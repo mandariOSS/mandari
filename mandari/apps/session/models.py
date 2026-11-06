@@ -3554,6 +3554,17 @@ class SessionApplication(EncryptionMixin, models.Model):
     content_digest = models.CharField(
         max_length=100, blank=True, default="", db_default="", verbose_name="Prüfsumme der Einreichung"
     )
+    # Person, die eingereicht hat (Auslöser ``user:<id>`` des Befehls ``submission.submit``: Work und das Profil
+    # Einreichung). Im Profil sieht und zurücknimmt eine Person nur ihre eigenen Einreichungen. Leer bei
+    # Einreichungen mit API-Token und bei älteren Einreichungen.
+    submitted_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Eingereicht von (Konto)",
+    )
 
     class Meta:
         db_table = "session_applications"
@@ -3648,6 +3659,9 @@ class SessionSubmissionUpload(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Hochgeladen am")
     expires_at = models.DateTimeField(verbose_name="Verwendbar bis")
     used_at = models.DateTimeField(null=True, blank=True, verbose_name="Verwendet am")
+    # SHA-256 des Idempotenzschlüssels der Einreichung, die die Datei verwendet: Eine Datei lässt sich nur in einer
+    # Einreichung verwenden, eine Wiederholung mit demselben Schlüssel zählt nicht als zweite Verwendung
+    used_for_key = models.CharField(max_length=64, blank=True, default="", verbose_name="Verwendet für (Schlüssel)")
     application = models.ForeignKey(
         SessionApplication,
         on_delete=models.SET_NULL,

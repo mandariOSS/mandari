@@ -217,7 +217,9 @@ curl -X POST -H 'Authorization: Bearer mandari_at_…' -H 'Idempotency-Key: 5b0f
   Credentials) ergeben 403, API-Tokens der Session-API 401; eine angemeldete Browsersitzung zählt hier nicht.
 - Die Person darf über das Token nur, was sie selbst darf: Einreichen für eine Organisation, in der sie das Recht
   „Anträge ans RIS übermitteln“ hat und die mit der Verwaltung verbunden ist (wie aus Work), zurückmelden zu
-  Sitzungen, zu denen sie geladen ist (wie im Portal). Sie sieht die Einreichungen dieser Organisationen.
+  Sitzungen, zu denen sie geladen ist (wie im Portal). Sie sieht und nimmt nur ihre eigenen Einreichungen zurück,
+  nicht die anderer Mitglieder derselben Organisation. Anlagen hochladen kann nur, wer bei der Verwaltung einreichen
+  darf.
 - Jede Handlung steht im Prüfprotokoll des Mandanten mit Person und Client-ID der Anwendung.
 
 ## Fehler am Token-Endpunkt

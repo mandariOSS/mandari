@@ -3,7 +3,7 @@
   "info": {
     "title": "mandari-Schnittstelle",
     "version": "1",
-    "description": "Eine Schnittstelle für alle Bereiche von mandari. Einstieg: `GET /api/`.\n\n- Ratsdaten kommen als OParl 1.1; offene Erweiterungen tragen das Präfix `kommparl:`, Erweiterungen nur für\n  mandari das Präfix `mandari:`.\n- Die Adressen der OParl-Objekte sind ihre Kennungen und ändern sich nicht.\n- Fehler kommen als `application/problem+json` (RFC 9457); die OParl-Ausgaben melden einfache Fehler als\n  `{\"error\", \"status\"}`.\n- Bedingte Abrufe über `ETag` und `If-None-Match`; abgekündigte Endpunkte tragen `Deprecation` (RFC 9745) und\n  `Sunset` (RFC 8594).\n- Schreibende Aufrufe sind Befehle mit `Idempotency-Key`.\n\nSchemas der OParl- und kommParl-Typen aus kommParl 0.1 (https://github.com/mandariOSS/kommParl, Commit 404a0c98ece8 vom 2026-11-06), einer Bearbeitung der OParl-Spezifikation 1.1 (https://github.com/OParl/spec), Lizenz CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Für die Beschreibung in JSON Schema 2020-12 umgewandelt."
+    "description": "Eine Schnittstelle für alle Bereiche von mandari. Einstieg: `GET /api/`.\n\n- Ratsdaten kommen als OParl 1.1; offene Erweiterungen tragen das Präfix `kommparl:`, Erweiterungen nur für\n  mandari das Präfix `mandari:`.\n- Die Adressen der OParl-Objekte sind ihre Kennungen und ändern sich nicht.\n- Fehler kommen als `application/problem+json` (RFC 9457); die OParl-Ausgaben melden einfache Fehler als\n  `{\"error\", \"status\"}`.\n- Bedingte Abrufe über `ETag` und `If-None-Match`; abgekündigte Endpunkte tragen `Deprecation` (RFC 9745) und\n  `Sunset` (RFC 8594).\n- Schreibende Aufrufe sind Befehle mit `Idempotency-Key`.\n\nSchemas der OParl- und kommParl-Typen aus kommParl 0.1 (https://github.com/mandariOSS/kommParl, Commit 575108d2d61c vom 2026-11-06), einer Bearbeitung der OParl-Spezifikation 1.1 (https://github.com/OParl/spec), Lizenz CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Für die Beschreibung in JSON Schema 2020-12 umgewandelt."
   },
   "tags": [
     {
@@ -4122,7 +4122,7 @@
       "get": {
         "operationId": "einreichung_liste",
         "summary": "Einreichungen",
-        "description": "Einreichungen der Stellen, für die die angemeldete Person einreichen darf, die jüngste zuerst; Seiten wie in OParl (data, pagination, links). Jedes Element ist eine Einreichung (KommparlSubmission).",
+        "description": "Eigene Einreichungen der angemeldeten Person (aus Work oder über das Profil), solange sie für deren Stelle einreichen darf, die jüngste zuerst; Einreichungen anderer Mitglieder derselben Stelle erscheinen nicht. Seiten wie in OParl (data, pagination, links). Jedes Element ist eine Einreichung (KommparlSubmission).",
         "security": [
           {
             "mandariOidc": [
@@ -4428,7 +4428,7 @@
       "get": {
         "operationId": "einreichung",
         "summary": "Einreichung",
-        "description": "Eine Einreichung mit Eingangsbestätigung und Bearbeitungsstand; fremde Einreichungen ergeben 404.",
+        "description": "Eine eigene Einreichung mit Eingangsbestätigung und Bearbeitungsstand; Einreichungen anderer Personen ergeben 404.",
         "security": [
           {
             "mandariOidc": [
@@ -4545,7 +4545,7 @@
       "post": {
         "operationId": "einreichung_zuruecknehmen",
         "summary": "Einreichung zurücknehmen",
-        "description": "Rücknahme (Befehl submission.withdraw), solange der Stand es zulässt (withdrawableStatus der Einreichungsregeln); sonst 409. Inhalt: leer oder ein leeres JSON-Objekt.",
+        "description": "Rücknahme einer eigenen Einreichung (Befehl submission.withdraw), solange der Stand es zulässt (withdrawableStatus der Einreichungsregeln); sonst 409. Einreichungen anderer Personen ergeben 404. Inhalt: leer oder ein leeres JSON-Objekt.",
         "security": [
           {
             "mandariOidc": [
@@ -4703,7 +4703,7 @@
       "post": {
         "operationId": "einreichung_anlage_hochladen",
         "summary": "Anlage hochladen",
-        "description": "Eine Datei im Teil „file“ (multipart/form-data), geprüft wie Antrags-Anhänge (Dateityp, Größe, Virenprüfung). Die Antwort nennt die Adresse, die beim Einreichen in upload steht; der Inhalt wird nie ausgeliefert.",
+        "description": "Eine Datei im Teil „file“ (multipart/form-data), geprüft wie Antrags-Anhänge (Dateityp, Größe, Virenprüfung). Nur für Personen, die bei dieser Verwaltung einreichen dürfen (sonst 403); offene Dateien sind je Person begrenzt (429). Die Datei lässt sich 24 Stunden in genau einer Einreichung verwenden. Die Antwort nennt die Adresse, die beim Einreichen in upload steht; der Inhalt wird nie ausgeliefert.",
         "security": [
           {
             "mandariOidc": [
@@ -4813,7 +4813,7 @@
             }
           },
           "422": {
-            "description": "Virenprüfung nicht bestanden oder nicht verfügbar",
+            "description": "Datei leer, Virenprüfung nicht bestanden oder nicht verfügbar",
             "content": {
               "application/problem+json": {
                 "schema": {

@@ -202,8 +202,9 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
   Hash; bei `submission.submit` bleibt er der Nachweis für Einreichende.
 - **Handler** für `submission.withdraw`, `attendance.respond` und `invitation.acknowledge` liegen in
   `apps/session/commands.py`. Auslöser sind Personen (`user:<id>`); die Rechte entsprechen dem Einreichen aus Work
-  und der Rückmeldung im Portal. Rücknahme nur in den Ständen eingereicht, eingegangen, in Prüfung und angenommen,
-  sonst 409.
+  und der Rückmeldung im Portal. `submission.submit` hält die einreichende Person fest (`submitted_by_user`); zurück
+  nimmt nur sie, solange sie für die Organisation einreichen darf. Rücknahme nur in den Ständen eingereicht,
+  eingegangen, in Prüfung und angenommen, sonst 409.
 - **HTTP-Ebene des Profils:** Die Endpunkte nach dem Profil Einreichung von kommParl liegen an der OParl-Ausgabe je
   Mandant (`…/api/oparl/body/kommparl/submissions/` und weitere), nicht unter `/api/v1/einreichung/antraege`
   ([Nachtrag #1228 zum ADR „Eine Schnittstelle“](20261105-eine-schnittstelle-api-first.md)). Dort ist

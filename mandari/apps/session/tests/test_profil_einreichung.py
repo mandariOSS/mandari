@@ -17,11 +17,13 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import timedelta
+from io import StringIO
 from typing import Any, cast
 
 import pytest
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -30,6 +32,7 @@ from apps.accounts.oidc.models import OAuthApplication
 from apps.accounts.tests import oidc_hilfen as h
 from apps.common.tests.factories import MembershipFactory, OrganizationFactory, RoleFactory, UserFactory
 from apps.events.models import IdempotencyKey
+from apps.session.api import einreichung
 from apps.session.models import (
     SessionAPIToken,
     SessionApplication,
@@ -155,6 +158,18 @@ def _hochladen(welt: Welt, inhalt: bytes = PDF, name: str = "Lageplan.pdf", toke
     )
 
 
+def _offene_datei(tenant: SessionTenant, user: Any, size: int = 1) -> SessionSubmissionUpload:
+    return SessionSubmissionUpload.objects.create(
+        tenant=tenant,
+        user=user,
+        name="Plan.pdf",
+        mime_type="application/pdf",
+        size=size,
+        sha256="0" * 64,
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+
+
 def _konform(daten: Any, name: str) -> None:
     probleme = pruefe_profil(daten, "submission", name)
     assert not probleme, probleme
@@ -200,6 +215,7 @@ class TestEinreichen:
         antrag = SessionApplication.objects.get()
         assert einreichung["receiptNumber"] == antrag.reference
         assert antrag.submitting_organization_id == welt.fraktion.pk and antrag.co_signers == "Max Mustermann"
+        assert antrag.submitted_by_user_id == welt.mitglied.user.pk
         assert SessionFile.objects.filter(application=antrag, is_public=False).count() == 1
         verwendet = SessionSubmissionUpload.objects.get()
         assert verwendet.used_at is not None and not verwendet.file, "Inhalt liegt jetzt in der Ablage der Anlagen"
@@ -239,23 +255,95 @@ class TestEinreichen:
         assert antwort.status_code == 422
         assert antwort.json()["errors"][0]["pointer"] == "/upload/0"
 
-    def test_abgelaufene_anlagen_werden_aufgeraeumt(self, welt: Welt) -> None:
+    def test_abgelaufene_anlagen_werden_per_zeitplan_aufgeraeumt(self, welt: Welt) -> None:
         alt = _hochladen(welt).json()
+        anderer = SessionTenant.objects.create(name="Gemeinde Beispiel", slug="beispiel")
+        _offene_datei(anderer, welt.mitglied.user)
         SessionSubmissionUpload.objects.update(expires_at=timezone.now() - timedelta(minutes=1))
-        name = str(SessionSubmissionUpload.objects.get().file.name)
+        name = str(SessionSubmissionUpload.objects.get(tenant=welt.tenant).file.name)
         storage = SessionSubmissionUpload._meta.get_field("file").storage
         assert storage.exists(name)
         antwort = _post(SUBMISSIONS, _antrag(upload=[alt["id"]]), welt.headers("k-1"))
         assert antwort.status_code == 422 and antwort.json()["errors"][0]["pointer"] == "/upload/0"
-        assert _hochladen(welt).status_code == 201
-        assert SessionSubmissionUpload.objects.count() == 1
+        aktuell = _hochladen(welt)
+        assert aktuell.status_code == 201
+        assert SessionSubmissionUpload.objects.count() == 3, "Hochladen räumt nicht auf; das macht der Zeitplan"
+
+        call_command("einreichung_aufraeumen", "--trotz-zeitplan", stdout=StringIO())
+        kennung = uuid.UUID(aktuell.json()["id"].rstrip("/").rsplit("/", 1)[-1])
+        assert list(SessionSubmissionUpload.objects.values_list("pk", flat=True)) == [kennung]
         assert not storage.exists(name)
+
+    def test_aufraeumen_steht_im_zeitplan(self) -> None:
+        from apps.common import schedules
+        from apps.events.schedule import Cron, ScheduleRegistry
+
+        ziel = ScheduleRegistry()
+        schedules.registrieren(ziel=ziel)
+        eintrag = ziel.get("befehl:einreichung_aufraeumen")
+        assert eintrag is not None and eintrag.trigger == Cron("25 * * * *")
 
     def test_anlage_mit_unerlaubtem_typ(self, welt: Welt) -> None:
         antwort = _hochladen(welt, b"<html><script>alert(1)</script></html>", name="seite.html")
         assert antwort.status_code == 415
         assert antwort["Content-Type"].startswith("application/problem+json")
+        # SVG nimmt Session als Anhang an, die gemeinsame Prüfung (NEVER) nie
+        assert _hochladen(welt, b"<svg xmlns='http://www.w3.org/2000/svg'/>", name="bild.svg").status_code == 415
+        assert _hochladen(welt, b"", name="leer.pdf").status_code == 422
         assert not SessionSubmissionUpload.objects.exists()
+        regeln = Client().get(RULES, headers=welt.headers()).json()
+        assert "image/svg+xml" not in regeln["upload"]["mediaTypes"]
+        assert "application/pdf" in regeln["upload"]["mediaTypes"]
+
+    def test_hochladen_nur_mit_einreichungsrecht(self, welt: Welt) -> None:
+        _ohne_fraktion, ohne = _fraktion(welt.tenant, "Fraktion C", ["meetings.view"], "carl@example.org")
+        token = h.access_token(welt.app, ohne.user, scope=SCOPE)
+        antwort = _hochladen(welt, token=token)
+        assert antwort.status_code == 403
+        assert antwort.json()["detail"] == einreichung.NO_ORIGINATOR
+        assert not SessionSubmissionUpload.objects.exists()
+
+    def test_offene_dateien_je_person_begrenzt(self, welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Eine offene Datei der Person bei einem anderen Mandanten zählt mit
+        anderer = SessionTenant.objects.create(name="Gemeinde Beispiel", slug="beispiel")
+        _offene_datei(anderer, welt.mitglied.user, size=len(PDF))
+        monkeypatch.setattr(einreichung, "MAX_OPEN_UPLOADS", 1)
+        antwort = _hochladen(welt)
+        assert antwort.status_code == 429 and antwort["Retry-After"]
+        monkeypatch.setattr(einreichung, "MAX_OPEN_UPLOADS", 5)
+        monkeypatch.setattr(einreichung, "MAX_OPEN_UPLOAD_BYTES", len(PDF) + 1)
+        assert _hochladen(welt).status_code == 429
+        monkeypatch.setattr(einreichung, "MAX_OPEN_UPLOAD_BYTES", 2 * len(PDF))
+        assert _hochladen(welt).status_code == 201
+
+    def test_datei_nur_in_einer_einreichung(self, welt: Welt) -> None:
+        upload = _hochladen(welt).json()
+        erste = _post(SUBMISSIONS, _antrag(upload=[upload["id"]]), welt.headers("k-1"))
+        assert erste.status_code == 201
+        zweite = _post(SUBMISSIONS, _antrag(name="Zweiter Antrag", upload=[upload["id"]]), welt.headers("k-2"))
+        assert zweite.status_code == 422
+        assert zweite.json()["errors"] == [{"pointer": "/upload/0", "detail": einreichung.UPLOAD_USED}]
+        assert SessionApplication.objects.count() == 1
+
+    def test_gleichzeitig_vorgemerkte_datei_ist_vergeben(self, welt: Welt) -> None:
+        upload = _hochladen(welt).json()
+        # Eine gleichzeitige Einreichung mit anderem Schlüssel hat die Datei schon vorgemerkt
+        SessionSubmissionUpload.objects.update(used_at=timezone.now(), used_for_key="f" * 64)
+        antwort = _post(SUBMISSIONS, _antrag(upload=[upload["id"]]), welt.headers("k-1"))
+        assert antwort.status_code == 422
+        assert antwort.json()["errors"] == [{"pointer": "/upload/0", "detail": einreichung.UPLOAD_USED}]
+        assert not SessionApplication.objects.exists()
+
+    def test_abgelehnte_einreichung_gibt_die_datei_frei(self, welt: Welt) -> None:
+        upload = _hochladen(welt).json()
+        unbekannt = f"http://localhost:8000{OPARL}organization/{uuid.uuid4()}/"
+        abgelehnt = _post(
+            SUBMISSIONS, _antrag(upload=[upload["id"]], targetOrganization=unbekannt), welt.headers("k-1")
+        )
+        assert abgelehnt.status_code == 422, abgelehnt.content
+        frei = SessionSubmissionUpload.objects.get()
+        assert frei.used_at is None and frei.used_for_key == "" and frei.file
+        assert _post(SUBMISSIONS, _antrag(upload=[upload["id"]]), welt.headers("k-2")).status_code == 201
 
     def test_wiederholung_mit_gleichem_schluessel_ergibt_keinen_zweiten_vorgang(self, welt: Welt) -> None:
         upload = _hochladen(welt).json()
@@ -343,6 +431,50 @@ class TestSichtbarkeitUndRuecknahme:
         assert _post(f"{pfad}withdraw/", {}, welt.headers("r-1", token=token)).status_code == 404
         assert SessionApplication.objects.get().status == "submitted"
 
+    def test_einreichung_einer_kollegin_derselben_fraktion_ist_nicht_auffindbar(self, welt: Welt) -> None:
+        """Dasselbe Recht in derselben Fraktion genügt nicht: Lesen und Rücknahme nur für die eigene Person."""
+        einreichung_a = self._einreichen(welt)
+        rolle = welt.mitglied.roles.first()
+        kollegin = cast(Any, UserFactory)(email="bea@example.org")
+        cast(Any, MembershipFactory)(organization=welt.fraktion, user=kollegin, roles=[rolle])
+        token = h.access_token(welt.app, kollegin, scope=SCOPE)
+        regeln = Client().get(RULES, headers=welt.headers(token=token)).json()
+        assert regeln["originator"] == [{"id": f"urn:uuid:{welt.fraktion.pk}", "name": "Fraktion A"}]
+
+        pfad = einreichung_a["id"].removeprefix("http://localhost:8000")
+        assert Client().get(pfad, headers=welt.headers(token=token)).status_code == 404
+        assert Client().get(SUBMISSIONS, headers=welt.headers(token=token)).json()["data"] == []
+        assert _post(f"{pfad}withdraw/", {}, welt.headers("r-1", token=token)).status_code == 404
+        assert SessionApplication.objects.get().status == "submitted"
+
+        # Ihre eigene Einreichung sieht sie, die von Person A nicht
+        eigene = _post(SUBMISSIONS, _antrag(name="Antrag von Bea"), welt.headers("b-1", token=token)).json()
+        liste = Client().get(SUBMISSIONS, headers=welt.headers(token=token)).json()["data"]
+        assert [eintrag["id"] for eintrag in liste] == [eigene["id"]]
+
+    def test_ohne_einreichungsrecht_keine_eigenen_einreichungen_mehr(self, welt: Welt) -> None:
+        einreichung_a = self._einreichen(welt)
+        # Die Person hat die Fraktion verlassen: Sie reicht nicht mehr für sie ein und sieht ihre Einreichungen nicht
+        welt.mitglied.is_active = False
+        welt.mitglied.save()
+        pfad = einreichung_a["id"].removeprefix("http://localhost:8000")
+        assert Client().get(pfad, headers=welt.headers()).status_code == 404
+        assert _post(f"{pfad}withdraw/", {}, welt.headers("r-1")).status_code == 404
+
+    def test_einreichung_mit_api_token_ist_im_profil_nicht_sichtbar(self, welt: Welt) -> None:
+        """Ohne einreichende Person (API-Token der Session-API) gehört die Einreichung niemandem im Profil."""
+        SessionApplication.objects.create(
+            tenant=welt.tenant,
+            title="Über die Session-API",
+            application_type="motion",
+            justification="x",
+            resolution_proposal="y",
+            submitting_organization=welt.fraktion,
+            submitter_name="Fraktion A",
+            submitter_email="fraktion@example.org",
+        )
+        assert Client().get(SUBMISSIONS, headers=welt.headers()).json()["data"] == []
+
     def test_ruecknahme_erlaubt_und_wiederholt(self, welt: Welt) -> None:
         einreichung = self._einreichen(welt)
         ziel = einreichung["withdraw"].removeprefix("http://localhost:8000")
@@ -369,6 +501,13 @@ class TestSichtbarkeitUndRuecknahme:
         einreichung = self._einreichen(welt)
         ziel = einreichung["withdraw"].removeprefix("http://localhost:8000")
         assert _post(ziel, {}, welt.headers()).status_code == 400
+
+    def test_andere_endpunkte_melden_405_ohne_hinweis_auf_die_empfangsbestaetigung(self, welt: Welt) -> None:
+        ziel = self._einreichen(welt)["withdraw"].removeprefix("http://localhost:8000")
+        for pfad in (UPLOADS, ziel):
+            antwort = Client().get(pfad, headers=welt.headers())
+            assert antwort.status_code == 405 and antwort["Allow"] == "POST"
+            assert antwort.json()["detail"] == einreichung.METHOD_NOT_ALLOWED
 
 
 # =============================================================================
@@ -437,7 +576,9 @@ class TestRueckmeldung:
 
     def test_empfangsbestaetigung(self, welt: Welt) -> None:
         pfad = self._pfad(welt, "invitation_receipt")
-        assert Client().get(pfad, headers=welt.headers()).status_code == 405, "Ein Abruf bestätigt nichts"
+        abruf = Client().get(pfad, headers=welt.headers())
+        assert abruf.status_code == 405, "Ein Abruf bestätigt nichts"
+        assert abruf.json()["detail"] == einreichung.RECEIPT_GET and abruf["Allow"] == "POST"
         welt.recipient.refresh_from_db()
         assert welt.recipient.acknowledged_at is None
 

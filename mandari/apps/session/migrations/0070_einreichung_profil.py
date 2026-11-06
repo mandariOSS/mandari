@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Profil Einreichung von kommParl (Issue #1228): Prüfsumme der Einreichung und vorab hochgeladene Anlagen.
+Profil Einreichung von kommParl (Issue #1228): Prüfsumme der Einreichung, einreichende Person und vorab
+hochgeladene Anlagen.
 
-Rein additiv: eine neue Tabelle und ein Textfeld an den Anträgen, leer auch in der Datenbank (``db_default``). Ein
-Rückfall auf das vorige Image liest beides nicht und legt Anträge weiter an.
+Rein additiv: eine neue Tabelle, ein Textfeld an den Anträgen, leer auch in der Datenbank (``db_default``), und ein
+Verweis auf das Konto, das eingereicht hat (darf leer sein). Ein Rückfall auf das vorige Image liest das nicht und
+legt Anträge weiter an.
 """
 
 import django.db.models.deletion
@@ -24,6 +26,18 @@ class Migration(migrations.Migration):
             name="content_digest",
             field=models.CharField(
                 blank=True, db_default="", default="", max_length=100, verbose_name="Prüfsumme der Einreichung"
+            ),
+        ),
+        migrations.AddField(
+            model_name="sessionapplication",
+            name="submitted_by_user",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+                verbose_name="Eingereicht von (Konto)",
             ),
         ),
         migrations.CreateModel(
@@ -65,6 +79,10 @@ class Migration(migrations.Migration):
                 (
                     "used_at",
                     models.DateTimeField(blank=True, null=True, verbose_name="Verwendet am"),
+                ),
+                (
+                    "used_for_key",
+                    models.CharField(blank=True, default="", max_length=64, verbose_name="Verwendet für (Schlüssel)"),
                 ),
                 (
                     "application",

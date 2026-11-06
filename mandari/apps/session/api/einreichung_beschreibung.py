@@ -179,8 +179,10 @@ def description() -> Description:
                 "Anlage hochladen",
                 (
                     "Eine Datei im Teil „file“ (multipart/form-data), geprüft wie Antrags-Anhänge (Dateityp, Größe, "
-                    "Virenprüfung). Die Antwort nennt die Adresse, die beim Einreichen in upload steht; der Inhalt "
-                    "wird nie ausgeliefert."
+                    "Virenprüfung). Nur für Personen, die bei dieser Verwaltung einreichen dürfen (sonst 403); "
+                    "offene Dateien sind je Person begrenzt (429). Die Datei lässt sich 24 Stunden in genau einer "
+                    "Einreichung verwenden. Die Antwort nennt die Adresse, die beim Einreichen in upload steht; der "
+                    "Inhalt wird nie ausgeliefert."
                 ),
                 {
                     "201": {
@@ -191,7 +193,7 @@ def description() -> Description:
                     "400": _problem("Nicht genau eine Datei im Teil file"),
                     "413": _problem("Datei zu groß"),
                     "415": _problem("Dateityp nicht angenommen oder kein multipart/form-data"),
-                    "422": _problem("Virenprüfung nicht bestanden oder nicht verfügbar"),
+                    "422": _problem("Datei leer, Virenprüfung nicht bestanden oder nicht verfügbar"),
                 },
                 parameters=tenant,
                 body={
@@ -224,8 +226,10 @@ def description() -> Description:
                 "einreichung_liste",
                 "Einreichungen",
                 (
-                    "Einreichungen der Stellen, für die die angemeldete Person einreichen darf, die jüngste zuerst; "
-                    "Seiten wie in OParl (data, pagination, links). Jedes Element ist eine Einreichung "
+                    "Eigene Einreichungen der angemeldeten Person (aus Work oder über das Profil), solange sie für "
+                    "deren Stelle einreichen darf, die jüngste zuerst; Einreichungen anderer Mitglieder derselben "
+                    "Stelle erscheinen nicht. Seiten wie in OParl (data, pagination, links). Jedes Element ist eine "
+                    "Einreichung "
                     f"({kommparl.profile_component_name('Submission')})."
                 ),
                 {
@@ -279,7 +283,10 @@ def description() -> Description:
             "get": _operation(
                 "einreichung",
                 "Einreichung",
-                "Eine Einreichung mit Eingangsbestätigung und Bearbeitungsstand; fremde Einreichungen ergeben 404.",
+                (
+                    "Eine eigene Einreichung mit Eingangsbestätigung und Bearbeitungsstand; Einreichungen anderer "
+                    "Personen ergeben 404."
+                ),
                 {"200": {"description": "Einreichung", "headers": _GET_HEADERS, "content": _json("Submission")}},
                 parameters=[*tenant, submission_id],
             )
@@ -289,8 +296,9 @@ def description() -> Description:
                 "einreichung_zuruecknehmen",
                 "Einreichung zurücknehmen",
                 (
-                    "Rücknahme (Befehl submission.withdraw), solange der Stand es zulässt (withdrawableStatus der "
-                    "Einreichungsregeln); sonst 409. Inhalt: leer oder ein leeres JSON-Objekt."
+                    "Rücknahme einer eigenen Einreichung (Befehl submission.withdraw), solange der Stand es zulässt "
+                    "(withdrawableStatus der Einreichungsregeln); sonst 409. Einreichungen anderer Personen ergeben "
+                    "404. Inhalt: leer oder ein leeres JSON-Objekt."
                 ),
                 {
                     "200": {"description": "Zurückgenommen", "content": _json("Submission")},

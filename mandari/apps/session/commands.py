@@ -29,10 +29,11 @@ ohne Inhalte, das Protokoll nennt nur Kennungen und Typen von Ausnahmen.
 Seit dem Profil Einreichung (Issue #1228) führt Session drei weitere Befehle aus. Auslöser ist dort eine Person
 (``user:<id>``, angemeldet über ein Access-Token mit dem Scope ``einreichung:schreiben``):
 
-- ``submission.withdraw``: Die Einreichung gehört einer Organisation, für die die Person einreichen darf
-  (``application_service.submission_originators``, dieselbe Regel wie beim Einreichen), sonst 404. Zurückgenommen
-  wird nur in ``WITHDRAWABLE_STATUSES``, sonst 409. Ein API-Token (``system:session.api-token.<id>``) darf
-  Einreichungen seiner Organisation zurücknehmen.
+- ``submission.withdraw``: Die Person hat die Einreichung selbst eingereicht (``submitted_by_user``, aus Work oder
+  über das Profil), und sie darf für deren Organisation weiter einreichen
+  (``application_service.submission_originators``, dieselbe Regel wie beim Einreichen), sonst 404. Andere Mitglieder
+  der Organisation nehmen fremde Einreichungen nicht zurück. Zurückgenommen wird nur in ``WITHDRAWABLE_STATUSES``,
+  sonst 409. Ein API-Token (``system:session.api-token.<id>``) darf Einreichungen seiner Organisation zurücknehmen.
 - ``attendance.respond``: Die Person des Kontos (``portal_link_service.person_for_user_in_tenant``, dieselben
   Bedingungen wie im Portal) ist die im Inhalt genannte und zu der Sitzung geladen, sonst 403 bzw. 404; die Sitzung
   nimmt noch Rückmeldungen an, sonst 409. Gespeichert wird wie im Portal (Herkunft „portal“): Rückmeldung, Grund
@@ -132,6 +133,9 @@ def submit(command: Command) -> HandlerResult:
     tenant = _tenant(command.tenant_ref)
     token, organization, via_work = _authorize(command, tenant)
     target, attachments = _check(command, tenant)
+    # Auslöser ``user:<id>`` (Work, Profil Einreichung): Die Person gehört zur Einreichung (Sicht und Rücknahme)
+    actor = command.actor_ref or ""
+    submitted_by = _uuid(actor.removeprefix(USER_ACTOR_PREFIX)) if via_work else None
 
     submitter = body["submitter"]
     application = SessionApplication.objects.create(
@@ -151,6 +155,7 @@ def submit(command: Command) -> HandlerResult:
         urgency_reason=(body.get("urgency_reason") or "").strip(),
         deadline=date.fromisoformat(body["deadline"]) if body.get("deadline") else None,
         submitted_via_token=token,
+        submitted_by_user_id=submitted_by,
         status="submitted",
     )
 
@@ -185,11 +190,9 @@ def withdraw(command: Command) -> HandlerResult:
     """Einreichung zurücknehmen (siehe Moduldokumentation)."""
     body = command.body
     tenant = _tenant(command.tenant_ref)
+    # Nur die Zeile des Antrags sperren: PostgreSQL sperrt keine Zeilen auf der leeren Seite eines äußeren Joins
     application = (
-        SessionApplication.objects.select_for_update()
-        .filter(pk=body["submission"], tenant=tenant)
-        .select_related("submitting_organization")
-        .first()
+        SessionApplication.objects.select_for_update(of=("self",)).filter(pk=body["submission"], tenant=tenant).first()
     )
     if application is None or not _may_withdraw(command, tenant, application):
         raise CommandError.of(404, "nicht-gefunden", SUBMISSION_UNKNOWN)
@@ -293,7 +296,7 @@ def _actor_user(command: Command) -> Any:
 
 
 def _may_withdraw(command: Command, tenant: SessionTenant, application: SessionApplication) -> bool:
-    """Darf der Auslöser die Einreichung zurücknehmen? (Person: Organisation aus ``submission_originators``)"""
+    """Darf der Auslöser die Einreichung zurücknehmen? (Person: eigene Einreichung, Organisation weiter erlaubt)"""
     from .services.application_service import submission_originators, submitting_organization_for_token
 
     actor = command.actor_ref or ""
@@ -307,7 +310,7 @@ def _may_withdraw(command: Command, tenant: SessionTenant, application: SessionA
             bound is not None and application.submitting_organization_id == bound.pk
         )
     user = _actor_user(command)
-    if user is None or application.submitting_organization_id is None:
+    if user is None or application.submitting_organization_id is None or application.submitted_by_user_id != user.pk:
         return False
     return any(
         organization.pk == application.submitting_organization_id

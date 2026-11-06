@@ -260,5 +260,10 @@ Die Entscheidung bleibt. Etappe 4 setzt das Profil Einreichung um ([SCHNITTSTELL
 - **Befehlsparität erreicht.** Mit `submission.withdraw`, `attendance.respond` und `invitation.acknowledge` hat jeder
   registrierte Befehl einen Endpunkt; die Ausnahmeliste ist leer. Die Rückmeldewege der Oberfläche (Link, Portal,
   Sitzungsdienst) nutzen die Befehle noch nicht (#541).
-- **Herkunft der Schemas:** Die Profilschemas sind mit `scripts/kommparl_schemas.py` vom Commit des Pull Requests in
-  kommParl übernommen (`HERKUNFT.json`); nach dem Merge dort wird auf den Merge-Commit umgestellt.
+- **Herkunft der Schemas:** Die Profilschemas sind mit `scripts/kommparl_schemas.py` vom Merge-Commit des Profils in
+  kommParl übernommen (`HERKUNFT.json`).
+- **Nur eigene Einreichungen.** Lesen und Rücknahme gelten nur für Einreichungen, die die Person selbst eingereicht
+  hat (`SessionApplication.submitted_by_user`, aus Work und aus dem Profil), solange sie für deren Organisation
+  einreichen darf. Das Recht, für dieselbe Organisation einzureichen, öffnet die Einreichungen anderer Mitglieder
+  nicht: Sie enthalten Kontaktdaten und Texte, die Work nur nach seiner Sichtbarkeit zeigt. Anlagen hochladen kann
+  nur, wer bei der Verwaltung einreichen darf.

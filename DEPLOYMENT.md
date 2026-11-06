@@ -1537,6 +1537,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026, Issue #366) |
 | `befehl:purge_security_audit_log` | täglich 04:40 | Sicherheitsprotokoll nach Frist |
 | `befehl:session_privacy_purge` | am 1. um 05:00 | DSGVO-Löschlauf mit Archivpaket |
+| `befehl:einreichung_aufraeumen` | stündlich :25 | nicht eingereichte Anlagen des Profils Einreichung nach ihrem Ablauf löschen (Issue #1228) |
 | `befehl:build_meeting_packages` | jede Minute | Sitzungsmappen (Issue #218): `--limit 5 --max-seconds 240` |
 
 Dazu die Zeitpläne aus dem Abschnitt „Worker“ (Fraktionssitzungen, Verortung, Aufräumen).
@@ -1586,7 +1587,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|einreichung_aufraeumen|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 

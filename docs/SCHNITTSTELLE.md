@@ -92,17 +92,24 @@ zurückmelden: nach dem Profil Einreichung von kommParl (`https://schema.kommpar
   `apps/session/commands.py` prüfen die Rechte wie die bisherigen Wege: Einreichen und Zurücknehmen für Organisationen,
   in denen die Person „Anträge ans RIS übermitteln“ darf und die mit der Verwaltung verbunden sind (wie aus Work);
   Rückmelden und Empfang bestätigen nur für die eigene Person, die wie im Portal über die bestätigte E-Mail-Adresse
-  zugeordnet wird. Wer für eine Organisation einreichen darf, sieht deren Einreichungen; fremde ergeben 404.
+  zugeordnet wird. Lesen und zurücknehmen darf eine Person nur ihre eigenen Einreichungen
+  (`SessionApplication.submitted_by_user`, gesetzt aus dem Auslöser `user:<id>` in Work und im Profil), solange sie
+  für deren Organisation einreichen darf. Einreichungen anderer Mitglieder derselben Organisation ergeben 404: Sie
+  enthalten Kontaktdaten und Texte, die Work nur nach seiner Sichtbarkeit zeigt.
 - **Gemeinsame Bausteine:** Probleme nach RFC 9457 (`apps/common/api/problems.py`), `Idempotency-Key` Pflicht bei
   jedem `POST` außer dem Hochladen (Speicher und Prüfung im Dispatcher, derselbe Schlüssel mit anderem Inhalt 422),
   `ETag` mit `If-None-Match` bei jedem `GET`, Seiten wie in OParl für die Liste.
 - **Eingangsbestätigung:** Eingangsnummer und Eingangszeit aus der Quittung des Befehls, `contentDigest` nach RFC 9530
   über den Inhalt der Anfrage, wie er angekommen ist (gespeichert am Antrag, `SessionApplication.content_digest`). Ein
   mitgesendeter Header `Content-Digest` wird nachgerechnet (sha-256, sha-512), Abweichung 400.
-- **Anlagen:** hochladen als `multipart/form-data`, geprüft wie Antrags-Anhänge (Dateityp, Größe, Virenprüfung), bis
-  zum Einreichen 24 Stunden in `SessionSubmissionUpload` unter `session/files/` (nie über `/media/`). Beim Einreichen
-  übernimmt der Befehl die Datei in die Ablage der Anlagen; der Inhalt des Uploads wird danach gelöscht, die Angaben
-  bleiben 30 Tage für Wiederholungen. Hochgeladene Inhalte liefert das Profil nie aus.
+- **Anlagen:** hochladen nur mit Einreichungsrecht bei der Verwaltung (sonst 403, bevor der Inhalt gelesen wird), als
+  `multipart/form-data`, geprüft wie Antrags-Anhänge (Dateityp, Größe, Virenprüfung) und mit `validate_upload`
+  ([Uploads](UPLOADS.md)), bis zum Einreichen 24 Stunden in `SessionSubmissionUpload` unter `session/files/` (nie über
+  `/media/`). Je Person über alle Mandanten höchstens 50 offene Dateien und 500 MB (429). Eine Datei lässt sich in
+  genau einer Einreichung verwenden: Vor dem Befehl wird sie für den `Idempotency-Key` vorgemerkt, eine andere
+  Einreichung bekommt 422. Beim Einreichen übernimmt der Befehl die Datei in die Ablage der Anlagen; der Inhalt des
+  Uploads wird danach gelöscht, die Angaben bleiben 30 Tage für Wiederholungen. Nicht eingereichte Dateien löscht der
+  Zeitplan `befehl:einreichung_aufraeumen` stündlich. Hochgeladene Inhalte liefert das Profil nie aus.
 - **Rückmeldung zur Ladung:** Herkunft „portal“ wie im Portal; der Grund einer Absage wird verschlüsselt gespeichert
   und erscheint in keiner Antwort. Die Rückmeldung bestätigt zugleich den Empfang aller Versände der Sitzung.
 - **Prüfprotokoll:** Jede schreibende Handlung und jeder Abruf von Einreichungen steht im Protokoll des Mandanten mit

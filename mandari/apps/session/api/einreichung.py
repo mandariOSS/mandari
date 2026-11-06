@@ -13,12 +13,17 @@ Scope ``einreichung:schreiben``. Ohne eingeschalteten Anbieter gibt es das Profi
 
 **Ein Weg:** Geschrieben wird nur über die Befehle (``apps/session/commands.py``) mit dem Auslöser ``user:<id>``;
 deren Handler prüfen die Rechte wie beim bisherigen Weg (Einreichen wie aus Work, Rückmeldung wie im Portal). Die
-Endpunkte lesen nur das Format ein und geben das Ergebnis im Format des Profils aus. Lesen dürfen Personen die
-Einreichungen der Organisationen, für die sie einreichen dürfen (``application_service.submission_originators``).
+Endpunkte lesen nur das Format ein und geben das Ergebnis im Format des Profils aus. Lesen und zurücknehmen dürfen
+Personen nur ihre eigenen Einreichungen (``SessionApplication.submitted_by_user``, aus Work oder über das Profil),
+solange sie für deren Organisation einreichen dürfen (``application_service.submission_originators``). Einreichungen
+anderer Mitglieder derselben Organisation gibt es für sie nicht (404).
 
-**Anlagen** laden Personen vorab hoch (``SessionSubmissionUpload``). Geprüft wird wie bei Antrags-Anhängen (Dateityp,
-Größe, Virenprüfung, ``application_service.attachment_rejection``), abgelegt beim Einreichen wie bisher in der Ablage
-der Anlagen (``attach_application_files``). Das Profil liefert hochgeladene Inhalte nie aus.
+**Anlagen** laden Personen vorab hoch (``SessionSubmissionUpload``), nur wenn sie bei der Verwaltung einreichen
+dürfen. Geprüft wird wie bei Antrags-Anhängen (Dateityp, Größe, Virenprüfung, ``application_service
+.attachment_rejection``) und mit der gemeinsamen Prüfung (``apps.common.uploads.validate_upload``), abgelegt beim
+Einreichen wie bisher in der Ablage der Anlagen (``attach_application_files``). Offene Dateien sind je Person über alle
+Mandanten begrenzt; eine Datei lässt sich in genau einer Einreichung verwenden. Abgelaufene Dateien löscht der
+Zeitplan ``befehl:einreichung_aufraeumen``. Das Profil liefert hochgeladene Inhalte nie aus.
 
 **Gemeinsame Bausteine** aus ``apps.common.api``: Fehler nach RFC 9457, ``Idempotency-Key``, ``ETag`` und Seiten.
 Jede schreibende Handlung und jeder Abruf von Einreichungen steht im Prüfprotokoll des Mandanten mit Person und
@@ -42,8 +47,9 @@ from typing import Any, Final
 
 from django.core.cache import cache as django_cache
 from django.core.exceptions import RequestDataTooBig
+from django.core.exceptions import ValidationError as UploadRejected
 from django.core.paginator import EmptyPage, Paginator
-from django.db.models import Prefetch, QuerySet
+from django.db.models import Count, Prefetch, QuerySet, Sum
 from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
 from django.utils import timezone
@@ -140,8 +146,10 @@ PAGE_SIZE: Final = 20
 UPLOAD_LIFETIME: Final = timedelta(hours=24)
 #: Angaben verwendeter Dateien bleiben so lange (Wiederholungen mit demselben Idempotenzschlüssel, wie der Speicher)
 UPLOAD_RETENTION: Final = timedelta(days=30)
-#: Höchstzahl offener (hochgeladener, noch nicht verwendeter) Dateien je Person und Mandant
+#: Höchstzahl offener (hochgeladener, noch nicht verwendeter) Dateien je Person, über alle Mandanten
 MAX_OPEN_UPLOADS: Final = 50
+#: Höchstens so viele Bytes in offenen Dateien je Person, über alle Mandanten
+MAX_OPEN_UPLOAD_BYTES: Final = 500 * 1024 * 1024
 #: Höchstzahl von Anfragen je Person und Minute über alle Endpunkte des Profils
 REQUESTS_PER_MINUTE: Final = 120
 #: Spielraum für Kopfzeilen eines multipart-Inhalts über der Größe der Datei
@@ -171,7 +179,10 @@ UPLOAD_ONE_FILE: Final = "Erwartet wird genau eine Datei im Teil „file“ (mul
 UPLOAD_TOO_LARGE: Final = "Die Datei ist zu groß."
 UPLOAD_TYPE: Final = "Dieser Dateityp wird nicht angenommen."
 UPLOAD_SCAN: Final = "Die Datei hat die Virenprüfung nicht bestanden, oder die Prüfung ist nicht verfügbar."
+UPLOAD_EMPTY: Final = "Die Datei ist leer."
 UPLOAD_LIMIT: Final = "Zu viele offene Dateien. Bitte zuerst einreichen oder den Ablauf abwarten."
+UPLOAD_USED: Final = "Datei schon verwendet"
+METHOD_NOT_ALLOWED: Final = "Methode nicht erlaubt."
 RECEIPT_GET: Final = "Der Empfang wird mit POST bestätigt; ein Abruf zählt nicht als Bestätigung."
 PAGE_INVALID: Final = "Ungültige Seitennummer."
 
@@ -315,8 +326,11 @@ def offered() -> bool:
 View = Callable[..., HttpResponseBase]
 
 
-def profile_endpoint(*methods: str) -> Callable[[View], View]:
-    """Rahmen jedes Endpunkts: Methoden (405 mit ``Allow``), ``ProfileError`` als Problem, kein CSRF (nur Bearer)."""
+def profile_endpoint(*methods: str, method_detail: str = METHOD_NOT_ALLOWED) -> Callable[[View], View]:
+    """
+    Rahmen jedes Endpunkts: Methoden (405 mit ``Allow`` und ``method_detail``), ``ProfileError`` als Problem, kein
+    CSRF (nur Bearer).
+    """
     allowed = ", ".join(methods)
 
     def decorate(view: View) -> View:
@@ -324,12 +338,7 @@ def profile_endpoint(*methods: str) -> Callable[[View], View]:
         def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
             try:
                 if request.method not in methods:
-                    raise ProfileError(
-                        405,
-                        "methode-nicht-erlaubt",
-                        RECEIPT_GET if methods == ("POST",) else "Methode nicht erlaubt.",
-                        headers={"Allow": allowed},
-                    )
+                    raise ProfileError(405, "methode-nicht-erlaubt", method_detail, headers={"Allow": allowed})
                 return view(request, *args, **kwargs)
             except ProfileError as exc:
                 headers = {"Cache-Control": "no-store", **exc.headers}
@@ -504,10 +513,15 @@ def originator_id(organization_id: Any) -> str:
 
 
 def _visible(caller: Caller) -> QuerySet[SessionApplication]:
-    """Einreichungen der Organisationen, für die die Person einreichen darf; alles andere gibt es für sie nicht."""
+    """
+    Eigene Einreichungen der Person, solange sie für deren Organisation einreichen darf; alles andere gibt es für sie
+    nicht. Einreichungen anderer Mitglieder derselben Organisation enthalten deren Kontaktdaten und Texte, die Work
+    nur nach seiner Sichtbarkeit zeigt; das Recht, für die Organisation einzureichen, genügt dafür nicht.
+    """
     organizations = _originators(caller)
     return _applications(caller.tenant).filter(
-        submitting_organization_id__in=[organization.pk for organization in organizations]
+        submitted_by_user=caller.user,
+        submitting_organization_id__in=[organization.pk for organization in organizations],
     )
 
 
@@ -644,7 +658,7 @@ def rules_view(request: HttpRequest, tenant_slug: str) -> HttpResponseBase:
         ],
         "upload": {
             "maxSize": int(file_service.MAX_FILE_SIZE_MB) * 1024 * 1024,
-            "mediaTypes": sorted({file_service.MIME_TYPES[extension] for extension in file_service.ALLOWED_EXTENSIONS}),
+            "mediaTypes": sorted({file_service.MIME_TYPES[extension] for extension in upload_extensions()}),
         },
         "originator": [
             {"id": originator_id(organization.pk), "name": organization.name} for organization in _originators(caller)
@@ -682,16 +696,41 @@ def _drop_content(upload: SessionSubmissionUpload) -> bool:
     return True
 
 
-def purge_uploads(tenant: SessionTenant) -> int:
-    """Abgelaufene, nicht verwendete Dateien und alte Angaben verwendeter Dateien eines Mandanten löschen."""
+def purge_uploads(tenant: SessionTenant | None = None) -> int:
+    """
+    Abgelaufene, nicht verwendete Dateien und alte Angaben verwendeter Dateien löschen, ohne ``tenant`` aller
+    Mandanten (Zeitplan ``befehl:einreichung_aufraeumen``). Liefert die Zahl der gelöschten Zeilen.
+    """
     now = timezone.now()
-    stale = list(
-        SessionSubmissionUpload.objects.filter(tenant=tenant, used_at__isnull=True, expires_at__lte=now)
-    ) + list(SessionSubmissionUpload.objects.filter(tenant=tenant, used_at__lte=now - UPLOAD_RETENTION))
+    uploads = SessionSubmissionUpload.objects.all()
+    if tenant is not None:
+        uploads = uploads.filter(tenant=tenant)
+    stale = list(uploads.filter(used_at__isnull=True, expires_at__lte=now)) + list(
+        uploads.filter(used_at__lte=now - UPLOAD_RETENTION)
+    )
     # Zeilen nur ohne Inhalt löschen; sonst bliebe eine Datei ohne Verweis im Speicher
     dropped = [upload.pk for upload in stale if _drop_content(upload)]
     SessionSubmissionUpload.objects.filter(pk__in=dropped).delete()
     return len(dropped)
+
+
+def upload_extensions() -> frozenset[str]:
+    """
+    Endungen, die das Profil als Anlage annimmt: die der Antrags-Anhänge in Session, soweit das Profil ``DOCUMENTS``
+    der gemeinsamen Prüfung sie erlaubt (``apps.common.uploads``; ``NEVER`` wie SVG nie).
+    """
+    from apps.common.uploads import DOCUMENTS, NEVER
+    from apps.session.services import file_service
+
+    return (frozenset(file_service.ALLOWED_EXTENSIONS) & DOCUMENTS) - NEVER
+
+
+def _open_uploads(user: Any) -> tuple[int, int]:
+    """Offene (hochgeladene, nicht verwendete, nicht abgelaufene) Dateien einer Person über alle Mandanten."""
+    totals = SessionSubmissionUpload.objects.filter(
+        user=user, used_at__isnull=True, expires_at__gt=timezone.now()
+    ).aggregate(count=Count("pk"), size=Sum("size"))
+    return int(totals["count"] or 0), int(totals["size"] or 0)
 
 
 def _measure(handle: Any) -> tuple[int, str]:
@@ -705,17 +744,48 @@ def _measure(handle: Any) -> tuple[int, str]:
     return size, digest.hexdigest()
 
 
-@profile_endpoint("POST")
-def uploads_view(request: HttpRequest, tenant_slug: str) -> HttpResponseBase:
-    """Anlage hochladen (``kommparl:submissionUpload``): geprüft wie Antrags-Anhänge, nur für die eigene Person."""
+def _check_upload(uploaded: Any, name: str, open_bytes: int) -> None:
+    """Grenze der Person, Dateityp und Größe (wie Antrags-Anhänge, dazu ``validate_upload``), Virenprüfung."""
+    from apps.common.uploads import validate_upload
     from apps.session.services import application_service, file_service
 
+    size = int(uploaded.size or 0)
+    if open_bytes + size > MAX_OPEN_UPLOAD_BYTES:
+        raise ProfileError(429, "ratenlimit", UPLOAD_LIMIT, headers={"Retry-After": "3600"})
+    code = application_service.attachment_rejection(name, size)
+    if code == application_service.ATTACHMENT_SIZE:
+        raise ProfileError(413, "anfrage-zu-gross", UPLOAD_TOO_LARGE)
+    if code is not None:
+        raise ProfileError(415, "format-nicht-unterstuetzt", UPLOAD_TYPE)
+    try:
+        validate_upload(
+            uploaded, allowed=upload_extensions(), max_bytes=int(file_service.MAX_FILE_SIZE_MB) * 1024 * 1024
+        )
+    except UploadRejected:
+        if size <= 0:
+            raise ProfileError(422, "validierung", UPLOAD_EMPTY) from None
+        raise ProfileError(415, "format-nicht-unterstuetzt", UPLOAD_TYPE) from None
+    try:
+        file_service.scan_upload(uploaded)
+    except Exception:  # Befund oder Prüfung nicht verfügbar – der Hook wirft beliebige Ausnahmen
+        logger.warning("Profil Einreichung: Anlage abgelehnt (Virenprüfung)")
+        raise ProfileError(422, "virenpruefung", UPLOAD_SCAN) from None
+
+
+@profile_endpoint("POST")
+def uploads_view(request: HttpRequest, tenant_slug: str) -> HttpResponseBase:
+    """
+    Anlage hochladen (``kommparl:submissionUpload``): nur mit Einreichungsrecht bei dieser Verwaltung (sonst 403,
+    bevor der Inhalt gelesen wird), höchstens ``MAX_OPEN_UPLOADS`` offene Dateien und ``MAX_OPEN_UPLOAD_BYTES`` je
+    Person über alle Mandanten (429), geprüft wie Antrags-Anhänge.
+    """
+    from apps.session.services import file_service
+
     caller = _caller(request, tenant_slug)
-    purge_uploads(caller.tenant)
-    open_uploads = SessionSubmissionUpload.objects.filter(
-        tenant=caller.tenant, user=caller.user, used_at__isnull=True, expires_at__gt=timezone.now()
-    ).count()
-    if open_uploads >= MAX_OPEN_UPLOADS:
+    if not _originators(caller):
+        raise ProfileError(403, "keine-berechtigung", NO_ORIGINATOR)
+    open_count, open_bytes = _open_uploads(caller.user)
+    if open_count >= MAX_OPEN_UPLOADS:
         raise ProfileError(429, "ratenlimit", UPLOAD_LIMIT, headers={"Retry-After": "3600"})
     max_bytes = int(file_service.MAX_FILE_SIZE_MB) * 1024 * 1024
     try:
@@ -736,16 +806,7 @@ def uploads_view(request: HttpRequest, tenant_slug: str) -> HttpResponseBase:
     name = PurePosixPath(str(uploaded.name or "").replace("\\", "/")).name.strip()[:255]
     if not name:
         raise ProfileError(400, "ungueltige-anfrage", UPLOAD_ONE_FILE)
-    code = application_service.attachment_rejection(name, int(uploaded.size or 0))
-    if code == application_service.ATTACHMENT_SIZE:
-        raise ProfileError(413, "anfrage-zu-gross", UPLOAD_TOO_LARGE)
-    if code is not None:
-        raise ProfileError(415, "format-nicht-unterstuetzt", UPLOAD_TYPE)
-    try:
-        file_service.scan_upload(uploaded)
-    except Exception:  # Befund oder Prüfung nicht verfügbar – der Hook wirft beliebige Ausnahmen
-        logger.warning("Profil Einreichung: Anlage abgelehnt (Virenprüfung), Mandant %s", caller.tenant.pk)
-        raise ProfileError(422, "virenpruefung", UPLOAD_SCAN) from None
+    _check_upload(uploaded, name, open_bytes)
     size, sha256 = _measure(uploaded)
     upload = SessionSubmissionUpload(
         tenant=caller.tenant,
@@ -813,8 +874,16 @@ def _list(request: HttpRequest, caller: Caller) -> HttpResponseBase:
     return _response(request, envelope, headers={key: value for key, value in headers.items() if value})
 
 
-def _resolve_uploads(caller: Caller, urls: Sequence[str]) -> list[SessionSubmissionUpload]:
-    """Hochgeladene Dateien der Person; abgelaufene oder fremde ergeben 422 (Stelle ``/upload/<n>``)."""
+def _key_hash(key: str) -> str:
+    """Kennung des Idempotenzschlüssels an einer verwendeten Datei (SHA-256, nicht der Schlüssel selbst)."""
+    return hashlib.sha256(f"{commands.SUBMIT} {key}".encode()).hexdigest()
+
+
+def _resolve_uploads(caller: Caller, urls: Sequence[str], key_hash: str) -> list[SessionSubmissionUpload]:
+    """
+    Hochgeladene Dateien der Person; fremde, abgelaufene oder in einer anderen Einreichung verwendete ergeben 422
+    (Stelle ``/upload/<n>``). Eine Datei, die schon für diesen Schlüssel vorgemerkt ist, gehört zur Wiederholung.
+    """
     prefix = caller.mapping.uris.submission_uploads()
     now = timezone.now()
     uploads: list[SessionSubmissionUpload] = []
@@ -828,6 +897,8 @@ def _resolve_uploads(caller: Caller, urls: Sequence[str]) -> list[SessionSubmiss
         )
         if upload is None:
             errors.append({"pointer": f"/upload/{index}", "detail": "Datei nicht gefunden"})
+        elif upload.used_at is not None and upload.used_for_key != key_hash:
+            errors.append({"pointer": f"/upload/{index}", "detail": UPLOAD_USED})
         elif upload.used_at is None and upload.expires_at <= now:
             errors.append({"pointer": f"/upload/{index}", "detail": "Datei abgelaufen"})
         else:
@@ -835,6 +906,39 @@ def _resolve_uploads(caller: Caller, urls: Sequence[str]) -> list[SessionSubmiss
     if errors:
         raise ProfileError(422, "validierung", INVALID, errors=errors)
     return uploads
+
+
+def _reserve_uploads(uploads: Sequence[SessionSubmissionUpload], key_hash: str) -> list[Any]:
+    """
+    Unverwendete Dateien vor dem Befehl für diesen Schlüssel vormerken (bedingtes Update): Von zwei gleichzeitigen
+    Einreichungen mit verschiedenen Schlüsseln bekommt nur eine die Datei, die andere 422. Liefert die vorgemerkten.
+    """
+    now = timezone.now()
+    reserved: list[Any] = []
+    errors: list[dict[str, str]] = []
+    for index, upload in enumerate(uploads):
+        if upload.used_at is not None:
+            continue  # Wiederholung: schon für diesen Schlüssel vorgemerkt
+        taken = SessionSubmissionUpload.objects.filter(pk=upload.pk, used_at__isnull=True).update(
+            used_at=now, used_for_key=key_hash
+        )
+        if taken:
+            reserved.append(upload.pk)
+            upload.used_at, upload.used_for_key = now, key_hash
+        elif not SessionSubmissionUpload.objects.filter(pk=upload.pk, used_for_key=key_hash).exists():
+            errors.append({"pointer": f"/upload/{index}", "detail": UPLOAD_USED})
+    if errors:
+        _release_uploads(reserved, key_hash)
+        raise ProfileError(422, "validierung", INVALID, errors=errors)
+    return reserved
+
+
+def _release_uploads(pks: Sequence[Any], key_hash: str) -> None:
+    """Vormerkung zurücknehmen, wenn der Befehl abgelehnt wurde (die Dateien bleiben verwendbar)."""
+    if pks:
+        SessionSubmissionUpload.objects.filter(pk__in=pks, used_for_key=key_hash, application__isnull=True).update(
+            used_at=None, used_for_key=""
+        )
 
 
 def _originator(caller: Caller, requested: object) -> Any:
@@ -915,13 +1019,18 @@ def _submit(request: HttpRequest, caller: Caller) -> HttpResponseBase:
     organization = _originator(caller, data.get("originator"))
     body = _submit_body(caller, data, organization)
     upload_urls = list(data.get("upload") or [])
-    uploads = _resolve_uploads(caller, upload_urls)
+    key_hash = _key_hash(key)
+    uploads = _resolve_uploads(caller, upload_urls, key_hash)
     body["attachments"] = [{"name": u.name, "size": int(u.size), "sha256": u.sha256} for u in uploads]
     if not body["attachments"]:
         del body["attachments"]
-    # Nur Dateien, die noch nicht verwendet wurden, gehen mit; eine Wiederholung braucht sie nicht
-    handles = {u.sha256: u.file.open("rb") for u in uploads if u.used_at is None and u.file}
+    reserved = _reserve_uploads(uploads, key_hash)
+    # Dateien gehen mit, solange ihr Inhalt hier liegt; eine Wiederholung nach dem Ablegen braucht sie nicht
+    handles: dict[str, Any] = {}
     try:
+        for upload in uploads:
+            if upload.file and upload.sha256 not in handles:
+                handles[upload.sha256] = upload.file.open("rb")
         receipt = dispatch(
             Command(
                 name=commands.SUBMIT,
@@ -933,11 +1042,15 @@ def _submit(request: HttpRequest, caller: Caller) -> HttpResponseBase:
             )
         )
     except CommandError as exc:
+        _release_uploads(reserved, key_hash)
         raise _problem_from_command(exc, SUBMIT_POINTERS) from None
+    except Exception:
+        _release_uploads(reserved, key_hash)
+        raise
     finally:
         for handle in handles.values():
             handle.close()
-    application = _finish_submission(caller, receipt, uploads, raw)
+    application = _finish_submission(caller, receipt, uploads, raw, key_hash)
     _audit(request, caller, "create", application, "Einreichung", anlagen=len(uploads))
     obj = submission_object(caller, application, _papers(caller.tenant, [application]).get(application.pk))
     rejected = [
@@ -951,20 +1064,18 @@ def _submit(request: HttpRequest, caller: Caller) -> HttpResponseBase:
 
 
 def _finish_submission(
-    caller: Caller, receipt: Receipt, uploads: Sequence[SessionSubmissionUpload], raw: bytes
+    caller: Caller, receipt: Receipt, uploads: Sequence[SessionSubmissionUpload], raw: bytes, key_hash: str
 ) -> SessionApplication:
     """Prüfsumme festhalten (nur beim ersten Mal) und verwendete Dateien vermerken; ihr Inhalt liegt jetzt in der Ablage."""
     application_id = str(receipt.aggregate_id)
     SessionApplication.objects.filter(pk=application_id, content_digest="").update(content_digest=content_digest(raw))
     application = _applications(caller.tenant).get(pk=application_id)
-    now = timezone.now()
     for upload in uploads:
-        if upload.used_at is None:
-            marked = SessionSubmissionUpload.objects.filter(pk=upload.pk, used_at__isnull=True).update(
-                used_at=now, application=application
-            )
-            if marked:
-                _drop_content(upload)
+        SessionSubmissionUpload.objects.filter(pk=upload.pk, used_for_key=key_hash, application__isnull=True).update(
+            application=application
+        )
+        if upload.file:
+            _drop_content(upload)
     return application
 
 
@@ -1136,7 +1247,7 @@ def attendance_view(request: HttpRequest, tenant_slug: str, pk: uuid.UUID) -> Ht
     return _response(request, attendance_object(caller, _invitation(caller, pk)))
 
 
-@profile_endpoint("POST")
+@profile_endpoint("POST", method_detail=RECEIPT_GET)
 def invitation_receipt_view(request: HttpRequest, tenant_slug: str, pk: uuid.UUID) -> HttpResponseBase:
     """Empfang der Ladung bestätigen (Befehl ``invitation.acknowledge``); ein Abruf zählt nicht."""
     from hub.ris.canonical import iso
