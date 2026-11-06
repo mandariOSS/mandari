@@ -91,9 +91,12 @@ def can_import(membership: Membership | None, meeting: FactionMeeting) -> bool:
     Darf die Person nichtöffentliche Unterlagen für diese Sitzung einlesen und TOPs übernehmen?
 
     Neben dem Genehmigungsrecht braucht sie das Recht, Dokumente zu sehen (``motions.view``): Die Unterlage liegt im
-    Dokumentenspeicher, und die Auswahl der TOPs öffnet sie dort.
+    Dokumentenspeicher, und die Auswahl der TOPs öffnet sie dort. Eine Sitzungsart ohne nichtöffentlichen Teil
+    bekommt keine nichtöffentlichen TOPs, also auch keine aus Unterlagen (Issue #1240).
     """
     if membership is None or meeting.organization_id != membership.organization_id:
+        return False
+    if not meeting.nichtoeffentlich_erlaubt:
         return False
     if not is_sworn_member(membership) or not membership.has_permission("motions.view"):
         return False

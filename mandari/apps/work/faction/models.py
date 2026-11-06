@@ -42,10 +42,11 @@ class FactionMeetingType(models.Model):
     Datenmigration hat sie als „Fraktionssitzung“ angelegt und ihr alle Reihen, Sitzungen und Standard-TOPs
     zugeordnet; neue Organisationen bekommen sie beim Anlegen (:func:`apps.work.faction.sitzungsarten.register`).
 
-    Jede Art zählt ihre Sitzungen für sich, ab ``number_start`` (:meth:`next_number`). ``settings`` bleibt leer und
-    heißt „wie die Organisation“: Einladung, Erinnerung, Protokoll und Erster TOP liest Work weiterhin aus
-    ``organization.settings["faction"]``. Teilnehmende, Sichtbarkeit und Ablauf setzt Work in diesem Schritt noch
-    nicht durch (Folgeschritte von #1226).
+    Jede Art zählt ihre Sitzungen für sich, ab ``number_start`` (:meth:`next_number`). ``settings`` übersteuert die
+    Einstellungen der Organisation (``organization.settings["faction"]``) feldweise; leer oder ohne ein Feld heißt
+    „wie die Organisation“ (Issue #1240, :mod:`apps.work.faction.regeln`). Je Art gelten außerdem die
+    Standard-Tagesordnung (``agenda_mode``), der nichtöffentliche Teil (``non_public_enabled``) und Abstimmungen samt
+    Beschlussfähigkeit (``voting_enabled``).
     """
 
     DEFAULT_NAME = "Fraktionssitzung"
@@ -415,7 +416,7 @@ class FactionStandardAgendaItem(models.Model):
         related_name="faction_standard_agenda_items",
         verbose_name="Organisation",
     )
-    # Sitzungsart (Issue #1231); ohne Angabe die Standardart. Übernommen werden vorerst alle Punkte der Organisation.
+    # Sitzungsart (Issue #1231); ohne Angabe die Standardart. Neue Sitzungen bekommen die Punkte ihrer Art (Issue #1240).
     meeting_type = models.ForeignKey(
         FactionMeetingType,
         on_delete=models.RESTRICT,
@@ -820,9 +821,27 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         return not self.previous_meeting.protocol_approved
 
     def get_faction_settings(self) -> dict:
-        """Get faction-specific settings from organization."""
-        settings = self.organization.settings or {}
-        return settings.get("faction", {})
+        """
+        Gespeicherte Einstellungen dieser Sitzung: die der Organisation, darüber die Übersteuerung ihrer Sitzungsart
+        (Issue #1240, :func:`apps.work.faction.regeln.einstellungen`). Fehlende Felder ersetzt der Aufrufer.
+        """
+        from .regeln import einstellungen
+
+        return einstellungen(self)
+
+    @property
+    def nichtoeffentlich_erlaubt(self) -> bool:
+        """Bietet die Sitzungsart einen nichtöffentlichen Teil an (Issue #1240)? Bestehende NÖ-TOPs bleiben geschützt."""
+        from .regeln import nichtoeffentlich_erlaubt
+
+        return nichtoeffentlich_erlaubt(self)
+
+    @property
+    def abstimmungen_erlaubt(self) -> bool:
+        """Gibt es in dieser Sitzung Abstimmungen und Beschlussfähigkeit (Sitzungsart, Issue #1240)?"""
+        from .regeln import abstimmungen_erlaubt
+
+        return abstimmungen_erlaubt(self)
 
     def approval_item_texts(self) -> tuple[str, str]:
         """
@@ -832,7 +851,7 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         settings = self.get_faction_settings()
 
         # Default-Texte (Issue #63): verbindliche Standard-Formulierung,
-        # je Organisation weiterhin anpassbar
+        # je Organisation und je Sitzungsart (Issue #1240) anpassbar
         default_title_with_prev = "Tagesordnung festlegen und letztes Protokoll genehmigen"
         default_title_no_prev = "Tagesordnung festlegen"
 
@@ -1124,6 +1143,15 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
 
     def __str__(self):
         return f"{self.number}: {self.title}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # Letzte Sicherung (Issue #1240): Eine Sitzungsart ohne nichtöffentlichen Teil bekommt keine neuen NÖ-TOPs.
+        # Die Wege der Oberfläche prüfen vorher selbst und melden es verständlich; bestehende NÖ-TOPs bleiben, wie sie sind.
+        if self._state.adding and self.visibility == "internal" and self.meeting_id is not None:
+            from .regeln import pruefe_nichtoeffentlich
+
+            pruefe_nichtoeffentlich(self.meeting, self.visibility)
+        super().save(*args, **kwargs)
 
     def get_encryption_organization(self):
         return self.meeting.organization

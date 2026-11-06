@@ -33,7 +33,7 @@ der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Wo
         {% endif %}
         {% if t.beschluss %}<p class="fs-prot-beschluss"><b>Beschluss:</b> {{ t.beschluss }}{% if t.beschluss_text %} {{ t.beschluss_text }}{% endif %}</p>{% endif %}
         {% if t.leer and not t.konfig %}<p class="fs-meta">Ohne Eintrag.</p>{% endif %}
-        {% if rechte.protokollieren and not t.item.is_approval_item %}
+        {% if rechte.protokollieren and not t.item.is_approval_item and meeting.abstimmungen_erlaubt %}
         <p class="fs-prot-aktion"><button type="button" class="wf-textlink" @click="$dispatch('open-decision', { item_id: '{{ t.item.pk }}', title: '{{ t.item.title|escapejs }}' })">{% if t.beschluss %}Abstimmung ändern …{% else %}Abstimmung erfassen …{% endif %}</button></p>
         {% endif %}
         {% if t.intern %}</div>{% endif %}

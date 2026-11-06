@@ -29,6 +29,7 @@ from ..models import (
 )
 
 logger = logging.getLogger(__name__)
+from ..regeln import ABSTIMMUNGEN_AUS, NOE_AUS
 from ..visibility import can_view_internal, can_view_item, is_item_internal
 from ._helpers import (
     VIDEO_LINK_MAX_LENGTH,
@@ -545,6 +546,9 @@ class FactionActionView(WorkViewMixin, View):
             # NÖ strikt: Unterpunkte erben die Sichtbarkeit des Eltern-TOPs
             if visibility == "internal" and not can_view_internal(self.membership):
                 return HttpResponse(status=403)
+        # Art ohne nichtöffentlichen Teil (Issue #1240): keine neuen NÖ-TOPs, auch keine Unterpunkte bestehender
+        if visibility == "internal" and not meeting.nichtoeffentlich_erlaubt:
+            return self._rejected(request, meeting, NOE_AUS, 400)
 
         # Nummer und Reihenfolge wie in der laufenden Sitzung (Issue #1166): offene und abgelehnte Vorschläge zählen
         # nicht mit (Issue #872), gleichzeitige Einträge erhalten verschiedene Nummern
@@ -676,6 +680,9 @@ class FactionActionView(WorkViewMixin, View):
                 not agenda.open_for_members(meeting) or (teil == "internal" and not can_view_internal(self.membership))
             ):
                 return HttpResponse(status=403)
+            # Art ohne nichtöffentlichen Teil (Issue #1240): nichts in den NÖ-Teil, zurück in den öffentlichen schon
+            if wechselt and teil == "internal" and not meeting.nichtoeffentlich_erlaubt:
+                return self._rejected(request, meeting, NOE_AUS, 400)
             with transaction.atomic():
                 if wechselt:
                     agenda.move_to_part(meeting, item, teil)
@@ -1010,6 +1017,9 @@ class FactionActionView(WorkViewMixin, View):
         # NÖ strikt (Issue #64): keine Abstimmungen auf NÖ-TOPs durch Nicht-Vereidigte
         if not can_view_item(agenda_item, self.membership):
             return HttpResponse(status=403)
+        # Art ohne Abstimmungen (Issue #1240): erfasste bleiben lesbar, neue gibt es nicht
+        if not meeting.abstimmungen_erlaubt:
+            return self._rejected(request, meeting, ABSTIMMUNGEN_AUS, 400)
 
         try:
             votes_yes = int(request.POST.get("votes_yes", 0))
@@ -1272,6 +1282,10 @@ class FactionActionView(WorkViewMixin, View):
         if visibility == "internal" and not can_view_internal(self.membership):
             messages.error(request, "Nicht-öffentliche TOPs können nur vereidigte Mitglieder vorschlagen.")
             return self._redirect_detail(meeting)
+        # Art ohne nichtöffentlichen Teil (Issue #1240)
+        if visibility == "internal" and not meeting.nichtoeffentlich_erlaubt:
+            messages.error(request, NOE_AUS)
+            return self._redirect_detail(meeting)
 
         if not title:
             messages.error(request, "Bitte einen Titel angeben.")
@@ -1309,6 +1323,9 @@ class FactionActionView(WorkViewMixin, View):
             visibility = None
         if visibility == "internal" and not can_view_internal(self.membership):
             return HttpResponse(status=403)
+        # Art ohne nichtöffentlichen Teil (Issue #1240): ein öffentlicher Vorschlag kommt nicht in den NÖ-Teil
+        if visibility == "internal" and item.visibility != "internal" and not meeting.nichtoeffentlich_erlaubt:
+            return self._rejected(request, meeting, NOE_AUS, 400)
 
         from ..services import AgendaProposalService
 

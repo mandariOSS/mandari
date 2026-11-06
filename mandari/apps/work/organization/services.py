@@ -44,11 +44,11 @@ from . import audit, emails, selectors
 from .models import DATA_EXPORT_FAILED_MESSAGE, DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
     from django.core.files.uploadedfile import UploadedFile
 
-    from apps.work.faction.models import FactionMeetingSchedule
+    from apps.work.faction.models import FactionMeetingSchedule, FactionMeetingType
     from apps.work.notifications.models import NotificationPreference
 
 logger = logging.getLogger(__name__)
@@ -2068,6 +2068,40 @@ def _apply_faction_settings(
     strict: bool,
 ) -> None:
     """Felder aus ``wanted`` (alle bei ``None``) in die Einstellungen der Organisation übernehmen, ohne zu speichern."""
+
+    def want(key: str) -> bool:
+        return wanted is None or key in wanted
+
+    settings = organization.settings or {}
+    faction_settings = settings.get("faction", {})
+    # Erinnerung an die Sitzung (Issue #1071): Das Formular als Ganzes (ohne JavaScript, bisherige Vorlage) enthält sie
+    # nur in der neuen Vorlage; fehlt das Stundenfeld, bleibt sie, wie sie ist.
+    meeting_reminder_in_form = wanted is not None or "meeting_reminder_hours" in form
+    _apply_faction_fields(
+        faction_settings, form, want, strict, before=faction_settings, meeting_reminder_in_form=meeting_reminder_in_form
+    )
+
+    settings["faction"] = faction_settings
+    organization.settings = settings
+    # Öffentliche Protokolle (Opt-in): nur mit protocols.publish änderbar
+    if want("publish_protocols") and membership.has_permission("protocols.publish"):
+        organization.publish_protocols = form.get("publish_protocols") == "on"
+
+
+def _apply_faction_fields(
+    faction_settings: dict[str, Any],
+    form: Mapping[str, str],
+    want: Callable[[str], bool],
+    strict: bool,
+    *,
+    before: Mapping[str, Any],
+    meeting_reminder_in_form: bool,
+) -> None:
+    """
+    Gewünschte Felder (``want``) aus dem Formular in ``faction_settings`` schreiben: die Einstellungen der Organisation
+    oder die Übersteuerung einer Sitzungsart (Issue #1240). ``before`` sind die bis dahin wirksamen Einstellungen; an
+    ihnen misst sich, ob der Protokollversand gerade eingeschaltet wird.
+    """
     from apps.common.quorum import QUORUM_RULES
     from apps.work.faction.invitations import (
         AGENDA_REMINDER_MAX_HOURS,
@@ -2076,12 +2110,6 @@ def _apply_faction_settings(
         MEETING_REMINDER_MAX_HOURS,
     )
     from apps.work.faction.protocol_dispatch import PROTOCOL_DISPATCH_MAX_DELAY_HOURS, PROTOCOL_DISPATCH_MODES
-
-    def want(key: str) -> bool:
-        return wanted is None or key in wanted
-
-    settings = organization.settings or {}
-    faction_settings = settings.get("faction", {})
 
     for key in FACTION_SETTINGS_SWITCHES:
         if want(key):
@@ -2111,9 +2139,7 @@ def _apply_faction_settings(
         if reminder_hours is not None:
             faction_settings["agenda_reminder_hours"] = reminder_hours
 
-    # Erinnerung an die Sitzung (Issue #1071): Standard an, 48 Stunden vor Beginn. Das Formular als Ganzes (ohne
-    # JavaScript, bisherige Vorlage) enthält sie nur in der neuen Vorlage; fehlt das Stundenfeld, bleibt sie, wie sie ist.
-    meeting_reminder_in_form = wanted is not None or "meeting_reminder_hours" in form
+    # Erinnerung an die Sitzung (Issue #1071): Standard an, 48 Stunden vor Beginn
     if want("meeting_reminder_enabled") and meeting_reminder_in_form:
         faction_settings["meeting_reminder_enabled"] = form.get("meeting_reminder_enabled") == "on"
     if want("meeting_reminder_hours") and meeting_reminder_in_form:
@@ -2128,9 +2154,9 @@ def _apply_faction_settings(
     if want("protocol_dispatch"):
         protocol_dispatch = _choice(form, "protocol_dispatch", PROTOCOL_DISPATCH_MODES, strict)
         if protocol_dispatch is not None:
-            was_off = faction_settings.get("protocol_dispatch", "off") not in ("after_completion", "after_approval")
+            was_off = before.get("protocol_dispatch", "off") not in ("after_completion", "after_approval")
             faction_settings["protocol_dispatch"] = protocol_dispatch
-            if protocol_dispatch != "off" and (was_off or not faction_settings.get("protocol_dispatch_since")):
+            if protocol_dispatch != "off" and (was_off or not before.get("protocol_dispatch_since")):
                 faction_settings["protocol_dispatch_since"] = timezone.now().isoformat()
     if want("protocol_dispatch_delay_hours"):
         delay_hours = _hours(
@@ -2148,12 +2174,6 @@ def _apply_faction_settings(
     for key in ("first_agenda_title_with_previous", "first_agenda_title_no_previous", "first_agenda_description"):
         if want(key):
             faction_settings[key] = form.get(key, "").strip()
-
-    settings["faction"] = faction_settings
-    organization.settings = settings
-    # Öffentliche Protokolle (Opt-in): nur mit protocols.publish änderbar
-    if want("publish_protocols") and membership.has_permission("protocols.publish"):
-        organization.publish_protocols = form.get("publish_protocols") == "on"
 
 
 def save_faction_settings(
@@ -2188,32 +2208,61 @@ def save_faction_settings(
     organization.publish_protocols = locked.publish_protocols
 
 
-def faction_settings_with_defaults(organization: Organization) -> dict[str, Any]:
-    """Aktuelle Fraktionssitzungs-Einstellungen, fehlende Schlüssel mit Standardwerten ergänzt."""
-    from apps.work.faction.invitations import INVITATION_DEFAULTS
-    from apps.work.faction.protocol_dispatch import PROTOCOL_DISPATCH_DEFAULTS
+#: Felder, die eine Sitzungsart übersteuern kann (Issue #1240): alle der Einstellungsseite außer den öffentlichen
+#: Protokollen, die für die ganze Organisation gelten
+MEETING_TYPE_SETTINGS_FIELDS = FACTION_SETTINGS_FIELDS - {"publish_protocols"}
 
-    settings = organization.settings or {}
-    faction_settings: dict[str, Any] = dict(settings.get("faction", {}))
-    defaults: dict[str, Any] = {
-        "auto_create_approval_item": True,
-        "link_previous_meeting": True,
-        "protocol_revision_safe": True,
-        "auto_lock_protocol_on_complete": True,
-        "require_protocol_approval": True,
-        "first_agenda_title_with_previous": "Tagesordnung festlegen und letztes Protokoll genehmigen",
-        "first_agenda_title_no_previous": "Tagesordnung festlegen",
-        "first_agenda_description": "",
-        # Einladungslogik (Issue #62), TOP-Erinnerung (Issue #871)
-        **INVITATION_DEFAULTS,
-        # Protokollversand (Issue #871)
-        **PROTOCOL_DISPATCH_DEFAULTS,
-        # Beschlussfähigkeit (Issue #69): Erweiterungspunkt — aktuell nur die Mehrheitsregel
-        "quorum_rule": "majority",
-    }
-    for key, default in defaults.items():
-        faction_settings.setdefault(key, default)
-    return faction_settings
+
+def save_meeting_type_settings(
+    meeting_type: FactionMeetingType,
+    form: Mapping[str, str],
+    fields: Iterable[str] = (),
+    *,
+    inherit: Iterable[str] = (),
+) -> None:
+    """
+    Regeln einer Sitzungsart speichern (Issue #1240): Die Felder aus ``fields`` übersteuern mit den Werten aus ``form``
+    die Einstellungen der Organisation, die Felder aus ``inherit`` gelten wieder „wie die Organisation“.
+
+    Geprüft und gespeichert wird feldweise wie auf der Einstellungsseite der Organisation (ungültige Werte melden einen
+    ``ServiceError``); alle anderen Felder der Art bleiben, wie sie in der Datenbank stehen. Schaltet die Art den
+    Protokollversand ein, zählt wie bei der Organisation erst, was danach fällig wird. Rechte prüft der Aufrufer.
+    """
+    from apps.work.faction.models import FactionMeetingType
+    from apps.work.faction.regeln import einstellungen
+
+    wanted = {f for f in fields if f}
+    erben = {f for f in inherit if f}
+    if not (wanted or erben) or (wanted | erben) - MEETING_TYPE_SETTINGS_FIELDS:
+        raise ServiceError("Unbekannte Einstellung.")
+    if wanted & erben:
+        raise ServiceError("Eine Einstellung kann nicht zugleich übersteuert und übernommen werden.")
+    with transaction.atomic():
+        locked = FactionMeetingType.objects.select_for_update().select_related("organization").get(pk=meeting_type.pk)
+        overrides: dict[str, Any] = dict(locked.settings) if isinstance(locked.settings, dict) else {}
+        _apply_faction_fields(
+            overrides, form, wanted.__contains__, True, before=einstellungen(locked), meeting_reminder_in_form=True
+        )
+        for key in erben:
+            overrides.pop(key, None)
+            if key == "protocol_dispatch":
+                # Wie die Organisation: dann auch ab ihrem Einschaltzeitpunkt
+                overrides.pop("protocol_dispatch_since", None)
+        locked.settings = overrides
+        locked.save(update_fields=["settings"])
+    meeting_type.settings = locked.settings
+
+
+def faction_settings_with_defaults(
+    organization: Organization, meeting_type: FactionMeetingType | None = None
+) -> dict[str, Any]:
+    """
+    Aktuelle Einstellungen der Sitzungen, fehlende Schlüssel mit Standardwerten ergänzt: die der Organisation, mit
+    ``meeting_type`` die wirksamen dieser Sitzungsart (Standardwerte, Organisation, Art; Issue #1240).
+    """
+    from apps.work.faction.regeln import wirksame_einstellungen
+
+    return wirksame_einstellungen(meeting_type if meeting_type is not None else organization)
 
 
 # -- Sitzungsreihen + Ausfallregeln (Issue #61) -------------------------------
@@ -2579,19 +2628,43 @@ def _standard_agenda_item(organization: Organization, item_id: Any, *, may_view_
     return item
 
 
-def _next_standard_agenda_order(organization: Organization) -> int:
+def _standard_agenda_type(organization: Organization, meeting_type: FactionMeetingType | None) -> FactionMeetingType:
+    """Sitzungsart der Standard-Tagesordnung (Issue #1240): die angegebene der Organisation, sonst die Standardart."""
+    from apps.work.faction.models import FactionMeetingType
+
+    if meeting_type is None:
+        return FactionMeetingType.default_for(organization)
+    if meeting_type.organization_id != organization.pk:
+        raise ServiceError("Sitzungsart nicht gefunden.")
+    return meeting_type
+
+
+def _next_standard_agenda_order(organization: Organization, meeting_type: FactionMeetingType) -> int:
     from django.db.models import Max
 
     from apps.work.faction.models import FactionStandardAgendaItem
 
-    highest = FactionStandardAgendaItem.objects.filter(organization=organization).aggregate(highest=Max("order"))
+    highest = FactionStandardAgendaItem.objects.filter(organization=organization, meeting_type=meeting_type).aggregate(
+        highest=Max("order")
+    )
     return (highest["highest"] or 0) + 1
 
 
-def add_standard_agenda_item(organization: Organization, form: Mapping[str, str], *, may_view_internal: bool) -> str:
-    """Punkt (Formular: ``title``, ``visibility``) am Ende der Standard-Tagesordnung anlegen; liefert den Titel."""
+def add_standard_agenda_item(
+    organization: Organization,
+    form: Mapping[str, str],
+    *,
+    may_view_internal: bool,
+    meeting_type: FactionMeetingType | None = None,
+) -> str:
+    """
+    Punkt (Formular: ``title``, ``visibility``) am Ende der Standard-Tagesordnung einer Sitzungsart (ohne Angabe der
+    Standardart, Issue #1240) anlegen; liefert den Titel.
+    """
     from apps.work.faction.models import FactionStandardAgendaItem
+    from apps.work.faction.regeln import nichtoeffentlich_erlaubt
 
+    art = _standard_agenda_type(organization, meeting_type)
     title = (form.get("title") or "").strip()
     visibility = form.get("visibility") or "public"
     if not title:
@@ -2602,26 +2675,33 @@ def add_standard_agenda_item(organization: Organization, form: Mapping[str, str]
         visibility = "public"
     if visibility == "internal" and not may_view_internal:
         raise ServiceError("Nicht-öffentliche Standard-TOPs können nur vereidigte Mitglieder anlegen.")
+    if visibility == "internal" and not nichtoeffentlich_erlaubt(art):
+        raise ServiceError("Diese Sitzungsart hat keinen nichtöffentlichen Teil.")
     FactionStandardAgendaItem.objects.create(
         organization=organization,
+        meeting_type=art,
         title=title,
         visibility=visibility,
-        order=_next_standard_agenda_order(organization),
+        order=_next_standard_agenda_order(organization, art),
     )
     return title
 
 
 @transaction.atomic
-def add_standard_agenda_suggestion(organization: Organization) -> int:
-    """Übliche Grundstruktur übernehmen, nur solange die Standard-Tagesordnung leer ist; liefert die Anzahl."""
+def add_standard_agenda_suggestion(organization: Organization, meeting_type: FactionMeetingType | None = None) -> int:
+    """
+    Übliche Grundstruktur übernehmen, nur solange die Standard-Tagesordnung der Sitzungsart (ohne Angabe der
+    Standardart, Issue #1240) leer ist; liefert die Anzahl.
+    """
     from apps.work.faction.models import FactionStandardAgendaItem
 
-    if FactionStandardAgendaItem.objects.filter(organization=organization).exists():
+    art = _standard_agenda_type(organization, meeting_type)
+    if FactionStandardAgendaItem.objects.filter(organization=organization, meeting_type=art).exists():
         raise ServiceError("Die Standard-Tagesordnung enthält bereits Punkte.")
     # Einzeln anlegen, damit jede Anlage in der Änderungshistorie steht
     for position, title in enumerate(STANDARD_AGENDA_SUGGESTION, start=1):
         FactionStandardAgendaItem.objects.create(
-            organization=organization, title=title, visibility="public", order=position
+            organization=organization, meeting_type=art, title=title, visibility="public", order=position
         )
     return len(STANDARD_AGENDA_SUGGESTION)
 
@@ -2636,14 +2716,17 @@ def delete_standard_agenda_item(organization: Organization, form: Mapping[str, s
 
 @transaction.atomic
 def move_standard_agenda_item(organization: Organization, form: Mapping[str, str], *, may_view_internal: bool) -> None:
-    """Punkt (Formular: ``item_id``, ``direction`` up/down) innerhalb seines Teils um eine Position verschieben."""
+    """
+    Punkt (Formular: ``item_id``, ``direction`` up/down) innerhalb seines Teils um eine Position verschieben, in der
+    Standard-Tagesordnung seiner Sitzungsart (Issue #1240).
+    """
     from apps.work.faction.agenda import standard_items
 
     item = _standard_agenda_item(organization, form.get("item_id"), may_view_internal=may_view_internal)
     direction = form.get("direction")
     if direction not in ("up", "down"):
         raise ServiceError("Ungültige Richtung.")
-    items = list(standard_items(organization).select_for_update())
+    items = list(standard_items(organization, item.meeting_type).select_for_update())
     # Reihenfolge lückenlos machen, damit der Tausch auch bei gleichen Werten wirkt
     for position, entry in enumerate(items, start=1):
         if entry.order != position:

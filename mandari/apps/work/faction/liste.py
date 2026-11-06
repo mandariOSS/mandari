@@ -116,9 +116,13 @@ def mit_zahlen(meetings: Any) -> Any:
 
 def zeilen(meetings: Any, organization: Any, *, intern: bool) -> list[dict[str, Any]]:
     """Zeilen für die Vorlage: Sitzung, Stand und die TOP-Zahl, die diese Person sehen darf."""
-    einladung = get_invitation_settings(organization)
+    # Einladungs-Einstellungen je Sitzungsart (Issue #1240), einmal je Art gelesen
+    je_art: dict[Any, dict[str, Any]] = {}
     ergebnis = []
     for meeting in meetings:
+        if meeting.meeting_type_id not in je_art:
+            je_art[meeting.meeting_type_id] = get_invitation_settings(meeting)
+        einladung = je_art[meeting.meeting_type_id]
         oeffentlich = getattr(meeting, "tops_oeffentlich", 0)
         nicht = getattr(meeting, "tops_intern", 0) if intern else 0
         tops = ""
@@ -147,7 +151,7 @@ def naechste_satz(organization: Any, stats_satz: str) -> str:
     if naechste is None:
         return stats_satz
     satz = f"Die nächste Fraktionssitzung ist am {_zeitpunkt(naechste.start)}."
-    einladung = get_invitation_settings(organization)
+    einladung = get_invitation_settings(naechste)
     if naechste.invitation_sent:
         if naechste.invitation_sent_at:
             # Automatisch: Versand ohne Klick vorgesehen und nicht vor dem geplanten Zeitpunkt (sonst „Jetzt einladen“)
@@ -252,10 +256,18 @@ def reihen(organization: Any) -> list[Reihe]:
     from .models import FactionStandardAgendaItem
 
     vorlauf = max(1, int(getattr(django_settings, "FACTION_SCHEDULE_HORIZON_DAYS", DEFAULT_HORIZON_DAYS)))
-    mit_standard = FactionStandardAgendaItem.objects.filter(organization=organization).exists()
+    # Standard-Tagesordnung je Sitzungsart (Issue #1240): Arten „ohne feste Tagesordnung“ übernehmen keine, Arten ohne
+    # nichtöffentlichen Teil nur die öffentlichen Punkte
+    arten_mit_standard = set(
+        FactionStandardAgendaItem.objects.filter(organization=organization)
+        .exclude(meeting_type__agenda_mode="free")
+        .exclude(visibility="internal", meeting_type__non_public_enabled=False)
+        .values_list("meeting_type_id", flat=True)
+    )
     heute = timezone.localdate()
     ergebnis = []
     for schedule in selectors.faction_schedules(organization):
+        mit_standard = schedule.meeting_type_id in arten_mit_standard
         satz = f"{_rhythmus(schedule)} {_von_bis(schedule)}"
         if schedule.default_location:
             satz += f", {schedule.default_location}"
@@ -290,9 +302,15 @@ def _wochenzeit_minus(wochentag: int, uhrzeit: Any, stunden: int) -> str:
 
 
 def automatik(organization: Any) -> list[tuple[str, str]]:
-    """Was Work von selbst tut, als Paare (wann, was) in der Reihenfolge des Ablaufs."""
-    einladung = get_invitation_settings(organization)
-    protokoll = get_protocol_dispatch_settings(organization)
+    """
+    Was Work von selbst tut, als Paare (wann, was) in der Reihenfolge des Ablaufs; mit den Regeln der Standardart
+    (Issue #1240), bis die Liste die Sitzungsarten getrennt zeigt.
+    """
+    from .models import FactionMeetingType
+
+    standardart = FactionMeetingType.default_for(organization)
+    einladung = get_invitation_settings(standardart)
+    protokoll = get_protocol_dispatch_settings(standardart)
     feste = [s for s in organization.meeting_schedules.filter(is_active=True, auto_invite=True) if s.auto_invite_ready]
     eine = feste[0] if len(feste) == 1 else None
     punkte: list[tuple[str, str]] = []
