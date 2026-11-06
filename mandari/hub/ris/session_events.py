@@ -1071,7 +1071,7 @@ class SessionEvents:
         internal = [name for name in changed if name not in public]
         drafts = []
         if public:
-            drafts.append(self._file_draft(after, self._file_change(public), True))
+            drafts.append(self._file_draft(after, self._file_change(public), True, previous=before))
         if internal:
             drafts.append(self._file_draft(after, self._file_change(internal), False))
         return drafts
@@ -1093,13 +1093,22 @@ class SessionEvents:
         # Neue Zugehörigkeit: Die Datei hängt jetzt (auch) woanders
         return "added"
 
-    def _file_draft(self, state: FileState, change: str, public: bool) -> Draft:
+    def _file_draft(self, state: FileState, change: str, public: bool, *, previous: FileState | None = None) -> Draft:
+        """
+        Ereignis zu einer Anlage. ``previous``: Zustand vor der Änderung eines öffentlichen Ereignisses. Hing die
+        Anlage öffentlich an einem Objekt, an dem sie jetzt nicht mehr hängt, nennt die Nutzlast es als
+        ``previous_paper``, ``previous_meeting`` bzw. ``previous_agenda_item``: Es gibt die Anlage nicht mehr aus,
+        und der Änderungsfeed nennt auch es (Issue #1229).
+        """
         file_id = self.ref("file", state.id)
         payload: dict[str, Any] = {"file": str(file_id), "change": change}
         for name, kind, key in FILE_REFS:
             found = state.public_ref(name) if public else state.fields.get(name)
             if found is not None:
                 payload[key] = str(self.ref(kind, found))
+            earlier = previous.public_ref(name) if public and previous is not None else None
+            if earlier is not None and earlier != found:
+                payload[f"previous_{key}"] = str(self.ref(kind, earlier))
         visibility = Visibility.OEFFENTLICH if public else Visibility.NICHTOEFFENTLICH
         return Draft(FILE_CHANGED, "File", file_id, visibility, Operation.UPSERT, payload)
 

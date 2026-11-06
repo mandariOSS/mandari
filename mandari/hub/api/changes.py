@@ -79,12 +79,14 @@ Eintrag, auch nach dem Aufräumen (Abschnitt „Abruf“). ``changes_response`` 
 und Reihenfolge“): die Sitzung zu einem Tagesordnungspunkt, die Vorlage zu einer Beratung, Vorlage, Sitzung und
 Tagesordnungspunkt zu einer Datei, die Person zu einer Mitgliedschaft, die Kommune zu einer Wahlperiode, die
 Sitzungen zu einem Ort – auch über zwei Stufen (Datei im Tagesordnungspunkt in der Sitzung). Welche Einbettungen eine
-Ausgabe hat, nennt sie selbst (``Feed.embeds``). Das einbettende Objekt steht in der Nutzlast des Ereignisses
-(``PAYLOAD_PARENTS``); wo nicht (Rücknahmen älterer Erzeuger, Orte), kennt es die Ausgabe (``Feed.related``). Es
-bekommt einen Eintrag ``upsert``, solange die Ausgabe es ausliefert (``Feed.current``): Wird es mit dem eingebetteten
-Objekt gelöscht, folgt kein ``upsert`` hinter seinem ``delete``. Ein Objekt, das zu einem anderen gehört und dessen
-Kennung trägt (der Sitzungsort einer Sitzung), ändert sich mit ihm und bekommt einen Eintrag mit derselben Operation;
-ebenso die Datei, die ein Ereignis als neu nennt (die öffentliche Fassung der Niederschrift, ``PAYLOAD_COMPANIONS``).
+Ausgabe hat, nennt sie selbst (``Feed.embeds``). Die einbettenden Objekte kommen aus der Nutzlast des Ereignisses
+(``PAYLOAD_PARENTS``) und aus der Ausgabe (``Feed.related``), zusammengeführt: Die Nutzlast nennt auch frühere und
+gelöschte Bezüge, die Ausgabe die übrigen der Zeile (Rücknahmen älterer Erzeuger, Orte, eine Datei an Vorlage und
+Sitzung, deren Ereignis nur eines nennt). Jedes bekommt einen Eintrag ``upsert``, solange die Ausgabe es ausliefert
+(``Feed.current``): Wird es mit dem eingebetteten Objekt gelöscht, folgt kein ``upsert`` hinter seinem ``delete``. Ein
+Objekt, das zu einem anderen gehört und dessen Kennung trägt (der Sitzungsort einer Sitzung), ändert sich mit ihm und
+bekommt einen Eintrag mit derselben Operation; ebenso die Datei, die ein Ereignis als neu nennt (die öffentliche
+Fassung der Niederschrift, ``PAYLOAD_COMPANIONS``).
 
 - **Reihenfolge:** Die Einträge eines Ereignisses stehen zusammen, zuerst das geänderte Objekt, dann mitgeänderte,
   dann einbettende, jeweils nach Typ und Kennung. Jeder Eintrag hat seine eigene Stelle: Endet eine Seite innerhalb
@@ -203,7 +205,14 @@ PAYLOAD_PARENTS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
     "AgendaItem": (("meeting", "meeting"), ("previous_meeting", "meeting")),
     "Voting": (("meeting", "meeting"),),
     "Consultation": (("paper", "paper"),),
-    "File": (("paper", "paper"), ("meeting", "meeting"), ("agenda_item", "agendaitem")),
+    "File": (
+        ("paper", "paper"),
+        ("meeting", "meeting"),
+        ("agenda_item", "agendaitem"),
+        ("previous_paper", "paper"),
+        ("previous_meeting", "meeting"),
+        ("previous_agenda_item", "agendaitem"),
+    ),
     "Membership": (("person", "person"),),
 }
 
@@ -271,7 +280,8 @@ class Feed:
 
     - ``embeds``: Einbettungen dieser Ausgabe, eingebetteter Typ -> Typen, die ihn intern ausgeben (aus
       ``OPARL_EMBEDDINGS``). Ohne Angabe nennt der Feed keine einbettenden Objekte.
-    - ``related``: einbettende und mitgeänderte Objekte, die die Ereignisse nicht nennen (``Related``)
+    - ``related``: einbettende und mitgeänderte Objekte nach dem Stand der Ausgabe (``Related``); der Feed führt sie
+      mit denen aus der Nutzlast zusammen
     - ``current``: Adressen der Objekte, die die Ausgabe derzeit ausliefert, ohne Gelöschtes; nur solche bekommen als
       einbettendes Objekt einen Eintrag. ``None``: wie ``addresses``.
     """
@@ -661,8 +671,10 @@ def _expand(feed: Feed, batch: Sequence[Event], subjects: Sequence[tuple[str, uu
         for name, companion_kind in PAYLOAD_COMPANIONS.get(event.type, ()):
             if (companion := _uuid(payload.get(name))) is not None:
                 expansion.shared.append(Link(companion_kind, companion, shared=True))
-        # Die Ausgabe fragen: nach dem einbettenden Objekt, wenn das Ereignis keines nennt, und nach mitgeänderten
-        ask = (kind in feed.embeds and not links) or kind in SHARED_KINDS
+        # Die Ausgabe fragen, auch wenn das Ereignis einbettende Objekte nennt: Es nennt nicht immer alle (eine Datei
+        # an Vorlage und Sitzung, deren Ereignis nur die Vorlage nennt). ``add_parent`` führt beides ohne Doppel
+        # zusammen. Dazu nach mitgeänderten Objekten
+        ask = kind in feed.embeds or kind in SHARED_KINDS
         own = [(kind, object_id)] if ask else []
         # Einbettende Objekte, die selbst eingebettet sind (der Tagesordnungspunkt einer Datei): eine Stufe weiter
         pending.append(own + [(link.kind, link.id) for link in links if link.kind in feed.embeds])

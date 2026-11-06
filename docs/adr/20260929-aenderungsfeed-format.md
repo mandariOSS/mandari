@@ -240,13 +240,15 @@ dem Profil (`kommparl:changes`); die ältere Form (`mandari:changes`) bleibt bei
   Beratung in der Vorlage, Datei in Sitzung und Vorlage, Ort in der Sitzung. Nur Session: Datei im
   Tagesordnungspunkt. Körperschaft, Gremium und Vorlage geben in keiner Ausgabe einen Ort aus, obwohl OParl 1.1 das
   vorsieht.
-- **Herkunft des einbettenden Objekts, beim Lesen:** zuerst die Nutzlast des Ereignisses (Sitzung und frühere Sitzung
-  eines Tagesordnungspunkts, Vorlage einer Beratung, Vorlage, Sitzung und Tagesordnungspunkt einer Datei, Person
-  einer Mitgliedschaft, Sitzung einer Abstimmung, die Körperschaft einer Wahlperiode aus `body_id`). Fehlt sie, fragt
-  der Feed die Ausgabe (`Feed.related`), je Abschnitt des Journals eine Abfrage je Typ und Stufe: Der Bestand behält
-  gelöschte Zeilen und findet die Sitzungen eines Orts über die Kennung der Quelle, Session die Zeilen über die
-  Suche nach Adressen. Bis zu drei Stufen (Datei im Tagesordnungspunkt in der Sitzung). Das Journal wird nicht
-  umgeschrieben.
+- **Herkunft des einbettenden Objekts, beim Lesen:** die Nutzlast des Ereignisses (Sitzung und frühere Sitzung
+  eines Tagesordnungspunkts, Vorlage einer Beratung, Vorlage, Sitzung und Tagesordnungspunkt einer Datei und die,
+  an denen sie nicht mehr hängt, Person einer Mitgliedschaft, Sitzung einer Abstimmung, die Körperschaft einer
+  Wahlperiode aus `body_id`) und die Ausgabe (`Feed.related`), zusammengeführt und ohne Doppel. Die Nutzlast allein
+  genügt nicht: Eine Datei des Bestands kann an Vorlage und Sitzung hängen, ihr Ereignis nennt oft nur eines. Die
+  Ausgabe allein genügt nicht: Sie kennt weder frühere Bezüge noch die gelöschter Zeilen. Je Abschnitt des Journals
+  eine Abfrage je Typ und Stufe: Der Bestand behält gelöschte Zeilen und findet die Sitzungen eines Orts über die
+  Kennung der Quelle, Session die Zeilen über die Suche nach Adressen. Bis zu drei Stufen (Datei im
+  Tagesordnungspunkt in der Sitzung). Das Journal wird nicht umgeschrieben.
 - **Rücknahmen nennen das einbettende Objekt:** Session löscht Zeilen; danach kennt die Ausgabe das einbettende
   Objekt nicht mehr. `ris.object.depublished` hat deshalb optionale Felder `meeting`, `paper`, `agenda_item` und
   `person` (additiv in v1). Session füllt sie bei Tagesordnungspunkten, Beratungen und Anlagen, nur mit Objekten,
@@ -277,7 +279,10 @@ dem Profil (`kommparl:changes`); die ältere Form (`mandari:changes`) bleibt bei
   Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht; `modified` kann sich ohne öffentliches
   Ereignis ändern (Abgleich ohne inhaltliche Änderung, interne Änderungen in Session, erkannter Text); der Aggregator
   nennt Änderungen gespiegelter Session-Mandanten vor ihrer Übernahme; ein nichtöffentlich gewordener
-  Tagesordnungspunkt des Bestands bleibt ohne `deleted: true` abrufbar.
+  Tagesordnungspunkt des Bestands bleibt ohne `deleted: true` abrufbar; hängt eine Datei des Bestands an einer
+  anderen Vorlage, meldet der Abgleich das nicht, und die frühere Vorlage bekommt keinen Eintrag (Session nennt
+  frühere Bezüge einer Datei als `previous_paper`, `previous_meeting`, `previous_agenda_item` in `ris.file.changed`,
+  additiv in v1). Diese Punkte bleiben unter #1229 offen.
 
 ## Bezug
 

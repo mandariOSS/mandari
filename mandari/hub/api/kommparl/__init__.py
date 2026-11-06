@@ -54,7 +54,8 @@ OPARL_ERROR: Final = "https://schema.oparl.org/1.1/Error"
 #: Profile, deren Anforderungen beide OParl-Ausgaben vollständig erfüllen, wenn die Installation Änderungsfeed und
 #: Snapshot anbietet (``OPARL_CHANGES_ENABLED``). Nur sie nennt ``kommparl:conformsTo`` (Kapitel 5: nur vollständig
 #: erfüllte Kennungen). Heute keines. Die einbettenden Objekte nennt der Feed seit #1229 (``hub.api.changes``), aber
-#: Muss-Anforderungen des Profils Änderungsfeed sind noch offen (Abschnitt „Vollständigkeit und Reihenfolge“):
+#: Muss-Anforderungen des Profils Änderungsfeed sind noch offen (Abschnitt „Vollständigkeit und Reihenfolge“). Sie
+#: bleiben unter #1229 offen (Epic #1203):
 #:
 #: - Session meldet Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht als Ereignis; ihre
 #:   Änderungen fehlen im Feed der Session-Schnittstelle.
@@ -64,6 +65,9 @@ OPARL_ERROR: Final = "https://schema.oparl.org/1.1/Error"
 #: - Der Aggregator nennt Änderungen gespiegelter Session-Mandanten, bevor der Abgleich sie übernommen hat.
 #: - Ein nichtöffentlich gewordener Tagesordnungspunkt des Bestands erscheint als ``delete``, bleibt unter seiner
 #:   Adresse aber ohne ``deleted: true`` abrufbar.
+#: - Hängt eine Datei des Bestands an einer anderen Vorlage, meldet der Abgleich das nicht (``file_events`` im
+#:   Ingestor); die frühere Vorlage gibt sie nicht mehr aus und bekommt keinen Eintrag. Session nennt die früheren
+#:   Bezüge (``previous_paper`` usw. in ``ris.file.changed``).
 #:
 #: Das Profil Snapshot setzt das Profil Änderungsfeed voraus.
 PROFILES_FULFILLED: Final[tuple[str, ...]] = ()

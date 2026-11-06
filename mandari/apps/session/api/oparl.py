@@ -401,6 +401,28 @@ def _location_response(mapping, pk):
 _ADDRESS_CHUNK = 2000
 
 
+def _candidates(tenant, kind):
+    """
+    Kennungen öffentlicher und ehemals öffentlicher Objekte eines Typs, jüngste zuerst, mit „öffentlich“.
+
+    Eine Funktion, keine Methode von ``_FeedIndex``: Die Suche hält eine offene Abfrage (unter PostgreSQL ein
+    serverseitiger Cursor). Hielte der Generator den Index, entstünde ein Kreis (Index -> Suche -> Index), den erst
+    die Speicherbereinigung auflöst, irgendwann später und womöglich in einer anderen Transaktion. Das Schließen des
+    Cursors bräche dann die Transaktion ab. Ohne Kreis endet die Suche mit der Anfrage.
+    """
+    # Der Ort gehört zur Sitzung und trägt deren Kennung
+    source = "meeting" if kind == "location" else kind
+    spec = OBJECT_SPECS.get(source)
+    if spec is None:
+        return
+    visible = spec[0](tenant).order_by("-updated_at").values_list("pk", flat=True)
+    for pk in visible.iterator(_ADDRESS_CHUNK):
+        yield pk, True
+    tombstones = SessionOParlTombstone.objects.filter(tenant=tenant, oparl_type=source)
+    for pk in tombstones.order_by("-deleted_at").values_list("object_id", flat=True).iterator(_ADDRESS_CHUNK):
+        yield pk, False
+
+
 class _FeedIndex:
     """
     Adressen und Einbettungen der Objekte eines Mandanten für den Änderungsfeed (``hub.api.changes.Feed``).
@@ -437,20 +459,6 @@ class _FeedIndex:
         self._public = {}
         self._searches = {}
 
-    def _candidates(self, kind):
-        """Kennungen öffentlicher und ehemals öffentlicher Objekte eines Typs, jüngste zuerst, mit „öffentlich“."""
-        # Der Ort gehört zur Sitzung und trägt deren Kennung
-        source = "meeting" if kind == "location" else kind
-        spec = OBJECT_SPECS.get(source)
-        if spec is None:
-            return
-        visible = spec[0](self.tenant).order_by("-updated_at").values_list("pk", flat=True)
-        for pk in visible.iterator(_ADDRESS_CHUNK):
-            yield pk, True
-        tombstones = SessionOParlTombstone.objects.filter(tenant=self.tenant, oparl_type=source)
-        for pk in tombstones.order_by("-deleted_at").values_list("object_id", flat=True).iterator(_ADDRESS_CHUNK):
-            yield pk, False
-
     def _find(self, kind, ids):
         """Kanonische Kennung -> Kennung des Session-Objekts, für die Kennungen, die es gibt (oder gab)."""
         wanted = set(ids)
@@ -462,7 +470,7 @@ class _FeedIndex:
             return found
         search = self._searches.get(kind)
         if search is None:
-            search = self._searches[kind] = self._candidates(kind)
+            search = self._searches[kind] = _candidates(self.tenant, kind)
         for pk, visible in search:
             key = self.mapping.uris.canonical_id(self.mapping.uris.obj(kind, pk))
             if key not in known:

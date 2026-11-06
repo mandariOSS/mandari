@@ -88,7 +88,9 @@ Die öffentliche Fassung der Niederschrift ist keine Anlage in diesem Sinn; sie 
 Rücknahmen eingebetteter Objekte (`ris.object.depublished` für Tagesordnungspunkte, Stationen und Anlagen) nennen
 das Objekt, in das sie eingebettet waren: `meeting` beim Tagesordnungspunkt, `paper` bei der Station, `paper`,
 `meeting` und `agenda_item` bei der Anlage, jeweils nur, wenn es öffentlich war. Session löscht die Zeilen; so nennt
-der Änderungsfeed auch das einbettende Objekt (#1229).
+der Änderungsfeed auch das einbettende Objekt (#1229). Hängt eine öffentliche Anlage nicht mehr an einem öffentlichen
+Objekt, an dem sie hing (neue Zugehörigkeit), nennt `ris.file.changed` es als `previous_paper`, `previous_meeting`
+bzw. `previous_agenda_item`.
 
 ## Ereignisse je Fachfunktion (#535)
 

@@ -240,5 +240,6 @@ Die Entscheidung bleibt. Etappe 3 legt Folgendes fest ([SCHNITTSTELLE.md](../SCH
   [A10](20260929-aenderungsfeed-format.md)). `kommparl:conformsTo` nennt die Profile trotzdem noch nicht: Die
   Prüfung aller Muss-Anforderungen hat weitere offene gefunden (Ereignisse für Gremien, Personen, Mitgliedschaften und
   Wahlperioden aus Session, `modified` ohne öffentliches Ereignis, Übernahme gespiegelter Mandanten, nichtöffentlich
-  gewordene Tagesordnungspunkte des Bestands). Die Regel bleibt: Die Profile kommen erst hinzu, wenn alle erfüllt
-  sind, und nur, wenn die Installation den Feed anbietet.
+  gewordene Tagesordnungspunkte des Bestands, Wechsel der Vorlage einer Datei im Bestand). Sie bleiben unter #1229
+  offen. Die Regel bleibt: Die Profile kommen erst hinzu, wenn alle erfüllt sind, und nur, wenn die Installation den
+  Feed anbietet.

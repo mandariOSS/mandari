@@ -360,8 +360,9 @@ kommParl, nach der sich die Ausgabe richtet.
 Nach kommParl nennt der Feed auch die einbettenden Objekte (#1229, `OPARL_API.md`, „Einbettende Objekte“). Anders
 als im Aggregator gibt der Tagesordnungspunkt hier seine Anlagen aus: Ändert sich eine Anlage eines
 Tagesordnungspunkts, folgen Einträge für den Punkt und seine Sitzung. Rücknahmen nennen das Objekt, in das das
-zurückgenommene eingebettet war (`docs/SESSION_EREIGNISSE.md`). Gremien, Personen, Mitgliedschaften und
-Wahlperioden meldet Session noch nicht als Ereignis; ihre Änderungen fehlen im Feed.
+zurückgenommene eingebettet war (`docs/SESSION_EREIGNISSE.md`). Hängt eine Anlage woanders, bekommt auch das Objekt
+einen Eintrag, an dem sie vorher hing. Gremien, Personen, Mitgliedschaften und Wahlperioden meldet Session noch
+nicht als Ereignis; ihre Änderungen fehlen im Feed.
 
 - **Kommune im Journal:** die kanonische Kennung des Body, `uuid5` über `…/api/oparl/body/`.
   Ereignisse nennen Objekte ebenfalls mit ihrer kanonischen Kennung (`uuid5` über die Adresse des

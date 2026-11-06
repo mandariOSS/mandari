@@ -431,7 +431,8 @@ leitet weiter.
 - Noch offen für das Profil Änderungsfeed: Ändert sich `modified` eines Objekts, ohne dass sich sein Inhalt in der
   Quelle geändert hat (manche Quellen stempeln bei jedem Abruf neu), oder ergänzt die Texterkennung `File.text`,
   gibt es keinen Eintrag. Ein Tagesordnungspunkt, den die Quelle nichtöffentlich stellt, erscheint als `delete`
-  (`nonPublic`), bleibt unter seiner Adresse aber ohne `deleted: true` abrufbar.
+  (`nonPublic`), bleibt unter seiner Adresse aber ohne `deleted: true` abrufbar. Hängt eine Datei in der Quelle an
+  einer anderen Vorlage, gibt es keinen Eintrag, auch nicht für die frühere Vorlage.
 - Gespiegelte Session-Mandanten: Der Aggregator nennt nur Objekte, die sein Bestand kennt. Meldet ein
   Session-Mandant eine Änderung, bevor der Abgleich sie übernommen hat, fehlt ein neues Objekt im Feed,
   und `id` eines bekannten liefert kurz noch den alten Stand. Die Übernahme erscheint verlässlich erst,

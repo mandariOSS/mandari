@@ -16,9 +16,11 @@ muss der Feed einen Eintrag für das Objekt selbst und einen für das einbettend
 
 from __future__ import annotations
 
+import gc
 import json
 import re
 import uuid
+import weakref
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
@@ -32,6 +34,7 @@ from django.utils import timezone
 from mandari_oparl.ids import canonical_id
 
 from apps.common.models import IdentifierBase
+from apps.session.api import oparl as session_oparl
 from apps.session.models import (
     SessionAgendaItem,
     SessionConsultation,
@@ -337,6 +340,29 @@ class TestAggregatorEinbettungen:
         eintraege = _kurz(_feed(kommune), _namen(bestand))
 
         assert eintraege == [("upsert", name, None), *(("upsert", objekt, None) for objekt in einbettend)]
+
+    @pytest.mark.parametrize(
+        ("nutzlast", "einbettend"),
+        [
+            # Die Zeile hängt an Vorlage und Sitzung (``upsert_file`` behält beide), das Ereignis nennt nur die Vorlage
+            ({"paper": "vorlage"}, ["sitzung", "vorlage"]),
+            # Das Ereignis nennt eine andere Sitzung als die Zeile (``_first_reference`` im Ingestor)
+            ({"meeting": "ausschuss"}, ["ausschuss", "sitzung", "vorlage"]),
+        ],
+    )
+    def test_nutzlast_und_zeile_zusammen(
+        self, kommune: OParlBody, bestand: dict[str, Any], nutzlast: dict[str, str], einbettend: list[str]
+    ) -> None:
+        """Nennt das Ereignis nur einen Teil der einbettenden Objekte, ergänzt die Ausgabe die übrigen."""
+        b = bestand
+        OParlFile.objects.filter(pk=b["anlage"].pk).update(meeting=b["sitzung"])
+        bezuege = {key: b[name].pk for key, name in nutzlast.items()}
+        _e("ris.file.changed", kommune.pk, b["anlage"].pk, change="renamed", **bezuege)
+
+        eintraege = _kurz(_feed(kommune), _namen(b))
+
+        assert eintraege[0] == ("upsert", "anlage", None)
+        assert sorted(eintraege[1:]) == [("upsert", objekt, None) for objekt in einbettend]
 
     def test_ort_in_allen_sitzungen(self, kommune: OParlBody, bestand: dict[str, Any]) -> None:
         """Ein Ort nennt seine Sitzungen nicht; der Bestand findet sie über die Kennung der Quelle (Adresse und Objekt)."""
@@ -690,6 +716,13 @@ class TestSessionEinbettungen:
             ),
             ("ris.file.changed", "anlage", {"paper": "vorlage", "change": "renamed"}, ["anlage", "vorlage"]),
             ("ris.file.changed", "einladung", {"meeting": "sitzung", "change": "renamed"}, ["einladung", "sitzung"]),
+            # Neue Zugehörigkeit: Die frühere Sitzung gibt die Datei nicht mehr aus und bekommt auch einen Eintrag
+            (
+                "ris.file.changed",
+                "anlage",
+                {"paper": "vorlage", "previous_meeting": "sitzung", "change": "added"},
+                ["anlage", "sitzung", "vorlage"],
+            ),
             # Zwei Stufen: Datei im Tagesordnungspunkt in der Sitzung (die Sitzung kennt die Schnittstelle)
             (
                 "ris.file.changed",
@@ -770,6 +803,27 @@ class TestSessionEinbettungen:
         namen = _session_namen(welt)
         assert [(e["operation"], namen[e["id"]]) for e in seite["data"]] == [("upsert", "top"), ("upsert", "sitzung")]
         assert "GEHEIM" not in json.dumps(seite) and str(welt["geheim"].pk) not in json.dumps(seite)
+
+
+def test_offene_suche_endet_mit_der_anfrage(welt: dict[str, Any]) -> None:
+    """
+    Die Suche nach Adressen hält eine offene Abfrage (unter PostgreSQL ein serverseitiger Cursor). Sie darf den Index
+    nicht in einem Kreis halten: Sonst schlösse erst die Speicherbereinigung den Cursor, womöglich in einer späteren
+    Transaktion, und bräche sie ab.
+    """
+    abbildung, feed = cast(Any, session_oparl)._feed("musterstadt", profile=True)
+    assert feed.addresses("meeting", [_k(welt, "sitzung")])
+    index = cast(Any, feed.addresses).__self__
+    suche = index._searches["meeting"]
+    assert suche.gi_frame is not None, "die Suche ist noch offen"
+    verweis = weakref.ref(index)
+
+    gc.disable()
+    try:
+        del abbildung, feed, index, suche
+        assert verweis() is None
+    finally:
+        gc.enable()
 
 
 def test_session_abfragen_je_seite_haengen_nicht_an_der_zahl_der_eintraege(welt: dict[str, Any]) -> None:

@@ -477,7 +477,7 @@ Beispiel 2:
 
 ### ris.file.changed v1
 
-**Anlage geändert.** Eine Datei (Anlage) wurde hinzugefügt, ersetzt, umbenannt oder entfernt. Aggregat: File. Die Zugehörigkeit nennt, woran die Datei hängt. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+**Anlage geändert.** Eine Datei (Anlage) wurde hinzugefügt, ersetzt, umbenannt oder entfernt. Aggregat: File. Die Zugehörigkeit nennt, woran die Datei hängt; bei neuer Zugehörigkeit nennen previous_paper, previous_meeting und previous_agenda_item, woran sie nicht mehr hängt. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
@@ -491,6 +491,9 @@ Beispiel 2:
 | `paper` | nein | Zeichenkette (uuid) | Vorlage, an der die Datei hängt. |
 | `meeting` | nein | Zeichenkette (uuid) | Sitzung, an der die Datei hängt. |
 | `agenda_item` | nein | Zeichenkette (uuid) | Tagesordnungspunkt, an dem die Datei hängt. |
+| `previous_paper` | nein | Zeichenkette (uuid) | Vorlage, an der die Datei vor der Änderung hing und jetzt nicht mehr (neue Zugehörigkeit); optional. Der Änderungsfeed nennt damit auch sie. |
+| `previous_meeting` | nein | Zeichenkette (uuid) | Sitzung, an der die Datei vor der Änderung hing und jetzt nicht mehr; optional. |
+| `previous_agenda_item` | nein | Zeichenkette (uuid) | Tagesordnungspunkt, an dem die Datei vor der Änderung hing und jetzt nicht mehr; optional. |
 
 Beispiel 1:
 
@@ -509,6 +512,17 @@ Beispiel 2:
   "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
   "change": "removed",
   "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
+}
+```
+
+Beispiel 3:
+
+```json
+{
+  "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
+  "change": "added",
+  "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+  "previous_agenda_item": "3e4f5a6b-7c8d-5e9f-8a0b-1c2d3e4f5a6b"
 }
 ```
 

@@ -30,8 +30,9 @@ Feed auch das einbettende Objekt, wenn sich ein eingebettetes ändert (Profil Ä
 „Vollständigkeit und Reihenfolge“; ADR A10, Nachtrag #1229). Erfüllt ist das Profil damit noch nicht: Session meldet
 Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht als Ereignis, `modified` kann sich ohne
 öffentliches Ereignis ändern, der Aggregator nennt Änderungen gespiegelter Session-Mandanten vor ihrer Übernahme,
-und ein nichtöffentlich gewordener Tagesordnungspunkt des Bestands bleibt ohne `deleted: true` abrufbar. Das Profil
-Snapshot setzt das Profil Änderungsfeed voraus.
+ein nichtöffentlich gewordener Tagesordnungspunkt des Bestands bleibt ohne `deleted: true` abrufbar, und hängt eine
+Datei des Bestands an einer anderen Vorlage, bekommt die frühere keinen Eintrag. Diese Punkte bleiben unter #1229
+offen. Das Profil Snapshot setzt das Profil Änderungsfeed voraus.
 
 Die Fassung verlangt unter anderem jeden Zeitpunkt als `yyyy-mm-ddThh:mm:ss±hh:mm` (Kapitel „JSON-Ausgabe“). Beide
 Ausgaben geben Zeitpunkte deshalb auf die Sekunde aus (`hub.ris.canonical.iso`), und die Konformitätsprüfung der Tests
