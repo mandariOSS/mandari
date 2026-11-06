@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Migration common/0014: Altspalten der Systemeinstellungen löschen (Issue #604).
+Migration common/0015: Altspalten der Systemeinstellungen löschen (Issue #604).
 
 Läuft auf PostgreSQL und SQLite. Die Datenbanken führen die Spalten unterschiedlich (siehe Migration), deshalb stellt
 jeder Test seinen Ausgangszustand selbst her. Roh-SQL nennt Spalten ohne Anführungszeichen: SQLite läse einen fehlenden
@@ -18,8 +18,8 @@ from django.db.migrations.executor import MigrationExecutor
 
 from apps.common.models import SiteSettings
 
-VORHER = ("common", "0013_ki_anbieter_auswahl_als_aufruf")
-NACHHER = ("common", "0014_systemeinstellungen_spalten_entfernen")
+VORHER = ("common", "0014_zusammenfassung_claude")
+NACHHER = ("common", "0015_systemeinstellungen_spalten_entfernen")
 TABELLE = "common_sitesettings"
 ALTSPALTEN = {
     "site_name": "varchar(100) NOT NULL DEFAULT 'Mandari'",
@@ -42,7 +42,7 @@ def _migrieren(ziel: tuple[str, str]) -> None:
     MigrationExecutor(connection).migrate([ziel])
 
 
-def _modell_ohne_0014() -> type[SiteSettings]:
+def _modell_ohne_0015() -> type[SiteSettings]:
     """Das Modell, wie es ein Image ohne diese Migration kennt."""
     return MigrationExecutor(connection).loader.project_state([VORHER]).apps.get_model("common", "SiteSettings")
 
@@ -63,7 +63,7 @@ def _altspalten_herstellen(vorhanden: set[str]) -> None:
 
 
 def _bestand_anlegen() -> None:
-    _modell_ohne_0014().objects.update_or_create(pk=1, defaults={"maintenance_message": "Bleibt"})
+    _modell_ohne_0015().objects.update_or_create(pk=1, defaults={"maintenance_message": "Bleibt"})
     with connection.cursor() as cursor:
         cursor.execute(f"UPDATE {TABELLE} SET email_backend = 'bleibt' WHERE id = 1")
 
@@ -114,7 +114,7 @@ def test_rueckweg_laesst_email_backend_und_laeuft_wieder_vor() -> None:
 def test_stand_ohne_diese_migration_laeuft_auf_der_geleerten_tabelle() -> None:
     """Rückfall ohne Rückbau: Das ältere Modell liest und schreibt, obwohl die Spalten fehlen."""
     _migrieren(NACHHER)
-    alt = _modell_ohne_0014()
+    alt = _modell_ohne_0015()
     alt.objects.all().delete()
 
     zeile = alt.objects.create(pk=1, maintenance_message="Neu angelegt")

@@ -32,6 +32,9 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 ### Abgekündigt
 - OParl-API: Änderungsfeed und Snapshot in der älteren Form (`mandari:changes`, `mandari:snapshot`, Adressen `…/body/<uuid>/changes` und `…/snapshot` bzw. `…/body/changes/` und `…/body/snapshot/` je Session-Mandant): **Wegfall frühestens am 01.12.2027.** Nachfolger sind `kommparl:changes` und `kommparl:snapshot`; Cursor gelten in beiden Formen. Die Antworten tragen `Deprecation: @1793836800`, `Sunset: Wed, 01 Dec 2027 00:00:00 GMT` und `Link: <Nachfolger>; rel="successor-version"`, die Beschreibung kennzeichnet Endpunkte und Eigenschaften mit `deprecated` und `x-sunset` (#1216).
 
+### Entfernt
+- Systemeinstellungen: die Datenbankspalten `site_name` und `site_description` der in 0.12.0 entfallenen Felder „Seitenname“ und „Seitenbeschreibung“ (Migration `common.0015`). Vor einem Rückfall auf ein Image ohne `common.0007`, etwa `v0.11.0`, gehört `manage.py migrate common 0014` (`DEPLOYMENT.md`, „Rollback“) (#604).
+
 ### Behoben
 - Insight: Auf Vorgangsseiten mit amtlichem Umring (Bebauungspläne) brach ein Fehler der Karte die ganze Seite ab: keine Icons, Dunkelmodus und Aufklappen ohne Wirkung. Die Karte setzt jetzt erst den Ausschnitt und fügt danach Flächen und Orte hinzu; ein Fehler in einer Karte reißt die übrige Seite nicht mehr mit (seit #626).
 - Work, Fraktionssitzungen: Die Einladungsmail listet Unterpunkte (TOP 3.1, 3.2 …) direkt unter ihrem TOP statt hinter dem letzten TOP, wenn sie nach den übrigen TOPs angelegt wurden; Sichtbarkeit wie im Tagesordnungs-PDF, nicht-öffentliche Unterpunkte nur für Vereidigte und gekennzeichnet (#1234).
@@ -125,7 +128,6 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Provisionierungs-API: Die Antwort auf das Anlegen einer Organisation enthält kein Feld `invitation_url` mehr; der Einladungslink geht nur per Mail (#501).
 - Systemeinstellungen: die verdeckte Wahl des Mail-Backends (`email_backend`); das Backend bestimmt `EMAIL_BACKEND` bzw. ein eingetragener SMTP-Host (#501).
 - Systemeinstellungen: die wirkungslosen Felder „Seitenname“ und „Seitenbeschreibung“ (#588).
-- Systemeinstellungen: die Datenbankspalten `site_name` und `site_description` dieser Felder (Migration `common.0014`). Vor einem Rückfall auf ein Image ohne `common.0007`, etwa `v0.11.0`, gehört `manage.py migrate common 0013` (`DEPLOYMENT.md`, „Rollback“) (#604).
 - Befehl `manage.py sync_oparl`; synchronisiert wird nur noch über den Ingestor (von Hand: `python -m src.main sync --all` im Ingestor-Container) (#500).
 - Ingestor: `src/sources.py`, die Befehle `init-sources` und `add-source` sowie `import_oparl_sources --activate`: Es gibt eine Liste bekannter Quellen (`import_oparl_sources`, 111 Einträge, inaktiv, ohne Abruf) und einen Registrierungsweg (`add_oparl_source`). `sync --source` und `sync --body` lehnen eine Adresse ab, die keine registrierte Quelle ist, auch die Adresse einer einzelnen Kommune (dafür `sync --source <Quelle> --filter <Kommune>`, ohne Treffer im Filter endet der Befehl mit Fehler und ändert nichts an der Quelle); `add_oparl_source` bricht ab, wenn eine Kommune schon an einer anderen Quelle hängt, statt sie umzuhängen; im Formular „Quelle hinzufügen“ ist „Aktiv“ nicht mehr vorbelegt. Vorhandene Quellen bleiben unverändert (#555).
 - Ingestor: die wirkungslosen Befehle `metrics`, `circuit-breakers` und `init-db`; Kennzahlen liefert der Endpunkt `/metrics` des Daemons, die Verbindungsprüfung `status` (#500).

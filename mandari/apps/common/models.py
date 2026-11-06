@@ -135,7 +135,7 @@ class SiteSettings(models.Model):
     # Wartungsmodus (wirkt über apps.common.maintenance.MaintenanceModeMiddleware)
     # ==========================================================================
     # Die früheren Felder „Seitenname“ und „Seitenbeschreibung“ wirkten nirgends und sind
-    # entfallen (Migration common/0007, Spalten gelöscht mit common/0014).
+    # entfallen (Migration common/0007, Spalten gelöscht mit common/0015).
     maintenance_mode = models.BooleanField(
         default=False, verbose_name="Wartungsmodus", help_text="Website für Besucher sperren"
     )

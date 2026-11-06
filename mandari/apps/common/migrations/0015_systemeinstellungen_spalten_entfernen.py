@@ -43,7 +43,7 @@ class RemoveFieldFallsVorhanden(migrations.RemoveField):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("common", "0013_ki_anbieter_auswahl_als_aufruf"),
+        ("common", "0014_zusammenfassung_claude"),
     ]
 
     operations = [
