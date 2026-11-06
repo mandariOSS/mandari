@@ -35,7 +35,7 @@ from .models import DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberCh
 
 if TYPE_CHECKING:
     from apps.session.models import SessionApplication
-    from apps.work.faction.models import CalendarFeedToken, FactionMeetingSchedule
+    from apps.work.faction.models import CalendarFeedToken, FactionMeetingSchedule, FactionMeetingType
     from apps.work.motions.models import (
         DocumentFolder,
         FolderGuestShare,
@@ -1016,16 +1016,25 @@ def faction_schedules(organization: Organization) -> QuerySet[FactionMeetingSche
 
 
 def standard_agenda_context(
-    organization: Organization, *, may_view_internal: bool, approval_item: bool
+    organization: Organization,
+    *,
+    may_view_internal: bool,
+    approval_item: bool,
+    meeting_type: FactionMeetingType | None = None,
 ) -> dict[str, Any]:
     """
-    Standard-Tagesordnung für die Einstellungen (Issue #872): Zeilen mit der Nummer, die der Punkt in einer neuen
-    Sitzung erhält. Nicht-öffentliche Punkte nur für Vereidigte (NÖ strikt, Issue #64), sonst nur ihre Anzahl.
-    Der Titel des Genehmigungs-TOPs erscheint ohne rohe Platzhalter.
+    Standard-Tagesordnung für die Einstellungen (Issue #872) einer Sitzungsart, ohne Angabe der Standardart
+    (Issue #1240): Zeilen mit der Nummer, die der Punkt in einer neuen Sitzung erhält. Nicht-öffentliche Punkte nur
+    für Vereidigte (NÖ strikt, Issue #64), sonst nur ihre Anzahl; neue nur, wenn die Art einen nichtöffentlichen Teil
+    hat. Der Titel des Genehmigungs-TOPs erscheint ohne rohe Platzhalter, ohne Art mit den Einstellungen der
+    Organisation (die Seite, auf der sie stehen).
     """
     from apps.work.faction.agenda import approval_title_preview, format_number, standard_items
+    from apps.work.faction.models import FactionMeetingType
+    from apps.work.faction.regeln import einstellungen, nichtoeffentlich_erlaubt
 
-    items = list(standard_items(organization))
+    art = meeting_type if meeting_type is not None else FactionMeetingType.default_for(organization)
+    items = list(standard_items(organization, art))
     public = [item for item in items if item.visibility == "public"]
     internal = [item for item in items if item.visibility == "internal"]
     first = 2 if approval_item else 1
@@ -1034,12 +1043,12 @@ def standard_agenda_context(
         rows += [(format_number("internal", position), item) for position, item in enumerate(internal, start=1)]
     return {
         "standard_agenda_approval_title": approval_title_preview(
-            (organization.settings or {}).get("faction", {}), has_previous=True
+            einstellungen(meeting_type if meeting_type is not None else organization), has_previous=True
         ),
         "standard_agenda_rows": rows,
         "standard_agenda_empty": not items,
         "standard_agenda_locked": 0 if may_view_internal else len(internal),
-        "standard_agenda_may_internal": may_view_internal,
+        "standard_agenda_may_internal": may_view_internal and nichtoeffentlich_erlaubt(art),
     }
 
 

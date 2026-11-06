@@ -6,10 +6,12 @@ Gezählt werden nur angenommene TOPs (``proposal_status="active"``): Offene oder
 haben keine Nummer und verschieben die Nummerierung nicht. Der Genehmigungs-TOP („Tagesordnung festlegen
 und letztes Protokoll genehmigen“) ist immer TOP 1 des öffentlichen Teils.
 
-Die Standard-Tagesordnung je Organisation (:class:`FactionStandardAgendaItem`) übernimmt
+Die Standard-Tagesordnung je Sitzungsart (:class:`FactionStandardAgendaItem`, Issue #1240) übernimmt
 :func:`apply_standard_agenda` in eine neu angelegte Sitzung. Aufgerufen wird sie von beiden Wegen, auf denen
 Sitzungen entstehen: der Anlage von Hand (``FactionMeetingListView.post``) und der Sitzungsreihe
-(:func:`apps.work.faction.generation.generate_meetings_for_schedule`). Bestehende Sitzungen ändert sie nie.
+(:func:`apps.work.faction.generation.generate_meetings_for_schedule`). Bestehende Sitzungen ändert sie nie. Eine Art
+„ohne feste Tagesordnung“ (``agenda_mode`` „free“) bekommt keine Standardpunkte, eine Art ohne nichtöffentlichen Teil
+keine nichtöffentlichen.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from django.db.models import Max, QuerySet
 if TYPE_CHECKING:
     from apps.tenants.models import Organization
 
-    from .models import FactionAgendaItem, FactionMeeting, FactionStandardAgendaItem
+    from .models import FactionAgendaItem, FactionMeeting, FactionMeetingType, FactionStandardAgendaItem
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +107,12 @@ def add_item(
     erhalten. Den Änderungsverlauf schreibt das Speichern (``audit.audit_post_save``).
     """
     from .models import FactionAgendaItem
+    from .regeln import pruefe_nichtoeffentlich
 
     if parent is not None and parent.visibility == "internal":
         visibility = "internal"
+    # Art ohne nichtöffentlichen Teil (Issue #1240): keine neuen NÖ-TOPs, auch keine Unterpunkte bestehender
+    pruefe_nichtoeffentlich(meeting, visibility)
     with transaction.atomic():
         lock_meeting(meeting)
         if parent is not None:
@@ -156,9 +161,13 @@ def move_to_part(meeting: FactionMeeting, item: FactionAgendaItem, visibility: s
     (Einladung, PDF). Zurück im öffentlichen Teil bleiben sie nicht-öffentlich, bis jemand sie einzeln freigibt. Ein
     Unterpunkt eines nicht-öffentlichen TOPs wird aus demselben Grund nicht öffentlich.
     """
+    from .regeln import pruefe_nichtoeffentlich
+
     previous = item.visibility
     if visibility == previous:
         return
+    # Art ohne nichtöffentlichen Teil (Issue #1240): nichts in den NÖ-Teil; zurück in den öffentlichen Teil geht
+    pruefe_nichtoeffentlich(meeting, visibility)
     parent = item.parent
     if visibility == "public" and parent is not None and parent.visibility == "internal":
         return
@@ -181,11 +190,35 @@ def move_to_part(meeting: FactionMeeting, item: FactionAgendaItem, visibility: s
 # =============================================================================
 
 
-def standard_items(organization: Organization) -> QuerySet[FactionStandardAgendaItem]:
-    """Standard-Tagesordnung der Organisation in ihrer Reihenfolge."""
+def standard_items(
+    organization: Organization, meeting_type: FactionMeetingType | None = None
+) -> QuerySet[FactionStandardAgendaItem]:
+    """Standard-Tagesordnung einer Sitzungsart (ohne Angabe der Standardart) in ihrer Reihenfolge (Issue #1240)."""
     from .models import FactionStandardAgendaItem
 
-    return FactionStandardAgendaItem.objects.filter(organization=organization).order_by("order", "created_at")
+    same_type = {"meeting_type__is_default": True} if meeting_type is None else {"meeting_type": meeting_type}
+    return FactionStandardAgendaItem.objects.filter(organization=organization, **same_type).order_by(
+        "order", "created_at"
+    )
+
+
+def standard_items_for_new_meetings(
+    organization: Organization, meeting_type: FactionMeetingType | None = None
+) -> list[FactionStandardAgendaItem]:
+    """
+    Standardpunkte, die eine neue Sitzung der Art (ohne Angabe der Standardart) erhält (Issue #1240): keine bei „ohne
+    feste Tagesordnung“, ohne nichtöffentlichen Teil nur die öffentlichen.
+    """
+    from .models import FactionMeetingType
+    from .regeln import nichtoeffentlich_erlaubt, tagesordnung_frei
+
+    art = meeting_type if meeting_type is not None else FactionMeetingType.default_for(organization)
+    if tagesordnung_frei(art):
+        return []
+    items = list(standard_items(organization, art))
+    if not nichtoeffentlich_erlaubt(art):
+        items = [item for item in items if item.visibility != "internal"]
+    return items
 
 
 def approval_title_preview(faction_settings: dict[str, Any], *, has_previous: bool) -> str:
@@ -205,30 +238,38 @@ def approval_title_preview(faction_settings: dict[str, Any], *, has_previous: bo
     return title
 
 
-def new_meeting_has_previous(organization: Organization) -> bool:
+def new_meeting_has_previous(organization: Organization, meeting_type: FactionMeetingType | None = None) -> bool:
     """
-    Erhielte eine neue Sitzung eine Vorsitzung (und damit „… und letztes Protokoll genehmigen“)?
+    Erhielte eine neue Sitzung der Art (ohne Angabe der Standardart) eine Vorsitzung und damit „… und letztes
+    Protokoll genehmigen“?
 
-    Wie bei der Anlage (``FactionMeetingListView.post``): die letzte begonnene oder abgeschlossene Sitzung, sofern
-    sie nicht schon einer anderen Sitzung als Vorsitzung zugeordnet ist.
+    Wie bei der Anlage (``FactionMeetingListView.post``): die letzte begonnene oder abgeschlossene Sitzung derselben
+    Art (Issue #1231), sofern sie nicht schon einer anderen Sitzung als Vorsitzung zugeordnet ist.
     """
     from .models import FactionMeeting
 
-    previous = cast(Any, FactionMeeting).find_previous_meeting(organization)
+    previous = cast(Any, FactionMeeting).find_previous_meeting(organization, meeting_type=meeting_type)
     return previous is not None and not FactionMeeting.objects.filter(previous_meeting=previous).exists()
 
 
-def standard_agenda_preview(organization: Organization, *, may_view_internal: bool) -> dict[str, Any]:
+def standard_agenda_preview(
+    organization: Organization, *, may_view_internal: bool, meeting_type: FactionMeetingType | None = None
+) -> dict[str, Any]:
     """
-    Tagesordnung, die eine neue Sitzung erhält (Dialog „Neue Sitzung“): erster TOP und Standard-TOPs.
+    Tagesordnung, die eine neue Sitzung der Art (ohne Angabe der Standardart) erhält (Dialog „Neue Sitzung“): erster
+    TOP nach den Regeln der Art und ihre Standard-TOPs (Issue #1240).
 
     Nicht-öffentliche Punkte nur für Vereidigte (NÖ strikt, Issue #64), sonst nur ihre Anzahl.
     """
-    faction_settings = (organization.settings or {}).get("faction", {})
-    items = list(standard_items(organization))
+    from .models import FactionMeetingType
+    from .regeln import einstellungen
+
+    art = meeting_type if meeting_type is not None else FactionMeetingType.default_for(organization)
+    faction_settings = einstellungen(art)
+    items = standard_items_for_new_meetings(organization, art)
     approval_item = faction_settings.get("auto_create_approval_item", True)
     title = (
-        approval_title_preview(faction_settings, has_previous=new_meeting_has_previous(organization))
+        approval_title_preview(faction_settings, has_previous=new_meeting_has_previous(organization, art))
         if approval_item
         else ""
     )
@@ -245,17 +286,18 @@ def standard_agenda_preview(organization: Organization, *, may_view_internal: bo
 
 def apply_standard_agenda(meeting: FactionMeeting) -> int:
     """
-    Standard-TOPs der Organisation in eine neue Sitzung übernehmen; liefert die Zahl angelegter TOPs.
+    Standard-TOPs der Sitzungsart in eine neue Sitzung übernehmen; liefert die Zahl angelegter TOPs.
 
     Die Punkte folgen auf den Genehmigungs-TOP (falls vorhanden) und auf schon vorhandene TOPs, öffentliche
-    und nicht-öffentliche getrennt nummeriert. Abgesagte Sitzungen erhalten keine Tagesordnung. Ein zweiter
-    Aufruf für dieselbe Sitzung legt nichts an, auch wenn dort inzwischen Standard-TOPs gelöscht wurden.
+    und nicht-öffentliche getrennt nummeriert. Abgesagte Sitzungen erhalten keine Tagesordnung, Sitzungen einer Art
+    „ohne feste Tagesordnung“ auch nicht (Issue #1240). Ein zweiter Aufruf für dieselbe Sitzung legt nichts an, auch
+    wenn dort inzwischen Standard-TOPs gelöscht wurden.
     """
     from .models import FactionAgendaItem
 
     if meeting.status == "cancelled":
         return 0
-    templates = list(standard_items(meeting.organization))
+    templates = standard_items_for_new_meetings(meeting.organization, meeting.meeting_type)
     if not templates:
         return 0
 

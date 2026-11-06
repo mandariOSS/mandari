@@ -75,6 +75,8 @@ class Angebot:
     punkte: list[Punkt] = field(default_factory=list)
     #: Nichtöffentliche Punkte, die die Person nicht sehen darf (nur die Zahl)
     gesperrt: int = 0
+    #: Die Sitzungsart hat keinen nichtöffentlichen Teil (Issue #1240): nichtöffentliche Punkte sind nicht wählbar
+    ohne_noe: bool = False
     eltern: list[Any] = field(default_factory=list)
     eltern_vorschlag: str = ""
 
@@ -136,7 +138,7 @@ def angebot(meeting: FactionMeeting, membership: Membership, ris_meeting_id: Any
     """Auswahl für den Dialog; ``ris_meeting_id`` wählt eine andere Sitzung der eigenen Kommunen."""
     from hub.ris import selectors as ris
 
-    ergebnis = Angebot()
+    ergebnis = Angebot(ohne_noe=not meeting.nichtoeffentlich_erlaubt)
     liste, vorschlag = sitzungen(meeting)
     bodies = _bodies(meeting)
     gewaehlt = vorschlag
@@ -149,7 +151,8 @@ def angebot(meeting: FactionMeeting, membership: Membership, ris_meeting_id: Any
     if gewaehlt is None:
         return ergebnis
 
-    intern = can_view_internal(membership)
+    # Nichtöffentliche Punkte nur für Vereidigte und nur in Sitzungsarten mit nichtöffentlichem Teil (Issue #1240)
+    intern = can_view_internal(membership) and meeting.nichtoeffentlich_erlaubt
     punkte = ris.visible_agenda_items(gewaehlt)
     vorlagen = ris.papers_of_agenda_items(punkte)
     schon = _schon_uebernommen(meeting)
@@ -203,6 +206,8 @@ def uebernehmen(
     intern = can_view_internal(membership)
     if any(not p.public for p in punkte) and not intern:
         raise UebernahmeError("Nichtöffentliche Punkte können nur vereidigte Mitglieder übernehmen.")
+    if any(not p.public for p in punkte) and not meeting.nichtoeffentlich_erlaubt:
+        raise UebernahmeError("Diese Sitzungsart hat keinen nichtöffentlichen Teil.")
     if not punkte:
         raise UebernahmeError("Wählen Sie mindestens einen Punkt aus.")
     vorlagen = ris.papers_of_agenda_items(punkte)

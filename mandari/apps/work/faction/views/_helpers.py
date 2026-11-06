@@ -131,15 +131,16 @@ def _get_meeting_context(view, meeting):
     can_add_items = can_edit or (can_create_directly and open_for_members(meeting))
 
     # Beschlussfähigkeit (Issue #69): Anzeige während/nach der Sitzung
-    from ..quorum import faction_quorum_status
+    from ..quorum import quorum_der_sitzung
 
-    quorum = faction_quorum_status(meeting) if meeting.status in ("ongoing", "completed") else None
+    # Ohne Abstimmungen in der Sitzungsart keine Beschlussfähigkeit (Issue #1240)
+    quorum = quorum_der_sitzung(meeting) if meeting.status in ("ongoing", "completed") else None
 
     # Einladungslogik (Issue #62): Freigabe-Status für die Sidebar
     from ..invitations import auto_invite_schedule, get_invitation_settings, invitation_dispatch_at
     from ..invitations import can_release_invitations as _can_release
 
-    inv_settings = get_invitation_settings(view.organization)
+    inv_settings = get_invitation_settings(meeting)
     # Reihe mit automatischer Einladung zum festen Zeitpunkt (Issue #871): ohne Freigabe
     invitation_auto_schedule = auto_invite_schedule(meeting)
     invitation_release_pending = (

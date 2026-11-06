@@ -21,7 +21,7 @@ Sichtschutz (Titel und Beschreibung weichgezeichnet, bis Nichtöffentliches eing
                     {% csrf_token %}
                     <input type="hidden" name="action" value="accept_proposal">
                     <input type="hidden" name="item_id" value="{{ vorschlag.id }}">
-                    {% if can_view_internal %}
+                    {% if can_view_internal and meeting.nichtoeffentlich_erlaubt %}
                     <label class="sr-only" for="vs-teil-{{ vorschlag.id }}">Teil der Tagesordnung für {{ vorschlag.title }}</label>
                     <select id="vs-teil-{{ vorschlag.id }}" class="wf-eingabe wf-auswahl" name="visibility">
                         <option value="public"{% if vorschlag.visibility != 'internal' %} selected{% endif %}>öffentlich</option>

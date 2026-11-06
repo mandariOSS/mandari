@@ -292,7 +292,10 @@ def tagesordnung(
         "to_gesamt": gesamt,
         "to_offen": offen_id,
         "to_eltern": [z for z in oeffentlich if not z.unter and not z.item.is_approval_item],
-        "to_eltern_intern": [z for z in intern if not z.unter and not z.item.is_approval_item],
+        # Art ohne nichtöffentlichen Teil (Issue #1240): keine Unterpunkte unter bestehenden NÖ-TOPs
+        "to_eltern_intern": [z for z in intern if not z.unter and not z.item.is_approval_item]
+        if meeting.nichtoeffentlich_erlaubt
+        else [],
     }
 
 
@@ -574,7 +577,7 @@ def absender(organization: Any) -> str:
 
 def einladung_zeitpunkt(meeting: FactionMeeting) -> dict[str, Any]:
     """Geplanter Versand für den Dialog „Jetzt einladen“: Zeitpunkt, automatisch oder nach Freigabe, schon vorbei."""
-    einstellungen = get_invitation_settings(meeting.organization)
+    einstellungen = get_invitation_settings(meeting)
     versand_am = invitation_dispatch_at(meeting, einstellungen)
     return {
         "einladung_zeitpunkt": _zeitpunkt(versand_am),
@@ -606,7 +609,7 @@ def _start_ab(meeting: FactionMeeting) -> Any:
 
 def stufen(meeting: FactionMeeting, to_zahl: int, rm: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Ablaufleiste Planung → Einladung → Sitzung → Protokoll vor der Sitzung (wie im Muster)."""
-    einstellungen = get_invitation_settings(meeting.organization)
+    einstellungen = get_invitation_settings(meeting)
     tops = count_label(to_zahl, "TOP", "TOPs")
     lokal = timezone.localtime(meeting.start)
     sitzung_unter = f"{_tag(lokal)}, {lokal:%H:%M}"
@@ -673,7 +676,7 @@ def info(meeting: FactionMeeting, membership: Membership, *, verwalten: bool, ve
 
 
 def _info(meeting: FactionMeeting, membership: Membership, *, verwalten: bool, versand_zahl: dict[str, Any]) -> Info:
-    einstellungen = get_invitation_settings(meeting.organization)
+    einstellungen = get_invitation_settings(meeting)
     jetzt = timezone.now()
     darf_einladen = membership.has_permission("faction.invite")
     start_ab = _start_ab(meeting)
@@ -744,7 +747,7 @@ def _info(meeting: FactionMeeting, membership: Membership, *, verwalten: bool, v
 
 def erinnerung_satz(meeting: FactionMeeting, *, mitglied: bool) -> str:
     """„Erinnerung zum Eintragen von TOPs“: verschickt oder geplant, nur wenn eingeschaltet."""
-    einstellungen = get_invitation_settings(meeting.organization)
+    einstellungen = get_invitation_settings(meeting)
     if meeting.agenda_reminder_sent_at:
         wann = _zeitpunkt(meeting.agenda_reminder_sent_at)
         return (
@@ -763,7 +766,7 @@ def erinnerung_satz(meeting: FactionMeeting, *, mitglied: bool) -> str:
 
 def einladung_satz(meeting: FactionMeeting, nicht_vereidigt: list[str]) -> tuple[str, str]:
     """Abschnitt „Einladung“ der Nebenspalte in der Planung: Satz und Erläuterung zur Regel (Muster)."""
-    einstellungen = get_invitation_settings(meeting.organization)
+    einstellungen = get_invitation_settings(meeting)
     versand_am = invitation_dispatch_at(meeting, einstellungen)
     reihe = cast(Any, invitations).auto_invite_schedule(meeting)
     if dispatches_automatically(meeting, einstellungen):
@@ -790,7 +793,7 @@ def erinnerung_sitzung(meeting: FactionMeeting) -> str:
     """Erinnerung an die Sitzung (Einstellung, Standard 48 Stunden vorher, an alle Eingeladenen bzw. Zusagen)."""
     if meeting.reminder_sent_at:
         return f"Work hat am {_zeitpunkt(meeting.reminder_sent_at)} an die Sitzung erinnert."
-    stunden = meeting_reminder_hours(meeting.organization)
+    stunden = meeting_reminder_hours(meeting)
     if stunden is None:
         return ""
     wann = meeting.start - timedelta(hours=stunden)

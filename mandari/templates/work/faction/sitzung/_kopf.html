@@ -22,8 +22,8 @@
     <div class="fs-kopf-aktionen">
         <button type="button" class="wf-knopf wf-klein fs-anw-knopf" aria-controls="fs-anwesenheit"
                 :aria-expanded="anwesenheitOffen ? 'true' : 'false'" @click="anwesenheitUmschalten()"
-                title="{% if quorum.met %}Beschlussfähig{% else %}Nicht beschlussfähig{% endif %}">
-            <span class="wf-punkt {% if quorum.met %}zustimmung{% else %}ablehnung{% endif %}" aria-hidden="true"></span>
+                {% if quorum %}title="{% if quorum.met %}Beschlussfähig{% else %}Nicht beschlussfähig{% endif %}"{% endif %}>
+            {% if quorum %}<span class="wf-punkt {% if quorum.met %}zustimmung{% else %}ablehnung{% endif %}" aria-hidden="true"></span>{% endif %}
             <span>{{ anw.anwesend }} von {{ anw.gesamt }}<span class="fs-desktop-nur"> anwesend</span></span>
         </button>
         {% if rechte.beenden %}

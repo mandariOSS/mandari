@@ -89,9 +89,14 @@ INVITATION_CLAIM_STALE_MINUTES = 30
 # =============================================================================
 
 
-def get_invitation_settings(organization) -> dict:
-    """Einladungs-Einstellungen der Organisation (mit Defaults)."""
-    faction_settings = (organization.settings or {}).get("faction", {})
+def get_invitation_settings(ziel) -> dict:
+    """
+    Einladungs-Einstellungen (mit Defaults) einer Sitzung oder Sitzungsart, je Art übersteuerbar (Issue #1240); mit
+    einer Organisation die der Organisation selbst.
+    """
+    from .regeln import einstellungen
+
+    faction_settings = einstellungen(ziel)
     result = dict(INVITATION_DEFAULTS)
 
     mode = faction_settings.get("invitation_mode")
@@ -155,7 +160,7 @@ def invitation_dispatch_at(meeting, settings: dict | None = None):
     schedule = auto_invite_schedule(meeting)
     if schedule is not None:
         return fixed_dispatch_at(meeting.start, schedule.auto_invite_weekday, schedule.auto_invite_time)
-    settings = settings or get_invitation_settings(meeting.organization)
+    settings = settings or get_invitation_settings(meeting)
     return meeting.start - timedelta(hours=settings["invitation_lead_hours"])
 
 
@@ -168,7 +173,7 @@ def dispatches_automatically(meeting, settings: dict | None = None) -> bool:
     """
     if auto_invite_schedule(meeting) is not None:
         return True
-    settings = settings or get_invitation_settings(meeting.organization)
+    settings = settings or get_invitation_settings(meeting)
     return settings["invitation_dispatch"] == "automatic" or meeting.invitation_released_at is not None
 
 
@@ -252,7 +257,7 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
     """
     from .services import FactionMeetingEmailService, invitation_attendances
 
-    settings = get_invitation_settings(meeting.organization)
+    settings = get_invitation_settings(meeting)
     service = FactionMeetingEmailService()
 
     sent_count = service.send_invitations(meeting, update=update, invitation_mode=settings["invitation_mode"])
@@ -558,7 +563,7 @@ def release_invitations(meeting, membership) -> bool:
     meeting.invitation_released_by = membership
     meeting.save(update_fields=["invitation_released_at", "invitation_released_by", "updated_at"])
 
-    settings = get_invitation_settings(meeting.organization)
+    settings = get_invitation_settings(meeting)
     if timezone.now() >= invitation_dispatch_at(meeting, settings):
         dispatch_invitations_once(meeting)
     return True
@@ -698,10 +703,10 @@ def run_faction_invitation_pass(now=None) -> dict:
             invitation_sent=False,
             start__gt=now,
             organization__is_active=True,
-        ).select_related("organization", "schedule")
+        ).select_related("organization", "schedule", "meeting_type")
 
         for meeting in meetings:
-            settings = get_invitation_settings(meeting.organization)
+            settings = get_invitation_settings(meeting)
             dispatch_at = invitation_dispatch_at(meeting, settings)
 
             if _agenda_reminder_due(meeting, settings, dispatch_at, now) and _claim_timestamp(

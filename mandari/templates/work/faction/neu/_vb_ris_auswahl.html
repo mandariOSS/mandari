@@ -20,7 +20,7 @@ eingeblendet ist (Sichtschutz, Issue #1201).
     {% for s in angebot.sitzungen %}<option value="{{ s.id }}"{% if s.id == angebot.gewaehlt.pk|stringformat:"s" %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
 </select>
 {% if not angebot.punkte %}
-<p>Die Tagesordnung dieser Sitzung ist im Ratsinformationssystem noch nicht veröffentlicht{% if angebot.gesperrt %} oder enthält nur nichtöffentliche Punkte, die nur vereidigte Mitglieder sehen{% endif %}. Sobald sie da ist, können Sie TOPs hier übernehmen.</p>
+<p>Die Tagesordnung dieser Sitzung ist im Ratsinformationssystem noch nicht veröffentlicht{% if angebot.gesperrt %} oder enthält nur nichtöffentliche Punkte, {% if angebot.ohne_noe %}und diese Sitzungsart hat keinen nichtöffentlichen Teil{% else %}die nur vereidigte Mitglieder sehen{% endif %}{% endif %}. Sobald sie da ist, können Sie TOPs hier übernehmen.</p>
 <div class="wf-dialog-fuss"><button type="button" class="wf-knopf" data-close-modal>Schließen</button></div>
 {% else %}
 <form class="fs-ris-form" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-target="#agenda-container" hx-swap="innerHTML" hx-include="#fs-offen"
@@ -49,7 +49,7 @@ eingeblendet ist (Sichtschutz, Issue #1201).
         </li>
         {% endfor %}
     </ul>
-    {% if angebot.gesperrt %}<p class="fs-meta">Dazu {{ angebot.gesperrt }} nichtöffentliche{% if angebot.gesperrt == 1 %}r Punkt{% else %} Punkte{% endif %}, die nur vereidigte Mitglieder sehen.</p>{% endif %}
+    {% if angebot.gesperrt %}<p class="fs-meta">Dazu {{ angebot.gesperrt }} nichtöffentliche{% if angebot.gesperrt == 1 %}r Punkt{% else %} Punkte{% endif %}, {% if angebot.ohne_noe %}die diese Sitzungsart nicht übernimmt, weil sie keinen nichtöffentlichen Teil hat{% else %}die nur vereidigte Mitglieder sehen{% endif %}.</p>{% endif %}
     <div class="wf-dialog-fuss">
         <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>
         <button type="submit" class="wf-knopf wf-haupt" :disabled="!n" disabled x-text="n ? (n === 1 ? '1 TOP übernehmen' : n + ' TOPs übernehmen') : 'TOPs übernehmen'">TOPs übernehmen</button>
