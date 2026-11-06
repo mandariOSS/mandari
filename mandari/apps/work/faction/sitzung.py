@@ -758,7 +758,7 @@ def sitzung_laden(organization: Organization, meeting_id: Any) -> FactionMeeting
     if pk is None:
         return None
     return (
-        FactionMeeting.objects.select_related("organization", "minute_taker__user", "chaired_by__user")
+        FactionMeeting.objects.select_related("organization", "meeting_type", "minute_taker__user", "chaired_by__user")
         .filter(id=pk, organization=organization)
         .first()
     )

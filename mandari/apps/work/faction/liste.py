@@ -31,6 +31,7 @@ from .invitations import (
     invitation_dispatch_at,
 )
 from .protocol_dispatch import get_protocol_dispatch_settings
+from .sitzungsarten import sichtbar_fuer, sichtbare_arten
 
 WOCHENTAGE = dict(formatting.WEEKDAY_CHOICES)
 
@@ -130,15 +131,16 @@ def zeilen(meetings: Any, organization: Any, *, intern: bool) -> list[dict[str, 
     return ergebnis
 
 
-def naechste_satz(organization: Any, stats_satz: str) -> str:
+def naechste_satz(organization: Any, stats_satz: str, membership: Any) -> str:
     """
     Satz im Kopfband: „Die nächste Fraktionssitzung ist am Mo 12.10. um 18:00. Work hat am Fr 09.10. eingeladen.“
-    Offene Protokolle hängen an. Ohne kommende Sitzung bleibt der Zahlensatz.
+    Offene Protokolle hängen an. Ohne kommende Sitzung bleibt der Zahlensatz. Nur Sitzungen, die das Mitglied sieht.
     """
     from .models import FactionMeeting
 
+    sichtbar = sichtbar_fuer(membership, FactionMeeting.objects.filter(organization=organization))
     naechste = (
-        FactionMeeting.objects.filter(organization=organization, start__gte=timezone.now())
+        sichtbar.filter(start__gte=timezone.now())
         .exclude(status="cancelled")
         .select_related("schedule")
         .order_by("start")
@@ -162,9 +164,7 @@ def naechste_satz(organization: Any, stats_satz: str) -> str:
                 satz += f" Work lädt am {_zeitpunkt(versand)} automatisch ein."
             else:
                 satz += f" Die Einladung ist für {_zeitpunkt(versand)} geplant und braucht eine Freigabe."
-    offen = FactionMeeting.objects.filter(
-        organization=organization, status="completed", protocol_approved=False
-    ).count()
+    offen = sichtbar.filter(status="completed", protocol_approved=False).count()
     if offen:
         satz += f" Offene Protokolle: {formatting.format_count(offen)}."
     return satz
@@ -245,8 +245,8 @@ def _ausnahme(ausnahme: Any) -> str:
     return f"{ausnahme.get_exception_type_display()} am {_tag_kurz(ausnahme.original_date)}{grund}"
 
 
-def reihen(organization: Any) -> list[Reihe]:
-    """Sitzungsreihen als Satz wie im Muster, mit kommenden Pausen und Ausfallregeln."""
+def reihen(organization: Any, membership: Any) -> list[Reihe]:
+    """Sitzungsreihen als Satz wie im Muster, mit kommenden Pausen und Ausfallregeln; nur Reihen sichtbarer Arten."""
     from apps.work.organization import selectors
 
     from .models import FactionStandardAgendaItem
@@ -255,7 +255,8 @@ def reihen(organization: Any) -> list[Reihe]:
     mit_standard = FactionStandardAgendaItem.objects.filter(organization=organization).exists()
     heute = timezone.localdate()
     ergebnis = []
-    for schedule in selectors.faction_schedules(organization):
+    arten = sichtbare_arten(membership).values("pk")
+    for schedule in selectors.faction_schedules(organization).filter(meeting_type__in=arten):
         satz = f"{_rhythmus(schedule)} {_von_bis(schedule)}"
         if schedule.default_location:
             satz += f", {schedule.default_location}"
@@ -289,11 +290,14 @@ def _wochenzeit_minus(wochentag: int, uhrzeit: Any, stunden: int) -> str:
     return f"{WOCHENTAGE[tag]} {rest // 60:02d}:{rest % 60:02d}"
 
 
-def automatik(organization: Any) -> list[tuple[str, str]]:
-    """Was Work von selbst tut, als Paare (wann, was) in der Reihenfolge des Ablaufs."""
+def automatik(organization: Any, membership: Any) -> list[tuple[str, str]]:
+    """Was Work von selbst tut, als Paare (wann, was) in der Reihenfolge des Ablaufs; Reihen nur sichtbarer Arten."""
     einladung = get_invitation_settings(organization)
     protokoll = get_protocol_dispatch_settings(organization)
-    feste = [s for s in organization.meeting_schedules.filter(is_active=True, auto_invite=True) if s.auto_invite_ready]
+    reihen_qs = organization.meeting_schedules.filter(
+        is_active=True, auto_invite=True, meeting_type__in=sichtbare_arten(membership).values("pk")
+    )
+    feste = [s for s in reihen_qs if s.auto_invite_ready]
     eine = feste[0] if len(feste) == 1 else None
     punkte: list[tuple[str, str]] = []
 

@@ -44,8 +44,8 @@ class FactionMeetingType(models.Model):
 
     Jede Art zählt ihre Sitzungen für sich, ab ``number_start`` (:meth:`next_number`). ``settings`` bleibt leer und
     heißt „wie die Organisation“: Einladung, Erinnerung, Protokoll und Erster TOP liest Work weiterhin aus
-    ``organization.settings["faction"]``. Teilnehmende, Sichtbarkeit und Ablauf setzt Work in diesem Schritt noch
-    nicht durch (Folgeschritte von #1226).
+    ``organization.settings["faction"]``. Teilnehmende und Sichtbarkeit setzt Work durch (Issue #1239, nur über
+    :mod:`apps.work.faction.sitzungsarten`); den Ablauf noch nicht (Folgeschritte von #1226).
     """
 
     DEFAULT_NAME = "Fraktionssitzung"

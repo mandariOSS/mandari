@@ -14,6 +14,9 @@ ohne Objekt-Beschreibung und ohne Änderungs-Diff.
 Gast-Downloads (Issue #582): Der Eintrag selbst enthält weder Titel noch
 Dateinamen; beides steht nur bei Personen, die das Dokument sehen
 (Motion.visible_to). Für alle anderen ist der Eintrag gesperrt.
+
+Sitzungsarten (Issue #1239): Einträge zu Sitzungen und Reihen, die das Mitglied
+nicht sehen darf, fehlen ganz (wie die Sitzung selbst).
 """
 
 from django.core.paginator import Paginator
@@ -24,7 +27,7 @@ from apps.common.params import uuid_param
 from apps.work.motions.freigaben import guest_download_rows
 from apps.work.rahmen import NeueVorlageMixin
 
-from ..audit import locked_object_ids
+from ..audit import locked_object_ids, unsichtbare_eintraege
 from ..models import FactionAuditLog
 from ..visibility import LOCKED_PLACEHOLDER, can_view_internal
 
@@ -42,6 +45,7 @@ class FactionAuditLogView(NeueVorlageMixin, WorkViewMixin, TemplateView):
 
         qs = (
             FactionAuditLog.objects.filter(organization=self.organization)
+            .exclude(unsichtbare_eintraege(self.organization, self.membership))
             .select_related("membership__user")
             .order_by("-created_at")
         )

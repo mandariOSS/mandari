@@ -18,7 +18,8 @@ Tagesordnungen auf der Fraktions-Webseite:
 
 Inhalte — STRIKT öffentlich:
 - Sitzungen (kommende + vergangene im konfigurierten Zeitraum) mit
-  Datum/Ort/Status; Entwürfe erscheinen nie.
+  Datum/Ort/Status; Entwürfe erscheinen nie. Nur Sitzungsarten mit der
+  Sichtbarkeit „öffentlich“ (Issue #1239).
 - Je Sitzung ausschließlich ÖFFENTLICHE, angenommene TOPs (Nummer,
   Titel). NÖ-TOPs erscheinen niemals — auch nicht als Platzhalter.
 - Niemals Protokollinhalte, Beschlüsse, Teilnehmer, Video-Links oder
@@ -36,6 +37,7 @@ from django.utils import timezone
 from django.views.generic import View
 
 from .models import FactionMeeting, FactionPublicApiAccess
+from .sitzungsarten import oeffentlich
 
 API_VERSION = "1.0"
 
@@ -201,11 +203,13 @@ class PublicMeetingListView(PublicApiBaseView):
             return _not_found()
 
         window_start, window_end = _meeting_window(access)
-        meetings = FactionMeeting.objects.filter(
-            organization=access.organization,
-            status__in=PUBLIC_STATUSES,
-            start__gte=window_start,
-            start__lte=window_end,
+        meetings = oeffentlich(
+            FactionMeeting.objects.filter(
+                organization=access.organization,
+                status__in=PUBLIC_STATUSES,
+                start__gte=window_start,
+                start__lte=window_end,
+            )
         ).order_by("start")
         return _json_response(
             {
@@ -227,10 +231,12 @@ class PublicMeetingDetailView(PublicApiBaseView):
         if access is None:
             return _not_found()
 
-        meeting = FactionMeeting.objects.filter(
-            id=kwargs.get("meeting_id"),
-            organization=access.organization,
-            status__in=PUBLIC_STATUSES,
+        meeting = oeffentlich(
+            FactionMeeting.objects.filter(
+                id=kwargs.get("meeting_id"),
+                organization=access.organization,
+                status__in=PUBLIC_STATUSES,
+            )
         ).first()
         if meeting is None:
             return _json_response({"error": "not_found", "detail": "Unbekannte Sitzung."}, status=404, cache_seconds=0)

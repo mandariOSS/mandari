@@ -94,6 +94,7 @@ class DashboardView(WorkViewMixin, TemplateView):
         from django.db.models import Prefetch
 
         from apps.work.faction.models import FactionMeeting
+        from apps.work.faction.sitzungsarten import sichtbar_fuer
         from hub.ris import selectors as ris
         from insight_core.models import OParlOrganization
 
@@ -101,12 +102,15 @@ class DashboardView(WorkViewMixin, TemplateView):
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         meetings = []
 
-        # Faction meetings (not completed/cancelled, starting from today)
+        # Faction meetings (not completed/cancelled, starting from today), nur sichtbare (Issue #1239)
         faction_meetings = (
-            FactionMeeting.objects.filter(
-                organization=self.organization,
-                start__gte=today_start,
-                status__in=["draft", "planned", "invited", "ongoing"],
+            sichtbar_fuer(
+                self.membership,
+                FactionMeeting.objects.filter(
+                    organization=self.organization,
+                    start__gte=today_start,
+                    status__in=["draft", "planned", "invited", "ongoing"],
+                ),
             )
             .select_related("organization")
             .order_by("start")[:5]
