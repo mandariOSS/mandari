@@ -3,7 +3,7 @@
   "info": {
     "title": "mandari-Schnittstelle",
     "version": "1",
-    "description": "Eine Schnittstelle für alle Bereiche von mandari. Einstieg: `GET /api/`.\n\n- Ratsdaten kommen als OParl 1.1; offene Erweiterungen tragen das Präfix `kommparl:`, Erweiterungen nur für\n  mandari das Präfix `mandari:`.\n- Die Adressen der OParl-Objekte sind ihre Kennungen und ändern sich nicht.\n- Fehler kommen als `application/problem+json` (RFC 9457); die OParl-Ausgaben melden einfache Fehler als\n  `{\"error\", \"status\"}`.\n- Bedingte Abrufe über `ETag` und `If-None-Match`; abgekündigte Endpunkte tragen `Deprecation` (RFC 9745) und\n  `Sunset` (RFC 8594).\n- Schreibende Aufrufe sind Befehle mit `Idempotency-Key`.\n\nSchemas der OParl- und kommParl-Typen aus kommParl 0.1 (https://github.com/mandariOSS/kommParl, Commit 0d538716d576 vom 2026-10-18), einer Bearbeitung der OParl-Spezifikation 1.1 (https://github.com/OParl/spec), Lizenz CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Für die Beschreibung in JSON Schema 2020-12 umgewandelt."
+    "description": "Eine Schnittstelle für alle Bereiche von mandari. Einstieg: `GET /api/`.\n\n- Ratsdaten kommen als OParl 1.1; offene Erweiterungen tragen das Präfix `kommparl:`, Erweiterungen nur für\n  mandari das Präfix `mandari:`.\n- Die Adressen der OParl-Objekte sind ihre Kennungen und ändern sich nicht.\n- Fehler kommen als `application/problem+json` (RFC 9457); die OParl-Ausgaben melden einfache Fehler als\n  `{\"error\", \"status\"}`.\n- Bedingte Abrufe über `ETag` und `If-None-Match`; abgekündigte Endpunkte tragen `Deprecation` (RFC 9745) und\n  `Sunset` (RFC 8594).\n- Schreibende Aufrufe sind Befehle mit `Idempotency-Key`.\n\nSchemas der OParl- und kommParl-Typen aus kommParl 0.1 (https://github.com/mandariOSS/kommParl, Commit 575108d2d61c vom 2026-11-06), einer Bearbeitung der OParl-Spezifikation 1.1 (https://github.com/OParl/spec), Lizenz CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Für die Beschreibung in JSON Schema 2020-12 umgewandelt."
   },
   "tags": [
     {
@@ -17,6 +17,10 @@
     {
       "name": "OParl je Mandant",
       "description": "OParl 1.1 je Session-Mandant, sobald die Verwaltung die Schnittstelle freigeschaltet hat: anonym, lesend, nur Öffentliches; Änderungsfeed und Snapshot, wenn die Installation sie anbietet."
+    },
+    {
+      "name": "Profil Einreichung",
+      "description": "Profil Einreichung von kommParl 0.1 je Session-Mandant: einreichen, Bearbeitungsstand, Rücknahme, Rückmeldung zur Ladung. Nur mit Access-Token im Namen einer Person (Scope einreichung:schreiben), nur wenn die Installation den OpenID-Connect-Anbieter eingeschaltet hat."
     },
     {
       "name": "Session-API v1",
@@ -4007,6 +4011,977 @@
         ]
       }
     },
+    "/session/{tenant_slug}/api/oparl/body/kommparl/submission-rules/": {
+      "get": {
+        "operationId": "einreichung_regeln",
+        "summary": "Einreichungsregeln",
+        "description": "Einreichungsregeln für die angemeldete Person (kommparl:submissionRules, Profil https://schema.kommparl.de/0.1/profile/submission).",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Einreichungsregeln",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlSubmissionRules"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Profil Einreichung"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/body/kommparl/submissions/": {
+      "get": {
+        "operationId": "einreichung_liste",
+        "summary": "Einreichungen",
+        "description": "Eigene Einreichungen der angemeldeten Person (aus Work oder über das Profil), solange sie für deren Stelle einreichen darf, die jüngste zuerst; Einreichungen anderer Mitglieder derselben Stelle erscheinen nicht. Seiten wie in OParl (data, pagination, links). Jedes Element ist eine Einreichung (KommparlSubmission).",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Seite der Einreichungen",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Blätter-Verweise nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlSubmissionList"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "400": {
+            "description": "Ungültige Seitennummer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Profil Einreichung"
+        ]
+      },
+      "post": {
+        "operationId": "einreichung_einreichen",
+        "summary": "Einreichen",
+        "description": "Antrag, Änderungsantrag oder Anfrage einreichen (Befehl submission.submit). Die Antwort 201 ist die Eingangsbestätigung mit Eingangsnummer (receiptNumber), Eingangszeit (receivedAt) und Prüfsumme des Inhalts (contentDigest, RFC 9530); eine Wiederholung mit demselben Idempotency-Key liefert dieselbe.",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Pflicht. Dieselbe Anfrage mit demselben Schlüssel wirkt nur einmal und erhält dieselbe Antwort; derselbe Schlüssel mit anderem Inhalt ergibt 422. 1 bis 255 sichtbare ASCII-Zeichen, auch in Anführungszeichen.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 257
+            }
+          },
+          {
+            "name": "Content-Digest",
+            "in": "header",
+            "required": false,
+            "description": "Prüfsumme des Inhalts nach RFC 9530 (sha-256 oder sha-512); weicht sie ab, antwortet der Server mit 400.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Eingangsbestätigung",
+            "headers": {
+              "Location": {
+                "description": "Adresse der Einreichung",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlSubmission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key fehlt, Inhalt kein JSON-Objekt oder Content-Digest abweichend",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Kein application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Inhalt passt nicht zum Profil oder zu den Einreichungsregeln; Schlüssel schon verwendet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Anlagen konnten nicht abgelegt werden; mit demselben Schlüssel wiederholen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KommparlSubmissionRequest"
+              }
+            }
+          }
+        },
+        "x-mandari-command": "submission.submit",
+        "tags": [
+          "Profil Einreichung"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/body/kommparl/submissions/{id}/": {
+      "get": {
+        "operationId": "einreichung",
+        "summary": "Einreichung",
+        "description": "Eine eigene Einreichung mit Eingangsbestätigung und Bearbeitungsstand; Einreichungen anderer Personen ergeben 404.",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Einreichung",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Einreichung",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlSubmission"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Profil Einreichung"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/body/kommparl/submissions/{id}/withdraw/": {
+      "post": {
+        "operationId": "einreichung_zuruecknehmen",
+        "summary": "Einreichung zurücknehmen",
+        "description": "Rücknahme einer eigenen Einreichung (Befehl submission.withdraw), solange der Stand es zulässt (withdrawableStatus der Einreichungsregeln); sonst 409. Einreichungen anderer Personen ergeben 404. Inhalt: leer oder ein leeres JSON-Objekt.",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Pflicht. Dieselbe Anfrage mit demselben Schlüssel wirkt nur einmal und erhält dieselbe Antwort; derselbe Schlüssel mit anderem Inhalt ergibt 422. 1 bis 255 sichtbare ASCII-Zeichen, auch in Anführungszeichen.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 257
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Einreichung",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zurückgenommen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlSubmission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key fehlt, Inhalt kein JSON-Objekt oder Content-Digest abweichend",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Rücknahme in diesem Stand nicht zulässig",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Kein application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Inhalt passt nicht zum Profil oder zu den Einreichungsregeln; Schlüssel schon verwendet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "x-mandari-command": "submission.withdraw",
+        "tags": [
+          "Profil Einreichung"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/body/kommparl/uploads/": {
+      "post": {
+        "operationId": "einreichung_anlage_hochladen",
+        "summary": "Anlage hochladen",
+        "description": "Eine Datei im Teil „file“ (multipart/form-data), geprüft wie Antrags-Anhänge (Dateityp, Größe, Virenprüfung). Nur für Personen, die bei dieser Verwaltung einreichen dürfen (sonst 403); offene Dateien sind je Person begrenzt (429). Die Datei lässt sich 24 Stunden in genau einer Einreichung verwenden. Die Antwort nennt die Adresse, die beim Einreichen in upload steht; der Inhalt wird nie ausgeliefert.",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Hochgeladen",
+            "headers": {
+              "Location": {
+                "description": "Adresse der Datei",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlSubmissionUpload"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "400": {
+            "description": "Nicht genau eine Datei im Teil file",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Datei zu groß",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Dateityp nicht angenommen oder kein multipart/form-data",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datei leer, Virenprüfung nicht bestanden oder nicht verfügbar",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "contentMediaType": "application/octet-stream"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Profil Einreichung"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/body/kommparl/uploads/{id}/": {
+      "get": {
+        "operationId": "einreichung_anlage",
+        "summary": "Hochgeladene Anlage",
+        "description": "Angaben zu einer eigenen hochgeladenen Datei, nicht ihr Inhalt.",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Datei",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Angaben",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlSubmissionUpload"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Profil Einreichung"
+        ]
+      }
+    },
     "/session/{tenant_slug}/api/oparl/body/snapshot/": {
       "get": {
         "operationId": "oparl_mandant_snapshot",
@@ -5190,6 +6165,457 @@
         ],
         "tags": [
           "OParl je Mandant"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/meeting/{id}/kommparl/attendance/": {
+      "get": {
+        "operationId": "einreichung_rueckmeldung",
+        "summary": "Rückmeldung zur Ladung",
+        "description": "Stand der eigenen Rückmeldung zu einer Sitzung, zu der die Person geladen ist (kommparl:attendanceResponse).",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Sitzung",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stand",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlAttendanceResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Profil Einreichung"
+        ]
+      },
+      "post": {
+        "operationId": "einreichung_zurueckmelden",
+        "summary": "Zurückmelden",
+        "description": "Teilnahme oder Absage, bei einer Absage mit Vertretungswunsch und Grund (Befehl attendance.respond). Der Grund ist nur für die Verwaltung bestimmt und erscheint in keiner Ausgabe. Die Rückmeldung bestätigt zugleich den Empfang der Ladung.",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Pflicht. Dieselbe Anfrage mit demselben Schlüssel wirkt nur einmal und erhält dieselbe Antwort; derselbe Schlüssel mit anderem Inhalt ergibt 422. 1 bis 255 sichtbare ASCII-Zeichen, auch in Anführungszeichen.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 257
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Sitzung",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Neuer Stand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlAttendanceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key fehlt, Inhalt kein JSON-Objekt oder Content-Digest abweichend",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Die Sitzung nimmt keine Rückmeldungen mehr an",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Kein application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Inhalt passt nicht zum Profil oder zu den Einreichungsregeln; Schlüssel schon verwendet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KommparlAttendanceResponseRequest"
+              }
+            }
+          }
+        },
+        "x-mandari-command": "attendance.respond",
+        "tags": [
+          "Profil Einreichung"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/meeting/{id}/kommparl/invitation-receipt/": {
+      "post": {
+        "operationId": "einreichung_empfang_bestaetigen",
+        "summary": "Empfang der Ladung bestätigen",
+        "description": "Bestätigt den Empfang der Ladung (Befehl invitation.acknowledge); ein Abruf zählt nicht. Inhalt: leer oder ein leeres JSON-Objekt. Der Zeitpunkt der ersten Bestätigung bleibt.",
+        "security": [
+          {
+            "mandariOidc": [
+              "einreichung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Pflicht. Dieselbe Anfrage mit demselben Schlüssel wirkt nur einmal und erhält dieselbe Antwort; derselbe Schlüssel mit anderem Inhalt ergibt 422. 1 bis 255 sichtbare ASCII-Zeichen, auch in Anführungszeichen.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 257
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Sitzung",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bestätigt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlInvitationReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key fehlt, Inhalt kein JSON-Objekt oder Content-Digest abweichend",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Nur POST",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Die Ladung ist noch nicht zugestellt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Kein application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Inhalt passt nicht zum Profil oder zu den Einreichungsregeln; Schlüssel schon verwendet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProblem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "x-mandari-command": "invitation.acknowledge",
+        "tags": [
+          "Profil Einreichung"
         ]
       }
     },
@@ -7071,6 +8497,150 @@
         "title": "FeedbackStation",
         "type": "object"
       },
+      "KommparlAttendanceResponse": {
+        "title": "AttendanceResponse",
+        "description": "Stand der Rückmeldung der angemeldeten Person zu einer Sitzung (Profil Einreichung, Entwurf).",
+        "type": "object",
+        "required": [
+          "type",
+          "meeting",
+          "response",
+          "acceptsResponses"
+        ],
+        "properties": {
+          "type": {
+            "const": "https://schema.kommparl.de/0.1/AttendanceResponse"
+          },
+          "meeting": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "Sitzung (id des oparl:Meeting)."
+          },
+          "response": {
+            "description": "pending: noch keine Rückmeldung, attending: Teilnahme, notAttending: Absage.",
+            "enum": [
+              "pending",
+              "attending",
+              "notAttending"
+            ]
+          },
+          "substituteRequested": {
+            "description": "Bei notAttending: Vertretung erbeten.",
+            "type": "boolean"
+          },
+          "respondedAt": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$",
+            "description": "Zeitpunkt der letzten Rückmeldung."
+          },
+          "acknowledgedAt": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$",
+            "description": "Zeitpunkt, zu dem die Person den Empfang der Ladung bestätigt hat."
+          },
+          "acceptsResponses": {
+            "description": "Der Server nimmt zu dieser Sitzung noch Rückmeldungen an.",
+            "type": "boolean"
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "response"
+              ],
+              "properties": {
+                "response": {
+                  "const": "pending"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "respondedAt": false,
+                "substituteRequested": false
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "response"
+              ],
+              "properties": {
+                "response": {
+                  "const": "attending"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "substituteRequested": {
+                  "const": false
+                }
+              }
+            }
+          }
+        ],
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/AttendanceResponse.json"
+      },
+      "KommparlAttendanceResponseRequest": {
+        "title": "AttendanceResponseRequest",
+        "description": "Rückmeldung zur Ladung, die der Client per POST an kommparl:attendanceResponse sendet (Profil Einreichung, Entwurf).",
+        "type": "object",
+        "required": [
+          "response"
+        ],
+        "properties": {
+          "response": {
+            "description": "attending: Teilnahme, notAttending: Absage.",
+            "enum": [
+              "attending",
+              "notAttending"
+            ]
+          },
+          "substituteRequested": {
+            "description": "Nur bei notAttending: Die Person bittet um Vertretung.",
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Nur bei notAttending: Grund der Absage, nur für die Verwaltung bestimmt."
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "response"
+              ],
+              "properties": {
+                "response": {
+                  "const": "attending"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "substituteRequested": {
+                  "const": false
+                },
+                "reason": false
+              }
+            }
+          }
+        ],
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/AttendanceResponseRequest.json"
+      },
       "KommparlChangeList": {
         "title": "ChangeList",
         "description": "Seite des Änderungsfeeds einer Körperschaft (Profil Änderungsfeed, Entwurf).",
@@ -7266,6 +8836,92 @@
         "additionalProperties": false,
         "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/changes/CursorExpired.json"
       },
+      "KommparlInvitationReceipt": {
+        "title": "InvitationReceipt",
+        "description": "Bestätigung, dass die angemeldete Person die Ladung zu einer Sitzung erhalten hat (Profil Einreichung, Entwurf).",
+        "type": "object",
+        "required": [
+          "type",
+          "meeting",
+          "acknowledgedAt"
+        ],
+        "properties": {
+          "type": {
+            "const": "https://schema.kommparl.de/0.1/InvitationReceipt"
+          },
+          "meeting": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "Sitzung (id des oparl:Meeting)."
+          },
+          "acknowledgedAt": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$",
+            "description": "Zeitpunkt der ersten Bestätigung; spätere Bestätigungen ändern ihn nicht."
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/InvitationReceipt.json"
+      },
+      "KommparlProblem": {
+        "title": "Problem",
+        "description": "Fehler nach RFC 9457 (application/problem+json) (Profil Einreichung, Entwurf). Weitere Eigenschaften sind als Erweiterungen nach RFC 9457 erlaubt.",
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "properties": {
+          "type": {
+            "description": "Art des Problems als URI, sonst about:blank.",
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "description": "Kurzbeschreibung der Art des Problems.",
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "description": "HTTP-Statuscode.",
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "detail": {
+            "description": "Erklärung zu diesem Fall, zur Anzeige für die Person.",
+            "type": "string"
+          },
+          "instance": {
+            "description": "Adresse der Anfrage.",
+            "type": "string"
+          },
+          "errors": {
+            "description": "Bei 422: einzelne Verstöße mit der Stelle im Inhalt der Anfrage als JSON-Pointer (RFC 6901).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "detail"
+              ],
+              "properties": {
+                "pointer": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/Problem.json"
+      },
       "KommparlSnapshotEnd": {
         "title": "SnapshotEnd",
         "description": "Schlusszeile eines Snapshots (Profil Snapshot, Entwurf).",
@@ -7325,6 +8981,761 @@
         },
         "additionalProperties": false,
         "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/snapshot/SnapshotHeader.json"
+      },
+      "KommparlSubmission": {
+        "title": "Submission",
+        "description": "Eine Einreichung mit Eingangsbestätigung und Bearbeitungsstand (Profil Einreichung, Entwurf).",
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "body",
+          "submissionType",
+          "name",
+          "proposalText",
+          "status",
+          "statusHistory",
+          "receiptNumber",
+          "receivedAt",
+          "withdraw",
+          "created",
+          "modified"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "URL der Einreichung."
+          },
+          "type": {
+            "const": "https://schema.kommparl.de/0.1/Submission"
+          },
+          "body": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "Körperschaft (id des oparl:Body)."
+          },
+          "submissionType": {
+            "enum": [
+              "motion",
+              "amendment",
+              "question",
+              "majorQuestion",
+              "agendaRequest",
+              "resolution",
+              "other"
+            ],
+            "description": "Art der Einreichung."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Titel."
+          },
+          "proposalText": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Beschlussvorschlag; bei Anfragen die Fragen."
+          },
+          "reasoningText": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Begründung."
+          },
+          "financialImpactText": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Finanzielle Auswirkungen."
+          },
+          "urgent": {
+            "description": "Als dringlich eingereicht.",
+            "type": "boolean"
+          },
+          "urgencyReason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Begründung der Dringlichkeit."
+          },
+          "targetOrganization": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "Zuständiges Gremium (id eines oparl:Organization)."
+          },
+          "targetDate": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Gewünschter Beratungstermin."
+          },
+          "originator": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$",
+            "description": "Einreichende Stelle."
+          },
+          "originatorName": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name der einreichenden Stelle."
+          },
+          "coSigner": {
+            "description": "Mitunterzeichnende.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "contact": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Name der Ansprechperson."
+              },
+              "email": {
+                "type": "string",
+                "minLength": 1,
+                "description": "E-Mail-Adresse."
+              },
+              "phone": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Telefonnummer."
+              }
+            },
+            "patternProperties": {
+              "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false,
+            "description": "Ansprechperson für Rückfragen der Verwaltung."
+          },
+          "attachment": {
+            "description": "Angenommene Anlagen.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "size",
+                "contentDigest"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Dateiname."
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Medientyp, vom Server bestimmt."
+                },
+                "size": {
+                  "description": "Größe in Bytes.",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha-256=:[A-Za-z0-9+/]{43}=:$",
+                  "description": "Prüfsumme der Datei im Format des Felds Content-Digest (RFC 9530)."
+                }
+              },
+              "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+              },
+              "additionalProperties": false
+            }
+          },
+          "rejectedUpload": {
+            "description": "Nur in der Antwort auf das Einreichen: Anlagen, die der Server nicht angenommen hat.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "upload",
+                "reason"
+              ],
+              "properties": {
+                "upload": {
+                  "type": "string",
+                  "pattern": "^https?://[^\\s]+$",
+                  "description": "URL der hochgeladenen Datei aus upload der Anfrage."
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Grund als Code: mediaType, size, scan oder ein anderer Code des Servers."
+                }
+              },
+              "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+              },
+              "additionalProperties": false
+            }
+          },
+          "status": {
+            "enum": [
+              "submitted",
+              "registered",
+              "inReview",
+              "accepted",
+              "rejected",
+              "converted",
+              "withdrawn",
+              "closed"
+            ],
+            "description": "Bearbeitungsstand."
+          },
+          "statusHistory": {
+            "description": "Verlauf des Bearbeitungsstands, soweit der Server ihn festhält, ältester Eintrag zuerst. Der letzte Eintrag entspricht status.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "enum": [
+                    "submitted",
+                    "registered",
+                    "inReview",
+                    "accepted",
+                    "rejected",
+                    "converted",
+                    "withdrawn",
+                    "closed"
+                  ],
+                  "description": "Bearbeitungsstand."
+                },
+                "date": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$",
+                  "description": "Seit wann dieser Stand gilt, soweit bekannt."
+                }
+              },
+              "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+              },
+              "additionalProperties": false
+            }
+          },
+          "receiptNumber": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Eingangsnummer."
+          },
+          "receivedAt": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$",
+            "description": "Eingangszeit: Zeitpunkt, zu dem der Server die Einreichung angenommen hat."
+          },
+          "contentDigest": {
+            "type": "string",
+            "pattern": "^sha-256=:[A-Za-z0-9+/]{43}=:$",
+            "description": "Prüfsumme des Inhalts der Anfrage, mit der eingereicht wurde, im Format des Felds Content-Digest (RFC 9530). Zwingend in der Antwort auf das Einreichen; kann bei Einreichungen fehlen, die nicht über dieses Profil kamen."
+          },
+          "paper": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "Vorlage, die aus der Einreichung entstanden ist (id eines oparl:Paper), soweit die Person sie sehen darf."
+          },
+          "withdraw": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "URL für die Rücknahme."
+          },
+          "created": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+          },
+          "modified": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/Submission.json"
+      },
+      "KommparlSubmissionList": {
+        "title": "SubmissionList",
+        "description": "Seite der Einreichungen, die die angemeldete Person sehen darf, wie eine Objektliste in OParl 1.1 (Profil Einreichung, Entwurf). Jedes Element ist eine Einreichung nach Submission.json.",
+        "type": "object",
+        "required": [
+          "data",
+          "pagination",
+          "links"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "description": "Eine Einreichung nach Submission.json.",
+              "type": "object",
+              "required": [
+                "id",
+                "type"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^https?://[^\\s]+$"
+                },
+                "type": {
+                  "const": "https://schema.kommparl.de/0.1/Submission"
+                }
+              }
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "totalElements": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "elementsPerPage": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "currentPage": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "patternProperties": {
+              "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "first": {
+                "type": "string",
+                "pattern": "^https?://[^\\s]+$"
+              },
+              "prev": {
+                "type": "string",
+                "pattern": "^https?://[^\\s]+$"
+              },
+              "next": {
+                "type": "string",
+                "pattern": "^https?://[^\\s]+$"
+              },
+              "last": {
+                "type": "string",
+                "pattern": "^https?://[^\\s]+$"
+              },
+              "self": {
+                "type": "string",
+                "pattern": "^https?://[^\\s]+$"
+              }
+            },
+            "patternProperties": {
+              "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/SubmissionList.json"
+      },
+      "KommparlSubmissionRequest": {
+        "title": "SubmissionRequest",
+        "description": "Inhalt einer Einreichung, den der Client per POST an kommparl:submission sendet (Profil Einreichung, Entwurf).",
+        "type": "object",
+        "required": [
+          "submissionType",
+          "name",
+          "proposalText"
+        ],
+        "properties": {
+          "submissionType": {
+            "enum": [
+              "motion",
+              "amendment",
+              "question",
+              "majorQuestion",
+              "agendaRequest",
+              "resolution",
+              "other"
+            ],
+            "description": "Art der Einreichung; einer der Werte aus acceptedTypes der Einreichungsregeln."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Titel."
+          },
+          "proposalText": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Beschlussvorschlag; bei Anfragen die Fragen."
+          },
+          "reasoningText": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Begründung."
+          },
+          "financialImpactText": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Finanzielle Auswirkungen."
+          },
+          "urgent": {
+            "description": "Die Einreichung soll als dringlich behandelt werden.",
+            "type": "boolean"
+          },
+          "urgencyReason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Begründung der Dringlichkeit."
+          },
+          "targetOrganization": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "Zuständiges Gremium (id eines oparl:Organization der Körperschaft)."
+          },
+          "targetDate": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Gewünschter Beratungstermin."
+          },
+          "originator": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$",
+            "description": "Einreichende Stelle; eine id aus originator der Einreichungsregeln."
+          },
+          "coSigner": {
+            "description": "Mitunterzeichnende, je Eintrag ein Name.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "contact": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Name der Ansprechperson."
+              },
+              "email": {
+                "type": "string",
+                "minLength": 1,
+                "description": "E-Mail-Adresse."
+              },
+              "phone": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Telefonnummer."
+              }
+            },
+            "patternProperties": {
+              "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false,
+            "description": "Ansprechperson für Rückfragen der Verwaltung."
+          },
+          "upload": {
+            "description": "Anlagen: URLs zuvor hochgeladener Dateien (SubmissionUpload).",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^https?://[^\\s]+$"
+            },
+            "uniqueItems": true
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/SubmissionRequest.json"
+      },
+      "KommparlSubmissionRules": {
+        "title": "SubmissionRules",
+        "description": "Einreichungsregeln der Körperschaft für die angemeldete Person (Profil Einreichung, Entwurf).",
+        "type": "object",
+        "required": [
+          "type",
+          "body",
+          "acceptedTypes",
+          "acceptedProperties",
+          "requiredProperties",
+          "formRequirement",
+          "withdrawableStatus",
+          "upload",
+          "originator"
+        ],
+        "properties": {
+          "type": {
+            "const": "https://schema.kommparl.de/0.1/SubmissionRules"
+          },
+          "body": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "Körperschaft (id des oparl:Body)."
+          },
+          "acceptedTypes": {
+            "description": "Arten von Einreichungen, die der Server annimmt.",
+            "type": "array",
+            "items": {
+              "enum": [
+                "motion",
+                "amendment",
+                "question",
+                "majorQuestion",
+                "agendaRequest",
+                "resolution",
+                "other"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "acceptedProperties": {
+            "description": "Freiwillige Angaben einer Einreichung, die der Server verarbeitet.",
+            "type": "array",
+            "items": {
+              "enum": [
+                "reasoningText",
+                "financialImpactText",
+                "urgent",
+                "urgencyReason",
+                "targetOrganization",
+                "targetDate",
+                "originator",
+                "coSigner",
+                "contact",
+                "upload"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "requiredProperties": {
+            "description": "Freiwillige Angaben, die der Server nach der Geschäftsordnung zusätzlich verlangt.",
+            "type": "array",
+            "items": {
+              "enum": [
+                "reasoningText",
+                "financialImpactText",
+                "urgent",
+                "urgencyReason",
+                "targetOrganization",
+                "targetDate",
+                "originator",
+                "coSigner",
+                "contact",
+                "upload"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "formRequirement": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Formerfordernis; text: Die Einreichung über dieses Profil genügt der Form."
+          },
+          "withdrawableStatus": {
+            "description": "Bearbeitungsstände, in denen eine Rücknahme zulässig ist.",
+            "type": "array",
+            "items": {
+              "enum": [
+                "submitted",
+                "registered",
+                "inReview",
+                "accepted",
+                "rejected",
+                "converted",
+                "withdrawn",
+                "closed"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "deadline": {
+            "description": "Fristen nach der Geschäftsordnung.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "description"
+              ],
+              "properties": {
+                "submissionType": {
+                  "enum": [
+                    "motion",
+                    "amendment",
+                    "question",
+                    "majorQuestion",
+                    "agendaRequest",
+                    "resolution",
+                    "other"
+                  ],
+                  "description": "Art, für die die Frist gilt; fehlt, wenn sie für alle Arten gilt."
+                },
+                "daysBeforeMeeting": {
+                  "description": "Frist in Tagen vor der Sitzung.",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Frist als Text."
+                }
+              },
+              "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+              },
+              "additionalProperties": false
+            }
+          },
+          "rulesOfProcedure": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "Geschäftsordnung."
+          },
+          "upload": {
+            "description": "Grenzen für Anlagen.",
+            "type": "object",
+            "required": [
+              "maxSize",
+              "mediaTypes"
+            ],
+            "properties": {
+              "maxSize": {
+                "description": "Höchstgröße einer Datei in Bytes.",
+                "type": "integer",
+                "minimum": 1
+              },
+              "mediaTypes": {
+                "description": "Medientypen, die der Server annimmt.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "patternProperties": {
+              "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+          },
+          "originator": {
+            "description": "Stellen, für die die angemeldete Person einreichen darf; leer, wenn sie nicht einreichen darf.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$",
+                  "description": "Kennung der Stelle; bei einem oparl:Organization dessen id."
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Name der Stelle."
+                }
+              },
+              "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/SubmissionRules.json"
+      },
+      "KommparlSubmissionUpload": {
+        "title": "SubmissionUpload",
+        "description": "Eine hochgeladene Anlage, die noch zu keiner Einreichung gehört (Profil Einreichung, Entwurf).",
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "mediaType",
+          "size",
+          "contentDigest",
+          "created",
+          "expires"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$",
+            "description": "URL der hochgeladenen Datei; sie steht in upload einer Einreichung."
+          },
+          "type": {
+            "const": "https://schema.kommparl.de/0.1/SubmissionUpload"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Dateiname."
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Medientyp, vom Server bestimmt."
+          },
+          "size": {
+            "description": "Größe in Bytes.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "contentDigest": {
+            "type": "string",
+            "pattern": "^sha-256=:[A-Za-z0-9+/]{43}=:$",
+            "description": "Prüfsumme der Datei im Format des Felds Content-Digest (RFC 9530)."
+          },
+          "created": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+          },
+          "expires": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$",
+            "description": "Bis zu diesem Zeitpunkt lässt sich die Datei in einer Einreichung verwenden."
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/SubmissionUpload.json"
       },
       "ListMeta": {
         "properties": {
@@ -7726,6 +10137,18 @@
             "format": "uri"
           },
           "kommparl:snapshot": {
+            "type": "string",
+            "format": "uri"
+          },
+          "kommparl:submission": {
+            "type": "string",
+            "format": "uri"
+          },
+          "kommparl:submissionUpload": {
+            "type": "string",
+            "format": "uri"
+          },
+          "kommparl:submissionRules": {
             "type": "string",
             "format": "uri"
           },
@@ -8547,6 +10970,14 @@
             "items": {
               "$ref": "#/components/schemas/OParlAgendaItem"
             }
+          },
+          "kommparl:attendanceResponse": {
+            "type": "string",
+            "format": "uri"
+          },
+          "kommparl:invitationReceipt": {
+            "type": "string",
+            "format": "uri"
           },
           "license": {
             "type": "string",
@@ -9583,6 +12014,20 @@
       "BearerOrSession": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "mandariOidc": {
+        "type": "oauth2",
+        "description": "OpenID-Connect-Anbieter der Installation (Discovery unter /.well-known/openid-configuration). Nur Access-Tokens im Namen einer Person; PKCE mit S256 ist Pflicht.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "/oauth/authorize/",
+            "tokenUrl": "/oauth/token/",
+            "refreshUrl": "/oauth/token/",
+            "scopes": {
+              "einreichung:schreiben": "Anträge in deinem Namen einreichen"
+            }
+          }
+        }
       }
     }
   }

@@ -47,8 +47,9 @@ from mandari_oparl.ids import canonical_id, canonical_uri
 from hub.ris.canonical import Objekt, as_list, clean, file_text, iso, iso_date, iso_day, schema_type, tombstone
 
 #: Version der Abbildung (2: Umsetzungsstand und Genehmigung der Niederschrift, Issue #525;
-#: 3: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216)
-VERSION: Final = 3
+#: 3: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216;
+#: 4: Adressen des Profils Einreichung an Body und Sitzung, wenn die Ausgabe es anbietet, Issue #1228)
+VERSION: Final = 4
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
 #: Der Änderungsfeed nennt danach auch das einbettende Objekt (``hub.api.changes``, Issue #1229); ein Test prüft die
@@ -187,6 +188,37 @@ class SessionUris:
         """Snapshot des Mandanten nach dem Profil von kommParl (``kommparl:snapshot``)."""
         return f"{self.base}body/kommparl/snapshot/"
 
+    # -- Profil Einreichung (Issue #1228) --------------------------------------------------------------
+
+    def submissions(self) -> str:
+        """Einreichungen des Mandanten (``kommparl:submission``)."""
+        return f"{self.base}body/kommparl/submissions/"
+
+    def submission(self, pk: Any) -> str:
+        return f"{self.submissions()}{pk}/"
+
+    def submission_withdraw(self, pk: Any) -> str:
+        return f"{self.submission(pk)}withdraw/"
+
+    def submission_uploads(self) -> str:
+        """Anlagen hochladen (``kommparl:submissionUpload``)."""
+        return f"{self.base}body/kommparl/uploads/"
+
+    def submission_upload(self, pk: Any) -> str:
+        return f"{self.submission_uploads()}{pk}/"
+
+    def submission_rules(self) -> str:
+        """Einreichungsregeln (``kommparl:submissionRules``)."""
+        return f"{self.base}body/kommparl/submission-rules/"
+
+    def attendance_response(self, meeting_pk: Any) -> str:
+        """Rückmeldung zur Ladung (``kommparl:attendanceResponse``)."""
+        return f"{self.obj('meeting', meeting_pk)}kommparl/attendance/"
+
+    def invitation_receipt(self, meeting_pk: Any) -> str:
+        """Empfangsbestätigung der Ladung (``kommparl:invitationReceipt``)."""
+        return f"{self.obj('meeting', meeting_pk)}kommparl/invitation-receipt/"
+
 
 def _timestamps(obj: Any) -> Objekt:
     return {"created": iso(obj.created_at), "modified": iso(obj.updated_at)}
@@ -204,6 +236,7 @@ class SessionMapping:
         changes: bool = False,
         id_base: str | Callable[[], str] | None = None,
         conforms_to: Sequence[str] = (),
+        submission: bool = False,
     ) -> None:
         self.tenant = tenant
         #: Adressen aus ``base``, kanonische Kennungen aus ``id_base`` (``SessionUris``)
@@ -211,6 +244,8 @@ class SessionMapping:
         self.source = source
         #: Die Ausgabe bietet Änderungsfeed und Snapshot an; der Body nennt dann deren Adressen
         self.changes = changes
+        #: Die Ausgabe bietet das Profil Einreichung an; Body und Sitzungen nennen dann dessen Adressen
+        self.submission = submission
         #: Kennungen aus kommParl, die die Ausgabe vollständig erfüllt (``System``, ``kommparl:conformsTo``)
         self.conforms_to = list(conforms_to)
 
@@ -268,6 +303,10 @@ class SessionMapping:
                 "kommparl:snapshot": self.uris.kommparl_snapshot() if self.changes else None,
                 "mandari:changes": self.uris.changes() if self.changes else None,
                 "mandari:snapshot": self.uris.snapshot() if self.changes else None,
+                # Profil Einreichung (Issue #1228): Adressen, die Endpunkte verlangen eine Anmeldung
+                "kommparl:submission": self.uris.submissions() if self.submission else None,
+                "kommparl:submissionUpload": self.uris.submission_uploads() if self.submission else None,
+                "kommparl:submissionRules": self.uris.submission_rules() if self.submission else None,
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)
@@ -390,8 +429,18 @@ class SessionMapping:
                 or None,
                 # Sitzungsformat (Issue #138): nie der Zugangsweg der Zugeschalteten
                 **self._format_extension(meeting),
+                **self._submission_extension(meeting),
             }
         )
+
+    def _submission_extension(self, meeting: Any) -> Objekt:
+        """Rückmeldung zur Ladung und Empfangsbestätigung (Profil Einreichung), wenn die Ausgabe es anbietet."""
+        if not self.submission:
+            return {}
+        return {
+            "kommparl:attendanceResponse": self.uris.attendance_response(meeting.id),
+            "kommparl:invitationReceipt": self.uris.invitation_receipt(meeting.id),
+        }
 
     def _meeting_date(self, meeting: Any) -> Objekt:
         """Nichtöffentliche Sitzung mit veröffentlichtem Termin: ohne Ort, Tagesordnung, Anlagen und Format."""
@@ -410,6 +459,8 @@ class SessionMapping:
                 "agendaItem": [],
                 **_timestamps(meeting),
                 "mandari:nonPublic": True,
+                # Geladene melden sich auch zu nichtöffentlichen Sitzungen zurück (Profil Einreichung)
+                **self._submission_extension(meeting),
             }
         )
 

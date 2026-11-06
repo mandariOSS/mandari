@@ -49,6 +49,23 @@ def content_hash(value: object) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
 
 
+#: Zweck des Schlüssels für ``keyed_content_hash`` (Djangos ``salted_hmac``: eigener Schlüssel je Zweck)
+KEYED_HASH_SALT: Final = "hub.commands.inhalt"
+
+
+def keyed_content_hash(value: object) -> str:
+    """
+    HMAC-SHA-256 (hexadezimal, klein) über das kanonische JSON von ``value`` mit einem Schlüssel der Installation.
+
+    Für personenbezogene Befehle (``docs/adr/20260929-befehle-synchron.md``, Nachtrag #1228): Gleicher Inhalt ergibt
+    denselben Wert, aber ohne den Schlüssel lässt sich der Inhalt weder nachrechnen noch aus bekannten Kennungen und
+    kurzen Gründen erraten. Der Schlüssel stammt aus ``SECRET_KEY`` (``salted_hmac`` mit ``KEYED_HASH_SALT``).
+    """
+    from django.utils.crypto import salted_hmac
+
+    return salted_hmac(KEYED_HASH_SALT, canonical_json(value), algorithm="sha256").hexdigest()
+
+
 def _serialize(value: object) -> str:
     if value is None:
         return "null"

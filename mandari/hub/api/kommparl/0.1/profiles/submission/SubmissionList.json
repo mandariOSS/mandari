@@ -1,0 +1,92 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/SubmissionList.json",
+    "title": "SubmissionList",
+    "description": "Seite der Einreichungen, die die angemeldete Person sehen darf, wie eine Objektliste in OParl 1.1 (Profil Einreichung, Entwurf). Jedes Element ist eine Einreichung nach Submission.json.",
+    "type": "object",
+    "required": [
+        "data",
+        "pagination",
+        "links"
+    ],
+    "properties": {
+        "data": {
+            "type": "array",
+            "items": {
+                "description": "Eine Einreichung nach Submission.json.",
+                "type": "object",
+                "required": [
+                    "id",
+                    "type"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/$defs/url"
+                    },
+                    "type": {
+                        "const": "https://schema.kommparl.de/0.1/Submission"
+                    }
+                }
+            }
+        },
+        "pagination": {
+            "type": "object",
+            "properties": {
+                "totalElements": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "elementsPerPage": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "currentPage": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "totalPages": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+        },
+        "links": {
+            "type": "object",
+            "properties": {
+                "first": {
+                    "$ref": "#/$defs/url"
+                },
+                "prev": {
+                    "$ref": "#/$defs/url"
+                },
+                "next": {
+                    "$ref": "#/$defs/url"
+                },
+                "last": {
+                    "$ref": "#/$defs/url"
+                },
+                "self": {
+                    "$ref": "#/$defs/url"
+                }
+            },
+            "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "url": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        }
+    }
+}

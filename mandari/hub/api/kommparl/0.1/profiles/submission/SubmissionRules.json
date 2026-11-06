@@ -1,0 +1,210 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/SubmissionRules.json",
+    "title": "SubmissionRules",
+    "description": "Einreichungsregeln der Körperschaft für die angemeldete Person (Profil Einreichung, Entwurf).",
+    "type": "object",
+    "required": [
+        "type",
+        "body",
+        "acceptedTypes",
+        "acceptedProperties",
+        "requiredProperties",
+        "formRequirement",
+        "withdrawableStatus",
+        "upload",
+        "originator"
+    ],
+    "properties": {
+        "type": {
+            "const": "https://schema.kommparl.de/0.1/SubmissionRules"
+        },
+        "body": {
+            "description": "Körperschaft (id des oparl:Body).",
+            "$ref": "#/$defs/url"
+        },
+        "acceptedTypes": {
+            "description": "Arten von Einreichungen, die der Server annimmt.",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/submissionType"
+            },
+            "uniqueItems": true
+        },
+        "acceptedProperties": {
+            "description": "Freiwillige Angaben einer Einreichung, die der Server verarbeitet.",
+            "type": "array",
+            "items": {
+                "enum": [
+                    "reasoningText",
+                    "financialImpactText",
+                    "urgent",
+                    "urgencyReason",
+                    "targetOrganization",
+                    "targetDate",
+                    "originator",
+                    "coSigner",
+                    "contact",
+                    "upload"
+                ]
+            },
+            "uniqueItems": true
+        },
+        "requiredProperties": {
+            "description": "Freiwillige Angaben, die der Server nach der Geschäftsordnung zusätzlich verlangt.",
+            "type": "array",
+            "items": {
+                "enum": [
+                    "reasoningText",
+                    "financialImpactText",
+                    "urgent",
+                    "urgencyReason",
+                    "targetOrganization",
+                    "targetDate",
+                    "originator",
+                    "coSigner",
+                    "contact",
+                    "upload"
+                ]
+            },
+            "uniqueItems": true
+        },
+        "formRequirement": {
+            "description": "Formerfordernis; text: Die Einreichung über dieses Profil genügt der Form.",
+            "$ref": "#/$defs/text"
+        },
+        "withdrawableStatus": {
+            "description": "Bearbeitungsstände, in denen eine Rücknahme zulässig ist.",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/status"
+            },
+            "uniqueItems": true
+        },
+        "deadline": {
+            "description": "Fristen nach der Geschäftsordnung.",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "description"
+                ],
+                "properties": {
+                    "submissionType": {
+                        "description": "Art, für die die Frist gilt; fehlt, wenn sie für alle Arten gilt.",
+                        "$ref": "#/$defs/submissionType"
+                    },
+                    "daysBeforeMeeting": {
+                        "description": "Frist in Tagen vor der Sitzung.",
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "description": {
+                        "description": "Frist als Text.",
+                        "$ref": "#/$defs/text"
+                    }
+                },
+                "patternProperties": {
+                    "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+                },
+                "additionalProperties": false
+            }
+        },
+        "rulesOfProcedure": {
+            "description": "Geschäftsordnung.",
+            "$ref": "#/$defs/url"
+        },
+        "upload": {
+            "description": "Grenzen für Anlagen.",
+            "type": "object",
+            "required": [
+                "maxSize",
+                "mediaTypes"
+            ],
+            "properties": {
+                "maxSize": {
+                    "description": "Höchstgröße einer Datei in Bytes.",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "mediaTypes": {
+                    "description": "Medientypen, die der Server annimmt.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/text"
+                    }
+                }
+            },
+            "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+        },
+        "originator": {
+            "description": "Stellen, für die die angemeldete Person einreichen darf; leer, wenn sie nicht einreichen darf.",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name"
+                ],
+                "properties": {
+                    "id": {
+                        "description": "Kennung der Stelle; bei einem oparl:Organization dessen id.",
+                        "$ref": "#/$defs/uri"
+                    },
+                    "name": {
+                        "description": "Name der Stelle.",
+                        "$ref": "#/$defs/text"
+                    }
+                },
+                "patternProperties": {
+                    "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+                },
+                "additionalProperties": false
+            }
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "status": {
+            "enum": [
+                "submitted",
+                "registered",
+                "inReview",
+                "accepted",
+                "rejected",
+                "converted",
+                "withdrawn",
+                "closed"
+            ]
+        },
+        "submissionType": {
+            "enum": [
+                "motion",
+                "amendment",
+                "question",
+                "majorQuestion",
+                "agendaRequest",
+                "resolution",
+                "other"
+            ]
+        },
+        "text": {
+            "type": "string",
+            "minLength": 1
+        },
+        "uri": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$"
+        },
+        "url": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        }
+    }
+}

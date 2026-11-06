@@ -94,6 +94,16 @@
                 "schema": "AgendaItem.json"
             }
         },
+        "kommparl:attendanceResponse": {
+            "description": "{{ Meeting.properties.kommparl:attendanceResponse.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "kommparl:invitationReceipt": {
+            "description": "{{ Meeting.properties.kommparl:invitationReceipt.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "license": {
             "type": "string"
         },

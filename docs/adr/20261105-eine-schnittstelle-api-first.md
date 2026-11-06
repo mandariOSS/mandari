@@ -243,3 +243,27 @@ Die Entscheidung bleibt. Etappe 3 legt Folgendes fest ([SCHNITTSTELLE.md](../SCH
   gewordene Tagesordnungspunkte des Bestands, Wechsel der Vorlage einer Datei im Bestand). Sie bleiben unter #1229
   offen. Die Regel bleibt: Die Profile kommen erst hinzu, wenn alle erfüllt sind, und nur, wenn die Installation den
   Feed anbietet.
+
+## Nachtrag zur Umsetzung (#1228)
+
+Die Entscheidung bleibt. Etappe 4 setzt das Profil Einreichung um ([SCHNITTSTELLE.md](../SCHNITTSTELLE.md), Abschnitt
+„Profil Einreichung“; Spezifikation im Repository `mandariOSS/kommParl`, Kapitel „Profil Einreichung“).
+
+- **Adressen an der OParl-Ausgabe je Mandant, nicht unter `/api/v1/einreichung/`.** Das Profil hängt seine Endpunkte
+  wie Änderungsfeed und Snapshot an Body und Sitzung (`kommparl:submission`, `kommparl:attendanceResponse` …). Die
+  Adresse aus A6 (`POST /api/v1/einreichung/antraege`) entsteht deshalb nicht. Nur die Session-Ausgabe nennt das
+  Profil, der Aggregator nimmt keine Einreichungen an; `kommparl:conformsTo` nennt es deshalb nur am `System` dieser
+  Ausgabe und nur mit eingeschaltetem OpenID-Connect-Anbieter, nicht am Einstieg `/api/`.
+- **Nur Tokens im Namen einer Person.** Das Profil nimmt nur Access-Tokens mit `einreichung:schreiben` an. Der Katalog
+  erlaubt den Scope auch Diensten; ohne Person bleibt er wirkungslos (403). Das API-Token der Session-API v1 reicht dort
+  weiter ein, bis die v1 abgekündigt wird.
+- **Befehlsparität erreicht.** Mit `submission.withdraw`, `attendance.respond` und `invitation.acknowledge` hat jeder
+  registrierte Befehl einen Endpunkt; die Ausnahmeliste ist leer. Die Rückmeldewege der Oberfläche (Link, Portal,
+  Sitzungsdienst) nutzen die Befehle noch nicht (#541).
+- **Herkunft der Schemas:** Die Profilschemas sind mit `scripts/kommparl_schemas.py` vom Merge-Commit des Profils in
+  kommParl übernommen (`HERKUNFT.json`).
+- **Nur eigene Einreichungen.** Lesen und Rücknahme gelten nur für Einreichungen, die die Person selbst eingereicht
+  hat (`SessionApplication.submitted_by_user`, aus Work und aus dem Profil), solange sie für deren Organisation
+  einreichen darf. Das Recht, für dieselbe Organisation einzureichen, öffnet die Einreichungen anderer Mitglieder
+  nicht: Sie enthalten Kontaktdaten und Texte, die Work nur nach seiner Sichtbarkeit zeigt. Anlagen hochladen kann
+  nur, wer bei der Verwaltung einreichen darf.

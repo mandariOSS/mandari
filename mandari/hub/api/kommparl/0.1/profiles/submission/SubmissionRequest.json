@@ -1,0 +1,130 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/SubmissionRequest.json",
+    "title": "SubmissionRequest",
+    "description": "Inhalt einer Einreichung, den der Client per POST an kommparl:submission sendet (Profil Einreichung, Entwurf).",
+    "type": "object",
+    "required": [
+        "submissionType",
+        "name",
+        "proposalText"
+    ],
+    "properties": {
+        "submissionType": {
+            "description": "Art der Einreichung; einer der Werte aus acceptedTypes der Einreichungsregeln.",
+            "$ref": "#/$defs/submissionType"
+        },
+        "name": {
+            "description": "Titel.",
+            "$ref": "#/$defs/text"
+        },
+        "proposalText": {
+            "description": "Beschlussvorschlag; bei Anfragen die Fragen.",
+            "$ref": "#/$defs/text"
+        },
+        "reasoningText": {
+            "description": "Begründung.",
+            "$ref": "#/$defs/text"
+        },
+        "financialImpactText": {
+            "description": "Finanzielle Auswirkungen.",
+            "$ref": "#/$defs/text"
+        },
+        "urgent": {
+            "description": "Die Einreichung soll als dringlich behandelt werden.",
+            "type": "boolean"
+        },
+        "urgencyReason": {
+            "description": "Begründung der Dringlichkeit.",
+            "$ref": "#/$defs/text"
+        },
+        "targetOrganization": {
+            "description": "Zuständiges Gremium (id eines oparl:Organization der Körperschaft).",
+            "$ref": "#/$defs/url"
+        },
+        "targetDate": {
+            "description": "Gewünschter Beratungstermin.",
+            "$ref": "#/$defs/date"
+        },
+        "originator": {
+            "description": "Einreichende Stelle; eine id aus originator der Einreichungsregeln.",
+            "$ref": "#/$defs/uri"
+        },
+        "coSigner": {
+            "description": "Mitunterzeichnende, je Eintrag ein Name.",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/text"
+            }
+        },
+        "contact": {
+            "description": "Ansprechperson für Rückfragen der Verwaltung.",
+            "$ref": "#/$defs/contact"
+        },
+        "upload": {
+            "description": "Anlagen: URLs zuvor hochgeladener Dateien (SubmissionUpload).",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/url"
+            },
+            "uniqueItems": true
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "contact": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "description": "Name der Ansprechperson.",
+                    "$ref": "#/$defs/text"
+                },
+                "email": {
+                    "description": "E-Mail-Adresse.",
+                    "$ref": "#/$defs/text"
+                },
+                "phone": {
+                    "description": "Telefonnummer.",
+                    "$ref": "#/$defs/text"
+                }
+            },
+            "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+        },
+        "date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "submissionType": {
+            "enum": [
+                "motion",
+                "amendment",
+                "question",
+                "majorQuestion",
+                "agendaRequest",
+                "resolution",
+                "other"
+            ]
+        },
+        "text": {
+            "type": "string",
+            "minLength": 1
+        },
+        "uri": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$"
+        },
+        "url": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        }
+    }
+}

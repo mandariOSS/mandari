@@ -25,6 +25,7 @@ Gemessen wird die letzte Endung des Dateinamens; Pfadangaben im Namen ändern ni
 | Bereich | Profil | Höchstgröße | Prüfende Stelle |
 |---|---|---|---|
 | Session: Anlagen zu Vorlagen und Sitzungen | `DOCUMENTS` | `file_service` | `apps/session/services/file_service.py` |
+| Session: Anlagen über das Profil Einreichung | `DOCUMENTS`, nur Endungen der Antrags-Anhänge | `file_service` | `apps/session/api/einreichung.py` (`uploads_view`) |
 | Work: Anlagen zu Anträgen | `DOCUMENTS` | 50 MB | `MotionDocumentForm.clean_file` |
 | Work: Antrags-Import (Textübernahme) | `IMPORTABLE_DOCUMENTS` | 25 MB | `DocumentImportView` |
 | Work: Briefköpfe | `PDF` | 10 MB | `LetterheadCreateView`, `LetterheadEditView` |

@@ -63,7 +63,7 @@ vertrauenswürdig markiert werden und kommen ohne Zustimmungsseite aus. Fremde A
 | `profile` | Name (`name`, `given_name`, `family_name`) | ja | nein |
 | `email` | E-Mail-Adresse (`email`, `email_verified`) | ja | nein |
 | `ratsdaten:lesen` | Ratsdaten lesen, siehe unten | ja | ja |
-| `einreichung:schreiben` | Anträge einreichen (folgt mit dem Profil Einreichung) | ja | ja |
+| `einreichung:schreiben` | Profil Einreichung: einreichen, zurücknehmen, zur Ladung zurückmelden (nur im Namen einer Person wirksam) | ja | ja |
 | `mandari:bereitstellung` | Bereitstellung von Organisationen und Mandanten (folgt) | nein | ja |
 
 Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliche Inhalte gibt es über Tokens
@@ -193,13 +193,34 @@ curl -H 'Authorization: Bearer mandari_at_…' https://mandari.example.org/api/v
   lesen dürfte: nur mit dem Recht „API-Zugang“ in diesem Mandanten, sonst wie ein anonymer Aufruf. Nichtöffentliche
   Sitzungen und Vorlagen, Texte, interne Notizen und Anträge gibt es nicht, auch wenn die Person sie sehen darf.
 - **Ein Dienst** (Client Credentials) liest nur, was anonym lesbar ist.
-- Einreichen geht über Access-Tokens noch nicht; dafür bleibt bis zum Profil Einreichung das API-Token des
-  Mandanten.
+- Einreichen geht in der Session-API v1 weiter nur mit dem API-Token des Mandanten. Mit Access-Tokens reichen
+  Anwendungen über das Profil Einreichung ein (nächster Abschnitt).
 
 Fehler kommen als `application/problem+json` (RFC 9457) mit `WWW-Authenticate` nach RFC 6750: 401 mit
 `error="invalid_token"` für unbekannte, abgelaufene oder widerrufene Tokens, 403 mit
 `error="insufficient_scope"` ohne `ratsdaten:lesen`. Die bisherigen API-Tokens der Session-API (64 Zeichen)
 funktionieren unverändert.
+
+## Einreichen: Profil Einreichung
+
+Anträge und Anfragen einreichen, den Bearbeitungsstand abrufen, Einreichungen zurücknehmen und sich zur Ladung
+zurückmelden: über das [Profil Einreichung von kommParl](../SCHNITTSTELLE.md#profil-einreichung-1228) je
+Session-Mandant. Die Adressen stehen an Body und Sitzung der OParl-Ausgabe des Mandanten
+(`kommparl:submission`, `kommparl:submissionUpload`, `kommparl:submissionRules`, `kommparl:attendanceResponse`,
+`kommparl:invitationReceipt`).
+
+```bash
+curl -X POST -H 'Authorization: Bearer mandari_at_…' -H 'Idempotency-Key: 5b0f2c1e-8d3a-4f7e-9a61-2c7d0e4b9f10'   -H 'Content-Type: application/json'   -d '{"submissionType": "motion", "name": "…", "proposalText": "…", "reasoningText": "…"}'   https://mandari.example.org/session/<mandant>/api/oparl/body/kommparl/submissions/
+```
+
+- Nur **Access-Tokens im Namen einer Person** mit dem Scope `einreichung:schreiben`. Tokens von Diensten (Client
+  Credentials) ergeben 403, API-Tokens der Session-API 401; eine angemeldete Browsersitzung zählt hier nicht.
+- Die Person darf über das Token nur, was sie selbst darf: Einreichen für eine Organisation, in der sie das Recht
+  „Anträge ans RIS übermitteln“ hat und die mit der Verwaltung verbunden ist (wie aus Work), zurückmelden zu
+  Sitzungen, zu denen sie geladen ist (wie im Portal). Sie sieht und nimmt nur ihre eigenen Einreichungen zurück,
+  nicht die anderer Mitglieder derselben Organisation. Anlagen hochladen kann nur, wer bei der Verwaltung einreichen
+  darf.
+- Jede Handlung steht im Prüfprotokoll des Mandanten mit Person und Client-ID der Anwendung.
 
 ## Fehler am Token-Endpunkt
 

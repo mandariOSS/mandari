@@ -378,6 +378,38 @@ def submitting_organization_for_token(token: Any, claimed_id: object = None) -> 
     return bound
 
 
+def submission_originators(tenant: SessionTenant, user: Any) -> list[Any]:
+    """
+    Organisationen, für die eine Person bei dieser Verwaltung einreichen darf (Profil Einreichung, Issue #1228).
+
+    Dieselbe Regel wie im Befehl ``submission.submit`` für den Auslöser ``user:<id>``: aktives Mitglied mit dem Recht
+    „Anträge ans RIS übermitteln“, die Organisation ist aktiv mit dem Mandanten verbunden, und ihr Einreichungs-Token
+    ist gültig und darf einreichen. Wer für eine Organisation einreichen darf, sieht auch deren Einreichungen.
+    """
+    from apps.tenants.models import Membership
+    from apps.work.motions.models import AdministrationConnection
+
+    from ..commands import SUBMIT_PERMISSION
+
+    if user is None or not getattr(user, "is_active", False):
+        return []
+    organization_ids = list(
+        AdministrationConnection.objects.filter(tenant=tenant, is_active=True).values_list("organization_id", flat=True)
+    )
+    memberships = Membership.objects.filter(
+        user=user, organization_id__in=organization_ids, is_active=True
+    ).select_related("organization")
+    result = []
+    for membership in memberships:
+        if not membership.has_permission(SUBMIT_PERMISSION):
+            continue
+        token = connected_token(tenant, membership.organization_id)
+        if token is None or not token.is_valid() or not token.can_submit_applications:
+            continue
+        result.append(membership.organization)
+    return sorted(result, key=lambda organization: (str(organization.name).lower(), str(organization.pk)))
+
+
 def submit_with_token(
     tenant: SessionTenant,
     token: Any,
