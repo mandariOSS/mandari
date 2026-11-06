@@ -19,6 +19,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `SESSION_OPARL_API.md` | [Session → OParl-API je Kommune](https://docs.mandari.de/session/oparl-api/), [Veröffentlichung im Bürgerportal](https://docs.mandari.de/session/buergerportal/) |
 | `API_V1_SESSION.md` | [Session → Session-API v1](https://docs.mandari.de/session/api-v1/) |
 | `schnittstelle/anmeldung.md` | Schnittstelle → Anmeldung für Anwendungen (OpenID Connect, Seite folgt) |
+| `schnittstelle/anmeldung-betrieb.md` | – (OpenID-Connect-Anbieter einschalten: Schlüssel, Proxy, `oidc_pruefen`, `oidc_anwendung`, Schlüsselwechsel, Widerruf; Betrieb) |
 | `FACTION_PUBLIC_API.md` | [Work → Öffentliche Fraktions-API](https://docs.mandari.de/work/fraktions-api/) |
 | `PROVISIONING_API.md` | – (Provisioning-API v1 und v2: Work-Organisationen aus einem System des Betreibers anlegen und abgleichen; Betrieb) |
 | `WORK_SESSION_SUBMISSION.md` | [Work → Anträge digital einreichen](https://docs.mandari.de/work/antraege-einreichen/) |

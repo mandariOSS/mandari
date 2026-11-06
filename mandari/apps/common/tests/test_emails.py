@@ -583,6 +583,34 @@ def work_org_registration_rejected(org: Any, make_member: Any) -> dict[str, Any]
     }
 
 
+def _auslauf(org: Any) -> dict[str, Any]:
+    """Mitgliedschaft „Nur Lesen, Löschung nach 30 Tagen“ (Issue #1237)."""
+    return {
+        "organization": org,
+        "user": _eva(),
+        "deletion_date": "05.12.2026",
+        "expiry_url": f"{SITE_URL}/work/{org.slug}/zugang/auslauf/",
+    }
+
+
+def work_org_deletion_scheduled(org: Any, make_member: Any) -> dict[str, Any]:
+    return _auslauf(org)
+
+
+def work_org_deletion_reminder(org: Any, make_member: Any) -> dict[str, Any]:
+    return {**_auslauf(org), "days_left": 3}
+
+
+def work_org_deletion_done(org: Any, make_member: Any) -> dict[str, Any]:
+    return {
+        "organization": org,
+        "name": "Eva Beispiel",
+        "documents_deleted": 2,
+        "account_deleted": True,
+        "backup_days": 30,
+    }
+
+
 def session_user_invitation(org: Any, make_member: Any) -> dict[str, Any]:
     tenant = _ns(name="Stadt Musterstadt")
     invitation = _ns(email="neu@example.org", expires_at=WHEN, token="t" * 32)
@@ -741,6 +769,15 @@ CASES = [
         "work/organization/email/submission_email_receipt.html",
         work_org_submission_email_receipt,
     ),
+    MailCase(
+        "work_org_deletion_scheduled",
+        "work/organization/email/deletion_scheduled.html",
+        work_org_deletion_scheduled,
+    ),
+    MailCase(
+        "work_org_deletion_reminder", "work/organization/email/deletion_reminder.html", work_org_deletion_reminder
+    ),
+    MailCase("work_org_deletion_done", "work/organization/email/deletion_done.html", work_org_deletion_done),
 ]
 
 ALL_MAIL_TEMPLATES = sorted({case.template for case in CASES})

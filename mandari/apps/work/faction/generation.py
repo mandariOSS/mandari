@@ -225,14 +225,19 @@ def create_occurrence(schedule, date, *, exceptions=None, rules=None):
     Standard-Tagesordnung. Prüft nicht, ob es den Termin schon gibt (das tut der Aufrufer).
     """
     from apps.work.faction.models import FactionAttendance, FactionMeeting
+    from apps.work.faction.regeln import einstellungen
 
     organization = schedule.organization
-    faction_settings = (organization.settings or {}).get("faction", {})
+    # Regeln der Sitzungsart der Reihe (Issue #1240): Organisation, darüber die Übersteuerung der Art
+    faction_settings = einstellungen(schedule.meeting_type)
     start = _occurrence_start(schedule, date)
     reason = evaluate_cancellation(schedule, date, exceptions=exceptions, rules=rules)
 
+    meeting_type = schedule.meeting_type
     meeting = FactionMeeting(
         organization=organization,
+        # Sitzungsart der Reihe (Issue #1231): Nummer und vorherige Sitzung zählen nur innerhalb der Art
+        meeting_type=meeting_type,
         schedule=schedule,
         scheduled_date=date,
         title=schedule.name,
@@ -255,18 +260,20 @@ def create_occurrence(schedule, date, *, exceptions=None, rules=None):
         return meeting
 
     meeting.status = "planned"
-    meeting.meeting_number = FactionMeeting.get_next_meeting_number(organization)
+    meeting.meeting_number = FactionMeeting.get_next_meeting_number(organization, meeting_type)
 
-    # Vorherige Sitzung verketten (OneToOne — nur wenn noch frei)
-    previous = FactionMeeting.find_previous_meeting(organization, before_date=start)
+    # Vorherige Sitzung derselben Art verketten (OneToOne — nur wenn noch frei)
+    previous = FactionMeeting.find_previous_meeting(organization, before_date=start, meeting_type=meeting_type)
     if previous is not None and not FactionMeeting.objects.filter(previous_meeting=previous).exists():
         meeting.previous_meeting = previous
 
     meeting._audit_created_action = "generated"
     meeting.save()
 
-    # Anwesenheiten für alle aktiven Mitglieder (wie manuelle Anlage)
-    for member in organization.memberships.filter(is_active=True, is_guest=False):
+    # Anwesenheiten für die Teilnehmenden der Art (Issue #1239, wie manuelle Anlage)
+    from apps.work.faction.sitzungsarten import teilnehmende
+
+    for member in teilnehmende(meeting_type):
         FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
 
     # Automatischer erster TOP (Genehmigung TO/Protokoll)
@@ -489,9 +496,11 @@ def renumber_upcoming(organization, now=None) -> int:
     """
     Nummern der künftigen, noch nicht eingeladenen Sitzungen nach Datum ordnen (Issue #1071), nach dem Bearbeiten
     einer Reihe oder dem Wiederherstellen eines Termins. Vergeben werden nur die Nummern, die diese Sitzungen schon
-    haben (eingeladene und vergangene behalten ihre). Unbearbeitete Genehmigungs-TOPs bekommen den neuen Titel
-    (Platzhalter ``{nr}``). Liefert die Zahl der umnummerierten Sitzungen.
+    haben (eingeladene und vergangene behalten ihre), und zwar je Sitzungsart für sich (Issue #1231). Unbearbeitete
+    Genehmigungs-TOPs bekommen den neuen Titel (Platzhalter ``{nr}``). Liefert die Zahl der umnummerierten Sitzungen.
     """
+    from itertools import groupby
+
     from django.db import transaction
 
     from apps.work.faction.models import FactionMeeting
@@ -508,17 +517,19 @@ def renumber_upcoming(organization, now=None) -> int:
                 meeting_number__isnull=False,
                 status__in=["draft", "planned", "cancelled"],
             )
-            .order_by("start", "created_at")
+            .order_by("meeting_type_id", "start", "created_at")
         )
-        numbers = sorted(m.meeting_number for m in meetings)
         unchanged = {m.pk: approval_item_unchanged(m) for m in meetings}
         changed = 0
-        for meeting, number in zip(meetings, numbers, strict=True):
-            if meeting.meeting_number == number:
-                continue
-            meeting.meeting_number = number
-            meeting.save(update_fields=["meeting_number", "updated_at"])
-            changed += 1
+        for _meeting_type_id, group in groupby(meetings, key=lambda m: m.meeting_type_id):
+            same_type = list(group)
+            numbers = sorted(m.meeting_number for m in same_type)
+            for meeting, number in zip(same_type, numbers, strict=True):
+                if meeting.meeting_number == number:
+                    continue
+                meeting.meeting_number = number
+                meeting.save(update_fields=["meeting_number", "updated_at"])
+                changed += 1
         if changed:
             # Auch {nr_letzte_sitzung} der Folgesitzung kann sich geändert haben: alle unbearbeiteten neu beschriften
             # (frisch geladen, damit die vorherige Sitzung mit ihrer neuen Nummer zählt)

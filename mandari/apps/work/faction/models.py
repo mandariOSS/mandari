@@ -14,7 +14,8 @@ import uuid
 from datetime import timedelta
 from typing import Any, ClassVar
 
-from django.db import models
+from django.core.validators import MinValueValidator
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
 from apps.common import formatting
@@ -31,6 +32,158 @@ def generate_opaque_token() -> str:
     erratbar/enumerierbar (32 Zeichen, URL-safe Base64 aus 24 Zufallsbytes).
     """
     return secrets.token_urlsafe(24)
+
+
+class FactionMeetingType(models.Model):
+    """
+    Sitzungsart einer Organisation (Issue #1231, Epic #1226), etwa „Fraktionssitzung“ oder eine Arbeitsgruppe.
+
+    Jede Organisation hat genau eine Standardart (``is_default``, abgesichert über einen Constraint). Die
+    Datenmigration hat sie als „Fraktionssitzung“ angelegt und ihr alle Reihen, Sitzungen und Standard-TOPs
+    zugeordnet; neue Organisationen bekommen sie beim Anlegen (:func:`apps.work.faction.sitzungsarten.register`).
+
+    Jede Art zählt ihre Sitzungen für sich, ab ``number_start`` (:meth:`next_number`). ``settings`` übersteuert die
+    Einstellungen der Organisation (``organization.settings["faction"]``) feldweise; leer oder ohne ein Feld heißt
+    „wie die Organisation“ (Issue #1240, :mod:`apps.work.faction.regeln`). Je Art gelten außerdem die
+    Standard-Tagesordnung (``agenda_mode``), der nichtöffentliche Teil (``non_public_enabled``) und Abstimmungen samt
+    Beschlussfähigkeit (``voting_enabled``). Teilnehmende und Sichtbarkeit setzt Work durch (Issue #1239, nur über
+    :mod:`apps.work.faction.sitzungsarten`).
+    """
+
+    DEFAULT_NAME = "Fraktionssitzung"
+
+    PARTICIPANTS_MODE_CHOICES = [
+        ("all", "Alle Mitglieder"),
+        ("role", "Eine Rolle"),
+        ("committee", "Ein Gremium"),
+        ("persons", "Ausgewählte Personen"),
+    ]
+
+    VISIBILITY_CHOICES = [
+        ("public", "Öffentlich"),
+        ("members", "Alle Mitglieder"),
+        ("participants", "Nur Teilnehmende"),
+    ]
+
+    AGENDA_MODE_CHOICES = [
+        ("standard", "Mit Standard-Tagesordnung"),
+        ("free", "Ohne feste Tagesordnung"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.ForeignKey(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        related_name="faction_meeting_types",
+        verbose_name="Organisation",
+    )
+    name = models.CharField(max_length=200, verbose_name="Name")
+    position = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name="Standardart",
+        help_text="Genau eine Art je Organisation; von Hand angelegte Sitzungen bekommen sie",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+
+    # Nummerierung: höchste Nummer der Art + 1, mindestens die Startnummer
+    number_start = models.PositiveIntegerField(
+        default=1,
+        validators=[MinValueValidator(1)],
+        verbose_name="Startnummer",
+        help_text="Erste Sitzungsnummer dieser Art",
+    )
+
+    # Teilnehmende
+    participants_mode = models.CharField(
+        max_length=20, choices=PARTICIPANTS_MODE_CHOICES, default="all", verbose_name="Teilnehmende"
+    )
+    participants_role = models.ForeignKey(
+        "tenants.Role",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="faction_meeting_types",
+        verbose_name="Rolle der Teilnehmenden",
+    )
+    # Mitglieder des Gremiums über die zugewiesenen Gremien der Mitgliedschaft (Membership.oparl_committees)
+    participants_committee = models.ForeignKey(
+        "insight_core.OParlOrganization",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="faction_meeting_types",
+        verbose_name="Gremium der Teilnehmenden",
+    )
+    participants = models.ManyToManyField(
+        "tenants.Membership",
+        blank=True,
+        related_name="faction_meeting_types",
+        verbose_name="Ausgewählte Teilnehmende",
+    )
+
+    visibility = models.CharField(
+        max_length=20, choices=VISIBILITY_CHOICES, default="members", verbose_name="Sichtbarkeit"
+    )
+
+    # Ablauf
+    agenda_mode = models.CharField(
+        max_length=20, choices=AGENDA_MODE_CHOICES, default="standard", verbose_name="Tagesordnung"
+    )
+    non_public_enabled = models.BooleanField(default=True, verbose_name="Nichtöffentlicher Teil")
+    voting_enabled = models.BooleanField(default=True, verbose_name="Abstimmungen und Beschlussfähigkeit")
+    settings = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Regeln",
+        help_text="Leer heißt: wie in den Einstellungen der Organisation",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Sitzungsart"
+        verbose_name_plural = "Sitzungsarten"
+        ordering = ["position", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(is_default=True),
+                name="uniq_faction_meeting_type_default",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @classmethod
+    def default_for(cls, organization: Any) -> "FactionMeetingType":
+        """
+        Standardart der Organisation holen oder anlegen (Organisation oder ihre ID).
+
+        Legt nie doppelt an: Kommt ein gleichzeitiger Aufruf zuvor, greift der Constraint und Work nimmt dessen Art.
+        """
+        organization_id = getattr(organization, "pk", organization)
+        existing = cls.objects.filter(organization_id=organization_id, is_default=True).first()
+        if existing is not None:
+            return existing
+        try:
+            with transaction.atomic():
+                return cls.objects.create(organization_id=organization_id, name=cls.DEFAULT_NAME, is_default=True)
+        except IntegrityError:
+            return cls.objects.get(organization_id=organization_id, is_default=True)
+
+    def next_number(self) -> int:
+        """Nächste Sitzungsnummer der Art: höchste vergebene Nummer + 1, mindestens die Startnummer."""
+        highest = self.meetings.aggregate(highest=models.Max("meeting_number"))["highest"] or 0
+        return max(highest + 1, self.number_start or 1)
+
+
+def assign_default_meeting_type(instance: Any) -> None:
+    """Neue Reihe, Sitzung oder Standard-TOP ohne Sitzungsart bekommt die Standardart der Organisation."""
+    if instance._state.adding and instance.__dict__.get("meeting_type_id") is None and instance.organization_id:
+        instance.meeting_type = FactionMeetingType.default_for(instance.organization_id)
 
 
 class FactionMeetingSchedule(models.Model):
@@ -58,6 +211,14 @@ class FactionMeetingSchedule(models.Model):
         on_delete=models.CASCADE,
         related_name="meeting_schedules",
         verbose_name="Organisation",
+    )
+    # Sitzungsart (Issue #1231): Die Reihe gibt sie an ihre Sitzungen weiter; ohne Angabe die Standardart
+    meeting_type = models.ForeignKey(
+        FactionMeetingType,
+        on_delete=models.RESTRICT,
+        blank=True,
+        related_name="schedules",
+        verbose_name="Sitzungsart",
     )
 
     name = models.CharField(max_length=200, verbose_name="Name", help_text="z.B. 'Wöchentliche Fraktionssitzung'")
@@ -108,6 +269,10 @@ class FactionMeetingSchedule(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_weekday_display()}, {self.time})"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        assign_default_meeting_type(self)
+        super().save(*args, **kwargs)
 
     @property
     def auto_invite_ready(self) -> bool:
@@ -252,6 +417,14 @@ class FactionStandardAgendaItem(models.Model):
         related_name="faction_standard_agenda_items",
         verbose_name="Organisation",
     )
+    # Sitzungsart (Issue #1231); ohne Angabe die Standardart. Neue Sitzungen bekommen die Punkte ihrer Art (Issue #1240).
+    meeting_type = models.ForeignKey(
+        FactionMeetingType,
+        on_delete=models.RESTRICT,
+        blank=True,
+        related_name="standard_agenda_items",
+        verbose_name="Sitzungsart",
+    )
     title = models.CharField(max_length=500, verbose_name="Titel")
     visibility = models.CharField(
         max_length=20, choices=VISIBILITY_CHOICES, default="public", verbose_name="Sichtbarkeit"
@@ -267,6 +440,10 @@ class FactionStandardAgendaItem(models.Model):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        assign_default_meeting_type(self)
+        super().save(*args, **kwargs)
 
 
 class MemberNameSnapshotMixin(models.Model):
@@ -374,6 +551,15 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="faction_meetings",
         verbose_name="Organisation",
+    )
+    # Sitzungsart (Issue #1231): Nummern und die Kette zur vorherigen Sitzung gelten je Art. Sitzungen aus einer
+    # Reihe bekommen die Art der Reihe, sonst die Standardart.
+    meeting_type = models.ForeignKey(
+        FactionMeetingType,
+        on_delete=models.RESTRICT,
+        blank=True,
+        related_name="meetings",
+        verbose_name="Sitzungsart",
     )
 
     # Basic info
@@ -599,6 +785,10 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
     def __str__(self):
         return f"{self.title} ({self.start.date()})"
 
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        assign_default_meeting_type(self)
+        super().save(*args, **kwargs)
+
     def get_encryption_organization(self):
         return self.organization
 
@@ -632,9 +822,27 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         return not self.previous_meeting.protocol_approved
 
     def get_faction_settings(self) -> dict:
-        """Get faction-specific settings from organization."""
-        settings = self.organization.settings or {}
-        return settings.get("faction", {})
+        """
+        Gespeicherte Einstellungen dieser Sitzung: die der Organisation, darüber die Übersteuerung ihrer Sitzungsart
+        (Issue #1240, :func:`apps.work.faction.regeln.einstellungen`). Fehlende Felder ersetzt der Aufrufer.
+        """
+        from .regeln import einstellungen
+
+        return einstellungen(self)
+
+    @property
+    def nichtoeffentlich_erlaubt(self) -> bool:
+        """Bietet die Sitzungsart einen nichtöffentlichen Teil an (Issue #1240)? Bestehende NÖ-TOPs bleiben geschützt."""
+        from .regeln import nichtoeffentlich_erlaubt
+
+        return nichtoeffentlich_erlaubt(self)
+
+    @property
+    def abstimmungen_erlaubt(self) -> bool:
+        """Gibt es in dieser Sitzung Abstimmungen und Beschlussfähigkeit (Sitzungsart, Issue #1240)?"""
+        from .regeln import abstimmungen_erlaubt
+
+        return abstimmungen_erlaubt(self)
 
     def approval_item_texts(self) -> tuple[str, str]:
         """
@@ -644,7 +852,7 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         settings = self.get_faction_settings()
 
         # Default-Texte (Issue #63): verbindliche Standard-Formulierung,
-        # je Organisation weiterhin anpassbar
+        # je Organisation und je Sitzungsart (Issue #1240) anpassbar
         default_title_with_prev = "Tagesordnung festlegen und letztes Protokoll genehmigen"
         default_title_no_prev = "Tagesordnung festlegen"
 
@@ -741,20 +949,25 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         return True
 
     @classmethod
-    def get_next_meeting_number(cls, organization) -> int:
-        """Get the next meeting number for an organization."""
-        last = cls.objects.filter(organization=organization).order_by("-meeting_number").first()
-
-        if last and last.meeting_number:
-            return last.meeting_number + 1
-        return 1
+    def get_next_meeting_number(cls, organization: Any, meeting_type: FactionMeetingType | None = None) -> int:
+        """Nächste Sitzungsnummer; jede Sitzungsart zählt für sich (Issue #1231), ohne Angabe die Standardart."""
+        if meeting_type is None:
+            meeting_type = FactionMeetingType.default_for(organization)
+        return meeting_type.next_number()
 
     @classmethod
-    def find_previous_meeting(cls, organization, before_date=None):
-        """Find the most recent completed meeting before a given date."""
+    def find_previous_meeting(
+        cls, organization: Any, before_date: Any = None, meeting_type: FactionMeetingType | None = None
+    ) -> "FactionMeeting | None":
+        """
+        Letzte begonnene oder abgeschlossene Sitzung vor einem Zeitpunkt, nur in derselben Sitzungsart (Issue #1231);
+        ohne Angabe in der Standardart.
+        """
+        same_type = {"meeting_type__is_default": True} if meeting_type is None else {"meeting_type": meeting_type}
         qs = cls.objects.filter(
             organization=organization,
             status__in=["completed", "ongoing"],
+            **same_type,
         )
         if before_date:
             qs = qs.filter(start__lt=before_date)
@@ -931,6 +1144,15 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
 
     def __str__(self):
         return f"{self.number}: {self.title}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # Letzte Sicherung (Issue #1240): Eine Sitzungsart ohne nichtöffentlichen Teil bekommt keine neuen NÖ-TOPs.
+        # Die Wege der Oberfläche prüfen vorher selbst und melden es verständlich; bestehende NÖ-TOPs bleiben, wie sie sind.
+        if self._state.adding and self.visibility == "internal" and self.meeting_id is not None:
+            from .regeln import pruefe_nichtoeffentlich
+
+            pruefe_nichtoeffentlich(self.meeting, self.visibility)
+        super().save(*args, **kwargs)
 
     def get_encryption_organization(self):
         return self.meeting.organization

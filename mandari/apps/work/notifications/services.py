@@ -91,6 +91,11 @@ class NotificationHub:
         if actor and actor.id == recipient.id:
             return None
 
+        # Sitzungsarten (Issue #1239): nichts zu einer Fraktionssitzung, die der Empfänger nicht sehen darf. Gilt für
+        # jeden Weg, auch für die Weiterleitung an eine Vertretung.
+        if cls._sitzung_verborgen(recipient, notification_type, metadata):
+            return None
+
         # Typ-Einstellung (Issue #70): In-App-Benachrichtigungen sind je Typ
         # in den Benachrichtigungseinstellungen abschaltbar (Default: an).
         # Der E-Mail-Kanal wird separat in _queue_email geprüft.
@@ -155,6 +160,28 @@ class NotificationHub:
             )
 
         return notification
+
+    @staticmethod
+    def _sitzung_verborgen(recipient, notification_type: str, metadata: dict | None) -> bool:
+        """
+        Betrifft die Benachrichtigung eine Fraktionssitzung (Art „Fraktion“ mit ``meeting_id``), die der Empfänger nicht
+        sehen darf (Issue #1239)? Ohne Sitzung (unbekannte oder gelöschte Kennung) gibt es nichts zu verbergen.
+        """
+        from .models import PREFERENCE_CATEGORIES
+
+        meeting_id = (metadata or {}).get("meeting_id")
+        if not meeting_id or str(notification_type) not in PREFERENCE_CATEGORIES["faction"]:
+            return False
+        from django.core.exceptions import ValidationError
+
+        from apps.work.faction.models import FactionMeeting
+        from apps.work.faction.sitzungsarten import darf_sehen
+
+        try:
+            meeting = FactionMeeting.objects.select_related("meeting_type").filter(pk=meeting_id).first()
+        except (ValueError, TypeError, ValidationError):
+            return False
+        return meeting is not None and not darf_sehen(recipient, meeting)
 
     @classmethod
     def already_direct(cls, recipient, notification_type: str, metadata: dict | None, since: datetime) -> bool:

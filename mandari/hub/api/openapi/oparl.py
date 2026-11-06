@@ -5,13 +5,23 @@ Die OParl-Ausgaben in der OpenAPI-Beschreibung: Schemas der Objekttypen und die 
 Die Endpunkte selbst bleiben, wie sie sind (``hub.api.aggregator``, ``apps/session/api/oparl.py``); hier
 steht nur ihre Beschreibung.
 
-- **Schemas** entstehen aus den Typen von OParl 1.1 in ``hub.api.oparl_types``, derselben Quelle wie die
-  Typprüfung der Ausgaben. Ein Objekt hat die Eigenschaften der Spezifikation, eigene Felder nur mit
-  Namensraum (``mandari:…``). Gelöschtes ist ein gekürztes Objekt (``OParlDeleted``, OParl 1.1 §2.8).
+- **Schemas** stammen aus der kommParl-Spezifikation (``hub.api.kommparl``): die Objekttypen von OParl 1.1 mit den
+  Ergänzungen von kommParl, für OpenAPI 3.1 in JSON Schema 2020-12 umgewandelt, und die Schemas der Profile
+  Änderungsfeed und Snapshot (``Kommparl…``). Dieselben Schemas prüfen die Ausgaben (``hub.api.tests.konformitaet``,
+  auch im OParl-Validator der CI). Gelöschtes ist ein gekürztes Objekt (``OParlDeleted``, OParl 1.1 §2.8).
+- **Ergänzungen**, die die Spezifikation nicht als Schema hergibt (``SUPPLEMENTS``, ``COMMON_SUPPLEMENTS``): die
+  sieben Werte von ``organizationType`` und ``license`` als URL (beides nur im Text der Spezifikation, Kapitel 6)
+  sowie die abgekündigten Eigenschaften ``mandari:changes`` und ``mandari:snapshot`` am Body.
+- **Eigene Felder** erlaubt die Beschreibung mit jedem Namensraum (``NAMESPACED``), wie vor der Umstellung auf
+  kommParl; ein strengeres Muster wäre für Werkzeuge wie oasdiff eine brechende Änderung der Beschreibung. Dass
+  Eigenschaften mit ``kommparl:`` im Schema stehen (``hub.api.kommparl.VENDOR_PROPERTY``), prüft die
+  Konformitätsprüfung.
 - **Pfade** beschreibt ``oparl_paths`` für eine Ausgabe: Aggregator (``aggregator_description``) und je
   Session-Mandant (das Fachmodul meldet seinen Bereich mit ``tenant_description`` an). Externe Listen haben
   Seiten (``apps.common.api.pages``) und Zeitfilter, jede Antwort einen ``ETag``; Fehler kommen als JSON
-  ``{"error", "status"}``, Absagen von Änderungsfeed und Snapshot als Problem nach RFC 9457.
+  ``{"error", "status"}``. Änderungsfeed und Snapshot gibt es zweimal: nach den Profilen von kommParl
+  (``kommparl:changes``, ``kommparl:snapshot``) und in der älteren Form (``mandari:changes``, ``mandari:snapshot``,
+  abgekündigt; Absagen dort als Problem nach RFC 9457).
 """
 
 from __future__ import annotations
@@ -20,7 +30,9 @@ from collections.abc import Iterable, Mapping
 from typing import Any, Final
 
 from apps.common.api.pages import LINKS_SCHEMA, PAGINATION_SCHEMA, page_schema
-from hub.api.oparl_types import ALLGEMEIN, FELDER, ORGANIZATION_TYPES, PFLICHT, SCHEMA
+from hub.api import kommparl
+from hub.api.changes import MANDARI_FEED_DEPRECATION
+from hub.ris.canonical import ORGANIZATION_TYPES
 
 #: Objekttyp in Adressen (Kleinbuchstaben) -> Typ in OParl
 KINDS: Final[dict[str, str]] = {
@@ -48,62 +60,81 @@ PAGINATION: Final = "OParlPagination"
 LINKS: Final = "OParlLinks"
 CHANGES: Final = "OParlChangeList"
 PROBLEM: Final = "Problem"
-
-_URL: Final[dict[str, Any]] = {"type": "string", "format": "uri"}
-_TEXT: Final[dict[str, Any]] = {"type": "string", "minLength": 1}
-
-#: Art einer Eigenschaft (``hub.api.oparl_types``) -> Schema
-_ARTEN: Final[dict[str, dict[str, Any]]] = {
-    "url": _URL,
-    "text": _TEXT,
-    "datum": {"type": "string", "format": "date"},
-    "zeitpunkt": {"type": "string", "format": "date-time"},
-    "bool": {"type": "boolean"},
-    "zahl": {"type": "integer"},
-    "urls": {"type": "array", "items": _URL},
-    "texte": {"type": "array", "items": _TEXT},
-    "geojson": {"type": "object", "description": "GeoJSON (RFC 7946)"},
-}
+KOMMPARL_CHANGES: Final = kommparl.profile_component_name("ChangeList")
+KOMMPARL_CURSOR_EXPIRED: Final = kommparl.profile_component_name("CursorExpired")
+KOMMPARL_SNAPSHOT_HEADER: Final = kommparl.profile_component_name("SnapshotHeader")
+KOMMPARL_SNAPSHOT_END: Final = kommparl.profile_component_name("SnapshotEnd")
 
 SPECIFICATION: Final = "https://oparl.org/spezifikation/"
 
+_URL: Final[dict[str, Any]] = {"type": "string", "format": "uri"}
+_DATE_TIME: Final[dict[str, Any]] = {"type": "string", "format": "date-time"}
+
+#: Wegfall der älteren Form von Änderungsfeed und Snapshot (``x-sunset``, Tag)
+SUNSET: Final = MANDARI_FEED_DEPRECATION.sunset.date().isoformat()
+#: Derselbe Tag im Text der Beschreibung
+SUNSET_TEXT: Final = MANDARI_FEED_DEPRECATION.sunset.strftime("%d.%m.%Y")
+
+
+def _deprecated_extension(successor: str, what: str) -> dict[str, Any]:
+    return {
+        **_URL,
+        "deprecated": True,
+        "x-sunset": SUNSET,
+        "description": (
+            f"Abgekündigt, entfällt frühestens am {SUNSET_TEXT}: Adresse {what} in der älteren Form. "
+            f"Nachfolger ist {successor} (Profil von kommParl {kommparl.FASSUNG})."
+        ),
+    }
+
+
+#: Eigenschaften aller Objekttypen, die die Spezifikation nicht als Schema hergibt: ``license`` ist eine URL
+#: (kommParl Kapitel 6, „Klarstellungen“; die Schemas nennen das Format nur bei System und Body).
+COMMON_SUPPLEMENTS: Final[dict[str, dict[str, Any]]] = {"license": _URL}
+
+#: Eigenschaften je Objekttyp, die die Spezifikation nicht als Schema hergibt; sie ergänzen das umgewandelte Schema.
+#:
+#: - ``organizationType``: Die sieben Werte stehen in OParl 1.1 und kommParl nur im Text (kommParl Kapitel 6,
+#:   „Klarstellungen“); die Ausgaben nennen nur diese (``hub.ris.canonical.ORGANIZATION_TYPES``).
+#: - ``mandari:changes`` und ``mandari:snapshot``: eigene Eigenschaften, abgekündigt zugunsten von
+#:   ``kommparl:changes`` und ``kommparl:snapshot`` (ADR „Eine Schnittstelle“, Regel 2).
+SUPPLEMENTS: Final[dict[str, dict[str, dict[str, Any]]]] = {
+    "Organization": {
+        "organizationType": {"type": "string", "enum": sorted(ORGANIZATION_TYPES)},
+    },
+    "Body": {
+        "mandari:changes": _deprecated_extension("kommparl:changes", "des Änderungsfeeds"),
+        "mandari:snapshot": _deprecated_extension("kommparl:snapshot", "des Snapshots"),
+    },
+}
+
 
 def schema_name(typ: str) -> str:
-    return f"OParl{typ}"
+    return kommparl.component_name(typ)
 
 
 def ref(name: str) -> dict[str, str]:
     return {"$ref": f"{REF}{name}"}
 
 
-def _property(art: str) -> dict[str, Any]:
-    if art.startswith("objekt:"):
-        return ref(schema_name(art.split(":", 1)[1]))
-    if art.startswith("objekte:"):
-        return {"type": "array", "items": ref(schema_name(art.split(":", 1)[1]))}
-    return dict(_ARTEN[art])
-
-
 def type_schema(typ: str) -> dict[str, Any]:
-    """Schema eines Objekttyps aus OParl 1.1 (``hub.api.oparl_types``)."""
-    properties = {name: _property(art) for name, art in {**ALLGEMEIN, **FELDER[typ]}.items()}
-    properties["type"] = {"const": f"{SCHEMA}{typ}"}
-    if typ == "Organization":
-        properties["organizationType"] = {"type": "string", "enum": sorted(ORGANIZATION_TYPES)}
+    """Schema eines Objekttyps: aus kommParl umgewandelt (``hub.api.kommparl.type_schema``) und ergänzt."""
+    schema = kommparl.type_schema(typ, vendor_property=NAMESPACED)
+    schema["properties"].update({**COMMON_SUPPLEMENTS, **SUPPLEMENTS.get(typ, {})})
     return {
         "title": typ,
-        "description": f"Objekttyp {typ} nach OParl 1.1 ({SPECIFICATION}). Eigene Felder tragen einen Namensraum.",
-        "type": "object",
-        "required": list(PFLICHT.get(typ, ("id", "type"))),
-        "properties": properties,
-        "patternProperties": {NAMESPACED: {}},
-        "additionalProperties": False,
+        "description": (
+            f"Objekttyp {typ} nach OParl 1.1 ({SPECIFICATION}) mit den Ergänzungen von kommParl {kommparl.FASSUNG}. "
+            "Eigene Felder tragen einen Namensraum."
+        ),
+        **{key: value for key, value in schema.items() if key != "title"},
     }
 
 
 def component_schemas() -> dict[str, dict[str, Any]]:
     """Alle Schemas der OParl-Ausgaben, nach Namen."""
-    schemas: dict[str, dict[str, Any]] = {schema_name(typ): type_schema(typ) for typ in FELDER}
+    types = kommparl.object_types()
+    schemas: dict[str, dict[str, Any]] = {schema_name(typ): type_schema(typ) for typ in types}
     schemas[DELETED] = {
         "title": "Gelöschtes Objekt",
         "description": "Gekürztes Objekt für Gelöschtes oder nicht mehr Öffentliches (OParl 1.1 §2.8).",
@@ -112,15 +143,15 @@ def component_schemas() -> dict[str, dict[str, Any]]:
         "properties": {
             "id": _URL,
             "type": {"type": "string", "pattern": "^https://schema\\.oparl\\.org/1\\.1/[A-Za-z]+$"},
-            "created": _ARTEN["zeitpunkt"],
-            "modified": _ARTEN["zeitpunkt"],
+            "created": _DATE_TIME,
+            "modified": _DATE_TIME,
             "deleted": {"const": True},
         },
         "additionalProperties": False,
     }
     schemas[PAGINATION] = dict(PAGINATION_SCHEMA)
     schemas[LINKS] = dict(LINKS_SCHEMA)
-    for typ in FELDER:
+    for typ in types:
         if typ != "System":
             schemas[f"{schema_name(typ)}List"] = {
                 "title": f"Liste {typ}",
@@ -134,6 +165,8 @@ def component_schemas() -> dict[str, dict[str, Any]]:
         "properties": {"error": {"type": "string"}, "status": {"type": "integer"}},
     }
     schemas[CHANGES] = _changes_schema()
+    for profile, name in kommparl.profile_schemas():
+        schemas[kommparl.profile_component_name(name)] = kommparl.profile_component(profile, name)
     return schemas
 
 
@@ -142,6 +175,7 @@ def _object_or_deleted(typ: str) -> dict[str, Any]:
 
 
 def _changes_schema() -> dict[str, Any]:
+    """Seite des Änderungsfeeds in der älteren Form (``mandari:changes``, abgekündigt)."""
     entry = {
         "type": "object",
         "required": ["cursor", "operation", "type", "id", "modified"],
@@ -150,7 +184,7 @@ def _changes_schema() -> dict[str, Any]:
             "operation": {"type": "string", "enum": ["upsert", "delete", "redact"]},
             "type": {"type": "string", "description": "Typ des Objekts (OParl 1.1)"},
             "id": _URL,
-            "modified": _ARTEN["zeitpunkt"],
+            "modified": _DATE_TIME,
             "reason": {
                 "type": "string",
                 "enum": ["quelle_geloescht", "zurueckgenommen", "nichtoeffentlich", "datenschutz"],
@@ -161,8 +195,9 @@ def _changes_schema() -> dict[str, Any]:
     return {
         "title": "Änderungsfeed",
         "description": (
-            "Eine Seite des Änderungsfeeds einer Körperschaft (Erweiterung mandari:changes, Entwurf des "
-            "kommParl-Profils Änderungsfeed): Einträge ohne Inhalte, Cursor für die nächste Anfrage."
+            "Eine Seite des Änderungsfeeds einer Körperschaft in der älteren Form (mandari:changes, abgekündigt, "
+            f"entfällt frühestens am {SUNSET_TEXT}; Nachfolger: kommparl:changes, Schema {KOMMPARL_CHANGES}): Einträge "
+            "ohne Inhalte, Cursor für die nächste Anfrage."
         ),
         "type": "object",
         "required": ["data", "cursor", "links"],
@@ -213,6 +248,23 @@ _LIST_PARAMETERS: Final[list[dict[str, Any]]] = [
     },
 ]
 
+_FEED_PARAMETERS: Final[list[dict[str, Any]]] = [
+    {
+        "name": "after",
+        "in": "query",
+        "required": False,
+        "description": "Cursor der vorigen Antwort",
+        "schema": {"type": "string"},
+    },
+    {
+        "name": "limit",
+        "in": "query",
+        "required": False,
+        "description": "Höchstzahl der Einträge (Standard 100, höchstens 1000)",
+        "schema": {"type": "integer", "minimum": 1, "maximum": 1000},
+    },
+]
+
 _HEADERS: Final[dict[str, Any]] = {
     "ETag": {"description": "Kennung des Inhalts für bedingte Abrufe", "schema": {"type": "string"}},
 }
@@ -220,6 +272,18 @@ _HEADERS: Final[dict[str, Any]] = {
 _LIST_HEADERS: Final[dict[str, Any]] = {
     **_HEADERS,
     "Link": {"description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288", "schema": {"type": "string"}},
+}
+
+_DEPRECATION_HEADERS: Final[dict[str, Any]] = {
+    "Deprecation": {
+        "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+        "schema": {"type": "string"},
+    },
+    "Sunset": {"description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)", "schema": {"type": "string"}},
+    "Link": {
+        "description": 'Nachfolger nach RFC 8288 (rel="successor-version"): die Adresse nach dem kommParl-Profil',
+        "schema": {"type": "string"},
+    },
 }
 
 
@@ -233,6 +297,11 @@ def _error(description: str) -> dict[str, Any]:
 
 def _problem(description: str) -> dict[str, Any]:
     return {"description": description, "content": {"application/problem+json": {"schema": ref(PROBLEM)}}}
+
+
+def _oparl_error(description: str) -> dict[str, Any]:
+    """Fehlerobjekt nach OParl 1.1, Kapitel „Ausnahmebehandlung“ (Schema des Profils Änderungsfeed)."""
+    return {"description": description, "content": _json(ref(KOMMPARL_CURSOR_EXPIRED))}
 
 
 _NOT_MODIFIED: Final = {"description": "Unverändert (If-None-Match passt zum ETag)"}
@@ -278,6 +347,24 @@ def _uuid(name: str, description: str) -> dict[str, Any]:
     }
 
 
+def _deprecate(item: dict[str, Any], successor: str) -> dict[str, Any]:
+    """Endpunkt der älteren Form als abgekündigt kennzeichnen: ``deprecated``, ``x-sunset``, Header der Abkündigung."""
+    operation = item["get"]
+    operation["deprecated"] = True
+    operation["x-sunset"] = SUNSET
+    operation["description"] = (
+        f"Abgekündigt, entfällt frühestens am {SUNSET_TEXT}. Nachfolger: {successor} (Profil von kommParl "
+        f"{kommparl.FASSUNG}); die Antworten nennen ihn im Header Link. {operation.get('description', '')}"
+    ).strip()
+    for code in ("200", "410", "503"):
+        response = operation["responses"].get(code)
+        if response is not None:
+            # Neue Antwort statt Änderung: Antworten wie ``_PAUSED`` werden von mehreren Pfaden geteilt
+            headers = {**response.get("headers", {}), **_DEPRECATION_HEADERS}
+            operation["responses"][code] = {**response, "headers": headers}
+    return item
+
+
 _BAD_FILTER: Final = {"400": _error("Ungültiger Zeitfilter oder ungültige Seitennummer")}
 _PAUSED: Final = {
     "503": {
@@ -285,6 +372,105 @@ _PAUSED: Final = {
         "headers": {"Retry-After": {"schema": {"type": "integer"}}},
     }
 }
+
+
+def _feed_paths(
+    prefix: str,
+    key: str,
+    feed: str | None,
+    snapshot: str | None,
+    kommparl_feed: str | None,
+    kommparl_snapshot: str | None,
+    parameters: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Änderungsfeed und Snapshot: nach den Profilen von kommParl und in der älteren, abgekündigten Form."""
+    paths: dict[str, Any] = {}
+    if kommparl_feed:
+        paths[f"{prefix}{kommparl_feed}"] = _operation(
+            f"{key}_kommparl_changes",
+            "Änderungsfeed (kommParl)",
+            _ok(
+                f"Seite des Änderungsfeeds nach dem Profil {kommparl.PROFILE_CHANGES} (kommparl:changes am Body, "
+                "je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen",
+                ref(KOMMPARL_CHANGES),
+            ),
+            parameters=[*parameters, *_FEED_PARAMETERS],
+            errors={
+                "400": _error("Ungültiger Parameter"),
+                "410": _oparl_error(
+                    "Cursor abgelaufen (mit kommparl:snapshot) oder Kommune zurückgenommen; Bestand neu aufbauen"
+                ),
+                **_PAUSED,
+            },
+        )
+    if kommparl_snapshot:
+        paths[f"{prefix}{kommparl_snapshot}"] = {
+            "get": {
+                "operationId": f"{key}_kommparl_snapshot",
+                "summary": "Snapshot (kommParl)",
+                "description": (
+                    f"Gesamtstand der Körperschaft nach dem Profil {kommparl.PROFILE_SNAPSHOT} als NDJSON: die "
+                    f"Kopfzeile ({KOMMPARL_SNAPSHOT_HEADER}) nennt den Cursor, mit dem der Änderungsfeed fortsetzt, "
+                    "danach je Zeile ein Objekt (der Body und jedes öffentliche Objekt der Körperschaft genau "
+                    f"einmal, ohne Gelöschtes), zuletzt die Schlusszeile ({KOMMPARL_SNAPSHOT_END}) mit der Zahl der "
+                    "Objektzeilen. Fehlt sie oder stimmt die Zahl nicht, ist der Snapshot unvollständig."
+                ),
+                "parameters": [dict(parameter) for parameter in parameters],
+                "responses": {
+                    "200": {
+                        "description": "Snapshot",
+                        "headers": {
+                            "Snapshot-Cursor": {
+                                "description": "Cursor der Kopfzeile",
+                                "schema": {"type": "string"},
+                            }
+                        },
+                        "content": {"application/x-ndjson": {"schema": {"type": "string"}}},
+                    },
+                    "404": _error("Nicht gefunden oder nicht eingeschaltet"),
+                    "410": _oparl_error("Kommune zurückgenommen oder ihr Body gelöscht"),
+                    "429": _RATE_LIMITED,
+                    **_PAUSED,
+                },
+            }
+        }
+    if feed:
+        item = _operation(
+            f"{key}_changes",
+            "Änderungsfeed",
+            _ok("Seite des Änderungsfeeds (Erweiterung mandari:changes, je Installation einzuschalten)", ref(CHANGES)),
+            parameters=[*parameters, *_FEED_PARAMETERS],
+            errors={
+                "400": _error("Ungültiger Parameter"),
+                "410": _problem("Cursor abgelaufen oder Kommune zurückgenommen; neu über den Snapshot einsteigen"),
+                **_PAUSED,
+            },
+        )
+        paths[f"{prefix}{feed}"] = _deprecate(item, "kommparl:changes") if kommparl_feed else item
+    if snapshot:
+        item = {
+            "get": {
+                "operationId": f"{key}_snapshot",
+                "summary": "Snapshot",
+                "description": (
+                    "Gesamtstand der Körperschaft als NDJSON: die erste Zeile nennt snapshot_cursor und die Zahl "
+                    "der Objekte, danach je Zeile ein Objekt. Fortsetzung über den Änderungsfeed ab snapshot_cursor."
+                ),
+                "parameters": [dict(parameter) for parameter in parameters],
+                "responses": {
+                    "200": {
+                        "description": "Snapshot",
+                        "content": {"application/x-ndjson": {"schema": {"type": "string"}}},
+                    },
+                    "404": _error("Nicht gefunden oder nicht eingeschaltet"),
+                    "410": _problem("Kommune zurückgenommen"),
+                    "429": _RATE_LIMITED,
+                    **_PAUSED,
+                },
+            }
+        }
+        paths[f"{prefix}{snapshot}"] = _deprecate(item, "kommparl:snapshot") if kommparl_snapshot else item
+    return paths
 
 
 def oparl_paths(
@@ -299,6 +485,8 @@ def oparl_paths(
     object_path: str,
     feed: str | None,
     snapshot: str | None,
+    kommparl_feed: str | None = None,
+    kommparl_snapshot: str | None = None,
     parameters: Iterable[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """
@@ -308,7 +496,9 @@ def oparl_paths(
     und ``body`` sind die Pfade von System, Körperschaftsliste und Körperschaft, ``lists`` nennt je Pfad einer
     externen Liste ihren Objekttyp (Kleinbuchstaben wie in ``KINDS``), ``objects`` die Objekttypen mit
     eigenem Endpunkt, ``object_path`` dessen Pfad (mit ``{kind}`` und ``{id}``). ``feed`` und ``snapshot``
-    sind die Pfade von Änderungsfeed und Snapshot. ``parameters`` gelten für alle Pfade (etwa der Mandant).
+    sind die Pfade von Änderungsfeed und Snapshot in der älteren Form, ``kommparl_feed`` und
+    ``kommparl_snapshot`` die nach den Profilen von kommParl; gibt es sie, ist die ältere Form abgekündigt.
+    ``parameters`` gelten für alle Pfade (etwa der Mandant).
     """
     shared = [dict(parameter) for parameter in parameters]
     body_id = [_uuid("id", "Kennung der Körperschaft")] if "{id}" in body else []
@@ -349,55 +539,5 @@ def oparl_paths(
             parameters=[*shared, _uuid("id", f"Kennung {typ}")],
             errors=_PAUSED,
         )
-    if feed:
-        paths[f"{prefix}{feed}"] = _operation(
-            f"{key}_changes",
-            "Änderungsfeed",
-            _ok("Seite des Änderungsfeeds (Erweiterung mandari:changes, je Installation einzuschalten)", ref(CHANGES)),
-            parameters=[
-                *shared,
-                *body_id,
-                {
-                    "name": "after",
-                    "in": "query",
-                    "required": False,
-                    "description": "Cursor der vorigen Antwort",
-                    "schema": {"type": "string"},
-                },
-                {
-                    "name": "limit",
-                    "in": "query",
-                    "required": False,
-                    "description": "Höchstzahl der Einträge (Standard 100, höchstens 1000)",
-                    "schema": {"type": "integer", "minimum": 1, "maximum": 1000},
-                },
-            ],
-            errors={
-                "400": _error("Ungültiger Parameter"),
-                "410": _problem("Cursor abgelaufen oder Kommune zurückgenommen; neu über den Snapshot einsteigen"),
-                **_PAUSED,
-            },
-        )
-    if snapshot:
-        paths[f"{prefix}{snapshot}"] = {
-            "get": {
-                "operationId": f"{key}_snapshot",
-                "summary": "Snapshot",
-                "description": (
-                    "Gesamtstand der Körperschaft als NDJSON: die erste Zeile nennt snapshot_cursor und die Zahl "
-                    "der Objekte, danach je Zeile ein Objekt. Fortsetzung über den Änderungsfeed ab snapshot_cursor."
-                ),
-                "parameters": [*shared, *body_id],
-                "responses": {
-                    "200": {
-                        "description": "Snapshot",
-                        "content": {"application/x-ndjson": {"schema": {"type": "string"}}},
-                    },
-                    "404": _error("Nicht gefunden oder nicht eingeschaltet"),
-                    "410": _problem("Kommune zurückgenommen"),
-                    "429": _RATE_LIMITED,
-                    **_PAUSED,
-                },
-            }
-        }
+    paths.update(_feed_paths(prefix, key, feed, snapshot, kommparl_feed, kommparl_snapshot, [*shared, *body_id]))
     return paths

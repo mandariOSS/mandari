@@ -758,7 +758,7 @@ def sitzung_laden(organization: Organization, meeting_id: Any) -> FactionMeeting
     if pk is None:
         return None
     return (
-        FactionMeeting.objects.select_related("organization", "minute_taker__user", "chaired_by__user")
+        FactionMeeting.objects.select_related("organization", "meeting_type", "minute_taker__user", "chaired_by__user")
         .filter(id=pk, organization=organization)
         .first()
     )
@@ -833,6 +833,11 @@ def top_hinzufuegen(
             teil = "internal"
     if teil == "internal" and not can_view_internal(membership):
         raise TopNeuError("Gesperrte Information", status=403)
+    # Art ohne nichtöffentlichen Teil (Issue #1240): keine neuen NÖ-TOPs, auch keine Unterpunkte bestehender
+    if teil == "internal" and not meeting.nichtoeffentlich_erlaubt:
+        from .regeln import NOE_AUS
+
+        raise TopNeuError(NOE_AUS)
     return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung)
 
 
@@ -869,7 +874,8 @@ def anwesenheit(meeting: FactionMeeting) -> Anwesenheit:
 
     Gruppen (Issue #1166): „Stimmberechtigt“ nach derselben Regel wie die Beschlussfähigkeit
     (:func:`.quorum.stimmberechtigt`, die Administrator-Rolle allein gibt kein Stimmrecht), dann „Weitere Mitglieder“,
-    dann „Gäste“, je nach Namen. Rollen und Rechte sind vorgeladen, ohne eigene Abfragen je Teilnahme.
+    dann „Gäste“, je nach Namen. Rollen und Rechte sind vorgeladen, ohne eigene Abfragen je Teilnahme. In einer
+    Sitzungsart ohne Abstimmungen (Issue #1240) stehen alle Mitglieder in einer Gruppe „Mitglieder“.
     """
     from .quorum import stimmberechtigt
 
@@ -879,17 +885,20 @@ def anwesenheit(meeting: FactionMeeting) -> Anwesenheit:
         .order_by("is_guest", "membership__user__last_name", "membership__user__first_name", "guest_name")
     )
     mitglieder = [a for a in teilnahmen if not a.is_guest]
-    stimme = {a.pk: stimmberechtigt(a.membership) for a in mitglieder}
-    mit_stimme = [a for a in mitglieder if stimme[a.pk]]
-    ohne_stimme = [a for a in mitglieder if not stimme[a.pk]]
     gaeste = [a for a in teilnahmen if a.is_guest]
+    aufteilung: list[tuple[str, str, list[Any]]]
+    if meeting.abstimmungen_erlaubt:
+        stimme = {a.pk: stimmberechtigt(a.membership) for a in mitglieder}
+        aufteilung = [
+            ("stimmberechtigt", "Stimmberechtigt", [a for a in mitglieder if stimme[a.pk]]),
+            ("weitere", "Weitere Mitglieder", [a for a in mitglieder if not stimme[a.pk]]),
+        ]
+    else:
+        # Sitzungsart ohne Abstimmungen (Issue #1240): ohne Stimmrecht keine Trennung der Mitglieder
+        aufteilung = [("mitglieder", "Mitglieder", mitglieder)]
     gruppen = [
         AnwesenheitGruppe(schluessel, titel, liste)
-        for schluessel, titel, liste in (
-            ("stimmberechtigt", "Stimmberechtigt", mit_stimme),
-            ("weitere", "Weitere Mitglieder", ohne_stimme),
-            ("gaeste", "Gäste", gaeste),
-        )
+        for schluessel, titel, liste in (*aufteilung, ("gaeste", "Gäste", gaeste))
         if liste
     ]
     return Anwesenheit(teilnahmen, sum(1 for a in mitglieder if a.status == "present"), len(mitglieder), gruppen)

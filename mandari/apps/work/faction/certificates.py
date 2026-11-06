@@ -61,15 +61,25 @@ def confirmed_attendances(membership, period_start, period_end):
     )
 
 
-def bulk_confirmed_attendances(organization: Any, period_start: date, period_end: date) -> QuerySet[FactionAttendance]:
+def bulk_confirmed_attendances(
+    organization: Any, period_start: date, period_end: date, membership: Any = None
+) -> QuerySet[FactionAttendance]:
     """
     Alle final bestätigten Anwesenheiten der Organisation im Zeitraum (je Person).
 
     Ehemalige Mitglieder zählen mit ihrem gesicherten Namen mit (Issue #591): Der Export dient
     z. B. der Abrechnung von Sitzungsgeld und muss auch Teilnahmen vor dem Ausscheiden belegen.
+    Mit ``membership`` nur aus Sitzungen, die diese Person sieht (Sitzungsarten, Issue #1239).
     """
+    qs = FactionAttendance.objects.all()
+    if membership is not None:
+        from .models import FactionMeeting
+        from .sitzungsarten import sichtbar_fuer
+
+        sichtbar = sichtbar_fuer(membership, FactionMeeting.objects.filter(organization=organization))
+        qs = qs.filter(meeting__in=sichtbar.values("pk"))
     return (
-        FactionAttendance.objects.filter(
+        qs.filter(
             Q(membership__isnull=False) | ~Q(member_name_snapshot=""),
             meeting__organization=organization,
             is_guest=False,

@@ -118,6 +118,13 @@ KOPF_ZEILEN = 10
 #: Pfade, deren Angaben nicht vom Projekt stammen (Fremdbibliotheken, Lizenztexte, Testdaten)
 FREMDE_PFADE = ("LICENSES/", "mandari/static/vendor/", "ingestor/tests/fixtures/")
 
+#: Zuordnungen in ``REUSE.toml`` nur für fremde Werke: Fremdbibliotheken und die unverändert übernommenen Schemas der
+#: kommParl-Spezifikation (Issue #1216). Sie nennen ihre Urheber.
+FREMDE_ZUORDNUNGEN = ("mandari/static/vendor/", "mandari/hub/api/kommparl/")
+
+#: Urheberangabe des Projekts in ``REUSE.toml``
+EIGENE_ANGABE = re.compile(r"\d{4}(?:-\d{4})? " + URHEBER)
+
 
 def _eigene_annotationen() -> list[dict[str, object]]:
     daten = tomllib.loads((REPO / "REUSE.toml").read_text(encoding="utf-8"))
@@ -125,12 +132,17 @@ def _eigene_annotationen() -> list[dict[str, object]]:
     for eintrag in daten["annotations"]:
         pfade = eintrag["path"]
         pfade = [pfade] if isinstance(pfade, str) else list(pfade)
-        if not all(p.startswith("mandari/static/vendor/") for p in pfade):
+        if not all(p.startswith(FREMDE_ZUORDNUNGEN) for p in pfade):
             eigene.append(eintrag)
     return eigene
 
 
 def test_reuse_toml_nennt_den_urheber() -> None:
+    """
+    Eigene Zuordnungen nennen den Urheber. Eine Datei, die eigene und übernommene Teile verbindet (Lizenzausdruck mit
+    ``AND``, etwa die Beschreibung der Schnittstelle mit den kommParl-Schemas), nennt ihn zuerst und danach die
+    Urheber der übernommenen Teile.
+    """
     daten = tomllib.loads((REPO / "REUSE.toml").read_text(encoding="utf-8"))
     assert daten["SPDX-PackageSupplier"] == URHEBER
 
@@ -138,8 +150,13 @@ def test_reuse_toml_nennt_den_urheber() -> None:
     assert eigene, "REUSE.toml ohne eigene Zuordnungen?"
     for eintrag in eigene:
         angabe = eintrag["SPDX-FileCopyrightText"]
+        if isinstance(angabe, list):
+            assert " AND " in str(eintrag["SPDX-License-Identifier"]), (eintrag["path"], angabe)
+            assert len(angabe) > 1, (eintrag["path"], angabe)
+            assert not any(EIGENE_ANGABE.fullmatch(a) for a in angabe[1:]), (eintrag["path"], angabe)
+            angabe = angabe[0]
         assert isinstance(angabe, str)
-        assert re.fullmatch(r"\d{4}(?:-\d{4})? " + URHEBER, angabe), (eintrag["path"], angabe)
+        assert EIGENE_ANGABE.fullmatch(angabe), (eintrag["path"], angabe)
 
 
 @pytest.mark.parametrize(

@@ -1,7 +1,8 @@
 {% extends "work/base_work.html" %}
 {% comment %}
 Mein Profil › Sicherheit im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Stand im Satz des Kopfbands statt einer
-Übersichtskarte, Abschnitte Passwort, Zwei-Faktor-Anmeldung, aktive Sitzungen und Sicherheitshinweise statt Karten. Die
+Übersichtskarte, Abschnitte Passwort, Zwei-Faktor-Anmeldung, aktive Sitzungen, Verbundene Anwendungen (nur bei
+eingeschaltetem OIDC-Anbieter, #1215) und Sicherheitshinweise statt Karten. Die
 drei Dialoge (Einrichtung, Backup-Codes, Abschalten) über c-ui.alpine-modal statt eigener Überlagerungen; Zustand und
 Ablauf bleiben in securitySettings (frontend/alpine/security-settings.ts). Kontext: SecurityView; die bisherige Seite
 bleibt work/profile/security.html.
@@ -28,6 +29,12 @@ bleibt work/profile/security.html.
         </div>
         <div class="space-y-10 min-w-0">
             {% include "work/profile/neu/_sicherheit_sitzungen.html" %}
+            {% if oidc_provider_enabled %}
+            <c-rahmen.abschnitt titel="Verbundene Anwendungen" titel_id="sicherheit-anwendungen" data-testid="sicherheit-anwendungen">
+                <c-slot name="link"><c-ui.textlink href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}">Anzeigen und widerrufen</c-ui.textlink></c-slot>
+                <c-rahmen.satz eng>Anwendungen, die Sie mit Ihrem mandari-Konto angemeldet haben und die in Ihrem Namen zugreifen dürfen.</c-rahmen.satz>
+            </c-rahmen.abschnitt>
+            {% endif %}
             <c-rahmen.abschnitt titel="Sicherheitshinweise" titel_id="sicherheit-hinweise">
                 <c-rahmen.satz eng>Letzte Änderungen an Passwort, zweitem Faktor, Sicherheitsschlüsseln und Sitzungen.</c-rahmen.satz>
                 {% if security_notifications %}

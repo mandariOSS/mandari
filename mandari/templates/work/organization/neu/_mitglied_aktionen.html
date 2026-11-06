@@ -1,6 +1,8 @@
 {% comment %}
-Mitglied: Aktionen zur Mitgliedschaft (Issue #951) – deaktivieren und entfernen nur mit members.remove, reaktivieren,
-Eigentum übertragen nur durch den Eigentümer; nie für sich selbst, Eigentümer nie deaktivieren oder entfernen.
+Mitglied: Aktionen zur Mitgliedschaft (Issue #951) – deaktivieren, Nur Lesen mit Löschung (Issue #1237) und entfernen
+nur mit members.remove, reaktivieren,
+Eigentum übertragen nur durch den Eigentümer und nur an aktive Mitglieder; nie für sich selbst, Eigentümer nie deaktivieren
+oder entfernen.
 Formulare und Rückfragen (confirmAction mit Variante) wie bisher (partials/_member_actions.html), als Zeilen mit
 Linien statt farbiger Kästen. Kontext: member, organization, is_self, is_owner, can_remove, request.
 {% endcomment %}
@@ -33,6 +35,31 @@ Linien statt farbiger Kästen. Kontext: member, organization, is_self, is_owner,
             </form>
         </li>
         {% endif %}
+        {% if can_remove and member.deletion_pending %}
+        <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
+            <div class="min-w-[14rem] flex-1">
+                <p class="font-medium text-gray-900 dark:text-white">Löschung am {{ member.deletion_scheduled_at|date:"d.m.Y" }}</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Bis dahin lässt sich die Löschung zurücknehmen; danach ist das Mitglied deaktiviert.</p>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="cancel_deletion">
+                <c-ui.button type="submit" size="sm" variant="secondary" icon="undo-2">Löschung zurücknehmen</c-ui.button>
+            </form>
+        </li>
+        {% elif can_remove and not member.is_guest and not member.registration_requested_at %}
+        <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
+            <div class="min-w-[14rem] flex-1">
+                <p class="font-medium text-gray-900 dark:text-white">Nur Lesen, Löschung nach 30 Tagen</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Die Person kann nur noch ihre eigenen Daten herunterladen; nach 30 Tagen wird die Mitgliedschaft gelöscht.</p>
+            </div>
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Nur Lesen, Löschung nach 30 Tagen', message: 'Die Person sieht ab sofort keine Inhalte mehr und kann nichts ändern. 30 Tage lang kann sie sich noch anmelden und ihre eigenen Daten herunterladen; sie erhält dazu eine E-Mail und Erinnerungen 7 und 3 Tage vorher. Danach wird die Mitgliedschaft gelöscht: Beiträge für die Fraktion bleiben als „Ehemaliges Mitglied“, Namen in Protokollen und Anwesenheitslisten bleiben; persönliche Daten, private Dokumente und Entwürfe werden gelöscht, das Konto ebenfalls, wenn es sonst nirgends gebraucht wird. Bis dahin können Sie die Löschung zurücknehmen.', confirmText: 'Löschung planen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="schedule_deletion">
+                <c-ui.button type="submit" size="sm" variant="secondary" icon="clock">Löschung planen</c-ui.button>
+            </form>
+        </li>
+        {% endif %}
         {% if can_remove %}
         <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
             <div class="min-w-[14rem] flex-1">
@@ -48,7 +75,7 @@ Linien statt farbiger Kästen. Kontext: member, organization, is_self, is_owner,
         {% endif %}
         {% endif %}
 
-        {% if request.user == organization.owner and not is_self %}
+        {% if request.user == organization.owner and not is_self and member.is_active %}
         <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
             <div class="min-w-[14rem] flex-1">
                 <p class="font-medium text-gray-900 dark:text-white">Eigentum übertragen</p>

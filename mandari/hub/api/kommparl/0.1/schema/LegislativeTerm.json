@@ -1,0 +1,63 @@
+{
+    "title": "LegislativeTerm",
+    "description": "{{ LegislativeTerm.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/LegislativeTerm$"
+        },
+        "body": {
+            "type": "string",
+            "format": "url",
+            "description": "{{ LegislativeTerm.properties.body.description }}",
+            "references": "Body"
+        },
+        "name": {
+            "description": "{{ LegislativeTerm.properties.name.description }}",
+            "type": "string"
+        },
+        "startDate": {
+            "description": "{{ LegislativeTerm.properties.startDate.description }}",
+            "type": "string",
+            "format": "date"
+        },
+        "endDate": {
+            "description": "{{ LegislativeTerm.properties.endDate.description }}",
+            "type": "string",
+            "format": "date"
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

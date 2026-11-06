@@ -1,0 +1,100 @@
+{
+    "title": "System",
+    "description": "{{ System.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type",
+        "oparlVersion",
+        "body"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/System$"
+        },
+        "oparlVersion": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org/1\\.(0|1)\\/$",
+            "description": "{{ System.properties.oparlVersion.description }}"
+        },
+        "otherOparlVersions": {
+            "description": "{{ System.properties.otherOparlVersions.description }}",
+            "references": "System",
+            "items": {
+                "type": "string",
+                "format": "url"
+            },
+            "type": "array"
+        },
+        "kommparl:conformsTo": {
+            "description": "{{ System.properties.kommparl:conformsTo.description }}",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "license": {
+            "description": "{{ System.properties.license.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "body": {
+            "description": "{{ System.properties.body.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Body.json"
+            }
+        },
+        "name": {
+            "description": "{{ System.properties.name.description }}",
+            "type": "string"
+        },
+        "contactEmail": {
+            "description": "{{ System.properties.contactEmail.description }}",
+            "type": "string"
+        },
+        "contactName": {
+            "description": "{{ System.properties.contactName.description }}",
+            "type": "string"
+        },
+        "website": {
+            "description": "{{ System.properties.website.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "vendor": {
+            "description": "{{ System.properties.vendor.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "product": {
+            "description": "{{ System.properties.product.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

@@ -133,10 +133,20 @@ sh deploy/scripts/deploy.sh plan   v0.11.0   # Images ziehen, migrate --plan, ch
 sh deploy/scripts/deploy.sh apply  v0.11.0   # Sicherung, Migration, Umschalten, Prüfung, ggf. Rückfall
 sh deploy/scripts/deploy.sh verify           # nur die Prüfungen (Seiten + Worker) gegen den laufenden Stand
 sh deploy/scripts/deploy.sh rollback <tag>   # von Hand zurück auf ein früheres Tag
+sh deploy/scripts/deploy.sh prune           # Vor-Deploy-Sicherungen auf Anzahl und Höchstalter kürzen
+```
+
+Die Sicherung vor jedem Deploy (`BACKUP_DIR`) bleibt höchstens `BACKUP_KEEP` Stück (Standard 5) und höchstens
+`BACKUP_MAX_AGE_DAYS` Tage (Standard 30) liegen, wie die Offsite-Sicherungen (`docs/BACKUP.md`). Gelöschte Daten
+verschwinden so mit der Zeit auch aus diesen Sicherungen. Damit die Grenze auch ohne Deploy greift, täglich
+`deploy.sh prune` aufrufen, etwa per Cron:
+
+```cron
+15 4 * * * set -a; . /opt/mandari/deploy.env; set +a; cd /opt/mandari && sh deploy/scripts/deploy.sh prune
 ```
 
 Alle Parameter (`MANDARI_DIR`, `COMPOSE_FILES`, `APP_SERVICE`, `WORKER_SERVICES`,
-`WORKER_CHECK_SECONDS`, `DB_SERVICE`, `BACKUP_DIR`, `NOTIFY_EMAIL`, `VERIFY_*`) stehen im Kopf
+`WORKER_CHECK_SECONDS`, `DB_SERVICE`, `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_MAX_AGE_DAYS`, `NOTIFY_EMAIL`, `VERIFY_*`) stehen im Kopf
 des Skripts.
 Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, keine
 Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
@@ -698,6 +708,7 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 | `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |
 | `apps.work.schedules.ris_verknuepfungen_abgleichen` | alle `WORK_RIS_RELINK_INTERVAL_MINUTES` (15) min | Work-Daten nach Neuveröffentlichung im RIS umhängen (`WORK_RIS_RELINK`, Standard aus) |
 | `apps.work.schedules.fraktionsprotokolle_versenden` | alle `FACTION_PROTOCOL_INTERVAL_MINUTES` (15) min | automatischer Protokollversand, wenn die Organisation ihn eingeschaltet hat |
+| `apps.work.schedules.mitgliedschaften_auslaufen` | alle `WORK_MEMBER_EXPIRY_INTERVAL_MINUTES` (60) min | Mitgliedschaften „Nur Lesen, Löschung nach 30 Tagen“: Erinnerungen 7 und 3 Tage vorher, Löschung am Löschtag (Issue #1237) |
 | `apps.events.schedules.idempotenzschluessel_aufraeumen` | täglich 03:40 | Idempotenzschlüssel nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` |
 | `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS` (14), tote und fehlgeschlagene nach `EVENTS_TASKS_DEAD_RETENTION_DAYS` (90) Tagen |
 | `befehl:events_purge` | täglich 04:10, nur mit `EVENTS_JOURNAL_PURGE_ENABLED` (Standard aus) | Journal nach `EVENTS_JOURNAL_RETENTION_DAYS` (90), nie über den kleinsten Cursor; `docs/MONITORING.md`, „Nachspielen und Aufräumen des Journals“ |
@@ -705,6 +716,13 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 `python manage.py events_scheduler --list` zeigt alle Zeitpläne mit dem zuletzt geplanten Termin. Auch Sync
 einer Quelle und Löschen einer Kommune aus dem Admin laufen als Auftrag im Worker (Warteschlange
 `default`), unabhängig von `TASKS_BACKEND`.
+
+**Rückfall und Auslauf „Nur Lesen“ (Issue #1237):** Ein älteres Image kennt den Zeitplan
+`mitgliedschaften_auslaufen` nicht. Läuft es länger, holt der erste Lauf nach der Rückkehr alles nach:
+Mitgliedschaften, deren Löschdatum inzwischen vorbei ist, werden sofort gelöscht, ohne weitere Erinnerung;
+bei den übrigen geht nur die jüngste versäumte Erinnerung raus. Löschdaten, die das ältere Image durch Reaktivieren oder
+Deaktivieren überholt hat, hebt der Lauf auf, statt zu löschen: Gelöscht wird nur, wenn der jüngste
+Zugangswechsel in der Änderungshistorie das Setzen mit genau diesem Datum ist.
 
 **Wann meldet die Anwendung ein Fehlen?** Wenn die Installation Worker braucht, und das ist wegen
 der Zeitpläne der Standard: Dann melden `/health/` und `/health/ready/` `"degraded"` (Antwort

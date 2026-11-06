@@ -190,6 +190,12 @@
                     <i data-lucide="shield" class="w-4 h-4 inline mr-2"></i>
                     Sicherheit
                 </a>
+                {% if oidc_provider_enabled %}
+                <a href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="plug" class="w-4 h-4 inline mr-2"></i>
+                    Verbundene Anwendungen
+                </a>
+                {% endif %}
                 {# App-Installation (Android/Chromium): nur wenn beforeinstallprompt verfügbar, wegklickbar #}
                 <div x-show="canInstall && !installHidden" x-cloak class="flex items-center">
                     <button type="button" @click="installApp()"

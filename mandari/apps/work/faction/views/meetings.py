@@ -8,7 +8,7 @@ from datetime import datetime
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView
@@ -21,10 +21,12 @@ from apps.work.stats_text import faction_meetings_sentence
 from ..models import (
     FactionAttendance,
     FactionMeeting,
+    FactionMeetingType,
 )
 
 logger = logging.getLogger(__name__)
 from ..agenda import apply_standard_agenda, standard_agenda_preview
+from ..sitzungsarten import sichtbar_fuer, sitzung_oder_404, teilnehmende
 from ..visibility import can_view_internal
 from ._helpers import VIDEO_LINK_MAX_LENGTH, VIDEO_LINK_TOO_LONG, _get_meeting_context
 
@@ -51,9 +53,9 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "faction"
 
-        meetings = FactionMeeting.objects.filter(organization=self.organization).select_related(
-            "created_by__user", "schedule"
-        )
+        # Sitzungsarten (Issue #1239): nur Sitzungen, die das Mitglied sehen darf
+        sichtbar = sichtbar_fuer(self.membership, FactionMeeting.objects.filter(organization=self.organization))
+        meetings = sichtbar.select_related("created_by__user", "schedule")
 
         # Filter by status
         status = self.request.GET.get("status")
@@ -101,7 +103,7 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         context["meetings"] = paginator.get_page(page)
 
         # Statistics
-        all_meetings = FactionMeeting.objects.filter(organization=self.organization)
+        all_meetings = sichtbar
         context["stats"] = {
             "total": all_meetings.count(),
             "upcoming": all_meetings.filter(start__gte=today_start).count(),
@@ -147,9 +149,9 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         seite = context["meetings"]
         kontext = {
             "zeilen": liste.zeilen(seite, self.organization, intern=intern),
-            "kopf_satz": liste.naechste_satz(self.organization, context["stats_sentence"]),
-            "reihen": liste.reihen(self.organization),
-            "automatik": liste.automatik(self.organization),
+            "kopf_satz": liste.naechste_satz(self.organization, context["stats_sentence"], self.membership),
+            "reihen": liste.reihen(self.organization, self.membership),
+            "automatik": liste.automatik(self.organization, self.membership),
             "zuletzt": [],
         }
         # Wie im Muster: unter den kommenden die letzten drei vergangenen, „Ältere Sitzungen anzeigen“ führt zu
@@ -157,7 +159,8 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         ungefiltert = not context.get("search_query") and not context.get("selected_status")
         if time_filter == "upcoming" and ungefiltert and seite.number == 1:
             vergangen = liste.mit_zahlen(
-                FactionMeeting.objects.filter(organization=self.organization, start__lt=today_start)
+                sichtbar_fuer(self.membership, FactionMeeting.objects.filter(organization=self.organization))
+                .filter(start__lt=today_start)
                 .select_related("schedule")
                 .annotate(
                     attendee_count=Count(
@@ -211,9 +214,11 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             messages.error(request, "Bitte einen gültigen Videolink angeben (https://…).")
             return redirect("work:faction", org_slug=self.organization.slug)
 
-        # Create meeting
+        # Create meeting: von Hand angelegt in der Standardart, Nummer und vorherige Sitzung in ihr (Issue #1231)
+        meeting_type = FactionMeetingType.default_for(self.organization)
         meeting = FactionMeeting(
             organization=self.organization,
+            meeting_type=meeting_type,
             created_by=self.membership,
             title=title,
             start=start_datetime,
@@ -224,19 +229,19 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             status="draft" if request.POST.get("save_as") == "draft" else "planned",
             # Zu- und Absagen sind standardmäßig aus und je Sitzung einschaltbar (Issue #871)
             rsvp_enabled=request.POST.get("rsvp_enabled") == "on",
-            meeting_number=FactionMeeting.get_next_meeting_number(self.organization),
+            meeting_number=FactionMeeting.get_next_meeting_number(self.organization, meeting_type),
         )
 
         # Find and link previous meeting — nur wenn die Vorsitzung noch
         # nicht verkettet ist (OneToOne; Muster aus der Sitzungserzeugung #61)
-        previous = FactionMeeting.find_previous_meeting(self.organization, before_date=meeting.start)
+        previous = FactionMeeting.find_previous_meeting(self.organization, meeting.start, meeting_type=meeting_type)
         if previous is not None and FactionMeeting.objects.filter(previous_meeting=previous).exists():
             previous = None
         meeting.previous_meeting = previous
         meeting.save()
 
-        # Anwesenheit für alle aktiven Mitglieder – ohne Gastzugänge
-        for member in self.organization.memberships.filter(is_active=True, is_guest=False):
+        # Anwesenheit für die Teilnehmenden der Art (Issue #1239), immer ohne Gastzugänge
+        for member in teilnehmende(meeting_type):
             FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
 
         # Auto-create approval agenda item if enabled — über den Service, damit
@@ -273,7 +278,7 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "faction"
 
-        meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
+        meeting = sitzung_oder_404(self.membership, self.organization, kwargs.get("meeting_id"))
 
         # Neue Sitzungsansicht der laufenden Sitzung (Issue #874) hinter dem Schalter der Organisation;
         # ``?ansicht=bisher`` öffnet weiterhin die bisherige Seite mit allen Funktionen

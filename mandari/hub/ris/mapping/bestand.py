@@ -33,7 +33,7 @@ der Erkennung der antragstellenden Fraktionen (``insight_core.services.vorgang_u
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Any, Final
 
@@ -81,8 +81,9 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 
 #: Version der Abbildung (2: Beschlussfassung und Genehmigung der Niederschrift aus eigenen Spalten, Issue #525;
 #: 3: ``mandari:summaryAiGenerated`` zur KI-Zusammenfassung, Issue #938;
-#: 4: antragstellende Fraktionen ``originatorOrganization``, ``mandari:originator…``, Issue #1138)
-VERSION: Final = 4
+#: 4: antragstellende Fraktionen ``originatorOrganization``, ``mandari:originator…``, Issue #1138;
+#: 5: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216)
+VERSION: Final = 5
 
 # Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören.
 # Manche RIS ordnen nach dem Kommunalrecht: Hauptorgan (Rat, Kreistag) und Hilfsorgan (Ausschüsse,
@@ -168,12 +169,20 @@ class BestandUris:
         return f"{self.base}/v1/body/{body_id}/{segment}"
 
     def changes(self, body_id: Any) -> str:
-        """Änderungsfeed einer Kommune (kompatible Erweiterung von OParl 1.1)."""
+        """Änderungsfeed einer Kommune in der älteren Form (``mandari:changes``, abgekündigt)."""
         return self.list(body_id, "changes")
 
     def snapshot(self, body_id: Any) -> str:
-        """Snapshot einer Kommune: Einstieg in den Änderungsfeed."""
+        """Snapshot einer Kommune in der älteren Form (``mandari:snapshot``, abgekündigt)."""
         return self.list(body_id, "snapshot")
+
+    def kommparl_changes(self, body_id: Any) -> str:
+        """Änderungsfeed einer Kommune nach dem Profil von kommParl (``kommparl:changes``)."""
+        return self.list(body_id, "kommparl/changes")
+
+    def kommparl_snapshot(self, body_id: Any) -> str:
+        """Snapshot einer Kommune nach dem Profil von kommParl (``kommparl:snapshot``)."""
+        return self.list(body_id, "kommparl/snapshot")
 
     def web(self, path: str) -> str:
         """Seite im Bürgerportal."""
@@ -407,11 +416,21 @@ def _file_day(file_obj: OParlFile) -> str | None:
 class BestandMapping:
     """Abbildung der Objekte des RIS-Bestands; je Objekttyp eine Methode, Ergebnis ist ein OParl-Objekt."""
 
-    def __init__(self, base: str, site: str, *, license_url: str = "", changes: bool = False) -> None:
+    def __init__(
+        self,
+        base: str,
+        site: str,
+        *,
+        license_url: str = "",
+        changes: bool = False,
+        conforms_to: Sequence[str] = (),
+    ) -> None:
         self.uris = BestandUris(base, site)
         self.license_url = license_url
         #: Die Ausgabe bietet Änderungsfeed und Snapshot an; der Body nennt dann deren Adressen
         self.changes = changes
+        #: Kennungen aus kommParl, die die Ausgabe vollständig erfüllt (``System``, ``kommparl:conformsTo``)
+        self.conforms_to = list(conforms_to)
 
     # -- System, Körperschaft, Wahlperiode -------------------------------------------------------
 
@@ -421,6 +440,7 @@ class BestandMapping:
                 "id": self.uris.system(),
                 "type": schema_type("system"),
                 "oparlVersion": "https://schema.oparl.org/1.1/",
+                "kommparl:conformsTo": self.conforms_to,
                 # Übergreifende Lizenz nur, wenn der Betreiber eine festlegt (OPARL_LICENSE_URL); sonst gilt
                 # die Angabe der jeweiligen Kommune am Body
                 "license": self.license_url or None,
@@ -466,6 +486,9 @@ class BestandMapping:
                 "mandari:displayName": body.get_display_name(),
                 # Abgekündigt: dieselbe URL steht im Standardfeld ``locationList``
                 "mandari:locationList": self.uris.list(body.id, "locations"),
+                # Änderungsfeed und Snapshot nach den Profilen von kommParl; die älteren Formen sind abgekündigt
+                "kommparl:changes": self.uris.kommparl_changes(body.id) if offers_feed else None,
+                "kommparl:snapshot": self.uris.kommparl_snapshot(body.id) if offers_feed else None,
                 "mandari:changes": self.uris.changes(body.id) if offers_feed else None,
                 "mandari:snapshot": self.uris.snapshot(body.id) if offers_feed else None,
             }
@@ -645,6 +668,16 @@ class BestandMapping:
                 **_timestamps(meeting),
             }
         )
+
+    def derived_location(self, meeting: OParlMeeting, ctx: RefContext) -> Objekt | None:
+        """
+        Der Sitzungsort, den ``meeting`` als eigenes Objekt einbettet, weil die Quelle kein Location-Objekt
+        geliefert hat (``meeting_location``); ``None``, wenn es eines gibt oder keine Ortsangabe. ``ctx`` wie für
+        ``meeting`` (``RefContext.for_meetings``).
+        """
+        if ctx.location_by_ext.get(_location_ext(meeting.raw_json or {}) or ""):
+            return None
+        return self.meeting_location(meeting)
 
     def agenda_item(self, item: OParlAgendaItem, ctx: RefContext) -> Objekt:
         consultation_ids = ctx.consultations_by_agenda_ext.get(item.external_id, [])

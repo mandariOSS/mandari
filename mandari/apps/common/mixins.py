@@ -41,6 +41,20 @@ class OrganizationMixin(LoginRequiredMixin):
     # Alle anderen Views leiten auf die Gast-Übersicht um.
     guest_allowed = False
 
+    # Mitgliedschaften im Auslauf „Nur Lesen, Löschung nach 30 Tagen“ (Issue #1237) erreichen nur Views mit
+    # expiry_allowed (Auslauf-Seite und Download der eigenen Daten); alle anderen leiten dorthin um. Solche
+    # Views prüfen keine Rechte über permission_required und zeigen nur Daten der eigenen Mitgliedschaft.
+    expiry_allowed = False
+
+    def handle_expiry_restriction(self, request):
+        """
+        Zentrale Gate-Stelle für den Auslauf: None, wenn der Zugriff weiterlaufen darf, sonst die Umleitung auf
+        die Auslauf-Seite der Organisation.
+        """
+        if self.membership is None or self.membership.is_active or self.expiry_allowed:
+            return None
+        return redirect("work:membership_expiry", org_slug=self.organization.slug)
+
     def handle_guest_restriction(self, request):
         """
         Zentrale Gate-Stelle für Gäste.
@@ -83,11 +97,24 @@ class OrganizationMixin(LoginRequiredMixin):
                 .get(user=request.user, organization=self.organization, is_active=True)
             )
         except Membership.DoesNotExist:
-            raise PermissionDenied("Kein Zugang zu dieser Organisation") from None
+            # Auslauf „Nur Lesen“ (Issue #1237): Zugang nur zur Auslauf-Seite (handle_expiry_restriction)
+            self.membership = (
+                Membership.objects.select_related("organization")
+                .filter(
+                    user=request.user,
+                    organization=self.organization,
+                    is_active=False,
+                    is_guest=False,
+                    deletion_scheduled_at__isnull=False,
+                )
+                .first()
+            )
+            if self.membership is None:
+                raise PermissionDenied("Kein Zugang zu dieser Organisation") from None
 
-        # Set on request for easy access
+        # Set on request for easy access (eine Mitgliedschaft im Auslauf gilt dort weiter als keine)
         request.organization = self.organization
-        request.membership = self.membership
+        request.membership = self.membership if self.membership.is_active else None
 
         return True
 
@@ -100,6 +127,11 @@ class OrganizationMixin(LoginRequiredMixin):
 
         # Set up organization context
         self.setup_organization_context(request, **kwargs)
+
+        # Auslauf: nur die Auslauf-Seite
+        expiry_response = self.handle_expiry_restriction(request)
+        if expiry_response is not None:
+            return expiry_response
 
         # Gäste: nur explizit freigegebene Views
         guest_response = self.handle_guest_restriction(request)
@@ -160,6 +192,13 @@ class PermissionRequiredMixin(OrganizationMixin):
 
         # Set up organization context (reuses parent's method)
         self.setup_organization_context(request, **kwargs)
+
+        # Auslauf „Nur Lesen“: nur die Auslauf-Seite, dort ohne Rechteprüfung (Issue #1237)
+        expiry_response = self.handle_expiry_restriction(request)
+        if expiry_response is not None:
+            return expiry_response
+        if not self.membership.is_active:
+            return LoginRequiredMixin.dispatch(self, request, *args, **kwargs)
 
         # Gäste: nur explizit freigegebene Views (zentrale Gate-Stelle).
         # Auf freigegebenen Views wird die reguläre Berechtigungsprüfung

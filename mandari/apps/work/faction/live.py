@@ -343,7 +343,7 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
 
         try:
             return (
-                FactionAgendaItem.objects.select_related("meeting__organization", "parent")
+                FactionAgendaItem.objects.select_related("meeting__organization", "meeting__meeting_type", "parent")
                 .filter(pk=self.item_id, proposal_status="active")
                 .first()
             )
@@ -372,6 +372,11 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
             .first()
         )
         if membership is None or not membership.has_permission("faction.view_public"):
+            return None
+        # Sitzungsarten (Issue #1239): nur wer die Sitzung sieht; die Prüfung läuft auch während der Verbindung
+        from .sitzungsarten import darf_sehen
+
+        if not darf_sehen(membership, item.meeting):
             return None
         # Nichtöffentlich strikt: auch lesend nichts für Nicht-Vereidigte (Issue #64)
         if not sitzung.darf_top_sehen(item, membership):

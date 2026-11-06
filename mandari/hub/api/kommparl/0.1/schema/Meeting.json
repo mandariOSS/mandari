@@ -1,0 +1,122 @@
+{
+    "title": "Meeting",
+    "description": "{{ Meeting.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/Meeting$"
+        },
+        "name": {
+            "description": "{{ Meeting.properties.name.description }}",
+            "type": "string"
+        },
+        "meetingState": {
+            "description": "{{ Meeting.properties.meetingState.description }}",
+            "type": "string"
+        },
+        "cancelled": {
+            "description": "{{ Meeting.properties.cancelled.description }}",
+            "type": "boolean"
+        },
+        "start": {
+            "description": "{{ Meeting.properties.start.description }}",
+            "type": "string",
+            "format": "date-time"
+        },
+        "end": {
+            "description": "{{ Meeting.properties.end.description }}",
+            "type": "string",
+            "format": "date-time"
+        },
+        "location": {
+            "description": "{{ Meeting.properties.location.description }}",
+            "type": "object",
+            "schema": "Location.json"
+        },
+        "organization": {
+            "description": "{{ Meeting.properties.organization.description }}",
+            "references": "Organization",
+            "backreference": "meeting",
+            "cardinality": "n:m",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "participant": {
+            "description": "{{ Meeting.properties.participant.description }}",
+            "references": "Person",
+            "cardinality": "n:m",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "invitation": {
+            "description": "{{ Meeting.properties.invitation.description }}",
+            "type": "object",
+            "schema": "File.json"
+        },
+        "resultsProtocol": {
+            "description": "{{ Meeting.properties.resultsProtocol.description }}",
+            "type": "object",
+            "schema": "File.json"
+        },
+        "verbatimProtocol": {
+            "description": "{{ Meeting.properties.verbatimProtocol.description }}",
+            "type": "object",
+            "schema": "File.json"
+        },
+        "auxiliaryFile": {
+            "description": "{{ Meeting.properties.auxiliaryFile.description }}",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "schema": "File.json"
+            }
+        },
+        "agendaItem": {
+            "description": "{{ Meeting.properties.agendaItem.description }}",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "schema": "AgendaItem.json"
+            }
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

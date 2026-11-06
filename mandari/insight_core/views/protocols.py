@@ -60,11 +60,13 @@ class PublicProtocolListView(TemplateView):
         # Get approved protocols from these organizations
         from apps.work.faction.models import FactionMeeting
 
+        # Nur Sitzungsarten mit der Sichtbarkeit „öffentlich“ (Issue #1239)
         protocols = (
             FactionMeeting.objects.filter(
                 organization__in=organizations,
                 protocol_status="approved",
                 status="completed",
+                meeting_type__visibility="public",
             )
             .select_related("organization")
             .order_by("-start")
@@ -89,6 +91,7 @@ class PublicProtocolListView(TemplateView):
         years = FactionMeeting.objects.filter(
             organization__in=organizations,
             protocol_status="approved",
+            meeting_type__visibility="public",
         ).dates("start", "year", order="DESC")
         context["available_years"] = [d.year for d in years]
 
@@ -123,6 +126,7 @@ class PublicProtocolDetailView(TemplateView):
             status="completed",
             organization__is_active=True,
             organization__publish_protocols=True,
+            meeting_type__visibility="public",  # Sitzungsarten (Issue #1239)
         )
 
         context["meeting"] = meeting
@@ -159,6 +163,7 @@ class PublicProtocolDetailView(TemplateView):
             FactionMeeting.objects.filter(
                 organization=meeting.organization,
                 protocol_status="approved",
+                meeting_type__visibility="public",
                 start__lt=meeting.start,
             )
             .order_by("-start")
@@ -169,6 +174,7 @@ class PublicProtocolDetailView(TemplateView):
             FactionMeeting.objects.filter(
                 organization=meeting.organization,
                 protocol_status="approved",
+                meeting_type__visibility="public",
                 start__gt=meeting.start,
             )
             .order_by("start")

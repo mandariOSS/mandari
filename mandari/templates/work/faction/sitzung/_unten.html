@@ -1,9 +1,11 @@
 {# Leiste fest am unteren Rand: Beschluss kompakt, voriger und nächster TOP (Issue #874) #}
 {# Kontext: item, decision, beschluss_punkt, vor/nach (sitzung.TopZeile), rechte, quorum, ergebnisse, aendern, oob, oob_zeile, sitzung_urls #}
+{# Sitzungsart ohne Abstimmungen (Issue #1240, rechte.abstimmungen): kein Beschlussfeld, erfasste Beschlüsse bleiben lesbar #}
 <div class="wf-leiste fs-unten" id="fs-unten" role="region" aria-label="Beschluss und TOP wechseln" data-meldungen-darueber x-data="beschlussLeiste"
      data-ja="{{ decision.votes_yes|default:0 }}" data-nein="{{ decision.votes_no|default:0 }}" data-enthaltung="{{ decision.votes_abstain|default:0 }}"
      :class="{ 'beschluss-offen': offen }"{% if oob %} hx-swap-oob="true"{% endif %}>
     {# Nichtöffentlich: Beschluss verdeckt, Titel der Nachbarn weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issues #1166, #1201) #}
+    {% if decision or rechte.abstimmungen %}
     {% if intern %}<div class="fs-beschluss fs-noe-ersatz"><span class="beschriftung">Beschluss</span><span class="fs-meta">Nichtöffentlich, ausgeblendet</span></div><div class="fs-noe-inhalt">{% endif %}
     {% if decision and not aendern %}
     <div class="fs-beschluss">
@@ -14,12 +16,12 @@
             {% if decision.result != 'postponed' %}<span>{{ decision.votes_yes }} dafür, {{ decision.votes_no }} dagegen, {{ decision.votes_abstain }} {% if decision.votes_abstain == 1 %}Enthaltung{% else %}Enthaltungen{% endif %}</span>{% endif %}
             {% if decision.decision_text %}<span class="text" title="{{ decision.decision_text }}">{{ decision.decision_text }}</span>{% endif %}
         </span>
-        {% if rechte.protokollieren %}
+        {% if rechte.abstimmen %}
         <button type="button" class="wf-textlink" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-unten" hx-swap="outerHTML"
                 hx-vals='{"action": "beschluss_aendern", "item_id": "{{ item.pk }}"}'>Ändern</button>
         {% endif %}
     </div>
-    {% elif rechte.protokollieren %}
+    {% elif rechte.abstimmen %}
     <form class="fs-beschluss" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-unten" hx-swap="outerHTML">
         <input type="hidden" name="action" value="beschluss">
         <input type="hidden" name="item_id" value="{{ item.pk }}">
@@ -43,12 +45,13 @@
     <div class="fs-beschluss"><span class="beschriftung">Beschluss</span><span class="fs-meta">Noch kein Beschluss.</span></div>
     {% endif %}
     {% if intern %}</div>{% endif %}
+    {% endif %}
 
     <nav class="wf-nachbarn fs-nav" aria-label="TOP wechseln">
         <button type="button" class="wf-knopf wf-klein fs-mobil-nur" @click="tagesordnungOffen = true" aria-controls="fs-tagesordnung">
             <i data-lucide="list" aria-hidden="true"></i>TOP {{ item.number }}
         </button>
-        <button type="button" class="wf-knopf wf-klein fs-mobil-nur" @click="offen = !offen" :aria-expanded="offen ? 'true' : 'false'">Beschluss</button>
+        {% if decision or rechte.abstimmungen %}<button type="button" class="wf-knopf wf-klein fs-mobil-nur" @click="offen = !offen" :aria-expanded="offen ? 'true' : 'false'">Beschluss</button>{% endif %}
         {% if vor %}
         <a class="wf-nachbar" href="?top={{ vor.item.pk }}" hx-get="{% url 'work:faction_session_item' org_slug=org_slug meeting_id=meeting.pk item_id=vor.item.pk %}"
            hx-target="#fs-fokus" hx-swap="outerHTML" hx-push-url="?top={{ vor.item.pk }}" data-top-wechsel data-nav="vor" aria-keyshortcuts="K"

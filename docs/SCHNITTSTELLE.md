@@ -23,9 +23,42 @@ verwirrt Anwendungen, die Objekte an ihrer `id` erkennen. Der Einstieg ist desha
 verweist mit `system` auf das System des Aggregators (`/oparl/v1/system`).
 
 `kommparl:conformsTo` nennt nur Kennungen, deren Anforderungen die Installation vollständig erfüllt (kommParl,
-Kapitel 5): heute `https://schema.kommparl.de/0.1/`. Änderungsfeed und Snapshot gibt es schon, die Körperschaften
-nennen sie aber als `mandari:changes` und `mandari:snapshot`. Die Profile verlangen `kommparl:changes` und
-`kommparl:snapshot`. Ihre Kennungen kommen hinzu, sobald die Ausgaben beide Eigenschaften nennen (ADR, Regel 2).
+Kapitel 5): heute `https://schema.kommparl.de/0.1/`. Dieselbe Liste steht seit #1216 am `System` beider OParl-Ausgaben
+(`hub.api.kommparl.conforms_to`). Die Profile Änderungsfeed und Snapshot kämen hinzu, sobald die Installation den
+Feed anbietet (`OPARL_CHANGES_ENABLED`) und sie vollständig erfüllt sind (`PROFILES_FULFILLED`). Das ist noch nicht
+der Fall: Ändert sich ein eingebettetes Objekt (ein Tagesordnungspunkt in einer Sitzung), verlangt das Profil
+Änderungsfeed auch einen Eintrag für das einbettende Objekt; der Feed nennt nur das geänderte Objekt (Profil
+Änderungsfeed, Abschnitt „Vollständigkeit und Reihenfolge“). Das Profil Snapshot setzt das Profil Änderungsfeed
+voraus.
+
+Die Fassung verlangt unter anderem jeden Zeitpunkt als `yyyy-mm-ddThh:mm:ss±hh:mm` (Kapitel „JSON-Ausgabe“). Beide
+Ausgaben geben Zeitpunkte deshalb auf die Sekunde aus (`hub.ris.canonical.iso`), und die Konformitätsprüfung der Tests
+prüft die Formate mit den Mustern der Spezifikation, ohne Ausnahme.
+
+## OParl-Ausgaben nach kommParl (#1216)
+
+Beide OParl-Ausgaben stehen mit den Schemas der kommParl-Spezifikation in der Beschreibung.
+
+- **Übernommene Schemas:** `mandari/hub/api/kommparl/0.1/` enthält `schema/*.json` (Objekttypen im Format der
+  OParl-Spezifikation) und `profiles/<Profil>/*.json` (JSON Schema 2020-12) unverändert, dazu `HERKUNFT.json` mit
+  Repository, Commit, Datum, Lizenz (CC BY-SA 4.0, `REUSE.toml`) und Prüfsummen. Erneuern:
+  `python scripts/kommparl_schemas.py --commit <sha>`, prüfen: `--pruefen` (auch ein Test).
+- **Umwandlung im Code:** `hub.api.kommparl` wandelt die Objekttypen beim Erzeugen der Beschreibung in JSON Schema
+  2020-12 um (`url` → `format: uri`, eingebettete Objekte → `$ref`, `type` → `const`, Texte nicht leer) und
+  übernimmt die Profilschemas als Komponenten `Kommparl…` (ohne `$id`, `$defs` aufgelöst). `hub/api/oparl_types.py`
+  entfällt; Beschreibung und Konformitätsprüfung (`hub/api/tests/konformitaet.py`) nutzen dieselben Schemas.
+- **Ergänzungen** (`hub/api/openapi/oparl.py`), weil die Spezifikation sie nur im Text nennt: die sieben Werte von
+  `organizationType` und `license` als URL (kommParl Kapitel 6), dazu die abgekündigten Eigenschaften
+  `mandari:changes` und `mandari:snapshot` am Body. Eigene Felder erlaubt die Beschreibung wie bisher mit jedem
+  Namensraum; dass `kommparl:`-Eigenschaften im Schema stehen, prüft die Konformitätsprüfung.
+- **Änderungsfeed und Snapshot nach den Profilen** unter `…/kommparl/changes` und `…/kommparl/snapshot` (am Body
+  `kommparl:changes`, `kommparl:snapshot`). Die ältere Form konnte nicht additiv angepasst werden: Die Profilschemas
+  lassen keine Felder ohne Namensraum zu (`freshness`, `links.snapshot`, Kopfzeile des Snapshots) und legen andere
+  Gründe, `links.next` nur bis zur letzten Seite, eine Schlusszeile und ein Fehlerobjekt nach OParl 1.1 fest.
+- **Abkündigung:** `mandari:changes` und `mandari:snapshot` bleiben mit ihren Adressen bis frühestens 01.12.2027
+  (12 Monate, [RELEASE_POLITIK.md](RELEASE_POLITIK.md), Abschnitt 5). Die Beschreibung kennzeichnet Endpunkte und
+  Eigenschaften mit `deprecated` und `x-sunset`, die Antworten tragen `Deprecation`, `Sunset` und den Nachfolger im
+  Header `Link`. Die Beschreibung bleibt ohne brechende Änderung (oasdiff).
 
 ## Bereiche anmelden
 
@@ -41,7 +74,8 @@ register_area(Area(key="session-v1", title="Session-API v1", description="…",
 `openapi` liefert die Beschreibung des Bereichs (`paths`, `components`) und wird erst beim Abruf gebaut.
 Heute angemeldet: der OParl-Aggregator (`hub/api/openapi/aggregator.py`), OParl je Mandant und die Session-API v1
 (`apps/session/api/schnittstelle.py`). Die OParl-Pfade stammen aus den Routen der Ausgaben, die Schemas der
-OParl-Typen aus `hub/api/oparl_types.py`, derselben Tabelle wie die Typprüfung des OParl-Validators.
+OParl-Typen aus der kommParl-Spezifikation (`hub/api/kommparl/`), denselben Schemas wie die Typprüfung des
+OParl-Validators.
 
 ## Gemeinsame Regeln als Code
 
@@ -66,6 +100,8 @@ cd mandari && python manage.py schnittstelle_beschreibung --pruefen
 ```
 
 - **Aktualität:** `hub/api/tests/test_schnittstelle.py` vergleicht die Datei mit der erzeugten Beschreibung.
+- **Lizenz:** Die Datei enthält die umgewandelten Schemas aus kommParl und steht deshalb unter `CC0-1.0 AND CC-BY-SA-4.0`
+  (`REUSE.toml`, mit den Urhebern der übernommenen Teile).
 - **Brechende Änderungen:** Der CI-Job „Schnittstelle“ vergleicht die Datei mit dem Stand der Basis (oasdiff,
   Stufe `ERR`) und prüft sie gegen OpenAPI 3.1. Eine brechende Änderung braucht eine neue Hauptversion im Pfad
   und eine Abkündigung nach [RELEASE_POLITIK.md](RELEASE_POLITIK.md), Abschnitt 5.

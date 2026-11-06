@@ -1,0 +1,18 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Löschung am {{ deletion_date }}{% endblock %}
+{% block preheader %}Bis zum {{ deletion_date }} können Sie Ihre Daten noch herunterladen.{% endblock %}
+{% block content %}
+<h1 class="h1">Ihr Zugang endet am {{ deletion_date }}</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Guten Tag{% if user.get_full_name %} {{ user.get_full_name }}{% endif %},</p>
+<p>die Verwaltung von {{ organization.name }} hat Ihre Mitgliedschaft auf „Nur Lesen“ gestellt. Inhalte der Organisation sehen Sie ab sofort nicht mehr, ändern können Sie nichts. Am <strong>{{ deletion_date }}</strong> wird Ihre Mitgliedschaft gelöscht.</p>
+<p>Bis dahin können Sie sich wie gewohnt anmelden und eine Kopie Ihrer eigenen Daten herunterladen, auch Ihrer Dokumente.</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ expiry_url }}">Meine Daten herunterladen</a>
+</div>
+<p>Am Löschtag entfallen Ihre persönlichen Daten in {{ organization.name }}, Ihre privaten Dokumente und Ihre Entwürfe. Was Sie für die Fraktion beigetragen haben, bleibt erhalten und zeigt dann „Ehemaliges Mitglied“; in Protokollen und Anwesenheitslisten bleibt Ihr Name stehen.</p>
+<p class="muted small">Ist das ein Versehen? Dann wenden Sie sich bitte an die Verwaltung von {{ organization.name }}; sie kann die Löschung bis zum {{ deletion_date }} zurücknehmen.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

@@ -22,6 +22,8 @@ ROUTES = [
     ("v1/body/<uuid:pk>", aggregator.object_view, {"kind": "body"}, "body"),
     ("v1/body/<uuid:pk>/changes", aggregator.body_changes, {}, "body_changes"),
     ("v1/body/<uuid:pk>/snapshot", aggregator.body_snapshot, {}, "body_snapshot"),
+    ("v1/body/<uuid:pk>/kommparl/changes", aggregator.body_kommparl_changes, {}, "body_kommparl_changes"),
+    ("v1/body/<uuid:pk>/kommparl/snapshot", aggregator.body_kommparl_snapshot, {}, "body_kommparl_snapshot"),
     ("v1/body/<uuid:pk>/<str:segment>", aggregator.body_sub_list, {}, "body_list"),
     ("v1/<str:kind>/<uuid:pk>", aggregator.object_view, {}, "object"),
 ]

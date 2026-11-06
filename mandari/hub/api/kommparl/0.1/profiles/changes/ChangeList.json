@@ -1,0 +1,174 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/changes/ChangeList.json",
+    "title": "ChangeList",
+    "description": "Seite des Änderungsfeeds einer Körperschaft (Profil Änderungsfeed, Entwurf).",
+    "type": "object",
+    "required": [
+        "data",
+        "cursor",
+        "links"
+    ],
+    "properties": {
+        "data": {
+            "description": "Die Einträge in der Reihenfolge, in der der Server die Änderungen festgehalten hat.",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/Change"
+            }
+        },
+        "cursor": {
+            "description": "Position hinter dem letzten Eintrag dieser Seite.",
+            "$ref": "#/$defs/cursor"
+        },
+        "links": {
+            "type": "object",
+            "properties": {
+                "next": {
+                    "description": "URL der folgenden Seite. Fehlt auf der letzten Seite.",
+                    "$ref": "#/$defs/url"
+                },
+                "self": {
+                    "description": "URL dieser Seite.",
+                    "$ref": "#/$defs/url"
+                }
+            },
+            "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{1,512}$"
+        },
+        "url": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        },
+        "dateTime": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+        },
+        "Change": {
+            "description": "Eintrag des Änderungsfeeds.",
+            "type": "object",
+            "required": [
+                "cursor",
+                "operation",
+                "type",
+                "id",
+                "modified"
+            ],
+            "properties": {
+                "cursor": {
+                    "description": "Position hinter diesem Eintrag.",
+                    "$ref": "#/$defs/cursor"
+                },
+                "operation": {
+                    "description": "Art der Änderung.",
+                    "enum": [
+                        "upsert",
+                        "delete",
+                        "redact"
+                    ]
+                },
+                "type": {
+                    "description": "Typ-URL des betroffenen Objekts.",
+                    "$ref": "#/$defs/url"
+                },
+                "id": {
+                    "description": "Die id des betroffenen Objekts.",
+                    "$ref": "#/$defs/url"
+                },
+                "modified": {
+                    "description": "Zeitpunkt, zu dem der Server die Änderung festgehalten hat.",
+                    "$ref": "#/$defs/dateTime"
+                },
+                "reason": {
+                    "description": "Grund der Änderung. Zwingend bei delete und redact, sonst nicht vorhanden.",
+                    "type": "string"
+                }
+            },
+            "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false,
+            "allOf": [
+                {
+                    "if": {
+                        "required": [
+                            "operation"
+                        ],
+                        "properties": {
+                            "operation": {
+                                "const": "upsert"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "reason": false
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": [
+                            "operation"
+                        ],
+                        "properties": {
+                            "operation": {
+                                "const": "delete"
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "reason"
+                        ],
+                        "properties": {
+                            "reason": {
+                                "enum": [
+                                    "deleted",
+                                    "withdrawn",
+                                    "nonPublic"
+                                ]
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": [
+                            "operation"
+                        ],
+                        "properties": {
+                            "operation": {
+                                "const": "redact"
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "reason"
+                        ],
+                        "properties": {
+                            "reason": {
+                                "enum": [
+                                    "privacy"
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

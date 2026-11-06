@@ -1,0 +1,19 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Ihre Daten sind gelöscht{% endblock %}
+{% block preheader %}Ihre Mitgliedschaft bei {{ organization.name }} ist gelöscht.{% endblock %}
+{% block content %}
+<h1 class="h1">Ihre Daten sind gelöscht</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Guten Tag{% if name %} {{ name }}{% endif %},</p>
+<p>wie angekündigt wurde heute Ihre Mitgliedschaft bei {{ organization.name }} gelöscht. Gelöscht sind Ihre persönlichen Daten in der Organisation (etwa Notizen, Benachrichtigungen, Einstellungen, Abwesenheiten und Datenexporte){% if documents_deleted %} sowie {{ documents_deleted }} private Dokumente und Entwürfe mit ihren Versionen und Anhängen{% endif %}.</p>
+<p>Was Sie für die Fraktion beigetragen haben, etwa geteilte Dokumente, Aufgaben und Sitzungen, bleibt erhalten und zeigt jetzt „Ehemaliges Mitglied“. In Protokollen und Anwesenheitslisten bleibt Ihr Name stehen, weil sie Beschlüsse und Teilnahme belegen.</p>
+{% if account_deleted %}
+<p>Ihr Konto bei mandari wurde ebenfalls gelöscht, weil es sonst nirgends mehr genutzt wurde.</p>
+{% else %}
+<p>Ihr Konto bei mandari bleibt bestehen, weil es noch anderweitig genutzt wird.</p>
+{% endif %}
+<p class="muted small">Unsere Sicherungen enthalten die gelöschten Daten noch eine Weile. Sie verschwinden dort mit der Zeit, spätestens nach {{ backup_days }} Tagen.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

@@ -1,0 +1,15 @@
+# Löschung in 3 Tagen
+
+Fraktion Test
+
+Guten Tag Eva Beispiel,
+
+in 3 Tagen, am 05.12.2026, wird Ihre Mitgliedschaft bei Fraktion Test mit Ihren persönlichen Daten, privaten Dokumenten und Entwürfen gelöscht. Wenn Sie eine Kopie Ihrer Daten behalten möchten, laden Sie sie vorher herunter.
+
+[Meine Daten herunterladen](https://mandari.example/work/fraktion-test/zugang/auslauf/)
+
+Ist das ein Versehen? Dann wenden Sie sich bitte an die Verwaltung von Fraktion Test; sie kann die Löschung bis dahin zurücknehmen.
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

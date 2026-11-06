@@ -133,6 +133,7 @@ SELBSTBEDIENUNG: dict[str, str] = {
     "profile_requests": "eigenen Änderungsantrag einreichen oder zurückziehen",
     "profile_data": "eigener Datenexport und Löschung der eigenen Mitgliedschaft",
     "export_delete": "eigenen Datenexport löschen",
+    "membership_expiry": "eigener Datenexport einer Mitgliedschaft im Auslauf „Nur Lesen“ (Issue #1237)",
     "profile_visibility": "Sichtbarkeit des eigenen Profils",
     "profile_committees": "eigene Gremien und Fachgebiete",
     "session_invitation_respond": "eigene Ladung der Verwaltung beantworten",
@@ -526,6 +527,14 @@ CASES: list[Case] = [
     Case("document_type_edit", path={"type_id": "doctype"}, data={"name": "Antrag geändert", "slug": "antrag"}),
     Case("document_type_delete", path={"type_id": "doctype"}),
     Case("document_topic_list", data={"name": "Neues Thema", "color": "green"}),
+    # Aufgaben-Labels unter Organisation › Themen und Labels (Issue #1230)
+    Case("document_topic_list", "add_label", data={"action": "add_label", "name": "Neu", "color": "green"}),
+    Case(
+        "document_topic_list",
+        "delete_label",
+        data={"action": "delete_label", "label_id": "{label}"},
+        foreign={"label": {"label_id": "{a_label}"}},
+    ),
     Case("document_topic_update", path={"topic_id": "topic"}, data={"name": "Thema neu", "color": "red"}),
     Case("document_topic_delete", path={"topic_id": "topic"}),
     Case(
@@ -890,6 +899,8 @@ CASES: list[Case] = [
     _mitglied("deactivate"),
     _mitglied("reactivate"),
     _mitglied("remove"),
+    _mitglied("schedule_deletion"),
+    _mitglied("cancel_deletion"),
     _mitglied("transfer_ownership"),
     _mitglied("link_oparl_person", oparl_person_id="{person}", foreign={"person": {"oparl_person_id": "{a_person}"}}),
     _mitglied("unlink_oparl_person"),
@@ -929,6 +940,18 @@ CASES: list[Case] = [
         foreign={"partei": {"party_id": "{a_party}"}},
     ),
     _rat("delete_party", party_id="{party}", foreign={"partei": {"party_id": "{a_party}"}}),
+    # Verwaltungskontakte auf eigener Seite (Issue #1230)
+    Case(
+        "organization_admin_contacts",
+        "add_admin_contact",
+        data={"action": "add_admin_contact", "contact_label": "Ratsbüro", "contact_email": "rat@example.org"},
+    ),
+    Case(
+        "organization_admin_contacts",
+        "delete_admin_contact",
+        data={"action": "delete_admin_contact", "contact_id": "{contact}"},
+        foreign={"kontakt": {"contact_id": "{a_contact}"}},
+    ),
     # --- Support ---
     Case(
         "support_create",
@@ -1002,6 +1025,7 @@ CASES: list[Case] = [
     Case("profile_data", "export_data", data={"action": "export_data", "format": "json"}),
     Case("profile_data", "request_deletion", data={"action": "request_deletion", "password": DEFAULT_PASSWORD}),
     Case("export_delete", path={"export_id": "export"}, same_org=True),
+    Case("membership_expiry", "export_data", data={"action": "export_data", "format": "json"}),
     Case("profile_visibility", data={"bio": "Hallo", "show_email": "on", "preferred_contact": "email"}),
     Case("profile_committees", "gremien", data={"committees": ["{committee}"]}),
     Case("profile_committees", "save_expertise", data={"action": "save_expertise", "expertise_topics": ["{topic}"]}),

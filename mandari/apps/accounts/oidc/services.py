@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Schreibende Abläufe des OpenID-Connect-Anbieters (Issue #1206): Widerruf durch Person und Administration."""
+"""
+Schreibende Abläufe des OpenID-Connect-Anbieters: Widerruf durch Person und Administration (Issue #1206), Sperren
+einer Anwendung mit Widerruf aller ihrer Tokens, Widerruf aller Zugänge einer Person bei „Alle Sitzungen beenden“
+und beim Passwortwechsel (Issue #1215).
+"""
 
 from __future__ import annotations
 
@@ -43,3 +47,56 @@ def revoke_for_user(request: Any, user: Any, application_id: Any, *, by: str = a
         durch=by,
     )
     return True
+
+
+def revoke_all_for_user(request: Any, user: Any, *, by: str) -> int:
+    """
+    Alle Tokens und offenen Codes der Person widerrufen, bei allen Anwendungen.
+
+    Für „Alle Sitzungen beenden“ und den Passwortwechsel: Wer zeitweise eine Sitzung der Person hatte, kann sich
+    darüber Tokens einer Anwendung geholt haben; sie sollen diese Schritte nicht überstehen. Je Anwendung ein
+    Eintrag im Prüfprotokoll (wie :func:`revoke_for_user`).
+
+    Returns: Anzahl der Anwendungen, deren Zugang widerrufen wurde.
+    """
+    application_ids: set[int] = set()
+    for model in (OAuthRefreshToken, OAuthAccessToken, OAuthGrant):
+        rows = model.objects.filter(user=user)
+        if model is OAuthRefreshToken:
+            rows = rows.filter(revoked__isnull=True)
+        application_ids.update(int(pk) for pk in rows.values_list("application_id", flat=True) if pk is not None)
+    return sum(1 for pk in sorted(application_ids) if revoke_for_user(request, user, pk, by=by))
+
+
+@transaction.atomic
+def revoke_application(request: Any, application: Any, *, by: str = audit.BY_ADMINISTRATION, **details: Any) -> int:
+    """
+    Alle Tokens und offenen Codes einer Anwendung widerrufen, für alle Personen und für den Dienst selbst.
+
+    Wie :func:`revoke_for_user`: Refresh-Tokens bleiben als widerrufene Einträge stehen, Access-Tokens, ID-Tokens
+    und Codes werden gelöscht. Nach dem Sperren einer Anwendung (``is_active``) lebt so auch beim Entsperren kein
+    alter Zugang wieder auf. Der Eintrag im Prüfprotokoll nennt nur Anzahlen.
+
+    Returns: Anzahl widerrufener Access- und Refresh-Tokens.
+    """
+    refresh_tokens = list(
+        OAuthRefreshToken.objects.select_for_update().filter(application=application, revoked__isnull=True)
+    )
+    # Vor dem Widerruf zählen: Ein widerrufenes Refresh-Token nimmt sein Access-Token mit
+    access_count = int(OAuthAccessToken.objects.filter(application=application).count())
+    for refresh_token in refresh_tokens:
+        refresh_token.revoke()
+    OAuthAccessToken.objects.filter(application=application).delete()
+    OAuthIDToken.objects.filter(application=application).delete()
+    OAuthGrant.objects.filter(application=application).delete()
+    revoked = len(refresh_tokens) + access_count
+    if revoked:
+        audit.record(
+            audit.EVENT_REVOKED,
+            request,
+            anwendung=application.client_id,
+            durch=by,
+            anzahl=revoked,
+            **details,
+        )
+    return revoked

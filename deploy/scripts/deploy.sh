@@ -23,6 +23,10 @@
 #   DB_SERVICE       PostgreSQL-Dienst fuer die Sicherung                      (Standard postgres)
 #   BACKUP_DIR       Ablage der Pre-Deploy-Dumps                               (Standard $MANDARI_DIR/backups)
 #   BACKUP_KEEP      wie viele Dumps behalten                                  (Standard 5)
+#   BACKUP_MAX_AGE_DAYS  Dumps nach so vielen Tagen loeschen                   (Standard 30, 0 = aus)
+#                    Geloeschte Daten verschwinden damit auch aus diesen Sicherungen,
+#                    wie aus den Offsite-Backups (restic, 30 Tage). Ohne Deploy greift
+#                    die Grenze ueber den taeglichen Aufruf "deploy.sh prune" (Cron).
 #   VERIFY_*         siehe deploy/scripts/verify_deploy.py
 #   NOTIFY_EMAIL     Empfaenger fuer Rueckfall-Meldungen (ueber den App-Container, Django send_mail)
 #   DEPLOY_LOG       Protokoll je Deploy                                       (Standard $MANDARI_DIR/deploy-log.tsv)
@@ -32,7 +36,7 @@
 # keine Migrationen; deshalb muessen Migrationen abwaertskompatibel sein.
 set -eu
 
-MODE="${1:?plan|apply|verify|rollback}"
+MODE="${1:?plan|apply|verify|rollback|prune}"
 NEW_TAG="${2:-}"
 MANDARI_DIR="${MANDARI_DIR:-/opt/mandari}"
 COMPOSE_FILES="${COMPOSE_FILES:-docker-compose.yml}"
@@ -43,6 +47,7 @@ WORKER_HEALTH_SECONDS="${WORKER_HEALTH_SECONDS:-120}"
 DB_SERVICE="${DB_SERVICE:-postgres}"
 BACKUP_DIR="${BACKUP_DIR:-$MANDARI_DIR/backups}"
 BACKUP_KEEP="${BACKUP_KEEP:-5}"
+BACKUP_MAX_AGE_DAYS="${BACKUP_MAX_AGE_DAYS:-30}"
 NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 DEPLOY_LOG="${DEPLOY_LOG:-$MANDARI_DIR/deploy-log.tsv}"
 HIER=$(cd "$(dirname "$0")" && pwd)
@@ -73,6 +78,15 @@ REGISTRY="${REGISTRY:-ghcr.io/mandarioss}"
 app_container() { $DC ps -q "$APP_SERVICE" | head -1; }
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+# Vor-Deploy-Sicherungen begrenzen: hoechstens BACKUP_KEEP Stueck, keine aelter als BACKUP_MAX_AGE_DAYS Tage
+alte_sicherungen_loeschen() {
+  ls -1t "$BACKUP_DIR"/pre-deploy-*.dump 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | xargs -r rm -f
+  if [ "$BACKUP_MAX_AGE_DAYS" -gt 0 ] && [ -d "$BACKUP_DIR" ]; then
+    find "$BACKUP_DIR" -maxdepth 1 -type f -name 'pre-deploy-*.dump' -mtime +$((BACKUP_MAX_AGE_DAYS - 1)) \
+      -exec sh -c 'for f; do echo "Sicherung aelter als Hoechstalter geloescht: $f"; rm -f "$f"; done' sh {} +
+  fi
+}
 
 run_manage() {
   # Einmalcontainer mit dem NEUEN Image, ohne Abhaengigkeiten hochzufahren
@@ -260,6 +274,10 @@ protokoll() {
 }
 
 case "$MODE" in
+  prune)
+    alte_sicherungen_loeschen
+    ;;
+
   plan)
     [ -n "$NEW_TAG" ] || { echo "Tag fehlt"; exit 1; }
     log "Alt: $OLD_TAG  Neu: $NEW_TAG"
@@ -298,8 +316,8 @@ case "$MODE" in
     $DC exec -T "$DB_SERVICE" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' < /dev/null > "$BACKUP"
     [ -s "$BACKUP" ] || { echo "FEHLER: Sicherung leer"; exit 1; }
     log "Sicherung $BACKUP ($(du -h "$BACKUP" | cut -f1))"
-    # alte Dumps begrenzen
-    ls -1t "$BACKUP_DIR"/pre-deploy-*.dump 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | xargs -r rm -f
+    # alte Dumps begrenzen (Anzahl und Hoechstalter)
+    alte_sicherungen_loeschen
 
     # shellcheck disable=SC2086
     $DC stop $WORKER_SERVICES < /dev/null

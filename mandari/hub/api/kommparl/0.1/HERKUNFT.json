@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/mandariOSS/kommParl",
+  "commit": "0d538716d57607b0c8ecf10e3385f9387ed863ca",
+  "commitDate": "2026-10-18T21:11:41+02:00",
+  "retrieved": "2026-11-05",
+  "version": "0.1",
+  "license": "CC-BY-SA-4.0",
+  "files": {
+    "profiles/changes/ChangeList.json": "86705c218d9d4a1b638d39383f7f11da510cb38f6a6eff146c3213a7059c46f5",
+    "profiles/changes/CursorExpired.json": "88d20c6c701e6bccae9f4037da5a4a2085eff28ad703a056550ad5eeadfe8885",
+    "profiles/snapshot/SnapshotEnd.json": "84a8317163ae44326ff6eb8ab436b761db52eaace97cd1b6cdd10aeba45cf2f8",
+    "profiles/snapshot/SnapshotHeader.json": "68b9a13259fb68fab97934bb54f1719460b47a8a919c854f78ff3c8d554b488e",
+    "schema/AgendaItem.json": "942328621cf0300aa7f2a166d7c47fab3a85a75953de44a29f42e5cff0c5722e",
+    "schema/Body.json": "e5e54b02d1bf71be390220e70d23e185b5a2edcd676f605bd5c593c445b3f471",
+    "schema/Consultation.json": "412535f09dd48ec51936274c9aa68553f1f94ea2e95b8037ca244a93a13be320",
+    "schema/File.json": "9b2ca31df6edc6ee0ccc6263bd482c6dc8890cb376c59e4b91a8c7eb2c6bc0f7",
+    "schema/LegislativeTerm.json": "aeaa43ddeb229764a7edbf0be1cefa214f23cfb4c1cdc5eca30b2975d2700d9a",
+    "schema/Location.json": "32932e5acb84d1d6281c47d508062d3a281ad3435ec7414cbdaf0bf5f3a95eb8",
+    "schema/Meeting.json": "00168590d03f5d0299219014929affb881ecddbcda511d24555e9f8a73d15a47",
+    "schema/Membership.json": "aad5ae39efacd97af4557a25751ec26a87a6aa42c6ad00f8b6bbc628984002d1",
+    "schema/Organization.json": "cf7ea3540a12694784abc043445b366c55b83cc5427fa1d591fa091454496de1",
+    "schema/Paper.json": "97b235a325422e2b2273bfbec161bd2abab131bf9f39581dce095647e76885aa",
+    "schema/Person.json": "fb61718797c0d200fe956cc642f5945f033df8cce686bfd55f010a39890dbb8c",
+    "schema/System.json": "bde9841aa00dbf8d78bf333cc26445f7c330ae9bad4f4b43bc2dc3cd14450adf"
+  }
+}

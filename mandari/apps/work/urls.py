@@ -36,6 +36,16 @@ def _work_root_redirect(request):
         )
         if membership:
             return redirect("work:dashboard", org_slug=membership.organization.slug)
+        # Nur noch eine Mitgliedschaft im Auslauf „Nur Lesen“ (Issue #1237): zu deren Auslauf-Seite
+        expiring = (
+            request.user.memberships.filter(
+                is_active=False, is_guest=False, deletion_scheduled_at__isnull=False, organization__is_active=True
+            )
+            .select_related("organization")
+            .first()
+        )
+        if expiring:
+            return redirect("work:membership_expiry", org_slug=expiring.organization.slug)
         return redirect("/insight/")
     return redirect("/accounts/login/?next=/work/")
 
@@ -713,6 +723,11 @@ urlpatterns = [
         name="organization_documents",
     ),
     path(
+        "<slug:org_slug>/organization/verwaltungskontakte/",
+        organization_views.AdministrationContactListView.as_view(),
+        name="organization_admin_contacts",
+    ),
+    path(
         "<slug:org_slug>/organization/email-settings/",
         organization_views.OrganizationEmailSettingsView.as_view(),
         name="organization_email_settings",
@@ -920,6 +935,22 @@ urlpatterns = [
         "<slug:org_slug>/profile/data/exports/<uuid:export_id>/delete/",
         organization_views.DataExportDeleteView.as_view(),
         name="export_delete",
+    ),
+    # Auslauf „Nur Lesen, Löschung nach 30 Tagen“ (Issue #1237): einzige Seite für Mitgliedschaften im Auslauf
+    path(
+        "<slug:org_slug>/zugang/auslauf/",
+        organization_views.MembershipExpiryView.as_view(),
+        name="membership_expiry",
+    ),
+    path(
+        "<slug:org_slug>/zugang/auslauf/exporte/<uuid:export_id>/",
+        organization_views.MembershipExpiryExportDownloadView.as_view(),
+        name="membership_expiry_download",
+    ),
+    path(
+        "<slug:org_slug>/zugang/auslauf/anhaenge/<slug:kind>/<uuid:attachment_id>/",
+        organization_views.MembershipExpiryAttachmentView.as_view(),
+        name="membership_expiry_attachment",
     ),
     path(
         "<slug:org_slug>/profile/activity/",

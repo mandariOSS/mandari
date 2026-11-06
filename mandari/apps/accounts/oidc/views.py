@@ -8,10 +8,14 @@ Die Ansichten von django-oauth-toolkit, ergänzt um:
 - ``authorize``: läuft über die Anmeldung von mandari. Wer eine offene Pflicht zum zweiten Faktor oder zum
   Sicherheitsschlüssel hat, gilt nicht als angemeldet und muss sie erst erfüllen. ``prompt=login`` und ein
   überschrittenes ``max_age`` führen zur erneuten Anmeldung; bis dahin gibt es für die Anfrage keinen Code
-  (:mod:`.reauth`). ``prompt=none`` meldet nur Anwendungen ohne Zustimmungsseite still an. ``approval_prompt``
-  der Anfrage gilt nicht: Fremde Anwendungen fragen jedes Mal (``REQUEST_APPROVAL_PROMPT``).
+  (:mod:`.reauth`). ``max_age`` und ``auth_time`` beziehen sich auf die Anmeldung in dieser Sitzung.
+  ``prompt=none`` meldet nur Anwendungen ohne Zustimmungsseite still an, ein ``id_token_hint`` muss zur
+  angemeldeten Person passen. ``approval_prompt`` der Anfrage gilt nicht: Fremde Anwendungen fragen jedes Mal
+  (``REQUEST_APPROVAL_PROMPT``).
 - ``token``: Ratenbegrenzung je Adresse; Gerätefreigabe (RFC 8628) gibt es nicht
-- ``introspect`` (RFC 7662): nur für die Anwendung selbst, mit Client-Authentifizierung und nur über eigene Tokens
+- ``revoke`` (RFC 7009): Ratenbegrenzung je Adresse wie am Token-Endpunkt (#1215)
+- ``introspect`` (RFC 7662): nur für die Anwendung selbst, mit Client-Authentifizierung und nur über eigene Tokens,
+  Ratenbegrenzung je Adresse
 - Discovery: nennt nur, was mandari tatsächlich anbietet
 - „Verbundene Anwendungen“: Kontoseite mit Widerruf
 """
@@ -40,6 +44,8 @@ from oauth2_provider.exceptions import OAuthToolkitError
 from oauth2_provider.settings import oauth2_settings
 from oauth2_provider.views.mixins import OAuthLibMixin
 from oauthlib.common import Request as OAuthlibRequest
+
+from apps.common.next_url import safe_next_url
 
 from .. import security_audit
 from ..middleware import REQUIREMENT_TARGETS, open_requirement
@@ -72,14 +78,19 @@ def _prompt(request: HttpRequest) -> set[str]:
 
 
 def _login_too_old(request: HttpRequest) -> bool:
-    """Verlangt die Anwendung mit ``max_age`` eine jüngere Anmeldung, als die Person hat?"""
+    """
+    Verlangt die Anwendung mit ``max_age`` eine jüngere Anmeldung, als die Person in dieser Sitzung hat?
+
+    Maßgeblich ist die Anmeldung in dieser Sitzung (:func:`.reauth.login_time`), nicht ``User.last_login``: Eine
+    Anmeldung auf einem anderen Gerät macht eine alte Sitzung nicht wieder jung.
+    """
     raw = request.GET.get("max_age", "").strip()
     if not raw.isdigit():
         return False
-    last_login = getattr(request.user, "last_login", None)
-    if last_login is None:
+    logged_in = reauth.login_time(request)
+    if logged_in is None:
         return True
-    return bool((timezone.now() - last_login).total_seconds() > int(raw))
+    return bool((timezone.now() - logged_in).total_seconds() > int(raw))
 
 
 def _request_ids(request: HttpRequest) -> tuple[str, str]:
@@ -120,7 +131,8 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
                 return redirect(f"{target}?{urlencode({'next': request.get_full_path()})}")
             if not _login_too_old(request) and not _reauth_pending(request):
                 signed_in = user
-        with signed_in_as(signed_in):
+        # Der Code trägt den Anmeldezeitpunkt dieser Sitzung (auth_time im ID-Token)
+        with signed_in_as(signed_in, reauth.login_time(request)):
             return cast(HttpResponseBase, super().dispatch(request, *args, **kwargs))
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
@@ -162,26 +174,39 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
         return context
 
 
+def _rate_limited(request: HttpRequest, endpoint: str) -> HttpResponse | None:
+    """429-Antwort, wenn die Adresse ihr Kontingent an ``endpoint`` überschreitet (:mod:`.throttle`), sonst None."""
+    if not throttle.exceeded(request, endpoint):
+        return None
+    security_audit.record_throttled(request, step=endpoint, limit=security_audit.LIMIT_ADDRESS, window_minutes=1)
+    response = JsonResponse(
+        {"error": "rate_limited", "error_description": "Zu viele Anfragen. Bitte später erneut versuchen."},
+        status=429,
+    )
+    response["Retry-After"] = str(throttle.seconds_until_next_window())
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 class TokenView(dot_views.TokenView):  # type: ignore[misc]  # Bibliothek ohne Typen
     """Token-Endpunkt mit Ratenbegrenzung je Adresse."""
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
-        if throttle.exceeded(request):
-            security_audit.record_throttled(
-                request,
-                step=throttle.STEP_TOKEN_ENDPOINT,
-                limit=security_audit.LIMIT_ADDRESS,
-                window_minutes=1,
-            )
-            response = JsonResponse(
-                {"error": "rate_limited", "error_description": "Zu viele Anfragen. Bitte später erneut versuchen."},
-                status=429,
-            )
-            response["Retry-After"] = str(throttle.seconds_until_next_window())
-            response["Cache-Control"] = "no-store"
-            return response
+        limited = _rate_limited(request, throttle.STEP_TOKEN_ENDPOINT)
+        if limited is not None:
+            return limited
         if request.POST.get("grant_type") == DEVICE_CODE_GRANT:
             return JsonResponse({"error": "unsupported_grant_type"}, status=400)
+        return cast(HttpResponseBase, super().post(request, *args, **kwargs))
+
+
+class RevokeView(dot_views.RevokeTokenView):  # type: ignore[misc]  # Bibliothek ohne Typen
+    """Widerruf (RFC 7009) mit Ratenbegrenzung je Adresse wie am Token-Endpunkt."""
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
+        limited = _rate_limited(request, throttle.STEP_REVOKE_ENDPOINT)
+        if limited is not None:
+            return limited
         return cast(HttpResponseBase, super().post(request, *args, **kwargs))
 
 
@@ -197,6 +222,9 @@ class IntrospectView(OAuthLibMixin, View):  # type: ignore[misc]  # Bibliothek o
     http_method_names = ["post"]
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        limited = _rate_limited(request, throttle.STEP_INTROSPECT_ENDPOINT)
+        if limited is not None:
+            return limited
         core = self.get_oauthlib_core()
         uri, http_method, body, headers = core._extract_params(request)
         oauth_request = OAuthlibRequest(uri, http_method, body, headers)
@@ -273,7 +301,12 @@ class ConnectedApplicationsView(LoginRequiredMixin, View):
         return super().dispatch(request, *args, **kwargs)
 
     def get(self, request: HttpRequest) -> HttpResponse:
-        return render(request, self.template_name, {"applications": selectors.connected_applications(request.user)})
+        context = {
+            "applications": selectors.connected_applications(request.user),
+            # Rückweg zur Konto- oder Profilseite, von der die Person kam (wie bei den Sicherheitsschlüsseln)
+            "next": safe_next_url(request, request.GET.get("next")),
+        }
+        return render(request, self.template_name, context)
 
     def post(self, request: HttpRequest) -> HttpResponse:
         application_id = request.POST.get("application_id", "")
@@ -281,12 +314,14 @@ class ConnectedApplicationsView(LoginRequiredMixin, View):
             messages.success(request, "Der Zugang wurde widerrufen. Die Anwendung muss dich erneut fragen.")
         else:
             messages.error(request, "Für diese Anwendung gab es keinen Zugang zu widerrufen.")
-        return redirect("accounts:connected_applications")
+        target = reverse("accounts:connected_applications")
+        next_url = safe_next_url(request, request.POST.get("next"))
+        return redirect(f"{target}?{urlencode({'next': next_url})}" if next_url else target)
 
 
 authorize = only_when_enabled(AuthorizeView.as_view())
 token = only_when_enabled(TokenView.as_view())
-revoke = only_when_enabled(dot_views.RevokeTokenView.as_view())
+revoke = only_when_enabled(RevokeView.as_view())
 introspect = only_when_enabled(IntrospectView.as_view())
 userinfo = only_when_enabled(dot_views.UserInfoView.as_view())
 jwks = only_when_enabled(dot_views.JwksInfoView.as_view())

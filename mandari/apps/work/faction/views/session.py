@@ -31,7 +31,9 @@ from hub.ris import selectors as ris
 
 from .. import sitzung
 from ..models import FactionAgendaItem, FactionDecision, FactionMeeting
-from ..quorum import faction_quorum_status
+from ..quorum import quorum_der_sitzung
+from ..regeln import ABSTIMMUNGEN_AUS
+from ..sitzungsarten import darf_sehen
 from ..visibility import can_view_internal, is_item_internal
 
 if TYPE_CHECKING:
@@ -113,6 +115,10 @@ def _rechte(membership: Any, meeting: FactionMeeting) -> dict[str, bool]:
         "beenden": membership.has_permission("faction.start"),
         "intern": can_view_internal(membership),
         "top_neu": sitzung.darf_top_hinzufuegen(membership, meeting),
+        # Regeln der Sitzungsart (Issue #1240): neue nichtöffentliche TOPs, Abstimmungen
+        "noe_neu": can_view_internal(membership) and meeting.nichtoeffentlich_erlaubt,
+        "abstimmungen": meeting.abstimmungen_erlaubt,
+        "abstimmen": meeting.abstimmungen_erlaubt and sitzung.darf_protokollieren(membership, meeting),
     }
 
 
@@ -124,12 +130,15 @@ def _basis(view: Any, meeting: FactionMeeting) -> dict[str, Any]:
         "org_slug": view.organization.slug,
         "membership": view.membership,
         "rechte": _rechte(view.membership, meeting),
-        "quorum": faction_quorum_status(meeting),
+        # Ohne Abstimmungen in der Sitzungsart keine Beschlussfähigkeit (Issue #1240)
+        "quorum": quorum_der_sitzung(meeting),
         "sitzung_urls": _urls(meeting),
     }
 
 
-def _kopf_kontext(meeting: FactionMeeting, ordnung: sitzung.Tagesordnung, quorum: dict[str, Any]) -> dict[str, Any]:
+def _kopf_kontext(
+    meeting: FactionMeeting, ordnung: sitzung.Tagesordnung, quorum: dict[str, Any] | None
+) -> dict[str, Any]:
     """Kopf und Anwesenheit: Ablaufleiste, Anwesenheit, Auswahl für Sitzungsleitung und Schriftführung."""
     return {
         "ordnung": ordnung,
@@ -245,7 +254,8 @@ def unterlage_kontext(unterlage: sitzung.Unterlage) -> dict[str, Any]:
 
 def _sitzung_oder_404(view: Any, meeting_id: Any) -> FactionMeeting:
     meeting = sitzung.sitzung_laden(view.organization, meeting_id)
-    if meeting is None or not neues_design(meeting.organization):
+    # Sitzungsarten (Issue #1239): unsichtbare Sitzungen wie unbekannte
+    if meeting is None or not neues_design(meeting.organization) or not darf_sehen(view.membership, meeting):
         raise Http404
     return meeting
 
@@ -375,6 +385,9 @@ class FactionSessionActionView(_SitzungsView):
         item = self._top(request, meeting)
         if not sitzung.darf_protokollieren(self.mitglied, meeting):
             return HttpResponse(KEINE_BERECHTIGUNG, status=403)
+        # Art ohne Abstimmungen (Issue #1240): erfasste bleiben lesbar, neue gibt es nicht
+        if not meeting.abstimmungen_erlaubt:
+            return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
         try:
             stimmen = [max(0, int(_wert(request, k) or 0)) for k in ("votes_yes", "votes_no", "votes_abstain")]
         except ValueError:
@@ -402,6 +415,8 @@ class FactionSessionActionView(_SitzungsView):
         item = self._top(request, meeting)
         if not sitzung.darf_protokollieren(self.mitglied, meeting):
             return HttpResponse(KEINE_BERECHTIGUNG, status=403)
+        if not meeting.abstimmungen_erlaubt:
+            return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
         return self._render(request, UNTEN, self._top_basis(meeting, item) | {"aendern": True})
 
     # -- Aufgaben ----------------------------------------------------------

@@ -1,0 +1,149 @@
+{
+    "title": "File",
+    "description": "{{ File.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type",
+        "accessUrl"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/File$"
+        },
+        "name": {
+            "description": "{{ File.properties.name.description }}",
+            "type": "string"
+        },
+        "fileName": {
+            "description": "{{ File.properties.fileName.description }}",
+            "type": "string"
+        },
+        "mimeType": {
+            "description": "{{ File.properties.mimeType.description }}",
+            "type": "string"
+        },
+        "date": {
+            "description": "{{ File.properties.date.description }}",
+            "type": "string",
+            "format": "date"
+        },
+        "size": {
+            "description": "{{ File.properties.size.description }}",
+            "type": "integer"
+        },
+        "sha1Checksum": {
+            "description": "{{ File.properties.sha1Checksum.description }}",
+            "type": "string"
+        },
+        "sha512Checksum": {
+            "description": "{{ File.properties.sha512Checksum.description }}",
+            "type": "string"
+        },
+        "text": {
+            "description": "{{ File.properties.text.description }}",
+            "type": "string"
+        },
+        "accessUrl": {
+            "description": "{{ File.properties.accessUrl.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "downloadUrl": {
+            "description": "{{ File.properties.downloadUrl.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "externalServiceUrl": {
+            "description": "{{ File.properties.externalServiceUrl.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "masterFile": {
+            "description": "{{ File.properties.masterFile.description }}",
+            "references": "File",
+            "backreference": "derivativeFile",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "derivativeFile": {
+            "description": "{{ File.properties.derivativeFile.description }}",
+            "references": "File",
+            "backreference": "masterFile",
+            "cardinality": "1:n",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "fileLicense": {
+            "description": "{{ File.properties.fileLicense.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "meeting": {
+            "description": "{{ File.properties.meeting.description }}",
+            "type": "array",
+            "references": "Meeting",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "agendaItem": {
+            "description": "{{ File.properties.agendaItem.description }}",
+            "type": "array",
+            "references": "AgendaItem",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "person": {
+            "description": "{{ File.properties.person.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "Person"
+        },
+        "paper": {
+            "description": "{{ File.properties.paper.description }}",
+            "type": "array",
+            "references": "Paper",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

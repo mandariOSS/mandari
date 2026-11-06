@@ -319,7 +319,11 @@ def zeitraum(meeting: FactionMeeting) -> str:
 
 
 def angaben(meeting: FactionMeeting) -> Angaben:
-    from .quorum import faction_quorum_status, stimmberechtigt
+    from .quorum import quorum_der_sitzung, stimmberechtigt
+    from .regeln import abstimmungen_erlaubt
+
+    # Ohne Abstimmungen in der Sitzungsart (Issue #1240) weder Beschlussfähigkeit noch Stimmrecht-Sternchen
+    mit_abstimmungen = abstimmungen_erlaubt(meeting)
 
     teilnahmen = sitzung.anwesenheit(meeting).teilnahmen
     vor_ort: list[str] = []
@@ -337,7 +341,7 @@ def angaben(meeting: FactionMeeting) -> Angaben:
         if a.status == "present":
             # Stimmrecht wie in der Beschlussfähigkeit und der Anwesenheitsliste: aktives Mitglied, nie allein über
             # die Administrator-Rolle (Issue #1166)
-            stimme = stimmberechtigt(a.membership)
+            stimme = stimmberechtigt(a.membership) if mit_abstimmungen else True
             if not stimme:
                 ohne_stimme = True
                 name = f"{name}*"
@@ -352,7 +356,7 @@ def angaben(meeting: FactionMeeting) -> Angaben:
         zeit += f", {ort}"
     if meeting.is_virtual:
         zeit += ", auch per Video" if ort else ", per Video"
-    quorum = faction_quorum_status(meeting) if meeting.status == "completed" else None
+    quorum = quorum_der_sitzung(meeting) if meeting.status == "completed" else None
     return Angaben(
         zeit=zeit,
         leitung=meeting.chaired_by_name,
@@ -435,7 +439,7 @@ def versand(meeting: FactionMeeting) -> Versand:
     from .models import FactionAuditLog
     from .protocol_dispatch import get_protocol_dispatch_settings, protocol_due_at
 
-    einstellungen = get_protocol_dispatch_settings(meeting.organization)
+    einstellungen = get_protocol_dispatch_settings(meeting)
     modus = einstellungen["protocol_dispatch"]
     fassung = "an Vereidigte vollständig, an alle anderen den öffentlichen Teil"
     if meeting.protocol_sent_at:

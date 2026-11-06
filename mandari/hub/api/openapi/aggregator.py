@@ -52,6 +52,8 @@ def description() -> Description:
         object_path=_route("object"),
         feed=_route("body_changes"),
         snapshot=_route("body_snapshot"),
+        kommparl_feed=_route("body_kommparl_changes"),
+        kommparl_snapshot=_route("body_kommparl_snapshot"),
     )
     overview: dict[str, Any] = {
         "description": "Übersicht über die Schnittstelle (kein OParl-Objekt)",

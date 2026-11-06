@@ -351,6 +351,7 @@ IM_EXPORT: dict[str, str] = {
     "FactionProtocolEntry.speaker": "faction.protocol_entries",
     "FactionProtocolEntry.action_assignee": "faction.protocol_entries",
     "FactionAttendanceCertificate.membership": "faction.certificates",
+    "FactionMeetingType.participants": "membership.meeting_types",
     "MeetingPreparation.membership": "meetings.preparations",
     "AgendaItemNote.author": "meetings.agenda_notes",
     "AgendaSpeechNote.author": "meetings.speech_notes",
@@ -453,6 +454,8 @@ class DsgvoExportService:
             "is_active": membership.is_active,
             "roles": [r.name for r in membership.roles.all()],
             "committees": [c.name for c in membership.oparl_committees.all()],
+            # Als ausgewählte Teilnehmende einer Sitzungsart (Issue #1231)
+            "meeting_types": [t.name for t in membership.faction_meeting_types.all()],
             "individual_permissions": [p.codename for p in membership.individual_permissions.all()],
             "denied_permissions": [p.codename for p in membership.denied_permissions.all()],
         }

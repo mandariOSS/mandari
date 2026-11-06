@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Prefetch, Q, QuerySet
+from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.utils import timezone
 
 from apps.tenants.models import Membership, Organization
@@ -89,15 +89,28 @@ def visible_tasks(
     Alle Aufgaben der Organisation, die das Mitglied sehen darf.
 
     Sichtbar sind organisationsweite Aufgaben sowie eigene, zugewiesene und
-    explizit geteilte Aufgaben.
+    explizit geteilte Aufgaben. Organisationsweite Aufgaben aus einer Fraktionssitzung
+    nur, wenn das Mitglied die Sitzung sieht (Sitzungsarten, Issue #1239).
     """
     qs = base if base is not None else Task.objects.filter(organization=organization)
+    sitzungen = _sichtbare_sitzungen(organization, membership)
+    aus_sichtbarer_sitzung = (Q(related_faction_meeting__isnull=True) | Q(related_faction_meeting__in=sitzungen)) & (
+        Q(related_faction_agenda_item__isnull=True) | Q(related_faction_agenda_item__meeting__in=sitzungen)
+    )
     return qs.filter(
-        Q(visibility="organization")
+        (Q(visibility="organization") & aus_sichtbarer_sitzung)
         | Q(created_by=membership)
         | Q(assigned_to=membership)
         | Q(shares__membership=membership)
     ).distinct()
+
+
+def _sichtbare_sitzungen(organization: Organization, membership: Membership) -> QuerySet[Any]:
+    """Kennungen der Fraktionssitzungen der Organisation, die das Mitglied sieht (Unterabfrage)."""
+    from apps.work.faction.models import FactionMeeting
+    from apps.work.faction.sitzungsarten import sichtbar_fuer
+
+    return sichtbar_fuer(membership, FactionMeeting.objects.filter(organization=organization)).values("pk")
 
 
 def tasks_for_motion(organization: Organization, membership: Membership, motion: Motion) -> QuerySet[Task]:
@@ -137,6 +150,21 @@ def task_counts_for_agenda_items(
     ):
         counts[str(item_id)] = counts.get(str(item_id), 0) + 1
     return counts
+
+
+def personal_tasks(membership: Membership) -> QuerySet[Task]:
+    """
+    Persönliche Aufgaben eines Mitglieds (Issue #420): Aufgaben, die außer dem Mitglied niemand sieht – nicht
+    organisationsweit, von ihm angelegt, ihm oder niemandem zugewiesen und mit niemand anderem geteilt. Sie
+    entfallen mit der Mitgliedschaft (``services.delete_personal_tasks``).
+    """
+    shared_with_others = TaskShare.objects.filter(task=OuterRef("pk")).exclude(membership=membership)
+    return (
+        Task.objects.filter(organization_id=membership.organization_id, created_by=membership)
+        .exclude(visibility="organization")
+        .filter(Q(assigned_to=membership) | Q(assigned_to__isnull=True))
+        .exclude(Exists(shared_with_others))
+    )
 
 
 def own_tasks(membership: Membership, *, base: QuerySet[Task]) -> QuerySet[Task]:
@@ -309,7 +337,10 @@ def _visible_protocol_entries(organization: Organization, membership: Membership
     from apps.work.faction.models import FactionProtocolEntry
     from apps.work.faction.visibility import can_view_internal
 
-    qs = FactionProtocolEntry.objects.filter(meeting__organization=organization)
+    # Nur aus Sitzungen, die das Mitglied sieht (Sitzungsarten, Issue #1239)
+    qs = FactionProtocolEntry.objects.filter(
+        meeting__organization=organization, meeting__in=_sichtbare_sitzungen(organization, membership)
+    )
     if not can_view_internal(membership):
         qs = qs.exclude(Q(agenda_item__visibility="internal") | Q(agenda_item__parent__visibility="internal"))
     return qs

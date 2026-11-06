@@ -25,7 +25,7 @@ Einstellungen › Dokumente › Dokumenttypen im neuen Erscheinungsbild (Issue #
         {% else %}
         <p class="text-sm text-gray-700 dark:text-gray-300">Noch keine Dokumenttypen. <c-ui.textlink href="{% url 'work:document_type_create' org_slug=organization.slug %}">Ersten Typ erstellen</c-ui.textlink></p>
         {% endif %}
-        <p class="mt-6 text-sm"><c-ui.textlink href="{% url 'work:document_settings' org_slug=organization.slug %}">Zu den Dokumenteinstellungen</c-ui.textlink></p>
+        <p class="mt-6 text-sm"><c-ui.textlink href="{% url 'work:organization_documents' org_slug=organization.slug %}">Zur Übersicht der Dokumente</c-ui.textlink></p>
     </div>
 </div>
 {% endblock %}

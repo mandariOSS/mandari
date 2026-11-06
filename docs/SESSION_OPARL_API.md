@@ -127,8 +127,10 @@ DSGVO kann sie die Veröffentlichung so beschreiben:
 | `GET …/api/oparl/memberships/`, `…/agendaitems/`, `…/consultations/`, `…/files/`, `…/legislativeterms/` | weitere externe Listen (OParl 1.1 Body-Listen) |
 | `GET …/api/oparl/<typ>/<uuid>/` | Objekt-Endpunkte aller Typen |
 | `GET …/api/oparl/file/<uuid>/download/` | Anonymer Datei-Abruf (nur öffentlich sichtbare Anlagen; `?download=1` für Attachment) |
-| `GET …/api/oparl/body/changes/` | Änderungsfeed (kompatible Erweiterung, nur wenn eingeschaltet; Abschnitt „Änderungsfeed“) |
-| `GET …/api/oparl/body/snapshot/` | Snapshot mit Cursor-Übergabe (NDJSON, Einstieg in den Änderungsfeed) |
+| `GET …/api/oparl/body/kommparl/changes/` | Änderungsfeed nach dem kommParl-Profil (nur wenn eingeschaltet; Abschnitt „Änderungsfeed“) |
+| `GET …/api/oparl/body/kommparl/snapshot/` | Snapshot nach dem kommParl-Profil (NDJSON, Einstieg in den Änderungsfeed) |
+| `GET …/api/oparl/body/changes/` | Änderungsfeed in der älteren Form, abgekündigt (Wegfall frühestens am 01.12.2027) |
+| `GET …/api/oparl/body/snapshot/` | Snapshot in der älteren Form, abgekündigt (Wegfall frühestens am 01.12.2027) |
 
 Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
 `agendaitem`, `paper`, `consultation`, `file`, `legislativeterm`, `location`.
@@ -348,9 +350,12 @@ OParl 1.1 §2.8, Muster wie beim Aggregator: Objekte, die einmal
 
 Ist der Änderungsfeed in der Installation eingeschaltet (`OPARL_CHANGES_ENABLED`, siehe
 `OPARL_API.md`, Abschnitte „Änderungsfeed“ und „Betrieb“), bietet jeder freigeschaltete Mandant ihn
-unter `…/api/oparl/body/changes/` an; der Body nennt die Adresse in `mandari:changes`. Format, Cursor,
-Aufbewahrung und `410` sind dieselben wie beim Aggregator – beide Ausgaben nutzen dieselbe
-Serialisierung (`mandari/hub/api/changes.py`).
+nach dem kommParl-Profil unter `…/api/oparl/body/kommparl/changes/` an; der Body nennt die Adresse in
+`kommparl:changes`. Die ältere Form unter `…/api/oparl/body/changes/` (`mandari:changes`) bleibt bis zu ihrem
+Wegfall frühestens am 01.12.2027 und ist abgekündigt. Format, Cursor, Aufbewahrung und `410` sind dieselben wie
+beim Aggregator – beide Ausgaben nutzen dieselbe Serialisierung (`mandari/hub/api/changes.py`, Unterschiede der
+Formen in `OPARL_API.md`, Abschnitt „Zwei Formen“). Das System nennt in `kommparl:conformsTo` die Fassung von
+kommParl, nach der sich die Ausgabe richtet.
 
 - **Kommune im Journal:** die kanonische Kennung des Body, `uuid5` über `…/api/oparl/body/`.
   Ereignisse nennen Objekte ebenfalls mit ihrer kanonischen Kennung (`uuid5` über die Adresse des
@@ -369,11 +374,13 @@ Serialisierung (`mandari/hub/api/changes.py`).
   Freischaltung ändert weder Daten noch ihre Sichtbarkeit. Das Ende der Veröffentlichung im
   Bürgerportal betrifft nur dessen Spiegel (`OPARL_API.md`, Abschnitt „Welche Kommunen“), nicht die
   eigene Schnittstelle des Mandanten.
-- **Snapshot:** `…/api/oparl/body/snapshot/` (am Body in `mandari:snapshot`) liefert den öffentlichen
-  Gesamtstand als NDJSON mit dem Cursor, ab dem der Feed fortsetzt: den Body und die Objekte der Listen
-  `organizations`, `people`, `meetings` und `papers` mit ihren Einbettungen (Mitgliedschaften,
-  Tagesordnungspunkte des öffentlichen Teils, öffentliche Anlagen, Beratungen). Form und Übergabe wie
-  beim Aggregator (`OPARL_API.md`, Abschnitt „Snapshot“).
+- **Snapshot:** `…/api/oparl/body/kommparl/snapshot/` (am Body in `kommparl:snapshot`) liefert den öffentlichen
+  Gesamtstand als NDJSON nach dem kommParl-Profil: Kopfzeile mit dem Cursor, ab dem der Feed fortsetzt, dann jedes
+  öffentliche Objekt in einer eigenen Zeile (die Objekte aller externen Listen und die Sitzungsorte), zuletzt die
+  Schlusszeile mit der Zahl der Objektzeilen. Die ältere Form `…/api/oparl/body/snapshot/` (`mandari:snapshot`,
+  abgekündigt) liefert den Body und die Objekte der Listen `organizations`, `people`, `meetings` und `papers` mit
+  ihren Einbettungen (Mitgliedschaften, Tagesordnungspunkte des öffentlichen Teils, öffentliche Anlagen,
+  Beratungen). Form und Übergabe wie beim Aggregator (`OPARL_API.md`, Abschnitte „Zwei Formen“ und „Snapshot“).
 
 ## Konsumenten
 

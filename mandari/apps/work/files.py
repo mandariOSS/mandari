@@ -13,15 +13,20 @@ wird beim Download gesetzt.
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 import uuid
+from collections.abc import Iterable
 from pathlib import PurePosixPath
 from typing import Any
 
+from django.db import transaction
 from django.http import FileResponse, Http404
 from django.utils import timezone
 
 from apps.common.uploads import is_embeddable
+
+logger = logging.getLogger(__name__)
 
 TASK_ATTACHMENTS = "tasks/attachments/"
 FACTION_ATTACHMENTS = "faction/attachments/"
@@ -141,3 +146,23 @@ def attachment_response(fieldfile: Any, filename: str = "", *, allow_pdf_inline:
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "private, no-store"
     return response
+
+
+def remove_files_on_commit(files: Iterable[Any]) -> None:
+    """
+    Dateien (``FieldFile``) gelöschter Einträge erst nach erfolgreicher Transaktion aus dem Speicher entfernen;
+    bricht die Transaktion ab, bleiben sie. Fehlt eine Datei schon, ist das kein Fehler.
+    """
+    stored = [(fieldfile.storage, fieldfile.name) for fieldfile in files if fieldfile and fieldfile.name]
+    if not stored:
+        return
+
+    def remove() -> None:
+        for storage, name in stored:
+            try:
+                if storage.exists(name):
+                    storage.delete(name)
+            except OSError:
+                logger.warning("Datei eines gelöschten Eintrags konnte nicht entfernt werden: %s", name)
+
+    transaction.on_commit(remove)

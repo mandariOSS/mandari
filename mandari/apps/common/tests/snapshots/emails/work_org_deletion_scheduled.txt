@@ -1,0 +1,19 @@
+# Ihr Zugang endet am 05.12.2026
+
+Fraktion Test
+
+Guten Tag Eva Beispiel,
+
+die Verwaltung von Fraktion Test hat Ihre Mitgliedschaft auf „Nur Lesen“ gestellt. Inhalte der Organisation sehen Sie ab sofort nicht mehr, ändern können Sie nichts. Am 05.12.2026 wird Ihre Mitgliedschaft gelöscht.
+
+Bis dahin können Sie sich wie gewohnt anmelden und eine Kopie Ihrer eigenen Daten herunterladen, auch Ihrer Dokumente.
+
+[Meine Daten herunterladen](https://mandari.example/work/fraktion-test/zugang/auslauf/)
+
+Am Löschtag entfallen Ihre persönlichen Daten in Fraktion Test, Ihre privaten Dokumente und Ihre Entwürfe. Was Sie für die Fraktion beigetragen haben, bleibt erhalten und zeigt dann „Ehemaliges Mitglied“; in Protokollen und Anwesenheitslisten bleibt Ihr Name stehen.
+
+Ist das ein Versehen? Dann wenden Sie sich bitte an die Verwaltung von Fraktion Test; sie kann die Löschung bis zum 05.12.2026 zurücknehmen.
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

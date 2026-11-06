@@ -31,9 +31,10 @@
 </c-ui.panel-section>
 {% endif %}{% endwith %}
 
-{# 2. Beschluss #}
+{# 2. Beschluss; in einer Sitzungsart ohne Abstimmungen nur ein schon erfasster, nur lesbar (Issue #1240) #}
+{% if decision or meeting.abstimmungen_erlaubt %}
 <c-ui.panel-section title="Beschluss">
-    {% if can_edit or can_protocol %}
+    {% if can_edit and meeting.abstimmungen_erlaubt or can_protocol and meeting.abstimmungen_erlaubt %}
     <c-slot name="action">
         <c-ui.text-button icon="{% if decision %}edit-2{% else %}plus{% endif %}" @click="showDecisionForm = !showDecisionForm">
             {% if decision %}Bearbeiten{% else %}Erfassen{% endif %}
@@ -58,7 +59,7 @@
         {% if decision.decision_text %}
         <p class="text-sm text-gray-700 dark:text-gray-300 mt-1">{{ decision.decision_text }}</p>
         {% endif %}
-        {% if can_edit or can_protocol %}
+        {% if can_edit and meeting.abstimmungen_erlaubt or can_protocol and meeting.abstimmungen_erlaubt %}
         <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
               hx-vals='{"action": "clear_decision"}'
               hx-target="#agenda-panel-content" hx-swap="innerHTML"
@@ -74,6 +75,7 @@
     {% endif %}
 
     {# Inline-Formular Abstimmung #}
+    {% if meeting.abstimmungen_erlaubt %}
     <div x-show="showDecisionForm" x-transition x-cloak class="mt-3">
         <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
               hx-vals='{"action": "record_decision"}'
@@ -112,7 +114,9 @@
             </div>
         </form>
     </div>
+    {% endif %}
 </c-ui.panel-section>
+{% endif %}
 
 {# 3. Protokolleinträge #}
 <c-ui.panel-section title="Protokoll" :count="protocol_entries|length">

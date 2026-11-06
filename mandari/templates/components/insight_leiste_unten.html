@@ -3,7 +3,8 @@
 Am Handy (unter lg) die Leiste unten mit fünf Zielen und das Blatt „Mehr“ (Issue #783, Stufe 3, Variante C). Beides
 steht geschlossen im HTML; Alpine öffnet das Blatt nur auf Klick (wie die Korrektur aus #763). Das Blatt ist ein
 modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf „Mehr“ zurück. Safe-Area unten für Geräte ohne Knopf,
-seitlich für das Querformat (wirkt nur mit viewport-fit=cover im Layout).
+seitlich für das Querformat (wirkt nur mit viewport-fit=cover im Layout). Angemeldet steht im Blatt „Verbundene
+Anwendungen“, nur bei eingeschaltetem OIDC-Anbieter (#1215).
 {% endcomment %}
 <nav aria-label="Hauptbereiche" class="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
     <ul class="grid grid-cols-5 max-w-xl mx-auto">
@@ -79,6 +80,7 @@ seitlich für das Querformat (wirkt nur mit viewport-fit=cover im Layout).
                 </button>
             </li>
             {% if request.user.is_authenticated %}
+            {% if oidc_provider_enabled %}<li><c-insight.blatt-link href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}" icon="plug">Verbundene Anwendungen</c-insight.blatt-link></li>{% endif %}
             <li><c-insight.blatt-link href="{% url 'accounts:logout' %}" icon="log-out">Abmelden</c-insight.blatt-link></li>
             {% else %}
             <li><c-insight.blatt-link href="{% url 'accounts:login' %}" icon="log-in">Anmelden</c-insight.blatt-link></li>

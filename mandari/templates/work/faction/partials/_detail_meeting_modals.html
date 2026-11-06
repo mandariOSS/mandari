@@ -24,7 +24,7 @@
             <c-form.field name="title" label="Titel" placeholder="Thema Ihres Vorschlags" required />
             <c-form.textarea name="description" label="Begründung" rows="3" placeholder="Warum sollte dies besprochen werden?" />
             {# Vereidigte schlagen auch nichtöffentliche TOPs vor; der Server prüft die Vereidigung (Issue #1160) #}
-            {% if can_view_internal %}
+            {% if can_view_internal and meeting.nichtoeffentlich_erlaubt %}
             <c-form.select name="visibility" id="vorschlag-teil" label="Teil der Tagesordnung">
                 <option value="public">Öffentlich</option>
                 <option value="internal">Nichtöffentlich</option>

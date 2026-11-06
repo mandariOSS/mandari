@@ -7,6 +7,12 @@
    Breiten und was es nur dort gibt. Maße nach „Gestalten ohne KI-Slop“ (Arbeitsplattform): Bedienschrift 13–14 px,
    Bedienelemente 32 px (28 px in Leisten), Icons 16 px, Radius 4–6 px, Linien nur zum Trennen. */
 @layer components {
+  /* Feste Kopfzeile (48 px): Sprungziele und Felder, zu denen gescrollt wird (Fokus per Tastatur, Fehler), landen
+     darunter statt verdeckt (WCAG 2.4.11, aufgefallen mit #1230) */
+  html[data-rahmen="neu"] {
+    scroll-padding-top: calc(3.5rem + env(safe-area-inset-top));
+  }
+
   /* ---------- Farben ---------- */
   .wf {
     --wf-tinte: #1f2430;

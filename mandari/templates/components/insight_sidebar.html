@@ -1,7 +1,8 @@
 {% load static insight_listen %}
 {% comment %}
 Seitenleiste des Bürgerportals (Issue #783, Variante A): eigene graue Fläche ohne Trennlinien, oben die Kommune als
-weiße Schaltfläche, sieben Bereiche (Beschlüsse und Ratsfragen nur mit Inhalten), unten „Für Sie“. Nur ab lg; am
+weiße Schaltfläche, sieben Bereiche (Beschlüsse und Ratsfragen nur mit Inhalten), unten „Für Sie“ (angemeldet
+mit „Verbundene Anwendungen“, nur bei eingeschaltetem OIDC-Anbieter, #1215). Nur ab lg; am
 Handy übernehmen die Leiste unten und das Blatt „Mehr“ (components/insight_leiste_unten.html, Variante C). Die Leiste
 steht fest im HTML und wird nie per Skript eingeblendet, ein Herausfahren beim Seitenaufruf (#763) ist damit
 ausgeschlossen.
@@ -74,6 +75,7 @@ ausgeschlossen.
             <li><c-insight.nav-link href="{% insight_url 'notifications' %}" rel="{% insight_rel 'notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.nav-link></li>
             {% endif %}
             {% if request.user.is_authenticated %}
+            {% if oidc_provider_enabled %}<li><c-insight.nav-link href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}" icon="plug">Verbundene Anwendungen</c-insight.nav-link></li>{% endif %}
             <li class="flex items-center gap-3 h-10 px-3 text-[0.9rem]">
                 <i data-lucide="circle-user" class="w-[18px] h-[18px] shrink-0 text-gray-500" aria-hidden="true"></i>
                 <span class="flex-1 min-w-0 truncate text-gray-700 dark:text-gray-300">{{ request.user.get_full_name|default:request.user.email }}</span>

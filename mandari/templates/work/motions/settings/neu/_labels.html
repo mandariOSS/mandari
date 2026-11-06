@@ -1,0 +1,37 @@
+{% comment %}
+Aufgaben-Labels in den Einstellungen (Issue #1230): anlegen (action=add_label, Felder name und color wie TaskLabelForm)
+und mit Rückfrage löschen (action=delete_label). Recht tasks.manage; das Aufgaben-Panel pflegt Labels weiter selbst.
+Kontext: labels, label_farben.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Aufgaben-Labels" titel_id="labels-titel">
+    <form method="post" class="mt-3 flex flex-wrap items-end gap-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add_label">
+        <c-form.field name="name" id="label-neu" label="Neues Label" placeholder="z. B. Presse, Haushalt" maxlength="50" dicht required class="flex-1 min-w-[14rem]" />
+        <c-form.select name="color" id="label-neu-farbe" label="Farbe" dicht class="w-40">
+            {% for value, label in label_farben %}<option value="{{ value }}" {% if value == "blue" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </c-form.select>
+        <c-ui.button type="submit" size="sm" variant="secondary" icon="plus">Anlegen</c-ui.button>
+    </form>
+    {% if labels %}
+    <ul class="mt-4 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm" data-testid="labels-liste">
+        {% for task_label in labels %}
+        <li class="flex items-center justify-between gap-3 py-1.5">
+            <span class="flex min-w-0 items-center gap-2">
+                <span class="w-2.5 h-2.5 shrink-0 rounded-full bg-{{ task_label.color }}-500" aria-hidden="true"></span>
+                <span class="text-gray-900 dark:text-white break-words">{{ task_label.name }}</span>
+                <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ task_label.get_color_display }}</span>
+            </span>
+            <form method="post" data-confirm="Label „{{ task_label.name }}“ wirklich löschen? Die Aufgaben bleiben, sie verlieren nur das Label.">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_label">
+                <input type="hidden" name="label_id" value="{{ task_label.id }}">
+                <c-ui.button type="submit" size="sm" variant="ghost" icon="trash-2" class="text-red-700 dark:text-red-400">Löschen<span class="sr-only">: {{ task_label.name }}</span></c-ui.button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <c-rahmen.satz>Noch keine Labels. Labels lassen sich auch beim Bearbeiten einer Aufgabe anlegen.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>

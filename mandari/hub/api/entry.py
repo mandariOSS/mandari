@@ -9,10 +9,9 @@ oder eine zweite – beides verwirrt Anwendungen, die Objekte an ihrer ``id`` er
 deshalb auf das System der Installation (``system``, der Aggregator) und nennt daneben
 
 - ``kommparl:conformsTo``: die Kennungen aus kommParl, deren Anforderungen die Installation vollständig erfüllt
-  (kommParl, Kapitel 5). Das ist die Fassung des Entwurfs, auf der die OParl-Ausgaben beruhen. Änderungsfeed
-  und Snapshot gibt es schon, die Körperschaften nennen sie aber noch als ``mandari:changes`` und
-  ``mandari:snapshot``; die Profile verlangen ``kommparl:changes`` und ``kommparl:snapshot``. Ihre Kennungen
-  kommen hinzu, sobald die Ausgaben beide Eigenschaften nennen (ADR, Regel 2).
+  (kommParl, Kapitel 5; ``hub.api.kommparl.conforms_to``, dieselbe Liste wie am ``System`` beider Ausgaben). Das ist
+  die Fassung des Entwurfs, auf der die OParl-Ausgaben beruhen. Die Profile Änderungsfeed und Snapshot kämen hinzu,
+  wenn die Installation sie anbietet und sie vollständig erfüllt sind (``PROFILES_FULFILLED``).
 - ``openapi`` und ``documentation``: die Beschreibung aller Bereiche und ihre Dokumentationsseite,
 - ``areas``: die Bereiche mit ihrem Einstieg (``{…}`` steht für einen Teil der Adresse, RFC 6570).
 
@@ -37,14 +36,14 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_safe
 
+from hub.api import changes, kommparl
 from hub.api.http import endpoint, json_response
-from hub.api.oparl_types import SCHEMA
 from hub.api.openapi import Area, Description, areas, build_description
 from hub.api.openapi.aggregator import system_url
 from hub.api.openapi.build import TITLE
 
 #: Fassung von kommParl, nach der sich die OParl-Ausgaben richten (Entwurf 0.1, kommParl Kapitel 5)
-KOMMPARL_VERSION: Final = "https://schema.kommparl.de/0.1/"
+KOMMPARL_VERSION: Final = kommparl.VERSION
 
 ENTRY_SCHEMA: Final = "Einstieg"
 
@@ -58,7 +57,7 @@ DESCRIPTION: Final = (
 
 def conforms_to() -> list[str]:
     """Kennungen aus kommParl, deren Anforderungen die Installation vollständig erfüllt."""
-    return [KOMMPARL_VERSION]
+    return kommparl.conforms_to(feed_offered=changes.enabled())
 
 
 def _site(path: str) -> str:
@@ -75,7 +74,7 @@ def entry_document() -> dict[str, Any]:
     return {
         "name": NAME,
         "description": DESCRIPTION,
-        "oparlVersion": SCHEMA,
+        "oparlVersion": kommparl.OPARL_VERSION,
         "system": system_url(),
         "kommparl:conformsTo": conforms_to(),
         "openapi": _site(reverse("schnittstelle:openapi")),

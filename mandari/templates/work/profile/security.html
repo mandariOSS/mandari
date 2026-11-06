@@ -23,6 +23,17 @@
             {% include "work/profile/partials/_security_password_card.html" %}
             {% include "work/profile/partials/_security_two_factor_card.html" %}
             {% include "work/profile/partials/_security_sessions_card.html" %}
+            {% if oidc_provider_enabled %}
+            {# Verbundene Anwendungen nur bei eingeschaltetem OIDC-Anbieter (Issue #1215) #}
+            <c-ui.card title="Verbundene Anwendungen" subtitle="Anwendungen, die in Ihrem Namen zugreifen dürfen" data-testid="sicherheit-anwendungen">
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Anwendungen, die Sie mit Ihrem mandari-Konto angemeldet haben. Dort können Sie ihren Zugang widerrufen.</p>
+                <a href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}"
+                   class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <i data-lucide="plug" class="w-4 h-4"></i>
+                    Verbundene Anwendungen
+                </a>
+            </c-ui.card>
+            {% endif %}
             {% include "work/profile/partials/_security_notifications_card.html" %}
         </div>
     </div>

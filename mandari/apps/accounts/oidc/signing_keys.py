@@ -10,7 +10,7 @@ Der Schlüssel kommt wie die übrigen Geheimnisse aus der Umgebung, nie aus dem 
 Nur während eines Schlüsselwechsels zusätzlich der bisherige Schlüssel (``OIDC_RSA_PRIVATE_KEY_PREVIOUS_FILE``,
 mehrere Pfade durch Komma getrennt, oder ``OIDC_RSA_PRIVATE_KEY_PREVIOUS``). Mit ihm wird nichts mehr signiert;
 das JWKS veröffentlicht seinen öffentlichen Teil, damit Anwendungen ID-Tokens, die vor dem Wechsel ausgestellt
-wurden, bis zu deren Ablauf weiter prüfen können. Ablauf in ``docs/schnittstelle/anmeldung.md``.
+wurden, bis zu deren Ablauf weiter prüfen können. Ablauf in ``docs/schnittstelle/anmeldung-betrieb.md``.
 
 Verlangt wird ein unverschlüsselter RSA-Schlüssel mit mindestens 2048 Bit. Fehlermeldungen nennen nie den
 Inhalt eines Schlüssels. Das Modul hat keine Abhängigkeiten zu Django, weil ``settings.py`` es liest.

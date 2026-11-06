@@ -5,10 +5,13 @@ mandari als OpenID-Connect-Anbieter (Issue #1206, ADR ``20261105-eine-schnittste
 Grundlage ist django-oauth-toolkit. Die Plattform legt dessen austauschbare Modelle selbst fest
 (:mod:`.models`), dazu Scopes (:mod:`.catalog`, :mod:`.scopes`), Prüfregeln (:mod:`.validator`),
 Signaturschlüssel (:mod:`.signing_keys`), Endpunkte (:mod:`.views`, :mod:`.urls`), Prüfprotokoll
-(:mod:`.audit`) und die Prüfung von Access-Tokens für Ressourcen wie die Session-API (:mod:`.access`).
+(:mod:`.audit`) und die Prüfung von Access-Tokens für Ressourcen wie die Session-API (:mod:`.access`). Für den
+Betrieb die Prüfung vor dem Einschalten (:mod:`.readiness`, ``manage.py oidc_pruefen``) und
+``manage.py oidc_anwendung``.
 
 Der Schalter ``OIDC_PROVIDER_ENABLED`` ist standardmäßig aus; dann antworten alle Endpunkte mit 404
-und kein Access-Token wird angenommen. Für Anwendungsentwickler: ``docs/schnittstelle/anmeldung.md``.
+und kein Access-Token wird angenommen. Für Anwendungsentwickler: ``docs/schnittstelle/anmeldung.md``, für den
+Betrieb: ``docs/schnittstelle/anmeldung-betrieb.md``.
 """
 
 from __future__ import annotations

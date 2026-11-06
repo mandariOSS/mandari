@@ -20,12 +20,13 @@ from ..models import (
     FactionAgendaItem,
     FactionAgendaItemAttachment,
     FactionDecision,
-    FactionMeeting,
     FactionProtocolEntry,
 )
 
 logger = logging.getLogger(__name__)
 
+from ..regeln import ABSTIMMUNGEN_AUS, NOE_AUS
+from ..sitzungsarten import sitzung_oder_404
 from ..visibility import can_view_item, can_view_item_with_parents, is_item_internal
 
 
@@ -71,7 +72,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
+        meeting = sitzung_oder_404(self.membership, self.organization, kwargs["meeting_id"])
         item = get_object_or_404(
             FactionAgendaItem.objects.select_related(
                 "meeting", "parent", "approves_meeting", "related_agenda_item"
@@ -182,7 +183,7 @@ class FactionAttachmentDownloadView(WorkViewMixin, View):
     permission_required = "faction.view_public"
 
     def get(self, request, *args, **kwargs):
-        meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
+        meeting = sitzung_oder_404(self.membership, self.organization, kwargs["meeting_id"])
         item = get_object_or_404(FactionAgendaItem, id=kwargs["item_id"], meeting=meeting)
         if not can_view_item_with_parents(item, self.membership):
             raise PermissionDenied("Gesperrte Information")
@@ -197,7 +198,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
     permission_required = "faction.view_public"
 
     def post(self, request, *args, **kwargs):
-        meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
+        meeting = sitzung_oder_404(self.membership, self.organization, kwargs["meeting_id"])
         item = get_object_or_404(FactionAgendaItem, id=kwargs["item_id"], meeting=meeting)
 
         # NÖ strikt (Issue #64): keine Aktionen auf NÖ-TOPs für Nicht-Vereidigte
@@ -308,6 +309,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
             if visibility == "internal" and not can_view_internal(self.membership):
                 return HttpResponse(status=403)
+            # Art ohne nichtöffentlichen Teil (Issue #1240): nichts in den NÖ-Teil verschieben
+            if visibility == "internal" and item.visibility != "internal" and not meeting.nichtoeffentlich_erlaubt:
+                return HttpResponse(NOE_AUS, status=400)
         else:
             visibility = None
 
@@ -402,6 +406,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         """Record or update a decision/vote."""
         if not can_edit and not self._can_protocol(meeting):
             return HttpResponse(status=403)
+        # Art ohne Abstimmungen (Issue #1240): erfasste bleiben lesbar, neue gibt es nicht
+        if not meeting.abstimmungen_erlaubt:
+            return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
 
         try:
             votes_yes = int(request.POST.get("votes_yes", 0))
@@ -430,6 +437,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         """Remove decision from agenda item."""
         if not can_edit and not self._can_protocol(meeting):
             return HttpResponse(status=403)
+        # Art ohne Abstimmungen (Issue #1240): erfasste Abstimmungen bleiben unverändert lesbar
+        if not meeting.abstimmungen_erlaubt:
+            return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
 
         FactionDecision.objects.filter(agenda_item=item).delete()
         item.has_decision = False
@@ -644,7 +654,7 @@ class FactionItemFieldsView(WorkViewMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, *args, **kwargs):
-        meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
+        meeting = sitzung_oder_404(self.membership, self.organization, kwargs["meeting_id"])
         item = get_object_or_404(FactionAgendaItem, id=kwargs["item_id"], meeting=meeting)
         if not can_view_item(item, self.membership):
             return JsonResponse({"error": "Gesperrte Information"}, status=403)

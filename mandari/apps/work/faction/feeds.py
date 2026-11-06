@@ -4,7 +4,9 @@ Persönlicher iCal-Feed (Issue #70).
 
 Je Benutzer:in ein abonnierbarer Kalender-Feed mit:
 - den Fraktionssitzungen ALLER Organisationen der Person (nur Titel,
-  Zeit, Ort, Status — NIEMALS NÖ-TOP-Inhalte oder Protokolle)
+  Zeit, Ort, Status — NIEMALS NÖ-TOP-Inhalte oder Protokolle), je
+  Organisation nur die Sitzungen, die die Person sehen darf (Sitzungsarten,
+  Issue #1239)
 - den RIS-Terminen der OParl-Gremien, denen die Person über ihre
   Mitgliedschaften zugeordnet ist (``Membership.oparl_committees``,
   Grundlage von "Meine Sitzungen")
@@ -45,6 +47,7 @@ def build_personal_feed(user) -> bytes:
     from hub.ris import selectors as ris
 
     from .models import FactionMeeting
+    from .sitzungsarten import sichtbar_fuer
 
     now = timezone.now()
     window_start = now - timedelta(days=FEED_PAST_DAYS)
@@ -62,17 +65,12 @@ def build_personal_feed(user) -> bytes:
     # -- Fraktionssitzungen aller Organisationen -------------------------
     # Nur Organisationen, in denen die Person Fraktionssitzungen sehen darf (keine Gastzugänge)
     faction_memberships = [m for m in memberships if not m.is_guest and m.has_permission("faction.view_public")]
-    org_ids = [m.organization_id for m in faction_memberships]
     org_by_id = {m.organization_id: m.organization for m in faction_memberships}
-    faction_meetings = (
-        FactionMeeting.objects.filter(
-            organization_id__in=org_ids,
-            start__gte=window_start,
-            start__lte=window_end,
-        )
-        .exclude(status="draft")
-        .order_by("start")
-    )
+    im_fenster = FactionMeeting.objects.filter(start__gte=window_start, start__lte=window_end).exclude(status="draft")
+    faction_meetings = []
+    for membership in faction_memberships:
+        faction_meetings.extend(sichtbar_fuer(membership, im_fenster).order_by("start"))
+    faction_meetings.sort(key=lambda meeting: meeting.start)
     for meeting in faction_meetings:
         organization = org_by_id.get(meeting.organization_id)
         location = meeting.location or ("Online" if meeting.is_virtual else "")

@@ -250,6 +250,11 @@ einschließlich Journal prüft `.github/workflows/backup-roundtrip.yml`.
   transaktionskonsistent.
 - Die Aufbewahrung zählt ab dem neuesten Stand: Fällt die Sicherung länger
   aus, bleiben ältere Stände erhalten, bis wieder gesichert wird.
+- Gelöschte Daten (etwa nach der Löschung einer Mitgliedschaft) verschwinden aus den
+  Sicherungen mit der Zeit, spätestens nach 30 Tagen. Das gilt auch für die
+  Sicherungen vor jedem Deploy (`deploy.sh`, `BACKUP_MAX_AGE_DAYS`, täglich
+  `deploy.sh prune`, siehe `DEPLOYMENT.md`). Sicherungen von Hand außerhalb dieser
+  Ablagen unterliegen keiner Frist und sind nach 30 Tagen zu löschen.
 - Wer Schreibzugriff auf den Server hat, kann mit dem hinterlegten Schlüssel
   auch Sicherungen löschen. Schutz davor bieten Ziele mit unveränderlichen
   Snapshots oder ein zusätzlich gepflegtes, nur anhängendes Repository.

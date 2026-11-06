@@ -39,7 +39,8 @@ can_import_internal_documents, can_approve_proposals, pending_proposals).
     {% endif %}
 </div>
 
-{% if can_view_internal %}
+{# Sitzungsart ohne nichtöffentlichen Teil (Issue #1240): nur bestehende NÖ-TOPs, geschützt wie bisher, ohne Hinzufügen und ohne Ziehen hinein #}
+{% if can_view_internal and meeting.nichtoeffentlich_erlaubt or can_view_internal and to_intern %}
 <div class="fs-teil noe" data-testid="fs-teil-intern">
     <div class="fs-teil-kopf">
         <h3><i data-lucide="lock" aria-hidden="true"></i>Nichtöffentlicher Teil <span class="fs-meta">sehen nur vereidigte Mitglieder</span></h3>
@@ -47,10 +48,10 @@ can_import_internal_documents, can_approve_proposals, pending_proposals).
         <a class="wf-knopf wf-klein fs-teil-aktion" href="{% url 'work:faction_internal_import' org_slug=org_slug meeting_id=meeting.id %}"><i data-lucide="upload" aria-hidden="true"></i>PDF auslesen …</a>
         {% endif %}
     </div>
-    <ol class="fs-tops" data-teil="internal"{% if can_edit %} data-ziehbar{% endif %}>
+    <ol class="fs-tops" data-teil="internal"{% if can_edit and meeting.nichtoeffentlich_erlaubt %} data-ziehbar{% endif %}>
         {% for z in to_intern %}{% include "work/faction/neu/_vb_top.html" %}{% endfor %}
     </ol>
-    {% if can_add_items %}
+    {% if can_add_items and meeting.nichtoeffentlich_erlaubt %}
     <form class="fs-top-neu" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-target="#agenda-container" hx-swap="innerHTML" hx-include="#fs-offen">
         <input type="hidden" name="action" value="add_item">
         <input type="hidden" name="visibility" value="internal">

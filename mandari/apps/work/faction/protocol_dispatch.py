@@ -41,9 +41,14 @@ _PROTOCOL_LOCK_KEY = "faction:protocol:lock"
 _PROTOCOL_LOCK_TIMEOUT = 10 * 60
 
 
-def get_protocol_dispatch_settings(organization: Any) -> dict[str, Any]:
-    """Einstellungen des Protokollversands der Organisation (mit Standardwerten)."""
-    faction_settings = (organization.settings or {}).get("faction", {})
+def get_protocol_dispatch_settings(ziel: Any) -> dict[str, Any]:
+    """
+    Einstellungen des Protokollversands (mit Standardwerten) einer Sitzung oder Sitzungsart, je Art übersteuerbar
+    (Issue #1240); mit einer Organisation die der Organisation selbst.
+    """
+    from .regeln import einstellungen
+
+    faction_settings = einstellungen(ziel)
     result: dict[str, Any] = dict(PROTOCOL_DISPATCH_DEFAULTS)
     mode = faction_settings.get("protocol_dispatch")
     if mode in PROTOCOL_DISPATCH_MODES:
@@ -71,10 +76,14 @@ def protocol_due_at(meeting: Any, settings: dict[str, Any]) -> datetime | None:
 
 
 def protocol_recipients(meeting: Any) -> list[tuple[Any, bool]]:
-    """Empfänger mit Fassung: ``(membership, intern)`` – wie beim PDF-Download der Niederschrift."""
+    """
+    Empfänger mit Fassung: ``(membership, intern)`` – wie beim PDF-Download der Niederschrift. Empfänger sind die
+    Teilnehmenden der Sitzungsart und die Eingeladenen (Issue #1239), bei der Standardart alle Mitglieder.
+    """
+    from .sitzungsarten import empfaenger
     from .visibility import can_view_internal
 
-    memberships = meeting.organization.memberships.filter(is_active=True, is_guest=False).select_related("user")
+    memberships = empfaenger(meeting).select_related("user")
     recipients = []
     for membership in memberships:
         if not membership.has_permission("faction.view_public"):
@@ -139,9 +148,9 @@ def send_protocol(meeting: Any) -> int:
     return sent
 
 
-def _due_window(organization: Any, settings: dict[str, Any], now: datetime) -> Any:
+def _due_window(meeting_type: Any, settings: dict[str, Any], now: datetime) -> Any:
     """
-    Sitzungen der Organisation, deren Protokoll im Fenster ``[Einschalten, jetzt]`` fällig wird.
+    Sitzungen der Sitzungsart, deren Protokoll im Fenster ``[Einschalten, jetzt]`` fällig wird.
 
     Gefiltert wird in der Datenbank: fällig = Bezugszeitpunkt + Verzögerung, also Bezugszeitpunkt zwischen
     Einschalten minus Verzögerung und jetzt minus Verzögerung. Ältere Sitzungen (vor dem Einschalten)
@@ -156,7 +165,10 @@ def _due_window(organization: Any, settings: dict[str, Any], now: datetime) -> A
         return FactionMeeting.objects.none()
     delay = timedelta(hours=settings["protocol_dispatch_delay_hours"])
     meetings = FactionMeeting.objects.filter(
-        organization=organization, status="completed", protocol_sent_at__isnull=True
+        organization_id=meeting_type.organization_id,
+        meeting_type=meeting_type,
+        status="completed",
+        protocol_sent_at__isnull=True,
     )
     if settings["protocol_dispatch"] == "after_completion":
         return meetings.annotate(versand_bezug=Coalesce("end", "start")).filter(
@@ -172,17 +184,25 @@ def _due_window(organization: Any, settings: dict[str, Any], now: datetime) -> A
 
 
 def _candidates(now: datetime) -> Iterator[tuple[Any, dict[str, Any]]]:
-    """Kandidaten je eingeschalteter Organisation, mit deren Einstellungen."""
-    from apps.tenants.models import Organization
+    """
+    Kandidaten je Sitzungsart mit eingeschaltetem Versand, mit deren Einstellungen (Issue #1240): Eingeschaltet in
+    der Organisation (die Art kann ihn wieder ausschalten) oder in der Art selbst.
+    """
+    from django.db.models import Q
 
-    organizations = Organization.objects.filter(
-        is_active=True,
-        settings__faction__protocol_dispatch__in=["after_completion", "after_approval"],
+    from .models import FactionMeetingType
+
+    on = ["after_completion", "after_approval"]
+    meeting_types = FactionMeetingType.objects.filter(organization__is_active=True).filter(
+        Q(organization__settings__faction__protocol_dispatch__in=on) | Q(settings__protocol_dispatch__in=on)
     )
-    for organization in organizations:
-        settings = get_protocol_dispatch_settings(organization)
-        for meeting in _due_window(organization, settings, now):
-            meeting.organization = organization
+    for meeting_type in meeting_types.select_related("organization"):
+        settings = get_protocol_dispatch_settings(meeting_type)
+        if settings["protocol_dispatch"] not in on:
+            continue
+        for meeting in _due_window(meeting_type, settings, now):
+            meeting.organization = meeting_type.organization
+            meeting.meeting_type = meeting_type
             yield meeting, settings
 
 

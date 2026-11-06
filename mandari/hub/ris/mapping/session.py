@@ -34,7 +34,7 @@ Grundsätze:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cached_property
@@ -46,8 +46,9 @@ from mandari_oparl.ids import canonical_id, canonical_uri
 
 from hub.ris.canonical import Objekt, as_list, clean, file_text, iso, iso_date, iso_day, schema_type, tombstone
 
-#: Version der Abbildung (2: Umsetzungsstand und Genehmigung der Niederschrift, Issue #525)
-VERSION: Final = 2
+#: Version der Abbildung (2: Umsetzungsstand und Genehmigung der Niederschrift, Issue #525;
+#: 3: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216)
+VERSION: Final = 3
 
 #: Genehmigungsweg der Niederschrift (``mandari:protocolApproval``, wie ``ris.protocol.approved``)
 FOLLOW_UP: Final = "follow_up"
@@ -158,12 +159,20 @@ class SessionUris:
         return f"{self.base}file/{pk}/download/"
 
     def changes(self) -> str:
-        """Änderungsfeed des Mandanten (kompatible Erweiterung von OParl 1.1)."""
+        """Änderungsfeed des Mandanten in der älteren Form (``mandari:changes``, abgekündigt)."""
         return f"{self.base}body/changes/"
 
     def snapshot(self) -> str:
-        """Snapshot des Mandanten: Einstieg in den Änderungsfeed."""
+        """Snapshot des Mandanten in der älteren Form (``mandari:snapshot``, abgekündigt)."""
         return f"{self.base}body/snapshot/"
+
+    def kommparl_changes(self) -> str:
+        """Änderungsfeed des Mandanten nach dem Profil von kommParl (``kommparl:changes``)."""
+        return f"{self.base}body/kommparl/changes/"
+
+    def kommparl_snapshot(self) -> str:
+        """Snapshot des Mandanten nach dem Profil von kommParl (``kommparl:snapshot``)."""
+        return f"{self.base}body/kommparl/snapshot/"
 
 
 def _timestamps(obj: Any) -> Objekt:
@@ -181,6 +190,7 @@ class SessionMapping:
         *,
         changes: bool = False,
         id_base: str | Callable[[], str] | None = None,
+        conforms_to: Sequence[str] = (),
     ) -> None:
         self.tenant = tenant
         #: Adressen aus ``base``, kanonische Kennungen aus ``id_base`` (``SessionUris``)
@@ -188,6 +198,8 @@ class SessionMapping:
         self.source = source
         #: Die Ausgabe bietet Änderungsfeed und Snapshot an; der Body nennt dann deren Adressen
         self.changes = changes
+        #: Kennungen aus kommParl, die die Ausgabe vollständig erfüllt (``System``, ``kommparl:conformsTo``)
+        self.conforms_to = list(conforms_to)
 
     # -- System, Körperschaft, Wahlperiode -------------------------------------------------------
 
@@ -198,6 +210,7 @@ class SessionMapping:
                 "id": self.uris.system(),
                 "type": schema_type("system"),
                 "oparlVersion": "https://schema.oparl.org/1.1/",
+                "kommparl:conformsTo": self.conforms_to,
                 # Lizenz der offenen Daten, sofern die Verwaltung eine festgelegt hat (Einstellungen)
                 "license": tenant.oparl_license or None,
                 "body": self.uris.bodies(),
@@ -237,6 +250,9 @@ class SessionMapping:
                 "file": self.uris.list("files"),
                 "legislativeTermList": self.uris.list("legislativeterms"),
                 **_timestamps(tenant),
+                # Änderungsfeed und Snapshot nach den Profilen von kommParl; die älteren Formen sind abgekündigt
+                "kommparl:changes": self.uris.kommparl_changes() if self.changes else None,
+                "kommparl:snapshot": self.uris.kommparl_snapshot() if self.changes else None,
                 "mandari:changes": self.uris.changes() if self.changes else None,
                 "mandari:snapshot": self.uris.snapshot() if self.changes else None,
             }

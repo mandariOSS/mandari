@@ -74,17 +74,20 @@ def test_groesste_gelistete_kommune_ohne_eingeschalteten_feed(kommunen: dict[str
 
 
 def test_misst_dasselbe_wie_der_abruf(kommunen: dict[str, Any]) -> None:
+    """Gemessen wird der Snapshot nach dem Profil von kommParl (``…/kommparl/snapshot``) ohne Kopf- und Schlusszeile."""
     gross = kommunen["gross"]
     # Eingeschaltet nennt der Body zusätzlich Feed und Snapshot; sonst ist alles gleich
     with override_settings(OPARL_CHANGES_ENABLED=True):
         gemessen = oparl_snapshot_messen.messen(gross.pk)
-        antwort = Client().get(f"/oparl/v1/body/{gross.pk}/snapshot")
+        antwort = Client().get(f"/oparl/v1/body/{gross.pk}/kommparl/snapshot")
     assert antwort.status_code == 200
     inhalt = b"".join(cast(Any, antwort).streaming_content)
     kopf, rest = inhalt.split(b"\n", 1)
+    objekte, ende = rest.rstrip(b"\n").rsplit(b"\n", 1)
 
-    assert json.loads(kopf)["objects"] == gemessen.zeilen == 7
-    assert len(rest) == gemessen.groesse
+    assert json.loads(kopf)["cursor"]
+    assert json.loads(ende)["count"] == gemessen.zeilen == 7
+    assert len(objekte) + 1 == gemessen.groesse
     assert gemessen.sekunden >= 0
 
 

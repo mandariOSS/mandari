@@ -372,9 +372,9 @@ check(
     tomb.get("id") == f"{BASE}/v1/paper/{paper_gone.id}" and tomb.get("type") == "https://schema.oparl.org/1.1/Paper",
 )
 check(
-    "Tombstone: modified = Löschzeitpunkt",
-    tomb.get("modified") == paper_gone.deleted_at.isoformat(),
-    f"{tomb.get('modified')} != {paper_gone.deleted_at.isoformat()}",
+    "Tombstone: modified = Löschzeitpunkt (auf die Sekunde, OParl-Format)",
+    tomb.get("modified") == paper_gone.deleted_at.replace(microsecond=0).isoformat(),
+    f"{tomb.get('modified')} != {paper_gone.deleted_at.replace(microsecond=0).isoformat()}",
 )
 
 resp, papers_list = get_json(f"/oparl/v1/body/{body.id}/papers")

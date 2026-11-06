@@ -344,7 +344,8 @@ def _krumen(html: str) -> list[tuple[str, str]]:
     [
         # Formularseiten der Einstellungen: Bereich als Weg zurück, der Seitentitel als aktuelle Seite
         ("members", [("Einstellungen", "link"), ("Mitglieder", "aktuell")]),
-        ("organization_api_settings", [("Einstellungen", "link"), ("API", "aktuell")]),
+        # Seit Issue #1230 „Sitzungen › Veröffentlichung“ (bisher „API“)
+        ("organization_api_settings", [("Einstellungen", "link"), ("Veröffentlichung", "aktuell")]),
         ("organization_documents", [("Einstellungen", "link"), ("Dokumente", "aktuell")]),
         # Dokument-Einstellungen gehören zu den Einstellungen, nicht zu den Dokumenten (Issue #951)
         ("document_type_list", [("Einstellungen", "link"), ("Dokumenttypen", "aktuell")]),

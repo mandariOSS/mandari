@@ -48,6 +48,35 @@ def not_sent_invitation_count(meeting, *, update: bool = False) -> int:
     return attendances.exclude(invitation_error="").count()
 
 
+def invitation_agenda(meeting, *, include_internal: bool) -> tuple[list, list]:
+    """
+    TOPs der Einladungsmail in der Reihenfolge der Tagesordnung, als flache Listen.
+
+    Unterpunkte (TOP 3.1, 3.2 …) stehen direkt unter ihrem TOP, auch wenn sie erst nach den übrigen
+    TOPs angelegt wurden und deshalb eine höhere ``order`` haben. Sichtbarkeit wie im Tagesordnungs-PDF:
+    im öffentlichen Teil NÖ-Unterpunkte nur mit ``include_internal``, den NÖ-Teil nur mit ``include_internal``.
+    """
+    from .visibility import visible_children
+
+    top_level = (
+        meeting.agenda_items.filter(proposal_status="active", parent__isnull=True)
+        .prefetch_related("children")
+        .order_by("order", "number")
+    )
+    public_items: list = []
+    internal_items: list = []
+    for item in top_level:
+        if item.visibility == "public":
+            target, children = public_items, visible_children(item, include_internal=include_internal)
+        elif include_internal:
+            target, children = internal_items, visible_children(item, include_internal=True)
+        else:
+            continue
+        target.append(item)
+        target.extend(child for child in children if child.proposal_status == "active")
+    return public_items, internal_items
+
+
 def _invitation_error_text(error: Exception, address: str) -> str:
     """Grund, warum eine Einladung nicht rausging, als Satz für das Versandergebnis (ohne Interna des Servers)."""
     import smtplib
@@ -287,16 +316,8 @@ class FactionMeetingEmailService:
         if invitation_mode is None:
             from .invitations import get_invitation_settings
 
-            invitation_mode = get_invitation_settings(meeting.organization)["invitation_mode"]
-        public_items = meeting.agenda_items.filter(visibility="public", proposal_status="active").order_by(
-            "order", "number"
-        )
-
-        internal_items = []
-        if include_internal:
-            internal_items = meeting.agenda_items.filter(visibility="internal", proposal_status="active").order_by(
-                "order", "number"
-            )
+            invitation_mode = get_invitation_settings(meeting)["invitation_mode"]
+        public_items, internal_items = invitation_agenda(meeting, include_internal=include_internal)
 
         meeting_url = self.get_meeting_url(meeting)
         context = {
@@ -381,7 +402,8 @@ class FactionMeetingEmailService:
         if public_items:
             lines.extend(["", "TAGESORDNUNG", ""])
             for item in public_items:
-                lines.append(f"TOP {item.number}: {item.title}")
+                zusatz = " (nicht-öffentlich)" if item.visibility == "internal" else ""
+                lines.append(f"TOP {item.number}: {item.title}{zusatz}")
 
         if internal_items:
             lines.extend(["", "NICHT-ÖFFENTLICHER TEIL", ""])
@@ -619,11 +641,14 @@ def _claim_reminder(meeting, now) -> bool:
     return True
 
 
-def meeting_reminder_hours(organization) -> int | None:
-    """Vorlauf der Erinnerung an die Sitzung in Stunden, ``None`` wenn ausgeschaltet (Einstellung, Issue #1071)."""
+def meeting_reminder_hours(ziel) -> int | None:
+    """
+    Vorlauf der Erinnerung an die Sitzung in Stunden, ``None`` wenn ausgeschaltet (Einstellung, Issue #1071), für
+    eine Sitzung oder Sitzungsart je Art (Issue #1240).
+    """
     from .invitations import get_invitation_settings
 
-    einstellungen = get_invitation_settings(organization)
+    einstellungen = get_invitation_settings(ziel)
     if not einstellungen["meeting_reminder_enabled"]:
         return None
     return int(einstellungen["meeting_reminder_hours"])
@@ -663,14 +688,15 @@ def run_faction_reminder_pass(now=None) -> dict:
             reminder_sent_at__isnull=True,
             start__gt=now,
             start__lte=window_end,
-        ).select_related("organization")
+        ).select_related("organization", "meeting_type")
 
         service = FactionMeetingEmailService()
+        # Vorlauf je Sitzungsart (Issue #1240), einmal je Art gelesen
         vorlauf: dict = {}
         for meeting in meetings:
-            if meeting.organization_id not in vorlauf:
-                vorlauf[meeting.organization_id] = meeting_reminder_hours(meeting.organization)
-            stunden = vorlauf[meeting.organization_id]
+            if meeting.meeting_type_id not in vorlauf:
+                vorlauf[meeting.meeting_type_id] = meeting_reminder_hours(meeting)
+            stunden = vorlauf[meeting.meeting_type_id]
             if stunden is None or meeting.start > now + timedelta(hours=stunden):
                 continue
             # Einmalig je Sitzung — auch bei 0 Empfängern oder einem Fehler nicht erneut versuchen
@@ -763,8 +789,13 @@ def record_decision(
 
     Hält die Kopie am TOP (``has_decision``/``votes_*``) aktuell und genehmigt über den Genehmigungs-TOP das
     Vorprotokoll. ``notes=None`` lässt vorhandene Anmerkungen unverändert (die Sitzungsansicht hat kein Feld dafür).
+    In einer Sitzungsart ohne Abstimmungen meldet sie ``regeln.AbstimmungenAusError`` (Issue #1240); die Wege der
+    Oberfläche prüfen das vorher selbst.
     """
     from .models import FactionDecision
+    from .regeln import pruefe_abstimmung
+
+    pruefe_abstimmung(item.meeting)
 
     defaults = {
         "votes_yes": votes_yes,
@@ -1113,6 +1144,11 @@ class AgendaProposalService:
 
             # Vor der Annahme setzen: Ihr Eintrag im Änderungsverlauf gilt schon für den gewählten Teil
             if visibility:
+                if visibility != current.visibility:
+                    # Art ohne nichtöffentlichen Teil (Issue #1240): nichts in den NÖ-Teil
+                    from .regeln import pruefe_nichtoeffentlich
+
+                    pruefe_nichtoeffentlich(item.meeting, visibility)
                 current.visibility = visibility
 
             # Nummer und Platz am Ende des jeweiligen Teils — ermittelt, solange der Vorschlag noch nicht mitzählt
@@ -1257,11 +1293,10 @@ class ProtocolApprovalService:
             from apps.work.notifications.models import NotificationType
             from apps.work.notifications.services import NotificationHub
 
-            recipients = list(
-                meeting.organization.memberships.filter(is_active=True, is_guest=False)
-                .exclude(id=approved_by.id)
-                .select_related("user")
-            )
+            from .sitzungsarten import empfaenger
+
+            # Teilnehmende der Art und Eingeladene (Issue #1239), bei der Standardart alle Mitglieder
+            recipients = list(empfaenger(meeting).exclude(id=approved_by.id).select_related("user"))
             if not recipients:
                 return
 

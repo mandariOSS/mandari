@@ -1,0 +1,105 @@
+{
+    "title": "AgendaItem",
+    "description": "{{ AgendaItem.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type",
+        "order"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/AgendaItem$"
+        },
+        "meeting": {
+            "description": "{{ AgendaItem.properties.meeting.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "Meeting"
+        },
+        "number": {
+            "description": "{{ AgendaItem.properties.number.description }}",
+            "type": "string"
+        },
+        "order": {
+            "description": "{{ AgendaItem.properties.order.description }}",
+            "type": "integer"
+        },
+        "name": {
+            "description": "{{ AgendaItem.properties.name.description }}",
+            "type": "string"
+        },
+        "public": {
+            "description": "{{ AgendaItem.properties.public.description }}",
+            "type": "boolean"
+        },
+        "consultation": {
+            "description": "{{ AgendaItem.properties.consultation.description }}",
+            "references": "Consultation",
+            "backreference": "agendaItem",
+            "cardinality": "1:1",
+            "type": "string",
+            "format": "url"
+        },
+        "result": {
+            "description": "{{ AgendaItem.properties.result.description }}",
+            "type": "string"
+        },
+        "resolutionText": {
+            "description": "{{ AgendaItem.properties.resolutionText.description }}",
+            "type": "string"
+        },
+        "resolutionFile": {
+            "description": "{{ AgendaItem.properties.resolutionFile.description }}",
+            "type": "object",
+            "schema": "File.json"
+        },
+        "auxiliaryFile": {
+            "description": "{{ AgendaItem.properties.auxiliaryFile.description }}",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "schema": "File.json"
+            }
+        },
+        "start": {
+            "description": "{{ AgendaItem.properties.start.description }}",
+            "type": "string",
+            "format": "date-time"
+        },
+        "end": {
+            "description": "{{ AgendaItem.properties.end.description }}",
+            "type": "string",
+            "format": "date-time"
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

@@ -1,0 +1,151 @@
+{
+    "title": "Organization",
+    "description": "{{ Organization.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/Organization$"
+        },
+        "body": {
+            "description": "{{ Organization.properties.body.description }}",
+            "references": "Body",
+            "backreference": "organization",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "name": {
+            "description": "{{ Organization.properties.name.description }}",
+            "type": "string"
+        },
+        "membership": {
+            "description": "{{ Organization.properties.membership.description }}",
+            "references": "Membership",
+            "cardinality": "1:n",
+            "backreference": "organization",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "meeting": {
+            "description": "{{ Organization.properties.meeting.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Meeting.json"
+            },
+            "backreference": "organization",
+            "cardinality": "n:m"
+        },
+        "consultation": {
+            "description": "URL auf eine externe Objektliste mit den Beratungen dieser Gruppierung. Invers zur Eigenschaft `organization` der Klasse `oparl:Consultation`",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Consultation.json"
+            },
+            "backreference": "organization",
+            "cardinality": "n:m"
+        },
+        "shortName": {
+            "description": "{{ Organization.properties.shortName.description }}",
+            "type": "string"
+        },
+        "post": {
+            "description": "{{ Organization.properties.post.description }}",
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "subOrganizationOf": {
+            "description": "{{ Organization.properties.subOrganizationOf.description }}",
+            "references": "Organization",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "organizationType": {
+            "description": "{{ Organization.properties.organizationType.description }}",
+            "type": "string"
+        },
+        "classification": {
+            "description": "{{ Organization.properties.classification.description }}",
+            "type": "string"
+        },
+        "startDate": {
+            "description": "{{ Organization.properties.startDate.description }}",
+            "type": "string",
+            "format": "date"
+        },
+        "endDate": {
+            "description": "{{ Organization.properties.endDate.description }}",
+            "type": "string",
+            "format": "date"
+        },
+        "website": {
+            "description": "{{ Organization.properties.website.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "location": {
+            "description": "{{ Organization.properties.location.description }}",
+            "type": "object",
+            "schema": "Location.json"
+        },
+        "externalBody": {
+            "description": "{{ Organization.properties.externalBody.description }}",
+            "references": "Body",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "memberCount": {
+            "description": "{{ Organization.properties.memberCount.description }}",
+            "type": "integer"
+        },
+        "votingMemberCount": {
+            "description": "{{ Organization.properties.votingMemberCount.description }}",
+            "type": "integer"
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

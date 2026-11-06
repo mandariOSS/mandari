@@ -169,13 +169,13 @@ def _lesen_kontext(meeting: FactionMeeting, kontext: dict[str, Any]) -> dict[str
     from ..invitations import get_invitation_settings, invitation_dispatch_at
     from ..services import meeting_reminder_hours
 
-    versand_am = invitation_dispatch_at(meeting, get_invitation_settings(meeting.organization))
+    versand_am = invitation_dispatch_at(meeting, get_invitation_settings(meeting))
     folgt = (
         f"Einladung folgt am {liste._zeitpunkt(versand_am)}"
         if versand_am > timezone.now()
         else "Einladung folgt in Kürze"
     )
-    stunden = meeting_reminder_hours(meeting.organization)
+    stunden = meeting_reminder_hours(meeting)
     erinnerung = meeting.start - timedelta(hours=stunden) if stunden is not None else None
     return {
         "einladung_folgt": folgt,

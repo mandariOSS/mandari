@@ -1,0 +1,25 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/snapshot/SnapshotEnd.json",
+    "title": "SnapshotEnd",
+    "description": "Schlusszeile eines Snapshots (Profil Snapshot, Entwurf).",
+    "type": "object",
+    "required": [
+        "type",
+        "count"
+    ],
+    "properties": {
+        "type": {
+            "const": "https://schema.kommparl.de/0.1/SnapshotEnd"
+        },
+        "count": {
+            "description": "Anzahl der Objektzeilen des Snapshots.",
+            "type": "integer",
+            "minimum": 0
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false
+}

@@ -136,6 +136,30 @@ def log_member_access(
     return _log_member(action, member, _with_reason(changes, reason), actor, neutral=neutral)
 
 
+def last_access(member: Membership) -> str | None:
+    """
+    Zugang laut jüngstem Zugangswechsel der Mitgliedschaft in der Änderungshistorie (``Zugang`` → neu), ``None``
+    ohne einen solchen Eintrag. Nachweis für den Auslauf „Nur Lesen“ (Issue #1237, ``auslauf.scheduling_proven``).
+    """
+    from apps.work.faction.models import FactionAuditLog
+
+    changes = (
+        FactionAuditLog.objects.filter(
+            organization_id=member.organization_id,
+            model_name=type(member).__name__,
+            object_id=member.pk,
+            changes__has_key="Zugang",
+        )
+        .order_by("-created_at", "-seq")
+        .values_list("changes", flat=True)
+        .first()
+    )
+    if not isinstance(changes, dict) or not isinstance(changes.get("Zugang"), dict):
+        return None
+    new = changes["Zugang"].get("neu")
+    return new if isinstance(new, str) else None
+
+
 def log_sworn_in(member: Membership, old: bool, new: bool, *, actor: Membership | None = None) -> Any:
     """Vereidigung (schaltet nichtöffentliche Inhalte frei); ohne Unterschied kein Eintrag."""
     changes: dict[str, Any] = {}

@@ -36,6 +36,7 @@ from apps.work.rahmen import neues_design
 
 from .. import internal_documents
 from ..models import FactionMeeting
+from ..sitzungsarten import sitzung_oder_404
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class _InternalImportMixin(WorkViewMixin):
         return cast(Membership, self.membership)
 
     def _meeting(self, meeting_id: Any) -> FactionMeeting:
-        meeting = get_object_or_404(FactionMeeting, id=meeting_id, organization=self._org)
+        meeting = sitzung_oder_404(self._member, self._org, meeting_id)
         if not internal_documents.can_import(self._member, meeting):
             raise PermissionDenied(internal_documents.NOT_ALLOWED)
         return meeting

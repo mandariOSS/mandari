@@ -49,7 +49,7 @@ to_oeffentlich, to_intern, to_gesperrt, to_eltern, to_eltern_intern, can_view_in
     {% csrf_token %}
     {% if can_add_items %}
     <input type="hidden" name="action" value="add_item">
-    {% if not can_view_internal %}<input type="hidden" name="visibility" value="public">{% endif %}
+    {% if not can_view_internal or not meeting.nichtoeffentlich_erlaubt %}<input type="hidden" name="visibility" value="public">{% endif %}
     <h3 id="tf-h">TOP eintragen</h3>
     <p class="fs-meta">Sie tragen Punkte direkt in die Tagesordnung ein.</p>
     {% else %}
@@ -64,8 +64,8 @@ to_oeffentlich, to_intern, to_gesperrt, to_eltern, to_eltern_intern, can_view_in
     <div class="fs-top-form-zeile">
         <label class="sr-only" for="tf-titel">Titel des TOPs</label>
         <input id="tf-titel" class="wf-eingabe" type="text" name="title" autocomplete="off" required maxlength="500" placeholder="Worum geht es?">
-        {% if can_view_internal %}
-        {# Vereidigte tragen auch nichtöffentliche TOPs ein oder schlagen sie vor (der Server prüft die Vereidigung, Issue #1160) #}
+        {% if can_view_internal and meeting.nichtoeffentlich_erlaubt %}
+        {# Vereidigte tragen auch nichtöffentliche TOPs ein oder schlagen sie vor (der Server prüft die Vereidigung, Issue #1160), nur in Sitzungsarten mit nichtöffentlichem Teil (Issue #1240) #}
         <label class="sr-only" for="tf-sicht">Teil der Tagesordnung</label>
         <select id="tf-sicht" class="wf-eingabe wf-auswahl" name="visibility">
             <option value="public">öffentlich</option>

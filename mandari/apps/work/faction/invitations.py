@@ -89,9 +89,14 @@ INVITATION_CLAIM_STALE_MINUTES = 30
 # =============================================================================
 
 
-def get_invitation_settings(organization) -> dict:
-    """Einladungs-Einstellungen der Organisation (mit Defaults)."""
-    faction_settings = (organization.settings or {}).get("faction", {})
+def get_invitation_settings(ziel) -> dict:
+    """
+    Einladungs-Einstellungen (mit Defaults) einer Sitzung oder Sitzungsart, je Art übersteuerbar (Issue #1240); mit
+    einer Organisation die der Organisation selbst.
+    """
+    from .regeln import einstellungen
+
+    faction_settings = einstellungen(ziel)
     result = dict(INVITATION_DEFAULTS)
 
     mode = faction_settings.get("invitation_mode")
@@ -155,7 +160,7 @@ def invitation_dispatch_at(meeting, settings: dict | None = None):
     schedule = auto_invite_schedule(meeting)
     if schedule is not None:
         return fixed_dispatch_at(meeting.start, schedule.auto_invite_weekday, schedule.auto_invite_time)
-    settings = settings or get_invitation_settings(meeting.organization)
+    settings = settings or get_invitation_settings(meeting)
     return meeting.start - timedelta(hours=settings["invitation_lead_hours"])
 
 
@@ -168,7 +173,7 @@ def dispatches_automatically(meeting, settings: dict | None = None) -> bool:
     """
     if auto_invite_schedule(meeting) is not None:
         return True
-    settings = settings or get_invitation_settings(meeting.organization)
+    settings = settings or get_invitation_settings(meeting)
     return settings["invitation_dispatch"] == "automatic" or meeting.invitation_released_at is not None
 
 
@@ -252,7 +257,7 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
     """
     from .services import FactionMeetingEmailService, invitation_attendances
 
-    settings = get_invitation_settings(meeting.organization)
+    settings = get_invitation_settings(meeting)
     service = FactionMeetingEmailService()
 
     sent_count = service.send_invitations(meeting, update=update, invitation_mode=settings["invitation_mode"])
@@ -484,6 +489,60 @@ def _notify_invitations(meeting, *, update: bool) -> None:
         logger.exception("In-App-Benachrichtigung zum Einladungsversand fehlgeschlagen (meeting=%s)", meeting.id)
 
 
+def change_notice_recipients(meeting, *, date_changed: bool) -> list:
+    """
+    Wer von der Änderung einer eingeladenen Sitzung erfährt (Issue #1227): eingeladene aktive Mitglieder ohne
+    Gastzugänge (sie erhalten auch keine Einladung). Ändert sich der Termin, auch wer abgesagt hat – am neuen Termin
+    kann es passen; sonst wie bei der aktualisierten Einladung alle außer Absagen.
+    """
+    attendances = meeting.attendances.filter(
+        membership__isnull=False, membership__is_active=True, membership__is_guest=False
+    )
+    if not date_changed:
+        attendances = attendances.exclude(status="declined")
+    return [a.membership for a in attendances.select_related("membership__user")]
+
+
+def notify_invitees_of_change(
+    meeting, series_name: str, before: str, changes: list[str], *, date_changed: bool, actor=None
+) -> int:
+    """
+    Eingeladene über die Änderung einer Sitzung durch ihre Reihe informieren (Issue #1227): In-App-Benachrichtigung
+    und E-Mail über den Benachrichtigungsweg (Art „Fraktionssitzung aktualisiert“, je Person in den
+    Benachrichtigungseinstellungen abschaltbar, Ruhezeiten und Sammelmails wie dort eingestellt; Vertretung bei
+    Abwesenheit). Die Nachricht nennt Reihe, bisherigen Termin und die Änderungen – Angaben der Sitzung selbst, nie
+    Inhalte von TOPs, also auch nichts Nichtöffentliches. Zu- und Absagen bleiben stehen; ändert sich der Termin, bittet
+    die Nachricht, sie zu prüfen.
+
+    Returns:
+        Anzahl angelegter Benachrichtigungen (ohne Vertretungen).
+    """
+    from apps.work.notifications.models import NotificationType
+    from apps.work.notifications.services import NotificationHub
+
+    recipients = change_notice_recipients(meeting, date_changed=date_changed)
+    if not recipients or not changes:
+        return 0
+    message = f"Die Sitzungsreihe „{series_name}“ wurde geändert. Für die Sitzung am {before} gilt jetzt: "
+    message += "; ".join(changes) + "."
+    if date_changed:
+        if meeting.rsvp_enabled:
+            message += " Bitte prüfen Sie Ihre Zu- oder Absage; sie bleibt bestehen, bis Sie sie ändern."
+        else:
+            message += " Bitte prüfen Sie, ob Sie zum neuen Termin teilnehmen können."
+    notifications = NotificationHub.send_bulk(
+        recipients=recipients,
+        notification_type=NotificationType.FACTION_MEETING_UPDATED,
+        title=f"Sitzung geändert: {meeting.title}"[:255],
+        message=message,
+        link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
+        actor=actor,
+        metadata={"meeting_id": str(meeting.id), "reihe": True, "termin": date_changed},
+        send_email=True,
+    )
+    return len(notifications)
+
+
 def release_invitations(meeting, membership) -> bool:
     """
     Einladungsversand freigeben (Freigabe-Modus, Issue #62).
@@ -504,7 +563,7 @@ def release_invitations(meeting, membership) -> bool:
     meeting.invitation_released_by = membership
     meeting.save(update_fields=["invitation_released_at", "invitation_released_by", "updated_at"])
 
-    settings = get_invitation_settings(meeting.organization)
+    settings = get_invitation_settings(meeting)
     if timezone.now() >= invitation_dispatch_at(meeting, settings):
         dispatch_invitations_once(meeting)
     return True
@@ -527,7 +586,10 @@ def _send_release_notice(meeting, dispatch_at, *, final: bool) -> int:
     from apps.work.notifications.services import NotificationHub
 
     organization = meeting.organization
-    board = get_board_members(organization)
+    # Sitzungsarten (Issue #1239): nur, wer die Sitzung sehen darf
+    from .sitzungsarten import nur_sichtbar
+
+    board = nur_sichtbar(meeting, get_board_members(organization))
     if not board:
         logger.warning("Keine Freigabe-Berechtigten für Organisation %s gefunden", organization.slug)
         return 0
@@ -641,10 +703,10 @@ def run_faction_invitation_pass(now=None) -> dict:
             invitation_sent=False,
             start__gt=now,
             organization__is_active=True,
-        ).select_related("organization", "schedule")
+        ).select_related("organization", "schedule", "meeting_type")
 
         for meeting in meetings:
-            settings = get_invitation_settings(meeting.organization)
+            settings = get_invitation_settings(meeting)
             dispatch_at = invitation_dispatch_at(meeting, settings)
 
             if _agenda_reminder_due(meeting, settings, dispatch_at, now) and _claim_timestamp(

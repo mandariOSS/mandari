@@ -35,7 +35,7 @@ from .models import DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberCh
 
 if TYPE_CHECKING:
     from apps.session.models import SessionApplication
-    from apps.work.faction.models import CalendarFeedToken, FactionMeetingSchedule
+    from apps.work.faction.models import CalendarFeedToken, FactionMeetingSchedule, FactionMeetingType
     from apps.work.motions.models import (
         DocumentFolder,
         FolderGuestShare,
@@ -96,6 +96,58 @@ def roles_with_member_count(organization: Organization) -> QuerySet[Role]:
         .annotate(member_count=Count("memberships"))
         .order_by("-priority", "name")
     )
+
+
+@dataclass(frozen=True)
+class RolleZweiterFaktor:
+    """Eine Rolle mit ihrer Zwei-Faktor-Pflicht für die Seite „Anmeldesicherheit“ (Issue #1230)."""
+
+    role: Role
+    pflicht: bool
+    grund: str
+
+
+def roles_two_factor(organization: Organization) -> list[RolleZweiterFaktor]:
+    """
+    Alle Rollen der Organisation mit ihrer Zwei-Faktor-Pflicht nach ``apps.accounts.two_factor_policy``: Die
+    Administration und Rollen mit Verwaltungsrechten (``WORK_VERWALTUNGSRECHTE``) verlangen ihn immer, sonst die
+    Einstellung der Rolle („2FA erforderlich“) oder die Pflicht für die ganze Organisation.
+    """
+    from apps.accounts.two_factor_policy import WORK_VERWALTUNGSRECHTE
+
+    ergebnis: list[RolleZweiterFaktor] = []
+    for role in roles_with_member_count(organization):
+        rechte = {permission.codename for permission in role.permissions.all()}
+        if role.is_admin:
+            eintrag = RolleZweiterFaktor(role, True, "Immer, Administration")
+        elif rechte & set(WORK_VERWALTUNGSRECHTE):
+            eintrag = RolleZweiterFaktor(role, True, "Immer, die Rolle verwaltet Mitglieder, Rollen oder Einstellungen")
+        elif role.require_2fa:
+            eintrag = RolleZweiterFaktor(role, True, "Verlangt, in der Rolle eingestellt")
+        elif organization.require_2fa:
+            eintrag = RolleZweiterFaktor(role, True, "Verlangt, gilt für alle Mitglieder")
+        else:
+            eintrag = RolleZweiterFaktor(role, False, "Freiwillig")
+        ergebnis.append(eintrag)
+    return ergebnis
+
+
+def letterhead_overview(organization: Organization) -> dict[str, Any]:
+    """Wichtigster aktiver Briefkopf und seine Art (generiert, PDF oder keiner) für die Dokument-Übersicht."""
+    from apps.work.motions.models import OrganizationLetterhead
+
+    primary_letterhead = (
+        OrganizationLetterhead.objects.filter(organization=organization, is_active=True)
+        .order_by("-is_default", "name")
+        .first()
+    )
+    if primary_letterhead is None:
+        letterhead_status = "keiner"
+    elif primary_letterhead.is_generated:
+        letterhead_status = "generiert"
+    else:
+        letterhead_status = "PDF"
+    return {"primary_letterhead": primary_letterhead, "letterhead_status": letterhead_status}
 
 
 def get_role_or_404(organization: Organization, role_id: Any) -> Role:
@@ -825,6 +877,7 @@ def get_absence_or_404(organization: Organization, membership: Membership, absen
 def activity_statistics(organization: Organization, membership: Membership) -> dict[str, int]:
     """Kennzahlen des Mitglieds: Aufgaben, Anträge, Kommentare, Fraktionssitzungen, Vorbereitungen."""
     from apps.work.faction.models import FactionAttendance, FactionMeeting
+    from apps.work.faction.sitzungsarten import sichtbar_fuer
     from apps.work.meetings.models import AgendaItemNote, MeetingPreparation
     from apps.work.motions.models import Motion, MotionComment
     from apps.work.tasks.models import Task
@@ -842,7 +895,10 @@ def activity_statistics(organization: Organization, membership: Membership) -> d
         "meetings_present": attendance.filter(status="present").count(),
         "meetings_excused": attendance.filter(status="excused").count(),
         "meetings_absent": attendance.filter(status="absent").count(),
-        "meetings_total": FactionMeeting.objects.filter(organization=organization, status="completed").count(),
+        # Nur Sitzungen, die das Mitglied sieht (Sitzungsarten, Issue #1239)
+        "meetings_total": sichtbar_fuer(
+            membership, FactionMeeting.objects.filter(organization=organization, status="completed")
+        ).count(),
         "preparations": MeetingPreparation.objects.filter(organization=organization, membership=membership).count(),
         "agenda_notes": AgendaItemNote.objects.filter(organization=organization, author=membership).count(),
     }
@@ -960,16 +1016,25 @@ def faction_schedules(organization: Organization) -> QuerySet[FactionMeetingSche
 
 
 def standard_agenda_context(
-    organization: Organization, *, may_view_internal: bool, approval_item: bool
+    organization: Organization,
+    *,
+    may_view_internal: bool,
+    approval_item: bool,
+    meeting_type: FactionMeetingType | None = None,
 ) -> dict[str, Any]:
     """
-    Standard-Tagesordnung für die Einstellungen (Issue #872): Zeilen mit der Nummer, die der Punkt in einer neuen
-    Sitzung erhält. Nicht-öffentliche Punkte nur für Vereidigte (NÖ strikt, Issue #64), sonst nur ihre Anzahl.
-    Der Titel des Genehmigungs-TOPs erscheint ohne rohe Platzhalter.
+    Standard-Tagesordnung für die Einstellungen (Issue #872) einer Sitzungsart, ohne Angabe der Standardart
+    (Issue #1240): Zeilen mit der Nummer, die der Punkt in einer neuen Sitzung erhält. Nicht-öffentliche Punkte nur
+    für Vereidigte (NÖ strikt, Issue #64), sonst nur ihre Anzahl; neue nur, wenn die Art einen nichtöffentlichen Teil
+    hat. Der Titel des Genehmigungs-TOPs erscheint ohne rohe Platzhalter, ohne Art mit den Einstellungen der
+    Organisation (die Seite, auf der sie stehen).
     """
     from apps.work.faction.agenda import approval_title_preview, format_number, standard_items
+    from apps.work.faction.models import FactionMeetingType
+    from apps.work.faction.regeln import einstellungen, nichtoeffentlich_erlaubt
 
-    items = list(standard_items(organization))
+    art = meeting_type if meeting_type is not None else FactionMeetingType.default_for(organization)
+    items = list(standard_items(organization, art))
     public = [item for item in items if item.visibility == "public"]
     internal = [item for item in items if item.visibility == "internal"]
     first = 2 if approval_item else 1
@@ -978,12 +1043,12 @@ def standard_agenda_context(
         rows += [(format_number("internal", position), item) for position, item in enumerate(internal, start=1)]
     return {
         "standard_agenda_approval_title": approval_title_preview(
-            (organization.settings or {}).get("faction", {}), has_previous=True
+            einstellungen(meeting_type if meeting_type is not None else organization), has_previous=True
         ),
         "standard_agenda_rows": rows,
         "standard_agenda_empty": not items,
         "standard_agenda_locked": 0 if may_view_internal else len(internal),
-        "standard_agenda_may_internal": may_view_internal,
+        "standard_agenda_may_internal": may_view_internal and nichtoeffentlich_erlaubt(art),
     }
 
 

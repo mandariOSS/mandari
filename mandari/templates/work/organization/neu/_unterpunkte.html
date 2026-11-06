@@ -1,8 +1,8 @@
 {% load work_einstellungen %}
 {% comment %}
-Unterpunkte eines Reiters der Einstellungen (Issue #951), etwa „Organisation · E-Mail-Versand · Registrierung · API“
-unter „Allgemein“: ab 1024 px als schmale Spalte links neben dem Inhalt, darunter als Zeile über dem Inhalt (am
-Handy waagerecht verschiebbar). Nur bei Reitern mit mehr als einer sichtbaren Seite.
+Unterpunkte eines Reiters der Einstellungen (Issue #951), etwa „Profil · E-Mail-Versand · Themen und Labels“ unter
+„Organisation“: ab 1024 px als schmale Spalte links neben dem Inhalt, darunter als Zeile über dem Inhalt (am Handy
+waagerecht verschiebbar). Nur bei Reitern mit mehr als einer sichtbaren Seite.
   <div class="lg:flex lg:gap-10">{% include "work/organization/neu/_unterpunkte.html" with seite="email" %}<div class="min-w-0 flex-1">…</div></div>
 {% endcomment %}
 {% einstellungen_navigation seite aktuell|default:"page" as navi %}

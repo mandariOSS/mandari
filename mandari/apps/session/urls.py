@@ -1020,6 +1020,16 @@ urlpatterns = [
         name="oparl_snapshot",
     ),
     path(
+        "<slug:tenant_slug>/api/oparl/body/kommparl/changes/",
+        oparl_api_views.kommparl_changes_view,
+        name="oparl_kommparl_changes",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/body/kommparl/snapshot/",
+        oparl_api_views.kommparl_snapshot_view,
+        name="oparl_kommparl_snapshot",
+    ),
+    path(
         "<slug:tenant_slug>/api/oparl/file/<uuid:pk>/download/",
         oparl_api_views.file_download_view,
         name="oparl_file_download",

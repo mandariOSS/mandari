@@ -1,17 +1,42 @@
 {% comment %}
-Einstellungen › Sicherheit: Zwei-Faktor-Pflicht für alle Mitglieder (Formular update_security, Issue #951); ohne
-organization.edit nur der Stand. Kontext: organization, can_edit.
+Mitglieder und Rechte › Anmeldesicherheit (Issue #951, Rollenliste seit Issue #1230): Zwei-Faktor-Pflicht für alle
+Mitglieder (Formular update_security), ohne organization.edit nur der Stand; darunter jede Rolle mit ihrer Pflicht
+(selectors.roles_two_factor), mit organization.manage_roles verlinkt auf das Rollenformular mit „2FA erforderlich“.
+Kontext: organization, can_edit, rollen_zweiter_faktor, can_manage_roles.
 {% endcomment %}
-<c-rahmen.abschnitt titel="Anmeldesicherheit" titel_id="anmeldesicherheit-titel" class="max-w-3xl">
-    <c-rahmen.satz eng>Die Administration und alle, die Mitglieder, Rollen, Einstellungen oder API-Zugänge verwalten dürfen (über ihre Rolle oder als Einzelrecht), verwenden immer einen zweiten Faktor, ebenso Rollen mit „2FA erforderlich“. Allen anderen empfiehlt Work ihn auf der Startseite.</c-rahmen.satz>
-    {% if can_edit %}
-    <form method="post" class="mt-4 space-y-4">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="update_security">
-        {% include "work/organization/neu/_haken.html" with name="require_2fa" id="require_2fa" label="Zweiten Faktor für alle Mitglieder verlangen" an=organization.require_2fa hilfe="Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein." %}
-        <c-ui.button type="submit" size="sm">Speichern</c-ui.button>
-    </form>
-    {% else %}
-    <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">{% include "work/organization/neu/_status.html" with an=organization.require_2fa %}{% if organization.require_2fa %}Für alle Mitglieder verpflichtend.{% else %}Für Mitglieder ohne Verwaltungsrechte empfohlen, aber freiwillig.{% endif %}</p>
+<div class="max-w-3xl space-y-10">
+    <c-rahmen.abschnitt titel="Alle Mitglieder" titel_id="anmeldesicherheit-titel">
+        <c-rahmen.satz eng>Die Administration und alle, die Mitglieder, Rollen, Einstellungen oder API-Zugänge verwalten dürfen (über ihre Rolle oder als Einzelrecht), verwenden immer einen zweiten Faktor, ebenso Rollen mit „2FA erforderlich“. Allen anderen empfiehlt Work ihn auf der Startseite.</c-rahmen.satz>
+        {% if can_edit %}
+        <form method="post" class="mt-4 space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_security">
+            {% include "work/organization/neu/_haken.html" with name="require_2fa" id="require_2fa" label="Zweiten Faktor für alle Mitglieder verlangen" an=organization.require_2fa hilfe="Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein." %}
+            <c-ui.button type="submit" size="sm">Speichern</c-ui.button>
+        </form>
+        {% else %}
+        <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">{% include "work/organization/neu/_status.html" with an=organization.require_2fa %}{% if organization.require_2fa %}Für alle Mitglieder verpflichtend.{% else %}Für Mitglieder ohne Verwaltungsrechte empfohlen, aber freiwillig.{% endif %}</p>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    {% if rollen_zweiter_faktor %}
+    <c-rahmen.abschnitt titel="Rollen" titel_id="rollen-zweiter-faktor-titel">
+        <c-rahmen.satz eng>Was für jede Rolle gilt.{% if can_manage_roles %} Ob eine Rolle den zweiten Faktor verlangt, stellen Sie in der Rolle ein.{% endif %}</c-rahmen.satz>
+        <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm" data-testid="rollen-zweiter-faktor">
+            {% for eintrag in rollen_zweiter_faktor %}
+            <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-2">
+                <span class="flex min-w-0 items-center gap-2 break-words">
+                    {% include "work/organization/neu/_farbpunkt.html" with farbe=eintrag.role.color %}
+                    {% if can_manage_roles %}
+                    <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=eintrag.role.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ eintrag.role.name }}</a>
+                    {% else %}
+                    <span class="font-medium text-gray-900 dark:text-white">{{ eintrag.role.name }}</span>
+                    {% endif %}
+                </span>
+                <span class="text-[0.8125rem] text-gray-700 dark:text-gray-300">{% include "work/organization/neu/_status.html" with an=eintrag.pflicht %}{{ eintrag.grund }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </c-rahmen.abschnitt>
     {% endif %}
-</c-rahmen.abschnitt>
+</div>
