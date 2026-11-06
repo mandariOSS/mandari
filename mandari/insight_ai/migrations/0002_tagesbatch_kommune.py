@@ -46,7 +46,7 @@ class Migration(migrations.Migration):
                 (
                     "body",
                     models.OneToOneField(
-                        on_delete=django.db.models.deletion.CASCADE,
+                        on_delete=django.db.models.deletion.PROTECT,
                         related_name="tagesbatch",
                         to="insight_core.oparlbody",
                         verbose_name="Kommune",

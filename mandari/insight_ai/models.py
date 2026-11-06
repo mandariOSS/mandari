@@ -90,9 +90,10 @@ class TagesbatchKommune(models.Model):
     Anfrage die Verortung auf der Karte (Issue #1222). Ohne Eintrag reicht der Batch nichts ein.
     """
 
+    # PROTECT: Verweise auf den RIS-Bestand nie mit CASCADE (hub/ris/tests/test_loeschsemantik.py)
     body = models.OneToOneField(
         "insight_core.OParlBody",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="tagesbatch",
         verbose_name="Kommune",
     )
