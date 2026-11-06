@@ -182,6 +182,9 @@ def login_per_cookie(page: Any, base_url: str, email: str, password: str) -> Non
             }
         ]
     )
+    # Wie nach dem Formular steht der Tab danach auf der eigenen Adresse (eine winzige Seite): Tests, die gleich
+    # localStorage setzen, brauchen den Ursprung schon vor dem ersten Seitenaufruf
+    page.goto(f"{base_url}/robots.txt")
 
 
 @pytest.fixture
