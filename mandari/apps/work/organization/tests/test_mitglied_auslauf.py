@@ -137,7 +137,7 @@ def test_setzen_mailt_der_person_ueber_den_plattformweg(org: Any, admin: Any, mi
     (nachricht,) = _an("geht@example.org")
     assert _datum(mitglied) in nachricht.subject
     assert reverse("work:membership_expiry", kwargs={"org_slug": org.slug}) in nachricht.body
-    assert "deine" in nachricht.body
+    assert "Ihre" in nachricht.body
 
 
 def test_nicht_fuer_eigentuemer_und_nicht_fuer_sich_selbst(org: Any, admin: Any, mitglied: Any) -> None:

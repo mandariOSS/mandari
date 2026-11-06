@@ -87,7 +87,9 @@ def schedule_member_deletion(organization: Organization, member: Membership, act
     Liefert, ob die Mail rausging. Fachliche Hindernisse als ``ServiceError``.
     """
     if member.is_guest:
-        raise ServiceError("Gastzugänge lassen sich nicht auf „Nur Lesen“ setzen. Entziehe den Zugang stattdessen.")
+        raise ServiceError(
+            "Gastzugänge lassen sich nicht auf „Nur Lesen“ setzen. Entziehen Sie den Zugang stattdessen."
+        )
     if member.registration_requested_at is not None and not member.is_active:
         raise ServiceError("Offene Registrierungsanfragen bitte ablehnen statt auf „Nur Lesen“ setzen.")
     if member.deletion_pending:
@@ -240,7 +242,7 @@ def delete_expired_membership(membership_id: Any, now: datetime) -> DeletionResu
         organization = Organization.objects.get(pk=member.organization_id)
         user = member.user
         # Vorher sichern: Mitgliedschaft und Konto sind danach weg
-        email, first_name = user.email, user.first_name
+        email, name = user.email, user.get_full_name()
         documents, files = _delete_documents(member)
         export_paths = [path for export in member.data_exports.all() if (path := cast(Any, export).get_absolute_path())]
         audit.log_member_access(
@@ -268,7 +270,7 @@ def delete_expired_membership(membership_id: Any, now: datetime) -> DeletionResu
     emails.send_deletion_done(
         organization,
         email=email,
-        first_name=first_name,
+        name=name,
         documents_deleted=documents,
         account_deleted=result.account_deleted,
         backup_days=SICHERUNG_TAGE,

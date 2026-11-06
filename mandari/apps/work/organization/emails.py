@@ -181,7 +181,7 @@ def send_registration_rejected(organization: Organization, user: User, reason: s
 # ---------------------------------------------------------------------------
 #
 # Zugangsrelevant wie die Links oben: immer über mandari (``via_organization=False``), nie über ein eigenes SMTP der
-# Organisation. Du-Form wie die übrigen Work-Mails an Mitglieder.
+# Organisation. Sie-Form wie die übrigen Zugangs-Mails.
 
 
 def expiry_url(organization: Organization) -> str:
@@ -195,7 +195,7 @@ def send_deletion_scheduled(membership: Membership, deletion_date: str) -> bool:
     return send_organization_mail(
         organization,
         template="deletion_scheduled.html",
-        subject=f"Dein Zugang zu {organization.name}: Löschung am {deletion_date}",
+        subject=f"Ihr Zugang zu {organization.name}: Löschung am {deletion_date}",
         to=membership.user.email,
         context={"user": membership.user, "deletion_date": deletion_date, "expiry_url": expiry_url(organization)},
         via_organization=False,
@@ -208,7 +208,7 @@ def send_deletion_reminder(membership: Membership, deletion_date: str, days_left
     return send_organization_mail(
         organization,
         template="deletion_reminder.html",
-        subject=f"Erinnerung: Dein Zugang zu {organization.name} wird am {deletion_date} gelöscht",
+        subject=f"Erinnerung: Ihr Zugang zu {organization.name} wird am {deletion_date} gelöscht",
         to=membership.user.email,
         context={
             "user": membership.user,
@@ -224,7 +224,7 @@ def send_deletion_done(
     organization: Organization,
     *,
     email: str,
-    first_name: str,
+    name: str,
     documents_deleted: int,
     account_deleted: bool,
     backup_days: int,
@@ -233,10 +233,10 @@ def send_deletion_done(
     return send_organization_mail(
         organization,
         template="deletion_done.html",
-        subject=f"Deine Daten bei {organization.name} sind gelöscht",
+        subject=f"Ihre Daten bei {organization.name} sind gelöscht",
         to=email,
         context={
-            "first_name": first_name,
+            "name": name,
             "documents_deleted": documents_deleted,
             "account_deleted": account_deleted,
             "backup_days": backup_days,

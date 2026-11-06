@@ -189,7 +189,7 @@ class MemberDetailView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             messages.warning(
                 request,
                 f"{name} kann nur noch die eigenen Daten herunterladen, Löschung am {datum}. Die E-Mail an die Person "
-                "konnte nicht versendet werden. Bitte informiere sie direkt.",
+                "konnte nicht versendet werden. Bitte informieren Sie die Person direkt.",
             )
 
     def _cancel_deletion(self, request, member):

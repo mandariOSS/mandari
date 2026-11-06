@@ -40,19 +40,20 @@ class _AuslaufMixin(WorkViewMixin):
     def member(self) -> Membership:
         return cast(Membership, self.membership)
 
+    def handle_expiry_restriction(self, request: HttpRequest) -> HttpResponse | None:
+        """Aktive Mitglieder brauchen die Auslauf-Seite nicht: zum Start."""
+        if self.membership is not None and self.membership.is_active:
+            return redirect("work:dashboard", org_slug=self.org.slug)
+        return None
+
 
 class MembershipExpiryView(_AuslaufMixin, TemplateView):
     """Hinweis mit Löschdatum und Export der eigenen Daten."""
 
     template_name = "work/organization/auslauf.html"
 
-    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        if self.member.is_active:
-            return redirect("work:dashboard", org_slug=self.org.slug)
-        return super().get(request, *args, **kwargs)
-
     def get_template_names(self) -> list[str]:
-        if self.request.GET.get("teil") == "exporte":
+        if self.request.GET.getlist("teil") == ["exporte"]:
             return [f"{self.template_name}#exporte"]
         return [self.template_name]
 
@@ -64,14 +65,13 @@ class MembershipExpiryView(_AuslaufMixin, TemplateView):
         return context
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        if self.member.is_active:
-            return redirect("work:dashboard", org_slug=self.org.slug)
-        if request.POST.get("action") == "export_data":
-            try:
-                services.start_data_export(self.org, self.member, request.POST.get("format", "json"))
-                messages.success(request, "Dein Datenexport wird erstellt. Du kannst ihn gleich hier herunterladen.")
-            except ServiceError as exc:
-                flash_error(request, exc)
+        """Einzige Aktion der Seite: Export der eigenen Daten starten (Format JSON oder PDF)."""
+        export_format = "pdf" if request.POST.getlist("format") == ["pdf"] else "json"
+        try:
+            services.start_data_export(self.org, self.member, export_format)
+            messages.success(request, "Ihr Datenexport wird erstellt. Sie können ihn gleich hier herunterladen.")
+        except ServiceError as exc:
+            flash_error(request, exc)
         return redirect("work:membership_expiry", org_slug=self.org.slug)
 
 

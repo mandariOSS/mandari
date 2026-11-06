@@ -1,15 +1,15 @@
 {% extends "emails/base_email.html" %}
 {% block subject %}Erinnerung: Löschung am {{ deletion_date }}{% endblock %}
-{% block preheader %}In {{ days_left }} Tagen löschen wir deine Mitgliedschaft bei {{ organization.name }}.{% endblock %}
+{% block preheader %}In {{ days_left }} Tagen wird Ihre Mitgliedschaft bei {{ organization.name }} gelöscht.{% endblock %}
 {% block content %}
 <h1 class="h1">Löschung in {{ days_left }} Tagen</h1>
 <p class="muted">{{ organization.name }}</p>
-<p>Hallo {{ user.first_name|default:user.email }},</p>
-<p>in {{ days_left }} Tagen, am <strong>{{ deletion_date }}</strong>, löschen wir deine Mitgliedschaft bei {{ organization.name }} mit deinen persönlichen Daten, privaten Dokumenten und Entwürfen. Wenn du eine Kopie deiner Daten behalten möchtest, lade sie vorher herunter.</p>
+<p>Guten Tag{% if user.get_full_name %} {{ user.get_full_name }}{% endif %},</p>
+<p>in {{ days_left }} Tagen, am <strong>{{ deletion_date }}</strong>, wird Ihre Mitgliedschaft bei {{ organization.name }} mit Ihren persönlichen Daten, privaten Dokumenten und Entwürfen gelöscht. Wenn Sie eine Kopie Ihrer Daten behalten möchten, laden Sie sie vorher herunter.</p>
 <div class="btn-wrap">
     <a class="btn" href="{{ expiry_url }}">Meine Daten herunterladen</a>
 </div>
-<p class="muted small">Ist das ein Versehen? Dann wende dich bitte an die Verwaltung von {{ organization.name }}; sie kann die Löschung bis dahin zurücknehmen.</p>
+<p class="muted small">Ist das ein Versehen? Dann wenden Sie sich bitte an die Verwaltung von {{ organization.name }}; sie kann die Löschung bis dahin zurücknehmen.</p>
 {% endblock %}
 {% block footer %}
 <p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>

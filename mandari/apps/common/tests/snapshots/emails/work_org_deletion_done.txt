@@ -1,0 +1,17 @@
+# Ihre Daten sind gelöscht
+
+Fraktion Test
+
+Guten Tag Eva Beispiel,
+
+wie angekündigt wurde heute Ihre Mitgliedschaft bei Fraktion Test gelöscht. Gelöscht sind Ihre persönlichen Daten in der Organisation (etwa Notizen, Benachrichtigungen, Einstellungen, Abwesenheiten und Datenexporte) sowie 2 private Dokumente und Entwürfe mit ihren Versionen und Anhängen.
+
+Was Sie für die Fraktion beigetragen haben, etwa geteilte Dokumente, Aufgaben und Sitzungen, bleibt erhalten und zeigt jetzt „Ehemaliges Mitglied“. In Protokollen und Anwesenheitslisten bleibt Ihr Name stehen, weil sie Beschlüsse und Teilnahme belegen.
+
+Ihr Konto bei mandari wurde ebenfalls gelöscht, weil es mit keiner anderen Organisation mehr verbunden war.
+
+Unsere Sicherungen enthalten die gelöschten Daten noch eine Weile. Sie verschwinden dort mit der Zeit, spätestens nach 30 Tagen.
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

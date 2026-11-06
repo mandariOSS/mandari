@@ -7,7 +7,7 @@ Organisation. Laufende Exporte fragt das Fragment „exporte“ alle fünf Sekun
 
 {% block title %}Zugang endet am {{ deletion_date }}{% endblock %}
 {% block card_width %}max-w-lg{% endblock %}
-{% block header_title %}Dein Zugang endet am {{ deletion_date }}{% endblock %}
+{% block header_title %}Ihr Zugang endet am {{ deletion_date }}{% endblock %}
 {% block header_subtitle %}{{ organization.name }}{% endblock %}
 
 {% block content %}
@@ -16,12 +16,12 @@ Organisation. Laufende Exporte fragt das Fragment „exporte“ alle fünf Sekun
 {% endfor %}
 
 <div class="space-y-3 text-sm text-gray-700 dark:text-gray-300">
-    <p>Die Verwaltung von {{ organization.name }} hat deine Mitgliedschaft auf „Nur Lesen“ gestellt. Inhalte der Organisation siehst du nicht mehr. Am <strong>{{ deletion_date }}</strong> löschen wir deine Mitgliedschaft mit deinen persönlichen Daten, privaten Dokumenten und Entwürfen.</p>
-    <p>Was du für die Fraktion beigetragen hast, bleibt erhalten und zeigt dann „Ehemaliges Mitglied“. Ist das ein Versehen, wende dich an die Verwaltung von {{ organization.name }}.</p>
+    <p>Die Verwaltung von {{ organization.name }} hat Ihre Mitgliedschaft auf „Nur Lesen“ gestellt. Inhalte der Organisation sehen Sie nicht mehr. Am <strong>{{ deletion_date }}</strong> wird Ihre Mitgliedschaft mit Ihren persönlichen Daten, privaten Dokumenten und Entwürfen gelöscht.</p>
+    <p>Was Sie für die Fraktion beigetragen haben, bleibt erhalten und zeigt dann „Ehemaliges Mitglied“. Ist das ein Versehen, wenden Sie sich an die Verwaltung von {{ organization.name }}.</p>
 </div>
 
-<h2 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Deine Daten herunterladen</h2>
-<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Der Export enthält deine Daten in {{ organization.name }}, auch deine Dokumente mit Inhalt und Versionen.</p>
+<h2 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Ihre Daten herunterladen</h2>
+<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Der Export enthält Ihre Daten in {{ organization.name }}, auch Ihre Dokumente mit Inhalt und Versionen.</p>
 <form method="post" class="mt-3 flex flex-wrap items-center gap-3">
     {% csrf_token %}
     <input type="hidden" name="action" value="export_data">
