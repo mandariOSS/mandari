@@ -3,10 +3,12 @@
 OpenID-Connect-Anbieter für das Profil Nichtöffentliches (Issue #565): Regeln am Autorisierungs- und Token-Endpunkt.
 
 - ``ratsdaten:nichtoeffentlich`` nur im Code-Ablauf und nur für Anwendungen, die ihn ausdrücklich dürfen; zweiter
-  Faktor Pflicht; höchstens sieben Tage nach der Anmeldung, danach endet der Refresh
+  Faktor Pflicht, und zwar bei der Anmeldung selbst (ein erst danach eingerichteter Faktor genügt nicht); höchstens
+  sieben Tage nach der Anmeldung, danach endet der Refresh
 - ``sitzung:lesen`` nur für Dienste mit Bindung
-- ``private_key_jwt`` (RFC 7523): ``aud`` gleich Token-Endpunkt, ``exp`` höchstens fünf Minuten, ``jti`` nur einmal,
-  nur RS256 und ES256, nur der eingetragene Schlüssel, kein Client-Secret für solche Anwendungen
+- ``private_key_jwt`` (RFC 7523): ``aud`` nur der Aussteller als einzelne Zeichenkette (draft-ietf-oauth-rfc7523bis),
+  ``exp`` höchstens fünf Minuten, ``jti`` nur einmal, nur RS256 und ES256, nur der eingetragene Schlüssel, kein
+  Client-Secret für solche Anwendungen
 
 Was die nichtöffentliche Ausgabe daraus macht, prüft ``apps/session/tests/test_profil_nichtoeffentlich.py``.
 """
@@ -19,6 +21,7 @@ import time
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 import pytest
 from django.core.cache import cache
@@ -28,10 +31,10 @@ from django.utils import timezone
 from jwcrypto import jwk, jwt
 
 from apps.accounts.models import SecurityAuditLog, User
-from apps.accounts.oidc import catalog, client_assertion
+from apps.accounts.oidc import catalog, client_assertion, reauth
 from apps.accounts.oidc.models import OAuthApplication, OAuthClientAssertion, OAuthRefreshToken
 from apps.accounts.tests import oidc_hilfen as h
-from apps.accounts.tests.test_login_2fa import enable_2fa, make_user
+from apps.accounts.tests.test_login_2fa import code_step, current_code, enable_2fa, make_user, password_step
 
 pytestmark = pytest.mark.django_db
 
@@ -54,9 +57,11 @@ def person() -> User:
     return user
 
 
-def _angemeldet(user: User) -> Client:
+def _angemeldet(user: User, *, zweiter_faktor: bool = True) -> Client:
     client = Client()
     client.force_login(user)
+    if zweiter_faktor:
+        h.zweiter_faktor(client)
     return client
 
 
@@ -179,6 +184,45 @@ class TestPerson:
         antwort = client.get("/oauth/authorize/", h.autorisierung(app2, challenge))
         assert antwort.status_code == 200
 
+    def test_anmeldung_ohne_zweiten_faktor_verlangt_neue(self, person: User) -> None:
+        # Konto mit Faktor, aber die Anmeldung dieser Sitzung war ohne ihn: erst neu anmelden
+        app, _secret = _app()
+        _verifier, challenge = h.pkce()
+        client = _angemeldet(person, zweiter_faktor=False)
+        antwort = client.get("/oauth/authorize/", h.autorisierung(app, challenge, scope=f"openid {NOE}"))
+        assert antwort.status_code == 302
+        assert "/accounts/login/" in antwort["Location"]
+        stumm = client.get("/oauth/authorize/", h.autorisierung(app, challenge, scope=f"openid {NOE}", prompt="none"))
+        assert h.rueckweg(stumm["Location"])["error"] == "login_required"
+        # Auch das Formular der Zustimmungsseite führt dann zur Anmeldung, nicht zum Code
+        formular = client.post(
+            "/oauth/authorize/?" + urlencode(h.autorisierung(app, challenge, scope=f"openid {NOE}")),
+            {**h.autorisierung(app, challenge, scope=f"openid {NOE}"), "allow": "Erlauben"},
+        )
+        assert formular.status_code == 302
+        assert "/accounts/login/" in formular["Location"]
+        # Ohne den geschützten Scope genügt die Anmeldung wie bisher
+        app2, _ = _app([catalog.OPENID, catalog.RATSDATEN_LESEN])
+        assert client.get("/oauth/authorize/", h.autorisierung(app2, challenge)).status_code == 200
+
+    def test_faktor_erst_nach_der_anmeldung_eingerichtet(self) -> None:
+        # Anmeldung nur mit Passwort, dann in derselben Sitzung einen Faktor eingerichtet: kein Code ohne neue
+        # Anmeldung; mit Passwort und Code geht es
+        user = make_user("spaet@example.org")
+        app, secret = _app()
+        verifier, challenge = h.pkce()
+        client = Client()
+        assert password_step(client, user).status_code == 302
+        geheimnis = enable_2fa(user)
+        assert not reauth.login_with_second_factor(client)
+        antwort = client.get("/oauth/authorize/", h.autorisierung(app, challenge, scope=f"openid {NOE}"))
+        assert antwort.status_code == 302
+        assert "/accounts/login/" in antwort["Location"]
+        password_step(client, user)
+        assert code_step(client, current_code(geheimnis)).status_code == 302
+        code = h.code_holen(client, app, challenge, scope=f"openid {NOE}")
+        assert NOE in h.tokens_holen(client, app, secret, code, verifier)["scope"].split()
+
     def test_anmeldung_aelter_als_sieben_tage_verlangt_neue(self, person: User) -> None:
         app, _secret = _app()
         _verifier, challenge = h.pkce()
@@ -252,7 +296,7 @@ def _assertion(app: OAuthApplication, key: jwk.JWK, *, alg: str = "ES256", **ang
     claims = {
         "iss": app.client_id,
         "sub": app.client_id,
-        "aud": client_assertion.token_endpoint(),
+        "aud": client_assertion.audience(),
         "iat": jetzt,
         "exp": jetzt + 60,
         "jti": secrets.token_hex(12),
@@ -291,6 +335,7 @@ class TestPrivateKeyJwt:
         [
             {"aud": "https://andere.example.org/oauth/token/"},
             {"aud": ["https://andere.example.org/oauth/token/"]},
+            {"aud": "https://andere.example.org"},
             {"exp": -10},
             {"exp": 6 * 60},
             {"exp": None},
@@ -318,7 +363,7 @@ class TestPrivateKeyJwt:
             basis = {
                 "iss": app.client_id,
                 "sub": app.client_id,
-                "aud": client_assertion.token_endpoint(),
+                "aud": client_assertion.audience(),
                 "exp": jetzt + 60,
                 "jti": secrets.token_hex(8),
             }
@@ -330,10 +375,17 @@ class TestPrivateKeyJwt:
         assert antwort.status_code == 401, angaben
         assert antwort.json()["error"] == "invalid_client"
 
-    def test_aud_als_liste_mit_dem_token_endpunkt(self) -> None:
+    def test_aud_nur_der_aussteller_als_zeichenkette(self) -> None:
+        # draft-ietf-oauth-rfc7523bis: weder der Token-Endpunkt noch eine Liste, auch nicht mit dem Aussteller
         key = _schluessel()
         app = _dienst(key)
-        assert _token(_assertion(app, key, aud=[client_assertion.token_endpoint()])).status_code == 200
+        aussteller = client_assertion.audience()
+        token_endpunkt = f"{aussteller.rstrip('/')}/oauth/token/"
+        for aud in (token_endpunkt, [token_endpunkt], [aussteller], [aussteller, token_endpunkt], f"{aussteller}/"):
+            antwort = _token(_assertion(app, key, aud=aud))
+            assert antwort.status_code == 401, aud
+            assert antwort.json()["error"] == "invalid_client"
+        assert _token(_assertion(app, key, aud=aussteller)).status_code == 200
 
     def test_jti_nur_einmal(self) -> None:
         key = _schluessel()
@@ -367,7 +419,7 @@ class TestPrivateKeyJwt:
         claims = {
             "iss": app.client_id,
             "sub": app.client_id,
-            "aud": client_assertion.token_endpoint(),
+            "aud": client_assertion.audience(),
             "exp": jetzt + 60,
             "jti": "hs",
         }

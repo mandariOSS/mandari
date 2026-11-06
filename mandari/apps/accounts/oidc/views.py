@@ -12,8 +12,9 @@ Die Ansichten von django-oauth-toolkit, ergänzt um:
   ``prompt=none`` meldet nur Anwendungen ohne Zustimmungsseite still an, ein ``id_token_hint`` muss zur
   angemeldeten Person passen. ``approval_prompt`` der Anfrage gilt nicht: Fremde Anwendungen fragen jedes Mal
   (``REQUEST_APPROVAL_PROMPT``). Verlangt die Anwendung einen geschützten Scope (``catalog.PROTECTED``, #565),
-  braucht das Konto einen zweiten Faktor (sonst geht es zur Einrichtung), und die Anmeldung in der Sitzung darf
-  höchstens ``catalog.PROTECTED_MAX_LOGIN_AGE`` zurückliegen (sonst erneute Anmeldung wie bei ``max_age``).
+  braucht das Konto einen zweiten Faktor (sonst geht es zur Einrichtung), die Anmeldung in der Sitzung muss mit
+  diesem Faktor gewesen sein (:func:`.reauth.login_with_second_factor`) und darf höchstens
+  ``catalog.PROTECTED_MAX_LOGIN_AGE`` zurückliegen; sonst erneute Anmeldung wie bei ``max_age``.
 - ``token``: Ratenbegrenzung je Adresse; Gerätefreigabe (RFC 8628) gibt es nicht
 - ``revoke`` (RFC 7009): Ratenbegrenzung je Adresse wie am Token-Endpunkt (#1215)
 - ``introspect`` (RFC 7662): nur für die Anwendung selbst, mit Client-Authentifizierung und nur über eigene Tokens,
@@ -93,11 +94,14 @@ def _login_too_old(request: HttpRequest) -> bool:
 
     Maßgeblich ist die Anmeldung in dieser Sitzung (:func:`.reauth.login_time`), nicht ``User.last_login``: Eine
     Anmeldung auf einem anderen Gerät macht eine alte Sitzung nicht wieder jung. Ein geschützter Scope (#565) wirkt
-    wie ``max_age`` mit ``catalog.PROTECTED_MAX_LOGIN_AGE``.
+    wie ``max_age`` mit ``catalog.PROTECTED_MAX_LOGIN_AGE`` und verlangt dazu, dass diese Anmeldung mit zweitem Faktor
+    war: Ein Faktor, der erst nach einer Anmeldung nur mit Passwort eingerichtet wurde, genügt nicht.
     """
     raw = request.GET.get("max_age", "").strip()
     limits = [int(raw)] if raw.isdigit() else []
     if _requests_protected_scope(request):
+        if not reauth.login_with_second_factor(request):
+            return True
         limits.append(int(catalog.PROTECTED_MAX_LOGIN_AGE.total_seconds()))
     if not limits:
         return False
@@ -168,8 +172,9 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
         return cast(HttpResponseBase, super().get(request, *args, **kwargs))
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
-        # Formular der Zustimmungsseite: Steht für die Anfrage noch eine erneute Anmeldung aus, erst diese
-        if _reauth_pending(request):
+        # Formular der Zustimmungsseite: Steht für die Anfrage noch eine erneute Anmeldung aus oder reicht die
+        # Anmeldung nicht (zu alt, für einen geschützten Scope ohne zweiten Faktor), erst diese
+        if _reauth_pending(request) or _login_too_old(request):
             return self.handle_prompt_login()
         return cast(HttpResponseBase, super().post(request, *args, **kwargs))
 

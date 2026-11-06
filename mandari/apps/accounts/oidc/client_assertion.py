@@ -10,7 +10,10 @@ signiert hat (``client_assertion``), und den Typ ``urn:ietf:params:oauth:client-
 - Signatur mit einem der Schlüssel der Anwendung, nur ``RS256`` (RSA ab 2048 Bit) und ``ES256`` (P-256); ``kid`` im
   Kopf wählt den Schlüssel, ohne ``kid`` gilt jeder passende
 - ``iss`` und ``sub`` sind die Client-ID
-- ``aud`` ist die Adresse des Token-Endpunkts (eine Zeichenkette oder eine Liste mit genau dieser Adresse)
+- ``aud`` ist der Aussteller (``issuer`` der Discovery, ``OIDC_ISS_ENDPOINT``) als einzelne Zeichenkette, keine Liste
+  und nicht die Adresse des Token-Endpunkts (draft-ietf-oauth-rfc7523bis, kommParl Profil Nichtöffentliches). Sonst
+  könnte ein anderer Autorisierungsserver, dem ein Dienst mit demselben Schlüssel eine Assertion geschickt hat, sie
+  hier einlösen (Audience Injection, Hinweis der OpenID Foundation 2025)
 - ``exp`` liegt in der Zukunft, höchstens :data:`MAX_LIFETIME` entfernt; ``nbf`` und ``iat`` nicht in der Zukunft
   (mit :data:`CLOCK_SKEW` Spielraum)
 - ``jti`` ist gesetzt und wurde bis zu seinem Ablauf noch nicht angenommen (:class:`.models.OAuthClientAssertion`)
@@ -28,7 +31,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from django.db import IntegrityError, transaction
-from django.urls import reverse
 from django.utils import timezone
 from jwcrypto import jwk, jwt
 from jwcrypto.common import JWException
@@ -53,9 +55,9 @@ class AssertionInvalid(Exception):  # noqa: N818 – Begriff aus RFC 7523 (inval
     """Die Client-Assertion taugt nicht; der Grund ist nur für das Betriebslog."""
 
 
-def token_endpoint() -> str:
-    """Adresse des Token-Endpunkts (``aud`` der Assertions): Aussteller und Pfad, wie in der Discovery."""
-    return f"{str(oauth2_settings.OIDC_ISS_ENDPOINT).rstrip('/')}{reverse('oauth2_provider:token')}"
+def audience() -> str:
+    """Erwartetes ``aud`` der Assertions: der Aussteller, genau wie ``issuer`` in der Discovery."""
+    return str(oauth2_settings.OIDC_ISS_ENDPOINT or "")
 
 
 # ---------------------------------------------------------------------------
@@ -204,10 +206,9 @@ def verify(application: Any, assertion: str, *, now: datetime | None = None) -> 
     client_id = str(application.client_id)
     if claims.get("iss") != client_id or claims.get("sub") != client_id:
         raise AssertionInvalid("iss und sub sind nicht die Client-ID")
-    audience = claims.get("aud")
-    endpoint = token_endpoint()
-    if not (audience == endpoint or (isinstance(audience, list) and audience == [endpoint])):
-        raise AssertionInvalid("aud ist nicht der Token-Endpunkt")
+    expected = audience()
+    if not expected or claims.get("aud") != expected:
+        raise AssertionInvalid("aud ist nicht der Aussteller als einzelne Zeichenkette")
 
     current = (now or timezone.now()).timestamp()
     expires = _number(claims, "exp")

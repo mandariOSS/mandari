@@ -67,7 +67,7 @@ vertrauenswürdig markiert werden und kommen ohne Zustimmungsseite aus. Fremde A
 | `ratsdaten:lesen` | Ratsdaten lesen, siehe unten | ja | ja |
 | `einreichung:schreiben` | Profil Einreichung: einreichen, zurücknehmen, zur Ladung zurückmelden (nur im Namen einer Person wirksam) | ja | ja |
 | `mandari:bereitstellung` | Bereitstellung von Organisationen und Mandanten (folgt) | nein | ja |
-| `ratsdaten:nichtoeffentlich` | Nichtöffentliches lesen, soweit die Person es selbst sehen darf (nichtöffentliche Ausgabe); zweiter Faktor Pflicht, höchstens 7 Tage nach der Anmeldung | ja | nein |
+| `ratsdaten:nichtoeffentlich` | Nichtöffentliches lesen, soweit die Person es selbst sehen darf (nichtöffentliche Ausgabe); Anmeldung mit zweitem Faktor Pflicht, höchstens 7 Tage danach | ja | nein |
 | `sitzung:lesen` | Alle Sitzungsdaten des gebundenen Mandanten einschließlich Nichtöffentlichem (nichtöffentliche Ausgabe); nur für Dienste mit Bindung an einen Mandanten | nein | ja |
 
 Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliches gibt es nur mit den beiden
@@ -204,7 +204,7 @@ Das JWT trägt im Kopf `alg` (`RS256` oder `ES256`) und `kid` (Schlüssel-ID aus
 | Angabe | Wert |
 |---|---|
 | `iss`, `sub` | die Client-ID |
-| `aud` | die Adresse des Token-Endpunkts, `https://mandari.example.org/oauth/token/` |
+| `aud` | der Aussteller (`issuer` der Discovery), `https://mandari.example.org`, als einzelne Zeichenkette. Die Adresse des Token-Endpunkts und Listen gelten nicht (draft-ietf-oauth-rfc7523bis, Schutz vor Audience Injection) |
 | `exp` | höchstens fünf Minuten in der Zukunft |
 | `jti` | eindeutig; ein zweites Mal wird die Assertion abgelehnt |
 | `iat` | empfohlen |
@@ -244,7 +244,8 @@ nicht sehen darf, fehlt in Listen und Einbettungen und ergibt am Objekt 404.
 **Im Namen einer Person** (Scope `ratsdaten:nichtoeffentlich`, Code-Ablauf mit PKCE):
 
 - Die Person braucht einen zweiten Faktor; ohne ihn führt die Autorisierung zur Einrichtung, und ein Token verliert
-  den Scope, sobald der zweite Faktor entfernt ist.
+  den Scope, sobald der zweite Faktor entfernt ist. Maßgeblich ist die Anmeldung selbst: War sie ohne zweiten Faktor
+  (etwa weil er erst danach eingerichtet wurde), meldet sich die Person erneut an, diesmal mit Faktor.
 - Liegt die Anmeldung in der Sitzung mehr als sieben Tage zurück, meldet sich die Person erneut an. Tokens mit diesem
   Scope gibt es höchstens sieben Tage nach der Anmeldung; danach endet der Refresh mit `invalid_grant`, und das letzte
   Access-Token läuft spätestens dann ab.
@@ -252,9 +253,13 @@ nicht sehen darf, fehlt in Listen und Einbettungen und ergibt am Objekt 404.
   „Nichtöffentliche Sitzungen und TOPs sehen“ und „Nichtöffentliche Vorlagen sehen“ samt Sichtrecht), bei
   eingeschalteten Rechten mit Geltungsbereich auch Zuweisungen für Körperschaften, Gremien und Ämter und befristete
   Zuweisungen etwa für Vertretungen, solange sie gelten. Ein festgestelltes Mitwirkungsverbot (in der Abstimmung als
-  „befangen“ vermerkt) sperrt den nichtöffentlichen Tagesordnungspunkt, seine Anlagen und den nichtöffentlichen
-  Beschlusstext. Als Person des Kontos gelten Personen des Mandanten mit derselben E-Mail-Adresse.
-- Ohne aktives Konto im Mandanten gibt es 403.
+  „befangen“ vermerkt) sperrt den nichtöffentlichen Tagesordnungspunkt, seine Anlagen, den nichtöffentlichen
+  Beschlusstext und die dort beratenen Vorlagen mit ihren Anlagen, soweit sie nicht öffentlich sind. Als Person des
+  Kontos gelten Personen des Mandanten mit derselben E-Mail-Adresse oder die mit dem Konto verknüpfte Person; ohne
+  solche Person greift das Mitwirkungsverbot nicht (siehe [Betrieb](anmeldung-betrieb.md)).
+- Die Person braucht ein aktives Konto im Mandanten mit dem Recht „API-Zugang“, wie in der Session-API v1. Ohne Konto
+  oder ohne dieses Recht gibt es 403, auch mit einer freigegebenen Anwendung: Der Mandant entscheidet, wer seine Daten
+  über die Schnittstelle abrufen darf.
 
 **Dienste je Mandant** (Scope `sitzung:lesen`, Client Credentials mit `private_key_jwt`): Die Anwendung ist an genau
 einen Session-Mandanten gebunden und liest alles Nichtöffentliche dieses Mandanten, nie das eines anderen (403).
@@ -265,13 +270,17 @@ einen Session-Mandanten gebunden und liest alles Nichtöffentliche dieses Mandan
 | Status | Bedeutung |
 |---|---|
 | 401 | kein, ungültiges, abgelaufenes oder widerrufenes Token; `WWW-Authenticate: Bearer resource_metadata="…"`, bei mitgeschicktem Token mit `error="invalid_token"` |
-| 403 | Scope fehlt (`error="insufficient_scope"`, `scope="…"`), kein Konto im Mandanten oder Dienst eines anderen Mandanten |
+| 403 | Scope fehlt (`error="insufficient_scope"`, `scope="…"`), kein Konto im Mandanten, kein „API-Zugang“ oder Dienst eines anderen Mandanten |
 | 404 | gibt es nicht oder darf der Aufrufer nicht sehen |
 | 503 | der Abruf konnte nicht protokolliert werden; ohne Eintrag gibt es keine Inhalte |
 
 **Prüfprotokoll:** Jeder Abruf, dessen Antwort Nichtöffentliches enthält, steht im Protokoll des Mandanten (Session,
 „Protokoll“) mit Person bzw. Dienst, Anwendung (Client-ID) und den Kennungen der nichtöffentlichen Objekte, ohne
-Inhalte und ohne Zusammenfassung.
+Inhalte und ohne Zusammenfassung. Dazu zählen auch Beratungen einer veröffentlichten Vorlage, die Gremium, Rolle,
+Sitzung oder Tagesordnungspunkt einer nichtöffentlichen Station nennen (sie tragen `kommparl:nonPublic` und
+`kommparl:publicId`), und Verweise öffentlicher Objekte auf nichtöffentliche, etwa eines öffentlichen
+Tagesordnungspunkts auf die Beratung einer nichtöffentlichen Vorlage. Ein Dienst steht dort immer als Dienst, auch wenn
+seine Anfrage das Sitzungs-Cookie einer Person mitbringt.
 
 ## Ratsdaten lesen: Session-API v1
 
@@ -320,7 +329,7 @@ curl -X POST -H 'Authorization: Bearer mandari_at_…' -H 'Idempotency-Key: 5b0f
 | Fehler | Bedeutung |
 |---|---|
 | `invalid_client` (401) | Client-ID oder Secret falsch, Anwendung ausgeschaltet, Client-Assertion (`private_key_jwt`) ungültig, abgelaufen oder schon benutzt, Secret bei einer Anwendung mit Schlüsseln |
-| `invalid_grant` | Code abgelaufen, schon benutzt oder `code_verifier` passt nicht; Refresh-Token widerrufen oder ersetzt; für `ratsdaten:nichtoeffentlich` Anmeldung älter als sieben Tage oder kein zweiter Faktor |
+| `invalid_grant` | Code abgelaufen, schon benutzt oder `code_verifier` passt nicht; Refresh-Token widerrufen oder ersetzt; für `ratsdaten:nichtoeffentlich` Anmeldung älter als sieben Tage oder kein zweiter Faktor mehr am Konto |
 | `invalid_scope` | Scope nicht für die Anwendung freigegeben |
 | `unauthorized_client` | Ablauf für die Anwendung nicht freigegeben |
 | `unsupported_grant_type` | Ablauf gibt es bei mandari nicht |

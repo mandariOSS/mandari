@@ -12,10 +12,12 @@ verweist nur mit ``kommparl:nonPublicSystem`` am System hierher; ihre Adressen u
 **Zugang** (Zugriffsmodell aus #565, abgestimmt am 05.11.2026), immer mit Access-Token des OpenID-Connect-Anbieters
 im Header ``Authorization: Bearer``:
 
-- **Person:** Scope ``ratsdaten:nichtoeffentlich`` (nur Code-Ablauf mit PKCE, zweiter Faktor, höchstens sieben Tage
-  nach der Anmeldung; das setzt ``apps.accounts.oidc`` durch). Die Person braucht ein aktives Konto im Mandanten und
-  sieht bei jedem Abruf genau, was ``visibility.sicht_fuer_person`` ergibt: dieselbe Regel wie die Oberfläche, mit
-  Rechten mit Geltungsbereich, befristeten Zuweisungen und Mitwirkungsverbot. Kein zweiter Rechteweg.
+- **Person:** Scope ``ratsdaten:nichtoeffentlich`` (nur Code-Ablauf mit PKCE, Anmeldung mit zweitem Faktor, höchstens
+  sieben Tage nach der Anmeldung; das setzt ``apps.accounts.oidc`` durch). Die Person braucht ein aktives Konto im
+  Mandanten mit dem Recht „API-Zugang“ (``access_api``, wie in der Session-API v1: Der Mandant entscheidet, wer Daten
+  über die Schnittstelle abrufen darf) und sieht bei jedem Abruf genau, was ``visibility.sicht_fuer_person`` ergibt:
+  dieselbe Regel wie die Oberfläche, mit Rechten mit Geltungsbereich, befristeten Zuweisungen und Mitwirkungsverbot.
+  Kein zweiter Rechteweg.
 - **Dienst:** Client Credentials mit ``private_key_jwt``, Scope ``sitzung:lesen`` und Bindung an genau diesen
   Mandanten (``session-mandant:<Kennung>``, ``apps.accounts.oidc.bindings``). Er liest alles Nichtöffentliche des
   Mandanten außer Arbeitsständen, nie einen anderen Mandanten.
@@ -25,7 +27,8 @@ Fehler kommen nach RFC 9457, bei 401 und 403 mit ``WWW-Authenticate`` nach RFC 6
 Aufrufer nicht sehen darf, fehlen in Listen und Einbettungen und ergeben am Objekt 404.
 
 **Prüfprotokoll:** Jeder Abruf, dessen Antwort Nichtöffentliches enthält (``kommparl:nonPublic``,
-``kommparl:nonPublicResolutionText``), steht im Protokoll des Mandanten (``audit.log_nonpublic_read``): Person oder
+``kommparl:nonPublicResolutionText``, Verweise öffentlicher Objekte auf nichtöffentliche:
+``SessionMapping.nonpublic_refs``), steht im Protokoll des Mandanten (``audit.log_nonpublic_read``): Person oder
 Dienst, Anwendung, Kennungen der Objekte. Kann der Eintrag nicht geschrieben werden, gibt es keine Inhalte (503).
 
 Änderungsfeed und Snapshot bleiben öffentlich; diese Ausgabe bietet keine an. Standardmäßig aus: Nur mit
@@ -80,6 +83,8 @@ logger = logging.getLogger(__name__)
 SCOPE_PERSON: Final = catalog.RATSDATEN_NICHTOEFFENTLICH
 #: Scope für Dienste, die an genau einen Mandanten gebunden sind
 SCOPE_SERVICE: Final = catalog.SITZUNG_LESEN
+#: Recht „API-Zugang“ im Mandanten (wie ``apps.session.api.v1.auth.API_ACCESS``): ohne es keine Schnittstelle
+API_ACCESS: Final = "access_api"
 
 #: Kopfzeilen jeder Antwort dieser Ausgabe (kommParl, Profil Nichtöffentliches, „Zwischenspeicher“)
 CACHE_CONTROL: Final = "private, no-store"
@@ -266,7 +271,14 @@ def zugang(request: HttpRequest, tenant: Any) -> Zugang:
         )
         if session_user is None:
             raise Abgelehnt(problem(request, 403, "Kein Zugang zu diesem Mandanten.", kind="keine-berechtigung"))
-        return Zugang(tenant=tenant, access=access, session_user=session_user, sicht=sicht_fuer_person(session_user))
+        sicht = sicht_fuer_person(session_user)
+        if API_ACCESS not in sicht.permissions:
+            # Wie in der Session-API v1: ohne „API-Zugang“ keine Daten über die Schnittstelle, auch mit freigegebener
+            # Anwendung; so behält der Mandant den Hebel gegen den Abfluss über Anwendungen
+            raise Abgelehnt(
+                problem(request, 403, "Das Konto hat in diesem Mandanten keinen API-Zugang.", kind="keine-berechtigung")
+            )
+        return Zugang(tenant=tenant, access=access, session_user=session_user, sicht=sicht)
     if not access.has_scope(SCOPE_SERVICE):
         raise fehlender_scope(SCOPE_SERVICE)
     if bindings.key_of(access.binding, bindings.TENANT) != str(tenant.pk):
@@ -505,9 +517,16 @@ def _protokollieren(
     return None
 
 
-def _ausliefern(request: HttpRequest, zugang: Zugang, data: Any, abruf: str) -> HttpResponseBase:
+def _kennungen(objekte: Iterable[Any], abbildung: SessionMapping) -> list[str]:
+    """Kennungen fürs Prüfprotokoll: gekennzeichnete Objekte und Verweise öffentlicher Objekte auf nichtöffentliche."""
+    return list(dict.fromkeys([*nichtoeffentliche_kennungen(objekte), *abbildung.nonpublic_refs]))
+
+
+def _ausliefern(
+    request: HttpRequest, zugang: Zugang, abbildung: SessionMapping, data: Any, abruf: str
+) -> HttpResponseBase:
     """Antwort mit Eintrag im Prüfprotokoll, wenn sie Nichtöffentliches enthält."""
-    abgelehnt = _protokollieren(request, zugang, abruf, nichtoeffentliche_kennungen([data]))
+    abgelehnt = _protokollieren(request, zugang, abruf, _kennungen([data], abbildung))
     return abgelehnt if abgelehnt is not None else _json(data)
 
 
@@ -518,18 +537,21 @@ def _ausliefern(request: HttpRequest, zugang: Zugang, data: Any, abruf: str) -> 
 
 @endpoint
 def system_view(request: HttpRequest, zugang: Zugang) -> HttpResponseBase:
-    return _ausliefern(request, zugang, mapping(zugang).system(), "System")
+    abbildung = mapping(zugang)
+    return _ausliefern(request, zugang, abbildung, abbildung.system(), "System")
 
 
 @endpoint
 def bodies_view(request: HttpRequest, zugang: Zugang) -> HttpResponseBase:
     abbildung = mapping(zugang)
-    return _ausliefern(request, zugang, single_page(abbildung.uris.bodies(), [abbildung.body()]), "Körperschaften")
+    seite = single_page(abbildung.uris.bodies(), [abbildung.body()])
+    return _ausliefern(request, zugang, abbildung, seite, "Körperschaften")
 
 
 @endpoint
 def body_view(request: HttpRequest, zugang: Zugang) -> HttpResponseBase:
-    return _ausliefern(request, zugang, mapping(zugang).body(), "Körperschaft")
+    abbildung = mapping(zugang)
+    return _ausliefern(request, zugang, abbildung, abbildung.body(), "Körperschaft")
 
 
 @endpoint
@@ -553,7 +575,7 @@ def list_view(request: HttpRequest, zugang: Zugang, segment: str) -> HttpRespons
     if response.status_code != 200:
         meldung = json.loads(response.content).get("error", "Nicht gefunden.")
         return problem(request, response.status_code, str(meldung), kind="nicht-gefunden")
-    abgelehnt = _protokollieren(request, zugang, f"Liste {segment.lower()}", nichtoeffentliche_kennungen(gerendert))
+    abgelehnt = _protokollieren(request, zugang, f"Liste {segment.lower()}", _kennungen(gerendert, abbildung))
     return abgelehnt if abgelehnt is not None else _privat(response)
 
 
@@ -568,7 +590,7 @@ def object_view(request: HttpRequest, zugang: Zugang, kind: str, pk: Any) -> Htt
             data = abbildung.location(meeting)
         if data is None:
             return problem(request, 404, "Nicht gefunden.", kind="nicht-gefunden")
-        return _ausliefern(request, zugang, data, "Ort")
+        return _ausliefern(request, zugang, abbildung, data, "Ort")
     spec = OBJECT_SPECS.get(kind)
     if spec is None:
         return problem(request, 404, f"Unbekannter Objekttyp '{kind}'.", kind="nicht-gefunden")
@@ -577,7 +599,7 @@ def object_view(request: HttpRequest, zugang: Zugang, kind: str, pk: Any) -> Htt
     if obj is None:
         # Gibt es nicht oder darf der Aufrufer nicht sehen; die Antwort verrät nicht, was davon
         return problem(request, 404, "Nicht gefunden.", kind="nicht-gefunden")
-    return _ausliefern(request, zugang, getattr(abbildung, method)(obj), kind)
+    return _ausliefern(request, zugang, abbildung, getattr(abbildung, method)(obj), kind)
 
 
 @endpoint

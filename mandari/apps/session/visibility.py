@@ -31,6 +31,7 @@ Mitwirkungsverbot (``sicht_fuer_person``), und für Dienste, die an einen Mandan
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date
@@ -177,6 +178,9 @@ class Sicht:
       ``vorlage.noe_sehen`` (Körperschaft der Vorlage, federführendes Amt, Gremien der Beratungsfolge)
     - ``gesperrte_tops``: Tagesordnungspunkte, bei denen die Person als befangen vermerkt ist (Mitwirkungsverbot); sie
       und ihre Anlagen sieht sie nur, soweit sie öffentlich sind
+    - ``gesperrte_vorlagen``: Vorlagen, die an einem dieser Tagesordnungspunkte beraten werden (Beratung oder Vorlage
+      des TOP); auch sie und ihre Anlagen nur, soweit sie öffentlich sind (kommParl: „Tagesordnungspunkt und seine
+      Unterlagen“)
 
     Arbeitsstände (Vorlagen im Entwurf oder in der Prüfung) zeigt die Sicht nie. Die Q-Ausdrücke filtern Listen, die
     Prüfungen auf einzelnen, schon geladenen Objekten dienen der Abbildung (``hub.ris.mapping.session.SessionSicht``).
@@ -190,6 +194,7 @@ class Sicht:
     vorlage_aemter: frozenset[str] = frozenset()
     vorlage_gremien: frozenset[str] = frozenset()
     gesperrte_tops: frozenset[str] = frozenset()
+    gesperrte_vorlagen: frozenset[str] = frozenset()
 
     # -- Rechte ------------------------------------------------------------------------------------------------
 
@@ -238,8 +243,10 @@ class Sicht:
         return oeffentlich | self.top_noe_q(prefix)
 
     def vorlage_noe_q(self, prefix: str = "") -> Q:
-        """Vorlagen, deren nichtöffentliche Inhalte die Sicht zeigt (ohne Arbeitsstände)."""
+        """Vorlagen, deren nichtöffentliche Inhalte die Sicht zeigt (ohne Arbeitsstände und Mitwirkungsverbot)."""
         kein_arbeitsstand = ~Q(**{f"{prefix}status__in": ARBEITSSTAENDE})
+        if self.gesperrte_vorlagen:
+            kein_arbeitsstand &= ~Q(**{f"{prefix}pk__in": sorted(self.gesperrte_vorlagen)})
         if self.alle_vorlagen:
             return kein_arbeitsstand
         teile: list[Q] = []
@@ -269,15 +276,18 @@ class Sicht:
         Anlagen der Sicht, nach dem Bezugsobjekt in der Reihenfolge von ``file_service.file_parent`` (Vorlage vor TOP
         vor Sitzung): öffentliche Anlagen öffentlicher Bezugsobjekte und Anlagen, deren Bezugsobjekt die Sicht mit
         seinen nichtöffentlichen Inhalten zeigt. Anhänge von Anträgen und Anlagen ohne Bezugsobjekt nie; die
-        öffentliche Fassung einer Niederschrift nur, solange sie veröffentlicht ist.
+        öffentliche Fassung einer Niederschrift nur, solange sie veröffentlicht ist. Hängt eine Anlage (auch) an einem
+        Tagesordnungspunkt mit Mitwirkungsverbot, zeigt die Sicht sie nur nach der öffentlichen Regel.
         """
 
         def cond(**lookups: Any) -> Q:
             return Q(**{f"{prefix}{key}": value for key, value in lookups.items()})
 
+        noe_vorlage = self.vorlage_noe_q(f"{prefix}paper__")
+        if self.gesperrte_tops:
+            noe_vorlage &= ~cond(agenda_item_id__in=sorted(self.gesperrte_tops))
         an_vorlage = cond(paper__isnull=False) & (
-            (cond(is_public=True, paper__is_public=True) & ~cond(paper__status__in=ARBEITSSTAENDE))
-            | self.vorlage_noe_q(f"{prefix}paper__")
+            (cond(is_public=True, paper__is_public=True) & ~cond(paper__status__in=ARBEITSSTAENDE)) | noe_vorlage
         )
         an_top = cond(paper__isnull=True, agenda_item__isnull=False) & (
             cond(is_public=True, agenda_item__is_public=True, agenda_item__meeting__is_public=True)
@@ -304,8 +314,8 @@ class Sicht:
         return str(item.pk) not in self.gesperrte_tops and self.sitzung_noe(item.meeting)
 
     def vorlage_noe(self, paper: Any) -> bool:
-        """Zeigt die Sicht diese Vorlage mit ihren nichtöffentlichen Inhalten (nie Arbeitsstände)?"""
-        if paper.status in ARBEITSSTAENDE:
+        """Zeigt die Sicht diese Vorlage mit ihren nichtöffentlichen Inhalten (nie Arbeitsstände, kein Mitwirkungsverbot)?"""
+        if paper.status in ARBEITSSTAENDE or str(paper.pk) in self.gesperrte_vorlagen:
             return False
         if self.alle_vorlagen:
             return True
@@ -319,6 +329,8 @@ class Sicht:
         """Zeigt die Sicht diese Anlage über die nichtöffentlichen Inhalte ihres Bezugsobjekts?"""
         if getattr(file_obj, "public_protocol_id", None) is not None:
             return False  # öffentliche Fassung einer Niederschrift: nur nach der öffentlichen Regel
+        if file_obj.agenda_item_id and str(file_obj.agenda_item_id) in self.gesperrte_tops:
+            return False  # hängt an einem TOP mit Mitwirkungsverbot: nur nach der öffentlichen Regel
         if file_obj.paper_id:
             return self.vorlage_noe(file_obj.paper)
         if file_obj.agenda_item_id:
@@ -345,7 +357,7 @@ def sicht_fuer_person(session_user: Any, *, tag: date | None = None) -> Sicht:
     - Rechte wie in der Oberfläche (``SessionPermissionChecker``), dazu die Häkchen aus befristeten mandantenweiten
       Zuweisungen und die Geltungsbereiche aus dem Zugriffskontext (nur bei eingeschaltetem Schalter des Mandanten;
       abgelaufene Zuweisungen wirken nicht)
-    - Mitwirkungsverbot: :func:`mitwirkungsverbote`
+    - Mitwirkungsverbot: :func:`mitwirkungsverbote` und die dort beratenen Vorlagen (:func:`vorlagen_an_tops`)
     """
     from .permissions import SessionPermissionChecker
     from .rechte import aufloesung, katalog
@@ -360,13 +372,15 @@ def sicht_fuer_person(session_user: Any, *, tag: date | None = None) -> Sicht:
             kennung for kennung in kontext.kennungen(recht, art) if kontext.gilt_in(grundrecht, [bereich(art, kennung)])
         )
 
+    gesperrte_tops = mitwirkungsverbote(session_user)
     return Sicht(
         permissions=frozenset(permissions),
         sitzung_gremien=bereiche("sitzung.noe_sehen", "sitzung.sehen", GREMIUM),
         vorlage_koerperschaften=bereiche("vorlage.noe_sehen", "vorlage.sehen", KOERPERSCHAFT),
         vorlage_aemter=bereiche("vorlage.noe_sehen", "vorlage.sehen", AMT),
         vorlage_gremien=bereiche("vorlage.noe_sehen", "vorlage.sehen", GREMIUM),
-        gesperrte_tops=mitwirkungsverbote(session_user),
+        gesperrte_tops=gesperrte_tops,
+        gesperrte_vorlagen=vorlagen_an_tops(gesperrte_tops),
     )
 
 
@@ -390,3 +404,17 @@ def mitwirkungsverbote(session_user: Any) -> frozenset[str]:
         "agenda_item_id", flat=True
     )
     return frozenset(str(pk) for pk in tops)
+
+
+def vorlagen_an_tops(tops: Collection[str]) -> frozenset[str]:
+    """Vorlagen, die an diesen Tagesordnungspunkten beraten werden: über ihre Beratung oder als Vorlage des TOP."""
+    if not tops:
+        return frozenset()
+    from .models import SessionAgendaItem, SessionConsultation
+
+    kennungen = sorted(uuid.UUID(kennung) for kennung in tops)
+    direkt = SessionAgendaItem.objects.filter(pk__in=kennungen, paper_id__isnull=False).values_list(
+        "paper_id", flat=True
+    )
+    beraten = SessionConsultation.objects.filter(agenda_item_id__in=kennungen).values_list("paper_id", flat=True)
+    return frozenset(str(pk) for pk in [*direkt, *beraten])

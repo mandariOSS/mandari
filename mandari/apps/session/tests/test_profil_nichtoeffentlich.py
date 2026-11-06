@@ -4,12 +4,15 @@ Nichtöffentliche Ausgabe je Session-Mandant nach dem Profil Nichtöffentliches 
 
 Je Regel des Zugriffsmodells (abgestimmt am 05.11.2026) mindestens ein Test:
 
-- Personen: nur mit Scope ``ratsdaten:nichtoeffentlich``, nur was die Person in Session sieht (dieselben Selektoren,
-  Rechte mit Geltungsbereich, befristete Vertretung, Mitwirkungsverbot), bei jedem Abruf geprüft, zweiter Faktor
+- Personen: nur mit Scope ``ratsdaten:nichtoeffentlich`` und Recht „API-Zugang“, nur was die Person in Session sieht
+  (dieselben Selektoren, Rechte mit Geltungsbereich, befristete Vertretung, Mitwirkungsverbot samt der dort beratenen
+  Vorlagen), bei jedem Abruf geprüft, zweiter Faktor
 - Dienste: an genau einen Mandanten gebunden, ``private_key_jwt``, ``sitzung:lesen`` liest Nichtöffentliches des
   eigenen Mandanten, nie eines anderen
-- Für beide: Prüfprotokoll, ``Cache-Control: private, no-store``, nichts im öffentlichen Feed und Snapshot, öffentliche
-  Antworten unverändert, Konformität gegen die Schemas der Spezifikation
+- Für beide: Prüfprotokoll (auch für Beratungen mit nichtöffentlicher Station und Verweise öffentlicher Objekte auf
+  nichtöffentliche; ein Dienst nie unter dem Konto eines mitgeschickten Cookies), ``Cache-Control: private, no-store``,
+  nichts im öffentlichen Feed und Snapshot, öffentliche Antworten unverändert, Konformität gegen die Schemas der
+  Spezifikation
 
 Die Regeln am Token-Endpunkt (private_key_jwt, sieben Tage, zweiter Faktor) prüft
 ``apps/accounts/tests/test_oidc_nichtoeffentlich.py``.
@@ -49,6 +52,7 @@ from apps.session.api import nichtoeffentlich
 from apps.session.models import (
     SessionAgendaItem,
     SessionAuditLog,
+    SessionConsultation,
     SessionFile,
     SessionMeeting,
     SessionOrganization,
@@ -77,8 +81,9 @@ ALLE_NOE = {
     "can_view_non_public_meetings": True,
     "can_view_papers": True,
     "can_view_non_public_papers": True,
+    "can_access_api": True,
 }
-NUR_SEHEN = {"can_view_meetings": True, "can_view_papers": True}
+NUR_SEHEN = {"can_view_meetings": True, "can_view_papers": True, "can_access_api": True}
 
 
 @pytest.fixture(autouse=True)
@@ -229,7 +234,7 @@ def assertion(app: OAuthApplication, key: jwk.JWK, **angaben: Any) -> str:
     claims = {
         "iss": app.client_id,
         "sub": app.client_id,
-        "aud": client_assertion.token_endpoint(),
+        "aud": client_assertion.audience(),
         "iat": jetzt,
         "exp": jetzt + 60,
         "jti": secrets.token_hex(12),
@@ -326,8 +331,10 @@ class TestPersonMitRecht:
         user, session_user = konto(welt["tenant"], ALLE_NOE)
         raw = token_fuer(user)
         assert abruf(f"{NOE}meeting/{welt['noe_sitzung'].pk}/", raw).status_code == 200
-        session_user.roles.clear()
+        session_user.roles.update(can_view_non_public_meetings=False)
         assert abruf(f"{NOE}meeting/{welt['noe_sitzung'].pk}/", raw).status_code == 404
+        session_user.roles.clear()
+        assert abruf(f"{NOE}meeting/{welt['noe_sitzung'].pk}/", raw).status_code == 403
 
 
 class TestPersonOhneRecht:
@@ -358,6 +365,22 @@ class TestPersonOhneRecht:
         antwort = abruf(f"{NOE}meetings/", token_fuer(user))
         assert antwort.status_code == 403
         privat(antwort)
+
+    def test_ohne_api_zugang_403(self, welt: dict[str, Any]) -> None:
+        # Der Mandant nimmt der Rolle den API-Zugang: auch mit NÖ-Recht und freigegebener Anwendung keine Daten
+        user, session_user = konto(welt["tenant"], {**ALLE_NOE, "can_access_api": False})
+        raw = token_fuer(user)
+        pfade = ("", "meetings/", f"meeting/{welt['noe_sitzung'].pk}/", f"file/{welt['anlage_geheim'].pk}/download/")
+        for pfad in pfade:
+            antwort = abruf(f"{NOE}{pfad}", raw)
+            assert antwort.status_code == 403, pfad
+            assert b"PERSONAL" not in antwort.content
+            privat(antwort)
+            assert pruefe_profil(antwort.json(), "nonpublic", "NonPublicProblem") == []
+        # Bekommt die Rolle den API-Zugang zurück, gilt das ab dem nächsten Abruf
+        session_user.roles.update(can_access_api=True)
+        assert abruf(f"{NOE}meeting/{welt['noe_sitzung'].pk}/", raw).status_code == 200
+        assert len(protokoll(welt["tenant"])) == 1
 
 
 class TestGeltungsbereichUndVertretung:
@@ -426,6 +449,64 @@ class TestMitwirkungsverbot:
         dateien = abruf(f"{NOE}files/", raw).json()["data"]
         assert "vergabe.pdf" not in {datei["name"] for datei in dateien}
         assert "AUFTRAG-BEFANGEN" not in abruf(f"{NOE}agendaitems/", raw).content.decode()
+
+    def test_sperrt_auch_die_dort_beratenen_vorlagen_und_ihre_anlagen(self, welt: dict[str, Any]) -> None:
+        # Die befangene Person hat das Recht auf nichtöffentliche Vorlagen; die am gesperrten TOP beratene
+        # nichtöffentliche Vorlage und ihr Gutachten bleiben ihr trotzdem verborgen (kommParl 7-04: „Unterlagen“)
+        tenant = welt["tenant"]
+        user, _ = konto(tenant, ALLE_NOE, email="rat@example.org")
+        person = SessionPerson.objects.create(
+            tenant=tenant, given_name="Rita", family_name="Rat", email="rat@example.org"
+        )
+        SessionVote.objects.create(agenda_item=welt["befangen"], person=person, vote="excluded")
+        SessionConsultation.objects.create(
+            paper=welt["noe_vorlage"],
+            organization=welt["finanzen"],
+            meeting=welt["sitzung"],
+            agenda_item=welt["befangen"],
+        )
+        direkt = SessionPaper.objects.create(
+            tenant=tenant, reference="V/4", name="VORLAGE-AM-TOP", is_public=False, status="approved"
+        )
+        welt["befangen"].paper = direkt
+        welt["befangen"].save()
+        gutachten = _anlage(tenant, "wertgutachten.pdf", paper=direkt, is_public=False)
+        raw = token_fuer(user)
+        for pfad in (
+            f"paper/{welt['noe_vorlage'].pk}/",
+            f"file/{welt['anlage_vorlage'].pk}/",
+            f"file/{welt['anlage_vorlage'].pk}/download/",
+            f"paper/{direkt.pk}/",
+            f"file/{gutachten.pk}/download/",
+        ):
+            assert abruf(f"{NOE}{pfad}", raw).status_code == 404, pfad
+        assert namen(abruf(f"{NOE}papers/", raw)) == {"Radweg"}
+        dateien = {datei["name"] for datei in abruf(f"{NOE}files/", raw).json()["data"]}
+        assert {"anlage-geheim.pdf", "wertgutachten.pdf"}.isdisjoint(dateien)
+        assert "oeffentlich.pdf" in dateien
+        assert abruf(f"{NOE}consultations/", raw).json()["data"] == []
+        # Wer nicht befangen ist, sieht beide Vorlagen
+        andere, _ = konto(tenant, ALLE_NOE)
+        assert namen(abruf(f"{NOE}papers/", token_fuer(andere))) == {"Radweg", "VORLAGE-GEHEIM", "VORLAGE-AM-TOP"}
+
+    def test_oeffentliche_vorlage_am_gesperrten_top_bleibt_ohne_nichtoeffentliches(self, welt: dict[str, Any]) -> None:
+        tenant = welt["tenant"]
+        user, _ = konto(tenant, ALLE_NOE, email="rat@example.org")
+        person = SessionPerson.objects.create(
+            tenant=tenant, given_name="Rita", family_name="Rat", email="rat@example.org"
+        )
+        SessionVote.objects.create(agenda_item=welt["befangen"], person=person, vote="excluded")
+        SessionConsultation.objects.create(
+            paper=welt["vorlage"], organization=welt["finanzen"], meeting=welt["sitzung"], agenda_item=welt["befangen"]
+        )
+        intern = _anlage(tenant, "intern.pdf", paper=welt["vorlage"], is_public=False)
+        raw = token_fuer(user)
+        vorlage = abruf(f"{NOE}paper/{welt['vorlage'].pk}/", raw).json()
+        assert "kommparl:nonPublic" not in vorlage
+        assert "intern.pdf" not in json.dumps(vorlage)
+        assert abruf(f"{NOE}file/{intern.pk}/download/", raw).status_code == 404
+        (beratung,) = vorlage["consultation"]
+        assert {"agendaItem", "organization", "role"}.isdisjoint(beratung)
 
 
 # =============================================================================
@@ -626,6 +707,69 @@ class TestPruefprotokoll:
         assert all(eintrag.changes["anwendung"] == app.client_id for eintrag in eintraege)
         assert kennung("paper", welt["noe_vorlage"].pk) in eintraege[0].changes["kennungen"]
         assert eintraege[2].changes["kennungen"] == [kennung("file", welt["anlage_vorlage"].pk)]
+
+    def test_dienst_mit_cookie_einer_person_bleibt_dienst(self, welt: dict[str, Any]) -> None:
+        key = schluessel()
+        raw = dienst_token(dienst(welt["tenant"], key), key)
+        person, _ = konto(welt["tenant"], ALLE_NOE)
+        browser = Client()
+        browser.force_login(person)
+        antwort = browser.get(f"{NOE}meeting/{welt['noe_sitzung'].pk}/", headers={"Authorization": f"Bearer {raw}"})
+        assert antwort.status_code == 200
+        (eintrag,) = protokoll(welt["tenant"])
+        assert eintrag.user_id is None
+        assert eintrag.on_behalf_of_id is None
+        assert eintrag.changes["handelnd"] == "Dienst"
+
+    def test_beratung_mit_nichtoeffentlicher_station(self, welt: dict[str, Any]) -> None:
+        # Veröffentlichte Vorlage, beraten in einer nichtöffentlichen Sitzung: Gremium, Rolle und Sitzung sind
+        # nichtöffentlich; die Beratung ist gekennzeichnet und steht im Protokoll, auch eingebettet in der Vorlage
+        beratung = SessionConsultation.objects.create(
+            paper=welt["vorlage"], organization=welt["finanzen"], meeting=welt["noe_sitzung"], role="decision"
+        )
+        user, _ = konto(welt["tenant"], ALLE_NOE)
+        raw = token_fuer(user)
+        objekt = abruf(f"{NOE}consultation/{beratung.pk}/", raw).json()
+        assert objekt["kommparl:nonPublic"] is True
+        assert objekt["meeting"] == kennung("meeting", welt["noe_sitzung"].pk)
+        assert objekt["kommparl:publicId"] == f"{SITE}{OEFFENTLICH}consultation/{beratung.pk}/"
+        assert pruefe(objekt, "Consultation") == []
+        abruf(f"{NOE}consultations/", raw)
+        vorlage = abruf(f"{NOE}paper/{welt['vorlage'].pk}/", raw).json()
+        assert "kommparl:nonPublic" not in vorlage
+        assert vorlage["consultation"][0]["kommparl:nonPublic"] is True
+        eintraege = protokoll(welt["tenant"])
+        assert [eintrag.changes["abruf"] for eintrag in eintraege] == ["consultation", "Liste consultations", "paper"]
+        assert all(kennung("consultation", beratung.pk) in eintrag.changes["kennungen"] for eintrag in eintraege)
+        # Öffentlich bleibt nur, dass die Vorlage dort beraten wird
+        oeffentlich = Client().get(f"{OEFFENTLICH}consultation/{beratung.pk}/").json()
+        assert {"organization", "meeting", "role"}.isdisjoint(oeffentlich)
+
+    def test_ohne_sicht_auf_die_station_wie_oeffentlich(self, welt: dict[str, Any]) -> None:
+        beratung = SessionConsultation.objects.create(
+            paper=welt["vorlage"], organization=welt["finanzen"], meeting=welt["noe_sitzung"], role="decision"
+        )
+        user, _ = konto(welt["tenant"], NUR_SEHEN)
+        objekt = abruf(f"{NOE}consultation/{beratung.pk}/", token_fuer(user)).json()
+        assert "kommparl:nonPublic" not in objekt
+        assert {"organization", "meeting", "role"}.isdisjoint(objekt)
+        assert protokoll(welt["tenant"]) == []
+
+    def test_oeffentlicher_top_verweist_auf_nichtoeffentliche_beratung(self, welt: dict[str, Any]) -> None:
+        beratung = SessionConsultation.objects.create(
+            paper=welt["noe_vorlage"],
+            organization=welt["finanzen"],
+            meeting=welt["sitzung"],
+            agenda_item=welt["oeffentlich"],
+        )
+        # Nur Vorlagen-Recht: Der öffentliche TOP selbst enthält nichts Nichtöffentliches außer dem Verweis
+        user, _ = konto(welt["tenant"], {**ALLE_NOE, "can_view_non_public_meetings": False})
+        top = abruf(f"{NOE}agendaitem/{welt['oeffentlich'].pk}/", token_fuer(user)).json()
+        assert "kommparl:nonPublic" not in top
+        assert "kommparl:nonPublicResolutionText" not in top
+        assert top["consultation"] == kennung("consultation", beratung.pk)
+        (eintrag,) = protokoll(welt["tenant"])
+        assert eintrag.changes["kennungen"] == [kennung("consultation", beratung.pk)]
 
     def test_nur_oeffentliches_ohne_eintrag(self, welt: dict[str, Any]) -> None:
         user, _ = konto(welt["tenant"], ALLE_NOE)

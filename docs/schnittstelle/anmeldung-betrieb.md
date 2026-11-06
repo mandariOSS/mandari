@@ -50,7 +50,7 @@ chmod 400 oidc.pem
 | `OIDC_REFRESH_TOKEN_DAYS` | Tage, die ein ungenutztes Refresh-Token nach Ablauf seines Access-Tokens gilt | `30` |
 | `OIDC_TOKEN_RATE_LIMIT` | Anfragen je Minute und Adresse an Token-Endpunkt, Widerruf und Introspektion (IPv6 je /64), `0` = aus | `30` |
 | `SITE_URL` | Aussteller (`iss`): `https://<host>` ohne Pfad. Bei Docker Compose aus `DOMAIN` gesetzt | – |
-| `OPARL_NONPUBLIC_ENABLED` | Nichtöffentliche Ausgabe je Session-Mandant (Profil Nichtöffentliches, #565); wirkt nur mit eingeschaltetem Anbieter. Vorher externer Penetrationstest | `false` |
+| `OPARL_NONPUBLIC_ENABLED` | Nichtöffentliche Ausgabe je Session-Mandant (Profil Nichtöffentliches, #565); wirkt nur mit eingeschaltetem Anbieter. Vorher externer Penetrationstest und Zuordnung der Konten zu Personen (siehe unten) | `false` |
 
 **Ein Schlüssel für alle Dienste mit den Einstellungen der Anwendung.** Bei Docker Compose lesen die Anwendung und die
 drei Worker (`worker`, `worker-heavy`, `worker-live`) dieselbe `.env`. Ist der Anbieter eingeschaltet, startet keiner
@@ -188,7 +188,16 @@ Es gibt kein Client-Secret. `--jwks` geht auch ohne `--mandant` für jeden vertr
 während eines Wechsels enthält das Set beide Schlüssel mit eigener `kid`.
 
 **Eine App für nichtöffentliche Unterlagen** im Namen von Personen: wie oben, mit `--scope ratsdaten:nichtoeffentlich`.
-Den Scope erhält nur, wer ihn ausdrücklich bekommt; Personen brauchen einen zweiten Faktor.
+Den Scope erhält nur, wer ihn ausdrücklich bekommt; Personen melden sich mit zweitem Faktor an und brauchen im Mandanten
+das Recht „API-Zugang“. Nimmt ein Mandant einer Rolle dieses Recht, lesen ihre Mitglieder auch über freigegebene
+Anwendungen nichts mehr.
+
+**Vor dem Einschalten der nichtöffentlichen Ausgabe:** Das Mitwirkungsverbot (in der Abstimmung als „befangen“
+vermerkt) sperrt nur, wenn das Konto einer Person des Mandanten zugeordnet ist: dieselbe E-Mail-Adresse an Konto und
+Person oder die verknüpfte Person am Session-Konto. Eine feste Verknüpfung von Konten und Personen folgt mit #761. Bis
+dahin schaltet der Betrieb `OPARL_NONPUBLIC_ENABLED` erst ein, wenn jedes Konto mit Recht auf nichtöffentliche Inhalte,
+das als Mitglied abstimmt, so einer Person zugeordnet ist (etwa die Ratsadresse an Konto und Person). Ohne Zuordnung
+bleibt die Sperre wirkungslos, und die befangene Person liest den Tagesordnungspunkt samt Unterlagen.
 
 `--skip-authorization` lässt die Zustimmungsseite weg. Das ist nur für eigene Anwendungen von mandari gedacht; fremde
 Anwendungen fragen die Person jedes Mal.
@@ -238,7 +247,8 @@ schaltet sie wieder ein; alte Tokens leben dabei nicht auf, Personen stimmen ern
 
 - **Nichtöffentliche Ausgabe:** Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Session-Mandanten
   (Person oder Dienst, Client-ID, Kennungen der Objekte). Die Ausgabe von Tokens nennt im Sicherheitsprotokoll auch
-  `anmeldung: private_key_jwt` und die Bindung eines Dienstes.
+  `anmeldung: private_key_jwt` und die Bindung eines Dienstes. Dienste setzen in ihren Assertions `aud` auf den
+  Aussteller (`SITE_URL`), nicht auf den Token-Endpunkt.
 - **Prüfprotokoll:** Das Sicherheitsprotokoll (`SecurityAuditLog`) hält jede Ausgabe eines Tokens (`oidc_token`),
   jeden Widerruf (`oidc_widerruf`, durch Anwendung, Person, Passwortwechsel oder Plattform-Administration, beim
   Sperren mit Anzahl) und jede Änderung an Anwendungen fest (`oidc_anwendung`: im Admin mit Konto, mit dem Befehl

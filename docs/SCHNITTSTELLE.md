@@ -132,8 +132,9 @@ Session-Mandant. Anleitung für Anwendungen: [Anmeldung](schnittstelle/anmeldung
 - **Eine Regel für Sichtbarkeit:** `apps/session/visibility.py` (`Sicht`, `sicht_fuer_person`, `sicht_fuer_dienst`)
   baut auf denselben Bausteinen auf wie die Oberfläche und ergänzt Rechte mit Geltungsbereich, befristete Zuweisungen
   und das Mitwirkungsverbot. Die Oberfläche stellt mit #773 auf dieselbe Prüfung um.
-- **Anmeldung in der Plattform:** Scopes `ratsdaten:nichtoeffentlich` (Person, zweiter Faktor, höchstens sieben Tage)
-  und `sitzung:lesen` (gebundener Dienst), `private_key_jwt` und die Bindung einer Anwendung an einen Bereich
+- **Anmeldung in der Plattform:** Scopes `ratsdaten:nichtoeffentlich` (Person, Anmeldung mit zweitem Faktor,
+  höchstens sieben Tage danach; Session verlangt dazu „API-Zugang“ im Mandanten) und `sitzung:lesen` (gebundener
+  Dienst), `private_key_jwt` mit dem Aussteller als `aud` und die Bindung einer Anwendung an einen Bereich
   (`apps/accounts/oidc/bindings.py`, fachfreie Kennung `session-mandant:<Kennung>`, ausgewertet von Session).
 - **Endpunkte:** `apps/session/api/nichtoeffentlich.py`, Metadaten nach RFC 9728 unter
   `/.well-known/oauth-protected-resource/session/<mandant>/api/oparl/nichtoeffentlich/`, in der Beschreibung als Bereich

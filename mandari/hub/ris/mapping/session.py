@@ -290,6 +290,10 @@ class SessionMapping:
         self.nonpublic_system = nonpublic_system
         #: Nichtöffentliche Ausgabe (#565): was über das Öffentliche hinaus abgebildet wird; ``None``: nur Öffentliches
         self.sicht = sicht
+        #: Nur in der Sicht: Kennungen nichtöffentlicher Objekte, auf die ein nicht gekennzeichnetes, öffentliches Objekt
+        #: dieser Abbildung verweist (etwa ein öffentlicher TOP auf die Beratung einer nichtöffentlichen Vorlage). Das
+        #: Prüfprotokoll nennt sie zusätzlich zu den gekennzeichneten Objekten.
+        self.nonpublic_refs: list[str] = []
 
     # -- Sichtbarkeit: öffentlich oder in der nichtöffentlichen Sicht ----------------------------------------------
 
@@ -321,6 +325,12 @@ class SessionMapping:
         if kind == "body":
             return public.body()
         return public.obj(kind, pk)
+
+    def _nonpublic_ref(self, url: str) -> str:
+        """Verweis auf ein nichtöffentliches Objekt für das Prüfprotokoll vormerken (:attr:`nonpublic_refs`)."""
+        if self.sicht is not None:
+            self.nonpublic_refs.append(url)
+        return url
 
     def _marks(self, public_url: str | None, *, non_public: bool) -> Objekt:
         """
@@ -630,6 +640,9 @@ class SessionMapping:
         _require_public("agendaitem", item, self._item_visible(item))
         public = self._item_public(item)
         consultation = self._visible_consultation(item)
+        consultation_url = self.uris.obj("consultation", consultation.id) if consultation else None
+        if consultation_url and not self.source.is_published(consultation.paper):
+            self._nonpublic_ref(consultation_url)
         files = [f for f in item.files.all() if self._file_flag_visible(f)]
         return clean(
             {
@@ -641,7 +654,7 @@ class SessionMapping:
                 "name": item.name,
                 # Öffentlich abgebildet werden nur öffentliche TOPs; in der Sicht auch nichtöffentliche (false)
                 "public": public,
-                "consultation": self.uris.obj("consultation", consultation.id) if consultation else None,
+                "consultation": consultation_url,
                 "result": item.get_vote_result_display() if item.vote_result != "pending" else None,
                 # Nur der öffentliche Beschlusstext – das verschlüsselte Feld nie
                 "resolutionText": item.resolution_text or None,
@@ -806,6 +819,12 @@ class SessionMapping:
         # Eine Station in einer nichtöffentlichen Sitzung bzw. auf einem nichtöffentlichen TOP nennt auch
         # Gremium und Rolle nicht – öffentlich bleibt nur, dass die Vorlage dort beraten wird
         non_public = (meeting is not None and not meeting_visible) or (item is not None and not item_visible)
+        # In der Sicht (#565): Nennt die Beratung eine nichtöffentliche Sitzung oder einen nichtöffentlichen TOP, die die
+        # Sicht zeigt, oder Gremium und Rolle einer solchen Station, ist sie nichtöffentlich (kommparl:nonPublic), auch
+        # wenn die Vorlage veröffentlicht ist. Ohne solche Angaben bleibt sie wie in der öffentlichen Ausgabe.
+        station_non_public = (meeting_visible and not meeting.is_public) or (
+            item_visible and not self._item_public(item)
+        )
         return clean(
             {
                 "id": self.uris.obj("consultation", consultation.id),
@@ -819,7 +838,7 @@ class SessionMapping:
                 **_timestamps(consultation),
                 **self._marks(
                     self._public_url("consultation", consultation.id) if published else None,
-                    non_public=not published,
+                    non_public=not published or station_non_public,
                 ),
             }
         )
@@ -838,6 +857,14 @@ class SessionMapping:
         # Sicht genügt ein Bezugsobjekt, das die Sicht zeigt
         _require_public("file", file_obj, bool(self._file_flag_visible(file_obj) and refs))
         public = self.sicht is not None and self._file_public(file_obj)
+        if public:
+            # Öffentliche Datei, die (auch) an einem nichtöffentlichen Bezugsobjekt hängt: Verweis fürs Prüfprotokoll
+            if "paper" in refs and not self.source.is_published(file_obj.paper):
+                self._nonpublic_ref(refs["paper"][0])
+            if "meeting" in refs and not file_obj.meeting.is_public:
+                self._nonpublic_ref(refs["meeting"][0])
+            if "agendaItem" in refs and not self._item_public(file_obj.agenda_item):
+                self._nonpublic_ref(refs["agendaItem"][0])
         return clean(
             {
                 "id": self.uris.obj("file", file_obj.id),
