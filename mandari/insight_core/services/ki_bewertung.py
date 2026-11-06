@@ -184,8 +184,8 @@ def fuer_erp(*, seit: date | None = None, nach: int = 0, anzahl: int = ERP_SEITE
                 "modell": zeile.modell,
                 "hinweis": zeile.hinweis,
                 "fassung": zeile.fassung,
-                "vorgang": str(zeile.paper_id),
-                "vorgang_nummer": zeile.paper.reference or "",
+                "vorgang": str(zeile.paper_id) if zeile.paper_id else None,
+                "vorgang_nummer": (zeile.paper.reference or "") if zeile.paper else "",
                 "kommune": str(zeile.body_id) if zeile.body_id else None,
                 "kommune_name": zeile.body.name if zeile.body else "",
             }

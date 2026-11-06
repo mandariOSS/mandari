@@ -2817,11 +2817,13 @@ class ZusammenfassungBewertung(models.Model):
     ``/api/insight/ki-bewertungen/`` ab.
     """
 
+    # SET_NULL: Verweise auf den RIS-Bestand nie mit CASCADE (hub/ris/tests/test_loeschsemantik.py); die Bewertung
+    # bleibt als Messwert mit Modell und Tag erhalten
     paper = models.ForeignKey(
-        OParlPaper, on_delete=models.CASCADE, related_name="ki_bewertungen", verbose_name="Vorgang"
+        OParlPaper, on_delete=models.SET_NULL, related_name="ki_bewertungen", null=True, verbose_name="Vorgang"
     )
     body = models.ForeignKey(
-        OParlBody, on_delete=models.CASCADE, related_name="ki_bewertungen", null=True, verbose_name="Kommune"
+        OParlBody, on_delete=models.SET_NULL, related_name="ki_bewertungen", null=True, verbose_name="Kommune"
     )
     hilfreich = models.BooleanField(verbose_name="Hilfreich")
     fassung = models.CharField(max_length=16, db_index=True, verbose_name="Fassung (Prüfsumme)")
