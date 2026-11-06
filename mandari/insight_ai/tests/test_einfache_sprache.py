@@ -133,3 +133,13 @@ def test_absaetze_aus_einfachen_zeilenumbruechen() -> None:
     assert ki_absaetze("Eins.\nZwei.") == ["Eins.", "Zwei."]
     assert ki_absaetze("Eins\nweiter.\n\nZwei.") == ["Eins weiter.", "Zwei."]
     assert ki_absaetze(None) == []
+
+
+def test_langer_block_wird_geteilt() -> None:
+    from insight_core.templatetags.ki_bewertung import ki_absaetze
+
+    saetze = [f"Satz {i} hat ein paar Wörter mehr, damit der Block lang genug wird für die Teilung." for i in range(9)]
+    absaetze = ki_absaetze(" ".join(saetze))
+    assert len(absaetze) == 3 and absaetze[0].startswith("Satz 0") and absaetze[1].startswith("Satz 3")
+    # Abkürzungen trennen keinen Satz, kurze Blöcke bleiben ganz
+    assert ki_absaetze("Der Bebauungsplan Nr. 144 gilt. Er ist neu.") == ["Der Bebauungsplan Nr. 144 gilt. Er ist neu."]
