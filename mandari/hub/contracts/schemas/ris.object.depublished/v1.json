@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:mandari:event:ris.object.depublished:v1",
   "title": "Objekt zurückgenommen",
-  "description": "Ein Objekt des RIS-Bestands ist nicht mehr öffentlich: in der Quelle gelöscht, zurückgenommen, nichtöffentlich geworden oder aus Datenschutzgründen entfernt. Aggregat: das betroffene Objekt. Die Hülle trägt operation delete, beim Grund datenschutz redact (docs/adr/20260929-aenderungsfeed-format.md).",
+  "description": "Ein Objekt des RIS-Bestands ist nicht mehr öffentlich: in der Quelle gelöscht, zurückgenommen, nichtöffentlich geworden oder aus Datenschutzgründen entfernt. Aggregat: das betroffene Objekt. Die Hülle trägt operation delete, beim Grund datenschutz redact (docs/adr/20260929-aenderungsfeed-format.md). War das Objekt in ein anderes eingebettet, kann die Nutzlast dieses nennen (meeting, paper, agenda_item, person).",
   "x-kind": "event",
   "x-owner": "hub.ris",
   "x-visibility": "oeffentlich",
@@ -46,6 +46,26 @@
         "nichtoeffentlich",
         "datenschutz"
       ]
+    },
+    "meeting": {
+      "description": "Sitzung, in die das Objekt eingebettet war (Tagesordnungspunkt, Datei), wenn sie öffentlich war; optional. Der Änderungsfeed nennt damit auch sie, wenn das Objekt nicht mehr besteht.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "paper": {
+      "description": "Vorlage, in die das Objekt eingebettet war (Beratung, Datei), wenn sie öffentlich war; optional.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "agenda_item": {
+      "description": "Tagesordnungspunkt, in den das Objekt eingebettet war (Datei), wenn er öffentlich war; optional.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "person": {
+      "description": "Person, in die das Objekt eingebettet war (Mitgliedschaft); optional.",
+      "type": "string",
+      "format": "uuid"
     }
   },
   "examples": [
@@ -58,6 +78,12 @@
       "object_type": "File",
       "object": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
       "reason": "datenschutz"
+    },
+    {
+      "object_type": "AgendaItem",
+      "object": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+      "reason": "quelle_geloescht",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
     }
   ]
 }

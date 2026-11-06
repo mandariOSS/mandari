@@ -233,3 +233,12 @@ Die Entscheidung bleibt. Etappe 3 legt Folgendes fest ([SCHNITTSTELLE.md](../SCH
   sich ein eingebettetes ändert (Profil Änderungsfeed, „Vollständigkeit und Reihenfolge“), und die Installation den
   Feed anbietet. Damit ändert sich die Aussage des vorigen Nachtrags: Dass die Körperschaften `kommparl:changes` und
   `kommparl:snapshot` nennen, genügt allein nicht.
+
+## Nachtrag zur Umsetzung (#1229)
+
+- Der Feed nach dem Profil nennt jetzt auch die einbettenden Objekte (Nachtrag #1229 in
+  [A10](20260929-aenderungsfeed-format.md)). `kommparl:conformsTo` nennt die Profile trotzdem noch nicht: Die
+  Prüfung aller Muss-Anforderungen hat weitere offene gefunden (Ereignisse für Gremien, Personen, Mitgliedschaften und
+  Wahlperioden aus Session, `modified` ohne öffentliches Ereignis, Übernahme gespiegelter Mandanten, nichtöffentlich
+  gewordene Tagesordnungspunkte des Bestands). Die Regel bleibt: Die Profile kommen erst hinzu, wenn alle erfüllt
+  sind, und nur, wenn die Installation den Feed anbietet.

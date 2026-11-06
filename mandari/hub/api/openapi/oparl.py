@@ -391,7 +391,9 @@ def _feed_paths(
             "Änderungsfeed (kommParl)",
             _ok(
                 f"Seite des Änderungsfeeds nach dem Profil {kommparl.PROFILE_CHANGES} (kommparl:changes am Body, "
-                "je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen",
+                "je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen. Ändert sich "
+                "ein eingebettetes Objekt, folgt ein Eintrag für das einbettende (etwa die Sitzung eines "
+                "Tagesordnungspunkts); in einer Seite steht jeder Eintrag zu einem Objekt höchstens einmal",
                 ref(KOMMPARL_CHANGES),
             ),
             parameters=[*parameters, *_FEED_PARAMETERS],

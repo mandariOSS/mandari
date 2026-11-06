@@ -314,7 +314,7 @@ class TestKoerperschaftUndSystem:
             assert pruefe({**body, "modified": falsch}, "Body"), falsch
 
     def test_heute_kein_profil_genannt(self) -> None:
-        """Der Feed nennt einbettende Objekte nicht (Profil Änderungsfeed, „Vollständigkeit“); siehe PROFILES_FULFILLED."""
+        """Muss-Anforderungen des Profils Änderungsfeed sind noch offen („Vollständigkeit“); siehe PROFILES_FULFILLED."""
         assert kommparl.conforms_to(feed_offered=True) == [kommparl.VERSION]
 
 

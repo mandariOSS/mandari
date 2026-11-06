@@ -53,10 +53,19 @@ OPARL_ERROR: Final = "https://schema.oparl.org/1.1/Error"
 
 #: Profile, deren Anforderungen beide OParl-Ausgaben vollständig erfüllen, wenn die Installation Änderungsfeed und
 #: Snapshot anbietet (``OPARL_CHANGES_ENABLED``). Nur sie nennt ``kommparl:conformsTo`` (Kapitel 5: nur vollständig
-#: erfüllte Kennungen). Heute keines: Ändert sich ein eingebettetes Objekt (ein Tagesordnungspunkt in einer Sitzung,
-#: eine Datei an einer Vorlage), verlangt das Profil Änderungsfeed auch einen Eintrag für das einbettende Objekt
-#: (Abschnitt „Vollständigkeit und Reihenfolge“). Der Feed nennt nur das Objekt, zu dem es ein Ereignis gibt. Das
-#: Profil Snapshot setzt das Profil Änderungsfeed voraus.
+#: erfüllte Kennungen). Heute keines. Die einbettenden Objekte nennt der Feed seit #1229 (``hub.api.changes``), aber
+#: Muss-Anforderungen des Profils Änderungsfeed sind noch offen (Abschnitt „Vollständigkeit und Reihenfolge“):
+#:
+#: - Session meldet Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht als Ereignis; ihre
+#:   Änderungen fehlen im Feed der Session-Schnittstelle.
+#: - ``modified`` eines Objekts kann sich ändern, ohne dass ein öffentliches Ereignis entsteht: Der Abgleich übernimmt
+#:   den Zeitstempel der Quelle auch ohne inhaltliche Änderung, Session stempelt interne Änderungen, die Texterkennung
+#:   ergänzt ``File.text`` mit einem internen Ereignis.
+#: - Der Aggregator nennt Änderungen gespiegelter Session-Mandanten, bevor der Abgleich sie übernommen hat.
+#: - Ein nichtöffentlich gewordener Tagesordnungspunkt des Bestands erscheint als ``delete``, bleibt unter seiner
+#:   Adresse aber ohne ``deleted: true`` abrufbar.
+#:
+#: Das Profil Snapshot setzt das Profil Änderungsfeed voraus.
 PROFILES_FULFILLED: Final[tuple[str, ...]] = ()
 
 #: Eigenschaften mit Herstellerpräfix, z. B. ``mandari:slug``. ``kommparl:`` ist kein Herstellerpräfix: Solche

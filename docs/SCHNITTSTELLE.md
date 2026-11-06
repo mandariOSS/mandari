@@ -25,11 +25,13 @@ verweist mit `system` auf das System des Aggregators (`/oparl/v1/system`).
 `kommparl:conformsTo` nennt nur Kennungen, deren Anforderungen die Installation vollständig erfüllt (kommParl,
 Kapitel 5): heute `https://schema.kommparl.de/0.1/`. Dieselbe Liste steht seit #1216 am `System` beider OParl-Ausgaben
 (`hub.api.kommparl.conforms_to`). Die Profile Änderungsfeed und Snapshot kämen hinzu, sobald die Installation den
-Feed anbietet (`OPARL_CHANGES_ENABLED`) und sie vollständig erfüllt sind (`PROFILES_FULFILLED`). Das ist noch nicht
-der Fall: Ändert sich ein eingebettetes Objekt (ein Tagesordnungspunkt in einer Sitzung), verlangt das Profil
-Änderungsfeed auch einen Eintrag für das einbettende Objekt; der Feed nennt nur das geänderte Objekt (Profil
-Änderungsfeed, Abschnitt „Vollständigkeit und Reihenfolge“). Das Profil Snapshot setzt das Profil Änderungsfeed
-voraus.
+Feed anbietet (`OPARL_CHANGES_ENABLED`) und sie vollständig erfüllt sind (`PROFILES_FULFILLED`). Seit #1229 nennt der
+Feed auch das einbettende Objekt, wenn sich ein eingebettetes ändert (Profil Änderungsfeed, Abschnitt
+„Vollständigkeit und Reihenfolge“; ADR A10, Nachtrag #1229). Erfüllt ist das Profil damit noch nicht: Session meldet
+Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht als Ereignis, `modified` kann sich ohne
+öffentliches Ereignis ändern, der Aggregator nennt Änderungen gespiegelter Session-Mandanten vor ihrer Übernahme,
+und ein nichtöffentlich gewordener Tagesordnungspunkt des Bestands bleibt ohne `deleted: true` abrufbar. Das Profil
+Snapshot setzt das Profil Änderungsfeed voraus.
 
 Die Fassung verlangt unter anderem jeden Zeitpunkt als `yyyy-mm-ddThh:mm:ss±hh:mm` (Kapitel „JSON-Ausgabe“). Beide
 Ausgaben geben Zeitpunkte deshalb auf die Sekunde aus (`hub.ris.canonical.iso`), und die Konformitätsprüfung der Tests

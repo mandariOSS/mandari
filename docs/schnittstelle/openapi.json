@@ -992,7 +992,7 @@
         "summary": "Änderungsfeed (kommParl)",
         "responses": {
           "200": {
-            "description": "Seite des Änderungsfeeds nach dem Profil https://schema.kommparl.de/0.1/profile/changes (kommparl:changes am Body, je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen",
+            "description": "Seite des Änderungsfeeds nach dem Profil https://schema.kommparl.de/0.1/profile/changes (kommparl:changes am Body, je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen. Ändert sich ein eingebettetes Objekt, folgt ein Eintrag für das einbettende (etwa die Sitzung eines Tagesordnungspunkts); in einer Seite steht jeder Eintrag zu einem Objekt höchstens einmal",
             "headers": {
               "ETag": {
                 "description": "Kennung des Inhalts für bedingte Abrufe",
@@ -3791,7 +3791,7 @@
         "summary": "Änderungsfeed (kommParl)",
         "responses": {
           "200": {
-            "description": "Seite des Änderungsfeeds nach dem Profil https://schema.kommparl.de/0.1/profile/changes (kommparl:changes am Body, je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen",
+            "description": "Seite des Änderungsfeeds nach dem Profil https://schema.kommparl.de/0.1/profile/changes (kommparl:changes am Body, je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen. Ändert sich ein eingebettetes Objekt, folgt ein Eintrag für das einbettende (etwa die Sitzung eines Tagesordnungspunkts); in einer Seite steht jeder Eintrag zu einem Objekt höchstens einmal",
             "headers": {
               "ETag": {
                 "description": "Kennung des Inhalts für bedingte Abrufe",

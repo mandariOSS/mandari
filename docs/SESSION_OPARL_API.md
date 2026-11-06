@@ -357,6 +357,12 @@ beim Aggregator – beide Ausgaben nutzen dieselbe Serialisierung (`mandari/hub/
 Formen in `OPARL_API.md`, Abschnitt „Zwei Formen“). Das System nennt in `kommparl:conformsTo` die Fassung von
 kommParl, nach der sich die Ausgabe richtet.
 
+Nach kommParl nennt der Feed auch die einbettenden Objekte (#1229, `OPARL_API.md`, „Einbettende Objekte“). Anders
+als im Aggregator gibt der Tagesordnungspunkt hier seine Anlagen aus: Ändert sich eine Anlage eines
+Tagesordnungspunkts, folgen Einträge für den Punkt und seine Sitzung. Rücknahmen nennen das Objekt, in das das
+zurückgenommene eingebettet war (`docs/SESSION_EREIGNISSE.md`). Gremien, Personen, Mitgliedschaften und
+Wahlperioden meldet Session noch nicht als Ereignis; ihre Änderungen fehlen im Feed.
+
 - **Kommune im Journal:** die kanonische Kennung des Body, `uuid5` über `…/api/oparl/body/`.
   Ereignisse nennen Objekte ebenfalls mit ihrer kanonischen Kennung (`uuid5` über die Adresse des
   Objekts, ADR `docs/adr/20260929-kanonisches-modell.md`).

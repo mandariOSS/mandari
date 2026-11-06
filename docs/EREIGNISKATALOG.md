@@ -787,7 +787,7 @@ Beispiel 2:
 
 ### ris.object.depublished v1
 
-**Objekt zurückgenommen.** Ein Objekt des RIS-Bestands ist nicht mehr öffentlich: in der Quelle gelöscht, zurückgenommen, nichtöffentlich geworden oder aus Datenschutzgründen entfernt. Aggregat: das betroffene Objekt. Die Hülle trägt operation delete, beim Grund datenschutz redact (docs/adr/20260929-aenderungsfeed-format.md).
+**Objekt zurückgenommen.** Ein Objekt des RIS-Bestands ist nicht mehr öffentlich: in der Quelle gelöscht, zurückgenommen, nichtöffentlich geworden oder aus Datenschutzgründen entfernt. Aggregat: das betroffene Objekt. Die Hülle trägt operation delete, beim Grund datenschutz redact (docs/adr/20260929-aenderungsfeed-format.md). War das Objekt in ein anderes eingebettet, kann die Nutzlast dieses nennen (meeting, paper, agenda_item, person).
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
@@ -799,6 +799,10 @@ Beispiel 2:
 | `object_type` | ja | Code: `Body`, `Organization`, `Person`, `Membership`, `LegislativeTerm`, `Meeting`, `AgendaItem`, `Paper`, `Consultation`, `File`, `Location`, `Voting` | Kanonischer Typ des Objekts. |
 | `object` | ja | Zeichenkette (uuid) | Kanonische Kennung des Objekts. |
 | `reason` | ja | Code: `quelle_geloescht`, `zurueckgenommen`, `nichtoeffentlich`, `datenschutz` | Grund: quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz. |
+| `meeting` | nein | Zeichenkette (uuid) | Sitzung, in die das Objekt eingebettet war (Tagesordnungspunkt, Datei), wenn sie öffentlich war; optional. Der Änderungsfeed nennt damit auch sie, wenn das Objekt nicht mehr besteht. |
+| `paper` | nein | Zeichenkette (uuid) | Vorlage, in die das Objekt eingebettet war (Beratung, Datei), wenn sie öffentlich war; optional. |
+| `agenda_item` | nein | Zeichenkette (uuid) | Tagesordnungspunkt, in den das Objekt eingebettet war (Datei), wenn er öffentlich war; optional. |
+| `person` | nein | Zeichenkette (uuid) | Person, in die das Objekt eingebettet war (Mitgliedschaft); optional. |
 
 Beispiel 1:
 
@@ -817,6 +821,17 @@ Beispiel 2:
   "object_type": "File",
   "object": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
   "reason": "datenschutz"
+}
+```
+
+Beispiel 3:
+
+```json
+{
+  "object_type": "AgendaItem",
+  "object": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+  "reason": "quelle_geloescht",
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
 }
 ```
 

@@ -50,9 +50,11 @@ from django.http import Http404
 
 from apps.session import oparl_publication as pub
 from apps.session.models import (
+    SessionAgendaItem,
     SessionConsultation,
     SessionFile,
     SessionOParlTombstone,
+    SessionOrganizationMembership,
     SessionTenant,
 )
 from apps.session.services import file_service, meeting_format_service
@@ -61,6 +63,7 @@ from hub.api import changes, kommparl, snapshot
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import Gone, MergedEntries, TimeFilters, list_response, single_page
 from hub.ris.canonical import with_limited_text
+from hub.ris.mapping.session import EMBEDDINGS as SESSION_EMBEDDINGS
 from hub.ris.mapping.session import SessionMapping, SessionSource
 
 
@@ -398,9 +401,9 @@ def _location_response(mapping, pk):
 _ADDRESS_CHUNK = 2000
 
 
-def _addresses(mapping):
+class _FeedIndex:
     """
-    Adressen der Objekte eines Mandanten für den Änderungsfeed (``hub.api.changes.Feed.addresses``).
+    Adressen und Einbettungen der Objekte eines Mandanten für den Änderungsfeed (``hub.api.changes.Feed``).
 
     Ereignisse nennen die kanonische Kennung eines Objekts: ``uuid5`` über seine Adresse in dieser
     Schnittstelle auf der festgeschriebenen Basis der Installation (``SessionUris.canonical_id``, ADR
@@ -415,48 +418,130 @@ def _addresses(mapping):
     Eine Anfrage fragt mehrmals (je gelesenem Abschnitt des Journals). Die Suche setzt deshalb dort fort,
     wo sie zuletzt aufgehört hat, und merkt sich die gesehenen Kennungen: Jeder Typ wird je Anfrage
     höchstens einmal durchlaufen, auch wenn Kennungen unauffindbar sind.
-    """
-    tenant = mapping.tenant
-    #: je Typ: gesehene kanonische Kennungen -> Kennung des Session-Objekts, und die offene Suche
-    seen = {}
-    searches = {}
 
-    def candidates(kind):
-        """Kennungen öffentlicher und ehemals öffentlicher Objekte eines Typs, jüngste zuerst."""
+    Für die einbettenden Objekte (Issue #1229):
+
+    - ``current``: nur Objekte, die die Schnittstelle derzeit ausliefert (``visible_*``, ohne Einträge für
+      Gelöschtes),
+    - ``related``: der Sitzungsort einer öffentlichen Sitzung (trägt ihre Kennung und ändert sich mit ihr), die
+      Sitzung eines Orts und das einbettende Objekt eines Tagesordnungspunkts, einer Beratung, Datei oder
+      Mitgliedschaft, solange es die Zeile gibt. Für gelöschte Zeilen nennt es die Rücknahme selbst
+      (``ris.object.depublished``, Felder ``meeting``, ``paper``, ``agenda_item``).
+    """
+
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.tenant = mapping.tenant
+        # je Typ: gesehene kanonische Kennungen -> Kennung des Session-Objekts, davon die öffentlichen, die offene Suche
+        self._known = {}
+        self._public = {}
+        self._searches = {}
+
+    def _candidates(self, kind):
+        """Kennungen öffentlicher und ehemals öffentlicher Objekte eines Typs, jüngste zuerst, mit „öffentlich“."""
         # Der Ort gehört zur Sitzung und trägt deren Kennung
         source = "meeting" if kind == "location" else kind
         spec = OBJECT_SPECS.get(source)
         if spec is None:
             return
-        yield from spec[0](tenant).order_by("-updated_at").values_list("pk", flat=True).iterator(_ADDRESS_CHUNK)
-        tombstones = SessionOParlTombstone.objects.filter(tenant=tenant, oparl_type=source)
-        yield from tombstones.order_by("-deleted_at").values_list("object_id", flat=True).iterator(_ADDRESS_CHUNK)
+        visible = spec[0](self.tenant).order_by("-updated_at").values_list("pk", flat=True)
+        for pk in visible.iterator(_ADDRESS_CHUNK):
+            yield pk, True
+        tombstones = SessionOParlTombstone.objects.filter(tenant=self.tenant, oparl_type=source)
+        for pk in tombstones.order_by("-deleted_at").values_list("object_id", flat=True).iterator(_ADDRESS_CHUNK):
+            yield pk, False
 
-    def addresses(kind, ids):
+    def _find(self, kind, ids):
+        """Kanonische Kennung -> Kennung des Session-Objekts, für die Kennungen, die es gibt (oder gab)."""
         wanted = set(ids)
-        if kind == "body":
-            url = mapping.uris.body()
-            key = mapping.uris.canonical_id(url)
-            return {key: url} if key in wanted else {}
-        known = seen.setdefault(kind, {})
-        found = {key: mapping.uris.obj(kind, known[key]) for key in wanted if key in known}
+        known = self._known.setdefault(kind, {})
+        public = self._public.setdefault(kind, set())
+        found = {key: known[key] for key in wanted if key in known}
         wanted -= found.keys()
         if not wanted:
             return found
-        search = searches.get(kind)
+        search = self._searches.get(kind)
         if search is None:
-            search = searches[kind] = candidates(kind)
-        for pk in search:
-            key = mapping.uris.canonical_id(mapping.uris.obj(kind, pk))
-            known.setdefault(key, pk)
+            search = self._searches[kind] = self._candidates(kind)
+        for pk, visible in search:
+            key = self.mapping.uris.canonical_id(self.mapping.uris.obj(kind, pk))
+            if key not in known:
+                # Öffentliche Objekte kommen zuerst: Steht eine Kennung dort, gilt sie als öffentlich
+                known[key] = pk
+                if visible:
+                    public.add(key)
             if key in wanted:
-                found[key] = mapping.uris.obj(kind, pk)
+                found[key] = known[key]
                 wanted.discard(key)
                 if not wanted:
                     break
         return found
 
-    return addresses
+    def _body(self, ids):
+        url = self.mapping.uris.body()
+        key = self.mapping.uris.canonical_id(url)
+        return {key: url} if key in set(ids) else {}
+
+    def addresses(self, kind, ids):
+        """Adressen der Objekte, die öffentlich sind oder es waren (``Feed.addresses``)."""
+        if kind == "body":
+            return self._body(ids)
+        return {key: self.mapping.uris.obj(kind, pk) for key, pk in self._find(kind, ids).items()}
+
+    def current(self, kind, ids):
+        """Adressen der Objekte, die die Schnittstelle derzeit ausliefert (``Feed.current``)."""
+        if kind == "body":
+            return self._body(ids)
+        found = self._find(kind, ids)
+        public = self._public.get(kind, set())
+        return {key: self.mapping.uris.obj(kind, pk) for key, pk in found.items() if key in public}
+
+    def _ref(self, kind, pk):
+        return self.mapping.uris.canonical_id(self.mapping.uris.obj(kind, pk))
+
+    def related(self, kind, ids):
+        """Mitgeänderte und einbettende Objekte, die die Ereignisse nicht nennen (``Feed.related``)."""
+        found = self._find(kind, ids) if kind in _RELATED_KINDS else {}
+        if not found:
+            return {}
+        by_pk = {pk: key for key, pk in found.items()}
+        result = {}
+        if kind == "meeting":
+            # Der Sitzungsort einer öffentlichen Sitzung trägt ihre Kennung und ändert sich mit ihr. Entfällt er,
+            # meldet Session seine Rücknahme selbst (``ris.object.depublished``)
+            meetings = pub.visible_meetings(self.tenant).filter(pk__in=list(by_pk), is_public=True)
+            for meeting in meetings:
+                if self.mapping.location(meeting) is not None:
+                    link = changes.Link("location", self._ref("location", meeting.pk), shared=True)
+                    result[by_pk[meeting.pk]] = [link]
+        elif kind == "location":
+            for key, pk in found.items():
+                result[key] = [changes.Link("meeting", self._ref("meeting", pk))]
+        else:
+            model, references = _EMBEDDED_IN[kind]
+            fields = [name for name, _ in references]
+            for pk, *parents in model.objects.filter(pk__in=list(by_pk)).values_list("pk", *fields):
+                result[by_pk[pk]] = [
+                    changes.Link(parent_kind, self._ref(parent_kind, parent))
+                    for (_, parent_kind), parent in zip(references, parents, strict=True)
+                    if parent is not None
+                ]
+        return result
+
+
+#: Eingebettete Typen -> (Modell, (Fremdschlüssel, Typ des einbettenden Objekts) …) in Session
+_EMBEDDED_IN = {
+    "agendaitem": (SessionAgendaItem, (("meeting_id", "meeting"),)),
+    "consultation": (SessionConsultation, (("paper_id", "paper"),)),
+    "file": (SessionFile, (("paper_id", "paper"), ("meeting_id", "meeting"), ("agenda_item_id", "agendaitem"))),
+    "membership": (SessionOrganizationMembership, (("person_id", "person"),)),
+}
+_RELATED_KINDS = frozenset({"meeting", "location", *_EMBEDDED_IN})
+
+
+def _addresses(mapping):
+    """Adressen der Objekte eines Mandanten für den Änderungsfeed (``_FeedIndex.addresses``)."""
+    return _FeedIndex(mapping).addresses
 
 
 def _feed(tenant_slug, *, profile=False):
@@ -468,12 +553,17 @@ def _feed(tenant_slug, *, profile=False):
         raise Http404("Diese Adresse gibt es nicht.")
     mapping = _mapping(_get_tenant(tenant_slug))
     uris = mapping.uris
+    index = _FeedIndex(mapping)
     feed = changes.Feed(
         # Kommune im Journal: die kanonische Kennung des Body dieser Schnittstelle
         body_id=uris.canonical_id(uris.body()),
         url=uris.kommparl_changes() if profile else uris.changes(),
         snapshot_url=uris.kommparl_snapshot() if profile else uris.snapshot(),
-        addresses=_addresses(mapping),
+        addresses=index.addresses,
+        # Einbettungen der Abbildung (nur nach dem Profil genutzt, Issue #1229)
+        embeds=SESSION_EMBEDDINGS,
+        related=index.related,
+        current=index.current,
     )
     return mapping, feed
 
