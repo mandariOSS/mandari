@@ -71,9 +71,9 @@ import hashlib
 import logging
 import random
 from collections import Counter, deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -150,6 +150,8 @@ _KEIN_PLATZ: Final = frozenset(n for n in (errno.ENOSPC, getattr(errno, "EDQUOT"
 VERSION_REQUESTED: Final = "0"
 #: Texte ohne Version (vor Issue #919) gelten als diese Version
 LEGACY_VERSION: Final = 1
+#: Nacharbeit für den Tagesbatch: Anlagen von Vorgängen höchstens so viele Tage zurück (``nacharbeiten(kommunen=…)``)
+NACHARBEIT_TAGE: Final = 100
 #: Fehlertexte, mit denen ein Abruf als Erkennungsfehler endete (Ingestor „Download failed: …“, Auftrag „Download
 #: fehlgeschlagen“); ``dokumentkette nacharbeiten`` setzt diese Dateien zurück
 DOWNLOAD_ERROR_PREFIX: Final = "Download"
@@ -947,7 +949,9 @@ class Nacharbeit:
         return summe
 
 
-def nacharbeiten(*, ausfuehren: bool = False, chunk: int = 1000) -> Nacharbeit:
+def nacharbeiten(
+    *, ausfuehren: bool = False, chunk: int = 1000, kommunen: Mapping[Any, date] | None = None
+) -> Nacharbeit:
     """
     Dateien, deren Erkennung an einem Abruffehler gescheitert ist (``failed``, Fehlertext beginnt mit „Download“),
     zurück in die Kette (ADR Abschnitt 11, Etappe 1). Mit abgelegtem Inhalt: Erkennung ``pending``. Ohne: Abruf
@@ -956,10 +960,22 @@ def nacharbeiten(*, ausfuehren: bool = False, chunk: int = 1000) -> Nacharbeit:
     freigegebener Altbestand, Quelle ohne Dateiabruf, Stichtag ausstehend), bleiben ohne Inhalt unverändert, ebenso
     von der Obergrenze verdrängte (``evicted``, #961): Sie zurückzusetzen hieße, sie von selbst neu abzurufen.
     Ohne ``ausfuehren`` nur zählen. Idempotent: Zurückgesetzte Dateien sind nicht mehr ``failed``.
+
+    ``kommunen`` (Kennung der Kommune → Datum) beschränkt auf Anlagen von Vorgängen dieser Kommunen ab dem Datum,
+    höchstens ``NACHARBEIT_TAGE`` zurück: der tägliche Lauf für den Tagesbatch der Zusammenfassungen (Issue #1220).
+    Viele Quellen stellen Dateien erst nach den Vorgangsdaten bereit; der erste Abruf scheitert dann mit 404. Mit dem
+    OCR-Worker des Ingestors (``TEXT_EXTRACTION_RUNNER=ingestor``) lädt dieser die Datei dabei neu bei der Quelle, im
+    Takt der Quelle und höchstens einmal am Tag je Datei.
     """
+    auswahl = OParlFile.objects.filter(abruf.not_excluded_q())
+    if kommunen is not None:
+        frueheste = timezone.localdate() - timedelta(days=NACHARBEIT_TAGE)
+        bereich = Q(pk__in=[])
+        for kommune, ab in kommunen.items():
+            bereich |= Q(paper__body_id=kommune, paper__date__gte=max(ab, frueheste), paper__deleted=False)
+        auswahl = auswahl.filter(bereich)
     auswahl = (
-        OParlFile.objects.filter(abruf.not_excluded_q())
-        .filter(text_extraction_status=FAILED, text_extraction_error__startswith=DOWNLOAD_ERROR_PREFIX)
+        auswahl.filter(text_extraction_status=FAILED, text_extraction_error__startswith=DOWNLOAD_ERROR_PREFIX)
         .select_related("body", "body__source")
         .only(
             "pk",

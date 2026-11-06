@@ -1051,17 +1051,28 @@ class PaperLocationAdmin(ModelAdmin):
         "name",
         "source",
         "status_display",
+        "ki_urteil",
         "paper_reference",
         "body",
         "latitude",
         "longitude",
         "reviewed_at",
     ]
-    list_filter = ["status", "source", "body"]
+    # KI-Prüfung (#1222): „Passt nicht“ blendet Orte aus (Status „Entfernt“ ohne „Geprüft am“); „Bestätigen“ holt
+    # einen zu Unrecht ausgeblendeten Ort zurück
+    list_filter = ["status", "ki_urteil", "source", "body"]
     list_select_related = ["paper", "body"]
     search_fields = ["name", "paper__reference", "paper__name"]
     raw_id_fields = ["paper"]
-    readonly_fields = ["body", "reviewed_at", "created_at", "updated_at"]
+    readonly_fields = [
+        "body",
+        "reviewed_at",
+        "ki_urteil",
+        "ki_begruendung",
+        "ki_geprueft_am",
+        "created_at",
+        "updated_at",
+    ]
     ordering = ["-updated_at"]
     actions = ["confirm_selected", "remove_selected_locations"]
     actions_row = ["confirm_row", "remove_row"]

@@ -1891,6 +1891,16 @@ class PaperLocation(models.Model):
         ("ai", "KI-Extraktion"),
         ("manual", "Manuell"),
         ("plan_boundary", "Amtlicher Umring (Bebauungsplan)"),
+        ("ai_check", "KI-Prüfung (Claude, ergänzt)"),
+    ]
+    #: Urteile der KI-Prüfung (Issue #1222): Claude prüft die automatisch gefundenen Orte gegen den Inhalt
+    KI_PASST = "passt"
+    KI_PASST_NICHT = "passt_nicht"
+    KI_UNSICHER = "unsicher"
+    KI_URTEILE = [
+        (KI_PASST, "Passt"),
+        (KI_PASST_NICHT, "Passt nicht (ausgeblendet)"),
+        (KI_UNSICHER, "Unsicher"),
     ]
     STATUS_AUTO = "auto"
     STATUS_CONFIRMED = "confirmed"
@@ -1926,6 +1936,19 @@ class PaperLocation(models.Model):
         verbose_name="Prüfstatus",
     )
     reviewed_at = models.DateTimeField(blank=True, null=True, verbose_name="Geprüft am")
+    ki_urteil = models.CharField(
+        max_length=12,
+        choices=KI_URTEILE,
+        blank=True,
+        default="",
+        db_default="",
+        db_index=True,
+        verbose_name="KI-Prüfung",
+    )
+    ki_begruendung = models.CharField(
+        max_length=300, blank=True, default="", db_default="", verbose_name="Begründung der KI"
+    )
+    ki_geprueft_am = models.DateTimeField(blank=True, null=True, verbose_name="KI-geprüft am")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

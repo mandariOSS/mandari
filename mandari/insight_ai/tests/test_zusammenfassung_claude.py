@@ -43,7 +43,7 @@ from apps.common.ki_anbieter import (
 )
 from apps.common.models import AISettings
 from insight_ai import kosten
-from insight_ai.models import KiVerbrauch, ZusammenfassungsBatch
+from insight_ai.models import KiVerbrauch, TagesbatchKommune, ZusammenfassungsBatch
 from insight_ai.providers import NichtEingerichtet, get_insight_provider, get_summary_provider
 from insight_ai.providers.base import ChatMessage
 from insight_ai.providers.claude import BudgetErschoepftError, ClaudeZusammenfassung, antwort_text
@@ -155,8 +155,13 @@ def _endpunkt(**werte: Any) -> ClaudeEndpunkt:
 
 @pytest.fixture
 def body() -> OParlBody:
+    """Kommune im Tagesbatch (Vorgänge der letzten 30 Tage, ohne Prüfung der Verortung; die prüft test_tagesbatch)."""
     quelle = OParlSource.objects.create(name="Quelle", url="https://ris.example.org/oparl/system")
-    return OParlBody.objects.create(external_id="https://ris.example.org/oparl/body/1", source=quelle, name="Stadt")
+    kommune = OParlBody.objects.create(external_id="https://ris.example.org/oparl/body/1", source=quelle, name="Stadt")
+    TagesbatchKommune.objects.create(
+        body=kommune, ab=timezone.localdate() - timedelta(days=30), verortung_pruefen=False
+    )
+    return kommune
 
 
 def _vorgang(

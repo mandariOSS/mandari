@@ -36,7 +36,14 @@ from insight_ai.providers import get_summary_provider
 from insight_ai.providers.base import STANDARD_MAX_AUSGABE, ChatMessage
 from insight_ai.providers.claude import BudgetErschoepftError
 
-from .prompts import PAPER_SUMMARY_SYSTEM_PROMPT, anlage_block, build_paper_summary_user_prompt
+from .prompts import (
+    PAPER_SUMMARY_SYSTEM_PROMPT,
+    TAGESBATCH_SCHEMA,
+    VERORTUNG_SYSTEM_ZUSATZ,
+    anlage_block,
+    build_paper_summary_user_prompt,
+    orte_block,
+)
 
 if TYPE_CHECKING:
     from insight_core.models import OParlPaper
@@ -98,6 +105,10 @@ class Vorbereitung:
     datei_ids: list[Any]
     #: Zeichen aller Nachrichten zusammen (Schätzung der Kosten vor einem Batch)
     zeichen: int
+    #: Mit Prüfung der Verortung (Tagesbatch, Issue #1222): Kennungen der Orte in der Reihenfolge des Prompts
+    orte_ids: list[str] | None = None
+    #: Antwortformat (JSON-Schema) bei Prüfung der Verortung; ``None``: Text
+    schema: dict[str, Any] | None = None
 
 
 class SummaryService:
@@ -216,11 +227,15 @@ class SummaryService:
                 "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
             ) from e
 
-    def vorbereiten(self, paper: "OParlPaper") -> Vorbereitung | None:
+    def vorbereiten(self, paper: "OParlPaper", orte: list[Any] | None = None) -> Vorbereitung | None:
         """
         Prompt der Zusammenfassung aus dem gespeicherten Text und den Metadaten; ``None`` ohne Text.
 
         Einzelaufruf (``generate_summary``) und Batch nutzen denselben Prompt. Lädt und erkennt nichts.
+
+        Mit ``orte`` (``verortung_pruefung.orte_fuer_pruefung``, auch leer) prüft Claude in derselben Anfrage die
+        Verortung (Tagesbatch, Issue #1222): Zusatz im Systemprompt, Orte im Nutzerprompt, Antwort als JSON nach
+        ``TAGESBATCH_SCHEMA``.
         """
         datei_ids = list(self._current_files(paper).values_list("pk", flat=True))
         text_content = self._collect_text_content(paper)
@@ -263,6 +278,8 @@ class SummaryService:
 
         # Build prompts
         system_prompt = PAPER_SUMMARY_SYSTEM_PROMPT
+        if orte is not None:
+            system_prompt = f"{system_prompt}\n\n{VERORTUNG_SYSTEM_ZUSATZ}"
         user_prompt = build_paper_summary_user_prompt(
             paper_name=paper.name or "Unbekannt",
             paper_type=paper.paper_type,
@@ -271,6 +288,7 @@ class SummaryService:
             text_content=text_content,
             body_name=body_name,
             organizations=list(organizations) if organizations else None,
+            orte=orte_block(orte) if orte is not None else None,
         )
 
         # Create messages
@@ -278,7 +296,13 @@ class SummaryService:
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=user_prompt),
         ]
-        return Vorbereitung(nachrichten=messages, datei_ids=datei_ids, zeichen=len(system_prompt) + len(user_prompt))
+        return Vorbereitung(
+            nachrichten=messages,
+            datei_ids=datei_ids,
+            zeichen=len(system_prompt) + len(user_prompt),
+            orte_ids=[ort.pk for ort in orte] if orte is not None else None,
+            schema=TAGESBATCH_SCHEMA if orte is not None else None,
+        )
 
     def _collect_text_content(self, paper: "OParlPaper") -> str:
         """

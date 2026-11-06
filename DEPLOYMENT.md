@@ -1159,15 +1159,27 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
    unset CLAUDE_SCHLUESSEL
    ```
 
-   Optional sind `--modell` (Standard `claude-haiku-5-5`), `--budget` (USD je Monat, Standard 100),
-   `--batch-tage` (Standard 30) und `--ohne-batch`. Die Prüfung ruft nur das Modell über die Models API ab und
+   Optional sind `--modell` (Standard `claude-haiku-5-5`), `--budget` (USD je Monat, Standard 100) und
+   `--ohne-batch` (`--batch-tage` wirkt seit dem Tagesbatch nicht mehr). Die Prüfung ruft nur das Modell über die Models API ab und
    kostet nichts. Zurück zum Endpunkt oben:
    `ki_anbieter zusammenfassung --wie-buergerportal`. Im Admin stehen dieselben Felder unter „KI-Einstellungen →
    Zusammenfassungen“.
-3. Batch: Die Zeitpläne `zusammenfassungen_einreichen` (alle 30 Minuten) und `zusammenfassungen_abholen` (alle 10
-   Minuten) laufen im Worker mit der Rolle `scheduler` (`TASKS_BACKEND=journal`). Eingereicht werden Vorgänge ohne
-   Zusammenfassung aus den letzten `summary_batch_days` Tagen, neueste zuerst, höchstens 500 je Batch und nur ein
-   Batch zur Zeit. Kommunen mit pausierter oder zurückgenommener Veröffentlichung fallen heraus. Ein Batch, dessen
+3. Tagesbatch (#1220): Die Zeitpläne `zusammenfassungen_nacharbeiten` (täglich 20:00 Uhr),
+   `zusammenfassungen_einreichen` (täglich 06:30 Uhr) und `zusammenfassungen_abholen` (alle 10 Minuten) laufen im
+   Worker mit der Rolle `scheduler` (`TASKS_BACKEND=journal`). Eingereicht werden nur Vorgänge der ausgewählten
+   Kommunen ab ihrem Stichtag, ohne Auswahl nichts:
+
+   ```bash
+   docker exec mandari python manage.py tagesbatch kommune "Stadt Münster" --ab 2026-08-05
+   docker exec mandari python manage.py tagesbatch liste
+   ```
+
+   Ein Vorgang kommt erst, wenn der Text aller aktuellen Anlagen erkannt ist (Texterkennung ist Pflicht); am Abruf
+   gescheiterte Anlagen dieser Kommunen reiht der Lauf um 20:00 Uhr neu ein. Mit Prüfung der Verortung (Standard,
+   `--ohne-verortung` schaltet sie ab, #1222) prüft Claude in derselben Anfrage die gefundenen Orte; Fehltreffer
+   verschwinden von der Karte und stehen im Admin unter „Verortungen“, Filter „KI-Prüfung“. Neueste zuerst,
+   höchstens 500 je Batch und nur ein Batch zur Zeit. Kommunen mit pausierter oder zurückgenommener Veröffentlichung
+   fallen heraus. Ein Batch, dessen
    Ergebnisse nicht mehr abrufbar sind (HTTP 404 oder älter als 29 Tage), wird als „verloren“ abgeschlossen; seine
    Schätzung zählt dann als Verbrauch. Abschalten lässt sich der Batch mit dem Häkchen in den KI-Einstellungen oder
    mit `EVENTS_SCHEDULES_DISABLED`.
