@@ -158,12 +158,41 @@ def login_via_form(page: Any, base_url: str, email: str, password: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def login_per_cookie(page: Any, base_url: str, email: str, password: str) -> None:
+    """
+    Meldet einen Nutzer ohne das Formular an: prüft das Passwort, legt die Sitzung wie ``django.contrib.auth.login``
+    an (mit dem Signal ``user_logged_in``) und setzt ihr Cookie im Browser. Spart je Anmeldung den Aufruf der
+    Login-Seite, das Absenden und das Warten auf ``networkidle``. Das Formular selbst prüfen die Tests, die
+    ``login_via_form`` nutzen (etwa ``test_core_paths.TestWorkPortal.test_login_and_dashboard``).
+    """
+    from django.conf import settings
+    from django.contrib.auth import get_user_model
+    from django.test import Client
+
+    nutzer = get_user_model().objects.get(email=email)
+    assert nutzer.check_password(password), f"Falsches Passwort für {email}"
+    client = Client()
+    client.force_login(nutzer)
+    page.context.add_cookies(
+        [
+            {
+                "name": settings.SESSION_COOKIE_NAME,
+                "value": client.cookies[settings.SESSION_COOKIE_NAME].value,
+                "url": base_url,
+            }
+        ]
+    )
+    # Wie nach dem Formular steht der Tab danach auf der eigenen Adresse (eine winzige Seite): Tests, die gleich
+    # localStorage setzen, brauchen den Ursprung schon vor dem ersten Seitenaufruf
+    page.goto(f"{base_url}/robots.txt")
+
+
 @pytest.fixture
 def login(page: Any, live_server: Any) -> Callable[[str, str], None]:
-    """Meldet einen Nutzer über das Login-Formular an (prüft dabei Alpine/Vite im Browser)."""
+    """Meldet einen Nutzer per Sitzungs-Cookie an (schnell, ``login_per_cookie``); die Seite öffnet der Test danach."""
 
     def do_login(email: str, password: str) -> None:
-        login_via_form(page, live_server.url, email, password)
+        login_per_cookie(page, live_server.url, email, password)
 
     return do_login
 
