@@ -34,7 +34,7 @@
                     {% if member.is_guest %}
                     <span class="px-2 py-0.5 text-xs bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-full">Gast</span>
                     {% endif %}
-                    {% if not member.is_active %}<c-ui.badge color="red">Deaktiviert</c-ui.badge>{% endif %}
+                    {% if member.deletion_pending %}<c-ui.badge color="red">Löschung am {{ member.deletion_scheduled_at|date:"d.m.Y" }}</c-ui.badge>{% elif not member.is_active %}<c-ui.badge color="red">Deaktiviert</c-ui.badge>{% endif %}
                 </div>
                 <p class="text-gray-500 dark:text-gray-400">{{ member.user.email }}</p>
 

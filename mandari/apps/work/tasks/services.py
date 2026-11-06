@@ -17,10 +17,10 @@ from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from apps.tenants.models import Membership, Organization
+from apps.work.files import remove_files_on_commit
 
 from . import ereignisse, selectors
 from .activity import log_activity, log_field_change
@@ -152,22 +152,16 @@ def update_visibility(task: Task, membership: Membership, visibility: str, share
 
 def delete_personal_tasks(membership: Membership) -> int:
     """
-    Persönliche Aufgaben eines Mitglieds löschen (Issue #420).
+    Persönliche Aufgaben eines Mitglieds löschen (Issue #420, :func:`selectors.personal_tasks`).
 
-    Wird beim Entfernen der Mitgliedschaft aufgerufen. Persönlich ist eine Aufgabe, die außer dem
-    Mitglied niemand sieht: nicht organisationsweit, von ihm angelegt, ihm oder niemandem
-    zugewiesen und mit niemand anderem geteilt. Alle anderen Aufgaben bleiben erhalten; der
-    Verweis auf das Mitglied wird geleert. Liefert die Anzahl gelöschter Aufgaben.
+    Wird beim Entfernen der Mitgliedschaft aufgerufen. Alle anderen Aufgaben bleiben erhalten; der
+    Verweis auf das Mitglied wird geleert. Die Dateien der Anhänge verschwinden nach erfolgreicher
+    Transaktion mit (Issue #1237). Liefert die Anzahl gelöschter Aufgaben.
     """
-    shared_with_others = TaskShare.objects.filter(task=OuterRef("pk")).exclude(membership=membership)
-    personal = (
-        Task.objects.filter(organization_id=membership.organization_id, created_by=membership)
-        .exclude(visibility="organization")
-        .filter(Q(assigned_to=membership) | Q(assigned_to__isnull=True))
-        .exclude(Exists(shared_with_others))
-    )
-    task_ids = list(personal.values_list("pk", flat=True))
+    task_ids = list(selectors.personal_tasks(membership).values_list("pk", flat=True))
+    files = [attachment.file for attachment in TaskAttachment.objects.filter(task_id__in=task_ids)]
     Task.objects.filter(pk__in=task_ids).delete()
+    remove_files_on_commit(files)
     return len(task_ids)
 
 

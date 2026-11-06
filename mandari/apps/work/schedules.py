@@ -16,6 +16,8 @@ idempotent und durch eine Cache-Sperre gegen parallele Läufe geschützt:
   (Issue #547); tut nichts, solange ``WORK_RIS_RELINK`` auf ``aus`` (Standard) steht.
 - ``fraktionsprotokolle_versenden``: alle ``FACTION_PROTOCOL_INTERVAL_MINUTES`` (Standard 15) Minuten
   automatischer Protokollversand, falls die Organisation ihn eingeschaltet hat (Issue #871).
+- ``mitgliedschaften_auslaufen``: alle ``WORK_MEMBER_EXPIRY_INTERVAL_MINUTES`` (Standard 60) Minuten Erinnerungen
+  7 und 3 Tage vor der Löschung und Löschung fälliger Mitgliedschaften im Auslauf „Nur Lesen“ (Issue #1237).
 
 Die Erinnerung zum Eintragen von TOPs und die automatische Einladung zum festen Zeitpunkt einer Reihe
 (Issue #871) laufen im Einladungslauf mit.
@@ -32,6 +34,7 @@ from .faction.generation import run_faction_schedule_pass
 from .faction.invitations import run_faction_invitation_pass
 from .faction.protocol_dispatch import run_faction_protocol_pass
 from .faction.services import run_faction_reminder_pass
+from .organization.auslauf import run_membership_expiry_pass
 from .ris.verknuepfungen import abgleichen
 
 
@@ -72,3 +75,10 @@ def ris_verknuepfungen_abgleichen() -> dict[str, object]:
 def fraktionsprotokolle_versenden() -> None:
     """Versendet fällige Protokolle von Fraktionssitzungen (nur wenn die Organisation es eingeschaltet hat)."""
     run_faction_protocol_pass()
+
+
+@every(minutes=_minuten("WORK_MEMBER_EXPIRY_INTERVAL_MINUTES", 60))
+@task
+def mitgliedschaften_auslaufen() -> dict[str, object]:
+    """Erinnert vor der Löschung und löscht fällige Mitgliedschaften im Auslauf „Nur Lesen“ (Issue #1237)."""
+    return run_membership_expiry_pass()

@@ -1036,6 +1036,14 @@ class Membership(models.Model):
     # Selbstregistrierung: gesetzt, solange eine bestätigte Anfrage auf Freischaltung wartet.
     # Unterscheidet offene Anfragen eindeutig von deaktivierten Mitgliedschaften.
     registration_requested_at = models.DateTimeField(blank=True, null=True, verbose_name="Registrierung angefragt")
+    # Auslauf „Nur Lesen, Löschung nach 30 Tagen“ (Issue #1237): gesetzt zusammen mit is_active=False. Bis dahin sieht
+    # die Person in der Organisation nur die Auslauf-Seite mit ihrem Datenexport; der Lauf in
+    # apps.work.organization.auslauf erinnert und löscht. Unterscheidet den Auslauf von „deaktiviert“.
+    deletion_scheduled_at = models.DateTimeField(blank=True, null=True, verbose_name="Löschung geplant am")
+    # Kleinste Erinnerungsstufe (Tage vor der Löschung), die schon verschickt ist: jede Erinnerung höchstens einmal
+    deletion_reminder_days = models.PositiveSmallIntegerField(
+        blank=True, null=True, verbose_name="Erinnerung an die Löschung verschickt (Tage vorher)"
+    )
 
     class Meta:
         verbose_name = "Mitgliedschaft"
@@ -1045,6 +1053,22 @@ class Membership(models.Model):
 
     def __str__(self):
         return f"{self.user.email} @ {self.organization.name}"
+
+    @property
+    def deletion_pending(self) -> bool:
+        """Im Auslauf: nur noch Lesen der eigenen Daten, Löschung geplant (Issue #1237)."""
+        return not self.is_active and self.deletion_scheduled_at is not None
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # Aktiv heißt: kein Auslauf (Issue #1237). Ein Löschdatum überdauert keine Reaktivierung, gleich auf welchem
+        # Weg (Mitgliederverwaltung, Admin); sonst schaltete ein späteres Deaktivieren die alte Löschung wieder scharf.
+        if self.is_active and (self.deletion_scheduled_at is not None or self.deletion_reminder_days is not None):
+            self.deletion_scheduled_at = None
+            self.deletion_reminder_days = None
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "deletion_scheduled_at", "deletion_reminder_days"}
+        super().save(*args, **kwargs)
 
     def clean(self):
         """

@@ -87,26 +87,32 @@ class DataExportStatusView(WorkViewMixin, View):
         return JsonResponse(_export_payload(export, self.organization))
 
 
+def export_file_response(organization, membership, export_id) -> HttpResponse:
+    """
+    Fertige Exportdatei der eigenen Mitgliedschaft ausliefern – der einzige Weg zu ``exports/`` (Profil und
+    Auslauf-Seite, Issue #1237). Fremde oder unfertige Exporte: 404.
+    """
+    export = selectors.get_export_or_404(organization, membership, export_id, status="completed")
+    file_path = export.get_absolute_path()
+    if not file_path or not file_path.exists():
+        raise Http404("Exportdatei nicht gefunden.")
+
+    content_type = "application/pdf" if export.export_format == "pdf" else "application/json; charset=utf-8"
+    filename = f"mandari-datenexport-{export.created_at.strftime('%Y%m%d')}.{export.export_format}"
+    response = HttpResponse(file_path.read_bytes(), content_type=content_type)
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 class DataExportDownloadView(WorkViewMixin, View):
-    """Exportdatei der eigenen Mitgliedschaft ausliefern – der einzige Weg zu ``exports/``."""
+    """Exportdatei der eigenen Mitgliedschaft ausliefern (:func:`export_file_response`)."""
 
     permission_required = "dashboard.view"
 
     def get(self, request, *args, **kwargs):
-        export = selectors.get_export_or_404(
-            self.organization, self.membership, kwargs["export_id"], status="completed"
-        )
-        file_path = export.get_absolute_path()
-        if not file_path or not file_path.exists():
-            raise Http404("Exportdatei nicht gefunden.")
-
-        content_type = "application/pdf" if export.export_format == "pdf" else "application/json; charset=utf-8"
-        filename = f"mandari-datenexport-{export.created_at.strftime('%Y%m%d')}.{export.export_format}"
-        response = HttpResponse(file_path.read_bytes(), content_type=content_type)
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        response["Cache-Control"] = "private, no-store"
-        response["X-Content-Type-Options"] = "nosniff"
-        return response
+        return export_file_response(self.organization, self.membership, kwargs["export_id"])
 
 
 class DataExportDeleteView(WorkViewMixin, View):

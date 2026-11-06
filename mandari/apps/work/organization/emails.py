@@ -174,3 +174,72 @@ def send_registration_rejected(organization: Organization, user: User, reason: s
         to=user.email,
         context={"user": user, "reason": reason, "retention_days": ABGELEHNT_TAGE},
     )
+
+
+# ---------------------------------------------------------------------------
+# Auslauf „Nur Lesen, Löschung nach 30 Tagen“ (Issue #1237)
+# ---------------------------------------------------------------------------
+#
+# Zugangsrelevant wie die Links oben: immer über mandari (``via_organization=False``), nie über ein eigenes SMTP der
+# Organisation. Sie-Form wie die übrigen Zugangs-Mails.
+
+
+def expiry_url(organization: Organization) -> str:
+    """Auslauf-Seite der Organisation (Hinweis, Löschdatum, Download der eigenen Daten)."""
+    return absolute_url(reverse("work:membership_expiry", kwargs={"org_slug": organization.slug}))
+
+
+def send_deletion_scheduled(membership: Membership, deletion_date: str) -> bool:
+    """Beim Setzen: Löschdatum und Weg zum Download der eigenen Daten."""
+    organization = membership.organization
+    return send_organization_mail(
+        organization,
+        template="deletion_scheduled.html",
+        subject=f"Ihr Zugang zu {organization.name}: Löschung am {deletion_date}",
+        to=membership.user.email,
+        context={"user": membership.user, "deletion_date": deletion_date, "expiry_url": expiry_url(organization)},
+        via_organization=False,
+    )
+
+
+def send_deletion_reminder(membership: Membership, deletion_date: str, days_left: int) -> bool:
+    """Erinnerung vor der Löschung (7 und 3 Tage vorher)."""
+    organization = membership.organization
+    return send_organization_mail(
+        organization,
+        template="deletion_reminder.html",
+        subject=f"Erinnerung: Ihr Zugang zu {organization.name} wird am {deletion_date} gelöscht",
+        to=membership.user.email,
+        context={
+            "user": membership.user,
+            "deletion_date": deletion_date,
+            "days_left": days_left,
+            "expiry_url": expiry_url(organization),
+        },
+        via_organization=False,
+    )
+
+
+def send_deletion_done(
+    organization: Organization,
+    *,
+    email: str,
+    name: str,
+    documents_deleted: int,
+    account_deleted: bool,
+    backup_days: int,
+) -> bool:
+    """Bestätigung nach der Löschung; Adresse und Name sind vorher gesichert (das Konto kann schon weg sein)."""
+    return send_organization_mail(
+        organization,
+        template="deletion_done.html",
+        subject=f"Ihre Daten bei {organization.name} sind gelöscht",
+        to=email,
+        context={
+            "name": name,
+            "documents_deleted": documents_deleted,
+            "account_deleted": account_deleted,
+            "backup_days": backup_days,
+        },
+        via_organization=False,
+    )

@@ -12,7 +12,7 @@ nur mit members.remove, Eigentum übertragen nur für den Eigentümer. Kontext: 
 
 {% block work_header %}
 <c-rahmen.kopfband titel="{{ member.user.get_full_name|default:member.user.email }}" dicht
-    text="{{ member.user.email }}{% if member.is_guest %} · Gast{% endif %}{% if is_owner %} · Eigentümer{% endif %}{% if not member.is_active %} · deaktiviert{% endif %}. Mitglied seit {{ member.joined_at|date:'d.m.Y' }}{% if member.invited_by %}, eingeladen von {{ member.invited_by.get_full_name|default:member.invited_by.email }}{% endif %}.">
+    text="{{ member.user.email }}{% if member.is_guest %} · Gast{% endif %}{% if is_owner %} · Eigentümer{% endif %}{% if member.deletion_pending %} · Löschung am {{ member.deletion_scheduled_at|date:'d.m.Y' }}{% elif not member.is_active %} · deaktiviert{% endif %}. Mitglied seit {{ member.joined_at|date:'d.m.Y' }}{% if member.invited_by %}, eingeladen von {{ member.invited_by.get_full_name|default:member.invited_by.email }}{% endif %}.">
     <c-slot name="oben"><c-insight.zurueck href="{% url 'work:members' org_slug=organization.slug %}">Mitglieder</c-insight.zurueck></c-slot>
 </c-rahmen.kopfband>
 {% include "work/organization/neu/_reiter.html" with seite="mitglieder" aktuell="true" %}

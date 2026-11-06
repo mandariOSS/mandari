@@ -20,6 +20,13 @@ User-Modells: Jede neue Beziehung schützt ein Konto automatisch, bis sie hier
 ausdrücklich als Konto-Artefakt freigegeben wird.
 
 Aufruf über ``manage.py cleanup_orphaned_accounts`` (siehe dort), Ausgabe nur Zahlen.
+
+Derselbe Weg löscht ein Konto, sobald seine letzte Mitgliedschaft nach dem Auslauf „Nur Lesen, Löschung nach
+30 Tagen“ gelöscht ist (Issue #1237, :func:`loesche_konto_nach_austritt`): ohne Fristen, aber nur, wenn nichts
+mehr daran hängt. Dort binden Verweise, die beim Löschen nur geleert werden (Inhalte bleiben als „Ehemaliges
+Mitglied“), das Konto nicht, ebenso wenig Tokens, der Kalender-Feed und versandte Einladungen. Die Insight-Merkliste
+bindet: Das Konto bleibt, nur die Mitgliedschaft ist gelöscht. Mit dem Konto verschwindet auch die Datei des
+Profilbilds.
 """
 
 from __future__ import annotations
@@ -28,7 +35,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
@@ -54,6 +61,23 @@ KONTO_ARTEFAKTE: frozenset[str] = frozenset(
 )
 
 
+#: Zusätzlich beim Löschen nach dem Austritt (Issue #1237): Tokens und Zugänge des OpenID-Anbieters, der
+#: Kalender-Feed und von der Person versandte Einladungen (offene verfallen schon beim Austritt, angenommene sind
+#: Verlauf). Verweise mit SET_NULL binden dort ohnehin nicht, außer ``IMMER_BINDEND``. Die Insight-Merkliste
+#: (``bookmarks``) bindet bewusst: Sie gehört zur Nutzung außerhalb der Organisation.
+AUSTRITT_ENTFAELLT: frozenset[str] = KONTO_ARTEFAKTE | {
+    "accounts_oauthaccesstoken",
+    "accounts_oauthrefreshtoken",
+    "accounts_oauthidtoken",
+    "accounts_oauthgrant",
+    "accounts_oauthdevicegrant",
+    "calendar_feed_token",
+    "created_invitations",
+}
+#: Bindet immer, obwohl der Verweis nur geleert würde: Eine Organisation verlöre ihre Eigentümerschaft.
+IMMER_BINDEND: frozenset[str] = frozenset({"owned_organizations"})
+
+
 @dataclass
 class Fund:
     unbestaetigt: list[User]
@@ -69,16 +93,38 @@ class Fund:
         return len(self.alle)
 
 
-def _hat_fremde_verknuepfungen(user: User) -> bool:
-    """True, wenn am Konto etwas hängt, das kein bloßes Konto-Artefakt ist."""
-    if user.groups.exists() or user.user_permissions.exists():
-        return True
+def _fremde_verknuepfungen(
+    user: User, *, entfaellt: frozenset[str] = KONTO_ARTEFAKTE, verweise_leeren: bool = False, erste: bool = False
+) -> list[str]:
+    """
+    Was am Konto hängt und kein bloßes Konto-Artefakt ist (Namen der Rückbeziehungen).
+
+    ``verweise_leeren``: Verweise mit SET_NULL zählen nicht (außer ``IMMER_BINDEND``), weil ihr Inhalt bleibt.
+    ``erste``: nach dem ersten Fund aufhören (nur die Frage, ob überhaupt etwas hängt).
+    """
+    gefunden: list[str] = []
+    if user.groups.exists():
+        gefunden.append("groups")
+    if user.user_permissions.exists():
+        gefunden.append("user_permissions")
+    if gefunden and erste:
+        return gefunden
     for rel in User._meta.related_objects:
-        if rel.get_accessor_name() in KONTO_ARTEFAKTE:
+        name = rel.get_accessor_name()
+        if name is None or name in entfaellt:
+            continue
+        if verweise_leeren and rel.on_delete is models.SET_NULL and name not in IMMER_BINDEND:
             continue
         if rel.related_model._default_manager.filter(**{rel.field.name: user}).exists():
-            return True
-    return False
+            gefunden.append(name)
+            if erste:
+                break
+    return gefunden
+
+
+def _hat_fremde_verknuepfungen(user: User) -> bool:
+    """True, wenn am Konto etwas hängt, das kein bloßes Konto-Artefakt ist."""
+    return bool(_fremde_verknuepfungen(user, erste=True))
 
 
 def _hat_gueltige_einladung(user: User, jetzt: datetime) -> bool:
@@ -92,6 +138,59 @@ def ist_frei(user: User, jetzt: datetime | None = None) -> bool:
     if user.is_staff or user.is_superuser:
         return False
     return not _hat_fremde_verknuepfungen(user) and not _hat_gueltige_einladung(user, jetzt)
+
+
+def bindungen_nach_austritt(user: User, jetzt: datetime | None = None) -> list[str]:
+    """
+    Was ein Konto nach dem Löschen seiner Mitgliedschaft noch hält (Issue #1237); leer = es darf weg.
+
+    Mitarbeiter- und Superuser-Konten nie, ebenso wenig Konten mit weiterer Mitgliedschaft (auch deaktiviert oder
+    im Auslauf), Session-Mandant, Gruppe, eigener Organisation, gültiger Einladung oder sonst einem Eintrag, der
+    beim Löschen des Kontos mit verschwände.
+    """
+    if user.is_staff or user.is_superuser:
+        return ["mitarbeiterkonto"]
+    gruende = _fremde_verknuepfungen(user, entfaellt=AUSTRITT_ENTFAELLT, verweise_leeren=True)
+    if _hat_gueltige_einladung(user, jetzt or timezone.now()):
+        gruende.append("einladungen")
+    return gruende
+
+
+def loesche_konto_nach_austritt(user: User) -> list[str]:
+    """
+    Konto löschen, wenn nach dem Löschen der letzten Mitgliedschaft nichts mehr daran hängt (Issue #1237).
+
+    Liefert die Bindungen, die das verhindern; leer heißt gelöscht (oder schon weg). Geprüft wird unter Sperre
+    der Kontozeile, wie beim Löschen verwaister Konten. Die Datei des Profilbilds verschwindet nach erfolgreicher
+    Transaktion mit.
+    """
+    with transaction.atomic():
+        aktuell = User.objects.select_for_update().filter(pk=user.pk).first()
+        if aktuell is None:
+            return []
+        gruende = bindungen_nach_austritt(aktuell)
+        if gruende:
+            logger.info("Konto nach Austritt nicht gelöscht, Bindungen: %s", ", ".join(gruende))
+            return gruende
+        _profilbild_nach_commit_entfernen(aktuell)
+        aktuell.delete()
+    return []
+
+
+def _profilbild_nach_commit_entfernen(user: User) -> None:
+    """Datei des Profilbilds erst nach erfolgreicher Transaktion löschen; fehlt sie schon, ist das kein Fehler."""
+    if not user.avatar or not user.avatar.name:
+        return
+    storage, name = user.avatar.storage, user.avatar.name
+
+    def entfernen() -> None:
+        try:
+            if storage.exists(name):
+                storage.delete(name)
+        except OSError:
+            logger.warning("Profilbild eines gelöschten Kontos konnte nicht entfernt werden")
+
+    transaction.on_commit(entfernen)
 
 
 def _kandidaten(jetzt: datetime) -> tuple[QuerySet[User], QuerySet[User], QuerySet[User]]:

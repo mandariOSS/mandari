@@ -1,0 +1,79 @@
+{% extends "accounts/base_auth.html" %}
+{% comment %}
+Auslauf-Seite einer Mitgliedschaft „Nur Lesen, Löschung nach 30 Tagen“ (Issue #1237): die einzige Seite, die die
+Person in dieser Organisation noch erreicht. Hinweis mit Löschdatum und Export der eigenen Daten; keine Inhalte der
+Organisation. Laufende Exporte fragt das Fragment „exporte“ alle fünf Sekunden neu ab. Darunter die Anhänge, die am
+Löschtag entfallen (nur die eigenen privaten Dokumente und persönlichen Aufgaben). Kontext: MembershipExpiryView.
+{% endcomment %}
+
+{% block title %}Zugang endet am {{ deletion_date }}{% endblock %}
+{% block card_width %}max-w-lg{% endblock %}
+{% block header_title %}Ihr Zugang endet am {{ deletion_date }}{% endblock %}
+{% block header_subtitle %}{{ organization.name }}{% endblock %}
+
+{% block content %}
+{% for message in messages %}
+<c-ui.alert variant="{% if message.level_tag == 'error' %}error{% elif message.level_tag == 'success' %}success{% else %}info{% endif %}" class="mb-4">{{ message }}</c-ui.alert>
+{% endfor %}
+
+<div class="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+    <p>Die Verwaltung von {{ organization.name }} hat Ihre Mitgliedschaft auf „Nur Lesen“ gestellt. Inhalte der Organisation sehen Sie nicht mehr. Am <strong>{{ deletion_date }}</strong> wird Ihre Mitgliedschaft mit Ihren persönlichen Daten, privaten Dokumenten und Entwürfen gelöscht.</p>
+    <p>Was Sie für die Fraktion beigetragen haben, bleibt erhalten und zeigt dann „Ehemaliges Mitglied“. Ist das ein Versehen, wenden Sie sich an die Verwaltung von {{ organization.name }}.</p>
+</div>
+
+<h2 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Ihre Daten herunterladen</h2>
+<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Der Export enthält Ihre Daten in {{ organization.name }}, auch Ihre Dokumente mit Inhalt und Versionen.</p>
+<form method="post" class="mt-3 flex flex-wrap items-center gap-3">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="export_data">
+    <label for="export-format" class="sr-only">Format</label>
+    <select id="export-format" name="format" class="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm dark:border-gray-600 dark:bg-gray-800">
+        <option value="json">JSON (maschinenlesbar)</option>
+        <option value="pdf">PDF (zum Lesen)</option>
+    </select>
+    <c-ui.button type="submit" size="sm" icon="download">Export erstellen</c-ui.button>
+</form>
+
+{% partialdef exporte inline %}
+<div id="auslauf-exporte" class="mt-4"{% if has_active_export %} hx-get="{{ request.path }}?teil=exporte" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+    {% if exports %}
+    <ul class="divide-y divide-gray-200 border-y border-gray-200 text-sm dark:divide-gray-700 dark:border-gray-700">
+        {% for export in exports %}
+        <li class="flex items-center justify-between gap-4 py-2">
+            <span class="text-gray-700 dark:text-gray-300">{{ export.get_export_format_display }} vom {{ export.created_at|date:"d.m.Y, H:i" }} Uhr</span>
+            {% if export.is_ready %}
+            <a href="{% url 'work:membership_expiry_download' org_slug=organization.slug export_id=export.id %}" class="font-medium text-primary-600 hover:underline underline-offset-4 dark:text-primary-400">Herunterladen{% if export.file_size_human %} ({{ export.file_size_human }}){% endif %}</a>
+            {% elif export.is_in_progress %}
+            <span class="text-gray-500 dark:text-gray-400">Wird erstellt …</span>
+            {% else %}
+            <span class="text-red-700 dark:text-red-400">Fehlgeschlagen</span>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+{% endpartialdef %}
+
+{% if attachments %}
+<section class="mt-6 space-y-1" aria-labelledby="auslauf-anhaenge">
+<h2 id="auslauf-anhaenge" class="text-sm font-semibold text-gray-900 dark:text-white">Anhänge, die gelöscht werden</h2>
+<p class="text-sm text-gray-600 dark:text-gray-400">Der Export nennt Anhänge nur mit Namen. Die Dateien Ihrer privaten Dokumente, Entwürfe und persönlichen Aufgaben laden Sie hier einzeln herunter.</p>
+</section>
+<ul class="mt-3 divide-y divide-gray-200 border-y border-gray-200 text-sm dark:divide-gray-700 dark:border-gray-700">
+    {% for eintrag in attachments %}
+    <li class="flex items-center justify-between gap-4 py-2">
+        <span class="min-w-0 truncate text-gray-700 dark:text-gray-300">{{ eintrag.attachment.filename }} <span class="text-gray-500 dark:text-gray-400">({{ eintrag.source }})</span></span>
+        <a href="{% url 'work:membership_expiry_attachment' org_slug=organization.slug kind=eintrag.kind attachment_id=eintrag.attachment.id %}" class="shrink-0 font-medium text-primary-600 hover:underline underline-offset-4 dark:text-primary-400">Herunterladen</a>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}
+
+{% block footer_content %}
+<form method="post" action="{% url 'accounts:logout' %}">
+    {% csrf_token %}
+    <button type="submit" class="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400">Abmelden</button>
+</form>
+{% endblock %}

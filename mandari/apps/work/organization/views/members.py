@@ -10,7 +10,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.work.rahmen import NeueVorlageMixin
 
-from .. import selectors, services
+from .. import auslauf, selectors, services
 from ..services import ServiceError, display_name
 from ._helpers import flash_error
 
@@ -110,6 +110,8 @@ class MemberDetailView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             "deactivate": self._deactivate,
             "reactivate": self._reactivate,
             "remove": self._remove,
+            "schedule_deletion": self._schedule_deletion,
+            "cancel_deletion": self._cancel_deletion,
             "transfer_ownership": self._transfer_ownership,
             "link_oparl_person": self._link_oparl_person,
             "unlink_oparl_person": self._unlink_oparl_person,
@@ -174,6 +176,28 @@ class MemberDetailView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         name = services.remove_member(self.organization, member, request.user)
         messages.success(request, f"{name} wurde aus der Organisation entfernt.")
         return redirect("work:members", org_slug=self.organization.slug)
+
+    def _schedule_deletion(self, request, member):
+        """Auf „Nur Lesen, Löschung nach 30 Tagen“ setzen (Issue #1237), Rechte wie Deaktivieren."""
+        self._require("members.remove", "Keine Berechtigung zum Entfernen von Mitgliedern.")
+        name = display_name(member.user)
+        sent = auslauf.schedule_member_deletion(self.organization, member, request.user)
+        datum = auslauf.deletion_date_text(member)
+        if sent:
+            messages.success(request, f"{name} kann nur noch die eigenen Daten herunterladen. Löschung am {datum}.")
+        else:
+            messages.warning(
+                request,
+                f"{name} kann nur noch die eigenen Daten herunterladen, Löschung am {datum}. Die E-Mail an die Person "
+                "konnte nicht versendet werden. Bitte informieren Sie die Person direkt.",
+            )
+
+    def _cancel_deletion(self, request, member):
+        self._require("members.remove", "Keine Berechtigung zum Entfernen von Mitgliedern.")
+        auslauf.cancel_member_deletion(self.organization, member, request.user)
+        messages.success(
+            request, f"Löschung für {display_name(member.user)} zurückgenommen. Das Mitglied ist deaktiviert."
+        )
 
     def _transfer_ownership(self, request, member):
         services.transfer_ownership(self.organization, member, request.user)

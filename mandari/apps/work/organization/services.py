@@ -699,20 +699,41 @@ def _discard_open_invitations(organization: Organization, user: User) -> None:
     ).delete()
 
 
+def _lock_membership(member: Membership) -> None:
+    """
+    Zeile sperren und die Instanz auf den Stand der Datenbank bringen (Issue #1237). Der Lauf
+    ``mitgliedschaften_auslaufen`` kann die Mitgliedschaft inzwischen gelöscht oder geändert haben; ein ``save()``
+    auf eine gelöschte Zeile legte sie neu an. Nur innerhalb einer Transaktion aufrufen.
+    """
+    if Membership.objects.select_for_update().filter(pk=member.pk).only("pk").first() is None:
+        raise ServiceError("Diese Mitgliedschaft gibt es nicht mehr.")
+    member.refresh_from_db()
+
+
+def _clear_deletion(member: Membership) -> None:
+    """Geplante Löschung (Auslauf „Nur Lesen“, Issue #1237) an der Instanz leeren; speichern muss der Aufrufer."""
+    member.deletion_scheduled_at = None
+    member.deletion_reminder_days = None
+
+
 @transaction.atomic
 def deactivate_member(organization: Organization, member: Membership, actor_user: User) -> None:
-    """Mitglied deaktivieren (Soft-Delete); Eigentümer und man selbst sind ausgenommen."""
+    """
+    Mitglied deaktivieren (Soft-Delete); Eigentümer und man selbst sind ausgenommen. Ein Löschdatum entfällt
+    dabei, auch ein altes, das ein Rückfall auf ein älteres Image stehen ließ (Issue #1237).
+    """
     if member.user == organization.owner:
         raise ServiceError("Der Eigentümer kann nicht deaktiviert werden.")
     if member.user == actor_user:
         raise ServiceError("Sie können sich nicht selbst deaktivieren.")
     _ensure_may_remove(organization, member, actor_user)
-    was_active = member.is_active
+    _lock_membership(member)
+    before = _access_text(member)
     member.is_active = False
+    _clear_deletion(member)
     member.save()
     _discard_open_invitations(organization, member.user)
-    if was_active:
-        audit.log_member_access(member, "aktiv", "deaktiviert", actor=_active_membership(organization, actor_user))
+    audit.log_member_access(member, before, _access_text(member), actor=_active_membership(organization, actor_user))
 
 
 @transaction.atomic
@@ -722,6 +743,7 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     „Mitglied einladen“). Das Gast-Limit gilt auch hier (sonst per Deaktivieren/Reaktivieren
     umgehbar); die bisherigen Rechte kehren nur im Rahmen der Rechte der handelnden Person zurück.
     """
+    _lock_membership(member)
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
     if not member.is_guest and not member.is_active:
@@ -730,6 +752,8 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     before = _access_text(member)
     member.is_active = True
     member.registration_requested_at = None
+    # Auch aus dem Auslauf „Nur Lesen“ zurück: Die geplante Löschung entfällt (Issue #1237)
+    _clear_deletion(member)
     member.save()
     audit.log_member_access(member, before, "aktiv", roles_after=_pending_roles(member, before), actor=actor)
 
@@ -738,9 +762,13 @@ PENDING_TEXT = "Registrierungsanfrage offen"
 
 
 def _access_text(member: Membership) -> str:
-    """Zugang für die Änderungshistorie: aktiv, deaktiviert oder offene Registrierungsanfrage."""
+    """Zugang für die Änderungshistorie: aktiv, deaktiviert, im Auslauf oder offene Registrierungsanfrage."""
     if member.is_active:
         return "aktiv"
+    if member.deletion_scheduled_at is not None:
+        from .auslauf import access_text
+
+        return access_text(member)
     return PENDING_TEXT if member.registration_requested_at else "deaktiviert"
 
 
@@ -811,6 +839,9 @@ def transfer_ownership(organization: Organization, member: Membership, actor_use
     """Eigentümerschaft übertragen — nur durch den aktuellen Eigentümer."""
     if organization.owner != actor_user:
         raise ServiceError("Nur der aktuelle Eigentümer kann die Eigentümerschaft übertragen.")
+    # Nur an aktive Mitglieder: nicht deaktiviert und nicht im Auslauf „Nur Lesen“ (Issue #1237)
+    if not member.is_active:
+        raise ServiceError("Die Eigentümerschaft lässt sich nur auf aktive Mitglieder übertragen.")
     organization.owner = member.user
     _save_organization(organization)
 
@@ -1569,6 +1600,8 @@ def request_account_deletion(organization: Organization, membership: Membership,
     if not user.check_password(password):
         raise ServiceError("Falsches Passwort.")
     membership.is_active = False
+    # Ein altes Löschdatum (Rückfall auf ein älteres Image) darf hier nicht wieder scharf werden (Issue #1237)
+    _clear_deletion(membership)
     membership.save()
     _discard_open_invitations(organization, user)
 
