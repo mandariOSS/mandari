@@ -3,7 +3,8 @@
 Claude API (Anthropic) für die Zusammenfassungen im Bürgerportal: Einzelaufruf und Message Batches.
 
 Nur für Zusammenfassungen öffentlicher Dokumente; KI-Assistent und KI-Verortung nutzen weiter den
-OpenAI-kompatiblen Endpunkt (``openai_kompatibel.py``). Zugang, Modell und Budget kommen aus der zentralen
+OpenAI-kompatiblen Endpunkt (``openai_kompatibel.py``). Im Tagesbatch prüft Claude in derselben Anfrage die schon
+gefundenen Orte des Vorgangs (Issue #1222, Antwort als JSON); eigene Anfragen zur Verortung gibt es nicht. Zugang, Modell und Budget kommen aus der zentralen
 KI-Konfiguration (``apps.common.ki_anbieter.claude_fuer_zusammenfassung``); der Host steht dort gegen
 ``KI_ERLAUBTE_HOSTS`` geprüft, Schlüssel und Adresse gehen ausdrücklich an das SDK.
 
@@ -138,14 +139,22 @@ class ClaudeZusammenfassung(AbstractAIProvider):
     def budget_rest(self) -> Any:
         return kosten.budget_rest(self.endpunkt)
 
-    def parameter(self, messages: list[ChatMessage], max_tokens: int) -> dict[str, Any]:
-        """Anfrage an die Messages API: Systemnachrichten als ``system``, sonst die Nachrichten in Reihenfolge."""
+    def parameter(
+        self, messages: list[ChatMessage], max_tokens: int, schema: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """
+        Anfrage an die Messages API: Systemnachrichten als ``system``, sonst die Nachrichten in Reihenfolge. Mit
+        ``schema`` antwortet Claude als JSON nach diesem Schema (Structured Outputs, auch im Batch).
+        """
         system = "\n\n".join(msg.content for msg in messages if msg.role == "system" and msg.content)
+        ausgabe: dict[str, Any] = {"effort": EFFORT}
+        if schema is not None:
+            ausgabe["format"] = {"type": "json_schema", "schema": schema}
         params: dict[str, Any] = {
             "model": self.endpunkt.modell,
             "max_tokens": max(1, int(max_tokens)),
             "messages": [{"role": msg.role, "content": msg.content} for msg in messages if msg.role != "system"],
-            "output_config": {"effort": EFFORT},
+            "output_config": ausgabe,
         }
         if system:
             params["system"] = system
@@ -187,17 +196,23 @@ class ClaudeZusammenfassung(AbstractAIProvider):
 
     # --- Message Batches -----------------------------------------------------------------------------------------
 
-    def batch_einreichen(self, anfragen: list[tuple[str, list[ChatMessage], int]]) -> str:
-        """Reicht ``(custom_id, Nachrichten, max_tokens)`` als einen Message Batch ein; Rückgabe: Batch-Kennung."""
+    def batch_einreichen(self, anfragen: list[tuple[Any, ...]]) -> str:
+        """
+        Reicht ``(custom_id, Nachrichten, max_tokens[, Schema])`` als einen Message Batch ein; Rückgabe: Kennung.
+        Mit Schema antwortet Claude für diese Anfrage als JSON (Tagesbatch mit Prüfung der Verortung).
+        """
         from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
         from anthropic.types.messages.batch_create_params import Request
 
         requests = [
             Request(
-                custom_id=custom_id,
-                params=cast(MessageCreateParamsNonStreaming, self.parameter(nachrichten, grenze)),
+                custom_id=anfrage[0],
+                params=cast(
+                    MessageCreateParamsNonStreaming,
+                    self.parameter(anfrage[1], anfrage[2], anfrage[3] if len(anfrage) > 3 else None),
+                ),
             )
-            for custom_id, nachrichten, grenze in anfragen
+            for anfrage in anfragen
         ]
         try:
             batch = self.client.messages.batches.create(requests=requests)

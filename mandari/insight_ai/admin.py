@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Admin: Batches und Verbrauch der Zusammenfassungen mit der Claude API (nur lesen)."""
+"""Admin: Kommunen im Tagesbatch, Batches und Verbrauch der Zusammenfassungen mit der Claude API."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from django.contrib import admin, messages
 from django.http import HttpRequest
 from unfold.admin import ModelAdmin
 
-from .models import KiVerbrauch, ZusammenfassungsBatch
+from .models import KiVerbrauch, TagesbatchKommune, ZusammenfassungsBatch
 
 
 class _NurLesen(ModelAdmin):  # type: ignore[misc]
@@ -24,6 +24,15 @@ class _NurLesen(ModelAdmin):  # type: ignore[misc]
 
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         return False
+
+
+@admin.register(TagesbatchKommune)
+class TagesbatchKommuneAdmin(ModelAdmin):  # type: ignore[misc]
+    """Kommunen im täglichen Batch (Issue #1220); auch per ``manage.py tagesbatch``."""
+
+    list_display = ("body", "ab", "verortung_pruefen", "angelegt_am")
+    raw_id_fields = ("body",)
+    readonly_fields = ("angelegt_am",)
 
 
 @admin.register(ZusammenfassungsBatch)
