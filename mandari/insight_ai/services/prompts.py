@@ -135,7 +135,7 @@ Zwischen <orte> und </orte> stehen die Orte, die ein Programm für die Karte in 
 - passt: Der Ort ist im Vorgang tatsächlich gemeint (dort wird gebaut, geplant oder etwas beantragt, oder er ist der Gegenstand).
 - passt_nicht: Fehltreffer, etwa ein Straßenname als Teil eines Personen- oder Firmennamens, eine Absender- oder Behördenadresse, ein Rechtsbegriff, ein Ort in einer anderen Stadt oder eine beiläufige Erwähnung ohne Bezug zum Vorhaben.
 - anderer_ort: Gemeint ist ein anderer oder genauerer Ort, etwa eine andere Straße, eine Hausnummer oder ein Gebäude statt nur der Straße. Nenne ihn unter richtiger_ort so, dass man ihn auf einer Karte findet (Straße mit Hausnummer, Platz oder Gebäude mit Straße).
-- unsicher: Aus den Dokumenten nicht klar zu entscheiden.
+- unsicher: Aus den Dokumenten nicht klar zu entscheiden. Die Dokumente können gekürzt sein (Vermerk „[… gekürzt]“): Kommt ein Ort im vorliegenden Text nicht vor, urteile unsicher, nicht passt_nicht.
 Gib je beurteiltem Ort eine Begründung in einem kurzen Satz. richtiger_ort bleibt leer, außer bei anderer_ort.
 Nenne unter fehlende_orte höchstens 5 konkrete Orte in der Kommune, um die es im Vorgang geht und die in der Liste fehlen (Straße mit Hausnummer, Platz, Gebäude oder Einrichtung mit Straße); keine Stadtteile allein, keine Orte außerhalb der Kommune und nichts, was nicht in den Dokumenten steht. Fehlt nichts, bleibt die Liste leer.
 Antworte ausschließlich im vorgegebenen JSON-Format; die Zusammenfassung steht nach den Regeln oben im Feld zusammenfassung."""

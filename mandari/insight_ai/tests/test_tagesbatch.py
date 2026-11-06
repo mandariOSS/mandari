@@ -176,6 +176,8 @@ class TestVerortung:
         params = sdk.batches.eingereicht[0][0]["params"]
         assert params["output_config"]["format"] == {"type": "json_schema", "schema": TAGESBATCH_SCHEMA}
         assert "ZWEITE AUFGABE – VERORTUNG PRÜFEN" in params["system"][0]["text"]
+        # Gekürzte Dokumente: Ein Ort, der im Text fehlt, ist unsicher, kein Fehltreffer
+        assert "Kommt ein Ort im vorliegenden Text nicht vor, urteile unsicher" in params["system"][0]["text"]
         nutzer = params["messages"][0]["content"]
         # Prüfbare Orte zuerst, OParl-Orte nur als Kontext
         assert "1. Hauptstraße (Herkunft: Straße (Straßenverzeichnis); prüfen: ja)" in nutzer
