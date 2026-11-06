@@ -85,9 +85,18 @@ if (document.documentElement.dataset.portal === 'insight') {
   // Karte (gemeinsames Kartenmodul mit Work, frontend/js/vorgangskarte.ts, Issue #853)
   Alpine.data('insightKarte', insightKarte)
   registerBookmarksStore(Alpine)
-  // Vorgangsseite: Orte und amtliche Umringe; Sitzungsseite: Sitzungsort (Leaflet als Vendor-Skript, läuft vor diesem Modul)
-  initPaperMap()
-  initMeetingMap()
+  // Vorgangsseite: Orte und amtliche Umringe; Sitzungsseite: Sitzungsort (Leaflet als Vendor-Skript, läuft vor diesem Modul).
+  // Ein Fehler in einer Karte darf den Rest der Seite (Alpine, Icons, Dunkelmodus) nicht mitreißen.
+  try {
+    initPaperMap()
+  } catch (error) {
+    console.warn('Vorgangskarte nicht gezeichnet', error)
+  }
+  try {
+    initMeetingMap()
+  } catch (error) {
+    console.warn('Sitzungskarte nicht gezeichnet', error)
+  }
   // Suche: Karte im Ortsband (auch nach HTMX-Austausch, siehe search-place-map.ts)
   try {
     initSearchPlaceMap()
