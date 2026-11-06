@@ -108,8 +108,9 @@ VERORTUNG_SYSTEM_ZUSATZ = """ZWEITE AUFGABE – VERORTUNG PRÜFEN:
 Zwischen <orte> und </orte> stehen die Orte, die ein Programm für die Karte in den Dokumenten gefunden hat, nummeriert, mit Herkunft. Beurteile nur die Orte mit „prüfen: ja“:
 - passt: Der Ort ist im Vorgang tatsächlich gemeint (dort wird gebaut, geplant oder etwas beantragt, oder er ist der Gegenstand).
 - passt_nicht: Fehltreffer, etwa ein Straßenname als Teil eines Personen- oder Firmennamens, eine Absender- oder Behördenadresse, ein Rechtsbegriff, ein Ort in einer anderen Stadt oder eine beiläufige Erwähnung ohne Bezug zum Vorhaben.
+- anderer_ort: Gemeint ist ein anderer oder genauerer Ort, etwa eine andere Straße, eine Hausnummer oder ein Gebäude statt nur der Straße. Nenne ihn unter richtiger_ort so, dass man ihn auf einer Karte findet (Straße mit Hausnummer, Platz oder Gebäude mit Straße).
 - unsicher: Aus den Dokumenten nicht klar zu entscheiden.
-Gib je beurteiltem Ort eine Begründung in einem kurzen Satz.
+Gib je beurteiltem Ort eine Begründung in einem kurzen Satz. richtiger_ort bleibt leer, außer bei anderer_ort.
 Nenne unter fehlende_orte höchstens 5 konkrete Orte in der Kommune, um die es im Vorgang geht und die in der Liste fehlen (Straße mit Hausnummer, Platz, Gebäude oder Einrichtung mit Straße); keine Stadtteile allein, keine Orte außerhalb der Kommune und nichts, was nicht in den Dokumenten steht. Fehlt nichts, bleibt die Liste leer.
 Antworte ausschließlich im vorgegebenen JSON-Format; die Zusammenfassung steht nach den Regeln oben im Feld zusammenfassung."""
 
@@ -124,10 +125,11 @@ TAGESBATCH_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "properties": {
                     "nr": {"type": "integer"},
-                    "urteil": {"type": "string", "enum": ["passt", "passt_nicht", "unsicher"]},
+                    "urteil": {"type": "string", "enum": ["passt", "passt_nicht", "anderer_ort", "unsicher"]},
                     "begruendung": {"type": "string"},
+                    "richtiger_ort": {"type": "string"},
                 },
-                "required": ["nr", "urteil", "begruendung"],
+                "required": ["nr", "urteil", "begruendung", "richtiger_ort"],
                 "additionalProperties": False,
             },
         },

@@ -1896,10 +1896,12 @@ class PaperLocation(models.Model):
     #: Urteile der KI-Prüfung (Issue #1222): Claude prüft die automatisch gefundenen Orte gegen den Inhalt
     KI_PASST = "passt"
     KI_PASST_NICHT = "passt_nicht"
+    KI_ANDERER_ORT = "anderer_ort"
     KI_UNSICHER = "unsicher"
     KI_URTEILE = [
         (KI_PASST, "Passt"),
         (KI_PASST_NICHT, "Passt nicht (ausgeblendet)"),
+        (KI_ANDERER_ORT, "Anderer Ort (ersetzt)"),
         (KI_UNSICHER, "Unsicher"),
     ]
     STATUS_AUTO = "auto"

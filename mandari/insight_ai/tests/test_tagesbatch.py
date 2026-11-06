@@ -223,9 +223,14 @@ class TestVerortung:
         antwort = {
             "zusammenfassung": "Die Stadt plant einen neuen Spielplatz.",
             "orte": [
-                {"nr": 1, "urteil": "passt_nicht", "begruendung": "Absenderadresse der Verwaltung."},
-                {"nr": 2, "urteil": "passt_nicht", "begruendung": "OParl-Orte bleiben."},
-                {"nr": 7, "urteil": "passt", "begruendung": "Unbekannte Nummer."},
+                {
+                    "nr": 1,
+                    "urteil": "passt_nicht",
+                    "begruendung": "Absenderadresse der Verwaltung.",
+                    "richtiger_ort": "",
+                },
+                {"nr": 2, "urteil": "passt_nicht", "begruendung": "OParl-Orte bleiben.", "richtiger_ort": ""},
+                {"nr": 7, "urteil": "passt", "begruendung": "Unbekannte Nummer.", "richtiger_ort": ""},
             ],
             "fehlende_orte": [{"bezeichnung": "Marktplatz 1"}, {"bezeichnung": "Irgendwo"}],
         }
@@ -268,6 +273,82 @@ class TestVerortung:
         vorgang.refresh_from_db()
         assert vorgang.summary is None
         assert PaperLocation.objects.get(paper=vorgang, source="street_match").ki_urteil == ""
+
+    @staticmethod
+    def _verzeichnis(monkeypatch: Any, orte: dict[str, tuple[float, float]]) -> None:
+        """Straßenverzeichnis zum Test: Name (Anfang) → Koordinaten; Photon findet nichts."""
+
+        class _Verzeichnis:
+            def __init__(self, body: Any) -> None:
+                pass
+
+            def lookup(self, name: str) -> dict[str, Any] | None:
+                for anfang, (lat, lon) in orte.items():
+                    if name.startswith(anfang):
+                        return {"name": name, "lat": lat, "lon": lon}
+                return None
+
+            def refine(self, treffer: dict[str, Any]) -> dict[str, Any]:
+                return treffer
+
+        monkeypatch.setattr("insight_core.services.gazetteer.StreetGazetteer", _Verzeichnis)
+        monkeypatch.setattr("insight_core.services.georeferencing.geocode_address", lambda name, body: None)
+
+    def test_anderer_ort_ersetzt(self, kommune: OParlBody, monkeypatch: Any) -> None:
+        vorgang = _verortet(_vorgang(kommune))
+        alt = PaperLocation.objects.get(paper=vorgang, source="street_match")
+        self._verzeichnis(monkeypatch, {"Gartenweg 4": (51.9700, 7.6400)})
+        ergebnis = verortung_pruefung.anwenden(
+            vorgang.pk,
+            [str(alt.pk)],
+            [
+                {
+                    "nr": 1,
+                    "urteil": "anderer_ort",
+                    "begruendung": "Die Hauptstraße ist nur die Adresse des Amts.",
+                    "richtiger_ort": "Gartenweg 4",
+                }
+            ],
+            [],
+        )
+        assert (ergebnis.anderer_ort, ergebnis.ergaenzt) == (1, 1)
+        alt.refresh_from_db()
+        assert alt.status == PaperLocation.STATUS_REMOVED and alt.ki_urteil == "anderer_ort"
+        assert alt.ki_begruendung.endswith("Richtig: Gartenweg 4.")
+        neu = PaperLocation.objects.get(paper=vorgang, source="ai_check")
+        assert neu.name == "Gartenweg 4" and neu.ki_urteil == "passt"
+        assert neu.ki_begruendung == "Von Claude statt „Hauptstraße“ gesetzt."
+        vorgang.refresh_from_db()
+        assert sorted(eintrag["name"] for eintrag in vorgang.locations or []) == ["Gartenweg 4", "Rathaus"]
+
+    def test_anderer_ort_am_selben_punkt_passt(self, kommune: OParlBody, monkeypatch: Any) -> None:
+        vorgang = _verortet(_vorgang(kommune))
+        alt = PaperLocation.objects.get(paper=vorgang, source="street_match")
+        # Nur genauer (Hausnummer), aber keine 50 m entfernt: Der alte Ort bleibt
+        self._verzeichnis(monkeypatch, {"Hauptstraße 3": (51.9601, 7.6201)})
+        verortung_pruefung.anwenden(
+            vorgang.pk,
+            [str(alt.pk)],
+            [{"nr": 1, "urteil": "anderer_ort", "begruendung": "Genauer.", "richtiger_ort": "Hauptstraße 3"}],
+            [],
+        )
+        alt.refresh_from_db()
+        assert alt.status == PaperLocation.STATUS_AUTO and alt.ki_urteil == "passt"
+        assert not PaperLocation.objects.filter(paper=vorgang, source="ai_check").exists()
+
+    def test_anderer_ort_nicht_gefunden(self, kommune: OParlBody, monkeypatch: Any) -> None:
+        vorgang = _verortet(_vorgang(kommune))
+        alt = PaperLocation.objects.get(paper=vorgang, source="street_match")
+        self._verzeichnis(monkeypatch, {})
+        ergebnis = verortung_pruefung.anwenden(
+            vorgang.pk,
+            [str(alt.pk)],
+            [{"nr": 1, "urteil": "anderer_ort", "begruendung": "Falsch.", "richtiger_ort": "Unbekannter Weg 9"}],
+            [],
+        )
+        alt.refresh_from_db()
+        # Claude hält den Ort für falsch: Er verschwindet, der genannte fehlt im Verzeichnis
+        assert alt.status == PaperLocation.STATUS_REMOVED and ergebnis.nicht_gefunden == ["Unbekannter Weg 9"]
 
     def test_bestaetigte_orte_bleiben(self, kommune: OParlBody) -> None:
         vorgang = _verortet(_vorgang(kommune))

@@ -36,6 +36,7 @@ class Migration(migrations.Migration):
                 choices=[
                     ("passt", "Passt"),
                     ("passt_nicht", "Passt nicht (ausgeblendet)"),
+                    ("anderer_ort", "Anderer Ort (ersetzt)"),
                     ("unsicher", "Unsicher"),
                 ],
                 db_default="",
