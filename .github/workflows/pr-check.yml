@@ -1494,8 +1494,14 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    # Die Suite braucht inzwischen um 25 Minuten (Work- und Session-Seiten im neuen Erscheinungsbild)
-    timeout-minutes: 40
+    # Am Stück brauchte die Suite rund 25 Minuten (284 Tests in einem Prozess). Vier parallele Teile mit ganzen
+    # Testdateien (--teil, apps/common/tests/testlauf.py) bringen den Job auf etwa ein Viertel plus Einrichtung.
+    timeout-minutes: 25
+    strategy:
+      # Alle Teile laufen zu Ende, damit jeder rote Test auf einmal sichtbar ist
+      fail-fast: false
+      matrix:
+        teil: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -1523,12 +1529,12 @@ jobs:
           MANDARI_E2E: '1'
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
-        run: cd mandari && pytest tests_e2e -q --browser chromium
+        run: cd mandari && pytest tests_e2e -q --browser chromium --teil=${{ matrix.teil }}/4
       - name: Screenshots als Artefakt (hell/dunkel, Komponentenvorschau, Kernpfade)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-screenshots
+          name: e2e-screenshots-${{ matrix.teil }}
           path: mandari/tests_e2e/screenshots/
           if-no-files-found: ignore
 

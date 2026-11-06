@@ -111,25 +111,33 @@ export function initPaperMap(): void {
     map.attributionControl?.addAttribution(escapeHtml(`Umring: ${text}`))
   }
 
+  // Erst die Ebenen bauen und den Ausschnitt bestimmen, dann den Ausschnitt setzen und erst danach die Ebenen
+  // hinzufügen: Eine Fläche (Umring) auf einer Karte ohne Ausschnitt wirft in Leaflet
+  // („Cannot read properties of undefined (reading 'min')“ in _clipPoints).
   const bounds = leaflet.latLngBounds([])
   const style = placeStyle()
   const areaStyle = { color: themeColor(700), weight: 2, fillOpacity: 0.15 }
+  const layers: LeafletLayer[] = []
   for (const area of data.areas) {
     const layer = leaflet.geoJSON(area.geometry, { style: areaStyle })
     layer.bindPopup(popupContent(area.name))
-    layer.addTo(map)
     bounds.extend(layer.getBounds())
+    layers.push(layer)
   }
   for (const place of data.places) {
     const marker = leaflet.circleMarker([place.lat, place.lon], style)
     if (place.name) marker.bindPopup(popupContent(place.name))
-    marker.addTo(map)
     bounds.extend([place.lat, place.lon])
+    layers.push(marker)
   }
 
   if (!data.areas.length && data.places.length === 1) {
     map.setView([data.places[0].lat, data.places[0].lon], 15)
   } else if (bounds.isValid()) {
     map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 })
+  } else {
+    element.hidden = true
+    return
   }
+  for (const layer of layers) layer.addTo(map)
 }
