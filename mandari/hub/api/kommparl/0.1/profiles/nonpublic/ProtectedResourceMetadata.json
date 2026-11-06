@@ -1,0 +1,56 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/nonpublic/ProtectedResourceMetadata.json",
+    "title": "ProtectedResourceMetadata",
+    "description": "Metadaten der nichtöffentlichen Ausgabe als geschützte Ressource nach RFC 9728 (Profil Nichtöffentliches, Entwurf). Weitere Angaben aus RFC 9728 sind erlaubt.",
+    "type": "object",
+    "required": [
+        "resource",
+        "authorization_servers",
+        "scopes_supported",
+        "bearer_methods_supported"
+    ],
+    "properties": {
+        "resource": {
+            "description": "URL des oparl:System-Objekts der nichtöffentlichen Ausgabe; dieselbe URL, aus der die Adresse der Metadaten gebildet ist.",
+            "$ref": "#/$defs/url"
+        },
+        "authorization_servers": {
+            "description": "Aussteller (issuer) der Autorisierungsserver, die Tokens für die Ausgabe ausstellen.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "$ref": "#/$defs/url"
+            }
+        },
+        "scopes_supported": {
+            "description": "Scopes, die Zugriff auf die Ausgabe geben. Die Namen legt der Server fest.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "string",
+                "minLength": 1
+            }
+        },
+        "bearer_methods_supported": {
+            "description": "Zugriffstokens nur im Header Authorization.",
+            "const": [
+                "header"
+            ]
+        },
+        "resource_name": {
+            "description": "Name der Ausgabe zur Anzeige.",
+            "type": "string"
+        },
+        "resource_documentation": {
+            "description": "URL einer Beschreibung für Entwicklerinnen und Entwickler.",
+            "$ref": "#/$defs/url"
+        }
+    },
+    "$defs": {
+        "url": {
+            "type": "string",
+            "pattern": "^https://[^\\s]+$"
+        }
+    }
+}

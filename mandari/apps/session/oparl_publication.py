@@ -53,7 +53,7 @@ def visible_persons(tenant: SessionTenant) -> QuerySet[SessionPerson]:
     return SessionPerson.objects.filter(tenant=tenant)
 
 
-def visible_memberships(tenant):
+def visible_memberships(tenant: SessionTenant) -> QuerySet[SessionOrganizationMembership]:
     return SessionOrganizationMembership.objects.filter(organization__tenant=tenant)
 
 
@@ -108,7 +108,7 @@ def visible_consultations(tenant):
     )
 
 
-def visible_legislative_terms(tenant):
+def visible_legislative_terms(tenant: SessionTenant) -> QuerySet[SessionLegislativeTerm]:
     return SessionLegislativeTerm.objects.filter(tenant=tenant)
 
 

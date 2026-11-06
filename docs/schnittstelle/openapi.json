@@ -3,7 +3,7 @@
   "info": {
     "title": "mandari-Schnittstelle",
     "version": "1",
-    "description": "Eine Schnittstelle für alle Bereiche von mandari. Einstieg: `GET /api/`.\n\n- Ratsdaten kommen als OParl 1.1; offene Erweiterungen tragen das Präfix `kommparl:`, Erweiterungen nur für\n  mandari das Präfix `mandari:`.\n- Die Adressen der OParl-Objekte sind ihre Kennungen und ändern sich nicht.\n- Fehler kommen als `application/problem+json` (RFC 9457); die OParl-Ausgaben melden einfache Fehler als\n  `{\"error\", \"status\"}`.\n- Bedingte Abrufe über `ETag` und `If-None-Match`; abgekündigte Endpunkte tragen `Deprecation` (RFC 9745) und\n  `Sunset` (RFC 8594).\n- Schreibende Aufrufe sind Befehle mit `Idempotency-Key`.\n\nSchemas der OParl- und kommParl-Typen aus kommParl 0.1 (https://github.com/mandariOSS/kommParl, Commit 575108d2d61c vom 2026-11-06), einer Bearbeitung der OParl-Spezifikation 1.1 (https://github.com/OParl/spec), Lizenz CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Für die Beschreibung in JSON Schema 2020-12 umgewandelt."
+    "description": "Eine Schnittstelle für alle Bereiche von mandari. Einstieg: `GET /api/`.\n\n- Ratsdaten kommen als OParl 1.1; offene Erweiterungen tragen das Präfix `kommparl:`, Erweiterungen nur für\n  mandari das Präfix `mandari:`.\n- Die Adressen der OParl-Objekte sind ihre Kennungen und ändern sich nicht.\n- Fehler kommen als `application/problem+json` (RFC 9457); die OParl-Ausgaben melden einfache Fehler als\n  `{\"error\", \"status\"}`.\n- Bedingte Abrufe über `ETag` und `If-None-Match`; abgekündigte Endpunkte tragen `Deprecation` (RFC 9745) und\n  `Sunset` (RFC 8594).\n- Schreibende Aufrufe sind Befehle mit `Idempotency-Key`.\n\nSchemas der OParl- und kommParl-Typen aus kommParl 0.1 (https://github.com/mandariOSS/kommParl, Commit bb08f36768a0 vom 2026-11-06), einer Bearbeitung der OParl-Spezifikation 1.1 (https://github.com/OParl/spec), Lizenz CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Für die Beschreibung in JSON Schema 2020-12 umgewandelt."
   },
   "tags": [
     {
@@ -19,6 +19,10 @@
       "description": "OParl 1.1 je Session-Mandant, sobald die Verwaltung die Schnittstelle freigeschaltet hat: anonym, lesend, nur Öffentliches; Änderungsfeed und Snapshot, wenn die Installation sie anbietet."
     },
     {
+      "name": "OParl je Mandant, nichtöffentlich",
+      "description": "Nichtöffentliche Ausgabe je Session-Mandant nach dem Profil Nichtöffentliches von kommParl: Personen mit Scope ratsdaten:nichtoeffentlich lesen, was sie selbst sehen dürfen, gebundene Dienste mit sitzung:lesen alles ihres Mandanten. Je Installation einzuschalten."
+    },
+    {
       "name": "Profil Einreichung",
       "description": "Profil Einreichung von kommParl 0.1 je Session-Mandant: einreichen, Bearbeitungsstand, Rücknahme, Rückmeldung zur Ladung. Nur mit Access-Token im Namen einer Person (Scope einreichung:schreiben), nur wenn die Installation den OpenID-Connect-Anbieter eingeschaltet hat."
     },
@@ -28,6 +32,63 @@
     }
   ],
   "paths": {
+    "/.well-known/oauth-protected-resource/session/{tenant_slug}/api/oparl/nichtoeffentlich/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_metadata",
+        "summary": "Metadaten der geschützten Ressource (RFC 9728)",
+        "description": "Ohne Anmeldung: Kennung der nichtöffentlichen Ausgabe (resource), Aussteller der Tokens, Scopes und bearer_methods_supported; die Adresse nennt jede Antwort 401 in WWW-Authenticate (resource_metadata).",
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadaten",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlProtectedResourceMetadata"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht eingeschaltet oder Mandant unbekannt",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
     "/api/": {
       "get": {
         "operationId": "api_entry",
@@ -7029,6 +7090,5393 @@
         ]
       }
     },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_system",
+        "summary": "System",
+        "responses": {
+          "200": {
+            "description": "System-Objekt (OParl 1.1)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlSystem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/agendaitem/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_agendaitem",
+        "summary": "AgendaItem",
+        "responses": {
+          "200": {
+            "description": "AgendaItem (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlAgendaItem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung AgendaItem",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/agendaitems/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_agendaitems",
+        "summary": "Externe Liste AgendaItem",
+        "responses": {
+          "200": {
+            "description": "Externe Liste AgendaItem",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlAgendaItemList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/bodies/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_bodies",
+        "summary": "Körperschaften",
+        "responses": {
+          "200": {
+            "description": "Externe Liste der Körperschaften",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlBodyList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/body/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_body",
+        "summary": "Körperschaft",
+        "responses": {
+          "200": {
+            "description": "Körperschaft",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/consultation/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_consultation",
+        "summary": "Consultation",
+        "responses": {
+          "200": {
+            "description": "Consultation (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlConsultation"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung Consultation",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/consultations/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_consultations",
+        "summary": "Externe Liste Consultation",
+        "responses": {
+          "200": {
+            "description": "Externe Liste Consultation",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlConsultationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/file/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_file",
+        "summary": "File",
+        "responses": {
+          "200": {
+            "description": "File (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlFile"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung File",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/file/{id}/download/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_file_download",
+        "summary": "Datei abrufen (nichtöffentlich)",
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Datei",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "description": "Gesetzt: immer als Download",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inhalt der Datei",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/files/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_files",
+        "summary": "Externe Liste File",
+        "responses": {
+          "200": {
+            "description": "Externe Liste File",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlFileList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/legislativeterm/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_legislativeterm",
+        "summary": "LegislativeTerm",
+        "responses": {
+          "200": {
+            "description": "LegislativeTerm (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlLegislativeTerm"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung LegislativeTerm",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/legislativeterms/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_legislativeterms",
+        "summary": "Externe Liste LegislativeTerm",
+        "responses": {
+          "200": {
+            "description": "Externe Liste LegislativeTerm",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlLegislativeTermList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/location/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_location",
+        "summary": "Location",
+        "responses": {
+          "200": {
+            "description": "Location (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlLocation"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung Location",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/meeting/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_meeting",
+        "summary": "Meeting",
+        "responses": {
+          "200": {
+            "description": "Meeting (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlMeeting"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung Meeting",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/meetings/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_meetings",
+        "summary": "Externe Liste Meeting",
+        "responses": {
+          "200": {
+            "description": "Externe Liste Meeting",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlMeetingList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/membership/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_membership",
+        "summary": "Membership",
+        "responses": {
+          "200": {
+            "description": "Membership (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlMembership"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung Membership",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/memberships/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_memberships",
+        "summary": "Externe Liste Membership",
+        "responses": {
+          "200": {
+            "description": "Externe Liste Membership",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlMembershipList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/organization/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_organization",
+        "summary": "Organization",
+        "responses": {
+          "200": {
+            "description": "Organization (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlOrganization"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung Organization",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/organizations/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_organizations",
+        "summary": "Externe Liste Organization",
+        "responses": {
+          "200": {
+            "description": "Externe Liste Organization",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlOrganizationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/paper/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_paper",
+        "summary": "Paper",
+        "responses": {
+          "200": {
+            "description": "Paper (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlPaper"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung Paper",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/papers/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_papers",
+        "summary": "Externe Liste Paper",
+        "responses": {
+          "200": {
+            "description": "Externe Liste Paper",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlPaperList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/people/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_list_people",
+        "summary": "Externe Liste Person",
+        "responses": {
+          "200": {
+            "description": "Externe Liste Person",
+            "headers": {
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlPersonList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/nichtoeffentlich/person/{id}/": {
+      "get": {
+        "operationId": "oparl_mandant_noe_person",
+        "summary": "Person",
+        "responses": {
+          "200": {
+            "description": "Person (gelöscht: gekürztes Objekt)",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OParlPerson"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OParlDeleted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Kein oder kein gültiges Zugriffstoken",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope fehlt, Dienst an einen anderen Mandanten gebunden oder kein Konto im Mandanten",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer mit resource_metadata (RFC 9728) und error nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gibt es nicht oder darf der Aufrufer nicht sehen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Der Abruf konnte nicht protokolliert werden; ohne Eintrag keine Inhalte",
+            "headers": {
+              "Cache-Control": {
+                "description": "Immer private, no-store",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Enthält Authorization",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlNonPublicProblem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung Person",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "kommparlNichtoeffentlich": [
+              "ratsdaten:nichtoeffentlich"
+            ]
+          },
+          {
+            "kommparlNichtoeffentlich": [
+              "sitzung:lesen"
+            ]
+          }
+        ],
+        "description": "Nichtöffentliche Ausgabe nach dem Profil https://schema.kommparl.de/0.1/profile/nonpublic: alle Objekte, die der Aufrufer sehen darf; nichtöffentliche tragen kommparl:nonPublic, auch öffentliche kommparl:publicId. Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Mandanten.",
+        "tags": [
+          "OParl je Mandant, nichtöffentlich"
+        ]
+      }
+    },
     "/session/{tenant_slug}/api/oparl/organization/{id}/": {
       "get": {
         "operationId": "oparl_mandant_organization",
@@ -8866,6 +14314,43 @@
         "additionalProperties": false,
         "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/InvitationReceipt.json"
       },
+      "KommparlNonPublicProblem": {
+        "title": "NonPublicProblem",
+        "description": "Fehler der nichtöffentlichen Ausgabe als Problem nach RFC 9457, Medientyp application/problem+json (Profil Nichtöffentliches, Entwurf). Weitere Angaben sind erlaubt.",
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "properties": {
+          "type": {
+            "description": "Art des Problems als URI; about:blank, wenn der Status genügt.",
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "description": "Kurze Zusammenfassung der Art des Problems.",
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "description": "HTTP-Statuscode der Antwort.",
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "detail": {
+            "description": "Erklärung zu diesem Fall. Sie nennt keine Inhalte, die der Aufrufer nicht sehen darf.",
+            "type": "string"
+          },
+          "instance": {
+            "description": "Adresse, auf die sich das Problem bezieht.",
+            "type": "string"
+          }
+        },
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/nonpublic/NonPublicProblem.json"
+      },
       "KommparlProblem": {
         "title": "Problem",
         "description": "Fehler nach RFC 9457 (application/problem+json) (Profil Einreichung, Entwurf). Weitere Eigenschaften sind als Erweiterungen nach RFC 9457 erlaubt.",
@@ -8921,6 +14406,58 @@
           }
         },
         "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/submission/Problem.json"
+      },
+      "KommparlProtectedResourceMetadata": {
+        "title": "ProtectedResourceMetadata",
+        "description": "Metadaten der nichtöffentlichen Ausgabe als geschützte Ressource nach RFC 9728 (Profil Nichtöffentliches, Entwurf). Weitere Angaben aus RFC 9728 sind erlaubt.",
+        "type": "object",
+        "required": [
+          "resource",
+          "authorization_servers",
+          "scopes_supported",
+          "bearer_methods_supported"
+        ],
+        "properties": {
+          "resource": {
+            "type": "string",
+            "pattern": "^https://[^\\s]+$",
+            "description": "URL des oparl:System-Objekts der nichtöffentlichen Ausgabe; dieselbe URL, aus der die Adresse der Metadaten gebildet ist."
+          },
+          "authorization_servers": {
+            "description": "Aussteller (issuer) der Autorisierungsserver, die Tokens für die Ausgabe ausstellen.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^https://[^\\s]+$"
+            }
+          },
+          "scopes_supported": {
+            "description": "Scopes, die Zugriff auf die Ausgabe geben. Die Namen legt der Server fest.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "bearer_methods_supported": {
+            "description": "Zugriffstokens nur im Header Authorization.",
+            "const": [
+              "header"
+            ]
+          },
+          "resource_name": {
+            "description": "Name der Ausgabe zur Anzeige.",
+            "type": "string"
+          },
+          "resource_documentation": {
+            "type": "string",
+            "pattern": "^https://[^\\s]+$",
+            "description": "URL einer Beschreibung für Entwicklerinnen und Entwickler."
+          }
+        },
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/nonpublic/ProtectedResourceMetadata.json"
       },
       "KommparlSnapshotEnd": {
         "title": "SnapshotEnd",
@@ -9951,6 +15488,17 @@
               "minLength": 1
             }
           },
+          "kommparl:nonPublic": {
+            "type": "boolean"
+          },
+          "kommparl:nonPublicResolutionText": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
+          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -10158,6 +15706,10 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
           },
           "created": {
             "type": "string",
@@ -10377,6 +15929,13 @@
               "minLength": 1
             }
           },
+          "kommparl:nonPublic": {
+            "type": "boolean"
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
+          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -10588,6 +16147,13 @@
               "minLength": 1
             }
           },
+          "kommparl:nonPublic": {
+            "type": "boolean"
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
+          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -10681,6 +16247,10 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
           },
           "created": {
             "type": "string",
@@ -10847,6 +16417,13 @@
               "minLength": 1
             }
           },
+          "kommparl:nonPublic": {
+            "type": "boolean"
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
+          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -10990,6 +16567,13 @@
               "minLength": 1
             }
           },
+          "kommparl:nonPublic": {
+            "type": "boolean"
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
+          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -11094,6 +16678,10 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
           },
           "created": {
             "type": "string",
@@ -11251,6 +16839,10 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
           },
           "created": {
             "type": "string",
@@ -11472,6 +17064,13 @@
               "minLength": 1
             }
           },
+          "kommparl:nonPublic": {
+            "type": "boolean"
+          },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
+          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -11630,6 +17229,10 @@
               "minLength": 1
             }
           },
+          "kommparl:publicId": {
+            "type": "string",
+            "format": "uri"
+          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -11718,6 +17321,10 @@
               "format": "uri"
             }
           },
+          "kommparl:nonPublicSystem": {
+            "type": "string",
+            "format": "uri"
+          },
           "license": {
             "type": "string",
             "format": "uri"
@@ -11747,6 +17354,10 @@
             "format": "uri"
           },
           "product": {
+            "type": "string",
+            "format": "uri"
+          },
+          "kommparl:publicId": {
             "type": "string",
             "format": "uri"
           },
@@ -12014,6 +17625,26 @@
       "BearerOrSession": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "kommparlNichtoeffentlich": {
+        "type": "oauth2",
+        "description": "Access-Token des OpenID-Connect-Anbieters im Header Authorization: Bearer. Personen: Code-Ablauf mit PKCE, Scope ratsdaten:nichtoeffentlich, zweiter Faktor, höchstens sieben Tage nach der Anmeldung. Dienste: Client Credentials mit private_key_jwt (RFC 7523), Scope sitzung:lesen, gebunden an genau diesen Mandanten.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "/oauth/authorize/",
+            "tokenUrl": "/oauth/token/",
+            "refreshUrl": "/oauth/token/",
+            "scopes": {
+              "ratsdaten:nichtoeffentlich": "Nichtöffentliche Sitzungen, Tagesordnungspunkte, Vorlagen und Anlagen lesen, soweit du sie selbst sehen darfst"
+            }
+          },
+          "clientCredentials": {
+            "tokenUrl": "/oauth/token/",
+            "scopes": {
+              "sitzung:lesen": "Alle Sitzungsdaten des gebundenen Mandanten lesen, auch Nichtöffentliches (nur für gebundene Dienste)"
+            }
+          }
+        }
       },
       "mandariOidc": {
         "type": "oauth2",

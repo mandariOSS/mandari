@@ -5,7 +5,9 @@ mandari als OpenID-Connect-Anbieter (Issue #1206, ADR ``20261105-eine-schnittste
 Grundlage ist django-oauth-toolkit. Die Plattform legt dessen austauschbare Modelle selbst fest
 (:mod:`.models`), dazu Scopes (:mod:`.catalog`, :mod:`.scopes`), Prüfregeln (:mod:`.validator`),
 Signaturschlüssel (:mod:`.signing_keys`), Endpunkte (:mod:`.views`, :mod:`.urls`), Prüfprotokoll
-(:mod:`.audit`) und die Prüfung von Access-Tokens für Ressourcen wie die Session-API (:mod:`.access`). Für den
+(:mod:`.audit`) und die Prüfung von Access-Tokens für Ressourcen wie die Session-API (:mod:`.access`). Für das
+Profil Nichtöffentliches (#565) die Anmeldung mit ``private_key_jwt`` (:mod:`.client_assertion`) und die fachfreie
+Bindung einer Anwendung an genau einen Bereich (:mod:`.bindings`). Für den
 Betrieb die Prüfung vor dem Einschalten (:mod:`.readiness`, ``manage.py oidc_pruefen``) und
 ``manage.py oidc_anwendung``.
 

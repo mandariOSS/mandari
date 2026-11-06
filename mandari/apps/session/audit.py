@@ -143,6 +143,7 @@ def log_event(
     request: Any = None,
     on_behalf_of: Any = None,
     object_repr: str | None = None,
+    actor_from_request: bool = True,
 ) -> Any:
     """
     Audit-Eintrag schreiben.
@@ -156,6 +157,8 @@ def log_event(
         request: Optionaler Request (sonst Thread-Local)
         on_behalf_of: Vertretene Person (sonst aus :func:`in_vertretung`), Issue #222
         object_repr: Objekt-Beschreibung statt ``str(instance)`` (Lesezugriffe: nur Referenz, Issue #221)
+        actor_from_request: ohne ``user`` die angemeldete Person des Requests eintragen; ``False``, wenn der Request
+            für jemand anderen handelt (ein Dienst mit Access-Token, #565), und nur ``user`` gilt
     """
     entry = build_event(
         action,
@@ -166,6 +169,7 @@ def log_event(
         request=request,
         on_behalf_of=on_behalf_of,
         object_repr=object_repr,
+        actor_from_request=actor_from_request,
     )
     if entry is not None:
         # Schreiben über die Hash-Kette des Mandanten (SessionAuditLog.save, Issue #221)
@@ -196,6 +200,7 @@ def build_event(
     request: Any = None,
     on_behalf_of: Any = None,
     object_repr: str | None = None,
+    actor_from_request: bool = True,
 ) -> Any:
     """
     Audit-Eintrag wie :func:`log_event` aufbauen, ohne ihn zu speichern (für :func:`log_events`).
@@ -213,13 +218,13 @@ def build_event(
         return None
 
     request = request or get_current_request()
-    if request is not None and user is None:
+    if request is not None and user is None and actor_from_request:
         session_user = getattr(request, "session_user", None)
         if session_user is not None and session_user.tenant_id == tenant.pk:
             user = session_user
     ip_address, user_agent = audit_core.get_client_meta(request)
 
-    if on_behalf_of is None:
+    if on_behalf_of is None and actor_from_request:
         on_behalf_of = getattr(_vertretung, "principal", None)
     if on_behalf_of is not None and on_behalf_of.tenant_id != tenant.pk:
         on_behalf_of = None
@@ -450,6 +455,59 @@ def log_api_reads(
         dedup_suffix=f"api:{liste}:{digest}",
         reference=f"{liste} ({zugriff})",
         merker=READ_SESSION_KEY_API,
+    )
+
+
+#: Vermerk in Abrufen über die nichtöffentliche Ausgabe (Profil Nichtöffentliches von kommParl, Issue #565)
+API_READ_NONPUBLIC = "Nichtöffentliche Ausgabe (kommParl)"
+#: Höchstzahl der Kennungen je Eintrag; darüber nennt der Eintrag nur die Anzahl der übrigen
+NONPUBLIC_MAX_IDS = 1000
+
+
+def log_nonpublic_read(
+    request: Any,
+    *,
+    tenant: Any,
+    user: Any,
+    anwendung: str,
+    anwendung_name: str,
+    dienst: bool,
+    abruf: str,
+    objekte: list[str],
+    action: str = "view",
+) -> Any:
+    """
+    Abruf mit nichtöffentlichen Inhalten über die nichtöffentliche Ausgabe protokollieren (Issue #565): **jeder**
+    Abruf, ohne Zusammenfassung und unabhängig von der Einstellung für Lesezugriffe, mit Person (``user``, das
+    Session-Konto) oder Dienst, Anwendung (Client-ID) und den Kennungen der nichtöffentlichen Objekte, nie Inhalte.
+
+    Anders als :func:`log_read` scheitert der Abruf, wenn der Eintrag nicht geschrieben werden kann: Nichtöffentliches
+    ohne Eintrag im Prüfprotokoll gibt es nicht. Der Aufrufer fängt den Fehler und antwortet ohne Inhalte.
+
+    Wer abruft, steht nur in ``user`` (``None`` bei einem Dienst); eine Anmeldung im Browser, deren Cookie die Anfrage
+    zufällig mitbringt, gilt nicht (``actor_from_request=False``).
+    """
+    kennungen = list(dict.fromkeys(objekte))
+    changes = {
+        "zugriff": API_READ_NONPUBLIC,
+        "abruf": abruf,
+        "anwendung": anwendung,
+        "anwendung_name": anwendung_name,
+        "handelnd": "Dienst" if dienst else "Person",
+        "anzahl": len(kennungen),
+        "kennungen": kennungen[:NONPUBLIC_MAX_IDS],
+    }
+    if len(kennungen) > NONPUBLIC_MAX_IDS:
+        changes["weitere"] = len(kennungen) - NONPUBLIC_MAX_IDS
+    return log_event(
+        action,
+        tenant,
+        tenant=tenant,
+        user=user,
+        changes=changes,
+        request=request,
+        object_repr=f"{abruf} ({API_READ_NONPUBLIC}, {anwendung_name})",
+        actor_from_request=False,
     )
 
 

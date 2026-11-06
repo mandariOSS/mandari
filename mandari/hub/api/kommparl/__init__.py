@@ -43,7 +43,10 @@ VERSION: Final = f"https://schema.kommparl.de/{FASSUNG}/"
 #: Kennungen der Profile
 PROFILE_CHANGES: Final = f"{VERSION}profile/changes"
 PROFILE_SNAPSHOT: Final = f"{VERSION}profile/snapshot"
+#: Profil Einreichung (#1228): Anträge und Rückmeldungen je Session-Mandant, nur mit eingeschaltetem OIDC-Anbieter
 PROFILE_SUBMISSION: Final = f"{VERSION}profile/submission"
+#: Profil Nichtöffentliches (#565): geschützte Ausgabe nichtöffentlicher Inhalte je Session-Mandant
+PROFILE_NONPUBLIC: Final = f"{VERSION}profile/nonpublic"
 #: Typ-URLs der Kopf- und Schlusszeile eines Snapshots
 SNAPSHOT_HEADER: Final = f"{VERSION}SnapshotHeader"
 SNAPSHOT_END: Final = f"{VERSION}SnapshotEnd"
@@ -142,12 +145,13 @@ def profile_schema(profile: str, name: str) -> dict[str, Any]:
     return copy.deepcopy(_profile_schemas()[(profile, name)])
 
 
-def conforms_to(*, feed_offered: bool, submission_offered: bool = False) -> list[str]:
+def conforms_to(*, feed_offered: bool, submission_offered: bool = False, nonpublic: bool = False) -> list[str]:
     """
     Kennungen für ``kommparl:conformsTo`` (Einstieg ``/api/`` und ``System`` beider Ausgaben): die Fassung und die
     Profile aus ``PROFILES_FULFILLED`` – diese nur, wenn die Installation Änderungsfeed und Snapshot anbietet.
     ``submission_offered`` nennt zusätzlich das Profil Einreichung; das gilt nur für eine Ausgabe, die es anbietet
-    (OParl je Session-Mandant mit eingeschaltetem OpenID-Connect-Anbieter, Issue #1228), nie für den Aggregator.
+    (OParl je Session-Mandant mit eingeschaltetem OpenID-Connect-Anbieter, Issue #1228), nie für den Aggregator. Das
+    Profil Nichtöffentliches (``nonpublic``, #565) nennt nur die Session-Ausgabe, und nur, wenn sie es anbietet.
 
     Die Fassung setzt unter anderem voraus, dass jeder Zeitpunkt die Form ``yyyy-mm-ddThh:mm:ss±hh:mm`` hat (Kapitel
     „JSON-Ausgabe“, muss); dafür sorgt ``hub.ris.canonical.iso``. Die Konformitätsprüfung der Tests prüft die Formate
@@ -157,6 +161,7 @@ def conforms_to(*, feed_offered: bool, submission_offered: bool = False) -> list
         VERSION,
         *(PROFILES_FULFILLED if feed_offered else ()),
         *((PROFILE_SUBMISSION,) if submission_offered else ()),
+        *((PROFILE_NONPUBLIC,) if nonpublic else ()),
     ]
 
 

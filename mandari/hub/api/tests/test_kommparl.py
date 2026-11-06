@@ -136,6 +136,9 @@ class TestUebernommeneSchemas:
             ("submission", "SubmissionRequest"),
             ("submission", "SubmissionRules"),
             ("submission", "SubmissionUpload"),
+            # Profil Nichtöffentliches (#565)
+            ("nonpublic", "NonPublicProblem"),
+            ("nonpublic", "ProtectedResourceMetadata"),
         }
 
     def test_lizenz_in_reuse_toml(self) -> None:
@@ -326,6 +329,22 @@ class TestKoerperschaftUndSystem:
     def test_heute_kein_profil_genannt(self) -> None:
         """Muss-Anforderungen des Profils Änderungsfeed sind noch offen („Vollständigkeit“); siehe PROFILES_FULFILLED."""
         assert kommparl.conforms_to(feed_offered=True) == [kommparl.VERSION]
+
+    def test_profile_der_session_ausgabe(self) -> None:
+        """Einreichung (#1228) und Nichtöffentliches (#565) nennt nur eine Ausgabe, die sie anbietet, beide zusammen."""
+        assert kommparl.conforms_to(feed_offered=False, submission_offered=True) == [
+            kommparl.VERSION,
+            kommparl.PROFILE_SUBMISSION,
+        ]
+        assert kommparl.conforms_to(feed_offered=False, nonpublic=True) == [
+            kommparl.VERSION,
+            kommparl.PROFILE_NONPUBLIC,
+        ]
+        assert kommparl.conforms_to(feed_offered=True, submission_offered=True, nonpublic=True) == [
+            kommparl.VERSION,
+            kommparl.PROFILE_SUBMISSION,
+            kommparl.PROFILE_NONPUBLIC,
+        ]
 
 
 # =============================================================================

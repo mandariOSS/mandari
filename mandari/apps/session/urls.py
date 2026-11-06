@@ -10,6 +10,7 @@ from django.urls import path
 from . import views
 from .api import dcat as dcat_views
 from .api import einreichung as einreichung_views
+from .api import nichtoeffentlich as oparl_noe_views
 from .api import oparl as oparl_api_views
 from .api import views as api_views
 from .views import approvals as approval_views
@@ -1070,6 +1071,38 @@ urlpatterns = [
         "<slug:tenant_slug>/api/oparl/meeting/<uuid:pk>/kommparl/invitation-receipt/",
         einreichung_views.invitation_receipt_view,
         name="oparl_kommparl_invitation_receipt",
+    ),
+    # Nichtöffentliche Ausgabe nach dem Profil Nichtöffentliches von kommParl (Issue #565): vor der allgemeinen Liste,
+    # deren Muster sonst …/nichtoeffentlich/ als Liste läse
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/",
+        oparl_noe_views.system_view,
+        name="oparl_noe_system",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/bodies/",
+        oparl_noe_views.bodies_view,
+        name="oparl_noe_bodies",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/body/",
+        oparl_noe_views.body_view,
+        name="oparl_noe_body",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/file/<uuid:pk>/download/",
+        oparl_noe_views.file_download_view,
+        name="oparl_noe_file_download",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/<str:segment>/",
+        oparl_noe_views.list_view,
+        name="oparl_noe_list",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/<str:kind>/<uuid:pk>/",
+        oparl_noe_views.object_view,
+        name="oparl_noe_object",
     ),
     path(
         "<slug:tenant_slug>/api/oparl/file/<uuid:pk>/download/",

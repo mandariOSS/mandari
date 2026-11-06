@@ -130,6 +130,15 @@
                 "type": "string"
             }
         },
+        "kommparl:nonPublic": {
+            "description": "{{ File.properties.kommparl:nonPublic.description }}",
+            "type": "boolean"
+        },
+        "kommparl:publicId": {
+            "description": "{{ File.properties.kommparl:publicId.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "created": {
             "type": "string",
             "format": "date-time"

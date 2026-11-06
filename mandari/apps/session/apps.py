@@ -45,3 +45,9 @@ class SessionConfig(AppConfig):
         from .api import schnittstelle
 
         schnittstelle.register()
+
+        # Bindung von Diensten an einen Mandanten (Profil Nichtöffentliches, Issue #565): die Plattform speichert nur
+        # die fachfreie Kennung, Session löst Kurznamen auf und nennt den Mandanten
+        from .api import nichtoeffentlich
+
+        nichtoeffentlich.register()

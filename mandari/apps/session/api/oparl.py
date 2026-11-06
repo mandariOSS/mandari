@@ -140,15 +140,22 @@ def _mapping(tenant):
     Basis der Installation (Issue #733, ADR docs/adr/20260929-kanonisches-modell.md); die Basis liest die
     Abbildung erst, wenn sie Kennungen braucht (Änderungsfeed, Snapshot).
     """
+    from apps.session.api import nichtoeffentlich
+
+    # Profil Nichtöffentliches (#565): nur wenn angeboten, nennt das System das Profil und die nichtöffentliche Ausgabe
+    nonpublic = nichtoeffentlich.enabled()
     return SessionMapping(
         tenant,
         oparl_system_url(tenant),
         SOURCE,
         changes=changes.enabled(),
         id_base=partial(oparl_id_base, tenant),
-        conforms_to=kommparl.conforms_to(feed_offered=changes.enabled(), submission_offered=provider_enabled()),
+        conforms_to=kommparl.conforms_to(
+            feed_offered=changes.enabled(), submission_offered=provider_enabled(), nonpublic=nonpublic
+        ),
         # Profil Einreichung (Issue #1228): nur mit eingeschaltetem OpenID-Connect-Anbieter, nur in dieser Ausgabe
         submission=provider_enabled(),
+        nonpublic_system=nichtoeffentlich.system_url(tenant) if nonpublic else None,
     )
 
 

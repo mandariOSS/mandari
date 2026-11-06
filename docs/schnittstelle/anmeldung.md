@@ -1,11 +1,13 @@
 # Anmeldung für Anwendungen: mandari als OpenID-Connect-Anbieter
 
-Stand: 2026-11-05 (Issue #1206, Teil von Epic #1203). Grundlage ist das ADR
+Stand: 2026-11-06 (Issues #1206, #1228 und #565, Teil von Epic #1203). Grundlage ist das ADR
 [Eine Schnittstelle: API-first](../adr/20261105-eine-schnittstelle-api-first.md).
 
 Anwendungen melden Personen über mandari an und erhalten ein begrenztes, widerrufbares Token. Die Anmeldung
 selbst bleibt die von mandari, einschließlich des zweiten Faktors. Dienste ohne Person bekommen ihr Token über
-Client Credentials. Umgesetzt ist das mit [django-oauth-toolkit](https://github.com/django-oauth/django-oauth-toolkit)
+Client Credentials, mit Client-Secret oder mit `private_key_jwt` (RFC 7523). Nichtöffentliches lesen Anwendungen nur
+über die [nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe) nach dem Profil
+Nichtöffentliches von kommParl. Umgesetzt ist das mit [django-oauth-toolkit](https://github.com/django-oauth/django-oauth-toolkit)
 in der Plattform (`mandari/apps/accounts/oidc/`).
 
 > **Standardmäßig aus.** Ohne `OIDC_PROVIDER_ENABLED=true` antworten alle Endpunkte mit 404, auch die Discovery,
@@ -33,7 +35,7 @@ Eine dynamische Registrierung von Anwendungen gibt es nicht.
 | Ablauf | Für | Merkmale |
 |---|---|---|
 | Authorization Code mit PKCE | Anwendungen im Namen einer Person (App, Partnerdienst mit Oberfläche) | PKCE mit `S256` ist Pflicht, auch für Anwendungen mit Secret |
-| Client Credentials | Dienste ohne Person | nur mit Client-Secret, kein ID-Token, kein Refresh-Token |
+| Client Credentials | Dienste ohne Person | mit Client-Secret oder `private_key_jwt`, kein ID-Token, kein Refresh-Token |
 | Refresh Token | beide Code-Anwendungen | Rotation bei jeder Nutzung |
 
 Implicit, Password-Grant, Hybrid und Gerätefreigabe (RFC 8628) sind abgeschaltet. Access-Tokens werden nur im
@@ -65,9 +67,12 @@ vertrauenswürdig markiert werden und kommen ohne Zustimmungsseite aus. Fremde A
 | `ratsdaten:lesen` | Ratsdaten lesen, siehe unten | ja | ja |
 | `einreichung:schreiben` | Profil Einreichung: einreichen, zurücknehmen, zur Ladung zurückmelden (nur im Namen einer Person wirksam) | ja | ja |
 | `mandari:bereitstellung` | Bereitstellung von Organisationen und Mandanten (folgt) | nein | ja |
+| `ratsdaten:nichtoeffentlich` | Nichtöffentliches lesen, soweit die Person es selbst sehen darf (nichtöffentliche Ausgabe); Anmeldung mit zweitem Faktor Pflicht, höchstens 7 Tage danach | ja | nein |
+| `sitzung:lesen` | Alle Sitzungsdaten des gebundenen Mandanten einschließlich Nichtöffentlichem (nichtöffentliche Ausgabe); nur für Dienste mit Bindung an einen Mandanten | nein | ja |
 
-Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliche Inhalte gibt es über Tokens
-nicht, bis das Zugriffsmodell abgestimmt und geprüft ist (#565). Nimmt die Plattform-Administration einer
+Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliches gibt es nur mit den beiden
+letzten Scopes und nur über die [nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe); beide
+Scopes muss die Plattform-Administration einer Anwendung ausdrücklich erlauben. Nimmt die Plattform-Administration einer
 Anwendung einen Scope weg, gilt er auch für ihre bestehenden Tokens sofort nicht mehr, ebenso bei `userinfo` und
 in neuen Tokens aus bestehenden Refresh-Tokens. Für gesperrte Konten gibt es keine neuen Tokens.
 
@@ -181,6 +186,102 @@ curl -u '<client-id>:<client-secret>' https://mandari.example.org/oauth/token/ \
 Ohne `scope` bekommt der Dienst alle für ihn freigegebenen Scopes. Ein nicht freigegebener Scope ergibt
 `invalid_scope`.
 
+## Client Credentials mit `private_key_jwt`
+
+Dienste mit öffentlichen Schlüsseln an der Anwendung (JWK Set, nur RS256 mit RSA ab 2048 Bit oder ES256 mit P-256)
+weisen sich statt mit Client-Secret mit einem selbst signierten JWT aus (RFC 7523, Abschnitt 2.2). Ein Client-Secret
+gilt für solche Anwendungen nicht. Dienste mit Bindung an einen Mandanten melden sich nur so an.
+
+```bash
+curl https://mandari.example.org/oauth/token/ \
+  -d grant_type=client_credentials -d scope=sitzung:lesen \
+  -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+  -d client_assertion=eyJ…
+```
+
+Das JWT trägt im Kopf `alg` (`RS256` oder `ES256`) und `kid` (Schlüssel-ID aus dem JWK Set), im Inhalt:
+
+| Angabe | Wert |
+|---|---|
+| `iss`, `sub` | die Client-ID |
+| `aud` | der Aussteller (`issuer` der Discovery), `https://mandari.example.org`, als einzelne Zeichenkette. Die Adresse des Token-Endpunkts und Listen gelten nicht (draft-ietf-oauth-rfc7523bis, Schutz vor Audience Injection) |
+| `exp` | höchstens fünf Minuten in der Zukunft |
+| `jti` | eindeutig; ein zweites Mal wird die Assertion abgelehnt |
+| `iat` | empfohlen |
+
+Jede Abweichung ergibt `invalid_client` (401). Widerruf und Introspektion nehmen dieselbe Anmeldung an. Neue Schlüssel
+trägt der Betrieb mit `manage.py oidc_anwendung schluessel` ein ([Betrieb](anmeldung-betrieb.md#6-anwendungen-anlegen)).
+
+## Nichtöffentliches: die nichtöffentliche Ausgabe
+
+Umsetzung des Profils Nichtöffentliches von kommParl (Issue #565). Standardmäßig aus: Es gibt sie nur mit
+`OIDC_PROVIDER_ENABLED` und `OPARL_NONPUBLIC_ENABLED`, sonst antworten alle Adressen mit 404. **Vor dem Einschalten in
+Produktion steht ein externer Penetrationstest an.**
+
+**Adressen.** Je Session-Mandant eine eigene OParl-Ausgabe mit eigenem System-Objekt und eigenen Kennungen:
+
+| Zweck | Pfad |
+|---|---|
+| System | `/session/<mandant>/api/oparl/nichtoeffentlich/` |
+| Körperschaft, Liste der Körperschaften | `…/nichtoeffentlich/body/`, `…/nichtoeffentlich/bodies/` |
+| Listen | `…/nichtoeffentlich/<liste>/` (`meetings`, `agendaitems`, `papers`, `files`, `consultations`, `organizations`, `people`, `memberships`, `legislativeterms`) |
+| Objekte | `…/nichtoeffentlich/<art>/<kennung>/` |
+| Dateien | `…/nichtoeffentlich/file/<kennung>/download/` |
+| Metadaten (RFC 9728) | `/.well-known/oauth-protected-resource/session/<mandant>/api/oparl/nichtoeffentlich/` |
+
+Die öffentliche Ausgabe bleibt unverändert, auch mit Token. Ist die nichtöffentliche Ausgabe eingeschaltet, nennt nur
+das öffentliche `System` zusätzlich das Profil in `kommparl:conformsTo` und die Adresse in `kommparl:nonPublicSystem`.
+Änderungsfeed und Snapshot enthalten nie Nichtöffentliches; die nichtöffentliche Ausgabe bietet keine an. Anwendungen
+gleichen ihren Bestand regelmäßig vollständig ab und löschen, was nicht mehr enthalten ist.
+
+**Inhalte.** Alles, was der Aufrufer sehen darf, öffentlich wie nichtöffentlich, mit Verweisen innerhalb der
+Ausgabe. Nichtöffentliche Sitzungen, Tagesordnungspunkte, Vorlagen, Beratungen, Anlagen und Orte tragen
+`kommparl:nonPublic: true`, nichtöffentliche Tagesordnungspunkte zusätzlich `public: false`. Objekte, die auch öffentlich
+abrufbar sind, nennen ihre öffentliche Adresse in `kommparl:publicId`. Der nichtöffentliche Teil eines Beschlusstexts
+steht in `kommparl:nonPublicResolutionText`. Vorlagen im Entwurf oder in der Prüfung gibt es nicht. Was der Aufrufer
+nicht sehen darf, fehlt in Listen und Einbettungen und ergibt am Objekt 404.
+
+**Im Namen einer Person** (Scope `ratsdaten:nichtoeffentlich`, Code-Ablauf mit PKCE):
+
+- Die Person braucht einen zweiten Faktor; ohne ihn führt die Autorisierung zur Einrichtung, und ein Token verliert
+  den Scope, sobald der zweite Faktor entfernt ist. Maßgeblich ist die Anmeldung selbst: War sie ohne zweiten Faktor
+  (etwa weil er erst danach eingerichtet wurde), meldet sich die Person erneut an, diesmal mit Faktor.
+- Liegt die Anmeldung in der Sitzung mehr als sieben Tage zurück, meldet sich die Person erneut an. Tokens mit diesem
+  Scope gibt es höchstens sieben Tage nach der Anmeldung; danach endet der Refresh mit `invalid_grant`, und das letzte
+  Access-Token läuft spätestens dann ab.
+- Gelesen wird bei jedem Abruf genau, was die Person in Session sieht: dieselbe Regel wie die Oberfläche (Rechte
+  „Nichtöffentliche Sitzungen und TOPs sehen“ und „Nichtöffentliche Vorlagen sehen“ samt Sichtrecht), bei
+  eingeschalteten Rechten mit Geltungsbereich auch Zuweisungen für Körperschaften, Gremien und Ämter und befristete
+  Zuweisungen etwa für Vertretungen, solange sie gelten. Ein festgestelltes Mitwirkungsverbot (in der Abstimmung als
+  „befangen“ vermerkt) sperrt den nichtöffentlichen Tagesordnungspunkt, seine Anlagen, den nichtöffentlichen
+  Beschlusstext und die dort beratenen Vorlagen mit ihren Anlagen, soweit sie nicht öffentlich sind. Als Person des
+  Kontos gelten Personen des Mandanten mit derselben E-Mail-Adresse oder die mit dem Konto verknüpfte Person; ohne
+  solche Person greift das Mitwirkungsverbot nicht (siehe [Betrieb](anmeldung-betrieb.md)).
+- Die Person braucht ein aktives Konto im Mandanten mit dem Recht „API-Zugang“, wie in der Session-API v1. Ohne Konto
+  oder ohne dieses Recht gibt es 403, auch mit einer freigegebenen Anwendung: Der Mandant entscheidet, wer seine Daten
+  über die Schnittstelle abrufen darf.
+
+**Dienste je Mandant** (Scope `sitzung:lesen`, Client Credentials mit `private_key_jwt`): Die Anwendung ist an genau
+einen Session-Mandanten gebunden und liest alles Nichtöffentliche dieses Mandanten, nie das eines anderen (403).
+
+**Antworten** tragen `Cache-Control: private, no-store` und `Vary: Authorization`, keine CORS-Freigabe und keinen
+`ETag`. Fehler kommen als `application/problem+json`:
+
+| Status | Bedeutung |
+|---|---|
+| 401 | kein, ungültiges, abgelaufenes oder widerrufenes Token; `WWW-Authenticate: Bearer resource_metadata="…"`, bei mitgeschicktem Token mit `error="invalid_token"` |
+| 403 | Scope fehlt (`error="insufficient_scope"`, `scope="…"`), kein Konto im Mandanten, kein „API-Zugang“ oder Dienst eines anderen Mandanten |
+| 404 | gibt es nicht oder darf der Aufrufer nicht sehen |
+| 503 | der Abruf konnte nicht protokolliert werden; ohne Eintrag gibt es keine Inhalte |
+
+**Prüfprotokoll:** Jeder Abruf, dessen Antwort Nichtöffentliches enthält, steht im Protokoll des Mandanten (Session,
+„Protokoll“) mit Person bzw. Dienst, Anwendung (Client-ID) und den Kennungen der nichtöffentlichen Objekte, ohne
+Inhalte und ohne Zusammenfassung. Dazu zählen auch Beratungen einer veröffentlichten Vorlage, die Gremium, Rolle,
+Sitzung oder Tagesordnungspunkt einer nichtöffentlichen Station nennen (sie tragen `kommparl:nonPublic` und
+`kommparl:publicId`), und Verweise öffentlicher Objekte auf nichtöffentliche, etwa eines öffentlichen
+Tagesordnungspunkts auf die Beratung einer nichtöffentlichen Vorlage. Ein Dienst steht dort immer als Dienst, auch wenn
+seine Anfrage das Sitzungs-Cookie einer Person mitbringt.
+
 ## Ratsdaten lesen: Session-API v1
 
 Die [Session-API v1](../API_V1_SESSION.md) nimmt Access-Tokens mit dem Scope `ratsdaten:lesen` an:
@@ -191,7 +292,8 @@ curl -H 'Authorization: Bearer mandari_at_…' https://mandari.example.org/api/v
 
 - **Im Namen einer Person** liest das Token höchstens, was die Person mit eigener Anmeldung über die Schnittstelle
   lesen dürfte: nur mit dem Recht „API-Zugang“ in diesem Mandanten, sonst wie ein anonymer Aufruf. Nichtöffentliche
-  Sitzungen und Vorlagen, Texte, interne Notizen und Anträge gibt es nicht, auch wenn die Person sie sehen darf.
+  Sitzungen und Vorlagen, Texte, interne Notizen und Anträge gibt es hier nicht, auch wenn die Person sie sehen darf;
+  Nichtöffentliches liefert die [nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe).
 - **Ein Dienst** (Client Credentials) liest nur, was anonym lesbar ist.
 - Einreichen geht in der Session-API v1 weiter nur mit dem API-Token des Mandanten. Mit Access-Tokens reichen
   Anwendungen über das Profil Einreichung ein (nächster Abschnitt).
@@ -226,8 +328,8 @@ curl -X POST -H 'Authorization: Bearer mandari_at_…' -H 'Idempotency-Key: 5b0f
 
 | Fehler | Bedeutung |
 |---|---|
-| `invalid_client` (401) | Client-ID oder Secret falsch, Anwendung ausgeschaltet |
-| `invalid_grant` | Code abgelaufen, schon benutzt oder `code_verifier` passt nicht; Refresh-Token widerrufen oder ersetzt |
+| `invalid_client` (401) | Client-ID oder Secret falsch, Anwendung ausgeschaltet, Client-Assertion (`private_key_jwt`) ungültig, abgelaufen oder schon benutzt, Secret bei einer Anwendung mit Schlüsseln |
+| `invalid_grant` | Code abgelaufen, schon benutzt oder `code_verifier` passt nicht; Refresh-Token widerrufen oder ersetzt; für `ratsdaten:nichtoeffentlich` Anmeldung älter als sieben Tage oder kein zweiter Faktor mehr am Konto |
 | `invalid_scope` | Scope nicht für die Anwendung freigegeben |
 | `unauthorized_client` | Ablauf für die Anwendung nicht freigegeben |
 | `unsupported_grant_type` | Ablauf gibt es bei mandari nicht |

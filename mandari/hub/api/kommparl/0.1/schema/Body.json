@@ -237,6 +237,11 @@
                 "type": "string"
             }
         },
+        "kommparl:publicId": {
+            "description": "{{ Body.properties.kommparl:publicId.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "created": {
             "type": "string",
             "format": "date-time"

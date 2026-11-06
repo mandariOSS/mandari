@@ -88,6 +88,9 @@ def on_app_authorized(sender: Any, request: Any = None, token: Any = None, **kwa
         anwendung=getattr(application, "client_id", ""),
         ablauf=str(getattr(request, "POST", {}).get("grant_type", "")) if request is not None else "",
         scopes=str(getattr(token, "scope", "")),
+        # private_key_jwt (RFC 7523, #565); sonst Client-Secret bzw. PKCE ohne Secret
+        anmeldung="private_key_jwt" if getattr(application, "uses_private_key_jwt", False) else None,
+        bindung=str(getattr(application, "binding", "") or "") or None,
     )
 
 

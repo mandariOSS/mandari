@@ -435,6 +435,7 @@ class SecurityAuditLog(models.Model):
 from .oidc.models import (  # noqa: E402
     OAuthAccessToken,
     OAuthApplication,
+    OAuthClientAssertion,
     OAuthDeviceGrant,
     OAuthGrant,
     OAuthIDToken,
@@ -446,6 +447,7 @@ __all__ = [
     "LoginAttempt",
     "OAuthAccessToken",
     "OAuthApplication",
+    "OAuthClientAssertion",
     "OAuthDeviceGrant",
     "OAuthGrant",
     "OAuthIDToken",
