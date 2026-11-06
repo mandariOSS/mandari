@@ -14,6 +14,7 @@ Kein Netz: Der SDK-Client ist ein Ersatz. Nur erfundene Namen.
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from decimal import Decimal
 from itertools import count
@@ -77,6 +78,19 @@ def _nachricht(text: str = "Kurzfassung des Vorgangs.", *, stop: str = "end_turn
     )
 
 
+def _als_json(nachricht: Any) -> Any:
+    """Antwort auf eine Anfrage mit Schema: der Text als JSON (Zusammenfassung, leere Einfache Sprache)."""
+    bloecke = list(getattr(nachricht, "content", None) or [])
+    if not any(getattr(b, "type", "") == "text" and getattr(b, "text", "").startswith("{") for b in bloecke):
+        bloecke = [
+            SimpleNamespace(type="text", text=json.dumps({"zusammenfassung": b.text, "einfache_sprache": ""}))
+            if getattr(b, "type", "") == "text" and getattr(b, "text", "")
+            else b
+            for b in bloecke
+        ]
+    return SimpleNamespace(**{**vars(nachricht), "content": bloecke})
+
+
 class _Batches:
     def __init__(self) -> None:
         self.eingereicht: list[list[Any]] = []
@@ -115,6 +129,8 @@ class _Client:
         self.anfragen.append(params)
         if isinstance(self.antwort, Exception):
             raise self.antwort
+        if "format" in (params.get("output_config") or {}):
+            return _als_json(self.antwort)
         return self.antwort
 
 
@@ -263,7 +279,8 @@ class TestEinzelaufruf:
         antwort = ClaudeZusammenfassung(_endpunkt(), client=client).chat_completion(self.NACHRICHTEN, max_tokens=2048)
         assert antwort.content == "Kurzfassung des Vorgangs."
         (anfrage,) = client.anfragen
-        assert anfrage["system"] == "Systemprompt"
+        # Systemprompt als Cache-Präfix (Prompt Caching)
+        assert anfrage["system"] == [{"type": "text", "text": "Systemprompt", "cache_control": {"type": "ephemeral"}}]
         assert anfrage["messages"] == [{"role": "user", "content": "Text"}]
         assert anfrage["model"] == "claude-haiku-5-5" and anfrage["max_tokens"] == 2048
         assert anfrage["output_config"] == {"effort": "low"}
@@ -354,10 +371,9 @@ class TestVorgangsseite:
         assert vorgang.summary == "Kurzfassung des Vorgangs."
         assert vorgang.summary_hinweis.startswith("Claude von Anthropic (claude-haiku-5-5)")
         html = antwort.content.decode()
-        assert "Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten." in html
-        assert (
-            "KI-Anbieter: Claude von Anthropic (claude-haiku-5-5); Verarbeitungsort: weltweit, auch in den USA" in html
-        )
+        assert "Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten." in html
+        # Anbieter und Verarbeitungsort stehen in der Datenschutzerklärung, nicht unter dem Text
+        assert "KI-Anbieter" not in html and "Verarbeitungsort" not in html
 
     def test_ohne_hinweis_wie_bisher(self, body: OParlBody, client: Client) -> None:
         vorgang = _vorgang(body, summary="Ältere Zusammenfassung.")
@@ -480,7 +496,9 @@ class TestBatchAbholen:
             return SimpleNamespace(custom_id=str(vorgang.pk), result=SimpleNamespace(type=art))
         return SimpleNamespace(
             custom_id=str(vorgang.pk),
-            result=SimpleNamespace(type=art, message=nachricht or _nachricht(f"Kurzfassung {vorgang.name}.")),
+            result=SimpleNamespace(
+                type=art, message=_als_json(nachricht or _nachricht(f"Kurzfassung {vorgang.name}."))
+            ),
         )
 
     def test_laeuft_noch(self, eingereicht: Any) -> None:

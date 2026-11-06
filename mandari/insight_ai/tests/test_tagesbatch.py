@@ -175,12 +175,12 @@ class TestVerortung:
         assert zusammenfassung_batch.einreichen(provider=anbieter) == 1
         params = sdk.batches.eingereicht[0][0]["params"]
         assert params["output_config"]["format"] == {"type": "json_schema", "schema": TAGESBATCH_SCHEMA}
-        assert "ZWEITE AUFGABE – VERORTUNG PRÜFEN" in params["system"]
+        assert "ZWEITE AUFGABE – VERORTUNG PRÜFEN" in params["system"][0]["text"]
         nutzer = params["messages"][0]["content"]
         # Prüfbare Orte zuerst, OParl-Orte nur als Kontext
         assert "1. Hauptstraße (Herkunft: Straße (Straßenverzeichnis); prüfen: ja)" in nutzer
         assert "2. Rathaus (Herkunft: OParl-Ort; prüfen: nein)" in nutzer
-        assert nutzer.endswith("Fasse diesen Vorgang zusammen und prüfe die Orte.")
+        assert nutzer.endswith("Fasse diesen Vorgang zusammen, auch in Einfacher Sprache, und prüfe die Orte.")
         eintrag = ZusammenfassungsBatch.objects.get().anfragen[str(vorgang.pk)]
         hauptstrasse = PaperLocation.objects.get(paper=vorgang, source="street_match")
         assert eintrag["orte"][0] == str(hauptstrasse.pk)

@@ -38,7 +38,7 @@ def discard_for_files(file_ids: Iterable[uuid.UUID], *, dry_run: bool = False) -
         return 0
     vorgaenge = OParlFile.objects.filter(pk__in=kennungen, paper_id__isnull=False).values("paper_id")
     betroffen = OParlPaper.objects.filter(pk__in=vorgaenge, summary__isnull=False)
-    return betroffen.count() if dry_run else betroffen.update(summary=None, summary_hinweis="")
+    return betroffen.count() if dry_run else betroffen.update(summary=None, summary_hinweis="", summary_einfach=None)
 
 
 def _aktuelle_dateien_mit_text() -> QuerySet[OParlFile]:
@@ -176,7 +176,13 @@ def vorgaenge(kennungen: Iterable[Any]) -> QuerySet[OParlPaper]:
 
 
 def speichern(
-    vorgang_id: Any, zusammenfassung: str, hinweis: str, *, seit: datetime, dateien: Iterable[Any] = ()
+    vorgang_id: Any,
+    zusammenfassung: str,
+    hinweis: str,
+    *,
+    seit: datetime,
+    dateien: Iterable[Any] = (),
+    einfach: str = "",
 ) -> bool:
     """
     Speichert eine vorab erstellte Zusammenfassung, wenn sie noch passt; Rückgabe: gespeichert?
@@ -203,6 +209,8 @@ def speichern(
         ).exists():
             return False
         OParlPaper.objects.filter(pk=vorgang_id).update(
-            summary=zusammenfassung, summary_hinweis=(hinweis or "")[:HINWEIS_LAENGE]
+            summary=zusammenfassung,
+            summary_hinweis=(hinweis or "")[:HINWEIS_LAENGE],
+            summary_einfach=einfach or None,
         )
     return True

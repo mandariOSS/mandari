@@ -9,7 +9,13 @@
 import collapse from '@alpinejs/collapse'
 import focus from '@alpinejs/focus'
 import Alpine from 'alpinejs'
-import { documentText, merklisteController, neighborhoodSubscription, questionForm } from '../alpine/insight'
+import {
+  documentText,
+  kiBewertung,
+  merklisteController,
+  neighborhoodSubscription,
+  questionForm,
+} from '../alpine/insight'
 import { insightKarte } from '../alpine/insight-karte'
 import { insightShell } from '../alpine/insight-shell'
 import { kommunenWahl } from '../alpine/kommunen-wahl'
@@ -74,6 +80,7 @@ if (document.documentElement.dataset.portal === 'insight') {
   Alpine.data('questionForm', questionForm)
   Alpine.data('neighborhoodSubscription', neighborhoodSubscription)
   Alpine.data('documentText', documentText)
+  Alpine.data('kiBewertung', kiBewertung)
   Alpine.data('neighborhoodApp', neighborhoodApp)
   // Karte (gemeinsames Kartenmodul mit Work, frontend/js/vorgangskarte.ts, Issue #853)
   Alpine.data('insightKarte', insightKarte)

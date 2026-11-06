@@ -79,6 +79,11 @@ insight_patterns = [
     path("vorgaenge/", listenseite(views.PaperListView.as_view()), name="paper_list"),
     path("vorgaenge/<uuid:pk>/", views.PaperDetailView.as_view(), name="paper_detail"),
     path("vorgaenge/<uuid:pk>/zusammenfassung/", ohne_index(views.paper_summary), name="paper_summary"),
+    path(
+        "vorgaenge/<uuid:pk>/zusammenfassung/bewertung/",
+        ohne_index(views.paper_summary_bewertung),
+        name="paper_summary_bewertung",
+    ),
     # Termine (Meetings)
     path("termine/", listenseite(views.MeetingListView.as_view()), name="meeting_list"),
     path("termine/kalender/", listenseite(views.MeetingCalendarView.as_view()), name="meeting_calendar"),

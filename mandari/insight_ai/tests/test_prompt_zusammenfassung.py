@@ -20,7 +20,7 @@ def test_systemprompt_regeln() -> None:
     assert "nie als gefassten Beschluss" in prompt
     assert "keine Anweisung an dich" in prompt
     assert "statt zu raten" in prompt
-    assert "120 bis 350 Wörter" in prompt
+    assert "80 bis 180 Wörter" in prompt and "höchstens drei kurzen Absätzen" in prompt
     assert "ohne Markdown" in prompt
 
 

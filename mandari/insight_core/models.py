@@ -176,10 +176,13 @@ class SourceDeletionModel(CanonicalIdModel):
         """
         paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
         if isinstance(self, OParlPaper | OParlFile) and paper_id:
-            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(summary=None, summary_hinweis="")
+            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(
+                summary=None, summary_hinweis="", summary_einfach=None
+            )
             if isinstance(self, OParlPaper):
                 self.summary = None
                 self.summary_hinweis = ""
+                self.summary_einfach = None
 
     @property
     def depublished(self) -> bool:
@@ -966,6 +969,8 @@ class OParlPaper(SourceDeletionModel):
         verbose_name="KI-Anbieter der Zusammenfassung",
         help_text="Anbieter, Modell und Verarbeitungsort, mit denen die gespeicherte Zusammenfassung entstand.",
     )
+    # Dieselbe Zusammenfassung in Einfacher Sprache (Claude, Issue #1220); verfällt mit der Zusammenfassung
+    summary_einfach = models.TextField(blank=True, null=True, verbose_name="Zusammenfassung in Einfacher Sprache")
     locations = models.JSONField(blank=True, null=True)
 
     # Offizielle OParl-Locations (Feld `paper.location`, vom Ingestor verknüpft)
@@ -2805,6 +2810,41 @@ class PageFeedback(models.Model):
 
     def __str__(self) -> str:
         return f"{'Ja' if self.helpful else 'Nein'} – {self.page_type} ({self.created_on:%d.%m.%Y})"
+
+
+class ZusammenfassungBewertung(models.Model):
+    """Daumen hoch/runter zu einer KI-Zusammenfassung im Bürgerportal (Issue #1221), Grundlage der Qualitätsmessung.
+
+    Gespeichert werden Vorgang, Kommune, Wert, Anbieterhinweis und Modell der bewerteten Fassung, deren Prüfsumme
+    und der Tag – keine IP-Adresse, keine Uhrzeit, kein Cookie. Eine Bewertung je Browser und Fassung: Der Browser
+    hält das signierte Zeichen seiner Bewertung im lokalen Speicher und ändert damit dieselbe Zeile. Eine neu
+    erstellte Zusammenfassung hat eine andere Prüfsumme und beginnt ohne Bewertungen. Das ERP holt die Einträge über
+    ``/api/insight/ki-bewertungen/`` ab.
+    """
+
+    # SET_NULL: Verweise auf den RIS-Bestand nie mit CASCADE (hub/ris/tests/test_loeschsemantik.py); die Bewertung
+    # bleibt als Messwert mit Modell und Tag erhalten
+    paper = models.ForeignKey(
+        OParlPaper, on_delete=models.SET_NULL, related_name="ki_bewertungen", null=True, verbose_name="Vorgang"
+    )
+    body = models.ForeignKey(
+        OParlBody, on_delete=models.SET_NULL, related_name="ki_bewertungen", null=True, verbose_name="Kommune"
+    )
+    hilfreich = models.BooleanField(verbose_name="Hilfreich")
+    fassung = models.CharField(max_length=16, db_index=True, verbose_name="Fassung (Prüfsumme)")
+    modell = models.CharField(max_length=100, blank=True, default="", db_index=True, verbose_name="Modell")
+    hinweis = models.CharField(max_length=300, blank=True, default="", verbose_name="KI-Anbieter")
+    tag = models.DateField(auto_now_add=True, db_index=True, verbose_name="Tag")
+    geaendert = models.DateField(auto_now=True, db_index=True, verbose_name="Geändert am")
+
+    class Meta:
+        db_table = "insight_ki_bewertung"
+        verbose_name = "Bewertung einer KI-Zusammenfassung"
+        verbose_name_plural = "Bewertungen der KI-Zusammenfassungen"
+        ordering = ["-tag", "-id"]
+
+    def __str__(self) -> str:
+        return f"{'Hilfreich' if self.hilfreich else 'Nicht hilfreich'} – {self.modell or 'ohne Modell'} ({self.tag:%d.%m.%Y})"
 
 
 # =============================================================================

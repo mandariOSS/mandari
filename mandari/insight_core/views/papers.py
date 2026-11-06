@@ -265,6 +265,38 @@ def paper_summary(request, pk):
         summary_guard.release(paper.pk)
 
 
+@require_http_methods(["POST"])
+def paper_summary_bewertung(request, pk):
+    """
+    Daumen hoch/runter zur KI-Zusammenfassung (Issue #1221, ``services.ki_bewertung``): POST mit ``wert``
+    (``hoch``/``runter``), ``fassung`` und optional ``zeichen`` einer früheren Bewertung desselben Browsers.
+    Antwort JSON ``{"hilfreich": …, "zeichen": …}``; 409, wenn die Zusammenfassung inzwischen eine andere ist.
+    """
+    from django.http import JsonResponse
+
+    from ..services import ki_bewertung
+
+    paper = get_object_or_404(OParlPaper, pk=pk)
+    if paper.withdrawn_by_publisher or not paper.summary:
+        return JsonResponse({"fehler": "keine_zusammenfassung"}, status=404)
+    wert = request.POST.get("wert")
+    if wert not in ("hoch", "runter"):
+        return JsonResponse({"fehler": "wert"}, status=400)
+    try:
+        bewertung, zeichen = ki_bewertung.abgeben(
+            request,
+            paper,
+            hilfreich=wert == "hoch",
+            bewertete_fassung=str(request.POST.get("fassung", ""))[:32],
+            zeichen=str(request.POST.get("zeichen", ""))[:500],
+        )
+    except ki_bewertung.FassungVeraltetError:
+        return JsonResponse({"fehler": "fassung"}, status=409)
+    except ki_bewertung.ZuVieleBewertungenError:
+        return JsonResponse({"fehler": "grenze"}, status=429)
+    return JsonResponse({"hilfreich": bewertung.hilfreich, "zeichen": zeichen})
+
+
 def _generate_summary(request, paper):
     from insight_ai.services.summarizer import (
         APINotConfiguredError,

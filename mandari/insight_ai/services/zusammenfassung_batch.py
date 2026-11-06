@@ -49,6 +49,7 @@ from insight_ai import kosten
 from insight_ai.models import KiVerbrauch, TagesbatchKommune, ZusammenfassungsBatch
 from insight_ai.providers.claude import BatchErgebnis, ClaudeZusammenfassung
 from insight_ai.providers.openai_kompatibel import KiAnbieterError
+from insight_ai.services.summarizer import ZUSATZ_AUSGABE_EINFACH, zerlegen
 
 logger = logging.getLogger(__name__)
 
@@ -149,10 +150,10 @@ def _einreichen(endpunkt: ClaudeEndpunkt, provider: Any) -> int:
             wartend[grund] += 1
             continue
         orte = verortung_pruefung.orte_fuer_pruefung(vorgang) if pruefen else None
-        vorbereitung = dienst.vorbereiten(vorgang, orte=orte)
+        vorbereitung = dienst.vorbereiten(vorgang, orte=orte, einfach=True)
         if vorbereitung is None:
             continue
-        grenze_anfrage = grenze + (ZUSATZ_AUSGABE_VERORTUNG if vorbereitung.schema is not None else 0)
+        grenze_anfrage = grenze + ZUSATZ_AUSGABE_EINFACH + (ZUSATZ_AUSGABE_VERORTUNG if orte is not None else 0)
         betrag = kosten.schaetzung(
             endpunkt.modell, zeichen=vorbereitung.zeichen, max_ausgabe=grenze_anfrage, batch=True
         )
@@ -162,6 +163,8 @@ def _einreichen(endpunkt: ClaudeEndpunkt, provider: Any) -> int:
         custom_id = str(vorgang.pk)
         anfragen.append((custom_id, vorbereitung.nachrichten, grenze_anfrage, vorbereitung.schema))
         eintrag: dict[str, Any] = {"vorgang": str(vorgang.pk), "dateien": [str(i) for i in vorbereitung.datei_ids]}
+        if vorbereitung.schema is not None:
+            eintrag["json"] = True
         if vorbereitung.orte_ids is not None:
             eintrag["orte"] = vorbereitung.orte_ids
         eintraege[custom_id] = eintrag
@@ -281,9 +284,8 @@ def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) 
                 )
             if not vorgang_id:
                 continue
-            text, pruefung = ergebnis.text, None
-            if text and "orte" in eintrag:
-                text, pruefung = _mit_verortung(text)
+            text, einfach = zerlegen(ergebnis.text, json_pflicht=bool(eintrag.get("json")))
+            pruefung = _verortung(ergebnis.text) if text and "orte" in eintrag else None
             if not text:
                 fehlgeschlagen += 1
                 if ergebnis.art in PAUSE_NACH:
@@ -301,7 +303,12 @@ def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) 
             if hinweis and pruefung is not None:
                 hinweis += HINWEIS_VERORTUNG
             if summary_store.speichern(
-                vorgang_id, text, hinweis, seit=batch.eingereicht_am, dateien=eintrag.get("dateien") or []
+                vorgang_id,
+                text,
+                hinweis,
+                seit=batch.eingereicht_am,
+                dateien=eintrag.get("dateien") or [],
+                einfach=einfach,
             ):
                 gespeichert += 1
                 if pruefung is not None:
@@ -325,18 +332,17 @@ def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) 
     return gespeichert
 
 
-def _mit_verortung(antwort: str) -> tuple[str, tuple[list[dict[str, Any]], list[dict[str, Any]]] | None]:
-    """JSON-Antwort mit Prüfung der Verortung zerlegen: (Zusammenfassung, (Urteile, fehlende Orte)); unlesbar: leer."""
+def _verortung(antwort: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
+    """Urteile und fehlende Orte aus der JSON-Antwort (``TAGESBATCH_SCHEMA``); unlesbar: ``None``."""
     try:
         daten = json.loads(antwort)
     except ValueError:
-        return "", None
+        return None
     if not isinstance(daten, dict):
-        return "", None
-    text = str(daten.get("zusammenfassung") or "").strip()
+        return None
     urteile = [eintrag for eintrag in daten.get("orte") or [] if isinstance(eintrag, dict)]
     fehlende = [eintrag for eintrag in daten.get("fehlende_orte") or [] if isinstance(eintrag, dict)]
-    return text, (urteile, fehlende) if text else None
+    return urteile, fehlende
 
 
 def _verortung_anwenden(
