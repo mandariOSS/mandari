@@ -892,7 +892,11 @@ class TestOeffentlicheAusgabe:
             feed = Client().get(f"{OEFFENTLICH}body/kommparl/changes/", headers=headers).json()
             snapshot = Client().get(f"{OEFFENTLICH}body/kommparl/snapshot/", headers=headers)
             zeilen = b"".join(cast(Any, snapshot).streaming_content).decode()
-        assert [eintrag["id"] for eintrag in feed["data"]] == [f"{basis}meeting/{welt['sitzung'].pk}/"]
+        # Nur die öffentliche Sitzung, seit #1229 mit ihrem Ort, der ihre Kennung trägt und sich mit ihr ändert
+        assert [eintrag["id"] for eintrag in feed["data"]] == [
+            f"{basis}meeting/{welt['sitzung'].pk}/",
+            f"{basis}location/{welt['sitzung'].pk}/",
+        ]
         for geheim in ("GEHEIM", "PERSONAL", "nichtoeffentlich", str(welt["noe_sitzung"].pk), str(welt["geheim"].pk)):
             assert geheim not in json.dumps(feed)
             assert geheim not in zeilen
@@ -970,3 +974,19 @@ class TestKonformitaet:
         user, _ = konto(tenant, ALLE_NOE)
         sitzung = abruf(f"{NOE}meeting/{welt['sitzung'].pk}/", token_fuer(user)).json()
         assert "kommparl:publicId" not in json.dumps(sitzung)
+
+    def test_profil_einreichung_nur_in_der_oeffentlichen_ausgabe(self, welt: dict[str, Any]) -> None:
+        """Mit #1228 zusammen: Das öffentliche System nennt beide Profile, die nichtöffentliche Ausgabe keine Einreichung."""
+        einreichung = "https://schema.kommparl.de/0.1/profile/submission"
+        nonpublic = "https://schema.kommparl.de/0.1/profile/nonpublic"
+        system = Client().get(OEFFENTLICH).json()
+        assert einreichung in system["kommparl:conformsTo"] and nonpublic in system["kommparl:conformsTo"]
+        assert "kommparl:submission" in Client().get(f"{OEFFENTLICH}body/").json()
+        user, _ = konto(welt["tenant"], ALLE_NOE)
+        raw = token_fuer(user)
+        assert einreichung not in abruf(NOE, raw).json()["kommparl:conformsTo"]
+        body = abruf(f"{NOE}body/", raw).json()
+        assert not [name for name in body if name.startswith("kommparl:submission")]
+        for sitzung in (welt["sitzung"], welt["noe_sitzung"]):
+            objekt = abruf(f"{NOE}meeting/{sitzung.pk}/", raw).json()
+            assert "kommparl:attendanceResponse" not in objekt and "kommparl:invitationReceipt" not in objekt
