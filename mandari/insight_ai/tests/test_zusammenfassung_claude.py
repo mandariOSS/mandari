@@ -371,10 +371,9 @@ class TestVorgangsseite:
         assert vorgang.summary == "Kurzfassung des Vorgangs."
         assert vorgang.summary_hinweis.startswith("Claude von Anthropic (claude-haiku-5-5)")
         html = antwort.content.decode()
-        assert "Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten." in html
-        assert (
-            "KI-Anbieter: Claude von Anthropic (claude-haiku-5-5); Verarbeitungsort: weltweit, auch in den USA" in html
-        )
+        assert "Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten." in html
+        # Anbieter und Verarbeitungsort stehen in der Datenschutzerklärung, nicht unter dem Text
+        assert "KI-Anbieter" not in html and "Verarbeitungsort" not in html
 
     def test_ohne_hinweis_wie_bisher(self, body: OParlBody, client: Client) -> None:
         vorgang = _vorgang(body, summary="Ältere Zusammenfassung.")

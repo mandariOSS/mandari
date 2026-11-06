@@ -106,7 +106,30 @@ def test_verfaellt_mit_der_zusammenfassung(body: OParlBody) -> None:
 def test_umschalter_auf_der_seite(body: OParlBody, client: Client) -> None:
     vorgang = _vorgang(body, summary="Ausführlich.", summary_einfach="Ganz einfach.")
     html = client.get(reverse("insight_core:insight:paper_summary", args=[vorgang.pk])).content.decode()
-    assert "Ganz einfach." in html and "In Einfacher Sprache lesen" in html
+    assert "Ganz einfach." in html and "In Einfacher Sprache" in html
     ohne = _vorgang(body, summary="Nur ausführlich.")
     html = client.get(reverse("insight_core:insight:paper_summary", args=[ohne.pk])).content.decode()
-    assert "In Einfacher Sprache lesen" not in html
+    assert "In Einfacher Sprache" not in html
+
+
+def test_absaetze_mit_weiterlesen(body: OParlBody, client: Client) -> None:
+    vorgang = _vorgang(body, summary="Kern des Vorgangs.\n\nEinzelheiten eins.\n\nEinzelheiten zwei.")
+    html = client.get(reverse("insight_core:insight:paper_summary", args=[vorgang.pk])).content.decode()
+    assert ">KI-Zusammenfassung</h2>" in html
+    # Der Kern steht vor dem eingeklappten Rest, jeder Absatz in einem eigenen <p>
+    assert (
+        html.index("<p>Kern des Vorgangs.</p>") < html.index('x-show="offen"') < html.index("<p>Einzelheiten zwei.</p>")
+    )
+    assert "Weiterlesen" in html and 'aria-expanded="false"' in html
+    # Nur ein Absatz: nichts einzuklappen
+    kurz = _vorgang(body, summary="Nur ein Satz.")
+    html = client.get(reverse("insight_core:insight:paper_summary", args=[kurz.pk])).content.decode()
+    assert "<p>Nur ein Satz.</p>" in html and "Weiterlesen" not in html
+
+
+def test_absaetze_aus_einfachen_zeilenumbruechen() -> None:
+    from insight_core.templatetags.ki_bewertung import ki_absaetze
+
+    assert ki_absaetze("Eins.\nZwei.") == ["Eins.", "Zwei."]
+    assert ki_absaetze("Eins\nweiter.\n\nZwei.") == ["Eins weiter.", "Zwei."]
+    assert ki_absaetze(None) == []
