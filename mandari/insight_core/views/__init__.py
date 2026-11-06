@@ -75,6 +75,7 @@ from .papers import (
     PaperDetailView,
     PaperListView,
     paper_summary,
+    paper_summary_bewertung,
 )
 from .persons import (
     COUNCIL_ROLES,
@@ -178,6 +179,7 @@ __all__ = [
     "neighborhood_results",
     "page_feedback",
     "paper_summary",
+    "paper_summary_bewertung",
     "search_results",
     "set_body",
     "tile_proxy",
