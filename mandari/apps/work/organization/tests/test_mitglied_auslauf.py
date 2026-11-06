@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -27,12 +27,21 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.common.mail_backends import build_backend
 from apps.common.tests import factories
-from apps.tenants.models import Membership
+from apps.tenants.models import Membership, Organization
 from apps.work.faction.models import FactionAuditLog
-from apps.work.motions.models import Motion, MotionComment, MotionDocument, MotionRevision, MotionShare
-from apps.work.organization import auslauf, services
+from apps.work.motions.models import (
+    Motion,
+    MotionAdministrationEvent,
+    MotionComment,
+    MotionDocument,
+    MotionEmailSubmission,
+    MotionRevision,
+    MotionShare,
+)
+from apps.work.organization import audit, auslauf, services
 from apps.work.organization.models import DataExport
 from apps.work.organization.services import ServiceError
+from apps.work.tasks.models import Task, TaskAttachment, TaskShare
 
 pytestmark = pytest.mark.django_db
 
@@ -569,3 +578,358 @@ def test_vor_dem_loeschdatum_wird_nichts_geloescht(org: Any, admin: Any, mitglie
     auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at - timedelta(minutes=5))
 
     assert Membership.objects.filter(pk=mitglied.pk).exists()
+
+
+# ---------------------------------------------------------------------------
+# Absicherungen aus der Prüfung von PR #1241
+# ---------------------------------------------------------------------------
+
+
+def _passwort(member: Any) -> str:
+    passwort = "ein-langes-test-passwort-1237"
+    member.user.set_password(passwort)
+    member.user.save()
+    return passwort
+
+
+def test_deaktivieren_leert_ein_altes_loeschdatum(org: Any, admin: Any, mitglied: Any) -> None:
+    """Rückfall: Ein altes Image reaktiviert, das Löschdatum bleibt stehen; späteres Deaktivieren darf es nicht
+    wieder scharf schalten."""
+    Membership.objects.filter(pk=mitglied.pk).update(
+        deletion_scheduled_at=timezone.now() - TAG, deletion_reminder_days=3
+    )
+    mitglied.refresh_from_db()
+
+    services.deactivate_member(org, mitglied, admin.user)
+
+    mitglied.refresh_from_db()
+    assert mitglied.deletion_scheduled_at is None
+    assert mitglied.deletion_reminder_days is None
+
+
+def test_kontoloeschantrag_leert_ein_altes_loeschdatum(org: Any, mitglied: Any) -> None:
+    Membership.objects.filter(pk=mitglied.pk).update(
+        deletion_scheduled_at=timezone.now() - TAG, deletion_reminder_days=3
+    )
+    mitglied.refresh_from_db()
+
+    services.request_account_deletion(org, mitglied, _passwort(mitglied))
+
+    mitglied.refresh_from_db()
+    assert mitglied.is_active is False
+    assert mitglied.deletion_scheduled_at is None
+    assert mitglied.deletion_reminder_days is None
+
+
+def test_lauf_loescht_nur_nachweislich_gesetzten_auslauf(org: Any, admin: Any, mitglied: Any) -> None:
+    """Nach dem Setzen hat ein altes Image reaktiviert und wieder deaktiviert (Einträge in der Änderungshistorie,
+    die neuen Spalten unberührt): Der Lauf löscht nicht, sondern nimmt das alte Datum zurück und vermerkt das."""
+    _setzen(org, mitglied, admin)
+    Membership.objects.filter(pk=mitglied.pk).update(is_active=True)
+    audit.log_member_access(mitglied, "deaktiviert", "aktiv", actor=admin)
+    Membership.objects.filter(pk=mitglied.pk).update(is_active=False)
+    audit.log_member_access(mitglied, "aktiv", "deaktiviert", actor=admin)
+    mail.outbox.clear()
+
+    ergebnis = auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at + TAG)
+
+    assert ergebnis["deleted"] == 0
+    mitglied.refresh_from_db()
+    assert mitglied.is_active is False
+    assert mitglied.deletion_scheduled_at is None
+    assert _an("geht@example.org") == []
+    eintrag = _eintraege(org)[-1]
+    assert eintrag.changes["Zugang"]["neu"] == "deaktiviert"
+    assert "nicht nachweisbar" in eintrag.changes["Anlass"]["neu"]
+
+
+def test_loeschdatum_ohne_eintrag_in_der_historie_loescht_und_erinnert_nicht(org: Any, mitglied: Any) -> None:
+    """Etwa ein im Django-Admin gesetztes Datum: weder Erinnerung noch Löschung."""
+    jetzt = timezone.now()
+    Membership.objects.filter(pk=mitglied.pk).update(is_active=False, deletion_scheduled_at=jetzt + 2 * TAG)
+    anderes = fabrik.MembershipFactory(organization=org, user=fabrik.UserFactory(email="alt@example.org"))
+    Membership.objects.filter(pk=anderes.pk).update(is_active=False, deletion_scheduled_at=jetzt - TAG)
+
+    ergebnis = auslauf.run_membership_expiry_pass(now=jetzt)
+
+    assert ergebnis["deleted"] == 0
+    assert ergebnis["reminded"] == 0
+    assert _an("geht@example.org") == []
+    assert _an("alt@example.org") == []
+    assert Membership.objects.filter(pk__in=[mitglied.pk, anderes.pk], deletion_scheduled_at=None).count() == 2
+
+
+def test_setzen_scheitert_ohne_eintrag_in_der_historie(org: Any, admin: Any, mitglied: Any) -> None:
+    """Ohne Eintrag gäbe es keinen Nachweis für den Lauf: dann lieber gar nicht setzen."""
+    with mock.patch.object(audit, "log_member_access", return_value=None), pytest.raises(ServiceError):
+        auslauf.schedule_member_deletion(org, mitglied, admin.user)
+
+    mitglied.refresh_from_db()
+    assert mitglied.is_active is True
+    assert mitglied.deletion_scheduled_at is None
+    assert _an("geht@example.org") == []
+
+
+def _session_antrag() -> Any:
+    from apps.session.models import SessionApplication, SessionTenant
+
+    return SessionApplication.objects.create(
+        tenant=SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt"),
+        title="Bänke",
+        justification="Weil.",
+        resolution_proposal="Aufstellen.",
+        submitter_name="Fraktion",
+        submitter_email="f@example.org",
+    )
+
+
+def test_eingereichte_private_dokumente_bleiben(org: Any, mitglied: Any) -> None:
+    session = _motion(org, mitglied, "Über Session eingereicht", visibility="private")
+    session.session_application = _session_antrag()
+    session.save()
+    stempel = _motion(org, mitglied, "Mit Einreichungsdatum", visibility="private", status="submitted")
+    stempel.submitted_at = timezone.now()
+    stempel.save()
+    rueckmeldung = _motion(org, mitglied, "Mit Rückmeldung", visibility="private")
+    MotionAdministrationEvent.objects.create(motion=rueckmeldung, key="submitted", kind="submitted")
+    per_mail = _motion(org, mitglied, "Per Mail eingereicht", visibility="private")
+    MotionEmailSubmission.objects.create(motion=per_mail, submitted_by_name="Geht", subject="Antrag")
+    stand = _motion(org, mitglied, "Stand der Verwaltung", visibility="private")
+    stand.administration_status = "submitted"
+    stand.save()
+    _motion(org, mitglied, "Nie eingereicht", visibility="private")
+
+    gewaehlt = set(auslauf.private_documents_and_drafts(mitglied).values_list("title", flat=True))
+
+    assert gewaehlt == {"Nie eingereicht"}
+
+
+def test_entwurf_mit_versionen_anderer_bleibt(org: Any, mitglied: Any, kollegin: Any) -> None:
+    mitbearbeitet = _motion(org, mitglied, "Mitbearbeitet", visibility="private")
+    MotionRevision.objects.create(motion=mitbearbeitet, version=1, changed_by=mitglied)
+    MotionRevision.objects.create(motion=mitbearbeitet, version=2, changed_by=kollegin)
+    eigen = _motion(org, mitglied, "Nur eigene Versionen", visibility="private")
+    MotionRevision.objects.create(motion=eigen, version=1, changed_by=mitglied)
+
+    gewaehlt = set(auslauf.private_documents_and_drafts(mitglied).values_list("title", flat=True))
+
+    assert gewaehlt == {"Nur eigene Versionen"}
+
+
+def _aufgabe(org: Any, member: Any, title: str, **kwargs: Any) -> Any:
+    return Task.objects.create(organization=org, title=title, created_by=member, **kwargs)
+
+
+def _aufgaben_anhang(task: Any, member: Any, name: str, inhalt: bytes = b"Aufgabenanhang") -> Any:
+    return TaskAttachment.objects.create(
+        task=task, file=SimpleUploadedFile(name, inhalt), filename=name, mime_type="text/plain", uploaded_by=member
+    )
+
+
+def _dokument_anhang(motion: Any, member: Any, name: str, inhalt: bytes = b"%PDF-1.4 privat") -> Any:
+    return MotionDocument.objects.create(
+        motion=motion,
+        file=SimpleUploadedFile(name, inhalt),
+        filename=name,
+        mime_type="application/pdf",
+        uploaded_by=member,
+    )
+
+
+def _anhang_url(org: Any, art: str, anhang: Any) -> str:
+    return reverse(
+        "work:membership_expiry_attachment", kwargs={"org_slug": org.slug, "kind": art, "attachment_id": anhang.id}
+    )
+
+
+def test_auslaufseite_bietet_anhaenge_zum_herunterladen(org: Any, admin: Any, mitglied: Any, client_for: Any) -> None:
+    dokument = _dokument_anhang(_motion(org, mitglied, "Privat", visibility="private"), mitglied, "konzept.pdf")
+    aufgabe = _aufgaben_anhang(_aufgabe(org, mitglied, "Eigene Aufgabe"), mitglied, "notiz.txt")
+    _setzen(org, mitglied, admin)
+    client = client_for(mitglied.user)
+
+    seite = client.get(reverse("work:membership_expiry", kwargs={"org_slug": org.slug})).content.decode()
+
+    assert "konzept.pdf" in seite
+    assert _anhang_url(org, "dokument", dokument) in seite
+    assert "notiz.txt" in seite
+    assert _anhang_url(org, "aufgabe", aufgabe) in seite
+    for art, anhang, inhalt in (("dokument", dokument, b"%PDF-1.4 privat"), ("aufgabe", aufgabe, b"Aufgabenanhang")):
+        antwort = client.get(_anhang_url(org, art, anhang))
+        assert antwort.status_code == 200, art
+        assert b"".join(antwort.streaming_content) == inhalt
+        assert antwort["Content-Disposition"].startswith("attachment")
+        assert antwort["X-Content-Type-Options"] == "nosniff"
+
+
+def test_fremde_und_geteilte_anhaenge_nicht_ueber_die_auslaufseite(
+    org: Any, admin: Any, mitglied: Any, kollegin: Any, client_for: Any
+) -> None:
+    fraktion = _dokument_anhang(
+        _motion(org, mitglied, "Fraktionsantrag", visibility="organization", status="submitted"), mitglied, "a.pdf"
+    )
+    geteilt = _dokument_anhang(_motion(org, mitglied, "Geteilt", visibility="shared"), mitglied, "b.pdf")
+    fremd = _dokument_anhang(_motion(org, kollegin, "Fremd", visibility="private"), kollegin, "c.pdf")
+    geteilte_aufgabe = _aufgabe(org, mitglied, "Geteilte Aufgabe", visibility="shared")
+    TaskShare.objects.create(task=geteilte_aufgabe, membership=kollegin, shared_by=mitglied)
+    aufgabe_geteilt = _aufgaben_anhang(geteilte_aufgabe, mitglied, "d.txt")
+    aufgabe_fremd = _aufgaben_anhang(_aufgabe(org, kollegin, "Fremde Aufgabe"), kollegin, "e.txt")
+    eigener = _dokument_anhang(_motion(org, mitglied, "Privat", visibility="private"), mitglied, "f.pdf")
+
+    # Aktive Mitglieder erreichen die View gar nicht
+    assert client_for(mitglied.user).get(_anhang_url(org, "dokument", eigener)).status_code == 302
+    _setzen(org, mitglied, admin)
+    client = client_for(mitglied.user)
+
+    for art, anhang in (
+        ("dokument", fraktion),
+        ("dokument", geteilt),
+        ("dokument", fremd),
+        ("aufgabe", aufgabe_geteilt),
+        ("aufgabe", aufgabe_fremd),
+        ("aufgabe", eigener),
+        ("unbekannt", eigener),
+    ):
+        assert client.get(_anhang_url(org, art, anhang)).status_code == 404, (art, anhang.filename)
+    seite = client.get(reverse("work:membership_expiry", kwargs={"org_slug": org.slug})).content.decode()
+    for name in ("a.pdf", "b.pdf", "c.pdf", "d.txt", "e.txt"):
+        assert name not in seite, name
+    # Die Kollegin (aktiv) kommt über die Auslauf-View an nichts
+    assert client_for(kollegin.user).get(_anhang_url(org, "dokument", eigener)).status_code == 302
+
+
+def test_loeschtag_entfernt_dateien_persoenlicher_aufgaben(
+    org: Any, admin: Any, mitglied: Any, django_capture_on_commit_callbacks: Any
+) -> None:
+    anhang = _aufgaben_anhang(_aufgabe(org, mitglied, "Eigene Aufgabe"), mitglied, "notiz.txt")
+    datei = Path(anhang.file.path)
+    assert datei.exists()
+    _setzen(org, mitglied, admin)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at + TAG)
+
+    assert not Membership.objects.filter(pk=mitglied.pk).exists()
+    assert not TaskAttachment.objects.filter(pk=anhang.pk).exists()
+    assert not datei.exists()
+
+
+def test_loeschtag_entfernt_das_exportverzeichnis(
+    org: Any, admin: Any, mitglied: Any, _medien: Path, django_capture_on_commit_callbacks: Any
+) -> None:
+    """Ein Export, der während der Löschung fertig wurde, hat keinen Eintrag mehr, nur seine Datei."""
+    verzeichnis = _medien / "exports" / str(org.pk) / str(mitglied.pk)
+    verzeichnis.mkdir(parents=True)
+    (verzeichnis / "dsgvo-export-spaet.json").write_text("{}")
+    _setzen(org, mitglied, admin)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at + TAG)
+
+    assert not verzeichnis.exists()
+
+
+def test_export_waehrend_der_loeschung_hinterlaesst_keine_datei(org: Any, mitglied: Any, _medien: Path) -> None:
+    """Die Löschung räumt das Verzeichnis nach dem Commit; ein Export, der danach erst schreibt, räumt selbst."""
+    from apps.work.background_tasks import generate_dsgvo_export_task
+    from apps.work.organization.export_service import dsgvo_export_service
+
+    export = DataExport.objects.create(organization=org, membership=mitglied, export_format="json")
+    sammeln = dsgvo_export_service.collect_user_data
+
+    def sammeln_waehrend_der_loeschung(**kwargs: Any) -> Any:
+        daten = sammeln(**kwargs)
+        DataExport.objects.filter(pk=export.pk).delete()
+        return daten
+
+    with mock.patch.object(dsgvo_export_service, "collect_user_data", side_effect=sammeln_waehrend_der_loeschung):
+        cast(Any, generate_dsgvo_export_task).enqueue(str(export.id))
+
+    verzeichnis = _medien / "exports" / str(org.pk) / str(mitglied.pk)
+    assert list(verzeichnis.glob("*")) == []
+
+
+def test_eigentuemer_wird_am_loeschtag_nicht_geloescht(
+    org: Any, admin: Any, mitglied: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    _setzen(org, mitglied, admin)
+    Organization.objects.filter(pk=org.pk).update(owner=mitglied.user)
+    mail.outbox.clear()
+
+    with caplog.at_level("WARNING"):
+        ergebnis = auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at + TAG)
+
+    assert ergebnis["deleted"] == 0
+    assert Membership.objects.filter(pk=mitglied.pk).exists()
+    assert User.objects.filter(pk=mitglied.user_id).exists()
+    assert "Eigentümer" in caplog.text
+    eintrag = _eintraege(org)[-1]
+    assert "Eigentümer" in eintrag.changes["Anlass"]["neu"]
+    assert _an("geht@example.org") == []
+    # Kein weiterer Eintrag bei jedem folgenden Lauf
+    auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at + 2 * TAG)
+    assert _eintraege(org)[-1].pk == eintrag.pk
+
+
+@pytest.mark.parametrize("neues_design", [False, True])
+def test_eigentum_nur_an_aktive_mitglieder(
+    org: Any, admin: Any, mitglied: Any, client_for: Any, neues_design: bool
+) -> None:
+    Organization.objects.filter(pk=org.pk).update(owner=admin.user, work_new_design=neues_design)
+    org.refresh_from_db()
+    url = reverse("work:member_detail", kwargs={"org_slug": org.slug, "member_id": mitglied.id})
+    assert 'value="transfer_ownership"' in client_for(admin.user).get(url).content.decode()
+    _setzen(org, mitglied, admin)
+
+    assert 'value="transfer_ownership"' not in client_for(admin.user).get(url).content.decode()
+    with pytest.raises(ServiceError):
+        services.transfer_ownership(org, mitglied, admin.user)
+    org.refresh_from_db()
+    assert org.owner == admin.user
+
+
+def test_zuruecknehmen_nach_der_loeschung_ohne_fehler(org: Any, admin: Any, mitglied: Any) -> None:
+    _setzen(org, mitglied, admin)
+    veraltet = Membership.objects.get(pk=mitglied.pk)
+    auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at + TAG)
+
+    with pytest.raises(ServiceError):
+        auslauf.cancel_member_deletion(org, veraltet, admin.user)
+
+    assert not Membership.objects.filter(pk=mitglied.pk).exists()
+
+
+def test_reaktivieren_nach_der_loeschung_legt_nichts_neu_an(org: Any, admin: Any, mitglied: Any) -> None:
+    # Das Konto bleibt (weitere Mitgliedschaft); ein save() auf die gelöschte Zeile legte sie sonst neu an
+    fabrik.MembershipFactory(user=mitglied.user, organization=fabrik.OrganizationFactory(name="Andere", slug="andere"))
+    _setzen(org, mitglied, admin)
+    veraltet = Membership.objects.get(pk=mitglied.pk)
+    auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at + TAG)
+
+    with pytest.raises(ServiceError):
+        services.reactivate_member(org, veraltet, admin)
+
+    assert not Membership.objects.filter(pk=mitglied.pk).exists()
+
+
+def test_reaktivieren_prueft_den_zustand_unter_sperre(org: Any, admin: Any, mitglied: Any) -> None:
+    """Die übergebene Instanz ist veraltet (noch im Auslauf), die Zeile schon zurückgenommen: Historie stimmt."""
+    _setzen(org, mitglied, admin)
+    veraltet = Membership.objects.get(pk=mitglied.pk)
+    auslauf.cancel_member_deletion(org, mitglied, admin.user)
+
+    services.reactivate_member(org, veraltet, admin)
+
+    assert _eintraege(org)[-1].changes["Zugang"] == {"alt": "deaktiviert", "neu": "aktiv"}
+
+
+def test_bestaetigung_nennt_den_grund_fuer_das_behaltene_konto_allgemein(org: Any, admin: Any, mitglied: Any) -> None:
+    User.objects.filter(pk=mitglied.user_id).update(is_staff=True)
+    _setzen(org, mitglied, admin)
+    mail.outbox.clear()
+
+    auslauf.run_membership_expiry_pass(now=mitglied.deletion_scheduled_at + TAG)
+
+    (bestaetigung,) = _an("geht@example.org")
+    assert "anderweitig genutzt" in bestaetigung.body
+    assert "andere Organisation" not in bestaetigung.body

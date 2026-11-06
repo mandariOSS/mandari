@@ -707,6 +707,13 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 einer Quelle und Löschen einer Kommune aus dem Admin laufen als Auftrag im Worker (Warteschlange
 `default`), unabhängig von `TASKS_BACKEND`.
 
+**Rückfall und Auslauf „Nur Lesen“ (Issue #1237):** Ein älteres Image kennt den Zeitplan
+`mitgliedschaften_auslaufen` nicht. Läuft es länger, holt der erste Lauf nach der Rückkehr alles nach:
+Mitgliedschaften, deren Löschdatum inzwischen vorbei ist, werden sofort gelöscht, ohne weitere Erinnerung;
+bei den übrigen geht nur die jüngste versäumte Erinnerung raus. Löschdaten, die das ältere Image durch Reaktivieren oder
+Deaktivieren überholt hat, hebt der Lauf auf, statt zu löschen: Gelöscht wird nur, wenn der jüngste
+Zugangswechsel in der Änderungshistorie das Setzen mit genau diesem Datum ist.
+
 **Wann meldet die Anwendung ein Fehlen?** Wenn die Installation Worker braucht, und das ist wegen
 der Zeitpläne der Standard: Dann melden `/health/` und `/health/ready/` `"degraded"` (Antwort
 bleibt 200, die Anwendung bleibt in Betrieb), und Admin-Startseite und Betriebsmonitor zeigen den

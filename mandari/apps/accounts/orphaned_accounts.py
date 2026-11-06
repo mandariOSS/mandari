@@ -24,7 +24,9 @@ Aufruf über ``manage.py cleanup_orphaned_accounts`` (siehe dort), Ausgabe nur Z
 Derselbe Weg löscht ein Konto, sobald seine letzte Mitgliedschaft nach dem Auslauf „Nur Lesen, Löschung nach
 30 Tagen“ gelöscht ist (Issue #1237, :func:`loesche_konto_nach_austritt`): ohne Fristen, aber nur, wenn nichts
 mehr daran hängt. Dort binden Verweise, die beim Löschen nur geleert werden (Inhalte bleiben als „Ehemaliges
-Mitglied“), das Konto nicht, ebenso wenig Tokens, Lesezeichen, der Kalender-Feed und versandte Einladungen.
+Mitglied“), das Konto nicht, ebenso wenig Tokens, der Kalender-Feed und versandte Einladungen. Die Insight-Merkliste
+bindet: Das Konto bleibt, nur die Mitgliedschaft ist gelöscht. Mit dem Konto verschwindet auch die Datei des
+Profilbilds.
 """
 
 from __future__ import annotations
@@ -59,16 +61,16 @@ KONTO_ARTEFAKTE: frozenset[str] = frozenset(
 )
 
 
-#: Zusätzlich beim Löschen nach dem Austritt (Issue #1237): Tokens und Zugänge des OpenID-Anbieters, eigene
-#: Lesezeichen, der Kalender-Feed und von der Person versandte Einladungen (offene verfallen schon beim Austritt,
-#: angenommene sind Verlauf). Verweise mit SET_NULL binden dort ohnehin nicht, außer ``IMMER_BINDEND``.
+#: Zusätzlich beim Löschen nach dem Austritt (Issue #1237): Tokens und Zugänge des OpenID-Anbieters, der
+#: Kalender-Feed und von der Person versandte Einladungen (offene verfallen schon beim Austritt, angenommene sind
+#: Verlauf). Verweise mit SET_NULL binden dort ohnehin nicht, außer ``IMMER_BINDEND``. Die Insight-Merkliste
+#: (``bookmarks``) bindet bewusst: Sie gehört zur Nutzung außerhalb der Organisation.
 AUSTRITT_ENTFAELLT: frozenset[str] = KONTO_ARTEFAKTE | {
     "accounts_oauthaccesstoken",
     "accounts_oauthrefreshtoken",
     "accounts_oauthidtoken",
     "accounts_oauthgrant",
     "accounts_oauthdevicegrant",
-    "bookmarks",
     "calendar_feed_token",
     "created_invitations",
 }
@@ -159,7 +161,8 @@ def loesche_konto_nach_austritt(user: User) -> list[str]:
     Konto löschen, wenn nach dem Löschen der letzten Mitgliedschaft nichts mehr daran hängt (Issue #1237).
 
     Liefert die Bindungen, die das verhindern; leer heißt gelöscht (oder schon weg). Geprüft wird unter Sperre
-    der Kontozeile, wie beim Löschen verwaister Konten.
+    der Kontozeile, wie beim Löschen verwaister Konten. Die Datei des Profilbilds verschwindet nach erfolgreicher
+    Transaktion mit.
     """
     with transaction.atomic():
         aktuell = User.objects.select_for_update().filter(pk=user.pk).first()
@@ -169,8 +172,25 @@ def loesche_konto_nach_austritt(user: User) -> list[str]:
         if gruende:
             logger.info("Konto nach Austritt nicht gelöscht, Bindungen: %s", ", ".join(gruende))
             return gruende
+        _profilbild_nach_commit_entfernen(aktuell)
         aktuell.delete()
     return []
+
+
+def _profilbild_nach_commit_entfernen(user: User) -> None:
+    """Datei des Profilbilds erst nach erfolgreicher Transaktion löschen; fehlt sie schon, ist das kein Fehler."""
+    if not user.avatar or not user.avatar.name:
+        return
+    storage, name = user.avatar.storage, user.avatar.name
+
+    def entfernen() -> None:
+        try:
+            if storage.exists(name):
+                storage.delete(name)
+        except OSError:
+            logger.warning("Profilbild eines gelöschten Kontos konnte nicht entfernt werden")
+
+    transaction.on_commit(entfernen)
 
 
 def _kandidaten(jetzt: datetime) -> tuple[QuerySet[User], QuerySet[User], QuerySet[User]]:

@@ -3,8 +3,10 @@
 Auslauf-Seite einer Mitgliedschaft „Nur Lesen, Löschung nach 30 Tagen“ (Issue #1237).
 
 Die einzige Seite, die eine Mitgliedschaft im Auslauf in ihrer Organisation erreicht (``expiry_allowed``): Hinweis,
-Löschdatum und der DSGVO-Export der eigenen Daten (Starten und Herunterladen). Keine Inhalte der Organisation,
-keine Änderungen. Aktive Mitglieder kommen zum Start, alle anderen bleiben ausgesperrt wie bisher.
+Löschdatum, der DSGVO-Export der eigenen Daten (Starten und Herunterladen) und die Anhänge, die am Löschtag mit den
+privaten Dokumenten und persönlichen Aufgaben entfallen (nur genau diese, ``auslauf.deleted_attachments``). Keine
+Inhalte der Organisation, keine Änderungen. Aktive Mitglieder kommen zum Start, alle anderen bleiben ausgesperrt wie
+bisher.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django.contrib import messages
-from django.http import HttpRequest, HttpResponse
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect
 from django.views import View
 from django.views.generic import TemplateView
@@ -62,6 +64,7 @@ class MembershipExpiryView(_AuslaufMixin, TemplateView):
         context["deletion_date"] = auslauf.deletion_date_text(self.member)
         context["exports"] = selectors.recent_exports(self.org, self.member)
         context["has_active_export"] = selectors.has_active_export(self.org, self.member)
+        context["attachments"] = auslauf.deleted_attachments(self.member)
         return context
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -80,3 +83,27 @@ class MembershipExpiryExportDownloadView(_AuslaufMixin, View):
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         return export_file_response(self.org, self.member, kwargs["export_id"])
+
+
+class MembershipExpiryAttachmentView(_AuslaufMixin, View):
+    """
+    Anhang eines privaten Dokuments oder einer persönlichen Aufgabe herunterladen, der am Löschtag entfällt.
+
+    Erreichbar ist nur genau diese Auswahl der eigenen Mitgliedschaft (``auslauf.deleted_attachment``); alles andere
+    (geteilte oder fremde Anhänge, unbekannte Art): 404. Immer als Download, nie eingebettet.
+    """
+
+    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> FileResponse:
+        attachment = auslauf.deleted_attachment(self.member, kwargs["kind"], kwargs["attachment_id"])
+        if attachment is None or not attachment.file:
+            raise Http404("Anhang nicht gefunden.")
+        try:
+            handle = attachment.file.open("rb")
+        except (FileNotFoundError, ValueError, OSError):
+            raise Http404("Datei nicht gefunden.") from None
+        response = FileResponse(
+            handle, as_attachment=True, filename=attachment.filename, content_type="application/octet-stream"
+        )
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        return response

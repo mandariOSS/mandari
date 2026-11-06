@@ -10,10 +10,13 @@ binden das Konto nicht.
 
 from __future__ import annotations
 
+import uuid
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -89,3 +92,29 @@ def test_nie_mitarbeiter_oder_superuser(konto: Any, feld: str) -> None:
 
     assert loesche_konto_nach_austritt(konto) == ["mitarbeiterkonto"]
     assert User.objects.filter(pk=konto.pk).exists()
+
+
+def test_merkliste_bindet(konto: Any) -> None:
+    """Insight-Merkliste: Das Konto bleibt, nur die Mitgliedschaft ist gelöscht (Prüfung PR #1241)."""
+    from insight_core.models import Bookmark
+
+    Bookmark.objects.create(user=konto, entity_type="paper", entity_id=uuid.uuid4())
+
+    assert "bookmarks" in loesche_konto_nach_austritt(konto)
+    assert User.objects.filter(pk=konto.pk).exists()
+
+
+def test_profilbild_wird_mit_dem_konto_geloescht(
+    konto: Any, settings: Any, tmp_path: Path, django_capture_on_commit_callbacks: Any
+) -> None:
+    settings.MEDIA_ROOT = str(tmp_path)
+    konto.avatar = SimpleUploadedFile("bild.png", b"\x89PNG\r\n\x1a\n")
+    konto.save()
+    datei = Path(konto.avatar.path)
+    assert datei.exists()
+
+    with django_capture_on_commit_callbacks(execute=True):
+        assert loesche_konto_nach_austritt(konto) == []
+
+    assert not User.objects.filter(pk=konto.pk).exists()
+    assert not datei.exists()

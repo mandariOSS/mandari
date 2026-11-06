@@ -75,7 +75,7 @@
             {% endif %}
         {% endif %}
 
-        {% if request.user == organization.owner and not is_self %}
+        {% if request.user == organization.owner and not is_self and member.is_active %}
         <form method="post" x-data @submit.prevent="confirmAction({title: 'Eigentümerschaft übertragen', message: 'Sind Sie sicher? Sie können diese Aktion nicht selbst rückgängig machen.', confirmText: 'Übertragen', variant: 'danger'}).then(ok => ok && $el.submit())">
             {% csrf_token %}
             <input type="hidden" name="action" value="transfer_ownership">

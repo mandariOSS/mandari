@@ -199,7 +199,12 @@ def generate_dsgvo_export_task(context: TaskContext[Any, Any], export_id: str):
         export.file_path = rel_path.as_posix()
         export.file_size = len(file_bytes)
         export.completed_at = timezone.now()
-        export.save(update_fields=["status", "file_path", "file_size", "completed_at"])
+        fields = ("status", "file_path", "file_size", "completed_at")
+        if not DataExport.objects.filter(pk=export.pk).update(**{name: getattr(export, name) for name in fields}):
+            # Mitgliedschaft samt Export inzwischen gelöscht (Auslauf, Issue #1237): keine Datei zurücklassen
+            abs_path.unlink(missing_ok=True)
+            logger.info(f"DataExport {export_id} wurde während der Erstellung gelöscht")
+            return
 
         logger.info(f"DSGVO export {export_id} completed ({export.file_size_human})")
 

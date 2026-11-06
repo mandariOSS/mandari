@@ -943,6 +943,11 @@ urlpatterns = [
         name="membership_expiry_download",
     ),
     path(
+        "<slug:org_slug>/zugang/auslauf/anhaenge/<slug:kind>/<uuid:attachment_id>/",
+        organization_views.MembershipExpiryAttachmentView.as_view(),
+        name="membership_expiry_attachment",
+    ),
+    path(
         "<slug:org_slug>/profile/activity/",
         organization_views.ProfileActivityView.as_view(),
         name="profile_activity",

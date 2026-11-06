@@ -1,7 +1,8 @@
 {% comment %}
 Mitglied: Aktionen zur Mitgliedschaft (Issue #951) – deaktivieren, Nur Lesen mit Löschung (Issue #1237) und entfernen
 nur mit members.remove, reaktivieren,
-Eigentum übertragen nur durch den Eigentümer; nie für sich selbst, Eigentümer nie deaktivieren oder entfernen.
+Eigentum übertragen nur durch den Eigentümer und nur an aktive Mitglieder; nie für sich selbst, Eigentümer nie deaktivieren
+oder entfernen.
 Formulare und Rückfragen (confirmAction mit Variante) wie bisher (partials/_member_actions.html), als Zeilen mit
 Linien statt farbiger Kästen. Kontext: member, organization, is_self, is_owner, can_remove, request.
 {% endcomment %}
@@ -74,7 +75,7 @@ Linien statt farbiger Kästen. Kontext: member, organization, is_self, is_owner,
         {% endif %}
         {% endif %}
 
-        {% if request.user == organization.owner and not is_self %}
+        {% if request.user == organization.owner and not is_self and member.is_active %}
         <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
             <div class="min-w-[14rem] flex-1">
                 <p class="font-medium text-gray-900 dark:text-white">Eigentum übertragen</p>

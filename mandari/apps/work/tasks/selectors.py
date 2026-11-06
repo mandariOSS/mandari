@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Prefetch, Q, QuerySet
+from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.utils import timezone
 
 from apps.tenants.models import Membership, Organization
@@ -137,6 +137,21 @@ def task_counts_for_agenda_items(
     ):
         counts[str(item_id)] = counts.get(str(item_id), 0) + 1
     return counts
+
+
+def personal_tasks(membership: Membership) -> QuerySet[Task]:
+    """
+    Persönliche Aufgaben eines Mitglieds (Issue #420): Aufgaben, die außer dem Mitglied niemand sieht – nicht
+    organisationsweit, von ihm angelegt, ihm oder niemandem zugewiesen und mit niemand anderem geteilt. Sie
+    entfallen mit der Mitgliedschaft (``services.delete_personal_tasks``).
+    """
+    shared_with_others = TaskShare.objects.filter(task=OuterRef("pk")).exclude(membership=membership)
+    return (
+        Task.objects.filter(organization_id=membership.organization_id, created_by=membership)
+        .exclude(visibility="organization")
+        .filter(Q(assigned_to=membership) | Q(assigned_to__isnull=True))
+        .exclude(Exists(shared_with_others))
+    )
 
 
 def own_tasks(membership: Membership, *, base: QuerySet[Task]) -> QuerySet[Task]:
