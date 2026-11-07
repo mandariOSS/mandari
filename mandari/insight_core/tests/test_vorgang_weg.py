@@ -106,7 +106,7 @@ class TestArten:
             ("Anträge und Anfragen", "Antrag der SPD: Radwege", False),
             ("Mitteilungen/Anfragen", "Anfrage der CDU zur Kita", True),
             ("Mitteilungen/Anfragen", "Antwort auf die Anfrage der CDU", False),
-            (None, "Grüne-Große Anfrage: Siemensstraße", True),
+            (None, "Fraktions-Große Anfrage: Hauptstraße", True),
             (None, "Bauvoranfrage Hauptstraße 3", False),
         ],
     )
@@ -336,7 +336,7 @@ class TestVorgangsseite:
             kommune,
             "1",
             name="Sanierung der Grundschule Nord",
-            reference="261553",
+            reference="A/0142/2026",
             paper_type="Große Anfrage",
             date=date(2026, 8, 18),
             raw_json={
@@ -349,13 +349,13 @@ class TestVorgangsseite:
             kommune,
             "2",
             name="Sanierung der Grundschule Nord",
-            reference="261553-01 ST",
+            reference="A/0142/2026-01",
             paper_type="Stellungnahme der Verwaltung",
             date=date(2026, 10, 9),
             raw_json={"underDirectionOf": [BASIS + "organization/66"]},
         )
         # Zurückgenommen bzw. gelöscht: erscheint nicht
-        self._vorlage(kommune, "3", name="Alt", reference="261553-02", paper_type="Ergänzung", deleted=True)
+        self._vorlage(kommune, "3", name="Alt", reference="A/0142/2026-02", paper_type="Ergänzung", deleted=True)
         OParlFile.objects.create(
             external_id=BASIS + "file/1", body=kommune, paper=anfrage, name="Große Anfrage", text_content=ANFRAGE_TEXT
         )
@@ -379,7 +379,7 @@ class TestVorgangsseite:
 
     def test_anfrage_mit_antwort_zeitleiste_und_federfuehrung(self, anfrage: OParlPaper) -> None:
         seite = self._seite(anfrage)
-        antwort = OParlPaper.objects.get(reference="261553-01 ST")
+        antwort = OParlPaper.objects.get(reference="A/0142/2026-01")
         assert 'data-ergebnis="beantwortet"' in seite
         assert "Die Verwaltung hat am 09.10.2026 geantwortet." in seite
         # Gefragt und geantwortet im Wortlaut, Kernzahlen fett
@@ -398,18 +398,18 @@ class TestVorgangsseite:
             < verlauf.index("Bezirksvertretung")
         )
         assert f'href="/insight/vorgaenge/{antwort.pk}/"' in verlauf
-        assert "Stellungnahme der Verwaltung 261553-01 ST, federführend: Tiefbauamt." in verlauf
+        assert "Stellungnahme der Verwaltung A/0142/2026-01, federführend: Tiefbauamt." in verlauf
         assert 'data-ergebnis="kenntnis"' in verlauf and "zuletzt" in verlauf
-        assert "261553-02" not in seite
+        assert "A/0142/2026-02" not in seite
         # Federführung der Anfrage selbst in den Angaben
         assert 'data-testid="vorgang-federfuehrung">Ratsbüro<' in seite
 
     def test_ohne_text_nur_der_hinweis(self, anfrage: OParlPaper) -> None:
-        OParlFile.objects.filter(paper__reference="261553-01 ST").update(text_content=None)
+        OParlFile.objects.filter(paper__reference="A/0142/2026-01").update(text_content=None)
         seite = self._seite(anfrage)
         assert 'data-testid="gefragt-geantwortet"' in seite
         assert "Die Fragen stehen in der Anfrage, die Antwort der Verwaltung in" in seite
-        assert ">Stellungnahme der Verwaltung 261553-01 ST</a>" in seite
+        assert ">Stellungnahme der Verwaltung A/0142/2026-01</a>" in seite
         assert "Wann beginnt die Sanierung der Grundschule Nord?" not in seite
 
     def test_offene_anfrage(self, kommune: OParlBody) -> None:
@@ -446,7 +446,7 @@ class TestVorgangsseite:
         assert "X-1" not in self._seite(paper)
 
     def test_stellungnahme_zeigt_ihre_anfrage(self, anfrage: OParlPaper) -> None:
-        antwort = OParlPaper.objects.get(reference="261553-01 ST")
+        antwort = OParlPaper.objects.get(reference="A/0142/2026-01")
         antwort.raw_json = {**antwort.raw_json, "superordinatedPaper": [anfrage.external_id]}
         antwort.save(update_fields=["raw_json"])
         seite = self._seite(antwort)
