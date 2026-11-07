@@ -18,6 +18,9 @@ unterhalb von 2xl unter dem Titel; ohne Begriff aus dem Vokabular bleibt der Pun
 Hat der Aufrufer ``absender`` an die Vorgänge gehängt (insight_core.services.fraktionskuerzel.anhaengen, Issue #1272),
 steht der Titel ohne Absender-Präfix und die Spalte „Von“ zeigt die Fraktionskürzel (c-insight.absender), unter sm in
 der Zeile unter dem Titel; ohne Angabe (Work) bleibt der Titel des RIS und die Spalte entfällt.
+Hat der Aufrufer die Kurzfassung „Worum es geht“ angehängt (``vorschau``, insight_core.services.kurzfassung.anhaengen,
+Issue #1271), steht sie unter dem Titel; die Dokumentzeile darunter nennt dann nur noch Vorlage und Anlagen ohne
+Dateityp und Größe.
 {% endcomment %}
 <c-vars vorgaenge="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" zusatz_ab="" />
 {% load insight_listen %}
@@ -54,7 +57,8 @@ der Zeile unter dem Titel; ohne Angabe (Work) bleibt der Titel des RIS und die S
                         {% if paper.absender.neben_art %}<c-insight.absender :absender="paper.absender" klasse="ml-2 align-middle" hinweis="eingebracht von" neben_art />{% endif %}
                     </div>
                     {% if dicht and paper.stand %}<p class="2xl:hidden mt-0.5 text-sm text-gray-700 dark:text-gray-300">{% if paper.stand.etikett %}<c-insight.ergebnis :ergebnis="paper.stand.etikett" /> {% endif %}{{ paper.stand.text }}</p>{% elif paper.stand.etikett %}<p class="2xl:hidden mt-1"><c-insight.ergebnis :ergebnis="paper.stand.etikett" /></p>{% endif %}
-                    {% if paper.dokumentzeile %}<c-liste.vorgang-dokumente :zeile="paper.dokumentzeile" :vorgang="paper" ziel="{{ ziel }}" dicht="{{ dicht }}" />{% endif %}
+                    {% if paper.vorschau %}<c-insight.ki-vorschau :text="paper.vorschau" />{% endif %}
+                    {% if paper.dokumentzeile %}<c-liste.vorgang-dokumente :zeile="paper.dokumentzeile" :vorgang="paper" ziel="{{ ziel }}" dicht="{{ dicht }}" :knapp="paper.vorschau" />{% endif %}
                     {% if zusatz %}<div class="{% if zusatz_ab == '2xl' %}2xl:hidden{% else %}md:hidden{% endif %} mt-1 text-sm">{% include zusatz with eintrag=paper %}</div>{% endif %}
                 </td>
                 {% if sp_nr %}

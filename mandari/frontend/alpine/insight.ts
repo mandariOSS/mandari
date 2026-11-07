@@ -117,11 +117,11 @@ export const kiBewertung = defineComponent(() => ({
         } catch {
           // Ohne lokalen Speicher zählt die Bewertung trotzdem, nur eine spätere Änderung wird eine neue
         }
-        this.meldung = 'Danke für deine Rückmeldung.'
+        this.meldung = 'Danke für Ihre Rückmeldung.'
       } else if (antwort.status === 409) {
-        this.meldung = 'Die Zusammenfassung wurde inzwischen neu erstellt. Bitte lade die Seite neu.'
+        this.meldung = 'Die Zusammenfassung wurde inzwischen neu erstellt. Bitte laden Sie die Seite neu.'
       } else if (antwort.status === 429) {
-        this.meldung = 'Gerade sind es zu viele Bewertungen. Bitte versuche es später erneut.'
+        this.meldung = 'Gerade sind es zu viele Bewertungen. Bitte versuchen Sie es später erneut.'
       } else {
         this.meldung = 'Die Bewertung konnte nicht gespeichert werden.'
       }

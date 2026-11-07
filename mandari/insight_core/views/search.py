@@ -90,6 +90,8 @@ class SearchView(TemplateView):
 
             body_ids = None if body else _searchable_body_ids()
             context.update(build_context(get_search_service(), params, body, body_ids, timezone.localdate()))
+            # Kurzfassung „Worum es geht“ statt des Textausschnitts, nur im Bürgerportal (Issue #1271)
+            context["mit_kurzfassung"] = _kurzfassungen(context.get("groups") or [])
         except Exception as e:  # Elasticsearch nicht erreichbar: Datenbanksuche über das Partial, Seite bleibt nutzbar
             import logging
 
@@ -284,6 +286,14 @@ def search_results(request):
         )
 
 
+def _kurzfassungen(groups: list[dict]) -> bool:
+    """Hängt die Kurzfassung an die Vorgangstreffer (``kurzfassung.an_treffer``); Rückgabe: mindestens eine da?"""
+    from ..services import kurzfassung
+
+    kurzfassung.an_treffer(groups)
+    return any(treffer.get("vorschau") for treffer in groups)
+
+
 #: Typen, die in „Alle“ nicht in der Liste stehen, sondern als Link mit Zahl (Konzept Insight-Suche, 3.2)
 _OTHER_TYPES = (("persons", "person", "Person", "Personen"), ("organizations", "organization", "Gremium", "Gremien"))
 
@@ -297,6 +307,7 @@ def _grouped_results(request, search_service, query, body, body_id, body_ids, in
     )
     groups = present_groups(grouped["groups"], body.slug if body else "")
     fraktionskuerzel.treffer_anreichern(groups)
+    mit_kurzfassung = _kurzfassungen(groups)
     totals = grouped["totals_by_index"]
     other_types = []
     if index_names is None:
@@ -320,5 +331,6 @@ def _grouped_results(request, search_service, query, body, body_id, body_ids, in
             "similar_spelling": grouped["similar_spelling"],
             "search_type": search_type,
             "is_dropdown": False,
+            "mit_kurzfassung": mit_kurzfassung,
         },
     )

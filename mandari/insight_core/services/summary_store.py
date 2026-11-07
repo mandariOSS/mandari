@@ -52,7 +52,9 @@ def discard_for_files(file_ids: Iterable[uuid.UUID], *, dry_run: bool = False) -
     betroffen = OParlPaper.objects.filter(pk__in=vorgaenge, summary__isnull=False)
     if dry_run:
         return betroffen.count()
-    return betroffen.update(summary=None, summary_hinweis="", summary_einfach=None, summary_stand="")
+    return betroffen.update(
+        summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
+    )
 
 
 # =============================================================================
@@ -127,6 +129,7 @@ def veraltete(
     limit: int,
     ab: date | None = None,
     now: datetime | None = None,
+    ohne: Any = None,
 ) -> list[OParlPaper]:
     """
     Vorgänge mit veralteter Zusammenfassung (``veraltet``), neueste zuerst, höchstens ``limit``: Tagesbatch und
@@ -135,7 +138,8 @@ def veraltete(
     ``kommunen``: Kennung der Kommune → Stichtag (``None``: ohne Stichtag); ohne Angabe alle Kommunen. ``ab``: nur
     Vorgänge ab diesem Datum. Wie ``fuer_tagesbatch`` nur nicht gelöschte Vorgänge gelisteter Kommunen, deren
     Veröffentlichung weder pausiert noch zurückgenommen ist, und nur mit aktueller Anlage mit Text. Der Stand wird
-    blockweise berechnet (``STAND_BLOCK`` Vorgänge je Abfrage des Beratungsverlaufs).
+    blockweise berechnet (``STAND_BLOCK`` Vorgänge je Abfrage des Beratungsverlaufs). ``ohne``: Kennungen von
+    Vorgängen, die nicht in Frage kommen (Unterabfrage, etwa mit derselben Prompt-Fassung schon verworfene, #1271).
     """
     from insight_core import publication
 
@@ -154,6 +158,8 @@ def veraltete(
         auswahl = auswahl.filter(bedingung)
     if ab is not None:
         auswahl = auswahl.filter(date__gte=ab)
+    if ohne is not None:
+        auswahl = auswahl.exclude(pk__in=ohne)
     mit_text = _aktuelle_dateien_mit_text().filter(paper_id=OuterRef("pk"))
     auswahl = (
         auswahl.filter(Exists(mit_text))
@@ -210,14 +216,15 @@ def kommune_finden(schluessel: str) -> Any:
     return treffer[0]
 
 
-def fuer_tagesbatch(kommunen: Mapping[Any, date], *, limit: int) -> list[OParlPaper]:
+def fuer_tagesbatch(kommunen: Mapping[Any, date], *, limit: int, ohne: Any = None) -> list[OParlPaper]:
     """
     Vorgänge ausgewählter Kommunen für den Tagesbatch (Issue #1220): neueste zuerst, höchstens ``limit``; nur ohne
     Zusammenfassung, nicht gelöscht, aus einer gelisteten Kommune, je Kommune ab ihrem Stichtag (``kommunen``: Kennung
     der Kommune → Datum) und mit mindestens einer aktuellen Anlage mit gespeichertem Text. Kommunen, deren
     Veröffentlichung pausiert oder zurückgenommen ist (``publication``), fallen heraus: Ihre Seiten antworten mit 503
     bzw. 410, also geht auch nichts an einen KI-Anbieter. Ohne Kommunen keine Vorgänge. Ob der Text aller
-    Anlagen schon vorliegt, prüft ``tagesbatch_wartet`` je Vorgang.
+    Anlagen schon vorliegt, prüft ``tagesbatch_wartet`` je Vorgang. ``ohne``: Kennungen von Vorgängen, die nicht in
+    Frage kommen (Unterabfrage, etwa mit derselben Prompt-Fassung schon verworfene, Issue #1271).
     """
     from insight_core import publication
 
@@ -238,6 +245,8 @@ def fuer_tagesbatch(kommunen: Mapping[Any, date], *, limit: int) -> list[OParlPa
         .select_related("body", "body__source")
         .order_by("-date", "-pk")
     )
+    if ohne is not None:
+        auswahl = auswahl.exclude(pk__in=ohne)
     return list(auswahl[: max(0, limit)])
 
 
@@ -316,6 +325,28 @@ def vorgaenge(kennungen: Iterable[Any]) -> QuerySet[OParlPaper]:
     return OParlPaper.objects.filter(pk__in=list(kennungen)).select_related("body", "body__source")
 
 
+def stichprobe(kommune_id: Any, *, anzahl: int, startwert: str, bis: date | None = None) -> list[OParlPaper]:
+    """
+    Feste Stichprobe zur Bewertung einer Prompt-Fassung (Issue #1271, ``manage.py zusammenfassung_stichprobe``):
+    ``anzahl`` nicht gelöschte Vorgänge der Kommune mit aktueller Anlage mit Text, mit ``bis`` nur bis zu diesem Datum.
+
+    Gewählt wird nach einer Prüfsumme aus ``startwert`` und Kennung: Dieselben Angaben ergeben dieselbe Stichprobe in
+    derselben Reihenfolge. Ein neuer Vorgang kommt nur hinein, wenn seine Prüfsumme kleiner ist; mit ``bis`` nie.
+    """
+    if anzahl <= 0:
+        return []
+    mit_text = _aktuelle_dateien_mit_text().filter(paper_id=OuterRef("pk"))
+    auswahl = OParlPaper.objects.filter(body_id=kommune_id, deleted=False).filter(Exists(mit_text))
+    if bis is not None:
+        auswahl = auswahl.filter(date__lte=bis)
+    kennungen = sorted(
+        auswahl.values_list("pk", flat=True),
+        key=lambda kennung: hashlib.sha256(f"{startwert}:{kennung}".encode()).hexdigest(),
+    )[:anzahl]
+    gefunden = {vorgang.pk: vorgang for vorgang in vorgaenge(kennungen)}
+    return [gefunden[kennung] for kennung in kennungen if kennung in gefunden]
+
+
 def speichern(
     vorgang_id: Any,
     zusammenfassung: str,
@@ -326,6 +357,7 @@ def speichern(
     einfach: str = "",
     stand: str = "",
     ersetzt: str | None = None,
+    prompt_fassung: int = 0,
 ) -> bool:
     """
     Speichert eine vorab erstellte Zusammenfassung, wenn sie noch passt; Rückgabe: gespeichert?
@@ -337,7 +369,8 @@ def speichern(
 
     ``stand``: Beratungsstand, den die neue Zusammenfassung kennt (``beratungsstand``). ``ersetzt``: Sie ersetzt eine
     veraltete Zusammenfassung mit diesem Stand (Issue #1257). Gespeichert wird dann nur, wenn die vorhandene noch
-    diesen Stand hat (sonst hat sie inzwischen jemand neu erstellt) oder keine mehr da ist.
+    diesen Stand hat (sonst hat sie inzwischen jemand neu erstellt) oder keine mehr da ist. ``prompt_fassung``:
+    Fassung des Prompts, mit der sie entstand (Issue #1271).
     """
     datei_ids = [kennung for kennung in dateien if kennung]
     with transaction.atomic():
@@ -367,5 +400,6 @@ def speichern(
             summary_hinweis=(hinweis or "")[:HINWEIS_LAENGE],
             summary_einfach=einfach or None,
             summary_stand=(stand or "")[:STAND_LAENGE],
+            summary_prompt_fassung=max(0, int(prompt_fassung or 0)),
         )
     return True

@@ -5,7 +5,8 @@ Suchtreffer mit Kontext (Konzept Insight-Suche, P0.6): Vorgang, Sitzung mit Unte
 Parameter: treffer (Dict aus insight_core.services.search_presentation.present_groups) mit
   kind, url, title (SafeString), context (Liste: Art, Aktenzeichen, Gremium, Datum), status, status_kind, ergebnis
   (Etikett zum Stand-Satz, c-insight.ergebnis, Issue #1260; ohne Etikett ein Punkt in der Farbe des Stands),
-  snippet (SafeString), fundstelle {label, url}, others [{label, url}]; in Work dazu bezug („Eigener Antrag“,
+  snippet (SafeString), vorschau (Kurzfassung „Worum es geht“ statt des Ausschnitts, nur im Bürgerportal, Issue #1271),
+  fundstelle {label, url}, others [{label, url}]; in Work dazu bezug („Eigener Antrag“,
   apps/work/ris/bezug.py, Issue #853): warum der Treffer weiter oben steht; nummer_passt: genau die gesuchte
   Vorlagennummer, aus der Datenbank oben angeheftet (Issue #1102); im Bürgerportal absender (Fraktionskürzel nach der
   Art, c-insight.absender, Issue #1272; der Titel kommt dann ohne Absender-Präfix).
@@ -36,7 +37,9 @@ ab 2xl (Filterspalte daneben) bleibt die Spalte durchgehend, statt bis etwa 1.63
     {% if treffer.bezug %}
     <p class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-200">{{ treffer.bezug }}</p>
     {% endif %}
-    {% if treffer.snippet %}
+    {% if treffer.vorschau %}
+    <c-insight.ki-vorschau :text="treffer.vorschau" zeilen="3" klasse="mt-2" />
+    {% elif treffer.snippet %}
     <p class="mt-2 max-w-3xl text-[0.95rem] leading-relaxed text-gray-700 dark:text-gray-300 break-words">… {{ treffer.snippet }} …</p>
     {% endif %}
     {% if treffer.fundstelle %}

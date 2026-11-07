@@ -1,0 +1,11 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Sichtbarer Hinweis über einer Liste mit KI-Kurzfassungen (Issue #1271, c-insight.ki-vorschau): einmal je Liste statt
+eines Zeichens vor jeder Zeile. Nur einbinden, wenn die Liste mindestens eine Kurzfassung zeigt.
+  {% if mit_kurzfassung %}<c-insight.ki-hinweis klasse="mb-2" />{% endif %}
+{% endcomment %}
+<c-vars klasse="" />
+<p class="{{ klasse }} flex items-start gap-1.5 text-[0.8125rem] leading-snug text-gray-600 dark:text-gray-400" data-testid="ki-hinweis">
+    <i data-lucide="sparkles" class="mt-0.5 w-3.5 h-3.5 shrink-0 text-primary-700 dark:text-primary-300" aria-hidden="true"></i>
+    <span>Die Zeilen unter den Titeln fasst eine KI aus den Dokumenten zusammen. Maßgeblich sind die Dokumente.</span>
+</p>

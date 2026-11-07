@@ -2,7 +2,9 @@
 """
 Kennzeichnung der KI-Zusammenfassung eines Vorgangs (EU AI Act Art. 50, Issue #938, docs/KI_TRANSPARENZ.md).
 
-Sichtbar steht unter dem Text „Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten.“,
+Sichtbar stehen am Titel „KI-Kurzfassung“ und unter dem Text „Mit KI zusammengefasst; Fehler sind möglich. Maßgeblich
+sind die Dokumente.“ (Bürgerportal, Issue #1271; Work: „Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann
+Fehler enthalten.“),
 maschinenlesbar trägt genau der KI-Text ``data-ai-generated="true"`` – auf der Vorgangsseite wie im HTMX-Ausschnitt
 nach dem Erstellen. Die OParl-Schnittstelle kennzeichnet sie mit ``mandari:summaryAiGenerated``
 (``hub/ris/tests/test_mapping_bestand.py``), Description und JSON-LD mit „KI-Zusammenfassung:“
@@ -22,7 +24,7 @@ from insight_core.models import OParlBody, OParlFile, OParlPaper, OParlSource
 
 pytestmark = pytest.mark.django_db
 
-SICHTBAR = "Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten."
+SICHTBAR = "Mit KI zusammengefasst; Fehler sind möglich. Maßgeblich sind die Dokumente."
 #: Der gekennzeichnete Block und sein Inhalt (``linebreaks`` setzt ihn in Absätze)
 MERKMAL_RE = re.compile(r'<div[^>]*data-ai-generated="true"[^>]*>(.*?)</div>', re.S)
 
