@@ -51,6 +51,7 @@ from ..models import (
     OParlOrganization,
     OParlPaper,
     VorgangUrheber,
+    withdrawn_q,
 )
 from ..portal import get_portal
 from ..services import feed_eintraege as ereignisse
@@ -518,25 +519,49 @@ def _feed_der_anfrage(roh: str) -> dict[str, Any] | None:
     return {"url": _basis() + pfad, "pfad": pfad, "titel": titel, "seite": seite}
 
 
+def _veroeffentlicht(body_id: Any) -> bool:
+    """Die Kommune zeigt ihre Seiten (nicht abgeschaltet, nicht zurückgenommen; ein Archiv bleibt lesbar)."""
+    from .. import publication
+
+    stand = publication.body_state(body_id)
+    return stand is None or not (stand.paused or stand.withdrawn)
+
+
 def _titel_und_seite(name: str, kwargs: Mapping[str, Any], werte: Mapping[str, str]) -> tuple[str, str]:
-    """Was abonniert wird (Satz für die Anleitung) und die Seite dazu; leer, wenn es das Ziel nicht gibt."""
+    """
+    Was abonniert wird (Satz für die Anleitung) und die Seite dazu; leer, wenn es das Ziel nicht gibt oder seine
+    Kommune es nicht zeigt. Zurückgenommene Einträge (Session, Ö→NÖ) und Einträge abgeschalteter bzw. zurückgenommener
+    Kommunen nennt die Anleitung nicht: Ihre Kennung steht in ``?feed=``, die Middleware sieht sie nicht
+    (``publication.DETAIL_PAGES``). Titel stammen aus dem Bestand oder sind feste Sätze, nie Text der Anfrage.
+    """
     if name == "paper_feed":
-        paper = OParlPaper.objects.filter(pk=kwargs["pk"]).only("id", "name", "reference").first()
-        if paper is None:
+        paper = (
+            OParlPaper.objects.exclude(withdrawn_q())
+            .filter(pk=kwargs["pk"])
+            .only("id", "body_id", "name", "reference")
+            .first()
+        )
+        if paper is None or not _veroeffentlicht(paper.body_id):
             return "", ""
         ueber = ereignisse.betreff(paper) or paper.reference or "diesem Vorgang"
         return f"Neues zu „{ueber}“", reverse(f"{_NAMESPACE}:paper_detail", kwargs={"pk": paper.pk})
     if name == "organization_feed":
-        gremium = OParlOrganization.objects.filter(pk=kwargs["pk"]).only("id", "name").first()
-        if gremium is None:
+        gremium = (
+            OParlOrganization.objects.exclude(withdrawn_q())
+            .filter(pk=kwargs["pk"])
+            .only("id", "body_id", "name")
+            .first()
+        )
+        if gremium is None or not _veroeffentlicht(gremium.body_id):
             return "", ""
         return f"Neues aus „{gremium.name or 'Gremium'}“", reverse(
             f"{_NAMESPACE}:organization_detail", kwargs={"pk": gremium.pk}
         )
+    if not _veroeffentlicht(werte.get("kommune")):
+        return "", ""
     filter_ = {k: v for k, v in werte.items() if k != "kommune"}
     if name == "search_feed":
-        suchbegriff = " ".join(str(werte.get("q", "")).split())[:_FILTER_MAX]
-        return f"Neue Treffer für „{suchbegriff}“", reverse(f"{_NAMESPACE}:search") + "?" + urlencode(filter_)
+        return "Neue Treffer dieser Suche", reverse(f"{_NAMESPACE}:search") + "?" + urlencode(filter_)
     if name == "decision_feed":
         return "Neue Beschlüsse", reverse(f"{_NAMESPACE}:decision_list")
     abfrage = _abfrage(vorgangsfilter(filter_))

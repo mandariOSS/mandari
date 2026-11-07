@@ -709,6 +709,51 @@ class TestAnleitung:
         assert 'id="feed-adresse"' not in html
         assert "Feeds gibt es für jede Vorgangsliste" in html
 
+    def test_zurueckgenommene_eintraege_ohne_titel(self, bestand: dict[str, Any]) -> None:
+        from insight_core.models import SESSION_OPARL_MARKERS
+
+        kennung = "https://mandari.example/" + "/".join(SESSION_OPARL_MARKERS)
+        paper = OParlPaper.objects.create(
+            external_id=f"{kennung}/paper/9", body=bestand["body"], name="Geheimer Betreff", deleted=True
+        )
+        gremium = OParlOrganization.objects.create(
+            external_id=f"{kennung}/org/9", body=bestand["body"], name="Geheimes Gremium", deleted=True
+        )
+
+        for feed in (f"/insight/vorgaenge/{paper.pk}/feed.atom", f"/insight/gremien/{gremium.pk}/feed.atom"):
+            html = Client().get("/insight/abonnieren/", {"feed": feed}).content.decode()
+
+            assert "Geheim" not in html, feed
+            assert 'id="feed-adresse"' not in html, feed
+
+    @pytest.mark.parametrize("modus", [publication.PAUSED, publication.WITHDRAWN])
+    def test_beendete_veroeffentlichung_ohne_titel(self, bestand: dict[str, Any], modus: str) -> None:
+        from django.core.cache import cache
+
+        cache.set(publication.CACHE_KEY, {str(bestand["body"].pk): (modus, None)}, 300)
+        kommune = str(bestand["body"].pk)
+
+        for feed in (
+            f"/insight/vorgaenge/{bestand['antrag'].pk}/feed.atom",
+            f"/insight/gremien/{bestand['fraktion'].pk}/feed.atom",
+            f"/insight/vorgaenge/feed.atom?kommune={kommune}",
+            f"/insight/beschluesse/feed.atom?kommune={kommune}",
+            f"/insight/suche/feed.atom?q=Radweg&kommune={kommune}",
+        ):
+            html = Client().get("/insight/abonnieren/", {"feed": feed}).content.decode()
+
+            assert "Hauptstraße" not in html and "Grüne" not in html, feed
+            assert 'id="feed-adresse"' not in html, feed
+
+    def test_suche_ohne_text_der_anfrage_im_titel(self, bestand: dict[str, Any]) -> None:
+        feed = f"/insight/suche/feed.atom?q=Rufen+Sie+0900+an&kommune={bestand['body'].pk}"
+
+        html = Client().get("/insight/abonnieren/", {"feed": feed}).content.decode()
+
+        titel = re.search(r'<h2 id="feed-titel"[^>]*>([^<]*)</h2>', html)
+        assert titel and titel.group(1) == "Neue Treffer dieser Suche"
+        assert 'id="feed-adresse"' in html
+
 
 def test_kopf_aktion_mit_kurzem_text_am_handy() -> None:
     from django.template import engines
