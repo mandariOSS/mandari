@@ -211,6 +211,10 @@
         <ul class="space-y-2">{% for absender in demo_absender %}<li><c-insight.absender :absender="absender" hinweis="eingebracht von" /></li>{% endfor %}</ul>
     </c-ui.card>
 
+    <c-ui.card title="Bürgerportal: Aktion im Kopf einer Detailseite" subtitle="c-insight.kopf-aktion – href, icon, kurz (Text am Handy), download; wie „Im Ratsinformationssystem ansehen“">
+        <p class="flex flex-wrap gap-2"><c-insight.kopf-aktion href="#" icon="rss" kurz="Abonnieren">Neues zu diesem Vorgang abonnieren</c-insight.kopf-aktion><c-insight.kopf-aktion href="#" icon="calendar-plus" download>Termin speichern</c-insight.kopf-aktion></p>
+    </c-ui.card>
+
     <c-ui.card title="Rahmen: Leiste, Leiste unten, Blatt „Mehr“" subtitle="c-rahmen.nav-link / c-rahmen.tab / c-rahmen.blatt-link – href, icon, area + aktuell oder aktiv; nav-link mit dicht (Work)">
         <div class="grid gap-6 sm:grid-cols-3">
             <ul class="space-y-0.5 rounded-lg bg-band-grau p-2.5">

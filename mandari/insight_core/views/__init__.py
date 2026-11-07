@@ -31,6 +31,15 @@ from .decisions import (  # noqa: F401
     unsubscribe_decision,
 )
 from .feedback import page_feedback
+from .feeds import (
+    decision_feed,
+    feed_hilfe,
+    meeting_ics,
+    organization_feed,
+    paper_feed,
+    paper_list_feed,
+    search_feed,
+)
 from .files import (
     FileListView,
     _annotate_files_with_context,
@@ -170,6 +179,13 @@ __all__ = [
     "chat_message",
     "clear_body",
     "confirm_subscription",
+    "decision_feed",
+    "feed_hilfe",
+    "meeting_ics",
+    "organization_feed",
+    "paper_feed",
+    "paper_list_feed",
+    "search_feed",
     "file_proxy",
     "get_active_body",
     "is_all_bodies_mode",

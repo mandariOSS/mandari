@@ -85,6 +85,10 @@ class SearchView(TemplateView):
         ).to_dict()
         if len(params.query) < 2:
             return context
+        # Feed dieser Suche (Issue #1274): Kopf der Seite und „Als RSS abonnieren“ unter den Treffern
+        from .feeds import abo_suche
+
+        context["abo_feed"] = abo_suche(params, body)
         try:
             from ..services.search_service import get_search_service
 

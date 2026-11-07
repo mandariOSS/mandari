@@ -30,8 +30,8 @@
                     {% if meeting.location_name %}<span>{{ meeting.location_name }}</span>{% endif %}
                     {% if meeting.cancelled %}<span class="font-semibold text-red-700 dark:text-red-400">Abgesagt</span>{% elif meeting.meeting_state %}<span>{{ meeting.meeting_state|capfirst }}</span>{% endif %}
                 </p>
-                {# Original im Ratsinformationssystem (Issue #1259), wie im Kopf der Vorgangsseite #}
-                {% if source_url %}<div class="mt-5"><c-insight.ris-link href="{{ source_url }}" /></div>{% endif %}
+                {# „Termin speichern“ für kommende Sitzungen (Issue #1274) und das Original im Ratsinformationssystem (#1259) #}
+                {% if termin_ics or source_url %}<div class="mt-5 flex flex-wrap items-center gap-2">{% if termin_ics %}<c-insight.kopf-aktion href="{{ termin_ics }}" icon="calendar-plus" download data-testid="termin-speichern">Termin speichern</c-insight.kopf-aktion>{% endif %}{% if source_url %}<c-insight.ris-link href="{{ source_url }}" />{% endif %}</div>{% endif %}
             </div>
             <div class="shrink-0">
                 {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="lg" %}

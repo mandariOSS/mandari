@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, JsonResponse
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.generic import DetailView, ListView, TemplateView
@@ -28,6 +29,8 @@ from ..models import (
 )
 from ..services import indexierung
 from ..services.ergebnis import angekuendigt, ergebnis
+from ..services.feed_eintraege import ANGEKUENDIGT_SATZ
+from ..services.sitzung_kalender import ics_ereignis, tagesordnung_vorhanden
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -63,6 +66,13 @@ class MeetingListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSe
             ),
             body=body,
         ).to_dict()
+        # Kommende Sitzung ohne Tagesordnung: Etikett „angekündigt“ wie auf der Sitzungsseite (Issue #1274)
+        jetzt = timezone.now()
+        meetings = list(context["meetings"])
+        for meeting in meetings:
+            if not meeting.cancelled and meeting.start and meeting.start > jetzt and not meeting.hat_tagesordnung:
+                meeting.angekuendigt = angekuendigt(ANGEKUENDIGT_SATZ)
+        context["meetings"] = meetings
         return context
 
     def get_queryset(self):
@@ -81,7 +91,7 @@ class MeetingListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSe
         qs = (
             OParlMeeting.objects.filter(body=body, deleted=False)
             .prefetch_related("organizations")
-            .annotate(anzahl_tops=Coalesce(tops_sq, 0))
+            .annotate(anzahl_tops=Coalesce(tops_sq, 0), hat_tagesordnung=tagesordnung_vorhanden())
         )
 
         # Suche
@@ -249,25 +259,21 @@ def calendar_feed(request):
             raise Http404("Gremium nicht gefunden") from None
 
     now = timezone.now()
-    qs = OParlMeeting.objects.filter(
-        body=body, deleted=False, start__gte=now - timedelta(days=90), start__lte=now + timedelta(days=400)
-    ).order_by("start")
+    qs = (
+        OParlMeeting.objects.filter(
+            body=body, deleted=False, start__gte=now - timedelta(days=90), start__lte=now + timedelta(days=400)
+        )
+        .annotate(hat_tagesordnung=tagesordnung_vorhanden())
+        .prefetch_related("organizations")
+        .order_by("start")
+    )
     if organization is not None:
         qs = qs.filter(organizations=organization)
 
+    # Dieselbe UID wie die Kalenderdatei je Sitzung (Issue #1274), „angekündigt“ ohne Tagesordnung
     site_url = getattr(settings, "SITE_URL", "https://mandari.de").rstrip("/")
     events = [
-        {
-            "uid": f"meeting-{meeting.id}@mandari.de",
-            "summary": meeting.get_display_name() + (" (abgesagt)" if meeting.cancelled else ""),
-            "start": meeting.start,
-            "end": meeting.end,
-            "location": meeting.location_name or "",
-            "description": f"{site_url}/insight/termine/{meeting.id}/",
-            "status": "CANCELLED" if meeting.cancelled else "CONFIRMED",
-        }
-        for meeting in qs
-        if meeting.start
+        ics_ereignis(meeting, site_url, angekuendigt=not meeting.hat_tagesordnung) for meeting in qs if meeting.start
     ]
     name = f"{body.get_display_name()} – {organization.get_display_name() if organization else 'Sitzungen'}"
     response = HttpResponse(build_ics_feed(events, name=name), content_type="text/calendar; charset=utf-8")
@@ -321,9 +327,10 @@ class MeetingDetailView(DetailView):
         context["agenda_items"] = agenda_items
         # Kommende Sitzung ohne veröffentlichte Tagesordnung: „angekündigt“ statt einer leeren Liste
         if not agenda_items and not meeting.cancelled and meeting.start and meeting.start > timezone.now():
-            context["angekuendigt"] = angekuendigt(
-                "Der Termin steht fest, die Tagesordnung ist noch nicht veröffentlicht."
-            )
+            context["angekuendigt"] = angekuendigt(ANGEKUENDIGT_SATZ)
+        # „Termin speichern“: Kalenderdatei mit derselben UID wie im Kalender-Abo (Issue #1274), nur für kommende
+        if not meeting.cancelled and meeting.start and meeting.start > timezone.now():
+            context["termin_ics"] = reverse("insight_core:insight:meeting_ics", kwargs={"pk": meeting.pk})
         context["protocol_file"] = _protocol_file(meeting)
         context["broadcast"] = _broadcast_info(meeting)
         # Seite der Sitzung im Ratsinformationssystem (OParl ``web`` bzw. Detailseite der Scraper-Quelle, #1259)
