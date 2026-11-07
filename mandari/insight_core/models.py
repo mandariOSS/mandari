@@ -2337,6 +2337,40 @@ class TileCache(models.Model):
         return tiles
 
 
+class SitemapAufteilung(models.Model):
+    """
+    Vorberechnete Aufteilung der Sitemap einer Kommune in nummerierte Dateien, je Art (Issue #1259).
+
+    Je Datei Seite, Zahl der Einträge und jüngste glaubhafte Änderung (``services/sitemaps.py``). Der Zeitplan
+    ``sitemap_aufteilen`` rechnet sie im Worker, der Sitemap-Index liest nur diese Werte und antwortet so auch ohne
+    Cache schnell. Abgeleitete Daten: Fehlt eine Zeile, rechnet der nächste Lauf sie neu. Nur Django kennt die Tabelle.
+
+    Die Kommune steht als Kennung, nicht als Fremdschlüssel: Auf den RIS-Bestand zeigt nichts mit ``CASCADE``
+    (``docs/adr/20260929-fremdschluessel-ris-bestand.md``), und abgeleitete Werte dürfen das Löschen einer Kommune nicht
+    aufhalten. Zeilen von Kommunen, die nicht mehr gelistet sind, entfernt der Zeitplan.
+    """
+
+    body_id = models.UUIDField("Kommune")
+    #: Kennung der Art aus ``services.sitemaps.ARTEN`` („vorgaenge“, „sitzungen“)
+    art = models.CharField("Art", max_length=20)
+    #: Dateigröße der Aufteilung; gilt nur, solange sie ``EINTRAEGE_JE_DATEI`` entspricht
+    eintraege_je_datei = models.PositiveIntegerField("Einträge je Datei")
+    #: Je Datei ``[seite, anzahl, lastmod]``, ``lastmod`` in ISO 8601 oder ``null``
+    dateien = models.JSONField("Dateien", default=list, blank=True)
+    berechnet_am = models.DateTimeField("Berechnet am")
+
+    class Meta:
+        db_table = "insight_sitemap_aufteilung"
+        verbose_name = "Sitemap-Aufteilung"
+        verbose_name_plural = "Sitemap-Aufteilungen"
+        constraints = [
+            models.UniqueConstraint(fields=["body_id", "art"], name="sitemap_aufteilung_je_kommune_und_art"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Sitemap {self.art} ({self.body_id})"
+
+
 # =============================================================================
 # Contact Requests (Public Contact Form)
 # =============================================================================

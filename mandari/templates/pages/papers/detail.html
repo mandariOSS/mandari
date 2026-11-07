@@ -17,7 +17,7 @@
 {% block content %}
 {% include "partials/tombstone_notice.html" with object=paper %}
 
-{# Kopf: wo steht die Sache? Titel, Angaben in einer Zeile, Stand-Satz und Aktionen (Stufe 2a) #}
+{# Kopf: wo steht die Sache? Titel, Angaben in einer Zeile, Stand-Satz und Aktionen (Stufe 2a), dazu das Original im RIS (#1259) #}
 <header class="rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
     <c-insight.zurueck :ziel="insight_bereich_ziel" href="{% url 'insight_core:insight:paper_list' %}">Vorgänge</c-insight.zurueck>
     <h1 class="max-w-4xl text-[1.75rem] sm:text-[2.25rem] leading-[1.12] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">
@@ -44,6 +44,7 @@
             </button>
         </div>
         {% endif %}
+        {% if source_url %}<c-insight.ris-link href="{{ source_url }}" />{% endif %}
     </div>
     <p id="summary-status" role="status" class="hidden [&.htmx-request]:block mt-3 text-sm text-gray-700 dark:text-gray-300">
         Die KI fasst die Dokumente zusammen. Das dauert bis zu drei Minuten.
@@ -112,16 +113,6 @@
             {% endif %}
             <dt class="text-gray-600 dark:text-gray-400">Kommune</dt>
             <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.body.get_display_name }}</dd>
-            {% if source_url %}
-            <dt class="text-gray-600 dark:text-gray-400">Quelle</dt>
-            <dd>
-                <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer"
-                   class="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
-                    Ratsinformationssystem<span class="sr-only"> (öffnet in neuem Fenster)</span>
-                    <i data-lucide="external-link" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></i>
-                </a>
-            </dd>
-            {% endif %}
         </dl>
     </aside>
 </div>

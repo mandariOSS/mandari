@@ -18,6 +18,7 @@ from django.views.generic import DetailView, ListView, TemplateView
 
 from apps.common.formatting import MONTH_ABBREVIATIONS
 from hub.ris import selectors as ris_selectors
+from hub.ris.original import seite_im_ris
 
 from ..models import (
     OParlAgendaItem,
@@ -325,6 +326,8 @@ class MeetingDetailView(DetailView):
             )
         context["protocol_file"] = _protocol_file(meeting)
         context["broadcast"] = _broadcast_info(meeting)
+        # Seite der Sitzung im Ratsinformationssystem (OParl ``web`` bzw. Detailseite der Scraper-Quelle, #1259)
+        context["source_url"] = seite_im_ris(meeting)
 
         # Location Koordinaten für Karte (body kann fehlen bei verwaisten Meetings)
         try:
@@ -341,7 +344,13 @@ class MeetingDetailView(DetailView):
         try:
             from ..seo import get_meeting_seo
 
-            seo = get_meeting_seo(meeting, self.request, agenda_count=len(agenda_items), tagesordnung=agenda_items)
+            seo = get_meeting_seo(
+                meeting,
+                self.request,
+                agenda_count=len(agenda_items),
+                tagesordnung=agenda_items,
+                original=context["source_url"],
+            )
             # Gremium und Datum allein sind keine Seite für den Suchindex (Issue #1145); den Links folgen sie weiter
             if not indexierung.sitzung_mit_inhalt(
                 meeting.start, len(agenda_items), context["protocol_file"], timezone.now()

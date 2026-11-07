@@ -15,6 +15,7 @@ from django.views.generic import DetailView, ListView
 from apps.common.mixins import HTMXMixin
 from hub.ris import selectors as ris_selectors
 from hub.ris import vorlagennummer
+from hub.ris.original import seite_im_ris
 
 from ..models import OParlPaper, VorgangUrheber
 from ..services import file_reconcile
@@ -187,9 +188,8 @@ class PaperDetailView(DetailView):
         # Gremium der Bezugsberatung als Angabe in der Dokumentansicht
         reference = status.upcoming or status.last
         context["viewer_committee"] = reference.get("organization_name") if reference else ""
-        # Seite des Vorgangs im Ratsinformationssystem (OParl ``web``), nur als http(s)-Adresse
-        web = (paper.raw_json or {}).get("web") if isinstance(paper.raw_json, dict) else None
-        context["source_url"] = web if isinstance(web, str) and web.startswith(("https://", "http://")) else ""
+        # Seite des Vorgangs im Ratsinformationssystem (OParl ``web`` bzw. Detailseite der Scraper-Quelle, #1259)
+        context["source_url"] = seite_im_ris(paper)
 
         # Ortsbezüge (offizielle OParl-Locations + extrahierte) für Karte/Liste
         locations = paper.locations if isinstance(paper.locations, list) else []
@@ -214,7 +214,9 @@ class PaperDetailView(DetailView):
         # SEO-Kontext
         from ..seo import get_paper_seo
 
-        context["seo"] = get_paper_seo(paper, self.request, stand=status, mit_zusammenfassung=not veraltet).to_dict()
+        context["seo"] = get_paper_seo(
+            paper, self.request, stand=status, mit_zusammenfassung=not veraltet, original=context["source_url"]
+        ).to_dict()
 
         return context
 

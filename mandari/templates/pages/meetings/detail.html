@@ -30,6 +30,8 @@
                     {% if meeting.location_name %}<span>{{ meeting.location_name }}</span>{% endif %}
                     {% if meeting.cancelled %}<span class="font-semibold text-red-700 dark:text-red-400">Abgesagt</span>{% elif meeting.meeting_state %}<span>{{ meeting.meeting_state|capfirst }}</span>{% endif %}
                 </p>
+                {# Original im Ratsinformationssystem (Issue #1259), wie im Kopf der Vorgangsseite #}
+                {% if source_url %}<div class="mt-5"><c-insight.ris-link href="{{ source_url }}" /></div>{% endif %}
             </div>
             <div class="shrink-0">
                 {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="lg" %}

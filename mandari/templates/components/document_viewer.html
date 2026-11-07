@@ -38,6 +38,13 @@
                 </div>
             </div>
             <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+                {# Original im Ratsinformationssystem (Issue #1259), nur mit Adresse aus der Dokumentzeile. Über $data: Work #}
+                {# kennt den Wert nicht, dort bleibt der Link verborgen. Als Textlink, damit er sich von den Knöpfen abhebt.  #}
+                <a href="" x-show="$data.docViewerQuelle" x-cloak :href="$data.docViewerQuelle || ''" target="_blank" rel="noopener noreferrer"
+                   aria-label="Original im Ratsinformationssystem ansehen (öffnet in neuem Fenster)"
+                   class="inline-flex items-center px-2 py-1.5 text-sm font-medium rounded-lg text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+                    <span class="sm:hidden">Original</span><span class="hidden sm:inline">Im Ratsinformationssystem</span>
+                </a>
                 {# Download #}
                 {# Ohne geöffnetes Dokument bleibt href leer: sonst zeigte jede Seite auf sich selbst mit ?download=1 (#939) #}
                 <a href="" rel="nofollow" :href="docViewerUrl ? docViewerUrl + (docViewerUrl.includes('?') ? '&' : '?') + 'download=1' : ''"

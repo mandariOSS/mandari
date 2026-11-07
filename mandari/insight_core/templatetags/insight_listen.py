@@ -3,7 +3,8 @@
 Filter für Listen des Bürgerportals (Issue #841): Spalten nur zeigen, wenn sie etwas enthalten; Seitenlinks; Ziele
 der Listen im Bürgerportal einer Körperschaft (``insight_url``, ``insight_rel``, Issue #939); Dateityp der
 Dokumentlinks (``dateityp``, Issue #1103); Ergebnis-Etikett (``ergebnis``) und Reiter mit den übrigen Filtern der
-Adresse (``adresse_mit``, Issue #1260).
+Adresse (``adresse_mit``, Issue #1260); Original eines Dokuments im Ratsinformationssystem (``dokument_im_ris``,
+Issue #1259).
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from typing import Any
 from django import template
 from django.http import QueryDict
 from django.urls import reverse
+
+from hub.ris import original
 
 from ..listenadresse import ohne_leere
 from ..ris_links import INSIGHT
@@ -58,6 +61,12 @@ def hat_wert(objekte: Iterable[Any] | None, pfad: str) -> bool:
     if not objekte:
         return False
     return any(not ist_leer(_wert(objekt, pfad)) for objekt in objekte)
+
+
+@register.filter
+def dokument_im_ris(datei: Any) -> str:
+    """Abrufadresse eines Dokuments im Ratsinformationssystem (``hub.ris.original``); leer, wenn es keine gibt."""
+    return original.dokument_im_ris(datei)
 
 
 @register.filter

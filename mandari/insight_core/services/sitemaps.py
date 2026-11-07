@@ -12,8 +12,15 @@ geht in der Produktion an Django.
 Die Dateien teilen den Bestand in der Reihenfolge des Eingangs (``created_at``, dann ``id``) auf: Neue Einträge
 landen meist in der letzten Datei; bekommt ein älterer Vorgang Text, rückt er an seine Stelle. Der Container hat wenig Speicher, deshalb lesen
 alle Abfragen nur Kennung und Änderungszeitpunkt (``values_list``) und laufen über ``iterator``; Seitenzahl, Anzahl
-und letzte Änderung je Datei rechnet die Datenbank in einer Abfrage je Art aus. Diese Aufteilung liest den ganzen
-Bestand einer Kommune; der Index hält sie deshalb ``DATEIEN_CACHE_SEKUNDEN`` im Cache.
+und letzte Änderung je Datei rechnet die Datenbank in einer Abfrage je Art aus.
+
+Vorberechnet (Issue #1259): Diese Aufteilung liest den ganzen Bestand einer Kommune. Für alle gelisteten Kommunen
+brauchte der Index ohne Cache über 40 Sekunden, Suchmaschinen brechen dann ab. Deshalb rechnet der Zeitplan
+``insight_core.schedules.sitemap_aufteilen`` sie im Worker vor und speichert sie (``SitemapAufteilung``), neu, sobald
+sie älter als ``ERNEUERN_NACH`` ist. Der Index liest nur die gespeicherten Werte, eine Abfrage für alle Kommunen, mit
+oder ohne Cache. Fehlt eine Aufteilung (neu gelistete Kommune, geänderte Dateigröße) oder ist sie älter als
+``HOECHSTENS_ALT`` (kein Worker), rechnet der Index sie selbst, aber höchstens ``INDEX_RECHENZEIT_SEKUNDEN`` je
+Abruf; was dann noch fehlt, erscheint nach dem nächsten Lauf des Zeitplans.
 
 ``lastmod`` ist nur ein glaubhafter Änderungszeitpunkt (``aenderungszeitpunkt``, Issue #939): Manche Quellen tragen
 statt des echten Werts einen Ersatzwert ein (Bonn: 1999-12-31 bei fast allen Vorgängen), und solche Angaben schwächen
@@ -22,12 +29,12 @@ bei Suchmaschinen das Vertrauen in alle ``lastmod`` der Domain. Ohne glaubhaften
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import time
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from django.core.cache import cache
 from django.db import connection
 from django.db.models import Case, DateTimeField, F, Model, Q, QuerySet, When, Window
 from django.db.models.functions import RowNumber
@@ -36,9 +43,16 @@ from django.utils.dateparse import parse_datetime
 
 #: Höchstens so viele Adressen je Datei (das Protokoll erlaubt 50.000; kleinere Dateien antworten schneller)
 EINTRAEGE_JE_DATEI = 10_000
-#: So lange gilt die Aufteilung je Kommune und Art im Cache: Neue Dateien erscheinen spätestens dann im Index
-#: (die Antworten selbst dürfen Suchmaschinen und Zwischenspeicher 24 Stunden halten)
-DATEIEN_CACHE_SEKUNDEN = 6 * 3600
+#: Älter als das rechnet der Zeitplan eine gespeicherte Aufteilung neu: Neue Dateien und ``lastmod`` erscheinen dann im
+#: Index (die Antworten selbst dürfen Suchmaschinen und Zwischenspeicher 24 Stunden halten)
+ERNEUERN_NACH = timedelta(hours=3)
+#: Älter als das gilt eine Aufteilung als liegen geblieben (läuft kein Worker?): Der Index rechnet sie dann selbst
+HOECHSTENS_ALT = timedelta(hours=24)
+#: So lange darf der Index je Abruf selbst rechnen; den Rest übernimmt der Zeitplan
+INDEX_RECHENZEIT_SEKUNDEN = 5.0
+#: So lange rechnet ein Lauf des Zeitplans höchstens (Zeitgrenze der Warteschlange ``default``: 5 Minuten); was
+#: offen bleibt, kommt im nächsten Lauf zuerst
+ZEITPLAN_RECHENZEIT_SEKUNDEN = 240.0
 #: Gremien, Personen und Ratsfragen der Grund-Sitemap: je höchstens so viele
 GRUND_HOECHSTENS = 5_000
 #: Reihenfolge der Aufteilung: Eingang, dann Kennung (eindeutig, stabil)
@@ -128,26 +142,107 @@ def _zeitpunkt(wert: Any) -> datetime | None:
     return zeitpunkt
 
 
-def _cache_schluessel(art: Art, body_id: Any) -> str:
-    # Mit der Dateigröße: Ändert sie sich, gilt eine zwischengespeicherte Aufteilung nicht mehr. „lastmod2“: Seit
-    # Issue #939 zählen nur glaubhafte Änderungszeitpunkte; Aufteilungen mit den alten Werten gelten nicht weiter.
-    # „inhalt“: Seit Issue #1145 stehen nur noch Einträge mit Inhalt darin.
-    return f"insight:sitemap:dateien:lastmod2:inhalt:{art.kennung}:{EINTRAEGE_JE_DATEI}:{body_id}"
+def _gespeichert(dateien: list[Datei]) -> list[list[Any]]:
+    """Dateien als JSON: je Datei Seite, Zahl der Einträge und letzte Änderung (ISO 8601 oder ``None``)."""
+    return [[d.seite, d.eintraege, d.lastmod.isoformat() if d.lastmod else None] for d in dateien]
 
 
-def dateien(art: Art, body_id: Any) -> list[Datei]:
+def _aus_gespeichertem(art: Art, werte: Any) -> list[Datei]:
+    return [
+        Datei(art=art, seite=int(seite), eintraege=int(anzahl), lastmod=_zeitpunkt(lastmod))
+        for seite, anzahl, lastmod in (werte if isinstance(werte, list) else [])
+    ]
+
+
+def aufteilen(art: Art, body_id: Any) -> list[Datei]:
+    """Aufteilung einer Kommune und Art aus dem Bestand berechnen (``_dateien_berechnen``) und speichern."""
+    from ..models import SitemapAufteilung
+
+    dateien = _dateien_berechnen(art, body_id)
+    SitemapAufteilung.objects.update_or_create(
+        body_id=body_id,
+        art=art.kennung,
+        defaults={
+            "eintraege_je_datei": EINTRAEGE_JE_DATEI,
+            "dateien": _gespeichert(dateien),
+            "berechnet_am": timezone.now(),
+        },
+    )
+    return dateien
+
+
+def _gespeicherte(body_ids: list[Any]) -> dict[tuple[Any, str], tuple[datetime, list[Datei]]]:
+    """Gespeicherte Aufteilungen dieser Kommunen mit der geltenden Dateigröße, in einer Abfrage."""
+    from ..models import SitemapAufteilung
+
+    zeilen = SitemapAufteilung.objects.filter(
+        body_id__in=body_ids, art__in=list(ARTEN), eintraege_je_datei=EINTRAEGE_JE_DATEI
+    ).values_list("body_id", "art", "berechnet_am", "dateien")
+    return {
+        (body_id, kennung): (berechnet, _aus_gespeichertem(ARTEN[kennung], werte))
+        for body_id, kennung, berechnet, werte in zeilen
+    }
+
+
+def index_dateien(body_ids: Iterable[Any]) -> dict[tuple[Any, str], list[Datei]]:
     """
-    Nummerierte Dateien einer Art für den Sitemap-Index: Seite, Zahl der Einträge, letzte Änderung.
+    Nummerierte Dateien je Kommune und Art (Schlüssel ``(body_id, art.kennung)``) für den Sitemap-Index.
 
-    Aus dem Cache, sonst aus der Datenbank (``_dateien_berechnen``); zwischengespeichert werden nur Zahlen und
-    Zeitpunkte, je Datei ein kleines Tupel.
+    Aus der Vorberechnung, eine Abfrage für alle Kommunen. Fehlende und liegen gebliebene Aufteilungen (älter als
+    ``HOECHSTENS_ALT``) rechnet der Index selbst, solange ``INDEX_RECHENZEIT_SEKUNDEN`` nicht verbraucht sind;
+    danach gilt eine liegen gebliebene weiter, und eine fehlende fehlt im Index bis zum nächsten Lauf des Zeitplans.
     """
-    schluessel = _cache_schluessel(art, body_id)
-    gespeichert = cache.get(schluessel)
-    if gespeichert is None:
-        gespeichert = [(d.seite, d.eintraege, d.lastmod) for d in _dateien_berechnen(art, body_id)]
-        cache.set(schluessel, gespeichert, DATEIEN_CACHE_SEKUNDEN)
-    return [Datei(art=art, seite=seite, eintraege=anzahl, lastmod=lastmod) for seite, anzahl, lastmod in gespeichert]
+    kennungen = list(body_ids)
+    gespeichert = _gespeicherte(kennungen)
+    grenze = timezone.now() - HOECHSTENS_ALT
+    frist = time.monotonic() + INDEX_RECHENZEIT_SEKUNDEN
+    ergebnis: dict[tuple[Any, str], list[Datei]] = {}
+    for body_id in kennungen:
+        for art in ARTEN.values():
+            eintrag = gespeichert.get((body_id, art.kennung))
+            if (eintrag is None or eintrag[0] < grenze) and time.monotonic() < frist:
+                ergebnis[(body_id, art.kennung)] = aufteilen(art, body_id)
+            elif eintrag is not None:
+                ergebnis[(body_id, art.kennung)] = eintrag[1]
+    return ergebnis
+
+
+def aufteilungen_erneuern(
+    *, aelter_als: timedelta = ERNEUERN_NACH, rechenzeit: float = ZEITPLAN_RECHENZEIT_SEKUNDEN
+) -> int:
+    """
+    Aufteilungen der gelisteten Kommunen vorberechnen (Zeitplan ``sitemap_aufteilen``): fehlende zuerst, dann die
+    ältesten, jede, die älter als ``aelter_als`` ist. Nach ``rechenzeit`` Sekunden endet der Lauf, der nächste macht
+    weiter. Aufteilungen von Kommunen, die nicht mehr gelistet sind oder nicht mehr bestehen, entfallen. Rückgabe:
+    Zahl der neu berechneten Aufteilungen.
+    """
+    from ..models import OParlBody, SitemapAufteilung
+
+    body_ids = list(OParlBody.objects.listed().order_by("id").values_list("id", flat=True))
+    SitemapAufteilung.objects.exclude(body_id__in=body_ids).delete()
+    stand = {
+        (body_id, kennung): berechnet
+        for body_id, kennung, berechnet in SitemapAufteilung.objects.filter(
+            body_id__in=body_ids, eintraege_je_datei=EINTRAEGE_JE_DATEI
+        ).values_list("body_id", "art", "berechnet_am")
+    }
+    grenze = timezone.now() - aelter_als
+    faellig: list[tuple[datetime | None, Any, Art]] = []
+    for body_id in body_ids:
+        for art in ARTEN.values():
+            berechnet = stand.get((body_id, art.kennung))
+            if berechnet is None or berechnet <= grenze:
+                faellig.append((berechnet, body_id, art))
+    # Fehlende zuerst, dann die ältesten (stabil: sonst in der Reihenfolge der Kommunen)
+    faellig.sort(key=lambda eintrag: (eintrag[0] is not None, eintrag[0] or grenze))
+    frist = time.monotonic() + rechenzeit
+    anzahl = 0
+    for _berechnet, body_id, art in faellig:
+        if time.monotonic() >= frist:
+            break
+        aufteilen(art, body_id)
+        anzahl += 1
+    return anzahl
 
 
 def _dateien_berechnen(art: Art, body_id: Any) -> list[Datei]:

@@ -7,6 +7,8 @@ Indexierung des Bürgerportals durch Suchmaschinen (Issue #914).
   Grund-Sitemap; Personen nur mit laufender Mitgliedschaft.
 - ``lastmod`` nur mit glaubhaftem Änderungszeitpunkt (Issue #939): keine Ersatzwerte der Quelle (1999-12-31), keine
   Zeitpunkte in der Zukunft, kein Rückfall auf den letzten Abgleich.
+- Aufteilung vorberechnet (Issue #1259): Der Index liest sie aus der Datenbank, auch ohne Cache, mit gleich vielen
+  Abfragen für jede Zahl von Kommunen; der Zeitplan rechnet fehlende und veraltete neu, der Index nur in Grenzen.
 - Personen ohne laufende Mitgliedschaft: ``noindex, follow``, Seite bleibt erreichbar.
 - ``noindex`` für Suche, Listen mit Parametern, Teilansichten und Dateien; Beschlussseiten mit robots und Canonical.
 - Crawlbare Wege: Brotkrume auf die Stadtseite ohne Weiterleitung, Umwege über die Wahl der Kommune mit ``nofollow``,
@@ -45,6 +47,7 @@ from insight_core.models import (
     OParlPerson,
     OParlSource,
     PublicQuestion,
+    SitemapAufteilung,
     validate_body_slug,
 )
 from insight_core.services import file_cache, indexierung, safe_fetch, sitemaps
@@ -198,9 +201,13 @@ class TestSitemapIndex:
             "%Y-%m-%dT%H:%M:%S+00:00"
         )
 
-    def test_abfragen_haengen_nicht_von_der_zahl_der_eintraege_ab(self, client: Client, klein: int) -> None:
+    def test_abfragen_haengen_nicht_von_der_zahl_der_kommunen_und_eintraege_ab(
+        self, client: Client, klein: int
+    ) -> None:
+        """Ohne Cache aus der Vorberechnung: eine Abfrage für alle Kommunen, keine Aufteilung beim Abruf."""
         body = _kommune(1, "Stadt Köln", slug="koeln")
         _vorgang(body, 0)
+        sitemaps.aufteilungen_erneuern()
         client.get("/sitemap-insight-index.xml")  # Aufwärmen (Sitzung, Einstellungen)
         cache.clear()
         with CaptureQueriesContext(connection) as wenige:
@@ -208,13 +215,18 @@ class TestSitemapIndex:
         for nummer in range(1, 20):
             _vorgang(body, nummer)
             _sitzung(body, nummer, start=timezone.now())
+        for nummer in range(2, 6):
+            _vorgang(_kommune(nummer, f"Stadt {nummer}", slug=f"stadt-{nummer}"), 0)
+        sitemaps.aufteilungen_erneuern(aelter_als=timedelta(0))
         cache.clear()
         with CaptureQueriesContext(connection) as viele:
             index = client.get("/sitemap-insight-index.xml").content.decode()
-        assert "/sitemap-insight-koeln-vorgaenge-7.xml" in index, "ohne Cache neu aufgeteilt"
+        assert "/sitemap-insight-koeln-vorgaenge-7.xml" in index
+        assert "/sitemap-insight-stadt-5-vorgaenge-1.xml" in index
         assert len(viele) == len(wenige)
+        assert not any("ROW_NUMBER" in abfrage["sql"].upper() for abfrage in viele.captured_queries)
 
-    def test_aufteilung_aus_dem_cache(self, client: Client, stadt: dict[str, Any]) -> None:
+    def test_aufteilung_aus_der_vorberechnung(self, client: Client, stadt: dict[str, Any]) -> None:
         """Die Aufteilung liest den ganzen Bestand einer Kommune: Der Index rechnet sie nicht bei jedem Abruf neu."""
 
         def aufteilungen(erfasst: CaptureQueriesContext) -> int:
@@ -222,26 +234,100 @@ class TestSitemapIndex:
 
         with CaptureQueriesContext(connection) as erster:
             vorher = client.get("/sitemap-insight-index.xml").content
+        cache.clear()
         with CaptureQueriesContext(connection) as zweiter:
             nachher = client.get("/sitemap-insight-index.xml").content
-        assert aufteilungen(erster) == len(sitemaps.ARTEN)
-        assert aufteilungen(zweiter) == 0
+        assert aufteilungen(erster) == len(sitemaps.ARTEN), "noch nicht vorberechnet: der Index rechnet selbst"
+        assert aufteilungen(zweiter) == 0, "danach gespeichert, auch ohne Cache"
         assert nachher == vorher
 
-        # Neue Vorgänge erscheinen spätestens nach Ablauf des Caches
+        # Neue Vorgänge erscheinen mit dem nächsten Lauf des Zeitplans, sobald die Aufteilung veraltet ist
         for nummer in range(10, 13):
             _vorgang(stadt["body"], nummer)
         assert "koeln-vorgaenge-4.xml" not in client.get("/sitemap-insight-index.xml").content.decode()
-        cache.clear()
+        assert sitemaps.aufteilungen_erneuern() == 0, "noch frisch"
+        assert sitemaps.aufteilungen_erneuern(aelter_als=timedelta(0)) == len(sitemaps.ARTEN)
         assert "koeln-vorgaenge-4.xml" in client.get("/sitemap-insight-index.xml").content.decode()
 
-    def test_cache_gilt_nur_fuer_die_gleiche_dateigroesse(
+    def test_vorberechnung_gilt_nur_fuer_die_gleiche_dateigroesse(
         self, client: Client, stadt: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         assert "koeln-vorgaenge-3.xml" in client.get("/sitemap-insight-index.xml").content.decode()
         monkeypatch.setattr(sitemaps, "EINTRAEGE_JE_DATEI", 10)
         index = client.get("/sitemap-insight-index.xml").content.decode()
         assert "koeln-vorgaenge-1.xml" in index and "koeln-vorgaenge-2.xml" not in index
+
+    def test_index_rechnet_nur_in_seiner_rechenzeit(
+        self, client: Client, stadt: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Ist die Rechenzeit des Index verbraucht, fehlen nicht vorberechnete Dateien bis zum Lauf des Zeitplans."""
+        monkeypatch.setattr(sitemaps, "INDEX_RECHENZEIT_SEKUNDEN", 0)
+        assert _locs(_xml(client, "/sitemap-insight-index.xml")) == [f"{settings.SITE_URL}/sitemap-insight-koeln.xml"]
+        assert sitemaps.aufteilungen_erneuern() == len(sitemaps.ARTEN)
+        assert len(_locs(_xml(client, "/sitemap-insight-index.xml"))) == 6
+
+    def test_liegen_gebliebene_aufteilung_rechnet_der_index_neu(self, client: Client, stadt: dict[str, Any]) -> None:
+        """Läuft kein Worker, rechnet der Index eine Aufteilung neu, die älter als ``HOECHSTENS_ALT`` ist."""
+        sitemaps.aufteilungen_erneuern()
+        for nummer in range(10, 13):
+            _vorgang(stadt["body"], nummer)
+        SitemapAufteilung.objects.update(berechnet_am=timezone.now() - sitemaps.HOECHSTENS_ALT - timedelta(minutes=1))
+        assert "koeln-vorgaenge-4.xml" in client.get("/sitemap-insight-index.xml").content.decode()
+        assert SitemapAufteilung.objects.filter(berechnet_am__gte=timezone.now() - timedelta(minutes=1)).count() == 2
+
+    def test_zeitplan(self, stadt: dict[str, Any]) -> None:
+        from apps.events.schedule import Catchup, Every, autodiscover, registry
+
+        autodiscover()
+        eintrag = registry.get("insight_core.schedules.sitemap_aufteilen")
+        assert eintrag is not None, "Zeitplan im Worker registriert"
+        assert eintrag.trigger == Every(timedelta(minutes=30)) and eintrag.catchup == Catchup.NACHHOLEN
+        assert eintrag.task.queue_name == "default", "der Worker der Compose-Vorlage bedient default"
+
+        _kommune(2, "Gemeinde Ungelistet", slug="ungelistet", is_listed=False)
+        assert eintrag.task.call() == len(sitemaps.ARTEN), "nur gelistete Kommunen"
+        assert eintrag.task.call() == 0, "frisch berechnet"
+        koeln = stadt["body"].pk
+        assert set(SitemapAufteilung.objects.values_list("body_id", "art")) == {
+            (koeln, "vorgaenge"),
+            (koeln, "sitzungen"),
+        }
+
+    def test_zeitplan_fehlende_zuerst_dann_die_aeltesten(
+        self, stadt: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        aelter = _kommune(2, "Stadt Älter", slug="aelter")
+        _vorgang(aelter, 0)
+        sitemaps.aufteilungen_erneuern()
+        jetzt = timezone.now()
+        SitemapAufteilung.objects.filter(body_id=stadt["body"].pk).update(berechnet_am=jetzt - timedelta(hours=4))
+        SitemapAufteilung.objects.filter(body_id=aelter.pk).update(berechnet_am=jetzt - timedelta(hours=5))
+        _kommune(3, "Stadt Neu", slug="neu")
+
+        reihenfolge: list[tuple[str, str]] = []
+        berechnen = sitemaps.aufteilen
+
+        def aufteilen(art: sitemaps.Art, body_id: Any) -> list[sitemaps.Datei]:
+            reihenfolge.append((OParlBody.objects.get(pk=body_id).slug or "", art.kennung))
+            return berechnen(art, body_id)
+
+        monkeypatch.setattr(sitemaps, "aufteilen", aufteilen)
+        assert sitemaps.aufteilungen_erneuern() == 6
+        assert [slug for slug, _ in reihenfolge] == ["neu", "neu", "aelter", "aelter", "koeln", "koeln"]
+
+    def test_zeitplan_endet_nach_seiner_rechenzeit(self, stadt: dict[str, Any]) -> None:
+        assert sitemaps.aufteilungen_erneuern(rechenzeit=0) == 0
+        assert not SitemapAufteilung.objects.exists()
+
+    def test_aufteilung_haelt_das_loeschen_einer_kommune_nicht_auf(self, stadt: dict[str, Any]) -> None:
+        """Kein Fremdschlüssel auf den RIS-Bestand: Die Kommune lässt sich löschen, der Zeitplan räumt danach auf."""
+        andere = _kommune(2, "Stadt Ungelistet", slug="ungelistet")
+        sitemaps.aufteilungen_erneuern()
+        assert SitemapAufteilung.objects.count() == 4
+        stadt["body"].delete()
+        OParlBody.objects.filter(pk=andere.pk).update(is_listed=False)
+        sitemaps.aufteilungen_erneuern()
+        assert not SitemapAufteilung.objects.exists()
 
     def test_kommune_ohne_vorgaenge_hat_nur_die_grund_sitemap(self, client: Client) -> None:
         _kommune(1, "Stadt Leerheim", slug="leerheim")
