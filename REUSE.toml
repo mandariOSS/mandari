@@ -111,21 +111,20 @@ SPDX-FileCopyrightText = "2019 Lebedev Konstantin and SortableJS contributors"
 SPDX-License-Identifier = "MIT"
 
 # --- Übernommene Testseiten: ALLRIS 3 aus dem Projekt bv-hh (unverändert, Herkunft im README daneben) ---
+# Die eigenen, synthetischen Seiten unter allris3/synthetisch/ fallen unter die Grundregel.
 [[annotations]]
-path = "ingestor/tests/fixtures/scrapers/allris3/**/*.html"
+path = [
+  "ingestor/tests/fixtures/scrapers/allris3/altona/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/bergedorf/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/cases/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/eimsbuettel/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/hamburg_mitte/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/hamburg_nord/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/harburg/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/wandsbek/*.html",
+]
 precedence = "override"
 SPDX-FileCopyrightText = "2020, 2021 Timo B. Kranz (https://github.com/bv-hh/bv-hh)"
-SPDX-License-Identifier = "MIT"
-
-# Synthetische Seiten im Aufbau der übernommenen (bearbeitet nach bv-hh, Inhalte erfunden). Muss nach der Regel
-# darüber stehen: Es gilt die letzte passende Zuordnung.
-[[annotations]]
-path = "ingestor/tests/fixtures/scrapers/allris3/synthetisch/*.html"
-precedence = "override"
-SPDX-FileCopyrightText = [
-  "2020, 2021 Timo B. Kranz (https://github.com/bv-hh/bv-hh)",
-  "2025-2026 Sven Konopka",
-]
 SPDX-License-Identifier = "MIT"
 
 # --- kommParl-Spezifikation: übernommene Schemas, unverändert (Herkunft in HERKUNFT.json daneben) ---

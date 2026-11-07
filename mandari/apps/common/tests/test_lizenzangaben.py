@@ -118,9 +118,14 @@ KOPF_ZEILEN = 10
 #: Pfade, deren Angaben nicht vom Projekt stammen (Fremdbibliotheken, Lizenztexte, Testdaten)
 FREMDE_PFADE = ("LICENSES/", "mandari/static/vendor/", "ingestor/tests/fixtures/")
 
-#: Zuordnungen in ``REUSE.toml`` nur für fremde Werke: Fremdbibliotheken und die unverändert übernommenen Schemas der
-#: kommParl-Spezifikation (Issue #1216). Sie nennen ihre Urheber.
-FREMDE_ZUORDNUNGEN = ("mandari/static/vendor/", "mandari/hub/api/kommparl/")
+#: Zuordnungen in ``REUSE.toml`` nur für fremde Werke: Fremdbibliotheken, die unverändert übernommenen Schemas der
+#: kommParl-Spezifikation (Issue #1216) und die unverändert übernommenen ALLRIS-3-Testseiten aus bv-hh (Issue #121).
+#: Sie nennen ihre Urheber.
+FREMDE_ZUORDNUNGEN = (
+    "mandari/static/vendor/",
+    "mandari/hub/api/kommparl/",
+    "ingestor/tests/fixtures/scrapers/allris3/",
+)
 
 #: Urheberangabe des Projekts in ``REUSE.toml``
 EIGENE_ANGABE = re.compile(r"\d{4}(?:-\d{4})? " + URHEBER)

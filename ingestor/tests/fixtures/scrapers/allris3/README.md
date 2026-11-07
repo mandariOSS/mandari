@@ -55,9 +55,9 @@ SOFTWARE.
 
 ## Synthetische Seiten
 
-`synthetisch/` enthält erfundene Seiten im Aufbau der übernommenen (Rahmen, Klassen, Tabellen),
-ohne echte Namen und Inhalte. Sie sind im Quelltext als synthetisch gekennzeichnet und in
-Windows-1252 gespeichert:
+`synthetisch/` enthält eigene, erfundene Seiten im Aufbau der übernommenen (Rahmen, Klassen,
+Tabellen), ohne echte Namen und Inhalte; sie stehen wie das Projekt unter AGPL-3.0-or-later. Sie sind
+im Quelltext als synthetisch gekennzeichnet und in Windows-1252 gespeichert:
 
 | Datei | Zweck |
 |---|---|
