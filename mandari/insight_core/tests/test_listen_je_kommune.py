@@ -299,8 +299,9 @@ class TestBlaettern:
 
         assert antwort.content.decode().count("Vorgang 0") == 24
         assert len(viele) == len(wenige), "keine Abfrage je Eintrag"
-        # Kommune, Anzahl (nur bis zur Grenze), Vorgänge, deren Stand, Beschlüsse in der Navigation, Typen im Filter
-        assert len(viele) <= 8, [q["sql"] for q in viele.captured_queries]
+        # Kommune, Anzahl (nur bis zur Grenze), Vorgänge, deren Stand, Beschlüsse in der Navigation, Typen im Filter,
+        # antragstellende Fraktionen für die Kürzel (Issue #1272)
+        assert len(viele) <= 9, [q["sql"] for q in viele.captured_queries]
         zaehlung = [q["sql"] for q in viele.captured_queries if "COUNT(" in q["sql"]]
         assert zaehlung and all("LIMIT" in sql for sql in zaehlung), "gezählt wird nur bis zur Grenze der Seiten"
 

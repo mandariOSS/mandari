@@ -57,6 +57,7 @@ def ui_kit_context() -> dict[str, object]:
         "demo_file_barriere": _demo_file("Stellungnahme zum Antrag (nicht barrierefrei)"),
         "demo_treffer": _demo_treffer(),
         "demo_ergebnisse": _demo_ergebnisse(),
+        "demo_absender": _demo_absender(),
         "demo_reiter": [
             {"key": "", "label": "Alle", "count": "94", "url": "#", "active": True},
             {"key": "papers", "label": "Vorgänge", "count": "79", "url": "#", "active": False},
@@ -116,6 +117,27 @@ def _demo_ergebnisse() -> list[SimpleNamespace]:
     return [
         SimpleNamespace(schluessel=schluessel, text=text, titel=f"Erklärung zu „{text}“", bekannt=bool(schluessel))
         for schluessel, text in begriffe
+    ]
+
+
+def _demo_absender() -> list[SimpleNamespace]:
+    """
+    Absender für die Vorschau von c-insight.absender (Attribute wie insight_core.services.fraktionskuerzel.Absender):
+    eine Fraktion, ein gemeinsamer Antrag mit mehr als drei Fraktionen, eine örtliche Gruppe in Grau, ein Bürgerantrag.
+    """
+
+    def kuerzel(text: str, farbe: str) -> SimpleNamespace:
+        return SimpleNamespace(text=text, farbe=farbe, titel=f"Fraktion {text}")
+
+    return [
+        SimpleNamespace(sichtbar=[kuerzel("Grüne", "#1aa037")], weitere=0, von=""),
+        SimpleNamespace(
+            sichtbar=[kuerzel("CDU", "#1f1f1f"), kuerzel("SPD", "#e3000f"), kuerzel("FDP", "#e6c300")],
+            weitere=1,
+            von="",
+        ),
+        SimpleNamespace(sichtbar=[kuerzel("BBB", "#9ca3af")], weitere=0, von=""),
+        SimpleNamespace(sichtbar=[], weitere=0, von="Bürgerantrag"),
     ]
 
 

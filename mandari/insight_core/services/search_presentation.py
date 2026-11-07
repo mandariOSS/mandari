@@ -344,6 +344,9 @@ def _present_entry(group: dict[str, Any], statuses: Mapping[str, Any], body_slug
             "gremien": _gremien(paper, main_file),
             "url": links("vorgang", paper.get("id")),
             "title": _title(paper, str(paper.get("reference") or "Vorgang")),
+            # Titel und Art laut Index für den Titel ohne Absender im Bürgerportal (fraktionskuerzel, Issue #1272)
+            "titel_roh": clean_snippet(str(paper.get("name") or "")),
+            "art_roh": str(paper.get("paper_type") or ""),
             "context": [part for part in context if part],
             "status": getattr(status, "text", "") or "Noch keine Beratung bekannt.",
             "status_kind": getattr(status, "kind", ""),

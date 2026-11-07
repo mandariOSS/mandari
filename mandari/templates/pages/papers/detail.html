@@ -21,10 +21,11 @@
 <header class="rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
     <c-insight.zurueck :ziel="insight_bereich_ziel" href="{% url 'insight_core:insight:paper_list' %}">Vorgänge</c-insight.zurueck>
     <h1 class="max-w-4xl text-[1.75rem] sm:text-[2.25rem] leading-[1.12] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">
-        {{ paper.name|default:"Vorgang" }}
+        {% firstof absender.titel paper.name "Vorgang" %}
     </h1>
     <p class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
         {% if paper.paper_type %}<span>{{ paper.paper_type }}</span>{% endif %}
+        {% if absender.neben_art %}<c-insight.absender :absender="absender" hinweis="eingebracht von" neben_art />{% endif %}
         {% if paper.reference %}<span>{{ paper.reference }}</span>{% endif %}
         {% if paper.date %}<span class="tabular-nums">vom {{ paper.date|date:"d.m.Y" }}</span>{% endif %}
     </p>
@@ -95,6 +96,11 @@
             {% if paper.reference %}
             <dt class="text-gray-600 dark:text-gray-400">Vorlagen-Nr.</dt>
             <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.reference }}</dd>
+            {% endif %}
+            {% if absender.gekuerzt %}
+            {% comment %}Titel ohne Absender im Kopf (Issue #1272): hier der unveränderte Titel aus dem Ratsinformationssystem{% endcomment %}
+            <dt class="text-gray-600 dark:text-gray-400">Titel im RIS</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words" data-testid="titel-im-ris">{{ paper.name }}</dd>
             {% endif %}
             {% if paper.paper_type %}
             <dt class="text-gray-600 dark:text-gray-400">Art</dt>
