@@ -18,6 +18,7 @@ from ..models import (
     withdrawn_q,
 )
 from ..services import fraktionen, personen_liste
+from ..services.testkonten import ist_testkonto, systemrolle_q, testkonto_q
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -79,7 +80,8 @@ class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, L
         if not body:
             return OParlPerson.objects.none()
 
-        qs = OParlPerson.objects.filter(body=body, deleted=False).select_related("body")
+        # Ohne Test- und Platzhalterkonten des RIS (Issue #1258); die Daten bleiben im Bestand
+        qs = OParlPerson.objects.filter(body=body, deleted=False).exclude(testkonto_q()).select_related("body")
 
         # Suche (Name + Funktion/Gremium über Mitgliedschaften)
         q = self.request.GET.get("q", "").strip()
@@ -118,10 +120,12 @@ class PersonDetailView(DetailView):
         today = timezone.localdate()
 
         # Nur bestehende Mitgliedschaften in bestehenden, nicht zurückgenommenen Gremien (gelöschte Fraktionen
-        # erschienen sonst als laufende Mitgliedschaft, Prüfung #848)
+        # erschienen sonst als laufende Mitgliedschaft, Prüfung #848), ohne Zugänge zum RIS wie „Informationssystem“
+        # (Issue #1258: sonst stand die Systemrolle als Funktion im Kopf)
         all_memberships = (
             person.memberships.filter(deleted=False, organization__deleted=False)
             .exclude(withdrawn_q("organization"))
+            .exclude(systemrolle_q())
             .select_related("organization")
         )
         context["active_memberships"] = all_memberships.filter(
@@ -165,8 +169,14 @@ class PersonDetailView(DetailView):
         enabled = question_service.questions_enabled()
         context["can_ask"] = enabled and (bool(council_membership) or question_service.is_mandate_holder(person))
         context["faction"] = question_service.get_faction(person)
-        # Ohne Fraktion aus OParl: bestätigte Zuordnung aus Insight, mit Hinweis auf die Quelle (Issue #916)
-        context["fraktion_lokal"] = None if context["faction"] else fraktionen.aktuelle_fraktion(person, person.body)
+        # Ohne Fraktion aus OParl: bestätigte Zuordnung aus Insight (Issue #916), sonst bei einem Mandat im Hauptorgan
+        # die gepflegte Liste (Issue #1258), jeweils mit Hinweis auf die Quelle
+        context["fraktion_lokal"] = None
+        if not context["faction"]:
+            lokal = fraktionen.aktuelle_fraktion(person, person.body)
+            context["fraktion_lokal"] = lokal or personen_liste.gepflegte_fraktion(
+                person, context["active_memberships"]
+            )
         if context["can_ask"] or not enabled:
             context["published_questions"] = PublicQuestion.objects.filter(
                 recipient=person,
@@ -180,7 +190,8 @@ class PersonDetailView(DetailView):
         from ..seo import get_person_seo
         from ..services.indexierung import robots_fuer_person
 
-        # Ohne laufende Mitgliedschaft noindex (Issue #914); die Mitgliedschaften sind oben schon geladen
+        # Ohne laufende Mitgliedschaft noindex (Issue #914); die Mitgliedschaften sind oben schon geladen. Test- und
+        # Platzhalterkonten bleiben erreichbar, aber nie im Index (Issue #1258)
         context["seo"] = robots_fuer_person(
             get_person_seo(
                 person,
@@ -189,7 +200,7 @@ class PersonDetailView(DetailView):
                 fraktion=context["faction"],
                 mitgliedschaften=context["active_memberships"],
             ).to_dict(),
-            context["active_memberships"],
+            [] if ist_testkonto(person) else context["active_memberships"],
         )
 
         return context

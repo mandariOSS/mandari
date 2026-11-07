@@ -20,6 +20,7 @@ from ..models import (
 )
 from ..ranking import sort_organizations_by_ranking
 from ..services import personen_liste, question_service
+from ..services.testkonten import ausgeblendet_q
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -71,10 +72,12 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMi
             .values("start")[:1]
         )
         has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
-        # Laufende Mitgliedschaften (Spalte „Mitglieder“ auf breiten Bildschirmen, Issue #841)
+        # Laufende Mitgliedschaften (Spalte „Mitglieder“ auf breiten Bildschirmen, Issue #841), ohne Test- und
+        # Systemkonten (Issue #1258)
         members_sq = Subquery(
             OParlMembership.objects.filter(organization=OuterRef("pk"), deleted=False)
             .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .exclude(ausgeblendet_q())
             .order_by()
             .values("organization")
             .annotate(n=Count("pk"))
@@ -161,10 +164,12 @@ class OrganizationDetailView(DetailView):
         today = timezone.now().date()
         now = timezone.now()
 
-        # Nur bestehende Mitgliedschaften von nicht zurückgenommenen Personen
+        # Nur bestehende Mitgliedschaften von nicht zurückgenommenen Personen, ohne Test- und Systemkonten des RIS
+        # (Issue #1258: sie zählen auch nicht als Mitglieder)
         all_memberships = (
             org.memberships.filter(deleted=False)
             .exclude(withdrawn_q("person"))
+            .exclude(ausgeblendet_q())
             .select_related("person", "person__body")
         )
         active_qs = all_memberships.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by(

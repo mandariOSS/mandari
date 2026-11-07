@@ -19,7 +19,12 @@ from hub.ris import vorlagennummer
 from ..models import OParlPaper, VorgangUrheber
 from ..services import file_reconcile
 from ..services.vorgang_dokumente import dokumente_anhaengen
-from ..services.vorgang_urheber import fraktionen_der_kommune, urheber_je_vorgang
+from ..services.vorgang_urheber import (
+    FraktionsAuswahl,
+    bezeichnungen_fuer,
+    fraktionen_der_kommune,
+    urheber_je_vorgang,
+)
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -63,6 +68,12 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
             return ""
         return reverse("insight_core:insight:paper_detail", kwargs={"pk": treffer[0].pk})
 
+    def _fraktionen(self, body) -> list[FraktionsAuswahl]:
+        """Fraktionen des Filters, einmal je Anfrage berechnet (Liste und Auswahl brauchen sie)."""
+        if getattr(self, "_fraktionen_cache", None) is None:
+            self._fraktionen_cache = fraktionen_der_kommune(body.pk)
+        return self._fraktionen_cache
+
     def get_queryset(self):
         body = get_active_body(self.request)
         if not body:
@@ -75,11 +86,12 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
         if paper_type:
             qs = qs.filter(paper_type=paper_type)
 
-        # Antragstellende Fraktion (Issue #1138)
+        # Antragstellende Fraktion (Issue #1138), mit früheren Namen derselben Fraktion (Issue #1258)
         fraktion = self.request.GET.get("fraktion", "").strip()
         if fraktion:
+            bezeichnungen = bezeichnungen_fuer(self._fraktionen(body), fraktion)
             qs = qs.filter(
-                pk__in=VorgangUrheber.objects.filter(body_id=body.pk, bezeichnung=fraktion).values("paper_id")
+                pk__in=VorgangUrheber.objects.filter(body_id=body.pk, bezeichnung__in=bezeichnungen).values("paper_id")
             )
 
         # Suche in Name und Nummer, Vorlagennummern in jeder Schreibweise mit dem passenden Vorgang vorn (Issue #1102)
@@ -106,8 +118,9 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
                 .distinct()
                 .order_by("paper_type")
             )
-            # Fraktionen, die in der Kommune Vorgänge gestellt haben (Filter, Issue #1138)
-            context["paper_fraktionen"] = fraktionen_der_kommune(body.pk)
+            # Fraktionen der laufenden Wahlperiode, die in der Kommune Vorgänge gestellt haben (Filter, Issues #1138,
+            # #1258)
+            context["paper_fraktionen"] = self._fraktionen(body)
 
         from ..seo import get_list_seo
 

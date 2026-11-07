@@ -63,8 +63,8 @@
                         hx-include="#search-papers, #filter-type"
                         class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
                     <option value="">Alle Fraktionen</option>
-                    {% for wert, anzeige in paper_fraktionen %}
-                    <option value="{{ wert }}" {% if request.GET.fraktion == wert %}selected{% endif %}>{{ anzeige }}</option>
+                    {% for fraktion in paper_fraktionen %}
+                    <option value="{{ fraktion.wert }}" {% if request.GET.fraktion == fraktion.wert or request.GET.fraktion in fraktion.bezeichnungen %}selected{% endif %}>{{ fraktion.anzeige }}</option>
                     {% endfor %}
                 </select>
             </div>
