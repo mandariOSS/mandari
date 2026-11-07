@@ -171,8 +171,9 @@ def problem(
 ) -> HttpResponseBase:
     """Fehler nach RFC 9457, mit den Kopfzeilen dieser Ausgabe."""
     body = Problem(status=status, kind=kind, detail=detail).to_dict(instance=request.path)
-    response = HttpResponse(json.dumps(body, ensure_ascii=False).encode("utf-8"), status=status)
-    response["Content-Type"] = PROBLEM_CONTENT_TYPE
+    # Typ gleich beim Anlegen setzen: Die Antwort ist nie HTML, auch nicht kurzzeitig mit dem Standardtyp
+    payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    response = HttpResponse(payload, status=status, content_type=PROBLEM_CONTENT_TYPE)
     for key, value in (headers or {}).items():
         response[key] = value
     return _privat(response)

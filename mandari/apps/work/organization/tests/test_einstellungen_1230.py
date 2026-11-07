@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from django.urls import reverse
@@ -22,6 +23,7 @@ from django.urls import reverse
 from apps.common.tests.factories import OrganizationFactory, RoleFactory
 from apps.tenants.models import AdministrationContact, CouncilParty, Topic
 from apps.work.organization import einstellungen, selectors
+from apps.work.organization.views import council
 from apps.work.tasks.models import TaskLabel
 
 from .einstellungen_hilfen import (
@@ -270,6 +272,33 @@ def test_verwaltungskontakte_auf_eigener_seite(org: Any, admin: Any, leser: Any,
     antwort = client.get(f"{pfad}?ansicht=bisher")
     assert antwort.status_code == 302
     assert antwort["Location"] == f"{url('council_parties', org)}?ansicht=bisher"
+
+
+def test_verwaltungskontakte_leiten_nur_auf_die_ratsfraktionen(
+    org: Any, admin: Any, client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bisheriges Erscheinungsbild: Ziel ist immer die Seite der Ratsfraktionen auf diesem Host, die Abfrage kommt nur
+    als Abfrage mit, gleich was in ihr steht."""
+    client = client_for(admin.user)
+    pfad = url("organization_admin_contacts", org)
+    rat = url("council_parties", org)
+    for abfrage in (
+        "ansicht=bisher&next=//example.org/",
+        "ansicht=bisher&ziel=https://example.org/pfad",
+        "ansicht=bisher&x=%2F%2Fexample.org%5C%40evil",
+        "ansicht=bisher&x=%0d%0aLocation:%20https://example.org",
+    ):
+        antwort = client.get(f"{pfad}?{abfrage}")
+        assert antwort.status_code == 302, abfrage
+        ziel = urlsplit(antwort["Location"])
+        assert (ziel.scheme, ziel.netloc, ziel.path) == ("", "", rat), abfrage
+        assert parse_qs(ziel.query) == parse_qs(abfrage), abfrage
+
+    # Hielte die Prüfung das Ziel einmal nicht für eigen, ginge es ohne Abfrage auf die Seite der Ratsfraktionen
+    monkeypatch.setattr(council, "url_has_allowed_host_and_scheme", lambda *args, **kwargs: False)
+    antwort = client.get(f"{pfad}?ansicht=bisher")
+    assert antwort.status_code == 302
+    assert antwort["Location"] == rat
 
 
 def test_kontakte_tragen_die_bisherigen_formulare(org: Any, admin: Any, client_for: Any) -> None:
