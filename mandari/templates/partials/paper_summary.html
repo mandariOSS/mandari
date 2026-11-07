@@ -7,8 +7,27 @@ in der Datenschutzerklärung (es geht um öffentliche Dokumente, nicht um Daten 
 in ``paper.summary_hinweis`` (Auswertung der Bewertungen je Modell).
 Darunter im Bürgerportal Daumen hoch/runter (Issue #1221, ``kiBewertung`` in ``frontend/alpine/insight.ts``), nicht in
 Work (``dicht``).
+``veraltet``: Die Zusammenfassung kennt den aktuellen Beratungsstand nicht (Issue #1257, ``summary_store.veraltet``;
+auch Zusammenfassungen von vor #1257 ohne gespeicherten Stand, deren Vorgang ein Ergebnis hat). Dann
+steht vor dem Text ein Satz dazu und „Neu zusammenfassen“ (POST wie „Zusammenfassen“, in denselben Grenzen).
 {% endcomment %}{% load ki_bewertung %}{% if summary %}{% with absaetze=summary|ki_absaetze %}
 <h2 class="{% if dicht %}text-base font-semibold{% else %}text-[1.375rem] font-bold tracking-tight{% endif %} text-gray-900 dark:text-white">KI-Zusammenfassung</h2>
+{% if veraltet %}
+<div class="mt-2" data-testid="zusammenfassung-veraltet">
+    <p class="text-sm text-gray-700 dark:text-gray-300">
+        Diese Zusammenfassung entstand ohne den aktuellen Beratungsstand und kann ihm widersprechen. Maßgeblich ist der Stand oben.
+    </p>
+    <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
+            hx-target="#paper-summary" hx-swap="innerHTML"
+            hx-disabled-elt="this" hx-indicator="#summary-refresh-status"
+            class="mt-1 -ml-2 inline-flex items-center gap-1.5 min-h-11 px-2 rounded-md text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 disabled:opacity-60">
+        <i data-lucide="refresh-cw" class="w-4 h-4" aria-hidden="true"></i>Neu zusammenfassen
+    </button>
+    <p id="summary-refresh-status" role="status" class="hidden [&.htmx-request]:block mt-1 text-sm text-gray-700 dark:text-gray-300">
+        Die KI fasst die Dokumente mit dem aktuellen Stand neu zusammen. Das dauert bis zu drei Minuten.
+    </p>
+</div>
+{% endif %}
 <div x-data="{ offen: false, einfach: false }" class="mt-3">
     <div class="space-y-3 text-base leading-7 text-gray-800 dark:text-gray-200" data-ai-generated="true" x-show="!einfach">
         <p>{{ absaetze.0 }}</p>

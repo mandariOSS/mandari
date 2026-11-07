@@ -177,12 +177,13 @@ class SourceDeletionModel(CanonicalIdModel):
         paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
         if isinstance(self, OParlPaper | OParlFile) and paper_id:
             OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(
-                summary=None, summary_hinweis="", summary_einfach=None
+                summary=None, summary_hinweis="", summary_einfach=None, summary_stand=""
             )
             if isinstance(self, OParlPaper):
                 self.summary = None
                 self.summary_hinweis = ""
                 self.summary_einfach = None
+                self.summary_stand = ""
 
     @property
     def depublished(self) -> bool:
@@ -972,6 +973,17 @@ class OParlPaper(SourceDeletionModel):
     )
     # Dieselbe Zusammenfassung in Einfacher Sprache (Claude, Issue #1220); verfällt mit der Zusammenfassung
     summary_einfach = models.TextField(blank=True, null=True, verbose_name="Zusammenfassung in Einfacher Sprache")
+    # Beratungsstand, den die Zusammenfassung kannte (Issue #1257, ``summary_store.beratungsstand``): Weicht er vom
+    # aktuellen ab, ist sie veraltet und wird nachgezogen. Leer: ohne bekanntes Ergebnis erstellt oder vor #1257.
+    # Datenbank-Standardwert wie bei ``summary_hinweis`` (Ingestor, Rückfall auf ein älteres Image)
+    summary_stand = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Beratungsstand der Zusammenfassung",
+        help_text="Prüfsumme der Beratungsergebnisse, die die gespeicherte Zusammenfassung kannte.",
+    )
     locations = models.JSONField(blank=True, null=True)
 
     # Offizielle OParl-Locations (Feld `paper.location`, vom Ingestor verknüpft)

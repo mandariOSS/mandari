@@ -20,7 +20,6 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from django.urls import reverse
@@ -300,19 +299,9 @@ def _paper_entry(ctx: ToolContext, paper: OParlPaper, stand: str | None = None) 
 
 def _status_entries(steps: Iterable[ris.ConsultationStep]) -> list[dict[str, Any]]:
     """Beratungsschritte im Format von ``paper_status`` (Ergebnis nichtöffentlicher Punkte bleibt leer)."""
-    return [
-        {
-            "meeting": SimpleNamespace(cancelled=step.cancelled),
-            "date": step.date,
-            "organization_name": step.organization_name,
-            "agenda_number": step.agenda_number,
-            "result": step.result,
-            "public": step.public,
-            "role": step.role,
-            "authoritative": step.authoritative,
-        }
-        for step in steps
-    ]
+    from insight_core.services.paper_status import status_eintraege
+
+    return status_eintraege(steps)
 
 
 def _status_texts(ctx: ToolContext, paper_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -484,12 +473,18 @@ def vorgang(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _vorgang_details(ctx: ToolContext, paper: OParlPaper) -> dict[str, Any]:
-    """Vorgang mit Stand, Beratungsfolge (nur öffentliche Ergebnisse), Beschlusstext und Dokumentliste."""
+    """
+    Vorgang mit Stand, Beratungsfolge (nur öffentliche Ergebnisse), Beschlusstext und Dokumentliste. Eine
+    Zusammenfassung, die älter als der Beratungsstand ist, fehlt (Issue #1257): Sie könnte dem Stand widersprechen.
+    """
+    from insight_core.services import summary_store
     from insight_core.services.paper_status import paper_status
 
     url = ctx.link("paper_detail", paper.pk)
     ctx.note(url, paper.name or paper.reference or "Vorgang", "paper", detail=True)
     steps = ris.public_consultation_history([paper.pk]).get(paper.pk, [])
+    aktuell = (paper.summary_stand or "") == summary_store.beratungsstand(steps, now=ctx.now)
+    zusammenfassung = paper.summary if aktuell else None
     folge = []
     for step in steps:
         rolle = _short(step.role, 60) if step.role and not step.role.startswith("http") else None
@@ -523,9 +518,9 @@ def _vorgang_details(ctx: ToolContext, paper: OParlPaper) -> dict[str, Any]:
             "stand": paper_status(_status_entries(steps), ctx.now).text,
             "beratungsfolge": folge[-12:],
             "beschluss": beschluss,
-            "zusammenfassung": _short(paper.summary, 600),
+            "zusammenfassung": _short(zusammenfassung, 600),
             # Die gespeicherte Zusammenfassung ist KI-Text ohne redaktionelle Prüfung (EU AI Act Art. 50, Issue #938)
-            "zusammenfassung_ki_erzeugt": bool(paper.summary),
+            "zusammenfassung_ki_erzeugt": bool(zusammenfassung),
             "dokumente": dokumente,
         }
     )

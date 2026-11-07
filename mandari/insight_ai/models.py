@@ -31,7 +31,8 @@ class ZusammenfassungsBatch(models.Model):
         "Eingereicht am", help_text="Beginn der Erstellung: Neuerer Text verwirft das Ergebnis eines Vorgangs."
     )
     abgeholt_am = models.DateTimeField("Übernommen am", null=True, blank=True)
-    #: ``custom_id`` → ``{"vorgang": <uuid>, "dateien": [<uuid>, …]}``: verwendete Anlagen je Anfrage
+    #: ``custom_id`` → ``{"vorgang": <uuid>, "dateien": [<uuid>, …], "stand": …}``: verwendete Anlagen und
+    #: Beratungsstand je Anfrage; ``"ersetzt"``: Stand der veralteten Zusammenfassung, die sie ersetzt (Issue #1257)
     anfragen = models.JSONField("Anfragen", default=dict, blank=True)
     anzahl = models.PositiveIntegerField("Anfragen", default=0)
     gespeichert = models.PositiveIntegerField("Gespeichert", default=0)

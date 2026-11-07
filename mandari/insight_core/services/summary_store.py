@@ -8,10 +8,17 @@ Message Batch (``insight_ai.services.zusammenfassung_batch``: Auswahl ``fuer_tag
 (``SourceDeletionModel._forget_summaries``), im Löschabgleich (``file_reconcile``) und nach neuem Text einer Anlage
 (Abonnement ``insight.zusammenfassung``, Issue #919). Abonnement und Batch liegen bei den KI-Funktionen und
 schreiben über diese Funktionen, nicht selbst in den Bestand (``scripts/check_ris_access_ratchet.py``).
+
+Mit der Zusammenfassung steht der Beratungsstand, den sie kannte (``OParlPaper.summary_stand``, Prüfsumme aus
+``beratungsstand``, Issue #1257). Kommt danach ein Ergebnis hinzu (beschlossen, abgelehnt, vertagt …) oder ändert es
+sich, ist sie veraltet (``veraltet``): Die Vorgangsseite sagt das, und der Batch erzeugt sie neu (Auswahl
+``veraltete``, Übernahme mit ``speichern(..., ersetzt=...)``). Zusammenfassungen von vor #1257 haben keinen Stand;
+sie gelten als veraltet, sobald der Vorgang ein Ergebnis hat.
 """
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Iterable, Mapping
 from datetime import date, datetime
@@ -19,11 +26,16 @@ from typing import Any
 
 from django.db import transaction
 from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.utils import timezone
 
-from ..models import OParlFile, OParlPaper
+from ..models import OParlAgendaItem, OParlConsultation, OParlFile, OParlPaper, withdrawn_q
 
 #: Länge des gespeicherten Anbieterhinweises (``OParlPaper.summary_hinweis``)
 HINWEIS_LAENGE = 300
+#: Länge der Prüfsumme des Beratungsstands (``OParlPaper.summary_stand``)
+STAND_LAENGE = 32
+#: So viele Vorgänge prüft ``veraltete`` je Abfrage des Beratungsverlaufs
+STAND_BLOCK = 500
 
 
 def discard_for_files(file_ids: Iterable[uuid.UUID], *, dry_run: bool = False) -> int:
@@ -38,7 +50,136 @@ def discard_for_files(file_ids: Iterable[uuid.UUID], *, dry_run: bool = False) -
         return 0
     vorgaenge = OParlFile.objects.filter(pk__in=kennungen, paper_id__isnull=False).values("paper_id")
     betroffen = OParlPaper.objects.filter(pk__in=vorgaenge, summary__isnull=False)
-    return betroffen.count() if dry_run else betroffen.update(summary=None, summary_hinweis="", summary_einfach=None)
+    if dry_run:
+        return betroffen.count()
+    return betroffen.update(summary=None, summary_hinweis="", summary_einfach=None, summary_stand="")
+
+
+# =============================================================================
+# Beratungsstand der Zusammenfassung (Issue #1257)
+# =============================================================================
+
+
+def _tag(zeitpunkt: datetime | None) -> str:
+    if zeitpunkt is None:
+        return ""
+    return (timezone.localtime(zeitpunkt) if timezone.is_aware(zeitpunkt) else zeitpunkt).date().isoformat()
+
+
+def beratungsstand(schritte: Iterable[Any], *, now: datetime | None = None) -> str:
+    """
+    Prüfsumme des öffentlich bekannten Beratungsstands eines Vorgangs; leer, solange kein Ergebnis bekannt ist.
+
+    ``schritte``: Beratungsverlauf nur mit öffentlichen Angaben (``hub.ris.selectors.public_consultation_history``).
+    Es zählen die Ergebnisse öffentlicher Tagesordnungspunkte mit Sitzungstag und vergangene nichtöffentliche
+    Beratungen (ohne Ergebnis, das ist nicht öffentlich). Termine, Gremiennamen, Reihenfolge und Leerraum zählen
+    nicht: Ein neuer Termin macht eine Zusammenfassung nicht falsch, ein Ergebnis schon. Abgesagte Sitzungen zählen
+    nicht (wie im Stand-Satz, ``paper_status``).
+    """
+    jetzt = now or timezone.now()
+    zeilen: set[str] = set()
+    for schritt in schritte:
+        if schritt.cancelled:
+            continue
+        if schritt.public:
+            ergebnis = " ".join(str(schritt.result or "").split()).casefold()
+            if ergebnis:
+                zeilen.add(f"{_tag(schritt.date)}|{ergebnis}")
+        elif schritt.date is not None and schritt.date <= jetzt:
+            zeilen.add(f"{_tag(schritt.date)}|nichtöffentlich beraten")
+    if not zeilen:
+        return ""
+    return hashlib.sha256("\n".join(sorted(zeilen)).encode()).hexdigest()[:STAND_LAENGE]
+
+
+def beratungsstaende(vorgang_ids: Iterable[Any], *, now: datetime | None = None) -> dict[Any, str]:
+    """Beratungsstand je Vorgang (``beratungsstand``) in einer Abfrage; Vorgänge ohne Beratung fehlen (Stand leer)."""
+    from hub.ris.selectors import public_consultation_history
+
+    return {
+        kennung: beratungsstand(schritte, now=now)
+        for kennung, schritte in public_consultation_history(vorgang_ids).items()
+    }
+
+
+def veraltet(vorgang: OParlPaper, *, now: datetime | None = None) -> bool:
+    """Kennt die gespeicherte Zusammenfassung einen anderen Beratungsstand als den aktuellen? Ohne: ``False``."""
+    if not vorgang.summary:
+        return False
+    return (vorgang.summary_stand or "") != beratungsstaende([vorgang.pk], now=now).get(vorgang.pk, "")
+
+
+def _mit_moeglichem_stand() -> Q:
+    """
+    Vorfilter in der Datenbank für ``veraltete``: Vorgänge, die einen Beratungsstand haben können (Beratung mit
+    Tagesordnungspunkt mit Ergebnis oder nichtöffentlich) oder einen gespeicherten haben (er kann wegfallen).
+    """
+    punkte = OParlAgendaItem.objects.filter(
+        external_id=OuterRef("agenda_item_external_id"), deleted=False, meeting__deleted=False
+    ).filter(Q(public=False) | (Q(result__isnull=False) & ~Q(result="")))
+    beratungen = OParlConsultation.objects.filter(paper_id=OuterRef("pk")).exclude(withdrawn_q()).filter(Exists(punkte))
+    return Q(Exists(beratungen)) | ~Q(summary_stand="")
+
+
+def veraltete(
+    kommunen: Mapping[Any, date | None] | None = None,
+    *,
+    limit: int,
+    ab: date | None = None,
+    now: datetime | None = None,
+) -> list[OParlPaper]:
+    """
+    Vorgänge mit veralteter Zusammenfassung (``veraltet``), neueste zuerst, höchstens ``limit``: Tagesbatch und
+    ``manage.py zusammenfassungen_nachziehen`` (Issue #1257).
+
+    ``kommunen``: Kennung der Kommune → Stichtag (``None``: ohne Stichtag); ohne Angabe alle Kommunen. ``ab``: nur
+    Vorgänge ab diesem Datum. Wie ``fuer_tagesbatch`` nur nicht gelöschte Vorgänge gelisteter Kommunen, deren
+    Veröffentlichung weder pausiert noch zurückgenommen ist, und nur mit aktueller Anlage mit Text. Der Stand wird
+    blockweise berechnet (``STAND_BLOCK`` Vorgänge je Abfrage des Beratungsverlaufs).
+    """
+    from insight_core import publication
+
+    if limit <= 0 or (kommunen is not None and not kommunen):
+        return []
+    gesperrt = [
+        uuid.UUID(kennung) for kennung, stand in publication.states().items() if stand.paused or stand.withdrawn
+    ]
+    auswahl = OParlPaper.objects.filter(
+        summary__isnull=False, deleted=False, body__deleted=False, body__is_listed=True
+    ).exclude(body_id__in=gesperrt)
+    if kommunen is not None:
+        bedingung = Q()
+        for kommune, stichtag in kommunen.items():
+            bedingung |= Q(body_id=kommune, date__gte=stichtag) if stichtag else Q(body_id=kommune)
+        auswahl = auswahl.filter(bedingung)
+    if ab is not None:
+        auswahl = auswahl.filter(date__gte=ab)
+    mit_text = _aktuelle_dateien_mit_text().filter(paper_id=OuterRef("pk"))
+    auswahl = (
+        auswahl.filter(Exists(mit_text))
+        .filter(_mit_moeglichem_stand())
+        .select_related("body", "body__source")
+        .defer("raw_json", "summary_einfach")
+        .order_by("-date", "-pk")
+    )
+    jetzt = now or timezone.now()
+    treffer: list[OParlPaper] = []
+    block: list[OParlPaper] = []
+
+    def pruefen() -> None:
+        staende = beratungsstaende([vorgang.pk for vorgang in block], now=jetzt)
+        treffer.extend(vorgang for vorgang in block if (vorgang.summary_stand or "") != staende.get(vorgang.pk, ""))
+        block.clear()
+
+    for vorgang in auswahl.iterator(chunk_size=STAND_BLOCK):
+        block.append(vorgang)
+        if len(block) >= STAND_BLOCK:
+            pruefen()
+            if len(treffer) >= limit:
+                break
+    if block and len(treffer) < limit:
+        pruefen()
+    return treffer[:limit]
 
 
 def _aktuelle_dateien_mit_text() -> QuerySet[OParlFile]:
@@ -183,6 +324,8 @@ def speichern(
     seit: datetime,
     dateien: Iterable[Any] = (),
     einfach: str = "",
+    stand: str = "",
+    ersetzt: str | None = None,
 ) -> bool:
     """
     Speichert eine vorab erstellte Zusammenfassung, wenn sie noch passt; Rückgabe: gespeichert?
@@ -191,11 +334,22 @@ def speichern(
     verwendeten Anlagen (``dateien``) inzwischen gelöscht oder in der Quelle verschwunden ist oder wenn seit ``seit``
     (Beginn der Erstellung) neuer Text zu einer Anlage vorliegt. Der Vorgang ist dabei gesperrt: Eine gleichzeitige
     Rücknahme wartet und verwirft die Zusammenfassung danach (``_forget_summaries``).
+
+    ``stand``: Beratungsstand, den die neue Zusammenfassung kennt (``beratungsstand``). ``ersetzt``: Sie ersetzt eine
+    veraltete Zusammenfassung mit diesem Stand (Issue #1257). Gespeichert wird dann nur, wenn die vorhandene noch
+    diesen Stand hat (sonst hat sie inzwischen jemand neu erstellt) oder keine mehr da ist.
     """
     datei_ids = [kennung for kennung in dateien if kennung]
     with transaction.atomic():
-        vorgang = OParlPaper.objects.select_for_update().filter(pk=vorgang_id).only("pk", "deleted", "summary").first()
-        if vorgang is None or vorgang.deleted or vorgang.summary is not None:
+        vorgang = (
+            OParlPaper.objects.select_for_update()
+            .filter(pk=vorgang_id)
+            .only("pk", "deleted", "summary", "summary_stand")
+            .first()
+        )
+        if vorgang is None or vorgang.deleted:
+            return False
+        if vorgang.summary is not None and (ersetzt is None or (vorgang.summary_stand or "") != ersetzt):
             return False
         if (
             datei_ids
@@ -212,5 +366,6 @@ def speichern(
             summary=zusammenfassung,
             summary_hinweis=(hinweis or "")[:HINWEIS_LAENGE],
             summary_einfach=einfach or None,
+            summary_stand=(stand or "")[:STAND_LAENGE],
         )
     return True

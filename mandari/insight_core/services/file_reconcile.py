@@ -118,7 +118,7 @@ def _forget_summary(file_obj: Any) -> None:
 
     if file_obj.paper_id:
         OParlPaper.objects.filter(pk=file_obj.paper_id, summary__isnull=False).update(
-            summary=None, summary_hinweis="", summary_einfach=None
+            summary=None, summary_hinweis="", summary_einfach=None, summary_stand=""
         )
 
 

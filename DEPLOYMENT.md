@@ -1197,7 +1197,20 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
    Ergebnisse nicht mehr abrufbar sind (HTTP 404 oder älter als 29 Tage), wird als „verloren“ abgeschlossen; seine
    Schätzung zählt dann als Verbrauch. Abschalten lässt sich der Batch mit dem Häkchen in den KI-Einstellungen oder
    mit `EVENTS_SCHEDULES_DISABLED`.
-4. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
+4. Veraltete Zusammenfassungen (#1257): Jede Zusammenfassung merkt sich den Beratungsstand, den sie kannte. Kommt
+   danach ein Ergebnis (beschlossen, abgelehnt, vertagt …), zeigt die Vorgangsseite einen Hinweis mit „Neu
+   zusammenfassen“, und der Tagesbatch erzeugt sie für seine Kommunen ab dem Stichtag nach den neuen Vorgängen neu.
+   Den übrigen Bestand zieht ein Befehl nach, ein Batch je Lauf, nie neben einem offenen Batch und im Monatsbudget.
+   Ohne `--ausfuehren` zählt und schätzt er nur:
+
+   ```bash
+   docker exec mandari python manage.py zusammenfassungen_nachziehen --limit 100
+   docker exec mandari python manage.py zusammenfassungen_nachziehen --limit 100 --hoechstens-usd 2 --ausfuehren
+   ```
+
+   `--kommune` (mehrfach) und `--ab JJJJ-MM-TT` grenzen ein, höchstens 500 Vorgänge je Lauf. Zusammenfassungen von
+   vor #1257 kennen keinen Stand und gelten als veraltet, sobald der Vorgang ein Ergebnis hat.
+5. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
    reserviert offene Batches mit ihrer Schätzung. Ist es erreicht, ruht der Batch, und „Zusammenfassen“ meldet
    „derzeit nicht verfügbar“. Stand im Admin unter „KI-Verbrauch (Claude)“. Das Ausgabenlimit in der Konsole von
    Anthropic sollte zusätzlich gesetzt sein.
