@@ -13,7 +13,9 @@ oder ein Text, der zugleich „beschlossen“ und „abgelehnt“ enthält. Das 
 „angekündigt“ kommt nie aus dem Rohtext: Es steht für eine angesetzte Beratung, zu der es noch kein Ergebnis gibt.
 
 Vorrang bei mehreren Treffern: abgesetzt, vertagt, verwiesen, dann die Entscheidung (beschlossen oder abgelehnt), zuletzt
-die Kenntnisnahme. „Vertagung beschlossen“ ist also vertagt, „beschlossen; Kenntnis der Stellungnahme“ ein Beschluss.
+die Kenntnisnahme. „Vertagung beschlossen“ ist also vertagt, „Absetzung beschlossen“ abgesetzt, „beschlossen; Kenntnis der
+Stellungnahme“ ein Beschluss. Ein abgelehnter Antrag zum Verfahren („Verweisung abgelehnt“, „Antrag auf Absetzung
+abgelehnt“) oder ein verneintes Verfahrensergebnis („nicht vertagt“) sagt nichts über die Sache selbst und bleibt neutral.
 """
 
 from __future__ import annotations
@@ -56,9 +58,15 @@ _ERKLAERUNG_MAX: Final = 200
 #: „verschoben“ zählt nur in kurzen Ergebnissen („auf die nächste Sitzung verschoben“), nicht in Beschlussinhalten
 _VERSCHOBEN_MAX_WOERTER: Final = 6
 
-_ABGESETZT: Final = re.compile(r"\babgesetzt\b|\bvon der tagesordnung (genommen|abgesetzt|gestrichen)\b")
+_ABGESETZT: Final = re.compile(r"\babgesetzt\b|\babsetzung\b|\bvon der tagesordnung (genommen|abgesetzt|gestrichen)\b")
 _VERTAGT: Final = re.compile(r"\bvertagt\b|\bzurückgestellt\b|\bnicht behandelt\b|\bvertagung beschlossen\b")
 _VERWIESEN: Final = re.compile(r"\b(verwiesen|überwiesen|zurückverwiesen|verweisung|überweisung)\b")
+#: Antrag zum Verfahren (auch „Verweisungsantrag“); wird er abgelehnt, ist über die Sache nichts gesagt
+_VERFAHREN: Final = re.compile(r"\b(absetzung|vertagung|verweisung|überweisung|zurückverweisung|rückverweisung)")
+#: Verneintes Verfahrensergebnis („nicht vertagt“, „nicht verwiesen“): ebenfalls nichts über die Sache
+_VERFAHREN_VERNEINT: Final = re.compile(
+    r"\b(nicht|keine?)\s+(abgesetzt|vertagt|verwiesen|überwiesen|zurückverwiesen|zurückgestellt)\b"
+)
 #: Verneinte Zustimmung; sie zählt als Ablehnung und nicht als Beschluss
 _VERNEINT: Final = re.compile(
     r"\b(nicht|keine?)\s+(beschlossen|zugestimmt|angenommen|empfohlen|genehmigt|bestätigt|zustimmung|mehrheit)\b"
@@ -128,6 +136,10 @@ def einordnen(roh: object) -> str:
     text = _bereinigen(roh).lower()
     if not text:
         return NEUTRAL
+    abgelehnt = bool(_ABGELEHNT.search(text) or _VERNEINT.search(text))
+    if (abgelehnt and _VERFAHREN.search(text)) or _VERFAHREN_VERNEINT.search(text):
+        # „Verweisung abgelehnt“ ist das Gegenteil von verwiesen, und was mit der Sache geschah, steht nicht da
+        return NEUTRAL
     if _ABGESETZT.search(text):
         return ABGESETZT
     worte = len(text.split())
@@ -135,7 +147,6 @@ def einordnen(roh: object) -> str:
         return VERTAGT
     if _VERWIESEN.search(text):
         return VERWIESEN
-    abgelehnt = bool(_ABGELEHNT.search(text) or _VERNEINT.search(text))
     beschlossen = bool(_BESCHLOSSEN.search(_VERNEINT.sub(" ", text)))
     if abgelehnt and beschlossen:
         # Widersprüchlich („Änderungsantrag abgelehnt, Vorlage beschlossen“): lieber neutral als falsch
