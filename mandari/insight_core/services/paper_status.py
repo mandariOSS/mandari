@@ -31,6 +31,8 @@ from typing import Any, Final
 
 from django.utils import timezone
 
+from .ergebnis import Ergebnis, angekuendigt, ergebnis
+
 #: Art des Stands (für Tests und Darstellung)
 DECIDED: Final = "decided"
 DEFERRED: Final = "deferred"
@@ -120,6 +122,19 @@ class PaperStatus:
     text: str
     last: Mapping[str, Any] | None = None
     upcoming: Mapping[str, Any] | None = None
+
+    @property
+    def etikett(self) -> Ergebnis | None:
+        """
+        Ergebnis-Etikett zum Satz (Issue #1260): das Ergebnis der letzten Beratung, wenn es zum festen Vokabular gehört,
+        „angekündigt“ vor der ersten Beratung, sonst nichts (der Satz allein sagt dann, was bekannt ist).
+        """
+        if self.kind == SCHEDULED:
+            return angekuendigt("Die erste Beratung ist angesetzt, ein Ergebnis gibt es noch nicht.")
+        if self.kind in (DECIDED, DEFERRED) and self.last is not None:
+            etikett = ergebnis(self.last.get("result"))
+            return etikett if etikett is not None and etikett.bekannt else None
+        return None
 
 
 def _local_date(value: datetime) -> str:

@@ -3,7 +3,8 @@
 Suchtreffer mit Kontext (Konzept Insight-Suche, P0.6): Vorgang, Sitzung mit Unterlagen oder einzelnes Dokument.
   <ol><c-suche.treffer-vorgang :treffer="t" /></ol>
 Parameter: treffer (Dict aus insight_core.services.search_presentation.present_groups) mit
-  kind, url, title (SafeString), context (Liste: Art, Aktenzeichen, Gremium, Datum), status, status_kind,
+  kind, url, title (SafeString), context (Liste: Art, Aktenzeichen, Gremium, Datum), status, status_kind, ergebnis
+  (Etikett zum Stand-Satz, c-insight.ergebnis, Issue #1260; ohne Etikett ein Punkt in der Farbe des Stands),
   snippet (SafeString), fundstelle {label, url}, others [{label, url}]; in Work dazu bezug („Eigener Antrag“,
   apps/work/ris/bezug.py, Issue #853): warum der Treffer weiter oben steht; nummer_passt: genau die gesuchte
   Vorlagennummer, aus der Datenbank oben angeheftet (Issue #1102).
@@ -24,7 +25,7 @@ ab 2xl (Filterspalte daneben) bleibt die Spalte durchgehend, statt bis etwa 1.63
     </h3>
     {% if treffer.status %}
     <p class="mt-1 flex items-baseline gap-2 text-[0.95rem] text-gray-800 dark:text-gray-200">
-        <span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if treffer.status_kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif treffer.status_kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
+        {% if treffer.ergebnis %}<c-insight.ergebnis :ergebnis="treffer.ergebnis" klasse="shrink-0" />{% else %}<span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if treffer.status_kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif treffer.status_kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% endif %}
         <span>{{ treffer.status }}</span>
     </p>
     {% endif %}

@@ -2,7 +2,8 @@
 """
 Filter für Listen des Bürgerportals (Issue #841): Spalten nur zeigen, wenn sie etwas enthalten; Seitenlinks; Ziele
 der Listen im Bürgerportal einer Körperschaft (``insight_url``, ``insight_rel``, Issue #939); Dateityp der
-Dokumentlinks (``dateityp``, Issue #1103).
+Dokumentlinks (``dateityp``, Issue #1103); Ergebnis-Etikett (``ergebnis``) und Reiter mit den übrigen Filtern der
+Adresse (``adresse_mit``, Issue #1260).
 """
 
 from __future__ import annotations
@@ -11,9 +12,13 @@ from collections.abc import Iterable
 from typing import Any
 
 from django import template
+from django.http import QueryDict
 from django.urls import reverse
 
+from ..listenadresse import ohne_leere
 from ..ris_links import INSIGHT
+from ..services.ergebnis import Ergebnis
+from ..services.ergebnis import ergebnis as ergebnis_zuordnen
 
 register = template.Library()
 
@@ -68,6 +73,33 @@ def dateityp(datei: Any) -> str:
     if endung.isascii() and endung.isalnum() and 2 <= len(endung) <= 4:
         return endung.upper()
     return "Dokument"
+
+
+@register.filter
+def ergebnis(roh: Any) -> Ergebnis | None:
+    """
+    Ergebnis-Etikett zu einem Ergebnistext des Ratsinformationssystems (Issue #1260, ``services.ergebnis``), für
+    ``<c-insight.ergebnis>``: ``{% with etikett=item.result|ergebnis %}``. ``None`` ohne Text.
+    """
+    return ergebnis_zuordnen(roh)
+
+
+@register.simple_tag(takes_context=True)
+def adresse_mit(context: Any, behalten: str = "", **werte: Any) -> str:
+    """
+    Adresse eines Reiters der Liste (Issue #1260): die Werte des Reiters und von der Anfrage nur die Parameter aus
+    ``behalten`` (Komma-Liste, etwa der Suchbegriff), ohne leere Werte und ohne Seitenzahl. Fremde Parameter der
+    Anfrage landen so nicht in den Links der Seite: ``{% adresse_mit behalten="q" period="past" %}`` → ``?q=Rad&period=past``.
+    """
+    request = context.get("request")
+    params = QueryDict(mutable=True)
+    if request is not None:
+        for name in filter(None, (teil.strip() for teil in behalten.split(","))):
+            if name in request.GET:
+                params.setlist(name, request.GET.getlist(name))
+    for name, wert in werte.items():
+        params[name] = str(wert)
+    return "?" + str(ohne_leere(params).urlencode())
 
 
 @register.simple_tag(takes_context=True)

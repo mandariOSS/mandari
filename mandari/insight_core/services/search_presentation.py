@@ -347,6 +347,8 @@ def _present_entry(group: dict[str, Any], statuses: Mapping[str, Any], body_slug
             "context": [part for part in context if part],
             "status": getattr(status, "text", "") or "Noch keine Beratung bekannt.",
             "status_kind": getattr(status, "kind", ""),
+            # Ergebnis-Etikett zum Stand-Satz (Issue #1260), nur Begriffe des festen Vokabulars
+            "ergebnis": getattr(status, "etikett", None),
             "snippet": snippet or _snippet(paper, "file_contents_preview"),
             "fundstelle": fundstelle,
             "others": others,

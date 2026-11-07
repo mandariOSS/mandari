@@ -203,6 +203,10 @@
         </c-insight.timeline>
     </c-ui.card>
 
+    <c-ui.card title="Bürgerportal: Ergebnis-Etikett" subtitle="c-insight.ergebnis – ergebnis (insight_core.services.ergebnis), klasse; festes Vokabular, Erklärung als Tooltip, Unbekanntes neutral">
+        <p class="flex flex-wrap gap-2">{% for etikett in demo_ergebnisse %}<c-insight.ergebnis :ergebnis="etikett" />{% endfor %}</p>
+    </c-ui.card>
+
     <c-ui.card title="Rahmen: Leiste, Leiste unten, Blatt „Mehr“" subtitle="c-rahmen.nav-link / c-rahmen.tab / c-rahmen.blatt-link – href, icon, area + aktuell oder aktiv; nav-link mit dicht (Work)">
         <div class="grid gap-6 sm:grid-cols-3">
             <ul class="space-y-0.5 rounded-lg bg-band-grau p-2.5">

@@ -13,6 +13,8 @@ hub.ris.vorlagennummer, Issue #1102), ist die Zeile leicht hinterlegt und die Nu
 bei 1.280 px nicht umbrechen (Work: „Für die Fraktion“ der Vorgänge); ohne Angabe ab md wie bisher.
 Unter dem Titel stehen Vorlage und Anlagen (c-liste.vorgang-dokumente, Issue #1103), wenn der Aufrufer sie für die
 Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen); der Baustein fragt nicht selbst nach.
+Das Ergebnis der letzten Beratung steht als Etikett (``stand.etikett``, c-insight.ergebnis, Issue #1260) vor dem Stand und
+unterhalb von 2xl unter dem Titel; ohne Begriff aus dem Vokabular bleibt der Punkt vor dem Stand.
 {% endcomment %}
 <c-vars vorgaenge="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" zusatz_ab="" />
 {% load insight_listen %}
@@ -46,7 +48,7 @@ Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen);
                         {% if paper.reference and paper.paper_type %} &middot; {% endif %}
                         {% if paper.paper_type %}{{ paper.paper_type }}{% endif %}
                     </div>
-                    {% if dicht and paper.stand %}<p class="2xl:hidden mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ paper.stand.text }}</p>{% endif %}
+                    {% if dicht and paper.stand %}<p class="2xl:hidden mt-0.5 text-sm text-gray-700 dark:text-gray-300">{% if paper.stand.etikett %}<c-insight.ergebnis :ergebnis="paper.stand.etikett" /> {% endif %}{{ paper.stand.text }}</p>{% elif paper.stand.etikett %}<p class="2xl:hidden mt-1"><c-insight.ergebnis :ergebnis="paper.stand.etikett" /></p>{% endif %}
                     {% if paper.dokumentzeile %}<c-liste.vorgang-dokumente :zeile="paper.dokumentzeile" :vorgang="paper" ziel="{{ ziel }}" dicht="{{ dicht }}" />{% endif %}
                     {% if zusatz %}<div class="{% if zusatz_ab == '2xl' %}2xl:hidden{% else %}md:hidden{% endif %} mt-1 text-sm">{% include zusatz with eintrag=paper %}</div>{% endif %}
                 </td>
@@ -67,7 +69,7 @@ Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen);
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-700 dark:text-gray-300 max-2xl:hidden w-[26rem]">
                     {% if paper.stand %}
                     <span class="flex items-baseline gap-2">
-                        <span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if paper.stand.kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif paper.stand.kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
+                        {% if paper.stand.etikett %}<c-insight.ergebnis :ergebnis="paper.stand.etikett" klasse="shrink-0" />{% else %}<span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if paper.stand.kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif paper.stand.kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% endif %}
                         <span>{{ paper.stand.text }}</span>
                     </span>
                     {% endif %}

@@ -1,14 +1,16 @@
 {% extends "base_insight.html" %}
-{% load static %}
+{% load static insight_listen %}
 
 {% block title %}Gremien{% if page_obj.number > 1 %} – Seite {{ page_obj.number }}{% endif %}{% endblock %}
 
 {% block page %}
 <c-insight.kopfband titel="Gremien" text="{% if active_body %}Rat, Ausschüsse, Bezirksvertretungen und Beiräte von {{ active_body.get_display_name }}.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
-    <!-- Search -->
-    <div class="mb-4">
+    {% comment %}Suche und Reiter stehen in der Adresse (Issue #1260): Die Suche schreibt sie per hx-push-url fort und nimmt den Reiter mit, die Reiter behalten den Suchbegriff{% endcomment %}
+    <form method="get" role="search" class="mb-4" id="org-filter-form" hx-history="false">
+        <input type="hidden" name="tab" value="{{ request.GET.tab }}">
         <div class="relative max-w-md">
-            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true"></i>
+            <label for="search-orgs" class="sr-only">Gremium suchen</label>
             <input type="search"
                    id="search-orgs"
                    name="q"
@@ -17,9 +19,10 @@
                    hx-get="{{ request.path }}"
                    hx-trigger="keyup changed delay:400ms, search"
                    hx-target="#organizations-list"
+                   hx-push-url="true"
                    hx-swap="innerHTML"
                    hx-indicator="#org-search-loading"
-                   hx-vals='{"tab": "{{ tab }}"}'
+                   hx-include="closest form"
                    class="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <div id="org-search-loading" class="htmx-indicator absolute right-3 top-1/2 -translate-y-1/2">
                 <svg class="animate-spin h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -28,14 +31,14 @@
                 </svg>
             </div>
         </div>
-    </div>
+    </form>
     <!-- Tabs -->
     <div class="flex gap-2 border-b border-gray-200 dark:border-gray-700">
-        <a href="?tab=active{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
+        <a href="{% adresse_mit behalten='q' tab='active' %}"{% if tab == 'active' %} aria-current="page"{% endif %}
            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if tab == 'active' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
             Aktiv ({{ active_count|default:0 }})
         </a>
-        <a href="?tab=all{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
+        <a href="{% adresse_mit behalten='q' tab='all' %}"{% if tab == 'all' %} aria-current="page"{% endif %}
            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if tab == 'all' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
             Alle ({{ all_count|default:0 }})
         </a>

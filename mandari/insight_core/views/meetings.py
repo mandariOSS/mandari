@@ -17,7 +17,6 @@ from django.views.decorators.http import require_GET
 from django.views.generic import DetailView, ListView, TemplateView
 
 from apps.common.formatting import MONTH_ABBREVIATIONS
-from apps.common.mixins import HTMXMixin
 from hub.ris import selectors as ris_selectors
 
 from ..models import (
@@ -27,7 +26,8 @@ from ..models import (
     OParlOrganization,
 )
 from ..services import indexierung
-from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
+from ..services.ergebnis import angekuendigt, ergebnis
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -35,19 +35,14 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class MeetingListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
+class MeetingListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Sitzungen."""
 
     model = OParlMeeting
     template_name = "pages/meetings/list.html"
     context_object_name = "meetings"
     paginate_by = 25
-
-    def get_template_names(self):
-        # Für HTMX-Requests nur das Partial zurückgeben
-        if self.is_htmx:
-            return ["partials/meeting_list_items.html"]
-        return [self.template_name]
+    teil_vorlage = "partials/meeting_list_items.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -320,7 +315,14 @@ class MeetingDetailView(DetailView):
             beschluss = ris_selectors.decision(item)
             item.vote_info = beschluss.vote
             item.roll_call_entries = beschluss.roll_call
+            # Ergebnis als Etikett aus dem festen Vokabular (Issue #1260)
+            item.ergebnis = ergebnis(item.result)
         context["agenda_items"] = agenda_items
+        # Kommende Sitzung ohne veröffentlichte Tagesordnung: „angekündigt“ statt einer leeren Liste
+        if not agenda_items and not meeting.cancelled and meeting.start and meeting.start > timezone.now():
+            context["angekuendigt"] = angekuendigt(
+                "Der Termin steht fest, die Tagesordnung ist noch nicht veröffentlicht."
+            )
         context["protocol_file"] = _protocol_file(meeting)
         context["broadcast"] = _broadcast_info(meeting)
 
