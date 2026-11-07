@@ -657,7 +657,8 @@ unter `/public/`) ist ein anderes Produkt, siehe Abschnitt 2.
 ### Vor dem Anlegen
 
 - **Zensus:** `probe-ris <Adresse>` erkennt ALLRIS 3 und schlägt ohne OParl und ohne robots-Sperre
-  `{"scraper": "allris3", "base_url": "…/bi"}` vor; die Basis-URL kommt aus den Verweisen der Startseite.
+  `{"scraper": "allris3", "base_url": "…/bi"}` vor; die Basis-URL kommt aus den Verweisen der Startseite (nach
+  Weiterleitungen), die robots-Prüfung gilt für sie.
   Bietet die Instanz OParl, hat OParl Vorrang.
 - **robots.txt:** verbindlich wie bei jeder Quelle (Abschnitt 3). Sperrt sie die Basis-URL, ruft der
   Ingestor nichts ab, und die Quelle bekommt die Fehlerklasse `robots_blocked`. Eine solche Quelle wird erst
@@ -685,8 +686,10 @@ Admin → Insight → OParl-Quellen → Hinzufügen, die URL ist die Basis-URL:
 |---|---|---|
 | `base_url` | – (Pflicht) | Verzeichnis der `*.asp`-Seiten, meist `…/bi/` |
 | `body_name` | "Unbekannte Kommune" | Anzeigename des Bodies (eine Körperschaft je Basis-URL) |
-| `oldest_paper_id` | – (kein Rückwärtszählen) | Untergrenze der Drucksachen-Kennung (`VOLFDNR`), bis zu der der Vollabgleich von der neuesten Drucksache rückwärts zählt |
-| `rate_limit_seconds`, `calendar_window_days`, `full_window_days`, `max_detail_pages`, `members_on_full_only` | wie bei SessionNet | siehe Abschnitt 1, Schritt 3 |
+| `oldest_paper_id` | – (kein Rückwärtszählen) | Untergrenze der Drucksachen-Kennung (`VOLFDNR`), bis zu der Vollabgleiche von der neuesten Drucksache rückwärts zählen |
+| `paper_backfill_per_run` | `200` | Höchstens so viele Kennungen fragt ein Vollabgleich beim Rückwärtszählen ab, auch ohne `max_detail_pages`; der nächste setzt beim gemerkten Stand fort |
+| `max_detail_pages` | unbegrenzt | Obergrenze der Detailseiten je Lauf: Sitzungen, Tagesordnungspunkte (`to020`), Drucksachen, Mitgliederlisten. Eine angefangene Sitzung liest der Lauf zu Ende |
+| `rate_limit_seconds`, `calendar_window_days`, `full_window_days`, `members_on_full_only` | wie bei SessionNet | siehe Abschnitt 1, Schritt 3 |
 
 `variant` und `bodies` gibt es bei ALLRIS 3 nicht. Die Schlüssel außerhalb von `scraper`
 (`request_interval`, `sync_window`, `robots_override` …) gelten wie bei jeder Quelle.
@@ -708,10 +711,15 @@ Admin → Insight → OParl-Quellen → Hinzufügen, die URL ist die Basis-URL:
 
 - **Drucksachen** findet der Adapter über die Tagesordnungen der gelesenen Sitzungen und über die Liste
   `vo040.asp` (erste Seite, neueste zuerst): im Änderungsabgleich nur Drucksachen, die neuer sind als beim
-  letzten Lauf (`scraper_state.list_snapshots.vo040`), im Vollabgleich alle der Liste und, mit
-  `oldest_paper_id`, alle Kennungen von der neuesten rückwärts bis zur Untergrenze. Lücken, die ALLRIS nicht
-  herausgibt, zählen wie tote Verweise. `max_detail_pages` begrenzt jeden Lauf; die neueste Kennung rückt
-  nur vor, wenn alle Drucksachen gelesen sind.
+  letzten Lauf (`scraper_state.list_snapshots.vo040`), im Vollabgleich alle der Liste. Die neueste Kennung
+  rückt nur vor, wenn alle Drucksachen gelesen sind.
+- **Rückwärtszählen** (nur Vollabgleich, nur mit `oldest_paper_id`): Kennungen von der neuesten bzw. vom
+  gemerkten Stand abwärts bis zur Untergrenze, je Lauf höchstens `paper_backfill_per_run` Abrufe (Standard 200)
+  und nie über `max_detail_pages`. Der Stand (nächste Kennung) steht in
+  `scraper_state.list_snapshots.vo020_backfill` und rückt erst vor, wenn der Läufer die Drucksachen davor
+  gespeichert hat; der nächste Vollabgleich setzt dort fort. Unter der Untergrenze ist das Rückwärtszählen
+  fertig; eine tiefere Untergrenze setzt es fort, Löschen des Stands beginnt es neu. Lücken, die ALLRIS nicht
+  herausgibt, zählen wie tote Verweise; bei einer gestörten Kennung endet es für diesen Lauf (nach ihr).
 - **Gremien** kennt ALLRIS 3 ohne eigene Liste nur aus den Sitzungen; ein Gremium erscheint mit seiner ersten
   Sitzung im Fenster. Fraktionen stehen in `fr010.asp`.
 - **Text:** ALLRIS 3 deklariert ISO-8859-1, schreibt aber Windows-1252; der Adapter dekodiert die Rohbytes.
@@ -726,13 +734,16 @@ Admin → Insight → OParl-Quellen → Hinzufügen, die URL ist die Basis-URL:
   ändert sich auch, wenn eine Niederschrift erscheint; dann liest der Änderungsabgleich den Monat neu. Als
   gelesen gilt ein Monat erst, wenn keine seiner Seiten gestört war und das Budget reichte; sonst liest ihn der
   nächste Änderungsabgleich wieder.
-- **Nicht öffentlich:** Leitet ALLRIS auf die Anmeldung (`noauth.asp`) um oder zeigt „Keine Information
-  verfügbar“, zählt die Seite wie ein toter Verweis, nicht als Störung. Sperrt die robots.txt die Anmeldeseite,
-  folgt der Abruf der Weiterleitung nicht und wertet die Seite ebenso. Eine Sitzung mit nicht öffentlicher
-  Tagesordnung entsteht aus dem Kalender.
-- **Fremde Seiten:** Jede Seite muss den Rahmen von ALLRIS (`div#allriscontainer`) mit der angefragten
-  Seitenart tragen, der Kalender die Tageszeilen des angefragten Monats; sonst ist sie nicht lesbar und ergibt
-  nie eine leere Liste.
+- **Nicht öffentlich:** Leitet ALLRIS auf die Anmeldung (`noauth.asp`) um oder zeigt die angefragte Seite
+  „Keine Information verfügbar“ außerhalb der Abschnitte aus Word (im Wortprotokoll darf der Satz stehen), zählt
+  die Seite wie ein toter Verweis, nicht als Störung. Sperrt die robots.txt die Anmeldeseite, folgt der Abruf der
+  Weiterleitung nicht und wertet die Seite ebenso. Eine Sitzung, deren Tagesordnung ALLRIS nicht herausgibt,
+  schreibt der Lauf nicht neu: Sie bleibt im Bestand, wie sie ist (mit Gremium und Anschrift), und gilt als
+  gesehen; neu angelegt wird sie erst mit öffentlicher Tagesordnung.
+- **Fremde Seiten:** Jede Seite muss den Rahmen von ALLRIS (`div#allriscontainer`) mit genau der angefragten
+  Seitenart tragen (der Kalender `si010_e` trägt `si010`), der Kalender die Tageszeilen des angefragten Monats;
+  sonst ist sie nicht lesbar und ergibt nie eine leere Liste. Eine Sitzungsseite auf eine Anfrage nach einem
+  Tagesordnungspunkt ist eine Störung, nicht „nicht öffentlich“.
 - **Löschabgleich** nur für Sitzungen im Fenster und Tagesordnungspunkte gelesener Sitzungen, nach denselben
   Regeln wie bei SessionNet (nur vollständige Vollabgleiche, Bremse, `SCRAPER_TOMBSTONE_FULL_CRAWLS`). Gremien,
   Fraktionen, Personen und Drucksachen markiert der Adapter nie als gelöscht.

@@ -462,8 +462,10 @@ async def probe_url(
     kandidaten = oparl_candidates(url, result.vendor)
     pfade = [parsed.path or "/"] + [urlparse(k).path for k in kandidaten[:3]]
     if result.vendor == "allris3":
-        # Der Adapter liest unter der Basis-URL: Sperrt die robots.txt sie, gibt es keinen Vorschlag
-        result.scraper_base_url = allris3_base_url(url, html)
+        # Der Adapter liest unter der Basis-URL: Sperrt die robots.txt sie, gibt es keinen Vorschlag. Relative
+        # Verweise gelten zur Adresse der Startseite nach Weiterleitungen (etwa / -> /bi/allris.net.asp)
+        landing_url = str(landing.url) if landing is not None else url
+        result.scraper_base_url = allris3_base_url(landing_url, html)
         pfade.append((urlparse(result.scraper_base_url).path or "") + "/")
     result.robots, result.robots_detail = robots_verdict(robots_txt, user_agent, pfade)
     gesperrte = [k for k in kandidaten if not erlaubt(k)]

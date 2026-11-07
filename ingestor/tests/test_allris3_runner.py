@@ -27,7 +27,14 @@ from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED
 from src.config import settings
 from src.scrapers import get_adapter, politeness
 from src.scrapers import runner as runner_module
-from src.scrapers.allris3 import Allris3Adapter, decode_page, parse_meeting, parse_paper_list
+from src.scrapers.allris3 import (
+    BACKFILL_KEY,
+    PAPER_BACKFILL_PER_RUN,
+    Allris3Adapter,
+    decode_page,
+    parse_meeting,
+    parse_paper_list,
+)
 from src.scrapers.base import CrawlWindow, ScraperConfig
 from src.scrapers.politeness import PoliteFetcher
 from src.scrapers.runner import ScraperSyncRunner
@@ -428,6 +435,69 @@ async def test_rueckwaerts_zaehlen_bis_zur_untergrenze() -> None:
     assert adapter.stats.complete
     assert f"{BASE_URL}vo020.asp?VOLFDNR={NEWEST_PAPER - 1}" not in papers
     assert adapter.list_snapshots["vo040"] == str(NEWEST_PAPER)
+    # Untergrenze erreicht: Der Stand liegt darunter, weitere Vollabgleiche zählen nicht mehr rückwärts
+    assert adapter.list_snapshots[BACKFILL_KEY] == str(NEWEST_PAPER - 12)
+
+
+def _rueckwaerts(fetcher: AllrisFetcher) -> list[int]:
+    """Abgefragte Kennungen, die weder auf einer Tagesordnung noch in der Liste stehen (Rückwärtszählen)."""
+    return [
+        int(_query(url)["VOLFDNR"])
+        for url in fetcher.pages("vo020")
+        if int(_query(url)["VOLFDNR"]) not in fetcher.instance_of_paper
+    ]
+
+
+async def test_rueckwaerts_zaehlen_hat_ohne_budget_eine_obergrenze() -> None:
+    """Ohne ``max_detail_pages`` fragt ein Vollabgleich höchstens ``PAPER_BACKFILL_PER_RUN`` Kennungen ab."""
+    fetcher = AllrisFetcher()
+    adapter = _adapter(fetcher, oldest_paper_id=NEWEST_PAPER - 100_000)
+    assert adapter.config.max_detail_pages is None
+    async for _ in adapter.iter_entities(OKTOBER, full=True):
+        pass
+
+    backfill = _rueckwaerts(fetcher)
+    assert len(backfill) == PAPER_BACKFILL_PER_RUN
+    assert backfill == sorted(backfill, reverse=True)
+    assert adapter.list_snapshots[BACKFILL_KEY] == str(min(backfill) - 1)
+
+
+async def test_rueckwaerts_zaehlen_ueber_mehrere_vollabgleiche(abruf: dict[str, Any]) -> None:
+    """Der Stand steht im Zustand der Quelle; jeder Vollabgleich setzt dort fort, bis die Untergrenze erreicht ist."""
+    # Zwischen der neuesten Kennung und der Untergrenze stehen 25 Kennungen weder in der Liste noch auf einer
+    # Tagesordnung
+    lowest = NEWEST_PAPER - 74
+    state: dict[str, Any] = {}
+    gelesen: list[list[int]] = []
+    for _ in range(4):
+        orchestrator = Orchestrator()
+        quelle = Quelle(scraper_state=state, oldest_paper_id=lowest, paper_backfill_per_run=10)
+        await ScraperSyncRunner(orchestrator, quelle).run(full=True)  # type: ignore[arg-type]
+        state = orchestrator.storage.state
+        gelesen.append(_rueckwaerts(abruf["fetcher"]))
+
+    assert [len(lauf) for lauf in gelesen] == [10, 10, 5, 0]
+    alle = [n for lauf in gelesen for n in lauf]
+    assert len(alle) == len(set(alle)), "keine Kennung zweimal"
+    assert max(gelesen[1]) < min(gelesen[0]) and max(gelesen[2]) < min(gelesen[1])
+    assert min(alle) == lowest
+    assert int(state["list_snapshots"][BACKFILL_KEY]) == lowest - 1
+
+
+async def test_rueckwaerts_zaehlen_haelt_bei_stoerung() -> None:
+    """Eine gestörte Kennung beendet das Rückwärtszählen dieses Laufs; der nächste beginnt nach ihr."""
+    gestoert = NEWEST_PAPER - 3
+
+    def antwort(url: str) -> tuple[int, bytes] | None:
+        return (500, b"") if url.endswith(f"VOLFDNR={gestoert}") else None
+
+    fetcher = AllrisFetcher(antwort)
+    adapter = _adapter(fetcher, oldest_paper_id=NEWEST_PAPER - 50)
+    async for _ in adapter.iter_entities(OKTOBER, full=True):
+        pass
+    assert min(_rueckwaerts(fetcher)) == gestoert
+    assert adapter.list_snapshots[BACKFILL_KEY] == str(gestoert - 1)
+    assert not adapter.stats.complete
 
 
 async def test_ohne_untergrenze_kein_rueckwaertszaehlen() -> None:
@@ -437,6 +507,7 @@ async def test_ohne_untergrenze_kein_rueckwaertszaehlen() -> None:
         pass
     requested = {int(_query(url)["VOLFDNR"]) for url in fetcher.pages("vo020")}
     assert requested <= set(fetcher.instance_of_paper)
+    assert BACKFILL_KEY not in adapter.list_snapshots
 
 
 async def test_detailseiten_budget() -> None:
@@ -449,12 +520,86 @@ async def test_detailseiten_budget() -> None:
     assert "paper" in adapter.stats.incomplete
     # Die neueste Kennung rückt nur vor, wenn alle Drucksachen gelesen sind
     assert "vo040" not in adapter.list_snapshots
+    assert not _rueckwaerts(fetcher)
+
+
+async def test_tagesordnungspunkte_zaehlen_zum_budget() -> None:
+    """to020 zählt zum Budget; eine angefangene Sitzung wird zu Ende gelesen, danach keine weitere."""
+    fetcher = AllrisFetcher()
+    adapter = _adapter(fetcher, max_detail_pages=3)
+    async for _ in adapter.iter_entities(OKTOBER, full=False):
+        pass
+    assert len(fetcher.pages("to010")) == 1
+    assert len(fetcher.pages("to020")) > 3
+    assert adapter.stats.detail_pages_attempted == 1 + len(fetcher.pages("to020"))
+    assert adapter.stats.detail_pages_parsed == adapter.stats.detail_pages_attempted
+    assert adapter.stats.incomplete.get("meeting") == "Detailseiten-Budget erreicht"
+    assert not fetcher.pages("vo020")
 
 
 def test_ungueltige_untergrenze_wird_ignoriert() -> None:
     assert _adapter(oldest_paper_id="abc").oldest_paper_id is None
     assert _adapter(oldest_paper_id=0).oldest_paper_id is None
     assert _adapter(oldest_paper_id="1000").oldest_paper_id == 1000
+    assert _adapter().paper_backfill_per_run == PAPER_BACKFILL_PER_RUN
+    assert _adapter(paper_backfill_per_run="nein").paper_backfill_per_run == PAPER_BACKFILL_PER_RUN
+    assert _adapter(paper_backfill_per_run=25).paper_backfill_per_run == 25
+
+
+async def test_nicht_oeffentliche_tagesordnung_laesst_die_sitzung_stehen(abruf: dict[str, Any]) -> None:
+    """Gibt ALLRIS die Tagesordnung nicht heraus, schreibt der Lauf die Sitzung nicht neu: Gremium und Anschrift
+    bleiben, und sie gilt als gesehen."""
+    anmeldung = (FIXTURES / "synthetisch/noauth.html").read_bytes()
+    abruf["overrides"] = lambda url: (200, anmeldung) if url.endswith("to010.asp?SILFDNR=1002655") else None
+    orchestrator = _mit_bestand(Orchestrator())
+
+    await ScraperSyncRunner(orchestrator, Quelle()).run(full=True)  # type: ignore[arg-type]
+
+    meetings = {external_id for entity_type, external_id, _ in orchestrator.stored if entity_type == "meeting"}
+    assert SITZUNG not in meetings
+    assert len(meetings) == CALENDAR_MEETINGS - 1
+    assert SITZUNG not in orchestrator.marked
+    last_run = orchestrator.storage.state["last_run"]
+    assert last_run["complete"] is True, last_run
+    assert last_run["gone_pages"] == last_run["failed_pages"] == 1
+
+
+async def test_sitzungsseite_statt_tagesordnungspunkt_ist_eine_stoerung(abruf: dict[str, Any]) -> None:
+    """Liefert ALLRIS auf to020 eine Sitzungsseite, ist der Punkt nicht lesbar: Die Sitzung bleibt stehen, statt
+    Protokoll und Beschluss zu verlieren."""
+    sitzung = (FIXTURES / "altona/to010.html").read_bytes()
+    abruf["overrides"] = lambda url: (200, sitzung) if url.endswith("to020.asp?TOLFDNR=1052638") else None
+    orchestrator = _mit_bestand(Orchestrator())
+
+    await ScraperSyncRunner(orchestrator, Quelle()).run(full=True)  # type: ignore[arg-type]
+
+    meetings = {external_id for entity_type, external_id, _ in orchestrator.stored if entity_type == "meeting"}
+    assert SITZUNG not in meetings
+    assert SITZUNG not in orchestrator.marked
+    assert orchestrator.storage.state["last_run"]["complete"] is False
+
+
+async def test_hinweis_im_protokoll_behaelt_das_protokoll() -> None:
+    """„Keine Information verfügbar“ im Wortprotokoll: Protokoll und Beschluss werden trotzdem geschrieben."""
+    protokoll = (
+        (FIXTURES / "altona/to020.html")
+        .read_bytes()
+        .replace(
+            b'<a name="allrisWP"></a>',
+            b'<a name="allrisWP"></a><div><p>Dazu ist Keine Information verf&uuml;gbar gewesen.</p></div>',
+            1,
+        )
+    )
+    fetcher = AllrisFetcher(lambda url: (200, protokoll) if url.endswith("to020.asp?TOLFDNR=1052638") else None)
+    adapter = _adapter(fetcher)
+    meetings: dict[str, dict[str, Any]] = {}
+    async for entity_type, page in adapter.iter_entities(OKTOBER, full=False):
+        if entity_type == "meeting":
+            meetings.update({entity["id"]: entity for entity in page})
+
+    items = {item["number"]: item for item in meetings[SITZUNG]["agendaItem"]}
+    assert items["2.1"]["mandari:minutes"].startswith("Dazu ist Keine Information verfügbar gewesen.")
+    assert items["2.1"]["resolutionText"] == "Der Ausschuss nimmt die Drucksache zur Kenntnis."
 
 
 def test_auswahl_des_adapters() -> None:

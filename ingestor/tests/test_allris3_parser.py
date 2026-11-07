@@ -23,6 +23,7 @@ from src.scrapers.allris3 import (
     html_to_text,
     is_calendar_page,
     is_not_public,
+    kind_matches,
     page_kind,
     parse_agenda_item,
     parse_calendar,
@@ -275,3 +276,38 @@ class TestSeitenart:
         sperrseite = "<html><head><title>Just a moment...</title></head><body>Prüfung</body></html>"
         assert page_kind(sperrseite) is None
         assert not is_calendar_page(page("hamburg_nord/vo040.html"))
+
+    def test_seitenart_genau(self) -> None:
+        """Eine Sitzung (to010) ist kein Tagesordnungspunkt (to020); der Kalender si010_e trägt den Rahmen si010."""
+        assert kind_matches("to020", "to020")
+        assert kind_matches("si010", "si010")
+        assert not kind_matches("to010", "to020")
+        assert not kind_matches("vo040", "vo020")
+        assert not kind_matches("", "to020") and not kind_matches(None, "to020")
+
+    def test_andere_seitenart_ist_nicht_nicht_oeffentlich(self) -> None:
+        """Eine Sitzungsseite auf eine Anfrage nach einem Punkt ist nicht lesbar, nicht „nicht öffentlich“."""
+        sitzung = page("altona/to010.html")
+        assert not is_not_public(sitzung, expected="to020")
+        mit_hinweis = sitzung.replace("<h1>", "<h1>Keine Information verfügbar ", 1)
+        assert not is_not_public(mit_hinweis, expected="to020")
+        assert is_not_public(mit_hinweis, expected="to010")
+
+    def test_hinweis_im_wortprotokoll_ist_kein_sperrvermerk(self) -> None:
+        """„Keine Information verfügbar“ im Wortprotokoll (Abschnitt aus Word) macht den Punkt nicht unsichtbar."""
+        html = page("altona/to020.html").replace(
+            '<a name="allrisWP"></a>',
+            '<a name="allrisWP"></a><div><p>Zu Punkt 3 lag der Verwaltung Keine Information verf&uuml;gbar vor.</p>'
+            "</div>",
+            1,
+        )
+        assert not is_not_public(html, expected="to020")
+        item = parse_agenda_item(html)
+        assert item["minutes"].startswith("Zu Punkt 3 lag der Verwaltung Keine Information verfügbar vor.")
+        assert item["resolution"] == "Der Ausschuss nimmt die Drucksache zur Kenntnis."
+
+    def test_sperrvermerk_ohne_rahmen(self) -> None:
+        """Antworten ohne Rahmen: Verweis auf die Anmeldung oder der Hinweis allein (bv-hh)."""
+        assert is_not_public('<html><a href="noauth.asp">Anmelden</a></html>', expected="vo020")
+        assert is_not_public("<html>Keine Information verf&uuml;gbar</html>", expected="vo020")
+        assert not is_not_public("<html><body>Wartungsarbeiten</body></html>", expected="vo020")

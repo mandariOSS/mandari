@@ -1,11 +1,14 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2020, 2021 Timo B. Kranz (https://github.com/bv-hh/bv-hh)
+# SPDX-License-Identifier: AGPL-3.0-or-later AND MIT
 """
 ALLRIS-3-Adapter (CC e-gov ALLRIS net 3.x, klassische ASP-Oberfläche unter ``/bi/*.asp``), Issue #121.
 
 Geprüft an Seiten von ALLRIS net 3.9.5 (Testseiten unter ``tests/fixtures/scrapers/allris3/``). Vorbild für
-Seitenauswahl und Selektoren ist das Projekt bv-hh (https://github.com/bv-hh/bv-hh, MIT-Lizenz,
-Copyright (c) 2020, 2021 Timo B. Kranz), von dort stammen auch die Testseiten und die Zeichentabelle der
-Schriften Symbol und Wingdings.
+Seitenauswahl und Selektoren ist das Projekt bv-hh (https://github.com/bv-hh/bv-hh), von dort stammen auch die
+Testseiten. Die Zeichentabelle der Schriften Symbol und Wingdings (``SYMBOL_FONT_CHARACTERS``) und die
+Bezeichnungen der Abschnitte einer Drucksache sind aus bv-hh übernommen (``app/models/concerns/parsing.rb``,
+``app/models/document.rb``) und stehen unter der MIT-Lizenz (``LICENSES/MIT.txt``, Urheber Timo B. Kranz, siehe
+Dateikopf); der übrige Code unter AGPL-3.0-or-later.
 
 Seitenkürzel (``<Basis-URL><Kürzel>.asp``, Basis meist ``…/bi/``):
 
@@ -61,6 +64,13 @@ ID_PARAMS = ("SILFDNR", "TOLFDNR", "VOLFDNR", "AULFDNR", "PALFDNR", "FRLFDNR", "
 
 #: So viele Drucksachen gibt der Adapter höchstens in einer Seite an den Läufer weiter (Rückwärtszählen)
 PAPER_PAGE_SIZE = 50
+#: So viele Kennungen fragt ein Vollabgleich beim Rückwärtszählen höchstens ab, auch ohne ``max_detail_pages``
+#: (``scraper.paper_backfill_per_run``); spätere Läufe setzen beim gemerkten Stand fort
+PAPER_BACKFILL_PER_RUN = 200
+#: Stand des Rückwärtszählens in ``scraper_state.list_snapshots``: nächste abzufragende Kennung
+BACKFILL_KEY = "vo020_backfill"
+#: Neueste Kennung der Liste vo040 beim letzten Lauf (``scraper_state.list_snapshots``)
+LIST_HEAD_KEY = "vo040"
 
 _DATE_RE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
 _TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})(?:\s*[-–]\s*(\d{1,2}:\d{2}))?")
@@ -191,8 +201,11 @@ def page_kind(html: str) -> str | None:
 
 
 def kind_matches(found: str | None, expected: str) -> bool:
-    """Passt die Seitenart zur angefragten Seite? Gleiches Präfix genügt (``si010`` für ``si010_e``)."""
-    return found is not None and found != "" and found[:2] == expected[:2]
+    """
+    Ist die Seite genau die angefragte Seitenart? Der Rahmen nennt die Seite ohne Zusatz (der Kalender ``si010_e``
+    trägt ``si010``, so wird er angefragt). Eine Sitzung (``to010``) ist kein Tagesordnungspunkt (``to020``).
+    """
+    return found is not None and found == expected
 
 
 def is_noauth_url(url: str | None) -> bool:
@@ -200,14 +213,36 @@ def is_noauth_url(url: str | None) -> bool:
     return bool(url) and urlparse(str(url)).path.lower().endswith("/" + _NOAUTH)
 
 
-def is_not_public(html: str, url: str | None = None) -> bool:
+def _outside_sections(html: str) -> str:
     """
-    Zeigt ALLRIS statt der Seite „nicht öffentlich“? Weiterleitung auf die Anmeldung (``noauth.asp``) oder
-    „Keine Information verfügbar“.
+    Seite ohne die Abschnitte aus Word (Sachverhalt, Wortprotokoll …, ab dem ersten ``allris*``-Anker): Dort darf
+    jeder Text stehen, auch „Keine Information verfügbar“.
+    """
+    first = _SECTION_ANCHOR_RE.search(html)
+    return html[: first.start()] if first else html
+
+
+def is_not_public(html: str, url: str | None = None, expected: str | None = None) -> bool:
+    """
+    Zeigt ALLRIS statt der Seite „nicht öffentlich“?
+
+    - Weiterleitung auf die Anmeldung (Adresse ``noauth.asp``) oder deren Seite (Rahmen ``noauth``);
+    - eine Seite ohne Rahmen, die auf die Anmeldung verweist oder „Keine Information verfügbar“ sagt;
+    - die angefragte Seitenart (``expected``) mit „Keine Information verfügbar“ außerhalb der Abschnitte aus Word.
+
+    Eine Seite einer anderen Art ist nie „nicht öffentlich“, sondern nicht lesbar: Sonst entfielen gespeicherte
+    Protokolle und Beschlüsse.
     """
     if is_noauth_url(url):
         return True
-    return _NOT_PUBLIC_RE.search(html) is not None or page_kind(html) == "noauth"
+    kind = page_kind(html)
+    if kind == "noauth":
+        return True
+    if kind is None:
+        return _NOAUTH in html.lower() or _NOT_PUBLIC_RE.search(html) is not None
+    if expected is not None and kind != expected:
+        return False
+    return _NOT_PUBLIC_RE.search(_outside_sections(html)) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -759,6 +794,13 @@ class _MeetingResult:
     committee: dict[str, Any] | None = None
 
 
+class _Kept:
+    """Sitzung, deren Tagesordnung ALLRIS nicht herausgibt: Sie bleibt im Bestand, wie sie ist."""
+
+
+_KEPT = _Kept()
+
+
 def _int_option(value: Any, name: str) -> int | None:
     """Ganzzahl größer 0 aus ``sync_config["scraper"]``; sonst ``None`` mit Warnung (der Crawl läuft weiter)."""
     if value in (None, ""):
@@ -801,9 +843,17 @@ class Allris3Adapter:
         self._crawl_time = datetime.now(TZ_BERLIN).isoformat(timespec="seconds")
         #: Untergrenze der Drucksachen-Kennungen beim Rückwärtszählen im Vollabgleich (``scraper.oldest_paper_id``)
         self.oldest_paper_id = _int_option(config.extra.get("oldest_paper_id"), "oldest_paper_id")
-        #: Listen-Diffing wie bei SessionNet: Monat -> Hash der Kalendereinträge, ``vo040`` -> neueste Kennung
+        #: Höchstens so viele Kennungen je Vollabgleich beim Rückwärtszählen (``scraper.paper_backfill_per_run``)
+        self.paper_backfill_per_run = (
+            _int_option(config.extra.get("paper_backfill_per_run"), "paper_backfill_per_run") or PAPER_BACKFILL_PER_RUN
+        )
+        #: Listen-Diffing wie bei SessionNet: Monat -> Hash der Kalendereinträge, ``vo040`` -> neueste Kennung,
+        #: ``vo020_backfill`` -> nächste Kennung beim Rückwärtszählen
         self.list_snapshots: dict[str, str] = {}
+        #: Stände des letzten Laufs, die der Läufer im Änderungsabgleich setzt (im Vollabgleich leer)
         self.previous_snapshots: dict[str, str] = {}
+        #: Gespeicherte Stände unabhängig von der Art des Laufs (Läufer), für den Fortschritt beim Rückwärtszählen
+        self.stored_snapshots: dict[str, str] = {}
         #: War die zuletzt geholte Seite „nicht öffentlich“?
         self.last_not_public = False
         self._orgs_yielded: set[str] = set()
@@ -846,9 +896,7 @@ class Allris3Adapter:
         if html is not None:
             found = page_kind(html)
             final_url = getattr(self.fetcher, "last_url", None)
-            if is_not_public(html, final_url if isinstance(final_url, str) else None) or (
-                not kind_matches(found, kind) and _NOAUTH in html.lower()
-            ):
+            if is_not_public(html, final_url if isinstance(final_url, str) else None, expected=kind):
                 console.print(f"[dim]ALLRIS 3: nicht öffentlich: {url}[/dim]")
                 self.last_not_public = True
                 html = None
@@ -1070,6 +1118,10 @@ class Allris3Adapter:
                 month_complete = False
                 break
             result = await self._build_meeting(stub, body_id)
+            if isinstance(result, _Kept):
+                # Tagesordnung nicht öffentlich: Es gibt die Sitzung, der Lauf schreibt sie nicht neu
+                self.stats.mark_listed("meeting", self.urls.external_id("to010", SILFDNR=stub.silfdnr))
+                continue
             if result is None:
                 # Der Kalender nennt die Sitzung: Es gibt sie, nur ihre Seite war nicht lesbar
                 self.stats.mark_listed("meeting", self.urls.external_id("to010", SILFDNR=stub.silfdnr))
@@ -1117,21 +1169,27 @@ class Allris3Adapter:
 
     # -------------------- Sitzung --------------------
 
-    async def _build_meeting(self, stub: MeetingStub, body_id: str) -> _MeetingResult | None:
+    async def _build_meeting(self, stub: MeetingStub, body_id: str) -> _MeetingResult | _Kept | None:
         """
-        Sitzung aus to010 (mit to020 je Punkt für vergangene Sitzungen); ohne veröffentlichte oder bei nicht
-        öffentlicher Tagesordnung aus dem Kalender. ``None``: nicht lesbar, die Sitzung bleibt in diesem Lauf, wie
-        sie ist.
+        Sitzung aus to010 (mit to020 je Punkt für vergangene Sitzungen), ohne veröffentlichte Tagesordnung aus dem
+        Kalender. ``None``: nicht lesbar; ``_KEPT``: Tagesordnung nicht öffentlich. In beiden Fällen bleibt die Sitzung
+        in diesem Lauf, wie sie ist: Aus dem Kalender allein entstünde sie ohne Gremium, Anschrift und Tagesordnung,
+        und der Upsert nähme ihr eine bestehende Zuordnung zum Gremium.
+
+        Eine angefangene Sitzung liest der Lauf zu Ende, auch wenn ihre Tagesordnungspunkte (to020) das Budget
+        ``max_detail_pages`` überschreiten; vor jeder Sitzung wird es geprüft.
         """
         meeting_id = self.urls.external_id("to010", SILFDNR=stub.silfdnr)
         page = MeetingPage()
         if stub.agenda_linked:
             html = await self._fetch(self.urls.page("to010", SILFDNR=stub.silfdnr), "to010", is_detail=True)
-            if html is None and not self.last_not_public:
+            if html is None and self.last_not_public:
+                self.stats.detail_pages_parsed += 1
+                return _KEPT
+            if html is None:
                 self._failure("to010")
                 return None
-            if html is not None:
-                page = parse_meeting(html)
+            page = parse_meeting(html)
 
         meeting: dict[str, Any] = {
             "id": meeting_id,
@@ -1239,10 +1297,12 @@ class Allris3Adapter:
         Protokoll und Beschluss eines Punkts (to020). Nicht öffentlich oder toter Verweis: ohne Angaben.
         ``None``: Seite gestört, die Sitzung wird in diesem Lauf nicht geschrieben (sonst fehlten gespeicherte Texte).
         """
-        html = await self._fetch(self.urls.page("to020", TOLFDNR=tolfdnr), "to020")
+        html = await self._fetch(self.urls.page("to020", TOLFDNR=tolfdnr), "to020", is_detail=True)
         if html is not None:
+            self.stats.detail_pages_parsed += 1
             return parse_agenda_item(html)
         if self.last_not_public or is_gone(getattr(self.fetcher, "last_status", None)):
+            self.stats.detail_pages_parsed += 1
             return {}
         self._failure("to020")
         return None
@@ -1290,8 +1350,8 @@ class Allris3Adapter:
     ) -> AsyncIterator[list[dict[str, Any]]]:
         """
         Drucksachen der Liste vo040: im Änderungsabgleich nur neuere als beim letzten Lauf, im Vollabgleich alle
-        der Liste und rückwärts bis ``scraper.oldest_paper_id``. Die neueste Kennung rückt nur vor, wenn alle
-        gelesen sind (Budget).
+        der Liste, danach rückwärts bis ``scraper.oldest_paper_id`` (``_backfill``). Die neueste Kennung rückt nur vor,
+        wenn alle gelesen sind (Budget, Störungen).
         """
         html = await self._fetch(self.urls.page("vo040"), "vo040")
         if html is None:
@@ -1304,12 +1364,9 @@ class Allris3Adapter:
             self.stats.mark_incomplete("Drucksachenliste ohne Drucksachen", "paper")
             return
         newest = max(row["volfdnr"] for row in rows)
-        previous_head = str(self.previous_snapshots.get("vo040") or "")
+        previous_head = str(self.previous_snapshots.get(LIST_HEAD_KEY) or "")
         previous = int(previous_head) if previous_head.isdigit() and not full else 0
         wanted = sorted({row["volfdnr"] for row in rows if row["volfdnr"] > previous}, reverse=True)
-        if full and self.oldest_paper_id is not None and self.oldest_paper_id <= newest:
-            listed = set(wanted)
-            wanted += [n for n in range(newest, self.oldest_paper_id - 1, -1) if n not in listed]
         complete = True
         disturbances = self._disturbances()
         page: list[dict[str, Any]] = []
@@ -1326,12 +1383,67 @@ class Allris3Adapter:
                 continue
             page.append(paper)
             self.stats.entities_parsed += 1
-            if len(page) >= PAPER_PAGE_SIZE:
-                yield page
-                page = []
         if page:
             yield page
         if complete and self._disturbances() == disturbances:
             # Sonst bleibt die bisherige Kennung stehen (der Läufer übernimmt nur, was der Adapter meldet), und der
             # nächste Lauf liest die Drucksachen wieder
-            self.list_snapshots["vo040"] = str(newest)
+            self.list_snapshots[LIST_HEAD_KEY] = str(newest)
+        if full and self.oldest_paper_id is not None:
+            async for backfill_page in self._backfill(body_id, newest, fetched_papers):
+                yield backfill_page
+
+    async def _backfill(
+        self, body_id: str, newest: int, fetched_papers: set[int]
+    ) -> AsyncIterator[list[dict[str, Any]]]:
+        """
+        Rückwärtszählen im Vollabgleich: Kennungen von der gemerkten Stelle (sonst der neuesten) abwärts bis
+        ``scraper.oldest_paper_id``, je Lauf höchstens ``scraper.paper_backfill_per_run`` Abrufe (Standard
+        ``PAPER_BACKFILL_PER_RUN``) und nie über ``max_detail_pages``.
+
+        Die nächste Kennung steht in ``list_snapshots["vo020_backfill"]``; der Läufer speichert sie im Zustand der
+        Quelle, spätere Vollabgleiche setzen dort fort. Sie rückt erst vor, wenn der Läufer die Drucksachen davor
+        gespeichert hat. Unter der Untergrenze ist das Rückwärtszählen fertig; eine tiefere Untergrenze setzt es fort.
+        Lücken (nicht öffentlich, toter Verweis) überspringt es. Bei einer gestörten Kennung hält es an, nach ihr:
+        Ein gestörter Server kostet so je Lauf eine Kennung, nicht das ganze Kontingent.
+        """
+        lowest = self.oldest_paper_id
+        if lowest is None:
+            return
+        stored = str(self.stored_snapshots.get(BACKFILL_KEY) or "")
+        cursor = min(int(stored), newest) if stored.isdigit() else newest
+        if cursor < lowest:
+            return
+        reads = 0
+        page: list[dict[str, Any]] = []
+        while cursor >= lowest:
+            if cursor in fetched_papers:
+                cursor -= 1
+                continue
+            if reads >= self.paper_backfill_per_run:
+                break
+            if not self._budget_left():
+                self.stats.mark_incomplete("Detailseiten-Budget erreicht", "paper")
+                break
+            volfdnr = cursor
+            fetched_papers.add(volfdnr)
+            reads += 1
+            disturbances = self._disturbances()
+            paper = await self._build_paper(volfdnr, body_id)
+            cursor = volfdnr - 1
+            if paper is not None:
+                page.append(paper)
+                self.stats.entities_parsed += 1
+            if self._disturbances() != disturbances:
+                break
+            if len(page) >= PAPER_PAGE_SIZE:
+                yield page
+                page = []
+                # Der Läufer hat die Seite gespeichert: Stand fortschreiben
+                self.list_snapshots[BACKFILL_KEY] = str(cursor)
+        if page:
+            yield page
+        self.list_snapshots[BACKFILL_KEY] = str(cursor)
+        console.print(
+            f"[dim]ALLRIS 3: Rückwärtszählen {reads} Kennung(en), weiter bei {cursor} (Untergrenze {lowest})[/dim]"
+        )

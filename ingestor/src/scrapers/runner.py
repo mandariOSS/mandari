@@ -135,6 +135,8 @@ class ScraperSyncRunner:
             adapter = get_adapter(self.source_type, config, fetcher)
             # Listen-Diffing: bekannte Monats-Snapshots aus dem letzten Lauf
             adapter.previous_snapshots = {} if full else dict(state.get("list_snapshots") or {})
+            # Gespeicherte Stände auch im Vollabgleich, etwa der Fortschritt beim Rückwärtszählen (ALLRIS 3, #121)
+            adapter.stored_snapshots = dict(state.get("list_snapshots") or {})
 
             # robots.txt vorab prüfen: verbietet die Instanz unseren Crawler,
             # wird die Quelle nicht gecrawlt und im Admin sichtbar markiert.

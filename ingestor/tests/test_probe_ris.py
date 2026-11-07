@@ -279,6 +279,53 @@ async def test_probe_allris3_robots_sperrt_die_basis() -> None:
     assert any("robots.txt" in note for note in r.notes)
 
 
+def _allris3_mit_weiterleitung(robots: str, anfragen: list[str]) -> httpx.MockTransport:
+    """Die Wurzel leitet auf /bi/allris.net.asp um; die Seite dort verweist relativ auf ihre Nachbarn."""
+    startseite = (
+        "<html><head><title>ALLRIS net</title></head><body>"
+        '<a href="si010_e.asp">Kalender</a><a href="vo040.asp">Drucksachen</a></body></html>'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        anfragen.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=robots)
+        if request.url.path == "/":
+            return httpx.Response(302, headers={"Location": "/bi/allris.net.asp"})
+        if request.url.path == "/bi/allris.net.asp":
+            return httpx.Response(200, text=startseite)
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+async def test_probe_allris3_basis_nach_weiterleitung() -> None:
+    """Relative Verweise gelten zur Startseite nach der Weiterleitung: Basis ist /bi, nicht die Wurzel."""
+    anfragen: list[str] = []
+    transport = _allris3_mit_weiterleitung("User-agent: *\nAllow: /\n", anfragen)
+    async with httpx.AsyncClient(transport=transport) as client:
+        r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
+
+    assert "/bi/allris.net.asp" in anfragen
+    assert r.vendor == "allris3"
+    assert r.scraper_base_url == "https://ris.example.org/bi"
+    assert r.sync_config == {"scraper": "allris3", "base_url": "https://ris.example.org/bi"}
+
+
+@pytest.mark.asyncio
+async def test_probe_allris3_robots_gilt_fuer_die_basis_nach_weiterleitung() -> None:
+    """Erlaubt die robots.txt nur die Startseite, aber nicht /bi/, gibt es keinen Vorschlag."""
+    anfragen: list[str] = []
+    robots = "User-agent: *\nAllow: /bi/allris.net.asp\nDisallow: /bi/\n"
+    async with httpx.AsyncClient(transport=_allris3_mit_weiterleitung(robots, anfragen)) as client:
+        r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
+
+    assert r.vendor == "allris3"
+    assert r.robots == "gesperrt"
+    assert r.sync_config is None
+
+
 def test_allris3_basis_url() -> None:
     assert rp.allris3_base_url("https://ris.example.org/bi/allris.net.asp") == "https://ris.example.org/bi"
     assert rp.allris3_base_url("https://ris.example.org/bi/") == "https://ris.example.org/bi"
