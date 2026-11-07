@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Zusammenfassungen mit der Claude API: eingereichte Message Batches und Verbrauch (Grundlage des Monatsbudgets).
+Zusammenfassungen mit der Claude API: eingereichte Message Batches und Verbrauch (Grundlage des Monatsbudgets), dazu
+das Protokoll verworfener Zusammenfassungen (mechanische Prüfung, Issue #1271).
 
 Beides gehört den KI-Funktionen. Die Zusammenfassungen selbst stehen am Vorgang (``OParlPaper.summary``) und werden
 nur über ``insight_core.services.summary_store`` geschrieben.
@@ -31,8 +32,9 @@ class ZusammenfassungsBatch(models.Model):
         "Eingereicht am", help_text="Beginn der Erstellung: Neuerer Text verwirft das Ergebnis eines Vorgangs."
     )
     abgeholt_am = models.DateTimeField("Übernommen am", null=True, blank=True)
-    #: ``custom_id`` → ``{"vorgang": <uuid>, "dateien": [<uuid>, …], "stand": …}``: verwendete Anlagen und
-    #: Beratungsstand je Anfrage; ``"ersetzt"``: Stand der veralteten Zusammenfassung, die sie ersetzt (Issue #1257)
+    #: ``custom_id`` → ``{"vorgang": <uuid>, "dateien": [<uuid>, …], "stand": …, "fassung": <int>}``: verwendete
+    #: Anlagen, Beratungsstand und Prompt-Fassung (Issue #1271) je Anfrage; ``"ersetzt"``: Stand der veralteten
+    #: Zusammenfassung, die sie ersetzt (Issue #1257)
     anfragen = models.JSONField("Anfragen", default=dict, blank=True)
     anzahl = models.PositiveIntegerField("Anfragen", default=0)
     gespeichert = models.PositiveIntegerField("Gespeichert", default=0)
@@ -113,3 +115,45 @@ class TagesbatchKommune(models.Model):
 
     def __str__(self) -> str:
         return f"{self.body} ab {self.ab:%d.%m.%Y}"
+
+
+class VerworfeneZusammenfassung(models.Model):
+    """
+    Von der mechanischen Prüfung verworfene KI-Zusammenfassung (Issue #1271, ``services.zusammenfassung_pruefung``).
+
+    Sie erscheint nirgends. Der Eintrag zeigt, welche Regel wie oft greift (je Prompt-Fassung und Modell), und hält den
+    Tagesbatch davon ab, denselben Vorgang mit derselben Prompt-Fassung erneut einzureichen. Der Text bleibt erhalten,
+    außer er nennt eine Hausnummer. Verweise auf Vorgang und Kommune als Kennung, ohne Fremdschlüssel (wie
+    ``KiVerbrauch``).
+    """
+
+    class Weg(models.TextChoices):
+        KLICK = "klick", "Klick auf „Zusammenfassen“"
+        BATCH = "batch", "Batch"
+
+    class Teil(models.TextChoices):
+        ZUSAMMENFASSUNG = "zusammenfassung", "Zusammenfassung"
+        EINFACH = "einfache_sprache", "Einfache Sprache"
+
+    zeitpunkt = models.DateTimeField("Zeitpunkt", default=timezone.now, db_index=True)
+    vorgang_id = models.UUIDField("Vorgang", db_index=True)
+    kommune_id = models.UUIDField("Kommune", null=True, blank=True)
+    prompt_fassung = models.PositiveSmallIntegerField("Prompt-Fassung")
+    weg = models.CharField("Weg", max_length=10, choices=Weg.choices)
+    teil = models.CharField("Teil", max_length=20, choices=Teil.choices, default=Teil.ZUSAMMENFASSUNG)
+    regel = models.CharField("Regel", max_length=20, db_index=True)
+    grund = models.CharField("Grund", max_length=500)
+    entwurf = models.TextField(
+        "Verworfener Text", blank=True, help_text="Leer, wenn er eine Hausnummer nannte (Datenschutz)."
+    )
+    modell = models.CharField("Modell", max_length=100, blank=True)
+    batch_id = models.CharField("Batch-Kennung", max_length=100, blank=True)
+
+    class Meta:
+        verbose_name = "Verworfene KI-Zusammenfassung"
+        verbose_name_plural = "Verworfene KI-Zusammenfassungen"
+        ordering = ("-zeitpunkt",)
+        indexes = [models.Index(fields=["prompt_fassung", "teil", "vorgang_id"], name="insight_ai_verworfen_idx")]
+
+    def __str__(self) -> str:
+        return f"Vorgang {self.vorgang_id}: {self.regel} (Fassung {self.prompt_fassung})"

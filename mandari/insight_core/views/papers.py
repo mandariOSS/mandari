@@ -18,7 +18,7 @@ from hub.ris import vorlagennummer
 from hub.ris.original import seite_im_ris
 
 from ..models import OParlPaper, VorgangUrheber
-from ..services import file_reconcile
+from ..services import file_reconcile, kurzfassung
 from ..services.vorgang_dokumente import dokumente_anhaengen
 from ..services.vorgang_urheber import (
     FraktionsAuswahl,
@@ -142,6 +142,9 @@ class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, Be
             paper.stand = staende.get(str(paper.pk))
         # Vorlage und Anlagen je Vorgang in einer Abfrage für die Seite (Issue #1103)
         dokumente_anhaengen(papers)
+        # Kurzfassung „Worum es geht“ als Vorschauzeile, nur zum aktuellen Beratungsstand (Issue #1271)
+        kurzfassung.anhaengen(papers)
+        context["mit_kurzfassung"] = any(paper.vorschau for paper in papers)
         context["papers"] = papers
         return context
 
@@ -224,6 +227,11 @@ class PaperDetailView(DetailView):
 NO_TEXT_MESSAGE = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."
 TEXT_PENDING_MESSAGE = "Die Texte der Dokumente werden gerade erkannt. Bitte versuche es in einigen Minuten erneut."
 RETRY_MESSAGE = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
+#: Die mechanische Prüfung hat die Zusammenfassung verworfen (Issue #1271); ein neuer Versuch kann bestehen
+REJECTED_MESSAGE = (
+    "Die KI-Zusammenfassung hat die automatische Prüfung nicht bestanden, etwa weil sie eine Zahl oder einen Namen "
+    "nannte, der nicht in den Dokumenten steht. Sie wird deshalb nicht angezeigt."
+)
 
 
 def _summary_response(request, context, status=200):
@@ -322,6 +330,7 @@ def _generate_summary(request, paper):
         BudgetExhaustedError,
         NoTextContentError,
         SummaryError,
+        SummaryRejectedError,
         SummaryService,
         TextPendingError,
     )
@@ -344,6 +353,9 @@ def _generate_summary(request, paper):
     except BudgetExhaustedError:
         # Monatsbudget der Claude API ausgeschöpft: bis Monatsende kein Einzelaufruf, erneuter Versuch zwecklos
         error, retry = "Die KI-Zusammenfassung ist derzeit nicht verfügbar.", False
+    except SummaryRejectedError:
+        # Verworfen und protokolliert (Issue #1271); ein erneuter Klick erzeugt sie neu, in den Grenzen von summary_guard
+        error = REJECTED_MESSAGE
     except SummaryError:
         error = RETRY_MESSAGE
     except Exception:
