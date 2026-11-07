@@ -1,0 +1,99 @@
+{% load static %}
+{% comment %}
+Fehlerseiten des Bürgerportals (Issue #1261): im Stil von Insight (Grün über data-portal="insight", Bänder wie auf
+den übrigen Seiten, Sie-Form), mit Suche und Wegen zu Sitzungen und Vorgängen. Work, Session und Konto behalten
+errors/base_error.html; welche Seite gilt, entscheidet mandari/urls.py (fehlerseite_fuer).
+
+Gerendert ohne Kontextprozessoren und ohne Datenbank (Issue #1024): Verfügbar sind nur request, csp_nonce und was
+der Handler mitgibt (marketing_url, bei 500 request_id). Deshalb keine Seitenleiste und keine Kommune, kein
+Inline-Style (Dunkelmodus über insightShell, Icons über dark:hidden).
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="de" data-portal="insight" x-data="insightShell" :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="theme-color" content="#17703f">
+    <title>{% block title %}Fehler{% endblock %} | mandari Insight</title>
+
+    <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
+
+    <link rel="stylesheet" href="{% static 'css/schrift-inter.css' %}">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    {% load django_vite %}{% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
+</head>
+<body class="min-h-screen bg-band-hell text-gray-900 dark:text-gray-100">
+    <div class="min-h-screen flex flex-col">
+        <header class="border-b border-gray-200 dark:border-gray-800">
+            <div class="max-w-insight mx-auto h-16 px-4 sm:px-8 flex items-center justify-between gap-4">
+                <a href="{% url 'insight_core:insight:portal_home' %}" class="text-[1.15rem] font-bold tracking-tight leading-none text-gray-900 dark:text-white">mandari<span class="text-indigo-600 dark:text-indigo-400" aria-hidden="true">.</span> <span class="font-semibold text-primary-700 dark:text-primary-300">Insight</span></a>
+                <button type="button" @click="darkMode = !darkMode"
+                    class="inline-flex items-center justify-center w-11 h-11 rounded-lg text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-band-grau"
+                    aria-label="Hell oder dunkel anzeigen">
+                    <i data-lucide="moon" class="w-5 h-5 dark:hidden" aria-hidden="true"></i>
+                    <i data-lucide="sun" class="w-5 h-5 hidden dark:block" aria-hidden="true"></i>
+                </button>
+            </div>
+        </header>
+
+        <main id="main-content" class="flex-1">
+            <section class="bg-band-grau" aria-labelledby="fehler-titel">
+                <div class="max-w-insight mx-auto px-4 sm:px-8 py-8 sm:py-10">
+                    <div class="max-w-2xl">
+                        <h1 id="fehler-titel" class="text-[1.75rem] sm:text-[2.25rem] font-bold tracking-tight leading-tight text-gray-900 dark:text-white">{% block ueberschrift %}{% endblock %}</h1>
+                        <p class="mt-2 text-[1.0625rem] leading-relaxed text-gray-700 dark:text-gray-300">{% block erklaerung %}{% endblock %}</p>
+                        <div class="mt-6">{% block hauptaktion %}{% endblock %}</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-band-hell" aria-labelledby="fehler-weiter">
+                <div class="max-w-insight mx-auto px-4 sm:px-8 py-8 sm:py-12">
+                    <div class="max-w-2xl">
+                        <h2 id="fehler-weiter" class="text-[1.1875rem] font-semibold text-gray-900 dark:text-white">{% block weiter_titel %}Weiter im Bürgerportal{% endblock %}</h2>
+                        {% block weiter_vorspann %}{% endblock %}
+                        <ul class="mt-3 [&>li+li]:border-t [&>li]:border-gray-200 dark:[&>li]:border-gray-800">
+                            <li>
+                                <a href="{% url 'insight_core:insight:meeting_list' %}" class="group block py-3">
+                                    <span class="font-semibold text-primary-700 dark:text-primary-300 group-hover:underline underline-offset-4">Sitzungen</span>
+                                    <span class="block mt-0.5 text-[0.95rem] text-gray-600 dark:text-gray-400">Termine der Gremien mit Tagesordnung, Unterlagen und Ergebnissen</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'insight_core:insight:paper_list' %}" class="group block py-3">
+                                    <span class="font-semibold text-primary-700 dark:text-primary-300 group-hover:underline underline-offset-4">Vorgänge</span>
+                                    <span class="block mt-0.5 text-[0.95rem] text-gray-600 dark:text-gray-400">Vorlagen, Anträge und Anfragen mit ihrem Beratungsverlauf</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'insight_core:insight:portal_home' %}" class="group block py-3">
+                                    <span class="font-semibold text-primary-700 dark:text-primary-300 group-hover:underline underline-offset-4">Übersicht</span>
+                                    <span class="block mt-0.5 text-[0.95rem] text-gray-600 dark:text-gray-400">Die nächsten Sitzungen und neuesten Vorgänge Ihrer Kommune</span>
+                                </a>
+                            </li>
+                        </ul>
+                        <p class="mt-8 text-sm text-gray-600 dark:text-gray-400">{% block fussnote %}{% endblock %}</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="bg-band-tinte text-gray-300">
+            <div class="max-w-insight mx-auto px-4 sm:px-8 py-8 flex flex-wrap items-center justify-between gap-x-8 gap-y-4 text-[0.9375rem]">
+                <p class="flex flex-wrap items-baseline gap-x-4 gap-y-1"><span class="font-bold tracking-tight text-white">mandari<span class="text-indigo-400" aria-hidden="true">.</span> <span class="font-semibold text-primary-300">Insight</span></span> <span>Öffentliche Ratsinformationen der Kommunen</span></p>
+                <nav aria-label="Rechtliches">
+                    <ul class="flex flex-wrap gap-x-5 gap-y-2">
+                        <li><a href="{{ marketing_url }}/barrierefreiheit/" class="hover:text-white underline-offset-4 hover:underline">Barrierefreiheit</a></li>
+                        <li><a href="{{ marketing_url }}/datenschutz/" class="hover:text-white underline-offset-4 hover:underline">Datenschutz</a></li>
+                        <li><a href="{{ marketing_url }}/impressum/" class="hover:text-white underline-offset-4 hover:underline">Impressum</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

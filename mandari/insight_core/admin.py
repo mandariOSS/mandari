@@ -1684,16 +1684,16 @@ from .services import page_feedback as page_feedback_service  # noqa: E402
 
 @admin.register(PageFeedback)
 class PageFeedbackAdmin(ReadOnlyAdminMixin, ModelAdmin):
-    """Auswertung: Zählung je Seitentyp und Seite über der Liste, Freitexte in der Liste.
+    """Auswertung: Zählung je Seitentyp und Seite über der Liste, Freitexte mit ihrer Art in der Liste.
 
     Die Zählung folgt den gewählten Filtern (Kommune, Zeitraum, Seitentyp). Einträge löscht ein
     täglicher Auftrag nach zwölf Monaten (``insight_core/schedules.py``).
     """
 
-    list_display = ["created_on", "page_label", "body", "helpful", "short_comment", "path"]
-    list_filter = ["helpful", "page_type", "body", ("comment", admin.EmptyFieldListFilter), "created_on"]
+    list_display = ["created_on", "page_label", "body", "helpful", "kind", "short_comment", "path"]
+    list_filter = ["helpful", "kind", "page_type", "body", ("comment", admin.EmptyFieldListFilter), "created_on"]
     search_fields = ["comment", "path"]
-    readonly_fields = ["created_on", "page_type", "path", "body", "helpful", "comment"]
+    readonly_fields = ["created_on", "page_type", "path", "body", "helpful", "kind", "comment"]
     ordering = ["-created_on", "-id"]
     list_per_page = 50
     list_before_template = "admin/insight_core/pagefeedback/auswertung.html"

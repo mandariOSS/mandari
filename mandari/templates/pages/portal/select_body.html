@@ -25,7 +25,7 @@ Name, Ortsteil oder Postleitzahl, in der Nähe oder über das Stöbern Land → 
     {# Ab lg Satz links, Suchfeld rechts: das Band nutzt die Breite statt einer leeren rechten Hälfte (Issue #841) #}
     <div class="grid gap-x-12 gap-y-5 lg:grid-cols-2 lg:items-end">
         <div class="max-w-2xl">
-            <h2 id="alle-kommunen-titel" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">In allen Kommunen suchen</h2>
+            <h2 id="alle-kommunen-titel" class="abschnitt-titel">In allen Kommunen suchen</h2>
             <p class="mt-2 text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">Ohne Festlegung auf eine Kommune: Vorgänge, Sitzungen und Dokumente aller angebundenen Kommunen durchsuchen.</p>
         </div>
         <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="flex flex-col sm:flex-row gap-3 lg:max-w-2xl">
@@ -39,7 +39,7 @@ Name, Ortsteil oder Postleitzahl, in der Nähe oder über das Stöbern Land → 
 {% else %}
 <c-insight.band>
     <div class="max-w-xl">
-        <h2 class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Noch keine Kommune verf&uuml;gbar</h2>
+        <h2 class="abschnitt-titel">Noch keine Kommune verf&uuml;gbar</h2>
         <p class="mt-2 text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">
             Es wurden noch keine Ratsinformationen synchronisiert. Sobald eine Kommune angebunden ist, erscheint sie hier automatisch.
         </p>

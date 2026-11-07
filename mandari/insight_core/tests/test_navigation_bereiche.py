@@ -16,7 +16,7 @@ from django.test import Client, override_settings
 from django.urls import get_resolver, reverse
 from django.utils import timezone
 
-from apps.session.models import SessionTenant
+from apps.session.models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionTenant
 from insight_core.models import OParlBody, OParlMeeting, OParlSource
 from insight_core.navigation import NAV_AREAS
 
@@ -92,12 +92,21 @@ class TestBereiche:
 
     def test_beschluesse_nur_wenn_die_kommune_sie_veroeffentlicht(self, besucher: Client, kommune: OParlBody) -> None:
         assert "Beschlüsse" not in _bereiche(_seite(besucher, "paper_list"))
-        SessionTenant.objects.create(
+        tenant = SessionTenant.objects.create(
             name="Verwaltung Beispielstadt",
             slug="beispielstadt",
             oparl_body=kommune,
             insight_publish=True,
             implementation_publish=True,
+        )
+        # Eingeschaltet, aber noch kein Beschluss freigegeben: kein Eintrag, der auf eine leere Liste führt (#1261)
+        assert "Beschlüsse" not in _bereiche(_seite(besucher, "paper_list"))
+        rat = SessionOrganization.objects.create(tenant=tenant, name="Rat", organization_type="council")
+        sitzung = SessionMeeting.objects.create(
+            tenant=tenant, organization=rat, name="Rat", start=timezone.now() - timedelta(days=7), is_public=True
+        )
+        SessionAgendaItem.objects.create(
+            meeting=sitzung, number="1", name="Radweg", vote_result="approved", implementation_public=True
         )
         assert "Beschlüsse" in _beschriftungen(_bereiche(_seite(besucher, "paper_list")))
 

@@ -127,6 +127,8 @@ insight_patterns = [
     re_path(r"^(?P<name>[A-Za-z0-9-]{8,128})\.txt$", views.indexnow_schluessel, name="indexnow_schluessel"),
     # Rückmeldung am Seitenende („War diese Seite hilfreich?“)
     path("rueckmeldung/", ohne_index(views.page_feedback), name="page_feedback"),
+    # „Was ist neu?“: Neuigkeiten in Bürgersprache, verlinkt von der Versionsnummer im Fuß (Issue #1261)
+    path("neuigkeiten/", views.NeuigkeitenView.as_view(), name="neuigkeiten"),
 ]
 
 # =============================================================================

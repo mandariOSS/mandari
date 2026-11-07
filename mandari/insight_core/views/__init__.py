@@ -67,6 +67,7 @@ from .neighborhood import (
     neighborhood_autocomplete,
     neighborhood_results,
 )
+from .neuigkeiten import NeuigkeitenView
 from .organizations import (
     OrganizationDetailView,
     OrganizationListView,
@@ -129,6 +130,7 @@ __all__ = [
     "MeetingListView",
     "MerklisteView",
     "NeighborhoodView",
+    "NeuigkeitenView",
     "OrganizationDetailView",
     "OrganizationListView",
     "PaperDetailView",

@@ -2827,13 +2827,21 @@ class DigestLog(models.Model):
 class PageFeedback(models.Model):
     """Rückmeldung „War diese Seite hilfreich?“ am Seitenende des Bürgerportals.
 
-    Gespeichert werden nur Antwort, optionaler Satz, Seitentyp, Pfad, Kommune und der Tag – keine
-    IP-Adresse, keine Uhrzeit, kein Cookie. Gegen Massenabgaben zählt ``throttle`` grob je Adresse
-    im Cache. „Anonym“ sagen wir trotzdem nicht: Die Zugriffsprotokolle des Webservers halten wie bei jedem
-    Aufruf Adresse, Zeit und Seite fest, und der Satz kann Personenbezug enthalten. Nach ``services.page_feedback.RETENTION_DAYS`` löscht ein täglicher Auftrag die Einträge.
+    Gespeichert werden nur Antwort, optionaler Satz mit seiner Art (Fehler, Idee, Kommune vorschlagen; Issue #1261),
+    Seitentyp, Pfad, Kommune und der Tag – keine IP-Adresse, keine Uhrzeit, kein Cookie, keine E-Mail-Adresse.
+    Gegen Massenabgaben zählt ``throttle`` grob je Adresse im Cache. „Anonym“ sagen wir trotzdem nicht: Die
+    Zugriffsprotokolle des Webservers halten wie bei jedem Aufruf Adresse, Zeit und Seite fest, und der Satz kann
+    Personenbezug enthalten. Nach ``services.page_feedback.RETENTION_DAYS`` löscht ein täglicher Auftrag die Einträge.
     """
 
     COMMENT_MAX_LENGTH = 500
+
+    class Kind(models.TextChoices):
+        """Art des Satzes nach „Nein“ (Issue #1261); leer bei „Ja“ oder ohne Auswahl."""
+
+        FEHLER = "fehler", "Fehler"
+        IDEE = "idee", "Idee"
+        KOMMUNE = "kommune", "Kommune vorschlagen"
 
     body = models.ForeignKey(
         OParlBody,
@@ -2847,6 +2855,9 @@ class PageFeedback(models.Model):
     path = models.CharField(max_length=255, blank=True, default="", verbose_name="Seite")
     helpful = models.BooleanField(verbose_name="Hilfreich")
     comment = models.TextField(max_length=COMMENT_MAX_LENGTH, blank=True, default="", verbose_name="Ergänzung")
+    kind = models.CharField(
+        max_length=20, choices=Kind.choices, blank=True, default="", db_default="", verbose_name="Art"
+    )
     created_on = models.DateField(auto_now_add=True, db_index=True, verbose_name="Tag")
 
     class Meta:

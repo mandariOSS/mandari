@@ -27,8 +27,10 @@ verfügbar“ (410).
 
 - Liste `/insight/beschluesse/` (Navigation „Beschlüsse“): Kacheln je Status (Umsetzung steht an /
   in Umsetzung / umgesetzt / zurückgestellt), Filter Gremium, Jahr, „nur offene“, Volltext
-  (Betreff, Beschlusstext, Nummer, öffentliche Statusmeldung). Ohne Freigabe der Verwaltung
-  erscheint ein Hinweis.
+  (Betreff, Beschlusstext, Nummer, öffentliche Statusmeldung). Die Navigation zeigt „Beschlüsse“ erst,
+  wenn mindestens ein Beschluss lesbar ist (`decision_tracking.has_public_decisions`), nicht schon mit
+  eingeschaltetem Schalter. Ohne solche Beschlüsse zeigt die Liste einen Hinweis, die zuletzt beratenen
+  Punkte der Kommune und Wege zu Sitzungen und Vorgängen, mit `noindex, follow` (Issue #1261).
 - Detail `/insight/beschluesse/<id>/`: Status-Zeitleiste beschlossen → in Umsetzung → umgesetzt
   (bzw. zurückgestellt), Beschlusstext, öffentliche Statusmeldung mit Stand-Datum, zuständige
   Stelle, geplante Umsetzung (überschritten rot), Links zu Sitzung und Vorlage (Beratungsverlauf)

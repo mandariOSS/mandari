@@ -1,0 +1,21 @@
+{% extends "errors/insight_base.html" %}
+{# 500 im Bürgerportal (Issue #1261): Neu laden als Hauptaktion, Suche und Wege darunter, Fehler-ID zum Melden #}
+
+{% block title %}Fehler beim Laden (500){% endblock %}
+
+{% block ueberschrift %}Diese Seite lässt sich gerade nicht anzeigen{% endblock %}
+
+{% block erklaerung %}
+Bei uns ist ein technischer Fehler aufgetreten, an Ihrer Eingabe liegt es nicht. Laden Sie die Seite in einigen
+Minuten neu, oder suchen Sie unten weiter.
+{% endblock %}
+
+{% block hauptaktion %}<c-ui.button type="button" data-action="reload" icon="refresh-cw">Seite neu laden</c-ui.button>{% endblock %}
+
+{% block weiter_titel %}Weiter suchen{% endblock %}
+{% block weiter_vorspann %}<div class="mt-3">{% include "errors/insight_suche.html" %}</div>{% endblock %}
+
+{% block fussnote %}
+Fehler-ID <code class="px-1.5 py-0.5 rounded bg-band-grau font-mono text-xs text-gray-700 dark:text-gray-300">{{ request_id|default:"unbekannt" }}</code>.
+Tritt der Fehler wieder auf, {# djlint:off D018 #}<a href="/feedback/?error_id={{ request_id|urlencode }}&amp;url={{ request.build_absolute_uri|urlencode }}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">melden Sie ihn bitte mit dieser ID</a>{# djlint:on D018 #}.
+{% endblock %}
