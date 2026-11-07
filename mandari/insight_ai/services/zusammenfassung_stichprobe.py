@@ -223,9 +223,15 @@ def erzeugen(vorgaenge: Iterable[Any], provider: Any) -> list[Zeile]:
 
 
 def schreiben(zeilen: Iterable[Zeile], pfad: Path) -> None:
-    """Prüfbogen als TSV (UTF-8, Tabulator), Spalten ``SPALTEN``; ``urteil`` und ``anmerkung`` bleiben leer."""
+    """
+    Prüfbogen als TSV (UTF-8, Tabulator), Spalten ``SPALTEN``; ``urteil`` und ``anmerkung`` bleiben leer. Jede Zelle
+    ist gegen Formel-Injektion geschützt (``apps.common.csv_safety``): Der Bogen wird in einer Tabellenkalkulation
+    ausgefüllt.
+    """
+    from apps.common import csv_safety
+
     with pfad.open("w", encoding="utf-8", newline="") as datei:
-        schreiber = csv.writer(datei, delimiter="\t", lineterminator="\n")
+        schreiber = csv_safety.writer(datei, delimiter="\t", lineterminator="\n")
         schreiber.writerow(SPALTEN)
         for zeile in zeilen:
             schreiber.writerow(zeile.werte())
