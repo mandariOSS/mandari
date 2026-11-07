@@ -13,8 +13,10 @@
  * - `data-filter-param="status"` auf Select: bei Änderung den Query-Parameter setzen.
  * - `data-href="URL"` auf Zeilen/Karten: Klick navigiert, außer auf innere Links,
  *   Buttons, Formularfelder oder Aufklappbereiche (`<details>`, etwa die Anlagen einer Vorgangszeile).
- * - `data-action="reload|back|print|select|click-target|clear-target|share|confirm-submit|fullscreen"` auf Buttons
- *   (`data-target` als Selektor für click-/clear-target, confirm-submit und fullscreen, `data-share-title` für share).
+ * - `data-action="reload|back|print|select|click-target|clear-target|share|copy-link|confirm-submit|fullscreen"` auf
+ *   Buttons (`data-target` als Selektor für click-/clear-target, confirm-submit und fullscreen, `data-share-title` für
+ *   share). `copy-link` an einem Link kopiert seine Adresse (bzw. `data-url`) und meldet `data-copied` im Element
+ *   `data-target` (etwa `role="status"`); ohne Zwischenablage folgt der Klick dem Link (Beschlüsse, Issue #1270).
  *   `fullscreen` schaltet das Element `data-target` in den Vollbildmodus und wieder heraus (Esc beendet ihn auch);
  *   solche Knöpfe stehen mit `hidden` im Markup und erscheinen nur, wenn der Browser Vollbild für Elemente kann.
  *   `confirm-submit` fragt mit dem Bestätigungsdialog (`data-confirm-title`, `data-confirm-message`,
@@ -82,6 +84,15 @@ async function confirmSubmit(el: HTMLElement, form: HTMLFormElement): Promise<vo
   if (ok) form.submit()
 }
 
+/** Meldung nach dem Kopieren im Element `status` (etwa `role="status"`), nach fünf Sekunden wieder leer. */
+function meldeKopiert(status: Element | null, text: string): void {
+  if (!status) return
+  status.textContent = text
+  window.setTimeout(() => {
+    if (status.textContent === text) status.textContent = ''
+  }, 5000)
+}
+
 function runAction(el: HTMLElement, event: Event): void {
   const target = el.dataset.target
   switch (el.dataset.action) {
@@ -109,6 +120,16 @@ function runAction(el: HTMLElement, event: Event): void {
       const daten = { title: el.dataset.shareTitle ?? document.title, url: window.location.href }
       if (typeof navigator.share === 'function') void navigator.share(daten)
       else void navigator.clipboard?.writeText(daten.url)
+      break
+    }
+    case 'copy-link': {
+      const url = el.dataset.url || (el instanceof HTMLAnchorElement ? el.href : '')
+      if (!url || !navigator.clipboard) return
+      const status = target ? document.querySelector(target) : null
+      void navigator.clipboard.writeText(url).then(
+        () => meldeKopiert(status, el.dataset.copied ?? 'Link kopiert.'),
+        () => window.location.assign(url),
+      )
       break
     }
     case 'confirm-submit': {

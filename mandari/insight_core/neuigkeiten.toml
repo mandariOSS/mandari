@@ -17,6 +17,15 @@
 [[eintrag]]
 datum = 2026-11-07
 version = ""
+titel = "Sehen Sie auf einen Blick, was entschieden wurde."
+text = """Unter „Beschlüsse“ stehen jetzt die Ergebnisse der öffentlichen Sitzungen, nach Sitzung geordnet und das \
+Neueste zuerst: beschlossen, abgelehnt, vertagt und mehr, dazu wer den Antrag gestellt hat. Sie können nach Rat und \
+Ausschüssen oder Bezirksvertretungen, Gremium, Fraktion, Ergebnis und Zeitraum filtern und den Link zu Ihrer \
+Auswahl weitergeben."""
+
+[[eintrag]]
+datum = 2026-11-07
+version = ""
 titel = "Sagen Sie uns, was fehlt."
 text = """Wenn Sie bei „War diese Seite hilfreich?“ mit Nein antworten, können Sie jetzt angeben, ob Sie einen \
 Fehler gefunden haben, eine Idee für eine neue Funktion haben oder eine Kommune vorschlagen möchten. Ein Satz \

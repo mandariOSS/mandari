@@ -56,7 +56,7 @@ class TestBeschluesseOhneDaten:
         )
         OParlAgendaItem.objects.create(external_id=f"{RIS}/item/2", meeting=sitzung, number="4", name="Ohne Ergebnis")
 
-        antwort = besucher.get("/insight/beschluesse/")
+        antwort = besucher.get("/insight/beschluesse/umsetzung/")
 
         assert antwort.status_code == 200
         html = antwort.content.decode()
@@ -65,6 +65,7 @@ class TestBeschluesseOhneDaten:
         assert "Zuletzt beraten" in html and "Neuer Spielplatz" in html and "Ohne Ergebnis" not in html
         assert f"/insight/termine/{sitzung.pk}/" in html
         assert 'href="/insight/termine/?period=past"' in html and 'href="/insight/vorgaenge/"' in html
+        assert 'href="/insight/beschluesse/"' in html, "Weg zur Liste der Entscheidungen (#1270)"
         # Keine leere Liste und kein Abo-Versprechen, nicht im Index
         assert "Abonnieren Sie einzelne Beschlüsse" not in html and "Umsetzung steht an" not in html
         assert '<meta name="robots" content="noindex, follow">' in html
@@ -73,7 +74,7 @@ class TestBeschluesseOhneDaten:
         SessionTenant.objects.create(
             name="Verwaltung", slug="verwaltung", oparl_body=kommune, insight_publish=True, implementation_publish=True
         )
-        html = besucher.get("/insight/beschluesse/").content.decode()
+        html = besucher.get("/insight/beschluesse/umsetzung/").content.decode()
         assert "Noch kein Umsetzungsstand gemeldet" in html
         assert "Zuletzt beraten" not in html, "ohne beratene Punkte keine leere Überschrift"
         assert 'href="/insight/vorgaenge/"' in html
@@ -89,7 +90,7 @@ class TestBeschluesseOhneDaten:
         SessionAgendaItem.objects.create(
             meeting=sitzung, number="1", name="Radweg Hafen", vote_result="approved", implementation_public=True
         )
-        html = besucher.get("/insight/beschluesse/").content.decode()
+        html = besucher.get("/insight/beschluesse/umsetzung/").content.decode()
         assert "Radweg Hafen" in html and "Umsetzung steht an" in html
         assert "Noch kein Umsetzungsstand gemeldet" not in html
         assert '<meta name="robots" content="index, follow">' in html

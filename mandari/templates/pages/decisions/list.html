@@ -1,114 +1,71 @@
 {% extends "base_insight.html" %}
+{% load insight_listen %}
+{% comment %}
+Beschlüsse als Liste der Entscheidungen (Issue #1270, views/decisions.py, services/beschlussliste.py): Kopfband mit
+Titel, einem Satz, dem Reiter „Umsetzung“ (nur mit Daten der Verwaltung), dem Umschalter der Gremiengruppe (nur, wenn
+die Kommune Bezirksvertretungen hat) und vier Auswahllisten. Am Handy liegen die Auswahllisten hinter „Weitere Filter“,
+damit der erste Beschluss im ersten Bildschirm steht; ohne JavaScript bleiben sie offen und „Anzeigen“ schickt das
+Formular ab (data-ohne-js, base_insight.html). Jede Änderung lädt per htmx nur die Ergebnisse und schreibt die
+Adresse fort (FilterInAdresseMixin); „Zurück“ lädt die Seite der Adresse.
+{% endcomment %}
 
-{% block title %}Beschlüsse und Umsetzung{% endblock %}
+{% block title %}Beschlüsse{% if page_obj.number > 1 %} – Seite {{ page_obj.number }}{% endif %}{% endblock %}
 
-{% block content %}
-<div>
-    {% if messages %}
-    <div class="mb-4 space-y-2">
-        {% for message in messages %}
-        <div class="px-4 py-3 rounded-xl text-sm {% if message.tags == "error" %}bg-red-50 text-red-800 border border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800{% elif message.tags == "success" %}bg-green-50 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800{% else %}bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800{% endif %}">{{ message }}</div>
-        {% endfor %}
-    </div>
-    {% endif %}
-    <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
-        <div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Was wurde aus …?</h1>
-            <p class="text-gray-600 dark:text-gray-400 max-w-2xl">
-                {% if publishing %}
-                Beschlüsse{% if active_body %} aus {{ active_body.get_display_name }}{% endif %} und ihr Umsetzungsstand,
-                gemeldet von der Verwaltung. Abonnieren Sie einzelne Beschlüsse, um bei Änderungen informiert zu werden.
-                {% else %}
-                Hier zeigt das Bürgerportal, wie weit die Verwaltung beschlossene Punkte umgesetzt hat, sobald sie den
-                Stand meldet.
-                {% endif %}
-            </p>
-        </div>
-    </div>
-
-    {% if not publishing %}
-    {% include "partials/beschluesse_leer.html" %}
-    {% else %}
-
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <a href="?status=open" class="bg-white dark:bg-gray-800 rounded-xl border px-4 py-3 hover:border-primary-300 {% if filter_status == 'open' %}border-primary-400{% else %}border-gray-200 dark:border-gray-700{% endif %}">
-            <p class="text-xs text-gray-500 dark:text-gray-400">Umsetzung steht an</p>
-            <p class="text-2xl font-bold text-amber-600 dark:text-amber-400">{{ stats.open }}</p>
-        </a>
-        <a href="?status=in_progress" class="bg-white dark:bg-gray-800 rounded-xl border px-4 py-3 hover:border-primary-300 {% if filter_status == 'in_progress' %}border-primary-400{% else %}border-gray-200 dark:border-gray-700{% endif %}">
-            <p class="text-xs text-gray-500 dark:text-gray-400">In Umsetzung</p>
-            <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ stats.in_progress }}</p>
-        </a>
-        <a href="?status=done" class="bg-white dark:bg-gray-800 rounded-xl border px-4 py-3 hover:border-primary-300 {% if filter_status == 'done' %}border-primary-400{% else %}border-gray-200 dark:border-gray-700{% endif %}">
-            <p class="text-xs text-gray-500 dark:text-gray-400">Umgesetzt</p>
-            <p class="text-2xl font-bold text-green-600 dark:text-green-400">{{ stats.done }}</p>
-        </a>
-        <a href="?status=deferred" class="bg-white dark:bg-gray-800 rounded-xl border px-4 py-3 hover:border-primary-300 {% if filter_status == 'deferred' %}border-primary-400{% else %}border-gray-200 dark:border-gray-700{% endif %}">
-            <p class="text-xs text-gray-500 dark:text-gray-400">Zurückgestellt</p>
-            <p class="text-2xl font-bold text-gray-700 dark:text-gray-200">{{ stats.deferred }}</p>
-        </a>
-    </div>
-
-    <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-4 flex flex-wrap items-center gap-2">
-        <div class="relative flex-1 min-w-[200px]">
-            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
-            <input type="search" name="q" value="{{ search_query }}" placeholder="Beschluss suchen…" aria-label="Beschlüsse durchsuchen"
-                   class="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-        </div>
-        <select name="gremium" class="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-            <option value="">Alle Gremien</option>
-            {% for org in organizations %}<option value="{{ org.id }}" {% if filter_organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
-        </select>
-        <select name="jahr" class="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-            <option value="">Alle Jahre</option>
-            {% for y in years %}<option value="{{ y }}" {% if filter_year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>{% endfor %}
-        </select>
-        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" name="offen" value="1" {% if filter_open %}checked{% endif %} class="rounded border-gray-300"> nur offene Beschlüsse</label>
-        <button type="submit" class="px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700">Filtern</button>
-        {% if has_filter %}<a href="{% url 'insight_core:insight:decision_list' %}" class="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white">Zurücksetzen</a>{% endif %}
-    </form>
-
-    {% if items %}
-    <ul class="space-y-3">
-        {% for item in items %}
-        <li class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
-            <a href="{% url 'insight_core:insight:decision_detail' pk=item.id %}" class="block">
-                <div class="flex flex-wrap items-center gap-2 mb-1.5">
-                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full
-                        {% if item.implementation_status == 'done' %}bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300
-                        {% elif item.implementation_status == 'in_progress' %}bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
-                        {% elif item.implementation_status == 'deferred' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300
-                        {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300{% endif %}">
-                        <span class="w-1.5 h-1.5 rounded-full bg-current"></span>{{ item.public_label }}
-                    </span>
-                    {% if item.resolution_number %}<span class="text-xs font-mono text-gray-500 dark:text-gray-400">{{ item.resolution_number }}</span>{% endif %}
-                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}</span>
+{% block page %}
+<c-insight.kopfband titel="Beschlüsse" text="{% if active_body %}Was Rat, Ausschüsse und Bezirksvertretungen in {{ active_body.get_display_name }} entschieden haben, neueste zuerst.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
+    {% if umsetzung_vorhanden %}{% include "pages/decisions/_reiter.html" with aktiv="entscheidungen" %}{% endif %}
+    {% if active_body %}
+    <form method="get" action="{{ request.path }}" id="beschluss-filter" aria-label="Beschlüsse filtern"
+          hx-get="{{ request.path }}" hx-trigger="change, submit" hx-target="#beschluesse-ergebnis" hx-swap="innerHTML"
+          hx-push-url="true" hx-history="false" hx-indicator="#beschluesse-ergebnis"
+          x-data="{ mehr: false }" class="space-y-4">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
+            {% if mit_umschalter %}
+            <fieldset class="w-full sm:w-auto">
+                <legend class="sr-only">Gremien</legend>
+                <div class="flex rounded-lg bg-band-hell p-1 ring-1 ring-gray-300 dark:ring-gray-700">
+                    <label class="umschalter-wahl"><input type="radio" name="gruppe" value="" class="sr-only"{% if not auswahl.gruppe %} checked{% endif %}>Alle</label>
+                    {% for wert, namen in gruppen.items %}
+                    <label class="umschalter-wahl"><input type="radio" name="gruppe" value="{{ wert }}" class="sr-only"{% if auswahl.gruppe == wert %} checked{% endif %}><span class="max-sm:hidden">{{ namen.0 }}</span><span class="sm:hidden">{{ namen.1 }}</span></label>
+                    {% endfor %}
                 </div>
-                <h3 class="font-semibold text-gray-900 dark:text-white">{{ item.name }}</h3>
-                {% if item.implementation_public_note %}
-                <p class="text-sm text-gray-700 dark:text-gray-300 mt-1.5 line-clamp-2"><span class="text-gray-500">Stand:</span> {{ item.implementation_public_note }}</p>
-                {% elif item.resolution_text %}
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1.5 line-clamp-2">{{ item.resolution_text }}</p>
-                {% endif %}
-                {% if item.implementation_deadline and item.implementation_status != 'done' %}
-                <p class="text-xs mt-2 {% if item.implementation_deadline < today %}text-red-600 dark:text-red-400 font-medium{% else %}text-gray-500 dark:text-gray-400{% endif %}">Geplante Umsetzung bis {{ item.implementation_deadline|date:"d.m.Y" }}</p>
-                {% endif %}
-            </a>
-        </li>
-        {% endfor %}
-    </ul>
-    {% if page_obj.has_other_pages %}
-    <nav class="mt-6 flex items-center justify-center gap-2 text-sm">
-        {% if page_obj.has_previous %}<a href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700">Zurück</a>{% endif %}
-        <span class="text-gray-500">Seite {{ page_obj.number }} von {{ page_obj.paginator.num_pages }}</span>
-        {% if page_obj.has_next %}<a href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700">Weiter</a>{% endif %}
-    </nav>
+            </fieldset>
+            {% endif %}
+            <button type="button" x-cloak="platz" @click="mehr = !mehr" :aria-expanded="mehr" aria-expanded="false" aria-controls="beschluss-filter-felder"
+                    class="lg:hidden inline-flex items-center gap-2 min-h-11 px-4 rounded-lg bg-band-hell ring-1 ring-gray-300 dark:ring-gray-700 font-medium text-gray-900 dark:text-white">
+                <i data-lucide="sliders-horizontal" class="w-5 h-5" aria-hidden="true"></i>Weitere Filter<span id="filter-zahl">{% if filter_zahl %} ({{ filter_zahl }}){% endif %}</span>
+            </button>
+        </div>
+        <div id="beschluss-filter-felder" class="max-lg:hidden" :class="{ 'max-lg:!block': mehr }" data-ohne-js="zeigen">
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.2fr)] lg:max-w-5xl">
+                <c-form.select name="gremium" id="f-gremium" label="Gremium">
+                    <option value="">Alle Gremien</option>
+                    {% for titel, liste in gremien_auswahl %}
+                    <optgroup label="{{ titel }}">
+                        {% for gremium in liste %}<option value="{{ gremium.id }}"{% if auswahl.gremium == gremium.id|stringformat:"s" %} selected{% endif %}>{{ gremium.name }}</option>{% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </c-form.select>
+                <c-form.select name="von" id="f-von" label="Eingebracht von">
+                    <option value="">Alle</option>
+                    {% for wert, anzeige in von_auswahl %}<option value="{{ wert }}"{% if auswahl.von == wert %} selected{% endif %}>{{ anzeige }}</option>{% endfor %}
+                </c-form.select>
+                <c-form.select name="ergebnis" id="f-ergebnis" label="Ergebnis">
+                    <option value="">Alle Ergebnisse</option>
+                    {% for wert, anzeige in ergebnisse.items %}<option value="{{ wert }}"{% if auswahl.ergebnis == wert %} selected{% endif %}>{{ anzeige }}</option>{% endfor %}
+                </c-form.select>
+                <c-form.select name="zeitraum" id="f-zeitraum" label="Zeitraum">
+                    {% for wert, anzeige in zeitraeume.items %}<option value="{{ wert }}"{% if auswahl.zeitraum == wert %} selected{% endif %}>{{ anzeige }}</option>{% endfor %}
+                </c-form.select>
+            </div>
+            <button type="submit" data-ohne-js="zeigen" class="hidden mt-3 min-h-11 px-5 rounded-lg bg-primary-700 font-medium text-white hover:bg-primary-800">Anzeigen</button>
+        </div>
+    </form>
     {% endif %}
-    {% else %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center text-gray-500 dark:text-gray-400">
-        Keine Beschlüsse für diese Auswahl.
+</c-insight.kopfband>
+<c-insight.band aria-label="Ergebnisse">
+    <div id="beschluesse-ergebnis" class="transition-opacity motion-reduce:transition-none [&.htmx-request]:opacity-60">
+        {% include "partials/beschluesse_liste.html" %}
     </div>
-    {% endif %}
-    {% endif %}
-</div>
+</c-insight.band>
 {% endblock %}

@@ -51,6 +51,7 @@ PAGE_TYPES: Final[dict[str, str]] = {
     "person_list": "Personen",
     "person_detail": "Person",
     "decision_list": "Beschlüsse",
+    "decision_tracking": "Umsetzung der Beschlüsse",
     "decision_detail": "Beschluss",
     "question_portal": "Ratsfragen",
     "question_detail": "Ratsfrage",
