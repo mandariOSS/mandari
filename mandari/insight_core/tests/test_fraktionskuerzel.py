@@ -67,7 +67,8 @@ def _urheber(bezeichnung: str, kurzform: str = "", art: str = "fraktion") -> Sim
     [
         # Absender vor der Art
         ("Grüne-Antrag: Nahversorgung im Baugebiet Nord", "Antrag", "Nahversorgung im Baugebiet Nord", ["Grüne"], ""),
-        ("BBB-Große Anfrage: Leistungen an Nachbarkommunen", "Große Anfrage", "Leistungen an Nachbarkommunen", ["BBB"], ""),
+        ("BBB-Fraktion-Große Anfrage: Leistungen an Nachbarkommunen", "Große Anfrage", "Leistungen an Nachbarkommunen", ["BBB"], ""),
+        ("Antrag der AfB-Gruppe: Mehr Bänke", "Antrag", "Mehr Bänke", ["AfB"], ""),
         ("CDU-SPD-FDP-Kooperation-Antrag: Parkplatz am Nordring", "Antrag", "Parkplatz am Nordring", ["CDU", "SPD", "FDP"], ""),
         ("BSW/SBI-Gruppe-Große Anfrage: Stadtbahnwagen", "Große Anfrage", "Stadtbahnwagen", ["BSW/SBI"], ""),
         ("SPD-Bezirksfraktion-Antrag: Radweg am Bach", "Antrag", "Radweg am Bach", ["SPD"], ""),
@@ -130,10 +131,23 @@ def test_absender_wird_abgetrennt(titel: str, art: str, anzeige: str, kuerzel: l
         ("Antrag der Verwaltung: Haushaltssatzung 2026", "Antrag"),
         ("Gemeinsamer Antrag: Klimaschutz", "Antrag"),
         ("Antrag der Fraktion Unabhängige Wählergemeinschaft: Mehr Bänke", "Antrag"),
-        # Abkürzungen von Themen sind keine Gruppen
+        # Ein Gruppenkürzel allein ist ohne bekannte Fraktion oft ein Thema oder Verein, keine Gruppe
+        ("BBB-Große Anfrage: Leistungen an Nachbarkommunen", "Große Anfrage"),
         ("OGS-Antrag: Ausbau der Ganztagsbetreuung", "Antrag"),
         ("KiTa-Antrag: Neue Plätze", "Antrag"),
         ("TOP-Antrag: Reihenfolge", "Antrag"),
+        ("WLAN-Antrag: Schulen", "Antrag"),
+        ("LED-Antrag: Straßenbeleuchtung", "Antrag"),
+        ("SGB-Antrag: Eingliederungshilfe", "Antrag"),
+        ("TSV-Antrag: Kunstrasenplatz", "Antrag"),
+        ("THW-Anfrage: Hochwasserschutz", "Anfrage"),
+        ("DGB-Antrag: Tariftreue", "Antrag"),
+        ("IT-Antrag: Ausstattung der Schulen", "Antrag"),
+        ("UN-Antrag: Nachhaltigkeitsziele", "Antrag"),
+        ("DRK-Antrag: Zuschuss Rettungswache", "Vorlage"),
+        ("Antrag DRK: Zuschuss Rettungswache", "Antrag"),
+        ("Zuschuss Rettungswache (Antrag DRK)", "Antrag"),
+        ("CDU-WLAN-Antrag: Schulen", "Antrag"),
         # Gewöhnliche Titel mit Doppelpunkt
         ("Haushalt 2026: Eckpunkte", "Beschlussvorlage"),
         ("Sachstand: Radweg", "Mitteilungsvorlage"),
@@ -247,6 +261,24 @@ def test_oertliche_fraktion_mit_gespeicherter_zuordnung_wird_abgetrennt() -> Non
     # … aber nie eine Stellungnahme, auch wenn eine Fraktion bekannt ist
     stellungnahme = fk.absender("Stellungnahme zum Antrag der Fraktion X: Bänke", "Antrag", urheber)
     assert stellungnahme.titel == "Stellungnahme zum Antrag der Fraktion X: Bänke"
+
+
+def test_gruppenkuerzel_nur_mit_bekannter_fraktion_abgetrennt() -> None:
+    bbb = [_urheber("Bürger Bund Beispiel (BBB)")]
+    cdu = [_urheber("CDU-Fraktion")]
+
+    ergebnis = fk.absender("BBB-Große Anfrage: Leistungen an Nachbarkommunen", "Große Anfrage", bbb)
+
+    assert ergebnis.titel == "Leistungen an Nachbarkommunen" and ergebnis.gekuerzt
+    assert [(k.text, k.titel) for k in ergebnis.kuerzel] == [("BBB", "Bürger Bund Beispiel (BBB)")]
+    # Eine andere bekannte Fraktion bestätigt kein Themenkürzel: Titel bleibt, Kürzel aus der Erkennung
+    wlan = fk.absender("WLAN-Antrag: Schulen", "Antrag", cdu)
+    assert wlan.titel == "WLAN-Antrag: Schulen" and not wlan.gekuerzt
+    assert [k.text for k in wlan.kuerzel] == ["CDU"]
+    # Neben einer Partei braucht jedes Gruppenkürzel die Bestätigung
+    assert not fk.absender("CDU-BBB-Antrag: Radweg Nord", "Antrag", cdu).gekuerzt
+    beide = fk.absender("CDU-BBB-Antrag: Radweg Nord", "Antrag", [*cdu, *bbb])
+    assert beide.titel == "Radweg Nord" and [k.text for k in beide.kuerzel] == ["CDU", "BBB"]
 
 
 def test_gespeicherte_fraktion_ohne_kuerzel_laesst_den_titel_entscheiden() -> None:
@@ -387,6 +419,38 @@ def test_suchtreffer_anreichern() -> None:
     assert str(treffer[0]["title"]) == f"Dringlichkeitsantrag: {HIGHLIGHT_PRE}Radweg{HIGHLIGHT_POST} Nord"
     assert [k.titel for k in treffer[0]["absender"].kuerzel] == ["Fraktion Bündnis 90/Die Grünen"]
     assert "absender" not in treffer[1] and "absender" not in treffer[2]
+
+
+@pytest.mark.django_db
+def test_suchtreffer_mit_bestaetigtem_gruppenkuerzel() -> None:
+    pk = uuid.uuid4()
+    treffer: list[dict[str, Any]] = [
+        {
+            "kind": "vorgang",
+            "pk": str(pk),
+            "title": _safe_highlight(_markiert("BBB-Große Anfrage: [Leistungen] an Nachbarkommunen")),
+            "titel_roh": "BBB-Große Anfrage: Leistungen an Nachbarkommunen",
+            "art_roh": "Große Anfrage",
+        },
+        {
+            "kind": "vorgang",
+            "pk": str(uuid.uuid4()),
+            "title": _safe_highlight(_markiert("WLAN-Antrag: [Schulen]")),
+            "titel_roh": "WLAN-Antrag: Schulen",
+            "art_roh": "Antrag",
+        },
+    ]
+    VorgangUrheber.objects.create(
+        paper_id=pk, body_id=uuid.uuid4(), bezeichnung="Bürger Bund Beispiel (BBB)", kurzform="", herkunft="title"
+    )
+
+    fk.treffer_anreichern(treffer)
+
+    assert str(treffer[0]["title"]) == f"{HIGHLIGHT_PRE}Leistungen{HIGHLIGHT_POST} an Nachbarkommunen"
+    assert [k.text for k in treffer[0]["absender"].kuerzel] == ["BBB"]
+    # Ohne bekannte Fraktion bleibt das Themenkürzel samt Hervorhebung stehen
+    assert str(treffer[1]["title"]) == f"WLAN-Antrag: {HIGHLIGHT_PRE}Schulen{HIGHLIGHT_POST}"
+    assert not treffer[1]["absender"].gekuerzt and not treffer[1]["absender"].kuerzel
 
 
 @pytest.mark.django_db

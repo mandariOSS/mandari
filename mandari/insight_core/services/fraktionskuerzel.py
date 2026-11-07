@@ -25,6 +25,9 @@ gekennzeichnet). So wirkt die Anzeige schon vor dem Bestandslauf der Erkennung, 
   Füllwörtern bestehen. Bleibt etwas übrig („Stellungnahme der Verwaltung zum Grüne-Antrag:“, „Anfrage des
   Ratsmitglieds …“, „Antrag zur Änderung der Satzung:“), bleibt der Titel ganz. Ausnahme: Die Erkennung (#1138) kennt
   die Fraktion schon und der Absender nennt eine Fraktion („Antrag der Fraktion Unabhängige Wählergemeinschaft: …“);
+- ein Gruppenkürzel ohne Partei zählt nur mit dem Wort Fraktion, Gruppe oder Kooperation im Absender („BBB-Fraktion:“)
+  oder wenn die Erkennung (#1138) eine Fraktion mit genau diesem Kürzel kennt. Allein ist es oft ein Thema oder ein
+  Verein („WLAN-Antrag:“, „LED-Antrag:“, „DRK-Antrag:“), und der Titel bleibt ganz;
 - Antworten und Stellungnahmen der Verwaltung (Vorlagenart) behalten ihren Titel;
 - was nach dem Absender bleibt, muss ein Titel sein (mindestens vier Zeichen mit Buchstaben);
 - nennt der Absender eine Art, die die Vorlagenart nicht nennt („Dringlichkeitsantrag“ bei der Art „Antrag“), bleibt
@@ -41,8 +44,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable, Sequence
+from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
 from . import urheber_erkennung as erkennung
@@ -128,6 +131,8 @@ class Absender:
     abgetrennt: str = ""
     #: Vorlagenart laut RIS, damit Listen mit Spalte „Typ“ „Bürgerantrag“ nicht doppelt zeigen (``von_zusatz``)
     vorlagenart: str = ""
+    #: Der abgetrennte Absender mit Stelle im Titel (für die Hervorhebung der Suche), ``None`` ohne Kürzung
+    fund: Fund | None = field(default=None, compare=False, repr=False)
 
     @property
     def gekuerzt(self) -> bool:
@@ -183,10 +188,6 @@ _KEIN_KUERZEL: Final = frozenset(
         "top", "bv", "ob", "eu", "nrw", "go", "gemo", "ag", "nr", "abs", "ds", "vo", "gmbh", "kg", "ev", "ua", "ha",
     }
 )  # fmt: skip
-#: Abkürzungen von Themen, die vor „-Antrag:“ stehen können, aber keine Gruppe sind
-_THEMEN: Final = frozenset(
-    {"öpnv", "ogs", "zob", "kita", "isek", "igs", "fnp", "vep", "nkf", "lsg", "nsg", "spnv", "dsgvo"}
-)
 _FRAKTIONSWORT: Final = re.compile(
     r"(?<![\w])(?:rats|bezirks|kreistags|stadtrats|gemeinderats|regionalrats)?(?:fraktion(?:en)?|gruppen?)(?![\w])", _I
 )
@@ -210,6 +211,8 @@ class _Baustein:
     ende: int
     text: str
     schluessel: str = ""
+    #: Kürzel einer örtlichen Gruppe (``_GRUPPENKUERZEL``), nicht aus der Liste der Parteien
+    gruppe: bool = False
 
 
 def _fasse(text: str | None) -> str:
@@ -237,7 +240,7 @@ def _bausteine(text: str) -> tuple[list[_Baustein], str]:
     for treffer in _GRUPPENKUERZEL.finditer(text):
         if any(belegt[treffer.start() : treffer.end()]) or treffer.group(0).casefold() in _KEIN_KUERZEL:
             continue
-        funde.append(_Baustein(treffer.start(), treffer.end(), treffer.group(0)))
+        funde.append(_Baustein(treffer.start(), treffer.end(), treffer.group(0), gruppe=True))
         belegt[treffer.start() : treffer.end()] = [True] * (treffer.end() - treffer.start())
     funde.sort(key=lambda b: b.anfang)
     rest = "".join(" " if belegt[i] else zeichen for i, zeichen in enumerate(text))
@@ -403,19 +406,20 @@ def _ist_titel(text: str) -> bool:
     return len(text.strip()) >= REST_MIN and re.search(r"[A-Za-zÄÖÜäöüß]{2}", text) is not None
 
 
-def _zweifelhafte_kuerzel(bausteine: Sequence[_Baustein]) -> bool:
+def _unbestaetigt(bausteine: Sequence[_Baustein], bekannt: Collection[str]) -> bool:
     """
-    Nur Gruppenkürzel ohne Partei („BBB-Große Anfrage:“) gelten nur ganz in Großbuchstaben und nicht als bekannte
-    Abkürzung eines Themas („OGS-Antrag:“, „KiTa-Antrag:“).
+    Steht im Absender ein Gruppenkürzel, das keine bekannte Fraktion trägt? Ohne Fraktions- oder Gruppenwort ist so ein
+    Kürzel oft ein Thema oder ein Verein („WLAN-Antrag:“, „OGS-Antrag:“, „DRK-Antrag:“), keine örtliche Gruppe.
     """
-    if not bausteine or any(b.schluessel for b in bausteine):
-        return False
-    return not all(re.fullmatch(r"[A-ZÄÖÜ]{2,5}", b.text) and b.text.casefold() not in _THEMEN for b in bausteine)
+    return any(b.gruppe and b.text.casefold() not in bekannt for b in bausteine)
 
 
-def praefix_finden(titel: str) -> Fund | None:
+def praefix_finden(titel: str, bekannt: Collection[str] = frozenset()) -> Fund | None:
     """
     Absender am Anfang (oder als Klammer am Ende) des Titels nach den Formen der Moduldokumentation.
+
+    ``bekannt``: Kürzel der Fraktionen, die die Erkennung (#1138) für den Vorgang kennt (``casefold``); nur sie
+    bestätigen ein Gruppenkürzel in einem Absender ohne Fraktions- oder Gruppenwort („BBB-Große Anfrage:“).
 
     Liefert auch Absender, die nicht ganz aufgehen (``vollstaendig`` falsch); ob abgetrennt wird, entscheidet
     ``absender``. ``None`` ohne passende Form.
@@ -448,7 +452,7 @@ def praefix_finden(titel: str) -> Fund | None:
             wort = gruppe.group(0).casefold()
             vom_wort = "interfraktionell" if wort.startswith("interfraktionell") else wort.capitalize()
         fraktionswort = bool(_FRAKTIONSWORT.search(von))
-        if not (fraktionswort or gruppe) and _zweifelhafte_kuerzel(bausteine):
+        if not (fraktionswort or gruppe) and _unbestaetigt(bausteine, bekannt):
             bausteine, kuerzel = [], ()
             rest = rest or von
         vollstaendig = not rest and bool(bausteine or vom_wort)
@@ -490,14 +494,23 @@ def absender(name: str | None, paper_type: str | None = "", urheber: Sequence[Ur
         if kuerzel is not None:
             eigene.setdefault(kuerzel.text.casefold(), kuerzel)
     bekannt = tuple(eigene.values())
-    fund = None if erkennung.ist_antwort(erkennung.Vorlage(paper_type=art)) else praefix_finden(titel)
+    # Einzelne Kürzel der bekannten Fraktionen („SPD/Volt“ → „spd“, „volt“); nur sie bestätigen ein Gruppenkürzel
+    bestaetigt = frozenset(teil.casefold() for k in bekannt for teil in k.text.split("/"))
+    fund = None if erkennung.ist_antwort(erkennung.Vorlage(paper_type=art)) else praefix_finden(titel, bestaetigt)
     if fund is None:
         return Absender(titel=titel, kuerzel=bekannt, vorlagenart=art)
     if bekannt and (fund.vollstaendig or (fund.fraktionswort and not _KEIN_ABSENDER.search(fund.abgetrennt))):
-        return Absender(titel=fund.anzeige(art), kuerzel=bekannt, abgetrennt=fund.abgetrennt, vorlagenart=art)
+        return Absender(
+            titel=fund.anzeige(art), kuerzel=bekannt, abgetrennt=fund.abgetrennt, vorlagenart=art, fund=fund
+        )
     if fund.vollstaendig and not bekannt:
         return Absender(
-            titel=fund.anzeige(art), kuerzel=fund.kuerzel, von=fund.von, abgetrennt=fund.abgetrennt, vorlagenart=art
+            titel=fund.anzeige(art),
+            kuerzel=fund.kuerzel,
+            von=fund.von,
+            abgetrennt=fund.abgetrennt,
+            vorlagenart=art,
+            fund=fund,
         )
     return Absender(titel=titel, kuerzel=bekannt, vorlagenart=art)
 
@@ -552,7 +565,7 @@ def treffer_anreichern(treffer: Iterable[dict[str, Any]]) -> None:
         roh, art = str(t.get("titel_roh") or ""), str(t.get("art_roh") or "")
         ergebnis = absender(roh, art, je_vorgang.get(kennung, []))
         t["absender"] = ergebnis
-        fund = praefix_finden(roh) if ergebnis.gekuerzt else None
+        fund = ergebnis.fund
         if fund is None:
             continue
         gekuerzt = _markiert_kuerzen(str(t.get("title") or ""), fund)
