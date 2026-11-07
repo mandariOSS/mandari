@@ -4,7 +4,8 @@ kopieren“ (data-action="copy-link", frontend/js/actions.ts), die Sitzungen mit
 Seite und htmx-Ausschnitt (nur_liste); im Ausschnitt zählt der Knopf „Weitere Filter“ per hx-swap-oob mit. Je Eintrag
 das Ergebnis-Etikett, der Titel (Link auf den Vorgang, sonst auf den Punkt der Sitzung), „Worum es geht“ (sobald es eine
 geprüfte Kurzfassung gibt, Issue #1271), Sätze wie „Mit Stellungnahme der Verwaltung.“ und rechts die Absender.
-Gebündelte Vertagungen zeigen ihre Punkte zum Aufklappen. Linien nur zwischen den Einträgen, keine Karten.
+Gebündelte Vertagungen zeigen ihre Punkte zum Aufklappen. Linien nur zwischen den Einträgen, keine Karten. Im DOM (und
+für Screenreader) steht je Eintrag Etikett, Titel, Absender; am Handy rücken die Absender per order neben das Etikett.
 {% endcomment %}
 {% if nur_liste %}<span id="filter-zahl" hx-swap-oob="true">{% if filter_zahl %} ({{ filter_zahl }}){% endif %}</span>{% endif %}
 {% if active_body %}
@@ -34,8 +35,7 @@ Gebündelte Vertagungen zeigen ihre Punkte zum Aufklappen. Linien nur zwischen d
         {% for eintrag in sitzung.eintraege %}
         <li class="group relative grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 py-4 lg:grid-cols-[11rem_minmax(0,1fr)_auto]">
             <span class="self-start lg:pt-0.5"><c-insight.ergebnis :ergebnis="eintrag.ergebnis" /></span>
-            <span class="justify-self-end text-right text-[0.875rem] font-semibold text-gray-700 dark:text-gray-300 lg:col-start-3 lg:row-start-1 lg:max-w-60 lg:pt-0.5">{{ eintrag.von|join:", " }}{% if eintrag.von_weitere %} und weitere{% endif %}</span>
-            <div class="col-span-2 min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1">
+            <div class="order-last col-span-2 min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1">
                 <a href="{{ eintrag.ziel }}" class="font-semibold text-gray-900 dark:text-white break-words underline-offset-4 group-hover:text-primary-700 group-hover:underline dark:group-hover:text-primary-300 after:absolute after:inset-0">{{ eintrag.titel }}</a>
                 {% if eintrag.worum %}<p class="mt-1 text-gray-700 dark:text-gray-300">{{ eintrag.worum }}</p>{% endif %}
                 {% for satz in eintrag.dazu %}<p class="mt-1 text-[0.9375rem] text-gray-600 dark:text-gray-400">{{ satz }}</p>{% endfor %}
@@ -48,6 +48,7 @@ Gebündelte Vertagungen zeigen ihre Punkte zum Aufklappen. Linien nur zwischen d
                 </details>
                 {% endif %}
             </div>
+            <span class="justify-self-end text-right text-[0.875rem] font-semibold text-gray-700 dark:text-gray-300 lg:col-start-3 lg:row-start-1 lg:max-w-60 lg:pt-0.5">{{ eintrag.von|join:", " }}{% if eintrag.von_weitere %} und weitere{% endif %}</span>
         </li>
         {% endfor %}
     </ul>

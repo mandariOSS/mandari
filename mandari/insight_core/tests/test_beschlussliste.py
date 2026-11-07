@@ -148,6 +148,18 @@ def _liste(html: str) -> str:
         "1. Eröffnung der Sitzung",
         "TOP 2: Feststellung der Tagesordnung",
         "Ö 1.1 Genehmigung der Niederschrift",
+        "Genehmigung des Protokolls der letzten Sitzung",
+        "Genehmigung des Protokolls vom 12.10.2026",
+        "Genehmigung des Protokolls Nr. 12",
+        "Genehmigung des Protokolls (öffentlicher Teil)",
+        "Genehmigung des Protokolls des Kreistages",
+        "Genehmigung des Sitzungsprotokolls",
+        "Verpflichtung eines neuen Ratsmitglieds",
+        "Verpflichtung von Frau Müller",
+        "Verpflichtung sachkundiger Bürgerinnen und Bürger",
+        "Verpflichtung der Bezirksvertreterin Frau Schmidt",
+        "Verpflichtung und Einführung von Ratsmitgliedern",
+        "Verpflichtung des stellvertretenden Ortsvorstehers",
     ],
 )
 def test_formalien(name: str) -> None:
@@ -168,6 +180,13 @@ def test_formalien(name: str) -> None:
         "Öffentliche Toiletten am Markt",
         "Antrag zur Änderung der Hauptsatzung",
         "",
+        # Verpflichtung nur für Personen, Protokoll nur mit Bezug zur Sitzung
+        "Verpflichtung der Stadt zur Übernahme der Kosten",
+        "Verpflichtung der Mitgliedsgemeinden zur Zahlung der Umlage",
+        "Verpflichtung der Bürger zur Mülltrennung",
+        "Änderung des Protokolls zur Städtepartnerschaft",
+        "Änderung des Protokolls über die Partnerschaft mit Lviv",
+        "Genehmigung des Protokolls zum Kooperationsvertrag",
     ],
 )
 def test_keine_formalien(name: str) -> None:
@@ -180,10 +199,19 @@ def test_formalien_auch_in_der_abfrage(welt: Welt) -> None:
     welt.punkt(sitzung, "Genehmigung der Niederschrift", "genehmigt")
     welt.punkt(sitzung, "Feststellung des Jahresabschlusses 2025", "beschlossen")
     welt.punkt(sitzung, None, "beschlossen")
+    welt.punkt(sitzung, "Genehmigung des Protokolls der letzten Sitzung", "genehmigt")
+    welt.punkt(sitzung, "Verpflichtung eines neuen Ratsmitglieds", "erledigt")
+    welt.punkt(sitzung, "Verpflichtung der Stadt zur Übernahme der Kosten", "beschlossen")
+    welt.punkt(sitzung, "Änderung des Protokolls zur Städtepartnerschaft", "beschlossen")
     gremien = beschlussliste.gremien_der_kommune(welt.body)
     zeit = beschlussliste.zeitraum("", wahlperiode=None)
     namen = set(beschlussliste.punkte(welt.body, Auswahl(), zeit=zeit, gremien=gremien).values_list("name", flat=True))
-    assert namen == {"Feststellung des Jahresabschlusses 2025", None}
+    assert namen == {
+        "Feststellung des Jahresabschlusses 2025",
+        None,
+        "Verpflichtung der Stadt zur Übernahme der Kosten",
+        "Änderung des Protokolls zur Städtepartnerschaft",
+    }
 
 
 @pytest.mark.parametrize(
@@ -295,6 +323,7 @@ class TestListe:
         assert "Spielplatz" in liste, "ohne Antrag in der Sitzung eine eigene Zeile"
         assert f'href="/insight/vorgaenge/{antrag.pk}/"' in liste
         assert "Bürgerantrag" in liste and "Verwaltung" in liste, "Absender nach der Vorlagenart"
+        assert liste.index("Gefahrenstelle Radweg") < liste.index("Bürgerantrag"), "Lesereihenfolge: Titel vor Absender"
 
     def test_viele_vertagungen_als_eine_zeile(self, besucher: Client, welt: Welt) -> None:
         haupt = welt.gremium("Hauptausschuss")

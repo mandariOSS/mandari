@@ -15,7 +15,8 @@ Regeln, die hier und nur hier stehen:
   Mitgliedern, Schließung, Fragestunden, Sammelpunkte ohne eigenen Inhalt („Mitteilungen“, „Verschiedenes“) und die
   Bekanntgabe nichtöffentlicher Beschlüsse entfallen. Der Ausdruck läuft gleich in Python und in der Datenbank
   (``name__iregex``): nur Zeichenklassen, ``\\s``, Gruppen ``(?:…)`` und Anker, kein ``\\b`` (das hieße in PostgreSQL
-  Rückschritt). „Feststellung des Jahresabschlusses“ oder „Verpflichtungsermächtigung“ sind keine Formalien.
+  Rückschritt). „Feststellung des Jahresabschlusses“, „Verpflichtungsermächtigung“, „Verpflichtung der Stadt zur …“
+  oder „Änderung des Protokolls zur Städtepartnerschaft“ sind keine Formalien.
 - **Gremiengruppe** (``gremiengruppe``): Bezirksvertretungen, Bezirks- und Ortsbeiräte, Orts- und Stadtbezirksräte
   bilden die Gruppe „Bezirksvertretungen“; Rat, Kreistag, Ausschüsse und Kommissionen „Rat und Ausschüsse“. Beiräte,
   Aufsichtsräte, Gesellschaften und Fraktionen gehören zu keiner Gruppe und erscheinen unter „Alle“.
@@ -80,6 +81,20 @@ from .ergebnis import (
 _KEIN_BUCHSTABE: Final = "[^a-zäöüß]"
 #: Nummer vor dem Titel („1.“, „TOP 3:“, „Ö 1.2“), wie sie manche Quellen in den Namen schreiben
 _ANFANG: Final = rf"^{_KEIN_BUCHSTABE}*(?:(?:top|ö)\s*[0-9]{_KEIN_BUCHSTABE}*)?"
+#: „Protokoll“ ist nur mit Bezug zur Sitzung eine Formalie: am Ende des Titels, mit Nummer oder Datum, „über die
+#: 12. Sitzung“, „der letzten Sitzung“, „des Rates“; nicht „Änderung des Protokolls zur Städtepartnerschaft“
+_PROTOKOLL_DER_SITZUNG: Final = (
+    rf"protokoll(?:s|es|e|en)?(?:{_KEIN_BUCHSTABE}*$|{_KEIN_BUCHSTABE}*(?:[0-9]|nr{_KEIN_BUCHSTABE}|nummer|teil"
+    r"|öffentlich|nichtöffentlich)|\s+vom\s+[0-9]|\s+(?:über|der|des|zu[rm]?|aus)\s+(?:\S+\s+){0,3}\S*(?:sitzung"
+    rf"|sitzungen|rates|rats|ausschusses|vertretung|beirats|beirates|tages|tags)(?:{_KEIN_BUCHSTABE}|$))"
+)
+#: Personen, die zu Beginn ihres Mandats verpflichtet werden („Verpflichtung eines neuen Ratsmitglieds“, „… von Frau
+#: Müller“, „… sachkundiger Bürger“); nicht „Verpflichtung der Stadt zur Übernahme der Kosten“ oder „… der
+#: Mitgliedsgemeinden zur Umlage“
+_VERPFLICHTETE: Final = (
+    rf"(?:\S*mitglied(?:er|ern|s|es)?(?:{_KEIN_BUCHSTABE}|$)|\S*(?:bezirksvertreter|verordnete|abgeordnete"
+    r"|beigeordnete|sachkundig|nachfolger|nachrücker|vorsteher|ratsherr|ratsfrau|räte|rätin)|herrn?\s|frau\s)"
+)
 _FORMALIEN_TEILE: Final = (
     # Eröffnung der Sitzung, auch „Eröffnung, Begrüßung und …“, nicht „Eröffnung des Hallenbads“
     rf"eröffnung(?:{_KEIN_BUCHSTABE}*$|\s+der\s+(?:öffentlichen\s+)?sitzung|\s*,|\s+(?:und|sowie)\s+(?:begrüßung"
@@ -88,13 +103,16 @@ _FORMALIEN_TEILE: Final = (
     r"feststellung\s+der\s+(?:beschlussfähigkeit|anwesenheit|ordnungsgemäßen|ordnungsmäßigen|form-|frist|rechtzeitigen"
     r"|einberufung|ladung|einladung|tagesordnung)",
     r"(?:genehmigung|billigung|anerkennung|unterzeichnung|feststellung|festsetzung|festlegung|änderung|ergänzung"
-    r"|erweiterung|beschlussfassung\s+über)\s+(?:der|des|die)\s+(?:sitzungs)?(?:niederschrift|protokoll|tagesordnung)",
-    rf"(?:sitzungs)?niederschrift(?:{_KEIN_BUCHSTABE}|$)",
+    r"|erweiterung|beschlussfassung\s+über)\s+(?:der|des|die)\s+(?:sitzungsprotokoll|(?:sitzungs)?niederschrift"
+    rf"|tagesordnung|{_PROTOKOLL_DER_SITZUNG})",
+    rf"sitzungsprotokoll|(?:sitzungs)?niederschrift(?:{_KEIN_BUCHSTABE}|$)",
     rf"tagesordnung{_KEIN_BUCHSTABE}*$",
     r"anträge\s+zur\s+tagesordnung",
     r"bestellung\s+(?:eines|einer|des|der)\s+(?:schrift|protokoll)führ",
-    # Verpflichtung neuer Mitglieder, nicht die „Verpflichtungsermächtigung“ im Haushalt
-    r"(?:einführung\s+und\s+)?verpflichtung\s+(?:von|eines|einer|des|der|neuer|neuen)\s",
+    # Verpflichtung neuer Mitglieder, nicht die „Verpflichtungsermächtigung“ im Haushalt und nicht „Verpflichtung der
+    # Stadt zur …“
+    r"(?:einführung\s+und\s+)?verpflichtung(?:\s+und\s+einführung)?\s+(?:(?:von|eines|einer|des|der|die|neuer|neuen"
+    rf"|neu|gewählter|gewählten|stellvertretende[nr]?)\s+)*{_VERPFLICHTETE}",
     r"(?:schließung|schluss|ende)\s+der\s+(?:öffentlichen\s+)?sitzung",
     r"(?:einwohner(?:innen)?|bürger(?:innen)?)?fragestunde",
     # Sammelpunkte ohne eigenen Inhalt, nur als ganzer Titel („Mitteilungen der Verwaltung“, nicht „Mitteilung zum …“)
