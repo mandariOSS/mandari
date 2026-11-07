@@ -82,6 +82,8 @@ def render(source: str, **context: object) -> str:
         ("Kenntnisnahme", vokabular.KENNTNIS),
         ("einstimmig zur Kenntnis genommen", vokabular.KENNTNIS),
         ("beantwortet", vokabular.KENNTNIS),
+        ("schriftlich beantwortet", vokabular.KENNTNIS),
+        ("Kenntnis genommen; Antwort folgt schriftlich", vokabular.KENNTNIS),
         # vertagt
         ("vertagt", vokabular.VERTAGT),
         ("Vertagt in die nächste Sitzung", vokabular.VERTAGT),
@@ -120,6 +122,11 @@ def render(source: str, **context: object) -> str:
         ("nicht abgesetzt", vokabular.NEUTRAL),
         ("Die Verwaltung wird beauftragt, die Maßnahme auf das Jahr 2027 zu verschieben", vokabular.NEUTRAL),
         ("Die Maßnahme wird auf das Jahr 2027 verschoben, die Mittel bleiben im Haushalt", vokabular.NEUTRAL),
+        # neutral: eine fehlende oder nur angekündigte Antwort ist keine Kenntnisnahme (#1273)
+        ("nicht beantwortet", vokabular.NEUTRAL),
+        ("unbeantwortet", vokabular.NEUTRAL),
+        ("wird schriftlich beantwortet", vokabular.NEUTRAL),
+        ("Die Anfrage wird in der nächsten Sitzung beantwortet", vokabular.NEUTRAL),
         ("", vokabular.NEUTRAL),
         (None, vokabular.NEUTRAL),
     ],

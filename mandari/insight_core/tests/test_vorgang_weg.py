@@ -28,7 +28,7 @@ from insight_core.models import (
     OParlSource,
 )
 from insight_core.services import fragen_antworten, vorgang_weg
-from insight_core.services.ergebnis import ANTWORT_OFFEN, BEANTWORTET
+from insight_core.services.ergebnis import ANTWORT_OFFEN, BEANTWORTET, KENNTNIS
 from insight_core.services.paper_status import LATEST, PAST, UPCOMING, PaperStatus, paper_status
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -126,6 +126,35 @@ class TestArten:
     )
     def test_antwort(self, art: str, titel: str, erwartet: bool) -> None:
         assert vorgang_weg.ist_antwort(art, titel) is erwartet
+
+    @pytest.mark.parametrize(
+        ("art", "titel", "verwandt", "erwartet"),
+        [
+            # Folgevorlage: Art oder Titel genügt
+            ("Mitteilungsvorlage", "Radverkehr in der Innenstadt", False, True),
+            ("Information", "Radverkehr in der Innenstadt", False, True),
+            # Nur verwandt: Eine Mitteilung zum selben Thema ist keine Antwort
+            ("Mitteilungsvorlage", "Radverkehr in der Innenstadt", True, False),
+            ("Information", "Sachstand Schulsanierungen 2026", True, False),
+            ("Beschlussvorlage", "Stellungnahme zum Regionalplan", True, False),
+            # … sie muss sich als Antwort ausweisen oder auf die Anfrage beziehen
+            ("Stellungnahme der Verwaltung", "Radverkehr in der Innenstadt", True, True),
+            ("Mitteilungsvorlage", "Mitteilung zur Anfrage der Fraktion", True, True),
+            ("Mitteilungsvorlage", "Beantwortung: Grundschule Nord", True, True),
+            ("Mitteilungsvorlage", "Information zu A/0142/2026", True, True),
+            ("Mitteilungsvorlage", "Sanierung der Grundschule Nord", True, True),
+        ],
+    )
+    def test_antwort_auf_die_anfrage(self, art: str, titel: str, verwandt: bool, erwartet: bool) -> None:
+        anfrage = vorlage(paper_type="Anfrage", reference="A/0142/2026", date=date(2026, 8, 18))
+        kandidat = vorlage(titel, paper_type=art, date=date(2026, 10, 9))
+        assert vorgang_weg.antwort_auf(anfrage, kandidat, verwandt=verwandt) is erwartet
+
+    def test_antwort_nicht_vor_der_anfrage(self) -> None:
+        anfrage = vorlage(paper_type="Anfrage", date=date(2026, 8, 18))
+        frueher = vorlage(paper_type="Stellungnahme der Verwaltung", date=date(2026, 8, 1))
+        assert not vorgang_weg.antwort_auf(anfrage, frueher)
+        assert vorgang_weg.antwort_auf(anfrage, vorlage(paper_type="Stellungnahme der Verwaltung"))
 
     def test_antwort_als_dokument(self) -> None:
         assert vorgang_weg.ist_antwort_datei("Antwort der Verwaltung.pdf")
@@ -280,12 +309,66 @@ class TestAnfrageStand:
         stand = vorgang_weg.anfrage_stand(vorlage(paper_type="Anfrage"), [], [datei], [], _status([]), JETZT)
         assert stand.beantwortet and stand.antwort_datei is datei
 
-    @pytest.mark.parametrize("ergebnis", ["mündlich beantwortet", "zur Kenntnis genommen"])
+    @pytest.mark.parametrize(
+        "ergebnis",
+        [
+            "mündlich beantwortet",
+            "schriftlich beantwortet",
+            "Die Anfrage wurde von der Verwaltung beantwortet",
+            "Beantwortung ist erfolgt",
+            "erledigt durch Beantwortung",
+            "zur Kenntnis genommen",
+            "Kenntnisnahme",
+        ],
+    )
     def test_in_der_sitzung_beantwortet(self, ergebnis: str) -> None:
         verlauf = [eintrag(tag(2025, 3, 1), ergebnis=ergebnis)]
         paper = vorlage(paper_type="Anfrage", date=date(2025, 2, 1))
         stand = vorgang_weg.anfrage_stand(paper, [], [], verlauf, _status(verlauf), JETZT)
         assert stand.beantwortet and stand.in_sitzung and stand.satz == ""
+
+    @pytest.mark.parametrize(
+        "ergebnis",
+        [
+            "wird schriftlich beantwortet",
+            "Beantwortung vertagt",
+            "nicht beantwortet",
+            "Kenntnis genommen; Antwort folgt schriftlich",
+            "Die Anfrage konnte nicht abschließend beantwortet werden",
+            "Beantwortung erfolgt schriftlich",
+            "Die Antwort steht noch aus",
+            "schriftliche Antwort zugesagt",
+            "Die Verwaltung wird die Anfrage in der nächsten Sitzung beantworten",
+            "an den Fachausschuss verwiesen",
+            "von der Tagesordnung abgesetzt",
+        ],
+    )
+    def test_verneinte_angekuendigte_oder_vertagte_antwort_steht_aus(self, ergebnis: str) -> None:
+        # Eine frühere Kenntnisnahme ändert daran nichts: Es zählt die jüngste Beratung mit Ergebnis
+        verlauf = [
+            eintrag(tag(2026, 9, 15), "Bauausschuss", ergebnis="zur Kenntnis genommen"),
+            eintrag(tag(2026, 10, 13), ergebnis=ergebnis),
+            eintrag(tag(2026, 10, 20), "Rat der Stadt"),
+        ]
+        paper = vorlage(paper_type="Anfrage", date=date(2026, 9, 1))
+        status = _status(verlauf)
+        stand = vorgang_weg.anfrage_stand(paper, [], [], verlauf, status, JETZT)
+        assert not stand.beantwortet and not stand.in_sitzung
+        assert stand.schluessel == ANTWORT_OFFEN and stand.luecke
+        assert stand.etikett is not None and stand.etikett.text == "Antwort steht aus"
+        stationen = vorgang_weg.stationen(paper, verlauf, status, anfrage=stand, now=JETZT)
+        assert [s.detail for s in stationen if s.art == vorgang_weg.LUECKE] == ["Steht noch aus"]
+        # Das Etikett der Beratung sagt nicht „zur Kenntnis genommen“, wo die Antwort fehlt oder angekündigt ist
+        beratung = next(s for s in stationen if s.datum == tag(2026, 10, 13))
+        if "Kenntnis" not in ergebnis:
+            assert beratung.ergebnis is not None and beratung.ergebnis.schluessel != KENNTNIS
+
+    def test_angekuendigte_antwort_bei_alter_anfrage_liegt_nicht_vor(self) -> None:
+        verlauf = [eintrag(tag(2019, 3, 1), ergebnis="wird schriftlich beantwortet")]
+        paper = vorlage(paper_type="Anfrage", date=date(2019, 2, 1))
+        stand = vorgang_weg.anfrage_stand(paper, [], [], verlauf, _status(verlauf), JETZT)
+        assert stand.etikett is None and stand.luecke
+        assert stand.satz == "Eine Antwort der Verwaltung liegt uns nicht vor."
 
     def test_alte_anfrage_ohne_spur_ohne_etikett(self) -> None:
         paper = vorlage(paper_type="Anfrage", date=date(2019, 2, 1))
@@ -469,3 +552,37 @@ class TestVorgangsseite:
         assert "Im Wortlaut automatisch aus den Dokumenten ausgelesen" in seite
         verlauf = seite[seite.index('id="verlauf-titel"') : seite.index('id="dokumente-titel"')]
         assert "Antwort der Verwaltung" in verlauf and "Dokument „Antwort der Verwaltung“." in verlauf
+
+    def test_verwandte_mitteilung_zum_thema_ist_keine_antwort(self, kommune: OParlBody) -> None:
+        mitteilung = self._vorlage(
+            kommune,
+            "21",
+            name="Radverkehr in der Innenstadt",
+            reference="M/0001/2026",
+            paper_type="Mitteilungsvorlage",
+            date=date.today(),
+        )
+        paper = self._vorlage(
+            kommune,
+            "20",
+            name="Radweg am Markt",
+            paper_type="Anfrage",
+            date=date.today(),
+            raw_json={"relatedPaper": [mitteilung.external_id]},
+        )
+        seite = self._seite(paper)
+        assert 'data-ergebnis="antwort_offen"' in seite and "Antwort steht aus" in seite
+        assert "Die Verwaltung hat" not in seite
+
+    def test_texte_nur_fuer_die_gewaehlten_dokumente(self, anfrage: OParlPaper, kommune: OParlBody) -> None:
+        haupt = OParlFile.objects.get(external_id=BASIS + "file/1")
+        anlage = OParlFile.objects.create(
+            external_id=BASIS + "file/5", body=kommune, paper=anfrage, name="Anlage", text_content="Lageplan"
+        )
+        geloescht = OParlFile.objects.create(
+            external_id=BASIS + "file/6", body=kommune, paper=anfrage, name="Alt", text_content="Alt", deleted=True
+        )
+        texte = ris_selectors.text_starts_of_files([haupt.pk, geloescht.pk, "keine-kennung"], max_chars=12)
+        assert texte == {haupt.pk: ANFRAGE_TEXT[:12]}
+        assert anlage.pk not in texte
+        assert ris_selectors.text_starts_of_files([], max_chars=12) == {}

@@ -1312,17 +1312,19 @@ def organization_names_by_external_id(body_id: object, external_ids: Iterable[st
     return {external_id: " ".join(name.split()) for external_id, name in rows if name}
 
 
-def public_files_of_papers_with_text(paper_ids: Iterable[object], *, max_chars: int) -> list[OParlFile]:
+def text_starts_of_files(file_ids: Iterable[object], *, max_chars: int) -> dict[uuid.UUID, str]:
     """
-    Öffentliche Dateien mehrerer Vorlagen mit dem Anfang ihres erkannten Texts (``text_begrenzt``, höchstens
-    ``max_chars`` Zeichen, gekürzt in der Datenbank), nach Vorlage und Name. Es gelten die Regeln der Vorgangsseiten
-    (``visible_files_of_papers``). Eine Abfrage; ``text_content`` selbst ist nicht geladen.
+    Anfang des erkannten Texts ausgewählter Dateien je Primärschlüssel (höchstens ``max_chars`` Zeichen und nie mehr
+    als ``MAX_TEXT_CHARS``, gekürzt in der Datenbank). Es gelten die Regeln der Vorgangsseiten
+    (``visible_files_of_papers``); Dateien ohne Text stehen mit leerem Text da. Eine Abfrage nur für die genannten
+    Dateien, ``text_content`` selbst ist nicht geladen.
     """
-    ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
+    ids = [pk for pk in (_uuid(value) for value in file_ids) if pk is not None]
     if not ids:
-        return []
-    return list(
-        visible_files_of_papers(ids)
+        return {}
+    rows = (
+        OParlFile.objects.filter(pk__in=ids, deleted=False, source_missing_since__isnull=True)
         .annotate(text_begrenzt=Substr("text_content", 1, max(1, min(max_chars, MAX_TEXT_CHARS))))
-        .order_by("paper_id", "name", "file_name")
+        .values_list("pk", "text_begrenzt")
     )
+    return {pk: text or "" for pk, text in rows}

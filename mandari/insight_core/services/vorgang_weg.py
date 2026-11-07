@@ -10,10 +10,13 @@ wird wenig und nachvollziehbar:
 
 - **Anfrage** ist eine Vorlage, deren Art „Anfrage“ nennt (nicht „Bauvoranfrage“); bei Sammelarten wie „Anträge und
   Anfragen“ entscheidet der Titel.
-- **Antwort** ist eine Folge- oder verwandte Vorlage der Anfrage, deren Art oder Titel Stellungnahme, Antwort,
-  Beantwortung, Mitteilung oder Information nennt, ersatzweise ein Dokument der Anfrage mit „Antwort“, „Beantwortung“
-  oder „Stellungnahme“ im Namen. Hat ein Gremium die Anfrage als beantwortet oder zur Kenntnis genommen vermerkt, gilt
-  sie ebenfalls als beantwortet.
+- **Antwort** ist eine Folgevorlage der Anfrage, deren Art oder Titel Stellungnahme, Antwort, Beantwortung, Mitteilung
+  oder Information nennt, ersatzweise ein Dokument der Anfrage mit „Antwort“, „Beantwortung“ oder „Stellungnahme“ im
+  Namen. Eine nur verwandte Vorlage (``relatedPaper``) muss sich zusätzlich als Antwort ausweisen (Art Stellungnahme,
+  Antwort oder Beantwortung) oder sich im Titel auf die Anfrage beziehen; eine Mitteilung zum selben Thema genügt nicht.
+  Hat ein Gremium die Anfrage als beantwortet oder zur Kenntnis genommen vermerkt, gilt sie ebenfalls als beantwortet,
+  nicht aber bei einer verneinten, angekündigten oder vertagten Antwort („nicht beantwortet“, „wird schriftlich
+  beantwortet“, „Antwort folgt“, „Beantwortung vertagt“).
 - **Antwort steht aus**, wenn nichts davon vorliegt und die Anfrage jünger als ein Jahr ist oder eine Beratung noch
   ansteht. Bei älteren Anfragen ohne jede Spur sagen wir nur, dass uns keine Antwort vorliegt.
 - **Federführung** zeigen wir nur, wenn ``underDirectionOf`` auf ein Gremium bzw. eine Organisationseinheit im Bestand
@@ -39,7 +42,19 @@ from django.utils import timezone
 from hub.ris import selectors as ris_selectors
 
 from . import fragen_antworten
-from .ergebnis import ANTWORT_OFFEN, BEANTWORTET, KENNTNIS, Ergebnis, anfrage_etikett, ergebnis
+from .ergebnis import (
+    ABGELEHNT,
+    ABGESETZT,
+    ANTWORT_OFFEN,
+    BEANTWORTET,
+    KENNTNIS,
+    VERTAGT,
+    VERWIESEN,
+    Ergebnis,
+    anfrage_etikett,
+    antwort_aussteht,
+    ergebnis,
+)
 from .paper_status import DEFERRED, LATEST, PAST, UPCOMING, PaperStatus, timeline
 
 #: Arten der Stationen; die Zahl ordnet Stationen am selben Tag (erst die Vorlage, dann ihre Folgen, dann Beratungen)
@@ -73,8 +88,20 @@ _ANTWORT_DATEI: Final = re.compile(
     r"^\W*(?:anlage\s*\d*\W*)?(?:antwort|beantwortung|stellungnahme)\b"
     r"|\b(?:antwort|stellungnahme) der verwaltung\b|\bbeantwortung de[rs] anfrage\b"
 )
-_ANTWORT_IM_ERGEBNIS: Final = re.compile(r"beantwort")
+#: Ergebnis einer Beratung, nach dem die Anfrage dort beantwortet wurde („beantwortet“, „mündlich beantwortet“,
+#: „Beantwortung erfolgte mündlich“, „erledigt durch Beantwortung“); dazu eine Kenntnisnahme. Verneinte und angekündigte
+#: Antworten schließt ``ergebnis.antwort_aussteht`` vorher aus.
+_IN_SITZUNG_BEANTWORTET: Final = re.compile(
+    r"\bbeantwortet\b|\bbeantwortung\s+(?:ist\s+erfolgt|erfolgte)\b|\bmündlich\w*\s+beantwort"
+    r"|\berledigt durch\s+(?:\w+\s+){0,2}beantwortung\b"
+)
+#: Etiketten einer Beratung, nach der die Antwort noch aussteht: vertagt, verwiesen, abgesetzt, abgelehnt
+_OHNE_ANTWORT: Final = frozenset({VERTAGT, VERWIESEN, ABGESETZT, ABGELEHNT})
 _ZURUECKGEZOGEN: Final = re.compile(r"zurückgezogen|erledigt")
+#: Art einer verwandten Vorlage, die sich selbst als Antwort ausweist (eine Mitteilung oder Information genügt nicht)
+_ANTWORT_EIGENE_ART: Final = re.compile(r"stellungnahme|antwort|beantwortung")
+#: Titel einer verwandten Vorlage, der eine Antwort oder die Anfrage nennt („Mitteilung zur Anfrage der …“)
+_BEZUG_AUF_ANFRAGE: Final = re.compile(r"\b(?:antwort|beantwortung|anfrage)\b")
 
 
 def _klein(text: object) -> str:
@@ -103,6 +130,29 @@ def ist_antwort(art: str | None, titel: str | None = None) -> bool:
     if _ANTRAG.search(_klein(art)):
         return False
     return bool(_ANTWORT_ART.search(_klein(art)) or _ANTWORT_TITEL.match(_klein(titel)))
+
+
+def antwort_auf(anfrage: Any, vorlage: Any, *, verwandt: bool = False) -> bool:
+    """
+    Ist ``vorlage`` die Antwort auf ``anfrage``? Eine Antwort-Vorlage (``ist_antwort``), die nicht vor der Anfrage
+    datiert ist. Eine nur verwandte Vorlage (``verwandt``, OParl ``relatedPaper``) muss sich außerdem als Antwort
+    ausweisen: Ihre Art nennt Stellungnahme, Antwort oder Beantwortung, oder ihr Titel nennt eine Antwort, die Anfrage,
+    deren Nummer oder lautet wie die Anfrage. Eine verwandte Mitteilung zum selben Thema ist noch keine Antwort.
+    """
+    if not ist_antwort(vorlage.paper_type, vorlage.name):
+        return False
+    if anfrage.date is not None and vorlage.date is not None and vorlage.date < anfrage.date:
+        return False
+    if not verwandt:
+        return True
+    titel = _klein(vorlage.name)
+    nummer = _klein(anfrage.reference)
+    return bool(
+        _ANTWORT_EIGENE_ART.search(_klein(vorlage.paper_type))
+        or _BEZUG_AUF_ANFRAGE.search(titel)
+        or (len(nummer) >= 3 and nummer in titel)
+        or (titel and titel == _klein(anfrage.name))
+    )
 
 
 def ist_antwort_datei(name: str | None) -> bool:
@@ -272,6 +322,11 @@ def anfrage_stand(
 ) -> AnfrageStand:
     """
     Stand einer Anfrage aus Antwort-Vorlagen (``antworten``, nach Datum), Antwort-Dokumenten und dem Beratungsverlauf.
+
+    Im Verlauf zählt die jüngste Beratung mit Ergebnis: „beantwortet“ oder eine Kenntnisnahme heißt beantwortet. Eine
+    verneinte, angekündigte oder vertagte Antwort („nicht beantwortet“, „wird schriftlich beantwortet“, „Kenntnis
+    genommen; Antwort folgt schriftlich“, „Beantwortung vertagt“) heißt, dass sie danach noch aussteht; frühere
+    Beratungen ändern daran nichts.
     """
     if antworten:
         vorlage = antworten[-1]
@@ -286,9 +341,14 @@ def anfrage_stand(
     for eintrag in reversed(beraten):
         roh = _klein(eintrag.get("result"))
         etikett = ergebnis(roh) if roh else None
-        if _ANTWORT_IM_ERGEBNIS.search(roh) or (etikett is not None and etikett.schluessel == KENNTNIS):
+        if etikett is None:
+            continue
+        if antwort_aussteht(roh) or etikett.schluessel in _OHNE_ANTWORT:
+            # Antwort verneint, nur angekündigt oder die Beratung vertagt: Sie steht aus (bzw. liegt uns nicht vor)
+            break
+        if _IN_SITZUNG_BEANTWORTET.search(roh) or etikett.schluessel == KENNTNIS:
             return AnfrageStand(BEANTWORTET, "", in_sitzung=True)
-        if roh and _ZURUECKGEZOGEN.search(roh):
+        if _ZURUECKGEZOGEN.search(roh):
             # Zurückgezogen oder erledigt: keine Antwort zu erwarten, also auch keine Lücke
             return AnfrageStand("", "")
     juenger = paper.date is not None and _tag(now) - paper.date <= timedelta(days=ANTWORT_OFFEN_TAGE)
@@ -394,45 +454,54 @@ def stationen(
     return ergebnis_liste
 
 
+def _nach_name(dateien: Iterable[Any]) -> list[Any]:
+    """Dokumente nach Name und Dateiname (die Vorgangsseite lädt sie ohne feste Reihenfolge)."""
+    return sorted(dateien, key=lambda d: (_klein(d.name), _klein(d.file_name)))
+
+
 def _hauptdatei(dateien: Sequence[Any], paper: Any, *, ohne: Sequence[Any] = ()) -> Any:
-    """Hauptdokument einer Vorlage: OParl ``mainFile``, sonst das erste Dokument; beides ohne die in ``ohne``."""
+    """
+    Hauptdokument einer Vorlage: OParl ``mainFile``, sonst das erste Dokument nach Name; beides ohne die in ``ohne``.
+    """
     kennungen = ris_selectors.oparl_references(paper.raw_json, "mainFile")
-    kandidaten = [d for d in dateien if d not in ohne]
+    kandidaten = [d for d in _nach_name(dateien) if d not in ohne]
     return next((d for d in kandidaten if d.external_id in kennungen), kandidaten[0] if kandidaten else None)
 
 
 def _haupt_und_antwortdatei(dateien: Sequence[Any], paper: Any) -> tuple[Any, list[Any]]:
     """
-    Hauptdokument einer Anfrage und die Antwort-Dokumente unter ihren Dokumenten. Das Hauptdokument laut OParl
-    (``mainFile``) ist die Anfrage selbst und nie die Antwort.
+    Hauptdokument einer Anfrage und die Antwort-Dokumente unter ihren Dokumenten (nach Name). Das Hauptdokument laut
+    OParl (``mainFile``) ist die Anfrage selbst und nie die Antwort.
     """
     haupt_kennungen = ris_selectors.oparl_references(paper.raw_json, "mainFile")
     antworten = [
         d
-        for d in dateien
+        for d in _nach_name(dateien)
         if d.external_id not in haupt_kennungen and (ist_antwort_datei(d.name) or ist_antwort_datei(d.file_name))
     ]
     return _hauptdatei(dateien, paper, ohne=antworten), antworten
 
 
 def _fragen_und_antworten(paper: Any, anfrage: AnfrageStand, dateien: Sequence[Any]) -> Any:
-    """Paare aus dem Text der Anfrage und der Antwort; ``None``, wenn ein Text fehlt oder nichts sicher passt."""
+    """
+    Paare aus dem Text der Anfrage und der Antwort; ``None``, wenn ein Text fehlt oder nichts sicher passt. Der Text
+    kommt nur für die zwei Dokumente aus der Datenbank, die es braucht (Hauptdokument der Anfrage und die Antwort),
+    nicht für alle Anlagen.
+    """
     if not anfrage.beantwortet or anfrage.in_sitzung:
         return None
-    vorlagen = [paper.pk] + ([anfrage.antwort_vorlage.pk] if anfrage.antwort_vorlage is not None else [])
-    mit_text = ris_selectors.public_files_of_papers_with_text(vorlagen, max_chars=TEXT_ZEICHEN)
-    eigene = [d for d in mit_text if d.paper_id == paper.pk]
-    haupt, antwort_dateien = _haupt_und_antwortdatei(eigene, paper)
+    haupt, _ = _haupt_und_antwortdatei(dateien, paper)
     if anfrage.antwort_vorlage is not None:
-        fremde = [d for d in mit_text if d.paper_id == anfrage.antwort_vorlage.pk]
+        fremde = list(ris_selectors.visible_files_of_papers([anfrage.antwort_vorlage.pk]))
         antwort = _hauptdatei(fremde, anfrage.antwort_vorlage)
     else:
-        antwort = next((d for d in antwort_dateien if d.pk == anfrage.antwort_datei.pk), None)
+        antwort = anfrage.antwort_datei
     if antwort is None:
         return None
     # Nur ein Dokument, und das ist die Antwort: Fragen und Antworten stehen dann meist beide darin
     haupt = haupt or antwort
-    return fragen_antworten.paare(getattr(haupt, "text_begrenzt", ""), getattr(antwort, "text_begrenzt", ""))
+    texte = ris_selectors.text_starts_of_files([haupt.pk, antwort.pk], max_chars=TEXT_ZEICHEN)
+    return fragen_antworten.paare(texte.get(haupt.pk, ""), texte.get(antwort.pk, ""))
 
 
 def weg_des_vorgangs(
@@ -448,7 +517,7 @@ def weg_des_vorgangs(
     Weg des Vorgangs für die Vorgangsseite. ``verlauf`` ist der Beratungsverlauf aus
     ``hub.ris.selectors.consultation_history``, ``status`` der Stand-Satz dazu, ``dateien`` die angezeigten Dokumente.
     Zwei Abfragen (verbundene Vorlagen, Namen der federführenden Stellen), bei einer beantworteten Anfrage eine weitere
-    für die Texte.
+    für die zwei Texte und, wenn die Antwort eine eigene Vorlage ist, eine für deren Dokumente.
     """
     now = now or timezone.now()
     verbunden = ris_selectors.related_public_papers(paper)
@@ -457,12 +526,8 @@ def weg_des_vorgangs(
     anfrage_ist = ist_anfrage(paper.paper_type, paper.name)
     antworten: list[Any] = []
     if anfrage_ist:
-        kandidaten = [*folge, *verbunden["relatedPaper"]]
-        antworten = [
-            v
-            for v in kandidaten
-            if ist_antwort(v.paper_type, v.name) and (paper.date is None or v.date is None or v.date >= paper.date)
-        ]
+        antworten = [v for v in folge if antwort_auf(paper, v)]
+        antworten += [v for v in verbunden["relatedPaper"] if antwort_auf(paper, v, verwandt=True)]
         antworten = list({v.pk: v for v in antworten}.values())
         antworten.sort(key=lambda v: (v.date is None, v.date or date.min))
         folge = [v for v in folge if v not in antworten]

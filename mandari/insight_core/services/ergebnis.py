@@ -8,8 +8,9 @@ zeigt sie als kleines Etikett (``c-insight.ergebnis``) mit einem von sieben Begr
 
     beschlossen, abgelehnt, zur Kenntnis genommen, vertagt, verwiesen, abgesetzt, angekündigt
 
-Die Zuordnung steht nur hier. Was sich nicht sicher zuordnen lässt, bleibt neutral: etwa „zurückgezogen“, „erledigt“
-oder ein Text, der zugleich „beschlossen“ und „abgelehnt“ enthält. Das Etikett zeigt dann den Rohtext ohne Farbe.
+Die Zuordnung steht nur hier. Was sich nicht sicher zuordnen lässt, bleibt neutral: etwa „zurückgezogen“, „erledigt“,
+ein Text, der zugleich „beschlossen“ und „abgelehnt“ enthält, oder eine fehlende bzw. nur angekündigte Antwort („nicht
+beantwortet“, „wird schriftlich beantwortet“). Das Etikett zeigt dann den Rohtext ohne Farbe.
 „angekündigt“ kommt nie aus dem Rohtext: Es steht für eine angesetzte Beratung, zu der es noch kein Ergebnis gibt.
 
 Vorrang bei mehreren Treffern: abgesetzt, vertagt, verwiesen, dann die Entscheidung (beschlossen oder abgelehnt), zuletzt
@@ -77,7 +78,24 @@ _BESCHLOSSEN: Final = re.compile(
     r"|\bgenehmigt\b|\bempfohlen\b|\bgewählt\b|\bbestätigt\b|\bwie vorgeschlagen\b|\bgemä(ß|ss) (beschluss)?vorschlag\b"
     r"|\bgemä(ß|ss) vorlage\b"
 )
-_KENNTNIS: Final = re.compile(r"kenntnis|\bbeantwortet\b")
+_KENNTNIS: Final = re.compile(r"kenntnis")
+#: „beantwortet“ zählt als Kenntnisnahme, außer die Antwort fehlt noch (``_ANTWORT_AUSSTEHEND``)
+_BEANTWORTET: Final = re.compile(r"\bbeantwortet\b")
+#: Antwort verneint, angekündigt oder ausstehend (Issue #1273): „nicht beantwortet“, „unbeantwortet“, „keine Antwort“,
+#: „Antwort liegt nicht vor“, „wird schriftlich beantwortet“, „Antwort folgt schriftlich“, „Beantwortung erfolgt
+#: schriftlich“ (nicht aber „Beantwortung ist erfolgt“), „Antwort steht noch aus“, „Antwort zugesagt“, „ist schriftlich
+#: zu beantworten“. Das ist weder die Kenntnisnahme einer Antwort noch eine beantwortete Anfrage.
+_ANTWORT_AUSSTEHEND: Final = re.compile(
+    r"\bunbeantwortet\b"
+    r"|\bnicht\s+(?:\w+\s+){0,3}beantwort"
+    r"|\bkeine?\s+(?:\w+\s+)?(?:beantwortung|antwort)"
+    r"|\b(?:beantwortung|antwort)\w*\s+(?:\w+\s+){0,2}(?:nicht|keine?)\b"
+    r"|\b(?:wird|werden|soll|sollen)\s+(?:\w+\s+){0,6}"
+    r"(?:beantwortet|beantworten|antworten|zugesandt|zugeleitet|übersandt|übermittelt)\b"
+    r"|\b(?:beantwortung|antwort)\w*\s+(?:(?!ist\b|sind\b|wurde\b|war\b)\w+\s+){0,2}(?:folgt|folgen|erfolgt|kommt)\b"
+    r"|\b(?:zugesagt|angekündigt|nachgereicht|nachzureichen|nachgeliefert|ausstehend|aussteht)\b"
+    r"|\bzu beantworten\b|\bsteh(?:t|en)\s+(?:noch\s+)?aus\b"
+)
 _VERSCHOBEN: Final = re.compile(r"\bverschoben\b")
 #: „einstimmig“ oder „mehrheitlich“ ohne Partizip (manche Systeme lassen es weg, etwa „einstimmig bei einer
 #: Enthaltung“) gilt als Beschluss, wenn nichts anderes zutrifft und nichts auf ein offenes Ende deutet
@@ -155,7 +173,7 @@ def einordnen(roh: object) -> str:
         return ABGELEHNT
     if beschlossen:
         return BESCHLOSSEN
-    if _KENNTNIS.search(text):
+    if _KENNTNIS.search(text) or (_BEANTWORTET.search(text) and not _ANTWORT_AUSSTEHEND.search(text)):
         return KENNTNIS
     if _NUR_MEHRHEIT.match(text) and not _OFFEN.search(text):
         return BESCHLOSSEN
@@ -193,6 +211,14 @@ ANFRAGE_STAND: Final[dict[str, tuple[str, str]]] = {
     BEANTWORTET: ("beantwortet", "Die Verwaltung hat auf die Anfrage geantwortet."),
     ANTWORT_OFFEN: ("Antwort steht aus", "Eine Antwort der Verwaltung ist noch nicht veröffentlicht."),
 }
+
+
+def antwort_aussteht(roh: object) -> bool:
+    """
+    Sagt der Ergebnistext einer Beratung, dass die Antwort auf eine Anfrage fehlt, nur angekündigt ist oder nachgereicht
+    wird („nicht beantwortet“, „wird schriftlich beantwortet“, „Kenntnis genommen; Antwort folgt schriftlich“)?
+    """
+    return bool(_ANTWORT_AUSSTEHEND.search(_bereinigen(roh).lower()))
 
 
 def anfrage_etikett(schluessel: str, erklaerung: str = "") -> Ergebnis:
