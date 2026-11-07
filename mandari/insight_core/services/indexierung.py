@@ -234,14 +234,16 @@ def mit_laufender_mitgliedschaft(personen: QuerySet[Any], stichtag: date) -> Que
     Nur Personen mit mindestens einer laufenden Mitgliedschaft – eine Unterabfrage (``EXISTS``), kein N+1.
 
     Gezählt werden dieselben Mitgliedschaften wie auf der Personenseite (``active_memberships``): nicht
-    gelöscht, in einem nicht gelöschten Gremium, ohne Ende oder mit Ende ab dem Stichtag.
+    gelöscht, in einem nicht gelöschten Gremium, ohne Ende oder mit Ende ab dem Stichtag, ohne Zugänge zum RIS
+    („Informationssystem“). Test- und Platzhalterkonten zählen nie (Issue #1258).
     """
     from ..models import OParlMembership
+    from .testkonten import systemrolle_q, testkonto_q
 
     laufende = OParlMembership.objects.filter(
         laufend_q(stichtag), person=OuterRef("pk"), deleted=False, organization__deleted=False
-    )
-    return personen.filter(Exists(laufende))
+    ).exclude(systemrolle_q())
+    return personen.exclude(testkonto_q()).filter(Exists(laufende))
 
 
 def robots_fuer_person(seo: dict[str, Any], laufende_mitgliedschaften: Any) -> dict[str, Any]:
