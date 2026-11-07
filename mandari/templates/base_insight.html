@@ -176,7 +176,7 @@
 
     {# Ohne JavaScript füllt nichts diese Bereiche: ganz ausblenden statt Platz zu halten #}
     {# Ohne JavaScript: Platzhalter für Knöpfe aus Alpine weg, Bereiche mit data-ohne-js="zeigen" offen (Beschlüsse, #1270) #}
-    <noscript><style nonce="{{ csp_nonce }}">[x-cloak="platz"] { display: none !important; } [data-ohne-js="zeigen"] { display: block !important; }</style></noscript>
+    <noscript><style nonce="{{ csp_nonce }}">[data-ohne-js="zeigen"] { display: block !important; } [x-cloak="platz"] { display: none !important; }</style></noscript>
 
     {% block extra_head %}{% endblock %}
 </head>
