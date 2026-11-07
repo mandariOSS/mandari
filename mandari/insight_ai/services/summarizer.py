@@ -15,7 +15,9 @@ des Ingestors den Text, ein Auftrag wäre ein zweiter Weg zur Quelle.
 Neuer Text verwirft eine gespeicherte Zusammenfassung (Abonnement ``insight.zusammenfassung``,
 ``insight_ai/abonnement.py``); erzeugt wird sie auf Abruf und, mit der Claude API, vorab im Message Batch
 (``insight_ai.services.zusammenfassung_batch``, gleicher Prompt über ``vorbereiten``). Kommt während der Erstellung
-neuer Text hinzu, wird das Ergebnis ausgegeben, aber nicht gespeichert.
+neuer Text hinzu, wird das Ergebnis ausgegeben, aber nicht gespeichert. Der Prompt enthält den Beratungsverlauf;
+dessen Stand wird mitgespeichert, damit ein späteres Ergebnis die Zusammenfassung als veraltet erkennen lässt
+(``insight_core.services.summary_store.veraltet``, Issue #1257).
 
 Den Anbieter liefert ``get_summary_provider()``: nur für die Zusammenfassungen ggf. die Claude API, sonst der
 Endpunkt des Bürgerportals. Mit der Zusammenfassung wird gespeichert, wer sie erstellt hat
@@ -43,6 +45,7 @@ from .prompts import (
     VERORTUNG_SYSTEM_ZUSATZ,
     ZUSAMMENFASSUNG_SCHEMA,
     anlage_block,
+    beratungsverlauf_block,
     build_paper_summary_user_prompt,
     orte_block,
 )
@@ -133,6 +136,8 @@ class Vorbereitung:
     orte_ids: list[str] | None = None
     #: Antwortformat (JSON-Schema) bei Prüfung der Verortung; ``None``: Text
     schema: dict[str, Any] | None = None
+    #: Beratungsstand, den der Prompt kennt (``summary_store.beratungsstand``, Issue #1257); wird mitgespeichert
+    stand: str = ""
 
 
 class SummaryService:
@@ -247,7 +252,8 @@ class SummaryService:
                 else:
                     paper.summary = summary
                     paper.summary_einfach = einfach or None
-                    paper.save(update_fields=["summary", "summary_hinweis", "summary_einfach"])
+                    paper.summary_stand = vorbereitung.stand
+                    paper.save(update_fields=["summary", "summary_hinweis", "summary_einfach", "summary_stand"])
                     logger.info(f"Summary saved to paper {paper.id}")
 
             return summary
@@ -268,9 +274,14 @@ class SummaryService:
         self, paper: "OParlPaper", orte: list[Any] | None = None, einfach: bool = False
     ) -> Vorbereitung | None:
         """
-        Prompt der Zusammenfassung aus dem gespeicherten Text und den Metadaten; ``None`` ohne Text.
+        Prompt der Zusammenfassung aus dem gespeicherten Text, den Metadaten und dem Beratungsverlauf; ``None`` ohne
+        Text.
 
         Einzelaufruf (``generate_summary``) und Batch nutzen denselben Prompt. Lädt und erkennt nichts.
+
+        Der Beratungsverlauf (nur öffentliche Angaben, mit dem Stand-Satz der Vorgangsseite) steht im Prompt, damit
+        die Zusammenfassung dem Stand nicht widerspricht; sein Stand (``summary_store.beratungsstand``) wird mit der
+        Zusammenfassung gespeichert, ein neues Ergebnis macht sie damit erkennbar veraltet (Issue #1257).
 
         Mit ``orte`` (``verortung_pruefung.orte_fuer_pruefung``, auch leer) prüft Claude in derselben Anfrage die
         Verortung (Tagesbatch, Issue #1222): Zusatz im Systemprompt, Orte im Nutzerprompt, Antwort als JSON nach
@@ -316,6 +327,15 @@ class SummaryService:
         except Exception as e:
             logger.debug(f"Could not get organizations: {e}")
 
+        # Beratungsverlauf mit Stand-Satz (wie auf der Vorgangsseite) und sein Stand (Issue #1257)
+        from hub.ris.selectors import public_consultation_history
+        from insight_core.services import summary_store
+        from insight_core.services.paper_status import paper_status, status_eintraege
+
+        jetzt = timezone.now()
+        schritte = public_consultation_history([paper.pk]).get(paper.pk, [])
+        verlauf = beratungsverlauf_block(schritte, paper_status(status_eintraege(schritte), jetzt).text, now=jetzt)
+
         # Build prompts
         einfach = einfach or orte is not None
         system_prompt = PAPER_SUMMARY_SYSTEM_PROMPT
@@ -333,6 +353,7 @@ class SummaryService:
             organizations=list(organizations) if organizations else None,
             orte=orte_block(orte) if orte is not None else None,
             einfach=einfach,
+            verlauf=verlauf,
         )
 
         # Create messages
@@ -346,6 +367,7 @@ class SummaryService:
             zeichen=len(system_prompt) + len(user_prompt),
             orte_ids=[ort.pk for ort in orte] if orte is not None else None,
             schema=TAGESBATCH_SCHEMA if orte is not None else (ZUSAMMENFASSUNG_SCHEMA if einfach else None),
+            stand=summary_store.beratungsstand(schritte, now=jetzt),
         )
 
     def _collect_text_content(self, paper: "OParlPaper") -> str:

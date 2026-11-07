@@ -210,10 +210,16 @@ class PaperDetailView(DetailView):
         context["plan_areas"] = plan_areas
         context["paper_map_data"] = paper_map_data(context["paper_locations"], plan_areas)
 
+        # Zusammenfassung älter als der Beratungsstand (Issue #1257): Hinweis darüber, nicht in der Description
+        from ..services import summary_store
+
+        veraltet = summary_store.veraltet(paper, now=now)
+        context["zusammenfassung_veraltet"] = veraltet
+
         # SEO-Kontext
         from ..seo import get_paper_seo
 
-        context["seo"] = get_paper_seo(paper, self.request, stand=status).to_dict()
+        context["seo"] = get_paper_seo(paper, self.request, stand=status, mit_zusammenfassung=not veraltet).to_dict()
 
         return context
 
@@ -239,16 +245,19 @@ def paper_summary(request, pk):
     GET liefert die gespeicherte Zusammenfassung oder das Angebot, eine zu erstellen – ohne
     KI-Aufruf. Erstellt wird nur per POST (Klick, CSRF-geschützt) und in den Grenzen aus
     ``summary_guard``: eine Erstellung je Vorgang gleichzeitig, je IP-Adresse wenige pro Stunde
-    und Tag, insgesamt ein Tagesbudget.
+    und Tag, insgesamt ein Tagesbudget. Eine vorhandene Zusammenfassung ersetzt ein POST nur, wenn sie
+    älter als der Beratungsstand ist (``summary_store.veraltet``, Issue #1257).
     """
-    from ..services import summary_guard
+    from ..services import summary_guard, summary_store
 
     paper = get_object_or_404(OParlPaper, pk=pk)
     if paper.withdrawn_by_publisher:
         return withdrawn_response(request, paper)
 
     if paper.summary:
-        return _summary_response(request, {"paper": paper, "summary": paper.summary})
+        veraltet = summary_store.veraltet(paper)
+        if not (veraltet and request.method == "POST"):
+            return _summary_response(request, {"paper": paper, "summary": paper.summary, "veraltet": veraltet})
     if summary_guard.has_no_text(paper.pk):
         return _summary_response(request, {"paper": paper, "error": NO_TEXT_MESSAGE, "retry": False})
     if request.method != "POST":

@@ -423,13 +423,17 @@ def _ki_zusammenfassung(text: str | None, davor: str) -> str:
     return f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {text}"
 
 
-def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = None) -> SEOContext:
+def get_paper_seo(
+    paper: Any, request: HttpRequest, stand: PaperStatus | None = None, *, mit_zusammenfassung: bool = True
+) -> SEOContext:
     """
     SEO-Kontext einer Vorgangsseite.
 
     ``stand`` ist der Stand-Satz der Seite (``paper_status``, aus dem schon geladenen Beratungsverlauf). Die
     Description nennt Kommune, Art, Nummer und Datum, dann den Stand und, wenn Platz bleibt, den Anfang der
-    gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``).
+    gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``). Ohne
+    ``mit_zusammenfassung`` (sie ist älter als der Beratungsstand, Issue #1257) fehlt sie, damit die Description dem
+    Stand nicht widerspricht.
     """
     body = paper.body
     kommune = _kommune(body)
@@ -437,7 +441,9 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
     kopf = f"{_kennung(paper)} vom {datum}" if datum else _kennung(paper)
     stand_satz = stand.text if stand is not None and stand.kind != STAND_UNBEKANNT else ""
     kopf_satz = f"{kommune}: {kopf}." if kommune else f"{kopf}."
-    zusammenfassung = _ki_zusammenfassung(paper.summary, beschreibung(kopf_satz, stand_satz))
+    zusammenfassung = _ki_zusammenfassung(
+        paper.summary if mit_zusammenfassung else None, beschreibung(kopf_satz, stand_satz)
+    )
     description = beschreibung(kopf_satz, stand_satz, zusammenfassung)
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)

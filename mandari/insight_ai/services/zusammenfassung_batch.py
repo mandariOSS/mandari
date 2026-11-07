@@ -12,6 +12,11 @@ Zeitpläne im Worker (``insight_ai/schedules.py``):
   **Texterkennung ist Pflicht:** Ein Vorgang kommt erst, wenn der Text aller aktuellen Anlagen erkannt ist und (mit
   Prüfung der Verortung) der Verortungslauf danach gelaufen ist (``summary_store.tagesbatch_wartet``); wartende
   Vorgänge zählt das Protokoll. Am Abruf gescheiterte Anlagen dieser Kommunen reiht ``nacharbeiten()`` vorher neu ein.
+- **Veraltete Zusammenfassungen (Issue #1257):** Nach den Vorgängen ohne Zusammenfassung kommen die derselben
+  Kommunen, deren Zusammenfassung einen älteren Beratungsstand kennt (``summary_store.veraltete``, etwa: erstellt
+  vor dem Beschluss). Die neue ersetzt sie bei der Übernahme, sofern sie inzwischen niemand neu erstellt hat; die
+  Verortung wird dabei nicht erneut geprüft. Für den übrigen Bestand gibt es ``nachziehen()`` (``manage.py
+  zusammenfassungen_nachziehen``): ein Batch je Lauf mit Obergrenze, nie neben einem offenen.
 - **Verortung als zweiter Faktor (Issue #1222):** Für Kommunen mit ``verortung_pruefen`` bekommt Claude in derselben
   Anfrage die gefundenen Orte (``verortung_pruefung.orte_fuer_pruefung``) und antwortet als JSON
   (``prompts.TAGESBATCH_SCHEMA``): Zusammenfassung, Urteil je Ort, fehlende Orte. Nach dem Speichern der
@@ -19,14 +24,15 @@ Zeitpläne im Worker (``insight_ai/schedules.py``):
   geokodiert werden).
 - ``abholen()``: Ist ein offener Batch beendet, übernimmt sie die Ergebnisse in einer Transaktion: Kosten verbuchen,
   Zusammenfassung über ``summary_store.speichern`` speichern, sofern sie noch passt (keine Rücknahme, kein neuer
-  Text seit dem Einreichen, noch keine Zusammenfassung). Abgelehnte, abgeschnittene und fehlerhafte Anfragen werden
-  eine Woche lang nicht erneut eingereicht; abgelaufene und abgebrochene beim nächsten Lauf wieder. Ist ein Batch
-  nicht mehr abrufbar (HTTP 404, etwa nach einem Schlüssel aus einem anderen Workspace, oder älter als
-  ``ERGEBNIS_TAGE``), gilt er als verloren: Seine Schätzung wird als Verbrauch verbucht (das Budget bleibt vorsichtig),
-  und der nächste Batch kann kommen.
+  Text seit dem Einreichen, noch keine Zusammenfassung bzw. die veraltete unverändert). Abgelehnte, abgeschnittene
+  und fehlerhafte Anfragen werden eine Woche lang nicht erneut eingereicht; abgelaufene und abgebrochene beim
+  nächsten Lauf wieder. Ist ein Batch nicht mehr abrufbar (HTTP 404, etwa nach einem Schlüssel aus einem anderen
+  Workspace, oder älter als ``ERGEBNIS_TAGE``), gilt er als verloren: Seine Schätzung wird als Verbrauch verbucht
+  (das Budget bleibt vorsichtig), und der nächste Batch kann kommen.
 
 Ein Klick auf „Zusammenfassen“ erstellt weiterhin sofort (Einzelaufruf); kommt das Batch-Ergebnis danach, bleibt die
-vorhandene Zusammenfassung stehen. Den Prompt baut für beide Wege ``SummaryService.vorbereiten``.
+vorhandene Zusammenfassung stehen. Ist sie veraltet, erstellt „Neu zusammenfassen“ auf der Vorgangsseite sie ebenfalls
+sofort neu. Den Prompt baut für beide Wege ``SummaryService.vorbereiten``.
 """
 
 from __future__ import annotations
@@ -34,8 +40,9 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter
-from dataclasses import replace
-from datetime import timedelta
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
@@ -99,7 +106,10 @@ def _pause_schluessel(vorgang_id: Any) -> str:
 
 
 def einreichen(*, provider: Any = None) -> int:
-    """Reicht einen Batch mit Vorgängen ohne Zusammenfassung ein; Rückgabe: Zahl der Anfragen (0: nichts zu tun)."""
+    """
+    Reicht den Tagesbatch ein: Vorgänge ohne Zusammenfassung, danach veraltete (Issue #1257), jeweils der
+    ausgewählten Kommunen ab ihrem Stichtag. Rückgabe: Zahl der Anfragen (0: nichts zu tun).
+    """
     endpunkt = claude_fuer_zusammenfassung()
     if endpunkt is None or not endpunkt.batch:
         return 0
@@ -107,47 +117,90 @@ def einreichen(*, provider: Any = None) -> int:
         return 0
     try:
         # Erst unter der Sperre prüfen: Ein paralleler Lauf hat sonst womöglich gerade eingereicht
-        if ZusammenfassungsBatch.objects.filter(status=ZusammenfassungsBatch.Status.EINGEREICHT).exists():
+        if _batch_offen():
             return 0
         return _einreichen(endpunkt, provider or ClaudeZusammenfassung(endpunkt))
     finally:
         cache.delete(SPERRE)
 
 
+def _batch_offen() -> bool:
+    return ZusammenfassungsBatch.objects.filter(status=ZusammenfassungsBatch.Status.EINGEREICHT).exists()
+
+
 def _einreichen(endpunkt: ClaudeEndpunkt, provider: Any) -> int:
-    from insight_ai.services.summarizer import SummaryService
-    from insight_core.services import summary_guard, summary_store
+    from insight_core.services import summary_store
 
     rest = kosten.budget_rest(endpunkt)
     if rest <= 0:
         logger.info("Zusammenfassungs-Batch: Monatsbudget ausgeschöpft, nichts eingereicht")
         return 0
-
-    from insight_core.services import verortung_pruefung
-
     stichtage, mit_verortung = kommunen()
     if not stichtage:
         logger.info("Zusammenfassungs-Batch: keine Kommune ausgewählt, nichts eingereicht")
         return 0
     beginn = timezone.now()
+    # Zuerst Vorgänge ohne Zusammenfassung, dann veraltete (neues Beratungsergebnis seit der Zusammenfassung)
     kandidaten = summary_store.fuer_tagesbatch(stichtage, limit=MAX_JE_BATCH * 2)
+    kandidaten += summary_store.veraltete(stichtage, limit=MAX_JE_BATCH)
+    plan = _planen(endpunkt, provider, kandidaten, rest=rest, mit_verortung=mit_verortung, hoechstens=MAX_JE_BATCH)
+    if plan.wartend:
+        logger.info("Tagesbatch: %d Vorgänge warten noch %s", sum(plan.wartend.values()), dict(plan.wartend))
+    if not plan.anfragen:
+        return 0
+    return _abschicken(endpunkt, provider, plan, beginn)
+
+
+@dataclass
+class _Plan:
+    """Anfragen eines Batches mit ihren Einträgen (``ZusammenfassungsBatch.anfragen``) und der Kostenschätzung."""
+
+    anfragen: list[tuple[Any, ...]] = field(default_factory=list)
+    eintraege: dict[str, dict[str, Any]] = field(default_factory=dict)
+    geschaetzt: Decimal = Decimal(0)
+    #: Vorgänge, die noch warten (Texterkennung, Abruf, Verortung), je Grund
+    wartend: Counter[str] = field(default_factory=Counter)
+    #: Kennung, Vorlagen-Nr. und Titel der geplanten Vorgänge (Ausgabe des Befehls)
+    vorgaenge: list[tuple[str, str, str]] = field(default_factory=list)
+
+
+def _planen(
+    endpunkt: ClaudeEndpunkt,
+    provider: Any,
+    kandidaten: list[Any],
+    *,
+    rest: Decimal,
+    mit_verortung: set[Any],
+    hoechstens: int,
+) -> _Plan:
+    """
+    Anfragen für die Kandidaten, höchstens ``hoechstens`` und nur so viele, wie ``rest`` (USD) nach der Schätzung
+    trägt. Vorgänge mit Zusammenfassung sind veraltet (``summary_store.veraltete``): Sie ersetzen sie
+    (``ersetzt`` mit dem alten Stand) und prüfen die Verortung nicht erneut, die Dokumente sind dieselben.
+    """
+    from insight_ai.services.summarizer import SummaryService
+    from insight_core.services import summary_guard, summary_store, verortung_pruefung
+
     dienst = SummaryService(provider=provider)
     grenze = provider.max_output_tokens
-    anfragen: list[tuple[Any, ...]] = []
-    eintraege: dict[str, dict[str, Any]] = {}
-    wartend: Counter[str] = Counter()
-    geschaetzt = Decimal(0)
+    plan = _Plan()
+    gesehen: set[str] = set()
     for vorgang in kandidaten:
-        if len(anfragen) >= MAX_JE_BATCH:
+        if len(plan.anfragen) >= hoechstens:
             break
+        custom_id = str(vorgang.pk)
+        if custom_id in gesehen:
+            continue
+        gesehen.add(custom_id)
         if cache.get(_pause_schluessel(vorgang.pk)) or summary_guard.has_no_text(vorgang.pk):
             continue
         if vorgang.withdrawn_by_publisher or dienst._downloads_disabled(vorgang):
             continue
-        pruefen = vorgang.body_id in mit_verortung
+        ersetzt = (vorgang.summary_stand or "") if vorgang.summary is not None else None
+        pruefen = ersetzt is None and vorgang.body_id in mit_verortung
         grund = summary_store.tagesbatch_wartet(vorgang, verortung=pruefen)
         if grund:
-            wartend[grund] += 1
+            plan.wartend[grund] += 1
             continue
         orte = verortung_pruefung.orte_fuer_pruefung(vorgang) if pruefen else None
         vorbereitung = dienst.vorbereiten(vorgang, orte=orte, einfach=True)
@@ -157,45 +210,51 @@ def _einreichen(endpunkt: ClaudeEndpunkt, provider: Any) -> int:
         betrag = kosten.schaetzung(
             endpunkt.modell, zeichen=vorbereitung.zeichen, max_ausgabe=grenze_anfrage, batch=True
         )
-        if geschaetzt + betrag > rest:
-            logger.info("Zusammenfassungs-Batch: Monatsbudget reicht nur für %d Anfragen", len(anfragen))
+        if plan.geschaetzt + betrag > rest:
+            logger.info("Zusammenfassungs-Batch: Budget reicht nur für %d Anfragen", len(plan.anfragen))
             break
-        custom_id = str(vorgang.pk)
-        anfragen.append((custom_id, vorbereitung.nachrichten, grenze_anfrage, vorbereitung.schema))
-        eintrag: dict[str, Any] = {"vorgang": str(vorgang.pk), "dateien": [str(i) for i in vorbereitung.datei_ids]}
+        plan.anfragen.append((custom_id, vorbereitung.nachrichten, grenze_anfrage, vorbereitung.schema))
+        eintrag: dict[str, Any] = {
+            "vorgang": custom_id,
+            "dateien": [str(i) for i in vorbereitung.datei_ids],
+            "stand": vorbereitung.stand,
+        }
         if vorbereitung.schema is not None:
             eintrag["json"] = True
         if vorbereitung.orte_ids is not None:
             eintrag["orte"] = vorbereitung.orte_ids
-        eintraege[custom_id] = eintrag
-        geschaetzt += betrag
-    if wartend:
-        logger.info("Tagesbatch: %d Vorgänge warten noch %s", sum(wartend.values()), dict(wartend))
-    if not anfragen:
-        return 0
+        if ersetzt is not None:
+            eintrag["ersetzt"] = ersetzt
+        plan.eintraege[custom_id] = eintrag
+        plan.vorgaenge.append((custom_id, vorgang.reference or "", vorgang.name or ""))
+        plan.geschaetzt += betrag
+    return plan
 
+
+def _abschicken(endpunkt: ClaudeEndpunkt, provider: Any, plan: _Plan, beginn: Any) -> int:
+    """Reicht die Anfragen als einen Batch ein und legt ihn an; Rückgabe: Zahl der Anfragen (0: gescheitert)."""
     # Das Einreichen kann dauern (bis zu einigen MB): Datenbankverbindung solange an den Pool zurückgeben
     release_idle_thread_connections()
     try:
-        batch_id = provider.batch_einreichen(anfragen)
+        batch_id = provider.batch_einreichen(plan.anfragen)
     except KiAnbieterError as fehler:
         logger.warning("Zusammenfassungs-Batch nicht eingereicht: %s", fehler)
         return 0
     logger.info(
         "Zusammenfassungs-Batch %s eingereicht: %d Anfragen, Modell %s, geschätzt höchstens %s USD",
         batch_id,
-        len(anfragen),
+        len(plan.anfragen),
         endpunkt.modell,
-        geschaetzt.quantize(Decimal("0.0001")),
+        plan.geschaetzt.quantize(Decimal("0.0001")),
     )
     try:
         ZusammenfassungsBatch.objects.create(
             batch_id=batch_id,
             modell=endpunkt.modell,
             eingereicht_am=beginn,
-            anfragen=eintraege,
-            anzahl=len(anfragen),
-            geschaetzt_usd=geschaetzt,
+            anfragen=plan.eintraege,
+            anzahl=len(plan.anfragen),
+            geschaetzt_usd=plan.geschaetzt,
         )
     except Exception:
         # Ohne Eintrag würde der Batch nie abgeholt und nicht im Budget gezählt, die Vorgänge gingen erneut hinaus:
@@ -206,7 +265,81 @@ def _einreichen(endpunkt: ClaudeEndpunkt, provider: Any) -> int:
         except KiAnbieterError as fehler:
             logger.error("Zusammenfassungs-Batch %s nicht abgebrochen: %s", batch_id, fehler)
         return 0
-    return len(anfragen)
+    return len(plan.anfragen)
+
+
+@dataclass(frozen=True)
+class Nachzug:
+    """Ergebnis von ``nachziehen``: geplante bzw. eingereichte Anfragen mit Schätzung, sonst der Grund."""
+
+    #: Gefundene Vorgänge mit veralteter Zusammenfassung (höchstens die Obergrenze)
+    gefunden: int = 0
+    #: Davon im Batch (geplant bzw. eingereicht)
+    anfragen: int = 0
+    geschaetzt_usd: Decimal = Decimal(0)
+    eingereicht: bool = False
+    #: Warum nichts eingereicht wurde (leer: eingereicht oder nur gezählt)
+    grund: str = ""
+    #: Vorgänge, die noch auf ihren Text warten, je Grund
+    wartend: dict[str, int] = field(default_factory=dict)
+    #: Kennung, Vorlagen-Nr. und Titel der Vorgänge im Batch
+    vorgaenge: list[tuple[str, str, str]] = field(default_factory=list)
+
+
+def nachziehen(
+    *,
+    limit: int,
+    kommunen: Mapping[Any, date | None] | None = None,
+    ab: date | None = None,
+    hoechstens_usd: Decimal | None = None,
+    ausfuehren: bool = False,
+    provider: Any = None,
+) -> Nachzug:
+    """
+    Veraltete Zusammenfassungen im Bestand neu erzeugen (Issue #1257, ``manage.py zusammenfassungen_nachziehen``):
+    ein Message Batch je Lauf mit höchstens ``limit`` (und ``MAX_JE_BATCH``) Vorgängen, neueste zuerst.
+
+    Gedrosselt wie der Tagesbatch: nur mit eingerichtetem und eingeschaltetem Batch, nie neben einem offenen Batch
+    (der nächste Lauf erst nach dessen Übernahme), höchstens so viel, wie das Monatsbudget und ``hoechstens_usd``
+    nach der Schätzung tragen. Ohne ``ausfuehren`` wird nur geplant und geschätzt, nichts eingereicht.
+    """
+    from insight_core.services import summary_store
+
+    endpunkt = claude_fuer_zusammenfassung()
+    if endpunkt is None or not endpunkt.batch:
+        return Nachzug(grund="Claude für die Zusammenfassungen oder der Batch ist nicht eingeschaltet.")
+    obergrenze = max(0, min(limit, MAX_JE_BATCH))
+    if ausfuehren and not cache.add(SPERRE, 1, timeout=SPERRE_SEKUNDEN):
+        return Nachzug(grund="Ein anderer Lauf reicht gerade ein.")
+    try:
+        offen = _batch_offen()
+        if ausfuehren and offen:
+            return Nachzug(grund="Ein Batch ist noch offen; erst nach seiner Übernahme kommt der nächste.")
+        rest = kosten.budget_rest(endpunkt)
+        if hoechstens_usd is not None:
+            rest = min(rest, hoechstens_usd)
+        if rest <= 0:
+            return Nachzug(grund="Budget ausgeschöpft.")
+        provider = provider or ClaudeZusammenfassung(endpunkt)
+        beginn = timezone.now()
+        kandidaten = summary_store.veraltete(kommunen, limit=obergrenze, ab=ab)
+        plan = _planen(endpunkt, provider, kandidaten, rest=rest, mit_verortung=set(), hoechstens=obergrenze)
+        ergebnis = Nachzug(
+            gefunden=len(kandidaten),
+            anfragen=len(plan.anfragen),
+            geschaetzt_usd=plan.geschaetzt,
+            wartend=dict(plan.wartend),
+            vorgaenge=plan.vorgaenge,
+            grund="Ein Batch ist noch offen; eingereicht wird erst nach seiner Übernahme." if offen else "",
+        )
+        if not ausfuehren or not plan.anfragen:
+            return ergebnis
+        if not _abschicken(endpunkt, provider, plan, beginn):
+            return replace(ergebnis, grund="Einreichen gescheitert (siehe Protokoll).")
+        return replace(ergebnis, eingereicht=True)
+    finally:
+        if ausfuehren:
+            cache.delete(SPERRE)
 
 
 def abholen(*, provider: Any = None) -> int:
@@ -309,6 +442,8 @@ def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) 
                 seit=batch.eingereicht_am,
                 dateien=eintrag.get("dateien") or [],
                 einfach=einfach,
+                stand=str(eintrag.get("stand") or ""),
+                ersetzt=eintrag.get("ersetzt"),
             ):
                 gespeichert += 1
                 if pruefung is not None:
