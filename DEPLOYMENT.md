@@ -720,6 +720,14 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 | `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS` (14), tote und fehlgeschlagene nach `EVENTS_TASKS_DEAD_RETENTION_DAYS` (90) Tagen |
 | `befehl:events_purge` | täglich 04:10, nur mit `EVENTS_JOURNAL_PURGE_ENABLED` (Standard aus) | Journal nach `EVENTS_JOURNAL_RETENTION_DAYS` (90), nie über den kleinsten Cursor; `docs/MONITORING.md`, „Nachspielen und Aufräumen des Journals“ |
 
+**Sitemaps nach dem Update (Issue #1259):** Ein neuer Zeitplan beginnt mit seinem nächsten Termin. Bis zum
+ersten Lauf von `sitemap_aufteilen` (höchstens 30 Minuten) ist die Vorberechnung leer: Der Sitemap-Index rechnet je
+Abruf höchstens 5 s selbst, die nummerierten Dateien der übrigen Kommunen fehlen so lange. Sofort füllen lässt sie
+sich einmal von Hand (höchstens 240 s, danach macht der Zeitplan weiter):
+`docker exec mandari python manage.py shell -c "from insight_core.services.sitemaps import aufteilungen_erneuern; print(aufteilungen_erneuern())"`.
+Die Grenzen von 5 s und 240 s prüft der Index bzw. der Zeitplan vor jeder Aufteilung; eine einzelne große Kommune
+kann sie also um ihre eigene Rechenzeit überschreiten.
+
 `python manage.py events_scheduler --list` zeigt alle Zeitpläne mit dem zuletzt geplanten Termin. Auch Sync
 einer Quelle und Löschen einer Kommune aus dem Admin laufen als Auftrag im Worker (Warteschlange
 `default`), unabhängig von `TASKS_BACKEND`.
