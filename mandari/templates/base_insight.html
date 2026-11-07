@@ -23,6 +23,8 @@
     {% if seo.canonical_url %}
     <link rel="canonical" href="{{ seo.canonical_url }}">
     {% endif %}
+    {# Feed der Seite für Feed-Reader und Browser (Issue #1274, views/feeds.py: abo) #}
+    {% if abo_feed %}<link rel="alternate" type="application/atom+xml" title="{{ abo_feed.titel }}" href="{{ abo_feed.url }}">{% endif %}
 
     <!-- Open Graph -->
     <meta property="og:title" content="{% block og_title %}{% firstof seo.og_title seo.title "mandari Insight" %}{% endblock %}">

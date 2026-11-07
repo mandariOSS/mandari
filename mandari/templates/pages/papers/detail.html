@@ -34,6 +34,7 @@
     </p>
     <div class="mt-6 flex flex-wrap items-center gap-2">
         {% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="lg" %}
+        {% if abo_feed %}<c-insight.kopf-aktion href="{{ abo_feed.hilfe }}" icon="rss" kurz="Abonnieren" data-testid="vorgang-abonnieren">Neues zu diesem Vorgang abonnieren</c-insight.kopf-aktion>{% endif %}
         {% if not paper.summary and files %}
         <div id="summary-action">
             <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"

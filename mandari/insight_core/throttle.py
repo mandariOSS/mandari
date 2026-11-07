@@ -31,6 +31,8 @@ DEFAULTS: dict[str, int] = {
     "INSIGHT_TILE_FETCHES_PER_IP_MINUTE": 300,
     "INSIGHT_TILE_FETCHES_PER_MINUTE": 1200,
     "INSIGHT_TILE_CACHE_MAX_TILES": 500_000,
+    # Feeds (Issue #1274): nur Neubauten zählen, Feeds aus dem Cache sind frei
+    "INSIGHT_FEEDS_PER_IP_MINUTE": 30,
     # Dateivorschau (nur Abrufe beim Quell-RIS, Dateien aus dem Cache sind frei)
     "FILE_PROXY_FETCHES_PER_IP_MINUTE": 20,
     "FILE_PROXY_MAX_CONCURRENT": 4,

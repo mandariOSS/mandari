@@ -27,8 +27,9 @@ Im Kopf die Sitzverteilung nach Fraktionen als ein Balken, wenn sie etwas sagt (
             </p>
             {% if sitzverteilung %}{% include "pages/organizations/_sitzverteilung.html" %}{% endif %}
         </div>
-        <div class="shrink-0">
+        <div class="shrink-0 flex flex-wrap items-center gap-2">
             {% include "components/bookmark_star.html" with entity_type="organization" entity_id=organization.id size="lg" %}
+            {% if abo_feed %}<c-insight.kopf-aktion href="{{ abo_feed.hilfe }}" icon="rss" data-testid="gremium-abonnieren">Abonnieren</c-insight.kopf-aktion>{% endif %}
         </div>
     </div>
 </header>

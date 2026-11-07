@@ -5,6 +5,10 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
+from collections.abc import Callable, Mapping
+from typing import Any
+
+from django.db.models import QuerySet
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -17,7 +21,7 @@ from hub.ris import selectors as ris_selectors
 from hub.ris import vorlagennummer
 from hub.ris.original import seite_im_ris
 
-from ..models import OParlPaper, VorgangUrheber
+from ..models import OParlBody, OParlPaper, VorgangUrheber
 from ..services import file_reconcile, fraktionskuerzel
 from ..services.vorgang_dokumente import dokumente_anhaengen
 from ..services.vorgang_urheber import (
@@ -32,6 +36,36 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 # Vorgänge (Papers)
 # =============================================================================
+
+
+def vorgaenge_der_auswahl(
+    body: OParlBody,
+    get: Mapping[str, Any],
+    fraktionen: Callable[[OParlBody], list[FraktionsAuswahl]] | None = None,
+) -> QuerySet[OParlPaper]:
+    """
+    Vorgänge der Kommune nach den Filtern der Liste: Art (``type``), antragstellende Fraktion (``fraktion``) und Suche
+    in Name und Nummer (``q``). Dieselbe Auswahl für Liste und Feed (Issue #1274). ``fraktionen`` liefert die
+    Fraktionen der Kommune (die Liste rechnet sie einmal je Anfrage).
+    """
+    qs = OParlPaper.objects.filter(body=body, deleted=False)
+
+    # Typ-Filter
+    paper_type = str(get.get("type", "") or "").strip()
+    if paper_type:
+        qs = qs.filter(paper_type=paper_type)
+
+    # Antragstellende Fraktion (Issue #1138), mit früheren Namen derselben Fraktion (Issue #1258)
+    fraktion = str(get.get("fraktion", "") or "").strip()
+    if fraktion:
+        auswahl = fraktionen(body) if fraktionen is not None else fraktionen_der_kommune(body.pk)
+        bezeichnungen = bezeichnungen_fuer(auswahl, fraktion)
+        qs = qs.filter(
+            pk__in=VorgangUrheber.objects.filter(body_id=body.pk, bezeichnung__in=bezeichnungen).values("paper_id")
+        )
+
+    # Suche in Name und Nummer, Vorlagennummern in jeder Schreibweise mit dem passenden Vorgang vorn (Issue #1102)
+    return ris_selectors.search_papers_in(qs, str(get.get("q", "") or ""))
 
 
 class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
@@ -74,24 +108,7 @@ class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, Be
         body = get_active_body(self.request)
         if not body:
             return OParlPaper.objects.none()
-
-        qs = OParlPaper.objects.filter(body=body, deleted=False)
-
-        # Typ-Filter
-        paper_type = self.request.GET.get("type", "").strip()
-        if paper_type:
-            qs = qs.filter(paper_type=paper_type)
-
-        # Antragstellende Fraktion (Issue #1138), mit früheren Namen derselben Fraktion (Issue #1258)
-        fraktion = self.request.GET.get("fraktion", "").strip()
-        if fraktion:
-            bezeichnungen = bezeichnungen_fuer(self._fraktionen(body), fraktion)
-            qs = qs.filter(
-                pk__in=VorgangUrheber.objects.filter(body_id=body.pk, bezeichnung__in=bezeichnungen).values("paper_id")
-            )
-
-        # Suche in Name und Nummer, Vorlagennummern in jeder Schreibweise mit dem passenden Vorgang vorn (Issue #1102)
-        return ris_selectors.search_papers_in(qs, self.request.GET.get("q", ""))
+        return vorgaenge_der_auswahl(body, self.request.GET, self._fraktionen)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -117,6 +134,10 @@ class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, Be
             # Fraktionen der laufenden Wahlperiode, die in der Kommune Vorgänge gestellt haben (Filter, Issues #1138,
             # #1258)
             context["paper_fraktionen"] = self._fraktionen(body)
+            # Feed dieser Auswahl (Issue #1274): Kopf der Seite und „Als RSS abonnieren“ unter der Liste
+            from .feeds import abo_vorgangsliste
+
+            context["abo_feed"] = abo_vorgangsliste(body, self.request.GET)
 
         from ..seo import get_list_seo
 
@@ -193,6 +214,12 @@ class PaperDetailView(DetailView):
         context["viewer_committee"] = reference.get("organization_name") if reference else ""
         # Seite des Vorgangs im Ratsinformationssystem (OParl ``web`` bzw. Detailseite der Scraper-Quelle, #1259)
         context["source_url"] = seite_im_ris(paper)
+        # „Neues zu diesem Vorgang abonnieren“ (Issue #1274): Feed im Kopf der Seite und als Knopf
+        from .feeds import abo
+
+        context["abo_feed"] = abo(
+            "paper_feed", f"Neues zu {paper.reference or 'diesem Vorgang'}", kwargs={"pk": paper.pk}
+        )
 
         # Ortsbezüge (offizielle OParl-Locations + extrahierte) für Karte/Liste
         locations = paper.locations if isinstance(paper.locations, list) else []

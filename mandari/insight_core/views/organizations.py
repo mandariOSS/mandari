@@ -221,6 +221,12 @@ class OrganizationDetailView(DetailView):
         context["kurzname"] = kurzname
         context["hat_angaben"] = bool(kurzname or org.start_date or org.end_date or org.website)
         context["hat_randspalte"] = context["hat_angaben"] or bool(context["upcoming_meetings"])
+        # Feed des Gremiums (Issue #1274): kommende Sitzungen, Beschlüsse, bei Fraktionen ihre Vorgänge
+        from .feeds import abo
+
+        context["abo_feed"] = abo(
+            "organization_feed", f"Neues aus {org.name or 'diesem Gremium'}", kwargs={"pk": org.pk}
+        )
 
         # SEO-Kontext
         from ..seo import get_organization_seo

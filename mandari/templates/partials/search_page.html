@@ -84,9 +84,13 @@ man nach dem Filtern tief unten am Ende der neuen Liste. Der Anker hat erst ab 2
         {% endif %}
     </div>
     {% endif %}
-    {% if insight_subscriptions_enabled and not suche_work %}
-    <p class="mt-8"><c-suche.textlink href="{% url 'insight_core:insight:notifications' %}?keyword={{ query|urlencode }}">Bei neuen Treffern zu „{{ query }}“ benachrichtigen</c-suche.textlink></p>
-    {% endif %}
+    {% comment %}Abonnieren (E-Mail, Issue #1274 als Feed ohne Konto); der Feed folgt Suchbegriff, Zeitraum und Art{% endcomment %}
+    {% if not suche_work %}{% if insight_subscriptions_enabled or abo_feed %}
+    <p class="mt-8 flex flex-wrap gap-x-6 gap-y-2">
+        {% if insight_subscriptions_enabled %}<c-suche.textlink href="{% url 'insight_core:insight:notifications' %}?keyword={{ query|urlencode }}">Bei neuen Treffern zu „{{ query }}“ benachrichtigen</c-suche.textlink>{% endif %}
+        {% if abo_feed %}<c-suche.textlink href="{{ abo_feed.hilfe }}" data-testid="suche-abonnieren">Als RSS abonnieren</c-suche.textlink>{% endif %}
+    </p>
+    {% endif %}{% endif %}
     </div>
     </div>
 </c-insight.band>
