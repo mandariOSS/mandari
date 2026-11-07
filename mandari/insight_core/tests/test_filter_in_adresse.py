@@ -76,12 +76,15 @@ class TestAdresse:
         assert saubere_adresse(RequestFactory().get("/insight/vorgaenge/", {"q": ""})) == "/insight/vorgaenge/"
 
     def test_reiter_behalten_die_suche_kodiert(self) -> None:
-        request = RequestFactory().get("/insight/termine/", {"q": "Rad & Weg", "period": "past", "page": "4"})
+        request = RequestFactory().get(
+            "/insight/termine/", {"q": "Rad & Weg", "period": "past", "page": "4", "next": "https://evil.example/"}
+        )
         html = (
             engines["django"]
-            .from_string("{% load insight_listen %}{% adresse_mit period='all' %}")
+            .from_string("{% load insight_listen %}{% adresse_mit behalten='q' period='all' %}")
             .render({"request": request})
         )
+        # Nur der Suchbegriff bleibt; fremde Parameter und die Seitenzahl nicht
         assert html == "?q=Rad+%26+Weg&amp;period=all"
 
 
@@ -123,8 +126,8 @@ class TestSitzungen:
         assert 'hx-include="closest form"' in html and 'hx-push-url="true"' in html
         assert 'value="Rad"' in html
         # Reiter: gewählter Zeitraum markiert, Suchbegriff bleibt erhalten
-        assert 'href="?period=all&amp;q=Rad"' in html
-        assert re.search(r'href="\?period=past&amp;q=Rad" aria-current="page"', html)
+        assert 'href="?q=Rad&amp;period=all"' in html
+        assert re.search(r'href="\?q=Rad&amp;period=past" aria-current="page"', html)
 
     def test_htmx_suche_im_zeitraum(self, stadt: dict[str, Any]) -> None:
         antwort = _get(self.pfad, {"period": "past", "q": "Radweg"}, **HTMX)
@@ -147,7 +150,7 @@ class TestGremienUndPersonen:
         html = _get(pfad, {"tab": "all", "q": "Rat"}).content.decode()
 
         assert '<input type="hidden" name="tab" value="all">' in html and "hx-vals" not in html
-        assert re.search(r'href="\?tab=all&amp;q=Rat" aria-current="page"', html)
+        assert re.search(r'href="\?q=Rat&amp;tab=all" aria-current="page"', html)
         antwort = _get(pfad, {"tab": "all", "q": "Rat"}, **HTMX)
         assert antwort["HX-Push-Url"] == f"{pfad}?tab=all&q=Rat" and "Rat der Stadt" in antwort.content.decode()
 

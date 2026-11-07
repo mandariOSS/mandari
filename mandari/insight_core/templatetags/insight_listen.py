@@ -85,14 +85,18 @@ def ergebnis(roh: Any) -> Ergebnis | None:
 
 
 @register.simple_tag(takes_context=True)
-def adresse_mit(context: Any, **werte: Any) -> str:
+def adresse_mit(context: Any, behalten: str = "", **werte: Any) -> str:
     """
-    Adresse der Liste mit allen übrigen Parametern der Anfrage und den genannten Werten (Reiter, Issue #1260), ohne
-    Seitenzahl und ohne leere Parameter: ``{% adresse_mit period="past" %}`` → ``?q=Rad&period=past``.
+    Adresse eines Reiters der Liste (Issue #1260): die Werte des Reiters und von der Anfrage nur die Parameter aus
+    ``behalten`` (Komma-Liste, etwa der Suchbegriff), ohne leere Werte und ohne Seitenzahl. Fremde Parameter der
+    Anfrage landen so nicht in den Links der Seite: ``{% adresse_mit behalten="q" period="past" %}`` → ``?q=Rad&period=past``.
     """
     request = context.get("request")
-    params = request.GET.copy() if request is not None else QueryDict(mutable=True)
-    params.pop("page", None)
+    params = QueryDict(mutable=True)
+    if request is not None:
+        for name in filter(None, (teil.strip() for teil in behalten.split(","))):
+            if name in request.GET:
+                params.setlist(name, request.GET.getlist(name))
     for name, wert in werte.items():
         params[name] = str(wert)
     return "?" + str(ohne_leere(params).urlencode())
