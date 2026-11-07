@@ -267,7 +267,7 @@ class TestVorDemBeschluss:
         assert summary_store.veraltet(vorgang)
         html = client.get(seite).content.decode()
         assert 'data-testid="zusammenfassung-veraltet"' in html and "Neu zusammenfassen" in html
-        assert "älter als der aktuelle Beratungsstand" in html
+        assert "entstand ohne den aktuellen Beratungsstand" in html
         assert "im Rat mehrheitlich beschlossen" in html
         beschreibung = html.split('<meta name="description" content="', 1)[1].split('"', 1)[0]
         assert "KI-Zusammenfassung" not in beschreibung and "Vorschlag" not in beschreibung

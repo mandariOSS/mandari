@@ -7,14 +7,15 @@ in der Datenschutzerklärung (es geht um öffentliche Dokumente, nicht um Daten 
 in ``paper.summary_hinweis`` (Auswertung der Bewertungen je Modell).
 Darunter im Bürgerportal Daumen hoch/runter (Issue #1221, ``kiBewertung`` in ``frontend/alpine/insight.ts``), nicht in
 Work (``dicht``).
-``veraltet``: Die Zusammenfassung ist älter als der Beratungsstand (Issue #1257, ``summary_store.veraltet``). Dann
+``veraltet``: Die Zusammenfassung kennt den aktuellen Beratungsstand nicht (Issue #1257, ``summary_store.veraltet``;
+auch Zusammenfassungen von vor #1257 ohne gespeicherten Stand, deren Vorgang ein Ergebnis hat). Dann
 steht vor dem Text ein Satz dazu und „Neu zusammenfassen“ (POST wie „Zusammenfassen“, in denselben Grenzen).
 {% endcomment %}{% load ki_bewertung %}{% if summary %}{% with absaetze=summary|ki_absaetze %}
 <h2 class="{% if dicht %}text-base font-semibold{% else %}text-[1.375rem] font-bold tracking-tight{% endif %} text-gray-900 dark:text-white">KI-Zusammenfassung</h2>
 {% if veraltet %}
 <div class="mt-2" data-testid="zusammenfassung-veraltet">
     <p class="text-sm text-gray-700 dark:text-gray-300">
-        Diese Zusammenfassung ist älter als der aktuelle Beratungsstand und kann ihm widersprechen. Maßgeblich ist der Stand oben.
+        Diese Zusammenfassung entstand ohne den aktuellen Beratungsstand und kann ihm widersprechen. Maßgeblich ist der Stand oben.
     </p>
     <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
             hx-target="#paper-summary" hx-swap="innerHTML"
