@@ -341,8 +341,8 @@ def vorschau_ohne_hausnummer(hits: list[dict[str, Any]], results: list[dict[str,
     Kopfzeilen-Vorschau der Suche (``format_search_result``) ohne Hausnummer, wie ``present_groups`` (Issue #1269).
 
     Vorgänge entscheiden nach Art und Titel aus dem Index. Dokumente tragen dort nur den Titel ihres Vorgangs; dessen
-    Art kommt aus einer Abfrage für alle Dokument-Treffer der Vorschau, dazu zählt der eigene Name. Titel, Ausschnitt, Vorschautext und Unterzeile
-    verlieren die Hausnummer, der Ausschnitt dabei seine Markierung.
+    Art kommt aus einer Abfrage für alle Dokument-Treffer der Vorschau, dazu zählt der eigene Name. Titel, Ausschnitt,
+    Vorschautext und Unterzeile verlieren die Hausnummer, der Ausschnitt dabei seine Markierung.
     """
     from ..models import OParlPaper
     from .ortsschutz import grund_nach_art, hausnummern_auslassen
