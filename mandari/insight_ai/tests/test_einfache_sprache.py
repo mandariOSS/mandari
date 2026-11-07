@@ -115,7 +115,8 @@ def test_umschalter_auf_der_seite(body: OParlBody, client: Client) -> None:
 def test_absaetze_mit_weiterlesen(body: OParlBody, client: Client) -> None:
     vorgang = _vorgang(body, summary="Kern des Vorgangs.\n\nEinzelheiten eins.\n\nEinzelheiten zwei.")
     html = client.get(reverse("insight_core:insight:paper_summary", args=[vorgang.pk])).content.decode()
-    assert ">KI-Zusammenfassung</h2>" in html
+    # Bürgerportal: „Worum es geht“ mit KI-Zeichen am Titel (Issue #1271)
+    assert ">Worum es geht</h2>" in html and 'data-testid="ki-marke"' in html
     # Der Kern steht vor dem eingeklappten Rest, jeder Absatz in einem eigenen <p>
     assert (
         html.index("<p>Kern des Vorgangs.</p>") < html.index('x-show="offen"') < html.index("<p>Einzelheiten zwei.</p>")

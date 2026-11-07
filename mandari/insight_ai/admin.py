@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Admin: Kommunen im Tagesbatch, Batches und Verbrauch der Zusammenfassungen mit der Claude API."""
+"""
+Admin: Kommunen im Tagesbatch, Batches und Verbrauch der Zusammenfassungen mit der Claude API, verworfene
+Zusammenfassungen (mechanische Prüfung, Issue #1271).
+"""
 
 from __future__ import annotations
 
@@ -10,7 +13,7 @@ from django.contrib import admin, messages
 from django.http import HttpRequest
 from unfold.admin import ModelAdmin
 
-from .models import KiVerbrauch, TagesbatchKommune, ZusammenfassungsBatch
+from .models import KiVerbrauch, TagesbatchKommune, VerworfeneZusammenfassung, ZusammenfassungsBatch
 
 
 class _NurLesen(ModelAdmin):  # type: ignore[misc]
@@ -76,3 +79,13 @@ class KiVerbrauchAdmin(_NurLesen):
             f"Monatsbudget {budget} USD.",
         )
         return super().changelist_view(request, extra_context)
+
+
+@admin.register(VerworfeneZusammenfassung)
+class VerworfeneZusammenfassungAdmin(_NurLesen):
+    """Von der mechanischen Prüfung verworfene Zusammenfassungen: welche Regel greift wie oft, je Fassung und Modell."""
+
+    list_display = ("zeitpunkt", "regel", "teil", "prompt_fassung", "modell", "weg", "grund", "vorgang_id")
+    list_filter = ("regel", "teil", "prompt_fassung", "modell", "weg")
+    search_fields = ("grund", "entwurf")
+    date_hierarchy = "zeitpunkt"

@@ -33,8 +33,8 @@ nachrüsten müssen.
 
 | Funktion | Code | Wer sieht den Text | Menschliche Prüfung | Rolle mandari | Kennzeichnung |
 |----------|------|--------------------|---------------------|---------------|---------------|
-| Zusammenfassung eines Vorgangs (Insight) | `insight_ai/services/summarizer.py`, `insight_core/views/papers.py`, `templates/partials/paper_summary.html` | **öffentlich:** Vorgangsseite, Description und JSON-LD der Seite, OParl-API, MCP-Werkzeug `vorgang` | keine; entsteht auf Abruf durch Besucher oder vorab im Batch (Claude API, #1208) und wird gespeichert | Anbieter (Abs. 2) und auf mandari.de Betreiber (Abs. 4) | sichtbar: „Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten.“ (Anbieter, Modell und Verarbeitungsort nennt die Datenschutzerklärung; gespeichert in `OParlPaper.summary_hinweis` für die Auswertung je Modell), und „KI-Zusammenfassung:“ in Description/JSON-LD; maschinenlesbar: `data-ai-generated="true"`, `mandari:summaryAiGenerated`, `zusammenfassung_ki_erzeugt` |
-| Dieselbe Zusammenfassung in Work | `templates/work/ris/neu/vorgang.html`, `templates/work/ris/paper_detail.html` | intern: Mitglieder der Organisation | keine | Anbieter (Abs. 2) | sichtbar wie oben (seit #938 auch im bisherigen Rahmen); `data-ai-generated="true"` |
+| Zusammenfassung eines Vorgangs (Insight) | `insight_ai/services/summarizer.py`, `insight_core/views/papers.py`, `templates/partials/paper_summary.html`, Vorschau `insight_core/services/kurzfassung.py`, `templates/cotton/insight/ki_vorschau.html` | **öffentlich:** Vorgangsseite („Worum es geht“), Vorgangsliste und Suchtreffer (erster Absatz als Vorschauzeile, #1271), Description und JSON-LD der Seite, OParl-API, MCP-Werkzeug `vorgang` | keine; entsteht auf Abruf durch Besucher oder vorab im Batch (Claude API, #1208) und wird gespeichert; vorher prüft ein Programm Zahlen, Daten, Fraktionen, wörtliche Übernahmen und Hausnummern gegen das Material (`insight_ai/services/zusammenfassung_pruefung.py`, #1271), das ersetzt keine menschliche Prüfung | Anbieter (Abs. 2) und auf mandari.de Betreiber (Abs. 4) | sichtbar: „KI-Kurzfassung“ am Titel „Worum es geht“ und „Mit KI zusammengefasst; Fehler sind möglich. Maßgeblich sind die Dokumente.“ unter dem Text; über Vorgangsliste und Suchtreffern einmal „Die Zeilen unter den Titeln fasst eine KI aus den Dokumenten zusammen. Maßgeblich sind die Dokumente.“, vor jeder Zeile für Screenreader „KI-Kurzfassung:“ (Anbieter, Modell und Verarbeitungsort nennt die Datenschutzerklärung; gespeichert in `OParlPaper.summary_hinweis` für die Auswertung je Modell), und „KI-Zusammenfassung:“ in Description/JSON-LD; maschinenlesbar: `data-ai-generated="true"` (auch an jeder Vorschauzeile), `mandari:summaryAiGenerated`, `zusammenfassung_ki_erzeugt` |
+| Dieselbe Zusammenfassung in Work | `templates/work/ris/neu/vorgang.html`, `templates/work/ris/paper_detail.html` | intern: Mitglieder der Organisation | keine | Anbieter (Abs. 2) | sichtbar: „Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten.“ (seit #938 auch im bisherigen Rahmen); `data-ai-generated="true"` |
 | KI-Assistent (Insight) | `insight_core/views/chat.py`, `insight_ai/services/chat_service.py`, `templates/partials/chat_nachrichten.html` | nur die fragende Person; Antworten werden nicht gespeichert | keine (Antwort an eine Person, keine Veröffentlichung) | Anbieter (Abs. 1 und 2) | sichtbar: Seitentitel „KI-Assistent“, Einwilligung mit Anbieter und Ort, Satz „Antworten erstellt eine KI aus öffentlichen Ratsdokumenten. Sie können Fehler enthalten.“; maschinenlesbar: `data-ai-generated="true"` an jeder Antwort, Feld `ai_generated: true` in `POST /insight/chat/api/message/` |
 | Fragen an die Ratsdaten (Work) | `apps/work/ris/fragen.py`, `templates/work/ris/partials/frage_antwort.html` | intern: die fragende Person | keine (nur für die eigene Recherche) | Anbieter (Abs. 1 und 2) | sichtbar: „KI-Antwort aus den öffentlichen Ratsdaten – maßgeblich sind die Quellen.“; `data-ai-generated="true"` |
 | Schreibhilfe und Co-Editor (Work) | `apps/work/motions/services.py`, `apps/work/motions/views/actions.py`, `templates/work/motions/partials/_editor_ai_panel.html` | intern: die schreibende Person im KI-Bereich des Editors | ja: Vorschläge werden erst mit „Übernehmen“ Teil des Dokuments, das die Fraktion verantwortet | Anbieter (Abs. 1 und 2); die Fraktion ist Betreiberin, Abs. 4 entfällt durch Prüfung und redaktionelle Verantwortung | sichtbar: KI-Bereich mit Hinweis „Ich bin Ihr KI-Assistent“; maschinenlesbar: Feld `ai_generated: true` in `POST /work/<org>/documents/ai/`, `data-ai-generated` an jeder KI-Nachricht |
@@ -62,7 +62,11 @@ Alle Merkmale ergänzen die bestehenden Antworten; kein Feld ist entfallen oder 
 
 - **Insight-Zusammenfassungen:** Eine Freigabe vor der Anzeige würde Redaktion für tausende Vorgänge je Kommune
   verlangen. Die Zusammenfassungen bleiben deshalb ungeprüft und gekennzeichnet. Eine Freigabe wäre eine neue
-  Funktion und ist nicht Teil von #938.
+  Funktion und ist nicht Teil von #938. Seit #1271 verwirft ein Programm vor dem Speichern Zusammenfassungen mit Zahlen,
+  Daten oder Fraktionen, die nicht im Material stehen, mit längeren wörtlichen Übernahmen und mit Hausnummern;
+  jede neue Fassung des Prompts beurteilt ein Mensch vorher an einer festen Stichprobe
+  (`manage.py zusammenfassung_stichprobe`). Das ist keine Prüfung je Text im Sinne von Abs. 4, die Kennzeichnung
+  bleibt.
 - **Schreibhilfe:** Die Übernahme durch die schreibende Person ist die Prüfung. Das Dokument verantwortet danach
   die Fraktion.
 - **KI-Protokoll:** Die Übernahme durch die Protokollführung ist im Datenmodell vorgesehen und bleibt Pflicht,
@@ -70,7 +74,8 @@ Alle Merkmale ergänzen die bestehenden Antworten; kein Feld ist entfallen oder 
 
 ## Tests
 
-`insight_core/tests/test_ki_kennzeichnung.py`, `insight_core/tests/test_seo_titel.py` (Description, JSON-LD),
+`insight_core/tests/test_ki_kennzeichnung.py`, `insight_core/tests/test_worum_es_geht.py` (Vorschauzeilen),
+`insight_core/tests/test_seo_titel.py` (Description, JSON-LD),
 `insight_core/tests/test_ki_buergerportal.py` (KI-Assistent), `hub/ris/tests/test_mapping_bestand.py` (OParl),
 `insight_ai/tests/test_chat_werkzeuge.py` (Werkzeug `vorgang`), `apps/work/ris/tests/test_fragen.py`,
 `apps/work/ris/tests/test_neues_design.py` (Vorgangsseite in Work), `apps/work/motions/tests/test_ki_europa.py`
