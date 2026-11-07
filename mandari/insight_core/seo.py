@@ -107,6 +107,10 @@ def script_json(value: Any) -> SafeString:
     return mark_safe(text)  # durch die Maskierung oben sicher
 
 
+#: Standardbild für Vorschauen beim Teilen (``og:image``), 1200 × 630 Pixel wie in den Seitenköpfen angegeben
+VORSCHAUBILD = "images/og-default.png"
+
+
 @dataclass
 class SEOContext:
     """
@@ -294,6 +298,16 @@ def _absolut(path: str) -> str:
     return urljoin(get_site_url(), path)
 
 
+def vorschaubild(bild: str | None = None) -> str:
+    """
+    Absolute Adresse des Vorschaubilds für ``og:image`` und ``twitter:image`` (Issue #1259): das Bild der Seite,
+    sonst das Standardbild (``VORSCHAUBILD``). Beide Angaben verlangen eine vollständige URL; eine relative wie
+    ``/static/images/og-default.png`` ignorieren Dienste beim Teilen. Basis ist ``SITE_URL`` wie bei der kanonischen
+    Adresse; ein schon absolutes Bild bleibt, wie es ist.
+    """
+    return _absolut(bild or static(VORSCHAUBILD))
+
+
 def seite_der_kommune(body: Any) -> str:
     """Absolute Adresse der Seite einer Kommune (``/insight/k/<slug>/``), leer, wo es keine erreichbare gibt.
 
@@ -424,7 +438,12 @@ def _ki_zusammenfassung(text: str | None, davor: str) -> str:
 
 
 def get_paper_seo(
-    paper: Any, request: HttpRequest, stand: PaperStatus | None = None, *, mit_zusammenfassung: bool = True
+    paper: Any,
+    request: HttpRequest,
+    stand: PaperStatus | None = None,
+    *,
+    mit_zusammenfassung: bool = True,
+    original: str = "",
 ) -> SEOContext:
     """
     SEO-Kontext einer Vorgangsseite.
@@ -433,7 +452,8 @@ def get_paper_seo(
     Description nennt Kommune, Art, Nummer und Datum, dann den Stand und, wenn Platz bleibt, den Anfang der
     gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``). Ohne
     ``mit_zusammenfassung`` (sie ist älter als der Beratungsstand, Issue #1257) fehlt sie, damit die Description dem
-    Stand nicht widerspricht.
+    Stand nicht widerspricht. ``original`` ist die Seite des Vorgangs im Ratsinformationssystem (``hub.ris.original``,
+    Issue #1259); sie steht als ``isBasedOn`` im JSON-LD.
     """
     body = paper.body
     kommune = _kommune(body)
@@ -463,6 +483,7 @@ def get_paper_seo(
             "about": ort,
             "author": _verwaltung(kommune) or {"@type": "Organization", "name": "Kommune"},
             "publisher": {"@type": "Organization", "name": "mandari", "url": get_site_url()},
+            "isBasedOn": original or None,
         }
     )
 
@@ -504,7 +525,7 @@ def _bild_der_kommune(body: Any) -> str:
     Suchergebnisse nicht zeigen.
     """
     logo = getattr(body, "logo", None) if body is not None else None
-    return _absolut(logo.url if logo else static("images/og-default.png"))
+    return _absolut(logo.url) if logo else vorschaubild()
 
 
 def _gremien_der_sitzung(meeting: Any) -> list[dict[str, str]]:
@@ -553,12 +574,14 @@ def get_meeting_seo(
     request: HttpRequest,
     agenda_count: int | None = None,
     tagesordnung: Iterable[Any] = (),
+    original: str = "",
 ) -> SEOContext:
     """
     SEO-Kontext einer Sitzungsseite: „{Gremium} am {Datum} – {Kommune}“.
 
     ``agenda_count`` ist die Zahl der Tagesordnungspunkte, die die Seite zeigt, ``tagesordnung`` sind diese
-    Punkte (schon geladen, für den Hinweis auf eine öffentliche Sitzung).
+    Punkte (schon geladen, für den Hinweis auf eine öffentliche Sitzung). ``original`` ist die Seite der Sitzung im
+    Ratsinformationssystem (Issue #1259), im JSON-LD der Veranstaltung als ``sameAs``.
 
     Die Veranstaltung (``Event``) erscheint nur mit Beginn und einem verlässlichen Ort samt Postanschrift
     (``services.sitzungsort``, Issue #939) – Google wertet sie sonst als ungültig. Ohne beides trägt die Seite nur
@@ -617,6 +640,7 @@ def get_meeting_seo(
                 "organizer": _verwaltung(kommune, seite_der_kommune(body) or _webseite(body))
                 or {"@type": "Organization", "name": "Kommune"},
                 "performer": _gremien_der_sitzung(meeting),
+                "sameAs": original or None,
                 "isAccessibleForFree": True if eintritt_frei else None,
                 "offers": {
                     "@type": "Offer",

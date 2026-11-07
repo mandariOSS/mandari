@@ -3,6 +3,8 @@
 
 Detailseiten und Stadtseiten bauen ihren Titel schon passend (``seo.seitentitel``). Der Filter sichert den Rest ab –
 Listen im Bürgerportal einer Kommune mit langem Namen, Suchanfragen, Rückfälle ohne SEO-Kontext.
+
+Dazu ``vorschaubild`` für ``og:image`` und ``twitter:image`` im Seitenkopf: immer eine absolute Adresse (Issue #1259).
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from django import template
 from django.utils.html import escape
 from django.utils.safestring import SafeString
 
+from .. import seo
 from ..seo import TITEL_MAX, kuerzen
 
 register = template.Library()
@@ -31,3 +34,9 @@ def seitentitel(gerendert: str) -> SafeString:
     if len(text) > TITEL_MAX and ZUSATZ_TRENNER in text:
         text = text.rsplit(ZUSATZ_TRENNER, 1)[0]
     return escape(kuerzen(text, TITEL_MAX))
+
+
+@register.simple_tag
+def vorschaubild(bild: str | None = None) -> str:
+    """Absolute Adresse des Vorschaubilds: ``{% vorschaubild seo.og_image %}``, ohne Bild der Seite das Standardbild."""
+    return seo.vorschaubild(bild or None)

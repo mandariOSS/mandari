@@ -709,6 +709,7 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 |---|---|---|
 | `insight_sync.schedules.haengende_syncs_bereinigen` | alle 5 min | Sync-Protokolle, die länger als 15 min laufen, als fehlgeschlagen markieren |
 | `insight_core.schedules.verortung_automatisch` | alle `GEOREF_AUTO_INTERVAL_MINUTES` (15) min | begrenzter Verortungslauf (`GEOREF_AUTO_ENABLED`, `GEOREF_AUTO_LIMIT`) |
+| `insight_core.schedules.sitemap_aufteilen` | alle 30 min | Aufteilung der Sitemaps je gelistete Kommune vorberechnen, fehlende zuerst, sonst älter als drei Stunden, höchstens 240 s je Lauf; der Sitemap-Index liest nur diese Werte (Issue #1259) |
 | `apps.work.schedules.fraktionserinnerungen_senden` | alle `FACTION_REMINDER_INTERVAL_MINUTES` (15) min | Erinnerungen an Fraktionssitzungen |
 | `apps.work.schedules.fraktionseinladungen_senden` | alle `FACTION_INVITATION_INTERVAL_MINUTES` (15) min | automatische Einladungen (auch zum festen Zeitpunkt einer Reihe), Freigabe-Hinweise, Erinnerungen zum Eintragen von TOPs |
 | `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |

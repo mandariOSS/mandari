@@ -99,7 +99,8 @@ def sitemap_index(request):
 
     Kennung ist der Slug, für Kommunen ohne Slug die ID. ``lastmod`` der Grund-Sitemap ist der letzte Abgleich,
     der nummerierten Dateien die jüngste glaubhafte Änderung ihrer Einträge (Issues #914, #939); ohne glaubhaften
-    Zeitpunkt fehlt ``lastmod``.
+    Zeitpunkt fehlt ``lastmod``. Die Dateien kommen aus der Vorberechnung (``sitemaps.index_dateien``, Issue #1259):
+    zwei Abfragen für alle Kommunen, auch ohne Cache.
     """
     site_url = _site_url()
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
@@ -112,12 +113,13 @@ def sitemap_index(request):
             xml_parts.append(f"    <lastmod>{_w3c(lastmod)}</lastmod>")
         xml_parts.append("  </sitemap>")
 
-    bodies = OParlBody.objects.listed().only("id", "slug", "last_sync").order_by("name")
+    bodies = list(OParlBody.objects.listed().only("id", "slug", "last_sync").order_by("name"))
+    dateien = sitemaps.index_dateien(body.pk for body in bodies)
     for body in bodies:
         kennung = _sitemap_key(body)
         add_sitemap(reverse("insight_core:body_sitemap", kwargs={"body_slug": kennung}), body.last_sync)
         for art in sitemaps.ARTEN.values():
-            for datei in sitemaps.dateien(art, body.pk):
+            for datei in dateien.get((body.pk, art.kennung), []):
                 pfad = reverse(
                     "insight_core:body_sitemap_seite",
                     kwargs={"body_slug": kennung, "art": art.kennung, "seite": datei.seite},

@@ -29,7 +29,9 @@
     <meta property="og:description" content="{% block og_description %}{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}{% endblock %}">
     <meta property="og:type" content="{% if seo.og_type %}{{ seo.og_type }}{% else %}website{% endif %}">
     <meta property="og:url" content="{% if seo.canonical_url %}{{ seo.canonical_url }}{% else %}{{ request.build_absolute_uri }}{% endif %}">
-    <meta property="og:image" content="{% block og_image %}{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}{% endblock %}">
+    {# Vorschaubild immer als absolute Adresse (Issue #1259); Maße nur für das Standardbild #}
+    <meta property="og:image" content="{% block og_image %}{% vorschaubild seo.og_image %}{% endblock %}">
+    {% if not seo.og_image %}<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">{% endif %}
     <meta property="og:locale" content="de_DE">
     <meta property="og:site_name" content="{% if insight_portal %}{{ insight_portal.name }}{% else %}mandari{% endif %}">
 
@@ -37,7 +39,7 @@
     <meta name="twitter:card" content="{% if seo.twitter_card %}{{ seo.twitter_card }}{% else %}summary{% endif %}">
     <meta name="twitter:title" content="{% firstof seo.og_title seo.title "mandari Insight" %}">
     <meta name="twitter:description" content="{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}">
-    <meta name="twitter:image" content="{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}">
+    <meta name="twitter:image" content="{% vorschaubild seo.og_image %}">
 
     <!-- JSON-LD Structured Data -->
     {% if seo.json_ld %}
