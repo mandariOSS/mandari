@@ -57,6 +57,8 @@ console = MaskingConsole()
 # Entity-Typen, für die auf Full-Crawls Verschwinde-Erkennung läuft.
 # Bewusst konservativ: nur Typen, deren Kandidatenmenge vollständig im
 # Crawl-Fenster liegt (Sitzungen im Fenster, Gremienliste ist komplett).
+# Ein Adapter kann die Auswahl einschränken (``tombstone_entity_types``), etwa
+# wenn die Quelle keine vollständige Gremienliste hat (ALLRIS 3, Issue #121).
 TOMBSTONE_ENTITY_TYPES = ("meeting", "organization")
 #: Tagesordnungspunkte zählen je vollständig gelesener Sitzung (``ScrapeStats.agendas``, Issue #863)
 AGENDA_ITEM_TYPE = "agendaitem"
@@ -133,6 +135,8 @@ class ScraperSyncRunner:
             adapter = get_adapter(self.source_type, config, fetcher)
             # Listen-Diffing: bekannte Monats-Snapshots aus dem letzten Lauf
             adapter.previous_snapshots = {} if full else dict(state.get("list_snapshots") or {})
+            # Gespeicherte Stände auch im Vollabgleich, etwa der Fortschritt beim Rückwärtszählen (ALLRIS 3, #121)
+            adapter.stored_snapshots = dict(state.get("list_snapshots") or {})
 
             # robots.txt vorab prüfen: verbietet die Instanz unseren Crawler,
             # wird die Quelle nicht gecrawlt und im Admin sichtbar markiert.
@@ -249,6 +253,7 @@ class ScraperSyncRunner:
                     braked,
                     removable_agenda_item=getattr(adapter, "is_removable_agenda_item_id", None),
                     agenda_braked=agenda_braked,
+                    entity_types=tuple(getattr(adapter, "tombstone_entity_types", TOMBSTONE_ENTITY_TYPES)),
                 )
 
             # Zustand persistieren. Endete der Crawl mit dem Abruffenster, stand ein Monat vielleicht schon in der
@@ -377,6 +382,7 @@ class ScraperSyncRunner:
         *,
         removable_agenda_item: Callable[[str], bool] | None = None,
         agenda_braked: dict[str, int] | None = None,
+        entity_types: tuple[str, ...] = TOMBSTONE_ENTITY_TYPES,
     ) -> int:
         """
         Zählt nicht mehr gesichtete Objekte hoch und tombstonet nach
@@ -392,6 +398,7 @@ class ScraperSyncRunner:
 
         Markiert werden nur Objekte dieser Quelle: Die Löschmarkierung ist an die Quelle der Kommunen gebunden
         (``mark_entity_deleted``), alle Kommunen in ``body_ids`` gehören zu ihr. Ohne Kommune wird nichts gezählt.
+        ``entity_types``: Typen mit Löschabgleich, nur aus ``TOMBSTONE_ENTITY_TYPES`` (Auswahl des Adapters).
         """
         if not body_ids:
             return 0
@@ -400,7 +407,7 @@ class ScraperSyncRunner:
         missing_state: dict[str, dict[str, int]] = {k: dict(v) for k, v in (state.get("missing") or {}).items()}
         deleted_count = 0
 
-        for entity_type in TOMBSTONE_ENTITY_TYPES:
+        for entity_type in (t for t in TOMBSTONE_ENTITY_TYPES if t in entity_types):
             if entity_type in stats.incomplete:
                 console.print(
                     f"[yellow]  Löschabgleich {entity_type} ausgesetzt: {stats.incomplete[entity_type]}[/yellow]"

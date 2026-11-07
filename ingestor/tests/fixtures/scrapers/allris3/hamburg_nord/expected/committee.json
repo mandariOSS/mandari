@@ -1,0 +1,194 @@
+{
+  "name": "Regionalausschuss Langenhorn-Fuhlsbüttel-Ohlsdorf-Alsterdorf-Groß Borstel",
+  "members": [
+    {
+      "kplfdnr": 1000622,
+      "name": "Torben Eickmann",
+      "role": "Vorsitzendes Mitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1447,
+      "name": "Carsten Redlich",
+      "role": "Stellvertr. Vorsitz",
+      "faction": "GRÜNE-Fraktion (Sprecher-Alsterdorf)",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000510,
+      "name": "Daniela Clément",
+      "role": "Ausschussmitglied",
+      "faction": "Sprecherin GRÜNE-Fraktion (Ohlsdorf, Fuhlsbüttel)",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000638,
+      "name": "Moritz Fiedel",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000307,
+      "name": "Nadja Grichisch",
+      "role": "Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion (Sprecherin-Langenhorn)",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000247,
+      "name": "Katrin Ulrike Hofmann",
+      "role": "Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion (Sprecherin-Groß Borstel)",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000639,
+      "name": "Heidrun Jenkner",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000623,
+      "name": "Ralph Gutthardt",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000654,
+      "name": "Johannes Nachtigal",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000290,
+      "name": "Eric Schabow",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000039,
+      "name": "Martina Schenkewitz",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion (Sprecherin)",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000036,
+      "name": "Angelina Timm",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000423,
+      "name": "Joachim Feimann",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000325,
+      "name": "Tom Jermann",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000565,
+      "name": "Marco Lehmitz",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000451,
+      "name": "Corinna Mieth-Gurke",
+      "role": "Ausschussmitglied",
+      "faction": "Sprecherin CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000555,
+      "name": "Dr. Julia Wickert",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000581,
+      "name": "Malgorzata Lazurek",
+      "role": "Ausschussmitglied",
+      "faction": "Sprecherin Die Linke-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 652,
+      "name": "Rachid Messaoudi",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "Fraktion Die Linke",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 627,
+      "name": "Robert Bläsing",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "FDP-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000271,
+      "name": "Jan-Peter Döhne",
+      "role": "Ausschussmitglied",
+      "faction": "FDP-Fraktion (Sprecher)",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000559,
+      "name": "Robert Buck",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000558,
+      "name": "Kilian Oltrogge",
+      "role": "Ausschussmitglied",
+      "faction": "AfD-Fraktion (Sprecher)",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000589,
+      "name": "Dr. Jörg Bormann",
+      "role": "Ausschussmitglied",
+      "faction": "Volt-Fraktion (Sprecher)",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000695,
+      "name": "Simon Rennfanz",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000658,
+      "name": "Rolf-Dieter Scheel",
+      "role": "Seniorenbeiratsmitglied",
+      "faction": "Seniorenbeirat",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000196,
+      "name": "Dr. Petra Sellenschlo",
+      "role": "Seniorenbeiratsmitglied",
+      "faction": "Seniorenbeirat",
+      "voting_right": true
+    }
+  ]
+}

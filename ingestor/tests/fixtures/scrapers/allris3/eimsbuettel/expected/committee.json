@@ -1,0 +1,180 @@
+{
+  "name": "Kerngebietsausschuss",
+  "members": [
+    {
+      "kplfdnr": 1000094,
+      "name": "Ralf Meiburg",
+      "role": "Vorsitzendes Mitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000589,
+      "name": "Lea Fricke",
+      "role": "stellvertretender Vorsitz",
+      "faction": "FDP-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 227,
+      "name": "Andreas Birnbaum",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000523,
+      "name": "Nikolai Drews",
+      "role": "Ausschussmitglied",
+      "faction": "DIE LINKE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000599,
+      "name": "Simone Gastl",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000365,
+      "name": "Hans-Peter Heiss",
+      "role": "Ausschussmitglied",
+      "faction": "Die GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 272,
+      "name": "Jutta Höflich",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000371,
+      "name": "Martin Lemke",
+      "role": "Ausschussmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 371,
+      "name": "Dr. Petra Löning",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000441,
+      "name": "Katrin Meyer",
+      "role": "Ausschussmitglied",
+      "faction": "Die GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000397,
+      "name": "Roland Oehlmann",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000400,
+      "name": "Luise Rosemeier",
+      "role": "Ausschussmitglied",
+      "faction": "Die GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000110,
+      "name": "Nina Joana Schübel",
+      "role": "Ausschussmitglied",
+      "faction": "Die GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000544,
+      "name": "Dr. Katharina Seyfarth-Bünz",
+      "role": "Ausschussmitglied",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 214,
+      "name": "Thomas Thomsen",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 222,
+      "name": "Gabriele Albers",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "Die GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000383,
+      "name": "Til Bernstein",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000349,
+      "name": "Dr. Marc Cremer-Thursby",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000511,
+      "name": "Jörn Gerdau",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000216,
+      "name": "Robert Klein",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "Die GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000587,
+      "name": "Anja Kunz",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "DIE LINKE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000354,
+      "name": "Richter",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000644,
+      "name": "Robert Schaper",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "FDP-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000276,
+      "name": "Stephan-Philipp Schirmer",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000611,
+      "name": "Christoph Walpert",
+      "role": "Stellvertretendes Ausschussmitglied",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    }
+  ]
+}

@@ -1,0 +1,376 @@
+{
+  "name": "SPD Bezirksfraktion Wandsbek",
+  "members": [
+    {
+      "kplfdnr": 241,
+      "name": "Marc Buttler",
+      "role": "Fraktionsvorsitz",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 424,
+      "name": "Xavier Wasner",
+      "role": "1. stellvertr. Fraktionsvorsitz",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1017,
+      "name": "Marlies Riebe",
+      "role": "2. stellvertr. Fraktionsvorsitz",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 258,
+      "name": "Ingo Freund",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000036,
+      "name": "Patricia Hauto",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 283,
+      "name": "Carsten Heeder",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000563,
+      "name": "Marcel Klose",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1015,
+      "name": "John-Patrick Martens",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000301,
+      "name": "Finn Ole Nußbaum",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 352,
+      "name": "Frank Rieken",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000315,
+      "name": "Christiane Carola Rösch",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000596,
+      "name": "Hannah Schneehage",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 356,
+      "name": "André Schneider",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000060,
+      "name": "Christoph Schütte",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 857,
+      "name": "Oliver Schweim",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000310,
+      "name": "Paul Strothmann",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000152,
+      "name": "Stephanie Baumgärtl",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000376,
+      "name": "Ingeburg Benthin",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000086,
+      "name": "Alisa-Christin Berk",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000560,
+      "name": "Dana Braunsdorf",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000615,
+      "name": "Tugrul Cinkaya",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000102,
+      "name": "Udo Cordes",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000622,
+      "name": "Heike Elvers",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1007,
+      "name": "Andreas Ernst",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000726,
+      "name": "Romina Ghadimpour",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000080,
+      "name": "Kristel Gießler",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000623,
+      "name": "Björn Hauto",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000641,
+      "name": "Klaus Herrmann",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000242,
+      "name": "Sebastian Hoffmann",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000662,
+      "name": "Yasmin Hohberg",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000418,
+      "name": "Felix Kirschstein",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 306,
+      "name": "Christine Krahl",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000108,
+      "name": "Oliver Kretschmann",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000620,
+      "name": "Kevin Liebon",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000652,
+      "name": "Elisabeth Enyonam Lösche",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 482,
+      "name": "Leni Melzer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000619,
+      "name": "Hans-Ronald Niehus",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 334,
+      "name": "Peter Pape",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000564,
+      "name": "Rolf Willi Pfeiffer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000631,
+      "name": "Jan Quast",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000710,
+      "name": "Jonathan Quast",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000559,
+      "name": "Dr. Nicolai Rehbein",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000648,
+      "name": "Janne Marie Roehsler",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000566,
+      "name": "Helga Schlanze-Hünerbein",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000375,
+      "name": "Dr. Elmar Schleif",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000634,
+      "name": "Keno Malte Schuldt",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000106,
+      "name": "Uwe Schurig",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000371,
+      "name": "Manuel Angelo Stapelfeldt",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000523,
+      "name": "Lars Vavrina",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000502,
+      "name": "Martin Wettering",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000624,
+      "name": "Jannis Hendrik Woens",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000377,
+      "name": "Regina Wysocki",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000647,
+      "name": "Zander-Olofsson",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    }
+  ]
+}

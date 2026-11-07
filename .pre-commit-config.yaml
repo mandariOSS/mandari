@@ -33,9 +33,9 @@ repos:
       - id: check-json
       - id: end-of-file-fixer
         # Der Textlink und der verdeckte NÖ-Text stehen mitten im Satz: ohne Zeilenumbruch am Ende kein Leerzeichen vor
-        # Satzzeichen
-        exclude: (\.(min\.js|min\.css|svg)$|^mandari/templates/cotton/ui/textlink\.html$|^mandari/templates/work/faction/sitzung/_noe_text\.html$)
+        # Satzzeichen. Übernommene ALLRIS-3-Testseiten bleiben Byte für Byte, wie die Server sie ausliefern.
+        exclude: (\.(min\.js|min\.css|svg)$|^mandari/templates/cotton/ui/textlink\.html$|^mandari/templates/work/faction/sitzung/_noe_text\.html$|^ingestor/tests/fixtures/scrapers/allris3/.*\.html$)
       - id: trailing-whitespace
-        exclude: \.(min\.js|min\.css|md)$
+        exclude: (\.(min\.js|min\.css|md)$|^ingestor/tests/fixtures/scrapers/allris3/.*\.html$)
       - id: check-merge-conflict
       - id: detect-private-key

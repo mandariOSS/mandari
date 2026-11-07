@@ -301,6 +301,7 @@ class OParlSource(models.Model):
     SOURCE_TYPE_OPARL = "oparl"
     SOURCE_TYPE_BRIDGE_ALLRIS = "bridge:allris"
     SOURCE_TYPE_SCRAPER_SESSIONNET = "scraper:sessionnet"
+    SOURCE_TYPE_SCRAPER_ALLRIS3 = "scraper:allris3"
 
     class Meta:
         db_table = "oparl_sources"
@@ -315,7 +316,7 @@ class OParlSource(models.Model):
         """
         Art der Quelle: "oparl" (Default), "bridge:<vendor>" (externer
         OParl-Proxy, z. B. Aeroid/oparl-bridge vor ALLRIS) oder
-        "scraper:<vendor>" (Ingestor-Scraper-Adapter, z. B. SessionNet).
+        "scraper:<vendor>" (Ingestor-Scraper-Adapter, z. B. SessionNet oder ALLRIS 3).
         Gespeichert in sync_config["source_type"].
         """
         if isinstance(self.sync_config, dict):

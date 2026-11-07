@@ -1,0 +1,110 @@
+{
+  "name": "Hauptausschuss",
+  "members": [
+    {
+      "kplfdnr": 188,
+      "name": "Philip Buse",
+      "role": "Vorsitzendes Mitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 356,
+      "name": "André Schneider",
+      "role": "Stellvertr. Vorsitz",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1022,
+      "name": "Jan-Hendrik Blumenthal",
+      "role": "Ausschussmitglied",
+      "faction": "B 90 / DIE GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 241,
+      "name": "Marc Buttler",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 256,
+      "name": "Claudia Folkers",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1209,
+      "name": "Niclas Heins",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000111,
+      "name": "Dr. Natalie Hochheim",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000311,
+      "name": "Thomas Iwan",
+      "role": "Ausschussmitglied",
+      "faction": "DIE LINKE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000385,
+      "name": "Justin Orbán",
+      "role": "Ausschussmitglied",
+      "faction": "B 90 / DIE GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1017,
+      "name": "Marlies Riebe",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000328,
+      "name": "Katja Rosenbohm",
+      "role": "Ausschussmitglied",
+      "faction": "B 90 / DIE GRÜNEN-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000329,
+      "name": "Marco Schulz",
+      "role": "Ausschussmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000334,
+      "name": "Dietmar Werner Wagner",
+      "role": "Ausschussmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 424,
+      "name": "Xavier Wasner",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000335,
+      "name": "Birgit Wolff",
+      "role": "Ausschussmitglied",
+      "faction": "FDP-Fraktion",
+      "voting_right": true
+    }
+  ]
+}

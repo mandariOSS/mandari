@@ -1,0 +1,75 @@
+{
+  "name": "AfD Fraktion Eimsbüttel",
+  "members": [
+    {
+      "kplfdnr": 1000305,
+      "name": "Elke Zimmermann",
+      "role": "Fraktionsvorsitzende/r",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000481,
+      "name": "Harald Wellmann",
+      "role": "1. stv. Fraktionsvorsitzende/r",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000303,
+      "name": "Jörg Pillatzke",
+      "role": "Fraktionsmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000535,
+      "name": "Brettschneider",
+      "role": "Zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000349,
+      "name": "Dr. Marc Cremer-Thursby",
+      "role": "Zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000495,
+      "name": "Julian Frank",
+      "role": "Zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000371,
+      "name": "Martin Lemke",
+      "role": "Zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000519,
+      "name": "John Fahim Lorenz",
+      "role": "Zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000532,
+      "name": "Franziska von Schlippe",
+      "role": "Zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000350,
+      "name": "Peter Zimmermann",
+      "role": "Zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    }
+  ]
+}

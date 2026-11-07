@@ -3,11 +3,12 @@
 Mandari kann neben echten OParl-APIs auch Ratsinformationssysteme ohne
 OParl-Schnittstelle anbinden. Zwei Wege:
 
-1. **Scraper-Adapter im Ingestor** (`ingestor/src/scrapers/`) — z. B.
-   **SessionNet** (Somacos). Der Adapter erzeugt synthetisches
+1. **Scraper-Adapter im Ingestor** (`ingestor/src/scrapers/`) — für
+   **SessionNet** (Somacos) und **ALLRIS 3** (CC e-gov, klassische
+   ASP-Oberfläche, Abschnitt 7). Der Adapter erzeugt synthetisches
    OParl-1.1-JSON und speist es in die unveränderte Pipeline ein
    (OParlProcessor → Upserts → OCR-Queue → Elasticsearch → Tombstones).
-2. **Externer OParl-Proxy** — z. B. **ALLRIS** via
+2. **Externer OParl-Proxy** — z. B. **ALLRIS 4** via
    [Aeroid/oparl-bridge](https://github.com/Aeroid/oparl-bridge) (MIT).
    Der Proxy läuft als eigener Container; Mandari konsumiert seine
    OParl-Ausgabe als ganz normale OParl-Quelle. Der Ingestor-Kern bleibt
@@ -22,6 +23,7 @@ Django und Ingestor zu vermeiden):
 | `oparl` (Default, Schlüssel fehlt) | echte OParl-API |
 | `bridge:allris` | oparl-bridge-Proxy vor ALLRIS (normaler OParl-Sync, nur Provenienz-Label) |
 | `scraper:sessionnet` | SessionNet-HTML-Scraper im Ingestor |
+| `scraper:allris3` | ALLRIS-3-HTML-Scraper im Ingestor (klassische Oberfläche unter `/bi/*.asp`, Abschnitt 7) |
 
 Im Django-Admin (OParl-Quellen) sind Art, Parse-Quote und robots.txt-Status
 je Quelle sichtbar; der Filter "Quellen-Art" trennt OParl/Bridge/Scraper.
@@ -60,8 +62,8 @@ mandari-ingestor probe-ris --batch kommunen.txt --format csv --out zensus.csv
 mandari-ingestor probe-ris --batch kommunen.txt --store                     # Ergebnis an registrierte Quellen
 ```
 
-Das Ergebnis enthält einen Vorschlag für `sync_config` (OParl-Systemadresse mit Version oder
-SessionNet-Basis-URL) beziehungsweise die Begründung, warum kein Adapter sinnvoll ist (robots,
+Das Ergebnis enthält einen Vorschlag für `sync_config` (OParl-Systemadresse mit Version,
+SessionNet- oder ALLRIS-3-Basis-URL) beziehungsweise die Begründung, warum kein Adapter sinnvoll ist (robots,
 Gate, Hersteller ohne Scraping-Pfad, siehe ADR 2026-09-17). Der Batch-Lauf liefert zwei
 Listen: **ohne OParl, robots-frei** (Scraper-Kandidaten) und **OParl vorhanden, nicht
 registriert** (Aktivierung und Registrierung anstoßen). Mit `--store` landet das Ergebnis in
@@ -405,7 +407,8 @@ Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf
 ## 2. ALLRIS via oparl-bridge (externer Container)
 
 **ALLRIS 4/net** (CC e-gov) rendert sein Frontend per Apache-Wicket/Ajax —
-klassisches HTML-Scraping reicht dort nicht.
+klassisches HTML-Scraping reicht dort nicht. Für die klassische Oberfläche von
+ALLRIS 3 (`/bi/*.asp`) gibt es den Adapter `scraper:allris3` (Abschnitt 7).
 [Aeroid/oparl-bridge](https://github.com/Aeroid/oparl-bridge) (MIT,
 FastAPI + Playwright + SQLite) scrapt eine ALLRIS-Instanz (Wicket-UI plus
 die XML-API der ALLRIS-Windows-App, `/app01`) und publiziert die Daten als
@@ -640,3 +643,121 @@ seit Issue #122; die Kommune muss nichts freischalten.
    more! rubin liefert keinen Gemeindeschlüssel; die Ortsgemeinden werden per
    Name im Gebiet der Verbandsgemeinde gefunden. Mehrdeutiges steht danach im
    Admin unter „Geo-Vorschläge“. Einzelheiten: `docs/INSIGHT_GEO.md`.
+
+## 7. ALLRIS 3 anbinden (klassische ASP-Oberfläche)
+
+Der Adapter `scraper:allris3` (`ingestor/src/scrapers/allris3.py`, Issue #121) liest die klassische
+Oberfläche von ALLRIS 3 (CC e-gov). Sie ist serverseitig gerendert, mit dreistelligen Seitenkürzeln
+unter `/bi/`: `si010_e.asp` (Sitzungskalender), `to010.asp?SILFDNR=…` (Sitzung),
+`vo020.asp?VOLFDNR=…` (Drucksache). Geprüft ist der Adapter an Seiten von ALLRIS net 3.9.5; Vorbild für
+Seitenauswahl und Selektoren ist das Projekt [bv-hh](https://github.com/bv-hh/bv-hh) (MIT), von dort
+stammen auch die Testseiten (`ingestor/tests/fixtures/scrapers/allris3/`). ALLRIS 4 (Wicket-Oberfläche
+unter `/public/`) ist ein anderes Produkt, siehe Abschnitt 2.
+
+### Vor dem Anlegen
+
+- **Zensus:** `probe-ris <Adresse>` erkennt ALLRIS 3 und schlägt ohne OParl und ohne robots-Sperre
+  `{"scraper": "allris3", "base_url": "…/bi"}` vor; die Basis-URL kommt aus den Verweisen der Startseite (nach
+  Weiterleitungen), die robots-Prüfung gilt für sie.
+  Bietet die Instanz OParl, hat OParl Vorrang.
+- **robots.txt:** verbindlich wie bei jeder Quelle (Abschnitt 3). Sperrt sie die Basis-URL, ruft der
+  Ingestor nichts ab, und die Quelle bekommt die Fehlerklasse `robots_blocked`. Eine solche Quelle wird erst
+  nach einer Zustimmung des Betreibers eingeschaltet, mit Vermerk:
+  `manage.py robots_override <quelle> --scope api --note "…"` (wer hat wann zugestimmt, `docs/MONITORING.md`).
+- **Neue Quellen starten inaktiv:** „Aktiv“ erst nach dem Probelauf setzen (Abschnitt 1, Schritt 3 und 4).
+
+### Quelle anlegen
+
+Admin → Insight → OParl-Quellen → Hinzufügen, die URL ist die Basis-URL:
+
+```json
+{
+  "source_type": "scraper:allris3",
+  "scraper": {
+    "base_url": "https://ratsinfo.example.org/bi/",
+    "body_name": "Stadt Musterstadt",
+    "max_detail_pages": 50,
+    "oldest_paper_id": 1000000
+  }
+}
+```
+
+| Schlüssel | Default | Bedeutung |
+|---|---|---|
+| `base_url` | – (Pflicht) | Verzeichnis der `*.asp`-Seiten, meist `…/bi/` |
+| `body_name` | "Unbekannte Kommune" | Anzeigename des Bodies (eine Körperschaft je Basis-URL) |
+| `oldest_paper_id` | – (kein Rückwärtszählen) | Untergrenze der Drucksachen-Kennung (`VOLFDNR`), bis zu der Vollabgleiche von der neuesten Drucksache rückwärts zählen |
+| `paper_backfill_per_run` | `200` | Höchstens so viele Kennungen fragt ein Vollabgleich beim Rückwärtszählen ab, auch ohne `max_detail_pages`; der nächste setzt beim gemerkten Stand fort |
+| `max_detail_pages` | unbegrenzt | Obergrenze der Detailseiten je Lauf: Sitzungen, Tagesordnungspunkte (`to020`), Drucksachen, Mitgliederlisten. Eine angefangene Sitzung liest der Lauf zu Ende |
+| `rate_limit_seconds`, `calendar_window_days`, `full_window_days`, `members_on_full_only` | wie bei SessionNet | siehe Abschnitt 1, Schritt 3 |
+
+`variant` und `bodies` gibt es bei ALLRIS 3 nicht. Die Schlüssel außerhalb von `scraper`
+(`request_interval`, `sync_window`, `robots_override` …) gelten wie bei jeder Quelle.
+
+### Was der Adapter liest
+
+| ALLRIS-Seite | OParl-Entität | external_id |
+|---|---|---|
+| Basis-URL | Body | `https://<host>/bi/` |
+| `si010_e.asp?MM=…&YY=…` | Sitzungen des Monats; ohne veröffentlichte Tagesordnung nur Name, Zeit und Raum aus dem Kalender | – |
+| `to010.asp?SILFDNR=` | Meeting: Bezeichnung, Gremium, Datum, Zeit, Raum, Ort, Tagesordnung | `…/to010.asp?SILFDNR=N` |
+| TOP in `to010` | AgendaItem: Nummer, Titel, öffentlich (Kennzeichen Ö/N), Beschlussart (`result`) | `…/to020.asp?TOLFDNR=N` |
+| `to020.asp?TOLFDNR=` (nur vergangene Sitzungen) | am AgendaItem: `resolutionText` (Beschluss und Abstimmungsergebnis), `mandari:minutes` (Wortprotokoll) | – |
+| `vo020.asp?VOLFDNR=` | Paper: Nummer (`reference`), Betreff, Art, `mandari:explanation` (Sachverhalt), `mandari:proposal` (Beschlussvorschlag, Petitum) | `…/vo020.asp?VOLFDNR=N` |
+| TOP ↔ Drucksache | Consultation | `…/vo020.asp?VOLFDNR=N#consultation/<TOLFDNR>` |
+| Gremium einer Sitzung (`au020`, `pa020`) | Organization „Gremium“ (Ausschuss bzw. Hauptorgan) | `…/au020.asp?AULFDNR=N`, `…/pa020.asp?PALFDNR=N` |
+| `fr010.asp`, `fr020.asp?FRLFDNR=` | Organization „Fraktion“ | `…/fr020.asp?FRLFDNR=N` |
+| Mitglieder in `au020`, `pa020`, `fr020` (Vollabgleich) | Person, Membership (Art der Mitarbeit, Stimmrecht) | `…/kp020.asp?KPLFDNR=N`, ohne Personenseite `<Basis-URL>#person/<Name>` |
+
+- **Drucksachen** findet der Adapter über die Tagesordnungen der gelesenen Sitzungen und über die Liste
+  `vo040.asp` (erste Seite, neueste zuerst): im Änderungsabgleich nur Drucksachen, die neuer sind als beim
+  letzten Lauf (`scraper_state.list_snapshots.vo040`), im Vollabgleich alle der Liste. Die neueste Kennung
+  rückt nur vor, wenn alle Drucksachen gelesen sind.
+- **Rückwärtszählen** (nur Vollabgleich, nur mit `oldest_paper_id`): Kennungen von der neuesten bzw. vom
+  gemerkten Stand abwärts bis zur Untergrenze, je Lauf höchstens `paper_backfill_per_run` Abrufe (Standard 200)
+  und nie über `max_detail_pages`. Der Stand (nächste Kennung) steht in
+  `scraper_state.list_snapshots.vo020_backfill` und rückt erst vor, wenn der Läufer die Drucksachen davor
+  gespeichert hat; der nächste Vollabgleich setzt dort fort. Unter der Untergrenze ist das Rückwärtszählen
+  fertig; eine tiefere Untergrenze setzt es fort, Löschen des Stands beginnt es neu. Lücken, die ALLRIS nicht
+  herausgibt, zählen wie tote Verweise; bei einer gestörten Kennung endet es für diesen Lauf (nach ihr).
+- **Gremien** kennt ALLRIS 3 ohne eigene Liste nur aus den Sitzungen; ein Gremium erscheint mit seiner ersten
+  Sitzung im Fenster. Fraktionen stehen in `fr010.asp`.
+- **Text:** ALLRIS 3 deklariert ISO-8859-1, schreibt aber Windows-1252; der Adapter dekodiert die Rohbytes.
+  Inhalte aus Word werden Text mit Zeilenumbrüchen, Zeichen der Schriften Symbol und Wingdings werden lesbar.
+  Wie in bv-hh entscheidet die Bezeichnung am Anfang eines Blocks über Sachverhalt oder Beschlussvorschlag
+  („Petitum/Beschluss:“, „Beschluss:“); Bezeichnungen entfallen, Platzhalter („keine“, „---“) gelten als leer,
+  Blöcke ohne Bezeichnung gehören zum Sachverhalt.
+
+### Änderungserkennung und Löschungen
+
+- **Listen-Diffing** je Kalendermonat und **Content-Hash** je Objekt wie bei SessionNet. Ein Kalendermonat
+  ändert sich auch, wenn eine Niederschrift erscheint; dann liest der Änderungsabgleich den Monat neu. Als
+  gelesen gilt ein Monat erst, wenn keine seiner Seiten gestört war und das Budget reichte; sonst liest ihn der
+  nächste Änderungsabgleich wieder.
+- **Nicht öffentlich:** Leitet ALLRIS auf die Anmeldung (`noauth.asp`) um oder zeigt die angefragte Seite
+  „Keine Information verfügbar“ außerhalb der Abschnitte aus Word (im Wortprotokoll darf der Satz stehen), zählt
+  die Seite wie ein toter Verweis, nicht als Störung. Sperrt die robots.txt die Anmeldeseite, folgt der Abruf der
+  Weiterleitung nicht und wertet die Seite ebenso. Eine Sitzung, deren Tagesordnung ALLRIS nicht herausgibt,
+  schreibt der Lauf nicht neu: Sie bleibt im Bestand, wie sie ist (mit Gremium und Anschrift), und gilt als
+  gesehen; neu angelegt wird sie erst mit öffentlicher Tagesordnung.
+- **Fremde Seiten:** Jede Seite muss den Rahmen von ALLRIS (`div#allriscontainer`) mit genau der angefragten
+  Seitenart tragen (der Kalender `si010_e` trägt `si010`), der Kalender die Tageszeilen des angefragten Monats;
+  sonst ist sie nicht lesbar und ergibt nie eine leere Liste. Eine Sitzungsseite auf eine Anfrage nach einem
+  Tagesordnungspunkt ist eine Störung, nicht „nicht öffentlich“.
+- **Löschabgleich** nur für Sitzungen im Fenster und Tagesordnungspunkte gelesener Sitzungen, nach denselben
+  Regeln wie bei SessionNet (nur vollständige Vollabgleiche, Bremse, `SCRAPER_TOMBSTONE_FULL_CRAWLS`). Gremien,
+  Fraktionen, Personen und Drucksachen markiert der Adapter nie als gelöscht.
+- **Gestörter Tagesordnungspunkt:** Ist eine `to020`-Seite gestört, schreibt der Lauf die ganze Sitzung nicht,
+  damit gespeicherte Protokolle nicht verloren gehen; der nächste Lauf liest sie wieder.
+
+### Grenzen
+
+- **Keine Dateien:** ALLRIS 3 gibt Dokumente (Einladung, Niederschrift, Drucksache als PDF) nur über das
+  POST-Formular `do027.asp` mit Sitzungs-Cookie heraus, Anlagen nur als befristete Kopie unter `___tmp/`. Die
+  Datei-Pipeline lädt per GET von einer dauerhaften Adresse und wertet `404`/`410` als Löschsignal; eine
+  befristete Adresse würde nach Ablauf gesperrt. Der Adapter legt deshalb keine Dateien an. Den Text der
+  Drucksachen liest er aus der Seite selbst.
+- Sachverhalt, Beschlussvorschlag und Wortprotokoll stehen im Rohdatensatz (`mandari:explanation`,
+  `mandari:proposal`, `mandari:minutes`); Suche und Bürgerportal zeigen sie noch nicht.
+- Kein Datum an Drucksachen (`vo020` nennt keines), keine Wahlperioden, keine Personenseiten (`kp020`).
+- Protokolle (`to020`) nur für vergangene Sitzungen.

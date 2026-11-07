@@ -110,6 +110,23 @@ precedence = "override"
 SPDX-FileCopyrightText = "2019 Lebedev Konstantin and SortableJS contributors"
 SPDX-License-Identifier = "MIT"
 
+# --- Übernommene Testseiten: ALLRIS 3 aus dem Projekt bv-hh (unverändert, Herkunft im README daneben) ---
+# Die eigenen, synthetischen Seiten unter allris3/synthetisch/ fallen unter die Grundregel.
+[[annotations]]
+path = [
+  "ingestor/tests/fixtures/scrapers/allris3/altona/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/bergedorf/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/cases/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/eimsbuettel/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/hamburg_mitte/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/hamburg_nord/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/harburg/*.html",
+  "ingestor/tests/fixtures/scrapers/allris3/wandsbek/*.html",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2020, 2021 Timo B. Kranz (https://github.com/bv-hh/bv-hh)"
+SPDX-License-Identifier = "MIT"
+
 # --- kommParl-Spezifikation: übernommene Schemas, unverändert (Herkunft in HERKUNFT.json daneben) ---
 # kommParl ist eine Bearbeitung der OParl-Spezifikation; beide stehen unter CC BY-SA 4.0
 # (https://github.com/mandariOSS/kommParl/blob/main/HERKUNFT.md). Erneuern: scripts/kommparl_schemas.py.

@@ -1,0 +1,411 @@
+{
+  "name": "Jugendhilfeausschuss",
+  "members": [
+    {
+      "kplfdnr": 1000506,
+      "name": "Kay Dassow",
+      "role": "Ausschussvorsitz",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000188,
+      "name": "Stefanie Blaschka",
+      "role": "stellv. Vorsitz",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000690,
+      "name": "Nassy Ahmed-Buscher",
+      "role": "Freie Träger Jugendhilfe stimmber.",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000815,
+      "name": "Gülten Arslan",
+      "role": "Freie Träger Jugendhilfe stimmber.",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000149,
+      "name": "Christoph Gregg",
+      "role": "Freie Träger Jugendhilfe stimmber.",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000814,
+      "name": "Sönke Jans",
+      "role": "Freie Träger Jugendhilfe stimmber.",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000231,
+      "name": "Nicole Jordan",
+      "role": "Ausschussmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000493,
+      "name": "Klaus-Michael Leipold",
+      "role": "Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000692,
+      "name": "Anna Löwe",
+      "role": "Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000509,
+      "name": "Miriam Natur",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000487,
+      "name": "Elyon Schrader",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000145,
+      "name": "Maureen Schwalke",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion DIE LINKE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000599,
+      "name": "Hanifah Soylu",
+      "role": "Ausschussmitglied",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000354,
+      "name": "Pascal Transchel",
+      "role": "Freie Träger Jugendhilfe stimmber.",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000733,
+      "name": "Sarah Veigel",
+      "role": "Ausschussmitglied",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000827,
+      "name": "Marcella Pauline Ahmed",
+      "role": "ständige Vertretung",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000717,
+      "name": "Faissal Al Asmi",
+      "role": "ständige Vertretung",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000657,
+      "name": "Justin Blacharczyk",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "CDU-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000456,
+      "name": "Timo Alexander Blechschmidt",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000804,
+      "name": "Mehmet Ciftlik",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 29,
+      "name": "Sven Dahlgaard",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000731,
+      "name": "Ilayda Yagmur Damar",
+      "role": "ständige Vertretung",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000808,
+      "name": "Ece Yeter Dilber",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000758,
+      "name": "Anh Thi Do-Kavka",
+      "role": "ständige Vertretung",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000291,
+      "name": "Julia Domanski",
+      "role": "ständige Vertretung",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000881,
+      "name": "Oliver Döscher",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000739,
+      "name": "Lisa Marie Erkalp",
+      "role": "ständige Vertretung",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000810,
+      "name": "Dorothea Frauböse",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "beratende Mitglieder",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000811,
+      "name": "Stephan Giese",
+      "role": "Beratendes Mitglied",
+      "faction": "beratende Mitglieder",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000611,
+      "name": "Christa Glischke-Klein",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000806,
+      "name": "Stefan Hartmann",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 76,
+      "name": "Peter Herkenrath",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "CDU-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000803,
+      "name": "Muhammed Emre Kaya",
+      "role": "ständige Vertretung",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000867,
+      "name": "Isgard Klein",
+      "role": "ständige Vertretung",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 115,
+      "name": "Lothar Knode",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000813,
+      "name": "Dennis Kraft",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "CDU-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000615,
+      "name": "Mathis Leifhelm",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "CDU-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000805,
+      "name": "Gesine Lindemann",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000812,
+      "name": "Jan Petersen",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "beratende Mitglieder",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000021,
+      "name": "Anja Post-Martens",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "Fraktion DIE LINKE",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000816,
+      "name": "Hans-Dieter Pralle",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "freie Träger",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000817,
+      "name": "Yegane Rasaei",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "beratende Mitglieder",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000807,
+      "name": "Yasir Salami",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000707,
+      "name": "Simon Seiffert",
+      "role": "Freie Träger Jugendhilfe stellv.",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000512,
+      "name": "Neele Singh",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000155,
+      "name": "Ulrike Sohns-Dorff",
+      "role": "Beratendes Mitglied",
+      "faction": "beratende Mitglieder",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000809,
+      "name": "Ignaz-Ewald Spies",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000673,
+      "name": "Nora Stärz",
+      "role": "ständige Vertretung",
+      "faction": "Fraktion DIE LINKE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000821,
+      "name": "Derya Tamer",
+      "role": "ständige Vertretung",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000851,
+      "name": "Pieter Thomas",
+      "role": "Beratendes Mitglied",
+      "faction": "beratende Mitglieder",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000818,
+      "name": "Yama Waziri",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "beratende Mitglieder",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000718,
+      "name": "Shlica Weiß",
+      "role": "ständige Vertretung",
+      "faction": "freie Träger",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000459,
+      "name": "Jana Wilczek",
+      "role": "Beratendes Mitglied Ehrenamt",
+      "faction": "SPD-Fraktion",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000831,
+      "name": "Daniela Brall",
+      "role": "Verwaltung",
+      "faction": "Bezirksamt",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000699,
+      "name": "Dr. Sabine Kerner",
+      "role": "Verwaltung",
+      "faction": "Bezirksamt",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000633,
+      "name": "Henning Klahn",
+      "role": "Verwaltung",
+      "faction": "Bezirksamt",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000085,
+      "name": "Rietz",
+      "role": "Verwaltung",
+      "faction": "Bezirksamt",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 1000396,
+      "name": "von Czettritz und Neuhaus",
+      "role": "Verwaltung",
+      "faction": "Bezirksamt",
+      "voting_right": false
+    }
+  ]
+}
