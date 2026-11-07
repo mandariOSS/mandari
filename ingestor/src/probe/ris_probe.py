@@ -38,7 +38,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from mandari_oparl.abgleich import detect_gate
@@ -104,6 +104,8 @@ class ProbeResult:
     oparl_checked: list[str] = field(default_factory=list)
     requests: int = 0
     sync_config: dict[str, Any] | None = None
+    #: Verzeichnis der Seiten eines Scraper-Adapters (ALLRIS 3: dort liegen si010_e.asp, vo020.asp …)
+    scraper_base_url: str | None = None
     notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -153,6 +155,37 @@ def fingerprint(html: str, url: str = "", headers: dict[str, str] | None = None)
     if "/bi/" in url and re.search(r"\b(si|to|vo)\d{4}\.(asp|php)", text):
         return "sessionnet"
     return "unbekannt"
+
+
+#: Seiten einer ALLRIS-3-Oberfläche: dreistellige Kürzel mit *.asp (si010_e, to010, vo020, au020 …)
+_ALLRIS3_PAGE_RE = re.compile(
+    r"""href\s*=\s*["']([^"'#?]*\b(?:si|to|vo|au|pa|fr|kp)\d{3}(?:_[a-z])?\.asp)\b""", re.IGNORECASE
+)
+
+
+def allris3_base_url(url: str, html: str = "") -> str:
+    """
+    Basis-URL einer ALLRIS-3-Oberfläche (Verzeichnis der ``*.asp``-Seiten, ohne Schrägstrich am Ende).
+
+    Zuerst aus dem ersten Verweis der Startseite auf eine ALLRIS-Seite (``si010_e.asp``, ``vo020.asp`` …), sonst aus
+    der Adresse: bis einschließlich ``/bi``, das Verzeichnis einer ``*.asp``-Adresse oder ``/bi`` unter dem Wurzelpfad
+    (Standardpfad von ALLRIS 3).
+    """
+    match = _ALLRIS3_PAGE_RE.search(html or "")
+    if match is not None:
+        page = urljoin(url, str(match.group(1)))
+        return page.rsplit("/", 1)[0]
+    parsed = urlparse(url)
+    path = parsed.path or "/"
+    lowered = path.lower()
+    if "/bi/" in lowered or lowered.endswith("/bi"):
+        end = lowered.index("/bi") + 3
+        path = path[:end]
+    elif lowered.endswith(".asp"):
+        path = path.rsplit("/", 1)[0]
+    else:
+        path = path.rstrip("/") + "/bi"
+    return urlunparse((parsed.scheme or "https", parsed.netloc, path, "", "", "")).rstrip("/")
 
 
 def robots_verdict(robots_txt: str | None, user_agent: str, paths: list[str]) -> tuple[str, str]:
@@ -210,8 +243,11 @@ def suggest_sync_config(result: ProbeResult) -> dict[str, Any] | None:
         return None
     if result.vendor == "sessionnet":
         return {"scraper": "sessionnet", "base_url": result.url.rstrip("/")}
-    if result.vendor in ("allris3", "allris4"):
-        result.notes.append("ALLRIS ohne OParl: Bridge bzw. App-API prüfen (Issues #119/#120), kein direkter Scraper")
+    if result.vendor == "allris3":
+        # Adapter scraper:allris3 (Issue #121); die Basis-URL vor dem Anlegen prüfen (si010_e.asp liefert den Kalender)
+        return {"scraper": "allris3", "base_url": result.scraper_base_url or allris3_base_url(result.url)}
+    if result.vendor == "allris4":
+        result.notes.append("ALLRIS 4 ohne OParl: Bridge bzw. App-API prüfen (Issues #119/#120), kein direkter Scraper")
         return None
     if result.vendor in ("sternberg_rim", "regisafe", "komuna"):
         result.notes.append("kein Scraping für diesen Hersteller (ADR 2026-09-17), OParl-Aktivierung anfragen")
@@ -424,9 +460,12 @@ async def probe_url(
 
     # 4) OParl-Autodiscovery mit dem Restbudget; gesperrte Kandidaten fragen wir nicht an
     kandidaten = oparl_candidates(url, result.vendor)
-    result.robots, result.robots_detail = robots_verdict(
-        robots_txt, user_agent, [parsed.path or "/"] + [urlparse(k).path for k in kandidaten[:3]]
-    )
+    pfade = [parsed.path or "/"] + [urlparse(k).path for k in kandidaten[:3]]
+    if result.vendor == "allris3":
+        # Der Adapter liest unter der Basis-URL: Sperrt die robots.txt sie, gibt es keinen Vorschlag
+        result.scraper_base_url = allris3_base_url(url, html)
+        pfade.append((urlparse(result.scraper_base_url).path or "") + "/")
+    result.robots, result.robots_detail = robots_verdict(robots_txt, user_agent, pfade)
     gesperrte = [k for k in kandidaten if not erlaubt(k)]
     if gesperrte:
         result.notes.append(f"{len(gesperrte)} OParl-Kandidat(en) per robots.txt gesperrt – nicht abgerufen")

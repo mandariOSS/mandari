@@ -1,0 +1,61 @@
+{
+  "name": "AfD-Fraktion",
+  "members": [
+    {
+      "kplfdnr": 1000666,
+      "name": "Bernd Bamberg",
+      "role": "Fraktionsmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000231,
+      "name": "Nicole Jordan",
+      "role": "Fraktionsvorsitzende/r",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000441,
+      "name": "Norbert Jordan",
+      "role": "Fraktionsmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000422,
+      "name": "Marc-Manuel Kunstmann",
+      "role": "Fraktionsvorsitzende/r",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000794,
+      "name": "Martin Knorr",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000757,
+      "name": "Matthias Lloyd",
+      "role": "zubenannte/r Bürger/in",
+      "faction": null,
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000743,
+      "name": "Monika Pawletta",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000592,
+      "name": "Hans-Jürgen Rinck",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    }
+  ]
+}

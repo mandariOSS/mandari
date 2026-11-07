@@ -10,6 +10,8 @@ Quellen-Auswahl über OParlSource.sync_config["source_type"]:
   - "bridge:allris"            -> normaler OParl-Sync (externer oparl-bridge-
                                   Proxy, nur Provenienz-Label)
   - "scraper:sessionnet"       -> SessionNetAdapter (dieses Paket)
+  - "scraper:allris3"          -> Allris3Adapter (ALLRIS 3, klassische
+                                  ASP-Oberfläche unter /bi/*.asp)
 """
 
 from src.scrapers.base import ScraperAdapter, ScraperConfig, content_hash
@@ -24,6 +26,10 @@ def get_adapter(source_type: str, config: "ScraperConfig", fetcher) -> "ScraperA
         from src.scrapers.sessionnet import SessionNetAdapter
 
         return SessionNetAdapter(config, fetcher)
+    if vendor == "allris3":
+        from src.scrapers.allris3 import Allris3Adapter
+
+        return Allris3Adapter(config, fetcher)
     raise ValueError(f"Unbekannter Scraper-Vendor: {vendor!r} (source_type={source_type!r})")
 
 

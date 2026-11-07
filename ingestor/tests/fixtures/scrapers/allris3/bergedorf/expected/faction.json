@@ -1,0 +1,320 @@
+{
+  "name": "CDU-Fraktion - Bergedorf",
+  "members": [
+    {
+      "kplfdnr": 361,
+      "name": "Julian Emrich",
+      "role": "Fraktionsvorsitzende/r",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 201,
+      "name": "Jörg Froh",
+      "role": "stellv. Fraktionsvorsitzende/r",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000059,
+      "name": "André Wegner",
+      "role": "stellv. Fraktionsvorsitzende/r",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000282,
+      "name": "Cetin Akbulut",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000227,
+      "name": "Julia Bentin",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 234,
+      "name": "Bernd Capeletti",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 200,
+      "name": "Lars Dietrich",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 359,
+      "name": "Erika Garbers",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000522,
+      "name": "Clara-Sophie Groß",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000511,
+      "name": "Klaus Klingler",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000351,
+      "name": "Viktoria Kohls",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000440,
+      "name": "Parmod Kumar",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 822,
+      "name": "Stephanie Pelch",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000553,
+      "name": "Dr. Toufic Schilling",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000580,
+      "name": "Werner Strehle",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 290,
+      "name": "Christa Timmermann",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 216,
+      "name": "Karl Wilhelm Albert Woller",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 236,
+      "name": "Mathias Zaum",
+      "role": "Fraktionsmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000122,
+      "name": "Renate Bower",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 197,
+      "name": "Tobias Bußmann",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 886,
+      "name": "Ocke Christian Eggebrecht",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 717,
+      "name": "Waltraud Fromme-Born",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000091,
+      "name": "Dennis Gladiator",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 329,
+      "name": "Olaf Grotheer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000489,
+      "name": "Ole Fiete Jost",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000063,
+      "name": "Sabine Kohls",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000130,
+      "name": "Finn Külper",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000144,
+      "name": "Janet Külper-Stehr",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000267,
+      "name": "Janina Laugell-Saracoglu",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000169,
+      "name": "Bärbel Lüdeke",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000446,
+      "name": "Thomas Niese",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000039,
+      "name": "Friedrich Nikolei",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 288,
+      "name": "Sven Noetzel",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000297,
+      "name": "Henrik Ralf",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000390,
+      "name": "Marita Sannmann",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000474,
+      "name": "Neven Scagnoli",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": null,
+      "name": "Ursula Schilakowski",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": null,
+      "name": "Thomas Schulte",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": null,
+      "name": "Gerhard Sellhorn",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000374,
+      "name": "Oliver Summer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000468,
+      "name": "Christoph Treder",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000428,
+      "name": "Jannik von Hacht",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 292,
+      "name": "Weßling",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000375,
+      "name": "Frank Wimmler",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": null,
+      "name": "Bettina Witthöft",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    }
+  ]
+}

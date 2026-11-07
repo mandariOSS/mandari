@@ -79,6 +79,12 @@ class PoliteFetcher:
         #: HTTP-Status der letzten Antwort von :meth:`fetch_text` (``None``: keine Antwort, etwa Netzfehler).
         #: Unterscheidet „die Quelle sagt, die Seite gibt es nicht“ (404/410) von einer Störung (Issue #556).
         self.last_status: int | None = None
+        #: Rohbytes der letzten Antwort mit Status 200 (``None`` sonst): Adapter, deren Quellen einen falschen
+        #: Zeichensatz deklarieren, dekodieren selbst (ALLRIS 3: ISO-8859-1 deklariert, Windows-1252 geschrieben)
+        self.last_content: bytes | None = None
+        #: Adresse der letzten Antwort nach Weiterleitungen (``None``: keine Antwort), etwa die Anmeldeseite einer
+        #: Quelle, die nicht öffentliche Seiten dorthin umleitet
+        self.last_url: str | None = None
 
     async def __aenter__(self) -> PoliteFetcher:
         # Weiterleitungen folgen wir selbst, im Takt und nach der robots.txt des Ziels (src/client/redirects.py)
@@ -157,6 +163,8 @@ class PoliteFetcher:
 
         last_error: str | None = None
         self.last_status = None
+        self.last_content = None
+        self.last_url = None
 
         for attempt in range(self.max_retries):
             async with self._lock, host_pacer.limit(url, self.rate_limit_seconds) as slot:
@@ -186,8 +194,10 @@ class PoliteFetcher:
             self.pages_fetched += 1
             metrics.record_scraper_page(self.source_name)
             self.last_status = response.status_code
+            self.last_url = str(response.url)
 
             if response.status_code == 200:
+                self.last_content = response.content
                 return response.text
             if response.status_code in (404, 410):
                 return None

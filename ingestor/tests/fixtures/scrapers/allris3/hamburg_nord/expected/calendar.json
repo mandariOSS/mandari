@@ -1,0 +1,142 @@
+[
+  {
+    "silfdnr": 1002655,
+    "name": "Sitzung des Haushaltsausschusses",
+    "date": "2023-10-04",
+    "time_start": "18:00",
+    "time_end": "18:38",
+    "room": "Großer Sitzungssaal",
+    "agenda_linked": true,
+    "minutes": true
+  },
+  {
+    "silfdnr": 1002824,
+    "name": "Sitzung des Vorstandes Fraktion Bündnis 90/DIE GRÜNEN",
+    "date": "2023-10-04",
+    "time_start": "18:00",
+    "time_end": "18:30",
+    "room": null,
+    "agenda_linked": false,
+    "minutes": false
+  },
+  {
+    "silfdnr": 1002587,
+    "name": "ENTFÄLLT! Sitzung des Stadtentwicklungsausschusses",
+    "date": "2023-10-05",
+    "time_start": "18:00",
+    "time_end": null,
+    "room": "Großer Sitzungssaal",
+    "agenda_linked": false,
+    "minutes": false
+  },
+  {
+    "silfdnr": 1002571,
+    "name": "Sitzung des Vergabeausschusses",
+    "date": "2023-10-09",
+    "time_start": "17:00",
+    "time_end": "18:00",
+    "room": null,
+    "agenda_linked": false,
+    "minutes": false
+  },
+  {
+    "silfdnr": 1002680,
+    "name": "Sitzung des Regionalausschusses Eppendorf-Winterhude",
+    "date": "2023-10-09",
+    "time_start": "18:00",
+    "time_end": "19:15",
+    "room": "Großer Sitzungssaal",
+    "agenda_linked": true,
+    "minutes": true
+  },
+  {
+    "silfdnr": 1002713,
+    "name": "Sitzung des (FOLAG) Unterausschusses Bau des Regionalausschusses Langenhorn-Fuhlsbüttel-Ohlsdorf-Alsterdorf-Groß Borstel (nichtöffentlich)",
+    "date": "2023-10-09",
+    "time_start": "18:00",
+    "time_end": "18:35",
+    "room": "dOZ 2.0",
+    "agenda_linked": true,
+    "minutes": true
+  },
+  {
+    "silfdnr": 1002823,
+    "name": "Sitzung des Vorstandes CDU-Fraktion",
+    "date": "2023-10-10",
+    "time_start": "17:30",
+    "time_end": "18:00",
+    "room": null,
+    "agenda_linked": false,
+    "minutes": false
+  },
+  {
+    "silfdnr": 1002825,
+    "name": "Sitzung der Fraktion Bündnis 90/DIE GRÜNEN",
+    "date": "2023-10-10",
+    "time_start": "18:00",
+    "time_end": "19:00",
+    "room": null,
+    "agenda_linked": false,
+    "minutes": false
+  },
+  {
+    "silfdnr": 1002827,
+    "name": "Sitzung des Vorstandes DIE LINKE-Fraktion",
+    "date": "2023-10-10",
+    "time_start": "18:00",
+    "time_end": "20:00",
+    "room": null,
+    "agenda_linked": false,
+    "minutes": false
+  },
+  {
+    "silfdnr": 1002828,
+    "name": "Sitzung der DIE LINKE-Fraktion",
+    "date": "2023-10-10",
+    "time_start": "18:00",
+    "time_end": "20:00",
+    "room": null,
+    "agenda_linked": false,
+    "minutes": false
+  },
+  {
+    "silfdnr": 1002826,
+    "name": "Sitzung der FDP-Fraktion",
+    "date": "2023-10-10",
+    "time_start": "19:30",
+    "time_end": "20:15",
+    "room": null,
+    "agenda_linked": false,
+    "minutes": false
+  },
+  {
+    "silfdnr": 1002646,
+    "name": "Sitzung des Ausschusses für Klimaschutz, Umwelt und Mobilität",
+    "date": "2023-10-11",
+    "time_start": "18:00",
+    "time_end": "20:42",
+    "room": "Großer Sitzungssaal",
+    "agenda_linked": true,
+    "minutes": true
+  },
+  {
+    "silfdnr": 1002626,
+    "name": "Sitzung der Bezirksversammlung",
+    "date": "2023-10-12",
+    "time_start": "18:00",
+    "time_end": "19:58",
+    "room": "Großer Sitzungssaal",
+    "agenda_linked": true,
+    "minutes": true
+  },
+  {
+    "silfdnr": 1002572,
+    "name": "Sitzung des Vergabeausschusses",
+    "date": "2023-10-23",
+    "time_start": "17:00",
+    "time_end": "18:00",
+    "room": null,
+    "agenda_linked": false,
+    "minutes": false
+  }
+]

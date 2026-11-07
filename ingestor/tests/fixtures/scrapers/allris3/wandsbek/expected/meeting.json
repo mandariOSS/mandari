@@ -1,0 +1,365 @@
+{
+  "title": "Sitzung des Hauptausschusses",
+  "committee": [
+    "au",
+    226,
+    "Hauptausschuss"
+  ],
+  "date": "2025-11-03",
+  "time_start": "17:30",
+  "time_end": "18:00",
+  "room": "Bürgersaal Wandsbek",
+  "address": "Am Alten Posthaus 4, 22041 Hamburg",
+  "rows": [
+    {
+      "tolfdnr": 1068695,
+      "number": "1",
+      "title": "Eröffnung der Sitzung",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068696,
+      "number": "2",
+      "title": "Anliegen der Bürgerinnen und Bürger und Öffentliche Fragestunde 1. Teil",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068697,
+      "number": "3",
+      "title": "Genehmigung der Niederschrift",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068698,
+      "number": "4",
+      "title": "Eingaben",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068703,
+      "number": "4.1",
+      "title": "Antrag auf sichere Querungsmöglichkeit für Kinder an der Kreuzung Schneehuhnkamp/Nydamer Weg Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023800,
+      "paper_reference": "22-2375"
+    },
+    {
+      "tolfdnr": 1068704,
+      "number": "4.2",
+      "title": "Bitte um Hilfe bzw. eine 30er-Zone wegen Lärmbelästigung und Beschwerde über dröhnende Bässe Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023801,
+      "paper_reference": "22-2376"
+    },
+    {
+      "tolfdnr": 1068705,
+      "number": "4.3",
+      "title": "Verkehrsberuhigung in der Nordmarkstraße Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023802,
+      "paper_reference": "22-2377"
+    },
+    {
+      "tolfdnr": 1068706,
+      "number": "4.4",
+      "title": "Verkehrsberuhigung Josephstraße Ecke Böhmestraße Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023803,
+      "paper_reference": "22-2378"
+    },
+    {
+      "tolfdnr": 1068707,
+      "number": "4.5",
+      "title": "Schlaglöcher in der Pferdekoppel Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023804,
+      "paper_reference": "22-2379"
+    },
+    {
+      "tolfdnr": 1068708,
+      "number": "4.6",
+      "title": "Hundekotmülleimer im Bereich Grootmoor Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023808,
+      "paper_reference": "22-2383"
+    },
+    {
+      "tolfdnr": 1068709,
+      "number": "4.7",
+      "title": "Weg zur Bergstedter Kirche ausschildern Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023809,
+      "paper_reference": "22-2384"
+    },
+    {
+      "tolfdnr": 1068710,
+      "number": "4.8",
+      "title": "Aufhebung des Parkverbots in der Angerburger Straße Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023811,
+      "paper_reference": "22-2385"
+    },
+    {
+      "tolfdnr": 1068711,
+      "number": "4.9",
+      "title": "Gefährlicher Fußgängerüberweg in Bergstedt Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023812,
+      "paper_reference": "22-2386"
+    },
+    {
+      "tolfdnr": 1068712,
+      "number": "4.10",
+      "title": "Antrag zur Einrichtung eines Taubenhauses im Bezirk Hamburg-Wandsbek Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023831,
+      "paper_reference": "22-2403"
+    },
+    {
+      "tolfdnr": 1068713,
+      "number": "4.11",
+      "title": "Gefährlicher Radweg Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023845,
+      "paper_reference": "22-2417"
+    },
+    {
+      "tolfdnr": 1068714,
+      "number": "4.12",
+      "title": "Zustand der Gehwege in Hamburg-Volksdorf Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023846,
+      "paper_reference": "22-2418"
+    },
+    {
+      "tolfdnr": 1068715,
+      "number": "4.13",
+      "title": "Verbesserung des Straßenzustandes - Beseitigung von Schlaglöchern Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023847,
+      "paper_reference": "22-2419"
+    },
+    {
+      "tolfdnr": 1068716,
+      "number": "4.14",
+      "title": "Eingabe zum Schutz von Grünflächen und Schulwegsicherung Voßkulen Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023849,
+      "paper_reference": "22-2421"
+    },
+    {
+      "tolfdnr": 1068717,
+      "number": "4.15",
+      "title": "Einwand gegen die Aufstellung von Glascontainer auf öffentlichen Grund: Ecke Alter Berner Weg / Auf der Heide Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023852,
+      "paper_reference": "22-2424"
+    },
+    {
+      "tolfdnr": 1068718,
+      "number": "4.16",
+      "title": "Aufhebung 30er Zone Trillup Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023853,
+      "paper_reference": "22-2425"
+    },
+    {
+      "tolfdnr": 1068734,
+      "number": "4.17",
+      "title": "Überdimensionierte und am Bedarf vorbeigeplante Fahrradbügel in der Straße Am Stadtrand Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023856,
+      "paper_reference": "22-2428"
+    },
+    {
+      "tolfdnr": 1068946,
+      "number": "4.17.1",
+      "title": "Stellungnahme zur Eingabe \"Am Stadtrand - Entfernung von Fahrradbügeln\" Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023923,
+      "paper_reference": "22-2494"
+    },
+    {
+      "tolfdnr": 1068947,
+      "number": "4.18",
+      "title": "Parkplätze vor der Bäckerei Daube Eingabe",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1023925,
+      "paper_reference": "22-2496"
+    },
+    {
+      "tolfdnr": 1068733,
+      "number": "5",
+      "title": "Vorlagen zur Vereinbarung gem. § 19 BezVG",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068720,
+      "number": "5.1",
+      "title": "Bezirksversammlung immer gut informiert: § 19 Vereinbarung mit dem Bezirksamt schließen Antrag der CDU-Fraktion",
+      "public": true,
+      "decision": "vertagt",
+      "detail": true,
+      "volfdnr": 1021554,
+      "paper_reference": "22-0455"
+    },
+    {
+      "tolfdnr": 1068726,
+      "number": "5.2",
+      "title": "Vereinbarung gem. § 19 BezVG - Entwurf des Bezirksamts",
+      "public": true,
+      "decision": "vertagt",
+      "detail": true,
+      "volfdnr": 1022174,
+      "paper_reference": "22-0982"
+    },
+    {
+      "tolfdnr": 1068722,
+      "number": "5.3",
+      "title": "Ergänzungs- /Änderungsvorschlag zur § 19 Vereinbarung Entwurfsfassung der CDU-Fraktion",
+      "public": true,
+      "decision": "vertagt",
+      "detail": true,
+      "volfdnr": 1023177,
+      "paper_reference": "22-1848"
+    },
+    {
+      "tolfdnr": 1068723,
+      "number": "5.4",
+      "title": "Wichtige Personalwechsel und Vakanzen im Bezirksamt dem Hauptausschuss anzeigen Antrag der CDU-Fraktion",
+      "public": true,
+      "decision": "vertagt",
+      "detail": true,
+      "volfdnr": 1023593,
+      "paper_reference": "22-2207"
+    },
+    {
+      "tolfdnr": 1068719,
+      "number": "6",
+      "title": "Anträge / Beschlussvorlagen / Überweisungen",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068724,
+      "number": "6.1",
+      "title": "Rahmenzuweisung Förderung des freiwilligen Engagements in Wandsbek 2025 hier: Mittelverwendung eingegangener Rückforderungen in 2025 Beschlussvorlage des Ausschusses für Soziales",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1023813,
+      "paper_reference": "22-2355.1"
+    },
+    {
+      "tolfdnr": 1068725,
+      "number": "7",
+      "title": "Mitteilungen",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068727,
+      "number": "8",
+      "title": "Verschiedenes",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068728,
+      "number": "9",
+      "title": "Feststellung der umweltrelevanten Themen zur Überweisung in den Ausschuss für Klima, Umwelt und Verbraucherschutz",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068729,
+      "number": "10",
+      "title": "Feststellung der jugendhilferelevanten Themen zur Überweisung in den Jugendhilfeausschuss",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1068730,
+      "number": "11",
+      "title": "Anliegen der Bürgerinnen und Bürger und Öffentliche Fragestunde 2. Teil",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    }
+  ]
+}

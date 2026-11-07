@@ -1,0 +1,265 @@
+{
+  "title": "Sitzung des Regionalausschusses Langenhorn-Fuhlsbüttel-Ohlsdorf-Alsterdorf-Groß Borstel",
+  "committee": [
+    "au",
+    1000005,
+    "Regionalausschuss Langenhorn-Fuhlsbüttel-Ohlsdorf-Alsterdorf-Groß Borstel"
+  ],
+  "date": "2025-11-03",
+  "time_start": "18:00",
+  "time_end": "19:16",
+  "room": "Sitzungssaal Langenhorn",
+  "address": "Tangstedter Landstr. 6, 22415 Hamburg",
+  "rows": [
+    {
+      "tolfdnr": 1038113,
+      "number": "1",
+      "title": "Bestätigung der Tagesordnung",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038114,
+      "number": "2",
+      "title": "Aktuelle Bürgerfragestunde",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038115,
+      "number": "3",
+      "title": "Genehmigung der Niederschrift der Sitzung vom 29.09.2025",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038116,
+      "number": "4",
+      "title": "Tagesordnungspunkte mit Referierenden- und Bürgerbeteiligung",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038117,
+      "number": "4.1",
+      "title": "Präsentationen",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038119,
+      "number": "5",
+      "title": "Anträge",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038412,
+      "number": "5.1",
+      "title": "Stellungnahme zu der Inbetriebnahme eines Standortes der öffentlich-rechtlichen Unterbringung in der Tangstedter Landstraße 81 im Bezirk Hamburg-Nord im Stadtteil Langenhorn (§ 28 BezVG) – Drs. 22-1441",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1015839,
+      "paper_reference": "22-1441.1"
+    },
+    {
+      "tolfdnr": 1038120,
+      "number": "6",
+      "title": "Vorlagen der Bezirksamtsleitung",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038123,
+      "number": "6.1",
+      "title": "Straßenverkehrsbehördliche Anordnungen für den Regionalbereich Langenhorn-Fuhlsbüttel-Ohlsdorf-Alsterdorf-Groß Borstel",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038121,
+      "number": "6.1.1",
+      "title": "Rathenaustraße zw. Traute-Lafrenz-Straße und Hs. Nr. 9",
+      "public": true,
+      "decision": "vertagt",
+      "detail": true,
+      "volfdnr": 1015646,
+      "paper_reference": "22-1362"
+    },
+    {
+      "tolfdnr": 1038122,
+      "number": "6.1.2",
+      "title": "Langenhorner Chaussee 3 hier: Straßenverkehrsbehördliche Anordnung vom 30.09.2025, Neuregelung des ruhenden Verkehrs",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015720,
+      "paper_reference": "22-1425"
+    },
+    {
+      "tolfdnr": 1038222,
+      "number": "6.1.3",
+      "title": "Rübenkamp 246-250 hier: Straßenverkehrsbehördliche Anordnung vom06.10.2025, Beschilderung von Parkständen zur Bevorrechtigung elektrisch betriebener Fahrzeuge (eFz) an Ladesäulen.",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015767,
+      "paper_reference": "22-1466"
+    },
+    {
+      "tolfdnr": 1038248,
+      "number": "6.1.4",
+      "title": "Sengelmannstraße hier: Straßenverkehrsbehördliche Anordnung vom 25.09.2025, Verkehrsführung für Arbeiten in den Nebenflächen",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015777,
+      "paper_reference": "22-1472"
+    },
+    {
+      "tolfdnr": 1038285,
+      "number": "6.1.5",
+      "title": "Heselstücken 24-28 hier: Straßenverkehrsbehördliche Anordnung vom 08.10.2025, Neuregelung des ruhenden Verkehrs",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015793,
+      "paper_reference": "22-1484"
+    },
+    {
+      "tolfdnr": 1038287,
+      "number": "6.1.6",
+      "title": "Niedernstegen / Röntgenstraße hier: Straßenverkehrsbehördliche Anordnung vom 09.10.2025, Verkehrseinrichtung",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015794,
+      "paper_reference": "22-1485"
+    },
+    {
+      "tolfdnr": 1038288,
+      "number": "6.1.7",
+      "title": "Hummelsbütteler Landstraße 70 ggü. hier: Straßenverkehrsbehördliche Anordnung vom 24.02.2025, Beschilderung von Parkständen zur Bevorrechtigung elektrisch betriebener Fahrzeuge (eFz) an Ladesäulen",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015795,
+      "paper_reference": "22-1486"
+    },
+    {
+      "tolfdnr": 1038394,
+      "number": "6.1.8",
+      "title": "Leegmoor 17 hier: Straßenverkehrsbehördliche Anordnung vom 16.10.2025, Beschilderung von Parkständen zur Bevorrechtigung elektrisch betriebener Fahrzeuge (eFz) an Ladesäulen",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015827,
+      "paper_reference": "22-1517"
+    },
+    {
+      "tolfdnr": 1038124,
+      "number": "7",
+      "title": "Vorlagen des vorsitzenden Mitglieds der Bezirksversammlung",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038118,
+      "number": "7.1",
+      "title": "Eingaben",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038178,
+      "number": "7.1.1",
+      "title": "Fahrrad-Bügel vor dem SPZ Fuhlsbüttel",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015749,
+      "paper_reference": "22-1449"
+    },
+    {
+      "tolfdnr": 1038392,
+      "number": "7.1.2",
+      "title": "Überwachsendes Geländer",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015825,
+      "paper_reference": "22-1515"
+    },
+    {
+      "tolfdnr": 1038286,
+      "number": "7.2",
+      "title": "Inbetriebnahme eines Standortes der öffentlich-rechtlichen Unterbringung in der Tangstedter Landstraße 81 im Bezirk Hamburg-Nord im Stadtteil Langenhorn Anhörung der Bezirksversammlung Hamburg-Nord gern. § 28 Bezirksverwaltungsgesetz (BezVG)",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015741,
+      "paper_reference": "22-1441"
+    },
+    {
+      "tolfdnr": 1038125,
+      "number": "8",
+      "title": "Sonstige Mitteilungen",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038391,
+      "number": "8.1",
+      "title": "Liste der aktuell offenen Beschlüsse aus dem RegA FOLAG, Stand: 30.10.2025",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015824,
+      "paper_reference": "22-1514"
+    },
+    {
+      "tolfdnr": 1038127,
+      "number": "9",
+      "title": "Verschiedenes",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    }
+  ]
+}

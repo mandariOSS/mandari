@@ -147,7 +147,7 @@ class SourceTypeListFilter(admin.SimpleListFilter):
         return [
             ("oparl", "OParl-API"),
             ("bridge", "OParl-Bridge (z. B. ALLRIS)"),
-            ("scraper", "Scraper (z. B. SessionNet)"),
+            ("scraper", "Scraper (z. B. SessionNet, ALLRIS 3)"),
         ]
 
     def queryset(self, request, queryset):

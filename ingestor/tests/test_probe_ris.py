@@ -238,6 +238,62 @@ async def test_probe_sessionnet_ohne_oparl_schlaegt_scraper_vor() -> None:
     assert len(fake.requests) == r.requests
 
 
+#: Startseite einer ALLRIS-3-Oberfläche unter /bi/ (synthetisch, Verweise wie im Menü von ALLRIS net 3.9)
+ALLRIS3_BI = (
+    "<html><head><title>ALLRIS net</title></head><body>"
+    '<a href="/bi/si010_e.asp" title="Sitzungstermine aller Gremien">Kalender</a>'
+    '<a href="/bi/vo040.asp">Drucksachen</a></body></html>'
+)
+
+
+@pytest.mark.asyncio
+async def test_probe_allris3_ohne_oparl_schlaegt_adapter_vor() -> None:
+    """Issue #121: ALLRIS 3 ohne OParl und ohne robots-Sperre bekommt einen Vorschlag für scraper:allris3."""
+    fake = FakeRis(html=ALLRIS3_BI)
+    r = await _probe(fake, "https://ris.example.org/")
+
+    assert r.vendor == "allris3" and r.oparl_endpoint is None
+    assert r.robots == "erlaubt"
+    assert r.sync_config == {"scraper": "allris3", "base_url": "https://ris.example.org/bi"}
+    assert r.requests <= rp.MAX_REQUESTS
+
+
+@pytest.mark.asyncio
+async def test_probe_allris3_basis_aus_den_verweisen_der_startseite() -> None:
+    fake = FakeRis(html=(FIXTURES / "allris3.html").read_text(encoding="utf-8"))
+    r = await _probe(fake, "https://ris.example.org/")
+
+    assert r.vendor == "allris3"
+    assert r.sync_config == {"scraper": "allris3", "base_url": "https://ris.example.org"}
+
+
+@pytest.mark.asyncio
+async def test_probe_allris3_robots_sperrt_die_basis() -> None:
+    """Sperrt die robots.txt das Verzeichnis der Seiten, gibt es keinen Vorschlag (§ 44b UrhG)."""
+    fake = FakeRis(html=ALLRIS3_BI, robots="User-agent: *\nDisallow: /bi/\n")
+    r = await _probe(fake, "https://ris.example.org/")
+
+    assert r.vendor == "allris3"
+    assert r.robots == "gesperrt"
+    assert r.sync_config is None
+    assert any("robots.txt" in note for note in r.notes)
+
+
+def test_allris3_basis_url() -> None:
+    assert rp.allris3_base_url("https://ris.example.org/bi/allris.net.asp") == "https://ris.example.org/bi"
+    assert rp.allris3_base_url("https://ris.example.org/bi/") == "https://ris.example.org/bi"
+    assert rp.allris3_base_url("https://ris.example.org/") == "https://ris.example.org/bi"
+    assert rp.allris3_base_url("https://ris.example.org/ratsinfo/start.asp") == "https://ris.example.org/ratsinfo"
+    html = '<a href="vo020.asp?VOLFDNR=1">Drucksache</a>'
+    assert rp.allris3_base_url("https://ris.example.org/ri/index.html", html) == "https://ris.example.org/ri"
+
+
+def test_allris4_bleibt_ohne_vorschlag() -> None:
+    r = rp.ProbeResult(url="https://ris.example.org/public/", vendor="allris4", robots="erlaubt")
+    assert rp.suggest_sync_config(r) is None
+    assert any("ALLRIS 4" in note for note in r.notes)
+
+
 @pytest.mark.asyncio
 async def test_probe_ignoriert_oparl_fehlerobjekt() -> None:
     fake = FakeRis(

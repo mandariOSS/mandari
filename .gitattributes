@@ -7,3 +7,5 @@ mandari/biome.json text eol=lf
 docs/schnittstelle/*.json text eol=lf
 # Übernommene Schemas der kommParl-Spezifikation: Bytes wie im Original (Prüfsummen in HERKUNFT.json)
 mandari/hub/api/kommparl/[0-9]*/** -text
+# Übernommene ALLRIS-3-Testseiten: Bytes wie ausgeliefert (Windows-1252, CRLF), keine Umwandlung
+ingestor/tests/fixtures/scrapers/allris3/**/*.html -text

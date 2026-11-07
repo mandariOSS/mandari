@@ -1,0 +1,208 @@
+{
+  "name": "Ausschuss für Bildung und Sport",
+  "members": [
+    {
+      "kplfdnr": 581,
+      "name": "Jacqueline Pannier",
+      "role": "Vorsitz",
+      "faction": "FDP-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 777,
+      "name": "Jan-Martin Thoden",
+      "role": "Stellv. Vorsitz",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 582,
+      "name": "Axel Backhaus",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 13,
+      "name": "Holger Böhm",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 769,
+      "name": "Christin Detje",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 35,
+      "name": "Lars Frommann",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 772,
+      "name": "Nicole Hartmann",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 791,
+      "name": "Mike Hoffmann",
+      "role": "Ausschussmitglied",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 466,
+      "name": "Dr. Regina Marek",
+      "role": "Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 342,
+      "name": "Eftichia Olowson-Saviolaki",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 800,
+      "name": "Peggy Pazour",
+      "role": "Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 753,
+      "name": "Patrick Matthias Rogozenski",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion Forum Harburg",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 374,
+      "name": "Michael Sander",
+      "role": "Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 747,
+      "name": "Sylvie Szagarus",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion Die Linke Harburg",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 778,
+      "name": "Werner Timmann",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 741,
+      "name": "Alf Ibrahim Bas",
+      "role": "Ständige Vertretung",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 892,
+      "name": "Berit",
+      "role": "Ständige Vertretung",
+      "faction": "Fraktion Forum Harburg",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 834,
+      "name": "Ilja Kaufmann",
+      "role": "Ständige Vertretung",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 794,
+      "name": "Gerd Meier",
+      "role": "Ständige Vertretung",
+      "faction": "AfD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 655,
+      "name": "Jörg Nintemann",
+      "role": "Ständige Vertretung",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 101,
+      "name": "Ingo Schroeder",
+      "role": "Ständige Vertretung",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 824,
+      "name": "Falk Wolf",
+      "role": "Ständige Vertretung",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 775,
+      "name": "Markus Sass",
+      "role": "Bezirksversammlungsmitglied fraktionslos (ohne Stimmrecht)",
+      "faction": "fraktionslos (SPD)",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 828,
+      "name": "Oksana Korniyenko",
+      "role": "Vertreter des Integrationsrates",
+      "faction": "Vertreter des Integrationsrates",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 865,
+      "name": "Nidhinkumar Paramthatta",
+      "role": "Vertreter des Integrationsrates",
+      "faction": "Vertreter des Integrationsrates",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 851,
+      "name": "Katrin Boschatzky",
+      "role": "Vertreter des Seniorenbeirates",
+      "faction": "Vertreter des Seniorenbeirates",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 845,
+      "name": "Bärbel Müller",
+      "role": "Vertreter des Seniorenbeirates",
+      "faction": "Vertreter des Seniorenbeirates",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 96,
+      "name": "Torsten Schlage",
+      "role": "Beratendes Mitglied",
+      "faction": "Vertr. d. Bezirkl. Sportstättenbeiräte",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 835,
+      "name": "Mark Schütter",
+      "role": "Beratendes Mitglied",
+      "faction": "Vertr. d. Bezirkl. Sportstättenbeiräte",
+      "voting_right": false
+    }
+  ]
+}

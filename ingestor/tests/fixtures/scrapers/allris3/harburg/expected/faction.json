@@ -1,0 +1,215 @@
+{
+  "name": "SPD-Fraktion",
+  "members": [
+    {
+      "kplfdnr": 343,
+      "name": "Frank Richter",
+      "role": "Fraktionsvorsitz",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 378,
+      "name": "Natalia Sahling",
+      "role": "Fraktionsvorsitz",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 30,
+      "name": "Klaus Fehling",
+      "role": "stellv. Fraktionsvorsitz",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 87,
+      "name": "Beate Pohlmann",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 13,
+      "name": "Holger Böhm",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 23,
+      "name": "Michael Dose",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 772,
+      "name": "Nicole Hartmann",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 680,
+      "name": "Dr. Sven Hey",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 598,
+      "name": "Oksan Karakus",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 342,
+      "name": "Eftichia Olowson-Saviolaki",
+      "role": "Fraktionsmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 6,
+      "name": "Peter Bartels",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 741,
+      "name": "Alf Ibrahim Bas",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 20,
+      "name": "Martin Celik",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 745,
+      "name": "Coobs",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 22,
+      "name": "Frido Domroese",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 476,
+      "name": "Dr. Monika Hellmeyer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 806,
+      "name": "Niklas Jahn",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 796,
+      "name": "Philipp-Morten Meyer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 593,
+      "name": "Hans-Ulrich Müller",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 655,
+      "name": "Jörg Nintemann",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 561,
+      "name": "Claudia Oldenburg",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 90,
+      "name": "Birgit Rajski",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 805,
+      "name": "Christine Schomers",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 729,
+      "name": "Dr. Daniel Thewes",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 587,
+      "name": "Sigrid Waschull",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 119,
+      "name": "Barbara Weiß",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 797,
+      "name": "Dagmar Welke",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 562,
+      "name": "Marion Wolkenhauer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 893,
+      "name": "Fuat Yavas",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 804,
+      "name": "Rositha Yougma",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    }
+  ]
+}

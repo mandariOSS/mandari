@@ -1,0 +1,208 @@
+{
+  "name": "Mobilitätsausschuss",
+  "members": [
+    {
+      "kplfdnr": 307,
+      "name": "Strate, Henrik",
+      "role": "Vorsitzendes Mitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2549,
+      "name": "Fischer, Patrick",
+      "role": "Stellvertretender Vorsitz",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2364,
+      "name": "Fitschen, Heidi",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2098,
+      "name": "Harders, Benjamin",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2106,
+      "name": "Piotrowski, Fabian",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2371,
+      "name": "Stünitz, Rolf",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2319,
+      "name": "Vornhagen, Dana",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 733,
+      "name": "Faust-Weik-Roßnagel, Stephanie",
+      "role": "Ständige Vertretung",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2675,
+      "name": "Weber-Newth, Francesca",
+      "role": "Ständige Vertretung",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 271,
+      "name": "Adrian, Thomas",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2152,
+      "name": "Packmohr, Maik",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 672,
+      "name": "Schmidt, Oliver",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2646,
+      "name": "Frische, Christian",
+      "role": "Ständige Vertretung",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2644,
+      "name": "Schätzle, Matthias",
+      "role": "Ständige Vertretung",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2488,
+      "name": "Heyne, Hans Henning",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 223,
+      "name": "Schmuckall, Tim",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2387,
+      "name": "Stamm, Claudia",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2596,
+      "name": "Möller, Victoria Felicitas",
+      "role": "Ständige Vertretung",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2702,
+      "name": "Todt, Christian",
+      "role": "Ständige Vertretung",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2373,
+      "name": "Müller-Goldenstedt, Andreas",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion DIE LINKE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 527,
+      "name": "Strasser, Karsten",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion DIE LINKE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2706,
+      "name": "Persson, Jutta",
+      "role": "Ständige Vertretung",
+      "faction": "Fraktion DIE LINKE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2313,
+      "name": "Pauly, Rose",
+      "role": "Ausschussmitglied",
+      "faction": "FDP-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 591,
+      "name": "Porten, Harri",
+      "role": "Ständige Vertretung",
+      "faction": "FDP-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2573,
+      "name": "Lund, George",
+      "role": "Ständige Vertretung",
+      "faction": "Volt-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2153,
+      "name": "Batenhorst, Uwe",
+      "role": "Ausschussmitglied",
+      "faction": "AFD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2707,
+      "name": "Schadow-Jäger, Ulrike",
+      "role": "Ständige Vertretung",
+      "faction": "AFD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2692,
+      "name": "Böhnert, Michael",
+      "role": "Hinzugezogene:r Sachkundige:r",
+      "faction": "Bezirks-Senior:innenbeirat",
+      "voting_right": false
+    },
+    {
+      "kplfdnr": 2631,
+      "name": "van den Heuvel, Jan",
+      "role": "Hinzugezogene:r Sachkundige:r",
+      "faction": "Bezirks-Senior:innenbeirat",
+      "voting_right": false
+    }
+  ]
+}
