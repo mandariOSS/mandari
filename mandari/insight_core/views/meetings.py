@@ -26,7 +26,7 @@ from ..models import (
     OParlMeeting,
     OParlOrganization,
 )
-from ..services import indexierung
+from ..services import indexierung, ortsschutz, sitzungsabbruch
 from ..services.ergebnis import angekuendigt, ergebnis
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
@@ -318,7 +318,15 @@ class MeetingDetailView(DetailView):
             item.roll_call_entries = beschluss.roll_call
             # Ergebnis als Etikett aus dem festen Vokabular (Issue #1260)
             item.ergebnis = ergebnis(item.result)
+            # Titel ohne Hausnummer, wenn der Punkt eine Eingabe aus der Einwohnerschaft oder einen Bauantrag
+            # betrifft (Issue #1269)
+            item._ortsschutz = next(
+                (g for p in item._prefetched_papers if (g := ortsschutz.grund_nach_art(p.paper_type, p.name))),
+                ortsschutz.grund_nach_art(None, item.name),
+            )
         context["agenda_items"] = agenda_items
+        # Abgebrochene bzw. insgesamt vertagte Sitzung: ein Hinweis statt vieler Zeilen „vertagt“ (Issue #1269)
+        context["abbruch"] = sitzungsabbruch.buendeln(agenda_items)
         # Kommende Sitzung ohne veröffentlichte Tagesordnung: „angekündigt“ statt einer leeren Liste
         if not agenda_items and not meeting.cancelled and meeting.start and meeting.start > timezone.now():
             context["angekuendigt"] = angekuendigt(

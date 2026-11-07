@@ -1,10 +1,10 @@
 {% extends "emails/base_email.html" %}
 {% block subject %}Neuer Stand zu Ihrem Beschluss{% endblock %}
-{% block preheader %}{{ status_label }} — {{ item.name }}{% endblock %}
+{% block preheader %}{{ status_label }} — {{ titel|default:item.name }}{% endblock %}
 {% block content %}
 <h1 class="h1">Neuer Stand zu Ihrem Beschluss</h1>
 <p class="muted">{{ item.meeting.tenant.name }}</p>
-<p><strong>{{ item.name }}</strong><br>
+<p><strong>{{ titel|default:item.name }}</strong><br>
 <span class="muted">Beschlossen am {{ item.meeting.start|date:"d.m.Y" }} · {{ item.meeting.organization.name }}{% if item.resolution_number %} · {{ item.resolution_number }}{% endif %}</span></p>
 <p>Die Verwaltung meldet: <span class="badge">{{ status_label }}</span></p>
 {% if item.implementation_public_note %}

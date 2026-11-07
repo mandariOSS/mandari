@@ -29,11 +29,16 @@ def ki_fassung(zusammenfassung: str | None) -> str:
 
 
 @register.filter
-def ki_absaetze(text: str | None) -> list[str]:
+def ki_absaetze(text: str | None, ortsschutz: str | None = None) -> list[str]:
     """
     Absätze einer Zusammenfassung: getrennt an Leerzeilen, sonst an einzelnen Zeilenumbrüchen; Leerraum zusammengefasst.
-    Ältere Zusammenfassungen kamen oft nur mit einfachen Zeilenumbrüchen.
+    Ältere Zusammenfassungen kamen oft nur mit einfachen Zeilenumbrüchen. Mit ``ortsschutz`` (Ergebnis von
+    ``ortsschutz.grund``, Bürgerportal) ohne Hausnummern (Issue #1269); die Prüfsumme bleibt die des gespeicherten Texts.
     """
+    if ortsschutz:
+        from ..services.ortsschutz import hausnummern_auslassen
+
+        text = hausnummern_auslassen(text)
     roh = (text or "").replace("\r\n", "\n").strip()
     if not roh:
         return []

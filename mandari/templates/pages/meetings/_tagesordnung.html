@@ -3,10 +3,19 @@ Tagesordnung der Sitzung (Issue #1260): flach, je Punkt Nummer, Titel, Ergebnis-
 ohne Kasten im Kasten. Ab sm steht das Etikett rechts neben dem Titel, damit sich die Ergebnisse überfliegen lassen;
 sagt der Text des Ratsinformationssystems mehr („einstimmig beschlossen“), steht er darunter. Sprungmarke top-<uuid> für
 Links von der Live-Seite, scroll-mt hält den Punkt unter dem festen Kopf. Kontext: agenda_items (mit ergebnis, vote_info,
-roll_call_entries, get_papers), angekuendigt (Etikett, wenn zur kommenden Sitzung noch keine Tagesordnung vorliegt).
+roll_call_entries, get_papers), angekuendigt (Etikett, wenn zur kommenden Sitzung noch keine Tagesordnung vorliegt),
+abbruch (insight_core/services/sitzungsabbruch.buendeln, Issue #1269): Ist die Sitzung abgebrochen oder insgesamt
+vertagt, steht ein Hinweis über der Liste, und die gebündelten Punkte (``gebuendelt``) zeigen ihr Etikett nicht einzeln.
+Titel ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (``titel_oeffentlich``, Issue #1269).
 {% endcomment %}
 <section aria-labelledby="tagesordnung-titel">
     <h2 id="tagesordnung-titel" class="abschnitt-titel">Tagesordnung{% if agenda_items %} <span class="font-normal text-gray-600 dark:text-gray-400">({{ agenda_items|length }})</span>{% endif %}</h2>
+    {% if abbruch %}
+    <div class="mt-4 max-w-3xl" role="note" data-testid="sitzung-abbruch">
+        <p class="text-[1.0625rem] leading-relaxed text-gray-900 dark:text-gray-100"><c-insight.ergebnis :ergebnis="abbruch.ergebnis" klasse="mr-1.5" /> {{ abbruch.satz }}</p>
+        {% if abbruch.roh %}<p class="mt-1 text-[0.9rem] text-gray-600 dark:text-gray-400 break-words">Im Ratsinformationssystem: „{{ abbruch.roh }}“</p>{% endif %}
+    </div>
+    {% endif %}
     {% if agenda_items %}
     <ol class="mt-4 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
         {% for item in agenda_items %}
@@ -14,12 +23,12 @@ roll_call_entries, get_papers), angekuendigt (Etikett, wenn zur kommenden Sitzun
             <span class="w-12 shrink-0 break-words font-semibold tabular-nums text-gray-600 dark:text-gray-400">{{ item.number|default:forloop.counter }}</span>
             <div class="min-w-0 flex-1">
                 <div class="flex flex-col items-start gap-1 sm:flex-row sm:justify-between sm:gap-4">
-                    <p class="min-w-0 font-medium text-gray-900 dark:text-white break-words">{{ item.name|default:"Tagesordnungspunkt" }}</p>
-                    <c-insight.ergebnis :ergebnis="item.ergebnis" klasse="shrink-0 mt-0.5" />
+                    <p class="min-w-0 font-medium text-gray-900 dark:text-white break-words">{{ item.titel_oeffentlich|default:"Tagesordnungspunkt" }}</p>
+                    {% if not item.gebuendelt %}<c-insight.ergebnis :ergebnis="item.ergebnis" klasse="shrink-0 mt-0.5" />{% endif %}
                 </div>
-                {% if item.ergebnis.roh_abweichend or item.vote_info or not item.public %}
+                {% if item.ergebnis.roh_abweichend and not item.gebuendelt or item.vote_info or not item.public %}
                 <p class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
-                    {% if item.ergebnis.roh_abweichend %}<span class="break-words">{{ item.ergebnis.roh_abweichend }}</span>{% endif %}
+                    {% if item.ergebnis.roh_abweichend and not item.gebuendelt %}<span class="break-words">{{ item.ergebnis.roh_abweichend }}</span>{% endif %}
                     {% if item.vote_info %}<span>Ja {{ item.vote_info.yes|default:0 }}, Nein {{ item.vote_info.no|default:0 }}, Enthaltung {{ item.vote_info.abstain|default:0 }}{% if item.vote_info.methodLabel %} ({{ item.vote_info.methodLabel }}){% endif %}</span>{% endif %}
                     {% if not item.public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>nicht öffentlich</span>{% endif %}
                 </p>
@@ -41,7 +50,7 @@ roll_call_entries, get_papers), angekuendigt (Etikett, wenn zur kommenden Sitzun
                 {% if papers %}
                 <ul class="mt-2 space-y-1 text-[0.95rem]">
                     {% for paper in papers %}
-                    <li class="break-words"><a href="{% url 'insight_core:insight:paper_detail' paper.pk %}" class="font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">{{ paper.paper_type|default:"Vorgang" }}{% if paper.reference %} {{ paper.reference }}{% endif %}</a>{% if paper.name and paper.name != item.name %}<span class="text-gray-700 dark:text-gray-300">: {{ paper.name|truncatechars:120 }}</span>{% endif %}</li>
+                    <li class="break-words"><a href="{% url 'insight_core:insight:paper_detail' paper.pk %}" class="font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">{{ paper.paper_type|default:"Vorgang" }}{% if paper.reference %} {{ paper.reference }}{% endif %}</a>{% if paper.name and paper.name != item.name %}<span class="text-gray-700 dark:text-gray-300">: {{ paper.titel_oeffentlich|truncatechars:120 }}</span>{% endif %}</li>
                     {% endfor %}
                 </ul>
                 {% endif %}

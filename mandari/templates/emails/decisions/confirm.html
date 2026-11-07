@@ -6,7 +6,7 @@
 <p class="muted">{{ item.meeting.tenant.name }}</p>
 <p>Sie möchten informiert werden, wenn sich der Umsetzungsstand dieses Beschlusses ändert:</p>
 <div class="card card-accent">
-    <p><strong>{{ item.name }}</strong></p>
+    <p><strong>{{ titel|default:item.name }}</strong></p>
     <p class="muted">Beschlossen am {{ item.meeting.start|date:"d.m.Y" }} · {{ item.meeting.organization.name }}</p>
 </div>
 <p>Bitte bestätigen Sie Ihre E-Mail-Adresse mit einem Klick:</p>

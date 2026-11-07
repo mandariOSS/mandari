@@ -84,7 +84,7 @@
                     {% if item.resolution_number %}<span class="text-xs font-mono text-gray-500 dark:text-gray-400">{{ item.resolution_number }}</span>{% endif %}
                     <span class="text-xs text-gray-500 dark:text-gray-400">{{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}</span>
                 </div>
-                <h3 class="font-semibold text-gray-900 dark:text-white">{{ item.name }}</h3>
+                <h3 class="font-semibold text-gray-900 dark:text-white">{{ item.titel_oeffentlich|default:item.name }}</h3>
                 {% if item.implementation_public_note %}
                 <p class="text-sm text-gray-700 dark:text-gray-300 mt-1.5 line-clamp-2"><span class="text-gray-500">Stand:</span> {{ item.implementation_public_note }}</p>
                 {% elif item.resolution_text %}

@@ -594,7 +594,7 @@ def test_switched_off_source_is_cleaned_up_on_next_run(
     assert pb.paper_plan_context(paper) == []
     assert nearby_papers(geo_body, CENTER_LAT, CENTER_LON, 100) == []
     html = Client().get(f"/insight/vorgaenge/{paper.id}/").content.decode()
-    assert ">amtlich<" not in html
+    assert "amtlicher Umring des Bebauungsplans" not in html
 
     # Aufgeräumt: Danach ist für die Kommune nichts mehr zu tun
     out = StringIO()
@@ -699,7 +699,8 @@ def test_paper_page_shows_boundary_source_and_plan_link(
     assert "Quelle: Land NRW &lt;b&gt;dl-de/by-2-0&lt;/b&gt;" in html
     assert 'href="https://geo.beispielstadt.example/bplan?nr=_579__"' in html
     assert "Amtlicher Umring, Rechtskräftig" in html
-    assert ">amtlich<" in html  # Verortung aus dem Umring in der Ortsliste
+    # Verortung aus dem Umring in der Ortsliste, mit Sicherheit und Fundstelle (#1269)
+    assert 'data-sicherheit="gesichert"' in html and "amtlicher Umring des Bebauungsplans" in html
     assert 'id="paper-map-data"' in html and '"areas": [{"name": "Bebauungsplan Nr. 579"' in html
     assert "L.map(" not in html  # Kartenlogik steckt in frontend/js/paper-map.ts
 

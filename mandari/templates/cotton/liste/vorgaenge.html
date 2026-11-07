@@ -15,6 +15,8 @@ Unter dem Titel stehen Vorlage und Anlagen (c-liste.vorgang-dokumente, Issue #11
 Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen); der Baustein fragt nicht selbst nach.
 Das Ergebnis der letzten Beratung steht als Etikett (``stand.etikett``, c-insight.ergebnis, Issue #1260) vor dem Stand und
 unterhalb von 2xl unter dem Titel; ohne Begriff aus dem Vokabular bleibt der Punkt vor dem Stand.
+Im Bürgerportal (ohne ``links``) steht der Titel ohne Hausnummer, wo es eine Privatanschrift sein kann
+(``OParlPaper.titel_oeffentlich``, Issue #1269); Work zeigt den vollen Titel.
 {% endcomment %}
 <c-vars vorgaenge="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" zusatz_ab="" />
 {% load insight_listen %}
@@ -41,7 +43,7 @@ unterhalb von 2xl unter dem Titel; ohne Begriff aus dem Vokabular bleibt der Pun
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
                     <a href="{{ ziel }}"
                        class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
-                        {{ paper.name|default:"Vorgang" }}
+                        {% if links %}{{ paper.name|default:"Vorgang" }}{% else %}{{ paper.titel_oeffentlich|default:"Vorgang" }}{% endif %}
                     </a>
                     <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                         {% if paper.reference %}<span class="font-mono">{{ paper.reference }}</span>{% endif %}
