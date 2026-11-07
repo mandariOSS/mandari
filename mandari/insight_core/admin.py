@@ -1070,6 +1070,7 @@ class PaperLocationAdmin(ModelAdmin):
         "ki_urteil",
         "ki_begruendung",
         "ki_geprueft_am",
+        "vorher",
         "created_at",
         "updated_at",
     ]
@@ -1084,6 +1085,7 @@ class PaperLocationAdmin(ModelAdmin):
             PaperLocation.STATUS_AUTO: "#64748b",
             PaperLocation.STATUS_CONFIRMED: "#16a34a",
             PaperLocation.STATUS_REMOVED: "#dc2626",
+            PaperLocation.STATUS_HIDDEN: "#b45309",
         }
         return status_text(colors.get(obj.status, "#64748b"), obj.get_status_display())
 

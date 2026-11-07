@@ -163,6 +163,12 @@ class PaperDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         paper = self.object
+        # Datenschutz bei Orten (Issue #1269): Eingaben aus der Einwohnerschaft und Bauanträge, auch über das Amt und
+        # verbundene Vorgänge; Titel, Seitentitel und Orte dann ohne Hausnummer
+        from ..services import ortsschutz
+
+        paper._ortsschutz = ortsschutz.grund(paper)
+        context["ortsschutz"] = paper._ortsschutz
 
         # Alle Dateien – ohne zurückgenommene Anlagen aus Session und ohne Dokumente, die die Kommune
         # entfernt hat oder die dort nicht mehr abrufbar sind (Löschabgleich, #787). Ohne Volltext geladen: Die
@@ -198,12 +204,18 @@ class PaperDetailView(DetailView):
             for loc in locations
             if isinstance(loc, dict) and loc.get("lat") is not None and loc.get("lon") is not None
         ]
+        # Sicherheit und Fundstelle je Ort, „stadtweit“ statt langer Straßenlisten (Issue #1269)
+        from ..services.orte_anzeige import kartenorte, ortsangaben
+
+        context["ortsangaben"] = ortsangaben(paper, context["paper_locations"], consultations, paper._ortsschutz)
         # Amtliche Umringe von Bebauungsplänen mit Planseite und Quellenangabe (#598)
         from ..services.plan_boundaries import paper_map_data, paper_plan_context
 
         plan_areas = paper_plan_context(paper)
         context["plan_areas"] = plan_areas
-        context["paper_map_data"] = paper_map_data(context["paper_locations"], plan_areas)
+        context["paper_map_data"] = paper_map_data(
+            kartenorte(context["paper_locations"], paper._ortsschutz), plan_areas
+        )
 
         # Zusammenfassung älter als der Beratungsstand (Issue #1257): Hinweis darüber, nicht in der Description
         from ..services import summary_store

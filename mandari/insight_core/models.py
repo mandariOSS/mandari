@@ -1052,6 +1052,18 @@ class OParlPaper(SourceDeletionModel):
             return f"{self.reference}: {self.name or ''}"
         return self.name or f"Vorgang {self.id}"
 
+    @property
+    def titel_oeffentlich(self) -> str:
+        """
+        Titel für das Bürgerportal: bei Eingaben aus der Einwohnerschaft und Bauanträgen ohne Hausnummer (#1269).
+
+        Entscheidet nach Art und Titel; hat die Seite die gründlichere Prüfung ``ortsschutz.grund`` schon gemacht (Amt,
+        verbundene Vorgänge), legt sie das Ergebnis als ``_ortsschutz`` am Objekt ab.
+        """
+        from insight_core.services.ortsschutz import oeffentlicher_titel
+
+        return oeffentlicher_titel(self.name, self.paper_type, getattr(self, "_ortsschutz", None))
+
 
 class OParlAgendaItem(SourceDeletionModel):
     """Ein Tagesordnungspunkt."""
@@ -1112,6 +1124,16 @@ class OParlAgendaItem(SourceDeletionModel):
         if self.number:
             return f"TOP {self.number}: {self.name or ''}"
         return self.name or f"TOP {self.id}"
+
+    @property
+    def titel_oeffentlich(self) -> str:
+        """
+        Name für das Bürgerportal ohne Hausnummer, wenn er eine Eingabe aus der Einwohnerschaft oder einen Bauantrag
+        nennt (#1269). Kennt die Seite die Vorgänge des Punkts, legt sie deren Ergebnis als ``_ortsschutz`` ab.
+        """
+        from insight_core.services.ortsschutz import oeffentlicher_titel
+
+        return oeffentlicher_titel(self.name, None, getattr(self, "_ortsschutz", None))
 
     def get_papers(self):
         """Liefert alle Papers/Vorgänge, die mit diesem TOP verknüpft sind."""
@@ -1925,11 +1947,17 @@ class PaperLocation(models.Model):
     STATUS_AUTO = "auto"
     STATUS_CONFIRMED = "confirmed"
     STATUS_REMOVED = "removed"
+    #: Adresspunkt einer Privatanschrift, den ``adresspunkte_zurueckstufen`` nicht auf eine Straße zurückstufen konnte
+    #: (Straße unbekannt oder dort schon ein Ort des Vorgangs, Issue #1269): öffentlich unsichtbar, nichts gelöscht
+    STATUS_HIDDEN = "hidden"
     STATUS_CHOICES = [
         (STATUS_AUTO, "Automatisch"),
         (STATUS_CONFIRMED, "Bestätigt"),
         (STATUS_REMOVED, "Entfernt"),
+        (STATUS_HIDDEN, "Ausgeblendet (Datenschutz)"),
     ]
+    #: Status, die Karte, Umkreissuche und Vorgangsseite nicht zeigen
+    STATUS_UNSICHTBAR = (STATUS_REMOVED, STATUS_HIDDEN)
 
     paper = models.ForeignKey(
         OParlPaper,
@@ -1969,6 +1997,9 @@ class PaperLocation(models.Model):
         max_length=300, blank=True, default="", db_default="", verbose_name="Begründung der KI"
     )
     ki_geprueft_am = models.DateTimeField(blank=True, null=True, verbose_name="KI-geprüft am")
+    #: Angaben vor der Rückstufung eines Adresspunkts (``adresspunkte_zurueckstufen``, Issue #1269): Punkt, Name,
+    #: Herkunft, Konfidenz und Status; ``--rueckgaengig`` stellt sie wieder her
+    vorher = models.JSONField(blank=True, null=True, verbose_name="Vor der Rückstufung")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

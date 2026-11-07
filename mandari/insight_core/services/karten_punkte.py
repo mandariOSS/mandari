@@ -43,22 +43,29 @@ def geojson(
     since: date | None = None,
     url: Callable[[uuid.UUID], str] | None = None,
     hoechstens: int = HOECHSTENS,
+    oeffentlich: bool = False,
 ) -> dict[str, Any]:
     """
     Verortete Vorgänge der Kommunen als GeoJSON-``FeatureCollection``: je Ort ein Punkt mit Kennung, Titel,
     Vorlagen-Nr., Datum und Ortsbezeichnung des Vorgangs; mit ``url`` zusätzlich die Adresse des Vorgangs (Insight
     gibt sie mit, Work setzt sie im Browser aus einer Vorlage zusammen). ``truncated``, wenn mehr als ``hoechstens``
-    Punkte im Ausschnitt liegen.
+    Punkte im Ausschnitt liegen. ``oeffentlich`` (Bürgerportal): Titel und Ortsbezeichnung ohne Hausnummer bei
+    Eingaben aus der Einwohnerschaft und Bauanträgen (``ortsschutz``, Issue #1269); Work zeigt sie vollständig.
     """
+    from insight_core.services import ortsschutz
+
     orte = ris.paper_places(bodies, area=area, since=since, limit=hoechstens + 1)
     features = []
     for ort in orte[:hoechstens]:
+        titel, ortsname = ort.title, ort.place
+        if oeffentlich and ortsschutz.grund_nach_art(ort.paper_type, ort.title):
+            titel, ortsname = ortsschutz.hausnummern_auslassen(titel), ortsschutz.ort_ohne_hausnummer(ortsname)
         eigenschaften: dict[str, Any] = {
             "id": str(ort.paper_id),
-            "title": ort.title,
+            "title": titel,
             "reference": ort.reference,
             "date": ort.paper_date.isoformat() if ort.paper_date else None,
-            "location_name": ort.place,
+            "location_name": ortsname,
         }
         if url is not None:
             eigenschaften["url"] = url(ort.paper_id)

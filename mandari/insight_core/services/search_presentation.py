@@ -12,6 +12,8 @@ eine Sitzung mit ihren Unterlagen oder einen einzelnen Treffer. Hier wird daraus
 * **Ausschnitt** ohne Steuer- und Symbolschriftzeichen und ohne offene Silbentrennung; gesäubert wird der
   Rohtext **vor** ``_safe_highlight``, denn das nutzt ``\\x00`` als Platzhalter für die Markierung.
 * **Dokumentname** statt technischem Dateinamen („V-0169-2016-Anlage-2-Begruendung“ → „Anlage 2 – Begründung“).
+* **Ohne Hausnummer** im Bürgerportal: Titel, Ausschnitt und Dokumentnamen von Eingaben aus der Einwohnerschaft und
+  Bauanträgen (``ortsschutz``, Issue #1269); der Ausschnitt verliert dabei seine Markierung.
 """
 
 from __future__ import annotations
@@ -289,17 +291,46 @@ def insight_link(kind: str, pk: Any) -> str:
 
 
 def present_groups(
-    groups: list[dict[str, Any]], body_slug: str = "", links: Links | None = None
+    groups: list[dict[str, Any]], body_slug: str = "", links: Links | None = None, *, oeffentlich: bool = True
 ) -> list[dict[str, Any]]:
     """Gruppen des Suchdienstes als Treffer der Liste; ein Datenbankzugriff für alle Stand-Sätze.
 
     ``links`` bildet Art und Kennung auf die Adresse ab; ohne Angabe die Seiten des Bürgerportals, Work übergibt seine
     eigenen (Issue #853). Jeder Treffer nennt zusätzlich ``pk`` (Kennung des Vorgangs, der Sitzung …) und ``gremien``
-    (Gremien laut Index), damit Aufrufer ihn zuordnen können.
+    (Gremien laut Index), damit Aufrufer ihn zuordnen können. ``oeffentlich`` (Bürgerportal) lässt Hausnummern bei
+    Eingaben aus der Einwohnerschaft und Bauanträgen aus (Issue #1269); Work zeigt den vollen Titel.
     """
     paper_ids = [str(g["paper"]["id"]) for g in groups if g.get("paper")]
     statuses = statuses_for_papers(paper_ids)
-    return [_present(group, statuses, body_slug, links or insight_link) for group in groups]
+    eintraege = [_present(group, statuses, body_slug, links or insight_link) for group in groups]
+    if oeffentlich:
+        for group, entry in zip(groups, eintraege, strict=True):
+            _ohne_hausnummer(group, entry)
+    return eintraege
+
+
+def _ohne_hausnummer(group: dict[str, Any], entry: dict[str, Any]) -> None:
+    """Treffer eines Vorgangs aus der Einwohnerschaft oder der Bauordnung ohne Hausnummer (Issue #1269)."""
+    from html import unescape
+
+    from django.utils.html import strip_tags
+
+    from .ortsschutz import grund_nach_art, hausnummern_auslassen
+
+    paper = group.get("paper")
+    if not paper or not grund_nach_art(paper.get("paper_type"), paper.get("name")):
+        return
+
+    def ohne(text: Any) -> str:
+        # Markierung und Maskierung weg, Hausnummern aus, beim Ausgeben wieder maskiert
+        return hausnummern_auslassen(clean_snippet(unescape(strip_tags(str(text or "")))))
+
+    entry["title"] = escape(ohne(paper.get("name")) or str(paper.get("reference") or "Vorgang"))
+    if entry.get("snippet"):
+        entry["snippet"] = escape(ohne(entry["snippet"]))
+    for dokument in [entry.get("fundstelle"), *entry.get("others", [])]:
+        if dokument:
+            dokument["label"] = hausnummern_auslassen(dokument["label"])
 
 
 def _present(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str, links: Links) -> dict[str, Any]:

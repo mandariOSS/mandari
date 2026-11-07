@@ -1,9 +1,11 @@
 {% comment %}
 Orte und amtliche Umringe eines Vorgangs (Seitenleiste der Vorgangsseite).
-Kontext: paper_locations (Liste aus paper.locations), plan_areas (services.plan_boundaries.paper_plan_context),
-paper_map_data (Daten der Karte, gelesen von frontend/js/paper-map.ts).
+Kontext: ortsangaben (insight_core/services/orte_anzeige.ortsangaben: höchstens fünf Orte mit Sicherheit und Fundstelle,
+weitere aufklappbar, „stadtweit“ mit Begründung, Hinweis ohne Hausnummer, Issue #1269), plan_areas
+(services.plan_boundaries.paper_plan_context), paper_map_data (Daten der Karte, gelesen von frontend/js/paper-map.ts).
+Die Sicherheit steht als Wort da; Farbe nur zusätzlich: Grün gesichert, Bernstein unsicher.
 {% endcomment %}
-<section aria-labelledby="orte-titel">
+<section aria-labelledby="orte-titel" data-testid="vorgang-orte">
     <h2 id="orte-titel" class="text-[1.125rem] font-bold tracking-tight text-gray-900 dark:text-white mb-3">Orte</h2>
     <div id="paper-map"
          class="mb-4 h-56 rounded-xl z-0"
@@ -11,19 +13,26 @@ paper_map_data (Daten der Karte, gelesen von frontend/js/paper-map.ts).
          role="img"
          aria-label="Karte mit den Orten dieses Vorgangs"></div>
     {{ paper_map_data|json_script:"paper-map-data" }}
-    <ul class="space-y-2">
-        {% for loc in paper_locations %}
-            <li class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <i data-lucide="map-pin" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400"></i>
-                <span class="min-w-0">
-                    {{ loc.name }}
-                    {% if loc.source == "oparl" or loc.source == "plan_boundary" %}
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 align-middle ml-1">{% if loc.source == "oparl" %}offiziell{% else %}amtlich{% endif %}</span>
-                    {% endif %}
-                </span>
-            </li>
+    {% if ortsangaben.stadtweit %}
+    <p class="font-semibold text-gray-900 dark:text-white" data-testid="orte-stadtweit">Stadtweit</p>
+    <p class="mt-0.5 text-[0.9rem] leading-snug text-gray-700 dark:text-gray-300">{{ ortsangaben.stadtweit }}</p>
+    {% endif %}
+    {% if ortsangaben.orte %}
+    <ul class="space-y-2.5">
+        {% for ort in ortsangaben.orte %}
+        <li class="text-[0.95rem] leading-snug">
+            <span class="text-gray-900 dark:text-gray-100 break-words">{{ ort.name }}</span>
+            <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400"><span data-sicherheit="{{ ort.sicherheit }}" title="{{ ort.erklaerung }}" class="font-medium {% if ort.sicherheit == 'gesichert' %}text-primary-700 dark:text-primary-300{% elif ort.sicherheit == 'unsicher' %}text-amber-800 dark:text-amber-300{% else %}text-gray-800 dark:text-gray-200{% endif %}">{{ ort.sicherheit }}</span>, {{ ort.fundstelle }}</span>
+        </li>
         {% endfor %}
     </ul>
+    {% endif %}
+    {% if ortsangaben.weitere %}
+    <details class="mt-3 text-[0.9rem]">
+        <summary class="cursor-pointer font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">{% if ortsangaben.stadtweit %}Genannte Orte ({{ ortsangaben.weitere|length }}){% else %}{{ ortsangaben.weitere|length }} weitere{{ ortsangaben.weitere|length|pluralize:"r Ort, Orte" }}{% endif %}</summary>
+        <p class="mt-1 leading-snug text-gray-700 dark:text-gray-300 break-words">{% for ort in ortsangaben.weitere %}{{ ort.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+    </details>
+    {% endif %}
     {% for area in plan_areas %}
         <div class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-sm">
             <p class="font-medium text-gray-900 dark:text-white">{{ area.label }}</p>
@@ -51,7 +60,9 @@ paper_map_data (Daten der Karte, gelesen von frontend/js/paper-map.ts).
             </p>
         </div>
     {% endfor %}
-    <p class="mt-3 text-[0.8125rem] leading-snug text-gray-600 dark:text-gray-400">
-        Ortsbezüge werden automatisch aus den Dokumenten ermittelt und können unvollständig sein.
+    {% if ortsangaben.stufen or ortsangaben.ohne_hausnummer %}
+    <p class="mt-3 text-[0.8125rem] leading-snug text-gray-600 dark:text-gray-400" data-testid="orte-hinweis">
+        {% for stufe, erklaerung in ortsangaben.stufen %}<span class="font-medium text-gray-800 dark:text-gray-200">{{ stufe|capfirst }}:</span> {{ erklaerung }} {% endfor %}{% if ortsangaben.ohne_hausnummer %}Bei Eingaben aus der Einwohnerschaft und Bauanträgen nennen wir keine Hausnummern.{% endif %}
     </p>
+    {% endif %}
 </section>

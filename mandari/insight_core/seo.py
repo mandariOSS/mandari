@@ -373,8 +373,11 @@ def art_kurz(paper_type: str | None, body_slug: str = "") -> str:
 
 
 def betreff(paper: Any) -> str:
-    """Betreff eines Vorgangs ohne vorangestellte Drucksachennummer („V/0881/2011 Radweg …“ → „Radweg …“)."""
-    name = " ".join(str(paper.name or "").split())
+    """
+    Betreff eines Vorgangs ohne vorangestellte Drucksachennummer („V/0881/2011 Radweg …“ → „Radweg …“); bei Eingaben
+    aus der Einwohnerschaft und Bauanträgen ohne Hausnummer (``OParlPaper.titel_oeffentlich``, Issue #1269).
+    """
+    name = " ".join(str(getattr(paper, "titel_oeffentlich", None) or paper.name or "").split())
     nummer = (paper.reference or "").strip()
     if nummer and name.lower().startswith(nummer.lower()):
         name = name[len(nummer) :].lstrip(" :–-,")
@@ -472,7 +475,7 @@ def get_paper_seo(
         {
             "@context": "https://schema.org",
             "@type": "CreativeWork",
-            "name": paper.name or "Vorgang",
+            "name": getattr(paper, "titel_oeffentlich", None) or paper.name or "Vorgang",
             "identifier": paper.reference,
             "genre": paper.paper_type,
             "description": description,
