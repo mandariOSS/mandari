@@ -6,7 +6,7 @@ Linien nur zwischen Einträgen derselben Spalte.
 {% endcomment %}
 <section aria-labelledby="zuletzt-beschlossen" class="lg:col-span-2 min-[1600px]:col-span-1">
     <div class="flex items-baseline justify-between gap-4">
-        <h2 id="zuletzt-beschlossen" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Zuletzt beschlossen</h2>
+        <h2 id="zuletzt-beschlossen" class="abschnitt-titel">Zuletzt beschlossen</h2>
         <a href="{% insight_url 'meeting_list' %}?period=past" class="shrink-0 text-[0.95rem] font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">Vergangene Sitzungen</a>
     </div>
     <ul class="mt-4 lg:grid lg:grid-cols-2 lg:gap-x-12 min-[1600px]:block [&>li+li]:border-t lg:[&>li:nth-child(2)]:border-t-0 min-[1600px]:[&>li:nth-child(2)]:border-t [&>li]:border-gray-200 dark:[&>li]:border-gray-800">
