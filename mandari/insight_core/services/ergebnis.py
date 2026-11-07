@@ -183,3 +183,19 @@ def angekuendigt(erklaerung: str = "") -> Ergebnis:
     """Etikett „angekündigt“ für eine angesetzte Beratung bzw. Sitzung ohne Ergebnis (eigene Erklärung möglich)."""
     text, standard = VOKABULAR[ANGEKUENDIGT]
     return Ergebnis(ANGEKUENDIGT, text, erklaerung or standard)
+
+
+#: Stand einer Anfrage (Issue #1273): eigene Etiketten neben dem Vokabular der Beratungsergebnisse. Sie kommen nie
+#: aus dem Rohtext eines Tagesordnungspunkts, sondern aus ``vorgang_weg.anfrage_stand``.
+BEANTWORTET: Final = "beantwortet"
+ANTWORT_OFFEN: Final = "antwort_offen"
+ANFRAGE_STAND: Final[dict[str, tuple[str, str]]] = {
+    BEANTWORTET: ("beantwortet", "Die Verwaltung hat auf die Anfrage geantwortet."),
+    ANTWORT_OFFEN: ("Antwort steht aus", "Eine Antwort der Verwaltung ist noch nicht veröffentlicht."),
+}
+
+
+def anfrage_etikett(schluessel: str, erklaerung: str = "") -> Ergebnis:
+    """Etikett „beantwortet“ bzw. „Antwort steht aus“ für eine Anfrage (eigene Erklärung möglich)."""
+    text, standard = ANFRAGE_STAND[schluessel]
+    return Ergebnis(schluessel, text, erklaerung or standard)

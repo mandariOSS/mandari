@@ -1231,3 +1231,98 @@ def public_current_memberships(person: OParlPerson, *, on: date | None = None) -
         .select_related("organization")
         .order_by("organization__name")
     )
+
+
+# =============================================================================
+# Weg eines Vorgangs: verbundene Vorlagen, Federführung, Texte (Issue #1273)
+# =============================================================================
+
+#: OParl-Felder einer Vorlage mit Verweisen auf andere Vorlagen: übergeordnete Vorlage (etwa die Anfrage zu einer
+#: Stellungnahme), Folgevorlagen (Stellungnahmen, Änderungsanträge, Ergänzungen) und sonst verwandte Vorlagen
+VORLAGEN_VERWEISE: Final = ("superordinatedPaper", "subordinatedPaper", "relatedPaper")
+#: Höchstens so viele verbundene Vorlagen je Feld (die Seite bleibt lesbar, die Abfrage klein)
+MAX_VERBUNDENE_VORLAGEN: Final = 20
+
+
+def oparl_references(raw: object, key: str) -> list[str]:
+    """
+    Kennungen (URLs) eines OParl-Verweisfelds aus den Rohdaten, in der Reihenfolge der Quelle und ohne Dubletten.
+
+    Ein Feld ist eine Liste aus URLs oder eingebetteten Objekten mit ``id``; manche Systeme liefern einen einzelnen
+    Wert statt einer Liste. Alles andere zählt nicht.
+    """
+    value = raw.get(key) if isinstance(raw, dict) else None
+    values = value if isinstance(value, list) else [value]
+    found: list[str] = []
+    for item in values:
+        reference = item.get("id") if isinstance(item, dict) else item
+        if isinstance(reference, str) and reference.strip() and reference.strip() not in found:
+            found.append(reference.strip())
+    return found
+
+
+def related_public_papers(paper: OParlPaper) -> dict[str, list[OParlPaper]]:
+    """
+    Verbundene Vorlagen laut OParl je Feld aus ``VORLAGEN_VERWEISE``, in einer Abfrage für alle Felder.
+
+    Nur nicht gelöschte und nicht zurückgenommene Vorlagen derselben Kommune, ohne die Vorlage selbst, je Feld
+    höchstens ``MAX_VERBUNDENE_VORLAGEN`` und nach Datum (ohne Datum zuletzt). Verweise auf Vorlagen, die nicht im
+    Bestand liegen, fehlen. Felder ohne Treffer stehen mit leerer Liste da.
+    """
+    raw = paper.raw_json if isinstance(paper.raw_json, dict) else {}
+    per_key = {key: oparl_references(raw, key)[:MAX_VERBUNDENE_VORLAGEN] for key in VORLAGEN_VERWEISE}
+    wanted = {reference for references in per_key.values() for reference in references}
+    wanted.discard(paper.external_id)
+    if not wanted:
+        return {key: [] for key in VORLAGEN_VERWEISE}
+    found = {
+        other.external_id: other
+        for other in public_papers([paper.body_id])
+        .filter(external_id__in=list(wanted))
+        .exclude(withdrawn_q())
+        .exclude(pk=paper.pk)
+        .defer("summary", "summary_einfach", "locations")
+    }
+
+    def _order(other: OParlPaper) -> tuple[bool, date]:
+        return (other.date is None, other.date or date.min)
+
+    return {
+        key: sorted((found[reference] for reference in references if reference in found), key=_order)
+        for key, references in per_key.items()
+    }
+
+
+def organization_names_by_external_id(body_id: object, external_ids: Iterable[str]) -> dict[str, str]:
+    """
+    Namen nicht gelöschter Gremien und Organisationseinheiten einer Kommune zu OParl-Kennungen, etwa aus
+    ``underDirectionOf``. Kennungen, die auf etwas anderes zeigen (manche Systeme nennen dort eine Person), und
+    unbekannte fehlen; Personen geben wir so nie aus.
+    """
+    ids = [external_id for external_id in dict.fromkeys(external_ids) if external_id]
+    pk = _uuid(body_id)
+    if not ids or pk is None:
+        return {}
+    rows = (
+        OParlOrganization.objects.filter(body_id=pk, external_id__in=ids, deleted=False)
+        .exclude(name__isnull=True)
+        .exclude(name="")
+        .values_list("external_id", "name")
+    )
+    return {external_id: " ".join(name.split()) for external_id, name in rows if name}
+
+
+def public_files_of_papers_with_text(paper_ids: Iterable[object], *, max_chars: int) -> list[OParlFile]:
+    """
+    Öffentliche Dateien mehrerer Vorlagen mit dem Anfang ihres erkannten Texts (``text_begrenzt``, höchstens
+    ``max_chars`` Zeichen, gekürzt in der Datenbank), nach Vorlage und Name. Es gelten die Regeln der Vorgangsseiten
+    (``visible_files_of_papers``). Eine Abfrage; ``text_content`` selbst ist nicht geladen.
+    """
+    ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
+    if not ids:
+        return []
+    return list(
+        visible_files_of_papers(ids)
+        .annotate(text_begrenzt=Substr("text_content", 1, max(1, min(max_chars, MAX_TEXT_CHARS))))
+        .order_by("paper_id", "name", "file_name")
+    )

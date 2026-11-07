@@ -102,7 +102,8 @@ def _demo_treffer() -> dict[str, object]:
 def _demo_ergebnisse() -> list[SimpleNamespace]:
     """
     Ergebnis-Etiketten für die Vorschau von c-insight.ergebnis (Attribute wie insight_core.services.ergebnis.Ergebnis;
-    die Plattform importiert das Bürgerportal nicht): das Vokabular und ein neutraler Rohtext.
+    die Plattform importiert das Bürgerportal nicht): das Vokabular, der Stand einer Anfrage (Issue #1273) und ein
+    neutraler Rohtext.
     """
     begriffe = [
         ("beschlossen", "beschlossen"),
@@ -112,6 +113,8 @@ def _demo_ergebnisse() -> list[SimpleNamespace]:
         ("verwiesen", "verwiesen"),
         ("abgesetzt", "abgesetzt"),
         ("angekuendigt", "angekündigt"),
+        ("beantwortet", "beantwortet"),
+        ("antwort_offen", "Antwort steht aus"),
         ("", "zurückgezogen"),
     ]
     return [
