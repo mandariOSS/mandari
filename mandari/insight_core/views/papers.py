@@ -25,7 +25,7 @@ from ..services.vorgang_urheber import (
     fraktionen_der_kommune,
     urheber_je_vorgang,
 )
-from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -33,19 +33,14 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
+class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Vorgänge."""
 
     model = OParlPaper
     template_name = "pages/papers/list.html"
     context_object_name = "papers"
     paginate_by = 25
-
-    def get_template_names(self):
-        # Für HTMX-Requests nur das Partial zurückgeben
-        if self.is_htmx:
-            return ["partials/paper_list_items.html"]
-        return [self.template_name]
+    teil_vorlage = "partials/paper_list_items.html"
 
     def get(self, request, *args, **kwargs):
         ziel = self._einziger_nummerntreffer()

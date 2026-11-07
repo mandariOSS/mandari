@@ -10,8 +10,6 @@ from django.db.models.functions import Coalesce, NullIf
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
-from apps.common.mixins import HTMXMixin
-
 from ..models import (
     OParlMeeting,
     OParlMembership,
@@ -21,7 +19,7 @@ from ..models import (
 from ..ranking import sort_organizations_by_ranking
 from ..services import personen_liste, question_service
 from ..services.testkonten import ausgeblendet_q
-from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -29,19 +27,14 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
+class OrganizationListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Gremien mit Aktiv/Alle-Tabs."""
 
     model = OParlOrganization
     template_name = "pages/organizations/list.html"
     context_object_name = "organizations"
     paginate_by = 50
-
-    def get_template_names(self):
-        # Für HTMX-Requests nur das Partial zurückgeben
-        if self.is_htmx:
-            return ["partials/organization_list_items.html"]
-        return [self.template_name]
+    teil_vorlage = "partials/organization_list_items.html"
 
     def get_queryset(self):
         body = get_active_body(self.request)

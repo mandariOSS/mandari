@@ -9,8 +9,6 @@ from django.db.models import Q
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
-from apps.common.mixins import HTMXMixin
-
 from ..models import (
     OParlMeeting,
     OParlPerson,
@@ -19,7 +17,7 @@ from ..models import (
 )
 from ..services import fraktionen, personen_liste
 from ..services.testkonten import ist_testkonto, systemrolle_q, testkonto_q
-from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -35,18 +33,14 @@ COUNCIL_ROLES = [
 ]
 
 
-class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
+class PersonListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Personen mit Ratsrolle-Annotation."""
 
     model = OParlPerson
     template_name = "pages/persons/list.html"
     context_object_name = "persons"
     paginate_by = 50
-
-    def get_template_names(self):
-        if self.is_htmx:
-            return ["partials/person_list_items.html"]
-        return [self.template_name]
+    teil_vorlage = "partials/person_list_items.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

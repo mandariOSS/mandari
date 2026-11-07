@@ -5,10 +5,11 @@
 
 {% block page %}
 <c-insight.kopfband titel="Personen" text="{% if active_body %}Ratsmitglieder und sachkundige Bürgerinnen und Bürger von {{ active_body.get_display_name }}.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
-    <!-- Search -->
-    <div class="mb-4">
+    {% comment %}Die Suche steht in der Adresse (hx-push-url, Issue #1260){% endcomment %}
+    <form method="get" role="search" class="mb-4" id="person-filter-form" hx-history="false">
         <div class="relative max-w-md">
-            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true"></i>
+            <label for="search-persons" class="sr-only">Person suchen</label>
             <input type="search"
                    id="search-persons"
                    name="q"
@@ -17,6 +18,7 @@
                    hx-get="{{ request.path }}"
                    hx-trigger="keyup changed delay:400ms, search"
                    hx-target="#persons-list"
+                   hx-push-url="true"
                    hx-swap="innerHTML"
                    hx-indicator="#person-search-loading"
                    class="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
@@ -27,7 +29,7 @@
                 </svg>
             </div>
         </div>
-    </div>
+    </form>
 </c-insight.kopfband>
 <c-insight.band>
     <div id="persons-list">
