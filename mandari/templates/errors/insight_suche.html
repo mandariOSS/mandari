@@ -1,0 +1,10 @@
+{# Suche auf den Fehlerseiten des Bürgerportals (Issue #1261): dieselbe Suche wie in der Kopfzeile, ohne JavaScript #}
+<form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="flex flex-col sm:flex-row gap-2 max-w-xl">
+    <label for="fehler-suche" class="sr-only">Ratsinformationen durchsuchen</label>
+    <span class="relative block flex-1">
+        <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+        <input id="fehler-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …" autocomplete="off"
+            class="w-full h-11 pl-11 pr-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-600 text-[0.95rem] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    </span>
+    <c-ui.button type="submit" class="h-11">Suchen</c-ui.button>
+</form>

@@ -3,9 +3,9 @@
 Rückmeldung am Seitenende: „War diese Seite hilfreich? Ja / Nein“, optional ein Satz.
 
 Ein Endpunkt für beide Schritte (POST): Antwort speichern, danach optional den Satz an die Antwort
-hängen. Mit HTMX kommt nur der Teil für ``#rueckmeldung-inhalt`` zurück (immer Status 200, HTMX tauscht
-nur 2xx ein); ohne JavaScript eine eigene Seite mit Rückweg. Was gespeichert wird und was nicht:
-``services/page_feedback.py``.
+hängen, nach „Nein“ mit seiner Art (Fehler, Idee, Kommune vorschlagen; Issue #1261). Mit HTMX kommt nur der Teil
+für ``#rueckmeldung-inhalt`` zurück (immer Status 200, HTMX tauscht nur 2xx ein); ohne JavaScript eine eigene Seite
+mit Rückweg. Was gespeichert wird und was nicht: ``services/page_feedback.py``.
 """
 
 from __future__ import annotations
@@ -52,6 +52,7 @@ class FeedbackCommentForm(forms.Form):
     path = forms.CharField(max_length=255, required=False)
     helpful = forms.ChoiceField(choices=[("ja", "Ja"), ("nein", "Nein")], required=False)
     comment = CommentField(max_length=PageFeedback.COMMENT_MAX_LENGTH, required=False)
+    kind = forms.ChoiceField(choices=[("", "–"), *PageFeedback.Kind.choices], required=False)
     website = forms.CharField(required=False)
 
 
@@ -92,22 +93,25 @@ def _comment(request: HttpRequest) -> HttpResponse:
     form = FeedbackCommentForm(request.POST)
     if not form.is_valid():
         if "comment" in form.errors and "token" not in form.errors:
-            # Zu lang: Formular mit Hinweis erneut zeigen, der Text bleibt erhalten
+            # Zu lang: Formular mit Hinweis erneut zeigen, Text und Art bleiben erhalten
+            kind = request.POST.get("kind", "")
             retry = {
                 "token": request.POST.get("token", ""),
                 "path": request.POST.get("path", ""),
                 "helpful": request.POST.get("helpful") == "ja",
                 "comment": request.POST.get("comment", ""),
+                "kind": kind if kind in PageFeedback.Kind.values else "",
                 "error": MESSAGE_TOO_LONG,
             }
             return _respond(request, "danke", retry, status=400)
         return _respond(request, "hinweis", {"message": MESSAGE_INVALID}, status=400)
     data = form.cleaned_data
     context: dict[str, Any] = {"path": data["path"]}
-    if data["website"] or not service.clean_comment(data["comment"]):
+    # Bot oder Werbung: Antwort wie bei Menschen, gespeichert wird nichts
+    if data["website"] or not service.clean_comment(data["comment"]) or service.looks_like_spam(data["comment"]):
         return _respond(request, "ergaenzt", context)
     if service.rate_limited(request):
         return _respond(request, "hinweis", {**context, "message": MESSAGE_LIMIT}, status=429)
-    if not service.add_comment(data["token"], data["comment"]):
+    if not service.add_comment(data["token"], data["comment"], data["kind"]):
         return _respond(request, "hinweis", {**context, "message": MESSAGE_INVALID}, status=400)
     return _respond(request, "ergaenzt", context)

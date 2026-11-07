@@ -113,6 +113,11 @@ def public_decisions(body: Any) -> Any:
     )
 
 
+def has_public_decisions(body: Any) -> bool:
+    """Gibt es in der Kommune lesbare Beschlüsse? Nur dann steht „Beschlüsse“ in der Navigation (Issue #1261)."""
+    return public_decisions(body).exists()
+
+
 def visibility(item: Any) -> str:
     """Sichtbarkeit eines Beschlusses (``VISIBLE``, ``ARCHIVED``, ``PAUSED``, ``WITHDRAWN``, ``HIDDEN``)."""
     tenant = item.meeting.tenant

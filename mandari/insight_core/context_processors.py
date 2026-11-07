@@ -15,6 +15,7 @@ from django.utils.functional import SimpleLazyObject
 from .models import OParlBody
 from .navigation import KOMMUNEN_LISTEN, breadcrumb_area, more_area_listed, nav_area
 from .publication import DETAIL_PAGES, PORTAL_NAMESPACE, body_id_of
+from .services.neuigkeiten import mandari_version
 
 
 def navigation_context(request: HttpRequest) -> dict[str, Any]:
@@ -44,6 +45,8 @@ def navigation_context(request: HttpRequest) -> dict[str, Any]:
         "insight_breadcrumb": breadcrumb_area(url_name),
         # Namensnennung der Quellen im Kommunenwechsel; erst abgefragt, wenn ein Template sie zeigt
         "kommunenverzeichnis_quellen": SimpleLazyObject(_kommunenverzeichnis_quellen),
+        # Versionsnummer im Fuß, verlinkt auf „Was ist neu?“ (Issue #1261); einmal je Prozess gelesen
+        "mandari_version": mandari_version(),
     }
 
 
@@ -182,14 +185,15 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
             publication_state = None
     archive = publication_state if publication_state is not None and publication_state.archived else None
 
-    # Beschlüsse stehen nur in der Navigation, wenn die Kommune sie veröffentlicht (Issue #783):
-    # Ein Eintrag, der auf „Noch keine Beschlüsse“ führt, hilft niemandem. Nur auf Portalseiten abgefragt.
+    # Beschlüsse stehen nur in der Navigation, wenn die Kommune welche veröffentlicht (Issues #783, #1261): Ein
+    # Eintrag, der auf eine leere Liste führt, hilft niemandem, auch wenn die Verwaltung das Veröffentlichen schon
+    # eingeschaltet hat. Nur auf Portalseiten abgefragt.
     decisions_published = False
     if body is not None and portal_page:
         from .services import decision_tracking
 
         try:
-            decisions_published = decision_tracking.publishing_tenants(body).exists()
+            decisions_published = decision_tracking.has_public_decisions(body)
         except Exception:  # noqa: BLE001 - die Navigation darf keine Seite brechen (wie oben)
             decisions_published = False
 

@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# „Was ist neu?“ im Bürgerportal (Issue #1261): kuratierte Neuigkeiten in Bürgersprache, erreichbar über die
+# Versionsnummer im Fuß jeder Seite (/insight/neuigkeiten/).
+#
+# Ein Eintrag je Neuerung, die Bürgerinnen und Bürger im Portal bemerken. Interne Änderungen (Betrieb, Schnittstellen,
+# Work, Session) gehören nicht hierher, sondern nur in die CHANGELOG.md.
+#
+#   datum    Tag, ab dem die Neuerung im Portal steht (Release oder Übernahme nach dev), JJJJ-MM-TT ohne Anführungszeichen
+#   version  Version, mit der sie erschien; leer, solange sie noch nicht in einem Release steht
+#   titel    ein Satz zum Nutzen, mit Punkt am Ende, höchstens 80 Zeichen
+#   text     ein Absatz, der erklärt, wo man die Neuerung findet und was sie bringt, höchstens 500 Zeichen
+#
+# Ton: Sie-Form, einladend und sachlich, keine Fachwörter aus der Technik, nichts versprechen, was nicht überall gilt
+# („in ersten Kommunen“). insight_core/tests/test_neuigkeiten.py prüft Pflichtfelder, Längen und die Anrede.
+
+[[eintrag]]
+datum = 2026-11-07
+version = ""
+titel = "Sagen Sie uns, was fehlt."
+text = """Wenn Sie bei „War diese Seite hilfreich?“ mit Nein antworten, können Sie jetzt angeben, ob Sie einen \
+Fehler gefunden haben, eine Idee für eine neue Funktion haben oder eine Kommune vorschlagen möchten. Ein Satz \
+genügt. Wir speichern dazu keine IP-Adresse und setzen kein Cookie."""
+
+[[eintrag]]
+datum = 2026-11-07
+version = ""
+titel = "Alle Neuigkeiten an einem Ort."
+text = """Auf dieser Seite stellen wir vor, was im Bürgerportal neu ist, das Neueste zuerst. Sie erreichen sie \
+jederzeit über die Versionsnummer im Fuß jeder Seite."""
+
+[[eintrag]]
+datum = 2026-11-06
+version = ""
+titel = "Zusammenfassungen in Einfacher Sprache lesen."
+text = """Auf der Seite eines Vorgangs schalten Sie mit „In Einfacher Sprache“ auf eine zweite Fassung der \
+KI-Zusammenfassung um: kurze Sätze, Wörter aus dem Alltag und erklärte Fachbegriffe. Maßgeblich bleiben die \
+Originaldokumente der Kommune."""
+
+[[eintrag]]
+datum = 2026-11-06
+version = ""
+titel = "Zusammenfassungen kommen schneller zum Punkt."
+text = """Der erste Satz sagt jetzt, worum es geht und was zu entscheiden ist. Die Zusammenfassungen sind kürzer, \
+und ein Vorschlag liest sich nicht mehr so, als wäre er schon beschlossen."""
+
+[[eintrag]]
+datum = 2026-11-06
+version = ""
+titel = "Mit einem Klick sagen, ob eine Zusammenfassung hilft."
+text = """Unter jeder KI-Zusammenfassung fragen wir, ob sie hilfreich war. Ihr Daumen hoch oder runter zeigt uns, wo \
+die Zusammenfassungen besser werden müssen. Dafür brauchen Sie kein Konto, und wir setzen kein Cookie."""
+
+[[eintrag]]
+datum = 2026-11-06
+version = ""
+titel = "Orte auf der Karte werden ein zweites Mal geprüft."
+text = """In ersten Kommunen vergleicht eine KI die automatisch gefundenen Orte eines Vorgangs mit seinem Text. \
+Passt ein Ort nicht, verschwindet er von der Karte. Fehlt einer, sucht ihn das Straßenverzeichnis der Kommune."""
+
+[[eintrag]]
+datum = 2026-11-03
+version = "0.12.0"
+titel = "Sehen, welche Fraktion einen Antrag gestellt hat."
+text = """An Anträgen und Anfragen steht jetzt „Gestellt von“ mit der Fraktion oder Ratsgruppe, und in der Liste \
+der Vorgänge können Sie danach filtern. Erkannt wird das ohne KI aus den Angaben des Ratsinformationssystems und den \
+Unterschriften im Dokument. Ist etwas nicht eindeutig, bleibt die Angabe leer."""
+
+[[eintrag]]
+datum = 2026-11-03
+version = "0.12.0"
+titel = "Bebauungspläne zeigen ihr Plangebiet auf der Karte."
+text = """Wo die Kommune oder das Land die Daten bereitstellt, zeigen Vorlagen zu Bebauungsplänen die amtliche \
+Grenze des Plangebiets, mit Planstand und Link zur Planseite. Auch „Was passiert in Ihrer Nähe?“ findet diese \
+Pläne jetzt über ihre Fläche."""
+
+[[eintrag]]
+datum = 2026-11-03
+version = "0.12.0"
+titel = "Listen einer Kommune direkt teilen."
+text = """Sitzungen, Vorgänge, Gremien und Personen einer Kommune haben feste Adressen, etwa \
+/insight/k/muenster/vorgaenge/. Sie lassen sich teilen und als Lesezeichen speichern und öffnen immer die \
+richtige Kommune."""
+
+[[eintrag]]
+datum = 2026-09-27
+version = "0.11.0"
+titel = "Jede Kommune hat ihren eigenen Einstieg."
+text = """Unter /insight/k/ und dem Namen der Kommune öffnet sich das Bürgerportal gleich mit ihrem Namen und Logo. \
+Wer von dort aus weiterklickt, bleibt bei dieser Kommune."""
+
+[[eintrag]]
+datum = 2026-09-27
+version = "0.11.0"
+titel = "Genauer finden, was in Ihrer Nähe passiert."
+text = """Die Suche nach Vorgängen in Ihrer Nähe kennt jetzt Hausnummern und schlägt Straßen aus dem Verzeichnis \
+Ihrer Kommune vor. So finden Sie Vorlagen, die Ihre Straße betreffen, schneller."""
+
+[[eintrag]]
+datum = 2026-09-27
+version = "0.11.0"
+titel = "Fenster und Dialoge mit der Tastatur bedienen."
+text = """Fenster wie die Auswahl der Kommune halten den Fokus, schließen mit der Escape-Taste und werden von \
+Bildschirmlesern als Dialog angesagt. Die Barrierefreiheit wichtiger Seiten prüfen wir bei jeder Änderung \
+automatisch."""

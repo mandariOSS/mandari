@@ -1,0 +1,34 @@
+{% load insight_listen %}
+{% comment %}
+„Beschlüsse“ ohne veröffentlichten Umsetzungsstand (Issue #1261, views/decisions.py): statt einer leeren Seite der
+Hinweis, die zuletzt beratenen Punkte der Kommune (views/home.py, zuletzt_beschlossen) und der Weg zu Sitzungen und
+Vorgängen. Eine Ebene ohne Karte; Linien nur zwischen den Einträgen der Liste.
+{% endcomment %}
+<section aria-labelledby="beschluesse-leer" class="max-w-3xl">
+    <h2 id="beschluesse-leer" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Noch kein Umsetzungsstand gemeldet</h2>
+    <p class="mt-2 text-[1.0625rem] leading-relaxed text-gray-700 dark:text-gray-300">
+        {% if active_body %}Für {{ active_body.get_display_name }}{% else %}Für diese Kommune{% endif %} liegt noch keine
+        Meldung der Verwaltung vor. Was der Rat und die Ausschüsse entschieden haben, finden Sie schon jetzt in den
+        Ergebnissen der Sitzungen und an den Vorgängen.
+    </p>
+    {% if zuletzt_beraten %}
+    <h3 class="mt-8 text-[1.1875rem] font-semibold text-gray-900 dark:text-white">Zuletzt beraten</h3>
+    <ul class="mt-2 [&>li+li]:border-t [&>li]:border-gray-200 dark:[&>li]:border-gray-800">
+        {% for item in zuletzt_beraten %}
+        <li>
+            <a href="{% if item.vorgang %}{% url 'insight_core:insight:paper_detail' item.vorgang.pk %}{% else %}{% url 'insight_core:insight:meeting_detail' item.meeting.pk %}{% endif %}" class="group grid grid-cols-[6.5rem_minmax(0,1fr)] gap-4 py-4">
+                <time datetime="{{ item.meeting.start|date:'c' }}" class="text-[0.95rem] font-semibold text-gray-900 dark:text-gray-100">{{ item.meeting.start|date:"d.m.Y" }}</time>
+                <span class="min-w-0">
+                    <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% if item.vorgang.name %}{{ item.vorgang.name|truncatechars:140 }}{% else %}{{ item.name|default:"Tagesordnungspunkt"|truncatechars:140 }}{% endif %}</span>
+                    <span class="block mt-0.5 text-[0.9rem] text-gray-600 dark:text-gray-400 break-words">{{ item.result|truncatechars:80 }}{% if item.gremium %}, {{ item.gremium }}{% endif %}</span>
+                </span>
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    <p class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[0.95rem]">
+        <a href="{% insight_url 'meeting_list' %}?period=past" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4 hover:text-primary-800 dark:hover:text-primary-200">Vergangene Sitzungen</a>
+        <a href="{% insight_url 'paper_list' %}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4 hover:text-primary-800 dark:hover:text-primary-200">Alle Vorgänge</a>
+    </p>
+</section>

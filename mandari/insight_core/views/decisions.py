@@ -19,8 +19,11 @@ from ..models import DecisionSubscription
 from ..seo import get_page_seo
 from ..services import decision_tracking
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
+from .home import zuletzt_beschlossen
 
 PAGE_SIZE = 25
+#: Ohne veröffentlichte Beschlüsse: so viele zuletzt beratene Punkte statt einer leeren Liste (Issue #1261)
+LEER_ANZAHL = 6
 
 #: Sichtbarkeit der Beschlussseiten → Stand im Bürgerportal (Hinweis, 503, 410; Issue #618)
 _STATE_MODES = {
@@ -62,18 +65,24 @@ class DecisionListView(ActiveBodyRequiredMixin, TemplateView):
         body = get_active_body(self.request)
         context["active_body"] = body
         context["nav"] = "decision_list"
-        # robots und kanonische Adresse wie die übrigen Listen; mit Filtern noindex (urls.py, Issue #914)
+        # Leer, solange die Verwaltung keinen Beschluss mit Umsetzungsstand freigegeben hat – auch wenn sie das
+        # Veröffentlichen schon eingeschaltet hat (Issue #1261). Dann statt einer leeren Liste die zuletzt
+        # beratenen Punkte der Kommune und der Weg zu Sitzungen und Vorgängen.
+        context["publishing"] = body is not None and decision_tracking.has_public_decisions(body)
+        # robots und kanonische Adresse wie die übrigen Listen; mit Filtern noindex (urls.py, Issue #914). Die leere
+        # Seite gehört nicht in den Index, ihren Links dürfen Suchmaschinen folgen.
         context["seo"] = get_page_seo(
             self.request,
             title="Beschlüsse und Umsetzung",
             description="Was wurde aus den Beschlüssen des Rats? Umsetzungsstand, Fristen und Meldungen der Verwaltung.",
             body=body,
+            robots="index, follow" if context["publishing"] else "noindex, follow",
             keywords=["Beschlüsse", "Umsetzung", "Kommunalpolitik", "Transparenz"],
         ).to_dict()
-        tenants = decision_tracking.publishing_tenants(body)
-        context["publishing"] = tenants.exists()
         if not context["publishing"]:
+            context["zuletzt_beraten"] = zuletzt_beschlossen(body, anzahl=LEER_ANZAHL) if body is not None else []
             return context
+        tenants = decision_tracking.publishing_tenants(body)
 
         params = self.request.GET
         qs = decision_tracking.public_decisions(body)
