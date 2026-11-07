@@ -17,7 +17,7 @@ from ..models import (
     withdrawn_q,
 )
 from ..ranking import sort_organizations_by_ranking
-from ..services import personen_liste, question_service
+from ..services import personen_liste, sitzverteilung
 from ..services.testkonten import ausgeblendet_q
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
@@ -170,13 +170,18 @@ class OrganizationDetailView(DetailView):
         )
         past_qs = all_memberships.filter(end_date__lt=today).order_by("person__family_name")
 
-        # Laufende Mitglieder mit ihrer Fraktion (Spalte „Fraktion“, Issue #841); auf Fraktionsseiten ohne
+        # Laufende Mitglieder mit ihrer Fraktion (Spalte „Fraktion“ aus OParl, Issue #841) und die Sitzverteilung als
+        # Balken (Issue #1272, Fraktion wie in der Personenliste, auch gepflegt); auf Fraktionsseiten ohne beides
         active = list(active_qs)
         context["mitglieder_anzahl"] = len(active)
+        context["sitzverteilung"] = None
         if not personen_liste.ist_fraktion(org):
-            fraktionen = question_service.get_faction_map([m.person for m in active])
+            angaben = personen_liste.angaben_fuer({m.person_id: m.person for m in active}.values())
             for membership in active:
-                membership.fraktion = fraktionen.get(membership.person_id)
+                membership.fraktion = angaben[membership.person_id].fraktion
+            context["sitzverteilung"] = sitzverteilung.berechnen(
+                active, {pid: a.fraktion or a.fraktion_lokal for pid, a in angaben.items()}
+            )
 
         # Sonderfall "Rat": Ratsmitglieder von anderen trennen
         is_rat = org.name == "Rat"

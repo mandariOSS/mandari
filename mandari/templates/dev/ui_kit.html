@@ -207,6 +207,10 @@
         <p class="flex flex-wrap gap-2">{% for etikett in demo_ergebnisse %}<c-insight.ergebnis :ergebnis="etikett" />{% endfor %}</p>
     </c-ui.card>
 
+    <c-ui.card title="Bürgerportal: Fraktionskürzel" subtitle="c-insight.absender – absender (insight_core.services.fraktionskuerzel), klasse, hinweis; c-insight.kuerzel – kuerzel; gleich groß für alle, Farbe nur im Strich, Unbekanntes grau">
+        <ul class="space-y-2">{% for absender in demo_absender %}<li><c-insight.absender :absender="absender" hinweis="eingebracht von" /></li>{% endfor %}</ul>
+    </c-ui.card>
+
     <c-ui.card title="Rahmen: Leiste, Leiste unten, Blatt „Mehr“" subtitle="c-rahmen.nav-link / c-rahmen.tab / c-rahmen.blatt-link – href, icon, area + aktuell oder aktiv; nav-link mit dicht (Work)">
         <div class="grid gap-6 sm:grid-cols-3">
             <ul class="space-y-0.5 rounded-lg bg-band-grau p-2.5">

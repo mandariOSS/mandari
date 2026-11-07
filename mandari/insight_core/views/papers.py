@@ -18,7 +18,7 @@ from hub.ris import vorlagennummer
 from hub.ris.original import seite_im_ris
 
 from ..models import OParlPaper, VorgangUrheber
-from ..services import file_reconcile
+from ..services import file_reconcile, fraktionskuerzel
 from ..services.vorgang_dokumente import dokumente_anhaengen
 from ..services.vorgang_urheber import (
     FraktionsAuswahl,
@@ -142,6 +142,8 @@ class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, Be
             paper.stand = staende.get(str(paper.pk))
         # Vorlage und Anlagen je Vorgang in einer Abfrage für die Seite (Issue #1103)
         dokumente_anhaengen(papers)
+        # Titel ohne Absender und Fraktionskürzel (Issue #1272), eine Abfrage für die Seite
+        fraktionskuerzel.anhaengen(papers)
         context["papers"] = papers
         return context
 
@@ -173,8 +175,9 @@ class PaperDetailView(DetailView):
             if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)
         ]
         context["files"] = ris_selectors.with_text_start(files)
-        # Antragstellende Fraktionen (Issue #1138)
+        # Antragstellende Fraktionen (Issue #1138); Titel ohne Absender und Kürzel im Kopf (Issue #1272)
         context["urheber"] = urheber_je_vorgang([paper.pk]).get(paper.pk, [])
+        context["absender"] = fraktionskuerzel.absender(paper.name, paper.paper_type, context["urheber"])
 
         # Beratungsverlauf (Consultations mit Meeting-Info), Stand-Satz und Zeitstrahl; der Verlauf kommt aus der
         # Lese-Fassade wie auf der Vorgangsseite von Work (Issue #853)
