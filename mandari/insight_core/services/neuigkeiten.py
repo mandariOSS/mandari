@@ -5,7 +5,7 @@
 Die Neuigkeiten sind kuratiert: kurze Einträge in Bürgersprache aus ``insight_core/neuigkeiten.toml`` (ein Satz Nutzen,
 ein Absatz Erklärung), nicht die technische CHANGELOG.md. Die Datei wird beim ersten Aufruf gelesen und bleibt bis
 zum Neustart im Speicher; ein Fehler in der Datei bricht keine Seite, sondern lässt die Liste leer (und wird
-protokolliert). Pflichtfelder, Längen und Anrede prüft ``insight_core/tests/test_neuigkeiten.py``.
+protokolliert). Pflichtfelder, Längen und Anrede prüft ``insight_core/tests/test_leer_fehler_neu.py``.
 
 Die Version kommt aus ``pyproject.toml`` (die eine Stelle nach ``docs/RELEASE_POLITIK.md``), im Image unter
 ``/app/pyproject.toml``.

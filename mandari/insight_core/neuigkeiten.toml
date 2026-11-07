@@ -12,7 +12,7 @@
 #   text     ein Absatz, der erklärt, wo man die Neuerung findet und was sie bringt, höchstens 500 Zeichen
 #
 # Ton: Sie-Form, einladend und sachlich, keine Fachwörter aus der Technik, nichts versprechen, was nicht überall gilt
-# („in ersten Kommunen“). insight_core/tests/test_neuigkeiten.py prüft Pflichtfelder, Längen und die Anrede.
+# („in ersten Kommunen“). insight_core/tests/test_leer_fehler_neu.py prüft Pflichtfelder, Längen und die Anrede.
 
 [[eintrag]]
 datum = 2026-11-07
