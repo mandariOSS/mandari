@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
     """Art der Rückmeldung nach „Nein“ (Issue #1261): eine Spalte mit Datenbank-Standardwert, sonst nichts."""
 
     dependencies = [
-        ("insight_core", "0066_zusammenfassung_einfach"),
+        ("insight_core", "0067_zusammenfassung_stand"),
     ]
 
     operations = [
