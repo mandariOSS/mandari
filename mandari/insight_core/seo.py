@@ -440,6 +440,14 @@ def _ki_zusammenfassung(text: str | None, davor: str) -> str:
     return f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {text}"
 
 
+def _ortsschutz(paper: Any) -> str:
+    """Grund für den Datenschutz bei Orten (Issue #1269): von der Seite ermittelt (``_ortsschutz``) oder nach Art."""
+    from .services.ortsschutz import grund_nach_art
+
+    schutz = getattr(paper, "_ortsschutz", None)
+    return schutz if schutz is not None else grund_nach_art(paper.paper_type, paper.name)
+
+
 def get_paper_seo(
     paper: Any,
     request: HttpRequest,
@@ -464,9 +472,13 @@ def get_paper_seo(
     kopf = f"{_kennung(paper)} vom {datum}" if datum else _kennung(paper)
     stand_satz = stand.text if stand is not None and stand.kind != STAND_UNBEKANNT else ""
     kopf_satz = f"{kommune}: {kopf}." if kommune else f"{kopf}."
-    zusammenfassung = _ki_zusammenfassung(
-        paper.summary if mit_zusammenfassung else None, beschreibung(kopf_satz, stand_satz)
-    )
+    text = paper.summary if mit_zusammenfassung else None
+    if text and _ortsschutz(paper):
+        # Wie Titel und Zusammenfassung der Seite ohne Hausnummern bei Privatanschriften (Issue #1269)
+        from .services.ortsschutz import hausnummern_auslassen
+
+        text = hausnummern_auslassen(text)
+    zusammenfassung = _ki_zusammenfassung(text, beschreibung(kopf_satz, stand_satz))
     description = beschreibung(kopf_satz, stand_satz, zusammenfassung)
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)
@@ -822,8 +834,12 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
     {Kommune}“; die Description nennt Gremium, Datum, Stand der Umsetzung und den Anfang des Beschlusstexts.
     """
     kommune = _kommune(body)
-    titel = kuerzen(item.name, TITEL_BETREFF_MAX) or "Beschluss"
-    name = " ".join(str(item.name or "").split()) or "Beschluss"
+    # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
+    from .services.decision_tracking import oeffentlicher_name
+
+    oeffentlich = oeffentlicher_name(item)
+    titel = kuerzen(oeffentlich, TITEL_BETREFF_MAX) or "Beschluss"
+    name = " ".join(oeffentlich.split()) or "Beschluss"
     title = seitentitel([f"{name} – Umsetzungsstand", name], name, kommune)
     meeting = item.meeting
     gremium = getattr(getattr(meeting, "organization", None), "name", "") or ""
@@ -840,7 +856,7 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
         {
             "@context": "https://schema.org",
             "@type": "CreativeWork",
-            "name": item.name,
+            "name": name,
             "identifier": getattr(item, "resolution_number", "") or None,
             "description": description,
             "url": canonical,

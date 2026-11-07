@@ -13,6 +13,9 @@ Seit #1269 verortet die Pipeline Eingaben aus der Einwohnerschaft und Bauanträg
 Gelöscht wird nichts. Die alten Angaben stehen in ``PaperLocation.vorher``; ``rueckgaengig`` stellt Punkt, Name,
 Herkunft, Konfidenz und Status wieder her und nimmt den Eintrag wieder in ``paper.locations`` auf. Entfernte und
 schon ausgeblendete Zeilen bleiben unberührt. Ohne ``ausfuehren`` wird nur gezählt (Probelauf).
+
+Findet ein späterer Verortungslauf die Straße einer zurückgestuften Zeile nicht mehr, löscht ``sync_paper_locations``
+sie nicht, sondern blendet sie aus (``vorher`` bleibt); ``rueckgaengig`` stellt auch dann den alten Stand her.
 """
 
 from __future__ import annotations

@@ -133,12 +133,13 @@ _GRUNDWORT: Final = (
     r"(?:straße|strasse|str\.|weg|platz|gasse|allee|ring|ufer|damm|pfad|chaussee|hof|markt|graben|berg|feld|wall|"
     r"steig|stieg|kamp|bogen|deich|garten|brücke|anger|winkel|wiese|weide|mühle|siedlung)"
 )
-#: Straßenname (letztes Wort mit Grundwort) und Hausnummer, auch mit „Nr.“ dazwischen
-_STRASSE_NR: Final = re.compile(rf"(?<![\w-])([\w.-]*{_GRUNDWORT})(\s+)(?:nr\.?\s*)?{_NR}", re.IGNORECASE)
+#: Straßenname (letztes Wort mit Grundwort) und Hausnummer, auch mit „Nr.“ dazwischen; nach „str.“ auch ohne
+#: Leerzeichen („Hauptstr.5“, so in manchen Titeln der Ratsinformationssysteme)
+_STRASSE_NR: Final = re.compile(rf"(?<![\w-])([\w.-]*{_GRUNDWORT})(?:\s+|(?<=\.))(?:nr\.?\s*)?{_NR}", re.IGNORECASE)
 #: Straßen mit Vorwort („Am Wehr 4“, „An der Kirche 5“, „Zur Linde 2“): ein bis drei großgeschriebene Wörter
 _VORWORT_NR: Final = re.compile(
     r"(?<!\w)((?:Am|An der|An den|Auf dem|Auf der|Auf den|Im|In der|In den|Zum|Zur|Hinter dem|Hinter der|Unter den|"
-    rf"Vor dem|Bei der|Beim)(?:\s+[A-ZÄÖÜ][\w.-]*){{1,3}})(\s+)(?:Nr\.?\s*)?{_NR}"
+    rf"Vor dem|Bei der|Beim)(?:\s+[A-ZÄÖÜ][\w.-]*){{1,3}})\s+(?:Nr\.?\s*)?{_NR}"
 )
 #: „Hausnummer 82“, „Haus-Nr. 5“, „Hausnummern 36 bis 40“; eine schließende Klammer dazwischen bleibt stehen
 _WORT_NR: Final = re.compile(rf"\b(?:hausnummern?|hausnr\.?|haus-nr\.?|haus\s+nr\.?)\s*(\))?\s*{_NR}", re.IGNORECASE)

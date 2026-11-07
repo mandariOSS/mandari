@@ -34,6 +34,10 @@ from insight_core.services.ortsschutz import (
         ("(neben Haus-Nr.) 68", f"(neben {OHNE_NR})"),
         ("Wolbecker Straße 1 bis 3", f"Wolbecker Straße {OHNE_NR}"),
         ("Markt 2", f"Markt {OHNE_NR}"),
+        # Ohne Leerzeichen nach „str.“, wie in manchen Titeln der Ratsinformationssysteme
+        ("Hauptstr.5", f"Hauptstr. {OHNE_NR}"),
+        ("Parkverbot Hauptstr.12a, 53111 Bonn", f"Parkverbot Hauptstr. {OHNE_NR}, 53111 Bonn"),
+        ("Musterstr.Nr.7", f"Musterstr. {OHNE_NR}"),
     ],
 )
 def test_hausnummer_hinter_strasse_wird_ausgelassen(titel: str, erwartet: str) -> None:
@@ -49,6 +53,8 @@ def test_hausnummer_hinter_strasse_wird_ausgelassen(titel: str, erwartet: str) -
         "Haushaltsplan 2027, Produkt 12",
         "Faktor 2 beim Beschluss 12",
         "Bürgerantrag zur Musterstraße",
+        "Hauptstr.2027",  # Jahr direkt hinter „str.“
+        "Weg.5 ist kein Straßenname mit Punkt",
         "",
     ],
 )

@@ -240,6 +240,11 @@ RETRY_MESSAGE = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte 
 
 def _summary_response(request, context, status=200):
     """Teilansicht der Zusammenfassung; HTMX tauscht nur 2xx ein, deshalb dort immer 200."""
+    if context.get("summary"):
+        # Wie auf der Vorgangsseite ohne Hausnummern bei Privatanschriften (Issue #1269)
+        from ..services import ortsschutz
+
+        context = {**context, "ortsschutz": ortsschutz.grund(context["paper"])}
     response = render(request, "partials/paper_summary.html", context)
     if status != 200 and not request.htmx:
         response.status_code = status

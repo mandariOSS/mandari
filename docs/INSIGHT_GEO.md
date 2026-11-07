@@ -53,14 +53,17 @@ Bauaufsicht, Untere Naturschutzbehörde) und an über- und untergeordneten Vorg�
   (`oparl_locations`; unbekannte Straße: kein Punkt) und bei der KI-Prüfung. Eingaben aus der Einwohnerschaft werden
   nur aus dem Titel verortet, weil im Volltext meist die Anschrift der Einreichenden steht.
 - **Anzeige:** Titel und Ortsnamen ohne Hausnummer („[Hausnummer ausgelassen]“) auf der Vorgangsseite, im Seitentitel,
-  in Vorgangsliste, Startseite, Merkliste, Tagesordnung, Karte, Umkreissuche, Suchtreffern, Benachrichtigungen und in
-  den Werkzeugen des KI-Assistenten (auch Dokumentabschnitte). Datenbank, OParl-Schnittstelle und Work behalten den
-  vollen Titel.
+  in der KI-Zusammenfassung samt Description, in Vorgangsliste, Startseite, „Beschlüsse“, Merkliste, Tagesordnung,
+  Karte, Umkreissuche, Suchtreffern und Suchvorschau der Kopfzeile, Benachrichtigungen, Umsetzungsstand von Beschlüssen
+  (Seite und Abo-Mails) und in den Werkzeugen des KI-Assistenten (auch Dokumentabschnitte). Datenbank,
+  OParl-Schnittstelle und Work behalten den vollen Titel.
 - **Bestand:** `python manage.py adresspunkte_zurueckstufen [--body <slug>] [--ausfuehren] [--rueckgaengig]` stuft
   vorhandene Adresspunkte dieser Vorgänge auf die Straße zurück (`services/ortsschutz_bestand.py`). Ist die Straße
   unbekannt oder schon ein Ort des Vorgangs, wird die Zeile ausgeblendet (`status=hidden`). Gelöscht wird nichts, die
   alten Angaben stehen in `PaperLocation.vorher`; `--rueckgaengig` stellt sie wieder her. Ohne `--ausfuehren` nur
-  Probelauf.
+  Probelauf. Findet ein späterer Verortungslauf eine zurückgestufte Straße nicht mehr (etwa weil Eingaben aus der
+  Einwohnerschaft jetzt nur aus dem Titel verortet werden), blendet `sync_paper_locations` die Zeile aus, statt sie zu
+  löschen; `vorher` bleibt, die Rückstufung bleibt umkehrbar.
 
 ## Orte auf der Vorgangsseite (`services/orte_anzeige.py`, #1269)
 
@@ -96,7 +99,8 @@ Stand `pending` mit erkanntem Text. Mit `GEOREF_SUBSCRIPTION=aktiv` stößt zus�
     Umkreissuche und Vorgangsseite zeigen sie nicht.
   - **Bestätigte** Zeilen bleiben erhalten und werden ins JSON zurückgeschrieben, auch wenn ein
     neuer Lauf sie nicht mehr liefert.
-  - Automatische Zeilen ohne JSON-Gegenstück werden gelöscht.
+  - Automatische Zeilen ohne JSON-Gegenstück werden gelöscht; zurückgestufte Zeilen (`vorher` gesetzt, #1269) werden
+    nur ausgeblendet, damit `adresspunkte_zurueckstufen --rueckgaengig` sie wiederherstellen kann.
 - `nearby_papers(body, lat, lon, radius_m, limit)`: Bounding-Box-Vorfilter auf dem Index,
   Haversine-Feinfilter als SQL-Ausdruck (`ACos/Cos/Sin/Radians`, läuft auf PostgreSQL und SQLite),
   nächster Punkt je Vorgang, sortiert nach Entfernung. Ersetzt den JSONB-Vollscan in

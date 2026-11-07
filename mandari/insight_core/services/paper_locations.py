@@ -47,11 +47,13 @@ class SyncResult:
     updated: int = 0
     deleted: int = 0
     suppressed: int = 0
+    #: zurückgestufte Zeilen (#1269) ohne JSON-Gegenstück: ausgeblendet statt gelöscht
+    hidden: int = 0
     json_changed: bool = False
 
     @property
     def changed(self) -> bool:
-        return bool(self.created or self.updated or self.deleted or self.json_changed)
+        return bool(self.created or self.updated or self.deleted or self.hidden or self.json_changed)
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -124,7 +126,8 @@ def sync_paper_locations(paper: OParlPaper, save: bool = True) -> SyncResult:
     - Einträge im Umkreis (≤ 50 m) einer entfernten Zeile werden verworfen (Sperre).
     - Ausgeblendete Zeilen (Datenschutz, #1269) bleiben, wie sie sind; ein Eintrag genau an ihrem Punkt entfällt.
     - Bestätigte Zeilen, die im JSON fehlen, werden dort wieder aufgenommen.
-    - Automatische Zeilen ohne JSON-Gegenstück werden gelöscht.
+    - Automatische Zeilen ohne JSON-Gegenstück werden gelöscht; zurückgestufte (``vorher`` gesetzt, #1269) nur
+      ausgeblendet, damit ``adresspunkte_zurueckstufen --rueckgaengig`` sie wiederherstellen kann.
 
     Bei ``save=True`` wird ein verändertes JSON am Vorgang gespeichert.
     """
@@ -179,7 +182,17 @@ def sync_paper_locations(paper: OParlPaper, save: bool = True) -> SyncResult:
         elif _row_needs_update(row, entry):
             to_update.append(row)
 
-    stale_ids = [r.pk for r in auto.values()]
+    # Zurückgestufte Zeilen tragen die alten Angaben (``vorher``): ausblenden statt löschen, sonst wäre die
+    # Rückstufung nicht mehr umkehrbar (#1269)
+    zurueckgestuft = [r for r in auto.values() if r.vorher is not None]
+    stale_ids = [r.pk for r in auto.values() if r.vorher is None]
+    if zurueckgestuft:
+        jetzt = timezone.now()
+        for zeile in zurueckgestuft:
+            zeile.status = PaperLocation.STATUS_HIDDEN
+            zeile.updated_at = jetzt
+        PaperLocation.objects.bulk_update(zurueckgestuft, ["status", "updated_at"], batch_size=500)
+        result.hidden = len(zurueckgestuft)
     if stale_ids:
         result.deleted = PaperLocation.objects.filter(pk__in=stale_ids).delete()[0]
     if to_create:

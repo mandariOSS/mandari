@@ -101,6 +101,34 @@ def test_adresspunkt_wird_strasse_und_kommt_zurueck(kommune: OParlBody, make_pap
     assert orte[0]["name"] == "Wolbecker Straße 12a" and orte[0]["fundstelle"] == "titel"
 
 
+def test_spaeterer_lauf_ohne_strasse_blendet_aus_statt_zu_loeschen(
+    kommune: OParlBody, make_paper: Callable[..., OParlPaper]
+) -> None:
+    """Findet ein neuer Verortungslauf die Straße nicht mehr, bleibt die zurückgestufte Zeile umkehrbar."""
+    paper = _vorgang(kommune, make_paper, "Bürgerantrag", [_ort("Wolbecker Straße 12a", HAUS)])
+    ortsschutz_bestand.zurueckstufen(paper, ausfuehren=True)
+    zeile = PaperLocation.objects.get(paper=paper)
+    # Neuer Lauf, etwa nur noch aus dem Titel: kein Ort mehr
+    paper.refresh_from_db()
+    paper.locations = None
+    paper.save(update_fields=["locations"])
+    ergebnis = sync_paper_locations(paper)
+    assert (ergebnis.deleted, ergebnis.hidden) == (0, 1)
+    zeile.refresh_from_db()
+    assert zeile.status == PaperLocation.STATUS_HIDDEN and (zeile.vorher or {}).get("name") == "Wolbecker Straße 12a"
+    assert ris.paper_places([kommune]) == [] and location_counts([str(paper.pk)]) == {}
+    # Ein weiterer Abgleich bleibt ruhig, eine Zeile ohne ``vorher`` wird wie bisher gelöscht
+    assert not sync_paper_locations(paper).changed
+    anderer = _vorgang(kommune, make_paper, "Beschlussvorlage", [_ort("Wolbecker Straße", STRASSE, "street_match")])
+    anderer.locations = None
+    anderer.save(update_fields=["locations"])
+    assert sync_paper_locations(anderer).deleted == 1
+
+    assert ortsschutz_bestand.rueckgaengig(paper, ausfuehren=True).wiederhergestellt == 1
+    assert _zeilen(paper) == [("Wolbecker Straße 12a", *HAUS, "address_match", PaperLocation.STATUS_AUTO)]
+    assert [o["name"] for o in _orte(paper)] == ["Wolbecker Straße 12a"]
+
+
 def test_unbekannte_strasse_wird_ausgeblendet(kommune: OParlBody, make_paper: Callable[..., OParlPaper]) -> None:
     paper = _vorgang(kommune, make_paper, "Einwohnerfrage", [_ort("Gartenpfad 3", HAUS, quelle="oparl")])
     bilanz = ortsschutz_bestand.zurueckstufen(paper, ausfuehren=True)
