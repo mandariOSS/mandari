@@ -55,6 +55,12 @@ insight_patterns = [
         {"liste": "person_list"},
         name="portal_person_list",
     ),
+    path(
+        "k/<slug:slug>/beschluesse/",
+        listenseite(views.portal_list),
+        {"liste": "decision_list"},
+        name="portal_decision_list",
+    ),
     path("k/<slug:slug>/<path:rest>", views.portal_entry, name="portal_entry_path"),
     # Gremien (Organizations)
     path("gremien/", listenseite(views.OrganizationListView.as_view()), name="organization_list"),
@@ -64,8 +70,9 @@ insight_patterns = [
     path("personen/<uuid:pk>/", views.PersonDetailView.as_view(), name="person_detail"),
     path("personen/<uuid:pk>/frage-stellen/", views.AskQuestionView.as_view(), name="ask_question"),
     # Öffentliche Fragen (Ratsfragen-Portal)
-    # Öffentliches Beschluss-Tracking „Was wurde aus …?“ (Issue #48)
+    # Beschlüsse als Liste der Entscheidungen (Issue #1270), die Umsetzung „Was wurde aus …?“ als Reiter (Issue #48)
     path("beschluesse/", listenseite(views.DecisionListView.as_view()), name="decision_list"),
+    path("beschluesse/umsetzung/", listenseite(views.DecisionTrackingView.as_view()), name="decision_tracking"),
     path("beschluesse/<uuid:pk>/", views.DecisionDetailView.as_view(), name="decision_detail"),
     path("beschluesse/abo/bestaetigen/<uuid:token>/", views.confirm_decision_subscription, name="decision_confirm"),
     path("beschluesse/abo/abmelden/<uuid:token>/", views.unsubscribe_decision, name="decision_unsubscribe"),
