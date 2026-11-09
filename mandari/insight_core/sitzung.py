@@ -19,8 +19,8 @@ from collections.abc import Callable
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 
-#: Pfadendungen von Abos, die Programme ohne Cookie abrufen (Kalender-Feed)
-ABO_ENDUNGEN = (".ics",)
+#: Pfadendungen von Abos, die Programme ohne Cookie abrufen (Kalender, Feeds aus Issue #1274)
+ABO_ENDUNGEN = (".ics", ".atom")
 
 
 def ohne_neue_sitzung(request: HttpRequest) -> bool:

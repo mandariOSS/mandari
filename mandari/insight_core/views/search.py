@@ -22,6 +22,7 @@ from ..models import (
     OParlPaper,
     OParlPerson,
 )
+from ..services import fraktionskuerzel
 from ._helpers import get_active_body, is_all_bodies_mode, page_number
 
 # =============================================================================
@@ -84,6 +85,10 @@ class SearchView(TemplateView):
         ).to_dict()
         if len(params.query) < 2:
             return context
+        # Feed dieser Suche (Issue #1274): Kopf der Seite und „Als RSS abonnieren“ unter den Treffern
+        from .feeds import abo_suche
+
+        context["abo_feed"] = abo_suche(params, body)
         try:
             from ..services.search_service import get_search_service
 
@@ -94,6 +99,8 @@ class SearchView(TemplateView):
 
             logging.getLogger(__name__).warning(f"Suche ohne Elasticsearch, Datenbanksuche: {e}")
             context.update(_fallback_context(params, body))
+        # Titel ohne Absender und Fraktionskürzel (Issue #1272); nur im Bürgerportal, Work zeigt die Titel des RIS
+        fraktionskuerzel.treffer_anreichern(context.get("groups") or [])
         context["page"] = context.get("page", 1)
         return context
 
@@ -297,6 +304,7 @@ def _grouped_results(request, search_service, query, body, body_id, body_ids, in
         query, body_id=body_id, body_ids=body_ids, page=page, page_size=20, index_names=index_names
     )
     groups = present_groups(grouped["groups"], body.slug if body else "")
+    fraktionskuerzel.treffer_anreichern(groups)
     totals = grouped["totals_by_index"]
     other_types = []
     if index_names is None:

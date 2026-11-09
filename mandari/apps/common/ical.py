@@ -62,8 +62,9 @@ def _vevent_lines(
     organizer_email: str = "",
     sequence: int = 0,
     status: str = "CONFIRMED",
+    url: str = "",
 ) -> list[str]:
-    """Zeilen eines einzelnen VEVENT (gemeinsam für Einzel-ICS und Feeds)."""
+    """Zeilen eines einzelnen VEVENT (gemeinsam für Einzel-ICS und Feeds); ``url`` ist die Seite des Termins."""
     lines = [
         "BEGIN:VEVENT",
         f"UID:{_escape(uid)}",
@@ -77,6 +78,9 @@ def _vevent_lines(
         lines.append(f"LOCATION:{_escape(location)}")
     if description:
         lines.append(f"DESCRIPTION:{_escape(description)}")
+    if url:
+        # URI-Wert (RFC 5545, 3.8.4.6): nicht wie Text maskieren
+        lines.append(f"URL:{url}")
     if organizer_email:
         cn = f";CN={_escape(organizer_name)}" if organizer_name else ""
         lines.append(f"ORGANIZER{cn}:mailto:{organizer_email}")
@@ -102,6 +106,8 @@ def build_ics_event(
     organizer_email: str = "",
     method: str = "PUBLISH",
     sequence: int = 0,
+    status: str = "CONFIRMED",
+    url: str = "",
 ) -> bytes:
     """
     Einzelnes VEVENT als vollständige ICS-Datei erzeugen.
@@ -115,6 +121,8 @@ def build_ics_event(
         organizer_name/organizer_email: optionaler Organisator
         method: PUBLISH (Standard) oder REQUEST
         sequence: Versionszähler bei Aktualisierungen
+        status: CONFIRMED (Standard) oder CANCELLED
+        url: Seite des Termins (optional)
 
     Returns:
         bytes: ICS-Inhalt (UTF-8, CRLF-Zeilenenden)
@@ -136,6 +144,8 @@ def build_ics_event(
             organizer_name=organizer_name,
             organizer_email=organizer_email,
             sequence=sequence,
+            status=status,
+            url=url,
         )
     )
     lines.append("END:VCALENDAR")
@@ -148,7 +158,7 @@ def build_ics_feed(events: list[dict], *, name: str = "mandari Sitzungen") -> by
 
     Args:
         events: Liste von dicts mit den Argumenten von :func:`_vevent_lines`
-            (uid, summary, start, optional end/description/location/status)
+            (uid, summary, start, optional end/description/location/status/sequence/url)
         name: Kalendername (X-WR-CALNAME)
 
     Returns:

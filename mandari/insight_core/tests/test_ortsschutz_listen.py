@@ -283,3 +283,51 @@ def test_umsetzungsstand_eines_buergerantrags_ohne_hausnummer(antrag: OParlPaper
         assert "Musterstraße 12a" not in html, adresse
     beschluss.refresh_from_db()
     assert beschluss.name == f"Bürgerantrag: {TITEL}"
+
+
+# --- Zusammenspiel mit den Fraktionskürzeln (#1272) und den Feeds (#1274) --------------------------------------------
+
+#: Antrag mit Absender im Titel zu einem privaten Bauvorhaben: Der Titel ohne Absender darf die Nummer nicht zurückbringen
+MIT_ABSENDER = "Grüne-Antrag: Bauvoranfrage Musterstraße 12a"
+
+
+def test_titel_ohne_absender_ohne_hausnummer(geo_body: OParlBody, make_paper: Callable[..., OParlPaper]) -> None:
+    from insight_core.services import fraktionskuerzel
+
+    paper = make_paper(geo_body, name=MIT_ABSENDER, paper_type="Antrag", date=timezone.localdate())
+    fraktionskuerzel.anhaengen([paper])
+    assert paper.absender.gekuerzt, "Absender muss erkannt sein, sonst prüft der Test nichts"
+    assert paper.absender.titel == f"Bauvoranfrage Musterstraße {OHNE_NR}"
+
+    html = Client().get(f"/insight/vorgaenge/{paper.pk}/").content.decode()
+    assert "Musterstraße 12a" not in html
+    liste = _aktiv(Client(), geo_body).get("/insight/vorgaenge/", HTTP_HX_REQUEST="true").content.decode()
+    assert f"Bauvoranfrage Musterstraße {OHNE_NR}" in liste and "Musterstraße 12a" not in liste
+
+
+def test_suchtreffer_mit_absender_ohne_hausnummer(geo_body: OParlBody, make_paper: Callable[..., OParlPaper]) -> None:
+    from insight_core.services import fraktionskuerzel
+
+    paper = make_paper(geo_body, name=MIT_ABSENDER, paper_type="Antrag")
+    gruppe: dict[str, Any] = {
+        "paper": {
+            "id": str(paper.pk),
+            "name": MIT_ABSENDER,
+            "paper_type": "Antrag",
+            "reference": paper.reference,
+            "_formatted": {"name": f"Grüne-Antrag: {HIGHLIGHT_PRE}Bauvoranfrage{HIGHLIGHT_POST} Musterstraße 12a"},
+        },
+        "others": [],
+    }
+    treffer = present_groups([gruppe])
+    fraktionskuerzel.treffer_anreichern(treffer)
+    assert treffer[0]["absender"].gekuerzt
+    assert "12a" not in str(treffer[0]["title"]) and "Musterstraße" in str(treffer[0]["title"])
+
+
+def test_feed_ohne_hausnummer(antrag: OParlPaper) -> None:
+    from insight_core.services.feed_eintraege import betreff
+
+    assert betreff(antrag) == OHNE
+    feed = Client().get(f"/insight/vorgaenge/{antrag.pk}/feed.atom").content.decode()
+    assert "Musterstraße 12a" not in feed

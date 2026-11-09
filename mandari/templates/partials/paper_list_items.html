@@ -28,3 +28,5 @@ die wir nicht haben (nummer_gesucht, Issue #1102), sagen wir das so, statt nur â
     </p>
 </div>
 {% endif %}
+{% comment %}Feed dieser Auswahl (Issue #1274): wird mit der Liste ausgetauscht und folgt so den Filtern{% endcomment %}
+{% if abo_feed %}<p class="mt-6 text-sm"><c-ui.textlink href="{{ abo_feed.hilfe }}" class="inline-flex items-center gap-1.5" data-testid="auswahl-abonnieren"><i data-lucide="rss" class="w-4 h-4" aria-hidden="true"></i>Diese Auswahl als RSS abonnieren</c-ui.textlink></p>{% endif %}

@@ -1,0 +1,14 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Absender eines Vorgangs (Issue #1272): je Fraktion ein kleines Kürzel mit schmalem Strich in der Farbe der Partei,
+gleich groß für alle; ohne Fraktion das Wort („Bürgerantrag“, „interfraktionell“) ohne Strich. Der volle Name bzw.
+„aus dem Titel abgeleitet“ steht im Tooltip. Die Farbe trägt nie allein, das Kürzel steht immer als Text daneben.
+Kürzel, Farben und Regeln: insight_core/services/fraktionskuerzel.py (``absender``, an Vorgänge gehängt mit ``anhaengen``).
+  <c-insight.absender :absender="paper.absender" />
+Parameter: absender (Absender oder leer, dann nichts), klasse (zusätzliche Klassen), hinweis (Text für Bildschirmleser
+davor, etwa „eingebracht von“, wo keine Spaltenüberschrift den Zusammenhang nennt), neben_art (die Vorlagenart steht
+daneben: „Bürgerantrag“ nicht noch einmal, ``von_zusatz``).
+Ein Kürzel ist c-insight.kuerzel.
+{% endcomment %}
+<c-vars absender="" klasse="" hinweis="" neben_art="" />
+{% if neben_art and absender.neben_art or not neben_art and absender %}<span class="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1{% if klasse %} {{ klasse }}{% endif %}" data-testid="absender">{% if hinweis %}<span class="sr-only">{{ hinweis }} </span>{% endif %}{% for k in absender.sichtbar %}<c-insight.kuerzel :kuerzel="k" />{% endfor %}{% if absender.weitere %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">und {{ absender.weitere }} weitere</span>{% endif %}{% if neben_art %}{% if absender.von_zusatz %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">{{ absender.von_zusatz }}</span>{% endif %}{% elif absender.von %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">{{ absender.von }}</span>{% endif %}</span>{% endif %}

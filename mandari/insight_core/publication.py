@@ -292,6 +292,10 @@ DETAIL_PAGES: dict[str, tuple[str, str]] = {
     "ask_question": ("OParlPerson", "pk"),
     "file_proxy": ("OParlFile", "file_id"),
     "question_detail": ("PublicQuestion", "pk"),
+    # Feeds und Kalenderdatei eines Eintrags (Issue #1274)
+    "paper_feed": ("OParlPaper", "pk"),
+    "organization_feed": ("OParlOrganization", "pk"),
+    "meeting_ics": ("OParlMeeting", "pk"),
 }
 
 #: Seiten der gewählten Kommune (Liste, Kalender, Karte, Suche …) und ihre HTMX-Teile
@@ -319,10 +323,15 @@ BODY_PAGES = frozenset(
         "neighborhood_results",
         "chat",
         "chat_message",
+        "paper_list_feed",
+        "search_feed",
+        "decision_feed",
     }
 )
-#: Seiten, die ihre Kommune per ``?kommune=<uuid>`` wählen (Deep-Links aus Session, Kalender-Abos)
-QUERY_BODY_PAGES = frozenset({"meeting_calendar", "calendar_feed", "meeting_year_plan"})
+#: Seiten, die ihre Kommune per ``?kommune=<uuid>`` wählen (Deep-Links aus Session, Kalender-Abos, Feeds)
+QUERY_BODY_PAGES = frozenset(
+    {"meeting_calendar", "calendar_feed", "meeting_year_plan", "paper_list_feed", "search_feed", "decision_feed"}
+)
 PORTAL_NAMESPACE = "insight_core:insight"
 
 

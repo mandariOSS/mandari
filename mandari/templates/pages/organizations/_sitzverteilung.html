@@ -1,0 +1,25 @@
+{% comment %}
+Sitzverteilung im Kopf der Gremienseite (Issue #1272): ein dünner Balken aus den laufenden Mitgliedschaften
+(insight_core/services/sitzverteilung.py), Teile in Sitzreihenfolge mit 2 px Lücke in der Farbe des Kopfs, die Farbe
+der Partei nur im Balken und im Strich vor dem Kürzel. Textalternative ist die Legende darunter (Kürzel und Sitze, für
+Bildschirmleser „6 Sitze“); der Balken selbst ist für Bildschirmleser ausgeblendet und zeigt beim Überfahren je Teil
+den vollen Namen. Ohne aussagekräftige Verteilung (sitzverteilung None) erscheint nichts.
+{% endcomment %}
+{% with v=sitzverteilung %}
+<section class="mt-5 max-w-2xl" aria-labelledby="sitzverteilung-titel" data-testid="sitzverteilung">
+    <h2 id="sitzverteilung-titel" class="sr-only">Sitzverteilung</h2>
+    <svg class="block w-full h-2 rounded-full overflow-hidden" viewBox="0 0 {{ v.sitze }} 1" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        {% for a in v.anteile %}{% if not a.kuerzel %}<rect x="{{ a.x }}" y="0" width="{{ a.sitze }}" height="1" class="fill-gray-300 dark:fill-gray-600"><title>{{ a.titel }}</title></rect>{% elif a.farbe_dunkel != a.farbe %}<rect x="{{ a.x }}" y="0" width="{{ a.sitze }}" height="1" fill="{{ a.farbe }}" class="dark:hidden"><title>{{ a.titel }}</title></rect><rect x="{{ a.x }}" y="0" width="{{ a.sitze }}" height="1" fill="{{ a.farbe_dunkel }}" class="hidden dark:block"><title>{{ a.titel }}</title></rect>{% else %}<rect x="{{ a.x }}" y="0" width="{{ a.sitze }}" height="1" fill="{{ a.farbe }}"><title>{{ a.titel }}</title></rect>{% endif %}{% endfor %}
+        {% for x in v.grenzen %}<line x1="{{ x }}" x2="{{ x }}" y1="0" y2="1" stroke-width="2" vector-effect="non-scaling-stroke" class="stroke-gray-100 dark:stroke-gray-800"/>{% endfor %}
+    </svg>
+    <ul class="mt-2.5 flex flex-wrap gap-x-5 gap-y-1.5">
+        {% for a in v.anteile %}
+        <li class="inline-flex items-center gap-1.5 text-[0.8125rem]">
+            {% if a.kuerzel %}<c-insight.kuerzel :kuerzel="a.kuerzel" />{% else %}<span class="inline-flex items-center gap-1.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 whitespace-nowrap"><span class="w-1 h-3.5 shrink-0 rounded-[1px] bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>{{ a.text }}</span>{% endif %}
+            <span class="tabular-nums text-gray-700 dark:text-gray-300"><span class="sr-only">: </span>{{ a.sitze }}<span class="sr-only"> {% if a.sitze == 1 %}Sitz{% else %}Sitze{% endif %}</span></span>
+        </li>
+        {% endfor %}
+    </ul>
+    <p class="mt-1.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ v.sitze }} Sitze aus den laufenden Mitgliedschaften, die Fraktion ist je Person abgeleitet{% if v.stellvertretungen %}; dazu {{ v.stellvertretungen }} Stellvertretung{{ v.stellvertretungen|pluralize:"en" }}{% endif %}{% if v.beratend %}{% if v.stellvertretungen %} und{% else %}; dazu{% endif %} {{ v.beratend }} beratende{% if v.beratend == 1 %}s{% endif %} Mitglied{{ v.beratend|pluralize:"er" }}{% endif %}.</p>
+</section>
+{% endwith %}
