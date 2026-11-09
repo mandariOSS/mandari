@@ -22,6 +22,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
+from apps.common.next_url import safe_next_url
 from apps.common.params import uuid_param
 
 from .. import publication, throttle
@@ -104,8 +105,9 @@ class DecisionListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, TemplateVi
 
     def get(self, request, *args, **kwargs):
         if ALTE_PARAMETER & set(request.GET):
+            # Die Abfrage kommt nur mit, solange das Ziel relativ auf dem eigenen Host bleibt
             ziel = reverse("insight_core:insight:decision_tracking")
-            return redirect(f"{ziel}?{request.GET.urlencode()}")
+            return redirect(safe_next_url(request, f"{ziel}?{request.GET.urlencode()}", ziel))
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
