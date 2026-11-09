@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="oparlpaper",
             name="summary_prompt_fassung",
-            field=models.PositiveSmallIntegerField(
+            field=models.SmallIntegerField(
                 db_default=0,
                 default=0,
                 help_text="Fassung des Prompts, mit der die gespeicherte Zusammenfassung entstand (0: vor der Zählung).",

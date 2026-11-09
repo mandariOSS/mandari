@@ -425,13 +425,30 @@ def _pruefen(batch: ZusammenfassungsBatch, ergebnisse: list[BatchErgebnis], prov
     pruefungen: dict[str, _Geprueft] = {}
     for custom_id, (kennung, text, einfach) in texte.items():
         vorgang = vorgaenge.get(kennung)
-        vorbereitung = dienst.vorbereiten(vorgang, einfach=bool(einfach)) if vorgang is not None else None
-        if vorgang is None or vorbereitung is None:
+        try:
+            vorbereitung = dienst.vorbereiten(vorgang, einfach=bool(einfach)) if vorgang is not None else None
+        except Exception:
+            # Ein Vorgang darf die Übernahme der übrigen nicht aufhalten (der Batch bliebe sonst offen)
+            logger.exception("Material von Vorgang %s für die Prüfung nicht zusammengestellt", kennung)
+            vorbereitung = None
+        if vorgang is None or vorbereitung is None or _material_geaendert(batch.anfragen.get(custom_id), vorbereitung):
+            # Andere Anlagen als beim Einreichen: nicht prüfbar statt verworfen, damit der
+            # Vorgang nicht für die ganze Prompt-Fassung aus dem Tagesbatch fällt; der nächste Lauf fasst neu zusammen
             pruefungen[custom_id] = _Geprueft(NICHT_PRUEFBAR)
             continue
         pruefung = zusammenfassung_pruefung.pruefen_beide(text, einfach, vorbereitung.pruefquelle())
         pruefungen[custom_id] = _Geprueft(pruefung, vorgang.body_id)
     return pruefungen
+
+
+def _material_geaendert(eintrag: Any, vorbereitung: Any) -> bool:
+    """
+    Weichen die Anlagen vom Einreichen ab (neue oder entfernte Datei)? Dann ist der Text je Anlage anders gekürzt, und
+    eine richtige Zahl könnte im neuen Material fehlen. Ältere Einträge ohne Angabe gelten als gleich.
+    """
+    if not isinstance(eintrag, dict) or eintrag.get("dateien") is None:
+        return False
+    return sorted(map(str, eintrag["dateien"])) != sorted(str(i) for i in vorbereitung.datei_ids)
 
 
 def _verloren(batch_pk: Any, grund: str) -> None:

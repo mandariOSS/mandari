@@ -147,6 +147,10 @@ def test_uebernahme_und_erlaubte_angaben() -> None:
         "Vor dem Haus Bonner Platz 3 fehlen Bänke.",
         "Gebaut wird am Markt 2.",
         "Die Häuser Hauptstraße 12-14 werden saniert.",
+        "Ein Anwohner der Mühlenstr 12 beschwert sich.",
+        "Das Haus mit der Hausnummer 12 wird abgerissen.",
+        "Vor dem Neumarkt 12 fehlen Bänke.",
+        "Am Lindenhof 12 entsteht ein Neubau.",
     ],
 )
 def test_hausnummern(text: str) -> None:
@@ -163,10 +167,53 @@ def test_hausnummern(text: str) -> None:
         "Am Montag 12 neue Anträge.",
         "an der Hauptstraße, 12 Bäume und zwei Bänke",
         "Der Radweg wird 300 Meter lang.",
+        "Zur Frage 2 teilt die Verwaltung mit, dass die Arbeiten im Frühjahr beginnen.",
+        "Gebaut wird in der Variante 2.",
+        "Das gilt zum Bebauungsplan 245 der Stadt.",
+        "Im Bauabschnitt 2 folgen die Gehwege.",
+        "In der Klasse 5 fehlen Lehrkräfte.",
+        "Die Stelle ist in der Entgeltgruppe 9 eingruppiert.",
+        "Der Bus fährt an der Linie 12 entlang.",
+        "Im Wahlkreis 12 wird neu gewählt.",
     ],
 )
 def test_keine_hausnummern(text: str) -> None:
     assert not hausnummer(text)
+
+
+def test_lange_zeichenfolge_ohne_leerraum_bleibt_schnell() -> None:
+    """Kein quadratisches Zurückgehen bei langen Wörtern (ReDoS, CodeQL ``py/polynomial-redos``)."""
+    import time
+
+    beginn = time.perf_counter()
+    assert not hausnummer("a" * 20_000 + " x")
+    assert time.perf_counter() - beginn < 0.5
+
+
+def test_monatsname_mit_fremdem_i_ohne_absturz() -> None:
+    """„Julı“ (punktloses ı) passt mit IGNORECASE zum Muster, ist aber kein Monat der Tabelle: kein KeyError."""
+    quelle = Quelle(text="Beginn am 1. Julı 2026, Kosten 20.000 EUR.")
+    assert fremdes_datum("Beginn am 1. JULİ.", quelle) is None
+    assert pruefen("Die Kosten betragen 20.000 Euro.", quelle) is None
+
+
+def test_scheitert_die_pruefung_gilt_der_text_als_nicht_bestanden(monkeypatch: pytest.MonkeyPatch) -> None:
+    from insight_ai.services import zusammenfassung_pruefung
+
+    def kaputt(_text: str, _quelle: Quelle) -> None:
+        raise RuntimeError("kaputt")
+
+    monkeypatch.setattr(zusammenfassung_pruefung, "_pruefen", kaputt)
+    befund = pruefen("Ein Text.", QUELLE)
+    assert befund is not None and befund.regel == zusammenfassung_pruefung.FEHLER
+
+
+def test_tausend_euro_und_doppeljahre() -> None:
+    quelle = Quelle(text="Der Zuschuss beträgt 250 TEUR, weitere 40 T€ im Haushaltsjahr 2026/27.")
+    assert fremde_zahl("Der Zuschuss beträgt 250.000 Euro.", quelle) is None
+    assert fremde_zahl("Dazu kommen 40.000 Euro.", quelle) is None
+    assert fremde_zahl("Das Geld fließt bis 2027.", quelle) is None
+    assert fremde_zahl("Das Geld fließt bis 2029.", quelle) == "2029"
 
 
 def test_reihenfolge_und_entwurf() -> None:
@@ -302,6 +349,22 @@ class TestTagesbatch:
         # Mit derselben Prompt-Fassung nicht erneut: kostet nur wieder
         assert zusammenfassung_batch.einreichen(provider=anbieter) == 0
         assert len(sdk.batches.eingereicht) == 1
+
+    def test_andere_anlagen_nicht_pruefbar_statt_verworfen(self, body: OParlBody) -> None:
+        """Neue Anlage seit dem Einreichen: nicht speichern, nicht protokollieren, nicht aus dem Tagesbatch nehmen."""
+        vorgang = _vorgang(body, text="Der Rat beschließt den Bau einer Brücke.")
+        anbieter, sdk = _claude("Platzhalter.")
+        assert zusammenfassung_batch.einreichen(provider=anbieter) == 1
+        batch = ZusammenfassungsBatch.objects.get()
+        batch.anfragen[str(vorgang.pk)]["dateien"] = ["00000000-0000-0000-0000-000000000000"]
+        batch.save(update_fields=["anfragen"])
+
+        sdk.batches.stand = "ended"
+        sdk.batches.ergebnisse = [_ergebnis(vorgang, "Die FDP will die Brücke bis 2031 bauen.")]
+        assert zusammenfassung_batch.abholen(provider=anbieter) == 0
+        vorgang.refresh_from_db()
+        assert vorgang.summary is None
+        assert not VerworfeneZusammenfassung.objects.exists()
 
     def test_prompt_fassung_aus_dem_einreichen(self, body: OParlBody) -> None:
         vorgang = _vorgang(body, text="Der Rat beschließt den Bau einer Brücke.")

@@ -51,6 +51,8 @@ RUNDUNG_UNGEFAEHR: Final = Decimal("0.10")
 
 #: Regeln in der Reihenfolge der Prüfung; Hausnummern zuerst, damit kein Entwurf mit Anschrift aufbewahrt wird
 REGELN: Final = ("leer", "hausnummer", "uebernahme", "datum", "zahl", "fraktion")
+#: Regel, wenn die Prüfung selbst scheitert: Dann gilt der Text als nicht bestanden (lieber keine als eine ungeprüfte)
+FEHLER: Final = "fehler"
 #: Bei diesen Regeln wird der Entwurf nicht aufbewahrt (Datenschutz)
 OHNE_ENTWURF: Final = frozenset({"hausnummer"})
 
@@ -95,6 +97,8 @@ _MONATSNAME: Final = "|".join(sorted(_MONATE, key=len, reverse=True))
 _DATUM_ZIFFERN: Final = re.compile(r"(?<![\d.,])(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2}(?!\d))?")
 #: „7. Oktober 2026“, „7. Oktober“
 _DATUM_NAME: Final = re.compile(rf"(?<![\d.,])(\d{{1,2}})\.\s*({_MONATSNAME})\b(?:\s+(\d{{4}}))?", re.IGNORECASE)
+#: Doppeljahr „2026/27“ (Haushalts-, Schul- und Wirtschaftsjahre): Jahrhundert und Kurzjahr
+_DOPPELJAHR: Final = re.compile(r"(?<!\d)(\d{2})\d{2}/(\d{2})(?!\d)")
 #: „2026-10-07“ (Datum im Nutzerprompt)
 _DATUM_ISO: Final = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
 
@@ -103,7 +107,9 @@ _ZAHL: Final = re.compile(r"(?<![\w.,])\d+(?:[.,:]\d+)*")
 #: Tausendergruppen mit Leerzeichen („1 661 000“, auch schmale geschützte Leerzeichen)
 _ZAHL_LEERZEICHEN: Final = re.compile(r"(?<![\d.,])\d{1,3}(?:[   ]\d{3})+(?![\d])")
 #: Größenwort hinter einer Zahl und sein Faktor
-_GROESSE: Final = re.compile(r"\s*(Mrd\.?|Milliarden?|Mio\.?|Millionen|Million|Tsd\.?|Tausend)(?![\w])", re.IGNORECASE)
+_GROESSE: Final = re.compile(
+    r"\s*(Mrd\.?|Milliarden?|Mio\.?|Millionen|Million|Tsd\.?|Tausend|TEUR|T€|T\s?Euro)(?![\w])", re.IGNORECASE
+)
 _FAKTOR: Final = {
     "mrd": 10**9,
     "milliarde": 10**9,
@@ -113,6 +119,10 @@ _FAKTOR: Final = {
     "millionen": 10**6,
     "tsd": 10**3,
     "tausend": 10**3,
+    "teur": 10**3,
+    "t€": 10**3,
+    "t euro": 10**3,
+    "teuro": 10**3,
 }
 #: Wörter vor einer ungefähren Angabe
 _UNGEFAEHR: Final = re.compile(
@@ -123,8 +133,8 @@ _UNGEFAEHR: Final = re.compile(
 
 #: Straßenwörter, hinter denen eine Zahl eine Hausnummer ist („Hauptstraße 12“, „Endenicher Allee 11a“)
 _STRASSE: Final = re.compile(
-    r"(?:straße|strasse|str\.|weg|platz|allee|gasse|ring|ufer|damm|pfad|graben|wall|chaussee|promenade|steig|stieg"
-    r"|kamp)$",
+    r"(?:straße|strasse|str\.?|weg|platz|allee|gasse|ring|ufer|damm|pfad|graben|wall|chaussee|promenade|steig|stieg"
+    r"|kamp|markt|hof)$",
     re.IGNORECASE,
 )
 #: Straßenwörter, die allein stehen und erst mit einem Namen davor eine Anschrift sind („Bonner Platz 3“)
@@ -141,7 +151,7 @@ _FUNKTIONSWOERTER: Final = frozenset(
 _NUMMERNSTRASSE: Final = re.compile(r"^(?:bundes|landes|kreis|staats|gemeinde|kommunal)", re.IGNORECASE)
 #: Wort vor einer Zahl, die Zahl und ggf. ein Buchstabe dahinter; keine Maße, Beträge oder Dezimalzahlen
 _WORT_NUMMER: Final = re.compile(
-    r"(?P<wort>[^\s\d][^\s]*)\s+(?:Nr\.\s*)?(?P<nummer>\d{1,3})(?:\s?[a-zA-Z])?(?![\w])"
+    r"(?<!\S)(?P<wort>[^\s\d]\S*)\s+(?:Nr\.\s*)?(?P<nummer>\d{1,3})(?:\s?[a-zA-Z])?(?![\w])"
     r"(?!\s?(?:%|Prozent|Euro|EUR|€|Cent|Jahre|Jahren|Monate|Wochen|Tage|Meter|m\b|km|Kilometer|Uhr|[.,]\d))",
 )
 #: „Am Burggraben 3“, „am Markt 2“: Ortsangabe mit Name und Nummer (nicht „zur Vorlage 123/2026“)
@@ -155,7 +165,26 @@ _KEIN_ORT: Final = frozenset(
     {"montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag", "jahr", "tag", "ende", "anfang"}
     | {"vorlage", "drucksache", "anlage", "nummer", "seite", "punkt", "top", "ziffer", "paragraf", "absatz"}
     | {"kapitel", "abschnitt", "teil", "antrag", "anfrage", "beschluss", "sitzung", "ausschuss", "rat", "haushalt"}
+    | {"frage", "fragen", "variante", "option", "stufe", "phase", "schritt", "runde", "los", "zone", "ebene", "etage"}
+    | {"klasse", "gruppe", "linie", "wahlkreis", "bezirk", "stadtbezirk", "artikel", "tagesordnungspunkt", "quartal"}
+    | {"halbjahr", "kalenderwoche", "woche", "jahrgang", "stockwerk", "geschoss", "bauabschnitt", "bebauungsplan"}
+    | {"plan", "fall", "modul", "projekt", "maßnahme", "position", "titel", "produkt", "konto", "haushaltsjahr"}
     | set(_MONATE)
+)
+#: Wortenden von Verweisen und Zählungen („Bebauungsplan 245“, „Entgeltgruppe 9“, „Bauabschnitt 2“)
+_KEIN_ORT_ENDE: Final = (
+    "plan",
+    "plans",
+    "gruppe",
+    "abschnitt",
+    "klasse",
+    "stufe",
+    "phase",
+    "linie",
+    "kreis",
+    "bezirk",
+    "nummer",
+    "punkt",
 )
 
 
@@ -216,7 +245,12 @@ def _daten(text: str) -> list[tuple[tuple[int, int, int | None], tuple[int, int]
         if 1 <= tag <= 31 and 1 <= monat <= 12:
             gefunden.append(((tag, monat, _jahr(treffer.group(3))), treffer.span()))
     for treffer in _DATUM_NAME.finditer(text):
-        tag, monat = int(treffer.group(1)), _MONATE[treffer.group(2).casefold()]
+        # Mit IGNORECASE passen auch „Julı“ oder „JULİ“, deren casefold kein Monat der Tabelle ist
+        monat_oder_none = _MONATE.get(treffer.group(2).casefold())
+        tag = int(treffer.group(1))
+        if monat_oder_none is None:
+            continue
+        monat = monat_oder_none
         if 1 <= tag <= 31:
             gefunden.append(((tag, monat, _jahr(treffer.group(3))), treffer.span()))
     return gefunden
@@ -253,6 +287,9 @@ class Quelle:
                 werte.update(Decimal(teil) for teil in re.split(r"[.,:]", roh) if teil)
         for tag, monat, jahr in self.daten:
             werte.update(Decimal(teil) for teil in (tag, monat, jahr) if teil is not None)
+        # Doppeljahre: „2026/27“ nennt auch das Jahr 2027
+        for treffer in _DOPPELJAHR.finditer(self.text):
+            werte.add(Decimal(int(treffer.group(1)) * 100 + int(treffer.group(2))))
         return sorted(werte)
 
     @cached_property
@@ -295,7 +332,15 @@ def hausnummer(text: str) -> bool:
         davor = text[: treffer.start()].split()
         if davor and davor[-1][:1].isupper() and davor[-1].casefold() not in _FUNKTIONSWOERTER:
             return True
-    return any(treffer.group("name").casefold() not in _KEIN_ORT for treffer in _ORTSANGABE.finditer(text))
+    if re.search(r"\bHaus(?:nummer|\s?-?Nr\.?)\s*\d", text, re.IGNORECASE):
+        return True
+    return any(_ortsname(treffer.group("name")) for treffer in _ORTSANGABE.finditer(text))
+
+
+def _ortsname(name: str) -> bool:
+    """Kann ``name`` in „am/zur/in der … 12“ eine Straße sein? Nicht bei Verweisen, Zählungen und Zeitangaben."""
+    klein = name.casefold()
+    return klein not in _KEIN_ORT and not klein.endswith(_KEIN_ORT_ENDE)
 
 
 def uebernahme(text: str, quelle: Quelle) -> str | None:
@@ -395,7 +440,18 @@ def fremde_fraktion(text: str, quelle: Quelle) -> str | None:
 
 
 def pruefen(text: str, quelle: Quelle) -> Befund | None:
-    """Grund, aus dem ``text`` verworfen wird (Regeln in der Reihenfolge von ``REGELN``), oder ``None``."""
+    """
+    Grund, aus dem ``text`` verworfen wird (Regeln in der Reihenfolge von ``REGELN``), oder ``None``. Scheitert die
+    Prüfung selbst, gilt der Text als nicht bestanden (Regel ``FEHLER``), statt Klick oder Tagesbatch abzubrechen.
+    """
+    try:
+        return _pruefen(text, quelle)
+    except Exception:
+        logger.exception("Prüfung einer KI-Zusammenfassung gescheitert")
+        return Befund(FEHLER, "Prüfung fehlgeschlagen")
+
+
+def _pruefen(text: str, quelle: Quelle) -> Befund | None:
     if not (text or "").strip():
         return Befund("leer", "Kein Text")
     if hausnummer(text):

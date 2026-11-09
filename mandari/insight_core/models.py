@@ -987,8 +987,9 @@ class OParlPaper(SourceDeletionModel):
     )
     # Fassung des Prompts, mit der die gespeicherte Zusammenfassung entstand (Issue #1271,
     # ``insight_ai.services.prompts.PROMPT_FASSUNG``); 0: vor der Zählung. Datenbank-Standardwert wie bei
-    # ``summary_hinweis`` (Ingestor, Rückfall auf ein älteres Image)
-    summary_prompt_fassung = models.PositiveSmallIntegerField(
+    # ``summary_hinweis`` (Ingestor, Rückfall auf ein älteres Image). SmallIntegerField statt Positive…: Dessen
+    # CHECK-Bedingung prüfte PostgreSQL beim Anlegen gegen alle Vorgänge unter exklusiver Sperre der Tabelle
+    summary_prompt_fassung = models.SmallIntegerField(
         default=0,
         db_default=0,
         verbose_name="Prompt-Fassung der Zusammenfassung",
