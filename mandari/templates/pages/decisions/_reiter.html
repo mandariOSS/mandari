@@ -1,0 +1,12 @@
+{% load insight_listen %}
+{% comment %}
+Reiter der Beschlüsse (Issue #1270): „Entscheidungen“ (Liste der Entscheidungen) und „Umsetzung“ (Beschlusskontrolle
+der Verwaltung, Issue #48). Nur eingebunden, wenn die Kommune Beschlüsse mit Umsetzungsstand veröffentlicht.
+``aktiv``: entscheidungen oder umsetzung.
+{% endcomment %}
+<nav aria-label="Ansicht der Beschlüsse" class="mb-6 flex gap-6 border-b border-gray-300 dark:border-gray-700">
+    <a href="{% insight_url 'decision_list' %}"{% if aktiv == 'entscheidungen' %} aria-current="page"{% endif %}
+       class="-mb-px inline-flex min-h-11 items-center border-b-2 font-medium {% if aktiv == 'entscheidungen' %}border-primary-600 text-gray-900 dark:text-white{% else %}border-transparent text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white{% endif %}">Entscheidungen</a>
+    <a href="{% insight_url 'decision_tracking' %}" rel="{% insight_rel 'decision_tracking' %}"{% if aktiv == 'umsetzung' %} aria-current="page"{% endif %}
+       class="-mb-px inline-flex min-h-11 items-center border-b-2 font-medium {% if aktiv == 'umsetzung' %}border-primary-600 text-gray-900 dark:text-white{% else %}border-transparent text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white{% endif %}">Umsetzung</a>
+</nav>

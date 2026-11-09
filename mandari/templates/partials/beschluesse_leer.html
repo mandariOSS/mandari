@@ -1,16 +1,17 @@
 {% load insight_listen %}
 {% comment %}
-„Beschlüsse“ ohne veröffentlichten Umsetzungsstand (Issue #1261, views/decisions.py): statt einer leeren Seite der
-Hinweis, die zuletzt beratenen Punkte der Kommune (views/home.py, zuletzt_beschlossen) und der Weg zu Sitzungen und
-Vorgängen. Eine Ebene ohne Karte; Linien nur zwischen den Einträgen der Liste. Titel wie auf der Startseite ohne
-Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (``titel_oeffentlich``, Issue #1269).
+Reiter „Umsetzung“ ohne veröffentlichten Umsetzungsstand (Issue #1261, views/decisions.py, seit Issue #1270 unter
+/insight/beschluesse/umsetzung/): statt einer leeren Seite der Hinweis, die zuletzt beratenen Punkte der Kommune
+(views/home.py, zuletzt_beschlossen) und der Weg zu den Beschlüssen und Sitzungen. Eine Ebene ohne Karte; Linien nur
+zwischen den Einträgen der Liste. Titel wie auf der Startseite ohne Hausnummer bei Eingaben aus der Einwohnerschaft und
+Bauanträgen (``titel_oeffentlich``, Issue #1269).
 {% endcomment %}
 <section aria-labelledby="beschluesse-leer" class="max-w-3xl">
     <h2 id="beschluesse-leer" class="abschnitt-titel">Noch kein Umsetzungsstand gemeldet</h2>
     <p class="mt-2 text-[1.0625rem] leading-relaxed text-gray-700 dark:text-gray-300">
         {% if active_body %}Für {{ active_body.get_display_name }}{% else %}Für diese Kommune{% endif %} liegt noch keine
-        Meldung der Verwaltung vor. Was der Rat und die Ausschüsse entschieden haben, finden Sie schon jetzt in den
-        Ergebnissen der Sitzungen und an den Vorgängen.
+        Meldung der Verwaltung vor. Was der Rat und die Ausschüsse entschieden haben, finden Sie schon jetzt in der
+        Liste der Beschlüsse und in den Ergebnissen der Sitzungen.
     </p>
     {% if zuletzt_beraten %}
     <h3 class="mt-8 text-[1.1875rem] font-semibold text-gray-900 dark:text-white">Zuletzt beraten</h3>
@@ -29,6 +30,7 @@ Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (``titel_oeffen
     </ul>
     {% endif %}
     <p class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[0.95rem]">
+        <a href="{% insight_url 'decision_list' %}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4 hover:text-primary-800 dark:hover:text-primary-200">Alle Beschlüsse</a>
         <a href="{% insight_url 'meeting_list' %}?period=past" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4 hover:text-primary-800 dark:hover:text-primary-200">Vergangene Sitzungen</a>
         <a href="{% insight_url 'paper_list' %}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4 hover:text-primary-800 dark:hover:text-primary-200">Alle Vorgänge</a>
     </p>

@@ -4,7 +4,7 @@ Aggregator: der RIS-Bestand aller Kommunen als eine OParl-1.1-Ausgabe (``/oparl/
 
 Endpunkte (alle rein lesend, anonym, JSON, CORS offen):
 
-- ``/oparl/v1/``                                  Übersicht
+- ``/oparl/v1/``                                  Übersicht mit dem Verzeichnis der Kommunen (``bodyIndex``)
 - ``/oparl/v1/system``                            System-Objekt
 - ``/oparl/v1/bodies``                            externe Liste aller Kommunen
 - ``/oparl/v1/body/<uuid>``                       einzelne Kommune
@@ -43,8 +43,9 @@ from django.db.models import Model, Q, QuerySet
 from django.db.models.functions import Coalesce
 from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
+from django.urls import reverse
 
-from hub.api import changes, kommparl, snapshot
+from hub.api import changes, kommparl, snapshot, verzeichnis
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import TimeFilters, list_cache_key, list_response, page_number
 from hub.ris import selectors as ris
@@ -194,23 +195,40 @@ def _list_response(request: HttpRequest, base_url: str, queryset: QuerySet[Any],
 # =============================================================================
 
 
+#: Beschreibung der Schnittstelle für Menschen (docs.mandari.de, Repo mandariOSS/docs)
+DOCUMENTATION_URL: Final = "https://docs.mandari.de/insight/oparl-api/"
+
+
+def directory_url() -> str:
+    """Seite „Offene Daten“ im Bürgerportal: alle Kommunen mit ihren Adressen (Issue #1282)."""
+    return f"{settings.SITE_URL.rstrip('/')}{reverse('insight_core:insight:offene_daten')}"
+
+
 @endpoint
 def root_view(request: HttpRequest) -> HttpResponse:
-    """Kleine Übersicht über die Schnittstelle (kein OParl-Objekt)."""
+    """
+    Kleine Übersicht über die Schnittstelle (kein OParl-Objekt).
+
+    ``bodyIndex`` nennt jede gelistete Kommune mit den Adressen ihrer Listen (``hub.api.verzeichnis``): Ein Abnehmer
+    findet so mit einem Abruf die Vorlagen einer Kommune, ohne alle Bodies zu laden (Issue #1282).
+    """
     uris = mapping().uris
     return json_response(
         {
             "name": "mandari — aggregierte OParl-Datenquelle",
             "description": (
                 "OParl-1.1-konforme, lesende API über die von mandari gespiegelten "
-                "Ratsinformationen aller angebundenen Kommunen. Einstieg über das System-Objekt."
+                "Ratsinformationen aller angebundenen Kommunen. Einstieg über das System-Objekt; "
+                "bodyIndex nennt je Kommune die Adressen von Body, Vorlagen, Sitzungen, Gremien und Personen."
             ),
             "oparlVersion": "https://schema.oparl.org/1.1/",
             "system": uris.system(),
             "bodies": uris.bodies(),
-            "documentation": "https://github.com/mandariOSS/mandari/blob/main/docs/OPARL_API.md",
+            "documentation": DOCUMENTATION_URL,
+            "bodyDirectory": directory_url(),
             "specification": "https://oparl.org/spezifikation/",
             "objectEndpoints": {kind: uris.obj(kind, "<uuid>") for kind in OBJECT_TYPES},
+            "bodyIndex": [eintrag.als_json() for eintrag in verzeichnis.eintraege()],
         }
     )
 

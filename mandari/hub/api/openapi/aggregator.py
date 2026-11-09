@@ -20,6 +20,8 @@ KEY: Final = "oparl"
 
 OVERVIEW: Final = "OParlOverview"
 
+BODY_INDEX_ENTRY: Final = "OParlBodyIndexEntry"
+
 
 def system_url() -> str:
     """Kennung des OParl-Systems der Installation; geht wie alle Adressen des Aggregators von ``OPARL_BASE_URL`` aus."""
@@ -74,8 +76,40 @@ def description() -> Description:
             "system": {"type": "string", "format": "uri"},
             "bodies": {"type": "string", "format": "uri"},
             "documentation": {"type": "string", "format": "uri"},
+            "bodyDirectory": {
+                "type": "string",
+                "format": "uri",
+                "description": "Seite im Bürgerportal mit allen Kommunen und ihren Adressen",
+            },
             "specification": {"type": "string", "format": "uri"},
             "objectEndpoints": {"type": "object", "additionalProperties": {"type": "string"}},
+            "bodyIndex": {
+                "type": "array",
+                "description": (
+                    "Gelistete Kommunen mit den Adressen ihrer Listen (Felder wie im Body), alphabetisch nach "
+                    "displayName"
+                ),
+                "items": {"$ref": f"{REF}{BODY_INDEX_ENTRY}"},
+            },
+        },
+    }
+    uri: dict[str, Any] = {"type": "string", "format": "uri"}
+    schemas[BODY_INDEX_ENTRY] = {
+        "title": "Kommune im Verzeichnis",
+        "type": "object",
+        "required": ["name", "body", "paper", "meeting", "organization", "person"],
+        "properties": {
+            "name": {"type": "string", "description": "Name wie im Body"},
+            "displayName": {"type": "string", "description": "Anzeigename im Bürgerportal"},
+            "slug": {"type": "string", "description": "Kurzname in den Adressen des Bürgerportals"},
+            "ags": {"type": "string", "description": "Achtstelliger Amtlicher Gemeindeschlüssel, soweit gepflegt"},
+            "body": uri,
+            "paper": uri,
+            "meeting": uri,
+            "organization": uri,
+            "person": uri,
+            "web": uri,
+            "license": {**uri, "description": "Lizenz der Kommune, sonst die der Installation"},
         },
     }
     return {"paths": paths, "components": {"schemas": schemas}}

@@ -43,11 +43,9 @@ Anwendungen“, nur bei eingeschaltetem OIDC-Anbieter (#1215).
         </div>
         <nav aria-label="Weitere Bereiche" class="px-2">
             <ul class="space-y-0.5">
+                <li><c-insight.blatt-link href="{% insight_url 'decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.blatt-link></li>
                 <li><c-insight.blatt-link href="{% insight_url 'organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.blatt-link></li>
                 <li><c-insight.blatt-link href="{% insight_url 'person_list' %}" icon="users" area="personen">Personen</c-insight.blatt-link></li>
-                {% if insight_decisions_published %}
-                <li><c-insight.blatt-link href="{% insight_url 'decision_list' %}" rel="{% insight_rel 'decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.blatt-link></li>
-                {% endif %}
                 {% if insight_questions_enabled %}
                 <li><c-insight.blatt-link href="{% insight_url 'question_portal' %}" rel="{% insight_rel 'question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.blatt-link></li>
                 {% endif %}

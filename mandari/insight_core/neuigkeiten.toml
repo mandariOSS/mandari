@@ -17,6 +17,15 @@
 [[eintrag]]
 datum = 2026-11-07
 version = ""
+titel = "Sehen Sie auf einen Blick, was entschieden wurde."
+text = """Unter „Beschlüsse“ stehen jetzt die Ergebnisse der öffentlichen Sitzungen, nach Sitzung geordnet und das \
+Neueste zuerst: beschlossen, abgelehnt, vertagt und mehr, dazu wer den Antrag gestellt hat. Sie können nach Rat und \
+Ausschüssen oder Bezirksvertretungen, Gremium, Fraktion, Ergebnis und Zeitraum filtern und den Link zu Ihrer \
+Auswahl weitergeben."""
+
+[[eintrag]]
+datum = 2026-11-07
+version = ""
 titel = "Neues abonnieren, ohne Konto und ohne E-Mail-Adresse."
 text = """Auf der Seite eines Vorgangs, eines Gremiums, unter jeder Vorgangsliste und unter jeder Suche finden Sie \
 jetzt „Abonnieren“. Ihr Feed-Reader zeigt Ihnen dann neue Vorlagen, angesetzte Beratungen und Ergebnisse von \

@@ -202,8 +202,11 @@ def test_suchvorschau_ohne_suchdienst_ohne_hausnummer(antrag: OParlPaper, monkey
         assert OHNE in seite and "Musterstraße 12a" not in seite
 
 
-def test_beschluesse_ohne_umsetzungsstand_ohne_hausnummer(antrag: OParlPaper) -> None:
-    """„Zuletzt beraten“ auf /beschluesse ohne Umsetzungsstand (#1261) zeigt den Titel wie die Startseite (#1269)."""
+def test_beschluesse_ohne_hausnummer(antrag: OParlPaper) -> None:
+    """
+    Die Liste der Entscheidungen (#1270) und „Zuletzt beraten“ im Reiter „Umsetzung“ ohne Umsetzungsstand (#1261)
+    zeigen den Titel wie die Startseite (#1269).
+    """
     sitzung = OParlMeeting.objects.create(
         external_id=f"{antrag.external_id}/rat", body=antrag.body, name="Rat", start=timezone.now() - timedelta(days=2)
     )
@@ -224,10 +227,12 @@ def test_beschluesse_ohne_umsetzungsstand_ohne_hausnummer(antrag: OParlPaper) ->
         name="Bürgerantrag Am Wehr 4",
         result="abgelehnt",
     )
-    html = _aktiv(Client(), antrag.body).get("/insight/beschluesse/").content.decode()
+    client = _aktiv(Client(), antrag.body)
+    for adresse in ("/insight/beschluesse/", "/insight/beschluesse/umsetzung/"):
+        html = client.get(adresse).content.decode()
+        assert OHNE in html and "Musterstraße 12a" not in html, adresse
+        assert f"Bürgerantrag Am Wehr {OHNE_NR}" in html and "Am Wehr 4" not in html, adresse
     assert "Zuletzt beraten" in html
-    assert OHNE in html and "Musterstraße 12a" not in html
-    assert f"Bürgerantrag Am Wehr {OHNE_NR}" in html and "Am Wehr 4" not in html
 
 
 def test_ki_zusammenfassung_und_description_ohne_hausnummer(antrag: OParlPaper) -> None:
@@ -277,7 +282,7 @@ def test_umsetzungsstand_eines_buergerantrags_ohne_hausnummer(antrag: OParlPaper
         implementation_public=True,
     )
     client = _aktiv(Client(), antrag.body)
-    for adresse in (f"/insight/beschluesse/{beschluss.pk}/", "/insight/beschluesse/"):
+    for adresse in (f"/insight/beschluesse/{beschluss.pk}/", "/insight/beschluesse/umsetzung/"):
         html = client.get(adresse).content.decode()
         assert f"Bürgerantrag: {OHNE}" in html, adresse
         assert "Musterstraße 12a" not in html, adresse
