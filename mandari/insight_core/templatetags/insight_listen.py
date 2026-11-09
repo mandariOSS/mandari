@@ -4,17 +4,20 @@ Filter für Listen des Bürgerportals (Issue #841): Spalten nur zeigen, wenn sie
 der Listen im Bürgerportal einer Körperschaft (``insight_url``, ``insight_rel``, Issue #939); Dateityp der
 Dokumentlinks (``dateityp``, Issue #1103); Ergebnis-Etikett (``ergebnis``) und Reiter mit den übrigen Filtern der
 Adresse (``adresse_mit``, Issue #1260); Original eines Dokuments im Ratsinformationssystem (``dokument_im_ris``,
-Issue #1259).
+Issue #1259); Beträge und Prozente in Antworten der Verwaltung hervorheben (``kernzahlen``, Issue #1273).
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Final
 
 from django import template
 from django.http import QueryDict
 from django.urls import reverse
+from django.utils.html import conditional_escape
+from django.utils.safestring import SafeString, mark_safe
 
 from hub.ris import original
 
@@ -153,3 +156,29 @@ def ris_url(links: Any, art: str, kennung: Any) -> str:
     ohne Angabe die Detailseite in Insight. ``{% ris_url links "vorgang" paper.pk as ziel %}``.
     """
     return str((links or INSIGHT).url(art, kennung))
+
+
+#: Beträge und Prozente in einer Antwort der Verwaltung („4,2 Mio. €“, „€ 12.500“, „12 %“, „3 Prozent“)
+_ZAHL: Final = r"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?"
+_WAEHRUNG: Final = r"(?:€|Euro|EUR)"
+_GROESSE: Final = r"(?:Mio\.|Millionen|Mrd\.|Milliarden|Tsd\.)"
+_KERNZAHL: Final = re.compile(
+    rf"(?<![\w,.])(?:{_WAEHRUNG}\s?(?:{_ZAHL})(?:\s{_GROESSE})?"
+    rf"|(?:{_ZAHL})\s?(?:{_GROESSE}(?:\s?{_WAEHRUNG})?|{_WAEHRUNG}|%|Prozent))(?![\w])"
+)
+
+
+@register.filter
+def kernzahlen(text: object) -> SafeString:
+    """
+    Text mit fett gesetzten Beträgen und Prozentangaben, damit sie beim Überfliegen einer Antwort auffallen
+    („Im Haushalt sind <strong>4,2 Mio. €</strong> eingeplant“). Der übrige Text wird escaped.
+    """
+    sicher = str(conditional_escape("" if text is None else str(text)))
+    # Sicher: Der Text ist escaped, eingefügt werden nur feste Tags um Treffer aus Ziffern, Leerzeichen und Einheiten
+    return mark_safe(
+        _KERNZAHL.sub(
+            lambda treffer: f'<strong class="font-semibold text-gray-900 dark:text-white">{treffer.group(0)}</strong>',
+            sicher,
+        )
+    )
