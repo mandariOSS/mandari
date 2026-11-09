@@ -102,13 +102,14 @@ def description() -> Description:
             "name": {"type": "string", "description": "Name wie im Body"},
             "displayName": {"type": "string", "description": "Anzeigename im Bürgerportal"},
             "slug": {"type": "string", "description": "Kurzname in den Adressen des Bürgerportals"},
-            "ags": {"type": "string", "description": "Amtlicher Gemeindeschlüssel, soweit bekannt"},
+            "ags": {"type": "string", "description": "Achtstelliger Amtlicher Gemeindeschlüssel, soweit gepflegt"},
             "body": uri,
             "paper": uri,
             "meeting": uri,
             "organization": uri,
             "person": uri,
             "web": uri,
+            "license": {**uri, "description": "Lizenz der Kommune, sonst die der Installation"},
         },
     }
     return {"paths": paths, "components": {"schemas": schemas}}

@@ -21,6 +21,8 @@ from django.views.decorators.http import require_safe
 
 from hub.api import verzeichnis
 from hub.api.aggregator import DOCUMENTATION_URL
+from hub.api.http import rate_limit
+from hub.api.serialization import page_size
 from hub.ris.mapping.bestand import BestandUris
 
 from ..portal import get_portal
@@ -36,8 +38,10 @@ BEISPIEL_SLUG = "muenster"
 
 
 def _katalog(eintraege: list[verzeichnis.Eintrag], system: str, seite: str) -> dict[str, Any]:
-    """Das Angebot als ``DataCatalog`` mit einem ``Dataset`` je Kommune (schema.org, für Suchmaschinen)."""
-    lizenz = getattr(settings, "OPARL_LICENSE_URL", "") or None
+    """
+    Das Angebot als ``DataCatalog`` mit einem ``Dataset`` je Kommune (schema.org, für Suchmaschinen). Die Lizenz
+    steht je Datensatz, wie die Kommune sie angibt (``Eintrag.lizenz``); ohne Angabe entfällt sie.
+    """
     return {
         "@context": "https://schema.org",
         "@type": "DataCatalog",
@@ -46,7 +50,7 @@ def _katalog(eintraege: list[verzeichnis.Eintrag], system: str, seite: str) -> d
         "url": seite,
         "inLanguage": "de",
         "publisher": {"@type": "Organization", "name": "mandari", "url": "https://mandari.de"},
-        "distribution": {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": system},
+        "sameAs": system,
         "dataset": [
             {
                 "@type": "Dataset",
@@ -57,7 +61,7 @@ def _katalog(eintraege: list[verzeichnis.Eintrag], system: str, seite: str) -> d
                 ),
                 "url": eintrag.web,
                 "isAccessibleForFree": True,
-                **({"license": lizenz} if lizenz else {}),
+                **({"license": eintrag.lizenz} if eintrag.lizenz else {}),
                 **({"identifier": eintrag.ags} if eintrag.ags else {}),
                 "distribution": [
                     {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": eintrag.body},
@@ -97,6 +101,8 @@ def offene_daten(request: HttpRequest) -> HttpResponse:
         "bodies_url": uris.bodies(),
         "uebersicht_url": settings.OPARL_BASE_URL.rstrip("/") + "/",
         "doku_url": DOCUMENTATION_URL,
+        "seitengroesse": page_size(),
+        "anfragen_je_minute": rate_limit(),
         "seo": seo.to_dict(),
     }
     return render(request, "pages/offene_daten.html", context)

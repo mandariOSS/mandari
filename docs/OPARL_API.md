@@ -32,8 +32,8 @@ die Kennungen aller Objekte lauten deshalb `https://oparl.mandari.de/oparl/v1/�
 ## Kommunen finden (Issue #1282)
 
 - **Übersicht `GET /oparl/` (bzw. `/oparl/v1/`)**: Das Feld `bodyIndex` nennt jede gelistete Kommune mit `name`,
-  `displayName`, `slug`, `ags` (soweit bekannt) und den Adressen `body`, `paper`, `meeting`, `organization`,
-  `person` und `web`, alphabetisch nach `displayName`. Ein Abnehmer findet so mit einem Abruf die Vorlagen einer
+  `displayName`, `slug`, `ags` (achtstellig, soweit gepflegt), `license` (der Kommune, sonst der Installation) und
+  den Adressen `body`, `paper`, `meeting`, `organization`, `person` und `web`, alphabetisch nach `displayName`. Ein Abnehmer findet so mit einem Abruf die Vorlagen einer
   Kommune, ohne alle Bodies zu laden. `bodyDirectory` verweist auf dieselbe Liste als Seite.
 - **Seite „Offene Daten“ `GET /insight/offene-daten/`**: Einstieg, Beispiel und Tabelle der Kommunen für Menschen
   und Suchmaschinen, mit `DataCatalog` (schema.org). Der Fuß jeder Seite des Bürgerportals verlinkt sie, auf Seiten
@@ -78,7 +78,7 @@ Objekte eingebettet; alle übrigen Referenzen sind URLs auf diese API.
 | `Organization.organizationType` | einer der sieben Werte der Spezifikation (`Gremium`, `Partei`, `Fraktion`, `Verwaltungsbereich`, `externes Gremium`, `Institution`, `Sonstiges`). Angaben der Quelle werden zugeordnet (Tabelle unten); Unbekanntes gilt als `Sonstiges`. Weicht die Angabe der Quelle ab, steht sie zusätzlich in `mandari:originalOrganizationType` |
 | Zeitpunkte (`created`, `modified`, `start`, `end`, `licenseValidSince` …) | `yyyy-mm-ddThh:mm:ss±hh:mm`, auf die Sekunde (OParl 1.1 und kommParl, Kapitel „JSON-Ausgabe“); Sekundenbruchteile der Quelle oder der eigenen Zeitstempel entfallen |
 | Daten (`Paper.date`, `startDate`, `endDate` von Wahlperiode, Gremium und Mitgliedschaft) | Datum `yyyy-mm-dd`, auch wenn die Datenbank die Spalte als Zeitpunkt führt (Tabellen des Ingestors): dann gilt der Tag in der Zeitzone der Installation (Issue #1282) |
-| `Body.ags`, `Body.rgs` | der gepflegte Schlüssel der Kommune (`resolve_body_geodata`, Verwaltung), sonst die Angabe der Quelle |
+| `Body.ags`, `Body.rgs` | der gepflegte Schlüssel der Kommune (`resolve_body_geodata`, Verwaltung), sonst die Angabe der Quelle; `ags` aus der Pflege nur achtstellig (Kreise und Bezirke tragen ihn gekürzt). `modified` ändert sich dadurch nicht: Wer inkrementell abgleicht, lädt einmal neu |
 | `Body.web` | die Seite der Kommune im Bürgerportal (`/insight/k/<slug>/`), für nicht gelistete Kommunen `/insight/` |
 | `File.date` | Datum `yyyy-mm-dd`: der Tag, den die Quelle nennt. Nennt sie einen Zeitpunkt, gilt dessen Tag in der Zeitzone der Installation; der Zeitpunkt der Quelle steht in `created` |
 | `Meeting.location` | immer ein Location-Objekt: das der Quelle oder, wenn der Ort im Bestand nur als Text an der Sitzung steht, eines mit der Kennung der Sitzung (`…/v1/location/<Kennung der Sitzung>`, `description` aus Ort und Anschrift). Das gilt für Quellen, die den Ort nur als Text nennen, und für Session-Mandanten (siehe „Orte aus Text“) |

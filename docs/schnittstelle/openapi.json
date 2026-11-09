@@ -15772,7 +15772,7 @@
           },
           "ags": {
             "type": "string",
-            "description": "Amtlicher Gemeindeschlüssel, soweit bekannt"
+            "description": "Achtstelliger Amtlicher Gemeindeschlüssel, soweit gepflegt"
           },
           "body": {
             "type": "string",
@@ -15797,6 +15797,11 @@
           "web": {
             "type": "string",
             "format": "uri"
+          },
+          "license": {
+            "type": "string",
+            "format": "uri",
+            "description": "Lizenz der Kommune, sonst die der Installation"
           }
         }
       },

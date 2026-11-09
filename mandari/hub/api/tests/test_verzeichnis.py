@@ -19,6 +19,7 @@ from hub.api import verzeichnis
 from hub.ris.canonical import iso_date
 from hub.ris.mapping.bestand import BestandMapping
 from insight_core import publication
+from insight_core.context_processors import _oparl_body
 from insight_core.models import OParlBody, OParlSource
 
 pytestmark = pytest.mark.django_db
@@ -42,7 +43,15 @@ def kommunen() -> Any:
         yield {
             "source": source,
             "muenster": body("Stadt Münster", "muenster", short_name="Münster", ags="05515000"),
-            "koeln": body("Stadt Köln", "koeln", display_name="Köln", raw_json={"ags": "05315000"}),
+            "koeln": body(
+                "Stadt Köln",
+                "koeln",
+                display_name="Köln",
+                raw_json={"ags": "05315000"},
+                license="https://dl-de.example/by",
+            ),
+            # Kreis: der gepflegte Schlüssel ist gekürzt (fünf Stellen), kein Gemeindeschlüssel
+            "kreis": body("Kreis Viersen", "kreis-viersen", ags="05166", raw_json={"ags": "05166000"}),
             "krefeld": body("Stadt Krefeld", "krefeld", display_name="Krefeld"),
             "demo": body("Demostadt", "demo", is_listed=False),
             "weg": body("Altstadt", "altstadt", deleted=True),
@@ -62,9 +71,9 @@ def test_uebersicht_nennt_jede_gelistete_kommune_mit_ihren_listen(kommunen: dict
     eintraege = daten["bodyIndex"]
 
     # Alphabetisch nach Anzeigename (DIN 5007: Köln vor Krefeld vor Münster), ohne Demo und Gelöschtes
-    assert [e["displayName"] for e in eintraege] == ["Köln", "Krefeld", "Münster"]
+    assert [e["displayName"] for e in eintraege] == ["Köln", "Krefeld", "Kreis Viersen", "Münster"]
     muenster = kommunen["muenster"]
-    assert eintraege[2] == {
+    assert eintraege[3] == {
         "name": "Stadt Münster",
         "displayName": "Münster",
         "slug": "muenster",
@@ -76,8 +85,11 @@ def test_uebersicht_nennt_jede_gelistete_kommune_mit_ihren_listen(kommunen: dict
         "person": f"{OPARL}/v1/body/{muenster.pk}/people",
         "web": f"{SITE}/insight/k/muenster/",
     }
-    # Ohne gepflegten Schlüssel kein Feld (der Schlüssel der Quelle steht am Body)
-    assert "ags" not in eintraege[0]
+    # Ohne gepflegten achtstelligen Schlüssel kein Feld (der Schlüssel der Quelle steht am Body)
+    assert "ags" not in eintraege[0] and "ags" not in eintraege[1]
+    # Lizenz der Kommune, ohne Angabe (und ohne OPARL_LICENSE_URL) kein Feld
+    assert eintraege[0]["license"] == "https://dl-de.example/by"
+    assert "license" not in eintraege[3]
     assert daten["documentation"] == "https://docs.mandari.de/insight/oparl-api/"
     assert daten["bodyDirectory"] == f"{SITE}/insight/offene-daten/"
 
@@ -92,11 +104,18 @@ def test_adressen_im_verzeichnis_sind_die_des_body(kommunen: dict[str, Any]) -> 
         assert body["web"] == eintrag["web"]
 
 
-def test_voruebergehend_abgeschaltete_kommune_fehlt(kommunen: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    assert publication.paused_body_ids() == set()
-    pausiert = str(kommunen["krefeld"].pk)
-    monkeypatch.setattr("hub.api.verzeichnis.paused_body_ids", lambda: {pausiert})
-    assert [e.display_name for e in verzeichnis.eintraege()] == ["Köln", "Münster"]
+def test_voruebergehend_abgeschaltete_kommune_fehlt(kommunen: dict[str, Any]) -> None:
+    krefeld = kommunen["krefeld"]
+    assert _oparl_body(krefeld) == f"{OPARL}/v1/body/{krefeld.pk}"
+    # Der Stand gilt je Quelle: Krefeld bekommt eine eigene und wird vorübergehend abgeschaltet
+    eigene = OParlSource.objects.create(name="Krefeld", url=f"{RIS}/krefeld/system")
+    krefeld.source = eigene
+    krefeld.save(update_fields=["source"])
+    publication.set_source_state(eigene, publication.PAUSED)
+
+    assert [e.display_name for e in verzeichnis.eintraege()] == ["Köln", "Kreis Viersen", "Münster"]
+    # Auch der Kopf-Link und der Anker im Fuß entfallen (der Body antwortet mit 503)
+    assert _oparl_body(krefeld) == ""
 
 
 def test_body_nennt_seite_der_kommune_und_gepflegte_schluessel(kommunen: dict[str, Any]) -> None:
@@ -108,6 +127,8 @@ def test_body_nennt_seite_der_kommune_und_gepflegte_schluessel(kommunen: dict[st
     assert abbildung.body(kommunen["koeln"])["ags"] == "05315000"
     # Nicht gelistet: keine eigene Seite, also die Startseite des Bürgerportals
     assert abbildung.body(kommunen["demo"])["web"] == f"{SITE}/insight/"
+    # Gekürzter Schlüssel eines Kreises: die Angabe der Quelle
+    assert abbildung.body(kommunen["kreis"])["ags"] == "05166000"
 
 
 def test_datum_auch_aus_einer_spalte_mit_zeitpunkt() -> None:
@@ -135,14 +156,23 @@ def test_seite_offene_daten_nennt_einstieg_und_adressen(kommunen: dict[str, Any]
     assert f"{OPARL}/v1/body/{muenster.pk}/papers?modified_since=" in html
     assert 'name="robots" content="index, follow"' in html
 
+    # Seitengröße und Grenze aus der Konfiguration (die Fixture schaltet die Grenze ab)
+    assert "höchstens 100 Objekte je Seite" in html
+    assert "Anfragen pro Minute" not in html
+
     katalog = _json_ld(html, "DataCatalog")
-    assert katalog["distribution"]["contentUrl"] == f"{OPARL}/v1/system"
-    assert [d["name"] for d in katalog["dataset"]] == [
+    assert katalog["sameAs"] == f"{OPARL}/v1/system"
+    datensaetze = {d["name"]: d for d in katalog["dataset"]}
+    assert list(datensaetze) == [
         "Ratsinformationen Köln",
         "Ratsinformationen Krefeld",
+        "Ratsinformationen Kreis Viersen",
         "Ratsinformationen Münster",
     ]
-    assert katalog["dataset"][2]["identifier"] == "05515000"
+    assert datensaetze["Ratsinformationen Münster"]["identifier"] == "05515000"
+    # Lizenz je Kommune, keine erfundene
+    assert datensaetze["Ratsinformationen Köln"]["license"] == "https://dl-de.example/by"
+    assert "license" not in datensaetze["Ratsinformationen Münster"]
 
 
 def test_seiten_einer_kommune_verweisen_auf_ihren_body(kommunen: dict[str, Any]) -> None:

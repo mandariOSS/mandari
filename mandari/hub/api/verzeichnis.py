@@ -24,7 +24,7 @@ from typing import Any
 
 from django.conf import settings
 
-from hub.ris.mapping.bestand import BestandUris, body_page
+from hub.ris.mapping.bestand import BestandUris, body_page, gemeindeschluessel
 from insight_core.models import OParlBody
 from insight_core.publication import paused_body_ids
 
@@ -49,6 +49,8 @@ class Eintrag:
     body: str
     listen: dict[str, str]
     web: str
+    #: Lizenz der Daten: die der Kommune, sonst die der Installation (``OPARL_LICENSE_URL``), sonst leer
+    lizenz: str = ""
 
     def als_json(self) -> dict[str, Any]:
         """Eintrag in ``bodyIndex``: die Felder wie im Body, ``displayName`` und ``slug`` als Hilfe zum Finden."""
@@ -60,6 +62,7 @@ class Eintrag:
             "body": self.body,
             **self.listen,
             "web": self.web,
+            "license": self.lizenz,
         }
         return {key: value for key, value in data.items() if value}
 
@@ -74,8 +77,9 @@ def eintraege() -> list[Eintrag]:
     """Alle Kommunen des Verzeichnisses, alphabetisch nach Anzeigename."""
     uris = BestandUris(settings.OPARL_BASE_URL, settings.SITE_URL)
     pausiert = paused_body_ids()
+    installation = (getattr(settings, "OPARL_LICENSE_URL", "") or "").strip()
     bodies = OParlBody.objects.listed().only(
-        "id", "name", "short_name", "display_name", "slug", "ags", "is_listed", "deleted"
+        "id", "name", "short_name", "display_name", "slug", "ags", "license", "is_listed", "deleted"
     )
     gefunden = [
         Eintrag(
@@ -83,10 +87,11 @@ def eintraege() -> list[Eintrag]:
             name=body.name,
             display_name=body.get_display_name(),
             slug=body.slug or "",
-            ags=(body.ags or "").strip(),
+            ags=gemeindeschluessel(body) or "",
             body=uris.obj("body", body.pk),
             listen={feld: uris.list(body.pk, segment) for feld, segment in LISTEN.items()},
             web=uris.web(body_page(body)),
+            lizenz=(body.license or "").strip() or installation,
         )
         for body in bodies
         if str(body.pk) not in pausiert

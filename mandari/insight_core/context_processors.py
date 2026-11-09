@@ -60,8 +60,16 @@ def _kommunenverzeichnis_quellen() -> list[dict[str, str]]:
 
 
 def _oparl_body(body: Any) -> str:
-    """Adresse des Body einer gelisteten Kommune in der OParl-Schnittstelle, sonst leer."""
+    """
+    Adresse des Body einer Kommune in der OParl-Schnittstelle, wenn das Verzeichnis sie nennt (gelistet, nicht
+    gelöscht, nicht vorübergehend abgeschaltet; ``hub.api.verzeichnis``), sonst leer.
+    """
     if body is None or not body.is_listed or body.deleted:
+        return ""
+    from .publication import body_state
+
+    state = body_state(body.pk)
+    if state is not None and state.paused:
         return ""
     from hub.ris.mapping.bestand import BestandUris
 

@@ -221,6 +221,17 @@ def _schluessel(value: str | None) -> str | None:
     return value or None
 
 
+def gemeindeschluessel(body: OParlBody) -> str | None:
+    """
+    Gepflegter Amtlicher Gemeindeschlüssel einer Kommune, nur achtstellig wie ``Body.ags`` in OParl 1.1.
+
+    Höhere Ebenen tragen ihn gekürzt (Kreis fünf, Regierungsbezirk drei Stellen, ``OParlBody.is_regional_level``);
+    das ist kein Gemeindeschlüssel, dann gilt die Angabe der Quelle.
+    """
+    value = _schluessel(body.ags)
+    return value if value is not None and len(value) == 8 else None
+
+
 # =============================================================================
 # Vorladen: Beziehungen, die die Abbildung liest (ohne Gelöschtes)
 # =============================================================================
@@ -544,7 +555,7 @@ class BestandMapping:
                 "oparlSince": raw.get("oparlSince"),
                 # Gepflegte Schlüssel (resolve_body_geodata, Verwaltung) vor der Angabe der Quelle: Die meisten
                 # Systeme nennen keinen, und Abnehmer finden eine Kommune am sichersten über ihn (Issue #1282)
-                "ags": _schluessel(body.ags) or raw.get("ags"),
+                "ags": gemeindeschluessel(body) or raw.get("ags"),
                 "rgs": _schluessel(body.rgs) or raw.get("rgs"),
                 "equivalent": raw.get("equivalent"),
                 "contactEmail": raw.get("contactEmail"),

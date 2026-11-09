@@ -3,7 +3,7 @@
 „Offene Daten“ (Issue #1282, views/offene_daten.py): Einstieg in die OParl-Schnittstelle zum Kopieren, ein Beispiel
 mit den Vorlagen einer Kommune und je Kommune die Adressen aus hub.api.verzeichnis. Die Adressen stehen als
 sichtbarer Text und als Link, damit Programme sie auch aus einer Textfassung der Seite lesen. Kontext: eintraege,
-beispiel, system_url, bodies_url, uebersicht_url, doku_url.
+beispiel, system_url, bodies_url, uebersicht_url, doku_url, seitengroesse, anfragen_je_minute.
 {% endcomment %}
 
 {% block title %}Offene Daten: OParl-Schnittstelle{% endblock %}
@@ -28,8 +28,8 @@ beispiel, system_url, bodies_url, uebersicht_url, doku_url.
                 Die Übersicht <a href="{{ uebersicht_url }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ uebersicht_url }}</a> nennt im Feld <code class="font-mono text-[0.95rem]">bodyIndex</code> dieselben Adressen wie die Tabelle unten, für Programme in einem Abruf.
             </p>
             <p class="mt-3 text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">
-                Jede Antwort enthält höchstens 100 Objekte, den Link zur nächsten Seite finden Sie unter <code class="font-mono text-[0.95rem]">links.next</code>.
-                Die Schnittstelle erlaubt Abrufe aus dem Browser (CORS) und bis zu 120 Anfragen pro Minute. Die Lizenz der Daten legt die jeweilige Kommune fest.
+                Jede Liste enthält höchstens {{ seitengroesse }} Objekte je Seite, den Link zur nächsten Seite finden Sie unter <code class="font-mono text-[0.95rem]">links.next</code>.
+                Die Schnittstelle erlaubt Abrufe aus dem Browser (CORS){% if anfragen_je_minute %} und bis zu {{ anfragen_je_minute }} Anfragen pro Minute{% endif %}. Die Lizenz der Daten legt die jeweilige Kommune fest.
             </p>
             <p class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[0.95rem]">
                 <c-ui.textlink href="{{ doku_url }}">Dokumentation der Schnittstelle</c-ui.textlink>
@@ -45,7 +45,7 @@ beispiel, system_url, bodies_url, uebersicht_url, doku_url.
                     <a href="{{ beispiel.listen.paper }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ beispiel.listen.paper }}</a></li>
                 <li>Nur, was sich seit einem Zeitpunkt geändert hat, mit dem Filter <code class="font-mono text-[0.95rem]">modified_since</code> (Zeitzone angeben, etwa <code class="font-mono text-[0.95rem]">Z</code> für UTC):<br>
                     <a href="{{ beispiel.listen.paper }}?modified_since=2026-11-01T00:00:00Z" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ beispiel.listen.paper }}?modified_since=2026-11-01T00:00:00Z</a></li>
-                <li>Die Art einer Vorlage steht im Feld <code class="font-mono text-[0.95rem]">paperType</code>, etwa „Antrag“ oder „Anfrage“. Die Dokumente stehen unter <code class="font-mono text-[0.95rem]">mainFile</code> und <code class="font-mono text-[0.95rem]">auxiliaryFile</code>, ihr Text am Objekt der Datei im Feld <code class="font-mono text-[0.95rem]">text</code>.</li>
+                <li>Die Art einer Vorlage steht im Feld <code class="font-mono text-[0.95rem]">paperType</code>, etwa „Antrag“ oder „Anfrage“. Die Dokumente stehen unter <code class="font-mono text-[0.95rem]">mainFile</code> und <code class="font-mono text-[0.95rem]">auxiliaryFile</code>; den erkannten Text liefert eine Datei unter ihrer eigenen Adresse (<code class="font-mono text-[0.95rem]">id</code>) im Feld <code class="font-mono text-[0.95rem]">text</code>.</li>
             </ol>
             <pre class="mt-5 overflow-x-auto rounded-lg bg-gray-100 dark:bg-gray-900 px-4 py-3 font-mono text-sm text-gray-900 dark:text-gray-100"><code>curl "{{ beispiel.listen.paper }}?modified_since=2026-11-01T00:00:00Z"</code></pre>
         </section>
