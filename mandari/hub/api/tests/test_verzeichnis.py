@@ -149,7 +149,7 @@ def test_seiten_einer_kommune_verweisen_auf_ihren_body(kommunen: dict[str, Any])
     muenster = kommunen["muenster"]
     html = Client().get("/insight/k/muenster/").content.decode()
     assert (
-        f'<link rel="alternate" type="application/json" title="OParl-Schnittstelle: Münster" '
+        f'<link rel="alternate" type="application/json" title="OParl-Body: Münster" '
         f'href="{OPARL}/v1/body/{muenster.pk}">'
     ) in html
     assert 'href="/insight/offene-daten/#kommune-muenster"' in html
