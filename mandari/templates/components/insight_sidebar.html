@@ -53,10 +53,8 @@ ausgeschlossen.
         <ul class="space-y-0.5">
             <li><c-insight.nav-link href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" icon="house" area="uebersicht">Übersicht</c-insight.nav-link></li>
             <li><c-insight.nav-link href="{% insight_url 'meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.nav-link></li>
             <li><c-insight.nav-link href="{% insight_url 'paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.nav-link></li>
-            {% if insight_decisions_published %}
-            <li><c-insight.nav-link href="{% insight_url 'decision_list' %}" rel="{% insight_rel 'decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.nav-link></li>
-            {% endif %}
             <li><c-insight.nav-link href="{% insight_url 'organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.nav-link></li>
             <li><c-insight.nav-link href="{% insight_url 'person_list' %}" icon="users" area="personen">Personen</c-insight.nav-link></li>
             {% if insight_questions_enabled %}

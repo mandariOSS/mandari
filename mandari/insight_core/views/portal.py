@@ -7,7 +7,7 @@ hält den Kontext für alle weiteren Seiten fest (``insight_core/portal.py``). M
 (``/insight/k/<slug>/termine/kalender/``) führt er nach dem Festhalten auf die genannte Portalseite –
 nur auf geprüfte, relative Pfade und ohne Parameter.
 
-Die Listen der Sitzungen, Vorgänge, Gremien und Personen haben je Kommune eine eigene Adresse
+Die Listen der Sitzungen, Vorgänge, Beschlüsse (Issue #1270), Gremien und Personen haben je Kommune eine eigene Adresse
 (``/insight/k/<slug>/vorgaenge/``, Issue #939, ``portal_list``): Sie antworten ohne Sitzung direkt mit der Liste
 statt mit einer Weiterleitung, damit Suchmaschinen über ihre Seiten die Detailseiten finden. Sie schreiben nichts
 in die Sitzung (``portal.betrachten``).
@@ -22,6 +22,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from .. import portal, publication
 from ..models import OParlBody
+from .decisions import DecisionListView
 from .home import PortalHomeView
 from .meetings import MeetingListView
 from .organizations import OrganizationListView
@@ -32,6 +33,7 @@ from .persons import PersonListView
 LISTEN_VIEWS = {
     "meeting_list": MeetingListView.as_view(),
     "paper_list": PaperListView.as_view(),
+    "decision_list": DecisionListView.as_view(),
     "organization_list": OrganizationListView.as_view(),
     "person_list": PersonListView.as_view(),
 }

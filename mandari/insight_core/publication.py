@@ -305,6 +305,7 @@ BODY_PAGES = frozenset(
         "organization_list",
         "person_list",
         "decision_list",
+        "decision_tracking",
         "question_portal",
         "question_start",
         "paper_list",
