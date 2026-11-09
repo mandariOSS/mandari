@@ -439,6 +439,22 @@ class TestFilter:
     def test_unsinnige_parameter_ohne_fehler(self, besucher: Client, bestand: dict[str, Any], params: Any) -> None:
         assert besucher.get("/insight/beschluesse/", params).status_code == 200
 
+    def test_feed_der_auswahl_mit_kommune_und_gremium(self, besucher: Client, bestand: dict[str, Any]) -> None:
+        """Der Knopf „Als RSS abonnieren“ führt zur Anleitung; der Feed trägt Kommune und Gremium, braucht keine Sitzung."""
+        from urllib.parse import parse_qs, urlsplit
+
+        html = unescape(besucher.get("/insight/beschluesse/", {"gremium": str(bestand["bv"].pk)}).content.decode())
+        hilfe = re.search(r'href="(/insight/abonnieren/\?feed=[^"]+)"', html)
+        assert hilfe, "Knopf „Als RSS abonnieren“ fehlt"
+        feed = parse_qs(urlsplit(hilfe.group(1)).query)["feed"][0]
+        abfrage = parse_qs(urlsplit(feed).query)
+        assert abfrage["gremium"] == [str(bestand["bv"].pk)] and abfrage["kommune"]
+        assert 'rel="alternate" type="application/atom+xml"' in html
+
+        antwort = Client().get(feed)
+        assert antwort.status_code == 200
+        assert "Spielplatz Süd" in antwort.content.decode() and "Mehr Bänke" not in antwort.content.decode()
+
     def test_wahlperiode_nur_mit_bekanntem_beginn(self, besucher: Client, welt: Welt, bestand: dict[str, Any]) -> None:
         assert 'value="wahlperiode"' not in besucher.get("/insight/beschluesse/").content.decode()
         OParlLegislativeTerm.objects.create(

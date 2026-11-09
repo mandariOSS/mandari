@@ -26,6 +26,22 @@ Auswahl weitergeben."""
 [[eintrag]]
 datum = 2026-11-07
 version = ""
+titel = "Neues abonnieren, ohne Konto und ohne E-Mail-Adresse."
+text = """Auf der Seite eines Vorgangs, eines Gremiums, unter jeder Vorgangsliste und unter jeder Suche finden Sie \
+jetzt „Abonnieren“. Ihr Feed-Reader zeigt Ihnen dann neue Vorlagen, angesetzte Beratungen und Ergebnisse von \
+selbst. Eine kurze Anleitung erklärt, wie das geht."""
+
+[[eintrag]]
+datum = 2026-11-07
+version = ""
+titel = "Sitzungstermine im eigenen Kalender speichern."
+text = """Bei kommenden Sitzungen übernehmen Sie den Termin mit „Termin speichern“ in Ihren Kalender. Öffnen Sie \
+die Datei nach einer Verschiebung erneut, ändert sich der Termin, statt doppelt zu erscheinen. Sitzungen, deren \
+Tagesordnung noch fehlt, tragen das Etikett „angekündigt“."""
+
+[[eintrag]]
+datum = 2026-11-07
+version = ""
 titel = "Sagen Sie uns, was fehlt."
 text = """Wenn Sie bei „War diese Seite hilfreich?“ mit Nein antworten, können Sie jetzt angeben, ob Sie einen \
 Fehler gefunden haben, eine Idee für eine neue Funktion haben oder eine Kommune vorschlagen möchten. Ein Satz \

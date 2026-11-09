@@ -13,10 +13,13 @@
  * - `data-filter-param="status"` auf Select: bei Änderung den Query-Parameter setzen.
  * - `data-href="URL"` auf Zeilen/Karten: Klick navigiert, außer auf innere Links,
  *   Buttons, Formularfelder oder Aufklappbereiche (`<details>`, etwa die Anlagen einer Vorgangszeile).
- * - `data-action="reload|back|print|select|click-target|clear-target|share|copy-link|confirm-submit|fullscreen"` auf
- *   Buttons (`data-target` als Selektor für click-/clear-target, confirm-submit und fullscreen, `data-share-title` für
- *   share). `copy-link` an einem Link kopiert seine Adresse (bzw. `data-url`) und meldet `data-copied` im Element
- *   `data-target` (etwa `role="status"`); ohne Zwischenablage folgt der Klick dem Link (Beschlüsse, Issue #1270).
+ * - `data-action="reload|back|print|select|click-target|clear-target|share|copy-link|confirm-submit|fullscreen|copy"`
+ *   auf Buttons (`data-target` als Selektor für click-/clear-target, confirm-submit, fullscreen und copy,
+ *   `data-share-title` für share). `copy-link` an einem Link kopiert seine Adresse (bzw. `data-url`) und meldet
+ *   `data-copied` im Element `data-target` (etwa `role="status"`); ohne Zwischenablage folgt der Klick dem Link
+ *   (Beschlüsse, Issue #1270). `copy` kopiert den Wert des Felds `data-target` und schreibt `data-copied` in das
+ *   Element `data-status` (`aria-live`); ohne Zwischenablage markiert es das Feld zum Kopieren von Hand
+ *   (Feed-Adressen, Issue #1274).
  *   `fullscreen` schaltet das Element `data-target` in den Vollbildmodus und wieder heraus (Esc beendet ihn auch);
  *   solche Knöpfe stehen mit `hidden` im Markup und erscheinen nur, wenn der Browser Vollbild für Elemente kann.
  *   `confirm-submit` fragt mit dem Bestätigungsdialog (`data-confirm-title`, `data-confirm-message`,
@@ -93,6 +96,27 @@ function meldeKopiert(status: Element | null, text: string): void {
   }, 5000)
 }
 
+/** Text in die Zwischenablage; `false`, wenn der Browser es nicht erlaubt (ohne HTTPS, ohne Berechtigung). */
+async function inZwischenablage(text: string): Promise<boolean> {
+  if (!text || !navigator.clipboard) return false
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** `data-action="copy"`: Wert von `data-target` kopieren, Rückmeldung in `data-status`. */
+async function kopieren(el: HTMLElement, target: string | undefined): Promise<void> {
+  const quelle = target ? document.querySelector(target) : null
+  const feld = quelle instanceof HTMLInputElement || quelle instanceof HTMLTextAreaElement ? quelle : null
+  const ok = await inZwischenablage(feld ? feld.value : (quelle?.textContent ?? '').trim())
+  const status = el.dataset.status ? document.querySelector(el.dataset.status) : null
+  if (status) status.textContent = ok ? (el.dataset.copied ?? 'Kopiert.') : ''
+  if (!ok) feld?.select()
+}
+
 function runAction(el: HTMLElement, event: Event): void {
   const target = el.dataset.target
   switch (el.dataset.action) {
@@ -137,6 +161,9 @@ function runAction(el: HTMLElement, event: Event): void {
       if (form instanceof HTMLFormElement) void confirmSubmit(el, form)
       break
     }
+    case 'copy':
+      void kopieren(el, target)
+      break
     case 'fullscreen': {
       const ziel = target ? document.querySelector(target) : null
       if (document.fullscreenElement) void document.exitFullscreen()

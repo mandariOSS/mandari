@@ -8,6 +8,8 @@ Beschlüsse im Bürgerportal: die Liste der Entscheidungen (Issue #1270) und die
 veröffentlicht. Alte Adressen der Beschlusskontrolle (``?status=…``, ``?offen=1``, ``?jahr=…``, ``?q=…``) führen dorthin.
 """
 
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.core.validators import validate_email
@@ -15,7 +17,7 @@ from django.db.models import Q
 from django.forms import ValidationError
 from django.http import Http404, HttpRequest
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import NoReverseMatch, reverse
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
@@ -74,16 +76,20 @@ def _adresse_der_auswahl(request: HttpRequest, body: OParlBody, auswahl: beschlu
     return request.build_absolute_uri((pfad or request.path) + auswahl.adresse())
 
 
-def _feed_der_auswahl(auswahl: beschlussliste.Auswahl) -> str:
+def _feed_der_auswahl(
+    body: OParlBody, auswahl: beschlussliste.Auswahl, gremien: dict[str, beschlussliste.Gremium]
+) -> dict[str, str]:
     """
-    Feed derselben Auswahl, sobald es ihn gibt (URL-Name ``decision_feed``, Feeds aus Issue #1274); bis dahin leer und
-    ohne Knopf „Als RSS abonnieren“.
+    Beschluss-Feed zur Auswahl (Issue #1274, ``views.feeds.decision_feed``): immer mit der Kommune in der Adresse, weil
+    Feed-Reader keine Sitzung haben, und mit dem gewählten Gremium. Die übrigen Filter (Ergebnis, Absender, Zeitraum)
+    kennt der Feed nicht; er bringt neue Beschlüsse, sobald sie erscheinen.
     """
-    try:
-        pfad = reverse("insight_core:insight:decision_feed")
-    except NoReverseMatch:
-        return ""
-    return pfad + auswahl.adresse()
+    from .feeds import abo
+
+    gremium = gremien.get(auswahl.gremium) if auswahl.gremium else None
+    abfrage = {"kommune": str(body.pk)} | ({"gremium": str(gremium.id)} if gremium is not None else {})
+    titel = f"Beschlüsse: {gremium.name}" if gremium is not None else f"Beschlüsse in {body.get_display_name()}"
+    return abo("decision_feed", titel, abfrage=urlencode(abfrage))
 
 
 class DecisionListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, TemplateView):
@@ -173,7 +179,8 @@ class DecisionListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, TemplateVi
             "ergebnisse": beschlussliste.ERGEBNISSE,
             "filter_zahl": auswahl.weitere_filter,
             "link_auswahl": _adresse_der_auswahl(self.request, body, auswahl),
-            "feed_url": _feed_der_auswahl(auswahl),
+            "abo_feed": (abo_feed := _feed_der_auswahl(body, auswahl, gremien)),
+            "feed_url": abo_feed["hilfe"],
             # Leerzustand: der nächstlängere Zeitraum, sofern es ihn gibt
             "leer_laenger": (
                 (auswahl.adresse(zeitraum=laenger), zeitraeume[laenger])

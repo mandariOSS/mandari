@@ -1,0 +1,11 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ein Fraktionskürzel (Issue #1272): schmaler Strich in der Farbe der Partei und das Kürzel, gleich groß für alle; der
+volle Name im Tooltip. Die Farbe trägt nie allein. Teil von c-insight.absender und der Sitzverteilung der Gremienseite.
+  <c-insight.kuerzel :kuerzel="k" />
+Parameter: kuerzel (fraktionskuerzel.Kuerzel mit text, farbe, titel).
+Der Strich ist ein SVG mit ``fill``: Farben aus der Tabelle ohne style-Attribut; im Dunkelmodus mit feinem Rand und,
+wo die Tabelle eine nennt (Schwarz), mit eigener Farbe (``farbe_dunkel``).
+{% endcomment %}
+<c-vars kuerzel="" />
+{% if kuerzel %}<span class="inline-flex items-center gap-1.5 text-[0.8125rem] font-semibold leading-tight text-gray-800 dark:text-gray-200 whitespace-nowrap"{% if kuerzel.titel %} title="{{ kuerzel.titel }}"{% endif %}><svg class="w-1 h-3.5 shrink-0 rounded-[1px] dark:ring-1 dark:ring-white/30" viewBox="0 0 4 14" aria-hidden="true" focusable="false">{% if kuerzel.farbe_dunkel != kuerzel.farbe %}<rect width="4" height="14" rx="1" fill="{{ kuerzel.farbe }}" class="dark:hidden"/><rect width="4" height="14" rx="1" fill="{{ kuerzel.farbe_dunkel }}" class="hidden dark:block"/>{% else %}<rect width="4" height="14" rx="1" fill="{{ kuerzel.farbe }}"/>{% endif %}</svg>{{ kuerzel.text }}</span>{% endif %}
