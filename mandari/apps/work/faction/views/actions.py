@@ -6,7 +6,6 @@ from datetime import datetime
 from urllib.parse import parse_qs, urlsplit
 
 from django.contrib import messages
-from django.db import transaction
 from django.http import HttpResponse
 from django.http.response import HttpResponseRedirectBase
 from django.shortcuts import get_object_or_404, redirect
@@ -29,7 +28,7 @@ from ..models import (
 )
 
 logger = logging.getLogger(__name__)
-from ..regeln import ABSTIMMUNGEN_AUS, NOE_AUS
+from ..regeln import ABSTIMMUNGEN_AUS, NOE_AUS, NichtOeffentlichAusError
 from ..sitzungsarten import sitzung_oder_404
 from ..visibility import can_view_internal, can_view_item, is_item_internal
 from ._helpers import (
@@ -68,6 +67,7 @@ class FactionActionView(WorkViewMixin, View):
             "update": self._update_meeting,
             "set_rsvp": self._set_rsvp,
             "invite": self._invite,
+            "keep_agenda": self._keep_agenda,
             "release_invitations": self._release_invitations,
             "remind_open": self._remind_open,
             "test_invitation": self._test_invitation,
@@ -441,6 +441,20 @@ class FactionActionView(WorkViewMixin, View):
         meldung = "Zu- und Absagen eingeschaltet." if meeting.rsvp_enabled else "Zu- und Absagen ausgeschaltet."
         return self._refresh_or_redirect(request, meeting, meldung)
 
+    def _keep_agenda(self, request, meeting):
+        """
+        „Ohne Aktualisierung übernehmen“ (Issue #1285): Änderungen der Tagesordnung nach dem Versand gelten ohne E-Mail
+        als erledigt, bis zur nächsten Änderung. Wer einladen darf, entscheidet das wie über die Aktualisierung.
+        """
+        if not self.membership.has_permission("faction.invite"):
+            messages.error(request, "Keine Berechtigung.")
+            return self._redirect_detail(meeting)
+        if not meeting.invitation_sent or meeting.status not in ("planned", "invited"):
+            return self._refresh_or_redirect(request, meeting)
+        meeting.agenda_change_acknowledged_at = timezone.now()
+        meeting.save(update_fields=["agenda_change_acknowledged_at"])
+        return self._refresh_or_redirect(request, meeting, "Änderungen übernommen, ohne E-Mail an die Mitglieder.")
+
     def _invite(self, request, meeting):
         if not self.membership.has_permission("faction.invite"):
             messages.error(request, "Keine Berechtigung zum Einladen.")
@@ -659,87 +673,105 @@ class FactionActionView(WorkViewMixin, View):
         return _htmx_response(html)
 
     def _move_item(self, request, meeting):
+        """
+        TOP verschieben: ``direction=to`` (Ziehen am Griff, Issue #1071) an die Stelle ``position`` (ab 0) auf der
+        obersten Ebene oder mit ``parent_id`` als Unterpunkt (Issue #1285), auch in den anderen Teil (``teil``, Issue
+        #1160); ``up``/``down`` unter den Geschwistern; ``in`` rückt unter den TOP darüber ein, ``out`` macht einen
+        Unterpunkt zum eigenen TOP direkt hinter seinem bisherigen.
+        """
         if not self._can_manage_agenda(meeting):
             return HttpResponse(status=403)
 
         item_id = request.POST.get("item_id")
         direction = request.POST.get("direction")
 
-        item = FactionAgendaItem.objects.filter(
-            id=item_id, meeting=meeting, is_approval_item=False, parent__isnull=True
-        ).first()
+        item = (
+            FactionAgendaItem.objects.filter(
+                id=item_id, meeting=meeting, is_approval_item=False, proposal_status="active"
+            )
+            .select_related("parent")
+            .first()
+        )
 
         # NÖ strikt (Issue #64): Nicht-Vereidigte können NÖ-TOPs nicht verschieben
         if item and not can_view_item(item, self.membership):
             return HttpResponse(status=403)
 
-        if item and direction == "to":
-            # Ziehen am Griff (Issue #1071): an eine Stelle der obersten Ebene, auch in den anderen Teil (Issue #1160)
-            teil = request.POST.get("teil")
-            wechselt = teil in ("public", "internal") and teil != item.visibility and item.proposal_status == "active"
-            if wechselt and (
-                not agenda.open_for_members(meeting) or (teil == "internal" and not can_view_internal(self.membership))
-            ):
-                return HttpResponse(status=403)
-            # Art ohne nichtöffentlichen Teil (Issue #1240): nichts in den NÖ-Teil, zurück in den öffentlichen schon
-            if wechselt and teil == "internal" and not meeting.nichtoeffentlich_erlaubt:
-                return self._rejected(request, meeting, NOE_AUS, 400)
-            with transaction.atomic():
-                if wechselt:
-                    agenda.move_to_part(meeting, item, teil)
-                self._move_item_to(meeting, item, request.POST.get("position"))
-        elif item and direction in ("up", "down"):
-            siblings = list(agenda.numbered_items(meeting, item.visibility).order_by("order"))
+        def sichtbar(eintrag) -> bool:
+            return can_view_item(eintrag, self.membership)
 
-            current_index = None
-            for i, s in enumerate(siblings):
-                if s.id == item.id:
-                    current_index = i
-                    break
-
-            if current_index is not None:
-                swap_target = None
-                if direction == "up" and current_index > 0:
-                    swap_target = siblings[current_index - 1]
-                elif direction == "down" and current_index < len(siblings) - 1:
-                    swap_target = siblings[current_index + 1]
-
-                if swap_target:
-                    item.order, swap_target.order = swap_target.order, item.order
-                    item.save()
-                    swap_target.save()
-                    _renumber_items(meeting, item.visibility)
+        try:
+            if item and direction == "to":
+                parent = None
+                parent_id = request.POST.get("parent_id", "").strip()
+                if parent_id:
+                    parent = FactionAgendaItem.objects.filter(
+                        id=parent_id, meeting=meeting, proposal_status="active"
+                    ).first()
+                    if parent is None or not can_view_item(parent, self.membership):
+                        return HttpResponse(status=403)
+                teil = request.POST.get("teil")
+                # Wirksamer Teil: Unterpunkte eines NÖ-TOPs sind nichtöffentlich, auch wenn sie öffentlich gespeichert sind
+                aktuell = "internal" if is_item_internal(item) else item.visibility
+                if parent is not None and parent.visibility == "internal":
+                    ziel = "internal"
+                elif teil in ("public", "internal"):
+                    ziel = teil
+                else:
+                    ziel = aktuell
+                wechselt = ziel != aktuell
+                if wechselt and (
+                    not agenda.open_for_members(meeting)
+                    or (ziel == "internal" and not can_view_internal(self.membership))
+                ):
+                    return HttpResponse(status=403)
+                # Art ohne nichtöffentlichen Teil (Issue #1240): nichts in den NÖ-Teil, zurück in den öffentlichen schon
+                if wechselt and ziel == "internal" and not meeting.nichtoeffentlich_erlaubt:
+                    return self._rejected(request, meeting, NOE_AUS, 400)
+                try:
+                    position = int(request.POST.get("position", ""))
+                except ValueError:
+                    position = None
+                # Ohne gültige Stelle bleibt alles, wie es ist
+                if position is not None:
+                    agenda.place_item(
+                        meeting, item, parent=parent, position=position, visibility=ziel, visible=sichtbar
+                    )
+            elif item and direction in ("up", "down"):
+                teil = agenda.part_of(item)
+                geschwister = [s for s in agenda.siblings(meeting, item.parent, teil) if sichtbar(s)]
+                stelle = next((i for i, s in enumerate(geschwister) if s.pk == item.pk), None)
+                neu = None if stelle is None else stelle - 1 if direction == "up" else stelle + 1
+                if neu is not None and 0 <= neu < len(geschwister):
+                    agenda.place_item(meeting, item, parent=item.parent, position=neu, visible=sichtbar)
+            elif item and direction == "in" and item.parent_id is None:
+                # Einrücken: letzter Unterpunkt des TOPs darüber
+                geschwister = [s for s in agenda.siblings(meeting, None, item.visibility) if sichtbar(s)]
+                stelle = next((i for i, s in enumerate(geschwister) if s.pk == item.pk), 0)
+                if stelle == 0:
+                    return self._rejected(
+                        request, meeting, "Über diesem TOP steht keiner, unter den er rücken könnte.", 400
+                    )
+                agenda.place_item(meeting, item, parent=geschwister[stelle - 1], position=None, visible=sichtbar)
+            elif item and direction == "out" and item.parent is not None:
+                # Ausrücken: eigener TOP direkt hinter dem bisherigen. Ein nichtöffentlicher Unterpunkt eines
+                # öffentlichen TOPs bleibt nichtöffentlich und geht ans Ende des nichtöffentlichen Teils.
+                eltern = item.parent
+                position = None
+                if ("internal" if is_item_internal(item) else item.visibility) == eltern.visibility:
+                    oben = [s for s in agenda.siblings(meeting, None, eltern.visibility) if sichtbar(s)]
+                    position = next((i + 1 for i, s in enumerate(oben) if s.pk == eltern.pk), None)
+                agenda.place_item(meeting, item, parent=None, position=position, visible=sichtbar)
+        except agenda.VerschiebenError as exc:
+            return self._rejected(request, meeting, str(exc), 400)
+        except NichtOeffentlichAusError:
+            return self._rejected(request, meeting, NOE_AUS, 400)
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
         return self._redirect_detail(meeting)
-
-    @staticmethod
-    def _move_item_to(meeting, item, position_raw) -> None:
-        """
-        TOP an die Stelle ``position`` (ab 0) der nummerierten TOPs seines Teils setzen. Die Reihenfolge-Werte der
-        Geschwister werden nur neu verteilt (Genehmigungs-TOP und Unterpunkte bleiben, wo sie sind).
-        """
-        try:
-            position = int(position_raw)
-        except (TypeError, ValueError):
-            return
-        with transaction.atomic():
-            agenda.lock_meeting(meeting)
-            siblings = list(agenda.numbered_items(meeting, item.visibility).order_by("order"))
-            if item.pk not in {s.pk for s in siblings}:
-                return
-            werte = sorted(s.order for s in siblings)
-            neu = [s for s in siblings if s.pk != item.pk]
-            position = max(0, min(position, len(neu)))
-            neu.insert(position, next(s for s in siblings if s.pk == item.pk))
-            for sibling, wert in zip(neu, werte, strict=True):
-                if sibling.order != wert:
-                    sibling.order = wert
-                    sibling.save(update_fields=["order", "updated_at"])
-            _renumber_items(meeting, item.visibility)
 
     # -- Aus Ratssitzung übernehmen (Issue #1071) -----------------------------
 

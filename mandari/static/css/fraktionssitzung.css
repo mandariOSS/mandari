@@ -1761,6 +1761,10 @@
   .fs-griff:focus-visible { outline: 2px solid var(--wf-work); outline-offset: 1px; }
   .fs-griff svg { width: 16px; height: 16px; }
   .fs-top.bewegt { background: var(--wf-work-flaeche); }
+  /* Ebene der Ablage beim Ziehen (Issue #1285): eingerückt als Unterpunkt, sonst bündig; Unterpunkte eines gezogenen TOPs gehen ausgeblendet mit */
+  .fs-top.bewegt[data-ebene-neu="1"] .nr, .fs-top.bewegt[data-ebene-neu="1"] .fs-top-titel { padding-left: 16px; }
+  .fs-top.bewegt[data-ebene-neu="0"] .nr, .fs-top.bewegt[data-ebene-neu="0"] .fs-top-titel { padding-left: 0; }
+  .fs-top.fs-mitgezogen { display: none; }
   /* Beim Ziehen bietet auch ein leerer Teil eine Ablage (Issue #1160) */
   .fs-zieht ol.fs-tops[data-ziehbar]:not(:has(> .fs-top)) { min-height: 44px; margin-top: 6px; border: 1px dashed var(--wf-linie); border-radius: 6px; }
   .fs-speicherstand { display: flex; align-items: baseline; gap: 8px; min-height: 20px; margin: 8px 0 0; font-size: 12.5px; }

@@ -17,6 +17,7 @@ keine nichtöffentlichen.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 from django.db import transaction
@@ -181,6 +182,127 @@ def move_to_part(meeting: FactionMeeting, item: FactionAgendaItem, visibility: s
                 child.save(update_fields=["visibility", "updated_at"])
         renumber(meeting, previous)
         renumber(meeting, visibility)
+        # renumber arbeitet auf eigenen Instanzen: Ein späteres save() überschriebe die neue Nummer sonst
+        item.refresh_from_db(fields=["number"])
+
+
+class VerschiebenError(ValueError):
+    """Der TOP lässt sich nicht an die gewünschte Stelle legen; die Meldung richtet sich an die Person am Bildschirm."""
+
+
+def part_of(item: FactionAgendaItem) -> str:
+    """Teil der Tagesordnung, in dem ein TOP steht: Unterpunkte stehen im Teil ihres TOPs."""
+    parent = item.parent
+    return parent.visibility if parent is not None else item.visibility
+
+
+def siblings(meeting: FactionMeeting, parent: FactionAgendaItem | None, part: str) -> QuerySet[FactionAgendaItem]:
+    """Unterpunkte von ``parent`` bzw. die nummerierten TOPs der obersten Ebene eines Teils, in ihrer Reihenfolge."""
+    if parent is not None:
+        return parent.children.filter(proposal_status=ACTIVE).order_by("order", "number")
+    return numbered_items(meeting, part).order_by("order", "number")
+
+
+def _insert_index(others: Sequence[Any], position: int | None, visible: Callable[[Any], bool] | None) -> int:
+    """
+    Stelle in ``others`` für ``position`` (ab 0), gezählt unter den Geschwistern, die das Mitglied sieht: Für
+    Nicht-Vereidigte fehlen nichtöffentliche Unterpunkte auf der Seite. ``None``: ans Ende.
+    """
+    if position is None:
+        return len(others)
+    shown = [i for i, s in enumerate(others) if visible is None or visible(s)]
+    position = max(0, position)
+    if position < len(shown):
+        return shown[position]
+    return shown[-1] + 1 if shown else len(others)
+
+
+def place_item(
+    meeting: FactionMeeting,
+    item: FactionAgendaItem,
+    *,
+    parent: FactionAgendaItem | None,
+    position: int | None,
+    visibility: str | None = None,
+    visible: Callable[[Any], bool] | None = None,
+) -> None:
+    """
+    TOP an eine Stelle der Tagesordnung legen (Ziehen am Griff, Ein- und Ausrücken, Issue #1285): auf die oberste Ebene
+    eines Teils oder als Unterpunkt von ``parent``, an die Stelle ``position`` unter den Geschwistern (siehe
+    :func:`_insert_index`). ``visibility``: gewünschter Teil, ``None`` behält ihn. Rechte prüft der Aufrufer.
+
+    Eine Ebene wie bisher: Ein TOP mit eigenen Unterpunkten wird kein Unterpunkt, unter den Genehmigungs-TOP kommt
+    nichts. Unterpunkte eines nichtöffentlichen TOPs sind nichtöffentlich; geht ein TOP in den nichtöffentlichen Teil,
+    gehen seine Unterpunkte mit (wie :func:`move_to_part`). Ein nichtöffentlicher Unterpunkt eines öffentlichen TOPs
+    bleibt nichtöffentlich, solange niemand den öffentlichen Teil wählt.
+    """
+    from .regeln import pruefe_nichtoeffentlich
+    from .visibility import is_item_internal
+
+    if item.is_approval_item:
+        raise VerschiebenError("Der erste TOP bleibt an seiner Stelle.")
+    with transaction.atomic():
+        lock_meeting(meeting)
+        item.refresh_from_db(fields=["parent", "visibility", "order"])
+        # Wirksamer Teil: Ein (alter) öffentlich gespeicherter Unterpunkt eines NÖ-TOPs ist nichtöffentlich und bleibt es
+        current = "internal" if is_item_internal(item) else item.visibility
+        if parent is not None:
+            parent.refresh_from_db(fields=["parent", "visibility", "proposal_status", "is_approval_item"])
+            if (
+                parent.pk == item.pk
+                or parent.meeting_id != meeting.pk
+                or parent.parent_id is not None
+                or parent.is_approval_item
+                or parent.proposal_status != ACTIVE
+            ):
+                raise VerschiebenError("Unter diesen TOP lässt sich kein Unterpunkt legen.")
+            if item.children.exists():
+                raise VerschiebenError(
+                    f"TOP {item.number} hat eigene Unterpunkte und kann deshalb kein Unterpunkt werden."
+                )
+            target = "internal" if parent.visibility == "internal" else (visibility or current)
+            part = parent.visibility
+        else:
+            target = visibility or current
+            part = target
+        if target != current:
+            # Art ohne nichtöffentlichen Teil (Issue #1240): nichts in den NÖ-Teil, zurück in den öffentlichen schon
+            pruefe_nichtoeffentlich(meeting, target)
+        previous_part = part_of(item)
+        old_order = item.order
+        changed: list[str] = []
+        if item.parent_id != (parent.pk if parent is not None else None):
+            item.parent = parent
+            changed.append("parent")
+        if item.visibility != target:
+            item.visibility = target
+            changed.append("visibility")
+
+        others = list(siblings(meeting, parent, part).exclude(pk=item.pk))
+        ordered = list(others)
+        ordered.insert(_insert_index(others, position, visible), item)
+        # Die Reihenfolge-Werte der Gruppe nur neu verteilen; doppelte (Altbestand) oder 0 auf der obersten Ebene, wo
+        # der Genehmigungs-TOP mit 0 steht, werden fortlaufend
+        values = sorted([s.order for s in others] + [old_order])
+        if len(set(values)) < len(values) or (parent is None and values[0] < 1):
+            start = max(values[0], 1)
+            values = list(range(start, start + len(values)))
+        for entry, value in zip(ordered, values, strict=True):
+            if entry.pk == item.pk:
+                if item.order != value:
+                    item.order = value
+                    changed.append("order")
+            elif entry.order != value:
+                entry.order = value
+                entry.save(update_fields=["order", "updated_at"])
+        if changed:
+            item.save(update_fields=[*changed, "updated_at"])
+        if "visibility" in changed and target == "internal":
+            for child in item.children.filter(visibility="public"):
+                child.visibility = target
+                child.save(update_fields=["visibility", "updated_at"])
+        for touched in dict.fromkeys((previous_part, part)):
+            renumber(meeting, touched)
         # renumber arbeitet auf eigenen Instanzen: Ein späteres save() überschriebe die neue Nummer sonst
         item.refresh_from_db(fields=["number"])
 

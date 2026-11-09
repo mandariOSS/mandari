@@ -33,7 +33,7 @@ erinnerung_tops, erinnerung_sitzung, ratssitzungen, reihe_satz, membership.
 
 <c-work.neben-abschnitt titel="Einladung" kennung="einl-h" data-testid="fs-einladung-neben">
     {% if eingeladen %}
-    <p>Versendet{% if meeting.invitation_sent_at %} am {{ meeting.invitation_sent_at|date:"D d.m. \u\m H:i" }}{% endif %}. Ändern Sie Termin oder Tagesordnung, schicken Sie danach eine Aktualisierung; Kalender übernehmen die Änderung.</p>
+    <p>Versendet{% if meeting.invitation_sent_at %} am {{ meeting.invitation_sent_at|date:"D d.m. \u\m H:i" }}{% endif %}. Änderungen an Termin oder Tagesordnung sehen alle sofort in Work. Per E-Mail und im Kalender kommen sie nur mit einer Aktualisierung.</p>
     {% else %}
     <p>{{ einladung_satz }}</p>
     <p class="fs-meta">{{ einladung_regel }}</p>

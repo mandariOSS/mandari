@@ -660,6 +660,11 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
     invitation_updated_at = models.DateTimeField(
         blank=True, null=True, verbose_name="Aktualisierte Einladung versendet am"
     )
+    # Änderungen der Tagesordnung nach dem Versand ohne Aktualisierung übernommen (Issue #1285): Bis hierhin gelten sie
+    # als erledigt, der Hinweis „Tagesordnung geändert“ kommt erst mit der nächsten Änderung wieder
+    agenda_change_acknowledged_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Änderungen ohne Aktualisierung übernommen am"
+    )
     reminder_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Erinnerung versendet am")
 
     # Einladungslogik je Organisation (Issue #62): Im Freigabe-Modus wird der

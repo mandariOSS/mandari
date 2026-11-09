@@ -3,7 +3,8 @@
 Kopf der Seite vor der Sitzung (Issue #1071, Muster sitzung.html): Zurück, Titel mit Termin und Ort, Ablaufleiste
 Planung → Einladung → Sitzung → Protokoll (Markup wie der Kopf der laufenden Sitzung, .fs-kopf/.fs-stufen), Menü
 „Weitere Aktionen“. Darunter die Infoleiste: ein Satz und höchstens eine Hauptaktion (Einladen, Freigeben,
-Aktualisieren, Starten), nach dem Versand dazu „Versandergebnis“. Nach der Sitzung (neu/protokoll.html) Bestätigen,
+Aktualisieren, Starten), nach dem Versand dazu „Versandergebnis“. Nach einer Änderung der Tagesordnung seit dem Versand
+gleichwertig „Aktualisierung senden …“ und „Ohne Aktualisierung übernehmen“ (Issue #1285). Nach der Sitzung (neu/protokoll.html) Bestätigen,
 Direkt genehmigen oder Nachtrag; Kalender und Videoraum entfallen dort, dafür „Protokoll als PDF“.
 Kontext: meeting, org_slug, stufen, info, verwalten, can_edit, can_delete, can_start, can_manage_attendance, darf_einladen,
 eingeladen,
@@ -107,7 +108,13 @@ empfaenger, membership.
         </form>
         {% if darf_einladen %}<button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-einladen').showModal()" aria-haspopup="dialog">Jetzt einladen …</button>{% endif %}
         {% elif info.aktion == "aktualisieren" %}
-        <button type="button" class="wf-knopf wf-klein wf-haupt" @click="document.getElementById('fs-aktualisieren').showModal()" aria-haspopup="dialog">Aktualisierung senden …</button>
+        {# Beide Wege gleichwertig (Issue #1285): Eine Änderung nach dem Versand braucht keine E-Mail #}
+        <button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-aktualisieren').showModal()" aria-haspopup="dialog">Aktualisierung senden …</button>
+        <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="keep_agenda">
+            <button type="submit" class="wf-knopf wf-klein" data-testid="fs-ohne-aktualisierung">Ohne Aktualisierung übernehmen</button>
+        </form>
         {% elif info.aktion == "bestaetigen" %}
         <button type="button" class="wf-knopf wf-klein wf-haupt" @click="document.getElementById('fs-bestaetigen').showModal()" aria-haspopup="dialog">Anwesenheit bestätigen …</button>
         {% elif info.aktion == "genehmigen" %}
