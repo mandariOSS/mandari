@@ -63,6 +63,19 @@ def test_ohne_hausnummer_bleibt_der_titel(titel: str) -> None:
     assert not hat_hausnummer(titel)
 
 
+@pytest.mark.parametrize("anfang", ["Bürger", "Einwohner", "Bau", "Fäll", "Bürger-", "Bau -"])
+def test_lange_leerraumfolgen_bleiben_schnell(anfang: str) -> None:
+    """Kein polynomielles Zurückgehen bei langen Leerraumfolgen nach „Bürger“, „Bau“ … (ReDoS, CodeQL)."""
+    import time
+
+    text = anfang + "	" * 50_000 + "x"
+    beginn = time.perf_counter()
+    assert grund_nach_art(text, text) == ""
+    assert time.perf_counter() - beginn < 0.5
+    assert grund_nach_art("Bürger - Antrag", None) == EINWOHNERSCHAFT
+    assert grund_nach_art(None, "Bau-	voranfrage Musterweg 3") == BAUORDNUNG
+
+
 def test_ort_ohne_hausnummer() -> None:
     assert ort_ohne_hausnummer("Musterstraße 12, 53111 Bonn") == "Musterstraße, 53111 Bonn"
     assert ort_ohne_hausnummer("Wolbecker Straße 12a") == "Wolbecker Straße"

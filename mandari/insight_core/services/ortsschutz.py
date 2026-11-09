@@ -37,29 +37,32 @@ OHNE_NR: Final = "[Hausnummer ausgelassen]"
 # --- Vorgangsarten ---------------------------------------------------------------------------------------------------
 
 #: Vorgangsart (OParl ``paperType``) einer Eingabe aus der Einwohnerschaft; „Bürgerbegehren“ ist ein förmliches
-#: Verfahren ohne Privatanschrift und zählt nicht
+#: Verfahren ohne Privatanschrift und zählt nicht. Bindestrich als ``\s*(?:-\s*)?`` statt ``\s*-?\s*``: Zwei Läufe
+#: ``\s*`` direkt hintereinander ließen lange Leerraumfolgen polynomiell lange prüfen (ReDoS)
 _EINWOHNER_ART: Final = re.compile(
-    r"bürger\s*-?\s*(?:antr[aä]g|brief|eingabe|anregung|frage)|einwohner\s*-?\s*(?:antr[aä]g|frage|anfrage|eingabe|"
-    r"anregung)|anregung|beschwerde|\beingabe|petition",
+    r"bürger\s*(?:-\s*)?(?:antr[aä]g|brief|eingabe|anregung|frage)|"
+    r"einwohner\s*(?:-\s*)?(?:antr[aä]g|frage|anfrage|eingabe|anregung)|anregung|beschwerde|\beingabe|petition",
     re.IGNORECASE,
 )
 #: Titel einer Eingabe aus der Einwohnerschaft (strenger als die Art: „Anregung“ allein kommt in vielen Titeln vor)
 _EINWOHNER_TITEL: Final = re.compile(
-    r"bürger\s*-?\s*(?:antr[aä]g|brief|eingabe|anregung)|einwohner\s*-?\s*(?:antr[aä]g|frage|anfrage|eingabe)|"
+    r"bürger\s*(?:-\s*)?(?:antr[aä]g|brief|eingabe|anregung)|"
+    r"einwohner\s*(?:-\s*)?(?:antr[aä]g|frage|anfrage|eingabe)|"
     r"anregungen?\s+(?:und|u\.|&|bzw\.?)\s+beschwerden?|(?:anregung|beschwerde|eingabe)\s+(?:gem\.?|gemäß|nach)\s*§|"
     r"§\s*24\s*go\b|petition",
     re.IGNORECASE,
 )
 #: Vorgangsart der Bauordnung (Bauantrag, Voranfrage, Vorbescheid, Fällgenehmigung)
 _BAU_ART: Final = re.compile(
-    r"bau\s*-?\s*(?:antr[aä]g|voranfrage|vorbescheid|genehmigung|ordnung|aufsicht)|fäll\s*-?\s*(?:genehmigung|antrag)",
+    r"bau\s*(?:-\s*)?(?:antr[aä]g|voranfrage|vorbescheid|genehmigung|ordnung|aufsicht)|"
+    r"fäll\s*(?:-\s*)?(?:genehmigung|antrag)",
     re.IGNORECASE,
 )
 #: Titel eines Vorgangs zu einem privaten Bauvorhaben
 _BAU_TITEL: Final = re.compile(
-    r"bau\s*-?\s*(?:antr[aä]g|voranfrage|vorbescheid|genehmigung)|nutzungsänderung|"
+    r"bau\s*(?:-\s*)?(?:antr[aä]g|voranfrage|vorbescheid|genehmigung)|nutzungsänderung|"
     r"§\s*3[1456]\s*(?:abs\.?\s*\d\s*)?baugb|einvernehmen\s+(?:der\s+(?:gemeinde|stadt)\s+)?(?:gem\.?|gemäß|nach)\s*§\s*36|"
-    r"befreiung\s+von\s+(?:den\s+)?festsetzungen|fäll\s*-?\s*(?:genehmigung|antrag)",
+    r"befreiung\s+von\s+(?:den\s+)?festsetzungen|fäll\s*(?:-\s*)?(?:genehmigung|antrag)",
     re.IGNORECASE,
 )
 #: Federführendes Amt mit privaten Grundstücken (Bauordnung, Bauaufsicht, Untere Naturschutzbehörde)
