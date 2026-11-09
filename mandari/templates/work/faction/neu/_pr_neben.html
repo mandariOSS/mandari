@@ -9,7 +9,12 @@ Nebenspalte nach der Sitzung (Issue #1071, Schritt 3; Muster protokollHtml/altNe
 - Für alle: Herunterladen (PDF je Fassung nach Recht, wie bisher) und Änderungshistorie.
 Kontext: meeting, org_slug, rechte, dok, schritte, versand, aufgaben_sitzung, eigene_aufgaben, teilnahme, nachweis_tag,
 can_export_attendance, darf_einstellungen, darf_intern, membership.
+Offene Vorschläge (Issue #1287): aufnehmen oder ablehnen, solange das Protokoll nicht genehmigt ist (can_approve_proposals,
+pending_proposals aus _get_meeting_context).
 {% endcomment %}
+{% if not meeting.protocol_approved and meeting.status != 'cancelled' %}
+{% include "work/faction/neu/_vb_vorschlaege.html" with vs_eng=True %}
+{% endif %}
 {% if meeting.status == 'cancelled' %}
 <c-work.neben-abschnitt titel="Abgesagt" kennung="ab-h">
     <p>{% if meeting.cancellation_reason %}{{ meeting.cancellation_reason }}{% else %}Diese Sitzung findet nicht statt.{% endif %}</p>

@@ -1,11 +1,16 @@
 {# Ein TOP der laufenden Sitzung: Kopf, Unterlagen groß in der Mitte, Protokoll als eine Ansicht rechts (Issue #874) #}
+{# Teilung nur mit Unterlagen; Trenner zum Ziehen, Pfeiltasten und Doppelklick, Unterlagen ausblendbar (Issue #1289, fraktionssitzung) #}
 {# Kontext: views.session.top_kontext; mit oob (TOP-Wechsel, neuer TOP per HTMX) kommen die Leiste unten und die Tagesordnung mit (neue TOPs anderer, Issue #1166), mit oob_kopf der Kopf #}
 <section class="fs-fokus" id="fs-fokus" data-top="{{ item.pk }}" aria-labelledby="fs-top-titel">
     {% include "work/faction/sitzung/_top_kopf.html" %}
     <div class="fs-arbeit{% if not unterlagen %} ohne-unterlagen{% endif %}">
         {# Nichtöffentlich: Abdeckung statt Unterlagen und Protokoll, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issues #1166, #1201) #}
         {% if intern %}{% include "work/faction/sitzung/_noe_abdeckung.html" with einblenden="noeEinblenden()" %}<div class="fs-noe-inhalt">{% endif %}
-        {% if unterlagen %}{% include "work/faction/sitzung/_unterlagen.html" %}{% endif %}
+        {% if unterlagen %}{% include "work/faction/sitzung/_unterlagen.html" %}
+        <div class="fs-trenner" role="separator" aria-orientation="vertical" tabindex="0" aria-controls="fs-unterlagen"
+             aria-label="Breite der Unterlagen" aria-valuemin="25" aria-valuemax="70" :aria-valuenow="Math.round(untBreite)"
+             title="Ziehen ändert die Breite, Doppelklick stellt sie zurück" data-testid="fs-trenner"
+             @pointerdown="trennerGreifen($event)" @keydown="trennerTaste($event)" @dblclick="trennerZurueck()"></div>{% endif %}
         {% include "work/faction/sitzung/_protokoll.html" %}
         {% if intern %}</div>{% endif %}
     </div>
