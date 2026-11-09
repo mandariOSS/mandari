@@ -26,6 +26,11 @@ class WorkConfig(AppConfig):
 
         sitzungsarten.register()
 
+        # Neue und reaktivierte Mitglieder, neue Rollen und Gremien: in kommende Fraktionssitzungen eintragen (Issue #1288)
+        from apps.work.faction import teilnahme
+
+        teilnahme.register()
+
         # Dokument-Freigaben beim Entfernen einer Mitgliedschaft aufräumen
         from apps.work.motions import signals as motion_signals
 

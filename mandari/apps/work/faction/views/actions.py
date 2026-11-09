@@ -1210,7 +1210,11 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         attendee_type = request.POST.get("attendee_type")
-        status = request.POST.get("status", "present")
+        # Vor der Sitzung eingeladen, nicht anwesend (Issue #1288); ist schon eingeladen, schickt der Einladungslauf
+        # Mitgliedern ihre Einladung (teilnahme.nachzuegler_einladen). Während und nach der Sitzung wie bisher anwesend.
+        status = request.POST.get("status") or (
+            "invited" if meeting.status in ("draft", "planned", "invited") else "present"
+        )
 
         if attendee_type == "guest":
             guest_name = request.POST.get("guest_name", "").strip()

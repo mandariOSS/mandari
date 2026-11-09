@@ -1422,6 +1422,10 @@
   .fs-vorschlaege .vs-was b { display: block; font-size: 14px; font-weight: 500; }
   .fs-vorschlaege .vs-was small { display: block; font-size: 12.5px; color: var(--wf-text2); margin-top: 1px; }
   .fs-vorschlaege .vs-akt { display: flex; gap: 6px; }
+  /* Schmale Spalten: laufende Sitzung unter der Tagesordnung, Nebenspalte des Protokolls (Issue #1287) */
+  .fs-vorschlaege.eng { margin: 12px 0 8px; }
+  .fs-vorschlaege.eng li { grid-template-columns: minmax(0, 1fr); }
+  .fs-vorschlaege.eng .vs-akt, .fs-vorschlaege.eng .vs-akt form { display: flex; flex-wrap: wrap; gap: 6px; }
 
   /* Lesende Tagesordnung (Einladung, Mitgliedersicht, Seitenfeld) */
   .fs-to-lesen { list-style: none; margin: 0; padding: 0; }

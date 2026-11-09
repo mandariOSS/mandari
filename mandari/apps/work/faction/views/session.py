@@ -35,6 +35,7 @@ from ..quorum import quorum_der_sitzung
 from ..regeln import ABSTIMMUNGEN_AUS
 from ..sitzungsarten import darf_sehen
 from ..visibility import can_view_internal, is_item_internal
+from ._helpers import offene_vorschlaege
 
 if TYPE_CHECKING:
     from apps.tenants.models import Membership, Organization
@@ -133,6 +134,10 @@ def _basis(view: Any, meeting: FactionMeeting) -> dict[str, Any]:
         # Ohne Abstimmungen in der Sitzungsart keine Beschlussfähigkeit (Issue #1240)
         "quorum": quorum_der_sitzung(meeting),
         "sitzung_urls": _urls(meeting),
+        # Offene Vorschläge unter der Tagesordnung (Issue #1287); die Abfrage läuft erst, wenn die Vorlage sie zeigt
+        "can_approve_proposals": view.membership.has_permission("agenda.approve"),
+        "can_view_internal": can_view_internal(view.membership),
+        "pending_proposals": offene_vorschlaege(meeting, intern=can_view_internal(view.membership)),
     }
 
 

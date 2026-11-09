@@ -681,3 +681,37 @@ def test_meldung_blockiert_den_top_wechsel_nicht(
     leiste.locator("[data-nav=nach]").click(timeout=2000)
     expect(page.locator("#fs-top-titel")).to_contain_text("Termine")
     expect(meldung).to_be_visible()
+
+
+def test_vorschlag_in_der_laufenden_sitzung_aufnehmen(
+    page: Any, live_server: Any, login: Any, org: Any, sitzung: Any, screenshot: Any
+) -> None:
+    """Issue #1287: Offene Vorschläge stehen unter der Tagesordnung; Aufnehmen sichert die Notizen, der TOP bleibt offen."""
+    from apps.common.tests.factories import RoleFactory
+
+    vorsitz, meeting, tops = sitzung
+    vorsitz.roles.add(RoleFactory(organization=org, permissions=["agenda.approve"]))
+    vorschlag = FactionAgendaItem.objects.create(
+        meeting=meeting,
+        title="Radweg am Musterweg",
+        visibility="public",
+        proposal_status="proposed",
+        proposed_at=timezone.now(),
+    )
+    page.set_viewport_size({"width": 1440, "height": 900})
+    login(vorsitz.user.email, PASSWORD)
+    oeffnen(page, live_server, org, meeting, tops[1])
+    block = page.get_by_test_id("fs-vorschlaege")
+    expect(block).to_contain_text("Radweg am Musterweg")
+    screenshot("fraktionssitzung-vorschlag-1440")
+
+    page.locator(NOTIZ).click()
+    page.keyboard.type("Vor dem Aufnehmen notiert.")
+    block.get_by_role("button", name="Aufnehmen").click()
+    expect(page.locator("#fs-tagesordnung")).to_contain_text("Radweg am Musterweg")
+    expect(page.get_by_test_id("fs-vorschlaege")).to_have_count(0)
+    expect(page.locator("#fs-top-titel")).to_contain_text("Feuerwehrbedarfsplan")
+    vorschlag.refresh_from_db()
+    assert vorschlag.proposal_status == "active" and vorschlag.number == "5"
+    tops[1].refresh_from_db()
+    assert "Vor dem Aufnehmen notiert." in cast(Any, tops[1]).get_notes_decrypted()
