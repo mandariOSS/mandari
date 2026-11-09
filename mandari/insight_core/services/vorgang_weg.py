@@ -374,7 +374,8 @@ def anfrage_stand(
         if _ZURUECKGEZOGEN.search(roh):
             # Zurückgezogen oder erledigt: keine Antwort zu erwarten, also auch keine Lücke
             return AnfrageStand("", "")
-    juenger = paper.date is not None and _tag(now) - paper.date <= timedelta(days=ANTWORT_OFFEN_TAGE)
+    # paper.date ist in bestehenden Installationen ein Zeitpunkt (Spalte des Ingestors, Issue #1282), deshalb _tag
+    juenger = paper.date is not None and _tag(now) - _tag(paper.date) <= timedelta(days=ANTWORT_OFFEN_TAGE)
     if juenger or status.upcoming is not None or status.kind == DEFERRED:
         return AnfrageStand(ANTWORT_OFFEN, "Eine Antwort der Verwaltung liegt noch nicht vor.")
     return AnfrageStand("", "Eine Antwort der Verwaltung liegt uns nicht vor.")
