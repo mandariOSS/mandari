@@ -4,9 +4,12 @@ Vorschläge, die auf Genehmigung warten (Issue #872, Muster vorschlaegeHtml): Au
 Teil der Tagesordnung (Issue #1160). Nichtöffentliche Vorschläge fehlen für Nicht-Vereidigte schon im Kontext.
 Kontext: can_approve_proposals, can_view_internal, pending_proposals, meeting, org_slug. Nichtöffentliche Vorschläge mit
 Sichtschutz (Titel und Beschreibung weichgezeichnet, bis Nichtöffentliches eingeblendet ist, Issue #1201).
+Auch in der laufenden Sitzung unter der Tagesordnung und in der Nebenspalte des Protokolls (Issue #1287):
+vs_eng (schmale Spalte, alles untereinander), vs_htmx (Senden per htmx mit data-sichern-vorher: Notizen werden vorher
+gespeichert, die Antwort lädt die Seite am aktuellen TOP neu).
 {% endcomment %}
 {% if can_approve_proposals and pending_proposals %}
-<section class="fs-vorschlaege" aria-labelledby="vs-h" data-testid="fs-vorschlaege">
+<section class="fs-vorschlaege{% if vs_eng %} eng{% endif %}" aria-labelledby="vs-h" data-testid="fs-vorschlaege">
     <h3 id="vs-h">Vorschläge <span class="fs-meta">{% if pending_proposals|length == 1 %}einer wartet{% else %}{{ pending_proposals|length }} warten{% endif %} auf Ihre Genehmigung</span></h3>
     <ul>
         {% for vorschlag in pending_proposals %}
@@ -17,7 +20,7 @@ Sichtschutz (Titel und Beschreibung weichgezeichnet, bis Nichtöffentliches eing
                 {% with beschreibung=vorschlag.get_description_decrypted %}{% if beschreibung %}<small{% if vorschlag.visibility == 'internal' %} class="fs-noe" aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar"{% endif %}>{{ beschreibung|truncatewords:40 }}</small>{% endif %}{% endwith %}
             </span>
             <span class="vs-akt">
-                <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+                <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"{% if vs_htmx %} hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-swap="none" data-sichern-vorher{% endif %}>
                     {% csrf_token %}
                     <input type="hidden" name="action" value="accept_proposal">
                     <input type="hidden" name="item_id" value="{{ vorschlag.id }}">
@@ -32,7 +35,7 @@ Sichtschutz (Titel und Beschreibung weichgezeichnet, bis Nichtöffentliches eing
                 </form>
                 <button type="button" class="wf-knopf wf-leise" @click="ablehnen = !ablehnen" :aria-expanded="ablehnen ? 'true' : 'false'" aria-controls="vs-ab-{{ vorschlag.id }}">Ablehnen …</button>
             </span>
-            <form id="vs-ab-{{ vorschlag.id }}" class="fs-vs-ablehnen" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" x-show="ablehnen" x-cloak>
+            <form id="vs-ab-{{ vorschlag.id }}" class="fs-vs-ablehnen" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"{% if vs_htmx %} hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-swap="none" data-sichern-vorher{% endif %} x-show="ablehnen" x-cloak>
                 {% csrf_token %}
                 <input type="hidden" name="action" value="reject_proposal">
                 <input type="hidden" name="item_id" value="{{ vorschlag.id }}">

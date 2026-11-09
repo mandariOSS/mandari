@@ -501,6 +501,13 @@ class TestAdresseUndReiter:
         assert antwort.status_code == 302
         assert antwort["Location"] == "/insight/beschluesse/umsetzung/?status=open&gremium=1"
 
+    def test_alte_adressen_bleiben_auf_dem_eigenen_host(self, besucher: Client) -> None:
+        antwort = besucher.get("/insight/beschluesse/", {"q": "//evil.example/", "status": "https://evil.example"})
+        assert antwort.status_code == 302
+        assert antwort["Location"] == (
+            "/insight/beschluesse/umsetzung/?q=%2F%2Fevil.example%2F&status=https%3A%2F%2Fevil.example"
+        )
+
     def test_beschluesse_immer_in_der_navigation(self, besucher: Client) -> None:
         html = besucher.get("/insight/vorgaenge/").content.decode()
         nav = re.search(r'<nav class="mt-5 px-3" aria-label="Bereiche">(.*?)</nav>', html, re.S)

@@ -295,6 +295,73 @@
   .fs-unt .wf-reiterleiste {
     padding-left: 24px;
   }
+  /* Trenner zwischen Unterlagen und Protokoll (Issue #1289): 1 px Linie, 9 px zum Greifen, nur auf breiten Bildschirmen */
+  .fs-trenner {
+    display: none;
+    position: relative;
+    z-index: 1;
+    width: 9px;
+    margin: 0 -4px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .fs-trenner::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 1px;
+    background: var(--wf-linie);
+  }
+  .fs-trenner:hover::before,
+  .fs-trenner:focus-visible::before,
+  .fs-trennt .fs-trenner::before {
+    left: 3px;
+    width: 3px;
+    background: var(--wf-work);
+  }
+  .fs-trenner:focus-visible {
+    outline: none;
+  }
+  .fs-trennt,
+  .fs-trennt * {
+    cursor: col-resize !important;
+    user-select: none;
+  }
+  /* Beim Ziehen über eingebettete PDFs fängt der Rahmen sonst den Zeiger */
+  .fs-trennt iframe {
+    pointer-events: none;
+  }
+  .fs-unt-zu .fs-unt,
+  .fs-unt-zu .fs-trenner {
+    display: none !important;
+  }
+  .fs-prot-kopf .fs-unt-einblenden {
+    margin-left: -8px;
+  }
+  /* Links des TOPs im Kopf (Issue #1289) */
+  .fs-top-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 16px;
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    font-size: 14px;
+  }
+  .fs-top-links li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .fs-top-links svg {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    color: var(--wf-text3);
+  }
   .fs-werkzeuge {
     margin-left: auto;
     display: flex;
@@ -1259,15 +1326,17 @@
     .fs-fokus {
       overflow: hidden;
     }
+    /* Unterlagen | Trenner | Protokoll; Breite der Unterlagen verstellbar (--fs-unt-breite an .fs-sitzung, Issue #1289) */
     .fs-arbeit {
       flex: 1 1 auto;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      grid-template-columns: minmax(0, var(--fs-unt-breite, 46%)) auto minmax(0, 1fr);
     }
-    .fs-arbeit.ohne-unterlagen {
+    .fs-arbeit.ohne-unterlagen,
+    .fs-unt-zu .fs-arbeit {
       grid-template-columns: minmax(0, 1fr);
     }
-    .fs-unt {
-      border-right: 1px solid var(--wf-linie);
+    .fs-trenner {
+      display: block;
     }
   }
   @media (min-width: 1800px) {
@@ -1422,6 +1491,10 @@
   .fs-vorschlaege .vs-was b { display: block; font-size: 14px; font-weight: 500; }
   .fs-vorschlaege .vs-was small { display: block; font-size: 12.5px; color: var(--wf-text2); margin-top: 1px; }
   .fs-vorschlaege .vs-akt { display: flex; gap: 6px; }
+  /* Schmale Spalten: laufende Sitzung unter der Tagesordnung, Nebenspalte des Protokolls (Issue #1287) */
+  .fs-vorschlaege.eng { margin: 12px 0 8px; }
+  .fs-vorschlaege.eng li { grid-template-columns: minmax(0, 1fr); }
+  .fs-vorschlaege.eng .vs-akt, .fs-vorschlaege.eng .vs-akt form { display: flex; flex-wrap: wrap; gap: 6px; }
 
   /* Lesende Tagesordnung (Einladung, Mitgliedersicht, Seitenfeld) */
   .fs-to-lesen { list-style: none; margin: 0; padding: 0; }

@@ -113,6 +113,21 @@ interface HtmxDetail {
 
 /** Ab dieser Breite steht die Anwesenheit als eigene Spalte rechts (Prototyp Fassung 2), darunter klappt sie auf */
 const BREIT = '(min-width: 2200px)'
+/** Unterlagen ausgeblendet und ihre Breite in Prozent der Arbeitsfläche, für alle Sitzungen im Browser (Issue #1289) */
+const UNT_ZU_KEY = 'fs-unterlagen-zu'
+const UNT_BREITE_KEY = 'fs-unterlagen-breite'
+const UNT_MIN = 25
+const UNT_MAX = 70
+const UNT_STANDARD = 46
+
+function untBreiteBegrenzt(wert: number): number {
+  return Math.round(Math.max(UNT_MIN, Math.min(UNT_MAX, wert)) * 10) / 10
+}
+
+function gespeicherteUntBreite(): number {
+  const wert = Number(window.localStorage.getItem(UNT_BREITE_KEY))
+  return Number.isFinite(wert) && wert > 0 ? untBreiteBegrenzt(wert) : UNT_STANDARD
+}
 
 // ---- Sichtschutz für den nichtöffentlichen Teil (Issues #1166, #1201) ------------------------------
 //
@@ -129,9 +144,15 @@ export const fraktionssitzung = defineComponent(() => ({
   anwesenheitOffen: false,
   tagesordnungOffen: false,
   breit: false,
+  /** Unterlagen ausgeblendet: Protokoll über die ganze Breite (Issue #1289) */
+  unterlagenZu: false,
+  /** Breite der Unterlagen in Prozent der Arbeitsfläche (Trenner) */
+  untBreite: UNT_STANDARD,
 
   init() {
     this.aktuell = this.$el.dataset.aktuell ?? ''
+    this.unterlagenZu = window.localStorage.getItem(UNT_ZU_KEY) === '1'
+    this.untBreite = gespeicherteUntBreite()
     const breite = window.matchMedia(BREIT)
     this.breit = breite.matches
     breite.addEventListener('change', (event) => {
@@ -162,6 +183,64 @@ export const fraktionssitzung = defineComponent(() => ({
 
   istAktuell(id: string | undefined): boolean {
     return !!id && id === this.aktuell
+  },
+
+  // ---------- Arbeitsfläche: Unterlagen und Protokoll (Issue #1289) ----------
+
+  unterlagenUmschalten() {
+    this.unterlagenZu = !this.unterlagenZu
+    window.localStorage.setItem(UNT_ZU_KEY, this.unterlagenZu ? '1' : '0')
+    // Der Fokus bleibt bei einem sichtbaren Knopf: nach dem Ausblenden „Unterlagen (n)“, nach dem Einblenden der Trenner
+    this.$nextTick(() => {
+      const ziel = this.unterlagenZu ? '[data-testid="fs-unterlagen-einblenden"]' : '[data-testid="fs-trenner"]'
+      document.querySelector<HTMLElement>(ziel)?.focus({ preventScroll: true })
+    })
+  },
+
+  untBreiteSetzen(wert: number, speichern = true) {
+    this.untBreite = untBreiteBegrenzt(wert)
+    if (speichern) window.localStorage.setItem(UNT_BREITE_KEY, String(this.untBreite))
+  },
+
+  /** Trenner ziehen: Breite folgt dem Zeiger, gespeichert beim Loslassen */
+  trennerGreifen(event: PointerEvent) {
+    const trenner = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+    const flaeche = trenner?.closest<HTMLElement>('.fs-arbeit')
+    if (!trenner || !flaeche || event.button !== 0) return
+    event.preventDefault()
+    trenner.focus({ preventScroll: true })
+    trenner.setPointerCapture(event.pointerId)
+    const rahmen = flaeche.getBoundingClientRect()
+    document.body.classList.add('fs-trennt')
+    const bewegen = (e: PointerEvent) => this.untBreiteSetzen(((e.clientX - rahmen.left) / rahmen.width) * 100, false)
+    const loslassen = () => {
+      trenner.removeEventListener('pointermove', bewegen)
+      trenner.removeEventListener('pointerup', loslassen)
+      trenner.removeEventListener('pointercancel', loslassen)
+      document.body.classList.remove('fs-trennt')
+      this.untBreiteSetzen(this.untBreite)
+    }
+    trenner.addEventListener('pointermove', bewegen)
+    trenner.addEventListener('pointerup', loslassen)
+    trenner.addEventListener('pointercancel', loslassen)
+  },
+
+  /** Pfeil links und rechts: 2 Prozentpunkte, Pos1 und Ende: schmalste und breiteste Fassung */
+  trennerTaste(event: KeyboardEvent) {
+    const schritte: Record<string, number> = {
+      ArrowLeft: this.untBreite - 2,
+      ArrowRight: this.untBreite + 2,
+      Home: UNT_MIN,
+      End: UNT_MAX,
+    }
+    const wert = schritte[event.key]
+    if (wert === undefined) return
+    event.preventDefault()
+    this.untBreiteSetzen(wert)
+  },
+
+  trennerZurueck() {
+    this.untBreiteSetzen(UNT_STANDARD)
   },
 
   anwesenheitUmschalten() {

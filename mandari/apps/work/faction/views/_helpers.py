@@ -175,19 +175,12 @@ def _get_meeting_context(view, meeting):
 
     protocol_entry_count = protocol_entries_qs.count()
 
-    # TOP-Vorschläge: NÖ-Vorschläge sind für Nicht-Vereidigte unsichtbar
-    # (Organisation mitladen: die Beschreibung wird je Vorschlag mit ihrem Schlüssel entschlüsselt)
-    pending_proposals = (
-        meeting.agenda_items.filter(proposal_status="proposed")
-        .select_related("proposed_by__user", "meeting__organization")
-        .prefetch_related("proposed_by__roles")
-    )
+    pending_proposals = offene_vorschlaege(meeting, intern=can_view_internal)
     # Eigene Vorschläge mit Stand (offen/abgelehnt) für die Vorschlagenden
     my_proposals = meeting.agenda_items.filter(
         proposed_by=view.membership, proposal_status__in=["proposed", "rejected"]
     ).order_by("proposed_at")
     if not can_view_internal:
-        pending_proposals = pending_proposals.exclude(visibility="internal")
         # Auch eigene NÖ-Vorschläge nur, solange die Vereidigung besteht
         my_proposals = my_proposals.exclude(visibility="internal")
 
@@ -266,6 +259,21 @@ def _apply_approval_item_decision(agenda_item, decision, meeting, membership):
     from ..services import apply_approval_item_decision
 
     return apply_approval_item_decision(agenda_item, decision, meeting, membership)
+
+
+def offene_vorschlaege(meeting, *, intern: bool):
+    """
+    TOP-Vorschläge, die auf Genehmigung warten (vor der Sitzung, in der laufenden Sitzung und beim Protokoll, Issue
+    #1287). NÖ-Vorschläge nur für Vereidigte (``intern``). Organisation mitgeladen: Die Beschreibung wird je Vorschlag
+    mit ihrem Schlüssel entschlüsselt.
+    """
+    vorschlaege = (
+        meeting.agenda_items.filter(proposal_status="proposed")
+        .select_related("proposed_by__user", "meeting__organization")
+        .prefetch_related("proposed_by__roles")
+        .order_by("proposed_at", "created_at")
+    )
+    return vorschlaege if intern else vorschlaege.exclude(visibility="internal")
 
 
 def _renumber_items(meeting, visibility):

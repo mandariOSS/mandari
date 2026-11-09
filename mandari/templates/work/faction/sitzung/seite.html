@@ -20,6 +20,7 @@ Editor-Bundle frontend/editor/index.ts.
 {{ sitzung_urls|json_script:"fs-sitzung-config" }}
 {# Sichtschutz für den nichtöffentlichen Teil: Klasse noe-verdeckt am body, ein Zustand für ganz Work (Issues #1166, #1201) #}
 <div class="fs-sitzung wf" x-data="fraktionssitzung" data-aktuell="{{ item.pk|default:'' }}"
+     :class="{ 'fs-unt-zu': unterlagenZu }" :style="'--fs-unt-breite: ' + untBreite + '%'"
      @keydown.window="taste($event)" @keydown.escape.window="schliessen()">
     {% include "work/faction/sitzung/_kopf.html" %}
     <div class="fs-flaeche">

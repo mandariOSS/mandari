@@ -58,8 +58,9 @@ TITEL_HOECHSTENS: Final = 300
 ZWISCHENSPEICHER_SEKUNDEN: Final = 900
 #: Datum eines Feeds ohne Einträge (fest, damit die Antwort gleich bleibt)
 LEER_STAND: Final = datetime(2026, 1, 1, tzinfo=UTC)
-#: Zeichen, die XML 1.0 nicht erlaubt (Steuerzeichen außer Tab, Zeilenumbruch, Wagenrücklauf)
-_UNGUELTIG: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+#: Zeichen, die XML 1.0 nicht erlaubt (Steuerzeichen außer Tab, Zeilenumbruch, Wagenrücklauf, dazu U+FFFE und
+#: U+FFFF); als Rohtext-Regex wie ``search_presentation._CONTROL``, die Bereiche stehen als Escapes im Muster
+_UNGUELTIG: Final = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,10 @@
 <section class="fs-prot" aria-labelledby="fs-prot-h" x-data="sitzungsNotizen">
     {{ notizen_config|json_script:"fs-notizen-config" }}
     <div class="fs-prot-kopf">
+        {% if unterlagen %}
+        <button type="button" class="wf-knopf wf-leise wf-klein fs-unt-einblenden" x-show="unterlagenZu" x-cloak @click="unterlagenUmschalten()"
+                aria-controls="fs-unterlagen" data-testid="fs-unterlagen-einblenden"><i data-lucide="panel-left-open" aria-hidden="true"></i>Unterlagen ({{ unterlagen|length }})</button>
+        {% endif %}
         <h3 id="fs-prot-h">Protokoll</h3>
         {% if notizen_config.editierbar %}
         <div class="fs-wz" role="toolbar" aria-label="Formatierung der Notizen" aria-controls="fs-notiz" x-show="bereit" x-cloak @mousedown.prevent>
