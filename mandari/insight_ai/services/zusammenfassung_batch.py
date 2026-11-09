@@ -22,6 +22,10 @@ Zeitpläne im Worker (``insight_ai/schedules.py``):
   (``prompts.TAGESBATCH_SCHEMA``): Zusammenfassung, Urteil je Ort, fehlende Orte. Nach dem Speichern der
   Zusammenfassung übernimmt ``verortung_pruefung.anwenden`` die Urteile (außerhalb der Transaktion, weil fehlende Orte
   geokodiert werden).
+- **Mechanische Prüfung (Issue #1271):** Vor der Übernahme wird jedes Ergebnis gegen das Material seines Prompts
+  geprüft (``zusammenfassung_pruefung``, Material neu zusammengestellt wie beim Einreichen). Verworfene werden
+  protokolliert und nicht gespeichert; fällt nur die Fassung in Einfacher Sprache durch, entfällt nur sie. Einen
+  Vorgang, dessen Zusammenfassung mit der aktuellen Prompt-Fassung verworfen wurde, reicht der Batch nicht erneut ein.
 - ``abholen()``: Ist ein offener Batch beendet, übernimmt sie die Ergebnisse in einer Transaktion: Kosten verbuchen,
   Zusammenfassung über ``summary_store.speichern`` speichern, sofern sie noch passt (keine Rücknahme, kein neuer
   Text seit dem Einreichen, noch keine Zusammenfassung bzw. die veraltete unverändert). Abgelehnte, abgeschnittene
@@ -56,6 +60,8 @@ from insight_ai import kosten
 from insight_ai.models import KiVerbrauch, TagesbatchKommune, ZusammenfassungsBatch
 from insight_ai.providers.claude import BatchErgebnis, ClaudeZusammenfassung
 from insight_ai.providers.openai_kompatibel import KiAnbieterError
+from insight_ai.services import zusammenfassung_pruefung
+from insight_ai.services.prompts import PROMPT_FASSUNG
 from insight_ai.services.summarizer import ZUSATZ_AUSGABE_EINFACH, zerlegen
 
 logger = logging.getLogger(__name__)
@@ -141,8 +147,10 @@ def _einreichen(endpunkt: ClaudeEndpunkt, provider: Any) -> int:
         return 0
     beginn = timezone.now()
     # Zuerst Vorgänge ohne Zusammenfassung, dann veraltete (neues Beratungsergebnis seit der Zusammenfassung)
-    kandidaten = summary_store.fuer_tagesbatch(stichtage, limit=MAX_JE_BATCH * 2)
-    kandidaten += summary_store.veraltete(stichtage, limit=MAX_JE_BATCH)
+    # Mit der aktuellen Prompt-Fassung schon verworfene Vorgänge nicht erneut (Issue #1271)
+    verworfen = zusammenfassung_pruefung.verworfene_vorgaenge()
+    kandidaten = summary_store.fuer_tagesbatch(stichtage, limit=MAX_JE_BATCH * 2, ohne=verworfen)
+    kandidaten += summary_store.veraltete(stichtage, limit=MAX_JE_BATCH, ohne=verworfen)
     plan = _planen(endpunkt, provider, kandidaten, rest=rest, mit_verortung=mit_verortung, hoechstens=MAX_JE_BATCH)
     if plan.wartend:
         logger.info("Tagesbatch: %d Vorgänge warten noch %s", sum(plan.wartend.values()), dict(plan.wartend))
@@ -218,6 +226,8 @@ def _planen(
             "vorgang": custom_id,
             "dateien": [str(i) for i in vorbereitung.datei_ids],
             "stand": vorbereitung.stand,
+            # Prompt-Fassung beim Einreichen (Issue #1271); ein Deploy bis zur Übernahme ändert sie nicht
+            "fassung": PROMPT_FASSUNG,
         }
         if vorbereitung.schema is not None:
             eintrag["json"] = True
@@ -322,7 +332,9 @@ def nachziehen(
             return Nachzug(grund="Budget ausgeschöpft.")
         provider = provider or ClaudeZusammenfassung(endpunkt)
         beginn = timezone.now()
-        kandidaten = summary_store.veraltete(kommunen, limit=obergrenze, ab=ab)
+        kandidaten = summary_store.veraltete(
+            kommunen, limit=obergrenze, ab=ab, ohne=zusammenfassung_pruefung.verworfene_vorgaenge()
+        )
         plan = _planen(endpunkt, provider, kandidaten, rest=rest, mit_verortung=set(), hoechstens=obergrenze)
         ergebnis = Nachzug(
             gefunden=len(kandidaten),
@@ -375,6 +387,70 @@ def abholen(*, provider: Any = None) -> int:
     return gespeichert
 
 
+#: Ergebnis der Prüfung, wenn das Material eines Vorgangs nicht mehr vorliegt (nicht speichern, nicht protokollieren)
+NICHT_PRUEFBAR: Final = zusammenfassung_pruefung.Pruefung(
+    befund=zusammenfassung_pruefung.Befund("quelle", "Material nicht mehr vorhanden")
+)
+
+
+@dataclass(frozen=True)
+class _Geprueft:
+    """Ergebnis der mechanischen Prüfung eines Batch-Ergebnisses mit der Kommune des Vorgangs (Protokoll)."""
+
+    pruefung: zusammenfassung_pruefung.Pruefung
+    kommune_id: Any = None
+
+
+def _pruefen(batch: ZusammenfassungsBatch, ergebnisse: list[BatchErgebnis], provider: Any) -> dict[str, _Geprueft]:
+    """
+    Mechanische Prüfung der Ergebnisse eines Batches (Issue #1271) je ``custom_id``, vor der Transaktion der
+    Übernahme: Das Material (Metadaten, Beratungsverlauf, Dokumente) wird je Vorgang neu zusammengestellt wie beim
+    Einreichen (``SummaryService.vorbereiten``). Fehlt es inzwischen, gilt das Ergebnis als nicht prüfbar.
+    """
+    from insight_ai.services.summarizer import SummaryService
+    from insight_core.services import summary_store
+
+    texte: dict[str, tuple[str, str, str]] = {}
+    for ergebnis in ergebnisse:
+        eintrag = batch.anfragen.get(ergebnis.custom_id) or {}
+        if not eintrag.get("vorgang"):
+            continue
+        text, einfach = zerlegen(ergebnis.text, json_pflicht=bool(eintrag.get("json")))
+        if text:
+            texte[ergebnis.custom_id] = (str(eintrag["vorgang"]), text, einfach)
+    if not texte:
+        return {}
+    dienst = SummaryService(provider=provider)
+    vorgaenge = {str(v.pk): v for v in summary_store.vorgaenge(kennung for kennung, _t, _e in texte.values())}
+    pruefungen: dict[str, _Geprueft] = {}
+    for custom_id, (kennung, text, einfach) in texte.items():
+        vorgang = vorgaenge.get(kennung)
+        try:
+            vorbereitung = dienst.vorbereiten(vorgang, einfach=bool(einfach)) if vorgang is not None else None
+        except Exception:
+            # Ein Vorgang darf die Übernahme der übrigen nicht aufhalten (der Batch bliebe sonst offen)
+            logger.exception("Material von Vorgang %s für die Prüfung nicht zusammengestellt", kennung)
+            vorbereitung = None
+        if vorgang is None or vorbereitung is None or _material_geaendert(batch.anfragen.get(custom_id), vorbereitung):
+            # Andere Anlagen als beim Einreichen: nicht prüfbar statt verworfen, damit der
+            # Vorgang nicht für die ganze Prompt-Fassung aus dem Tagesbatch fällt; der nächste Lauf fasst neu zusammen
+            pruefungen[custom_id] = _Geprueft(NICHT_PRUEFBAR)
+            continue
+        pruefung = zusammenfassung_pruefung.pruefen_beide(text, einfach, vorbereitung.pruefquelle())
+        pruefungen[custom_id] = _Geprueft(pruefung, vorgang.body_id)
+    return pruefungen
+
+
+def _material_geaendert(eintrag: Any, vorbereitung: Any) -> bool:
+    """
+    Weichen die Anlagen vom Einreichen ab (neue oder entfernte Datei)? Dann ist der Text je Anlage anders gekürzt, und
+    eine richtige Zahl könnte im neuen Material fehlen. Ältere Einträge ohne Angabe gelten als gleich.
+    """
+    if not isinstance(eintrag, dict) or eintrag.get("dateien") is None:
+        return False
+    return sorted(map(str, eintrag["dateien"])) != sorted(str(i) for i in vorbereitung.datei_ids)
+
+
 def _verloren(batch_pk: Any, grund: str) -> None:
     """Batch nicht mehr abrufbar: als verloren abschließen und seine Schätzung als Verbrauch verbuchen."""
     with transaction.atomic():
@@ -396,15 +472,23 @@ def _verloren(batch_pk: Any, grund: str) -> None:
 
 
 def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) -> int:
-    """Ergebnisse eines Batches übernehmen, genau einmal (Zeilensperre, Status)."""
+    """
+    Ergebnisse eines Batches übernehmen, genau einmal (Zeilensperre, Status). Geprüft wird vorher, außerhalb der
+    Transaktion (``_pruefen``); ein Ergebnis ohne Prüfung gilt als nicht prüfbar und wird nicht gespeichert.
+    """
     from insight_core.services import summary_store
+
+    vorab = ZusammenfassungsBatch.objects.filter(pk=batch_pk, status=ZusammenfassungsBatch.Status.EINGEREICHT).first()
+    if vorab is None:
+        return 0
+    geprueft_je_anfrage = _pruefen(vorab, ergebnisse, provider)
 
     with transaction.atomic():
         batch = ZusammenfassungsBatch.objects.select_for_update().get(pk=batch_pk)
         if batch.status != ZusammenfassungsBatch.Status.EINGEREICHT:
             return 0
         endpunkt = getattr(provider, "endpunkt", None)
-        gespeichert = verworfen = fehlgeschlagen = 0
+        gespeichert = verworfen = fehlgeschlagen = geprueft_verworfen = 0
         summe = Decimal(0)
         pruefungen: list[tuple[str, list[str], list[dict[str, Any]], list[dict[str, Any]]]] = []
         for ergebnis in ergebnisse:
@@ -435,6 +519,39 @@ def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) 
             )
             if hinweis and pruefung is not None:
                 hinweis += HINWEIS_VERORTUNG
+            # Mechanische Prüfung (Issue #1271): Verworfenes wird protokolliert und nicht gespeichert. Die
+            # Prompt-Fassung stammt aus dem Einreichen (Batches von vor #1271: 0)
+            geprueft = geprueft_je_anfrage.get(ergebnis.custom_id) or _Geprueft(NICHT_PRUEFBAR)
+            kommune_id = geprueft.kommune_id
+            fassung = int(eintrag.get("fassung") or 0)
+            if geprueft.pruefung.befund is not None:
+                verworfen += 1
+                if geprueft.pruefung is not NICHT_PRUEFBAR:
+                    geprueft_verworfen += 1
+                    zusammenfassung_pruefung.protokollieren(
+                        vorgang_id,
+                        kommune_id,
+                        text,
+                        geprueft.pruefung.befund,
+                        weg="batch",
+                        hinweis=hinweis,
+                        batch_id=batch.batch_id,
+                        prompt_fassung=fassung,
+                    )
+                continue
+            if geprueft.pruefung.befund_einfach is not None:
+                zusammenfassung_pruefung.protokollieren(
+                    vorgang_id,
+                    kommune_id,
+                    einfach,
+                    geprueft.pruefung.befund_einfach,
+                    weg="batch",
+                    teil="einfache_sprache",
+                    hinweis=hinweis,
+                    batch_id=batch.batch_id,
+                    prompt_fassung=fassung,
+                )
+                einfach = ""
             if summary_store.speichern(
                 vorgang_id,
                 text,
@@ -444,6 +561,7 @@ def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) 
                 einfach=einfach,
                 stand=str(eintrag.get("stand") or ""),
                 ersetzt=eintrag.get("ersetzt"),
+                prompt_fassung=fassung,
             ):
                 gespeichert += 1
                 if pruefung is not None:
@@ -456,10 +574,12 @@ def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) 
         batch.kosten_usd = summe
         batch.save(update_fields=["status", "abgeholt_am", "gespeichert", "verworfen", "fehlgeschlagen", "kosten_usd"])
     logger.info(
-        "Zusammenfassungs-Batch %s übernommen: %d gespeichert, %d verworfen, %d ohne Ergebnis, Kosten %s USD",
+        "Zusammenfassungs-Batch %s übernommen: %d gespeichert, %d verworfen (davon %d von der Prüfung), "
+        "%d ohne Ergebnis, Kosten %s USD",
         batch.batch_id,
         gespeichert,
         verworfen,
+        geprueft_verworfen,
         fehlgeschlagen,
         summe.quantize(Decimal("0.0001")),
     )

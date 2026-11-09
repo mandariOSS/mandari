@@ -104,7 +104,7 @@ def test_grenze(client: Client, vorgang: OParlPaper, monkeypatch: Any) -> None:
 
 def test_schalter_unter_zusammenfassung(client: Client, vorgang: OParlPaper) -> None:
     html = client.get(reverse("insight_core:insight:paper_summary", args=[vorgang.pk])).content.decode()
-    assert 'x-data="kiBewertung"' in html and "War die Zusammenfassung hilfreich?" in html
+    assert 'x-data="kiBewertung"' in html and "War die Kurzfassung hilfreich?" in html and "Hilfreich?" in html
     assert f'data-fassung="{ki_bewertung.fassung(vorgang.summary)}"' in html
     assert 'aria-label="Ja, hilfreich"' in html and 'aria-label="Nein, nicht hilfreich"' in html
 

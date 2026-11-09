@@ -19,6 +19,12 @@ neuer Text hinzu, wird das Ergebnis ausgegeben, aber nicht gespeichert. Der Prom
 dessen Stand wird mitgespeichert, damit ein späteres Ergebnis die Zusammenfassung als veraltet erkennen lässt
 (``insight_core.services.summary_store.veraltet``, Issue #1257).
 
+Vor dem Speichern prüft ein Programm jede Zusammenfassung gegen das Material des Prompts (Issue #1271,
+``zusammenfassung_pruefung``): Zahlen, Daten, Beträge und Fraktionen müssen dort stehen, längere wörtliche Übernahmen
+und Hausnummern führen zum Verwerfen. Eine verworfene Zusammenfassung wird protokolliert und nicht angezeigt
+(``SummaryRejectedError``); fällt nur die Fassung in Einfacher Sprache durch, entfällt nur sie. Gespeichert wird mit
+der Prompt-Fassung (``prompts.PROMPT_FASSUNG``).
+
 Den Anbieter liefert ``get_summary_provider()``: nur für die Zusammenfassungen ggf. die Claude API, sonst der
 Endpunkt des Bürgerportals. Mit der Zusammenfassung wird gespeichert, wer sie erstellt hat
 (``OParlPaper.summary_hinweis``: Anbieter, Modell, Verarbeitungsort), damit der Hinweis darunter stimmt.
@@ -38,9 +44,11 @@ from insight_ai.providers import get_summary_provider
 from insight_ai.providers.base import STANDARD_MAX_AUSGABE, ChatMessage
 from insight_ai.providers.claude import BudgetErschoepftError
 
+from . import zusammenfassung_pruefung
 from .prompts import (
     EINFACH_SYSTEM_ZUSATZ,
     PAPER_SUMMARY_SYSTEM_PROMPT,
+    PROMPT_FASSUNG,
     TAGESBATCH_SCHEMA,
     VERORTUNG_SYSTEM_ZUSATZ,
     ZUSAMMENFASSUNG_SCHEMA,
@@ -116,6 +124,14 @@ class SummaryRevokedError(SummaryError):
     pass
 
 
+class SummaryRejectedError(SummaryError):
+    """Die Zusammenfassung hat die mechanische Prüfung nicht bestanden (``zusammenfassung_pruefung``)."""
+
+    def __init__(self, befund: zusammenfassung_pruefung.Befund) -> None:
+        super().__init__(befund.grund)
+        self.befund = befund
+
+
 class TextPendingError(SummaryError):
     """Noch kein Text, aber die Texterkennung mindestens einer Anlage steht aus: später erneut versuchen."""
 
@@ -138,6 +154,25 @@ class Vorbereitung:
     schema: dict[str, Any] | None = None
     #: Beratungsstand, den der Prompt kennt (``summary_store.beratungsstand``, Issue #1257); wird mitgespeichert
     stand: str = ""
+    #: Material der Prüfung (Issue #1271): Nutzerprompt mit Metadaten, Beratungsverlauf und Dokumenten
+    quelle: str = ""
+    #: Angaben, die wörtlich in der Zusammenfassung stehen dürfen (Titel, Gremien, Kommune)
+    erlaubt: tuple[str, ...] = ()
+
+    def pruefquelle(self) -> zusammenfassung_pruefung.Quelle:
+        """Quelle der mechanischen Prüfung (``zusammenfassung_pruefung.pruefen``)."""
+        return zusammenfassung_pruefung.quelle_aus(self.quelle, self.erlaubt)
+
+
+@dataclass(frozen=True)
+class Entwurf:
+    """Antwort der KI auf eine ``Vorbereitung``, geprüft, aber noch nicht gespeichert."""
+
+    zusammenfassung: str
+    einfach: str
+    pruefung: zusammenfassung_pruefung.Pruefung
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class SummaryService:
@@ -175,6 +210,7 @@ class SummaryService:
             NoTextContentError: If no text content is available
             APINotConfiguredError: If the API is not configured
             BudgetExhaustedError: Monthly budget of the summaries (Claude API) used up
+            SummaryRejectedError: Die Zusammenfassung hat die mechanische Prüfung nicht bestanden (Issue #1271)
             SummaryError: For other generation errors
         """
         # Check if API is available
@@ -209,30 +245,11 @@ class SummaryService:
             # Der KI-Aufruf dauert Minuten: Datenbankverbindung solange an den Pool zurückgeben
             release_idle_thread_connections()
 
-            # Modelle mit Reasoning brauchen viel Platz vor der eigentlichen Antwort: Obergrenze aus der
-            # KI-Konfiguration (AISettings.insight_max_output_tokens)
-            max_tokens = getattr(self.provider, "max_output_tokens", 0) or STANDARD_MAX_AUSGABE
-            if vorbereitung.schema is not None:
-                response = self.provider.chat_completion(
-                    messages=vorbereitung.nachrichten,
-                    max_tokens=max_tokens + ZUSATZ_AUSGABE_EINFACH,
-                    temperature=0.3,
-                    schema=vorbereitung.schema,
-                )
-                summary, einfach = zerlegen(response.content, json_pflicht=True)
-                if not summary:
-                    raise SummaryError("Antwort ohne Zusammenfassung")
-            else:
-                response = self.provider.chat_completion(
-                    messages=vorbereitung.nachrichten,
-                    max_tokens=max_tokens,
-                    temperature=0.3,
-                )
-                summary, einfach = response.content, ""
+            entwurf = self.entwurf_erstellen(vorbereitung)
+            summary, einfach = entwurf.zusammenfassung, entwurf.einfach
 
             logger.info(
-                f"Summary generated for {paper.id}: "
-                f"{response.input_tokens} input, {response.output_tokens} output tokens"
+                f"Summary generated for {paper.id}: {entwurf.input_tokens} input, {entwurf.output_tokens} output tokens"
             )
 
             # Während der Erstellung zurückgenommen (Vorgang oder Anlage)? Dann nichts ausgeben
@@ -242,7 +259,27 @@ class SummaryService:
             # Wer sie erstellt hat (Hinweis unter dem Text, auch wenn sie unten nicht gespeichert wird);
             # Ersatz-Anbieter in Tests haben keinen
             hinweis = getattr(self.provider, "zusammenfassung_hinweis", "")
-            paper.summary_hinweis = (hinweis if isinstance(hinweis, str) else "")[:300]
+            hinweis = (hinweis if isinstance(hinweis, str) else "")[:300]
+
+            # Mechanische Prüfung (Issue #1271): Verworfenes wird protokolliert und nicht ausgegeben
+            pruefung = entwurf.pruefung
+            if pruefung.befund is not None:
+                zusammenfassung_pruefung.protokollieren(
+                    paper.pk, paper.body_id, summary, pruefung.befund, weg="klick", hinweis=hinweis
+                )
+                raise SummaryRejectedError(pruefung.befund)
+            if pruefung.befund_einfach is not None:
+                zusammenfassung_pruefung.protokollieren(
+                    paper.pk,
+                    paper.body_id,
+                    einfach,
+                    pruefung.befund_einfach,
+                    weg="klick",
+                    teil="einfache_sprache",
+                    hinweis=hinweis,
+                )
+                einfach = ""
+            paper.summary_hinweis = hinweis
 
             # Save to paper if requested – nicht, wenn inzwischen neuer Text vorliegt: Das Abonnement hätte die
             # Zusammenfassung verworfen, sie stammt aus dem älteren Text
@@ -253,12 +290,21 @@ class SummaryService:
                     paper.summary = summary
                     paper.summary_einfach = einfach or None
                     paper.summary_stand = vorbereitung.stand
-                    paper.save(update_fields=["summary", "summary_hinweis", "summary_einfach", "summary_stand"])
+                    paper.summary_prompt_fassung = PROMPT_FASSUNG
+                    paper.save(
+                        update_fields=[
+                            "summary",
+                            "summary_hinweis",
+                            "summary_einfach",
+                            "summary_stand",
+                            "summary_prompt_fassung",
+                        ]
+                    )
                     logger.info(f"Summary saved to paper {paper.id}")
 
             return summary
 
-        except (NoTextContentError, APINotConfiguredError, SummaryRevokedError):
+        except (NoTextContentError, APINotConfiguredError, SummaryRevokedError, SummaryRejectedError):
             raise
         except BudgetErschoepftError as e:
             logger.warning("Summary for paper %s not generated: monthly budget of the summaries used up", paper.id)
@@ -269,6 +315,43 @@ class SummaryService:
             raise SummaryError(
                 "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
             ) from e
+
+    def entwurf_erstellen(self, vorbereitung: Vorbereitung) -> Entwurf:
+        """
+        Fragt den Anbieter mit dem vorbereiteten Prompt und prüft die Antwort mechanisch; speichert nichts.
+
+        Einzelaufruf (``generate_summary``) und Stichprobe (``manage.py zusammenfassung_stichprobe``) nutzen ihn.
+        Fehler des Anbieters gehen unverändert weiter; eine strukturierte Antwort ohne Zusammenfassung ist ein
+        ``SummaryError``.
+        """
+        # Modelle mit Reasoning brauchen viel Platz vor der eigentlichen Antwort: Obergrenze aus der
+        # KI-Konfiguration (AISettings.insight_max_output_tokens)
+        max_tokens = getattr(self.provider, "max_output_tokens", 0) or STANDARD_MAX_AUSGABE
+        if vorbereitung.schema is not None:
+            response = self.provider.chat_completion(
+                messages=vorbereitung.nachrichten,
+                max_tokens=max_tokens + ZUSATZ_AUSGABE_EINFACH,
+                temperature=0.3,
+                schema=vorbereitung.schema,
+            )
+            summary, einfach = zerlegen(response.content, json_pflicht=True)
+            if not summary:
+                raise SummaryError("Antwort ohne Zusammenfassung")
+        else:
+            response = self.provider.chat_completion(
+                messages=vorbereitung.nachrichten,
+                max_tokens=max_tokens,
+                temperature=0.3,
+            )
+            summary, einfach = response.content, ""
+        pruefung = zusammenfassung_pruefung.pruefen_beide(summary, einfach, vorbereitung.pruefquelle())
+        return Entwurf(
+            zusammenfassung=summary,
+            einfach=einfach,
+            pruefung=pruefung,
+            input_tokens=getattr(response, "input_tokens", 0) or 0,
+            output_tokens=getattr(response, "output_tokens", 0) or 0,
+        )
 
     def vorbereiten(
         self, paper: "OParlPaper", orte: list[Any] | None = None, einfach: bool = False
@@ -361,6 +444,9 @@ class SummaryService:
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=user_prompt),
         ]
+        # Wörtlich erlaubt (Prüfung, Issue #1271): Titel, Kommune und Gremien aus Metadaten und Beratungsverlauf
+        gremien = {str(schritt.organization_name) for schritt in schritte if schritt.organization_name}
+        erlaubt = (paper.name or "", body_name or "", *sorted(organizations | gremien))
         return Vorbereitung(
             nachrichten=messages,
             datei_ids=datei_ids,
@@ -368,6 +454,8 @@ class SummaryService:
             orte_ids=[ort.pk for ort in orte] if orte is not None else None,
             schema=TAGESBATCH_SCHEMA if orte is not None else (ZUSAMMENFASSUNG_SCHEMA if einfach else None),
             stand=summary_store.beratungsstand(schritte, now=jetzt),
+            quelle=user_prompt,
+            erlaubt=tuple(angabe for angabe in erlaubt if angabe),
         )
 
     def _collect_text_content(self, paper: "OParlPaper") -> str:

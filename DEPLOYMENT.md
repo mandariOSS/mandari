@@ -1219,7 +1219,21 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
 
    `--kommune` (mehrfach) und `--ab JJJJ-MM-TT` grenzen ein, höchstens 500 Vorgänge je Lauf. Zusammenfassungen von
    vor #1257 kennen keinen Stand und gelten als veraltet, sobald der Vorgang ein Ergebnis hat.
-5. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
+5. Mechanische Prüfung und Prompt-Fassung (#1271): Jede neue Zusammenfassung (Klick und Batch) wird vor dem Speichern
+   gegen das Material ihres Prompts geprüft; Verworfene stehen im Admin unter „Verworfene KI-Zusammenfassungen“ und
+   gehen mit derselben Prompt-Fassung nicht erneut in den Tagesbatch. Bestehende Zusammenfassungen bleiben stehen,
+   nichts wird deswegen neu erzeugt. Vor einer neuen Prompt-Fassung (`PROMPT_FASSUNG` in
+   `insight_ai/services/prompts.py`) einen Prüfbogen ziehen; ohne `--ausfuehren` mit den vorhandenen
+   Zusammenfassungen und ohne KI-Aufruf, mit `--ausfuehren` 30 Einzelaufrufe zum vollen Preis (nur nach Freigabe):
+
+   ```bash
+   docker exec mandari python manage.py zusammenfassung_stichprobe --kommune "<Kommune>" --bis 2026-11-01        --ausgabe /tmp/stichprobe.tsv
+   docker exec mandari python manage.py zusammenfassung_stichprobe --auswerten /tmp/stichprobe.tsv
+   ```
+
+   Migrationen `insight_core/0071` (eine Spalte mit Datenbank-Standardwert, im Ingestor als Anreicherungsspalte
+   eingetragen) und `insight_ai/0003` (nur eine neue Tabelle).
+6. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
    reserviert offene Batches mit ihrer Schätzung. Ist es erreicht, ruht der Batch, und „Zusammenfassen“ meldet
    „derzeit nicht verfügbar“. Stand im Admin unter „KI-Verbrauch (Claude)“. Das Ausgabenlimit in der Konsole von
    Anthropic sollte zusätzlich gesetzt sein.

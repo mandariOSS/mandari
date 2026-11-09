@@ -371,7 +371,7 @@ class TestVorgangsseite:
         assert vorgang.summary == "Kurzfassung des Vorgangs."
         assert vorgang.summary_hinweis.startswith("Claude von Anthropic (claude-haiku-5-5)")
         html = antwort.content.decode()
-        assert "Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten." in html
+        assert "Mit KI zusammengefasst; Fehler sind möglich." in html
         # Anbieter und Verarbeitungsort stehen in der Datenschutzerklärung, nicht unter dem Text
         assert "KI-Anbieter" not in html and "Verarbeitungsort" not in html
 

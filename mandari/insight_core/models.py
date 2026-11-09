@@ -177,13 +177,14 @@ class SourceDeletionModel(CanonicalIdModel):
         paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
         if isinstance(self, OParlPaper | OParlFile) and paper_id:
             OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(
-                summary=None, summary_hinweis="", summary_einfach=None, summary_stand=""
+                summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
             )
             if isinstance(self, OParlPaper):
                 self.summary = None
                 self.summary_hinweis = ""
                 self.summary_einfach = None
                 self.summary_stand = ""
+                self.summary_prompt_fassung = 0
 
     @property
     def depublished(self) -> bool:
@@ -983,6 +984,16 @@ class OParlPaper(SourceDeletionModel):
         db_default="",
         verbose_name="Beratungsstand der Zusammenfassung",
         help_text="Prüfsumme der Beratungsergebnisse, die die gespeicherte Zusammenfassung kannte.",
+    )
+    # Fassung des Prompts, mit der die gespeicherte Zusammenfassung entstand (Issue #1271,
+    # ``insight_ai.services.prompts.PROMPT_FASSUNG``); 0: vor der Zählung. Datenbank-Standardwert wie bei
+    # ``summary_hinweis`` (Ingestor, Rückfall auf ein älteres Image). SmallIntegerField statt Positive…: Dessen
+    # CHECK-Bedingung prüfte PostgreSQL beim Anlegen gegen alle Vorgänge unter exklusiver Sperre der Tabelle
+    summary_prompt_fassung = models.SmallIntegerField(
+        default=0,
+        db_default=0,
+        verbose_name="Prompt-Fassung der Zusammenfassung",
+        help_text="Fassung des Prompts, mit der die gespeicherte Zusammenfassung entstand (0: vor der Zählung).",
     )
     locations = models.JSONField(blank=True, null=True)
 
