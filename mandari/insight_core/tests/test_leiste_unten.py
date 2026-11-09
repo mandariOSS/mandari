@@ -87,6 +87,7 @@ def test_mehr_markiert_bereiche_im_blatt(besucher: Client, seite: str) -> None:
 def test_blatt_mehr_inhalt(besucher: Client) -> None:
     blatt = _blatt(_seite(besucher, "paper_list"))
     for eintrag in (
+        "Beschlüsse",
         "Gremien",
         "Personen",
         "KI-Assistent",
@@ -96,7 +97,7 @@ def test_blatt_mehr_inhalt(besucher: Client) -> None:
         "Anmelden",
     ):
         assert eintrag in blatt, eintrag
-    assert "Beschlüsse" not in blatt and "Ratsfragen" not in blatt, "nur mit Inhalten"
+    assert "Ratsfragen" not in blatt, "nur mit Inhalten; Beschlüsse stehen seit #1270 immer im Blatt"
     assert "pb-[max(1.25rem,env(safe-area-inset-bottom))]" in blatt
     assert 'aria-label="Schließen"' in blatt
 
@@ -142,7 +143,6 @@ def test_safe_area_seitlich_und_oben(besucher: Client) -> None:
 @pytest.mark.parametrize(
     ("seite", "einstellungen"),
     [
-        ("decision_list", {}),
         ("question_portal", {"INSIGHT_QUESTIONS_ENABLED": False}),
     ],
 )
@@ -158,6 +158,12 @@ def test_mehr_nur_hervorgehoben_wenn_das_blatt_den_bereich_zeigt(
     assert "bg-primary-100" not in leiste
 
 
+def test_mehr_hervorgehoben_auf_den_beschluessen(besucher: Client) -> None:
+    # Beschlüsse stehen seit Issue #1270 immer im Blatt „Mehr“
+    leiste = _leiste(_seite(besucher, "decision_list"))
+    assert "enthält den aktuellen Bereich" in leiste
+
+
 @override_settings(INSIGHT_QUESTIONS_ENABLED=True)
 def test_mehr_hervorgehoben_bei_eingeschalteten_ratsfragen(besucher: Client) -> None:
     leiste = _leiste(_seite(besucher, "question_portal"))
@@ -167,11 +173,11 @@ def test_mehr_hervorgehoben_bei_eingeschalteten_ratsfragen(besucher: Client) -> 
 def test_bedingte_bereiche_im_blatt() -> None:
     from insight_core.navigation import more_area_listed
 
-    aus = {"decisions": False, "questions": False, "subscriptions": False}
+    aus = {"questions": False, "subscriptions": False}
     assert more_area_listed("gremien", **aus) and more_area_listed("gespeichert", **aus)
-    assert not more_area_listed("vorgaenge", decisions=True, questions=True, subscriptions=True), "Leiste, nicht Blatt"
+    assert more_area_listed("beschluesse", **aus), "Beschlüsse stehen immer im Blatt (#1270)"
+    assert not more_area_listed("vorgaenge", questions=True, subscriptions=True), "Leiste, nicht Blatt"
     for bereich, schalter in (
-        ("beschluesse", "decisions"),
         ("ratsfragen", "questions"),
         ("benachrichtigungen", "subscriptions"),
     ):

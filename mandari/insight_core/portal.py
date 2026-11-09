@@ -74,6 +74,7 @@ DEEP_LINK_NAMES = frozenset(
         "person_list",
         "person_detail",
         "decision_list",
+        "decision_tracking",
         "decision_detail",
         "question_portal",
         "question_detail",

@@ -22,7 +22,7 @@ from insight_core.navigation import NAV_AREAS
 
 pytestmark = pytest.mark.django_db
 
-BEREICHE = ["Übersicht", "Sitzungen", "Vorgänge", "Gremien", "Personen", "Karte", "KI-Assistent"]
+BEREICHE = ["Übersicht", "Sitzungen", "Beschlüsse", "Vorgänge", "Gremien", "Personen", "Karte", "KI-Assistent"]
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def _beschriftungen(nav: str) -> list[str]:
 
 
 class TestBereiche:
-    def test_sieben_bereiche_in_fester_folge(self, besucher: Client) -> None:
+    def test_acht_bereiche_in_fester_folge(self, besucher: Client) -> None:
         nav = _bereiche(_seite(besucher, "paper_list"))
         assert _beschriftungen(nav) == BEREICHE
 
@@ -90,8 +90,10 @@ class TestBereiche:
         aktiv = re.search(r'<a[^>]*aria-current="page"[^>]*>.*?</a>', nav, re.S)
         assert aktiv and "Karte" in aktiv.group(0)
 
-    def test_beschluesse_nur_wenn_die_kommune_sie_veroeffentlicht(self, besucher: Client, kommune: OParlBody) -> None:
-        assert "Beschlüsse" not in _bereiche(_seite(besucher, "paper_list"))
+    def test_beschluesse_immer_die_umsetzung_als_reiter(self, besucher: Client, kommune: OParlBody) -> None:
+        # Seit Issue #1270 sind „Beschlüsse“ die Liste der Entscheidungen aus dem RIS: immer in der Navigation. Der
+        # Umsetzungsstand der Verwaltung ist dort ein Reiter, der erst mit freigegebenen Beschlüssen erscheint (#1261)
+        assert "Beschlüsse" in _beschriftungen(_bereiche(_seite(besucher, "paper_list")))
         tenant = SessionTenant.objects.create(
             name="Verwaltung Beispielstadt",
             slug="beispielstadt",
@@ -99,8 +101,7 @@ class TestBereiche:
             insight_publish=True,
             implementation_publish=True,
         )
-        # Eingeschaltet, aber noch kein Beschluss freigegeben: kein Eintrag, der auf eine leere Liste führt (#1261)
-        assert "Beschlüsse" not in _bereiche(_seite(besucher, "paper_list"))
+        assert "/insight/beschluesse/umsetzung/" not in _seite(besucher, "decision_list")
         rat = SessionOrganization.objects.create(tenant=tenant, name="Rat", organization_type="council")
         sitzung = SessionMeeting.objects.create(
             tenant=tenant, organization=rat, name="Rat", start=timezone.now() - timedelta(days=7), is_public=True
@@ -108,7 +109,7 @@ class TestBereiche:
         SessionAgendaItem.objects.create(
             meeting=sitzung, number="1", name="Radweg", vote_result="approved", implementation_public=True
         )
-        assert "Beschlüsse" in _beschriftungen(_bereiche(_seite(besucher, "paper_list")))
+        assert "/insight/beschluesse/umsetzung/" in _seite(besucher, "decision_list")
 
     def test_ratsfragen_nur_wenn_eingeschaltet(self, besucher: Client) -> None:
         with override_settings(INSIGHT_QUESTIONS_ENABLED=False):

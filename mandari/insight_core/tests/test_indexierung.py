@@ -453,12 +453,13 @@ class TestGrundSitemap:
         assert "/insight/vorgaenge/" not in grund and "/insight/termine/" not in grund
 
     def test_listen_je_kommune(self, client: Client, stadt: dict[str, Any]) -> None:
-        # Erste Seite der Listen mit eigener Adresse (Issue #939), direkt nach der Stadtseite
+        # Erste Seite der Listen mit eigener Adresse (Issue #939, Beschlüsse seit #1270), direkt nach der Stadtseite
         locs = _locs(_xml(client, "/sitemap-insight-koeln.xml"))
         listen = [
-            f"{settings.SITE_URL}/insight/k/koeln/{liste}/" for liste in ("termine", "vorgaenge", "gremien", "personen")
+            f"{settings.SITE_URL}/insight/k/koeln/{liste}/"
+            for liste in ("termine", "vorgaenge", "beschluesse", "gremien", "personen")
         ]
-        assert locs[1:5] == listen
+        assert locs[1:6] == listen
 
     def test_ohne_slug_keine_listen(self, client: Client) -> None:
         body = _kommune(2, "Stadt Darmstadt")
@@ -965,13 +966,23 @@ def beschluss() -> Any:
 class TestBeschluesse:
     def test_liste_mit_robots_und_canonical(self, client: Client, beschluss: Any) -> None:
         client.get(reverse("insight_core:insight:set_body", args=[beschluss.meeting.tenant.oparl_body_id]))
+        # Liste der Entscheidungen (Issue #1270): kanonisch ist die Adresse je Kommune
         html = client.get("/insight/beschluesse/").content.decode()
         assert _robots(html) == "index, follow"
-        assert _canonical(html) == f"{settings.SITE_URL}/insight/beschluesse/"
-
-        gefiltert = client.get("/insight/beschluesse/", {"status": "open"}).content.decode()
+        assert _canonical(html) == f"{settings.SITE_URL}/insight/k/nord/beschluesse/"
+        gefiltert = client.get("/insight/beschluesse/", {"ergebnis": "abgelehnt"}).content.decode()
         assert _robots(gefiltert) == "noindex, follow"
-        assert _canonical(gefiltert) == f"{settings.SITE_URL}/insight/beschluesse/"
+
+        # Umsetzung als Reiter; Filter der Beschlusskontrolle führen dorthin
+        assert client.get("/insight/beschluesse/", {"status": "open"})["Location"] == (
+            "/insight/beschluesse/umsetzung/?status=open"
+        )
+        html = client.get("/insight/beschluesse/umsetzung/").content.decode()
+        assert _robots(html) == "index, follow"
+        assert _canonical(html) == f"{settings.SITE_URL}/insight/beschluesse/umsetzung/"
+        gefiltert = client.get("/insight/beschluesse/umsetzung/", {"status": "open"}).content.decode()
+        assert _robots(gefiltert) == "noindex, follow"
+        assert _canonical(gefiltert) == f"{settings.SITE_URL}/insight/beschluesse/umsetzung/"
 
     def test_detail_mit_robots_und_canonical(self, client: Client, beschluss: Any) -> None:
         antwort = client.get(f"/insight/beschluesse/{beschluss.pk}/")

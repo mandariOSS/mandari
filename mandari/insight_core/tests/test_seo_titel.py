@@ -855,6 +855,8 @@ class TestHoechstens70Zeichen:
             "/insight/k/muenster/vorgaenge/",
             "/insight/k/muenster/gremien/",
             "/insight/k/muenster/personen/",
+            "/insight/k/muenster/beschluesse/",
+            "/insight/beschluesse/umsetzung/",
         ],
     )
     def test_uebersichten_im_buergerportal(self, lange_namen: dict[str, str], url: str) -> None:

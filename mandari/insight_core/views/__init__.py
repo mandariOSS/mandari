@@ -27,6 +27,7 @@ from .chat import (
 from .decisions import (  # noqa: F401
     DecisionDetailView,
     DecisionListView,
+    DecisionTrackingView,
     confirm_decision_subscription,
     unsubscribe_decision,
 )
