@@ -93,10 +93,14 @@ class Zeile:
     bezug: str = ""
     verlauf: list[sitzung.VerlaufEintrag] = field(default_factory=list)
     von_mir: bool = False
-    #: Verschieben wie bisher nur für TOPs der obersten Ebene (nicht den Genehmigungs-TOP)
+    #: Verschieben: alle TOPs außer dem Genehmigungs-TOP, Unterpunkte eingeschlossen (Issue #1285)
     verschiebbar: bool = False
+    #: Erster bzw. letzter unter seinen Geschwistern (TOPs eines Teils oder Unterpunkte desselben TOPs)
     erster: bool = False
     letzter: bool = False
+    #: Nummer des TOPs darüber, unter den „Einrücken“ diesen TOP legt; leer, wenn das nicht geht
+    einruecken_unter: str = ""
+    hat_unterpunkte: bool = False
     offen: bool = False
     beschreibung: str = ""
 
@@ -253,10 +257,17 @@ def tagesordnung(
     teile: dict[str, list[Zeile]] = {"oeffentlich": [], "intern": []}
     alle_unterlagen = _unterlagen_alle([z.item for z in ordnung.zeilen], membership)
     for teil, quelle in (("oeffentlich", ordnung.oeffentlich), ("intern", ordnung.intern)):
-        oben = [z for z in quelle if not z.unter and not z.item.is_approval_item]
+        # Geschwister je Ebene: TOPs der obersten Ebene (ohne Genehmigungs-TOP), Unterpunkte je TOP
+        gruppen: dict[Any, list[Any]] = {}
+        for z in quelle:
+            if not z.item.is_approval_item:
+                gruppen.setdefault(z.item.parent_id, []).append(z.item.pk)
+        oben = gruppen.get(None, [])
         for z in quelle:
             item = z.item
             verweise = _verweise(item, alle_unterlagen[item.pk])
+            gruppe = gruppen.get(item.parent_id, [])
+            stelle = oben.index(item.pk) if item.pk in oben else -1
             zeile = Zeile(
                 item=item,
                 unter=z.unter,
@@ -264,11 +275,15 @@ def tagesordnung(
                 unterlagen=verweise,
                 bezug=_bezug(item, verweise),
                 von_mir=bool(item.proposed_by_id and item.proposed_by_id == membership.pk),
-                verschiebbar=not z.unter and not item.is_approval_item,
-                erster=bool(oben) and oben[0].item.pk == item.pk,
-                letzter=bool(oben) and oben[-1].item.pk == item.pk,
+                verschiebbar=not item.is_approval_item,
+                erster=bool(gruppe) and gruppe[0] == item.pk,
+                letzter=bool(gruppe) and gruppe[-1] == item.pk,
+                hat_unterpunkte=bool(gruppen.get(item.pk)),
                 offen=str(item.pk) == offen_id,
             )
+            if stelle > 0 and not zeile.hat_unterpunkte:
+                vorher = next(v.item for v in quelle if v.item.pk == oben[stelle - 1])
+                zeile.einruecken_unter = str(vorher.number or "")
             # Beratungsverlauf nur für TOPs mit Bezug zum RIS (verknüpfter TOP oder Vorlage), sonst keine Abfrage
             mit_bezug = bool(item.related_agenda_item_id) or any(
                 u.art in ("ris_datei", "ris_vorlage") for u in alle_unterlagen[item.pk]
@@ -587,10 +602,15 @@ def einladung_zeitpunkt(meeting: FactionMeeting) -> dict[str, Any]:
 
 
 def tagesordnung_geaendert(meeting: FactionMeeting) -> bool:
-    """Seit dem letzten Versand TOPs angelegt oder geändert? Dann gehört eine Aktualisierung an alle."""
+    """
+    Seit dem letzten Versand TOPs angelegt oder geändert? Dann bietet die Infoleiste eine Aktualisierung an alle an,
+    oder die Änderungen ohne Aktualisierung zu übernehmen (Issue #1285); danach zählt erst die nächste Änderung.
+    """
     stand = meeting.invitation_updated_at or meeting.invitation_sent_at
     if not stand:
         return False
+    if meeting.agenda_change_acknowledged_at and meeting.agenda_change_acknowledged_at > stand:
+        stand = meeting.agenda_change_acknowledged_at
     # Aufgenommene Vorschläge über reviewed_at (Issue #1160): Die Annahme speichert mit update_fields, updated_at bleibt
     # beim Zeitpunkt des Vorschlags stehen, und der kann vor dem Versand liegen.
     return meeting.agenda_items.filter(
@@ -647,7 +667,7 @@ class Info:
 
     fett: str = ""
     text: str = ""
-    #: Hauptaktion: einladen, freigeben, aktualisieren, starten oder leer
+    #: Hauptaktion: einladen, freigeben, aktualisieren (mit „Ohne Aktualisierung übernehmen“), starten oder leer
     aktion: str = ""
     #: Knopf „Versandergebnis“ neben der Aktion
     versand: bool = False
@@ -713,11 +733,13 @@ def _info(meeting: FactionMeeting, membership: Membership, *, verwalten: bool, v
         return Info()
     darf_starten = membership.has_permission("faction.start")
     if darf_einladen and tagesordnung_geaendert(meeting):
+        # Kein Muss (Issue #1285): Die Änderung gilt schon, in Work sehen alle die neue Fassung
         return Info(
             "Tagesordnung geändert.",
-            "Senden Sie eine Aktualisierung, damit alle die neue Fassung und den Kalendereintrag erhalten.",
+            "In Work sehen alle die neue Fassung. Per E-Mail und im Kalender erhalten sie sie nur mit einer Aktualisierung.",
             "aktualisieren",
             versand=True,
+            starten_ab=_zeitpunkt(start_ab),
         )
     gesendet = meeting.invitation_sent_at
     wann = f"am {_zeitpunkt(gesendet)}" if gesendet else ""

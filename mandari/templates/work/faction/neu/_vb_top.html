@@ -2,19 +2,21 @@
 Ein TOP der Planung (Issue #1071, Muster topZeileHtml/detailHtml): Nummer, Titel (klappt die Angaben auf), Bezug,
 Zahl der Unterlagen, Menü. Aufgeklappt: Titel und Beschreibung (edit_item), Unterlagen, Im Beratungsverlauf, Herkunft;
 Unterpunkt, weitere Angaben im Panel (Unterlagen hochladen und verknüpfen, Links, Sichtbarkeit) und Löschen mit dem
-Dialog nach #897. Verschieben mit move_item (oberste Ebene, nicht der Genehmigungs-TOP): Ziehen am Griff, Pfeiltasten am
-Griff oder Menü „Nach oben“/„Nach unten“; in den anderen Teil ziehen oder im Panel wählen (Issue #1160). Titel und Beschreibung speichern beim Verlassen des Felds (fsTagesordnung,
-frontend/alpine/fs-tagesordnung.ts); das Formular mit edit_item bleibt der Weg ohne Skript.
+Dialog nach #897. Verschieben mit move_item (alle TOPs außer dem Genehmigungs-TOP, auch Unterpunkte): Ziehen am Griff,
+Pfeiltasten am Griff oder Menü „Nach oben“/„Nach unten“; in den anderen Teil ziehen oder im Panel wählen (Issue #1160).
+Ebene (Issue #1285): nach rechts ziehen, Pfeil rechts oder Menü „Zum Unterpunkt von …“ rückt unter den TOP darüber ein,
+nach links, Pfeil links oder „Zum eigenen TOP machen“ rückt aus. Titel und Beschreibung speichern beim Verlassen des
+Felds (fsTagesordnung, frontend/alpine/fs-tagesordnung.ts); das Formular mit edit_item bleibt der Weg ohne Skript.
 Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
 Nichtöffentlich (z.intern): Titel und Bezug weichgezeichnet, die aufgeklappten Angaben (Felder, Unterlagen, Verlauf) hinter
 der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Work, Issue #1201).
 {% endcomment %}
 {% with item=z.item %}
-<li class="fs-top{% if z.unter %} unter{% endif %}{% if z.offen %} offen{% endif %}" id="top-{{ item.pk }}" data-testid="fs-top" data-id="{{ item.pk }}" data-titel="{{ item.title }}"{% if can_edit and z.verschiebbar %} data-verschiebbar{% endif %}>
+<li class="fs-top{% if z.unter %} unter{% endif %}{% if z.offen %} offen{% endif %}" id="top-{{ item.pk }}" data-testid="fs-top" data-id="{{ item.pk }}" data-titel="{{ item.title }}"{% if z.unter %} data-eltern="{{ item.parent_id }}"{% endif %}{% if z.intern %} data-intern{% endif %}{% if can_edit and z.verschiebbar %} data-verschiebbar{% endif %}>
     <div class="fs-top-zeile">
         {% if can_edit and z.verschiebbar %}
         <button type="button" class="fs-griff" data-griff="{{ item.pk }}" aria-label="TOP {{ item.number }} verschieben" aria-describedby="griff-hilfe"
-                @keydown.up="taste($event, 'up')" @keydown.down="taste($event, 'down')"><i data-lucide="grip-vertical" aria-hidden="true"></i></button>
+                @keydown.up="taste($event, 'up')" @keydown.down="taste($event, 'down')" @keydown.right="taste($event, 'in')" @keydown.left="taste($event, 'out')"><i data-lucide="grip-vertical" aria-hidden="true"></i></button>
         {% else %}
         <span class="fs-griff-platz" aria-hidden="true"></span>
         {% endif %}
@@ -48,6 +50,11 @@ der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Wo
                 {% endif %}
                 {% if not z.letzter %}
                 <button type="button" role="menuitem" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-vals='{"action": "move_item", "item_id": "{{ item.pk }}", "direction": "down"}' hx-include="#fs-offen" hx-target="#agenda-container" hx-swap="innerHTML"><i data-lucide="arrow-down" aria-hidden="true"></i>Nach unten</button>
+                {% endif %}
+                {% if z.unter %}
+                <button type="button" role="menuitem" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-vals='{"action": "move_item", "item_id": "{{ item.pk }}", "direction": "out"}' hx-include="#fs-offen" hx-target="#agenda-container" hx-swap="innerHTML"><i data-lucide="indent-decrease" aria-hidden="true"></i>Zum eigenen TOP machen</button>
+                {% elif z.einruecken_unter %}
+                <button type="button" role="menuitem" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-vals='{"action": "move_item", "item_id": "{{ item.pk }}", "direction": "in"}' hx-include="#fs-offen" hx-target="#agenda-container" hx-swap="innerHTML"><i data-lucide="indent-increase" aria-hidden="true"></i>Zum Unterpunkt von TOP {{ z.einruecken_unter }} machen</button>
                 {% endif %}
                 {% endif %}
                 {% if not item.is_approval_item %}

@@ -15,7 +15,7 @@ weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #12
         {% for z in to_intern %}<li{% if z.unter %} class="unter"{% endif %}><span class="nr">{{ z.nummer }}</span><span class="t">{% include "work/faction/sitzung/_noe_text.html" with text=z.item.title noe=True %}</span></li>{% endfor %}
     </ol>
     {% if to_gesperrt %}<p class="fs-meta fs-unter-liste"><i data-lucide="lock" aria-hidden="true"></i> Nichtöffentlicher Teil: {{ to_gesperrt }} TOP{{ to_gesperrt|pluralize:"s" }}, nur für Vereidigte.</p>{% endif %}
-    <p class="fs-meta fs-unter-liste">Die Einladung enthielt die Tagesordnung vom {{ meeting.invitation_updated_at|default:meeting.invitation_sent_at|date:"D d.m., H:i" }}. Änderungen gehen als Aktualisierung an alle.</p>
+    <p class="fs-meta fs-unter-liste">Die Einladung enthielt die Tagesordnung vom {{ meeting.invitation_updated_at|default:meeting.invitation_sent_at|date:"D d.m., H:i" }}. Änderungen sehen alle sofort in Work, per E-Mail nur mit einer Aktualisierung.</p>
 </section>
 {% include "work/faction/neu/_vb_meine_antwort.html" %}
 
