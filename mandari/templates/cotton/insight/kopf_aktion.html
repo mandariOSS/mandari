@@ -1,0 +1,14 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Schlichte Aktion im Kopf einer Detailseite (Issue #1274), so hoch wie „Merken“ daneben und in der Kennfarbe wie
+„Im Ratsinformationssystem ansehen“ (c-insight.ris-link). ``kurz`` ersetzt den Text am Handy, ``download`` lädt die
+Datei herunter, statt sie zu öffnen. Weitere Attribute (type, data-testid) werden durchgereicht.
+  <c-insight.kopf-aktion href="{{ abo_feed.hilfe }}" icon="rss" kurz="Abonnieren">Neues zu diesem Vorgang abonnieren</c-insight.kopf-aktion>
+  <c-insight.kopf-aktion href="{{ termin_ics }}" icon="calendar-plus" download>Termin speichern</c-insight.kopf-aktion>
+{% endcomment %}
+<c-vars href="" icon="" kurz="" download="" />
+<a href="{{ href }}"{% if download %} download{% endif %} {{ attrs }}
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-primary-700 dark:text-primary-300 hover:bg-white dark:hover:bg-gray-700 transition-colors">
+    {% if icon %}<i data-lucide="{{ icon }}" class="w-4 h-4 shrink-0" aria-hidden="true"></i>{% endif %}
+    {% if kurz %}<span class="max-sm:hidden">{{ slot }}</span><span class="sm:hidden">{{ kurz }}</span>{% else %}{{ slot }}{% endif %}
+</a>

@@ -6,6 +6,8 @@ entfallen.
   <c-liste.sitzungen :sitzungen="meetings" />
   <c-liste.sitzungen :sitzungen="meetings" :links="ris_links" dicht ohne_merken
                      zusatz="work/ris/neu/_sitzung_fraktion.html" zusatz_titel="Für die Fraktion" />
+Kommende Sitzungen ohne Tagesordnung tragen das Etikett „angekündigt“, wenn der Aufrufer ``angekuendigt`` setzt
+(Bürgerportal, Issue #1274).
 Parameter: sitzungen; links (Ziele, insight_core.ris_links, ohne Angabe Insight); dicht (Arbeitsfläche: 14 px,
 Zeilen um 36 px); ohne_merken (ohne Stern der Merkliste); zusatz/zusatz_titel (Vorlage einer weiteren Spalte, je Zeile
 mit ``eintrag``, etwa „Für die Fraktion“ in Work).
@@ -40,6 +42,8 @@ mit ``eintrag``, etwa „Für die Fraktion“ in Work).
                         </a>
                         {% if meeting.cancelled %}
                         <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
+                        {% elif meeting.angekuendigt %}
+                        <c-insight.ergebnis :ergebnis="meeting.angekuendigt" klasse="shrink-0" />
                         {% endif %}
                     </div>
                     <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
