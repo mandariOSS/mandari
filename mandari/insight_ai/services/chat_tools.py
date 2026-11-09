@@ -27,6 +27,7 @@ from django.utils import timezone
 
 from hub.ris import selectors as ris
 from hub.ris.canonical import file_text
+from insight_core.services import ortsschutz
 
 if TYPE_CHECKING:
     from insight_core.models import OParlMeeting, OParlOrganization, OParlPaper
@@ -282,12 +283,24 @@ def _meeting_title(meeting: Any) -> str:
     return str(meeting.get_display_name() or meeting.name or "Sitzung")
 
 
+def _titel(paper: Any) -> str:
+    """Titel eines Vorgangs ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)."""
+    return str(getattr(paper, "titel_oeffentlich", None) or "")
+
+
+def _ohne_nr(paper: Any, text: str | None) -> str | None:
+    """Text eines Vorgangs (Ausschnitt, Beschluss, Dokumentname) ohne Hausnummer, wenn eine Privatanschrift möglich ist."""
+    if paper is None or not text or not ortsschutz.grund_nach_art(paper.paper_type, paper.name):
+        return text
+    return ortsschutz.hausnummern_auslassen(text)
+
+
 def _paper_entry(ctx: ToolContext, paper: OParlPaper, stand: str | None = None) -> dict[str, Any]:
     url = ctx.link("paper_detail", paper.pk)
-    ctx.note(url, paper.name or paper.reference or "Vorgang", "paper")
+    ctx.note(url, _titel(paper) or paper.reference or "Vorgang", "paper")
     return _compact(
         {
-            "titel": _short(paper.name, 200),
+            "titel": _short(_titel(paper), 200),
             "az": paper.reference,
             "art": paper.paper_type,
             "datum": _day(paper.date),
@@ -390,14 +403,20 @@ def _sitzung_details(ctx: ToolContext, meeting: OParlMeeting) -> dict[str, Any]:
         vorlagen = []
         for paper in entry.papers[:3]:
             paper_url = ctx.link("paper_detail", paper.pk)
-            ctx.note(paper_url, paper.name or paper.reference or "Vorgang", "paper")
+            ctx.note(paper_url, _titel(paper) or paper.reference or "Vorgang", "paper")
             # Der Titel der Vorlage steht nur dabei, wenn er nicht schon der des Punkts ist
-            name = _short(paper.name, 120) if paper.name != item.name else None
+            name = _short(_titel(paper), 120) if paper.name != item.name else None
             vorlagen.append(f"Vorlage {' '.join(filter(None, (paper.reference, name))) or '-'} {paper_url}")
         ergebnis = _short(item.result, 160)
+        # Name des Punkts ohne Hausnummer, wenn er oder eine seiner Vorlagen eine Privatanschrift nennen kann (#1269)
+        schutz = next(
+            (g for p in entry.papers if (g := ortsschutz.grund_nach_art(p.paper_type, p.name))),
+            ortsschutz.grund_nach_art(None, item.name),
+        )
+        punkt_name = ortsschutz.oeffentlicher_titel(item.name, None, schutz)
         punkte.append(
             _line(
-                f"TOP {item.number or '?'}: {_short(item.name, 160) or '-'}",
+                f"TOP {item.number or '?'}: {_short(punkt_name, 160) or '-'}",
                 f"Ergebnis: {ergebnis}" if ergebnis else None,
                 *vorlagen,
             )
@@ -481,7 +500,7 @@ def _vorgang_details(ctx: ToolContext, paper: OParlPaper) -> dict[str, Any]:
     from insight_core.services.paper_status import paper_status
 
     url = ctx.link("paper_detail", paper.pk)
-    ctx.note(url, paper.name or paper.reference or "Vorgang", "paper", detail=True)
+    ctx.note(url, _titel(paper) or paper.reference or "Vorgang", "paper", detail=True)
     steps = ris.public_consultation_history([paper.pk]).get(paper.pk, [])
     aktuell = (paper.summary_stand or "") == summary_store.beratungsstand(steps, now=ctx.now)
     zusammenfassung = paper.summary if aktuell else None
@@ -504,13 +523,15 @@ def _vorgang_details(ctx: ToolContext, paper: OParlPaper) -> dict[str, Any]:
         )
     entscheidend = [step for step in steps if step.resolution_text and step.authoritative]
     mit_beschluss = entscheidend or [step for step in steps if step.resolution_text]
-    beschluss = _short(mit_beschluss[-1].resolution_text, 800) if mit_beschluss else None
+    beschluss = _short(_ohne_nr(paper, mit_beschluss[-1].resolution_text), 800) if mit_beschluss else None
     dokumente = []
     for datei in ris.public_files_of_paper(paper)[:MAX_PAPER_FILES]:
-        dokumente.append({"id": str(datei.pk), "name": _short(datei.name or datei.file_name or "Dokument", 120)})
+        dokumente.append(
+            {"id": str(datei.pk), "name": _short(_ohne_nr(paper, datei.name or datei.file_name or "Dokument"), 120)}
+        )
     return _compact(
         {
-            "titel": _short(paper.name, 300),
+            "titel": _short(_titel(paper), 300),
             "az": paper.reference,
             "art": paper.paper_type,
             "datum": _day(paper.date),
@@ -518,7 +539,7 @@ def _vorgang_details(ctx: ToolContext, paper: OParlPaper) -> dict[str, Any]:
             "stand": paper_status(_status_entries(steps), ctx.now).text,
             "beratungsfolge": folge[-12:],
             "beschluss": beschluss,
-            "zusammenfassung": _short(zusammenfassung, 600),
+            "zusammenfassung": _short(_ohne_nr(paper, zusammenfassung), 600),
             # Die gespeicherte Zusammenfassung ist KI-Text ohne redaktionelle Prüfung (EU AI Act Art. 50, Issue #938)
             "zusammenfassung_ki_erzeugt": bool(zusammenfassung),
             "dokumente": dokumente,
@@ -601,7 +622,7 @@ def dokumente_suchen(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, Any
         paper = datei.paper
         if paper is not None:
             url = ctx.link("paper_detail", paper.pk)
-            ctx.note(url, paper.name or paper.reference or "Vorgang", "paper")
+            ctx.note(url, _titel(paper) or paper.reference or "Vorgang", "paper")
         elif datei.meeting_id:
             url = ctx.link("meeting_detail", datei.meeting_id)
             ctx.note(url, datei.name or "Sitzung", "meeting")
@@ -611,11 +632,11 @@ def dokumente_suchen(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, Any
             _compact(
                 {
                     "id": str(datei.pk),
-                    "name": _short(datei.name or datei.file_name, 120),
-                    "vorgang": _short(paper.name, 120) if paper is not None else None,
+                    "name": _short(_ohne_nr(paper, datei.name or datei.file_name), 120),
+                    "vorgang": _short(_titel(paper), 120) if paper is not None else None,
                     "az": paper.reference if paper is not None else None,
                     "link": url,
-                    "ausschnitt": _snippet(hit),
+                    "ausschnitt": _ohne_nr(paper, _snippet(hit)),
                 }
             )
         )
@@ -687,7 +708,7 @@ def dokument_abschnitt(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, A
     url = None
     if paper is not None:
         url = ctx.link("paper_detail", paper.pk)
-        ctx.note(url, paper.name or paper.reference or "Vorgang", "paper", detail=True)
+        ctx.note(url, _titel(paper) or paper.reference or "Vorgang", "paper", detail=True)
     elif datei.meeting_id:
         url = ctx.link("meeting_detail", datei.meeting_id)
         ctx.note(url, datei.name or "Sitzung", "meeting", detail=True)
@@ -695,14 +716,16 @@ def dokument_abschnitt(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, A
     text = (file_text(datei) or "")[:ABSCHNITT_SUCHE_ZEICHEN]
     laenge = int(getattr(datei, "text_laenge", None) or len(text))
     kopf = {
-        "name": _short(datei.name or datei.file_name, 120),
-        "vorgang": _short(paper.name, 120) if paper else None,
+        "name": _short(_ohne_nr(paper, datei.name or datei.file_name), 120),
+        "vorgang": _short(_titel(paper), 120) if paper else None,
         "link": url,
     }
     if not text.strip():
         return _compact({**kopf, "hinweis": "Für dieses Dokument liegt kein erkannter Text vor."})
+    # Bei Eingaben aus der Einwohnerschaft und Bauanträgen ohne Hausnummern (Anschrift der Einreichenden, #1269)
     abschnitte = [
-        {"ab_zeichen": position, "text": " ".join(chunk.split())} for position, chunk in best_passages(text, frage)
+        {"ab_zeichen": position, "text": _ohne_nr(paper, " ".join(chunk.split()))}
+        for position, chunk in best_passages(text, frage)
     ]
     hinweis = f"Durchsucht wurden die ersten {len(text)} Zeichen." if laenge > len(text) else None
     return _compact({**kopf, "laenge_zeichen": laenge, "abschnitte": abschnitte, "hinweis": hinweis})

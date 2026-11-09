@@ -10,7 +10,9 @@ Work (``dicht``).
 ``veraltet``: Die Zusammenfassung kennt den aktuellen Beratungsstand nicht (Issue #1257, ``summary_store.veraltet``;
 auch Zusammenfassungen von vor #1257 ohne gespeicherten Stand, deren Vorgang ein Ergebnis hat). Dann
 steht vor dem Text ein Satz dazu und „Neu zusammenfassen“ (POST wie „Zusammenfassen“, in denselben Grenzen).
-{% endcomment %}{% load ki_bewertung %}{% if summary %}{% with absaetze=summary|ki_absaetze %}
+``ortsschutz`` (nur Bürgerportal, ``ortsschutz.grund``): Text ohne Hausnummern bei Eingaben aus der Einwohnerschaft
+und Bauanträgen (Issue #1269); die Prüfsumme für die Bewertung bleibt die des gespeicherten Texts.
+{% endcomment %}{% load ki_bewertung %}{% if summary %}{% with schutz=ortsschutz|default:"" %}{% with absaetze=summary|ki_absaetze:schutz %}
 <h2 class="{% if dicht %}text-base font-semibold{% else %}text-[1.375rem] font-bold tracking-tight{% endif %} text-gray-900 dark:text-white">KI-Zusammenfassung</h2>
 {% if veraltet %}
 <div class="mt-2" data-testid="zusammenfassung-veraltet">
@@ -39,7 +41,7 @@ steht vor dem Text ein Satz dazu und „Neu zusammenfassen“ (POST wie „Zusam
     </div>
     {% if paper.summary_einfach %}
     <div class="space-y-3 text-base leading-7 text-gray-800 dark:text-gray-200" data-ai-generated="true" lang="de" x-show="einfach" x-cloak>
-        {% for absatz in paper.summary_einfach|ki_absaetze %}<p>{{ absatz }}</p>{% endfor %}
+        {% for absatz in paper.summary_einfach|ki_absaetze:schutz %}<p>{{ absatz }}</p>{% endfor %}
     </div>
     {% endif %}
     {% if absaetze|length > 1 or paper.summary_einfach %}
@@ -87,7 +89,7 @@ steht vor dem Text ein Satz dazu und „Neu zusammenfassen“ (POST wie „Zusam
     <span role="status" aria-live="polite" x-text="meldung"></span>
 </div>
 {% endif %}
-{% endwith %}
+{% endwith %}{% endwith %}
 {# Nach dem Erstellen verschwindet „Zusammenfassen“ im Kopf der Vorgangsseite #}
 {% if request.htmx %}<div id="summary-action" hx-swap-oob="true"></div>{% endif %}
 {% elif error %}

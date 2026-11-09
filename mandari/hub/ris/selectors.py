@@ -837,6 +837,7 @@ class PaperPlace:
     title: str
     reference: str
     paper_date: date | None
+    paper_type: str = ""
 
 
 #: Kartenausschnitt als (West, Süd, Ost, Nord) in Grad
@@ -850,13 +851,13 @@ def paper_places(
     Verortungen von Vorgängen der Kommunen für Karten, neueste Vorgänge zuerst, höchstens ``limit`` Punkte.
 
     Liest die Tabelle der Verortungen (Index auf Kommune, Breite, Länge) statt des JSON am Vorgang, ohne entfernte
-    Verortungen und ohne Vorgänge, die in der Quelle gelöscht oder zurückgenommen sind. ``area`` begrenzt auf einen
+    und aus Datenschutzgründen ausgeblendete Verortungen (#1269) und ohne Vorgänge, die in der Quelle gelöscht oder zurückgenommen sind. ``area`` begrenzt auf einen
     Kartenausschnitt, ``since`` auf Vorgänge ab diesem Datum (Vorgänge ohne Datum fallen dann heraus). Eine Abfrage.
     """
     from insight_core.models import PaperLocation
 
     rows = PaperLocation.objects.filter(body__in=bodies, paper__deleted=False).exclude(
-        status=PaperLocation.STATUS_REMOVED
+        status__in=PaperLocation.STATUS_UNSICHTBAR
     )
     if area is not None:
         west, south, east, north = area
@@ -873,9 +874,17 @@ def paper_places(
             title=str(title or reference or "Vorgang"),
             reference=str(reference or ""),
             paper_date=paper_date,
+            paper_type=str(paper_type or ""),
         )
-        for paper_id, lat, lon, place, title, reference, paper_date in rows.values_list(
-            "paper_id", "latitude", "longitude", "name", "paper__name", "paper__reference", "paper__date"
+        for paper_id, lat, lon, place, title, reference, paper_date, paper_type in rows.values_list(
+            "paper_id",
+            "latitude",
+            "longitude",
+            "name",
+            "paper__name",
+            "paper__reference",
+            "paper__date",
+            "paper__paper_type",
         )[: max(limit, 0)]
     ]
 

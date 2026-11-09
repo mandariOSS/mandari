@@ -646,11 +646,16 @@ def _satz(art: str, anzahl: int) -> str:
 
 def _eintrag(punkt: OParlAgendaItem, vorgaenge: list[dict[str, Any]], urheber: Mapping[Any, list[str]]) -> Eintrag:
     """Zeile für einen Punkt: Hauptvorgang ist der erste, der keine Stellungnahme oder Antwort ist."""
+    from .ortsschutz import oeffentlicher_titel
+
     haupt = next((v for v in vorgaenge if not _antwortart(v)), vorgaenge[0] if vorgaenge else None)
+    name = (haupt or {}).get("paper__name") or punkt.name or "Tagesordnungspunkt"
+    # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
+    titel = oeffentlicher_titel(" ".join(str(name).split()), (haupt or {}).get("paper__paper_type"))
     eintrag = Eintrag(
         punkt_id=punkt.pk,
         sitzung_id=punkt.meeting_id,
-        titel=" ".join(str((haupt or {}).get("paper__name") or punkt.name or "Tagesordnungspunkt").split()),
+        titel=titel,
         ergebnis=ergebnis(punkt.result),
         vorgang_id=haupt["paper_id"] if haupt else None,
         art=str((haupt or {}).get("paper__paper_type") or ""),

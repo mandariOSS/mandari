@@ -533,7 +533,9 @@ def anhaengen(vorgaenge: Iterable[Any]) -> None:
         return
     je_vorgang = urheber_je_vorgang({v.pk for v in liste})
     for vorgang in liste:
-        vorgang.absender = absender(vorgang.name, vorgang.paper_type, je_vorgang.get(vorgang.pk, []))
+        # Vom öffentlichen Titel aus (ohne Hausnummer bei Privatanschriften, Issue #1269); nur das Bürgerportal ruft das
+        titel = getattr(vorgang, "titel_oeffentlich", None) or vorgang.name
+        vorgang.absender = absender(titel, vorgang.paper_type, je_vorgang.get(vorgang.pk, []))
 
 
 def treffer_anreichern(treffer: Iterable[dict[str, Any]]) -> None:
@@ -548,6 +550,7 @@ def treffer_anreichern(treffer: Iterable[dict[str, Any]]) -> None:
     from django.utils.html import escape
     from django.utils.safestring import mark_safe
 
+    from .ortsschutz import grund_nach_art, hausnummern_auslassen
     from .vorgang_urheber import urheber_je_vorgang
 
     vorgaenge: list[tuple[uuid.UUID, dict[str, Any]]] = []
@@ -563,6 +566,9 @@ def treffer_anreichern(treffer: Iterable[dict[str, Any]]) -> None:
     je_vorgang = urheber_je_vorgang({kennung for kennung, _t in vorgaenge})
     for kennung, t in vorgaenge:
         roh, art = str(t.get("titel_roh") or ""), str(t.get("art_roh") or "")
+        if grund_nach_art(art, roh):
+            # Titel ohne Hausnummer wie in present_groups (Issue #1269), sonst brächte der gekürzte Titel sie zurück
+            roh = hausnummern_auslassen(roh)
         ergebnis = absender(roh, art, je_vorgang.get(kennung, []))
         t["absender"] = ergebnis
         fund = ergebnis.fund

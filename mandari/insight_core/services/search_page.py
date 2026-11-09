@@ -165,7 +165,8 @@ def build_context(
         roh = (angeheftet if params.page == 1 else []) + [g for g in roh if _paper_id(g) not in kennungen]
         counts = {**counts, "vorgaenge": max(int(counts.get("vorgaenge") or 0), len(angeheftet))}
     totals: Mapping[str, int] = grouped["totals_by_index"]
-    groups = present_groups(roh, slug, links=links)
+    # Ohne eigene Adressen ist es das Bürgerportal: dort ohne Hausnummern bei Privatanschriften (Issue #1269)
+    groups = present_groups(roh, slug, links=links, oeffentlich=links is None)
     for gruppe, treffer in zip(roh, groups, strict=True):
         if gruppe.get("nummer_rang"):
             treffer["nummer_passt"] = gruppe["nummer_rang"] <= RANG_GENAU

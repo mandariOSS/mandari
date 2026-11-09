@@ -36,6 +36,43 @@ Voraussetzung ist `osm_relation_id` an der Kommune. Die Adressabfrage nutzt
    bleibt der Straßen-Zentroid (`precision: street`).
 3. `update_paper_georef()` und `apply_oparl_locations()` rufen nach dem Speichern
    `sync_paper_locations()` auf, damit Tabelle und JSON übereinstimmen.
+4. Gelesen werden Titel und Hauptteil des Hauptdokuments (OParl `mainFile`, Text bis zur Zeile „Anlagen“). Orte, die
+   nur in Anlagen stehen, werden nicht verortet; ohne Angabe zum Hauptdokument zählen alle Dokumente. Sammellisten
+   nichtöffentlicher Punkte, Wirtschaftspläne, Jahresabschlüsse und Aufsichtsratsvorlagen bekommen keinen Ort
+   (`titel_ohne_ort`). Straßennamen, die Gattungsnamen sind („Markt“, „Schulstraße“), zählen nur mit Hausnummer.
+5. Jeder Eintrag trägt seine Fundstelle (`fundstelle`: `titel`, `dokument`, `ki`, #1269).
+
+## Datenschutz bei Orten (`services/ortsschutz.py`, #1269)
+
+Eingaben aus der Einwohnerschaft (Bürgerantrag, Anregungen und Beschwerden, Einwohnerfrage und -antrag, Bürgerbrief,
+Eingabe, Petition) und Bauanträge bzw. Vorgänge der Bauordnung können eine Privatanschrift nennen. Erkannt werden sie an
+Art und Titel (`grund_nach_art`, ohne Abfrage) und zusätzlich am federführenden Amt (`underDirectionOf`: Bauordnung,
+Bauaufsicht, Untere Naturschutzbehörde) und an über- und untergeordneten Vorgängen (`grund`).
+
+- **Verortung:** nie ein Adresspunkt, höchstens der Punkt der Straße – in der Pipeline, bei Orten der Kommune
+  (`oparl_locations`; unbekannte Straße: kein Punkt) und bei der KI-Prüfung. Eingaben aus der Einwohnerschaft werden
+  nur aus dem Titel verortet, weil im Volltext meist die Anschrift der Einreichenden steht.
+- **Anzeige:** Titel und Ortsnamen ohne Hausnummer („[Hausnummer ausgelassen]“) auf der Vorgangsseite, im Seitentitel,
+  in der KI-Zusammenfassung samt Description, in Vorgangsliste, Startseite, „Beschlüsse“, Merkliste, Tagesordnung,
+  Karte, Umkreissuche, Suchtreffern und Suchvorschau der Kopfzeile, Benachrichtigungen, Umsetzungsstand von Beschlüssen
+  (Seite und Abo-Mails) und in den Werkzeugen des KI-Assistenten (auch Dokumentabschnitte). Datenbank,
+  OParl-Schnittstelle und Work behalten den vollen Titel.
+- **Bestand:** `python manage.py adresspunkte_zurueckstufen [--body <slug>] [--ausfuehren] [--rueckgaengig]` stuft
+  vorhandene Adresspunkte dieser Vorgänge auf die Straße zurück (`services/ortsschutz_bestand.py`). Ist die Straße
+  unbekannt oder schon ein Ort des Vorgangs, wird die Zeile ausgeblendet (`status=hidden`). Gelöscht wird nichts, die
+  alten Angaben stehen in `PaperLocation.vorher`; `--rueckgaengig` stellt sie wieder her. Ohne `--ausfuehren` nur
+  Probelauf. Findet ein späterer Verortungslauf eine zurückgestufte Straße nicht mehr (etwa weil Eingaben aus der
+  Einwohnerschaft jetzt nur aus dem Titel verortet werden), blendet `sync_paper_locations` die Zeile aus, statt sie zu
+  löschen; `vorher` bleibt, die Rückstufung bleibt umkehrbar.
+
+## Orte auf der Vorgangsseite (`services/orte_anzeige.py`, #1269)
+
+Jeder Ort trägt eine Sicherheit und seine Fundstelle: **gesichert** (Angabe der Kommune, amtlicher Umring, von Hand
+eingetragen oder bestätigt), **erschlossen** (Straße im Titel oder Dokument) und **unsicher** (von einer KI erkannt
+oder ergänzt, KI-Prüfung „unsicher“). Die Randspalte nennt höchstens fünf Orte, weitere aufklappbar in einer Zeile.
+Beraten mindestens drei Bezirksgremien (Bezirksvertretung, Ortsrat, Bezirksausschuss …) den Vorgang oder liegen
+mindestens sechs Orte über die Hälfte der Ausdehnung der Kommune verteilt, steht „Stadtweit“ mit Begründung statt einer
+Straßenliste.
 
 ## Verortung nach neuem Text (`services/georef_abonnement.py`, #919)
 
@@ -58,9 +95,12 @@ Stand `pending` mit erkanntem Text. Mit `GEOREF_SUBSCRIPTION=aktiv` stößt zus�
 - `sync_paper_locations(paper)`: JSON → Tabelle, idempotent. Regeln:
   - Einträge im Umkreis von 50 m einer **entfernten** Zeile werden verworfen und aus dem JSON
     gestrichen (Sperrmerkmal; der automatische Lauf legt sie nicht wieder an).
+  - **Ausgeblendete** Zeilen (`hidden`, Datenschutz #1269) bleiben unverändert und sperren genau ihren Punkt; Karte,
+    Umkreissuche und Vorgangsseite zeigen sie nicht.
   - **Bestätigte** Zeilen bleiben erhalten und werden ins JSON zurückgeschrieben, auch wenn ein
     neuer Lauf sie nicht mehr liefert.
-  - Automatische Zeilen ohne JSON-Gegenstück werden gelöscht.
+  - Automatische Zeilen ohne JSON-Gegenstück werden gelöscht; zurückgestufte Zeilen (`vorher` gesetzt, #1269) werden
+    nur ausgeblendet, damit `adresspunkte_zurueckstufen --rueckgaengig` sie wiederherstellen kann.
 - `nearby_papers(body, lat, lon, radius_m, limit)`: Bounding-Box-Vorfilter auf dem Index,
   Haversine-Feinfilter als SQL-Ausdruck (`ACos/Cos/Sin/Radians`, läuft auf PostgreSQL und SQLite),
   nächster Punkt je Vorgang, sortiert nach Entfernung. Ersetzt den JSONB-Vollscan in

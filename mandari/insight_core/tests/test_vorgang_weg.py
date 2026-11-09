@@ -487,6 +487,16 @@ class TestVorgangsseite:
         # Federführung der Anfrage selbst in den Angaben
         assert 'data-testid="vorgang-federfuehrung">Ratsbüro<' in seite
 
+    def test_einwohnerfrage_ohne_wortlaut_und_ohne_hausnummer(self, anfrage: OParlPaper) -> None:
+        """Einwohnerfragen (#1269): kein Wortlaut aus dem Schreiben, Titel verbundener Vorlagen ohne Hausnummer."""
+        OParlPaper.objects.filter(pk=anfrage.pk).update(paper_type="Einwohnerfrage")
+        OParlPaper.objects.filter(reference="A/0142/2026-01").update(name="Stellungnahme zur Musterstraße 12a")
+        seite = self._seite(anfrage)
+        assert 'data-ergebnis="beantwortet"' in seite
+        assert "Wann beginnt die Sanierung der Grundschule Nord?" not in seite
+        assert "Musterstraße 12a" not in seite
+        assert "Musterstraße [Hausnummer ausgelassen]" in seite
+
     def test_ohne_text_nur_der_hinweis(self, anfrage: OParlPaper) -> None:
         OParlFile.objects.filter(paper__reference="A/0142/2026-01").update(text_content=None)
         seite = self._seite(anfrage)

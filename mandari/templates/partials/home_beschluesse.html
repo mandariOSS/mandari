@@ -18,7 +18,7 @@ Linien nur zwischen Einträgen derselben Spalte.
                     <time datetime="{{ item.meeting.start|date:'c' }}" class="font-semibold">{{ item.meeting.start|date:"D, d.m." }}</time>
                 </span>
                 <span class="min-w-0">
-                    <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% if item.vorgang.name %}{% firstof item.vorgang.absender.titel|truncatechars:140 item.vorgang.name|truncatechars:140 %}{% else %}{{ item.name|default:"Tagesordnungspunkt"|truncatechars:140 }}{% endif %}</span>
+                    <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% if item.vorgang.name %}{% firstof item.vorgang.absender.titel|truncatechars:140 item.vorgang.titel_oeffentlich|truncatechars:140 %}{% else %}{{ item.titel_oeffentlich|default:"Tagesordnungspunkt"|truncatechars:140 }}{% endif %}</span>
                     {% with etikett=item.result|ergebnis %}<span class="flex flex-wrap items-baseline gap-x-2 mt-1 text-[0.9rem] text-gray-600 dark:text-gray-400 break-words">{% if etikett.bekannt %}<c-insight.ergebnis :ergebnis="etikett" />{% else %}<span>{{ item.result|truncatechars:80 }}{% if item.gremium %} ·{% endif %}</span>{% endif %}{% if item.gremium %}<span>{{ item.gremium }}</span>{% endif %}{% if item.vorgang.absender %}<c-insight.absender :absender="item.vorgang.absender" hinweis="eingebracht von" />{% endif %}</span>{% endwith %}
                 </span>
             </a>

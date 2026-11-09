@@ -111,8 +111,8 @@ class Adressen:
 
 
 def betreff(paper: OParlPaper) -> str:
-    """Betreff ohne vorangestellte Drucksachennummer."""
-    name = " ".join(str(paper.name or "").split())
+    """Betreff ohne vorangestellte Drucksachennummer, ohne Hausnummer bei Privatanschriften (Issue #1269)."""
+    name = " ".join(str(paper.titel_oeffentlich or "").split())
     nummer = (paper.reference or "").strip()
     if nummer and name.lower().startswith(nummer.lower()):
         name = name[len(nummer) :].lstrip(" :–-,")
@@ -265,10 +265,15 @@ def beratung_eintraege(
 
 def dokument_eintraege(paper: OParlPaper, dateien: Iterable[OParlFile], adressen: Adressen) -> list[Eintrag]:
     """Dokumente eines Vorgangs (Vorlage, Anlagen, Stellungnahmen), je Datei ein Eintrag."""
+    from .ortsschutz import grund_nach_art, hausnummern_auslassen
+
     ueber = _ueber(paper, "")
+    schutz = bool(grund_nach_art(paper.paper_type, paper.name))
     eintraege = []
     for datei in dateien:
         name = text(datei.name or datei.file_name or "Dokument", 200)
+        if schutz:
+            name = hausnummern_auslassen(name)
         zeitpunkt = datei.file_date or datei.oparl_created or datei.created_at
         eintraege.append(
             Eintrag(
@@ -349,7 +354,7 @@ def beschluss_eintraege(punkte: Iterable[OParlAgendaItem], adressen: Adressen) -
         etikett = ergebnis(punkt.result)
         if etikett is None or sitzung.start is None:
             continue
-        name = text(punkt.name or "Tagesordnungspunkt", _BETREFF_MAX)
+        name = text(punkt.titel_oeffentlich or "Tagesordnungspunkt", _BETREFF_MAX)
         gremium = sitzung.get_display_name()
         top = f", TOP {punkt.number}" if punkt.number else ""
         titel = (

@@ -81,7 +81,7 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
                 {% for paper in recent_papers %}
                 <li>
                     <a href="{% url 'insight_core:insight:paper_detail' paper.pk %}" class="group block py-4">
-                        <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% firstof paper.absender.titel paper.name paper.reference %}</span>
+                        <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% firstof paper.absender.titel paper.titel_oeffentlich paper.reference %}</span>
                         <span class="mt-1 flex flex-wrap items-center gap-x-4 text-[0.9rem] text-gray-600 dark:text-gray-400">
                             {% if paper.paper_type %}<span>{{ paper.paper_type }}</span>{% endif %}
                             {% if paper.absender.neben_art %}<c-insight.absender :absender="paper.absender" hinweis="eingebracht von" neben_art />{% endif %}

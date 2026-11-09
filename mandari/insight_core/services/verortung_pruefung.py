@@ -78,7 +78,7 @@ def orte_fuer_pruefung(paper: OParlPaper) -> list[PruefOrt]:
 
     zeilen = list(
         PaperLocation.objects.filter(paper=paper)
-        .exclude(status=PaperLocation.STATUS_REMOVED)
+        .exclude(status__in=PaperLocation.STATUS_UNSICHTBAR)
         .only("pk", "name", "source", "status")
         .order_by("name", "pk")
     )
@@ -235,15 +235,20 @@ def _text(wert: Any, laenge: int = BEGRUENDUNG_MAX) -> str:
 def _geokodieren(name: str, paper: OParlPaper, gazetteer: Any) -> dict[str, Any] | None:
     """
     Ort über das Straßenverzeichnis der Kommune, sonst Photon/Nominatim mit Prüfung, ob er in der Kommune liegt;
-    Rückgabe: JSON-Eintrag mit Herkunft ``ai_check`` oder ``None``. Nie Koordinaten von der KI.
+    Rückgabe: JSON-Eintrag mit Herkunft ``ai_check`` oder ``None``. Nie Koordinaten von der KI. Bei Eingaben aus der
+    Einwohnerschaft und Bauanträgen nur die Straße, nie der Adresspunkt (``ortsschutz``, Issue #1269).
     """
+    from insight_core.services import ortsschutz
     from insight_core.services.georeferencing import geocode_address, is_within_body
 
     if paper.body is None:
         return None
+    adresspunkt = not ortsschutz.grund(paper)
+    if not adresspunkt:
+        name = ortsschutz.ort_ohne_hausnummer(name)
     treffer = gazetteer.lookup(name) if gazetteer is not None else None
     if treffer:
-        treffer = gazetteer.refine(treffer)
+        treffer = gazetteer.refine(treffer) if adresspunkt else {**treffer, "house_number": None}
         lat, lon = float(treffer["lat"]), float(treffer["lon"])
         bezeichnung = treffer["name"] + (f" {treffer['house_number']}" if treffer.get("house_number") else "")
         konfidenz = KONFIDENZ_VERZEICHNIS

@@ -252,14 +252,37 @@ def federfuehrung(paper: Any, namen: Mapping[str, str]) -> str:
     return ""
 
 
-def _vorlage_detail(vorlage: Any, titel_der_seite: str | None, amt: str, *, mit_art: bool = False) -> str:
-    """Detailzeile einer verbundenen Vorlage: Nummer (mit Art), Titel, wenn er etwas anderes sagt, federführend."""
+def _ortsschutz(paper: Any) -> bool:
+    """
+    Kann der Vorgang eine Privatanschrift nennen (Eingabe aus der Einwohnerschaft, Bauordnung; Issue #1269)? Nimmt das
+    Ergebnis der Vorgangsseite (``_ortsschutz``), sonst Art und Titel.
+    """
+    from .ortsschutz import grund_nach_art
+
+    bekannt = getattr(paper, "_ortsschutz", None)
+    return bool(bekannt if bekannt is not None else grund_nach_art(paper.paper_type, paper.name))
+
+
+def _ohne_nr(text: str, schutz: bool) -> str:
+    from .ortsschutz import hausnummern_auslassen
+
+    return hausnummern_auslassen(text) if schutz else text
+
+
+def _vorlage_detail(
+    vorlage: Any, titel_der_seite: str | None, amt: str, *, mit_art: bool = False, schutz: bool = False
+) -> str:
+    """
+    Detailzeile einer verbundenen Vorlage: Nummer (mit Art), Titel, wenn er etwas anderes sagt, federführend. Der Titel
+    ohne Hausnummer, wenn der Vorgang der Seite oder die Vorlage selbst eine Privatanschrift nennen kann (#1269).
+    """
     teile: list[str] = []
     nummer = " ".join(part for part in ((vorlage.paper_type or "") if mit_art else "", vorlage.reference or "") if part)
     if nummer:
         teile.append(nummer)
     if vorlage.name and not _gleicher_titel(vorlage.name, titel_der_seite):
-        teile.append(f"„{_kuerzen(vorlage.name)}“")
+        name = _ohne_nr(vorlage.name, schutz or _ortsschutz(vorlage))
+        teile.append(f"„{_kuerzen(name)}“")
     if amt:
         teile.append(f"federführend: {amt}")
     return ", ".join(teile)
@@ -378,6 +401,7 @@ def stationen(
     """
     now = now or timezone.now()
     namen = namen or {}
+    schutz = _ortsschutz(paper)
     liste: list[tuple[Station, Any]] = []
     if paper.date:
         gestellt = ", ".join(u.anzeigename for u in urheber if getattr(u, "anzeigename", ""))
@@ -394,19 +418,19 @@ def stationen(
         )
     for vorlage in stammvorlagen:
         amt = federfuehrung(vorlage, namen)
-        detail = _vorlage_detail(vorlage, paper.name, amt)
+        detail = _vorlage_detail(vorlage, paper.name, amt, schutz=schutz)
         liste.append((_vorlage_station(STAMMVORLAGE, vorlage, vorlage.paper_type or "Vorlage", detail), None))
     for vorlage in antworten:
-        detail = _vorlage_detail(vorlage, paper.name, federfuehrung(vorlage, namen), mit_art=True)
+        detail = _vorlage_detail(vorlage, paper.name, federfuehrung(vorlage, namen), mit_art=True, schutz=schutz)
         liste.append((_vorlage_station(ANTWORT, vorlage, "Antwort der Verwaltung", detail), None))
     for vorlage in folgevorlagen:
-        detail = _vorlage_detail(vorlage, paper.name, federfuehrung(vorlage, namen))
+        detail = _vorlage_detail(vorlage, paper.name, federfuehrung(vorlage, namen), schutz=schutz)
         liste.append((_vorlage_station(FOLGEVORLAGE, vorlage, vorlage.paper_type or "Folgevorlage", detail), None))
     for eintrag, original in zip(timeline(verlauf, status, now), verlauf, strict=True):
         liste.append((_beratung(eintrag, eintrag["state"], now), original))
     if anfrage is not None and anfrage.antwort_datei is not None:
         datei = anfrage.antwort_datei
-        titel = datei.name or datei.file_name or "Dokument"
+        titel = _ohne_nr(datei.name or datei.file_name or "Dokument", schutz)
         liste.append(
             (
                 Station(
@@ -489,6 +513,9 @@ def _fragen_und_antworten(paper: Any, anfrage: AnfrageStand, dateien: Sequence[A
     nicht für alle Anlagen.
     """
     if not anfrage.beantwortet or anfrage.in_sitzung:
+        return None
+    if _ortsschutz(paper):
+        # Einwohnerfragen: Der Wortlaut stammt aus dem Schreiben einer Privatperson (Anschrift, Name), Issue #1269
         return None
     haupt, _ = _haupt_und_antwortdatei(dateien, paper)
     if anfrage.antwort_vorlage is not None:

@@ -262,6 +262,8 @@ class DecisionTrackingView(ActiveBodyRequiredMixin, TemplateView):
             item.public_label = decision_tracking.PUBLIC_STATUS_LABELS.get(
                 item.implementation_status, item.get_implementation_status_display()
             )
+            # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
+            item.titel_oeffentlich = decision_tracking.oeffentlicher_name(item)
         context.update(
             {
                 "stats": decision_tracking.stats(body),
@@ -328,6 +330,8 @@ class DecisionDetailView(TemplateView):
                 "active_body": body,
                 "nav": "decision_detail",
                 "item": item,
+                # Name ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
+                "titel": decision_tracking.oeffentlicher_name(item),
                 "tenant": item.meeting.tenant,
                 "timeline": decision_tracking.timeline(item),
                 "status_label": status_label,
@@ -403,7 +407,8 @@ def confirm_decision_subscription(request, token):
         return link_confirmation(
             request,
             title="Benachrichtigung aktivieren",
-            message=f"Bitte bestätigen Sie die Benachrichtigung zum Beschluss „{subscription.agenda_item.name}“.",
+            message="Bitte bestätigen Sie die Benachrichtigung zum Beschluss "
+            f"„{decision_tracking.oeffentlicher_name(subscription.agenda_item)}“.",
             button="Benachrichtigung aktivieren",
             icon="bell-ring",
         )
@@ -417,6 +422,7 @@ def confirm_decision_subscription(request, token):
         "pages/decisions/subscription_status.html",
         {
             "item": subscription.agenda_item,
+            "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item),
             "title": "Benachrichtigung aktiv" if not already else "Bereits bestätigt",
             "message": (
                 "Sie erhalten eine E-Mail, sobald die Verwaltung einen neuen Umsetzungsstand zu diesem Beschluss meldet."
@@ -436,7 +442,8 @@ def unsubscribe_decision(request, token):
         return link_confirmation(
             request,
             title="Benachrichtigung beenden",
-            message=f"Möchten Sie keine E-Mails mehr zum Beschluss „{subscription.agenda_item.name}“ erhalten?",
+            message="Möchten Sie keine E-Mails mehr zum Beschluss "
+            f"„{decision_tracking.oeffentlicher_name(subscription.agenda_item)}“ erhalten?",
             button="Abmelden",
             icon="bell-off",
         )
@@ -448,6 +455,7 @@ def unsubscribe_decision(request, token):
         "pages/decisions/subscription_status.html",
         {
             "item": subscription.agenda_item,
+            "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item),
             "title": "Benachrichtigung beendet",
             "message": "Sie erhalten keine weiteren E-Mails zu diesem Beschluss. Die Adresse wird nicht weiter verwendet.",
             "unsubscribe_token": None,

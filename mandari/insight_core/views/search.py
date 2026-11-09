@@ -179,8 +179,11 @@ def search_results(request):
             index_names=index_names,
         )
 
-        # Ergebnisse formatieren
+        # Ergebnisse formatieren; Bürger- und Bauanträge ohne Hausnummer wie in der Trefferliste (Issue #1269)
+        from ..services.search_presentation import vorschau_ohne_hausnummer
+
         results = [format_search_result(hit) for hit in search_result["results"]]
+        vorschau_ohne_hausnummer(search_result["results"], results)
 
         return render(
             request,
@@ -215,7 +218,8 @@ def search_results(request):
             results.append(
                 {
                     "type": "paper",
-                    "title": paper.name or paper.reference,
+                    # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
+                    "title": paper.titel_oeffentlich or paper.reference,
                     "subtitle": paper.paper_type,
                     "url": f"/insight/vorgaenge/{paper.id}/",
                 }
