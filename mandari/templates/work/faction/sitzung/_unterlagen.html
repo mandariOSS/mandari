@@ -34,6 +34,8 @@
                 <i data-lucide="a-arrow-up" aria-hidden="true"></i>
             </button>
             {% if rechte.anhaengen %}{% include "work/faction/sitzung/_anhaengen.html" with ziel="unterlagen" %}{% endif %}
+            <button type="button" class="wf-knopf wf-leise wf-ik" @click="unterlagenUmschalten()" aria-controls="fs-unterlagen"
+                    aria-label="Unterlagen ausblenden" title="Unterlagen ausblenden"><i data-lucide="panel-left-close" aria-hidden="true"></i></button>
         </div>
     </div>
     {% include "work/faction/sitzung/_unterlage.html" %}

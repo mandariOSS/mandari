@@ -715,3 +715,56 @@ def test_vorschlag_in_der_laufenden_sitzung_aufnehmen(
     assert vorschlag.proposal_status == "active" and vorschlag.number == "5"
     tops[1].refresh_from_db()
     assert "Vor dem Aufnehmen notiert." in cast(Any, tops[1]).get_notes_decrypted()
+
+
+def test_arbeitsflaeche_teilt_sich_nur_fuer_unterlagen(
+    page: Any, live_server: Any, login: Any, org: Any, sitzung: Any, screenshot: Any
+) -> None:
+    """Issue #1289: Links im Kopf statt halber Bildschirm; Trenner zum Ziehen, Unterlagen ausblendbar, beides gemerkt."""
+    vorsitz, meeting, tops = sitzung
+    termine = tops[2]
+    termine.reference_links = [{"label": "Formulare", "url": "https://www.example.org/formulare"}]
+    termine.save(update_fields=["reference_links"])
+    page.set_viewport_size({"width": 1440, "height": 900})
+    login(vorsitz.user.email, PASSWORD)
+
+    # Nur ein Link: keine Teilung, das Protokoll nimmt die ganze Breite
+    oeffnen(page, live_server, org, meeting, termine)
+    expect(page.get_by_test_id("fs-top-links")).to_contain_text("Formulare")
+    expect(page.locator("#fs-unterlagen")).to_have_count(0)
+    arbeit = page.locator(".fs-arbeit").bounding_box()
+    protokoll = page.locator(".fs-prot").bounding_box()
+    assert protokoll["width"] > arbeit["width"] - 4
+    screenshot("fraktionssitzung-nur-links-1440")
+
+    # Mit Unterlagen: Trenner nach links ziehen macht die Unterlagen schmaler, die Breite bleibt nach dem Neuladen
+    oeffnen(page, live_server, org, meeting, tops[1])
+    unterlagen = page.locator("#fs-unterlagen")
+    vorher = unterlagen.bounding_box()["width"]
+    trenner = page.get_by_test_id("fs-trenner").bounding_box()
+    page.mouse.move(trenner["x"] + trenner["width"] / 2, trenner["y"] + 200)
+    page.mouse.down()
+    page.mouse.move(trenner["x"] - 200, trenner["y"] + 200, steps=10)
+    page.mouse.up()
+    nachher = unterlagen.bounding_box()["width"]
+    assert nachher < vorher - 150
+    oeffnen(page, live_server, org, meeting, tops[1])
+    assert abs(page.locator("#fs-unterlagen").bounding_box()["width"] - nachher) < 4
+    # Tastatur am Trenner, Doppelklick stellt zurück
+    page.get_by_test_id("fs-trenner").focus()
+    page.keyboard.press("ArrowRight")
+    expect(page.get_by_test_id("fs-trenner")).to_have_attribute("aria-valuenow", re.compile(r"^\d+$"))
+    page.get_by_test_id("fs-trenner").dblclick()
+    expect(page.get_by_test_id("fs-trenner")).to_have_attribute("aria-valuenow", "46")
+
+    # Ausblenden: Protokoll über die ganze Breite, „Unterlagen (n)“ blendet wieder ein, auch nach dem TOP-Wechsel
+    page.get_by_role("button", name="Unterlagen ausblenden").click()
+    expect(page.locator("#fs-unterlagen")).to_be_hidden()
+    einblenden = page.get_by_test_id("fs-unterlagen-einblenden")
+    expect(einblenden).to_be_visible()
+    screenshot("fraktionssitzung-unterlagen-zu-1440")
+    oeffnen(page, live_server, org, meeting, tops[1])
+    expect(page.locator("#fs-unterlagen")).to_be_hidden()
+    page.get_by_test_id("fs-unterlagen-einblenden").click()
+    expect(page.locator("#fs-unterlagen")).to_be_visible()
+    screenshot("fraktionssitzung-unterlagen-1440")

@@ -172,7 +172,11 @@ def top_kontext(
     if ordnung is None:
         ordnung = sitzung.tagesordnung(meeting, membership)
     vor, nach = ordnung.nachbarn(item.pk)
-    unterlagen = sitzung.unterlagen(item, membership)
+    # Links sind keine Unterlage zum Lesen (Issue #1289): Sie stehen im Kopf des TOPs, die Arbeitsfläche teilt sich nur
+    # für Vorlagen, Dokumente, Anlagen und das Protokoll der vorigen Sitzung. Der Reiter „links“ bleibt abrufbar.
+    alle_unterlagen = sitzung.unterlagen(item, membership)
+    unterlagen = [u for u in alle_unterlagen if u.art != "links"]
+    top_links = next((u.objekt for u in alle_unterlagen if u.art == "links"), [])
     intern = is_item_internal(item)
     personen, gruppen = sitzung.personen_und_gruppen(meeting.organization, nur_vereidigte=intern)
     notizen = sitzung.notizen(item)
@@ -185,6 +189,7 @@ def top_kontext(
         "vor": vor,
         "nach": nach,
         "unterlagen": unterlagen,
+        "top_links": top_links,
         "verlauf": sitzung.beratungsverlauf(item, meeting.organization)
         if sitzung.darf_beratungsverlauf_sehen(membership)
         else [],

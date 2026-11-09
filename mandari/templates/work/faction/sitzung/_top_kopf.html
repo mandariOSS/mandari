@@ -1,5 +1,6 @@
 {# Kopf des TOPs: Nummer und Titel, Herkunft und Beschreibung, „Im Beratungsverlauf“ aus der Vorbereitung (Issue #874) #}
-{# Kontext: item, intern, verlauf (sitzung.VerlaufEintrag), unterlagen, rechte, org_slug, meeting; gekürzte Zeilen öffnet „Mehr“ #}
+{# Kontext: item, intern, verlauf (sitzung.VerlaufEintrag), unterlagen, top_links, rechte, org_slug, meeting; gekürzte Zeilen öffnet „Mehr“ #}
+{# Links des TOPs als eine Zeile unter der Beschreibung statt als Reiter der Unterlagen (Issue #1289) #}
 {# Nichtöffentlich: Titel, Beschreibung und Verlauf verdeckt, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issues #1166, #1201) #}
 <div class="fs-top-kopf" x-data="topKopf" :class="{ 'offen': offen }">
     <div class="fs-top-text">
@@ -19,6 +20,13 @@
                 {% endfor %}
             </ul>
         </c-work.beratungsverlauf>
+        {% endif %}
+        {% if top_links %}
+        <ul class="fs-top-links{% if intern %} fs-noe{% endif %}" aria-label="Links zu TOP {{ item.number }}" data-testid="fs-top-links"{% if intern %}{% if not noe_sichtbar %} inert{% endif %} x-bind:inert="!$store.noe.sichtbar"{% endif %}>
+            {% for link in top_links %}
+            <li><i data-lucide="external-link" aria-hidden="true"></i><c-suche.textlink href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label|default:link.url }}</c-suche.textlink></li>
+            {% endfor %}
+        </ul>
         {% endif %}
     </div>
     {% if intern %}{% include "work/faction/sitzung/_noe_schalter.html" %}{% endif %}

@@ -51,7 +51,7 @@ def _beitreten(org: Any, make_member: Any, capture: Any, email: str = "neu@examp
 
 
 def _eingeladen(meeting: FactionMeeting) -> set[str]:
-    return {a.membership.user.email for a in meeting.attendances.select_related("membership__user")}
+    return set(meeting.attendances.filter(membership__isnull=False).values_list("membership__user__email", flat=True))
 
 
 def test_neues_mitglied_steht_in_den_kommenden_sitzungen(
