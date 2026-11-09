@@ -59,6 +59,23 @@ def _kommunenverzeichnis_quellen() -> list[dict[str, str]]:
         return []
 
 
+def _oparl_body(body: Any) -> str:
+    """
+    Adresse des Body einer Kommune in der OParl-Schnittstelle, wenn das Verzeichnis sie nennt (gelistet, nicht
+    gelöscht, nicht vorübergehend abgeschaltet; ``hub.api.verzeichnis``), sonst leer.
+    """
+    if body is None or not body.is_listed or body.deleted:
+        return ""
+    from .publication import body_state
+
+    state = body_state(body.pk)
+    if state is not None and state.paused:
+        return ""
+    from hub.ris.mapping.bestand import BestandUris
+
+    return BestandUris(settings.OPARL_BASE_URL, settings.SITE_URL).obj("body", body.pk)
+
+
 def _seiten_kommune(request: HttpRequest, gewaehlt: OParlBody | None, match: Any) -> OParlBody | None:
     """
     Kommune der angezeigten Seite: bei Detailseiten die des Eintrags, sonst die gewählte (Issue #783).
@@ -255,6 +272,9 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
         # Stadtseite der Kommune der Seite (/insight/k/<slug>/): Ziel der Brotkrume ohne Umweg über die Wahl, so
         # finden Suchmaschinen ohne Sitzung die Stadtseiten (Issue #914); leer ohne Slug oder nicht gelistet
         "page_body_stadtseite": stadtseite_url(page_body) if portal is None else "",
+        # OParl-Body der Kommune der Seite (Issue #1282): <link rel="alternate"> im Kopf und „Offene Daten“ im Fuß;
+        # leer für nicht gelistete Kommunen, die das Verzeichnis nicht nennt
+        "page_body_oparl": _oparl_body(page_body),
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
         "active_body_stale_days": stale_days,

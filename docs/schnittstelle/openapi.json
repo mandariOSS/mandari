@@ -15746,6 +15746,65 @@
         },
         "additionalProperties": false
       },
+      "OParlBodyIndexEntry": {
+        "title": "Kommune im Verzeichnis",
+        "type": "object",
+        "required": [
+          "name",
+          "body",
+          "paper",
+          "meeting",
+          "organization",
+          "person"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name wie im Body"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Anzeigename im Bürgerportal"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Kurzname in den Adressen des Bürgerportals"
+          },
+          "ags": {
+            "type": "string",
+            "description": "Achtstelliger Amtlicher Gemeindeschlüssel, soweit gepflegt"
+          },
+          "body": {
+            "type": "string",
+            "format": "uri"
+          },
+          "paper": {
+            "type": "string",
+            "format": "uri"
+          },
+          "meeting": {
+            "type": "string",
+            "format": "uri"
+          },
+          "organization": {
+            "type": "string",
+            "format": "uri"
+          },
+          "person": {
+            "type": "string",
+            "format": "uri"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "license": {
+            "type": "string",
+            "format": "uri",
+            "description": "Lizenz der Kommune, sonst die der Installation"
+          }
+        }
+      },
       "OParlBodyList": {
         "title": "Liste Body",
         "type": "object",
@@ -16921,6 +16980,11 @@
             "type": "string",
             "format": "uri"
           },
+          "bodyDirectory": {
+            "type": "string",
+            "format": "uri",
+            "description": "Seite im Bürgerportal mit allen Kommunen und ihren Adressen"
+          },
           "specification": {
             "type": "string",
             "format": "uri"
@@ -16929,6 +16993,13 @@
             "type": "object",
             "additionalProperties": {
               "type": "string"
+            }
+          },
+          "bodyIndex": {
+            "type": "array",
+            "description": "Gelistete Kommunen mit den Adressen ihrer Listen (Felder wie im Body), alphabetisch nach displayName",
+            "items": {
+              "$ref": "#/components/schemas/OParlBodyIndexEntry"
             }
           }
         }

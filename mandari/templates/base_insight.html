@@ -50,6 +50,8 @@
     {% if seo.json_ld_brotkrumen %}
     <script type="application/ld+json">{{ seo.json_ld_brotkrumen }}</script>
     {% endif %}
+    {# Dieselbe Kommune als offene Daten: ihr Body in der OParl-Schnittstelle (Issue #1282) #}
+    {% if page_body_oparl %}<link rel="alternate" type="application/json" title="OParl-Body: {{ page_body.get_display_name }}" href="{{ page_body_oparl }}">{% endif %}
 
     <!-- Favicon (Brand "m." — Quelle: marketing-website/scripts/generate_logo.py) -->
     <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
