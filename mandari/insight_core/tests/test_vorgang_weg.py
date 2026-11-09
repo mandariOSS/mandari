@@ -296,6 +296,19 @@ class TestStationen:
         assert stationen[1].titel == "Antwort der Verwaltung" and stationen[1].detail == "Steht noch aus"
 
 
+class TestDatumAlsZeitpunkt:
+    """In bestehenden Installationen liefert die Datenbank OParlPaper.date als Zeitpunkt (Spalte des Ingestors)."""
+
+    def test_offene_anfrage_mit_zeitpunkt_als_datum(self) -> None:
+        paper = vorlage(paper_type="Anfrage", date=datetime(2026, 10, 1, tzinfo=BERLIN))
+        verlauf = [eintrag(tag(2026, 12, 1))]
+        status = _status(verlauf)
+        anfrage = vorgang_weg.anfrage_stand(paper, [], [], verlauf, status, JETZT)
+        assert anfrage.schluessel == ANTWORT_OFFEN
+        stationen = vorgang_weg.stationen(paper, verlauf, status, anfrage=anfrage, now=JETZT)
+        assert [s.art for s in stationen][:2] == [vorgang_weg.VORLAGE, vorgang_weg.LUECKE]
+
+
 class TestAnfrageStand:
     def test_antwort_als_folgevorlage(self) -> None:
         paper = vorlage(paper_type="Anfrage", date=date(2026, 8, 18))
