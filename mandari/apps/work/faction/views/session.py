@@ -176,7 +176,7 @@ def top_kontext(
     # für Vorlagen, Dokumente, Anlagen und das Protokoll der vorigen Sitzung. Der Reiter „links“ bleibt abrufbar.
     alle_unterlagen = sitzung.unterlagen(item, membership)
     unterlagen = [u for u in alle_unterlagen if u.art != "links"]
-    top_links = next((u.objekt for u in alle_unterlagen if u.art == "links"), [])
+    top_links: list[Any] = next((u.objekt for u in alle_unterlagen if u.art == "links"), [])
     intern = is_item_internal(item)
     personen, gruppen = sitzung.personen_und_gruppen(meeting.organization, nur_vereidigte=intern)
     notizen = sitzung.notizen(item)
