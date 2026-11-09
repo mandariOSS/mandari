@@ -296,8 +296,9 @@ def test_titel_ohne_absender_ohne_hausnummer(geo_body: OParlBody, make_paper: Ca
 
     paper = make_paper(geo_body, name=MIT_ABSENDER, paper_type="Antrag", date=timezone.localdate())
     fraktionskuerzel.anhaengen([paper])
-    assert paper.absender.gekuerzt, "Absender muss erkannt sein, sonst prüft der Test nichts"
-    assert paper.absender.titel == f"Bauvoranfrage Musterstraße {OHNE_NR}"
+    absender = cast(Any, paper).absender
+    assert absender.gekuerzt, "Absender muss erkannt sein, sonst prüft der Test nichts"
+    assert absender.titel == f"Bauvoranfrage Musterstraße {OHNE_NR}"
 
     html = Client().get(f"/insight/vorgaenge/{paper.pk}/").content.decode()
     assert "Musterstraße 12a" not in html
