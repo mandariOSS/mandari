@@ -189,6 +189,12 @@ class PaperDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         paper = self.object
+        # Datenschutz bei Orten (Issue #1269): Eingaben aus der Einwohnerschaft und Bauanträge, auch über das Amt und
+        # verbundene Vorgänge; Titel, Seitentitel und Orte dann ohne Hausnummer
+        from ..services import ortsschutz
+
+        paper._ortsschutz = ortsschutz.grund(paper)
+        context["ortsschutz"] = paper._ortsschutz
 
         # Alle Dateien – ohne zurückgenommene Anlagen aus Session und ohne Dokumente, die die Kommune
         # entfernt hat oder die dort nicht mehr abrufbar sind (Löschabgleich, #787). Ohne Volltext geladen: Die
@@ -201,7 +207,7 @@ class PaperDetailView(DetailView):
         context["files"] = ris_selectors.with_text_start(files)
         # Antragstellende Fraktionen (Issue #1138); Titel ohne Absender und Kürzel im Kopf (Issue #1272)
         context["urheber"] = urheber_je_vorgang([paper.pk]).get(paper.pk, [])
-        context["absender"] = fraktionskuerzel.absender(paper.name, paper.paper_type, context["urheber"])
+        context["absender"] = fraktionskuerzel.absender(paper.titel_oeffentlich, paper.paper_type, context["urheber"])
 
         # Beratungsverlauf (Consultations mit Meeting-Info) und Stand-Satz; der Verlauf kommt aus der Lese-Fassade wie
         # auf der Vorgangsseite von Work (Issue #853). Daraus der Weg des Vorgangs (Issue #1273): Zeitleiste mit
@@ -235,12 +241,18 @@ class PaperDetailView(DetailView):
             for loc in locations
             if isinstance(loc, dict) and loc.get("lat") is not None and loc.get("lon") is not None
         ]
+        # Sicherheit und Fundstelle je Ort, „stadtweit“ statt langer Straßenlisten (Issue #1269)
+        from ..services.orte_anzeige import kartenorte, ortsangaben
+
+        context["ortsangaben"] = ortsangaben(paper, context["paper_locations"], consultations, paper._ortsschutz)
         # Amtliche Umringe von Bebauungsplänen mit Planseite und Quellenangabe (#598)
         from ..services.plan_boundaries import paper_map_data, paper_plan_context
 
         plan_areas = paper_plan_context(paper)
         context["plan_areas"] = plan_areas
-        context["paper_map_data"] = paper_map_data(context["paper_locations"], plan_areas)
+        context["paper_map_data"] = paper_map_data(
+            kartenorte(context["paper_locations"], paper._ortsschutz), plan_areas
+        )
 
         # Zusammenfassung älter als der Beratungsstand (Issue #1257): Hinweis darüber, nicht in der Description
         from ..services import summary_store
@@ -270,6 +282,11 @@ REJECTED_MESSAGE = (
 
 def _summary_response(request, context, status=200):
     """Teilansicht der Zusammenfassung; HTMX tauscht nur 2xx ein, deshalb dort immer 200."""
+    if context.get("summary"):
+        # Wie auf der Vorgangsseite ohne Hausnummern bei Privatanschriften (Issue #1269)
+        from ..services import ortsschutz
+
+        context = {**context, "ortsschutz": ortsschutz.grund(context["paper"])}
     response = render(request, "partials/paper_summary.html", context)
     if status != 200 and not request.htmx:
         response.status_code = status

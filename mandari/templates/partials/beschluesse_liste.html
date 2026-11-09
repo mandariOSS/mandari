@@ -1,0 +1,68 @@
+{% comment %}
+Ergebnisse der Beschlüsse (Issue #1270, services/beschlussliste.py): Trefferzahl mit Zeitraum, „Link zu dieser Auswahl
+kopieren“ (data-action="copy-link", frontend/js/actions.ts), die Sitzungen mit ihren Einträgen und die Seitenwahl. Ganze
+Seite und htmx-Ausschnitt (nur_liste); im Ausschnitt zählt der Knopf „Weitere Filter“ per hx-swap-oob mit. Je Eintrag
+das Ergebnis-Etikett, der Titel (Link auf den Vorgang, sonst auf den Punkt der Sitzung), „Worum es geht“ (sobald es eine
+geprüfte Kurzfassung gibt, Issue #1271), Sätze wie „Mit Stellungnahme der Verwaltung.“ und rechts die Absender.
+Gebündelte Vertagungen zeigen ihre Punkte zum Aufklappen. Linien nur zwischen den Einträgen, keine Karten. Im DOM (und
+für Screenreader) steht je Eintrag Etikett, Titel, Absender; am Handy rücken die Absender per order neben das Etikett.
+{% endcomment %}
+{% if nur_liste %}<span id="filter-zahl" hx-swap-oob="true">{% if filter_zahl %} ({{ filter_zahl }}){% endif %}</span>{% endif %}
+{% if active_body %}
+<div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+    <p class="text-[1.0625rem] text-gray-800 dark:text-gray-200">
+        {% if anzahl %}<strong class="font-semibold text-gray-900 dark:text-white">{{ anzahl }} Ergebnis{{ anzahl|pluralize:"se" }}</strong> in {{ page_obj.paginator.count }} Sitzung{{ page_obj.paginator.count|pluralize:"en" }} {{ zeitraum.text }}<span class="max-lg:hidden">, ohne Formalien wie Tagesordnung und Niederschrift</span>{% else %}<strong class="font-semibold text-gray-900 dark:text-white">Keine Ergebnisse</strong> {{ zeitraum.text }}{% endif %}
+    </p>
+    <p class="flex flex-wrap items-center gap-x-5 text-[0.9375rem]">
+        <a href="{{ link_auswahl }}" data-action="copy-link" data-target="#link-meldung" data-copied="Link kopiert. Wer ihn öffnet, sieht dieselbe Auswahl."
+           class="inline-flex min-h-11 items-center gap-2 font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline"><i data-lucide="link" class="w-4 h-4" aria-hidden="true"></i><span class="max-lg:hidden">Link zu dieser Auswahl kopieren</span><span class="lg:hidden">Link kopieren</span></a>
+        {% if feed_url %}<a href="{{ feed_url }}" class="inline-flex min-h-11 items-center gap-2 font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline"><i data-lucide="rss" class="w-4 h-4" aria-hidden="true"></i><span class="max-lg:hidden">Als RSS abonnieren</span><span class="lg:hidden">RSS</span></a>{% endif %}
+        {% if auswahl.gefiltert %}<a href="{{ request.path }}" class="inline-flex min-h-11 items-center font-medium text-gray-700 dark:text-gray-300 underline underline-offset-4 hover:text-gray-900 dark:hover:text-white">Filter zurücksetzen</a>{% endif %}
+    </p>
+</div>
+<p id="link-meldung" role="status" class="text-[0.9375rem] text-primary-800 dark:text-primary-200"></p>
+
+{% for sitzung in sitzungen %}
+<section aria-labelledby="sitzung-{{ sitzung.id }}" class="mt-8 sm:mt-10">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-3">
+        <h2 id="sitzung-{{ sitzung.id }}" class="text-[1.1875rem] font-semibold text-gray-900 dark:text-white break-words">{{ sitzung.gremium }}</h2>
+        <p class="flex flex-wrap items-baseline gap-x-4 text-[0.9375rem] text-gray-600 dark:text-gray-400">
+            <time datetime="{{ sitzung.beginn|date:'c' }}">{{ sitzung.beginn|date:"l, j. F Y" }}</time>
+            <a href="{% url 'insight_core:insight:meeting_detail' sitzung.id %}" class="font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">Zur Sitzung</a>
+        </p>
+    </div>
+    <ul class="divide-y divide-gray-200 border-t border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+        {% for eintrag in sitzung.eintraege %}
+        <li class="group relative grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 py-4 lg:grid-cols-[11rem_minmax(0,1fr)_auto]">
+            <span class="self-start lg:pt-0.5"><c-insight.ergebnis :ergebnis="eintrag.ergebnis" /></span>
+            <div class="order-last col-span-2 min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1">
+                <a href="{{ eintrag.ziel }}" class="font-semibold text-gray-900 dark:text-white break-words underline-offset-4 group-hover:text-primary-700 group-hover:underline dark:group-hover:text-primary-300 after:absolute after:inset-0">{{ eintrag.titel }}</a>
+                {% if eintrag.worum %}<p class="mt-1 text-gray-700 dark:text-gray-300">{{ eintrag.worum }}</p>{% endif %}
+                {% for satz in eintrag.dazu %}<p class="mt-1 text-[0.9375rem] text-gray-600 dark:text-gray-400">{{ satz }}</p>{% endfor %}
+                {% if eintrag.teile %}
+                <details class="relative z-10 mt-1 text-[0.9375rem]">
+                    <summary class="inline-flex min-h-11 cursor-pointer items-center font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">Welche Punkte?</summary>
+                    <ul class="mt-1 list-disc space-y-1 pl-5 text-gray-700 dark:text-gray-300">
+                        {% for teil in eintrag.teile %}<li class="break-words"><a href="{{ teil.ziel }}" class="underline-offset-4 hover:underline">{{ teil.titel }}</a>{% if teil.von %} <span class="text-gray-600 dark:text-gray-400">({{ teil.von|join:", " }}{% if teil.von_weitere %} und weitere{% endif %})</span>{% endif %}</li>{% endfor %}
+                    </ul>
+                </details>
+                {% endif %}
+            </div>
+            <span class="justify-self-end text-right text-[0.875rem] font-semibold text-gray-700 dark:text-gray-300 lg:col-start-3 lg:row-start-1 lg:max-w-60 lg:pt-0.5">{{ eintrag.von|join:", " }}{% if eintrag.von_weitere %} und weitere{% endif %}</span>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% empty %}
+<div class="mt-8 max-w-2xl">
+    <h2 class="text-[1.1875rem] font-semibold text-gray-900 dark:text-white">{% if auswahl.gefiltert %}Keine Ergebnisse für diese Auswahl{% else %}In diesem Zeitraum liegen noch keine Ergebnisse vor{% endif %}</h2>
+    <p class="mt-2 text-[1.0625rem] leading-relaxed text-gray-700 dark:text-gray-300">
+        {% if leer_laenger %}Vielleicht liegt die Entscheidung länger zurück: <c-ui.textlink href="{{ request.path }}{{ leer_laenger.0 }}" class="underline">{{ leer_laenger.1 }} zeigen</c-ui.textlink>{% if auswahl.gefiltert %} oder <c-ui.textlink href="{{ request.path }}" class="underline">alle Filter zurücksetzen</c-ui.textlink>{% endif %}.
+        {% elif auswahl.gefiltert %}<c-ui.textlink href="{{ request.path }}" class="underline">Alle Filter zurücksetzen</c-ui.textlink>
+        {% else %}Ergebnisse erscheinen hier, sobald die Kommune sie nach den Sitzungen veröffentlicht.{% endif %}
+    </p>
+</div>
+{% endfor %}
+
+{% include "partials/insight_seiten.html" %}
+{% endif %}

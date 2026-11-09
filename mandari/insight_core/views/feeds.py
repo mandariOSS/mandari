@@ -538,7 +538,7 @@ def _titel_und_seite(name: str, kwargs: Mapping[str, Any], werte: Mapping[str, s
         paper = (
             OParlPaper.objects.exclude(withdrawn_q())
             .filter(pk=kwargs["pk"])
-            .only("id", "body_id", "name", "reference")
+            .only("id", "body_id", "name", "reference", "paper_type")
             .first()
         )
         if paper is None or not _veroeffentlicht(paper.body_id):

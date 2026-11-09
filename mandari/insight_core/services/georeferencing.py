@@ -12,10 +12,14 @@ Georeferenzierungs-Pipeline: Ortsextraktion + Geocoding für Papers.
 Ist kein Straßenverzeichnis importiert (import_streets), fällt Pass 1 auf
 das alte Verhalten (Photon-Geocoding + Blocklist) zurück.
 
-`locations`-Einträge tragen `source` (oparl|address_match|street_match|ai|manual|plan_boundary|ai_check)
-und `confidence`. Einträge mit source oparl/manual/plan_boundary/ai_check werden bei Re-Runs nie
-überschrieben (siehe update_paper_georef). Treffer mit Hausnummer werden auf den
-OSM-Adresspunkt (Address-Modell) verfeinert, sofern importiert (Issue #54).
+`locations`-Einträge tragen `source` (oparl|address_match|street_match|ai|manual|plan_boundary|ai_check),
+`confidence` und `fundstelle` (titel|dokument|ki, Issue #1269). Einträge mit source oparl/manual/plan_boundary/
+ai_check werden bei Re-Runs nie überschrieben (siehe update_paper_georef). Treffer mit Hausnummer werden auf den
+OSM-Adresspunkt (Address-Modell) verfeinert, sofern importiert (Issue #54) – nie bei Eingaben aus der
+Einwohnerschaft und Bauanträgen (``ortsschutz``, Issue #1269): Dort bleibt es beim Punkt der Straße, und Eingaben aus
+der Einwohnerschaft werden nur aus dem Titel verortet. Gelesen wird der Hauptteil des Hauptdokuments (OParl
+``mainFile`` bis zur Überschrift „Anlagen“); Orte, die nur in Anlagen stehen, werden nicht verortet, ebenso wenig
+Sammellisten, Wirtschaftspläne und Jahresabschlüsse (``titel_ohne_ort``).
 Jeder Lauf spiegelt das JSON zusätzlich in die Tabelle PaperLocation
 (services/paper_locations.py) – Grundlage für Umkreissuche und Admin-Korrektur.
 """
@@ -55,6 +59,31 @@ CONFIDENCE = {
     "street_match": 0.8,
     "ai": 0.6,
 }
+
+#: Fundstelle eines Orts (Eintrag ``fundstelle``, Issue #1269): im Titel, im Hauptdokument, von der KI erkannt
+FUNDSTELLE_TITEL = "titel"
+FUNDSTELLE_DOKUMENT = "dokument"
+FUNDSTELLE_KI = "ki"
+
+#: Titel ohne gemeinsamen Ort: Sammellisten nichtöffentlicher Punkte und Vorlagen zu Gesellschaften und Haushalt,
+#: deren Text Straßen nur als Anschrift oder Beispiel nennt (Issue #1269)
+_SAMMELLISTE = r"\b(?:tagesordnungs)?punkte?\w*\b.*nicht\s?öffentlich|nicht\s?öffentlich\w*\s+(?:tagesordnungs)?punkte?"
+TITEL_OHNE_ORT = re.compile(
+    _SAMMELLISTE + r"|jahresabschluss|wirtschaftsplan|aufsichtsrat|gesellschafterversammlung|beteiligungsbericht|"
+    r"lagebericht",
+    re.IGNORECASE,
+)
+#: Straßennamen, die zugleich Gattungsnamen sind („auf dem Markt“, „Schulstraße“ als Verkehrsberuhigung vor Schulen):
+#: im Volltext nur mit Hausnummer ein Ort (normalisiert wie das Straßenverzeichnis)
+GATTUNGSNAMEN = frozenset({"markt", "marktplatz", "schulstrasse", "forstweg", "rheinufer", "kirchplatz", "dorfplatz"})
+#: Überschrift des Anlagenteils in einem Hauptdokument („Anlagen:“ auf eigener Zeile)
+_ANLAGEN_RE = re.compile(r"^[ \t]*Anlage(?:n|/n)?[ \t]*:?[ \t]*$", re.MULTILINE)
+
+
+def titel_ohne_ort(name: str | None) -> bool:
+    """Titel ohne eigenen Ortsbezug (Sammelliste, Wirtschaftsplan, Jahresabschluss, Aufsichtsrat …)?"""
+    return bool(TITEL_OHNE_ORT.search(name or ""))
+
 
 # Rate limiter state
 _last_geocode_time = 0.0
@@ -801,22 +830,41 @@ _BOILERPLATE_RE = re.compile(
 )
 
 
+def _hauptdokument_kennung(paper) -> str:
+    """Kennung des Hauptdokuments laut Quelle (OParl ``mainFile``: Adresse oder Objekt mit ``id``), sonst leer."""
+    roh = paper.raw_json if isinstance(paper.raw_json, dict) else {}
+    haupt = roh.get("mainFile")
+    if isinstance(haupt, dict):
+        haupt = haupt.get("id")
+    return haupt if isinstance(haupt, str) else ""
+
+
+def hauptteil(text: str) -> str:
+    """Text bis zur Überschrift „Anlagen“ (eigene Zeile); Orte im Anlagenteil werden nicht verortet (#1269)."""
+    treffer = _ANLAGEN_RE.search(text or "")
+    return text[: treffer.start()] if treffer else (text or "")
+
+
 def collect_paper_text(paper) -> str:
     """
-    Collect all extracted text content from a paper's files.
-    Strips common boilerplate (bank details, phone numbers, etc.).
+    Text für die Verortung: Titel und Hauptteil des Hauptdokuments.
 
-    Only includes files with text_extraction_status=completed.
+    Nennt die Quelle ein Hauptdokument (OParl ``mainFile``), zählt nur dessen Text bis zur Überschrift „Anlagen“;
+    Anlagen nennen oft Adressen anderer Stellen oder Listen (Issue #1269). Ohne Angabe zum Hauptdokument bleibt es bei
+    allen Dokumenten mit erkanntem Text. Häufige Textbausteine (Bankverbindung, Telefon …) fallen weg.
     """
     texts = []
     files = paper.files.filter(
         text_extraction_status="completed",
         text_content__isnull=False,
     ).exclude(text_content="")
+    haupt = _hauptdokument_kennung(paper)
+    if haupt:
+        files = files.filter(external_id=haupt)
 
     for f in files:
         if f.text_content:
-            texts.append(f.text_content)
+            texts.append(hauptteil(f.text_content) if haupt else f.text_content)
 
     combined = "\n\n".join(texts)
 
@@ -832,19 +880,36 @@ def collect_paper_text(paper) -> str:
 # =============================================================================
 
 
-def _street_hit_to_location(hit: dict) -> dict:
-    """Wandelt einen Gazetteer-Treffer in einen locations-Eintrag um."""
-    source = "address_match" if hit.get("house_number") else "street_match"
+def _street_hit_to_location(hit: dict, *, adresspunkt: bool = True, fundstelle: str = "") -> dict:
+    """
+    Wandelt einen Gazetteer-Treffer in einen locations-Eintrag um. ``adresspunkt=False`` (Privatanschriften, #1269):
+    Name ohne Hausnummer und Herkunft „Straße“, auch wenn der Text eine Hausnummer nennt.
+    """
+    mit_nummer = bool(hit.get("house_number")) and adresspunkt
+    source = "address_match" if mit_nummer else "street_match"
     name = hit["name"]
-    if hit.get("house_number"):
+    if mit_nummer:
         name = f"{name} {hit['house_number']}"
-    return {
+    entry = {
         "lat": round(float(hit["lat"]), 7),
         "lon": round(float(hit["lon"]), 7),
         "name": name,
         "source": source,
         "confidence": CONFIDENCE[source],
     }
+    if fundstelle:
+        entry["fundstelle"] = fundstelle
+    return entry
+
+
+def _im_titel(normalized: str, titel: str) -> bool:
+    """Steht der (normalisierte) Straßenname als ganzes Wort im Titel?"""
+    from insight_core.services.gazetteer import normalize_street_name
+
+    if not normalized or not titel:
+        return False
+    muster = r"(?<![a-zäöü0-9])" + re.escape(normalized) + r"(?![a-zäöü])"
+    return re.search(muster, normalize_street_name(titel)) is not None
 
 
 def _collect_street_hit(street_hits: dict, hit: dict) -> None:
@@ -869,13 +934,18 @@ def _is_person_false_positive(hit: dict, person_names: set[str]) -> bool:
     return hit["normalized"] in person_names
 
 
-def extract_with_gazetteer(text: str, gazetteer, person_names: set[str]) -> list[dict]:
+def extract_with_gazetteer(
+    text: str, gazetteer, person_names: set[str], *, adresspunkte: bool = True, titel: str = ""
+) -> list[dict]:
     """
     Pass 1 mit Straßenverzeichnis: Regex-Kandidaten + direkte Volltextsuche,
     beides validiert gegen den Gazetteer. Geometrie kommt lokal aus OSM.
 
+    ``adresspunkte=False`` (Privatanschriften, #1269) verfeinert nie auf den Adresspunkt. ``titel`` bestimmt die
+    Fundstelle je Ort (im Titel oder im Dokument). Gattungsnamen („Markt“) zählen nur mit Hausnummer.
+
     Returns:
-        Liste von locations-Einträgen (lat, lon, name, source, confidence).
+        Liste von locations-Einträgen (lat, lon, name, source, confidence, fundstelle).
     """
     street_hits: dict[str, dict] = {}
 
@@ -891,11 +961,17 @@ def extract_with_gazetteer(text: str, gazetteer, person_names: set[str]) -> list
     for hit in gazetteer.find_in_text(text):
         _collect_street_hit(street_hits, hit)
 
-    # c) Personen-False-Positives ausschließen, Hausnummern auf Adresspunkte verfeinern
+    # c) Personen-False-Positives und Gattungsnamen ohne Hausnummer ausschließen, Hausnummern auf Adresspunkte
+    #    verfeinern (nicht bei Privatanschriften)
     return [
-        _street_hit_to_location(gazetteer.refine(hit))
+        _street_hit_to_location(
+            gazetteer.refine(hit) if adresspunkte else hit,
+            adresspunkt=adresspunkte,
+            fundstelle=FUNDSTELLE_TITEL if _im_titel(hit["normalized"], titel) else FUNDSTELLE_DOKUMENT,
+        )
         for hit in street_hits.values()
         if not _is_person_false_positive(hit, person_names)
+        and not (hit["normalized"] in GATTUNGSNAMEN and not hit.get("house_number"))
     ]
 
 
@@ -915,12 +991,21 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
     Returns:
         Dict with status, locations, method, error
     """
+    from insight_core.services import ortsschutz
     from insight_core.services.gazetteer import StreetGazetteer, get_person_name_set
 
-    # 1. Collect text from all files
-    text = collect_paper_text(paper)
+    # 0. Sammellisten, Wirtschaftspläne, Jahresabschlüsse: kein gemeinsamer Ort (Issue #1269)
+    if titel_ohne_ort(paper.name):
+        return {"status": "no_locations", "locations": [], "method": "none", "reason": "Titel ohne Ortsbezug"}
+
+    # 1. Text: Titel und Hauptteil des Hauptdokuments. Eingaben aus der Einwohnerschaft nur aus dem Titel, denn im
+    #    Volltext steht meist die Anschrift der Einreichenden; Privatanschriften nie als Adresspunkt (Issue #1269)
+    schutz = ortsschutz.grund(paper)
+    adresspunkte = not schutz
+    text = (paper.name or "").strip() if schutz == ortsschutz.EINWOHNERSCHAFT else collect_paper_text(paper)
     if not text:
         return {"status": "skipped", "reason": "Kein Text verfügbar"}
+    titel = paper.name or ""
 
     body = paper.body
     gazetteer = StreetGazetteer(body) if body else None
@@ -932,7 +1017,7 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
     if mode in ("regex", "all"):
         if gazetteer:
             person_names = get_person_name_set(body)
-            geocoded = extract_with_gazetteer(text, gazetteer, person_names)
+            geocoded = extract_with_gazetteer(text, gazetteer, person_names, adresspunkte=adresspunkte, titel=titel)
             if geocoded:
                 method = "gazetteer"
         else:
@@ -944,12 +1029,17 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
                 address = loc.get("normalized") or loc.get("raw", "")
                 if not address:
                     continue
+                _, house_number = _split_house_number(address)
+                if not adresspunkte:
+                    # Privatanschrift: nur die Straße geokodieren (#1269)
+                    address, house_number = ortsschutz.ort_ohne_hausnummer(address), None
                 result = geocode_address(address, body)
                 if result and is_within_body(result["lat"], result["lon"], body):
-                    _, house_number = _split_house_number(address)
                     source = "address_match" if house_number else "street_match"
                     result["source"] = source
                     result["confidence"] = CONFIDENCE[source]
+                    im_titel = address.lower() in titel.lower()
+                    result["fundstelle"] = FUNDSTELLE_TITEL if im_titel else FUNDSTELLE_DOKUMENT
                     geocoded.append(result)
             if geocoded:
                 method = "regex"
@@ -963,12 +1053,21 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
             address = loc.get("normalized") or loc.get("raw", "")
             if not address:
                 continue
+            if not adresspunkte:
+                # Privatanschrift: nur die Straße (#1269)
+                address = ortsschutz.ort_ohne_hausnummer(address)
 
             # Straßen-Kandidaten zuerst lokal im Gazetteer auflösen
             if gazetteer:
                 hit = gazetteer.lookup(address)
                 if hit:
-                    geocoded.append(_street_hit_to_location(gazetteer.refine(hit)))
+                    geocoded.append(
+                        _street_hit_to_location(
+                            gazetteer.refine(hit) if adresspunkte else hit,
+                            adresspunkt=adresspunkte,
+                            fundstelle=FUNDSTELLE_KI,
+                        )
+                    )
                     continue
 
             # POIs/sonstige Orte: Photon/Nominatim-Fallback mit BBox-Check
@@ -976,6 +1075,7 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
             if result and is_within_body(result["lat"], result["lon"], body):
                 result["source"] = "ai"
                 result["confidence"] = CONFIDENCE["ai"]
+                result["fundstelle"] = FUNDSTELLE_KI
                 geocoded.append(result)
         if geocoded:
             method = "ai" if method == "none" else f"{method}+ai"

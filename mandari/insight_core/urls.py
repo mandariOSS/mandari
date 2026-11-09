@@ -55,6 +55,12 @@ insight_patterns = [
         {"liste": "person_list"},
         name="portal_person_list",
     ),
+    path(
+        "k/<slug:slug>/beschluesse/",
+        listenseite(views.portal_list),
+        {"liste": "decision_list"},
+        name="portal_decision_list",
+    ),
     path("k/<slug:slug>/<path:rest>", views.portal_entry, name="portal_entry_path"),
     # Gremien (Organizations)
     path("gremien/", listenseite(views.OrganizationListView.as_view()), name="organization_list"),
@@ -65,8 +71,9 @@ insight_patterns = [
     path("personen/<uuid:pk>/", views.PersonDetailView.as_view(), name="person_detail"),
     path("personen/<uuid:pk>/frage-stellen/", views.AskQuestionView.as_view(), name="ask_question"),
     # Öffentliche Fragen (Ratsfragen-Portal)
-    # Öffentliches Beschluss-Tracking „Was wurde aus …?“ (Issue #48)
+    # Beschlüsse als Liste der Entscheidungen (Issue #1270), die Umsetzung „Was wurde aus …?“ als Reiter (Issue #48)
     path("beschluesse/", listenseite(views.DecisionListView.as_view()), name="decision_list"),
+    path("beschluesse/umsetzung/", listenseite(views.DecisionTrackingView.as_view()), name="decision_tracking"),
     # Feeds (Issue #1274, views/feeds.py): Atom je Auswahl, Vorgang und Gremium, noindex wie das Kalender-Abo
     path("beschluesse/feed.atom", ohne_index(views.decision_feed), name="decision_feed"),
     path("beschluesse/<uuid:pk>/", views.DecisionDetailView.as_view(), name="decision_detail"),
@@ -139,6 +146,8 @@ insight_patterns = [
     path("rueckmeldung/", ohne_index(views.page_feedback), name="page_feedback"),
     # „Was ist neu?“: Neuigkeiten in Bürgersprache, verlinkt von der Versionsnummer im Fuß (Issue #1261)
     path("neuigkeiten/", views.NeuigkeitenView.as_view(), name="neuigkeiten"),
+    # „Offene Daten“: OParl-Schnittstelle mit den Adressen je Kommune, verlinkt im Fuß und aus /oparl/ (Issue #1282)
+    path("offene-daten/", views.offene_daten, name="offene_daten"),
 ]
 
 # =============================================================================

@@ -26,6 +26,9 @@ LANGER_BLOCK_WOERTER: Final = 80
 SAETZE_JE_ABSATZ: Final = 3
 #: Längste Vorschauzeile (Zeichen); die Liste kürzt sichtbar auf zwei bzw. drei Zeilen
 VORSCHAU_ZEICHEN: Final = 360
+#: Ab dieser Prompt-Fassung prüft ``insight_ai.services.zusammenfassung_pruefung`` jede Zusammenfassung vor dem Speichern
+#: (auch auf Hausnummern); ältere Fassungen zeigt die Vorschau nur ohne Hausnummern
+GEPRUEFT_AB_FASSUNG: Final = 2
 #: Satzende: Punkt, Ausrufe- oder Fragezeichen, dann Leerraum und ein Großbuchstabe; nicht nach Abkürzungen
 _SATZENDE: Final = re.compile(r"(?<=[.!?])(?<!\bNr\.)(?<!\bz\.)(?<!\bB\.)(?<!\bca\.)(?<!\bvgl\.)\s+(?=[A-ZÄÖÜ„])")
 
@@ -71,10 +74,23 @@ def vorschauen(vorgaenge: Iterable[Any], *, now: datetime | None = None) -> dict
         return {}
     staende = {str(k): stand for k, stand in summary_store.beratungsstaende(list(mit_text), now=now).items()}
     return {
-        kennung: kurz
+        kennung: _ohne_hausnummer(vorgang, kurz)
         for kennung, vorgang in mit_text.items()
         if (vorgang.summary_stand or "") == staende.get(kennung, "") and (kurz := kurzfassung(vorgang.summary))
     }
+
+
+def _ohne_hausnummer(vorgang: Any, text: str) -> str:
+    """
+    Vorschau ohne Hausnummer (Issue #1269), wenn die Zusammenfassung ungeprüft ist (vor ``GEPRUEFT_AB_FASSUNG``) oder
+    der Vorgang eine Privatanschrift nennen kann (Eingabe aus der Einwohnerschaft, Bauordnung).
+    """
+    from .ortsschutz import grund_nach_art, hausnummern_auslassen
+
+    ungeprueft = int(getattr(vorgang, "summary_prompt_fassung", 0) or 0) < GEPRUEFT_AB_FASSUNG
+    if ungeprueft or grund_nach_art(getattr(vorgang, "paper_type", None), getattr(vorgang, "name", None)):
+        return hausnummern_auslassen(text)
+    return text
 
 
 def anhaengen(vorgaenge: list[Any]) -> None:
@@ -95,7 +111,7 @@ def an_treffer(treffer: list[dict[str, Any]]) -> None:
     if not kennungen:
         return
     vorgaenge = OParlPaper.objects.filter(pk__in=kennungen, summary__isnull=False).only(
-        "pk", "summary", "summary_stand"
+        "pk", "summary", "summary_stand", "summary_prompt_fassung", "paper_type", "name"
     )
     gefunden = vorschauen(vorgaenge)
     for eintrag in treffer:

@@ -27,6 +27,7 @@ from .chat import (
 from .decisions import (  # noqa: F401
     DecisionDetailView,
     DecisionListView,
+    DecisionTrackingView,
     confirm_decision_subscription,
     unsubscribe_decision,
 )
@@ -77,6 +78,7 @@ from .neighborhood import (
     neighborhood_results,
 )
 from .neuigkeiten import NeuigkeitenView
+from .offene_daten import offene_daten
 from .organizations import (
     OrganizationDetailView,
     OrganizationListView,
@@ -195,6 +197,7 @@ __all__ = [
     "meeting_live_kino",
     "neighborhood_autocomplete",
     "neighborhood_results",
+    "offene_daten",
     "page_feedback",
     "paper_summary",
     "paper_summary_bewertung",

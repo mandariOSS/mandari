@@ -47,11 +47,13 @@ class SyncResult:
     updated: int = 0
     deleted: int = 0
     suppressed: int = 0
+    #: zurückgestufte Zeilen (#1269) ohne JSON-Gegenstück: ausgeblendet statt gelöscht
+    hidden: int = 0
     json_changed: bool = False
 
     @property
     def changed(self) -> bool:
-        return bool(self.created or self.updated or self.deleted or self.json_changed)
+        return bool(self.created or self.updated or self.deleted or self.hidden or self.json_changed)
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -122,8 +124,10 @@ def sync_paper_locations(paper: OParlPaper, save: bool = True) -> SyncResult:
     Gleicht ``paper.locations`` (JSON) mit der Tabelle ``PaperLocation`` ab.
 
     - Einträge im Umkreis (≤ 50 m) einer entfernten Zeile werden verworfen (Sperre).
+    - Ausgeblendete Zeilen (Datenschutz, #1269) bleiben, wie sie sind; ein Eintrag genau an ihrem Punkt entfällt.
     - Bestätigte Zeilen, die im JSON fehlen, werden dort wieder aufgenommen.
-    - Automatische Zeilen ohne JSON-Gegenstück werden gelöscht.
+    - Automatische Zeilen ohne JSON-Gegenstück werden gelöscht; zurückgestufte (``vorher`` gesetzt, #1269) nur
+      ausgeblendet, damit ``adresspunkte_zurueckstufen --rueckgaengig`` sie wiederherstellen kann.
 
     Bei ``save=True`` wird ein verändertes JSON am Vorgang gespeichert.
     """
@@ -135,12 +139,16 @@ def sync_paper_locations(paper: OParlPaper, save: bool = True) -> SyncResult:
     removed = [r for r in existing if r.status == PaperLocation.STATUS_REMOVED]
     confirmed = {point_key(r.latitude, r.longitude): r for r in existing if r.status == PaperLocation.STATUS_CONFIRMED}
     auto = {point_key(r.latitude, r.longitude): r for r in existing if r.status == PaperLocation.STATUS_AUTO}
+    # Aus Datenschutzgründen ausgeblendete Adresspunkte (#1269) bleiben unangetastet und sperren genau ihren Punkt
+    hidden = {point_key(r.latitude, r.longitude) for r in existing if r.status == PaperLocation.STATUS_HIDDEN}
 
     kept: list[dict[str, Any]] = []
     kept_keys: set[PointKey] = set()
     for entry in entries:
         key = point_key(entry["lat"], entry["lon"])
-        if any(haversine_m(key[0], key[1], r.latitude, r.longitude) <= SUPPRESS_RADIUS_M for r in removed):
+        if key in hidden or any(
+            haversine_m(key[0], key[1], r.latitude, r.longitude) <= SUPPRESS_RADIUS_M for r in removed
+        ):
             result.suppressed += 1
             continue
         if key in kept_keys:
@@ -174,7 +182,17 @@ def sync_paper_locations(paper: OParlPaper, save: bool = True) -> SyncResult:
         elif _row_needs_update(row, entry):
             to_update.append(row)
 
-    stale_ids = [r.pk for r in auto.values()]
+    # Zurückgestufte Zeilen tragen die alten Angaben (``vorher``): ausblenden statt löschen, sonst wäre die
+    # Rückstufung nicht mehr umkehrbar (#1269)
+    zurueckgestuft = [r for r in auto.values() if r.vorher is not None]
+    stale_ids = [r.pk for r in auto.values() if r.vorher is None]
+    if zurueckgestuft:
+        jetzt = timezone.now()
+        for zeile in zurueckgestuft:
+            zeile.status = PaperLocation.STATUS_HIDDEN
+            zeile.updated_at = jetzt
+        PaperLocation.objects.bulk_update(zurueckgestuft, ["status", "updated_at"], batch_size=500)
+        result.hidden = len(zurueckgestuft)
     if stale_ids:
         result.deleted = PaperLocation.objects.filter(pk__in=stale_ids).delete()[0]
     if to_create:
@@ -246,10 +264,13 @@ def _result_row(
     paper_type: str | None,
     date: Any,
 ) -> dict[str, Any]:
+    from insight_core.services.ortsschutz import oeffentlicher_titel
+
     dist_int = int(distance)
     return {
         "id": str(paper_id),
-        "name": name,
+        # Bürgerportal (Nachbarschaft, Ortsband der Suche): ohne Hausnummer bei Privatanschriften (Issue #1269)
+        "name": oeffentlicher_titel(name, paper_type),
         "reference": reference,
         "paper_type": paper_type,
         "date": date,
@@ -299,7 +320,7 @@ def nearby_papers(
             longitude__lte=east,
             paper__deleted=False,
         )
-        .exclude(status=PaperLocation.STATUS_REMOVED)
+        .exclude(status__in=PaperLocation.STATUS_UNSICHTBAR)
         .annotate(distance=_distance_expression(lat, lon))
         .filter(distance__lte=float(radius_m))
         .order_by(
@@ -381,7 +402,7 @@ def count_nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int) 
             longitude__lte=east,
             paper__deleted=False,
         )
-        .exclude(status=PaperLocation.STATUS_REMOVED)
+        .exclude(status__in=PaperLocation.STATUS_UNSICHTBAR)
         .annotate(distance=_distance_expression(lat, lon))
         .filter(distance__lte=float(radius_m))
         .values("paper_id")
@@ -400,7 +421,7 @@ def location_counts(paper_ids: list[str]) -> dict[str, int]:  # Kennungen als Te
         return {}
     rows = (
         PaperLocation.objects.filter(paper_id__in=[uuid.UUID(pid) for pid in paper_ids])
-        .exclude(status=PaperLocation.STATUS_REMOVED)
+        .exclude(status__in=PaperLocation.STATUS_UNSICHTBAR)
         .values("paper_id")
         .annotate(n=Count("id"))
     )
@@ -419,7 +440,7 @@ def located_share(body: OParlBody) -> float:
             return 0.0
         verortet = (
             PaperLocation.objects.filter(body=body, paper__deleted=False)
-            .exclude(status=PaperLocation.STATUS_REMOVED)
+            .exclude(status__in=PaperLocation.STATUS_UNSICHTBAR)
             .values("paper_id")
             .distinct()
             .count()

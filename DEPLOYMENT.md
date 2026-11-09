@@ -1231,7 +1231,7 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
    docker exec mandari python manage.py zusammenfassung_stichprobe --auswerten /tmp/stichprobe.tsv
    ```
 
-   Migrationen `insight_core/0070` (eine Spalte mit Datenbank-Standardwert, im Ingestor als Anreicherungsspalte
+   Migrationen `insight_core/0071` (eine Spalte mit Datenbank-Standardwert, im Ingestor als Anreicherungsspalte
    eingetragen) und `insight_ai/0003` (nur eine neue Tabelle).
 6. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
    reserviert offene Batches mit ihrer Schätzung. Ist es erreicht, ruht der Batch, und „Zusammenfassen“ meldet

@@ -140,6 +140,23 @@ def test_liste_zeigt_kurzfassung_statt_dateigroesse(kommune: OParlBody) -> None:
     assert str(ohne.name) in html
 
 
+def test_vorschau_ungepruefter_zusammenfassung_ohne_hausnummer(kommune: OParlBody) -> None:
+    """Zusammenfassungen von vor der Prüfung (Fassung 0 und 1) zeigt die Vorschau nur ohne Hausnummer (#1269)."""
+    from insight_core.services.ortsschutz import OHNE_NR
+
+    alt = _vorgang(kommune, 1)
+    _beschlossen(alt, 1)
+    _mit_zusammenfassung(alt, "Vor dem Haus Hauptstraße 12 soll ein Radweg entstehen.\n\nMehr dazu.")
+    OParlPaper.objects.filter(pk=alt.pk).update(summary_prompt_fassung=0)
+
+    html = Client().get(LISTE).content.decode()
+    assert f"Hauptstraße {OHNE_NR}" in html and "Hauptstraße 12" not in html
+
+    # Geprüft (Fassung 2) und kein geschützter Vorgang: Text unverändert
+    OParlPaper.objects.filter(pk=alt.pk).update(summary_prompt_fassung=2)
+    assert "Hauptstraße 12" in Client().get(LISTE).content.decode()
+
+
 def test_liste_ohne_kurzfassung_ohne_hinweis(kommune: OParlBody) -> None:
     _vorgang(kommune, 1)
     html = Client().get(LISTE).content.decode()

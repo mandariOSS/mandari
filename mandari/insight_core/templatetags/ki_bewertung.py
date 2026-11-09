@@ -21,6 +21,14 @@ def ki_fassung(zusammenfassung: str | None) -> str:
 
 
 @register.filter
-def ki_absaetze(text: str | None) -> list[str]:
-    """Absätze einer Zusammenfassung für die Anzeige mit „Weiterlesen“ (``services.kurzfassung.absaetze``)."""
+def ki_absaetze(text: str | None, ortsschutz: str | None = None) -> list[str]:
+    """
+    Absätze einer Zusammenfassung für die Anzeige mit „Weiterlesen“ (``services.kurzfassung.absaetze``). Mit
+    ``ortsschutz`` (Ergebnis von ``ortsschutz.grund``, Bürgerportal) ohne Hausnummern (Issue #1269); die Prüfsumme
+    bleibt die des gespeicherten Texts.
+    """
+    if ortsschutz:
+        from ..services.ortsschutz import hausnummern_auslassen
+
+        text = hausnummern_auslassen(text)
     return absaetze(text)

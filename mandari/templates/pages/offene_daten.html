@@ -1,0 +1,94 @@
+{% extends "base_insight.html" %}
+{% comment %}
+„Offene Daten“ (Issue #1282, views/offene_daten.py): Einstieg in die OParl-Schnittstelle zum Kopieren, ein Beispiel
+mit den Vorlagen einer Kommune und je Kommune die Adressen aus hub.api.verzeichnis. Die Adressen stehen als
+sichtbarer Text und als Link, damit Programme sie auch aus einer Textfassung der Seite lesen. Kontext: eintraege,
+beispiel, system_url, bodies_url, uebersicht_url, doku_url, seitengroesse, anfragen_je_minute.
+{% endcomment %}
+
+{% block title %}Offene Daten: OParl-Schnittstelle{% endblock %}
+{% block brotkrumen_aktuell %}<c-insight.brotkrume>Offene Daten</c-insight.brotkrume>{% endblock %}
+
+{% block page %}
+<c-insight.kopfband titel="Offene Daten" text="Die Ratsinformationen in diesem Bürgerportal stehen nach dem Standard OParl 1.1 als offene Daten bereit: lesend, ohne Anmeldung, im Format JSON." />
+
+<c-insight.band aria-labelledby="einstieg-titel">
+    <div class="max-w-3xl">
+        <section>
+            <h2 id="einstieg-titel" class="abschnitt-titel">Einstieg</h2>
+            <label for="oparl-einstieg" class="mt-4 block text-[0.95rem] font-medium text-gray-900 dark:text-white">Adresse des OParl-Systems</label>
+            <div class="mt-1 flex flex-col gap-2 sm:flex-row">
+                <input id="oparl-einstieg" type="text" readonly value="{{ system_url }}" data-action="select" spellcheck="false" autocomplete="off"
+                       class="min-w-0 flex-1 px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 font-mono text-sm text-gray-900 dark:text-gray-100 select-all">
+                <c-ui.button data-action="copy" data-target="#oparl-einstieg" data-status="#oparl-kopiert" data-copied="Adresse kopiert." icon="copy">Adresse kopieren</c-ui.button>
+            </div>
+            <p id="oparl-kopiert" role="status" aria-live="polite" class="mt-2 text-[0.95rem] font-medium text-primary-700 dark:text-primary-300 empty:hidden"></p>
+            <p class="mt-4 text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">
+                Vom System-Objekt führen Links zur <a href="{{ bodies_url }}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">Liste der Kommunen</a> und von jeder Kommune zu ihren Sitzungen, Vorlagen, Gremien und Personen.
+                Die Übersicht <a href="{{ uebersicht_url }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ uebersicht_url }}</a> nennt im Feld <code class="font-mono text-[0.95rem]">bodyIndex</code> dieselben Adressen wie die Tabelle unten, für Programme in einem Abruf.
+            </p>
+            <p class="mt-3 text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">
+                Jede Liste enthält höchstens {{ seitengroesse }} Objekte je Seite, den Link zur nächsten Seite finden Sie unter <code class="font-mono text-[0.95rem]">links.next</code>.
+                Die Schnittstelle erlaubt Abrufe aus dem Browser (CORS){% if anfragen_je_minute %} und bis zu {{ anfragen_je_minute }} Anfragen pro Minute{% endif %}. Die Lizenz der Daten legt die jeweilige Kommune fest.
+            </p>
+            <p class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[0.95rem]">
+                <c-ui.textlink href="{{ doku_url }}">Dokumentation der Schnittstelle</c-ui.textlink>
+                <c-ui.textlink href="https://oparl.org/spezifikation/" extern>Spezifikation OParl 1.1</c-ui.textlink>
+            </p>
+        </section>
+
+        {% if beispiel %}
+        <section aria-labelledby="beispiel-titel" class="mt-12">
+            <h2 id="beispiel-titel" class="abschnitt-titel">Beispiel: Vorlagen von {{ beispiel.display_name }} abrufen</h2>
+            <ol class="mt-3 list-decimal pl-5 space-y-3 text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">
+                <li>Alle Vorlagen, Anträge und Anfragen, sortiert nach dem Zeitpunkt der letzten Änderung:<br>
+                    <a href="{{ beispiel.listen.paper }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ beispiel.listen.paper }}</a></li>
+                <li>Nur, was sich seit einem Zeitpunkt geändert hat, mit dem Filter <code class="font-mono text-[0.95rem]">modified_since</code> (Zeitzone angeben, etwa <code class="font-mono text-[0.95rem]">Z</code> für UTC):<br>
+                    <a href="{{ beispiel.listen.paper }}?modified_since=2026-11-01T00:00:00Z" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ beispiel.listen.paper }}?modified_since=2026-11-01T00:00:00Z</a></li>
+                <li>Die Art einer Vorlage steht im Feld <code class="font-mono text-[0.95rem]">paperType</code>, etwa „Antrag“ oder „Anfrage“. Die Dokumente stehen unter <code class="font-mono text-[0.95rem]">mainFile</code> und <code class="font-mono text-[0.95rem]">auxiliaryFile</code>; den erkannten Text liefert eine Datei unter ihrer eigenen Adresse (<code class="font-mono text-[0.95rem]">id</code>) im Feld <code class="font-mono text-[0.95rem]">text</code>.</li>
+            </ol>
+            <pre class="mt-5 overflow-x-auto rounded-lg bg-gray-100 dark:bg-gray-900 px-4 py-3 font-mono text-sm text-gray-900 dark:text-gray-100"><code>curl "{{ beispiel.listen.paper }}?modified_since=2026-11-01T00:00:00Z"</code></pre>
+        </section>
+        {% endif %}
+    </div>
+</c-insight.band>
+
+<c-insight.band ton="grau" aria-labelledby="kommunen-titel">
+    <h2 id="kommunen-titel" class="abschnitt-titel">Adressen je Kommune</h2>
+    {% if eintraege %}
+    <p class="mt-2 max-w-3xl text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">{{ eintraege|length }} Kommune{{ eintraege|length|pluralize:"n" }}, alphabetisch. Die Adresse des Body ist die Kennung der Kommune in der Schnittstelle.</p>
+    <div class="mt-5 overflow-x-auto">
+        <table class="block md:table w-full text-left text-[0.95rem]">
+            <thead class="hidden md:table-header-group">
+                <tr class="border-b border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400">
+                    <th scope="col" class="py-2 pr-6 font-medium">Kommune</th>
+                    <th scope="col" class="py-2 pr-6 font-medium">OParl-Body</th>
+                    <th scope="col" class="py-2 font-medium">Listen</th>
+                </tr>
+            </thead>
+            <tbody class="block md:table-row-group divide-y divide-gray-200 dark:divide-gray-800">
+                {% for eintrag in eintraege %}
+                <tr id="kommune-{% firstof eintrag.slug eintrag.body_id %}" class="block md:table-row py-3 md:py-0 align-top scroll-mt-24">
+                    <th scope="row" class="block md:table-cell md:py-3 pr-6 font-semibold text-gray-900 dark:text-white">
+                        <a href="{{ eintrag.web }}" class="hover:underline underline-offset-4">{{ eintrag.display_name }}</a>
+                        {% if eintrag.display_name in eintrag.name and eintrag.name != eintrag.display_name %}<span class="block font-normal text-[0.875rem] text-gray-600 dark:text-gray-400">{{ eintrag.name }}</span>{% endif %}
+                        {% if eintrag.ags %}<span class="block font-normal text-[0.875rem] text-gray-600 dark:text-gray-400">AGS {{ eintrag.ags }}</span>{% endif %}
+                    </th>
+                    <td class="block md:table-cell mt-1 md:mt-0 md:py-3 pr-6"><a href="{{ eintrag.body }}" class="font-mono text-[0.875rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.body }}</a></td>
+                    <td class="block md:table-cell mt-1 md:mt-0 md:py-3 md:whitespace-nowrap">
+                        <c-ui.textlink href="{{ eintrag.listen.paper }}">Vorlagen</c-ui.textlink>
+                        · <c-ui.textlink href="{{ eintrag.listen.meeting }}">Sitzungen</c-ui.textlink>
+                        · <c-ui.textlink href="{{ eintrag.listen.organization }}">Gremien</c-ui.textlink>
+                        · <c-ui.textlink href="{{ eintrag.listen.person }}">Personen</c-ui.textlink>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="mt-2 max-w-2xl text-[1.0625rem] text-gray-700 dark:text-gray-300">Zurzeit ist keine Kommune angebunden.</p>
+    {% endif %}
+    {% include "partials/page_feedback.html" %}
+</c-insight.band>
+{% endblock %}

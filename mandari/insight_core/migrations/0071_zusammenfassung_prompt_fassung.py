@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0069_rueckmeldung_art"),
+        ("insight_core", "0070_verortung_datenschutz"),
     ]
 
     operations = [

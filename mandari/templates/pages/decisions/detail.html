@@ -1,6 +1,6 @@
 {% extends "base_insight.html" %}
 
-{% block title %}{% if seo.title %}{{ seo.title }}{% else %}{{ item.name }} – Umsetzungsstand{% endif %}{% endblock %}
+{% block title %}{% if seo.title %}{{ seo.title }}{% else %}{{ titel|default:item.name }} – Umsetzungsstand{% endif %}{% endblock %}
 {# Ohne Zusatz: Der Titel nennt die Kommune schon, die Marke steht in og:site_name (Issue #939) #}
 {% block title_suffix %}{% endblock %}
 
@@ -13,8 +13,8 @@
         {% endfor %}
     </div>
     {% endif %}
-    <a href="{% url 'insight_core:insight:decision_list' %}" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-primary-600 mb-4">
-        <i data-lucide="arrow-left" class="w-4 h-4"></i> Alle Beschlüsse
+    <a href="{% url 'insight_core:insight:decision_tracking' %}" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-primary-600 mb-4">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i> Umsetzung der Beschlüsse
     </a>
 
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
@@ -28,7 +28,7 @@
             </span>
             {% if item.resolution_number %}<span class="text-sm font-mono text-gray-500 dark:text-gray-400">{{ item.resolution_number }}</span>{% endif %}
         </div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ item.name }}</h1>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ titel|default:item.name }}</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Beschlossen am {{ item.meeting.start|date:"d.m.Y" }} im Gremium <strong>{{ item.meeting.organization.name }}</strong> · {{ tenant.name }}
         </p>

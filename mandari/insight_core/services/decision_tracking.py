@@ -185,6 +185,20 @@ def public_url(item) -> str:
     return f"{site_url}/insight/beschluesse/{item.id}/"
 
 
+def oeffentlicher_name(item) -> str:
+    """
+    Name eines Beschlusses für Bürgerportal und Abo-Mails: ohne Hausnummer, wenn der Punkt oder seine Vorlage eine
+    Eingabe aus der Einwohnerschaft oder einen Bauantrag nennt (``ortsschutz``, Issue #1269). Work zeigt den vollen Namen.
+    """
+    from .ortsschutz import grund_nach_art, oeffentlicher_titel
+
+    paper = item.paper if getattr(item, "paper_id", None) else None
+    schutz = grund_nach_art(None, item.name) or (
+        grund_nach_art(paper.get_paper_type_display(), paper.name) if paper is not None else ""
+    )
+    return oeffentlicher_titel(item.name, None, schutz)
+
+
 # =============================================================================
 # Abos
 # =============================================================================
@@ -218,7 +232,13 @@ def send_confirmation(subscription) -> bool:
     return _send(
         subject="Bitte bestätigen: Benachrichtigung zum Beschluss",
         template="emails/decisions/confirm.html",
-        context={"item": item, "confirm_url": confirm_url, "site_url": site_url, "decision_url": public_url(item)},
+        context={
+            "item": item,
+            "titel": oeffentlicher_name(item),
+            "confirm_url": confirm_url,
+            "site_url": site_url,
+            "decision_url": public_url(item),
+        },
         recipient=subscription.email,
     )
 
@@ -240,13 +260,15 @@ def notify_status_change(item, old_status: str | None, old_public_note: str | No
     subscriptions = DecisionSubscription.objects.filter(agenda_item=item, confirmed=True, unsubscribed_at__isnull=True)
     site_url = getattr(settings, "SITE_URL", "http://localhost:8000").rstrip("/")
     label = PUBLIC_STATUS_LABELS.get(item.implementation_status, item.get_implementation_status_display())
+    titel = oeffentlicher_name(item)
     sent = 0
     for subscription in subscriptions:
         ok = _send(
-            subject=f"Neuer Stand: {label} — {item.name}"[:150],
+            subject=f"Neuer Stand: {label} — {titel}"[:150],
             template="emails/decisions/status.html",
             context={
                 "item": item,
+                "titel": titel,
                 "status_label": label,
                 "status_changed": status_changed,
                 "decision_url": public_url(item),

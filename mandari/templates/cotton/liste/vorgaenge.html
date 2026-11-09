@@ -17,7 +17,9 @@ Das Ergebnis der letzten Beratung steht als Etikett (``stand.etikett``, c-insigh
 unterhalb von 2xl unter dem Titel; ohne Begriff aus dem Vokabular bleibt der Punkt vor dem Stand.
 Hat der Aufrufer ``absender`` an die Vorgänge gehängt (insight_core.services.fraktionskuerzel.anhaengen, Issue #1272),
 steht der Titel ohne Absender-Präfix und die Spalte „Von“ zeigt die Fraktionskürzel (c-insight.absender), unter sm in
-der Zeile unter dem Titel; ohne Angabe (Work) bleibt der Titel des RIS und die Spalte entfällt.
+der Zeile unter dem Titel; ohne Angabe (Work) bleibt der Titel des RIS und die Spalte entfällt. Im Bürgerportal (ohne
+``links``) steht der Titel ohne Hausnummer, wo es eine Privatanschrift sein kann (``OParlPaper.titel_oeffentlich``,
+Issue #1269; ``absender.titel`` geht schon vom öffentlichen Titel aus); Work zeigt den vollen Titel.
 Hat der Aufrufer die Kurzfassung „Worum es geht“ angehängt (``vorschau``, insight_core.services.kurzfassung.anhaengen,
 Issue #1271), steht sie unter dem Titel; die Dokumentzeile darunter nennt dann nur noch Vorlage und Anlagen ohne
 Dateityp und Größe.
@@ -48,7 +50,7 @@ Dateityp und Größe.
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
                     <a href="{{ ziel }}"
                        class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
-                        {% firstof paper.absender.titel paper.name "Vorgang" %}
+                        {% if links %}{{ paper.name|default:"Vorgang" }}{% else %}{% firstof paper.absender.titel paper.titel_oeffentlich paper.name "Vorgang" %}{% endif %}
                     </a>
                     <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                         {% if paper.reference %}<span class="font-mono">{{ paper.reference }}</span>{% endif %}
