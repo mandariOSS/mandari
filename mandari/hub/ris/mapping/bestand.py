@@ -82,8 +82,10 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 #: Version der Abbildung (2: Beschlussfassung und Genehmigung der Niederschrift aus eigenen Spalten, Issue #525;
 #: 3: ``mandari:summaryAiGenerated`` zur KI-Zusammenfassung, Issue #938;
 #: 4: antragstellende Fraktionen ``originatorOrganization``, ``mandari:originator…``, Issue #1138;
-#: 5: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216)
-VERSION: Final = 5
+#: 5: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216;
+#: 6: ``Body.web`` auf die Seite der Kommune, ``Body.ags``/``rgs`` aus der eigenen Pflege, Datumsfelder ohne Uhrzeit,
+#: Issue #1282)
+VERSION: Final = 6
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
 #: Der Änderungsfeed nennt danach auch das einbettende Objekt (``hub.api.changes``, Issue #1229); ein Test prüft die
@@ -201,6 +203,22 @@ class BestandUris:
     def web(self, path: str) -> str:
         """Seite im Bürgerportal."""
         return f"{self.site}/insight/{path}"
+
+
+def body_page(body: OParlBody) -> str:
+    """
+    Pfad der Seite einer Kommune im Bürgerportal relativ zu ``/insight/`` (``BestandUris.web``): ``k/<slug>/`` für
+    gelistete Kommunen mit Slug, sonst leer (die Startseite). Dieselbe Regel wie ``indexierung.stadtseite_url``.
+    """
+    if body.slug and body.is_listed and not body.deleted:
+        return f"k/{body.slug}/"
+    return ""
+
+
+def _schluessel(value: str | None) -> str | None:
+    """Amtlicher Schlüssel aus der eigenen Pflege, ohne Leerraum; leer -> ``None``."""
+    value = (value or "").strip()
+    return value or None
 
 
 # =============================================================================
@@ -524,8 +542,10 @@ class BestandMapping:
                 "license": body.license,
                 "licenseValidSince": iso(body.license_valid_since),
                 "oparlSince": raw.get("oparlSince"),
-                "ags": raw.get("ags"),
-                "rgs": raw.get("rgs"),
+                # Gepflegte Schlüssel (resolve_body_geodata, Verwaltung) vor der Angabe der Quelle: Die meisten
+                # Systeme nennen keinen, und Abnehmer finden eine Kommune am sichersten über ihn (Issue #1282)
+                "ags": _schluessel(body.ags) or raw.get("ags"),
+                "rgs": _schluessel(body.rgs) or raw.get("rgs"),
                 "equivalent": raw.get("equivalent"),
                 "contactEmail": raw.get("contactEmail"),
                 "contactName": raw.get("contactName"),
@@ -535,7 +555,7 @@ class BestandMapping:
                 "meeting": self.uris.list(body.id, "meetings"),
                 "paper": self.uris.list(body.id, "papers"),
                 "locationList": self.uris.list(body.id, "locations"),
-                "web": self.uris.web(""),
+                "web": self.uris.web(body_page(body)),
                 **_timestamps(body),
                 "mandari:originalId": body.external_id,
                 "mandari:slug": body.slug,

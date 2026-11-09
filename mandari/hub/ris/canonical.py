@@ -77,8 +77,18 @@ def iso(dt: datetime | None, *, fractions: bool = False) -> str | None:
 
 
 def iso_date(d: date | None) -> str | None:
-    """Datum -> ISO 8601 (None-sicher)."""
-    return d.isoformat() if d else None
+    """
+    Datum -> ``yyyy-mm-dd`` (None-sicher), für Felder vom Typ ``date`` (``Paper.date``, ``startDate`` …).
+
+    Die Tabellen des RIS-Bestands legt der Ingestor an; in bestehenden Installationen sind die Datumsspalten dort
+    Zeitpunkte, und die Datenbank liefert ``datetime`` statt ``date`` (Issue #1282). Auch dann gilt nur der Tag
+    (``iso_day``), denn OParl 1.1 verlangt für diese Felder ein Datum ohne Uhrzeit.
+    """
+    if d is None:
+        return None
+    if isinstance(d, datetime):
+        return iso_day(d)
+    return d.isoformat()
 
 
 def iso_day(dt: datetime | None) -> str | None:

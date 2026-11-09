@@ -139,6 +139,8 @@ insight_patterns = [
     path("rueckmeldung/", ohne_index(views.page_feedback), name="page_feedback"),
     # „Was ist neu?“: Neuigkeiten in Bürgersprache, verlinkt von der Versionsnummer im Fuß (Issue #1261)
     path("neuigkeiten/", views.NeuigkeitenView.as_view(), name="neuigkeiten"),
+    # „Offene Daten“: OParl-Schnittstelle mit den Adressen je Kommune, verlinkt im Fuß und aus /oparl/ (Issue #1282)
+    path("offene-daten/", views.offene_daten, name="offene_daten"),
 ]
 
 # =============================================================================
