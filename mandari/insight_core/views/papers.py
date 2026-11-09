@@ -200,15 +200,19 @@ class PaperDetailView(DetailView):
         context["urheber"] = urheber_je_vorgang([paper.pk]).get(paper.pk, [])
         context["absender"] = fraktionskuerzel.absender(paper.name, paper.paper_type, context["urheber"])
 
-        # Beratungsverlauf (Consultations mit Meeting-Info), Stand-Satz und Zeitstrahl; der Verlauf kommt aus der
-        # Lese-Fassade wie auf der Vorgangsseite von Work (Issue #853)
-        from ..services.paper_status import paper_status, timeline
+        # Beratungsverlauf (Consultations mit Meeting-Info) und Stand-Satz; der Verlauf kommt aus der Lese-Fassade wie
+        # auf der Vorgangsseite von Work (Issue #853). Daraus der Weg des Vorgangs (Issue #1273): Zeitleiste mit
+        # Folgevorlagen und Lücken, federführende Stelle, Stand einer Anfrage, Fragen und Antworten
+        from ..services.paper_status import paper_status
+        from ..services.vorgang_weg import weg_des_vorgangs
 
         consultations = ris_selectors.consultation_history(paper)
         now = timezone.now()
         status = paper_status(consultations, now)
         context["paper_status"] = status
-        context["consultations"] = timeline(consultations, status, now)
+        context["weg"] = weg_des_vorgangs(
+            paper, consultations, status, dateien=context["files"], urheber=context["urheber"], now=now
+        )
         # Gremium der Bezugsberatung als Angabe in der Dokumentansicht
         reference = status.upcoming or status.last
         context["viewer_committee"] = reference.get("organization_name") if reference else ""

@@ -29,8 +29,9 @@
         {% if paper.reference %}<span>{{ paper.reference }}</span>{% endif %}
         {% if paper.date %}<span class="tabular-nums">vom {{ paper.date|date:"d.m.Y" }}</span>{% endif %}
     </p>
+    {% comment %}Etikett zum Stand (#1260), bei Anfragen „beantwortet“ bzw. „Antwort steht aus“ samt Satz zur Antwort (#1273){% endcomment %}
     <p class="mt-5 max-w-3xl text-[1.0625rem] leading-relaxed text-gray-900 dark:text-gray-100" data-testid="vorgang-stand">
-        <span class="font-semibold">Stand:</span> {{ paper_status.text }}
+        {% with etikett=weg.anfrage.etikett|default:paper_status.etikett %}{% if etikett %}<c-insight.ergebnis :ergebnis="etikett" klasse="mr-1 align-[0.125em]" /> {% endif %}{% endwith %}<span class="font-semibold">Stand:</span> {% if weg.anfrage.satz %}{{ weg.anfrage.satz }} {% endif %}{{ paper_status.text }}
     </p>
     <div class="mt-6 flex flex-wrap items-center gap-2">
         {% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="lg" %}
@@ -57,6 +58,9 @@
     <div class="min-w-0">
         <div id="paper-summary" class="mb-12 empty:hidden" aria-live="polite">{% if paper.summary %}{% include "partials/paper_summary.html" with summary=paper.summary veraltet=zusammenfassung_veraltet %}{% endif %}</div>
 
+        {% if weg.anfrage.beantwortet and not weg.anfrage.in_sitzung %}{% include "pages/papers/_gefragt_geantwortet.html" %}{% endif %}
+        {% if weg.zeigen %}{% include "pages/papers/_verlauf.html" %}{% endif %}
+
         <section aria-labelledby="dokumente-titel">
             <h2 id="dokumente-titel" class="abschnitt-titel">Dokumente</h2>
             {% if files %}
@@ -70,20 +74,6 @@
             {% endif %}
         </section>
 
-        {% if consultations %}
-        <section aria-labelledby="verlauf-titel" class="mt-12">
-            <h2 id="verlauf-titel" class="abschnitt-titel">Beratungsverlauf</h2>
-            <c-insight.timeline class="mt-6">
-                {% for item in consultations %}
-                <c-insight.timeline-entry date="{{ item.date|date:'d.m.Y' }}" title="{{ item.organization_name|default:'Sitzung' }}"
-                    href="{% if item.meeting %}{% url 'insight_core:insight:meeting_detail' item.meeting.id %}{% endif %}" state="{{ item.state }}">
-                    {% if item.detail %}{{ item.detail }}.{% endif %}
-                    {% if item.result %}Ergebnis: <span class="font-semibold text-gray-900 dark:text-white">{{ item.result }}</span>{% endif %}
-                </c-insight.timeline-entry>
-                {% endfor %}
-            </c-insight.timeline>
-        </section>
-        {% endif %}
     </div>
 
     <aside class="min-w-0" aria-label="Orte und Angaben">
@@ -113,6 +103,11 @@
             <dd class="text-gray-900 dark:text-gray-100 break-words" data-testid="vorgang-urheber">
                 {% for u in urheber %}{% if u.organisation_id %}<a href="{% url 'insight_core:insight:organization_detail' u.organisation_id %}" title="{{ u.bezeichnung }}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ u.anzeigename }}</a>{% else %}<span title="{{ u.bezeichnung }}">{{ u.anzeigename }}</span>{% endif %}{% if u.art == "gruppe" %} (Ratsgruppe){% elif u.art == "einzelmandat" %} (Einzelmandat){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
             </dd>
+            {% endif %}
+            {% if weg.federfuehrung %}
+            {% comment %}Federführende Stelle aus OParl underDirectionOf, nur Gremien bzw. Organisationseinheiten (Issue #1273){% endcomment %}
+            <dt class="text-gray-600 dark:text-gray-400">Federführung</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words" data-testid="vorgang-federfuehrung">{{ weg.federfuehrung }}</dd>
             {% endif %}
             {% if paper.date %}
             <dt class="text-gray-600 dark:text-gray-400">Datum</dt>

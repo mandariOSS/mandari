@@ -1,0 +1,31 @@
+{% comment %}
+„Gefragt und geantwortet“ (Issue #1273): die Fragen einer Anfrage neben der Antwort der Verwaltung, im Wortlaut aus dem
+erkannten Text der Dokumente (insight_core/services/fragen_antworten.py), Beträge und Prozente fett (Filter kernzahlen).
+Ab sm zwei Spalten, darunter je Paar „Gefragt“ über „Antwort der Verwaltung“. Lassen sich die Paare nicht sicher
+bilden oder fehlt ein Text, nur ein schlichter Hinweis auf die Dokumente. Kontext: weg (WegDesVorgangs, beantwortet).
+{% endcomment %}
+{% load insight_listen %}
+<section aria-labelledby="gefragt-titel" class="mb-12" data-testid="gefragt-geantwortet">
+    <h2 id="gefragt-titel" class="abschnitt-titel">Gefragt und geantwortet</h2>
+    {% with vorlage=weg.anfrage.antwort_vorlage datei=weg.anfrage.antwort_datei %}
+    {% if weg.fragen %}
+    <div class="mt-4 hidden sm:grid sm:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] sm:gap-8 pb-2 text-[0.8125rem] font-semibold text-gray-600 dark:text-gray-400" aria-hidden="true"><span>Gefragt</span><span>Antwort der Verwaltung</span></div>
+    <dl class="mt-3 sm:mt-0 border-b border-gray-200 dark:border-gray-800">
+        {% for paar in weg.fragen %}
+        <div class="grid gap-2 py-4 border-t border-gray-200 dark:border-gray-800 sm:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] sm:gap-8">
+            <dt class="flex gap-2.5 font-semibold leading-normal text-gray-900 dark:text-white">
+                <span class="shrink-0 font-medium tabular-nums text-gray-600 dark:text-gray-400">{{ paar.nummer }}</span>
+                <span class="min-w-0 break-words"><span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 sm:sr-only">Gefragt</span>{{ paar.frage }}</span>
+            </dt>
+            <dd class="min-w-0 break-words leading-relaxed text-gray-800 dark:text-gray-200"><span class="block text-[0.8125rem] font-semibold text-gray-600 dark:text-gray-400 sm:sr-only">Antwort der Verwaltung</span>{{ paar.antwort|kernzahlen }}</dd>
+        </div>
+        {% endfor %}
+    </dl>
+    <p class="mt-3 text-[0.8125rem] text-gray-600 dark:text-gray-400">Im Wortlaut automatisch aus {% if vorlage %}der Anfrage und aus „<a href="{% url 'insight_core:insight:paper_detail' vorlage.pk %}" class="text-primary-700 dark:text-primary-300 underline underline-offset-4">{{ vorlage.paper_type|default:"Vorlage" }}{% if vorlage.reference %} {{ vorlage.reference }}{% endif %}</a>“{% else %}den Dokumenten{% endif %} ausgelesen, Lesefehler sind möglich. Maßgeblich sind die Dokumente.</p>
+    {% elif vorlage %}
+    <p class="mt-3 max-w-3xl text-gray-700 dark:text-gray-300">Die Fragen stehen in der Anfrage, die Antwort der Verwaltung in „<a href="{% url 'insight_core:insight:paper_detail' vorlage.pk %}" class="text-primary-700 dark:text-primary-300 underline underline-offset-4">{{ vorlage.paper_type|default:"Vorlage" }}{% if vorlage.reference %} {{ vorlage.reference }}{% endif %}</a>“.</p>
+    {% elif datei %}
+    <p class="mt-3 max-w-3xl text-gray-700 dark:text-gray-300">Die Fragen und die Antwort der Verwaltung stehen in den Dokumenten, die Antwort in „<a href="#dokumente-titel" class="text-primary-700 dark:text-primary-300 underline underline-offset-4">{{ datei.name|default:datei.file_name|default:"Dokument" }}</a>“.</p>
+    {% endif %}
+    {% endwith %}
+</section>
