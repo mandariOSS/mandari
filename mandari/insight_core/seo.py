@@ -107,6 +107,10 @@ def script_json(value: Any) -> SafeString:
     return mark_safe(text)  # durch die Maskierung oben sicher
 
 
+#: Standardbild für Vorschauen beim Teilen (``og:image``), 1200 × 630 Pixel wie in den Seitenköpfen angegeben
+VORSCHAUBILD = "images/og-default.png"
+
+
 @dataclass
 class SEOContext:
     """
@@ -294,6 +298,16 @@ def _absolut(path: str) -> str:
     return urljoin(get_site_url(), path)
 
 
+def vorschaubild(bild: str | None = None) -> str:
+    """
+    Absolute Adresse des Vorschaubilds für ``og:image`` und ``twitter:image`` (Issue #1259): das Bild der Seite,
+    sonst das Standardbild (``VORSCHAUBILD``). Beide Angaben verlangen eine vollständige URL; eine relative wie
+    ``/static/images/og-default.png`` ignorieren Dienste beim Teilen. Basis ist ``SITE_URL`` wie bei der kanonischen
+    Adresse; ein schon absolutes Bild bleibt, wie es ist.
+    """
+    return _absolut(bild or static(VORSCHAUBILD))
+
+
 def seite_der_kommune(body: Any) -> str:
     """Absolute Adresse der Seite einer Kommune (``/insight/k/<slug>/``), leer, wo es keine erreichbare gibt.
 
@@ -359,8 +373,11 @@ def art_kurz(paper_type: str | None, body_slug: str = "") -> str:
 
 
 def betreff(paper: Any) -> str:
-    """Betreff eines Vorgangs ohne vorangestellte Drucksachennummer („V/0881/2011 Radweg …“ → „Radweg …“)."""
-    name = " ".join(str(paper.name or "").split())
+    """
+    Betreff eines Vorgangs ohne vorangestellte Drucksachennummer („V/0881/2011 Radweg …“ → „Radweg …“); bei Eingaben
+    aus der Einwohnerschaft und Bauanträgen ohne Hausnummer (``OParlPaper.titel_oeffentlich``, Issue #1269).
+    """
+    name = " ".join(str(getattr(paper, "titel_oeffentlich", None) or paper.name or "").split())
     nummer = (paper.reference or "").strip()
     if nummer and name.lower().startswith(nummer.lower()):
         name = name[len(nummer) :].lstrip(" :–-,")
@@ -423,13 +440,31 @@ def _ki_zusammenfassung(text: str | None, davor: str) -> str:
     return f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {text}"
 
 
-def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = None) -> SEOContext:
+def _ortsschutz(paper: Any) -> str:
+    """Grund für den Datenschutz bei Orten (Issue #1269): von der Seite ermittelt (``_ortsschutz``) oder nach Art."""
+    from .services.ortsschutz import grund_nach_art
+
+    schutz = getattr(paper, "_ortsschutz", None)
+    return schutz if schutz is not None else grund_nach_art(paper.paper_type, paper.name)
+
+
+def get_paper_seo(
+    paper: Any,
+    request: HttpRequest,
+    stand: PaperStatus | None = None,
+    *,
+    mit_zusammenfassung: bool = True,
+    original: str = "",
+) -> SEOContext:
     """
     SEO-Kontext einer Vorgangsseite.
 
     ``stand`` ist der Stand-Satz der Seite (``paper_status``, aus dem schon geladenen Beratungsverlauf). Die
     Description nennt Kommune, Art, Nummer und Datum, dann den Stand und, wenn Platz bleibt, den Anfang der
-    gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``).
+    gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``). Ohne
+    ``mit_zusammenfassung`` (sie ist älter als der Beratungsstand, Issue #1257) fehlt sie, damit die Description dem
+    Stand nicht widerspricht. ``original`` ist die Seite des Vorgangs im Ratsinformationssystem (``hub.ris.original``,
+    Issue #1259); sie steht als ``isBasedOn`` im JSON-LD.
     """
     body = paper.body
     kommune = _kommune(body)
@@ -437,7 +472,13 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
     kopf = f"{_kennung(paper)} vom {datum}" if datum else _kennung(paper)
     stand_satz = stand.text if stand is not None and stand.kind != STAND_UNBEKANNT else ""
     kopf_satz = f"{kommune}: {kopf}." if kommune else f"{kopf}."
-    zusammenfassung = _ki_zusammenfassung(paper.summary, beschreibung(kopf_satz, stand_satz))
+    text = paper.summary if mit_zusammenfassung else None
+    if text and _ortsschutz(paper):
+        # Wie Titel und Zusammenfassung der Seite ohne Hausnummern bei Privatanschriften (Issue #1269)
+        from .services.ortsschutz import hausnummern_auslassen
+
+        text = hausnummern_auslassen(text)
+    zusammenfassung = _ki_zusammenfassung(text, beschreibung(kopf_satz, stand_satz))
     description = beschreibung(kopf_satz, stand_satz, zusammenfassung)
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)
@@ -446,7 +487,7 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
         {
             "@context": "https://schema.org",
             "@type": "CreativeWork",
-            "name": paper.name or "Vorgang",
+            "name": getattr(paper, "titel_oeffentlich", None) or paper.name or "Vorgang",
             "identifier": paper.reference,
             "genre": paper.paper_type,
             "description": description,
@@ -457,6 +498,7 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
             "about": ort,
             "author": _verwaltung(kommune) or {"@type": "Organization", "name": "Kommune"},
             "publisher": {"@type": "Organization", "name": "mandari", "url": get_site_url()},
+            "isBasedOn": original or None,
         }
     )
 
@@ -498,7 +540,7 @@ def _bild_der_kommune(body: Any) -> str:
     Suchergebnisse nicht zeigen.
     """
     logo = getattr(body, "logo", None) if body is not None else None
-    return _absolut(logo.url if logo else static("images/og-default.png"))
+    return _absolut(logo.url) if logo else vorschaubild()
 
 
 def _gremien_der_sitzung(meeting: Any) -> list[dict[str, str]]:
@@ -547,12 +589,14 @@ def get_meeting_seo(
     request: HttpRequest,
     agenda_count: int | None = None,
     tagesordnung: Iterable[Any] = (),
+    original: str = "",
 ) -> SEOContext:
     """
     SEO-Kontext einer Sitzungsseite: „{Gremium} am {Datum} – {Kommune}“.
 
     ``agenda_count`` ist die Zahl der Tagesordnungspunkte, die die Seite zeigt, ``tagesordnung`` sind diese
-    Punkte (schon geladen, für den Hinweis auf eine öffentliche Sitzung).
+    Punkte (schon geladen, für den Hinweis auf eine öffentliche Sitzung). ``original`` ist die Seite der Sitzung im
+    Ratsinformationssystem (Issue #1259), im JSON-LD der Veranstaltung als ``sameAs``.
 
     Die Veranstaltung (``Event``) erscheint nur mit Beginn und einem verlässlichen Ort samt Postanschrift
     (``services.sitzungsort``, Issue #939) – Google wertet sie sonst als ungültig. Ohne beides trägt die Seite nur
@@ -611,6 +655,7 @@ def get_meeting_seo(
                 "organizer": _verwaltung(kommune, seite_der_kommune(body) or _webseite(body))
                 or {"@type": "Organization", "name": "Kommune"},
                 "performer": _gremien_der_sitzung(meeting),
+                "sameAs": original or None,
                 "isAccessibleForFree": True if eintritt_frei else None,
                 "offers": {
                     "@type": "Offer",
@@ -789,8 +834,12 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
     {Kommune}“; die Description nennt Gremium, Datum, Stand der Umsetzung und den Anfang des Beschlusstexts.
     """
     kommune = _kommune(body)
-    titel = kuerzen(item.name, TITEL_BETREFF_MAX) or "Beschluss"
-    name = " ".join(str(item.name or "").split()) or "Beschluss"
+    # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
+    from .services.decision_tracking import oeffentlicher_name
+
+    oeffentlich = oeffentlicher_name(item)
+    titel = kuerzen(oeffentlich, TITEL_BETREFF_MAX) or "Beschluss"
+    name = " ".join(oeffentlich.split()) or "Beschluss"
     title = seitentitel([f"{name} – Umsetzungsstand", name], name, kommune)
     meeting = item.meeting
     gremium = getattr(getattr(meeting, "organization", None), "name", "") or ""
@@ -807,7 +856,7 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
         {
             "@context": "https://schema.org",
             "@type": "CreativeWork",
-            "name": item.name,
+            "name": name,
             "identifier": getattr(item, "resolution_number", "") or None,
             "description": description,
             "url": canonical,

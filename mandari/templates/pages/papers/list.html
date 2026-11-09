@@ -7,8 +7,8 @@
 <c-insight.kopfband titel="Vorgänge" text="{% if active_body %}Vorlagen, Anträge und Anfragen von {{ active_body.get_display_name }} mit Beratungsverlauf und Dokumenten.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
     <!-- Filters -->
     <div class="mb-4">
-        <form method="get" class="flex flex-col sm:flex-row gap-3 max-w-4xl" id="paper-filter-form">
-            {% comment %}Eingabetaste: genau ein passender Treffer für eine Vorlagennummer öffnet den Vorgang (Issue #1102){% endcomment %}
+        <form method="get" role="search" class="flex flex-col sm:flex-row gap-3 max-w-4xl" id="paper-filter-form" hx-history="false">
+            {% comment %}Eingabetaste: genau ein passender Treffer für eine Vorlagennummer öffnet den Vorgang (Issue #1102). Suche und Filter stehen in der Adresse (hx-push-url, Issue #1260); „direkt“ nicht, ein geteilter Link öffnet die Liste. Ohne Schnappschuss im Verlauf (hx-history), „Zurück“ lädt die Auswahl aus der Adresse{% endcomment %}
             <input type="hidden" name="direkt" value="1">
             <div class="relative flex-1 min-w-0">
                 <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true"></i>
@@ -21,6 +21,7 @@
                        hx-get="{{ request.path }}"
                        hx-trigger="keyup changed delay:400ms, search"
                        hx-target="#papers-list"
+                       hx-push-url="true"
                        hx-swap="innerHTML"
                        hx-indicator="#search-loading"
                        hx-include="#filter-type, #filter-fraktion"
@@ -41,6 +42,7 @@
                         hx-get="{{ request.path }}"
                         hx-trigger="change"
                         hx-target="#papers-list"
+                        hx-push-url="true"
                         hx-swap="innerHTML"
                         hx-include="#search-papers, #filter-fraktion"
                         class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
@@ -59,12 +61,13 @@
                         hx-get="{{ request.path }}"
                         hx-trigger="change"
                         hx-target="#papers-list"
+                        hx-push-url="true"
                         hx-swap="innerHTML"
                         hx-include="#search-papers, #filter-type"
                         class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
                     <option value="">Alle Fraktionen</option>
-                    {% for wert, anzeige in paper_fraktionen %}
-                    <option value="{{ wert }}" {% if request.GET.fraktion == wert %}selected{% endif %}>{{ anzeige }}</option>
+                    {% for fraktion in paper_fraktionen %}
+                    <option value="{{ fraktion.wert }}" {% if request.GET.fraktion == fraktion.wert or request.GET.fraktion in fraktion.bezeichnungen %}selected{% endif %}>{{ fraktion.anzeige }}</option>
                     {% endfor %}
                 </select>
             </div>

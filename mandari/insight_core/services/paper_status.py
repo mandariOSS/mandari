@@ -23,12 +23,15 @@ Abgesagte Sitzungen zählen nicht als Beratung. Liegt nach der letzten Beratung 
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from typing import Any, Final
 
 from django.utils import timezone
+
+from .ergebnis import Ergebnis, angekuendigt, ergebnis
 
 #: Art des Stands (für Tests und Darstellung)
 DECIDED: Final = "decided"
@@ -119,6 +122,19 @@ class PaperStatus:
     text: str
     last: Mapping[str, Any] | None = None
     upcoming: Mapping[str, Any] | None = None
+
+    @property
+    def etikett(self) -> Ergebnis | None:
+        """
+        Ergebnis-Etikett zum Satz (Issue #1260): das Ergebnis der letzten Beratung, wenn es zum festen Vokabular gehört,
+        „angekündigt“ vor der ersten Beratung, sonst nichts (der Satz allein sagt dann, was bekannt ist).
+        """
+        if self.kind == SCHEDULED:
+            return angekuendigt("Die erste Beratung ist angesetzt, ein Ergebnis gibt es noch nicht.")
+        if self.kind in (DECIDED, DEFERRED) and self.last is not None:
+            etikett = ergebnis(self.last.get("result"))
+            return etikett if etikett is not None and etikett.bekannt else None
+        return None
 
 
 def _local_date(value: datetime) -> str:
@@ -294,6 +310,26 @@ def paper_status(entries: Sequence[Mapping[str, Any]], now: datetime | None = No
     if _is_deferred(result):
         return PaperStatus(DEFERRED, _join(text, follow or "Ein neuer Termin ist nicht bekannt."), last, upcoming)
     return PaperStatus(DECIDED, _join(text, follow), last, upcoming)
+
+
+def status_eintraege(steps: Iterable[Any]) -> list[dict[str, Any]]:
+    """
+    Beratungsschritte nur mit öffentlichen Angaben (``hub.ris.selectors.ConsultationStep`` aus
+    ``public_consultation_history``) im Format von ``paper_status``: KI-Assistent und Prompt der Zusammenfassung.
+    """
+    return [
+        {
+            "meeting": SimpleNamespace(cancelled=step.cancelled),
+            "date": step.date,
+            "organization_name": step.organization_name,
+            "agenda_number": step.agenda_number,
+            "result": step.result,
+            "public": step.public,
+            "role": step.role,
+            "authoritative": step.authoritative,
+        }
+        for step in steps
+    ]
 
 
 def _join(*sentences: str) -> str:

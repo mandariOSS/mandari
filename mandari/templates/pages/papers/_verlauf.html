@@ -1,0 +1,17 @@
+{% comment %}
+Weg des Vorgangs als Zeitleiste (Issue #1273, insight_core/services/vorgang_weg.py): die Vorlage, eine übergeordnete
+Vorlage, Folgevorlagen und die Antwort der Verwaltung, Beratungen mit Ergebnis-Etikett (#1260) und Lücken mit Namen
+(„Antwort der Verwaltung steht noch aus“, „Ergebnis noch nicht veröffentlicht“). Sagt der Ergebnistext des
+Ratsinformationssystems mehr als das Etikett, steht er daneben. Kontext: weg (WegDesVorgangs).
+{% endcomment %}
+<section aria-labelledby="verlauf-titel" class="mb-12">
+    <h2 id="verlauf-titel" class="abschnitt-titel">Verlauf</h2>
+    <c-insight.timeline class="mt-6" data-testid="vorgang-verlauf">
+        {% for s in weg.stationen %}
+        <c-insight.timeline-entry date="{% if s.datum %}{{ s.datum|date:'d.m.Y' }}{% else %}{{ s.datum_text }}{% endif %}" title="{{ s.titel }}" href="{{ s.href }}" state="{{ s.zustand }}">
+            {% if s.ergebnis or s.ergebnis_text %}<p class="flex flex-wrap items-baseline gap-x-2 gap-y-1">{% if s.ergebnis %}<c-insight.ergebnis :ergebnis="s.ergebnis" />{% endif %}{% if s.ergebnis_text %}<span class="break-words">{{ s.ergebnis_text }}</span>{% endif %}</p>{% endif %}
+            {% if s.detail %}<p class="{% if s.ergebnis or s.ergebnis_text %}mt-1 {% endif %}break-words">{{ s.detail }}.</p>{% endif %}
+        </c-insight.timeline-entry>
+        {% endfor %}
+    </c-insight.timeline>
+</section>

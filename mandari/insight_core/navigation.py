@@ -2,8 +2,9 @@
 """
 Bereiche der Insight-Navigation (Issue #783).
 
-Die Seitenleiste zeigt sieben feste Bereiche (Übersicht, Sitzungen, Vorgänge, Gremien, Personen,
-Karte, KI-Assistent) und zwei bedingte (Beschlüsse, Ratsfragen). Jede Seite gehört zu genau einem
+Die Seitenleiste zeigt acht feste Bereiche (Übersicht, Sitzungen, Beschlüsse, Vorgänge, Gremien, Personen,
+Karte, KI-Assistent) und einen bedingten (Ratsfragen). Beschlüsse sind seit Issue #1270 die Liste der Entscheidungen
+und stehen immer da; die Umsetzung ist dort ein Reiter. Jede Seite gehört zu genau einem
 Bereich; der aktive Bereich wird hervorgehoben und trägt ``aria-current="page"``. Seiten ohne
 eigenen Eintrag (Dokumente, Nachbarschaft) zählen zum Bereich, in dem sie fachlich aufgehen.
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 KOMMUNEN_LISTEN: dict[str, str] = {
     "meeting_list": "portal_meeting_list",
     "paper_list": "portal_paper_list",
+    "decision_list": "portal_decision_list",
     "organization_list": "portal_organization_list",
     "person_list": "portal_person_list",
 }
@@ -31,6 +33,7 @@ NAV_AREAS: dict[str, str] = {
     "paper_list": "vorgaenge",
     "paper_detail": "vorgaenge",
     "decision_list": "beschluesse",
+    "decision_tracking": "beschluesse",
     "decision_detail": "beschluesse",
     "organization_list": "gremien",
     "organization_detail": "gremien",
@@ -51,6 +54,7 @@ NAV_AREAS: dict[str, str] = {
     # Listen je Kommune (Issue #939) gehören zum Bereich ihrer Liste
     "portal_meeting_list": "sitzungen",
     "portal_paper_list": "vorgaenge",
+    "portal_decision_list": "beschluesse",
     "portal_organization_list": "gremien",
     "portal_person_list": "personen",
 }
@@ -96,12 +100,12 @@ def breadcrumb_area(url_name: str | None) -> dict[str, str | bool]:
 MORE_AREAS = frozenset({"gremien", "personen", "beschluesse", "ratsfragen", "ki", "gespeichert", "benachrichtigungen"})
 
 
-def more_area_listed(area: str, *, decisions: bool, questions: bool, subscriptions: bool) -> bool:
+def more_area_listed(area: str, *, questions: bool, subscriptions: bool) -> bool:
     """Liegt der Bereich im Blatt „Mehr“ und zeigt das Blatt ihn auch?
 
-    Beschlüsse (nur wenn die Kommune sie veröffentlicht), Ratsfragen (``INSIGHT_QUESTIONS_ENABLED``) und
-    Benachrichtigungen (``INSIGHT_SUBSCRIPTIONS_ENABLED``) stehen nur bedingt im Blatt. Ruft jemand eine dieser
-    Seiten direkt auf, obwohl das Blatt sie nicht zeigt, darf „Mehr“ nicht „enthält den aktuellen Bereich“ ansagen.
+    Ratsfragen (``INSIGHT_QUESTIONS_ENABLED``) und Benachrichtigungen (``INSIGHT_SUBSCRIPTIONS_ENABLED``) stehen nur
+    bedingt im Blatt. Ruft jemand eine dieser Seiten direkt auf, obwohl das Blatt sie nicht zeigt, darf „Mehr“ nicht
+    „enthält den aktuellen Bereich“ ansagen. Beschlüsse stehen seit Issue #1270 immer im Blatt.
     """
-    bedingt = {"beschluesse": decisions, "ratsfragen": questions, "benachrichtigungen": subscriptions}
+    bedingt = {"ratsfragen": questions, "benachrichtigungen": subscriptions}
     return area in MORE_AREAS and bedingt.get(area, True)

@@ -48,6 +48,7 @@ NON_MANDATE_ROLE_HINTS = [
     "schriftführ",
     "protokoll",
     "zugriff",
+    "informationssystem",
     "prüfungsamt",
     "beigeordnet",
     "sachbearbeit",

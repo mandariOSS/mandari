@@ -1,0 +1,15 @@
+{% extends "errors/insight_base.html" %}
+{# 404 im Bürgerportal (Issue #1261): Grund in einem Satz, Suche als Hauptaktion, darunter Sitzungen und Vorgänge #}
+
+{% block title %}Seite nicht gefunden (404){% endblock %}
+
+{% block ueberschrift %}Seite nicht gefunden{% endblock %}
+
+{% block erklaerung %}
+Diese Adresse gibt es im Bürgerportal nicht oder nicht mehr. Vielleicht wurde die Seite verschoben oder der Link ist
+unvollständig. Suchen Sie nach einem Thema, einer Sitzung oder einer Person.
+{% endblock %}
+
+{% block hauptaktion %}{% include "errors/insight_suche.html" %}{% endblock %}
+
+{% block fussnote %}Fehler 404{% endblock %}

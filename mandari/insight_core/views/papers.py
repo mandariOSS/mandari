@@ -5,6 +5,10 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
+from collections.abc import Callable, Mapping
+from typing import Any
+
+from django.db.models import QuerySet
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -15,12 +19,18 @@ from django.views.generic import DetailView, ListView
 from apps.common.mixins import HTMXMixin
 from hub.ris import selectors as ris_selectors
 from hub.ris import vorlagennummer
+from hub.ris.original import seite_im_ris
 
-from ..models import OParlPaper, VorgangUrheber
-from ..services import file_reconcile
+from ..models import OParlBody, OParlPaper, VorgangUrheber
+from ..services import file_reconcile, fraktionskuerzel, kurzfassung
 from ..services.vorgang_dokumente import dokumente_anhaengen
-from ..services.vorgang_urheber import fraktionen_der_kommune, urheber_je_vorgang
-from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
+from ..services.vorgang_urheber import (
+    FraktionsAuswahl,
+    bezeichnungen_fuer,
+    fraktionen_der_kommune,
+    urheber_je_vorgang,
+)
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -28,19 +38,44 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
+def vorgaenge_der_auswahl(
+    body: OParlBody,
+    get: Mapping[str, Any],
+    fraktionen: Callable[[OParlBody], list[FraktionsAuswahl]] | None = None,
+) -> QuerySet[OParlPaper]:
+    """
+    Vorgänge der Kommune nach den Filtern der Liste: Art (``type``), antragstellende Fraktion (``fraktion``) und Suche
+    in Name und Nummer (``q``). Dieselbe Auswahl für Liste und Feed (Issue #1274). ``fraktionen`` liefert die
+    Fraktionen der Kommune (die Liste rechnet sie einmal je Anfrage).
+    """
+    qs = OParlPaper.objects.filter(body=body, deleted=False)
+
+    # Typ-Filter
+    paper_type = str(get.get("type", "") or "").strip()
+    if paper_type:
+        qs = qs.filter(paper_type=paper_type)
+
+    # Antragstellende Fraktion (Issue #1138), mit früheren Namen derselben Fraktion (Issue #1258)
+    fraktion = str(get.get("fraktion", "") or "").strip()
+    if fraktion:
+        auswahl = fraktionen(body) if fraktionen is not None else fraktionen_der_kommune(body.pk)
+        bezeichnungen = bezeichnungen_fuer(auswahl, fraktion)
+        qs = qs.filter(
+            pk__in=VorgangUrheber.objects.filter(body_id=body.pk, bezeichnung__in=bezeichnungen).values("paper_id")
+        )
+
+    # Suche in Name und Nummer, Vorlagennummern in jeder Schreibweise mit dem passenden Vorgang vorn (Issue #1102)
+    return ris_selectors.search_papers_in(qs, str(get.get("q", "") or ""))
+
+
+class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Vorgänge."""
 
     model = OParlPaper
     template_name = "pages/papers/list.html"
     context_object_name = "papers"
     paginate_by = 25
-
-    def get_template_names(self):
-        # Für HTMX-Requests nur das Partial zurückgeben
-        if self.is_htmx:
-            return ["partials/paper_list_items.html"]
-        return [self.template_name]
+    teil_vorlage = "partials/paper_list_items.html"
 
     def get(self, request, *args, **kwargs):
         ziel = self._einziger_nummerntreffer()
@@ -63,27 +98,17 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
             return ""
         return reverse("insight_core:insight:paper_detail", kwargs={"pk": treffer[0].pk})
 
+    def _fraktionen(self, body) -> list[FraktionsAuswahl]:
+        """Fraktionen des Filters, einmal je Anfrage berechnet (Liste und Auswahl brauchen sie)."""
+        if getattr(self, "_fraktionen_cache", None) is None:
+            self._fraktionen_cache = fraktionen_der_kommune(body.pk)
+        return self._fraktionen_cache
+
     def get_queryset(self):
         body = get_active_body(self.request)
         if not body:
             return OParlPaper.objects.none()
-
-        qs = OParlPaper.objects.filter(body=body, deleted=False)
-
-        # Typ-Filter
-        paper_type = self.request.GET.get("type", "").strip()
-        if paper_type:
-            qs = qs.filter(paper_type=paper_type)
-
-        # Antragstellende Fraktion (Issue #1138)
-        fraktion = self.request.GET.get("fraktion", "").strip()
-        if fraktion:
-            qs = qs.filter(
-                pk__in=VorgangUrheber.objects.filter(body_id=body.pk, bezeichnung=fraktion).values("paper_id")
-            )
-
-        # Suche in Name und Nummer, Vorlagennummern in jeder Schreibweise mit dem passenden Vorgang vorn (Issue #1102)
-        return ris_selectors.search_papers_in(qs, self.request.GET.get("q", ""))
+        return vorgaenge_der_auswahl(body, self.request.GET, self._fraktionen)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -106,8 +131,13 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
                 .distinct()
                 .order_by("paper_type")
             )
-            # Fraktionen, die in der Kommune Vorgänge gestellt haben (Filter, Issue #1138)
-            context["paper_fraktionen"] = fraktionen_der_kommune(body.pk)
+            # Fraktionen der laufenden Wahlperiode, die in der Kommune Vorgänge gestellt haben (Filter, Issues #1138,
+            # #1258)
+            context["paper_fraktionen"] = self._fraktionen(body)
+            # Feed dieser Auswahl (Issue #1274): Kopf der Seite und „Als RSS abonnieren“ unter der Liste
+            from .feeds import abo_vorgangsliste
+
+            context["abo_feed"] = abo_vorgangsliste(body, self.request.GET)
 
         from ..seo import get_list_seo
 
@@ -133,6 +163,11 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
             paper.stand = staende.get(str(paper.pk))
         # Vorlage und Anlagen je Vorgang in einer Abfrage für die Seite (Issue #1103)
         dokumente_anhaengen(papers)
+        # Titel ohne Absender und Fraktionskürzel (Issue #1272), eine Abfrage für die Seite
+        fraktionskuerzel.anhaengen(papers)
+        # Kurzfassung „Worum es geht“ als Vorschauzeile, nur zum aktuellen Beratungsstand (Issue #1271)
+        kurzfassung.anhaengen(papers)
+        context["mit_kurzfassung"] = any(paper.vorschau for paper in papers)
         context["papers"] = papers
         return context
 
@@ -154,6 +189,12 @@ class PaperDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         paper = self.object
+        # Datenschutz bei Orten (Issue #1269): Eingaben aus der Einwohnerschaft und Bauanträge, auch über das Amt und
+        # verbundene Vorgänge; Titel, Seitentitel und Orte dann ohne Hausnummer
+        from ..services import ortsschutz
+
+        paper._ortsschutz = ortsschutz.grund(paper)
+        context["ortsschutz"] = paper._ortsschutz
 
         # Alle Dateien – ohne zurückgenommene Anlagen aus Session und ohne Dokumente, die die Kommune
         # entfernt hat oder die dort nicht mehr abrufbar sind (Löschabgleich, #787). Ohne Volltext geladen: Die
@@ -164,24 +205,34 @@ class PaperDetailView(DetailView):
             if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)
         ]
         context["files"] = ris_selectors.with_text_start(files)
-        # Antragstellende Fraktionen (Issue #1138)
+        # Antragstellende Fraktionen (Issue #1138); Titel ohne Absender und Kürzel im Kopf (Issue #1272)
         context["urheber"] = urheber_je_vorgang([paper.pk]).get(paper.pk, [])
+        context["absender"] = fraktionskuerzel.absender(paper.titel_oeffentlich, paper.paper_type, context["urheber"])
 
-        # Beratungsverlauf (Consultations mit Meeting-Info), Stand-Satz und Zeitstrahl; der Verlauf kommt aus der
-        # Lese-Fassade wie auf der Vorgangsseite von Work (Issue #853)
-        from ..services.paper_status import paper_status, timeline
+        # Beratungsverlauf (Consultations mit Meeting-Info) und Stand-Satz; der Verlauf kommt aus der Lese-Fassade wie
+        # auf der Vorgangsseite von Work (Issue #853). Daraus der Weg des Vorgangs (Issue #1273): Zeitleiste mit
+        # Folgevorlagen und Lücken, federführende Stelle, Stand einer Anfrage, Fragen und Antworten
+        from ..services.paper_status import paper_status
+        from ..services.vorgang_weg import weg_des_vorgangs
 
         consultations = ris_selectors.consultation_history(paper)
         now = timezone.now()
         status = paper_status(consultations, now)
         context["paper_status"] = status
-        context["consultations"] = timeline(consultations, status, now)
+        context["weg"] = weg_des_vorgangs(
+            paper, consultations, status, dateien=context["files"], urheber=context["urheber"], now=now
+        )
         # Gremium der Bezugsberatung als Angabe in der Dokumentansicht
         reference = status.upcoming or status.last
         context["viewer_committee"] = reference.get("organization_name") if reference else ""
-        # Seite des Vorgangs im Ratsinformationssystem (OParl ``web``), nur als http(s)-Adresse
-        web = (paper.raw_json or {}).get("web") if isinstance(paper.raw_json, dict) else None
-        context["source_url"] = web if isinstance(web, str) and web.startswith(("https://", "http://")) else ""
+        # Seite des Vorgangs im Ratsinformationssystem (OParl ``web`` bzw. Detailseite der Scraper-Quelle, #1259)
+        context["source_url"] = seite_im_ris(paper)
+        # „Neues zu diesem Vorgang abonnieren“ (Issue #1274): Feed im Kopf der Seite und als Knopf
+        from .feeds import abo
+
+        context["abo_feed"] = abo(
+            "paper_feed", f"Neues zu {paper.reference or 'diesem Vorgang'}", kwargs={"pk": paper.pk}
+        )
 
         # Ortsbezüge (offizielle OParl-Locations + extrahierte) für Karte/Liste
         locations = paper.locations if isinstance(paper.locations, list) else []
@@ -190,17 +241,31 @@ class PaperDetailView(DetailView):
             for loc in locations
             if isinstance(loc, dict) and loc.get("lat") is not None and loc.get("lon") is not None
         ]
+        # Sicherheit und Fundstelle je Ort, „stadtweit“ statt langer Straßenlisten (Issue #1269)
+        from ..services.orte_anzeige import kartenorte, ortsangaben
+
+        context["ortsangaben"] = ortsangaben(paper, context["paper_locations"], consultations, paper._ortsschutz)
         # Amtliche Umringe von Bebauungsplänen mit Planseite und Quellenangabe (#598)
         from ..services.plan_boundaries import paper_map_data, paper_plan_context
 
         plan_areas = paper_plan_context(paper)
         context["plan_areas"] = plan_areas
-        context["paper_map_data"] = paper_map_data(context["paper_locations"], plan_areas)
+        context["paper_map_data"] = paper_map_data(
+            kartenorte(context["paper_locations"], paper._ortsschutz), plan_areas
+        )
+
+        # Zusammenfassung älter als der Beratungsstand (Issue #1257): Hinweis darüber, nicht in der Description
+        from ..services import summary_store
+
+        veraltet = summary_store.veraltet(paper, now=now)
+        context["zusammenfassung_veraltet"] = veraltet
 
         # SEO-Kontext
         from ..seo import get_paper_seo
 
-        context["seo"] = get_paper_seo(paper, self.request, stand=status).to_dict()
+        context["seo"] = get_paper_seo(
+            paper, self.request, stand=status, mit_zusammenfassung=not veraltet, original=context["source_url"]
+        ).to_dict()
 
         return context
 
@@ -208,10 +273,20 @@ class PaperDetailView(DetailView):
 NO_TEXT_MESSAGE = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."
 TEXT_PENDING_MESSAGE = "Die Texte der Dokumente werden gerade erkannt. Bitte versuche es in einigen Minuten erneut."
 RETRY_MESSAGE = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
+#: Die mechanische Prüfung hat die Zusammenfassung verworfen (Issue #1271); ein neuer Versuch kann bestehen
+REJECTED_MESSAGE = (
+    "Die KI-Zusammenfassung hat die automatische Prüfung nicht bestanden, etwa weil sie eine Zahl oder einen Namen "
+    "nannte, der nicht in den Dokumenten steht. Sie wird deshalb nicht angezeigt."
+)
 
 
 def _summary_response(request, context, status=200):
     """Teilansicht der Zusammenfassung; HTMX tauscht nur 2xx ein, deshalb dort immer 200."""
+    if context.get("summary"):
+        # Wie auf der Vorgangsseite ohne Hausnummern bei Privatanschriften (Issue #1269)
+        from ..services import ortsschutz
+
+        context = {**context, "ortsschutz": ortsschutz.grund(context["paper"])}
     response = render(request, "partials/paper_summary.html", context)
     if status != 200 and not request.htmx:
         response.status_code = status
@@ -226,16 +301,19 @@ def paper_summary(request, pk):
     GET liefert die gespeicherte Zusammenfassung oder das Angebot, eine zu erstellen – ohne
     KI-Aufruf. Erstellt wird nur per POST (Klick, CSRF-geschützt) und in den Grenzen aus
     ``summary_guard``: eine Erstellung je Vorgang gleichzeitig, je IP-Adresse wenige pro Stunde
-    und Tag, insgesamt ein Tagesbudget.
+    und Tag, insgesamt ein Tagesbudget. Eine vorhandene Zusammenfassung ersetzt ein POST nur, wenn sie
+    älter als der Beratungsstand ist (``summary_store.veraltet``, Issue #1257).
     """
-    from ..services import summary_guard
+    from ..services import summary_guard, summary_store
 
     paper = get_object_or_404(OParlPaper, pk=pk)
     if paper.withdrawn_by_publisher:
         return withdrawn_response(request, paper)
 
     if paper.summary:
-        return _summary_response(request, {"paper": paper, "summary": paper.summary})
+        veraltet = summary_store.veraltet(paper)
+        if not (veraltet and request.method == "POST"):
+            return _summary_response(request, {"paper": paper, "summary": paper.summary, "veraltet": veraltet})
     if summary_guard.has_no_text(paper.pk):
         return _summary_response(request, {"paper": paper, "error": NO_TEXT_MESSAGE, "retry": False})
     if request.method != "POST":
@@ -303,6 +381,7 @@ def _generate_summary(request, paper):
         BudgetExhaustedError,
         NoTextContentError,
         SummaryError,
+        SummaryRejectedError,
         SummaryService,
         TextPendingError,
     )
@@ -325,6 +404,9 @@ def _generate_summary(request, paper):
     except BudgetExhaustedError:
         # Monatsbudget der Claude API ausgeschöpft: bis Monatsende kein Einzelaufruf, erneuter Versuch zwecklos
         error, retry = "Die KI-Zusammenfassung ist derzeit nicht verfügbar.", False
+    except SummaryRejectedError:
+        # Verworfen und protokolliert (Issue #1271); ein erneuter Klick erzeugt sie neu, in den Grenzen von summary_guard
+        error = REJECTED_MESSAGE
     except SummaryError:
         error = RETRY_MESSAGE
     except Exception:

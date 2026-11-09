@@ -39,3 +39,8 @@ nichtöffentliche Teil einer Sitzung zählt dort neu (`Ö 1`, `Ö 2`, `N 1`).
 Die Inhalte von `luedenscheid/` und `eschweiler/` sind amtliche öffentliche
 Ratsinformationen; alle Fixtures dienen ausschließlich Testzwecken (Quellenangabe:
 jeweilige Kommune).
+
+## allris3/
+
+Seiten von ALLRIS-3-Instanzen (ALLRIS net 3.9.5) aus dem Projekt bv-hh (MIT-Lizenz) und einige
+synthetische Seiten; Herkunft, Lizenz und Aufbau in [`allris3/README.md`](allris3/README.md).

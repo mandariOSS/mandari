@@ -153,6 +153,29 @@ def test_fehlerfall_ohne_ladeereignis(page: Any, goto: Any, screenshot: Any) -> 
     page.unroute_all(behavior="ignoreErrors")
 
 
+def test_original_im_ratsinformationssystem(page: Any, goto: Any, screenshot: Any) -> None:
+    """Issue #1259: Kopf und Dokumentansicht verlinken das Original im Ratsinformationssystem, in neuem Fenster."""
+    paper, datei = _vorgang()
+    paper.raw_json = {"web": "https://ris.dokumentansicht.e2e/vo0050.asp?__kvonr=100"}
+    paper.save(update_fields=["raw_json"])
+    _halten(page, datei)
+    goto(f"/insight/vorgaenge/{paper.pk}/")
+
+    kopf = page.get_by_role("link", name=re.compile(r"^Im Ratsinformationssystem ansehen"))
+    expect(kopf).to_be_visible()
+    expect(kopf).to_have_attribute("href", "https://ris.dokumentansicht.e2e/vo0050.asp?__kvonr=100")
+    expect(kopf).to_have_attribute("target", "_blank")
+
+    page.get_by_role("button", name=ANSEHEN).click()
+    original = page.get_by_role("link", name=re.compile(r"^Original im Ratsinformationssystem ansehen"))
+    expect(original).to_be_visible()
+    expect(original).to_have_attribute("href", datei.access_url or "")
+    expect(original).to_have_attribute("target", "_blank")
+    page.wait_for_timeout(400)
+    screenshot("dokumentansicht-original")
+    page.unroute_all(behavior="ignoreErrors")
+
+
 def test_kommunenwechsel_zeigt_kommunen_ohne_daten(page: Any, goto: Any, screenshot: Any) -> None:
     paper, _ = _vorgang()
     importieren(

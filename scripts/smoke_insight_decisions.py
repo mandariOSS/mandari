@@ -142,11 +142,12 @@ sess.save()
 
 print()
 print("=== 1. Ohne Freigabe der Verwaltung ===")
-resp = anon.get("/insight/beschluesse/")
+# Die Beschlusskontrolle ist seit Issue #1270 der Reiter „Umsetzung“ der Beschlüsse
+resp = anon.get("/insight/beschluesse/umsetzung/")
 check(
     "Liste -> Hinweis, keine Daten",
-    resp.status_code == 200 and "noch keine beschlusskontrolle" in html(resp).lower() and "Radweg" not in html(resp),
-    f"status={resp.status_code} radweg={'Radweg' in html(resp)} hint={'beschlusskontrolle' in html(resp).lower()}",
+    resp.status_code == 200 and "noch kein umsetzungsstand" in html(resp).lower() and "Radweg" not in html(resp),
+    f"status={resp.status_code} radweg={'Radweg' in html(resp)} hint={'umsetzungsstand' in html(resp).lower()}",
 )
 check("Detail -> 404", anon.get(f"/insight/beschluesse/{radweg.id}/").status_code == 404)
 check("Navigation zeigt Beschlüsse", "beschluesse/" in html(resp))
@@ -171,7 +172,7 @@ check("Register (intern) zeigt den internen Vermerk", "Vergabevermerk Quokkawurz
 
 print()
 print("=== 3. Insight: Liste und Detail ===")
-resp = anon.get("/insight/beschluesse/")
+resp = anon.get("/insight/beschluesse/umsetzung/")
 page = html(resp)
 check(
     "Liste -> 200 mit freigegebenen Beschlüssen",
@@ -192,13 +193,13 @@ stats = decision_tracking.stats(body)
 check("Statistik: 1 offen, 1 umgesetzt", stats["open"] == 1 and stats["done"] == 1 and stats["total"] == 2, str(stats))
 check(
     "Filter nur offene",
-    "Spielplatz" not in html(anon.get("/insight/beschluesse/?offen=1"))
-    and "Radweg" in html(anon.get("/insight/beschluesse/?offen=1")),
+    "Spielplatz" not in html(anon.get("/insight/beschluesse/umsetzung/?offen=1"))
+    and "Radweg" in html(anon.get("/insight/beschluesse/umsetzung/?offen=1")),
 )
 check(
     "Suche in Statusmeldung",
-    "Spielplatz" in html(anon.get("/insight/beschluesse/?q=Eröffnet"))
-    and "Radweg" not in html(anon.get("/insight/beschluesse/?q=Eröffnet")),
+    "Spielplatz" in html(anon.get("/insight/beschluesse/umsetzung/?q=Eröffnet"))
+    and "Radweg" not in html(anon.get("/insight/beschluesse/umsetzung/?q=Eröffnet")),
 )
 
 resp = anon.get(f"/insight/beschluesse/{radweg.id}/")
@@ -347,7 +348,7 @@ check("Abgemeldete Adresse erhält nichts mehr", len(mail.outbox) == 0)
 
 # Verwaltung schaltet Veröffentlichung ab
 c_clerk.post(f"{SESSION}/settings/implementation-publish/", {"publish": "0"})
-check("Nach Abschalten: Liste ohne Daten", "Radweg" not in html(anon.get("/insight/beschluesse/")))
+check("Nach Abschalten: Liste ohne Daten", "Radweg" not in html(anon.get("/insight/beschluesse/umsetzung/")))
 
 print()
 print(f"=== Ergebnis: {PASS} OK, {FAIL} FAIL ===")

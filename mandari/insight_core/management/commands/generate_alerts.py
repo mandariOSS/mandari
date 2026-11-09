@@ -19,6 +19,7 @@ from django.db import connection
 from django.utils import timezone
 
 from apps.common.einmalig import EinmaligMixin
+from insight_core.services.ortsschutz import oeffentlicher_titel
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ class Command(EinmaligMixin, BaseCommand):
 
         sql = """
             SELECT DISTINCT ON (p.id) p.id, p.name, p.reference,
-                   d.dist AS distance
+                   d.dist AS distance, p.paper_type
             FROM oparl_papers p,
                  LATERAL jsonb_array_elements(p.locations) AS loc,
                  LATERAL (
@@ -114,7 +115,7 @@ class Command(EinmaligMixin, BaseCommand):
 
         with connection.cursor() as cursor:
             cursor.execute(sql, [lat, lon, lat, str(subscriber.body_id), cutoff, radius])
-            matches = {str(row[0]): (row[1], row[2], row[3]) for row in cursor.fetchall()}
+            matches = {str(row[0]): (row[1], row[2], row[3], row[4]) for row in cursor.fetchall()}
 
         # Amtliche Umringe von Bebauungsplänen (#598): Treffer, wenn der Umring den Kreis berührt
         from insight_core.models import OParlPaper
@@ -122,11 +123,16 @@ class Command(EinmaligMixin, BaseCommand):
 
         plan_hits = nearby_plan_papers(subscriber.body, lat, lon, radius, created_since=cutoff)
         extra = {str(paper_id): hit for paper_id, hit in plan_hits.items() if str(paper_id) not in matches}
-        for paper in OParlPaper.objects.filter(pk__in=list(extra)).values("id", "name", "reference"):
-            matches[str(paper["id"])] = (paper["name"], paper["reference"], extra[str(paper["id"])].distance)
+        for paper in OParlPaper.objects.filter(pk__in=list(extra)).values("id", "name", "reference", "paper_type"):
+            matches[str(paper["id"])] = (
+                paper["name"],
+                paper["reference"],
+                extra[str(paper["id"])].distance,
+                paper["paper_type"],
+            )
 
         count = 0
-        for paper_id, (name, reference, distance) in matches.items():
+        for paper_id, (name, reference, distance, paper_type) in matches.items():
             if dry_run:
                 count += 1
                 continue
@@ -137,7 +143,8 @@ class Command(EinmaligMixin, BaseCommand):
                 entity_id=paper_id,
                 defaults={
                     "alert_type": "neighborhood",
-                    "entity_title": name or reference or "Vorgang",
+                    # Titel ohne Hausnummer bei Privatanschriften (Issue #1269)
+                    "entity_title": oeffentlicher_titel(name, paper_type) or reference or "Vorgang",
                     "entity_url": f"/insight/vorgaenge/{paper_id}/",
                     "context": {"distance": int(distance)},
                 },
@@ -182,7 +189,7 @@ class Command(EinmaligMixin, BaseCommand):
                     entity_id=paper_id,
                     defaults={
                         "alert_type": "keyword",
-                        "entity_title": hit.get("title", "Vorgang"),
+                        "entity_title": oeffentlicher_titel(hit.get("title"), hit.get("subtitle")) or "Vorgang",
                         "entity_url": f"/insight/vorgaenge/{paper_id}/",
                         "context": {"keyword": keyword},
                     },
@@ -212,7 +219,7 @@ class Command(EinmaligMixin, BaseCommand):
                     entity_id=paper.id,
                     defaults={
                         "alert_type": "keyword",
-                        "entity_title": paper.name or paper.reference or "Vorgang",
+                        "entity_title": paper.titel_oeffentlich or paper.reference or "Vorgang",
                         "entity_url": f"/insight/vorgaenge/{paper.id}/",
                         "context": {"keyword": keyword},
                     },

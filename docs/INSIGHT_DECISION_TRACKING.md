@@ -25,10 +25,15 @@ verfügbar“ (410).
 
 ## Insight
 
-- Liste `/insight/beschluesse/` (Navigation „Beschlüsse“): Kacheln je Status (Umsetzung steht an /
-  in Umsetzung / umgesetzt / zurückgestellt), Filter Gremium, Jahr, „nur offene“, Volltext
-  (Betreff, Beschlusstext, Nummer, öffentliche Statusmeldung). Ohne Freigabe der Verwaltung
-  erscheint ein Hinweis.
+- Reiter „Umsetzung“ der Beschlüsse, `/insight/beschluesse/umsetzung/`: Kacheln je Status (Umsetzung
+  steht an / in Umsetzung / umgesetzt / zurückgestellt), Filter Gremium, Jahr, „nur offene“, Volltext
+  (Betreff, Beschlusstext, Nummer, öffentliche Statusmeldung). Seit Issue #1270 ist „Beschlüsse“
+  (`/insight/beschluesse/`, je Kommune `/insight/k/<slug>/beschluesse/`) die Liste der Entscheidungen aus
+  dem RIS-Bestand und steht immer in der Navigation; den Reiter „Umsetzung“ zeigt sie erst, wenn
+  mindestens ein Beschluss lesbar ist (`decision_tracking.has_public_decisions`), nicht schon mit
+  eingeschaltetem Schalter. Alte Adressen der Liste mit `?status=`, `?offen=`, `?jahr=` oder `?q=` leiten
+  auf den Reiter weiter. Ohne lesbare Beschlüsse zeigt der Reiter einen Hinweis, die zuletzt beratenen
+  Punkte der Kommune und Wege zu Beschlüssen, Sitzungen und Vorgängen, mit `noindex, follow` (Issue #1261).
 - Detail `/insight/beschluesse/<id>/`: Status-Zeitleiste beschlossen → in Umsetzung → umgesetzt
   (bzw. zurückgestellt), Beschlusstext, öffentliche Statusmeldung mit Stand-Datum, zuständige
   Stelle, geplante Umsetzung (überschritten rot), Links zu Sitzung und Vorlage (Beratungsverlauf)

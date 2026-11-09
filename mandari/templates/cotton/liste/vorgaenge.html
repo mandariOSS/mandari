@@ -13,10 +13,20 @@ hub.ris.vorlagennummer, Issue #1102), ist die Zeile leicht hinterlegt und die Nu
 bei 1.280 px nicht umbrechen (Work: „Für die Fraktion“ der Vorgänge); ohne Angabe ab md wie bisher.
 Unter dem Titel stehen Vorlage und Anlagen (c-liste.vorgang-dokumente, Issue #1103), wenn der Aufrufer sie für die
 Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen); der Baustein fragt nicht selbst nach.
+Das Ergebnis der letzten Beratung steht als Etikett (``stand.etikett``, c-insight.ergebnis, Issue #1260) vor dem Stand und
+unterhalb von 2xl unter dem Titel; ohne Begriff aus dem Vokabular bleibt der Punkt vor dem Stand.
+Hat der Aufrufer ``absender`` an die Vorgänge gehängt (insight_core.services.fraktionskuerzel.anhaengen, Issue #1272),
+steht der Titel ohne Absender-Präfix und die Spalte „Von“ zeigt die Fraktionskürzel (c-insight.absender), unter sm in
+der Zeile unter dem Titel; ohne Angabe (Work) bleibt der Titel des RIS und die Spalte entfällt. Im Bürgerportal (ohne
+``links``) steht der Titel ohne Hausnummer, wo es eine Privatanschrift sein kann (``OParlPaper.titel_oeffentlich``,
+Issue #1269; ``absender.titel`` geht schon vom öffentlichen Titel aus); Work zeigt den vollen Titel.
+Hat der Aufrufer die Kurzfassung „Worum es geht“ angehängt (``vorschau``, insight_core.services.kurzfassung.anhaengen,
+Issue #1271), steht sie unter dem Titel; die Dokumentzeile darunter nennt dann nur noch Vorlage und Anlagen ohne
+Dateityp und Größe.
 {% endcomment %}
 <c-vars vorgaenge="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" zusatz_ab="" />
 {% load insight_listen %}
-{% with sp_nr=vorgaenge|hat_wert:"reference" sp_typ=vorgaenge|hat_wert:"paper_type" sp_datum=vorgaenge|hat_wert:"date" sp_stand=vorgaenge|hat_wert:"stand.text" %}
+{% with sp_nr=vorgaenge|hat_wert:"reference" sp_typ=vorgaenge|hat_wert:"paper_type" sp_datum=vorgaenge|hat_wert:"date" sp_stand=vorgaenge|hat_wert:"stand.text" sp_von=vorgaenge|hat_wert:"absender.teile" %}
 <div class="-mx-3">
     <div class="relative overflow-x-auto">
     <table class="w-full">
@@ -25,6 +35,7 @@ Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen);
                 <th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Vorgang</th>
                 {% if sp_nr %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Vorlagen-Nr.</th>{% endif %}
                 {% if sp_typ %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Typ</th>{% endif %}
+                {% if sp_von %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Von</th>{% endif %}
                 {% if sp_datum %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>{% endif %}
                 {% if sp_stand %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-2xl:hidden">Stand</th>{% endif %}
                 {% if zusatz %}<th class="text-left px-3 py-2 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 {% if zusatz_ab == '2xl' %}max-2xl:hidden{% else %}max-md:hidden{% endif %}">{{ zusatz_titel }}</th>{% endif %}
@@ -39,15 +50,17 @@ Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen);
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
                     <a href="{{ ziel }}"
                        class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
-                        {{ paper.name|default:"Vorgang" }}
+                        {% if links %}{{ paper.name|default:"Vorgang" }}{% else %}{% firstof paper.absender.titel paper.titel_oeffentlich paper.name "Vorgang" %}{% endif %}
                     </a>
                     <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                         {% if paper.reference %}<span class="font-mono">{{ paper.reference }}</span>{% endif %}
                         {% if paper.reference and paper.paper_type %} &middot; {% endif %}
                         {% if paper.paper_type %}{{ paper.paper_type }}{% endif %}
+                        {% if paper.absender.neben_art %}<c-insight.absender :absender="paper.absender" klasse="ml-2 align-middle" hinweis="eingebracht von" neben_art />{% endif %}
                     </div>
-                    {% if dicht and paper.stand %}<p class="2xl:hidden mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ paper.stand.text }}</p>{% endif %}
-                    {% if paper.dokumentzeile %}<c-liste.vorgang-dokumente :zeile="paper.dokumentzeile" :vorgang="paper" ziel="{{ ziel }}" dicht="{{ dicht }}" />{% endif %}
+                    {% if dicht and paper.stand %}<p class="2xl:hidden mt-0.5 text-sm text-gray-700 dark:text-gray-300">{% if paper.stand.etikett %}<c-insight.ergebnis :ergebnis="paper.stand.etikett" /> {% endif %}{{ paper.stand.text }}</p>{% elif paper.stand.etikett %}<p class="2xl:hidden mt-1"><c-insight.ergebnis :ergebnis="paper.stand.etikett" /></p>{% endif %}
+                    {% if paper.vorschau %}<c-insight.ki-vorschau :text="paper.vorschau" />{% endif %}
+                    {% if paper.dokumentzeile %}<c-liste.vorgang-dokumente :zeile="paper.dokumentzeile" :vorgang="paper" ziel="{{ ziel }}" dicht="{{ dicht }}" :knapp="paper.vorschau" />{% endif %}
                     {% if zusatz %}<div class="{% if zusatz_ab == '2xl' %}2xl:hidden{% else %}md:hidden{% endif %} mt-1 text-sm">{% include zusatz with eintrag=paper %}</div>{% endif %}
                 </td>
                 {% if sp_nr %}
@@ -58,6 +71,9 @@ Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen);
                 {% if sp_typ %}
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-sm:hidden">{{ paper.paper_type|default:"" }}</td>
                 {% endif %}
+                {% if sp_von %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} max-sm:hidden"><c-insight.absender :absender="paper.absender" neben_art /></td>
+                {% endif %}
                 {% if sp_datum %}
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
                     {% if paper.date %}<time datetime="{{ paper.date|date:'Y-m-d' }}">{{ paper.date|date:"d.m.Y" }}</time>{% endif %}
@@ -67,7 +83,7 @@ Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen);
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-700 dark:text-gray-300 max-2xl:hidden w-[26rem]">
                     {% if paper.stand %}
                     <span class="flex items-baseline gap-2">
-                        <span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if paper.stand.kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif paper.stand.kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
+                        {% if paper.stand.etikett %}<c-insight.ergebnis :ergebnis="paper.stand.etikett" klasse="shrink-0" />{% else %}<span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if paper.stand.kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif paper.stand.kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% endif %}
                         <span>{{ paper.stand.text }}</span>
                     </span>
                     {% endif %}

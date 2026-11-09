@@ -1,0 +1,14 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ergebnis-Etikett (Issue #1260): ein Begriff aus dem festen Vokabular, klein und flach, die Erklärung als Tooltip.
+Zuordnung der Rohtexte und Erklärungen: insight_core/services/ergebnis.py (Filter ``ergebnis`` in insight_listen).
+  <c-insight.ergebnis :ergebnis="item.ergebnis" />
+  {% with etikett=item.result|ergebnis %}<c-insight.ergebnis :ergebnis="etikett" />{% endwith %}
+Parameter: ergebnis (Ergebnis oder leer, dann kein Etikett), klasse (zusätzliche Klassen, etwa shrink-0).
+Die Farbe trägt die Bedeutung nie allein, der Begriff steht immer da: Grün beschlossen, Rot abgelehnt, Gelb vertagt,
+Blau verwiesen, Grau zur Kenntnis genommen und abgesetzt; nur umrandet angekündigt und alles, was sich nicht zuordnen
+lässt (dann mit dem Rohtext des Ratsinformationssystems). Anfragen (Issue #1273): beantwortet grün, „Antwort steht aus“
+umrandet.
+{% endcomment %}
+<c-vars ergebnis="" klasse="" />
+{% if ergebnis %}<span data-ergebnis="{{ ergebnis.schluessel|default:'neutral' }}" title="{{ ergebnis.titel }}" class="inline-flex items-center rounded px-1.5 py-0.5 text-[0.8125rem] font-medium leading-tight {% if ergebnis.bekannt %}whitespace-nowrap {% endif %}{% if ergebnis.schluessel == 'beschlossen' or ergebnis.schluessel == 'beantwortet' %}bg-primary-50 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200{% elif ergebnis.schluessel == 'abgelehnt' %}bg-red-50 text-red-800 dark:bg-red-900/40 dark:text-red-200{% elif ergebnis.schluessel == 'vertagt' %}bg-amber-50 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200{% elif ergebnis.schluessel == 'verwiesen' %}bg-blue-50 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200{% elif ergebnis.schluessel == 'kenntnis' or ergebnis.schluessel == 'abgesetzt' %}bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200{% else %}ring-1 ring-inset ring-gray-300 text-gray-700 dark:ring-gray-600 dark:text-gray-300{% endif %}{% if klasse %} {{ klasse }}{% endif %}">{{ ergebnis.text }}</span>{% endif %}

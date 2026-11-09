@@ -22,6 +22,7 @@ from ..models import (
     OParlPaper,
     OParlPerson,
 )
+from ..services import fraktionskuerzel
 from ._helpers import get_active_body, is_all_bodies_mode, page_number
 
 # =============================================================================
@@ -84,16 +85,24 @@ class SearchView(TemplateView):
         ).to_dict()
         if len(params.query) < 2:
             return context
+        # Feed dieser Suche (Issue #1274): Kopf der Seite und „Als RSS abonnieren“ unter den Treffern
+        from .feeds import abo_suche
+
+        context["abo_feed"] = abo_suche(params, body)
         try:
             from ..services.search_service import get_search_service
 
             body_ids = None if body else _searchable_body_ids()
             context.update(build_context(get_search_service(), params, body, body_ids, timezone.localdate()))
+            # Kurzfassung „Worum es geht“ statt des Textausschnitts, nur im Bürgerportal (Issue #1271)
+            context["mit_kurzfassung"] = _kurzfassungen(context.get("groups") or [])
         except Exception as e:  # Elasticsearch nicht erreichbar: Datenbanksuche über das Partial, Seite bleibt nutzbar
             import logging
 
             logging.getLogger(__name__).warning(f"Suche ohne Elasticsearch, Datenbanksuche: {e}")
             context.update(_fallback_context(params, body))
+        # Titel ohne Absender und Fraktionskürzel (Issue #1272); nur im Bürgerportal, Work zeigt die Titel des RIS
+        fraktionskuerzel.treffer_anreichern(context.get("groups") or [])
         context["page"] = context.get("page", 1)
         return context
 
@@ -172,8 +181,11 @@ def search_results(request):
             index_names=index_names,
         )
 
-        # Ergebnisse formatieren
+        # Ergebnisse formatieren; Bürger- und Bauanträge ohne Hausnummer wie in der Trefferliste (Issue #1269)
+        from ..services.search_presentation import vorschau_ohne_hausnummer
+
         results = [format_search_result(hit) for hit in search_result["results"]]
+        vorschau_ohne_hausnummer(search_result["results"], results)
 
         return render(
             request,
@@ -208,7 +220,8 @@ def search_results(request):
             results.append(
                 {
                     "type": "paper",
-                    "title": paper.name or paper.reference,
+                    # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
+                    "title": paper.titel_oeffentlich or paper.reference,
                     "subtitle": paper.paper_type,
                     "url": f"/insight/vorgaenge/{paper.id}/",
                 }
@@ -281,6 +294,14 @@ def search_results(request):
         )
 
 
+def _kurzfassungen(groups: list[dict]) -> bool:
+    """Hängt die Kurzfassung an die Vorgangstreffer (``kurzfassung.an_treffer``); Rückgabe: mindestens eine da?"""
+    from ..services import kurzfassung
+
+    kurzfassung.an_treffer(groups)
+    return any(treffer.get("vorschau") for treffer in groups)
+
+
 #: Typen, die in „Alle“ nicht in der Liste stehen, sondern als Link mit Zahl (Konzept Insight-Suche, 3.2)
 _OTHER_TYPES = (("persons", "person", "Person", "Personen"), ("organizations", "organization", "Gremium", "Gremien"))
 
@@ -293,6 +314,8 @@ def _grouped_results(request, search_service, query, body, body_id, body_ids, in
         query, body_id=body_id, body_ids=body_ids, page=page, page_size=20, index_names=index_names
     )
     groups = present_groups(grouped["groups"], body.slug if body else "")
+    fraktionskuerzel.treffer_anreichern(groups)
+    mit_kurzfassung = _kurzfassungen(groups)
     totals = grouped["totals_by_index"]
     other_types = []
     if index_names is None:
@@ -316,5 +339,6 @@ def _grouped_results(request, search_service, query, body, body_id, body_ids, in
             "similar_spelling": grouped["similar_spelling"],
             "search_type": search_type,
             "is_dropdown": False,
+            "mit_kurzfassung": mit_kurzfassung,
         },
     )

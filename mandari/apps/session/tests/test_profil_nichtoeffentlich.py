@@ -30,6 +30,7 @@ from datetime import date, timedelta
 from io import StringIO
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import quote
 
 import pytest
 from django.core.cache import cache
@@ -553,6 +554,23 @@ class TestScope:
     def test_token_in_der_adresse_gilt_nicht(self, welt: dict[str, Any]) -> None:
         user, _ = konto(welt["tenant"], ALLE_NOE)
         assert abruf(f"{NOE}meetings/", access_token=token_fuer(user)).status_code == 401
+
+
+class TestFehlerantworten:
+    def test_immer_problem_json_auch_mit_sonderzeichen_in_der_adresse(self, welt: dict[str, Any]) -> None:
+        """Fehler sind nie HTML: Typ ``application/problem+json``, Pfad und Angaben nur als JSON-Werte."""
+        segment = '<svg onload="alert(1)">'
+        pfad = f"{NOE}{quote(segment)}/"
+        user, _ = konto(welt["tenant"], ALLE_NOE)
+        ohne_token, mit_token = abruf(pfad), abruf(pfad, token_fuer(user))
+        for antwort, status in ((ohne_token, 401), (mit_token, 404)):
+            assert antwort.status_code == status
+            assert antwort["Content-Type"] == "application/problem+json; charset=utf-8"
+            assert antwort["X-Content-Type-Options"] == "nosniff"
+            privat(antwort)
+            assert antwort.json()["instance"] == f"{NOE}{segment}/"
+            assert pruefe_profil(antwort.json(), "nonpublic", "NonPublicProblem") == []
+        assert segment in mit_token.json()["detail"]
 
 
 # =============================================================================

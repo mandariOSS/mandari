@@ -1,0 +1,327 @@
+{
+  "name": "Fraktion GRÜNE",
+  "members": [
+    {
+      "kplfdnr": 1282,
+      "name": "Eschenburg, Benjamin",
+      "role": "Fraktionsvorsitz",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2319,
+      "name": "Vornhagen, Dana",
+      "role": "Fraktionsvorsitz",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2258,
+      "name": "Wesselkamp Holzer, Florian",
+      "role": "Stellv. Fraktionsvorsitz",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 240,
+      "name": "Andersen, Lars",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2637,
+      "name": "Andresen, Elsa",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 243,
+      "name": "Boehlich, Gesche",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2316,
+      "name": "Boettger, Lars",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2506,
+      "name": "Bottin, Sabine",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2663,
+      "name": "Bregulla, Michael",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2640,
+      "name": "Buchholz, Birgit",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2588,
+      "name": "Carstensen, Iris",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2641,
+      "name": "Cramer, Lukas",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2505,
+      "name": "Damm, Anna",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2595,
+      "name": "Evers, Oliver",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 733,
+      "name": "Faust-Weik-Roßnagel, Stephanie",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2587,
+      "name": "Finger, Sabine",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2364,
+      "name": "Fitschen, Heidi",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2600,
+      "name": "Günther, Silvana",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2642,
+      "name": "Hansen, Oke",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2638,
+      "name": "Dr. Hansen, Tim",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2098,
+      "name": "Harders, Benjamin",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2554,
+      "name": "Helmers, Kai-Uwe",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2363,
+      "name": "Hirschfeld, Yohana",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2480,
+      "name": "Johannsen, Meike",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2599,
+      "name": "Kaeding, Peer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2482,
+      "name": "Kähler-Witte, Philipp Karl",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2643,
+      "name": "Kern, Carla",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 567,
+      "name": "Klanck, Michael",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2618,
+      "name": "Klick, Fabian",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2513,
+      "name": "Licari, Emilie",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2414,
+      "name": "Dr. Lohkamp, Meike",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2594,
+      "name": "Lücken, Lucas",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2590,
+      "name": "Meier, Friederike",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2593,
+      "name": "Meyer-Schreiber, Kirsten",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2592,
+      "name": "Mittag, Maike",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 255,
+      "name": "Neumann, Nadine",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2664,
+      "name": "Dr. Neuse, Carl Jannes",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2106,
+      "name": "Piotrowski, Fabian",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2201,
+      "name": "Rehbock, Ralph",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2112,
+      "name": "Schulte, Heike",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2371,
+      "name": "Stünitz, Rolf",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2553,
+      "name": "Suttmann-Arndt, Sabine",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2662,
+      "name": "Tötter, Anna",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 731,
+      "name": "Trede, Christian",
+      "role": "Fraktionsmitglied",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2639,
+      "name": "von Türckheim, Friederike",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 2675,
+      "name": "Weber-Newth, Francesca",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "Fraktion GRÜNE",
+      "voting_right": true
+    }
+  ]
+}

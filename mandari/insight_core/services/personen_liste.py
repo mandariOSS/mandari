@@ -7,7 +7,9 @@ deren Hauptorgan anders heißt oder deren RIS andere Rollennamen führt, blieb s
 laufenden Mitgliedschaften: die wichtigste Rolle je Person, eine Abfrage für die ganze Seite.
 
 Nennt OParl keine Fraktion (viele Kommunen führen Fraktionen nicht als Gremium), gilt die bestätigte
-Fraktionszuordnung aus Insight (Issue #916, ``services/fraktionen.py``) – mit Hinweis auf ihre Quelle.
+Fraktionszuordnung aus Insight (Issue #916, ``services/fraktionen.py``), sonst für Mandate im Hauptorgan die gepflegte
+Liste der Fraktionszugehörigkeiten (Issue #1258, ``vorgang_urheber.gepflegte_fraktionen``) – jeweils mit Hinweis auf
+die Quelle. Zugänge zum RIS („Informationssystem“) zählen nicht als Mitgliedschaft (``services/testkonten.py``).
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ from django.utils import timezone
 from ..models import OParlMembership, OParlOrganization, OParlPerson, PersonFraktion, withdrawn_q
 from .fraktionen import aktuelle_fraktionen
 from .question_service import COUNCIL_ORG_NAMES
+from .testkonten import systemrolle_q
+from .vorgang_urheber import GepflegteFraktion, gepflegte_fraktionen
 
 #: Rollen ohne eigene Aussage („Mitglied“) – sie sagen nur, dass jemand dabei ist
 ALLGEMEINE_ROLLEN = {"", "-", "–", "—", "mitglied", "ordentliches mitglied", "member", "ratsmitglied"}
@@ -49,8 +53,8 @@ class PersonAngaben:
     fraktion: OParlOrganization | None = None
     funktion: str = ""
     gremien: list[str] = field(default_factory=list)
-    #: Fraktionszuordnung aus Insight, nur wenn OParl keine Fraktion nennt (Issue #916)
-    fraktion_lokal: PersonFraktion | None = None
+    #: Fraktionszuordnung aus Insight bzw. aus der gepflegten Liste, nur wenn OParl keine Fraktion nennt (#916, #1258)
+    fraktion_lokal: PersonFraktion | GepflegteFraktion | None = None
 
     @property
     def fraktion_name(self) -> str:
@@ -169,7 +173,8 @@ def angaben_fuer(personen: Iterable[OParlPerson], stichtag: date | None = None) 
     """
     ``{person_id: PersonAngaben}`` aus den laufenden Mitgliedschaften, eine Abfrage für alle Personen.
 
-    Ohne Fraktion aus OParl kommt sie aus den bestätigten Zuordnungen in Insight (eine weitere Abfrage).
+    Ohne Fraktion aus OParl kommt sie aus den bestätigten Zuordnungen in Insight (eine weitere Abfrage), sonst für
+    Personen mit Mandat im Hauptorgan aus der gepflegten Liste (höchstens zwei weitere).
     """
     personen = list(personen)
     ids = [p.pk for p in personen]
@@ -181,6 +186,7 @@ def angaben_fuer(personen: Iterable[OParlPerson], stichtag: date | None = None) 
         .filter(Q(end_date__isnull=True) | Q(end_date__gte=stichtag))
         .filter(Q(organization__end_date__isnull=True) | Q(organization__end_date__gte=stichtag))
         .exclude(withdrawn_q("organization"))
+        .exclude(systemrolle_q())
         .select_related("organization")
         .order_by("organization__name")
     )
@@ -199,4 +205,19 @@ def angaben_fuer(personen: Iterable[OParlPerson], stichtag: date | None = None) 
     ohne_fraktion = [p for p in personen if ergebnis[p.pk].fraktion is None]
     for pid, zuordnung in aktuelle_fraktionen(ohne_fraktion, stichtag=stichtag).items():
         ergebnis[pid].fraktion_lokal = zuordnung
+    # Gepflegte Liste (Issue #1258): nur Mandate im Hauptorgan, damit Gleichnamige ohne Mandat keine Fraktion erhalten
+    mit_mandat = [
+        p
+        for p in ohne_fraktion
+        if ergebnis[p.pk].fraktion_lokal is None and any(ist_hauptorgan(m.organization) for m in je_person[p.pk])
+    ]
+    for pid, gepflegt in gepflegte_fraktionen(mit_mandat, stichtag=stichtag).items():
+        ergebnis[pid].fraktion_lokal = gepflegt
     return ergebnis
+
+
+def gepflegte_fraktion(person: OParlPerson, mitgliedschaften: Iterable[OParlMembership]) -> GepflegteFraktion | None:
+    """Fraktion aus der gepflegten Liste für die Personenseite, nur mit laufendem Mandat im Hauptorgan (Issue #1258)."""
+    if not any(ist_hauptorgan(m.organization) for m in mitgliedschaften):
+        return None
+    return gepflegte_fraktionen([person]).get(person.pk)

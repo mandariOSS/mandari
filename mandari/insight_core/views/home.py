@@ -23,7 +23,7 @@ from ..models import (
     OParlPaper,
     withdrawn_q,
 )
-from ..services import indexierung, kommunenverzeichnis
+from ..services import fraktionskuerzel, indexierung, kommunenverzeichnis
 from ..services.paper_status import ENTSCHEIDUNG, KEINE_ENTSCHEIDUNG, ist_beschluss
 from ._helpers import get_active_body, is_all_bodies_mode
 
@@ -155,12 +155,16 @@ class PortalHomeView(TemplateView):
             )
 
             # Neueste Vorgänge
-            context["recent_papers"] = OParlPaper.objects.filter(body=body, deleted=False).order_by(
-                "-date", "-oparl_created"
-            )[:5]
+            context["recent_papers"] = list(
+                OParlPaper.objects.filter(body=body, deleted=False).order_by("-date", "-oparl_created")[:5]
+            )
 
             # Zuletzt beschlossen: dritte Spalte auf breiten Bildschirmen (Issue #841)
             context["recent_decisions"] = zuletzt_beschlossen(body)
+            # Titel ohne Absender und Fraktionskürzel für beide Listen in einer Abfrage (Issue #1272)
+            fraktionskuerzel.anhaengen(
+                [*context["recent_papers"], *(punkt.vorgang for punkt in context["recent_decisions"])]
+            )
 
             # Stadtteile für Nachbarschafts-Schnellwahl
             import os

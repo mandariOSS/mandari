@@ -1,0 +1,215 @@
+{
+  "title": "Sitzung des Mobilitätsausschusses",
+  "committee": [
+    "au",
+    235,
+    "Mobilitätsausschuss"
+  ],
+  "date": "2025-11-03",
+  "time_start": "18:00",
+  "time_end": "19:45",
+  "room": "Sitzungsraum des Technischen Rathauses (EG)",
+  "address": "Jessenstraße 1, 22767 Hamburg (Zugang über Nebeneingang Parkplatz Grotjahnstraße)",
+  "rows": [
+    {
+      "tolfdnr": 1052631,
+      "number": "1",
+      "title": "Öffentliche Fragestunde",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1052632,
+      "number": "2",
+      "title": "Eingaben",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1052638,
+      "number": "2.1",
+      "title": "Unerlaubter Verkehr Klövensteen Eingabe vom 05.10.2025",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017291,
+      "paper_reference": "22-1471"
+    },
+    {
+      "tolfdnr": 1052639,
+      "number": "2.2",
+      "title": "Kreuzung Bahrenfelder Straße/ Barnerstraße rechtzeitig umplanen Eingabe vom 08.10.2025",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017292,
+      "paper_reference": "22-1472"
+    },
+    {
+      "tolfdnr": 1052640,
+      "number": "2.3",
+      "title": "Umbau der Kreuzung Reventlowstraße/ Walderseestraße Eingabe vom 09.10.2025",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017293,
+      "paper_reference": "22-1473"
+    },
+    {
+      "tolfdnr": 1052691,
+      "number": "2.4",
+      "title": "Krötenwanderung zwischen Reemtsmapark und Jenischpark Eingabe vom 07.10.2025 Bitte des Ausschusses für Grün, Naturschutz und Sport an den Mobilitätsausschuss um fachliche Stellungnahme zur Eingabe (Nach eingegangener Stellungnahme des Mobilitätsausschusses wird die Beratung im Ausschuss für Grün, Naturschutz und Sport fortgesetzt)",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017309,
+      "paper_reference": "22-1442.1"
+    },
+    {
+      "tolfdnr": 1052694,
+      "number": "2.5",
+      "title": "Klimagerechte Umgestaltung des Ebertplatzes - Anliegen von Bahrenfeld auf Trab Eingabe vom 10.09.2025 Von der Vorsitzenden der Bezirksversammlung auf Bitte des Ausschusses für Wirtschaft, Klima und Verbraucherschutz in den Mobilitätsausschuss überwiesen",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017311,
+      "paper_reference": "22-1406.1"
+    },
+    {
+      "tolfdnr": 1052689,
+      "number": "3",
+      "title": "Zuwendungsantrag Ottenser Gestalten - Mehrere Oasen in Ottensen Beschlussempfehlung des Amtes Bitte des Haushaltsausschusses um Stellungnahme des Mobilitätsausschusses",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017306,
+      "paper_reference": "22-1355.2"
+    },
+    {
+      "tolfdnr": 1052783,
+      "number": "4",
+      "title": "Sichere Überwege dort, wo sie dringend gebraucht werden – Lichtsignalanlage im Kalckreuthweg Antrag der Fraktionen von GRÜNE und CDU",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1017345,
+      "paper_reference": "22-1508"
+    },
+    {
+      "tolfdnr": 1052784,
+      "number": "5",
+      "title": "Barrierefreiheit am Fahrgastunterstand Elbschloßstraße herstellen Antrag der Fraktionen von GRÜNE und CDU",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1017346,
+      "paper_reference": "22-1509"
+    },
+    {
+      "tolfdnr": 1052785,
+      "number": "6",
+      "title": "Sichere Überwege in der Ebertallee und Dürerstraße einrichten Antrag der Fraktionen von GRÜNE und CDU",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1017347,
+      "paper_reference": "22-1510"
+    },
+    {
+      "tolfdnr": 1052633,
+      "number": "7",
+      "title": "Mitteilungen",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1052696,
+      "number": "7.1",
+      "title": "Mobilität an den Arenen Mitteilungsdrucksache zum Beschluss der Bezirksversammlung vom 26.06.2025",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017312,
+      "paper_reference": "22-1263.1"
+    },
+    {
+      "tolfdnr": 1052688,
+      "number": "7.2",
+      "title": "Sichere Schulwege für die Max-Brauer-Schule Mitteilungsdrucksache zum Beschluss der Bezirksversammlung vom 26.06.2025",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017300,
+      "paper_reference": "22-1278.1"
+    },
+    {
+      "tolfdnr": 1052635,
+      "number": "7.3",
+      "title": "Schulwegsicherheit: 30 km/h-Strecke auf dem Bahrenfelder Steindamm einrichten Mitteilungsdrucksache zum Beschluss des Hauptausschusses vom 14.08.2025",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017257,
+      "paper_reference": "22-1446"
+    },
+    {
+      "tolfdnr": 1052636,
+      "number": "7.4",
+      "title": "Unterkunft Ohnhorststraße Kleine Anfrage von Katarina Blume (FDP-Fraktion)",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017262,
+      "paper_reference": "22-1450"
+    },
+    {
+      "tolfdnr": 1052637,
+      "number": "7.5",
+      "title": "Tanzsport in Altona Kleine Anfrage von Uwe Batenhorst, Robert Risch und Tobias Steinhaus (alle AFD-Fraktion)",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017264,
+      "paper_reference": "22-1452"
+    },
+    {
+      "tolfdnr": 1052780,
+      "number": "7.6",
+      "title": "Kenntnisnahmeverschickung VR-A029 Lise-Meitner-Park Mitteilungsdrucksache des Amtes",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017342,
+      "paper_reference": "22-1506"
+    },
+    {
+      "tolfdnr": 1052781,
+      "number": "7.7",
+      "title": "Instandsetzung von Straßen im Jahr 2026 Mitteilungsdrucksache des Amtes",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1017343,
+      "paper_reference": "22-1507"
+    },
+    {
+      "tolfdnr": 1052634,
+      "number": "8",
+      "title": "Verschiedenes",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    }
+  ]
+}

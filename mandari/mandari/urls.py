@@ -182,6 +182,33 @@ def fehlerseite(
     return HttpResponse(inhalt, status=status)
 
 
+#: Fehlerseiten mit eigener Fassung im Stil des Bürgerportals (Issue #1261): Status → Vorlage
+INSIGHT_FEHLERSEITEN = {404: "errors/insight_404.html", 500: "errors/insight_500.html"}
+
+
+def im_buergerportal(request: HttpRequest) -> bool:
+    """Gehört die Anfrage zum Bürgerportal? Pfad unter /insight/ oder eigener Host einer Körperschaft.
+
+    Ohne Datenbank: Den Host ordnet die PortalHostMiddleware vorher zu (``insight_portal_host_slug``); fiel der
+    Fehler davor, zählt nur der Pfad.
+    """
+    return request.path_info.startswith("/insight/") or bool(getattr(request, "insight_portal_host_slug", None))
+
+
+def fehlerseite_fuer(
+    request: HttpRequest, template_name: str, status: int, kontext: dict[str, object] | None = None
+) -> HttpResponse:
+    """Fehlerseite des Bereichs: im Bürgerportal dessen Fassung (Sie-Form, Suche), sonst die gemeinsame Vorlage.
+
+    Work, Session und Konto behalten ``template_name`` (errors/base_error.html); die Website hat eigene Seiten.
+    """
+    insight = INSIGHT_FEHLERSEITEN.get(status)
+    if insight is not None and im_buergerportal(request):
+        marketing = str(getattr(settings, "MARKETING_URL", "") or "")
+        return fehlerseite(request, insight, status, {"marketing_url": marketing, **(kontext or {})})
+    return fehlerseite(request, template_name, status, kontext)
+
+
 @releases_db_connections
 def handler_400(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
     """Bad Request error handler."""
@@ -197,7 +224,7 @@ def handler_403(request: HttpRequest, exception: Exception | None = None) -> Htt
 @releases_db_connections
 def handler_404(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
     """Page Not Found error handler."""
-    return fehlerseite(request, "404.html", 404)
+    return fehlerseite_fuer(request, "404.html", 404)
 
 
 @releases_db_connections
@@ -224,7 +251,7 @@ def handler_500(request: HttpRequest) -> HttpResponse:
 
     kontext: dict[str, object] = {"request_id": str(uuid.uuid4())[:8]}
     try:
-        return fehlerseite(request, "500.html", 500, kontext)
+        return fehlerseite_fuer(request, "500.html", 500, kontext)
     except Exception:  # noqa: BLE001 - die Fehlerseite darf nicht selbst zum zweiten Fehler werden
         return HttpResponse(render_to_string("500.html", kontext), status=500)
 

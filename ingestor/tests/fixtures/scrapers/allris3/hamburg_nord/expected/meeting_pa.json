@@ -1,0 +1,345 @@
+{
+  "title": "Sitzung der Bezirksversammlung",
+  "committee": [
+    "pa",
+    211,
+    "Bezirksversammlung"
+  ],
+  "date": "2025-12-11",
+  "time_start": "18:00",
+  "time_end": "21:57",
+  "room": "Großer Sitzungssaal",
+  "address": "Robert - Koch - Straße 17, 20249 Hamburg",
+  "rows": [
+    {
+      "tolfdnr": 1038573,
+      "number": "1",
+      "title": "Öffentliche Bürgerfragestunde",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038574,
+      "number": "2",
+      "title": "Aktuelle Stunde",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038575,
+      "number": "3",
+      "title": "Geschäftsordnungsangelegenheiten",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038809,
+      "number": "3.1",
+      "title": "Ausschuss-Benennungen Antrag der GRÜNE-Fraktion",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1016036,
+      "paper_reference": "22-1692"
+    },
+    {
+      "tolfdnr": 1038811,
+      "number": "3.2",
+      "title": "Benennung von Ausschussmitgliedern Antrag der CDU-Fraktion",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1016038,
+      "paper_reference": "22-1694"
+    },
+    {
+      "tolfdnr": 1038813,
+      "number": "3.3",
+      "title": "Antrag Umbenennung von Ausschussmitgliedern im Stadtentwicklungsausschuss für die Fraktion Die Linke Antrag der Fraktion Die Linke",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1016039,
+      "paper_reference": "22-1695"
+    },
+    {
+      "tolfdnr": 1038576,
+      "number": "4",
+      "title": "Genehmigung der Niederschrift der Sitzung vom 13.11.2025",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038577,
+      "number": "5",
+      "title": "Vorlagen des vorsitzenden Mitglieds der Bezirksversammlung",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038604,
+      "number": "5.1",
+      "title": "Fortschreibung und Verstetigung eines bezirklichen Gewerbeflächenkonzepts für Hamburg-Nord Stellungnahme der Behörde für Stadtentwicklung und Wohnen",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1015943,
+      "paper_reference": "22-1470.1"
+    },
+    {
+      "tolfdnr": 1038766,
+      "number": "5.2",
+      "title": "Fußgängerfreundlichkeit steigern - Querungsmöglichkeit auf der Adolph-Schönfelder-Straße prüfen Stellungnahme der Behörde für Verkehr und Mobilitätswende",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1016005,
+      "paper_reference": "22-1662"
+    },
+    {
+      "tolfdnr": 1038769,
+      "number": "5.3",
+      "title": "Beabsichtigte Umstellung des Standorts Langenhorn vom Zweischichtbetrieb in den Einschichtbetrieb Anhörung gem. § 28 Nr. 13 BezVG",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1016011,
+      "paper_reference": "22-1668"
+    },
+    {
+      "tolfdnr": 1038777,
+      "number": "5.4",
+      "title": "Mehr Klarheit für zu Fuß Gehende und Radfahrende am Winterhuder Marktplatz Stellungnahme der Polizei Hamburg",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1016019,
+      "paper_reference": "22-1566.1.1"
+    },
+    {
+      "tolfdnr": 1038815,
+      "number": "5.5",
+      "title": "ÖPNV in Hamburg-Nord fit für 2030 – Taktverdichtung und Taktharmonisierung auf der Linie U1 ab Ochsenzoll als Zwischenschritt ermöglichen Stellungnahme der Behörde für Verkehr und Mobilitätswende",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1016041,
+      "paper_reference": "22-1546.1"
+    },
+    {
+      "tolfdnr": 1038579,
+      "number": "6",
+      "title": "Anträge",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038728,
+      "number": "6.1",
+      "title": "Maßnahmen zur Erreichung der Klimaneutralität 2040 im Bezirk Hamburg-Nord Antrag der Volt-Fraktion",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1015991,
+      "paper_reference": "22-1649"
+    },
+    {
+      "tolfdnr": 1038733,
+      "number": "6.2",
+      "title": "Busanbindung zwischen Norderstedt und dem Hamburg Airport Gemeinsamer Antrag von SPD-, CDU- und FDP-Fraktion",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1015995,
+      "paper_reference": "22-1653"
+    },
+    {
+      "tolfdnr": 1038734,
+      "number": "6.3",
+      "title": "Öffentliche Trinkwasserbrunnen für alle in Hamburg-Nord! Antrag der GRÜNE-Fraktion",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1015996,
+      "paper_reference": "22-1654"
+    },
+    {
+      "tolfdnr": 1038735,
+      "number": "6.4",
+      "title": "Eine Heimat für Gebäudebrüter und Fledermäuse – bei Neubauten und Sanierungen, auch im Denkmalschutz Antrag der GRÜNE-Fraktion",
+      "public": true,
+      "decision": "abgelehnt",
+      "detail": true,
+      "volfdnr": 1015997,
+      "paper_reference": "22-1655"
+    },
+    {
+      "tolfdnr": 1038736,
+      "number": "6.5",
+      "title": "Stadtteilkonferenz für Langenhorn wieder beleben Antrag der GRÜNE-Fraktion",
+      "public": true,
+      "decision": "abgelehnt",
+      "detail": true,
+      "volfdnr": 1015998,
+      "paper_reference": "22-1656"
+    },
+    {
+      "tolfdnr": 1038746,
+      "number": "6.6",
+      "title": "„Wände für alle” – Legale Freiflächen für Street Art in Hamburg-Nord schaffen Gemeinsamer Antrag von SPD-, CDU- und FDP-Fraktion",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1016001,
+      "paper_reference": "22-1658"
+    },
+    {
+      "tolfdnr": 1038745,
+      "number": "6.7",
+      "title": "Sonderfonds für interkulturelle Projekte 2026 Gemeinsamer Antrag von SPD-, CDU- und FDP-Fraktion",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1016002,
+      "paper_reference": "22-1659"
+    },
+    {
+      "tolfdnr": 1038807,
+      "number": "6.8",
+      "title": "Geschichtswerkstatt Fuhlsbüttel: Strukturelle Weiterentwicklung und Neuausrichtung sowie kritische und historisch kontextualisierte Aufbereitung der Person Willi Bredels als Voraussetzung der institutionellen Förderung im Rahmen der GlobalrichtlinieStadtteilkultur 2024 – 2028 ab dem Jahr 2027",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1016035,
+      "paper_reference": "22-1691"
+    },
+    {
+      "tolfdnr": 1038810,
+      "number": "6.9",
+      "title": "Bezirkliche Mittel Dezember 2025 Antrag der GRÜNE-Fraktion",
+      "public": true,
+      "decision": "überwiesen",
+      "detail": true,
+      "volfdnr": 1016037,
+      "paper_reference": "22-1693"
+    },
+    {
+      "tolfdnr": 1038814,
+      "number": "6.10",
+      "title": "Erfolg fortsetzen – Fonds für interkulturelle Projekte wieder auffüllen! Gemeinsamer Antrag von GRÜNE-, Die Linke- und Volt-Fraktion",
+      "public": true,
+      "decision": "abgelehnt",
+      "detail": true,
+      "volfdnr": 1016040,
+      "paper_reference": "22-1696"
+    },
+    {
+      "tolfdnr": 1038580,
+      "number": "7",
+      "title": "Große Anfragen",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038581,
+      "number": "8",
+      "title": "Vorlagen der Bezirksamtsleitung",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038812,
+      "number": "8.1",
+      "title": "Sportfonds der Bezirksversammlung Antrag Sport für Menschen mit Fluchtgeschichte aus den Folgeunterkünften: Eschenweg, Freiligrathstraße, Jugendparkweg, Flughafenstraße, Langenhorner Chaussee, Papenreye, Wiesendamm, Suhrenkamp sowie den Interimsstandorten Überseering, Mundsburg Tower, Best Western Hotel, Leonardo Hotel, Flughafenstraße und evtl. weitere im Laufe des Jahres hinzukommende Standorte",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1015990,
+      "paper_reference": "22-1648"
+    },
+    {
+      "tolfdnr": 1038806,
+      "number": "8.2",
+      "title": "Sportfonds der Bezirksversammlung Hier: Bitte um Aufstockung des Sportfonds",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1016023,
+      "paper_reference": "22-1679"
+    },
+    {
+      "tolfdnr": 1038582,
+      "number": "9",
+      "title": "Berichte aus den Ausschüssen",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038730,
+      "number": "9.1",
+      "title": "Beschlüsse des Hauptausschusses",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1015994,
+      "paper_reference": "22-1652"
+    },
+    {
+      "tolfdnr": 1038729,
+      "number": "9.2",
+      "title": "Angepasste Stellungnahme des Regionalausschusses Eppendorf-Winterhude zur geplanten Einrichtung einer Fahrradstraße in der Klärchenstraße und Goernestraße - Beschlussempfehlung des Regionalausschusses Eppendorf-Winterhude",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1015954,
+      "paper_reference": "22-1306.1.1"
+    },
+    {
+      "tolfdnr": 1038731,
+      "number": "9.3",
+      "title": "Einladung einer Referentin bzw. eines Referenten der Behörde für Inneres und Sport - Beschlussempfehlung des Regionalausschusses BUHD",
+      "public": true,
+      "decision": "ungeändert beschlossen",
+      "detail": true,
+      "volfdnr": 1015993,
+      "paper_reference": "22-1651"
+    },
+    {
+      "tolfdnr": 1038747,
+      "number": "9.4",
+      "title": "Vorlage abgelehnter Anträge aus den Fach- und Regionalausschüssen",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1016003,
+      "paper_reference": "22-1660"
+    }
+  ]
+}

@@ -250,6 +250,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "summary",
         "summary_hinweis",
         "summary_einfach",
+        "summary_stand",
+        "summary_prompt_fassung",
         "locations",
         "georef_status",
         # OParlBody: Sichtbarkeit im Portal (Django-managed); der Ingestor setzt sie nur beim Anlegen (Issue #555)

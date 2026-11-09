@@ -12,6 +12,10 @@ Parteien der Wahl. Kennt OParl in der Kommune keine einzige Fraktionsmitgliedsch
 ``FraktionsZugehoerigkeit`` (Münster): Ihre Fraktionen kommen dazu, soweit es sie nicht schon als Gremium gibt, und
 ihre Personen zählen für Antragsteller und Unterschriften.
 
+**Lesen (Issue #1258):** ``fraktionen_der_kommune`` bietet im Filter der Vorgangsliste nur Fraktionen der laufenden
+Wahlperiode an, frühere Namen derselben Fraktion eingeschlossen; ``gepflegte_fraktionen`` nennt die Fraktion einer
+Person aus der gepflegten Liste (Personenliste und Personenseite, wenn OParl keine nennt).
+
 **Wann es läuft:** nach dem Abruf über das Abonnement ``insight.urheber`` (neue oder geänderte Vorlage, neuer Text
 einer Anlage), einmalig über den Bestand mit ``manage.py vorgang_urheber_ermitteln`` (in Stapeln, drosselbar,
 setzt nach Abbruch fort) und erneut für alles, was eine ältere ``VERSION`` der Erkennung bearbeitet hat.
@@ -30,7 +34,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Any, Final, cast
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Exists, OuterRef, Q
 from django.db.models.functions import Right
 from django.utils import timezone
 
@@ -42,6 +46,7 @@ from ..models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    PersonFraktion,
     VorgangUrheber,
     VorgangUrheberStand,
 )
@@ -370,10 +375,200 @@ def urheber_je_vorgang(paper_ids: Iterable[Any]) -> dict[Any, list[VorgangUrhebe
     return je_vorgang
 
 
-def fraktionen_der_kommune(body_id: Any) -> list[tuple[str, str]]:
-    """(Bezeichnung, Name für Leser) der Fraktionen, die in der Kommune Vorgänge gestellt haben (Filter)."""
-    paare = dict(VorgangUrheber.objects.filter(body_id=body_id).values_list("bezeichnung", "kurzform").distinct())
-    return sorted(((b, k or b) for b, k in paare.items()), key=lambda paar: paar[1].casefold())
+@dataclasses.dataclass(frozen=True)
+class FraktionsAuswahl:
+    """Eine Fraktion im Filter der Vorgangsliste (Issue #1258)."""
+
+    #: Wert des Filters (``?fraktion=``): der Name, unter dem die Fraktion am Stichtag geführt wird
+    wert: str
+    #: Name für Leser (Kurzform, sonst der volle Name)
+    anzeige: str
+    #: Gespeicherte Bezeichnungen (``VorgangUrheber``), die der Filter trifft, auch frühere Namen
+    bezeichnungen: tuple[str, ...]
+
+
+def _anzeige_schluessel(anzeige: str) -> str:
+    return " ".join(anzeige.split()).casefold()
+
+
+def _am(stichtag: date, ab: str = "gueltig_ab", bis: str = "gueltig_bis") -> Q:
+    """Zeitraum umfasst den Stichtag; ein fehlender Beginn bzw. ein fehlendes Ende gilt als offen."""
+    return (Q(**{f"{ab}__isnull": True}) | Q(**{f"{ab}__lte": stichtag})) & (
+        Q(**{f"{bis}__isnull": True}) | Q(**{f"{bis}__gte": stichtag})
+    )
+
+
+def _laufende_gremien(org_ids: set[Any], stichtag: date) -> set[Any]:
+    """
+    Fraktionen im RIS, die am Stichtag bestehen: begonnen, nicht beendet und – wenn die Quelle überhaupt
+    Mitgliedschaften nennt – mit mindestens einer laufenden. Eine Fraktion ohne Ende, deren Mitgliedschaften alle
+    beendet sind, ist ein Rest einer früheren Wahlperiode.
+    """
+    if not org_ids:
+        return set()
+    alle = OParlMembership.objects.filter(organization=OuterRef("pk"), deleted=False)
+    laufende = alle.filter(_am(stichtag, "start_date", "end_date"))
+    return set(
+        OParlOrganization.objects.filter(pk__in=org_ids, deleted=False)
+        .filter(_am(stichtag, "start_date", "end_date"))
+        .filter(Exists(laufende) | ~Exists(alle))
+        .values_list("pk", flat=True)
+    )
+
+
+def _gepflegte_namen(body_ids: Iterable[Any]) -> dict[tuple[Any, str], list[FraktionsBezeichnung]]:
+    """Namen der gepflegten Fraktionen je (Kommune, Fraktion in Kleinschreibung), nach Beginn sortiert."""
+    namen: dict[tuple[Any, str], list[FraktionsBezeichnung]] = defaultdict(list)
+    for eintrag in FraktionsBezeichnung.objects.filter(body_id__in=list(body_ids)).order_by("gueltig_ab"):
+        namen[(eintrag.body_id, eintrag.fraktion.casefold())].append(eintrag)
+    return namen
+
+
+def _name_am(namen: Sequence[FraktionsBezeichnung], stichtag: date) -> FraktionsBezeichnung | None:
+    """Name einer gepflegten Fraktion, der am Stichtag gilt, oder ``None``."""
+    for name in namen:
+        if (name.gueltig_ab is None or name.gueltig_ab <= stichtag) and (
+            name.gueltig_bis is None or name.gueltig_bis >= stichtag
+        ):
+            return name
+    return None
+
+
+def _gepflegte_laufend(body_id: Any, stichtag: date) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+    """
+    Gepflegte Fraktionen mit Mitgliedern am Stichtag: Anzeige-Schlüssel → (Name am Stichtag, Name für Leser), und
+    jeder Name einer solchen Fraktion (auch frühere, ``FraktionsBezeichnung``) → Anzeige-Schlüssel des heutigen.
+    """
+    gruppen: dict[str, tuple[str, str]] = {}
+    for fraktion, kurzform in (
+        FraktionsZugehoerigkeit.objects.filter(_am(stichtag), body_id=body_id)
+        .exclude(fraktion="")
+        .values_list("fraktion", "kurzform")
+    ):
+        bisher = gruppen.get(fraktion.casefold())
+        if bisher is None or (kurzform and not bisher[1]):
+            gruppen[fraktion.casefold()] = (fraktion, kurzform)
+    if not gruppen:
+        return {}, {}
+    namen = _gepflegte_namen([body_id])
+    laufend: dict[str, tuple[str, str]] = {}
+    frueher: dict[str, str] = {}
+    for schluessel, (fraktion, kurzform) in gruppen.items():
+        eigene = namen.get((body_id, schluessel), [])
+        heute = _name_am(eigene, stichtag)
+        name, anzeige = (heute.bezeichnung, heute.kurzform) if heute else (fraktion, kurzform)
+        anzeige = anzeige or name
+        anzeige_schluessel = _anzeige_schluessel(anzeige)
+        laufend.setdefault(anzeige_schluessel, (name, anzeige))
+        for frueherer in [fraktion, *(n.bezeichnung for n in eigene)]:
+            frueher.setdefault(frueherer.casefold(), anzeige_schluessel)
+    return laufend, frueher
+
+
+def fraktionen_der_kommune(body_id: Any, *, stichtag: date | None = None) -> list[FraktionsAuswahl]:
+    """
+    Fraktionen der laufenden Wahlperiode, die in der Kommune Vorgänge gestellt haben (Filter der Vorgangsliste).
+
+    Laufend heißt: am Stichtag (Standard heute) als Fraktion im RIS mit laufenden Mitgliedschaften
+    (``_laufende_gremien``) oder in der gepflegten Liste mit Mitgliedern. Reste früherer Wahlperioden (etwa eine
+    Ratsgruppe bis 2004) erscheinen nicht. Vorgänge unter demselben Namen für Leser („FDP“ als Einzelmandat vor der
+    Gründung der FDP-Ratsfraktion) oder unter einem früheren Namen derselben gepflegten Fraktion („Die PARTEI/ÖDP“)
+    gehören zur heutigen Fraktion. Fraktionen ohne gespeicherten Vorgang fehlen, damit keine Wahl ins Leere führt.
+    Eine Abfrage, wenn es keine antragstellenden Fraktionen gibt, sonst höchstens vier.
+    """
+    zeilen = list(
+        VorgangUrheber.objects.filter(body_id=body_id)
+        .values_list("bezeichnung", "kurzform", "organisation_id")
+        .distinct()
+    )
+    if not zeilen:
+        return []
+    stichtag = stichtag or timezone.localdate()
+    laufende_gremien = _laufende_gremien({org for _b, _k, org in zeilen if org}, stichtag)
+    laufend, frueher = _gepflegte_laufend(body_id, stichtag)
+    for bezeichnung, kurzform, org in zeilen:
+        if org in laufende_gremien:
+            anzeige = kurzform or bezeichnung
+            laufend.setdefault(_anzeige_schluessel(anzeige), (bezeichnung, anzeige))
+    gruppen: dict[str, set[str]] = defaultdict(set)
+    for bezeichnung, kurzform, _org in zeilen:
+        schluessel = _anzeige_schluessel(kurzform or bezeichnung)
+        if schluessel not in laufend:
+            schluessel = frueher.get(bezeichnung.casefold(), schluessel)
+        if schluessel in laufend:
+            gruppen[schluessel].add(bezeichnung)
+    auswahl = [
+        FraktionsAuswahl(wert=laufend[s][0], anzeige=laufend[s][1], bezeichnungen=tuple(sorted(gruppen[s])))
+        for s in gruppen
+    ]
+    return sorted(auswahl, key=lambda f: f.anzeige.casefold())
+
+
+def bezeichnungen_fuer(auswahl: Iterable[FraktionsAuswahl], wert: str) -> tuple[str, ...]:
+    """
+    Gespeicherte Bezeichnungen, die ein Filterwert trifft: die seiner Fraktion (auch über einen früheren Namen), sonst
+    genau der Wert – ältere Links auf eine frühere Fraktion zeigen weiter ihre Vorgänge.
+    """
+    for fraktion in auswahl:
+        if wert == fraktion.wert or wert in fraktion.bezeichnungen:
+            return fraktion.bezeichnungen
+    return (wert,)
+
+
+@dataclasses.dataclass(frozen=True)
+class GepflegteFraktion:
+    """Fraktion einer Person aus der gepflegten Liste (Issue #1258), für die Anzeige wie ``PersonFraktion``."""
+
+    #: Name für Leser: Kurzform des am Stichtag gültigen Namens, sonst der Name
+    bezeichnung: str
+    #: Voller Name am Stichtag
+    name: str
+    #: Öffentlicher Quellenhinweis
+    hinweis: str = PersonFraktion.HINWEISE[PersonFraktion.QUELLE_HAND]
+
+
+def gepflegte_fraktionen(
+    personen: Iterable[OParlPerson], *, stichtag: date | None = None
+) -> dict[Any, GepflegteFraktion]:
+    """
+    ``{person_id: GepflegteFraktion}`` aus der gepflegten Liste am Stichtag (Standard heute), höchstens zwei Abfragen.
+
+    Zuordnung über Vor- und Nachname ohne Titel wie bei den Unterschriften, innerhalb der Kommune der Person. Nennt die
+    Liste für einen Namen am Stichtag mehrere Fraktionen, bleibt die Person ohne. Die Liste führt Mandate im
+    Hauptorgan: Der Aufrufer reicht nur Personen mit einer laufenden Mitgliedschaft dort herein, damit eine
+    gleichnamige andere Person keine Fraktion erhält.
+    """
+    personen = list(personen)
+    if not personen:
+        return {}
+    stichtag = stichtag or timezone.localdate()
+    koerperschaften = {p.body_id for p in personen}
+    je_name: dict[tuple[Any, tuple[str, str]], list[tuple[str, str]]] = defaultdict(list)
+    for body_id, listen_vorname, listen_nachname, listen_fraktion, listen_kurzform in (
+        FraktionsZugehoerigkeit.objects.filter(_am(stichtag), body_id__in=koerperschaften)
+        .exclude(fraktion="")
+        .values_list("body_id", "vorname", "nachname", "fraktion", "kurzform")
+    ):
+        je_name[(body_id, _schluessel(listen_vorname, listen_nachname))].append((listen_fraktion, listen_kurzform))
+    if not je_name:
+        return {}
+    namen = _gepflegte_namen(koerperschaften)
+    ergebnis: dict[Any, GepflegteFraktion] = {}
+    for person in personen:
+        vorname, nachname = person.given_name or "", person.family_name or ""
+        if not (vorname and nachname):
+            vorname, nachname = _ohne_titel_teilen(person.name or "")
+        if not (vorname and nachname):
+            continue
+        treffer = je_name.get((person.body_id, _schluessel(vorname, nachname)), [])
+        if not treffer or len({f.casefold() for f, _k in treffer}) != 1:
+            continue
+        fraktion = treffer[0][0]
+        kurzform = next((k for _f, k in treffer if k), "")
+        heute = _name_am(namen.get((person.body_id, fraktion.casefold()), []), stichtag)
+        name, kurz = (heute.bezeichnung, heute.kurzform) if heute else (fraktion, kurzform)
+        ergebnis[person.pk] = GepflegteFraktion(bezeichnung=kurz or name, name=name)
+    return ergebnis
 
 
 # =============================================================================
@@ -422,8 +617,6 @@ def urheber_abonnement(events: list[Event], delivery: Delivery) -> None:
 
 def koerperschaft_finden(wert: str) -> Any:
     """Körperschaft per Kürzel (``slug``), Kennung oder genauem Namen; ``None``, wenn es keine eindeutige gibt."""
-    from django.db.models import Q
-
     from ..models import OParlBody
 
     abfrage = Q(slug=wert) | Q(name=wert)

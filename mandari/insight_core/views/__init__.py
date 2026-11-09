@@ -27,10 +27,20 @@ from .chat import (
 from .decisions import (  # noqa: F401
     DecisionDetailView,
     DecisionListView,
+    DecisionTrackingView,
     confirm_decision_subscription,
     unsubscribe_decision,
 )
 from .feedback import page_feedback
+from .feeds import (
+    decision_feed,
+    feed_hilfe,
+    meeting_ics,
+    organization_feed,
+    paper_feed,
+    paper_list_feed,
+    search_feed,
+)
 from .files import (
     FileListView,
     _annotate_files_with_context,
@@ -67,6 +77,8 @@ from .neighborhood import (
     neighborhood_autocomplete,
     neighborhood_results,
 )
+from .neuigkeiten import NeuigkeitenView
+from .offene_daten import offene_daten
 from .organizations import (
     OrganizationDetailView,
     OrganizationListView,
@@ -129,6 +141,7 @@ __all__ = [
     "MeetingListView",
     "MerklisteView",
     "NeighborhoodView",
+    "NeuigkeitenView",
     "OrganizationDetailView",
     "OrganizationListView",
     "PaperDetailView",
@@ -168,6 +181,13 @@ __all__ = [
     "chat_message",
     "clear_body",
     "confirm_subscription",
+    "decision_feed",
+    "feed_hilfe",
+    "meeting_ics",
+    "organization_feed",
+    "paper_feed",
+    "paper_list_feed",
+    "search_feed",
     "file_proxy",
     "get_active_body",
     "is_all_bodies_mode",
@@ -177,6 +197,7 @@ __all__ = [
     "meeting_live_kino",
     "neighborhood_autocomplete",
     "neighborhood_results",
+    "offene_daten",
     "page_feedback",
     "paper_summary",
     "paper_summary_bewertung",

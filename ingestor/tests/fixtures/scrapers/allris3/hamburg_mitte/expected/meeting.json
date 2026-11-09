@@ -1,0 +1,165 @@
+{
+  "title": "Sitzung des Jugendhilfeausschusses",
+  "committee": [
+    "au",
+    13,
+    "Jugendhilfeausschuss"
+  ],
+  "date": "2025-11-03",
+  "time_start": "18:00",
+  "time_end": "21:14",
+  "room": "LUKULULE e. V.",
+  "address": "Stockmeyerstr 41, Halle 4i, 20457 Hamburg",
+  "rows": [
+    {
+      "tolfdnr": 1043092,
+      "number": "1",
+      "title": "Begrüßung und öffentliche Fragestunde",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043099,
+      "number": "2",
+      "title": "Beschlussfassung über die Niederschrift am 22.09.2025",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043093,
+      "number": "3",
+      "title": "Beschlussfassung über die Niederschrift am 29.09.2025",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043254,
+      "number": "4",
+      "title": "LUKULULE e.V. stellt sich vor",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043101,
+      "number": "5",
+      "title": "Aktuelle Situation am Jungfernstieg (Ein Vertreter der Polizei berichtet.)",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043251,
+      "number": "6",
+      "title": "Legato Hamburg stellt sich vor",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043252,
+      "number": "7",
+      "title": "Schura Hamburg e.V. stellt sich vor",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043094,
+      "number": "8",
+      "title": "Anträge und Vorlagen zur Beschlussfassung",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043100,
+      "number": "8.1",
+      "title": "Haushaltsvoranschlag 2027/2028 - Abstimmung der Schlüssel für die Rahmenzuweisungen gem. § 37 Abs. 3 BezVG (Eine Ergänzung folgt.)",
+      "public": true,
+      "decision": "geändert beschlossen",
+      "detail": true,
+      "volfdnr": 1019270,
+      "paper_reference": "23-0994"
+    },
+    {
+      "tolfdnr": 1043351,
+      "number": "8.2",
+      "title": "Regelmäßige Übersicht zu Einrichtungen der offenen Kinder- und Jugendarbeit in Hamburg-Mitte (Antrag der GRÜNE- und SPD-Fraktion)",
+      "public": true,
+      "decision": "geändert beschlossen",
+      "detail": true,
+      "volfdnr": 1019406,
+      "paper_reference": "23-1101"
+    },
+    {
+      "tolfdnr": 1043095,
+      "number": "9",
+      "title": "Mitteilungen",
+      "public": true,
+      "decision": null,
+      "detail": false,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043096,
+      "number": "9.1",
+      "title": "AG § 78 SGB VIII Offene Kinder- und Jugendarbeit",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043097,
+      "number": "9.2",
+      "title": "Berichte aus den Arbeitsgemeinschaften des JHA",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1043253,
+      "number": "9.3",
+      "title": "Besetzung des Unterausschusses Haushalt",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1019398,
+      "paper_reference": "23-1093"
+    },
+    {
+      "tolfdnr": 1043098,
+      "number": "10",
+      "title": "Verschiedenes",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    }
+  ]
+}

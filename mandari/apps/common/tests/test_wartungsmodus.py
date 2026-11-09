@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 from django.core.cache import cache
-from django.db import OperationalError, connection
+from django.db import OperationalError
 from django.test import Client
 
 from apps.common import maintenance
@@ -185,15 +185,3 @@ def test_seitenname_und_beschreibung_sind_entfallen() -> None:
         for name in (eintrag if isinstance(eintrag, tuple) else (eintrag,))
     }
     assert not im_admin & {"site_name", "site_description"}
-
-
-def test_alte_spalten_bleiben_mit_standardwert_fuer_den_rueckfall() -> None:
-    """Eine ältere Version liest die Spalten weiter; neue Zeilen erhalten den Datenbank-Standardwert."""
-    SiteSettings.objects.all().delete()
-    cache.delete(SiteSettings.CACHE_KEY)
-
-    SiteSettings.get_settings()
-
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT site_name, site_description FROM common_sitesettings WHERE id = 1")
-        assert cursor.fetchone() == ("Mandari", "Kommunalpolitische Transparenz")

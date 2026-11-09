@@ -17,6 +17,9 @@ Zeitpläne des Bürgerportals (``apps.events.schedule``, Issue #515).
   ``file.read_text_layer`` in ``text`` (nur Textebene), ``file.extract_text`` in ``ocr`` nur für Dateien, deren
   Textebene nicht reicht; ohne Worker für ``text`` alles in ``ocr``. Reihum über die Quellen. Mit dem Standard
   ``ingestor`` erkennt der OCR-Worker des Ingestors den Text.
+- ``sitemap_aufteilen``: alle 30 Minuten die Aufteilung der Sitemaps vorberechnen (Issue #1259), je gelistete Kommune
+  und Art, fehlende zuerst, sonst die älter als drei Stunden (``services.sitemaps.aufteilungen_erneuern``). Der
+  Sitemap-Index liest nur diese Werte und antwortet so auch ohne Cache schnell.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from apps.events.schedule import cron, every
 from .services.georef_runner import run_auto_georef_pass
 from .services.kommunenverzeichnis_import import aus_koerperschaften
 from .services.page_feedback import purge_expired
+from .services.sitemaps import aufteilungen_erneuern
 
 
 @every(minutes=max(1, int(settings.GEOREF_AUTO_INTERVAL_MINUTES)))
@@ -50,6 +54,13 @@ def rueckmeldungen_aufraeumen() -> int:
 def kommunenverzeichnis_abgleichen() -> int:
     """Gelistete Kommunen ohne Verzeichniseintrag übernehmen (idempotent); Rückgabe: Zahl der neuen Einträge."""
     return aus_koerperschaften().neu
+
+
+@every(minutes=30)
+@task
+def sitemap_aufteilen() -> int:
+    """Aufteilung der Sitemaps vorberechnen (fehlende und veraltete); Rückgabe: Zahl der neu berechneten."""
+    return aufteilungen_erneuern()
 
 
 @task

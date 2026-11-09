@@ -1,0 +1,159 @@
+{
+  "name": "Fachausschuss für Sport und Bildung",
+  "members": [
+    {
+      "kplfdnr": 200,
+      "name": "Lars Dietrich",
+      "role": "Stellvert. Vorsitz",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 216,
+      "name": "Karl Wilhelm Albert Woller",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000351,
+      "name": "Viktoria Kohls",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000446,
+      "name": "Thomas Niese",
+      "role": "Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000374,
+      "name": "Oliver Summer",
+      "role": "stellvertr. Ausschussmitglied",
+      "faction": "CDU-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000459,
+      "name": "Hannah Adjiewah Arthur",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000276,
+      "name": "Ebrahim Momenzada",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000301,
+      "name": "Suleyman Nasiri",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000456,
+      "name": "Amelie Teske",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000590,
+      "name": "Julian Brosius",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000464,
+      "name": "Vladislav Litau",
+      "role": "Ausschussmitglied",
+      "faction": "SPD-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 887,
+      "name": "Lenka Alzbeta Brodbeck",
+      "role": "Stellvertr. Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000421,
+      "name": "Nancy Granström",
+      "role": "Ausschussmitlglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000180,
+      "name": "Jan Vlamynck",
+      "role": "Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 225,
+      "name": "Joachim Lentfer",
+      "role": "stellvertr. Ausschussmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000264,
+      "name": "Reinhard Krohn",
+      "role": "Ausschussmitglied",
+      "faction": "AfD - Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000458,
+      "name": "Andreas Schander",
+      "role": "stellvertr. Ausschussmitglied",
+      "faction": "AfD - Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000266,
+      "name": "Winkelbach",
+      "role": "Ausschussmitglied",
+      "faction": "AfD - Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 429,
+      "name": "Michael Mirbach",
+      "role": "Ausschussmitglied",
+      "faction": "Fraktion - DIE LINKE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000567,
+      "name": "Ali Baran Cantay",
+      "role": "stellvertr. Ausschussmitglied",
+      "faction": "Fraktion - DIE LINKE",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000525,
+      "name": "Peter Müller",
+      "role": "Seniorenbeiratsvertretung",
+      "faction": "Seniorenbeirat",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000025,
+      "name": "Peter Puhle",
+      "role": "Seniorenbeiratsvertretung",
+      "faction": "Seniorenbeirat",
+      "voting_right": true
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {% extends "base_insight.html" %}
 {% load static %}
 
-{% block title %}{% firstof seo.title paper.reference paper.name %}{% endblock %}
+{% block title %}{% firstof seo.title paper.reference paper.titel_oeffentlich %}{% endblock %}
 {# Ohne Zusatz: Der Titel nennt die Kommune schon, die Marke steht in og:site_name (Issue #939) #}
 {% block title_suffix %}{% endblock %}
 
@@ -12,27 +12,30 @@
 {% endblock %}
 
 {# Brotkrumen „Kommune › Vorgänge › Nummer“ trägt die Kopfzeile des Rahmens (Kommune der Seite, Issue #783) #}
-{% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ paper.reference|default:paper.name|truncatechars:50 }}</c-insight.brotkrume>{% endblock %}
+{% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ paper.reference|default:paper.titel_oeffentlich|truncatechars:50 }}</c-insight.brotkrume>{% endblock %}
 
 {% block content %}
 {% include "partials/tombstone_notice.html" with object=paper %}
 
-{# Kopf: wo steht die Sache? Titel, Angaben in einer Zeile, Stand-Satz und Aktionen (Stufe 2a) #}
+{# Kopf: wo steht die Sache? Titel, Angaben in einer Zeile, Stand-Satz und Aktionen (Stufe 2a), dazu das Original im RIS (#1259) #}
 <header class="rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
     <c-insight.zurueck :ziel="insight_bereich_ziel" href="{% url 'insight_core:insight:paper_list' %}">Vorgänge</c-insight.zurueck>
     <h1 class="max-w-4xl text-[1.75rem] sm:text-[2.25rem] leading-[1.12] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">
-        {{ paper.name|default:"Vorgang" }}
+        {% firstof absender.titel paper.titel_oeffentlich "Vorgang" %}
     </h1>
     <p class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
         {% if paper.paper_type %}<span>{{ paper.paper_type }}</span>{% endif %}
+        {% if absender.neben_art %}<c-insight.absender :absender="absender" hinweis="eingebracht von" neben_art />{% endif %}
         {% if paper.reference %}<span>{{ paper.reference }}</span>{% endif %}
         {% if paper.date %}<span class="tabular-nums">vom {{ paper.date|date:"d.m.Y" }}</span>{% endif %}
     </p>
+    {% comment %}Etikett zum Stand (#1260), bei Anfragen „beantwortet“ bzw. „Antwort steht aus“ samt Satz zur Antwort (#1273){% endcomment %}
     <p class="mt-5 max-w-3xl text-[1.0625rem] leading-relaxed text-gray-900 dark:text-gray-100" data-testid="vorgang-stand">
-        <span class="font-semibold">Stand:</span> {{ paper_status.text }}
+        {% with etikett=weg.anfrage.etikett|default:paper_status.etikett %}{% if etikett %}<c-insight.ergebnis :ergebnis="etikett" klasse="mr-1 align-[0.125em]" /> {% endif %}{% endwith %}<span class="font-semibold">Stand:</span> {% if weg.anfrage.satz %}{{ weg.anfrage.satz }} {% endif %}{{ paper_status.text }}
     </p>
     <div class="mt-6 flex flex-wrap items-center gap-2">
         {% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="lg" %}
+        {% if abo_feed %}<c-insight.kopf-aktion href="{{ abo_feed.hilfe }}" icon="rss" kurz="Abonnieren" data-testid="vorgang-abonnieren">Neues zu diesem Vorgang abonnieren</c-insight.kopf-aktion>{% endif %}
         {% if not paper.summary and files %}
         <div id="summary-action">
             <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
@@ -44,6 +47,7 @@
             </button>
         </div>
         {% endif %}
+        {% if source_url %}<c-insight.ris-link href="{{ source_url }}" />{% endif %}
     </div>
     <p id="summary-status" role="status" class="hidden [&.htmx-request]:block mt-3 text-sm text-gray-700 dark:text-gray-300">
         Die KI fasst die Dokumente zusammen. Das dauert bis zu drei Minuten.
@@ -52,10 +56,13 @@
 
 <div class="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_21rem]">
     <div class="min-w-0">
-        <div id="paper-summary" class="mb-12 empty:hidden" aria-live="polite">{% if paper.summary %}{% include "partials/paper_summary.html" with summary=paper.summary %}{% endif %}</div>
+        <div id="paper-summary" class="mb-12 empty:hidden" aria-live="polite">{% if paper.summary %}{% include "partials/paper_summary.html" with summary=paper.summary veraltet=zusammenfassung_veraltet %}{% endif %}</div>
+
+        {% if weg.anfrage.beantwortet and not weg.anfrage.in_sitzung %}{% include "pages/papers/_gefragt_geantwortet.html" %}{% endif %}
+        {% if weg.zeigen %}{% include "pages/papers/_verlauf.html" %}{% endif %}
 
         <section aria-labelledby="dokumente-titel">
-            <h2 id="dokumente-titel" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Dokumente</h2>
+            <h2 id="dokumente-titel" class="abschnitt-titel">Dokumente</h2>
             {% if files %}
             <ul class="mt-3">
                 {% for file in files %}
@@ -67,20 +74,6 @@
             {% endif %}
         </section>
 
-        {% if consultations %}
-        <section aria-labelledby="verlauf-titel" class="mt-12">
-            <h2 id="verlauf-titel" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Beratungsverlauf</h2>
-            <c-insight.timeline class="mt-6">
-                {% for item in consultations %}
-                <c-insight.timeline-entry date="{{ item.date|date:'d.m.Y' }}" title="{{ item.organization_name|default:'Sitzung' }}"
-                    href="{% if item.meeting %}{% url 'insight_core:insight:meeting_detail' item.meeting.id %}{% endif %}" state="{{ item.state }}">
-                    {% if item.detail %}{{ item.detail }}.{% endif %}
-                    {% if item.result %}Ergebnis: <span class="font-semibold text-gray-900 dark:text-white">{{ item.result }}</span>{% endif %}
-                </c-insight.timeline-entry>
-                {% endfor %}
-            </c-insight.timeline>
-        </section>
-        {% endif %}
     </div>
 
     <aside class="min-w-0" aria-label="Orte und Angaben">
@@ -95,6 +88,11 @@
             <dt class="text-gray-600 dark:text-gray-400">Vorlagen-Nr.</dt>
             <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.reference }}</dd>
             {% endif %}
+            {% if absender.gekuerzt %}
+            {% comment %}Titel ohne Absender im Kopf (Issue #1272): hier der unveränderte Titel aus dem Ratsinformationssystem{% endcomment %}
+            <dt class="text-gray-600 dark:text-gray-400">Titel im RIS</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words" data-testid="titel-im-ris">{{ paper.titel_oeffentlich }}</dd>
+            {% endif %}
             {% if paper.paper_type %}
             <dt class="text-gray-600 dark:text-gray-400">Art</dt>
             <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.paper_type }}</dd>
@@ -106,22 +104,17 @@
                 {% for u in urheber %}{% if u.organisation_id %}<a href="{% url 'insight_core:insight:organization_detail' u.organisation_id %}" title="{{ u.bezeichnung }}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ u.anzeigename }}</a>{% else %}<span title="{{ u.bezeichnung }}">{{ u.anzeigename }}</span>{% endif %}{% if u.art == "gruppe" %} (Ratsgruppe){% elif u.art == "einzelmandat" %} (Einzelmandat){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
             </dd>
             {% endif %}
+            {% if weg.federfuehrung %}
+            {% comment %}Federführende Stelle aus OParl underDirectionOf, nur Gremien bzw. Organisationseinheiten (Issue #1273){% endcomment %}
+            <dt class="text-gray-600 dark:text-gray-400">Federführung</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words" data-testid="vorgang-federfuehrung">{{ weg.federfuehrung }}</dd>
+            {% endif %}
             {% if paper.date %}
             <dt class="text-gray-600 dark:text-gray-400">Datum</dt>
             <dd class="text-gray-900 dark:text-gray-100 tabular-nums">{{ paper.date|date:"d.m.Y" }}</dd>
             {% endif %}
             <dt class="text-gray-600 dark:text-gray-400">Kommune</dt>
             <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.body.get_display_name }}</dd>
-            {% if source_url %}
-            <dt class="text-gray-600 dark:text-gray-400">Quelle</dt>
-            <dd>
-                <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer"
-                   class="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
-                    Ratsinformationssystem<span class="sr-only"> (öffnet in neuem Fenster)</span>
-                    <i data-lucide="external-link" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></i>
-                </a>
-            </dd>
-            {% endif %}
         </dl>
     </aside>
 </div>

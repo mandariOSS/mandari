@@ -13,6 +13,7 @@ from insight_ai.services import chat_tools
 from insight_ai.services.chat_tools import TOOL_NAMES, TOOLS, ToolContext, context_for, run_tool, select_sources
 from insight_core import publication
 from insight_core.models import OParlOrganization
+from insight_core.services import summary_store
 
 from .musterstadt import JETZT, FakeSuche, Musterstadt, baue_musterstadt, kennung
 
@@ -216,11 +217,22 @@ def test_vorgang_kennzeichnet_die_ki_zusammenfassung(ctx: ToolContext, stadt: Mu
     ohne = rufe(ctx, "vorgang", id=str(stadt.vorlage.pk))
     assert "zusammenfassung" not in ohne and "zusammenfassung_ki_erzeugt" not in ohne
 
-    type(stadt.vorlage).objects.filter(pk=stadt.vorlage.pk).update(summary="Der Radweg wird markiert.")
+    stand = summary_store.beratungsstaende([stadt.vorlage.pk], now=JETZT)[stadt.vorlage.pk]
+    type(stadt.vorlage).objects.filter(pk=stadt.vorlage.pk).update(
+        summary="Der Radweg wird markiert.", summary_stand=stand
+    )
     mit = rufe(ctx, "vorgang", id=str(stadt.vorlage.pk))
 
     assert mit["zusammenfassung"] == "Der Radweg wird markiert."
     assert mit["zusammenfassung_ki_erzeugt"] is True
+
+
+def test_vorgang_ohne_veraltete_zusammenfassung(ctx: ToolContext, stadt: Musterstadt) -> None:
+    """Issue #1257: Eine Zusammenfassung von vor dem letzten Ergebnis könnte dem Stand widersprechen, sie fehlt."""
+    type(stadt.vorlage).objects.filter(pk=stadt.vorlage.pk).update(summary="Noch kein Beschluss.", summary_stand="")
+    ergebnis = rufe(ctx, "vorgang", id=str(stadt.vorlage.pk))
+    assert "zusammenfassung" not in ergebnis and "zusammenfassung_ki_erzeugt" not in ergebnis
+    assert "einstimmig empfohlen" in json.dumps(ergebnis["beratungsfolge"], ensure_ascii=False)
 
 
 def test_vorgang_nichtoeffentlich_beraten_ohne_ergebnis(ctx: ToolContext, stadt: Musterstadt) -> None:

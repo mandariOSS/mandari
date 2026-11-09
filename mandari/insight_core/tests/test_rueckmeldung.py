@@ -105,6 +105,7 @@ class TestAntwort:
             "path",
             "helpful",
             "comment",
+            "kind",
             "created_on",
         }
         # Kein eigenes Cookie und nichts in der Sitzung: nur die Cookies, die das Portal ohnehin erneuert
@@ -113,8 +114,22 @@ class TestAntwort:
 
     def test_nein_fragt_nach_dem_fehlenden(self, vorgang: OParlPaper) -> None:
         antwort = _antwort(Client(), vorgang, "nein")
-        assert "Was hat Ihnen auf dieser Seite gefehlt?" in antwort.content.decode()
+        html = antwort.content.decode()
+        assert "Was fehlt oder stimmt nicht?" in html
         assert PageFeedback.objects.get().helpful is False
+        # Nach „Nein“ die Art der Rückmeldung (Issue #1261), ohne E-Mail-Feld
+        assert "Worum geht es?" in html
+        for wert, text in (
+            ("fehler", "Fehler melden"),
+            ("idee", "Idee vorschlagen"),
+            ("kommune", "Kommune vorschlagen"),
+        ):
+            assert f'name="kind" value="{wert}"' in html and text in html
+        assert 'type="email"' not in html and 'name="email"' not in html
+
+    def test_ja_ohne_art(self, vorgang: OParlPaper) -> None:
+        html = _antwort(Client(), vorgang, "ja").content.decode()
+        assert 'name="kind"' not in html and "Worum geht es?" not in html
 
     def test_honeypot_speichert_nichts(self, vorgang: OParlPaper) -> None:
         antwort = _antwort(Client(), vorgang, website="https://spam.example")
@@ -198,6 +213,60 @@ class TestErgaenzung:
         assert PageFeedback.objects.get().comment == ""
 
 
+class TestArt:
+    """Nach „Nein“: Fehler, Idee oder Kommune vorschlagen (Issue #1261), weiter ohne Cookie und ohne IP-Adresse."""
+
+    @pytest.mark.parametrize("art", ["fehler", "idee", "kommune"])
+    def test_art_kommt_mit_dem_satz(self, vorgang: OParlPaper, art: str) -> None:
+        client = Client()
+        zeichen = _zeichen(_antwort(client, vorgang, "nein").content.decode())
+        antwort = client.post(
+            URL, {"token": zeichen, "comment": "Bitte Kleinstadt aufnehmen", "kind": art}, headers=HTMX
+        )
+        assert "Danke, Ihre Ergänzung ist angekommen." in antwort.content.decode()
+        eintrag = PageFeedback.objects.get()
+        assert (eintrag.kind, eintrag.comment) == (art, "Bitte Kleinstadt aufnehmen")
+        assert set(antwort.cookies) <= {"sessionid", "csrftoken"}
+
+    def test_ohne_auswahl_bleibt_die_art_leer(self, vorgang: OParlPaper) -> None:
+        client = Client()
+        zeichen = _zeichen(_antwort(client, vorgang, "nein").content.decode())
+        client.post(URL, {"token": zeichen, "comment": "Text fehlt"}, headers=HTMX)
+        assert PageFeedback.objects.get().kind == ""
+
+    def test_art_nur_nach_nein(self, vorgang: OParlPaper) -> None:
+        """Ein von Hand ergänztes Feld nach „Ja“ speichert keine Art, der Satz kommt trotzdem an."""
+        client = Client()
+        zeichen = _zeichen(_antwort(client, vorgang, "ja").content.decode())
+        client.post(URL, {"token": zeichen, "comment": "Gut gemacht", "kind": "fehler"}, headers=HTMX)
+        assert PageFeedback.objects.values_list("kind", "comment").get() == ("", "Gut gemacht")
+
+    def test_unbekannte_art(self, vorgang: OParlPaper) -> None:
+        client = Client()
+        zeichen = _zeichen(_antwort(client, vorgang, "nein").content.decode())
+        antwort = client.post(URL, {"token": zeichen, "comment": "Hallo", "kind": "admin"}, headers=HTMX)
+        assert "Bitte laden Sie die Seite neu." in antwort.content.decode()
+        assert PageFeedback.objects.get().comment == ""
+
+    def test_zu_lang_behaelt_die_art(self, vorgang: OParlPaper) -> None:
+        client = Client()
+        zeichen = _zeichen(_antwort(client, vorgang, "nein").content.decode())
+        daten = {"token": zeichen, "comment": "x" * 501, "helpful": "nein", "kind": "idee"}
+        html = client.post(URL, daten, headers=HTMX).content.decode()
+        assert "Bitte höchstens 500 Zeichen." in html
+        assert 'value="idee" checked' in html
+
+    def test_viele_links_werden_verworfen(self, vorgang: OParlPaper) -> None:
+        client = Client()
+        zeichen = _zeichen(_antwort(client, vorgang, "nein").content.decode())
+        werbung = "Billig: https://a.example https://b.example www.c.example"
+        antwort = client.post(URL, {"token": zeichen, "comment": werbung, "kind": "idee"}, headers=HTMX)
+        assert "Danke, Ihre Ergänzung ist angekommen." in antwort.content.decode()
+        assert PageFeedback.objects.values_list("kind", "comment").get() == ("", "")
+        # Ein einzelner Link (etwa die betroffene Seite) bleibt erlaubt
+        assert not service.looks_like_spam("Fehler auf https://ris.example/seite und www.example.org")
+
+
 class TestAufbewahrung:
     def test_nach_zwoelf_monaten_geloescht(self, vorgang: OParlPaper) -> None:
         alt = service.record(page_type="paper_detail", path="/", body_id=None, helpful=True)
@@ -254,3 +323,6 @@ class TestAuswertung:
         seite = client.get(reverse("admin:insight_core_pagefeedback_changelist")).content.decode()
         assert "Zählung je Seitentyp" in seite and "Vorgang" in seite
         assert "Der Beschlusstext fehlt." in seite
+        PageFeedback.objects.filter(pk=eintrag.pk).update(kind=PageFeedback.Kind.KOMMUNE)
+        seite = client.get(reverse("admin:insight_core_pagefeedback_changelist") + "?kind=kommune").content.decode()
+        assert "Kommune vorschlagen" in seite and "Der Beschlusstext fehlt." in seite

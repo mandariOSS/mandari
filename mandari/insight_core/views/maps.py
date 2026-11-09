@@ -138,12 +138,13 @@ def map_markers(request):
     def vorgang_url(paper_id):
         return reverse("insight_core:insight:paper_detail", args=[paper_id])
 
+    # Bürgerportal: Titel und Orte ohne Hausnummer bei Privatanschriften (Issue #1269; neuer Cache-Schlüssel)
     if area is not None:
-        return JsonResponse(karten_punkte.geojson([body], area=area, since=since, url=vorgang_url))
-    cache_key = f"map_markers:{body.id}:{'all' if show_all else weeks}"
+        return JsonResponse(karten_punkte.geojson([body], area=area, since=since, url=vorgang_url, oeffentlich=True))
+    cache_key = f"map_markers:1269:{body.id}:{'all' if show_all else weeks}"
     daten = cache.get(cache_key)
     if daten is None:
-        daten = karten_punkte.geojson([body], since=since, url=vorgang_url)
+        daten = karten_punkte.geojson([body], since=since, url=vorgang_url, oeffentlich=True)
         cache.set(cache_key, daten, getattr(settings, "MAP_MARKERS_CACHE_SECONDS", 600))
     return JsonResponse(daten)
 

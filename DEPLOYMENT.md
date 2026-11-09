@@ -270,6 +270,12 @@ wieder als `none` bzw. `error` da (`docs/FILE_CACHE.md`, „Zustände des Abrufs
 Obergrenze #961, Migration `insight_core.0056`) bleiben verdrängt; ein Image mit `0056`, aber ohne `0059` kennt den
 Zustand.
 
+Zurück auf ein Image vor `common.0007`, etwa `v0.11.0` (Issue #604): **vorher** mit dem laufenden Image
+`docker exec mandari python manage.py migrate common 0014` ausführen. Das legt die mit `common.0015` gelöschten Spalten
+`site_name` und `site_description` mit ihren Standardwerten wieder an; ohne sie scheitert in diesen Images jeder Zugriff
+auf die Systemeinstellungen. Der automatische Rückfall von `update.sh` macht das nicht von selbst. Images ab `common.0007`
+brauchen die Spalten nicht.
+
 ### Datenbank-Migration
 
 Migrationen laufen beim Update, nicht im Entrypoint: verträgliche vor dem Umschalten
@@ -703,6 +709,7 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 |---|---|---|
 | `insight_sync.schedules.haengende_syncs_bereinigen` | alle 5 min | Sync-Protokolle, die länger als 15 min laufen, als fehlgeschlagen markieren |
 | `insight_core.schedules.verortung_automatisch` | alle `GEOREF_AUTO_INTERVAL_MINUTES` (15) min | begrenzter Verortungslauf (`GEOREF_AUTO_ENABLED`, `GEOREF_AUTO_LIMIT`) |
+| `insight_core.schedules.sitemap_aufteilen` | alle 30 min | Aufteilung der Sitemaps je gelistete Kommune vorberechnen, fehlende zuerst, sonst älter als drei Stunden, höchstens 240 s je Lauf; der Sitemap-Index liest nur diese Werte (Issue #1259) |
 | `apps.work.schedules.fraktionserinnerungen_senden` | alle `FACTION_REMINDER_INTERVAL_MINUTES` (15) min | Erinnerungen an Fraktionssitzungen |
 | `apps.work.schedules.fraktionseinladungen_senden` | alle `FACTION_INVITATION_INTERVAL_MINUTES` (15) min | automatische Einladungen (auch zum festen Zeitpunkt einer Reihe), Freigabe-Hinweise, Erinnerungen zum Eintragen von TOPs |
 | `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |
@@ -712,6 +719,14 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 | `apps.events.schedules.idempotenzschluessel_aufraeumen` | täglich 03:40 | Idempotenzschlüssel nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` |
 | `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS` (14), tote und fehlgeschlagene nach `EVENTS_TASKS_DEAD_RETENTION_DAYS` (90) Tagen |
 | `befehl:events_purge` | täglich 04:10, nur mit `EVENTS_JOURNAL_PURGE_ENABLED` (Standard aus) | Journal nach `EVENTS_JOURNAL_RETENTION_DAYS` (90), nie über den kleinsten Cursor; `docs/MONITORING.md`, „Nachspielen und Aufräumen des Journals“ |
+
+**Sitemaps nach dem Update (Issue #1259):** Ein neuer Zeitplan beginnt mit seinem nächsten Termin. Bis zum
+ersten Lauf von `sitemap_aufteilen` (höchstens 30 Minuten) ist die Vorberechnung leer: Der Sitemap-Index rechnet je
+Abruf höchstens 5 s selbst, die nummerierten Dateien der übrigen Kommunen fehlen so lange. Sofort füllen lässt sie
+sich einmal von Hand (höchstens 240 s, danach macht der Zeitplan weiter):
+`docker exec mandari python manage.py shell -c "from insight_core.services.sitemaps import aufteilungen_erneuern; print(aufteilungen_erneuern())"`.
+Die Grenzen von 5 s und 240 s prüft der Index bzw. der Zeitplan vor jeder Aufteilung; eine einzelne große Kommune
+kann sie also um ihre eigene Rechenzeit überschreiten.
 
 `python manage.py events_scheduler --list` zeigt alle Zeitpläne mit dem zuletzt geplanten Termin. Auch Sync
 einer Quelle und Löschen einer Kommune aus dem Admin laufen als Auftrag im Worker (Warteschlange
@@ -1191,7 +1206,34 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
    Ergebnisse nicht mehr abrufbar sind (HTTP 404 oder älter als 29 Tage), wird als „verloren“ abgeschlossen; seine
    Schätzung zählt dann als Verbrauch. Abschalten lässt sich der Batch mit dem Häkchen in den KI-Einstellungen oder
    mit `EVENTS_SCHEDULES_DISABLED`.
-4. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
+4. Veraltete Zusammenfassungen (#1257): Jede Zusammenfassung merkt sich den Beratungsstand, den sie kannte. Kommt
+   danach ein Ergebnis (beschlossen, abgelehnt, vertagt …), zeigt die Vorgangsseite einen Hinweis mit „Neu
+   zusammenfassen“, und der Tagesbatch erzeugt sie für seine Kommunen ab dem Stichtag nach den neuen Vorgängen neu.
+   Den übrigen Bestand zieht ein Befehl nach, ein Batch je Lauf, nie neben einem offenen Batch und im Monatsbudget.
+   Ohne `--ausfuehren` zählt und schätzt er nur:
+
+   ```bash
+   docker exec mandari python manage.py zusammenfassungen_nachziehen --limit 100
+   docker exec mandari python manage.py zusammenfassungen_nachziehen --limit 100 --hoechstens-usd 2 --ausfuehren
+   ```
+
+   `--kommune` (mehrfach) und `--ab JJJJ-MM-TT` grenzen ein, höchstens 500 Vorgänge je Lauf. Zusammenfassungen von
+   vor #1257 kennen keinen Stand und gelten als veraltet, sobald der Vorgang ein Ergebnis hat.
+5. Mechanische Prüfung und Prompt-Fassung (#1271): Jede neue Zusammenfassung (Klick und Batch) wird vor dem Speichern
+   gegen das Material ihres Prompts geprüft; Verworfene stehen im Admin unter „Verworfene KI-Zusammenfassungen“ und
+   gehen mit derselben Prompt-Fassung nicht erneut in den Tagesbatch. Bestehende Zusammenfassungen bleiben stehen,
+   nichts wird deswegen neu erzeugt. Vor einer neuen Prompt-Fassung (`PROMPT_FASSUNG` in
+   `insight_ai/services/prompts.py`) einen Prüfbogen ziehen; ohne `--ausfuehren` mit den vorhandenen
+   Zusammenfassungen und ohne KI-Aufruf, mit `--ausfuehren` 30 Einzelaufrufe zum vollen Preis (nur nach Freigabe):
+
+   ```bash
+   docker exec mandari python manage.py zusammenfassung_stichprobe --kommune "<Kommune>" --bis 2026-11-01        --ausgabe /tmp/stichprobe.tsv
+   docker exec mandari python manage.py zusammenfassung_stichprobe --auswerten /tmp/stichprobe.tsv
+   ```
+
+   Migrationen `insight_core/0071` (eine Spalte mit Datenbank-Standardwert, im Ingestor als Anreicherungsspalte
+   eingetragen) und `insight_ai/0003` (nur eine neue Tabelle).
+6. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
    reserviert offene Batches mit ihrer Schätzung. Ist es erreicht, ruht der Batch, und „Zusammenfassen“ meldet
    „derzeit nicht verfügbar“. Stand im Admin unter „KI-Verbrauch (Claude)“. Das Ausgabenlimit in der Konsole von
    Anthropic sollte zusätzlich gesetzt sein.

@@ -10,8 +10,6 @@ from django.db.models.functions import Coalesce, NullIf
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
-from apps.common.mixins import HTMXMixin
-
 from ..models import (
     OParlMeeting,
     OParlMembership,
@@ -19,8 +17,9 @@ from ..models import (
     withdrawn_q,
 )
 from ..ranking import sort_organizations_by_ranking
-from ..services import personen_liste, question_service
-from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
+from ..services import personen_liste, sitzverteilung
+from ..services.testkonten import ausgeblendet_q
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -28,19 +27,14 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
+class OrganizationListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Gremien mit Aktiv/Alle-Tabs."""
 
     model = OParlOrganization
     template_name = "pages/organizations/list.html"
     context_object_name = "organizations"
     paginate_by = 50
-
-    def get_template_names(self):
-        # Für HTMX-Requests nur das Partial zurückgeben
-        if self.is_htmx:
-            return ["partials/organization_list_items.html"]
-        return [self.template_name]
+    teil_vorlage = "partials/organization_list_items.html"
 
     def get_queryset(self):
         body = get_active_body(self.request)
@@ -71,10 +65,12 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMi
             .values("start")[:1]
         )
         has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
-        # Laufende Mitgliedschaften (Spalte „Mitglieder“ auf breiten Bildschirmen, Issue #841)
+        # Laufende Mitgliedschaften (Spalte „Mitglieder“ auf breiten Bildschirmen, Issue #841), ohne Test- und
+        # Systemkonten (Issue #1258)
         members_sq = Subquery(
             OParlMembership.objects.filter(organization=OuterRef("pk"), deleted=False)
             .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .exclude(ausgeblendet_q())
             .order_by()
             .values("organization")
             .annotate(n=Count("pk"))
@@ -161,10 +157,12 @@ class OrganizationDetailView(DetailView):
         today = timezone.now().date()
         now = timezone.now()
 
-        # Nur bestehende Mitgliedschaften von nicht zurückgenommenen Personen
+        # Nur bestehende Mitgliedschaften von nicht zurückgenommenen Personen, ohne Test- und Systemkonten des RIS
+        # (Issue #1258: sie zählen auch nicht als Mitglieder)
         all_memberships = (
             org.memberships.filter(deleted=False)
             .exclude(withdrawn_q("person"))
+            .exclude(ausgeblendet_q())
             .select_related("person", "person__body")
         )
         active_qs = all_memberships.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by(
@@ -172,13 +170,18 @@ class OrganizationDetailView(DetailView):
         )
         past_qs = all_memberships.filter(end_date__lt=today).order_by("person__family_name")
 
-        # Laufende Mitglieder mit ihrer Fraktion (Spalte „Fraktion“, Issue #841); auf Fraktionsseiten ohne
+        # Laufende Mitglieder mit ihrer Fraktion (Spalte „Fraktion“ aus OParl, Issue #841) und die Sitzverteilung als
+        # Balken (Issue #1272, Fraktion wie in der Personenliste, auch gepflegt); auf Fraktionsseiten ohne beides
         active = list(active_qs)
         context["mitglieder_anzahl"] = len(active)
+        context["sitzverteilung"] = None
         if not personen_liste.ist_fraktion(org):
-            fraktionen = question_service.get_faction_map([m.person for m in active])
+            angaben = personen_liste.angaben_fuer({m.person_id: m.person for m in active}.values())
             for membership in active:
-                membership.fraktion = fraktionen.get(membership.person_id)
+                membership.fraktion = angaben[membership.person_id].fraktion
+            context["sitzverteilung"] = sitzverteilung.berechnen(
+                active, {pid: a.fraktion or a.fraktion_lokal for pid, a in angaben.items()}
+            )
 
         # Sonderfall "Rat": Ratsmitglieder von anderen trennen
         is_rat = org.name == "Rat"
@@ -218,6 +221,12 @@ class OrganizationDetailView(DetailView):
         context["kurzname"] = kurzname
         context["hat_angaben"] = bool(kurzname or org.start_date or org.end_date or org.website)
         context["hat_randspalte"] = context["hat_angaben"] or bool(context["upcoming_meetings"])
+        # Feed des Gremiums (Issue #1274): kommende Sitzungen, Beschlüsse, bei Fraktionen ihre Vorgänge
+        from .feeds import abo
+
+        context["abo_feed"] = abo(
+            "organization_feed", f"Neues aus {org.name or 'diesem Gremium'}", kwargs={"pk": org.pk}
+        )
 
         # SEO-Kontext
         from ..seo import get_organization_seo

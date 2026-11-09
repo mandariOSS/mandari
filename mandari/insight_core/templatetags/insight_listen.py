@@ -2,18 +2,29 @@
 """
 Filter für Listen des Bürgerportals (Issue #841): Spalten nur zeigen, wenn sie etwas enthalten; Seitenlinks; Ziele
 der Listen im Bürgerportal einer Körperschaft (``insight_url``, ``insight_rel``, Issue #939); Dateityp der
-Dokumentlinks (``dateityp``, Issue #1103).
+Dokumentlinks (``dateityp``, Issue #1103); Ergebnis-Etikett (``ergebnis``) und Reiter mit den übrigen Filtern der
+Adresse (``adresse_mit``, Issue #1260); Original eines Dokuments im Ratsinformationssystem (``dokument_im_ris``,
+Issue #1259); Beträge und Prozente in Antworten der Verwaltung hervorheben (``kernzahlen``, Issue #1273).
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Final
 
 from django import template
+from django.http import QueryDict
 from django.urls import reverse
+from django.utils.html import conditional_escape
+from django.utils.safestring import SafeString, mark_safe
 
+from hub.ris import original
+
+from ..listenadresse import ohne_leere
 from ..ris_links import INSIGHT
+from ..services.ergebnis import Ergebnis
+from ..services.ergebnis import ergebnis as ergebnis_zuordnen
 
 register = template.Library()
 
@@ -56,6 +67,12 @@ def hat_wert(objekte: Iterable[Any] | None, pfad: str) -> bool:
 
 
 @register.filter
+def dokument_im_ris(datei: Any) -> str:
+    """Abrufadresse eines Dokuments im Ratsinformationssystem (``hub.ris.original``); leer, wenn es keine gibt."""
+    return original.dokument_im_ris(datei)
+
+
+@register.filter
 def dateityp(datei: Any) -> str:
     """
     Kurzer Dateityp für Dokumentlinks der Listen (Issue #1103): „PDF“, sonst die Endung des Dateinamens („DOCX“),
@@ -68,6 +85,33 @@ def dateityp(datei: Any) -> str:
     if endung.isascii() and endung.isalnum() and 2 <= len(endung) <= 4:
         return endung.upper()
     return "Dokument"
+
+
+@register.filter
+def ergebnis(roh: Any) -> Ergebnis | None:
+    """
+    Ergebnis-Etikett zu einem Ergebnistext des Ratsinformationssystems (Issue #1260, ``services.ergebnis``), für
+    ``<c-insight.ergebnis>``: ``{% with etikett=item.result|ergebnis %}``. ``None`` ohne Text.
+    """
+    return ergebnis_zuordnen(roh)
+
+
+@register.simple_tag(takes_context=True)
+def adresse_mit(context: Any, behalten: str = "", **werte: Any) -> str:
+    """
+    Adresse eines Reiters der Liste (Issue #1260): die Werte des Reiters und von der Anfrage nur die Parameter aus
+    ``behalten`` (Komma-Liste, etwa der Suchbegriff), ohne leere Werte und ohne Seitenzahl. Fremde Parameter der
+    Anfrage landen so nicht in den Links der Seite: ``{% adresse_mit behalten="q" period="past" %}`` → ``?q=Rad&period=past``.
+    """
+    request = context.get("request")
+    params = QueryDict(mutable=True)
+    if request is not None:
+        for name in filter(None, (teil.strip() for teil in behalten.split(","))):
+            if name in request.GET:
+                params.setlist(name, request.GET.getlist(name))
+    for name, wert in werte.items():
+        params[name] = str(wert)
+    return "?" + str(ohne_leere(params).urlencode())
 
 
 @register.simple_tag(takes_context=True)
@@ -112,3 +156,29 @@ def ris_url(links: Any, art: str, kennung: Any) -> str:
     ohne Angabe die Detailseite in Insight. ``{% ris_url links "vorgang" paper.pk as ziel %}``.
     """
     return str((links or INSIGHT).url(art, kennung))
+
+
+#: Beträge und Prozente in einer Antwort der Verwaltung („4,2 Mio. €“, „€ 12.500“, „12 %“, „3 Prozent“)
+_ZAHL: Final = r"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?"
+_WAEHRUNG: Final = r"(?:€|Euro|EUR)"
+_GROESSE: Final = r"(?:Mio\.|Millionen|Mrd\.|Milliarden|Tsd\.)"
+_KERNZAHL: Final = re.compile(
+    rf"(?<![\w,.])(?:{_WAEHRUNG}\s?(?:{_ZAHL})(?:\s{_GROESSE})?"
+    rf"|(?:{_ZAHL})\s?(?:{_GROESSE}(?:\s?{_WAEHRUNG})?|{_WAEHRUNG}|%|Prozent))(?![\w])"
+)
+
+
+@register.filter
+def kernzahlen(text: object) -> SafeString:
+    """
+    Text mit fett gesetzten Beträgen und Prozentangaben, damit sie beim Überfliegen einer Antwort auffallen
+    („Im Haushalt sind <strong>4,2 Mio. €</strong> eingeplant“). Der übrige Text wird escaped.
+    """
+    sicher = str(conditional_escape("" if text is None else str(text)))
+    # Sicher: Der Text ist escaped, eingefügt werden nur feste Tags um Treffer aus Ziffern, Leerzeichen und Einheiten
+    return mark_safe(
+        _KERNZAHL.sub(
+            lambda treffer: f'<strong class="font-semibold text-gray-900 dark:text-white">{treffer.group(0)}</strong>',
+            sicher,
+        )
+    )

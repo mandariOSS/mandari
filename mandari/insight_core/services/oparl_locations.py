@@ -66,22 +66,38 @@ def _point_from_geojson(geojson: dict | None) -> tuple[float, float] | None:
 
 
 def build_oparl_location_entries(paper) -> list[dict]:
-    """Erzeugt locations-Einträge aus den offiziellen OParl-Locations eines Papers."""
+    """
+    Erzeugt locations-Einträge aus den offiziellen OParl-Locations eines Papers.
+
+    Bei Eingaben aus der Einwohnerschaft und Bauanträgen (``ortsschutz``, Issue #1269) wird ein Ort mit Hausnummer zum
+    Punkt der Straße; ist die Straße im Verzeichnis der Kommune unbekannt, entfällt er hier (die OParl-Location selbst
+    bleibt unverändert gespeichert).
+    """
+    from insight_core.services import ortsschutz
+
     entries = []
+    schutz: str | None = None
     for location in paper.oparl_locations.all():
         point = _point_from_geojson(location.geojson)
         if not point:
             continue
         name = location.street_address or location.description or location.locality or "Offizieller Ort"
-        entries.append(
-            {
-                "lat": round(point[0], 7),
-                "lon": round(point[1], 7),
-                "name": name,
-                "source": "oparl",
-                "confidence": CONFIDENCE["oparl"],
-            }
-        )
+        entry = {
+            "lat": round(point[0], 7),
+            "lon": round(point[1], 7),
+            "name": name,
+            "source": "oparl",
+            "confidence": CONFIDENCE["oparl"],
+        }
+        if ortsschutz.hat_hausnummer(name) or ortsschutz.ort_ohne_hausnummer(name) != name:
+            if schutz is None:
+                schutz = ortsschutz.grund(paper)
+            if schutz:
+                strasse = ortsschutz.strassenpunkt(paper.body, name)
+                if strasse is None:
+                    continue
+                entry.update(lat=strasse["lat"], lon=strasse["lon"], name=strasse["name"])
+        entries.append(entry)
     return entries
 
 

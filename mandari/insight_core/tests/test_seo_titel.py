@@ -42,6 +42,7 @@ from insight_core.models import (
     PublicQuestion,
 )
 from insight_core.seo import kuerzen
+from insight_core.services import summary_store
 
 pytestmark = pytest.mark.django_db
 
@@ -111,6 +112,12 @@ def _beraten(paper: OParlPaper, sitzung: OParlMeeting, ergebnis: str) -> None:
     )
 
 
+def _kennt_den_stand(paper: OParlPaper) -> None:
+    """Die Zusammenfassung entstand nach der letzten Beratung (Issue #1257): Ihr Stand ist der aktuelle."""
+    stand = summary_store.beratungsstaende([paper.pk]).get(paper.pk, "")
+    OParlPaper.objects.filter(pk=paper.pk).update(summary_stand=stand)
+
+
 def _person(body: OParlBody, name: str, *rollen: tuple[OParlOrganization, str], ehemals: bool = False) -> OParlPerson:
     person = OParlPerson.objects.create(external_id=f"{BASIS}person/{_id()}", body=body, name=name)
     for gremium, rolle in rollen:
@@ -167,6 +174,7 @@ class TestVorgang:
     def test_description_mit_stand_und_anfang_der_zusammenfassung(self, muenster: OParlBody) -> None:
         paper = _vorgang(muenster, summary=ZUSAMMENFASSUNG)
         _beraten(paper, _sitzung(muenster, _gremium(muenster, "Rat"), _zeit(2011, 12, 6, 17)), "beschlossen")
+        _kennt_den_stand(paper)
 
         description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
 
@@ -175,6 +183,15 @@ class TestVorgang:
             "KI-Zusammenfassung: Die Feuerwache Süd"
         )
         assert len(description) <= 160 and description.endswith("…")
+
+    def test_veraltete_zusammenfassung_nicht_in_der_description(self, muenster: OParlBody) -> None:
+        """Issue #1257: Eine Zusammenfassung von vor dem Beschluss könnte dem Stand widersprechen, sie fehlt."""
+        paper = _vorgang(muenster, summary=ZUSAMMENFASSUNG)
+        _beraten(paper, _sitzung(muenster, _gremium(muenster, "Rat"), _zeit(2011, 12, 6, 17)), "beschlossen")
+
+        description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
+
+        assert description == "Münster: Vorlage V/0881/2011 vom 15.11.2011. Am 06.12.2011 im Rat beschlossen."
 
     def test_ohne_beratung_folgt_die_zusammenfassung(self, muenster: OParlBody) -> None:
         paper = _vorgang(muenster, paper_type="Antrag", reference="A/12/2026", summary="Kurz und klar.")
@@ -189,6 +206,7 @@ class TestVorgang:
         paper = _vorgang(muenster, summary=ZUSAMMENFASSUNG)
         gremium = _gremium(muenster, "Ausschuss für Stadtentwicklung, Umwelt und Wohnen")
         _beraten(paper, _sitzung(muenster, gremium, _zeit(2011, 12, 6, 17)), "beschlossen")
+        _kennt_den_stand(paper)
 
         description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
 
@@ -837,6 +855,8 @@ class TestHoechstens70Zeichen:
             "/insight/k/muenster/vorgaenge/",
             "/insight/k/muenster/gremien/",
             "/insight/k/muenster/personen/",
+            "/insight/k/muenster/beschluesse/",
+            "/insight/beschluesse/umsetzung/",
         ],
     )
     def test_uebersichten_im_buergerportal(self, lange_namen: dict[str, str], url: str) -> None:

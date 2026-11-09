@@ -1,12 +1,12 @@
 {
   "insight_startseite": {
-    "beschreibung": "Insight: Startseite der Kommune",
-    "abfragen": 12,
+    "beschreibung": "Insight: Startseite der Kommune (+1 Kürzel der antragstellenden Fraktionen, #1272)",
+    "abfragen": 13,
     "ms": 500
   },
   "insight_einstieg_koerperschaft": {
-    "beschreibung": "Insight: Einstieg einer Körperschaft (/insight/k/<slug>/, Issue #317)",
-    "abfragen": 11,
+    "beschreibung": "Insight: Einstieg einer Körperschaft (/insight/k/<slug>/, Issue #317; +1 Kürzel der antragstellenden Fraktionen, #1272)",
+    "abfragen": 12,
     "ms": 500
   },
   "insight_suche": {
@@ -25,8 +25,8 @@
     "ms": 500
   },
   "insight_vorgaenge": {
-    "beschreibung": "Insight: Vorgangsliste (+1 Auswahl der antragstellenden Fraktionen, #1138)",
-    "abfragen": 15,
+    "beschreibung": "Insight: Vorgangsliste (+1 Auswahl der antragstellenden Fraktionen, #1138; +1 ihre Kürzel, #1272)",
+    "abfragen": 16,
     "ms": 500
   },
   "session_sitzungsliste": {

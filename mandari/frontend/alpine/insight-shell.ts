@@ -39,6 +39,8 @@ export const insightShell = defineComponent(() => ({
   docViewerUrl: '',
   docViewerName: '',
   docViewerMeta: '',
+  /** Original im Ratsinformationssystem (Issue #1259); leer, wenn die Zeile keine Adresse mitgibt */
+  docViewerQuelle: '',
   docViewerLoading: false,
   docViewerError: false,
   _docTimeout: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -76,10 +78,11 @@ export const insightShell = defineComponent(() => ({
     this.cityModalOpen = false
   },
 
-  openDoc(url: string, name?: string, meta?: string) {
+  openDoc(url: string, name?: string, meta?: string, quelle?: string) {
     this.docViewerUrl = url
     this.docViewerName = name || 'Dokument'
     this.docViewerMeta = meta || ''
+    this.docViewerQuelle = quelle || ''
     this.docViewerLoading = true
     this.docViewerError = false
     clearTimeout(this._docTimeout)

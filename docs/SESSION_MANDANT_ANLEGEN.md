@@ -225,7 +225,9 @@ ohne Slug unter ihrer ID: die Grund-Sitemap (`/sitemap-insight-<slug>.xml` mit S
 Personen mit laufender Mitgliedschaft und Ratsfragen) sowie in nummerierten Dateien mit höchstens
 10.000 Einträgen die Vorgänge mit ausgelesenem Text oder aus den letzten zwei Jahren und die Sitzungen mit
 Tagesordnung, Niederschrift oder Termin in den nächsten 60 Tagen (`/sitemap-insight-<slug>-vorgaenge-1.xml`,
-`/sitemap-insight-<slug>-sitzungen-1.xml` …).
+`/sitemap-insight-<slug>-sitzungen-1.xml` …). Die Aufteilung in diese Dateien rechnet der Zeitplan
+`sitemap_aufteilen` im Worker vor (alle 30 Minuten, neu nach drei Stunden). Für eine neu gelistete Kommune rechnet
+sie der Index beim Abruf selbst, höchstens fünf Sekunden je Abruf; was dann noch fehlt, folgt mit dem nächsten Lauf.
 
 Im Einstieg gilt:
 

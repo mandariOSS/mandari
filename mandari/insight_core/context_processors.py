@@ -15,6 +15,7 @@ from django.utils.functional import SimpleLazyObject
 from .models import OParlBody
 from .navigation import KOMMUNEN_LISTEN, breadcrumb_area, more_area_listed, nav_area
 from .publication import DETAIL_PAGES, PORTAL_NAMESPACE, body_id_of
+from .services.neuigkeiten import mandari_version
 
 
 def navigation_context(request: HttpRequest) -> dict[str, Any]:
@@ -44,6 +45,8 @@ def navigation_context(request: HttpRequest) -> dict[str, Any]:
         "insight_breadcrumb": breadcrumb_area(url_name),
         # Namensnennung der Quellen im Kommunenwechsel; erst abgefragt, wenn ein Template sie zeigt
         "kommunenverzeichnis_quellen": SimpleLazyObject(_kommunenverzeichnis_quellen),
+        # Versionsnummer im Fuß, verlinkt auf „Was ist neu?“ (Issue #1261); einmal je Prozess gelesen
+        "mandari_version": mandari_version(),
     }
 
 
@@ -54,6 +57,23 @@ def _kommunenverzeichnis_quellen() -> list[dict[str, str]]:
         return quellen()
     except Exception:  # noqa: BLE001 - die Namensnennung darf keine Seite brechen (Datenbank noch nicht migriert)
         return []
+
+
+def _oparl_body(body: Any) -> str:
+    """
+    Adresse des Body einer Kommune in der OParl-Schnittstelle, wenn das Verzeichnis sie nennt (gelistet, nicht
+    gelöscht, nicht vorübergehend abgeschaltet; ``hub.api.verzeichnis``), sonst leer.
+    """
+    if body is None or not body.is_listed or body.deleted:
+        return ""
+    from .publication import body_state
+
+    state = body_state(body.pk)
+    if state is not None and state.paused:
+        return ""
+    from hub.ris.mapping.bestand import BestandUris
+
+    return BestandUris(settings.OPARL_BASE_URL, settings.SITE_URL).obj("body", body.pk)
 
 
 def _seiten_kommune(request: HttpRequest, gewaehlt: OParlBody | None, match: Any) -> OParlBody | None:
@@ -182,17 +202,6 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
             publication_state = None
     archive = publication_state if publication_state is not None and publication_state.archived else None
 
-    # Beschlüsse stehen nur in der Navigation, wenn die Kommune sie veröffentlicht (Issue #783):
-    # Ein Eintrag, der auf „Noch keine Beschlüsse“ führt, hilft niemandem. Nur auf Portalseiten abgefragt.
-    decisions_published = False
-    if body is not None and portal_page:
-        from .services import decision_tracking
-
-        try:
-            decisions_published = decision_tracking.publishing_tenants(body).exists()
-        except Exception:  # noqa: BLE001 - die Navigation darf keine Seite brechen (wie oben)
-            decisions_published = False
-
     # Hinweis der Kommune (Issue #734, im Admin gepflegt), z. B. „Die Stadt stellt ihre Daten nicht mehr
     # bereit“: auf Einstieg und Listen der gewählten Kommune (BODY_PAGES, dazu der eigene Einstieg
     # /insight/k/<slug>/). Detailseiten haben eine eigene Kommune und zeigen ihn nicht.
@@ -231,11 +240,10 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
     from .services.kommunenverzeichnis import ort_der_koerperschaft
 
     # Am Handy liegt der Bereich im Blatt „Mehr“: dann ist „Mehr“ in der Leiste unten hervorgehoben (Stufe 3) – aber
-    # nur, wenn das Blatt den Bereich auch zeigt (Beschlüsse, Ratsfragen und Benachrichtigungen sind bedingt)
+    # nur, wenn das Blatt den Bereich auch zeigt (Ratsfragen und Benachrichtigungen sind bedingt)
     area = nav_area(match.url_name if match is not None and match.namespace == PORTAL_NAMESPACE else None)
     area_more = more_area_listed(
         area,
-        decisions=decisions_published,
         questions=bool(getattr(settings, "INSIGHT_QUESTIONS_ENABLED", False)),
         subscriptions=bool(getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False)),
     )
@@ -264,9 +272,11 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
         # Stadtseite der Kommune der Seite (/insight/k/<slug>/): Ziel der Brotkrume ohne Umweg über die Wahl, so
         # finden Suchmaschinen ohne Sitzung die Stadtseiten (Issue #914); leer ohne Slug oder nicht gelistet
         "page_body_stadtseite": stadtseite_url(page_body) if portal is None else "",
+        # OParl-Body der Kommune der Seite (Issue #1282): <link rel="alternate"> im Kopf und „Offene Daten“ im Fuß;
+        # leer für nicht gelistete Kommunen, die das Verzeichnis nicht nennt
+        "page_body_oparl": _oparl_body(page_body),
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
-        "insight_decisions_published": decisions_published,
         "active_body_stale_days": stale_days,
         "active_body_archive": archive,
         "active_body_notice": notice if body_page else "",

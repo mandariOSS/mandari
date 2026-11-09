@@ -1,0 +1,13 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Link auf das Original im Ratsinformationssystem der Kommune (Issue #1259) im Kopf von Vorgang und Sitzung: so hoch
+wie „Merken“ daneben, in der Kennfarbe und mit dem Zeichen für einen Link nach außen. Nur mit Adresse einbinden
+(hub.ris.original.seite_im_ris):
+  {% if source_url %}<c-insight.ris-link href="{{ source_url }}" />{% endif %}
+{% endcomment %}
+<c-vars href="" />
+<a href="{{ href }}" target="_blank" rel="noopener noreferrer" data-testid="ris-link"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-primary-700 dark:text-primary-300 hover:bg-white dark:hover:bg-gray-700 transition-colors">
+    <i data-lucide="external-link" class="w-4 h-4 shrink-0" aria-hidden="true"></i>
+    Im Ratsinformationssystem ansehen<span class="sr-only"> (öffnet in neuem Fenster)</span>
+</a>

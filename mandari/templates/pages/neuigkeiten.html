@@ -1,0 +1,41 @@
+{% extends "base_insight.html" %}
+{% comment %}
+„Was ist neu?“ (Issue #1261, views/neuigkeiten.py): kuratierte Einträge aus insight_core/neuigkeiten.toml, je Tag eine
+Gruppe. Links Datum und Version, rechts je Eintrag ein Satz Nutzen und ein Absatz; Linien nur zwischen den Gruppen.
+{% endcomment %}
+
+{% block title %}Was ist neu?{% endblock %}
+{% block brotkrumen_aktuell %}<c-insight.brotkrume>Was ist neu?</c-insight.brotkrume>{% endblock %}
+
+{% block page %}
+<c-insight.kopfband titel="Was ist neu?" text="Was sich im Bürgerportal verbessert hat, kurz erklärt und das Neueste zuerst.{% if mandari_version %} Dieses Portal läuft mit mandari {{ mandari_version }}.{% endif %}" />
+<c-insight.band>
+    {% if gruppen %}
+    <div class="max-w-5xl [&>section+section]:border-t [&>section]:border-gray-200 dark:[&>section]:border-gray-800">
+        {% for gruppe in gruppen %}
+        <section aria-labelledby="neu-{{ forloop.counter }}" class="grid gap-x-10 gap-y-3 py-8 first:pt-0 md:grid-cols-[12rem_minmax(0,1fr)]">
+            <div>
+                <h2 id="neu-{{ forloop.counter }}" class="text-[1.0625rem] font-semibold text-gray-900 dark:text-white"><time datetime="{{ gruppe.datum|date:'Y-m-d' }}">{{ gruppe.datum|date:"j. F Y" }}</time></h2>
+                {% if gruppe.version %}<p class="mt-0.5 text-[0.9rem] text-gray-600 dark:text-gray-400">Version {{ gruppe.version }}</p>{% endif %}
+            </div>
+            <div class="space-y-6 max-w-2xl">
+                {% for eintrag in gruppe.eintraege %}
+                <article>
+                    <h3 class="text-[1.1875rem] font-semibold leading-snug text-gray-900 dark:text-white">{{ eintrag.titel }}</h3>
+                    <p class="mt-1.5 text-[1.0625rem] leading-relaxed text-gray-700 dark:text-gray-300 break-words">{{ eintrag.text }}</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="max-w-2xl text-[1.0625rem] text-gray-700 dark:text-gray-300">Gerade gibt es hier nichts zu lesen. Schauen Sie bald wieder vorbei.</p>
+    {% endif %}
+    <p class="mt-10 max-w-2xl text-[0.95rem] text-gray-600 dark:text-gray-400">
+        Jede technische Änderung steht im
+        <a href="https://github.com/mandariOSS/mandari/blob/main/CHANGELOG.md" rel="noopener noreferrer" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Änderungsprotokoll des Quellcodes</a>.
+    </p>
+    {% include "partials/page_feedback.html" %}
+</c-insight.band>
+{% endblock %}

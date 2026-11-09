@@ -179,7 +179,8 @@ def test_sitzungsseite_hat_sprungmarken_je_tagesordnungspunkt(client: Client, we
     """Ziel der TOP-Links der Live-Seite: je Tagesordnungspunkt eine stabile Sprungmarke unter dem festen Kopf."""
     html = client.get(reverse("insight_core:insight:meeting_detail", args=[welt.sitzung.pk])).content.decode()
     for punkt in (welt.top1, welt.top5, welt.top51):
-        marke = re.search(r'<div id="top-' + str(punkt.pk) + r'" class="([^"]*)"', html)
+        # Seit #1260 ein Eintrag der flachen Tagesordnung (<li>), vorher ein Kasten (<div>)
+        marke = re.search(r'<(?:li|div) id="top-' + str(punkt.pk) + r'" class="([^"]*)"', html)
         assert marke is not None, punkt.number
         assert "scroll-mt-20" in marke.group(1).split()
 

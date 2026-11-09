@@ -100,6 +100,40 @@ class BegrenzteSeitenMixin:
         return super().paginate_queryset(queryset[: LISTEN_SEITEN_HOECHSTENS * page_size], page_size)
 
 
+class FilterInAdresseMixin:
+    """
+    Liste mit Filtern in der Adresse (Issue #1260, ``insight_core.listenadresse``).
+
+    Suche, Filter und Reiter fragen dieselbe Adresse per htmx ab und schreiben sie fort (``hx-push-url``); htmx bekommt
+    dann nur die Liste (``teil_vorlage``), samt bereinigter Adresse im Kopf ``HX-Push-Url``. Die Filterformulare tragen
+    ``hx-history="false"``: Ein Schnappschuss der Seite hielte eingetippte Werte und gewählte Optionen nicht fest. „Zurück“
+    lädt deshalb die Seite der Adresse (``HX-History-Restore-Request``), und dafür braucht es die ganze Seite.
+    Dieselbe Adresse liefert also Seite oder Ausschnitt; ``Vary`` hält Caches auseinander. Ohne JavaScript bleibt es ein
+    gewöhnliches GET-Formular.
+    """
+
+    teil_vorlage = ""
+
+    @property
+    def nur_liste(self) -> bool:
+        htmx = getattr(self.request, "htmx", None)
+        return bool(htmx) and not htmx.history_restore_request
+
+    def get_template_names(self):
+        return [self.teil_vorlage] if self.nur_liste else [self.template_name]
+
+    def render_to_response(self, context, **response_kwargs):
+        from django.utils.cache import patch_vary_headers
+
+        from ..listenadresse import saubere_adresse
+
+        response = super().render_to_response(context, **response_kwargs)
+        if self.nur_liste:
+            response["HX-Push-Url"] = saubere_adresse(self.request)
+        patch_vary_headers(response, ("HX-Request", "HX-History-Restore-Request"))
+        return response
+
+
 def is_all_bodies_mode(request):
     """Prüft ob der 'Alle Kommunen' Modus aktiv ist."""
     if get_portal(request) is not None:

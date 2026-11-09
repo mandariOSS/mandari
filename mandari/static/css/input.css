@@ -392,6 +392,27 @@
   }
 }
 
+/* ---- Abschnittstitel im Bürgerportal (Issue #1261) ------------------------------------------------------------------
+   Überschrift eines Abschnitts unter dem Seitenkopf (Startseite, Kommunenwahl, Vorgang, Tagesordnung, Beschlüsse),
+   an einer Stelle statt als Klassenkette in jeder Vorlage (Frontend-Ratchet). Abstände ergänzt die Vorlage. */
+@layer components {
+  .abschnitt-titel {
+    @apply text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white;
+  }
+}
+
+/* ---- Umschalter im Bürgerportal (Issue #1270) -------------------------------------------------------------------------
+   Eine Wahl im Umschalter der Gremiengruppe (Beschlüsse: Alle, Rat und Ausschüsse, Bezirksvertretungen): ein Label um
+   ein unsichtbares Optionsfeld, gewählt hell hinterlegt, Fokus als Rahmen. Am Handy teilen sich die Wahlen die Breite,
+   jede mindestens 44 px hoch. */
+@layer components {
+  .umschalter-wahl {
+    @apply flex-1 sm:flex-none inline-flex min-h-11 cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-3 text-[0.9375rem] text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white;
+    @apply has-[:checked]:bg-primary-100 has-[:checked]:font-semibold has-[:checked]:text-primary-900 dark:has-[:checked]:bg-primary-900/50 dark:has-[:checked]:text-primary-100;
+    @apply has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-primary-600;
+  }
+}
+
 /* Personenmenü (templates/work/rahmen/_person.html) steht fest über der Person; bei schmaler Leiste rechts neben ihr */
 @media (min-width: 1024px) {
   [data-rahmen="neu"][data-leiste="schmal"] .person-menue {

@@ -14,6 +14,8 @@ import pytest
 playwright_sync = pytest.importorskip("playwright.sync_api")
 expect = playwright_sync.expect
 
+from tests_e2e.conftest import login_via_form  # noqa: E402 (nach importorskip)
+
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
@@ -120,10 +122,11 @@ class TestUiKit:
 
 class TestWorkPortal:
     def test_login_and_dashboard(
-        self, page: Any, goto: Any, login: Any, member_user: Any, axe: Any, screenshot: Any
+        self, page: Any, goto: Any, live_server: Any, member_user: Any, axe: Any, screenshot: Any
     ) -> None:
         membership, password = member_user
-        login(membership.user.email, password)
+        # Echter Weg über das Login-Formular (die übrigen Tests melden sich per Sitzungs-Cookie an)
+        login_via_form(page, live_server.url, membership.user.email, password)
         assert "/accounts/login" not in page.url, "Anmeldung fehlgeschlagen"
         goto(f"/work/{membership.organization.slug}/dashboard/")
         assert page.locator("body").count() == 1

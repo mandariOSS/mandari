@@ -147,7 +147,7 @@ class SourceTypeListFilter(admin.SimpleListFilter):
         return [
             ("oparl", "OParl-API"),
             ("bridge", "OParl-Bridge (z. B. ALLRIS)"),
-            ("scraper", "Scraper (z. B. SessionNet)"),
+            ("scraper", "Scraper (z. B. SessionNet, ALLRIS 3)"),
         ]
 
     def queryset(self, request, queryset):
@@ -1070,6 +1070,7 @@ class PaperLocationAdmin(ModelAdmin):
         "ki_urteil",
         "ki_begruendung",
         "ki_geprueft_am",
+        "vorher",
         "created_at",
         "updated_at",
     ]
@@ -1084,6 +1085,7 @@ class PaperLocationAdmin(ModelAdmin):
             PaperLocation.STATUS_AUTO: "#64748b",
             PaperLocation.STATUS_CONFIRMED: "#16a34a",
             PaperLocation.STATUS_REMOVED: "#dc2626",
+            PaperLocation.STATUS_HIDDEN: "#b45309",
         }
         return status_text(colors.get(obj.status, "#64748b"), obj.get_status_display())
 
@@ -1684,16 +1686,16 @@ from .services import page_feedback as page_feedback_service  # noqa: E402
 
 @admin.register(PageFeedback)
 class PageFeedbackAdmin(ReadOnlyAdminMixin, ModelAdmin):
-    """Auswertung: Zählung je Seitentyp und Seite über der Liste, Freitexte in der Liste.
+    """Auswertung: Zählung je Seitentyp und Seite über der Liste, Freitexte mit ihrer Art in der Liste.
 
     Die Zählung folgt den gewählten Filtern (Kommune, Zeitraum, Seitentyp). Einträge löscht ein
     täglicher Auftrag nach zwölf Monaten (``insight_core/schedules.py``).
     """
 
-    list_display = ["created_on", "page_label", "body", "helpful", "short_comment", "path"]
-    list_filter = ["helpful", "page_type", "body", ("comment", admin.EmptyFieldListFilter), "created_on"]
+    list_display = ["created_on", "page_label", "body", "helpful", "kind", "short_comment", "path"]
+    list_filter = ["helpful", "kind", "page_type", "body", ("comment", admin.EmptyFieldListFilter), "created_on"]
     search_fields = ["comment", "path"]
-    readonly_fields = ["created_on", "page_type", "path", "body", "helpful", "comment"]
+    readonly_fields = ["created_on", "page_type", "path", "body", "helpful", "kind", "comment"]
     ordering = ["-created_on", "-id"]
     list_per_page = 50
     list_before_template = "admin/insight_core/pagefeedback/auswertung.html"

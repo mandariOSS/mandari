@@ -10,9 +10,10 @@ ziel: Adresse des Vorgangs. Dateien öffnen wie auf den Vorgangsseiten von Insig
 Portals (c-insight.document-row), nofollow wie dort (#939).
 Das Hauptdokument steht links (float), damit die Zahl der Anlagen in derselben Zeile bleibt und die aufgeklappte
 Liste darunter die volle Breite hat, ohne dass der Knopf springt. Klickflächen 24 px, im Bürgerportal auf dem Handy
-44 px wie c-insight.document-row.
+44 px wie c-insight.document-row. ``knapp``: ohne Dateityp und Größe der Vorlage, wenn darüber schon die Kurzfassung
+steht (Issue #1271).
 {% endcomment %}
-<c-vars zeile="" vorgang="" ziel="" dicht="" />
+<c-vars zeile="" vorgang="" ziel="" dicht="" knapp="" />
 {% load insight_listen %}
 {% if zeile.haupt %}
 {% with haupt=zeile.haupt anzahl=zeile.anlagen|length kennung=vorgang.reference|default:vorgang.name|default:""|truncatechars:60 %}
@@ -21,7 +22,7 @@ Liste darunter die volle Breite hat, ohne dass der Knopf springt. Klickflächen 
        class="group/haupt float-left mr-4 inline-flex items-center gap-1.5 {% if dicht %}min-h-6{% else %}min-h-11 sm:min-h-6{% endif %}">
         <i data-lucide="file-text" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></i>
         <span class="font-medium text-primary-700 dark:text-primary-300 group-hover/haupt:underline underline-offset-4">Vorlage<span class="sr-only">{% if kennung %} {{ kennung }}{% endif %} öffnen,</span></span>
-        <span>{{ haupt|dateityp }}{% if haupt.size %}, {{ haupt.size_human }}{% endif %}</span>
+        {% if not knapp %}<span>{{ haupt|dateityp }}{% if haupt.size %}, {{ haupt.size_human }}{% endif %}</span>{% endif %}
     </a>
     {% if anzahl %}
     <details class="group/anlagen">

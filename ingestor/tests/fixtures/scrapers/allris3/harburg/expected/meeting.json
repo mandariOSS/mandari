@@ -1,0 +1,85 @@
+{
+  "title": "Sitzung des Ausschusses für Bildung und Sport",
+  "committee": [
+    "au",
+    25,
+    "Ausschuss für Bildung und Sport"
+  ],
+  "date": "2025-11-03",
+  "time_start": "18:00",
+  "time_end": "18:10",
+  "room": "Mehrzwecksaal im SDZ",
+  "address": "Harburger Rathausforum 1, 21073 Hamburg",
+  "rows": [
+    {
+      "tolfdnr": 1045621,
+      "number": "1",
+      "title": "Feststellung der Tagesordnung",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1045929,
+      "number": "2",
+      "title": "Antrag CDU betr. Sportpark Opferberg - es wird Zeit zu handeln!",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": 1013101,
+      "paper_reference": "22-0794"
+    },
+    {
+      "tolfdnr": 1045944,
+      "number": "2.1",
+      "title": "Stellungnahme zum Antrag CDU betr. Sportpark Opferberg - es wird Zeit zu handeln!",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": 1013516,
+      "paper_reference": "22-0794.01"
+    },
+    {
+      "tolfdnr": 1045930,
+      "number": "3",
+      "title": "NEU Ergänzungsantrag der GRÜNE Fraktion zu DS.22-0794 der CDU-Fraktion betr. Sportpark Opferberg - es wird Zeit zu handeln!",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": 1013460,
+      "paper_reference": "22-1029"
+    },
+    {
+      "tolfdnr": 1045943,
+      "number": "3.1",
+      "title": "Stellungnahme zum NEU Ergänzungsantrag der GRÜNE Fraktion zu DS.22-0794 der CDU-Fraktion betr. Sportpark Opferberg - es wird Zeit zu handeln!",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": 1013517,
+      "paper_reference": "22-1029.01"
+    },
+    {
+      "tolfdnr": 1045622,
+      "number": "4",
+      "title": "Mitteilungen der Verwaltung",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1045623,
+      "number": "5",
+      "title": "Verschiedenes",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    }
+  ]
+}

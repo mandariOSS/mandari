@@ -177,12 +177,14 @@ class SourceDeletionModel(CanonicalIdModel):
         paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
         if isinstance(self, OParlPaper | OParlFile) and paper_id:
             OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(
-                summary=None, summary_hinweis="", summary_einfach=None
+                summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
             )
             if isinstance(self, OParlPaper):
                 self.summary = None
                 self.summary_hinweis = ""
                 self.summary_einfach = None
+                self.summary_stand = ""
+                self.summary_prompt_fassung = 0
 
     @property
     def depublished(self) -> bool:
@@ -301,6 +303,7 @@ class OParlSource(models.Model):
     SOURCE_TYPE_OPARL = "oparl"
     SOURCE_TYPE_BRIDGE_ALLRIS = "bridge:allris"
     SOURCE_TYPE_SCRAPER_SESSIONNET = "scraper:sessionnet"
+    SOURCE_TYPE_SCRAPER_ALLRIS3 = "scraper:allris3"
 
     class Meta:
         db_table = "oparl_sources"
@@ -315,7 +318,7 @@ class OParlSource(models.Model):
         """
         Art der Quelle: "oparl" (Default), "bridge:<vendor>" (externer
         OParl-Proxy, z. B. Aeroid/oparl-bridge vor ALLRIS) oder
-        "scraper:<vendor>" (Ingestor-Scraper-Adapter, z. B. SessionNet).
+        "scraper:<vendor>" (Ingestor-Scraper-Adapter, z. B. SessionNet oder ALLRIS 3).
         Gespeichert in sync_config["source_type"].
         """
         if isinstance(self.sync_config, dict):
@@ -971,6 +974,27 @@ class OParlPaper(SourceDeletionModel):
     )
     # Dieselbe Zusammenfassung in Einfacher Sprache (Claude, Issue #1220); verfällt mit der Zusammenfassung
     summary_einfach = models.TextField(blank=True, null=True, verbose_name="Zusammenfassung in Einfacher Sprache")
+    # Beratungsstand, den die Zusammenfassung kannte (Issue #1257, ``summary_store.beratungsstand``): Weicht er vom
+    # aktuellen ab, ist sie veraltet und wird nachgezogen. Leer: ohne bekanntes Ergebnis erstellt oder vor #1257.
+    # Datenbank-Standardwert wie bei ``summary_hinweis`` (Ingestor, Rückfall auf ein älteres Image)
+    summary_stand = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Beratungsstand der Zusammenfassung",
+        help_text="Prüfsumme der Beratungsergebnisse, die die gespeicherte Zusammenfassung kannte.",
+    )
+    # Fassung des Prompts, mit der die gespeicherte Zusammenfassung entstand (Issue #1271,
+    # ``insight_ai.services.prompts.PROMPT_FASSUNG``); 0: vor der Zählung. Datenbank-Standardwert wie bei
+    # ``summary_hinweis`` (Ingestor, Rückfall auf ein älteres Image). SmallIntegerField statt Positive…: Dessen
+    # CHECK-Bedingung prüfte PostgreSQL beim Anlegen gegen alle Vorgänge unter exklusiver Sperre der Tabelle
+    summary_prompt_fassung = models.SmallIntegerField(
+        default=0,
+        db_default=0,
+        verbose_name="Prompt-Fassung der Zusammenfassung",
+        help_text="Fassung des Prompts, mit der die gespeicherte Zusammenfassung entstand (0: vor der Zählung).",
+    )
     locations = models.JSONField(blank=True, null=True)
 
     # Offizielle OParl-Locations (Feld `paper.location`, vom Ingestor verknüpft)
@@ -1039,6 +1063,18 @@ class OParlPaper(SourceDeletionModel):
             return f"{self.reference}: {self.name or ''}"
         return self.name or f"Vorgang {self.id}"
 
+    @property
+    def titel_oeffentlich(self) -> str:
+        """
+        Titel für das Bürgerportal: bei Eingaben aus der Einwohnerschaft und Bauanträgen ohne Hausnummer (#1269).
+
+        Entscheidet nach Art und Titel; hat die Seite die gründlichere Prüfung ``ortsschutz.grund`` schon gemacht (Amt,
+        verbundene Vorgänge), legt sie das Ergebnis als ``_ortsschutz`` am Objekt ab.
+        """
+        from insight_core.services.ortsschutz import oeffentlicher_titel
+
+        return oeffentlicher_titel(self.name, self.paper_type, getattr(self, "_ortsschutz", None))
+
 
 class OParlAgendaItem(SourceDeletionModel):
     """Ein Tagesordnungspunkt."""
@@ -1099,6 +1135,16 @@ class OParlAgendaItem(SourceDeletionModel):
         if self.number:
             return f"TOP {self.number}: {self.name or ''}"
         return self.name or f"TOP {self.id}"
+
+    @property
+    def titel_oeffentlich(self) -> str:
+        """
+        Name für das Bürgerportal ohne Hausnummer, wenn er eine Eingabe aus der Einwohnerschaft oder einen Bauantrag
+        nennt (#1269). Kennt die Seite die Vorgänge des Punkts, legt sie deren Ergebnis als ``_ortsschutz`` ab.
+        """
+        from insight_core.services.ortsschutz import oeffentlicher_titel
+
+        return oeffentlicher_titel(self.name, None, getattr(self, "_ortsschutz", None))
 
     def get_papers(self):
         """Liefert alle Papers/Vorgänge, die mit diesem TOP verknüpft sind."""
@@ -1912,11 +1958,17 @@ class PaperLocation(models.Model):
     STATUS_AUTO = "auto"
     STATUS_CONFIRMED = "confirmed"
     STATUS_REMOVED = "removed"
+    #: Adresspunkt einer Privatanschrift, den ``adresspunkte_zurueckstufen`` nicht auf eine Straße zurückstufen konnte
+    #: (Straße unbekannt oder dort schon ein Ort des Vorgangs, Issue #1269): öffentlich unsichtbar, nichts gelöscht
+    STATUS_HIDDEN = "hidden"
     STATUS_CHOICES = [
         (STATUS_AUTO, "Automatisch"),
         (STATUS_CONFIRMED, "Bestätigt"),
         (STATUS_REMOVED, "Entfernt"),
+        (STATUS_HIDDEN, "Ausgeblendet (Datenschutz)"),
     ]
+    #: Status, die Karte, Umkreissuche und Vorgangsseite nicht zeigen
+    STATUS_UNSICHTBAR = (STATUS_REMOVED, STATUS_HIDDEN)
 
     paper = models.ForeignKey(
         OParlPaper,
@@ -1956,6 +2008,9 @@ class PaperLocation(models.Model):
         max_length=300, blank=True, default="", db_default="", verbose_name="Begründung der KI"
     )
     ki_geprueft_am = models.DateTimeField(blank=True, null=True, verbose_name="KI-geprüft am")
+    #: Angaben vor der Rückstufung eines Adresspunkts (``adresspunkte_zurueckstufen``, Issue #1269): Punkt, Name,
+    #: Herkunft, Konfidenz und Status; ``--rueckgaengig`` stellt sie wieder her
+    vorher = models.JSONField(blank=True, null=True, verbose_name="Vor der Rückstufung")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -2322,6 +2377,40 @@ class TileCache(models.Model):
                     tiles.append((z, x, y))
 
         return tiles
+
+
+class SitemapAufteilung(models.Model):
+    """
+    Vorberechnete Aufteilung der Sitemap einer Kommune in nummerierte Dateien, je Art (Issue #1259).
+
+    Je Datei Seite, Zahl der Einträge und jüngste glaubhafte Änderung (``services/sitemaps.py``). Der Zeitplan
+    ``sitemap_aufteilen`` rechnet sie im Worker, der Sitemap-Index liest nur diese Werte und antwortet so auch ohne
+    Cache schnell. Abgeleitete Daten: Fehlt eine Zeile, rechnet der nächste Lauf sie neu. Nur Django kennt die Tabelle.
+
+    Die Kommune steht als Kennung, nicht als Fremdschlüssel: Auf den RIS-Bestand zeigt nichts mit ``CASCADE``
+    (``docs/adr/20260929-fremdschluessel-ris-bestand.md``), und abgeleitete Werte dürfen das Löschen einer Kommune nicht
+    aufhalten. Zeilen von Kommunen, die nicht mehr gelistet sind, entfernt der Zeitplan.
+    """
+
+    body_id = models.UUIDField("Kommune")
+    #: Kennung der Art aus ``services.sitemaps.ARTEN`` („vorgaenge“, „sitzungen“)
+    art = models.CharField("Art", max_length=20)
+    #: Dateigröße der Aufteilung; gilt nur, solange sie ``EINTRAEGE_JE_DATEI`` entspricht
+    eintraege_je_datei = models.PositiveIntegerField("Einträge je Datei")
+    #: Je Datei ``[seite, anzahl, lastmod]``, ``lastmod`` in ISO 8601 oder ``null``
+    dateien = models.JSONField("Dateien", default=list, blank=True)
+    berechnet_am = models.DateTimeField("Berechnet am")
+
+    class Meta:
+        db_table = "insight_sitemap_aufteilung"
+        verbose_name = "Sitemap-Aufteilung"
+        verbose_name_plural = "Sitemap-Aufteilungen"
+        constraints = [
+            models.UniqueConstraint(fields=["body_id", "art"], name="sitemap_aufteilung_je_kommune_und_art"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Sitemap {self.art} ({self.body_id})"
 
 
 # =============================================================================
@@ -2780,13 +2869,21 @@ class DigestLog(models.Model):
 class PageFeedback(models.Model):
     """Rückmeldung „War diese Seite hilfreich?“ am Seitenende des Bürgerportals.
 
-    Gespeichert werden nur Antwort, optionaler Satz, Seitentyp, Pfad, Kommune und der Tag – keine
-    IP-Adresse, keine Uhrzeit, kein Cookie. Gegen Massenabgaben zählt ``throttle`` grob je Adresse
-    im Cache. „Anonym“ sagen wir trotzdem nicht: Die Zugriffsprotokolle des Webservers halten wie bei jedem
-    Aufruf Adresse, Zeit und Seite fest, und der Satz kann Personenbezug enthalten. Nach ``services.page_feedback.RETENTION_DAYS`` löscht ein täglicher Auftrag die Einträge.
+    Gespeichert werden nur Antwort, optionaler Satz mit seiner Art (Fehler, Idee, Kommune vorschlagen; Issue #1261),
+    Seitentyp, Pfad, Kommune und der Tag – keine IP-Adresse, keine Uhrzeit, kein Cookie, keine E-Mail-Adresse.
+    Gegen Massenabgaben zählt ``throttle`` grob je Adresse im Cache. „Anonym“ sagen wir trotzdem nicht: Die
+    Zugriffsprotokolle des Webservers halten wie bei jedem Aufruf Adresse, Zeit und Seite fest, und der Satz kann
+    Personenbezug enthalten. Nach ``services.page_feedback.RETENTION_DAYS`` löscht ein täglicher Auftrag die Einträge.
     """
 
     COMMENT_MAX_LENGTH = 500
+
+    class Kind(models.TextChoices):
+        """Art des Satzes nach „Nein“ (Issue #1261); leer bei „Ja“ oder ohne Auswahl."""
+
+        FEHLER = "fehler", "Fehler"
+        IDEE = "idee", "Idee"
+        KOMMUNE = "kommune", "Kommune vorschlagen"
 
     body = models.ForeignKey(
         OParlBody,
@@ -2800,6 +2897,9 @@ class PageFeedback(models.Model):
     path = models.CharField(max_length=255, blank=True, default="", verbose_name="Seite")
     helpful = models.BooleanField(verbose_name="Hilfreich")
     comment = models.TextField(max_length=COMMENT_MAX_LENGTH, blank=True, default="", verbose_name="Ergänzung")
+    kind = models.CharField(
+        max_length=20, choices=Kind.choices, blank=True, default="", db_default="", verbose_name="Art"
+    )
     created_on = models.DateField(auto_now_add=True, db_index=True, verbose_name="Tag")
 
     class Meta:

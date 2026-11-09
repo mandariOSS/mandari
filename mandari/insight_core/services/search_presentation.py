@@ -12,6 +12,9 @@ eine Sitzung mit ihren Unterlagen oder einen einzelnen Treffer. Hier wird daraus
 * **Ausschnitt** ohne Steuer- und Symbolschriftzeichen und ohne offene Silbentrennung; gesäubert wird der
   Rohtext **vor** ``_safe_highlight``, denn das nutzt ``\\x00`` als Platzhalter für die Markierung.
 * **Dokumentname** statt technischem Dateinamen („V-0169-2016-Anlage-2-Begruendung“ → „Anlage 2 – Begründung“).
+* **Ohne Hausnummer** im Bürgerportal: Titel, Ausschnitt und Dokumentnamen von Eingaben aus der Einwohnerschaft und
+  Bauanträgen (``ortsschutz``, Issue #1269), in der Trefferliste und in der Kopfzeilen-Vorschau
+  (``vorschau_ohne_hausnummer``); der Ausschnitt verliert dabei seine Markierung.
 """
 
 from __future__ import annotations
@@ -289,17 +292,90 @@ def insight_link(kind: str, pk: Any) -> str:
 
 
 def present_groups(
-    groups: list[dict[str, Any]], body_slug: str = "", links: Links | None = None
+    groups: list[dict[str, Any]], body_slug: str = "", links: Links | None = None, *, oeffentlich: bool = True
 ) -> list[dict[str, Any]]:
     """Gruppen des Suchdienstes als Treffer der Liste; ein Datenbankzugriff für alle Stand-Sätze.
 
     ``links`` bildet Art und Kennung auf die Adresse ab; ohne Angabe die Seiten des Bürgerportals, Work übergibt seine
     eigenen (Issue #853). Jeder Treffer nennt zusätzlich ``pk`` (Kennung des Vorgangs, der Sitzung …) und ``gremien``
-    (Gremien laut Index), damit Aufrufer ihn zuordnen können.
+    (Gremien laut Index), damit Aufrufer ihn zuordnen können. ``oeffentlich`` (Bürgerportal) lässt Hausnummern bei
+    Eingaben aus der Einwohnerschaft und Bauanträgen aus (Issue #1269); Work zeigt den vollen Titel.
     """
     paper_ids = [str(g["paper"]["id"]) for g in groups if g.get("paper")]
     statuses = statuses_for_papers(paper_ids)
-    return [_present(group, statuses, body_slug, links or insight_link) for group in groups]
+    eintraege = [_present(group, statuses, body_slug, links or insight_link) for group in groups]
+    if oeffentlich:
+        for group, entry in zip(groups, eintraege, strict=True):
+            _ohne_hausnummer(group, entry)
+    return eintraege
+
+
+def _ohne_nr(text: Any) -> str:
+    """Klartext ohne Hausnummer: Markierung und Maskierung weg, Hausnummern aus; beim Ausgeben wieder maskieren."""
+    from html import unescape
+
+    from django.utils.html import strip_tags
+
+    from .ortsschutz import hausnummern_auslassen
+
+    return hausnummern_auslassen(clean_snippet(unescape(strip_tags(str(text or "")))))
+
+
+def _ohne_hausnummer(group: dict[str, Any], entry: dict[str, Any]) -> None:
+    """Treffer eines Vorgangs aus der Einwohnerschaft oder der Bauordnung ohne Hausnummer (Issue #1269)."""
+    from .ortsschutz import grund_nach_art, hausnummern_auslassen
+
+    paper = group.get("paper")
+    if not paper or not grund_nach_art(paper.get("paper_type"), paper.get("name")):
+        return
+    entry["title"] = escape(_ohne_nr(paper.get("name")) or str(paper.get("reference") or "Vorgang"))
+    if entry.get("snippet"):
+        entry["snippet"] = escape(_ohne_nr(entry["snippet"]))
+    for dokument in [entry.get("fundstelle"), *entry.get("others", [])]:
+        if dokument:
+            dokument["label"] = hausnummern_auslassen(dokument["label"])
+
+
+def vorschau_ohne_hausnummer(hits: list[dict[str, Any]], results: list[dict[str, Any]]) -> None:
+    """
+    Kopfzeilen-Vorschau der Suche (``format_search_result``) ohne Hausnummer, wie ``present_groups`` (Issue #1269).
+
+    Vorgänge entscheiden nach Art und Titel aus dem Index. Dokumente tragen dort nur den Titel ihres Vorgangs; dessen
+    Art kommt aus einer Abfrage für alle Dokument-Treffer der Vorschau, dazu zählt der eigene Name. Titel, Ausschnitt,
+    Vorschautext und Unterzeile verlieren die Hausnummer, der Ausschnitt dabei seine Markierung.
+    """
+    from ..models import OParlPaper
+    from .ortsschutz import grund_nach_art, hausnummern_auslassen
+
+    kennungen = {
+        str(hit.get("paper_id")) for hit in hits if hit.get("type") == "file" and _is_uuid(hit.get("paper_id"))
+    }
+    vorgaenge: dict[str, tuple[str | None, str | None]] = {}
+    if kennungen:
+        vorgaenge = {
+            str(pk): (art, name)
+            for pk, art, name in OParlPaper.objects.filter(pk__in=[uuid.UUID(k) for k in kennungen]).values_list(
+                "pk", "paper_type", "name"
+            )
+        }
+    for hit, result in zip(hits, results, strict=True):
+        if hit.get("type") == "paper":
+            schutz = grund_nach_art(hit.get("paper_type"), hit.get("name"))
+            name, ersatz = hit.get("name") or hit.get("reference"), "Vorgang"
+        elif hit.get("type") == "file":
+            art, vorgang = vorgaenge.get(str(hit.get("paper_id")), (None, hit.get("paper_name")))
+            name, ersatz = hit.get("name") or hit.get("file_name"), "Datei"
+            schutz = grund_nach_art(art, vorgang) or grund_nach_art(None, name)
+        else:
+            continue
+        if not schutz:
+            continue
+        result["title"] = escape(_ohne_nr(name) or ersatz)
+        for feld in ("highlight", "text_preview"):
+            if result.get(feld):
+                result[feld] = escape(_ohne_nr(result[feld]))
+        if result.get("subtitle"):
+            result["subtitle"] = hausnummern_auslassen(str(result["subtitle"]))
 
 
 def _present(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str, links: Links) -> dict[str, Any]:
@@ -344,9 +420,14 @@ def _present_entry(group: dict[str, Any], statuses: Mapping[str, Any], body_slug
             "gremien": _gremien(paper, main_file),
             "url": links("vorgang", paper.get("id")),
             "title": _title(paper, str(paper.get("reference") or "Vorgang")),
+            # Titel und Art laut Index für den Titel ohne Absender im Bürgerportal (fraktionskuerzel, Issue #1272)
+            "titel_roh": clean_snippet(str(paper.get("name") or "")),
+            "art_roh": str(paper.get("paper_type") or ""),
             "context": [part for part in context if part],
             "status": getattr(status, "text", "") or "Noch keine Beratung bekannt.",
             "status_kind": getattr(status, "kind", ""),
+            # Ergebnis-Etikett zum Stand-Satz (Issue #1260), nur Begriffe des festen Vokabulars
+            "ergebnis": getattr(status, "etikett", None),
             "snippet": snippet or _snippet(paper, "file_contents_preview"),
             "fundstelle": fundstelle,
             "others": others,

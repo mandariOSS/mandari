@@ -1,0 +1,85 @@
+{
+  "title": "Sitzung des Fachausschusses für Sport und Bildung",
+  "committee": [
+    "au",
+    1000013,
+    "Fachausschuss für Sport und Bildung"
+  ],
+  "date": "2025-11-03",
+  "time_start": "18:00",
+  "time_end": "19:42",
+  "room": "Großer Sitzungssaal, 1.Stock",
+  "address": "Wentorfer Straße 38, 21029 Hamburg",
+  "rows": [
+    {
+      "tolfdnr": 1033130,
+      "number": "1",
+      "title": "Öffentliche Fragestunde",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1033131,
+      "number": "2",
+      "title": "Beschluss über die Tagesordnung",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1033217,
+      "number": "3",
+      "title": "Förderung und Unterstützung von Schülerinnen und Schülern mit Schwierigkeiten oder besonderen Schwierigkeiten im Lesen, Rechtschreiben oder Rechnen (Referentinnen der Behörde für Schule, Familie und Berufsbildung)",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1033141,
+      "number": "4",
+      "title": "Anhebung der Pauschalen für die Pflege und Unterhaltung von unüberdachten Sportflächen und Umkleidehäusern II (Verfasserin: CDU-Fraktion Verfasserin 2: SPD-Fraktion)",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1008999,
+      "paper_reference": "22-0285.03"
+    },
+    {
+      "tolfdnr": 1033140,
+      "number": "5",
+      "title": "Sport- und Bewegungspark Ladenbeker Furtweg, Bergedorf-West",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1009020,
+      "paper_reference": "22-0485"
+    },
+    {
+      "tolfdnr": 1033133,
+      "number": "6",
+      "title": "Verschiedenes",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1033132,
+      "number": "7",
+      "title": "Genehmigung der Niederschrift der Sitzung vom 08.09.2025, öffentlicher Teil",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    }
+  ]
+}

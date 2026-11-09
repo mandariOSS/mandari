@@ -3,10 +3,11 @@
 Rückmeldung am Seitenende des Bürgerportals: „War diese Seite hilfreich? Ja / Nein“.
 
 Statt A/B-Tests und Messung im Browser fragen wir auf jeder Seite schlicht nach. Gespeichert werden
-Antwort, optional ein Satz (höchstens 500 Zeichen), Seitentyp, Pfad, Kommune und der Tag. Nicht
-gespeichert werden IP-Adresse, Uhrzeit, Browserdaten oder eine Kennung; die Rückmeldung setzt kein
-Cookie. Gegen Massenabgaben zählt ``throttle`` grob je Adresse im Cache (gehasht, eine Stunde).
-Spamschutz: verstecktes Feld (Honeypot) wie bei den Bürgerfragen. Der Hinweis im Formular verspricht
+Antwort, optional ein Satz (höchstens 500 Zeichen), nach „Nein“ dessen Art (Fehler, Idee, Kommune vorschlagen;
+Issue #1261), Seitentyp, Pfad, Kommune und der Tag. Nicht gespeichert werden IP-Adresse, Uhrzeit, Browserdaten,
+E-Mail-Adresse oder eine Kennung; die Rückmeldung setzt kein Cookie. Gegen Massenabgaben zählt ``throttle`` grob je
+Adresse im Cache (gehasht, eine Stunde). Spamschutz: verstecktes Feld (Honeypot) wie bei den Bürgerfragen; ein Satz
+mit mehr als ``MAX_LINKS`` Links gilt als Werbung und wird still verworfen. Der Hinweis im Formular verspricht
 deshalb keine Anonymität, sondern nennt, was die Rückmeldung speichert; die Zugriffsprotokolle des
 Webservers und ein frei eingegebener Satz können Personenbezug haben (Datenschutzerklärung, Abschnitt
 „Rückmeldung zu Seiten im Portal Insight“).
@@ -26,7 +27,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from django.conf import settings
 from django.core import signing
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Case, Count, Q, QuerySet, Value, When
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -50,6 +51,7 @@ PAGE_TYPES: Final[dict[str, str]] = {
     "person_list": "Personen",
     "person_detail": "Person",
     "decision_list": "Beschlüsse",
+    "decision_tracking": "Umsetzung der Beschlüsse",
     "decision_detail": "Beschluss",
     "question_portal": "Ratsfragen",
     "question_detail": "Ratsfrage",
@@ -60,6 +62,7 @@ PAGE_TYPES: Final[dict[str, str]] = {
     "chat": "KI-Assistent",
     "saved": "Gespeichert",
     "notifications": "Benachrichtigungen",
+    "neuigkeiten": "Was ist neu?",
 }
 
 #: Aufbewahrung in Tagen (zwölf Monate), überschreibbar mit ``INSIGHT_FEEDBACK_RETENTION_DAYS``
@@ -69,6 +72,9 @@ TOKEN_MAX_AGE: Final = 60 * 60
 _SALT: Final = "insight.page_feedback"
 _PATH_RE: Final = re.compile(r"^/[A-Za-z0-9/_\-.~%]{0,254}$")
 _CONTROL_RE: Final = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+#: Mehr Links als das in einem Satz: Werbung, keine Rückmeldung (still verworfen wie beim Honeypot)
+MAX_LINKS: Final = 2
+_LINK_RE: Final = re.compile(r"https?://|www\.", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -106,6 +112,11 @@ def clean_comment(text: str | None) -> str:
     return "\n".join(" ".join(line.split()) for line in value.strip().splitlines()).strip()
 
 
+def looks_like_spam(text: str | None) -> bool:
+    """Satz mit auffällig vielen Links (mehr als ``MAX_LINKS``)? Dann speichern wir ihn nicht."""
+    return len(_LINK_RE.findall(str(text or ""))) > MAX_LINKS
+
+
 def rate_limited(request: HttpRequest) -> bool:
     """Zu viele Rückmeldungen von dieser Adresse in der letzten Stunde? (zählt mit)"""
     return throttle.hit(
@@ -139,8 +150,11 @@ def token_for(feedback: PageFeedback) -> str:
     return signing.dumps(feedback.pk, salt=_SALT)
 
 
-def add_comment(token: str, comment: str) -> bool:
-    """Satz an die Antwort hängen; einmalig, nur mit gültigem Zeichen. ``True``, wenn gespeichert."""
+def add_comment(token: str, comment: str, kind: str = "") -> bool:
+    """Satz (und seine Art) an die Antwort hängen; einmalig, nur mit gültigem Zeichen. ``True``, wenn gespeichert.
+
+    Die Art gibt es nur zu „Nein“ (Issue #1261): Bei „Ja“ oder einem unbekannten Wert bleibt sie leer.
+    """
     from ..models import PageFeedback
 
     try:
@@ -150,7 +164,13 @@ def add_comment(token: str, comment: str) -> bool:
     text = clean_comment(comment)[: PageFeedback.COMMENT_MAX_LENGTH]
     if not text or not isinstance(pk, int):
         return False
-    return PageFeedback.objects.filter(pk=pk, comment="").update(comment=text) == 1
+    art = Value(kind if kind in PageFeedback.Kind.values else "")
+    return (
+        PageFeedback.objects.filter(pk=pk, comment="").update(
+            comment=text, kind=Case(When(helpful=False, then=art), default=Value(""))
+        )
+        == 1
+    )
 
 
 def retention_days() -> int:

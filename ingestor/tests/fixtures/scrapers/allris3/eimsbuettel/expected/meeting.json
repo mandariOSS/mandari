@@ -1,0 +1,145 @@
+{
+  "title": "Sitzung des Kerngebietsausschusses",
+  "committee": [
+    "au",
+    219,
+    "Kerngebietsausschuss"
+  ],
+  "date": "2025-11-03",
+  "time_start": "18:00",
+  "time_end": "18:46",
+  "room": "Ferdinand-Streb-Saal (Raum 1275), 12.Stock",
+  "address": "Grindelberg 62-66, 20144 Hamburg",
+  "rows": [
+    {
+      "tolfdnr": 1037962,
+      "number": "1",
+      "title": "Allgemeine Geschäftsordnungsangelegenheiten / Festlegung der Stimmberechtigungen",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1037963,
+      "number": "2",
+      "title": "Genehmigung der Niederschrift",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1037964,
+      "number": "3",
+      "title": "Fragestunde im Kerngebietsausschuss",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1037965,
+      "number": "4",
+      "title": "Mitteilungen der/des Vorsitzenden",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1037966,
+      "number": "5",
+      "title": "Mitteilungen der Verwaltung",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1038040,
+      "number": "5.1",
+      "title": "Info über Reparatur des Spielhügels und die Revitalisierung Spielplatz Kottwitzstraße",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1011026,
+      "paper_reference": "22-1537"
+    },
+    {
+      "tolfdnr": 1038045,
+      "number": "5.2",
+      "title": "Temporäre Querungsmöglichkeit für den Wiesingerweg schaffen - Drs. 21-4658, BV-Beschluss vom 25.04.2025 -",
+      "public": true,
+      "decision": "zur Kenntnis genommen",
+      "detail": true,
+      "volfdnr": 1011030,
+      "paper_reference": "22-1541"
+    },
+    {
+      "tolfdnr": 1037967,
+      "number": "6",
+      "title": "Anträge",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    },
+    {
+      "tolfdnr": 1037999,
+      "number": "6.1",
+      "title": "Eine Gedenktafel für Carl von Ossietzky in der Grindelallee",
+      "public": true,
+      "decision": "zurückgestellt",
+      "detail": true,
+      "volfdnr": 1010872,
+      "paper_reference": "22-1383"
+    },
+    {
+      "tolfdnr": 1037998,
+      "number": "6.2",
+      "title": "Wegebeleuchtung im Alstervorland endlich wieder leuchten lassen",
+      "public": true,
+      "decision": "zurückgezogen",
+      "detail": true,
+      "volfdnr": 1010967,
+      "paper_reference": "22-1478"
+    },
+    {
+      "tolfdnr": 1038053,
+      "number": "6.2.1",
+      "title": "Änderungsantrag zu Drucksache 22-1478: \"Wegebeleuchtung im Alstervorland endlich wieder leuchten lassen\"",
+      "public": true,
+      "decision": "beschlossen",
+      "detail": true,
+      "volfdnr": 1011052,
+      "paper_reference": "22-1563"
+    },
+    {
+      "tolfdnr": 1038042,
+      "number": "6.3",
+      "title": "Sondermittel für das Eimsbütteler Adventssingen 2025",
+      "public": true,
+      "decision": "beschlossen",
+      "detail": true,
+      "volfdnr": 1011028,
+      "paper_reference": "22-1539"
+    },
+    {
+      "tolfdnr": 1037968,
+      "number": "7",
+      "title": "Verschiedenes",
+      "public": true,
+      "decision": null,
+      "detail": true,
+      "volfdnr": null,
+      "paper_reference": null
+    }
+  ]
+}

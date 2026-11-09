@@ -6,6 +6,8 @@ Dokumentzeile im Bürgerportal (Vorgang, Sitzung): Name, Art und Größe, dazu d
   Herunterladen – Datei über den Dateiabruf des Portals.
   <ul><c-insight.document-row :file="file" meta="Rat · A-S/0011/2009" /></ul>
 Parameter: file (OParlFile), meta (Zeile unter dem Titel der Dokumentansicht).
+Über den Dateiabruf von Insight bekommt die Dokumentansicht auch das Original im Ratsinformationssystem mit
+(data-doc-quelle, Filter dokument_im_ris, Issue #1259); sie verlinkt es, wo eine Adresse bekannt ist.
 Text: nur file.text_anfang (Anfang des Texts) und file.text_gekuerzt aus hub.ris.selectors.with_text_start, nie
 file.text_content: Der Volltext kann Millionen Zeichen lang sein und würde sonst je Datei nachgeladen.
 Steht „nicht barrierefrei“ im Namen, kommt „Text“ zuerst: Der ausgelesene Text ist dann die zugängliche Fassung.
@@ -18,6 +20,7 @@ titel: Name der Datei (sonst aus file.name/file_name). ansehen/herunterladen: ei
 übergebenen Aktionen. Größe auch aus file_size. dicht: Arbeitsfläche (Zeile und Aktionen 32 px statt 44 px).
 {% endcomment %}
 <c-vars file="" meta="" titel="" ansehen="" herunterladen="" dicht="" />
+{% load insight_listen %}
 {% url 'insight_core:insight:file_proxy' file.id as abruf %}
 {% partialdef text-button %}
 <button type="button" @click="toggle()" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false"
@@ -29,8 +32,8 @@ titel: Name der Datei (sonst aus file.name/file_name). ansehen/herunterladen: ei
 {% endpartialdef %}
 {% partialdef ansehen-button %}
 <button type="button"
-        data-doc-url="{{ ansehen_url }}" data-doc-name="{{ name }}" data-doc-meta="{{ meta }}"
-        @click="openDoc($el.dataset.docUrl, $el.dataset.docName, $el.dataset.docMeta)"
+        data-doc-url="{{ ansehen_url }}" data-doc-name="{{ name }}" data-doc-meta="{{ meta }}"{% if quelle %} data-doc-quelle="{{ quelle }}"{% endif %}
+        @click="openDoc($el.dataset.docUrl, $el.dataset.docName, $el.dataset.docMeta, $el.dataset.docQuelle)"
         class="inline-flex items-center gap-1.5 {% if dicht %}min-h-8{% else %}min-h-11{% endif %} px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
     <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>Ansehen<span class="sr-only">: {{ name }}</span>
 </button>
@@ -57,8 +60,8 @@ titel: Name der Datei (sonst aus file.name/file_name). ansehen/herunterladen: ei
         </div>
         <div class="flex flex-wrap items-center gap-x-1 -ml-2 sm:ml-0 text-sm font-medium">
             {% if file.text_anfang.strip and "nicht barrierefrei" in name|lower %}{% partial text-button %}{% endif %}
-            {% if ansehen %}{% with ansehen_url=ansehen %}{% partial ansehen-button %}{% endwith %}
-            {% elif not herunterladen and file.download_url or not herunterladen and file.access_url %}{% with ansehen_url=abruf %}{% partial ansehen-button %}{% endwith %}{% endif %}
+            {% if ansehen %}{% with ansehen_url=ansehen quelle="" %}{% partial ansehen-button %}{% endwith %}
+            {% elif not herunterladen and file.download_url or not herunterladen and file.access_url %}{% with ansehen_url=abruf quelle=file|dokument_im_ris %}{% partial ansehen-button %}{% endwith %}{% endif %}
             {% if file.text_anfang.strip and "nicht barrierefrei" not in name|lower %}{% partial text-button %}{% endif %}
             {% if herunterladen %}{% with herunterladen_url=herunterladen %}{% partial herunterladen-link %}{% endwith %}
             {% elif not ansehen and file.download_url or not ansehen and file.access_url %}{% with herunterladen_url=abruf|add:"?download=1" %}{% partial herunterladen-link %}{% endwith %}{% endif %}

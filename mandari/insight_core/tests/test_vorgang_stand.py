@@ -425,7 +425,8 @@ class TestVorgangsseite:
     def test_stand_zeitstrahl_und_dokumente(self, vorgang: OParlPaper) -> None:
         seite = Client().get(f"/insight/vorgaenge/{vorgang.id}/").content.decode()
         assert "Am 06.12.2011 in der Bezirksvertretung Mitte zur Kenntnis genommen." in seite
-        assert seite.index("Dokumente") < seite.index("Beratungsverlauf")
+        # Der Verlauf steht vor den Dokumenten (Issue #1273, Gestaltung des Vorgangs als Weg der Sache)
+        assert seite.index('id="verlauf-titel"') < seite.index('id="dokumente-titel"')
         assert "zuletzt" in seite and "TOP 5.1, Entscheidung." in seite
         assert "Herunterladen" in seite and "?download=1" in seite
         assert "Die Verwaltung nimmt wie folgt Stellung." in seite
@@ -437,7 +438,7 @@ class TestVorgangsseite:
         vorgang.consultations.all().delete()
         seite = Client().get(f"/insight/vorgaenge/{vorgang.id}/").content.decode()
         assert "Noch keine Beratung bekannt." in seite
-        assert "Beratungsverlauf" not in seite
+        assert 'id="verlauf-titel"' not in seite
 
     def test_gremium_mit_komma_aus_der_sitzung(self, vorgang: OParlPaper) -> None:
         from insight_core.models import OParlOrganization

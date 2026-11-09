@@ -1,0 +1,369 @@
+{
+  "name": "Fraktion Bündnis 90/DIE GRÜNEN",
+  "members": [
+    {
+      "kplfdnr": 1000510,
+      "name": "Daniela Clément",
+      "role": "Fraktionsvorsitzende/r",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1425,
+      "name": "Thorsten Schmidt",
+      "role": "Fraktionsvorsitzende/r",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000538,
+      "name": "Nergis Zarifi",
+      "role": "Stellvertr. Fraktionsvorsitz",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000214,
+      "name": "Marcel Bulawa",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000440,
+      "name": "Katharina Fischer-Zernin",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000458,
+      "name": "Sidney Luna Gregor-Wielan",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000307,
+      "name": "Nadja Grichisch",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000247,
+      "name": "Katrin Ulrike Hofmann",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000088,
+      "name": "Dr. Anıl Kaputanoğlu",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1777,
+      "name": "Timo Kranz",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000507,
+      "name": "Azra Kültür",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000215,
+      "name": "Isabel Permien",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000091,
+      "name": "Angelina Platz",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1447,
+      "name": "Carsten Redlich",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 645,
+      "name": "Christoph Reiffert",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000634,
+      "name": "Lilian Adlung-Schönheit",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000636,
+      "name": "Janis Altherr",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000306,
+      "name": "Martin Bender",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000684,
+      "name": "Michael Bideller",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000688,
+      "name": "Helene Bosmann",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000531,
+      "name": "Ralph Carstens",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000393,
+      "name": "Dr. Simone Dietz",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 640,
+      "name": "Kai Elmendorf",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000136,
+      "name": "Birgit Elster",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000629,
+      "name": "Dörte Feiß",
+      "role": "Fraktionsmitglied",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000638,
+      "name": "Moritz Fiedel",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000683,
+      "name": "Wiebke Frerichs",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000515,
+      "name": "Julia Hauck",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000318,
+      "name": "Sibylle Helms",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000639,
+      "name": "Heidrun Jenkner",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000696,
+      "name": "Thomas Kehrer",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000630,
+      "name": "Stephanie König",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000519,
+      "name": "Tonja Körner-Uhlmann",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000429,
+      "name": "Nicole Leßner",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000469,
+      "name": "Lino Mai",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000633,
+      "name": "Max Mauk",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000628,
+      "name": "Stefan Mielchen",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000632,
+      "name": "Dmitrii Milovanov",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000627,
+      "name": "Holger Mossakowski",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000637,
+      "name": "Janine Riesle",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1153,
+      "name": "Michael Schilf",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000169,
+      "name": "Tanja Schmedt auf der Günne",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000530,
+      "name": "Jonas Felix Schultz",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000413,
+      "name": "Daniela Schulz",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1829,
+      "name": "Beate Seelis",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000650,
+      "name": "Richard Spengler",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000319,
+      "name": "Julia Stier",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000380,
+      "name": "Nikola Stojcevic",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000496,
+      "name": "Andreas Unger",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000309,
+      "name": "Daniela Wachter",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": 1000685,
+      "name": "Malte Zietz",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    },
+    {
+      "kplfdnr": null,
+      "name": "N. N.",
+      "role": "zubenannte/r Bürger/in",
+      "faction": "GRÜNE-Fraktion",
+      "voting_right": true
+    }
+  ]
+}

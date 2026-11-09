@@ -10,8 +10,10 @@ weil das bisherige Erscheinungsbild (``work/organization/parties.html``) sie dor
 from typing import Any
 
 from django.contrib import messages
+from django.http import HttpRequest
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
@@ -134,10 +136,24 @@ class AdministrationContactListView(_KontakteMixin, NeueVorlageMixin, WorkViewMi
 
     def get(self, request, *args, **kwargs):
         if not self.neue_ansicht():
-            ziel = reverse("work:council_parties", kwargs={"org_slug": self.organization.slug})
-            abfrage = request.GET.urlencode()
-            return redirect(f"{ziel}?{abfrage}" if abfrage else ziel)
+            return redirect(self._seite_der_ratsfraktionen(request))
         return super().get(request, *args, **kwargs)
+
+    def _seite_der_ratsfraktionen(self, request: HttpRequest) -> str:
+        """
+        Seite der Ratsfraktionen mit der Abfrage dieser Anfrage (etwa ``?ansicht=bisher``). Das Ziel ist immer eine
+        benannte Route; die Abfrage kommt nur dazu, solange das Ergebnis ein relatives Ziel auf dem eigenen Host bleibt.
+        """
+        ziel = reverse("work:council_parties", kwargs={"org_slug": self.organization.slug})
+        abfrage = request.GET.urlencode()
+        if not abfrage:
+            return ziel
+        mit_abfrage = f"{ziel}?{abfrage}"
+        if url_has_allowed_host_and_scheme(
+            mit_abfrage, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        ):
+            return mit_abfrage
+        return ziel
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

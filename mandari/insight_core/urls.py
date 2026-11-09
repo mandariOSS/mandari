@@ -55,17 +55,27 @@ insight_patterns = [
         {"liste": "person_list"},
         name="portal_person_list",
     ),
+    path(
+        "k/<slug:slug>/beschluesse/",
+        listenseite(views.portal_list),
+        {"liste": "decision_list"},
+        name="portal_decision_list",
+    ),
     path("k/<slug:slug>/<path:rest>", views.portal_entry, name="portal_entry_path"),
     # Gremien (Organizations)
     path("gremien/", listenseite(views.OrganizationListView.as_view()), name="organization_list"),
     path("gremien/<uuid:pk>/", views.OrganizationDetailView.as_view(), name="organization_detail"),
+    path("gremien/<uuid:pk>/feed.atom", ohne_index(views.organization_feed), name="organization_feed"),
     # Personen
     path("personen/", listenseite(views.PersonListView.as_view()), name="person_list"),
     path("personen/<uuid:pk>/", views.PersonDetailView.as_view(), name="person_detail"),
     path("personen/<uuid:pk>/frage-stellen/", views.AskQuestionView.as_view(), name="ask_question"),
     # Öffentliche Fragen (Ratsfragen-Portal)
-    # Öffentliches Beschluss-Tracking „Was wurde aus …?“ (Issue #48)
+    # Beschlüsse als Liste der Entscheidungen (Issue #1270), die Umsetzung „Was wurde aus …?“ als Reiter (Issue #48)
     path("beschluesse/", listenseite(views.DecisionListView.as_view()), name="decision_list"),
+    path("beschluesse/umsetzung/", listenseite(views.DecisionTrackingView.as_view()), name="decision_tracking"),
+    # Feeds (Issue #1274, views/feeds.py): Atom je Auswahl, Vorgang und Gremium, noindex wie das Kalender-Abo
+    path("beschluesse/feed.atom", ohne_index(views.decision_feed), name="decision_feed"),
     path("beschluesse/<uuid:pk>/", views.DecisionDetailView.as_view(), name="decision_detail"),
     path("beschluesse/abo/bestaetigen/<uuid:token>/", views.confirm_decision_subscription, name="decision_confirm"),
     path("beschluesse/abo/abmelden/<uuid:token>/", views.unsubscribe_decision, name="decision_unsubscribe"),
@@ -77,7 +87,9 @@ insight_patterns = [
     path("fragen/<uuid:pk>/", views.QuestionDetailView.as_view(), name="question_detail"),
     # Vorgänge (Papers)
     path("vorgaenge/", listenseite(views.PaperListView.as_view()), name="paper_list"),
+    path("vorgaenge/feed.atom", ohne_index(views.paper_list_feed), name="paper_list_feed"),
     path("vorgaenge/<uuid:pk>/", views.PaperDetailView.as_view(), name="paper_detail"),
+    path("vorgaenge/<uuid:pk>/feed.atom", ohne_index(views.paper_feed), name="paper_feed"),
     path("vorgaenge/<uuid:pk>/zusammenfassung/", ohne_index(views.paper_summary), name="paper_summary"),
     path(
         "vorgaenge/<uuid:pk>/zusammenfassung/bewertung/",
@@ -90,6 +102,8 @@ insight_patterns = [
     path("termine/kalender.ics", ohne_index(views.calendar_feed), name="calendar_feed"),
     path("termine/jahresplan/", listenseite(views.MeetingYearPlanView.as_view()), name="meeting_year_plan"),
     path("termine/<uuid:pk>/", views.MeetingDetailView.as_view(), name="meeting_detail"),
+    # Kalenderdatei einer Sitzung („Termin speichern“, Issue #1274), dieselbe UID wie im Kalender-Abo
+    path("termine/<uuid:pk>/kalender.ics", ohne_index(views.meeting_ics), name="meeting_ics"),
     # Live-Seite einer Sitzung und Kinomodus (Issue #915): bewusst nicht verlinkt, noindex (setzen den
     # X-Robots-Tag selbst)
     path("termine/<uuid:pk>/live/", views.meeting_live, name="meeting_live"),
@@ -101,6 +115,9 @@ insight_patterns = [
     # Suche
     path("suche/", suchseite(views.SearchView.as_view()), name="search"),
     path("suche/partials/results/", ohne_index(views.search_results), name="search_results"),
+    path("suche/feed.atom", ohne_index(views.search_feed), name="search_feed"),
+    # Anleitung „Abonnieren“ mit der Adresse eines Feeds (?feed=<pfad>), noindex
+    path("abonnieren/", ohne_index(views.feed_hilfe), name="feed_hilfe"),
     # Karte
     path("karte/", listenseite(views.MapView.as_view()), name="map"),
     path("karte/partials/markers/", ohne_index(views.map_markers), name="map_markers"),
@@ -127,6 +144,10 @@ insight_patterns = [
     re_path(r"^(?P<name>[A-Za-z0-9-]{8,128})\.txt$", views.indexnow_schluessel, name="indexnow_schluessel"),
     # Rückmeldung am Seitenende („War diese Seite hilfreich?“)
     path("rueckmeldung/", ohne_index(views.page_feedback), name="page_feedback"),
+    # „Was ist neu?“: Neuigkeiten in Bürgersprache, verlinkt von der Versionsnummer im Fuß (Issue #1261)
+    path("neuigkeiten/", views.NeuigkeitenView.as_view(), name="neuigkeiten"),
+    # „Offene Daten“: OParl-Schnittstelle mit den Adressen je Kommune, verlinkt im Fuß und aus /oparl/ (Issue #1282)
+    path("offene-daten/", views.offene_daten, name="offene_daten"),
 ]
 
 # =============================================================================
