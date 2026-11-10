@@ -26,6 +26,9 @@ from insight_core.tests.conftest import CENTER_LAT, CENTER_LON
 pytestmark = pytest.mark.django_db
 
 TITEL = "Parkverbot vor Musterstraße 12a"
+#: Die Hausnummer als eigenes Wort. Die Seiten enthalten zufällige Kennungen in Adressen (UUID), in denen die
+#: Zeichenfolge „12a“ gelegentlich vorkommt; als Wort steht sie dort nie
+HAUSNUMMER = re.compile(r"\b12a\b")
 OHNE = f"Parkverbot vor Musterstraße {OHNE_NR}"
 
 
@@ -180,7 +183,7 @@ def test_suchvorschau_der_kopfzeile_ohne_hausnummer(
     monkeypatch.setattr("insight_core.services.search_service.get_search_service", lambda: _Vorschau(treffer))
     html = _aktiv(Client(), antrag.body).get("/insight/suche/partials/results/?q=Musterstra%C3%9Fe&dropdown=1")
     seite = html.content.decode()
-    assert OHNE in seite and "12a" not in seite
+    assert OHNE in seite and not HAUSNUMMER.search(seite)
     assert f"Schreiben Musterweg {OHNE_NR}" in seite and "Musterweg 3" not in seite
     # Andere Vorgänge behalten ihren Titel samt Hausnummer
     assert "Sanierung Musterstraße 12" in seite
@@ -260,7 +263,7 @@ def test_ki_zusammenfassung_nach_dem_erzeugen_ohne_hausnummer(antrag: OParlPaper
     antrag.summary = "Es geht um die Einfahrt Musterstraße 12a."
     antrag.save(update_fields=["summary"])
     html = Client().post(f"/insight/vorgaenge/{antrag.pk}/zusammenfassung/", HTTP_HX_REQUEST="true").content.decode()
-    assert f"Einfahrt Musterstraße {OHNE_NR}." in html and "12a" not in html
+    assert f"Einfahrt Musterstraße {OHNE_NR}." in html and not HAUSNUMMER.search(html)
 
 
 def test_umsetzungsstand_eines_buergerantrags_ohne_hausnummer(antrag: OParlPaper) -> None:
