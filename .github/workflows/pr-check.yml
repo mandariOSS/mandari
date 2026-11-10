@@ -95,6 +95,7 @@ jobs:
       audit: ${{ steps.ergebnis.outputs.audit }}
       docker: ${{ steps.ergebnis.outputs.docker }}
       kubernetes: ${{ steps.ergebnis.outputs.kubernetes }}
+      sicherung: ${{ steps.ergebnis.outputs.sicherung }}
       codeql: ${{ steps.ergebnis.outputs.codeql }}
     steps:
       # Pull Request und Merge-Queue: Die Queue vergleicht per git mit ihrem Basisstand (merge_group.base_sha),
@@ -310,6 +311,9 @@ jobs:
               - 'install-k8s.sh'
               - 'docker-compose.yml'
               - '**/Dockerfile'
+            # Backup-Stack mit der Wiederherstellung auf einen Zeitpunkt (Issue #1303)
+            sicherung:
+              - 'deploy/backup/**'
             codeql_python:
               - '**/*.py'
             codeql_js:
@@ -401,7 +405,7 @@ jobs:
               wert "$1"
             fi
           }
-          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl schnittstelle e2e ingestor audit docker kubernetes; do
+          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl schnittstelle e2e ingestor audit docker kubernetes sicherung; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -1657,6 +1661,37 @@ jobs:
           shellcheck -S error install-k8s.sh
 
   # ===========================================================================
+  # Sicherung: Wiederherstellung auf einen Zeitpunkt im Rundlauf (Issue #1303)
+  # ===========================================================================
+  # Der Backup-Stack aus deploy/backup gegen eine kleine Datenbank aus dem unveränderten
+  # PostgreSQL-Image und zwei lokale restic-Repositorys, ohne Zugriff auf echte Ablagen:
+  # Einrichtung der Datenbank ohne Neustart, WAL-Empfang, Basissicherung, Zeitpunkt-Probe mit
+  # zwei Markierungen (Befehl und Wiederherstellungstest), Aufbewahrung, Warnungen des Watchdogs.
+  # Ablauf: deploy/backup/tests/pitr-rundlauf.sh, Einzelprüfungen: deploy/backup/tests/pitr-einheiten.sh.
+  sicherung:
+    name: Sicherung (Zeitpunkt-Probe)
+    needs: changes
+    if: needs.changes.outputs.sicherung == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Shell-Skripte (Syntax, ShellCheck)
+        run: |
+          set -euo pipefail
+          for skript in deploy/backup/scripts/*.sh deploy/backup/tests/*.sh; do
+            bash -n "$skript"
+          done
+          shellcheck deploy/backup/scripts/*.sh deploy/backup/tests/*.sh
+
+      - name: Rundlauf mit Zeitpunkt-Probe
+        run: bash deploy/backup/tests/pitr-rundlauf.sh
+
+  # ===========================================================================
   # CodeQL (erweitertes Setup, nur für die betroffenen Sprachen)
   # ===========================================================================
   # Ersetzt das Default-Setup von GitHub, das jede Sprache in jedem Pull Request analysiert.
@@ -1721,6 +1756,7 @@ jobs:
       - dependency-audit
       - docker-build
       - kubernetes
+      - sicherung
       - codeql
     runs-on: ubuntu-latest
     timeout-minutes: 5
