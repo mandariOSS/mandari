@@ -16,7 +16,7 @@ Fitnessfunktionen, aus denen ein Teil der Zahlen stammt (Spalte „Quelle“).
 
 ## 1. Letzte Erhebung
 
-Erhoben am 10. November 2026 am Stand `3a63808d` (`dev`), Anlass: erste Erhebung.
+Erhoben am 10. November 2026 am Stand `3a63808d` (`dev`) mit #1304, Anlass: erste Erhebung.
 
 | Nr. | Kennzahl | Wert | Ziel | Quelle |
 |---|---|---:|---:|---|
@@ -47,11 +47,13 @@ Zur Einordnung der ersten Erhebung:
 
 ## 2. Verlauf
 
-Eine Zeile je Erhebung, die neueste unten. K8 trägt ein, wer die Zeile schreibt (Abschnitt 4).
+Eine Zeile je Erhebung, die neueste unten. „Stand“ nennt den Commit auf `dev`, auf dem die Erhebung
+aufsetzt, und den Pull Request, dessen Änderungen mitgezählt sind. K8 trägt ein, wer die Zeile schreibt
+(Abschnitt 4).
 
-| Datum | Commit | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 |
+| Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2026-11-10 | `3a63808d` | erste Erhebung | 55 | 4 | 7 | 32 | 6 | 0 | 126 | 0 | 13 | 54 | – |
+| 2026-11-10 | `3a63808d` + #1304 | erste Erhebung | 55 | 4 | 7 | 32 | 6 | 0 | 126 | 0 | 13 | 54 | – |
 
 ## 3. Zählregeln
 
@@ -130,23 +132,39 @@ Ratchet der Schichtregeln (#567). `--json` nennt die Zahl je Vertrag.
 
 **K8 – Ereignis-Rückstand p95.** Nicht aus dem Quellstand erhebbar. Der Wert kommt aus dem Monitoring der
 Produktion: `mandari_events_lag_seconds` je Abonnement ([MONITORING.md](MONITORING.md), Abschnitt
-„Metriken“), als 95. Perzentil über die sieben Tage vor der Erhebung, etwa
-`quantile_over_time(0.95, mandari_events_lag_seconds[7d])`, davon der höchste Wert über alle aktiven
-Abonnements. Zugesagt sind p95 ≤ 5 s im Normalbetrieb ([Nachweise](EREIGNISTECHNIK_NACHWEISE.md)).
+„Metriken“), als 95. Perzentil über die sieben Tage vor der Erhebung, davon der höchste Wert über alle
+Abonnements, die nicht pausiert sind. Der Rückstand eines pausierten Abonnements wächst bewusst und zählt
+nicht, wie bei der Alarmregel für den Rückstand:
+
+```promql
+max(
+  quantile_over_time(0.95, mandari_events_lag_seconds[7d])
+  unless on (subscription) mandari_events_subscription_paused == 1
+)
+```
+
+War ein Abonnement in den sieben Tagen zeitweise pausiert, steckt diese Zeit im Wert; das steht dann als
+Anmerkung an der Verlaufszeile. Zugesagt sind p95 ≤ 5 s im Normalbetrieb
+([Nachweise](EREIGNISTECHNIK_NACHWEISE.md)).
 
 ## 4. Fortschreibung
 
 **Wann:** nach Abschluss jeder Etappe des Epics #476 und mit dem Aufräumen jeder Umstellung eines Weges
 (Punkt in der [Checkliste](DREHSCHEIBE_UMSTELLUNG.md), Abschnitt 2.5), weil dort der alte Weg aus dem Code
-verschwindet. Der Stand ist der Commit auf `dev`, mit dem die Etappe bzw. das Aufräumen abgeschlossen ist.
+verschwindet.
 
-**Wie:** im Pull Request, der die Etappe oder Umstellung abschließt, oder in einem eigenen direkt danach:
+**Wie:** im Pull Request, der die Etappe oder Umstellung abschließt, oder in einem eigenen direkt danach.
+Der Zweig steht dabei auf dem aktuellen `dev` (`git fetch origin`, dann rebasen oder `origin/dev`
+einmischen). Belegt wird der Stand, auf dem der Zweig aufsetzt, zusammen mit der Nummer des Pull Requests:
+Den Commit des Zweigs fasst die Merge-Queue zu einem neuen zusammen, den es vorher nicht gibt. So stimmt die
+Zeile ohne Nacharbeit nach dem Merge.
 
 1. `python scripts/architektur_kennzahlen.py` ausführen und die Tabelle in Abschnitt 1 ersetzen, mit
-   Datum, Commit und Anlass in der Zeile darüber.
-2. `python scripts/architektur_kennzahlen.py --verlauf --anlass "Etappe 2"` ausführen und die letzte Zeile
-   der Ausgabe an die Tabelle in Abschnitt 2 anhängen. Den Commit in der Zeile prüfen: Er nennt `HEAD` des
-   Arbeitsstands.
+   Datum, Stand und Anlass in der Zeile darüber.
+2. `python scripts/architektur_kennzahlen.py --verlauf --anlass "Etappe 2" --pr <Nummer>` ausführen und die
+   letzte Zeile der Ausgabe an die Tabelle in Abschnitt 2 anhängen. Die Spalte „Stand“ nennt den Commit auf
+   `dev`, auf dem der Zweig aufsetzt (`git merge-base HEAD origin/dev`), und den Pull Request. Ohne `--pr`,
+   auf `dev` selbst ausgeführt, nennt sie nur den Commit.
 3. K8 aus dem Monitoring ablesen (Abschnitt 3) und in der Verlaufszeile statt „–“ eintragen, mit Einheit
    (`0,4 s`).
 4. Gestiegene Werte in zwei Sätzen unter Abschnitt 1 erklären; `--json` zeigt, welche Funktionen oder

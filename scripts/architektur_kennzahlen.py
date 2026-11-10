@@ -25,8 +25,10 @@ Die Ausgabe hängt nur vom Quellstand ab (keine Zeit, keine Reihenfolge des Date
     python scripts/architektur_kennzahlen.py                    # Tabelle (Markdown)
     python scripts/architektur_kennzahlen.py --json             # alle Werte mit Einzelheiten
 
-``--verlauf --anlass "Etappe 2"`` gibt Kopf und Zeile für die Verlaufstabelle der Dokumentation aus, mit dem
-Datum von heute und dem Commit von ``HEAD``.
+``--verlauf --anlass "Etappe 2" --pr 1234`` gibt Kopf und Zeile für die Verlaufstabelle der Dokumentation aus,
+mit dem Datum von heute und dem Stand: dem Commit auf ``dev``, auf dem der Zweig aufsetzt, und der Nummer des
+Pull Requests, der die Erhebung enthält. Der Commit des Zweigs selbst taugt nicht als Beleg, weil die
+Merge-Queue ihn zu einem neuen Commit zusammenfasst.
 """
 
 from __future__ import annotations
@@ -88,6 +90,8 @@ ES_HTTP_METHODEN = frozenset({"post", "put", "delete"})
 ES_HTTP_PFAD = re.compile(r"/_(bulk|doc|create|update|delete_by_query|update_by_query)\b")
 
 MODUL = "<modul>"
+#: Zweig, auf dem die Erhebungen zusammenlaufen.
+ZIELZWEIG = "origin/dev"
 
 
 # --- Quellstand lesen -------------------------------------------------------------------------------
@@ -620,22 +624,29 @@ def als_json(kennzahlen: Sequence[Kennzahl]) -> str:
 
 
 def verlauf_kopf(kennzahlen: Sequence[Kennzahl]) -> str:
-    kopf = ["Datum", "Commit", "Anlass", *(k.nummer for k in kennzahlen)]
+    kopf = ["Datum", "Stand", "Anlass", *(k.nummer for k in kennzahlen)]
     return "| " + " | ".join(kopf) + " |\n|---|---|---|" + "---:|" * len(kennzahlen) + "\n"
 
 
-def verlauf_zeile(kennzahlen: Sequence[Kennzahl], datum: str, commit: str, anlass: str) -> str:
-    return "| " + " | ".join([datum, f"`{commit}`", anlass, *(k.anzeige for k in kennzahlen)]) + " |\n"
+def verlauf_zeile(kennzahlen: Sequence[Kennzahl], datum: str, stand: str, anlass: str) -> str:
+    return "| " + " | ".join([datum, stand, anlass, *(k.anzeige for k in kennzahlen)]) + " |\n"
 
 
-def aktueller_commit(wurzel: Path) -> str:
-    try:
-        lauf = subprocess.run(
-            ["git", "rev-parse", "--short=8", "HEAD"], cwd=wurzel, capture_output=True, text=True, check=False
-        )
-    except OSError:
-        return "unbekannt"
-    return lauf.stdout.strip() or "unbekannt"
+def stand_text(commit: str, pr: int | None) -> str:
+    """Erhobener Stand: Commit auf ``dev``, dazu der Pull Request, dessen Änderungen mitgezählt sind."""
+    return f"`{commit}`" if pr is None else f"`{commit}` + #{pr}"
+
+
+def basis_commit(wurzel: Path) -> str:
+    """Commit auf ``dev``, auf dem der Arbeitsstand aufsetzt; auf ``dev`` selbst und ohne ``origin/dev``: ``HEAD``."""
+    for befehl in (["git", "merge-base", "HEAD", ZIELZWEIG], ["git", "rev-parse", "HEAD"]):
+        try:
+            lauf = subprocess.run(befehl, cwd=wurzel, capture_output=True, text=True, check=False)
+        except OSError:
+            break
+        if lauf.returncode == 0 and lauf.stdout.strip():
+            return lauf.stdout.strip()[:8]
+    return "unbekannt"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -644,6 +655,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     form.add_argument("--json", action="store_true", help="alle Werte mit Einzelheiten als JSON")
     form.add_argument("--verlauf", action="store_true", help="Kopf und Zeile für die Verlaufstabelle der Doku")
     parser.add_argument("--anlass", default="", help="Anlass der Erhebung für --verlauf, z. B. „Etappe 2“")
+    parser.add_argument("--pr", type=int, default=None, help="Nummer des Pull Requests der Erhebung, für --verlauf")
     optionen = parser.parse_args(argv)
 
     kennzahlen = erheben()
@@ -651,7 +663,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ausgabe = als_json(kennzahlen)
     elif optionen.verlauf:
         heute = datetime.date.today().isoformat()
-        ausgabe = verlauf_kopf(kennzahlen) + verlauf_zeile(kennzahlen, heute, aktueller_commit(ROOT), optionen.anlass)
+        stand = stand_text(basis_commit(ROOT), optionen.pr)
+        ausgabe = verlauf_kopf(kennzahlen) + verlauf_zeile(kennzahlen, heute, stand, optionen.anlass)
     else:
         ausgabe = als_markdown(kennzahlen)
     sys.stdout.buffer.write(ausgabe.encode("utf-8"))

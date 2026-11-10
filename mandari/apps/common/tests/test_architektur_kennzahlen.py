@@ -515,12 +515,50 @@ def test_tabelle_json_und_verlaufszeile(kennzahlen: ModuleType, tmp_path: Path) 
     assert set(daten[0]) == {"nr", "kennzahl", "wert", "ziel", "quelle", "einzelheiten"}
 
     assert kennzahlen.verlauf_kopf(ergebnis).splitlines() == [
-        "| Datum | Commit | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 |",
+        "| Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 |",
         "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    assert kennzahlen.verlauf_zeile(ergebnis, "2026-11-10", "0123abcd", "Etappe 2") == (
-        "| 2026-11-10 | `0123abcd` | Etappe 2 | 2 | 2 | 3 | 1 | 3 | 1 | 2 | 1 | 2 | 2 | – |\n"
+    assert kennzahlen.verlauf_zeile(ergebnis, "2026-11-10", "`0123abcd` + #1234", "Etappe 2") == (
+        "| 2026-11-10 | `0123abcd` + #1234 | Etappe 2 | 2 | 2 | 3 | 1 | 3 | 1 | 2 | 1 | 2 | 2 | – |\n"
     )
+
+
+class _Lauf:
+    def __init__(self, returncode: int, stdout: str) -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+
+
+def test_verlauf_nennt_den_stand_auf_dev_und_den_pull_request(
+    kennzahlen: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Der Commit des Zweigs überlebt den Squash der Merge-Queue nicht; belegt wird, worauf er aufsetzt."""
+    antworten = {"merge-base": _Lauf(0, "0123abcd4567ef89\n"), "rev-parse": _Lauf(0, "fedcba9876543210\n")}
+    befehle: list[list[str]] = []
+
+    def git(befehl: list[str], **_: Any) -> _Lauf:
+        befehle.append(befehl)
+        return antworten[befehl[1]]
+
+    monkeypatch.setattr(kennzahlen.subprocess, "run", git)
+
+    assert kennzahlen.basis_commit(WURZEL) == "0123abcd"
+    assert befehle == [["git", "merge-base", "HEAD", "origin/dev"]]
+    assert kennzahlen.stand_text("0123abcd", 1234) == "`0123abcd` + #1234"
+    # Auf dev selbst erhoben (nach dem Merge): nur der Commit
+    assert kennzahlen.stand_text("0123abcd", None) == "`0123abcd`"
+
+    # Ohne origin/dev (etwa ein Archiv mit flacher Historie): der Arbeitsstand selbst
+    antworten["merge-base"] = _Lauf(128, "")
+    assert kennzahlen.basis_commit(WURZEL) == "fedcba98"
+    antworten["rev-parse"] = _Lauf(128, "")
+    assert kennzahlen.basis_commit(WURZEL) == "unbekannt"
+
+    def ohne_git(befehl: list[str], **_: Any) -> _Lauf:
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(kennzahlen.subprocess, "run", ohne_git)
+    assert kennzahlen.basis_commit(WURZEL) == "unbekannt"
 
 
 # --- Stand im Repository --------------------------------------------------------------------------------
