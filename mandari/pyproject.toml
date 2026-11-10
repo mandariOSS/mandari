@@ -138,6 +138,10 @@ dev = [
     "sqlalchemy>=2.0",  # Schema-Contract gegen die Ingestor-Modelle (insight_core/schema_contract.py)
     "djlint==1.46.2",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
     "pyshacl==0.40.1",  # SHACL-Prüfung der Datenkataloge (scripts/dcat_shacl.py), gleiche Version wie CI
+    # Obergrenzen für toten und doppelten Code (scripts/check_dead_code_ratchet.py,
+    # scripts/check_duplicate_code_ratchet.py, #1113), gleiche Versionen wie CI: Eine andere Version zählt anders
+    "vulture==2.16",
+    "jscpd==5.4.2",  # Rust-Programm als Wheel, braucht kein Node
     "moto[s3]>=5.1",  # lokaler S3-Ersatz für die Tests des Objektspeichers (insight_core/tests/test_dokumentablage.py)
 ]
 

@@ -70,6 +70,11 @@ updates:
       - dependency-name: import-linter
       # SHACL-Prüfung der Datenkataloge (scripts/dcat_shacl.py): Version auch im Schritt von pr-check.yml
       - dependency-name: pyshacl
+      # Obergrenzen für toten und doppelten Code (scripts/check_dead_code_ratchet.py,
+      # scripts/check_duplicate_code_ratchet.py): Version auch im Schritt von pr-check.yml. Eine neue Version
+      # zählt anders; gehoben wird zusammen mit den Baselines.
+      - dependency-name: vulture
+      - dependency-name: jscpd
     labels: [dependencies]
   - package-ecosystem: uv
     target-branch: dev

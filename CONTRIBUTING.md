@@ -194,6 +194,8 @@ python scripts/check_import_linter_ratchet.py    # Schichtverträge nur strenger
 python scripts/mypy_allowlist.py                 # Typen (strict, schrumpfende Ausnahmeliste)
 python scripts/check_frontend_ratchet.py         # Inline-Code und Template-Größe
 python scripts/check_view_orm_ratio.py           # Datenbankzugriffe in Views
+python scripts/check_dead_code_ratchet.py        # toter Code (pip install vulture==2.16), --verbose listet alles
+python scripts/check_duplicate_code_ratchet.py   # doppelter Code (pip install jscpd==5.4.2)
 python scripts/check_schema_contract.py          # Anwendung gegen Ingestor-Schema
 python scripts/check_schnittstelle.py            # Befehlsparität der Schnittstelle (docs/SCHNITTSTELLE.md)
 ```
