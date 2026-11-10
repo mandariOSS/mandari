@@ -3,7 +3,8 @@
 „Offene Daten“ (Issue #1282, views/offene_daten.py): Einstieg in die OParl-Schnittstelle zum Kopieren, ein Beispiel
 mit den Vorlagen einer Kommune und je Kommune die Adressen aus hub.api.verzeichnis. Die Adressen stehen als
 sichtbarer Text und als Link, damit Programme sie auch aus einer Textfassung der Seite lesen. Kontext: eintraege,
-beispiel, system_url, bodies_url, uebersicht_url, doku_url, seitengroesse, anfragen_je_minute.
+beispiel, system_url, bodies_url, uebersicht_url, doku_url, seitengroesse, anfragen_je_minute. eintraege sind
+Paare aus Eintrag und dem Pfad der eigenen Seite der Kommune (Issue #1309).
 {% endcomment %}
 
 {% block title %}Offene Daten: OParl-Schnittstelle{% endblock %}
@@ -67,10 +68,10 @@ beispiel, system_url, bodies_url, uebersicht_url, doku_url, seitengroesse, anfra
                 </tr>
             </thead>
             <tbody class="block md:table-row-group divide-y divide-gray-200 dark:divide-gray-800">
-                {% for eintrag in eintraege %}
+                {% for eintrag, seite in eintraege %}
                 <tr id="kommune-{% firstof eintrag.slug eintrag.body_id %}" class="block md:table-row py-3 md:py-0 align-top scroll-mt-24">
                     <th scope="row" class="block md:table-cell md:py-3 pr-6 font-semibold text-gray-900 dark:text-white">
-                        <a href="{{ eintrag.web }}" class="hover:underline underline-offset-4">{{ eintrag.display_name }}</a>
+                        <a href="{{ seite }}" class="hover:underline underline-offset-4">{{ eintrag.display_name }}</a>
                         {% if eintrag.display_name in eintrag.name and eintrag.name != eintrag.display_name %}<span class="block font-normal text-[0.875rem] text-gray-600 dark:text-gray-400">{{ eintrag.name }}</span>{% endif %}
                         {% if eintrag.ags %}<span class="block font-normal text-[0.875rem] text-gray-600 dark:text-gray-400">AGS {{ eintrag.ags }}</span>{% endif %}
                     </th>

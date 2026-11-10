@@ -87,6 +87,23 @@ def portal_list(request: HttpRequest, slug: str, liste: str) -> HttpResponse:
     return cast(HttpResponse, LISTEN_VIEWS[liste](request))
 
 
+def portal_offene_daten(request: HttpRequest, slug: str) -> HttpResponse:
+    """
+    „Offene Daten“ einer Kommune unter eigener Adresse (``/insight/k/<slug>/offene-daten/``, Issue #1309), ohne
+    Sitzung wie die Listen. Nicht gelistete Kommunen antworten wie die Stadtseite (404, 410), abgeschaltete mit 503.
+    """
+    from .offene_daten import offene_daten_kommune
+
+    body = _kommune_des_einstiegs(request, slug)
+    if isinstance(body, HttpResponse):
+        return body
+    portal.betrachten(request, body, slug)
+    antwort = _stand_der_kommune(request, body)
+    if antwort is not None:
+        return antwort
+    return offene_daten_kommune(request, body)
+
+
 def portal_entry(request: HttpRequest, slug: str, rest: str = "") -> HttpResponse:
     body = _kommune_des_einstiegs(request, slug)
     if isinstance(body, HttpResponse):

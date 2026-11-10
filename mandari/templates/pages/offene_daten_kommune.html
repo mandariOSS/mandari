@@ -1,0 +1,74 @@
+{% extends "base_insight.html" %}
+{% comment %}
+„Offene Daten“ einer Kommune (Issue #1309, views/offene_daten.py): die OParl-Adressen dieser Kommune auf einer eigenen
+Seite, damit eine Suche nach „OParl“ und dem Namen der Kommune sie findet. Die Sammelseite (offene_daten.html) nennt
+alle Kommunen auf einer Seite; ein Anker dort ist kein eigener Treffer. Jede Adresse steht als sichtbarer Text und als
+Link, damit Programme sie auch aus einer Textfassung der Seite lesen. Kontext: eintrag, system_url, sammelseite_url,
+doku_url, seitengroesse, anfragen_je_minute.
+{% endcomment %}
+
+{% block title %}OParl-Schnittstelle {{ eintrag.display_name }}: offene Ratsdaten bei mandari{% endblock %}
+{% block brotkrumen_aktuell %}<c-insight.brotkrume>Offene Daten</c-insight.brotkrume>{% endblock %}
+
+{% block page %}
+<c-insight.kopfband titel="Offene Daten {{ eintrag.display_name }}" text="Sitzungen, Vorlagen, Gremien und Personen aus dem Ratsinformationssystem von {{ eintrag.name }} stehen bei mandari nach dem Standard OParl 1.1 als offene Daten bereit: lesend, ohne Anmeldung, im Format JSON." />
+
+<c-insight.band aria-labelledby="adressen-titel">
+    <div class="max-w-3xl">
+        <section>
+            <h2 id="adressen-titel" class="abschnitt-titel">Adressen der OParl-Schnittstelle</h2>
+            <dl class="mt-4 space-y-4 text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">
+                <div>
+                    <dt class="font-semibold text-gray-900 dark:text-white">{{ eintrag.display_name }} als OParl-Body (Kennung der Kommune)</dt>
+                    <dd><a href="{{ eintrag.body }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.body }}</a></dd>
+                </div>
+                <div>
+                    <dt class="font-semibold text-gray-900 dark:text-white">Vorlagen, Anträge und Anfragen</dt>
+                    <dd><a href="{{ eintrag.listen.paper }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.listen.paper }}</a></dd>
+                </div>
+                <div>
+                    <dt class="font-semibold text-gray-900 dark:text-white">Sitzungen mit Tagesordnung</dt>
+                    <dd><a href="{{ eintrag.listen.meeting }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.listen.meeting }}</a></dd>
+                </div>
+                <div>
+                    <dt class="font-semibold text-gray-900 dark:text-white">Gremien und Fraktionen</dt>
+                    <dd><a href="{{ eintrag.listen.organization }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.listen.organization }}</a></dd>
+                </div>
+                <div>
+                    <dt class="font-semibold text-gray-900 dark:text-white">Personen</dt>
+                    <dd><a href="{{ eintrag.listen.person }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.listen.person }}</a></dd>
+                </div>
+                <div>
+                    <dt class="font-semibold text-gray-900 dark:text-white">Einstieg in das OParl-System von mandari (alle Kommunen)</dt>
+                    <dd><a href="{{ system_url }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ system_url }}</a></dd>
+                </div>
+            </dl>
+            <p class="mt-5 text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">
+                Jede Liste enthält höchstens {{ seitengroesse }} Objekte je Seite, den Link zur nächsten Seite finden Sie unter <code class="font-mono text-[0.95rem]">links.next</code>.
+                Die Schnittstelle erlaubt Abrufe aus dem Browser (CORS){% if anfragen_je_minute %} und bis zu {{ anfragen_je_minute }} Anfragen pro Minute{% endif %}.
+                {% if eintrag.lizenz %}Lizenz der Daten: <a href="{{ eintrag.lizenz }}" class="text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.lizenz }}</a>.{% else %}Die Lizenz der Daten legt die Kommune fest.{% endif %}
+                {% if eintrag.ags %}Amtlicher Gemeindeschlüssel: {{ eintrag.ags }}.{% endif %}
+            </p>
+        </section>
+
+        <section aria-labelledby="beispiel-titel" class="mt-12">
+            <h2 id="beispiel-titel" class="abschnitt-titel">Beispiel: Was hat sich in {{ eintrag.display_name }} zuletzt geändert?</h2>
+            <ol class="mt-3 list-decimal pl-5 space-y-3 text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">
+                <li>Alle Vorlagen, Anträge und Anfragen, sortiert nach dem Zeitpunkt der letzten Änderung:<br>
+                    <a href="{{ eintrag.listen.paper }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.listen.paper }}</a></li>
+                <li>Nur, was sich seit einem Zeitpunkt geändert hat, mit dem Filter <code class="font-mono text-[0.95rem]">modified_since</code> (Zeitzone angeben, etwa <code class="font-mono text-[0.95rem]">Z</code> für UTC):<br>
+                    <a href="{{ eintrag.listen.paper }}?modified_since={{ beispiel_seit }}" class="font-mono text-[0.95rem] text-primary-700 dark:text-primary-300 underline underline-offset-4 break-all">{{ eintrag.listen.paper }}?modified_since={{ beispiel_seit }}</a></li>
+                <li>Kommende und vergangene Sitzungen mit ihren Tagesordnungspunkten stehen in der Liste der Sitzungen; das Ergebnis einer Beratung steht am Tagesordnungspunkt im Feld <code class="font-mono text-[0.95rem]">result</code>.</li>
+            </ol>
+            <pre class="mt-5 overflow-x-auto rounded-lg bg-gray-100 dark:bg-gray-900 px-4 py-3 font-mono text-sm text-gray-900 dark:text-gray-100"><code>curl "{{ eintrag.listen.meeting }}"</code></pre>
+            <p class="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-[0.95rem]">
+                <c-ui.textlink href="{{ eintrag.web }}">{{ eintrag.display_name }} im Bürgerportal</c-ui.textlink>
+                <c-ui.textlink href="{{ sammelseite_url }}">Alle Kommunen</c-ui.textlink>
+                <c-ui.textlink href="{{ doku_url }}">Dokumentation der Schnittstelle</c-ui.textlink>
+                <c-ui.textlink href="https://oparl.org/spezifikation/" extern>Spezifikation OParl 1.1</c-ui.textlink>
+            </p>
+        </section>
+    </div>
+    {% include "partials/page_feedback.html" %}
+</c-insight.band>
+{% endblock %}

@@ -203,7 +203,8 @@ class _Urlset:
 @require_safe
 def body_sitemap(request, body_slug):
     """
-    Grund-Sitemap einer Kommune: Stadtseite, ihre Listen (Sitzungen, Vorgänge, Gremien, Personen; Issue #939),
+    Grund-Sitemap einer Kommune: Stadtseite, ihre Listen (Sitzungen, Vorgänge, Gremien, Personen; Issue #939), die
+    Seite „Offene Daten“ (Issue #1309),
     Gremien, Personen mit laufender Mitgliedschaft und Ratsfragen.
 
     Vorgänge und Sitzungen stehen in eigenen, nummerierten Dateien (``body_sitemap_seite``, Issue #914).
@@ -223,6 +224,10 @@ def body_sitemap(request, body_slug):
         # Listen je Kommune (Issue #939), erste Seite: Über ihre Seitenlinks erreichen Suchmaschinen die Detailseiten
         for liste in KOMMUNEN_LISTEN.values():
             urlset.add(reverse(f"insight_core:insight:{liste}", kwargs={"slug": body.slug}), None, "daily", "0.7")
+        # „Offene Daten“ der Kommune mit ihren OParl-Adressen (Issue #1309); ändert sich nur mit der Schnittstelle
+        urlset.add(
+            reverse("insight_core:insight:portal_offene_daten", kwargs={"slug": body.slug}), None, "monthly", "0.6"
+        )
     for org_id, lastmod in sitemaps.gremien(body.pk):
         urlset.add(f"/insight/gremien/{org_id}/", lastmod, "monthly", "0.5")
     # Nur Personen mit laufender Mitgliedschaft; die übrigen Personenseiten tragen noindex

@@ -61,6 +61,7 @@ insight_patterns = [
         {"liste": "decision_list"},
         name="portal_decision_list",
     ),
+    path("k/<slug:slug>/offene-daten/", views.portal_offene_daten, name="portal_offene_daten"),
     path("k/<slug:slug>/<path:rest>", views.portal_entry, name="portal_entry_path"),
     # Gremien (Organizations)
     path("gremien/", listenseite(views.OrganizationListView.as_view()), name="organization_list"),

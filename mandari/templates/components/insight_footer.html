@@ -22,8 +22,8 @@
                 {% if insight_subscriptions_enabled %}
                 <li><a href="{% url 'insight_core:insight:notifications' %}" class="hover:text-white underline-offset-4 hover:underline">Benachrichtigungen</a></li>
                 {% endif %}
-                {# Schnittstelle mit den Adressen je Kommune, auf Seiten einer Kommune gleich an ihrer Zeile (Issue #1282) #}
-                <li><a href="{% url 'insight_core:insight:offene_daten' %}{% if page_body_oparl %}#kommune-{% firstof page_body.slug page_body.pk %}{% endif %}" class="hover:text-white underline-offset-4 hover:underline">Offene Daten</a></li>
+                {# Schnittstelle mit den Adressen je Kommune, auf Seiten einer Kommune gleich deren eigene Seite (Issues #1282, #1309) #}
+                <li><a href="{% if page_body_oparl and page_body.slug %}{% url 'insight_core:insight:portal_offene_daten' slug=page_body.slug %}{% else %}{% url 'insight_core:insight:offene_daten' %}{% if page_body_oparl %}#kommune-{{ page_body.pk }}{% endif %}{% endif %}" class="hover:text-white underline-offset-4 hover:underline">Offene Daten</a></li>
                 {% if not request.user.is_authenticated %}
                 <li><a href="{% url 'accounts:login' %}" class="hover:text-white underline-offset-4 hover:underline">Anmelden</a></li>
                 {% endif %}

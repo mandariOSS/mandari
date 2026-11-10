@@ -182,7 +182,51 @@ def test_seiten_einer_kommune_verweisen_auf_ihren_body(kommunen: dict[str, Any])
         f'<link rel="alternate" type="application/json" title="OParl-Body: Münster" '
         f'href="{OPARL}/v1/body/{muenster.pk}">'
     ) in html
-    assert 'href="/insight/offene-daten/#kommune-muenster"' in html
+    # Der Fuß führt auf die eigene Seite der Kommune (Issue #1309), nicht mehr auf einen Anker der Sammelseite
+    assert 'href="/insight/k/muenster/offene-daten/"' in html
+
+
+def test_jede_kommune_hat_eine_eigene_seite_offene_daten(kommunen: dict[str, Any]) -> None:
+    """Eine Suche nach „OParl“ und dem Namen der Kommune braucht eine Seite, die beides im Titel trägt (Issue #1309)."""
+    muenster = kommunen["muenster"]
+    antwort = Client().get("/insight/k/muenster/offene-daten/")
+    assert antwort.status_code == 200
+    html = antwort.content.decode()
+
+    titel = re.search(r"<title>(.*?)</title>", html, re.S)
+    assert titel is not None and "OParl-Schnittstelle Münster" in titel.group(1) and "mandari" in titel.group(1)
+    assert 'name="robots" content="index, follow"' in html
+    assert f'<link rel="canonical" href="{SITE}/insight/k/muenster/offene-daten/"' in html
+    # Jede Adresse als sichtbarer Text und als Link, dazu der Einstieg des Systems
+    for adresse in ("", "/papers", "/meetings", "/organizations", "/people"):
+        assert f">{OPARL}/v1/body/{muenster.pk}{adresse}</a>" in html, adresse
+    assert f">{OPARL}/v1/system</a>" in html
+    assert f"{OPARL}/v1/body/{muenster.pk}/papers?modified_since=" in html
+    assert "05515000" in html
+    # Nur diese Kommune
+    assert "Köln" not in html and "Krefeld" not in html
+
+    datensatz = _json_ld(html, "Dataset")
+    assert datensatz["name"] == "Ratsinformationen Münster"
+    assert datensatz["identifier"] == "05515000"
+    assert datensatz["distribution"][0]["contentUrl"] == f"{OPARL}/v1/body/{muenster.pk}"
+    assert "license" not in datensatz
+
+    lizenz = Client().get("/insight/k/koeln/offene-daten/").content.decode()
+    assert 'href="https://dl-de.example/by"' in lizenz
+
+
+def test_seite_offene_daten_nur_fuer_gelistete_kommunen(kommunen: dict[str, Any]) -> None:
+    assert Client().get("/insight/k/demo/offene-daten/").status_code == 404
+    assert Client().get("/insight/k/altstadt/offene-daten/").status_code in (404, 410)
+    assert Client().get("/insight/k/gibt-es-nicht/offene-daten/").status_code == 404
+
+
+def test_sammelseite_und_sitemap_fuehren_auf_die_seite_der_kommune(kommunen: dict[str, Any]) -> None:
+    html = Client().get("/insight/offene-daten/").content.decode()
+    assert '<a href="/insight/k/muenster/offene-daten/" class="hover:underline underline-offset-4">Münster</a>' in html
+    sitemap = Client().get("/sitemap-insight-muenster.xml").content.decode()
+    assert f"<loc>{SITE}/insight/k/muenster/offene-daten/</loc>" in sitemap
 
 
 def test_fuss_ohne_kommune_verweist_auf_die_seite(kommunen: dict[str, Any]) -> None:
