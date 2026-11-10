@@ -127,7 +127,8 @@ def probe(timeout: float) -> None:
         timeout,
         checksum_mode(),
         connect_timeout=timeout,
-        attempts=1,
+        # botocore zählt mit ``max_attempts`` nur die Wiederholungen: 0 heißt genau eine Anfrage
+        attempts=0,
     )
     try:
         probe_client.head_bucket(Bucket=settings.OBJ_BUCKET)

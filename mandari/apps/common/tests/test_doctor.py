@@ -702,15 +702,20 @@ def test_objektspeicher_probe_ohne_wiederholung_und_mit_zeitgrenze(
     gebaut: list[dict[str, Any]] = []
     echt = object_storage._new_client
 
+    kunden: list[Any] = []
+
     def merken(*args: Any, **optionen: Any) -> Any:
         gebaut.append({"timeout": args[5], **optionen})
-        return echt(*args, **optionen)
+        kunden.append(echt(*args, **optionen))
+        return kunden[-1]
 
     monkeypatch.setattr(object_storage, "_new_client", merken)
 
     object_storage.probe(4)
 
-    assert gebaut == [{"timeout": 4, "connect_timeout": 4, "attempts": 1}]
+    assert gebaut == [{"timeout": 4, "connect_timeout": 4, "attempts": 0}]
+    # botocore zählt ``max_attempts`` als Wiederholungen: Insgesamt bleibt genau eine Anfrage
+    assert kunden[0].meta.config.retries["total_max_attempts"] == 1
 
 
 @pytest.mark.parametrize(
