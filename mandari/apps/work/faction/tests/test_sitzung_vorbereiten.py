@@ -525,6 +525,52 @@ def test_aktualisierung_nach_aenderung(welt: dict[str, Any], client_for: Any) ->
     assert "Tagesordnung geändert." in html and 'id="fs-aktualisieren"' in html
 
 
+def test_aenderung_ohne_aktualisierung_uebernehmen(welt: dict[str, Any], client_for: Any) -> None:
+    """Issue #1285: Eine Änderung nach dem Versand braucht keine E-Mail; der Hinweis bietet beide Wege an."""
+    from django.core import mail
+
+    _einladen(welt, client_for)
+    meeting = welt["meeting"]
+    meeting.refresh_from_db()
+    sequenz, versendet = meeting.invitation_sequence, len(mail.outbox)
+    FactionAgendaItem.objects.create(meeting=meeting, title="Neu", number="3", visibility="public", order=9)
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert "Tagesordnung geändert." in html and "nur mit einer Aktualisierung" in html
+    assert 'data-testid="fs-ohne-aktualisierung"' in html and 'value="keep_agenda"' in html
+
+    antwort = client_for(welt["vorsitz"].user).post(_aktion(welt), {"action": "keep_agenda"})
+    assert antwort.status_code == 302
+    meeting.refresh_from_db()
+    assert meeting.agenda_change_acknowledged_at is not None
+    assert meeting.invitation_sequence == sequenz and meeting.invitation_updated_at is None
+    assert len(mail.outbox) == versendet
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert "Tagesordnung geändert." not in html and "Eingeladen" in html
+
+    # Die nächste Änderung meldet sich wieder
+    neu = meeting.agenda_items.get(title="Neu")
+    neu.title = "Neu und anders"
+    neu.save()
+    assert "Tagesordnung geändert." in _html(_seite(welt, client_for, "vorsitz"))
+
+
+def test_ohne_aktualisierung_uebernehmen_nur_mit_recht_und_nach_dem_versand(
+    welt: dict[str, Any], client_for: Any
+) -> None:
+    meeting = welt["meeting"]
+    # Vor dem Versand gibt es nichts zu übernehmen
+    client_for(welt["vorsitz"].user).post(_aktion(welt), {"action": "keep_agenda"})
+    meeting.refresh_from_db()
+    assert meeting.agenda_change_acknowledged_at is None
+
+    _einladen(welt, client_for)
+    FactionAgendaItem.objects.create(meeting=meeting, title="Neu", number="3", visibility="public", order=9)
+    client_for(welt["rat"].user).post(_aktion(welt), {"action": "keep_agenda"})
+    meeting.refresh_from_db()
+    assert meeting.agenda_change_acknowledged_at is None
+    assert "Tagesordnung geändert." in _html(_seite(welt, client_for, "vorsitz"))
+
+
 # ---------------------------------------------------------------------------
 # TOP-Vorschläge nach dem Versand (Issue #1160)
 # ---------------------------------------------------------------------------

@@ -248,22 +248,251 @@ def test_ziehen_ans_ende_und_ungueltige_stelle(welt: dict[str, Any], client_for:
     assert _oben(meeting) == ["Termine", "Beschlüsse"]
 
 
-def test_ziehen_nur_mit_recht_und_nur_oberste_ebene(welt: dict[str, Any], client_for: Any) -> None:
-    meeting, haupt = welt["meeting"], welt["haupt"]
+def test_ziehen_nur_mit_recht(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
     termine = FactionAgendaItem.objects.get(meeting=meeting, title="Termine")
     antwort = _post(
         welt, client_for, "rat", {"action": "move_item", "item_id": str(termine.pk), "direction": "to", "position": "0"}
     )
     assert antwort.status_code == 403
-    unter = FactionAgendaItem.objects.get(meeting=meeting, parent=haupt)
-    _post(
-        welt,
-        client_for,
-        "vorsitz",
-        {"action": "move_item", "item_id": str(unter.pk), "direction": "to", "position": "0"},
-        **_neu(),
-    )
     assert _oben(meeting) == ["Beschlüsse", "Termine"]
+
+
+# ---------------------------------------------------------------------------
+# 1a. Ebene: TOP zum Unterpunkt, Unterpunkt zum eigenen TOP (Issue #1285)
+# ---------------------------------------------------------------------------
+
+
+def _ziehen(
+    welt: dict[str, Any],
+    client_for: Any,
+    item: FactionAgendaItem,
+    eltern: Any = None,
+    pos: str = "0",
+    rolle: str = "vorsitz",
+    **mehr: str,
+) -> Any:
+    daten = {
+        "action": "move_item",
+        "item_id": str(item.pk),
+        "direction": "to",
+        "position": pos,
+        "parent_id": str(eltern.pk) if eltern is not None else "",
+        **mehr,
+    }
+    return _post(welt, client_for, rolle, daten, **_neu())
+
+
+def _nummern(meeting: FactionMeeting) -> dict[str, str]:
+    return dict(meeting.agenda_items.filter(proposal_status="active").values_list("title", "number"))
+
+
+def _richtung(welt: dict[str, Any], client_for: Any, item: FactionAgendaItem, richtung: str) -> Any:
+    daten = {"action": "move_item", "item_id": str(item.pk), "direction": richtung}
+    return _post(welt, client_for, "vorsitz", daten, **_neu())
+
+
+def test_ziehen_macht_top_zum_unterpunkt(welt: dict[str, Any], client_for: Any) -> None:
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    termine = meeting.agenda_items.get(title="Termine")
+
+    assert _ziehen(welt, client_for, termine, haupt, "0").status_code == 200
+    termine.refresh_from_db()
+    assert termine.parent_id == haupt.pk and termine.visibility == "public"
+    nummern = _nummern(meeting)
+    assert (nummern["Beschlüsse"], nummern["Termine"], nummern["Feuerwehrbedarfsplan"]) == ("1", "1.1", "1.2")
+    assert _oben(meeting) == ["Beschlüsse"]
+
+    # Hinter den bestehenden Unterpunkt
+    _ziehen(welt, client_for, termine, haupt, "1")
+    nummern = _nummern(meeting)
+    assert (nummern["Feuerwehrbedarfsplan"], nummern["Termine"]) == ("1.1", "1.2")
+    # Die Seite zeigt ihn als Unterpunkt mit Griff
+    html = _html(_seite(welt, client_for, "vorsitz", ansicht="tagesordnung"))
+    assert f'data-eltern="{haupt.pk}"' in html and f'data-griff="{termine.pk}"' in html
+
+
+def test_unterpunkt_wird_eigener_top_oder_unterpunkt_eines_anderen(welt: dict[str, Any], client_for: Any) -> None:
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    unter = meeting.agenda_items.get(title="Feuerwehrbedarfsplan")
+    termine = meeting.agenda_items.get(title="Termine")
+
+    _ziehen(welt, client_for, unter, None, "1")
+    unter.refresh_from_db()
+    assert unter.parent_id is None
+    assert _oben(meeting) == ["Beschlüsse", "Feuerwehrbedarfsplan", "Termine"]
+    assert _nummern(meeting)["Termine"] == "3"
+
+    _ziehen(welt, client_for, unter, termine, "0")
+    unter.refresh_from_db()
+    assert unter.parent_id == termine.pk
+    nummern = _nummern(meeting)
+    assert (nummern["Termine"], nummern["Feuerwehrbedarfsplan"]) == ("2", "2.1")
+    assert not haupt.children.exists()
+
+
+def test_nur_eine_ebene_und_nicht_unter_sich_selbst(welt: dict[str, Any], client_for: Any) -> None:
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    termine = meeting.agenda_items.get(title="Termine")
+    unter = meeting.agenda_items.get(title="Feuerwehrbedarfsplan")
+
+    # Ein TOP mit Unterpunkten wird kein Unterpunkt
+    antwort = _ziehen(welt, client_for, haupt, termine)
+    assert antwort.status_code == 400 and "eigene Unterpunkte" in antwort.content.decode()
+    # Kein Unterpunkt unter einem Unterpunkt, keiner unter sich selbst
+    assert _ziehen(welt, client_for, termine, unter).status_code == 400
+    assert _ziehen(welt, client_for, termine, termine).status_code == 400
+    # Unter einen offenen Vorschlag auch nicht
+    vorschlag = meeting.agenda_items.get(title="Radweg am Musterweg")
+    assert _ziehen(welt, client_for, termine, vorschlag).status_code == 403
+    # Unter den Genehmigungs-TOP kommt nichts
+    genehmigung = FactionAgendaItem.objects.create(
+        meeting=meeting, title="Tagesordnung festlegen", number="1", order=0, is_approval_item=True
+    )
+    assert _ziehen(welt, client_for, termine, genehmigung).status_code == 400
+    termine.refresh_from_db()
+    haupt.refresh_from_db()
+    assert termine.parent_id is None and haupt.parent_id is None
+
+
+def test_unterpunkt_eines_noe_tops_wird_nichtoeffentlich(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
+    termine = meeting.agenda_items.get(title="Termine")
+    geheim = meeting.agenda_items.get(title=basis.NOE_TITEL)
+
+    # Auch ohne Angabe des Teils: Unter einem NÖ-TOP ist der Unterpunkt nichtöffentlich
+    assert _ziehen(welt, client_for, termine, geheim).status_code == 200
+    termine.refresh_from_db()
+    assert termine.visibility == "internal" and termine.parent_id == geheim.pk and termine.number == "NÖ 1.1"
+    assert "Termine" not in _html(_seite(welt, client_for, "sachkundig"))
+
+
+def test_unterpunkt_unter_noe_top_nur_fuer_vereidigte(welt: dict[str, Any], client_for: Any, make_member: Any) -> None:
+    welt["verwaltend"] = make_member(welt["org"], ["faction.view_public", "faction.manage"], email="nina@example.org")
+    meeting = welt["meeting"]
+    termine = meeting.agenda_items.get(title="Termine")
+    geheim = meeting.agenda_items.get(title=basis.NOE_TITEL)
+    assert _ziehen(welt, client_for, termine, geheim, rolle="verwaltend").status_code == 403
+    termine.refresh_from_db()
+    assert termine.parent_id is None and termine.visibility == "public"
+
+
+def test_noe_unterpunkt_eines_oeffentlichen_tops_bleibt_nichtoeffentlich(welt: dict[str, Any], client_for: Any) -> None:
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    personal = FactionAgendaItem.objects.create(
+        meeting=meeting, title="Personalie", number="1.2", visibility="internal", order=7, parent=haupt
+    )
+    termine = meeting.agenda_items.get(title="Termine")
+    # Unter einen anderen öffentlichen TOP gezogen: bleibt nichtöffentlich
+    _ziehen(welt, client_for, personal, termine)
+    personal.refresh_from_db()
+    assert personal.parent_id == termine.pk and personal.visibility == "internal" and personal.number == "2.1"
+    # Ausgerückt ohne Wahl des öffentlichen Teils: eigener TOP am Ende des nichtöffentlichen Teils
+    assert _richtung(welt, client_for, personal, "out").status_code == 200
+    personal.refresh_from_db()
+    assert personal.parent_id is None and personal.visibility == "internal" and personal.number == "NÖ 2"
+    # Mit ausdrücklicher Wahl (Rückfrage im Browser) wird er öffentlich
+    _ziehen(welt, client_for, personal, None, "1", teil="public")
+    personal.refresh_from_db()
+    assert personal.visibility == "public" and personal.number == "2"
+
+
+def test_alter_oeffentlich_gespeicherter_unterpunkt_eines_noe_tops_bleibt_nichtoeffentlich(
+    welt: dict[str, Any], client_for: Any
+) -> None:
+    """Altbestand: Unterpunkte eines NÖ-TOPs gelten als nichtöffentlich, auch wenn sie öffentlich gespeichert sind."""
+    meeting = welt["meeting"]
+    geheim = meeting.agenda_items.get(title=basis.NOE_TITEL)
+    alt = FactionAgendaItem.objects.create(
+        meeting=meeting, title="Kaufpreis", number="NÖ 1.1", visibility="public", order=7, parent=geheim
+    )
+    assert _richtung(welt, client_for, alt, "out").status_code == 200
+    alt.refresh_from_db()
+    assert alt.parent_id is None and alt.visibility == "internal" and alt.number == "NÖ 2"
+    assert "Kaufpreis" not in _html(_seite(welt, client_for, "sachkundig"))
+
+    # Gezogen innerhalb des NÖ-Teils, ohne Wahl des öffentlichen Teils: bleibt nichtöffentlich
+    alt.parent = geheim
+    alt.visibility = "public"
+    alt.save()
+    _ziehen(welt, client_for, alt, None, "0")
+    alt.refresh_from_db()
+    assert alt.parent_id is None and alt.visibility == "internal" and alt.number == "NÖ 1"
+
+
+def test_ungueltige_stelle_verschiebt_nichts(welt: dict[str, Any], client_for: Any) -> None:
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    termine = meeting.agenda_items.get(title="Termine")
+    _ziehen(welt, client_for, termine, haupt, "abc")
+    termine.refresh_from_db()
+    assert termine.parent_id is None and termine.number == "2"
+
+
+def test_pfeiltasten_ruecken_ein_und_aus(welt: dict[str, Any], client_for: Any) -> None:
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    termine = meeting.agenda_items.get(title="Termine")
+    presse = FactionAgendaItem.objects.create(meeting=meeting, title="Presse", number="3", visibility="public", order=8)
+
+    # Rechts: letzter Unterpunkt des TOPs darüber
+    assert _richtung(welt, client_for, termine, "in").status_code == 200
+    termine.refresh_from_db()
+    assert termine.parent_id == haupt.pk and termine.number == "1.2"
+    assert _nummern(meeting)["Presse"] == "2"
+
+    # Unterpunkte hoch und runter unter ihresgleichen
+    _richtung(welt, client_for, termine, "up")
+    nummern = _nummern(meeting)
+    assert (nummern["Termine"], nummern["Feuerwehrbedarfsplan"]) == ("1.1", "1.2")
+    _richtung(welt, client_for, termine, "down")
+    assert _nummern(meeting)["Termine"] == "1.2"
+
+    # Links: eigener TOP direkt hinter dem bisherigen
+    assert _richtung(welt, client_for, termine, "out").status_code == 200
+    assert _oben(meeting) == ["Beschlüsse", "Termine", "Presse"]
+    assert _nummern(meeting)["Presse"] == "3"
+
+    # Der erste TOP hat keinen darüber; ein TOP mit Unterpunkten rückt nicht ein
+    antwort = _richtung(welt, client_for, haupt, "in")
+    assert antwort.status_code == 400 and "keiner" in antwort.content.decode()
+    FactionAgendaItem.objects.create(
+        meeting=meeting, title="Pressemitteilung", number="3.1", visibility="public", order=9, parent=presse
+    )
+    assert _richtung(welt, client_for, presse, "in").status_code == 400
+    presse.refresh_from_db()
+    assert presse.parent_id is None
+
+
+def test_menue_bietet_ein_und_ausruecken(welt: dict[str, Any], client_for: Any) -> None:
+    html = _html(_seite(welt, client_for, "vorsitz", ansicht="tagesordnung"))
+    assert "Zum Unterpunkt von TOP 1 machen" in html
+    assert "Zum eigenen TOP machen" in html
+    # Der erste TOP und einer mit Unterpunkten rücken nicht ein: nur „Termine“ bietet es an
+    assert html.count("Zum Unterpunkt von TOP") == 1
+    assert "Zum eigenen TOP" not in _html(_seite(welt, client_for, "rat", ansicht="tagesordnung"))
+
+
+def test_ebene_wechseln_gilt_nach_dem_versand_als_aenderung(welt: dict[str, Any], client_for: Any) -> None:
+    basis._einladen(welt, client_for)
+    assert "Tagesordnung geändert." not in _html(_seite(welt, client_for, "vorsitz"))
+    _richtung(welt, client_for, welt["meeting"].agenda_items.get(title="Termine"), "in")
+    assert "Tagesordnung geändert." in _html(_seite(welt, client_for, "vorsitz"))
+
+
+def test_stelle_zaehlt_nur_sichtbare_geschwister() -> None:
+    """Nicht-Vereidigte sehen nichtöffentliche Unterpunkte nicht; ihre Stelle zählt ohne sie."""
+    from apps.work.faction.agenda import _insert_index
+
+    geschwister = [mock.Mock(sichtbar=True), mock.Mock(sichtbar=False), mock.Mock(sichtbar=True)]
+
+    def sichtbar(s: Any) -> bool:
+        return bool(s.sichtbar)
+
+    assert _insert_index(geschwister, 0, sichtbar) == 0
+    assert _insert_index(geschwister, 1, sichtbar) == 2
+    assert _insert_index(geschwister, 2, sichtbar) == 3
+    assert _insert_index(geschwister, 9, None) == 3
+    assert _insert_index(geschwister, None, sichtbar) == 3
+    assert _insert_index([mock.Mock(sichtbar=False)], 0, sichtbar) == 1
 
 
 def test_griff_nur_fuer_die_verwaltung(welt: dict[str, Any], client_for: Any) -> None:

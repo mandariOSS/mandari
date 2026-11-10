@@ -8,6 +8,8 @@
 #   - letzte Sicherung endete mit Fehler
 #   - letzte erfolgreiche Sicherung älter als BACKUP_MAX_AGE_HOURS
 #   - Integritätsprüfung oder Wiederherstellungstest fehlgeschlagen
+#   - mit BACKUP_PITR=1: WAL-Empfang steht, Slot staut WAL, Basissicherung älter als
+#     BACKUP_PITR_BASE_MAX_AGE_HOURS, WAL-Übertragung überfällig, WAL-Kette unterbrochen
 # Solange ein Problem besteht, höchstens eine Mail je 6 Stunden.
 #
 #   scripts/backup-watchdog.sh          # prüfen (Exit 1 bei Problemen)
@@ -92,6 +94,56 @@ for marker in check_failed restore_test_failed; do
         problems+=("$what: $(head -c 1500 "$STATUS_DIR/$marker")")
     fi
 done
+
+# Wiederherstellung auf einen Zeitpunkt (nur mit BACKUP_PITR=1): WAL-Empfang, Slot,
+# Basissicherung und WAL-Übertragung. Den Zustand von Empfang und Slot schreibt der
+# Container mit jeder WAL-Übertragung in die Statusdateien.
+if [ "$(env_value BACKUP_PITR)" = 1 ]; then
+    base_max_hours="$(env_value BACKUP_PITR_BASE_MAX_AGE_HOURS)"; base_max_hours="${base_max_hours:-26}"
+    wal_max_minutes="$(env_value BACKUP_PITR_WAL_MAX_AGE_MINUTES)"; wal_max_minutes="${wal_max_minutes:-90}"
+    [ -f "$STATUS_DIR/.pitr-installed" ] || touch "$STATUS_DIR/.pitr-installed"
+
+    # Alter in Minuten; ohne die Datei zählt die Zeit seit dem Einschalten
+    pitr_age() {
+        local file="$STATUS_DIR/$1"
+        [ -f "$file" ] || file="$STATUS_DIR/.pitr-installed"
+        echo $(( (now - $(stat -c %Y "$file")) / 60 ))
+    }
+    pitr_error_after() {
+        [ -s "$STATUS_DIR/$1" ] && { [ ! -f "$STATUS_DIR/$2" ] || [ "$STATUS_DIR/$1" -nt "$STATUS_DIR/$2" ]; }
+    }
+
+    if [ -s "$STATUS_DIR/pitr_empfang_failed" ]; then
+        problems+=("PITR: $(head -c 1500 "$STATUS_DIR/pitr_empfang_failed")")
+    elif [ "$(pitr_age pitr_empfang_ok)" -ge "$wal_max_minutes" ]; then
+        problems+=("PITR: Der Zustand des WAL-Empfangs wurde seit $(pitr_age pitr_empfang_ok) Minuten nicht geprüft (läuft der Zeitplan im Container? Prüfen: docker exec $BACKUP_CONTAINER mandari-backup pitr-status).")
+    fi
+
+    age=$(pitr_age pitr_basis_last_success)
+    if [ "$age" -ge $((base_max_hours * 60)) ]; then
+        if [ -f "$STATUS_DIR/pitr_basis_last_success" ]; then
+            problems+=("PITR: Die jüngste Basissicherung ist $((age / 60)) Stunden alt ($(cat "$STATUS_DIR/pitr_basis_last_success")).")
+        else
+            problems+=("PITR: Seit dem Einschalten vor $((age / 60)) Stunden gab es keine Basissicherung.")
+        fi
+    fi
+    if pitr_error_after pitr_basis_last_error pitr_basis_last_success; then
+        problems+=("PITR: Die letzte Basissicherung endete mit einem Fehler: $(head -c 1500 "$STATUS_DIR/pitr_basis_last_error")")
+    fi
+
+    age=$(pitr_age pitr_wal_last_success)
+    if [ "$age" -ge "$wal_max_minutes" ]; then
+        problems+=("PITR: Das WAL wurde seit $age Minuten nicht in die Repositorys übertragen.")
+    fi
+    if pitr_error_after pitr_wal_last_error pitr_wal_last_success; then
+        problems+=("PITR: Die letzte WAL-Übertragung endete mit einem Fehler: $(head -c 1500 "$STATUS_DIR/pitr_wal_last_error")")
+    fi
+
+    # Eine unterbrochene WAL-Kette lässt sich nicht beheben, nur wissen: einen Tag lang melden
+    if [ -s "$STATUS_DIR/pitr_kette_unterbrochen" ] && [ "$(pitr_age pitr_kette_unterbrochen)" -lt 1440 ]; then
+        problems+=("PITR: $(head -c 1500 "$STATUS_DIR/pitr_kette_unterbrochen")")
+    fi
+fi
 
 if [ ${#problems[@]} -eq 0 ]; then
     rm -f "$ALERT_STAMP"

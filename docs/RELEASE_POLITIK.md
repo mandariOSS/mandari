@@ -27,6 +27,13 @@ Skript prüft auch das). Container-Images tragen die Version als Tag (`v0.10.0`)
 zusätzlich `latest` für das jüngste Release und `dev-<commit>` für Entwicklungsstände.
 Entwicklungsstände sind keine Releases und tragen keine Zusage.
 
+**Ein Zweig je Version:** Jede veröffentlichte Version bleibt über einen eigenen Zweig
+erreichbar, `release/v0.12.0` für Version 0.12.0, auch Patch-Versionen (`release/v0.12.1`).
+Der Zweig zeigt auf denselben Commit wie der Git-Tag und wird danach nicht mehr verändert;
+der Release-Workflow legt ihn beim Veröffentlichen an. Korrekturen an einer älteren Version
+erscheinen als neue Patch-Version mit eigenem Zweig. Entwickelt wird weiter auf `dev`,
+`main` trägt den jeweils jüngsten veröffentlichten Stand.
+
 **Vor 1.0** (heute): Wir halten uns bereits an die Regeln oben; MINOR-Versionen können
 bis 1.0 in Ausnahmefällen brechende Änderungen enthalten, die dann im Changelog unter
 „Brechend“ stehen und eine Migrationsanleitung bekommen.

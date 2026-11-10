@@ -242,6 +242,7 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
 ### Nach der Installation
 
 - [ ] `https://<domain>/health/ready/` meldet `"status": "ok"`
+- [ ] `manage.py doctor` meldet keinen Fehler (Abschnitt „Konfiguration prüfen“)
 - [ ] Tägliche Sicherung eingetragen (`crontab -l`), Probelauf mit `./backup.sh --verify`
 - [ ] Passphrase für die Konfiguration in der Sicherung (`.backup-passphrase`, legt `install.sh` an) außerhalb
   des Servers verwahrt (Abschnitt „Sicherung“)
@@ -250,6 +251,37 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
   zeigt die Zeitpläne (Abschnitt „Geplante Aufgaben“); in der Crontab nur Aufgaben des Betriebssystems
 - [ ] Testmail aus den Systemeinstellungen: Message-ID endet auf die eigene Domain, nicht auf eine
   Container-ID (Abschnitt „Mailversand: Message-ID und EHLO“)
+
+### Konfiguration prüfen: `manage.py doctor`
+
+Der Befehl prüft, ob die Einstellungen im Prozess angekommen und die Dienste erreichbar sind. Er ändert nichts
+(nur lesende Zugriffe, keine Testmail, kein Objekt im Objektspeicher) und gibt keine Passwörter, Schlüssel oder
+Tokens aus.
+
+```bash
+docker compose exec mandari python manage.py doctor
+# mit Abgleich der .env gegen den laufenden Prozess (die Datei liegt nicht im Container)
+docker compose exec -T mandari python manage.py doctor --env-datei - < .env
+# für Skripte; einzelne Prüfungen mit eigener Zeitgrenze je Prüfung (Standard 10 Sekunden)
+docker compose exec mandari python manage.py doctor --json
+docker compose exec mandari python manage.py doctor --nur smtp --nur objektspeicher --zeitgrenze 20
+```
+
+Jede Prüfung meldet `OK`, `WARNUNG`, `FEHLER` oder `ÜBERSPRUNGEN` (nicht eingestellt, kein Fehler), bei Bedarf mit
+einem Hinweis zur Behebung. Der Exit-Code ist 1, sobald eine Prüfung einen Fehler meldet, sonst 0. Keine Prüfung
+wartet länger als die Zeitgrenze. In den Diensten `worker`, `worker-heavy` und `worker-live` läuft der Befehl
+ebenso und zeigt, was dort ankommt.
+
+| Prüfung | Was sie feststellt |
+|---------|--------------------|
+| `umgebung` | `SECRET_KEY`, `ENCRYPTION_MASTER_KEY`, `DATABASE_URL`, `REDIS_URL` und `SITE_URL` sind gesetzt, keine trägt noch den Platzhalter aus `.env.example`, der Hauptschlüssel ist ein gültiger Schlüssel |
+| `umgebung-datei` | nur mit `--env-datei`: Jede Zuweisung der `.env` ist im Prozess angekommen und hat dort denselben Wert. Abweichen dürfen nur Werte, die `docker-compose.yml` selbst setzt. Ein anderer Wert heißt meist: Die Dienste wurden nach der Änderung nicht neu erstellt (`docker compose up -d`, ein `restart` liest die Datei nicht neu). Gemeldet werden nur Namen |
+| `datenbank` | Datenbank erreichbar |
+| `cache` | Redis erreichbar (Leseprobe); ohne Redis übersprungen |
+| `smtp` | Mailserver der Plattform (Systemeinstellungen, sonst `EMAIL_*`): Verbindung, Verschlüsselung und Anmeldung, ohne eine Mail zu senden; ohne Mailserver übersprungen |
+| `objektspeicher` | mit `OBJ_ENABLED=true`: alle vier Zugangswerte gesetzt (sonst bleibt der Objektspeicher stillschweigend aus) und der Bucket antwortet auf `HeadBucket` |
+| `aufgaben` | das Backend der Aufträge lädt (`TASKS_BACKEND`), mit `journal` ist dessen Tabelle lesbar; `MAIL_QUEUE` ohne `journal` wirkt nicht |
+| `worker` | laufende Worker bedienen alle Rollen und Warteschlangen, die die Installation braucht (wie `/health/ready/`) |
 
 ---
 
@@ -2127,6 +2159,9 @@ docker compose ps
 
 # 3. Health-Check manuell
 curl -s https://<domain>/health/ready/
+
+# 4. Einstellungen und Dienste prüfen (Abschnitt „Konfiguration prüfen“)
+docker compose exec mandari python manage.py doctor
 ```
 
 ### Container startet nicht

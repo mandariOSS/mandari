@@ -97,10 +97,15 @@ def sitemap_index(request):
     """
     Sitemap-Index: je gelistete Kommune die Grund-Sitemap und die nummerierten Dateien für Vorgänge und Sitzungen.
 
-    Kennung ist der Slug, für Kommunen ohne Slug die ID. ``lastmod`` der Grund-Sitemap ist der letzte Abgleich,
-    der nummerierten Dateien die jüngste glaubhafte Änderung ihrer Einträge (Issues #914, #939); ohne glaubhaften
-    Zeitpunkt fehlt ``lastmod``. Die Dateien kommen aus der Vorberechnung (``sitemaps.index_dateien``, Issue #1259):
-    zwei Abfragen für alle Kommunen, auch ohne Cache.
+    Kennung ist der Slug, für Kommunen ohne Slug die ID. ``lastmod`` der nummerierten Dateien ist die jüngste
+    glaubhafte Änderung ihrer Einträge (Issues #914, #939); ohne glaubhaften Zeitpunkt fehlt ``lastmod``. Die Dateien
+    kommen aus der Vorberechnung (``sitemaps.index_dateien``, Issue #1259): zwei Abfragen für alle Kommunen, auch ohne
+    Cache.
+
+    ``lastmod`` der Grund-Sitemap ist das ihrer Stadtseite: die jüngste glaubhafte Änderung der Vorgänge und Sitzungen
+    der Kommune, aus denselben vorberechneten Werten und ohne weitere Abfrage. Nicht der letzte Abgleich: Er läuft
+    auch, wenn sich nichts geändert hat (Issue #939). Änderungen nur an Gremien, Personen oder Ratsfragen zählt der
+    Index nicht mit; das wären Abfragen je Kommune. Ohne Stadtseite (Kommune ohne Slug) fehlt ``lastmod``.
     """
     site_url = _site_url()
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
@@ -113,18 +118,21 @@ def sitemap_index(request):
             xml_parts.append(f"    <lastmod>{_w3c(lastmod)}</lastmod>")
         xml_parts.append("  </sitemap>")
 
-    bodies = list(OParlBody.objects.listed().only("id", "slug", "last_sync").order_by("name"))
+    bodies = list(OParlBody.objects.listed().only("id", "slug").order_by("name"))
     dateien = sitemaps.index_dateien(body.pk for body in bodies)
     for body in bodies:
         kennung = _sitemap_key(body)
-        add_sitemap(reverse("insight_core:body_sitemap", kwargs={"body_slug": kennung}), body.last_sync)
-        for art in sitemaps.ARTEN.values():
-            for datei in dateien.get((body.pk, art.kennung), []):
-                pfad = reverse(
-                    "insight_core:body_sitemap_seite",
-                    kwargs={"body_slug": kennung, "art": art.kennung, "seite": datei.seite},
-                )
-                add_sitemap(pfad, datei.lastmod)
+        eigene = [datei for art in sitemaps.ARTEN.values() for datei in dateien.get((body.pk, art.kennung), [])]
+        add_sitemap(
+            reverse("insight_core:body_sitemap", kwargs={"body_slug": kennung}),
+            sitemaps.juengste_aenderung(eigene) if body.slug else None,
+        )
+        for datei in eigene:
+            pfad = reverse(
+                "insight_core:body_sitemap_seite",
+                kwargs={"body_slug": kennung, "art": datei.art.kennung, "seite": datei.seite},
+            )
+            add_sitemap(pfad, datei.lastmod)
     xml_parts.append("</sitemapindex>")
     return _xml_antwort(xml_parts)
 
@@ -209,8 +217,9 @@ def body_sitemap(request, body_slug):
     urlset = _Urlset()
     if body.slug:
         # Stadtseite der Kommune (/insight/k/<slug>/): Einstieg für „Ratsinformationen <Kommune>“
+        # lastmod: jüngste glaubhafte Änderung ihrer Vorgänge und Sitzungen, nicht der letzte Abgleich (Issue #939)
         stadtseite = reverse("insight_core:insight:portal_entry", kwargs={"slug": body.slug})
-        urlset.add(stadtseite, body.last_sync, "daily", "0.9")
+        urlset.add(stadtseite, sitemaps.aenderung_der_kommune(body.pk), "daily", "0.9")
         # Listen je Kommune (Issue #939), erste Seite: Über ihre Seitenlinks erreichen Suchmaschinen die Detailseiten
         for liste in KOMMUNEN_LISTEN.values():
             urlset.add(reverse(f"insight_core:insight:{liste}", kwargs={"slug": body.slug}), None, "daily", "0.7")

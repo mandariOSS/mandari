@@ -252,6 +252,13 @@ class TestAtomBaustein:
         assert len(titel) <= feeds.TITEL_HOECHSTENS
         assert len(eintrag.findtext(f"{ATOM}summary") or "") <= feeds.ZUSAMMENFASSUNG_HOECHSTENS
 
+    def test_ungueltige_zeichen_sind_genau_die_von_xml_verbotenen(self) -> None:
+        """C0-Steuerzeichen ohne Tab, Zeilenumbruch und Wagenrücklauf, dazu U+FFFE und U+FFFF – sonst nichts."""
+        alle = "".join(chr(c) for c in range(0x110000) if not 0xD800 <= c <= 0xDFFF)
+        gemeint = {chr(c) for c in (*range(0x00, 0x09), 0x0B, 0x0C, *range(0x0E, 0x20), 0xFFFE, 0xFFFF)}
+
+        assert set(feeds._UNGUELTIG.findall(alle)) == gemeint
+
     def test_leerer_feed_hat_ein_festes_datum(self) -> None:
         erster = feeds.atom(self._feed([]))
 

@@ -9,6 +9,11 @@
 #   monatlich   Wiederherstellungstest in einer Wegwerf-Datenbank
 # Die Daten werden vor der Übertragung verschlüsselt (AES-256, restic).
 #
+# Wahlweise (BACKUP_PITR=1): Wiederherstellung auf einen Zeitpunkt. Der Container
+# empfängt dann fortlaufend das WAL der Datenbank, erstellt nachts zusätzlich eine
+# physische Basissicherung und überträgt das WAL alle 15 Minuten. Vorher die
+# Datenbank einmal vorbereiten: scripts/pitr-db-einrichten.sh (docs/BACKUP.md).
+#
 #   cp .env.example .env              # Werte eintragen
 #   docker compose build
 #   docker compose run --rm backup mandari-backup init
@@ -53,11 +58,23 @@ services:
       BACKUP_PG_HOST: ${BACKUP_PG_HOST:-mandari-postgres}
       BACKUP_PG_USER: ${BACKUP_PG_USER:-mandari}
       PGPASSWORD: ${BACKUP_PG_PASSWORD:?BACKUP_PG_PASSWORD fehlt (siehe .env.example)}
+      # Wiederherstellung auf einen Zeitpunkt (PITR), Standard aus
+      BACKUP_PITR: ${BACKUP_PITR:-0}
+      BACKUP_PITR_REPL_USER: ${BACKUP_PITR_REPL_USER:-mandari_pitr}
+      BACKUP_PITR_REPL_PASSWORD: ${BACKUP_PITR_REPL_PASSWORD:-}
+      BACKUP_PITR_SLOT: ${BACKUP_PITR_SLOT:-mandari_pitr}
+      BACKUP_PITR_WAL_CRON: "${BACKUP_PITR_WAL_CRON:-*/15 * * * *}"
+      BACKUP_PITR_KEEP_DAYS: ${BACKUP_PITR_KEEP_DAYS:-7}
+      BACKUP_PITR_COMPRESS: ${BACKUP_PITR_COMPRESS:-6}
+      BACKUP_PITR_CHECKPOINT: ${BACKUP_PITR_CHECKPOINT:-spread}
+      BACKUP_PITR_SLOT_WARN_MB: ${BACKUP_PITR_SLOT_WARN_MB:-512}
     volumes:
       - ${BACKUP_SSH_DIR:-./ssh}:/root/.ssh:ro
       - ${BACKUP_PASSWORD_FILE:-./secrets/restic_password}:/run/secrets/restic_password:ro
       - ${BACKUP_STATUS_DIR:-./status}:/status
       - ${BACKUP_WORK_DIR:-./work}:/work
+      # WAL-Archiv und Zwischenablage der Basissicherung; ohne BACKUP_PITR=1 bleibt es leer
+      - ${BACKUP_PITR_DIR:-./pitr}:/pitr
       - restic_cache:/root/.cache/restic
       # Quellen (nur lesend) – alles unter /source landet im Backup.
       # Weitere Verzeichnisse per docker-compose.override.yml unter /source/… einhängen.

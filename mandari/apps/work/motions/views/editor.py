@@ -4,10 +4,12 @@ Motion/Antrag views for the Work module.
 """
 
 import logging
+from typing import Any
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.http import JsonResponse
+from django.db import transaction
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -38,7 +40,15 @@ from ..models import (
     OrganizationLetterhead,
     content_fingerprint,
 )
-from ..services import FremdeAuswahlError, MotionAIService, document_type_for, letterhead_for, speicherkonflikt
+from ..services import (
+    FremdeAuswahlError,
+    MotionAIService,
+    document_type_for,
+    hat_meta_felder,
+    letterhead_for,
+    meta_ueberholt,
+    speicherkonflikt,
+)
 from ._helpers import _broadcast_doc_reload, _flatten_folder_tree, _get_org_folder_or_404
 
 #: Neuer Antragseditor (Teil von #856) bzw. der bisherige; ``?ansicht=bisher`` öffnet den bisherigen auch bei
@@ -527,6 +537,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             "title": motion.title,
             "visibility": motion.visibility,
             "contentHash": content_fingerprint(_current_content(motion)),
+            # Stand von Titel, Dokumenttyp und Briefpapier; geht mit jedem POST dieser Felder mit (#1199)
+            "metaVersion": motion.meta_version,
             "motionType": motion.motion_type,
             "documentTypeId": str(motion.document_type_id) if motion.document_type_id else "",
             "documentTypeName": motion.get_type_display(),
@@ -648,9 +660,20 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                             )
                             if feld in request.POST
                         ]
-                    motion.save(update_fields=felder)
+                    with transaction.atomic():
+                        # Überholte Requests schreiben nichts; die Zeilensperre des Zählers hält bis zum Schreiben (#1199)
+                        ueberholt = meta_ueberholt(request, motion)
+                        if ueberholt is not None:
+                            return self._meta_ueberholt(request, motion, ueberholt)
+                        motion.save(update_fields=felder)
                     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                        return JsonResponse({"success": True, "saved_at": timezone.now().isoformat()})
+                        return JsonResponse(
+                            {
+                                "success": True,
+                                "saved_at": timezone.now().isoformat(),
+                                "meta_version": motion.meta_version,
+                            }
+                        )
                     messages.success(request, "Änderungen gespeichert.")
                     return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
@@ -670,34 +693,44 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                     messages.error(request, konflikt)
                     return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
-                # Create revision if content changed
-                if old_content != new_content and old_content:
-                    try:
-                        version = motion.revisions.count() + 1
-                        revision = MotionRevision(
-                            motion=motion,
-                            version=version,
-                            changed_by=self.membership,
-                            change_summary=request.POST.get("change_summary", "Automatische Speicherung"),
-                        )
-                        revision.set_content_encrypted(old_content)
-                        revision.save()
-                    except Exception as e:
-                        logger.exception(f"[DocumentEditor] REVISION CREATION FAILED: {e}")
+                with transaction.atomic():
+                    # Gehen Titel, Dokumenttyp oder Briefpapier mit, gilt deren Reihenfolge auch hier: Ein überholter
+                    # Request schreibt nichts, auch nicht den Text (#1199)
+                    ueberholt = meta_ueberholt(request, motion)
+                    if ueberholt is not None:
+                        return self._meta_ueberholt(request, motion, ueberholt)
 
-                content_changed = _store_content(motion, new_content, old_content)
-                motion.save()
+                    # Create revision if content changed
+                    if old_content != new_content and old_content:
+                        try:
+                            # Eigener Sicherungspunkt: Scheitert die Revision, bleibt die Transaktion benutzbar
+                            with transaction.atomic():
+                                version = motion.revisions.count() + 1
+                                revision = MotionRevision(
+                                    motion=motion,
+                                    version=version,
+                                    changed_by=self.membership,
+                                    change_summary=request.POST.get("change_summary", "Automatische Speicherung"),
+                                )
+                                revision.set_content_encrypted(old_content)
+                                revision.save()
+                        except Exception as e:
+                            logger.exception(f"[DocumentEditor] REVISION CREATION FAILED: {e}")
+
+                    content_changed = _store_content(motion, new_content, old_content)
+                    motion.save()
                 if content_changed:
                     _broadcast_doc_reload(motion)
 
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                    return JsonResponse(
-                        {
-                            "success": True,
-                            "saved_at": timezone.now().isoformat(),
-                            "content_hash": content_fingerprint(new_content),
-                        }
-                    )
+                    antwort: dict[str, Any] = {
+                        "success": True,
+                        "saved_at": timezone.now().isoformat(),
+                        "content_hash": content_fingerprint(new_content),
+                    }
+                    if hat_meta_felder(request):
+                        antwort["meta_version"] = motion.meta_version
+                    return JsonResponse(antwort)
 
                 messages.success(request, "Änderungen gespeichert.")
                 return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
@@ -711,6 +744,13 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         # Metadaten (Bezug, Zuständigkeit …) setzt document_meta (Issue #586)
         return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
+
+    def _meta_ueberholt(self, request: HttpRequest, motion: Motion, ueberholt: JsonResponse | str) -> HttpResponse:
+        """Antwort auf einen überholten Speicher-POST (#1199): 409 für den Editor, sonst Hinweis und zurück."""
+        if isinstance(ueberholt, JsonResponse):
+            return ueberholt
+        messages.error(request, ueberholt)
+        return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
 
 class GuestSharedDocumentsView(NeueVorlageMixin, WorkViewMixin, TemplateView):

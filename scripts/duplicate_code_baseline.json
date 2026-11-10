@@ -1,0 +1,21 @@
+{
+  "beschreibung": "Doppelter Code nach jscpd (Klone und doppelte Zeilen je Format) nach scripts/duplicate_code_ratchet.toml; dürfen nur sinken (scripts/check_duplicate_code_ratchet.py, Issue #1113).",
+  "formate": {
+    "javascript": {
+      "klone": 0,
+      "zeilen": 0
+    },
+    "markup": {
+      "klone": 44,
+      "zeilen": 843
+    },
+    "python": {
+      "klone": 20,
+      "zeilen": 387
+    },
+    "typescript": {
+      "klone": 1,
+      "zeilen": 19
+    }
+  }
+}

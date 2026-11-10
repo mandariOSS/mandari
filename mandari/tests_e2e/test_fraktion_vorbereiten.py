@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Tagesordnung der Fraktionssitzung vor der Sitzung (Issue #1071) im Browser: Ziehen am Griff, Verschieben mit den
-Pfeiltasten am Griff (Fokus bleibt, Ansage) und sofort speichern von Titel und Beschreibung beim Verlassen des Felds,
+Pfeiltasten am Griff (Fokus bleibt, Ansage), Ein- und Ausrücken als Unterpunkt (Issue #1285) und sofort speichern von Titel und Beschreibung beim Verlassen des Felds,
 auch wenn der Server kurz nicht erreichbar ist (Eingabe bleibt im Browser, wird erneut gesendet).
 """
 
@@ -76,7 +76,8 @@ def test_tops_ziehen_und_mit_pfeiltasten_verschieben(
     quelle.hover()
     page.mouse.down()
     box = ziel.bounding_box()
-    page.mouse.move(box["x"] + 40, box["y"] + 4, steps=12)
+    # Senkrecht ziehen: Wer weiter nach rechts geht, rückt den TOP ein (Issue #1285)
+    page.mouse.move(box["x"] + 12, box["y"] + 4, steps=12)
     page.mouse.up()
     expect(page.locator(".fs-teil").first.locator(".fs-top-titel").first).to_have_text("Verkehr")
     # Die Antwort des Servers bringt die neuen Nummern
@@ -95,8 +96,65 @@ def _ziehen(page: Any, griff: Any, ziel: Any) -> None:
     page.mouse.move(griff_box["x"] + 6, griff_box["y"] + 14, steps=4)
     expect(page.locator("[x-data^='fsTagesordnung']")).to_have_class(re.compile(r"\bfs-zieht\b"))
     box = ziel.bounding_box()
-    page.mouse.move(box["x"] + 60, box["y"] + box["height"] / 2, steps=16)
+    # Auf Höhe des Griffs bleiben: Weiter rechts würde der TOP zum Unterpunkt (Issue #1285)
+    page.mouse.move(griff_box["x"] + griff_box["width"] / 2, box["y"] + box["height"] / 2, steps=16)
     page.mouse.up()
+
+
+def _seitwaerts(page: Any, griff: Any, dx: float) -> None:
+    """Am Griff greifen und nur waagerecht ziehen (ohne Loslassen)."""
+    griff.hover()
+    box = griff.bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.down()
+    page.mouse.move(x + (4 if dx > 0 else -4), y + 2, steps=4)
+    expect(page.locator("[x-data^='fsTagesordnung']")).to_have_class(re.compile(r"\bfs-zieht\b"))
+    page.mouse.move(x + dx, y + 2, steps=12)
+
+
+def test_top_zum_unterpunkt_machen_und_zurueck(
+    page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems, screenshot: Any
+) -> None:
+    """Issue #1285: nach rechts gezogen wird aus TOP 3 der Unterpunkt 2.1, nach links wieder TOP 3; Pfeiltasten."""
+    meeting = _sitzung(admin)
+    _oeffnen(page, goto, login, admin, meeting)
+    verkehr = FactionAgendaItem.objects.get(meeting=meeting, title="Verkehr")
+    presse = FactionAgendaItem.objects.get(meeting=meeting, title="Presse")
+    # Die Zeile in der Liste; Sortable hängt beim Ziehen eine Kopie mit derselben id an body
+    zeile = page.locator(f"ol.fs-tops > #top-{presse.pk}")
+
+    # Nach rechts: Die Ablage rückt ein und zeigt die künftige Nummer
+    _seitwaerts(page, page.locator(f'[data-griff="{presse.pk}"]'), 60)
+    expect(zeile).to_have_attribute("data-ebene-neu", "1")
+    expect(zeile.locator(".nr")).to_have_text("2.1")
+    screenshot("fraktion_vorbereiten_unterpunkt_ziehen_1440")
+    page.mouse.up()
+    expect(zeile).to_have_class(re.compile(r"\bunter\b"))
+    expect(zeile.locator(".nr")).to_have_text("2.1")
+    presse.refresh_from_db()
+    assert presse.parent_id == verkehr.pk and presse.number == "2.1"
+
+    # Nach links: wieder ein eigener TOP
+    _seitwaerts(page, page.locator(f'[data-griff="{presse.pk}"]'), -60)
+    expect(zeile).to_have_attribute("data-ebene-neu", "0")
+    expect(zeile.locator(".nr")).to_have_text("3")
+    page.mouse.up()
+    expect(zeile).not_to_have_class(re.compile(r"\bunter\b"))
+    presse.refresh_from_db()
+    assert presse.parent_id is None and presse.number == "3"
+
+    # Tastatur: Pfeil rechts rückt unter den TOP darüber, Pfeil links wieder heraus; der Fokus bleibt am Griff
+    page.locator(f'[data-griff="{verkehr.pk}"]').focus()
+    page.keyboard.press("ArrowRight")
+    expect(page.locator(f"#top-{verkehr.pk} .nr")).to_have_text("1.1")
+    expect(page.locator(f'[data-griff="{verkehr.pk}"]')).to_be_focused()
+    expect(page.locator("[x-text='ansage']")).to_have_text("TOP verschoben, jetzt 1.1.")
+    assert FactionAgendaItem.objects.get(pk=presse.pk).number == "2"
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator(f"#top-{verkehr.pk} .nr")).to_have_text("2")
+    verkehr.refresh_from_db()
+    assert verkehr.parent_id is None
+    problems.assert_clean("TOP ein- und ausrücken")
 
 
 def test_top_zwischen_oeffentlichem_und_nichtoeffentlichem_teil_ziehen(

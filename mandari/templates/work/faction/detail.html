@@ -47,7 +47,7 @@
         {% endif %}
 
         {# Hinweis: Protokoll der vorherigen Sitzung noch nicht genehmigt #}
-        {% if meeting.previous_meeting and not meeting.previous_meeting.protocol_approved %}
+        {% if meeting.has_pending_protocol_approval %}
         <c-ui.alert variant="warning" icon="alert-triangle">Protokoll der vorherigen Sitzung ({{ meeting.previous_meeting.start|date:"d.m.Y" }}) noch nicht genehmigt</c-ui.alert>
         {% endif %}
 

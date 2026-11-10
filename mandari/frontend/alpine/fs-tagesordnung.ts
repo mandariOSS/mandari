@@ -2,13 +2,20 @@
  * Tagesordnung der Planung einer Fraktionssitzung (Alpine-Komponente `fsTagesordnung`, Issue #1071, Muster
  * sitzung.html „Planung“).
  *
- * - **Ziehen:** TOPs der obersten Ebene am Griff verschieben, je Teil (öffentlich, nichtöffentlich). SortableJS wie
+ * - **Ziehen:** TOPs und Unterpunkte am Griff verschieben, je Teil (öffentlich, nichtöffentlich). SortableJS wie
  *   das Aufgabenboard (Vendor-Skript, global `window.Sortable`). Nach dem Ablegen geht die neue Stelle an die
- *   bisherige Aktion `move_item` (`direction=to`, `position` ab 0); der Server antwortet mit der neuen Tagesordnung.
- *   Auch in den anderen Teil (`teil`, Issue #1160): Aus dem nichtöffentlichen in den öffentlichen Teil erst nach einer
- *   Rückfrage, denn dann sehen ihn alle Mitglieder. Scheitert das Speichern, lädt die Tagesordnung den Stand des Servers.
- *   Tastatur: Griff fokussieren, Pfeil hoch oder runter (`move_item` up/down); der Fokus bleibt am Griff, eine
- *   Ansage nennt die neue Nummer. Die Einträge „Nach oben“/„Nach unten“ im Menü je TOP bleiben.
+ *   bisherige Aktion `move_item` (`direction=to`, `position` ab 0 unter den Geschwistern, `parent_id`); der Server
+ *   antwortet mit der neuen Tagesordnung. Auch in den anderen Teil (`teil`, Issue #1160): Aus dem nichtöffentlichen in
+ *   den öffentlichen Teil erst nach einer Rückfrage, denn dann sehen ihn alle Mitglieder. Scheitert das Speichern, lädt
+ *   die Tagesordnung den Stand des Servers.
+ * - **Ebene (Issue #1285):** Die Liste bleibt flach, Unterpunkte stehen direkt unter ihrem TOP. Wer beim Ziehen
+ *   `EINRUECKEN_PX` nach rechts geht, macht den TOP zum Unterpunkt des TOPs darüber (aus 4 wird 3.1), nach links
+ *   wird ein Unterpunkt zum eigenen TOP. Die Ablage zeigt Einrückung und künftige Nummer. Grenzen wie beim Server:
+ *   eine Ebene, ein TOP mit Unterpunkten wird kein Unterpunkt (seine Unterpunkte ziehen ausgeblendet mit), nichts
+ *   unter den Genehmigungs-TOP; liegt die Ablage zwischen einem TOP und seinen Unterpunkten, wird sie zum Unterpunkt.
+ * - **Tastatur:** Griff fokussieren, Pfeil hoch oder runter (`move_item` up/down), Pfeil rechts rückt ein (`in`),
+ *   Pfeil links rückt aus (`out`); der Fokus bleibt am Griff, eine Ansage nennt die neue Nummer. Die Einträge im Menü
+ *   je TOP („Nach oben“, „Nach unten“, „Zum Unterpunkt von …“, „Zum eigenen TOP machen“) bleiben.
  * - **Sofort speichern:** Titel und Beschreibung des aufgeklappten TOPs speichern beim Verlassen des Felds bzw. mit
  *   Enter im Titel (JSON an `work:faction_item_fields`). Speicherdienst der Vorbereitung (frontend/js/speichern.ts):
  *   Wiederholung bei Störung, Anhalten bei abgelaufener Anmeldung oder fehlendem zweitem Faktor
@@ -43,6 +50,8 @@ const BEREICH = 'top'
 const FELDER = ['title', 'description'] as const
 type Feld = (typeof FELDER)[number]
 const GESPEICHERT_MS = 2500
+/** So weit nach rechts (links) gezogen wird ein TOP zum Unterpunkt (ein Unterpunkt zum eigenen TOP) */
+const EINRUECKEN_PX = 32
 
 // ---- SortableJS (Vendor-Skript ohne Typpaket; Typ hier nur lokal, task-board.ts hat einen eigenen) --------------
 
@@ -65,13 +74,64 @@ type SortableKlasse = new (
     ghostClass: string
     forceFallback: boolean
     fallbackOnBody: boolean
-    onStart: () => void
+    onStart: (event: ZiehEreignis) => void
+    onChange: () => void
     onEnd: (event: ZiehEreignis) => void
   },
 ) => unknown
 
 function sortable(): SortableKlasse | null {
   return (window as unknown as { Sortable?: SortableKlasse }).Sortable ?? null
+}
+
+/** Laufendes Ziehen: Zeile (Sortable bewegt sie als Ablage durch die Liste), Zeiger und Ebene */
+interface Ziehen {
+  zeile: HTMLElement
+  startX: number
+  x: number
+  startEbene: number
+  ebene: number
+  /** Nummer der Zeile vor dem Ziehen, zum Zurücksetzen */
+  nr: string
+  /** Unterpunkte eines gezogenen TOPs: ausgeblendet, sie gehen mit */
+  mitgezogen: HTMLElement[]
+}
+
+function istZeile(el: Element | null): el is HTMLElement {
+  return el instanceof HTMLElement && el.classList.contains('fs-top') && !el.classList.contains('fs-mitgezogen')
+}
+
+/** Nächste sichtbare Zeile vor oder nach `zeile` (ohne ausgeblendete Unterpunkte des gezogenen TOPs) */
+function nachbar(zeile: HTMLElement, richtung: 'previousElementSibling' | 'nextElementSibling'): HTMLElement | null {
+  let el = zeile[richtung]
+  while (el && !istZeile(el)) el = el[richtung]
+  return el instanceof HTMLElement ? el : null
+}
+
+/** TOP, unter den eine Ablage direkt hinter `vorher` rücken würde: der TOP selbst oder der TOP seines Unterpunkts */
+function elternFuer(vorher: HTMLElement | null): HTMLElement | null {
+  if (!vorher) return null
+  const eltern = vorher.dataset.eltern
+  const top = eltern ? document.getElementById(`top-${eltern}`) : vorher
+  // Der Genehmigungs-TOP ist nicht verschiebbar und nimmt keine Unterpunkte auf
+  return top?.hasAttribute('data-verschiebbar') ? top : null
+}
+
+/** Zeilen vor `zeile` (bis ausschließlich `ab`), die `passt` erfüllen, ohne die Zeile selbst und Ausgeblendetes */
+function davorZaehlen(zeile: HTMLElement, passt: (el: HTMLElement) => boolean, ab?: HTMLElement): number {
+  let zahl = 0
+  let el = nachbar(zeile, 'previousElementSibling')
+  while (el && el !== ab) {
+    if (passt(el)) zahl++
+    el = nachbar(el, 'previousElementSibling')
+  }
+  return zahl
+}
+
+/** Künftige Nummer einer Zeile der obersten Ebene: Zeilen der obersten Ebene davor (mit Genehmigungs-TOP) + 1 */
+function nummerOben(zeile: HTMLElement, gezogen: HTMLElement): string {
+  const n = davorZaehlen(zeile, (el) => !el.dataset.eltern && el !== gezogen) + 1
+  return zeile.parentElement?.dataset.teil === 'internal' ? `NÖ ${n}` : String(n)
 }
 
 /** Ein gesicherter, noch nicht gespeicherter Stand zur Übernahme (Konflikt oder Stand des Servers unbekannt) */
@@ -114,9 +174,31 @@ export const fsTagesordnung = defineComponent(() => {
     /** Nach dem Austausch fokussieren (Verschieben per Tastatur) */
     _fokusNach: '',
     _ansageNach: false,
+    _ziehen: null as Ziehen | null,
+    /** Zeigerposition beim Greifen und während des Ziehens */
+    _zeigerX: 0,
 
     init() {
       standMelden = (s) => this.uebernehmeStand(s)
+      // Zeiger verfolgen: beim Greifen (Startpunkt) und während des Ziehens (Ebene)
+      const zeiger = (x: number) => {
+        this._zeigerX = x
+        if (this._ziehen) {
+          this._ziehen.x = x
+          this.ebeneZeigen()
+        }
+      }
+      this.$el.addEventListener('pointerdown', (e: PointerEvent) => zeiger(e.clientX), true)
+      document.addEventListener('pointermove', (e: PointerEvent) => {
+        if (this._ziehen) zeiger(e.clientX)
+      })
+      document.addEventListener(
+        'touchmove',
+        (e: TouchEvent) => {
+          if (this._ziehen && e.touches[0]) zeiger(e.touches[0].clientX)
+        },
+        { passive: true },
+      )
       this.einrichten()
       this.sicherungPruefen()
       this.$el.addEventListener('htmx:afterSettle', (event: Event) => {
@@ -184,7 +266,8 @@ export const fsTagesordnung = defineComponent(() => {
           // Ziehen über Maus-/Zeigerereignisse statt HTML5 Drag and Drop: gleiches Verhalten in allen Browsern
           forceFallback: true,
           fallbackOnBody: true,
-          onStart: () => this.$el.classList.add('fs-zieht'),
+          onStart: (event) => this.ziehenBeginnt(event.item),
+          onChange: () => this.ebeneZeigen(),
           onEnd: (event) => {
             this.$el.classList.remove('fs-zieht')
             void this.abgelegt(event)
@@ -193,17 +276,90 @@ export const fsTagesordnung = defineComponent(() => {
       }
     },
 
-    /** Nach dem Ablegen: neue Stelle speichern, beim Wechsel des Teils mit dem Ziel-Teil */
+    ziehenBeginnt(zeile: HTMLElement): void {
+      this.$el.classList.add('fs-zieht')
+      const id = zeile.dataset.id || ''
+      const mitgezogen = zeile.dataset.eltern
+        ? []
+        : Array.from(zeile.parentElement?.querySelectorAll<HTMLElement>(`:scope > [data-eltern="${id}"]`) ?? [])
+      for (const kind of mitgezogen) kind.classList.add('fs-mitgezogen')
+      const ebene = zeile.dataset.eltern ? 1 : 0
+      this._ziehen = {
+        zeile,
+        startX: this._zeigerX,
+        x: this._zeigerX,
+        startEbene: ebene,
+        ebene,
+        nr: zeile.querySelector('.nr')?.textContent ?? '',
+        mitgezogen,
+      }
+      this.ebeneZeigen()
+    },
+
+    /**
+     * Ebene der Ablage aus Zeiger und Nachbarn: gewünscht ist die Ebene beim Greifen, um eine verschoben, wenn der
+     * Zeiger `EINRUECKEN_PX` nach rechts oder links gewandert ist; möglich ist ein Unterpunkt nur unter einem
+     * verschiebbaren TOP darüber und nur ohne eigene Unterpunkte, nötig, wenn darunter ein Unterpunkt folgt.
+     */
+    ebeneZeigen(): void {
+      const z = this._ziehen
+      if (!z) return
+      const dx = z.x - z.startX
+      const gewuenscht = z.startEbene + (dx >= EINRUECKEN_PX ? 1 : dx <= -EINRUECKEN_PX ? -1 : 0)
+      const eltern = elternFuer(nachbar(z.zeile, 'previousElementSibling'))
+      const danach = nachbar(z.zeile, 'nextElementSibling')
+      const hoechstens = eltern && z.mitgezogen.length === 0 ? 1 : 0
+      const mindestens = danach?.dataset.eltern ? 1 : 0
+      z.ebene = Math.min(Math.max(gewuenscht, mindestens), hoechstens)
+      z.zeile.dataset.ebeneNeu = String(z.ebene)
+      const nummer = z.zeile.querySelector('.nr')
+      if (!nummer) return
+      if (z.ebene === 1 && eltern) {
+        const stelle = davorZaehlen(z.zeile, (el) => el.dataset.eltern === eltern.dataset.id, eltern) + 1
+        nummer.textContent = `${nummerOben(eltern, z.zeile)}.${stelle}`
+      } else {
+        nummer.textContent = nummerOben(z.zeile, z.zeile)
+      }
+    },
+
+    /** Ende des Ziehens: Ablage zurück auf den Stand vor dem Ziehen, Unterpunkte wieder einblenden */
+    ziehenEndet(): Ziehen | null {
+      const z = this._ziehen
+      this._ziehen = null
+      if (!z) return null
+      for (const kind of z.mitgezogen) kind.classList.remove('fs-mitgezogen')
+      delete z.zeile.dataset.ebeneNeu
+      const nummer = z.zeile.querySelector('.nr')
+      if (nummer) nummer.textContent = z.nr
+      return z
+    },
+
+    /** Nach dem Ablegen: neue Stelle und Ebene speichern, beim Wechsel des Teils mit dem Ziel-Teil */
     async abgelegt(event: ZiehEreignis): Promise<void> {
+      const zeile = event.item
+      // Stelle und Eltern noch mit ausgeblendeten Unterpunkten bestimmen, dann aufräumen
+      const z = this._ziehen
+      const ebene = z?.ebene ?? 0
+      const startEbene = z?.startEbene ?? 0
+      const eltern = ebene === 1 ? elternFuer(nachbar(zeile, 'previousElementSibling')) : null
+      // Stelle unter den Geschwistern: Unterpunkte desselben TOPs bzw. verschiebbare TOPs der obersten Ebene
+      const position = eltern
+        ? davorZaehlen(zeile, (el) => el.dataset.eltern === eltern.dataset.id, eltern)
+        : davorZaehlen(zeile, (el) => !el.dataset.eltern && el.hasAttribute('data-verschiebbar'))
+      this.ziehenEndet()
       const andererTeil = event.from !== event.to
-      if (!andererTeil && event.oldIndex === event.newIndex) return
-      const zeilen = Array.from(event.to.querySelectorAll<HTMLElement>(':scope > [data-verschiebbar]'))
-      const position = zeilen.indexOf(event.item)
-      const id = event.item.dataset.id || ''
-      if (!id || position < 0) return
-      const werte: Record<string, string> = { direction: 'to', position: String(position) }
-      if (andererTeil) {
-        const teil = event.to.dataset.teil || ''
+      if (!andererTeil && event.oldIndex === event.newIndex && ebene === startEbene) return
+      const id = zeile.dataset.id || ''
+      if (!id) return
+      const werte: Record<string, string> = {
+        direction: 'to',
+        position: String(position),
+        parent_id: eltern?.dataset.id || '',
+      }
+      const teil = event.to.dataset.teil || ''
+      // Anderer Teil, oder ein nichtöffentlicher Unterpunkt eines öffentlichen TOPs wird eigener TOP im öffentlichen Teil
+      const wirdOeffentlich = teil === 'public' && !eltern && zeile.hasAttribute('data-intern')
+      if (andererTeil || wirdOeffentlich) {
         if (teil === 'public') {
           const bestaetigt = await window.confirmAction({
             title: 'In den öffentlichen Teil verschieben?',
@@ -221,11 +377,15 @@ export const fsTagesordnung = defineComponent(() => {
       }
       this.beiFehlerNeuLaden()
       this.verschieben(id, werte, false)
-      if (andererTeil) {
+      if (werte.teil) {
         this.ansage =
           werte.teil === 'internal'
             ? 'TOP in den nichtöffentlichen Teil verschoben.'
             : 'TOP in den öffentlichen Teil verschoben.'
+      } else if (eltern && startEbene === 0) {
+        this.ansage = 'TOP ist jetzt ein Unterpunkt.'
+      } else if (!eltern && startEbene === 1) {
+        this.ansage = 'Unterpunkt ist jetzt ein eigener TOP.'
       }
     },
 
@@ -244,11 +404,13 @@ export const fsTagesordnung = defineComponent(() => {
       window.htmx.trigger(document.body, 'agenda-refresh')
     },
 
-    /** Pfeil hoch oder runter am Griff */
-    taste(event: KeyboardEvent, richtung: 'up' | 'down'): void {
+    /** Pfeil hoch oder runter am Griff, Pfeil rechts rückt ein, Pfeil links rückt aus */
+    taste(event: KeyboardEvent, richtung: 'up' | 'down' | 'in' | 'out'): void {
       const griff = event.currentTarget as HTMLElement | null
       const id = griff?.dataset.griff || ''
       if (!id) return
+      const istUnterpunkt = Boolean(griff?.closest<HTMLElement>('.fs-top')?.dataset.eltern)
+      if ((richtung === 'in' && istUnterpunkt) || (richtung === 'out' && !istUnterpunkt)) return
       event.preventDefault()
       this.verschieben(id, { direction: richtung }, true)
     },

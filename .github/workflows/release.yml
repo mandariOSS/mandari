@@ -46,6 +46,38 @@ env:
   IMAGE_OWNER: mandarioss
 
 jobs:
+  # Jede veröffentlichte Version bleibt über einen eigenen Zweig erreichbar (docs/RELEASE_POLITIK.md,
+  # Abschnitt 1): release/<Tag> zeigt auf den Commit des Release, auch bei Patch-Versionen. Der Zweig
+  # entsteht über die API aus dem vorhandenen Commit; es wird nichts gebaut und nichts ausgecheckt.
+  # Gibt es ihn schon (Vorbereitungszweig desselben Namens), wird er nur vorgespult, nie zurückgesetzt.
+  versionszweig:
+    name: Versionszweig anlegen
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+      - name: Zweig release/<Tag> auf den Commit des Release setzen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq .sha)"
+          zweig="release/${TAG}"
+          if vorhanden="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${zweig}" --jq .object.sha 2>/dev/null)"; then
+            if [ "$vorhanden" = "$sha" ]; then
+              echo "Zweig ${zweig} zeigt schon auf ${sha}."
+            else
+              # force=false: Die API lehnt ab, wenn der Zweig kein Vorfahr des Release ist
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/${zweig}" -f sha="$sha" -F force=false --silent
+              echo "Zweig ${zweig} von ${vorhanden} auf ${sha} vorgespult."
+            fi
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/heads/${zweig}" -f sha="$sha" --silent
+            echo "Zweig ${zweig} auf ${sha} angelegt."
+          fi
+
   # Stueckliste (SBOM, CycloneDX) je Release: drei Dateien als Release-Anhang, damit
   # Kunden ihre eigene Schwachstellenueberwachung auf mandari anwenden koennen (Issue #97).
   sbom:

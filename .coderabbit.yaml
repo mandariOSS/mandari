@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit prüft Pull Requests automatisch. Entwickelt wird auf `dev` (Merge-Queue), `main` ist nur der
+# Freigabe-Zeiger: Ohne `base_branches` prüfte CodeRabbit nur PRs gegen den Standardzweig, also nur Releases.
+# Release-PRs (dev → main) und Abhängigkeits-PRs von Dependabot bleiben außen vor; ihr Inhalt ist schon geprüft
+# bzw. läuft über die CI. Projektregeln liest CodeRabbit aus AGENTS.md und CLAUDE.md.
+language: de-DE
+tone_instructions: "Knapp und sachlich auf Deutsch. Nur echte Fehler und Risiken (Logik, Daten, Sicherheit, Rechte), keine Stil- oder Geschmackshinweise."
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "^dev$"
+    # Release-PRs heißen „Release JJJJ-MM-TT …“ oder „Release <Version> …“ und gehen gegen den Standardzweig, den
+    # `base_branches` nicht ausnimmt. Die Stichwörter nennen den Anfang von Datum bzw. Version mit: „Release“ allein
+    # träfe jeden Titel mit dem Wort, etwa `chore(release): …` (so geschehen bei #1308).
+    ignore_title_keywords:
+      - "Release 20"
+      - "Release v0."
+      - "Release v1."
+      - "Release 0."
+      - "Release 1."
+    ignore_usernames:
+      - "dependabot[bot]"
+  # Docstrings prüft das Projekt nicht als Quote; die Meldung wäre reiner Stilhinweis
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+  path_filters:
+    - "!**/uv.lock"
+    - "!**/package-lock.json"
+    - "!docs/schnittstelle/openapi.json"
+    - "!mandari/static/dist/**"

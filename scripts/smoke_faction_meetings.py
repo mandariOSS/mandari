@@ -434,12 +434,14 @@ check("Genehmigtes Protokoll ohne Opt-in NICHT gelistet", "Fraktionssitzung Eins
 resp = anon.get(f"/public/{body.slug}/protokolle/{meeting1.id}/")
 check("Detail ohne Opt-in -> 404", resp.status_code == 404, f"got {resp.status_code}")
 
-# Schalter nur mit protocols.publish: faction.manage allein reicht nicht
-resp = manager.post(f"{base}/organization/faction-settings/", {"publish_protocols": "on"})
+# Schalter nur mit protocols.publish: faction.manage allein reicht nicht. Das ganze Formular schickt jeden
+# eingeschalteten Schalter mit; ohne „Sitzungen automatisch verketten“ löste Work die Kette (Issue #1297).
+opt_in = {"publish_protocols": "on", "link_previous_meeting": "on"}
+resp = manager.post(f"{base}/organization/faction-settings/", opt_in)
 org.refresh_from_db()
 check("Opt-in ohne protocols.publish unverändert", org.publish_protocols is False)
 
-resp = chair.post(f"{base}/organization/faction-settings/", {"publish_protocols": "on"})
+resp = chair.post(f"{base}/organization/faction-settings/", opt_in)
 org.refresh_from_db()
 check("Opt-in mit protocols.publish aktiviert", org.publish_protocols is True)
 
@@ -1254,14 +1256,15 @@ ml_entry = FactionProtocolEntry(meeting=ml_a, entry_type="note", created_by=chai
 ml_entry.set_content_encrypted("L-ORIGINAL-EINTRAG")
 ml_entry.save()
 
+# Die laufende Sitzung direkt danach: Die vorherige Sitzung setzt die Protokollkette (Termin davor, Issue #1295)
 ml_b = FactionMeeting.objects.create(
     organization=org,
     title="L-Sitzung B",
-    start=now + timedelta(days=21),
-    status="planned",
+    start=ml_a.start + timedelta(hours=1),
+    status="ongoing",
     created_by=chair_ms,
-    previous_meeting=ml_a,
 )
+check("Protokollkette: L-Sitzung B folgt auf L-Sitzung A", ml_b.previous_meeting_id == ml_a.id)
 ml_approval = ProtocolApprovalService.auto_create_approval_item(ml_b)
 check(
     "Standard-TOP 1: verbindlicher Default-Text",

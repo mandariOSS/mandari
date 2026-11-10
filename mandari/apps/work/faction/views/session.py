@@ -35,6 +35,7 @@ from ..quorum import quorum_der_sitzung
 from ..regeln import ABSTIMMUNGEN_AUS
 from ..sitzungsarten import darf_sehen
 from ..visibility import can_view_internal, is_item_internal
+from ._helpers import offene_vorschlaege
 
 if TYPE_CHECKING:
     from apps.tenants.models import Membership, Organization
@@ -133,6 +134,10 @@ def _basis(view: Any, meeting: FactionMeeting) -> dict[str, Any]:
         # Ohne Abstimmungen in der Sitzungsart keine Beschlussfähigkeit (Issue #1240)
         "quorum": quorum_der_sitzung(meeting),
         "sitzung_urls": _urls(meeting),
+        # Offene Vorschläge unter der Tagesordnung (Issue #1287); die Abfrage läuft erst, wenn die Vorlage sie zeigt
+        "can_approve_proposals": view.membership.has_permission("agenda.approve"),
+        "can_view_internal": can_view_internal(view.membership),
+        "pending_proposals": offene_vorschlaege(meeting, intern=can_view_internal(view.membership)),
     }
 
 
@@ -167,7 +172,11 @@ def top_kontext(
     if ordnung is None:
         ordnung = sitzung.tagesordnung(meeting, membership)
     vor, nach = ordnung.nachbarn(item.pk)
-    unterlagen = sitzung.unterlagen(item, membership)
+    # Links sind keine Unterlage zum Lesen (Issue #1289): Sie stehen im Kopf des TOPs, die Arbeitsfläche teilt sich nur
+    # für Vorlagen, Dokumente, Anlagen und das Protokoll der vorigen Sitzung. Der Reiter „links“ bleibt abrufbar.
+    alle_unterlagen = sitzung.unterlagen(item, membership)
+    unterlagen = [u for u in alle_unterlagen if u.art != "links"]
+    top_links: list[Any] = next((u.objekt for u in alle_unterlagen if u.art == "links"), [])
     intern = is_item_internal(item)
     personen, gruppen = sitzung.personen_und_gruppen(meeting.organization, nur_vereidigte=intern)
     notizen = sitzung.notizen(item)
@@ -180,6 +189,7 @@ def top_kontext(
         "vor": vor,
         "nach": nach,
         "unterlagen": unterlagen,
+        "top_links": top_links,
         "verlauf": sitzung.beratungsverlauf(item, meeting.organization)
         if sitzung.darf_beratungsverlauf_sehen(membership)
         else [],

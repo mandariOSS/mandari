@@ -95,6 +95,7 @@ jobs:
       audit: ${{ steps.ergebnis.outputs.audit }}
       docker: ${{ steps.ergebnis.outputs.docker }}
       kubernetes: ${{ steps.ergebnis.outputs.kubernetes }}
+      sicherung: ${{ steps.ergebnis.outputs.sicherung }}
       codeql: ${{ steps.ergebnis.outputs.codeql }}
     steps:
       # Pull Request und Merge-Queue: Die Queue vergleicht per git mit ihrem Basisstand (merge_group.base_sha),
@@ -310,6 +311,9 @@ jobs:
               - 'install-k8s.sh'
               - 'docker-compose.yml'
               - '**/Dockerfile'
+            # Backup-Stack mit der Wiederherstellung auf einen Zeitpunkt (Issue #1303)
+            sicherung:
+              - 'deploy/backup/**'
             codeql_python:
               - '**/*.py'
             codeql_js:
@@ -401,7 +405,7 @@ jobs:
               wert "$1"
             fi
           }
-          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl schnittstelle e2e ingestor audit docker kubernetes; do
+          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl schnittstelle e2e ingestor audit docker kubernetes sicherung; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -516,6 +520,41 @@ jobs:
       - name: Service-Layer-Ratchet (ORM-Zugriffe und lange Funktionen in Views dürfen nicht zunehmen, #160)
         if: ${{ !cancelled() }}
         run: python scripts/check_view_orm_ratio.py
+
+      # Toter und doppelter Code (Issue #1113): Die Funde von vulture und die Klone von jscpd dürfen nur
+      # weniger werden. Was zählt, steht in scripts/dead_code_ratchet.toml und
+      # scripts/duplicate_code_ratchet.toml. Beide Werkzeuge nur hier (nicht im Image), Versionen wie in
+      # pyproject.toml [dev]; jscpd kommt als Wheel mit fertigem Programm und braucht kein Node.
+      - name: Werkzeuge für toten und doppelten Code
+        id: codewerkzeuge
+        if: ${{ !cancelled() }}
+        run: pip install "vulture==2.16" "jscpd==5.4.2"
+
+      - name: Toter Python-Code (vulture, Funde dürfen nur sinken)
+        if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
+        run: python scripts/check_dead_code_ratchet.py --report "$RUNNER_TEMP/code-bericht/toter-code.md"
+
+      - name: Doppelter Code (jscpd, Klone dürfen nur sinken)
+        if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
+        run: python scripts/check_duplicate_code_ratchet.py --report "$RUNNER_TEMP/code-bericht/doppelter-code.md"
+
+      # Beide Berichte (Zahlen, die größten Posten, alle Funde) in der Zusammenfassung des Laufs und als
+      # Artefakt: Daraus entstehen die Aufträge zum Aufräumen.
+      - name: Berichte zu totem und doppeltem Code in die Zusammenfassung
+        if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
+        run: |
+          for bericht in "$RUNNER_TEMP"/code-bericht/*.md; do
+            if [ -f "$bericht" ]; then cat "$bericht" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+
+      - name: Berichte zu totem und doppeltem Code ablegen
+        if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: code-bericht
+          path: ${{ runner.temp }}/code-bericht/
+          retention-days: 14
+          if-no-files-found: warn
 
       # --- Templates -------------------------------------------------------------
       - name: djlint (Template-Linting, Profil Django)
@@ -1657,6 +1696,37 @@ jobs:
           shellcheck -S error install-k8s.sh
 
   # ===========================================================================
+  # Sicherung: Wiederherstellung auf einen Zeitpunkt im Rundlauf (Issue #1303)
+  # ===========================================================================
+  # Der Backup-Stack aus deploy/backup gegen eine kleine Datenbank aus dem unveränderten
+  # PostgreSQL-Image und zwei lokale restic-Repositorys, ohne Zugriff auf echte Ablagen:
+  # Einrichtung der Datenbank ohne Neustart, WAL-Empfang, Basissicherung, Zeitpunkt-Probe mit
+  # zwei Markierungen (Befehl und Wiederherstellungstest), Aufbewahrung, Warnungen des Watchdogs.
+  # Ablauf: deploy/backup/tests/pitr-rundlauf.sh, Einzelprüfungen: deploy/backup/tests/pitr-einheiten.sh.
+  sicherung:
+    name: Sicherung (Zeitpunkt-Probe)
+    needs: changes
+    if: needs.changes.outputs.sicherung == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Shell-Skripte (Syntax, ShellCheck)
+        run: |
+          set -euo pipefail
+          for skript in deploy/backup/scripts/*.sh deploy/backup/tests/*.sh; do
+            bash -n "$skript"
+          done
+          shellcheck deploy/backup/scripts/*.sh deploy/backup/tests/*.sh
+
+      - name: Rundlauf mit Zeitpunkt-Probe
+        run: bash deploy/backup/tests/pitr-rundlauf.sh
+
+  # ===========================================================================
   # CodeQL (erweitertes Setup, nur für die betroffenen Sprachen)
   # ===========================================================================
   # Ersetzt das Default-Setup von GitHub, das jede Sprache in jedem Pull Request analysiert.
@@ -1721,6 +1791,7 @@ jobs:
       - dependency-audit
       - docker-build
       - kubernetes
+      - sicherung
       - codeql
     runs-on: ubuntu-latest
     timeout-minutes: 5

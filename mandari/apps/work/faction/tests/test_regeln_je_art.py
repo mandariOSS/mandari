@@ -441,6 +441,15 @@ def test_art_ohne_noe_in_oberflaeche_und_aktionen(
         **htmx,
     )
     assert antwort.status_code == 400
+    # Auch nicht als Unterpunkt eines bestehenden NÖ-TOPs (Issue #1285)
+    antwort = client.post(
+        _aktion(org, meeting),
+        {"action": "move_item", "item_id": str(oeffentlich.pk), "direction": "to", "parent_id": str(bestehend.pk)},
+        **htmx,
+    )
+    assert antwort.status_code == 400
+    with pytest.raises(NichtOeffentlichAusError):
+        agenda.place_item(meeting, oeffentlich, parent=bestehend, position=None)
     antwort = client.post(_panel(org, meeting, oeffentlich), {"action": "update", "visibility": "internal"}, **htmx)
     assert antwort.status_code == 400
     assert FactionAgendaItem.objects.filter(meeting=meeting).count() == anzahl

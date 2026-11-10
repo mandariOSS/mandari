@@ -17,7 +17,7 @@ can_import_internal_documents, can_approve_proposals, pending_proposals).
             hx-target="#fs-ris-inhalt" hx-swap="innerHTML" @click="document.getElementById('fs-ris').showModal()"><i data-lucide="list-plus" aria-hidden="true"></i>Aus Ratssitzung übernehmen …</button>
     {% endif %}
 </div>
-{% if can_edit %}<p class="sr-only" id="griff-hilfe">Mit den Pfeiltasten nach oben oder unten verschieben, oder mit der Maus ziehen{% if can_view_internal %}, auch in den anderen Teil der Tagesordnung{% endif %}.</p>{% endif %}
+{% if can_edit %}<p class="sr-only" id="griff-hilfe">Mit Pfeil hoch oder runter verschieben, mit Pfeil rechts zum Unterpunkt des TOPs darüber machen, mit Pfeil links zum eigenen TOP. Oder mit der Maus ziehen{% if can_view_internal %}, auch in den anderen Teil der Tagesordnung{% endif %}; nach rechts gezogen wird der TOP zum Unterpunkt.</p>{% endif %}
 
 {% include "work/faction/neu/_vb_vorschlaege.html" %}
 

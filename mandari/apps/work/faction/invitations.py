@@ -457,14 +457,20 @@ def _notify_invitations(meeting, *, update: bool) -> None:
     Gleicher Empfängerkreis wie der E-Mail-Versand: beim Erstversand alle
     Eingeladenen, bei Aktualisierungen alle, die nicht abgesagt haben.
     """
+    from .services import invitation_attendances
+
+    _notify_attendances(
+        meeting, invitation_attendances(meeting, update=update).select_related("membership__user"), update=update
+    )
+
+
+def _notify_attendances(meeting, attendances, *, update: bool) -> None:
+    """In-App-Hinweis zur Einladung an die Mitglieder dieser Teilnahmen (auch für Nachgetragene, Issue #1288)."""
     try:
         from apps.work.notifications.models import NotificationType
         from apps.work.notifications.services import NotificationHub
 
-        from .services import invitation_attendances
-
-        attendances = invitation_attendances(meeting, update=update)
-        recipients = [a.membership for a in attendances.select_related("membership__user")]
+        recipients = [a.membership for a in attendances if a.membership_id]
         if not recipients:
             return
 
@@ -697,6 +703,7 @@ def run_faction_invitation_pass(now=None) -> dict:
             "notices": 0,
             "agenda_reminders": 0,
             "released_claims": release_stale_invitation_claims(now),
+            "late_invitations": 0,
         }
         meetings = FactionMeeting.objects.filter(
             status__in=["draft", "planned"],
@@ -763,12 +770,22 @@ def run_faction_invitation_pass(now=None) -> dict:
                 stats["meetings"] += 1
                 stats["notices"] += 1
 
-        if stats["dispatched"] or stats["notices"] or stats["agenda_reminders"]:
+        # Nach dem Erstversand Nachgetragene (neue Mitglieder, Issue #1288) bekommen ihre Einladung einzeln
+        try:
+            from .teilnahme import nachzuegler_einladen
+
+            stats["late_invitations"] = nachzuegler_einladen(now)
+        except Exception:
+            logger.exception("Einladung für Nachgetragene fehlgeschlagen")
+
+        if stats["dispatched"] or stats["notices"] or stats["agenda_reminders"] or stats["late_invitations"]:
             logger.info(
-                "Fraktions-Einladungslauf: %d versendet, %d Freigabe-Hinweis(e), %d TOP-Erinnerung(en)",
+                "Fraktions-Einladungslauf: %d versendet, %d Freigabe-Hinweis(e), %d TOP-Erinnerung(en), "
+                "%d Einladung(en) an Nachgetragene",
                 stats["dispatched"],
                 stats["notices"],
                 stats["agenda_reminders"],
+                stats["late_invitations"],
             )
         return stats
     finally:
