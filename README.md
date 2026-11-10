@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <strong>Open-Source-Plattform für kommunalpolitische Transparenz</strong><br>
-  Bürgerportal, Fraktions-Arbeitsbereich und Verwaltungs-RIS in einer Anwendung.
+  <strong>mandari: das offene Ratsinformationssystem</strong><br>
+  Bürgerportal, Fraktions-Arbeitsbereich und Sitzungsdienst der Verwaltung in einer Anwendung, mit OParl-Schnittstelle.
 </p>
 
 <p align="center">
@@ -42,6 +42,17 @@ SessionNet, regisafe und andere) und bietet drei Zugänge:
 
 Jede Kommune im Session-Portal veröffentlicht ihre öffentlichen Daten automatisch wieder als
 OParl-Schnittstelle — die Daten bleiben offen und maschinenlesbar.
+
+### Offene Daten der Installation auf mandari.de
+
+Die Ratsinformationen der Kommunen auf [mandari.de](https://mandari.de/insight/) stehen als offene Daten nach OParl 1.1
+bereit, lesend und ohne Anmeldung:
+
+- Einstieg: `https://oparl.mandari.de/oparl/v1/system`
+- Alle Kommunen mit ihren Adressen in einem Abruf: `https://oparl.mandari.de/oparl/` (Feld `bodyIndex`)
+- Eine Kommune über ihren Namen, zum Beispiel Münster: `https://oparl.mandari.de/oparl/v1/body/muenster`, ihre Vorlagen
+  unter `…/body/muenster/papers`, ihre Sitzungen unter `…/body/muenster/meetings`
+- Beschreibung und Beispiele: [docs.mandari.de/insight/oparl-api](https://docs.mandari.de/insight/oparl-api/)
 
 ### Eigenschaften
 
