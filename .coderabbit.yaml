@@ -15,9 +15,15 @@ reviews:
     drafts: false
     base_branches:
       - "^dev$"
+    # Release-PRs heißen „Release JJJJ-MM-TT …“ und gehen gegen den Standardzweig, den `base_branches` nicht ausnimmt
     ignore_title_keywords:
-      - "Release:"
-      - "chore(deps)"
+      - "Release "
+    ignore_usernames:
+      - "dependabot[bot]"
+  # Docstrings prüft das Projekt nicht als Quote; die Meldung wäre reiner Stilhinweis
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
   path_filters:
     - "!**/uv.lock"
     - "!**/package-lock.json"
