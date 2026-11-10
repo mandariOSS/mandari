@@ -7,6 +7,10 @@ Die Adressen sind die Kennungen der Objekte und ändern sich nicht. Der Namensra
 
 Zu jeder Adresse gibt es die abweichende Schreibweise mit Schrägstrich am Ende; sie leitet dauerhaft
 auf die gültige Adresse weiter (``hub.api.redirects``).
+
+Kurzadressen (Issue #1309): Unter ``v1/body/<slug>`` und allem darunter steht der Name der Kommune statt ihrer
+Kennung; sie leiten vorläufig auf die gültige Adresse weiter. Ihre Routen stehen hinter allen gültigen Adressen,
+damit eine UUID nie als Name gelesen wird, und nicht in ``ROUTES``: Sie sind keine Kennungen.
 """
 
 from django.urls import path
@@ -33,4 +37,7 @@ urlpatterns = [
     path("v1/", aggregator.root_view, name="root_v1"),
     *(path(route, view, kwargs, name=name) for route, view, kwargs, name in ROUTES),
     *(path(f"{route}/", redirects.without_trailing_slash) for route, _, _, _ in ROUTES),
+    path("v1/body/<slug:slug>", redirects.body_by_slug, name="body_by_slug"),
+    path("v1/body/<slug:slug>/", redirects.body_by_slug),
+    path("v1/body/<slug:slug>/<path:rest>", redirects.body_by_slug, name="body_by_slug_rest"),
 ]

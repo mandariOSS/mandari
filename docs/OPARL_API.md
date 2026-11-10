@@ -149,6 +149,21 @@ mit Schrägstrich abruft (`/oparl/v1/system/`), wird dauerhaft auf die gültige 
 Weiterleitung nennt einen Pfad ohne Host; der Abnehmer bleibt auf dem Host, über den er die
 Schnittstelle erreicht. Kennungen in Antworten nennen immer die gültige Schreibweise.
 
+### Kurzadressen mit dem Namen der Kommune
+
+Statt der Kennung darf in der Adresse einer Kommune ihr Name stehen (ihr `slug`, wie in `bodyIndex` und in den
+Adressen des Bürgerportals):
+
+```
+https://oparl.mandari.de/oparl/v1/body/muenster
+https://oparl.mandari.de/oparl/v1/body/muenster/papers?modified_since=2026-11-01T00:00:00Z
+```
+
+Die Kurzadresse leitet vorläufig (307) auf die gültige Adresse mit der UUID weiter, mit allem, was danach folgt, und mit
+den Parametern der Anfrage. Die Kennung (`id`) der Kommune und aller Objekte bleibt die Adresse mit der UUID; auch die
+Links zur nächsten Seite nennen sie. Ein Name kann sich ändern, eine Kennung nicht: Wer Daten dauerhaft abgleicht,
+speichert die Kennung. Unbekannte Namen antworten mit 404 als JSON.
+
 ## Pagination
 
 Externe Listen liefern 100 Objekte pro Seite (`?page=N`), sortiert nach `modified`
