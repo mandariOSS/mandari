@@ -212,6 +212,8 @@ def parse_date(value: Any) -> tuple[date | None, str | None]:
 #: ein langer Name, auf den viele Einträge verweisen, nicht je Verweis in voller Länge im Speicher steht
 MAX_LABELS_PER_ROW = 50
 MAX_LABEL_LENGTH = 100
+#: Länge, mit der der Name eines Labels gespeichert wird (``normalize_row``)
+LABEL_NAME_LENGTH = 50
 
 
 #: Ein Eintrag eines kommagetrennten Texts: beginnt am ersten Zeichen, das weder Komma noch Leerraum ist. Leere
@@ -320,28 +322,34 @@ def rows_from_trello_json(data: dict[str, Any]) -> tuple[list[Row], list[str]]:
         for lst in _dicts(data.get("lists"))
         if isinstance(lst.get("id"), str)
     }
+    # Auf die Länge gekürzt, mit der ein Label gespeichert wird: So fallen Namen, die erst dort gleich würden, schon
+    # beim Entdoppeln zusammen
     labels_by_id = {
-        lbl["id"]: str(lbl.get("name") or lbl.get("color") or "").strip()[:MAX_LABEL_LENGTH]
+        lbl["id"]: str(lbl.get("name") or lbl.get("color") or "").strip()[:LABEL_NAME_LENGTH]
         for lbl in _dicts(data.get("labels"))
         if isinstance(lbl.get("id"), str)
     }
+    # Archivierte Karten zählen nicht. Zu viele Karten weist der Import ab, bevor er eine davon umwandelt
+    cards = [(idx, card) for idx, card in enumerate(_dicts(data.get("cards")), start=1) if not card.get("closed")]
+    if len(cards) > MAX_IMPORT_ROWS:
+        raise TaskImportError(f"Zu viele Zeilen (max. {MAX_IMPORT_ROWS}).")
 
     rows: list[Row] = []
-    for idx, card in enumerate(_dicts(data.get("cards")), start=1):
-        if card.get("closed"):
-            continue  # archivierte Karten überspringen
-        if len(rows) >= MAX_IMPORT_ROWS:
-            raise TaskImportError(f"Zu viele Zeilen (max. {MAX_IMPORT_ROWS}).")
+    for idx, card in cards:
         list_id, label_ids = card.get("idList"), card.get("idLabels")
-        names = (
-            labels_by_id.get(lid) for lid in (label_ids if isinstance(label_ids, list) else []) if isinstance(lid, str)
-        )
+        labels: dict[str, None] = {}
+        for lid in label_ids if isinstance(label_ids, list) else []:
+            name = labels_by_id.get(lid) if isinstance(lid, str) else None
+            if name:
+                labels[name] = None
+                if len(labels) >= MAX_LABELS_PER_ROW:
+                    break
         row: Row = {
             "_line": idx,
             "title": card.get("name", ""),
             "description": card.get("desc", ""),
             "status": status_by_list.get(list_id, "todo") if isinstance(list_id, str) else "todo",
-            "labels": list(dict.fromkeys(name for name in names if name))[:MAX_LABELS_PER_ROW],
+            "labels": list(labels),
         }
         if card.get("due"):
             row["due_date"] = card["due"]
@@ -537,7 +545,7 @@ def normalize_row(row: Row, memberships_by_email: dict[str, Membership]) -> tupl
         else:
             data["assigned_to"] = membership
 
-    data["labels"] = [name[:50] for name in split_labels(row.get("labels"))]
+    data["labels"] = list(dict.fromkeys(name[:LABEL_NAME_LENGTH] for name in split_labels(row.get("labels"))))
     raw_tags = row.get("tags")
     data["tags"] = (
         [str(t) for t in raw_tags if str(t).strip()] if isinstance(raw_tags, list) else split_labels(raw_tags)

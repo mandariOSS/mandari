@@ -382,7 +382,7 @@ def test_trello_import_kuerzt_namen_einmal_und_begrenzt_karten() -> None:
 
     assert not errors
     assert rows[0]["status"] == "done"
-    assert rows[0]["labels"] == ["L" * import_service.MAX_LABEL_LENGTH, "Kultur"]
+    assert rows[0]["labels"] == ["L" * import_service.LABEL_NAME_LENGTH, "Kultur"]
     assert data["labels"] == ["L" * 50, "Kultur"]
     # Ohne Kürzung beim Sammeln wären es rund 500 MB (5.000 Verweise mal 100.000 Zeichen)
     assert spitze < 20 * 1024 * 1024
@@ -401,6 +401,21 @@ def test_trello_import_kuerzt_namen_einmal_und_begrenzt_karten() -> None:
     assert viele == ["ab"] * import_service.MAX_LABELS_PER_ROW
     assert spitze_text < 1024 * 1024
     assert import_service.split_labels("," * 2_000_000 + "Kultur") == ["Kultur"]
+
+    # Namen, die erst nach dem Kürzen gleich sind, belegen zusammen einen Platz; das Sammeln endet beim Limit
+    gleich = "G" * 60
+    viele_labels: dict[str, Any] = {
+        "labels": [{"id": f"g{i}", "name": f"{gleich}{i}"} for i in range(60)] + [{"id": "k", "name": "Kultur"}],
+        "cards": [{"name": "Karte", "idLabels": [f"g{i}" for i in range(60)] + ["k"]}],
+    }
+    _, gekuerzt = import_service.parse_upload("trello.json", json.dumps(viele_labels).encode())
+    assert gekuerzt[0]["labels"] == ["G" * 50, "Kultur"]
+
+    # Archivierte Karten zählen nicht mit
+    mit_archiv = {
+        "cards": [{"name": "Offen"}] + [{"name": "Alt", "closed": True}] * (import_service.MAX_IMPORT_ROWS + 5)
+    }
+    assert len(import_service.parse_upload("trello.json", json.dumps(mit_archiv).encode())[1]) == 1
 
     zu_viele = {"cards": [{"name": f"Karte {i}"} for i in range(import_service.MAX_IMPORT_ROWS + 1)]}
     with pytest.raises(import_service.TaskImportError, match="Zu viele Zeilen"):
