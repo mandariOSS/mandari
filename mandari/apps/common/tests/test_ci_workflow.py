@@ -198,14 +198,26 @@ def _ergebnis_schritt_ausfuehren(
     return dict(zeile.split("=", 1) for zeile in ausgabe.read_text(encoding="utf-8").splitlines())
 
 
-def test_merge_queue_laesst_alle_jobs_ausser_den_migrationstests_laufen(tmp_path: Path) -> None:
-    # In der Queue laufen alle Jobs ohne Rücksicht auf den Filter; nur die Migrationstests folgen ihm (Issue #935)
-    werte = _ergebnis_schritt_ausfuehren(tmp_path, "merge_group", "{}")
+@pytest.mark.parametrize("ereignis", ["pull_request", "merge_group"])
+def test_pfadfilter_gilt_im_pull_request_und_in_der_merge_queue(tmp_path: Path, ereignis: str) -> None:
+    """Issue #1315: Die Queue lässt nur die Jobs laufen, deren Bereich der Eintrag berührt (früher immer alle)."""
     bereiche = _bereiche_im_ergebnis_schritt()
-    assert {b: werte[b] for b in bereiche} == {b: "false" if b == "migrationen" else "true" for b in bereiche}
 
-    werte = _ergebnis_schritt_ausfuehren(tmp_path / "pr", "pull_request", '{"verweise": "true"}')
-    assert werte["verweise"] == "true" and werte["test"] == "false", "Gegenprobe: im PR wirkt der Filter"
+    werte = _ergebnis_schritt_ausfuehren(tmp_path / "text", ereignis, '{"verweise": "true"}')
+    assert {b: werte[b] for b in bereiche} == {b: "true" if b == "verweise" else "false" for b in bereiche}
+
+    # Sicherheitsnetz: Änderungen an .github/ oder an Abhängigkeitsdateien lassen alles laufen
+    werte = _ergebnis_schritt_ausfuehren(tmp_path / "netz", ereignis, '{"sicherheitsnetz": "true"}')
+    assert {werte[b] for b in bereiche} == {"true"}
+
+
+def test_e2e_in_der_merge_queue_bei_jeder_aenderung_am_anwendungscode(tmp_path: Path) -> None:
+    """Der E2E-Filter ist im Pull Request eng; vor dem Merge laufen die Browsertests mit dem Bereich smoke."""
+    anwendungscode = '{"test": "true", "smoke": "true"}'
+    assert _ergebnis_schritt_ausfuehren(tmp_path / "queue", "merge_group", anwendungscode)["e2e"] == "true"
+    assert _ergebnis_schritt_ausfuehren(tmp_path / "pr", "pull_request", anwendungscode)["e2e"] == "false"
+    # Ohne Anwendungscode (Text, Ingestor, reine Tests) auch in der Queue nicht
+    assert _ergebnis_schritt_ausfuehren(tmp_path / "text", "merge_group", '{"test": "true"}')["e2e"] == "false"
 
 
 @pytest.mark.parametrize("ereignis", ["pull_request", "merge_group"])
