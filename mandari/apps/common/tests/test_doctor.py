@@ -152,7 +152,8 @@ def test_haengende_pruefung_laeuft_als_daemon(monkeypatch: pytest.MonkeyPatch) -
 
     ausfuehren([_eintrag("gut", lambda k: ok("läuft"))], Kontext(zeitgrenze=5))
 
-    assert [thread.daemon for thread in gestartet] == [True]
+    # Nur die Threads des Laufs: Nebenher starten auch andere (Testverteilung, Verbindungspool)
+    assert [thread.daemon for thread in gestartet if thread.name.startswith("doctor-")] == [True]
 
 
 def test_ausnahme_wird_zum_befund_ohne_ihren_text() -> None:
@@ -750,6 +751,7 @@ def test_objektspeicher_fehler_haben_feste_texte(
 
 @pytest.mark.django_db
 def test_aufgaben_sofort_und_im_journal(settings: Any) -> None:
+    settings.MAIL_QUEUE = []
     sofort = dienste.pruefe_aufgaben(Kontext())
     assert (sofort.status, sofort.meldung) == (Status.OK, "ImmediateBackend: Aufträge laufen sofort in der Anfrage")
 
@@ -935,6 +937,7 @@ def alles_voller_geheimnisse(
     settings.OBJ_ENDPOINT, settings.OBJ_BUCKET = ENDPUNKT, BUCKET
     settings.OBJ_KEY, settings.OBJ_SECRET = GEHEIM["OBJ_KEY"], GEHEIM["OBJ_SECRET"]
     settings.EVENTS_WORKER_REQUIRED = "true"
+    settings.MAIL_QUEUE = []
     monkeypatch.setitem(settings.CACHES["default"], "BACKEND", "django.core.cache.backends.redis.RedisCache")
     monkeypatch.setattr(dienste, "cache", _Cache(ConnectionError(f"Error connecting to {GEHEIM['REDIS_URL']}")))
 
