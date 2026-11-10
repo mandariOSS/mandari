@@ -365,13 +365,13 @@ def new_meeting_has_previous(organization: Organization, meeting_type: FactionMe
     Erhielte eine neue Sitzung der Art (ohne Angabe der Standardart) eine Vorsitzung und damit „… und letztes
     Protokoll genehmigen“?
 
-    Wie bei der Anlage (``FactionMeetingListView.post``): die letzte begonnene oder abgeschlossene Sitzung derselben
-    Art (Issue #1231), sofern sie nicht schon einer anderen Sitzung als Vorsitzung zugeordnet ist.
+    Wie bei der Anlage (Protokollkette, ``kette.py``): Es gibt in derselben Art (Issue #1231) schon eine Sitzung,
+    die stattfindet. Der Tag der neuen Sitzung steht hier noch nicht fest; liegt sie vor allen anderen, entfällt
+    der Zusatz.
     """
     from .models import FactionMeeting
 
-    previous = cast(Any, FactionMeeting).find_previous_meeting(organization, meeting_type=meeting_type)
-    return previous is not None and not FactionMeeting.objects.filter(previous_meeting=previous).exists()
+    return cast(Any, FactionMeeting).find_previous_meeting(organization, meeting_type=meeting_type) is not None
 
 
 def standard_agenda_preview(

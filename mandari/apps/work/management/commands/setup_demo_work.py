@@ -139,9 +139,9 @@ class Command(BaseCommand):
             m = self._mitglieder(org)
             rat3, haupt2, rat2, bau1 = self._sitzungen()
             standard = self._standard_tagesordnung(org)
-            vorige = self._vergangene_sitzung(org, m)
+            self._vergangene_sitzung(org, m)
             antraege = self._antraege(org, m, rat3, haupt2)
-            self._kommende_sitzung(org, m, vorige, rat3, antraege)
+            self._kommende_sitzung(org, m, rat3, antraege)
             self._reihe(org)
             self._positionen(org, m, haupt2, rat2, bau1)
         self._zaehlen("Standard-TOPs", len(standard))
@@ -303,7 +303,6 @@ class Command(BaseCommand):
         self,
         org: Organization,
         m: dict[str, Membership],
-        vorige: FactionMeeting,
         rat3: OParlMeeting,
         antraege: dict[str, Motion],
     ) -> FactionMeeting:
@@ -328,9 +327,8 @@ class Command(BaseCommand):
         if angelegt or not sitzung.meeting_number:
             sitzung.meeting_number = cast(Any, FactionMeeting).get_next_meeting_number(org)
             sitzung.save(update_fields=["meeting_number"])
-        if sitzung.previous_meeting_id is None and not FactionMeeting.objects.filter(previous_meeting=vorige).exists():
-            sitzung.previous_meeting = vorige
-            sitzung.save(update_fields=["previous_meeting"])
+        # Die vorherige Sitzung setzt die Protokollkette (Issue #1295): erst die vergangene Sitzung, nach dem Anlegen
+        # der Reihe deren Termin direkt davor
         sitzung.create_approval_agenda_item()
         agenda.apply_standard_agenda(sitzung)
         self._anwesenheiten(sitzung, m)

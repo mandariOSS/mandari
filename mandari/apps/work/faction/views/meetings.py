@@ -232,12 +232,7 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             meeting_number=FactionMeeting.get_next_meeting_number(self.organization, meeting_type),
         )
 
-        # Find and link previous meeting — nur wenn die Vorsitzung noch
-        # nicht verkettet ist (OneToOne; Muster aus der Sitzungserzeugung #61)
-        previous = FactionMeeting.find_previous_meeting(self.organization, meeting.start, meeting_type=meeting_type)
-        if previous is not None and FactionMeeting.objects.filter(previous_meeting=previous).exists():
-            previous = None
-        meeting.previous_meeting = previous
+        # Die vorherige Sitzung (der Termin davor, Issue #1295) setzt das Speichern über die Protokollkette (kette.py)
         meeting.save()
 
         # Anwesenheit für die Teilnehmenden der Art (Issue #1239), immer ohne Gastzugänge

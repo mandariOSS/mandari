@@ -31,6 +31,11 @@ class WorkConfig(AppConfig):
 
         teilnahme.register()
 
+        # Protokollkette: Die vorherige Sitzung ist der Termin davor, auch nach Absagen, Verschieben, Löschen (Issue #1295)
+        from apps.work.faction import kette
+
+        kette.register()
+
         # Dokument-Freigaben beim Entfernen einer Mitgliedschaft aufräumen
         from apps.work.motions import signals as motion_signals
 
