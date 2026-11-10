@@ -14,6 +14,10 @@ Mit Live-Zusammenarbeit (ASGI-Testserver mit In-Memory-Channel-Layer, wie tests_
 Ohne Verbindung (WSGI-Live-Server, Solo-Modus): Federführung und Zustimmen aus der Seitenleiste bzw. Infozeile sichern
 vorher den Text und laden ohne Rückfrage „Website verlassen?“ neu.
 
+Folgepunkte (Issue #1199): Ein abgebrochener POST mit dem Titel, den der Server erst nach dem Wiederholversuch
+verarbeitet, überschreibt den neueren Titel nicht; nach dem Wechsel in den Solo-Modus läuft das automatische Speichern
+weiter.
+
 Das regelmäßige Sichern der Verbindung (alle 10 s) ist in diesen Tests abgeschaltet: Sonst hinge es vom Zufall ab, ob
 die letzten Eingaben schon gespeichert sind. Gesichert wird nur, was die geprüften Schritte selbst sichern.
 """
@@ -54,6 +58,13 @@ OHNE_REGELMAESSIGES_SICHERN = """
 (() => {
     const original = window.setInterval
     window.setInterval = (fn, ms, ...rest) => original(fn, ms === 10000 ? 3600000 : ms, ...rest)
+})()
+"""
+#: Das automatische Speichern des Editors (setInterval mit 60 s) läuft alle 500 ms
+AUTOMATISCH_SPEICHERN_RASCH = """
+(() => {
+    const original = window.setInterval
+    window.setInterval = (fn, ms, ...rest) => original(fn, ms === 60000 ? 500 : ms, ...rest)
 })()
 """
 GESPEICHERT_ANZEIGE = ".ke-gespeichert"
@@ -224,8 +235,11 @@ class PostAbbruch:
     """
 
     def __init__(self, page: Any, dokument: Motion) -> None:
+        self.page = page
         self.gehalten: list[Any] = []
         self.weitere: list[str] = []
+        #: Adresse, Content-Type und Inhalt des abgebrochenen POST für ``nachliefern``
+        self.abgebrochen: tuple[str, str, bytes] | None = None
         page.route(f"**/documents/{dokument.id}/", self._route)
 
     def _route(self, route: Any) -> None:
@@ -242,6 +256,21 @@ class PostAbbruch:
         antwort = route.fetch()
         assert antwort.ok, f"Der Server hat den zurückgehaltenen POST nicht angenommen: {antwort.status}"
         route.abort("timedout")
+
+    def abbrechen(self) -> None:
+        """Der Browser sieht eine Zeitüberschreitung, der Server hat den POST noch nicht verarbeitet."""
+        route = self.gehalten[0]
+        request = route.request
+        self.abgebrochen = (request.url, request.headers.get("content-type", ""), request.post_data_buffer or b"")
+        route.abort("timedout")
+
+    def nachliefern(self) -> Any:
+        """Der Server verarbeitet den abgebrochenen POST erst jetzt, unverändert und mit derselben Anmeldung."""
+        assert self.abgebrochen is not None
+        url, content_type, daten = self.abgebrochen
+        return self.page.context.request.post(
+            url, headers={"Content-Type": content_type, "X-Requested-With": "XMLHttpRequest"}, data=daten
+        )
 
 
 class ServerNachrichtenHalten:
@@ -552,6 +581,40 @@ class TestMitVerbindung:
         dokument.refresh_from_db()
         assert dokument.title == "Antrag Radweg", "der Server behielt den Zwischenwert"
 
+    def test_verspaetet_verarbeiteter_post_des_titels_gewinnt_nicht(
+        self, page: Any, asgi_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """
+        Der Browser bricht den POST mit dem Titel nach dem Zeitlimit ab, der Server verarbeitet ihn aber erst nach dem
+        Wiederholversuch mit dem neueren Titel. Der Editor schickt den Stand mit, von dem er ausgeht; der ältere POST
+        passt dann nicht mehr und schreibt nichts (#1199).
+        """
+        vorbereiten(page)
+        login_via_form(page, asgi_server.url, anna.user.email, PASSWORD)
+        editor_oeffnen(page, editor_url(asgi_server, org, dokument), "Alt")
+        abbruch = PostAbbruch(page, dokument)
+
+        page.fill("#ke-titel", "Zwischentitel")
+        warten_bis(page, lambda: bool(abbruch.gehalten), "POST mit dem Titel")
+        page.fill("#ke-titel", "Antrag Radweg Hauptstraße")
+        abbruch.abbrechen()
+        page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
+        dokument.refresh_from_db()
+        assert dokument.title == "Antrag Radweg Hauptstraße", "Vorbedingung: Der Wiederholversuch ist gespeichert"
+
+        assert abbruch.abgebrochen is not None and b"Zwischentitel" in abbruch.abgebrochen[2]
+        antwort = abbruch.nachliefern()
+        dokument.refresh_from_db()
+        assert dokument.title == "Antrag Radweg Hauptstraße", "der ältere Titel hat den neueren überschrieben"
+        assert antwort.status == 409, antwort.text()
+        assert antwort.json()["error"] == "meta_ueberholt"
+
+        # Der Editor arbeitet mit dem Stand des Servers weiter
+        page.fill("#ke-titel", "Antrag Radweg Nebenstraße")
+        page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
+        dokument.refresh_from_db()
+        assert dokument.title == "Antrag Radweg Nebenstraße"
+
     def test_eingabe_gleich_nach_dem_anfangsstand_bleibt_ungesichert(
         self, page: Any, asgi_server: Any, org: Any, anna: Any, dokument: Motion
     ) -> None:
@@ -799,3 +862,20 @@ class TestOhneVerbindung:
         page.keyboard.press("Control+s")
         page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
         assert "Alt Solo." in decrypted_content(dokument)
+
+    def test_automatisches_speichern_laeuft_im_solo_modus_weiter(
+        self, page: Any, live_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """
+        Der Wechsel in den Solo-Modus baut den Editor ab und neu auf. Dabei endete das automatische Speichern und
+        startete nicht wieder: Eingaben sicherte nur noch Strg+S, ein Absturz des Browsers verlor sie (#1199).
+        """
+        page.set_viewport_size(DESKTOP)
+        page.add_init_script(AUTOMATISCH_SPEICHERN_RASCH)
+        login_via_form(page, live_server.url, anna.user.email, PASSWORD)
+        solo_oeffnen(page, f"{live_server.url}/work/{org.slug}/documents/{dokument.id}/")
+        assert page.evaluate(f"() => {ALPINE_EDITOR}._collabFailed") is True, "Vorbedingung: Wechsel in den Solo-Modus"
+
+        tippen(page, " Ohne Strg+S.")
+        page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
+        assert "Alt Ohne Strg+S." in decrypted_content(dokument)

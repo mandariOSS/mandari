@@ -1017,6 +1017,14 @@ class Motion(EncryptionMixin, models.Model):
     # Frist
     due_date = models.DateField(blank=True, null=True, verbose_name="Frist")
 
+    # Stand von Titel, Dokumenttyp und Briefpapier aus dem Editor (#1199): Jeder angenommene Speicher-POST mit einem
+    # dieser Felder zählt ihn weiter. Der Editor schickt den Stand mit, von dem er ausgeht; ein überholter Request
+    # (nach einer Zeitüberschreitung erst nach dem Wiederholversuch verarbeitet) wird abgelehnt. Nur über
+    # services.meta_ueberholt() weiterzählen.
+    meta_version = models.PositiveIntegerField(
+        db_default=0, default=0, editable=False, verbose_name="Stand der Kopfdaten"
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

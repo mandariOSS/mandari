@@ -89,6 +89,8 @@ export interface DocumentEditorConfig {
   visibility: string
   /** Fingerabdruck des gespeicherten Inhalts für die Konflikterkennung (#184) */
   contentHash: string
+  /** Stand von Titel, Dokumenttyp und Briefpapier auf dem Server; geht mit jedem POST dieser Felder mit (#1199) */
+  metaVersion?: number
   motionType: string
   documentTypeId: string
   documentTypeName: string
@@ -185,10 +187,16 @@ const VERSUCHE_BEI_500 = 3
 // Kommt der gespeicherte Stand nicht über die Verbindung, wechselt der Editor nach dieser Zeit in den Solo-Modus mit
 // dem gespeicherten Text: Bis zum Anfangsstand ist er nicht bearbeitbar, niemand soll dauerhaft gesperrt sein (#1018)
 const ANFANGSSTAND_ZEITLIMIT_MS = 10000
+/** Automatisches Speichern: Abstand der Versuche */
+const AUTOSAVE_MS = 60000
+// Lehnt der Server einen POST ab, weil Titel, Dokumenttyp oder Briefpapier inzwischen gespeichert wurden, geht er mit
+// dem Stand des Servers sofort noch einmal, höchstens so oft (#1199)
+const VERSUCHE_BEI_UEBERHOLT = 3
 
 type SpeicherAntwort =
   | { art: 'ok'; daten: JsonResponse }
   | { art: 'konflikt'; daten: JsonResponse }
+  | { art: 'ueberholt'; daten: JsonResponse }
   | { art: 'stoerung' | 'server' | 'anmeldung' | 'fehler' }
 
 /** Titel, Dokumenttyp und Briefpapier mit den Feldnamen des Speicher-POST (laufen nicht über Yjs, #1018) */
@@ -200,6 +208,8 @@ async function speicherAntwort(response: Response): Promise<SpeicherAntwort> {
   // Abgelaufene Anmeldung: Django leitet auf die Anmeldeseite um, fetch folgt und liefert HTML
   if ((response.redirected && !json) || response.status === 401) return { art: 'anmeldung' }
   if (response.status === 403 && daten?.error === 'two_factor_setup_required') return { art: 'anmeldung' }
+  // Der Server hat nichts geschrieben: Der mitgeschickte Stand von Titel, Dokumenttyp und Briefpapier passt nicht mehr
+  if (response.status === 409 && daten?.error === 'meta_ueberholt') return { art: 'ueberholt', daten: daten ?? {} }
   if (response.status === 409) return { art: 'konflikt', daten: daten ?? {} }
   if (VORUEBERGEHEND.has(response.status)) return { art: 'stoerung' }
   if (response.status === 500) return { art: 'server' }
@@ -310,6 +320,10 @@ export const documentEditor = defineComponent(() => {
   // Felder, die ein Versuch ohne Bestätigung geschickt hat: Ob der Server sie geschrieben hat, ist offen. Sie gehen
   // beim nächsten Sichern mit, auch wenn sie wieder dem gesicherten Wert gleichen (#1018).
   const metaOffen = new Set<keyof MetaWerte>()
+  // Stand dieser Felder auf dem Server, von dem das Fenster ausgeht. Er geht mit jedem POST der Felder mit: Ein nach
+  // dem Zeitlimit abgebrochener POST, den der Server erst nach dem Wiederholversuch verarbeitet, passt dann nicht mehr
+  // und schreibt nichts (#1199). null: Der Server nennt keinen Stand, dann wird nichts mitgeschickt.
+  let metaVersion: number | null = typeof config.metaVersion === 'number' ? config.metaVersion : null
   const fensterId = neueFensterKennung()
   // Stellen offener Änderungsvorschläge im Text anders hervorheben als Kommentare (die Marke selbst kennt den
   // Unterschied nicht): eigenes Stylesheet mit den Marken-IDs, ohne Inline-Stil im Template
@@ -601,9 +615,6 @@ export const documentEditor = defineComponent(() => {
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible') this.speichernNachholen()
         })
-
-        // Autosave alle 60 Sekunden
-        autoSaveInterval = window.setInterval(() => this.autoSave(), 60000)
       }
 
       // Briefkopf-Hintergrund rendern, falls vorhanden
@@ -736,6 +747,7 @@ export const documentEditor = defineComponent(() => {
       // Wechsel aus der Kollaboration in den Solo-Modus, bei dem die Höhe des Blatts gleich bleibt)
       this._nachAenderung()
       this._modusAnwenden()
+      this._autoSaveStarten()
     },
 
     _initCollabEditor(editorEl: HTMLElement, initialContent: string, wsUrl: string): void {
@@ -830,12 +842,22 @@ export const documentEditor = defineComponent(() => {
         this.collabDestroy = result.collab.destroy
         this.collabFlush = result.collab.flush
         this._modusAnwenden()
+        this._autoSaveStarten()
       } catch (e) {
         console.error('Kollaborations-Editor konnte nicht gestartet werden, Solo-Fallback:', e)
         this.collabEnabled = false
         this.collabStatus = 'disconnected'
         this._initSoloEditor(editorEl, initialContent)
       }
+    },
+
+    /**
+     * Automatisches Speichern starten. Jeder Aufbau des Editors startet es: destroy() beendet es, und beim Wechsel in
+     * den Solo-Modus wird der Editor abgebaut und neu aufgebaut. Ohne Neustart sicherte dort nur noch Strg+S (#1199).
+     */
+    _autoSaveStarten(): void {
+      if (autoSaveInterval) window.clearInterval(autoSaveInterval)
+      autoSaveInterval = window.setInterval(() => this.autoSave(), AUTOSAVE_MS)
     },
 
     destroy(): void {
@@ -1656,22 +1678,33 @@ export const documentEditor = defineComponent(() => {
         if (force) formData.append('force', '1')
 
         let antwort: SpeicherAntwort
-        try {
-          const zeitlimit = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ZEITLIMIT_MS) : undefined
-          const response = await fetch(window.location.href, {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: formData,
-            credentials: 'same-origin',
-            ...(zeitlimit ? { signal: zeitlimit } : {}),
-          })
-          antwort = await speicherAntwort(response)
-        } catch (error) {
-          console.error('Save error:', error)
-          antwort = { art: 'stoerung' }
+        for (let versuch = 1; ; versuch += 1) {
+          // Stand von Titel, Dokumenttyp und Briefpapier, von dem dieser Versuch ausgeht (#1199)
+          if (metaFelder.length && metaVersion !== null) formData.set('meta_version', String(metaVersion))
+          try {
+            const zeitlimit = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ZEITLIMIT_MS) : undefined
+            const response = await fetch(window.location.href, {
+              method: 'POST',
+              headers: { 'X-Requested-With': 'XMLHttpRequest' },
+              body: formData,
+              credentials: 'same-origin',
+              ...(zeitlimit ? { signal: zeitlimit } : {}),
+            })
+            antwort = await speicherAntwort(response)
+          } catch (error) {
+            console.error('Save error:', error)
+            antwort = { art: 'stoerung' }
+          }
+          // Überholt: Der Server hat nichts geschrieben und nennt seinen Stand. Entweder kam der eigene abgebrochene
+          // Versuch doch an, oder ein anderes Fenster hat gespeichert. Dieser Versuch trägt die aktuellen Werte und
+          // geht mit dem Stand des Servers sofort noch einmal (#1199).
+          if (antwort.art !== 'ueberholt') break
+          if (typeof antwort.daten.meta_version === 'number') metaVersion = antwort.daten.meta_version
+          if (versuch >= VERSUCHE_BEI_UEBERHOLT) break
         }
 
         if (antwort.art === 'ok') {
+          if (typeof antwort.daten.meta_version === 'number') metaVersion = antwort.daten.meta_version
           this._gespeichertMelden()
           this._metaSavedSeq = metaSeq
           metaGesichert = { ...metaGesichert, ...metaWerte }
@@ -1689,6 +1722,9 @@ export const documentEditor = defineComponent(() => {
           this.saveError = true
           this.speicherStoerung = ''
           showToast(antwort.daten.message || 'Das Dokument wurde inzwischen an anderer Stelle geändert.', 'warning')
+        } else if (antwort.art === 'ueberholt') {
+          // Mehrmals hintereinander überholt (andere Fenster speichern gerade): später erneut, wie bei einer Störung
+          this._speichernWiederholen('stoerung', force)
         } else if (
           antwort.art === 'stoerung' ||
           antwort.art === 'anmeldung' ||
