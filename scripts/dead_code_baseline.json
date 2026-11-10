@@ -1,0 +1,105 @@
+{
+  "beschreibung": "Funde von vulture (toter Python-Code) je Datei nach scripts/dead_code_ratchet.toml; die Liste darf nur kürzer werden (scripts/check_dead_code_ratchet.py, Issue #1113).",
+  "funde": 43,
+  "dateien": {
+    "ingestor/src/metrics.py": [
+      "track_sync"
+    ],
+    "ingestor/src/storage/database.py": [
+      "date_type"
+    ],
+    "mandari/apps/minutes/provisioning/centron.py": [
+      "server_details"
+    ],
+    "mandari/apps/session/services/invitation_response_service.py": [
+      "latest_recipient"
+    ],
+    "mandari/apps/session/services/participation_service.py": [
+      "meeting_wide"
+    ],
+    "mandari/apps/tenants/models.py": [
+      "full_path",
+      "get_effective_ai_base_url"
+    ],
+    "mandari/apps/work/faction/models.py": [
+      "is_deleted_date",
+      "is_past",
+      "is_proposal",
+      "total_votes"
+    ],
+    "mandari/apps/work/faction/protokoll.py": [
+      "ist_top_intern"
+    ],
+    "mandari/apps/work/faction/services.py": [
+      "get_pending_approvals",
+      "get_pending_proposals",
+      "get_proposals_by_member",
+      "submit_for_approval"
+    ],
+    "mandari/apps/work/faction/views/_helpers.py": [
+      "_apply_approval_item_decision"
+    ],
+    "mandari/apps/work/motions/ai_security.py": [
+      "sanitize_for_json",
+      "validate_action"
+    ],
+    "mandari/apps/work/motions/import_service.py": [
+      "import_multiple_pdfs"
+    ],
+    "mandari/apps/work/motions/models.py": [
+      "is_pending"
+    ],
+    "mandari/apps/work/notifications/models.py": [
+      "get_default_settings"
+    ],
+    "mandari/apps/work/notifications/services.py": [
+      "cleanup_old_notifications",
+      "notify_meeting_reminder",
+      "notify_motion_shared",
+      "send_to_organization"
+    ],
+    "mandari/apps/work/organization/export_service.py": [
+      "export_to_json"
+    ],
+    "mandari/apps/work/organization/models.py": [
+      "is_future",
+      "is_past"
+    ],
+    "mandari/apps/work/organization/selectors.py": [
+      "contains_admin_role"
+    ],
+    "mandari/apps/work/support/models.py": [
+      "get_tags_list",
+      "helpful_percentage"
+    ],
+    "mandari/apps/work/support/tasks.py": [
+      "auto_close_resolved_tickets",
+      "cleanup_old_tickets",
+      "send_resolution_reminder"
+    ],
+    "mandari/apps/work/tasks/models.py": [
+      "is_personal"
+    ],
+    "mandari/insight_core/services/body_deletion.py": [
+      "delete_body_task"
+    ],
+    "mandari/insight_core/services/decision_tracking.py": [
+      "is_readable"
+    ],
+    "mandari/insight_core/services/document_extraction.py": [
+      "DocumentTooLargeError"
+    ],
+    "mandari/insight_core/services/file_cache_limit.py": [
+      "unrefetchable_bodies"
+    ],
+    "mandari/insight_core/services/file_reconcile.py": [
+      "blocked_q"
+    ],
+    "mandari/insight_core/services/urheber_erkennung.py": [
+      "fraktion_der_person"
+    ],
+    "mandari/insight_search/management/commands/setup_elasticsearch.py": [
+      "_get_analysis_settings"
+    ]
+  }
+}

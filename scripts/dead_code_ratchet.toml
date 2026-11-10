@@ -1,0 +1,173 @@
+# Regeln für die Zählung von totem Python-Code (scripts/check_dead_code_ratchet.py, Issue #1113).
+#
+# vulture kennt nur Namen im Python-Code. Was Django, pytest oder eine Bibliothek aufruft, ohne dass der
+# Name dort steht, hielte es für tot. Diese Datei nennt solche Einstiegspunkte an einer Stelle, mit
+# Begründung; im Code selbst stehen dafür keine `noqa`-Kommentare.
+# Muster sind Shell-Muster (`*` passt auch über `/` hinweg), Pfade relativ zum Repo-Root.
+
+[umfang]
+# Gelesen werden alle Python-Dateien dieser Verzeichnisse: Ein Name gilt als verwendet, sobald er in
+# einer davon vorkommt. `scripts` gehört dazu, weil Prüf- und Smoke-Skripte Code der Anwendung aufrufen.
+pfade = ["mandari", "shared", "ingestor", "scripts"]
+# Verzeichnisse, die nie gelesen werden (Fremdcode, Build-Ergebnisse, Uploads).
+ausgelassen = ["node_modules", "static", "staticfiles", "media", "dist", "__pycache__"]
+# Gezählte Arten. Nicht dabei: `variable` und `attribute` – auf Klassenebene sind das Angaben für das
+# Framework (Modellfelder, Meta, Optionen von Views, Formularen und Admin), als Parameter gibt sie ein
+# Protokoll vor (Signalempfänger, __exit__, Middleware).
+arten = ["function", "method", "class", "property", "import", "unreachable_code"]
+# 60 % ist die Sicherheit, die vulture für unbenutzte Funktionen, Methoden und Klassen angibt.
+mindest_sicherheit = 60
+
+[nur_verwendung]
+# Diese Dateien werden gelesen, ihre eigenen Funde zählen aber nicht.
+dateien = [
+    # Tests: pytest findet Testfunktionen und Fixtures über den Namen. Was nur ein Test verwendet, gilt
+    # damit als verwendet; das ist gewollt, sonst blockierte die Grenze Code, dessen Aufrufer erst im
+    # nächsten Pull Request kommt.
+    "*/tests/*",
+    "*/tests_e2e/*",
+    "*/test_*.py",
+    "*/conftest.py",
+    # Migrationen: von Django erzeugt; sie importieren Funktionen der Anwendung (Vorgabewerte,
+    # Speicherpfade), die deshalb bestehen bleiben müssen.
+    "*/migrations/*",
+    # Admin: Django findet die Klassen über die Registrierung und ihre Methoden über Zeichenketten in
+    # list_display, actions und readonly_fields.
+    "*/admin.py",
+    "*/admin/*",
+    # App-Konfiguration: Django lädt die Klasse über INSTALLED_APPS.
+    "*/apps.py",
+    # Prüf-, Smoke- und Betriebsskripte: jedes ist selbst ein Einstiegspunkt.
+    "scripts/*",
+    # OpenID-Connect-Anbieter: Die Klassen überschreiben Methoden von django-oauth-toolkit, das sie über
+    # die Einstellungen (OAUTH2_PROVIDER) lädt und aufruft.
+    "mandari/apps/accounts/oidc/validator.py",
+    "mandari/apps/accounts/oidc/scopes.py",
+]
+
+[einstiegspunkte]
+# Funktionen und Klassen mit diesen Dekoratoren ruft das Framework auf.
+dekoratoren = [
+    "@receiver",            # Django-Signale
+    "@cron",                # Zeitpläne der Ereignistechnik (apps/events/schedule.py)
+    "@every",
+    "@register.*",          # Template-Tags und -Filter (template.Library)
+    "@register",            # Systemprüfungen (django.core.checks)
+    "@admin.*",             # Admin außerhalb von admin.py
+    "@*router.*",           # django-ninja: Endpunkte der Schnittstellen
+    "@*api.*",              # django-ninja: Endpunkte direkt an der API
+    "@app.command",         # Befehle des Ingestors (typer)
+    "@app.callback",
+    "@*.exception_handler", # Fehlerbehandlung der Schnittstelle
+    "@pytest.fixture",      # Fixtures außerhalb der Testverzeichnisse
+    "@*.setter",            # Setter einer Property tragen den Namen der Property
+    "@field_validator",     # pydantic
+    "@model_validator",
+    "@event.listens_for",   # SQLAlchemy
+]
+# Namen, die eine Basisklasse oder das Framework aufruft, nie unser eigener Code.
+namen = [
+    # Management-Befehle
+    "Command",
+    "handle",
+    "add_arguments",
+    # Formulare: Feldprüfungen clean_<feld>, Haken eigener Felder
+    "clean_*",
+    "has_changed",
+    # Views (django.views.generic) und Mixins
+    "get_form_class",
+    "get_form_kwargs",
+    "get_success_url",
+    "get_template_names",
+    "get_context_object_name",
+    "get_object",
+    "get_initial",
+    "form_valid",
+    "form_invalid",
+    "http_method_not_allowed",
+    "handle_no_permission",
+    "test_func",
+    # Modelle; get_short_name und get_full_name gehören zur Schnittstelle des Benutzermodells
+    "get_absolute_url",
+    "get_short_name",
+    "get_full_name",
+    "natural_key",
+    "get_by_natural_key",
+    # Middleware
+    "process_view",
+    "process_response",
+    "process_exception",
+    "process_template_response",
+    # WebSocket-Consumer (channels): Verbindungsmethoden und Empfänger je Nachrichtentyp
+    "connect",
+    "disconnect",
+    "receive",
+    "receive_json",
+    "websocket_*",
+    # Admin-Mixins außerhalb von admin.py
+    "has_*_permission",
+    # Anmeldung: Backends und Passwortprüfer
+    "authenticate",
+    "get_user",
+    "validate",
+    "get_help_text",
+    "password_changed",
+    # Datenbank: Router, eigene Lookups und Funktionen
+    "db_for_read",
+    "db_for_write",
+    "allow_relation",
+    "allow_migrate",
+    "as_sql",
+    "as_sqlite",
+    "as_postgresql",
+    # Eigene Modellfelder
+    "from_db_value",
+    "get_prep_value",
+    "get_db_prep_value",
+    "to_python",
+    "deconstruct",
+    "formfield",
+    "db_type",
+    "contribute_to_class",
+    # Speicher und E-Mail-Backends
+    "send_messages",
+    "get_available_name",
+    # Sitemaps und Feeds
+    "items",
+    "lastmod",
+    "location",
+    "item_*",
+    # pytest-Erweiterungen (conftest außerhalb der Testverzeichnisse)
+    "pytest_*",
+    # pydantic (Einstellungen des Ingestors)
+    "model_post_init",
+    # html.parser.HTMLParser, http.server, configparser: von der Standardbibliothek aufgerufen
+    "handle_starttag",
+    "handle_endtag",
+    "handle_startendtag",
+    "handle_data",
+    "handle_entityref",
+    "handle_charref",
+    "do_GET",
+    "do_POST",
+    "do_HEAD",
+    "log_message",
+    "optionxform",
+    # logging: Filter, Formatter und Handler
+    "filter",
+    "format",
+    "emit",
+]
+
+# Einzelfälle: Funde, die nachweislich verwendet werden, ohne dass vulture es sehen kann. Je Eintrag die
+# Datei, die Namen (Shell-Muster) und der Grund. Ein Name, der auf keinen Fund mehr passt, lässt die
+# Prüfung scheitern, damit die Liste nicht veraltet.
+[[ausnahmen]]
+datei = "mandari/apps/work/tasks/views/panel.py"
+namen = ["_handle_*"]
+grund = "Verteilung der Aktionen über die Tabelle ACTIONS mit Methodennamen und getattr (TaskPanelActionView.post)"
+
+[[ausnahmen]]
+datei = "mandari/apps/accounts/oidc/models.py"
+namen = ["get_allowed_schemes"]
+grund = "überschreibt AbstractApplication aus django-oauth-toolkit; die Bibliothek ruft die Methode auf"

@@ -1,0 +1,35 @@
+# Regeln für die Zählung von doppeltem Code (scripts/check_duplicate_code_ratchet.py, Issue #1113).
+#
+# jscpd liest seine eigene Konfigurationsdatei ohne Kommentare; deshalb stehen die Einstellungen hier,
+# mit Begründung, und das Skript übergibt sie beim Aufruf.
+
+[umfang]
+# Code der Anwendung, der gemeinsamen Pakete und des Ingestors. Klone werden auch zwischen diesen
+# Verzeichnissen gefunden (etwa Code, der aus der Anwendung in den Ingestor kopiert wurde).
+pfade = ["mandari", "shared", "ingestor/src"]
+# Formate von jscpd: Python, Vorlagen (HTML), TypeScript und JavaScript des Frontends.
+formate = ["python", "markup", "typescript", "javascript"]
+# Ein Block zählt ab 100 gleichen Token über mindestens 10 Zeilen. Die Vorgabe von jscpd (50 Token,
+# 5 Zeilen) trifft auch Importblöcke, Feldlisten von Modellen und kurze Tabellenköpfe in Vorlagen; an
+# solchen Stellen soll die Grenze keinen Pull Request aufhalten. Wer die Schwelle senkt, schreibt die
+# Baseline im selben Pull Request neu.
+mindest_token = 100
+mindest_zeilen = 10
+
+[ausgenommen]
+# Muster relativ zu jedem Pfad aus `pfade` (das Skript stellt den Pfad voran); was .gitignore nennt,
+# liest jscpd ohnehin nicht.
+dateien = [
+    # Migrationen: von Django erzeugt, gleichen sich zwangsläufig und werden nie umgebaut.
+    "**/migrations/**",
+    # Tests: Wiederholung im Aufbau ist dort oft Absicht (jeder Test für sich lesbar).
+    "**/tests/**",
+    "**/tests_e2e/**",
+    "**/test/**",
+    "**/test_*.py",
+    "**/conftest.py",
+    # Fremdcode und Build-Ergebnisse.
+    "**/node_modules/**",
+    "**/static/**",
+    "**/staticfiles/**",
+]
