@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db.models import F
 from django.http import HttpRequest, JsonResponse
 
 from apps.common.db_connections import release_idle_thread_connections
@@ -524,6 +525,67 @@ def speicherkonflikt(request: HttpRequest, old_content: str, new_content: str) -
             status=409,
         )
     return KONFLIKT_HINWEIS
+
+
+# ---------------------------------------------------------------------------
+# Reihenfolge der Speicher-POSTs für Titel, Dokumenttyp und Briefpapier (#1199)
+# ---------------------------------------------------------------------------
+
+#: Felder des Speicher-POST, die nicht über Yjs laufen und deren Reihenfolge der Zähler ``Motion.meta_version`` sichert.
+META_FELDER = ("title", "document_type_id", "letterhead_id")
+
+#: Hinweis, wenn ein Speichern von einem überholten Stand dieser Felder ausgeht (nur für Formulare ohne JavaScript;
+#: der Editor wiederholt mit dem Stand des Servers).
+META_UEBERHOLT_HINWEIS = (
+    "Titel, Dokumenttyp oder Briefpapier wurden inzwischen an anderer Stelle gespeichert. "
+    "Laden Sie die Seite neu und wiederholen Sie die Änderung."
+)
+
+
+def hat_meta_felder(request: HttpRequest) -> bool:
+    """Schickt der Speicher-POST Titel, Dokumenttyp oder Briefpapier mit?"""
+    return any(feld in request.POST for feld in META_FELDER)
+
+
+def meta_ueberholt(request: HttpRequest, motion: Any) -> JsonResponse | str | None:
+    """
+    Zählt den Stand von Titel, Dokumenttyp und Briefpapier weiter und lehnt überholte Requests ab (#1199).
+
+    Der Editor schickt mit diesen Feldern ``meta_version`` mit, den Stand, von dem er ausgeht. Bricht der Browser
+    einen POST nach dem Zeitlimit ab und verarbeitet der Server ihn erst nach dem Wiederholversuch, hat der
+    Wiederholversuch den Zähler schon weitergezählt: Der ältere Request passt nicht mehr und schreibt nichts. Geprüft
+    und gezählt wird in einer Anweisung (``UPDATE … WHERE meta_version = …``). Der Aufrufer schreibt die Felder in
+    derselben Transaktion; die Zeilensperre hält bis dahin, ein gleichzeitiger Request wartet und sieht dann den neuen
+    Stand.
+
+    Ohne ``meta_version`` (ältere Fassung des Editors im Browser, Formulare) wird nur gezählt, nicht geprüft. POSTs
+    ohne eines der Felder lassen den Zähler unberührt.
+
+    Liefert ``None`` (angenommen, ``motion.meta_version`` trägt den neuen Stand), eine 409-Antwort mit dem Stand des
+    Servers für den Editor (AJAX) oder den Hinweistext für ein normales Formular.
+    """
+    from .models import Motion
+
+    if not hat_meta_felder(request):
+        return None
+    zeile = Motion.objects.filter(pk=motion.pk)
+    basis = request.POST.get("meta_version", "").strip()
+    if basis:
+        # Eine unlesbare Angabe passt zu keinem Stand
+        angenommen = basis.isascii() and basis.isdigit() and len(basis) <= 9
+        if angenommen:
+            angenommen = bool(zeile.filter(meta_version=int(basis)).update(meta_version=F("meta_version") + 1))
+    else:
+        angenommen = bool(zeile.update(meta_version=F("meta_version") + 1))
+    motion.meta_version = zeile.values_list("meta_version", flat=True).get()
+    if angenommen:
+        return None
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JsonResponse(
+            {"error": "meta_ueberholt", "message": META_UEBERHOLT_HINWEIS, "meta_version": motion.meta_version},
+            status=409,
+        )
+    return META_UEBERHOLT_HINWEIS
 
 
 # ---------------------------------------------------------------------------
