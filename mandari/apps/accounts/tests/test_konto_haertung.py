@@ -246,6 +246,54 @@ class TestSitzungBeenden:
         assert not self._angemeldet(fremd)
         assert self._angemeldet(eigen)
 
+    def _passwort_wechseln(self, client: Client, org: Any, neu: str = "Neues-Sicheres-Passwort-2027") -> None:
+        antwort = client.post(
+            reverse("work:security", kwargs={"org_slug": org.slug}),
+            {"action": "change_password", "old_password": PASSWORD, "new_password": neu, "confirm_password": neu},
+        )
+        assert antwort.status_code == 302
+
+    def test_passwortwechsel_haelt_die_sitzung_in_der_geraeteliste(self, org: Any) -> None:
+        """Der Passwortwechsel vergibt einen neuen Sitzungsschlüssel; die Geräteliste zieht mit um."""
+        from apps.accounts.models import UserSession
+        from apps.common.tests.factories import MembershipFactory, RoleFactory
+
+        user, andere, wechselnde = self._zwei_sitzungen()
+        rolle = RoleFactory(organization=org, permissions=["dashboard.view"])
+        MembershipFactory(user=user, organization=org, roles=[rolle])
+        alter_schluessel = str(wechselnde.session.session_key)
+
+        self._passwort_wechseln(wechselnde, org)
+
+        neuer_schluessel = str(wechselnde.session.session_key)
+        assert neuer_schluessel != alter_schluessel
+        assert self._angemeldet(wechselnde)
+        # Genau ein Eintrag, und zwar für die Sitzung, die das Passwort gewechselt hat
+        assert list(UserSession.objects.filter(user=user).values_list("session_key", flat=True)) == [neuer_schluessel]
+        # Die andere Sitzung endet mit dem Wechsel
+        assert not self._angemeldet(andere)
+
+        # Von einem neuen Gerät aus lässt sich die Sitzung danach beenden, einzeln und gesammelt
+        assert SessionService.revoke_session(user, neuer_schluessel)
+        assert not self._angemeldet(wechselnde)
+
+    def test_alle_sitzungen_beenden_erfasst_sitzungen_ohne_eintrag(self) -> None:
+        """Eine Sitzung, die in der Geräteliste fehlt (Bestand vor der Korrektur), endet mit „alle beenden“ trotzdem."""
+        from apps.accounts.models import UserSession
+
+        user, ohne_eintrag, eigen = self._zwei_sitzungen()
+        fremdes_konto = make_user("andere@example.org")
+        unbeteiligt = Client()
+        anmelden(unbeteiligt, fremdes_konto.email, ip="198.51.100.3")
+        UserSession.objects.filter(session_key=str(ohne_eintrag.session.session_key)).delete()
+
+        anzahl = SessionService.revoke_all_sessions(user, except_current=str(eigen.session.session_key))
+
+        assert anzahl == 1
+        assert not self._angemeldet(ohne_eintrag)
+        assert self._angemeldet(eigen)
+        assert self._angemeldet(unbeteiligt)
+
 
 # ---------------------------------------------------------------- Passwort vergessen
 
