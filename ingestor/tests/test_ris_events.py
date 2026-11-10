@@ -758,8 +758,31 @@ def test_tief_geschachtelte_listen_bleiben_im_rahmen(tiefe: int) -> None:
     assert ris_events.content_fingerprint(anders) != summe
 
 
+def test_ersatz_pruefsumme_ist_bestimmt_und_unabhaengig_von_der_rekursionsgrenze() -> None:
+    """Die Ersatz-Prüfsumme durchläuft den Wert ohne Rekursion: auch sehr tiefe Werte ergeben immer dasselbe."""
+    import sys
+
+    tief = _geschachtelt(50_000)
+    grenze = sys.getrecursionlimit()
+    sys.setrecursionlimit(200)
+    try:
+        summe = ris_events._digest(tief)
+        assert ris_events._digest(_geschachtelt(50_000)) == summe
+        assert ris_events._digest(_geschachtelt(50_001)) != summe
+    finally:
+        sys.setrecursionlimit(grenze)
+    # Reihenfolge der Schlüssel zählt nicht, die der Listen schon; flüchtige Felder der obersten Ebene zählen nicht
+    assert ris_events._digest({"a": 1, "b": [1, 2], "modified": "x"}) == ris_events._digest({"b": [1, 2], "a": 1})
+    assert ris_events._digest({"a": [1, 2]}) != ris_events._digest({"a": [2, 1]})
+    assert ris_events._digest({"a": {"modified": "x"}}) != ris_events._digest({"a": {"modified": "y"}})
+    assert ris_events._digest([["a"], "b"]) != ris_events._digest([["a", "b"]])
+    # Derselbe Behälter an zwei Stellen ist kein Kreis
+    doppelt = ["x"]
+    assert ris_events._digest([doppelt, doppelt]) == ris_events._digest([["x"], ["x"]])
+
+
 def test_nicht_darstellbarer_wert_gilt_nie_als_gleich() -> None:
-    """Lässt sich ein Wert nicht serialisieren, gilt er als geändert, statt eine Änderung zu verschlucken."""
+    """Enthält ein Wert sich selbst, gilt er als geändert, statt eine Änderung zu verschlucken."""
     kreis: list[Any] = []
     kreis.append(kreis)
 

@@ -234,18 +234,48 @@ def _digest(value: Any) -> str:
     Prüfsumme des Rohwerts ohne Mengenbildung: linear in der Größe, Reihenfolge der Listen zählt.
 
     Ersatz für Werte über den Obergrenzen. Flüchtige Felder der obersten Ebene bleiben außen vor, damit sich die
-    Prüfsumme nicht mit jedem ``modified`` ändert. Lässt sich der Wert nicht darstellen, ist das Ergebnis jedes
-    Mal ein anderes.
+    Prüfsumme nicht mit jedem ``modified`` ändert. Der Wert wird ohne Rekursion durchlaufen (eigener Stapel), die
+    Prüfsumme ist deshalb auch bei beliebig tiefer Schachtelung bestimmt: gleicher Inhalt, gleiche Prüfsumme. Nur
+    ein Wert, der sich selbst enthält, ist nicht darstellbar; er ergibt jedes Mal ein anderes Ergebnis und gilt
+    damit in jedem Lauf als geändert, statt dass eine Änderung unbemerkt bleibt.
     """
     if isinstance(value, Mapping):
         value = {key: item for key, item in value.items() if key not in VOLATILE_FIELDS}
-    try:
-        canonical = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
-    except (RecursionError, ValueError, TypeError):
-        # Nicht darstellbar (etwa jenseits der Rekursionsgrenze): nie gleich einem anderen Wert. Das Objekt gilt
-        # dann in jedem Lauf als geändert, statt dass eine Änderung unbemerkt bleibt.
-        return f"nicht-vergleichbar:{uuid4().hex}"
-    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256()
+    open_containers: set[int] = set()
+    # Einträge des Stapels: ("wert", Wert), ("text", Bytes der kanonischen Form) oder ("ende", id des Behälters)
+    stack: list[tuple[str, Any]] = [("wert", value)]
+    while stack:
+        kind, item = stack.pop()
+        if kind == "text":
+            digest.update(item)
+        elif kind == "ende":
+            open_containers.discard(item)
+        elif isinstance(item, Mapping | list | tuple):
+            if id(item) in open_containers:
+                return f"nicht-vergleichbar:{uuid4().hex}"
+            open_containers.add(id(item))
+            stack.append(("ende", id(item)))
+            if isinstance(item, Mapping):
+                stack.append(("text", b"}"))
+                for key, child in sorted(((str(key), child) for key, child in item.items()), reverse=True, key=_key):
+                    stack.append(("text", b","))
+                    stack.append(("wert", child))
+                    stack.append(("text", json.dumps(key, ensure_ascii=False).encode("utf-8") + b":"))
+                stack.append(("text", b"{"))
+            else:
+                stack.append(("text", b"]"))
+                for child in reversed(item):
+                    stack.append(("text", b","))
+                    stack.append(("wert", child))
+                stack.append(("text", b"["))
+        else:
+            digest.update(json.dumps(item, ensure_ascii=False, default=str).encode("utf-8"))
+    return "sha256:" + digest.hexdigest()
+
+
+def _key(entry: tuple[str, Any]) -> str:
+    return entry[0]
 
 
 def _type_name(value: Any) -> Any:
