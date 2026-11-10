@@ -439,6 +439,36 @@ def test_post_ohne_felder_zaehlt_nicht(
 
 
 @pytest.mark.django_db
+def test_post_mit_text_setzt_den_zaehler_nicht_zurueck(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Ein POST nur mit Text speichert das ganze Dokument. Hat ein anderes Fenster den Zähler seit dem Laden im View
+    weitergezählt, bleibt dessen Stand; sonst passte ein überholter Request wieder.
+    """
+    from apps.work.motions.views.editor import DocumentEditorView
+
+    echt: Any = DocumentEditorView._get_access_level
+
+    def anderes_fenster_zaehlt(self: Any, geladen: Motion) -> str:
+        Motion.objects.filter(pk=geladen.pk).update(meta_version=6)
+        return str(echt(self, geladen))
+
+    monkeypatch.setattr(DocumentEditorView, "_get_access_level", anderes_fenster_zaehlt)
+
+    response = client_for(author.user).post(
+        f"/work/{org.slug}/documents/{motion.id}/",
+        {"action": "save", "content": "<p>Neu</p>"},
+        HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+    )
+
+    assert response.status_code == 200
+    motion.refresh_from_db()
+    assert motion.meta_version == 6
+    assert cast(Any, motion).get_content_decrypted() == "<p>Neu</p>"
+
+
+@pytest.mark.django_db
 def test_ohne_angabe_wird_gezaehlt_aber_nicht_geprueft(org: Any, author: Any, motion: Motion, client_for: Any) -> None:
     """Eine ältere Fassung des Editors im Browser schickt keinen Stand: Sie speichert weiter, andere bemerken es."""
     client = client_for(author.user)

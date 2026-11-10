@@ -559,16 +559,19 @@ def meta_ueberholt(request: HttpRequest, motion: Any) -> JsonResponse | str | No
     Stand.
 
     Ohne ``meta_version`` (ältere Fassung des Editors im Browser, Formulare) wird nur gezählt, nicht geprüft. POSTs
-    ohne eines der Felder lassen den Zähler unberührt.
+    ohne eines der Felder lassen den Zähler unberührt. Für sie wird er unter Zeilensperre nachgeladen: Ein POST mit
+    Text speichert danach das ganze Dokument und setzte sonst einen inzwischen weitergezählten Stand zurück.
 
-    Liefert ``None`` (angenommen, ``motion.meta_version`` trägt den neuen Stand), eine 409-Antwort mit dem Stand des
-    Servers für den Editor (AJAX) oder den Hinweistext für ein normales Formular.
+    In einer Transaktion aufrufen. Liefert ``None`` (angenommen, ``motion.meta_version`` trägt den Stand der
+    Datenbank), eine 409-Antwort mit dem Stand des Servers für den Editor (AJAX) oder den Hinweistext für ein normales
+    Formular.
     """
     from .models import Motion
 
-    if not hat_meta_felder(request):
-        return None
     zeile = Motion.objects.filter(pk=motion.pk)
+    if not hat_meta_felder(request):
+        motion.meta_version = zeile.select_for_update().values_list("meta_version", flat=True).get()
+        return None
     basis = request.POST.get("meta_version", "").strip()
     if basis:
         # Eine unlesbare Angabe passt zu keinem Stand
