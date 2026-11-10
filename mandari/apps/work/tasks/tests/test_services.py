@@ -403,3 +403,30 @@ def test_import_updates_by_id_only_with_edit_permission(org: Any, member: Any, o
     own.refresh_from_db()
     assert own.title == "Eigene neu" and own.is_completed
     assert own.activities.filter(activity_type="completed").exists()
+
+
+@pytest.mark.django_db
+def test_import_mit_verwaltungsrecht_aendert_nur_sichtbare_aufgaben(org: Any, manager: Any, other: Any) -> None:
+    """``tasks.manage`` reicht für den Import wie in der Oberfläche nur für Aufgaben, die die Person sehen darf."""
+    privat = make_task(org, other, "Privat fremd", visibility="private")
+    offen = make_task(org, other, "Offen fremd", visibility="organization")
+    payload: dict[str, Any] = {
+        "tasks": [
+            {"id": str(privat.id), "title": "Übernommen", "visibility": "organization", "status": "todo"},
+            {"id": str(offen.id), "title": "Offen neu", "visibility": "organization", "status": "todo"},
+        ]
+    }
+    _, rows = import_service.parse_upload("import.json", json.dumps(payload).encode())
+
+    report = import_service.classify_rows(org, manager, rows)
+    assert [entry["task"] for entry in report.update] == [offen]
+    assert [entry["reason"] for entry in report.skip] == ["keine Berechtigung"]
+
+    # Auch ein Bericht, der die private Aufgabe noch als Änderung führt, schreibt sie nicht
+    report.update.append({"line": 1, "data": report.update[0]["data"] | {"title": "Übernommen"}, "task": privat})
+    import_service.apply_import(org, manager, report)
+
+    privat.refresh_from_db()
+    offen.refresh_from_db()
+    assert privat.title == "Privat fremd" and privat.visibility == "private"
+    assert offen.title == "Offen neu"

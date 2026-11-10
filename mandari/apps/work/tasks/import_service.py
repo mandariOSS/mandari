@@ -503,12 +503,18 @@ def normalize_row(row: Row, memberships_by_email: dict[str, Membership]) -> tupl
     return data, errors, warnings
 
 
+def _darf_aendern(task: Task, membership: Membership) -> bool:
+    """Bearbeitungsrecht an einer bestehenden Aufgabe, wie ``services.can_edit_task`` (dort importiert dieses Modul nicht)."""
+    from . import services
+
+    return services.can_edit_task(task, membership)
+
+
 def classify_rows(organization: Organization, membership: Membership, rows: list[Row]) -> ImportReport:
     """Validiert alle Zeilen und teilt sie in create/update/skip/errors ein (nur Lesezugriffe)."""
     report = ImportReport(total=len(rows))
     memberships_by_email = selectors.memberships_by_email(organization)
     existing_titles = selectors.visible_task_titles(organization, membership)
-    can_manage = membership.has_permission("tasks.manage")
     seen_in_file: set[str] = set()
 
     for row in rows:
@@ -524,7 +530,9 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
         # Update-Pfad: bekannte ID in dieser Organisation
         existing = selectors.find_task(organization, data["id"]) if data.get("id") else None
         if existing is not None:
-            if existing.can_edit(membership) or can_manage:
+            # Dieselbe Regel wie beim Bearbeiten in der Oberfläche: ``tasks.manage`` gilt nur für Aufgaben,
+            # die die Person sehen darf – sonst ließen sich private Aufgaben anderer per Kennung überschreiben
+            if _darf_aendern(existing, membership):
                 report.update.append({"line": line, "data": data, "task": existing})
             else:
                 report.skip.append({"line": line, "reason": "keine Berechtigung"})
@@ -641,4 +649,6 @@ def apply_import(organization: Organization, membership: Membership, report: Imp
         position_counters[status] += 1
 
     for entry in report.update:
-        _update_from_row(entry["task"], membership, entry["data"], labels, now)
+        # Erneut prüfen: Der Bericht kann aus einem früheren Lesestand stammen
+        if _darf_aendern(entry["task"], membership):
+            _update_from_row(entry["task"], membership, entry["data"], labels, now)
