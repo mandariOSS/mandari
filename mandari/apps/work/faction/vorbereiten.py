@@ -155,7 +155,7 @@ def _unterlagen_alle(items: list[FactionAgendaItem], membership: Membership) -> 
     fassung: str | None = None
     for item in items:
         liste = ergebnis[item.pk]
-        vorige = item.approves_meeting if item.is_approval_item and item.approves_meeting_id else None
+        vorige = sitzung.vorige_mit_protokoll(item)
         if vorige is not None:
             if fassung is None:
                 fassung = sitzung.protokoll_fassung(membership)

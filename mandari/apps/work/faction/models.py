@@ -821,10 +821,14 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
 
     @property
     def has_pending_protocol_approval(self) -> bool:
-        """Check if the previous meeting's protocol needs approval."""
-        if not self.previous_meeting:
-            return False
-        return not self.previous_meeting.protocol_approved
+        """
+        Ist das Protokoll der vorherigen Sitzung noch nicht genehmigt? Nur wenn sie stattgefunden hat: Die Kette
+        reicht in die Zukunft (Issue #1295), vor der Sitzung davor gibt es kein Protokoll.
+        """
+        from .kette import hat_stattgefunden
+
+        vorige = self.previous_meeting
+        return vorige is not None and hat_stattgefunden(vorige) and not vorige.protocol_approved
 
     def get_faction_settings(self) -> dict:
         """

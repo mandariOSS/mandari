@@ -15,11 +15,19 @@ from datetime import UTC, datetime, time, timedelta
 from typing import Any, cast
 
 import pytest
+from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 
-from apps.work.faction import kette, protokoll
+from apps.work.faction import kette, protokoll, sitzung, vorbereiten
 from apps.work.faction.generation import generate_meetings_for_schedule, run_faction_schedule_pass
-from apps.work.faction.models import FactionAgendaItem, FactionMeeting, FactionMeetingSchedule, FactionMeetingType
+from apps.work.faction.models import (
+    FactionAgendaItem,
+    FactionAuditLog,
+    FactionMeeting,
+    FactionMeetingSchedule,
+    FactionMeetingType,
+)
 from apps.work.faction.services import ProtocolApprovalService
 
 # Dienstag, 05.03.2030, 12:00 Uhr Ortszeit, und der Montag davor um 18:00 Uhr
@@ -42,12 +50,12 @@ def standardart(org: Any) -> FactionMeetingType:
 
 def _sitzung(org: Any, start: datetime, *, top: bool = True, **felder: Any) -> FactionMeeting:
     """Sitzung wie von Hand angelegt: gespeichert, danach der automatische erste TOP."""
-    sitzung = FactionMeeting.objects.create(
+    neu = FactionMeeting.objects.create(
         organization=org, start=start, **{"title": "Fraktionssitzung", "status": "planned", **felder}
     )
     if top:
-        cast(Any, ProtocolApprovalService).auto_create_approval_item(sitzung)
-    return sitzung
+        cast(Any, ProtocolApprovalService).auto_create_approval_item(neu)
+    return neu
 
 
 def _wochen(org: Any, zahl: int, **felder: Any) -> list[FactionMeeting]:
@@ -58,8 +66,18 @@ def _vorherige(*sitzungen: FactionMeeting) -> list[Any]:
     return [FactionMeeting.objects.get(pk=s.pk).previous_meeting_id for s in sitzungen]
 
 
-def _top(sitzung: FactionMeeting) -> FactionAgendaItem:
-    return FactionAgendaItem.objects.get(meeting=sitzung, is_approval_item=True)
+def _top(von: FactionMeeting) -> FactionAgendaItem:
+    return FactionAgendaItem.objects.get(meeting=von, is_approval_item=True)
+
+
+def _status(von: FactionMeeting, *folge: str) -> None:
+    for status in folge:
+        von.status = status
+        von.save()
+
+
+class Angenommen:
+    passed = True
 
 
 # =============================================================================
@@ -174,6 +192,39 @@ def test_geloeschter_termin_schliesst_die_kette(org: Any) -> None:
 
     assert _vorherige(erste, dritte) == [None, erste.pk]
     assert _top(dritte).approves_meeting_id == erste.pk
+    assert _top(dritte).title == MIT_PROTOKOLL
+
+    erste.delete()
+
+    assert _vorherige(dritte) == [None]
+    assert _top(dritte).approves_meeting_id is None
+    assert _top(dritte).title == OHNE_PROTOKOLL, "ohne Sitzung davor entfällt der Zusatz, wie beim Absagen"
+
+
+@pytest.mark.django_db
+def test_geloeschter_termin_titel_nennt_die_neue_vorherige_sitzung(org: Any) -> None:
+    org.settings = {"faction": {"first_agenda_title_with_previous": "Protokoll vom {datum_letzte_sitzung}"}}
+    org.save(update_fields=["settings"])
+    erste, zweite, dritte = _wochen(org, 3)
+    assert _top(dritte).title == f"Protokoll vom {zweite.start:%d.%m.%Y}"
+
+    zweite.delete()
+
+    assert _top(dritte).title == f"Protokoll vom {erste.start:%d.%m.%Y}"
+    assert _top(dritte).approves_meeting_id == erste.pk
+
+
+@pytest.mark.django_db
+def test_geloeschter_termin_laesst_bearbeiteten_top_der_folgenden_stehen(org: Any) -> None:
+    erste, zweite = _wochen(org, 2)
+    top = _top(zweite)
+    top.title = "Formalia"
+    top.save()
+
+    erste.delete()
+
+    top.refresh_from_db()
+    assert (top.title, top.approves_meeting_id) == ("Formalia", None)
 
 
 @pytest.mark.django_db
@@ -213,16 +264,39 @@ def test_ohne_aenderung_an_status_beginn_oder_art_wird_nicht_geordnet(org: Any) 
 @pytest.mark.django_db
 def test_begonnene_und_abgeschlossene_sitzungen_behalten_ihre_zuordnung(org: Any) -> None:
     erste, zweite, dritte = _wochen(org, 3)
-    for sitzung, status in ((erste, "completed"), (zweite, "ongoing")):
-        sitzung.status = status
-        sitzung.save()
+    _status(erste, "ongoing", "completed")
+    _status(zweite, "ongoing", "completed")
 
-    # Eine nachträglich angelegte Sitzung zwischen zwei feststehenden ändert deren Zuordnung nicht
+    # Eine nachträglich angelegte Sitzung zwischen zwei abgeschlossenen ändert deren Zuordnung nicht
     dazwischen = _sitzung(org, MONTAG + timedelta(days=3))
 
     assert _vorherige(erste, zweite, dritte) == [None, erste.pk, zweite.pk]
-    assert _vorherige(dazwischen) == [None], "die Sitzung davor ist schon der laufenden zugeordnet"
+    assert _vorherige(dazwischen) == [None]
     assert _top(zweite).approves_meeting_id == erste.pk
+    assert _top(dazwischen).title == OHNE_PROTOKOLL
+
+
+@pytest.mark.django_db
+def test_nie_begonnene_sitzung_wird_uebersprungen_sobald_die_naechste_beginnt(org: Any, make_member: Any) -> None:
+    """Die mittlere Sitzung fand nicht statt und wurde nicht abgesagt: Ihr Protokoll gibt es nicht."""
+    from apps.work.faction.services import apply_approval_item_decision
+
+    vorsitz = make_member(org, ["faction.manage"], email="v@example.org")
+    erste, zweite, dritte = _wochen(org, 3)
+    _status(erste, "ongoing", "completed")
+    assert _vorherige(zweite, dritte) == [erste.pk, zweite.pk]
+    # Solange nichts begonnen hat, genehmigt die Abstimmung kein Protokoll einer Sitzung, die nicht stattfand
+    assert cast(Any, apply_approval_item_decision)(_top(dritte), Angenommen(), dritte, vorsitz) is False
+    assert FactionMeeting.objects.get(pk=zweite.pk).protocol_approved is False
+
+    _status(dritte, "ongoing")
+
+    assert _vorherige(erste, zweite, dritte) == [None, None, erste.pk]
+    assert _top(dritte).approves_meeting_id == erste.pk
+    assert _top(zweite).title == OHNE_PROTOKOLL
+    assert cast(Any, apply_approval_item_decision)(_top(dritte), Angenommen(), dritte, vorsitz) is True
+    erste.refresh_from_db()
+    assert erste.protocol_approved and erste.protocol_approved_in_id == dritte.pk
 
 
 @pytest.mark.django_db
@@ -280,13 +354,76 @@ def test_abgeschlossene_sitzung_steht_zur_genehmigung_in_der_folgenden(org: Any,
     # Die angenommene Abstimmung am TOP 1 der folgenden Sitzung genehmigt genau dieses Protokoll
     from apps.work.faction.services import apply_approval_item_decision
 
-    class Angenommen:
-        passed = True
-
+    _status(zweite, "ongoing")
     assert cast(Any, apply_approval_item_decision)(_top(zweite), Angenommen(), zweite, vorsitz) is True
     erste.refresh_from_db()
     assert erste.protocol_approved and erste.protocol_approved_in_id == zweite.pk
     assert FactionMeeting.objects.get(pk=dritte.pk).previous_meeting_id == zweite.pk
+
+
+@pytest.mark.django_db
+def test_hinweise_und_unterlagen_erst_wenn_die_vorherige_sitzung_stattgefunden_hat(org: Any) -> None:
+    erste, zweite, dritte = _wochen(org, 3)
+    hinweis = "work/faction/neu/_vb_hinweise.html"
+
+    # Die Kette reicht in die Zukunft: Vor der Sitzung davor gibt es kein Protokoll, das fehlen oder vorliegen könnte
+    for kommende in (zweite, dritte):
+        frisch = FactionMeeting.objects.get(pk=kommende.pk)
+        assert frisch.has_pending_protocol_approval is False
+        assert "fs-hinweis-protokoll" not in render_to_string(hinweis, {"meeting": frisch})
+        assert sitzung.vorige_mit_protokoll(_top(kommende)) is None
+        assert "Protokoll von" not in sitzung.herkunft(_top(kommende))
+
+    _status(erste, "ongoing", "completed")
+
+    frisch = FactionMeeting.objects.get(pk=zweite.pk)
+    assert frisch.has_pending_protocol_approval is True
+    assert "fs-hinweis-protokoll" in render_to_string(hinweis, {"meeting": frisch})
+    assert sitzung.vorige_mit_protokoll(_top(zweite)) == erste
+    assert "liegt zur Genehmigung vor" in sitzung.herkunft(_top(zweite))
+    assert FactionMeeting.objects.get(pk=dritte.pk).has_pending_protocol_approval is False
+
+
+# =============================================================================
+# Änderungshistorie und Einladung
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_umhaengen_vor_der_einladung_hinterlaesst_keine_bearbeitung(org: Any) -> None:
+    """Die Reihe hält einen Termin nur für leer, solange seine Historie nichts als das Anlegen kennt."""
+    erste, zweite, dritte = _wochen(org, 3)
+    stand = {top.pk: top.updated_at for top in FactionAgendaItem.objects.filter(meeting__in=[zweite, dritte])}
+
+    _status(erste, "cancelled")
+    assert _top(zweite).title == OHNE_PROTOKOLL
+    _status(erste, "planned")
+
+    assert _top(zweite).title == MIT_PROTOKOLL and _top(zweite).approves_meeting_id == erste.pk
+    historie = FactionAuditLog.objects.filter(meeting_id_ref__in=[zweite.pk, dritte.pk])
+    assert not historie.exclude(action="create").exists()
+    assert {t.pk: t.updated_at for t in FactionAgendaItem.objects.filter(meeting__in=[zweite, dritte])} == stand
+
+
+@pytest.mark.django_db
+def test_eingeladene_erfahren_nur_sichtbare_aenderungen(org: Any) -> None:
+    erste, zweite, dritte = _wochen(org, 3)
+    FactionMeeting.objects.filter(pk__in=[zweite.pk, dritte.pk]).update(
+        invitation_sent=True, invitation_sent_at=timezone.now()
+    )
+
+    # Die mittlere Sitzung entfällt: TOP 1 der dritten heißt wie zuvor, nur das genehmigte Protokoll wechselt
+    _status(zweite, "cancelled")
+
+    dritte.refresh_from_db()
+    assert _top(dritte).approves_meeting_id == erste.pk
+    assert vorbereiten.tagesordnung_geaendert(dritte) is False
+
+    # Auch die erste entfällt: TOP 1 der dritten verliert das Protokoll, die Infoleiste bietet die Aktualisierung an
+    _status(erste, "cancelled")
+
+    assert _top(dritte).title == OHNE_PROTOKOLL
+    assert vorbereiten.tagesordnung_geaendert(dritte) is True
 
 
 # =============================================================================
@@ -304,8 +441,8 @@ def test_erzeugungslauf_ordnet_den_bestand(org: Any, standardart: FactionMeeting
     FactionMeeting.objects.filter(pk=alt_1.pk).update(protocol_status="approved", protocol_approved=True)
     FactionMeeting.objects.filter(pk=rand_1.pk).update(previous_meeting=alt_1)
     FactionMeeting.objects.filter(pk=rand_2.pk).update(previous_meeting=alt_2)
-    for sitzung in sitzungen:
-        FactionMeeting.objects.get(pk=sitzung.pk).create_approval_agenda_item()
+    for eine in sitzungen:
+        FactionMeeting.objects.get(pk=eine.pk).create_approval_agenda_item()
     assert _top(naechste).title == OHNE_PROTOKOLL and _top(rand_2).approves_meeting_id == alt_2.pk
 
     ergebnis = run_faction_schedule_pass(now=JETZT)
