@@ -106,8 +106,28 @@ def merge_layout_lines(plain: str, layout: str) -> list[str]:
     return lines
 
 
+#: Grenzen für das Lesen eines PDFs mit Zeilen und Abständen im laufenden Seitenaufruf: Seiten und Gesamtzeit.
+#: Darüber hinaus liest der Import nicht weiter; die vollständige Datei bleibt Anhang des Dokuments.
+MAX_PDF_IMPORT_PAGES = 500
+MAX_PDF_IMPORT_SECONDS = 45.0
+
+
 def pdf_page_lines(data: bytes) -> tuple[list[list[str]], int] | None:
-    """Zeilen je Seite (Leerzeilen = Abstand) und Seitenzahl; ``None``, wenn pypdf die Datei nicht öffnet."""
+    """
+    Zeilen je Seite (Leerzeilen = Abstand) und Seitenzahl; ``None``, wenn pypdf die Datei nicht öffnet.
+
+    Gelesen wird im aufrufenden Prozess, weil nur pypdf hier Zeilen und Abstände liefert. Vorher liest ein eigener
+    Prozess mit Speicher- und Zeitgrenze die Textebene (``pdf_readable_within_limits``); scheitert er an einer
+    Grenze, gilt die Datei hier als nicht lesbar (``None``) und geht wie ein Scan an die Texterkennung. Die Liste
+    kann kürzer sein als die Seitenzahl (``MAX_PDF_IMPORT_PAGES``, ``MAX_PDF_IMPORT_SECONDS``).
+    """
+    import time
+
+    from insight_core.services.document_extraction import pdf_readable_within_limits
+
+    if not pdf_readable_within_limits(data):
+        logger.warning("PDF nicht innerhalb der Grenzen lesbar, weiter mit der Texterkennung")
+        return None
     try:
         from pypdf import PdfReader
 
@@ -118,7 +138,11 @@ def pdf_page_lines(data: bytes) -> tuple[list[list[str]], int] | None:
         return None
 
     result: list[list[str]] = []
-    for page in pages:
+    deadline = time.monotonic() + MAX_PDF_IMPORT_SECONDS
+    for page in pages[:MAX_PDF_IMPORT_PAGES]:
+        if time.monotonic() > deadline:
+            logger.warning("PDF-Import: Zeitgrenze nach %s von %s Seiten", len(result), len(pages))
+            break
         plain = _extract(page, layout=False)
         if not plain.strip():
             result.append([])

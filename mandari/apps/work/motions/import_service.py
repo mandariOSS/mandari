@@ -141,6 +141,12 @@ class MotionImportService:
             parsed = import_text.pdf_page_lines(file_content)
             paragraphs = import_text.paragraphs_from_lines(parsed[0]) if parsed else []
             page_count = parsed[1] if parsed else None
+            if parsed and paragraphs and len(parsed[0]) < parsed[1]:
+                # Seiten- oder Zeitgrenze des Imports (import_text.MAX_PDF_IMPORT_*)
+                notice = (
+                    f"Text der ersten {len(parsed[0])} von {parsed[1]} Seiten übernommen. "
+                    "Die vollständige Datei liegt als Anhang am Dokument."
+                )
 
             if not paragraphs:
                 # Keine Textebene (Scan) oder pypdf kann die Datei nicht öffnen: Texterkennung
