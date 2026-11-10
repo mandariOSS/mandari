@@ -84,7 +84,7 @@ nur_lesen.
 <section aria-labelledby="e-regeln" id="einst-ablauf" {% include "work/organization/neu/_sofort.html" with felder=felder.ablauf %}>
     <h2 id="e-regeln">Weitere Regeln</h2>
     <div class="fs-schalter-zeile">{% include "work/organization/neu/_schalter.html" with name="link_previous_meeting" id="link_previous_meeting" label="Sitzungen automatisch verketten" an=faction_settings.link_previous_meeting hilfe="e-kette-h" %}</div>
-    <p class="fs-meta fs-einst-zusatz" id="e-kette-h">Neue Sitzungen werden mit der vorherigen verknüpft.</p>
+    <p class="fs-meta fs-einst-zusatz" id="e-kette-h">Der erste TOP genehmigt das Protokoll der Sitzung davor. Aus: Protokolle genehmigt der Vorsitz direkt; das gilt sofort für alle Sitzungen, die noch nicht begonnen haben.</p>
     <div class="fs-einst-zeile zwei">
         <label for="id_quorum_rule">Beschlussfähigkeit
             <select class="wf-eingabe wf-auswahl" name="quorum_rule" id="id_quorum_rule" aria-describedby="e-quorum-h">

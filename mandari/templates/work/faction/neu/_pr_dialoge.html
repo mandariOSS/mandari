@@ -26,7 +26,7 @@ Kontext: meeting, org_slug, rechte, angaben, genehmigung, versand, darf_einstell
     <form class="wf-dialog" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
         {% csrf_token %}
         <input type="hidden" name="action" value="approve_protocol">
-        <p>Üblich ist die Genehmigung in {{ genehmigung.wo }}. Als Vorsitz können Sie das Protokoll auch direkt genehmigen. Danach sind Änderungen nur noch als Nachtrag möglich.</p>
+        <p>{% if genehmigung.ohne_kette %}Sitzungen dieser Art sind nicht verkettet: Das Protokoll wird direkt genehmigt, nicht in einer Sitzung.{% else %}Üblich ist die Genehmigung in {{ genehmigung.wo }}. Als Vorsitz können Sie das Protokoll auch direkt genehmigen.{% endif %} Danach sind Änderungen nur noch als Nachtrag möglich.</p>
         <p>{% if versand.modus == 'after_approval' %}Work verschickt das genehmigte Protokoll danach automatisch per E-Mail: an vereidigte Mitglieder vollständig, an alle anderen den öffentlichen Teil.{% else %}{{ versand.satz }}{% endif %}{% if darf_einstellungen %} So ist es in den <a class="wf-textlink" href="{% url 'work:organization_faction_settings' org_slug=org_slug %}">Einstellungen der Fraktion</a> eingestellt.{% endif %}</p>
         <div class="wf-dialog-fuss">
             <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>

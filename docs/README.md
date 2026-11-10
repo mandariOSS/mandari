@@ -45,6 +45,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `SESSION_NUMMERNKREISE.md` | Session → Nummernkreise für Vorlagen und Drucksachen (Seite folgt) |
 | `SESSION_EREIGNISSE.md` | – (Session meldet Ereignisse an die Datendrehscheibe; Entwicklung und Betrieb) |
 | `DREHSCHEIBE_UMSTELLUNG.md` | – (Checkliste je Umstellung eines Weges auf die Datendrehscheibe: Schatten, Vergleich, Umschalten, Aufräumen, Abbruchkriterien; Betrieb) |
+| `ARCHITEKTUR_KENNZAHLEN.md` | – (Kennzahlen der Entkopplung je Etappe der Datendrehscheibe: Stand, Verlauf, Zählregeln, Fortschreibung mit `scripts/architektur_kennzahlen.py`; Entwicklung) |
 | `EREIGNISKATALOG.md` | – (aus dem Vertragsregister erzeugt: alle Ereignisse und Befehle der Datendrehscheibe) |
 | `SESSION_STAMMDATEN_IMPORT.md` | Session → Stammdaten aus Bestandssystemen übernehmen (Seite folgt) |
 | `SESSION_UMSTIEG_SESSIONNET.md` | Session → Umstieg aus SessionNet (Seite folgt) |

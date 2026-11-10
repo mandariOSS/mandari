@@ -15,6 +15,11 @@ beginnt erst, wenn die vorige vollständig abgehakt ist. Trifft ein Abbruchkrite
 gilt der Rückfall der jeweiligen Phase, und die Umstellung beginnt wieder mit der Phase, in der der
 Fehler lag.
 
+**Kennzahlen:** Mit dem Aufräumen jeder Umstellung (Abschnitt 2.5) und nach Abschluss jeder Etappe des
+Epics #476 werden die Architektur-Kennzahlen neu erhoben und in
+[`ARCHITEKTUR_KENNZAHLEN.md`](ARCHITEKTUR_KENNZAHLEN.md) fortgeschrieben (#569). So zeigt der Verlauf, ob
+eine Umstellung die Kopplung tatsächlich gesenkt hat.
+
 ## 1. Einmalige Voraussetzungen (E1-Gate, Epic #483)
 
 Gelten für alle Umstellungen; erst danach wird zum ersten Mal ein Weg umgeschaltet.
@@ -75,6 +80,9 @@ Gelten für alle Umstellungen; erst danach wird zum ersten Mal ein Weg umgeschal
 
 - [ ] Alter Weg entfernt (Code, Signale, Befehle, Schalter des alten Weges), Schattenziel gelöscht
 - [ ] Doku und Nachtrag im ADR, CHANGELOG (Rubrik „Entfernt“)
+- [ ] Architektur-Kennzahlen neu erhoben (`python scripts/architektur_kennzahlen.py`) und in
+      [`ARCHITEKTUR_KENNZAHLEN.md`](ARCHITEKTUR_KENNZAHLEN.md) fortgeschrieben (Tabelle, Verlaufszeile, K8 aus dem
+      Monitoring; dort Abschnitt 4, #569); die Verlaufszeile steht als Beleg im Issue der Umstellung
 - [ ] Issue geschlossen, Erkenntnisse für die nächste Umstellung hier ergänzt
 
 ## 3. Abbruchkriterien

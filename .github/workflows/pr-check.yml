@@ -521,6 +521,41 @@ jobs:
         if: ${{ !cancelled() }}
         run: python scripts/check_view_orm_ratio.py
 
+      # Toter und doppelter Code (Issue #1113): Die Funde von vulture und die Klone von jscpd dürfen nur
+      # weniger werden. Was zählt, steht in scripts/dead_code_ratchet.toml und
+      # scripts/duplicate_code_ratchet.toml. Beide Werkzeuge nur hier (nicht im Image), Versionen wie in
+      # pyproject.toml [dev]; jscpd kommt als Wheel mit fertigem Programm und braucht kein Node.
+      - name: Werkzeuge für toten und doppelten Code
+        id: codewerkzeuge
+        if: ${{ !cancelled() }}
+        run: pip install "vulture==2.16" "jscpd==5.4.2"
+
+      - name: Toter Python-Code (vulture, Funde dürfen nur sinken)
+        if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
+        run: python scripts/check_dead_code_ratchet.py --report "$RUNNER_TEMP/code-bericht/toter-code.md"
+
+      - name: Doppelter Code (jscpd, Klone dürfen nur sinken)
+        if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
+        run: python scripts/check_duplicate_code_ratchet.py --report "$RUNNER_TEMP/code-bericht/doppelter-code.md"
+
+      # Beide Berichte (Zahlen, die größten Posten, alle Funde) in der Zusammenfassung des Laufs und als
+      # Artefakt: Daraus entstehen die Aufträge zum Aufräumen.
+      - name: Berichte zu totem und doppeltem Code in die Zusammenfassung
+        if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
+        run: |
+          for bericht in "$RUNNER_TEMP"/code-bericht/*.md; do
+            if [ -f "$bericht" ]; then cat "$bericht" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+
+      - name: Berichte zu totem und doppeltem Code ablegen
+        if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: code-bericht
+          path: ${{ runner.temp }}/code-bericht/
+          retention-days: 14
+          if-no-files-found: warn
+
       # --- Templates -------------------------------------------------------------
       - name: djlint (Template-Linting, Profil Django)
         if: ${{ !cancelled() && needs.changes.outputs.templates == 'true' }}

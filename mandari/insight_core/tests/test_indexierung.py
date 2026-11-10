@@ -6,7 +6,7 @@ Indexierung des Bürgerportals durch Suchmaschinen (Issue #914).
   im Index gelistet mit ``lastmod`` je Datei; Pfade mit dem Präfix ``/sitemap-insight-``; Stadtseite in der
   Grund-Sitemap; Personen nur mit laufender Mitgliedschaft.
 - ``lastmod`` nur mit glaubhaftem Änderungszeitpunkt (Issue #939): keine Ersatzwerte der Quelle (1999-12-31), keine
-  Zeitpunkte in der Zukunft, kein Rückfall auf den letzten Abgleich.
+  Zeitpunkte in der Zukunft, kein Rückfall auf den letzten Abgleich, auch nicht für Stadtseite und Grund-Sitemap.
 - Aufteilung vorberechnet (Issue #1259): Der Index liest sie aus der Datenbank, auch ohne Cache, mit gleich vielen
   Abfragen für jede Zahl von Kommunen; der Zeitplan rechnet fehlende und veraltete neu, der Index nur in Grenzen.
 - Personen ohne laufende Mitgliedschaft: ``noindex, follow``, Seite bleibt erreichbar.
@@ -197,9 +197,8 @@ class TestSitemapIndex:
         assert lastmods[f"{site}/sitemap-insight-koeln-vorgaenge-1.xml"] == "2026-03-02T00:00:00+00:00"
         assert lastmods[f"{site}/sitemap-insight-koeln-vorgaenge-2.xml"] == "2026-01-31T00:00:00+00:00"
         assert lastmods[f"{site}/sitemap-insight-koeln-vorgaenge-3.xml"] == "2026-01-01T00:00:00+00:00"
-        assert lastmods[f"{site}/sitemap-insight-koeln.xml"] == stadt["body"].last_sync.strftime(
-            "%Y-%m-%dT%H:%M:%S+00:00"
-        )
+        # Grund-Sitemap: jüngste Änderung der Vorgänge und Sitzungen, nicht der letzte Abgleich (Issue #939)
+        assert lastmods[f"{site}/sitemap-insight-koeln.xml"] == "2026-03-02T00:00:00+00:00"
 
     def test_abfragen_haengen_nicht_von_der_zahl_der_kommunen_und_eintraege_ab(
         self, client: Client, klein: int
@@ -689,6 +688,69 @@ class TestLastmodNurGlaubhaft:
         assert lastmods[f"{site}/insight/fragen/{frage.pk}/"] == frage.updated_at.astimezone(UTC).strftime(
             "%Y-%m-%dT%H:%M:%S+00:00"
         )
+
+    def test_stadtseite_und_grund_sitemap_nicht_der_letzte_abgleich(self, client: Client, bonn: dict[str, Any]) -> None:
+        """Jüngste glaubhafte Änderung der Vorgänge und Sitzungen: Der Abgleich läuft auch ohne neue Inhalte."""
+        site = settings.SITE_URL
+        abgleich = bonn["body"].last_sync.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        # Vorgang 8 (2025-09-01) ist jünger als alle Sitzungen; die Zeitpunkte in der Zukunft zählen nicht
+        erwartet = "2025-09-01T00:00:00+00:00"
+
+        index = _lastmod_je_loc(_xml(client, "/sitemap-insight-index.xml"), "sitemap")
+        grund = _lastmod_je_loc(_xml(client, "/sitemap-insight-bonn.xml"))
+
+        assert index[f"{site}/sitemap-insight-bonn.xml"] == erwartet != abgleich
+        assert grund[f"{site}/insight/k/bonn/"] == erwartet
+
+    def test_stadtseite_folgt_der_juengsten_sitzung(self, client: Client, bonn: dict[str, Any]) -> None:
+        OParlMeeting.objects.filter(pk=bonn["sitzungen"][0].pk).update(
+            oparl_modified=datetime(2026, 4, 5, 6, 7, 8, tzinfo=UTC)
+        )
+        site = settings.SITE_URL
+
+        grund = _lastmod_je_loc(_xml(client, "/sitemap-insight-bonn.xml"))
+        index = _lastmod_je_loc(_xml(client, "/sitemap-insight-index.xml"), "sitemap")
+
+        assert grund[f"{site}/insight/k/bonn/"] == "2026-04-05T06:07:08+00:00"
+        assert index[f"{site}/sitemap-insight-bonn.xml"] == "2026-04-05T06:07:08+00:00"
+
+    def test_ohne_glaubhaften_zeitpunkt_kein_lastmod_fuer_stadtseite_und_grund_sitemap(
+        self, client: Client, klein: int
+    ) -> None:
+        body = _kommune(1, "Bundesstadt Bonn", slug="bonn", last_sync=timezone.now())
+        _vorgang(body, 1, oparl_modified=ERSATZWERT, oparl_created=ERSATZWERT)
+        _vorgang(body, 2)
+        _sitzung(body, 1, start=timezone.now() + timedelta(days=7), oparl_modified=timezone.now() + timedelta(days=30))
+        leer = _kommune(2, "Stadt Ohne Bestand", slug="ohne-bestand", last_sync=timezone.now())
+        site = settings.SITE_URL
+
+        index = _lastmod_je_loc(_xml(client, "/sitemap-insight-index.xml"), "sitemap")
+
+        for kommune in (body, leer):
+            assert index[f"{site}/sitemap-insight-{kommune.slug}.xml"] is None, kommune.name
+            grund = _lastmod_je_loc(_xml(client, f"/sitemap-insight-{kommune.slug}.xml"))
+            assert grund[f"{site}/insight/k/{kommune.slug}/"] is None, kommune.name
+
+    def test_grund_sitemap_ohne_stadtseite_ohne_lastmod_im_index(self, client: Client, klein: int) -> None:
+        """Ohne Slug gibt es keine Stadtseite: Die Grund-Sitemap ändert sich nicht mit Vorgängen und Sitzungen."""
+        body = _kommune(1, "Stadt Darmstadt", last_sync=timezone.now())
+        _vorgang(body, 1, oparl_modified=datetime(2026, 2, 3, tzinfo=UTC))
+        site = settings.SITE_URL
+
+        index = _lastmod_je_loc(_xml(client, "/sitemap-insight-index.xml"), "sitemap")
+
+        assert index[f"{site}/sitemap-insight-{body.pk}.xml"] is None
+        assert index[f"{site}/sitemap-insight-{body.pk}-vorgaenge-1.xml"] == "2026-02-03T00:00:00+00:00"
+
+    def test_stadtseite_liest_die_vorberechnung(self, client: Client, bonn: dict[str, Any]) -> None:
+        """Eine Abfrage auf die gespeicherte Aufteilung, kein Lauf über den Bestand der Vorgänge und Sitzungen."""
+        sitemaps.aufteilungen_erneuern()
+        with CaptureQueriesContext(connection) as erfasst:
+            client.get("/sitemap-insight-bonn.xml")
+        abfragen = [abfrage["sql"] for abfrage in erfasst.captured_queries]
+
+        assert sum('"insight_sitemap_aufteilung"' in sql for sql in abfragen) == 1
+        assert not any('"oparl_papers"' in sql or '"oparl_meetings"' in sql for sql in abfragen)
 
     def test_kein_ersatzwert_und_kein_leeres_element(self, client: Client, bonn: dict[str, Any]) -> None:
         for pfad in (

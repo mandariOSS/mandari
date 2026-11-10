@@ -60,6 +60,16 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   `E,F,I,N,W,UP,B,S,DJ,SIM,C4,RET,ARG`). `mypy --strict` mit `django-stubs` als wachsendes Gate mit
   Allowlist, die nur schrumpfen darf.
 - Keine `# noqa` ohne Begründung im selben Kommentar.
+- **Toter Code darf nur weniger werden:** `scripts/check_dead_code_ratchet.py` lässt vulture über
+  Anwendung, gemeinsame Pakete und Ingestor laufen und scheitert an jeder unbenutzten Funktion, Methode,
+  Klasse oder Property, die nicht in `scripts/dead_code_baseline.json` steht. Was das Framework aufruft
+  (Signale, Template-Tags, Management-Befehle, Admin, Methoden einer Basisklasse), steht mit Begründung in
+  `scripts/dead_code_ratchet.toml`, nicht als `noqa` im Code; Namen aus Vorlagen zählen als Verwendung.
+- **Doppelter Code darf nur weniger werden:** `scripts/check_duplicate_code_ratchet.py` zählt mit jscpd
+  kopierte Blöcke ab 100 Token und 10 Zeilen in Python, Vorlagen, TypeScript und JavaScript (ohne Tests und
+  Migrationen, Regeln in `scripts/duplicate_code_ratchet.toml`); Klone und doppelte Zeilen dürfen je
+  Format nicht über `scripts/duplicate_code_baseline.json` steigen. Nach einem Abbau zieht `--update`
+  die jeweilige Baseline im selben PR nach. Beide Berichte liegen als Artefakt `code-bericht` am CI-Lauf.
 
 ## 3. Tests
 
