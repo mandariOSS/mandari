@@ -14,7 +14,8 @@ stattfindet:
   blieben unverkettet oder genehmigten ein Protokoll erst Monate später.)
 
 :func:`ordnen` zieht die Kette einer Sitzungsart nach. Abgeschlossene Sitzungen behalten ihre vorherige Sitzung, denn
-ihr Genehmigungs-TOP ist so beraten worden. Der Genehmigungs-TOP folgt der Kette: die genehmigte Sitzung immer, Titel
+ihr Genehmigungs-TOP ist so beraten worden; laufende ebenso, Work ordnet sie nur in dem Moment ein letztes Mal ein, in
+dem sie beginnen (Issue #1297). Der Genehmigungs-TOP folgt der Kette: die genehmigte Sitzung immer, Titel
 und Beschreibung nur, solange niemand ihn bearbeitet hat (wie nach dem Verschieben, Issue #1071). Vor der Einladung
 ist das abgeleiteter Stand ohne Eintrag in der Änderungshistorie (die Reihe hielte den Termin sonst für bearbeitet);
 kennen die Eingeladenen den alten Titel schon, wird der TOP gespeichert wie von Hand geändert, und die Infoleiste
@@ -24,11 +25,18 @@ Ausgelöst wird das Ordnen durch das Speichern und Löschen einer Sitzung (``pos
 Status, Beginn oder geänderter Art; ``post_delete``), damit Absagen, Verschieben, Wiederansetzen und Löschen die Kette
 an keiner Stelle vergessen. Der stündliche Erzeugungslauf ordnet zusätzlich alle Arten mit kommenden Sitzungen
 (:func:`alle_ordnen`): So kommt auch der Bestand von vor #1295 in Ordnung.
+
+Die Kette lässt sich abschalten (Issue #1297): Einstellung „Sitzungen automatisch verketten“
+(``link_previous_meeting``) der Organisation, je Sitzungsart übersteuerbar (:func:`verkettet`). Ohne Kette hat keine
+Sitzung der Art eine vorherige Sitzung, der erste TOP genehmigt kein Protokoll, und Protokolle werden direkt
+genehmigt. Das gilt für alle Sitzungen, die noch nicht begonnen haben; laufende und abgeschlossene behalten ihre
+Zuordnung. Nach dem Speichern der Einstellung ordnen :func:`organisation_ordnen` bzw. :func:`ordnen` sofort.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any, cast
 
 from django.db import transaction
@@ -42,6 +50,8 @@ logger = logging.getLogger(__name__)
 BEGONNEN = ("ongoing", "completed")
 #: Abgeschlossen: Die vorherige Sitzung steht fest
 FEST = "completed"
+#: Läuft: Die vorherige Sitzung steht fest, außer in dem Moment, in dem die Sitzung beginnt
+LAEUFT = "ongoing"
 #: Entfällt: nicht Teil der Kette
 ENTFAELLT = "cancelled"
 #: Felder einer Sitzung, die ihre Stelle in der Kette bestimmen
@@ -53,11 +63,34 @@ def hat_stattgefunden(sitzung: FactionMeeting) -> bool:
     return sitzung.status in BEGONNEN
 
 
-def _soll(sitzungen: list[FactionMeeting], vergeben: set[Any]) -> dict[Any, Any]:
+def verkettet(ziel: Any) -> bool:
     """
-    Vorherige Sitzung je Sitzung (nach Beginn geordnet). ``vergeben``: Sitzungen, die schon einer abgeschlossenen oder
-    fremden Sitzung als vorherige zugeordnet sind (die Zuordnung ist eindeutig, OneToOne).
+    Verkettet Work die Sitzungen (Einstellung „Sitzungen automatisch verketten“, Issue #1297)? ``ziel``: Sitzung,
+    Sitzungsart oder Organisation, wie bei :func:`regeln.wirksame_einstellungen`.
     """
+    from .regeln import wirksame_einstellungen
+
+    return bool(wirksame_einstellungen(ziel)["link_previous_meeting"])
+
+
+def _fest(sitzung: FactionMeeting, beginnt: Collection[Any]) -> bool:
+    """
+    Steht die vorherige Sitzung fest? Bei abgeschlossenen immer, bei laufenden außer in dem Moment, in dem sie
+    beginnen (``beginnt``): Ihr erster TOP wird gerade beraten oder ist es schon.
+    """
+    return sitzung.status == FEST or (sitzung.status == LAEUFT and sitzung.pk not in beginnt)
+
+
+def _soll(
+    sitzungen: list[FactionMeeting], vergeben: set[Any], *, verketten: bool = True, beginnt: Collection[Any] = ()
+) -> dict[Any, Any]:
+    """
+    Vorherige Sitzung je Sitzung (nach Beginn geordnet). ``vergeben``: Sitzungen, die schon einer feststehenden oder
+    fremden Sitzung als vorherige zugeordnet sind (die Zuordnung ist eindeutig, OneToOne). ``beginnt``: Sitzungen, die
+    gerade beginnen. Ohne ``verketten`` behalten nur Sitzungen, die begonnen haben, ihre vorherige Sitzung.
+    """
+    if not verketten:
+        return {s.pk: s.previous_meeting_id if s.status in BEGONNEN else None for s in sitzungen}
     begonnen = [s.start for s in sitzungen if s.status in BEGONNEN]
     zuletzt_begonnen = max(begonnen) if begonnen else None
     soll: dict[Any, Any] = {}
@@ -69,7 +102,7 @@ def _soll(sitzungen: list[FactionMeeting], vergeben: set[Any]) -> dict[Any, Any]
         if sitzung.status == ENTFAELLT or nie_begonnen:
             soll[sitzung.pk] = None
             continue
-        if sitzung.status == FEST:
+        if _fest(sitzung, beginnt):
             soll[sitzung.pk] = sitzung.previous_meeting_id
         else:
             ziel = davor.pk if davor is not None else None
@@ -78,47 +111,57 @@ def _soll(sitzungen: list[FactionMeeting], vergeben: set[Any]) -> dict[Any, Any]
     return soll
 
 
-def _stand(organization_id: Any, meeting_type_id: Any) -> tuple[list[FactionMeeting], dict[Any, Any]]:
+def _stand(
+    organization_id: Any, meeting_type_id: Any, beginnt: Collection[Any] = ()
+) -> tuple[list[FactionMeeting], dict[Any, Any]]:
     """Sitzungen der Art nach Beginn und ihre vorherige Sitzung, wie sie sein soll."""
-    from .models import FactionMeeting
+    from .models import FactionMeeting, FactionMeetingType
 
     sitzungen = list(
         FactionMeeting.objects.filter(organization_id=organization_id, meeting_type_id=meeting_type_id)
         .only("id", "start", "created_at", "status", "protocol_status", "previous_meeting_id")
         .order_by("start", "created_at", "pk")
     )
-    soll = _soll(sitzungen, set())
+    art = FactionMeetingType.objects.select_related("organization").filter(pk=meeting_type_id).first()
+    if art is not None and not verkettet(art):
+        return sitzungen, _soll(sitzungen, set(), verketten=False)
+    soll = _soll(sitzungen, set(), beginnt=beginnt)
     if any(soll[s.pk] != s.previous_meeting_id for s in sitzungen):
-        # Erst jetzt nachsehen, was vergeben ist: an abgeschlossene Sitzungen und an Sitzungen anderer Arten
-        beweglich = [s.pk for s in sitzungen if s.status != FEST]
+        # Erst jetzt nachsehen, was vergeben ist: an feststehende Sitzungen und an Sitzungen anderer Arten
+        beweglich = [s.pk for s in sitzungen if not _fest(s, beginnt)]
         vergeben = set(
             FactionMeeting.objects.filter(organization_id=organization_id, previous_meeting__isnull=False)
             .exclude(pk__in=beweglich)
             .values_list("previous_meeting_id", flat=True)
         )
-        soll = _soll(sitzungen, vergeben)
+        soll = _soll(sitzungen, vergeben, beginnt=beginnt)
     return sitzungen, soll
 
 
 def ordnen(
-    organization_id: Any, meeting_type_id: Any, *, unbearbeitet: dict[Any, bool] | None = None
+    organization_id: Any,
+    meeting_type_id: Any,
+    *,
+    unbearbeitet: dict[Any, bool] | None = None,
+    beginnt: Collection[Any] = (),
 ) -> dict[Any, Any]:
     """
     Kette einer Sitzungsart nach dem Beginn ordnen. Liefert die geänderten Zuordnungen (Sitzung → vorherige Sitzung);
     leer, wenn alles stimmte. ``unbearbeitet``: vorab festgehaltener Stand des Genehmigungs-TOPs je Sitzung (beim
-    Löschen ist die Zuordnung schon gelöst, der Vergleich mit den Einstellungen ginge sonst fehl).
+    Löschen ist die Zuordnung schon gelöst, der Vergleich mit den Einstellungen ginge sonst fehl). ``beginnt``:
+    Sitzungen, die gerade beginnen und deshalb noch eingeordnet werden.
     """
     from .models import FactionMeetingType
 
     if organization_id is None or meeting_type_id is None:
         return {}
-    sitzungen, soll = _stand(organization_id, meeting_type_id)
+    sitzungen, soll = _stand(organization_id, meeting_type_id, beginnt)
     aenderungen: dict[Any, Any] = {}
     if any(soll[s.pk] != s.previous_meeting_id for s in sitzungen):
         with transaction.atomic():
             # Eine Neuordnung je Art zur Zeit (Sperre auf der Art, nicht auf allen Sitzungen); danach frisch lesen
             list(FactionMeetingType.objects.select_for_update().filter(pk=meeting_type_id).values_list("pk"))
-            sitzungen, soll = _stand(organization_id, meeting_type_id)
+            sitzungen, soll = _stand(organization_id, meeting_type_id, beginnt)
             aenderungen = {s.pk: soll[s.pk] for s in sitzungen if soll[s.pk] != s.previous_meeting_id}
             if aenderungen:
                 _umhaengen(aenderungen, unbearbeitet or {})
@@ -203,6 +246,17 @@ def _zur_genehmigung(sitzungen: list[FactionMeeting], soll: dict[Any, Any]) -> N
         cast(Any, vorherige).submit_protocol_for_approval()
 
 
+def organisation_ordnen(organization_id: Any) -> int:
+    """
+    Alle Sitzungsarten einer Organisation ordnen: nach dem Speichern von „Sitzungen automatisch verketten“ in ihren
+    Einstellungen (jede Art ohne eigene Übersteuerung folgt ihr). Liefert die Zahl der umgehängten Sitzungen.
+    """
+    from .models import FactionMeetingType
+
+    arten = FactionMeetingType.objects.filter(organization_id=organization_id).values_list("pk", flat=True)
+    return sum(len(ordnen(organization_id, art)) for art in list(arten))
+
+
 def alle_ordnen() -> int:
     """
     Alle Sitzungsarten mit Sitzungen ordnen, die noch nicht abgeschlossen sind (stündlicher Erzeugungslauf). Liefert
@@ -231,11 +285,11 @@ def alle_ordnen() -> int:
 # =============================================================================
 
 
-def _ordnen_fuer(sitzung: FactionMeeting) -> None:
+def _ordnen_fuer(sitzung: FactionMeeting, beginnt: Collection[Any] = ()) -> None:
     """Kette der Art dieser Sitzung ordnen und die übergebene Sitzung im Speicher nachführen."""
     from .models import FactionMeeting
 
-    aenderungen = ordnen(sitzung.organization_id, sitzung.meeting_type_id)
+    aenderungen = ordnen(sitzung.organization_id, sitzung.meeting_type_id, beginnt=beginnt)
     # Nach einem Wechsel der Art hängt die Sitzung noch in der Kette der alten Art; ihre alte vorherige Sitzung ist
     # jetzt frei
     fremd = (
@@ -257,6 +311,7 @@ def _gespeichert(
 ) -> None:
     if raw:
         return
+    alt = None
     if not created:
         if update_fields is not None and not {"status", "start", "meeting_type", "meeting_type_id"} & set(
             update_fields
@@ -266,7 +321,9 @@ def _gespeichert(
         alt = getattr(instance, "_audit_old", None)
         if alt is not None and all(getattr(alt, feld) == getattr(instance, feld) for feld in _KETTENFELDER):
             return
-    _ordnen_fuer(instance)
+    # Eine laufende Sitzung wird nur eingeordnet, wenn sie gerade beginnt oder die Art wechselt
+    neu_dabei = alt is None or alt.status != LAEUFT or alt.meeting_type_id != instance.meeting_type_id
+    _ordnen_fuer(instance, {instance.pk} if neu_dabei else ())
 
 
 def _vor_dem_loeschen(sender: Any, instance: FactionMeeting, **kwargs: Any) -> None:
