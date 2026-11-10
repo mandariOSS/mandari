@@ -751,15 +751,22 @@ def test_tief_geschachtelte_listen_bleiben_im_rahmen(tiefe: int) -> None:
     assert summe.startswith("sha256:")
     assert spitze < 64 * 1024 * 1024
     assert dauer < 5
+    # Gleicher Inhalt, gleiche Prüfsumme; anderer Inhalt, andere Prüfsumme
+    assert ris_events.content_fingerprint(_geschachtelt(tiefe)) == summe
     anders = _geschachtelt(tiefe)
     anders["beliebig"] = [anders["beliebig"]]
     assert ris_events.content_fingerprint(anders) != summe
-    if tiefe <= 400:
-        # Gleicher Inhalt, gleiche Prüfsumme
-        assert ris_events.content_fingerprint(_geschachtelt(tiefe)) == summe
-    else:
-        # Jenseits der Rekursionsgrenze nicht darstellbar: nie gleich, das Objekt gilt jedes Mal als geändert
-        assert ris_events.content_fingerprint(_geschachtelt(tiefe)) != summe
+
+
+def test_nicht_darstellbarer_wert_gilt_nie_als_gleich() -> None:
+    """Lässt sich ein Wert nicht serialisieren, gilt er als geändert, statt eine Änderung zu verschlucken."""
+    kreis: list[Any] = []
+    kreis.append(kreis)
+
+    assert ris_events._digest(kreis) != ris_events._digest(kreis)
+    assert ris_events.content_fingerprint({"id": "x", "a": kreis}) != ris_events.content_fingerprint(
+        {"id": "x", "a": kreis}
+    )
 
 
 def test_vergleich_ueber_der_grenze_ignoriert_weiter_die_zeitstempel() -> None:
