@@ -97,10 +97,13 @@ def test_kein_faden_beim_laden_der_anwendung() -> None:
 # --- Fitnessfunktion (ADR Aufträge und Zeitpläne, „Prüfung“) -------------------------------------
 
 #: Code, der Fäden starten darf: der Worker selbst und sein Metrik-Server. Alles andere läuft als
-#: Auftrag oder Zeitplan im Worker.
+#: Auftrag oder Zeitplan im Worker. Der Prüfbefehl ``manage.py doctor`` (Issue #964) erledigt keine
+#: Hintergrundarbeit: Je Prüfung läuft ein Faden nur, damit der Befehl nach der Zeitgrenze endet, auch wenn ein
+#: Dienst nie antwortet; im Webprozess startet er nie.
 ERLAUBT = (
     "apps/events/",
     "apps/common/metrics_server.py",
+    "apps/common/doctor/kern.py",
 )
 WURZEL = Path(__file__).resolve().parents[3]
 PAKETE = ("apps", "hub", "insight_core", "insight_ai", "insight_search", "insight_sync", "mandari")
