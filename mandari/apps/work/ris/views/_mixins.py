@@ -9,6 +9,16 @@ giving users access to their municipality's council information system.
 from .. import selectors
 
 
+def erlaubter_reiter(wert: str | None, erlaubt: tuple[str, ...]) -> str:
+    """
+    Reiter aus der Adresse (``?tab=``) nur, wenn die Seite ihn kennt, sonst der erste der Seite.
+
+    Der Wert steht in der Vorlage in einem Alpine-Ausdruck; ein beliebiger Text aus der Adresse würde dort als
+    Skript ausgewertet.
+    """
+    return wert if wert in erlaubt else erlaubt[0]
+
+
 class RISBodiesMixin:
     """
     Multi-Kommune-Unterstützung für RIS-Views.

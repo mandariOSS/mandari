@@ -13,7 +13,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 
 from .. import selectors
-from ._mixins import RISBodiesMixin
+from ._mixins import RISBodiesMixin, erlaubter_reiter
 
 
 class RISOrganizationsView(RISBodiesMixin, WorkViewMixin, TemplateView):
@@ -74,5 +74,5 @@ class RISOrganizationDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
         context["upcoming_meetings"] = meetings["upcoming"]
         context["past_meetings"] = meetings["past"]
 
-        context["active_tab"] = self.request.GET.get("tab", "members")
+        context["active_tab"] = erlaubter_reiter(self.request.GET.get("tab"), ("members", "calendar", "info"))
         return context
