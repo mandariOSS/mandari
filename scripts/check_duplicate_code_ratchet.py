@@ -2,7 +2,7 @@
 """
 Ratchet für doppelten Code (Issue #1113): Kopierte Blöcke dürfen je Sprache nur weniger werden.
 
-jscpd vergleicht Python, Vorlagen und TypeScript Token für Token und meldet Blöcke, die an zwei Stellen
+jscpd vergleicht Python, Vorlagen, TypeScript und JavaScript Token für Token und meldet Blöcke, die an zwei Stellen
 gleich sind (Klone). Gezählt werden je Format die Klone und die doppelten Zeilen. Was gelesen wird, ab
 welcher Größe ein Block zählt und was ausgenommen ist (Tests, Migrationen, Fremdcode), steht mit
 Begründung in ``scripts/duplicate_code_ratchet.toml``.
