@@ -85,8 +85,11 @@ class PersonListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSei
                 | Q(family_name__icontains=q)
                 | Q(given_name__icontains=q)
                 | Q(email__icontains=q)
-                | Q(memberships__role__icontains=q)
-                | Q(memberships__organization__name__icontains=q)
+                | Q(
+                    personen_liste.bestehende_mitgliedschaft(
+                        "pk", Q(role__icontains=q) | Q(organization__name__icontains=q)
+                    )
+                )
             ).distinct()
 
         return qs.order_by("family_name", "given_name")

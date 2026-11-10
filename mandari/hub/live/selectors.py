@@ -129,7 +129,12 @@ def _abschnitt(
     abschnitt: BroadcastSection, vorlagen: dict[uuid.UUID, uuid.UUID], sprecher: list[BroadcastSpeech]
 ) -> AbschnittStand:
     punkt = abschnitt.agenda_item
-    titel = (punkt.name if punkt is not None and punkt.name else "") or abschnitt.title_read
+    if punkt is not None and punkt.deleted:
+        # Zurückgenommen oder in der Quelle gelöscht: Der Abschnitt bleibt im Verlauf, aber ohne Titel (auch nicht
+        # den aus dem Bild gelesenen), ohne Verweis auf den Punkt und ohne Vorlage
+        punkt, titel = None, ""
+    else:
+        titel = (punkt.name if punkt is not None and punkt.name else "") or abschnitt.title_read
     return AbschnittStand(
         nummer=abschnitt.number,
         titel=titel,

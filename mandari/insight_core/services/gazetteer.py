@@ -10,6 +10,7 @@ die Geometrie (Zentroid) kommt direkt aus OSM, ohne API-Geocoding.
 
 from __future__ import annotations
 
+import bisect
 import re
 from typing import TYPE_CHECKING
 
@@ -239,15 +240,26 @@ class StreetGazetteer:
         normalized_text = normalize_street_name(text)
 
         found: dict[str, dict] = {}
-        matched_spans: list[tuple[int, int]] = []
+        # Bereiche bisheriger Treffer, nach Anfang sortiert und ohne ineinanderliegende: Dann wachsen auch die Enden,
+        # und nur der Bereich mit dem größten Anfang vor einer Stelle kann sie abdecken. Die frühere Suche über alle
+        # Bereiche je Treffer brauchte bei vielen Nennungen quadratische Zeit.
+        starts: list[int] = []
+        ends: list[int] = []
         for pattern in self._search_patterns:
             for match in pattern.finditer(normalized_text):
-                span = (match.start(1), match.end(1))
+                start, end = match.start(1), match.end(1)
                 # Longest-Match über Chunk-Grenzen: bereits durch einen
                 # längeren Treffer abgedeckte Bereiche überspringen
-                if any(s <= span[0] and span[1] <= e for s, e in matched_spans):
+                davor = bisect.bisect_right(starts, start) - 1
+                if davor >= 0 and ends[davor] >= end:
                     continue
-                matched_spans.append(span)
+                # Einfügen; Bereiche, die der neue ganz abdeckt, gehen in ihm auf
+                von = bisect.bisect_left(starts, start)
+                bis = von
+                while bis < len(starts) and ends[bis] <= end:
+                    bis += 1
+                starts[von:bis] = [start]
+                ends[von:bis] = [end]
 
                 normalized = match.group(1)
                 entry = self._streets.get(normalized)

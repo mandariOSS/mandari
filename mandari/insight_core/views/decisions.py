@@ -382,20 +382,20 @@ class DecisionDetailView(TemplateView):
             return redirect("insight_core:insight:decision_detail", pk=item.id)
 
         subscription, created = DecisionSubscription.objects.get_or_create(agenda_item=item, email=email)
-        if not created and subscription.confirmed and subscription.unsubscribed_at is None:
-            messages.info(request, "Diese Adresse ist für den Beschluss bereits eingetragen.")
-            return redirect("insight_core:insight:decision_detail", pk=item.id)
-        if not created:
+        # Die Antwort ist für jede Adresse dieselbe: Wer eine fremde Adresse einträgt, erfährt nicht, ob sie den
+        # Beschluss schon abonniert hat. Ein bestehendes, aktives Abo bleibt unverändert und löst keine Mail aus.
+        aktiv = not created and subscription.confirmed and subscription.unsubscribed_at is None
+        if not created and not aktiv:
             subscription.unsubscribed_at = None
             subscription.confirmed = False
             subscription.save(update_fields=["unsubscribed_at", "confirmed"])
         # Je Empfängeradresse gedrosselt; die Antwort bleibt gleich
-        if not throttle.mail_address_exceeded(email):
+        if not aktiv and not throttle.mail_address_exceeded(email):
             decision_tracking.send_confirmation(subscription)
         messages.success(
             request,
-            "Fast geschafft: Wir haben eine E-Mail zur Bestätigung geschickt. Erst nach dem Klick auf den Link "
-            "erhalten Sie Benachrichtigungen zu diesem Beschluss.",
+            "Fast geschafft: Ist die Adresse für diesen Beschluss noch nicht eingetragen, haben wir eine E-Mail zur "
+            "Bestätigung geschickt. Erst nach dem Klick auf den Link erhalten Sie Benachrichtigungen.",
         )
         return redirect("insight_core:insight:decision_detail", pk=item.id)
 

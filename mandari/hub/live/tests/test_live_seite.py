@@ -16,10 +16,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from hub.live import selectors
-from hub.live.models import Broadcast, BroadcastSpeech, BroadcastStatus
+from hub.live.models import Broadcast, BroadcastSection, BroadcastSpeech, BroadcastStatus
 from hub.live.services import WIEDERAUFNAHME
 from hub.live.tests.conftest import EMBED_ID, Welt, kennung
-from insight_core.models import OParlMeeting, OParlOrganization
+from insight_core.models import OParlAgendaItem, OParlMeeting, OParlOrganization
 
 pytestmark = pytest.mark.django_db
 
@@ -206,3 +206,23 @@ def test_wortmeldung_fuer_abonnenten(welt: Welt, laufend: Broadcast) -> None:
     gast = selectors.wortmeldung(unsicher.pk)
     assert gast is not None and not gast.eindeutig and gast.funktion_gelesen == "Bürgermeisterin"
     assert selectors.wortmeldung("00000000-0000-0000-0000-000000000000") is None
+
+
+def test_zurueckgenommener_punkt_ohne_titel_verweis_und_vorlage(client: Client, welt: Welt, laufend: Broadcast) -> None:
+    """Nimmt der Herausgeber einen Punkt zurück, bleibt der Abschnitt im Verlauf, aber ohne Titel und Verweise."""
+    BroadcastSection.objects.filter(broadcast=laufend).update(title_read="Gelesen: Neubau der Schule")
+    assert "Neubau einer Grundschule" in client.get(_url(welt.sitzung)).content.decode()
+
+    OParlAgendaItem.objects.filter(pk=welt.top5.pk).update(deleted=True)
+
+    for parameter in ({}, {"teil": "stand"}):
+        html = client.get(_url(welt.sitzung), parameter).content.decode()
+        assert "Neubau einer Grundschule" not in html
+        assert "Gelesen: Neubau der Schule" not in html
+        assert f"#top-{welt.top5.pk}" not in html
+        assert reverse("insight_core:insight:paper_detail", args=[welt.vorlage.pk]) not in html
+    stand = selectors.live_stand(welt.sitzung.pk)
+    assert stand is not None
+    abschnitte = [*stand.verlauf, *([stand.jetzt_abschnitt] if stand.jetzt_abschnitt else [])]
+    assert abschnitte
+    assert all((a.titel, a.agenda_item_id, a.paper_id) == ("", None, None) for a in abschnitte)
