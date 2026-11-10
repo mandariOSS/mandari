@@ -982,6 +982,10 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         return qs.order_by("-start").first()
 
 
+#: Teile der Tagesordnung, in denen ein TOP stehen kann (``FactionAgendaItem.visibility``)
+AGENDA_PARTS = frozenset({"public", "internal"})
+
+
 class FactionAgendaItem(EncryptionMixin, models.Model):
     """
     Agenda item for a faction meeting.
@@ -1159,6 +1163,10 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
             from .regeln import pruefe_nichtoeffentlich
 
             pruefe_nichtoeffentlich(self.meeting, self.visibility)
+        # Nur die beiden Teile der Tagesordnung: Der Wert steuert die Sichtbarkeit und steht in Skript-Ausdrücken der
+        # Vorlagen; die Wege der Oberfläche weisen andere Werte vorher mit einer Meldung ab
+        if self.visibility not in AGENDA_PARTS:
+            raise ValueError("Unbekannter Teil der Tagesordnung.")
         super().save(*args, **kwargs)
 
     def get_encryption_organization(self):
