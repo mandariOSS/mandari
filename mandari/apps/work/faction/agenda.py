@@ -367,10 +367,14 @@ def new_meeting_has_previous(organization: Organization, meeting_type: FactionMe
 
     Wie bei der Anlage (Protokollkette, ``kette.py``): Es gibt in derselben Art (Issue #1231) schon eine Sitzung,
     die stattfindet. Der Tag der neuen Sitzung steht hier noch nicht fest; liegt sie vor allen anderen, entfällt
-    der Zusatz.
+    der Zusatz. Ohne Kette (Einstellung „Sitzungen automatisch verketten“, Issue #1297) gibt es keine Vorsitzung.
     """
-    from .models import FactionMeeting
+    from .kette import verkettet
+    from .models import FactionMeeting, FactionMeetingType
 
+    art = meeting_type or FactionMeetingType.objects.filter(organization=organization, is_default=True).first()
+    if not verkettet(art if art is not None else organization):
+        return False
     return cast(Any, FactionMeeting).find_previous_meeting(organization, meeting_type=meeting_type) is not None
 
 

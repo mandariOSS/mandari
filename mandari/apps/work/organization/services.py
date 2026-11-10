@@ -2232,6 +2232,7 @@ def save_faction_settings(
     if fields is None:
         _apply_faction_settings(organization, membership, form, None, strict=False)
         _save_organization(organization)
+        _protokollkette_ordnen(organization)
         return
 
     wanted = {f for f in fields if f}
@@ -2245,6 +2246,25 @@ def save_faction_settings(
         _save_organization(locked, update_fields=["settings", "publish_protocols", "updated_at"])
     organization.settings = locked.settings
     organization.publish_protocols = locked.publish_protocols
+    if "link_previous_meeting" in wanted:
+        _protokollkette_ordnen(organization)
+
+
+def _protokollkette_ordnen(organization: Organization, meeting_type: FactionMeetingType | None = None) -> None:
+    """
+    „Sitzungen automatisch verketten“ gilt sofort für alle Sitzungen, die noch nicht begonnen haben (Issue #1297):
+    alle Arten der Organisation oder nur die angegebene. Die Einstellung ist dann schon gespeichert; scheitert das
+    Ordnen, holt der stündliche Erzeugungslauf es nach (``kette.alle_ordnen``).
+    """
+    from apps.work.faction import kette
+
+    try:
+        if meeting_type is None:
+            kette.organisation_ordnen(organization.pk)
+        else:
+            kette.ordnen(organization.pk, meeting_type.pk)
+    except Exception:
+        logger.exception("Protokollkette nach geänderter Einstellung nicht geordnet (organization=%s)", organization.pk)
 
 
 #: Felder, die eine Sitzungsart übersteuern kann (Issue #1240): alle der Einstellungsseite außer den öffentlichen
@@ -2290,6 +2310,8 @@ def save_meeting_type_settings(
         locked.settings = overrides
         locked.save(update_fields=["settings"])
     meeting_type.settings = locked.settings
+    if "link_previous_meeting" in wanted | erben:
+        _protokollkette_ordnen(locked.organization, locked)
 
 
 def faction_settings_with_defaults(

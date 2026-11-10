@@ -434,12 +434,14 @@ check("Genehmigtes Protokoll ohne Opt-in NICHT gelistet", "Fraktionssitzung Eins
 resp = anon.get(f"/public/{body.slug}/protokolle/{meeting1.id}/")
 check("Detail ohne Opt-in -> 404", resp.status_code == 404, f"got {resp.status_code}")
 
-# Schalter nur mit protocols.publish: faction.manage allein reicht nicht
-resp = manager.post(f"{base}/organization/faction-settings/", {"publish_protocols": "on"})
+# Schalter nur mit protocols.publish: faction.manage allein reicht nicht. Das ganze Formular schickt jeden
+# eingeschalteten Schalter mit; ohne „Sitzungen automatisch verketten“ löste Work die Kette (Issue #1297).
+opt_in = {"publish_protocols": "on", "link_previous_meeting": "on"}
+resp = manager.post(f"{base}/organization/faction-settings/", opt_in)
 org.refresh_from_db()
 check("Opt-in ohne protocols.publish unverändert", org.publish_protocols is False)
 
-resp = chair.post(f"{base}/organization/faction-settings/", {"publish_protocols": "on"})
+resp = chair.post(f"{base}/organization/faction-settings/", opt_in)
 org.refresh_from_db()
 check("Opt-in mit protocols.publish aktiviert", org.publish_protocols is True)
 
