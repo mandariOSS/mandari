@@ -851,6 +851,8 @@ def top_hinzufuegen(
         from .regeln import NOE_AUS
 
         raise TopNeuError(NOE_AUS)
+    if teil not in ("public", "internal"):
+        raise TopNeuError("Unbekannter Teil der Tagesordnung.")
     return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung)
 
 

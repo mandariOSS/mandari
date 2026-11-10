@@ -21,6 +21,7 @@ from apps.work.rahmen import fragment_neu
 from .. import agenda, deletion
 from .. import services as faction_services
 from ..models import (
+    AGENDA_PARTS,
     FactionAgendaItem,
     FactionAttendance,
     FactionMeeting,
@@ -542,6 +543,8 @@ class FactionActionView(WorkViewMixin, View):
         title = request.POST.get("title", "").strip()
         visibility = request.POST.get("visibility", "public")
         parent_id = request.POST.get("parent_id", "").strip()
+        if visibility not in AGENDA_PARTS:
+            return self._rejected(request, meeting, "Unbekannter Teil der Tagesordnung.", 400)
 
         # NÖ strikt (Issue #64): NÖ-TOPs (auch Unterpunkte von NÖ-TOPs)
         # dürfen nur Vereidigte anlegen — serverseitig geprüft
@@ -1313,6 +1316,9 @@ class FactionActionView(WorkViewMixin, View):
         title = request.POST.get("title", "").strip()
         description = request.POST.get("description", "").strip()
         visibility = request.POST.get("visibility", "public")
+        if visibility not in AGENDA_PARTS:
+            messages.error(request, "Unbekannter Teil der Tagesordnung.")
+            return self._redirect_detail(meeting)
 
         # NÖ strikt (Issue #64): auch das VORSCHLAGEN von NÖ-TOPs ist nur
         # Vereidigten erlaubt — serverseitig geprüft
