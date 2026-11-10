@@ -230,6 +230,68 @@ class TestSitzungBeenden:
         store = import_module(settings.SESSION_ENGINE).SessionStore(session_key=client.session.session_key)
         return "_auth_user_id" in store.load()
 
+    @pytest.mark.parametrize("tracked", [True, False])
+    @pytest.mark.parametrize("bulk", [True, False])
+    def test_passwortwechsel_bleibt_widerrufbar(self, monkeypatch: Any, tracked: bool, bulk: bool) -> None:
+        from django.contrib.messages.storage.cookie import CookieStorage
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+
+        from apps.accounts.models import UserSession
+        from apps.work.organization.views.profile import SecurityView
+
+        user, browser, _eigen = self._zwei_sitzungen()
+        old_key = browser.session.session_key
+        record = UserSession.objects.get(user=user, session_key=old_key)
+        if not tracked:
+            record.delete()
+        request = RequestFactory().post(
+            "/",
+            {
+                "old_password": PASSWORD,
+                "new_password": "Neues-Sicheres-Passwort-2027",
+                "confirm_password": "Neues-Sicheres-Passwort-2027",
+            },
+        )
+        request.user = user
+        request.session = browser.session
+        request._messages = CookieStorage(request)
+        view = SecurityView()
+        monkeypatch.setattr(view, "_redirect", lambda: HttpResponse(status=302))
+
+        assert view._change_password(request, user).status_code == 302
+        request.session.save()
+        new_key = request.session.session_key
+        assert new_key != old_key
+        current = UserSession.objects.get(user=user, session_key=new_key)
+        if tracked:
+            assert current.pk == record.pk
+        assert not UserSession.objects.filter(session_key=old_key).exists()
+        browser.cookies["sessionid"] = new_key
+        # Exercise Django authentication, including the updated password hash.
+        assert browser.get(reverse("accounts:two_factor_enroll")).status_code == 200
+
+        if bulk:
+            SessionService.revoke_all_sessions(user)
+        else:
+            assert SessionService.revoke_session(user, new_key)
+        assert not self._angemeldet(browser)
+
+    @pytest.mark.parametrize("bulk", [True, False])
+    def test_sitzung_ohne_tracking_beenden(self, bulk: bool) -> None:
+        from apps.accounts.models import UserSession
+
+        user, fremd, eigen = self._zwei_sitzungen()
+        UserSession.objects.filter(user=user, session_key=fremd.session.session_key).delete()
+        other = make_user("andere@example.org")
+        assert not SessionService.revoke_session(other, str(fremd.session.session_key))
+        if bulk:
+            SessionService.revoke_all_sessions(user, except_current=str(eigen.session.session_key))
+        else:
+            assert SessionService.revoke_session(user, str(fremd.session.session_key))
+        assert not self._angemeldet(fremd)
+        assert self._angemeldet(eigen)
+
     def test_einzelne_sitzung_beenden(self) -> None:
         user, fremd, _eigen = self._zwei_sitzungen()
         assert self._angemeldet(fremd)

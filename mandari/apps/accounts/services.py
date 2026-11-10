@@ -22,7 +22,9 @@ from importlib import import_module
 
 from cryptography.fernet import InvalidToken, MultiFernet
 from django.conf import settings
+from django.contrib.auth import SESSION_KEY, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.sessions.models import Session
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
@@ -428,6 +430,23 @@ class SessionService:
         )
         return session
 
+    @classmethod
+    def preserve_after_password_change(cls, request, user) -> None:
+        """Keep authentication and device tracking together when Django rotates the key."""
+        previous_key = request.session.session_key
+        update_session_auth_hash(request, user)
+        if request.user == user and request.session.session_key:
+            updated = UserSession.objects.filter(user=user, session_key=previous_key).update(
+                session_key=request.session.session_key,
+            )
+            if not updated:
+                cls.create_session(user, request, request.session.session_key)
+
+    @staticmethod
+    def _owns_django_session(user, session_key: str) -> bool:
+        store = import_module(settings.SESSION_ENGINE).SessionStore(session_key=session_key)
+        return store.load().get(SESSION_KEY) == str(user.pk)
+
     @staticmethod
     def _end_django_session(session_key: str) -> None:
         """Sitzung über den eingestellten Speicher löschen – bei ``cached_db`` auch aus dem Cache."""
@@ -437,24 +456,21 @@ class SessionService:
     @classmethod
     def revoke_session(cls, user, session_key: str) -> bool:
         """Revoke a specific session."""
-        try:
-            session = UserSession.objects.get(user=user, session_key=session_key)
+        session = UserSession.objects.filter(user=user, session_key=session_key).first()
+        if session is None and not cls._owns_django_session(user, session_key):
+            return False
 
-            # Delete Django session
-            cls._end_django_session(session_key)
-
+        cls._end_django_session(session_key)
+        if session is not None:
             session.delete()
 
-            security_notifications.notify(
-                user,
-                security_notifications.SESSION_REVOKED,
-                "Sitzung beendet",
-                "Eine deiner Sitzungen wurde beendet.",
-            )
-
-            return True
-        except UserSession.DoesNotExist:
-            return False
+        security_notifications.notify(
+            user,
+            security_notifications.SESSION_REVOKED,
+            "Sitzung beendet",
+            "Eine deiner Sitzungen wurde beendet.",
+        )
+        return True
 
     @classmethod
     def revoke_all_sessions(cls, user, except_current: str = None, request=None):
@@ -471,10 +487,16 @@ class SessionService:
         if except_current:
             sessions = sessions.exclude(session_key=except_current)
 
-        for session in sessions:
-            cls._end_django_session(session.session_key)
+        keys = set(sessions.values_list("session_key", flat=True))
+        # Both configured backends (db and cached_db) persist sessions here. Include
+        # legacy sessions whose tracking record was lost during key rotation.
+        for session in Session.objects.filter(expire_date__gt=timezone.now()).iterator():
+            if session.session_key != except_current and session.get_decoded().get(SESSION_KEY) == str(user.pk):
+                keys.add(session.session_key)
+        for key in keys:
+            cls._end_django_session(key)
 
-        count = sessions.count()
+        count = len(keys)
         sessions.delete()
         oidc_services.revoke_all_for_user(request, user, by=oidc_audit.BY_PERSON)
 
