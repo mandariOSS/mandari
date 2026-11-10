@@ -114,12 +114,12 @@ deshalb in diesen Dockerfiles nicht erlaubt.
 
 Alle Prüfungen laufen auch in der CI und müssen grün sein.
 
-Im Pull Request startet die CI nur die Jobs, deren Bereich die Änderung berührt (Job „Geänderte
-Bereiche“ in `.github/workflows/pr-check.yml`; eine reine Ingestor-Änderung braucht zum Beispiel
-keine Django-Testsuite). Maßgeblich ist der Job **„CI-Ergebnis“**: Er ist grün, wenn jeder nötige Job
-bestanden hat. Änderungen an `.github/` oder an Abhängigkeitsdateien, jeder Push auf `main`
-sowie jeder Lauf in der Merge-Queue lassen alle Jobs laufen. Wer einen neuen Job anlegt,
-trägt ihn unter `needs` von `ci-ergebnis` ein (ein Test prüft das).
+Im Pull Request und in der Merge-Queue startet die CI nur die Jobs, deren Bereich die Änderung
+berührt (Job „Geänderte Bereiche“ in `.github/workflows/pr-check.yml`; eine reine Ingestor-Änderung
+braucht zum Beispiel keine Django-Testsuite). Maßgeblich ist der Job **„CI-Ergebnis“**: Er ist grün,
+wenn jeder nötige Job bestanden hat. Änderungen an `.github/` oder an Abhängigkeitsdateien, jeder
+Pull Request gegen `main` und jeder Push auf `main` lassen alle Jobs laufen. Wer einen neuen Job
+anlegt, trägt ihn unter `needs` von `ci-ergebnis` ein (ein Test prüft das).
 
 Ein Push auf `dev` startet keine CI: Auf `dev` landet genau das Commit, das die Merge-Queue geprüft
 hat. Den Volllauf auf `dev` startet jede Nacht `.github/workflows/nachtlauf.yml`.

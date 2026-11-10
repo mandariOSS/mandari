@@ -5,16 +5,24 @@
 #
 # Pfadfilter (Issue #621): Der Job "Geänderte Bereiche" ordnet die Dateien eines
 # Pull Requests Bereichen zu; jeder Job läuft nur, wenn sein Bereich betroffen
-# ist. Sicherheitsnetz: push auf main, die Merge-Queue, der Wochenlauf, manuelle
-# Starts, Pull Requests gegen main und jede Änderung an .github/ oder an
-# Abhängigkeitsdateien lassen ALLE Jobs laufen. Einzige Ausnahme in der Merge-Queue:
-# Die Migrationstests laufen dort nach derselben Regel wie im Pull Request.
+# ist. Sicherheitsnetz: push auf main, der Wochenlauf, manuelle Starts (auch der
+# nächtliche Volllauf auf dev), Pull Requests gegen main und jede Änderung an
+# .github/ oder an Abhängigkeitsdateien lassen ALLE Jobs laufen.
 #
 # Merge-Queue (Issue #737): Pull Requests auf dev werden über die Queue gemergt
 # (gh pr merge <n> --squash --auto). Die Queue prüft den kombinierten Stand aus dev
-# und allen PRs davor (Ereignis merge_group) mit allen Jobs und merged erst, wenn
-# "CI-Ergebnis" grün ist. Der Pflicht-Check muss deshalb auch für merge_group
-# berichten; jeder weitere Pflicht-Check braucht diesen Auslöser ebenfalls.
+# und allen PRs davor (Ereignis merge_group) und merged erst, wenn "CI-Ergebnis"
+# grün ist. Der Pflicht-Check muss deshalb auch für merge_group berichten; jeder
+# weitere Pflicht-Check braucht diesen Auslöser ebenfalls.
+#
+# Pfadfilter auch in der Queue (Issue #1315): Verglichen wird mit dem Basisstand
+# des Queue-Eintrags (merge_group.base_sha), also genau die Änderung dieses Pull
+# Requests auf dem Stand aller Einträge davor. Die Jobs laufen auf dem kombinierten
+# Stand; was die Einträge davor berühren, haben deren Läufe geprüft. Früher liefen
+# in der Queue immer alle Jobs: rund 120 Job-Minuten auch für eine Textänderung,
+# und fremde Ursachen (neu gemeldete Schwachstelle in pip-audit) hielten jeden
+# Merge auf. Fehler im Pfadfilter fängt der nächtliche Volllauf auf dev
+# (nachtlauf.yml), vor einem Release der Pull Request gegen main.
 #
 # Kein Lauf bei push auf dev (Issue #935): Auf dev landet genau das Commit, das die
 # Queue geprüft hat (gleiche Commit-Kennung); ein zweiter Lauf prüfte denselben Stand
@@ -47,7 +55,7 @@ on:
     branches:
       - dev
       - main
-  # Merge-Queue: kombinierter Stand vor dem Merge, immer mit allen Jobs (kein Pfadfilter)
+  # Merge-Queue: kombinierter Stand vor dem Merge, Jobs nach dem Pfadfilter wie im Pull Request (Issue #1315)
   merge_group:
     types: [checks_requested]
   # Wöchentlicher Volllauf auf dem Standardzweig: CodeQL auch ohne Änderung (neue Abfragen)
@@ -59,6 +67,11 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # Python-Pakete installiert uv statt pip (Issue #1315: rund 40 s je Job gespart), und zwar in das Python
+  # von setup-python: Die Jobs haben keine virtuelle Umgebung.
+  UV_SYSTEM_PYTHON: '1'
 
 # Neuer Push in einen PR bricht dessen laufende Prüfung ab; alle anderen Läufe laufen vollständig durch
 concurrency:
@@ -108,7 +121,7 @@ jobs:
 
       # some-with-excludes: Eine Datei zählt, wenn sie mindestens ein positives Muster trifft und
       # kein "!"-Muster. Neue Verzeichnisse lösen die Django-Tests deshalb im Zweifel aus.
-      # In der Merge-Queue wirkt davon nur "migrationen" (und das Sicherheitsnetz dafür), sonst laufen dort alle Jobs.
+      # In der Merge-Queue gilt derselbe Filter gegen den Basisstand des Queue-Eintrags (Issue #1315).
       - name: Dateien des Pull Requests zuordnen
         id: filter
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
@@ -375,8 +388,9 @@ jobs:
           grund="Pfadfilter"
           netz=$(wert sicherheitsnetz)
           if [ "$EREIGNIS" = "merge_group" ]; then
-            alle=true; grund="Merge-Queue, Migrationstests nach der Regel des Pull Requests"
-          elif [ "$EREIGNIS" != "pull_request" ]; then
+            grund="Pfadfilter gegen den Basisstand der Merge-Queue"
+          fi
+          if [ "$EREIGNIS" != "pull_request" ] && [ "$EREIGNIS" != "merge_group" ]; then
             alle=true; grund="Ereignis $EREIGNIS"
           elif [ "$ZIELZWEIG" = "main" ]; then
             alle=true; grund="Pull Request gegen main"
@@ -395,9 +409,7 @@ jobs:
             if [ "$netz" = "true" ] || [ "$migrationstests" = "true" ]; then echo true; else wert migrationen; fi
           }
           ergebnis() {
-            if [ "$1" = "migrationen" ] && [ "$EREIGNIS" = "merge_group" ]; then
-              regel_migrationen
-            elif [ "$alle" = "true" ]; then
+            if [ "$alle" = "true" ]; then
               echo true
             elif [ "$1" = "migrationen" ]; then
               regel_migrationen
@@ -448,12 +460,12 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-          cache: 'pip'
-          cache-dependency-path: mandari/uv.lock
+
+      - uses: astral-sh/setup-uv@v7
 
       # --- Lint und schnelle Prüfskripte (immer, wenige Sekunden) ---------------
       - name: Install linters
-        run: pip install ruff==0.14.6
+        run: uv pip install ruff==0.14.6
 
       - name: Run Ruff linter
         if: ${{ !cancelled() }}
@@ -503,7 +515,7 @@ jobs:
       - name: Schichtregeln (import-linter, Ausnahmen duerfen nur sinken)
         if: ${{ !cancelled() }}
         run: |
-          pip install "import-linter==2.15" "grimp==3.17"
+          uv pip install "import-linter==2.15" "grimp==3.17"
           python scripts/check_import_linter_ratchet.py
           cd mandari && lint-imports --no-cache
 
@@ -528,7 +540,7 @@ jobs:
       - name: Werkzeuge für toten und doppelten Code
         id: codewerkzeuge
         if: ${{ !cancelled() }}
-        run: pip install "vulture==2.16" "jscpd==5.4.2"
+        run: uv pip install "vulture==2.16" "jscpd==5.4.2"
 
       - name: Toter Python-Code (vulture, Funde dürfen nur sinken)
         if: ${{ !cancelled() && steps.codewerkzeuge.outcome == 'success' }}
@@ -560,24 +572,21 @@ jobs:
       - name: djlint (Template-Linting, Profil Django)
         if: ${{ !cancelled() && needs.changes.outputs.templates == 'true' }}
         run: |
-          pip install djlint==1.46.2
+          uv pip install djlint==1.46.2
           cd mandari && djlint templates --lint
 
       # --- Python: Typprüfung und Schema-Contract ---------------------------------
-      - name: uv (Export aus mandari/uv.lock)
-        if: ${{ !cancelled() && (needs.changes.outputs.python == 'true' || needs.changes.outputs.vertrag == 'true') }}
-        uses: astral-sh/setup-uv@v7
       - name: Python-Abhängigkeiten (Django, mypy, SQLAlchemy)
         id: pydeps
         if: ${{ !cancelled() && (needs.changes.outputs.python == 'true' || needs.changes.outputs.vertrag == 'true') }}
         run: |
           sh scripts/export_requirements.sh /tmp/requirements.lock
-          pip install -r /tmp/requirements.lock
-          pip install --no-deps shared/
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
           # Versionen wie in pyproject [dev] – mypy-Ergebnisse unterscheiden sich zwischen Versionen
-          pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.1" "sqlalchemy>=2.0"
+          uv pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.1" "sqlalchemy>=2.0"
           # Test-Abhängigkeiten, damit Fixtures/Decorator in Testmodulen typisiert sind (sonst "untyped decorator")
-          pip install pytest pytest-django factory-boy pytest-playwright
+          uv pip install pytest pytest-django factory-boy pytest-playwright
 
       - name: mypy mit Allowlist (darf nur schrumpfen)
         if: ${{ !cancelled() && steps.pydeps.outcome == 'success' && needs.changes.outputs.python == 'true' }}
@@ -783,18 +792,16 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-          cache: 'pip'
-          cache-dependency-path: mandari/uv.lock
 
       - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
           sh scripts/export_requirements.sh /tmp/requirements.lock
-          pip install -r /tmp/requirements.lock
-          pip install --no-deps shared/
-          pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
-          pip install "moto[s3]>=5.1"  # lokaler S3-Ersatz für die Tests des Objektspeichers (#788)
-          pip install "sqlalchemy>=2.0"  # Schema-Contract gegen die Ingestor-Modelle
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
+          uv pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
+          uv pip install "moto[s3]>=5.1"  # lokaler S3-Ersatz für die Tests des Objektspeichers (#788)
+          uv pip install "sqlalchemy>=2.0"  # Schema-Contract gegen die Ingestor-Modelle
 
       - uses: actions/setup-node@v7
         with:
@@ -907,18 +914,16 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-          cache: 'pip'
-          cache-dependency-path: mandari/uv.lock
 
       - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
           sh scripts/export_requirements.sh /tmp/requirements.lock
-          pip install -r /tmp/requirements.lock
-          pip install --no-deps shared/
-          pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
-          pip install "moto[s3]>=5.1"
-          pip install "sqlalchemy>=2.0"
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
+          uv pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
+          uv pip install "moto[s3]>=5.1"
+          uv pip install "sqlalchemy>=2.0"
 
       - name: Schlüssel der Feldverschlüsselung für diesen Job
         run: |
@@ -1092,16 +1097,14 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-          cache: 'pip'
-          cache-dependency-path: mandari/uv.lock
 
       - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
           sh scripts/export_requirements.sh /tmp/requirements.lock
-          pip install -r /tmp/requirements.lock
-          pip install --no-deps shared/
-          pip install pytest pytest-django factory-boy
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
+          uv pip install pytest pytest-django factory-boy
 
       - name: PgBouncer erreichbar
         run: |
@@ -1160,16 +1163,14 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-          cache: 'pip'
-          cache-dependency-path: mandari/uv.lock
 
       - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
           sh scripts/export_requirements.sh /tmp/requirements.lock
-          pip install -r /tmp/requirements.lock
-          pip install --no-deps shared/
-          pip install pytest pytest-django factory-boy
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
+          uv pip install pytest pytest-django factory-boy
 
       - uses: actions/setup-node@v7
         with:
@@ -1279,7 +1280,7 @@ jobs:
   # ===========================================================================
   # Prüft beide OParl-Ausgaben (Aggregator und Session-Schnittstelle) mit oparl-validator-rs
   # (https://github.com/konstin/oparl-validator-rs, MIT oder Apache-2.0) und der eigenen Typprüfung
-  # (scripts/oparl_validator.py). Läuft bei Änderungen an den Schnittstellen, in der Merge-Queue und
+  # (scripts/oparl_validator.py). Läuft bei Änderungen an den Schnittstellen (Pull Request und Merge-Queue) und
   # bei jedem push auf main. Der Validator wird nur ausgeführt: festgelegter Stand der vom Projekt gebauten
   # Programmdatei (Commit im Zweig gh-pages, gebaut aus 9ae12e7), geprüft per SHA-256. Das Archiv
   # liegt im Zwischenspeicher der Actions (Schlüssel: Prüfsumme) und wird nur geladen, wenn es dort
@@ -1309,15 +1310,13 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-          cache: 'pip'
-          cache-dependency-path: mandari/uv.lock
 
       - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
           sh scripts/export_requirements.sh /tmp/requirements.lock
-          pip install -r /tmp/requirements.lock
-          pip install --no-deps shared/
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
 
       - name: Validator aus dem Zwischenspeicher
         uses: actions/cache@v6
@@ -1361,7 +1360,7 @@ jobs:
       - name: DCAT-AP.de-Kataloge gegen die SHACL-Regeln prüfen (Aggregator und Session-Mandant)
         if: ${{ !cancelled() }}
         run: |
-          pip install "pyshacl==0.40.1"
+          uv pip install "pyshacl==0.40.1"
           python scripts/dcat_shacl.py --ablage "$RUNNER_TEMP/dcat-ablage"
 
   # ===========================================================================
@@ -1443,8 +1442,10 @@ jobs:
   # ===========================================================================
   # Abhängigkeiten: bekannte Schwachstellen, Lockfile-Abgleich
   # ===========================================================================
-  # Läuft bei geänderten Abhängigkeitsdateien (Sicherheitsnetz), in der Merge-Queue, bei jedem push auf main
-  # und im Wochenlauf – dort fallen neu veröffentlichte Schwachstellen ohne Codeänderung auf.
+  # Läuft bei geänderten Abhängigkeitsdateien (Sicherheitsnetz, Pull Request und Merge-Queue), bei jedem push auf
+  # main, im nächtlichen Volllauf auf dev und im Wochenlauf – dort fallen neu veröffentlichte Schwachstellen ohne
+  # Codeänderung auf. Nicht bei jedem Eintrag der Merge-Queue (Issue #1315): Eine neu gemeldete Schwachstelle hielt
+  # sonst jeden Merge auf, auch wenn der Pull Request keine Abhängigkeit anfasst.
   dependency-audit:
     name: Abhängigkeiten prüfen (pip-audit, npm audit)
     needs: changes
@@ -1472,7 +1473,7 @@ jobs:
       # (mandari/pip-audit-ausnahmen.json, scripts/pip_audit_pruefen.py)
       - name: pip-audit Django-Anwendung (blockierend, befristete Ausnahmen)
         run: |
-          pip install pip-audit
+          uv pip install pip-audit
           sh scripts/export_requirements.sh /tmp/mandari-requirements.txt
           python scripts/pip_audit_pruefen.py /tmp/mandari-requirements.txt
       - name: pip-audit Ingestor (blockierend, befristete Ausnahmen)
@@ -1533,21 +1534,21 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    # Am Stück brauchte die Suite rund 25 Minuten (284 Tests in einem Prozess). Vier parallele Teile mit ganzen
-    # Testdateien (--teil, apps/common/tests/testlauf.py) bringen den Job auf etwa ein Viertel plus Einrichtung.
+    # Am Stück brauchte die Suite rund 25 Minuten (284 Tests in einem Prozess). Zwei Teile mit ganzen Testdateien
+    # (--teil, apps/common/tests/testlauf.py), jeder mit zwei Prozessen (pytest-xdist; die Runner haben vier Kerne):
+    # so schnell wie früher vier Jobs mit je einem Prozess, aber nur zwei Runner und zweimal Einrichtung
+    # (Issue #1315). Jeder Prozess hat seine eigene Datei-SQLite und seinen eigenen Testserver.
     timeout-minutes: 25
     strategy:
       # Alle Teile laufen zu Ende, damit jeder rote Test auf einmal sichtbar ist
       fail-fast: false
       matrix:
-        teil: [1, 2, 3, 4]
+        teil: [1, 2]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-          cache: 'pip'
-          cache-dependency-path: mandari/uv.lock
       - uses: actions/setup-node@v7
         with:
           node-version: '26'
@@ -1559,16 +1560,16 @@ jobs:
       - name: Python-Abhängigkeiten
         run: |
           sh scripts/export_requirements.sh /tmp/requirements.lock
-          pip install -r /tmp/requirements.lock
-          pip install --no-deps shared/
-          pip install pytest pytest-django factory-boy pytest-playwright
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
+          uv pip install pytest pytest-django pytest-xdist factory-boy pytest-playwright
           python -m playwright install --with-deps chromium
       - name: E2E-Tests (Kernpfade, axe-core)
         env:
           MANDARI_E2E: '1'
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
-        run: cd mandari && pytest tests_e2e -q --browser chromium --teil=${{ matrix.teil }}/4
+        run: cd mandari && pytest tests_e2e -q --browser chromium -n 2 --dist loadfile --teil=${{ matrix.teil }}/2
       - name: Screenshots als Artefakt (hell/dunkel, Komponentenvorschau, Kernpfade)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
