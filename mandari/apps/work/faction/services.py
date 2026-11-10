@@ -833,6 +833,11 @@ def apply_approval_item_decision(agenda_item, decision, meeting, membership):
         return False
     if decision is None or not decision.passed:
         return False
+    # Die Kette reicht in die Zukunft (Issue #1295): Genehmigt wird nur das Protokoll einer Sitzung, die stattfand
+    from .kette import hat_stattgefunden
+
+    if not hat_stattgefunden(agenda_item.approves_meeting):
+        return False
     return ProtocolApprovalService.approve_protocol(
         agenda_item.approves_meeting,
         approved_in_meeting=meeting,

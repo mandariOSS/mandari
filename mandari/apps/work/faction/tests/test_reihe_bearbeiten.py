@@ -154,7 +154,9 @@ def test_uhrzeit_und_ort_wirken_nur_auf_nicht_eingeladene_termine(
 def test_rhythmuswechsel_verschiebt_termine_ohne_datenverlust(
     org: Any, vorsitz: Any, client_for: Any, django_capture_on_commit_callbacks: CaptureCallbacks
 ) -> None:
-    org.settings = {"faction": {"first_agenda_title_no_previous": "Tagesordnung vom {datum}"}}
+    # Beide Vorlagen: Nur der erste Termin der Reihe hat keine vorherige Sitzung (Protokollkette, Issue #1295)
+    vorlage = "Tagesordnung vom {datum}"
+    org.settings = {"faction": {"first_agenda_title_no_previous": vorlage, "first_agenda_title_with_previous": vorlage}}
     org.save(update_fields=["settings"])
     schedule = _reihe(org, django_capture_on_commit_callbacks)
     vorher = _termine(schedule)

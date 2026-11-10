@@ -821,10 +821,14 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
 
     @property
     def has_pending_protocol_approval(self) -> bool:
-        """Check if the previous meeting's protocol needs approval."""
-        if not self.previous_meeting:
-            return False
-        return not self.previous_meeting.protocol_approved
+        """
+        Ist das Protokoll der vorherigen Sitzung noch nicht genehmigt? Nur wenn sie stattgefunden hat: Die Kette
+        reicht in die Zukunft (Issue #1295), vor der Sitzung davor gibt es kein Protokoll.
+        """
+        from .kette import hat_stattgefunden
+
+        vorige = self.previous_meeting
+        return vorige is not None and hat_stattgefunden(vorige) and not vorige.protocol_approved
 
     def get_faction_settings(self) -> dict:
         """
@@ -965,15 +969,13 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         cls, organization: Any, before_date: Any = None, meeting_type: FactionMeetingType | None = None
     ) -> "FactionMeeting | None":
         """
-        Letzte begonnene oder abgeschlossene Sitzung vor einem Zeitpunkt, nur in derselben Sitzungsart (Issue #1231);
-        ohne Angabe in der Standardart.
+        Letzte Sitzung vor einem Zeitpunkt, die stattfindet (nicht abgesagt), nur in derselben Sitzungsart (Issue
+        #1231); ohne Angabe in der Standardart. Der Status zählt nicht (Issue #1295): Die Reihe legt ihre Termine im
+        Voraus an, die Sitzung davor ist dann noch nicht abgeschlossen. Die Verkettung selbst pflegt
+        :mod:`apps.work.faction.kette`.
         """
         same_type = {"meeting_type__is_default": True} if meeting_type is None else {"meeting_type": meeting_type}
-        qs = cls.objects.filter(
-            organization=organization,
-            status__in=["completed", "ongoing"],
-            **same_type,
-        )
+        qs = cls.objects.filter(organization=organization, **same_type).exclude(status="cancelled")
         if before_date:
             qs = qs.filter(start__lt=before_date)
 

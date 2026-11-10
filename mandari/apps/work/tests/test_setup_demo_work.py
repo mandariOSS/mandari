@@ -94,7 +94,15 @@ class TestDemoZeigtAllePunkte:
         assert arten == {"decision", "note", "action"}
 
         sitzung = FactionMeeting.objects.get(organization=org, title=demo.KOMMENDE_SITZUNG)
-        assert sitzung.previous_meeting_id == vorige.pk
+        # Protokollkette (Issue #1295): jeweils der Termin davor, von der kommenden Sitzung über die Reihe (sofern
+        # kein Feiertag den Montag streicht) zurück bis zur vergangenen; deren Protokoll genehmigt der Termin danach
+        kette = [sitzung]
+        while kette[-1].previous_meeting is not None:
+            kette.append(kette[-1].previous_meeting)
+        assert kette[-1] == vorige
+        assert [s.start for s in kette] == sorted((s.start for s in kette), reverse=True)
+        assert all(s.schedule_id for s in kette[1:-1]), "dazwischen liegen die Termine der Reihe"
+        assert kette[-2].agenda_items.get(is_approval_item=True).approves_meeting_id == vorige.pk
         assert sitzung.location and sitzung.video_link
         assert sitzung.rsvp_enabled is False
         tops = list(sitzung.agenda_items.filter(proposal_status="active").order_by("order", "number"))

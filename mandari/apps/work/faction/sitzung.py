@@ -265,6 +265,19 @@ class Unterlage:
     fassung: str = ""
 
 
+def vorige_mit_protokoll(item: FactionAgendaItem) -> FactionMeeting | None:
+    """
+    Sitzung, deren Protokoll dieser Genehmigungs-TOP vorliegen hat. Nur wenn sie stattgefunden hat: Die Protokollkette
+    reicht in die Zukunft (Issue #1295), vor der Sitzung davor gibt es kein Protokoll zu zeigen.
+    """
+    from .kette import hat_stattgefunden
+
+    if not item.is_approval_item or not item.approves_meeting_id:
+        return None
+    vorige = item.approves_meeting
+    return vorige if vorige is not None and hat_stattgefunden(vorige) else None
+
+
 def protokoll_fassung(membership: Membership) -> str:
     """Fassung der Niederschrift, die das Mitglied lesen darf (wie der PDF-Export); leer ohne Recht."""
     if can_view_internal(membership) and membership.has_permission("protocols.view_full"):
@@ -292,7 +305,7 @@ def unterlagen(item: FactionAgendaItem, membership: Membership) -> list[Unterlag
     from . import services as faction_services
 
     liste: list[Unterlage] = []
-    vorige = item.approves_meeting if item.is_approval_item and item.approves_meeting_id else None
+    vorige = vorige_mit_protokoll(item)
     fassung = protokoll_fassung(membership) if vorige is not None else ""
     if vorige is not None and fassung:
         protokoll = f"Protokoll vom {timezone.localtime(vorige.start):%d.%m.%Y}" if vorige.start else "Protokoll"
@@ -371,7 +384,7 @@ def herkunft(item: FactionAgendaItem) -> str:
     # Das Datum endet schon mit einem Punkt („am 19.10.“): kein zweiter Punkt am Satzende
     text = text if not text or text.endswith(".") else f"{text}."
     # Genehmigungs-TOP: welches Protokoll vorliegt (wie „Genehmigt: …“ in der bisherigen Ansicht)
-    vorige = item.approves_meeting if item.is_approval_item and item.approves_meeting_id else None
+    vorige = vorige_mit_protokoll(item)
     if vorige is not None:
         datum = f" vom {timezone.localtime(vorige.start):%d.%m.%Y}" if vorige.start else ""
         satz = f"Das Protokoll von „{vorige.title}“{datum} liegt zur Genehmigung vor."

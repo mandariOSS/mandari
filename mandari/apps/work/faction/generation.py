@@ -262,11 +262,7 @@ def create_occurrence(schedule, date, *, exceptions=None, rules=None):
     meeting.status = "planned"
     meeting.meeting_number = FactionMeeting.get_next_meeting_number(organization, meeting_type)
 
-    # Vorherige Sitzung derselben Art verketten (OneToOne — nur wenn noch frei)
-    previous = FactionMeeting.find_previous_meeting(organization, before_date=start, meeting_type=meeting_type)
-    if previous is not None and not FactionMeeting.objects.filter(previous_meeting=previous).exists():
-        meeting.previous_meeting = previous
-
+    # Die vorherige Sitzung (der Termin davor, Issue #1295) setzt das Speichern über die Protokollkette (kette.py)
     meeting._audit_created_action = "generated"
     meeting.save()
 
@@ -596,6 +592,11 @@ def run_faction_schedule_pass(now=None) -> dict:
             stats["schedules"] += 1
             stats["created"] += result["created"]
             stats["cancelled"] += result["cancelled"]
+
+        # Protokollkette (Issue #1295): Bestand und alles, was am Speichern vorbei geändert wurde, in Ordnung bringen
+        from apps.work.faction import kette
+
+        stats["relinked"] = kette.alle_ordnen()
 
         if stats["created"] or stats["cancelled"]:
             logger.info(
