@@ -359,6 +359,39 @@ def test_parse_upload_detects_format_and_reads_csv() -> None:
         import_service.parse_upload("kaputt.json", b"{nicht json")
 
 
+def test_trello_import_kuerzt_namen_einmal_und_begrenzt_karten() -> None:
+    """Lange Namen von Labels und Listen stehen einmal gekürzt im Ergebnis, nicht je Verweis in voller Länge."""
+    import tracemalloc
+
+    langer_name = " " + "L" * 100_000 + " "
+    board: dict[str, Any] = {
+        "lists": [{"id": "l1", "name": "Erledigt"}, {"id": ["kaputt"], "name": "x"}],
+        "labels": [{"id": "a", "name": langer_name}, {"id": "b", "name": "Kultur"}],
+        "cards": [
+            {"name": "Karte", "idList": "l1", "idLabels": ["a"] * 5_000 + ["b", ["kaputt"], "fehlt"]},
+            "kein Objekt",
+        ],
+    }
+    raw = json.dumps(board).encode()
+
+    tracemalloc.start()
+    _, rows = import_service.parse_upload("trello.json", raw)
+    data, errors, _warnings = import_service.normalize_row(rows[0], {})
+    _aktuell, spitze = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert not errors
+    assert rows[0]["status"] == "done"
+    assert rows[0]["labels"] == ["L" * import_service.MAX_LABEL_LENGTH, "Kultur"]
+    assert data["labels"] == ["L" * 50, "Kultur"]
+    # Ohne Kürzung beim Sammeln wären es rund 500 MB (5.000 Verweise mal 100.000 Zeichen)
+    assert spitze < 20 * 1024 * 1024
+
+    zu_viele = {"cards": [{"name": f"Karte {i}"} for i in range(import_service.MAX_IMPORT_ROWS + 1)]}
+    with pytest.raises(import_service.TaskImportError, match="Zu viele Zeilen"):
+        import_service.parse_upload("trello.json", json.dumps(zu_viele).encode())
+
+
 @pytest.mark.django_db
 def test_classify_and_apply_import_is_idempotent(org: Any, member: Any) -> None:
     raw = (

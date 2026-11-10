@@ -207,12 +207,20 @@ def parse_date(value: Any) -> tuple[date | None, str | None]:
         return None, f"Ungültiges Datum: {text!r} (erwartet YYYY-MM-DD oder TT.MM.JJJJ)"
 
 
+#: Grenzen für Labels und Schlagworte einer Zeile: Anzahl und Länge je Eintrag. Gekürzt wird beim Sammeln, damit
+#: ein langer Name, auf den viele Einträge verweisen, nicht je Verweis in voller Länge im Speicher steht
+MAX_LABELS_PER_ROW = 50
+MAX_LABEL_LENGTH = 100
+
+
 def split_labels(value: Any) -> list[str]:
     if isinstance(value, list):
-        return [str(v).strip() for v in value if str(v).strip()]
+        cleaned = (str(v).strip()[:MAX_LABEL_LENGTH] for v in value[:MAX_LABELS_PER_ROW])
+        return [label for label in cleaned if label]
     if not value:
         return []
-    return [part.strip() for part in str(value).split(",") if part.strip()]
+    parts = (part.strip()[:MAX_LABEL_LENGTH] for part in str(value).split(",", MAX_LABELS_PER_ROW)[:MAX_LABELS_PER_ROW])
+    return [part for part in parts if part]
 
 
 def rows_from_csv(text: str) -> tuple[list[Row], list[str]]:
@@ -279,26 +287,42 @@ def rows_from_mandari_json(data: dict[str, Any]) -> tuple[list[Row], list[str]]:
     return rows, []
 
 
+def _dicts(value: Any) -> list[dict[str, Any]]:
+    """Die Einträge einer Liste, die Objekte sind; alles andere (auch keine Liste) ergibt nichts."""
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
 def rows_from_trello_json(data: dict[str, Any]) -> tuple[list[Row], list[str]]:
     """Basis-Mapping für Trello-Board-Exporte (cards/lists/labels)."""
-    lists_by_id = {lst.get("id"): lst.get("name", "") for lst in data.get("lists") or [] if isinstance(lst, dict)}
+    # Listen und Labels je einmal auflösen und kürzen: Karten verweisen nur darauf, und ein langer Name würde sonst
+    # für jede Karte bzw. jeden Verweis erneut verarbeitet
+    status_by_list = {
+        lst["id"]: STATUS_ALIASES.get(str(lst.get("name") or "").strip().lower(), "todo")
+        for lst in _dicts(data.get("lists"))
+        if isinstance(lst.get("id"), str)
+    }
     labels_by_id = {
-        lbl.get("id"): lbl.get("name") or lbl.get("color") or ""
-        for lbl in data.get("labels") or []
-        if isinstance(lbl, dict)
+        lbl["id"]: str(lbl.get("name") or lbl.get("color") or "").strip()[:MAX_LABEL_LENGTH]
+        for lbl in _dicts(data.get("labels"))
+        if isinstance(lbl.get("id"), str)
     }
 
     rows: list[Row] = []
-    for idx, card in enumerate(data.get("cards") or [], start=1):
-        if not isinstance(card, dict) or card.get("closed"):
+    for idx, card in enumerate(_dicts(data.get("cards")), start=1):
+        if card.get("closed"):
             continue  # archivierte Karten überspringen
-        list_name = (lists_by_id.get(card.get("idList")) or "").lower()
+        if len(rows) >= MAX_IMPORT_ROWS:
+            raise TaskImportError(f"Zu viele Zeilen (max. {MAX_IMPORT_ROWS}).")
+        list_id, label_ids = card.get("idList"), card.get("idLabels")
+        names = (
+            labels_by_id.get(lid) for lid in (label_ids if isinstance(label_ids, list) else []) if isinstance(lid, str)
+        )
         row: Row = {
             "_line": idx,
             "title": card.get("name", ""),
             "description": card.get("desc", ""),
-            "status": STATUS_ALIASES.get(list_name, "todo"),
-            "labels": [labels_by_id[lid] for lid in card.get("idLabels") or [] if labels_by_id.get(lid)],
+            "status": status_by_list.get(list_id, "todo") if isinstance(list_id, str) else "todo",
+            "labels": list(dict.fromkeys(name for name in names if name))[:MAX_LABELS_PER_ROW],
         }
         if card.get("due"):
             row["due_date"] = card["due"]
