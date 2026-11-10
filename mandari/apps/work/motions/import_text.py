@@ -358,7 +358,31 @@ def _inline_html(container: Any, paragraph: Any) -> str:
 
 
 _ADJACENT_MARKS_RE = re.compile(r"</(strong|em|u|s)><\1>")
-_EDGE_BREAKS_RE = re.compile(r"^(?:\s|<br>)+|(?:\s|<br>)+$")
+
+
+def _trim_edge_breaks(html: str) -> str:
+    """
+    Leerraum und Zeilenumbrüche (``<br>``) am Anfang und Ende entfernen.
+
+    Von beiden Enden her statt mit einem regulären Ausdruck: Ein Muster für das Ende, das an jeder Stelle eines
+    langen Leerraums im Absatz neu ansetzt, braucht quadratische Zeit.
+    """
+    start, end = 0, len(html)
+    while start < end:
+        if html.startswith("<br>", start):
+            start += 4
+        elif html[start].isspace():
+            start += 1
+        else:
+            break
+    while end > start:
+        if html.endswith("<br>", start, end):
+            end -= 4
+        elif html[end - 1].isspace():
+            end -= 1
+        else:
+            break
+    return html[start:end]
 
 
 def _paragraph_inline(paragraph: Any) -> str:
@@ -368,7 +392,7 @@ def _paragraph_inline(paragraph: Any) -> str:
         return ""
     # Word teilt formatierten Text in viele Läufe: <strong>a</strong><strong>b</strong> → <strong>ab</strong>
     html = _ADJACENT_MARKS_RE.sub("", html)
-    return _EDGE_BREAKS_RE.sub("", html)
+    return _trim_edge_breaks(html)
 
 
 def _alignment(paragraph: Any) -> str | None:
@@ -423,18 +447,44 @@ def _render_lists(items: list[_ListItem]) -> str:
     return "".join(out)
 
 
+#: Höchstens so viele Zellen wandelt der Import je Tabelle um; darüber rettet er nur den Text (``docx_to_html``)
+MAX_TABLE_CELLS = 20_000
+
+
+class _TableTooLargeError(Exception):
+    """Die Tabelle hat mehr Zellen, als der Import umwandelt."""
+
+
 def _table_html(table: Any) -> str:
+    """
+    Tabelle als HTML. Gelesen werden die tatsächlichen Zellen jeder Zeile (``w:tc``), nicht ``row.cells``:
+    python-docx entfaltet dort jede Zelle so oft, wie ihre Spanne (``gridSpan``) angibt, und die Spanne steht
+    ungeprüft in der Datei. Eine über mehrere Spalten verbundene Zelle erscheint so von selbst einmal. Bei einer
+    über mehrere Zeilen verbundenen Zelle steht in den Folgezeilen wie bisher der Inhalt der obersten Zelle.
+    """
+    from docx.table import _Cell
+
     rows: list[str] = []
     has_text = False
+    budget = MAX_TABLE_CELLS
+    # Rasterspalte -> Zelle, die dort eine Verbindung über mehrere Zeilen beginnt bzw. zuletzt eigenen Inhalt hatte
+    above: dict[int, Any] = {}
     for row in table.rows:
         cells_html: list[str] = []
-        seen: list[Any] = []
         row_has_text = False
-        for cell in row.cells:
-            # Verbundene Zellen liefert python-docx je Rasterspalte erneut – nur einmal ausgeben
-            if any(cell._tc is known for known in seen):
-                continue
-            seen.append(cell._tc)
+        # Zeilen können am Anfang Rasterspalten überspringen (``gridBefore``)
+        offset = int(getattr(row._tr, "grid_before", 0) or 0)
+        for tc in row._tr.tc_lst:
+            budget -= 1
+            if budget < 0:
+                raise _TableTooLargeError
+            source = tc
+            if tc.vMerge == "continue":
+                source = above.get(offset, tc)
+            else:
+                above[offset] = tc
+            offset += max(int(tc.grid_span or 1), 1)
+            cell = _Cell(source, table)
             inner = "".join(f"<p>{html}</p>" for html in (_paragraph_inline(p) for p in cell.paragraphs) if html)
             row_has_text = row_has_text or bool(inner)
             cells_html.append(f"<td>{inner or '<p></p>'}</td>")
@@ -462,11 +512,46 @@ def _iter_blocks(parent: Any, container: Any) -> Any:
                 yield from _iter_blocks(content, container)
 
 
+#: Grenzen des entpackten DOCX-Pakets. python-docx liest jedes Teil vollständig in den Speicher und baut aus den
+#: XML-Teilen Bäume, die ein Vielfaches ihrer Größe belegen; geprüft war bisher nur die gepackte Größe der Datei.
+MAX_DOCX_PARTS = 5_000
+MAX_DOCX_XML_BYTES = 25 * 1024 * 1024
+MAX_DOCX_TOTAL_BYTES = 150 * 1024 * 1024
+
+
+class DocxTooLargeError(ValueError):
+    """Das entpackte DOCX-Paket ist größer, als der Import im laufenden Seitenaufruf verarbeitet."""
+
+
+def check_docx_package(data: bytes) -> None:
+    """
+    Entpackte Größe eines DOCX-Pakets prüfen, bevor python-docx es liest (``DocxTooLargeError``).
+
+    Maßgeblich sind die Größen aus dem Verzeichnis des Archivs: ``zipfile`` liefert beim Lesen eines Teils nie
+    mehr als die dort genannte Größe, ein zu klein angegebenes Teil endet also mit einem Lesefehler statt mit mehr
+    Daten. Kein gültiges Archiv ist kein Fall für diese Prüfung; das meldet python-docx wie bisher.
+    """
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as archive:
+            parts = archive.infolist()
+    except zipfile.BadZipFile:
+        return
+    if len(parts) > MAX_DOCX_PARTS:
+        raise DocxTooLargeError("zu viele Teile")
+    total = sum(part.file_size for part in parts)
+    xml = sum(part.file_size for part in parts if part.filename.lower().endswith((".xml", ".rels")))
+    if total > MAX_DOCX_TOTAL_BYTES or xml > MAX_DOCX_XML_BYTES:
+        raise DocxTooLargeError("entpackt zu groß")
+
+
 def docx_to_html(data: bytes) -> str:
     """Editor-HTML aus einer DOCX-Datei (vor der Bereinigung durch die Positivliste)."""
     from docx import Document
     from docx.table import Table
 
+    check_docx_package(data)
     document = Document(BytesIO(data))
     formats = _numbering_formats(document)
     body = document.element.body
