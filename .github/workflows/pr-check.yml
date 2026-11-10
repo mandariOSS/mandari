@@ -517,6 +517,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: python scripts/check_view_orm_ratio.py
 
+      # Architektur-Kennzahlen der Datendrehscheibe (docs/ARCHITEKTUR_KENNZAHLEN.md, Issue #569): nur zur
+      # Ansicht in der Zusammenfassung des Laufs. Keine Prüfung; der Schritt kann den Job nicht rot machen.
+      - name: Architektur-Kennzahlen (Anzeige, keine Prüfung)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          {
+            echo "### Architektur-Kennzahlen"
+            echo
+            python scripts/architektur_kennzahlen.py
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # --- Templates -------------------------------------------------------------
       - name: djlint (Template-Linting, Profil Django)
         if: ${{ !cancelled() && needs.changes.outputs.templates == 'true' }}

@@ -116,6 +116,13 @@ Grenze zur Datenbank sichert der Schema-Vertrag
   ([Kanonisches Modell](20260929-kanonisches-modell.md)), Schreibzugriffe auf Daten fremder Module.
 - Definition of Done: Kein Pull Request verschlechtert den import-linter-Stand.
 
+## Nachtrag: Kennzahlen (#569)
+
+Die Entscheidung bleibt. Die Kennzahlen erhebt `scripts/architektur_kennzahlen.py` aus dem Quellstand, je
+Etappe der Datendrehscheibe und mit dem Aufräumen jeder Umstellung statt je Release. Zählregeln, Stand und
+Verlauf stehen in [`docs/ARCHITEKTUR_KENNZAHLEN.md`](../ARCHITEKTUR_KENNZAHLEN.md); die Fortschreibung ist ein
+Punkt der Checkliste in [`docs/DREHSCHEIBE_UMSTELLUNG.md`](../DREHSCHEIBE_UMSTELLUNG.md), Abschnitt 2.5.
+
 ## Bezug
 
 - ADR-Paket Datendrehscheibe: Grundlage für A2 bis A11
