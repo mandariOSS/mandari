@@ -19,7 +19,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.work.faction import kette, protokoll, sitzung, vorbereiten
+from apps.work.faction import agenda, kette, protokoll, sitzung, vorbereiten
 from apps.work.faction.generation import generate_meetings_for_schedule, run_faction_schedule_pass
 from apps.work.faction.models import (
     FactionAgendaItem,
@@ -29,6 +29,7 @@ from apps.work.faction.models import (
     FactionMeetingType,
 )
 from apps.work.faction.services import ProtocolApprovalService
+from apps.work.organization import selectors, services
 
 # Dienstag, 05.03.2030, 12:00 Uhr Ortszeit, und der Montag davor um 18:00 Uhr
 JETZT = datetime(2030, 3, 5, 11, 0, tzinfo=UTC)
@@ -78,6 +79,12 @@ def _status(von: FactionMeeting, *folge: str) -> None:
 
 class Angenommen:
     passed = True
+
+
+def _schalter(org: Any, mitglied: Any, *, an: bool) -> None:
+    """„Sitzungen automatisch verketten“ wie auf der Einstellungsseite: Das Feld fehlt im Formular, wenn es aus ist."""
+    formular = {"link_previous_meeting": "on"} if an else {}
+    services.save_faction_settings(org, mitglied, formular, fields=["link_previous_meeting"])
 
 
 # =============================================================================
@@ -456,3 +463,217 @@ def test_erzeugungslauf_ordnet_den_bestand(org: Any, standardart: FactionMeeting
     # Ein zweiter Lauf ändert nichts mehr
     assert kette.alle_ordnen() == 0
     assert kette.ordnen(org.pk, standardart.pk) == {}
+
+
+# =============================================================================
+# Schalter „Sitzungen automatisch verketten“ (Issue #1297)
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_ohne_kette_bleiben_neue_sitzungen_unverkettet(org: Any, make_member: Any) -> None:
+    vorsitz = make_member(org, ["faction.manage"], email="v@example.org")
+    _schalter(org, vorsitz, an=False)
+    reihe = FactionMeetingSchedule.objects.create(
+        organization=org, name="Wöchentliche Fraktionssitzung", weekday=0, time=time(18, 0)
+    )
+
+    generate_meetings_for_schedule(reihe, now=JETZT)
+    von_hand = _sitzung(org, MONTAG + timedelta(weeks=10))
+
+    termine = [*FactionMeeting.objects.filter(schedule=reihe).order_by("start"), von_hand]
+    assert len(termine) == 4
+    assert [t.previous_meeting_id for t in termine] == [None] * 4
+    assert [_top(t).title for t in termine] == [OHNE_PROTOKOLL] * 4
+    assert [_top(t).approves_meeting_id for t in termine] == [None] * 4
+    # Die Vorschauen im Dialog „Neue Sitzung“ und in den Einstellungen zeigen denselben Titel
+    assert agenda.new_meeting_has_previous(org) is False
+    assert agenda.standard_agenda_preview(org, may_view_internal=True)["approval_title"] == OHNE_PROTOKOLL
+    vorschau = selectors.standard_agenda_context(org, may_view_internal=True, approval_item=True)
+    assert vorschau["standard_agenda_approval_title"] == OHNE_PROTOKOLL
+    assert kette.alle_ordnen() == 0
+
+
+@pytest.mark.django_db
+def test_abschalten_loest_kommende_sitzungen_und_laesst_begonnene(org: Any, make_member: Any) -> None:
+    vorsitz = make_member(org, ["faction.manage"], email="v@example.org")
+    erste, zweite, dritte, vierte, fuenfte = _wochen(org, 5)
+    _status(erste, "ongoing", "completed")
+    _status(zweite, "ongoing")
+    FactionMeeting.objects.filter(pk=vierte.pk).update(invitation_sent=True, invitation_sent_at=timezone.now())
+    bearbeitet = _top(fuenfte)
+    bearbeitet.title = "Formalia"
+    bearbeitet.save()
+    assert agenda.new_meeting_has_previous(org) is True
+
+    _schalter(org, vorsitz, an=False)
+
+    # Die laufende Sitzung berät ihren ersten TOP so, wie er dasteht; die abgeschlossene ohnehin
+    assert _vorherige(erste, zweite, dritte, vierte, fuenfte) == [None, erste.pk, None, None, None]
+    assert (_top(zweite).title, _top(zweite).approves_meeting_id) == (MIT_PROTOKOLL, erste.pk)
+    assert (_top(dritte).title, _top(dritte).approves_meeting_id) == (OHNE_PROTOKOLL, None)
+    # Die Eingeladenen der vierten kennen den alten Titel: Die Infoleiste bietet die Aktualisierung an
+    vierte.refresh_from_db()
+    assert _top(vierte).title == OHNE_PROTOKOLL
+    assert vorbereiten.tagesordnung_geaendert(vierte) is True
+    # Ein von Hand bearbeiteter TOP behält seinen Titel und genehmigt nichts mehr
+    assert (_top(fuenfte).title, _top(fuenfte).approves_meeting_id) == ("Formalia", None)
+    assert FactionMeeting.objects.get(pk=dritte.pk).has_pending_protocol_approval is False
+    assert kette.alle_ordnen() == 0
+
+
+@pytest.mark.django_db
+def test_einschalten_ordnet_die_kommenden_sitzungen_wieder(org: Any, make_member: Any) -> None:
+    vorsitz = make_member(org, ["faction.manage"], email="v@example.org")
+    _schalter(org, vorsitz, an=False)
+    erste, zweite, dritte = _wochen(org, 3)
+    _status(erste, "ongoing", "completed")
+    assert _vorherige(erste, zweite, dritte) == [None, None, None]
+    assert FactionMeeting.objects.get(pk=erste.pk).protocol_status == "draft"
+
+    _schalter(org, vorsitz, an=True)
+
+    assert _vorherige(erste, zweite, dritte) == [None, erste.pk, zweite.pk]
+    assert (_top(zweite).title, _top(zweite).approves_meeting_id) == (MIT_PROTOKOLL, erste.pk)
+    abgeschlossen = FactionMeeting.objects.get(pk=erste.pk)
+    assert abgeschlossen.protocol_status == "pending"
+    assert protokoll.genehmigung(abgeschlossen).sitzung == zweite
+
+
+@pytest.mark.django_db
+def test_sitzungsart_uebersteuert_den_schalter(org: Any) -> None:
+    gruppe = FactionMeetingType.objects.create(organization=org, name="Arbeitsgruppe Umwelt", position=1)
+    f1, f2 = _wochen(org, 2)
+    g1, g2 = (_sitzung(org, MONTAG + timedelta(days=1, weeks=woche), meeting_type=gruppe) for woche in range(2))
+    assert _vorherige(f1, f2, g1, g2) == [None, f1.pk, None, g1.pk]
+
+    # Nur die Arbeitsgruppe verkettet nicht; die Fraktionssitzungen folgen weiter der Organisation
+    services.save_meeting_type_settings(gruppe, {}, fields=["link_previous_meeting"])
+
+    assert _vorherige(f1, f2, g1, g2) == [None, f1.pk, None, None]
+    assert (_top(g2).title, _top(g2).approves_meeting_id) == (OHNE_PROTOKOLL, None)
+    assert kette.verkettet(FactionMeeting.objects.get(pk=g2.pk)) is False
+    assert kette.verkettet(FactionMeeting.objects.get(pk=f2.pk)) is True
+    assert agenda.new_meeting_has_previous(org, gruppe) is False
+    assert agenda.new_meeting_has_previous(org) is True
+
+    # Wieder „wie die Organisation“
+    services.save_meeting_type_settings(gruppe, {}, inherit=["link_previous_meeting"])
+
+    assert _vorherige(g1, g2) == [None, g1.pk]
+    assert _top(g2).title == MIT_PROTOKOLL
+
+
+@pytest.mark.django_db
+def test_ohne_kette_nennt_das_protokoll_die_direkte_genehmigung(org: Any, make_member: Any) -> None:
+    vorsitz = make_member(org, ["faction.manage", "protocols.approve"], email="v@example.org")
+    erste, zweite = _wochen(org, 2)
+    _status(erste, "ongoing", "completed")
+    g = protokoll.genehmigung(FactionMeeting.objects.get(pk=erste.pk))
+    assert (g.sitzung, g.ohne_kette) == (zweite, False)
+
+    _schalter(org, vorsitz, an=False)
+
+    abgeschlossen = FactionMeeting.objects.get(pk=erste.pk)
+    g = protokoll.genehmigung(abgeschlossen)
+    assert (g.sitzung, g.ohne_kette) == (None, True)
+    v = protokoll.versand(abgeschlossen)
+    fuer_vorsitz = protokoll.info(abgeschlossen, protokoll.Rechte(genehmigen=True), g, v, alt=False)
+    assert "genehmigt das Protokoll direkt" in fuer_vorsitz.text and fuer_vorsitz.aktion == "genehmigen"
+    fuer_mitglieder = protokoll.info(abgeschlossen, protokoll.Rechte(), g, v, alt=False)
+    assert fuer_mitglieder.text == "Der Vorsitz genehmigt es direkt."
+    schritt = protokoll.schritte(abgeschlossen, protokoll.angaben(abgeschlossen), g, v, genehmigen=True)[1]
+    assert "nicht verkettet" in schritt["text"]
+    for text in (fuer_vorsitz.text, fuer_mitglieder.text, schritt["text"]):
+        assert "Sitzung unter TOP" not in text
+    dialog = render_to_string(
+        "work/faction/neu/_pr_dialoge.html",
+        {
+            "rechte": protokoll.Rechte(genehmigen=True),
+            "genehmigung": g,
+            "versand": v,
+            "meeting": abgeschlossen,
+            "org_slug": org.slug,
+        },
+    )
+    assert "nicht verkettet" in dialog and "Üblich ist die Genehmigung" not in dialog
+    # Der direkte Weg bleibt, wie er ist
+    assert cast(Any, ProtocolApprovalService).approve_protocol(abgeschlossen, None, vorsitz) is True
+    assert protokoll.genehmigung(FactionMeeting.objects.get(pk=erste.pk)).direkt is True
+
+
+@pytest.mark.django_db
+def test_laufende_sitzung_behaelt_ihren_ersten_top_beim_einschalten(org: Any, make_member: Any) -> None:
+    """TOP 1 der laufenden Sitzung ist schon beraten: Das Einschalten hängt ihr kein Protokoll mehr an."""
+    vorsitz = make_member(org, ["faction.manage"], email="v@example.org")
+    _schalter(org, vorsitz, an=False)
+    erste, zweite, dritte = _wochen(org, 3)
+    _status(erste, "ongoing", "completed")
+    _status(zweite, "ongoing")
+
+    _schalter(org, vorsitz, an=True)
+
+    assert _vorherige(erste, zweite, dritte) == [None, None, zweite.pk]
+    assert (_top(zweite).title, _top(zweite).approves_meeting_id) == (OHNE_PROTOKOLL, None)
+    assert _top(dritte).title == MIT_PROTOKOLL
+    # Auch der stündliche Lauf lässt sie in Ruhe; das Protokoll der ersten genehmigt der Vorsitz direkt
+    assert kette.alle_ordnen() == 0
+    assert FactionMeeting.objects.get(pk=erste.pk).protocol_status == "draft"
+
+
+@pytest.mark.django_db
+def test_schalter_im_bestand_wirkt_mit_dem_erzeugungslauf(org: Any) -> None:
+    """Update: Der Schalter stand schon auf „aus“, ohne zu wirken. Der erste Lauf danach löst die Kette."""
+    erste, zweite, dritte = _wochen(org, 3)
+    _status(erste, "ongoing", "completed")
+    assert _vorherige(erste, zweite, dritte) == [None, erste.pk, zweite.pk]
+    org.settings = {"faction": {"link_previous_meeting": False}}
+    org.save(update_fields=["settings"])
+
+    ergebnis = run_faction_schedule_pass(now=JETZT)
+
+    assert ergebnis["relinked"] == 2
+    assert _vorherige(erste, zweite, dritte) == [None, None, None]
+    assert [_top(s).title for s in (zweite, dritte)] == [OHNE_PROTOKOLL] * 2
+    assert kette.alle_ordnen() == 0
+
+
+@pytest.mark.django_db
+def test_ganzes_formular_ohne_den_schalter_schaltet_ab(org: Any, make_member: Any) -> None:
+    """Das alte Formular schickt jeden eingeschalteten Schalter mit; fehlt das Feld, ist er aus."""
+    vorsitz = make_member(org, ["faction.manage"], email="v@example.org")
+    erste, zweite = _wochen(org, 2)
+
+    services.save_faction_settings(org, vorsitz, {"auto_create_approval_item": "on"})
+
+    assert _vorherige(erste, zweite) == [None, None]
+    assert _top(zweite).title == OHNE_PROTOKOLL
+
+    services.save_faction_settings(org, vorsitz, {"auto_create_approval_item": "on", "link_previous_meeting": "on"})
+
+    assert _vorherige(erste, zweite) == [None, erste.pk]
+    assert _top(zweite).title == MIT_PROTOKOLL
+
+
+@pytest.mark.django_db
+def test_fehler_beim_ordnen_laesst_die_einstellung_gespeichert(
+    org: Any, make_member: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vorsitz = make_member(org, ["faction.manage"], email="v@example.org")
+    erste, zweite = _wochen(org, 2)
+
+    def kaputt(*args: Any, **kwargs: Any) -> int:
+        raise RuntimeError("Datenbank weg")
+
+    echt = kette.organisation_ordnen
+    monkeypatch.setattr(kette, "organisation_ordnen", kaputt)
+
+    _schalter(org, vorsitz, an=False)
+
+    org.refresh_from_db()
+    assert org.settings["faction"]["link_previous_meeting"] is False
+    assert _vorherige(erste, zweite) == [None, erste.pk]
+    # Der stündliche Lauf holt es nach
+    monkeypatch.setattr(kette, "organisation_ordnen", echt)
+    assert kette.alle_ordnen() == 1
+    assert _vorherige(erste, zweite) == [None, None]

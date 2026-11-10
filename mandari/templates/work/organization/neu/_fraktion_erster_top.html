@@ -33,6 +33,7 @@ x-text="preview" an #preview-title. Kontext: faction_settings, placeholders, fel
     </table>
 
     <p class="fs-feldname">Vorschau <span class="fs-meta">Sitzung am 15.02.2026, vorherige Sitzung am 01.02.2026</span></p>
+    {% if not faction_settings.link_previous_meeting %}<p class="fs-meta" data-testid="fs-erster-ohne-kette">„Sitzungen automatisch verketten“ ist aus: Neue Sitzungen erhalten den Titel ohne vorherige Sitzung.</p>{% endif %}
     <ol class="fs-std">
         <li><span class="nr">1</span><span class="t"><span id="preview-title" x-text="preview">{{ faction_settings.first_agenda_title_with_previous|default:"Tagesordnung festlegen und letztes Protokoll genehmigen" }}</span>{% if faction_settings.first_agenda_description %}<small>{{ faction_settings.first_agenda_description }}</small>{% endif %}</span><span class="akt" aria-hidden="true"> </span></li>
     </ol>
