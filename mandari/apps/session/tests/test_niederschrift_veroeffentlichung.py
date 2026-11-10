@@ -22,8 +22,10 @@ from typing import Any, cast
 from unittest import mock
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import Client
+from django.urls import reverse
 
 from apps.session.models import (
     SessionAgendaItem,
@@ -35,7 +37,7 @@ from apps.session.models import (
     SessionProtocolCorrection,
 )
 from apps.session.services import protocol_correction_service, protocol_publication
-from apps.session.tests._niederschrift import GEHEIM, Welt, base, client, pdf_text, welt
+from apps.session.tests._niederschrift import GEHEIM, Welt, base, client, nutzer, pdf_text, welt
 from insight_core.models import OParlBody, OParlFile, OParlMeeting, OParlSource
 from insight_sync.session_mirror import SessionMirror
 
@@ -172,6 +174,40 @@ class TestOeffentlicheFassung:
 # =============================================================================
 # Rücknahme und Aktualisierung im Bürgerportal
 # =============================================================================
+
+
+class TestKeineGewoehnlicheAnlage:
+    """Die öffentliche Fassung hängt an der Sitzung, ändern darf sie nur der Ablauf der Niederschrift."""
+
+    @pytest.mark.parametrize("weg", ["file_update", "file_replace", "file_delete"])
+    def test_anlagen_wege_aendern_die_oeffentliche_fassung_nicht(self, weg: str) -> None:
+        w = welt()
+        datei = _veroeffentlichen(w)
+        vorher = (datei.name, datei.is_public, datei.version, datei.text_content, datei.file.name)
+        bearbeiter = nutzer(w.tenant, "bearbeiter", "view_meetings", "edit_meetings")
+        daten: dict[str, Any] = {"name": "Umbenannt"}
+        if weg == "file_replace":
+            daten = {"file": SimpleUploadedFile("ersatz.pdf", b"%PDF-1.4 anderer Inhalt", "application/pdf")}
+
+        antwort = client(bearbeiter).post(
+            reverse(f"session:{weg}", kwargs={"tenant_slug": w.tenant.slug, "file_id": datei.pk}), daten
+        )
+
+        assert antwort.status_code == 403
+        aktuell = SessionFile.objects.get(pk=datei.pk)
+        assert (aktuell.name, aktuell.is_public, aktuell.version, aktuell.text_content, aktuell.file.name) == vorher
+        assert _protokoll(w).public_file_id == datei.pk
+
+    def test_sitzungsseite_bietet_keine_bearbeitung_der_fassung_an(self) -> None:
+        w = welt()
+        datei = _veroeffentlichen(w)
+        bearbeiter = nutzer(w.tenant, "bearbeiter", "view_meetings", "edit_meetings")
+
+        html = client(bearbeiter).get(f"{base(w)}/meetings/{w.sitzung.pk}/").content.decode()
+
+        assert reverse("session:file_download", kwargs={"tenant_slug": w.tenant.slug, "file_id": datei.pk}) in html
+        for weg in ("file_update", "file_replace", "file_delete"):
+            assert reverse(f"session:{weg}", kwargs={"tenant_slug": w.tenant.slug, "file_id": datei.pk}) not in html
 
 
 def _spiegel(w: Welt) -> tuple[OParlBody, Any]:
