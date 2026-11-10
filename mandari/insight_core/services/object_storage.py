@@ -60,9 +60,17 @@ def checksum_mode() -> str:
     return value if value in CHECKSUM_MODES else CHECKSUM_MODES[0]
 
 
-@lru_cache(maxsize=1)
-def _client(
-    endpoint: str, key: str, secret: str, region_name: str, addressing: str, timeout: float, checksums: str
+def _new_client(
+    endpoint: str,
+    key: str,
+    secret: str,
+    region_name: str,
+    addressing: str,
+    timeout: float,
+    checksums: str,
+    *,
+    connect_timeout: float = 5,
+    attempts: int = 3,
 ) -> Any:
     import boto3
     from botocore.config import Config
@@ -76,13 +84,20 @@ def _client(
         config=Config(
             signature_version="s3v4",
             s3={"addressing_style": addressing},
-            connect_timeout=5,
+            connect_timeout=connect_timeout,
             read_timeout=timeout,
-            retries={"max_attempts": 3, "mode": "standard"},
+            retries={"max_attempts": attempts, "mode": "standard"},
             request_checksum_calculation=checksums,
             response_checksum_validation=checksums,
         ),
     )
+
+
+@lru_cache(maxsize=1)
+def _client(
+    endpoint: str, key: str, secret: str, region_name: str, addressing: str, timeout: float, checksums: str
+) -> Any:
+    return _new_client(endpoint, key, secret, region_name, addressing, timeout, checksums)
 
 
 def client() -> Any:
@@ -95,6 +110,29 @@ def client() -> Any:
         float(getattr(settings, "OBJ_TIMEOUT_SECONDS", 30)),
         checksum_mode(),
     )
+
+
+def probe(timeout: float) -> None:
+    """
+    Nur lesende Probe für ``manage.py doctor`` (Issue #964): ``HeadBucket`` mit eigener Zeitgrenze und ohne
+    Wiederholung, über einen eigenen Client (der gemeinsame wartet länger und wiederholt). Jede Störung geht als
+    Ausnahme durch.
+    """
+    probe_client = _new_client(
+        str(settings.OBJ_ENDPOINT),
+        str(settings.OBJ_KEY),
+        str(settings.OBJ_SECRET),
+        region(),
+        str(getattr(settings, "OBJ_ADDRESSING_STYLE", "auto") or "auto"),
+        timeout,
+        checksum_mode(),
+        connect_timeout=timeout,
+        attempts=1,
+    )
+    try:
+        probe_client.head_bucket(Bucket=settings.OBJ_BUCKET)
+    finally:
+        probe_client.close()
 
 
 def _transfer_config() -> Any:
