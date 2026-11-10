@@ -29,6 +29,7 @@ Erwarteter Kontext:
                 <!-- Metazeile bricht in der schmalen Seitenleiste um, statt über die Aktionen zu laufen -->
                 <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span class="whitespace-nowrap">{{ file.size_human }}</span>
+                    {% if file.from_protocol %}<span class="whitespace-nowrap" data-testid="anlage-aus-niederschrift">· Öffentliche Fassung der Niederschrift</span>{% endif %}
                     {% if file.version > 1 %}
                     <a href="{% url 'session:file_versions' tenant_slug=tenant_slug file_id=file.id %}"
                        class="hover:underline whitespace-nowrap" title="Frühere Fassungen dieser Anlage">· Version {{ file.version }} (Verlauf)</a>
