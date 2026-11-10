@@ -144,6 +144,25 @@ def file_parent(session_file: Any) -> Any:
     return None
 
 
+#: Meldung, wenn jemand die öffentliche Fassung der Niederschrift wie eine gewöhnliche Anlage ändern will
+PROTOCOL_FILE_MESSAGE = (
+    "Diese Datei ist die öffentliche Fassung der Niederschrift. Sie entsteht beim Veröffentlichen der Niederschrift "
+    "und lässt sich nur dort erneuern oder zurücknehmen."
+)
+
+
+def is_public_protocol_file(session_file: Any) -> bool:
+    """
+    Ist die Datei die öffentliche Fassung einer Niederschrift (``SessionProtocol.public_file``, Issue #318)?
+
+    Sie hängt als Anlage an der Sitzung, gehört aber zum Ablauf der Niederschrift: Inhalt, Name, Sichtbarkeit
+    und Bestand ändert nur ``protocol_publication`` (Veröffentlichen, Berichtigen, Zurücknehmen).
+    """
+    from apps.session.models import SessionProtocol
+
+    return bool(session_file.pk) and SessionProtocol.objects.filter(public_file_id=session_file.pk).exists()
+
+
 def is_non_public(session_file: Any) -> bool:
     """Ist die Anlage selbst oder ihr Elternobjekt nichtöffentlich? (Kennzeichen im Protokoll, Issue #221)."""
     if not session_file.is_public:
