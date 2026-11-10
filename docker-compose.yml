@@ -202,6 +202,8 @@ x-app-environment: &app-environment
   INSIGHT_CHAT_TIME_LIMIT_SECONDS: ${INSIGHT_CHAT_TIME_LIMIT_SECONDS:-90}
   INSIGHT_CHAT_DAILY_MAX_CALLS: ${INSIGHT_CHAT_DAILY_MAX_CALLS:-500}
   INSIGHT_CHAT_DAILY_MAX_TOKENS: ${INSIGHT_CHAT_DAILY_MAX_TOKENS:-1000000}
+  # Seite „Offene Daten“ außerhalb des Bürgerportals (Issue #1309); leer = das Bürgerportal zeigt sie selbst
+  INSIGHT_OFFENE_DATEN_URL: ${INSIGHT_OFFENE_DATEN_URL:-}
   # Öffentlicher MCP-Server unter /insight/mcp (docs/INSIGHT_MCP.md), Standard aus
   INSIGHT_MCP_ENABLED: ${INSIGHT_MCP_ENABLED:-false}
   INSIGHT_MCP_PER_IP_MINUTE: ${INSIGHT_MCP_PER_IP_MINUTE:-30}

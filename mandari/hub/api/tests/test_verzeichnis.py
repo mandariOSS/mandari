@@ -197,3 +197,29 @@ def _json_ld(html: str, typ: str) -> dict[str, Any]:
         if daten.get("@type") == typ:
             return dict(daten)
     raise AssertionError(f"Kein JSON-LD vom Typ {typ}")
+
+
+# --- Seite „Offene Daten“ außerhalb des Bürgerportals (Issue #1309) -----------------------------------------
+
+EXTERN = "https://mandari.example/offene-daten/"
+
+
+@override_settings(INSIGHT_OFFENE_DATEN_URL=EXTERN)
+def test_eingestellte_seite_ersetzt_die_im_buergerportal(kommunen: dict[str, Any]) -> None:
+    antwort = Client().get("/insight/offene-daten/")
+    assert (antwort.status_code, antwort["Location"]) == (301, EXTERN)
+    assert _uebersicht()["bodyDirectory"] == EXTERN
+
+    # Fuß: auf der Seite einer Kommune deren Seite, sonst die Übersicht
+    assert f'href="{EXTERN}muenster/"' in Client().get("/insight/k/muenster/").content.decode()
+    start = Client().get("/insight/").content.decode()
+    assert f'href="{EXTERN}"' in start and "/insight/offene-daten/" not in start
+
+
+def test_ohne_einstellung_bleibt_die_seite_im_buergerportal(kommunen: dict[str, Any]) -> None:
+    from hub.api.aggregator import directory_url
+
+    assert directory_url() == f"{SITE}/insight/offene-daten/"
+    assert directory_url("muenster") == f"{SITE}/insight/offene-daten/#kommune-muenster"
+    with override_settings(INSIGHT_OFFENE_DATEN_URL=EXTERN):
+        assert directory_url("muenster") == f"{EXTERN}muenster/"
