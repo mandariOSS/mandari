@@ -194,3 +194,63 @@ def test_session_schnittstelle_leitet_adresse_ohne_schraegstrich_weiter() -> Non
         assert antwort.status_code == 301, adresse
         assert antwort["Location"] == f"{adresse}/?page=1"
         assert Client().get(adresse, follow=True).status_code == 200
+
+
+# =============================================================================
+# Kurzadresse einer Kommune: Name statt Kennung (Issue #1309)
+# =============================================================================
+
+
+@pytest.fixture
+def muenster() -> Any:
+    from insight_core.models import OParlBody, OParlSource
+
+    quelle = OParlSource.objects.create(name="Quelle", url="https://ris.example/oparl/system")
+    return OParlBody.objects.create(
+        external_id="https://ris.example/oparl/body/muenster", source=quelle, name="Stadt Münster", slug="muenster"
+    )
+
+
+@pytest.mark.parametrize(
+    ("kurz", "gueltig"),
+    [
+        ("", ""),
+        ("/", ""),
+        ("/papers", "/papers"),
+        ("/meetings/", "/meetings"),
+        ("/kommparl/changes", "/kommparl/changes"),
+    ],
+)
+def test_kurzadresse_fuehrt_vorlaeufig_auf_die_kennung(muenster: Any, kurz: str, gueltig: str) -> None:
+    antwort = Client().get(f"/oparl/v1/body/muenster{kurz}")
+
+    # Vorläufig: Der Name einer Kommune kann sich ändern, ihre Kennung nicht
+    assert antwort.status_code == 307
+    assert antwort["Location"] == f"/oparl/v1/body/{muenster.pk}{gueltig}"
+    assert antwort["Access-Control-Allow-Origin"] == "*"
+
+
+def test_kurzadresse_behaelt_die_parameter_und_liefert_dieselben_daten(muenster: Any) -> None:
+    antwort = Client().get("/oparl/v1/body/muenster/papers?modified_since=2026-11-01T00:00:00Z&limit=5")
+    assert antwort["Location"] == f"/oparl/v1/body/{muenster.pk}/papers?modified_since=2026-11-01T00:00:00Z&limit=5"
+
+    gefolgt = Client().get("/oparl/v1/body/muenster", follow=True)
+    assert gefolgt.status_code == 200
+    # Die Kennung in der Antwort bleibt die Adresse mit der UUID
+    assert gefolgt.json()["id"].endswith(f"/v1/body/{muenster.pk}")
+
+
+def test_kurzadresse_unbekannter_name_ist_404_als_json(muenster: Any) -> None:
+    antwort = Client().get("/oparl/v1/body/gibt-es-nicht/papers")
+
+    assert antwort.status_code == 404
+    assert antwort["Content-Type"].startswith("application/json")
+    assert "bodyIndex" in antwort.json()["error"]
+
+
+def test_kennung_wird_nie_als_name_gelesen() -> None:
+    assert resolve(f"/oparl/v1/body/{KENNUNG}").func is aggregator.object_view
+    assert resolve(f"/oparl/v1/body/{KENNUNG}/papers").func is aggregator.body_sub_list
+    assert resolve(f"/oparl/v1/body/{KENNUNG}/").func is redirects.without_trailing_slash
+    assert resolve("/oparl/v1/body/muenster").func is redirects.body_by_slug
+    assert resolve("/oparl/v1/body/muenster/papers").func is redirects.body_by_slug
