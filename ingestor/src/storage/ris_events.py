@@ -82,7 +82,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from mandari_oparl.ids import IdBases, canonical_id
 
@@ -234,14 +234,17 @@ def _digest(value: Any) -> str:
     Prüfsumme des Rohwerts ohne Mengenbildung: linear in der Größe, Reihenfolge der Listen zählt.
 
     Ersatz für Werte über den Obergrenzen. Flüchtige Felder der obersten Ebene bleiben außen vor, damit sich die
-    Prüfsumme nicht mit jedem ``modified`` ändert.
+    Prüfsumme nicht mit jedem ``modified`` ändert. Lässt sich der Wert nicht darstellen, ist das Ergebnis jedes
+    Mal ein anderes.
     """
     if isinstance(value, Mapping):
         value = {key: item for key, item in value.items() if key not in VOLATILE_FIELDS}
     try:
         canonical = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
     except (RecursionError, ValueError, TypeError):
-        return "sha256:nicht-vergleichbar"
+        # Nicht darstellbar (etwa jenseits der Rekursionsgrenze): nie gleich einem anderen Wert. Das Objekt gilt
+        # dann in jedem Lauf als geändert, statt dass eine Änderung unbemerkt bleibt.
+        return f"nicht-vergleichbar:{uuid4().hex}"
     return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
