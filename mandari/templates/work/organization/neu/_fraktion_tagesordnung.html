@@ -13,7 +13,7 @@ Nichtöffentliche Standardpunkte weichgezeichnet, bis Nichtöffentliches eingebl
     {% if faction_settings.auto_create_approval_item or standard_agenda_rows or standard_agenda_locked %}
     <ol class="fs-std" data-testid="fs-std">
         {% if faction_settings.auto_create_approval_item %}
-        <li><span class="nr">1</span><span class="t">{{ standard_agenda_approval_title }}<small>fest, mit dem Genehmigungsablauf für das letzte Protokoll</small></span><span class="akt" aria-hidden="true"> </span></li>
+        <li><span class="nr">1</span><span class="t">{{ standard_agenda_approval_title }}<small>fest{% if faction_settings.link_previous_meeting %}, mit dem Genehmigungsablauf für das letzte Protokoll{% endif %}</small></span><span class="akt" aria-hidden="true"> </span></li>
         {% endif %}
         {% for number, item in standard_agenda_rows %}
         <li>
