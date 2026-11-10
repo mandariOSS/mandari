@@ -20,7 +20,8 @@ reviews:
     # träfe jeden Titel mit dem Wort, etwa `chore(release): …` (so geschehen bei #1308).
     ignore_title_keywords:
       - "Release 20"
-      - "Release v"
+      - "Release v0."
+      - "Release v1."
       - "Release 0."
       - "Release 1."
     ignore_usernames:
