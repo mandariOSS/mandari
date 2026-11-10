@@ -648,7 +648,19 @@ def apply_import(organization: Organization, membership: Membership, report: Imp
         _create_from_row(organization, membership, data, position_counters[status], labels, now)
         position_counters[status] += 1
 
+    # Erneut prüfen, und zwar am aktuellen Stand der Datenbank: Seit dem Einteilen kann jemand die Aufgabe privat
+    # gestellt oder gelöscht haben. Die Zeilensperre hält den geprüften Stand bis zum Schreiben fest.
+    updated = []
     for entry in report.update:
-        # Erneut prüfen: Der Bericht kann aus einem früheren Lesestand stammen
-        if _darf_aendern(entry["task"], membership):
-            _update_from_row(entry["task"], membership, entry["data"], labels, now)
+        task = Task.objects.select_for_update().filter(pk=entry["task"].pk, organization=organization).first()
+        if task is None or not _darf_aendern(task, membership):
+            report.skip.append({"line": entry["line"], "reason": "keine Berechtigung"})
+            report.warnings.append(
+                f"Zeile {entry['line']}: Aufgabe {entry['task'].pk} ließ sich nicht ändern "
+                "(keine Bearbeitungsberechtigung mehr) – übersprungen."
+            )
+            continue
+        entry["task"] = task
+        _update_from_row(task, membership, entry["data"], labels, now)
+        updated.append(entry)
+    report.update[:] = updated
