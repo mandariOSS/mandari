@@ -135,7 +135,30 @@ class _KaputteSuche:
         raise ConnectionError("Elasticsearch nicht erreichbar")
 
 
+class _MerkendeSuche:
+    """Hält fest, mit welchem Suchtext der Endpunkt den Suchdienst aufruft."""
+
+    def __init__(self) -> None:
+        self.texte: list[str] = []
+
+    def search_all(self, **kwargs: Any) -> Any:
+        self.texte.append(kwargs["query"])
+        raise ConnectionError("Elasticsearch nicht erreichbar")
+
+
 class TestSuche:
+    def test_suchtext_des_ergebnisbereichs_ist_begrenzt(self, body: OParlBody, monkeypatch: Any) -> None:
+        """Der Endpunkt kürzt wie die Suchseite auf 200 Zeichen, bevor die Rangfolge die Anfrage vervielfacht."""
+        suche = _MerkendeSuche()
+        monkeypatch.setattr("insight_core.services.search_service.get_search_service", lambda: suche)
+        client = Client()
+        client.get(f"/insight/kommune/{body.id}/")
+
+        antwort = client.get("/insight/suche/partials/results/", {"q": "kita " * 3000, "dropdown": "1"})
+
+        assert antwort.status_code == 200
+        assert suche.texte and all(len(text) <= 200 for text in suche.texte)
+
     def test_rueckfall_ohne_elasticsearch_maskiert(self, body: OParlBody, monkeypatch: Any) -> None:
         monkeypatch.setattr("insight_core.services.search_service.get_search_service", lambda: _KaputteSuche())
         OParlPaper.objects.create(external_id="https://ris.fremd.example/oparl/paper/1", body=body, name=f"Bad {XSS}")
