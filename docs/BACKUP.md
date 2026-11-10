@@ -490,7 +490,7 @@ einschalten; es beginnt eine neue WAL-Kette mit eigener Basissicherung.
 - **Neu beginnen.** `mandari-backup pitr-neue-kette` verwirft den Slot und beginnt eine neue Kette, etwa
   wenn das lokale Archiv beschädigt ist. Die alte Kette bleibt, bis die Aufbewahrung sie nicht mehr braucht.
 - **Ausschalten.** `BACKUP_PITR=0`, `docker compose up -d`, und danach **den Slot löschen**, sonst hält die
-  Datenbank bis zur Schutzgrenze WAL zurück:
+  Datenbank bis zur Schutzgrenze WAL zurück (Name aus `BACKUP_PITR_SLOT`, Standard `mandari_pitr`):
   `select pg_drop_replication_slot('mandari_pitr');`
 
 ## Grenzen
