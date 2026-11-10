@@ -214,13 +214,21 @@ MAX_LABEL_LENGTH = 100
 
 
 def split_labels(value: Any) -> list[str]:
+    """Labels aus einer Liste oder einem Text mit Kommas: die ersten ``MAX_LABELS_PER_ROW`` nicht leeren, gekürzt."""
     if isinstance(value, list):
-        cleaned = (str(v).strip()[:MAX_LABEL_LENGTH] for v in value[:MAX_LABELS_PER_ROW])
-        return [label for label in cleaned if label]
-    if not value:
+        parts: Any = (str(v) for v in value)
+    elif value:
+        parts = str(value).split(",")
+    else:
         return []
-    parts = (part.strip()[:MAX_LABEL_LENGTH] for part in str(value).split(",", MAX_LABELS_PER_ROW)[:MAX_LABELS_PER_ROW])
-    return [part for part in parts if part]
+    labels: list[str] = []
+    for part in parts:
+        label = part.strip()[:MAX_LABEL_LENGTH]
+        if label:
+            labels.append(label)
+            if len(labels) >= MAX_LABELS_PER_ROW:
+                break
+    return labels
 
 
 def rows_from_csv(text: str) -> tuple[list[Row], list[str]]:
