@@ -145,7 +145,8 @@ Die Django-Testsuite läuft in drei parallelen Teilen (Job „Test“, Issue #93
 
 Zwei Grenzen des Filters: Die E2E-Tests laufen im Pull Request nur bei Templates, Frontend, Settings,
 Anmeldung, Editor und den Views der Seiten, die sie aufrufen. Ändert ein PR etwa einen Service, der
-den Kontext einer solchen Seite liefert, fällt ein Fehler im Browser erst in der Merge-Queue auf.
+den Kontext einer solchen Seite liefert, fällt ein Fehler im Browser erst in der Merge-Queue auf:
+Dort laufen die E2E-Tests bei jeder Änderung am Anwendungscode.
 Wer eine E2E-Seite mittelbar ändert, startet den Lauf deshalb besser von Hand (Actions → CI →
 „Run workflow“ auf dem eigenen Branch, das startet alle Jobs). Und sobald CodeQL im Workflow statt
 im Default-Setup läuft, analysiert es je PR nur die betroffenen Sprachen; Code Scanning weist dann

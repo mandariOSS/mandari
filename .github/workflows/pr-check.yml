@@ -22,7 +22,9 @@
 # in der Queue immer alle Jobs: rund 120 Job-Minuten auch für eine Textänderung,
 # und fremde Ursachen (neu gemeldete Schwachstelle in pip-audit) hielten jeden
 # Merge auf. Fehler im Pfadfilter fängt der nächtliche Volllauf auf dev
-# (nachtlauf.yml), vor einem Release der Pull Request gegen main.
+# (nachtlauf.yml), vor einem Release der Pull Request gegen main. Die E2E-Tests
+# laufen in der Queue bei jeder Änderung am Anwendungscode, nicht nur nach ihrem
+# engeren Filter (siehe Schritt "Ergebnis festlegen").
 #
 # Kein Lauf bei push auf dev (Issue #935): Auf dev landet genau das Commit, das die
 # Queue geprüft hat (gleiche Commit-Kennung); ein zweiter Lauf prüfte denselben Stand
@@ -72,6 +74,9 @@ env:
   # Python-Pakete installiert uv statt pip (Issue #1315: rund 40 s je Job gespart), und zwar in das Python
   # von setup-python: Die Jobs haben keine virtuelle Umgebung.
   UV_SYSTEM_PYTHON: '1'
+  # Wie pip: Python-Dateien beim Installieren übersetzen (uv tut das von sich aus nicht). Sonst übersetzt jeder
+  # Prozess beim ersten Import selbst; das Migrieren der Datenbankvorlage dauerte im Messlauf 25 s länger.
+  UV_COMPILE_BYTECODE: '1'
 
 # Neuer Push in einen PR bricht dessen laufende Prüfung ab; alle anderen Läufe laufen vollständig durch
 concurrency:
@@ -413,6 +418,11 @@ jobs:
               echo true
             elif [ "$1" = "migrationen" ]; then
               regel_migrationen
+            elif [ "$1" = "e2e" ] && [ "$EREIGNIS" = "merge_group" ] && [ "$(wert smoke)" = "true" ]; then
+              # Der E2E-Filter ist im Pull Request bewusst eng (Templates, Frontend, Views der aufgerufenen Seiten).
+              # Vor dem Merge laufen die Browsertests deshalb bei jeder Änderung am Anwendungscode (Bereich smoke):
+              # Ein Service, der den Kontext einer Seite liefert, fällt sonst erst im Nachtlauf auf.
+              echo true
             else
               wert "$1"
             fi
@@ -1562,14 +1572,18 @@ jobs:
           sh scripts/export_requirements.sh /tmp/requirements.lock
           uv pip install -r /tmp/requirements.lock
           uv pip install --no-deps shared/
-          uv pip install pytest pytest-django pytest-xdist factory-boy pytest-playwright
+          uv pip install pytest pytest-django pytest-xdist pytest-rerunfailures factory-boy pytest-playwright
           python -m playwright install --with-deps chromium
       - name: E2E-Tests (Kernpfade, axe-core)
         env:
           MANDARI_E2E: '1'
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
-        run: cd mandari && pytest tests_e2e -q --browser chromium -n 2 --dist loadfile --teil=${{ matrix.teil }}/2
+        # --reruns 1: Ein Browsertest, der an einer Wartezeit scheitert, läuft einmal neu; scheitert er wieder, ist der
+        # Job rot. -rR nennt jeden wiederholten Test in der Zusammenfassung, damit Wackler sichtbar bleiben.
+        run: >-
+          cd mandari && pytest tests_e2e -q --browser chromium -n 2 --dist loadfile --reruns 1 -rR
+          --teil=${{ matrix.teil }}/2
       - name: Screenshots als Artefakt (hell/dunkel, Komponentenvorschau, Kernpfade)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

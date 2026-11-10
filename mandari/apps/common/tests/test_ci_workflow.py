@@ -211,6 +211,15 @@ def test_pfadfilter_gilt_im_pull_request_und_in_der_merge_queue(tmp_path: Path, 
     assert {werte[b] for b in bereiche} == {"true"}
 
 
+def test_e2e_in_der_merge_queue_bei_jeder_aenderung_am_anwendungscode(tmp_path: Path) -> None:
+    """Der E2E-Filter ist im Pull Request eng; vor dem Merge laufen die Browsertests mit dem Bereich smoke."""
+    anwendungscode = '{"test": "true", "smoke": "true"}'
+    assert _ergebnis_schritt_ausfuehren(tmp_path / "queue", "merge_group", anwendungscode)["e2e"] == "true"
+    assert _ergebnis_schritt_ausfuehren(tmp_path / "pr", "pull_request", anwendungscode)["e2e"] == "false"
+    # Ohne Anwendungscode (Text, Ingestor, reine Tests) auch in der Queue nicht
+    assert _ergebnis_schritt_ausfuehren(tmp_path / "text", "merge_group", '{"test": "true"}')["e2e"] == "false"
+
+
 @pytest.mark.parametrize("ereignis", ["pull_request", "merge_group"])
 @pytest.mark.parametrize(
     ("filter_json", "migrationstests", "erwartet"),
