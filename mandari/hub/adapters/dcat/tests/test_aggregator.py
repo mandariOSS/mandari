@@ -193,6 +193,31 @@ def test_zeitraum_und_aenderung_aus_dem_bestand(welt: dict[str, Any]) -> None:
     assert g.value(URIRef(basis), DCTERMS.modified) == g.value(sitzungen, DCTERMS.modified)
 
 
+def test_aenderung_nur_mit_glaubhaftem_zeitstempel_der_quelle(welt: dict[str, Any]) -> None:
+    """Zukunft und Ersatzwert der Quelle (1999-12-31) sind keine letzte Änderung eines Datensatzes (Issue #939)."""
+    body = welt["body"]
+    ersatzwert = datetime(1999, 12, 31, tzinfo=UTC)
+    OParlMeeting.objects.create(
+        external_id=f"{RIS}/meeting/4", body=body, name="Zukunft", oparl_modified=datetime(2099, 1, 1, tzinfo=UTC)
+    )
+    OParlMeeting.objects.create(external_id=f"{RIS}/meeting/5", body=body, name="Ersatzwert", oparl_modified=ersatzwert)
+    # Vorlagen: Die Quelle nennt nur den Ersatzwert
+    OParlPaper.objects.filter(body=body).update(oparl_modified=ersatzwert)
+    # Gremien und Mandate: Nennt die Quelle keinen Zeitpunkt, gilt wie bisher der eigene
+    OParlPerson.objects.filter(body=body).update(oparl_modified=None, updated_at=datetime(2026, 10, 1, tzinfo=UTC))
+
+    g, _ = _katalog(welt)
+
+    basis = _basis(body)
+    sitzungen, vorlagen, gremien = (URIRef(f"{basis}#{name}") for name in ("sitzungen", "vorlagen", "gremien"))
+    assert g.value(sitzungen, DCTERMS.modified) == Literal("2026-09-02T08:00:00+00:00", datatype=XSD.dateTime)
+    assert g.value(vorlagen, DCTERMS.modified) is None, "ohne glaubhaften Wert keine Angabe"
+    assert g.value(gremien, DCTERMS.modified) == Literal("2026-10-01T00:00:00+00:00", datatype=XSD.dateTime)
+    assert g.value(URIRef(basis), DCTERMS.modified) == g.value(gremien, DCTERMS.modified)
+    for wert in g.objects(None, DCTERMS.modified):
+        assert not str(wert).startswith(("1999", "2099")), wert
+
+
 def test_feed_und_snapshot_wenn_eingeschaltet(welt: dict[str, Any]) -> None:
     with override_settings(OPARL_CHANGES_ENABLED=True):
         g, _ = _katalog(welt)

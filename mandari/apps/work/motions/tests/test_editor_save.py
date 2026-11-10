@@ -296,3 +296,221 @@ def test_ohne_inhalt_schreibt_nur_mitgeschickte_felder(
     assert motion.title == "Titel aus dem anderen Fenster"
     assert motion.summary == "Neu anderswo"
     assert cast(Any, motion).get_content_decrypted() == "<p>Alt</p>"
+
+
+# --- Reihenfolge der POSTs für Titel, Dokumenttyp und Briefpapier (#1199) ---
+
+
+def _meta(client: Any, org: Any, motion: Motion, **fields: str) -> Any:
+    """Speicher-POST ohne Text, wie ihn der Editor mit Live-Zusammenarbeit schickt."""
+    return client.post(
+        f"/work/{org.slug}/documents/{motion.id}/", {"action": "save", **fields}, HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+    )
+
+
+@pytest.mark.django_db
+def test_editor_bekommt_stand_der_kopfdaten(org: Any, author: Any, motion: Motion, client_for: Any) -> None:
+    Motion.objects.filter(pk=motion.pk).update(meta_version=4)
+
+    response = client_for(author.user).get(f"/work/{org.slug}/documents/{motion.id}/")
+
+    assert response.context["editor_config"]["metaVersion"] == 4
+
+
+@pytest.mark.django_db
+def test_ueberholter_meta_post_gewinnt_nicht(org: Any, author: Any, motion: Motion, client_for: Any) -> None:
+    """
+    Der Browser bricht den POST mit „Zwischentitel“ nach dem Zeitlimit ab und wiederholt mit dem neuen Titel; beide
+    gehen vom selben Stand aus. Verarbeitet der Server den älteren erst danach, schreibt er nichts mehr.
+    """
+    client = client_for(author.user)
+
+    wiederholung = _meta(client, org, motion, title="Neuer Titel", meta_version="0")
+    verspaetet = _meta(client, org, motion, title="Zwischentitel", meta_version="0")
+
+    assert wiederholung.status_code == 200
+    assert wiederholung.json()["meta_version"] == 1
+    assert verspaetet.status_code == 409
+    assert verspaetet.json()["error"] == "meta_ueberholt"
+    assert verspaetet.json()["meta_version"] == 1
+    motion.refresh_from_db()
+    assert motion.title == "Neuer Titel"
+    assert motion.meta_version == 1
+
+
+@pytest.mark.django_db
+def test_ueberholter_meta_post_schreibt_auch_typ_und_briefpapier_nicht(
+    org: Any, author: Any, motion: Motion, client_for: Any
+) -> None:
+    from apps.work.motions.models import MotionType, OrganizationLetterhead
+
+    typ = MotionType.objects.create(organization=org, name="Anfrage", slug="anfrage")
+    briefkopf = OrganizationLetterhead.objects.create(organization=org, name="Fraktion", kind="generated")
+    client = client_for(author.user)
+
+    assert _meta(client, org, motion, document_type_id="", letterhead_id="", meta_version="0").status_code == 200
+    verspaetet = _meta(
+        client, org, motion, document_type_id=str(typ.id), letterhead_id=str(briefkopf.id), meta_version="0"
+    )
+
+    assert verspaetet.status_code == 409
+    motion.refresh_from_db()
+    assert motion.document_type_id is None
+    assert motion.letterhead_id is None
+
+
+@pytest.mark.django_db
+def test_abgelehnter_post_gelingt_mit_dem_stand_des_servers(
+    org: Any, author: Any, motion: Motion, client_for: Any
+) -> None:
+    """Kam der abgebrochene POST doch an, bekommt die Wiederholung den Stand des Servers und gelingt damit."""
+    client = client_for(author.user)
+    assert _meta(client, org, motion, title="Zwischentitel", meta_version="0").status_code == 200
+
+    abgelehnt = _meta(client, org, motion, title="Antrag Radweg", meta_version="0")
+    wiederholt = _meta(client, org, motion, title="Antrag Radweg", meta_version=str(abgelehnt.json()["meta_version"]))
+
+    assert abgelehnt.status_code == 409
+    assert wiederholt.status_code == 200
+    assert wiederholt.json()["meta_version"] == 2
+    motion.refresh_from_db()
+    assert motion.title == "Antrag Radweg"
+
+
+@pytest.mark.django_db
+def test_ueberholter_post_mit_text_schreibt_nichts(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any
+) -> None:
+    """Ohne Verbindung gehen die Felder mit dem Text: Der überholte Request schreibt weder Titel noch Text."""
+    client = client_for(author.user)
+    basis = content_fingerprint("<p>Alt</p>")
+    erster = save(
+        client, org, motion, content="<p>Neu</p>", title="Neuer Titel", base_content_hash=basis, meta_version="0"
+    )
+    assert erster.status_code == 200
+    revisionen = motion.revisions.count()
+
+    # Gleicher Text wie gespeichert (kein Inhaltskonflikt), aber der ältere Titel
+    verspaetet = save(
+        client, org, motion, content="<p>Neu</p>", title="Zwischentitel", base_content_hash=basis, meta_version="0"
+    )
+    # Anderer Text, bewusst überschrieben: Auch dann gilt die Reihenfolge der Felder
+    erzwungen = save(client, org, motion, content="<p>Älter</p>", title="Zwischentitel", force="1", meta_version="0")
+
+    assert verspaetet.status_code == 409
+    assert verspaetet.json()["error"] == "meta_ueberholt"
+    assert erzwungen.status_code == 409
+    motion.refresh_from_db()
+    assert motion.title == "Neuer Titel"
+    assert cast(Any, motion).get_content_decrypted() == "<p>Neu</p>"
+    assert motion.revisions.count() == revisionen
+    assert motion.meta_version == 1
+
+
+@pytest.mark.django_db
+def test_post_mit_text_und_feldern_liefert_den_neuen_stand(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any
+) -> None:
+    response = save(client_for(author.user), org, motion, content="<p>Neu</p>", title="Neuer Titel", meta_version="0")
+
+    assert response.status_code == 200
+    assert response.json()["meta_version"] == 1
+    motion.refresh_from_db()
+    assert motion.meta_version == 1
+    assert motion.title == "Neuer Titel"
+
+
+@pytest.mark.django_db
+def test_post_ohne_felder_zaehlt_nicht(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any
+) -> None:
+    """Nur Text: Der Stand der Kopfdaten bleibt, auch eine veraltete Angabe stört nicht."""
+    response = client_for(author.user).post(
+        f"/work/{org.slug}/documents/{motion.id}/",
+        {"action": "save", "content": "<p>Neu</p>", "meta_version": "7"},
+        HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+    )
+
+    assert response.status_code == 200
+    assert "meta_version" not in response.json()
+    motion.refresh_from_db()
+    assert motion.meta_version == 0
+    assert cast(Any, motion).get_content_decrypted() == "<p>Neu</p>"
+
+
+@pytest.mark.django_db
+def test_post_mit_text_setzt_den_zaehler_nicht_zurueck(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Ein POST nur mit Text speichert das ganze Dokument. Hat ein anderes Fenster den Zähler seit dem Laden im View
+    weitergezählt, bleibt dessen Stand; sonst passte ein überholter Request wieder.
+    """
+    from apps.work.motions.views.editor import DocumentEditorView
+
+    echt: Any = DocumentEditorView._get_access_level
+
+    def anderes_fenster_zaehlt(self: Any, geladen: Motion) -> str:
+        Motion.objects.filter(pk=geladen.pk).update(meta_version=6)
+        return str(echt(self, geladen))
+
+    monkeypatch.setattr(DocumentEditorView, "_get_access_level", anderes_fenster_zaehlt)
+
+    response = client_for(author.user).post(
+        f"/work/{org.slug}/documents/{motion.id}/",
+        {"action": "save", "content": "<p>Neu</p>"},
+        HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+    )
+
+    assert response.status_code == 200
+    motion.refresh_from_db()
+    assert motion.meta_version == 6
+    assert cast(Any, motion).get_content_decrypted() == "<p>Neu</p>"
+
+
+@pytest.mark.django_db
+def test_ohne_angabe_wird_gezaehlt_aber_nicht_geprueft(org: Any, author: Any, motion: Motion, client_for: Any) -> None:
+    """Eine ältere Fassung des Editors im Browser schickt keinen Stand: Sie speichert weiter, andere bemerken es."""
+    client = client_for(author.user)
+    Motion.objects.filter(pk=motion.pk).update(meta_version=3)
+
+    ohne_angabe = _meta(client, org, motion, title="Ohne Angabe")
+    danach = _meta(client, org, motion, title="Von Stand 3", meta_version="3")
+
+    assert ohne_angabe.status_code == 200
+    assert ohne_angabe.json()["meta_version"] == 4
+    assert danach.status_code == 409
+    motion.refresh_from_db()
+    assert motion.title == "Ohne Angabe"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("angabe", ["abc", "-1", "1.5", "99999999999999999999"])
+def test_unlesbare_angabe_passt_zu_keinem_stand(
+    org: Any, author: Any, motion: Motion, client_for: Any, angabe: str
+) -> None:
+    response = _meta(client_for(author.user), org, motion, title="Neuer Titel", meta_version=angabe)
+
+    assert response.status_code == 409
+    assert response.json()["meta_version"] == 0
+    motion.refresh_from_db()
+    assert motion.title == "Antrag Radweg"
+    assert motion.meta_version == 0
+
+
+@pytest.mark.django_db
+def test_ueberholtes_formular_ohne_javascript_bekommt_hinweis(
+    org: Any, author: Any, motion: Motion, client_for: Any
+) -> None:
+    Motion.objects.filter(pk=motion.pk).update(meta_version=2)
+
+    response = client_for(author.user).post(
+        f"/work/{org.slug}/documents/{motion.id}/",
+        {"action": "save", "title": "Zwischentitel", "meta_version": "1"},
+        follow=True,
+    )
+
+    assert response.status_code == 200
+    assert "inzwischen an anderer Stelle gespeichert" in [str(m) for m in response.context["messages"]][0]
+    motion.refresh_from_db()
+    assert motion.title == "Antrag Radweg"

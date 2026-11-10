@@ -388,6 +388,8 @@ class Genehmigung:
     am: Any = None
     von: str = ""
     direkt: bool = False
+    #: Die Sitzungsart verkettet nicht (Issue #1297): Keine Sitzung genehmigt das Protokoll, nur der direkte Weg
+    ohne_kette: bool = False
 
     @property
     def wo(self) -> str:
@@ -423,7 +425,9 @@ def genehmigung(meeting: FactionMeeting) -> Genehmigung:
         .first()
     )
     if top is None:
-        return Genehmigung(genehmigt=False)
+        from .kette import verkettet
+
+        return Genehmigung(genehmigt=False, ohne_kette=not verkettet(meeting))
     return Genehmigung(genehmigt=False, sitzung=top.meeting, top_nr=top.number or "")
 
 
@@ -547,9 +551,14 @@ def info(meeting: FactionMeeting, r: Rechte, g: Genehmigung, v: Versand, *, alt:
         )
     if r.schritte:
         fett = "Anwesenheit bestätigt." if meeting.attendance_confirmed_at else "Protokoll im Entwurf."
-        return Info(
-            fett, f"Die Fraktion genehmigt das Protokoll in {g.wo}.{danach}", "genehmigen" if r.genehmigen else ""
+        satz = (
+            "Der Vorsitz genehmigt das Protokoll direkt, nicht in einer Sitzung."
+            if g.ohne_kette
+            else f"Die Fraktion genehmigt das Protokoll in {g.wo}."
         )
+        return Info(fett, f"{satz}{danach}", "genehmigen" if r.genehmigen else "")
+    if g.ohne_kette:
+        return Info("Protokoll im Entwurf.", "Der Vorsitz genehmigt es direkt.")
     return Info("Protokoll im Entwurf.", f"Die Fraktion genehmigt es in {g.wo}.")
 
 
@@ -582,9 +591,11 @@ def schritte(
             text2 = (
                 f"Work hat in {g.wo} „Tagesordnung und Protokoll beschließen“ angelegt; dort stimmt die Fraktion ab."
             )
+        elif g.ohne_kette:
+            text2 = "Sitzungen dieser Art sind nicht verkettet: Der Vorsitz genehmigt das Protokoll direkt."
         else:
             text2 = "Die Fraktion genehmigt das Protokoll in der nächsten Sitzung unter TOP 1."
-        if genehmigen:
+        if genehmigen and not g.ohne_kette:
             text2 += " Als Vorsitz können Sie es auch direkt genehmigen."
     return [
         {

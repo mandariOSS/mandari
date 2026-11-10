@@ -1027,9 +1027,10 @@ def standard_agenda_context(
     (Issue #1240): Zeilen mit der Nummer, die der Punkt in einer neuen Sitzung erhält. Nicht-öffentliche Punkte nur
     für Vereidigte (NÖ strikt, Issue #64), sonst nur ihre Anzahl; neue nur, wenn die Art einen nichtöffentlichen Teil
     hat. Der Titel des Genehmigungs-TOPs erscheint ohne rohe Platzhalter, ohne Art mit den Einstellungen der
-    Organisation (die Seite, auf der sie stehen).
+    Organisation (die Seite, auf der sie stehen); ohne Kette (Issue #1297) der Titel ohne vorherige Sitzung.
     """
     from apps.work.faction.agenda import approval_title_preview, format_number, standard_items
+    from apps.work.faction.kette import verkettet
     from apps.work.faction.models import FactionMeetingType
     from apps.work.faction.regeln import einstellungen, nichtoeffentlich_erlaubt
 
@@ -1043,7 +1044,8 @@ def standard_agenda_context(
         rows += [(format_number("internal", position), item) for position, item in enumerate(internal, start=1)]
     return {
         "standard_agenda_approval_title": approval_title_preview(
-            einstellungen(meeting_type if meeting_type is not None else organization), has_previous=True
+            einstellungen(meeting_type if meeting_type is not None else organization),
+            has_previous=verkettet(meeting_type if meeting_type is not None else organization),
         ),
         "standard_agenda_rows": rows,
         "standard_agenda_empty": not items,
