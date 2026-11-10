@@ -179,6 +179,13 @@ backup run
 [ "$(backup restic 1 snapshots --json | jq length)" = 1 ] || fail "ohne PITR entsteht genau ein Stand"
 [ -z "$(sudo ls -A "$T/pitr")" ] || fail "ohne PITR bleibt das Verzeichnis für das WAL leer"
 [ -z "$(db_sql "select slot_name from pg_replication_slots" postgres)" ] || fail "ohne PITR gibt es keinen Slot"
+# Besetzte Sperre: Ein geplanter Lauf bricht wie bisher sofort ab
+dc exec -T -d backup flock /run/mandari-backup.lock sleep 6
+sleep 1
+rc=0
+backup check || rc=$?
+[ "$rc" = 75 ] || fail "ohne PITR endet ein Lauf bei besetzter Sperre mit 75, nicht $rc"
+sleep 6
 
 # -----------------------------------------------------------------------------
 step "Datenbank einrichten: Rolle, pg_hba-Zeile, Schutzgrenze – ohne Neustart, wiederholbar"
@@ -223,6 +230,24 @@ backup pitr-wal
 watchdog || fail "der Watchdog meldet einen gesunden Stand als Problem"
 
 # -----------------------------------------------------------------------------
+step "Sperre: Die WAL-Übertragung weicht aus, ein geplanter Lauf wartet, statt auszufallen"
+dc exec -T -d backup flock /run/mandari-backup.lock sleep 10
+sleep 1
+out=$(backup pitr-wal)
+echo "$out"
+grep -q "folgt beim nächsten Takt" <<< "$out" || fail "die WAL-Übertragung muss einer besetzten Sperre ausweichen"
+SECONDS=0
+backup check
+[ "$SECONDS" -ge 5 ] || fail "die Prüfung hat nicht auf die Sperre gewartet"
+grep -q "geprüft" "$T/status/check_ok" || fail "die Prüfung nach dem Warten fehlt in der Statusdatei"
+# Die Zeile des Zeitplans, wie crond sie ausführt
+zeile=$(dc exec -T backup sh -c "grep pitr-wal /etc/crontabs/root | cut -d' ' -f6-")
+before=$(docker logs "$PROJECT" 2>&1 | grep -c "WAL übertragen" || true)
+dc exec -T backup sh -c "$zeile"
+[ "$(docker logs "$PROJECT" 2>&1 | grep -c "WAL übertragen")" -gt "$before" ] ||
+    fail "der Zeitplan der WAL-Übertragung schreibt nicht ins Protokoll des Containers"
+
+# -----------------------------------------------------------------------------
 step "mandari-backup pitr: Ortszeit des Containers, WAL aus dem lokalen Archiv"
 markierungen
 ortszeit=$(TZ=Europe/Berlin date -d "@$ZIEL" '+%Y-%m-%d %H:%M:%S')
@@ -257,7 +282,10 @@ echo "$plan"
     fail "in acht Tagen bleibt die jüngste als Anker, die ältere fällt weg"
 
 markierungen
-dc exec -T -e BACKUP_PITR_KEEP_DAYS=0 backup mandari-backup pitr-basis
+# Diese Basissicherung zugleich unkomprimiert (BACKUP_PITR_COMPRESS=0): Auf ihr bauen die folgenden Schritte auf
+out=$(dc exec -T -e BACKUP_PITR_KEEP_DAYS=0 -e BACKUP_PITR_COMPRESS=0 backup mandari-backup pitr-basis)
+echo "$out"
+grep -q "/base\.tar$" <<< "$out" || fail "mit BACKUP_PITR_COMPRESS=0 wird eine unkomprimierte Basissicherung erwartet"
 plan=$(backup pitr-plan 1)
 echo "$plan"
 left=$(base_count 1)

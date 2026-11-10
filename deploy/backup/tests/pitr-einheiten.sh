@@ -149,6 +149,98 @@ pitr_retention >/dev/null
 eq "ohne Basissicherung: kein Fehler" "$?" 0
 eq "ohne Basissicherung: lokales WAL unberührt" "$(wal_files)" "$before"
 
+echo "--- WAL-Ketten: wann eine neue beginnt (Datenbank ersetzt)"
+IDENT="7000000000000000001 16777216"
+SLOT=""
+DB_UP=1
+pitr_psql() {
+    [ "$DB_UP" = 1 ] || return 2
+    case "$*" in
+        *pg_control_system*) echo "$IDENT" ;;
+        *pg_replication_slots*) if [ -n "$SLOT" ]; then echo "$SLOT"; fi ;;
+    esac
+}
+repl() { echo "$*" >> "$TMP/repl"; }
+count() { grep -c -- "$1" "$2"; }
+has() {
+    case "$2" in
+        *"$3"*) echo "ok     $1" ;;
+        *)
+            echo "FEHLER $1: [$2] enthält nicht [$3]"
+            failed=1
+            ;;
+    esac
+}
+segment() { : > "$PITR_WAL_DIR/$(pitr_chain)/000000010000000000000001.gz"; }
+# Erwartet, dass der nächste Start des Empfängers eine neue Kette beginnt; sie bekommt ein Segment
+new_chain() {
+    local before
+    before=$(pitr_chain)
+    : > "$TMP/repl"
+    pitr_prepare_chain >/dev/null
+    eq "$1: neue Kette" "$([ "$(pitr_chain)" != "$before" ] && [ -d "$PITR_WAL_DIR/$before" ] && echo ja)" ja
+    has "$1: Unterbrechung gemeldet" "$(cat "$STATUS_DIR/pitr_kette_unterbrochen")" "WAL-Kette $before endet"
+    segment
+}
+
+rm -rf "$PITR_WAL_DIR"
+mkdir -p "$PITR_WAL_DIR"
+: > "$TMP/repl"
+pitr_prepare_chain >/dev/null
+eq "erste Kette: angelegt" "$?" 0
+first=$(pitr_chain)
+eq "erste Kette: Kennung und Segmentgröße der Datenbank abgelegt" "$(cat "$PITR_WAL_DIR/$first/.kennung")" "$IDENT"
+eq "erste Kette: keine Unterbrechung gemeldet" "$([ -e "$STATUS_DIR/pitr_kette_unterbrochen" ] || echo nein)" nein
+eq "erste Kette: Slot angelegt, nichts verworfen" "$(count create-slot "$TMP/repl") $(count drop-slot "$TMP/repl")" "1 0"
+SLOT=""
+pitr_prepare_chain >/dev/null
+eq "Slot fehlt, Kette noch leer: dieselbe Kette" "$(pitr_chain)" "$first"
+segment
+SLOT="f reserved 0"
+pitr_prepare_chain >/dev/null
+eq "Neustart des Empfängers: dieselbe Kette" "$(pitr_chain)" "$first"
+SLOT=""
+new_chain "Slot fehlt, Kette hat WAL"
+eq "Slot fehlt: nichts zu verwerfen" "$(count drop-slot "$TMP/repl")" 0
+SLOT="f lost 0"
+new_chain "Slot hat WAL verloren"
+eq "Slot hat WAL verloren: Slot verworfen und neu angelegt" "$(count drop-slot "$TMP/repl") $(count create-slot "$TMP/repl")" "1 1"
+SLOT="f reserved 0"
+IDENT="7000000000000000002 16777216"
+new_chain "anderer Datenbank-Cluster"
+: > "$PITR_WAL_DIR/.neue-kette"
+new_chain "pitr-neue-kette"
+eq "pitr-neue-kette: Anforderung erledigt" "$([ -e "$PITR_WAL_DIR/.neue-kette" ] || echo ja)" ja
+last=$(pitr_chain)
+DB_UP=0
+pitr_prepare_chain >/dev/null
+eq "Datenbank nicht erreichbar: Fehler" "$?" 1
+eq "Datenbank nicht erreichbar: Kette unverändert" "$(pitr_chain)" "$last"
+eq "keine Kette ging verloren" "$(find "$PITR_WAL_DIR" -name '*.gz' | wc -l)" 5
+
+echo "--- Zustand von Empfänger und Slot (Statusdateien für den Watchdog)"
+# Keine Wartezeit zwischen den Versuchen der Prüfung
+# shellcheck disable=SC2034
+PITR_RECHECK_SECONDS=0
+DB_UP=1
+receiver() {
+    SLOT="$1"
+    pitr_check_receiver >/dev/null
+    echo "$? $(cat "$STATUS_DIR/pitr_empfang_failed" 2>/dev/null)"
+}
+has "Empfänger hängt am Slot" "$(receiver "t reserved 1048576")$(cat "$STATUS_DIR/pitr_empfang_ok")" "Rückstand 1 MB"
+eq "gesund: kein Fehler, keine Fehlerdatei" "$(receiver "t reserved 0")" "0 "
+eq "kein Empfänger am Slot: Fehler" "$(receiver "f reserved 314572800" | cut -c1)" 1
+has "kein Empfänger am Slot: Meldung" "$(receiver "f reserved 314572800")" "WAL-Empfang steht: Am Slot mandari_pitr hängt kein Empfänger, 300 MB"
+has "Slot staut WAL" "$(receiver "t extended 600000000")" "staut 572 MB WAL (Warnschwelle 512 MB)"
+eq "unter der Warnschwelle" "$(receiver "t reserved 500000000")" "0 "
+has "Slot verliert WAL" "$(receiver "t unreserved 0")" "verliert WAL (wal_status unreserved)"
+has "Slot fehlt" "$(receiver "")" "Slot mandari_pitr fehlt"
+DB_UP=0
+has "Datenbank nicht erreichbar" "$(receiver "t reserved 0")" "nicht erreichbar, der WAL-Empfang steht"
+DB_UP=1
+eq "wieder gesund: Fehlerdatei entfernt" "$(receiver "t reserved 0")" "0 "
+
 echo "--- Lücken im WAL"
 gap="$TMP/luecke"
 mkdir -p "$gap"

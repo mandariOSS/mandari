@@ -346,10 +346,11 @@ Faustformel mit `D` = Größe der Datenbank auf der Platte, `W` = WAL je Tag, `N
 |---|---|
 | `pitr/` auf dem Server | `(N + 2) × 0,3 × W` für das WAL, dazu während der Übertragung eine Basissicherung: `0,4 × D` |
 | je Repository | `(N + 2) × 0,4 × D` für die Basissicherungen und `(N + 4) × 0,3 × W` für das WAL |
-| `work/` während einer Wiederherstellung | `D`, dazu das WAL seit der Basissicherung |
+| `work/` während einer Wiederherstellung | `D`, dazu das komprimierte WAL von der gewählten Basissicherung bis heute (aus dem Repository: das der ganzen Kette) |
 | Datenträger der Datenbank | bis `BACKUP_PITR_SLOT_MAX_WAL`, solange der Empfänger steht |
 
-Die Faktoren 0,4 und 0,3 sind Erfahrungswerte für gzip; `W` zeigt `du -sh pitr/wal` nach einigen Tagen.
+Die Faktoren 0,4 und 0,3 sind grobe Schätzwerte für gzip und im Betrieb noch nicht nachgemessen; nach
+einigen Tagen zeigen `du -sh pitr/wal` und `mandari-backup snapshots` den wirklichen Bedarf.
 Beispiel: 20 GB Datenbank mit 2 GB WAL je Tag brauchen rund 13 GB unter `pitr/` und rund 80 GB je
 Repository.
 
@@ -384,7 +385,8 @@ Statusdateien. `scripts/backup-watchdog.sh` meldet mit `BACKUP_PITR=1` zusätzli
 - **Basissicherung veraltet:** die jüngste ist älter als `BACKUP_PITR_BASE_MAX_AGE_HOURS` (Standard 26
   Stunden) oder die letzte endete mit einem Fehler.
 - **WAL-Übertragung überfällig:** seit `BACKUP_PITR_WAL_MAX_AGE_MINUTES` (Standard 90 Minuten) keine
-  erfolgreiche Übertragung, oder die letzte schlug fehl.
+  erfolgreiche Übertragung, oder die letzte schlug fehl. Dauert die tägliche Sicherung länger, den Wert
+  anheben: Während sie läuft, ruht die Übertragung.
 - **WAL-Kette unterbrochen:** einen Tag lang, mit Zeit und Grund.
 
 Der monatliche Wiederherstellungstest enthält die **Zeitpunkt-Probe**: Er schreibt zwei Markierungen in

@@ -396,6 +396,11 @@ pitr_prepare_chain() {
             repl pg_receivewal --drop-slot --slot="$PITR_SLOT" --no-password || return 1
         fi
         name="k$(date -u +%Y%m%dT%H%M%SZ)"
+        # Nie ein vorhandenes Verzeichnis weiterverwenden: Darin läge WAL vor dem Bruch
+        while [ -e "$PITR_WAL_DIR/$name" ]; do
+            sleep 1
+            name="k$(date -u +%Y%m%dT%H%M%SZ)"
+        done
         mkdir -p "$PITR_WAL_DIR/$name" && chmod 700 "$PITR_WAL_DIR/$name" || return 1
         echo "$ident" > "$PITR_WAL_DIR/$name/.kennung"
         echo "$name" > "$PITR_WAL_DIR/aktuell"
@@ -539,7 +544,7 @@ pitr_ship_wal() {
 }
 
 # Läuft im kurzen Takt. Ein geplanter Lauf hat Vorrang: Hält er die Sperre, entfällt
-# diese Übertragung; er überträgt das WAL am Ende selbst (mit der Basissicherung).
+# diese Übertragung. Der tägliche Lauf überträgt das WAL nach der Basissicherung selbst.
 cmd_pitr_wal() {
     pitr_require_enabled
     local rc=0
@@ -991,7 +996,8 @@ pitr_restore_build() {
 
     rm -rf "$PITR_RESTORE_DIR"
     mkdir -p "$PITR_RESTORE_DIR/pgdata" "$PITR_RESTORE_DIR/run" "$PITR_RESTORE_DIR/wal" || return 1
-    chmod 700 "$PITR_RESTORE_DIR/pgdata"
+    # Der Stand enthält alle Daten: nur für root und den Benutzer der Instanz
+    chmod 700 "$PITR_RESTORE_DIR" "$PITR_RESTORE_DIR/pgdata"
     if ! repo "$n" --retry-lock 10m dump "$id" "$path/base.$ext" | "${untar[@]}" -C "$PITR_RESTORE_DIR/pgdata"; then
         PITR_ERROR="Die Basissicherung ließ sich nicht aus dem Repository holen oder entpacken"
         return 1
@@ -1200,11 +1206,11 @@ cmd_pitr() {
     fi
 
     case "$PITR_REACHED" in
-        ja) log "  Zeitpunkt erreicht. Letzte eingespielte Transaktion: ${PITR_LAST_XACT:-unbekannt}" ;;
-        ende) log "  Ende des WAL-Archivs erreicht. Letzte eingespielte Transaktion: ${PITR_LAST_XACT:-unbekannt}" ;;
+        ja) log "  Zeitpunkt erreicht. Letzte eingespielte Transaktion: ${PITR_LAST_XACT:-keine seit der Basissicherung}" ;;
+        ende) log "  Ende des WAL-Archivs erreicht. Letzte eingespielte Transaktion: ${PITR_LAST_XACT:-keine seit der Basissicherung}" ;;
         *)
             log "  ACHTUNG: Das WAL-Archiv endet vor dem Zeitpunkt. Letzte eingespielte Transaktion:" \
-                "${PITR_LAST_XACT:-unbekannt}. Was danach geschah, fehlt in diesem Stand."
+                "${PITR_LAST_XACT:-keine seit der Basissicherung}. Was danach geschah, fehlt in diesem Stand."
             ;;
     esac
     pitr_report_counts "$db"
