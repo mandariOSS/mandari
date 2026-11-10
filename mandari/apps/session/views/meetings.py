@@ -29,6 +29,7 @@ from ..models import (
     SessionMeeting,
     SessionOrganization,
     SessionPerson,
+    SessionProtocol,
 )
 from ..permissions import SessionViewMixin
 from ..rahmen import neues_design
@@ -446,6 +447,12 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         if not self.has_permission("view_non_public_meetings"):
             files = files.filter(is_public=True)
         context["files"] = list(files)
+        # Die öffentliche Fassung der Niederschrift ändert nur der Ablauf der Niederschrift (file_service)
+        protocol_file_id = (
+            SessionProtocol.objects.filter(meeting=meeting).values_list("public_file_id", flat=True).first()
+        )
+        for session_file in context["files"]:
+            session_file.from_protocol = session_file.pk == protocol_file_id
         context["file_can_edit"] = self.has_permission("edit_meetings")
 
         # Sitzungsformat (Issue #138): nur für hybride und digitale Sitzungen oder mit Übertragung

@@ -45,7 +45,7 @@ Erwarteter Kontext:
                title="Herunterladen">
                 <i data-lucide="download" class="w-4 h-4"></i>
             </a>
-            {% if file_can_edit %}
+            {% if file_can_edit and not file.from_protocol %}
             <!-- Ö/NÖ umschalten -->
             <form method="post" action="{% url 'session:file_update' tenant_slug=tenant_slug file_id=file.id %}" class="inline">
                 {% csrf_token %}

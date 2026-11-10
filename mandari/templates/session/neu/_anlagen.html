@@ -17,10 +17,11 @@ file_content_locked, file_content_locked_message, tenant_slug).
                     <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
                         <span class="whitespace-nowrap">{{ file.size_human }}</span>
                         {% if file.version > 1 %}<a href="{% url 'session:file_versions' tenant_slug=tenant_slug file_id=file.id %}" class="whitespace-nowrap hover:underline underline-offset-4" title="Frühere Fassungen dieser Anlage">Version {{ file.version }} (Verlauf)</a>{% endif %}
+                        {% if file.from_protocol %}<span data-testid="anlage-aus-niederschrift">Öffentliche Fassung der Niederschrift</span>{% endif %}
                         {% if file.is_public %}<span>Öffentlich</span>{% else %}<span class="inline-flex items-center gap-1 text-gray-800 dark:text-gray-200"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
                     </p>
                 </div>
-                {% if file_can_edit %}
+                {% if file_can_edit and not file.from_protocol %}
                 <div class="flex shrink-0 items-center text-gray-600 dark:text-gray-400">
                     <form method="post" action="{% url 'session:file_update' tenant_slug=tenant_slug file_id=file.id %}">
                         {% csrf_token %}
@@ -38,7 +39,7 @@ file_content_locked, file_content_locked_message, tenant_slug).
                 </div>
                 {% endif %}
             </div>
-            {% if file_can_edit and not file_content_locked %}
+            {% if file_can_edit and not file_content_locked and not file.from_protocol %}
             <form id="anlage-ersetzen-{{ file.id }}" method="post" action="{% url 'session:file_replace' tenant_slug=tenant_slug file_id=file.id %}" enctype="multipart/form-data"
                   x-show="ersetzen" x-cloak class="mt-2 flex flex-wrap items-center gap-2">
                 {% csrf_token %}
