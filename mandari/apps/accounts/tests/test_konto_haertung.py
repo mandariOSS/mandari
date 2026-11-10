@@ -259,8 +259,8 @@ class TestSitzungBeenden:
         from apps.common.tests.factories import MembershipFactory, RoleFactory
 
         user, andere, wechselnde = self._zwei_sitzungen()
-        rolle = RoleFactory(organization=org, permissions=["dashboard.view"])
-        MembershipFactory(user=user, organization=org, roles=[rolle])
+        rolle = RoleFactory(organization=org, permissions=["dashboard.view"])  # type: ignore[no-untyped-call]
+        MembershipFactory(user=user, organization=org, roles=[rolle])  # type: ignore[no-untyped-call]
         alter_schluessel = str(wechselnde.session.session_key)
 
         self._passwort_wechseln(wechselnde, org)
