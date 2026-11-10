@@ -67,11 +67,16 @@ class SmtpConfig:
         )
 
 
-def platform_config() -> SmtpConfig:
-    """Zugang der Plattform: Systemeinstellungen, sonst Umgebung."""
+def platform_config(site: Any = None) -> SmtpConfig:
+    """Zugang der Plattform: Systemeinstellungen, sonst Umgebung.
+
+    ``site`` übergibt, wer die Systemeinstellungen schon gelesen hat und nichts anlegen darf
+    (``manage.py doctor``); sonst kommen sie aus ``SiteSettings.get_settings()``, das die Zeile bei Bedarf anlegt.
+    """
     from apps.common.models import SiteSettings
 
-    site = SiteSettings.get_settings()
+    if site is None:
+        site = SiteSettings.get_settings()
     fallback: dict[str, Any] = dict(getattr(settings, "SMTP_FALLBACK", {}) or {})
     from_address = site.default_from_email or str(getattr(settings, "DEFAULT_FROM_EMAIL", ""))
     if site.email_host:
