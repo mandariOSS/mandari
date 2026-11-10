@@ -15,9 +15,11 @@ reviews:
     drafts: false
     base_branches:
       - "^dev$"
-    # Release-PRs heißen „Release JJJJ-MM-TT …“ und gehen gegen den Standardzweig, den `base_branches` nicht ausnimmt
+    # Release-PRs heißen „Release JJJJ-MM-TT …“ und gehen gegen den Standardzweig, den `base_branches` nicht ausnimmt.
+    # Das Stichwort nennt die Jahrhundertziffern mit: „Release“ allein träfe jeden Titel mit dem Wort, etwa
+    # `chore(release): …` (so geschehen bei #1308).
     ignore_title_keywords:
-      - "Release "
+      - "Release 20"
     ignore_usernames:
       - "dependabot[bot]"
   # Docstrings prüft das Projekt nicht als Quote; die Meldung wäre reiner Stilhinweis
