@@ -73,6 +73,35 @@ def test_editor_markup_bleibt_unveraendert() -> None:
 
 
 @pytest.mark.parametrize(
+    "farbe",
+    ["#1a2b3c", "rgb(12, 34, 56)", "rgba(12, 34, 56, 0.5)", "hsl(120deg, 50%, 40%)", "hsla(120, 50%, 40%, 0.3)", "red"],
+)
+def test_farbangaben_des_editors_bleiben(farbe: str) -> None:
+    html = f'<p style="color: {farbe}">x</p><mark data-color="{farbe}">y</mark>'
+
+    assert sanitize_editor_html(html) == html
+
+
+@pytest.mark.parametrize("anfang", ["rgb(", "rgba(", "hsl(", "hsla("])
+def test_ueberlange_farbangabe_faellt_weg_ohne_rechenzeit(anfang: str) -> None:
+    """Viel Leerraum in einer Farbangabe darf die Bereinigung nicht aufhalten (läuft im Webprozess)."""
+    import time
+
+    wert = anfang + " " * 200_000 + "x"
+    start = time.perf_counter()
+    ergebnis = sanitize_editor_html(
+        f'<p style="color: {wert}; text-align: center">x</p><mark data-color="{wert}">y</mark>'
+    )
+    dauer = time.perf_counter() - start
+
+    assert ergebnis == '<p style="text-align: center">x</p><mark>y</mark>'
+    assert dauer < 1.0
+
+    # Auch knapp unter der Längengrenze bleibt der Abgleich linear
+    assert sanitize_editor_html(f'<p style="color: {anfang}{" " * 55}x">x</p>') == "<p>x</p>"
+
+
+@pytest.mark.parametrize(
     "eingabe",
     [
         '<img src=x onerror="alert(1)">',
