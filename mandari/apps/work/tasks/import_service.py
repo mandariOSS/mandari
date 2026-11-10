@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -213,12 +214,22 @@ MAX_LABELS_PER_ROW = 50
 MAX_LABEL_LENGTH = 100
 
 
+#: Ein Eintrag eines kommagetrennten Texts: beginnt am ersten Zeichen, das weder Komma noch Leerraum ist. Leere
+#: Felder überspringt die Suche, ohne sie einzeln anzulegen
+_LABEL_IN_TEXT = re.compile(r"[^,\s][^,]*")
+
+
 def split_labels(value: Any) -> list[str]:
-    """Labels aus einer Liste oder einem Text mit Kommas: die ersten ``MAX_LABELS_PER_ROW`` nicht leeren, gekürzt."""
+    """
+    Labels aus einer Liste oder einem Text mit Kommas: die ersten ``MAX_LABELS_PER_ROW`` nicht leeren, gekürzt.
+
+    Der Text wird schrittweise gelesen und nach dem letzten gebrauchten Eintrag nicht weiter zerlegt; ein Feld aus
+    Millionen kurzer Einträge legt so keine Liste aller Teile an.
+    """
     if isinstance(value, list):
         parts: Any = (str(v) for v in value)
     elif value:
-        parts = str(value).split(",")
+        parts = (match.group() for match in _LABEL_IN_TEXT.finditer(str(value)))
     else:
         return []
     labels: list[str] = []

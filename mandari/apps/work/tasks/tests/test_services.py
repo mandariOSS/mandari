@@ -391,6 +391,16 @@ def test_trello_import_kuerzt_namen_einmal_und_begrenzt_karten() -> None:
     assert import_service.split_labels(["", " "] * 40 + ["Kultur"]) == ["Kultur"]
     assert import_service.split_labels("," * 80 + " Kultur , Sport") == ["Kultur", "Sport"]
     assert len(import_service.split_labels([f"L{i}" for i in range(200)])) == import_service.MAX_LABELS_PER_ROW
+    assert import_service.split_labels(" Bau und Verkehr ,Kultur,, \t Sport ") == ["Bau und Verkehr", "Kultur", "Sport"]
+    # Ein Text aus Millionen kurzer Einträge wird nicht vollständig zerlegt
+    text = "ab," * 1_500_000
+    tracemalloc.start()
+    viele = import_service.split_labels(text)
+    _aktuell, spitze_text = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert viele == ["ab"] * import_service.MAX_LABELS_PER_ROW
+    assert spitze_text < 1024 * 1024
+    assert import_service.split_labels("," * 2_000_000 + "Kultur") == ["Kultur"]
 
     zu_viele = {"cards": [{"name": f"Karte {i}"} for i in range(import_service.MAX_IMPORT_ROWS + 1)]}
     with pytest.raises(import_service.TaskImportError, match="Zu viele Zeilen"):
