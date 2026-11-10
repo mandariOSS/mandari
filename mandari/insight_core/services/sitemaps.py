@@ -25,6 +25,11 @@ Abruf; was dann noch fehlt, erscheint nach dem nächsten Lauf des Zeitplans.
 ``lastmod`` ist nur ein glaubhafter Änderungszeitpunkt (``aenderungszeitpunkt``, Issue #939): Manche Quellen tragen
 statt des echten Werts einen Ersatzwert ein (Bonn: 1999-12-31 bei fast allen Vorgängen), und solche Angaben schwächen
 bei Suchmaschinen das Vertrauen in alle ``lastmod`` der Domain. Ohne glaubhaften Zeitpunkt fehlt ``lastmod``.
+
+Das gilt auch für die Stadtseite und die Grund-Sitemap im Index: Sie tragen die jüngste glaubhafte Änderung der
+Vorgänge und Sitzungen der Kommune (``aenderung_der_kommune``, ``juengste_aenderung``), nicht den letzten Abgleich.
+Der Abgleich läuft mehrmals am Tag, auch wenn sich nichts geändert hat; ein ``lastmod``, das jedes Mal mitläuft,
+sagt Suchmaschinen nichts über den Inhalt.
 """
 
 from __future__ import annotations
@@ -205,6 +210,23 @@ def index_dateien(body_ids: Iterable[Any]) -> dict[tuple[Any, str], list[Datei]]
             elif eintrag is not None:
                 ergebnis[(body_id, art.kennung)] = eintrag[1]
     return ergebnis
+
+
+def juengste_aenderung(dateien: Iterable[Datei]) -> datetime | None:
+    """Jüngste glaubhafte Änderung über mehrere Dateien; ``None``, wenn keine von ihnen eine nennt."""
+    return max((datei.lastmod for datei in dateien if datei.lastmod is not None), default=None)
+
+
+def aenderung_der_kommune(body_id: Any) -> datetime | None:
+    """
+    Jüngste glaubhafte Änderung der Vorgänge und Sitzungen einer Kommune: ``lastmod`` ihrer Stadtseite, die die
+    nächsten Sitzungen, die neuesten Vorgänge und die letzten Beschlüsse zeigt (Issue #939). ``None`` ohne
+    glaubhaften Zeitpunkt.
+
+    Aus der Vorberechnung wie im Index (``index_dateien``): eine Abfrage, und Stadtseite und Grund-Sitemap im Index
+    nennen denselben Wert.
+    """
+    return juengste_aenderung(datei for dateien in index_dateien([body_id]).values() for datei in dateien)
 
 
 def aufteilungen_erneuern(

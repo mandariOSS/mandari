@@ -42,8 +42,7 @@ from dataclasses import replace
 from datetime import datetime
 
 from django.conf import settings
-from django.db.models import Max, Min
-from django.db.models.functions import Coalesce
+from django.db.models import Case, DateTimeField, F, Max, Min, When
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
@@ -54,6 +53,7 @@ from hub.api.http import endpoint, error_response
 from hub.ris.mapping.bestand import BestandUris
 from insight_core import publication
 from insight_core.models import OParlBody, OParlMeeting, OParlOrganization, OParlPaper, OParlPerson
+from insight_core.services.sitemaps import aenderungszeitpunkt
 
 #: Wie lange ein Abnehmer die Weiterleitung auf den Katalog eines Session-Mandanten zwischenspeichern darf
 WEITERLEITUNG_MAX_AGE = 3600
@@ -186,10 +186,23 @@ def angebot(body: OParlBody, state: publication.BodyState | None = None) -> Ange
 def kennzahlen(body_id: uuid.UUID) -> dict[str, Kennzahlen]:
     """
     Zeitraum und letzte Änderung je Datensatz aus dem Bestand der Kommune (vier Abfragen, nur bei einem
-    Fehltreffer im Cache). Letzte Änderung wie ``modified`` der OParl-Ausgabe: der Zeitstempel der Quelle,
-    ersatzweise der eigene.
+    Fehltreffer im Cache). Letzte Änderung: der Zeitstempel der Quelle; für Objekte, zu denen sie keinen nennt,
+    der eigene.
+
+    Nur glaubhafte Zeitstempel der Quelle zählen (Issue #939), mit denselben Grenzen wie ``lastmod`` der Sitemaps
+    (``insight_core.services.sitemaps.aenderungszeitpunkt``): Ein Zeitpunkt in der Zukunft stünde sonst als letzte
+    Änderung des ganzen Datensatzes im Katalog, ein Ersatzwert der Quelle (1999-12-31), wenn sie nichts anderes
+    liefert. Solche Objekte zählen nicht mit, auch nicht mit dem eigenen Zeitstempel: Den setzt jeder Abgleich neu,
+    bei einer Quelle mit Ersatzwerten stünde sonst statt ihrer jüngsten echten Änderung der letzte Abgleich im
+    Katalog. Bleibt kein Wert, fehlt ``dct:modified``.
     """
-    geaendert = Max(Coalesce("oparl_modified", "updated_at"))
+    geaendert = Max(
+        Case(
+            When(oparl_modified__isnull=True, then=F("updated_at")),
+            default=aenderungszeitpunkt(("oparl_modified",)),
+            output_field=DateTimeField(),
+        )
+    )
     sitzungen = OParlMeeting.objects.filter(body_id=body_id, deleted=False).aggregate(
         beginn=Min("start"), ende=Max("start"), geaendert=geaendert
     )
