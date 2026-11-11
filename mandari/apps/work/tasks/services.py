@@ -148,6 +148,17 @@ def reset_shares_on_reshare(task: Task, old_visibility: str) -> None:
         TaskShare.objects.filter(task=task).delete()
 
 
+def _protocol_entry_taken(entry: Any, organization: Organization) -> bool:
+    """
+    Protokolleintrag bis zum Ende der Transaktion sperren und prüfen, ob es zu ihm schon eine Aufgabe gibt.
+
+    Beide Wege, die aus einem Eintrag eine Aufgabe machen (Sitzungsansicht und Übernahme im Aufgabenbereich),
+    gehen hier durch: Gleichzeitige Aufrufe laufen nacheinander, der zweite sieht die Aufgabe des ersten.
+    """
+    type(entry).objects.select_for_update().filter(pk=entry.pk).first()
+    return Task.objects.filter(organization=organization, related_protocol_entry=entry).exists()
+
+
 @transaction.atomic
 def task_from_protocol_entry(entry: Any, membership: Membership, *, title: str, description: str) -> Task | None:
     """
@@ -156,8 +167,7 @@ def task_from_protocol_entry(entry: Any, membership: Membership, *, title: str, 
     Der Eintrag wird für die Dauer der Transaktion gesperrt: Zwei gleichzeitige Aufrufe legen nacheinander an und
     der zweite sieht die Aufgabe des ersten.
     """
-    type(entry).objects.select_for_update().filter(pk=entry.pk).first()
-    if Task.objects.filter(organization=entry.meeting.organization, related_protocol_entry=entry).exists():
+    if _protocol_entry_taken(entry, entry.meeting.organization):
         return None
     return Task.objects.create(
         organization=entry.meeting.organization,
@@ -233,6 +243,9 @@ def import_protocol_entries(organization: Organization, membership: Membership, 
         ):
             continue
         imported_ids.add(entry.id)
+        # Unter der Sperre des Eintrags erneut prüfen: Der Stand oben kann vor einer gleichzeitigen Übernahme liegen
+        if _protocol_entry_taken(entry, organization):
+            continue
         task = Task.objects.create(
             organization=organization,
             title=entry.content[:500] if entry.content else "Protokoll-Aufgabe",

@@ -824,7 +824,10 @@ def clear_decision(item) -> None:
         item.votes_for = 0
         item.votes_against = 0
         item.votes_abstain = 0
-        item.save()
+        # Wie beim Erfassen nur die Felder des Beschlusses schreiben: Notizen, die die Schriftführung gleichzeitig
+        # speichert, bleiben erhalten. Ihren Stand vorher nachladen, damit die Änderungshistorie nichts erfindet.
+        item.refresh_from_db(fields=["notes_encrypted", "notes_updated_at"])
+        item.save(update_fields=["has_decision", "votes_for", "votes_against", "votes_abstain", "updated_at"])
 
 
 def _record_decision(
