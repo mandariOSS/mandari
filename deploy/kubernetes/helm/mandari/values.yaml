@@ -400,9 +400,13 @@ securityContext:
     drop:
       - ALL
 
-# Netzwerkrichtlinie: schränkt ein, wer die Datenbank erreichen darf
+# Netzwerkrichtlinie: Datenbank, Cache und Suchindex nehmen nur Verbindungen aus dieser Installation an.
+# Ab Werk ein: Der Suchindex läuft ohne Anmeldung, die Richtlinie ist seine Netzgrenze im Cluster. Sie wirkt nur
+# mit einem Netz-Plugin, das NetworkPolicy durchsetzt (Calico, Cilium, k3s ab Werk); sonst bleibt sie ohne Wirkung.
+# Richtlinien wirken additiv: Eine weitere NetworkPolicy im Namespace, die Zugriffe auf diese Pods erlaubt, öffnet
+# sie wieder. Eigene Richtlinien dürfen Datenbank, Cache und Suchindex deshalb nicht für fremde Pods freigeben.
 networkPolicy:
-  enabled: false
+  enabled: true
 
 commonLabels: {}
 commonAnnotations: {}
