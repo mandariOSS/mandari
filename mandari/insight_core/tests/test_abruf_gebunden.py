@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import gzip
 import socket
+import time
 import tracemalloc
 from typing import Any
 
@@ -125,6 +126,30 @@ def test_lesen_endet_an_der_grenze() -> None:
     with pytest.raises(redirects.ResponseTooLargeError):
         redirects.read_limited(_antwort(b"a" * 1001), 1000)
     assert redirects.read_limited(_antwort(b"a" * 5000), 1000, truncate=True) == b"a" * 1000
+
+
+def test_gesamtfrist_gilt_auch_fuer_eine_troepfelnde_antwort(monkeypatch: pytest.MonkeyPatch) -> None:
+    uhr = [100.0]
+    geliefert = [0]
+
+    class Troepfelnd(httpx.SyncByteStream):
+        def __iter__(self) -> Any:
+            # Ein Byte je neun Sekunden: unter jedem Lese-Timeout, aber weit über der Gesamtfrist
+            for _ in range(2000):
+                uhr[0] += 9.0
+                geliefert[0] += 1
+                yield b"a"
+
+    monkeypatch.setattr(time, "monotonic", lambda: uhr[0])
+    antwort = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=Troepfelnd()))
+    ).send(httpx.Request("GET", "https://ris.example.org/x"), stream=True)
+
+    with pytest.raises(httpx.ReadTimeout):
+        redirects.read_limited(antwort, 1024 * 1024, deadline=uhr[0] + 60.0)
+
+    # Abbruch kurz nach der Frist, nicht erst nach dem Ende der Antwort
+    assert geliefert[0] <= 8
 
 
 def test_stark_komprimierte_antwort_wird_nicht_ganz_entpackt() -> None:

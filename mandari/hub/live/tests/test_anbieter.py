@@ -238,6 +238,37 @@ def test_abruf_nur_oeffentliche_https_ziele(url: str) -> None:
         abruf.hole(url, http=client)
 
 
+def test_abruf_verbindet_nur_mit_geprueften_adressen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ein Name, der auf eine Adresse im eigenen Netz zeigt, bekommt keine Anfrage: weder direkt noch als Ziel."""
+    from insight_core.services import dienste, safe_fetch
+
+    adressen = {"player.example.org": ["93.184.215.14"], "intern.example.org": ["10.0.0.5"]}
+    monkeypatch.setattr(safe_fetch, "_resolve", lambda host: adressen.get(host, []))
+    monkeypatch.setattr(dienste, "warten", lambda *_a, **_kw: True)
+    gesehen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesehen.append(str(request.url))
+        if request.url.path == "/weiter":
+            return httpx.Response(302, headers={"Location": "https://intern.example.org/geheim"})
+        return httpx.Response(200, content=b"#EXTM3U")
+
+    with safe_fetch.guarded_client(transport=httpx.MockTransport(handler), follow_redirects=False) as client:
+        assert abruf.hole("https://player.example.org/ok", http=client) == b"#EXTM3U"
+        gesehen.clear()
+        with pytest.raises(AnbieterError, match="eigenen Netz"):
+            abruf.hole("https://intern.example.org/geheim", http=client)
+        assert gesehen == []
+        with pytest.raises(AnbieterError, match="eigenen Netz"):
+            abruf.hole("https://player.example.org/weiter", http=client)
+        assert gesehen == ["https://player.example.org/weiter"]
+
+    # Der eigene Client des Moduls prüft und bindet die Adresse
+    with abruf.client() as eigener:
+        assert isinstance(eigener._transport, safe_fetch.PinnedTransport)
+        assert safe_fetch._check_request in eigener.event_hooks["request"]
+
+
 def test_abruf_oeffentliche_ziele_erlaubt() -> None:
     for url in ("https://cdn.example/a.m3u8", "https://93.184.215.14/a", "https://xn--bcher-kva.example/a"):
         assert abruf.ziel_pruefen(url).scheme == "https"

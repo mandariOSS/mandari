@@ -236,6 +236,25 @@ def test_sperre_laesst_offene_verbindungen_der_mitglieder_neu_pruefen(
 
 
 @pytest.mark.django_db(transaction=True)
+def test_pflicht_zum_zweiten_faktor_laesst_offene_verbindungen_neu_pruefen(
+    org: Any, mitglied: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gesendet: list[list[str]] = []
+    monkeypatch.setattr(freigaben, "_send", gesendet.append)
+
+    org.require_2fa = True
+    org.save(update_fields=["name"])
+    assert gesendet == []
+
+    org.save(update_fields=["require_2fa"])
+    assert gesendet == [[freigaben.user_group(mitglied.user_id)]]
+
+    org.require_2fa = False
+    org.save()
+    assert len(gesendet) == 1
+
+
+@pytest.mark.django_db(transaction=True)
 def test_sperre_beendet_offene_notizen_verbindung(org: Any, mitglied: Any, top: FactionAgendaItem) -> None:
     async def lauf() -> None:
         kommunikator = _notizen(mitglied.user, top)

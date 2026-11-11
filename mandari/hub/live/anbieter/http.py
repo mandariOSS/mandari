@@ -9,7 +9,8 @@ ein Zeitpunkt beim Host, höchstens eine Anfrage je Sekunde und Host (``dienste.
 Jede Adresse, auch jedes Ziel einer Weiterleitung (höchstens ``MAX_WEITERLEITUNGEN``), muss https sein und auf
 einen öffentlichen Namen zeigen (``ziel_pruefen``): keine IP-Adresse aus privaten, Loopback- oder Link-Local-Bereichen,
 kein ``localhost``, kein Name ohne Punkt (Dienstnamen im Container-Netz) und keine Zahl als Name. Namen, die erst
-bei der Auflösung auf eine private Adresse zeigen, fängt das nicht ab (Folgearbeit).
+bei der Auflösung auf eine Adresse im eigenen Netz zeigen, weist der Client ab (``client``): Er prüft die aufgelöste
+Adresse vor jeder Anfrage und verbindet nur mit der geprüften Adresse (``safe_fetch.guarded_client``).
 
 Fehler werden zu ``AnbieterError`` mit festem Text (Statuscode, Zeitgrenze, zu groß); Antwortinhalte gelangen
 nie in Meldungen.
@@ -23,7 +24,7 @@ from typing import Any, Final
 
 import httpx
 
-from insight_core.services import dienste
+from insight_core.services import dienste, safe_fetch
 
 from . import AnbieterError
 
@@ -43,9 +44,14 @@ class NichtGefundenError(AnbieterError):
 
 
 def client() -> httpx.Client:
-    """Neuer Client mit Zeitgrenzen und User-Agent; Aufrufer schließt ihn (``with``)."""
+    """
+    Neuer Client mit Zeitgrenzen und User-Agent; Aufrufer schließt ihn (``with``).
+
+    Der Client löst den Namen jedes Ziels auf, prüft die Adresse und verbindet nur mit ihr: Ein Name, der beim
+    Verbindungsaufbau auf eine Adresse im eigenen Netz zeigt, bekommt keine Verbindung.
+    """
     # Weiterleitungen folgt ``hole`` selbst, damit jedes Ziel geprüft wird
-    return httpx.Client(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}, follow_redirects=False)
+    return safe_fetch.guarded_client(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}, follow_redirects=False)
 
 
 def ziel_pruefen(url: str | httpx.URL) -> httpx.URL:
@@ -86,6 +92,8 @@ def hole(url: str, *, max_bytes: int = MAX_TEXT, http: httpx.Client | None = Non
                     continue
                 return _inhalt(antwort, max_bytes)
         raise AnbieterError("zu viele Weiterleitungen")
+    except safe_fetch.BlockedDestinationError as fehler:
+        raise AnbieterError("Adresse im eigenen Netz") from fehler
     except httpx.TimeoutException as fehler:
         raise AnbieterError("Zeitgrenze") from fehler
     except httpx.HTTPError as fehler:

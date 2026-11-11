@@ -99,7 +99,8 @@ def read_limited(
     entpackt, nie mehr als bis zur Grenze: Darüber endet das Lesen mit ``ResponseTooLargeError`` oder, mit
     ``truncate``, beim Stand der Grenze (für robots.txt, deren Anfang gilt). Entpackt werden gzip und deflate
     (``ACCEPT_ENCODING``); andere und mehrfach kodierte Antworten weisen wir ab. ``deadline``
-    (``time.monotonic()``) begrenzt die Gesamtdauer.
+    (``time.monotonic()``) begrenzt die Gesamtdauer: geprüft nach jedem Stück, wie es aus dem Netz kommt. Eine
+    Antwort, die nur tröpfelt, endet damit spätestens einen Lese-Timeout des Clients nach der Frist.
     """
     if response.is_stream_consumed:
         # Der Rumpf liegt schon im Speicher (nicht gestreamt gesendet, oder ein Ersatz-Transport im Test): Es gibt
@@ -127,7 +128,9 @@ def read_limited(
             raise httpx.DecodingError(f"Kodierung {encodings[0]} wird nicht gelesen", request=response.request)
     parts: list[bytes] = []
     size = 0
-    for raw in response.iter_raw(16 * 1024):
+    # Ohne Stückgröße: Mit einer festen Größe sammelte httpx so lange, bis sie erreicht ist, und die Frist unten
+    # käme bei einer tröpfelnden Antwort erst nach Stunden zur Prüfung
+    for raw in response.iter_raw():
         pending = raw
         while pending:
             if decoder is None:
