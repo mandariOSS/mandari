@@ -62,6 +62,38 @@ def test_deaktivierte_mitgliedschaft_bekommt_keine_benachrichtigung(org: Any, ma
     assert set(Notification.objects.values_list("recipient_id", flat=True)) == {aktiv.pk}
 
 
+def test_vertretung_einer_deaktivierten_mitgliedschaft_wird_weiter_benachrichtigt(org: Any, make_member: Any) -> None:
+    from datetime import timedelta
+
+    from apps.work.organization.models import MemberAbsence
+
+    absender = make_member(org, ["dashboard.view"], email="absender@example.org")
+    abwesend = make_member(org, ["dashboard.view"], email="abwesend@example.org")
+    vertretung = make_member(org, ["dashboard.view"], email="vertretung@example.org")
+    heute = timezone.localdate()
+    MemberAbsence.objects.create(
+        organization=org,
+        membership=abwesend,
+        start_date=heute - timedelta(days=1),
+        end_date=heute + timedelta(days=7),
+        deputy=vertretung,
+    )
+    abwesend.is_active = False
+    abwesend.save(update_fields=["is_active"])
+
+    assert _benachrichtigen(abwesend, absender) is None
+
+    erhalten = Notification.objects.get()
+    assert erhalten.recipient_id == vertretung.pk and erhalten.title.startswith("[Vertretung]")
+
+    # Eine deaktivierte Vertretung bekommt weiterhin nichts
+    Notification.objects.all().delete()
+    vertretung.is_active = False
+    vertretung.save(update_fields=["is_active"])
+    assert _benachrichtigen(abwesend, absender) is None
+    assert not Notification.objects.exists()
+
+
 def test_mail_entfaellt_wenn_das_mitglied_vor_dem_versand_deaktiviert_wurde(
     org: Any, make_member: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -97,6 +129,9 @@ def test_offene_registrierung_gibt_nur_frei_wer_einladen_darf(org: Any, make_mem
 
     with pytest.raises(org_services.ServiceError):
         org_services.reactivate_member(org, anfrage, bearbeitet)
+    # Ohne aktive handelnde Mitgliedschaft (inzwischen deaktiviert) ebenfalls nicht
+    with pytest.raises(org_services.ServiceError):
+        org_services._restore_membership(org, anfrage, None)
     anfrage.refresh_from_db()
     assert not anfrage.is_active and anfrage.registration_requested_at is not None
 
@@ -167,6 +202,8 @@ def test_service_worker_holt_die_offline_seite_ohne_anmeldung() -> None:
     quelltext = (Path(settings.BASE_DIR) / "templates" / "pwa" / "sw.js").read_text(encoding="utf-8")
 
     assert "credentials: 'omit'" in quelltext and "redirect: 'error'" in quelltext
+    # Eine bei der Installation gescheiterte Offline-Seite holt die nächste gelungene Navigation nach
+    assert "event.waitUntil(ensureOfflinePage());" in quelltext
     assert "offlineCache.add(" not in quelltext
 
 
