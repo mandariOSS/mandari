@@ -246,21 +246,15 @@ ATTENDANCE_HAS_ALLOWANCE = (
 )
 
 
-def attendance_removal_block(attendance: Any) -> str:
+def _removal_block(allowance: Any) -> str:
     """
-    Grund, aus dem eine Anwesenheitszeile nicht entfernt werden darf (leer: sie darf).
+    Grund, aus dem eine Anwesenheitszeile mit dieser Position nicht entfernt werden darf (leer: sie darf).
 
     Das Sitzungsgeld hängt an der Anwesenheit und verschwände mit ihr. Genehmigte, exportierte oder ausgezahlte
     Positionen sind geprüft bzw. überwiesen: Sie bleiben, auch wenn die Niederschrift noch offen ist, und lassen
     sich nur in der Abrechnung (``manage_allowances``) stornieren. Ausstehende und stornierte Positionen entfallen
     mit der Zeile, wie sie auch der nächste Abrechnungslauf mangels Grundlage stornieren würde.
     """
-    from apps.session.models import SessionAllowance
-
-    return _removal_block(SessionAllowance.objects.filter(attendance=attendance).first())
-
-
-def _removal_block(allowance: Any) -> str:
     if allowance is None:
         return ""
     if allowance.status in ("approved", "paid") or allowance.export_reference:
