@@ -760,6 +760,14 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     umgehbar); die bisherigen Rechte kehren nur im Rahmen der Rechte der handelnden Person zurück.
     """
     _lock_membership(member)
+    # Eine offene Registrierungsanfrage zu aktivieren ist die Freischaltung (samt Zugangs-Mail): Das darf nur, wer
+    # Mitglieder einladen darf, gleich über welchen Weg der Aufruf kommt
+    if (
+        member.registration_requested_at is not None
+        and actor is not None
+        and not actor.has_permission("members.invite")
+    ):
+        raise ServiceError("Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf.")
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
     if not member.is_guest and not member.is_active:

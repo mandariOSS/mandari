@@ -122,5 +122,6 @@ def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
         output.write(result)
         return result.getvalue()
     except Exception as e:
-        logger.warning(f"Letterhead merge error: {e}")
+        # Nur die Art: Der Text stammt aus dem hochgeladenen Briefkopf-PDF (Namen aus der Datei, auch Zeilenumbrüche)
+        logger.warning("Briefkopf nicht anwendbar: %s", type(e).__name__)
         return pdf_content
