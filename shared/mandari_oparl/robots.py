@@ -108,18 +108,42 @@ class Rule:
 
     allow: bool
     pattern: str
-    _regex: re.Pattern[str] = field(repr=False, compare=False)
+    #: Feste Teilstücke zwischen den Sternen, in ihrer Reihenfolge
+    _parts: tuple[str, ...] = field(repr=False, compare=False)
+    #: Das Muster endet mit ``$``: Der Pfad muss mit dem letzten Teilstück enden
+    _anchored: bool = field(repr=False, compare=False)
 
     @classmethod
     def build(cls, allow: bool, raw: str) -> Rule:
         pattern = _normalize(raw if raw.startswith(("/", "*")) else f"/{raw}")
         anchored = pattern.endswith("$")
         body = pattern[:-1] if anchored else pattern
-        regex = ".*".join(re.escape(part) for part in body.split("*")) + ("$" if anchored else "")
-        return cls(allow=allow, pattern=pattern, _regex=re.compile(regex, re.DOTALL))
+        return cls(allow=allow, pattern=pattern, _parts=tuple(body.split("*")), _anchored=anchored)
 
     def matches(self, target: str) -> bool:
-        return self._regex.match(target) is not None
+        """
+        Passt das Muster auf den Anfang von ``target``? Ein Stern steht für beliebig viele Zeichen.
+
+        Abgleich der Teilstücke von links nach rechts mit je einer Suche ab der letzten Fundstelle, ohne
+        regulären Ausdruck: Die Muster kommen aus der robots.txt eines fremden Hosts, und ein Ausdruck mit
+        mehreren Sternen braucht bei einem Pfad ohne Treffer mit jedem weiteren Stern ein Vielfaches an Zeit.
+        Die früheste Fundstelle eines Teilstücks lässt den folgenden den meisten Platz, mehr braucht es nicht.
+        """
+        parts = self._parts
+        if not target.startswith(parts[0]):
+            return False
+        position = len(parts[0])
+        if len(parts) == 1:
+            return position == len(target) if self._anchored else True
+        for part in parts[1:-1]:
+            found = target.find(part, position)
+            if found == -1:
+                return False
+            position = found + len(part)
+        last = parts[-1]
+        if self._anchored:
+            return len(target) - len(last) >= position and target.endswith(last)
+        return target.find(last, position) != -1
 
     def __str__(self) -> str:
         return f"{'Allow' if self.allow else 'Disallow'}: {self.pattern}"
