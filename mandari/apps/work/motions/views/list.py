@@ -282,12 +282,12 @@ class DocumentFolderCreateView(WorkViewMixin, View):
             position=DocumentFolder.objects.filter(organization=self.organization, parent=parent).count(),
         )
         try:
-            folder.full_clean()
+            # Unter derselben Sperre wie Verschiebungen: Die Tiefenprüfung sieht den Stand anderer Anfragen
+            folder.save_checked()
         except ValidationError as e:
             messages.error(request, " ".join(m for msgs in e.message_dict.values() for m in msgs))
             return redirect(back_url)
 
-        folder.save()
         messages.success(request, f"Ordner '{folder.name}' erstellt.")
         return redirect(f"{list_url}?ordner={folder.id}")
 
@@ -322,12 +322,11 @@ class DocumentFolderUpdateView(WorkViewMixin, View):
             folder.parent = _get_org_folder_or_404(self.organization, parent_id, self.membership) if parent_id else None
 
         try:
-            folder.full_clean()
+            folder.save_checked(mover=self.membership)
         except ValidationError as e:
             messages.error(request, " ".join(m for msgs in e.message_dict.values() for m in msgs))
             return redirect(back_url)
 
-        folder.save()
         messages.success(request, f"Ordner '{folder.name}' aktualisiert.")
         return redirect(back_url)
 

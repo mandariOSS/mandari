@@ -360,7 +360,9 @@ def test_parse_upload_detects_format_and_reads_csv() -> None:
 
 
 @pytest.mark.django_db
-def test_classify_and_apply_import_is_idempotent(org: Any, member: Any) -> None:
+def test_classify_and_apply_import_is_idempotent(org: Any, make_member: Any) -> None:
+    # Neue Labels legt der Import nur mit dem Recht an, Labels zu verwalten
+    member = make_member(org, ["tasks.view", "tasks.create", "tasks.manage"], email="mitglied@example.org")
     raw = (
         b"Titel;Status;Prioritaet;Labels;Zugewiesen an\n"
         b"Haushalt;erledigt;hoch;Finanzen;mitglied@example.org\n"

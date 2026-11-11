@@ -541,6 +541,14 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
         seen_in_file.add(title_key)
         report.create.append({"line": line, "data": data})
 
+    # Hinweis zu Labels schon in der Vorschau, nach denselben Regeln und in derselben Reihenfolge wie beim Schreiben
+    # (erst neue, dann bestehende Aufgaben). Vorn im Bericht, damit ihn die Kürzung der Warnungen nicht trifft.
+    labels = _LabelResolver(organization, membership, dry_run=True)
+    for entry in [*report.create, *report.update]:
+        labels.resolve(entry["data"].get("labels") or [])
+    hinweis = labels.warning()
+    if hinweis:
+        report.warnings.insert(0, hinweis)
     return report
 
 
@@ -549,21 +557,64 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
 # ---------------------------------------------------------------------------
 
 
-class _LabelResolver:
-    """Labels per Name auflösen und bei Bedarf anlegen (Cache über den ganzen Import)."""
+#: Höchstens so viele neue Labels legt ein Import im gemeinsamen Katalog der Organisation an
+MAX_NEW_LABELS_PER_IMPORT = 50
 
-    def __init__(self, organization: Organization) -> None:
+
+class _LabelResolver:
+    """
+    Labels per Name auflösen (Cache über den ganzen Import).
+
+    Der Katalog gehört der ganzen Organisation: Unbekannte Namen legt der Import nur für Mitglieder an, die Labels
+    verwalten dürfen (``tasks.manage``, wie die Label-Verwaltung selbst), und höchstens
+    ``MAX_NEW_LABELS_PER_IMPORT`` je Import. Andere Namen bleiben weg und stehen in ``skipped``.
+    """
+
+    def __init__(
+        self, organization: Organization, membership: Membership | None = None, *, dry_run: bool = False
+    ) -> None:
         self.organization = organization
-        self.cache = selectors.labels_by_name(organization)
+        self.cache: dict[str, TaskLabel | None] = dict(selectors.labels_by_name(organization))
+        self.may_create = membership is not None and membership.has_permission("tasks.manage")
+        #: Vorschau: dieselben Regeln in derselben Reihenfolge, aber ohne Labels anzulegen
+        self.dry_run = dry_run
+        self.created = 0
+        self.skipped: dict[str, str] = {}
 
     def resolve(self, names: list[str]) -> list[TaskLabel]:
         resolved = []
         for name in names:
             key = name.lower()
             if key not in self.cache:
-                self.cache[key] = TaskLabel.objects.create(organization=self.organization, name=name, color="blue")
-            resolved.append(self.cache[key])
+                if not self.may_create or self.created >= MAX_NEW_LABELS_PER_IMPORT:
+                    self.skipped.setdefault(key, name)
+                    continue
+                self.cache[key] = (
+                    None
+                    if self.dry_run
+                    else TaskLabel.objects.create(organization=self.organization, name=name, color="blue")
+                )
+                self.created += 1
+            label = self.cache[key]
+            if label is not None:
+                resolved.append(label)
         return resolved
+
+    def complete(self, names: list[str]) -> bool:
+        """Lassen sich alle Namen auflösen (vorhanden oder in diesem Import angelegt)?"""
+        return all(name.lower() in self.cache for name in names)
+
+    def warning(self) -> str:
+        """Hinweis für den Bericht zu nicht übernommenen Labels (leer: alle übernommen)."""
+        if not self.skipped:
+            return ""
+        names = sorted(self.skipped.values(), key=str.lower)
+        shown = ", ".join(names[:10]) + (" …" if len(names) > 10 else "")
+        if not self.may_create:
+            reason = "neue Labels legt an, wer Labels verwalten darf"
+        else:
+            reason = f"höchstens {MAX_NEW_LABELS_PER_IMPORT} neue Labels je Import"
+        return f"{len(names)} unbekannte Labels nicht übernommen ({reason}): {shown}"
 
 
 def _create_from_row(
@@ -618,7 +669,13 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
         task.assigned_to = data["assigned_to"]
     task.save()
     if data["labels"]:
-        task.labels.set(labels.resolve(data["labels"]))
+        resolved = labels.resolve(data["labels"])
+        if labels.complete(data["labels"]):
+            task.labels.set(resolved)
+        else:
+            # Nicht alle Namen ließen sich auflösen (kein Recht, neue anzulegen, oder Obergrenze): Die bisherigen
+            # Labels der Aufgabe bleiben, die aufgelösten kommen hinzu
+            task.labels.add(*resolved)
     if old_status != task.status:
         if task.status == "done":
             log_activity(task, membership, "completed")
@@ -630,7 +687,7 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
 @transaction.atomic
 def apply_import(organization: Organization, membership: Membership, report: ImportReport) -> None:
     """Schreibt die klassifizierten Zeilen in die Datenbank (eine Transaktion)."""
-    labels = _LabelResolver(organization)
+    labels = _LabelResolver(organization, membership)
     position_counters = selectors.position_counters(organization)
     now = timezone.now()
 
