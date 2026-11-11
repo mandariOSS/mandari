@@ -143,8 +143,9 @@ Ohne Helm liegen fertige Manifeste unter [`deploy/kubernetes/manifests/`](deploy
 ./backup.sh                 # Datenbanken, Uploads, Dokument-Cache und verschlüsselte Konfiguration sichern
 ```
 
-Den automatischen Rückfall gibt es nur mit einer festen Version (`--tag v<Version>`): Ein bewegliches Tag wie
-`latest` zeigt nach dem Update schon auf das neue Image. Welche Versionen unterstützt werden, steht in
+Den automatischen Rückfall gibt es nur, wenn schon die bisherige Installation eine feste Version nutzt und das
+Update auf eine feste Version geht (`--tag v<Version>`): Der Rückfall stellt die bisherige `.env` wieder her,
+und ein bewegliches Tag wie `latest` zeigt nach dem Update schon auf das neue Image. Welche Versionen unterstützt werden, steht in
 [SECURITY.md](SECURITY.md#unterstützte-versionen).
 
 Vollständige Betriebsanleitung: <https://docs.mandari.de/betrieb/>

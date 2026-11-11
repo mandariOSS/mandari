@@ -551,14 +551,16 @@ Fachfreie Bausteine liegen in der Plattform, `apps/common/api/`:
 
 | Baustein | Modul | genutzt von |
 |---|---|---|
-| Fehler nach RFC 9457 (`Problem`, `ProblemError`, `problem_response`, Handler für django-ninja) | `problems.py`, `ninja.py` | Session-API v1, Befehle über HTTP, Änderungsfeed (ältere Form), Datenkatalog |
+| Fehler nach RFC 9457 (`Problem`, `ProblemError`, `problem_response`, Handler für django-ninja) | `problems.py`, `ninja.py` | Session-API v1, nichtöffentliche Ausgabe, Befehle über HTTP, Änderungsfeed (ältere Form), Datenkatalog |
 | `ETag` und `If-None-Match` | `conditional.py` | OParl-Ausgaben, Einstieg |
 | `Deprecation` (RFC 9745) und `Sunset` (RFC 8594) | `deprecation.py` | alte Session-API, abgekündigte Form des Änderungsfeeds (`hub/api/changes.py`) |
 | `Idempotency-Key` lesen und prüfen | `idempotency.py` | Befehle (`hub.commands`), Session-API v1 |
 | Seiten wie in OParl (`data`, `pagination`, `links`, `Link`-Header) | `pages.py` | OParl-Ausgaben, Beschreibung |
 
-Die OParl-Ausgaben antworten bei Fehlern mit dem Fehlerobjekt nach OParl 1.1 (`{"error", "status"}`,
-`hub/api/http.py`), nicht mit `application/problem+json`. Die nichtöffentliche Ausgabe liefert kein `ETag`.
+Die öffentlichen OParl-Ausgaben antworten bei Fehlern mit dem Fehlerobjekt nach OParl 1.1
+(`{"error", "status"}`, `hub/api/http.py`), nicht mit `application/problem+json`. Die nichtöffentliche
+Ausgabe (`apps/session/api/nichtoeffentlich.py`) antwortet bei Fehlern mit `application/problem+json`
+und liefert kein `ETag`.
 
 ## Eingecheckte Beschreibung und CI
 

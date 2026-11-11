@@ -728,7 +728,16 @@ COMPOSE_FILE=docker-compose.yml:deploy/roles/worker.yml
 DATA_HOST=10.0.0.10              # alle Dienste dieser Rolle direkt auf Port 5432
 ```
 
-Reihenfolge beim ersten Start: data → web (führt die Migrationen aus) → worker. Prüfen mit
+Reihenfolge beim ersten Start: data → web → worker. Die Container migrieren beim Start nicht (siehe
+[Ohne install.sh](#ohne-installsh)); auf dem Web-Server deshalb vor `docker compose up -d`:
+
+```bash
+docker compose run --rm mandari python manage.py migrate --noinput
+docker compose run --rm mandari python manage.py setup_roles
+docker compose run --rm website python manage.py migrate --noinput
+```
+
+Erst danach den Worker-Server starten. Prüfen mit
 `docker compose config --services` (zeigt nur die Dienste der Rolle) und
 `docker compose ps`.
 
@@ -2347,7 +2356,8 @@ docker compose -f docker-compose.yml -f deploy/logging/docker-compose.journald.y
 
 Das mitgelieferte `Caddyfile` hält das Zugriffslog bereits 14 Tage (`roll_keep_for 336h`); nur ein selbst
 gepflegtes Caddyfile braucht die Angabe in jedem `log { output file … }`-Block, danach
-`docker exec mandari-caddy caddy reload --config /etc/caddy/Caddyfile`.
+`docker compose restart caddy`. `caddy reload` scheitert, solange das Caddyfile wie das mitgelieferte die
+Admin-API abschaltet (`admin off`).
 
 Fristen, Begründungen, Sicherung und Zugriffsschutz: [docs/PROTOKOLLIERUNG.md](docs/PROTOKOLLIERUNG.md)
 (Übersicht und Abschnitt 12).

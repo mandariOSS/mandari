@@ -350,7 +350,7 @@ Stunden. Die Root-Platte überwacht daneben der Disk-Alarm des Betriebsmonitors
 Die Befehle stehen in [DEPLOYMENT.md, „Protokolle“](../DEPLOYMENT.md#protokolle). Das
 mitgelieferte `Caddyfile` setzt `roll_keep_for 336h` (14 Tage) bereits; nur ein selbst
 gepflegtes Caddyfile braucht die Angabe in jedem `log { output file … }`-Block, danach
-`docker exec mandari-caddy caddy reload --config /etc/caddy/Caddyfile`. Bei einer von Hand
+`docker compose restart caddy` (`caddy reload` scheitert bei `admin off`). Bei einer von Hand
 gepflegten Compose (andere Dienstnamen) den journald-Override entsprechend anpassen.
 
 ## 13. Abgleich mit BSI OPS.1.1.5

@@ -328,8 +328,9 @@ dafür die Anlage ersetzen oder löschen.
 
 Beim Löschen eines `SessionTenant` (Vertragsende) werden alle abhängigen Daten kaskadiert
 gelöscht, einschließlich Audit-Log und mandantenspezifischem Verschlüsselungsschlüssel
-(Crypto-Shredding: Ohne Schlüssel sind etwaige Sicherungen der verschlüsselten Felder nicht
-mehr lesbar).
+(Crypto-Shredding für den laufenden Bestand). Sicherungen von vor der Löschung enthalten den
+Mandantenschlüssel und die verschlüsselte Konfiguration noch und bleiben damit lesbar, bis sie
+nach höchstens 30 Tagen ablaufen ([BACKUP.md](BACKUP.md), Aufbewahrung).
 
 ### 3.7 Dokumente aus fremden Ratsinformationssystemen (Insight)
 
