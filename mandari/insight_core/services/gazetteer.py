@@ -246,6 +246,10 @@ class StreetGazetteer:
         starts: list[int] = []
         ends: list[int] = []
         for pattern in self._search_patterns:
+            # Treffer eines Musters kommen in Textreihenfolge und überschneiden sich nicht: Sie werden gesammelt und
+            # danach in einem Durchgang eingemischt, statt jeden einzeln mitten in die Listen einzufügen
+            new_starts: list[int] = []
+            new_ends: list[int] = []
             for match in pattern.finditer(normalized_text):
                 start, end = match.start(1), match.end(1)
                 # Longest-Match über Chunk-Grenzen: bereits durch einen
@@ -253,13 +257,8 @@ class StreetGazetteer:
                 davor = bisect.bisect_right(starts, start) - 1
                 if davor >= 0 and ends[davor] >= end:
                     continue
-                # Einfügen; Bereiche, die der neue ganz abdeckt, gehen in ihm auf
-                von = bisect.bisect_left(starts, start)
-                bis = von
-                while bis < len(starts) and ends[bis] <= end:
-                    bis += 1
-                starts[von:bis] = [start]
-                ends[von:bis] = [end]
+                new_starts.append(start)
+                new_ends.append(end)
 
                 normalized = match.group(1)
                 entry = self._streets.get(normalized)
@@ -275,7 +274,35 @@ class StreetGazetteer:
                         "house_number": house_number,
                         "normalized": normalized,
                     }
+            if new_starts:
+                starts, ends = _merge_spans(starts, ends, new_starts, new_ends)
         return list(found.values())
+
+
+def _merge_spans(
+    starts: list[int], ends: list[int], new_starts: list[int], new_ends: list[int]
+) -> tuple[list[int], list[int]]:
+    """
+    Zwei nach Anfang sortierte Bereichslisten zusammenführen (linear). Die neuen Bereiche liegen in keinem
+    bisherigen; bisherige, die ein neuer ganz abdeckt, gehen in ihm auf. Das Ergebnis ist wieder sortiert und
+    ohne ineinanderliegende Bereiche.
+    """
+    merged_starts: list[int] = []
+    merged_ends: list[int] = []
+    index = 0
+    count = len(starts)
+    for start, end in zip(new_starts, new_ends, strict=True):
+        while index < count and starts[index] < start:
+            merged_starts.append(starts[index])
+            merged_ends.append(ends[index])
+            index += 1
+        while index < count and ends[index] <= end:
+            index += 1
+        merged_starts.append(start)
+        merged_ends.append(end)
+    merged_starts.extend(starts[index:])
+    merged_ends.extend(ends[index:])
+    return merged_starts, merged_ends
 
 
 def get_person_name_set(body: OParlBody) -> set[str]:

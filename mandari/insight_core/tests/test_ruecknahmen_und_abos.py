@@ -15,6 +15,7 @@ Zurückgenommenes und Wartendes bestimmt keine öffentliche Ausgabe mehr, und Ab
 
 from __future__ import annotations
 
+import random
 import time
 import uuid
 from datetime import timedelta
@@ -38,7 +39,7 @@ from insight_core.models import (
     OParlSource,
     PublicQuestion,
 )
-from insight_core.services import georef_runner
+from insight_core.services import gazetteer, georef_runner
 from insight_core.services.gazetteer import StreetGazetteer
 from insight_core.services.georeferencing import collect_paper_text
 from insight_core.services.search_service import ElasticsearchService
@@ -312,7 +313,12 @@ def test_verortung_liest_nur_veroeffentlichte_anlagen(body: OParlBody) -> None:
     assert mit_text == {vorgang.pk}
 
 
-def test_strassenverzeichnis_bleibt_bei_vielen_nennungen_schnell(body: OParlBody, make_street: Any) -> None:
+@pytest.mark.parametrize("je_muster", [500, 1])
+def test_strassenverzeichnis_bleibt_bei_vielen_nennungen_schnell(
+    body: OParlBody, make_street: Any, monkeypatch: pytest.MonkeyPatch, je_muster: int
+) -> None:
+    # Mit einer Straße je Muster wechseln sich die Treffer zweier Muster im Text ab
+    monkeypatch.setattr(gazetteer, "_CHUNK_SIZE", je_muster)
     make_street(body, "Hafenstraße", CENTER_LAT, CENTER_LON)
     make_street(body, "Am Hafen", CENTER_LAT, CENTER_LON)
     verzeichnis = StreetGazetteer(body)
@@ -326,3 +332,31 @@ def test_strassenverzeichnis_bleibt_bei_vielen_nennungen_schnell(body: OParlBody
     assert {eintrag["normalized"] for eintrag in viel} == {eintrag["normalized"] for eintrag in wenig}
     assert len(wenig) == 2
     assert dauer < 20
+
+
+def test_bereiche_werden_wie_beim_einzelnen_einfuegen_zusammengefuehrt() -> None:
+    """Das Einmischen je Muster ergibt dieselben Bereiche wie das frühere Einfügen Treffer für Treffer."""
+    zufall = random.Random(1282)
+    for _ in range(300):
+        starts: list[int] = []
+        ends: list[int] = []
+        erwartet: list[tuple[int, int]] = []
+        for _muster in range(4):
+            # Treffer eines Musters: in Textreihenfolge, ohne Überschneidung
+            stelle = 0
+            neu_starts: list[int] = []
+            neu_ends: list[int] = []
+            for _treffer in range(zufall.randint(0, 8)):
+                start = stelle + zufall.randint(0, 6)
+                ende = start + zufall.randint(1, 9)
+                stelle = ende
+                if any(s <= start and ende <= e for s, e in erwartet):
+                    continue
+                neu_starts.append(start)
+                neu_ends.append(ende)
+            for start, ende in zip(neu_starts, neu_ends, strict=True):
+                erwartet = [(s, e) for s, e in erwartet if not (start <= s and e <= ende)]
+                erwartet.append((start, ende))
+            if neu_starts:
+                starts, ends = gazetteer._merge_spans(starts, ends, neu_starts, neu_ends)
+        assert list(zip(starts, ends, strict=True)) == sorted(erwartet)
