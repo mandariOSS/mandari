@@ -255,6 +255,21 @@ def test_sperre_beendet_offene_notizen_verbindung(org: Any, mitglied: Any, top: 
     asyncio.run(lauf())
 
 
+@pytest.mark.django_db(transaction=True)
+def test_notizen_verbindung_verlaesst_beim_ende_die_gruppe_der_person(mitglied: Any, top: FactionAgendaItem) -> None:
+    async def lauf() -> dict[str, Any]:
+        kommunikator = _notizen(mitglied.user, top)
+        verbunden, _ = await kommunikator.connect()
+        assert verbunden
+        layer = get_channel_layer()
+        gruppe = freigaben.user_group(mitglied.user_id)
+        assert layer.groups.get(gruppe)
+        await kommunikator.disconnect()
+        return dict(layer.groups.get(gruppe) or {})
+
+    assert asyncio.run(lauf()) == {}
+
+
 # --- Sitzungsvorbereitung: Nachprüfung während der Verbindung ----------------------------------------------------
 
 

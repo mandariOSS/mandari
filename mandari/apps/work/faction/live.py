@@ -177,6 +177,8 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         if self.group_name:
             await self._praesenz("weg")
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if self.user_group:
+            await self.channel_layer.group_discard(self.user_group, self.channel_name)
         # Wer den leeren Zustand füllen sollte und geht, gibt die Zusage frei (der Nächste füllt ihn)
         for schluessel in (_seed_schluessel, _seed_leer_schluessel):
             if self.item_id and cache.get(schluessel(self.item_id)) == self.kennung:
