@@ -40,6 +40,47 @@ EXTENSION_SCHEMES = ("moz-extension:", "chrome-extension:", "safari-extension:",
 VIOLATIONS = Counter("mandari_csp_violations_total", "Gemeldete CSP-Verstöße je Direktive", ["directive"])
 
 
+#: Direktiven, die als eigene Reihe der Metrik zählen. Die Meldungen kommen ohne Anmeldung von außen: Jeder andere
+#: Wert zählt als „unbekannt“, damit fremde Eingaben weder beliebig viele Reihen anlegen noch als Zeichenfolge in
+#: die Ausgabe der Metriken gelangen.
+KNOWN_DIRECTIVES = frozenset(
+    {
+        "base-uri",
+        "child-src",
+        "connect-src",
+        "default-src",
+        "font-src",
+        "form-action",
+        "frame-ancestors",
+        "frame-src",
+        "img-src",
+        "manifest-src",
+        "media-src",
+        "object-src",
+        "report-to",
+        "report-uri",
+        "require-trusted-types-for",
+        "sandbox",
+        "script-src",
+        "script-src-attr",
+        "script-src-elem",
+        "style-src",
+        "style-src-attr",
+        "style-src-elem",
+        "trusted-types",
+        "upgrade-insecure-requests",
+        "worker-src",
+    }
+)
+UNKNOWN_DIRECTIVE = "unbekannt"
+
+
+def directive_label(raw: str) -> str:
+    """Direktive einer Meldung als Label der Metrik: eine bekannte Direktive oder ``unbekannt``."""
+    first = raw.split()[0].lower() if raw.split() else ""
+    return first if first in KNOWN_DIRECTIVES else UNKNOWN_DIRECTIVE
+
+
 def _normalize(report: dict[str, Any]) -> dict[str, str]:
     """Legacy- und Reporting-API-Felder auf einheitliche Namen bringen."""
     aliases = {
@@ -50,7 +91,8 @@ def _normalize(report: dict[str, Any]) -> dict[str, str]:
         "lineNumber": "line-number",
     }
     merged = {aliases.get(k, k): v for k, v in report.items()}
-    return {feld: str(merged.get(feld, ""))[:300] for feld in FIELDS}
+    # Einzelne Surrogate (in JSON als Escape möglich) lassen sich nicht ausgeben: durch „?“ ersetzen
+    return {feld: str(merged.get(feld, ""))[:300].encode("utf-8", "replace").decode("utf-8") for feld in FIELDS}
 
 
 def parse_reports(raw: bytes, content_type: str) -> list[dict[str, str]]:
@@ -97,7 +139,7 @@ def csp_report(request: HttpRequest) -> HttpResponse:
     for report in parse_reports(request.body, request.content_type or ""):
         if from_extension(report):
             continue
-        directive = report["effective-directive"].split()[0] if report["effective-directive"] else "unbekannt"
+        directive = directive_label(report["effective-directive"])
         VIOLATIONS.labels(directive=directive).inc()
         logger.warning(
             "CSP-Verstoß %s: blockiert=%s seite=%s quelle=%s:%s (%s)",

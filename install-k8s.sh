@@ -352,10 +352,18 @@ build_helm_args() {
         --set "ingestor.data.className=$STORAGE_CLASS"
         --set "website.media.className=$STORAGE_CLASS"
     )
-    [ -n "$ADMIN_EMAIL" ] && HELM_ARGS+=(
-        --set "adminUser.email=$ADMIN_EMAIL"
-        --set "adminUser.password=$ADMIN_PASSWORD"
-    )
+    # Das Passwort steht nicht in den Argumenten von Helm (dort läse es jedes lokale Konto in der Prozessliste),
+    # sondern in einer Wertedatei, die nur das eigene Konto lesen darf und beim Ende des Skripts gelöscht wird.
+    # Sie steht getrennt von HELM_ARGS, damit der Testlauf sie nicht ausgibt.
+    HELM_SECRET_ARGS=()
+    if [ -n "$ADMIN_EMAIL" ]; then
+        ADMIN_VALUES=$(umask 077 && mktemp "${TMPDIR:-/tmp}/mandari-admin.XXXXXX")
+        trap 'rm -f "$ADMIN_VALUES"' EXIT
+        # YAML in einfachen Anführungszeichen: nur das Anführungszeichen selbst wird verdoppelt
+        printf "adminUser:\n  email: '%s'\n  password: '%s'\n" \
+            "${ADMIN_EMAIL//\'/\'\'}" "${ADMIN_PASSWORD//\'/\'\'}" > "$ADMIN_VALUES"
+        HELM_SECRET_ARGS=(--values "$ADMIN_VALUES")
+    fi
     if [ "${NO_TLS:-false}" = true ]; then
         HELM_ARGS+=(--set ingress.tls.enabled=false)
     else
@@ -369,7 +377,7 @@ build_helm_args() {
 do_dry_run() {
     log "Testlauf – es wird nichts verändert."
     echo ""
-    helm template "${HELM_ARGS[@]}" | head -60
+    helm template "${HELM_ARGS[@]}" ${HELM_SECRET_ARGS[@]+"${HELM_SECRET_ARGS[@]}"} | head -60
     echo ""
     info "Vollständige Ausgabe: helm template ${HELM_ARGS[*]}"
 }
@@ -378,7 +386,8 @@ do_install() {
     log "Installiere mandari in Namespace „$NAMESPACE“..."
     echo ""
     # Die Pods warten per initContainer auf den Migrations-Job; --wait-for-jobs meldet dessen Fehler direkt.
-    helm upgrade --install "${HELM_ARGS[@]}" --wait --wait-for-jobs --timeout 15m \
+    helm upgrade --install "${HELM_ARGS[@]}" ${HELM_SECRET_ARGS[@]+"${HELM_SECRET_ARGS[@]}"} \
+        --wait --wait-for-jobs --timeout 15m \
         || error "Installation fehlgeschlagen. Ursache suchen mit:
   kubectl -n $NAMESPACE get pods
   kubectl -n $NAMESPACE describe pod -l app.kubernetes.io/instance=$RELEASE

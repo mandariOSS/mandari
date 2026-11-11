@@ -79,9 +79,9 @@ SH = _sh()
 pytestmark = pytest.mark.skipif(SH is None, reason="sh nicht vorhanden")
 
 
-def _lauf(tmp_path: Path, *args: str, **fake: str) -> tuple[int, str, list[str], Path]:
+def _lauf(tmp_path: Path, *args: str, vorhanden: bool = False, **fake: str) -> tuple[int, str, list[str], Path]:
     arbeit = tmp_path / "mandari"
-    arbeit.mkdir()
+    arbeit.mkdir(exist_ok=vorhanden)
     skript = tmp_path / "deploy.sh"
     # LF erzwingen (Checkout unter Windows kann CRLF liefern)
     skript.write_bytes(SKRIPT.read_bytes().replace(b"\r\n", b"\n"))
@@ -116,6 +116,8 @@ def _lauf(tmp_path: Path, *args: str, **fake: str) -> tuple[int, str, list[str],
         errors="replace",
         timeout=120,
         check=False,
+        # Wie ein Konto mit der üblichen Vorgabe (nur POSIX): Das Skript muss seine Dateien selbst schließen
+        umask=-1 if os.name == "nt" else 0o022,
     )
     ausgabe = ergebnis.stdout + ergebnis.stderr
     return ergebnis.returncode, ausgabe, log.read_text(encoding="utf-8").splitlines(), arbeit
@@ -293,3 +295,24 @@ def test_container_ohne_healthcheck_zaehlen_nur_mit_ihrem_zustand(tmp_path: Path
 
     assert rc == 0, ausgabe
     assert "(Heartbeat" not in ausgabe
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Dateirechte nach POSIX")
+def test_sicherungen_und_zwischendateien_nur_fuer_das_eigene_konto(tmp_path: Path) -> None:
+    """Die Sicherung enthält die ganze Datenbank: Verzeichnis 700, Dateien 600, auch die früherer Läufe."""
+    alt = tmp_path / "mandari" / "backups"
+    alt.mkdir(parents=True)
+    frueher = alt / "pre-deploy-dev-uralt-20260101-0000.dump"
+    frueher.write_text("ALT", encoding="utf-8")
+    frueher.chmod(0o644)
+    alt.chmod(0o755)
+
+    rc, ausgabe, _aufrufe, arbeit = _lauf(tmp_path, "apply", "dev-neu", vorhanden=True, FAKE_EVENTS="worker-1 0")
+
+    assert rc == 0, ausgabe
+    sicherungen = sorted((arbeit / "backups").glob("pre-deploy-*.dump"))
+    assert len(sicherungen) == 2
+    assert (arbeit / "backups").stat().st_mode & 0o777 == 0o700
+    assert {datei.stat().st_mode & 0o777 for datei in sicherungen} == {0o600}
+    # Die Zwischenkopie der .env bleibt nicht liegen
+    assert not (arbeit / ".env.neu").exists()

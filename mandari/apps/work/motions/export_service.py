@@ -198,14 +198,21 @@ class MotionExportService:
 
         if letterhead and letterhead.is_generated:
             context.update(generated_letterhead_context(letterhead))
+            if letterhead.header_logo_enabled:
+                from apps.work.pdf_bilder import file_data_uri
+
+                # Die Umwandlung liest keine Dateien: Das Logo steht eingebettet im HTML
+                context["logo_src"] = file_data_uri(letterhead.organization.effective_logo)
 
         return render_to_string("work/motions/export/pdf_template.html", context)
 
     def _html_to_pdf(self, html_content: str) -> bytes:
         """Convert HTML to PDF (gemeinsamer Baustein in apps/common/pdf.py)."""
         from apps.common.pdf import html_to_pdf
+        from apps.work.pdf_bilder import inline_remote_images
 
-        return html_to_pdf(html_content)
+        # Die Umwandlung liest keine fremden Server: Bilder aus dem Text vorher abgesichert laden und einbetten
+        return html_to_pdf(inline_remote_images(html_content))
 
     def _apply_letterhead(self, pdf_content: bytes, letterhead) -> bytes:
         """
