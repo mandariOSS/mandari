@@ -57,7 +57,10 @@ def manages(meeting: FactionMeeting, membership: Any) -> bool:
     Nie nach genehmigtem Protokoll (Issue #63): Tagesordnung, Beschlüsse und Anlagen sind dann fest, auch wenn
     jemand den Status der Sitzung zurücksetzt. Korrekturen laufen als Nachtrag zum Protokoll.
     """
-    if meeting.protocol_approved:
+    from .models import FactionMeeting
+
+    # Stand der Datenbank, nicht der des geladenen Objekts: Die Genehmigung kann nach dem Laden gekommen sein
+    if meeting.protocol_approved or FactionMeeting.objects.filter(pk=meeting.pk, protocol_approved=True).exists():
         return False
     return bool(meeting.created_by == membership or membership.has_permission("faction.manage"))
 

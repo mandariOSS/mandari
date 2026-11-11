@@ -350,15 +350,19 @@ def deletable_item(meeting: FactionMeeting, item_id: Any) -> FactionAgendaItem |
 @transaction.atomic
 def delete_agenda_item(item: FactionAgendaItem, confirmation: Any) -> DeletionImpact:
     """TOP löschen; verschwinden Inhalte mit, nur mit passender Eingabe (Nummer oder Titel)."""
+    from .agenda import lock_meeting
     from .models import FactionMeeting
 
-    # Mit dem TOP verschwänden seine Protokolleinträge und der Beschluss; nach der Genehmigung sind sie fest
-    if FactionMeeting.objects.filter(pk=item.meeting_id, protocol_approved=True).exists():
-        raise DeletionBlockedError(PROTOCOL_APPROVED_ITEM)
-    impact = impact_of(item)
-    if impact.has_content and not confirmed(confirmation, item_phrases(item)):
-        raise DeletionNotConfirmedError(NOT_CONFIRMED_ITEM)
-    _delete_with_audit(item, impact)
+    with transaction.atomic():
+        # Mit dem TOP verschwänden seine Protokolleinträge und der Beschluss; nach der Genehmigung sind sie fest.
+        # Prüfung und Löschen unter der Sperre der Sitzung, damit keine Genehmigung dazwischenkommt.
+        lock_meeting(item.meeting)
+        if FactionMeeting.objects.filter(pk=item.meeting_id, protocol_approved=True).exists():
+            raise DeletionBlockedError(PROTOCOL_APPROVED_ITEM)
+        impact = impact_of(item)
+        if impact.has_content and not confirmed(confirmation, item_phrases(item)):
+            raise DeletionNotConfirmedError(NOT_CONFIRMED_ITEM)
+        _delete_with_audit(item, impact)
     return impact
 
 

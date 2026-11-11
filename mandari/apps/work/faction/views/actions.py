@@ -1408,16 +1408,9 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, "Nur Aufgaben-Einträge können ins Task-Board übernommen werden.")
             return self._redirect_detail(meeting)
 
-        from apps.work.tasks.models import Task
-
         # Aufgaben legt an, wer Aufgaben anlegen darf; das Recht an der Sitzung allein reicht nicht
         if not self.membership.has_permission("tasks.create"):
             return HttpResponse(status=403)
-        # Je Eintrag eine Aufgabe: Ein zweiter Aufruf legt keine weitere an
-        if Task.objects.filter(organization=self.organization, related_protocol_entry=entry).exists():
-            messages.info(request, "Aus diesem Eintrag wurde bereits eine Aufgabe angelegt.")
-            return self._redirect_detail(meeting)
-
         content = entry.get_content_decrypted() or ""
         task_title = content[:200] if content else f"Aufgabe aus Fraktionssitzung {meeting.title}"
 
@@ -1427,16 +1420,18 @@ class FactionActionView(WorkViewMixin, View):
         else:
             description_parts.append("TOP: Allgemein")
 
-        Task.objects.create(
-            organization=self.organization,
+        from apps.work.tasks import services as task_services
+
+        # Je Eintrag eine Aufgabe, auch bei gleichzeitigen Aufrufen (Sperre des Eintrags im Dienst)
+        task = task_services.task_from_protocol_entry(
+            entry,
+            self.membership,
             title=task_title,
             description="\n".join(description_parts),
-            assigned_to=entry.action_assignee,
-            due_date=entry.action_due_date,
-            created_by=self.membership,
-            related_faction_meeting=meeting,
-            related_protocol_entry=entry,
         )
+        if task is None:
+            messages.info(request, "Aus diesem Eintrag wurde bereits eine Aufgabe angelegt.")
+            return self._redirect_detail(meeting)
 
         # Den Erledigt-Stand am Eintrag setzt nur, wer das Protokoll bearbeiten darf; genehmigte Protokolle sind
         # unveränderbar (Issue #63). Die Aufgabe entsteht in beiden Fällen, nur das Flag bleibt unberührt.

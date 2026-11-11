@@ -180,9 +180,17 @@ class ProtokollGenehmigtError(ValueError):
 
 
 def pruefe_protokoll_offen(meeting: Any) -> None:
-    """``ProtokollGenehmigtError``, wenn das Protokoll der Sitzung genehmigt ist (Stand der Datenbank)."""
+    """
+    ``ProtokollGenehmigtError``, wenn das Protokoll der Sitzung genehmigt ist.
+
+    Sperrt die Sitzung bis zum Ende der laufenden Transaktion (``agenda.lock_meeting``): Die Genehmigung schreibt
+    dieselbe Zeile und wartet, bis die Änderung fertig ist, oder sie war vorher fertig und wird hier gesehen. Nur
+    innerhalb von ``transaction.atomic``.
+    """
+    from .agenda import lock_meeting
     from .models import FactionMeeting
 
+    lock_meeting(meeting)
     if FactionMeeting.objects.filter(pk=meeting.pk, protocol_approved=True).exists():
         raise ProtokollGenehmigtError()
 

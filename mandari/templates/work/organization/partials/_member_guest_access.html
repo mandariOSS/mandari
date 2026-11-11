@@ -111,7 +111,7 @@
         </div>
         {% endfor %}
     </div>
-    {% else %}
+    {% elif not guest_document_shares_hidden %}
     <p class="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">Dieser Gast hat aktuell keine Freigaben und sieht keine Dokumente.</p>
     {% endif %}
 </c-ui.card>

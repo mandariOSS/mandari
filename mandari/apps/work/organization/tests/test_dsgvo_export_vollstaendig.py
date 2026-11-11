@@ -101,8 +101,10 @@ def _vermerk(daten: dict[str, Any], vorgang: str) -> list[dict[str, Any]]:
 
 @pytest.mark.django_db
 def test_aufgabenkommentare_stammen_aus_der_aktivitaet_auch_bei_fremden_aufgaben(
-    org: Any, person: Any, andere: Any
+    org: Any, make_member: Any, andere: Any
 ) -> None:
+    # Titel und Stand fremder Aufgaben nennt der Export nur mit dem Recht, Aufgaben zu sehen
+    person = make_member(org, ["dashboard.view", "tasks.view"], email="kommentiert@example.org")
     fremd = Task.objects.create(organization=org, title="Plakate", created_by=andere, visibility="organization")
     eigen = Task.objects.create(organization=org, title="Rede", created_by=person)
     task_services.add_comment(fremd, person, "Ich übernehme die Hälfte")

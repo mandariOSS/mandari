@@ -224,21 +224,40 @@ def test_uebrig_gebliebene_freigabe_oeffnet_keine_private_aufgabe(org: Any, make
     assert aufgabe in task_selectors.own_tasks(autorin, base=basis)
 
 
-def test_wechsel_weg_von_geteilt_entfernt_die_freigaben(org: Any, make_member: Any) -> None:
+def test_wiederteilen_ohne_freigabedialog_beginnt_ohne_empfaenger(org: Any, make_member: Any) -> None:
     autorin = make_member(org, ["tasks.view", "tasks.create"], email="autorin@example.org")
     empfaenger = make_member(org, ["tasks.view"], email="empfaenger@example.org")
     aufgabe = Task.objects.create(organization=org, title="Vertraulich", created_by=autorin, visibility="shared")
     TaskShare.objects.create(task=aufgabe, membership=empfaenger, shared_by=autorin)
 
-    alt = task_services.capture_old_values(aufgabe)
-    aufgabe.visibility = "shared"
-    task_services.apply_panel_update(aufgabe, autorin, alt)
-    assert TaskShare.objects.filter(task=aufgabe).count() == 1
+    def panel(sichtbarkeit: str) -> None:
+        alt = task_services.capture_old_values(aufgabe)
+        aufgabe.visibility = sichtbarkeit
+        task_services.apply_panel_update(aufgabe, autorin, alt)
 
-    alt = task_services.capture_old_values(aufgabe)
-    aufgabe.visibility = "private"
-    task_services.apply_panel_update(aufgabe, autorin, alt)
+    # Unverändert geteilt: Die Empfänger bleiben
+    panel("shared")
+    assert TaskShare.objects.filter(task=aufgabe).count() == 1
+    # Auf privat: Die Zeile bleibt ohne Wirkung stehen (ein veraltetes Panel löscht so keine neuen Freigaben)
+    panel("private")
+    assert TaskShare.objects.filter(task=aufgabe).count() == 1
+    assert not aufgabe.can_access(empfaenger)
+    # Wieder geteilt, ohne Empfänger zu wählen: Die früheren bekommen nicht ungefragt wieder Zugriff
+    panel("shared")
     assert not TaskShare.objects.filter(task=aufgabe).exists()
+    assert not aufgabe.can_access(empfaenger)
+
+
+def test_aufgabe_aus_eintrag_nur_einmal_im_dienst(
+    leitung: Any, sitzung: FactionMeeting, top: FactionAgendaItem
+) -> None:
+    eintrag = _aufgabeneintrag(sitzung, top, leitung)
+
+    erste = task_services.task_from_protocol_entry(eintrag, leitung, title="Stellungnahme", description="Text")
+    zweite = task_services.task_from_protocol_entry(eintrag, leitung, title="Stellungnahme", description="Text")
+
+    assert erste is not None and zweite is None
+    assert Task.objects.filter(related_protocol_entry=eintrag).count() == 1
 
 
 # --- Gastseite ---------------------------------------------------------------------------------------------------
@@ -286,6 +305,19 @@ def test_export_nennt_stand_einer_aufgabe_nur_mit_zugriff(org: Any, make_member:
     assert [eintrag["title"] for eintrag in nachher] == [export_service.NO_ACCESS_TASK]
     assert nachher[0]["status"] == "" and nachher[0]["comments"][0]["content"] == "Mein Kommentar"
     assert "GEHEIM" not in str(nachher)
+
+
+def test_export_nennt_fremde_aufgaben_nur_mit_sichtrecht(org: Any, make_member: Any) -> None:
+    autorin = make_member(org, ["tasks.view", "tasks.create"], email="autorin@example.org")
+    person = make_member(org, ["dashboard.view"], email="person@example.org")
+    fremd = Task.objects.create(organization=org, title="Offene Aufgabe", created_by=autorin, visibility="organization")
+    TaskActivity.objects.create(task=fremd, actor=person, activity_type="comment", content="Mein Kommentar")
+    Task.objects.create(organization=org, title="Mir zugewiesen", created_by=autorin, assigned_to=person)
+
+    titel = {eintrag["title"] for eintrag in export_service.DsgvoExportService()._collect_tasks(person, org)}
+
+    # Ohne ``tasks.view``: fremde Aufgaben nur als Platzhalter, zugewiesene bleiben
+    assert titel == {export_service.NO_ACCESS_TASK, "Mir zugewiesen"}
 
 
 def test_export_nennt_stand_eines_dokuments_nur_mit_zugriff(org: Any, make_member: Any) -> None:

@@ -67,7 +67,7 @@ guest_has_password, guest_document_shares, guest_folder_shares, can_manage_guest
         </li>
         {% endfor %}
     </ul>
-    {% else %}
+    {% elif not guest_document_shares_hidden %}
     <c-rahmen.satz>Dieser Gast hat aktuell keine Freigaben und sieht keine Dokumente.</c-rahmen.satz>
     {% endif %}
 </c-rahmen.abschnitt>

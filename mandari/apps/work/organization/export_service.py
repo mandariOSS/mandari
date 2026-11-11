@@ -599,16 +599,20 @@ class DsgvoExportService:
                 | Q(id__in=shared_ids)
                 | Q(id__in=list(comments_by_task))
             )
+            .select_related("created_by", "assigned_to", "organization")
             .distinct()
             .order_by("-created_at")
         )
 
+        darf_aufgaben_sehen = membership.has_permission("tasks.view")
         result = []
         for t in tasks:
             is_creator = t.created_by_id == membership.id
             is_assignee = t.assigned_to_id == membership.id
             is_shared = t.id in shared_ids
-            if not t.can_access(membership):
+            # Fremde Aufgaben nur mit ``tasks.view`` (wie die Aufgabenansicht); eigene und zugewiesene bleiben
+            zugriff = t.can_access(membership) and (darf_aufgaben_sehen or is_creator or is_assignee)
+            if not zugriff:
                 # Eigene Kommentare gehören zur Auskunft, der heutige Stand der Aufgabe nicht mehr: Die Person hat
                 # keinen Zugriff mehr (Aufgabe inzwischen privat oder Freigabe entzogen)
                 result.append(

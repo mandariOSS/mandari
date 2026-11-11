@@ -437,18 +437,13 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         if not meeting.abstimmungen_erlaubt:
             return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
 
-        from ..regeln import ProtokollGenehmigtError, pruefe_protokoll_offen
+        from .. import services as faction_services
+        from ..regeln import ProtokollGenehmigtError
 
         try:
-            pruefe_protokoll_offen(meeting)
+            faction_services.clear_decision(item)
         except ProtokollGenehmigtError as exc:
             return HttpResponse(str(exc), status=400)
-        FactionDecision.objects.filter(agenda_item=item).delete()
-        item.has_decision = False
-        item.votes_for = 0
-        item.votes_against = 0
-        item.votes_abstain = 0
-        item.save()
 
         return self._panel_response(request, meeting, item, "Abstimmung entfernt")
 

@@ -134,10 +134,41 @@ def _org_member_ids(organization_id: Any, raw_ids: Sequence[str]) -> list[Any]:
     )
 
 
-def drop_shares_unless_shared(task: Task) -> None:
-    """Freigaben gehören zur Sichtbarkeit „geteilt“: Wechselt die Aufgabe auf eine andere, entfallen sie."""
-    if task.visibility != "shared":
+def reset_shares_on_reshare(task: Task, old_visibility: str) -> None:
+    """
+    Aufgabe ohne Freigabedialog (Panel, Dateiimport) auf „geteilt“ gestellt: frühere Empfänger entfallen.
+
+    Freigabezeilen zählen nur bei Sichtbarkeit „geteilt“ (``selectors.visible_tasks``, ``Task.can_access``). Wechselt
+    eine Aufgabe über Panel oder Import auf eine andere Sichtbarkeit, bleiben sie ohne Wirkung stehen; ein
+    veraltetes Panel kann so keine neuen Freigaben löschen. Wird die Aufgabe später auf demselben Weg wieder
+    geteilt, bekämen die früheren Empfänger ungefragt wieder Zugriff: Deshalb beginnt sie dann ohne Empfänger,
+    sie werden im Freigabedialog gewählt (``update_visibility``).
+    """
+    if task.visibility == "shared" and old_visibility != "shared":
         TaskShare.objects.filter(task=task).delete()
+
+
+@transaction.atomic
+def task_from_protocol_entry(entry: Any, membership: Membership, *, title: str, description: str) -> Task | None:
+    """
+    Aufgabe aus einem Protokolleintrag der Fraktionssitzung anlegen; ``None``, wenn es zu dem Eintrag schon eine gibt.
+
+    Der Eintrag wird für die Dauer der Transaktion gesperrt: Zwei gleichzeitige Aufrufe legen nacheinander an und
+    der zweite sieht die Aufgabe des ersten.
+    """
+    type(entry).objects.select_for_update().filter(pk=entry.pk).first()
+    if Task.objects.filter(organization=entry.meeting.organization, related_protocol_entry=entry).exists():
+        return None
+    return Task.objects.create(
+        organization=entry.meeting.organization,
+        title=title,
+        description=description,
+        assigned_to=entry.action_assignee,
+        due_date=entry.action_due_date,
+        created_by=membership,
+        related_faction_meeting=entry.meeting,
+        related_protocol_entry=entry,
+    )
 
 
 @transaction.atomic
@@ -400,7 +431,7 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
     """
     _sync_completion(task)
     task.save()
-    drop_shares_unless_shared(task)
+    reset_shares_on_reshare(task, old_values["visibility_raw"])
     _log_changes(task, membership, old_values)
     return task
 
