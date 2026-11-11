@@ -752,6 +752,17 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
     audit.log_member_access(member, before, _access_text(member), actor=_active_membership(organization, actor_user))
 
 
+def _still_active(actor: Membership | None) -> bool:
+    """Ist die handelnde Mitgliedschaft jetzt aktiv? Sperrt ihre Zeile bis zum Ende der Transaktion."""
+    if actor is None:
+        return False
+    return (
+        Membership.objects.select_for_update()
+        .filter(pk=actor.pk, is_active=True, is_guest=False, user__is_active=True)
+        .exists()
+    )
+
+
 @transaction.atomic
 def _restore_membership(organization: Organization, member: Membership, actor: Membership | None) -> None:
     """
@@ -762,8 +773,12 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     _lock_membership(member)
     # Eine offene Registrierungsanfrage zu aktivieren ist die Freischaltung (samt Zugangs-Mail): Das darf nur, wer
     # Mitglieder einladen darf, gleich über welchen Weg der Aufruf kommt. Ohne aktive handelnde Mitgliedschaft
-    # (etwa zwischen der Prüfung im View und diesem Aufruf deaktiviert) gibt es keine Freischaltung.
-    if member.registration_requested_at is not None and (actor is None or not actor.has_permission("members.invite")):
+    # (etwa zwischen der Prüfung im View und diesem Aufruf deaktiviert) gibt es keine Freischaltung. Der Stand der
+    # handelnden Mitgliedschaft wird dafür unter Sperre neu gelesen: Das mitgegebene Objekt stammt aus dem View, und
+    # ``has_permission`` fragt nicht nach ``is_active``.
+    if member.registration_requested_at is not None and not (
+        _still_active(actor) and actor is not None and actor.has_permission("members.invite")
+    ):
         raise ServiceError("Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf.")
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")

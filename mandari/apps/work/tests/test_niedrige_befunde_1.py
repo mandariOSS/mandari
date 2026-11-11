@@ -86,6 +86,23 @@ def test_vertretung_einer_deaktivierten_mitgliedschaft_wird_weiter_benachrichtig
     erhalten = Notification.objects.get()
     assert erhalten.recipient_id == vertretung.pk and erhalten.title.startswith("[Vertretung]")
 
+    # Auch über das Ereignis der Zuweisung: Die deaktivierte Mitgliedschaft geht an den NotificationHub
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from apps.work.notifications import abonnement
+    from apps.work.tasks.models import Task
+
+    aufgabe = Task.objects.create(organization=org, title="Rede schreiben", created_by=absender, assigned_to=abwesend)
+    Notification.objects.all().delete()
+    ereignis = SimpleNamespace(
+        event_id=uuid4(),
+        actor_ref=f"user:{absender.user_id}",
+        payload={"task": str(aufgabe.pk), "organization": str(org.pk), "assignee": str(abwesend.pk)},
+    )
+    abonnement.aufgabe_zugewiesen(ereignis)  # type: ignore[arg-type]
+    assert [n.recipient_id for n in Notification.objects.all()] == [vertretung.pk]
+
     # Eine deaktivierte Vertretung bekommt weiterhin nichts
     Notification.objects.all().delete()
     vertretung.is_active = False
@@ -132,6 +149,12 @@ def test_offene_registrierung_gibt_nur_frei_wer_einladen_darf(org: Any, make_mem
     # Ohne aktive handelnde Mitgliedschaft (inzwischen deaktiviert) ebenfalls nicht
     with pytest.raises(org_services.ServiceError):
         org_services._restore_membership(org, anfrage, None)
+    # Auch nicht mit einem Objekt aus dem View, dessen Mitgliedschaft inzwischen deaktiviert ist
+    veraltet = make_member(org, ["members.view", "members.edit", "members.invite"], email="veraltet@example.org")
+    type(veraltet).objects.filter(pk=veraltet.pk).update(is_active=False)
+    assert veraltet.is_active and veraltet.has_permission("members.invite")
+    with pytest.raises(org_services.ServiceError):
+        org_services.reactivate_member(org, anfrage, veraltet)
     anfrage.refresh_from_db()
     assert not anfrage.is_active and anfrage.registration_requested_at is not None
 
