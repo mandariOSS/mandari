@@ -35,13 +35,13 @@ TABELLE = """
 """
 
 
-def test_liest_linien_aelteste_zuerst():
+def test_liest_linien_aelteste_zuerst() -> None:
     linien = _skript().pflegelinien(TABELLE, dt.date(2027, 1, 1))
     assert [linie for linie, _ in linien] == ["0.11", "0.12", "0.16"]
     assert linien[0][1] == dt.date(2027, 5, 3)
 
 
-def test_abgelaufene_linien_fallen_weg():
+def test_abgelaufene_linien_fallen_weg() -> None:
     skript = _skript()
     assert [linie for linie, _ in skript.pflegelinien(TABELLE, dt.date(2027, 5, 4))] == ["0.12", "0.16"]
     # Der letzte Tag zählt noch
@@ -49,20 +49,20 @@ def test_abgelaufene_linien_fallen_weg():
     assert skript.pflegelinien(TABELLE, dt.date(2027, 7, 13)) == []
 
 
-def test_security_md_nennt_die_pflegelinien():
+def test_security_md_nennt_die_pflegelinien() -> None:
     """Die echte Tabelle ist lesbar: Am 11.11.2026 sind 0.11 und 0.12 in Pflege."""
     text = (REPO / "SECURITY.md").read_text(encoding="utf-8")
     linien = [linie for linie, _ in _skript().pflegelinien(text, dt.date(2026, 11, 11))]
     assert {"0.11", "0.12"} <= set(linien)
 
 
-def test_migrationen_werden_erkannt():
+def test_migrationen_werden_erkannt() -> None:
     skript = _skript()
     assert skript.enthaelt_migration(["mandari/apps/work/meetings/migrations/0050_x.py", "README.md"])
     assert not skript.enthaelt_migration(["mandari/apps/work/meetings/services.py", "docs/migrations.md"])
 
 
-def test_ci_ausloeser_der_linie_wird_erkannt():
+def test_ci_ausloeser_der_linie_wird_erkannt() -> None:
     """Linien vor 0.13 lösen für PRs gegen sich keine CI aus; das Skript bricht dann ab, statt PRs ohne Prüfung zu öffnen."""
     skript = _skript()
     assert skript.ci_ausloeser_vorhanden((REPO / ".github" / "workflows" / "pr-check.yml").read_text(encoding="utf-8"))

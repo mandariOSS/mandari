@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import io
 import json
 import re
 import subprocess
@@ -200,12 +201,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--linie", action="append", help="nur diese Pflegelinie(n), z. B. 0.12")
     parser.add_argument("--trocken", action="store_true", help="nur anzeigen, nichts anlegen")
     parser.add_argument("--nur-pr", action="store_true", help="nach gelöstem Konflikt nur den PR öffnen")
+    for strom in (sys.stdout, sys.stderr):
+        if isinstance(strom, io.TextIOWrapper):
+            strom.reconfigure(encoding="utf-8")  # Umlaute auch in der Windows-Konsole
     args = parser.parse_args(argv)
     if args.nur_pr and args.trocken:
         parser.error("--nur-pr öffnet Pull Requests und lässt sich nicht mit --trocken verbinden")
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")  # Umlaute auch in der Windows-Konsole
-        sys.stderr.reconfigure(encoding="utf-8")
 
     unterstuetzt = pflegelinien(SECURITY_MD.read_text(encoding="utf-8"), dt.date.today())
     linien = [linie for linie, _ in unterstuetzt]
