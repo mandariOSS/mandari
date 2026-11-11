@@ -82,7 +82,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from mandari_oparl.ids import IdBases, canonical_id
 
@@ -200,8 +200,82 @@ def _is_empty(value: Any) -> bool:
     return value is None or (isinstance(value, str | Mapping | list | tuple) and len(value) == 0)
 
 
-def _sort_key(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+#: Obergrenzen des Vergleichs. Eine ungeordnete Liste wird zur sortierten Menge der JSON-Texte ihrer Einträge; liegt
+#: eine solche Liste in einer anderen, steht der innere Text maskiert im äußeren, und Anführungszeichen wie
+#: Rückstriche verdoppeln sich je Ebene. Ohne Grenze reichen wenige hundert Byte einer Quelle mit tief geschachtelten
+#: Listen für Gigabytes im Ingestor. Echte OParl-Objekte bleiben weit darunter (zwei bis vier Listenebenen).
+MAX_COMPARE_DEPTH: Final = 64
+MAX_COMPARE_KEY_CHARS: Final = 16 * 1024 * 1024
+
+
+class _CompareLimitError(Exception):
+    """Der Vergleichswert würde die Obergrenzen überschreiten; der Aufrufer nimmt die Prüfsumme des Rohwerts."""
+
+
+class _Budget:
+    """Zeichen, die die Sortierschlüssel eines Vergleichs zusammen noch belegen dürfen."""
+
+    __slots__ = ("left",)
+
+    def __init__(self, limit: int = MAX_COMPARE_KEY_CHARS) -> None:
+        self.left = limit
+
+
+def _sort_key(value: Any, budget: _Budget) -> str:
+    key = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+    budget.left -= len(key)
+    if budget.left < 0:
+        raise _CompareLimitError
+    return key
+
+
+def _digest(value: Any) -> str:
+    """
+    Prüfsumme des Rohwerts ohne Mengenbildung: linear in der Größe, Reihenfolge der Listen zählt.
+
+    Ersatz für Werte über den Obergrenzen. Flüchtige Felder der obersten Ebene bleiben außen vor, damit sich die
+    Prüfsumme nicht mit jedem ``modified`` ändert. Der Wert wird ohne Rekursion durchlaufen (eigener Stapel), die
+    Prüfsumme ist deshalb auch bei beliebig tiefer Schachtelung bestimmt: gleicher Inhalt, gleiche Prüfsumme. Nur
+    ein Wert, der sich selbst enthält, ist nicht darstellbar; er ergibt jedes Mal ein anderes Ergebnis und gilt
+    damit in jedem Lauf als geändert, statt dass eine Änderung unbemerkt bleibt.
+    """
+    if isinstance(value, Mapping):
+        value = {key: item for key, item in value.items() if key not in VOLATILE_FIELDS}
+    digest = hashlib.sha256()
+    open_containers: set[int] = set()
+    # Einträge des Stapels: ("wert", Wert), ("text", Bytes der kanonischen Form) oder ("ende", id des Behälters)
+    stack: list[tuple[str, Any]] = [("wert", value)]
+    while stack:
+        kind, item = stack.pop()
+        if kind == "text":
+            digest.update(item)
+        elif kind == "ende":
+            open_containers.discard(item)
+        elif isinstance(item, Mapping | list | tuple):
+            if id(item) in open_containers:
+                return f"nicht-vergleichbar:{uuid4().hex}"
+            open_containers.add(id(item))
+            stack.append(("ende", id(item)))
+            if isinstance(item, Mapping):
+                stack.append(("text", b"}"))
+                for key, child in sorted(((str(key), child) for key, child in item.items()), reverse=True, key=_key):
+                    stack.append(("text", b","))
+                    stack.append(("wert", child))
+                    stack.append(("text", json.dumps(key, ensure_ascii=False).encode("utf-8") + b":"))
+                stack.append(("text", b"{"))
+            else:
+                stack.append(("text", b"]"))
+                for child in reversed(item):
+                    stack.append(("text", b","))
+                    stack.append(("wert", child))
+                stack.append(("text", b"["))
+        else:
+            digest.update(json.dumps(item, ensure_ascii=False, default=str).encode("utf-8"))
+    return "sha256:" + digest.hexdigest()
+
+
+def _key(entry: tuple[str, Any]) -> str:
+    return entry[0]
 
 
 def _type_name(value: Any) -> Any:
@@ -213,11 +287,38 @@ def _type_name(value: Any) -> Any:
     return value
 
 
-def _comparable_field(key: str, value: Any, *, ordered: bool = False) -> Any:
-    """Vergleichswert des Felds ``key``: ``type`` als Klassenname, sonst wie :func:`comparable`."""
+def _field(key: str, value: Any, ordered: bool, depth: int, budget: _Budget) -> Any:
     if key == TYPE_FIELD:
         value = _type_name(value)
-    return comparable(value, ordered=ordered or key in ORDERED_FIELDS)
+    return _comparable(value, ordered or key in ORDERED_FIELDS, depth, budget)
+
+
+def _comparable(value: Any, ordered: bool, depth: int, budget: _Budget) -> Any:
+    if depth > MAX_COMPARE_DEPTH:
+        raise _CompareLimitError
+    result: Any
+    if isinstance(value, Mapping):
+        result = {}
+        for key, item in value.items():
+            if key in VOLATILE_FIELDS:
+                continue
+            item = _field(key, item, ordered, depth + 1, budget)
+            if item is not None:
+                result[key] = item
+    elif isinstance(value, list | tuple):
+        items = [_comparable(item, ordered, depth + 1, budget) for item in value]
+        result = items if ordered else sorted({_sort_key(item, budget) for item in items if item is not None})
+    else:
+        result = value
+    return None if _is_empty(result) else result
+
+
+def _comparable_field(key: str, value: Any, *, ordered: bool = False) -> Any:
+    """Vergleichswert des Felds ``key``: ``type`` als Klassenname, sonst wie :func:`comparable`."""
+    try:
+        return _field(key, value, ordered, 0, _Budget())
+    except (_CompareLimitError, RecursionError):
+        return _digest(value)
 
 
 def comparable(value: Any, *, ordered: bool = False) -> Any:
@@ -231,22 +332,13 @@ def comparable(value: Any, *, ordered: bool = False) -> Any:
       Eingebettete Objekte werden dabei als Ganzes verglichen; ändert sich eines, ändert sich die
       Liste. Ausnahme sind Werte unter ``ORDERED_FIELDS`` (``ordered``).
     - ``null``, leere Listen, leere Objekte und leerer Text gelten als fehlend (``None``).
+    - Über den Obergrenzen (``MAX_COMPARE_DEPTH``, ``MAX_COMPARE_KEY_CHARS``) steht die Prüfsumme des Rohwerts
+      (:func:`_digest`): weiterhin gleich bei gleichem Inhalt, aber die Reihenfolge der Listen zählt dann.
     """
-    result: Any
-    if isinstance(value, Mapping):
-        result = {}
-        for key, item in value.items():
-            if key in VOLATILE_FIELDS:
-                continue
-            item = _comparable_field(key, item, ordered=ordered)
-            if item is not None:
-                result[key] = item
-    elif isinstance(value, list | tuple):
-        items = [comparable(item, ordered=ordered) for item in value]
-        result = items if ordered else sorted({_sort_key(item) for item in items if item is not None})
-    else:
-        result = value
-    return None if _is_empty(result) else result
+    try:
+        return _comparable(value, ordered, 0, _Budget())
+    except (_CompareLimitError, RecursionError):
+        return _digest(value)
 
 
 def content_fingerprint(raw: Mapping[str, Any]) -> str:
