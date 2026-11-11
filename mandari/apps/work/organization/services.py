@@ -753,13 +753,20 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
 
 
 def _still_active(actor: Membership | None) -> bool:
-    """Ist die handelnde Mitgliedschaft jetzt aktiv? Sperrt ihre Zeile bis zum Ende der Transaktion."""
+    """
+    Ist die handelnde Mitgliedschaft jetzt aktiv? Sperrt ihre Zeile bis zum Ende der Transaktion.
+
+    Gesperrt wird nur die Mitgliedschaft (``of=("self",)``), nicht das Konto: Die Abfrage verbindet beide, und eine
+    Sperre auf der Kontozeile könnte sich mit einer gleichzeitigen Einladung derselben Person gegenseitig blockieren.
+    """
     if actor is None:
         return False
     return (
-        Membership.objects.select_for_update()
+        Membership.objects.select_for_update(of=("self",))
         .filter(pk=actor.pk, is_active=True, is_guest=False, user__is_active=True)
-        .exists()
+        .only("pk")
+        .first()
+        is not None
     )
 
 
