@@ -710,7 +710,7 @@ class Command(BaseCommand):
         from apps.work.meetings.models import AgendaItemNote, AgendaItemPosition
         from apps.work.models import MeetingPreparation, Motion, Task
         from apps.work.motions.models import DocumentFolder, FolderGuestShare
-        from insight_core.models import OParlAgendaItem, OParlPerson
+        from insight_core.models import OParlAgendaItem
 
         now = timezone.now()
         today = now.date()
@@ -792,11 +792,6 @@ class Command(BaseCommand):
         )
         ms_sachkundig.roles.set([role_by_name["Sachkundige/r Bürger/in"]])
         ms_sachkundig.oparl_committees.set([self._insight_refs["orgs"]["bauausschuss"]])
-        # Ihre Person im RIS legt der Musterstadt-Bestand an (setup_demo_insight, apps/common/demo_stadt.py)
-        sofia = OParlPerson.objects.filter(external_id=_ext("person", "sofia-sachkundig")).first()
-        if sofia is not None and ms_sachkundig.oparl_person_id != sofia.pk:
-            ms_sachkundig.oparl_person = sofia
-            ms_sachkundig.save(update_fields=["oparl_person"])
 
         ms_unvereidigt, _ = Membership.objects.update_or_create(
             user=self._make_user("unvereidigt"),

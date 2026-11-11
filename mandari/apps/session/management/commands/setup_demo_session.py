@@ -67,6 +67,7 @@ from apps.common.demo_stadt import (
     stabil,
     stadtplan,
 )
+from hub.ris import selectors as ris
 
 if TYPE_CHECKING:
     from apps.session.models import (
@@ -245,14 +246,13 @@ class Command(BaseCommand):
     def _organisation(self, name: str, **felder: Any) -> SessionOrganization:
         """Gremium, Fraktion oder Amt über den Namen holen oder anlegen; bestehende bleiben unverändert."""
         from apps.session.models import SessionOrganization
-        from insight_core.models import OParlOrganization
 
         org = SessionOrganization.objects.filter(tenant=self.mandant, name=name).first()
         if org is not None:
             return org
         insight_key = felder.pop("insight_key", None)
         if insight_key:
-            insight = OParlOrganization.objects.filter(external_id=demo_ext("organization", insight_key)).first()
+            insight = ris.organizations_by_external_id([demo_ext("organization", insight_key)]).first()
             if insight is not None and not SessionOrganization.objects.filter(oparl_organization=insight).exists():
                 felder["oparl_organization"] = insight
         org = SessionOrganization.objects.create(tenant=self.mandant, name=name, is_active=True, **felder)
@@ -293,12 +293,8 @@ class Command(BaseCommand):
     def _personen(self) -> None:
         """Personen des Katalogs; die acht der Basisdemo gibt es schon (gleiche E-Mail-Adresse)."""
         from apps.session.models import SessionPerson
-        from insight_core.models import OParlPerson
 
-        insight = {
-            p.external_id: p
-            for p in OParlPerson.objects.filter(external_id__in=[demo_ext("person", p.key) for p in PERSONEN])
-        }
+        insight = {p.external_id: p for p in ris.persons_by_external_id([demo_ext("person", p.key) for p in PERSONEN])}
         verknuepft = set(
             SessionPerson.objects.filter(oparl_person__in=list(insight.values())).values_list(
                 "oparl_person_id", flat=True

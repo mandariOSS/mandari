@@ -80,7 +80,8 @@ from apps.work.motions.models import (
 from apps.work.notifications.models import Notification, NotificationPreference, NotificationType
 from apps.work.organization.models import MemberAbsence
 from apps.work.tasks.models import Task, TaskActivity, TaskChecklistItem, TaskComment, TaskLabel
-from insight_core.models import OParlAgendaItem, OParlMeeting, OParlOrganization, OParlPaper, OParlPerson
+from hub.ris import selectors as ris
+from insight_core.models import OParlAgendaItem, OParlMeeting, OParlPaper
 
 FRAKTION = "fraktion-bunte-liste"
 #: Personen der Basisdemo mit eigenem Demo-Konto in Work (Schlüssel aus DEMO_USERS)
@@ -1052,19 +1053,22 @@ class Command(BaseCommand):
         gast = Membership.objects.filter(organization=org, user__email=DEMO_USERS["gast"]["email"]).first()
         if gast is not None:
             welt.m["gast"] = gast
+        # Die Demo-Nutzerin „sachkundig“ ist Sofia Sachkundig, deren Person im RIS erst der Bestand anlegt
+        sofia = ris.persons_by_external_id([demo_ext("person", "sofia-sachkundig")]).first()
+        ms_sofia = welt.m.get("sofia-sachkundig")
+        if sofia is not None and ms_sofia is not None and ms_sofia.oparl_person_id != sofia.pk:
+            ms_sofia.oparl_person = sofia
+            ms_sofia.save(update_fields=["oparl_person"])
 
         rollen = {r.name: r for r in Role.objects.filter(organization=org)}
         personen = [p for p in PERSONEN if p.fraktion == FRAKTION and p.key not in BASIS_KONTEN]
         ris_personen = {
-            p.external_id: p
-            for p in OParlPerson.objects.filter(external_id__in=[demo_ext("person", p.key) for p in personen])
+            p.external_id: p for p in ris.persons_by_external_id([demo_ext("person", p.key) for p in personen])
         }
         gremien_keys = {"rat"} | {b.gremium for b in welt.plan.besetzung}
         gremien = {
             o.external_id: o
-            for o in OParlOrganization.objects.filter(
-                external_id__in=[demo_ext("organization", g) for g in gremien_keys]
-            )
+            for o in ris.organizations_by_external_id([demo_ext("organization", g) for g in gremien_keys])
         }
         neue_einstellungen = []
         for person in personen:
@@ -1127,13 +1131,13 @@ class Command(BaseCommand):
     def _ris(self, welt: Welt) -> None:
         plan = welt.plan
         papiere = {demo_ext("paper", v.key): v.key for v in plan.vorgaenge}
-        for papier in OParlPaper.objects.filter(external_id__in=papiere):
+        for papier in ris.papers_by_external_id(papiere):
             welt.papiere[papiere[papier.external_id]] = papier
         sitzungen = {demo_ext("meeting", s.key): s.key for s in plan.sitzungen}
-        for sitzung in OParlMeeting.objects.filter(external_id__in=sitzungen):
+        for sitzung in ris.meetings_by_external_id(sitzungen):
             welt.sitzungen[sitzungen[sitzung.external_id]] = sitzung
         tops = {demo_ext("agendaitem", top_kennung(s, t)): top_kennung(s, t) for s in plan.sitzungen for t in s.tops}
-        for top in OParlAgendaItem.objects.filter(external_id__in=tops):
+        for top in ris.agenda_items_by_external_id(tops):
             welt.tops[tops[top.external_id]] = top
         self._zaehlen("RIS-Verknüpfungen gefunden (Vorlagen/Sitzungen/TOPs)", len(welt.papiere) + len(welt.sitzungen))
 
