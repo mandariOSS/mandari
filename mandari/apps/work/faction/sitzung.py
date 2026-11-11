@@ -482,10 +482,27 @@ class NotizErgebnis:
 
 
 def _ist_leer(html: str) -> bool:
-    import re
+    """
+    Kein Text außerhalb von Marken und keine Liste.
 
-    text = re.sub(r"<[^>]+>", "", html or "")
-    return not text.strip() and "<li" not in (html or "")
+    Ein Durchlauf von vorn nach hinten statt eines regulären Ausdrucks: Der Text kommt ungeprüft vom Browser, und
+    ein Muster, das von jeder öffnenden Klammer bis zum Ende sucht, braucht bei vielen Klammern quadratische Zeit.
+    Eine Klammer ohne Abschluss und ein leeres Klammerpaar zählen wie bisher als Text.
+    """
+    html = html or ""
+    if "<li" in html:
+        return False
+    position = 0
+    while True:
+        start = html.find("<", position)
+        if start == -1:
+            return not html[position:].strip()
+        if html[position:start].strip():
+            return False
+        ende = html.find(">", start + 1)
+        if ende == -1 or ende == start + 1:
+            return False
+        position = ende + 1
 
 
 def notizen_leer(html: str) -> bool:

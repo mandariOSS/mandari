@@ -81,11 +81,18 @@ def extract(data: bytes, file_name: str) -> ExtractedUnterlage | None:
     page_count = parsed[1] if parsed else None
     lines = [line.strip() for page in pages for line in page]
     if any(lines):
-        return ExtractedUnterlage(
+        result = ExtractedUnterlage(
             lines=lines,
             paragraphs=import_text.paragraphs_from_lines(pages),
             page_count=page_count,
         )
+        if page_count and len(pages) < page_count:
+            # Seiten- oder Zeitgrenze des Imports (import_text.MAX_PDF_IMPORT_*)
+            result.notice = (
+                f"Text der ersten {len(pages)} von {page_count} Seiten übernommen. "
+                "Die vollständige Unterlage liegt als Anhang am Dokument."
+            )
+        return result
 
     limit = ocr_max_pages()
     text, ocr_performed, ocr_page_count, _method = extract_text_from_file(
