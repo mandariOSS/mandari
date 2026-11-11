@@ -208,6 +208,31 @@ def test_wortmeldung_fuer_abonnenten(welt: Welt, laufend: Broadcast) -> None:
     assert selectors.wortmeldung("00000000-0000-0000-0000-000000000000") is None
 
 
+def test_stand_aendert_sich_mit_titel_und_verweisen_der_abschnitte(welt: Welt, laufend: Broadcast) -> None:
+    """Gleiche Zahl von Abschnitten und Verweisen, anderer Inhalt: Geöffnete Seiten laden den Live-Teil neu."""
+    import dataclasses
+    import uuid
+
+    from insight_core.views.live import _version
+
+    stand = selectors.live_stand(welt.sitzung.pk)
+    assert stand is not None and stand.jetzt_abschnitt is not None
+    abschnitt = stand.jetzt_abschnitt
+    assert abschnitt.agenda_item_id is not None
+
+    def mit(**werte: Any) -> str:
+        return _version(dataclasses.replace(stand, jetzt_abschnitt=dataclasses.replace(abschnitt, **werte)))
+
+    bisher = _version(stand)
+    assert mit() == bisher
+    # Neu zugeordnet: weiter ein Verweis, aber auf einen anderen Punkt bzw. eine andere Vorlage
+    assert mit(agenda_item_id=uuid.uuid4()) != bisher
+    assert mit(paper_id=uuid.uuid4()) != bisher
+    assert mit(titel="Anderer Titel") != bisher
+    # Der Status steht weiter vorn (die Seite liest ihn aus dem Stand)
+    assert mit(titel="Anderer Titel").split(".")[0] == stand.status
+
+
 def test_zurueckgenommener_punkt_ohne_titel_verweis_und_vorlage(client: Client, welt: Welt, laufend: Broadcast) -> None:
     """Nimmt der Herausgeber einen Punkt zurück, bleibt der Abschnitt im Verlauf, aber ohne Titel und Verweise."""
     BroadcastSection.objects.filter(broadcast=laufend).update(title_read="Gelesen: Neubau der Schule")

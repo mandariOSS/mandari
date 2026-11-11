@@ -20,6 +20,7 @@ Bewusst nicht verlinkt (kein Menü, kein Link auf der Sitzungsseite) und ``noind
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from typing import Any, Final
 
@@ -60,15 +61,17 @@ def _nur_bericht() -> dict[str, list[str]]:
 
 def _version(stand: live.LiveStand) -> str:
     """
-    Kurzer Stand des Live-Teils; ändert sich mit Status, TOP, Wortmeldungen und der Zahl der Abschnitte, die auf
-    ihren Tagesordnungspunkt verweisen. Nimmt der Herausgeber einen Punkt zurück, verliert sein Abschnitt Titel
-    und Verweis; geöffnete Seiten laden den Live-Teil dann neu, statt den alten Titel weiter zu zeigen.
+    Kurzer Stand des Live-Teils; ändert sich mit Status, TOP, Wortmeldungen und dem, was die Abschnitte zeigen
+    (Nummer, Titel, Verweis auf Tagesordnungspunkt und Vorlage). Nimmt der Herausgeber einen Punkt zurück oder
+    wird ein Abschnitt neu zugeordnet, laden geöffnete Seiten den Live-Teil neu, statt den alten Titel und die
+    alten Verweise weiter zu zeigen.
     """
     wortmeldungen = sum(len(a.wortmeldungen) for a in stand.verlauf) + len(stand.ohne_abschnitt)
     abschnitte = [*stand.verlauf, *([stand.jetzt_abschnitt] if stand.jetzt_abschnitt else [])]
-    mit_verweis = sum(1 for a in abschnitte if a.agenda_item_id is not None)
+    gezeigt = repr([(a.nummer, a.titel, str(a.agenda_item_id or ""), str(a.paper_id or "")) for a in abschnitte])
+    inhalt = hashlib.sha256(gezeigt.encode()).hexdigest()[:12]
     jetzt = stand.jetzt_abschnitt.nummer if stand.jetzt_abschnitt else ""
-    return f"{stand.status}.{len(stand.verlauf)}.{wortmeldungen}.{mit_verweis}.{jetzt}"
+    return f"{stand.status}.{len(stand.verlauf)}.{wortmeldungen}.{inhalt}.{jetzt}"
 
 
 def _status_aus_version(version: str) -> str:
