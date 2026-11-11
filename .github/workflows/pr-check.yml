@@ -851,6 +851,9 @@ jobs:
 
       # Aus dem Vorrat einspielen oder einmal migrieren (Test-Settings; das Migrieren wird mit coverage gemessen)
       - name: Testdatenbank-Vorlage (aus dem Vorrat oder migrieren)
+        env:
+          # pg_restore aus dem Container des Servers: Die Programme des Runners sind eine Hauptversion neuer
+          MANDARI_PG_CONTAINER: ${{ job.services.postgres.id }}
         run: >-
           python scripts/testdb_vorlage.py --coverage "$RUNNER_TEMP/testteil/coverage-vorlage.daten"
           --aus-abbild "$RUNNER_TEMP/vorrat/testvorlage.dump"
@@ -858,6 +861,8 @@ jobs:
       - name: Run tests
         env:
           MANDARI_TEST_DB_VORLAGE: mandari_testvorlage
+          # für den Rundlauf-Test des Abbilds (apps/common/tests/test_ci_vorlagen.py)
+          MANDARI_PG_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           cd mandari
           # Parallel auf allen Kernen (pytest-xdist; je Worker eine Kopie der Vorlage), Tests einer Datei

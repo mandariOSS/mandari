@@ -173,7 +173,8 @@ def test_abbild_schreiben_und_einspielen(tmp_path: Path) -> None:
     import uuid
 
     url = os.environ.get("DATABASE_URL", "")
-    if not url.startswith(("postgres://", "postgresql://")) or not shutil.which("pg_dump"):
+    im_container = bool(os.environ.get("MANDARI_PG_CONTAINER", "").strip())
+    if not url.startswith(("postgres://", "postgresql://")) or not (im_container or shutil.which("pg_dump")):
         pytest.skip("braucht PostgreSQL und pg_dump (in der CI beides da)")
     import psycopg
     from psycopg import sql

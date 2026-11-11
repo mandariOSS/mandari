@@ -102,7 +102,18 @@ jobs:
           uv pip install --no-deps shared/
 
       - name: PostgreSQL-Vorlage migrieren und als Abbild ablegen
+        env:
+          # pg_dump aus dem Container des Servers: Die Programme des Runners sind eine Hauptversion neuer
+          MANDARI_PG_CONTAINER: ${{ job.services.postgres.id }}
         run: python scripts/testdb_vorlage.py --abbild-schreiben "$RUNNER_TEMP/vorrat/testvorlage.dump"
+
+      # Kein Abbild ablegen, das sich nicht einspielen lässt: Die Jobs der CI fielen sonst still auf das Migrieren zurück
+      - name: Abbild probeweise einspielen
+        env:
+          MANDARI_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: >-
+          python scripts/testdb_vorlage.py --name mandari_testvorlage_probe
+          --aus-abbild "$RUNNER_TEMP/vorrat/testvorlage.dump" --abbild-pflicht
 
       - name: SQLite-Vorlage der Smoke-Skripte
         run: python scripts/build_smoke_db_template.py "$RUNNER_TEMP/vorrat/mandari-smoke-template.sqlite3"

@@ -24,6 +24,11 @@ daneben ``DATEI.migrations`` mit dem Fingerabdruck der Migrationsdateien (wie di
 der Fingerabdruck nicht oder scheitert das Einspielen, wird wie sonst migriert. Die CI holt das Abbild aus dem
 Vorrat, den ``.github/workflows/testvorlage.yml`` bei jeder Änderung der Migrationen auf dev erneuert.
 
+``pg_dump`` und ``pg_restore`` müssen zur Version des Servers passen: Ein Abbild aus ``pg_dump`` 17 lässt sich in
+einen Server der Version 16 nicht einspielen. Mit ``MANDARI_PG_CONTAINER=<Container des Servers>`` laufen beide
+deshalb im Container des Servers (``docker exec``), in der CI der Dienst-Container des Jobs. Ohne die Variable
+laufen die Programme des Rechners.
+
 Lokal, mit einem PostgreSQL-Server:
 
     DATABASE_URL=postgresql://nutzer:passwort@localhost:5432/mandari_test python scripts/testdb_vorlage.py
@@ -78,24 +83,41 @@ def _neu_anlegen(wartung: str, vorlage: sql.Identifier, name: str) -> None:
         verbindung.execute(sql.SQL("CREATE DATABASE {}").format(vorlage))
 
 
+def _pg_befehl(programm: str, optionen: list[str], ziel: str) -> list[str]:
+    """Aufruf von ``pg_dump``/``pg_restore`` für die Datenbank ``ziel``: im Container des Servers oder auf dem Rechner.
+
+    Das Abbild geht in beiden Fällen über die Standardein- und -ausgabe, damit es keinen Pfad im Container braucht.
+    """
+    container = os.environ.get("MANDARI_PG_CONTAINER", "").strip()
+    if not container:
+        return [programm, *optionen, "--dbname", ziel]
+    teile = urlsplit(ziel)
+    nutzer = teile.username or "postgres"
+    # Im Container über den lokalen Socket, mit dem Namen der Datenbank statt der Adresse des Rechners
+    return ["docker", "exec", "-i", container, programm, *optionen, "-U", nutzer, "--dbname", teile.path.lstrip("/")]
+
+
 def _einspielen(abbild: Path, ziel: str) -> bool:
     """Abbild in die leere Vorlage einspielen; ``False`` bei jedem Fehler (dann migriert der Aufrufer)."""
-    befehl = ["pg_restore", "--no-owner", "--no-acl", "--exit-on-error", "--jobs", "4", "--dbname", ziel, str(abbild)]
+    befehl = _pg_befehl("pg_restore", ["--no-owner", "--no-acl", "--exit-on-error"], ziel)
     try:
-        ergebnis = subprocess.run(befehl, capture_output=True, text=True, timeout=300, check=False)  # noqa: S603
+        with abbild.open("rb") as eingabe:
+            ergebnis = subprocess.run(befehl, stdin=eingabe, capture_output=True, timeout=300, check=False)  # noqa: S603
     except (OSError, subprocess.TimeoutExpired) as fehler:
         print(f"Abbild nicht einspielbar ({type(fehler).__name__}), migriere stattdessen", file=sys.stderr)
         return False
     if ergebnis.returncode != 0:
-        print(f"pg_restore scheiterte, migriere stattdessen:\n{ergebnis.stderr[-2000:]}", file=sys.stderr)
+        meldung = ergebnis.stderr.decode("utf-8", "replace")[-2000:]
+        print(f"pg_restore scheiterte, migriere stattdessen:\n{meldung}", file=sys.stderr)
         return False
     return True
 
 
 def _abbild_schreiben(abbild: Path, ziel: str) -> None:
     abbild.parent.mkdir(parents=True, exist_ok=True)
-    befehl = ["pg_dump", "--format=custom", "--no-owner", "--no-acl", "--file", str(abbild), ziel]
-    subprocess.run(befehl, check=True, timeout=300)  # noqa: S603 – fester Aufruf
+    befehl = _pg_befehl("pg_dump", ["--format=custom", "--no-owner", "--no-acl"], ziel)
+    with abbild.open("wb") as ausgabe:
+        subprocess.run(befehl, stdout=ausgabe, check=True, timeout=300)  # noqa: S603 – fester Aufruf
     _fingerabdruck_datei(abbild).write_text(migration_fingerprint(PROJEKT), encoding="utf-8")
     print(f"Abbild {abbild} ({abbild.stat().st_size / 1024:.0f} KB)")
 
@@ -117,6 +139,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--coverage", metavar="DATEI", help="Migrieren mit coverage messen, Daten nach DATEI")
     parser.add_argument("--aus-abbild", metavar="DATEI", help="passendes pg_dump-Abbild einspielen statt zu migrieren")
     parser.add_argument("--abbild-schreiben", metavar="DATEI", help="migrierte Vorlage als pg_dump-Abbild ablegen")
+    parser.add_argument(
+        "--abbild-pflicht",
+        action="store_true",
+        help="mit --aus-abbild: scheitern statt zu migrieren (Probe des Abbilds)",
+    )
     args = parser.parse_args(argv)
 
     url = os.environ.get("DATABASE_URL", "")
@@ -140,6 +167,9 @@ def main(argv: list[str] | None = None) -> int:
                 _neu_anlegen(wartung, vorlage, args.name)
         else:
             print(f"Kein passendes Abbild unter {abbild}, migriere")
+        if args.abbild_pflicht and not eingespielt:
+            print("FEHLER: Das Abbild ließ sich nicht einspielen (--abbild-pflicht)", file=sys.stderr)
+            return 1
     if not eingespielt:
         _migrieren(args.coverage, ziel)
     if args.abbild_schreiben:
