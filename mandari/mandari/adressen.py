@@ -20,6 +20,8 @@ def basis_adresse(wert: str, name: str) -> str:
     adresse = (wert or "").strip()
     if not adresse:
         return ""
+    if any(zeichen.isspace() or not zeichen.isprintable() for zeichen in adresse):
+        raise ImproperlyConfigured(f"{name} darf keine Leer- oder Steuerzeichen enthalten")
     try:
         teile = urlsplit(adresse)
         host = teile.hostname

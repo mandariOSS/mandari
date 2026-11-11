@@ -255,6 +255,8 @@ def test_basis_adresse_aus_der_konfiguration(wert: str, erwartet: str) -> None:
         "https://mandari.example:abc/offene-daten/",
         "https://nutzer:geheim@mandari.example/offene-daten/",
         "https://nutzer@mandari.example/offene-daten/",
+        "https://mandari example/offene-daten/",
+        "https://mandari.example/offene daten/",
     ],
 )
 def test_basis_adresse_lehnt_unvollstaendiges_und_abfragen_ab(wert: str) -> None:
