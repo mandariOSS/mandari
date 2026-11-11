@@ -752,25 +752,29 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
     audit.log_member_access(member, before, _access_text(member), actor=_active_membership(organization, actor_user))
 
 
-def _may_approve_now(actor: Membership | None) -> bool:
+def _acting_now(actor: Membership | None) -> Membership | None:
     """
-    Darf die handelnde Mitgliedschaft jetzt Registrierungsanfragen freigeben (aktiv und ``members.invite``)?
+    Die handelnde Mitgliedschaft im jetzigen Stand, unter Sperre neu gelesen; ``None``, wenn es keine gibt oder sie
+    nicht mehr aktiv ist.
 
-    Geprüft wird ein unter Sperre neu gelesenes Objekt, nicht das mitgegebene: Das stammt aus dem View, kann
-    inzwischen deaktiviert sein, und seine Rechte sind dort schon geladen (``has_permission`` fragt weder nach
-    ``is_active`` noch liest es entzogene Rechte neu). Die Sperre hält bis zum Ende der Transaktion.
+    Das mitgegebene Objekt stammt aus dem View: Es kann inzwischen deaktiviert sein, und seine Rechte sind dort
+    schon geladen (``has_permission`` fragt weder nach ``is_active`` noch liest es geänderte Rechte neu). Prüfungen
+    während des Schreibens nutzen deshalb dieses Objekt. Die Sperre hält bis zum Ende der Transaktion.
 
     Gesperrt wird nur die Mitgliedschaft (``of=("self",)``), nicht das Konto: Die Abfrage verbindet beide, und eine
     Sperre auf der Kontozeile könnte sich mit einer gleichzeitigen Einladung derselben Person gegenseitig blockieren.
     """
     if actor is None:
-        return False
-    current = (
+        return None
+    return (
         Membership.objects.select_for_update(of=("self",))
         .filter(pk=actor.pk, is_active=True, is_guest=False, user__is_active=True)
         .first()
     )
-    return current is not None and current.has_permission("members.invite")
+
+
+NO_LONGER_ACTIVE = "Die handelnde Mitgliedschaft ist nicht mehr aktiv."
+APPROVAL_NEEDS_INVITE = "Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf."
 
 
 @transaction.atomic
@@ -784,14 +788,20 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     # Eine offene Registrierungsanfrage zu aktivieren ist die Freischaltung (samt Zugangs-Mail): Das darf nur, wer
     # Mitglieder einladen darf, gleich über welchen Weg der Aufruf kommt. Ohne aktive handelnde Mitgliedschaft
     # (etwa zwischen der Prüfung im View und diesem Aufruf deaktiviert) gibt es keine Freischaltung. Der Stand der
-    # handelnden Mitgliedschaft und ihre Rechte werden dafür unter Sperre neu gelesen (``_may_approve_now``).
-    if member.registration_requested_at is not None and not _may_approve_now(actor):
-        raise ServiceError("Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf.")
+    # handelnden Mitgliedschaft und ihre Rechte werden unter Sperre neu gelesen (``_acting_now``); alle Prüfungen
+    # hier nutzen dieses Objekt, auch die der zurückkehrenden Rechte.
+    acting = _acting_now(actor)
+    if actor is not None and acting is None:
+        raise ServiceError(NO_LONGER_ACTIVE)
+    if member.registration_requested_at is not None and not (
+        acting is not None and acting.has_permission("members.invite")
+    ):
+        raise ServiceError(APPROVAL_NEEDS_INVITE)
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
     if not member.is_guest and not member.is_active:
         _ensure_free_member_slot(organization)
-    _ensure_may_restore(actor, member)
+    _ensure_may_restore(acting, member)
     before = _access_text(member)
     member.is_active = True
     member.registration_requested_at = None
@@ -1052,8 +1062,9 @@ def approve_registration(membership: Membership, actor: Membership | None = None
         # Erst die Anfrage, dann die handelnde Mitgliedschaft sperren: dieselbe Reihenfolge wie beim Reaktivieren,
         # damit sich beide Wege zur selben Anfrage nicht gegenseitig blockieren
         _lock_membership(membership)
-        if not _may_approve_now(actor):
-            raise ServiceError("Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf.")
+        acting = _acting_now(actor)
+        if acting is None or not acting.has_permission("members.invite"):
+            raise ServiceError(APPROVAL_NEEDS_INVITE)
         if not membership.is_guest and not membership.is_active:
             _ensure_free_member_slot(membership.organization)
         before = _access_text(membership)

@@ -193,6 +193,31 @@ def test_direktes_freischalten_prueft_die_handelnde_mitgliedschaft_erneut(org: A
     assert anfrage.is_active and anfrage.registration_requested_at is None
 
 
+def test_reaktivieren_prueft_zurueckkehrende_rechte_am_jetzigen_stand(org: Any, make_member: Any) -> None:
+    """Die handelnde Person verliert ein Recht, das die zu reaktivierende Mitgliedschaft mitbringt."""
+    from apps.tenants.models import Permission
+
+    ziel = make_member(org, ["tasks.view", "tasks.manage"], email="ziel@example.org")
+    ziel.is_active = False
+    ziel.save(update_fields=["is_active"])
+    rechte = ["members.view", "members.edit", "tasks.view", "tasks.manage"]
+    handelnd = make_member(org, rechte, email="handelnd@example.org")
+    assert handelnd.has_permission("tasks.manage")
+    for rolle in handelnd.roles.all():
+        rolle.permissions.remove(*Permission.objects.filter(codename="tasks.manage"))
+    assert handelnd.has_permission("tasks.manage"), "das alte Objekt kennt den Entzug nicht"
+
+    with pytest.raises(org_services.ServiceError):
+        org_services.reactivate_member(org, ziel, handelnd)
+    ziel.refresh_from_db()
+    assert not ziel.is_active
+
+    # Mit den Rechten im jetzigen Stand geht es
+    org_services.reactivate_member(org, ziel, make_member(org, rechte, email="darf@example.org"))
+    ziel.refresh_from_db()
+    assert ziel.is_active
+
+
 # --- Backup-Codes ------------------------------------------------------------------------------------------------
 
 
