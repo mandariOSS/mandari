@@ -126,6 +126,32 @@ def test_tabelle_ueber_dem_zellenbudget_behaelt_ihren_text(monkeypatch: pytest.M
 
     assert "<table>" not in html
     assert "Anfang" in html and "Ende" in html
+    # Jeder Inhalt einmal, auch wenn ein Absatz aus mehreren Läufen besteht
+    assert html.count("Anfang") == 1 and html.count("Ende") == 1
+
+
+def test_tabellentext_im_rueckfall_einmal_und_absatzweise() -> None:
+    dokument = docx.Document()
+    tabelle = dokument.add_table(rows=2, cols=2)
+    tabelle.cell(0, 0).text = "Alpha"
+    absatz = tabelle.cell(1, 0).paragraphs[0]
+    absatz.add_run("Gam")
+    absatz.add_run("ma")
+    tabelle.cell(1, 1).text = "Delta"
+
+    assert import_text._table_text(tabelle) == "Alpha Gamma Delta"
+
+
+def test_tabellentext_im_rueckfall_trennt_an_tabulator_und_umbruch() -> None:
+    dokument = docx.Document()
+    tabelle = dokument.add_table(rows=1, cols=1)
+    lauf = tabelle.cell(0, 0).paragraphs[0].add_run("10")
+    lauf.add_tab()
+    lauf.add_text("20")
+    lauf.add_break()
+    lauf.add_text("30")
+
+    assert import_text._table_text(tabelle) == "10 20 30"
 
 
 def test_wiederholter_inhalt_verbundener_zeilen_ist_begrenzt(monkeypatch: pytest.MonkeyPatch) -> None:

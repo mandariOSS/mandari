@@ -532,6 +532,30 @@ def _table_html(table: Any, chars: list[int] | None = None) -> str:
     return "<table><tbody>" + "".join(rows) + "</tbody></table>"
 
 
+def _table_text(table: Any) -> str:
+    """
+    Text einer Tabelle für den Rückfall ohne Tabellenaufbau: jeder Absatz einmal, Absätze durch Leerzeichen getrennt.
+
+    Gelesen werden die Textknoten (``w:t``) je Absatz; Tabulatoren und Umbrüche im Absatz trennen wie ein
+    Leerzeichen, damit aus „10“ und „20“ nicht „1020“ wird. ``itertext()`` über die Tabelle lieferte denselben Text
+    mehrfach, weil die Elemente von python-docx ihren Text auch selbst ausgeben.
+    """
+    text_tag = _w("t")
+    breaks = {_w("tab"), _w("br"), _w("cr")}
+    paragraphs = []
+    for paragraph in table._tbl.iter(_w("p")):
+        pieces = []
+        for node in paragraph.iter():
+            if node.tag == text_tag:
+                pieces.append(node.text or "")
+            elif node.tag in breaks:
+                pieces.append(" ")
+        text = " ".join("".join(pieces).split())
+        if text:
+            paragraphs.append(text)
+    return " ".join(paragraphs)
+
+
 def _iter_blocks(parent: Any, container: Any) -> Any:
     """Absätze und Tabellen in Dokumentreihenfolge, auch innerhalb von Inhaltssteuerelementen."""
     from docx.table import Table
@@ -610,7 +634,7 @@ def docx_to_html(data: bytes) -> str:
                 parts.append(_table_html(block, table_chars))
             except Exception as exc:  # unregelmäßige Tabellen: Text der Zellen retten
                 logger.warning("DOCX-Tabelle nicht lesbar: %s", type(exc).__name__)
-                text = " ".join(t for t in (c.strip() for c in block._tbl.itertext()) if t)
+                text = _table_text(block)
                 if text:
                     parts.append(f"<p>{escape(text, quote=False)}</p>")
             continue
