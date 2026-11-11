@@ -181,7 +181,7 @@ def test_etikett_des_personenfilters_nur_fuer_sichtbare_personen_der_kommune(bod
     for person in (zurueckgenommen, fremd):
         antwort = client.get(url, {"person": str(person.pk)})
         assert antwort.context.get("filter_person_obj") is None
-        assert person.name not in antwort.content.decode()
+        assert str(person.name) not in antwort.content.decode()
 
 
 # --- Fragen: wartende Antworten -----------------------------------------------------------------------

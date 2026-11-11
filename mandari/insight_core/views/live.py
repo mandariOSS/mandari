@@ -59,10 +59,16 @@ def _nur_bericht() -> dict[str, list[str]]:
 
 
 def _version(stand: live.LiveStand) -> str:
-    """Kurzer Stand des Live-Teils; ändert sich mit Status, TOP und Wortmeldungen."""
+    """
+    Kurzer Stand des Live-Teils; ändert sich mit Status, TOP, Wortmeldungen und der Zahl der Abschnitte, die auf
+    ihren Tagesordnungspunkt verweisen. Nimmt der Herausgeber einen Punkt zurück, verliert sein Abschnitt Titel
+    und Verweis; geöffnete Seiten laden den Live-Teil dann neu, statt den alten Titel weiter zu zeigen.
+    """
     wortmeldungen = sum(len(a.wortmeldungen) for a in stand.verlauf) + len(stand.ohne_abschnitt)
+    abschnitte = [*stand.verlauf, *([stand.jetzt_abschnitt] if stand.jetzt_abschnitt else [])]
+    mit_verweis = sum(1 for a in abschnitte if a.agenda_item_id is not None)
     jetzt = stand.jetzt_abschnitt.nummer if stand.jetzt_abschnitt else ""
-    return f"{stand.status}.{len(stand.verlauf)}.{wortmeldungen}.{jetzt}"
+    return f"{stand.status}.{len(stand.verlauf)}.{wortmeldungen}.{mit_verweis}.{jetzt}"
 
 
 def _status_aus_version(version: str) -> str:

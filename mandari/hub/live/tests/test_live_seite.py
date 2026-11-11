@@ -211,9 +211,15 @@ def test_wortmeldung_fuer_abonnenten(welt: Welt, laufend: Broadcast) -> None:
 def test_zurueckgenommener_punkt_ohne_titel_verweis_und_vorlage(client: Client, welt: Welt, laufend: Broadcast) -> None:
     """Nimmt der Herausgeber einen Punkt zurück, bleibt der Abschnitt im Verlauf, aber ohne Titel und Verweise."""
     BroadcastSection.objects.filter(broadcast=laufend).update(title_read="Gelesen: Neubau der Schule")
-    assert "Neubau einer Grundschule" in client.get(_url(welt.sitzung)).content.decode()
+    vorher = client.get(_url(welt.sitzung), {"teil": "stand"}).content.decode()
+    assert "Neubau einer Grundschule" in vorher
+    version = re.search(r"v=([^\"&]+)\"", vorher)
+    assert version is not None
 
     OParlAgendaItem.objects.filter(pk=welt.top5.pk).update(deleted=True)
+
+    # Eine geöffnete Seite mit dem bisherigen Stand bekommt den Live-Teil neu (kein 204 mit altem Titel)
+    assert client.get(_url(welt.sitzung), {"teil": "stand", "v": version.group(1)}).status_code == 200
 
     for parameter in ({}, {"teil": "stand"}):
         html = client.get(_url(welt.sitzung), parameter).content.decode()
