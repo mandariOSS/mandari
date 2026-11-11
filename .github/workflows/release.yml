@@ -13,8 +13,9 @@
 # Zweig/Ereignis → Tags (für alle drei Images):
 #   dev     → :dev, :dev-<sha>
 #   main    → :latest, :main-<sha>, :<sha>
-#   release → :<version>, dazu :latest nur für die höchste veröffentlichte Version
-#             (eine Patch-Version einer Pflegelinie setzt latest nicht zurück, Issue #1341)
+#   release → :<version>; :v<X.Y> (bewegliches Tag der Linie) für das jüngste Patch-Release der Linie;
+#             :latest nur für die höchste veröffentlichte Version (eine Patch-Version einer
+#             Pflegelinie setzt latest nicht zurück, Issue #1341)
 #   manual  → :<input>
 # Einen Kanal "beta" gibt es nicht.
 #
@@ -154,9 +155,21 @@ jobs:
             # Release: Versions-Tag; latest nur, wenn es die höchste veröffentlichte Version ist. Eine Patch-Version
             # einer Pflegelinie (etwa v0.12.3 nach v0.16.0) darf latest nicht zurücksetzen (docs/RELEASE_POLITIK.md).
             VERSION="${{ github.event.release.tag_name }}"
-            HOECHSTE=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate               --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | sort -V | tail -n 1)
+            VEROEFFENTLICHT=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | sort -V)
+            HOECHSTE=$(echo "$VEROEFFENTLICHT" | tail -n 1)
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${VERSION}"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${VERSION}"
+            # Bewegliches Tag der Linie (v0.16 für v0.16.3): wer auf einer Pflegeversion bleibt, bekommt so
+            # deren jüngste Patch-Version (IMAGE_TAG=v0.16).
+            LINIE="${VERSION%.*}"
+            if printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              JUENGSTE_DER_LINIE=$(echo "$VEROEFFENTLICHT" | grep -E "^${LINIE//./\\.}\.[0-9]+$" | tail -n 1 || true)
+              if [ "$VERSION" = "$JUENGSTE_DER_LINIE" ]; then
+                MANDARI_TAGS="${MANDARI_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${LINIE}"
+                INGESTOR_TAGS="${INGESTOR_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${LINIE}"
+              fi
+            fi
             if [ "$VERSION" = "$HOECHSTE" ]; then
               MANDARI_TAGS="${MANDARI_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest"
               INGESTOR_TAGS="${INGESTOR_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest"
@@ -274,17 +287,16 @@ jobs:
           quelle=$(docker buildx imagetools inspect --raw "$WEBSITE_SOURCE")
           args=""
           for ziel in $(echo "$WEBSITE_TAGS" | tr ',' ' '); do
-            case "${ziel##*:}" in
-              latest|dev) ;;
-              *)
-                # Unveränderliches Tag: vorhanden und anderer Inhalt → stehen lassen
-                vorhanden=$(docker buildx imagetools inspect --raw "$ziel" 2>/dev/null || true)
-                if [ -n "$vorhanden" ] && [ "$vorhanden" != "$quelle" ]; then
-                  echo "::warning title=Website-Tag nicht überschrieben::$ziel gibt es schon mit anderem Inhalt (Commit-Tag aus mandariOSS/marketing-website oder früherer Lauf); es bleibt unverändert."
-                  continue
-                fi
-                ;;
-            esac
+            tag="${ziel##*:}"
+            # Beweglich: latest, dev und das Tag einer Linie (v0.16); alle anderen sind unveränderlich
+            if [ "$tag" != latest ] && [ "$tag" != dev ] && ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+$'; then
+              # Unveränderliches Tag: vorhanden und anderer Inhalt → stehen lassen
+              vorhanden=$(docker buildx imagetools inspect --raw "$ziel" 2>/dev/null || true)
+              if [ -n "$vorhanden" ] && [ "$vorhanden" != "$quelle" ]; then
+                echo "::warning title=Website-Tag nicht überschrieben::$ziel gibt es schon mit anderem Inhalt (Commit-Tag aus mandariOSS/marketing-website oder früherer Lauf); es bleibt unverändert."
+                continue
+              fi
+            fi
             args="$args --tag $ziel"
           done
           if [ -z "$args" ]; then

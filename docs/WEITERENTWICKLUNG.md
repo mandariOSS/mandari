@@ -176,8 +176,8 @@ Linien unterstützt werden, steht in [SECURITY.md](../SECURITY.md#unterstützte-
      gh release create v0.12.1 --verify-tag --latest=false --title "mandari 0.12.1" --notes-file notizen.md
      ```
 
-     Der Release-Workflow baut die Images und legt `release/v0.12.1` an; `latest` bleibt bei der
-     höchsten Version.
+     Der Release-Workflow baut die Images, legt `release/v0.12.1` an und setzt das Linien-Tag `v0.12`;
+     `latest` bleibt bei der höchsten Version.
    - Abschnitt `[0.12.1]` mit dem nächsten Vorbereitungs-PR im CHANGELOG von `dev` nachtragen.
 6. **Abschluss:** Im Original-PR kommentieren, in welchen Versionen die Korrektur steckt
    („Rückportiert: 0.11.2, 0.12.1“), und das Label `rueckportieren` entfernen.

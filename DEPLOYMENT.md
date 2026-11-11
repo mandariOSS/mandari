@@ -110,7 +110,8 @@ voraus. Wer bei den Einzeldateien bleibt, aktualisiert wie unter „Datenbank-Mi
 
 **Welche Spur?** Alle zwei Wochen erscheint eine Version (`latest`), ohne Handarbeit einspielbar. Wer
 seltener aktualisieren will, bleibt auf einer **Pflegeversion** (die erste Version jedes Quartals, sechs
-Monate Sicherheitskorrekturen) und spielt nur deren Patch-Versionen ein, etwa `./update.sh --tag v0.16.2`.
+Monate Sicherheitskorrekturen) und spielt nur deren Patch-Versionen ein: `./update.sh --tag v0.16` nimmt immer die
+jüngste Patch-Version der Linie, `--tag v0.16.2` eine bestimmte.
 Welche Pflegeversionen unterstützt werden, steht in [SECURITY.md](SECURITY.md#unterstützte-versionen),
 die Regeln in der [Release-Politik](docs/RELEASE_POLITIK.md).
 
