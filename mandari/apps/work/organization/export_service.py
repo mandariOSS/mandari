@@ -609,7 +609,8 @@ class DsgvoExportService:
         for t in tasks:
             is_creator = t.created_by_id == membership.id
             is_assignee = t.assigned_to_id == membership.id
-            is_shared = t.id in shared_ids
+            # Freigaben gelten nur für geteilte Aufgaben; Zeilen aus einer früheren Freigabe zählen nicht
+            is_shared = t.visibility == "shared" and t.id in shared_ids
             # Fremde Aufgaben nur mit ``tasks.view`` (wie die Aufgabenansicht); eigene und zugewiesene bleiben
             zugriff = t.can_access(membership) and (darf_aufgaben_sehen or is_creator or is_assignee)
             if not zugriff:
@@ -670,11 +671,42 @@ class DsgvoExportService:
 
         result = []
         for m in motions:
+            comments = MotionComment.objects.filter(motion=m, author=membership).order_by("created_at")
+            if not m.can_access(membership):
+                # Kein Zugriff mehr (etwa ``motions.view`` entzogen): Der heutige Stand des Dokuments gehört nicht
+                # mehr zur Auskunft, andere können es seither geändert haben. Die eigenen Fassungen und Kommentare
+                # bleiben.
+                result.append(
+                    {
+                        "title": NO_ACCESS_DOCUMENT,
+                        "status": "",
+                        "summary": "",
+                        "content": "",
+                        "visibility": "",
+                        "created_at": _dt(m.created_at),
+                        "submitted_at": _dt(None),
+                        "revisions": [
+                            {
+                                "version": r.version,
+                                "content": _safe_decrypt(r, "content"),
+                                "change_summary": r.change_summary or "",
+                                "changed_by": membership.user.get_full_name(),
+                                "created_at": _dt(r.created_at),
+                            }
+                            for r in MotionRevision.objects.filter(motion=m, changed_by=membership).order_by("version")
+                        ],
+                        "comments": [{"content": c.content, "created_at": _dt(c.created_at)} for c in comments],
+                        "approvals": [],
+                        "shares": [],
+                        "documents": [],
+                    }
+                )
+                continue
+
             # Decrypt content safely
             content = _safe_decrypt(m, "content")
 
             revisions = MotionRevision.objects.filter(motion=m).order_by("version")
-            comments = MotionComment.objects.filter(motion=m, author=membership).order_by("created_at")
             approvals = MotionApproval.objects.filter(motion=m).select_related("approver__user")
             shares = MotionShare.objects.filter(motion=m).order_by("-created_at")
             documents = MotionDocument.objects.filter(motion=m).order_by("-uploaded_at")
@@ -860,14 +892,14 @@ class DsgvoExportService:
             .order_by("-created_at")
         ):
             # Wie die Oberfläche: Eigene Vorschläge im nichtöffentlichen Teil sind ohne Vereidigung nicht mehr
-            # sichtbar, ebenso Vorschläge zu Sitzungen, die die Person nicht (mehr) sieht. Zeitpunkt und Status
-            # bleiben, Titel und Ablehnungsgrund nicht.
+            # sichtbar, ebenso Vorschläge zu Sitzungen, die die Person nicht (mehr) sieht. Der Zeitpunkt des
+            # eigenen Vorschlags bleibt; Titel, Stand der Entscheidung und Ablehnungsgrund nicht.
             sichtbar = darf_sehen(membership, i.meeting) and can_view_item_with_parents(i, membership)
             proposals.append(
                 {
                     "meeting": i.meeting.title if darf_sehen(membership, i.meeting) else NO_ACCESS_MEETING,
                     "title": i.title if sichtbar else NO_ACCESS_ITEM,
-                    "status": i.proposal_status,
+                    "status": i.proposal_status if sichtbar else "",
                     "rejection_reason": (i.rejection_reason or "") if sichtbar else "",
                     "proposed_at": _dt(i.proposed_at),
                 }

@@ -1366,10 +1366,14 @@ class FactionActionView(WorkViewMixin, View):
         if visibility == "internal" and item.visibility != "internal" and not meeting.nichtoeffentlich_erlaubt:
             return self._rejected(request, meeting, NOE_AUS, 400)
 
+        from ..regeln import ProtokollGenehmigtError
         from ..services import AgendaProposalService
 
         assign_number = request.POST.get("number", "").strip()
-        AgendaProposalService.accept_proposal(item, self.membership, assign_number or None, visibility)
+        try:
+            AgendaProposalService.accept_proposal(item, self.membership, assign_number or None, visibility)
+        except ProtokollGenehmigtError as exc:
+            return self._rejected(request, meeting, str(exc), 400)
 
         messages.success(request, f"Vorschlag '{item.title}' angenommen.")
         return self._refresh_or_redirect(request, meeting)

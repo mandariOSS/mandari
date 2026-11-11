@@ -366,9 +366,91 @@ def test_export_nennt_nichtoeffentlichen_vorschlag_nur_mit_sicht(
     nachher = dienst._collect_faction(person, org)["proposals"]
 
     assert vorher[0]["title"] == "GEHEIMER Grundstückskauf" and vorher[0]["rejection_reason"] == "GEHEIMER Grund"
+    assert vorher[0]["status"] == "rejected"
     assert nachher[0]["title"] == export_service.NO_ACCESS_ITEM and nachher[0]["rejection_reason"] == ""
-    assert nachher[0]["status"] == "rejected"
+    # Auch der Stand der Entscheidung gehört zum nichtöffentlichen Teil; der Zeitpunkt des eigenen Vorschlags bleibt
+    assert nachher[0]["status"] == "" and nachher[0]["proposed_at"]
     assert "GEHEIM" not in str(nachher)
+
+
+def test_export_nennt_stand_eigener_dokumente_nur_mit_zugriff(org: Any, make_member: Any) -> None:
+    from apps.tenants.models import Permission
+    from apps.work.motions.models import MotionRevision
+
+    person = make_member(org, ["motions.view", "motions.create", "motions.edit"], email="person@example.org")
+    andere = make_member(org, ["motions.view", "motions.edit_all"], email="andere@example.org")
+    dokument = Motion.objects.create(organization=org, author=person, title="Mein Antrag", visibility="organization")
+    MotionRevision.objects.create(motion=dokument, version=1, changed_by=person, change_summary="Erste Fassung")
+    MotionComment.objects.create(motion=dokument, author=person, content="Eigene Notiz")
+    dienst = export_service.DsgvoExportService()
+
+    vorher = dienst._collect_motions(person, org)
+    # Sichtrecht entzogen; danach ändern andere das Dokument
+    for rolle in person.roles.all():
+        rolle.permissions.remove(*Permission.objects.filter(codename="motions.view"))
+    person = type(person).objects.get(pk=person.pk)
+    Motion.objects.filter(pk=dokument.pk).update(title="GEHEIMER NEUER TITEL", summary="GEHEIME Zusammenfassung")
+    MotionRevision.objects.create(motion=dokument, version=2, changed_by=andere, change_summary="GEHEIME Änderung")
+    nachher = dienst._collect_motions(person, org)
+
+    assert vorher[0]["title"] == "Mein Antrag" and len(vorher[0]["revisions"]) == 1
+    assert not person.has_permission("motions.view")
+    assert nachher[0]["title"] == export_service.NO_ACCESS_DOCUMENT and nachher[0]["status"] == ""
+    # Eigene Fassungen und Kommentare bleiben, die Fassung der anderen Person nicht
+    assert [fassung["change_summary"] for fassung in nachher[0]["revisions"]] == ["Erste Fassung"]
+    assert [kommentar["content"] for kommentar in nachher[0]["comments"]] == ["Eigene Notiz"]
+    assert "GEHEIM" not in str(nachher)
+
+
+def test_export_meldet_fruehere_freigabe_einer_aufgabe_nicht_als_aktuell(org: Any, make_member: Any) -> None:
+    from apps.work.tasks.models import TaskShare
+
+    autorin = make_member(org, ["tasks.view", "tasks.create"], email="autorin@example.org")
+    person = make_member(org, ["tasks.view"], email="person@example.org")
+    aufgabe = Task.objects.create(organization=org, title="Für alle", created_by=autorin, visibility="organization")
+    TaskShare.objects.create(task=aufgabe, membership=person)
+    TaskActivity.objects.create(task=aufgabe, actor=person, activity_type="comment", content="Mein Kommentar")
+
+    eintrag = export_service.DsgvoExportService()._collect_tasks(person, org)[0]
+
+    assert eintrag["title"] == "Für alle" and eintrag["is_shared_with"] is False
+
+    Task.objects.filter(pk=aufgabe.pk).update(visibility="shared")
+    assert export_service.DsgvoExportService()._collect_tasks(person, org)[0]["is_shared_with"] is True
+
+
+# --- Vorschlag nach genehmigtem Protokoll ----------------------------------------------------------------------
+
+
+def test_vorschlag_wird_nach_genehmigtem_protokoll_nicht_mehr_angenommen(
+    org: Any, make_member: Any, client_for: Any, sitzung: FactionMeeting
+) -> None:
+    from apps.work.faction.regeln import PROTOKOLL_GENEHMIGT, ProtokollGenehmigtError
+    from apps.work.faction.services import AgendaProposalService
+
+    vorsitz = make_member(org, [*LEITUNG, "agenda.approve"], email="vorsitz@example.org")
+    vorschlag = FactionAgendaItem.objects.create(
+        meeting=sitzung,
+        number="",
+        title="Nachträglicher Punkt",
+        visibility="public",
+        order=9,
+        proposal_status="proposed",
+        proposed_by=vorsitz,
+        proposed_at=timezone.now(),
+    )
+    _genehmigen(sitzung)
+
+    with pytest.raises(ProtokollGenehmigtError):
+        AgendaProposalService.accept_proposal(vorschlag, vorsitz)
+    url = reverse("work:faction_action", kwargs={"org_slug": org.slug, "meeting_id": sitzung.pk})
+    antwort = client_for(vorsitz.user).post(
+        url, {"action": "accept_proposal", "item_id": str(vorschlag.pk)}, HTTP_HX_REQUEST="true"
+    )
+
+    assert antwort.status_code == 400 and antwort.content.decode() == PROTOKOLL_GENEHMIGT
+    vorschlag.refresh_from_db()
+    assert vorschlag.proposal_status == "proposed"
 
 
 # --- Einbettungs-Snippet -----------------------------------------------------------------------------------------
