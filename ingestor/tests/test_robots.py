@@ -541,7 +541,8 @@ class TestDateienNichtErreichbar:
         echter_client = httpx.AsyncClient
 
         def client_mit_transport(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
-            return echter_client(transport=httpx.MockTransport(handler), **kwargs)
+            ohne_transport = {k: v for k, v in kwargs.items() if k != "transport"}
+            return echter_client(transport=httpx.MockTransport(handler), **ohne_transport)
 
         monkeypatch.setattr("src.client.robots.httpx.AsyncClient", client_mit_transport)
         kennung = "mandari-ingestor/1.0 (+https://mandari.de; support@mandari.de)"

@@ -103,8 +103,10 @@ async def test_vermerk_der_erkennung_kommt_in_der_datenbank_an(monkeypatch: pyte
     echter_client = httpx.AsyncClient
 
     def client_mit_transport(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        # Der Download bringt einen eigenen Transport mit (geprüfte Adressen); der Test ersetzt ihn
+        ohne_transport = {k: v for k, v in kwargs.items() if k != "transport"}
         return echter_client(
-            transport=httpx.MockTransport(lambda request: httpx.Response(200, content=INHALT)), **kwargs
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, content=INHALT)), **ohne_transport
         )
 
     monkeypatch.setattr("src.extraction.extractor.httpx.AsyncClient", client_mit_transport)

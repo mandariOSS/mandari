@@ -24,6 +24,7 @@ Ereignis-Hook des Clients. Die erste Anfrage prüfen und takten die Aufrufer sel
 from __future__ import annotations
 
 import time
+import zlib
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -77,6 +78,77 @@ def send(
         before_redirect(next_request)
         response = client.send(next_request, stream=stream, follow_redirects=False)
     return response
+
+
+class ResponseTooLargeError(httpx.HTTPError):
+    """Der Rumpf einer Antwort überschreitet die Grenze des Aufrufers."""
+
+
+#: Kompression, die :func:`read_limited` entpackt; Aufrufer fordern nur diese an (``ACCEPT_ENCODING``)
+ACCEPT_ENCODING = "gzip, deflate"
+
+
+def read_limited(
+    response: httpx.Response, max_bytes: int, *, truncate: bool = False, deadline: float | None = None
+) -> bytes:
+    """
+    Rumpf einer gestreamten Antwort lesen, höchstens ``max_bytes``; der Aufrufer schließt die Antwort.
+
+    Ohne Streaming läse ``httpx`` die ganze Antwort und entpackte sie, bevor ein Aufrufer ihre Größe prüfen kann;
+    auch gestreamt entpackt es jedes empfangene Stück vollständig. Hier werden die rohen Bytes gelesen und selbst
+    entpackt, nie mehr als bis zur Grenze: Darüber endet das Lesen mit ``ResponseTooLargeError`` oder, mit
+    ``truncate``, beim Stand der Grenze (für robots.txt, deren Anfang gilt). Entpackt werden gzip und deflate
+    (``ACCEPT_ENCODING``); andere und mehrfach kodierte Antworten weisen wir ab. ``deadline``
+    (``time.monotonic()``) begrenzt die Gesamtdauer.
+    """
+    if response.is_stream_consumed:
+        # Der Rumpf liegt schon im Speicher (nicht gestreamt gesendet, oder ein Ersatz-Transport im Test): Es gibt
+        # nichts mehr zu begrenzen als das Ergebnis
+        ready = response.content
+        if len(ready) > max_bytes:
+            if not truncate:
+                raise ResponseTooLargeError("Antwort zu groß")
+            return ready[:max_bytes]
+        return ready
+    encodings = [
+        teil.strip().lower()
+        for teil in response.headers.get("content-encoding", "").split(",")
+        if teil.strip() and teil.strip().lower() != "identity"
+    ]
+    if len(encodings) > 1:
+        raise httpx.DecodingError("Mehrfach kodierte Antwort", request=response.request)
+    decoder: Any = None
+    if encodings:
+        if encodings[0] in ("gzip", "x-gzip"):
+            decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        elif encodings[0] == "deflate":
+            decoder = zlib.decompressobj()
+        else:
+            raise httpx.DecodingError(f"Kodierung {encodings[0]} wird nicht gelesen", request=response.request)
+    parts: list[bytes] = []
+    size = 0
+    for raw in response.iter_raw(16 * 1024):
+        pending = raw
+        while pending:
+            if decoder is None:
+                chunk, pending = pending, b""
+            else:
+                try:
+                    # Höchstens ein Byte über die Grenze entpacken: genug, um das Überschreiten zu erkennen
+                    chunk = decoder.decompress(pending, max_bytes - size + 1)
+                except zlib.error as exc:
+                    raise httpx.DecodingError(str(exc), request=response.request) from None
+                pending = decoder.unconsumed_tail
+            if size + len(chunk) > max_bytes:
+                if not truncate:
+                    raise ResponseTooLargeError("Antwort zu groß")
+                parts.append(chunk[: max_bytes - size])
+                return b"".join(parts)
+            parts.append(chunk)
+            size += len(chunk)
+        if deadline is not None and time.monotonic() > deadline:
+            raise httpx.ReadTimeout("Antwort dauert insgesamt zu lange", request=response.request)
+    return b"".join(parts)
 
 
 @contextmanager
