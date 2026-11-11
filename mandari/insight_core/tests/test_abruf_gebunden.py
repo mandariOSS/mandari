@@ -152,7 +152,8 @@ def test_gesamtfrist_gilt_auch_fuer_eine_troepfelnde_antwort(monkeypatch: pytest
     assert geliefert[0] <= 8
 
 
-def test_gesamtfrist_unterbricht_einen_blockierten_lesevorgang() -> None:
+@pytest.mark.parametrize("statuszeile", [b"HTTP/1.1 200 OK", b"HTTP/2.0 200 OK"])
+def test_gesamtfrist_unterbricht_einen_blockierten_lesevorgang(statuszeile: bytes) -> None:
     """Der Server schickt nur die Rahmung der Antwort, Byte für Byte: Kein Stück kommt an, die Frist greift trotzdem."""
     import threading
 
@@ -165,7 +166,8 @@ def test_gesamtfrist_unterbricht_einen_blockierten_lesevorgang() -> None:
         verbindung, _ = lauscher.accept()
         try:
             verbindung.recv(4096)
-            verbindung.sendall(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+            # Die Version in der Statuszeile schreibt der Server; sie darf die Grenze nicht abschalten
+            verbindung.sendall(statuszeile + b"\r\nTransfer-Encoding: chunked\r\n\r\n")
             # Chunk-Größe als endlose Ziffernfolge: unter jedem Lese-Timeout, aber ohne je Daten zu liefern
             while not fertig.wait(0.2):
                 verbindung.sendall(b"0")

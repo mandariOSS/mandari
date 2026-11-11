@@ -105,8 +105,10 @@ def _bounded_reads(response: httpx.Response, deadline: float | None) -> Iterator
     stream: Any = extensions.get("network_stream")
     read = getattr(stream, "read", None)
     # Nur bei HTTP/1: Dort gehört die Verbindung für die Dauer der Antwort dieser einen Antwort. Bei HTTP/2 teilen
-    # sich mehrere Antworten die Verbindung, eine Grenze am gemeinsamen Lesen träfe auch die anderen.
-    alone = bytes(extensions.get("http_version") or b"").startswith(b"HTTP/1")
+    # sich mehrere Antworten die Verbindung, eine Grenze am gemeinsamen Lesen träfe auch die anderen. Maßgeblich ist
+    # der Transport (HTTP/2 führt eine Stream-Kennung), nicht die Version aus der Statuszeile: Die schreibt der
+    # Server, und mit „HTTP/2.0“ auf einer HTTP/1-Verbindung entfiele sonst die Grenze.
+    alone = "stream_id" not in extensions
     if deadline is None or read is None or not alone:
         yield
         return
