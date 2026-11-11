@@ -400,6 +400,18 @@ class DecisionDetailView(TemplateView):
         return redirect("insight_core:insight:decision_detail", pk=item.id)
 
 
+def _subscription_status(request, context):
+    """
+    Statusseite eines Abo-Links (bestätigt, nicht aktiviert, abgemeldet).
+
+    Wie die Bestätigungsseite nicht speicherbar: Die Adresse trägt das Token, die Seite den Titel und, solange das
+    Abo läuft, den Verweis zum Abmelden.
+    """
+    response = render(request, "pages/decisions/subscription_status.html", context)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 @require_http_methods(["GET", "POST"])
 def confirm_decision_subscription(request, token):
     """GET zeigt die Bestätigungsseite, erst der Klick darauf (POST) aktiviert das Abo."""
@@ -408,11 +420,9 @@ def confirm_decision_subscription(request, token):
     lesbar = decision_tracking.is_readable(subscription.agenda_item)
     if not already and not decision_tracking.is_publicly_visible(subscription.agenda_item):
         # Nicht mehr aktiv veröffentlicht: nichts aktivieren. Im Archiv bleibt der Beschluss lesbar (Titel und
-        # Verweis), neue Benachrichtigungen gibt es dort nicht; sonst weder Titel noch Verweis. Wie die
-        # Bestätigungsseite nicht speicherbar: Die Adresse trägt das Token, die Seite den Titel.
-        response = render(
+        # Verweis), neue Benachrichtigungen gibt es dort nicht; sonst weder Titel noch Verweis.
+        return _subscription_status(
             request,
-            "pages/decisions/subscription_status.html",
             {
                 "item": subscription.agenda_item if lesbar else None,
                 "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item) if lesbar else "",
@@ -426,8 +436,6 @@ def confirm_decision_subscription(request, token):
                 "unsubscribe_token": None,
             },
         )
-        response["Cache-Control"] = "no-store"
-        return response
     if request.method == "GET" and not already:
         return link_confirmation(
             request,
@@ -442,9 +450,8 @@ def confirm_decision_subscription(request, token):
         subscription.confirmed_at = timezone.now()
         subscription.unsubscribed_at = None
         subscription.save(update_fields=["confirmed", "confirmed_at", "unsubscribed_at"])
-    return render(
+    return _subscription_status(
         request,
-        "pages/decisions/subscription_status.html",
         {
             "item": subscription.agenda_item if lesbar else None,
             "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item) if lesbar else "",
@@ -481,9 +488,8 @@ def unsubscribe_decision(request, token):
     if subscription.unsubscribed_at is None:
         subscription.unsubscribed_at = timezone.now()
         subscription.save(update_fields=["unsubscribed_at"])
-    return render(
+    return _subscription_status(
         request,
-        "pages/decisions/subscription_status.html",
         {
             "item": subscription.agenda_item if lesbar else None,
             "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item) if lesbar else "",

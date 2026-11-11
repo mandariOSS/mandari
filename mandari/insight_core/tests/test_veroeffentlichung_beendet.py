@@ -310,6 +310,7 @@ def test_abo_links_nennen_einen_zurueckgenommenen_beschluss_nicht(welt: dict[str
     for antwort in (client.get(bestaetigen), client.post(bestaetigen), client.get(abmelden), client.post(abmelden)):
         inhalt = antwort.content.decode()
         assert antwort.status_code == 200
+        assert antwort["Cache-Control"] == "no-store"
         assert "Radweg beschlossen" not in inhalt
         assert f"/insight/beschluesse/{welt['beschluss'].pk}/" not in inhalt
     # Nicht aktiviert, aber abgemeldet
