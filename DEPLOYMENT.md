@@ -2012,14 +2012,15 @@ Zwei Seiten, jede mit eigener Grenze:
    Worker + Ingestor + übrige Dienste + Reserve ≤ `max_connections`. `DEFAULT_POOL_SIZE` gilt je
    Datenbank und Benutzer; im Einzelserver lässt PgBouncer nur die Datenbank der Anwendung durch.
 
-Beispiel: Einzelserver mit `max_connections` 200:
+Beispiel: Einzelserver mit der mitgelieferten `docker-compose.yml` (ohne OCR-Worker und weitere Anwendungen)
+und `max_connections` 200:
 
 | | ohne PgBouncer | mit PgBouncer |
 |---|---|---|
 | Anwendung zu PostgreSQL | 10 (`DB_POOL_MAX`) | 20 (`DEFAULT_POOL_SIZE`) |
-| übrige Dienste (Budget oben ohne die Anwendung) | 128 | 128 |
-| **Summe in PostgreSQL** | **138** | **148** |
-| Reserve bis 200 | 62 | 52 |
+| übrige Dienste (Budget oben ohne Anwendung, OCR-Worker und weitere Anwendungen) | 91 | 91 |
+| **Summe in PostgreSQL** | **101** | **111** |
+| Reserve bis 200 | 99 | 89 |
 | Anwendung zu PgBouncer | – | 30 (`MANDARI_DB_POOL_MAX`) von 200 (`MAX_CLIENT_CONN`) |
 
 Mit PgBouncer bedient die Anwendung also dreimal so viele Anfragen mit Datenbankzugriff zugleich
