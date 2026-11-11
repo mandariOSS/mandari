@@ -231,4 +231,8 @@ def retract(obj: Any, *, reason: str, when: datetime | None = None) -> bool:
             # Die Rücknahme gilt trotzdem; der Feed verpasst sie. Meldung ohne Inhalte, nur Kennungen.
             logger.exception("Rücknahme von %s %s ohne Ereignis im Journal", model.__name__, row.pk)
     obj.deleted, obj.deleted_at, obj.oparl_modified = row.deleted, row.deleted_at, row.oparl_modified
+    # Zwischengespeicherte öffentliche Ausgaben (Feeds, Kartenpunkte) der Kommune entstehen neu
+    from insight_core.services import ruecknahme_stand
+
+    transaction.on_commit(lambda: ruecknahme_stand.forget(_body_id(row)), robust=True)
     return True

@@ -107,11 +107,13 @@ def mandate_memberships(person_ref):
     Hauptorgan (ohne Verwaltungs-/Protokollrollen). ``person_ref`` kann eine
     Person oder ein OuterRef("pk") sein.
     """
-    from ..models import OParlMembership
+    from ..models import OParlMembership, withdrawn_q
 
     faction = _faction_org_q()
     qs = (
-        OParlMembership.objects.filter(person=person_ref)
+        # Nur sichtbare Mitgliedschaften: ohne gelöschte Mitgliedschaften und Gremien und ohne zurückgenommene
+        OParlMembership.objects.filter(person=person_ref, deleted=False, organization__deleted=False)
+        .exclude(withdrawn_q("organization"))
         .filter(_active_membership_q())
         .filter(faction | _council_org_q())
     )
@@ -179,10 +181,12 @@ def get_faction_map(persons) -> dict:
 
 def get_council_role(person) -> str | None:
     """Rolle im Hauptorgan (z. B. „Ratsmitglied“), falls vorhanden."""
-    from ..models import OParlMembership
+    from ..models import OParlMembership, withdrawn_q
 
     m = (
-        OParlMembership.objects.filter(person=person)
+        # Nur sichtbare Mitgliedschaften (wie die Fraktion der Person, Issue #841)
+        OParlMembership.objects.filter(person=person, deleted=False, organization__deleted=False)
+        .exclude(withdrawn_q("organization"))
         .filter(_active_membership_q())
         .filter(_council_org_q())
         .exclude(role__isnull=True)

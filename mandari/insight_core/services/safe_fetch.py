@@ -192,6 +192,8 @@ def download_to(
     """
     deadline = _now() + total_seconds
     client_headers = {"User-Agent": user_agent} if user_agent else {}
+    # Dateien unkomprimiert: Die Größengrenze gilt dann für das, was tatsächlich im Speicher ankommt
+    headers = {"Accept-Encoding": "identity", **(headers or {})}
     client = guarded_client(timeout=timeout, follow_redirects=True, max_redirects=5, headers=client_headers)
     response_cm: AbstractContextManager[httpx.Response]
     if before_redirect is None:
@@ -205,8 +207,14 @@ def download_to(
         declared = int(response.headers.get("content-length") or 0)
         if declared > max_bytes:
             raise TooLargeError
+        # Angefordert wird unkomprimiert (siehe unten). Kommt die Antwort trotzdem kodiert, weisen wir sie ab: Die
+        # Grenze zählte sonst erst nach dem Entpacken, und ein kleiner Rohblock könnte den Speicher füllen.
+        if response.headers.get("content-encoding", "identity").strip().lower() not in ("", "identity"):
+            raise TooLargeError
         size = 0
-        for chunk in response.iter_bytes(64 * 1024):
+        # Schon vollständig geladene Antworten (Ersatz-Transport im Test) haben keinen rohen Strom mehr
+        chunks = [response.content] if response.is_stream_consumed else response.iter_raw(64 * 1024)
+        for chunk in chunks:
             size += len(chunk)
             if size > max_bytes:
                 raise TooLargeError

@@ -119,9 +119,14 @@ class Command(BaseCommand):
 
     def _before_redirect(self, request: httpx.Request) -> None:
         """Vor jeder Weiterleitung: robots.txt des Ziels (Art ``api``), dann im Takt seines Hosts (Issue #1027)."""
-        from insight_core.services import redirects, robots
+        from insight_core.services import redirects, robots, safe_fetch
 
         url = str(request.url)
+        # Nicht öffentliche Ziele zuerst (wie redirects.guard): dorthin auch keine Anfrage nach der robots.txt
+        try:
+            safe_fetch.check_url(url)
+        except safe_fetch.BlockedDestinationError as exc:
+            raise safe_fetch.BlockedDestinationError(str(exc), request=request) from None
         decision = robots.check(url, robots.KIND_API, sync_config=self._config_for(url))
         if not decision.allowed:
             raise redirects.RedirectBlockedError(decision, request=request)
@@ -129,8 +134,11 @@ class Command(BaseCommand):
 
     def _get(self, url: str, headers: dict[str, str]) -> httpx.Response:
         """GET im Takt; Weiterleitungen folgen wir selbst, nach der robots.txt ihres Ziels und im Takt."""
-        from insight_core.services import redirects
+        from insight_core.services import redirects, safe_fetch
 
+        # Adressen aus der Antwort der Quelle (Körperschaften, Folgeseiten) können überallhin zeigen: nur
+        # öffentliche Ziele. Weiterleitungen prüft ``_before_redirect`` auf dieselbe Weise.
+        safe_fetch.check_url(url)
         with httpx.Client(timeout=30.0, headers=headers, follow_redirects=False) as client:
             self._wait_for_slot(url)
             response = redirects.send(client, client.build_request("GET", url), before_redirect=self._before_redirect)

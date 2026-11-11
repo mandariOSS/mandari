@@ -405,6 +405,20 @@ def confirm_decision_subscription(request, token):
     """GET zeigt die Bestätigungsseite, erst der Klick darauf (POST) aktiviert das Abo."""
     subscription = get_object_or_404(DecisionSubscription.objects.select_related("agenda_item__meeting"), token=token)
     already = subscription.confirmed and subscription.unsubscribed_at is None
+    lesbar = decision_tracking.is_readable(subscription.agenda_item)
+    if not lesbar and not already:
+        # Der Beschluss ist nicht mehr veröffentlicht: nichts aktivieren, weder Titel noch Verweis zeigen
+        return render(
+            request,
+            "pages/decisions/subscription_status.html",
+            {
+                "item": None,
+                "titel": "",
+                "title": "Beschluss nicht mehr veröffentlicht",
+                "message": "Dieser Beschluss ist nicht mehr veröffentlicht. Die Benachrichtigung wurde nicht aktiviert.",
+                "unsubscribe_token": None,
+            },
+        )
     if request.method == "GET" and not already:
         return link_confirmation(
             request,
@@ -423,8 +437,8 @@ def confirm_decision_subscription(request, token):
         request,
         "pages/decisions/subscription_status.html",
         {
-            "item": subscription.agenda_item,
-            "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item),
+            "item": subscription.agenda_item if lesbar else None,
+            "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item) if lesbar else "",
             "title": "Benachrichtigung aktiv" if not already else "Bereits bestätigt",
             "message": (
                 "Sie erhalten eine E-Mail, sobald die Verwaltung einen neuen Umsetzungsstand zu diesem Beschluss meldet."
@@ -440,12 +454,18 @@ def confirm_decision_subscription(request, token):
 def unsubscribe_decision(request, token):
     """GET zeigt die Bestätigungsseite, erst der Klick darauf (POST) meldet ab."""
     subscription = get_object_or_404(DecisionSubscription.objects.select_related("agenda_item__meeting"), token=token)
+    # Abmelden bleibt immer möglich; den Titel nennt die Seite nur, solange der Beschluss lesbar ist
+    lesbar = decision_tracking.is_readable(subscription.agenda_item)
     if request.method == "GET" and subscription.unsubscribed_at is None:
+        name = decision_tracking.oeffentlicher_name(subscription.agenda_item) if lesbar else ""
         return link_confirmation(
             request,
             title="Benachrichtigung beenden",
-            message="Möchten Sie keine E-Mails mehr zum Beschluss "
-            f"„{decision_tracking.oeffentlicher_name(subscription.agenda_item)}“ erhalten?",
+            message=(
+                f"Möchten Sie keine E-Mails mehr zum Beschluss „{name}“ erhalten?"
+                if name
+                else "Möchten Sie keine E-Mails mehr zu diesem Beschluss erhalten?"
+            ),
             button="Abmelden",
             icon="bell-off",
         )
@@ -456,8 +476,8 @@ def unsubscribe_decision(request, token):
         request,
         "pages/decisions/subscription_status.html",
         {
-            "item": subscription.agenda_item,
-            "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item),
+            "item": subscription.agenda_item if lesbar else None,
+            "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item) if lesbar else "",
             "title": "Benachrichtigung beendet",
             "message": "Sie erhalten keine weiteren E-Mails zu diesem Beschluss. Die Adresse wird nicht weiter verwendet.",
             "unsubscribe_token": None,
