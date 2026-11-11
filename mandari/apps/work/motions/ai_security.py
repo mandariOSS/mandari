@@ -8,10 +8,17 @@ Provides security measures for AI integration:
 - Rate limiting to prevent abuse
 """
 
+import functools
 import html
 import re
 
 from django.core.cache import cache
+
+
+@functools.cache
+def _compiled(pattern: str) -> re.Pattern[str]:
+    """Muster einmal übersetzen (ohne Beachtung der Großschreibung), statt bei jedem Aufruf."""
+    return re.compile(pattern, re.IGNORECASE)
 
 
 class AIInputSanitizer:
@@ -22,8 +29,12 @@ class AIInputSanitizer:
     """
 
     # Patterns that may indicate prompt injection
+    #
+    # Jedes Muster muss in linearer Zeit laufen, auch wenn es nicht trifft: keine zwei Wiederholungen
+    # hintereinander, die dieselben Zeichen annehmen (Leerraum vor und nach einer optionalen Gruppe), und keine
+    # offene Suche bis zum Zeilenende von jeder Fundstelle aus. Abstände haben deshalb eine feste Obergrenze.
     INJECTION_PATTERNS = [
-        r"ignore\s+(previous|all|the|your)?\s*(instructions|prompt|rules)",
+        r"ignore\s+(?:(?:previous|all|the|your)\s+)?(instructions|prompt|rules)",
         r"disregard\s+(the\s+)?(above|previous)",
         r"you\s+are\s+now",
         r"act\s+as",
@@ -33,11 +44,11 @@ class AIInputSanitizer:
         r"system\s+prompt:",
         r"\[INST\]",
         r"\[/INST\]",
-        r"<\|.*?\|>",
+        r"<\|[^|\n]{0,200}\|>",
         r"###\s*(system|human|assistant)",
         r"<\|(system|user|assistant)\|>",
-        r"override\s+.*instructions",
-        r"bypass\s+.*restrictions",
+        r"override\s[\s\S]{0,200}?instructions",
+        r"bypass\s[\s\S]{0,200}?restrictions",
         r"jailbreak",
         r"DAN\s*mode",
     ]
@@ -64,14 +75,15 @@ class AIInputSanitizer:
 
         # Check for and neutralize injection patterns
         for pattern in cls.INJECTION_PATTERNS:
-            if re.search(pattern, text, re.IGNORECASE):
+            compiled = _compiled(pattern)
+            if compiled.search(text):
                 if log_attempts:
                     import logging
 
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Potential prompt injection detected: pattern '{pattern}'")
                 # Replace with innocuous text
-                text = re.sub(pattern, "[eingabe entfernt]", text, flags=re.IGNORECASE)
+                text = compiled.sub("[eingabe entfernt]", text)
 
         return text
 

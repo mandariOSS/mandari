@@ -12,6 +12,7 @@ eigene, bewusst restriktive Whitelist auf Basis von html.parser:
 - Text wird HTML-escaped wieder ausgegeben
 """
 
+from collections import Counter
 from html import escape
 from html.parser import HTMLParser
 
@@ -28,6 +29,9 @@ class _WhitelistParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.open_tags: list[str] = []
+        # Wie oft jede Marke gerade offen ist: Die Frage „ist sie offen?“ kostet so nichts, statt bei jeder
+        # Endmarke die ganze Liste zu durchsuchen (quadratisch bei vielen offenen Marken)
+        self._open_count: Counter[str] = Counter()
         self._drop_depth = 0
 
     def handle_starttag(self, tag, attrs):
@@ -45,6 +49,7 @@ class _WhitelistParser(HTMLParser):
             else:
                 self.parts.append(f"<{tag}>")
                 self.open_tags.append(tag)
+                self._open_count[tag] += 1
         # nicht erlaubte Tags: verwerfen, Inhalt bleibt
 
     def handle_startendtag(self, tag, attrs):
@@ -60,10 +65,11 @@ class _WhitelistParser(HTMLParser):
             if tag in DROP_CONTENT_TAGS:
                 self._drop_depth -= 1
             return
-        if tag in ALLOWED_TAGS and tag not in VOID_TAGS and tag in self.open_tags:
+        if tag in ALLOWED_TAGS and tag not in VOID_TAGS and self._open_count[tag] > 0:
             # Schließe ggf. dazwischen offen gebliebene Tags (wohlgeformte Ausgabe)
             while self.open_tags:
                 open_tag = self.open_tags.pop()
+                self._open_count[open_tag] -= 1
                 self.parts.append(f"</{open_tag}>")
                 if open_tag == tag:
                     break
