@@ -284,6 +284,15 @@ dem Profil (`kommparl:changes`); die ältere Form (`mandari:changes`) bleibt bei
   frühere Bezüge einer Datei als `previous_paper`, `previous_meeting`, `previous_agenda_item` in `ris.file.changed`,
   additiv in v1). Diese Punkte bleiben unter #1229 offen.
 
+## Nachtrag vom 11.11.2026: Format abgekündigt (#1216)
+
+Das in diesem ADR festgelegte Format (Adressen `…/changes` und `…/snapshot`, deutsche Gründe wie
+`quelle_geloescht`, `410` nach RFC 9457, `links.next` auf jeder Seite) ist seit #1216 die ältere Form und
+abgekündigt; Wegfall frühestens am 01.12.2027. Nachfolger ist das Profil Änderungsfeed bzw. Snapshot von kommParl
+unter `…/kommparl/changes` und `…/kommparl/snapshot` mit den Gründen `deleted`, `withdrawn`, `nonPublic` und
+`privacy` und dem Fehlerobjekt nach OParl 1.1 ([Nachtrag #1216 zum ADR „Eine Schnittstelle“](20261105-eine-schnittstelle-api-first.md),
+`docs/OPARL_API.md`, „Zwei Formen“). Cursor, Journal und Aufbewahrung gelten für beide Formen gleich.
+
 ## Bezug
 
 - [A3 Sequenzierer](20260929-sequenzierer.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),

@@ -740,7 +740,7 @@ FILE_RECONCILE_MAX_MISSING = int(os.environ.get("FILE_RECONCILE_MAX_MISSING", "1
 # Layout je Kommune, ohne Deduplizierung und ohne Objektspeicher)
 FILE_STORE_LAYOUT = os.environ.get("FILE_STORE_LAYOUT", "sha256")
 # Sieht dieser Dienst die gemeinsame Ablage (Anwendungsserver oder gemeinsam eingehängt)? false nur auf einem Server,
-# der die Inhalte allein über den Objektspeicher sieht (eigener Erkennungsserver, docs/MEHR_SERVER_BETRIEB.md): Was
+# der die Inhalte allein über den Objektspeicher sieht (eigener Erkennungsserver, DEPLOYMENT.md#-mehrere-server-rollen-data--web--worker): Was
 # weder dort noch im Objektspeicher liegt, gilt dann als gestört statt als fehlend und löst keinen Abruf aus.
 FILE_STORE_SHARED = os.environ.get("FILE_STORE_SHARED", "true").lower() in ("1", "true", "yes")
 # Der Ingestor legt Dateien, die er für den Text lädt, selbst in der Ablage ab (OPARL_FILES_ROOT im
@@ -803,7 +803,7 @@ SECURITY_AUDIT_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_RETENTION_DAY
 # (purge_security_audit_log, Issue #366)
 SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS", "0"))
 # Aufbewahrung der Anmeldeversuche (LoginAttempt, Drosselung) in Tagen, 0 = keine Löschung (purge_login_attempts,
-# Issue #366); 30 Tage, festgelegt durch den Betreiber am 16.10.2026 (docs/PROTOKOLLE.md)
+# Issue #366); 30 Tage, festgelegt durch den Betreiber am 16.10.2026 (docs/PROTOKOLLIERUNG.md#12-systemprotokolle-der-installation)
 LOGIN_ATTEMPT_RETENTION_DAYS = int(os.environ.get("LOGIN_ATTEMPT_RETENTION_DAYS", "30"))
 
 
@@ -938,7 +938,7 @@ INSIGHT_CHAT_TIME_LIMIT_SECONDS = int(os.environ.get("INSIGHT_CHAT_TIME_LIMIT_SE
 # Chat-Nutzungen seit Mitternacht). Ist eine erreicht, fragt der Assistent den Anbieter bis zum nächsten Tag nicht.
 INSIGHT_CHAT_DAILY_MAX_CALLS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_CALLS", "500"))
 INSIGHT_CHAT_DAILY_MAX_TOKENS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_TOKENS", "1000000"))
-# Öffentlicher, nur lesender MCP-Server unter /insight/mcp (Issue #899, docs/INSIGHT_MCP.md). Standard aus; die
+# Öffentlicher, nur lesender MCP-Server unter /insight/mcp (Issue #899, docs/KI.md#4-mcp-server). Standard aus; die
 # Freischaltung entscheidet der Betrieb. Grenzen je Adresse und Minute (alle Anfragen), je Adresse und Tag
 # (Werkzeugaufrufe) und insgesamt je Minute; 0 schaltet eine Grenze ab. INSIGHT_MCP_ALLOWED_ORIGINS: weitere Hosts,
 # deren Browser-Clients (Kopfzeile Origin) zugreifen dürfen, kommagetrennt; ALLOWED_HOSTS gelten immer.

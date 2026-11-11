@@ -30,3 +30,6 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20261105-eine-schnittstelle-api-first.md](20261105-eine-schnittstelle-api-first.md) | Eine Schnittstelle: API-first auf OParl, kommParl und OpenAPI | angenommen |
 
 Die Einträge „Datendrehscheibe A1–A11“ gehören zusammen (Epic #476); die Reihenfolge der Nummern entspricht den Abhängigkeiten.
+
+Nachträge vom 11.11.2026 (#1341) gleichen A1, A4, A5, A6, A9, A10, die Dokumentkette und „Eine Schnittstelle“
+mit dem Code ab. Überholte Stellen tragen einen datierten Vermerk; Entscheidungen und Status bleiben.

@@ -2,7 +2,7 @@
 Golden-File-Regressionstests für den SessionNet-Adapter.
 
 HTML-Fixtures stammen von zwei realen, öffentlichen Instanzen
-(abgerufen 2026-07-20, siehe fixtures/scrapers/sessionnet/README.md):
+(abgerufen 2026-07-20, siehe fixtures/scrapers/README.md, Abschnitt „sessionnet/“):
 - luedenscheid: buergerinfo.luedenscheid.de (klassische *.asp-Variante)
 - eschweiler:   rat.eschweiler.de/bi (*.php-Variante, gleiches Markup)
 

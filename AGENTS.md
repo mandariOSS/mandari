@@ -1,4 +1,4 @@
-# Mandari 2.0 - AI Assistant Context
+# Mandari: Kontext für KI-Assistenten
 
 > Gemeinsamer Kontext für alle KI-Assistenten (Claude, Copilot, Codex, Gemini usw.).
 > Claude-spezifische Ergänzungen stehen in CLAUDE.md, das diese Datei einbindet.
@@ -41,7 +41,7 @@ Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in De
 
 | Komponente | Technologie |
 |------------|-------------|
-| **Backend** | Django 6.1 (Python 3.12+) |
+| **Backend** | Django 6.1 (Python 3.12 bis 3.14) |
 | **Frontend** | Django Templates + HTMX + Alpine.js |
 | **CSS** | Tailwind CSS |
 | **Datenbank** | PostgreSQL 16 |
@@ -148,20 +148,23 @@ Membership (Verknüpfung User ↔ Organization)
 2. **Individuelle Berechtigungen** - Pro Membership zusätzlich gewährt
 3. **Verweigerte Berechtigungen** - Pro Membership explizit ausgeschlossen (höchste Priorität!)
 
-**50+ Berechtigungen** organisiert in 14 Kategorien:
-- Dashboard, Fraktionssitzungen, Agenda, Abstimmung/Rederecht
-- Anträge, Protokolle, RIS-Sitzungen, Aufgaben
-- RIS-Daten, Arbeitsgruppen, Dokumente, Mitglieder
-- Organisation, Gäste, Support
+Rechte und Standardrollen sind in `apps/common/permissions.py` definiert (`PERMISSIONS`,
+`PERMISSION_CATEGORIES`, `DEFAULT_ROLES`); `python manage.py setup_roles` legt die Rollen an.
 
-**Standard-Rollen** (werden automatisch erstellt):
-- Fraktionsvorsitz (Vollzugriff)
-- Stellvertretender Vorsitz
-- Fraktionsmitglied (mit Stimmrecht)
-- Sachkundige/r Bürger/in (beratend)
-- Bezirksvertreter/in (beratend)
-- Fraktionspersonal (administrativ)
-- Administrator (System; alle Rechte außer dem Stimmrecht, das kommt über eine weitere Rolle oder als Einzelrecht)
+**80 Einzelrechte** in 15 Bereichen:
+- Dashboard, Fraktionssitzungen, Tagesordnung, Stimm- und Rederecht, Anträge
+- Protokolle, Ratssitzungen (RIS), Aufgaben, RIS-Daten, Arbeitsgruppen
+- Dokumente, Mitglieder, Organisation, Gastzugänge (Dokumente), Support
+
+**Zehn Standardrollen:**
+- Administrator (alle Rechte außer dem Stimmrecht; das kommt über eine weitere Rolle oder als Einzelrecht)
+- Fraktionsvorsitz und Stellv. Vorsitz (Sitzungsleitung, weitreichende Verwaltungsrechte)
+- Fraktionsmitglied (Stimm- und Rederecht)
+- Sachkundige/r Bürger/in und Bezirksvertreter/in (beratend, kein Stimmrecht)
+- Fraktionspersonal (Organisation und Vorbereitung, kein Stimmrecht)
+- Geschäftsführung (Verwaltung der Organisation, kein Stimmrecht)
+- AG-Sprecher/in (leitet eine Arbeitsgruppe)
+- Parteimitglied (öffentlicher Teil der Fraktionssitzung, noch nicht freigeschaltet)
 
 ---
 
@@ -358,7 +361,7 @@ Ingestor (ingestor/, eigener Container)
     ▼
 insight_core (Django ORM Models)
     │
-    ├──► Public Portal
+    ├──► Insight (/insight/)
     │       └── Bürger:innen sehen Sitzungen, Vorlagen, Beschlüsse
     │
     └──► Work Portal
@@ -577,35 +580,12 @@ class MyListView(WorkViewMixin, ListView):
 
 ### Templates
 
-Verbindlich: [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) und die ADRs unter `docs/adr/`.
-Kurzfassung: Templates sind Struktur, nicht Programm.
-
-- Kein `<script>`/`<style>` in Seiten-Templates (Allowlist: Layouts, E-Mails, PDF, PWA). JavaScript lebt in
-  `frontend/` (TypeScript, Vite → `static/dist/`, Layouts laden per `{% vite_asset %}`); Alpine-Komponenten
-  werden in `frontend/js/main.ts` mit `Alpine.data()` registriert und im Template nur per `x-data="name"`
-  referenziert. Server-Daten gehen per `{{ data|json_script:"id" }}` an den Client. Icons brauchen kein
-  `lucide.createIcons()` mehr (MutationObserver). Entwicklung: `npm run watch` + `DJANGO_VITE_DEV_MODE=1`.
-- Höchstens 300 Zeilen je Template; HTMX-Fragmente als Django-6-Template-Partials (`{% partialdef %}`).
-- Wiederkehrendes Markup (Buttons, Cards, Badges, Formularfelder, Modals) als django-cotton-Komponente aus
-  `templates/cotton/` statt kopierter Klassenketten: `<c-ui.button type="submit" full>`, `<c-ui.card title="…">`,
-  `<c-form.field :field="form.email" label="E-Mail" type="email" required />`, `<c-form.errors :form="form" />`.
-  Vorschau aller Komponenten unter `/dev/ui/` (nur DEBUG); Tests in `apps/common/tests/test_components.py`.
-- `scripts/check_frontend_ratchet.py` misst Inline-Code und Template-Größe; die Werte dürfen nur sinken.
-- Template-Kommentare mit `{# … #}` nur einzeilig; mehrzeilig `{% comment %}…{% endcomment %}`. Ein
-  mehrzeiliges `{# #}` erscheint als Text auf der Seite (`scripts/check_template_comments.py` prüft das).
-
-```html
-{% extends "work/base_work.html" %}
-
-{% block content %}
-{{ board_data|json_script:"task-board-data" }}
-<div x-data="taskBoard" class="...">
-    {% partialdef task-list inline %}
-    <ul id="task-list">…</ul>
-    {% endpartialdef %}
-</div>
-{% endblock %}
-```
+Verbindlich: [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md), Abschnitt 5 (Regeln, Muster
+für Seiten ohne Inline-Code, E-Mails, Barrierefreiheit), und die ADRs unter `docs/adr/`. Kurz: Templates
+sind Struktur, nicht Programm. Kein `<script>`/`<style>` in Seiten-Templates, höchstens 300 Zeilen,
+wiederkehrendes Markup aus `templates/cotton/` (Vorschau unter `/dev/ui/`), JavaScript als TypeScript unter
+`frontend/`. Template-Kommentare mit `{# … #}` nur einzeilig; ein mehrzeiliges `{# #}` erscheint als Text
+auf der Seite (`scripts/check_template_comments.py`).
 
 ### Frontend-Technologien
 
@@ -651,68 +631,28 @@ python manage.py shell
 
 ## Umgebungsvariablen
 
-```bash
-# Erforderlich
-SECRET_KEY=django-insecure-change-in-production
-DATABASE_URL=postgresql://user:pass@localhost:5432/mandari
-ENCRYPTION_MASTER_KEY=base64-encoded-256-bit-key  # Für Verschlüsselung
+Alle Variablen mit Erläuterung stehen in [`.env.example`](.env.example), Betrieb, Texterkennung und
+KI-Anbieter in [DEPLOYMENT.md](DEPLOYMENT.md). Für die Arbeit am Code wichtig:
 
-# Optional
-DEBUG=True  # Niemals True in Production!
-ALLOWED_HOSTS=localhost,127.0.0.1
-SITE_URL=https://mandari.example.com
-
-# E-Mail (alternativ: SiteSettings im Admin)
-EMAIL_HOST=smtp.example.com
-EMAIL_PORT=587
-EMAIL_HOST_USER=user
-EMAIL_HOST_PASSWORD=pass
-EMAIL_USE_TLS=True
-DEFAULT_FROM_EMAIL=noreply@example.com
-
-# Logging / Tracing (apps/common/observability.py)
-LOG_FORMAT=json            # json (Produktion) oder text (Entwicklung)
-LOG_LEVEL=INFO             # DEBUG wird in Produktion auf INFO gekappt
-OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318   # leer = kein Tracing
-OTEL_SERVICE_NAME=mandari-web
-
-# Elasticsearch (Volltextsuche)
-ELASTICSEARCH_URL=http://localhost:9200
-ELASTICSEARCH_AUTO_INDEX=True
-
-# Texterkennung der RIS-Dateien (DEPLOYMENT.md, „Texterkennung“), in Anwendung und Ingestor gleich setzen:
-# ingestor (Standard) = OCR-Worker bzw. Sync des Ingestors; worker = Aufträge file.read_text_layer (Warteschlange
-# text, Dienst worker) und file.extract_text (ocr, Dienst worker-heavy), braucht TASKS_BACKEND=journal
-TEXT_EXTRACTION_RUNNER=ingestor
-TEXT_EXTRACTION_ENABLED=True       # nur Ingestor: Erkennung im Sync-Lauf
-TEXT_EXTRACTION_MAX_SIZE_MB=50     # Ingestor und Anwendung
-
-# KI (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen), kein fester Anbieter
-# im Code. Jeder KI-Aufruf nur an Hosts dieser Positivliste; leer ist nichts erlaubt (KI aus, kein Standard).
-# Erst nach Freigabe eines Anbieters dessen Host eintragen, etwa KI_ERLAUBTE_HOSTS=<host-des-anbieters>;
-# dann `manage.py ki_anbieter einrichten …` und `ki_anbieter pruefen` (Issue #1046, DEPLOYMENT.md „KI-Anbieter“)
-KI_ERLAUBTE_HOSTS=
-
-# Externe Texterkennung (optional, nur öffentliche RIS-Dateien): nur mit Basis-URL aus KI_ERLAUBTE_HOSTS
-MISTRAL_API_KEY=sk-...
-MISTRAL_BASE_URL=https://<host-aus-KI_ERLAUBTE_HOSTS>/v1
-MISTRAL_OCR_RATE_LIMIT=60
-```
+- KI-Aufrufe gehen nur an Hosts aus `KI_ERLAUBTE_HOSTS`; leer heißt KI aus. Anbieter, Modell und Schlüssel
+  stehen im Admin (KI-Einstellungen), nie fest im Code (Issue #950).
+- `TEXT_EXTRACTION_RUNNER` wird in Anwendung und Ingestor gleich gesetzt.
+- `DEBUG=True` nie in Produktion.
 
 ---
 
 ## URL-Struktur
 
 ```
-/                               # Public Portal (insight_core)
 /robots.txt                     # SEO: robots.txt
 /sitemap-insight-index.xml      # SEO: Sitemap-Index
 /sitemap-insight-<slug>.xml     # SEO: Pro Kommune
-/insight/                       # Insight Portal
+/insight/                       # Insight-Portal (Startseite: Kommunenauswahl)
     /vorgaenge/<uuid>/          # Paper-Detail
     /termine/<uuid>/            # Meeting-Detail
     /gremien/<uuid>/            # Organization-Detail
     /personen/<uuid>/           # Person-Detail
+/api/, /oparl/, /data/dcat/     # Schnittstellen (docs/SCHNITTSTELLE.md)
 /admin/                         # Django Admin (Unfold Theme)
 /accounts/                      # Authentifizierung
     /login/
@@ -739,31 +679,9 @@ MISTRAL_OCR_RATE_LIMIT=60
 
 ## Verschlüsselung
 
-Das System verwendet AES-256-GCM für sensible Daten mit einer Schlüssel-Hierarchie:
-
-```
-Master Key (Umgebungsvariable)
-    └── Tenant Key (pro Organisation, verschlüsselt gespeichert)
-            └── Feld-Daten (mit Tenant Key verschlüsselt)
-```
-
-**Verwendung in Models**:
-
-```python
-from apps.common.encryption import EncryptedTextField, EncryptionMixin
-
-class SensitiveModel(EncryptionMixin, models.Model):
-    # Feldname muss auf _encrypted enden
-    secret_encrypted = EncryptedTextField(verbose_name="Geheime Daten")
-    organization = models.ForeignKey("tenants.Organization", ...)
-
-    def get_encryption_organization(self):
-        return self.organization
-
-# Automatisch generierte Methoden:
-obj.set_secret_encrypted("Klartext")      # Verschlüsseln und speichern
-plain = obj.get_secret_decrypted()        # Entschlüsseln und zurückgeben
-```
+Sensible Felder sind `EncryptedTextField` aus `apps/common/encryption.py` (Feldname endet auf `_encrypted`,
+Modell mit `EncryptionMixin` und `get_encryption_organization()`). Schlüsselhierarchie, Verfahren und
+Schlüsselwechsel: [docs/KRYPTOKONZEPT.md](docs/KRYPTOKONZEPT.md).
 
 ---
 
@@ -777,14 +695,14 @@ plain = obj.get_secret_decrypted()        # Entschlüsseln und zurückgeben
 | `apps/common/encryption.py` | Verschlüsselungs-Utilities |
 | `apps/common/mixins.py` | Wiederverwendbare View-Mixins |
 | `templates/work/base_work.html` | Basis-Template für Work Portal |
-| `templates/components/` | Wiederverwendbare UI-Komponenten |
+| `templates/cotton/` | Wiederverwendbare UI-Komponenten (django-cotton) |
 
 ---
 
 ## Architektur-Prinzipien
 
 1. **Multi-Tenancy** - Strikte Datenisolation pro Organisation
-2. **RBAC** - Feingranulare Berechtigungen (50+) mit 3-Ebenen-System
+2. **RBAC** - 80 Einzelrechte mit 3-Ebenen-System
 3. **Verschlüsselung** - Sensible Daten mit AES-256-GCM verschlüsselt
 4. **OParl-Standard** - Kompatibilität mit deutschen Ratsinformationssystemen
 5. **HTMX-First** - Minimales JavaScript, maximale Interaktivität
@@ -792,20 +710,10 @@ plain = obj.get_secret_decrypted()        # Entschlüsseln und zurückgeben
 
 ### Datendrehscheibe: Regeln für Beiträge
 
-Schichten, Abhängigkeiten und Prüfungen stehen in `docs/ENGINEERING_STANDARDS.md`, Abschnitt 1, und in
-der [ADR Schichtenmodell](docs/adr/20260929-schichtenmodell.md). Kurz:
-
-- **Keine fremden Tabellen:** Jeder Datenbestand hat genau einen Eigentümer, nur er schreibt. Session,
-  Work und Minutes kennen sich nicht (`lint-imports`). Auch lesend gibt es keinen Zugriff auf fremde
-  Tabellen, weder über deren Modelle noch per SQL: RIS-Daten lesen Fachmodule nur über
-  `hub.ris.selectors`, nicht über `OParl*.objects`.
-- **Ereignisse veröffentlicht nur der Eigentümer:** `publish()` steht nur im Paket, das der Vertrag als
-  `x-owner` nennt. `ris.*` gehört der Drehscheibe (`hub.ris`, Übertragungen `ris.broadcast.*` in
-  `hub.live`); der Ingestor schreibt `ris.*` als Eingangsadapter direkt ins Journal.
-- **Befehle statt Direktaufruf:** Daten eines anderen Moduls ändert ein Befehl an den Eigentümer
-  (`hub.commands`, Quittung oder Problem nach RFC 9457), kein Aufruf seiner Services.
-- **Jedes Ereignis und jeder Befehl hat ein Schema** unter `hub/contracts/schemas/<typ>/v<n>.json`, im
-  selben PR, nur additiv geändert; `scripts/check_event_contracts.py` prüft das in der CI.
+Verbindlich: [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md), Abschnitt 1, und die
+[ADR Schichtenmodell](docs/adr/20260929-schichtenmodell.md). Kurz: keine fremden Tabellen (RIS-Daten nur
+über `hub.ris.selectors`), Ereignisse veröffentlicht nur der Eigentümer, Befehle statt Direktaufruf, und
+jedes Ereignis und jeder Befehl hat ein Schema unter `hub/contracts/schemas/`.
 
 ---
 
@@ -828,7 +736,8 @@ der [ADR Schichtenmodell](docs/adr/20260929-schichtenmodell.md). Kurz:
 - **Nicht** `User.objects.all()` - immer über Membership gehen
 - **Keine synchronen** externen API-Calls in Request-Cycle
 - **Keine inline-styles** - immer Tailwind CSS Klassen
-- **Nicht** `onclick="..."` in Templates - Alpine.js `@click` verwenden
+- **Kein** `onclick="..."` in Templates: Aktionen über `data-*`-Attribute (`frontend/js/actions.ts`)
+  oder eine registrierte Alpine-Komponente (Engineering-Standards, Abschnitt 5.1)
 
 ### Typische Code-Patterns
 

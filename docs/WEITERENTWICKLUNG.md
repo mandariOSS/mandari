@@ -48,7 +48,7 @@ erste Zug eines Quartals.
 | Tag | Schritt |
 |---|---|
 | **Donnerstag (Stichtag)** | 1. Meilenstein bereinigen: Was nicht fertig ist, in den nächsten Zug verschieben. 2. Vorbereitungs-PR gegen `dev` „chore(release): 0.13.0 vorbereiten“: Version in `mandari/pyproject.toml` und `mandari/package.json`, `uv lock` im Ordner `mandari`, im CHANGELOG `[Unreleased]` zu `[0.13.0] – 2026-11-17` und einen leeren Abschnitt `[Unreleased]` darüber. 3. Release-PR `dev` → `main` „Release v0.13.0“, CI grün, Merge. 4. Deploy in Produktion nach den Betriebsregeln. |
-| **Freitag bis Montag** | Produktion beobachten (Statusseite, Fehlerprotokolle, Rückmeldungen). Ein Fehler, der das Release verhindert (Datenverlust, Sicherheitslücke, Ausfall, gescheiterte Migration), wird über `dev` behoben und mit einem weiteren Release-PR ausgeliefert. Getaggt wird dann der korrigierte Stand, wenn er bis Dienstag mindestens einen Werktag in Produktion läuft; sonst entfällt der Zug. Der korrigierte Stand enthält auch, was seit dem Stichtag in `dev` kam. Das ist gewollt: Freigegeben ist, was mindestens einen Werktag in Produktion lief. Isolierte Korrekturen auf dem Stichtagsstand gibt es nicht. |
+| **Freitag bis Montag** | Produktion beobachten (Statusseite, Fehlerprotokolle, Rückmeldungen). Ein Fehler, der das Release verhindert (Datenverlust, Sicherheitslücke, Ausfall, gescheiterte Migration), wird über `dev` behoben und mit einem weiteren Release-PR ausgeliefert. Getaggt wird dann der korrigierte Stand, wenn er bis Dienstag mindestens einen Werktag in Produktion läuft; sonst entfällt der Zug. Der korrigierte Stand enthält auch, was seit dem Stichtag in `dev` kam; der weitere Release-PR verschiebt deshalb auch deren Einträge aus `[Unreleased]` in den Abschnitt der Version. Das ist gewollt: Freigegeben ist, was mindestens einen Werktag in Produktion lief. Isolierte Korrekturen auf dem Stichtagsstand gibt es nicht. |
 | **Dienstag (Release)** | Tag und GitHub-Release auf den getesteten Commit (Befehle unten). Der Release-Workflow baut die Images und legt `release/v0.13.0` an; `latest` setzt er nur, wenn der getaggte Commit noch der Kopf von `main` ist (lief `main` weiter, steht `latest` schon auf dem neueren Stand). Meilenstein schließen. Eintrag auf mandari.de/releases/. Bei einer **Pflegeversion** zusätzlich: Pflegelinie `release/v0.16` anlegen und die Tabelle „Unterstützte Versionen“ in `SECURITY.md` per PR ergänzen. Danach den übernächsten Zug planen (Abschnitt 3). |
 
 ```bash
@@ -61,7 +61,8 @@ gh release create v0.13.0 --verify-tag --title "mandari 0.13.0" --notes-file not
 ```
 
 Zwischen den Stichtagen darf Produktion weiter aus `main` aktualisiert werden (Release-PR
-„Release JJJJ-MM-TT“). Getaggt wird nur der Stand vom Stichtag.
+„Release JJJJ-MM-TT“). Getaggt wird der Stand vom Stichtag; nur wenn er einen Fehler hat, der das
+Release verhindert, der korrigierte Stand (siehe Freitag bis Montag oben).
 
 ## 3. Planung
 

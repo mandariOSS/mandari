@@ -84,7 +84,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Profil:
-    """Wahlperiode und Nummernkreis-Preset eines Profils (siehe docs/SESSION_NUMMERNKREISE.md)."""
+    """Wahlperiode und Nummernkreis-Preset eines Profils (siehe docs/SESSION.md#1-nummernkreise-für-vorlagen-und-drucksachen)."""
 
     preset: str
     wahlperiode: str

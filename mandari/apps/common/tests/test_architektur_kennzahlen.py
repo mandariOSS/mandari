@@ -18,7 +18,7 @@ import pytest
 
 WURZEL = Path(__file__).resolve().parents[4]
 SKRIPT = WURZEL / "scripts" / "architektur_kennzahlen.py"
-DOKU = WURZEL / "docs" / "ARCHITEKTUR_KENNZAHLEN.md"
+DOKU = WURZEL / "docs" / "DATENDREHSCHEIBE.md"
 
 MANAGER = frozenset({"objects", "_default_manager", "_base_manager"})
 #: Wie in ``mandari/pyproject.toml``: Fachmodule je für sich, Drehscheibe und Plattform je eine Einheit.
@@ -602,7 +602,7 @@ def test_alle_statischen_kennzahlen_haben_einen_wert(stand: dict[str, Any]) -> N
 
 
 def test_dokumentation_fuehrt_jede_kennzahl(kennzahlen: ModuleType, stand: dict[str, Any]) -> None:
-    """Tabelle und Verlauf in ``docs/ARCHITEKTUR_KENNZAHLEN.md`` haben die Zeilen bzw. Spalten des Skripts."""
+    """Tabelle und Verlauf in ``docs/DATENDREHSCHEIBE.md#5-architektur-kennzahlen`` haben die Zeilen bzw. Spalten des Skripts."""
     text = DOKU.read_text(encoding="utf-8")
     kopf, trenner = kennzahlen.verlauf_kopf(list(stand.values())).splitlines()
 

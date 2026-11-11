@@ -23,16 +23,9 @@ siehe [`../docs/ENGINEERING_STANDARDS.md`](../docs/ENGINEERING_STANDARDS.md).
 
 ## Technik
 
-| Bereich | Stand |
-|---------|-------|
-| Python | 3.12 bis 3.14 (`pyproject.toml`), Image auf `python:3.14-slim` |
-| Web-Framework | Django 6.1, ASGI mit Daphne und Channels |
-| Datenbank | PostgreSQL 16 |
-| Cache, Sessions, WebSocket | Redis 7 |
-| Suche | Elasticsearch 8 |
-| Frontend | Django-Templates, HTMX, Alpine.js, Tailwind CSS, Vite |
-| Admin | django-unfold |
-| Abhängigkeiten | `pyproject.toml`, gesperrt in `uv.lock`; `package.json`, `package-lock.json` |
+Versionen und Bausteine stehen in [`../DEPENDENCIES.md`](../DEPENDENCIES.md#kern-technologien) und in der
+Übersicht der [`../README.md`](../README.md#technik). Python 3.12 bis 3.14 (`pyproject.toml`), das Image
+nutzt `python:3.14-slim`; Abhängigkeiten sind in `uv.lock` und `package-lock.json` gesperrt.
 
 Hintergrundarbeit erledigt `manage.py events_worker` in den Compose-Diensten `worker`, `worker-heavy` und
 `worker-live` ([`../DEPLOYMENT.md`](../DEPLOYMENT.md), „Worker“).
@@ -53,4 +46,4 @@ Installation, Aktualisierung und Sicherung: [`../README.md`](../README.md) und
 
 ## Lizenz
 
-AGPL-3.0-or-later – siehe [LICENSE](../LICENSE)
+AGPL-3.0-or-later, siehe [LICENSE](../LICENSE).

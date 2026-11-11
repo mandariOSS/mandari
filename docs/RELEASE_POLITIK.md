@@ -10,7 +10,8 @@ Wie wir intern planen, ausliefern und zurückportieren, steht in
 [Weiterentwicklung](WEITERENTWICKLUNG.md).
 
 > **Stand:** 11.11.2026, gültig ab Release 0.13.0 (Issue #1341). Erste Fassung beschlossen am
-> 17.09.2026, gültig ab 0.10.0. Änderungen stehen am Ende dieser Seite und auf docs.mandari.de.
+> 17.09.2026, gültig ab 0.11.0 (eine Version 0.10.0 ist nicht erschienen). Änderungen stehen am Ende
+> dieser Seite und auf docs.mandari.de.
 
 ## 1. Versionierung
 
@@ -61,6 +62,10 @@ nie in eine Patch-Version einer Pflegelinie.
 - **Der Termin steht, der Inhalt folgt ihm.** Was am Stichtag nicht fertig ist, kommt zwei
   Wochen später. Lässt sich ein Fehler nicht rechtzeitig beheben, entfällt das Release; das
   nächste erscheint planmäßig.
+- **Ausnahme Korrektur:** Muss nach dem Stichtag ein Fehler behoben werden, der das Release
+  verhindert, erscheint der korrigierte Stand aus `main`, wenn er bis Dienstag mindestens einen
+  Werktag in Produktion läuft. Er enthält auch, was seit dem Stichtag fertig wurde; isolierte
+  Korrekturen auf dem Stichtagsstand gibt es nicht.
 - **Feiertage:** Fällt der Dienstag zwischen den 24.12. und den 01.01. oder auf einen bundesweiten
   Feiertag, entfällt das Release. Fällt der Stichtag auf einen Feiertag, ist es der Werktag davor.
 - Die Termine stehen als Fälligkeit an den [Meilensteinen](https://github.com/mandariOSS/mandari/milestones).
@@ -99,20 +104,22 @@ hinterlegte Kontaktadresse.
 
 ## 4. Sicherheitskorrekturen: Fristen
 
-Schweregrad nach CVSS 3.1 (Bewertung siehe `docs/SICHERHEITSMELDUNGEN.md`):
+Schweregrad nach CVSS 3.1 (Bewertung siehe [SECURITY.md](../SECURITY.md#cvss-bestimmen)):
 
 | Schweregrad | CVSS | Korrektur in Produktion und als Release | Pflegeversionen | Veröffentlichung des Advisories |
 |---|---|---|---|---|
 | **Kritisch** | ≥ 9,0 | **72 Stunden** | PATCH in derselben Frist | mit der Korrektur, CVE wird beantragt |
 | **Hoch** | 7,0–8,9 | **7 Tage** | PATCH in derselben Frist | mit der Korrektur, CVE wird beantragt |
-| **Mittel** | 4,0–6,9 | **30 Tage** | PATCH in derselben Frist | mit der Korrektur |
+| **Mittel** | 4,0–6,9 | **30 Tage** | PATCH in derselben Frist | mit der Korrektur, CVE nach Einschätzung |
 | **Niedrig** | < 4,0 | spätestens mit der nächsten Pflegeversion | keine Rückportierung | im Changelog |
 
 „Als Release“ heißt für die jüngste Version: als PATCH oder mit der nächsten MINOR, wenn sie
 innerhalb der Frist erscheint. Die Frist beginnt mit der Bestätigung der Meldung
 (Eingangsbestätigung innerhalb von drei Werktagen, siehe `SECURITY.md`). Abhängigkeiten werden
-von Dependabot überwacht; `pip-audit` und `npm audit` blockieren Änderungen mit bekannten
-Lücken ab „hoch“. Ist eine Korrektur in der Frist nicht möglich, veröffentlichen wir eine
+von Dependabot überwacht; `pip-audit` blockiert Änderungen mit jeder bekannten Lücke in
+Python-Abhängigkeiten, `npm audit` ab „high“. Technische Einzelheiten zum Angriffsweg folgen
+spätestens 90 Tage nach dem Advisory (Ablauf in [SECURITY.md](../SECURITY.md#umgang-mit-gemeldeten-lücken)).
+Ist eine Korrektur in der Frist nicht möglich, veröffentlichen wir eine
 Übergangsmaßnahme (Konfiguration, Abschaltung einer Funktion) und einen Termin.
 
 ## 5. Was in Pflegeversionen zurückportiert wird
@@ -134,23 +141,31 @@ mit einer Migration beheben, entscheidet die Projektleitung im Einzelfall; bis d
 
 | Schnittstelle | Versionierung | Ankündigungsfrist für brechende Änderungen |
 |---|---|---|
-| **OParl-API** (`/oparl/v1/`) | folgt dem OParl-Standard (1.0, 1.1); Erweiterungen unter `mandari:`-Präfix | **12 Monate**, alte Version bleibt parallel erreichbar |
+| **OParl-API** (`/oparl/v1/`) | folgt dem OParl-Standard (1.0, 1.1); Erweiterungen unter den Präfixen `kommparl:` und `mandari:` | **12 Monate**, alte Version bleibt parallel erreichbar |
+| **OParl je Mandant** (`/session/<mandant>/api/oparl/`) mit den kommParl-Profilen (Änderungsfeed, Einreichung, Nichtöffentliches) | wie die OParl-API | **12 Monate**, alte Version parallel |
 | **Session-API** (`/api/v1/session/`) | Pfadversion (`v1`, `v2`) | **6 Monate**, alte Version parallel |
-| **Fraktions-API / Work** | Pfadversion | **6 Monate**, alte Version parallel |
+| **Fraktions-API / Work** (`/api/public/v1/`) | Pfadversion | **6 Monate**, alte Version parallel |
+| **Einstieg und Beschreibung** (`/api/`, `/api/openapi.json`) | Bereiche wie oben; neue mandari-Bereiche unter `/api/mandari/v<n>/` | **6 Monate** |
+| **Anmeldung für Anwendungen** (OpenID Connect, `/oauth/`) | Endpunkte und Scopes | **6 Monate** |
+| **Datenkatalog** (`/data/dcat/`) | DCAT-AP.de | **6 Monate** |
 | **Provisioning-API** (`/api/provisioning/`, `/api/provisioning/v2/`) | Pfadversion (v1, v2); intern, nur für den Betreiber | keine Zusage |
+| **MCP-Server** (`/insight/mcp`) | Werkzeuge für KI-Assistenten | keine Zusage |
 
 Die Fristen hängen am Kalender, nicht am Release-Takt: Wer auf mandari aufbaut, braucht die
 Zeit unabhängig davon, wie oft wir veröffentlichen. Abkündigungen stehen im Changelog unter
 „Abgekündigt“ mit Datum des Wegfalls, in der API-Antwort als Header `Deprecation` (RFC 9745,
 Zeitpunkt der Abkündigung) und `Sunset` (RFC 8594, Zeitpunkt des Wegfalls) und auf
 docs.mandari.de. Felder werden nie umgedeutet; sie werden ergänzt oder nach Frist entfernt.
+Ausnahme: Eine Korrektur, die eine Ausgabe an den OParl-Standard angleicht (Normkonformität), gilt
+nicht als brechende Änderung. Sie steht im Changelog unter „Geändert“ mit einem Hinweis für
+Abnehmer (Beispiel: `organizationType` und `File.date`, Issue #560).
 
 ## 7. Changelog
 
 `CHANGELOG.md` im Repository folgt **Keep a Changelog 1.1**: je Release die
 Abschnitte *Hinzugefügt*, *Geändert*, *Abgekündigt*, *Entfernt*, *Behoben* und
 **Sicherheit** (mit GHSA-/CVE-Kennung, sobald das Advisory veröffentlicht ist). Jedes
-Release ab 0.10.0 enthält einen Changelog-Eintrag; ohne Eintrag wird kein Tag gesetzt.
+Release ab 0.11.0 enthält einen Changelog-Eintrag; ohne Eintrag wird kein Tag gesetzt.
 Patch-Versionen einer Pflegelinie stehen im Changelog ihrer Linie und werden im Changelog
 von `dev` nachgetragen. Die Kurzfassung erscheint auf `/releases/`.
 
@@ -184,6 +199,6 @@ Meldungen an uns: `security@mandari.de`, Ablauf in `SECURITY.md`.
 
 | Datum | Änderung |
 |---|---|
-| 11.11.2026 | Release alle zwei Wochen statt alle zwei Monate; Pflegeversionen je Quartal statt Pflege jeder vorherigen MINOR; Regeln zur Rückportierung; Frist für niedrige Befunde an die Pflegeversion gebunden; Übergang für 0.11 und 0.12 (Issue #1341) |
+| 11.11.2026 | Schnittstellentabelle ergänzt (OParl je Mandant, Einstieg, Anmeldung, Datenkatalog, MCP), Ausnahme für Korrekturen zur Normkonformität; Release alle zwei Wochen statt alle zwei Monate; Pflegeversionen je Quartal statt Pflege jeder vorherigen MINOR; Regeln zur Rückportierung; Frist für niedrige Befunde an die Pflegeversion gebunden; Übergang für 0.11 und 0.12 (Issue #1341) |
 | 10.11.2026 | ein Zweig je Version |
-| 17.09.2026 | erste Fassung, gültig ab 0.10.0 (Issue #96) |
+| 17.09.2026 | erste Fassung (Issue #96); erstes Release danach war 0.11.0, eine 0.10.0 ist nicht erschienen |

@@ -47,7 +47,7 @@ nur mit ``--schalt-befehl`` (etwa ein ``docker exec``-Aufruf, Platzhalter ``{akt
 bewusste Entscheidung der Person, die prüft. Außerdem ruft das Skript dort nur Seiten der Erlaubnisliste
 ``ERLAUBT_ENTFERNT`` auf (auch mit ``--nur``); andere sichtbare Links nennt der Bericht als „nicht geprüft“. Gedacht
 ist es für lokale Instanzen, die CI, die Demo und Staging, nicht für Produktion. Ablauf beim Ausrollen:
-docs/WORK_NEUES_DESIGN.md.
+docs/WORK.md#3-neues-design-in-work-ausrollen.
 """
 
 from __future__ import annotations

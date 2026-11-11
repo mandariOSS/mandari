@@ -3,6 +3,12 @@ Zensus-Werkzeug probe_ris (Issue #114): Fingerprint je Hersteller aus eingefrore
 Fixtures, robots-Verdict (erlaubt/gesperrt/nicht vorhanden), Gate-Erkennung, 403 auf
 unseren User-Agent, OParl-Autodiscovery, das Anfragebudget und der Takt je Host (#1027) –
 alles ohne Netz.
+
+Die Fixtures unter ``fixtures/ris/`` sind minimale, synthetische Startseiten mit den
+Erkennungsmerkmalen je Hersteller (SessionNet: vierstellige Seitenkennungen; ALLRIS 3: dreistellige
+``*.asp``; ALLRIS 4: Wicket und ``/public/``; Sternberg RIM: generator SD.NET RIM; more! rubin:
+generator/gremien.info; regisafe: Liferay-Portlet; komuna: React-Root). Keine echten Inhalte, keine
+personenbezogenen Daten.
 """
 
 from __future__ import annotations

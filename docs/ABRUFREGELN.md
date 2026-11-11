@@ -5,10 +5,9 @@ welchem Takt, welche Inhalte und wie Sie den Abruf drosseln, ausschließen oder 
 Betreiber von Ratsinformationssystemen und an alle, die mandari selbst betreiben. Eine Kurzfassung für
 IT-Verantwortliche der Kommunen steht unter <https://mandari.de/ingestor/>.
 
-Jede Aussage auf dieser Seite stammt aus dem Code oder der Konfiguration; die Fundstelle steht jeweils dabei.
-Stand: Code auf `dev` nach den Änderungen für [#1027](https://github.com/mandariOSS/mandari/issues/1027),
-Einzelheiten unter [Stand](#stand) am Ende. Die von uns betriebene Instanz (mandari.de) folgt diesen Regeln ab dem
-ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein älterer Stand.
+Jede Aussage auf dieser Seite stammt aus dem Code oder der Konfiguration; die Fundstelle steht jeweils dabei. Die
+Seite beschreibt den Code der Version, in der sie liegt; Änderungen an den Regeln nennt das Änderungsprotokoll
+([`CHANGELOG.md`](../CHANGELOG.md)).
 
 ## Auf einen Blick
 
@@ -16,17 +15,17 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 |---|---|
 | Kennung | `mandari-ingestor/<Version> (+https://mandari.de/ingestor/; support@mandari.de)` |
 | robots.txt | RFC 9309; für uns gilt die Gruppe `mandari-ingestor`, ohne sie `*`; je Hostname 24 Stunden zwischengespeichert |
-| Takt | höchstens eine Anfrage je Sekunde und Server, über alle Abrufe von mandari zusammen; je Quelle nur langsamer |
+| Takt | bei Ratsinformationssystemen höchstens eine Anfrage je Sekunde und Server, über alle Abrufe von mandari zusammen; je Quelle nur langsamer |
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
-| Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
+| Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr im Grundtakt der Installation (ohne Einstellung alle 10 Minuten, siehe [Rhythmus](#rhythmus)), sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
 | Abruffenster | je Quelle auf Wunsch: Abrufe nur in einem festen Zeitfenster, etwa 23:00 bis 01:00 Uhr; außerhalb ruft der Ingestor bei dieser Quelle nichts ab (siehe [Abruffenster](#abruffenster)) |
 | Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer eine Quelle mit OParl-Schnittstelle hat ein eigenes Zeitfenster, Zeitscheiben oder einen noch nicht erreichten Mindestabstand (`full_sync_every_days`) (siehe [Vollabgleich](#vollabgleich)) |
 | Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
 | Neue Quellen | inaktiv angelegt; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahme: die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
 | Abruf-Adresse | derzeit `144.76.153.200`, nur IPv4 (die von uns betriebene Instanz mandari.de); sie kann sich ändern, erkennen Sie uns am User-Agent |
-| Andere Dienste | Live-Übertragung und Geodienste mit derselben Kennung und eigenem Takt je Server (siehe [Andere Abrufe](#andere-abrufe)) |
+| Andere Dienste | Live-Übertragung und Geodienste mit derselben Kennung und eigenem Takt je Server, Kartenkacheln bis zu 20 Anfragen je Sekunde (siehe [Andere Abrufe](#andere-abrufe)) |
 | Kontakt | support@mandari.de |
 
 ## Drosseln, ausschließen, Kontakt
@@ -39,6 +38,32 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
   ausführen (`full_sync_every_days`), nur in Zeitscheiben ausführen (`full_sync_slices`) oder den Dateiabruf
   abschalten (`file_downloads`). Liegen mehrere Quellen auf Ihrem Server, setzen wir den Abstand bei allen.
 - **Kontakt:** support@mandari.de. Infoseite: <https://mandari.de/ingestor/>.
+
+## Opt-out und Entfernen von Inhalten
+
+Kommunen und Betroffene erreichen uns über support@mandari.de oder die Infoseite <https://mandari.de/ingestor/>. So
+gehen wir vor:
+
+1. **Abruf beenden oder drosseln:** Eine Quelle schalten wir im Admin ab (`is_active`). Dann gleicht der Ingestor sie
+   nicht mehr ab, und Dokument-Cache und Personenfotos fragen sie nicht an. Vorschau, Löschabgleich und der
+   OCR-Worker `extract-daemon` richten sich nicht nach `is_active`, sondern nach `file_downloads` (siehe
+   [Dokument-Cache und Vorschau der Anwendung](#dokument-cache-und-vorschau-der-anwendung)); für einen vollständigen
+   Stopp setzen wir deshalb zusätzlich `file_downloads = false`. Langsamer wird der Abruf über `request_interval`
+   (OParl-Quellen) bzw. `scraper.rate_limit_seconds` (Scraper-Quellen), seltener über `sync_schedule`, auf feste
+   Zeiten begrenzt über `sync_window` (siehe [Einstellungen je Quelle](#einstellungen-je-quelle)). Der Ingestor liest
+   die Einstellungen zu Beginn jedes Laufs der Quelle, die Anwendung bei jedem Abruf. Eine Sperre in der robots.txt
+   wirkt auch ohne uns, spätestens nach 24 Stunden.
+2. **Inhalte entfernen:** Was die Kommune in ihrem System löscht, markiert der Abgleich als gelöscht
+   (`deleted = true`): bei OParl-Quellen über die Löschmarkierung der Quelle, bei Scraper-Quellen nach drei
+   vollständigen Vollabgleichen ohne das Objekt (`SCRAPER_TOMBSTONE_FULL_CRAWLS`, je Adapter nur bestimmte
+   Objektarten, siehe [`SCRAPER_SOURCES.md`](SCRAPER_SOURCES.md)), Dokumente über den [Löschabgleich](#löschabgleich).
+   Markierte Objekte verschwinden aus Bürgerportal und Suche; die Daten bleiben für Prüfzwecke. Endgültig löschen wir
+   sie nur auf Wunsch der Kommune mit `python manage.py purge_deleted` (`--body <Kurzname>` oder `--ids <UUID …>`,
+   optional `--older-than <Tage>`); ohne `--yes` zeigt der Befehl nur, was er löschen würde. Objekte, auf die Daten
+   anderer Module verweisen, löscht er nicht (`mandari/insight_core/management/commands/purge_deleted.py`).
+3. **Abwägung:** Opt-out-Wünsche prüfen wir, statt sie ungeprüft umzusetzen, weil an amtlichen Informationen ein
+   Transparenzinteresse besteht. Drosseln und ein Abruffenster bieten wir immer an. Wir antworten innerhalb von fünf
+   Werktagen.
 
 ## Abruf-Adresse
 
@@ -327,13 +352,15 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
 | Wann | Abstand zwischen zwei Läufen einer Quelle | Schlüssel in `sync_config["sync_schedule"]` |
 |---|---|---|
 | Sitzungstag und Vortag, 07:00–22:00 Uhr | 5 Minuten, ohne Änderung höchstens 10 | `meeting_minutes`, `meeting_hours`, `meeting_days_before`, `meeting_idle_max_minutes` |
-| werktags (Montag bis Freitag) 07:00–19:00 Uhr | 10 Minuten (`daemon --interval`) | `workday_minutes`, `workday_hours` |
+| werktags (Montag bis Freitag) 07:00–19:00 Uhr | Grundtakt (`daemon --interval`), ohne Einstellung 10 Minuten | `workday_minutes`, `workday_hours` |
 | werktags außerhalb dieser Zeit | 60 Minuten | `off_hours_minutes` |
 | Samstag und Sonntag | 120 Minuten | `weekend_minutes` |
 
-- **Grundtakt:** `--interval` setzt den Takt werktags in der Arbeitszeit (`ingestor/src/main.py`, `daemon
-  --interval`, Standard 10; `docker-compose.yml`: `INGESTOR_INTERVAL`, ohne Wert 10). Die Vorlage `.env.example`,
-  `install.sh` und das Helm-Chart (`ingestor.syncInterval`) setzen 15 Minuten. Die übrigen Werte sind fest
+- **Grundtakt:** `--interval` setzt den Takt werktags in der Arbeitszeit. Ohne Angabe gilt 10 Minuten
+  (`ingestor/src/main.py`, `daemon --interval`), ebenso in `docker-compose.yml`, solange `INGESTOR_INTERVAL` fehlt.
+  Die Vorlagen setzen ihn selbst: `.env.example` und `install.sh` auf 15 Minuten, das Helm-Chart
+  (`ingestor.syncInterval`) in `values.yaml` und `values-production.yaml` auf 15, in `values-minimal.yaml` auf
+  60 Minuten. Die Beispiele auf dieser Seite rechnen mit 10 Minuten. Die übrigen Werte sind fest
   (`WORKDAY_MINUTES`, `OFF_HOURS_MINUTES`, `WEEKEND_MINUTES`, `MEETING_MINUTES`) und je Quelle einstellbar.
   Feiertage behandelt der Takt wie Werktage.
 - **Sitzungstage:** Tage, an denen laut eigenem Bestand eine Sitzung einer Kommune der Quelle beginnt
@@ -341,8 +368,8 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   Tag zählt in Ortszeit (`SyncSchedule.meeting_days`). Diese Regel geht den übrigen vor, auch am Wochenende. Die
   Sitzungstage liest der Daemon am Ende jedes Laufs der Quelle neu.
 - **Ruhe:** Nach je drei Läufen in Folge ohne Änderung verdoppelt sich der Abstand, höchstens bis 120 Minuten
-  (`idle_runs`, `idle_max_minutes`; `IDLE_RUNS`, `IDLE_MAX_MINUTES`). In der Arbeitszeit also 10 Minuten, nach drei
-  Läufen ohne Änderung 20, nach sechs 40, nach neun 80, ab zwölf 120. Ein längerer Grundtakt bleibt, wie er ist.
+  (`idle_runs`, `idle_max_minutes`; `IDLE_RUNS`, `IDLE_MAX_MINUTES`). Beim Grundtakt von 10 Minuten also in der
+  Arbeitszeit 10 Minuten, nach drei Läufen ohne Änderung 20, nach sechs 40, nach neun 80, ab zwölf 120. Ein längerer Grundtakt bleibt, wie er ist.
   An Sitzungstagen und am Vortag gilt in der Sitzungszeit eine eigene Grenze von 10 Minuten
   (`meeting_idle_max_minutes`, `MEETING_IDLE_MAX_MINUTES`): 5 Minuten, nach drei Läufen ohne Änderung 10. Der kurze
   Takt hält so den ganzen Tag, auch bei einer Sitzung am Abend nach einem ruhigen Tag.
@@ -359,8 +386,8 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
 - **Abruffenster:** Eine Quelle mit `sync_window` startet nur in ihrem Fenster; liegt der nächste Lauf außerhalb,
   ist er zu Beginn des nächsten Fensters fällig (siehe [Abruffenster](#abruffenster)).
 - **Ohne Änderung** sind das je Quelle am Wochenende 12 Läufe am Tag, werktags von 19 bis 7 Uhr 7 Läufe (19, 20,
-  21, 23, 1, 3 und 5 Uhr) und in der Arbeitszeit 14 Läufe, in einer Woche 131 statt 1008 im bisherigen
-  10-Minuten-Takt (`ingestor/tests/test_takt.py`).
+  21, 23, 1, 3 und 5 Uhr) und in der Arbeitszeit 14 Läufe (Grundtakt 10 Minuten), in einer Woche 131
+  (`ingestor/tests/test_takt.py`).
 - **Gleichzeitig:** Eine Schleife prüft alle 30 Sekunden (`TICK_SECONDS`), sofort nach einem Auslöser und nach dem
   Ende jedes Laufs, welche Quellen fällig sind. Höchstens 4 Quellen laufen zugleich (`INGESTOR_SYNC_POOL_SIZE`,
   `daemon --pool`), je Quelle höchstens ein Lauf. Vollabgleiche belegen höchstens alle Plätze bis auf einen (bei 4
@@ -578,15 +605,17 @@ Der Vermerk „filtert nicht“ gilt je Liste und nur für die Quelle, bei der e
 
 - Antwortet schon die erste Seite einer optionalen Liste (Mitgliedschaften, Tagesordnungspunkte, Beratungen,
   Dateien, Orte; `OPTIONAL_LIST_TYPES`) ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt, gibt es die Liste
-  bei dieser Quelle nicht. Der Ingestor vermerkt sie am Ende des Laufs mit Grund und Zeitpunkt der Prüfung in
+  bei dieser Quelle nicht. Wahlperioden liest der Ingestor aus der Kommune selbst (`legislativeTerm`); eine eigene
+  Liste fragt er nicht an, obwohl `OPTIONAL_LIST_TYPES` sie führt. Der Ingestor vermerkt fehlende Listen am Ende des
+  Laufs mit Grund und Zeitpunkt der Prüfung in
   `sync_config["missing_lists"]`, aber nur, wenn mindestens eine andere Liste der Kommune lesbar war. Sonst gilt das
   als Störung der Schnittstelle: Lücke im Abgleich, kein Vermerk (`_settle_missing_lists`).
 - Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) vermerkt er nie als fehlend. Ein HTTP 404 bleibt dort eine
   Lücke, und der nächste Lauf fragt die Liste wieder an. Ein Fehlerobjekt gilt dort als leere Liste, solange eine
   andere Liste der Kommune lesbar war, sonst ebenfalls als Lücke.
 - **Nicht freigegeben:** Listen, die die Kommune mit HTTP 403 für alle sperrt (auch ohne Filter, und die
-  Vergleichsanfrage mit neutralem Client bekommt ebenfalls eine Absage), etwa die Personen und Mitgliedschaften der
-  Stadt Bochum, gelten als nicht freigegeben. Sie werden wie fehlende Listen vermerkt (Grund „nicht freigegeben“),
+  Vergleichsanfrage mit neutralem Client bekommt ebenfalls eine Absage), etwa Personen und Mitgliedschaften, gelten
+  als nicht freigegeben. Sie werden wie fehlende Listen vermerkt (Grund „nicht freigegeben“),
   auch Pflichtlisten, und täglich neu geprüft; der Lauf bleibt vollständig, ein Vermerk „filtert nicht“ entfällt. Ist
   nur unser User-Agent gesperrt oder bleibt die Vergleichsanfrage unklar, bleibt es eine Lücke (Issue
   [#1086](https://github.com/mandariOSS/mandari/issues/1086)).
@@ -1053,32 +1082,3 @@ nicht möchte, schreibt uns; wir schalten die Quelle dann ab (Umring-Quelle im A
 
 `DIENSTE_DROSSEL` schaltet den Takt dieser Abrufe ab; die Einstellung gibt es nur im Code für Tests
 (`mandari/mandari/settings_test.py`), nicht als Umgebungsvariable.
-
-## Stand
-
-Diese Seite beschreibt den Code auf `dev` nach den Änderungen für
-[#1027](https://github.com/mandariOSS/mandari/issues/1027):
-
-- [#1025](https://github.com/mandariOSS/mandari/issues/1025): Änderungsfenster, fehlende Listen, höchstens eine
-  Anfrage je Sekunde ([#1029](https://github.com/mandariOSS/mandari/pull/1029));
-- [#1034](https://github.com/mandariOSS/mandari/issues/1034): leere gefilterte Listen von SD.NET RIM
-  ([#1035](https://github.com/mandariOSS/mandari/pull/1035));
-- [#1031](https://github.com/mandariOSS/mandari/pull/1031): eine robots.txt-Regel für alle Abrufe, Weiterleitungen
-  und Werkzeuge im Takt je Server;
-- [#869](https://github.com/mandariOSS/mandari/issues/869) und [#555](https://github.com/mandariOSS/mandari/issues/555):
-  Kommunenliste über alle Seiten, neue Quellen aus unseren Werkzeugen inaktiv, neue Kommunen nicht gelistet
-  ([#1037](https://github.com/mandariOSS/mandari/pull/1037));
-- [#1036](https://github.com/mandariOSS/mandari/issues/1036): eine robots.txt je Hostname, Grenze gleichzeitiger
-  Anfragen auch für Scraper und Vergleichsanfrage, eine Frist für die ganze Vorschau, Kennung und Takt je Server auch
-  für Live-Übertragung und Geodienste ([#1038](https://github.com/mandariOSS/mandari/pull/1038));
-- [#1026](https://github.com/mandariOSS/mandari/issues/1026): eigener Takt je Quelle, Abruf nach Bedarf
-  ([#1039](https://github.com/mandariOSS/mandari/pull/1039));
-- [#1033](https://github.com/mandariOSS/mandari/issues/1033): Vollabgleich in Zeitscheiben, langsame Listen aussetzen
-  ([#1040](https://github.com/mandariOSS/mandari/pull/1040));
-- [#1041](https://github.com/mandariOSS/mandari/issues/1041): Vermerk „filtert nicht“ je Liste und nur für die eigene
-  Quelle, mit täglicher Prüfung ([#1044](https://github.com/mandariOSS/mandari/pull/1044));
-- [#1186](https://github.com/mandariOSS/mandari/issues/1186): Abruffenster je Quelle für alle Abgleiche
-  (`sync_window`, siehe [Abruffenster](#abruffenster)).
-
-Die von uns betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy, der diese Änderungen enthält;
-bis dahin läuft dort noch ein älterer Stand.

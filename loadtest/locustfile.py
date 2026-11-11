@@ -4,7 +4,7 @@ Lastszenarien für mandari (Issue #228) — Locust.
 
 Läuft gegen eine Instanz mit den Daten aus ``manage.py generate_load_data``;
 die Konten und Slugs ergeben sich aus dem Profil (``LOADTEST_PROFILE``, Vorgabe
-``klein``). Befehle und Auswertung stehen in ``loadtest/README.md``.
+``klein``). Befehle und Auswertung stehen in ``docs/LASTTESTS.md#7-befehle``.
 
 Szenarien (Gewichtung in Klammern):
 

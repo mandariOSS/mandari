@@ -44,7 +44,7 @@
 		-X-Powered-By
 	}
 	# Standort nur für die eigene Seite: „In meiner Nähe“ im Kommunenwechsel fragt ihn auf Klick ab
-	# (docs/INSIGHT_KOMMUNENWECHSEL.md); Kamera und Mikrofon bleiben gesperrt.
+	# (docs/INSIGHT.md#1-kommunenwechsel-und-kommunenverzeichnis); Kamera und Mikrofon bleiben gesperrt.
 	# "?" = nur als Vorgabe: Die Website (Wagtail) unter derselben Domain schickt eine eigene, strengere Policy, die
 	# der Block oben überschriebe (er wirkt wegen "-Server" erst nach dem Proxy). Als eigene Anweisung, weil Caddy
 	# alle "?"-Felder eines Blocks zu einer Bedingung zusammenfasst (gesetzt wird nur, wenn alle fehlen): Sonst fiele
@@ -164,7 +164,7 @@
 		output file /data/access.log {
 			roll_size 10mb
 			roll_keep 5
-			roll_keep_for 336h   # 14 Tage: Zugriffslogs enthalten IP-Adressen (docs/PROTOKOLLE.md, #263)
+			roll_keep_for 336h   # 14 Tage: Zugriffslogs enthalten IP-Adressen (docs/PROTOKOLLIERUNG.md#12-systemprotokolle-der-installation, #263)
 		}
 	}
 }

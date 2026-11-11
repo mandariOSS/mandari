@@ -4,7 +4,7 @@ Architektur-Kennzahlen der Datendrehscheibe aus dem Quellstand erheben (Issue #5
 
 Ob die Entkopplung vorankommt, soll messbar sein (``docs/adr/20260929-schichtenmodell.md``, Abschnitt
 „Prüfung“). Dieses Skript zählt nach jeder Etappe dieselben Kennzahlen; Zählregeln, Ziele und der Verlauf
-stehen in ``docs/ARCHITEKTUR_KENNZAHLEN.md``. Es prüft nichts und schlägt bei keinem Wert fehl.
+stehen in ``docs/DATENDREHSCHEIBE.md#5-architektur-kennzahlen``. Es prüft nichts und schlägt bei keinem Wert fehl.
 
 Wo es schon eine Zählung oder eine Liste gibt, übernimmt das Skript sie, statt sie nachzubauen:
 

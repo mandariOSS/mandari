@@ -1,18 +1,104 @@
-# Stammdaten aus Bestandssystemen übernehmen (Session)
+# Stammdaten aus Bestandssystemen übernehmen und Umstieg aus SessionNet (Session)
 
-Stand: 10/2026 · Issue #762 (Teil L11a), Bezug #42
+Issue #762, Bezug #42.
 
 Wer von einem anderen Ratsinformationssystem zu mandari Session wechselt, bringt Wahlperioden, Gremien,
 Fraktionen, Ämter, Personen und Besetzungen mit. Der Befehl `session_stammdaten_import` übernimmt sie aus
 Listen der Verwaltung: je Objektart eine CSV- oder XLSX-Datei. Er prüft zuerst alles, schreibt nur ohne
-Fehler und dann ganz oder gar nicht. Ein zweiter Lauf mit denselben Dateien ändert nichts.
+Fehler und dann ganz oder gar nicht. Ein zweiter Lauf mit denselben Dateien ändert nichts (Teil B).
 
-Den öffentlichen Bestand (Sitzungen, Vorlagen, öffentliche Mitgliederlisten) holt bei SessionNet ohne OParl
-der SessionNet-Adapter in den RIS-Bestand ([SCRAPER_SOURCES.md](SCRAPER_SOURCES.md)); er kann die Vorlagen
-vorbefüllen und dient als Gegenprobe. Den Gesamtablauf beschreibt der Leitfaden
-[SESSION_UMSTIEG_SESSIONNET.md](SESSION_UMSTIEG_SESSIONNET.md).
+Teil A beschreibt den Umstieg als Ganzes, etwa von SessionNet oder einem anderen Ratsinformationssystem ohne
+freigeschaltetes OParl-Modul. Er hat drei Wege: den öffentlichen Bestand über den SessionNet-Adapter, die
+Stammdaten über Listen der Verwaltung und den nichtöffentlichen Altbestand als Archivpaket. Eine vollständige
+Migration des Nichtöffentlichen ist nicht vorgesehen.
 
-## Ablauf
+## Teil A: Umstieg zu mandari Session
+
+### A.1 Bestandsaufnahme mit der Verwaltung
+
+- Version und Betrieb von SessionNet (selbst betrieben oder im Rechenzentrum), Zusatzmodule (etwa OParl,
+  Bürgerinfo, Apps für Mandatsträger), welche Listen und Exporte Session liefern kann
+- Körperschaften in der Instanz: Viele Samtgemeinden führen sich und ihre Mitgliedsgemeinden in einer
+  Instanz (Auswahl „Mandant“ in der Bürgerinfo); jede Körperschaft wird ein eigener Body
+- Aufbewahrung und Archivierung der Niederschriften, zuständiges Archiv
+- laufende Vorgänge: Vorlagen in Bearbeitung, offene Beschlusskontrollen, geplante Sitzungen
+- Stichtag für den Umstieg (Abschnitt A.5)
+
+**Vor jeder Übernahme personenbezogener Daten** steht der Vertrag zur Auftragsverarbeitung. Bankdaten und
+nichtöffentliche Inhalte nur über einen gesicherten Kanal entgegennehmen, nie per E-Mail. Zugriff auf
+Systeme der Verwaltung nur in ihrem Auftrag.
+
+### A.2 Öffentlicher Bestand
+
+Gremien, Mitglieder, Sitzungen, Tagesordnungen und öffentliche Vorlagen holt der SessionNet-Adapter aus der
+Bürgerinfo in den RIS-Bestand; sie erscheinen im Bürgerportal. Anbindung und Schlüssel `bodies` für Instanzen
+mit mehreren Körperschaften stehen in [SCRAPER_SOURCES.md](SCRAPER_SOURCES.md), die Regeln für jeden Abruf
+(Kennung, robots.txt, Takt, keine Umgehung) in [ABRUFREGELN.md](ABRUFREGELN.md). Eine Quelle erst nach Freigabe
+anbinden und bis zur Freigabe im Bürgerportal ausblenden. Der öffentliche Altbestand bleibt im RIS-Bestand.
+
+### A.3 Stammdaten
+
+Wahlperioden, Gremien, Fraktionen, Ämter, Personen und Besetzungen übernimmt `session_stammdaten_import`
+(Teil B): Vorlagen erzeugen, von der Verwaltung ergänzen lassen, Prüflauf mit Gegenprobe, bis er ohne Fehler endet,
+dann Import mit Bericht als JSON für das Prüfprotokoll. Importdateien danach sicher löschen oder in der Akte
+ablegen.
+
+### A.4 Nichtöffentlicher Bestand
+
+Nicht migrieren, sondern je Sitzung als Archivpaket (PDF der nichtöffentlichen Niederschrift und der
+nichtöffentlichen Vorlagen) bei der Verwaltung bzw. dem zuständigen Archiv ablegen. In Session nur, was
+laufende Vorgänge brauchen, vor allem offene Beschlusskontrollen.
+
+### A.5 Stichtag
+
+Der Wechsel erfolgt an einer Sitzungsrunde:
+
+- Vorlagen in Bearbeitung werden im Altsystem abgeschlossen oder in Session neu angelegt.
+- Offene Beschlusskontrollen werden in Session übernommen.
+- Sitzungen ab dem Stichtag lädt Session; das Altsystem bleibt bis zur Abnahme lesend erreichbar.
+
+### A.6 Prüfprotokoll
+
+Vorlage für die Abnahme durch die Verwaltung (je Körperschaft ausfüllen):
+
+```text
+Prüfprotokoll Umstieg zu mandari Session
+Verwaltung / Körperschaft: ____________________   Stichtag: __.__.____
+Auftragsverarbeitung unterzeichnet am: __.__.____   Übergabeweg der Dateien: ____________________
+
+1. Zählabgleich (aus dem Importbericht, Abschnitt „zaehlabgleich“)
+   Objektart      Altsystem   Datei   neu   geändert   unverändert   fehlerhaft   Bestand nachher
+   Wahlperioden   ________    _____   ___   ________   ___________   __________   _______________
+   Gremien        ________    _____   ___   ________   ___________   __________   _______________
+   Fraktionen     ________    _____   ___   ________   ___________   __________   _______________
+   Ämter          ________    _____   ___   ________   ___________   __________   _______________
+   Personen       ________    _____   ___   ________   ___________   __________   _______________
+   Besetzungen    ________    _____   ___   ________   ___________   __________   _______________
+   Öffentlicher Bestand (RIS): Gremien ____ Sitzungen ____ Vorlagen ____ (Zählung im RIS-Bestand)
+
+2. Gegenprobe mit den öffentlichen Mitgliederlisten
+   Abweichungen geklärt: [ ] ja  [ ] nein – Bemerkung: ______________________________
+
+3. Stichproben (mindestens je Objektart drei Datensätze im Altsystem und in Session vergleichen)
+   Datensatz                      geprüft von   Ergebnis
+   ______________________________ ___________   [ ] stimmt  [ ] Abweichung: __________
+   ______________________________ ___________   [ ] stimmt  [ ] Abweichung: __________
+   ______________________________ ___________   [ ] stimmt  [ ] Abweichung: __________
+
+4. Nichtöffentlicher Bestand
+   Archivpakete übergeben an: ____________________ am __.__.____
+   Offene Beschlusskontrollen übernommen: ____ von ____
+
+5. Löschung
+   Importdateien und Berichte gelöscht bzw. zur Akte genommen am: __.__.____
+
+Abnahme durch die Verwaltung
+Name, Funktion: ____________________   Datum: __.__.____   Unterschrift: ____________________
+```
+
+## Teil B: Stammdaten-Import
+
+### Ablauf des Imports
 
 ```bash
 # 1. Leere Vorlagen für die Verwaltung erzeugen …
@@ -38,7 +124,7 @@ Fehlt eine Datei, wird diese Objektart übersprungen. Besetzungen brauchen die P
 überschreiben nie vorhandene Importdateien; dafür ein leeres Verzeichnis angeben. Prüfen und Schreiben laufen
 beim Import in einer Transaktion; gleichzeitige Läufe für denselben Mandanten warten aufeinander.
 
-## Vorlagen aus dem öffentlichen Bestand
+### Vorlagen aus dem öffentlichen Bestand
 
 `--aus-ris` nennt einen Body im RIS-Bestand wie bei der Gegenprobe (unten). Die Vorlagen enthalten dann:
 
@@ -59,7 +145,7 @@ Die Verwaltung prüft Namen, Arten und Funktionen, trägt Beginn, Kontakt- und B
 Dateien über einen gesicherten Kanal zurück. Öffentliche Listen sind oft unvollständig (etwa ohne
 Stellvertretungen oder sachkundige Einwohner); maßgeblich sind die Angaben der Verwaltung.
 
-## Dateien und Spalten
+### Dateien und Spalten
 
 Dateinamen: `wahlperioden`, `gremien`, `fraktionen`, `aemter`, `personen`, `besetzungen`, jeweils `.csv`
 oder `.xlsx` (erstes Tabellenblatt). CSV: Semikolon, Komma oder Tabulator; UTF-8 oder Windows-1252 (Excel).
@@ -95,7 +181,7 @@ Pflichtspalten sind **fett**.
 | stellvertretendes Mitglied ohne `vertretung_fuer` | nein, Hinweis im Bericht |
 | alle anderen | ja |
 
-## Abgleich mit dem Bestand
+### Abgleich mit dem Bestand
 
 Der Import erkennt vorhandene Datensätze an fachlichen Schlüsseln; eine eigene Kennungsspalte gibt es nicht:
 
@@ -109,7 +195,7 @@ Der Import erkennt vorhandene Datensätze an fachlichen Schlüsseln; eine eigene
 Vorhandene Datensätze werden aktualisiert, wenn die Datei abweichende Werte nennt. **Leere Zellen ändern
 nichts.** Der Import löscht nichts; was im Altsystem fehlt, bleibt in Session.
 
-## Körperschaften
+### Körperschaften
 
 Führt ein Mandant mehrere Körperschaften, etwa eine Samtgemeinde und ihre Mitgliedsgemeinden
 ([ADR Körperschaften im Mandanten](adr/20261002-koerperschaften-im-mandanten.md)), nennt die Spalte
@@ -144,7 +230,7 @@ meldet der Bericht „möglicherweise eine andere Person“ und ob sich dabei Ba
 zeigt er nicht. Ist es eine andere Person, sie vorher von Hand mit ihrer E-Mail-Adresse anlegen; dann ordnet
 der Import über die E-Mail richtig zu.
 
-## Prüfungen
+### Prüfungen
 
 Fehler stehen mit Datei und Zeile im Bericht; mit Fehlern schreibt auch der Import nichts:
 
@@ -168,7 +254,7 @@ gleichem Namen, Gremium neu in einer Körperschaft, obwohl es den Namen in einer
 übergeordnetes Gremium aus einer anderen Körperschaft, Abweichung in der Gegenprobe) halten den Import nicht
 auf.
 
-## Bericht und Zählabgleich
+### Bericht und Zählabgleich
 
 Der Bericht nennt je Objektart die Zeilen der Datei und wie sie verteilt sind: neu, geändert, unverändert,
 fehlerhaft – die Summe muss die Zeilenzahl ergeben. Dazu den Bestand im Mandanten vorher und nachher, die
@@ -177,7 +263,7 @@ maschinenlesbare Fassung für das Prüfprotokoll der Übernahme.
 
 Jede Anlage und Änderung steht außerdem im Prüfprotokoll des Mandanten (Protokollierung).
 
-## Gegenprobe mit den öffentlichen Mitgliederlisten
+### Gegenprobe mit den öffentlichen Mitgliederlisten
 
 `--gegenprobe` nennt einen Body im RIS-Bestand (OParl-Kennung, bei SessionNet die Basis-URL bzw. mit
 `?__cpanr=N`, oder die UUID). Für jedes Gremium der Besetzungsdatei vergleicht der Import die am Stichtag
@@ -188,7 +274,7 @@ Die Gegenprobe vergleicht über den Gremiennamen. Bei mehreren Körperschaften (
 Body) daher je Körperschaft prüfen; gleichnamige Gremien anderer Körperschaften erscheinen sonst als
 Abweichung.
 
-## Datenschutz
+### Datenschutz beim Import
 
 - Personenbezogene Daten nur mit Vertrag zur Auftragsverarbeitung übernehmen.
 - Bankdaten und Kontaktdaten nur über einen gesicherten Kanal entgegennehmen, nie per E-Mail.
@@ -196,10 +282,10 @@ Abweichung.
   Ausgabe oder in Fehlermeldungen. Der Bericht enthält Namen.
 - Importdateien und Berichte nach Abschluss sicher löschen bzw. in der Akte ablegen.
 
-## Grenzen
+### Grenzen des Imports
 
 - Körperschaften legt der Import nicht an und verschiebt keine Gremien zwischen ihnen (Abschnitt
   „Körperschaften“).
-- Sitzungen, Vorlagen und Niederschriften übernimmt der Befehl nicht (#762, Soll-Teil).
+- Sitzungen, Vorlagen und Niederschriften übernimmt der Befehl nicht.
 - Zeilen je Datei höchstens 20.000, Dateigröße höchstens 10 MB; XLSX entpackt höchstens 50 MB, Spalten bis
   XFD wie in Excel und höchstens 2 Millionen Zellen.

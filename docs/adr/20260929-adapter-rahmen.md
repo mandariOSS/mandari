@@ -138,6 +138,13 @@ Metadaten), Transparenz- und Open-Data-Portale über DCAT-AP.de, Finanzverfahren
   „Vollständig abgeglichen“ mit dem Hinweis „seither mit Lücken“; Änderungsfeed: Feld `freshness`
   ([A10, Nachtrag #556](20260929-aenderungsfeed-format.md)).
 
+## Nachtrag vom 11.11.2026: Abhol-Adapter ohne Abonnement
+
+Der erste und bisher einzige Adapter ist der Datenkatalog nach DCAT-AP.de (`hub/adapters/dcat`, #556). Er wird
+abgeholt und bildet bei jedem Abruf aus dem Bestand ab; er ist kein Abonnement `adapter.<name>`. Die Basisklasse
+`OutboundAdapter` und die Zustelltabelle `hub_delivery` aus der Entscheidung sind noch nicht angelegt. Sie
+entstehen mit dem ersten Adapter, der Ereignisse an ein Partnersystem zustellt.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md), [A5 Verträge](20260929-ereignisvertraege.md),

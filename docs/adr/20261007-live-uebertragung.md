@@ -91,6 +91,14 @@ einem Einzelbild je rund 10 Sekunden TOP, Name und Fraktion zuverlässig liest (
 - **Ton-Transkription** oder Live-Untertitel wären ein weiterer Leser neben `lesung`, mit eigener Entscheidung
   zu Rechtslage und Speicherung.
 
+## Nachtrag (11.11.2026)
+
+- **Kennung:** Die Abrufe melden sich nicht mit „mandari (+https://mandari.de)“, sondern mit derselben Kennung
+  wie alle Abrufe der Anwendung: `mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)`
+  ([`ABRUFREGELN.md`](../ABRUFREGELN.md#andere-abrufe)).
+- **Zustände:** Zu geplant → live → beendet kommt beendet → live: Meldet der Anbieter binnen 3 Stunden nach dem
+  Ende wieder „live“, läuft dieselbe Übertragung weiter (`WIEDERAUFNAHME`, `hub/live/services.py`).
+
 ## Bezug
 
 - Betrieb: [docs/LIVE_UEBERTRAGUNG.md](../LIVE_UEBERTRAGUNG.md)
