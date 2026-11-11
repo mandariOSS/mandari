@@ -608,21 +608,50 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
 # ---------------------------------------------------------------------------
 
 
-class _LabelResolver:
-    """Labels per Name auflösen und bei Bedarf anlegen (Cache über den ganzen Import)."""
+#: Höchstens so viele neue Labels legt ein Import im gemeinsamen Katalog der Organisation an
+MAX_NEW_LABELS_PER_IMPORT = 50
 
-    def __init__(self, organization: Organization) -> None:
+
+class _LabelResolver:
+    """
+    Labels per Name auflösen (Cache über den ganzen Import).
+
+    Der Katalog gehört der ganzen Organisation: Unbekannte Namen legt der Import nur für Mitglieder an, die Labels
+    verwalten dürfen (``tasks.manage``, wie die Label-Verwaltung selbst), und höchstens
+    ``MAX_NEW_LABELS_PER_IMPORT`` je Import. Andere Namen bleiben weg und stehen in ``skipped``.
+    """
+
+    def __init__(self, organization: Organization, membership: Membership | None = None) -> None:
         self.organization = organization
         self.cache = selectors.labels_by_name(organization)
+        self.may_create = membership is not None and membership.has_permission("tasks.manage")
+        self.created = 0
+        self.skipped: dict[str, str] = {}
 
     def resolve(self, names: list[str]) -> list[TaskLabel]:
         resolved = []
         for name in names:
             key = name.lower()
             if key not in self.cache:
+                if not self.may_create or self.created >= MAX_NEW_LABELS_PER_IMPORT:
+                    self.skipped.setdefault(key, name)
+                    continue
                 self.cache[key] = TaskLabel.objects.create(organization=self.organization, name=name, color="blue")
+                self.created += 1
             resolved.append(self.cache[key])
         return resolved
+
+    def warning(self) -> str:
+        """Hinweis für den Bericht zu nicht übernommenen Labels (leer: alle übernommen)."""
+        if not self.skipped:
+            return ""
+        names = sorted(self.skipped.values(), key=str.lower)
+        shown = ", ".join(names[:10]) + (" …" if len(names) > 10 else "")
+        if not self.may_create:
+            reason = "neue Labels legt an, wer Labels verwalten darf"
+        else:
+            reason = f"höchstens {MAX_NEW_LABELS_PER_IMPORT} neue Labels je Import"
+        return f"{len(names)} unbekannte Labels nicht übernommen ({reason}): {shown}"
 
 
 def _create_from_row(
@@ -689,7 +718,7 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
 @transaction.atomic
 def apply_import(organization: Organization, membership: Membership, report: ImportReport) -> None:
     """Schreibt die klassifizierten Zeilen in die Datenbank (eine Transaktion)."""
-    labels = _LabelResolver(organization)
+    labels = _LabelResolver(organization, membership)
     position_counters = selectors.position_counters(organization)
     now = timezone.now()
 
@@ -715,3 +744,6 @@ def apply_import(organization: Organization, membership: Membership, report: Imp
         _update_from_row(task, membership, entry["data"], labels, now)
         updated.append(entry)
     report.update[:] = updated
+    hinweis = labels.warning()
+    if hinweis:
+        report.warnings.append(hinweis)

@@ -16,6 +16,7 @@ Provides motion management with:
 import hashlib
 import logging
 import uuid
+from collections.abc import Iterator
 from datetime import datetime, timedelta
 
 from django.db import models
@@ -445,22 +446,25 @@ class DocumentFolder(models.Model):
             # Gleichzeitig angelegt: den vorhandenen Ordner verwenden
             return cls.objects.get(organization=organization, sworn_in_only=True)
 
+    def iter_ancestors(self) -> Iterator["DocumentFolder"]:
+        """
+        Vorfahren vom direkten Parent zur Wurzel. Endet auch, wenn die Elternkette (durch einen Fehler im Bestand)
+        einen Zyklus bildet: Kein Ordner kommt zweimal, der Ordner selbst gar nicht.
+        """
+        seen = {self.pk}
+        node = self.parent
+        while node is not None and node.pk not in seen:
+            seen.add(node.pk)
+            yield node
+            node = node.parent
+
     def get_depth(self) -> int:
         """Tiefe im Baum (Ordner auf Wurzelebene = 1)."""
-        depth = 1
-        node = self.parent
-        while node is not None:
-            depth += 1
-            node = node.parent
-        return depth
+        return 1 + sum(1 for _ in self.iter_ancestors())
 
     def get_ancestors(self) -> list["DocumentFolder"]:
         """Vorfahren von der Wurzel bis zum direkten Parent (für Breadcrumbs)."""
-        ancestors = []
-        node = self.parent
-        while node is not None:
-            ancestors.append(node)
-            node = node.parent
+        ancestors = list(self.iter_ancestors())
         ancestors.reverse()
         return ancestors
 
@@ -499,21 +503,34 @@ class DocumentFolder(models.Model):
         return ""
 
     def get_descendants(self) -> list["DocumentFolder"]:
-        """Alle Unterordner (rekursiv)."""
+        """Alle Unterordner (rekursiv); jeder Ordner höchstens einmal, auch bei einem Zyklus im Bestand."""
         result = []
+        seen = {self.pk}
         stack = list(self.children.all())
         while stack:
             node = stack.pop()
+            if node.pk in seen:
+                continue
+            seen.add(node.pk)
             result.append(node)
             stack.extend(node.children.all())
         return result
 
     def get_subtree_height(self) -> int:
-        """Höhe des eigenen Teilbaums (nur dieser Ordner = 1)."""
-        children = list(self.children.all())
-        if not children:
-            return 1
-        return 1 + max(child.get_subtree_height() for child in children)
+        """Höhe des eigenen Teilbaums (nur dieser Ordner = 1); endet auch bei einem Zyklus im Bestand."""
+        height = 0
+        seen = {self.pk}
+        level = [self]
+        while level:
+            height += 1
+            following = []
+            for node in level:
+                for child in node.children.all():
+                    if child.pk not in seen:
+                        seen.add(child.pk)
+                        following.append(child)
+            level = following
+        return height
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -531,12 +548,14 @@ class DocumentFolder(models.Model):
             if self.parent.organization_id != self.organization_id:
                 raise ValidationError({"parent": "Der übergeordnete Ordner gehört zu einer anderen Organisation."})
             # Zyklen verhindern (Ordner in eigenen Unterordner verschieben)
+            seen = set()
             node = self.parent
-            while node is not None:
+            while node is not None and node.pk not in seen:
                 if node.pk == self.pk:
                     raise ValidationError(
                         {"parent": "Ein Ordner kann nicht in einen eigenen Unterordner verschoben werden."}
                     )
+                seen.add(node.pk)
                 node = node.parent
 
         # Maximale Verschachtelungstiefe (inkl. eigenem Teilbaum beim Verschieben)
@@ -1251,14 +1270,13 @@ class Motion(EncryptionMixin, models.Model):
             self.shares.filter(scope="user", user=membership.user).values_list("level", "created_at", "allow_download")
         )
         # Ordner-Freigaben gelten rekursiv: Ordner des Dokuments + Vorfahren
-        node = self.folder
-        while node is not None:
+        folders = [self.folder, *self.folder.iter_ancestors()] if self.folder is not None else []
+        for node in folders:
             for level, created_at, allow_download, created_by_id in node.guest_shares.filter(
                 user=membership.user
             ).values_list("level", "created_at", "allow_download", "created_by_id"):
                 if self._folder_share_applies(created_by_id):
                     shares.append((level, created_at, allow_download))
-            node = node.parent
         return shares
 
     def get_guest_share_level(self, membership) -> str | None:
