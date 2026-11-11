@@ -40,7 +40,8 @@ from apps.session.models import (
 from apps.session.services import agenda_service, file_service
 
 #: Erhöhen, wenn sich Aufbau oder Gestaltung der Mappe ändern – ältere Fassungen gelten dann als veraltet
-FORMAT_VERSION = 1
+#: 2: Die Tagesordnung in der Mappe richtet sich nach den Rechten der Fassung
+FORMAT_VERSION = 2
 
 PUBLIC = SessionMeetingPackage.VARIANT_PUBLIC
 INTERNAL = SessionMeetingPackage.VARIANT_INTERNAL

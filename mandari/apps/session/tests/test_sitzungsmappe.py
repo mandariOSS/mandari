@@ -249,6 +249,20 @@ def welt(media: Path) -> Welt:
 
 
 class TestSichtbarkeit:
+    def test_oeffentliche_tagesordnung_ohne_aktenzeichen_nichtoeffentlicher_vorlagen(self, welt: Welt) -> None:
+        """Hängt eine nichtöffentliche Vorlage an einem öffentlichen Punkt, nennt nur die interne Fassung sie."""
+        geheim = SessionPaper.objects.get(tenant=welt.tenant, reference="V/2026/0002")
+        SessionAgendaItem.objects.create(
+            meeting=welt.meeting, number="3", name="Grundstücksfragen", order=4, paper=geheim
+        )
+
+        oeffentlich = "\n".join(_texts(_pdf_of(_build(welt.meeting, PUBLIC))))
+        intern = "\n".join(_texts(_pdf_of(_build(welt.meeting, INTERNAL))))
+
+        assert "Grundstücksfragen" in oeffentlich and "V/2026/0001" in oeffentlich
+        assert "V/2026/0002" not in oeffentlich
+        assert "V/2026/0002" in intern
+
     def test_oeffentliche_fassung_ohne_noe_inhalte(self, welt: Welt) -> None:
         package = _build(welt.meeting, PUBLIC)
         reader = _pdf_of(package)

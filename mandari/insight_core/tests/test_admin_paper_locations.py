@@ -60,7 +60,13 @@ def test_changelist_shows_source_and_row_actions(admin_client_: Client, located_
 
 def test_remove_row_action_suppresses_location(admin_client_: Client, located_paper: OParlPaper) -> None:
     row = PaperLocation.objects.get(paper=located_paper, name="Hafenweg")
-    response = admin_client_.get(reverse("admin:insight_core_paperlocation_remove_row", args=[row.pk]))
+    url = reverse("admin:insight_core_paperlocation_remove_row", args=[row.pk])
+    # Der Aufruf (GET) zeigt nur die Bestätigung und ändert nichts
+    status_vorher = row.status
+    assert admin_client_.get(url).status_code == 200
+    row.refresh_from_db()
+    assert row.status == status_vorher
+    response = admin_client_.post(url)
     assert response.status_code == 302
 
     row.refresh_from_db()
@@ -78,7 +84,13 @@ def test_remove_row_action_suppresses_location(admin_client_: Client, located_pa
 
 def test_confirm_detail_action(admin_client_: Client, located_paper: OParlPaper) -> None:
     row = PaperLocation.objects.get(paper=located_paper, name="Prinzipalmarkt 1")
-    response = admin_client_.get(reverse("admin:insight_core_paperlocation_confirm_detail", args=[row.pk]))
+    url = reverse("admin:insight_core_paperlocation_confirm_detail", args=[row.pk])
+    # Der Aufruf (GET) zeigt nur die Bestätigung und ändert nichts
+    status_vorher = row.status
+    assert admin_client_.get(url).status_code == 200
+    row.refresh_from_db()
+    assert row.status == status_vorher
+    response = admin_client_.post(url)
     assert response.status_code == 302
     row.refresh_from_db()
     assert row.status == PaperLocation.STATUS_CONFIRMED

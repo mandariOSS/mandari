@@ -207,6 +207,64 @@ def period_allowances(tenant: Any, period_start: date, period_end: date, organiz
     return qs
 
 
+#: Bezeichnung einer nichtöffentlichen Sitzung in der Abrechnung für Konten ohne das Sichtrecht dafür
+NON_PUBLIC_MEETING_LABEL = "Nichtöffentliche Sitzung"
+
+
+def meeting_label_expression(permissions: Any, prefix: str = "attendance__meeting__") -> Any:
+    """
+    Ausdruck für den Sitzungsnamen einer Position (Annotation ``meeting_label``).
+
+    Ausnahme von der Sichtbarkeitsregel für Sitzungen (``visibility.meeting_q``): Die Abrechnung zeigt auch
+    Positionen nichtöffentlicher Sitzungen, sonst wäre sie unvollständig. Ohne ``view_non_public_meetings`` steht
+    statt des Namens eine neutrale Bezeichnung; Gremium, Datum, Funktion und Betrag bleiben.
+    """
+    from django.db.models import Case, CharField, F, Value, When
+
+    from apps.session.visibility import NON_PUBLIC_MEETINGS
+
+    name = F(f"{prefix}name")
+    if NON_PUBLIC_MEETINGS in permissions:
+        return name
+    return Case(
+        When(**{f"{prefix}is_public": False}, then=Value(NON_PUBLIC_MEETING_LABEL)),
+        default=name,
+        output_field=CharField(),
+    )
+
+
+def meeting_label(allowance: Any) -> str:
+    """Sitzungsname einer Position: die Annotation der Abrechnungsansichten, sonst der Name der Sitzung."""
+    label = getattr(allowance, "meeting_label", None)
+    return str(label if label is not None else allowance.attendance.meeting.name)
+
+
+#: Meldung, wenn eine Anwesenheitszeile wegen ihres Sitzungsgelds bestehen bleibt
+ATTENDANCE_HAS_ALLOWANCE = (
+    "Für diese Anwesenheit ist Sitzungsgeld genehmigt, exportiert oder ausgezahlt. Die Zeile bleibt bestehen; "
+    "die Position lässt sich nur in der Abrechnung stornieren."
+)
+
+
+def attendance_removal_block(attendance: Any) -> str:
+    """
+    Grund, aus dem eine Anwesenheitszeile nicht entfernt werden darf (leer: sie darf).
+
+    Das Sitzungsgeld hängt an der Anwesenheit und verschwände mit ihr. Genehmigte, exportierte oder ausgezahlte
+    Positionen sind geprüft bzw. überwiesen: Sie bleiben, auch wenn die Niederschrift noch offen ist, und lassen
+    sich nur in der Abrechnung (``manage_allowances``) stornieren. Ausstehende und stornierte Positionen entfallen
+    mit der Zeile, wie sie auch der nächste Abrechnungslauf mangels Grundlage stornieren würde.
+    """
+    from apps.session.models import SessionAllowance
+
+    allowance = SessionAllowance.objects.filter(attendance=attendance).only("status", "export_reference").first()
+    if allowance is None:
+        return ""
+    if allowance.status in ("approved", "paid") or allowance.export_reference:
+        return ATTENDANCE_HAS_ALLOWANCE
+    return ""
+
+
 def cancel_allowances(allowances: Iterable[Any], *, note: str) -> int:
     """
     Offene, noch nicht exportierte Positionen stornieren (Sitzungsgeld oder Monatspauschalen).
@@ -481,7 +539,7 @@ def build_export_csv(allowances) -> str:
             [
                 person.display_name,
                 attendance.meeting.organization.name,
-                attendance.meeting.name,
+                meeting_label(allowance),
                 timezone.localtime(attendance.meeting.start).strftime("%d.%m.%Y"),
                 attendance.get_role_display(),
                 csv_amount(allowance.amount),
