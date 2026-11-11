@@ -752,22 +752,25 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
     audit.log_member_access(member, before, _access_text(member), actor=_active_membership(organization, actor_user))
 
 
-def _still_active(actor: Membership | None) -> bool:
+def _may_approve_now(actor: Membership | None) -> bool:
     """
-    Ist die handelnde Mitgliedschaft jetzt aktiv? Sperrt ihre Zeile bis zum Ende der Transaktion.
+    Darf die handelnde Mitgliedschaft jetzt Registrierungsanfragen freigeben (aktiv und ``members.invite``)?
+
+    Geprüft wird ein unter Sperre neu gelesenes Objekt, nicht das mitgegebene: Das stammt aus dem View, kann
+    inzwischen deaktiviert sein, und seine Rechte sind dort schon geladen (``has_permission`` fragt weder nach
+    ``is_active`` noch liest es entzogene Rechte neu). Die Sperre hält bis zum Ende der Transaktion.
 
     Gesperrt wird nur die Mitgliedschaft (``of=("self",)``), nicht das Konto: Die Abfrage verbindet beide, und eine
     Sperre auf der Kontozeile könnte sich mit einer gleichzeitigen Einladung derselben Person gegenseitig blockieren.
     """
     if actor is None:
         return False
-    return (
+    current = (
         Membership.objects.select_for_update(of=("self",))
         .filter(pk=actor.pk, is_active=True, is_guest=False, user__is_active=True)
-        .only("pk")
         .first()
-        is not None
     )
+    return current is not None and current.has_permission("members.invite")
 
 
 @transaction.atomic
@@ -781,11 +784,8 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     # Eine offene Registrierungsanfrage zu aktivieren ist die Freischaltung (samt Zugangs-Mail): Das darf nur, wer
     # Mitglieder einladen darf, gleich über welchen Weg der Aufruf kommt. Ohne aktive handelnde Mitgliedschaft
     # (etwa zwischen der Prüfung im View und diesem Aufruf deaktiviert) gibt es keine Freischaltung. Der Stand der
-    # handelnden Mitgliedschaft wird dafür unter Sperre neu gelesen: Das mitgegebene Objekt stammt aus dem View, und
-    # ``has_permission`` fragt nicht nach ``is_active``.
-    if member.registration_requested_at is not None and not (
-        _still_active(actor) and actor is not None and actor.has_permission("members.invite")
-    ):
+    # handelnden Mitgliedschaft und ihre Rechte werden dafür unter Sperre neu gelesen (``_may_approve_now``).
+    if member.registration_requested_at is not None and not _may_approve_now(actor):
         raise ServiceError("Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf.")
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
@@ -1045,14 +1045,14 @@ def approve_registration(membership: Membership, actor: Membership | None = None
     Reaktivieren); liefert, ob die Mail rausging. Unterliegt dem Mitglieder-Limit.
 
     Freischalten darf nur eine jetzt aktive Mitgliedschaft mit ``members.invite``: Der View hat das Recht geprüft,
-    die handelnde Mitgliedschaft kann aber seither deaktiviert worden sein. Ihr Stand wird deshalb unter Sperre neu
-    gelesen, wie beim Reaktivieren (:func:`_restore_membership`).
+    die handelnde Mitgliedschaft kann aber seither deaktiviert oder das Recht entzogen worden sein. Stand und Rechte
+    werden deshalb unter Sperre neu gelesen, wie beim Reaktivieren (:func:`_restore_membership`).
     """
     with transaction.atomic():
         # Erst die Anfrage, dann die handelnde Mitgliedschaft sperren: dieselbe Reihenfolge wie beim Reaktivieren,
         # damit sich beide Wege zur selben Anfrage nicht gegenseitig blockieren
         _lock_membership(membership)
-        if not (_still_active(actor) and actor is not None and actor.has_permission("members.invite")):
+        if not _may_approve_now(actor):
             raise ServiceError("Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf.")
         if not membership.is_guest and not membership.is_active:
             _ensure_free_member_slot(membership.organization)

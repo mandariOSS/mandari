@@ -173,8 +173,16 @@ def test_direktes_freischalten_prueft_die_handelnde_mitgliedschaft_erneut(org: A
     veraltet = make_member(org, rechte, email="veraltet@example.org")
     type(veraltet).objects.filter(pk=veraltet.pk).update(is_active=False)
     ohne_recht = make_member(org, ["members.view", "members.edit"], email="ohne@example.org")
+    # Objekt aus dem View mit schon geladenen Rechten, das Recht ist inzwischen entzogen
+    from apps.tenants.models import Permission
 
-    for handelnd in (veraltet, ohne_recht, None):
+    entzogen = make_member(org, rechte, email="entzogen@example.org")
+    assert entzogen.has_permission("members.invite")
+    for rolle in entzogen.roles.all():
+        rolle.permissions.remove(*Permission.objects.filter(codename="members.invite"))
+    assert entzogen.has_permission("members.invite"), "das alte Objekt kennt den Entzug nicht"
+
+    for handelnd in (veraltet, ohne_recht, entzogen, None):
         with pytest.raises(org_services.ServiceError):
             org_services.approve_registration(anfrage, actor=handelnd)
     anfrage.refresh_from_db()
