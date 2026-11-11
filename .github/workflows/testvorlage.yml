@@ -1,0 +1,130 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# =============================================================================
+# Vorrat an fertig migrierten Datenbankvorlagen für die CI (Issue #1315)
+# =============================================================================
+# Die Jobs "Test" und "Smoke-Tests" (pr-check.yml) brauchen eine migrierte Datenbank
+# als Vorlage. Sie selbst zu migrieren dauert je Job rund 100 Sekunden, bei drei
+# Testteilen und dem Smoke-Job also gut sechs Minuten je Lauf – für ein Ergebnis, das
+# sich nur ändert, wenn sich die Migrationen ändern.
+#
+# Dieser Workflow migriert einmal, sobald sich auf dev die Migrationen, die
+# Abhängigkeiten, die Einstellungen oder die Werkzeuge der Vorlagen ändern, und legt
+# beide Vorlagen als Artefakt ab:
+#
+#   testvorlage-<Prüfsumme>
+#     testvorlage.dump                       PostgreSQL (pg_dump), Test-Settings
+#     testvorlage.dump.migrations            Fingerabdruck der Migrationsdateien
+#     mandari-smoke-template.sqlite3         SQLite, Einstellungen der Smoke-Skripte
+#     mandari-smoke-template.sqlite3.migrations
+#
+# Die Prüfsumme im Namen bilden die Jobs der CI aus denselben Dateien (hashFiles mit
+# denselben Mustern, siehe VORLAGE_DATEIEN unten und in pr-check.yml; ein Test hält
+# beide Listen gleich). Gibt es kein Artefakt zum Stand eines Laufs – ein Pull Request
+# mit neuer Migration, ein abgelaufenes Artefakt –, migriert der Job wie bisher selbst.
+#
+# Der Schlüssel der Feldverschlüsselung ist hier und im Job "Test" derselbe feste
+# Testwert: Migrationen legen verschlüsselte Werte an, die die Tests lesen. Er schützt
+# nichts und wird nur in der CI verwendet.
+# =============================================================================
+
+name: Datenbankvorlagen
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'mandari/**/migrations/**'
+      - 'mandari/uv.lock'
+      - 'mandari/mandari/settings*.py'
+      - 'scripts/testdb_vorlage.py'
+      - 'scripts/build_smoke_db_template.py'
+      - 'scripts/_smoke_db.py'
+      - '.github/workflows/testvorlage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testvorlage-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_SYSTEM_PYTHON: '1'
+  UV_COMPILE_BYTECODE: '1'
+
+jobs:
+  vorlagen:
+    name: Vorlagen migrieren und ablegen
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+      DEBUG: 'false'
+      # Fester Testwert, derselbe wie im Job "Test" (pr-check.yml); schützt nichts
+      ENCRYPTION_MASTER_KEY: bWFuZGFyaS1jaS1udXItZnVlci10ZXN0cy0wMDAwMDA=
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data:rw
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev libpango1.0-dev libffi-dev shared-mime-info pkg-config poppler-utils tesseract-ocr tesseract-ocr-deu
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: |
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
+
+      - name: PostgreSQL-Vorlage migrieren und als Abbild ablegen
+        env:
+          # pg_dump aus dem Container des Servers: Die Programme des Runners sind eine Hauptversion neuer
+          MANDARI_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: python scripts/testdb_vorlage.py --abbild-schreiben "$RUNNER_TEMP/vorrat/testvorlage.dump"
+
+      # Kein Abbild ablegen, das sich nicht einspielen lässt: Die Jobs der CI fielen sonst still auf das Migrieren zurück
+      - name: Abbild probeweise einspielen
+        env:
+          MANDARI_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: >-
+          python scripts/testdb_vorlage.py --name mandari_testvorlage_probe
+          --aus-abbild "$RUNNER_TEMP/vorrat/testvorlage.dump" --abbild-pflicht
+
+      - name: SQLite-Vorlage der Smoke-Skripte
+        run: python scripts/build_smoke_db_template.py "$RUNNER_TEMP/vorrat/mandari-smoke-template.sqlite3"
+
+      # VORLAGE_DATEIEN: dieselben Muster wie in pr-check.yml (Test: test_ci_workflow.py)
+      - name: Vorlagen ablegen
+        uses: actions/upload-artifact@v7
+        with:
+          name: testvorlage-${{ hashFiles('mandari/**/migrations/*.py', 'mandari/uv.lock', 'mandari/mandari/settings*.py', 'scripts/testdb_vorlage.py', 'scripts/build_smoke_db_template.py', 'scripts/_smoke_db.py') }}
+          path: ${{ runner.temp }}/vorrat/
+          retention-days: 90
+          if-no-files-found: error
+          overwrite: true
+          include-hidden-files: true

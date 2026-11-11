@@ -753,11 +753,17 @@ jobs:
       fail-fast: false
       matrix:
         teil: [1, 2, 3]
+    permissions:
+      contents: read
+      actions: read   # Datenbankvorlage aus dem Vorrat holen (Artefakt von testvorlage.yml)
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/test
       REDIS_URL: redis://localhost:6379
       SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
       DEBUG: 'false'
+      # Fester Testwert, derselbe wie in testvorlage.yml: Die Vorlage aus dem Vorrat enthält Werte, die Migrationen
+      # mit diesem Schlüssel verschlüsselt haben. Er schützt nichts und wird nur in der CI verwendet.
+      ENCRYPTION_MASTER_KEY: bWFuZGFyaS1jaS1udXItZnVlci10ZXN0cy0wMDAwMDA=
 
     services:
       postgres:
@@ -834,20 +840,29 @@ jobs:
           cd mandari
           python manage.py collectstatic --noinput
 
-      # Vorlage und Tests nutzen denselben Schlüssel (sonst zöge jeder Prozess einen eigenen)
-      - name: Schlüssel der Feldverschlüsselung für diesen Job
-        run: |
-          schluessel=$(python -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')
-          echo "::add-mask::$schluessel"
-          echo "ENCRYPTION_MASTER_KEY=$schluessel" >> "$GITHUB_ENV"
+      # Fertig migrierte Vorlage aus dem Vorrat (Issue #1315, testvorlage.yml): einspielen dauert rund 10 statt
+      # 100 Sekunden. Der Name trägt die Prüfsumme der Dateien, aus denen die Vorlage entsteht (VORLAGE_DATEIEN,
+      # dieselben Muster wie in testvorlage.yml). Ohne passendes Artefakt migriert der nächste Schritt selbst.
+      - name: Datenbankvorlage aus dem Vorrat holen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VORLAGE: testvorlage-${{ hashFiles('mandari/**/migrations/*.py', 'mandari/uv.lock', 'mandari/mandari/settings*.py', 'scripts/testdb_vorlage.py', 'scripts/build_smoke_db_template.py', 'scripts/_smoke_db.py') }}
+        run: python scripts/ci_vorlage_holen.py "$VORLAGE" "$RUNNER_TEMP/vorrat"
 
-      # Einmal migrieren (Test-Settings, gemessen mit coverage wie früher das Migrieren je Worker)
-      - name: Testdatenbank-Vorlage migrieren
-        run: python scripts/testdb_vorlage.py --coverage "$RUNNER_TEMP/testteil/coverage-vorlage.daten"
+      # Aus dem Vorrat einspielen oder einmal migrieren (Test-Settings; das Migrieren wird mit coverage gemessen)
+      - name: Testdatenbank-Vorlage (aus dem Vorrat oder migrieren)
+        env:
+          # pg_restore aus dem Container des Servers: Die Programme des Runners sind eine Hauptversion neuer
+          MANDARI_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: >-
+          python scripts/testdb_vorlage.py --coverage "$RUNNER_TEMP/testteil/coverage-vorlage.daten"
+          --aus-abbild "$RUNNER_TEMP/vorrat/testvorlage.dump"
 
       - name: Run tests
         env:
           MANDARI_TEST_DB_VORLAGE: mandari_testvorlage
+          # für den Rundlauf-Test des Abbilds (apps/common/tests/test_ci_vorlagen.py)
+          MANDARI_PG_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           cd mandari
           # Parallel auf allen Kernen (pytest-xdist; je Worker eine Kopie der Vorlage), Tests einer Datei
@@ -1159,6 +1174,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.smoke == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read   # Datenbankvorlage aus dem Vorrat holen (Artefakt von testvorlage.yml)
 
     steps:
       - name: Checkout
@@ -1203,7 +1221,13 @@ jobs:
       - name: Smoke-Datenbankvorlage einmalig erzeugen
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-        run: python scripts/build_smoke_db_template.py "${{ runner.temp }}/mandari-smoke-template.sqlite3"
+          GH_TOKEN: ${{ github.token }}
+          VORLAGE: testvorlage-${{ hashFiles('mandari/**/migrations/*.py', 'mandari/uv.lock', 'mandari/mandari/settings*.py', 'scripts/testdb_vorlage.py', 'scripts/build_smoke_db_template.py', 'scripts/_smoke_db.py') }}
+        # Aus dem Vorrat (Issue #1315, testvorlage.yml), wenn der Fingerabdruck der Migrationen passt; sonst migrieren
+        run: |
+          python scripts/ci_vorlage_holen.py "$VORLAGE" "$RUNNER_TEMP/vorrat"
+          python scripts/build_smoke_db_template.py "$RUNNER_TEMP/mandari-smoke-template.sqlite3" \
+            --aus "$RUNNER_TEMP/vorrat/mandari-smoke-template.sqlite3"
 
       # Performance-Budgets (Issue #228): Abfragen je Kernseite gegen die Lasttest-
       # Daten des Profils "klein" (generate_load_data). Budgets stehen in
