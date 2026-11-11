@@ -554,12 +554,18 @@ def normalize_row(row: Row, memberships_by_email: dict[str, Membership]) -> tupl
     return data, errors, warnings
 
 
+def _darf_aendern(task: Task, membership: Membership) -> bool:
+    """Bearbeitungsrecht an einer bestehenden Aufgabe, wie ``services.can_edit_task`` (dort importiert dieses Modul nicht)."""
+    from . import services
+
+    return services.can_edit_task(task, membership)
+
+
 def classify_rows(organization: Organization, membership: Membership, rows: list[Row]) -> ImportReport:
     """Validiert alle Zeilen und teilt sie in create/update/skip/errors ein (nur Lesezugriffe)."""
     report = ImportReport(total=len(rows))
     memberships_by_email = selectors.memberships_by_email(organization)
     existing_titles = selectors.visible_task_titles(organization, membership)
-    can_manage = membership.has_permission("tasks.manage")
     seen_in_file: set[str] = set()
 
     for row in rows:
@@ -575,7 +581,9 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
         # Update-Pfad: bekannte ID in dieser Organisation
         existing = selectors.find_task(organization, data["id"]) if data.get("id") else None
         if existing is not None:
-            if existing.can_edit(membership) or can_manage:
+            # Dieselbe Regel wie beim Bearbeiten in der Oberfläche: ``tasks.manage`` gilt nur für Aufgaben,
+            # die die Person sehen darf – sonst ließen sich private Aufgaben anderer per Kennung überschreiben
+            if _darf_aendern(existing, membership):
                 report.update.append({"line": line, "data": data, "task": existing})
             else:
                 report.skip.append({"line": line, "reason": "keine Berechtigung"})
@@ -691,5 +699,19 @@ def apply_import(organization: Organization, membership: Membership, report: Imp
         _create_from_row(organization, membership, data, position_counters[status], labels, now)
         position_counters[status] += 1
 
+    # Erneut prüfen, und zwar am aktuellen Stand der Datenbank: Seit dem Einteilen kann jemand die Aufgabe privat
+    # gestellt oder gelöscht haben. Die Zeilensperre hält den geprüften Stand bis zum Schreiben fest.
+    updated = []
     for entry in report.update:
-        _update_from_row(entry["task"], membership, entry["data"], labels, now)
+        task = Task.objects.select_for_update().filter(pk=entry["task"].pk, organization=organization).first()
+        if task is None or not _darf_aendern(task, membership):
+            report.skip.append({"line": entry["line"], "reason": "keine Berechtigung"})
+            report.warnings.append(
+                f"Zeile {entry['line']}: Aufgabe {entry['task'].pk} ließ sich nicht ändern "
+                "(keine Bearbeitungsberechtigung mehr) – übersprungen."
+            )
+            continue
+        entry["task"] = task
+        _update_from_row(task, membership, entry["data"], labels, now)
+        updated.append(entry)
+    report.update[:] = updated
