@@ -330,6 +330,7 @@ def test_abo_wird_im_archiv_nicht_mehr_aktiviert(welt: dict[str, Any]) -> None:
         inhalt = antwort.content.decode()
         assert antwort.status_code == 200
         assert "Beschluss im Archiv" in inhalt and "Radweg beschlossen" in inhalt
+        assert antwort["Cache-Control"] == "no-store"
     offen.refresh_from_db()
     assert not offen.confirmed
 

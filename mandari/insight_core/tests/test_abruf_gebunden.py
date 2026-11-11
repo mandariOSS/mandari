@@ -66,7 +66,9 @@ def test_verbindung_geht_an_die_geprüfte_adresse(monkeypatch: pytest.MonkeyPatc
     with safe_fetch.guarded_client() as client, pytest.raises(httpx.ConnectError):
         client.get("http://ris.example.org/datei.pdf")
 
-    assert verbunden == [(OEFFENTLICH, 80)]  # die geprüfte Adresse, IPv4 zuerst; nicht der Name
+    # Die geprüften Adressen der Reihe nach, IPv4 zuerst; nie der Name. Ist die erste nicht erreichbar, folgt die
+    # nächste aus derselben Auflösung.
+    assert verbunden == [(OEFFENTLICH, 80), ("2606:2800:21f:cb07:6820:80da:af6b:8b2c", 80)]
 
 
 def test_zweite_aufloesung_ins_interne_netz_bekommt_keine_verbindung(monkeypatch: pytest.MonkeyPatch) -> None:

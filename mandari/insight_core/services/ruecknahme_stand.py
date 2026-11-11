@@ -12,7 +12,7 @@ deshalb in den Schlüssel dieser Einträge ein; ändert er sich, entsteht die Au
   (Dateien hängen an Vorgang oder Sitzung). Der gezählte Teil liegt unter einem Schlüssel mit der Generation: Eine
   Ausgabe, die noch vor der Rücknahme gezählt hat, schreibt ihr Ergebnis unter die alte Generation und überdeckt
   den neuen Stand nicht.
-- **Zählung:** je Art (Vorgänge, Sitzungen, Tagesordnungspunkte, Dateien) die Zahl der als gelöscht markierten
+- **Zählung:** je Art (Vorgänge, Sitzungen, Tagesordnungspunkte, Dateien, Beratungen) die Zahl der als gelöscht markierten
   Datensätze und der jüngste Zeitpunkt einer Markierung. So fallen auch Markierungen des Ingestors auf (eigener
   Prozess, ohne :func:`forget`), spätestens nach ``SECONDS``; und ebenso der Fall, dass ein Datensatz
   wiederhergestellt und ein anderer zurückgenommen wird (gleiche Zahl, anderer Zeitpunkt).
@@ -47,13 +47,14 @@ def _value_key(body_id: Any, generation: str | None = None) -> str:
 
 
 def _count(body_id: Any) -> str:
-    from insight_core.models import OParlAgendaItem, OParlFile, OParlMeeting, OParlPaper
+    from insight_core.models import OParlAgendaItem, OParlConsultation, OParlFile, OParlMeeting, OParlPaper
 
     scopes = (
         (OParlPaper, Q(body_id=body_id)),
         (OParlMeeting, Q(body_id=body_id)),
         (OParlAgendaItem, Q(meeting__body_id=body_id)),
         (OParlFile, Q(body_id=body_id) | Q(paper__body_id=body_id) | Q(meeting__body_id=body_id)),
+        (OParlConsultation, Q(body_id=body_id) | Q(paper__body_id=body_id)),
     )
     parts = []
     for model, scope in scopes:

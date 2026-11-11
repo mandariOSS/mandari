@@ -90,11 +90,15 @@ def _check_request(request: httpx.Request) -> None:
         raise BlockedDestinationError(str(exc), request=request) from None
 
 
-def _pinned_address(host: str) -> str | None:
+#: So viele geprüfte Adressen eines Namens versucht eine Verbindung höchstens nacheinander
+MAX_PINNED_ADDRESSES = 4
+
+
+def _pinned_addresses(host: str) -> list[str] | None:
     """
-    Adresse, an die die Verbindung zu ``host`` gehen darf; ``None`` heißt: nicht binden (eigener Host oder schon eine
-    Adresse). Wirft ``BlockedDestinationError``, wenn der Name nicht auflösbar ist oder eine seiner Adressen nicht
-    zulässig wäre.
+    Adressen, an die die Verbindung zu ``host`` gehen darf, in der Reihenfolge der Versuche; ``None`` heißt: nicht
+    binden (eigener Host oder schon eine Adresse). Wirft ``BlockedDestinationError``, wenn der Name nicht auflösbar
+    ist oder eine seiner Adressen nicht zulässig wäre.
     """
     name = host.lower().rstrip(".")
     if name in _own_hosts():
@@ -111,7 +115,7 @@ def _pinned_address(host: str) -> str | None:
     if not all(_allowed_address(address) for address in addresses):
         raise BlockedDestinationError("Ziel liegt nicht im öffentlichen Netz")
     # IPv4 zuerst: überall erreichbar, auch wo IPv6 nur halb eingerichtet ist
-    return sorted(addresses, key=lambda address: (":" in address, address))[0]
+    return sorted(addresses, key=lambda address: (":" in address, address))[:MAX_PINNED_ADDRESSES]
 
 
 class _PinnedBackend(httpcore.SyncBackend):
@@ -125,10 +129,23 @@ class _PinnedBackend(httpcore.SyncBackend):
         local_address: str | None = None,
         socket_options: Any = None,
     ) -> httpcore.NetworkStream:
-        address = _pinned_address(host)
-        return super().connect_tcp(
-            address or host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
-        )
+        addresses = _pinned_addresses(host)
+        if addresses is None:
+            return super().connect_tcp(
+                host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+            )
+        # Alle Adressen stammen aus derselben Auflösung und sind geprüft: Ist die erste nicht erreichbar, darf es
+        # die nächste sein, ohne die Bindung aufzugeben (wie ein gewöhnlicher Verbindungsaufbau über mehrere Adressen)
+        failure: Exception | None = None
+        for address in addresses:
+            try:
+                return super().connect_tcp(
+                    address, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                failure = exc
+        assert failure is not None
+        raise failure
 
 
 class PinnedTransport(httpx.HTTPTransport):
@@ -209,10 +226,12 @@ def download_to(
         declared = int(response.headers.get("content-length") or 0)
         if declared > max_bytes:
             raise TooLargeError
-        # Angefordert wird unkomprimiert (siehe unten). Kommt die Antwort trotzdem kodiert, weisen wir sie ab: Die
-        # Grenze zählte sonst erst nach dem Entpacken, und ein kleiner Rohblock könnte den Speicher füllen.
+        # Angefordert wird unkomprimiert (siehe oben). Kommt die Antwort trotzdem kodiert, weisen wir sie ab: Die
+        # Grenze zählte sonst erst nach dem Entpacken, und ein kleiner Rohblock könnte den Speicher füllen. Als
+        # Abruffehler (``httpx.RequestError``), nicht als „zu groß“: Der Zustand soll sich nicht festschreiben, die
+        # Quelle kann beim nächsten Versuch wieder unkodiert antworten.
         if response.headers.get("content-encoding", "identity").strip().lower() not in ("", "identity"):
-            raise TooLargeError
+            raise httpx.DecodingError("Antwort ist kodiert, angefordert war unkodiert", request=response.request)
         size = 0
         # Schon vollständig geladene Antworten (Ersatz-Transport im Test) haben keinen rohen Strom mehr
         # Ohne Stückgröße: Die Gesamtfrist unten wird nach jedem Stück geprüft, wie es aus dem Netz kommt; mit

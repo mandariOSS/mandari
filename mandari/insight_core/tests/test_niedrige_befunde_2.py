@@ -120,6 +120,24 @@ def test_stand_aendert_sich_mit_der_ruecknahme_einer_datei(
     assert nachher.split(":", 1)[1] != vorher.split(":", 1)[1]
 
 
+def test_stand_aendert_sich_mit_der_ruecknahme_einer_beratung_durch_den_ingestor(
+    geo_body: OParlBody, make_paper: Callable[..., OParlPaper]
+) -> None:
+    from insight_core.models import OParlConsultation
+
+    vorgang = make_paper(geo_body)
+    beratung = OParlConsultation.objects.create(
+        external_id="https://ris.beispielstadt.example/oparl/consultation/1", paper=vorgang
+    )
+    vorher = ruecknahme_stand.stand(geo_body.pk)
+
+    # Wie der Ingestor: Markierung ohne die Anwendung, die Kommune steht nur am Vorgang
+    OParlConsultation.objects.filter(pk=beratung.pk).update(deleted=True, deleted_at=timezone.now())
+    cache.delete(ruecknahme_stand._value_key(geo_body.pk))
+
+    assert ruecknahme_stand.stand(geo_body.pk) != vorher
+
+
 def test_alte_zaehlung_ueberdeckt_den_neuen_stand_nicht(
     geo_body: OParlBody, make_paper: Callable[..., OParlPaper], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -288,7 +306,8 @@ def test_kodierte_antwort_wird_abgewiesen(monkeypatch: pytest.MonkeyPatch) -> No
         lambda request: httpx.Response(200, stream=httpx.ByteStream(gepackt), headers={"Content-Encoding": "gzip"}),
     )
 
-    with pytest.raises(safe_fetch.TooLargeError):
+    # Als Abruffehler, nicht als „zu groß“: Der nächste Versuch kann wieder gelingen
+    with pytest.raises(httpx.DecodingError):
         _laden()
 
 

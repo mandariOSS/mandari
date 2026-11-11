@@ -408,8 +408,9 @@ def confirm_decision_subscription(request, token):
     lesbar = decision_tracking.is_readable(subscription.agenda_item)
     if not already and not decision_tracking.is_publicly_visible(subscription.agenda_item):
         # Nicht mehr aktiv veröffentlicht: nichts aktivieren. Im Archiv bleibt der Beschluss lesbar (Titel und
-        # Verweis), neue Benachrichtigungen gibt es dort nicht; sonst weder Titel noch Verweis.
-        return render(
+        # Verweis), neue Benachrichtigungen gibt es dort nicht; sonst weder Titel noch Verweis. Wie die
+        # Bestätigungsseite nicht speicherbar: Die Adresse trägt das Token, die Seite den Titel.
+        response = render(
             request,
             "pages/decisions/subscription_status.html",
             {
@@ -425,6 +426,8 @@ def confirm_decision_subscription(request, token):
                 "unsubscribe_token": None,
             },
         )
+        response["Cache-Control"] = "no-store"
+        return response
     if request.method == "GET" and not already:
         return link_confirmation(
             request,
