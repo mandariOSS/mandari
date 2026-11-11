@@ -540,9 +540,11 @@ class DocumentFolder(models.Model):
                 )
                 self.parent = DocumentFolder.objects.get(pk=self.parent_id)
                 if mover is not None and not self._state.adding:
-                    stored = DocumentFolder.objects.filter(pk=self.pk).values_list("parent_id", flat=True).first()
-                    if stored != self.parent_id:
-                        denied = self.guest_move_denied(self.parent, mover)
+                    # Am gespeicherten Ordner prüfen: Dieser hier trägt schon den Zielordner, seine Vorfahren wären
+                    # die neuen, und jede hinzukommende Freigabe gälte als schon vorhanden
+                    stored = DocumentFolder.objects.filter(pk=self.pk).first()
+                    if stored is not None and stored.parent_id != self.parent_id:
+                        denied = stored.guest_move_denied(self.parent, mover)
                         if denied:
                             raise ValidationError({"parent": denied})
             self.full_clean()

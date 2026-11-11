@@ -121,13 +121,25 @@ def test_import_erhaelt_bestehende_labels_wenn_neue_nicht_angelegt_werden(org: A
     vorhanden = TaskLabel.objects.create(organization=org, name="Haushalt", color="blue")
     aufgabe = Task.objects.create(organization=org, title="Rede", created_by=ohne)
     aufgabe.labels.add(vorhanden)
-    zeile = {"_line": 2, "id": str(aufgabe.pk), "title": "Rede", "labels": "Neu erfunden"}
+    zeile = {
+        "_line": 2,
+        "id": str(aufgabe.pk),
+        "title": "Rede",
+        "description": "Entwurf bis Freitag",
+        "labels": "Neu erfunden",
+    }
 
     bericht = import_service.classify_rows(org, ohne, [zeile])
+    # Der Hinweis steht schon in der Vorschau, vorn im Bericht
+    assert "Neu erfunden" in bericht.warnings[0]
+
     import_service.apply_import(org, ohne, bericht)
 
+    aufgabe.refresh_from_db()
+    # Die Zeile wurde übernommen, die bestehenden Labels sind geblieben
+    assert aufgabe.description == "Entwurf bis Freitag"
     assert list(aufgabe.labels.values_list("name", flat=True)) == ["Haushalt"]
-    # Der Hinweis steht schon in der Vorschau, vorn im Bericht und nur einmal
+    # Der Hinweis steht nach dem Import weiter vorn und nur einmal
     assert "Neu erfunden" in bericht.warnings[0]
     assert sum("unbekannte Labels" in warnung for warnung in bericht.warnings) == 1
 
@@ -153,6 +165,35 @@ def test_ordnerdurchlaeufe_enden_in_einem_zyklus(org: Any, make_member: Any) -> 
     # Die Prüfung beim Speichern endet ebenfalls
     neu = DocumentFolder(organization=org, name="D", parent=a, created_by=autorin)
     neu.clean()  # type: ignore[no-untyped-call]
+
+
+def test_verschieben_prueft_gastfreigabe_unter_der_sperre_am_gespeicherten_ordner(org: Any, make_member: Any) -> None:
+    """Der Zielordner wandert nach der frühen Prüfung unter einen für Gäste freigegebenen Ordner."""
+    from django.core.exceptions import ValidationError
+
+    from apps.work.motions.models import GUEST_FOLDER_SUBTREE_DENIED, FolderGuestShare
+
+    autorin = make_member(org, ["motions.view", "motions.create", "motions.edit"], email="autorin@example.org")
+    # Darf Ordner verwalten, aber keine Dokumente freigeben
+    verschiebt = make_member(org, ["motions.view", "motions.create", "motions.edit"], email="verschiebt@example.org")
+    gast = make_member(org, [], email="gast@example.org")
+    freigegeben = DocumentFolder.objects.create(organization=org, name="Für Gäste", created_by=autorin)
+    FolderGuestShare.objects.create(folder=freigegeben, user=gast.user, level="view", created_by=autorin.user)
+    ziel = DocumentFolder.objects.create(organization=org, name="Ziel", created_by=autorin)
+    ordner = DocumentFolder.objects.create(organization=org, name="Entwürfe", created_by=verschiebt)
+    Motion.objects.create(organization=org, author=autorin, title="Antrag", folder=ordner, visibility="organization")
+
+    # Frühe Prüfung im View: Das Ziel hängt noch nicht unter dem freigegebenen Ordner
+    assert ordner.guest_move_denied(ziel, verschiebt) == ""
+    ordner.parent = ziel
+    # Eine andere Anfrage hängt das Ziel inzwischen unter den freigegebenen Ordner
+    DocumentFolder.objects.filter(pk=ziel.pk).update(parent=freigegeben)
+
+    with pytest.raises(ValidationError) as fehler:
+        ordner.save_checked(mover=verschiebt)
+
+    assert fehler.value.message_dict == {"parent": [GUEST_FOLDER_SUBTREE_DENIED]}
+    assert DocumentFolder.objects.get(pk=ordner.pk).parent_id is None
 
 
 def test_ordner_ohne_zyklus_wie_bisher(org: Any, make_member: Any) -> None:
