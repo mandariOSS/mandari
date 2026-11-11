@@ -87,12 +87,12 @@ Leseaufträge und Statusabfragen liegen.
 
    Je Gremium gibt es eine Quelle; ein erneuter Aufruf ändert sie. `--takt` setzt den Abstand der Einzelbilder
    (5 bis 60 Sekunden, Standard 10).
-3. **Profil kalibrieren.** Ein Bildschirmfoto der laufenden Übertragung (oder eine Stelle in einer eigenen,
-   rechtmäßig vorliegenden Aufnahme) lokal lesen lassen; der Befehl speichert nichts:
+3. **Profil kalibrieren.** Ein Bildschirmfoto der laufenden Übertragung lokal lesen lassen; der Befehl
+   speichert nichts:
 
    ```bash
    python manage.py live_profil_testen bild.png --quelle <uuid der Quelle>
-   python manage.py live_profil_testen aufnahme.mp4 --sekunde 1800 --profil-datei profil.json
+   python manage.py live_profil_testen bild.png --profil-datei profil.json
    ```
 
    Die Ausgabe nennt, ob der Balken erkannt wurde, und die gelesenen Felder. Passen sie nicht, die Ausschnitte im
@@ -162,8 +162,7 @@ Leseaufträge und Statusabfragen liegen.
   der Zahl gleichzeitig laufender Quellen steigen: N = Quellen + 1 (`--concurrency live=N` beim Dienst
   `worker-live` in `docker-compose.yml`; ohne die Option gilt der Standardwert aus `settings.py`), dazu je Platz
   Speicher für einen Tesseract-Aufruf (`LIVE_OCR_MEMORY_LIMIT_MB`) mehr.
-- Abrufe folgen Weiterleitungen nur auf https-Adressen mit öffentlichem Namen (`hub/live/anbieter/http.py`). Ein
-  Name, der erst bei der Auflösung auf eine Adresse im eigenen Netz zeigt, wird noch nicht abgefangen.
+- Abrufe folgen Weiterleitungen nur auf https-Adressen mit öffentlichem Namen (`hub/live/anbieter/http.py`).
 - Kennung und Takt wie alle Abrufe bei Diensten (Issue #1036, `insight_core/services/dienste.py`): User-Agent
   `mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)`, vor jeder Anfrage und jeder Weiterleitung
   ein Zeitpunkt beim Server, höchstens eine Anfrage je Sekunde und Server (`dienste.LIVE`). Ein Einzelbild braucht

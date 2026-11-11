@@ -16,10 +16,10 @@ pdf2image/Poppler (Rendern für Tesseract).
 
 Der Machbarkeitstest lief mit PyMuPDF. PyMuPDF steht unter der GNU Affero General Public License
 (Version 3) oder einer kommerziellen Lizenz von Artifex. mandari selbst ist AGPL-3.0-or-later; die
-Lizenzen sind vereinbar. Die Strategie 2027 sieht aber auch Enterprise- und OEM-Verträge vor, in denen
-Kunden mandari unter anderen Bedingungen erhalten oder in eigene Produkte einbetten. Eine
-AGPL-Abhängigkeit im Kern würde solche Verträge an eine kostenpflichtige Lizenz von Artifex binden
-oder die Abhängigkeit müsste für diese Ausgaben entfernt werden.
+Lizenzen sind vereinbar. Abhängigkeiten im Kern sollen aber keine Lizenzpflicht über die AGPL hinaus
+auslösen: Eine AGPL-Abhängigkeit mit kommerzieller Zweitlizenz würde jede Weitergabe unter anderen
+Bedingungen an eine kostenpflichtige Lizenz von Artifex binden. Permissive Lizenzen werden deshalb
+bevorzugt.
 
 ## Entscheidung
 
@@ -35,7 +35,7 @@ oder die Abhängigkeit müsste für diese Ausgaben entfernt werden.
 ## Alternativen
 
 - **PyMuPDF.** Bequemste API (`get_drawings`, `get_image_rects`, `extract_image`), im Machbarkeitstest
-  bewährt. Verworfen wegen der Lizenzbindung für OEM- und Enterprise-Verträge; bleibt Option, falls
+  bewährt. Verworfen wegen der Lizenzbindung (AGPL oder kommerzielle Lizenz von Artifex); bleibt Option, falls
   eine kommerzielle Lizenz von Artifex ohnehin erworben wird.
 - **pdfminer.six** (MIT) für Text mit Positionen plus pypdfium2 zum Rendern. Langsamer bei großen
   Plänen, zweiter Parser; pypdfium2 liefert Text mit Rechtecken selbst. Verworfen.
@@ -48,8 +48,8 @@ oder die Abhängigkeit müsste für diese Ausgaben entfernt werden.
 
 **Positiv**
 
-- Keine Lizenzbindung über die AGPL hinaus; OEM- und Enterprise-Ausgaben bleiben ohne Zusatzlizenz
-  möglich.
+- Keine Lizenzbindung über die AGPL hinaus; eine Weitergabe unter anderen Bedingungen bleibt ohne
+  Zusatzlizenz möglich.
 - PDFium rendert schnell und robust (Chromium-Engine); Wheels bringen die Bibliothek mit, keine
   Systempakete.
 - Auf der Stichprobe des Machbarkeitstests liefert die Analyse dieselben Maßstäbe (1:500, 1:5.000,

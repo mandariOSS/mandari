@@ -103,7 +103,7 @@ mandari/
 
 ```
 Organization (Tenant/Mandant)
-├── PartyGroup (Partei-Hierarchie: Volt DE → Volt NRW → Volt MS)
+├── PartyGroup (Partei-Hierarchie: Bundespartei → Landesverband → Kreisverband)
 ├── OParlBody (Kommune-Verknüpfung für regionale Zuordnung)
 ├── encryption_key (tenant-spezifischer Schlüssel)
 └── smtp_* (eigene E-Mail-Konfiguration pro Org)

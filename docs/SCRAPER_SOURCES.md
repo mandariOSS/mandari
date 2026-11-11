@@ -456,7 +456,7 @@ services:
     image: mandari/oparl-bridge:v0.2.0
     environment:
       OPARL_ALLRIS_BASE_URL: "https://ratsinfo.musterstadt.de/allris"
-      OPARL_API_BASE_URL: "https://oparl-musterstadt.intern.mandari.de"
+      OPARL_API_BASE_URL: "https://oparl-bridge.musterstadt.example"
       OPARL_BODY_NAME: "Stadt Musterstadt"
       OPARL_SCRAPER_DELAY_MS: "2000"
     volumes:

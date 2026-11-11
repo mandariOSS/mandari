@@ -1,8 +1,8 @@
 # Lasttests, Mengengerüste und Größenempfehlungen
 
-Stand: Oktober 2026 (Issue #228). Vergaben legen ein Mengengerüst fest —
+Stand: Oktober 2026 (Issue #228). Betreiber planen mit einem Mengengerüst —
 Mandanten, Gremien, Sitzungen pro Jahr, Vorlagen, Dokumente, gleichzeitige
-Nutzung. Wir brauchen dafür Nachweise, die sich wiederholen lassen. Diese Seite
+Nutzung. Dafür braucht es Nachweise, die sich wiederholen lassen. Diese Seite
 hält fest, **was** wir messen, **womit** und **was dabei herauskam**; sie
 kennzeichnet, welche Zahl gemessen und welche abgeleitet ist.
 
@@ -25,7 +25,7 @@ Klasse, damit ein bestandener Test den Regelfall abdeckt.
 
 | Kennzahl | klein | mittel | groß | Begründung |
 |---|---:|---:|---:|---|
-| Einwohner (Orientierung) | 20.000 | 100.000 | 500.000+ | Größenklassen der Vergaben, die uns erreichen |
+| Einwohner (Orientierung) | 20.000 | 100.000 | 500.000+ | typische Größenklassen von Kommunen |
 | Mandanten (Session) | 1 | 2 | 3 | Stadt; dazu Eigenbetrieb bzw. Zweckverband mit eigenem Sitzungsdienst |
 | Gremien je Hauptmandant | 6 | 20 | 60 | Rat, Haupt- und Fachausschüsse; groß: dazu 9 Bezirksvertretungen, Beiräte, Kommissionen |
 | Personen (Mandatsträger, sachkundige Bürger) | 60 | 250 | 900 | Ratsgröße nach Gemeindeordnung plus Ausschuss- und Bezirksbesetzung |
@@ -367,7 +367,7 @@ Verbindungsbudget je Klasse (Muster aus `DEPLOYMENT.md`):
 Wer einen Dienst hinzufügt, trägt ihn ein und prüft die Summe — dieselbe
 Regel wie in `DEPLOYMENT.md`.
 
-Offen für die Vergabemappe: ein Lauf „Großstadt“ auf Hardware nach dieser
+Offen: ein Lauf „Großstadt“ auf Hardware nach dieser
 Tabelle, mit Lastgeber auf einem eigenen Rechner (Anleitung in
 `loadtest/README.md`). Er bestätigt oder korrigiert die Annahme von 0,1
 Anfragen/s je Nutzer nicht — die gehört aus Betriebsdaten (Zugriffsprotokoll
