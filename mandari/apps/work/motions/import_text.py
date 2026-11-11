@@ -474,23 +474,32 @@ def _render_lists(items: list[_ListItem]) -> str:
 #: Höchstens so viele Zellen wandelt der Import je Tabelle um; darüber rettet er nur den Text (``docx_to_html``)
 MAX_TABLE_CELLS = 20_000
 
+#: Höchstens so viele Zeichen Zelleninhalt erzeugt der Import für alle Tabellen eines Dokuments zusammen. Die
+#: Folgezeilen einer über mehrere Zeilen verbundenen Zelle wiederholen den Inhalt der obersten Zelle; ohne Grenze
+#: wüchse die Ausgabe mit Inhalt mal Zeilen. Ist das Budget aufgebraucht, rettet der Import nur noch den Text.
+MAX_TABLE_HTML_CHARS = 5_000_000
+
 
 class _TableTooLargeError(Exception):
-    """Die Tabelle hat mehr Zellen, als der Import umwandelt."""
+    """Die Tabelle hat mehr Zellen oder mehr Inhalt, als der Import umwandelt."""
 
 
-def _table_html(table: Any) -> str:
+def _table_html(table: Any, chars: list[int] | None = None) -> str:
     """
     Tabelle als HTML. Gelesen werden die tatsächlichen Zellen jeder Zeile (``w:tc``), nicht ``row.cells``:
     python-docx entfaltet dort jede Zelle so oft, wie ihre Spanne (``gridSpan``) angibt, und die Spanne steht
     ungeprüft in der Datei. Eine über mehrere Spalten verbundene Zelle erscheint so von selbst einmal. Bei einer
     über mehrere Zeilen verbundenen Zelle steht in den Folgezeilen wie bisher der Inhalt der obersten Zelle.
+
+    ``chars`` ist das verbleibende Zeichenbudget des Dokuments (ein Element, wird fortgeschrieben).
     """
     from docx.table import _Cell
 
     rows: list[str] = []
     has_text = False
     budget = MAX_TABLE_CELLS
+    if chars is None:
+        chars = [MAX_TABLE_HTML_CHARS]
     # Rasterspalte -> Zelle, die dort eine Verbindung über mehrere Zeilen beginnt bzw. zuletzt eigenen Inhalt hatte
     above: dict[int, Any] = {}
     for row in table.rows:
@@ -510,6 +519,9 @@ def _table_html(table: Any) -> str:
             offset += max(int(tc.grid_span or 1), 1)
             cell = _Cell(source, table)
             inner = "".join(f"<p>{html}</p>" for html in (_paragraph_inline(p) for p in cell.paragraphs) if html)
+            chars[0] -= len(inner)
+            if chars[0] < 0:
+                raise _TableTooLargeError
             row_has_text = row_has_text or bool(inner)
             cells_html.append(f"<td>{inner or '<p></p>'}</td>")
         if row_has_text:  # leere Abstandszeilen entfallen
@@ -584,6 +596,7 @@ def docx_to_html(data: bytes) -> str:
     parts: list[str] = []
     pending: list[_ListItem] = []
     counters: dict[tuple[str, int], int] = {}
+    table_chars = [MAX_TABLE_HTML_CHARS]
 
     def flush() -> None:
         if pending:
@@ -594,7 +607,7 @@ def docx_to_html(data: bytes) -> str:
         if isinstance(block, Table):
             flush()
             try:
-                parts.append(_table_html(block))
+                parts.append(_table_html(block, table_chars))
             except Exception as exc:  # unregelmäßige Tabellen: Text der Zellen retten
                 logger.warning("DOCX-Tabelle nicht lesbar: %s", type(exc).__name__)
                 text = " ".join(t for t in (c.strip() for c in block._tbl.itertext()) if t)

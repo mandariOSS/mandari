@@ -145,6 +145,19 @@ def test_import_liest_hoechstens_die_seitengrenze(monkeypatch: pytest.MonkeyPatc
     assert "Punkt 2" in " ".join(zeilen[1])
 
 
+def test_gekuerzte_nichtoeffentliche_unterlage_traegt_einen_hinweis(monkeypatch: pytest.MonkeyPatch) -> None:
+    from apps.work.motions import non_public
+
+    vollstaendig = non_public.extract(_text_pdf(seiten=2), "unterlage.pdf")
+    assert vollstaendig is not None and vollstaendig.notice == ""
+
+    monkeypatch.setattr(import_text, "MAX_PDF_IMPORT_PAGES", 2)
+    gekuerzt = non_public.extract(_text_pdf(seiten=5), "unterlage.pdf")
+
+    assert gekuerzt is not None and gekuerzt.page_count == 5
+    assert "ersten 2 von 5 Seiten" in gekuerzt.notice
+
+
 # --- Bildsuche der Textebene -------------------------------------------------------------------------
 
 

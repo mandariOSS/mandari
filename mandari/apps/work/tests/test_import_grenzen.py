@@ -128,6 +128,42 @@ def test_tabelle_ueber_dem_zellenbudget_behaelt_ihren_text(monkeypatch: pytest.M
     assert "Anfang" in html and "Ende" in html
 
 
+def test_wiederholter_inhalt_verbundener_zeilen_ist_begrenzt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Eine große oberste Zelle mit vielen Fortsetzungen: Die Ausgabe wächst nicht mit Inhalt mal Zeilen."""
+    monkeypatch.setattr(import_text, "MAX_TABLE_HTML_CHARS", 200_000)
+    dokument = docx.Document()
+    zeilen = 400
+    tabelle = dokument.add_table(rows=zeilen, cols=2)
+    tabelle.cell(0, 0).text = "Ratsbeschluss " * 2_000
+    tabelle.cell(zeilen - 1, 1).text = "Ende"
+    tabelle.cell(0, 0).merge(tabelle.cell(zeilen - 1, 0))
+    daten = _bytes(dokument)
+
+    tracemalloc.start()
+    html = import_text.docx_to_html(daten)
+    _aktuell, spitze = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert "<table>" not in html
+    assert "Ratsbeschluss" in html and "Ende" in html
+    assert len(html) < 100_000
+    assert spitze < 50 * 1024 * 1024
+
+
+def test_zeichenbudget_gilt_fuer_alle_tabellen_eines_dokuments(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(import_text, "MAX_TABLE_HTML_CHARS", 1_000)
+    dokument = docx.Document()
+    for nummer in range(3):
+        tabelle = dokument.add_table(rows=1, cols=1)
+        tabelle.cell(0, 0).text = f"Tabelle {nummer} " + "x" * 600
+
+    html = import_text.docx_to_html(_bytes(dokument))
+
+    # Die erste Tabelle passt ins Budget, die weiteren bleiben als Text erhalten
+    assert html.count("<table>") == 1
+    assert all(f"Tabelle {nummer}" in html for nummer in range(3))
+
+
 def test_viele_zellen_in_einer_zeile_bleiben_linear() -> None:
     dokument = docx.Document()
     tabelle = dokument.add_table(rows=1, cols=1)

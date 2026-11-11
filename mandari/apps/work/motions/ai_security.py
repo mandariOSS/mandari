@@ -47,8 +47,8 @@ class AIInputSanitizer:
         r"<\|[^|\n]{0,200}\|>",
         r"###\s*(system|human|assistant)",
         r"<\|(system|user|assistant)\|>",
-        r"override\s[^\n]{0,200}?instructions",
-        r"bypass\s[^\n]{0,200}?restrictions",
+        r"override\s[\s\S]{0,200}?instructions",
+        r"bypass\s[\s\S]{0,200}?restrictions",
         r"jailbreak",
         r"DAN\s*mode",
     ]
