@@ -182,12 +182,14 @@ def test_gesamtfrist_unterbricht_einen_blockierten_lesevorgang() -> None:
             antwort = client.send(client.build_request("GET", adresse), stream=True)
             beginn = time.monotonic()
             try:
-                with pytest.raises(httpx.ReadTimeout, match="insgesamt"):
+                with pytest.raises(httpx.ReadTimeout):
                     redirects.read_limited(antwort, 1024 * 1024, deadline=time.monotonic() + 0.6)
             finally:
                 antwort.close()
             # Abbruch zur Frist, nicht erst nach dem Lese-Timeout und nicht nie
             assert time.monotonic() - beginn < 3.0
+            # Die Verbindung liest danach wieder mit ihren eigenen Zeitgrenzen (sie kann im Pool bleiben)
+            assert "read" not in vars(antwort.extensions["network_stream"])
     finally:
         fertig.set()
         lauscher.close()

@@ -23,14 +23,13 @@ Ereignis-Hook des Clients. Die erste Anfrage prüfen und takten die Aufrufer sel
 
 from __future__ import annotations
 
-import socket
-import threading
 import time
 import zlib
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from typing import Any
 
+import httpcore
 import httpx
 from mandari_oparl.robots import KIND_FILES, Decision
 
@@ -90,53 +89,45 @@ class ResponseTooLargeError(httpx.HTTPError):
 ACCEPT_ENCODING = "gzip, deflate"
 
 
-class _Watchdog:
+@contextmanager
+def _bounded_reads(response: httpx.Response, deadline: float | None) -> Iterator[None]:
     """
-    Beendet die Verbindung einer gestreamten Antwort zur Frist, auch wenn gerade ein Lesevorgang blockiert.
+    Jeden Lesevorgang auf der Verbindung der gestreamten Antwort auf die Zeit bis ``deadline`` begrenzen.
 
     Die Prüfung nach jedem gelesenen Stück greift nicht, solange kein Stück ankommt: etwa wenn ein Server die
-    Rahmung der Antwort (Chunk-Kopf) Byte für Byte schickt, jedes knapp vor dem Lese-Timeout. Zur Frist fährt der
-    Wächter deshalb die Verbindung herunter (``shutdown``, nicht ``close``: Der Deskriptor bleibt beim lesenden
-    Thread); der blockierte Lesevorgang endet sofort mit einem Fehler. Ohne Zugriff auf die Verbindung (Antwort
-    aus einem Ersatz-Transport) bleibt es bei der Prüfung nach jedem Stück.
+    Rahmung der Antwort (Chunk-Kopf) Byte für Byte schickt, jedes knapp vor dem Lese-Timeout. ``httpcore`` liest
+    dann weiter von der Verbindung, jeweils mit dem Lese-Timeout der Anfrage. Hier bekommt jeder dieser Lesevorgänge
+    höchstens die Restzeit, und nach der Frist beginnt keiner mehr (``httpcore.ReadTimeout``, bei ``httpx`` als
+    ``ReadTimeout``). Ohne Thread: Die Grenze sitzt am Lesen selbst. Ohne Zugriff auf die Verbindung (Antwort aus
+    einem Ersatz-Transport) bleibt es bei der Prüfung nach jedem Stück.
     """
+    stream: Any = (getattr(response, "extensions", None) or {}).get("network_stream")
+    read = getattr(stream, "read", None)
+    if deadline is None or read is None:
+        yield
+        return
 
-    def __init__(self, response: httpx.Response, deadline: float | None) -> None:
-        self.fired = False
-        self._timer: threading.Timer | None = None
-        stream = response.extensions.get("network_stream")
-        sock = stream.get_extra_info("socket") if stream is not None else None
-        if deadline is None or sock is None:
-            return
-        self._sock = sock
-        self._timer = threading.Timer(max(0.0, deadline - time.monotonic()), self._fire)
-        self._timer.daemon = True
-        self._timer.start()
+    def bounded(max_bytes: int, timeout: float | None = None) -> bytes:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise httpcore.ReadTimeout("Antwort dauert insgesamt zu lange")
+        return bytes(read(max_bytes, timeout=remaining if timeout is None else min(timeout, remaining)))
 
-    def _fire(self) -> None:
-        self.fired = True
-        # Schon geschlossen heißt: Der Lesevorgang ist ohnehin beendet
-        with suppress(OSError):
-            self._sock.shutdown(socket.SHUT_RDWR)
-
-    def cancel(self) -> None:
-        if self._timer is not None:
-            self._timer.cancel()
+    stream.read = bounded
+    try:
+        yield
+    finally:
+        # Die Verbindung kann im Pool bleiben: den Lesevorgang für die nächste Anfrage wieder freigeben
+        with suppress(AttributeError):
+            del stream.read
 
 
 def read_limited(
     response: httpx.Response, max_bytes: int, *, truncate: bool = False, deadline: float | None = None
 ) -> bytes:
-    """Wie :func:`_read_limited`; die Frist unterbricht zusätzlich einen blockierten Lesevorgang (``_Watchdog``)."""
-    watchdog = _Watchdog(response, deadline)
-    try:
+    """Wie :func:`_read_limited`; die Frist gilt zusätzlich für jeden Lesevorgang der Verbindung (``_bounded_reads``)."""
+    with _bounded_reads(response, deadline):
         return _read_limited(response, max_bytes, truncate=truncate, deadline=deadline)
-    except httpx.TransportError:
-        if watchdog.fired:
-            raise httpx.ReadTimeout("Antwort dauert insgesamt zu lange", request=response.request) from None
-        raise
-    finally:
-        watchdog.cancel()
 
 
 def _read_limited(
