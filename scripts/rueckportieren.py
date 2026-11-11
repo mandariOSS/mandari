@@ -63,6 +63,11 @@ def enthaelt_migration(dateien: list[str]) -> bool:
     return any("/migrations/" in datei and datei.endswith(".py") for datei in dateien)
 
 
+def ci_ausloeser_vorhanden(workflow: str) -> bool:
+    """Löst der Workflow pr-check.yml der Linie die CI für Pull Requests gegen release/v* aus?"""
+    return "'release/v*'" in workflow or '"release/v*"' in workflow
+
+
 def _lauf(*befehl: str, cwd: Path = REPO, pruefen: bool = True) -> subprocess.CompletedProcess[str]:
     ergebnis = subprocess.run(befehl, cwd=cwd, capture_output=True, text=True, encoding="utf-8")
     if pruefen and ergebnis.returncode != 0:
@@ -82,21 +87,39 @@ def _zweig_vorhanden(zweig: str) -> bool:
     return bool(_lauf("git", "ls-remote", "--heads", "origin", zweig).stdout.strip())
 
 
-def _linie_anlegen(linie: str, trocken: bool) -> None:
+def _linie_anlegen(linie: str, trocken: bool) -> str:
+    """Stellt sicher, dass die Pflegelinie existiert; liefert die Referenz mit ihrem Stand."""
     zweig = f"release/v{linie}"
+    holen = f"+refs/heads/{zweig}:refs/remotes/origin/{zweig}"
     if _zweig_vorhanden(zweig):
-        return
+        _lauf("git", "fetch", "--quiet", "origin", holen)
+        return f"refs/remotes/origin/{zweig}"
     tag = f"v{linie}.0"
     print(f"  Pflegelinie {zweig} fehlt, lege sie auf {tag} an.")
-    if not trocken:
-        _lauf("git", "push", "origin", f"refs/tags/{tag}^{{commit}}:refs/heads/{zweig}")
+    if trocken:
+        return f"refs/tags/{tag}"
+    _lauf("git", "push", "origin", f"refs/tags/{tag}^{{commit}}:refs/heads/{zweig}")
+    _lauf("git", "fetch", "--quiet", "origin", holen)
+    return f"refs/remotes/origin/{zweig}"
+
+
+def _ci_pruefen(linie: str, referenz: str) -> None:
+    workflow = _lauf("git", "show", f"{referenz}:.github/workflows/pr-check.yml", pruefen=False).stdout
+    if not ci_ausloeser_vorhanden(workflow):
+        raise RueckportError(
+            f"Die Pflegelinie release/v{linie} löst für Pull Requests gegen sich keine CI aus. Zuerst einen PR "
+            "gegen die Linie öffnen, der in .github/workflows/pr-check.yml unter pull_request den Zweig "
+            "'release/v*' ergänzt (docs/WEITERENTWICKLUNG.md, Abschnitt 9), dann erneut aufrufen."
+        )
 
 
 def rueckportieren(nummer: int, grund: str, linien: list[str], trocken: bool) -> int:
     pr = _pull_request(nummer)
     sha = pr["mergeCommit"]["oid"]
     _lauf("git", "fetch", "--quiet", "--tags", "origin")
-    dateien = _lauf("git", "diff-tree", "--no-commit-id", "--name-only", "-r", sha).stdout.split()
+    # -z und quotepath=off: Pfade mit Umlauten unverändert, sonst entginge der Prüfung eine Migration
+    ausgabe = _lauf("git", "-c", "core.quotepath=off", "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", sha)
+    dateien = [datei for datei in ausgabe.stdout.split("\0") if datei]
     if enthaelt_migration(dateien):
         raise RueckportError(
             f"PR #{nummer} enthält eine Datenbankmigration. Rückportierungen enthalten keine Migration; "
@@ -107,13 +130,13 @@ def rueckportieren(nummer: int, grund: str, linien: list[str], trocken: bool) ->
     for linie in linien:
         basis = f"release/v{linie}"
         zweig = f"rueckport/{nummer}-v{linie}"
-        _linie_anlegen(linie, trocken)
+        referenz = _linie_anlegen(linie, trocken)
+        _ci_pruefen(linie, referenz)
         print(f"{basis}: übernehme {sha[:10]} aus #{nummer}")
         if trocken:
             continue
-        _lauf("git", "fetch", "--quiet", "origin", basis)
         ordner = Path(tempfile.mkdtemp(prefix=f"rueckport-{nummer}-v{linie}-"))
-        _lauf("git", "worktree", "add", "-b", zweig, str(ordner), f"origin/{basis}")
+        _lauf("git", "worktree", "add", "-b", zweig, str(ordner), referenz)
         auswahl = _lauf("git", "cherry-pick", "-x", sha, cwd=ordner, pruefen=False)
         if auswahl.returncode != 0:
             fehler += 1
@@ -124,17 +147,19 @@ def rueckportieren(nummer: int, grund: str, linien: list[str], trocken: bool) ->
                 f"    python scripts/rueckportieren.py {nummer} --grund {grund} --linie {linie} --nur-pr\n"
             )
             continue
-        _pr_oeffnen(nummer, pr, linie, grund, ordner)
+        _pr_oeffnen(nummer, pr, linie, ordner)
         _lauf("git", "worktree", "remove", str(ordner))
     return fehler
 
 
-def _pr_oeffnen(nummer: int, pr: dict, linie: str, grund: str, ordner: Path) -> None:
+def _pr_oeffnen(nummer: int, pr: dict, linie: str, ordner: Path) -> None:
+    # Der Text nennt bewusst keinen Grund und keinen Schweregrad: Der PR ist öffentlich, die Patch-Version
+    # der Linie noch nicht erschienen (docs/WEITERENTWICKLUNG.md, Abschnitt 9).
     zweig = f"rueckport/{nummer}-v{linie}"
     _lauf("git", "push", "-u", "origin", zweig, cwd=ordner)
     text = (
-        f"Rückportierung von #{nummer} in die Pflegelinie `release/v{linie}`.\n\n"
-        f"- Grund: {grund.replace('-', ' ')} (docs/RELEASE_POLITIK.md, Abschnitt 5)\n"
+        f"Rückportierung von #{nummer} in die Pflegelinie `release/v{linie}` "
+        "(docs/RELEASE_POLITIK.md, Abschnitt 5).\n\n"
         f"- Original: {pr['url']}, Commit {pr['mergeCommit']['oid']}\n"
         "- Inhalt: unverändert übernommen (`cherry-pick -x`); geprüft ist die Korrektur im Original-PR. "
         "Hier zählt nur, dass der Diff dem Original entspricht und die CI grün ist.\n"
@@ -158,22 +183,26 @@ def _pr_oeffnen(nummer: int, pr: dict, linie: str, grund: str, ordner: Path) -> 
     print(f"  PR gegen release/v{linie} geöffnet.")
 
 
-def nur_pr(nummer: int, grund: str, linien: list[str]) -> None:
+def nur_pr(nummer: int, linien: list[str]) -> None:
     """Nach gelöstem Konflikt: PR für den schon vorhandenen Worktree-Zweig öffnen."""
     pr = _pull_request(nummer)
     for linie in linien:
-        _pr_oeffnen(nummer, pr, linie, grund, REPO)
+        _pr_oeffnen(nummer, pr, linie, REPO)
     print("Den stehen gebliebenen Worktree danach mit `git worktree remove <pfad>` entfernen.")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("pr", type=int, help="Nummer des in dev gemergten Pull Requests")
-    parser.add_argument("--grund", required=True, choices=GRUENDE, help="warum zurückportiert wird")
+    parser.add_argument(
+        "--grund", required=True, choices=GRUENDE, help="warum zurückportiert wird (nur Protokoll, nicht im PR)"
+    )
     parser.add_argument("--linie", action="append", help="nur diese Pflegelinie(n), z. B. 0.12")
     parser.add_argument("--trocken", action="store_true", help="nur anzeigen, nichts anlegen")
     parser.add_argument("--nur-pr", action="store_true", help="nach gelöstem Konflikt nur den PR öffnen")
     args = parser.parse_args(argv)
+    if args.nur_pr and args.trocken:
+        parser.error("--nur-pr öffnet Pull Requests und lässt sich nicht mit --trocken verbinden")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")  # Umlaute auch in der Windows-Konsole
         sys.stderr.reconfigure(encoding="utf-8")
@@ -192,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     print("Pflegelinien: " + ", ".join(f"{linie} (bis {bis:%d.%m.%Y})" for linie, bis in unterstuetzt))
     try:
         if args.nur_pr:
-            nur_pr(args.pr, args.grund, linien)
+            nur_pr(args.pr, linien)
             return 0
         return 1 if rueckportieren(args.pr, args.grund, linien, args.trocken) else 0
     except RueckportError as fehler:

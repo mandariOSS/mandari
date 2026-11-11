@@ -48,7 +48,7 @@ erste Zug eines Quartals.
 | Tag | Schritt |
 |---|---|
 | **Donnerstag (Stichtag)** | 1. Meilenstein bereinigen: Was nicht fertig ist, in den nächsten Zug verschieben. 2. Vorbereitungs-PR gegen `dev` „chore(release): 0.13.0 vorbereiten“: Version in `mandari/pyproject.toml` und `mandari/package.json`, `uv lock` im Ordner `mandari`, im CHANGELOG `[Unreleased]` zu `[0.13.0] – 2026-11-17` und einen leeren Abschnitt `[Unreleased]` darüber. 3. Release-PR `dev` → `main` „Release v0.13.0“, CI grün, Merge. 4. Deploy in Produktion nach den Betriebsregeln. |
-| **Freitag bis Montag** | Produktion beobachten (Statusseite, Fehlerprotokolle, Rückmeldungen). Ein Fehler, der das Release verhindert (Datenverlust, Sicherheitslücke, Ausfall, gescheiterte Migration), wird über `dev` behoben und mit einem weiteren Release-PR ausgeliefert. Getaggt wird dann der korrigierte Stand, wenn er bis Dienstag mindestens einen Werktag in Produktion läuft; sonst entfällt der Zug. |
+| **Freitag bis Montag** | Produktion beobachten (Statusseite, Fehlerprotokolle, Rückmeldungen). Ein Fehler, der das Release verhindert (Datenverlust, Sicherheitslücke, Ausfall, gescheiterte Migration), wird über `dev` behoben und mit einem weiteren Release-PR ausgeliefert. Getaggt wird dann der korrigierte Stand, wenn er bis Dienstag mindestens einen Werktag in Produktion läuft; sonst entfällt der Zug. Der korrigierte Stand enthält auch, was seit dem Stichtag in `dev` kam. Das ist gewollt: Freigegeben ist, was mindestens einen Werktag in Produktion lief. Isolierte Korrekturen auf dem Stichtagsstand gibt es nicht. |
 | **Dienstag (Release)** | Tag und GitHub-Release auf den getesteten Commit (Befehle unten). Der Release-Workflow baut die Images, legt `release/v0.13.0` an und setzt `latest`. Meilenstein schließen. Eintrag auf mandari.de/releases/. Bei einer **Pflegeversion** zusätzlich: Pflegelinie `release/v0.16` anlegen und die Tabelle „Unterstützte Versionen“ in `SECURITY.md` per PR ergänzen. Danach den übernächsten Zug planen (Abschnitt 3). |
 
 ```bash
@@ -146,8 +146,10 @@ Linien unterstützt werden, steht in [SECURITY.md](../SECURITY.md#unterstützte-
 **Ablauf:**
 
 1. **Erst `dev`.** Die Korrektur entsteht wie jede andere: Branch von `dev`, PR, Merge-Queue.
-   Im PR-Text steht die Zeile `Rückportieren: <grund>` (`sicherheit-kritisch`, `sicherheit-hoch`,
-   `sicherheit-mittel` oder `kritischer-fehler`), dazu das Label `rueckportieren`.
+   - **Kritischer Fehler:** im PR-Text `Rückportieren: ja`, dazu das Label `rueckportieren`.
+   - **Sicherheitskorrektur:** im öffentlichen PR **nichts** kennzeichnen, weder Zeile noch Label noch
+     Schweregrad; der PR bleibt neutral. Dass und wohin zurückportiert wird, steht im privaten
+     Advisory. So verrät der öffentliche PR nicht, welche Versionen noch ungeschützt sind.
 2. **Übernehmen.** Nach dem Merge in `dev`:
 
    ```bash
@@ -156,28 +158,36 @@ Linien unterstützt werden, steht in [SECURITY.md](../SECURITY.md#unterstützte-
 
    Das Skript legt je unterstützter Linie den Zweig `rueckport/<PR>-v<Linie>` an, übernimmt den
    Commit mit `cherry-pick -x` und öffnet einen PR gegen `release/v<Linie>` (Label
-   `rueckportierung`). Fehlt eine Pflegelinie, legt es sie auf dem Tag `v<Linie>.0` an. PRs mit
-   Migrationen lehnt es ab.
+   `rueckportierung`, Text ohne Grund und Schweregrad). Fehlt eine Pflegelinie, legt es sie auf dem
+   Tag `v<Linie>.0` an. PRs mit Migrationen lehnt es ab, ebenso Linien ohne CI-Auslöser (unten).
+   Den Grund (`--grund`) braucht nur das Protokoll des Aufrufs.
 3. **Konflikte** nur so weit lösen, dass dieselbe Korrektur auf dem alten Stand wirkt; keine
    Nebenarbeiten. Gibt es den betroffenen Code auf einer Linie nicht, ist sie nicht betroffen:
    im Original-PR kommentieren („0.11 nicht betroffen, weil …“), kein PR.
 4. **Mergen**, sobald die CI grün ist: `gh pr merge <nummer> --squash`. Pflegelinien haben keine
    Merge-Queue. Eine zweite fachliche Prüfung entfällt; geprüft wird, dass der Diff dem Original
    entspricht.
+   **CI-Auslöser:** Linien ab 0.13 lösen die CI für PRs gegen `release/v*` selbst aus. Für Linien
+   davor (0.11, 0.12) braucht es einmalig einen PR, der in deren `.github/workflows/pr-check.yml`
+   den Zweig `release/v*` unter `pull_request` ergänzt; dieser PR startet die CI selbst, weil er die
+   Datei ändert. Erst danach Rückportierungen öffnen.
 5. **Patch-Version** innerhalb der Frist (Release-Politik, Abschnitt 4), mehrere Korrekturen
    gern gebündelt:
    - PR gegen `release/v<Linie>`: Version `X.Y.N` in `pyproject.toml` und `package.json`,
      `uv lock`, CHANGELOG-Abschnitt `[X.Y.N]`.
-   - Tag auf den Kopf der Linie, Release **nicht** als neuestes markieren:
+   - Tag auf den frisch abgerufenen Kopf der Linie. Als neuestes Release markiert wird es nur, wenn
+     es die höchste veröffentlichte Version ist (Patch der jüngsten Linie); sonst `--latest=false`:
 
      ```bash
+     git fetch origin release/v0.12 --tags
+     git log -1 --oneline origin/release/v0.12   # muss die Versionsanhebung zeigen
      git tag -a v0.12.1 origin/release/v0.12 -m "mandari 0.12.1"
      git push origin v0.12.1
      gh release create v0.12.1 --verify-tag --latest=false --title "mandari 0.12.1" --notes-file notizen.md
      ```
 
      Der Release-Workflow baut die Images, legt `release/v0.12.1` an und setzt das Linien-Tag `v0.12`;
-     `latest` bleibt bei der höchsten Version.
+     `latest` setzt er nur für die höchste Version. Zwei Releases nie gleichzeitig veröffentlichen.
    - Abschnitt `[0.12.1]` mit dem nächsten Vorbereitungs-PR im CHANGELOG von `dev` nachtragen.
 6. **Abschluss:** Im Original-PR kommentieren, in welchen Versionen die Korrektur steckt
    („Rückportiert: 0.11.2, 0.12.1“), und das Label `rueckportieren` entfernen.

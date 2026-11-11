@@ -1,5 +1,6 @@
 <!-- Pull Requests bitte gegen `dev` öffnen. Ablauf, Konventionen und Prüfungen stehen in CONTRIBUTING.md und docs/WEITERENTWICKLUNG.md.
-     PRs gegen Pflegelinien (release/v*) erzeugt nur scripts/rueckportieren.py. -->
+     PRs gegen Pflegelinien (release/v*): nur Rückportierungen (scripts/rueckportieren.py) und die Vorbereitung einer
+     Patch-Version (Version, CHANGELOG), siehe docs/WEITERENTWICKLUNG.md, Abschnitt 9. -->
 
 ## Beschreibung
 
@@ -27,8 +28,8 @@ Closes #(Nummer)
 
 ## Rückportierung
 
-<!-- Nur Sicherheitskorrekturen ab „mittel“ und kritische Fehler (docs/RELEASE_POLITIK.md, Abschnitt 5).
-     Grund dann: sicherheit-kritisch, sicherheit-hoch, sicherheit-mittel oder kritischer-fehler; dazu Label „rueckportieren“. -->
+<!-- „ja“ nur bei kritischen Fehlern (docs/RELEASE_POLITIK.md, Abschnitt 5), dazu Label „rueckportieren“.
+     Sicherheitskorrekturen hier NICHT kennzeichnen: Ihre Rückportierung steht im privaten Advisory. -->
 Rückportieren: nein
 
 ## Screenshots (falls UI-Änderung)

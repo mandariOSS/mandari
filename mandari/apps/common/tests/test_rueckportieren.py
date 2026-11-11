@@ -60,3 +60,10 @@ def test_migrationen_werden_erkannt():
     skript = _skript()
     assert skript.enthaelt_migration(["mandari/apps/work/meetings/migrations/0050_x.py", "README.md"])
     assert not skript.enthaelt_migration(["mandari/apps/work/meetings/services.py", "docs/migrations.md"])
+
+
+def test_ci_ausloeser_der_linie_wird_erkannt():
+    """Linien vor 0.13 lösen für PRs gegen sich keine CI aus; das Skript bricht dann ab, statt PRs ohne Prüfung zu öffnen."""
+    skript = _skript()
+    assert skript.ci_ausloeser_vorhanden((REPO / ".github" / "workflows" / "pr-check.yml").read_text(encoding="utf-8"))
+    assert not skript.ci_ausloeser_vorhanden("on:\n  pull_request:\n    branches:\n      - dev\n      - main\n")

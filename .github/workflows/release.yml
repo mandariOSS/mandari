@@ -116,6 +116,11 @@ jobs:
   build:
     name: Build and Push
     runs-on: ubuntu-latest
+    # Releases nacheinander: Ein Lauf entscheidet über latest und das Linien-Tag nach dem Stand der
+    # veröffentlichten Releases; liefen zwei parallel, könnte der ältere latest zuletzt überschreiben.
+    concurrency:
+      group: ${{ github.event_name == 'release' && 'release-tags' || format('build-{0}', github.run_id) }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -154,10 +159,15 @@ jobs:
           if [ "${{ github.event_name }}" == "release" ]; then
             # Release: Versions-Tag; latest nur, wenn es die höchste veröffentlichte Version ist. Eine Patch-Version
             # einer Pflegelinie (etwa v0.12.3 nach v0.16.0) darf latest nicht zurücksetzen (docs/RELEASE_POLITIK.md).
+            set -o pipefail
             VERSION="${{ github.event.release.tag_name }}"
             VEROEFFENTLICHT=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
               --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | sort -V)
             HOECHSTE=$(echo "$VEROEFFENTLICHT" | tail -n 1)
+            if [ -z "$HOECHSTE" ]; then
+              echo "::error::Keine veröffentlichten Releases gelesen; latest und Linien-Tag lassen sich nicht bestimmen."
+              exit 1
+            fi
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${VERSION}"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${VERSION}"
             # Bewegliches Tag der Linie (v0.16 für v0.16.3): wer auf einer Pflegeversion bleibt, bekommt so
