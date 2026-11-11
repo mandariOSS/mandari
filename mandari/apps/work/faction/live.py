@@ -110,6 +110,7 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         super().__init__(*args, **kwargs)
         self.item_id: str = ""
         self.group_name: str | None = None
+        self.user_group: str | None = None
         self.user: Any = None
         self.membership: Any = None
         self.stufe: str | None = None
@@ -146,6 +147,11 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         }
         self.group_name = gruppe(self.item_id)
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        # Gruppe der Person: Entzug von Mitgliedschaft, Rolle oder Konto wirkt sofort (access_recheck)
+        from apps.work.motions.freigaben import user_group
+
+        self.user_group = user_group(self.user.id)
+        await self.channel_layer.group_add(self.user_group, self.channel_name)
         self._geprueft_um = time.monotonic()
         await self.accept()
         await self.send_json({"type": "connected", "user": {**self.person, "access_level": self.stufe}})
@@ -171,6 +177,8 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         if self.group_name:
             await self._praesenz("weg")
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if self.user_group:
+            await self.channel_layer.group_discard(self.user_group, self.channel_name)
         # Wer den leeren Zustand füllen sollte und geht, gibt die Zusage frei (der Nächste füllt ihn)
         for schluessel in (_seed_schluessel, _seed_leer_schluessel):
             if self.item_id and cache.get(schluessel(self.item_id)) == self.kennung:
@@ -319,6 +327,11 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
             await self._neu_pruefen()
         return not self.entzogen
 
+    async def access_recheck(self, event: dict[str, Any]) -> None:
+        """Zugriff neu prüfen: Mitgliedschaft, Rolle, Konto oder Organisation haben sich geändert."""
+        if not self.entzogen:
+            await self._neu_pruefen()
+
     async def _neu_pruefen(self) -> None:
         self._geprueft_um = time.monotonic()
         zugriff = await self._zugriff()
@@ -327,6 +340,8 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
             if self.group_name:
                 await self._praesenz("weg")
                 await self.channel_layer.group_discard(self.group_name, self.channel_name)
+            if self.user_group:
+                await self.channel_layer.group_discard(self.user_group, self.channel_name)
             await self.send_json({"type": "reload", "reason": "access_revoked"})
             await self.close(code=4403)
             return
@@ -368,10 +383,17 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
                 is_active=True,
                 is_guest=False,
                 user__is_active=True,
+                # Gesperrte oder beendete Organisation: wie über HTTP kein Zugriff mehr
+                organization__is_active=True,
             )
             .first()
         )
         if membership is None or not membership.has_permission("faction.view_public"):
+            return None
+        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
+        from apps.accounts.websocket import requirement_open
+
+        if requirement_open(membership.user):
             return None
         # Sitzungsarten (Issue #1239): nur wer die Sitzung sieht; die Prüfung läuft auch während der Verbindung
         from .sitzungsarten import darf_sehen
