@@ -516,6 +516,27 @@ class DocumentFolder(models.Model):
             stack.extend(node.children.all())
         return result
 
+    def save_checked(self) -> None:
+        """
+        Prüfen (``full_clean``) und speichern, Verschiebungen einer Organisation nacheinander.
+
+        Zwei gleichzeitige Verschiebungen (A unter B, B unter A) bestünden sonst beide die Zyklusprüfung. Mit
+        Elternordner werden deshalb die Ordner der Organisation gesperrt und der Zielordner danach neu gelesen,
+        damit die Prüfung den Stand der anderen Anfrage sieht. Wirft ``ValidationError`` wie ``full_clean``.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            if self.parent_id is not None:
+                list(
+                    DocumentFolder.objects.select_for_update()
+                    .filter(organization_id=self.organization_id)
+                    .values_list("pk", flat=True)
+                )
+                self.parent = DocumentFolder.objects.get(pk=self.parent_id)
+            self.full_clean()
+            self.save()
+
     def get_subtree_height(self) -> int:
         """Höhe des eigenen Teilbaums (nur dieser Ordner = 1); endet auch bei einem Zyklus im Bestand."""
         height = 0

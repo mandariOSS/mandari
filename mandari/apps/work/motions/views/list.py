@@ -9,7 +9,6 @@ import uuid
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db import transaction
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -330,19 +329,7 @@ class DocumentFolderUpdateView(WorkViewMixin, View):
             folder.parent = parent
 
         try:
-            with transaction.atomic():
-                if folder.parent_id is not None:
-                    # Verschiebungen einer Organisation nacheinander: Zwei gleichzeitige (A unter B, B unter A)
-                    # bestünden sonst beide die Zyklusprüfung. Nach der Sperre den Zielordner neu lesen, damit die
-                    # Prüfung den Stand der anderen Anfrage sieht.
-                    list(
-                        DocumentFolder.objects.select_for_update()
-                        .filter(organization=self.organization)
-                        .values_list("pk", flat=True)
-                    )
-                    folder.parent = DocumentFolder.objects.get(pk=folder.parent_id)
-                folder.full_clean()
-                folder.save()
+            folder.save_checked()
         except ValidationError as e:
             messages.error(request, " ".join(m for msgs in e.message_dict.values() for m in msgs))
             return redirect(back_url)
