@@ -2,14 +2,14 @@
 
 Das neue Erscheinungsbild von Work (Rahmen wie Insight, Startseite, Sitzungsansicht, Vorbereitung und Editor; Epic
 #850) steht hinter einem **Schalter je Organisation**. Das Feld steht für neu angelegte Organisationen auf „aus“. In
-Produktion ist das neue Design **seit dem 06.10.2026 für alle Organisationen an** (#852). Diese Anleitung beschreibt,
-wie ein Deploy diesen Stand bestätigt, wie neue Seiten und neue Organisationen dazukommen und wie der Rückweg geht.
+einer Installation legt der Betreiber fest, welche Organisationen es nutzen (Soll-Stand). Diese Anleitung beschreibt,
+wie ein Update diesen Stand bestätigt, wie neue Organisationen dazukommen und wie der Rückweg geht.
 Der Rückweg ist jederzeit derselbe Schalter.
 
 | Was | Wo |
 |---|---|
 | Schalter | Feld `Organization.work_new_design` (#852), für neue Organisationen aus; Darstellung: `apps/work/rahmen.py` |
-| Soll-Stand | Produktion: alle Organisationen an (seit 06.10.2026); Abgleich mit `work_neues_design status --soll an` |
+| Soll-Stand | vom Betreiber festgelegt; Abgleich mit `work_neues_design status --soll an` |
 | Schalten und Stand | Verwaltungsbefehl `work_neues_design` (`apps/work/management/commands/work_neues_design.py`) |
 | Prüfen | `scripts/pruefe_work_design.py` (Playwright): alle Bereiche, fünf Rollen, fünf Breiten, Schalter an und aus; zählt Seiten ohne neue Gestaltung |
 | Stand je Seite | `data-gestaltung` am Hauptbereich im neuen Rahmen: `neu` setzt die Seite selbst (Block `gestaltung`), sonst `bisher` |
@@ -19,16 +19,16 @@ Der Rückweg ist jederzeit derselbe Schalter.
 
 | Instanz | Soll | Anmerkung |
 |---|---|---|
-| Produktion | **alle Organisationen an** | beschlossen und ausgerollt am 06.10.2026 (#852); eine neu angelegte Organisation steht zunächst auf „aus“ und wird nach Abschnitt 4 eingeschaltet |
+| Eigener Betrieb | vom Betreiber festgelegt, etwa alle Organisationen an | eine neu angelegte Organisation steht zunächst auf „aus“ und wird nach „Organisation einschalten“ eingeschaltet |
 | Öffentliche Demo | Demo-Organisation an | setzt `setup_demo_environment` bei jedem Neuaufbau |
 | Staging, Selbstbetrieb, lokal | Stand der Datenbank, aus der die Instanz aufgebaut ist | ohne eigenen Beschluss gilt das Feld: neue Organisationen aus, die Demo-Organisation an |
 
-Der Soll-Stand ist eine Entscheidung der Projektleitung. Bleibt eine Organisation bewusst beim bisherigen Rahmen,
-wird das im Issue des Deploys vermerkt und beim Abgleich mit `--org <slug> --soll aus` geprüft.
+Der Soll-Stand ist eine Entscheidung des Betreibers. Bleibt eine Organisation bewusst beim bisherigen Rahmen,
+wird das festgehalten und beim Abgleich mit `--org <slug> --soll aus` geprüft.
 
 **Ein Abgleich schaltet nie um.** `work_neues_design status --soll an` nennt nur die Abweichungen und endet dann mit
 einem Fehler. Wer daraufhin pauschal umschaltet, dreht womöglich den beschlossenen Stand zurück; vor allem
-`aus --alle` ist ausschließlich der Notfall-Rückweg aus Abschnitt 5.
+`aus --alle` ist ausschließlich der Notfall-Rückweg (Abschnitt „Rückweg“).
 
 ## Was der Schalter ändert – und was nicht
 
@@ -160,65 +160,29 @@ nach jedem nächtlichen Neuaufbau:
   dem Gast
 - **Neues Design an** für die Demo-Organisation (setzt `setup_demo_environment` bei jedem Aufbau)
 
-## Ablauf
+## Ablauf bei einem Update
 
-Produktion steht seit dem 06.10.2026 für alle Organisationen auf „an“. Ein Deploy ändert den Schalter nicht: Er
-bringt neue Seiten und Bausteine, der Stand der Organisationen bleibt, wie er ist. Darum gilt bei jedem Deploy:
-bestätigen statt umschalten.
+Ein Update ändert den Schalter nicht: Es bringt neue Seiten und Bausteine, der Stand der Organisationen bleibt, wie
+er ist. Darum gilt bei jedem Update: bestätigen statt umschalten.
 
-### 1. Vor dem Deploy
+1. Vorher den Stand sichern: `work_neues_design status --json > work-design-vorher.json`.
+2. Nach dem Update `work_neues_design status --soll an` (bzw. mit `--org <slug> --soll aus` für bewusste
+   Ausnahmen). Meldet der Abgleich eine Abweichung, **nichts pauschal umschalten**, auf keinen Fall `aus --alle`,
+   sondern mit dem gesicherten Stand vergleichen. Meist ist es eine neu angelegte Organisation (Feld „aus“).
+3. Das Prüfskript gegen eine Demo- oder Testinstanz laufen lassen, nie gegen Produktion.
 
-- [ ] Alle PRs des Updates gemergt, CI auf `dev` grün (einschließlich E2E)
-- [ ] Deploy-Vorschlag mit der Projektleitung abgestimmt: Inhalt, Migrationen (für den Schalter keine; das Feld aus
-      #852 ist seit dem 06.10.2026 in Produktion), Datenänderungen (keine), Risiko, Rückweg. **Deploy erst nach
-      ausdrücklicher Freigabe.**
-- [ ] Soll-Stand für Produktion bestätigt (heute: alle an, Ausnahmen im Issue des Deploys) und Stand vor dem Deploy
-      gesichert: `work_neues_design status --json > work-design-vorher.json`
-- [ ] Lokal: Prüfskript mit `--schalter beide` gegen die lokale Demo ohne Fehler
+### Organisation einschalten
 
-### 2. Deploy
+In Absprache mit der Organisation (Ankündigung im Produkt, #857):
 
-- [ ] Deploy wie in `DEPLOYMENT.md` (`deploy.sh plan`, dann `apply`); die Prüfung nach dem Deploy ist grün
-- [ ] `work_neues_design status --soll an` bestätigt den Soll-Stand (Meldung „Soll-Stand bestätigt (an)“, Exit-Code 0).
-      Bewusste Ausnahmen zusätzlich mit `status --org <slug> --soll aus`
-- [ ] Meldet der Abgleich eine Abweichung: **nichts pauschal umschalten**, auf keinen Fall `aus --alle`. Mit dem
-      gesicherten Stand vor dem Deploy vergleichen und mit der Projektleitung klären. Meist ist es eine seit dem
-      letzten Deploy neu angelegte Organisation (Feld „aus“); sie wird nach Abschnitt 4 eingeschaltet
-- [ ] Fehlerprotokoll der ersten Stunde ohne neue 5xx
+- `work_neues_design an --org <slug> --probelauf`, dann ohne `--probelauf`
+- `work_neues_design status --org <slug> --soll an` bestätigt den Stand
+- Sichtprüfung in Work durch die Administration der Organisation, Fehlerprotokoll der ersten Stunde ohne neue 5xx
 
-### 3. Demo und Staging prüfen
+## Rückweg
 
-Die öffentliche Demo baut nachts mit dem Image der Produktion neu auf; das neue Design ist dort immer an. Soll es
-früher gehen, baut der Betrieb die Demo von Hand neu auf (wie nachts) – die Demo-Datenbank wird nicht von Hand
-geändert.
-
-- [ ] Prüfskript gegen die Demo (`--bericht demo.json`): 0 Fehler, Hinweise gesichtet
-- [ ] Prüfskript gegen Staging mit eigenen Konten je Rolle (`--bericht staging.json`): 0 Fehler
-- [ ] Ergebnis beider Läufe (Fehler, Hinweise, Seiten je Rolle, nicht geprüfte Adressmuster) im Issue des Deploys
-- [ ] Rundgang mit den Konten Vorsitz und nicht vereidigt: Start (Hinweisband mit der Ankündigung), Sitzungen
-      (Für mich, Alle Gremien), Fraktionssitzungen und eine Fraktionssitzung (NÖ-TOPs nur für Vereidigte,
-      TOP-Vorschlag), Vorbereitung der Ratssitzung (Beratungsverlauf), Antrag mit Kommentaren, Recherche mit Karte
-      und Suche, Handy (390 px)
-- [ ] Zahl der Seiten ohne neue Gestaltung aus dem Bericht des Prüfskripts notieren (Stand für #951)
-- [ ] Neue oder umgestaltete Seiten nimmt die Projektleitung an der Demo ab (Bilder nur aus der Demo)
-
-### 4. Organisation einschalten
-
-Gilt für Organisationen, die noch auf „aus“ stehen: in Produktion eine neu angelegte Organisation, auf anderen
-Instanzen (Staging nach einem Neuaufbau, Selbstbetrieb) jede Organisation, für die das neue Design beschlossen ist.
-Die bestehenden Organisationen in Produktion sind schon an. Eingeschaltet wird in Absprache mit der Organisation
-(Ankündigung im Produkt, #857):
-
-- [ ] `work_neues_design an --org <slug> --probelauf`, dann ohne `--probelauf`
-- [ ] `work_neues_design status --org <slug> --soll an` bestätigt den Stand
-- [ ] Sichtprüfung in Work durch die Projektleitung bzw. die Administration der Organisation (in Produktion nur von
-      Hand und lesend; das Prüfskript läuft dort nicht)
-- [ ] Fehlerprotokoll der ersten Stunde ohne neue 5xx, keine Rückmeldung „Seite fehlt“
-
-### 5. Rückweg
-
-Jeder Rückweg weicht vom beschlossenen Stand ab und geschieht nur nach Entscheidung der Projektleitung. Danach im
-Issue des Deploys vermerken, welche Organisationen aus sind, damit der nächste Abgleich sie nicht als Fehler meldet
+Jeder Rückweg weicht vom beschlossenen Stand ab und geschieht nur nach Entscheidung des Betreibers. Danach
+festhalten, welche Organisationen aus sind, damit der nächste Abgleich sie nicht als Fehler meldet
 und niemand sie unbeabsichtigt wieder einschaltet.
 
 | Fall | Vorgehen |

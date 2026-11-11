@@ -54,14 +54,10 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `BACKUP.md` | [Betrieb → Updates und Backups](https://docs.mandari.de/betrieb/updates-backups/) |
 | `LASTTESTS.md` | Betrieb → Größenempfehlungen und Lasttests (Seite folgt) |
 | `MEHR_SERVER_BETRIEB.md` | – (Compose-Rollen `data`, `web` und `worker` unter `deploy/roles/`: dieselben Images auf mehrere Server verteilen; Betrieb) |
-| `SKALIERUNG_UND_VERFUEGBARKEIT.md` | – (heutiger Betrieb, Ausfallpunkte nach Tragweite und Stufenkonzept zu ihrer Auflösung; Betrieb) |
-| `HOCHVERFUEGBARKEIT.md` | – (Zielarchitektur ohne einzelne Ausfallpunkte, mit automatischem Umschalten und ohne Datenverlust; offene Entscheidungen; Betrieb) |
-| `SLA.md` | – (Vertragsanlage „Service Level“ für Managed Hosting: Verfügbarkeit, Wartungsfenster, Störungsklassen, RPO und RTO, Gutschriften) |
 | `EREIGNISTECHNIK_NACHWEISE.md` | – (Zusagen der Ereignistechnik: Absturz-, Doppelzustellungs- und Lasttests mit Messwerten; Entwicklung und Betrieb) |
 | `SCRAPER_SOURCES.md` | [Betrieb → Quellen anbinden](https://docs.mandari.de/betrieb/quellen-anbinden/) |
 | `ABRUFREGELN.md` | Datenschutz → Ingestor und Opt-out (Seite folgt mit mandariOSS/docs#9 unter `https://docs.mandari.de/datenschutz/ingestor/`), Infoseite `https://mandari.de/ingestor/` (folgt) |
 | `DEMO_ENVIRONMENT.md` | [Betrieb → Demo-Umgebung](https://docs.mandari.de/betrieb/demo-umgebung/) |
-| `DEMO_PRAESENTATION.md` | – (Drehbuch für Produktvorstellungen, nur intern) |
 | `ACCOUNT_SECURITY.md` | [Work → Konto und Sicherheit](https://docs.mandari.de/work/konto-und-sicherheit/); Betrieb → Anmeldesicherheit (Seite folgt) |
 | `WORK_REGISTRATION.md` | Work → Registrierung und Zugangs-Mails (Seite folgt) |
 | `WORK_NEUES_DESIGN.md` | – (neues Work-Design ausrollen: Schalter je Organisation, Befehl `work_neues_design`, Prüfung und Rückweg; Betrieb) |
@@ -71,7 +67,6 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `SBOM.md` | [Entwicklung → Abhängigkeiten](https://docs.mandari.de/entwicklung/sbom/) |
 | `RELEASE_POLITIK.md` | [Entwicklung → Release- und Support-Politik](https://docs.mandari.de/entwicklung/release-politik/) |
 | `SICHERHEITSMELDUNGEN.md` | – (Umgang mit Sicherheitslücken: privates Advisory, CVSS, CVE, erst der Fix, dann die Veröffentlichung; Meldewege in `SECURITY.md`) |
-| `SICHERHEITSNACHWEISE.md` | – (Fahrplan Sicherheitsnachweise: heutige Belege, Penetrationstest, Grundschutz-Selbstbewertung, ISO 27001 und C5) |
 | `ENGINEERING_STANDARDS.md` | – (Regeln für neuen und angefassten Code: Schichten, Typisierung, Tests, Sicherheit, Frontend, API, Betrieb; Entwicklung) |
 | `BARRIEREFREIHEIT_PRUEFPROTOKOLL.md` | – (automatisch und manuell geprüfte Komponenten und Kernpfade, offene Punkte; Grundlage der Barrierefreiheitserklärung) |
 | `PROJEKTSTEUERUNG.md` | – (wie Arbeit geplant, verfolgt und ausgeliefert wird: Issues, Epics, Meilensteine, Projekt-Board; Beitragende) |

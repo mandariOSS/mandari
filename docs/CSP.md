@@ -189,15 +189,15 @@ mehrwöchig“) ist damit überholt: Der Großteil der Ausdrücke ist mit dem he
   unzulässige Ausdrücke unbemerkt hinzu.
 - `x-html` durch Komponentenmethoden ersetzen, die bereinigtes HTML per `x-ref` einsetzen.
 
-### Aufwand
+### Umfang
 
-- Prüfskript und Ratchet: 0,5 Tage.
+- Prüfskript und Ratchet.
 - 142 Ausdrücke umschreiben (Methoden in den Komponenten, Anweisungsfolgen in Methoden, Bestätigungen
-  über `data-action="confirm-submit"` bzw. Komponentenmethoden): 3–4 Tage einschließlich E2E-Tests je Seite.
-- 13 verbleibende Inline-Skripte (Karten, Kalender, Chat, Admin-Diagramme): 2–3 Tage.
-- Umstellung, Admin-Policy, Report-Only-Messung: 1 Tag plus 14 Tage Beobachtung.
+  über `data-action="confirm-submit"` bzw. Komponentenmethoden), mit E2E-Tests je Seite.
+- 13 verbleibende Inline-Skripte (Karten, Kalender, Chat, Admin-Diagramme).
+- Umstellung, Admin-Policy, Report-Only-Messung mit 14 Tagen Beobachtung.
 
-Zusammen etwa 7–9 Arbeitstage, verteilt auf mehrere PRs.
+Verteilt auf mehrere PRs.
 
 ### Risiken
 

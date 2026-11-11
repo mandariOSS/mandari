@@ -446,7 +446,7 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
 
 ### Abruffenster
 
-Manche Kommunen erlauben Abrufe nur zu bestimmten Zeiten; die Stadt Köln etwa nur zwischen 23:00 und 01:00 Uhr. Dafür
+Manche Kommunen erlauben Abrufe nur zu bestimmten Zeiten, etwa nur zwischen 23:00 und 01:00 Uhr. Dafür
 gibt es je Quelle `sync_config["sync_window"]`, etwa `{"start": "23:00", "end": "01:00"}`, im selben Format wie
 `full_sync_window`: Ortszeit, Standard `Europe/Berlin`, abweichend mit `"tz"`, über Mitternacht erlaubt, Beginn und
 Ende verschieden; ungültige Werte gelten als nicht gesetzt (`ingestor/src/client/source_options.py`,
@@ -458,13 +458,13 @@ Abgleiche der Quelle, Änderungs- und Vollabgleiche, in Zeitscheiben und als Scr
 - **Start nur im Fenster:** Der Daemon startet die Quelle nur im Fenster. Liegt der nach dem
   [Rhythmus](#rhythmus) berechnete nächste Lauf außerhalb, ist er zu Beginn des nächsten Fensters fällig
   (`SyncState.after_run`); der Abstand des Takts bleibt dabei stehen. Dasselbe gilt für den ersten Lauf einer Quelle
-  (ohne `next_due`), nach dem Ende einer [Schonung](#fehler-und-schonung) und für Vollabgleiche. Beispiel Köln an
-  einem Werktag: Lauf um 23:00 Uhr, nach dem Takt (nachts 60 Minuten) wieder um 00:00 Uhr, der nächste wäre um
+  (ohne `next_due`), nach dem Ende einer [Schonung](#fehler-und-schonung) und für Vollabgleiche. Beispiel: eine Quelle mit
+  Fenster 23:00 bis 01:00 Uhr an einem Werktag: Lauf um 23:00 Uhr, nach dem Takt (nachts 60 Minuten) wieder um 00:00 Uhr, der nächste wäre um
   01:00 Uhr fällig und ist deshalb um 23:00 Uhr des nächsten Tages fällig. Mehr Läufe im Fenster gibt es nur mit
   kürzerem Takt (`sync_schedule`, etwa `{"off_hours_minutes": 20, "weekend_minutes": 20}`).
 - **Vollabgleich:** Mit Abruffenster beginnt der Vollabgleich nie im Standardfenster des Daemons
   (`--full-sync-hour`), sondern einmal je Abruffenster in dessen Fenster. Ein eigenes `full_sync_window` muss im
-  Abruffenster liegen; sonst begrenzt der Ingestor es auf die Schnittmenge: Köln mit `full_sync_window`
+  Abruffenster liegen; sonst begrenzt der Ingestor es auf die Schnittmenge: Eine solche Quelle mit `full_sync_window`
   00:00 bis 06:00 Uhr gleicht von 00:00 bis 01:00 Uhr vollständig ab, von 23:00 bis 00:00 Uhr nur Änderungen.
   Liegt es ganz außerhalb oder in einer anderen Zeitzone, gilt es als nicht gesetzt und das Abruffenster gilt.
   Zerfällt die Schnittmenge in zwei Stücke (etwa `full_sync_window` 22:00 bis 06:00 Uhr in einem Abruffenster von

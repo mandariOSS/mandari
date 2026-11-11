@@ -1,7 +1,7 @@
 # Betriebsmonitor (Admin)
 
-Der Betriebsmonitor macht Ausfälle sichtbar, die vorher still blieben — etwa die Bonner
-OParl-Quelle, die ab Februar 2026 nur noch HTTP 403 lieferte, ohne dass es jemand bemerkte.
+Der Betriebsmonitor macht Ausfälle sichtbar, die vorher still blieben — etwa eine OParl-Quelle, die über
+Monate nur noch HTTP 403 lieferte, ohne dass es jemand bemerkte.
 
 ## Wo
 

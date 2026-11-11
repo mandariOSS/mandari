@@ -58,8 +58,8 @@ Abweichungen an.
 | **Summe** | **179 700** | | **~65 GB** | **~5–8 GB** |
 
 Stichproben per HEAD-Request am 08.09.2026 (Median liegt deutlich unter dem Durchschnitt: einzelne
-große Anlagen dominieren). Das Systemlaufwerk (75 GB, ~46 GB frei) reicht für den Vollbestand
-nicht sicher – daher Festplatten-Schutz und Storage Box. Eine 1-TB-Box deckt alle Kommunen für
+große Anlagen dominieren). Ein kleines Systemlaufwerk reicht für den Vollbestand oft nicht – daher
+Festplatten-Schutz und ein eigener Speicher wie eine Storage Box. Eine 1-TB-Box deckt alle Kommunen für
 Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit möglich.
 
 ## Betrieb
@@ -613,7 +613,7 @@ Sperre verfällt nach 3000 s; für einen längeren Handlauf den Zeitplan so lang
 
 ### Quellen-Schonung
 
-Ratsinformationssysteme sperren IP-Adressen, die zu viele Verbindungen aufbauen (Köln, Issue #89).
+Ratsinformationssysteme sperren IP-Adressen, die zu viele Verbindungen aufbauen (Issue #89).
 Sobald der Ingestor eine Quelle `INSIGHT_SOURCE_BACKOFF_FAILURES`-mal in Folge nicht erreicht hat,
 lassen `cache_files` und der Vorschau-Proxy diese Quelle in Ruhe (Proxy antwortet mit 503 und
 `Retry-After`). Der Ingestor selbst verdoppelt den Abstand zwischen den Versuchen (10, 20, 40 …
@@ -624,13 +624,13 @@ automatisch weiter. Der Betriebsmonitor zeigt die Schonung als Grund an der Quel
 
 ```bash
 apt install cifs-utils
-mkdir -p /srv/mandari-files/stadt-koeln
-cat > /root/.smb-koeln <<EOF
+mkdir -p /srv/mandari-files/<kommune>
+cat > /root/.smb-<kommune> <<EOF
 username=<box-user>
 password=<box-passwort>
 EOF
-chmod 600 /root/.smb-koeln
-echo "//<box-host>/backup /srv/mandari-files/stadt-koeln cifs credentials=/root/.smb-koeln,uid=1000,gid=1000,iocharset=utf8,_netdev,nofail 0 0" >> /etc/fstab
+chmod 600 /root/.smb-<kommune>
+echo "//<box-host>/backup /srv/mandari-files/<kommune> cifs credentials=/root/.smb-<kommune>,uid=1000,gid=1000,iocharset=utf8,_netdev,nofail 0 0" >> /etc/fstab
 mount -a
 ```
 
