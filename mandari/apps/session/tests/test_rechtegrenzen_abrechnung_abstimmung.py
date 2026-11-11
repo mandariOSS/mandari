@@ -92,9 +92,7 @@ def test_genehmigte_niederschrift_bekommt_keinen_bearbeitungsvermerk() -> None:
 
 def _entfernen(w: Welt, anwesenheit: SessionAttendance) -> Any:
     dienst = nutzer(w.tenant, "dienst", "view_meetings", "edit_meetings", "manage_attendance")
-    url = reverse(
-        "session:attendance_delete", kwargs={"tenant_slug": w.tenant.slug, "attendance_id": anwesenheit.pk}
-    )
+    url = reverse("session:attendance_delete", kwargs={"tenant_slug": w.tenant.slug, "attendance_id": anwesenheit.pk})
     return client(dienst).post(url)
 
 
