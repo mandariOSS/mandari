@@ -23,9 +23,14 @@ from src.extraction.extractor import FileTooLargeError, TextExtractor
 INHALT = b"%PDF-1.4\n" + b"Ratsbeschluss " * 2000
 
 
+#: Der echte Client, festgehalten vor jedem Ersetzen: Ein zweiter Aufruf von ``_transport`` in einem Test soll den
+#: Ersatz austauschen, nicht den bereits ersetzten Client noch einmal einwickeln
+_ECHTER_CLIENT = httpx.AsyncClient
+
+
 def _transport(monkeypatch: pytest.MonkeyPatch, handler: Any) -> list[int]:
     gesendet: list[int] = []
-    echter_client = httpx.AsyncClient
+    echter_client = _ECHTER_CLIENT
 
     def mitzaehlen(request: httpx.Request) -> httpx.Response:
         response: httpx.Response = handler(request)
@@ -33,7 +38,9 @@ def _transport(monkeypatch: pytest.MonkeyPatch, handler: Any) -> list[int]:
         return response
 
     def client_mit_transport(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
-        return echter_client(transport=httpx.MockTransport(mitzaehlen), **kwargs)
+        # Der Download bringt einen eigenen Transport mit (geprüfte Adressen); der Test ersetzt ihn
+        ohne_transport = {k: v for k, v in kwargs.items() if k != "transport"}
+        return echter_client(transport=httpx.MockTransport(mitzaehlen), **ohne_transport)
 
     monkeypatch.setattr("src.extraction.extractor.httpx.AsyncClient", client_mit_transport)
     return gesendet

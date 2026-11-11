@@ -41,6 +41,9 @@ from mandari_oparl.robots import (
     host_key,
     robots_url,
 )
+from mandari_oparl.ziel import BlockedDestinationError, PinnedAsyncTransport, UnresolvableHostError
+
+from src.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +115,15 @@ class RobotsGate:
                 status = response.status_code
                 body = response.content
             except httpx.HTTPError as exc:
+                if isinstance(exc, BlockedDestinationError) and not isinstance(exc, UnresolvableHostError):
+                    # Der Host liegt nicht im öffentlichen Netz: kein Abruf dorthin, auch keine Datei. Das ist ein
+                    # Befund zum Ziel (überspringen), kein vorübergehender Ausfall (zurückstellen).
+                    logger.warning(
+                        "robots.txt %s nicht abgerufen: %s, Abrufe an den Host bleiben gesperrt", target, exc
+                    )
+                    gesperrt = RobotsTxt.parse("User-agent: *\nDisallow: /")
+                    self._entries[key] = _Entry(robots=gesperrt, fetched_at=now, last_good=gesperrt)
+                    return gesperrt
                 logger.warning(
                     "robots.txt %s nicht abrufbar (%s), Abrufe gelten als gesperrt", target, type(exc).__name__
                 )
@@ -144,7 +156,13 @@ class RobotsGate:
         if client is not None:
             request = client.build_request("GET", target, headers=headers, timeout=ROBOTS_TIMEOUT)
             return await send(client, request, before_redirect=before_redirect)
-        async with httpx.AsyncClient(timeout=ROBOTS_TIMEOUT) as own:
+        # Ohne Client der Quelle geht es um Dateien und Ziele von Weiterleitungen, deren Adressen die Quelle nennt:
+        # Auch ihre robots.txt rufen wir nur bei öffentlichen Adressen ab (mandari_oparl.ziel)
+        transport = PinnedAsyncTransport(
+            allow_private=settings.fetch_allow_private_networks,
+            allowed_hosts=[host for host in settings.fetch_internal_hosts.split(",") if host.strip()],
+        )
+        async with httpx.AsyncClient(timeout=ROBOTS_TIMEOUT, transport=transport) as own:
             return await send(own, own.build_request("GET", target, headers=headers), before_redirect=before_redirect)
 
     def seed(self, url: str, robots: RobotsTxt, *, user_agent: str | None = None) -> None:

@@ -78,6 +78,19 @@ class Settings(BaseSettings):
         default=DEFAULT_INTERVAL,
         validation_alias=AliasChoices("INGESTOR_REQUEST_INTERVAL", "request_interval"),
     )
+    # Datei-Downloads gehen nur an öffentliche Adressen (mandari_oparl.ziel): Die Adressen nennt die Quelle, und
+    # eine Antwort aus dem internen Netz landete als Text im öffentlichen Bestand. Private Netze nur mit diesem
+    # Schalter (Selbstbetrieb im Intranet, derselbe wie in der Anwendung); Loopback und Link-Local nie.
+    fetch_allow_private_networks: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS", "fetch_allow_private_networks"),
+    )
+    # Hostnamen, die von der Prüfung ausgenommen sind (kommagetrennt), etwa der eigene Dienst im internen Netz,
+    # wenn der Ingestor veröffentlichte Dateien von mandari Session unter einem internen Namen abruft.
+    fetch_internal_hosts: str = Field(
+        default="",
+        validation_alias=AliasChoices("INGESTOR_FETCH_INTERNAL_HOSTS", "fetch_internal_hosts"),
+    )
     # Höchstens so viele laufende Anfragen je Host in einem Prozess (Reservierung des Takts und Anfrage
     # zusammen). Hält den reservierten Takt kurz: Ohne Grenze reservierte jeder Abrufplatz einen eigenen
     # Zeitpunkt, der Horizont je Host lag bei 20 Plätzen 20 s voraus, und die Vorschau fand keinen freien

@@ -692,6 +692,9 @@ services:
       KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
+      # Datei-Downloads nur an öffentliche Adressen; Ausnahmen siehe .env.example
+      INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
+      INGESTOR_FETCH_INTERNAL_HOSTS: ${INGESTOR_FETCH_INTERNAL_HOSTS:-}
     volumes:
       - ingestor_data:/app/data
       - mandari_files:/app/files
