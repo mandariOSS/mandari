@@ -6,8 +6,8 @@ Er liegt unter Menüs, Dialogen und Hinweisen (z-10): Er soll informieren, nicht
 {% endcomment %}
 <div id="demo-hinweis" role="status"
      class="fixed {% if ueber_leiste %}bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-3 lg:bottom-3 lg:left-auto lg:right-3{% else %}bottom-3 left-3{% endif %} z-10 max-w-xs lg:max-w-none rounded-lg bg-amber-500 px-4 py-2 lg:px-3 lg:py-1 text-sm lg:text-xs font-medium text-white shadow-lg print:hidden"
-     title="Alle Daten sind erfunden und werden jede Nacht zurückgesetzt. E-Mails werden nicht versendet.">
+     title="Alle Daten sind erfunden und werden {{ demo_neuaufbau|default:'regelmäßig' }} zurückgesetzt. E-Mails werden nicht versendet.">
     <strong>Demo-Umgebung.</strong>
-    <span class="lg:hidden">Alle Daten sind erfunden und werden jede Nacht zurückgesetzt. E-Mails werden nicht versendet.</span>
-    <span class="hidden lg:inline">Erfundene Daten, jede Nacht zurückgesetzt.</span>
+    <span class="lg:hidden">Alle Daten sind erfunden und werden {{ demo_neuaufbau|default:'regelmäßig' }} zurückgesetzt. E-Mails werden nicht versendet.</span>
+    <span class="hidden lg:inline">Erfundene Daten, {{ demo_neuaufbau|default:'regelmäßig' }} zurückgesetzt.</span>
 </div>

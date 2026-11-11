@@ -151,6 +151,11 @@ ASGI_APPLICATION = "mandari.asgi.application"
 # Datenbank und nur synthetischen Daten. Schaltet Mailversand und KI ab, sperrt Änderungen an
 # Passwort, zweitem Faktor und Konto und blendet einen Hinweis ein. In Produktion nie setzen.
 DEMO_INSTANCE = os.environ.get("DEMO_INSTANCE", "false").lower() in ("1", "true", "yes")
+# Umfang des Musterstadt-Bestands in setup_demo_environment (apps/common/demo_stadt.py): voll (Demo) oder klein
+DEMO_UMFANG = os.environ.get("DEMO_UMFANG", "voll").strip() or "voll"
+# Zeiten des automatischen Neuaufbaus der Demo in UTC, kommagetrennt (z. B. "03:30,15:30"); der Hinweis nennt sie
+# in Ortszeit. Leer: kein fester Zeitplan bekannt.
+DEMO_NEUAUFBAU_UTC = os.environ.get("DEMO_NEUAUFBAU_UTC", "").strip()
 
 # SEITENHINWEIS (apps/common/seitenhinweis.py): kurzer Betriebshinweis oben in Insight und Work, etwa bei Störungen
 # außerhalb von mandari (leer = aus). Ein- und Ausschalten nur über die Umgebung, ohne Deploy.

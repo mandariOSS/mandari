@@ -476,6 +476,11 @@ def paper(bodies: Bodies, paper_id: object) -> OParlPaper | None:
     return papers(bodies).filter(pk=pk).first() if pk else None
 
 
+def papers_by_external_id(external_ids: Iterable[str]) -> QuerySet[OParlPaper]:
+    """Vorgänge zu OParl-Kennungen (URLs)."""
+    return OParlPaper.objects.filter(external_id__in=list(external_ids))
+
+
 def paper_exists(paper_id: object) -> bool:
     """Gibt es diese Vorlage im RIS-Bestand?"""
     pk = _uuid(paper_id)
@@ -806,6 +811,11 @@ def organizations_by_external_id(external_ids: Iterable[str]) -> QuerySet[OParlO
 def persons(bodies: Bodies) -> QuerySet[OParlPerson]:
     """Personen der Kommunen."""
     return OParlPerson.objects.filter(body__in=bodies)
+
+
+def persons_by_external_id(external_ids: Iterable[str]) -> QuerySet[OParlPerson]:
+    """Personen zu OParl-Kennungen (URLs), etwa zum Verknüpfen von Mitgliedschaften."""
+    return OParlPerson.objects.filter(external_id__in=list(external_ids))
 
 
 def memberships_of_person(person: OParlPerson, *, bodies: Bodies | None = None) -> QuerySet[OParlMembership]:
