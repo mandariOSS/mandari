@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from io import StringIO
-from typing import Final
+from typing import Any, Final
 from xml.sax.xmlreader import AttributesImpl
 
 from django.core.cache import cache
@@ -221,14 +221,20 @@ def gedrosselt(request: HttpRequest) -> bool:
     )
 
 
-def antwort(request: HttpRequest, schluessel: str, bauen: Callable[[], Feed]) -> HttpResponse:
+def antwort(request: HttpRequest, schluessel: str, bauen: Callable[[], Feed], *, body_id: Any = None) -> HttpResponse:
     """
     Feed aus dem Cache oder neu gebaut (``bauen``), mit ETag und Last-Modified.
 
     ``schluessel`` beschreibt die Auswahl vollständig (Art, Kommune, bereinigte Filter): Dieselbe Auswahl teilt sich
     einen Eintrag im Cache, unbekannte Parameter ändern ihn nicht. Gedrosselt wird nur der Neubau.
+
+    In den Schlüssel geht der Stand der Rücknahmen der Kommune ein (``ruecknahme_stand``; ``body_id=None``: über
+    alle Kommunen): Nach einer Rücknahme entsteht der Feed neu, statt den zurückgenommenen Datensatz bis zum
+    Ablauf des Eintrags weiter zu nennen. Nachgelagerte Caches fragen bei jedem Abruf nach (``no-cache`` mit ETag).
     """
-    cache_schluessel = _cache_schluessel(schluessel)
+    from . import ruecknahme_stand
+
+    cache_schluessel = _cache_schluessel(f"{schluessel}|stand={ruecknahme_stand.stand(body_id)}")
     gespeichert = cache.get(cache_schluessel)
     if gespeichert is None:
         if gedrosselt(request):
@@ -243,7 +249,7 @@ def antwort(request: HttpRequest, schluessel: str, bauen: Callable[[], Feed]) ->
     response = HttpResponse(inhalt, content_type=f"{MEDIENTYP}; charset=utf-8")
     response["ETag"] = etag
     response["Last-Modified"] = http_date(zuletzt)
-    response["Cache-Control"] = f"public, max-age={ZWISCHENSPEICHER_SEKUNDEN}"
+    response["Cache-Control"] = "public, no-cache"
     response["X-Robots-Tag"] = "noindex"
     bedingt = get_conditional_response(request, etag=etag, last_modified=zuletzt, response=response)
     return bedingt if bedingt is not None else response

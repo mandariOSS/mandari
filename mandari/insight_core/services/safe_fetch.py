@@ -90,11 +90,15 @@ def _check_request(request: httpx.Request) -> None:
         raise BlockedDestinationError(str(exc), request=request) from None
 
 
-def _pinned_address(host: str) -> str | None:
+#: So viele geprüfte Adressen eines Namens versucht eine Verbindung höchstens nacheinander
+MAX_PINNED_ADDRESSES = 4
+
+
+def _pinned_addresses(host: str) -> list[str] | None:
     """
-    Adresse, an die die Verbindung zu ``host`` gehen darf; ``None`` heißt: nicht binden (eigener Host oder schon eine
-    Adresse). Wirft ``BlockedDestinationError``, wenn der Name nicht auflösbar ist oder eine seiner Adressen nicht
-    zulässig wäre.
+    Adressen, an die die Verbindung zu ``host`` gehen darf, in der Reihenfolge der Versuche; ``None`` heißt: nicht
+    binden (eigener Host oder schon eine Adresse). Wirft ``BlockedDestinationError``, wenn der Name nicht auflösbar
+    ist oder eine seiner Adressen nicht zulässig wäre.
     """
     name = host.lower().rstrip(".")
     if name in _own_hosts():
@@ -111,7 +115,7 @@ def _pinned_address(host: str) -> str | None:
     if not all(_allowed_address(address) for address in addresses):
         raise BlockedDestinationError("Ziel liegt nicht im öffentlichen Netz")
     # IPv4 zuerst: überall erreichbar, auch wo IPv6 nur halb eingerichtet ist
-    return sorted(addresses, key=lambda address: (":" in address, address))[0]
+    return sorted(addresses, key=lambda address: (":" in address, address))[:MAX_PINNED_ADDRESSES]
 
 
 class _PinnedBackend(httpcore.SyncBackend):
@@ -125,10 +129,31 @@ class _PinnedBackend(httpcore.SyncBackend):
         local_address: str | None = None,
         socket_options: Any = None,
     ) -> httpcore.NetworkStream:
-        address = _pinned_address(host)
-        return super().connect_tcp(
-            address or host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
-        )
+        addresses = _pinned_addresses(host)
+        if addresses is None:
+            return super().connect_tcp(
+                host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+            )
+        # Alle Adressen stammen aus derselben Auflösung und sind geprüft: Ist die erste nicht erreichbar, darf es
+        # die nächste sein, ohne die Bindung aufzugeben (wie ein gewöhnlicher Verbindungsaufbau über mehrere Adressen)
+        # Die Zeitgrenze des Aufrufers gilt für alle Versuche zusammen: Jeder Versuch bekommt seinen Anteil an der
+        # verbleibenden Zeit, mit einer einzigen Adresse also die ganze wie bisher.
+        deadline = None if timeout is None else _now() + timeout
+        failure: Exception | None = None
+        for index, address in enumerate(addresses):
+            attempt = timeout
+            if deadline is not None:
+                remaining = deadline - _now()
+                if remaining <= 0:
+                    break
+                attempt = remaining / (len(addresses) - index)
+            try:
+                return super().connect_tcp(
+                    address, port, timeout=attempt, local_address=local_address, socket_options=socket_options
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                failure = exc
+        raise failure or httpcore.ConnectTimeout("Zeitgrenze für den Verbindungsaufbau erreicht")
 
 
 class PinnedTransport(httpx.HTTPTransport):
@@ -183,6 +208,9 @@ def download_to(
     """
     ``url`` gestreamt nach ``target`` laden – mit Größen- und Gesamtzeitgrenze.
 
+    Die Gesamtzeit gilt über Weiterleitungen hinweg: Nach ihrem Ablauf beginnt keine Anfrage mehr, und Verbindungsaufbau
+    und Lesen jeder Anfrage bekommen höchstens die verbleibende Zeit.
+
     Wirft ``httpx.HTTPStatusError`` (Antwort ≠ 2xx), ``httpx.RequestError`` (auch
     ``BlockedDestinationError``), ``TooLargeError`` und ``DeadlineExceededError``.
 
@@ -192,7 +220,24 @@ def download_to(
     """
     deadline = _now() + total_seconds
     client_headers = {"User-Agent": user_agent} if user_agent else {}
+    # Dateien unkomprimiert: Die Größengrenze gilt dann für das, was tatsächlich im Speicher ankommt. Das gilt auch,
+    # wenn die mitgegebenen Kopfzeilen (etwa die einer Quelle) etwas anderes anfordern, in jeder Schreibweise.
+    headers = {name: value for name, value in (headers or {}).items() if name.lower() != "accept-encoding"}
+    headers["Accept-Encoding"] = "identity"
     client = guarded_client(timeout=timeout, follow_redirects=True, max_redirects=5, headers=client_headers)
+
+    def within_deadline(request: httpx.Request) -> None:
+        """Vor jeder Anfrage, auch nach einer Weiterleitung: keine neue nach der Frist, Zeitgrenzen höchstens der Rest."""
+        remaining = deadline - _now()
+        if remaining <= 0:
+            raise DeadlineExceededError
+        limits = request.extensions.get("timeout")
+        if isinstance(limits, dict):
+            request.extensions["timeout"] = {
+                name: remaining if value is None else min(value, remaining) for name, value in limits.items()
+            }
+
+    client.event_hooks = {**client.event_hooks, "request": [*client.event_hooks.get("request", []), within_deadline]}
     response_cm: AbstractContextManager[httpx.Response]
     if before_redirect is None:
         response_cm = client.stream("GET", url, headers=headers or {})
@@ -205,8 +250,18 @@ def download_to(
         declared = int(response.headers.get("content-length") or 0)
         if declared > max_bytes:
             raise TooLargeError
+        # Angefordert wird unkomprimiert (siehe oben). Kommt die Antwort trotzdem kodiert, weisen wir sie ab: Die
+        # Grenze zählte sonst erst nach dem Entpacken, und ein kleiner Rohblock könnte den Speicher füllen. Als
+        # Abruffehler (``httpx.RequestError``), nicht als „zu groß“: Der Zustand soll sich nicht festschreiben, die
+        # Quelle kann beim nächsten Versuch wieder unkodiert antworten.
+        if response.headers.get("content-encoding", "identity").strip().lower() not in ("", "identity"):
+            raise httpx.DecodingError("Antwort ist kodiert, angefordert war unkodiert", request=response.request)
         size = 0
-        for chunk in response.iter_bytes(64 * 1024):
+        # Schon vollständig geladene Antworten (Ersatz-Transport im Test) haben keinen rohen Strom mehr
+        # Ohne Stückgröße: Die Gesamtfrist unten wird nach jedem Stück geprüft, wie es aus dem Netz kommt; mit
+        # fester Größe sammelte httpx bei einer tröpfelnden Antwort erst lange
+        chunks = [response.content] if response.is_stream_consumed else response.iter_raw()
+        for chunk in chunks:
             size += len(chunk)
             if size > max_bytes:
                 raise TooLargeError

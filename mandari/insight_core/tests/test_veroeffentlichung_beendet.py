@@ -294,6 +294,48 @@ class TestArchiv:
         assert list(decision_tracking.public_decisions(welt["body"])) == [beschluss]
 
 
+def test_abo_links_nennen_einen_zurueckgenommenen_beschluss_nicht(welt: dict[str, Any]) -> None:
+    """Bestätigen und Abmelden zeigen Titel und Verweis nur, solange der Beschluss lesbar ist."""
+    offen = DecisionSubscription.objects.create(email="offen@example.org", agenda_item=welt["beschluss"])
+    aktiv = DecisionSubscription.objects.create(
+        email="aktiv@example.org", agenda_item=welt["beschluss"], confirmed=True, confirmed_at=timezone.now()
+    )
+    client = Client()
+    bestaetigen = f"/insight/beschluesse/abo/bestaetigen/{offen.token}/"
+    abmelden = f"/insight/beschluesse/abo/abmelden/{aktiv.token}/"
+    assert "Radweg beschlossen" in client.get(bestaetigen).content.decode()
+
+    _beenden(welt, WITHDRAWN)
+
+    for antwort in (client.get(bestaetigen), client.post(bestaetigen), client.get(abmelden), client.post(abmelden)):
+        inhalt = antwort.content.decode()
+        assert antwort.status_code == 200
+        assert antwort["Cache-Control"] == "no-store"
+        assert "Radweg beschlossen" not in inhalt
+        assert f"/insight/beschluesse/{welt['beschluss'].pk}/" not in inhalt
+    # Nicht aktiviert, aber abgemeldet
+    offen.refresh_from_db()
+    aktiv.refresh_from_db()
+    assert not offen.confirmed and aktiv.unsubscribed_at is not None
+
+
+def test_abo_wird_im_archiv_nicht_mehr_aktiviert(welt: dict[str, Any]) -> None:
+    """Im Archiv bleibt der Beschluss lesbar, ein vorher verschickter Link aktiviert aber kein neues Abo."""
+    offen = DecisionSubscription.objects.create(email="offen@example.org", agenda_item=welt["beschluss"])
+    client = Client()
+    bestaetigen = f"/insight/beschluesse/abo/bestaetigen/{offen.token}/"
+
+    _beenden(welt, ARCHIVED)
+
+    for antwort in (client.get(bestaetigen), client.post(bestaetigen)):
+        inhalt = antwort.content.decode()
+        assert antwort.status_code == 200
+        assert "Beschluss im Archiv" in inhalt and "Radweg beschlossen" in inhalt
+        assert antwort["Cache-Control"] == "no-store"
+    offen.refresh_from_db()
+    assert not offen.confirmed
+
+
 class TestDauerhaft:
     def test_seiten_nicht_mehr_verfuegbar(self, welt: dict[str, Any]) -> None:
         _beenden(welt, WITHDRAWN)
