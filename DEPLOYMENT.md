@@ -2289,8 +2289,7 @@ Vorgabe 1. Empfehlung nach Größenklasse (`docs/LASTTESTS.md`, Abschnitt 6): kl
    und Verbindungen. Jeden Prozess einzeln über seinen Prüfport:
    ```bash
    docker compose exec mandari sh -c 'for p in $(seq 8101 $((8100 + APP_PROCESSES))); do
-     curl -s -o /dev/null -w "$p %{http_code}
-" http://localhost:$p/health/live/; done'
+     curl -s -o /dev/null -w "$p %{http_code}\n" http://localhost:$p/health/live/; done'
    ```
 
 **Rückweg:** die Zeilen aus der `.env` entfernen und `docker compose up -d mandari`. Mit einem Prozess
