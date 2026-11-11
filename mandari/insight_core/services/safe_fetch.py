@@ -208,6 +208,9 @@ def download_to(
     """
     ``url`` gestreamt nach ``target`` laden – mit Größen- und Gesamtzeitgrenze.
 
+    Die Gesamtzeit gilt über Weiterleitungen hinweg: Nach ihrem Ablauf beginnt keine Anfrage mehr, und Verbindungsaufbau
+    und Lesen jeder Anfrage bekommen höchstens die verbleibende Zeit.
+
     Wirft ``httpx.HTTPStatusError`` (Antwort ≠ 2xx), ``httpx.RequestError`` (auch
     ``BlockedDestinationError``), ``TooLargeError`` und ``DeadlineExceededError``.
 
@@ -222,6 +225,19 @@ def download_to(
     headers = {name: value for name, value in (headers or {}).items() if name.lower() != "accept-encoding"}
     headers["Accept-Encoding"] = "identity"
     client = guarded_client(timeout=timeout, follow_redirects=True, max_redirects=5, headers=client_headers)
+
+    def within_deadline(request: httpx.Request) -> None:
+        """Vor jeder Anfrage, auch nach einer Weiterleitung: keine neue nach der Frist, Zeitgrenzen höchstens der Rest."""
+        remaining = deadline - _now()
+        if remaining <= 0:
+            raise DeadlineExceededError
+        limits = request.extensions.get("timeout")
+        if isinstance(limits, dict):
+            request.extensions["timeout"] = {
+                name: remaining if value is None else min(value, remaining) for name, value in limits.items()
+            }
+
+    client.event_hooks = {**client.event_hooks, "request": [*client.event_hooks.get("request", []), within_deadline]}
     response_cm: AbstractContextManager[httpx.Response]
     if before_redirect is None:
         response_cm = client.stream("GET", url, headers=headers or {})

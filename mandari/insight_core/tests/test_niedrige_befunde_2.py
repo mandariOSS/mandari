@@ -298,6 +298,33 @@ def test_download_fordert_auch_mit_eigenen_kopfzeilen_unkomprimiert_an(monkeypat
     assert gesendet[0].headers["X-Quelle"] == "1"
 
 
+def test_gesamtfrist_des_downloads_gilt_ueber_weiterleitungen(monkeypatch: pytest.MonkeyPatch) -> None:
+    uhr = [100.0]
+    monkeypatch.setattr(safe_fetch, "_now", lambda: uhr[0])
+    grenzen: list[float] = []
+    dauer = {"erste": 4.0}
+
+    def antwort(request: httpx.Request) -> httpx.Response:
+        grenzen.append(request.extensions["timeout"]["connect"])
+        if request.url.path == "/datei.pdf":
+            uhr[0] += dauer["erste"]
+            return httpx.Response(302, headers={"Location": "https://ris.beispielstadt.example/ziel.pdf"})
+        return httpx.Response(200, stream=httpx.ByteStream(b"%PDF-1.4"))
+
+    gesendet = _client(monkeypatch, antwort)
+
+    # Nach vier von fünf Sekunden: Die zweite Anfrage bekommt nur noch den Rest
+    _laden()
+    assert grenzen == [pytest.approx(5.0), pytest.approx(1.0)]
+
+    # Die Frist ist bei der Weiterleitung schon abgelaufen: keine zweite Anfrage
+    gesendet.clear()
+    dauer["erste"] = 6.0
+    with pytest.raises(safe_fetch.DeadlineExceededError):
+        _laden()
+    assert [str(request.url) for request in gesendet] == ["https://ris.beispielstadt.example/datei.pdf"]
+
+
 def test_kodierte_antwort_wird_abgewiesen(monkeypatch: pytest.MonkeyPatch) -> None:
     gepackt = gzip.compress(b"0" * 5_000_000)
     assert len(gepackt) < 10_000
