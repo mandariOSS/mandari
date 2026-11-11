@@ -460,6 +460,8 @@ class FolderGuestShare(models.Model):
 
     Die Freigabe gilt für den Ordner UND rekursiv für alle Unterordner
     sowie alle enthaltenen Dokumente — auch künftig hinzukommende.
+    Die Stufe gilt je Dokument höchstens so weit, wie die freigebende
+    Person es selbst darf (Motion._folder_share_level).
     Zugriffs-Checks laufen zentral über Motion.get_guest_share_level()
     bzw. shared_folder_levels(); Views/Consumer prüfen NICHT einzeln.
     """
@@ -1011,6 +1013,34 @@ class Motion(EncryptionMixin, models.Model):
             return self.document_type.is_submittable
         return True
 
+    def _folder_share_level(self, level: str, created_by_id) -> str:
+        """
+        Stufe einer Ordner-Freigabe an diesem Dokument: höchstens, was die freigebende Person hier selbst darf.
+
+        Eine Ordner-Freigabe erfasst auch organisationsweite Dokumente anderer. Ohne diese Grenze gäbe „Bearbeiten“
+        am Ordner einem Gast mehr, als die freigebende Person an solchen Dokumenten hat (lesen oder kommentieren),
+        und mehr, als sie über eine einzelne Freigabe vergeben dürfte (``can_share``). Lesen bleibt in jedem Fall:
+        Was die Freigabe erfasst, regelt ``_folder_share_applies``. Ist die freigebende Person kein aktives Mitglied
+        mehr, lässt sich nichts mehr prüfen; die Freigabe gilt dann zum Lesen, bis jemand sie neu vergibt.
+        """
+        if level == "view":
+            return level
+        from apps.tenants.models import Membership
+
+        creator = (
+            Membership.objects.filter(
+                user_id=created_by_id, organization_id=self.organization_id, is_active=True, is_guest=False
+            ).first()
+            if created_by_id
+            else None
+        )
+        own = self._member_access_level(creator) if creator is not None else "view"
+        if own == "admin":
+            own = "edit"  # Gäste erhalten nie Verwaltungsrechte
+        elif own == "none":
+            own = "view"
+        return min(level, own, key=self.ACCESS_RANK.__getitem__)
+
     def get_guest_share_level(self, membership) -> str | None:
         """
         Freigabe-Level eines Gast-Zugangs für dieses Dokument.
@@ -1029,7 +1059,7 @@ class Motion(EncryptionMixin, models.Model):
                 "level", "created_by_id"
             ):
                 if self._folder_share_applies(created_by_id):
-                    levels.add(level)
+                    levels.add(self._folder_share_level(level, created_by_id))
             node = node.parent
         for level in ("admin", "edit", "comment", "view"):
             if level in levels:
@@ -1173,19 +1203,23 @@ class Motion(EncryptionMixin, models.Model):
                 level = "edit"  # Gäste erhalten nie Verwaltungsrechte
             return self.apply_status_lock(level, membership)
 
-        if not membership.has_permission("motions.view"):
+        level = self._member_access_level(membership)
+        return level if level == "none" else self.apply_status_lock(level, membership)
+
+    #: Rangfolge der Zugriffsstufen
+    ACCESS_RANK = {"none": 0, "view": 1, "comment": 2, "edit": 3, "admin": 4}
+
+    def _member_access_level(self, membership) -> str:
+        """Stufe eines Mitglieds (kein Gast) vor der Status-Sperre: 'admin', 'edit', 'comment', 'view' oder 'none'."""
+        if not self.can_access(membership) or not membership.has_permission("motions.view"):
             return "none"
         if self.author_id == membership.id:
-            level = "admin"
-        elif membership.has_permission("motions.edit_all") or (
+            return "admin"
+        if membership.has_permission("motions.edit_all") or (
             membership.has_permission("motions.edit") and self._member_share_level(membership) in ("edit", "admin")
         ):
-            level = "edit"
-        elif membership.has_permission("motions.comment"):
-            level = "comment"
-        else:
-            level = "view"
-        return self.apply_status_lock(level, membership)
+            return "edit"
+        return "comment" if membership.has_permission("motions.comment") else "view"
 
     def _member_share_level(self, membership) -> str | None:
         """Höchste persönliche Freigabestufe (scope=user) eines Mitglieds oder ``None``."""
