@@ -99,11 +99,15 @@ def _bounded_reads(response: httpx.Response, deadline: float | None) -> Iterator
     dann weiter von der Verbindung, jeweils mit dem Lese-Timeout der Anfrage. Hier bekommt jeder dieser Lesevorgänge
     höchstens die Restzeit, und nach der Frist beginnt keiner mehr (``httpcore.ReadTimeout``, bei ``httpx`` als
     ``ReadTimeout``). Ohne Thread: Die Grenze sitzt am Lesen selbst. Ohne Zugriff auf die Verbindung (Antwort aus
-    einem Ersatz-Transport) bleibt es bei der Prüfung nach jedem Stück.
+    einem Ersatz-Transport) und bei HTTP/2 bleibt es bei der Prüfung nach jedem Stück.
     """
-    stream: Any = (getattr(response, "extensions", None) or {}).get("network_stream")
+    extensions = getattr(response, "extensions", None) or {}
+    stream: Any = extensions.get("network_stream")
     read = getattr(stream, "read", None)
-    if deadline is None or read is None:
+    # Nur bei HTTP/1: Dort gehört die Verbindung für die Dauer der Antwort dieser einen Antwort. Bei HTTP/2 teilen
+    # sich mehrere Antworten die Verbindung, eine Grenze am gemeinsamen Lesen träfe auch die anderen.
+    alone = bytes(extensions.get("http_version") or b"").startswith(b"HTTP/1")
+    if deadline is None or read is None or not alone:
         yield
         return
 
