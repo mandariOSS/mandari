@@ -134,6 +134,12 @@ def _org_member_ids(organization_id: Any, raw_ids: Sequence[str]) -> list[Any]:
     )
 
 
+def drop_shares_unless_shared(task: Task) -> None:
+    """Freigaben gehören zur Sichtbarkeit „geteilt“: Wechselt die Aufgabe auf eine andere, entfallen sie."""
+    if task.visibility != "shared":
+        TaskShare.objects.filter(task=task).delete()
+
+
 @transaction.atomic
 def update_visibility(task: Task, membership: Membership, visibility: str, share_with_ids: Sequence[str]) -> None:
     """Sichtbarkeit setzen und Freigaben angleichen (nur bei ``shared`` bleiben Freigaben bestehen)."""
@@ -394,6 +400,7 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
     """
     _sync_completion(task)
     task.save()
+    drop_shares_unless_shared(task)
     _log_changes(task, membership, old_values)
     return task
 

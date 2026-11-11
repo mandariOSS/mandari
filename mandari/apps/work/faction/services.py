@@ -793,9 +793,11 @@ def record_decision(
     Oberfläche prüfen das vorher selbst.
     """
     from .models import FactionDecision
-    from .regeln import pruefe_abstimmung
+    from .regeln import pruefe_abstimmung, pruefe_protokoll_offen
 
     pruefe_abstimmung(item.meeting)
+    # Beschlüsse einer Sitzung mit genehmigtem Protokoll sind fest (Issue #63), gleich über welchen Weg
+    pruefe_protokoll_offen(item.meeting)
 
     defaults = {
         "votes_yes": votes_yes,

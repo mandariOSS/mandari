@@ -676,6 +676,10 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
     if data["assigned_to"] is not None:
         task.assigned_to = data["assigned_to"]
     task.save()
+    # Freigaben gehören zur Sichtbarkeit „geteilt“ (wie beim Ändern über Panel und Freigabedialog)
+    from . import services
+
+    services.drop_shares_unless_shared(task)
     if data["labels"]:
         task.labels.set(labels.resolve(data["labels"]))
     if old_status != task.status:

@@ -180,8 +180,8 @@ class FactionActionView(WorkViewMixin, View):
     # -- Permission helpers ----------------------------------------------
 
     def _can_manage_agenda(self, meeting):
-        """Ersteller der Sitzung oder faction.manage — entspricht can_edit in der UI."""
-        return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
+        """Ersteller der Sitzung oder faction.manage, nie nach genehmigtem Protokoll (``agenda.manages``)."""
+        return agenda.manages(meeting, self.membership)
 
     def _can_add_items(self, meeting):
         """
@@ -336,9 +336,7 @@ class FactionActionView(WorkViewMixin, View):
     # -- Meeting update ------------------------------------------------
 
     def _update_meeting(self, request, meeting):
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
 
         if not can_edit:
             messages.error(request, "Keine Berechtigung zum Bearbeiten.")
@@ -429,9 +427,7 @@ class FactionActionView(WorkViewMixin, View):
 
     def _set_rsvp(self, request, meeting):
         """Zu- und Absagen für diese Sitzung ein- oder ausschalten (Issue #871), wie das Feld im Bearbeiten-Dialog."""
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
         if not can_edit:
             if self.is_htmx:
                 return HttpResponse(status=403)
@@ -1414,6 +1410,14 @@ class FactionActionView(WorkViewMixin, View):
 
         from apps.work.tasks.models import Task
 
+        # Aufgaben legt an, wer Aufgaben anlegen darf; das Recht an der Sitzung allein reicht nicht
+        if not self.membership.has_permission("tasks.create"):
+            return HttpResponse(status=403)
+        # Je Eintrag eine Aufgabe: Ein zweiter Aufruf legt keine weitere an
+        if Task.objects.filter(organization=self.organization, related_protocol_entry=entry).exists():
+            messages.info(request, "Aus diesem Eintrag wurde bereits eine Aufgabe angelegt.")
+            return self._redirect_detail(meeting)
+
         content = entry.get_content_decrypted() or ""
         task_title = content[:200] if content else f"Aufgabe aus Fraktionssitzung {meeting.title}"
 
@@ -1434,9 +1438,9 @@ class FactionActionView(WorkViewMixin, View):
             related_protocol_entry=entry,
         )
 
-        # Endgültig genehmigte Protokolle sind unveränderbar (Issue #63) —
-        # die Aufgabe wird trotzdem angelegt, nur das Flag bleibt unberührt
-        if not meeting.protocol_approved:
+        # Den Erledigt-Stand am Eintrag setzt nur, wer das Protokoll bearbeiten darf; genehmigte Protokolle sind
+        # unveränderbar (Issue #63). Die Aufgabe entsteht in beiden Fällen, nur das Flag bleibt unberührt.
+        if self._can_protocol(meeting):
             entry.action_completed = True
             entry.save()
 

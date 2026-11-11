@@ -46,6 +46,27 @@ def open_for_members(meeting: FactionMeeting) -> bool:
     return meeting.status in AGENDA_OPEN_STATUSES and not meeting.protocol_approved
 
 
+#: Status, in denen die Sitzungsleitung Sitzung und Tagesordnung bearbeitet
+MANAGE_OPEN_STATUSES = ("draft", "planned", "invited", "ongoing")
+
+
+def manages(meeting: FactionMeeting, membership: Any) -> bool:
+    """
+    Verwaltet die Person die Tagesordnung dieser Sitzung (Ersteller:in oder ``faction.manage``)?
+
+    Nie nach genehmigtem Protokoll (Issue #63): Tagesordnung, Beschlüsse und Anlagen sind dann fest, auch wenn
+    jemand den Status der Sitzung zurücksetzt. Korrekturen laufen als Nachtrag zum Protokoll.
+    """
+    if meeting.protocol_approved:
+        return False
+    return bool(meeting.created_by == membership or membership.has_permission("faction.manage"))
+
+
+def editable_by(meeting: FactionMeeting, membership: Any) -> bool:
+    """Darf die Person Sitzung und Tagesordnung jetzt bearbeiten (verwaltet sie und die Sitzung ist offen)?"""
+    return manages(meeting, membership) and meeting.status in MANAGE_OPEN_STATUSES
+
+
 def open_for_proposals(meeting: FactionMeeting) -> bool:
     """Können für die Sitzung noch TOPs vorgeschlagen werden (vor Sitzungsbeginn)?"""
     return meeting.status in PROPOSAL_OPEN_STATUSES

@@ -100,9 +100,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         except FactionDecision.DoesNotExist:
             decision = None
 
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
 
         is_protocol_phase = meeting.status in ["ongoing", "completed"] and not meeting.protocol_approved
         can_protocol = is_protocol_phase and (
@@ -206,9 +204,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         action = request.POST.get("action")
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
 
         handlers = {
             "update": self._update,
@@ -441,6 +437,12 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         if not meeting.abstimmungen_erlaubt:
             return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
 
+        from ..regeln import ProtokollGenehmigtError, pruefe_protokoll_offen
+
+        try:
+            pruefe_protokoll_offen(meeting)
+        except ProtokollGenehmigtError as exc:
+            return HttpResponse(str(exc), status=400)
         FactionDecision.objects.filter(agenda_item=item).delete()
         item.has_decision = False
         item.votes_for = 0
@@ -658,9 +660,7 @@ class FactionItemFieldsView(WorkViewMixin, View):
         item = get_object_or_404(FactionAgendaItem, id=kwargs["item_id"], meeting=meeting)
         if not can_view_item(item, self.membership):
             return JsonResponse({"error": "Gesperrte Information"}, status=403)
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
         if not can_edit or item.is_approval_item:
             return JsonResponse({"error": "Keine Berechtigung zum Bearbeiten"}, status=403)
         try:

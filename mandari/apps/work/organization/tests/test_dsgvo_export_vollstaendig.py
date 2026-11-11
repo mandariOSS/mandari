@@ -118,7 +118,11 @@ def test_aufgabenkommentare_stammen_aus_der_aktivitaet_auch_bei_fremden_aufgaben
 
 
 @pytest.mark.django_db
-def test_kommentare_und_rollen_an_dokumenten_anderer(org: Any, person: Any, andere: Any) -> None:
+def test_kommentare_und_rollen_an_dokumenten_anderer(org: Any, make_member: Any, andere: Any) -> None:
+    # Titel und Stand eines fremden Dokuments nennt der Export nur, solange die Person es sehen darf
+    person = make_member(
+        org, ["dashboard.view", "motions.view", "motions.view_drafts"], email="federfuehrung@example.org"
+    )
     motion = Motion.objects.create(
         organization=org, author=andere, title="Radweg", visibility="organization", responsible=person
     )

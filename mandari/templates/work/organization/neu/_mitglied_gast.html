@@ -17,6 +17,9 @@ guest_has_password, guest_document_shares, guest_folder_shares, can_manage_guest
 
 <c-rahmen.abschnitt titel="Was sieht dieser Gast?" titel_id="gast-freigaben-titel" id="guest-shares"
                     zusatz="{{ guest_document_shares|length }} Dokument{{ guest_document_shares|length|pluralize:'e' }}, {{ guest_folder_shares|length }} Ordner">
+    {% if guest_document_shares_hidden %}
+    <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">{% if guest_document_shares_hidden == 1 %}Ein weiteres Dokument ist freigegeben, hier aber nicht sichtbar.{% else %}{{ guest_document_shares_hidden }} weitere Dokumente sind freigegeben, hier aber nicht sichtbar.{% endif %}</p>
+    {% endif %}
     {% if guest_document_shares or guest_folder_shares %}
     <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm">
         {% for share in guest_folder_shares %}
