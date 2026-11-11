@@ -14,6 +14,7 @@ Bibliothek). Bilder, die ein PDF zeigen soll, stehen deshalb als ``data:``-Adres
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import html as html_lib
 import logging
 import re
@@ -74,13 +75,31 @@ def file_data_uri(field_file: Any) -> str:
     return _data_uri(content_type, data)
 
 
+def _fetch_bounded(url: str, deadline: float) -> str:
+    """
+    Wie :func:`_fetch`, aber der Aufrufer wartet höchstens bis ``deadline``: Der Abruf läuft in einem eigenen
+    Thread, und nach der Frist geht der Export ohne das Bild weiter. Verbindungsaufbau, Antwortkopf und ein
+    Stillstand kurz vor der Frist verlängern ihn so nicht. Der Thread selbst endet durch die Wartezeiten des
+    Abrufs von allein.
+    """
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="pdf-bild")
+    future = executor.submit(_fetch, url, deadline)
+    try:
+        return future.result(timeout=max(0.1, deadline - _now()))
+    except concurrent.futures.TimeoutError:
+        logger.info("Bild für das PDF nicht geladen (Frist)")
+        return ""
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 def _fetch(url: str, deadline: float) -> str:
     """
     Ein Bild laden und als ``data:``-Adresse liefern; leer, wenn es sich nicht laden lässt.
 
-    ``deadline`` (``time.monotonic()``) gilt hart für den ganzen Abruf: Der Rumpf wird so gelesen, wie er ankommt,
-    und nach jedem Stück geprüft. Ein Server, der nur tröpfchenweise sendet, hält den Export deshalb nicht länger
-    auf als bis zur Frist; ohne Daten greift die Wartezeit je Lesevorgang.
+    Der Rumpf wird so gelesen, wie er ankommt, und nach jedem Stück gegen ``deadline`` (``time.monotonic()``) und
+    die Größengrenze geprüft; ohne Daten greift die Wartezeit je Lesevorgang. Die harte Frist für den Aufrufer
+    setzt :func:`_fetch_bounded`.
     """
     from insight_core.services import safe_fetch
 
@@ -133,7 +152,7 @@ def inline_remote_images(html: str) -> str:
             if len(geladen) >= MAX_REMOTE_IMAGES or _now() >= deadline:
                 geladen[url] = ""
             else:
-                geladen[url] = _fetch(url, min(deadline, _now() + IMAGE_SECONDS))
+                geladen[url] = _fetch_bounded(url, min(deadline, _now() + IMAGE_SECONDS))
         eingebettet = geladen[url]
         # Dieselbe Adresse kann beliebig oft im Text stehen: Jede Stelle zählt gegen das Budget
         if len(eingebettet) > budget:

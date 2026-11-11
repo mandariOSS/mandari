@@ -178,6 +178,30 @@ def test_frist_gilt_auch_bei_troepfelnden_daten(monkeypatch: pytest.MonkeyPatch)
     assert uhr["jetzt"] < 1000.0 + pdf_bilder.IMAGE_SECONDS + 5
 
 
+def test_export_wartet_hoechstens_bis_zur_frist(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hängt der Abruf (Verbindungsaufbau, Antwortkopf, Stillstand), geht es nach der Frist ohne das Bild weiter."""
+    import threading
+    import time
+
+    monkeypatch.setattr(pdf_bilder, "IMAGE_SECONDS", 0.3)
+    freigabe = threading.Event()
+
+    def haengt(url: str, deadline: float) -> str:
+        freigabe.wait(10)
+        return "data:image/png;base64,AAAA"
+
+    monkeypatch.setattr(pdf_bilder, "_fetch", haengt)
+    start = time.monotonic()
+    try:
+        ergebnis = pdf_bilder.inline_remote_images('<img src="https://haengt.example.org/x.png">')
+    finally:
+        dauer = time.monotonic() - start
+        freigabe.set()
+
+    assert ergebnis == '<img src="">'
+    assert dauer < 3
+
+
 def test_hoechstens_so_viele_bilder_je_dokument(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pdf_bilder, "MAX_REMOTE_IMAGES", 2)
     adressen = [f"https://bilder.example.org/{nummer}.png" for nummer in range(4)]

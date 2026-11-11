@@ -328,14 +328,21 @@ case "$MODE" in
     log "Deploy $OLD_TAG -> $NEW_TAG"
 
     mkdir -p "$BACKUP_DIR"
-    # umask wirkt nur auf Neues: Verzeichnis und Sicherungen früherer Läufe ebenfalls schließen
-    chmod 700 "$BACKUP_DIR"
-    for alt in "$BACKUP_DIR"/pre-deploy-*.dump; do
-      # Nur gewöhnliche Dateien: Über einen symbolischen Link änderte chmod die Rechte der Zieldatei
-      if [ -f "$alt" ] && [ ! -L "$alt" ]; then
-        chmod 600 "$alt"
-      fi
-    done
+    # umask wirkt nur auf Neues: Verzeichnis und Sicherungen früherer Läufe ebenfalls schließen. Nur wenn das
+    # Verzeichnis dem eigenen Konto gehört: Nach chmod 700 kann dann kein anderes Konto darin Dateien gegen
+    # symbolische Links tauschen, während die Rechte geändert werden. Gehört es einem anderen Konto, bleiben
+    # ältere Dateien unverändert.
+    if [ -O "$BACKUP_DIR" ]; then
+      chmod 700 "$BACKUP_DIR"
+      for alt in "$BACKUP_DIR"/pre-deploy-*.dump; do
+        # Nur gewöhnliche Dateien: Über einen symbolischen Link änderte chmod die Rechte der Zieldatei
+        if [ -f "$alt" ] && [ ! -L "$alt" ]; then
+          chmod 600 "$alt"
+        fi
+      done
+    else
+      echo "Hinweis: $BACKUP_DIR gehört einem anderen Konto, Rechte älterer Sicherungen bleiben unverändert"
+    fi
     BACKUP="$BACKUP_DIR/pre-deploy-$NEW_TAG-$(date -u +%Y%m%d-%H%M).dump"
     $DC exec -T "$DB_SERVICE" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' < /dev/null > "$BACKUP"
     [ -s "$BACKUP" ] || { echo "FEHLER: Sicherung leer"; exit 1; }

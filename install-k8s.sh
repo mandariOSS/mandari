@@ -353,20 +353,16 @@ build_helm_args() {
         --set "website.media.className=$STORAGE_CLASS"
     )
     # Das Passwort steht nicht in den Argumenten von Helm (dort läse es jedes lokale Konto in der Prozessliste),
-    # sondern in einer Wertedatei, die nur das eigene Konto lesen darf und beim Ende des Skripts gelöscht wird.
-    # Sie steht getrennt von HELM_ARGS, damit der Testlauf sie nicht ausgibt.
+    # sondern in einer Datei, die nur das eigene Konto lesen darf und beim Ende des Skripts gelöscht wird. Helm
+    # übernimmt ihren Inhalt unverändert als Wert (--set-file), ohne ihn als YAML zu lesen. Die Angabe steht
+    # getrennt von HELM_ARGS, damit der Testlauf sie nicht ausgibt.
     HELM_SECRET_ARGS=()
     if [ -n "$ADMIN_EMAIL" ]; then
-        # Die Wertedatei trägt das Passwort als eine Zeile: Zeilenumbrüche veränderte YAML beim Lesen
-        case "$ADMIN_PASSWORD" in
-            *$'\n'* | *$'\r'*) error "Das Administratorpasswort darf keine Zeilenumbrüche enthalten." ;;
-        esac
-        ADMIN_VALUES=$(umask 077 && mktemp "${TMPDIR:-/tmp}/mandari-admin.XXXXXX")
-        trap 'rm -f "$ADMIN_VALUES"' EXIT
-        # YAML in einfachen Anführungszeichen: nur das Anführungszeichen selbst wird verdoppelt
-        printf "adminUser:\n  email: '%s'\n  password: '%s'\n" \
-            "${ADMIN_EMAIL//\'/\'\'}" "${ADMIN_PASSWORD//\'/\'\'}" > "$ADMIN_VALUES"
-        HELM_SECRET_ARGS=(--values "$ADMIN_VALUES")
+        ADMIN_PASSWORD_FILE=$(umask 077 && mktemp "${TMPDIR:-/tmp}/mandari-admin.XXXXXX")
+        trap 'rm -f "$ADMIN_PASSWORD_FILE"' EXIT
+        printf '%s' "$ADMIN_PASSWORD" > "$ADMIN_PASSWORD_FILE"
+        HELM_ARGS+=(--set "adminUser.email=$ADMIN_EMAIL")
+        HELM_SECRET_ARGS=(--set-file "adminUser.password=$ADMIN_PASSWORD_FILE")
     fi
     if [ "${NO_TLS:-false}" = true ]; then
         HELM_ARGS+=(--set ingress.tls.enabled=false)
