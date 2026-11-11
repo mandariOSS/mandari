@@ -27,7 +27,8 @@ Die Version steht an genau einer Stelle je Sprache (`mandari/pyproject.toml`,
 den Git-Tag geprüft. `mandari/uv.lock` führt die Version des Projekts mit; nach dem
 Anheben in `pyproject.toml` deshalb `uv lock` im Ordner `mandari` ausführen (das
 Skript prüft auch das). Container-Images tragen die Version als Tag (`v0.16.0`),
-zusätzlich `v0.16` für die jüngste Patch-Version einer Linie, `latest` für die höchste veröffentlichte Version und `dev-<commit>` bzw.
+zusätzlich `v0.16` für die jüngste Patch-Version einer Linie, `latest` für den jüngsten Stand von `main`
+(die höchste veröffentlichte Version oder neuer; ein Patch-Release einer älteren Linie setzt es nie) und `dev-<commit>` bzw.
 `main-<commit>` für Entwicklungs- und Produktionsstände. Diese Stände sind keine
 Releases und tragen keine Zusage.
 
