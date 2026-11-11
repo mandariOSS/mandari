@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load member_tags %}
 
 {% block page_title %}Team{% endblock %}
 
@@ -51,13 +52,13 @@
                             {% if member.user.avatar %}
                             <img src="{{ member.user.avatar.url }}" alt="" class="w-8 h-8 rounded-full object-cover">
                             {% else %}
-                            {{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}
+                            {{ member.user|team_initial }}
                             {% endif %}
                         </div>
                         <div>
                             <a href="{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}"
                                class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                                {{ member.user.get_full_name|default:member.user.email }}
+                                {{ member.user|team_name }}
                             </a>
                             {% if is_owner_user == member.user %}
                             <span class="ml-1.5 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded">Eigentümer</span>

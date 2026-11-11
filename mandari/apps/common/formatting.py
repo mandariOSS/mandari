@@ -141,6 +141,24 @@ def member_name(membership: Any, snapshot: str = "") -> str:
     return str(membership.user.get_display_name())
 
 
+#: Anzeige im Team für ein Konto ohne Namen, das seine Adresse nicht zeigt
+NAMELESS_MEMBER = "Mitglied"
+
+
+def team_display_name(user: Any) -> str:
+    """
+    Name einer Person in Teamverzeichnis und Teamprofil.
+
+    Der volle Name; hat das Konto keinen, die E-Mail-Adresse nur, wenn die Person sie im Team zeigt
+    (``User.settings["profile"]["show_email"]``, Standard ja), sonst „Mitglied“.
+    """
+    name = str(user.get_full_name() or "").strip()
+    if name:
+        return name
+    profile = (getattr(user, "settings", None) or {}).get("profile") or {}
+    return str(user.email) if profile.get("show_email", True) else NAMELESS_MEMBER
+
+
 def member_name_snapshot(membership: Any) -> str:
     """Name einer Mitgliedschaft zum Sichern an Protokoll- und Anwesenheitseinträgen (Issue #591)."""
     if not membership:
