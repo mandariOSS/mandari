@@ -280,7 +280,7 @@ def test_abruf_verbindet_nur_mit_geprueften_adressen(monkeypatch: pytest.MonkeyP
     with safe_fetch._strict():
         assert safe_fetch._own_hosts() == set() and not safe_fetch._allowed_address("10.0.0.5")
         with pytest.raises(safe_fetch.BlockedDestinationError):
-            safe_fetch._pinned_address("portal.example.org")
+            safe_fetch.check_url("https://portal.example.org/intern")
     # Für die übrigen Abrufe bleiben die Ausnahmen der Installation bestehen
     assert safe_fetch._allowed_address("10.0.0.5") and safe_fetch._own_hosts() == {"portal.example.org"}
     safe_fetch.check_url("https://intern.example.org/oparl")
