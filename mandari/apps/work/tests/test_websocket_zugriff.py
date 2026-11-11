@@ -256,18 +256,27 @@ def test_sperre_beendet_offene_notizen_verbindung(org: Any, mitglied: Any, top: 
 
 
 @pytest.mark.django_db(transaction=True)
-def test_notizen_verbindung_verlaesst_beim_ende_die_gruppe_der_person(mitglied: Any, top: FactionAgendaItem) -> None:
-    async def lauf() -> dict[str, Any]:
+def test_notizen_verbindung_verlaesst_beim_ende_die_gruppe_der_person(
+    mitglied: Any, top: FactionAgendaItem, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    verlassen: list[str] = []
+    layer = get_channel_layer()
+    echt = layer.group_discard
+
+    async def mitschreiben(gruppe: str, kanal: str) -> None:
+        verlassen.append(gruppe)
+        await echt(gruppe, kanal)
+
+    monkeypatch.setattr(layer, "group_discard", mitschreiben)
+
+    async def lauf() -> None:
         kommunikator = _notizen(mitglied.user, top)
         verbunden, _ = await kommunikator.connect()
         assert verbunden
-        layer = get_channel_layer()
-        gruppe = freigaben.user_group(mitglied.user_id)
-        assert layer.groups.get(gruppe)
         await kommunikator.disconnect()
-        return dict(layer.groups.get(gruppe) or {})
 
-    assert asyncio.run(lauf()) == {}
+    asyncio.run(lauf())
+    assert freigaben.user_group(mitglied.user_id) in verlassen
 
 
 # --- Sitzungsvorbereitung: Nachprüfung während der Verbindung ----------------------------------------------------
