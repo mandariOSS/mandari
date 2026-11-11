@@ -56,7 +56,7 @@ MeetingInvitationStatusView.
                 </div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
                     {% if can_export_letters %}
-                    <c-ui.textlink href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='pdf' %}" class="text-sm">Serienbrief (PDF)</c-ui.textlink>
+                    {% if batch.dispatch.pk not in letter_pdf_blocked %}<c-ui.textlink href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='pdf' %}" class="text-sm">Serienbrief (PDF)</c-ui.textlink>{% endif %}
                     <c-ui.textlink href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='csv' %}" class="text-sm">Daten (CSV)</c-ui.textlink>
                     {% endif %}
                     {% if batch.pending %}

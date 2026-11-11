@@ -691,5 +691,9 @@ def test_serienbrief_mit_nichtoeffentlichem_teil_nur_mit_sichtrecht(welt: Welt) 
 
     assert ohne_noe.get(f"{_serienbrief(welt, dispatch)}/pdf/").status_code == 403
     # Die Datei für den eigenen Serienbrief enthält keine Tagesordnung
+    # Die Übersicht bietet diesem Konto nur die Datei an, dem Sitzungsdienst mit Sichtrecht beides
+    seite = ohne_noe.get(_status_url(welt)).content.decode()
+    assert f"{_serienbrief(welt, dispatch)}/csv/" in seite
+    assert f"{_serienbrief(welt, dispatch)}/pdf/" not in seite
     daten = ohne_noe.get(f"{_serienbrief(welt, dispatch)}/csv/")
     assert daten.status_code == 200 and "GEHEIMER-TOP" not in daten.content.decode("utf-8-sig")

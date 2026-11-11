@@ -174,12 +174,11 @@ class AttendanceDeleteView(SessionViewMixin, View):
         if gesperrt:
             return gesperrt
         # Geprüftes oder überwiesenes Sitzungsgeld hängt an der Zeile und darf nicht mit ihr verschwinden
-        grund = allowance_service.attendance_removal_block(attendance)
+        name = attendance.person.display_name
+        grund = allowance_service.remove_attendance(attendance)
         if grund:
             messages.error(request, grund)
             return _done(self, meeting)
-        name = attendance.person.display_name
-        attendance.delete()
         messages.success(request, f"{name} wurde von der Anwesenheitsliste entfernt.")
         if self.is_htmx:
             from django.http import HttpResponse

@@ -156,6 +156,16 @@ class MeetingInvitationStatusView(SessionViewMixin, TemplateView):
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
         overview = invitation_response_service.meeting_overview(meeting, include_reasons=True)
         config = meeting.tenant.reminder_config()
+        letter_batches = invitation_export_service.letter_batches(meeting)
+        # Versände, deren Serienbrief-PDF den nichtöffentlichen Teil druckt: ohne Sichtrecht kein PDF-Link
+        # (MeetingSerialLetterView lehnt den Abruf ab), die Datei für den eigenen Serienbrief bleibt
+        letter_pdf_blocked = set()
+        if not self.has_permission("view_non_public_meetings"):
+            letter_pdf_blocked = {
+                batch.dispatch.pk
+                for batch in letter_batches
+                if any(r.includes_non_public for r in invitation_export_service.letter_recipients(batch.dispatch))
+            }
         context.update(
             {
                 "meeting": meeting,
@@ -166,7 +176,8 @@ class MeetingInvitationStatusView(SessionViewMixin, TemplateView):
                 "reminder_reason": dict(SessionTenant.RSVP_REASON_CHOICES)[config["rsvp_reason"]],
                 "reminder_audience": dict(SessionTenant.RSVP_AUDIENCE_CHOICES)[config["rsvp_audience"]],
                 "is_open": invitation_response_service.is_open_for_responses(meeting),
-                "letter_batches": invitation_export_service.letter_batches(meeting),
+                "letter_batches": letter_batches,
+                "letter_pdf_blocked": letter_pdf_blocked,
                 "can_enter_responses": self.has_permission("manage_attendance"),
                 # Der Serienbrief enthält die persönlichen Rückmeldelinks (MeetingSerialLetterView)
                 "can_export_letters": self.has_permission("manage_attendance"),

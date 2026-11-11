@@ -43,6 +43,10 @@ from apps.session.services import agenda_service, file_service
 #: 2: Die Tagesordnung in der Mappe richtet sich nach den Rechten der Fassung
 FORMAT_VERSION = 2
 
+#: Öffentliche Fassungen mit älterem Aufbau werden nicht mehr ausgeliefert: Ihre Tagesordnung konnte Aktenzeichen
+#: nichtöffentlicher Vorlagen nennen. Sie entstehen auf Anforderung neu.
+PUBLIC_MIN_FORMAT = 2
+
 PUBLIC = SessionMeetingPackage.VARIANT_PUBLIC
 INTERNAL = SessionMeetingPackage.VARIANT_INTERNAL
 VARIANT_LABELS: dict[str, str] = dict(SessionMeetingPackage.VARIANT_CHOICES)
@@ -164,6 +168,8 @@ class MeetingPackagePlan:
     def contents(self) -> dict[str, Any]:
         """Enthaltene Objekte – Grundlage der Sperre älterer Fassungen (siehe Service)."""
         return {
+            # Aufbau, mit dem die Fassung entstand (Sperre älterer öffentlicher Fassungen, siehe Service)
+            "format": FORMAT_VERSION,
             "meeting_public": self.meeting.is_public,
             "items": sorted({str(top.item.pk) for top in self.all_tops()}),
             "papers": sorted({str(paper.paper.pk) for paper in self.all_papers()}),

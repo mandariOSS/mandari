@@ -257,11 +257,36 @@ def attendance_removal_block(attendance: Any) -> str:
     """
     from apps.session.models import SessionAllowance
 
-    allowance = SessionAllowance.objects.filter(attendance=attendance).only("status", "export_reference").first()
+    return _removal_block(SessionAllowance.objects.filter(attendance=attendance).first())
+
+
+def _removal_block(allowance: Any) -> str:
     if allowance is None:
         return ""
     if allowance.status in ("approved", "paid") or allowance.export_reference:
         return ATTENDANCE_HAS_ALLOWANCE
+    return ""
+
+
+def remove_attendance(attendance: Any) -> str:
+    """
+    Anwesenheitszeile entfernen, wenn kein geprüftes Sitzungsgeld daran hängt; sonst der Grund (leer: entfernt).
+
+    Prüfung und Löschen laufen in einer Transaktion unter Zeilensperren: Die Sperre der Anwesenheit hält auch eine
+    Position auf, die gerade erst entsteht; die Sperre der Position wartet eine laufende Genehmigung oder einen
+    laufenden Export ab und liest danach deren Ergebnis. So verschwindet keine Position, die zwischen Prüfung und
+    Löschen genehmigt oder exportiert wurde.
+    """
+    from apps.session.models import SessionAllowance, SessionAttendance
+
+    with transaction.atomic():
+        locked = SessionAttendance.objects.select_for_update().filter(pk=attendance.pk).first()
+        if locked is None:
+            return ""
+        reason = _removal_block(SessionAllowance.objects.select_for_update().filter(attendance=locked).first())
+        if reason:
+            return reason
+        locked.delete()
     return ""
 
 

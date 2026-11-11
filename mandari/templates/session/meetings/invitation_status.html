@@ -59,7 +59,7 @@ und Serienbrief. Absagegründe sind nur hier (Sitzungsdienst) sichtbar.
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                     {% if can_export_letters %}
-                    <c-ui.button size="sm" variant="secondary" icon="file-text" href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='pdf' %}">Serienbrief (PDF)</c-ui.button>
+                    {% if batch.dispatch.pk not in letter_pdf_blocked %}<c-ui.button size="sm" variant="secondary" icon="file-text" href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='pdf' %}">Serienbrief (PDF)</c-ui.button>{% endif %}
                     <c-ui.button size="sm" variant="secondary" icon="table" href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='csv' %}">Daten (CSV)</c-ui.button>
                     {% endif %}
                     {% if batch.pending %}
