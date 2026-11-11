@@ -3,13 +3,37 @@
 > Gemeinsamer Kontext für alle KI-Assistenten (Claude, Copilot, Codex, Gemini usw.).
 > Claude-spezifische Ergänzungen stehen in CLAUDE.md, das diese Datei einbindet.
 
+## Verbindliche Arbeitsregeln
+
+Vollständig in [docs/WEITERENTWICKLUNG.md](docs/WEITERENTWICKLUNG.md) und
+[docs/RELEASE_POLITIK.md](docs/RELEASE_POLITIK.md). Gehen Anweisungen auseinander, gelten diese beiden Seiten.
+
+1. **Aufgaben stehen nur in GitHub** (Issues, Meilensteine, Projekt-Board). Konzept- und Plandateien sind
+   Hintergrund, keine Aufgabenliste. Keine Arbeit ohne Issue; ausgenommen sind Dependabot,
+   Release-Vorbereitung und Rückportierungen.
+2. **Release alle zwei Wochen** (Dienstag, Stichtag Donnerstag davor). Jeder Meilenstein ist ein Zug. Was
+   nicht fertig ist, fährt mit dem nächsten; der Termin bleibt.
+3. **Prioritäten in dieser Reihenfolge:** Sicherheit innerhalb der Frist, Störungen und kritische Fehler,
+   Zusagen mit Termin, der laufende Meilenstein, Rückstand. Begonnenes vor Neuem.
+4. **Ein Issue zur Zeit** je Agent, höchstens sechs gleichzeitig „In Arbeit“. Eigene rote PRs und offene
+   Befunde gehen neuer Arbeit vor. Neue Wünsche kommen in den nächsten Zug, nicht still in den laufenden.
+5. **Branch von `dev`, PR gegen `dev`, Merge-Queue.** `Closes #…` nur, wenn der PR das Issue ganz erledigt,
+   sonst `Teil von #…`. CHANGELOG-Zeile unter `[Unreleased]` im selben PR.
+6. **Ältere Versionen:** Korrekturen nie direkt auf `release/v*` oder `main`. Erst in `dev` mergen, dann bei
+   Sicherheitskorrekturen ab „mittel“ und kritischen Fehlern zurückportieren:
+   `python scripts/rueckportieren.py <PR> --grund <grund>` (Abschnitt 9 in WEITERENTWICKLUNG.md). Keine
+   Migrationen und keine neuen Funktionen in Pflegelinien.
+7. **Sicherheitslücken nie öffentlich:** kein öffentliches Issue, neutrale PR-Titel und -Texte.
+8. **Dokumentation:** `docs/` beschreibt, was im Code existiert. Pläne gehören in Issues oder ADRs.
+   Überholtes wird entfernt, nicht als veraltet markiert.
+
 ## Projekt-Überblick
 
-Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in Deutschland. Sie basiert auf dem **OParl-Standard** für Ratsinformationssysteme (RIS) und bietet drei Portale:
+Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in Deutschland. Sie basiert auf dem **OParl-Standard** für Ratsinformationssysteme (RIS) und besteht aus drei Produkten:
 
-1. **Public Portal** - Bürger:innen-Zugang zu Ratsinformationen
-2. **Work Portal** - Arbeitsbereich für politische Organisationen (Fraktionen)
-3. **Session RIS** - Verwaltungs-RIS für kommunale Sachbearbeiter
+1. **mandari Insight** (Bürgerportal) - Bürger:innen-Zugang zu Ratsinformationen
+2. **mandari Work** - Arbeitsbereich für politische Organisationen (Fraktionen)
+3. **mandari Session** - Sitzungsdienst und Ratsinformationssystem der Verwaltung
 
 ---
 
@@ -867,7 +891,8 @@ python manage.py migrate
 
 - **OParl-Spezifikation**: https://oparl.org/spezifikation/
 - **Projekt-Repository**: https://github.com/mandariOSS/mandari
-- **Dokumentation**: `docs/`
+- **Dokumentation**: `docs/` (Index `docs/README.md`), öffentlich https://docs.mandari.de
+- **Weiterentwicklung und Release-Politik**: `docs/WEITERENTWICKLUNG.md`, `docs/RELEASE_POLITIK.md`
 - **Django Dokumentation**: https://docs.djangoproject.com/
 - **HTMX**: https://htmx.org/
 - **Alpine.js**: https://alpinejs.dev/

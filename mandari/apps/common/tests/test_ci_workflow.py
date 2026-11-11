@@ -174,7 +174,7 @@ def _bash() -> str | None:
 
 
 def _ergebnis_schritt_ausfuehren(
-    tmp_path: Path, ereignis: str, filter_json: str, migrationstests: str = ""
+    tmp_path: Path, ereignis: str, filter_json: str, migrationstests: str = "", zielzweig: str = ""
 ) -> dict[str, str]:
     """Führt das Skript des Schritts "Ergebnis festlegen" wie in GitHub Actions aus (bash, jq)."""
     bash = _bash()
@@ -187,7 +187,7 @@ def _ergebnis_schritt_ausfuehren(
     env = {
         **os.environ,
         "EREIGNIS": ereignis,
-        "ZIELZWEIG": "",
+        "ZIELZWEIG": zielzweig,
         "FILTER": filter_json,
         "MIGRATIONSTESTS": migrationstests,
         "CODEQL_ERWEITERT": "",
@@ -209,6 +209,19 @@ def test_pfadfilter_gilt_im_pull_request_und_in_der_merge_queue(tmp_path: Path, 
     # Sicherheitsnetz: Änderungen an .github/ oder an Abhängigkeitsdateien lassen alles laufen
     werte = _ergebnis_schritt_ausfuehren(tmp_path / "netz", ereignis, '{"sicherheitsnetz": "true"}')
     assert {werte[b] for b in bereiche} == {"true"}
+
+
+@pytest.mark.parametrize("zielzweig", ["main", "release/v0.12"])
+def test_pull_requests_gegen_main_und_pflegelinien_laufen_voll(tmp_path: Path, zielzweig: str) -> None:
+    """Issue #1341: Rückportierungen in eine Pflegelinie prüft die ganze CI, nicht nur der Pfadfilter."""
+    bereiche = _bereiche_im_ergebnis_schritt()
+    werte = _ergebnis_schritt_ausfuehren(tmp_path, "pull_request", '{"verweise": "true"}', zielzweig=zielzweig)
+    assert {werte[b] for b in bereiche} == {"true"}
+
+
+def test_pflegelinien_loesen_die_ci_aus() -> None:
+    """Ohne den Zweig im Auslöser liefe für Pull Requests gegen release/v0.12 gar keine Prüfung."""
+    assert "release/v*" in (_ausloeser()["pull_request"] or {})["branches"]
 
 
 def test_e2e_in_der_merge_queue_bei_jeder_aenderung_am_anwendungscode(tmp_path: Path) -> None:

@@ -2,19 +2,23 @@
 
 ## Unterstützte Versionen
 
-Sicherheitskorrekturen erscheinen für das jüngste Release und sechs Monate lang für das vorherige
-MINOR-Release. Wer selbst betreibt, sollte Aktualisierungen zeitnah einspielen (`./update.sh`
-beziehungsweise `helm upgrade`).
+mandari erscheint alle zwei Wochen. Sicherheitskorrekturen erhalten die jüngste Version und die
+**Pflegeversionen**: die erste Version jedes Quartals, sechs Monate lang. Wer selbst betreibt,
+geht entweder mit dem Takt (`./update.sh` beziehungsweise `helm upgrade`, ohne Handarbeit) oder
+bleibt auf einer Pflegeversion und spielt deren Patch-Versionen ein.
 
-| Version | Unterstützt |
-|---------|-------------|
-| jüngstes Release (Image-Tag `latest` oder `v<Version>`) | ja |
-| vorheriges MINOR-Release | Sicherheitskorrekturen, sechs Monate ab Erscheinen des Nachfolgers |
-| ältere Releases | nein |
-| Entwicklungsstände (Image-Tags `dev`, `dev-<commit>`) | nur Vorschau, keine Zusage |
+| Version | Unterstützt | bis |
+|---------|-------------|-----|
+| jüngstes Release (Image-Tag `v<Version>`; `latest` folgt dem Stand von `main`) | alle Korrekturen | Erscheinen der nächsten Version |
+| 0.12 (Pflegeversion 4. Quartal 2026) | Sicherheitskorrekturen ab „mittel“, kritische Fehler | 17.05.2027 |
+| 0.11 (Übergang, bisherige Regel) | Sicherheitskorrekturen ab „mittel“, kritische Fehler | 03.05.2027 |
+| übrige und ältere Releases | nein | – |
+| Entwicklungs- und Produktionsstände (Image-Tags `dev-<commit>`, `main-<commit>`) | keine Zusage | – |
 
-Supportzeiträume je Version, Release-Kadenz und die Fristen für Sicherheitskorrekturen nach
-Schweregrad stehen in der [Release- und Support-Politik](docs/RELEASE_POLITIK.md).
+Die nächste Pflegeversion erscheint am 12.01.2027 (0.16, unterstützt bis 12.07.2027). Diese Tabelle
+ist die maßgebliche Liste der Pflegelinien; das Werkzeug zur Rückportierung liest sie
+(`scripts/rueckportieren.py`). Release-Takt, Supportzeiträume und Fristen nach Schweregrad stehen
+in der [Release- und Support-Politik](docs/RELEASE_POLITIK.md).
 
 ## Sicherheitslücke melden
 
