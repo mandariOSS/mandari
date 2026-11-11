@@ -68,6 +68,10 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
     Organisation (Org-Grenze). Server -> Client Nachrichten:
         {"type": "comment", "event": "created"|"deleted", "comment": {...}}
         {"type": "position", "event": "updated", "position": {...}}
+
+    Der Zugriff wird während der Verbindung nachgeprüft, vor jedem Ereignis: Diese Linie hat keinen Kanal, der
+    offene Verbindungen bei Änderungen an Mitgliedschaft, Rolle, Konto oder Organisation benachrichtigt, und die
+    Ereignisse (Kommentare, Positionen) sind selten. Ohne Zugriff endet die Verbindung mit 4403.
     """
 
     async def connect(self):
@@ -76,11 +80,14 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
         self.scope_type = kwargs["scope"]
         self.object_id = kwargs["object_id"]
         self.group_name = None
+        self.user = None
+        self.entzogen = False
 
         user = self.scope.get("user")
         if not user or user.is_anonymous:
             await self.close(code=4401)
             return
+        self.user = user
 
         organization_id = await self._check_access(user)
         if organization_id is None:
@@ -97,6 +104,9 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({"type": "connected", "group_scope": self.scope_type})
 
     async def disconnect(self, close_code):
+        await self._gruppe_verlassen()
+
+    async def _gruppe_verlassen(self):
         if self.group_name:
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
@@ -106,8 +116,20 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
         pass
 
     async def preparation_event(self, event):
-        """Gruppen-Ereignis an den Client weiterleiten."""
+        """Gruppen-Ereignis an den Client weiterleiten, solange der Zugriff besteht."""
+        await self._zugriff_neu_pruefen()
+        if self.entzogen:
+            return
         await self.send_json(event["payload"])
+
+    async def _zugriff_neu_pruefen(self):
+        if self.entzogen or self.user is None:
+            return
+        if await self._check_access(self.user) is not None:
+            return
+        self.entzogen = True
+        await self._gruppe_verlassen()
+        await self.close(code=4403)
 
     @database_sync_to_async
     def _check_access(self, user):
@@ -121,11 +143,24 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
         from apps.tenants.models import Membership
 
         membership = (
-            Membership.objects.filter(user=user, organization__slug=self.org_slug, is_active=True)
+            Membership.objects.filter(
+                user=user,
+                organization__slug=self.org_slug,
+                is_active=True,
+                # Deaktiviertes Konto, gesperrte oder beendete Organisation: wie über HTTP kein Zugriff mehr
+                user__is_active=True,
+                organization__is_active=True,
+            )
             .select_related("organization")
             .first()
         )
         if membership is None:
+            return None
+
+        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
+        from apps.accounts.websocket import requirement_open
+
+        if requirement_open(user):
             return None
 
         # Divergenz zu den HTTP-Views vermeiden: Gäste haben keinen Zugriff,

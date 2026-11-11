@@ -34,6 +34,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -57,6 +58,36 @@ MAX_2FA_FAILURES = 5
 # Pflicht-Einrichtung nach dem Passwort: etwas mehr Zeit für App-Installation und Scan
 PENDING_ENROLL_MAX_AGE_SECONDS = 900
 ENROLL_SETUP_SESSION_KEY = "auth_2fa_enroll"
+
+
+def _pending_state(user, remember: bool, next_url: str, *, enroll: bool = False) -> dict:
+    """
+    Zustand zwischen Passwort und zweitem Schritt. ``auth`` bindet ihn an das geprüfte Passwort: Ändert sich das
+    Passwort des Kontos (Zurücksetzen, Entwerten bei einer Einladung), gilt der Zustand nicht mehr.
+    """
+    state = {
+        "user_id": str(user.pk),
+        "remember": remember,
+        "next": next_url or "",
+        "started": int(time.time()),
+        "auth": user.get_session_auth_hash(),
+    }
+    if enroll:
+        state["enroll"] = True
+    return state
+
+
+def _pending_user(request, data: dict):
+    """Konto zum schwebenden Zustand; ``None`` (Zustand verworfen), wenn es fehlt oder sein Passwort sich änderte."""
+    from .models import User
+
+    user = User.objects.filter(pk=data.get("user_id"), is_active=True).first()
+    if user is None or not constant_time_compare(str(data.get("auth", "")), user.get_session_auth_hash()):
+        request.session.pop(PENDING_2FA_SESSION_KEY, None)
+        request.session.pop(ENROLL_SETUP_SESSION_KEY, None)
+        return None
+    return user
+
 
 # Ratenbegrenzung der Anmeldung: Fehlversuche je Adresse (IPv6 je /64-Netz) und je Konto
 LOGIN_WINDOW_MINUTES = 15
@@ -154,24 +185,13 @@ class LoginView(View):
 
             if TwoFactorService().is_2fa_enabled(user):
                 # Noch NICHT anmelden: erst nach gültigem Code (LoginTwoFactorView)
-                request.session[PENDING_2FA_SESSION_KEY] = {
-                    "user_id": str(user.pk),
-                    "remember": remember,
-                    "next": next_url or "",
-                    "started": int(time.time()),
-                }
+                request.session[PENDING_2FA_SESSION_KEY] = _pending_state(user, remember, next_url)
                 request.session.cycle_key()
                 return redirect("accounts:login_2fa")
 
             if two_factor_required(user):
                 # 2FA-Pflicht ohne eingerichteten Faktor: erst einrichten, dann anmelden
-                request.session[PENDING_2FA_SESSION_KEY] = {
-                    "user_id": str(user.pk),
-                    "remember": remember,
-                    "next": next_url or "",
-                    "started": int(time.time()),
-                    "enroll": True,
-                }
+                request.session[PENDING_2FA_SESSION_KEY] = _pending_state(user, remember, next_url, enroll=True)
                 request.session.cycle_key()
                 return redirect("accounts:two_factor_enroll")
 
@@ -319,11 +339,8 @@ class LoginTwoFactorView(View):
         if int(time.time()) - int(data.get("started", 0)) > PENDING_2FA_MAX_AGE_SECONDS:
             request.session.pop(PENDING_2FA_SESSION_KEY, None)
             return None, None
-        from .models import User
-
-        user = User.objects.filter(pk=data.get("user_id"), is_active=True).first()
+        user = _pending_user(request, data)
         if user is None:
-            request.session.pop(PENDING_2FA_SESSION_KEY, None)
             return None, None
         return data, user
 
@@ -427,13 +444,36 @@ class TwoFactorEnrollView(View):
         if int(time.time()) - int(data.get("started", 0)) > PENDING_ENROLL_MAX_AGE_SECONDS:
             request.session.pop(PENDING_2FA_SESSION_KEY, None)
             return None, None
-        from .models import User
-
-        user = User.objects.filter(pk=data.get("user_id"), is_active=True).first()
+        user = _pending_user(request, data)
         if user is None:
-            request.session.pop(PENDING_2FA_SESSION_KEY, None)
             return None, None
         return user, data
+
+    @staticmethod
+    def _own_setup(request, user, service) -> dict | None:
+        """
+        Einrichtungsdaten dieser Sitzung, wenn sie den aktiven Faktor des Kontos selbst bestätigt hat; sonst ``None``.
+
+        Hat jemand anderes den Faktor eingerichtet (die Inhaberin in ihrer eigenen Sitzung), darf eine schwebende
+        Anmeldung die Einrichtung hier nicht abschließen: Sie braucht dann den Code wie jede andere Anmeldung.
+        """
+        setup = request.session.get(ENROLL_SETUP_SESSION_KEY)
+        if (
+            isinstance(setup, dict)
+            and setup.get("user_id") == str(user.pk)
+            and setup.get("confirmed")
+            and service.is_active_secret(user, str(setup.get("secret", "")))
+        ):
+            return setup
+        return None
+
+    @staticmethod
+    def _to_code_step(request, pending):
+        """Schwebende Anmeldung in den regulären Code-Schritt überführen."""
+        request.session.pop(ENROLL_SETUP_SESSION_KEY, None)
+        pending.pop("enroll", None)
+        request.session[PENDING_2FA_SESSION_KEY] = pending
+        return redirect("accounts:login_2fa")
 
     def _setup(self, request, user) -> dict:
         """Secret und Backup-Codes dieser Einrichtung (bleiben beim Neuladen erhalten)."""
@@ -485,15 +525,14 @@ class TwoFactorEnrollView(View):
         user, pending = self._subject(request)
         if user is None:
             return self._expired(request)
-        if TwoFactorService().is_2fa_enabled(user):
-            setup = request.session.get(ENROLL_SETUP_SESSION_KEY)
-            if isinstance(setup, dict) and setup.get("user_id") == str(user.pk) and setup.get("confirmed"):
+        service = TwoFactorService()
+        if service.is_2fa_enabled(user):
+            setup = self._own_setup(request, user, service)
+            if setup is not None:
                 return self._render_codes(request, pending, setup)
             if pending is not None:
                 # Inzwischen anderweitig eingerichtet: regulärer Code-Schritt
-                pending.pop("enroll", None)
-                request.session[PENDING_2FA_SESSION_KEY] = pending
-                return redirect("accounts:login_2fa")
+                return self._to_code_step(request, pending)
             return redirect(LoginView().get_success_url(request, self._next(request, pending) or None))
         return self._render_scan(request, user, pending, self._setup(request, user))
 
@@ -506,6 +545,9 @@ class TwoFactorEnrollView(View):
         if request.POST.get("action") == "finish":
             if not service.is_2fa_enabled(user):
                 return redirect("accounts:two_factor_enroll")
+            if pending is not None and self._own_setup(request, user, service) is None:
+                # Den Faktor hat nicht diese Anmeldung bestätigt: kein Abschluss ohne Code
+                return self._to_code_step(request, pending)
             next_url = self._next(request, pending)
             request.session.pop(ENROLL_SETUP_SESSION_KEY, None)
             request.session.pop(POLICY_CACHE_SESSION_KEY, None)

@@ -293,8 +293,17 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                 user=self.user,
                 organization=motion.organization,
                 is_active=True,
+                user__is_active=True,
+                # Gesperrte oder beendete Organisation: wie über HTTP kein Zugriff mehr
+                organization__is_active=True,
             )
         except Membership.DoesNotExist:
+            return None, None
+
+        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
+        from apps.accounts.websocket import requirement_open
+
+        if requirement_open(self.user):
             return None, None
 
         # Zentrale Stufenlogik (Motion.get_collab_access_level):
