@@ -1049,6 +1049,9 @@ def approve_registration(membership: Membership, actor: Membership | None = None
     gelesen, wie beim Reaktivieren (:func:`_restore_membership`).
     """
     with transaction.atomic():
+        # Erst die Anfrage, dann die handelnde Mitgliedschaft sperren: dieselbe Reihenfolge wie beim Reaktivieren,
+        # damit sich beide Wege zur selben Anfrage nicht gegenseitig blockieren
+        _lock_membership(membership)
         if not (_still_active(actor) and actor is not None and actor.has_permission("members.invite")):
             raise ServiceError("Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf.")
         if not membership.is_guest and not membership.is_active:
