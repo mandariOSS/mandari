@@ -36,8 +36,8 @@ selbst gehostetes ALLRIS 4 über Bridge oder App-API, Restbestand ALLRIS 3.
 
 1. **Adapter mit Umgehung** (Browser-Automatisierung, WAF-Token, robots ignorieren):
    technisch möglich, verstößt gegen unsere Regeln und § 44b UrhG, bricht bei jeder
-   Änderung der Gegenseite, gefährdet die Reputation des Projekts bei genau den
-   Verwaltungen, die wir als Kunden gewinnen wollen.
+   Änderung der Gegenseite, gefährdet die Reputation des Projekts bei den
+   Verwaltungen.
 2. **Warten**: keine Kosten, aber die Kommunen fehlen weiter im Portal.
 3. **Kooperationspfad**: Die Kommune erlaubt unseren User-Agent ausdrücklich per
    robots.txt oder aktiviert OParl. Beides ist für sie ein kleiner Schritt; OParl

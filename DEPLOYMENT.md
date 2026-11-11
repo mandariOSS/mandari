@@ -455,8 +455,7 @@ und 8 MB sind das rechnerisch 800 MB — deshalb sind `mem_limit`,
 
 **Warum `temp_file_limit`:** Sortier- und Gruppiervorgänge, die nicht in `work_mem`
 passen, schreibt PostgreSQL in temporäre Dateien. Ohne Grenze kann eine einzige
-entgleiste Abfrage die Platte füllen – am 24.09.2026 tat das ein Zähl-Join über
-Straßen und Adressen (Kreuzprodukt). Mit Grenze bricht nur diese Abfrage ab. Der
+entgleiste Abfrage die Platte füllen, etwa ein Zähl-Join mit Kreuzprodukt. Mit Grenze bricht nur diese Abfrage ab. Der
 Wert lässt sich ohne Neustart setzen: `ALTER SYSTEM SET temp_file_limit = '5GB';
 SELECT pg_reload_conf();`
 
@@ -478,8 +477,8 @@ Prozesse ein, siehe „Mehrere Anwendungsprozesse“.
 
 ### Für größere Installationen
 
-Beispiel aus dem eigenen Betrieb (Datenbankdienst mit 4 GB, gemeinsam genutzt von
-mandari, Website und Kundenportal):
+Beispiel für eine größere Installation (Datenbankdienst mit 4 GB, gemeinsam genutzt von
+mandari und weiteren Anwendungen):
 
 ```env
 POSTGRES_MEM_LIMIT=4g
@@ -1225,7 +1224,7 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
    Kommunen ab ihrem Stichtag, ohne Auswahl nichts:
 
    ```bash
-   docker exec mandari python manage.py tagesbatch kommune "Stadt Münster" --ab 2026-08-05
+   docker exec mandari python manage.py tagesbatch kommune "<Kommune>" --ab <JJJJ-MM-TT>
    docker exec mandari python manage.py tagesbatch liste
    ```
 
@@ -1284,7 +1283,7 @@ Schlüssel stand bisher in `NEBIUS_API_KEY`; die Anwendung liest ihn nicht mehr 
    export NEBIUS_API_KEY="$(grep '^NEBIUS_API_KEY=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r' \
      | sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
    docker exec -e NEBIUS_API_KEY mandari python manage.py ki_anbieter einrichten --vorlage nebius \
-     --modell moonshotai/Kimi-K2.6 --schluessel-aus-umgebung NEBIUS_API_KEY --work --buergerportal --pruefen
+     --modell <modell> --schluessel-aus-umgebung NEBIUS_API_KEY --work --buergerportal --pruefen
    unset NEBIUS_API_KEY
    ```
 
@@ -1620,7 +1619,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:check_service_levels` | täglich 06:30 | Service-Level |
 | `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
 | `befehl:verify_audit_chain` | täglich 04:20 | Hash-Ketten prüfen (Issue #221; ein Befund lässt den Lauf scheitern) |
-| `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026, Issue #366) |
+| `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, Issue #366) |
 | `befehl:purge_security_audit_log` | täglich 04:40 | Sicherheitsprotokoll nach Frist |
 | `befehl:session_privacy_purge` | am 1. um 05:00 | DSGVO-Löschlauf mit Archivpaket |
 | `befehl:einreichung_aufraeumen` | stündlich :25 | nicht eingereichte Anlagen des Profils Einreichung nach ihrem Ablauf löschen (Issue #1228) |
@@ -1737,7 +1736,7 @@ URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE
 `AUDIT_EXPORT_MAX_ROWS` (Vorgabe 100000) begrenzt Exporte aus der Oberfläche, größere Zeiträume
 exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
 Sicherheitsprotokolls, `SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS` (Vorgabe 0 = keine Löschung) die Frist seiner
-Archivpakete ab Ablage, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026;
+Archivpakete ab Ablage, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30;
 0 = keine Löschung) die der Anmeldeversuche für die Drosselung. Die Frist der Archivpakete eines Session-Mandanten
 steht in dessen Datenschutz-Einstellungen (`session_privacy_purge` wendet sie an).
 
@@ -1772,9 +1771,8 @@ Läufe enthalten nur Zahlen, keine personenbezogenen Daten.
 
 Alle Dienste teilen sich **eine** PostgreSQL-Instanz. Ist deren `max_connections`
 erschöpft, bekommt *jeder* Dienst `FATAL: sorry, too many clients already` — auch
-einer ganz ohne eigene Last. Genau das ist am 15.09.2026 passiert, als ein
-Schwachstellen-Scanner mit 304 Anfragen pro Minute (normal: 8) die Verbindungszahl
-über die damalige Obergrenze trieb.
+einer ganz ohne eigene Last. Das passiert zum Beispiel, wenn ein Schwachstellen-Scanner
+mit vielen Anfragen je Minute die Verbindungszahl über die Obergrenze treibt.
 
 Deshalb hat jeder Dienst eine feste Obergrenze, und die Summe bleibt unter der
 Obergrenze der Datenbank.
@@ -1788,17 +1786,13 @@ Obergrenze der Datenbank.
 | Worker für Live-Übertragungen (Dienst `worker-live`) | 7 | nur Rolle `tasks` mit `live=2`; Rechnung unten |
 | Protokoll-Orchestrator (`minutes-orchestrator`) | 2 | ein Faden; der Pool hält `DB_POOL_MIN` offen |
 | Verwaltungsbefehle der Zeitpläne (eigene Prozesse im Dienst `worker`) | 8 | höchstens 4 gleichzeitig (Parallelität von `default`), je Prozess 1–2 Verbindungen; früher als Host-Cron im Anwendungscontainer |
-| OCR-Worker | 30 | gleiches Image wie der Ingestor |
+| OCR-Worker (optional) | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
-| Kundenportal | 10 | eigener Container, eigene Datenbank |
+| Weitere Anwendungen am selben Datenbankdienst | je nach Pool | eigene Container, eigene Datenbanken |
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
-| **Summe** | **141** | |
-| **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb |
 
-Reserve im eigenen Betrieb: rund 60 Verbindungen.
-
-Die mitgelieferte `docker-compose.yml` hat keinen OCR-Worker und kein Kundenportal; dort ergeben die Zeilen
+Die mitgelieferte `docker-compose.yml` hat keinen OCR-Worker; dort ergeben die Zeilen
 zusammen 101, davon 3 nur mit `TEXT_EXTRACTION_RUNNER=worker` (Plätze in `text`), sonst 98. Ihre Vorgabe
 `POSTGRES_MAX_CONNECTIONS=100` reicht also nur ohne die Dokumentkette knapp. Wer `TEXT_EXTRACTION_RUNNER=worker`,
 mehrere Anwendungsprozesse oder größere Pools einschaltet, erhöht `POSTGRES_MAX_CONNECTIONS` (etwa auf 150) und
@@ -1851,12 +1845,12 @@ würden.
 oder Antworten mit 503, die Datenbank selbst hat aber reichlich freie Verbindungen (Abfrage
 unten). Seiten, die ganz aus dem Cache kommen, funktionieren weiter — das täuscht.
 
-**Ursache, die am 22.09.2026 zugeschlagen hat:** Unter ASGI bekommt jede Anfrage ihren
+**Ursache:** Unter ASGI bekommt jede Anfrage ihren
 *eigenen* Thread; eine Anfragespitze stellt also beliebig viele Threads vor die zehn
 Verbindungen. Legt ein Client auf, bricht asgiref die Aufgabe ab, und Django verschickt bei
 einem Teil dieser Anfragen nie `request_finished` — die Verbindung blieb dann für immer
 ausgeliehen. Ein Schwachstellen-Scanner, der Dutzende Anfragen pro Sekunde schickt und sofort
-auflegt, räumte so den Pool binnen Sekunden leer, bis zum Neustart gut 25 Stunden später.
+auflegt, konnte so den Pool binnen Sekunden leeren, bis zum nächsten Neustart.
 
 **Was heute dagegen schützt:**
 
@@ -1900,7 +1894,6 @@ select datname, count(*) as verbindungen, count(*) filter (where state='idle') a
 from pg_stat_activity where backend_type='client backend' group by 1 order by 2 desc;"
 ```
 
-Gemessener Normalbetrieb (16.09.2026): mandari 13, Portal 3, Website 2.
 
 ### Wenn der Ingestor der Engpass wird
 
@@ -1920,7 +1913,7 @@ davon nur so viele, wie gerade Anweisungen laufen, höchstens `DEFAULT_POOL_SIZE
 - mehrere Anwendungsprozesse (`APP_PROCESSES`, „Mehrere Anwendungsprozesse“ unten) oder mehrere
   web-Server: Ohne Pooler wächst die Summe ihrer Pools gegen `max_connections`;
 - Lastspitzen, bei denen der Pool der Anwendung (10 Verbindungen) leerläuft, obwohl PostgreSQL
-  Luft hätte (Schwachstellen-Scanner am 15.09. und 18.10.2026).
+  Luft hätte (etwa bei Schwachstellen-Scannern).
 
 Ein einzelner Prozess bei normaler Last braucht es nicht. Ohne Profil und Schalter ändert sich nichts.
 
@@ -2010,7 +2003,7 @@ Zwei Seiten, jede mit eigener Grenze:
    Worker + Ingestor + übrige Dienste + Reserve ≤ `max_connections`. `DEFAULT_POOL_SIZE` gilt je
    Datenbank und Benutzer; im Einzelserver lässt PgBouncer nur die Datenbank der Anwendung durch.
 
-Für unseren Einzelserver (`max_connections` 200, Budget oben):
+Beispiel: Einzelserver mit `max_connections` 200:
 
 | | ohne PgBouncer | mit PgBouncer |
 |---|---|---|

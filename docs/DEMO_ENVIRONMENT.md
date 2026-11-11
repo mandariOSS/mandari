@@ -9,9 +9,9 @@ python manage.py setup_demo_environment          # anlegen/aktualisieren
 python manage.py setup_demo_environment --reset  # restlos entfernen
 ```
 
-Für Produktvorstellungen setzt `setup_demo_praesentation` ein durchgehendes Drehbuch auf diese
-Umgebung auf – eine Drucksache von der Fraktion bis ins Bürgerportal, dazu ein zweiter Mandant
-und eine Leitstelle (siehe [DEMO_PRAESENTATION.md](DEMO_PRAESENTATION.md)).
+`setup_demo_praesentation` ergänzt diese Umgebung um einen durchgehenden Fall: eine Drucksache von
+der Fraktion bis ins Bürgerportal, dazu einen zweiten Mandanten und eine Leitstelle
+(`python manage.py setup_demo_praesentation --help`, wiederholbar mit `--reset`).
 
 ## Was wird angelegt?
 
@@ -131,9 +131,9 @@ Passwort, damit es auf der Website stehen kann. Das gilt **nur** in einer Demo-I
 neue Passwörter.
 
 **Neuaufbau alle 12 Stunden:** Die Demo-Datenbank wird zweimal am Tag verworfen, neu migriert und mit
-`setup_demo_environment` (und für das Drehbuch `setup_demo_praesentation`) neu befüllt. Was Besucher anlegen oder
-ändern, ist nach spätestens 12 Stunden wieder weg. Der Zeitplan steht im Cron des Servers und, damit der Hinweis
-ihn nennen kann, in `DEMO_NEUAUFBAU_UTC`; beide müssen zusammenpassen.
+`setup_demo_environment` (und `setup_demo_praesentation`) neu befüllt. Was Besucher anlegen oder ändern, ist nach
+spätestens 12 Stunden wieder weg. Der Zeitplan steht im Cron des Servers und, damit der Hinweis ihn nennen kann, in
+`DEMO_NEUAUFBAU_UTC`; beide müssen zusammenpassen.
 
 ## Idempotenz und Aufräumen
 

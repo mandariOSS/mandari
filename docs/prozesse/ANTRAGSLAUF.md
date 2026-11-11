@@ -158,7 +158,7 @@ geschlossen, (a) bis auf die Verweisung. Details: `docs/WORK_SESSION_SUBMISSION.
 
 | Land | Abweichung gegenüber NRW |
 |---|---|
-| **Hessen (HGO)** | Andere Begriffe (Gemeindevertretung statt Rat, Vorsitz durch Gemeindevertretung selbst, nicht durch den Bürgermeister). Einberufung und Ladungsfrist in § 58 HGO. Für Darmstadt maßgeblich. |
+| **Hessen (HGO)** | Andere Begriffe (Gemeindevertretung statt Rat, Vorsitz durch Gemeindevertretung selbst, nicht durch den Bürgermeister). Einberufung und Ladungsfrist in § 58 HGO. |
 | **Niedersachsen (NKomVG)** | Hauptverwaltungsbeamtin bzw. -beamter (HVB) lädt und stellt die Tagesordnung im Benehmen mit dem Vorsitz auf; Hauptausschuss stets nichtöffentlich; Fristen fast nur in der Geschäftsordnung. Einzelheiten unten. |
 | **Bayern (GO)** | Stärkere Stellung des ersten Bürgermeisters bei der Tagesordnung. |
 

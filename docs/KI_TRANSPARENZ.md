@@ -2,7 +2,7 @@
 
 Stand: Issue #938 (10/2026). Die Transparenzpflichten aus Art. 50 gelten seit dem 02.08.2026. Für Systeme, die vorher
 in Verkehr gebracht wurden, gilt die Kennzeichnungspflicht nach Abs. 2 ab dem 02.12.2026. Die rechtliche Bewertung
-ist eine Einschätzung aus der Entwicklung. Die Bestätigung durch die Kanzlei steht noch aus.
+ist eine Einschätzung aus der Entwicklung und ersetzt keine Rechtsberatung.
 
 ## Was Art. 50 verlangt
 
