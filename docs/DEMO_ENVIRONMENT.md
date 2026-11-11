@@ -80,6 +80,25 @@ Mandant **„Stadtverwaltung Musterstadt (Demo)"**
 Der Mandant veröffentlicht nicht im Bürgerportal (`insight_publish` aus); das schaltet erst
 die Präsentationsumgebung ein.
 
+### 4. Bestand der Musterstadt
+
+Die Geschichten oben (Trinkwasserbrunnen, Jugendbeirat, Spielplatz) sind von Hand geschrieben. Damit Rat,
+Ausschüsse, Fraktionen und Verwaltung so voll aussehen wie in einer echten Stadt, legt `setup_demo_environment`
+danach einen **Bestand** an. Grundlage ist ein gemeinsamer Katalog in `apps/common/demo_stadt.py` (nur Daten, keine
+Modelle); jedes Fachmodul legt seinen Teil selbst an:
+
+| Befehl | Modul | Inhalt |
+|---|---|---|
+| `setup_demo_insight` | Insight | 6 Fraktionen und Gruppen, gut 50 Personen mit Rat-, Fraktions- und Ausschussmitgliedschaften, 11 Gremien, ein Jahr Sitzungen (rund 115) mit Tagesordnungen inkl. nicht-öffentlicher Teile, rund 185 Vorgänge (Beschlussvorlagen, Satzungen, Bebauungspläne, Zuschüsse, Anträge und Anfragen aller Fraktionen, Mitteilungen) mit Beratungsfolgen, Beschlussnummern, Abstimmungen (auch namentlich), Umsetzungsstand, PDF-Drucksachen, Einladungen und Niederschriften sowie Orten für die Karte |
+| `setup_demo_work_bestand` | Work | Weitere Mitglieder der Musterfraktion (ohne Anmeldung), ihre Anträge und Anfragen passend zum RIS, Entwürfe, Ordner, Aufgaben, Sitzungsvorbereitungen mit Positionen |
+| `setup_demo_session` | Session | Dieselben Gremien, Personen, Ämter, Vorlagen, Sitzungen, Anträge, Anwesenheiten und Niederschriften im Verwaltungs-RIS |
+
+`stadtplan(aufbautag, umfang)` berechnet daraus deterministisch Termine (relativ zum Aufbautag, Ratssitzung alle
+sechs Wochen, Ausschüsse davor), Tagesordnungen, Beratungswege (Ausschuss → Rat), Ergebnisse und Abstimmungen.
+Ausschüsse sind nach d'Hondt besetzt. Kennungen des Bestands beginnen mit `b-`; ein wiederholter Lauf entfernt den
+Bestand und legt ihn neu an, die Geschichten bleiben unberührt. `DEMO_UMFANG=voll` ist der Standard, die Tests
+laufen mit `klein` (dieselben Wege, ein Bruchteil der Daten).
+
 ## Zugangsdaten
 
 Die Passwörter der Demo-Nutzer werden bei **jedem Lauf neu generiert** und
@@ -103,16 +122,18 @@ diese Demo (`apps/common/demo.py`):
 | KI-Funktionen | abgeschaltet, keine Aufrufe an KI-Anbieter oder frei eintragbare Adressen |
 | Passwort, zweiter Faktor, Sicherheitsschlüssel | nicht änderbar; alle Besucher teilen sich die Konten |
 | Registrierung, „Passwort vergessen“, Kontolöschung | gesperrt |
-| Hinweis | Auf jeder Seite unten links: „Demo-Umgebung – alle Daten sind erfunden und werden jede Nacht zurückgesetzt.“ |
+| Hinweis | Auf jeder Seite unten links: „Demo-Umgebung – alle Daten sind erfunden und werden zweimal täglich (4:30 und 16:30 Uhr) zurückgesetzt.“ Die Zeiten kommen aus `DEMO_NEUAUFBAU_UTC` (UTC, kommagetrennt, z. B. `03:30,15:30`) und erscheinen in Ortszeit. |
+| Anmeldeseite | Liste aller Demo-Zugänge mit dem Passwort; je Rolle meldet ein Klick an und führt in Work bzw. Session. Dazu ein Link ins Bürgerportal der Musterstadt. |
 
 **Zugangsdaten:** Ist zusätzlich `DEMO_PASSWORD` gesetzt, bekommen alle Demo-Konten dieses feste
 Passwort, damit es auf der Website stehen kann. Das gilt **nur** in einer Demo-Instanz. Ohne
 `DEMO_INSTANCE` ignorieren beide Befehle die Variable und erzeugen wie bisher bei jedem Lauf
 neue Passwörter.
 
-**Nächtlicher Neuaufbau:** Die Demo-Datenbank wird jede Nacht verworfen, neu migriert und mit
-`setup_demo_environment` (und für das Drehbuch `setup_demo_praesentation`) neu befüllt. Was
-Besucher tagsüber anlegen oder ändern, ist am nächsten Morgen wieder weg.
+**Neuaufbau alle 12 Stunden:** Die Demo-Datenbank wird zweimal am Tag verworfen, neu migriert und mit
+`setup_demo_environment` (und für das Drehbuch `setup_demo_praesentation`) neu befüllt. Was Besucher anlegen oder
+ändern, ist nach spätestens 12 Stunden wieder weg. Der Zeitplan steht im Cron des Servers und, damit der Hinweis
+ihn nennen kann, in `DEMO_NEUAUFBAU_UTC`; beide müssen zusammenpassen.
 
 ## Idempotenz und Aufräumen
 

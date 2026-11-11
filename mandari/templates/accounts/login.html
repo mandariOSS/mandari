@@ -1,16 +1,24 @@
 {% extends "accounts/base_auth.html" %}
+{% load demo_tags %}
 
 {% block title %}Anmelden{% endblock %}
 
-{% block header_title %}Willkommen zurück{% endblock %}
-{% block header_subtitle %}Melde dich an, um fortzufahren{% endblock %}
+{% block header_title %}{% demo_anmeldung as demo %}{% if demo %}mandari ausprobieren{% else %}Willkommen zurück{% endif %}{% endblock %}
+{% block header_subtitle %}{% demo_anmeldung as demo %}{% if demo %}Demo-Umgebung der fiktiven Stadt Musterstadt{% else %}Melde dich an, um fortzufahren{% endif %}{% endblock %}
 
 {% block content %}
+{% demo_anmeldung as demo %}
+{% if demo %}{% include "accounts/_demo_zugaenge.html" %}{% endif %}
 <form method="post" novalidate class="space-y-6">
     {% csrf_token %}
     {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
 
+    {% if demo %}
+    {# In der Demo kein Autofokus: Er schöbe die Rollenliste aus dem Bild #}
+    <c-form.field :field="form.email" label="E-Mail-Adresse" type="email" placeholder="deine@email.de" autocomplete="email" required />
+    {% else %}
     <c-form.field :field="form.email" label="E-Mail-Adresse" type="email" placeholder="deine@email.de" autocomplete="email" autofocus required />
+    {% endif %}
     <c-form.password :field="form.password" label="Passwort" placeholder="Dein Passwort" autocomplete="current-password" required />
     <c-form.errors :form="form" />
 
@@ -34,6 +42,7 @@
     </p>
     {% endif %}
 </form>
+
 {% endblock %}
 
 {% block footer %}{% endblock %}

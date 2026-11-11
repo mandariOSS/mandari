@@ -38,6 +38,8 @@ DIENSTE_DROSSEL = False
 # publish() prüft jedes Ereignis gegen das Vertragsregister (in der CI läuft die Suite mit DEBUG=false)
 EVENTS_VALIDATE_CONTRACTS = True
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # schnelle Hashes nur im Test
+# Kleiner Musterstadt-Bestand in setup_demo_environment: dieselben Wege, ein Bruchteil der Daten (eigene Tests mit voll)
+DEMO_UMFANG = "klein"
 # Tests laufen ohne Worker; die Prüfungen des Bedarfs (apps.events.presence) setzen den Wert selbst
 EVENTS_WORKER_REQUIRED = "false"
 # Sofort ausführen, wie ohne TASKS_BACKEND in Produktion; JournalBackend testen apps/events/tests

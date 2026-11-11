@@ -413,7 +413,13 @@ class TestReset:
             )
             == basis_papiere
         )
-        assert a.organizations.get(name=drehbuch.GREMIUM_HA).memberships.count() == 3
+        # Die Basisbesetzung des Hauptausschusses bleibt, die Zusatzmitglieder der Präsentation sind wieder weg
+        # (die übrigen Sitze besetzt der Musterstadt-Bestand, apps/common/demo_stadt.py)
+        ha = set(
+            a.organizations.get(name=drehbuch.GREMIUM_HA).memberships.values_list("person__family_name", flat=True)
+        )
+        assert {"Amberg", "Erden", "Birkholz"} <= ha
+        assert not ha & {"Dahl", "Grote", "Heller"}
 
     def test_reset_der_basisdemo_raeumt_die_praesentation_mit_auf(self) -> None:
         ausfuehren()
