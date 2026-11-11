@@ -926,6 +926,10 @@ class ElasticsearchService:
             filter_clauses.append({"terms": {"body_id": [str(b) for b in body_ids]}})
         elif body_id:
             filter_clauses.append({"term": {"body_id": body_id}})
+        elif body_ids is not None:
+            # Eine ausdrücklich leere Liste heißt: keine Kommune ist durchsuchbar (etwa alle pausiert). Ohne Filter
+            # liefe die Suche sonst über alle Kommunen im Index.
+            filter_clauses.append({"terms": {"body_id": []}})
 
         # Zeitraum-Filter (nur bei Indexen mit Datumsfeld)
         date_field = self.DATE_FIELD_BY_INDEX.get(index_name)
