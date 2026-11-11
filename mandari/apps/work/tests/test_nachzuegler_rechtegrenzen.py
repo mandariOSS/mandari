@@ -114,6 +114,24 @@ def test_import_legt_hoechstens_begrenzt_viele_labels_an(org: Any, make_member: 
     assert "3 unbekannte Labels" in aufloesung.warning()
 
 
+def test_import_erhaelt_bestehende_labels_wenn_neue_nicht_angelegt_werden(org: Any, make_member: Any) -> None:
+    from apps.work.tasks.models import Task
+
+    ohne = make_member(org, ["tasks.view", "tasks.create", "tasks.edit"], email="ohne@example.org")
+    vorhanden = TaskLabel.objects.create(organization=org, name="Haushalt", color="blue")
+    aufgabe = Task.objects.create(organization=org, title="Rede", created_by=ohne)
+    aufgabe.labels.add(vorhanden)
+    zeile = {"_line": 2, "id": str(aufgabe.pk), "title": "Rede", "labels": "Neu erfunden"}
+
+    bericht = import_service.classify_rows(org, ohne, [zeile])
+    import_service.apply_import(org, ohne, bericht)
+
+    assert list(aufgabe.labels.values_list("name", flat=True)) == ["Haushalt"]
+    # Der Hinweis steht schon in der Vorschau, vorn im Bericht und nur einmal
+    assert "Neu erfunden" in bericht.warnings[0]
+    assert sum("unbekannte Labels" in warnung for warnung in bericht.warnings) == 1
+
+
 # --- Ordner: Durchläufe enden auch im Zyklus ------------------------------------------------------------------
 
 

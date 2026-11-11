@@ -600,6 +600,14 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
         seen_in_file.add(title_key)
         report.create.append({"line": line, "data": data})
 
+    # Hinweis zu Labels schon in der Vorschau, nach denselben Regeln und in derselben Reihenfolge wie beim Schreiben
+    # (erst neue, dann bestehende Aufgaben). Vorn im Bericht, damit ihn die Kürzung der Warnungen nicht trifft.
+    labels = _LabelResolver(organization, membership, dry_run=True)
+    for entry in [*report.create, *report.update]:
+        labels.resolve(entry["data"].get("labels") or [])
+    hinweis = labels.warning()
+    if hinweis:
+        report.warnings.insert(0, hinweis)
     return report
 
 
@@ -621,10 +629,14 @@ class _LabelResolver:
     ``MAX_NEW_LABELS_PER_IMPORT`` je Import. Andere Namen bleiben weg und stehen in ``skipped``.
     """
 
-    def __init__(self, organization: Organization, membership: Membership | None = None) -> None:
+    def __init__(
+        self, organization: Organization, membership: Membership | None = None, *, dry_run: bool = False
+    ) -> None:
         self.organization = organization
-        self.cache = selectors.labels_by_name(organization)
+        self.cache: dict[str, TaskLabel | None] = dict(selectors.labels_by_name(organization))
         self.may_create = membership is not None and membership.has_permission("tasks.manage")
+        #: Vorschau: dieselben Regeln in derselben Reihenfolge, aber ohne Labels anzulegen
+        self.dry_run = dry_run
         self.created = 0
         self.skipped: dict[str, str] = {}
 
@@ -636,10 +648,20 @@ class _LabelResolver:
                 if not self.may_create or self.created >= MAX_NEW_LABELS_PER_IMPORT:
                     self.skipped.setdefault(key, name)
                     continue
-                self.cache[key] = TaskLabel.objects.create(organization=self.organization, name=name, color="blue")
+                self.cache[key] = (
+                    None
+                    if self.dry_run
+                    else TaskLabel.objects.create(organization=self.organization, name=name, color="blue")
+                )
                 self.created += 1
-            resolved.append(self.cache[key])
+            label = self.cache[key]
+            if label is not None:
+                resolved.append(label)
         return resolved
+
+    def complete(self, names: list[str]) -> bool:
+        """Lassen sich alle Namen auflösen (vorhanden oder in diesem Import angelegt)?"""
+        return all(name.lower() in self.cache for name in names)
 
     def warning(self) -> str:
         """Hinweis für den Bericht zu nicht übernommenen Labels (leer: alle übernommen)."""
@@ -706,7 +728,13 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
         task.assigned_to = data["assigned_to"]
     task.save()
     if data["labels"]:
-        task.labels.set(labels.resolve(data["labels"]))
+        resolved = labels.resolve(data["labels"])
+        if labels.complete(data["labels"]):
+            task.labels.set(resolved)
+        else:
+            # Nicht alle Namen ließen sich auflösen (kein Recht, neue anzulegen, oder Obergrenze): Die bisherigen
+            # Labels der Aufgabe bleiben, die aufgelösten kommen hinzu
+            task.labels.add(*resolved)
     if old_status != task.status:
         if task.status == "done":
             log_activity(task, membership, "completed")
@@ -744,6 +772,3 @@ def apply_import(organization: Organization, membership: Membership, report: Imp
         _update_from_row(task, membership, entry["data"], labels, now)
         updated.append(entry)
     report.update[:] = updated
-    hinweis = labels.warning()
-    if hinweis:
-        report.warnings.append(hinweis)

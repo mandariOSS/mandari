@@ -516,14 +516,19 @@ class DocumentFolder(models.Model):
             stack.extend(node.children.all())
         return result
 
-    def save_checked(self) -> None:
+    def save_checked(self, mover=None) -> None:
         """
-        Prüfen (``full_clean``) und speichern, Verschiebungen einer Organisation nacheinander.
+        Prüfen (``full_clean``) und speichern, Anlagen und Verschiebungen einer Organisation nacheinander.
 
-        Zwei gleichzeitige Verschiebungen (A unter B, B unter A) bestünden sonst beide die Zyklusprüfung. Mit
-        Elternordner werden deshalb die Ordner der Organisation gesperrt und der Zielordner danach neu gelesen,
-        damit die Prüfung den Stand der anderen Anfrage sieht. Wirft ``ValidationError`` wie ``full_clean``.
+        Zwei gleichzeitige Verschiebungen (A unter B, B unter A) bestünden sonst beide die Zyklusprüfung, und eine
+        Anlage unter einem Ordner, der gleichzeitig tiefer wandert, die Tiefenprüfung. Mit Elternordner werden
+        deshalb die Ordner der Organisation gesperrt und der Zielordner danach neu gelesen, damit die Prüfung den
+        Stand der anderen Anfrage sieht. Mit ``mover`` (wer einen bestehenden Ordner verschiebt) wird unter der
+        Sperre auch geprüft, ob das Umhängen Dokumente für Gäste öffnet, die diese Person nicht freigeben darf
+        (``guest_move_denied``): Der Zielordner kann inzwischen unter einen freigegebenen gewandert sein. Wirft
+        ``ValidationError`` wie ``full_clean``.
         """
+        from django.core.exceptions import ValidationError
         from django.db import transaction
 
         with transaction.atomic():
@@ -534,6 +539,12 @@ class DocumentFolder(models.Model):
                     .values_list("pk", flat=True)
                 )
                 self.parent = DocumentFolder.objects.get(pk=self.parent_id)
+                if mover is not None and not self._state.adding:
+                    stored = DocumentFolder.objects.filter(pk=self.pk).values_list("parent_id", flat=True).first()
+                    if stored != self.parent_id:
+                        denied = self.guest_move_denied(self.parent, mover)
+                        if denied:
+                            raise ValidationError({"parent": denied})
             self.full_clean()
             self.save()
 
