@@ -152,6 +152,20 @@ def actor_for(request: HttpRequest) -> str:
     return f"Django-Admin ({request.user.get_username()})"
 
 
+FEHLER_KUERZEL_VERGEBEN = "Dieses Kürzel ist bereits vergeben."
+
+
+def _darf_vervollstaendigen(model_admin: ModelAdmin[Any], request: HttpRequest, slug: str) -> bool:
+    """Gibt es den Mandanten schon, braucht der Assistent das Änderungsrecht an ihm (oder Superuser)."""
+    from apps.session.models import SessionTenant
+
+    bestehend = SessionTenant.objects.filter(slug=slug).first()
+    if bestehend is None:
+        return True
+    user: Any = request.user
+    return bool(user.is_superuser or model_admin.has_change_permission(request, bestehend))
+
+
 def provision_view(model_admin: ModelAdmin[Any], request: HttpRequest) -> HttpResponse:
     """Assistent „Mandant anlegen“; ``admin_site.admin_view`` hat Anmeldung und Staff geprüft."""
     user: Any = request.user
@@ -176,6 +190,11 @@ def provision_view(model_admin: ModelAdmin[Any], request: HttpRequest) -> HttpRe
             meldungen = tenant_provisioning.validate_spec(spec, katalog)
             for meldung in meldungen:
                 form.add_error(None, meldung)
+            if not meldungen and not _darf_vervollstaendigen(model_admin, request, spec.slug):
+                # Einen bestehenden Mandanten vervollständigt der Assistent (Administration einsetzen oder einladen).
+                # Dafür reicht das Recht zum Anlegen nicht: Es braucht das Änderungsrecht an diesem Mandanten.
+                form.add_error("slug", FEHLER_KUERZEL_VERGEBEN)
+                meldungen = [FEHLER_KUERZEL_VERGEBEN]
             if not meldungen:
                 try:
                     ergebnis = tenant_provisioning.provision_tenant(

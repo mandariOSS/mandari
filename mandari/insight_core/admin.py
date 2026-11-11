@@ -19,7 +19,7 @@ from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
-from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin, status_text
+from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin, confirm_before_change, status_text
 from apps.common.db_connections import releases_db_connections
 
 from .models import (
@@ -162,7 +162,7 @@ class OParlSourceAdmin(ModelAdmin):
             item["label"],
         )
 
-    @admin.action(description="Fehlerzähler und Alarm zurücksetzen")
+    @admin.action(description="Fehlerzähler und Alarm zurücksetzen", permissions=["change"])
     def reset_health(self, request, queryset):
         count = queryset.update(
             last_error=None,
@@ -245,27 +245,39 @@ class OParlSourceAdmin(ModelAdmin):
     def body_count(self, obj):
         return obj.bodies.count()
 
-    @action(description="Inkrementeller Sync", url_path="sync-incremental")
+    def _sync_action(self, request, object_id, *, full: bool):
+        obj = get_object_or_404(self.model, pk=object_id)
+        zurueck = reverse("admin:insight_core_oparlsource_change", args=[obj.pk])
+        art = "Vollständigen" if full else "Inkrementellen"
+        bestaetigung = confirm_before_change(
+            self,
+            request,
+            title=f"{art} Sync starten",
+            text=f"{art} Sync für „{obj.name}“ starten?",
+            back_url=zurueck,
+        )
+        if bestaetigung is not None:
+            return bestaetigung
+        run_sync_in_thread(obj, full=full)
+        art = "Vollständiger" if full else "Inkrementeller"
+        messages.success(request, f"{art} Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
+        return redirect(zurueck)
+
+    @action(description="Inkrementeller Sync", url_path="sync-incremental", permissions=["change"])
     def sync_incremental_action(self, request, object_id):
-        obj = self.model.objects.get(pk=object_id)
-        run_sync_in_thread(obj, full=False)
-        messages.success(request, f"Inkrementeller Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
-        return redirect(f"../../{object_id}/change/")
+        return self._sync_action(request, object_id, full=False)
 
-    @action(description="Vollständiger Sync", url_path="sync-full")
+    @action(description="Vollständiger Sync", url_path="sync-full", permissions=["change"])
     def sync_full_action(self, request, object_id):
-        obj = self.model.objects.get(pk=object_id)
-        run_sync_in_thread(obj, full=True)
-        messages.success(request, f"Vollständiger Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
-        return redirect(f"../../{object_id}/change/")
+        return self._sync_action(request, object_id, full=True)
 
-    @admin.action(description="Inkrementeller Sync (ausgewählte)")
+    @admin.action(description="Inkrementeller Sync (ausgewählte)", permissions=["change"])
     def sync_all_incremental(self, request, queryset):
         for source in queryset:
             run_sync_in_thread(source, full=False)
         messages.success(request, f"Inkrementeller Sync für {queryset.count()} Quellen gestartet.")
 
-    @admin.action(description="Vollständiger Sync (ausgewählte)")
+    @admin.action(description="Vollständiger Sync (ausgewählte)", permissions=["change"])
     def sync_all_full(self, request, queryset):
         for source in queryset:
             run_sync_in_thread(source, full=True)
@@ -556,7 +568,7 @@ class OParlBodyGeoSuggestionAdmin(NoAddAdminMixin, ModelAdmin):
         )
         return body
 
-    @admin.action(description="Ausgewählte Vorschläge übernehmen")
+    @admin.action(description="Ausgewählte Vorschläge übernehmen", permissions=["change"])
     def apply_selected(self, request: HttpRequest, queryset: QuerySet[OParlBodyGeoSuggestion]) -> None:
         per_body: dict[Any, list[OParlBodyGeoSuggestion]] = {}
         for suggestion in queryset.select_related("body"):
@@ -570,14 +582,34 @@ class OParlBodyGeoSuggestionAdmin(NoAddAdminMixin, ModelAdmin):
                 continue
             self._apply(request, suggestions[0])
 
-    @action(description="Übernehmen", url_path="uebernehmen")
-    def apply_row(self, request: HttpRequest, object_id: str) -> HttpResponse:
-        self._apply(request, get_object_or_404(OParlBodyGeoSuggestion.objects.select_related("body"), pk=object_id))
-        return redirect(reverse("admin:insight_core_oparlbodygeosuggestion_changelist"))
-
-    @action(description="Vorschlag übernehmen", url_path="detail-uebernehmen")
-    def apply_detail(self, request: HttpRequest, object_id: str) -> HttpResponse:
+    def _confirm_apply(
+        self, request: HttpRequest, object_id: str, back_url: str
+    ) -> tuple[OParlBodyGeoSuggestion, HttpResponse | None]:
         suggestion = get_object_or_404(OParlBodyGeoSuggestion.objects.select_related("body"), pk=object_id)
+        bestaetigung = confirm_before_change(
+            self,
+            request,
+            title="Vorschlag übernehmen",
+            text=f"Diesen Vorschlag für „{suggestion.body.name}“ übernehmen? Die übrigen Vorschläge gelten als erledigt.",
+            back_url=back_url,
+        )
+        return suggestion, bestaetigung
+
+    @action(description="Übernehmen", url_path="uebernehmen", permissions=["change"])
+    def apply_row(self, request: HttpRequest, object_id: str) -> HttpResponse:
+        zurueck = reverse("admin:insight_core_oparlbodygeosuggestion_changelist")
+        suggestion, bestaetigung = self._confirm_apply(request, object_id, zurueck)
+        if bestaetigung is not None:
+            return bestaetigung
+        self._apply(request, suggestion)
+        return redirect(zurueck)
+
+    @action(description="Vorschlag übernehmen", url_path="detail-uebernehmen", permissions=["change"])
+    def apply_detail(self, request: HttpRequest, object_id: str) -> HttpResponse:
+        zurueck = reverse("admin:insight_core_oparlbodygeosuggestion_change", args=[object_id])
+        suggestion, bestaetigung = self._confirm_apply(request, object_id, zurueck)
+        if bestaetigung is not None:
+            return bestaetigung
         body = self._apply(request, suggestion)
         return redirect(reverse("admin:insight_core_oparlbody_change", args=[body.pk]))
 
@@ -612,7 +644,7 @@ class OParlPersonAdmin(ModelAdmin):
             obj.photo_error = ""
         super().save_model(request, obj, form, change)
 
-    @admin.action(description="Fotos aus dem RIS neu laden")
+    @admin.action(description="Fotos aus dem RIS neu laden", permissions=["change"])
     def refetch_photos(self, request, queryset):
         from .services.person_photos import fetch_person_photo
 
@@ -721,7 +753,7 @@ class OParlPaperAdmin(ModelAdmin):
         }
         return status_text(colors.get(obj.georef_status, "#64748b"), obj.get_georef_status_display())
 
-    @admin.action(description="Verortungen aus dem JSON neu aufbauen (Tabelle abgleichen)")
+    @admin.action(description="Verortungen aus dem JSON neu aufbauen (Tabelle abgleichen)", permissions=["change"])
     def rebuild_paper_locations(self, request, queryset):
         from .services.paper_locations import sync_paper_locations
 
@@ -755,7 +787,7 @@ class OParlFileAdmin(ModelAdmin):
     ]
     actions = ["cache_locally"]
 
-    @admin.action(description="Lokal zwischenspeichern (max. 50)")
+    @admin.action(description="Lokal zwischenspeichern (max. 50)", permissions=["change"])
     def cache_locally(self, request, queryset):
         from .services.file_cache import fetch_and_cache
 
@@ -907,7 +939,7 @@ class PaperLocationAdmin(ModelAdmin):
 
     # --- Sammelaktionen (Liste) ---
 
-    @admin.action(description="Ausgewählte Verortungen bestätigen")
+    @admin.action(description="Ausgewählte Verortungen bestätigen", permissions=["change"])
     def confirm_selected(self, request, queryset):
         from .services.paper_locations import confirm_location
 
@@ -915,7 +947,7 @@ class PaperLocationAdmin(ModelAdmin):
             confirm_location(location)
         messages.success(request, f"{queryset.count()} Verortung(en) bestätigt.")
 
-    @admin.action(description="Ausgewählte Verortungen entfernen (Sperre)")
+    @admin.action(description="Ausgewählte Verortungen entfernen (Sperre)", permissions=["change"])
     def remove_selected_locations(self, request, queryset):
         from .services.paper_locations import remove_location
 
@@ -925,39 +957,55 @@ class PaperLocationAdmin(ModelAdmin):
 
     # --- Zeilen- und Detailaktionen (ein Klick je Verortung) ---
 
-    def _confirm(self, request, object_id):
+    def _confirm(self, request, object_id, back_url):
         from .services.paper_locations import confirm_location
 
         location = get_object_or_404(PaperLocation, pk=object_id)
+        bestaetigung = confirm_before_change(
+            self,
+            request,
+            title="Verortung bestätigen",
+            text=f"Verortung „{location.name or location.pk}“ bestätigen? Sie erscheint damit auf der Karte.",
+            back_url=back_url,
+        )
+        if bestaetigung is not None:
+            return bestaetigung
         confirm_location(location)
         messages.success(request, f"Verortung „{location.name or location.pk}“ bestätigt.")
+        return redirect(back_url)
 
-    def _remove(self, request, object_id):
+    def _remove(self, request, object_id, back_url):
         from .services.paper_locations import remove_location
 
         location = get_object_or_404(PaperLocation, pk=object_id)
+        bestaetigung = confirm_before_change(
+            self,
+            request,
+            title="Verortung entfernen",
+            text=f"Verortung „{location.name or location.pk}“ entfernen und sperren?",
+            back_url=back_url,
+        )
+        if bestaetigung is not None:
+            return bestaetigung
         remove_location(location)
         messages.success(request, f"Verortung „{location.name or location.pk}“ entfernt und gesperrt.")
+        return redirect(back_url)
 
-    @action(description="Bestätigen", url_path="bestaetigen")
+    @action(description="Bestätigen", url_path="bestaetigen", permissions=["change"])
     def confirm_row(self, request, object_id):
-        self._confirm(request, object_id)
-        return redirect(reverse("admin:insight_core_paperlocation_changelist"))
+        return self._confirm(request, object_id, reverse("admin:insight_core_paperlocation_changelist"))
 
-    @action(description="Entfernen", url_path="entfernen")
+    @action(description="Entfernen", url_path="entfernen", permissions=["change"])
     def remove_row(self, request, object_id):
-        self._remove(request, object_id)
-        return redirect(reverse("admin:insight_core_paperlocation_changelist"))
+        return self._remove(request, object_id, reverse("admin:insight_core_paperlocation_changelist"))
 
-    @action(description="Bestätigen", url_path="detail-bestaetigen")
+    @action(description="Bestätigen", url_path="detail-bestaetigen", permissions=["change"])
     def confirm_detail(self, request, object_id):
-        self._confirm(request, object_id)
-        return redirect(reverse("admin:insight_core_paperlocation_change", args=[object_id]))
+        return self._confirm(request, object_id, reverse("admin:insight_core_paperlocation_change", args=[object_id]))
 
-    @action(description="Entfernen", url_path="detail-entfernen")
+    @action(description="Entfernen", url_path="detail-entfernen", permissions=["change"])
     def remove_detail(self, request, object_id):
-        self._remove(request, object_id)
-        return redirect(reverse("admin:insight_core_paperlocation_change", args=[object_id]))
+        return self._remove(request, object_id, reverse("admin:insight_core_paperlocation_change", args=[object_id]))
 
 
 @admin.register(LocationMapping)
@@ -1085,17 +1133,17 @@ class ContactRequestAdmin(ModelAdmin):
             parts.append('<span title="Bestätigung gesendet">✅</span>')
         return mark_safe(" ".join(parts)) if parts else "-"
 
-    @admin.action(description="Als gelesen markieren")
+    @admin.action(description="Als gelesen markieren", permissions=["change"])
     def mark_as_read(self, request, queryset):
         updated = queryset.filter(status="new").update(status="read")
         messages.success(request, f"{updated} Anfrage(n) als gelesen markiert.")
 
-    @admin.action(description="Als beantwortet markieren")
+    @admin.action(description="Als beantwortet markieren", permissions=["change"])
     def mark_as_replied(self, request, queryset):
         updated = queryset.exclude(status__in=["closed", "converted"]).update(status="replied")
         messages.success(request, f"{updated} Anfrage(n) als beantwortet markiert.")
 
-    @admin.action(description="Als geschlossen markieren")
+    @admin.action(description="Als geschlossen markieren", permissions=["change"])
     def mark_as_closed(self, request, queryset):
         updated = queryset.update(status="closed")
         messages.success(request, f"{updated} Anfrage(n) geschlossen.")
@@ -1198,7 +1246,7 @@ class PublicQuestionAdmin(ModelAdmin):
         }
         return status_text(colors.get(obj.answer_status, "#64748b"), obj.get_answer_status_display())
 
-    @admin.action(description="Fragen freischalten")
+    @admin.action(description="Fragen freischalten", permissions=["change"])
     def approve_questions(self, request, queryset):
         from .services.question_service import publish_question
 
@@ -1207,21 +1255,21 @@ class PublicQuestionAdmin(ModelAdmin):
             request, f"{count} Frage(n) freigeschaltet – Ratsmitglied und Fragesteller:in wurden informiert."
         )
 
-    @admin.action(description="Fragen ablehnen")
+    @admin.action(description="Fragen ablehnen", permissions=["change"])
     def reject_questions(self, request, queryset):
         from .services.question_service import reject_question
 
         count = sum(1 for q in queryset.filter(status="pending") if reject_question(q, request.user))
         messages.success(request, f"{count} Frage(n) abgelehnt.")
 
-    @admin.action(description="Antworten freischalten")
+    @admin.action(description="Antworten freischalten", permissions=["change"])
     def approve_answers(self, request, queryset):
         from .services.question_service import publish_answer
 
         count = sum(1 for q in queryset.filter(answer_status="pending") if publish_answer(q))
         messages.success(request, f"{count} Antwort(en) freigeschaltet.")
 
-    @admin.action(description="Erinnerung senden")
+    @admin.action(description="Erinnerung senden", permissions=["change"])
     def send_reminders(self, request, queryset):
         from .services.question_service import send_answer_reminder
 

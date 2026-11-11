@@ -24,9 +24,11 @@ import logging
 import re
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.sax.saxutils import escape  # noqa: F401  (Doku: Escaping via ElementTree)
 
+from django.db import transaction
 from django.utils import timezone
 
 from apps.common import csv_safety
@@ -64,6 +66,83 @@ def rate_for(organization, role, rates_map=None) -> Decimal:
 # =============================================================================
 # Abrechnungslauf
 # =============================================================================
+
+
+#: Bezeichnung einer nichtöffentlichen Sitzung in der Abrechnung für Konten ohne das Sichtrecht dafür
+NON_PUBLIC_MEETING_LABEL = "Nichtöffentliche Sitzung"
+
+
+def meeting_label_expression(permissions: Any, prefix: str = "attendance__meeting__") -> Any:
+    """
+    Ausdruck für den Sitzungsnamen einer Position (Annotation ``meeting_label``).
+
+    Ausnahme von der Sichtbarkeitsregel für Sitzungen (``visibility.meeting_q``): Die Abrechnung zeigt auch
+    Positionen nichtöffentlicher Sitzungen, sonst wäre sie unvollständig. Ohne ``view_non_public_meetings`` steht
+    statt des Namens eine neutrale Bezeichnung; Gremium, Datum, Funktion und Betrag bleiben.
+    """
+    from django.db.models import Case, CharField, F, Value, When
+
+    from apps.session.visibility import NON_PUBLIC_MEETINGS
+
+    name = F(f"{prefix}name")
+    if NON_PUBLIC_MEETINGS in permissions:
+        return name
+    return Case(
+        When(**{f"{prefix}is_public": False}, then=Value(NON_PUBLIC_MEETING_LABEL)),
+        default=name,
+        output_field=CharField(),
+    )
+
+
+def meeting_label(allowance: Any) -> str:
+    """Sitzungsname einer Position: die Annotation der Abrechnungsansichten, sonst der Name der Sitzung."""
+    label = getattr(allowance, "meeting_label", None)
+    return str(label if label is not None else allowance.attendance.meeting.name)
+
+
+#: Meldung, wenn eine Anwesenheitszeile wegen ihres Sitzungsgelds bestehen bleibt
+ATTENDANCE_HAS_ALLOWANCE = (
+    "Für diese Anwesenheit ist Sitzungsgeld genehmigt, exportiert oder ausgezahlt. Die Zeile bleibt bestehen; "
+    "die Position lässt sich nur in der Abrechnung stornieren."
+)
+
+
+def _removal_block(allowance: Any) -> str:
+    """
+    Grund, aus dem eine Anwesenheitszeile mit dieser Position nicht entfernt werden darf (leer: sie darf).
+
+    Das Sitzungsgeld hängt an der Anwesenheit und verschwände mit ihr. Genehmigte, exportierte oder ausgezahlte
+    Positionen sind geprüft bzw. überwiesen: Sie bleiben, auch wenn die Niederschrift noch offen ist, und lassen
+    sich nur in der Abrechnung (``manage_allowances``) stornieren. Ausstehende und stornierte Positionen entfallen
+    mit der Zeile, wie sie auch der nächste Abrechnungslauf mangels Grundlage stornieren würde.
+    """
+    if allowance is None:
+        return ""
+    if allowance.status in ("approved", "paid") or allowance.export_reference:
+        return ATTENDANCE_HAS_ALLOWANCE
+    return ""
+
+
+def remove_attendance(attendance: Any) -> str:
+    """
+    Anwesenheitszeile entfernen, wenn kein geprüftes Sitzungsgeld daran hängt; sonst der Grund (leer: entfernt).
+
+    Prüfung und Löschen laufen in einer Transaktion unter Zeilensperren: Die Sperre der Anwesenheit hält auch eine
+    Position auf, die gerade erst entsteht; die Sperre der Position wartet eine laufende Genehmigung oder einen
+    laufenden Export ab und liest danach deren Ergebnis. So verschwindet keine Position, die zwischen Prüfung und
+    Löschen genehmigt oder exportiert wurde.
+    """
+    from apps.session.models import SessionAllowance, SessionAttendance
+
+    with transaction.atomic():
+        locked = SessionAttendance.objects.select_for_update().filter(pk=attendance.pk).first()
+        if locked is None:
+            return ""
+        reason = _removal_block(SessionAllowance.objects.select_for_update().filter(attendance=locked).first())
+        if reason:
+            return reason
+        locked.delete()
+    return ""
 
 
 def generate_allowances(tenant, period_start, period_end, *, organization=None, created_by=None) -> dict:
@@ -210,7 +289,7 @@ def build_export_csv(allowances) -> str:
             [
                 person.display_name,
                 attendance.meeting.organization.name,
-                attendance.meeting.name,
+                meeting_label(allowance),
                 timezone.localtime(attendance.meeting.start).strftime("%d.%m.%Y"),
                 attendance.get_role_display(),
                 f"{allowance.amount:.2f}".replace(".", ","),
