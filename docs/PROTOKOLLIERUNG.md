@@ -347,7 +347,7 @@ Stunden. Die Root-Platte überwacht daneben der Disk-Alarm des Betriebsmonitors
 
 ### 12.5 Einrichtung
 
-Die Befehle stehen in [DEPLOYMENT.md, „Protokolle“](../DEPLOYMENT.md#-protokolle). Das
+Die Befehle stehen in [DEPLOYMENT.md, „Protokolle“](../DEPLOYMENT.md#protokolle). Das
 mitgelieferte `Caddyfile` setzt `roll_keep_for 336h` (14 Tage) bereits; nur ein selbst
 gepflegtes Caddyfile braucht die Angabe in jedem `log { output file … }`-Block, danach
 `docker exec mandari-caddy caddy reload --config /etc/caddy/Caddyfile`. Bei einer von Hand

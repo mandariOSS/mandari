@@ -2334,7 +2334,7 @@ Die Startzeile nennt die Rechnung („je Prozess bis zu DB_POOL_MAX=… Datenban
 Prozesse × Server. **Kubernetes (Helm):** Dort skaliert `app.replicas` die Pods, je Pod ein Prozess
 (`APP_PROCESSES` bleibt ungesetzt).
 
-## 🧾 Protokolle
+## Protokolle
 
 Container-Logs laufen auf Produktionshosts über `journald` (90 Tage, höchstens 8 GB,
 überstehen die Neuerstellung von Containern), das Zugriffslog von Caddy 14 Tage, das
