@@ -18,6 +18,7 @@ from ..models import (
     PublicQuestion,
     withdrawn_q,
 )
+from ..services import personen_liste
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -90,8 +91,11 @@ class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
                 | Q(family_name__icontains=q)
                 | Q(given_name__icontains=q)
                 | Q(email__icontains=q)
-                | Q(memberships__role__icontains=q)
-                | Q(memberships__organization__name__icontains=q)
+                | Q(
+                    personen_liste.bestehende_mitgliedschaft(
+                        "pk", Q(role__icontains=q) | Q(organization__name__icontains=q)
+                    )
+                )
             ).distinct()
 
         return qs.order_by("family_name", "given_name")

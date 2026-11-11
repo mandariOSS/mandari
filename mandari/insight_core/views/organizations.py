@@ -55,6 +55,7 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
                 organizations=OuterRef("pk"),
                 start__gte=now,
                 cancelled=False,
+                deleted=False,
             )
             .order_by("start")
             .values("start")[:1]
@@ -63,11 +64,12 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
             OParlMeeting.objects.filter(
                 organizations=OuterRef("pk"),
                 start__lt=now,
+                deleted=False,
             )
             .order_by("-start")
             .values("start")[:1]
         )
-        has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
+        has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk"), deleted=False))
 
         base_qs = OParlOrganization.objects.filter(body=body, deleted=False).annotate(
             next_meeting=next_meeting_sq,
@@ -95,7 +97,7 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
 
         if body:
             today = timezone.now().date()
-            has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
+            has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk"), deleted=False))
 
             # Counts ohne Suchfilter
             all_orgs = OParlOrganization.objects.filter(body=body, deleted=False).annotate(
