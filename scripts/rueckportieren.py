@@ -95,8 +95,11 @@ def _pull_request_zweige(workflow: str) -> list[str]:
         elif inhalt.startswith("branches:") and "[" in inhalt:
             # Flussliste: branches: [dev, 'release/v*']
             if ereignis == "pull_request":
-                eintraege = inhalt.split("[", 1)[1].split("]", 1)[0].split(",")
-                muster += [e.strip().strip("'\"") for e in eintraege if e.strip()]
+                if inhalt.count("[") > 1 or inhalt.count("]") > 1:
+                    muster.append("[")  # Klammern im Muster: Liste nicht sicher lesbar, siehe ci_ausloeser_vorhanden
+                else:
+                    eintraege = inhalt.split("[", 1)[1].split("]", 1)[0].split(",")
+                    muster += [e.strip().strip("'\"") for e in eintraege if e.strip()]
             in_zweigen = False
         elif in_zweigen and inhalt.startswith("- "):
             if ereignis == "pull_request":
@@ -107,18 +110,16 @@ def _pull_request_zweige(workflow: str) -> list[str]:
 
 
 def ci_ausloeser_vorhanden(workflow: str, zweig: str = "release/v0.0") -> bool:
-    """Löst der Workflow pr-check.yml die CI für Pull Requests gegen ``zweig`` aus?
+    """Löst der Workflow pr-check.yml die CI für Pull Requests gegen ``zweig`` sicher erkennbar aus?
 
-    Wie bei GitHub entscheidet das letzte passende Muster; ``!muster`` schließt aus.
+    Ausgewertet werden nur einfache Muster mit ``*``. Enthält ein Muster einen Ausschluss (``!``), eine
+    Zeichenklasse oder ``+``/``?`` (GitHub wertet sie anders als ``fnmatch``), gilt der Auslöser als nicht sicher
+    erkennbar: lieber abbrechen und von Hand prüfen als einen PR ohne CI öffnen.
     """
-    erlaubt = False
-    for muster in _pull_request_zweige(workflow):
-        if muster.startswith("!"):
-            if fnmatch.fnmatchcase(zweig, muster[1:]):
-                erlaubt = False
-        elif fnmatch.fnmatchcase(zweig, muster):
-            erlaubt = True
-    return erlaubt
+    muster = _pull_request_zweige(workflow)
+    if any(set(eintrag) & set("![]+?") for eintrag in muster):
+        return False
+    return any(fnmatch.fnmatchcase(zweig, eintrag) for eintrag in muster)
 
 
 def _lauf(*befehl: str, cwd: Path = REPO, pruefen: bool = True) -> subprocess.CompletedProcess[str]:
@@ -160,7 +161,8 @@ def _ci_pruefen(linie: str, referenz: str) -> None:
     workflow = _lauf("git", "show", f"{referenz}:.github/workflows/pr-check.yml", pruefen=False).stdout
     if not ci_ausloeser_vorhanden(workflow, f"release/v{linie}"):
         raise RueckportError(
-            f"Die Pflegelinie release/v{linie} löst für Pull Requests gegen sich keine CI aus. Zuerst einen PR "
+            f"Die Pflegelinie release/v{linie} löst für Pull Requests gegen sich nicht erkennbar die CI aus "
+            "(fehlender Zweig oder komplexe Muster mit !, [], +, ?). Zuerst einen PR "
             "gegen die Linie öffnen, der in .github/workflows/pr-check.yml unter pull_request den Zweig "
             "'release/v*' ergänzt (docs/WEITERENTWICKLUNG.md, Abschnitt 9), dann erneut aufrufen."
         )

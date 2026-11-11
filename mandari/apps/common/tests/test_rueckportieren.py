@@ -84,11 +84,13 @@ def test_ci_ausloeser_zaehlt_nur_unter_pull_request() -> None:
     assert not skript.ci_ausloeser_vorhanden("on:\n  push:\n    branches: ['release/v*']\n")
 
 
-def test_ci_ausloeser_beachtet_ausschluesse_in_reihenfolge() -> None:
-    """Wie bei GitHub entscheidet das letzte passende Muster; ein späteres „!“ schließt die Linie aus."""
+def test_ci_ausloeser_mit_komplexen_mustern_gilt_als_unsicher() -> None:
+    """Ausschlüsse, Zeichenklassen und „+“ wertet GitHub anders aus als fnmatch: lieber abbrechen als ohne CI."""
     skript = _skript()
-    ausgeschlossen = "on:\n  pull_request:\n    branches:\n      - 'release/v*'\n      - '!release/v0.12'\n"
-    assert not skript.ci_ausloeser_vorhanden(ausgeschlossen, "release/v0.12")
-    assert skript.ci_ausloeser_vorhanden(ausgeschlossen, "release/v0.16")
-    wieder_drin = "on:\n  pull_request:\n    branches: ['!release/v0.12', 'release/v*']\n"
-    assert skript.ci_ausloeser_vorhanden(wieder_drin, "release/v0.12")
+    for muster in ("'!release/v0.12'", "'!release/v0.[0-9]*'", "'!release/v0.[0-9]+'", "'release/v?.*'"):
+        workflow = f"on:\n  pull_request:\n    branches:\n      - 'release/v*'\n      - {muster}\n"
+        assert not skript.ci_ausloeser_vorhanden(workflow, "release/v0.16"), muster
+    fluss = "on:\n  pull_request:\n    branches: ['release/v*', '!release/v0.[0-9]*']\n"
+    assert not skript.ci_ausloeser_vorhanden(fluss, "release/v0.16")
+    # Einfache Muster bleiben auswertbar, auch „**“ wie auf der Linie 0.11
+    assert skript.ci_ausloeser_vorhanden("on:\n  pull_request:\n    branches:\n      - 'release/**'\n", "release/v0.11")
