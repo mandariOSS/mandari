@@ -49,7 +49,7 @@ erste Zug eines Quartals.
 |---|---|
 | **Donnerstag (Stichtag)** | 1. Meilenstein bereinigen: Was nicht fertig ist, in den nächsten Zug verschieben. 2. Vorbereitungs-PR gegen `dev` „chore(release): 0.13.0 vorbereiten“: Version in `mandari/pyproject.toml` und `mandari/package.json`, `uv lock` im Ordner `mandari`, im CHANGELOG `[Unreleased]` zu `[0.13.0] – 2026-11-17` und einen leeren Abschnitt `[Unreleased]` darüber. 3. Release-PR `dev` → `main` „Release v0.13.0“, CI grün, Merge. 4. Deploy in Produktion nach den Betriebsregeln. |
 | **Freitag bis Montag** | Produktion beobachten (Statusseite, Fehlerprotokolle, Rückmeldungen). Ein Fehler, der das Release verhindert (Datenverlust, Sicherheitslücke, Ausfall, gescheiterte Migration), wird über `dev` behoben und mit einem weiteren Release-PR ausgeliefert. Getaggt wird dann der korrigierte Stand, wenn er bis Dienstag mindestens einen Werktag in Produktion läuft; sonst entfällt der Zug. Der korrigierte Stand enthält auch, was seit dem Stichtag in `dev` kam. Das ist gewollt: Freigegeben ist, was mindestens einen Werktag in Produktion lief. Isolierte Korrekturen auf dem Stichtagsstand gibt es nicht. |
-| **Dienstag (Release)** | Tag und GitHub-Release auf den getesteten Commit (Befehle unten). Der Release-Workflow baut die Images, legt `release/v0.13.0` an und setzt `latest`. Meilenstein schließen. Eintrag auf mandari.de/releases/. Bei einer **Pflegeversion** zusätzlich: Pflegelinie `release/v0.16` anlegen und die Tabelle „Unterstützte Versionen“ in `SECURITY.md` per PR ergänzen. Danach den übernächsten Zug planen (Abschnitt 3). |
+| **Dienstag (Release)** | Tag und GitHub-Release auf den getesteten Commit (Befehle unten). Der Release-Workflow baut die Images und legt `release/v0.13.0` an; `latest` setzt er nur, wenn der getaggte Commit noch der Kopf von `main` ist (lief `main` weiter, steht `latest` schon auf dem neueren Stand). Meilenstein schließen. Eintrag auf mandari.de/releases/. Bei einer **Pflegeversion** zusätzlich: Pflegelinie `release/v0.16` anlegen und die Tabelle „Unterstützte Versionen“ in `SECURITY.md` per PR ergänzen. Danach den übernächsten Zug planen (Abschnitt 3). |
 
 ```bash
 git fetch origin --tags
@@ -187,7 +187,8 @@ Linien unterstützt werden, steht in [SECURITY.md](../SECURITY.md#unterstützte-
      ```
 
      Der Release-Workflow baut die Images, legt `release/v0.12.1` an und setzt das Linien-Tag `v0.12`;
-     `latest` setzt er nur für die höchste Version. Zwei Releases nie gleichzeitig veröffentlichen.
+     `latest` setzt eine Patch-Version nie zurück, und das Website-Image bleibt bei dem von `v0.12.0`.
+     Zwei Releases nie gleichzeitig veröffentlichen.
    - Abschnitt `[0.12.1]` mit dem nächsten Vorbereitungs-PR im CHANGELOG von `dev` nachtragen.
 6. **Abschluss:** Im Original-PR kommentieren, in welchen Versionen die Korrektur steckt
    („Rückportiert: 0.11.2, 0.12.1“), und das Label `rueckportieren` entfernen.

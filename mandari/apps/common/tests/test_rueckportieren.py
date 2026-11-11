@@ -67,3 +67,16 @@ def test_ci_ausloeser_der_linie_wird_erkannt() -> None:
     skript = _skript()
     assert skript.ci_ausloeser_vorhanden((REPO / ".github" / "workflows" / "pr-check.yml").read_text(encoding="utf-8"))
     assert not skript.ci_ausloeser_vorhanden("on:\n  pull_request:\n    branches:\n      - dev\n      - main\n")
+
+
+def test_ci_ausloeser_zaehlt_nur_unter_pull_request() -> None:
+    """Ein Kommentar oder ein Eintrag unter push löst für Pull Requests gegen die Linie keine CI aus."""
+    skript = _skript()
+    nur_kommentar = "on:\n  pull_request:\n    branches:\n      - dev\n      # - 'release/v*'\n"
+    nur_push = "on:\n  push:\n    branches:\n      - 'release/v*'\n  pull_request:\n    branches:\n      - dev\n"
+    anderer_schluessel = "on:\n  pull_request:\n    paths:\n      - 'release/v*'\n"
+    unter_jobs = "on:\n  pull_request:\n    branches:\n      - dev\njobs:\n  a:\n    branches:\n      - 'release/v*'\n"
+    for workflow in (nur_kommentar, nur_push, anderer_schluessel, unter_jobs):
+        assert not skript.ci_ausloeser_vorhanden(workflow), workflow
+    mit_typen = 'on:\n  pull_request:\n    types: [opened]\n    branches:\n      - dev\n      - "release/v*"\n'
+    assert skript.ci_ausloeser_vorhanden(mit_typen)

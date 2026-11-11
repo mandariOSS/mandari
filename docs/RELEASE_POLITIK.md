@@ -28,7 +28,8 @@ den Git-Tag geprüft. `mandari/uv.lock` führt die Version des Projekts mit; nac
 Anheben in `pyproject.toml` deshalb `uv lock` im Ordner `mandari` ausführen (das
 Skript prüft auch das). Container-Images tragen die Version als Tag (`v0.16.0`),
 zusätzlich `v0.16` für die jüngste Patch-Version einer Linie, `latest` für den jüngsten Stand von `main`
-(die höchste veröffentlichte Version oder neuer; ein Patch-Release einer älteren Linie setzt es nie) und `dev-<commit>` bzw.
+(die höchste veröffentlichte Version oder neuer; ein Release setzt es nur, wenn sein Commit der Kopf von `main`
+ist, ein Patch-Release einer älteren Linie also nie) und `dev-<commit>` bzw.
 `main-<commit>` für Entwicklungs- und Produktionsstände. Diese Stände sind keine
 Releases und tragen keine Zusage.
 

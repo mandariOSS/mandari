@@ -65,8 +65,37 @@ def enthaelt_migration(dateien: list[str]) -> bool:
 
 
 def ci_ausloeser_vorhanden(workflow: str) -> bool:
-    """Löst der Workflow pr-check.yml der Linie die CI für Pull Requests gegen release/v* aus?"""
-    return "'release/v*'" in workflow or '"release/v*"' in workflow
+    """Löst der Workflow pr-check.yml der Linie die CI für Pull Requests gegen release/v* aus?
+
+    Zählt nur ein Eintrag in ``on.pull_request.branches``; Kommentare und andere Ereignisse (``push``) nicht.
+    Zeilenweise statt mit PyYAML, damit das Skript ohne zusätzliche Pakete läuft.
+    """
+    ereignis = None  # Name des Ereignisses unter "on:", in dem die Zeile steht
+    ereignis_einzug = -1
+    in_on = in_zweigen = False
+    for roh in workflow.splitlines():
+        zeile = roh.split("#", 1)[0].rstrip()
+        if not zeile.strip():
+            continue
+        einzug = len(zeile) - len(zeile.lstrip())
+        inhalt = zeile.strip()
+        if einzug == 0:
+            in_on = inhalt in ("on:", "'on':", '"on":')
+            ereignis, in_zweigen = None, False
+            continue
+        if not in_on:
+            continue
+        if ereignis is None or einzug <= ereignis_einzug:
+            ereignis, ereignis_einzug, in_zweigen = inhalt.rstrip(":"), einzug, False
+            continue
+        if inhalt == "branches:":
+            in_zweigen = True
+        elif in_zweigen and inhalt.startswith("- "):
+            if ereignis == "pull_request" and inhalt[2:].strip().strip("'\"") == "release/v*":
+                return True
+        else:
+            in_zweigen = False
+    return False
 
 
 def _lauf(*befehl: str, cwd: Path = REPO, pruefen: bool = True) -> subprocess.CompletedProcess[str]:

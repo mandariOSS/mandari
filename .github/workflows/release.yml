@@ -14,7 +14,7 @@
 #   dev     → :dev, :dev-<sha>
 #   main    → :latest, :main-<sha>, :<sha>
 #   release → :<version>; :v<X.Y> (bewegliches Tag der Linie) für das jüngste Patch-Release der Linie;
-#             :latest nur für die höchste veröffentlichte Version (eine Patch-Version einer
+#             :latest nur für die höchste veröffentlichte Version, deren Commit der Kopf von main ist (eine Patch-Version einer
 #             Pflegelinie setzt latest nicht zurück, Issue #1341)
 #   manual  → :<input>
 # Einen Kanal "beta" gibt es nicht.
@@ -155,6 +155,7 @@ jobs:
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           BRANCH="${GITHUB_REF_NAME}"
+          WEBSITE_QUELLE="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:main"
 
           if [ "${{ github.event_name }}" == "release" ]; then
             # Release: Versions-Tag; latest nur, wenn es die höchste veröffentlichte Version ist. Eine Patch-Version
@@ -180,11 +181,21 @@ jobs:
                 INGESTOR_TAGS="${INGESTOR_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${LINIE}"
               fi
             fi
-            if [ "$VERSION" = "$HOECHSTE" ]; then
+            # latest ist der jüngste Stand von main. Ein Release setzt es nur, wenn es die höchste Version ist UND
+            # sein Commit der aktuelle Kopf von main ist; lief main nach dem Stichtag weiter, bleibt latest beim
+            # neueren Stand (docs/WEITERENTWICKLUNG.md, Abschnitt 2).
+            MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+            RELEASE_SHA=$(git rev-parse HEAD)
+            if [ "$VERSION" = "$HOECHSTE" ] && [ "$RELEASE_SHA" = "$MAIN_SHA" ]; then
               MANDARI_TAGS="${MANDARI_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest"
               INGESTOR_TAGS="${INGESTOR_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest"
             else
-              echo "::notice title=latest bleibt::${VERSION} ist nicht die höchste Version (${HOECHSTE}); latest bleibt unverändert."
+              echo "::notice title=latest bleibt::${VERSION} (${RELEASE_SHA}) ist nicht die höchste Version (${HOECHSTE}) oder nicht der Kopf von main (${MAIN_SHA}); latest bleibt unverändert."
+            fi
+            # Website: Eine Patch-Version bekommt nicht den aktuellen Stand der Website, sondern den der ersten
+            # Version ihrer Linie (keine neuen Funktionen oder Migrationen über eine Patch-Version).
+            if printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[1-9][0-9]*$'; then
+              WEBSITE_QUELLE="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${LINIE}.0"
             fi
 
           elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
@@ -217,6 +228,7 @@ jobs:
           echo "mandari_tags=$MANDARI_TAGS" >> $GITHUB_OUTPUT
           echo "ingestor_tags=$INGESTOR_TAGS" >> $GITHUB_OUTPUT
           echo "website_tags=$WEBSITE_TAGS" >> $GITHUB_OUTPUT
+          echo "website_source=$WEBSITE_QUELLE" >> $GITHUB_OUTPUT
           echo "run_tags=$RUN_TAGS" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
@@ -284,12 +296,13 @@ jobs:
       # mandari und ingestor, damit ein IMAGE_TAG für alle drei Images reicht: Release-Versionen, latest,
       # dev und die Commit-Tags. Kopie des Manifests, kein Neubau. Das Paket website ist mit diesem
       # Repository verknüpft; GITHUB_TOKEN darf deshalb dort schreiben (Issue #698).
-      # Nur latest und dev werden überschrieben, alle anderen Tags nur angelegt (siehe Kopf der Datei).
+      # Nur latest, dev und Linien-Tags (v0.16) werden überschrieben, alle anderen Tags nur angelegt (siehe Kopf der Datei).
+      # Quelle ist website:main, bei Patch-Versionen das Website-Image der ersten Version der Linie.
       # Scheitert dieser Schritt, laufen SBOM, Sichtbarkeit und die Prüfung am Ende trotzdem.
       - name: Website-Image mit denselben Tags versehen
         id: website
         env:
-          WEBSITE_SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:main
+          WEBSITE_SOURCE: ${{ steps.tags.outputs.website_source }}
           WEBSITE_TAGS: ${{ steps.tags.outputs.website_tags }}
         run: |
           set -eu
