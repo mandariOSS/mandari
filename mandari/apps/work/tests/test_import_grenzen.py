@@ -142,6 +142,18 @@ def test_tabellentext_im_rueckfall_einmal_und_absatzweise() -> None:
     assert import_text._table_text(tabelle) == "Alpha Gamma Delta"
 
 
+def test_tabellentext_im_rueckfall_trennt_an_tabulator_und_umbruch() -> None:
+    dokument = docx.Document()
+    tabelle = dokument.add_table(rows=1, cols=1)
+    lauf = tabelle.cell(0, 0).paragraphs[0].add_run("10")
+    lauf.add_tab()
+    lauf.add_text("20")
+    lauf.add_break()
+    lauf.add_text("30")
+
+    assert import_text._table_text(tabelle) == "10 20 30"
+
+
 def test_wiederholter_inhalt_verbundener_zeilen_ist_begrenzt(monkeypatch: pytest.MonkeyPatch) -> None:
     """Eine große oberste Zelle mit vielen Fortsetzungen: Die Ausgabe wächst nicht mit Inhalt mal Zeilen."""
     monkeypatch.setattr(import_text, "MAX_TABLE_HTML_CHARS", 200_000)

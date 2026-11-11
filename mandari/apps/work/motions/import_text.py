@@ -536,12 +536,21 @@ def _table_text(table: Any) -> str:
     """
     Text einer Tabelle für den Rückfall ohne Tabellenaufbau: jeder Absatz einmal, Absätze durch Leerzeichen getrennt.
 
-    Gelesen werden die Textknoten (``w:t``) je Absatz. ``itertext()`` über die Tabelle lieferte denselben Text
+    Gelesen werden die Textknoten (``w:t``) je Absatz; Tabulatoren und Umbrüche im Absatz trennen wie ein
+    Leerzeichen, damit aus „10“ und „20“ nicht „1020“ wird. ``itertext()`` über die Tabelle lieferte denselben Text
     mehrfach, weil die Elemente von python-docx ihren Text auch selbst ausgeben.
     """
+    text_tag = _w("t")
+    breaks = {_w("tab"), _w("br"), _w("cr")}
     paragraphs = []
     for paragraph in table._tbl.iter(_w("p")):
-        text = "".join(node.text or "" for node in paragraph.iter(_w("t"))).strip()
+        pieces = []
+        for node in paragraph.iter():
+            if node.tag == text_tag:
+                pieces.append(node.text or "")
+            elif node.tag in breaks:
+                pieces.append(" ")
+        text = " ".join("".join(pieces).split())
         if text:
             paragraphs.append(text)
     return " ".join(paragraphs)
