@@ -737,6 +737,9 @@ services:
       INGESTOR_HOST_MAX_CONCURRENT:
       INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES:
       INGESTOR_USER_AGENT:
+      # Datei-Downloads nur an öffentliche Adressen; Ausnahmen siehe .env.example
+      INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:
+      INGESTOR_FETCH_INTERNAL_HOSTS:
       SCRAPER_USER_AGENT:
       MAX_WORKERS:
       SYNC_BODY_CONCURRENCY:
