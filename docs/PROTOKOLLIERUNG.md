@@ -1,14 +1,36 @@
-# Protokollierungskonzept – mandari Session RIS
+# Protokollierung: Systemprotokolle und fachliches Audit-Log
 
-Stand: September 2026 · Bezug: Issue #221 (Teil von #217)
+Bezug: BSI IT-Grundschutz OPS.1.1.5 (Protokollierung, Anforderungen A6, A8, A10) und
+CON.10.A17 (Überlauf überwachen); Issues #221, #263, #366 (Teil von #217).
 
-Dieses Konzept beschreibt, was mandari im Verwaltungs-RIS (Session) protokolliert, wozu, wie
-lange, wer das Protokoll einsehen darf und wie es gegen nachträgliche Veränderung geschützt
-ist. Es richtet sich an Verwaltungen, Revision, Datenschutzbeauftragte und Personalvertretungen.
-Verbindlich sind stets die Regelungen der jeweiligen Kommune; die hier genannten Fristen und
-Voreinstellungen lassen sich je Mandant anpassen.
+Diese Seite beschreibt, was mandari protokolliert, wozu, wie lange, wer die Protokolle einsehen
+darf und wie sie gesichert und gegen nachträgliche Veränderung geschützt sind. Sie richtet sich
+an Betreiber, Verwaltungen, Revision, Datenschutzbeauftragte und Personalvertretungen.
+Verbindlich sind stets die Regelungen der jeweiligen Kommune; die genannten Fristen und
+Voreinstellungen lassen sich anpassen.
 
-## 1. Zweck und Grundsätze
+Leitgedanke: **so lange wie nötig, nicht wie möglich.** Protokolle enthalten IP-Adressen und
+Kennungen; jede Frist ist zugleich eine Löschfrist. Nicht protokolliert werden Inhalte von
+Dokumenten, Passwörter, Tokens oder Mailtexte.
+
+Aufbau: Die Übersicht nennt alle Protokollarten. Die Abschnitte 1 bis 11 betreffen das
+fachliche Audit-Log im Sitzungsdienst (Session), Abschnitt 12 die Systemprotokolle der
+Installation, Abschnitt 13 den Abgleich mit dem BSI-Baustein.
+
+## Übersicht: Protokollarten und Aufbewahrung
+
+| Protokoll | Inhalt | Aufbewahrung | Wo | Begründung |
+|---|---|---|---|---|
+| **Anwendungs- und Container-Logs** | Strukturierte JSON-Zeilen der Anwendung (Anfrage-Kennung, keine personenbezogenen Inhalte), Worker, Ingestor, Postgres, Elasticsearch, Redis, Website | **90 Tage**, höchstens 8 GB | systemd-Journal des Hosts (`journalctl CONTAINER_NAME=…`, Abschnitt 12.1) | Sicherheitsvorfälle werden oft erst Wochen später erkannt; 90 Tage decken die Frage „seit wann?“ ab, ohne Bewegungsprofile über Monate zu bilden |
+| **Zugriffslog des Reverse Proxy** | Caddy-Zugriffslog (IP, Pfad, Status, Zeit) | **14 Tage** | Datei im Caddy-Datenvolume (`/data/access.log`), zeitlich rollierend | IP-Adressen; nötig für Störungsanalyse und Missbrauchserkennung (Art. 6 Abs. 1 lit. f DSGVO), danach ohne Zweck |
+| **Fachliches Audit-Log** (Session) | Wer hat wann was geändert oder Nichtöffentliches angesehen; nicht änder- oder löschbar | **je Mandant** (`audit_years`, Einstellungen → Datenschutz), Empfehlung 5–10 Jahre | Datenbank, in jeder Sicherung | Nachweis für Gremienarbeit; Frist folgt Archiv- und Aufbewahrungsvorschriften der Kommune (Abschnitt 10, [Löschkonzept](DATENSCHUTZ.md)) |
+| **Archivpakete des Protokolls** | Vor der fristgerechten Löschung archivierte Einträge (JSON, CSV, Kettenanker, `SHA256SUMS`) | **je Mandant** ab Ablage (`archive_years`, Einstellungen → Datenschutz), Sicherheitsprotokoll `SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS`; Standard jeweils 0 = keine Löschung | Archivspeicher (`AUDIT_ARCHIVE_ROOT` bzw. `AUDIT_ARCHIVE_STORAGE`) | Nachweis über die Frist des Protokolls hinaus; vor der Löschung dem Kommunalarchiv anbieten (Abschnitt 10) |
+| **Sicherheitsprotokoll** (plattformweit) | Anmeldungen von Konten ohne Session-Mandant, Fehlversuche mit unbekannter Kennung (nur als HMAC), von der Drosselung abgewiesene Versuche, Eingriffe in den Betrieb | `SECURITY_AUDIT_RETENTION_DAYS`, Standard 365 Tage | Datenbank, eigene Hash-Kette | nur für den Plattformbetrieb (Abschnitte 4 und 10) |
+| **Anmeldeversuche für die Drosselung** (`LoginAttempt`) | E-Mail-Adresse, IP-Adresse, Browserkennung und Ergebnis je Anmelde- und Code-Versuch | **30 Tage** (`LOGIN_ATTEMPT_RETENTION_DAYS`, 0 = keine Löschung), täglich gelöscht (`befehl:purge_login_attempts`) | Datenbank | Datenschutz: E-Mail- und IP-Adressen nur so lange wie nötig. Die Drosselung zählt nur 15 Minuten; Anmeldungen und Fehlversuche stehen zusätzlich im Sicherheits- bzw. Mandantenprotokoll mit eigener Frist (Abschnitt 4) |
+| **Logdateien der Cron-Jobs** | Ausgaben der Host-Cronjobs (Backup-Watchdog, Neustart ungesunder Container, Überlaufwarnung; `/var/log/mandari-*.log`); Erinnerungen, Fotos und Löschläufe laufen als Zeitpläne im Worker und schreiben in dessen Container-Log | **12 Wochen**, komprimiert | Host, `logrotate` | Nur Zahlen und Statusmeldungen; für die Nachvollziehbarkeit geplanter Läufe |
+| **Backup-Statusdateien** | Erfolg, Dauer, Prüfergebnisse je Lauf | letzter Stand je Lauf | `status/` des Backup-Stacks | Grundlage der Watchdog-Mail ([BACKUP.md](BACKUP.md)) |
+
+## 1. Audit-Log: Zweck und Grundsätze
 
 Das Protokoll macht nachvollziehbar, wer wann welche Inhalte angesehen, geändert oder
 heruntergeladen hat – insbesondere nichtöffentliche. Es dient
@@ -109,14 +131,14 @@ nutzen dieselbe Anmeldung.
   klein) und so für die Zählung der Drosselung, den Anmeldeversuch (`LoginAttempt`) und den HMAC verwendet.
 - **Anmeldeversuche für die Drosselung** (`LoginAttempt`: E-Mail-Adresse, IP-Adresse, Browserkennung,
   Ergebnis) braucht die Anwendung nur für die Zählung der letzten 15 Minuten. Der Zeitplan
-  `befehl:purge_login_attempts` löscht sie täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage,
-  festgelegt durch den Betreiber am 16.10.2026, [PROTOKOLLE.md](PROTOKOLLE.md); 0 = keine Löschung, Issue #366). Die Einträge im
+  `befehl:purge_login_attempts` löscht sie täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe
+  30 Tage, 0 = keine Löschung, Issue #366). Die Einträge im
   Sicherheits- und Mandantenprotokoll folgen ihren eigenen Fristen (Abschnitt 10).
 
 ## 5. Rechtsgrundlage (allgemeiner Hinweis)
 
 Verantwortlich für die Verarbeitung ist die jeweilige Kommune; mandari verarbeitet im Auftrag
-(siehe [AVV-Muster](DSGVO_AVV_MUSTER.md)). Die Protokollierung stützt sich in der Regel auf die
+(siehe [AVV-Muster](DATENSCHUTZ.md), Abschnitt 1). Die Protokollierung stützt sich in der Regel auf die
 Pflicht zur Sicherheit der Verarbeitung und zur Rechenschaft (Art. 5 Abs. 2, Art. 24 und
 Art. 32 DSGVO) in Verbindung mit Art. 6 Abs. 1 lit. c oder e DSGVO, ergänzt durch das
 Landesdatenschutzrecht, das Kommunalrecht (Verschwiegenheit bei nichtöffentlichen Beratungen)
@@ -249,8 +271,8 @@ Ein Eintrag aus dem JSON-Export lässt sich unabhängig von mandari prüfen:
   löscht er nach `SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS` ab Ablage (Standard 0 = keine Löschung,
   `--archive-days`); jede solche Löschung steht als „Eingriff in den Betrieb“
   (`archivpakete_geloescht`, mit Paketnamen) im Sicherheitsprotokoll.
-- **Verschlüsselung der Archivpakete** mit einem öffentlichen Schlüssel des Mandanten ist noch
-  offen (Issue #366). Bis dahin schützen Speicherort und Dateirechte (0600) die Pakete.
+- **Schutz der Archivpakete:** Die Pakete liegen unverschlüsselt im Archivspeicher; Speicherort
+  ohne Web-Zugriff und Dateirechte (0600) schützen sie.
 
 ## 11. Einführung und Betrieb
 
@@ -265,8 +287,80 @@ Ein Eintrag aus dem JSON-Export lässt sich unabhängig von mandari prüfen:
 4. **Rollen vergeben:** Revision und Datenschutz den zuständigen Personen zuweisen und prüfen,
    ob die Administrator-Rolle die Protokoll-Ansicht behalten soll.
 
-## 12. Zugehörige Dokumente
+## 12. Systemprotokolle der Installation
 
-- [Löschkonzept](DSGVO_LOESCHKONZEPT.md)
-- [Technische und organisatorische Maßnahmen](DSGVO_TOM.md)
-- [AVV-Muster](DSGVO_AVV_MUSTER.md)
+### 12.1 Ablage: journald statt Docker-JSON-Dateien
+
+Docker schreibt Container-Ausgaben standardmäßig in JSON-Dateien im Container-Verzeichnis,
+begrenzt nach Größe (`max-size`, `max-file`). Zwei Schwächen: Die Dateien verschwinden, sobald
+der Container beim Deploy neu erstellt wird, und je nach Last ist die Grenze nach wenigen Tagen
+erreicht.
+
+Deshalb laufen die Container-Logs auf Produktionshosts über den Treiber `journald`
+(`deploy/logging/docker-compose.journald.yml`). Das Journal liegt auf dem Host, hält nach
+**Zeit** vor (`deploy/logging/journald-mandari.conf`: 90 Tage, höchstens 8 GB, mindestens 5 GB
+der Platte bleiben frei, komprimiert, persistent) und übersteht jede Neuerstellung eines
+Containers. Die Container heißen nach `COMPOSE_PROJECT_NAME` (Vorgabe `mandari`): Anwendung
+`mandari`, sonst `mandari-<dienst>`.
+
+```bash
+journalctl CONTAINER_NAME=mandari -S -1h                 # letzte Stunde der Anwendung
+journalctl CONTAINER_NAME=mandari-ingestor -p warning    # Warnungen und Fehler des Ingestors
+journalctl CONTAINER_NAME=mandari -o cat | grep '"trace":"abc123"'   # eine Anfrage verfolgen
+journalctl --disk-usage                                  # Belegung
+docker logs --since 10m mandari                          # funktioniert weiterhin
+```
+
+`docker logs` und `docker compose logs` arbeiten mit journald unverändert. Der Treiber ist nur
+auf Linux-Hosts mit systemd verfügbar; für lokale Entwicklung bleibt `json-file` aus der
+Basis-Compose.
+
+### 12.2 Sicherung
+
+`/var/log/journal` wird als `/source/journal` in die tägliche restic-Sicherung eingehängt
+(`BACKUP_SRC_JOURNAL`, [BACKUP.md](BACKUP.md)); das Caddy-Datenvolume mit dem Zugriffslog ist
+ebenfalls Teil der Sicherung. Damit liegen die Protokolle verschlüsselt an zwei Standorten und
+überstehen einen Serververlust. Die Aufbewahrung in der Sicherung (30 Tage) ist kürzer als die
+Vorhaltezeit auf dem Host; die Sicherung dient dem Wiederanlauf, nicht der Archivierung.
+
+### 12.3 Zugriffsschutz (A10)
+
+- **Systemprotokolle:** Das Journal ist nur für `root` und die Gruppe `systemd-journal`
+  lesbar. Eine nachträgliche unbemerkte Veränderung setzt Root-Rechte auf dem Host voraus; wer
+  sie hat, kontrolliert ohnehin alles. Entscheidung: **keine kryptografische Versiegelung der
+  Systemprotokolle.** Der Schutz besteht aus Betriebssystemrechten plus der täglichen,
+  verschlüsselten Offsite-Kopie, gegen die sich ein manipulierter Stand vergleichen lässt. Wer
+  mehr braucht, kann journald-Versiegelung (Forward Secure Sealing, `journalctl --setup-keys`,
+  `Seal=yes`) aktivieren; das Verifikationsgeheimnis gehört dann außerhalb des Hosts verwahrt.
+- **Fachliches Audit-Log:** unveränderlich in der Anwendung, gesichert durch die Hash-Kette mit
+  Prüfung und Export (Abschnitte 7 bis 9).
+- **Zugriffslog:** liegt im Caddy-Volume (root), keine Weitergabe an Dritte.
+
+### 12.4 Überwachung des Überlaufs (CON.10.A17)
+
+`deploy/logging/journal-alert.sh` läuft stündlich per Cron und schickt eine Mail (über den
+mandari-Container), sobald das Journal 90 % seiner Obergrenze (`SystemMaxUse`) belegt. Ab der
+Obergrenze kürzt journald nach Größe statt nach Zeit, die zugesagten 90 Tage gelten dann nicht
+mehr. Die Mail nennt Belegung, Obergrenze und den ältesten Eintrag; höchstens eine Mail je sechs
+Stunden. Die Root-Platte überwacht daneben der Disk-Alarm des Betriebsmonitors
+([MONITORING.md](MONITORING.md)).
+
+### 12.5 Einrichtung
+
+Die Befehle stehen in [DEPLOYMENT.md, „Protokolle“](../DEPLOYMENT.md#-protokolle). Das
+mitgelieferte `Caddyfile` setzt `roll_keep_for 336h` (14 Tage) bereits; nur ein selbst
+gepflegtes Caddyfile braucht die Angabe in jedem `log { output file … }`-Block, danach
+`docker exec mandari-caddy caddy reload --config /etc/caddy/Caddyfile`. Bei einer von Hand
+gepflegten Compose (andere Dienstnamen) den journald-Override entsprechend anpassen.
+
+## 13. Abgleich mit BSI OPS.1.1.5
+
+| Anforderung | Stand |
+|---|---|
+| A6 zentrale Protokollierung, ausreichend dimensioniert | journald auf dem Host, 90 Tage / höchstens 8 GB, Zugriffslog 14 Tage |
+| A8 Archivierung nach Fristen | Fristen je Protokollart festgelegt und begründet (Übersicht), Archivpakete des Audit-Logs (Abschnitt 10) |
+| A10 Zugriffsschutz | Betriebssystemrechte, Offsite-Kopie, Versiegelung optional; Audit-Log mit Hash-Kette und Kontrollrechten (Abschnitte 6 und 7) |
+| CON.10.A17 Überlauf | stündliche Warnung ab 90 % der Obergrenze |
+| Sicherung | Journal und Caddy-Volume in der täglichen restic-Sicherung |
+
+Datenschutzunterlagen (AVV-Muster, TOM, Löschkonzept): [DATENSCHUTZ.md](DATENSCHUTZ.md).

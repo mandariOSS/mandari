@@ -1,4 +1,4 @@
-# Mandari 2.0 - Deployment Guide
+# Deployment-Anleitung für mandari
 
 ## Übersicht
 
@@ -12,7 +12,10 @@
 
 Die Images baut `.github/workflows/release.yml` und legt sie in der GitHub Container Registry ab
 (`ghcr.io/mandarioss/mandari`, `ghcr.io/mandarioss/ingestor`): `dev` → `:dev` und `:dev-<commit>`,
-`main` → `:latest` und `:main-<commit>`, ein Release → `:<version>` (z. B. `:v0.11.0`) und `:latest`.
+`main` → `:latest` und `:main-<commit>`, ein Release → `:<version>` (z. B. `:v0.12.0`), ab 0.13 dazu das Linien-Tag
+(`:v0.13`) für die jüngste Patch-Version der Linie und `:latest` nur, wenn der Commit des Release der Kopf von
+`main` ist. `latest` ist damit der jüngste Stand von `main` (Produktion), keine Zusage einer Version
+([Release-Politik](docs/RELEASE_POLITIK.md), Abschnitt 1).
 Die Website (`ghcr.io/mandarioss/website`) entsteht im Repository
 [mandariOSS/marketing-website](https://github.com/mandariOSS/marketing-website); derselbe Workflow gibt ihr
 jeweils dieselben Tags (Kopie des aktuellen Website-Stands), denn `docker-compose.yml` und das Helm-Chart
@@ -21,8 +24,8 @@ drei Images abrufbar ist (`scripts/check_image_tags.py`, auch von Hand nutzbar:
 `python scripts/check_image_tags.py v0.11.0 latest dev`).
 Commit-Tags im Paket `website` haben zwei Quellen: `dev-<commit>`/`main-<commit>` aus diesem Workflow nennen einen
 mandari-Commit, die gleichnamigen Tags aus dem Website-Repository einen Website-Commit. Welcher Website-Stand in
-einem Image steckt, zeigt das Label `org.opencontainers.image.revision`. Beweglich sind nur `latest` und `dev`;
-ein anderes Tag, das es schon mit anderem Inhalt gibt, überschreibt der Workflow nicht (Warnung im Lauf).
+einem Image steckt, zeigt das Label `org.opencontainers.image.revision`. Beweglich sind nur `latest`, `dev` und die Linien-Tags
+(`v0.13`); ein anderes Tag, das es schon mit anderem Inhalt gibt, überschreibt der Workflow nicht (Warnung im Lauf).
 
 Ein Push deployt nichts; umgeschaltet wird auf dem Server mit `update.sh` oder `deploy/scripts/deploy.sh`.
 Einzige Ausnahme ist eine Staging-Umgebung mit `deploy/scripts/staging_update.sh`: Sie holt sich neue
@@ -108,10 +111,12 @@ voraus. Wer bei den Einzeldateien bleibt, aktualisiert wie unter „Datenbank-Mi
 ./update.sh --rollback     # auf die vorherige Version zurück
 ```
 
-**Welche Spur?** Alle zwei Wochen erscheint eine Version (`latest`), ohne Handarbeit einspielbar. Wer
+**Welche Spur?** Alle zwei Wochen erscheint eine Version, ohne Handarbeit einspielbar
+(`./update.sh --tag <Version>`; `latest` folgt dem Stand von `main` und kann neuer sein als das jüngste
+Release). Wer
 seltener aktualisieren will, bleibt auf einer **Pflegeversion** (die erste Version jedes Quartals, sechs
 Monate Sicherheitskorrekturen) und spielt nur deren Patch-Versionen ein, und zwar mit fester Version:
-`./update.sh --tag v0.12.0`. Das bewegliche Tag der Linie (`v0.12`) zeigt, welche Patch-Version die jüngste ist; zum
+`./update.sh --tag <Version>`. Das bewegliche Linien-Tag (etwa `v0.13`) zeigt, welche Patch-Version die jüngste ist; zum
 Einspielen taugt es nicht, weil der automatische Rückfall ein bewegliches Tag (wie auch `latest`) nicht auf das
 vorherige Image zurückführen kann.
 Welche Pflegeversionen unterstützt werden, steht in [SECURITY.md](SECURITY.md#unterstützte-versionen),
@@ -126,7 +131,7 @@ Anmeldeseite, Bürgerportal, OParl-System, optional angemeldete Demo-Seiten, jew
 Inhaltsprüfung) und **Worker-Prüfung**: Beendet sich ein Container aus `WORKER_SERVICES` in den
 ersten `WORKER_CHECK_SECONDS` (Standard 60) mit einem Exit-Code ungleich 0 (etwa in einer
 Neustart-Schleife nach einem Startfehler), gilt der Deploy als gescheitert; Exit 0 ist planmäßig, weil die Worker nach jedem
-Durchlauf enden und neu starten. Worker mit Healthcheck (`worker`, `worker-heavy`: Heartbeat-Datei
+Durchlauf enden und neu starten. Worker mit Healthcheck (`worker`, `worker-heavy`, `worker-live`: Heartbeat-Datei
 von `events_worker`) müssen außerdem binnen `WORKER_HEALTH_SECONDS` (Standard 120) „healthy“ werden,
 und die Anwendungsprüfung verlangt, dass lebende Worker alle Rollen bedienen, die die Installation
 braucht (`VERIFY_WORKER_SECONDS`, Standard 90; Issue #574). Ein Stand ohne laufenden Worker fällt so
@@ -161,9 +166,9 @@ Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, k
 Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
 Das interaktive `update.sh` für Selbst-Hoster nutzt dieselbe Anwendungsprüfung und rollt
 bei Fehlschlag ebenfalls zurück. Wie `deploy.sh` hält es die Worker (`WORKER_SERVICES`,
-Standard `ingestor minutes-orchestrator worker worker-heavy`) während aller Migrationen an und startet sie erst danach
+Standard `ingestor minutes-orchestrator worker worker-heavy worker-live`) während aller Migrationen an und startet sie erst danach
 mit dem neuen Image – auch bei Abbruch oder Rückfall werden sie wieder gestartet. Die Worker für
-Ereignisse und Aufträge (`worker`, `worker-heavy`) starten schon nach den Migrationen vor dem
+Ereignisse und Aufträge (`worker`, `worker-heavy`, `worker-live`) starten schon nach den Migrationen vor dem
 Umschalten der Anwendung (**Reihenfolge Migration → Worker → Web**), damit Aufträge der neuen
 Webprozesse sofort abgearbeitet werden. Der
 Protokoll-Orchestrator (`minutes-orchestrator`) nutzt das Anwendungs-Image und wechselt nach den
@@ -171,9 +176,9 @@ Migrationen immer mit, auch wenn ein eigenes `WORKER_SERVICES` ihn nicht nennt; 
 setzt ihn ebenfalls zurück. Dienste, die die Compose-Datei nicht kennt, überspringt das Skript.
 
 Für `deploy.sh` gehört der Orchestrator ebenfalls in `WORKER_SERVICES`
-(z. B. `WORKER_SERVICES="worker worker-heavy ingestor minutes-orchestrator"`); sonst läuft er nach dem
-Deploy mit dem alten Image weiter. Ohne Angabe nimmt `deploy.sh` die Dienste `worker` und
-`worker-heavy` (soweit die Compose-Datei sie kennt) und den Ingestor. Es startet alle `WORKER_SERVICES` nach der Migration **vor** der Anwendung
+(z. B. `WORKER_SERVICES="worker worker-heavy worker-live ingestor minutes-orchestrator"`); sonst läuft er nach
+dem Deploy mit dem alten Image weiter. Ohne Angabe nimmt `deploy.sh` die Dienste `worker`, `worker-heavy`
+und `worker-live` (soweit die Compose-Datei sie kennt) und den Ingestor. Es startet alle `WORKER_SERVICES` nach der Migration **vor** der Anwendung
 (Migration → Worker → Web) und prüft sie danach wie bisher.
 
 ### Staging als Prüfstand
@@ -657,10 +662,209 @@ Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die
 
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 
-Ein Server ist der Standard. Für getrennte Daten-, Web- und Worker-Server gibt es
-Compose-Rollenprofile unter `deploy/roles/`, gewählt über `COMPOSE_FILE` in der `.env`;
-zeitgesteuerte Jobs sind gegen Doppelläufe gesperrt. Anleitung, Voraussetzungen (privates
-Netz, gemeinsame Ablagen) und Nachweis: `docs/MEHR_SERVER_BETRIEB.md` (Issue #55).
+Issues #55, #1107.
+
+mandari läuft standardmäßig auf **einem** Server: `docker compose up -d` startet alle Dienste
+aus `docker-compose.yml`. Für größere Installationen (oder um Datenhaltung, Web-Auslieferung
+und Hintergrundarbeit zu trennen) lassen sich dieselben Images ohne Codeänderung auf mehrere
+Server verteilen. Dafür gibt es drei Rollenprofile als Compose-Overrides unter `deploy/roles/`:
+
+| Rolle    | Dienste                                        | Datei                     |
+|----------|------------------------------------------------|---------------------------|
+| `data`   | PostgreSQL, Redis, Elasticsearch, optional PgBouncer | `deploy/roles/data.yml`   |
+| `web`    | Caddy, Anwendung (`mandari`), Website          | `deploy/roles/web.yml`    |
+| `worker` | Ingestor (Quellen-Sync), Protokoll-Orchestrator, Worker für Ereignisse, Aufträge und Zeitpläne (`worker`, `worker-heavy`, `worker-live`) | `deploy/roles/worker.yml` |
+
+Die Basisdatei bleibt unverändert und profilfrei; die Rollen-Dateien schalten die jeweils
+fremden Dienste über ein nie aktiviertes Profil `aus` ab und biegen die Verbindungs-URLs
+auf den Datenserver um. `scripts/check_compose_roles.py` prüft in der CI, dass jeder Dienst
+genau einer Rolle zugeordnet ist.
+
+### Voraussetzungen
+
+- **Privates Netz** zwischen den Servern (VLAN, WireGuard, Cloud-VPC). Die Datendienste
+  werden ausschließlich an die private Adresse `DATA_BIND` gebunden. Niemals an eine
+  öffentliche Adresse – PostgreSQL, Redis und Elasticsearch sind ohne TLS und mit einfachem
+  Passwort- bzw. ohne Schutz konfiguriert.
+- **Gemeinsame Ablagen** auf allen Servern mit `web`- oder `worker`-Rolle: Die Volumes
+  `mandari_media` (Uploads) und `mandari_files` (Dokument-Cache, `docs/FILE_CACHE.md`) müssen
+  dort denselben Inhalt zeigen, z. B. als NFS-Mount. Das gilt auch bei nur einem web-Server: Der
+  Worker erzeugt Sitzungsmappen aus hochgeladenen Unterlagen und füllt Personenfotos und
+  Dokument-Cache; ohne gemeinsame Ablage scheitern die Mappen, und die Anwendung sieht Fotos und
+  Cache nicht.
+- **Dieselbe `.env`-Basis** auf allen Servern: `POSTGRES_PASSWORD`, `REDIS_PASSWORD`,
+  `SECRET_KEY`, `ENCRYPTION_MASTER_KEY`, `DOMAIN` müssen überall identisch sein.
+
+### Einrichtung
+
+Auf jedem Server das Repository-Verzeichnis wie bei der Ein-Server-Installation anlegen
+(`install.sh` oder manuell, siehe oben), dann in der `.env` die Rolle wählen.
+Compose liest `COMPOSE_FILE` aus der `.env`; `docker compose up -d`, `update.sh` und
+`deploy/scripts/deploy.sh` funktionieren danach unverändert. Die Rollen-Dateien brauchen Docker
+Compose ab 2.24.4 (`!reset`, `!override`).
+
+**Datenserver:**
+
+```ini
+COMPOSE_FILE=docker-compose.yml:deploy/roles/data.yml
+DATA_BIND=10.0.0.10              # private Adresse dieses Servers
+# optional: Verbindungs-Pooler
+# COMPOSE_PROFILES=pgbouncer
+```
+
+**Web-Server:**
+
+```ini
+COMPOSE_FILE=docker-compose.yml:deploy/roles/web.yml
+DATA_HOST=10.0.0.10              # private Adresse des Datenservers
+DATA_PG_PORT=5432                # 6432, wenn dort PgBouncer aktiv ist, dann auch:
+# MANDARI_DB_PGBOUNCER=true      # Anwendung auf den Transaktionsmodus einstellen
+```
+
+**Worker-Server:**
+
+```ini
+COMPOSE_FILE=docker-compose.yml:deploy/roles/worker.yml
+DATA_HOST=10.0.0.10              # alle Dienste dieser Rolle direkt auf Port 5432
+```
+
+Reihenfolge beim ersten Start: data → web (führt die Migrationen aus) → worker. Prüfen mit
+`docker compose config --services` (zeigt nur die Dienste der Rolle) und
+`docker compose ps`.
+
+### Kein Doppellauf zeitgesteuerter Jobs
+
+Mehrere Server bedeuten die Gefahr, dass derselbe Job zweimal läuft – etwa wenn das
+`worker`-Profil versehentlich auf zwei Servern aktiv ist oder auf einem web-Server noch ein alter
+Cron-Eintrag steht. Drei Schutzmechanismen:
+
+1. **Management-Commands** (Zeitpläne im Worker, „Geplante Aufgaben“ unten;
+   je Termin plant genau ein Scheduler über seine Lease einen Auftrag) tragen zusätzlich die
+   Singleton-Sperre `apps/common/einmalig.py`: `cache.add` in Redis vergibt den Zuschlag
+   atomar an genau einen Aufrufer; die Sperre verfällt nach `sperre_ttl` Sekunden von
+   selbst (Absturzschutz) und wird nach dem Lauf sofort freigegeben. Ein zweiter Aufruf
+   meldet `läuft bereits auf <host:pid> – übersprungen` und endet mit Exit-Code 0.
+   Geschützt: `send_session_reminders`, `send_question_reminders`,
+   `send_task_due_reminders`, `fetch_person_photos`, `cleanup_orphaned_accounts`,
+   `check_source_health`, `check_service_levels`, `availability_report`,
+   `build_meeting_packages`, `session_privacy_purge`, `cache_files`, `generate_alerts`,
+   `send_digest` und die übrigen Befehle der Zeitpläne.
+   `--ohne-sperre` erzwingt den Lauf (Notfall). Die Sperre ist das Sicherheitsnetz, die
+   Lease des Schedulers das Konzept; Host-Cron für diese Befehle gibt es nicht mehr.
+2. **Protokoll-Orchestrator** (`minutes_orchestrator`) hält dieselbe Sperre je Durchlauf;
+   ein zweiter Orchestrator überspringt Takte statt doppelt Rechenknoten anzulegen.
+3. **Ingestor-Daemon** nutzt eine PostgreSQL-Advisory-Sperre (`pg_try_advisory_lock`),
+   die an seine Datenbankverbindung gebunden ist: Nur eine Instanz synchronisiert, eine
+   zweite wartet (`Andere Ingestor-Instanz aktiv … – warte`) und übernimmt automatisch,
+   sobald die erste endet. Kein veralteter Schlüssel, kein Aufräumen nach Abstürzen.
+
+Voraussetzung für 1 und 2 ist der gemeinsame Redis-Cache (`REDIS_URL`); mit dem lokalen
+Speicher-Cache (Entwicklung) schützt die Sperre nur innerhalb eines Prozesses.
+
+#### Nachweis: zwei worker-Profile erzeugen keine doppelten Läufe
+
+```bash
+# Auf dem Datenserver: wer hält die Ingestor-Sperre?
+docker compose exec postgres psql -U mandari -c \
+  "SELECT application_name, state FROM pg_stat_activity WHERE application_name LIKE 'ingestor-daemon %';"
+# → genau eine Zeile, auch wenn zwei Ingestor-Container laufen
+
+# Auf einem web-Server: denselben Befehl zweimal gleichzeitig von Hand starten
+docker compose exec -T mandari python manage.py check_source_health --trotz-zeitplan & \
+docker compose exec -T mandari python manage.py check_source_health --trotz-zeitplan
+# → einer läuft, der andere meldet „läuft bereits auf … – übersprungen“
+```
+
+### Texterkennung auf einem eigenen Server
+
+Die Texterkennung der RIS-Dateien (`TEXT_EXTRACTION_RUNNER=worker`, „Dokumentkette einschalten“ unten)
+braucht vor allem Rechenzeit: die erste Stufe `text` (nur Textebene, Dienst `worker`) einen Kern je Platz, die
+Erkennung aus dem Bild `ocr` (Dienst `worker-heavy`) zusätzlich Speicher für Tesseract. Beide lesen nur aus der
+Dokumentablage oder dem Objektspeicher, nie bei der Quelle (Issues #919, #1107). Ein zusätzlicher Server übernimmt
+deshalb einen Teil der Erkennung, ohne die Ablage des Anwendungsservers einzuhängen, wenn der Objektspeicher
+eingeschaltet ist und der Bestand darin liegt (Voraussetzungen unten):
+
+```ini
+# .env des Erkennungsservers (dieselbe Basis wie auf den übrigen Servern)
+COMPOSE_FILE=docker-compose.yml:deploy/roles/worker.yml
+DATA_HOST=10.0.0.10
+TASKS_BACKEND=journal
+TEXT_EXTRACTION_RUNNER=worker
+OBJ_ENABLED=true                 # dieselben OBJ_*-Werte wie Anwendung und Worker
+OBJ_CACHE_MAX_GB=20              # lokaler Zwischenspeicher dieses Servers
+FILE_STORE_SHARED=false          # sieht die Ablage des Anwendungsservers nicht
+```
+
+**Voraussetzungen.** Vor dem ersten Start ist der Bestand umgestellt und hochgeladen: `dokumentablage --umstellen`
+und `dokumentablage --hochladen` (je mit `--trotz-zeitplan`, `docs/FILE_CACHE.md`, „Objektspeicher“) melden nichts
+mehr offen. Prüfen im Container `mandari` des Anwendungsservers, beide Zahlen 0:
+
+```bash
+docker compose exec -T mandari python manage.py shell -c "
+from insight_core.models import OParlFile, OParlFileBlob
+print('nicht hochgeladen', OParlFileBlob.objects.filter(remote_at__isnull=True, ref_count__gt=0).count())
+print('altes Layout', OParlFile.objects.filter(local_status='ok', blob__isnull=True).count())"
+```
+
+`FILE_STORE_SHARED=false` ist Pflicht. Damit bestätigt der Erkennungsserver nie, dass ein Inhalt fehlt: Was weder in
+seinem Zwischenspeicher noch im Objektspeicher liegt, gilt als gestört. Der Auftrag gibt die Datei frei und versucht
+es nach 15 Minuten erneut, ohne Abruf bei der Quelle; das Protokoll von `worker-heavy` warnt höchstens einmal je
+Minute. Ohne die Einstellung hielte er solche Inhalte für verloren, setzte sie auf „nicht abgelegt“ zurück, und der
+Abrufweg holte sie erneut bei der Quelle, auch bei Quellen, die unsere Abrufe sperren. Neue Inhalte lädt der Abruf
+sofort in den Objektspeicher; scheitert das, holt das stündliche Hochladen sie nach. Bis dahin warten sie hier, oder
+ein Worker des Anwendungsservers erkennt sie.
+
+```bash
+docker compose up -d worker-heavy        # nur die Erkennung, nicht die übrigen Dienste der Rolle
+```
+
+- **Keine doppelte Arbeit:** Mehrere `worker-heavy` (auf einem oder mehreren Servern) teilen sich die
+  Warteschlange `ocr`. Jeder Runner holt einen Auftrag nur einmal (`SELECT … FOR UPDATE SKIP LOCKED`), und der
+  Auftrag beansprucht seine Datei beim Start; ein zweiter Auftrag derselben Datei endet ohne Wirkung. Gespeichert
+  wird nur, solange der Inhalt noch derselbe ist.
+- **Die erste Stufe auslagern:** ebenso ein Dienst wie `worker-heavy` mit `--roles tasks --queues text
+  --concurrency text=N` (N höchstens die Zahl der Kerne), etwa in einer eigenen Compose-Datei dieses Servers. Er teilt
+  sich die Warteschlange mit dem Hauptworker; wer ihn dort entlasten will, nimmt `text` aus dessen `--queues`. Der
+  Zeitplan füllt `text` nur, solange irgendein lebender Worker sie bedient.
+- **Lokale Kopien begrenzen:** Inhalte aus dem Objektspeicher landen im Volume `mandari_files` dieses Servers. Das
+  stündliche Aufräumen (`befehl:dokumentablage`) läuft nur im Worker mit Scheduler und sieht diese Platte nicht. Auf
+  dem Erkennungsserver deshalb per Host-Cron stündlich, versetzt zum Zeitplan (:50):
+  `docker compose exec -T worker-heavy python manage.py dokumentablage --aufraeumen --trotz-zeitplan`. Er verdrängt
+  nur Kopien, die nach `HEAD` sicher im Objektspeicher liegen, und lässt Inhalte stehen, deren Text gerade erkannt
+  wird oder darauf wartet; dieselbe Sperre in Redis verhindert zwei Läufe zugleich. Ohne diesen Lauf füllt sich die
+  Platte bis `FILE_CACHE_MIN_FREE_GB`, danach stellt die Erkennung ihre Aufträge immer wieder zurück.
+- **Ohne Objektspeicher** braucht der Erkennungsserver die gemeinsame Ablage `mandari_files` wie jeder Server mit
+  `worker`-Rolle (Voraussetzungen oben), und `FILE_STORE_SHARED` bleibt `true`. Ohne gemeinsame Ablage findet die
+  Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück.
+- **Updates:** `update.sh` startet alle Dienste der Rolle `worker`. Auf dem Erkennungsserver stattdessen
+  `docker compose pull worker-heavy && docker compose up -d worker-heavy`, nach den Migrationen auf dem
+  Anwendungsserver.
+
+### Prozesslokale Zustände
+
+Rate-Limits (Anmeldung), Alarm-Sperren, CSP-Report-Limit und die Singleton-Sperren liegen
+im Django-Cache und damit in Redis. Prozesslokal bleiben nur unveränderliche, aus Settings
+abgeleitete Werte (`lru_cache` für Netzlisten) und die Prometheus-Zähler je Prozess – die
+Metriken sind je web-Server auszulesen (`docs/MONITORING.md`).
+
+### PgBouncer bei mehreren Servern
+
+`COMPOSE_PROFILES=pgbouncer` auf dem Datenserver startet PgBouncer im Transaktionsmodus (Port 6432 an
+`DATA_BIND`). Über ihn geht nur die Anwendung auf den web-Servern: dort `DATA_PG_PORT=6432` **und**
+`MANDARI_DB_PGBOUNCER=true`. Website, Ingestor, Orchestrator und Worker verbinden sich direkt mit PostgreSQL
+(Port 5432); für die Ereignistechnik setzt `worker.yml` dazu `EVENTS_DB_DIRECT_URL`
+(`postgresql://mandari:…@<DATA_HOST>:5432/mandari`). Transaktionsmodus, Verbindungsrechnung, Einschalten und
+Rückweg: „PgBouncer für die Webanwendung“ unten.
+
+### Grenzen
+
+- Kein automatisches Failover: Fällt der Datenserver aus, stehen alle Rollen. Backups
+  laufen weiterhin auf dem Datenserver (`docs/BACKUP.md`).
+- Die Kollaboration im Editor (WebSockets über Channels) braucht bei mehreren web-Servern
+  den Redis-Channel-Layer (`REDIS_URL` gesetzt → Standard); der In-Memory-Layer gilt nur
+  für Tests.
+- Rollen auf Kubernetes: siehe `deploy/kubernetes/` (Helm); dort sind die Rollen ohnehin
+  getrennte Deployments.
 
 ## ⚙️ Worker: Ereignisse, Aufträge und Zeitpläne
 
@@ -726,14 +930,14 @@ derselben Umgebung und denselben Volumes wie die Anwendung (auch Dokumentablage 
 Getrennt sind sie, weil jeder Neustart eines Runners (Zahl der Aufträge, Speichergrenze) auf seinen
 längsten laufenden Auftrag wartet, bei `ocr` bis zu 30 Minuten; Mails und Suchindex warten so nie
 auf die Texterkennung. `worker-heavy` ist nicht der OCR-Worker aus dem Ingestor-Image. `worker-live` hält die
-Leseaufträge laufender Übertragungen (je rund 50 Sekunden) frei von beidem. Kubernetes (Helm) kennt ihn noch
-nicht: Dort `live` in `worker.queues` aufnehmen, bevor `LIVE_UEBERTRAGUNG_AKTIV` eingeschaltet wird.
+Leseaufträge laufender Übertragungen (je rund 50 Sekunden) frei von beidem. Im Helm-Chart ist er das
+Deployment `mandari-worker-live` (`worker.live.enabled`, Standard an; aus: der Hauptworker bedient `live` mit).
 
 | Installation | Wo | Lebenszeichen |
 |---|---|---|
 | Ein Server (Compose) | Dienste `worker`, `worker-heavy` und `worker-live` in `docker-compose.yml` | Healthcheck über die Heartbeat-Datei (jünger als 60 s); `restart-unhealthy.sh` startet sie neu (Label `mandari.autoheal`) |
-| Mehrere Server | Rolle `worker` (`deploy/roles/worker.yml`), `worker` mit `EVENTS_DB_DIRECT_URL` direkt zu PostgreSQL | wie oben |
-| Kubernetes (Helm) | `templates/worker.yaml`, Werte unter `worker.*` und `worker.heavy.*` (`worker.heavy.enabled: false`: ein Worker für alles, so in `values-minimal.yaml`) | Start- und Liveness-Probe auf `/health` (Port 9091) |
+| Mehrere Server | Rolle `worker` (`deploy/roles/worker.yml`, mit `worker`, `worker-heavy` und `worker-live`), `worker` mit `EVENTS_DB_DIRECT_URL` direkt zu PostgreSQL | wie oben |
+| Kubernetes (Helm) | `templates/worker.yaml`, Werte unter `worker.*`, `worker.heavy.*` und `worker.live.*` (`worker.heavy.enabled: false`: ein Worker für alles, so in `values-minimal.yaml`) | Start- und Liveness-Probe auf `/health` (Port 9091) |
 
 `install.sh` startet alle drei nach den Migrationen; `update.sh` und `deploy/scripts/deploy.sh` halten
 sie während der Migrationen an und starten sie danach vor der Anwendung (Migration → Worker →
@@ -1432,10 +1636,10 @@ jeder Schritt ist ohne Deploy umkehrbar.
 - Die Dokumentablage (`mandari_files` unter `OPARL_FILES_ROOT`) ist in Anwendung, `worker` und `worker-heavy`
   eingehängt, mit Objektspeicher haben alle drei dieselben `OBJ_*`-Werte. Compose erledigt beides über die
   gemeinsame Umgebung; eigene Compose-Dateien oder Umgebungsdateien müssen sie auch `worker-heavy` geben. Laufen
-  die Worker auf einem eigenen Server (`deploy/roles/worker.yml`, `docs/MEHR_SERVER_BETRIEB.md`), sehen sie die
+  die Worker auf einem eigenen Server (`deploy/roles/worker.yml`, „Mehrere Server“), sehen sie die
   Ablage des Anwendungsservers nur über eine gemeinsame Ablage oder den Objektspeicher (`OBJ_ENABLED=true`);
   sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück. Nur über den Objektspeicher
-  brauchen sie `FILE_STORE_SHARED=false` und einen vollständig hochgeladenen Bestand (`docs/MEHR_SERVER_BETRIEB.md`,
+  brauchen sie `FILE_STORE_SHARED=false` und einen vollständig hochgeladenen Bestand („Mehrere Server“,
   „Texterkennung auf einem eigenen Server“). Fehlen einem Worker nur die
   `OBJ_*`, gelten Inhalte, die laut Datenbank im Objektspeicher liegen, als gestört: Die Erkennung wartet, ohne bei
   der Quelle abzurufen, und das Protokoll des Workers warnt höchstens einmal je Minute (Issue #990,
@@ -1510,7 +1714,7 @@ Durchsatz (höchstens so viele Dateien je zwei Minuten); für einen großen Rüc
 Altbestand, den Wert erhöhen statt die Plätze. In `ocr` läuft eine Erkennung zugleich (`--concurrency ocr=1`),
 weil `WORKER_HEAVY_MEM_LIMIT` auf einen Tesseract-Unterprozess ausgelegt ist. Mehr Plätze (`ocr=N`) brauchen
 etwa 1 GB plus N × `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, oder ein zweiter Container wie `worker-heavy`, auch auf
-einem eigenen Server über den Objektspeicher (`docs/MEHR_SERVER_BETRIEB.md`, „Texterkennung auf einem eigenen
+einem eigenen Server über den Objektspeicher („Mehrere Server“, „Texterkennung auf einem eigenen
 Server“). Zwei Worker auf derselben Warteschlange bearbeiten keine Datei doppelt: Der Auftrag beansprucht die
 Datei beim Start, der zweite endet ohne Wirkung. Die Plätze gehen reihum an die Quellen, zuerst an die mit den
 wenigsten Aufträgen in der Warteschlange; eine große Quelle hält die kleinen nicht auf.
@@ -1562,7 +1766,7 @@ prüfen (`healthy`, bedient er `text`). Die Beispielalarme in `deploy/monitoring
 messen `text` und `ocr` ebenso gesondert (`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit
 „Auftragsrückstand“.
 
-**Abbruchkriterien** (ADR, Abschnitt 10; Vorgehen wie in `docs/DREHSCHEIBE_UMSTELLUNG.md`, Abschnitt 3). Eines
+**Abbruchkriterien** (ADR, Abschnitt 10; Vorgehen wie in `docs/DATENDREHSCHEIBE.md#4-umstellung-eines-weges`, Abschnitt 3). Eines
 genügt, dann den Rückweg gehen:
 
 - Der Abruf scheitert je Quelle häufiger als vor dem Umschalten, oder eine Quelle bremst uns (429, Schonung).
@@ -1595,9 +1799,6 @@ genügt, dann den Rückweg gehen:
   Inhalte und Stichtage bleiben, von der Obergrenze verdrängte Dokumente (`evicted`, ab Migration
   `insight_core.0056`) bleiben verdrängt. Das gilt auch, wenn die Schritte oben nie ausgeführt wurden, denn schon das
   Update auf Etappe 1 stellt Fehlerzustände auf `refused` um.
-
-Etappe 3 (Abruf als Auftrag über Ereignisse, Schalter `DOCUMENT_FETCH_SUBSCRIPTION`, Warteschlange `fetch`)
-folgt mit eigener Anleitung.
 
 ## ⏰ Geplante Aufgaben (Zeitpläne im Worker)
 
@@ -1661,7 +1862,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
 1. **Worker zuerst:** `docker compose ps worker` zeigt `healthy`, `/health/` meldet
    `"worker": "ok"`. Ohne laufenden Worker gibt es keine Zeitpläne. Im Rollenbetrieb
-   (`docs/MEHR_SERVER_BETRIEB.md`) vorher die gemeinsame Ablage für Medien und Dokument-Cache auf
+   („Mehrere Server“) vorher die gemeinsame Ablage für Medien und Dokument-Cache auf
    dem worker-Server einrichten – Sitzungsmappen, Personenfotos und `cache_files` laufen dort.
 2. **Update einspielen.** Ab jetzt planen die Zeitpläne. Ein noch vorhandener Cron-Eintrag ruft den
    Befehl weiter auf; der erkennt, dass ein Worker seinen Zeitplan bedient (Scheduler und Runner
@@ -1761,10 +1962,10 @@ abgeschaltet (`INSIGHT_SUBSCRIPTIONS_ENABLED=false`): keine Links im Portal, die
 mit 404, `generate_alerts` und `send_digest` brechen mit Hinweis ab. Abmelden über bereits versandte
 Links bleibt möglich; Beschluss-Abos sind nicht betroffen. Eingeschaltet laufen beide Befehle als
 Zeitpläne im Worker (`generate_alerts` täglich 07:45, `send_digest` montags 08:00, Abschnitt
-„Geplante Aufgaben“). Ein Neuaufbau der Abos über die Datendrehscheibe ist geplant.
+„Geplante Aufgaben“).
 
 **Ratsfragen im Bürgerportal** (`/insight/fragen/`) sind standardmäßig pausiert
-(`INSIGHT_QUESTIONS_ENABLED=false`, docs/INSIGHT_QUESTIONS.md): Die bisherigen Fragen und Antworten bleiben
+(`INSIGHT_QUESTIONS_ENABLED=false`, docs/INSIGHT.md#3-ratsfragen): Die bisherigen Fragen und Antworten bleiben
 unter ihren Adressen lesbar, mit Hinweis und ohne Antwortquoten je Person und Fraktion. Stellen, Bestätigen
 und Antworten antworten mit 404, es gehen keine Mails hinaus; `send_question_reminders` endet mit Hinweis
 und ohne Wirkung, der Zeitplan kann bleiben.
@@ -1773,7 +1974,7 @@ und ohne Wirkung, der Zeitplan kann bleiben.
 Lauf mit Exit-Code 1 (im Zeitplan: gescheiterter Auftrag).
 
 Vor dem ersten Scharfschalten von `cleanup_orphaned_accounts` lohnt ein Probelauf mit
-`--dry-run`; die Kriterien stehen in `docs/DSGVO_LOESCHKONZEPT.md`. Die Ausgaben aller
+`--dry-run`; die Kriterien stehen in `docs/DATENSCHUTZ.md` (Abschnitt 3.2). Die Ausgaben aller
 Läufe enthalten nur Zahlen, keine personenbezogenen Daten.
 
 ## 🔌 Datenbankverbindungen: Budget
@@ -1989,7 +2190,7 @@ PgBouncer nur Profile. Die Rollen unter `deploy/roles/` brauchen Docker Compose 
 **Mehrere Server:** Auf dem Datenserver `COMPOSE_PROFILES=pgbouncer` (Port 6432 an `DATA_BIND`),
 auf den web-Servern `DATA_PG_PORT=6432` und `MANDARI_DB_PGBOUNCER=true`. `deploy/roles/web.yml`
 setzt `DB_DIRECT_URL` auf Port 5432 des Datenservers und verbindet die Website direkt; alle Dienste
-der Rolle worker verbinden sich direkt (`docs/MEHR_SERVER_BETRIEB.md`).
+der Rolle worker verbinden sich direkt („Mehrere Server“).
 
 **Kubernetes (Helm):** Das Chart bringt keinen PgBouncer mit, und `DATABASE_URL` kommt dort aus
 einem Secret für Anwendung, Worker, Ingestor und Migrations-Job zugleich. Einen Pooler nur vor den
@@ -2135,17 +2336,21 @@ Prozesse × Server. **Kubernetes (Helm):** Dort skaliert `app.replicas` die Pods
 
 ## 🧾 Protokolle
 
-Container-Logs laufen auf Produktionshosts über `journald` (90 Tage, höchstens 2 GB,
-überstehen die Neuerstellung von Containern), Zugriffslogs von Caddy 14 Tage, das
-fachliche Audit-Log je Mandant in der Datenbank. Einrichtung in drei Schritten:
+Container-Logs laufen auf Produktionshosts über `journald` (90 Tage, höchstens 8 GB,
+überstehen die Neuerstellung von Containern), das Zugriffslog von Caddy 14 Tage, das
+fachliche Audit-Log je Mandant in der Datenbank. Einrichtung:
 
 ```bash
 sudo sh deploy/logging/install.sh mandari admin@example.org      # journald-Drop-in, logrotate, Überlaufwarnung
 docker compose -f docker-compose.yml -f deploy/logging/docker-compose.journald.yml up -d
-# Caddy: roll_keep_for 336h in den Zugriffslog-Blöcken, dann caddy reload
 ```
 
-Fristen, Begründungen, Sicherung und Zugriffsschutz: [docs/PROTOKOLLE.md](docs/PROTOKOLLE.md).
+Das mitgelieferte `Caddyfile` hält das Zugriffslog bereits 14 Tage (`roll_keep_for 336h`); nur ein selbst
+gepflegtes Caddyfile braucht die Angabe in jedem `log { output file … }`-Block, danach
+`docker exec mandari-caddy caddy reload --config /etc/caddy/Caddyfile`.
+
+Fristen, Begründungen, Sicherung und Zugriffsschutz: [docs/PROTOKOLLIERUNG.md](docs/PROTOKOLLIERUNG.md)
+(Übersicht und Abschnitt 12).
 
 ## 🚨 Troubleshooting
 
@@ -2184,29 +2389,13 @@ docker compose down && docker compose up -d
 
 ## 📊 Monitoring
 
-### Basis-Monitoring
-
 ```bash
 docker compose ps                # Status aller Dienste
 docker compose logs -f mandari   # Live-Logs der Anwendung
 ```
 
-### Health-Endpoints
-
-| Endpoint | Beschreibung |
-|----------|--------------|
-| `/health/` | Datenbankprüfung für bestehende Healthchecks (Compose, Statusseite); Feld `worker` |
-| `/health/live/` | Liveness: Prozess antwortet, Datenbank-Pool nicht festgefahren |
-| `/health/ready/` | Readiness: Datenbank, Cache, Elasticsearch und Medienspeicher; `worker` nur als Hinweis (`degraded`) |
-
-### Metriken (optional)
-
-Für erweitertes Monitoring empfohlen:
-- **Überwachung des Hosting-Anbieters** - CPU, RAM, Netzwerk
-- **Sentry** - Error Tracking
-- **Prometheus + Grafana** - Metriken
-
-Metriken-Endpunkt, Alarme und Statusseite: [docs/MONITORING.md](docs/MONITORING.md).
+Health-Endpunkte (`/health/`, `/health/live/`, `/health/ready/`, `/health/worker/`), Metriken, Alarme und
+Statusseite: [docs/MONITORING.md](docs/MONITORING.md), Abschnitte „Liveness und Readiness“ und „Metriken“.
 
 ---
 

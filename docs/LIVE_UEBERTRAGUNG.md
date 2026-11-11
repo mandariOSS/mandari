@@ -26,8 +26,10 @@ Ablauf: Für jede aktive Quelle sucht der Zeitplan jede Minute die Sitzungen des
 Status ab. Meldet er „live“, beginnt die Übertragung (Ereignis `ris.broadcast.started`), und ein Leseauftrag liest
 rund 50 Sekunden lang im Takt der Quelle Einzelbilder. Ein Wechsel von TOP oder Person gilt nach zwei gleichen
 Lesungen in Folge. Meldet der Anbieter das Ende (bei 3Q die Tafel `post`; das Standbild danach zählt nicht), kommt
-15 Minuten lang kein Signal oder endet das Zeitfenster, ist die Übertragung beendet. Lief bis 3 Stunden nach Beginn
-nichts, gilt die Sitzung als nicht übertragen.
+15 Minuten lang kein Signal oder endet das Zeitfenster, ist die Übertragung beendet. Meldet der Anbieter binnen
+3 Stunden nach dem Ende wieder „live“ (lange Pause), läuft dieselbe Übertragung weiter (`WIEDERAUFNAHME`,
+`hub/live/services.py`); so lange fragt der Zeitplan auch eine eben beendete Übertragung ab. Lief bis 3 Stunden
+nach Beginn nichts, gilt die Sitzung als nicht übertragen.
 
 ## TOP-Zuordnung
 
@@ -138,7 +140,7 @@ Leseaufträge und Statusabfragen liegen.
   die Live-Seite verlinkt Personen nur bei `eindeutig`.
 - **Fraktionen:** Aus Wortmeldungen mit Person und gelesener Fraktion leitet das Abonnement
   `insight.fraktionen_live` die Fraktion der Person ab (bestätigt bei eindeutiger Zuordnung und zwei gleichen
-  Lesungen, sonst Vorschlag im Admin; [Fraktionen ohne OParl-Fraktion](INSIGHT_FRAKTIONEN.md)). Für eingespielte
+  Lesungen, sonst Vorschlag im Admin; [Fraktionen ohne OParl-Fraktion](INSIGHT.md#2-fraktionen-ohne-oparl-fraktion)). Für eingespielte
   Protokolle: `python manage.py fraktionen_aus_wortmeldungen --meeting <uuid>`.
 - **Prototyp-Protokoll einspielen:** Ein JSONL-Protokoll des lokalen Live-Wächters (Zeilen mit `zeit` und
   `art`) wird mit `python manage.py live_protokoll_einspielen <datei.jsonl> --meeting <uuid>` zur Übertragung
@@ -165,7 +167,8 @@ Leseaufträge und Statusabfragen liegen.
 - Abrufe folgen Weiterleitungen nur auf https-Adressen mit öffentlichem Namen (`hub/live/anbieter/http.py`).
 - Kennung und Takt wie alle Abrufe bei Diensten (Issue #1036, `insight_core/services/dienste.py`): User-Agent
   `mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)`, vor jeder Anfrage und jeder Weiterleitung
-  ein Zeitpunkt beim Server, höchstens eine Anfrage je Sekunde und Server (`dienste.LIVE`). Ein Einzelbild braucht
+  ein Zeitpunkt beim Server, höchstens eine Anfrage je Sekunde und Server (`dienste.LIVE`); hat eine registrierte
+  Quelle auf demselben Server einen größeren Abstand, gilt dieser. Ein Einzelbild braucht
   2 bis 4 Anfragen (Playlist, gegebenenfalls Variante, Segment, gegebenenfalls Initialisierungssegment) und dauert
   deshalb bei einem Server mindestens 1 bis 3 Sekunden. Übersicht aller Abrufe:
   [ABRUFREGELN.md](ABRUFREGELN.md#andere-abrufe).

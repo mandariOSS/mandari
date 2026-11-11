@@ -2,7 +2,7 @@
 """
 Abkündigung einer Schnittstelle mit den Headern ``Deprecation`` (RFC 9745) und ``Sunset`` (RFC 8594).
 
-Fristen stehen in ``docs/RELEASE_POLITIK.md`` (Abschnitt 5). Eine abgekündigte Antwort trägt
+Fristen stehen in ``docs/RELEASE_POLITIK.md`` (Abschnitt 6). Eine abgekündigte Antwort trägt
 
 - ``Deprecation``: Zeitpunkt der Abkündigung als Structured-Field-Date (RFC 9651), also „@“ und die
   Unix-Sekunden,

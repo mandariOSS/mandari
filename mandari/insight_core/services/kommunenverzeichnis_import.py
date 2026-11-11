@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Import des Kommunenverzeichnisses (Issue #783, Stufe 2; Format in docs/INSIGHT_KOMMUNENWECHSEL.md).
+Import des Kommunenverzeichnisses (Issue #783, Stufe 2; Format in docs/INSIGHT.md#1-kommunenwechsel-und-kommunenverzeichnis).
 
 Eine CSV-Datei (UTF-8, Semikolon, Kopfzeile) je Gemeinde, Gemeindeverband oder kreisfreie Stadt:
 

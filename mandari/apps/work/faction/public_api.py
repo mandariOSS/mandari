@@ -25,7 +25,7 @@ Inhalte — STRIKT öffentlich:
 - Niemals Protokollinhalte, Beschlüsse, Teilnehmer, Video-Links oder
   interne Beschreibungen.
 
-Dokumentation: docs/FACTION_PUBLIC_API.md + OpenAPI-Schema-Endpoint.
+Dokumentation: https://docs.mandari.de/work/fraktions-api/ + OpenAPI-Schema-Endpoint.
 """
 
 from datetime import timedelta

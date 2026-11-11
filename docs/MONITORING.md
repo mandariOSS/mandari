@@ -68,7 +68,7 @@ Objekte), und nur umhängen, wenn beide Quellen dasselbe Ratsinformationssystem 
 
 Ist ein Wert mit dem Betreiber vereinbart, lässt sich der User-Agent **je Quelle** im Admin
 setzen (Feld *User-Agent*, leer = Standard). Den Standard beschreibt
-`docs/SCRAPER_SOURCES.md`, Abschnitt Politeness. Die Vergleichsanfrage lässt sich mit
+[ABRUFREGELN.md, „Kennung“](ABRUFREGELN.md#kennung). Die Vergleichsanfrage lässt sich mit
 `OPARL_UA_PROBE_ENABLED=false` abschalten.
 
 Häufiger Grund sind Wortfilter: Manche Server sperren Wörter wie „crawler“ oder „bot“ im User-Agent.
@@ -139,8 +139,8 @@ Admin einen User-Agent je Quelle.
 
 Die Report-Only-Policy (#172) meldet Verstöße an `/csp-report/`. Der Endpunkt gehört zur
 Anwendung, nicht zur Website: In der Caddy-Konfiguration muss der Pfad in der App-Pfadliste
-stehen (`Caddyfile`, Matcher `@mandari_app`), sonst landen die Meldungen auf der Marketing-
-Website (403). Auswertung: `journalctl CONTAINER_NAME=<app> | grep CSP-Verstoß` und die
+stehen (`Caddyfile`, Matcher `@mandari`), sonst landen die Meldungen auf der Marketing-
+Website (403). Auswertung: `journalctl CONTAINER_NAME=mandari | grep CSP-Verstoß` und die
 Metrik `mandari_csp_violations_total{directive}`; Limit 60 Meldungen je Adresse und Minute.
 
 ### Scraper-Quellen: Parse-Quote und Zufluss (Pilot #53)
@@ -175,13 +175,14 @@ Prüfungen, die für eine Installation nicht kritisch sind, lassen sich mit
 `HEALTH_READY_OPTIONAL=elasticsearch` (kommagetrennt) als optional erklären: Sie werden
 weiter gemeldet (`"status": "degraded"`), die Antwort bleibt 200.
 
-Die Prüfung `worker` ist immer optional: Braucht die Installation einen Worker
-(`TASKS_BACKEND=journal`, `INGESTOR_EVENTS_ENABLED=true`, `SESSION_EVENTS` nicht `aus` oder
-`EVENTS_WORKER_REQUIRED=true`) und
-bedient keiner die nötigen Rollen – mit `tasks` jede Warteschlange –, melden `/health/ready/` und
-`/health/` (Feld `worker`) `"degraded"`; Admin-Startseite und Betriebsmonitor zeigen einen
-Hinweis. Ohne Bedarf steht dort „nicht erforderlich“, nichts wird gemeldet, und die Prüfung fragt
-die Datenbank nicht (DEPLOYMENT.md, „Worker“).
+Die Prüfung `worker` ist immer optional. Jede Installation braucht einen Worker mit den Rollen
+`tasks` und `scheduler` (Zeitpläne und Aufträge laufen im Worker); schreiben Ingestor
+(`INGESTOR_EVENTS_ENABLED=true`) oder Session (`SESSION_EVENTS` nicht `aus`) Ereignisse, dazu
+`sequencer` (`apps/events/presence.py`, `required_roles`). Bedient keiner die nötigen Rollen, mit
+`tasks` jede Warteschlange, melden `/health/ready/` und `/health/` (Feld `worker`) `"degraded"`;
+Admin-Startseite und Betriebsmonitor zeigen einen Hinweis. Nur mit `EVENTS_WORKER_REQUIRED=false`
+(etwa eine Vorführinstanz ohne Worker) steht dort „nicht erforderlich“, nichts wird gemeldet, und die
+Prüfung fragt die Datenbank nicht (DEPLOYMENT.md, „Worker“).
 
 Das Helm-Chart nutzt `live` für Startup- und Liveness-Probe und `ready` für die
 Readiness-Probe. Die Statusseite (Gatus) kann `/health/ready/` als Bedingung nehmen.
@@ -435,8 +436,8 @@ oder `EVENTS_SCHEDULES_DISABLED=befehl:events_purge`; Gelöschtes kommt nur aus 
 
 ### Worker für die Statusseite (Issue #574)
 
-`GET /health/worker/` fasst den Zustand von Worker, Ereignissen und Aufträgen in vier Prüfungen
-zusammen und antwortet mit **200**, wenn alle bestehen, sonst mit **503**. Gemessen wird in der
+`GET /health/worker/` fasst den Zustand von Worker, Ereignissen, Aufträgen und Dokumenten in den
+Prüfungen der Tabelle unten zusammen und antwortet mit **200**, wenn alle bestehen, sonst mit **503**. Gemessen wird in der
 Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Gerechnet werden nur die
 gewählten Prüfungen, das Ergebnis gilt je Prüfung 15 s (Cache); ein neuer Befund zeigt sich also
 spätestens 15 s später.
@@ -619,8 +620,9 @@ seit dem letzten Lauf – beim täglichen Zeitplan die letzten ~24 h. Liegt der 
 gemerkten Stand (Neustart), gilt der Stand seit dem Start. Sind die Metriken nicht abrufbar,
 ist das selbst ein Alarm.
 
-Django-Tasks laufen mit dem `ImmediateBackend` synchron; eine allgemeine Warteschlange, die
-sich stauen könnte, gibt es nicht. Geprüft wird darum nur die Transkriptions-Warteschlange.
+Geprüft wird hier nur die Warteschlange der Transkription. Den Rückstand der Aufträge und
+Zeitpläne im Journal (`mandari_tasks_*`) meldet `/health/worker/` (Prüfung `rueckstau`), tote
+Ereignisse stehen in der Tabelle oben.
 
 Jeder Alarm geht **höchstens einmal je 24 h** hinaus (Sperre im Cache je Prüfobjekt);
 alle fälligen Alarme eines Laufs stehen in einer Sammelmail. Entwarnungen werden nicht

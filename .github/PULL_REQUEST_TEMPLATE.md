@@ -15,6 +15,8 @@ Was ändert dieser PR – und warum?
 
 ## Bezug zu Issue
 
+<!-- „Closes #…“ nur, wenn dieser PR das Issue ganz erledigt; sonst „Teil von #…“.
+     Sicherheitskorrekturen ohne öffentliches Issue. -->
 Closes #(Nummer)
 
 ## Checkliste

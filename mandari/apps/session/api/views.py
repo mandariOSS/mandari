@@ -117,9 +117,9 @@ class APIRootView(OParlMixin, View):
 # =============================================================================
 
 
-#: Abkündigung der alten Session-API-Pfade (Release-Politik §5: mindestens 6 Monate Ankündigung): abgekündigt mit
+#: Abkündigung der alten Session-API-Pfade (Release-Politik §6: mindestens 6 Monate Ankündigung): abgekündigt mit
 #: Release 0.11.0 am 27.09.2026 (Issue #482), Wegfall am 31.05.2027 – dasselbe Datum steht im CHANGELOG unter
-#: „Abgekündigt“ und in docs/API_V1_SESSION.md. Header nach RFC 9745 und RFC 8594 (``apps.common.api.deprecation``).
+#: „Abgekündigt“ und in docs/SCHNITTSTELLE.md#session-api-v1. Header nach RFC 9745 und RFC 8594 (``apps.common.api.deprecation``).
 SESSION_API_DEPRECATION_INFO = Deprecation(
     deprecated_at=datetime(2026, 9, 27, tzinfo=UTC), sunset=datetime(2027, 5, 31, tzinfo=UTC)
 )

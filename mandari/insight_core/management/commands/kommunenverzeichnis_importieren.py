@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Kommunenverzeichnis für den Kommunenwechsel im Bürgerportal füllen (Issue #783, docs/INSIGHT_KOMMUNENWECHSEL.md).
+Kommunenverzeichnis für den Kommunenwechsel im Bürgerportal füllen (Issue #783, docs/INSIGHT.md#1-kommunenwechsel-und-kommunenverzeichnis).
 
 Verwendung:
     python manage.py kommunenverzeichnis_importieren --datei kommunen.csv

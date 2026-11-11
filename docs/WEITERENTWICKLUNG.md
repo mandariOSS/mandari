@@ -61,7 +61,8 @@ gh release create v0.13.0 --verify-tag --title "mandari 0.13.0" --notes-file not
 ```
 
 Zwischen den Stichtagen darf Produktion weiter aus `main` aktualisiert werden (Release-PR
-„Release JJJJ-MM-TT“). Getaggt wird nur der Stand vom Stichtag.
+„Release JJJJ-MM-TT“). Getaggt wird der Stand vom Stichtag; nur wenn er einen Fehler hat, der das
+Release verhindert, der korrigierte Stand (siehe Freitag bis Montag oben).
 
 ## 3. Planung
 

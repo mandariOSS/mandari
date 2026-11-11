@@ -5,7 +5,7 @@ Neuen Session-Mandanten mit einem Befehl arbeitsfähig anlegen (Issue #317).
 Standardrollen, Nummernkreis-Preset, aktuelle Wahlperiode, optional eine Gremienvorlage, erster
 Administrator (vorhandenes Konto oder Einladung per E-Mail) und Schlüssel für verschlüsselte
 Felder. Idempotent: Ein erneuter Lauf ergänzt Fehlendes. Der Befehl gibt nie Passwörter oder
-Einladungslinks aus. Anleitung: docs/SESSION_MANDANT_ANLEGEN.md.
+Einladungslinks aus. Anleitung: docs/SESSION_MANDANTEN.md#2-mandant-anlegen.
 
     # Profile, Gremienvorlagen und Nummernkreis-Presets anzeigen
     python manage.py session_create_tenant --list-presets

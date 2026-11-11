@@ -1,6 +1,9 @@
 # Dokumentkette: Abruf, Ablage und Texterkennung als Aufträge über Ereignisse
 
-- Status: angenommen (Zielbild freigegeben am 07.10.2026, #919)
+- Status: angenommen (Zielbild freigegeben am 07.10.2026, #919). Stand 11.11.2026: Etappen 1 und 2 sind
+  umgesetzt (Abrufweg `hub.ris.abruf`, Befehl `dokumentkette`, Erkennung als Auftrag); Etappe 3 mit
+  `DOCUMENT_FETCH_SUBSCRIPTION`, `dokumentkette_nachholen`, `ris.file.content_stored` und der Warteschlange
+  `fetch` ist noch nicht im Code.
 - Datum: 2026-10-07
 - Issue: #919 (Epic #476)
 - Bezug: [A1 Schichtenmodell](20260929-schichtenmodell.md), [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),
@@ -8,7 +11,7 @@
   [A7 Kanonisches Modell](20260929-kanonisches-modell.md),
   [Schema-Vertrag Django/Ingestor](20260909-schema-contract-django-ingestor.md),
   [Texterkennung als eine Bibliothek](20261004-texterkennung-shared.md) (in zwei Punkten abgelöst),
-  `docs/FILE_CACHE.md` (Dokumentablage, Objektspeicher, Löschabgleich #787), `docs/DREHSCHEIBE_UMSTELLUNG.md`
+  `docs/FILE_CACHE.md` (Dokumentablage, Objektspeicher, Löschabgleich #787), `docs/DATENDREHSCHEIBE.md` (Abschnitt 4)
 
 ## Kontext
 
@@ -283,7 +286,7 @@ Ingestor (Eingangsadapter, nur Metadaten)
   (je Quelle und Fehlercode), `mandari_files_stored_without_text`, `mandari_files_text_outdated`.
 - `/health/worker/` meldet Warnung, wenn fällige Wiederholungen länger als 6 h liegen oder abgelegte Inhalte ohne
   Text länger als 24 h warten (Schwellen per Einstellung).
-- Umstellung nach der Checkliste in `docs/DREHSCHEIBE_UMSTELLUNG.md` mit Abbruchkriterien: Fehlerquote des
+- Umstellung nach der Checkliste in `docs/DATENDREHSCHEIBE.md` (Abschnitt 4) mit Abbruchkriterien: Fehlerquote des
   Abrufs je Quelle höher als vor dem Umschalten, Quellabrufe je Inhalt > 1 (außer Löschabgleich), wachsender
   Rückstau.
 

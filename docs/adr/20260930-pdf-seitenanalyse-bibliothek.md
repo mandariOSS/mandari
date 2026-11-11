@@ -70,3 +70,8 @@ bevorzugt.
   `apps/common/tests/test_abhaengigkeiten_lock.py`; der Abhängigkeitsbericht (SBOM) nennt die Lizenzen.
 - Tests der Seitenanalyse (`apps/common/tests/test_page_analysis.py`) laufen ohne Netz auf erzeugten
   PDFs.
+
+## Nachtrag (11.11.2026)
+
+Die Dokumentbibliothek in `shared/` gibt es inzwischen (`shared/mandari_dokumente/`, Texterkennung). Die
+Seitenanalyse liegt weiter in `apps/common/documents/page_analysis.py`; der Umzug dorthin ist nicht erfolgt.

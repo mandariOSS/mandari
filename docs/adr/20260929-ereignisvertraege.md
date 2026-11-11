@@ -101,7 +101,8 @@ diesen Nachtrag annimmt, nimmt die Ausnahme an.
 - **Bereich `invitation`.** Die Bereichsliste oben nennt ihn nicht, der Startumfang der Befehle
   ([A6](20260929-befehle-synchron.md)) braucht ihn für `invitation.acknowledge`. Er gehört zu den
   erlaubten Bereichen.
-- **Eigentümer der `ris.*`-Verträge ist die Drehscheibe (`hub.ris`).** `ris.*` spricht das
+- **Eigentümer der `ris.*`-Verträge ist die Drehscheibe (`hub.ris`).** (Vermerk 11.11.2026: Die Übertragungen
+  `ris.broadcast.*` gehören seit #915 `hub.live`, Nachtrag unten.) `ris.*` spricht das
   kanonische Modell, und dieselben Typen entstehen aus zwei Quellen: aus Session für eigene
   Mandanten und aus dem Ingestor für fremde RIS. Session veröffentlicht sie über die Abbildung in
   `hub/ris/` ([A7](20260929-kanonisches-modell.md)), nicht mit eigenem `publish()`.

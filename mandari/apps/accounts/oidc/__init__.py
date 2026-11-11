@@ -13,7 +13,7 @@ Betrieb die Prüfung vor dem Einschalten (:mod:`.readiness`, ``manage.py oidc_pr
 
 Der Schalter ``OIDC_PROVIDER_ENABLED`` ist standardmäßig aus; dann antworten alle Endpunkte mit 404
 und kein Access-Token wird angenommen. Für Anwendungsentwickler: ``docs/schnittstelle/anmeldung.md``, für den
-Betrieb: ``docs/schnittstelle/anmeldung-betrieb.md``.
+Betrieb: ``docs/schnittstelle/anmeldung.md#teil-b-betrieb``.
 """
 
 from __future__ import annotations

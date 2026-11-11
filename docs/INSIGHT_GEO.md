@@ -1,7 +1,8 @@
-# Geo-Verortung im Insight-Portal (Straßenverzeichnis, Umkreissuche, Korrektur)
+# Geo-Verortung im Insight-Portal (Straßenverzeichnis, Umkreissuche, Korrektur, Kartenanalyse)
 
 Issue #54 (Ausbaustufe) auf Basis der produktiven Geo-Pipeline (Gazetteer, OParl-Orte,
-automatischer Lauf). Diese Notiz beschreibt Module, Tabellen, Commands und Smoke-Tests.
+automatischer Lauf). Diese Notiz beschreibt Module, Tabellen, Commands und Smoke-Tests, dazu die Messung von
+Karten und Plänen in Anlagen (`analyze_maps`, #599).
 
 ## Datenmodell (`insight_core/models.py`)
 
@@ -9,7 +10,7 @@ automatischer Lauf). Diese Notiz beschreibt Module, Tabellen, Commands und Smoke
 |--------|---------|-------|
 | `Street` | `insight_streets` | Straßenverzeichnis aus OSM (highway-Ways mit Namen), Zentroid je Way. Wahrheitsquelle für Pass 1 der Georeferenzierung. |
 | `Address` | `insight_addresses` | Hausnummern-Punkte aus OSM (`addr:street` + `addr:housenumber`), Index `(body, normalized_street, normalized_house_number)`. |
-| `PaperLocation` | `insight_paper_locations` | Eine Zeile je Verortung eines Vorgangs mit `source` (Herkunft), `status` (auto/confirmed/removed) und Index `(body, latitude, longitude)`. |
+| `PaperLocation` | `insight_paper_locations` | Eine Zeile je Verortung eines Vorgangs mit `source` (Herkunft), `status` (auto/confirmed/removed/hidden) und Index `(body, latitude, longitude)`. |
 | `OParlPaper.locations` | JSON | Bleibt das Anzeigeformat für Karte, Detailseite, Alerts. Wird aus `PaperLocation` heraus konsistent gehalten. |
 
 Der Ingestor kennt die neuen Tabellen nicht (kein SQLAlchemy-Modell nötig; der
@@ -73,6 +74,15 @@ oder ergänzt, KI-Prüfung „unsicher“). Die Randspalte nennt höchstens fün
 Beraten mindestens drei Bezirksgremien (Bezirksvertretung, Ortsrat, Bezirksausschuss …) den Vorgang oder liegen
 mindestens sechs Orte über die Hälfte der Ausdehnung der Kommune verteilt, steht „Stadtweit“ mit Begründung statt einer
 Straßenliste.
+
+## KI-Prüfung der Verortung (`services/verortung_pruefung.py`, #1222)
+
+Ist für die Zusammenfassungen die Claude API gewählt, prüft dieselbe Anfrage im Tagesbatch die automatisch
+gefundenen Orte eines Vorgangs (Herkunft Adresse, Straße, KI-Extraktion, Status „automatisch“). „passt nicht“
+blendet den Ort aus (Status „entfernt“, ohne Prüfdatum, im Admin über den Filter „KI-Prüfung“ zu finden und mit
+„Bestätigen“ zurückzuholen); „anderer Ort“ ersetzt ihn durch den genannten Ort; fehlende Orte geokodiert die
+bestehende Pipeline, nie die KI, und sie tragen die Herkunft `ai_check`. Orte aus OParl, manuelle, amtliche
+Umringe und bestätigte bleiben unangetastet. Kennzeichnung und Anbieter: [KI.md](KI.md).
 
 ## Verortung nach neuem Text (`services/georef_abonnement.py`, #919)
 
@@ -199,7 +209,8 @@ Antwortformat unverändert: `[{"name", "lat", "lon"}]`.
 ## Admin-Korrektur-Workflow (`insight_core/admin.py`)
 
 - **Verortungen** (`PaperLocationAdmin`): Liste mit Herkunft (`OParl-Ort`, `Adresse`, `Straße`,
-  `KI`, `Manuell`), Prüfstatus, Vorgang, Koordinaten. Zeilenaktionen „Bestätigen“ / „Entfernen“
+  `KI-Extraktion`, `Manuell`, `Amtlicher Umring`, `KI-Prüfung`), Prüfstatus (automatisch, bestätigt, entfernt,
+  ausgeblendet), Urteil der KI-Prüfung, Vorgang, Koordinaten. Zeilenaktionen „Bestätigen“ / „Entfernen“
   (ein Klick je Zeile), dieselben Aktionen auf der Detailseite und als Sammelaktion.
 - **Vorgang** (`OParlPaperAdmin`): Inline „Verortungen“ (nur lesend, Änderungslink zur Verortung),
   Sammelaktion „Verortungen aus dem JSON neu aufbauen“.
@@ -287,9 +298,113 @@ pytest insight_core/tests/test_paper_locations.py insight_core/tests/test_geo_im
        insight_core/tests/test_body_geo_resolver.py
 ```
 
-## Offen
+## Karten und Pläne in Anlagen messen (`analyze_maps`, #599)
 
-- `generate_alerts` (Nachbarschafts-Abos) rechnet weiterhin per JSONB-Haversine; Umstellung auf
-  `PaperLocation` ist ein Folgeschritt.
-- Alternative Geo-Feld im Elasticsearch-Index wurde nicht umgesetzt (Tabelle mit Index reicht für
-  das Ziel < 300 ms).
+Viele Anlagen zu Vorlagen enthalten Karten und Pläne: Lagepläne, Bebauungspläne, FNP-Ausschnitte,
+Straßenplanungen. Bevor ein Dokument-Worker sie dauerhaft erkennt, rendert und verortet, misst
+`analyze_maps` den Bestand – nur aus dem lokalen Dateicache, ohne einen einzigen Abruf beim
+Ratsinformationssystem und ohne etwas zu speichern.
+
+### Bausteine der Kartenanalyse
+
+| Baustein | Ort | Aufgabe |
+|----------|-----|---------|
+| Seitenanalyse | `apps/common/documents/page_analysis.py` | fachfrei (Plattform-Schicht): Messwerte je Seite, Einordnung als Karte |
+| Auswertung | `insight_core/services/map_survey.py` | Dateien der Kommune aus dem Cache, Straßenverzeichnis, Kennzahlen, Stichprobe |
+| Befehl | `insight_core/management/commands/analyze_maps.py` | Aufruf, Ausgabe, JSON, Stichprobe, Auswertung der Prüfung von Hand |
+
+Bibliotheken: pypdfium2 (PDFium) und pypdf, nicht PyMuPDF – Begründung in
+[`docs/adr/20260930-pdf-seitenanalyse-bibliothek.md`](adr/20260930-pdf-seitenanalyse-bibliothek.md).
+
+### Aufruf von `analyze_maps`
+
+```bash
+# Gesamter Cache der Kommune (neueste Dateien zuerst); nur Auswertung, --dry-run ist Pflicht
+python manage.py analyze_maps --body muenster --dry-run
+# Teilmenge, Kennzahlen als JSON
+python manage.py analyze_maps --body muenster --dry-run --limit 2000 --json /tmp/karten.json
+# Stichprobe für die Prüfung von Hand: je zur Hälfte vorhergesagte Karten und andere Seiten
+python manage.py analyze_maps --body muenster --dry-run --sample-csv /tmp/stichprobe.csv --sample-size 200
+# Spalte „label“ mit ja/nein füllen, dann Präzision und Trefferquote berechnen
+python manage.py analyze_maps --evaluate /tmp/stichprobe.csv
+```
+
+Der Befehl hält eine Singleton-Sperre (`--ohne-sperre` erzwingt) und liest Datei für Datei;
+`--max-mb` (Vorgabe `FILE_CACHE_MAX_MB`) und `--max-pages` (Vorgabe 300) begrenzen große Dokumente.
+Nur öffentliche Dateien: gelöschte Dateien, Dateien gelöschter Vorgänge und Sitzungen sowie von
+mandari Session zurückgenommene Dateien bleiben außen vor. Eine Seite, die PDFium nicht lesen kann,
+wird übersprungen und gezählt (`seiten_nicht_lesbar`); scheitert eine ganze Datei unerwartet, zählt
+sie unter „Analysefehler“ (im Log nur Datei-ID und Fehlerart), und der Lauf geht weiter.
+
+#### Lauf auf dem Server: eigener Container, nicht im Web-Dienst
+
+Ein Lauf über den ganzen Cache einer großen Kommune dauert Stunden und braucht viel Rechenzeit.
+Deshalb nicht per `docker exec` im laufenden Web-Container starten, sondern in einem kurzlebigen
+Container des Anwendungsdienstes (`docker compose run`, wie bei `backup.sh`): gleiches Image, gleiche
+Umgebung und dieselben Volumes bzw. Bind-Mounts für den Dateicache, aber ein eigener Prozessraum mit
+der Speichergrenze des Dienstes (`mem_limit: 1g` in `docker-compose.yml`). Läuft der Speicher über,
+beendet der Kernel nur diesen Container, nicht die Web-Worker.
+
+```bash
+# im Verzeichnis mit docker-compose.yml und .env
+docker compose run -d --no-deps --label mandari.autoheal=false --name mandari-kartenanalyse \
+  mandari python manage.py analyze_maps --body muenster --dry-run \
+  --json /tmp/karten.json --sample-csv /tmp/stichprobe.csv --sample-size 200
+docker inspect -f '{{.HostConfig.Memory}}' mandari-kartenanalyse   # 1073741824 = 1 GB
+docker logs -f mandari-kartenanalyse                                # Fortschritt alle 500 Dateien
+docker wait mandari-kartenanalyse                                   # 0 = fertig
+docker inspect -f '{{.State.OOMKilled}}' mandari-kartenanalyse      # true = Speichergrenze gerissen
+docker cp mandari-kartenanalyse:/tmp/karten.json .
+docker cp mandari-kartenanalyse:/tmp/stichprobe.csv .
+docker rm mandari-kartenanalyse
+```
+
+Der Befehl öffnet die Dateien nur lesend und schreibt nichts in die Datenbank. „Speicher höchstens“
+in der Ausgabe (bzw. `speicher_max_mb` im JSON) ist der Spitzenwert dieses Containers über alle
+Dateien, also auch über den größten Plan – das ist die Messung für die Obergrenze von 1 GB.
+
+### Kennzahlen der Kartenanalyse
+
+- Dateien und Seiten, davon Karten bzw. Pläne (Anteil), Dateien mit mindestens einer Kartenseite
+- Kartenseiten mit maschinenlesbarem Maßstab (`/VP` mit `/Measure /RL`, AutoCAD-Plots), als GeoPDF,
+  mit Koordinatenbeschriftung (Rechts-/Hochwert-Paare im Textlayer), mit mindestens vier Straßennamen
+  aus dem Straßenverzeichnis der Kommune, als Scan ohne Textlayer, mit 1-bit-Rastergrundkarte
+- Median der effektiven Rasterauflösung, Papierformate, häufigste Erzeuger (Creator/Producer)
+- Übersprungene Dateien (nicht im Cache, kein PDF, zu groß, nicht lesbar, Analysefehler), nicht
+  lesbare Seiten, Laufzeit, höchster Speicherbedarf des Prozesses (Linux)
+
+### Messwerte je Seite und Einordnung
+
+`analyze_pdf` misst Format, Pfadobjekte und -segmente (auch in Form-XObjects), Vektordichte (Segmente
+je cm²), Rasterbilder (Pixel, Bittiefe, Filter, effektive dpi, Flächenanteil), den Textlayer (auf
+Wunsch mit Rechtecken), Kartenstichworte, Koordinatenpaare, Maßstäbe aus `/VP` (der Papierbereich
+entfällt) und GeoPDF-Merkmale (`/Measure /GEO`, `/LGIDict`). Bildseiten bekommen eine grobe Vorschau
+(40 dpi), um Karten (wenige Farbtöne) von Fotos zu trennen.
+
+`classify_page` vergibt Punkte nach den Regeln aus dem Machbarkeitstest (Stufe C), Karte ab 3 Punkten:
+
+| Merkmal | Punkte |
+|---------|--------|
+| Vektorzeichnung (≥ 5.000 Segmente und ≥ 10 je cm²) | +2 |
+| Maßstab im PDF (`/VP`) | +2 |
+| GeoPDF | +3 |
+| größer als A4 | +1 |
+| ≥ 2 bzw. ≥ 4 Kartenstichworte | +1 bzw. +2 |
+| ≥ 2 Straßennamen aus dem Straßenverzeichnis | +1 |
+| Textseite (> 1.500 Zeichen, kaum Vektoren) | −3 |
+| Bildseite: wie eine Karte (wenige Farben, 1-bit-Grundkarte, Vektoren oder `/VP`) bzw. wie ein Foto | +2 bzw. −2 |
+
+Auf den 44 Seiten der Stichprobe des Machbarkeitstests (18 PDFs, Münster) ergibt das ohne
+Straßenverzeichnis Präzision 0,92 und Trefferquote 0,79 (11 von 14 Karten). Verpasst werden wie im
+Test der Scan ohne Textlayer, der Nachdruck mit in Pfade umgewandelter Schrift und ein A0-Plan mit
+geringer Vektordichte, den im Machbarkeitstest erst die Straßennamen über die Schwelle hoben; Fehlalarm
+bleibt der Querschnitt. Die Regeln sind an dieser Stichprobe entstanden – die Prüfung von Hand an 200 Seiten
+aus dem Bestand (Akzeptanzkriterium: Präzision ≥ 0,9, Trefferquote ≥ 0,8) steht aus.
+
+### Stichprobe und Prüfung von Hand
+
+Die Stichprobe zieht je zur Hälfte Seiten, die als Karte eingeordnet wurden, und andere Seiten
+(Zufallsauswahl über den ganzen Lauf). Die Spalte `weight` gibt an, für wie viele Seiten des Bestands
+eine Seite steht. `--evaluate` rechnet Präzision und Trefferquote einmal für die Stichprobe und einmal
+nach Schichten gewichtet – die gewichtete Trefferquote ist die Schätzung für den Bestand, weil Karten
+in der Stichprobe überrepräsentiert sind.

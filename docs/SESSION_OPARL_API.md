@@ -9,8 +9,12 @@ https://<host>/session/<slug>/api/oparl/
 einen eigenen, **OParl-1.1-konformen System-Endpoint** bereit (Issue #35),
 sobald die Verwaltung die Schnittstelle freigeschaltet hat (Issue #319, nächster Abschnitt).
 Die API folgt dem Muster des mandari-Aggregators (`docs/OPARL_API.md`,
-Issue #17): rein lesend, anonym, JSON, CORS offen, Rate-Limit
-(`OPARL_API_RATE_LIMIT`, Standard 120 Anfragen/Minute je IP).
+Issue #17): Die OParl-Objekte sind lesend und anonym abrufbar, als JSON, CORS offen, Rate-Limit
+(`OPARL_API_RATE_LIMIT`, Standard 120 Anfragen/Minute je IP). Unter derselben Adresse liegen zusätzlich die
+Endpunkte des Profils Einreichung (schreibend, mit Anmeldung) und die nichtöffentliche Ausgabe (mit Anmeldung),
+beschrieben in [SCHNITTSTELLE.md](SCHNITTSTELLE.md). Was für beide OParl-Ausgaben gleich gilt (bedingte Anfragen,
+Seiten, Zeitfilter, Tombstones, Änderungsfeed), steht in [OPARL_API.md](OPARL_API.md); hier stehen nur die
+Besonderheiten der Ausgabe je Mandant.
 
 Für Datenportale wie GovData beschreibt ein Katalog nach DCAT-AP.de unter `…/api/dcat/catalog` die
 offenen Daten des Mandanten und verweist auf diese Schnittstelle ([DCAT_KATALOG.md](DCAT_KATALOG.md)).
@@ -116,7 +120,7 @@ DSGVO kann sie die Veröffentlichung so beschreiben:
 | Betroffene | Mitglieder der Gremien, sachkundige Bürgerinnen und Bürger, Beratende, Antragstellende |
 | Daten | Name, Titel, Anrede, Mitgliedschaften und Funktionen; E-Mail-Adresse nur mit Kennzeichen „Kontaktdaten veröffentlichen“; öffentliche Sitzungen, Vorlagen, Beschlüsse und Anlagen |
 | Empfänger | Öffentlichkeit (anonymer Abruf), Bürgerportal, weitere OParl-Abnehmer |
-| Löschung | Die Schnittstelle zeigt den jeweils aktuellen Stand; entfernte Kontaktdaten verschwinden mit dem nächsten Abgleich aus dem Bürgerportal; im Übrigen nach dem Löschkonzept (`DSGVO_LOESCHKONZEPT.md`) |
+| Löschung | Die Schnittstelle zeigt den jeweils aktuellen Stand; entfernte Kontaktdaten verschwinden mit dem nächsten Abgleich aus dem Bürgerportal; im Übrigen nach dem Löschkonzept (`DATENSCHUTZ.md`, Löschkonzept) |
 | Nachweis | Datum und Nachweis der Einwilligung je Person; Freischaltung der Schnittstelle mit Datum und Audit-Eintrag |
 
 ## Endpunkte
@@ -219,12 +223,9 @@ der Sitzung. Der Aggregator bildet den Ort aus dem Text (`…/v1/location/<Kennu
 
 ### Bedingte Anfragen (ETag, 304)
 
-Jede erfolgreiche JSON-Antwort trägt einen `ETag` über ihren Inhalt und `Cache-Control: no-cache`.
-Wer die Antwort aufbewahrt, fragt mit `If-None-Match: <ETag>` nach und erhält `304 Not Modified`
-ohne Inhalt, solange sich nichts geändert hat. Geprüft wird bei jeder Anfrage neu: Eine Rücknahme
-(Sitzung nicht mehr öffentlich, Schnittstelle gesperrt) wirkt sofort, auch bei passendem `ETag`.
-Der `ETag` hängt am Inhalt, nicht an einem Zeitstempel; er ändert sich genau dann, wenn sich die
-Antwort ändert.
+Wie beim Aggregator (`OPARL_API.md`, „Bedingte Anfragen“), dazu `Cache-Control: no-cache`. Geprüft wird bei
+jeder Anfrage neu: Eine Rücknahme (Sitzung nicht mehr öffentlich, Schnittstelle gesperrt) wirkt sofort, auch bei
+passendem `ETag`.
 
 ### Hinweise für bestehende Abnehmer
 
@@ -322,36 +323,18 @@ Sitzung bzw. auf einem nichtöffentlichen TOP nennt nur `paper` – ohne
 
 ## Pagination und Zeitfilter
 
-Wie beim Aggregator: OParl-Listen-Envelope (`data`/`pagination`/`links`)
-mit echten `links.next`-URLs und HTTP-`Link`-Headern; Seitengröße über
-`OPARL_API_PAGE_SIZE` (Standard 100). Sortierung nach `modified`
-aufsteigend — stabil für inkrementelle Clients. Mit `modified_since`
-werden Objekte und Tombstones seitenweise zusammengeführt; geladen
-werden nur die Objekte der angefragten Seite.
-
-Alle Listen unterstützen `created_since`, `created_until`,
-`modified_since`, `modified_until`. **Zeitstempel MÜSSEN eine explizite
-Zeitzone enthalten** (`+00:00`, `Z`, …); naive Zeitstempel werden mit
-HTTP 400 abgelehnt (`+` in URLs als `%2B` kodieren).
+Wie beim Aggregator (`OPARL_API.md`, Abschnitte „Pagination“ und „Zeitfilter“): Seitengröße über
+`OPARL_API_PAGE_SIZE` (Standard 100), Sortierung nach `modified` aufsteigend, Zeitstempel nur mit Zeitzone. Mit
+`modified_since` werden Objekte und Tombstones seitenweise zusammengeführt; geladen werden nur die Objekte der
+angefragten Seite.
 
 ## Gelöschte/entöffentlichte Objekte (Tombstones)
 
-OParl 1.1 §2.8, Muster wie beim Aggregator: Objekte, die einmal
-öffentlich ausgeliefert wurden und danach **gelöscht** oder auf
-**nicht öffentlich** gestellt werden, hinterlassen einen Tombstone
-(`SessionOParlTombstone`):
-
-- Objekt-Endpunkte liefern weiterhin **HTTP 200** mit dem gekürzten
-  Objekt (`id`, `type`, `created`, `modified`, `deleted: true`);
-  `modified` ist der Löschzeitpunkt. Inhalte entfallen vollständig.
-- Listen **ohne** Filter enthalten keine Tombstones.
-- Listen **mit `modified_since`** enthalten passende Tombstones —
-  inkrementelle Clients bekommen Löschungen zuverlässig mit.
-- Wird ein Objekt wieder veröffentlicht (NÖ → Ö), verschwindet der
-  Tombstone und das Vollobjekt ist wieder abrufbar.
-- Ö→NÖ-Wechsel kaskadieren: Eine entöffentlichte Sitzung hinterlässt
-  auch Tombstones für ihre öffentlichen TOPs und Anlagen; eine
-  entöffentlichte Vorlage für ihre Anlagen und Beratungsstationen.
+OParl 1.1 §2.8, Verhalten wie beim Aggregator (`OPARL_API.md`, „Gelöschte Objekte“). Besonderheiten je
+Mandant: Den Tombstone hinterlassen auch Objekte, die auf **nicht öffentlich** gestellt werden
+(`SessionOParlTombstone`). Wird ein Objekt wieder veröffentlicht (NÖ → Ö), verschwindet der Tombstone und das
+Vollobjekt ist wieder abrufbar. Ö→NÖ-Wechsel kaskadieren: Eine entöffentlichte Sitzung hinterlässt auch Tombstones
+für ihre öffentlichen TOPs und Anlagen; eine entöffentlichte Vorlage für ihre Anlagen und Beratungsstationen.
 
 ## Änderungsfeed (kompatible Erweiterung von OParl 1.1)
 
@@ -367,9 +350,9 @@ kommParl, nach der sich die Ausgabe richtet.
 Nach kommParl nennt der Feed auch die einbettenden Objekte (#1229, `OPARL_API.md`, „Einbettende Objekte“). Anders
 als im Aggregator gibt der Tagesordnungspunkt hier seine Anlagen aus: Ändert sich eine Anlage eines
 Tagesordnungspunkts, folgen Einträge für den Punkt und seine Sitzung. Rücknahmen nennen das Objekt, in das das
-zurückgenommene eingebettet war (`docs/SESSION_EREIGNISSE.md`). Hängt eine Anlage woanders, bekommt auch das Objekt
-einen Eintrag, an dem sie vorher hing. Gremien, Personen, Mitgliedschaften und Wahlperioden meldet Session noch
-nicht als Ereignis; ihre Änderungen fehlen im Feed.
+zurückgenommene eingebettet war (`docs/DATENDREHSCHEIBE.md`, „Session als Erzeuger“). Hängt eine Anlage woanders,
+bekommt auch das Objekt einen Eintrag, an dem sie vorher hing. Körperschaft, Gremien, Personen, Mitgliedschaften und
+Wahlperioden meldet Session noch nicht als Ereignis; ihre Änderungen fehlen im Feed.
 
 - **Kommune im Journal:** die kanonische Kennung des Body, `uuid5` über `…/api/oparl/body/`.
   Ereignisse nennen Objekte ebenfalls mit ihrer kanonischen Kennung (`uuid5` über die Adresse des
@@ -476,7 +459,7 @@ Anders beim **Deaktivieren des Mandanten** (Issue #317): Dann nimmt mandari die
 Quelle vollständig zurück – Quelle inaktiv, Kommune nicht mehr gelistet, alle
 gespiegelten Einträge zurückgenommen –, und das Reaktivieren stellt sie wieder
 her. Dazu, zum eigenen Einstieg `/insight/k/<slug>/` je Körperschaft und zum
-Anlegen neuer Mandanten siehe `docs/SESSION_MANDANT_ANLEGEN.md`. Der Body der
+Anlegen neuer Mandanten siehe `docs/SESSION_MANDANTEN.md`. Der Body der
 API nennt Körperschaftstyp und AGS des Mandanten als `classification` und `ags`,
 sofern gepflegt (sonst wie bisher `classification: "Kommune"`).
 

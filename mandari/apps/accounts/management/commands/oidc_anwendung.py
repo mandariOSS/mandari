@@ -27,7 +27,7 @@ ersetzt die Schlüssel einer Anwendung (Schlüsselwechsel).
 
 Sperren schaltet die Anwendung aus und widerruft alle ihre Tokens; Entsperren schaltet sie wieder ein, alte Tokens
 leben dabei nicht auf. Anlegen, Sperren und Entsperren stehen im Sicherheitsprotokoll (``oidc_anwendung``), nie mit
-Secret. Anleitung: ``docs/schnittstelle/anmeldung-betrieb.md``.
+Secret. Anleitung: ``docs/schnittstelle/anmeldung.md#teil-b-betrieb``.
 """
 
 from __future__ import annotations

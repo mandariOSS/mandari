@@ -131,7 +131,7 @@ Alle `scraper`-Schlüssel außer `base_url` sind optional:
 |---|---|---|
 | `body_name` | "Unbekannte Kommune" | Anzeigename des Bodies |
 | `variant` | Auto-Detect | `"asp"` oder `"php"` |
-| `rate_limit_seconds` | `2.0` | Mindestabstand zwischen Requests je Host, nie unter 1 s (kleinere Werte werden angehoben, Warnung im Log) |
+| `rate_limit_seconds` | `2.0` | Mindestabstand zwischen zwei Anfragen dieser Quelle an ihren Server, nie unter 1 s (kleinere Werte werden angehoben, Warnung im Log); andere Quellen auf demselben Server halten ihren eigenen Abstand ([Takt je Server](ABRUFREGELN.md#takt-je-server)) |
 | `max_concurrent` | `1` | immer 1 (Serialisierung, RIS-Server schonen) |
 | `calendar_window_days` | `[-60, 210]` | Kalenderfenster inkrementeller Läufe |
 | `full_window_days` | `[-365, 210]` | Fenster des Full-Crawls (Historie) |
@@ -139,23 +139,19 @@ Alle `scraper`-Schlüssel außer `base_url` sind optional:
 | `members_on_full_only` | `true` | Gremien-Mitglieder nur im Full-Crawl crawlen |
 | `bodies` | – (eine Körperschaft) | Mehrere Körperschaften je Instanz: `"auto"` oder Liste `[{"cpanr": 1, "name": "…", "short_name": "…"}]`, siehe Schritt 3a |
 
-Außerhalb von `scraper` (auf oberster Ebene der Sync config, auch für OParl-Quellen):
+Außerhalb von `scraper` (auf oberster Ebene der Sync config) gelten dieselben Schlüssel wie bei OParl-Quellen.
+Bedeutung, Grenzen und die Schlüssel, die der Ingestor selbst pflegt, stehen in
+[`ABRUFREGELN.md`, Einstellungen je Quelle](ABRUFREGELN.md#einstellungen-je-quelle). Für die Quellen dieser Seite
+wichtig:
 
-| Schlüssel | Default | Bedeutung |
-|---|---|---|
-| `download_headers` | keine | Zusätzliche HTTP-Header für **Datei-Downloads** dieser Quelle (Dateicache, Textextraktion im Ingestor und in Django), z. B. `{"Referer": "https://rat.example.de/bi/", "Cookie": "consent=1"}`. Für RIS, die Anlagen nur mit Referer oder Consent-Cookie ausliefern (#116). Werte sind Klartext im Admin — keine persönlichen Sitzungs-Cookies hinterlegen. |
-| `file_downloads` | `true` | `false`: Dateien dieser Quelle **nicht automatisch abrufen** (Textextraktion im Ingestor und in Django, Dateicache, Vorschau). Für RIS, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern (z. B. ALTCHA); die Vorschau verweist dann auf das Original. Die Dateien bleiben offen und werden nachgeholt, sobald der Schalter fällt. |
-| `request_interval` | `INGESTOR_REQUEST_INTERVAL` (1 s) | Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an den Host dieser Quelle (0–30). Er gilt über alle Abrufplätze, alle Quellen auf demselben Host und alle Prozesse (Daemon, Einzelabgleich, Dokument-Cache und Vorschau in Django), weil alle denselben Zeitstempel je Host in Redis reservieren. Ohne den Schlüssel gilt der Standard (`INGESTOR_REQUEST_INTERVAL` bzw. `RIS_REQUEST_INTERVAL` in Django, je eine Anfrage je Sekunde). Der Wert darf nur verlangsamen: Werte unter 1 s, auch `0`, gelten als 1 s (Warnung im Log, `mandari_oparl.pacing.MIN_REQUEST_INTERVAL`, #1025); schneller als eine Anfrage je Sekunde und Server rufen wir nie ab. Ohne erreichbares Redis drosselt jeder Prozess für sich. Je Prozess und Host laufen höchstens `INGESTOR_HOST_MAX_CONCURRENT` Anfragen (Standard 2) gleichzeitig, damit der reservierte Takt nicht so viele Sekunden vorausreicht, wie es Abrufplätze gibt; das gilt auch für den Ziel-Host einer Weiterleitung (der Platz des Abrufs zieht dorthin um). Django (Dokument-Cache, Vorschau) kennt diese Grenze nicht, hält aber denselben Takt ein. |
-| `sync_window` | keine | Abruffenster für alle Abgleiche, etwa `{"start": "23:00", "end": "01:00"}` (Ortszeit, optional `tz`): außerhalb kein Crawl und keine Texterkennung im Ingestor, ein laufender Crawl endet am Fensterende ohne Fehlversuch der Quelle. Einzelheiten in [`ABRUFREGELN.md`](ABRUFREGELN.md#abruffenster) (#1186). |
-| `list_params` | keine | Zusätzliche Parameter für die erste Seite jeder OParl-Liste, z. B. `{"size": 100}` bei ALLRIS (100 statt 10 Einträge je Seite). Folgeseiten kommen aus `links.next`. |
-| `modified_since_margin_minutes` | `INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES` (120) | Sicherheitsabstand des Änderungsfensters in Minuten (0–10080). Inkrementelle Läufe fragen je Kommune nach allem, was seit dem Beginn ihres letzten vollständig erfolgreichen Abgleichs abzüglich dieses Abstands geändert wurde; ohne einen solchen Abgleich, oder liegt er weiter zurück, wie früher nach den letzten sieben Tagen (#1025). Quellen, deren Objekte erst Stunden nach ihrem `modified` sichtbar werden, brauchen einen größeren Abstand. Listen, deren `modified` keine Uhrzeit trägt, erkennt der Ingestor selbst und fragt sie ab 00:00 Uhr an (`timed_lists`). |
-| `body_sync_started` | – (pflegt der Ingestor) | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (Kennung → Zeitpunkt UTC), Anfang des Änderungsfensters. Ein Lauf mit Lücke schreibt ihn nicht fort; konnte ein Lauf Objekte nicht speichern (Fehler, Mitgliedschaft ohne Person, TOP ohne Sitzung), rückt er höchstens bis zu ihrem ältesten `modified` vor. Objekte, die die Quelle trotz Filter liefert (`modified` mehr als einen Tag vor dem Fenster der Liste), halten ihn nicht; sie kommen ohnehin in jedem Lauf wieder. Löschen setzt die Kommune auf das Fenster von sieben Tagen zurück. |
-| `missing_lists` | – (pflegt der Ingestor) | Optionale Listen (Mitgliedschaften, Tagesordnungspunkte, Beratungen, Dateien, Orte, Wahlperioden), die die Quelle nicht anbietet, mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC): Die erste Seite antwortete ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt, während andere Listen der Kommune lesbar waren. Inkrementelle Läufe fragen sie einmal am Tag an, der Vollabgleich jedes Mal (in Zeitscheiben nicht, #1033); gibt es sie wieder, wird der Vermerk gelöscht. Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) werden nie als fehlend vermerkt, dort bleibt ein 404 eine Lücke; ein Fehlerobjekt gilt dort wie bisher als leere Liste, solange andere Listen der Kommune lesbar sind (#1025). Listen, die die Quelle mit HTTP 403 für alle sperrt (auch ohne Filter und für den neutralen Vergleichs-Client), stehen hier als nicht freigegeben, auch Pflichtlisten (#1086). Beantwortet SD.NET RIM eine gefilterte Liste ohne Treffer mit HTTP 404 und Code 802, gilt sie als leer und vollständig, nicht als fehlend (#1034). |
-| `timed_lists` | – (pflegt der Ingestor) | Listen, deren `modified` nachweislich die Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC). Nur sie fragen inkrementelle Läufe mit dem kurzen Fenster ab „Beginn minus Abstand“ an. Alle übrigen Listen beginnen um 00:00 Uhr (dem früheren Zeitpunkt von 00:00 Uhr Ortszeit und 00:00 Uhr UTC): Trägt `modified` nur das Datum, fände das kurze Fenster ab etwa 02:00 Uhr nichts mehr vom selben Tag, auch bei einer Liste, die noch kein Lauf prüfen konnte. Vermerkt, sobald ein Lauf dort Änderungen der letzten sieben Tage sieht und alle eine Uhrzeit tragen; gelöscht, sobald er dort eine solche Änderung nur mit Datum sieht, auch 00:00 Uhr Ortszeit in UTC angegeben (`22:00:00Z`) (#1025). |
-| `full_sync_slices` | keine | Vollabgleich nur in Zeitscheiben, etwa `{"days": 30, "since": "2010-01-01"}`: Der Vollabgleich fragt jede Liste nur mit `modified_since`/`modified_until` an, nie ohne Filter, von alt nach neu, und setzt nach einem Abbruch an der letzten vollständigen Scheibe fort. Für Quellen, deren ungefilterte Listen abbrechen (Stadt Hamm). `days` 1–366 (Standard 30), `since` Pflicht, optional `lists`. Er endet immer mit dem Zeitfenster (`full_sync_window`, sonst Standardfenster des Daemons). Einzelheiten in [`ABRUFREGELN.md`](ABRUFREGELN.md#vollabgleich-in-zeitscheiben) (#1033). |
-| `full_sync_progress`, `full_sync_filter_ignored` | – (pflegt der Ingestor) | Fortschritt des Vollabgleichs in Zeitscheiben je Liste und Befund „Server ignoriert den Filter“ (#1033). |
-| `slow_lists` | – (pflegt der Ingestor) | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind (1, 2, 4, 8, 16, dann höchstens 24 Stunden), mit eigenem Fensteranfang; danach holt der inkrementelle Lauf sie in Scheiben zu einem Tag nach, bei Servern ohne Filter wie bisher ohne Scheiben (#1033, [`ABRUFREGELN.md`](ABRUFREGELN.md#langsame-listen)). Nicht löschen: Die Änderungen seit dem Fensteranfang holte dann erst der nächste Vollabgleich; stattdessen `until` in die Vergangenheit setzen. |
-| `carry_modified_since` | `false` | `true`: Die Quelle filtert mit `modified_since`, lässt den Parameter aber in `links.next` weg (ALLRIS). Der Ingestor hängt ihn an jede Folgeseite an. Ohne den Schalter gilt die Quelle als „ohne Filter“, und der inkrementelle Abgleich erreicht neue Einträge erst im nächtlichen Vollabgleich, weil die Listen aufsteigend sortiert sind. |
+| Schlüssel | Wirkung bei Scraper- und Bridge-Quellen |
+|---|---|
+| `download_headers` | Zusätzliche HTTP-Header für Datei-Downloads (Texterkennung, Dokument-Cache, Vorschau), z. B. `{"Referer": "https://rat.example.de/bi/", "Cookie": "consent=1"}` für RIS, die Anlagen nur mit Referer oder Consent-Cookie ausliefern (#116). Werte sind Klartext im Admin; keine persönlichen Sitzungs-Cookies hinterlegen. |
+| `file_downloads` | `false`: Dateien dieser Quelle nicht abrufen, etwa wenn das RIS Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefert (z. B. ALTCHA); die Vorschau verweist dann auf das Original. Offene Dateien holt der Abruf nach, sobald der Schalter fällt. |
+| `request_interval` | Abstand der Dateiabrufe dieser Quelle und, bei Bridge-Quellen, der Schnittstelle (1 bis 30 s, nie schneller als eine Anfrage je Sekunde). Den Crawl der Scraper taktet `scraper.rate_limit_seconds`. |
+| `sync_window` | Abruffenster: außerhalb kein Crawl und keine Texterkennung im Ingestor, ein laufender Crawl endet am Fensterende ohne Fehlversuch der Quelle ([Abruffenster](ABRUFREGELN.md#abruffenster), #1186). |
+| `full_sync_window`, `full_sync_every_days` | Bei Scraper-Quellen nur für den geplanten Vollabgleich, nicht für einen angeforderten. Ein begonnener Vollabgleich läuft auch nach dem Ende von `full_sync_window` zu Ende; nur das Abruffenster beendet ihn. `full_sync_window` wirkt nur, soweit es im Abruffenster liegt ([Vollabgleich](ABRUFREGELN.md#vollabgleich)). |
+| `list_params`, `carry_modified_since`, `modified_since_margin_minutes`, `full_sync_slices` | Nur für OParl- und Bridge-Quellen; Scraper lesen sie nicht. |
 
 Zieht eine Quelle um und ändert dabei die Form ihrer Adressen, behalten die Objekte im Bestand ihre Kennungen
 über `id_address`, `id_base` und `id_rules` (Abbildungsregeln vom Rest der neuen Adresse auf den der alten,
@@ -213,11 +209,18 @@ Sitzungen, Vorlagen und Wahlperioden:
 
 ### Schritt 4: Probe-Crawl mit Limit
 
-Beim Onboarding zunächst mit strengem Limit fahren
-(`"max_detail_pages": 20`), Ergebnis im Admin prüfen (Scraper-Status:
-Parse-Quote, gespeicherte Entitäten), Stichproben gegen die Live-Seiten
-vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
-(Admin-Aktion „Vollständiger Sync").
+Beim Onboarding zunächst mit strengem Limit fahren (`"max_detail_pages": 20`). Die Quelle ist noch inaktiv; den
+Probelauf startet der Betrieb von Hand im Container `ingestor`:
+
+```bash
+python -m src.main sync --source <Basis-URL der Quelle>
+```
+
+Die Adresse muss genau die der Quelle sein (`python -m src.main list-sources`). Ergebnis im Admin prüfen
+(Scraper-Status: Parse-Quote, gespeicherte Entitäten), Stichproben gegen die Live-Seiten vergleichen. Danach das
+Limit entfernen, die Quelle aktivieren und einen Vollabgleich auslösen: Admin-Aktion „Vollständiger Sync“ (sie
+schickt erst bei einer aktiven Quelle einen Auslöser) oder von Hand mit `--full`. Regeln für Abläufe von Hand:
+[`ABRUFREGELN.md`, Rhythmus](ABRUFREGELN.md#rhythmus).
 
 ### Was der Adapter extrahiert
 
@@ -262,9 +265,9 @@ und 5.5.0):
   gegen die Parse-Quote; eine Sitzung mit nicht öffentlicher Seite entsteht dann aus dem Kalender. Andere
   Fehlercodes sind eine Störung. Die Gegenprobe „Mandant“ gilt auch für angekündigte Sitzungen.
 
-PDF-Anlagen laufen automatisch durch die bestehende OCR-Queue
-(`text_extraction_status='pending'` → pypdf → Tesseract → Mistral) und
-werden in Elasticsearch indexiert.
+PDF-Anlagen laufen automatisch durch die bestehende Texterkennung (`text_extraction_status='pending'`: zuerst die
+Textebene mit pypdf, reicht sie nicht, die Mistral-OCR, sofern eingerichtet, sonst Tesseract) und werden in
+Elasticsearch indexiert.
 
 ### Kennung der Tagesordnungspunkte
 
@@ -478,36 +481,19 @@ services:
 
 ---
 
-## 3. Politeness-Defaults (alle Scraper-Quellen)
+## 3. Abrufregeln
 
-- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de/ingestor/; support@mandari.de)`
-  (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`). Er gilt für
-  OParl-Client, Scraper und Textextraktion. Django (Dokument-Cache, Textextraktion,
-  Vorschau, Personenfotos, `add_oparl_source`) meldet sich mit demselben Produkt-Token,
-  nie mit einem Browser-User-Agent. Der User-Agent ist **je Quelle** im
-  Admin überschreibbar (Feld *User-Agent*, leer = Standard). Er nennt Produkt-Token,
-  Version, die Infoseite für Betreiber und die Kontaktadresse. Mindestens eine Quelle
-  filtert das Wort der Infoseite im User-Agent und antwortet mit HTTP 403 (Issue #123).
-  Für solche Quellen setzen wir im Admin einen User-Agent ohne den Pfad der Infoseite.
-  Wie der Ingestor eine Sperre erkennt und was dann zu tun ist: `docs/MONITORING.md`,
-  Abschnitt „Sperren und 5xx-Serien“.
-- **Rate-Limit**: max. 1 Request / 2 s je Host (konfigurierbar je Quelle),
-  `max_concurrent=1` — RIS-Server kleiner Kommunen sind schwachbrüstig. Der Abstand
-  gilt über alle Quellen und Prozesse hinweg (Drossel je Host, gemeinsamer Zeitstempel
-  in Redis; siehe `request_interval` oben).
-- **robots.txt**: nach RFC 9309 mit Platzhaltern (`*`, `$`), 24-h-Cache je Host,
-  getrennt für Seiten bzw. Schnittstelle und Dateien. Disallow → kein Abruf; ist die
-  Basis-URL gesperrt, wird die Quelle nicht gecrawlt und im Admin markiert. Fehlt die
-  robots.txt (4xx), ist alles erlaubt. Ist sie nicht erreichbar (5xx, 408, 429, Netzfehler),
-  werden Abrufe zurückgestellt, bis ein Abruf gelingt (Störung, keine Sperre). Für Dateien gilt
-  der User-Agent aus `download_headers`, auch beim Abruf der robots.txt. Ausnahmen nur mit Freigabe und Vermerk
-  (`manage.py robots_override`), Überblick mit `manage.py robots_report`
-  (`docs/MONITORING.md`).
-- **Keine Umgehung** von Logins, CAPTCHAs oder Session-Schranken — nur
-  öffentliche Bürgerinfo-Bereiche.
-- **Full-Crawls** sind selten (Scheduler-Nachtfenster) und gestaffelt;
-  beim Onboarding einer Kommune wächst der OCR-Backlog sprunghaft →
-  Kommunen einzeln aufschalten.
+Kennung, robots.txt, Takt je Server, Weiterleitungen sowie Fehler und Schonung gelten für Scraper wie für jede andere
+Quelle; verbindlich beschreibt sie [`ABRUFREGELN.md`](ABRUFREGELN.md). Für Scraper heißt das vor allem:
+
+- Takt `scraper.rate_limit_seconds` (Standard 2 s, nie unter 1 s), je Quelle streng nacheinander
+  ([Takt je Server](ABRUFREGELN.md#takt-je-server)).
+- Eine abweichende Kennung je Quelle steht im Feld „User-Agent“ der Quelle ([Kennung](ABRUFREGELN.md#kennung)).
+- Ausnahmen von der robots.txt nur mit Freigabe und Vermerk (`manage.py robots_override`), Überblick mit
+  `manage.py robots_report` ([robots.txt](ABRUFREGELN.md#robotstxt), `docs/MONITORING.md`).
+- Keine Umgehung von Logins, CAPTCHAs oder Session-Schranken, nur öffentliche Bürgerinfo-Bereiche.
+- Vollabgleiche laufen nachts im Zeitfenster ([Vollabgleich](ABRUFREGELN.md#vollabgleich)). Beim Onboarding einer
+  Kommune wächst der Rückstand der Texterkennung sprunghaft; Kommunen deshalb einzeln aufschalten.
 
 ## 4. Ausgeschlossene Systeme
 
@@ -518,29 +504,11 @@ Stattdessen bieten wir der Kommune den Kooperationspfad an (OParl aktivieren ode
 unseren User-Agent per robots.txt erlauben). Begründung je System, Wiedervorlage und
 Textvorlage: [ADR 2026-09-17](adr/20260917-kein-scraping-sternberg-regisafe-komuna.md).
 
-## 5. Opt-out- / Takedown-Prozess
+## 5. Opt-out und Entfernen von Inhalten
 
-Kommunen (oder Betroffene) können sich jederzeit über die auf der
-Infoseite für Betreiber (<https://mandari.de/ingestor/>) genannten Kontakte melden. Ablauf:
-
-1. **Drosseln/Pausieren**: Quelle im Admin deaktivieren (`is_active`)
-   oder `rate_limit_seconds` erhöhen — wirkt ab dem nächsten Lauf der Quelle.
-   Alternativ setzt die Kommune ein robots.txt-Disallow für unseren
-   User-Agent (`mandari-ingestor`); der Ingestor respektiert das
-   automatisch.
-2. **Inhalte entfernen (Takedown)**: Objekte werden zunächst tombstoned
-   (`deleted=true` — aus Portalen und Suche verschwunden, Daten bleiben
-   für Prüfzwecke). Endgültiges physisches Löschen ausschließlich über
-   das bestehende Django-Kommando:
-
-   ```bash
-   python manage.py purge_deleted --dry-run   # Vorschau
-   python manage.py purge_deleted --yes       # endgültig löschen
-   ```
-
-3. **Abwägung**: Opt-out-Wünsche werden geprüft, nicht blind ausgeführt
-   (Transparenzinteresse an amtlichen Informationen); mindestens
-   Drosselung/Nachtfenster wird immer angeboten. Reaktionszeit: 5 Werktage.
+Wie wir eine Quelle drosseln oder abschalten, Inhalte entfernen und Opt-out-Wünsche abwägen, steht in
+[`ABRUFREGELN.md`, Opt-out und Entfernen von Inhalten](ABRUFREGELN.md#opt-out-und-entfernen-von-inhalten). Bei
+Scraper-Quellen drosselt `scraper.rate_limit_seconds`, nicht `request_interval`.
 
 ## 6. OParl 1.0 anbinden (more! rubin auf gremien.info)
 
@@ -586,7 +554,8 @@ seit Issue #122; die Kommune muss nichts freischalten.
 
 - Aufsteigend sortierte Listen (Paper): neue Vorlagen stehen am Ende, der
   inkrementelle Lauf bricht vorher ab. Sie kommen spätestens mit dem
-  täglichen Voll-Sync (`FULL_SYNC_INTERVAL_HOURS`, Standard 24 h).
+  nächsten Vollabgleich, geplant einmal je Nacht im Zeitfenster der Quelle
+  ([`ABRUFREGELN.md`, Vollabgleich](ABRUFREGELN.md#vollabgleich)).
 - Ein Voll-Sync zieht die komplette Liste (Beispiel: 34 Paper-Seiten à
   100 Objekte mit Volltext, ca. 0,6 MB je Seite). Kommunen einzeln
   aufschalten, nicht Dutzende an einem Tag.
@@ -600,7 +569,7 @@ seit Issue #122; die Kommune muss nichts freischalten.
 1. System-URL prüfen (eine Anfrage, unser User-Agent):
 
    ```bash
-   curl -sS -A "Mandari-Ingestor/2.0 (https://github.com/mandariOSS/mandari)" \
+   curl -sS -A "mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)" \
      https://<mandant>.gremien.info/oparl/system | head -c 400
    ```
 
@@ -620,10 +589,12 @@ seit Issue #122; die Kommune muss nichts freischalten.
    bleibt ihr Status (aktiv oder abgeschaltet) unverändert. Hängt eine Kommune
    schon an einer anderen Quelle, bricht der Befehl ab, ohne etwas zu schreiben.
 
-3. Erstlauf als Voll-Sync anstoßen (Admin-Aktion „Voll-Sync" oder
-   `mandari-ingestor sync --body <System-URL> --full`); regelmäßig übernimmt
-   der Daemon erst, wenn die Quelle im Admin aktiviert ist. Nach dem
-   Vollabgleich prüft der Ingestor den Filter; im Log steht
+3. Erstlauf als Vollabgleich von Hand im Container `ingestor`:
+   `python -m src.main sync --source <Adresse der Quelle> --full` (Adresse wie in
+   `list-sources`). Die Admin-Aktion „Vollständiger Sync“ schickt erst bei einer
+   aktiven Quelle einen Auslöser, und regelmäßig gleicht der Daemon die Quelle erst
+   ab, wenn sie im Admin aktiviert ist. Nach dem Vollabgleich prüft der Ingestor
+   den Filter; im Log steht
    „modified_since-Prüfung für <mandant>.gremien.info: ignored".
 
 4. Nach dem ersten inkrementellen Lauf im Admin prüfen: `oparl_version = 1.0`,
@@ -660,7 +631,7 @@ unter `/public/`) ist ein anderes Produkt, siehe Abschnitt 2.
   `{"scraper": "allris3", "base_url": "…/bi"}` vor; die Basis-URL kommt aus den Verweisen der Startseite (nach
   Weiterleitungen), die robots-Prüfung gilt für sie.
   Bietet die Instanz OParl, hat OParl Vorrang.
-- **robots.txt:** verbindlich wie bei jeder Quelle (Abschnitt 3). Sperrt sie die Basis-URL, ruft der
+- **robots.txt:** verbindlich wie bei jeder Quelle ([`ABRUFREGELN.md`, robots.txt](ABRUFREGELN.md#robotstxt)). Sperrt sie die Basis-URL, ruft der
   Ingestor nichts ab, und die Quelle bekommt die Fehlerklasse `robots_blocked`. Eine solche Quelle wird erst
   nach einer Zustimmung des Betreibers eingeschaltet, mit Vermerk:
   `manage.py robots_override <quelle> --scope api --note "…"` (wer hat wann zugestimmt, `docs/MONITORING.md`).

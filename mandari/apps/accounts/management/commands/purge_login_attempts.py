@@ -6,7 +6,7 @@ Anmeldeversuche (``LoginAttempt``) nach Frist löschen (Issue #366).
 E-Mail-Adresse, IP-Adresse und Browserkennung fest. Länger als die Frist braucht es die Zeilen nicht:
 Anmeldungen und Fehlversuche stehen zusätzlich im Sicherheits- bzw. Mandantenprotokoll mit eigener Frist
 (docs/PROTOKOLLIERUNG.md). Frist ``LOGIN_ATTEMPT_RETENTION_DAYS``: 30 Tage, festgelegt durch den Betreiber am 16.10.2026
-(docs/PROTOKOLLE.md; 0 = keine Löschung). Die Ausgabe nennt nur Zahlen.
+(docs/PROTOKOLLIERUNG.md#12-systemprotokolle-der-installation; 0 = keine Löschung). Die Ausgabe nennt nur Zahlen.
 
     python manage.py purge_login_attempts             # löschen
     python manage.py purge_login_attempts --dry-run   # nur zählen

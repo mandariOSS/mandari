@@ -11,10 +11,24 @@ Bausteine:
 | Baustein | Ort |
 |---|---|
 | Datengenerator nach Mengengerüst | `manage.py generate_load_data --profile klein\|mittel\|gross` |
-| Lastszenarien (Locust) | `loadtest/locustfile.py`, Befehle in `loadtest/README.md` |
+| Lastszenarien (Locust) | `loadtest/locustfile.py`, Befehle in Abschnitt 7 |
 | Bericht und Zeit-Budgets | `loadtest/auswerten.py`, Budgets und Laufparameter in `loadtest/budgets.json` |
 | Lasttest in der CI | Workflow `Lasttest` (`.github/workflows/lasttest.yml`): werktags auf `dev`, von Hand, Pfadfilter |
 | Abfrage-Budgets der Kernseiten | `scripts/check_performance_budgets.py`, Budgets in `scripts/performance_budgets.json` (jeder Pull Request) |
+
+Dateien im Ordner `loadtest/`:
+
+| Datei | Zweck |
+|---|---|
+| `locustfile.py` | Szenarien (Portal, Sitzungsdienst, Fraktion, OParl, Live-Abstimmung, Sitzungsgeldlauf) |
+| `budgets.json` | je Mengengerüst: Laufparameter, PostgreSQL-Einstellungen, Budgets für p95 und Fehlerquote |
+| `auswerten.py` | Bericht aus den Locust-Ergebnissen, Prüfung der Budgets (Status 1 bei Verletzung) |
+| `ressourcen.py` | CPU und Speicher der Anwendung, Datenbank, Suche und des Lastgebers mitschreiben (Linux) |
+| `Caddyfile` | vorgeschalteter Webserver wie im Betrieb (TLS, Kompression, mehrere Anwendungsprozesse) |
+
+**Nur gegen eigene Test- oder Entwicklungsinstanzen.** Niemals gegen eine Produktionsinstanz
+oder fremde Systeme: Der Generator legt Konten mit bekanntem Passwort an, die Szenarien
+schreiben Stimmen und Sitzungsgeld-Positionen.
 
 ## 1. Referenz-Mengengerüste
 
@@ -97,40 +111,18 @@ Zwei Stufen, damit die CI nicht bei jedem Pull Request einen Lasttest fährt:
 
 ### 4.1 Abfrage-Budgets je Kernseite (jeder Pull Request)
 
-`scripts/check_performance_budgets.py` misst im Job „Smoke-Tests“ 18
-Kernseiten mit dem Django-Test-Client gegen die Daten des Profils `klein`
-(kalter Cache, Minimum aus drei Läufen, wenige Sekunden) und vergleicht mit
-`scripts/performance_budgets.json`:
+`scripts/check_performance_budgets.py` misst im Job „Smoke-Tests“ die Kernseiten aus
+`scripts/performance_budgets.json` (Insight, Session, OParl-Ausgaben und Work; je Seite eine
+Beschreibung, die erlaubte Zahl der Abfragen und eine Zeitgrenze) mit dem Django-Test-Client
+gegen die Daten des Profils `klein` (kalter Cache, Minimum aus drei Läufen, wenige Sekunden):
 
-- **Abfragen** sind hart: mehr Abfragen als im Budget lassen den CI-Lauf
-  scheitern. Budgets dürfen nur sinken (`--update` zieht nach unten nach).
-- **Zeit** ist hier nur eine Warnung (500 ms bei gemessenen 10–200 ms), weil
-  einzelne Aufrufe auf CI-Läufern stark schwanken. Die harte Zeitprüfung macht
-  der Lasttest (4.2).
+- **Abfragen** sind hart: mehr Abfragen als im Budget lassen den CI-Lauf scheitern. Budgets
+  dürfen nur sinken (`--update` zieht nach unten nach).
+- **Zeit** ist hier nur eine Warnung (500 ms bei gemessenen 10–200 ms), weil einzelne Aufrufe
+  auf CI-Läufern stark schwanken. Die harte Zeitprüfung macht der Lasttest (4.2).
 
-| Seite | Abfragen |
-|---|---:|
-| Insight: Startseite | 16 |
-| Insight: Einstieg einer Körperschaft | 15 |
-| Insight: Suchseite | 8 |
-| Insight: Suchergebnisse (Datenbank-Rückfall) | 12 |
-| Insight: Sitzungsliste | 10 |
-| Insight: Vorgangsliste | 13 |
-| Session: Sitzungsliste | 22 |
-| Session: Sitzungsdetail | 25 |
-| Session: Vorlagenliste | 21 |
-| Session: Abstimmungserfassung | 22 |
-| Session: Leitstellen-Übersicht | 22 |
-| OParl (Aggregator): Vorgangsliste | 11 |
-| OParl (Aggregator): Sitzungsliste | 11 |
-| OParl (Session-Schnittstelle): Vorgangsliste | 10 |
-| OParl (Session-Schnittstelle): Sitzungsliste | 14 |
-| Work: Dashboard | 33 |
-| Work: Dokumentliste | 42 |
-| Work: Editor-Seite | 46 |
-
-Die Zahlen sind mit Paginierung konstant; ein N+1-Zugriff würde hier sofort
-als Sprung sichtbar.
+Die Zahlen sind mit Paginierung konstant; ein N+1-Zugriff würde sofort als Sprung sichtbar.
+Maßgeblich sind die Werte in der JSON-Datei; diese Seite wiederholt sie bewusst nicht.
 
 ### 4.2 Lasttest mit Zeit-Budgets (werktags auf `dev`, von Hand, Pfadfilter)
 
@@ -178,6 +170,14 @@ Referenzläufen; dürfen nur sinken):
 | | | | `/session/papers/` | 800 |
 | | | | `/work/` | 700 |
 | | | | `/work/documents/` | 1.000 |
+
+### 4.3 Budgets ändern
+
+Budgets dürfen nur sinken. Nennt der Bericht unter „Hinweise“ ein Budget mit großer
+Reserve, kann es im selben Pull Request gesenkt werden. Ein neues Szenario oder ein
+neuer Endpunkt bekommt sein Budget aus einem Lauf in der CI (etwa doppelter p95,
+auf 100 ms gerundet). Ein Test (`mandari/apps/common/tests/test_lasttest_auswertung.py`)
+prüft, dass `budgets.json` nur Szenarien und Endpunkte nennt, die `locustfile.py` misst.
 
 ## 5. Gemessene Ergebnisse
 
@@ -258,8 +258,7 @@ fordern rund 150 Anfragen/s, der Läufer trägt 30); die Fehler sind
 `503`-Antworten der Anwendung, wenn der Datenbank-Pool keine Verbindung mehr
 frei hat. Der Lauf ist reproduzierbar und liefert den vollständigen Bericht
 mit p95 je Szenario; als Nachweis für die Klasse „groß“ taugt nur ein Lauf auf
-Hardware nach Abschnitt 6 (`loadtest/README.md`, „Lauf Großstadt auf eigener
-Hardware“).
+Hardware nach Abschnitt 6 (Abschnitt 7.5).
 
 Ein früherer Lauf mit dem Profil `mittel` (100 Nutzer, Anlauf 10/s, zwei
 Prozesse) war ebenfalls über der Grenze des Läufers: 25 Anfragen/s, p95 2,9 s,
@@ -340,53 +339,179 @@ Nutzungszahlen hat, rechnet mit derselben Formel nach.
 | Empfehlung | klein | mittel | groß | Status |
 |---|---|---|---|---|
 | vCPU (gesamt) | 2 | 4 | 12 | Rechenweg oben; dazu Suche, Cache, System. groß bisher 8 (abgeleitet), jetzt aus der Messung |
-| RAM (gesamt) | 8 GB | 16 GB | 32 GB | Summe der Dienstgrenzen unten |
+| RAM (gesamt) | 8 GB | 16 GB | 32 GB | aus den gemessenen Belegungen mit Reserve; die Speichergrenzen der mitgelieferten `docker-compose.yml` ergeben zusammen rund 10,5 GB, werden aber selten gleichzeitig ausgeschöpft (`README.md`) |
 | Anwendungsprozesse (Daphne) | 1 | 2 | 8 | ein Prozess trägt rund 15 Anfragen/s beim Bestand `klein` (gemessen, 5.2), beim Bestand `gross` etwa die Hälfte (doppelte Kosten je Anfrage, 5.3), und nutzt bis 1,5 Kerne. Docker Compose: `APP_PROCESSES` (#718); Helm-Chart: `app.replicas` |
 | RAM je Anwendungsprozess | 1 GB | 1 GB | 1 GB | gemessen 300 bis 480 MB je Prozess unter Last; Docker Compose: `MANDARI_MEM_LIMIT` = Prozesse × 1 GB (Grenze für den ganzen Container: 1g, 2g, 8g) |
 | PostgreSQL `mem_limit` | 1 GB | 4 GB | 8 GB | Bestand: 0,1 / 0,5 / 2 GB je Mandant und Jahr, Index soll in den Cache passen |
 | `shared_buffers` / `effective_cache_size` | 256 MB / 768 MB | 1 GB / 3 GB | 2 GB / 6 GB | Faustregel ein Viertel / drei Viertel (`DEPLOYMENT.md`); so auch im Lasttest |
 | `work_mem` | 8 MB | 8 MB | 16 MB | gilt je Sortiervorgang; mit `max_connections` gemeinsam ändern |
-| `max_connections` | 100 | 200 | 300 | Summe der Dienstgrenzen plus Reserve, siehe unten |
+| `max_connections` | 150 | 200 | 300 | Summe der Dienstgrenzen plus Reserve, siehe unten |
 | `DB_POOL_MAX` je Anwendungsprozess | 10 | 10 | 10 | mehr Prozesse statt größerer Pools; im Lasttest nie mehr als 42 Verbindungen bei vier Prozessen. Jeder Prozess hat einen eigenen Pool; ab zwei Prozessen PgBouncer (`DEPLOYMENT.md`), dann sieht PostgreSQL von der Anwendung höchstens `PGBOUNCER_DEFAULT_POOL_SIZE` |
 | Elasticsearch Heap | 1 GB | 2 GB | 4 GB | 1 GB Heap reichte im Lasttest auch für `gross` (1,8 GB Container); Reserve für echte Volltexte |
 | Redis | 256 MB | 512 MB | 1 GB | Cache, Sessions, Channel-Layer; gemessen unter 30 MB |
 | Ingestor (nur mit Bürgerportal) | 1 GB | 2 GB | 4 GB | OCR-Worker je nach Dokumentvolumen zusätzlich |
 
-Verbindungsbudget je Klasse (Muster aus `DEPLOYMENT.md`):
+Verbindungsbudget je Klasse (Rechnung wie in `DEPLOYMENT.md`, „Datenbankverbindungen: Budget“):
 
 | Dienst | klein | mittel | groß |
 |---|---:|---:|---:|
 | Anwendung (Prozesse × `DB_POOL_MAX`; mit PgBouncer `DEFAULT_POOL_SIZE`) | 10 | 20 | 80 |
-| Ingestor | 30 | 30 | 30 |
-| OCR-Worker | 30 | 30 | 30 |
-| Sicherung (`pg_dump`) | 2 | 2 | 2 |
-| Reserve Superuser | 3 | 3 | 3 |
-| **Summe** | **75** | **85** | **145** |
-| `max_connections` | 100 | 200 | 300 |
+| übrige Dienste der mitgelieferten `docker-compose.yml` (Ingestor 30, `worker` 22, `worker-heavy` 7, `worker-live` 7, Protokoll-Orchestrator 2, Verwaltungsbefehle der Zeitpläne 8, Website 10, Sicherung 2, Reserve Superuser 3) | 91 | 91 | 91 |
+| **Summe** | **101** | **111** | **171** |
+| `max_connections` | 150 | 200 | 300 |
 
-Wer einen Dienst hinzufügt, trägt ihn ein und prüft die Summe — dieselbe
-Regel wie in `DEPLOYMENT.md`.
+Ein eigener OCR-Worker aus dem Ingestor-Image kommt mit 30 Verbindungen hinzu. Die Vorgabe
+`POSTGRES_MAX_CONNECTIONS=100` der Compose-Datei reicht für „klein“ nur ohne die Plätze der
+Texterkennung in `text` (98 statt 101). Wer einen Dienst hinzufügt, trägt ihn ein und prüft die
+Summe; dieselbe Regel wie in `DEPLOYMENT.md`.
 
 Offen: ein Lauf „Großstadt“ auf Hardware nach dieser
 Tabelle, mit Lastgeber auf einem eigenen Rechner (Anleitung in
-`loadtest/README.md`). Er bestätigt oder korrigiert die Annahme von 0,1
+Abschnitt 7.5). Er bestätigt oder korrigiert die Annahme von 0,1
 Anfragen/s je Nutzer nicht — die gehört aus Betriebsdaten (Zugriffsprotokoll
 während einer Ratssitzung) —, aber die Kosten je Anfrage auf Zielhardware.
 
-## 7. Wiederholen
+## 7. Befehle
+
+### 7.1 In der CI (empfohlen)
+
+Der Workflow [`Lasttest`](../.github/workflows/lasttest.yml) baut die Umgebung
+auf einem GitHub-Läufer auf (Daphne hinter Caddy, PostgreSQL mit den
+Einstellungen der Größenklasse, Redis, Elasticsearch), erzeugt die Daten, lässt
+Locust laufen und prüft die Budgets. Er läuft
+
+- werktags auf `dev` mit dem Profil `klein` (Budget-Gate),
+- von Hand: *Actions → Lasttest → Run workflow*, Profil `klein`, `mittel` oder
+  `gross` (der Lauf „Großstadt“), Nutzerzahl, Laufzeit und Zahl der
+  Anwendungsprozesse optional (höchstens 2.000 Nutzer, 16 Prozesse, 60 Minuten);
+  mit **Stufen** (z. B. `25,50,75,100,150,200`) eine Kapazitätsmessung statt
+  fester Nutzerzahl,
+- in Pull Requests, die `loadtest/`, den Workflow, den Datengenerator oder den
+  Code der Szenarien OParl, Live-Abstimmung und Sitzungsgeldlauf ändern (Liste
+  unter `pull_request.paths` im Workflow).
+
+Ein Pull Request, der eine andere Kernseite umbaut (etwa eine Liste in Insight
+oder im Sitzungsdienst), löst den Lasttest nicht aus. Vor dem Merge von Hand auf
+seinem Branch starten: `gh workflow run lasttest.yml --ref <branch>` (ohne
+weitere Eingaben: Profil `klein` mit Budget-Gate). Abdeckung im Einzelnen: Abschnitt 4.2.
+
+Ergebnis: Bericht in der Zusammenfassung des Laufs, Rohdaten (CSV, HTML-Bericht
+von Locust, Ressourcen, Protokolle der Anwendung) als Artefakt `lasttest-<profil>`
+bzw. `lasttest-<profil>-kapazitaet`. Der Läufer hat 4 vCPU für alles zusammen; das
+Profil `gross` mit 400 Nutzern überlastet ihn (Einordnung in Abschnitt 5.4).
+
+Ein Prozess gegen vier (Abschnitt 5.6, #718), nacheinander auf demselben Stand:
 
 ```bash
-# In der CI: Actions → Lasttest → Run workflow (Profil, optional Nutzer, Laufzeit,
-# Prozesse, Stufen für eine Kapazitätsmessung, z. B. 25,50,75,100,150,200)
-
-# Ein Prozess gegen vier (Abschnitt 5.6, #718), nacheinander auf demselben Stand:
 gh workflow run lasttest.yml --ref dev -f profil=gross -f prozesse=1 -f stufen=10,25,50,75,100 -f stufendauer=120
 gh workflow run lasttest.yml --ref dev -f profil=gross -f prozesse=4 -f stufen=10,25,50,75,100 -f stufendauer=120
+```
 
-# Lokal: Daten, Budget-Gate, Lasttest (Befehle und Umgebungsvariablen in loadtest/README.md)
-cd mandari && python manage.py generate_load_data --profile klein
-python scripts/check_performance_budgets.py
-locust -f loadtest/locustfile.py --headless --host http://127.0.0.1:8000 -u 20 -r 5 -t 3m \
-       --csv loadtest/results/klein --html loadtest/results/klein.html
+### 7.2 Kapazitätsmessung (Stufenlast)
+
+`LOADTEST_STUFEN=25,50,100` (und optional `LOADTEST_STUFENDAUER`, Vorgabe 120 s)
+ersetzt die feste Nutzerzahl durch Stufen; `-u`/`-r` sind dann wirkungslos. Der
+Bericht nennt je Stufe Durchsatz, p95, Fehlerquote und CPU (ohne die ersten 20 s
+nach jedem Wechsel) und die höchste Stufe mit p95 bis 1 s und höchstens 1 %
+Fehlern. Budgets gelten dabei nicht — die Messung überschreitet die Grenze absichtlich.
+
+```bash
+LOADTEST_PROFILE=gross LOADTEST_STUFEN=25,50,75,100 locust -f loadtest/locustfile.py --headless --host http://127.0.0.1:8000 --csv loadtest/results/gross-kapazitaet
+python loadtest/auswerten.py bericht --profil gross --ergebnisse loadtest/results/gross-kapazitaet
+```
+
+### 7.3 Lokal gegen den Entwicklungsserver
+
+Alle Befehle aus `mandari/` (die Anwendung) bzw. dem Repo-Root (Locust). Der
+Entwicklungsserver ist Daphne (ASGI), genau wie im Betrieb — nur mit einem Prozess.
+
+```bash
+cd mandari
+npm ci --no-audit --no-fund && npm run build          # Vite-Manifest für die Seiten
+
+export DEBUG=true
+export DATABASE_URL=sqlite:///$PWD/../.lasttest.sqlite3   # oder eine PostgreSQL-URL
+export ENCRYPTION_MASTER_KEY=$(python -c 'import base64,secrets;print(base64.b64encode(secrets.token_bytes(32)).decode())')
+export ELASTICSEARCH_AUTO_INDEX=False
+export ELASTICSEARCH_URL=                              # leer: Suche fällt sofort auf die Datenbank zurück
+export REDIS_URL=                                     # leer: Cache im Prozess, Channel-Layer im Speicher
+export ALLOWED_HOSTS=localhost,127.0.0.1
+export OPARL_API_RATE_LIMIT=0                         # alle simulierten Abnehmer kommen von einer Adresse
+export DJANGO_LOG_LEVEL=WARNING
+
+python manage.py migrate --noinput
+python manage.py generate_load_data --profile klein   # letzte Zeile: LOADTEST_BODY_ID=<uuid>
+python manage.py runserver 127.0.0.1:8000 --noreload
+```
+
+Hinweis zu `ELASTICSEARCH_URL`: Zeigt die URL auf einen Server, der nicht
+antwortet, wartet der Client seine Wiederholungen ab (bis über eine Minute je
+Suche). Leer lassen oder Elasticsearch tatsächlich starten.
+
+In einem zweiten Terminal (Repo-Root):
+
+```bash
+python -m venv .locust && .locust/bin/pip install -r loadtest/requirements.txt
+export LOADTEST_PROFILE=klein
+.locust/bin/locust -f loadtest/locustfile.py --headless --host http://127.0.0.1:8000 \
+       -u 20 -r 5 -t 3m --csv loadtest/results/klein --html loadtest/results/klein.html
 python loadtest/auswerten.py bericht --profil klein --ergebnisse loadtest/results/klein
 ```
+
+`-u` ist die Zahl gleichzeitiger Nutzer aus dem Mengengerüst (klein 20, mittel 100,
+groß 400), `-r` die Anlaufrate je Sekunde, `-t` die Laufzeit; die Werte je Profil
+stehen in `budgets.json`. Ohne `--headless` öffnet Locust eine Web-Oberfläche auf
+http://localhost:8089.
+
+Voraussetzungen auf dem Zielsystem:
+
+- Daten aus `manage.py generate_load_data` (Profil `klein`, `mittel` oder `gross`).
+  Das Kommando läuft nur mit `DEBUG=true` oder mit `--ich-weiss-was-ich-tue` und
+  nur gegen eine leere Datenbank ohne echten Bestand.
+- Die Konten des Generators melden sich per Passwort an, der Sitzungsgeldlauf mit
+  dem Verwaltungskonto (Administrator). Die 2FA-Pflicht muss dafür aus sein
+  (`DEBUG=true` oder `TWO_FACTOR_ENFORCEMENT=false`).
+- Die Ratenbegrenzung der OParl-Schnittstelle muss aus sein (`OPARL_API_RATE_LIMIT=0`),
+  sonst antwortet sie dem Szenario „OParl“ mit 429.
+- Über HTTPS mit eigener Zertifizierungsstelle (z. B. Caddy mit `tls internal`):
+  `LOADTEST_TLS_PRUEFEN=0`.
+
+Das Budget-Gate der Abfragen (4.1) lokal: `python scripts/check_performance_budgets.py`
+(Daten des Profils `klein` vorher mit `generate_load_data` erzeugen).
+
+### 7.4 Ergebnisse
+
+Locust schreibt nach `loadtest/results/` (gitignored):
+
+| Datei | Inhalt |
+|---|---|
+| `<name>_stats.csv` | je Endpunkt: Anfragen, Fehler, Median, p95, p99, Durchsatz |
+| `<name>_szenarien.json` | je Szenario: p50, p95, p99 aus allen Einzelwerten; Antworten bedingter Anfragen (304) |
+| `<name>_failures.csv` | Fehler mit Ursache |
+| `<name>_stats_history.csv` | Verlauf über die Laufzeit |
+| `<name>.html` | Bericht von Locust mit Diagrammen |
+| `<name>_ressourcen.csv` | CPU und Speicher je Komponente (nur mit `ressourcen.py`, in der CI) |
+
+`auswerten.py bericht` fasst das als Markdown zusammen: Kennzahlen gesamt (Durchsatz,
+Fehlerquote, p95), p95 je Szenario und Endpunkt, ETag-Trefferquote, Ressourcen und
+das Ergebnis der Budgetprüfung. Mit `--budgets` und dem Profil aus `budgets.json`
+endet es mit Status 1, wenn ein Budget verletzt ist.
+
+### 7.5 Lauf „Großstadt“ auf eigener Hardware
+
+Der Workflow mit Profil `gross` ist reproduzierbar, teilt sich aber einen Läufer
+mit vier Kernen zwischen Anwendung, Datenbank, Suche und Lastgeber. Für einen
+Nachweis auf Zielhardware:
+
+1. Zielsystem wie in `DEPLOYMENT.md` aufsetzen (Docker Compose, PostgreSQL, Redis),
+   Ressourcen laut Größenklasse „groß“ (Abschnitt 6).
+2. Im Anwendungs-Container: `python manage.py generate_load_data --profile gross --ich-weiss-was-ich-tue`
+   (leere Datenbank, kein Produktionsbestand; der Lauf dauert einige Minuten).
+3. Lastgeber auf einem anderen Rechner im selben Netz, Laufparameter aus `budgets.json`
+   (`python loadtest/auswerten.py parameter --profil gross`: 400 Nutzer, Anlauf 2/s).
+   Den Anlauf nicht erhöhen: Anmeldewellen sind der teuerste Vorgang und leeren den Pool
+   (Abschnitt 5.5); der Lauf mäße sonst vor allem die Anmeldung.
+   `LOADTEST_PROFILE=gross locust -f loadtest/locustfile.py --headless --host https://<host> -u 400 -r 2 -t 15m --csv loadtest/results/gross --html loadtest/results/gross.html`
+4. Während des Laufs `docker stats` und `pg_stat_activity` mitschreiben (Verbindungsbudget, siehe `DEPLOYMENT.md`).
+5. `python loadtest/auswerten.py bericht --profil gross --ergebnisse loadtest/results/gross --umgebung "<Hardware>"`
+   und das Ergebnis in Abschnitt 5 eintragen.
