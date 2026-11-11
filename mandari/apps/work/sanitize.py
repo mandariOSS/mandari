@@ -141,7 +141,11 @@ ALLOWED_CLASSES = frozenset(
 )
 _CLASS_PATTERN_RE = re.compile(r"^language-[A-Za-z0-9_+-]{1,40}$")
 
-_COLOR = r"(?:#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.,%\s]+\)|hsla?\(\s*[\d.,%\sdeg]+\)|[a-zA-Z]{3,20})"
+#: Längster Wert einer erlaubten Stilangabe; längere verwirft die Bereinigung, bevor ein Muster läuft
+MAX_STYLE_VALUE = 64
+# Die Klammerinhalte haben eine feste Obergrenze und keinen vorangestellten Leerraum-Teil: Zwei Wiederholungen,
+# die dieselben Leerzeichen annehmen, brauchen bei langen Eingaben quadratische Zeit
+_COLOR = r"(?:#[0-9a-fA-F]{3,8}|rgba?\([\d.,%\s]{1,48}\)|hsla?\([\d.,%\sdeg]{1,48}\)|[a-zA-Z]{3,20})"
 _LENGTH = r"(?:0|\d{1,5}(?:\.\d{1,3})?(?:px|em|rem|%|pt|mm|cm))"
 STYLE_RULES: dict[str, re.Pattern[str]] = {
     "text-align": re.compile(r"^(?:left|right|center|justify|start|end)$"),
@@ -185,7 +189,7 @@ def _clean_style(value: str) -> str | None:
         prop = prop.strip().lower()
         raw = raw.strip()
         rule = STYLE_RULES.get(prop)
-        if rule is not None and rule.match(raw):
+        if rule is not None and len(raw) <= MAX_STYLE_VALUE and rule.match(raw):
             kept.append(f"{prop}: {raw}")
     return "; ".join(kept) or None
 
@@ -232,7 +236,7 @@ def _clean_attr(tag: str, name: str, value: str | None) -> str | None:
     if name == "data-comment-id":
         return value if _COMMENT_ID_RE.match(value) else None
     if name == "data-color":
-        return value if _COLOR_RE.match(value) else None
+        return value if len(value) <= MAX_STYLE_VALUE and _COLOR_RE.match(value) else None
     if name == "contenteditable":
         return "false" if value == "false" else None
     if name in ("alt", "title"):
