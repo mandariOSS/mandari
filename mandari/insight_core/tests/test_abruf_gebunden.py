@@ -152,6 +152,48 @@ def test_gesamtfrist_gilt_auch_fuer_eine_troepfelnde_antwort(monkeypatch: pytest
     assert geliefert[0] <= 8
 
 
+def test_gesamtfrist_unterbricht_einen_blockierten_lesevorgang() -> None:
+    """Der Server schickt nur die Rahmung der Antwort, Byte für Byte: Kein Stück kommt an, die Frist greift trotzdem."""
+    import threading
+
+    lauscher = socket.socket()
+    lauscher.bind(("127.0.0.1", 0))
+    lauscher.listen(1)
+    fertig = threading.Event()
+
+    def bedienen() -> None:
+        verbindung, _ = lauscher.accept()
+        try:
+            verbindung.recv(4096)
+            verbindung.sendall(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+            # Chunk-Größe als endlose Ziffernfolge: unter jedem Lese-Timeout, aber ohne je Daten zu liefern
+            while not fertig.wait(0.2):
+                verbindung.sendall(b"0")
+        except OSError:
+            pass
+        finally:
+            verbindung.close()
+
+    faden = threading.Thread(target=bedienen, daemon=True)
+    faden.start()
+    try:
+        with httpx.Client(timeout=httpx.Timeout(5.0)) as client:
+            adresse = f"http://127.0.0.1:{lauscher.getsockname()[1]}/foto.jpg"
+            antwort = client.send(client.build_request("GET", adresse), stream=True)
+            beginn = time.monotonic()
+            try:
+                with pytest.raises(httpx.ReadTimeout, match="insgesamt"):
+                    redirects.read_limited(antwort, 1024 * 1024, deadline=time.monotonic() + 0.6)
+            finally:
+                antwort.close()
+            # Abbruch zur Frist, nicht erst nach dem Lese-Timeout und nicht nie
+            assert time.monotonic() - beginn < 3.0
+    finally:
+        fertig.set()
+        lauscher.close()
+        faden.join(timeout=5)
+
+
 def test_stark_komprimierte_antwort_wird_nicht_ganz_entpackt() -> None:
     gepackt = gzip.compress(bytes(200 * 1024 * 1024))
     assert len(gepackt) < 300 * 1024

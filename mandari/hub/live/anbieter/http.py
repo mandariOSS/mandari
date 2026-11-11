@@ -10,7 +10,9 @@ Jede Adresse, auch jedes Ziel einer Weiterleitung (höchstens ``MAX_WEITERLEITUN
 einen öffentlichen Namen zeigen (``ziel_pruefen``): keine IP-Adresse aus privaten, Loopback- oder Link-Local-Bereichen,
 kein ``localhost``, kein Name ohne Punkt (Dienstnamen im Container-Netz) und keine Zahl als Name. Namen, die erst
 bei der Auflösung auf eine Adresse im eigenen Netz zeigen, weist der Client ab (``client``): Er prüft die aufgelöste
-Adresse vor jeder Anfrage und verbindet nur mit der geprüften Adresse (``safe_fetch.guarded_client``).
+Adresse vor jeder Anfrage und verbindet nur mit der geprüften Adresse (``safe_fetch.guarded_client``). Streaming-
+Anbieter liegen nie im eigenen Netz, deshalb gilt die strenge Prüfung: ohne die Ausnahmen für den eigenen Host und
+für private Netze (``INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS``), die Abrufe bei Ratsinformationssystemen brauchen.
 
 Fehler werden zu ``AnbieterError`` mit festem Text (Statuscode, Zeitgrenze, zu groß); Antwortinhalte gelangen
 nie in Meldungen.
@@ -51,7 +53,9 @@ def client() -> httpx.Client:
     Verbindungsaufbau auf eine Adresse im eigenen Netz zeigt, bekommt keine Verbindung.
     """
     # Weiterleitungen folgt ``hole`` selbst, damit jedes Ziel geprüft wird
-    return safe_fetch.guarded_client(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}, follow_redirects=False)
+    return safe_fetch.guarded_client(
+        strict=True, timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}, follow_redirects=False
+    )
 
 
 def ziel_pruefen(url: str | httpx.URL) -> httpx.URL:
