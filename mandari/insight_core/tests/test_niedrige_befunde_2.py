@@ -14,6 +14,7 @@ from __future__ import annotations
 import gzip
 import io
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -28,6 +29,7 @@ from hub.ris import retraction
 from insight_core.management.commands.add_oparl_source import Command as QuelleAnlegen
 from insight_core.models import (
     OParlBody,
+    OParlFile,
     OParlMembership,
     OParlOrganization,
     OParlPaper,
@@ -79,8 +81,69 @@ def test_markierung_ausserhalb_der_anwendung_wird_nach_ablauf_gesehen(
 
     # Innerhalb der Geltungsdauer bleibt der gelesene Stand, danach zählt die nächste Ausgabe neu
     assert ruecknahme_stand.stand(geo_body.pk) == vorher
-    cache.delete(ruecknahme_stand._key(geo_body.pk))
+    cache.delete(ruecknahme_stand._value_key(geo_body.pk))
     assert ruecknahme_stand.stand(geo_body.pk) != vorher
+
+
+def test_stand_unterscheidet_wiederherstellung_und_neue_ruecknahme(
+    geo_body: OParlBody, make_paper: Callable[..., OParlPaper]
+) -> None:
+    """Ein Vorgang kehrt zurück, ein anderer entfällt: gleiche Zahl, anderer Stand."""
+    alt, neu = make_paper(geo_body), make_paper(geo_body)
+    frueher = timezone.now() - timedelta(hours=2)
+    OParlPaper.objects.filter(pk=alt.pk).update(deleted=True, deleted_at=frueher)
+    vorher = ruecknahme_stand.stand(geo_body.pk)
+
+    # Wie der Ingestor: ohne die Anwendung, mit Zeitpunkt der Markierung
+    OParlPaper.objects.filter(pk=alt.pk).update(deleted=False, deleted_at=None)
+    OParlPaper.objects.filter(pk=neu.pk).update(deleted=True, deleted_at=timezone.now())
+    cache.delete(ruecknahme_stand._value_key(geo_body.pk))
+
+    assert ruecknahme_stand.stand(geo_body.pk) != vorher
+
+
+def test_stand_aendert_sich_mit_der_ruecknahme_einer_datei(
+    geo_body: OParlBody, make_paper: Callable[..., OParlPaper], django_capture_on_commit_callbacks: Any
+) -> None:
+    vorgang = make_paper(geo_body)
+    datei = OParlFile.objects.create(
+        external_id="https://ris.beispielstadt.example/oparl/file/1", paper=vorgang, name="Anlage 1"
+    )
+    vorher = ruecknahme_stand.stand(geo_body.pk)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        assert retraction.retract(datei, reason=retraction.REASON_WITHDRAWN) is True
+
+    nachher = ruecknahme_stand.stand(geo_body.pk)
+    assert nachher != vorher
+    # Auch die Zählung selbst sieht die Datei (Markierung ohne die Anwendung)
+    assert nachher.split(":", 1)[1] != vorher.split(":", 1)[1]
+
+
+def test_alte_zaehlung_ueberdeckt_den_neuen_stand_nicht(
+    geo_body: OParlBody, make_paper: Callable[..., OParlPaper], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Eine Ausgabe zählt, währenddessen wird zurückgenommen: Ihr Ergebnis gilt nicht für den neuen Stand."""
+    vorgang = make_paper(geo_body)
+    echte_zaehlung = ruecknahme_stand._count
+    laeufe: list[str] = []
+
+    def zaehlen(body_id: Any) -> str:
+        ergebnis = echte_zaehlung(body_id)
+        if not laeufe:
+            # Zwischen Zählung und Ablage: Rücknahme samt forget
+            OParlPaper.objects.filter(pk=vorgang.pk).update(deleted=True, deleted_at=timezone.now())
+            ruecknahme_stand.forget()
+        laeufe.append(ergebnis)
+        return ergebnis
+
+    monkeypatch.setattr(ruecknahme_stand, "_count", zaehlen)
+
+    veraltet = ruecknahme_stand.stand(geo_body.pk)
+    aktuell = ruecknahme_stand.stand(geo_body.pk)
+
+    assert len(laeufe) == 2, "nach der Rücknahme wird neu gezählt"
+    assert aktuell != veraltet and aktuell.split(":", 1)[1] == laeufe[1]
 
 
 def test_feed_nennt_zurueckgenommenen_vorgang_nicht_aus_dem_cache(
@@ -201,6 +264,22 @@ def test_download_fordert_unkomprimiert_an_und_zaehlt_uebertragene_bytes(monkeyp
     assert ziel.getvalue() == inhalt and ergebnis.size == len(inhalt)
 
 
+def test_download_fordert_auch_mit_eigenen_kopfzeilen_unkomprimiert_an(monkeypatch: pytest.MonkeyPatch) -> None:
+    gesendet = _client(monkeypatch, lambda request: httpx.Response(200, stream=httpx.ByteStream(b"%PDF-1.4")))
+
+    safe_fetch.download_to(
+        io.BytesIO(),
+        "https://ris.beispielstadt.example/datei.pdf",
+        max_bytes=10_000,
+        total_seconds=5,
+        timeout=httpx.Timeout(5),
+        headers={"accept-encoding": "gzip", "X-Quelle": "1"},
+    )
+
+    assert gesendet[0].headers.get_list("accept-encoding") == ["identity"]
+    assert gesendet[0].headers["X-Quelle"] == "1"
+
+
 def test_kodierte_antwort_wird_abgewiesen(monkeypatch: pytest.MonkeyPatch) -> None:
     gepackt = gzip.compress(b"0" * 5_000_000)
     assert len(gepackt) < 10_000
@@ -223,3 +302,25 @@ def test_quellen_befehl_folgt_keiner_weiterleitung_ins_interne_netz() -> None:
         befehl._before_redirect(httpx.Request("GET", "http://127.0.0.1:9200/_cat/indices"))
     with pytest.raises(safe_fetch.BlockedDestinationError):
         befehl._get("http://169.254.169.254/latest/meta-data/", {})
+
+
+def test_quellen_befehl_verbindet_nur_mit_der_geprueften_adresse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Der Client des Befehls prüft jede Anfrage und bindet die Verbindung an die geprüfte Adresse."""
+    erzeugt: list[httpx.Client] = []
+    echter = safe_fetch.guarded_client
+
+    def merken(**kwargs: Any) -> httpx.Client:
+        erzeugt.append(echter(**kwargs))
+        return erzeugt[-1]
+
+    monkeypatch.setattr(safe_fetch, "guarded_client", merken)
+    # Erst öffentlich (die Prüfung vorab besteht), beim Verbindungsaufbau intern
+    antworten = iter([["93.184.215.14"], ["93.184.215.14"], ["10.0.0.5"]])
+    monkeypatch.setattr(safe_fetch, "_resolve", lambda host: next(antworten, ["10.0.0.5"]))
+    befehl = QuelleAnlegen()
+    monkeypatch.setattr(befehl, "_wait_for_slot", lambda url: None)
+
+    with pytest.raises(safe_fetch.BlockedDestinationError):
+        befehl._get("https://wechselt.example.org/oparl/body/1", {})
+
+    assert isinstance(erzeugt[0]._transport, safe_fetch.PinnedTransport)

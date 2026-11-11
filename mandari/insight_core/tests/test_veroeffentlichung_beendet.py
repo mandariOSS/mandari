@@ -318,6 +318,22 @@ def test_abo_links_nennen_einen_zurueckgenommenen_beschluss_nicht(welt: dict[str
     assert not offen.confirmed and aktiv.unsubscribed_at is not None
 
 
+def test_abo_wird_im_archiv_nicht_mehr_aktiviert(welt: dict[str, Any]) -> None:
+    """Im Archiv bleibt der Beschluss lesbar, ein vorher verschickter Link aktiviert aber kein neues Abo."""
+    offen = DecisionSubscription.objects.create(email="offen@example.org", agenda_item=welt["beschluss"])
+    client = Client()
+    bestaetigen = f"/insight/beschluesse/abo/bestaetigen/{offen.token}/"
+
+    _beenden(welt, ARCHIVED)
+
+    for antwort in (client.get(bestaetigen), client.post(bestaetigen)):
+        inhalt = antwort.content.decode()
+        assert antwort.status_code == 200
+        assert "Beschluss im Archiv" in inhalt and "Radweg beschlossen" in inhalt
+    offen.refresh_from_db()
+    assert not offen.confirmed
+
+
 class TestDauerhaft:
     def test_seiten_nicht_mehr_verfuegbar(self, welt: dict[str, Any]) -> None:
         _beenden(welt, WITHDRAWN)

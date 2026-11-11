@@ -406,16 +406,22 @@ def confirm_decision_subscription(request, token):
     subscription = get_object_or_404(DecisionSubscription.objects.select_related("agenda_item__meeting"), token=token)
     already = subscription.confirmed and subscription.unsubscribed_at is None
     lesbar = decision_tracking.is_readable(subscription.agenda_item)
-    if not lesbar and not already:
-        # Der Beschluss ist nicht mehr veröffentlicht: nichts aktivieren, weder Titel noch Verweis zeigen
+    if not already and not decision_tracking.is_publicly_visible(subscription.agenda_item):
+        # Nicht mehr aktiv veröffentlicht: nichts aktivieren. Im Archiv bleibt der Beschluss lesbar (Titel und
+        # Verweis), neue Benachrichtigungen gibt es dort nicht; sonst weder Titel noch Verweis.
         return render(
             request,
             "pages/decisions/subscription_status.html",
             {
-                "item": None,
-                "titel": "",
-                "title": "Beschluss nicht mehr veröffentlicht",
-                "message": "Dieser Beschluss ist nicht mehr veröffentlicht. Die Benachrichtigung wurde nicht aktiviert.",
+                "item": subscription.agenda_item if lesbar else None,
+                "titel": decision_tracking.oeffentlicher_name(subscription.agenda_item) if lesbar else "",
+                "title": "Beschluss im Archiv" if lesbar else "Beschluss nicht mehr veröffentlicht",
+                "message": (
+                    "Dieser Beschluss liegt im Archiv. Neue Benachrichtigungen gibt es dazu nicht mehr; "
+                    "die Benachrichtigung wurde nicht aktiviert."
+                    if lesbar
+                    else "Dieser Beschluss ist nicht mehr veröffentlicht. Die Benachrichtigung wurde nicht aktiviert."
+                ),
                 "unsubscribe_token": None,
             },
         )

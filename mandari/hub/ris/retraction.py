@@ -234,5 +234,5 @@ def retract(obj: Any, *, reason: str, when: datetime | None = None) -> bool:
     # Zwischengespeicherte öffentliche Ausgaben (Feeds, Kartenpunkte) der Kommune entstehen neu
     from insight_core.services import ruecknahme_stand
 
-    transaction.on_commit(lambda: ruecknahme_stand.forget(_body_id(row)), robust=True)
+    transaction.on_commit(ruecknahme_stand.forget, robust=True)
     return True

@@ -137,9 +137,11 @@ class Command(BaseCommand):
         from insight_core.services import redirects, safe_fetch
 
         # Adressen aus der Antwort der Quelle (Körperschaften, Folgeseiten) können überallhin zeigen: nur
-        # öffentliche Ziele. Weiterleitungen prüft ``_before_redirect`` auf dieselbe Weise.
+        # öffentliche Ziele. Weiterleitungen prüft ``_before_redirect`` auf dieselbe Weise. Der Client prüft jede
+        # Anfrage erneut und verbindet nur mit der geprüften Adresse: Ein Name, der zwischen Prüfung und
+        # Verbindung auf eine interne Adresse wechselt, bekommt keine Verbindung.
         safe_fetch.check_url(url)
-        with httpx.Client(timeout=30.0, headers=headers, follow_redirects=False) as client:
+        with safe_fetch.guarded_client(timeout=30.0, headers=headers, follow_redirects=False) as client:
             self._wait_for_slot(url)
             response = redirects.send(client, client.build_request("GET", url), before_redirect=self._before_redirect)
             response.read()
