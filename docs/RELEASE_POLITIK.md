@@ -62,6 +62,10 @@ nie in eine Patch-Version einer Pflegelinie.
 - **Der Termin steht, der Inhalt folgt ihm.** Was am Stichtag nicht fertig ist, kommt zwei
   Wochen später. Lässt sich ein Fehler nicht rechtzeitig beheben, entfällt das Release; das
   nächste erscheint planmäßig.
+- **Ausnahme Korrektur:** Muss nach dem Stichtag ein Fehler behoben werden, der das Release
+  verhindert, erscheint der korrigierte Stand aus `main`, wenn er bis Dienstag mindestens einen
+  Werktag in Produktion läuft. Er enthält auch, was seit dem Stichtag fertig wurde; isolierte
+  Korrekturen auf dem Stichtagsstand gibt es nicht.
 - **Feiertage:** Fällt der Dienstag zwischen den 24.12. und den 01.01. oder auf einen bundesweiten
   Feiertag, entfällt das Release. Fällt der Stichtag auf einen Feiertag, ist es der Werktag davor.
 - Die Termine stehen als Fälligkeit an den [Meilensteinen](https://github.com/mandariOSS/mandari/milestones).
