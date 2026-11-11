@@ -123,6 +123,8 @@ f_old = make_file(7, when=now - timedelta(days=800))
 class FakeResponse:
     # Keine Weiterleitung: Abrufe folgen ihnen selbst (insight_core/services/redirects.py, Issue #1027)
     next_request = None
+    # Der Rumpf liegt schon im Speicher: Der Download (safe_fetch.download_to) nimmt dann ``content``
+    is_stream_consumed = True
 
     def __init__(self, status, content=b"", ctype="application/pdf"):
         self.status_code = status
@@ -156,7 +158,8 @@ class FakeClient:
     calls = []
 
     def __init__(self, *a, **kw):
-        pass
+        # Wie httpx.Client: Der Abruf hängt hier seine Prüfung der Gesamtfrist vor jede Anfrage
+        self.event_hooks = {}
 
     def __enter__(self):
         return self
