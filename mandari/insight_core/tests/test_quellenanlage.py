@@ -74,7 +74,7 @@ def server(monkeypatch: pytest.MonkeyPatch) -> Server:
     echter_client = httpx.Client
     monkeypatch.setattr(
         "insight_core.management.commands.add_oparl_source.httpx.Client",
-        lambda **kw: echter_client(transport=httpx.MockTransport(antworten), **kw),
+        lambda **kw: echter_client(**{**kw, "transport": httpx.MockTransport(antworten)}),
     )
     # Takt je Host ohne Warten (die Drossel selbst prüft test_drossel_je_host)
     monkeypatch.setattr(host_pacing, "wait", lambda url, **kw: True)

@@ -41,6 +41,9 @@ spec:
       labels:
         {{- include "mandari.selectorLabels" $root | nindent 8 }}
         app.kubernetes.io/component: migrate
+        # Der Kustomize-Weg ergänzt dieses Label in allen Selektoren, auch in der Netzwerkrichtlinie. Der Job wird
+        # dort getrennt angewendet und trägt es deshalb selbst, sonst erreichte er die Datenbank nicht.
+        app.kubernetes.io/part-of: mandari
     spec:
       restartPolicy: Never
       serviceAccountName: {{ include "mandari.serviceAccountName" $root }}

@@ -413,7 +413,7 @@ def test_quelle_anlegen_haelt_den_takt(monkeypatch: pytest.MonkeyPatch, registri
     echter_client = httpx.Client
     monkeypatch.setattr(
         "insight_core.management.commands.add_oparl_source.httpx.Client",
-        lambda **kw: echter_client(transport=httpx.MockTransport(handler), **kw),
+        lambda **kw: echter_client(**{**kw, "transport": httpx.MockTransport(handler)}),
     )
 
     call_command("add_oparl_source", system_url, stdout=StringIO())

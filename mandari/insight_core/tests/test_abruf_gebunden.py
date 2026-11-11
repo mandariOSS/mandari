@@ -66,7 +66,41 @@ def test_verbindung_geht_an_die_geprüfte_adresse(monkeypatch: pytest.MonkeyPatc
     with safe_fetch.guarded_client() as client, pytest.raises(httpx.ConnectError):
         client.get("http://ris.example.org/datei.pdf")
 
-    assert verbunden == [(OEFFENTLICH, 80)]  # die geprüfte Adresse, IPv4 zuerst; nicht der Name
+    # Die geprüften Adressen der Reihe nach, IPv4 zuerst; nie der Name. Ist die erste nicht erreichbar, folgt die
+    # nächste aus derselben Auflösung.
+    assert verbunden == [(OEFFENTLICH, 80), ("2606:2800:21f:cb07:6820:80da:af6b:8b2c", 80)]
+
+
+def test_verbindungsversuche_teilen_sich_die_zeitgrenze(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mehrere geprüfte Adressen verlängern den Verbindungsaufbau nicht über die Zeitgrenze des Aufrufers."""
+    _aufloesung(monkeypatch, [OEFFENTLICH, "93.184.215.15", "93.184.215.16", "93.184.215.17"])
+    grenzen: list[float] = []
+    uhr = [1000.0]
+
+    def connect_tcp(self: Any, host: str, port: int, timeout: float | None = None, **kwargs: Any) -> Any:
+        assert timeout is not None
+        grenzen.append(timeout)
+        # Der Versuch schöpft seine Zeit aus, bevor er scheitert
+        uhr[0] += timeout
+        raise httpcore.ConnectTimeout("Test: keine echte Verbindung")
+
+    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp", connect_tcp)
+    monkeypatch.setattr(safe_fetch, "_now", lambda: uhr[0])
+
+    grenze = httpx.Timeout(30.0, connect=8.0)
+    with safe_fetch.guarded_client(timeout=grenze) as client, pytest.raises(httpx.ConnectTimeout):
+        client.get("http://ris.example.org/datei.pdf")
+
+    assert grenzen == [pytest.approx(2.0)] * 4
+    assert sum(grenzen) == pytest.approx(8.0)
+
+    # Eine einzige Adresse bekommt die ganze Zeit, wie bisher
+    grenzen.clear()
+    _aufloesung(monkeypatch, [OEFFENTLICH])
+    grenze = httpx.Timeout(30.0, connect=8.0)
+    with safe_fetch.guarded_client(timeout=grenze) as client, pytest.raises(httpx.ConnectTimeout):
+        client.get("http://ris.example.org/datei.pdf")
+    assert grenzen == [pytest.approx(8.0)]
 
 
 def test_zweite_aufloesung_ins_interne_netz_bekommt_keine_verbindung(monkeypatch: pytest.MonkeyPatch) -> None:

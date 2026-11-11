@@ -37,7 +37,6 @@ Verwendung:
 import secrets
 from datetime import date, datetime, timedelta
 from datetime import time as dt_time
-from io import BytesIO
 from pathlib import Path
 
 from django.conf import settings
@@ -49,23 +48,25 @@ from django.utils import timezone
 # (ausdrücklich weitergegeben: setup_demo_praesentation und Tests importieren sie von hier)
 from apps.common.demo_daten import DEMO_ANTRAG_SITZBAENKE, demo_ext, termin_am_sitzungstag
 from apps.common.demo_daten import DEMO_ANTRAG_TRINKBRUNNEN as DEMO_ANTRAG_TRINKBRUNNEN
+from apps.common.demo_daten import DEMO_BODY_SLUG as DEMO_BODY_SLUG
 from apps.common.demo_daten import DEMO_EMAIL_DOMAIN as DEMO_EMAIL_DOMAIN
 from apps.common.demo_daten import DEMO_OPARL_PREFIX as DEMO_OPARL_PREFIX
 from apps.common.demo_daten import DEMO_ORG_SLUG as DEMO_ORG_SLUG
+from apps.common.demo_daten import DEMO_SESSION_SLUG as DEMO_SESSION_SLUG
+from apps.common.demo_daten import DEMO_START_DATE as DEMO_START_DATE
 from apps.common.demo_daten import DEMO_USERS as DEMO_USERS
 from apps.common.demo_daten import ist_sitzungstag as ist_sitzungstag
+from apps.common.demo_pdf import demo_pdf
+from apps.common.demo_stadt import PERSONEN as BESTAND_PERSONEN
+from apps.common.demo_stadt import demo_umfang
 
 # ---------------------------------------------------------------------------
 # Feste Demo-Kennungen (Grundlage der Idempotenz und des --reset)
 # ---------------------------------------------------------------------------
 
 DEMO_SOURCE_URL = f"{DEMO_OPARL_PREFIX}/system"
-DEMO_BODY_SLUG = "musterstadt-demo"
 DEMO_PARTY_SLUG = "musterpartei-demo"
-DEMO_SESSION_SLUG = "stadtverwaltung-musterstadt-demo"
 DEMO_MEDIA_SUBDIR = "demo"
-# Fester Mandatsbeginn: Teil natürlicher Schlüssel (Idempotenz bei Wiederholung)
-DEMO_START_DATE = date(2024, 7, 1)
 DEMO_RATSSITZUNG = "Ratssitzung (Demo, kommend)"
 #: Mitte der fiktiven Musterstadt auf der Karte (bisher die Standardmitte der Karte in Work)
 DEMO_KARTENMITTE = (51.5, 7.5)
@@ -123,35 +124,8 @@ def _ext(kind: str, key: str) -> str:
 
 
 def _minimal_pdf(title: str, lines: list[str]) -> bytes:
-    """Kleines, valides PDF erzeugen (reportlab, Fallback: Minimal-Bytes)."""
-    try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas
-
-        buffer = BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
-        pdf.setTitle(title)
-        pdf.setFont("Helvetica-Bold", 14)
-        pdf.drawString(50, height - 60, title)
-        pdf.setFont("Helvetica", 10)
-        y = height - 100
-        for line in lines:
-            pdf.drawString(50, y, line)
-            y -= 16
-        pdf.setFont("Helvetica-Oblique", 8)
-        pdf.drawString(50, 40, "Mandari Demo-Umgebung - synthetisches Musterdokument, kein amtliches Dokument.")
-        pdf.showPage()
-        pdf.save()
-        return buffer.getvalue()
-    except Exception:
-        # Fallback: minimal gültiges leeres PDF
-        return (
-            b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-            b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-            b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\n"
-            b"xref\n0 4\n0000000000 65535 f \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n0\n%%EOF\n"
-        )
+    """Kleines, valides PDF erzeugen (gemeinsam mit dem Musterstadt-Bestand, ``apps.common.demo_pdf``)."""
+    return demo_pdf(title, lines)[0]
 
 
 class Command(BaseCommand):
@@ -184,10 +158,19 @@ class Command(BaseCommand):
 
         Permission.sync_permissions()
 
+        from django.core.management import call_command
+
+        # Bestand der Musterstadt (apps/common/demo_stadt.py): Jedes Fachmodul legt seinen Teil selbst an
+        bestand = {"aufbautag": aufbautag(), "umfang": demo_umfang(), "stdout": self.stdout}
         with transaction.atomic():
+            # Work-Bestand zuerst lösen: Positionen und Notizen schützen Tagesordnungspunkte des Insight-Bestands
+            call_command("setup_demo_work_bestand", entfernen=True, stdout=self.stdout)
             body = self._setup_insight()
+            call_command("setup_demo_insight", **bestand)
             org = self._setup_work(body)
+            call_command("setup_demo_work_bestand", **bestand)
             self._setup_session(body, org)
+            call_command("setup_demo_session", **bestand)
 
         self._print_summary()
 
@@ -1472,7 +1455,8 @@ class Command(BaseCommand):
         count, _ = PartyGroup.objects.filter(slug=DEMO_PARTY_SLUG).delete()
         deleted.append(f"Parteigruppe: {count}")
 
-        demo_emails = [info["email"] for info in DEMO_USERS.values()]
+        # Demo-Konten und die Konten des Musterstadt-Bestands (Fraktionsmitglieder ohne Anmeldung)
+        demo_emails = [info["email"] for info in DEMO_USERS.values()] + [p.email for p in BESTAND_PERSONEN]
         count, _ = User.objects.filter(email__in=demo_emails).delete()
         deleted.append(f"Demo-Nutzer (+abhängige Objekte): {count}")
 

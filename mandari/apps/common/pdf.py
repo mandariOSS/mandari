@@ -15,6 +15,7 @@ import io
 import logging
 import re
 import time
+from typing import Any
 
 from apps.common.metrics import PDF_DOCUMENTS, PDF_DURATION
 
@@ -24,12 +25,41 @@ logger = logging.getLogger(__name__)
 DEFAULT_MARGINS = {"top": 30, "right": 25, "bottom": 25, "left": 25}
 
 
+#: Grenzen der Umwandlung. Dokumente mit eingebetteten Bildern (``data:``) dürfen groß sein, deshalb großzügiger
+#: als die Vorgaben der Bibliothek; die Pixelgrenze je Bild bleibt bei deren Vorgabe.
+MAX_DOCUMENT_BYTES = 100 * 1024 * 1024
+MAX_TOTAL_BYTES = 200 * 1024 * 1024
+MAX_RENDER_SECONDS = 300
+
+
+def _resource_policy() -> Any:
+    """
+    Richtlinie der Bibliothek für Dateien und Adressen im HTML: nichts außerhalb des Dokuments.
+
+    Das HTML enthält Text aus dem Editor. Ohne Richtlinie läse die Bibliothek für ``<img src>`` Dateien unterhalb
+    des Arbeitsverzeichnisses (dort liegt die Medienablage aller Mandanten) und riefe fremde Server ab, beides
+    während sie die prozessweite Sperre der Umwandlung hält. Deshalb: keine lokalen Dateien, keine Fernabrufe,
+    dazu Grenzen für Bildgröße, Dokumentgröße und Dauer. Bilder stehen als ``data:``-Adresse im HTML; wer Dateien
+    oder Bilder fremder Server braucht, bettet sie vorher ein (``apps.work.pdf_bilder``).
+    """
+    from xhtml2pdf.config.resources import ResourceAccessPolicy
+
+    return ResourceAccessPolicy.server(
+        base_dir=None,
+        allow_remote=False,
+        max_document_bytes=MAX_DOCUMENT_BYTES,
+        max_total_bytes=MAX_TOTAL_BYTES,
+        max_render_seconds=MAX_RENDER_SECONDS,
+    )
+
+
 def html_to_pdf(html_content: str) -> bytes:
     """
     HTML in ein PDF umwandeln (xhtml2pdf, Fallback: reportlab).
 
     Zentrale Stelle für Einladungen, Niederschriften, Beschlussauszüge, Exporte und
     Bescheinigungen – deshalb werden hier Anzahl und Dauer als Metrik erfasst (Issue #231).
+    Dateien und fremde Adressen im HTML werden nicht gelesen (``_resource_policy``).
 
     Args:
         html_content: vollständiges HTML-Dokument
@@ -43,7 +73,9 @@ def html_to_pdf(html_content: str) -> bytes:
             from xhtml2pdf import pisa
 
             result = io.BytesIO()
-            pisa_status = pisa.CreatePDF(src=html_content, dest=result, encoding="UTF-8")
+            pisa_status = pisa.CreatePDF(
+                src=html_content, dest=result, encoding="UTF-8", resource_policy=_resource_policy()
+            )
             if pisa_status.err:
                 raise RuntimeError(f"PDF generation error: {pisa_status.err}")
             pdf = result.getvalue()

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -100,3 +100,81 @@ def test_passwort_vergessen_ist_in_der_demo_gesperrt(client: Client) -> None:
     antwort = client.post(reverse("accounts:password_reset"), {"email": "demo-vorsitz@demo.mandari.de"})
     assert antwort.status_code == 302
     assert len(mail.outbox) == 0
+
+
+# ---------------------------------------------------------------------------
+# Zugänge auf der Anmeldeseite und Zeitplan des Neuaufbaus
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_anmeldeseite_zeigt_zugaenge_nur_in_der_demo(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEMO_PASSWORD", "Musterstadt-oeffentlich")
+    ohne = client.get(reverse("accounts:login")).content.decode()
+    assert "demo-zugaenge" not in ohne and "Musterstadt-oeffentlich" not in ohne
+    with override_settings(DEMO_INSTANCE=True):
+        seite = client.get(reverse("accounts:login")).content.decode()
+    assert 'id="demo-zugaenge"' in seite and "Musterstadt-oeffentlich" in seite
+    assert "Fraktion (Work)" in seite and "Verwaltung (Session)" in seite
+    for email in ("demo-vorsitz@demo.mandari.de", "demo-verwaltung@demo.mandari.de", "demo-leitstelle@demo.mandari.de"):
+        assert f'value="{email}"' in seite
+    assert demo.demo_kommune_url() in seite
+
+
+@pytest.mark.django_db
+def test_demo_ohne_festes_passwort_zeigt_keine_zugaenge(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEMO_PASSWORD", raising=False)
+    with override_settings(DEMO_INSTANCE=True):
+        seite = client.get(reverse("accounts:login")).content.decode()
+    assert "Demo-Umgebung." in seite and "demo-zugaenge" not in seite
+
+
+@pytest.mark.django_db
+@override_settings(DEMO_INSTANCE=True)
+def test_ein_klick_meldet_an_und_fuehrt_zum_ziel(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    from apps.accounts.models import User
+
+    monkeypatch.setenv("DEMO_PASSWORD", "Musterstadt-oeffentlich")
+    cast(Any, User.objects).create_user(email="demo-vorsitz@demo.mandari.de", password="Musterstadt-oeffentlich")
+    zugang = demo.demo_zugaenge()[0].zugaenge[0]
+    antwort = client.post(
+        reverse("accounts:login"),
+        {"email": zugang.email, "password": "Musterstadt-oeffentlich", "next": zugang.ziel},
+    )
+    assert antwort.status_code == 302
+    assert antwort["Location"] == zugang.ziel
+
+
+def test_demo_kommune_url_ist_die_kanonische_kennung() -> None:
+    from mandari_oparl.ids import canonical_id
+
+    from apps.common.demo_daten import demo_ext
+
+    assert demo.demo_kommune_url() == f"/insight/kommune/{canonical_id(demo_ext('body', 'musterstadt'))}/"
+
+
+@pytest.mark.parametrize(
+    ("utc", "heute", "text"),
+    [
+        ("03:30,15:30", "2026-11-11", "zweimal täglich (4:30 und 16:30 Uhr)"),  # Winterzeit
+        ("15:30, 03:30", "2026-07-01", "zweimal täglich (5:30 und 17:30 Uhr)"),  # Sommerzeit, sortiert
+        ("03:30", "2026-11-11", "täglich (4:30 Uhr)"),
+        ("", "2026-11-11", "regelmäßig"),
+        ("kaputt", "2026-11-11", "regelmäßig"),
+    ],
+)
+def test_neuaufbau_text_in_ortszeit(utc: str, heute: str, text: str) -> None:
+    from datetime import date
+
+    with (
+        override_settings(DEMO_NEUAUFBAU_UTC=utc),
+        mock.patch("apps.common.demo.timezone.localdate", return_value=date.fromisoformat(heute)),
+    ):
+        assert demo.neuaufbau_text() == text
+
+
+@pytest.mark.django_db
+@override_settings(DEMO_INSTANCE=True, DEMO_NEUAUFBAU_UTC="03:30,15:30")
+def test_hinweis_nennt_den_zeitplan(client: Client) -> None:
+    seite = client.get(reverse("accounts:login")).content.decode()
+    assert "zweimal täglich (" in seite and "jede Nacht" not in seite

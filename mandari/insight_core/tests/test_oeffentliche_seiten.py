@@ -311,12 +311,25 @@ class TestLinksAusEmails:
 @pytest.fixture
 def beschluss_abo(db: Any) -> Any:
     from apps.session.models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionTenant
-    from insight_core.models import DecisionSubscription
+    from insight_core.models import DecisionSubscription, OParlBody, OParlSource
 
-    tenant = SessionTenant.objects.create(name="Bezirk Süd", slug="sued")
+    # Ein veröffentlichter Beschluss: Bestätigen geht nur, solange er lesbar ist
+    tenant = SessionTenant.objects.create(
+        name="Bezirk Süd",
+        slug="sued",
+        insight_publish=True,
+        implementation_publish=True,
+        oparl_public_since=timezone.now(),
+    )
+    source = OParlSource.objects.get(sync_config__session_tenant="sued")
+    body = OParlBody.objects.create(external_id=f"{source.url}body/", source=source, name="Bezirk Süd", slug="sued")
+    tenant.oparl_body = body
+    tenant.save(update_fields=["oparl_body"])
     gremium = SessionOrganization.objects.create(tenant=tenant, name="Hauptausschuss", short_name="HA")
     sitzung = SessionMeeting.objects.create(
         tenant=tenant, name="Sitzung HA", organization=gremium, start=timezone.now(), is_public=True
     )
-    top = SessionAgendaItem.objects.create(meeting=sitzung, name="Radweg", number="1", order=1)
+    top = SessionAgendaItem.objects.create(
+        meeting=sitzung, name="Radweg", number="1", order=1, vote_result="approved", implementation_public=True
+    )
     return DecisionSubscription.objects.create(agenda_item=top, email="buergerin@example.org")

@@ -51,6 +51,7 @@ from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.common.demo_daten import DEMO_LEITSTELLE_EMAIL
 from apps.common.management.commands.setup_demo_environment import (
     DEMO_EMAIL_DOMAIN,
     DEMO_ORG_SLUG,
@@ -99,7 +100,7 @@ PROFILE: dict[str, Profil] = {
 MANDANT_B_SLUG = "bezirksamt-musterstadt-sued-demo"
 MANDANT_B_NAME = "Bezirksamt Musterstadt-Süd (Demo)"
 LEITSTELLE = {
-    "email": f"demo-leitstelle@{DEMO_EMAIL_DOMAIN}",
+    "email": DEMO_LEITSTELLE_EMAIL,
     "first_name": "Leo",
     "last_name": "Leitstelle",
 }

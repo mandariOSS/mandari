@@ -154,11 +154,16 @@ def produktionsartig(settings: Any) -> None:
     settings.CSRF_TRUSTED_ORIGINS = ["https://mandari.de"]
 
 
+# Mit Datenbank: Channels schließt beim Trennen alte Verbindungen (``close_old_connections``) im gemeinsamen
+# Hintergrund-Thread. Hat dort ein früherer Test eine Verbindung offen gelassen, fragt Django ihren Zustand ab; ohne
+# die Markierung scheiterte der Test dann je nach Reihenfolge an der Sperre von pytest-django.
+@pytest.mark.django_db
 def test_websocket_von_fremder_subdomain_wird_abgelehnt(produktionsartig: None) -> None:
     assert not _websocket_erlaubt("https://demo.mandari.de", "mandari.de")
     assert not _websocket_erlaubt("https://evil.example", "mandari.de")
 
 
+@pytest.mark.django_db
 def test_websocket_vom_eigenen_host_bleibt_erlaubt(produktionsartig: None) -> None:
     assert _websocket_erlaubt("https://mandari.de", "mandari.de")
     assert _websocket_erlaubt("https://volt.mandari.de", "volt.mandari.de")

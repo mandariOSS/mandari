@@ -500,7 +500,8 @@ class TestAbruf:
         pfad = f"/insight/vorgaenge/{bestand['antrag'].pk}/feed.atom"
         erste = Client().get(pfad)
         assert erste.status_code == 200 and erste["ETag"] and erste["Last-Modified"]
-        assert erste["Cache-Control"] == f"public, max-age={feeds.ZWISCHENSPEICHER_SEKUNDEN}"
+        # Nachgelagerte Caches fragen nach (bedingter Abruf), damit Rücknahmen sofort wirken
+        assert erste["Cache-Control"] == "public, no-cache"
 
         zweite = Client().get(pfad, headers={"If-None-Match": erste["ETag"]})
 

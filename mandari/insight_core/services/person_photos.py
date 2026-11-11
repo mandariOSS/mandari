@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 USER_AGENT = robots.USER_AGENT
 MAX_BYTES = 5 * 1024 * 1024
 MAX_SIZE = (400, 400)
+#: Höchstens so viele Bildpunkte dekodieren wir (ein 40-Megapixel-Foto passt)
+MAX_PIXELS = 40_000_000
 
 #: Bekannte RIS mit funktionierendem Foto-Muster (greift, wenn eine Kommune
 #: noch keine Konfiguration hat). Der Schlüssel wird gegen Quelle/Body-ID
@@ -65,9 +67,14 @@ def _normalize_image(data: bytes) -> bytes:
     """Bild auf max. 400 px verkleinern und als JPEG speichern (Pillow)."""
     from PIL import Image
 
-    with Image.open(io.BytesIO(data)) as img:
-        img = img.convert("RGB")
+    with Image.open(io.BytesIO(data), formats=("JPEG", "PNG", "WEBP", "GIF")) as img:
+        # Die Maße stehen im Kopf der Datei: Ein stark komprimiertes Bild mit riesiger Fläche wird abgewiesen, bevor
+        # es dekodiert ist. Verkleinert wird vor dem Umwandeln (JPEG dekodiert dann schon in kleinerer Auflösung).
+        if img.width * img.height > MAX_PIXELS:
+            raise ValueError("Bild hat zu viele Bildpunkte")
+        img.draft("RGB", MAX_SIZE)
         img.thumbnail(MAX_SIZE)
+        img = img.convert("RGB")
         out = io.BytesIO()
         img.save(out, format="JPEG", quality=85, optimize=True)
         return out.getvalue()
