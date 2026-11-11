@@ -472,6 +472,8 @@ def normalize_row(row: Row, memberships_by_email: dict[str, Membership]) -> tupl
     )
     if visibility is not None:
         data["visibility"] = visibility
+        # Ohne Angabe in der Datei bleibt bei bestehenden Aufgaben die bisherige Sichtbarkeit (``_update_from_row``)
+        data["visibility_given"] = bool(str(row.get("visibility") or "").strip())
 
     due_date, date_error = parse_date(row.get("due_date"))
     if date_error:
@@ -604,7 +606,9 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
     task.title = data["title"]
     task.description = data["description"]
     task.priority = data["priority"]
-    task.visibility = data["visibility"]
+    old_visibility = task.visibility
+    if data.get("visibility_given"):
+        task.visibility = data["visibility"]
     task.due_date = data["due_date"]
     old_status = task.status
     task.status = data["status"]
@@ -617,6 +621,9 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
     if data["assigned_to"] is not None:
         task.assigned_to = data["assigned_to"]
     task.save()
+    from . import services
+
+    services.reset_shares_on_reshare(task, old_visibility)
     if data["labels"]:
         task.labels.set(labels.resolve(data["labels"]))
     if old_status != task.status:

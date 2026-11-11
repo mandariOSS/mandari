@@ -100,9 +100,13 @@ class MotionImportService:
                 author=author,
                 title=title,
                 status="draft",
-                visibility=visibility,
+                visibility="private",
                 responsible=author,
             )
+            # Wie beim Anlegen (references.apply_to_new_document): eine andere Sichtbarkeit als „privat“ nur mit
+            # dem Recht, die Sichtbarkeit des neuen Dokuments zu ändern
+            if visibility != "private" and motion.can_share(author):
+                motion.visibility = visibility
             if motion_type:
                 motion.document_type = motion_type
             motion.set_content_encrypted(html)

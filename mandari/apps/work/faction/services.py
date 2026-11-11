@@ -12,6 +12,7 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -764,6 +765,53 @@ def record_decision(
     Hält die Kopie am TOP (``has_decision``/``votes_*``) aktuell und genehmigt über den Genehmigungs-TOP das
     Vorprotokoll. ``notes=None`` lässt vorhandene Anmerkungen unverändert (die Sitzungsansicht hat kein Feld dafür).
     """
+    from .regeln import pruefe_protokoll_offen
+
+    with transaction.atomic():
+        # Beschlüsse einer Sitzung mit genehmigtem Protokoll sind fest (Issue #63), gleich über welchen Weg;
+        # Prüfung und Schreiben unter der Sperre der Sitzung
+        pruefe_protokoll_offen(item.meeting)
+        return _record_decision(
+            item,
+            membership,
+            votes_yes=votes_yes,
+            votes_no=votes_no,
+            votes_abstain=votes_abstain,
+            result=result,
+            decision_text=decision_text,
+            notes=notes,
+        )
+
+
+def clear_decision(item) -> None:
+    """Beschluss eines TOPs entfernen (TOP-Panel); nicht nach genehmigtem Protokoll (``ProtokollGenehmigtError``)."""
+    from .models import FactionDecision
+    from .regeln import pruefe_protokoll_offen
+
+    with transaction.atomic():
+        pruefe_protokoll_offen(item.meeting)
+        FactionDecision.objects.filter(agenda_item=item).delete()
+        item.has_decision = False
+        item.votes_for = 0
+        item.votes_against = 0
+        item.votes_abstain = 0
+        # Wie beim Erfassen nur die Felder des Beschlusses schreiben: Notizen, die die Schriftführung gleichzeitig
+        # speichert, bleiben erhalten. Ihren Stand vorher nachladen, damit die Änderungshistorie nichts erfindet.
+        item.refresh_from_db(fields=["notes_encrypted", "notes_updated_at"])
+        item.save(update_fields=["has_decision", "votes_for", "votes_against", "votes_abstain", "updated_at"])
+
+
+def _record_decision(
+    item,
+    membership,
+    *,
+    votes_yes: int,
+    votes_no: int,
+    votes_abstain: int,
+    result: str,
+    decision_text: str,
+    notes: str | None,
+):
     from .models import FactionDecision
 
     defaults = {
