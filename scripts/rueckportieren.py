@@ -90,6 +90,12 @@ def ci_ausloeser_vorhanden(workflow: str) -> bool:
             continue
         if inhalt == "branches:":
             in_zweigen = True
+        elif inhalt.startswith("branches:") and "[" in inhalt:
+            # Flussliste: branches: [dev, 'release/v*']
+            eintraege = inhalt.split("[", 1)[1].split("]", 1)[0].split(",")
+            if ereignis == "pull_request" and "release/v*" in {e.strip().strip("'\"") for e in eintraege}:
+                return True
+            in_zweigen = False
         elif in_zweigen and inhalt.startswith("- "):
             if ereignis == "pull_request" and inhalt[2:].strip().strip("'\"") == "release/v*":
                 return True

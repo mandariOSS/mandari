@@ -188,6 +188,8 @@ Linien unterstützt werden, steht in [SECURITY.md](../SECURITY.md#unterstützte-
 
      Der Release-Workflow baut die Images, legt `release/v0.12.1` an und setzt das Linien-Tag `v0.12`;
      `latest` setzt eine Patch-Version nie zurück, und das Website-Image bleibt bei dem von `v0.12.0`.
+     Braucht eine Pflegelinie eine Korrektur der Website (Repo marketing-website), entscheidet die
+     Projektleitung im Einzelfall über ein eigenes Website-Image für die Linie.
      Zwei Releases nie gleichzeitig veröffentlichen.
    - Abschnitt `[0.12.1]` mit dem nächsten Vorbereitungs-PR im CHANGELOG von `dev` nachtragen.
 6. **Abschluss:** Im Original-PR kommentieren, in welchen Versionen die Korrektur steckt

@@ -80,3 +80,5 @@ def test_ci_ausloeser_zaehlt_nur_unter_pull_request() -> None:
         assert not skript.ci_ausloeser_vorhanden(workflow), workflow
     mit_typen = 'on:\n  pull_request:\n    types: [opened]\n    branches:\n      - dev\n      - "release/v*"\n'
     assert skript.ci_ausloeser_vorhanden(mit_typen)
+    assert skript.ci_ausloeser_vorhanden("on:\n  pull_request:\n    branches: [dev, 'release/v*']\n")
+    assert not skript.ci_ausloeser_vorhanden("on:\n  push:\n    branches: ['release/v*']\n")

@@ -9,7 +9,7 @@ bleibt auf einer Pflegeversion und spielt deren Patch-Versionen ein.
 
 | Version | Unterstützt | bis |
 |---------|-------------|-----|
-| jüngstes Release (Image-Tag `latest` oder `v<Version>`) | alle Korrekturen | Erscheinen der nächsten Version |
+| jüngstes Release (Image-Tag `v<Version>`; `latest` folgt dem Stand von `main`) | alle Korrekturen | Erscheinen der nächsten Version |
 | 0.12 (Pflegeversion 4. Quartal 2026) | Sicherheitskorrekturen ab „mittel“, kritische Fehler | 17.05.2027 |
 | 0.11 (Übergang, bisherige Regel) | Sicherheitskorrekturen ab „mittel“, kritische Fehler | 03.05.2027 |
 | übrige und ältere Releases | nein | – |

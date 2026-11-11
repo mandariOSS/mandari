@@ -193,8 +193,10 @@ jobs:
               echo "::notice title=latest bleibt::${VERSION} (${RELEASE_SHA}) ist nicht die höchste Version (${HOECHSTE}) oder nicht der Kopf von main (${MAIN_SHA}); latest bleibt unverändert."
             fi
             # Website: Eine Patch-Version bekommt nicht den aktuellen Stand der Website, sondern den der ersten
-            # Version ihrer Linie (keine neuen Funktionen oder Migrationen über eine Patch-Version).
-            if printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[1-9][0-9]*$'; then
+            # Version ihrer Linie (keine neuen Funktionen oder Migrationen über eine Patch-Version). Gibt es das
+            # Website-Image der .0-Version schon (Patch-Version oder wiederholter Lauf), ist es die Quelle.
+            if printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              && docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${LINIE}.0" >/dev/null 2>&1; then
               WEBSITE_QUELLE="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${LINIE}.0"
             fi
 
