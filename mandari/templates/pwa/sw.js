@@ -13,16 +13,42 @@ const SW_CONFIG = { cacheVersion: 'dev', offlineUrl: '/offline/', precache: [] }
 
 const CACHE_VERSION = SW_CONFIG.cacheVersion;
 const STATIC_CACHE = 'mandari-static-' + CACHE_VERSION;
-const OFFLINE_CACHE = 'mandari-offline-' + CACHE_VERSION;
+// v2: Die Offline-Seite wird ohne Cookies geholt. Der neue Name lässt activate frühere Einträge löschen, die mit
+// Anmeldung geholt wurden (eine Weiterleitung konnte dabei eine persönliche Seite in den Cache legen).
+const OFFLINE_CACHE = 'mandari-offline-v2-' + CACHE_VERSION;
 const OFFLINE_URL = SW_CONFIG.offlineUrl;
 
 // Kern-Assets fürs App-Shell-Gefühl (gehashte Namen => sicher cachebar).
 const PRECACHE_STATIC = SW_CONFIG.precache;
 
+// Offline-Seite holen und ablegen. Ohne Cookies und ohne Weiterleitungen: In den Cache kommt nur die allgemeine
+// Offline-Seite, nie eine Seite, auf die ein angemeldetes Konto umgeleitet würde (etwa die Einrichtung des zweiten
+// Faktors).
+async function cacheOfflinePage() {
+    const offlineCache = await caches.open(OFFLINE_CACHE);
+    try {
+        const offlineResponse = await fetch(
+            new Request(OFFLINE_URL, { cache: 'reload', credentials: 'omit', redirect: 'error' })
+        );
+        if (offlineResponse.ok && !offlineResponse.redirected) {
+            await offlineCache.put(OFFLINE_URL, offlineResponse);
+        }
+    } catch (error) {
+        // Ohne Offline-Seite weiter; die nächste gelungene Navigation holt sie nach.
+    }
+}
+
+// Fehlt die Offline-Seite (der Abruf bei der Installation ist gescheitert), wird sie nachgeholt.
+async function ensureOfflinePage() {
+    const cached = await caches.match(OFFLINE_URL, { cacheName: OFFLINE_CACHE });
+    if (!cached) {
+        await cacheOfflinePage();
+    }
+}
+
 self.addEventListener('install', (event) => {
     event.waitUntil((async () => {
-        const offlineCache = await caches.open(OFFLINE_CACHE);
-        await offlineCache.add(new Request(OFFLINE_URL, { cache: 'reload' }));
+        await cacheOfflinePage();
         const staticCache = await caches.open(STATIC_CACHE);
         // Einzeln addieren: ein fehlendes Asset darf die Installation nicht kippen.
         await Promise.allSettled(PRECACHE_STATIC.map((url) => staticCache.add(url)));
@@ -53,7 +79,10 @@ self.addEventListener('fetch', (event) => {
     if (request.mode === 'navigate') {
         event.respondWith((async () => {
             try {
-                return await fetch(request);
+                const response = await fetch(request);
+                // Das Netz ist da: eine fehlende Offline-Seite jetzt nachholen
+                event.waitUntil(ensureOfflinePage());
+                return response;
             } catch (err) {
                 const cached = await caches.match(OFFLINE_URL, { cacheName: OFFLINE_CACHE });
                 return cached || Response.error();

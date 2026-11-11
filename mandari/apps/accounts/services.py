@@ -26,6 +26,7 @@ from django.contrib.auth import SESSION_KEY, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.db import transaction
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
@@ -312,28 +313,38 @@ class TwoFactorService:
         return False
 
     def _use_backup_code(self, device: TwoFactorDevice, code: str) -> bool:
-        """Try to use a backup code."""
-        if not device.backup_codes_encrypted:
-            return False
+        """
+        Backup-Code einlösen: jeder Code genau einmal.
 
-        try:
-            codes = json.loads(self._decrypt(device.backup_codes_encrypted))
-        except (json.JSONDecodeError, Exception):
-            return False
-
+        Gelesen, gestrichen und gespeichert wird unter der Sperre der Zeile: Zwei gleichzeitige Anmeldungen mit
+        demselben Code laufen nacheinander, die zweite findet ihn nicht mehr, und ein Speichern aus altem Lesestand
+        schreibt keine neu erzeugte Liste zurück.
+        """
         # Normalize code (remove dashes/spaces)
         code = self._normalize_backup_code(code)
         if not code:
             return False
 
-        for i, stored_code in enumerate(codes):
-            if stored_code and hmac.compare_digest(code, self._normalize_backup_code(stored_code)):
-                # Mark code as used
-                codes[i] = None
-                device.backup_codes_encrypted = self._encrypt(json.dumps(codes))
-                device.last_used_at = timezone.now()
-                device.save()
-                return True
+        with transaction.atomic():
+            locked = TwoFactorDevice.objects.select_for_update().filter(pk=device.pk).first()
+            if locked is None or not locked.backup_codes_encrypted:
+                return False
+            try:
+                codes = json.loads(self._decrypt(locked.backup_codes_encrypted))
+            except (json.JSONDecodeError, Exception):
+                return False
+
+            for i, stored_code in enumerate(codes):
+                if stored_code and hmac.compare_digest(code, self._normalize_backup_code(stored_code)):
+                    # Mark code as used
+                    codes[i] = None
+                    locked.backup_codes_encrypted = self._encrypt(json.dumps(codes))
+                    locked.last_used_at = timezone.now()
+                    locked.save(update_fields=["backup_codes_encrypted", "last_used_at"])
+                    # Das Objekt des Aufrufers trägt den neuen Stand (spätere Speicherungen schreiben ihn nicht zurück)
+                    device.backup_codes_encrypted = locked.backup_codes_encrypted
+                    device.last_used_at = locked.last_used_at
+                    return True
 
         return False
 
@@ -363,8 +374,15 @@ class TwoFactorService:
             return []
 
         codes = self.generate_backup_codes()
-        device.backup_codes_encrypted = self._encrypt(json.dumps(codes))
-        device.save()
+        with transaction.atomic():
+            # Unter der Sperre der Zeile und nur dieses Feld: Eine gleichzeitige Anmeldung mit einem alten Code
+            # wartet und findet danach die neue Liste
+            locked = TwoFactorDevice.objects.select_for_update().filter(pk=device.pk).first()
+            if locked is None or not locked.is_confirmed:
+                return []
+            locked.backup_codes_encrypted = self._encrypt(json.dumps(codes))
+            locked.save(update_fields=["backup_codes_encrypted"])
+        device.backup_codes_encrypted = locked.backup_codes_encrypted
 
         return codes
 

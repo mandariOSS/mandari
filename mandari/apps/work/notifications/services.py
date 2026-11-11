@@ -91,6 +91,25 @@ class NotificationHub:
         if actor and actor.id == recipient.id:
             return None
 
+        # Deaktivierte Mitgliedschaften und Konten bekommen nichts mehr, auch nicht als Vertretung: Zuständigkeit
+        # und Erstellerbezug bleiben beim Deaktivieren stehen, die Person hat aber keinen Zugang mehr. Eine
+        # eingetragene Vertretung erfährt es wie bisher; für sie gelten in ihrem Aufruf dieselben Prüfungen.
+        if not recipient.is_active or not recipient.user.is_active:
+            if not _forwarded:
+                cls._forward_to_deputy(
+                    recipient=recipient,
+                    notification_type=notification_type,
+                    title=title,
+                    message=message,
+                    link=link,
+                    actor=actor,
+                    metadata=metadata,
+                    event_key=f"{event_key}:vertretung" if event_key else None,
+                    direct_since=direct_since,
+                    send_email=send_email if event_key else True,
+                )
+            return None
+
         # Sitzungsarten (Issue #1239): nichts zu einer Fraktionssitzung, die der Empfänger nicht sehen darf. Gilt für
         # jeden Weg, auch für die Weiterleitung an eine Vertretung.
         if cls._sitzung_verborgen(recipient, notification_type, metadata):
