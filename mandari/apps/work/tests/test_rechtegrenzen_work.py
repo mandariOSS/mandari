@@ -400,6 +400,11 @@ def test_export_nennt_stand_eigener_dokumente_nur_mit_zugriff(org: Any, make_mem
     assert [fassung["change_summary"] for fassung in nachher[0]["revisions"]] == ["Erste Fassung"]
     assert [kommentar["content"] for kommentar in nachher[0]["comments"]] == ["Eigene Notiz"]
     assert "GEHEIM" not in str(nachher)
+    # Auch der Bearbeitungsvermerk zur eigenen Fassung nennt den heutigen Titel nicht mehr
+    vermerke = dienst._collect_vermerke(person, org)
+    eigene = [v for v in vermerke if v["action"] == "Version gespeichert"]
+    assert [v["object"] for v in eigene] == [export_service.NO_ACCESS_DOCUMENT]
+    assert "GEHEIM" not in str(vermerke)
 
 
 def test_export_meldet_fruehere_freigabe_einer_aufgabe_nicht_als_aktuell(org: Any, make_member: Any) -> None:
@@ -417,6 +422,12 @@ def test_export_meldet_fruehere_freigabe_einer_aufgabe_nicht_als_aktuell(org: An
 
     Task.objects.filter(pk=aufgabe.pk).update(visibility="shared")
     assert export_service.DsgvoExportService()._collect_tasks(person, org)[0]["is_shared_with"] is True
+
+    # Ohne eigene Beteiligung nimmt eine frühere Freigabe die Aufgabe gar nicht erst in den Export auf
+    unbeteiligt = make_member(org, ["tasks.view"], email="unbeteiligt@example.org")
+    privat = Task.objects.create(organization=org, title="Privat", created_by=autorin, visibility="private")
+    TaskShare.objects.create(task=privat, membership=unbeteiligt)
+    assert export_service.DsgvoExportService()._collect_tasks(unbeteiligt, org) == []
 
 
 # --- Vorschlag nach genehmigtem Protokoll ----------------------------------------------------------------------

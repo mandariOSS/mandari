@@ -587,9 +587,11 @@ class DsgvoExportService:
             comments_by_task.setdefault(c.task_id, []).append({"content": c.content, "created_at": _dt(c.created_at)})
 
         shared_ids = set(
-            TaskShare.objects.filter(membership=membership, task__organization=organization).values_list(
-                "task_id", flat=True
-            )
+            # Freigaben gelten nur für geteilte Aufgaben; Zeilen aus einer früheren Freigabe zählen nicht, weder für
+            # die Auswahl noch für die Angabe „freigegeben“
+            TaskShare.objects.filter(
+                membership=membership, task__organization=organization, task__visibility="shared"
+            ).values_list("task_id", flat=True)
         )
         tasks = (
             Task.objects.filter(organization=organization)
@@ -609,8 +611,7 @@ class DsgvoExportService:
         for t in tasks:
             is_creator = t.created_by_id == membership.id
             is_assignee = t.assigned_to_id == membership.id
-            # Freigaben gelten nur für geteilte Aufgaben; Zeilen aus einer früheren Freigabe zählen nicht
-            is_shared = t.visibility == "shared" and t.id in shared_ids
+            is_shared = t.id in shared_ids
             # Fremde Aufgaben nur mit ``tasks.view`` (wie die Aufgabenansicht); eigene und zugewiesene bleiben
             zugriff = t.can_access(membership) and (darf_aufgaben_sehen or is_creator or is_assignee)
             if not zugriff:
@@ -1242,6 +1243,8 @@ class DsgvoExportService:
 
         Nichtöffentliches (``Vermerk.non_public``) beschreiben die Vermerke nur für vereidigte Mitglieder; alle
         anderen – auch nach Entzug der Vereidigung – erhalten Art und Zeitpunkt mit einem Platzhalter (Issue #873).
+        Vermerke an einem Dokument nennen dessen heutigen Titel nur, solange die Person das Dokument noch öffnen darf
+        (wie der Abschnitt der eigenen Dokumente); sonst steht ein Platzhalter.
         """
         from django.apps import apps as django_apps
         from django.db.models import BooleanField, Case, Value, When
@@ -1250,6 +1253,14 @@ class DsgvoExportService:
         from apps.work.faction.visibility import is_sworn_member
 
         sworn = is_sworn_member(membership)
+        access: dict[Any, bool] = {}
+
+        def document_hidden(obj: Any) -> bool:
+            motion = obj.motion
+            if motion.pk not in access:
+                access[motion.pk] = motion.can_access(membership)
+            return not access[motion.pk]
+
         rows: list[tuple[Any, dict]] = []
         for vermerk in VERMERKE:
             model_name, field_name = vermerk.ref.split(".")
@@ -1269,6 +1280,8 @@ class DsgvoExportService:
                 when = getattr(obj, vermerk.when)
                 if masked and obj.export_locked:
                     description = vermerk.describe_locked(obj) if vermerk.describe_locked else NON_PUBLIC_DOCUMENT
+                elif "motion" in vermerk.select and document_hidden(obj):
+                    description = NO_ACCESS_DOCUMENT
                 else:
                     description = vermerk.describe(obj)
                 rows.append(
