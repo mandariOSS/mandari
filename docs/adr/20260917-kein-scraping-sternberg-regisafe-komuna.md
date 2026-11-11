@@ -10,7 +10,7 @@ liest („Scraping“), die naheliegende Frage. Für drei verbreitete Systeme ke
 regelmäßig wieder. Damit sie nicht jedes Mal neu bewertet wird, halten wir die
 Entscheidung hier fest.
 
-Unsere Regeln für alle Scraper-Quellen (`docs/SCRAPER_SOURCES.md`, Abschnitt 3):
+Unsere Regeln für alle Scraper-Quellen (heute `docs/ABRUFREGELN.md`):
 identifizierbarer User-Agent mit Kontaktadresse, robots.txt nach RFC 9309, höchstens
 eine Anfrage je zwei Sekunden je Host, **keine Umgehung** von Logins, CAPTCHAs,
 Proof-of-Work-Gates oder Session-Schranken.
@@ -47,7 +47,7 @@ selbst gehostetes ALLRIS 4 über Bridge oder App-API, Restbestand ALLRIS 3.
 
 Wir bauen **keinen Adapter** für gehostetes Sternberg RIM, regisafe und komuna und
 umgehen keine der genannten Schranken. Stattdessen bieten wir betroffenen Kommunen
-den Kooperationspfad an (Vorlage unten). Der Zensus mit `probe_ris` (#114) erfasst
+den Kooperationspfad an (Vorlage unten). Der Zensus mit `probe-ris` (#114) erfasst
 je Kommune Hersteller, robots-Status, Gate und OParl-Autodiscovery, damit das
 Angebot gezielt und mit Beleg ausgesprochen werden kann.
 
@@ -83,15 +83,16 @@ Angebot gezielt und mit Beleg ausgesprochen werden kann.
 >    komuna beim Hersteller erfragen]. Nach Aktivierung binden wir die Schnittstelle
 >    innerhalb weniger Tage an und stimmen Abrufintervall und Last mit Ihnen ab.
 > 2. **Zugriff ausdrücklich erlauben.** Alternativ ergänzen Sie in der robots.txt
->    Ihres Ratsinformationssystems einen Eintrag für unseren Crawler:
+>    Ihres Ratsinformationssystems einen Eintrag für unseren Abrufdienst:
 >
 >    ```
 >    User-agent: mandari-ingestor
 >    Allow: /
 >    ```
 >
->    Unser Crawler identifiziert sich als `mandari-ingestor (+https://mandari.de/crawler)`,
->    stellt höchstens eine Anfrage alle zwei Sekunden und liest ausschließlich
+>    Unser Abrufdienst identifiziert sich als
+>    `mandari-ingestor/<Version> (+https://mandari.de/ingestor/; support@mandari.de)`,
+>    stellt höchstens eine Anfrage je Sekunde und Server und liest ausschließlich
 >    öffentliche Bereiche. Bei Systemen mit Bot-Schutz oder rein skriptgesteuerter
 >    Oberfläche ist Weg 1 der einzige belastbare.
 >
@@ -108,3 +109,9 @@ dorthin weiter. Der Ingestor ist kein Crawler, und Wortfilter auf „crawler“ 
 Abrufe nicht ungewollt treffen (#1061). Wer die Textvorlage verwendet, nennt Kennung und Takt nach
 [`docs/ABRUFREGELN.md`](../ABRUFREGELN.md#kennung): `mandari-ingestor/<Version> (+https://mandari.de/ingestor/;
 support@mandari.de)`, höchstens eine Anfrage je Sekunde und Server.
+
+## Nachtrag (11.11.2026)
+
+Die Textvorlage nennt jetzt selbst Kennung und Takt nach [`docs/ABRUFREGELN.md`](../ABRUFREGELN.md#kennung) und
+spricht vom Abrufdienst statt vom Crawler. Die Regeln für alle Abrufe stehen in `docs/ABRUFREGELN.md`;
+`docs/SCRAPER_SOURCES.md` verweist dorthin. Der Zensus heißt `probe-ris`.

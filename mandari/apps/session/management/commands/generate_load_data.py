@@ -863,5 +863,5 @@ class Command(BaseCommand):
         self.stdout.write(f"  OParl:    /oparl/v1/body/{body_id}  und  /session/{haupt}/api/oparl/")
         medien = Path(settings.MEDIA_ROOT)
         self.stdout.write(f"\nDateien liegen unter {medien / 'session' / 'files'}; --reset entfernt sie wieder.")
-        # Für Locust (loadtest/README.md), maschinenlesbar in einer eigenen Zeile
+        # Für Locust (docs/LASTTESTS.md#7-befehle), maschinenlesbar in einer eigenen Zeile
         self.stdout.write(f"LOADTEST_BODY_ID={body_id}")

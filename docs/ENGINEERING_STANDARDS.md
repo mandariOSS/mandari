@@ -1,8 +1,9 @@
 # Engineering-Standards
 
-Stand: September 2026. Diese Regeln gelten für neuen und für angefassten Code. Bestandscode wird
-schrittweise nachgezogen; die Ratchet-Gates in der CI stellen sicher, dass Kennzahlen nur besser werden.
-Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
+Diese Regeln gelten für neuen und für angefassten Code. Bestandscode wird schrittweise nachgezogen;
+die Ratchet-Gates in der CI stellen sicher, dass Kennzahlen nur besser werden. Architekturentscheidungen
+werden als ADR unter [`docs/adr/`](adr/) festgehalten. Wie wir planen und ausliefern, steht in
+[WEITERENTWICKLUNG.md](WEITERENTWICKLUNG.md).
 
 ## 1. Schichten (Backend)
 
@@ -55,7 +56,10 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 ## 2. Typisierung und Stil
 
 - Neuer Code: vollständige Parameter- und Rückgabe-Annotationen, Docstrings auf Deutsch für Fachlogik.
-- Code-Identifier Englisch, Fachbegriffe in `verbose_name`, Meldungen und Kommentaren Deutsch.
+- Bezeichner: Bestehende Modelle, Felder und Schnittstellen bleiben englisch. Neuer Code darf deutsche
+  Bezeichner verwenden, wo die Fachsprache deutsch ist (Verwaltungsbefehle wie `dokumentkette`,
+  Dienste wie `pruefe_*`); innerhalb eines Moduls einheitlich. `verbose_name`, Meldungen und Kommentare
+  sind deutsch.
 - `ruff check` und `ruff format` sind blockierend; Regelsatz wird schrittweise erweitert (Ziel:
   `E,F,I,N,W,UP,B,S,DJ,SIM,C4,RET,ARG`). `mypy --strict` mit `django-stubs` als wachsendes Gate mit
   Allowlist, die nur schrumpfen darf.
@@ -88,13 +92,107 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 - Alle Sicherheits-Header und Cookie-Flags werden in Django gesetzt, nicht nur im Reverse Proxy.
   `manage.py check --deploy --fail-level WARNING` ist ein blockierendes CI-Gate; Ausnahmen stehen mit
   Begründung in `SILENCED_SYSTEM_CHECKS`.
-- Content-Security-Policy: derzeit Report-Only mit Nonce für Skripte. Neue Templates enthalten keine
-  Inline-Skripte oder -Styles; Daten an JavaScript ausschließlich per `json_script` oder `data-`-Attribute.
+- Neue Templates enthalten keine Inline-Skripte oder -Styles; Daten an JavaScript ausschließlich per
+  `json_script` oder `data-`-Attribute (Stand der Policy in 4.2).
 - `|safe` und `mark_safe` nur mit Begründungskommentar; JSON niemals per `|safe`.
-- Keine Secrets im Repo; Abhängigkeiten über Dependabot aktualisiert, Sicherheitsupdates innerhalb von
-  sieben Tagen nach Veröffentlichung.
+- Keine Secrets im Repo. Abhängigkeiten aktualisiert Dependabot; Sicherheitsupdates folgen den Fristen
+  nach Schweregrad aus der [Release- und Support-Politik, Abschnitt 4](RELEASE_POLITIK.md#4-sicherheitskorrekturen-fristen).
+
+### 4.1 Uploads
+
+BSI IT-Grundschutz verlangt als Basis-Anforderung, Upload-Funktionen nach Dateigröße,
+Dateityp und Speicherort einzuschränken (CON.10.A5, APP.3.1.A4). In mandari steht diese
+Regel an genau einer Stelle: `apps/common/uploads.py`, Funktion `validate_upload`.
+Jede Upload-Stelle ruft sie mit einem Profil und einer Höchstgröße auf (Issue #260).
+
+| Profil | Endungen | Einsatz |
+|---|---|---|
+| `DOCUMENTS` | pdf, doc, docx, odt, rtf, txt, md, xls, xlsx, ods, csv, ppt, pptx, odp, png, jpg, jpeg, gif, webp, zip | Anlagen der Gremien- und Fraktionsarbeit |
+| `IMAGES` | png, jpg, jpeg, gif, webp | Dateien, die eingebettet angezeigt werden (Logos, Profilbilder) |
+| `PDF` | pdf | Briefköpfe, interner Import in Fraktionssitzungen |
+| `IMPORTABLE_DOCUMENTS` | pdf, docx | Antrags-Import mit Textübernahme |
+| `DATA` | csv, json, xml | Import-Schnittstellen; nur geparst (XML über defusedxml), nie gespeichert oder ausgeliefert |
+
+`NEVER` sticht jedes Profil: HTML, SVG, XSL/XSLT, JavaScript, Serverskripte und
+ausführbare Dateien werden nie angenommen. SVG fehlt auch im Bildprofil bewusst, weil
+eine SVG-Datei Skript enthalten kann und vom Browser als aktives Dokument behandelt wird.
+Gemessen wird die letzte Endung des Dateinamens; Pfadangaben im Namen ändern nichts.
+
+| Bereich | Profil | Höchstgröße | Prüfende Stelle |
+|---|---|---|---|
+| Session: Anlagen zu Vorlagen und Sitzungen | `DOCUMENTS` | `file_service` | `apps/session/services/file_service.py` |
+| Session: Anlagen über das Profil Einreichung | `DOCUMENTS`, nur Endungen der Antrags-Anhänge | `file_service` | `apps/session/api/einreichung.py` (`uploads_view`) |
+| Work: Anlagen zu Anträgen | `DOCUMENTS` | 50 MB | `apps/work/motions/attachments.py` (`add_attachments`) |
+| Work: Antrags-Import (Textübernahme) | `IMPORTABLE_DOCUMENTS` | 25 MB | `MotionImportView` |
+| Work: Briefköpfe | `PDF` | 10 MB | `LetterheadCreateView`, `LetterheadEditView` |
+| Work: Sitzungsvorbereitung | `DOCUMENTS` | 50 MB | `meetings/services.add_document_upload` |
+| Work: Fraktionssitzungen | `DOCUMENTS` | 20 MB | `faction/views/panel.py`, `faction/views/session.py` |
+| Work: interner Import in Fraktionssitzungen | `PDF` | 25 MB | `faction/views/internal_import.py` |
+| Work: Aufgaben-Anhänge | `DOCUMENTS` | 20 MB | `TaskAttachmentForm.clean_file` |
+| Work: Aufgaben-Import | `DATA` | 5 MB | `TaskFileImportView` |
+| Work: Support-Anhänge | `DOCUMENTS` | 10 MB | `support/views.py` (ungeeignete Anlagen werden übergangen) |
+| Work: Organisationslogo | `IMAGES` | 5 MB | `organization/services._pruefe_bild` |
+| Work: Profilbild | `IMAGES` | 5 MB | `organization/services._pruefe_bild` |
+
+**Auslieferung:** `serve_media` liefert alles außer eingebetteten Bildformaten mit
+`Content-Disposition: attachment` und `X-Content-Type-Options: nosniff` aus. Ein
+hochgeladenes Dokument wird also heruntergeladen, nicht im Browser gerendert; nur
+Logos, Profilbilder und ähnliche Bilder werden eingebettet (`is_embeddable`).
+
+Dateien unter `PROTECTED_MEDIA_PREFIXES` (`mandari/media.py`) liefert `serve_media` gar
+nicht aus, auch nicht an angemeldete Personen: Session-Anlagen, Work-Anhänge
+(`apps/work/files.py`), Datenexporte, Archivpakete des Protokolls und der Dokument-Cache.
+Sie gehen nur über Download-Ansichten hinaus, die Mandant, Sichtbarkeit und Rechte prüfen.
+Zeigen `OPARL_FILES_ROOT` oder `AUDIT_ARCHIVE_ROOT` in ein Verzeichnis unter `MEDIA_ROOT`,
+gilt es ebenfalls als geschützt. Wer eine neue nichtöffentliche Ablage unter `MEDIA_ROOT`
+einführt, trägt ihr Präfix dort ein.
+
+Vorhandene Dateien unter `PUBLIC_MEDIA_PREFIXES` (Logos, Personenfotos) liefert schon
+`PublicMediaMiddleware` vor Sitzung und Anmeldung aus: ohne Datenbankzugriff und ohne Cookie. Sonst
+schrieb jedes Bild wegen `SESSION_SAVE_EVERY_REQUEST` die Sitzung zurück und brauchte eine
+Verbindung aus dem Pool; eine Seite mit Dutzenden Fotos leerte ihn (Issue #667). Geschützte und
+anmeldepflichtige Präfixe, fehlende Dateien und der Wartungsmodus nehmen weiter den regulären Weg.
+
+**Gate:** `scripts/check_upload_validation.py` läuft im Lint-Job und meldet jedes Modul, das
+`request.FILES` liest oder ein Datei-Formularfeld deklariert, ohne `validate_upload`
+zu benutzen. Wer die Datei an eine prüfende Stelle weiterreicht, trägt das Modul mit
+Begründung in `DELEGIERT` ein; die Liste darf nur schrumpfen.
+
+### 4.2 Content-Security-Policy
+
+- **Policy:** `SECURE_CSP_REPORT_ONLY` in `mandari/mandari/settings.py` (Django 6). Der Browser meldet
+  Verstöße an `/csp-report/` (`apps/common/csp.py`, Logger `mandari.csp`, Zähler
+  `mandari_csp_violations_total{directive}`), blockiert aber nichts. Erzwungen wird bislang nur die
+  permissive Policy des Reverse Proxys (Issue #172). Die Betriebssicht steht in
+  [MONITORING.md](MONITORING.md).
+- **script-src:** `'self'`, Nonce, `'unsafe-eval'`. Der Nonce steht an allen Inline-Skripten
+  (`nonce="{{ csp_nonce }}"`, Kontextprozessor `django.template.context_processors.csp`).
+  `'unsafe-eval'` braucht Alpine (Ausdrücke in `x-data`, `@click`, `:class` …).
+- **style-src:** `'self'`, `'unsafe-inline'`. Alle `<style>`-Blöcke in Templates, die ein Browser erhält
+  (Layouts, Admin, Entwicklungsseiten, PWA und die verbleibenden Seiten), tragen ebenfalls den Nonce.
+  Wirksam wird das erst, wenn `style-src` einen Nonce verlangt.
+- **Ohne Nonce bleiben** E-Mail-Vorlagen (`emails/`, `work/notifications/email/`) und Vorlagen, die nur
+  serverseitig zu PDF oder Exportdateien gerendert werden (`*/pdf/`, `work/motions/export/pdf_template.html`,
+  `work/profile/export/`). Sie werden ohne Request gerendert und nie unter einer CSP ausgewertet.
+- **Fehlerseite 500** (`errors/base_error.html`): wird absichtlich ohne Request-Kontext gerendert
+  (`mandari/urls.py`, `handler_500`), der Nonce ist dort leer. Sobald `style-src` einen Nonce verlangt,
+  braucht die Seite ihre Styles aus `styles.css` oder einen eigenen Nonce.
+- **Inline-Handler:** keine (`on*=`, `hx-on`; Ratchet `on_handlers` = 0). Aktionen laufen über
+  `data-*`-Attribute (`frontend/js/actions.ts`, `frontend/js/htmx-setup.ts`).
+- **htmx:** `htmx.config.allowEval = false`, `selfRequestsOnly = true`; keine `hx-vars`, keine
+  `hx-vals="js:…"`, keine Trigger-Filter mit `[…]`.
+- **Verbleibende Inline-Stellen:** Die Zahlen führt `scripts/frontend_ratchet_baseline.json`, sie dürfen
+  nur sinken. Inline-Skripte (alle mit Nonce) stehen noch im Admin-Dashboard (Chart.js), im Chat
+  (`pages/chat.html`), in den beiden Kalendern (FullCalendar), im Teleprompter, beim Umsortieren der
+  Tagesordnung in Session (`session/meetings/detail.html`) und beim Nachrichten-Polling im Support.
+  Inline-Styles stehen in Layout-nahen Blöcken (`accounts/base_auth.html`, `errors/base_error.html`,
+  `admin/_monitor_styles.html`), Kalender, Sitzungsvorbereitung, Teleprompter, den Editor-Styles
+  (`work/motions/partials/_editor_styles.html`) sowie PDF- und Exportvorlagen (bleiben). Alle per HTTP
+  ausgelieferten tragen den Nonce.
 
 ## 5. Frontend (Templates, CSS, JavaScript)
+
+### 5.1 Regeln
 
 - Templates sind Struktur, nicht Programm: höchstens 300 Zeilen, kein `<script>`/`<style>` außerhalb der
   Allowlist (Layouts, E-Mails, PDF, PWA). Das Skript `scripts/check_frontend_ratchet.py` misst
@@ -103,7 +201,7 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 - Keine Inline-Handler (`onclick=`, `onsubmit=`, `onchange=`): Aktionen stehen als `data-*`-Attribute im
   Template (`data-confirm`, `data-autosubmit`, `data-href`, `data-action`, `data-post`, …), `frontend/js/actions.ts`
   hängt die delegierten Listener an. Voraussetzung für eine CSP ohne `unsafe-inline` (#172).
-  Gleiches gilt für htmx: kein `hx-on`, keine `hx-vals="js:…"`, keine Trigger-Filter `[…]` – `allowEval` ist aus;
+  Gleiches gilt für htmx: kein `hx-on`, keine `hx-vals="js:…"`, keine Trigger-Filter `[…]`; `allowEval` ist aus;
   Nachbearbeitung über `data-autosave`/`data-after-request` (`frontend/js/htmx-setup.ts`).
 - Was fünfmal identisch vorkommt, wird Komponente. Bibliothek: `templates/cotton/` (django-cotton) mit
   `ui/` (button, card, badge, alert, empty-state, modal, tabs/tab/tab-panel, icon, th), `form/` (field,
@@ -113,46 +211,133 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   `apps/common/tests/test_components.py` mitgerendert. Neue Komponente = Vorschau-Eintrag + Test.
   Fragmente für HTMX per Django-6-Template-Partials in derselben Datei.
 - JavaScript lebt in `frontend/` (TypeScript) und wird mit Vite gebaut; Layouts laden Assets über
-  `{% vite_asset %}` (django-vite, Manifest in `static/dist/`). Einstiege: `frontend/js/main.ts` (alle
-  Layouts: HTMX-Konfiguration, Alpine-Registry, Icon-Observer, Toasts, Bestätigungsdialog) und
-  `frontend/editor/index.ts` (nur Editor-Seiten). Alpine-Komponenten werden mit `Alpine.data()`
-  registriert und im Template nur referenziert. Server-Daten kommen per `json_script` oder `data-*` am
-  `x-data`-Element (nie als JavaScript-Literal im Attribut). `this.$el` nur in `init()` verwenden – in
-  Methoden, die das Template aufruft, ist es das auslösende Element. Muster und Stand: `docs/CSP.md`.
+  `{% vite_asset %}` (django-vite, Manifest in `static/dist/`). Einstiege (`vite.config.ts`):
+  `frontend/js/main.ts` (alle Layouts: HTMX-Konfiguration, Alpine-Registry, Icon-Observer, Toasts,
+  Bestätigungsdialog), `frontend/js/work.ts` (Komponenten des Work-Portals),
+  `frontend/editor/index.ts` (nur Editor-Seiten) und `frontend/js/webauthn.ts` (Sicherheitsschlüssel).
+  Alpine-Komponenten werden mit `Alpine.data()` registriert und im Template nur referenziert (5.2).
 - Icons: `<i data-lucide="name">` genügt, ein MutationObserver ersetzt neue Platzhalter nach HTMX-Swaps
   und Alpine-Rendering. Kein `lucide.createIcons()` in Templates. Server-Toasts per
   `HX-Trigger: {"showToast": {"message": "…", "type": "success"}}`.
 - `tsc --noEmit` und Biome (Lint + Format) laufen im CI; Frontend-Quellen sind LF-normalisiert.
-- Styles kommen aus Tailwind-Utilities und `frontend/css`; Design-Tokens (Farben, Radien, Schatten,
-  Typografie) sind zentral definiert.
-- Barrierefreiheit ist Teil jeder Komponente: Tastaturbedienung, Fokus sichtbar, ARIA, Zielgröße
-  mindestens 24 Pixel, Kontraste nach WCAG 2.2 AA.
-- E2E im Browser: `tests_e2e/` (pytest-playwright, Chromium) prüft Kernpfade mit aktivem JavaScript,
-  führt axe-core aus (kritische/schwere Befunde schlagen fehl; `color-contrast` bis #171 informativ)
-  und erzeugt Screenshots hell/dunkel als CI-Artefakt. Neue Kernpfade bekommen dort einen Test.
-- E-Mails: Jede HTML-Mail erweitert `templates/emails/base_email.html` (tabellenbasiertes 600-px-Layout,
-  Blöcke `subject`, `preheader`, `content`, `footer`). Nur das Basis-Layout hat einen `<style>`-Block;
-  Fach-Mails nutzen ausschließlich dessen Klassen (`.h1`, `.card`, `.btn`, `.muted`, `.table`, …) und
-  enthalten weder `<style>` noch `style=`-Attribute. Versandstellen rendern über
-  `apps.common.email.render_email(template, context)` → `(html, text)`: der Inliner (`css-inline`)
-  schreibt die Klassen in `style=`-Attribute, die Text-Alternative kommt aus dem `.txt`-Geschwistertemplate
-  oder per `html2text` aus dem HTML. `apps/common/tests/test_emails.py` rendert jede Mail mit Beispieldaten
-  und vergleicht mit Snapshots unter `apps/common/tests/snapshots/emails/`; nach gewollten Änderungen
-  `UPDATE_SNAPSHOTS=1 pytest apps/common/tests/test_emails.py` ausführen und die Snapshots mit committen.
-
+- Styles kommen aus Tailwind-Utilities und `static/css/input.css` (gebaut nach `static/css/styles.css`);
+  Design-Tokens (Farben, Radien, Schatten, Typografie) sind zentral definiert.
 - Schema-Contract: Django-Modelle und Ingestor-Tabellen (`oparl_*`) müssen zusammenpassen;
   `scripts/check_schema_contract.py` prüft das im CI. Pflichtfelder, die der Ingestor nicht setzt,
   bekommen `db_default`. Vorgehen: `docs/adr/20260909-schema-contract-django-ingestor.md`.
 
+### 5.2 Muster für Seiten ohne Inline-Code
+
+- **Alpine-Komponente** in `frontend/alpine/<bereich>.ts` mit `defineComponent(() => ({ … }))`,
+  registriert per `Alpine.data('name', …)` in `frontend/js/work.ts` (Work-Portal) bzw.
+  `frontend/js/main.ts` (alle Layouts; Insight-Komponenten im Zweig `data-portal="insight"`).
+  Im Template nur `x-data="name"`, ohne Klammern und ohne Argumente.
+- **Startwerte:** Listen und Objekte per `{{ wert|json_script:"id" }}` (lesen mit
+  `readJsonScript` aus `frontend/js/json-script.ts`), einzelne Werte als `data-*` am Element mit
+  `x-data`. Nie Template-Variablen in JavaScript-Literale im Attribut schreiben
+  (`x-data="farbe('{{ … }}')"`): Ein Wert mit Anführungszeichen bricht sonst aus dem String aus.
+  Zahlen und Koordinaten unlokalisiert ausgeben (`{% load l10n %}` und `|unlocalize`), sonst kommt
+  „51,96“ beim Client an.
+- **`this.$el` nur in `init()`:** Ruft ein Ausdruck im Template eine Methode auf (`@click="speichern()"`),
+  ist `$el` dort das auslösende Element, nicht die Wurzel der Komponente. Konfiguration deshalb in
+  `init()` in Felder übernehmen, DOM-Referenzen in einer Closure der Fabrik halten
+  (Beispiele: `permissionsManager`, `ticketForm`, `assignmentHandler`). `$refs` funktioniert überall,
+  steht aber erst nach `init()` bereit (`$nextTick`).
+- **Verhalten ohne Zustand** (URL-Kürzel, abhängige Auswahl, Textbausteine, Fehlerbericht) als
+  `data-*`-Attribute mit delegierten Listenern: `frontend/js/form-behaviors.ts`; Bestätigen und Absenden
+  per `data-action="confirm-submit"` (`frontend/js/actions.ts`).
+- **Styles:** Tailwind-Klassen oder `static/css/input.css`. `:style` nur als Objekt binden
+  (`:style="swatchStyle"` mit `{ backgroundColor: … }`): Alpine setzt Objekte über das CSSOM, Strings
+  dagegen per `setAttribute('style', …)`, und das fällt unter `style-src-attr`. Zustände wie „ausgewählt“
+  wenn möglich rein per CSS (`has-[:checked]:…`, `peer-checked:…`, siehe `work/profile/visibility.html`).
+- **Keine Inline-Skripte in HTMX-Fragmenten:** Die Fragment-Antwort hat einen anderen Nonce als die Seite;
+  unter einer erzwungenen Policy liefe das Skript nicht.
+- **Start-Reihenfolge:** `main.ts` startet Alpine erst bei `DOMContentLoaded`; `work.ts` und das
+  Editor-Bundle registrieren ihre Komponenten auf oberster Ebene davor. Editor-Instanzen (TipTap) bleiben
+  außerhalb reaktiver Daten.
+- **Karten:** Bürgerportal (`pages/map.html`, `insightKarte`) und Recherche in Work
+  (`work/ris/partials/_karte.html`, `risKarte`) nutzen das gemeinsame Kartenmodul
+  `frontend/js/vorgangskarte.ts` (Leaflet mit Kachel-Proxy, Punktgruppe, Abfrage je Ausschnitt, Popups
+  aus DOM-Knoten) und dieselbe Abfrage der Punkte (`insight_core/services/karten_punkte.py`). Leaflet
+  kommt als Vendor-Skript vor dem Modul.
+- **Tests:** Jede ausgelagerte Komponente bekommt einen E2E-Test mit der Fixture `problems`
+  (`tests_e2e/conftest.py`: Alpine-Fehler, Ausnahmen, Serverfehler) und prüft die typische Bedienung.
+
+### 5.3 E-Mails
+
+Jede HTML-Mail erweitert `templates/emails/base_email.html` (tabellenbasiertes 600-px-Layout,
+Blöcke `subject`, `preheader`, `content`, `footer`). Nur das Basis-Layout hat einen `<style>`-Block;
+Fach-Mails nutzen ausschließlich dessen Klassen (`.h1`, `.card`, `.btn`, `.muted`, `.table`, …) und
+enthalten weder `<style>` noch `style=`-Attribute. Versandstellen rendern über
+`apps.common.email.render_email(template, context)` → `(html, text)`: der Inliner (`css-inline`)
+schreibt die Klassen in `style=`-Attribute, die Text-Alternative kommt aus dem `.txt`-Geschwistertemplate
+oder per `html2text` aus dem HTML. `apps/common/tests/test_emails.py` rendert jede Mail mit Beispieldaten
+und vergleicht mit Snapshots unter `apps/common/tests/snapshots/emails/`; nach gewollten Änderungen
+`UPDATE_SNAPSHOTS=1 pytest apps/common/tests/test_emails.py` ausführen und die Snapshots mit committen.
+
+### 5.4 Barrierefreiheit
+
+Barrierefreiheit ist Teil jeder Komponente: Tastaturbedienung, Fokus sichtbar, ARIA, Zielgröße
+mindestens 24 Pixel, Kontraste nach WCAG 2.2 AA. Dieser Abschnitt hält fest, was automatisch geprüft
+wird und was nachgewiesen ist; er ist die technische Grundlage für die Barrierefreiheitserklärung nach
+BITV 2.0 / EN 301 549 (Issues #176, #44, #98). Die Erklärung selbst ist ein Dokument des Betreibers;
+manuelle Prüfungen mit Screenreader werden als Issue mit Label `a11y` geführt.
+
+**Automatische Prüfung:** `tests_e2e/test_core_paths.py` lädt die Seiten im Chromium, führt axe-core
+aus und lässt den Lauf fehlschlagen, sobald ein Befund der Stufen *critical* oder *serious* auftritt
+(`color-contrast` bis #171 informativ). Befunde der Stufen *moderate*/*minor* stehen in der Ausgabe des
+Tests (`AxeResult.describe()`). Screenshots hell/dunkel landen als CI-Artefakt
+(`tests_e2e/screenshots/`). Neue Kernpfade bekommen dort einen Test (ein `goto` plus
+`_assert_axe_clean`).
+
+| Kernpfad | Seite | Test |
+|---|---|---|
+| Anmeldung | `/accounts/login/` (leer und mit Fehlermeldung) | `TestLoginPage` |
+| Passwort zurücksetzen | `/accounts/password-reset/` | `TestLoginPage` |
+| Komponentenbibliothek | `/dev/ui/` (Buttons, Karten, Formularfelder, Tabs, Modal, Alpine-Modal, Alerts) | `TestUiKit` |
+| Work: Dashboard, Dokumentenliste, Aufgaben | `/work/<org>/dashboard/`, `…/documents/`, `…/tasks/` | `TestWorkPortal` |
+| Session: Dashboard, Sitzungen, Vorlagen | `/session/<mandant>/`, `…/meetings/`, `…/papers/` | `TestSessionPortal` (Fixture `session_user`) |
+| Session: Leitstelle einer Mandantengruppe | `/session/leitstelle/<gruppe>/` | `TestSessionPortal.test_leitstelle_barrierefrei` |
+| Insight: Startseite | `/` | `TestInsightPortal` |
+
+**Komponenten (Tastatur und Screenreader-Semantik):**
+
+| Komponente | Verhalten | Nachweis |
+|---|---|---|
+| `c-ui.modal` (natives `<dialog>`) | Fokusfalle, Escape, Hintergrund inert durch den Browser; `aria-labelledby` auf die Überschrift; Schließen-Button mit `aria-label` | `test_modal_focus_and_escape` |
+| `c-ui.alpine-modal` und Seitenmodals (Fraktionssitzung anlegen, Sitzungsvorbereitung ×3, KI-Vorschau, Ordner, Teilen, Aufgabenzuweisung) | `role="dialog"`, `aria-modal="true"`, Fokusfalle mit inertem Hintergrund und Scrollsperre (`x-trap.inert.noscroll`), Escape schließt, Fokus kehrt zum Auslöser zurück; Überschrift per `aria-labelledby` oder `aria-label` | `test_alpine_modal_traps_focus_and_restores_it` |
+| `c-ui.tabs` / `tab` / `tab-panel` | WAI-ARIA Tabs: `role=tablist/tab/tabpanel`, `aria-selected`, `aria-controls`, Roving Tabindex, Pfeiltasten, Home/Ende, automatische Aktivierung | `test_tabs_keyboard_navigation` |
+| `c-ui.button` | Sichtbarer Fokusring (`focus-visible:ring`), Mindesthöhe 40 px (Zielgröße ≥ 24 px erfüllt), Icons `aria-hidden` | UI-Kit-axe |
+| Formularfelder (`c-form.*`) | `<label for>`-Verknüpfung, Fehlermeldungen als Text unter dem Feld, Passwort-Umschalter mit `aria-pressed`/`aria-label` | `test_bundle_and_password_toggle` |
+| Toasts | Live-Region (`role="status"`, `aria-live="polite"`) | UI-Kit-axe |
+| Deklarative Aktionen (`data-confirm`, `data-href` …, #172) | Zeilen-Links reagieren zusätzlich auf den inneren `<a>`; Tastaturnutzung über den Link, nicht über die Zeile | `tests_e2e/test_actions.py` |
+
+Neue Komponenten kommen mit ihrem Nachweis in diese Tabelle.
+
+**Bekannte Lücken:**
+
+- Der Dokumenteditor (TipTap/ProseMirror) ist eine Rich-Text-Oberfläche; die Symbolleiste hat
+  beschriftete Schaltflächen (`aria-label` mit Tastenkürzel), die Semantik des Editorinhalts für
+  Screenreader ist aber nur so gut wie die des Browsers. Kein axe-Lauf auf der Editorseite in
+  der CI (Live-Server ohne WebSocket).
+- Karten (Leaflet) sind nicht tastaturbedienbar; die Listen daneben bieten dieselben Informationen.
+- Session-Portal: Sitzungsdetail, Tagesordnung, Niederschrift und Sitzungsgelder laufen noch nicht in der
+  axe-Prüfung (#44).
+- Zielgröße 24 px ist in den Komponenten eingehalten, in älteren Seiten-Templates nicht
+  flächendeckend geprüft.
+
 ## 6. API
 
-- Neue Endpunkte mit generiertem OpenAPI-Schema (django-ninja), versioniert unter `/api/v1/`,
-  Fehler nach RFC 9457. Bestehende `JsonResponse`-Views werden beim Anfassen migriert. Referenz:
-  Session-API v1 (`apps/session/api/v1/`, Leitfaden `docs/API_V1_SESSION.md`): Schemas in `schemas.py`,
-  Auth als `Principal` in `auth.py`, Fehler über `Problem(...)` in `problems.py`, Router in `endpoints.py`.
+- Neue Bereiche gehören in die eine Schnittstelle unter `/api/` mit gemeinsamer OpenAPI-Beschreibung
+  ([ADR Eine Schnittstelle](adr/20261105-eine-schnittstelle-api-first.md), [SCHNITTSTELLE.md](SCHNITTSTELLE.md));
+  neue mandari-Bereiche unter `/api/mandari/v<n>/`, Fehler nach RFC 9457. Bestehende `JsonResponse`-Views
+  werden beim Anfassen migriert. Referenz: Session-API v1 (`apps/session/api/v1/`, Leitfaden in
+  [SCHNITTSTELLE.md](SCHNITTSTELLE.md#session-api-v1)): Schemas in `schemas.py`, Auth als `Principal` in
+  `auth.py`, Fehler über `Problem(...)` in `problems.py`, Router in `endpoints.py`.
   Abgelöste Pfade antworten bis zur Abschaltung mit `Deprecation`, `Sunset` und `Link: rel="successor-version"`.
-- Öffentliche Schnittstellen (OParl, Fraktions-API, Session-API) folgen der Release- und
-  Deprecation-Politik: inkompatible Änderungen nur in neuer Version mit Ankündigungsfrist.
+- Öffentliche Schnittstellen (OParl, Fraktions-API, Session-API) folgen der
+  [Release-Politik](RELEASE_POLITIK.md#6-schnittstellen-und-abkündigung): inkompatible Änderungen nur in
+  neuer Version mit Ankündigungsfrist.
 
 ## 7. Betrieb und Beobachtbarkeit
 
@@ -175,7 +360,8 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 ## 8. Dokumentation und Commits
 
 - Conventional Commits auf Deutsch (`feat(session): …`, `fix(insight): …`), keine Signaturen von
-  Werkzeugen oder Assistenten.
+  Werkzeugen oder Assistenten; Einzelheiten in [CONTRIBUTING.md](../CONTRIBUTING.md#commits-und-pull-requests).
 - Architekturentscheidungen als ADR (MADR-Format) unter `docs/adr/`.
-- Öffentliche Dokumentation unter docs.mandari.de; Implementierungsnotizen unter `docs/`.
+- Öffentliche Dokumentation unter docs.mandari.de; Implementierungsnotizen unter `docs/`, Regeln dafür in
+  [WEITERENTWICKLUNG.md, Abschnitt 10](WEITERENTWICKLUNG.md#10-wo-was-steht).
 - Keine Preise, Konditionen, Zugangsdaten oder Infrastrukturdetails im Repo, in Issues oder Commits.

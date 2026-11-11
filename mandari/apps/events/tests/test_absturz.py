@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Absturztests mit dem Worker als eigenem Prozess (Issue #514, ``docs/EREIGNISTECHNIK_NACHWEISE.md``).
+Absturztests mit dem Worker als eigenem Prozess (Issue #514, ``docs/DATENDREHSCHEIBE.md#2-zusagen-der-ereignistechnik-und-nachweise``).
 
 Der Worker wird mitten in der Arbeit hart beendet (SIGKILL, wie ein OOM-Kill), ein neuer Prozess
 startet sofort, wie es die Neustartregel des Containers tut. Geprüft werden die Zusagen der

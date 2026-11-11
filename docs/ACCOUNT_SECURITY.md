@@ -12,7 +12,7 @@ Implementierungsnotiz. Code: `apps/accounts/two_factor_policy.py`,
 |---|---|
 | Plattform | Superuser und Staff |
 | Work | die Administration und alle Mitglieder mit einem Recht, Mitglieder, Rollen, Einstellungen oder API-Zugänge zu verwalten (`WORK_VERWALTUNGSRECHTE`: `members.invite`, `members.edit`, `members.remove`, `members.manage_roles`, `organization.edit`, `organization.manage_roles`, `organization.admin`, `organization.api_tokens`); Mitglieder mit einer Rolle mit „2FA erforderlich“; alle Mitglieder, wenn die Organisation „2FA für alle Mitglieder“ eingeschaltet hat |
-| Session | Nutzer mit Administrator-, Benutzer- oder Einstellungsrechten; alle Nutzer, wenn der Mandant „2FA für alle Nutzer“ eingeschaltet hat |
+| Session | Nutzer mit Administrator-, Benutzer- oder Einstellungsrechten, Nutzer mit einem Recht am Protokoll (Audit-Log anzeigen oder exportieren), Mitglieder einer Leitstelle (Mandantengruppe, Issue #317); alle Nutzer, wenn der Mandant „2FA für alle Nutzer“ eingeschaltet hat |
 
 Maßgeblich sind nur aktive Mitgliedschaften in aktiven Organisationen bzw.
 Mandanten. In Work zählen die wirksamen Rechte wie bei jeder
@@ -140,7 +140,3 @@ Die Mail geht nach dem Commit über die SMTP-Konfiguration der Plattform an die 
 Kontos und nennt Zeitpunkt, Gerät und IP-Adresse der auslösenden Anfrage sowie den Weg zum
 Zurücksetzen des Passworts. Scheitert der Versand, bleibt die Änderung wirksam; der Hinweis
 bleibt mit „nicht per E-Mail gemeldet“ stehen (`email_sent`).
-
-## Ausblick
-
-- Netzbeschränkung je Session-Mandant (Zugriff nur aus dem Verwaltungsnetz).

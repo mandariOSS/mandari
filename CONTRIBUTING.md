@@ -18,12 +18,13 @@ Mit der Teilnahme gilt der [Verhaltenskodex](CODE_OF_CONDUCT.md).
 Wie wir planen, priorisieren und ausliefern (Release alle zwei Wochen, Meilensteine, Prioritäten, Rückportierung in
 Pflegeversionen), steht verbindlich in [docs/WEITERENTWICKLUNG.md](docs/WEITERENTWICKLUNG.md).
 
-Bei größeren Änderungen lohnt sich ein Issue vorab — das erspart Arbeit, die am Ende nicht
-zum Projekt passt.
+Jede Arbeit beginnt mit einem Issue (Ausnahmen: Sicherheitslücken, siehe [SECURITY.md](SECURITY.md),
+sowie Abhängigkeits-Updates und Rückportierungen). Größere Vorhaben vorher in den Diskussionen
+ansprechen; das erspart Arbeit, die am Ende nicht zum Projekt passt.
 
 ## Entwicklungsumgebung
 
-Voraussetzungen: Python 3.12 oder neuer, Node.js 22 oder neuer (CI und Image nutzen Node.js 26),
+Voraussetzungen: Python 3.12 bis 3.14, Node.js 22 oder neuer (CI und Image nutzen Node.js 26),
 Docker (für PostgreSQL, Redis und Elasticsearch), [uv](https://github.com/astral-sh/uv).
 
 ```bash
@@ -54,8 +55,8 @@ Die Anwendung läuft dann unter <http://localhost:8000>.
 Die Werte im Block „DEVELOPMENT SETTINGS“ setzen die Verbindungen aus `POSTGRES_*` und `REDIS_PASSWORD`
 zusammen, passend zu den Diensten aus `docker-compose.yml`; die Vorgaben der Anwendung (`postgres:postgres`,
 Redis ohne Passwort) passen dazu nicht. In den Containern setzt Compose diese Variablen selbst. Belegt ein
-anderer Dienst einen der Ports 5432, 6379 oder 9200, setzt `DEV_POSTGRES_PORT` usw. in der `.env` einen anderen
-und die Adressen im selben Block ziehen mit. `docker-compose.dev.yml` heißt bewusst nicht
+anderer Dienst einen der Ports 5432, 6379 oder 9200, setzt `DEV_POSTGRES_PORT` usw. in der `.env` einen anderen;
+die Adressen `DATABASE_URL`, `REDIS_URL` und `ELASTICSEARCH_URL` im selben Block dann von Hand anpassen. `docker-compose.dev.yml` heißt bewusst nicht
 `docker-compose.override.yml`: Diese Datei läse Compose sonst auch bei `install.sh` und `update.sh` mit. Die
 Tests brauchen das alles nicht: `pytest` läuft mit SQLite, solange `DATABASE_URL` nicht in der Umgebung des
 Prozesses steht (`mandari/settings_test.py`; die Zeile in der `.env` zählt dafür nicht).
@@ -164,9 +165,9 @@ uv run pytest apps/work/tasks -q                 # einzelne App
 **End-to-End im Browser** (Playwright mit axe-core für Barrierefreiheit):
 
 ```bash
-pip install pytest-playwright && python -m playwright install chromium
+uv run playwright install chromium               # pytest-playwright kommt mit `uv sync --extra dev`
 npm run build
-MANDARI_E2E=1 pytest tests_e2e -q
+MANDARI_E2E=1 uv run pytest tests_e2e -q
 ```
 
 Ohne `MANDARI_E2E=1` werden diese Tests übersprungen. Screenshots landen unter
@@ -184,22 +185,25 @@ UPDATE_SNAPSHOTS=1 uv run pytest apps/common/tests/test_emails.py
 
 **Statische Prüfungen:**
 
+Die Prüfwerkzeuge (ruff, djlint, import-linter, mypy, vulture, jscpd) kommen mit `uv sync --extra dev` in den
+Versionen der CI; die Skripte unter `scripts/` laufen mit derselben Umgebung.
+
 ```bash
 cd mandari
-ruff check . && ruff format --check .            # Python
-djlint templates --lint                          # Django-Templates
-npm run typecheck && npm run lint                # TypeScript und Biome
-lint-imports                                     # Schichtregeln (pip install import-linter==2.15)
+uv run ruff check . && uv run ruff format --check .   # Python
+uv run djlint templates --lint                        # Django-Templates
+npm run typecheck && npm run lint                     # TypeScript und Biome
+uv run lint-imports                                   # Schichtregeln (import-linter==2.15)
 
 cd ..
-python scripts/check_import_linter_ratchet.py    # Schichtverträge nur strenger, Ausnahmen nur weniger
-python scripts/mypy_allowlist.py                 # Typen (strict, schrumpfende Ausnahmeliste)
-python scripts/check_frontend_ratchet.py         # Inline-Code und Template-Größe
-python scripts/check_view_orm_ratio.py           # Datenbankzugriffe in Views
-python scripts/check_dead_code_ratchet.py        # toter Code (pip install vulture==2.16), --verbose listet alles
-python scripts/check_duplicate_code_ratchet.py   # doppelter Code (pip install jscpd==5.4.2)
-python scripts/check_schema_contract.py          # Anwendung gegen Ingestor-Schema
-python scripts/check_schnittstelle.py            # Befehlsparität der Schnittstelle (docs/SCHNITTSTELLE.md)
+uv run --project mandari python scripts/check_import_linter_ratchet.py  # Schichtverträge nur strenger
+uv run --project mandari python scripts/mypy_allowlist.py               # Typen (strict, schrumpfende Ausnahmeliste)
+uv run --project mandari python scripts/check_frontend_ratchet.py       # Inline-Code und Template-Größe
+uv run --project mandari python scripts/check_view_orm_ratio.py         # Datenbankzugriffe in Views
+uv run --project mandari python scripts/check_dead_code_ratchet.py      # toter Code (vulture==2.16), --verbose listet alles
+uv run --project mandari python scripts/check_duplicate_code_ratchet.py # doppelter Code (jscpd==5.4.2)
+uv run --project mandari python scripts/check_schema_contract.py        # Anwendung gegen Ingestor-Schema
+uv run --project mandari python scripts/check_schnittstelle.py          # Befehlsparität der Schnittstelle (docs/SCHNITTSTELLE.md)
 ```
 
 Wer einen Endpunkt der Schnittstelle ändert, schreibt die eingecheckte OpenAPI-Beschreibung neu und committet sie mit:
@@ -227,30 +231,10 @@ lychee README.md CONTRIBUTING.md SECURITY.md     # externe Verweise
 
 ## Konventionen
 
-Verbindlich ist [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md);
-Architekturentscheidungen stehen unter [`docs/adr/`](docs/adr/). Das Wichtigste:
-
-**Python.** Neuer und angefasster Code ist typisiert. Datenzugriff gehört in `selectors.py`,
-schreibende Fachlogik in `services.py` — Views bleiben dünn. Jede Abfrage im
-Arbeitsbereich filtert nach Organisation. Schreibende Pfade über mehrere Tabellen laufen in
-`transaction.atomic`.
-
-**Templates.** Struktur, kein Programm: höchstens 300 Zeilen, kein `<script>` oder `<style>`
-in Seiten-Templates. Wiederkehrendes Markup kommt aus der Komponentenbibliothek
-`templates/cotton/`; die Vorschau läuft unter `/dev/ui/`. Neue Komponenten brauchen einen
-Kopfkommentar mit den Parametern, einen Eintrag in der Vorschau und einen Test in
-`apps/common/tests/test_components.py`.
-
-**JavaScript.** Liegt als TypeScript unter `frontend/` und wird mit Vite gebaut.
-Alpine-Komponenten werden mit `Alpine.data()` registriert und im Template nur per
-`x-data="name"` referenziert. Server-Daten kommen per `json_script` zum Client, nicht als
-interpolierter String.
-
-**Barrierefreiheit.** Tastaturbedienung, sichtbarer Fokus, ARIA und Zielgrößen gehören zu
-jeder Komponente. Die E2E-Tests prüfen das mit axe-core.
-
-**Deutsch.** Kommentare, Commit-Nachrichten und Dokumentation auf Deutsch; Bezeichner im Code
-auf Englisch.
+Verbindlich sind [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) (Schichten, Typisierung,
+Tests, Sicherheit, Frontend, Barrierefreiheit, API, Betrieb) und die Architekturentscheidungen unter
+[`docs/adr/`](docs/adr/). Kommentare, Commit-Nachrichten und Dokumentation sind deutsch; die Regel für
+Bezeichner steht in den Engineering-Standards, Abschnitt 2.
 
 ## Commits und Pull Requests
 

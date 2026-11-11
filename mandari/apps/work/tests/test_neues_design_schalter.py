@@ -179,7 +179,7 @@ class TestBefehl:
 
 class TestSollStand:
     """
-    Nach dem Deploy wird der Stand mit dem abgestimmten Soll verglichen (docs/WORK_NEUES_DESIGN.md, Schritt 2).
+    Nach dem Deploy wird der Stand mit dem abgestimmten Soll verglichen (docs/WORK.md#3-neues-design-in-work-ausrollen, Schritt 2).
 
     In Produktion ist das neue Design für alle Organisationen an (#852). Der Abgleich nennt Abweichungen nur und schaltet
     nie selbst um – sonst würde ein Abgleich gegen das falsche Soll den beschlossenen Stand zurückdrehen.

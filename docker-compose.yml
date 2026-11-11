@@ -81,7 +81,7 @@ x-app-environment: &app-environment
   # TEXT_EXTRACTION_RUNNER=worker lädt er keine Dateien mehr, INGESTOR_STORES_FILES wirkt dann nicht
   FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
   INGESTOR_STORES_FILES: ${INGESTOR_STORES_FILES:-true}
-  # false nur auf einem Erkennungsserver ohne die Ablage des Anwendungsservers (docs/MEHR_SERVER_BETRIEB.md)
+  # false nur auf einem Erkennungsserver ohne die Ablage des Anwendungsservers (DEPLOYMENT.md#-mehrere-server-rollen-data--web--worker)
   FILE_STORE_SHARED: ${FILE_STORE_SHARED:-true}
   # Abrufe in die Ablage warten unterhalb dieses freien Platzes (GB), statt die Platte zu füllen; derselbe Wert
   # wie im Dienst ingestor, beide schreiben in mandari_files
@@ -196,7 +196,7 @@ x-app-environment: &app-environment
   # Streaming-Anbieter, kein Zeitplan; an = Dienst worker-live bedient die Warteschlange live
   LIVE_UEBERTRAGUNG_AKTIV: ${LIVE_UEBERTRAGUNG_AKTIV:-false}
   LIVE_PROTOKOLL_TAGE: ${LIVE_PROTOKOLL_TAGE:-90}
-  # KI-Assistent im Bürgerportal (docs/INSIGHT_KI_ASSISTENT.md): Werkzeugrunden und Zeitlimit je Antwort,
+  # KI-Assistent im Bürgerportal (docs/KI.md#2-ki-assistent-im-bürgerportal): Werkzeugrunden und Zeitlimit je Antwort,
   # Tagesobergrenze aller Antworten zusammen (Kostenbremse)
   INSIGHT_CHAT_MAX_TOOL_ROUNDS: ${INSIGHT_CHAT_MAX_TOOL_ROUNDS:-4}
   INSIGHT_CHAT_TIME_LIMIT_SECONDS: ${INSIGHT_CHAT_TIME_LIMIT_SECONDS:-90}
@@ -204,7 +204,7 @@ x-app-environment: &app-environment
   INSIGHT_CHAT_DAILY_MAX_TOKENS: ${INSIGHT_CHAT_DAILY_MAX_TOKENS:-1000000}
   # Seite „Offene Daten“ außerhalb des Bürgerportals (Issue #1309); leer = das Bürgerportal zeigt sie selbst
   INSIGHT_OFFENE_DATEN_URL: ${INSIGHT_OFFENE_DATEN_URL:-}
-  # Öffentlicher MCP-Server unter /insight/mcp (docs/INSIGHT_MCP.md), Standard aus
+  # Öffentlicher MCP-Server unter /insight/mcp (docs/KI.md#4-mcp-server), Standard aus
   INSIGHT_MCP_ENABLED: ${INSIGHT_MCP_ENABLED:-false}
   INSIGHT_MCP_PER_IP_MINUTE: ${INSIGHT_MCP_PER_IP_MINUTE:-30}
   INSIGHT_MCP_PER_IP_DAY: ${INSIGHT_MCP_PER_IP_DAY:-500}
@@ -560,7 +560,7 @@ services:
       - ocr,ai
       # Eine Erkennung zugleich: Das Speicherlimit ist auf einen Tesseract-Unterprozess ausgelegt. Mehr Plätze
       # (ocr=N) nur mit WORKER_HEAVY_MEM_LIMIT von etwa 1 GB + N × WORKER_HEAVY_OCR_MEMORY_LIMIT_MB, oder ein zweiter
-      # Container wie dieser (auch auf einem eigenen Server, docs/MEHR_SERVER_BETRIEB.md); doppelte Arbeit
+      # Container wie dieser (auch auf einem eigenen Server, DEPLOYMENT.md#-mehrere-server-rollen-data--web--worker); doppelte Arbeit
       # verhindert das Beanspruchen der Datei
       - --concurrency
       - ocr=1

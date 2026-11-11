@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Zusagen der Ereignistechnik, die keine eigene Datei haben (Issue #514,
-``docs/EREIGNISTECHNIK_NACHWEISE.md``): Reihenfolge je Objekt bei verschachtelten Transaktionen und
+``docs/DATENDREHSCHEIBE.md#2-zusagen-der-ereignistechnik-und-nachweise``): Reihenfolge je Objekt bei verschachtelten Transaktionen und
 ein Doppelzustellungstest für jedes Abonnement.
 """
 

@@ -6,13 +6,11 @@ Das Register (`hub.contracts.get_registry()`) lädt jede Datei `<typ>/v<n>.json`
 und prüft sie; ein Verstoß lässt `manage.py check` (Kennung `hub_contracts.E002`) und die Tests
 fehlschlagen.
 
-Ausgeliefert ist der Startumfang: 27 Ereignistypen und die Befehle `submission.submit`,
-`submission.withdraw`, `attendance.respond` und `invitation.acknowledge`; seither ergänzt um
-`ris.organization.changed` und `ris.person.changed` (#821) sowie `ris.membership.changed`,
-`ris.location.changed`, `ris.legislativeterm.changed` und `ris.body.changed` (#553) sowie
-`ris.person.faction_assigned` (#916, Fraktionszuordnung ohne OParl-Fraktion). Art, Eigentümer und
-Sichtbarkeit je Typ, die Inhaltsfelder mit jedem Unterfeld und seiner Längengrenze sowie die
-verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
+Welche Ereignisse und Befehle es gibt, mit Art, Eigentümer und Sichtbarkeit, steht im erzeugten
+[`docs/EREIGNISKATALOG.md`](../../../../docs/EREIGNISKATALOG.md); diese Datei zählt sie nicht noch einmal auf. Ein
+Schema im Register heißt nicht, dass es schon einen Erzeuger gibt: Für einige Typen (etwa `submission.received`,
+`core.*`, `session.*`) besteht nur der Vertrag. Die Inhaltsfelder mit jedem Unterfeld und seiner Längengrenze sowie
+die verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
 
 ## Aufbau einer Datei
 
@@ -53,8 +51,9 @@ verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
 - **`$id`** `urn:mandari:<event|command>:<typ>:v<n>`, **`title`** und **`description`** sind Pflicht.
 - **`x-kind`** `event` oder `command`; alle Versionen eines Typs haben dieselbe Art.
 - **`x-owner`**: Modul, das den Typ veröffentlicht bzw. den Befehl ausführt. `ris.*` gehört der
-  Drehscheibe (`hub.ris`), weil Session und Ingestor dieselben Typen erzeugen; `session.*`, `work.*`
-  und `portal.*` gehören ihrem Fachmodul, `core.*` der Plattform.
+  Drehscheibe, weil Session und Ingestor dieselben Typen erzeugen: `hub.ris`, die Übertragungen
+  `ris.broadcast.*` `hub.live` (#915). `session.*`, `work.*` und `portal.*` gehören ihrem Fachmodul, `core.*`
+  der Plattform.
 - **`x-visibility`**: eine Klasse oder eine Liste aus `oeffentlich`, `nichtoeffentlich`, `intern`,
   `personenbezogen`. Die Hülle jedes Ereignisses muss eine davon tragen. Interne Bereiche sind nie
   `oeffentlich`.
@@ -107,8 +106,9 @@ verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
   erscheinen mit Unterstrich statt Doppelpunkt (`mandari:meetingFormat` als `mandari_meetingFormat`),
   weil das Muster nur Buchstaben, Ziffern und Unterstrich zulässt; so meldet sie der Ingestor.
 - **Codes** übernehmen die Werte des Eigentümers (`confirmed`/`declined`, `motion`, `in_review` …);
-  die Gründe einer Rücknahme stehen wie im Änderungsfeed (`quelle_geloescht`, `zurueckgenommen`,
-  `nichtoeffentlich`, `datenschutz`).
+  die Gründe einer Rücknahme stehen wie in der älteren, abgekündigten Form des Änderungsfeeds
+  (`quelle_geloescht`, `zurueckgenommen`, `nichtoeffentlich`, `datenschutz`); der Feed nach kommParl übersetzt sie
+  in `deleted`, `withdrawn`, `nonPublic` und `privacy`.
 - **Nur additive Änderungen** an einer bestehenden Version: neue Felder optional, neue Codes in einer
   Codeliste. Entfernen, Umbenennen, Typwechsel, neue Pflichtfelder und jede Lockerung (Pflichtfeld wird
   optional, Format oder Muster entfällt, Grenze steigt) ergeben eine neue Version `v<n+1>.json` neben der

@@ -377,7 +377,7 @@ präzisiert wurde:
 
 Umgesetzt in `apps/session/hub_events.py` (Erfassung in den Fachfunktionen) und
 `hub/ris/session_events.py` (Ereignisse aus Zuständen, Eigentümer der Verträge `ris.*`); Überblick in
-`docs/SESSION_EREIGNISSE.md`. Die Entscheidung bleibt; präzisiert wurde:
+`docs/DATENDREHSCHEIBE.md`, Abschnitt 3. Die Entscheidung bleibt; präzisiert wurde:
 
 - **Fachlicher Anlass als Zustandsvergleich:** Eine Fachfunktion nennt vor der Änderung die betroffenen
   Objekte (`hub_events.track`), am Ende desselben Blocks vergleicht die Drehscheibe den Zustand im
@@ -430,7 +430,7 @@ Quelle). Die Entscheidung bleibt; präzisiert wurde:
 ## Nachtrag zu den Nachweisen (#514)
 
 Die Qualitätsziele und die Fitnessfunktion oben sind belegt; Tests, Messwerte und Grenzen stehen in
-`docs/EREIGNISTECHNIK_NACHWEISE.md`. Die Entscheidung bleibt; präzisiert wurde:
+`docs/DATENDREHSCHEIBE.md`, Abschnitt 2. Die Entscheidung bleibt; präzisiert wurde:
 
 - **Absturz als eigener Prozess:** Die Absturz- und Lasttests starten `events_worker` als eigenen
   Prozess und beenden ihn hart (`apps/events/tests/prozess.py`). Ein Absturz mitten im Batch lässt die

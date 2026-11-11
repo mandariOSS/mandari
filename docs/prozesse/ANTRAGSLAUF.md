@@ -53,8 +53,8 @@ Geschäftsregel-Aufgabe (`businessRuleTask`) und nicht als freie Entscheidung da
 
 Ein Antrag endet **nicht zwingend** in einem Beschluss. Die praktisch häufigen Ausgänge
 sind: Abstimmung, **Vertagung**, **Verweisung in einen Fachausschuss** und **Rücknahme
-durch die Antragstellerin**. Alle vier sind im Modell abgebildet — das ist der Punkt, an
-dem die Software heute am deutlichsten hinter dem Prozess zurückbleibt (siehe Abschnitt 3).
+durch die Antragstellerin**. Alle vier sind im Modell abgebildet; wie mandari sie abbildet,
+steht in Abschnitt 3.
 
 Über den wesentlichen Verhandlungsverlauf ist eine **Niederschrift** zu führen (§ 52 GO NRW).
 
@@ -90,67 +90,36 @@ Beratungsfolge.
 
 ## 3. Abgleich mit mandari
 
-### Was gut abgebildet ist
+### Arbeitsbereich der Fraktion (Work)
 
-Der Antragslauf im Arbeitsbereich ist als **ausformulierte Übergangsmatrix** implementiert
-(`apps/work/motions/models.py`, `VALID_TRANSITIONS`) — kein freies Statusfeld, sondern ein
-Zustandsmodell mit erlaubten Übergängen und bewusst zugelassenen Rücksprüngen:
+Der Antragslauf ist als **Übergangsmatrix** implementiert (`apps/work/motions/models.py`,
+`Motion.VALID_TRANSITIONS`): kein freies Statusfeld, sondern ein Zustandsmodell mit erlaubten
+Übergängen und bewusst zugelassenen Rücksprüngen. Die geführte Reihenfolge (`PIPELINE_ORDER`):
 
 ```
 draft → internal_review → external_review → approved → submitted → at_admin → on_agenda → completed
 ```
 
-Dazu passend friert `EDITABLE_STATUSES` die Bearbeitung ab der Freigabe ein. Das ist eine
-saubere Umsetzung der Schritte 1 bis 4.
+- `external_review` (Abstimmung mit Partnern, Schritt 3) ist optional.
+- `EDITABLE_STATUSES` friert die Bearbeitung ab der Freigabe ein.
+- Ab `on_agenda` stehen die Ausgänge der Beratung zur Wahl: **Beschlossen** (`adopted`),
+  **Erledigt** (`completed`), **Abgelehnt** (`rejected`) und **Zurückgezogen** (`withdrawn`).
+  Zurückziehen geht schon ab `submitted` und `at_admin`. Korrigiert die Verwaltung ein erfasstes
+  Ergebnis, führt der Weg zurück auf `on_agenda`.
 
-Die Verwaltungsseite kennt **Beratungsfolge** (`SessionConsultation`, Migration
+Digital eingereichte Anträge sind mit dem Vorgang der Verwaltung verknüpft
+(`Motion.session_application`, Issues #40, #316). Work zeigt Eingangsnummer, Drucksachennummer,
+die Stationen der Beratungsfolge mit Ergebnis (nicht-öffentliche nur als „nicht-öffentlich
+beraten“) und den Beschluss; Statuswechsel der Verwaltung kommen als Rückmeldung zurück. Damit
+bildet Work die Schritte 1, 3 und 4, die Beratungsfolge (Schritt 8) sowie Abstimmung und
+Rücknahme aus Schritt 10 ab. Einzelheiten: `docs/WORK.md`, Abschnitt 2.
+
+### Verwaltung (Session)
+
+Die Verwaltungsseite kennt die **Beratungsfolge** (`SessionConsultation`, Migration
 `0011_beratungsfolge`) sowie die Zustände **Vertagt** (`deferred`) und **Zurückgezogen**
 (`withdrawn`). Die Ö/NÖ-Trennung zieht sich durch das ganze Rechtemodell
 (`can_view_non_public_papers`, `can_view_non_public_meetings`).
-
-### Wo der Prozess weiter ist als die Software
-
-**a) Der Fraktionsseite fehlen Vertagung, Verweisung und Rücknahme.**
-`on_agenda` erlaubt nur `completed`, `rejected` oder zurück zu `at_admin`. Wird ein Antrag
-im Rat vertagt oder in einen Ausschuss verwiesen, gibt es dafür keinen Zustand. In der
-Praxis bleibt er entweder auf `on_agenda` stehen oder wandert zurück nach `at_admin` —
-in beiden Fällen geht die Information verloren, dass bereits beraten wurde. Ein
-zurückgezogener Antrag müsste heute als `rejected` geführt werden, was politisch das
-Gegenteil aussagt.
-
-Bemerkenswert: Die Verwaltungsseite hat diese Zustände. Die beiden Hälften des Produkts
-modellieren denselben Vorgang unterschiedlich tief.
-
-**b) Keine Beratungsfolge im Arbeitsbereich.**
-`on_agenda` ist ein einzelner Zustand. Eine Fraktion kann nicht erkennen, an welcher
-Station der Beratungsfolge ihr Antrag steht — obwohl genau das die Frage ist, die vor
-jeder Sitzung gestellt wird.
-
-**c) Keine Verknüpfung zwischen Antrag und Verwaltungsvorgang.**
-Ein `Motion` trägt kein Feld, das auf den Vorgang, das Aktenzeichen oder die Vorlage in
-der Verwaltung verweist. Nach der Einreichung (`motions.submit_to_ris`) reißt die Spur ab;
-der weitere Verlauf wird von Hand nachgehalten. Damit ist Schritt 12 — Beschlusskontrolle —
-nur so gut wie die Disziplin der Person, die den Status pflegt.
-
-**d) Der Fraktionsbeschluss ist kein eigener Schritt.**
-`internal_review → approved` bildet die Abstimmung ab, nicht den Beschluss. Für die
-Legitimation des Antrags (§ 56 GO NRW) wäre ein nachvollziehbarer Fraktionsbeschluss mit
-Datum und Ergebnis der sauberere Anker — das Modul für Fraktionssitzungen bringt die
-Bausteine dafür bereits mit.
-
-### Bewertung
-
-Keiner dieser Punkte ist ein Fehler. Es sind Stellen, an denen die Software einen
-einfacheren Prozess annimmt, als die Praxis ihn hat. Am folgenreichsten ist **(c)**: Ohne
-die Verknüpfung bleibt der Kreis zwischen Antrag und Beschlusskontrolle offen, und genau
-dieser geschlossene Kreis ist das Versprechen des Produkts.
-
-**Nachtrag 09/2026 (Issues #40, #316):** Digital eingereichte Anträge sind mit dem
-Verwaltungsvorgang verknüpft (`Motion.session_application`). Work zeigt Eingangsnummer,
-Drucksachennummer, die Stationen der Beratungsfolge mit Ergebnis (nicht-öffentliche nur als
-„nicht-öffentlich beraten“) und den Beschluss; die Zustände **Beschlossen** und **Zurückgezogen**
-unterscheiden Annahme, Ablehnung und Rücknahme. Damit sind (b) und (c) für eingereichte Anträge
-geschlossen, (a) bis auf die Verweisung. Details: `docs/WORK_SESSION_SUBMISSION.md`.
 
 ---
 

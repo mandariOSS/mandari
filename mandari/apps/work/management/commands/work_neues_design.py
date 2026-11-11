@@ -14,7 +14,7 @@ Der Befehl ändert ausschließlich den Schalter (``apps.work.design_schalter.set
 Inhalte, keine Mitglieder. Eingeschaltet wird bewusst nur je Organisation (``--org``, mehrfach möglich); „alle auf
 einmal“ gibt es nur für den Rückweg. ``status --soll an|aus`` liest nur: Er nennt die Organisationen, die vom
 abgestimmten Soll-Stand abweichen, und endet dann mit einem Fehler, ohne etwas umzuschalten. Ablauf beim Ausrollen:
-docs/WORK_NEUES_DESIGN.md.
+docs/WORK.md#3-neues-design-in-work-ausrollen.
 """
 
 from __future__ import annotations
@@ -130,7 +130,7 @@ class Command(BaseCommand):
             )
         raise CommandError(
             f"{len(abweichend)} von {len(organisationen)} Organisation(en) weichen vom Soll-Stand ({self._wort(soll)}) "
-            "ab. Nichts umgeschaltet: erst mit der Projektleitung klären (docs/WORK_NEUES_DESIGN.md)."
+            "ab. Nichts umgeschaltet: erst den beschlossenen Stand klären (docs/WORK.md#3-neues-design-in-work-ausrollen)."
         )
 
     @staticmethod

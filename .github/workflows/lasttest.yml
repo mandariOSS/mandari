@@ -125,7 +125,7 @@ jobs:
       ELASTICSEARCH_AUTO_INDEX: 'False'
       SITE_URL: https://localhost:8443
       ALLOWED_HOSTS: localhost,127.0.0.1
-      # Die Konten des Generators melden sich per Passwort an (loadtest/README.md)
+      # Die Konten des Generators melden sich per Passwort an (docs/LASTTESTS.md#7-befehle)
       TWO_FACTOR_ENFORCEMENT: 'false'
       # Alle simulierten Abnehmer der Schnittstelle kommen von einer Adresse
       OPARL_API_RATE_LIMIT: '0'

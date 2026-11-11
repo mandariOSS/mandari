@@ -1,4 +1,4 @@
-# Mandari 2.0 - Claude-Kontext
+# Mandari: Ergänzungen für Claude
 
 @AGENTS.md
 

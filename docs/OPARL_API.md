@@ -59,7 +59,7 @@ Es erscheinen dieselben Kommunen wie im Bürgerportal: gelistet, nicht gelöscht
 | `GET /oparl/v1/body/<uuid>/people` | Personen der Kommune (paginiert, filterbar) |
 | `GET /oparl/v1/body/<uuid>/meetings` | Sitzungen der Kommune (paginiert, filterbar) |
 | `GET /oparl/v1/body/<uuid>/papers` | Vorlagen/Drucksachen der Kommune (paginiert, filterbar) |
-| `GET /oparl/v1/body/<uuid>/locations` | Orte der Kommune (Vendor-Erweiterung, paginiert) |
+| `GET /oparl/v1/body/<uuid>/locations` | Orte der Kommune (paginiert; am Body im Standardfeld `locationList`) |
 | `GET /oparl/v1/body/<uuid>/kommparl/changes` | Änderungsfeed der Kommune nach dem kommParl-Profil (nur wenn eingeschaltet; Abschnitt „Änderungsfeed“) |
 | `GET /oparl/v1/body/<uuid>/kommparl/snapshot` | Snapshot der Kommune nach dem kommParl-Profil (NDJSON, Einstieg in den Änderungsfeed) |
 | `GET /oparl/v1/body/<uuid>/changes` | Änderungsfeed in der älteren Form, abgekündigt (Wegfall frühestens am 01.12.2027) |
@@ -338,7 +338,8 @@ curl --compressed "https://mandari.de/oparl/v1/body/<uuid>/kommparl/snapshot" -o
 ### Die ältere Form (abgekündigt)
 
 Die folgenden Abschnitte beschreiben die ältere Form; Einschalten, Stände der Kommune, Cursor, Sichtbarkeit,
-HTTP und Einschränkungen gelten für beide Formen gleich.
+HTTP und Einschränkungen gelten für beide Formen gleich. Verschieden ist nur die Form der Fehlerantwort (Tabelle
+oben, Zeile `410`).
 
 **Einschalten:** Der Feed ist je Installation abgeschaltet, bis die Erzeuger der Ereignisse laufen
 (`OPARL_CHANGES_ENABLED`, Abschnitt „Betrieb“). Eingeschaltet nennt jeder Body einer gelisteten
@@ -353,7 +354,7 @@ und in `/oparl/v1/bodies` listet. Es gelten dieselben Stände wie für die Seite
 | veröffentlicht, gelistet (auch „Archiv“) | werden geliefert | – |
 | nicht gelistet (etwa die Demo-Kommune) | `404` wie bei ausgeschaltetem Feed; der Body nennt die Adressen nicht | bleibt gültig, wenn sie wieder gelistet wird |
 | vorübergehend abgeschaltet | `503` mit `Retry-After` | bleibt gültig: Es wird nichts gelöscht, Änderungen aus der Zwischenzeit folgen hinter dem Cursor |
-| dauerhaft zurückgenommen | `410` (`application/problem+json`, Typ `…/kommune-zurueckgenommen`, ohne Snapshot): ihre Einträge gelten als gelöscht | gilt nicht mehr: nach der Wiederveröffentlichung `410` mit Verweis auf den Snapshot |
+| dauerhaft zurückgenommen | `410` ohne Snapshot, nach kommParl als Fehlerobjekt nach OParl 1.1 (`debug` `kommune-zurueckgenommen`), in der älteren Form als `application/problem+json` (Typ `…/kommune-zurueckgenommen`): ihre Einträge gelten als gelöscht | gilt nicht mehr: nach der Wiederveröffentlichung `410` mit Verweis auf den Snapshot |
 | Body in der Quelle gelöscht | Feed wird geliefert und nennt die Löschung; Snapshot nach kommParl `410` (Fehlerobjekt nach OParl 1.1, `debug` `kommune-geloescht`), weil er keine gelöschten Objekte enthält; die ältere Form liefert den Body gekürzt | bleibt gültig |
 
 Rücknahme und Wiederherstellung einer ganzen Kommune ändern den Bestand, ohne dass der Feed sie
@@ -476,7 +477,8 @@ leitet weiter.
 - Gespiegelte Session-Mandanten: Der Aggregator nennt nur Objekte, die sein Bestand kennt. Meldet ein
   Session-Mandant eine Änderung, bevor der Abgleich sie übernommen hat, fehlt ein neues Objekt im Feed,
   und `id` eines bekannten liefert kurz noch den alten Stand. Die Übernahme erscheint verlässlich erst,
-  wenn der Abgleich sie mit einem eigenen Ereignis meldet (in Arbeit).
+  wenn der RIS-Projektor sie mit einem eigenen Ereignis meldet; er kennt bisher nur die Betriebsarten `aus` und
+  `schatten` (`RIS_SESSION_PROJECTOR`, aktiv erst mit Issue #537).
 
 ### Snapshot: Einstieg mit Cursor-Übergabe
 
@@ -545,7 +547,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 | `mandari:originator` | Paper | alle antragstellenden Fraktionen mit `name`, `shortName`, `type` (`fraktion`, `gruppe`, `einzelmandat`) und `organization` (nur mit Organisationsobjekt) |
 | `mandari:originatorSource` | Paper | Weg der Erkennung: `source`, `title`, `person`, `signature` |
 | `mandari:summary` | Paper | KI-generierte Zusammenfassung (falls vorhanden) |
-| `mandari:summaryAiGenerated` | Paper | `true`, wenn `mandari:summary` vorhanden ist: Der Text ist KI-erzeugt und nicht redaktionell geprüft (EU AI Act Art. 50, siehe `KI_TRANSPARENZ.md`) |
+| `mandari:summaryAiGenerated` | Paper | `true`, wenn `mandari:summary` vorhanden ist: Der Text ist KI-erzeugt und nicht redaktionell geprüft (EU AI Act Art. 50, siehe `KI.md`, Abschnitt Kennzeichnung) |
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
 | `mandari:sha256`, `mandari:pageCount` | File | SHA-256-Hash / Seitenzahl |
 | `mandari:locationName`, `mandari:locationAddress` | Meeting | abgekündigt: Ortsangabe als Text, wenn die Quelle kein Location-Objekt liefert; steht jetzt in `Meeting.location` |
@@ -643,7 +645,7 @@ Objekt sofort aus dem Bürgerportal zurück (nichtöffentlich gestellt, gelösch
 markiert die Anwendung die Zeile im Bestand und meldet die Rücknahme selbst (`hub.ris.retraction`); der
 Ingestor findet sie beim nächsten Abgleich schon markiert vor und meldet sie nicht noch einmal.
 Mit `SESSION_EVENTS` meldet Session ihre Änderungen an Sitzungen, Tagesordnung, Vorlagen, Beratungsfolge,
-Anlagen, Abstimmungen, Beschlüssen und Niederschriften zusätzlich sofort selbst (`docs/SESSION_EREIGNISSE.md`);
+Anlagen, Abstimmungen, Beschlüssen und Niederschriften zusätzlich sofort selbst (`docs/DATENDREHSCHEIBE.md`, Abschnitt „Session als Erzeuger“);
 bis der Spiegel abgelöst ist, kann der Feed ein Objekt dann zweimal nennen. Mit Docker Compose reicht
 `docker-compose.yml` die Schalter aus der `.env` an Anwendung und Worker durch.
 Ausgeschaltet gibt es die Adresse nicht, und kein Body weist auf sie hin. Das Journal muss seine Zeilen

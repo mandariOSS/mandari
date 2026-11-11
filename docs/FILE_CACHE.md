@@ -53,7 +53,7 @@ Abweichungen an.
 |---------|--------:|--------:|--------:|-------------:|
 | Stadt Köln | 94 400 | ~0,38 MB (Stichprobe n=8, RIS war down) | ~35 GB (15–65 GB) | ~10 000 Dateien ≈ 4 GB |
 | Stadt Münster | 59 300 | 0,23 MB (Stichprobe n=78) | ~13 GB | ~3 000 Dateien ≈ 0,7 GB |
-| Bundesstadt Bonn | 23 900 | 0,68 MB (OParl-Angabe, exakt) | 15,5 GB | unbekannt (Quelle steht seit Februar) |
+| Bundesstadt Bonn | 23 900 | 0,68 MB (OParl-Angabe, exakt) | 15,5 GB | unbekannt |
 | Bezirksregierung Köln | 2 000 | ~0,25 MB (Stichprobe n=5) | ~0,5 GB | ~400 Dateien ≈ 0,1 GB |
 | **Summe** | **179 700** | | **~65 GB** | **~5–8 GB** |
 
@@ -74,7 +74,7 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
 | `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, nur langsamer: Werte unter 1 s gelten als 1 s; `0` hier = Drossel aus, nur Tests und Notfälle) |
 | `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange wartet die Vorschau höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After`. Die Frist gilt für den ganzen Abruf: Weiterleitungen (robots.txt des Ziels, Takt) warten nur noch die Restzeit. Die KI-Zusammenfassung lädt keine Dokumente (Issue #919). Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
-| `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
+| `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen fehlgeschlagenen Läufen des Abgleichs in Folge ruhen Dokument-Cache, Vorschau, Löschabgleich und Personenfotos für die Quelle |
 | `FILE_STORE_LAYOUT` | `sha256` | Ablage nach SHA-256 mit Referenzzählung; `kommune` = bisheriges Layout je Kommune |
 | `INGESTOR_STORES_FILES` | `false` (Compose: `true`) | Der Ingestor legt Dateien selbst ab; `cache_files` holt Dateien in der Texterkennung nicht nach. Mit `TEXT_EXTRACTION_RUNNER=worker` ohne Wirkung |
 | `DOCUMENT_FETCH_STALE_MINUTES` | 30 | So lange gilt die Beanspruchung einer Datei durch einen Abruf; danach gibt der nächste Lauf von `cache_files` sie frei |
@@ -416,7 +416,7 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   **Den Bucket nicht löschen, solange Vermerke `remote_at` bestehen** (`dokumentablage` nennt „im Objektspeicher
   N“): Für lokal verdrängte Inhalte ist er die einzige Kopie. Wechseln nur, wenn der Bestand im neuen Ziel
   vollständig bereitsteht („Betriebsrisiko“, oben). Im Mehr-Server-Betrieb
-  (`docs/MEHR_SERVER_BETRIEB.md`) brauchen alle Dienste, die Dokumente lesen, dieselben `OBJ_*`; ohne Objektspeicher
+  (`DEPLOYMENT.md#-mehrere-server-rollen-data--web--worker`) brauchen alle Dienste, die Dokumente lesen, dieselben `OBJ_*`; ohne Objektspeicher
   geht Mehr-Server-Betrieb nur mit gemeinsamer Ablage.
 - **Zurückholen** (`dokumentablage --zurueckholen --limit 5000 --trotz-zeitplan`, nur mit eingeschaltetem
   Objektspeicher): holt lokal verdrängte Inhalte aus dem Objektspeicher in die lokale Ablage, etwa um sie vor einer
@@ -554,13 +554,13 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   heißt: Die Vorschau antwortet mit `410` und liefert keine Bytes, auch nicht aus der lokalen Kopie; die
   Vorgangsseite zeigt weder Dokument noch Text; der OParl-Objekt-Endpunkt (`/oparl/v1/file/<id>`) gibt kein
   Feld `text` mehr aus; Suchindex (auch nach einem vollständigen Neuaufbau) und KI-Zusammenfassung des
-  Vorgangs verlieren es, eine neue Zusammenfassung nimmt seinen Text nicht auf; der Ingestor erkennt keinen
-  Text mehr und nimmt die Datei nicht wieder in den Index. Liefert die Quelle das Dokument wieder, wird die
+  Vorgangs verlieren es, eine neue Zusammenfassung nimmt seinen Text nicht auf; die Texterkennung erkennt
+  keinen Text mehr und nimmt die Datei nicht wieder in den Index. Liefert die Quelle das Dokument wieder, wird die
   Sperre aufgehoben. Browser und Zwischenspeicher dürfen ein vorher ausgeliefertes Dokument noch bis zu 24 h
   zeigen (`Cache-Control: public, max-age=86400`); das liegt bewusst innerhalb der Vorgabe des Konzepts.
 - **Änderung per Hash:** Meldet die Quelle eine Änderung (`modified`) nach unserer Kopie bzw. Texterkennung,
   lädt der Abgleich die Datei neu und vergleicht den SHA-256. Anderer Inhalt ersetzt die Kopie, der alte Text
-  wird verworfen und vom Ingestor neu erkannt; gleicher Inhalt ändert nichts. Hat die Datei noch keine Kopie und
+  wird verworfen und von der Texterkennung neu erkannt; gleicher Inhalt ändert nichts. Hat die Datei noch keine Kopie und
   wird sie abgelegt, legt der Abgleich den geladenen Inhalt gleich ab (kein zweiter Abruf, Issue #919). Der
   Abgleich ruft über `hub.ris.abruf` ab und überspringt Dateien, die gerade abgerufen werden.
 - **Stichproben:** Gedrosselte HEAD-Anfragen auf die Download-Adressen (am längsten nicht geprüfte zuerst)
@@ -582,10 +582,11 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   Laufs in Ruhe. Die Ausgabe nennt sie (`gebremst=…`, Hinweis auf stderr). Dann die Quelle prüfen (neue
   Adressen nach einer Umstellung, Wartung, Sperre unserer Abrufe); bei einer echten Massenlöschung den Lauf mit
   höherem `--max-fehlend` für diese Kommune wiederholen.
-- **robots.txt ist verbindlich:** Vor jedem Abruf einer Datei prüft der Abgleich die robots.txt des Hosts
-  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf), mit
-  derselben Auswertung wie alle Abrufe: Gruppe `mandari-ingestor` vor `*`, frühere Kennungen nur zusätzlich
-  (`docs/MONITORING.md`). Einer Weiterleitung folgt er nur, wenn die robots.txt ihres Ziel-Hosts sie erlaubt
+- **robots.txt ist verbindlich:** Vor jedem Abruf einer Datei prüft der Abgleich die robots.txt des Hosts, mit
+  derselben Auswertung wie alle Abrufe (RFC 9309 mit `*` und `$`, Gruppe `mandari-ingestor` vor `*`, frühere
+  Kennungen nur zusätzlich, je Hostname 24 Stunden zwischengespeichert; `docs/MONITORING.md`). Ist sie nicht
+  erreichbar, gilt eine zuvor gültige Fassung weiter; ohne eine fragt der Abgleich nicht an und versucht es
+  frühestens nach 15 Minuten erneut ([`ABRUFREGELN.md`, robots.txt](ABRUFREGELN.md#robotstxt)). Einer Weiterleitung folgt er nur, wenn die robots.txt ihres Ziel-Hosts sie erlaubt
   (sonst Ergebnis `robots`), und jede Weiterleitung läuft im Takt je Host. Eine
   Ausnahme trägt nur eine Quelle mit Vermerk in `sync_config["robots_override"]`, z. B.
   `{"scope": "files", "note": "Zustimmung liegt vor, Anfrage läuft"}` (Bereich `files` oder `all`, Vermerk
@@ -613,12 +614,12 @@ Sperre verfällt nach 3000 s; für einen längeren Handlauf den Zeitplan so lang
 
 ### Quellen-Schonung
 
-Ratsinformationssysteme sperren IP-Adressen, die zu viele Verbindungen aufbauen (Issue #89).
-Sobald der Ingestor eine Quelle `INSIGHT_SOURCE_BACKOFF_FAILURES`-mal in Folge nicht erreicht hat,
-lassen `cache_files` und der Vorschau-Proxy diese Quelle in Ruhe (Proxy antwortet mit 503 und
-`Retry-After`). Der Ingestor selbst verdoppelt den Abstand zwischen den Versuchen (10, 20, 40 …
-Minuten, höchstens 6 Stunden). Ein erfolgreicher Sync setzt den Zähler zurück, danach läuft alles
-automatisch weiter. Der Betriebsmonitor zeigt die Schonung als Grund an der Quelle.
+Ratsinformationssysteme sperren IP-Adressen, die zu viele Verbindungen aufbauen (Issue #89). Nach
+`INSIGHT_SOURCE_BACKOFF_FAILURES` (Standard 3) fehlgeschlagenen Läufen des Abgleichs in Folge fragen Dokument-Cache,
+Vorschau, Löschabgleich und Personenfotos die Quelle nicht mehr an (die Vorschau antwortet mit 503 und
+`Retry-After`), bis ein Lauf sie wieder erreicht. Was als fehlgeschlagen zählt und wie lange der Ingestor selbst
+pausiert, steht in [`ABRUFREGELN.md`, Fehler und Schonung](ABRUFREGELN.md#fehler-und-schonung). Der Betriebsmonitor
+zeigt die Schonung als Grund an der Quelle.
 
 ## Storage Box je Kommune mounten (Beispiel CIFS)
 
