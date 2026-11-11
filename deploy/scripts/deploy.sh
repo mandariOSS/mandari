@@ -31,6 +31,9 @@
 # einspielt, die mit dem alten Code vertraeglich sind. Ein Rueckfall rollt Code zurueck,
 # keine Migrationen; deshalb muessen Migrationen abwaertskompatibel sein.
 set -eu
+# Alles, was das Skript anlegt (Datenbank-Sicherungen, die Zwischenkopie der .env), ist nur für das eigene Konto
+# lesbar: Die Sicherung enthält die ganze Datenbank, die .env alle Schlüssel.
+umask 077
 
 MODE="${1:?plan|apply|verify|rollback}"
 NEW_TAG="${2:-}"
@@ -246,7 +249,20 @@ switch_to() {
   # Reihenfolge Migration -> Worker -> Web: Die Worker laufen schon mit dem Stand $1, wenn die
   # Anwendung umschaltet; Auftraege und Ereignisse der neuen Webprozesse bleiben nicht liegen.
   tag="$1"
-  sed "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" .env > .env.neu && cat .env.neu > .env && rm -f .env.neu
+  # Die Zwischenkopie enthält alle Schlüssel: jedes Mal neu angelegt (mktemp, nur für das eigene Konto), nie eine
+  # liegen gebliebene Datei mit anderen Rechten wiederverwendet
+  neu=$(mktemp .env.neu.XXXXXX)
+  if ! sed "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" .env > "$neu"; then
+    rm -f "$neu"
+    echo "FEHLER: IMAGE_TAG in .env nicht umgestellt"
+    return 1
+  fi
+  if ! cat "$neu" > .env; then
+    # .env kann jetzt unvollständig sein: Die vollständige Kopie bleibt liegen (nur für das eigene Konto lesbar)
+    echo "FEHLER: .env nicht geschrieben. Vollständige Kopie: $MANDARI_DIR/$neu"
+    return 1
+  fi
+  rm -f "$neu"
   # shellcheck disable=SC2086
   $DC up -d --no-deps $WORKER_SERVICES < /dev/null
   $DC up -d --no-deps --wait "$APP_SERVICE" < /dev/null
@@ -294,6 +310,21 @@ case "$MODE" in
     log "Deploy $OLD_TAG -> $NEW_TAG"
 
     mkdir -p "$BACKUP_DIR"
+    # umask wirkt nur auf Neues: Verzeichnis und Sicherungen früherer Läufe ebenfalls schließen. Nur wenn das
+    # Verzeichnis dem eigenen Konto gehört: Nach chmod 700 kann dann kein anderes Konto darin Dateien gegen
+    # symbolische Links tauschen, während die Rechte geändert werden. Gehört es einem anderen Konto, bleiben
+    # ältere Dateien unverändert.
+    if [ -O "$BACKUP_DIR" ]; then
+      chmod 700 "$BACKUP_DIR"
+      for alt in "$BACKUP_DIR"/pre-deploy-*.dump; do
+        # Nur gewöhnliche Dateien: Über einen symbolischen Link änderte chmod die Rechte der Zieldatei
+        if [ -f "$alt" ] && [ ! -L "$alt" ]; then
+          chmod 600 "$alt"
+        fi
+      done
+    else
+      echo "Hinweis: $BACKUP_DIR gehört einem anderen Konto, Rechte älterer Sicherungen bleiben unverändert"
+    fi
     BACKUP="$BACKUP_DIR/pre-deploy-$NEW_TAG-$(date -u +%Y%m%d-%H%M).dump"
     $DC exec -T "$DB_SERVICE" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' < /dev/null > "$BACKUP"
     [ -s "$BACKUP" ] || { echo "FEHLER: Sicherung leer"; exit 1; }

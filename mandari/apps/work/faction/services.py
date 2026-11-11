@@ -18,6 +18,7 @@ from django.utils import timezone
 from apps.common.email import render_email
 from apps.common.ical import build_ics_event
 from apps.common.pdf import html_to_pdf
+from apps.work.pdf_bilder import inline_remote_images
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ class FactionMeetingEmailService:
             "generated_at": timezone.localtime(),
         }
         html = render_to_string("work/faction/pdf/agenda.html", context)
-        return html_to_pdf(html)
+        return html_to_pdf(inline_remote_images(html))
 
     def _include_internal(self, membership) -> bool:
         """NÖ-Teil nur für Vereidigte — zentrale Sichtbarkeitsfunktion (Issue #64)."""
@@ -928,7 +929,7 @@ def build_faction_protocol_pdf(meeting, *, internal: bool) -> bytes:
         "generated_at": timezone.localtime(),
     }
     html = render_to_string("work/faction/pdf/protocol.html", context)
-    return html_to_pdf(html)
+    return html_to_pdf(inline_remote_images(html))
 
 
 class AgendaProposalService:

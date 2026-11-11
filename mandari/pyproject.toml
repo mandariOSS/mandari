@@ -77,7 +77,7 @@ dependencies = [
     "pypdfium2>=5.13.0",
 
     # PDF generation
-    "xhtml2pdf>=0.2.21",  # Security: fixes ReDoS vulnerability
+    "xhtml2pdf>=0.2.28",  # ab 0.2.28: Richtlinie für Dateien und Adressen im HTML (apps/common/pdf.py)
     "defusedxml>=0.7.1",  # Security: sicheres XML-Parsing (Task-Import)
     "reportlab>=5.0.1",
     "segno>=1.6.6",  # QR-Codes (reines Python, Teilnahmenachweis-Verifikation)
