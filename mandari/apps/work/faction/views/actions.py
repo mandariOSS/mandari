@@ -556,8 +556,12 @@ class FactionActionView(WorkViewMixin, View):
         parent = None
         if parent_id:
             parent = get_object_or_404(FactionAgendaItem, id=parent_id, meeting=meeting)
-            visibility = parent.visibility
-            # NÖ strikt: Unterpunkte erben die Sichtbarkeit des Eltern-TOPs
+            # Wie in der laufenden Sitzung (sitzung.top_hinzufuegen): Unter einem nichtöffentlichen TOP ist jeder
+            # Unterpunkt nichtöffentlich. Wer „nichtöffentlich“ wählt, bekommt auch unter einem öffentlichen TOP
+            # einen nichtöffentlichen Unterpunkt, damit nichts ungewollt öffentlich wird.
+            if parent.visibility == "internal":
+                visibility = "internal"
+            # NÖ strikt: nichtöffentliche Unterpunkte nur für Vereidigte
             if visibility == "internal" and not can_view_internal(self.membership):
                 return HttpResponse(status=403)
         # Art ohne nichtöffentlichen Teil (Issue #1240): keine neuen NÖ-TOPs, auch keine Unterpunkte bestehender
