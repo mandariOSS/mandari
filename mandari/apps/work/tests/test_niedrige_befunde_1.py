@@ -163,6 +163,61 @@ def test_offene_registrierung_gibt_nur_frei_wer_einladen_darf(org: Any, make_mem
     assert anfrage.is_active and anfrage.registration_requested_at is None
 
 
+def test_direktes_freischalten_prueft_die_handelnde_mitgliedschaft_erneut(org: Any, make_member: Any) -> None:
+    anfrage = make_member(org, [], email="neu@example.org")
+    anfrage.is_active = False
+    anfrage.registration_requested_at = timezone.now()
+    anfrage.save(update_fields=["is_active", "registration_requested_at"])
+    rechte = ["members.view", "members.edit", "members.invite"]
+    # Objekt aus dem View, die Mitgliedschaft ist inzwischen deaktiviert
+    veraltet = make_member(org, rechte, email="veraltet@example.org")
+    type(veraltet).objects.filter(pk=veraltet.pk).update(is_active=False)
+    ohne_recht = make_member(org, ["members.view", "members.edit"], email="ohne@example.org")
+    # Objekt aus dem View mit schon geladenen Rechten, das Recht ist inzwischen entzogen
+    from apps.tenants.models import Permission
+
+    entzogen = make_member(org, rechte, email="entzogen@example.org")
+    assert entzogen.has_permission("members.invite")
+    for rolle in entzogen.roles.all():
+        rolle.permissions.remove(*Permission.objects.filter(codename="members.invite"))
+    assert entzogen.has_permission("members.invite"), "das alte Objekt kennt den Entzug nicht"
+
+    for handelnd in (veraltet, ohne_recht, entzogen, None):
+        with pytest.raises(org_services.ServiceError):
+            org_services.approve_registration(anfrage, actor=handelnd)
+    anfrage.refresh_from_db()
+    assert not anfrage.is_active and anfrage.registration_requested_at is not None
+
+    org_services.approve_registration(anfrage, actor=make_member(org, rechte, email="einladen@example.org"))
+    anfrage.refresh_from_db()
+    assert anfrage.is_active and anfrage.registration_requested_at is None
+
+
+def test_reaktivieren_prueft_zurueckkehrende_rechte_am_jetzigen_stand(org: Any, make_member: Any) -> None:
+    """Die handelnde Person verliert ein Recht, das die zu reaktivierende Mitgliedschaft mitbringt."""
+    from apps.tenants.models import Permission
+
+    ziel = make_member(org, ["tasks.view", "tasks.manage"], email="ziel@example.org")
+    ziel.is_active = False
+    ziel.save(update_fields=["is_active"])
+    rechte = ["members.view", "members.edit", "tasks.view", "tasks.manage"]
+    handelnd = make_member(org, rechte, email="handelnd@example.org")
+    assert handelnd.has_permission("tasks.manage")
+    for rolle in handelnd.roles.all():
+        rolle.permissions.remove(*Permission.objects.filter(codename="tasks.manage"))
+    assert handelnd.has_permission("tasks.manage"), "das alte Objekt kennt den Entzug nicht"
+
+    with pytest.raises(org_services.ServiceError):
+        org_services.reactivate_member(org, ziel, handelnd)
+    ziel.refresh_from_db()
+    assert not ziel.is_active
+
+    # Mit den Rechten im jetzigen Stand geht es
+    org_services.reactivate_member(org, ziel, make_member(org, rechte, email="darf@example.org"))
+    ziel.refresh_from_db()
+    assert ziel.is_active
+
+
 # --- Backup-Codes ------------------------------------------------------------------------------------------------
 
 
