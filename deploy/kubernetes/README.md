@@ -76,7 +76,7 @@ Die Manifeste sind aus dem Chart erzeugt. Für Updates ist Helm deutlich bequeme
 | `adminUser.email` / `.password` | `""` | Legt beim ersten Lauf ein Administrationskonto an |
 | `logging.format` | `json` | `json` oder `text` |
 | `tracing.otlpEndpoint` | `""` | Gesetzt: OpenTelemetry aktiv |
-| `networkPolicy.enabled` | `false` | Schränkt den Zugriff auf Datenbank, Cache und Suchindex ein |
+| `networkPolicy.enabled` | `true` | Datenbank, Cache und Suchindex nehmen nur Verbindungen aus dieser Installation an (braucht ein Netz-Plugin, das NetworkPolicy durchsetzt; weitere Richtlinien im Namespace wirken additiv und dürfen diese Pods nicht für fremde Pods öffnen) |
 
 Vollständige Liste: `deploy/kubernetes/helm/mandari/values.yaml`. Vorlagen für kleine und
 große Installationen: `values-minimal.yaml`, `values-production.yaml`.
