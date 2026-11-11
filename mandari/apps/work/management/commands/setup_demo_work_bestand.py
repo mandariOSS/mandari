@@ -1336,7 +1336,9 @@ class Command(BaseCommand):
                 ),
                 document_type=typ,
                 status=dok.status,
-                visibility="organization",
+                # Im Ordner „Nichtöffentliche Vorgänge“ gespeichert als „privat“ (DocumentFolder, Issue #873):
+                # Eine ältere Version ohne Ordnerregel zeigt sie dann nicht allen Mitgliedern
+                visibility="private" if dok.ordner == "noe" else "organization",
                 author=self._wer(welt, dok.autor),
                 responsible=self._wer(welt, dok.autor),
                 summary=dok.zusammenfassung,
