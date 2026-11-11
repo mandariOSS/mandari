@@ -20,9 +20,10 @@ from typing import Any
 import httpcore
 import httpx
 import pytest
+from mandari_oparl.robots import MAX_BYTES, Decision
 
 from insight_core.models import OParlBody, OParlPerson, OParlSource
-from insight_core.services import person_photos, redirects, robots, safe_fetch
+from insight_core.services import host_pacing, person_photos, redirects, robots, safe_fetch
 
 OEFFENTLICH = "93.184.215.14"
 
@@ -39,7 +40,7 @@ def _aufloesung(monkeypatch: pytest.MonkeyPatch, *antworten: list[str]) -> list[
             raise socket.gaierror("nicht auflösbar")
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (adresse, 0)) for adresse in adressen]
 
-    monkeypatch.setattr(safe_fetch.socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
     return gefragt
 
 
@@ -173,7 +174,7 @@ def test_gzip_und_deflate_werden_entpackt() -> None:
 
 def test_robots_txt_wird_nur_bis_zur_grenze_gelesen(monkeypatch: pytest.MonkeyPatch, echte_robots: Any) -> None:
     gross = b"User-agent: *\nDisallow: /intern\n" + b"# Kommentar\n" * 500_000
-    assert len(gross) > 4 * robots.MAX_BYTES
+    assert len(gross) > 4 * MAX_BYTES
     transport = httpx.MockTransport(lambda request: httpx.Response(200, content=gross))
     monkeypatch.setattr(safe_fetch, "guarded_client", lambda **kwargs: httpx.Client(transport=transport, **kwargs))
     monkeypatch.setattr("insight_core.services.host_pacing.wait", lambda *a, **k: True)
@@ -181,7 +182,7 @@ def test_robots_txt_wird_nur_bis_zur_grenze_gelesen(monkeypatch: pytest.MonkeyPa
     status, body = robots._fetch("https://ris.example.org/datei.pdf", robots.USER_AGENT)
 
     assert status == 200
-    assert len(body) == robots.MAX_BYTES and body.startswith(b"User-agent: *")
+    assert len(body) == MAX_BYTES and body.startswith(b"User-agent: *")
 
 
 # --- Personenfotos -------------------------------------------------------------------------------------
@@ -209,8 +210,8 @@ def test_zu_grosses_foto_wird_nicht_ganz_gelesen(monkeypatch: pytest.MonkeyPatch
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, content=gross, headers={"Content-Type": "image/jpeg"})
     )
-    monkeypatch.setattr(person_photos.robots, "check", lambda *a, **k: robots.Decision(True, "parsed"))
-    monkeypatch.setattr(person_photos.host_pacing, "wait", lambda *a, **k: True)
+    monkeypatch.setattr(robots, "check", lambda *a, **k: Decision(True, "parsed"))
+    monkeypatch.setattr(host_pacing, "wait", lambda *a, **k: True)
 
     with httpx.Client(transport=transport) as client:
         ergebnis = person_photos.fetch_person_photo(person, client=client)

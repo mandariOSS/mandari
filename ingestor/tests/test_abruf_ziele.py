@@ -117,6 +117,36 @@ async def test_internes_ziel_ohne_verbindung(monkeypatch: pytest.MonkeyPatch) ->
             await client.get("http://intern.example.org/geheim")
 
     assert str(fehler.value.request.url) == "http://intern.example.org/geheim"
+    assert not isinstance(fehler.value, ziel.UnresolvableHostError)
+
+
+@pytest.mark.asyncio
+async def test_nicht_aufloesbarer_name_bleibt_im_transport_ein_voruebergehender_fehler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _aufloesung(monkeypatch, [])
+    monkeypatch.setattr(httpcore.AnyIOBackend, "connect_tcp", lambda *a, **k: pytest.fail("keine Verbindung erlaubt"))
+
+    async with httpx.AsyncClient(transport=ziel.PinnedAsyncTransport()) as client:
+        with pytest.raises(ziel.UnresolvableHostError) as fehler:
+            await client.get("http://ris.example.org/datei.pdf")
+
+    # Wie ein Verbindungsfehler: Aufrufer stellen zurück, statt das Ziel als intern zu werten
+    assert isinstance(fehler.value, httpx.ConnectError)
+    assert str(fehler.value.request.url) == "http://ris.example.org/datei.pdf"
+
+
+@pytest.mark.asyncio
+async def test_dns_ausfall_sperrt_den_host_nicht_dauerhaft_und_stellt_die_datei_zurueck(
+    monkeypatch: pytest.MonkeyPatch, ohne_takt: None
+) -> None:
+    _aufloesung(monkeypatch, [])
+    storage = _Storage()
+
+    ergebnis = await TextExtractor(storage)._process_file(_datei("http://ris.example.org/datei.pdf"))
+
+    assert ergebnis is False
+    assert [eintrag["status"] for eintrag in storage.texte] == ["pending"]
 
 
 # --- Datei-Download des Ingestors ------------------------------------------------------------------------

@@ -114,4 +114,6 @@ class PinnedAsyncTransport(httpx.AsyncHTTPTransport):
         try:
             return await super().handle_async_request(request)
         except BlockedDestinationError as exc:
-            raise BlockedDestinationError(str(exc), request=request) from None
+            # Dieselbe Klasse mit der Anfrage: Aufrufer unterscheiden „nicht auflösbar“ (später erneut) von
+            # „nicht öffentlich“ (überspringen)
+            raise type(exc)(str(exc), request=request) from None
