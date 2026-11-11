@@ -342,12 +342,13 @@ def test_export_nennt_nichtoeffentlichen_vorschlag_nur_mit_sicht(
 # --- Einbettungs-Snippet -----------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "vorlage", ["templates/work/organization/api_settings.html", "templates/work/organization/neu/api.html"]
-)
-def test_snippet_setzt_titel_und_ort_als_text(vorlage: str) -> None:
-    quelltext = (Path(settings.BASE_DIR) / vorlage).read_text(encoding="utf-8")
+def test_snippet_setzt_titel_und_ort_als_text() -> None:
+    vorlagen = Path(settings.BASE_DIR) / "templates" / "work" / "organization"
+    quelltext = (vorlagen / "partials" / "_termine_snippet.html").read_text(encoding="utf-8")
 
     assert "fraktions-termine" in quelltext
     assert "innerHTML" not in quelltext
     assert "document.createElement" in quelltext and "textContent" in quelltext
+    # Beide Einstellungsseiten zeigen dasselbe Snippet
+    for seite in ("api_settings.html", "neu/api.html"):
+        assert "partials/_termine_snippet.html" in (vorlagen / seite).read_text(encoding="utf-8")
