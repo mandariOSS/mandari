@@ -357,6 +357,10 @@ build_helm_args() {
     # Sie steht getrennt von HELM_ARGS, damit der Testlauf sie nicht ausgibt.
     HELM_SECRET_ARGS=()
     if [ -n "$ADMIN_EMAIL" ]; then
+        # Die Wertedatei trägt das Passwort als eine Zeile: Zeilenumbrüche veränderte YAML beim Lesen
+        case "$ADMIN_PASSWORD" in
+            *$'\n'* | *$'\r'*) error "Das Administratorpasswort darf keine Zeilenumbrüche enthalten." ;;
+        esac
         ADMIN_VALUES=$(umask 077 && mktemp "${TMPDIR:-/tmp}/mandari-admin.XXXXXX")
         trap 'rm -f "$ADMIN_VALUES"' EXIT
         # YAML in einfachen Anführungszeichen: nur das Anführungszeichen selbst wird verdoppelt

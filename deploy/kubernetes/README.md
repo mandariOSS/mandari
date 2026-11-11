@@ -112,7 +112,7 @@ PR-Prüfung vergleicht sie mit dem Chart). Für Updates ist Helm deutlich bequem
 | `mail.messageIdDomain` | `""` | Domain für Message-ID und EHLO (`EMAIL_MESSAGE_ID_DOMAIN`); leer = Domain von `mail.fromEmail`, sonst `domain`. Setzen, wenn der Absender in den Systemeinstellungen eine andere Domain hat (DEPLOYMENT.md, „Mailversand: Message-ID und EHLO“) |
 | `logging.format` | `json` | `json` oder `text` |
 | `tracing.otlpEndpoint` | `""` | Gesetzt: OpenTelemetry aktiv |
-| `networkPolicy.enabled` | `true` | Datenbank, Cache und Suchindex nehmen nur Verbindungen aus dieser Installation an (braucht ein Netz-Plugin, das NetworkPolicy durchsetzt) |
+| `networkPolicy.enabled` | `true` | Datenbank, Cache und Suchindex nehmen nur Verbindungen aus dieser Installation an (braucht ein Netz-Plugin, das NetworkPolicy durchsetzt; weitere Richtlinien im Namespace wirken additiv und dürfen diese Pods nicht für fremde Pods öffnen) |
 
 Vollständige Liste: `deploy/kubernetes/helm/mandari/values.yaml`. Vorlagen für kleine und
 große Installationen: `values-minimal.yaml`, `values-production.yaml`.

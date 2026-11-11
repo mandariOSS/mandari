@@ -14,7 +14,7 @@ Bibliothek). Bilder, die ein PDF zeigen soll, stehen deshalb als ``data:``-Adres
 from __future__ import annotations
 
 import base64
-import io
+import html as html_lib
 import logging
 import re
 import time
@@ -34,16 +34,24 @@ _SUFFIX_TYPES = {
     ".webp": "image/webp",
 }
 
-#: Grenzen für Bilder fremder Server je Dokument
+#: Grenzen für Bilder fremder Server je Dokument: verschiedene Adressen, Größe und Zeit je Bild, Zeit insgesamt
+#: und die Menge eingebetteter Daten (dieselbe Adresse kann im Text beliebig oft stehen)
 MAX_REMOTE_IMAGES = 20
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 IMAGE_SECONDS = 5.0
 TOTAL_SECONDS = 20.0
+MAX_EMBEDDED_BYTES = 30 * 1024 * 1024
+MAX_REDIRECTS = 3
 
 #: Grenze für eigene Dateien (Logo)
 MAX_FILE_BYTES = 5 * 1024 * 1024
 
 _REMOTE_IMG = re.compile(r"""(<img\b[^>]*?\bsrc\s*=\s*)(["'])(https?://[^"'\s>]+)\2""", re.IGNORECASE)
+
+
+def _now() -> float:
+    """Uhr der Fristen (in Tests ersetzbar)."""
+    return time.monotonic()
 
 
 def _data_uri(content_type: str, data: bytes) -> str:
@@ -66,50 +74,71 @@ def file_data_uri(field_file: Any) -> str:
     return _data_uri(content_type, data)
 
 
-def _fetch(url: str, seconds: float) -> str:
-    """Ein Bild laden und als ``data:``-Adresse liefern; leer, wenn es sich nicht laden lässt."""
+def _fetch(url: str, deadline: float) -> str:
+    """
+    Ein Bild laden und als ``data:``-Adresse liefern; leer, wenn es sich nicht laden lässt.
+
+    ``deadline`` (``time.monotonic()``) gilt hart für den ganzen Abruf: Der Rumpf wird so gelesen, wie er ankommt,
+    und nach jedem Stück geprüft. Ein Server, der nur tröpfchenweise sendet, hält den Export deshalb nicht länger
+    auf als bis zur Frist; ohne Daten greift die Wartezeit je Lesevorgang.
+    """
     from insight_core.services import safe_fetch
 
-    target = io.BytesIO()
+    seconds = max(0.1, min(deadline - _now(), IMAGE_SECONDS))
+    parts: list[bytes] = []
+    size = 0
     try:
-        download = safe_fetch.download_to(
-            target,
-            url,
-            max_bytes=MAX_IMAGE_BYTES,
-            total_seconds=seconds,
-            timeout=httpx.Timeout(min(seconds, IMAGE_SECONDS)),
-            # Unkomprimiert: Die Größengrenze zählt dann die empfangenen Bytes
-            headers={"Accept-Encoding": "identity"},
-        )
-    except (httpx.HTTPError, safe_fetch.TooLargeError, safe_fetch.DeadlineExceededError) as exc:
+        with (
+            safe_fetch.guarded_client(
+                timeout=httpx.Timeout(seconds), follow_redirects=True, max_redirects=MAX_REDIRECTS
+            ) as client,
+            # Unkomprimiert: Die Größengrenze zählt die empfangenen Bytes
+            client.stream("GET", url, headers={"Accept-Encoding": "identity"}) as response,
+        ):
+            content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+            if response.status_code != 200 or content_type not in IMAGE_TYPES:
+                return ""
+            if response.headers.get("content-encoding", "identity").strip().lower() not in ("", "identity"):
+                return ""
+            for chunk in response.iter_raw():
+                size += len(chunk)
+                if size > MAX_IMAGE_BYTES or _now() > deadline:
+                    return ""
+                parts.append(chunk)
+    except httpx.HTTPError as exc:
         logger.info("Bild für das PDF nicht geladen (%s)", type(exc).__name__)
         return ""
-    content_type = download.content_type.split(";")[0].strip().lower()
-    if content_type not in IMAGE_TYPES:
-        return ""
-    return _data_uri(content_type, target.getvalue())
+    return _data_uri(content_type, b"".join(parts)) if parts else ""
 
 
 def inline_remote_images(html: str) -> str:
     """
     Bilder fremder Server (``<img src="http…">``) durch eingebettete ersetzen.
 
-    Höchstens ``MAX_REMOTE_IMAGES`` verschiedene Adressen und ``TOTAL_SECONDS`` je Dokument. Bilder darüber hinaus
-    und solche, die sich nicht laden lassen, verlieren ihre Adresse und fehlen im PDF.
+    Höchstens ``MAX_REMOTE_IMAGES`` verschiedene Adressen, ``TOTAL_SECONDS`` und ``MAX_EMBEDDED_BYTES`` eingebettete
+    Daten je Dokument. Bilder darüber hinaus und solche, die sich nicht laden lassen, verlieren ihre Adresse und
+    fehlen im PDF.
     """
     if "<img" not in html.lower():
         return html
     geladen: dict[str, str] = {}
-    deadline = time.monotonic() + TOTAL_SECONDS
+    deadline = _now() + TOTAL_SECONDS
+    budget = MAX_EMBEDDED_BYTES
 
     def ersetzen(match: re.Match[str]) -> str:
-        url = match.group(3)
+        nonlocal budget
+        # Der Attributwert steht im HTML maskiert (``&amp;`` in Adressen mit mehreren Parametern)
+        url = html_lib.unescape(match.group(3))
         if url not in geladen:
-            rest = deadline - time.monotonic()
-            if len(geladen) >= MAX_REMOTE_IMAGES or rest <= 0:
+            if len(geladen) >= MAX_REMOTE_IMAGES or _now() >= deadline:
                 geladen[url] = ""
             else:
-                geladen[url] = _fetch(url, min(rest, IMAGE_SECONDS))
-        return f"{match.group(1)}{match.group(2)}{geladen[url]}{match.group(2)}"
+                geladen[url] = _fetch(url, min(deadline, _now() + IMAGE_SECONDS))
+        eingebettet = geladen[url]
+        # Dieselbe Adresse kann beliebig oft im Text stehen: Jede Stelle zählt gegen das Budget
+        if len(eingebettet) > budget:
+            eingebettet = ""
+        budget -= len(eingebettet)
+        return f"{match.group(1)}{match.group(2)}{eingebettet}{match.group(2)}"
 
     return _REMOTE_IMG.sub(ersetzen, html)

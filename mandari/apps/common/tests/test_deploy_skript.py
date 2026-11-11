@@ -315,4 +315,4 @@ def test_sicherungen_und_zwischendateien_nur_fuer_das_eigene_konto(tmp_path: Pat
     assert (arbeit / "backups").stat().st_mode & 0o777 == 0o700
     assert {datei.stat().st_mode & 0o777 for datei in sicherungen} == {0o600}
     # Die Zwischenkopie der .env bleibt nicht liegen
-    assert not (arbeit / ".env.neu").exists()
+    assert list(arbeit.glob(".env.neu*")) == []

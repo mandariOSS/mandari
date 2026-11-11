@@ -12,7 +12,6 @@ PDF-Erzeugung liest nichts außerhalb des Dokuments; Bilder werden vorher eingeb
 from __future__ import annotations
 
 import base64
-import io
 from typing import Any
 
 import httpx
@@ -86,32 +85,48 @@ def test_gesperrte_bildquellen_fehlen_und_das_pdf_entsteht(monkeypatch: pytest.M
 # --- Bilder fremder Server ---------------------------------------------------------------------------------------
 
 
-def _abruf(monkeypatch: pytest.MonkeyPatch, antworten: dict[str, Any]) -> list[str]:
+def _server(monkeypatch: pytest.MonkeyPatch, antworten: dict[str, Any]) -> list[str]:
+    """Abgesicherter Client mit Ersatz-Transport: je Adresse eine Antwort oder ein Fehler; zurück die Abrufe."""
     geladen: list[str] = []
 
-    def download_to(target: io.BytesIO, url: str, **kwargs: Any) -> safe_fetch.Download:
-        geladen.append(url)
-        antwort = antworten[url]
+    def antworten_auf(request: httpx.Request) -> httpx.Response:
+        geladen.append(str(request.url))
+        antwort = antworten[str(request.url)]
         if isinstance(antwort, Exception):
             raise antwort
         inhalt, art = antwort
-        target.write(inhalt)
-        return safe_fetch.Download(content_type=art, size=len(inhalt))
+        # Als Strom wie von einem echten Server (nicht schon vollständig geladen)
+        return httpx.Response(200, stream=httpx.ByteStream(inhalt), headers={"Content-Type": art})
 
-    monkeypatch.setattr(safe_fetch, "download_to", download_to)
+    def client(**kwargs: Any) -> httpx.Client:
+        kwargs.pop("transport", None)
+        return httpx.Client(transport=httpx.MockTransport(antworten_auf), **kwargs)
+
+    monkeypatch.setattr(safe_fetch, "guarded_client", client)
     return geladen
 
 
+EINGEBETTET = f"data:image/png;base64,{base64.b64encode(PNG).decode()}"
+
+
 def test_bilder_fremder_server_werden_eingebettet(monkeypatch: pytest.MonkeyPatch) -> None:
-    geladen = _abruf(monkeypatch, {"https://bilder.example.org/a.png": (PNG, "image/png; charset=binary")})
+    geladen = _server(monkeypatch, {"https://bilder.example.org/a.png": (PNG, "image/png; charset=binary")})
     html = '<p>Text</p><img alt="A" src="https://bilder.example.org/a.png"><img src="https://bilder.example.org/a.png">'
 
     ergebnis = pdf_bilder.inline_remote_images(html)
 
-    eingebettet = f"data:image/png;base64,{base64.b64encode(PNG).decode()}"
-    assert ergebnis.count(f'src="{eingebettet}"') == 2 and "https://bilder.example.org" not in ergebnis
+    assert ergebnis.count(f'src="{EINGEBETTET}"') == 2 and "https://bilder.example.org" not in ergebnis
     # Dieselbe Adresse wird einmal geladen
     assert geladen == ["https://bilder.example.org/a.png"]
+
+
+def test_adresse_mit_mehreren_parametern_wird_unmaskiert_abgerufen(monkeypatch: pytest.MonkeyPatch) -> None:
+    geladen = _server(monkeypatch, {"https://bilder.example.org/a.png?a=1&b=2": (PNG, "image/png")})
+
+    ergebnis = pdf_bilder.inline_remote_images('<img src="https://bilder.example.org/a.png?a=1&amp;b=2">')
+
+    assert geladen == ["https://bilder.example.org/a.png?a=1&b=2"]
+    assert ergebnis == f'<img src="{EINGEBETTET}">'
 
 
 @pytest.mark.parametrize(
@@ -120,22 +135,53 @@ def test_bilder_fremder_server_werden_eingebettet(monkeypatch: pytest.MonkeyPatc
         (b"<html>kein Bild</html>", "text/html"),
         httpx.ConnectError("nicht erreichbar"),
         safe_fetch.BlockedDestinationError("Ziel liegt nicht im öffentlichen Netz"),
-        safe_fetch.TooLargeError(),
-        safe_fetch.DeadlineExceededError(),
+        httpx.ReadTimeout("zu langsam"),
     ],
 )
 def test_nicht_ladbare_bilder_verlieren_ihre_adresse(monkeypatch: pytest.MonkeyPatch, antwort: Any) -> None:
-    _abruf(monkeypatch, {"http://intern.example.org/x.png": antwort})
+    _server(monkeypatch, {"http://intern.example.org/x.png": antwort})
 
     ergebnis = pdf_bilder.inline_remote_images('<img src="http://intern.example.org/x.png" alt="x">')
 
     assert ergebnis == '<img src="" alt="x">'
 
 
+def test_zu_grosses_bild_wird_nicht_eingebettet(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pdf_bilder, "MAX_IMAGE_BYTES", 10)
+    _server(monkeypatch, {"https://bilder.example.org/gross.png": (PNG, "image/png")})
+
+    assert pdf_bilder.inline_remote_images('<img src="https://bilder.example.org/gross.png">') == '<img src="">'
+
+
+def test_frist_gilt_auch_bei_troepfelnden_daten(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Der Rumpf kommt in vielen kleinen Stücken: Nach der Frist bricht der Abruf ab, statt weiterzulesen."""
+    uhr = {"jetzt": 1000.0}
+    monkeypatch.setattr(pdf_bilder, "_now", lambda: uhr["jetzt"])
+
+    class Troepfelnd(httpx.SyncByteStream):
+        def __iter__(self) -> Any:
+            for _ in range(10_000):
+                uhr["jetzt"] += 1.0
+                yield b"x"
+
+    def antworten_auf(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=Troepfelnd(), headers={"Content-Type": "image/png"})
+
+    def client(**kwargs: Any) -> httpx.Client:
+        kwargs.pop("transport", None)
+        return httpx.Client(transport=httpx.MockTransport(antworten_auf), **kwargs)
+
+    monkeypatch.setattr(safe_fetch, "guarded_client", client)
+
+    assert pdf_bilder.inline_remote_images('<img src="https://langsam.example.org/x.png">') == '<img src="">'
+    # Abgebrochen kurz nach der Frist je Bild, nicht erst nach allen Stücken
+    assert uhr["jetzt"] < 1000.0 + pdf_bilder.IMAGE_SECONDS + 5
+
+
 def test_hoechstens_so_viele_bilder_je_dokument(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pdf_bilder, "MAX_REMOTE_IMAGES", 2)
     adressen = [f"https://bilder.example.org/{nummer}.png" for nummer in range(4)]
-    geladen = _abruf(monkeypatch, dict.fromkeys(adressen, (PNG, "image/png")))
+    geladen = _server(monkeypatch, dict.fromkeys(adressen, (PNG, "image/png")))
 
     ergebnis = pdf_bilder.inline_remote_images("".join(f'<img src="{adresse}">' for adresse in adressen))
 
@@ -143,8 +189,19 @@ def test_hoechstens_so_viele_bilder_je_dokument(monkeypatch: pytest.MonkeyPatch)
     assert ergebnis.count("data:image/png;base64,") == 2 and ergebnis.count('src=""') == 2
 
 
+def test_wiederholte_adresse_zaehlt_gegen_das_datenbudget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dieselbe Adresse an vielen Stellen: Eingebettet wird nur, bis das Budget des Dokuments aufgebraucht ist."""
+    monkeypatch.setattr(pdf_bilder, "MAX_EMBEDDED_BYTES", 2 * len(EINGEBETTET) + 10)
+    geladen = _server(monkeypatch, {"https://bilder.example.org/a.png": (PNG, "image/png")})
+
+    ergebnis = pdf_bilder.inline_remote_images('<img src="https://bilder.example.org/a.png">' * 50)
+
+    assert len(geladen) == 1
+    assert ergebnis.count(EINGEBETTET) == 2 and ergebnis.count('src=""') == 48
+
+
 def test_text_ohne_fremde_bilder_bleibt_unveraendert(monkeypatch: pytest.MonkeyPatch) -> None:
-    geladen = _abruf(monkeypatch, {})
+    geladen = _server(monkeypatch, {})
     html = '<p>Text mit <a href="https://example.org/x.png">Link</a></p><img src="data:image/png;base64,AAAA">'
 
     assert pdf_bilder.inline_remote_images(html) == html and geladen == []

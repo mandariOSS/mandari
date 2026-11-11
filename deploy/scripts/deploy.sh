@@ -263,14 +263,20 @@ switch_to() {
   # Reihenfolge Migration -> Worker -> Web: Die Worker laufen schon mit dem Stand $1, wenn die
   # Anwendung umschaltet; Auftraege und Ereignisse der neuen Webprozesse bleiben nicht liegen.
   tag="$1"
-  # Die Zwischenkopie enthält alle Schlüssel: Sie entsteht mit umask 077 und bleibt auch bei einem Fehler nicht liegen
-  if sed "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" .env > .env.neu && cat .env.neu > .env; then
-    rm -f .env.neu
-  else
-    rm -f .env.neu
+  # Die Zwischenkopie enthält alle Schlüssel: jedes Mal neu angelegt (mktemp, nur für das eigene Konto), nie eine
+  # liegen gebliebene Datei mit anderen Rechten wiederverwendet
+  neu=$(mktemp .env.neu.XXXXXX)
+  if ! sed "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" .env > "$neu"; then
+    rm -f "$neu"
     echo "FEHLER: IMAGE_TAG in .env nicht umgestellt"
     return 1
   fi
+  if ! cat "$neu" > .env; then
+    # .env kann jetzt unvollständig sein: Die vollständige Kopie bleibt liegen (nur für das eigene Konto lesbar)
+    echo "FEHLER: .env nicht geschrieben. Vollständige Kopie: $MANDARI_DIR/$neu"
+    return 1
+  fi
+  rm -f "$neu"
   # shellcheck disable=SC2086
   $DC up -d --no-deps $WORKER_SERVICES < /dev/null
   $DC up -d --no-deps --wait "$APP_SERVICE" < /dev/null
@@ -325,7 +331,10 @@ case "$MODE" in
     # umask wirkt nur auf Neues: Verzeichnis und Sicherungen früherer Läufe ebenfalls schließen
     chmod 700 "$BACKUP_DIR"
     for alt in "$BACKUP_DIR"/pre-deploy-*.dump; do
-      [ -f "$alt" ] && chmod 600 "$alt"
+      # Nur gewöhnliche Dateien: Über einen symbolischen Link änderte chmod die Rechte der Zieldatei
+      if [ -f "$alt" ] && [ ! -L "$alt" ]; then
+        chmod 600 "$alt"
+      fi
     done
     BACKUP="$BACKUP_DIR/pre-deploy-$NEW_TAG-$(date -u +%Y%m%d-%H%M).dump"
     $DC exec -T "$DB_SERVICE" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' < /dev/null > "$BACKUP"
