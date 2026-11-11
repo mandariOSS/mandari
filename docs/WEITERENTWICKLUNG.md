@@ -167,10 +167,10 @@ Linien unterstützt werden, steht in [SECURITY.md](../SECURITY.md#unterstützte-
 4. **Mergen**, sobald die CI grün ist: `gh pr merge <nummer> --squash`. Pflegelinien haben keine
    Merge-Queue. Eine zweite fachliche Prüfung entfällt; geprüft wird, dass der Diff dem Original
    entspricht.
-   **CI-Auslöser:** Linien ab 0.13 lösen die CI für PRs gegen `release/v*` selbst aus. Für Linien
-   davor (0.11, 0.12) braucht es einmalig einen PR, der in deren `.github/workflows/pr-check.yml`
+   **CI-Auslöser:** Linien ab 0.13 lösen die CI für PRs gegen `release/v*` selbst aus, 0.11 seit 0.11.1
+   (`release/**`). Für 0.12 braucht es einmalig einen PR, der in deren `.github/workflows/pr-check.yml`
    den Zweig `release/v*` unter `pull_request` ergänzt; dieser PR startet die CI selbst, weil er die
-   Datei ändert. Erst danach Rückportierungen öffnen.
+   Datei ändert. Erst danach Rückportierungen öffnen; das Skript prüft das.
 5. **Patch-Version** innerhalb der Frist (Release-Politik, Abschnitt 4), mehrere Korrekturen
    gern gebündelt:
    - PR gegen `release/v<Linie>`: Version `X.Y.N` in `pyproject.toml` und `package.json`,
