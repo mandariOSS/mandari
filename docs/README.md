@@ -74,6 +74,6 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `SICHERHEITSNACHWEISE.md` | – (Fahrplan Sicherheitsnachweise: heutige Belege, Penetrationstest, Grundschutz-Selbstbewertung, ISO 27001 und C5) |
 | `ENGINEERING_STANDARDS.md` | – (Regeln für neuen und angefassten Code: Schichten, Typisierung, Tests, Sicherheit, Frontend, API, Betrieb; Entwicklung) |
 | `BARRIEREFREIHEIT_PRUEFPROTOKOLL.md` | – (automatisch und manuell geprüfte Komponenten und Kernpfade, offene Punkte; Grundlage der Barrierefreiheitserklärung) |
-| `PROJEKTSTEUERUNG.md` | – (wie Arbeit geplant, verfolgt und ausgeliefert wird: Issues, Epics, Meilensteine, Projekt-Board; Beitragende) |
+| `WEITERENTWICKLUNG.md` | – (verbindlich: Release-Zug alle zwei Wochen, Planung, Prioritäten, gleichzeitige Arbeit, Rückportierung in Pflegelinien; alle Beitragenden und Agenten) |
 | `CSP.md` | – (Content-Security-Policy: Stand, Muster ohne Inline-Code, Bewertung Alpine-CSP-Build; Entwicklung) |
 | `cla/README.md` | – (Beitragsvereinbarung: Stand, Prüfung im Pull Request, Pflege; Entwicklung) |

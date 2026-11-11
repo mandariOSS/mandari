@@ -13,7 +13,8 @@
 # Zweig/Ereignis → Tags (für alle drei Images):
 #   dev     → :dev, :dev-<sha>
 #   main    → :latest, :main-<sha>, :<sha>
-#   release → :<version>, :latest
+#   release → :<version>, dazu :latest nur für die höchste veröffentlichte Version
+#             (eine Patch-Version einer Pflegelinie setzt latest nicht zurück, Issue #1341)
 #   manual  → :<input>
 # Einen Kanal "beta" gibt es nicht.
 #
@@ -143,15 +144,25 @@ jobs:
 
       - name: Determine image tags
         id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           BRANCH="${GITHUB_REF_NAME}"
 
           if [ "${{ github.event_name }}" == "release" ]; then
-            # Release: version tag + latest
+            # Release: Versions-Tag; latest nur, wenn es die höchste veröffentlichte Version ist. Eine Patch-Version
+            # einer Pflegelinie (etwa v0.12.3 nach v0.16.0) darf latest nicht zurücksetzen (docs/RELEASE_POLITIK.md).
             VERSION="${{ github.event.release.tag_name }}"
-            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest"
-            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest"
+            HOECHSTE=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate               --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | sort -V | tail -n 1)
+            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${VERSION}"
+            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${VERSION}"
+            if [ "$VERSION" = "$HOECHSTE" ]; then
+              MANDARI_TAGS="${MANDARI_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest"
+              INGESTOR_TAGS="${INGESTOR_TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest"
+            else
+              echo "::notice title=latest bleibt::${VERSION} ist nicht die höchste Version (${HOECHSTE}); latest bleibt unverändert."
+            fi
 
           elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             # Manual: custom tag

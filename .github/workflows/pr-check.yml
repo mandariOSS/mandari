@@ -57,6 +57,8 @@ on:
     branches:
       - dev
       - main
+      # Pflegelinien (release/v0.12 usw.): Rückportierungen laufen durch die volle CI (docs/WEITERENTWICKLUNG.md, Issue #1341)
+      - 'release/v*'
   # Merge-Queue: kombinierter Stand vor dem Merge, Jobs nach dem Pfadfilter wie im Pull Request (Issue #1315)
   merge_group:
     types: [checks_requested]
@@ -397,8 +399,8 @@ jobs:
           fi
           if [ "$EREIGNIS" != "pull_request" ] && [ "$EREIGNIS" != "merge_group" ]; then
             alle=true; grund="Ereignis $EREIGNIS"
-          elif [ "$ZIELZWEIG" = "main" ]; then
-            alle=true; grund="Pull Request gegen main"
+          elif [ "$ZIELZWEIG" = "main" ] || [[ "$ZIELZWEIG" == release/v* ]]; then
+            alle=true; grund="Pull Request gegen $ZIELZWEIG"
           elif [ "$netz" = "true" ]; then
             alle=true; grund=".github/ oder Abhängigkeitsdateien geändert"
           fi

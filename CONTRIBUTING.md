@@ -15,7 +15,8 @@ Mit der Teilnahme gilt der [Verhaltenskodex](CODE_OF_CONDUCT.md).
 | Frage | [Diskussionen](https://github.com/mandariOSS/mandari/discussions) |
 | Erster Beitrag | Issues mit der Markierung [`good first issue`](https://github.com/mandariOSS/mandari/labels/good%20first%20issue) |
 
-Wie wir Arbeit planen und verfolgen (Epics, Meilensteine, Status, Entscheidungen), steht in [docs/PROJEKTSTEUERUNG.md](docs/PROJEKTSTEUERUNG.md).
+Wie wir planen, priorisieren und ausliefern (Release alle zwei Wochen, Meilensteine, Prioritäten, Rückportierung in
+Pflegeversionen), steht verbindlich in [docs/WEITERENTWICKLUNG.md](docs/WEITERENTWICKLUNG.md).
 
 Bei größeren Änderungen lohnt sich ein Issue vorab — das erspart Arbeit, die am Ende nicht
 zum Projekt passt.
@@ -295,7 +296,9 @@ allem davor geprüft ist. Nach dem Merge holt sich die Staging-Umgebung den neue
 (siehe [DEPLOYMENT.md](DEPLOYMENT.md#staging-als-prüfstand)). An der Queue vorbei mergen
 nur Administratoren im Notfall.
 
-Entwicklung findet auf `dev` statt; `main` ist der Produktionsstand.
+Entwicklung findet auf `dev` statt; `main` ist der Produktionsstand. Alle zwei Wochen erscheint aus
+`main` eine Version. Korrekturen für ältere Versionen entstehen nie direkt auf deren Zweig, sondern
+zuerst in `dev` und werden dann zurückportiert ([Weiterentwicklung, Abschnitt 9](docs/WEITERENTWICKLUNG.md#9-rückportierung-in-pflegelinien)).
 
 ## Lizenz und Urheberrecht
 
