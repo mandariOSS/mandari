@@ -238,6 +238,54 @@ def test_abruf_nur_oeffentliche_https_ziele(url: str) -> None:
         abruf.hole(url, http=client)
 
 
+def test_abruf_verbindet_nur_mit_geprueften_adressen(monkeypatch: pytest.MonkeyPatch, settings: Any) -> None:
+    """Ein Name, der auf eine Adresse im eigenen Netz zeigt, bekommt keine Anfrage: weder direkt noch als Ziel."""
+    from insight_core.services import dienste, safe_fetch
+
+    # Auch nicht, wenn die Installation Abrufe bei Ratsinformationssystemen im privaten Netz erlaubt und der eigene
+    # Host intern auflöst: Für Live-Abrufe gelten diese Ausnahmen nicht
+    settings.INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS = True
+    settings.SITE_URL = "https://portal.example.org"
+    adressen = {
+        "player.example.org": ["93.184.215.14"],
+        "intern.example.org": ["10.0.0.5"],
+        "portal.example.org": ["10.0.0.9"],
+    }
+    monkeypatch.setattr(safe_fetch, "_resolve", lambda host: adressen.get(host, []))
+    monkeypatch.setattr(dienste, "warten", lambda *_a, **_kw: True)
+    gesehen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesehen.append(str(request.url))
+        if request.url.path == "/weiter":
+            return httpx.Response(302, headers={"Location": "https://intern.example.org/geheim"})
+        return httpx.Response(200, content=b"#EXTM3U")
+
+    streng = safe_fetch.guarded_client(strict=True, transport=httpx.MockTransport(handler), follow_redirects=False)
+    with streng as client:
+        assert abruf.hole("https://player.example.org/ok", http=client) == b"#EXTM3U"
+        gesehen.clear()
+        for ziel in ("https://intern.example.org/geheim", "https://portal.example.org/intern"):
+            with pytest.raises(AnbieterError, match="eigenen Netz"):
+                abruf.hole(ziel, http=client)
+        assert gesehen == []
+        with pytest.raises(AnbieterError, match="eigenen Netz"):
+            abruf.hole("https://player.example.org/weiter", http=client)
+        assert gesehen == ["https://player.example.org/weiter"]
+
+    # Der eigene Client des Moduls prüft und bindet die Adresse, in der strengen Fassung
+    with abruf.client() as eigener:
+        assert isinstance(eigener._transport, safe_fetch.StrictPinnedTransport)
+        assert eigener.event_hooks["request"] == [safe_fetch._check_request_strict]
+    with safe_fetch._strict():
+        assert safe_fetch._own_hosts() == set() and not safe_fetch._allowed_address("10.0.0.5")
+        with pytest.raises(safe_fetch.BlockedDestinationError):
+            safe_fetch.check_url("https://portal.example.org/intern")
+    # Für die übrigen Abrufe bleiben die Ausnahmen der Installation bestehen
+    assert safe_fetch._allowed_address("10.0.0.5") and safe_fetch._own_hosts() == {"portal.example.org"}
+    safe_fetch.check_url("https://intern.example.org/oparl")
+
+
 def test_abruf_oeffentliche_ziele_erlaubt() -> None:
     for url in ("https://cdn.example/a.m3u8", "https://93.184.215.14/a", "https://xn--bcher-kva.example/a"):
         assert abruf.ziel_pruefen(url).scheme == "https"
