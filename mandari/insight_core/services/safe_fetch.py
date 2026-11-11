@@ -136,16 +136,24 @@ class _PinnedBackend(httpcore.SyncBackend):
             )
         # Alle Adressen stammen aus derselben Auflösung und sind geprüft: Ist die erste nicht erreichbar, darf es
         # die nächste sein, ohne die Bindung aufzugeben (wie ein gewöhnlicher Verbindungsaufbau über mehrere Adressen)
+        # Die Zeitgrenze des Aufrufers gilt für alle Versuche zusammen: Jeder Versuch bekommt seinen Anteil an der
+        # verbleibenden Zeit, mit einer einzigen Adresse also die ganze wie bisher.
+        deadline = None if timeout is None else _now() + timeout
         failure: Exception | None = None
-        for address in addresses:
+        for index, address in enumerate(addresses):
+            attempt = timeout
+            if deadline is not None:
+                remaining = deadline - _now()
+                if remaining <= 0:
+                    break
+                attempt = remaining / (len(addresses) - index)
             try:
                 return super().connect_tcp(
-                    address, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+                    address, port, timeout=attempt, local_address=local_address, socket_options=socket_options
                 )
             except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
                 failure = exc
-        assert failure is not None
-        raise failure
+        raise failure or httpcore.ConnectTimeout("Zeitgrenze für den Verbindungsaufbau erreicht")
 
 
 class PinnedTransport(httpx.HTTPTransport):
