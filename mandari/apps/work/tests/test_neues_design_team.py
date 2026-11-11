@@ -138,3 +138,30 @@ def test_vorlagen_ohne_kaesten_und_farbchips() -> None:
         assert "<c-rahmen.kopfband" in text and " dicht" in text and "{% block gestaltung %}neu{% endblock %}" in text
     assert "<c-form.suche" in (VORLAGEN / "verzeichnis.html").read_text(encoding="utf-8")
     assert "<c-ui.angaben" in (VORLAGEN / "profil.html").read_text(encoding="utf-8")
+
+
+def test_name_ohne_namen_zeigt_die_adresse_nur_wenn_die_person_sie_zeigt(
+    org: Any, vorsitz: Any, make_member: Any, client_for: Any
+) -> None:
+    """Konto ohne Vor- und Nachnamen: Die Adresse dient nur dann als Name, wenn die Person sie im Team zeigt."""
+    verborgen = make_member(org, ["dashboard.view"], email="verborgen.adresse@example.org")
+    verborgen.user.first_name = verborgen.user.last_name = ""
+    verborgen.user.settings = {"profile": {"show_email": False}}
+    verborgen.user.save()
+    offen = make_member(org, ["dashboard.view"], email="offene.adresse@example.org")
+    offen.user.first_name = offen.user.last_name = ""
+    offen.user.save()
+    client = client_for(vorsitz.user)
+
+    for ansicht in ({}, {"ansicht": "bisher"}):
+        verzeichnis = client.get(_url("team", org), ansicht).content.decode()
+        assert "offene.adresse@example.org" in verzeichnis
+        assert "verborgen.adresse" not in verzeichnis and ">Mitglied</a>" in verzeichnis.replace("\n", "").replace(
+            "  ", ""
+        )
+        profil = client.get(_url("team_profile", org, member_id=verborgen.id), ansicht).content.decode()
+        assert "verborgen.adresse" not in profil and "Mitglied" in profil
+
+    # Die Suche findet eine verborgene Adresse nicht, eine gezeigte schon
+    assert "Keine Mitglieder zu" in client.get(_url("team", org), {"q": "verborgen.adresse"}).content.decode()
+    assert "offene.adresse@example.org" in client.get(_url("team", org), {"q": "offene.adresse"}).content.decode()

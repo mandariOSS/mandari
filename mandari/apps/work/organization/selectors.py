@@ -386,7 +386,12 @@ def available_deputies(organization: Organization, membership: Membership) -> Qu
 
 
 def team_members(organization: Organization, search_query: str) -> QuerySet[Membership]:
-    """Aktive Mitglieder für das Teamverzeichnis, optional nach Name/E-Mail gefiltert."""
+    """
+    Aktive Mitglieder für das Teamverzeichnis, optional nach Name oder E-Mail gefiltert.
+
+    Über die Adresse findet die Suche nur Personen, die sie im Team zeigen (``profile.show_email``, Standard ja):
+    Sonst ließe sich eine verborgene Adresse Zeichen für Zeichen erfragen.
+    """
     members = (
         Membership.objects.filter(organization=organization, is_active=True)
         .select_related("user")
@@ -394,10 +399,12 @@ def team_members(organization: Organization, search_query: str) -> QuerySet[Memb
         .order_by("user__last_name", "user__first_name")
     )
     if search_query:
+        # Ohne gespeicherte Angabe gilt der Standard „zeigen“; ein verneinter Vergleich träfe diese Konten nicht
+        shows_email = Q(user__settings__profile__show_email__isnull=True) | Q(user__settings__profile__show_email=True)
         members = members.filter(
             Q(user__first_name__icontains=search_query)
             | Q(user__last_name__icontains=search_query)
-            | Q(user__email__icontains=search_query)
+            | (Q(user__email__icontains=search_query) & shows_email)
         )
     return members
 

@@ -108,7 +108,8 @@ def unsichtbare_eintraege(organization: Any, membership: Any) -> Any:
     """
     Bedingung (``Q``) für Einträge zu Sitzungen (``meeting_id_ref``) sowie zu Reihen samt Ausnahmen und Ausfallregeln
     (``object_id``), die das Mitglied nicht sieht (Sitzungsarten, Issue #1239); die Historie lässt sie ganz weg.
-    Gelöschte Sitzungen lassen sich keiner Art mehr zuordnen; ihre Einträge bleiben wie bisher.
+    Gelöschte Sitzungen lassen sich keiner Art mehr zuordnen: Ihre Einträge (samt Titel, Datum und Anwesenheiten aus
+    dem Löschen) sieht nur, wer ohnehin jede Sitzung sieht (``faction.manage``).
     """
     from django.db.models import Q
 
@@ -122,12 +123,15 @@ def unsichtbare_eintraege(organization: Any, membership: Any) -> Any:
     )
     ausnahmen = FactionMeetingException.objects.filter(schedule__in=reihen.values("pk"))
     regeln = FactionSuspensionRule.objects.filter(schedule__in=reihen.values("pk"))
-    return (
+    bedingung = (
         Q(meeting_id_ref__in=unsichtbar.values("pk"))
         | Q(model_name="FactionMeetingSchedule", object_id__in=reihen.values("pk"))
         | Q(model_name="FactionMeetingException", object_id__in=ausnahmen.values("pk"))
         | Q(model_name="FactionSuspensionRule", object_id__in=regeln.values("pk"))
     )
+    if not membership.has_permission("faction.manage"):
+        bedingung |= Q(meeting_id_ref__isnull=False) & ~Q(meeting_id_ref__in=sitzungen.values("pk"))
+    return bedingung
 
 
 def locked_object_ids(organization: Any, object_ids: set[Any]) -> set[Any]:
