@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import IO, Any
 from urllib.parse import urlsplit
 
+import httpcore
 import httpx
 from django.conf import settings
 
@@ -87,8 +88,76 @@ def _check_request(request: httpx.Request) -> None:
         raise BlockedDestinationError(str(exc), request=request) from None
 
 
+def _pinned_address(host: str) -> str | None:
+    """
+    Adresse, an die die Verbindung zu ``host`` gehen darf; ``None`` heißt: nicht binden (eigener Host oder schon eine
+    Adresse). Wirft ``BlockedDestinationError``, wenn der Name nicht auflösbar ist oder eine seiner Adressen nicht
+    zulässig wäre.
+    """
+    name = host.lower().rstrip(".")
+    if name in _own_hosts():
+        return None
+    try:
+        ipaddress.ip_address(name)
+    except ValueError:
+        pass
+    else:
+        return None
+    addresses = _resolve(name)
+    if not addresses:
+        raise BlockedDestinationError("Hostname nicht auflösbar")
+    if not all(_allowed_address(address) for address in addresses):
+        raise BlockedDestinationError("Ziel liegt nicht im öffentlichen Netz")
+    # IPv4 zuerst: überall erreichbar, auch wo IPv6 nur halb eingerichtet ist
+    return sorted(addresses, key=lambda address: (":" in address, address))[0]
+
+
+class _PinnedBackend(httpcore.SyncBackend):
+    """Netz-Backend, das vor jeder Verbindung auflöst, prüft und nur mit der geprüften Adresse verbindet."""
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.NetworkStream:
+        address = _pinned_address(host)
+        return super().connect_tcp(
+            address or host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+        )
+
+
+class PinnedTransport(httpx.HTTPTransport):
+    """
+    Verbindet nur mit Adressen, die die Zielprüfung bestanden haben.
+
+    Die Prüfung allein (``check_url``) löst den Namen getrennt von der Verbindung auf; antwortet der Nameserver beim
+    zweiten Mal mit einer internen Adresse, ginge die Verbindung dorthin. Hier löst der Verbindungsaufbau selbst
+    einmal auf, prüft und verbindet mit genau dieser Adresse. Die Anfrage bleibt unverändert: Adresse,
+    ``Host``-Kopfzeile und der Name für TLS (Zertifikat, SNI) sind weiter der Hostname.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        # Der Verbindungspool des Transports baut seine Verbindungen über dieses Backend auf
+        self._pool._network_backend = _PinnedBackend()
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        try:
+            return super().handle_request(request)
+        except BlockedDestinationError as exc:
+            raise BlockedDestinationError(str(exc), request=request) from None
+
+
 def guarded_client(**kwargs: Any) -> httpx.Client:
-    """``httpx.Client``, der jedes Ziel (auch nach Weiterleitungen) vor dem Abruf prüft."""
+    """
+    ``httpx.Client``, der jedes Ziel (auch nach Weiterleitungen) vor dem Abruf prüft und nur mit der geprüften
+    Adresse verbindet (``PinnedTransport``). Wer einen eigenen ``transport`` mitgibt (Tests), behält die Prüfung
+    der Adresse, aber nicht die Bindung.
+    """
+    kwargs.setdefault("transport", PinnedTransport())
     return httpx.Client(event_hooks={"request": [_check_request]}, **kwargs)
 
 

@@ -64,6 +64,20 @@ class Settings(BaseSettings):
     oparl_max_retries: int = 3  # Wiederholungsversuche bei Fehlern (zuvor 5)
     oparl_retry_backoff: float = 2.0
     oparl_wait_time: float = 0.05  # Seconds between requests (reduced from 0.2)
+
+    # Datei-Downloads gehen nur an öffentliche Adressen (mandari_oparl.ziel): Die Adressen nennt die Quelle, und
+    # eine Antwort aus dem internen Netz landete als Text im öffentlichen Bestand. Private Netze nur mit diesem
+    # Schalter (Selbstbetrieb im Intranet, derselbe wie in der Anwendung); Loopback und Link-Local nie.
+    fetch_allow_private_networks: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS", "fetch_allow_private_networks"),
+    )
+    # Hostnamen, die von der Prüfung ausgenommen sind (kommagetrennt), etwa der eigene Dienst im internen Netz,
+    # wenn der Ingestor veröffentlichte Dateien von mandari Session unter einem internen Namen abruft.
+    fetch_internal_hosts: str = Field(
+        default="",
+        validation_alias=AliasChoices("INGESTOR_FETCH_INTERNAL_HOSTS", "fetch_internal_hosts"),
+    )
     oparl_etag_cache_enabled: bool = True
     oparl_modified_since_enabled: bool = True
     oparl_max_concurrent: int = 20  # Concurrent HTTP requests
