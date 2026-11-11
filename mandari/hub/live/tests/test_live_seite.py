@@ -16,10 +16,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from hub.live import selectors
-from hub.live.models import Broadcast, BroadcastSpeech, BroadcastStatus
+from hub.live.models import Broadcast, BroadcastSection, BroadcastSpeech, BroadcastStatus
 from hub.live.services import WIEDERAUFNAHME
 from hub.live.tests.conftest import EMBED_ID, Welt, kennung
-from insight_core.models import OParlMeeting, OParlOrganization
+from insight_core.models import OParlAgendaItem, OParlMeeting, OParlOrganization
 
 pytestmark = pytest.mark.django_db
 
@@ -206,3 +206,54 @@ def test_wortmeldung_fuer_abonnenten(welt: Welt, laufend: Broadcast) -> None:
     gast = selectors.wortmeldung(unsicher.pk)
     assert gast is not None and not gast.eindeutig and gast.funktion_gelesen == "Bürgermeisterin"
     assert selectors.wortmeldung("00000000-0000-0000-0000-000000000000") is None
+
+
+def test_stand_aendert_sich_mit_titel_und_verweisen_der_abschnitte(welt: Welt, laufend: Broadcast) -> None:
+    """Gleiche Zahl von Abschnitten und Verweisen, anderer Inhalt: Geöffnete Seiten laden den Live-Teil neu."""
+    import dataclasses
+    import uuid
+
+    from insight_core.views.live import _version
+
+    stand = selectors.live_stand(welt.sitzung.pk)
+    assert stand is not None and stand.jetzt_abschnitt is not None
+    abschnitt = stand.jetzt_abschnitt
+    assert abschnitt.agenda_item_id is not None
+
+    def mit(**werte: Any) -> str:
+        return _version(dataclasses.replace(stand, jetzt_abschnitt=dataclasses.replace(abschnitt, **werte)))
+
+    bisher = _version(stand)
+    assert mit() == bisher
+    # Neu zugeordnet: weiter ein Verweis, aber auf einen anderen Punkt bzw. eine andere Vorlage
+    assert mit(agenda_item_id=uuid.uuid4()) != bisher
+    assert mit(paper_id=uuid.uuid4()) != bisher
+    assert mit(titel="Anderer Titel") != bisher
+    # Der Status steht weiter vorn (die Seite liest ihn aus dem Stand)
+    assert mit(titel="Anderer Titel").split(".")[0] == stand.status
+
+
+def test_zurueckgenommener_punkt_ohne_titel_verweis_und_vorlage(client: Client, welt: Welt, laufend: Broadcast) -> None:
+    """Nimmt der Herausgeber einen Punkt zurück, bleibt der Abschnitt im Verlauf, aber ohne Titel und Verweise."""
+    BroadcastSection.objects.filter(broadcast=laufend).update(title_read="Gelesen: Neubau der Schule")
+    vorher = client.get(_url(welt.sitzung), {"teil": "stand"}).content.decode()
+    assert "Neubau einer Grundschule" in vorher
+    version = re.search(r"v=([^\"&]+)\"", vorher)
+    assert version is not None
+
+    OParlAgendaItem.objects.filter(pk=welt.top5.pk).update(deleted=True)
+
+    # Eine geöffnete Seite mit dem bisherigen Stand bekommt den Live-Teil neu (kein 204 mit altem Titel)
+    assert client.get(_url(welt.sitzung), {"teil": "stand", "v": version.group(1)}).status_code == 200
+
+    for parameter in ({}, {"teil": "stand"}):
+        html = client.get(_url(welt.sitzung), parameter).content.decode()
+        assert "Neubau einer Grundschule" not in html
+        assert "Gelesen: Neubau der Schule" not in html
+        assert f"#top-{welt.top5.pk}" not in html
+        assert reverse("insight_core:insight:paper_detail", args=[welt.vorlage.pk]) not in html
+    stand = selectors.live_stand(welt.sitzung.pk)
+    assert stand is not None
+    abschnitte = [*stand.verlauf, *([stand.jetzt_abschnitt] if stand.jetzt_abschnitt else [])]
+    assert abschnitte
+    assert all((a.titel, a.agenda_item_id, a.paper_id) == ("", None, None) for a in abschnitte)

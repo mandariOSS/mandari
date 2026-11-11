@@ -19,7 +19,16 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.work.ris import selectors
-from insight_core.models import OParlBody, OParlFile, OParlMeeting, OParlOrganization, OParlPaper, OParlSource
+from insight_core.models import (
+    OParlAgendaItem,
+    OParlBody,
+    OParlConsultation,
+    OParlFile,
+    OParlMeeting,
+    OParlOrganization,
+    OParlPaper,
+    OParlSource,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -153,3 +162,46 @@ def test_listenseiten_ohne_zurueckgenommene(
     assert str(daten["vorgang_sichtbar"].pk) in vorgaenge and str(daten["vorgang_zurueck"].pk) not in vorgaenge
     assert str(daten["sitzung_sichtbar"].pk) in uebersicht and str(daten["vorgang_sichtbar"].pk) in uebersicht
     assert str(daten["sitzung_zurueck"].pk) not in uebersicht and str(daten["vorgang_zurueck"].pk) not in uebersicht
+
+
+@pytest.mark.parametrize("ansicht", [{"ansicht": "bisher"}, {}])
+def test_zurueckgenommener_punkt_fehlt_in_tagesordnung_und_beratungsfolge(
+    org: Any, mitglied: Any, client_for: Any, daten: dict[str, Any], ansicht: dict[str, str]
+) -> None:
+    """Auch die bisherigen Seiten zeigen einen zurückgenommenen Punkt weder in der Sitzung noch am Vorgang."""
+    org.work_new_design = bool(not ansicht)
+    org.save(update_fields=["work_new_design"])
+    sitzung, vorgang = daten["sitzung_sichtbar"], daten["vorgang_sichtbar"]
+    punkte = {}
+    for art, deleted in (("offen", False), ("zurueck", True)):
+        punkte[art] = OParlAgendaItem.objects.create(
+            external_id=f"{SESSION}/agendaitem/{art}/",
+            meeting=sitzung,
+            number="1" if art == "offen" else "2",
+            order=1,
+            name=f"Punkt {art}",
+            result=f"Ergebnis {art}",
+            deleted=deleted,
+        )
+        OParlConsultation.objects.create(
+            external_id=f"{SESSION}/consultation/{art}/",
+            body=sitzung.body,
+            paper=vorgang,
+            paper_external_id=vorgang.external_id,
+            meeting_external_id=sitzung.external_id,
+            agenda_item_external_id=punkte[art].external_id,
+        )
+    client = client_for(mitglied.user)
+
+    sitzungsseite = client.get(
+        reverse("work:ris_meeting_detail", kwargs={"org_slug": org.slug, "meeting_id": sitzung.pk}), ansicht
+    ).content.decode()
+    vorgangsseite = client.get(
+        reverse("work:ris_paper_detail", kwargs={"org_slug": org.slug, "paper_id": vorgang.pk}), ansicht
+    ).content.decode()
+
+    assert "Punkt offen" in sitzungsseite
+    for seite in (sitzungsseite, vorgangsseite):
+        assert "Punkt zurueck" not in seite
+        assert "Ergebnis zurueck" not in seite
+    assert [e["item"].name for e in selectors.agenda_items_with_papers(sitzung)] == ["Punkt offen"]
