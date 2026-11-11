@@ -332,7 +332,8 @@ gelöscht, einschließlich Audit-Log und mandantenspezifischem Verschlüsselungs
 Mandantenschlüssel und die verschlüsselte Konfiguration noch und bleiben damit lesbar, bis sie
 nach der eingestellten Aufbewahrung ablaufen (`BACKUP_KEEP_WITHIN_DAILY`, Standard 30 Tage, gezählt
 ab der jüngsten Sicherung; fällt die Sicherung aus, bleiben ältere Stände entsprechend länger,
-[BACKUP.md](BACKUP.md), Aufbewahrung).
+[BACKUP.md](BACKUP.md), Aufbewahrung). Sicherungen von Hand außerhalb der verwalteten Ablagen
+laufen nicht ab; sie sind nach 30 Tagen von Hand zu löschen ([BACKUP.md](BACKUP.md), Grenzen).
 
 ### 3.7 Dokumente aus fremden Ratsinformationssystemen (Insight)
 
@@ -346,4 +347,4 @@ Kommunen abrufen, folgen dem Löschabgleich ([FILE_CACHE.md, „Löschabgleich�
 | Quelle ändert das Dokument (anderer SHA-256, z. B. eine Schwärzung) | Kopie und Text werden durch die neue Fassung ersetzt, die alte Fassung gelöscht |
 | 30 Tage gesperrt (`FILE_PURGE_AFTER_DAYS`) | lokale Kopie und extrahierter Text gelöscht; der Datensatz bleibt als Tombstone (Name, Adresse, Fingerabdruck). Lässt sich die Quelle vor dem Löschen nicht befragen, spätestens sieben Tage später (`FILE_PURGE_CONFIRM_GRACE_DAYS`) |
 | Inhalt wird von keiner Datei mehr gebraucht (Ablage nach SHA-256: ersetzte Fassung, Löschen nach Frist) | Inhalt verwaist; der nächste Lauf von `loeschabgleich` bzw. `dokumentablage --aufraeumen` löscht ihn nach zehn Minuten lokal und im Objektspeicher. Ist der Objektspeicher ausgeschaltet (`OBJ_ENABLED=false`), bleibt eine dort schon liegende Kopie bis zum ersten Aufräumen nach dem Wiedereinschalten |
-| Sicherungen | restic hält Stände nach `BACKUP_KEEP_WITHIN_DAILY` (Standard 30 Tage ab der jüngsten Sicherung); danach ist auch dort nichts mehr |
+| Sicherungen | restic hält Stände nach `BACKUP_KEEP_WITHIN_DAILY` (Standard 30 Tage ab der jüngsten Sicherung); danach ist auch dort nichts mehr. Sicherungen von Hand außerhalb dieser Ablagen nach 30 Tagen von Hand löschen |
