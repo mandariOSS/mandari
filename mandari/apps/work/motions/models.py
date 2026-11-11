@@ -590,6 +590,8 @@ class FolderGuestShare(models.Model):
     werden organisationsweite Dokumente und geteilte Dokumente der
     freigebenden Person; private Dokumente bleiben privat und lassen sich
     nur einzeln freigeben (Motion._folder_share_applies, Issue #582).
+    Die Stufe gilt je Dokument höchstens so weit, wie die freigebende
+    Person es selbst darf (Motion._folder_share_level).
     Zugriffs-Checks laufen zentral über Motion.get_guest_share_level()
     bzw. shared_folder_levels(); Views/Consumer prüfen NICHT einzeln.
     """
@@ -1237,7 +1239,9 @@ class Motion(EncryptionMixin, models.Model):
         Wirksame Freigaben eines Gast-Zugangs für dieses Dokument als (Stufe, angelegt am, Herunterladen erlaubt).
 
         Persönliche Dokument-Freigaben (MotionShare, scope=user) und Ordner-Freigaben (FolderGuestShare) auf dem
-        Ordner des Dokuments bzw. seinen Vorfahren, soweit sie das Dokument erfassen (_folder_share_applies).
+        Ordner des Dokuments bzw. seinen Vorfahren, soweit sie das Dokument erfassen (_folder_share_applies). Die
+        Stufe einer Ordner-Freigabe gilt je Dokument höchstens so weit, wie die freigebende Person es selbst darf
+        (_folder_share_level).
         """
         shares = list(
             self.shares.filter(scope="user", user=membership.user).values_list("level", "created_at", "allow_download")
@@ -1249,9 +1253,37 @@ class Motion(EncryptionMixin, models.Model):
                 user=membership.user
             ).values_list("level", "created_at", "allow_download", "created_by_id"):
                 if self._folder_share_applies(created_by_id):
-                    shares.append((level, created_at, allow_download))
+                    shares.append((self._folder_share_level(level, created_by_id), created_at, allow_download))
             node = node.parent
         return shares
+
+    def _folder_share_level(self, level: str, created_by_id) -> str:
+        """
+        Stufe einer Ordner-Freigabe an diesem Dokument: höchstens, was die freigebende Person hier selbst darf.
+
+        Eine Ordner-Freigabe erfasst auch organisationsweite Dokumente anderer. Ohne diese Grenze gäbe „Bearbeiten“
+        am Ordner einem Gast mehr, als die freigebende Person an solchen Dokumenten hat (lesen oder kommentieren),
+        und mehr, als sie über eine einzelne Freigabe vergeben dürfte (``can_share``). Lesen bleibt in jedem Fall:
+        Was die Freigabe erfasst, regelt ``_folder_share_applies``. Ist die freigebende Person kein aktives Mitglied
+        mehr, lässt sich nichts mehr prüfen; die Freigabe gilt dann zum Lesen, bis jemand sie neu vergibt.
+        """
+        if level == "view":
+            return level
+        from apps.tenants.models import Membership
+
+        creator = (
+            Membership.objects.filter(
+                user_id=created_by_id, organization_id=self.organization_id, is_active=True, is_guest=False
+            ).first()
+            if created_by_id
+            else None
+        )
+        own = self.access_level(creator, status_lock=False) if creator is not None else "view"
+        if own == "admin":
+            own = "edit"  # Gäste erhalten nie Verwaltungsrechte
+        elif own == "none":
+            own = "view"
+        return min(level, own, key=self.ACCESS_RANK.__getitem__)
 
     def get_guest_share_level(self, membership) -> str | None:
         """
