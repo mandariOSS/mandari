@@ -284,7 +284,8 @@ class MotionMetaUpdateView(WorkViewMixin, View):
             folder_id = request.POST.get("folder", "").strip()
             target = _get_org_folder_or_404(self.organization, folder_id, self.membership) if folder_id else None
             # „Nichtöffentliche Vorgänge“: weder heraus noch hinein (Motion.folder_move_denied, #873)
-            denied = motion.folder_move_denied(target)
+            # In einen für Gäste freigegebenen Ordner nur mit Freigaberecht (wie MotionFolderMoveView)
+            denied = motion.folder_move_denied(target) or motion.guest_folder_move_denied(target, self.membership)
             if denied:
                 return JsonResponse({"error": denied}, status=403)
             motion.folder = target
