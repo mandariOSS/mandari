@@ -1043,8 +1043,14 @@ def approve_registration(membership: Membership, actor: Membership | None = None
     """
     Offene Registrierungsanfrage freischalten und benachrichtigen (:func:`_announce_access`, wie beim
     Reaktivieren); liefert, ob die Mail rausging. Unterliegt dem Mitglieder-Limit.
+
+    Freischalten darf nur eine jetzt aktive Mitgliedschaft mit ``members.invite``: Der View hat das Recht geprüft,
+    die handelnde Mitgliedschaft kann aber seither deaktiviert worden sein. Ihr Stand wird deshalb unter Sperre neu
+    gelesen, wie beim Reaktivieren (:func:`_restore_membership`).
     """
     with transaction.atomic():
+        if not (_still_active(actor) and actor is not None and actor.has_permission("members.invite")):
+            raise ServiceError("Offene Registrierungsanfragen gibt frei, wer Mitglieder einladen darf.")
         if not membership.is_guest and not membership.is_active:
             _ensure_free_member_slot(membership.organization)
         before = _access_text(membership)

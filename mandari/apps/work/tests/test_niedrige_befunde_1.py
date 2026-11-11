@@ -163,6 +163,28 @@ def test_offene_registrierung_gibt_nur_frei_wer_einladen_darf(org: Any, make_mem
     assert anfrage.is_active and anfrage.registration_requested_at is None
 
 
+def test_direktes_freischalten_prueft_die_handelnde_mitgliedschaft_erneut(org: Any, make_member: Any) -> None:
+    anfrage = make_member(org, [], email="neu@example.org")
+    anfrage.is_active = False
+    anfrage.registration_requested_at = timezone.now()
+    anfrage.save(update_fields=["is_active", "registration_requested_at"])
+    rechte = ["members.view", "members.edit", "members.invite"]
+    # Objekt aus dem View, die Mitgliedschaft ist inzwischen deaktiviert
+    veraltet = make_member(org, rechte, email="veraltet@example.org")
+    type(veraltet).objects.filter(pk=veraltet.pk).update(is_active=False)
+    ohne_recht = make_member(org, ["members.view", "members.edit"], email="ohne@example.org")
+
+    for handelnd in (veraltet, ohne_recht, None):
+        with pytest.raises(org_services.ServiceError):
+            org_services.approve_registration(anfrage, actor=handelnd)
+    anfrage.refresh_from_db()
+    assert not anfrage.is_active and anfrage.registration_requested_at is not None
+
+    org_services.approve_registration(anfrage, actor=make_member(org, rechte, email="einladen@example.org"))
+    anfrage.refresh_from_db()
+    assert anfrage.is_active and anfrage.registration_requested_at is None
+
+
 # --- Backup-Codes ------------------------------------------------------------------------------------------------
 
 
