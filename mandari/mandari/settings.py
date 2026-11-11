@@ -939,24 +939,22 @@ INSIGHT_CHAT_DAILY_MAX_TOKENS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_TOKEN
 # deren Browser-Clients (Kopfzeile Origin) zugreifen dürfen, kommagetrennt; ALLOWED_HOSTS gelten immer.
 INSIGHT_MCP_ENABLED = os.environ.get("INSIGHT_MCP_ENABLED", "false").lower() in ("true", "1", "yes")
 
-# Seite „Offene Daten“ außerhalb des Bürgerportals (Issue #1309): Steht die Übersicht der Schnittstelle mit den
-# Adressen je Kommune auf einer anderen Seite desselben Auftritts (auf mandari.de die Website unter /offene-daten/),
-# nennt der Betrieb hier deren vollständige Adresse. Dann leitet /insight/offene-daten/ dorthin weiter, die Fußzeile
-# und das Feld bodyDirectory der Schnittstelle verweisen dorthin, und die Seite einer Kommune liegt unter
-# <Adresse><Name der Kommune>/. Leer (Standard): Das Bürgerportal zeigt die Übersicht selbst.
-INSIGHT_OFFENE_DATEN_URL = os.environ.get("INSIGHT_OFFENE_DATEN_URL", "").strip()
-if INSIGHT_OFFENE_DATEN_URL and not INSIGHT_OFFENE_DATEN_URL.startswith(("https://", "http://")):
-    from django.core.exceptions import ImproperlyConfigured
-
-    raise ImproperlyConfigured("INSIGHT_OFFENE_DATEN_URL muss eine vollständige Adresse sein (https://…/)")
-if INSIGHT_OFFENE_DATEN_URL and not INSIGHT_OFFENE_DATEN_URL.endswith("/"):
-    INSIGHT_OFFENE_DATEN_URL += "/"
 INSIGHT_MCP_PER_IP_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_IP_MINUTE", "30"))
 INSIGHT_MCP_PER_IP_DAY = int(os.environ.get("INSIGHT_MCP_PER_IP_DAY", "500"))
 INSIGHT_MCP_PER_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_MINUTE", "300"))
 INSIGHT_MCP_ALLOWED_ORIGINS = [
     host.strip() for host in os.environ.get("INSIGHT_MCP_ALLOWED_ORIGINS", "").split(",") if host.strip()
 ]
+
+# Seite „Offene Daten“ außerhalb des Bürgerportals (Issue #1309): Steht die Übersicht der Schnittstelle mit den
+# Adressen je Kommune auf einer anderen Seite desselben Auftritts (auf mandari.de die Website unter /offene-daten/),
+# nennt der Betrieb hier deren vollständige Adresse. Dann leitet /insight/offene-daten/ dorthin weiter, die Fußzeile
+# und das Feld bodyDirectory der Schnittstelle verweisen dorthin, und die Seite einer Kommune liegt unter
+# <Adresse><Name der Kommune>/. Leer (Standard): Das Bürgerportal zeigt die Übersicht selbst.
+# Geprüft wird beim Start: vollständige Adresse mit Host, ohne Abfrage und Sprungmarke.
+from mandari.adressen import basis_adresse  # noqa: E402
+
+INSIGHT_OFFENE_DATEN_URL = basis_adresse(os.environ.get("INSIGHT_OFFENE_DATEN_URL", ""), "INSIGHT_OFFENE_DATEN_URL")
 
 # Mistral-kompatible Texterkennung (optional): nur mit Schlüssel UND Basis-URL, deren Host in KI_ERLAUBTE_HOSTS
 # steht; sonst bleibt die Texterkennung lokal (pypdf, Tesseract). Nur für öffentliche RIS-Dateien.

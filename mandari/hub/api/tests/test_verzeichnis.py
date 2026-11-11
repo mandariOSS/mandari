@@ -223,3 +223,41 @@ def test_ohne_einstellung_bleibt_die_seite_im_buergerportal(kommunen: dict[str, 
     assert directory_url("muenster") == f"{SITE}/insight/offene-daten/#kommune-muenster"
     with override_settings(INSIGHT_OFFENE_DATEN_URL=EXTERN):
         assert directory_url("muenster") == f"{EXTERN}muenster/"
+
+
+@pytest.mark.parametrize(
+    ("wert", "erwartet"),
+    [
+        ("", ""),
+        ("  ", ""),
+        ("https://mandari.example/offene-daten/", "https://mandari.example/offene-daten/"),
+        ("https://mandari.example/offene-daten", "https://mandari.example/offene-daten/"),
+        ("http://localhost:8000/daten", "http://localhost:8000/daten/"),
+    ],
+)
+def test_basis_adresse_aus_der_konfiguration(wert: str, erwartet: str) -> None:
+    from mandari.adressen import basis_adresse
+
+    assert basis_adresse(wert, "X") == erwartet
+
+
+@pytest.mark.parametrize(
+    "wert",
+    [
+        "/offene-daten/",
+        "mandari.example/offene-daten/",
+        "https://",
+        "https:///offene-daten/",
+        "ftp://mandari.example/daten/",
+        "https://mandari.example/offene-daten/?sprache=de",
+        "https://mandari.example/offene-daten/#liste",
+        "https://mandari.example/offene-daten/?",
+    ],
+)
+def test_basis_adresse_lehnt_unvollstaendiges_und_abfragen_ab(wert: str) -> None:
+    from django.core.exceptions import ImproperlyConfigured
+
+    from mandari.adressen import basis_adresse
+
+    with pytest.raises(ImproperlyConfigured, match="X"):
+        basis_adresse(wert, "X")
