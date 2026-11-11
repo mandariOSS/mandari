@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import re
+import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -203,3 +204,63 @@ def test_abbild_schreiben_und_einspielen(tmp_path: Path) -> None:
         with psycopg.connect(wartung, autocommit=True) as verbindung:
             for name in (quelle, ziel):
                 verbindung.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+def test_token_geht_bei_weiterleitung_nicht_an_einen_anderen_host() -> None:
+    """Der Abruf eines Artefakts leitet auf den Dateispeicher weiter; dorthin gehört das Token nicht."""
+    import http.server
+    import threading
+
+    gesehen: dict[str, list[str | None]] = {"ziel": [], "selber_host": []}
+
+    class Ziel(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            gesehen["ziel" if self.path == "/datei" else "selber_host"].append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"inhalt")
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    ziel = http.server.HTTPServer(("127.0.0.1", 0), Ziel)
+
+    class Quelle(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(302)
+            # /fremd: anderer Host (anderer Port), /gleich: derselbe Host
+            ort = f"http://127.0.0.1:{ziel.server_port}/datei" if self.path == "/fremd" else "/hier"
+            self.send_header("Location", ort)
+            self.end_headers()
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    class QuelleMitZiel(Quelle):
+        def do_GET(self) -> None:
+            if self.path == "/hier":
+                Ziel.do_GET(self)  # type: ignore[arg-type]
+            else:
+                super().do_GET()
+
+    quelle = http.server.HTTPServer(("127.0.0.1", 0), QuelleMitZiel)
+    for server in (ziel, quelle):
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        modul = _modul()
+        oeffner = urllib.request.build_opener(modul._OhneTokenWeiter)
+        for pfad in ("/fremd", "/gleich"):
+            anfrage = urllib.request.Request(  # noqa: S310 - lokaler Testserver
+                f"http://127.0.0.1:{quelle.server_port}{pfad}", headers={"Authorization": "Bearer geheim"}
+            )
+            assert oeffner.open(anfrage, timeout=10).read() == b"inhalt"
+    finally:
+        for server in (ziel, quelle):
+            server.shutdown()
+            server.server_close()
+
+    assert gesehen["ziel"] == [None], "Das Token ging an den anderen Host"
+    assert gesehen["selber_host"] == ["Bearer geheim"], "Auf demselben Host bleibt die Anmeldung"
+
+    with pytest.raises(ValueError, match="https"):
+        modul._abruf("http://example.invalid/", "t")

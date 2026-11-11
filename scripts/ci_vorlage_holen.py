@@ -29,6 +29,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 API = "https://api.github.com"
 ZWEIGE = ("dev", "main")
@@ -54,12 +55,32 @@ def auswaehlen(artefakte: list[dict[str, Any]]) -> dict[str, Any] | None:
     return max(passend, key=lambda a: a.get("created_at") or "") if passend else None
 
 
+class _OhneTokenWeiter(urllib.request.HTTPRedirectHandler):
+    """Weiterleitungen folgen, das Token aber nie an einen anderen Host geben.
+
+    Der Abruf eines Artefakts leitet auf den Dateispeicher weiter (signierte Adresse auf einem anderen Host). urllib
+    schickte die Kopfzeile ``Authorization`` sonst mit; der Speicher braucht sie nicht und lehnt sie teils ab.
+    """
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
+        neu = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if neu is not None and urlsplit(newurl).netloc.lower() != urlsplit(req.full_url).netloc.lower():
+            for name in list(neu.headers):
+                if name.lower() == "authorization":
+                    del neu.headers[name]
+            neu.unredirected_hdrs.pop("Authorization", None)
+        return neu
+
+
 def _abruf(adresse: str, token: str) -> bytes:
+    if not adresse.startswith("https://"):
+        raise ValueError("Abruf nur über https")
     kopf = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "mandari-ci"}
     if token:
         kopf["Authorization"] = f"Bearer {token}"
-    anfrage = urllib.request.Request(adresse, headers=kopf)  # noqa: S310 – feste https-Adresse der GitHub-API
-    with urllib.request.urlopen(anfrage, timeout=ZEITGRENZE) as antwort:  # noqa: S310
+    anfrage = urllib.request.Request(adresse, headers=kopf)  # noqa: S310 – https geprüft, Adresse der GitHub-API
+    oeffner = urllib.request.build_opener(_OhneTokenWeiter)
+    with oeffner.open(anfrage, timeout=ZEITGRENZE) as antwort:
         daten: bytes = antwort.read(HOECHSTENS + 1)
     if len(daten) > HOECHSTENS:
         raise ValueError("Artefakt größer als erwartet")
