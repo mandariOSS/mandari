@@ -82,3 +82,13 @@ def test_ci_ausloeser_zaehlt_nur_unter_pull_request() -> None:
     assert skript.ci_ausloeser_vorhanden(mit_typen)
     assert skript.ci_ausloeser_vorhanden("on:\n  pull_request:\n    branches: [dev, 'release/v*']\n")
     assert not skript.ci_ausloeser_vorhanden("on:\n  push:\n    branches: ['release/v*']\n")
+
+
+def test_ci_ausloeser_beachtet_ausschluesse_in_reihenfolge() -> None:
+    """Wie bei GitHub entscheidet das letzte passende Muster; ein späteres „!“ schließt die Linie aus."""
+    skript = _skript()
+    ausgeschlossen = "on:\n  pull_request:\n    branches:\n      - 'release/v*'\n      - '!release/v0.12'\n"
+    assert not skript.ci_ausloeser_vorhanden(ausgeschlossen, "release/v0.12")
+    assert skript.ci_ausloeser_vorhanden(ausgeschlossen, "release/v0.16")
+    wieder_drin = "on:\n  pull_request:\n    branches: ['!release/v0.12', 'release/v*']\n"
+    assert skript.ci_ausloeser_vorhanden(wieder_drin, "release/v0.12")

@@ -194,10 +194,18 @@ jobs:
             fi
             # Website: Eine Patch-Version bekommt nicht den aktuellen Stand der Website, sondern den der ersten
             # Version ihrer Linie (keine neuen Funktionen oder Migrationen über eine Patch-Version). Gibt es das
-            # Website-Image der .0-Version schon (Patch-Version oder wiederholter Lauf), ist es die Quelle.
-            if printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-              && docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${LINIE}.0" >/dev/null 2>&1; then
-              WEBSITE_QUELLE="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${LINIE}.0"
+            # Website-Image der .0-Version schon (wiederholter Lauf), ist es die Quelle. Bei einer Patch-Version
+            # ist es Pflicht: Fehlt es oder scheitert die Abfrage, bricht der Lauf ab statt website:main zu nehmen.
+            LINIEN_WEBSITE="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${LINIE}.0"
+            if printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[1-9][0-9]*$'; then
+              if ! docker buildx imagetools inspect "$LINIEN_WEBSITE" >/dev/null; then
+                echo "::error::${LINIEN_WEBSITE} fehlt oder ist nicht abrufbar. Vor dem Patch-Release ein Website-Image für die Linie bereitstellen (docs/WEITERENTWICKLUNG.md, Abschnitt 9)."
+                exit 1
+              fi
+              WEBSITE_QUELLE="$LINIEN_WEBSITE"
+            elif printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.0$' \
+              && docker buildx imagetools inspect "$LINIEN_WEBSITE" >/dev/null 2>&1; then
+              WEBSITE_QUELLE="$LINIEN_WEBSITE"
             fi
 
           elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
