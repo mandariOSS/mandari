@@ -1243,8 +1243,9 @@ class DsgvoExportService:
 
         Nichtöffentliches (``Vermerk.non_public``) beschreiben die Vermerke nur für vereidigte Mitglieder; alle
         anderen – auch nach Entzug der Vereidigung – erhalten Art und Zeitpunkt mit einem Platzhalter (Issue #873).
-        Vermerke an einem Dokument nennen dessen heutigen Titel nur, solange die Person das Dokument noch öffnen darf
-        (wie der Abschnitt der eigenen Dokumente); sonst steht ein Platzhalter.
+        Vermerke an einem Dokument oder einer Aufgabe nennen den heutigen Titel nur, solange die Person darauf noch
+        zugreifen darf (dieselben Regeln wie in den Abschnitten der Dokumente und Aufgaben); sonst steht ein
+        Platzhalter.
         """
         from django.apps import apps as django_apps
         from django.db.models import BooleanField, Case, Value, When
@@ -1253,13 +1254,25 @@ class DsgvoExportService:
         from apps.work.faction.visibility import is_sworn_member
 
         sworn = is_sworn_member(membership)
-        access: dict[Any, bool] = {}
+        may_see_tasks = membership.has_permission("tasks.view")
+        access: dict[tuple[str, Any], bool] = {}
 
-        def document_hidden(obj: Any) -> bool:
-            motion = obj.motion
-            if motion.pk not in access:
-                access[motion.pk] = motion.can_access(membership)
-            return not access[motion.pk]
+        def no_access(vermerk: Vermerk, obj: Any) -> str:
+            """Platzhalter, wenn der Vermerk an einem Dokument oder einer Aufgabe ohne Zugriff hängt, sonst ``""``."""
+            if "motion" in vermerk.select:
+                key = ("motion", obj.motion_id)
+                if key not in access:
+                    access[key] = obj.motion.can_access(membership)
+                return "" if access[key] else NO_ACCESS_DOCUMENT
+            if "task" in vermerk.select:
+                task = obj.task
+                key = ("task", task.pk)
+                if key not in access:
+                    # Fremde Aufgaben nur mit ``tasks.view``, eigene und zugewiesene bleiben (wie ``_collect_tasks``)
+                    own = membership.id in (task.created_by_id, task.assigned_to_id)
+                    access[key] = task.can_access(membership) and (may_see_tasks or own)
+                return "" if access[key] else NO_ACCESS_TASK
+            return ""
 
         rows: list[tuple[Any, dict]] = []
         for vermerk in VERMERKE:
@@ -1280,10 +1293,8 @@ class DsgvoExportService:
                 when = getattr(obj, vermerk.when)
                 if masked and obj.export_locked:
                     description = vermerk.describe_locked(obj) if vermerk.describe_locked else NON_PUBLIC_DOCUMENT
-                elif "motion" in vermerk.select and document_hidden(obj):
-                    description = NO_ACCESS_DOCUMENT
                 else:
-                    description = vermerk.describe(obj)
+                    description = no_access(vermerk, obj) or vermerk.describe(obj)
                 rows.append(
                     (
                         when,

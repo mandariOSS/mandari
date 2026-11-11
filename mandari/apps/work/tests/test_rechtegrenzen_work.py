@@ -307,6 +307,26 @@ def test_export_nennt_stand_einer_aufgabe_nur_mit_zugriff(org: Any, make_member:
     assert "GEHEIM" not in str(nachher)
 
 
+def test_export_vermerke_nennen_aufgabentitel_nur_mit_zugriff(org: Any, make_member: Any) -> None:
+    autorin = make_member(org, ["tasks.view", "tasks.create"], email="autorin@example.org")
+    person = make_member(org, ["tasks.view"], email="person@example.org")
+    aufgabe = Task.objects.create(
+        organization=org, title="Offene Aufgabe", created_by=autorin, visibility="organization"
+    )
+    TaskActivity.objects.create(task=aufgabe, actor=person, activity_type="status_changed")
+    dienst = export_service.DsgvoExportService()
+
+    def bearbeitet() -> list[str]:
+        return [v["object"] for v in dienst._collect_vermerke(person, org) if v["action"] == "Aufgabe bearbeitet"]
+
+    assert bearbeitet() == ["Offene Aufgabe: Status geändert"]
+
+    Task.objects.filter(pk=aufgabe.pk).update(visibility="private", title="GEHEIMER NEUER TITEL")
+
+    assert bearbeitet() == [export_service.NO_ACCESS_TASK]
+    assert "GEHEIM" not in str(dienst._collect_vermerke(person, org))
+
+
 def test_export_nennt_fremde_aufgaben_nur_mit_sichtrecht(org: Any, make_member: Any) -> None:
     autorin = make_member(org, ["tasks.view", "tasks.create"], email="autorin@example.org")
     person = make_member(org, ["dashboard.view"], email="person@example.org")
