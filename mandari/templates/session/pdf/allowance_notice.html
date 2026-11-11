@@ -25,7 +25,7 @@ Enthält KEINE Bankdaten — nur Positionen und Summen.
     {% for allowance in allowances %}
     <tr>
         <td>{{ allowance.attendance.meeting.start|date:"d.m.Y" }}</td>
-        <td>{{ allowance.attendance.meeting.organization.name }} — {{ allowance.attendance.meeting.name }}</td>
+        <td>{{ allowance.attendance.meeting.organization.name }} — {{ allowance.meeting_label }}</td>
         <td>{{ allowance.attendance.get_role_display }}</td>
         <td>{{ allowance.get_status_display }}{% if allowance.export_reference %} ({{ allowance.export_reference }}){% endif %}</td>
         <td style="text-align: right;">{{ allowance.amount }} {{ allowance.currency }}</td>

@@ -187,7 +187,7 @@ def _log_admin_revocation(request: HttpRequest, token: Any) -> None:
 class OAuthAccessTokenAdmin(ReadOnlyAdminMixin, AccessTokenAdmin, ModelAdmin):  # type: ignore[misc]
     list_display = ("pk", "user", "application", "scope", "expires", "created")
 
-    @admin.action(description="Ausgewählte Access-Tokens widerrufen")
+    @admin.action(description="Ausgewählte Access-Tokens widerrufen", permissions=["delete"])
     def revoke_tokens(self, request: HttpRequest, queryset: QuerySet[Any]) -> None:
         count = 0
         for token in queryset.select_related("application"):
@@ -200,7 +200,7 @@ class OAuthAccessTokenAdmin(ReadOnlyAdminMixin, AccessTokenAdmin, ModelAdmin):  
 class OAuthRefreshTokenAdmin(ReadOnlyAdminMixin, RefreshTokenAdmin, ModelAdmin):  # type: ignore[misc]
     list_display = ("pk", "user", "application", "created", "revoked")
 
-    @admin.action(description="Ausgewählte Refresh-Tokens widerrufen")
+    @admin.action(description="Ausgewählte Refresh-Tokens widerrufen", permissions=["delete"])
     def revoke_tokens(self, request: HttpRequest, queryset: QuerySet[Any]) -> None:
         count = 0
         for token in queryset.filter(revoked__isnull=True).select_related("application"):
