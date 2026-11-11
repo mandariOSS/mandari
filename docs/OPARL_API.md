@@ -38,6 +38,9 @@ die Kennungen aller Objekte lauten deshalb `https://oparl.mandari.de/oparl/v1/�
 - **Seite „Offene Daten“ `GET /insight/offene-daten/`**: Einstieg, Beispiel und Tabelle der Kommunen für Menschen
   und Suchmaschinen, mit `DataCatalog` (schema.org). Der Fuß jeder Seite des Bürgerportals verlinkt sie, auf Seiten
   einer Kommune gleich an deren Zeile.
+  Steht die Übersicht auf einer anderen Seite des Auftritts, nennt der Betrieb deren vollständige Adresse in
+  `INSIGHT_OFFENE_DATEN_URL` (#1309): Dann leitet `/insight/offene-daten/` dauerhaft dorthin weiter, Fuß und
+  `bodyDirectory` verweisen dorthin, und die Seite einer Kommune wird unter `<Adresse><Name der Kommune>/` erwartet.
 - **Seiten einer Kommune im Bürgerportal** tragen `<link rel="alternate" type="application/json">` auf ihren Body;
   umgekehrt zeigt `Body.web` auf die Seite der Kommune (`/insight/k/<slug>/`).
 
