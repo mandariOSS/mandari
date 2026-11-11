@@ -47,6 +47,8 @@ on:
     branches:
       - dev
       - main
+      # Pflegelinien (release/v0.12 usw.): Rückportierungen laufen durch die volle CI (docs/WEITERENTWICKLUNG.md, Issue #1341)
+      - 'release/v*'
   # Merge-Queue: kombinierter Stand vor dem Merge, immer mit allen Jobs (kein Pfadfilter)
   merge_group:
     types: [checks_requested]
