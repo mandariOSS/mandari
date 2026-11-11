@@ -42,6 +42,41 @@ class ImportResult:
     ocr_performed: bool = False
 
 
+#: Grenzen des entpackten DOCX-Pakets. python-docx liest jedes Teil vollständig in den Speicher und baut aus den
+#: XML-Teilen Bäume, die ein Vielfaches ihrer Größe belegen; geprüft war bisher nur die gepackte Größe der Datei.
+MAX_DOCX_PARTS = 5_000
+MAX_DOCX_XML_BYTES = 25 * 1024 * 1024
+MAX_DOCX_TOTAL_BYTES = 150 * 1024 * 1024
+
+
+class DocxTooLargeError(ValueError):
+    """Das entpackte DOCX-Paket ist größer, als der Import im laufenden Seitenaufruf verarbeitet."""
+
+
+def check_docx_package(data: bytes) -> None:
+    """
+    Entpackte Größe eines DOCX-Pakets prüfen, bevor python-docx es liest (``DocxTooLargeError``).
+
+    Maßgeblich sind die Größen aus dem Verzeichnis des Archivs: ``zipfile`` liefert beim Lesen eines Teils nie
+    mehr als die dort genannte Größe, ein zu klein angegebenes Teil endet also mit einem Lesefehler statt mit mehr
+    Daten. Kein gültiges Archiv ist kein Fall für diese Prüfung; das meldet python-docx wie bisher.
+    """
+    import io
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            parts = archive.infolist()
+    except zipfile.BadZipFile:
+        return
+    if len(parts) > MAX_DOCX_PARTS:
+        raise DocxTooLargeError("zu viele Teile")
+    total = sum(part.file_size for part in parts)
+    xml = sum(part.file_size for part in parts if part.filename.lower().endswith((".xml", ".rels")))
+    if total > MAX_DOCX_TOTAL_BYTES or xml > MAX_DOCX_XML_BYTES:
+        raise DocxTooLargeError("entpackt zu groß")
+
+
 def _escape_html(text: str) -> str:
     """Escape HTML special characters."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -206,6 +241,12 @@ class MotionImportService:
             # Parse the DOCX
             import io
 
+            try:
+                check_docx_package(file_content)
+            except DocxTooLargeError:
+                return ImportResult(
+                    success=False, error="Die Datei ist entpackt zu groß für den Import. Bitte als PDF anhängen."
+                )
             doc = Document(io.BytesIO(file_content))
 
             # Convert to HTML

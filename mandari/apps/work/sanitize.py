@@ -20,6 +20,7 @@ eigene, bewusst enge Positivliste auf Basis von ``html.parser``:
 from __future__ import annotations
 
 import re
+from collections import Counter
 from html import escape
 from html.parser import HTMLParser
 
@@ -249,6 +250,9 @@ class _EditorHtmlParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.open_tags: list[str] = []
+        # Wie oft jede Marke gerade offen ist: Die Frage „ist sie offen?“ kostet so nichts, statt bei jeder
+        # Endmarke die ganze Liste zu durchsuchen (quadratisch bei vielen offenen Marken)
+        self._open_count: Counter[str] = Counter()
         self._drop_depth = 0
 
     def _render_start(self, tag: str, attrs: list[tuple[str, str | None]]) -> str | None:
@@ -289,6 +293,7 @@ class _EditorHtmlParser(HTMLParser):
         self.parts.append(rendered)
         if tag not in VOID_TAGS:
             self.open_tags.append(tag)
+            self._open_count[tag] += 1
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
@@ -310,10 +315,11 @@ class _EditorHtmlParser(HTMLParser):
             if tag in DROP_CONTENT_TAGS:
                 self._drop_depth -= 1
             return
-        if tag in VOID_TAGS or tag not in self.open_tags:
+        if tag in VOID_TAGS or self._open_count[tag] <= 0:
             return
         while self.open_tags:
             open_tag = self.open_tags.pop()
+            self._open_count[open_tag] -= 1
             self.parts.append(f"</{open_tag}>")
             if open_tag == tag:
                 break
