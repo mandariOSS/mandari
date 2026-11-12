@@ -341,10 +341,24 @@ def _user_saved(
 def _organization_saved(
     sender: Any, instance: Any, created: bool, raw: bool = False, update_fields: Any = None, **kwargs: Any
 ) -> None:
-    """Organisation gesperrt oder beendet (``Organization.is_active``): Die Mitgliedschaften bleiben aktiv."""
-    if created or raw or instance.is_active:
+    """
+    Organisation gesperrt oder beendet (``is_active``) oder mit Pflicht zum zweiten Faktor gespeichert (``require_2fa``).
+
+    Die Mitgliedschaften bleiben in beiden Fällen aktiv, der Zugriff offener Verbindungen kann trotzdem enden: bei
+    der Sperre für alle, bei der Pflicht für Mitglieder ohne zweiten Faktor. Den früheren Stand kennt der Empfänger
+    nicht, deshalb prüfen die Verbindungen bei jedem Speichern mit gesetzter Pflicht neu (selten, und die Prüfung
+    ändert für Mitglieder mit Faktor nichts).
+    """
+    if created or raw:
         return
-    if update_fields is not None and "is_active" not in update_fields:
+    reasons = set()
+    if not instance.is_active:
+        reasons.add("is_active")
+    if instance.require_2fa:
+        reasons.add("require_2fa")
+    if not reasons:
+        return
+    if update_fields is not None and not reasons & set(update_fields):
         return
     from apps.tenants.models import Membership
 

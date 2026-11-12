@@ -26,9 +26,10 @@ from __future__ import annotations
 import time
 import zlib
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any
 
+import httpcore
 import httpx
 from mandari_oparl.robots import KIND_FILES, Decision
 
@@ -88,7 +89,54 @@ class ResponseTooLargeError(httpx.HTTPError):
 ACCEPT_ENCODING = "gzip, deflate"
 
 
+@contextmanager
+def _bounded_reads(response: httpx.Response, deadline: float | None) -> Iterator[None]:
+    """
+    Jeden Lesevorgang auf der Verbindung der gestreamten Antwort auf die Zeit bis ``deadline`` begrenzen.
+
+    Die Prüfung nach jedem gelesenen Stück greift nicht, solange kein Stück ankommt: etwa wenn ein Server die
+    Rahmung der Antwort (Chunk-Kopf) Byte für Byte schickt, jedes knapp vor dem Lese-Timeout. ``httpcore`` liest
+    dann weiter von der Verbindung, jeweils mit dem Lese-Timeout der Anfrage. Hier bekommt jeder dieser Lesevorgänge
+    höchstens die Restzeit, und nach der Frist beginnt keiner mehr (``httpcore.ReadTimeout``, bei ``httpx`` als
+    ``ReadTimeout``). Ohne Thread: Die Grenze sitzt am Lesen selbst. Ohne Zugriff auf die Verbindung (Antwort aus
+    einem Ersatz-Transport) und bei HTTP/2 bleibt es bei der Prüfung nach jedem Stück.
+    """
+    extensions = getattr(response, "extensions", None) or {}
+    stream: Any = extensions.get("network_stream")
+    read = getattr(stream, "read", None)
+    # Nur bei HTTP/1: Dort gehört die Verbindung für die Dauer der Antwort dieser einen Antwort. Bei HTTP/2 teilen
+    # sich mehrere Antworten die Verbindung, eine Grenze am gemeinsamen Lesen träfe auch die anderen. Maßgeblich ist
+    # der Transport (HTTP/2 führt eine Stream-Kennung), nicht die Version aus der Statuszeile: Die schreibt der
+    # Server, und mit „HTTP/2.0“ auf einer HTTP/1-Verbindung entfiele sonst die Grenze.
+    alone = "stream_id" not in extensions
+    if deadline is None or read is None or not alone:
+        yield
+        return
+
+    def bounded(max_bytes: int, timeout: float | None = None) -> bytes:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise httpcore.ReadTimeout("Antwort dauert insgesamt zu lange")
+        return bytes(read(max_bytes, timeout=remaining if timeout is None else min(timeout, remaining)))
+
+    stream.read = bounded
+    try:
+        yield
+    finally:
+        # Die Verbindung kann im Pool bleiben: den Lesevorgang für die nächste Anfrage wieder freigeben
+        with suppress(AttributeError):
+            del stream.read
+
+
 def read_limited(
+    response: httpx.Response, max_bytes: int, *, truncate: bool = False, deadline: float | None = None
+) -> bytes:
+    """Wie :func:`_read_limited`; die Frist gilt zusätzlich für jeden Lesevorgang der Verbindung (``_bounded_reads``)."""
+    with _bounded_reads(response, deadline):
+        return _read_limited(response, max_bytes, truncate=truncate, deadline=deadline)
+
+
+def _read_limited(
     response: httpx.Response, max_bytes: int, *, truncate: bool = False, deadline: float | None = None
 ) -> bytes:
     """
@@ -99,7 +147,8 @@ def read_limited(
     entpackt, nie mehr als bis zur Grenze: Darüber endet das Lesen mit ``ResponseTooLargeError`` oder, mit
     ``truncate``, beim Stand der Grenze (für robots.txt, deren Anfang gilt). Entpackt werden gzip und deflate
     (``ACCEPT_ENCODING``); andere und mehrfach kodierte Antworten weisen wir ab. ``deadline``
-    (``time.monotonic()``) begrenzt die Gesamtdauer.
+    (``time.monotonic()``) begrenzt die Gesamtdauer: geprüft nach jedem Stück, wie es aus dem Netz kommt. Eine
+    Antwort, die nur tröpfelt, endet damit spätestens einen Lese-Timeout des Clients nach der Frist.
     """
     if response.is_stream_consumed:
         # Der Rumpf liegt schon im Speicher (nicht gestreamt gesendet, oder ein Ersatz-Transport im Test): Es gibt
@@ -127,7 +176,9 @@ def read_limited(
             raise httpx.DecodingError(f"Kodierung {encodings[0]} wird nicht gelesen", request=response.request)
     parts: list[bytes] = []
     size = 0
-    for raw in response.iter_raw(16 * 1024):
+    # Ohne Stückgröße: Mit einer festen Größe sammelte httpx so lange, bis sie erreicht ist, und die Frist unten
+    # käme bei einer tröpfelnden Antwort erst nach Stunden zur Prüfung
+    for raw in response.iter_raw():
         pending = raw
         while pending:
             if decoder is None:

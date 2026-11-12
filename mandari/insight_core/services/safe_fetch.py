@@ -16,8 +16,9 @@ from __future__ import annotations
 import ipaddress
 import socket
 import time
-from collections.abc import Callable
-from contextlib import AbstractContextManager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import IO, Any
 from urllib.parse import urlsplit
@@ -43,7 +44,23 @@ class DeadlineExceededError(Exception):
     """Der Abruf dauert insgesamt zu lange."""
 
 
+#: Strenge Prüfung für die laufende Anfrage (``guarded_client(strict=True)``): ohne die beiden Ausnahmen, die für
+#: Abrufe bei Ratsinformationssystemen gelten (eigener Host, private Netze nach Einstellung)
+_STRICT: ContextVar[bool] = ContextVar("safe_fetch_strict", default=False)
+
+
+@contextmanager
+def _strict() -> Iterator[None]:
+    token = _STRICT.set(True)
+    try:
+        yield
+    finally:
+        _STRICT.reset(token)
+
+
 def _own_hosts() -> set[str]:
+    if _STRICT.get():
+        return set()
     host = urlsplit(str(getattr(settings, "SITE_URL", "") or "")).hostname
     return {host.lower()} if host else set()
 
@@ -63,6 +80,8 @@ def _allowed_address(address: str) -> bool:
     if ip.is_global:
         return True
     if ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved:
+        return False
+    if _STRICT.get():
         return False
     return bool(getattr(settings, "INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS", False)) and ip.is_private
 
@@ -153,14 +172,33 @@ class PinnedTransport(httpx.HTTPTransport):
             raise BlockedDestinationError(str(exc), request=request) from None
 
 
-def guarded_client(**kwargs: Any) -> httpx.Client:
+class StrictPinnedTransport(PinnedTransport):
+    """Wie ``PinnedTransport``, aber nur öffentliche Adressen: ohne Ausnahme für den eigenen Host und private Netze."""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        # Der Verbindungsaufbau (Auflösen, Prüfen, Binden) läuft innerhalb dieses Aufrufs
+        with _strict():
+            return super().handle_request(request)
+
+
+def _check_request_strict(request: httpx.Request) -> None:
+    with _strict():
+        _check_request(request)
+
+
+def guarded_client(*, strict: bool = False, **kwargs: Any) -> httpx.Client:
     """
     ``httpx.Client``, der jedes Ziel (auch nach Weiterleitungen) vor dem Abruf prüft und nur mit der geprüften
     Adresse verbindet (``PinnedTransport``). Wer einen eigenen ``transport`` mitgibt (Tests), behält die Prüfung
     der Adresse, aber nicht die Bindung.
+
+    ``strict``: für Abrufe bei Dritten, die nie im eigenen Netz liegen (Streaming-Anbieter). Dann gelten die
+    Ausnahmen nicht, die Abrufe bei Ratsinformationssystemen brauchen: Der eigene Host (``SITE_URL``) wird wie jeder
+    andere geprüft und gebunden, und ``INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS`` öffnet keine privaten Adressen.
     """
-    kwargs.setdefault("transport", PinnedTransport())
-    return httpx.Client(event_hooks={"request": [_check_request]}, **kwargs)
+    kwargs.setdefault("transport", StrictPinnedTransport() if strict else PinnedTransport())
+    hook = _check_request_strict if strict else _check_request
+    return httpx.Client(event_hooks={"request": [hook]}, **kwargs)
 
 
 @dataclass

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import gzip
 import socket
+import time
 import tracemalloc
 from typing import Any
 
@@ -125,6 +126,76 @@ def test_lesen_endet_an_der_grenze() -> None:
     with pytest.raises(redirects.ResponseTooLargeError):
         redirects.read_limited(_antwort(b"a" * 1001), 1000)
     assert redirects.read_limited(_antwort(b"a" * 5000), 1000, truncate=True) == b"a" * 1000
+
+
+def test_gesamtfrist_gilt_auch_fuer_eine_troepfelnde_antwort(monkeypatch: pytest.MonkeyPatch) -> None:
+    uhr = [100.0]
+    geliefert = [0]
+
+    class Troepfelnd(httpx.SyncByteStream):
+        def __iter__(self) -> Any:
+            # Ein Byte je neun Sekunden: unter jedem Lese-Timeout, aber weit über der Gesamtfrist
+            for _ in range(2000):
+                uhr[0] += 9.0
+                geliefert[0] += 1
+                yield b"a"
+
+    monkeypatch.setattr(time, "monotonic", lambda: uhr[0])
+    antwort = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=Troepfelnd()))
+    ).send(httpx.Request("GET", "https://ris.example.org/x"), stream=True)
+
+    with pytest.raises(httpx.ReadTimeout):
+        redirects.read_limited(antwort, 1024 * 1024, deadline=uhr[0] + 60.0)
+
+    # Abbruch kurz nach der Frist, nicht erst nach dem Ende der Antwort
+    assert geliefert[0] <= 8
+
+
+@pytest.mark.parametrize("statuszeile", [b"HTTP/1.1 200 OK", b"HTTP/2.0 200 OK"])
+def test_gesamtfrist_unterbricht_einen_blockierten_lesevorgang(statuszeile: bytes) -> None:
+    """Der Server schickt nur die Rahmung der Antwort, Byte für Byte: Kein Stück kommt an, die Frist greift trotzdem."""
+    import threading
+
+    lauscher = socket.socket()
+    lauscher.bind(("127.0.0.1", 0))
+    lauscher.listen(1)
+    fertig = threading.Event()
+
+    def bedienen() -> None:
+        verbindung, _ = lauscher.accept()
+        try:
+            verbindung.recv(4096)
+            # Die Version in der Statuszeile schreibt der Server; sie darf die Grenze nicht abschalten
+            verbindung.sendall(statuszeile + b"\r\nTransfer-Encoding: chunked\r\n\r\n")
+            # Chunk-Größe als endlose Ziffernfolge: unter jedem Lese-Timeout, aber ohne je Daten zu liefern
+            while not fertig.wait(0.2):
+                verbindung.sendall(b"0")
+        except OSError:
+            pass
+        finally:
+            verbindung.close()
+
+    faden = threading.Thread(target=bedienen, daemon=True)
+    faden.start()
+    try:
+        with httpx.Client(timeout=httpx.Timeout(5.0)) as client:
+            adresse = f"http://127.0.0.1:{lauscher.getsockname()[1]}/foto.jpg"
+            antwort = client.send(client.build_request("GET", adresse), stream=True)
+            beginn = time.monotonic()
+            try:
+                with pytest.raises(httpx.ReadTimeout):
+                    redirects.read_limited(antwort, 1024 * 1024, deadline=time.monotonic() + 0.6)
+            finally:
+                antwort.close()
+            # Abbruch zur Frist, nicht erst nach dem Lese-Timeout und nicht nie
+            assert time.monotonic() - beginn < 3.0
+            # Die Verbindung liest danach wieder mit ihren eigenen Zeitgrenzen (sie kann im Pool bleiben)
+            assert "read" not in vars(antwort.extensions["network_stream"])
+    finally:
+        fertig.set()
+        lauscher.close()
+        faden.join(timeout=5)
 
 
 def test_stark_komprimierte_antwort_wird_nicht_ganz_entpackt() -> None:

@@ -232,6 +232,25 @@ def test_stand_aendert_sich_mit_titel_und_verweisen_der_abschnitte(welt: Welt, l
     assert mit(titel="Anderer Titel").split(".")[0] == stand.status
 
 
+def test_ruecknahme_und_neuzuordnung_zwischen_zwei_abrufen_laden_den_live_teil_neu(
+    client: Client, welt: Welt, laufend: Broadcast
+) -> None:
+    """Ein Punkt wird zurückgenommen, ein anderer Abschnitt neu zugeordnet: gleich viele Verweise, anderer Stand."""
+    frueher = BroadcastSection.objects.create(
+        broadcast=laufend, agenda_item=None, number="1", started_at=welt.jetzt - timedelta(minutes=20)
+    )
+    vorher = client.get(_url(welt.sitzung), {"teil": "stand"}).content.decode()
+    version = re.search(r"v=([^\"&]+)\"", vorher)
+    assert version is not None
+    assert client.get(_url(welt.sitzung), {"teil": "stand", "v": version.group(1)}).status_code == 204
+
+    OParlAgendaItem.objects.filter(pk=welt.top5.pk).update(deleted=True)
+    BroadcastSection.objects.filter(pk=frueher.pk).update(agenda_item=welt.top1)
+
+    # Wieder genau ein Abschnitt mit Verweis, aber ein anderer: kein 204 für die geöffnete Seite
+    assert client.get(_url(welt.sitzung), {"teil": "stand", "v": version.group(1)}).status_code == 200
+
+
 def test_zurueckgenommener_punkt_ohne_titel_verweis_und_vorlage(client: Client, welt: Welt, laufend: Broadcast) -> None:
     """Nimmt der Herausgeber einen Punkt zurück, bleibt der Abschnitt im Verlauf, aber ohne Titel und Verweise."""
     BroadcastSection.objects.filter(broadcast=laufend).update(title_read="Gelesen: Neubau der Schule")
