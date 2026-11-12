@@ -58,6 +58,7 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMi
                 organizations=OuterRef("pk"),
                 start__gte=now,
                 cancelled=False,
+                deleted=False,
             )
             .order_by("start")
             .values("start")[:1]
@@ -66,11 +67,12 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMi
             OParlMeeting.objects.filter(
                 organizations=OuterRef("pk"),
                 start__lt=now,
+                deleted=False,
             )
             .order_by("-start")
             .values("start")[:1]
         )
-        has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
+        has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk"), deleted=False))
         # Laufende Mitgliedschaften (Spalte „Mitglieder“ auf breiten Bildschirmen, Issue #841)
         members_sq = Subquery(
             OParlMembership.objects.filter(organization=OuterRef("pk"), deleted=False)
@@ -110,7 +112,7 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMi
 
         if body:
             today = timezone.now().date()
-            has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
+            has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk"), deleted=False))
 
             # Counts ohne Suchfilter
             all_orgs = OParlOrganization.objects.filter(body=body, deleted=False).annotate(
