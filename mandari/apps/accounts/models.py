@@ -23,6 +23,34 @@ from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 class UserManager(BaseUserManager):
     """Custom user manager with email as the unique identifier."""
 
+    @classmethod
+    def normalize_email(cls, email: str | None) -> str:
+        """
+        Adresse eines Kontos in der gespeicherten Form: ohne Rand und ganz in Kleinbuchstaben (Issue #1397).
+
+        Django schreibt nur den Teil hinter dem ``@`` klein. Für Menschen ist ``Otto.Gross@…`` dieselbe
+        Adresse wie ``otto.gross@…``; mit einer einzigen Schreibweise gilt ``unique`` auch dafür.
+        """
+        return (email or "").strip().lower()
+
+    def get_by_natural_key(self, email: str | None) -> Any:
+        """
+        Konto zur Adresse der Anmeldung, ohne Beachtung der Groß-/Kleinschreibung (Issue #1397).
+
+        Die exakte Schreibweise hat Vorrang. So bleiben zwei Konten aus der Zeit vor dieser Regel, die sich
+        nur in der Schreibweise unterscheiden, je mit ihrer eigenen Schreibweise erreichbar; passt keine
+        genau und kommen mehrere in Frage, gilt keins.
+        """
+        email = (email or "").strip()
+        for kandidat in dict.fromkeys((email, self.normalize_email(email))):
+            konto = self.filter(email=kandidat).first()
+            if konto is not None:
+                return konto
+        konten = list(self.filter(email__iexact=email)[:2])
+        if len(konten) == 1:
+            return konten[0]
+        raise self.model.DoesNotExist(f"{self.model._meta.object_name} matching query does not exist.")
+
     def create_user(self, email, password=None, **extra_fields):
         """Create and return a regular user."""
         if not email:
@@ -92,6 +120,32 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+    def _normalize_email(self) -> None:
+        """
+        Adresse in die gespeicherte Form bringen (klein geschrieben, Issue #1397).
+
+        Ein bestehendes Konto behält seine Schreibweise, solange ein anderes Konto die klein geschriebene
+        Adresse schon trägt (Bestand aus der Zeit vor dieser Regel) – sonst ließe es sich nicht mehr speichern.
+        """
+        wanted = type(self).objects.normalize_email(self.email)
+        if wanted == self.email:
+            return
+        if not self._state.adding and type(self).objects.filter(email=wanted).exclude(pk=self.pk).exists():
+            return
+        self.email = wanted
+
+    def clean(self) -> None:
+        """Vor der Eindeutigkeitsprüfung der Formulare: Adresse klein schreiben."""
+        super().clean()
+        self._normalize_email()
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Speichert die Adresse immer klein geschrieben, auch am Formular vorbei (Admin, Shell, Dienste)."""
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or "email" in update_fields:
+            self._normalize_email()
+        super().save(*args, **kwargs)
 
     @property
     def full_name(self) -> str:

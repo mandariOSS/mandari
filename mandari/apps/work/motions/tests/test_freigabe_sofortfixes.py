@@ -408,6 +408,28 @@ def test_aenderungshistorie_zeigt_titel_und_anhang_nur_wer_das_dokument_sieht(
 
 
 @pytest.mark.django_db
+def test_freigabe_findet_konten_in_jeder_schreibweise(org: Any, freigebende: Any, client_for: Any) -> None:
+    """Teilen-Dialog und Ordner-Freigabe finden ein Konto, dessen Adresse noch mit Großbuchstaben gespeichert ist."""
+    dokument = Motion.objects.create(organization=org, author=freigebende, title="Antrag", visibility="shared")
+    ordner = DocumentFolder.objects.create(organization=org, name="Extern", created_by=freigebende)
+    gast = _gast(org)
+    type(gast.user).objects.filter(pk=gast.user.pk).update(email="Gast.Person@example.org")
+    client = client_for(freigebende.user)
+
+    client.post(
+        _url("document_share_update", org, motion_id=dokument.id),
+        {"visibility": "shared", "add_user_email": "GAST.person@Example.org", "level": "view"},
+    )
+    antwort = client.post(
+        _url("document_folder_share", org, folder_id=ordner.id), {"email": "gast.person@example.org", "level": "view"}
+    )
+
+    assert MotionShare.objects.filter(motion=dokument, user=gast.user, level="view").exists()
+    assert antwort.status_code < 400
+    assert FolderGuestShare.objects.filter(folder=ordner, user=gast.user, level="view").exists()
+
+
+@pytest.mark.django_db
 def test_stufenaenderung_laesst_abgeschaltetes_herunterladen_aus(org: Any, freigebende: Any, client_for: Any) -> None:
     """Schalter aus, danach Stufe ändern (Teilen-Dialog, Ordner-Freigabe ohne Feld): Der Schalter bleibt aus."""
     dokument = Motion.objects.create(organization=org, author=freigebende, title="Antrag", visibility="shared")

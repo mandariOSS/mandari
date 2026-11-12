@@ -537,5 +537,5 @@ def check_rate_limit(email: str, max_per_day: int = 3) -> bool:
     from ..models import PublicQuestion
 
     today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    count = PublicQuestion.objects.filter(questioner_email=email, created_at__gte=today_start).count()
+    count = PublicQuestion.objects.filter(questioner_email__iexact=email, created_at__gte=today_start).count()
     return count < max_per_day
