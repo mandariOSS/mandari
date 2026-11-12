@@ -530,3 +530,54 @@ def test_auskunft_enthaelt_ladungen_und_rueckmeldung(welt: Welt) -> None:
 
     assert daten["ladungen"][0]["empfang_bestaetigt_ueber"] == "Rückmeldelink"
     assert daten["anwesenheiten"][0]["grund"] == GRUND
+
+
+# =============================================================================
+# Serienbrief: Rechte der abrufenden Person
+# =============================================================================
+
+
+def _dienst(welt: Welt, name: str, **rechte: bool) -> Client:
+    role = SessionRole.objects.create(tenant=welt.tenant, name=name, **rechte)
+    user = cast(Any, UserFactory)(email=f"{name}@example.org")
+    session_user = SessionUser.objects.create(user=user, tenant=welt.tenant)
+    session_user.roles.add(role)
+    client = Client()
+    client.force_login(user)
+    return client
+
+
+def _serienbrief(welt: Welt, dispatch: SessionInvitationDispatch) -> str:
+    return f"/session/{welt.tenant.slug}/meetings/{welt.meeting.id}/invitation/serienbrief/{dispatch.id}"
+
+
+def test_serienbrief_nur_mit_dem_recht_rueckmeldungen_einzutragen(welt: Welt) -> None:
+    """Der Serienbrief enthält die persönlichen Rückmeldelinks; ohne ``manage_attendance`` gibt es ihn nicht."""
+    dispatch = _versenden(welt)
+    ohne = _dienst(
+        welt, "ohne-anwesenheit", can_view_meetings=True, can_edit_meetings=True, can_view_non_public_meetings=True
+    )
+
+    assert ohne.get(f"{_serienbrief(welt, dispatch)}/pdf/").status_code == 403
+    assert ohne.get(f"{_serienbrief(welt, dispatch)}/csv/").status_code == 403
+    seite = ohne.get(_status_url(welt)).content.decode()
+    assert f"{_serienbrief(welt, dispatch)}/pdf/" not in seite
+    assert f"{_serienbrief(welt, dispatch)}/csv/" not in seite
+    # Mit dem Recht stehen die Knöpfe auf der Seite
+    assert f"{_serienbrief(welt, dispatch)}/pdf/" in welt.staff_client.get(_status_url(welt)).content.decode()
+
+
+def test_serienbrief_mit_nichtoeffentlichem_teil_nur_mit_sichtrecht(welt: Welt) -> None:
+    """Das Anschreiben druckt für Mitglieder die vollständige Tagesordnung; ohne NÖ-Recht gibt es das PDF nicht."""
+    dispatch = _versenden(welt)
+    assert _empfaenger(dispatch, welt.letter).includes_non_public
+    ohne_noe = _dienst(welt, "ohne-noe", can_view_meetings=True, can_edit_meetings=True, can_manage_attendance=True)
+
+    assert ohne_noe.get(f"{_serienbrief(welt, dispatch)}/pdf/").status_code == 403
+    # Die Datei für den eigenen Serienbrief enthält keine Tagesordnung
+    # Die Übersicht bietet diesem Konto nur die Datei an, dem Sitzungsdienst mit Sichtrecht beides
+    seite = ohne_noe.get(_status_url(welt)).content.decode()
+    assert f"{_serienbrief(welt, dispatch)}/csv/" in seite
+    assert f"{_serienbrief(welt, dispatch)}/pdf/" not in seite
+    daten = ohne_noe.get(f"{_serienbrief(welt, dispatch)}/csv/")
+    assert daten.status_code == 200 and "GEHEIMER-TOP" not in daten.content.decode("utf-8-sig")

@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -149,14 +150,27 @@ class MeetingInvitationStatusView(SessionViewMixin, TemplateView):
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
         overview = invitation_response_service.meeting_overview(meeting, include_reasons=True)
+        letter_batches = invitation_export_service.letter_batches(meeting)
+        # Versände, deren Serienbrief-PDF den nichtöffentlichen Teil druckt: ohne Sichtrecht kein PDF-Link
+        # (MeetingSerialLetterView lehnt den Abruf ab), die Datei für den eigenen Serienbrief bleibt
+        letter_pdf_blocked = set()
+        if not self.has_permission("view_non_public_meetings"):
+            letter_pdf_blocked = {
+                batch.dispatch.pk
+                for batch in letter_batches
+                if any(r.includes_non_public for r in invitation_export_service.letter_recipients(batch.dispatch))
+            }
         context.update(
             {
                 "meeting": meeting,
                 "overview": overview,
                 "reminder_count": len(invitation_response_service.reminder_candidates(meeting, overview)),
                 "is_open": invitation_response_service.is_open_for_responses(meeting),
-                "letter_batches": invitation_export_service.letter_batches(meeting),
+                "letter_batches": letter_batches,
+                "letter_pdf_blocked": letter_pdf_blocked,
                 "can_enter_responses": self.has_permission("manage_attendance"),
+                # Der Serienbrief enthält die persönlichen Rückmeldelinks (MeetingSerialLetterView)
+                "can_export_letters": self.has_permission("manage_attendance"),
             }
         )
         return context
@@ -261,18 +275,32 @@ def _dispatch_for(view: Any, meeting: SessionMeeting, dispatch_id: Any) -> Sessi
 
 
 class MeetingSerialLetterView(SessionViewMixin, View):
-    """Serienbrief für Personen mit Zustellweg Brief: PDF (ein Anschreiben je Person) oder CSV."""
+    """
+    Serienbrief für Personen mit Zustellweg Brief: PDF (ein Anschreiben je Person) oder CSV.
+
+    Beide Fassungen enthalten je Person den persönlichen Rückmeldelink. Wer sie abruft, kann damit Rückmeldungen
+    im Namen der Person abgeben; deshalb gilt dieselbe Grenze wie für das Eintragen (``manage_attendance``).
+    """
 
     http_method_names = ["get"]
-    permission_required = "edit_meetings"
+    permission_required = ["edit_meetings", "manage_attendance"]
 
     def get(self, request: HttpRequest, tenant_slug: str, meeting_id: Any, dispatch_id: Any, fmt: str) -> HttpResponse:
         if fmt not in ("pdf", "csv"):
             raise Http404("Unbekanntes Format")
         meeting = _get_meeting(self, meeting_id)
         dispatch = _dispatch_for(self, meeting, dispatch_id)
-        if not invitation_export_service.letter_recipients(dispatch):
+        recipients = invitation_export_service.letter_recipients(dispatch)
+        if not recipients:
             raise Http404("Keine Briefempfänger in diesem Versand")
+        if (
+            fmt == "pdf"
+            and not self.has_permission("view_non_public_meetings")
+            and any(recipient.includes_non_public for recipient in recipients)
+        ):
+            # Das Anschreiben druckt für diese Personen die vollständige Tagesordnung samt nichtöffentlichem Teil.
+            # Ohne das Recht dafür gibt es den Serienbrief nicht (eine gekürzte Ladung wäre unvollständig).
+            raise PermissionDenied("Der Serienbrief enthält den nichtöffentlichen Teil der Tagesordnung.")
         _log_event("download", meeting, changes={"dokument": f"Serienbrief ({fmt.upper()})"}, request=request)
         if fmt == "csv":
             csv_text = invitation_export_service.build_serial_letter_csv(dispatch)
