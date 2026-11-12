@@ -469,6 +469,43 @@ def test_admin_can_revoke_folder_share(guests: Guests) -> None:
     assert not guests.doc_secret.can_access(guests.m_guest_a), "Zugriff nach Entzug nicht dicht"
 
 
+@pytest.mark.django_db
+def test_ordnerfreigabe_gibt_hoechstens_die_stufe_der_freigebenden_person(guests: Guests, make_member: Any) -> None:
+    """„Bearbeiten“ am Ordner gilt an Dokumenten anderer nur so weit, wie die freigebende Person sie selbst bearbeiten darf."""
+    rechte = ["motions.view", "motions.view_drafts", "motions.create", "motions.edit", "motions.comment"]
+    kollegin = make_member(guests.org_a, [*rechte, "motions.share"], email="kollegin@example.org")
+    ordner = DocumentFolder.objects.create(organization=guests.org_a, name="Arbeitskreis", created_by=kollegin)
+    eigenes = Motion.objects.create(
+        organization=guests.org_a, author=kollegin, title="Eigener Antrag", visibility="organization", folder=ordner
+    )
+    fremdes = Motion.objects.create(
+        organization=guests.org_a,
+        author=guests.m_admin,
+        title="Antrag der Vorsitzenden",
+        visibility="organization",
+        folder=ordner,
+    )
+    FolderGuestShare.objects.create(folder=ordner, user=guests.user_multi, level="edit", created_by=kollegin.user)
+    gast = guests.m_guest_a
+
+    # Die Kollegin darf das fremde Dokument nur kommentieren, also auch der Gast
+    assert fremdes.editor_access_level(kollegin) == "comment"
+    assert eigenes.get_guest_share_level(gast) == "edit"
+    assert fremdes.get_guest_share_level(gast) == "comment"
+    assert fremdes.editor_access_level(gast) == "comment" and fremdes.can_access(gast)
+
+    # Vergibt jemand die Freigabe neu, der das Dokument selbst bearbeiten darf, gilt wieder „Bearbeiten“
+    FolderGuestShare.objects.filter(folder=ordner, user=guests.user_multi).update(created_by=guests.user_admin)
+    assert fremdes.get_guest_share_level(gast) == "edit"
+
+    # Ohne aktive freigebende Person lässt sich nichts prüfen: lesen bleibt, mehr nicht
+    FolderGuestShare.objects.filter(folder=ordner, user=guests.user_multi).update(created_by=kollegin.user)
+    Membership.objects.filter(pk=kollegin.pk).update(is_active=False)
+    assert eigenes.get_guest_share_level(gast) == "view" and fremdes.get_guest_share_level(gast) == "view"
+    FolderGuestShare.objects.filter(folder=ordner, user=guests.user_multi).update(created_by=None)
+    assert fremdes.get_guest_share_level(gast) == "view"
+
+
 # =============================================================================
 # A. Gast-Einladung mit Ordner-Freigabe
 # =============================================================================
