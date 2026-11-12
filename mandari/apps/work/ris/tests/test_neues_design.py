@@ -606,3 +606,29 @@ def test_vorgang_im_bisherigen_rahmen_kennzeichnet_die_ki_zusammenfassung(welt: 
 
     assert '<p class="text-gray-600 dark:text-gray-400" data-ai-generated="true">Kurz gesagt: eine neue' in html
     assert "Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten." in html
+
+
+@pytest.mark.parametrize(
+    ("name", "objekt", "kwarg", "vorgabe", "bekannt"),
+    [
+        ("work:ris_organization_detail", "ausschuss", "org_id", "members", "calendar"),
+        ("work:ris_person_detail", "person", "person_id", "memberships", "info"),
+    ],
+)
+def test_reiter_aus_der_adresse_nur_aus_der_festen_liste(
+    welt: Welt, client_for: Any, name: str, objekt: str, kwarg: str, vorgabe: str, bekannt: str
+) -> None:
+    """Der Reiter (?tab=) steht in einem Alpine-Ausdruck: Unbekannte Werte fallen auf die Vorgabe zurück."""
+    welt.org.work_new_design = False
+    welt.org.save(update_fields=["work_new_design"])
+    kwargs = {kwarg: getattr(welt, objekt).pk}
+
+    fremd = _seite(client_for, welt.vorsitz, name, {"tab": "x'};window.kaputt=1;({a:'"}, **kwargs)
+    assert fremd.context["active_tab"] == vorgabe
+    html = fremd.content.decode()
+    assert "window.kaputt" not in html
+    assert f"x-data=\"{{ tab: '{vorgabe}' }}\"" in html
+
+    gewaehlt = _seite(client_for, welt.vorsitz, name, {"tab": bekannt}, **kwargs)
+    assert gewaehlt.context["active_tab"] == bekannt
+    assert f"x-data=\"{{ tab: '{bekannt}' }}\"" in gewaehlt.content.decode()
