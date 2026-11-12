@@ -12,14 +12,25 @@ Patch-Release der Linie 0.11 mit Sicherheitskorrekturen, ohne neue Funktionen un
 Dieselben Korrekturen enthält 0.12.1. Wer mandari 0.11 selbst betreibt, sollte zügig aktualisieren.
 
 ### Vor dem Update lesen
+- **Einbettungs-Snippet der öffentlichen Termine:** Bereits auf Webseiten eingebundene Kopien durch die neue Fassung aus den Einstellungen der Organisation ersetzen.
+- **Kubernetes:** Im Helm-Chart ist `networkPolicy.enabled` ab Werk `true`. Bestehende Installationen bekommen die Richtlinie beim Update nach `deploy/kubernetes/README.md` (`helm upgrade … --reset-then-reuse-values`, Helm ab 3.14) oder mit einer vollständigen Werte-Datei. Mit `--reuse-values` greift der neue Standardwert nicht; dann `--set networkPolicy.enabled=true` mitgeben. Wirksam ist die Richtlinie nur mit einem Netz-Plugin, das NetworkPolicy durchsetzt.
 - **Ordner-Freigaben an Gäste:** Eine Ordner-Freigabe mit „Kommentieren“ oder „Bearbeiten“ gilt an Dokumenten anderer Mitglieder nur noch so weit, wie die Person, die den Ordner freigegeben hat, diese Dokumente selbst kommentieren oder bearbeiten darf. Lesen bleibt. Ist diese Person kein aktives Mitglied mehr, gilt die Freigabe zum Lesen. Soll ein Gast weiter mehr dürfen, vergibt eine Person mit den nötigen Rechten die Freigabe neu (gleicher Gast, gleicher Ordner).
-- **Nach einem Passwortwechsel** enden alle anderen Sitzungen des Kontos sofort; andere Geräte melden sich neu an.
+- **PDF-Erzeugung:** Bilder mit relativer Adresse im Text eines Dokuments erscheinen nicht mehr im PDF; eingefügte Bilder und Bilder fremder Server bleiben. `xhtml2pdf` steht in `requirements.lock` jetzt in 0.2.28.
+- **Anmeldung:** Eine Anmeldung, die beim Update gerade zwischen Passwort und zweitem Schritt steht, beginnt einmal neu. Nach einem Passwortwechsel enden alle anderen Sitzungen des Kontos sofort; andere Geräte melden sich neu an.
+- **Aufgaben:** Rollen mit `tasks.create` ohne `tasks.manage` bekommen beim Import unbekannter Labels einen Hinweis statt neuer Labels. Eine Aufgabe aus einem Protokolleintrag der Fraktionssitzung legt nur an, wer `tasks.create` hat.
 
 ### Sicherheit
 - Konto: Nach einem Passwortwechsel bleibt die eigene Sitzung in der Geräteliste, alle übrigen Sitzungen des Kontos enden sofort. „Alle anderen Sitzungen beenden“ erfasst auch laufende Sitzungen, die in der Geräteliste fehlen (#1319).
-- Work, Dokumente und Gäste: Eine Ordner-Freigabe gibt einem Gast je Dokument höchstens die Stufe, die die freigebende Person dort selbst hat (#1357).
-- Work, Aufgaben: Der Datei-Import ändert nur Aufgaben, die die Person bearbeiten darf; geprüft wird beim Einteilen der Zeilen und erneut vor dem Schreiben (#1318).
+- Anmeldung: Der Zustand zwischen Passwort und zweitem Schritt gilt nur für das Passwort, das geprüft wurde; nach dem Zurücksetzen oder Entwerten des Passworts beginnt eine begonnene Anmeldung neu (#1337).
+- Work, Live-Verbindungen: Konten mit offener Pflicht zum zweiten Faktor und Mitglieder gesperrter oder beendeter Organisationen bekommen keine WebSocket-Verbindung. Der Verteilkanal der Sitzungsvorbereitung prüft den Zugriff vor jedem Ereignis (#1337).
+- Work, Dokumente und Gäste: Ein Dokument oder Ordner wechselt nur mit Freigaberecht in einen für Gäste freigegebenen Ordner. Gasteinladung und Ordner-Freigabe geben je Dokument höchstens die Stufe, die die einladende oder freigebende Person dort selbst hat. Die Gastseite nennt Titel freigegebener Dokumente nur, wenn die betrachtende Person das Dokument sehen oder die Freigabe entziehen darf. Durchläufe über die Ordnerstruktur enden auch bei einem Zyklus im Bestand; das Verschieben eines Ordners prüft und speichert unter einer Sperre (#1321, #1339, #1342, #1357).
+- Work, Aufgaben: Der Datei-Import ändert nur Aufgaben, die die Person bearbeiten darf, und legt unbekannte Labels nur für Mitglieder an, die Labels verwalten dürfen (höchstens 50 je Import). Freigaben zählen nur bei Sichtbarkeit „geteilt“; eine wieder geteilte Aufgabe beginnt ohne Empfänger (#1318, #1339, #1342).
+- Work, Fraktionssitzungen: Nach genehmigtem Protokoll sind Tagesordnung und Beschlüsse fest, auch wenn der Status der Sitzung zurückgesetzt wird. Ein Unterpunkt kann unter einem öffentlichen TOP nichtöffentlich sein. Eine Aufgabe aus einem Protokolleintrag verlangt `tasks.create`; den Erledigt-Stand am Eintrag setzt nur, wer protokollieren darf (#1339, #1342).
+- Work, RIS-Ansicht und Einbettung: Gremien- und Personenseite übernehmen den Reiter aus der Adresse nur aus der festen Liste. Das Einbettungs-Snippet der öffentlichen Termine setzt Datum, Titel und Ort als Text (#1317, #1339).
 - Work, Eingaben: Farbangaben im Editor-HTML haben eine Längengrenze und werden in linearer Zeit geprüft. Der Trello-Import begrenzt Namen und Labels je Karte und bricht bei mehr als 1000 Karten ab (#1322).
+- Session: Die öffentliche Fassung der Niederschrift lässt sich nicht über die Anlagen-Wege ändern, ersetzen oder löschen (#1320).
+- PDF-Erzeugung: Die Umwandlung liest keine lokalen Dateien und ruft nichts aus dem Netz ab; Grenzen für Bildgröße, Dokumentgröße und Dauer. Das Logo im Briefkopf und Bilder fremder Server im Text werden vorher über den abgesicherten Abruf eingebettet (höchstens 20 Bilder, 5 MB und 5 s je Bild) (#1340).
+- Betrieb: `deploy/scripts/deploy.sh` arbeitet mit `umask 077`, Sicherungen bekommen 600, das Sicherungsverzeichnis 700. `install-k8s.sh` übergibt das Administratorpasswort über eine Datei statt über die Argumente von Helm. Die Metrik der CSP-Meldungen führt nur bekannte Direktiven als Label (#1340).
 
 ## [0.11.1] – 2026-11-03
 
