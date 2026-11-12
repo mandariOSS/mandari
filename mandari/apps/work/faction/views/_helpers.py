@@ -76,9 +76,9 @@ def _get_meeting_context(view, meeting):
     }
 
     # Permissions
-    can_edit = (
-        meeting.created_by == view.membership or view.membership.has_permission("faction.manage")
-    ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+    from ..agenda import editable_by
+
+    can_edit = editable_by(meeting, view.membership)
 
     # Protokollphase: während der Sitzung und nach Sitzungsende bis zur
     # Protokoll-Genehmigung dürfen Berechtigte protokollieren/abstimmen.

@@ -48,6 +48,7 @@ NOT_ALLOWED = (
 NOT_CONFIRMED_MEETING = "Bitte zur Bestätigung das Datum oder den Titel der Sitzung eingeben."
 NOT_CONFIRMED_SCHEDULE = "Bitte zur Bestätigung den Namen der Sitzungsreihe eingeben."
 NOT_CONFIRMED_ITEM = "Bitte zur Bestätigung die Nummer oder den Titel des TOPs eingeben."
+PROTOCOL_APPROVED_ITEM = "Das Protokoll dieser Sitzung ist genehmigt. Der TOP lässt sich nicht mehr löschen."
 BLOCKED = "Löschen nicht möglich: Andere Daten verweisen noch auf diesen Eintrag."
 
 #: Was mit verschwindet: Bezeichnung je Modell (``app_label.modelname``); andere Modelle mit ihrem Pluralnamen
@@ -349,10 +350,19 @@ def deletable_item(meeting: FactionMeeting, item_id: Any) -> FactionAgendaItem |
 @transaction.atomic
 def delete_agenda_item(item: FactionAgendaItem, confirmation: Any) -> DeletionImpact:
     """TOP löschen; verschwinden Inhalte mit, nur mit passender Eingabe (Nummer oder Titel)."""
-    impact = impact_of(item)
-    if impact.has_content and not confirmed(confirmation, item_phrases(item)):
-        raise DeletionNotConfirmedError(NOT_CONFIRMED_ITEM)
-    _delete_with_audit(item, impact)
+    from .agenda import lock_meeting
+    from .models import FactionMeeting
+
+    with transaction.atomic():
+        # Mit dem TOP verschwänden seine Protokolleinträge und der Beschluss; nach der Genehmigung sind sie fest.
+        # Prüfung und Löschen unter der Sperre der Sitzung, damit keine Genehmigung dazwischenkommt.
+        lock_meeting(item.meeting)
+        if FactionMeeting.objects.filter(pk=item.meeting_id, protocol_approved=True).exists():
+            raise DeletionBlockedError(PROTOCOL_APPROVED_ITEM)
+        impact = impact_of(item)
+        if impact.has_content and not confirmed(confirmation, item_phrases(item)):
+            raise DeletionNotConfirmedError(NOT_CONFIRMED_ITEM)
+        _delete_with_audit(item, impact)
     return impact
 
 

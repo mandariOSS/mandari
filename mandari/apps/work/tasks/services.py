@@ -134,6 +134,53 @@ def _org_member_ids(organization_id: Any, raw_ids: Sequence[str]) -> list[Any]:
     )
 
 
+def reset_shares_on_reshare(task: Task, old_visibility: str) -> None:
+    """
+    Aufgabe ohne Freigabedialog (Panel, Dateiimport) auf „geteilt“ gestellt: frühere Empfänger entfallen.
+
+    Freigabezeilen zählen nur bei Sichtbarkeit „geteilt“ (``selectors.visible_tasks``, ``Task.can_access``). Wechselt
+    eine Aufgabe über Panel oder Import auf eine andere Sichtbarkeit, bleiben sie ohne Wirkung stehen; ein
+    veraltetes Panel kann so keine neuen Freigaben löschen. Wird die Aufgabe später auf demselben Weg wieder
+    geteilt, bekämen die früheren Empfänger ungefragt wieder Zugriff: Deshalb beginnt sie dann ohne Empfänger,
+    sie werden im Freigabedialog gewählt (``update_visibility``).
+    """
+    if task.visibility == "shared" and old_visibility != "shared":
+        TaskShare.objects.filter(task=task).delete()
+
+
+def _protocol_entry_taken(entry: Any, organization: Organization) -> bool:
+    """
+    Protokolleintrag bis zum Ende der Transaktion sperren und prüfen, ob es zu ihm schon eine Aufgabe gibt.
+
+    Beide Wege, die aus einem Eintrag eine Aufgabe machen (Sitzungsansicht und Übernahme im Aufgabenbereich),
+    gehen hier durch: Gleichzeitige Aufrufe laufen nacheinander, der zweite sieht die Aufgabe des ersten.
+    """
+    type(entry).objects.select_for_update().filter(pk=entry.pk).first()
+    return Task.objects.filter(organization=organization, related_protocol_entry=entry).exists()
+
+
+@transaction.atomic
+def task_from_protocol_entry(entry: Any, membership: Membership, *, title: str, description: str) -> Task | None:
+    """
+    Aufgabe aus einem Protokolleintrag der Fraktionssitzung anlegen; ``None``, wenn es zu dem Eintrag schon eine gibt.
+
+    Der Eintrag wird für die Dauer der Transaktion gesperrt: Zwei gleichzeitige Aufrufe legen nacheinander an und
+    der zweite sieht die Aufgabe des ersten.
+    """
+    if _protocol_entry_taken(entry, entry.meeting.organization):
+        return None
+    return Task.objects.create(
+        organization=entry.meeting.organization,
+        title=title,
+        description=description,
+        assigned_to=entry.action_assignee,
+        due_date=entry.action_due_date,
+        created_by=membership,
+        related_faction_meeting=entry.meeting,
+        related_protocol_entry=entry,
+    )
+
+
 @transaction.atomic
 def update_visibility(task: Task, membership: Membership, visibility: str, share_with_ids: Sequence[str]) -> None:
     """Sichtbarkeit setzen und Freigaben angleichen (nur bei ``shared`` bleiben Freigaben bestehen)."""
@@ -202,6 +249,9 @@ def import_protocol_entries(organization: Organization, membership: Membership, 
         ):
             continue
         imported_ids.add(entry.id)
+        # Unter der Sperre des Eintrags erneut prüfen: Der Stand oben kann vor einer gleichzeitigen Übernahme liegen
+        if _protocol_entry_taken(entry, organization):
+            continue
         task = Task.objects.create(
             organization=organization,
             title=entry.content[:500] if entry.content else "Protokoll-Aufgabe",
@@ -400,6 +450,7 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
     """
     _sync_completion(task)
     task.save()
+    reset_shares_on_reshare(task, old_values["visibility_raw"])
     _log_changes(task, membership, old_values)
     return task
 

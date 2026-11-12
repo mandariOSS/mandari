@@ -18,6 +18,11 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+#: Platzhalter im Export für Inhalte, an denen die Person beteiligt war, die sie heute aber nicht mehr sehen darf
+NO_ACCESS_TASK = "[Aufgabe, auf die kein Zugriff mehr besteht]"
+NO_ACCESS_DOCUMENT = "[Dokument, auf das kein Zugriff mehr besteht]"
+NO_ACCESS_ITEM = "[nichtöffentlicher Tagesordnungspunkt]"
+
 
 # =============================================================================
 # Einordnung aller Personenbezüge in Work
@@ -590,15 +595,37 @@ class DsgvoExportService:
                 | Q(id__in=shared_ids)
                 | Q(id__in=list(comments_by_task))
             )
+            .select_related("created_by", "assigned_to", "organization")
             .distinct()
             .order_by("-created_at")
         )
 
+        darf_aufgaben_sehen = membership.has_permission("tasks.view")
         result = []
         for t in tasks:
             is_creator = t.created_by_id == membership.id
             is_assignee = t.assigned_to_id == membership.id
             is_shared = t.id in shared_ids
+            # Fremde Aufgaben nur mit ``tasks.view`` (wie die Aufgabenansicht); eigene und zugewiesene bleiben
+            zugriff = t.can_access(membership) and (darf_aufgaben_sehen or is_creator or is_assignee)
+            if not zugriff:
+                # Eigene Kommentare gehören zur Auskunft, der heutige Stand der Aufgabe nicht mehr: Die Person hat
+                # keinen Zugriff mehr (Aufgabe inzwischen privat oder Freigabe entzogen)
+                result.append(
+                    {
+                        "title": NO_ACCESS_TASK,
+                        "description": "",
+                        "status": "",
+                        "priority": "",
+                        "due_date": None,
+                        "is_creator": False,
+                        "is_assignee": False,
+                        "is_shared_with": False,
+                        "created_at": "",
+                        "comments": comments_by_task.get(t.id, []),
+                    }
+                )
+                continue
             result.append(
                 {
                     "title": t.title,
@@ -774,10 +801,13 @@ class DsgvoExportService:
                 roles.append("Federführung")
             if m.id in contributor_ids:
                 roles.append("Mitarbeit")
+            # Eigene Kommentare und Entscheidungen gehören zur Auskunft; Titel und Status nur, solange die Person
+            # das Dokument noch sehen darf (Freigabe entzogen oder Dokument inzwischen privat)
+            zugriff = m.can_access(membership)
             result.append(
                 {
-                    "title": m.title,
-                    "status": m.status,
+                    "title": m.title if zugriff else NO_ACCESS_DOCUMENT,
+                    "status": m.status if zugriff else "",
                     "roles": roles,
                     "comments": comments_by_motion.get(m.id, []),
                     "approvals": approvals_by_motion.get(m.id, []),
@@ -818,18 +848,24 @@ class DsgvoExportService:
         from apps.work.faction.models import FactionAgendaItem, FactionAttendanceCertificate, FactionProtocolEntry
         from apps.work.faction.visibility import can_view_item_with_parents
 
-        proposals = [
-            {
-                "meeting": i.meeting.title,
-                "title": i.title,
-                "status": i.proposal_status,
-                "rejection_reason": i.rejection_reason or "",
-                "proposed_at": _dt(i.proposed_at),
-            }
-            for i in FactionAgendaItem.objects.filter(proposed_by=membership, meeting__organization=organization)
-            .select_related("meeting")
+        proposals = []
+        for i in (
+            FactionAgendaItem.objects.filter(proposed_by=membership, meeting__organization=organization)
+            .select_related("meeting", "parent")
             .order_by("-created_at")
-        ]
+        ):
+            # Wie die Oberfläche: Eigene Vorschläge im nichtöffentlichen Teil sind ohne Vereidigung nicht mehr
+            # sichtbar. Zeitpunkt und Status bleiben, Titel und Ablehnungsgrund nicht.
+            sichtbar = can_view_item_with_parents(i, membership)
+            proposals.append(
+                {
+                    "meeting": i.meeting.title,
+                    "title": i.title if sichtbar else NO_ACCESS_ITEM,
+                    "status": i.proposal_status,
+                    "rejection_reason": (i.rejection_reason or "") if sichtbar else "",
+                    "proposed_at": _dt(i.proposed_at),
+                }
+            )
 
         entries = []
         for e in (

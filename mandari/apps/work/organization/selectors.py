@@ -524,16 +524,33 @@ def my_committees(membership: Membership | None) -> MyCommittees:
 # ---------------------------------------------------------------------------
 
 
-def guest_document_shares(organization: Organization, user: User) -> list[MotionShare]:
-    """Persönliche Dokument-Freigaben eines Gastes (ohne gelöschte Dokumente)."""
-    from apps.work.motions.models import MotionShare
+def guest_document_shares(
+    organization: Organization, user: User, viewer: Membership | None = None
+) -> list[MotionShare]:
+    """
+    Persönliche Dokument-Freigaben eines Gastes (ohne gelöschte Dokumente).
 
-    return list(
+    Mit ``viewer`` nur die Freigaben, deren Dokument die betrachtende Person sehen darf (``Motion.visible_to``)
+    oder deren Freigabe sie verwalten darf (``may_manage_document_share``, zum Entziehen nötig). Titel anderer
+    Dokumente nennt die Gastseite nicht.
+    """
+    from apps.work.motions.freigaben import may_manage_document_share
+    from apps.work.motions.models import Motion, MotionShare
+
+    shares = list(
         MotionShare.objects.filter(motion__organization=organization, scope="user", user=user)
         .exclude(motion__status="deleted")
         .select_related("motion", "created_by")
         .order_by("-created_at")
     )
+    if viewer is None:
+        return shares
+    visible = set(
+        Motion.visible_to(viewer)  # type: ignore[no-untyped-call]
+        .filter(pk__in=[share.motion_id for share in shares])
+        .values_list("pk", flat=True)
+    )
+    return [share for share in shares if share.motion_id in visible or may_manage_document_share(viewer, share)]
 
 
 def guest_folder_shares(organization: Organization, user: User) -> list[FolderGuestShare]:
