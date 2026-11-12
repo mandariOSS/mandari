@@ -8,15 +8,17 @@
 - Formular, E-Mail-Verifizierung, Antwort per Token-Link
 """
 
-from django.db.models import Count, Q
+from django.db.models import Case, Count, F, Q, Value, When
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
+from apps.common.params import uuid_param
+
 from .. import throttle
 from ..models import OParlOrganization, OParlPerson, PublicQuestion
-from ..services import question_service
+from ..services import personen_liste, question_service
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
 SORT_OPTIONS = [
@@ -58,24 +60,32 @@ class QuestionPortalView(ActiveBodyRequiredMixin, ListView):
         if topic in dict(PublicQuestion.TOPIC_CHOICES):
             qs = qs.filter(topic=topic)
 
-        person = get.get("person", "")
-        if person:
-            qs = qs.filter(recipient_id=person)
+        # Kennungen aus der Adresse: Ungültige treffen nichts (statt eines Serverfehlers)
+        if get.get("person", ""):
+            person = uuid_param(get.get("person"))
+            qs = qs.filter(recipient_id=person) if person else qs.none()
 
-        faction = get.get("fraktion", "")
-        if faction:
+        if get.get("fraktion", ""):
+            faction = uuid_param(get.get("fraktion"))
             today = timezone.now().date()
-            qs = qs.filter(
-                Q(recipient__memberships__organization_id=faction)
-                & (Q(recipient__memberships__end_date__isnull=True) | Q(recipient__memberships__end_date__gte=today))
-            ).distinct()
+            qs = (
+                qs.filter(
+                    personen_liste.bestehende_mitgliedschaft(
+                        "recipient", Q(end_date__isnull=True) | Q(end_date__gte=today), organization_id=faction
+                    )
+                )
+                if faction
+                else qs.none()
+            )
 
         q = get.get("q", "").strip()
         if q:
             qs = qs.filter(
                 Q(subject__icontains=q)
                 | Q(question_text__icontains=q)
-                | Q(answer_text__icontains=q)
+                # Nur veröffentlichte Antworten: Eine Antwort, die auf die Moderation wartet, darf die Treffer nicht
+                # beeinflussen (ihr Text ließe sich sonst Stück für Stück erfragen)
+                | Q(answer_text__icontains=q, answer_status="published")
                 | Q(recipient__name__icontains=q)
                 | Q(recipient__family_name__icontains=q)
             )
@@ -84,7 +94,10 @@ class QuestionPortalView(ActiveBodyRequiredMixin, ListView):
         if sort == "offen":
             qs = qs.order_by("answer_status", "published_at")
         elif sort == "beantwortet":
-            qs = qs.order_by("-answered_at", "-published_at")
+            # Der Zeitpunkt einer noch nicht veröffentlichten Antwort zählt nicht für die Reihenfolge
+            qs = qs.annotate(
+                beantwortet_am=Case(When(answer_status="published", then=F("answered_at")), default=Value(None))
+            ).order_by(F("beantwortet_am").desc(nulls_last=True), "-published_at")
         else:
             qs = qs.order_by("-published_at", "-created_at")
         return qs
@@ -119,8 +132,11 @@ class QuestionPortalView(ActiveBodyRequiredMixin, ListView):
                 "top_recipients": question_service.get_top_recipients(body) if body else [],
             }
         )
-        if get.get("person"):
-            context["filter_person_obj"] = OParlPerson.objects.filter(id=get.get("person")).first()
+        person_id = uuid_param(get.get("person"))
+        if person_id and body:
+            # Nur Personen dieser Kommune, die weder gelöscht noch zurückgenommen sind: Die Kennung allein darf
+            # keinen Namen liefern
+            context["filter_person_obj"] = OParlPerson.objects.filter(pk=person_id, body=body, deleted=False).first()
 
         from ..seo import get_page_seo
 
@@ -196,7 +212,7 @@ class AskQuestionStartView(ActiveBodyRequiredMixin, TemplateView):
                 Q(name__icontains=q)
                 | Q(family_name__icontains=q)
                 | Q(given_name__icontains=q)
-                | Q(memberships__organization__name__icontains=q)
+                | Q(personen_liste.bestehende_mitgliedschaft("pk", organization__name__icontains=q))
             ).distinct()
         persons = list(persons.order_by("family_name", "given_name")[:300])
         faction_map = question_service.get_faction_map(persons)

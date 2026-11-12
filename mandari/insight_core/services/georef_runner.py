@@ -100,6 +100,8 @@ def _run_pass(limit: int) -> dict:
         paper=OuterRef("pk"),
         text_extraction_status="completed",
         text_content__isnull=False,
+        # Nur Anlagen, die weder gelöscht noch zurückgenommen sind (wie ``georeferencing``)
+        deleted=False,
     ).exclude(text_content="")
     queryset = (
         OParlPaper.objects.select_related("body")

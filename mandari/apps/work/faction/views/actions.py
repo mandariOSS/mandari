@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
@@ -971,7 +972,21 @@ class FactionActionView(WorkViewMixin, View):
         from ..services import AgendaProposalService
 
         assign_number = request.POST.get("number", "").strip()
-        AgendaProposalService.accept_proposal(item, self.membership, assign_number or None)
+        with transaction.atomic():
+            # Nach genehmigtem Protokoll ist die Tagesordnung fest (Issue #63), auch für Vorschläge. Die Zeile der
+            # Sitzung wird gesperrt gelesen: Eine gleichzeitige Genehmigung wartet oder ist hier schon sichtbar.
+            genehmigt = (
+                FactionMeeting.objects.select_for_update()
+                .filter(pk=meeting.pk)
+                .values_list("protocol_approved", flat=True)
+                .first()
+            )
+            if genehmigt:
+                messages.error(
+                    request, "Das Protokoll dieser Sitzung ist genehmigt. Korrekturen sind nur als Nachtrag möglich."
+                )
+                return self._refresh_or_redirect(request, meeting)
+            AgendaProposalService.accept_proposal(item, self.membership, assign_number or None)
 
         messages.success(request, f"Vorschlag '{item.title}' angenommen.")
         return self._refresh_or_redirect(request, meeting)

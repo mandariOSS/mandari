@@ -21,7 +21,7 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
-from apps.common.admin_mixins import ImmutableAdminMixin, status_pill
+from apps.common.admin_mixins import ImmutableAdminMixin, confirm_before_change, status_pill
 
 from . import audit
 from .models import (
@@ -171,7 +171,9 @@ class SessionTenantAdmin(ModelAdmin):
 
     # Einzeln über den Service statt queryset.update(): Rücknahme bzw. Wiederherstellung der
     # Bürgerportal-Quelle und Audit-Log laufen für jeden Mandanten (Issue #317).
-    @admin.action(description="Ausgewählte Mandanten aktivieren (Bürgerportal wiederherstellen)")
+    @admin.action(
+        description="Ausgewählte Mandanten aktivieren (Bürgerportal wiederherstellen)", permissions=["change"]
+    )
     def activate_tenants(self, request, queryset):
         from .admin_provisioning import actor_for
         from .services import tenant_provisioning
@@ -182,7 +184,7 @@ class SessionTenantAdmin(ModelAdmin):
         )
         messages.success(request, f"{count} Mandant(en) wurden aktiviert.")
 
-    @admin.action(description="Ausgewählte Mandanten deaktivieren (Bürgerportal zurücknehmen)")
+    @admin.action(description="Ausgewählte Mandanten deaktivieren (Bürgerportal zurücknehmen)", permissions=["change"])
     def deactivate_tenants(self, request, queryset):
         from .admin_provisioning import actor_for
         from .services import tenant_provisioning
@@ -554,17 +556,17 @@ class SessionMeetingAdmin(ModelAdmin):
     # Sammel-Aktionen speichern jede Sitzung einzeln statt per queryset.update(): Nur so laufen
     # Audit-Log, OParl-Veröffentlichung und die Rückmeldung an einreichende Fraktionen (Issue #316).
 
-    @admin.action(description="Als geplant markieren")
+    @admin.action(description="Als geplant markieren", permissions=["change"])
     def mark_scheduled(self, request, queryset):
         count = _save_each(queryset, meeting_state="scheduled", cancelled=False)
         messages.success(request, f"{count} Sitzung(en) als geplant markiert.")
 
-    @admin.action(description="Als abgeschlossen markieren")
+    @admin.action(description="Als abgeschlossen markieren", permissions=["change"])
     def mark_completed(self, request, queryset):
         count = _save_each(queryset, meeting_state="completed")
         messages.success(request, f"{count} Sitzung(en) als abgeschlossen markiert.")
 
-    @admin.action(description="Absagen")
+    @admin.action(description="Absagen", permissions=["change"])
     def cancel_meetings(self, request, queryset):
         count = _save_each(queryset, cancelled=True)
         messages.success(request, f"{count} Sitzung(en) abgesagt.")
@@ -765,7 +767,7 @@ class SessionApplicationAdmin(ModelAdmin):
     def is_urgent_display(self, obj):
         return obj.is_urgent
 
-    @admin.action(description="Als empfangen markieren")
+    @admin.action(description="Als empfangen markieren", permissions=["change"])
     def mark_received(self, request, queryset):
         count = 0
         for app in queryset.filter(status="submitted"):
@@ -779,19 +781,19 @@ class SessionApplicationAdmin(ModelAdmin):
     # Einzel-Speichern statt queryset.update(): Statuswechsel lösen Audit-Log und die Rückmeldung an
     # die einreichende Fraktion aus – genau wie im Session-Portal (Issue #316).
 
-    @admin.action(description="In Prüfung setzen")
+    @admin.action(description="In Prüfung setzen", permissions=["change"])
     def mark_in_review(self, request, queryset):
         count = _save_each(queryset.filter(status__in=["submitted", "received"]), status="in_review")
         messages.success(request, f"{count} Antrag/Anträge in Prüfung gesetzt.")
 
-    @admin.action(description="Annehmen")
+    @admin.action(description="Annehmen", permissions=["change"])
     def mark_accepted(self, request, queryset):
         count = _save_each(
             queryset.exclude(status__in=["accepted", "rejected", "withdrawn", "converted"]), status="accepted"
         )
         messages.success(request, f"{count} Antrag/Anträge angenommen.")
 
-    @admin.action(description="Ablehnen")
+    @admin.action(description="Ablehnen", permissions=["change"])
     def mark_rejected(self, request, queryset):
         count = _save_each(
             queryset.exclude(status__in=["accepted", "rejected", "withdrawn", "converted"]), status="rejected"
@@ -808,7 +810,18 @@ class SessionApplicationAdmin(ModelAdmin):
         from apps.session.services.numbering_service import NumberingError
 
         app = get_object_or_404(self.model.objects.select_related("tenant"), pk=object_id)
-        back = redirect(reverse("admin:session_sessionapplication_change", args=[app.pk]))
+        zurueck = reverse("admin:session_sessionapplication_change", args=[app.pk])
+        # Der Aufruf (GET) zeigt nur die Bestätigung; angelegt wird erst mit dem abgeschickten Formular (POST)
+        bestaetigung = confirm_before_change(
+            self,
+            request,
+            title="Vorlage erstellen",
+            text="Aus diesem Antrag eine Vorlage anlegen? Die einreichende Fraktion erhält eine Rückmeldung.",
+            back_url=zurueck,
+        )
+        if bestaetigung is not None:
+            return bestaetigung
+        back = redirect(zurueck)
         try:
             paper, created = convert_to_paper(app, main_organization_id=app.target_organization_id)
         except (ConversionError, NumberingError):
@@ -1036,12 +1049,12 @@ class SessionAPITokenAdmin(ModelAdmin):
             perms.append("Öffentliche Vorlagen")
         return ", ".join(perms) if perms else "-"
 
-    @admin.action(description="Ausgewählte Tokens deaktivieren")
+    @admin.action(description="Ausgewählte Tokens deaktivieren", permissions=["change"])
     def deactivate_tokens(self, request, queryset):
         count = queryset.update(is_active=False)
         messages.success(request, f"{count} Token(s) wurden deaktiviert.")
 
-    @admin.action(description="Ausgewählte Tokens aktivieren")
+    @admin.action(description="Ausgewählte Tokens aktivieren", permissions=["change"])
     def activate_tokens(self, request, queryset):
         count = queryset.update(is_active=True)
         messages.success(request, f"{count} Token(s) wurden aktiviert.")

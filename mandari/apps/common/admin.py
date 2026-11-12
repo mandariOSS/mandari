@@ -6,36 +6,14 @@ Includes SiteSettings admin for global configuration.
 """
 
 import logging
-from urllib.parse import urlparse
 
 from django import forms
 from django.contrib import admin, messages
-from django.utils.http import url_has_allowed_host_and_scheme
 from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
-from .admin_mixins import SingletonAdminMixin
+from .admin_mixins import SingletonAdminMixin, confirm_before_change
 from .models import AISettings, ProblemReport, SiteSettings
-
-
-def get_safe_admin_redirect(request):
-    """
-    Get a safe redirect URL from HTTP_REFERER for admin actions.
-
-    SECURITY: Uses Django's url_has_allowed_host_and_scheme to prevent Open Redirect attacks.
-    Only allows paths starting with /admin/ for additional security.
-    """
-    referer = request.META.get("HTTP_REFERER", "")
-    if referer and url_has_allowed_host_and_scheme(
-        referer,
-        allowed_hosts={request.get_host()},
-        require_https=request.is_secure(),
-    ):
-        # Additional check: only allow admin paths
-        parsed = urlparse(referer)
-        if parsed.path.startswith("/admin/"):
-            return referer
-    return "/admin/"
 
 
 class SiteSettingsAdminForm(forms.ModelForm):
@@ -172,12 +150,24 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
 
     actions_detail = ["test_email"]
 
-    @action(description="Test-E-Mail senden")
+    @action(description="Test-E-Mail senden", permissions=["change"])
     def test_email(self, request, object_id):
         """Send a test email to verify SMTP settings."""
         from django.core.mail import EmailMessage
+        from django.urls import reverse
 
         from apps.common.mail_backends import build_backend, send_with
+
+        # Der Aufruf (GET) zeigt nur die Bestätigung; gesendet wird erst mit dem abgeschickten Formular (POST)
+        bestaetigung = confirm_before_change(
+            self,
+            request,
+            title="Test-E-Mail senden",
+            text=f"Eine Test-E-Mail an {request.user.email} senden?",
+            back_url=reverse("admin:common_sitesettings_changelist"),
+        )
+        if bestaetigung is not None:
+            return bestaetigung
 
         settings = SiteSettings.get_settings()
         config = SiteSettings.get_email_config()
@@ -225,8 +215,8 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
 
         from django.http import HttpResponseRedirect
 
-        # SECURITY: Validate referer to prevent Open Redirect attacks
-        return HttpResponseRedirect(get_safe_admin_redirect(request))
+        # Zurück zu den Einstellungen (der Referer wäre jetzt die Bestätigungsseite)
+        return HttpResponseRedirect(reverse("admin:common_sitesettings_changelist"))
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
         # Always edit the singleton instance
@@ -347,7 +337,7 @@ class ProblemReportAdmin(ModelAdmin):
     def reporter(self, obj):
         return obj.reporter_email or "anonym"
 
-    @admin.action(description="Als gelöst markieren und Rückmeldung senden")
+    @admin.action(description="Als gelöst markieren und Rückmeldung senden", permissions=["change"])
     def mark_resolved_and_notify(self, request, queryset):
         from django.utils import timezone
 

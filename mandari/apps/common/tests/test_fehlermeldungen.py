@@ -113,7 +113,9 @@ def test_admin_testmail_zeigt_keinen_ausnahmetext(admin_client: Client) -> None:
 
     einstellungen = cast(Any, SiteSettings).get_settings()
     with mock.patch("apps.common.mail_backends.build_backend", side_effect=RuntimeError(GEHEIM)):
-        antwort = admin_client.get(f"/admin/common/sitesettings/{einstellungen.pk}/test_email/", HTTP_REFERER="/admin/")
+        # Der Aufruf zeigt nur die Bestätigung; gesendet wird mit dem abgeschickten Formular
+        assert admin_client.get(f"/admin/common/sitesettings/{einstellungen.pk}/test_email/").status_code == 200
+        antwort = admin_client.post(f"/admin/common/sitesettings/{einstellungen.pk}/test_email/")
     assert antwort.status_code == 302
     meldungen = [str(m) for m in get_messages(antwort.wsgi_request)]
     assert meldungen, "Fehlermeldung fehlt"

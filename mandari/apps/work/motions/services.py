@@ -11,7 +11,6 @@ Key goals:
 
 import json
 import logging
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,10 +28,34 @@ logger = logging.getLogger(__name__)
 
 
 def _strip_html(value: str) -> str:
+    """
+    Marken durch ein Leerzeichen ersetzen und Leerraum verdichten.
+
+    Ein Durchlauf von vorn nach hinten statt eines regulären Ausdrucks: Der Text kommt ungekürzt vom Browser, und
+    ein Muster, das von jeder öffnenden Klammer bis zum Ende sucht, braucht bei vielen Klammern quadratische Zeit.
+    Eine Klammer ohne Abschluss und ein leeres Klammerpaar bleiben wie bisher als Text stehen.
+    """
     if not value:
         return ""
-    value = re.sub(r"<[^>]+>", " ", value)
-    return re.sub(r"\s+", " ", value).strip()
+    parts: list[str] = []
+    position = 0
+    while True:
+        start = value.find("<", position)
+        if start == -1:
+            parts.append(value[position:])
+            break
+        ende = value.find(">", start + 1)
+        if ende == -1:
+            parts.append(value[position:])
+            break
+        if ende == start + 1:
+            parts.append(value[position : start + 1])
+            position = start + 1
+            continue
+        parts.append(value[position:start])
+        parts.append(" ")
+        position = ende + 1
+    return " ".join("".join(parts).split())
 
 
 def _estimate_tokens(value: str) -> int:

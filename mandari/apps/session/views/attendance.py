@@ -14,7 +14,7 @@ from django.views import View
 
 from ..models import SessionAttendance, SessionMeeting, SessionPerson
 from ..permissions import SessionViewMixin
-from ..services import attendance_service
+from ..services import allowance_service, attendance_service
 from ..visibility import meeting_q
 
 
@@ -106,9 +106,13 @@ class AttendanceDeleteView(SessionViewMixin, View):
             meeting__tenant=self.session_tenant,
         )
         meeting = attendance.meeting
+        # Geprüftes oder überwiesenes Sitzungsgeld hängt an der Zeile und darf nicht mit ihr verschwinden
         name = attendance.person.display_name
-        attendance.delete()
-        messages.success(request, f"{name} wurde von der Anwesenheitsliste entfernt.")
+        grund = allowance_service.remove_attendance(attendance)
+        if grund:
+            messages.error(request, grund)
+        else:
+            messages.success(request, f"{name} wurde von der Anwesenheitsliste entfernt.")
         if self.is_htmx:
             from django.http import HttpResponse
 

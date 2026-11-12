@@ -479,6 +479,16 @@ class FakeResponse:
         self.content = content
         self.headers = {"content-type": ctype}
 
+    # Der Fotoabruf liest gestreamt (client.stream als Kontext, iter_bytes)
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def iter_bytes(self, chunk_size=None):
+        yield self.content
+
 
 class FakeClient:
     """Simuliert das RIS: 101-104 liefern Bilder, 105 hat kein Foto, 106 Serverfehler."""
@@ -493,6 +503,9 @@ class FakeClient:
 
     def __exit__(self, *exc):
         return False
+
+    def stream(self, method, url, **kwargs):
+        return self.get(url)
 
     def close(self):
         pass

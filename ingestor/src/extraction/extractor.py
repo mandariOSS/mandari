@@ -28,6 +28,7 @@ from typing import Any, Final
 from uuid import UUID
 
 import httpx
+from mandari_oparl.ziel import BlockedDestinationError, PinnedAsyncTransport, UnresolvableHostError
 
 from src.config import settings
 from src.extraction.textebene import EXIT_MEMORY, MAX_TEXT_CHARS
@@ -49,6 +50,27 @@ logger = logging.getLogger(__name__)
 PDF_MIME_TYPES = {"application/pdf", "application/x-pdf"}
 TEXT_MIME_TYPES = {"text/plain", "text/html"}
 SUPPORTED_MIME_TYPES = PDF_MIME_TYPES | TEXT_MIME_TYPES
+
+
+def _download_transport() -> httpx.AsyncHTTPTransport:
+    """Transport für Datei-Downloads: verbindet nur mit geprüften, öffentlichen Adressen (``mandari_oparl.ziel``)."""
+    return PinnedAsyncTransport(
+        allow_private=settings.fetch_allow_private_networks,
+        allowed_hosts=[host for host in settings.fetch_internal_hosts.split(",") if host.strip()],
+    )
+
+
+def _content_encodings(response: httpx.Response) -> list[str]:
+    """Kompressionsverfahren der Antwort laut ``Content-Encoding``, ohne ``identity``."""
+    return [
+        teil.strip().lower()
+        for teil in response.headers.get("content-encoding", "").split(",")
+        if teil.strip() and teil.strip().lower() != "identity"
+    ]
+
+
+class FileTooLargeError(Exception):
+    """Die Datei überschreitet ``TEXT_EXTRACTION_MAX_SIZE_MB`` (Abbruch während des Downloads)."""
 
 
 class TextExtractor:
@@ -138,6 +160,27 @@ class TextExtractor:
 
         try:
             data = await self._download(download_url, await self._download_headers(file_row.body_id))
+        except FileTooLargeError:
+            await self.storage.update_file_text(
+                file_id=file_id,
+                status="skipped",
+                error=f"File too large: more than {self.max_size_bytes} bytes",
+            )
+            return False
+        except UnresolvableHostError as e:
+            # Name gerade nicht auflösbar: wie jeder andere Fehlschlag des Downloads
+            logger.warning("Download failed for %s: %s", download_url, e)
+            await self.storage.update_file_text(file_id=file_id, status="failed", error=f"Download failed: {e}")
+            return False
+        except BlockedDestinationError:
+            # Ziel außerhalb des öffentlichen Netzes: kein Abruf, kein erneuter Versuch
+            logger.warning("Download blocked for %s: destination is not a public address", download_url)
+            await self.storage.update_file_text(
+                file_id=file_id,
+                status="skipped",
+                error="Download blocked: destination is not a public address",
+            )
+            return False
         except Exception as e:
             logger.warning("Download failed for %s: %s", download_url, e)
             await self.storage.update_file_text(
@@ -213,15 +256,37 @@ class TextExtractor:
         return cache[body_id]
 
     async def _download(self, url: str, extra_headers: dict[str, str] | None = None) -> bytes:
-        """Download a file via httpx async."""
+        """
+        Datei gestreamt laden: nur von geprüften, öffentlichen Adressen (auch nach Weiterleitungen) und höchstens
+        ``max_size_bytes`` (``FileTooLargeError``).
+        """
         headers = {
             "User-Agent": "Mandari/2.0 (+https://mandari.de; support@mandari.de)",
             **(extra_headers or {}),
+            # Dateien unkomprimiert anfordern: Die Größengrenze unten zählt entpackte Bytes, und eine komprimierte
+            # Antwort belegt beim Entpacken ein Vielfaches, bevor das erste Stück gezählt ist
+            "Accept-Encoding": "identity",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(url, headers=headers, follow_redirects=True)
+        chunks: list[bytes] = []
+        size = 0
+        async with (
+            httpx.AsyncClient(timeout=self.timeout, transport=_download_transport()) as client,
+            client.stream("GET", url, headers=headers, follow_redirects=True) as response,
+        ):
             response.raise_for_status()
-            return response.content
+            # Mehrere Kompressionslagen übereinander vervielfachen, was ein gelesenes Stück entpackt belegt; so
+            # etwas liefert kein Dateiserver
+            if len(_content_encodings(response)) > 1:
+                raise FileTooLargeError
+            declared = response.headers.get("content-length")
+            if declared and declared.isdigit() and int(declared) > self.max_size_bytes:
+                raise FileTooLargeError
+            async for chunk in response.aiter_bytes(256 * 1024):
+                size += len(chunk)
+                if size > self.max_size_bytes:
+                    raise FileTooLargeError
+                chunks.append(chunk)
+        return b"".join(chunks)
 
     @staticmethod
     def _extract_text(data: bytes, mime_type: str, file_name: str) -> tuple[str, int | None, str]:

@@ -32,6 +32,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
     with_reference_checks,
+    withdrawn_q,
 )
 
 Bodies = QuerySet[OParlBody]
@@ -144,8 +145,11 @@ def _natural_key(number: str | None) -> list[tuple[int, int | str]]:
 
 
 def agenda_items_with_papers(meeting: OParlMeeting) -> list[dict[str, Any]]:
-    """Tagesordnung natürlich sortiert, je TOP mit verknüpften Vorgängen."""
-    items = sorted(meeting.agenda_items.all(), key=lambda item: _natural_key(item.number))
+    """
+    Tagesordnung natürlich sortiert, je TOP mit verknüpften Vorgängen; ohne in der Quelle gelöschte und vom
+    Herausgeber zurückgenommene Punkte (beides trägt ``deleted``).
+    """
+    items = sorted(meeting.agenda_items.filter(deleted=False), key=lambda item: _natural_key(item.number))
     return [{"item": item, "papers": cast(Any, item).get_papers()} for item in items]
 
 
@@ -361,7 +365,13 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
         meetings_by_id = {m.external_id: m for m in meetings}
     agenda_items_by_id: dict[str, OParlAgendaItem] = {}
     if agenda_item_ids:
-        agenda_items_by_id = {a.external_id: a for a in OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids)}
+        # Keine gelöschten oder zurückgenommenen Punkte und keine Punkte einer zurückgenommenen Sitzung
+        agenda_items_by_id = {
+            a.external_id: a
+            for a in OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids, deleted=False)
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("meeting"))
+        }
 
     result: list[dict[str, Any]] = []
     for consultation in consultations:
