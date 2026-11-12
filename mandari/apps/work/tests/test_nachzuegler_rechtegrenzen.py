@@ -162,7 +162,8 @@ def test_ordnerdurchlaeufe_enden_in_einem_zyklus(org: Any, make_member: Any) -> 
     assert a.get_depth() == 3 and a.get_subtree_height() == 3
     gast = make_member(org, [], email="gast@example.org")
     dokument = Motion.objects.get(pk=dokument.pk)
-    assert dokument.get_guest_share_level(gast) is None and dokument.guest_share_since(gast) is None
+    assert dokument.get_guest_share_level(gast) is None
+    assert dokument.guest_share_since(gast) is None  # type: ignore[no-untyped-call]
     # Die Prüfung beim Speichern endet ebenfalls
     neu = DocumentFolder(organization=org, name="D", parent=a, created_by=autorin)
     neu.clean()  # type: ignore[no-untyped-call]
