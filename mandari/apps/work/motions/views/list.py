@@ -384,12 +384,13 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
         if not _can_manage_folder(self.membership, folder):
             return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
 
-        email = request.POST.get("email", "").strip().lower()
+        email = request.POST.get("email", "").strip()
         level = request.POST.get("level", "view")
         if level not in dict(FolderGuestShare.LEVEL_CHOICES):
             level = "view"
 
-        user = User.objects.filter(email=email).first() if email else None
+        # Wie bei der Anmeldung: jede Schreibweise, bei Mehrdeutigkeit kein Konto (Issue #1397)
+        user = User.objects.find_by_email(email) if email else None
         if user is None:
             return JsonResponse({"error": f"Benutzer '{email}' nicht gefunden."}, status=400)
 
