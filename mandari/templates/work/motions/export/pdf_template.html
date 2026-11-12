@@ -124,7 +124,7 @@
     <table class="lh-header">
         <tr>
             <td class="lh-logo">
-                {% if logo_path %}<img src="{{ logo_path }}" style="height: 15mm;" alt="">{% endif %}
+                {% if logo_src %}<img src="{{ logo_src }}" style="height: 15mm;" alt="">{% endif %}
             </td>
             <td class="lh-address">
                 {% for line in address_lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}
