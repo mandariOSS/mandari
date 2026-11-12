@@ -21,6 +21,13 @@ from ..models import (
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
+#: Antwort auf das Abo-Formular, für jede Adresse dieselbe: An ihr lässt sich nicht ablesen, ob für eine Adresse
+#: schon ein Abo besteht. Ein bestehendes, aktives Abo löst keine Mail aus.
+ABO_ANTWORT = (
+    "Fast geschafft! Falls für diese Adresse noch kein aktives Abo besteht, haben wir eine E-Mail mit dem "
+    "Bestätigungslink geschickt. Bitte prüfen Sie auch den Spam-Ordner."
+)
+
 # =============================================================================
 # Benachrichtigungen (Subscriptions)
 # =============================================================================
@@ -104,15 +111,9 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
         )
 
         if not created and subscriber.confirmed and subscriber.unsubscribed_at is None:
-            # Bereits bestätigt und aktiv → zur Verwaltungsseite leiten
-            return render(
-                request,
-                "partials/subscribe_success.html",
-                {
-                    "message": "Sie haben bereits ein aktives Abo. Überprüfen Sie Ihre E-Mail für den Verwaltungslink.",
-                    "already_exists": True,
-                },
-            )
+            # Bereits bestätigt und aktiv: Das Abo bleibt unverändert. Die Antwort ist dieselbe wie für jede andere
+            # Adresse, damit niemand an ihr ablesen kann, ob eine fremde Adresse ein Abo hat.
+            return render(request, "partials/subscribe_success.html", {"message": ABO_ANTWORT})
 
         # Abo-Daten aktualisieren
         subscriber.neighborhood_active = neighborhood_active
@@ -133,7 +134,11 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
         subscriber.keyword = keyword or None
 
         subscriber.digest_frequency = digest_frequency
-        subscriber.unsubscribed_at = None  # Resubscribe falls abgemeldet
+        if subscriber.unsubscribed_at is not None:
+            # Erneutes Abonnieren nach einer Abmeldung gilt erst mit der Bestätigung aus dem Postfach: Ohne sie
+            # könnte jede Person, die die Adresse kennt, ein abgemeldetes Abo wieder einschalten
+            subscriber.confirmed = False
+        subscriber.unsubscribed_at = None
         subscriber.save()
 
         # Bestätigungsmail senden – je Empfängeradresse gedrosselt (die Antwort bleibt gleich)
@@ -143,9 +148,7 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
         return render(
             request,
             "partials/subscribe_success.html",
-            {
-                "message": "Fast geschafft! Bitte bestätigen Sie Ihr Abo über den Link in der E-Mail.",
-            },
+            {"message": ABO_ANTWORT},
         )
 
 
