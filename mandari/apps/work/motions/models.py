@@ -16,6 +16,7 @@ Provides motion management with:
 import hashlib
 import logging
 import uuid
+from collections.abc import Iterator
 from datetime import timedelta
 
 from django.db import models
@@ -359,22 +360,25 @@ class DocumentFolder(models.Model):
     def __str__(self):
         return self.name
 
+    def iter_ancestors(self) -> Iterator["DocumentFolder"]:
+        """
+        Vorfahren vom direkten Parent zur Wurzel. Endet auch, wenn die Elternkette (durch einen Fehler im Bestand)
+        einen Zyklus bildet: Kein Ordner kommt zweimal, der Ordner selbst gar nicht.
+        """
+        seen = {self.pk}
+        node = self.parent
+        while node is not None and node.pk not in seen:
+            seen.add(node.pk)
+            yield node
+            node = node.parent
+
     def get_depth(self) -> int:
         """Tiefe im Baum (Ordner auf Wurzelebene = 1)."""
-        depth = 1
-        node = self.parent
-        while node is not None:
-            depth += 1
-            node = node.parent
-        return depth
+        return 1 + sum(1 for _ in self.iter_ancestors())
 
     def get_ancestors(self) -> list["DocumentFolder"]:
         """Vorfahren von der Wurzel bis zum direkten Parent (für Breadcrumbs)."""
-        ancestors = []
-        node = self.parent
-        while node is not None:
-            ancestors.append(node)
-            node = node.parent
+        ancestors = list(self.iter_ancestors())
         ancestors.reverse()
         return ancestors
 
@@ -383,22 +387,98 @@ class DocumentFolder(models.Model):
         folder_ids = [self.id, *(ancestor.id for ancestor in self.get_ancestors())]
         return FolderGuestShare.objects.filter(folder_id__in=folder_ids).exists()
 
+    def guest_move_denied(self, new_parent: "DocumentFolder | None", membership) -> str:
+        """
+        Feste Meldung, wenn das Umhängen unter ``new_parent`` Dokumente dieses Ordners (samt Unterordnern) für
+        Gäste öffnen würde, die ``membership`` nicht freigeben darf, sonst ``""``.
+
+        Ordner-Freigaben gelten für alles darunter. Wer einen Ordner unter einen freigegebenen hängt, erweitert
+        also den Kreis der Lesenden seiner Dokumente; das darf nur, wer jedes betroffene Dokument freigeben
+        darf (``Motion.can_share``), wie beim Verschieben einzelner Dokumente. Geprüft werden nur Freigaben, die
+        neu hinzukommen, und nur Dokumente, für die sie gelten (``Motion._folder_share_applies``).
+        """
+        if new_parent is None:
+            return ""
+        new_ids = [new_parent.id, *(ancestor.id for ancestor in new_parent.get_ancestors())]
+        old_ids = [ancestor.id for ancestor in self.get_ancestors()]
+        creators = set(
+            FolderGuestShare.objects.filter(folder_id__in=new_ids)
+            .exclude(folder_id__in=old_ids)
+            .values_list("created_by_id", flat=True)
+        )
+        if not creators:
+            return ""
+        folder_ids = [self.id, *(folder.id for folder in self.get_descendants())]
+        motions = Motion.objects.filter(folder_id__in=folder_ids).exclude(visibility="private")
+        for motion in motions.select_related("author", "folder"):
+            opens = any(motion._folder_share_applies(created_by_id) for created_by_id in creators)
+            if opens and not motion.can_share(membership):
+                return GUEST_FOLDER_SUBTREE_DENIED
+        return ""
+
     def get_descendants(self) -> list["DocumentFolder"]:
-        """Alle Unterordner (rekursiv)."""
+        """Alle Unterordner (rekursiv); jeder Ordner höchstens einmal, auch bei einem Zyklus im Bestand."""
         result = []
+        seen = {self.pk}
         stack = list(self.children.all())
         while stack:
             node = stack.pop()
+            if node.pk in seen:
+                continue
+            seen.add(node.pk)
             result.append(node)
             stack.extend(node.children.all())
         return result
 
+    def save_checked(self, mover=None) -> None:
+        """
+        Prüfen (``full_clean``) und speichern, Anlagen und Verschiebungen einer Organisation nacheinander.
+
+        Zwei gleichzeitige Verschiebungen (A unter B, B unter A) bestünden sonst beide die Zyklusprüfung, und eine
+        Anlage unter einem Ordner, der gleichzeitig tiefer wandert, die Tiefenprüfung. Mit Elternordner werden
+        deshalb die Ordner der Organisation gesperrt und der Zielordner danach neu gelesen, damit die Prüfung den
+        Stand der anderen Anfrage sieht. Mit ``mover`` (wer einen bestehenden Ordner verschiebt) wird unter der
+        Sperre auch geprüft, ob das Umhängen Dokumente für Gäste öffnet, die diese Person nicht freigeben darf
+        (``guest_move_denied``): Der Zielordner kann inzwischen unter einen freigegebenen gewandert sein. Wirft
+        ``ValidationError`` wie ``full_clean``.
+        """
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+
+        with transaction.atomic():
+            if self.parent_id is not None:
+                list(
+                    DocumentFolder.objects.select_for_update()
+                    .filter(organization_id=self.organization_id)
+                    .values_list("pk", flat=True)
+                )
+                self.parent = DocumentFolder.objects.get(pk=self.parent_id)
+                if mover is not None and not self._state.adding:
+                    # Am gespeicherten Ordner prüfen: Dieser hier trägt schon den Zielordner, seine Vorfahren wären
+                    # die neuen, und jede hinzukommende Freigabe gälte als schon vorhanden
+                    stored = DocumentFolder.objects.filter(pk=self.pk).first()
+                    if stored is not None and stored.parent_id != self.parent_id:
+                        denied = stored.guest_move_denied(self.parent, mover)
+                        if denied:
+                            raise ValidationError({"parent": denied})
+            self.full_clean()
+            self.save()
+
     def get_subtree_height(self) -> int:
-        """Höhe des eigenen Teilbaums (nur dieser Ordner = 1)."""
-        children = list(self.children.all())
-        if not children:
-            return 1
-        return 1 + max(child.get_subtree_height() for child in children)
+        """Höhe des eigenen Teilbaums (nur dieser Ordner = 1); endet auch bei einem Zyklus im Bestand."""
+        height = 0
+        seen = {self.pk}
+        level = [self]
+        while level:
+            height += 1
+            following = []
+            for node in level:
+                for child in node.children.all():
+                    if child.pk not in seen:
+                        seen.add(child.pk)
+                        following.append(child)
+            level = following
+        return height
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -409,12 +489,14 @@ class DocumentFolder(models.Model):
             if self.parent.organization_id != self.organization_id:
                 raise ValidationError({"parent": "Der übergeordnete Ordner gehört zu einer anderen Organisation."})
             # Zyklen verhindern (Ordner in eigenen Unterordner verschieben)
+            seen = set()
             node = self.parent
-            while node is not None:
+            while node is not None and node.pk not in seen:
                 if node.pk == self.pk:
                     raise ValidationError(
                         {"parent": "Ein Ordner kann nicht in einen eigenen Unterordner verschoben werden."}
                     )
+                seen.add(node.pk)
                 node = node.parent
 
         # Maximale Verschachtelungstiefe (inkl. eigenem Teilbaum beim Verschieben)
@@ -583,6 +665,15 @@ class FolderGuestShare(models.Model):
                 stack.extend(children.get(folder_id, []))
             scopes.append((subtree, created_by_id))
         return scopes
+
+
+#: Feste Meldungen zu Ordnern, die für Gäste freigegeben sind (Issue #582)
+GUEST_FOLDER_MOVE_DENIED = (
+    "Dieser Ordner ist für Gäste freigegeben. Dorthin verschiebt nur, wer das Dokument freigeben darf."
+)
+GUEST_FOLDER_SUBTREE_DENIED = (
+    "Der Zielordner ist für Gäste freigegeben, und dieser Ordner enthält Dokumente, die Sie nicht freigeben dürfen."
+)
 
 
 class StatusTransitionError(ValueError):
@@ -1053,14 +1144,13 @@ class Motion(EncryptionMixin, models.Model):
         """
         levels = set(self.shares.filter(scope="user", user=membership.user).values_list("level", flat=True))
         # Ordner-Freigaben gelten rekursiv: Ordner des Dokuments + Vorfahren
-        node = self.folder
-        while node is not None:
+        folders = [self.folder, *self.folder.iter_ancestors()] if self.folder is not None else []
+        for node in folders:
             for level, created_by_id in node.guest_shares.filter(user=membership.user).values_list(
                 "level", "created_by_id"
             ):
                 if self._folder_share_applies(created_by_id):
                     levels.add(self._folder_share_level(level, created_by_id))
-            node = node.parent
         for level in ("admin", "edit", "comment", "view"):
             if level in levels:
                 return level
@@ -1077,14 +1167,13 @@ class Motion(EncryptionMixin, models.Model):
         Änderungen vor der Freigabe bleiben ihnen verborgen.
         """
         timestamps = list(self.shares.filter(scope="user", user=membership.user).values_list("created_at", flat=True))
-        node = self.folder
-        while node is not None:
+        folders = [self.folder, *self.folder.iter_ancestors()] if self.folder is not None else []
+        for node in folders:
             for created_at, created_by_id in node.guest_shares.filter(user=membership.user).values_list(
                 "created_at", "created_by_id"
             ):
                 if self._folder_share_applies(created_by_id):
                     timestamps.append(created_at)
-            node = node.parent
         return min(timestamps) if timestamps else None
 
     def revisions_for(self, membership):
@@ -1255,6 +1344,19 @@ class Motion(EncryptionMixin, models.Model):
         if getattr(membership, "is_guest", False) or not self.can_access(membership):
             return False
         return self.author_id == membership.id or membership.has_permission("motions.share")
+
+    def guest_folder_move_denied(self, target, membership) -> str:
+        """
+        Feste Meldung, wenn ``membership`` das Dokument nicht nach ``target`` verschieben darf, weil der Ordner
+        für Gäste freigegeben ist, sonst ``""``.
+
+        In einem freigegebenen Ordner (auch über einen übergeordneten) lesen Gäste mit: Das Verschieben dorthin
+        ist eine Freigabe und braucht das Freigaberecht (``can_share``). Eine Regel für alle Wege, auf denen
+        ein Dokument seinen Ordner wechselt.
+        """
+        if target is None or not target.is_shared_with_guests() or self.can_share(membership):
+            return ""
+        return GUEST_FOLDER_MOVE_DENIED
 
     def _folder_share_applies(self, created_by_id) -> bool:
         """

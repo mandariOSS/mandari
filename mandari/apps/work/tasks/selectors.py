@@ -94,7 +94,8 @@ def visible_tasks(
         Q(visibility="organization")
         | Q(created_by=membership)
         | Q(assigned_to=membership)
-        | Q(shares__membership=membership)
+        # Freigaben zählen nur, solange die Aufgabe geteilt ist (übrig gebliebene Zeilen öffnen nichts)
+        | Q(visibility="shared", shares__membership=membership)
     ).distinct()
 
 
@@ -109,7 +110,7 @@ def tasks_for_motion(organization: Organization, membership: Membership, motion:
 def own_tasks(membership: Membership, *, base: QuerySet[Task]) -> QuerySet[Task]:
     """Ansicht "Meine Aufgaben": erstellt, zugewiesen oder mit dem Mitglied geteilt."""
     return base.filter(
-        Q(assigned_to=membership) | Q(created_by=membership) | Q(shares__membership=membership)
+        Q(assigned_to=membership) | Q(created_by=membership) | Q(visibility="shared", shares__membership=membership)
     ).distinct()
 
 

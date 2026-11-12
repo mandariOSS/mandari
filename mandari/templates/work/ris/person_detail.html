@@ -22,7 +22,7 @@
 {% include "work/ris/partials/_no_body_notice.html" %}
 {% else %}
 
-<div x-data="{ tab: '{{ active_tab }}' }">
+<div x-data="{ tab: '{{ active_tab|escapejs }}' }">
     {# Hero Section — gleiches Design wie Insight #}
     <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
         <div class="flex items-center gap-5">

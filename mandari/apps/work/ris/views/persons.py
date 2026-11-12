@@ -13,7 +13,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 
 from .. import selectors
-from ._mixins import RISBodiesMixin
+from ._mixins import RISBodiesMixin, erlaubter_reiter
 
 
 class RISPersonsView(RISBodiesMixin, WorkViewMixin, TemplateView):
@@ -63,5 +63,5 @@ class RISPersonDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
         context["active_memberships"] = memberships["active"]
         context["past_memberships"] = memberships["past"]
 
-        context["active_tab"] = self.request.GET.get("tab", "memberships")
+        context["active_tab"] = erlaubter_reiter(self.request.GET.get("tab"), ("memberships", "info"))
         return context

@@ -15,6 +15,35 @@
 #
 # Empfehlung: Für Updates und Konfiguration ist das Helm-Chart komfortabler.
 # =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mandari-data
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  # Datenbank, Cache und Suchindex nehmen nur Verbindungen aus dieser Installation an.
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [postgres, redis, elasticsearch]
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: [mandari]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mandari
+              app.kubernetes.io/instance: mandari
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
