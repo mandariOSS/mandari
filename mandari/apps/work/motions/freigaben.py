@@ -338,6 +338,23 @@ def _user_saved(
     recheck_open_editors(user_ids=[instance.pk])
 
 
+def _organization_saved(
+    sender: Any, instance: Any, created: bool, raw: bool = False, update_fields: Any = None, **kwargs: Any
+) -> None:
+    """Organisation gesperrt oder beendet (``Organization.is_active``): Die Mitgliedschaften bleiben aktiv."""
+    if created or raw or instance.is_active:
+        return
+    if update_fields is not None and "is_active" not in update_fields:
+        return
+    from apps.tenants.models import Membership
+
+    recheck_open_editors(
+        user_ids=list(
+            Membership.objects.filter(organization=instance, is_active=True).values_list("user_id", flat=True)
+        )
+    )
+
+
 def _role_permissions_changed(sender: Any, instance: Any, action: str, reverse: bool, **kwargs: Any) -> None:
     if action not in ("post_add", "post_remove", "post_clear") or reverse:
         return
@@ -346,7 +363,7 @@ def _role_permissions_changed(sender: Any, instance: Any, action: str, reverse: 
 
 def register() -> None:
     from apps.accounts.models import User
-    from apps.tenants.models import Membership, Role
+    from apps.tenants.models import Membership, Organization, Role
 
     from .models import DocumentFolder, FolderGuestShare, Motion, MotionShare
 
@@ -372,6 +389,7 @@ def register() -> None:
     post_save.connect(_role_saved, sender=Role, dispatch_uid=f"{uid}_role_save")
     pre_delete.connect(_role_deleting, sender=Role, dispatch_uid=f"{uid}_role_delete")
     post_save.connect(_user_saved, sender=User, dispatch_uid=f"{uid}_user_save")
+    post_save.connect(_organization_saved, sender=Organization, dispatch_uid=f"{uid}_organization_save")
     m2m_changed.connect(
         _role_permissions_changed, sender=Role.permissions.through, dispatch_uid=f"{uid}_role_permissions"
     )
