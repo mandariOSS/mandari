@@ -813,10 +813,10 @@ class MotionShareUpdateView(WorkViewMixin, View):
 
         # Handle adding users for shared visibility
         if new_visibility == "shared":
-            add_user_email = request.POST.get("add_user_email", "").strip().lower()
+            add_user_email = request.POST.get("add_user_email", "").strip()
             if add_user_email:
+                from apps.accounts.models import User
                 from apps.tenants.models import Membership
-                from apps.work.organization.selectors import find_user_by_email
 
                 # Stufenwahl (Lesen/Kommentieren/Bearbeiten) – "admin" ist
                 # Verwaltungsrecht und wird über den Dialog nie vergeben.
@@ -824,7 +824,8 @@ class MotionShareUpdateView(WorkViewMixin, View):
                 if level not in SHARE_DIALOG_LEVELS:
                     level = "view"
 
-                user = find_user_by_email(add_user_email)
+                # Wie bei der Anmeldung: jede Schreibweise, bei Mehrdeutigkeit kein Konto (Issue #1397)
+                user = User.objects.find_by_email(add_user_email)
                 # Nur Nutzer mit aktivem Zugang zu DIESER Organisation – sonst
                 # wäre die Freigabe wirkungslos (und die Antwort ließe
                 # Rückschlüsse zu, welche E-Mail-Adressen ein Konto haben).

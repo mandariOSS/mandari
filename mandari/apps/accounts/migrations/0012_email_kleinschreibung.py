@@ -13,11 +13,12 @@ geschriebenen Adressen zurecht.
 """
 
 from collections import Counter
+from typing import Any
 
 from django.db import migrations
 
 
-def lowercase_emails(apps, schema_editor):
+def lowercase_emails(apps: Any, schema_editor: Any) -> None:
     User = apps.get_model("accounts", "User")
     konten = list(User.objects.values_list("pk", "email"))
     ziele = Counter(email.strip().lower() for _pk, email in konten)

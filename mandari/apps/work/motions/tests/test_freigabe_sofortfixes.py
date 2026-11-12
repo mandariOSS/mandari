@@ -428,6 +428,20 @@ def test_freigabe_findet_konten_in_jeder_schreibweise(org: Any, freigebende: Any
     assert antwort.status_code < 400
     assert FolderGuestShare.objects.filter(folder=ordner, user=gast.user, level="view").exists()
 
+    # Zwei Gäste, deren Adressen sich nur in der Schreibweise unterscheiden: Eine dritte Schreibweise trifft
+    # keinen von beiden, die genaue trifft genau das gemeinte Konto.
+    erster, zweiter = _gast(org, "paar-a@example.org"), _gast(org, "paar-b@example.org")
+    type(erster.user).objects.filter(pk=erster.user.pk).update(email="Paar.Gast@example.org")
+    type(zweiter.user).objects.filter(pk=zweiter.user.pk).update(email="PAAR.gast@example.org")
+    ordner_url = _url("document_folder_share", org, folder_id=ordner.id)
+
+    assert client.post(ordner_url, {"email": "paar.gast@example.org", "level": "view"}).status_code == 400
+    assert not FolderGuestShare.objects.filter(folder=ordner, user__in=[erster.user, zweiter.user]).exists()
+    assert client.post(ordner_url, {"email": "PAAR.gast@example.org", "level": "view"}).status_code < 400
+    assert list(
+        FolderGuestShare.objects.filter(folder=ordner).exclude(user=gast.user).values_list("user", flat=True)
+    ) == [zweiter.user.pk]
+
 
 @pytest.mark.django_db
 def test_stufenaenderung_laesst_abgeschaltetes_herunterladen_aus(org: Any, freigebende: Any, client_for: Any) -> None:

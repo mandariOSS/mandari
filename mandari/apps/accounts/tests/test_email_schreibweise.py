@@ -17,6 +17,8 @@ from typing import Any, cast
 import pytest
 from django.apps import apps as django_apps
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import Client
 from django.urls import reverse
 
@@ -94,11 +96,47 @@ def test_zwei_schreibweisen_aus_dem_bestand_bleiben_getrennt_erreichbar() -> Non
 
 
 def test_mehrdeutige_schreibweise_meldet_niemanden_an() -> None:
-    _altbestand("Otto.Gross@example.org")
+    erstes = _altbestand("Otto.Gross@example.org")
     _altbestand("OTTO.gross@example.org")
     with pytest.raises(User.DoesNotExist):
         User.objects.get_by_natural_key("otto.gross@example.org")
+    assert User.objects.find_by_email("otto.gross@example.org") is None
     assert not is_logged_in(_anmelden("otto.gross@example.org"))
+
+    # Auch ohne klein geschriebenes Gegenstück behält ein Konto des Paars beim Speichern seine Schreibweise;
+    # sonst würde aus der mehrdeutigen Anmeldung still ein Treffer.
+    erstes.first_name = "Otto"
+    erstes.save()
+    erstes.full_clean()
+    assert User.objects.get(pk=erstes.pk).email == "Otto.Gross@example.org"
+    assert User.objects.find_by_email("otto.gross@example.org") is None
+
+    # Ein drittes Konto in klein geschriebener Form entsteht nicht
+    with pytest.raises(IntegrityError), transaction.atomic():
+        make_user("otto.gross@example.org")
+
+
+def test_geaenderte_adresse_darf_kein_neues_paar_bilden() -> None:
+    alice = make_user("alice@example.org")
+    make_user("bob@example.org")
+    _altbestand("Carla@example.org")
+    _altbestand("CARLA@example.org")
+
+    for adresse in ("Bob@example.org", "carla@example.org", "Carla@Example.org"):
+        alice.email = adresse
+        with pytest.raises(ValidationError) as fehler:
+            alice.full_clean()
+        assert "email" in fehler.value.message_dict
+    alice.email = "Bob@example.org"
+    with pytest.raises(IntegrityError), transaction.atomic():
+        alice.save()
+    assert User.objects.get(pk=alice.pk).email == "alice@example.org"
+
+    # Eine freie Adresse geht weiter und wird klein gespeichert
+    alice.email = "Alice.Neu@Example.org"
+    alice.full_clean()
+    alice.save()
+    assert User.objects.get(pk=alice.pk).email == "alice.neu@example.org"
 
 
 def test_admin_legt_kein_zweites_konto_in_anderer_schreibweise_an() -> None:
