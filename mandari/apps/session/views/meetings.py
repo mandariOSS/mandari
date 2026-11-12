@@ -211,10 +211,16 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         if not self.has_permission("view_non_public_meetings"):
             files = files.filter(is_public=True)
         context["files"] = list(files)
+        # Die öffentliche Fassung der Niederschrift ändert nur der Ablauf der Niederschrift (file_service); die
+        # Niederschrift braucht die Seite ohnehin, also keine zweite Abfrage
+        protocol = getattr(meeting, "protocol", None)
+        protocol_file_id = protocol.public_file_id if protocol is not None else None
+        for session_file in context["files"]:
+            session_file.from_protocol = protocol_file_id is not None and session_file.pk == protocol_file_id
         context["file_can_edit"] = self.has_permission("edit_meetings")
 
         # Protocol
-        context["protocol"] = getattr(meeting, "protocol", None)
+        context["protocol"] = protocol
 
         # Sitzungsmappe (Issue #218): abrufbare Fassungen – reine Rechteprüfung, Stand lädt per HTMX nach
         from ..services.meeting_package_plan import variants_for
