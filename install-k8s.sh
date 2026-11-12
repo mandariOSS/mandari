@@ -311,10 +311,18 @@ build_helm_args() {
         --set "persistence.media.className=$STORAGE_CLASS"
         --set "persistence.files.className=$STORAGE_CLASS"
     )
-    [ -n "$ADMIN_EMAIL" ] && HELM_ARGS+=(
-        --set "adminUser.email=$ADMIN_EMAIL"
-        --set "adminUser.password=$ADMIN_PASSWORD"
-    )
+    # Das Passwort steht nicht in den Argumenten von Helm (dort läse es jedes lokale Konto in der Prozessliste),
+    # sondern in einer Datei, die nur das eigene Konto lesen darf und beim Ende des Skripts gelöscht wird. Helm
+    # übernimmt ihren Inhalt unverändert als Wert (--set-file), ohne ihn als YAML zu lesen. Die Angabe steht
+    # getrennt von HELM_ARGS, damit der Testlauf sie nicht ausgibt.
+    HELM_SECRET_ARGS=()
+    if [ -n "$ADMIN_EMAIL" ]; then
+        ADMIN_PASSWORD_FILE=$(umask 077 && mktemp "${TMPDIR:-/tmp}/mandari-admin.XXXXXX")
+        trap 'rm -f "$ADMIN_PASSWORD_FILE"' EXIT
+        printf '%s' "$ADMIN_PASSWORD" > "$ADMIN_PASSWORD_FILE"
+        HELM_ARGS+=(--set "adminUser.email=$ADMIN_EMAIL")
+        HELM_SECRET_ARGS=(--set-file "adminUser.password=$ADMIN_PASSWORD_FILE")
+    fi
     if [ "${NO_TLS:-false}" = true ]; then
         HELM_ARGS+=(--set ingress.tls.enabled=false)
     else
@@ -326,7 +334,7 @@ build_helm_args() {
 do_dry_run() {
     log "Testlauf – es wird nichts verändert."
     echo ""
-    helm template "${HELM_ARGS[@]}" | head -60
+    helm template "${HELM_ARGS[@]}" ${HELM_SECRET_ARGS[@]+"${HELM_SECRET_ARGS[@]}"} | head -60
     echo ""
     info "Vollständige Ausgabe: helm template ${HELM_ARGS[*]}"
 }
@@ -334,7 +342,8 @@ do_dry_run() {
 do_install() {
     log "Installiere mandari in Namespace „$NAMESPACE“..."
     echo ""
-    helm upgrade --install "${HELM_ARGS[@]}" --wait --timeout 15m \
+    helm upgrade --install "${HELM_ARGS[@]}" ${HELM_SECRET_ARGS[@]+"${HELM_SECRET_ARGS[@]}"} \
+        --wait --timeout 15m \
         || error "Installation fehlgeschlagen. Ursache suchen mit:
   kubectl -n $NAMESPACE get pods
   kubectl -n $NAMESPACE describe pod -l app.kubernetes.io/instance=$RELEASE
