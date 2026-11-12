@@ -1144,16 +1144,20 @@ class AgendaProposalService:
 
         Returns:
             True if accepted, False if already processed
+
+        Nach genehmigtem Protokoll ändert sich die Tagesordnung nicht mehr: ``ProtokollGenehmigtError``.
         """
         from django.db import transaction
 
         from . import agenda
         from .models import FactionAgendaItem
+        from .regeln import pruefe_protokoll_offen
 
         with transaction.atomic():
             # Sitzung und Vorschlag sperren: gleichzeitige Annahmen erhalten verschiedene Nummern, ein doppelter
-            # Klick entscheidet (und benachrichtigt) nur einmal (Issue #872)
-            agenda.lock_meeting(item.meeting)
+            # Klick entscheidet (und benachrichtigt) nur einmal (Issue #872). Dieselbe Sperre wie die Genehmigung
+            # des Protokolls; ist es genehmigt, kommt kein TOP mehr auf die Tagesordnung.
+            pruefe_protokoll_offen(item.meeting)
             current = (
                 FactionAgendaItem.objects.select_for_update().filter(pk=item.pk, proposal_status="proposed").first()
             )

@@ -185,7 +185,9 @@ def test_fraktion_und_bearbeitungsvermerke(org: Any, person: Any, andere: Any) -
     rede: Any = FactionProtocolEntry(meeting=sitzung, agenda_item=top, entry_type="speech", speaker=person)
     rede.set_content_encrypted("Wir stimmen zu")
     rede.save()
-    aufgabe = Task.objects.create(organization=org, title="Flyer", created_by=andere)
+    # Der Person zugewiesen: Vermerke nennen den Titel einer Aufgabe nur mit Zugriff, ohne ``tasks.view`` also nur bei
+    # eigenen und zugewiesenen Aufgaben
+    aufgabe = Task.objects.create(organization=org, title="Flyer", created_by=andere, assigned_to=person)
     TaskActivity.objects.create(task=aufgabe, actor=person, activity_type="status_changed")
 
     daten = _export(org, person)
