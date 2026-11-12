@@ -32,11 +32,16 @@ release_idle_thread_connections()
 
 # WebSockets nur vom eigenen Host oder aus CSRF_TRUSTED_ORIGINS – nicht von jeder Subdomain,
 # die ein Platzhalter in ALLOWED_HOSTS zulässt (apps/common/websocket_origin.py).
+# Konten mit offener Pflicht zum zweiten Faktor bekommen keine WebSocket-Verbindung (apps/accounts/websocket.py);
+# die Hülle braucht das Konto aus AuthMiddlewareStack und steht deshalb innerhalb davon.
+from apps.accounts.websocket import TwoFactorWebSocketMiddleware  # noqa: E402
 from apps.common.websocket_origin import SameOriginWebSocketValidator  # noqa: E402
 
 application = ProtocolTypeRouter(
     {
         "http": django_asgi_app,
-        "websocket": SameOriginWebSocketValidator(AuthMiddlewareStack(URLRouter(websocket_urlpatterns))),
+        "websocket": SameOriginWebSocketValidator(
+            AuthMiddlewareStack(TwoFactorWebSocketMiddleware(URLRouter(websocket_urlpatterns)))
+        ),
     }
 )

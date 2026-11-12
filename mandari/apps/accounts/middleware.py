@@ -62,6 +62,15 @@ ADMIN_DENIED_HTML = (
 GetResponse = Callable[[HttpRequest], HttpResponseBase]
 
 
+def open_requirement(user: object) -> str:
+    """Offene Pflicht des Kontos: ``"totp"``, ``"security_key"`` oder ``""``, ohne Zwischenspeicher."""
+    if two_factor_required(user) and not TwoFactorService().is_2fa_enabled(user):
+        return "totp"
+    if security_key_required(user) and not has_credentials(user):
+        return "security_key"
+    return ""
+
+
 class AdminNetworkMiddleware:
     """Django-Admin nur aus ``ADMIN_ALLOWED_NETWORKS`` (leer = keine Beschränkung)."""
 
@@ -109,11 +118,7 @@ class TwoFactorEnforcementMiddleware:
             and now - int(cached.get("at", 0)) < POLICY_CACHE_SECONDS
         ):
             return str(cached.get("need", ""))
-        need = ""
-        if two_factor_required(user) and not TwoFactorService().is_2fa_enabled(user):
-            need = "totp"
-        elif security_key_required(user) and not has_credentials(user):
-            need = "security_key"
+        need = open_requirement(user)
         request.session[POLICY_CACHE_SESSION_KEY] = {"user": user_id, "at": now, "need": need}
         return need
 

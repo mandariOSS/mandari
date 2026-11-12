@@ -27,6 +27,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 
 from apps.common.encryption import two_factor_keys
 
@@ -386,6 +387,16 @@ class TwoFactorService:
             return True
         except TwoFactorDevice.DoesNotExist:
             return False
+
+    def is_active_secret(self, user, secret: str) -> bool:
+        """Ist ``secret`` das Secret des bestätigten, aktiven Geräts des Kontos?"""
+        try:
+            device = user.totp_device
+        except TwoFactorDevice.DoesNotExist:
+            return False
+        if not secret or not device.is_confirmed or not device.is_active:
+            return False
+        return constant_time_compare(self._decrypt(device.secret_encrypted), secret)
 
     def is_2fa_enabled(self, user) -> bool:
         """Check if a user has 2FA enabled."""
