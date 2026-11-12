@@ -4,7 +4,6 @@ Profil und Konto-Sicherheit im Organisationskontext.
 """
 
 from django.contrib import messages
-from django.contrib.auth import update_session_auth_hash
 from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
@@ -150,7 +149,8 @@ class SecurityView(NeueVorlageMixin, WorkViewMixin, TemplateView):
 
         success, message = PasswordService.change_password(user, old_password, new_password)
         if success:
-            update_session_auth_hash(request, user)  # nach Passwortwechsel eingeloggt bleiben
+            # Angemeldet bleiben; die Geräteliste folgt dem neuen Sitzungsschlüssel
+            SessionService.keep_session_after_password_change(request, user)
             messages.success(request, message)
         else:
             messages.error(request, message)
