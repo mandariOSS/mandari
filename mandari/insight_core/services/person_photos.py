@@ -14,6 +14,7 @@ import logging
 import time
 from collections import Counter
 from datetime import timedelta
+from typing import Any
 
 from django.core.files.base import ContentFile
 from django.db.models import Q
@@ -86,6 +87,36 @@ def _mark(person, status: str, error: str = "") -> str:
     return status
 
 
+def _photo_client() -> Any:
+    """
+    Client für Fotoabrufe. Die Adresse des Fotos stammt aus den Angaben der Quelle; der geschützte Client prüft
+    deshalb schon das erste Ziel und jede Weiterleitung und verbindet nur mit öffentlichen Adressen
+    (``safe_fetch.guarded_client``).
+    """
+    from . import safe_fetch
+
+    return safe_fetch.guarded_client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=True)
+
+
+def _get_limited(client, url: str):
+    """
+    Foto gestreamt abrufen: Antwort und höchstens ``MAX_BYTES`` + 1 Bytes Inhalt (mehr heißt „zu groß“). Die
+    Antwort wird unkomprimiert angefordert; eine dennoch kodierte Antwort gilt als zu groß.
+    """
+    with client.stream("GET", url, headers={"Accept-Encoding": "identity"}) as response:
+        if response.status_code != 200:
+            return response, b""
+        kodiert = response.headers.get("content-encoding", "").strip().lower()
+        if kodiert and kodiert != "identity":
+            return response, b"x" * (MAX_BYTES + 1)
+        data = bytearray()
+        for chunk in response.iter_bytes(64 * 1024):
+            data += chunk
+            if len(data) > MAX_BYTES:
+                break
+        return response, bytes(data)
+
+
 def fetch_person_photo(person, client=None) -> str:
     """
     Foto einer Person abrufen und lokal speichern.
@@ -102,10 +133,10 @@ def fetch_person_photo(person, client=None) -> str:
 
     own_client = client is None
     if own_client:
-        client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=True)
+        client = _photo_client()
     try:
         try:
-            response = client.get(url)
+            response, data = _get_limited(client, url)
         except httpx.HTTPError as exc:
             return _mark(person, "error", f"{type(exc).__name__}: {exc}")
 
@@ -117,11 +148,11 @@ def fetch_person_photo(person, client=None) -> str:
             return _mark(person, "missing")
         if response.status_code != 200:
             return _mark(person, "error", f"HTTP {response.status_code}")
-        if not response.content or len(response.content) > MAX_BYTES:
+        if not data or len(data) > MAX_BYTES:
             return _mark(person, "error", "Leere oder zu große Datei")
 
         try:
-            normalized = _normalize_image(response.content)
+            normalized = _normalize_image(data)
         except Exception as exc:  # Pillow kann exotische Formate ablehnen
             return _mark(person, "error", f"Bild nicht lesbar: {exc}")
 
@@ -141,8 +172,6 @@ def fetch_photos_for_body(
     Fotos aller Personen einer Kommune (mit Foto-Konfiguration) aktualisieren.
     Ohne ``force`` werden nur ungeprüfte oder ältere Einträge angefasst.
     """
-    import httpx
-
     from ..models import OParlPerson
 
     apply_photo_presets(body)
@@ -157,7 +186,7 @@ def fetch_photos_for_body(
         persons = persons.filter(Q(photo_fetched_at__isnull=True) | Q(photo_fetched_at__lt=cutoff))
     persons = persons.order_by("photo_fetched_at", "family_name")[:limit]
 
-    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=True) as client:
+    with _photo_client() as client:
         for person in persons:
             results[fetch_person_photo(person, client)] += 1
             if sleep:
