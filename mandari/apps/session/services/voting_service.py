@@ -569,6 +569,11 @@ def capture_votes(
             SessionVote.objects.bulk_create(neu)
         if aendern:
             SessionVote.objects.bulk_update(aendern, ["vote", "recorded_by", "updated_at"])
+        if loeschen or neu or aendern:
+            # Vier-Augen-Prinzip: Auch wer nur Einzelstimmen ändert, hat die Niederschrift inhaltlich bearbeitet
+            from . import four_eyes_service
+
+            four_eyes_service.mark_protocol_edited(agenda_item.meeting_id, recorded_by)
 
         # Summen aus Einzelstimmen nur bei offener und namentlicher Abstimmung; bei „Nur Summen“ und geheimer
         # Abstimmung sind die erfassten Summen maßgeblich und werden nicht überschrieben

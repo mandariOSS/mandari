@@ -809,9 +809,13 @@ def collect_paper_text(paper) -> str:
     Only includes files with text_extraction_status=completed.
     """
     texts = []
+    # Nur Anlagen, die weder zurückgenommen noch in der Quelle gesperrt sind: Ihr Text bleibt im Bestand, darf
+    # aber keine öffentlichen Orte mehr liefern (dieselbe Auswahl wie die Zusammenfassung)
     files = paper.files.filter(
         text_extraction_status="completed",
         text_content__isnull=False,
+        deleted=False,
+        source_missing_since__isnull=True,
     ).exclude(text_content="")
 
     for f in files:

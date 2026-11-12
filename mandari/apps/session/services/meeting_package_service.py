@@ -51,6 +51,7 @@ from apps.session.services.meeting_package_pdf import build_pdf
 from apps.session.services.meeting_package_plan import (
     AGENDA_ZIP_PATH,
     PUBLIC,
+    PUBLIC_MIN_FORMAT,
     VARIANT_LABELS,
     VARIANT_PERMISSIONS,
     MeetingPackagePlan,
@@ -204,7 +205,8 @@ def blocked_packages(packages: Iterable[Package]) -> set[Any]:
 
     Gesperrt ist eine Fassung, wenn ein enthaltener TOP, eine Vorlage oder Anlage gelöscht
     wurde; die öffentliche Fassung außerdem, wenn die Sitzung, ein enthaltener TOP, eine
-    Vorlage oder Anlage inzwischen nichtöffentlich ist. Geprüft wird mit denselben Regeln
+    Vorlage oder Anlage inzwischen nichtöffentlich ist oder wenn sie mit einem älteren Aufbau
+    entstand (``PUBLIC_MIN_FORMAT``). Geprüft wird mit denselben Regeln
     wie beim Erzeugen (``file_service.file_visible``) – in drei Abfragen für alle Fassungen.
     """
     packages = [p for p in packages if p.status == Package.STATUS_READY]
@@ -245,7 +247,8 @@ def blocked_packages(packages: Iterable[Package]) -> set[Any]:
             continue
         if package.variant == PUBLIC:
             still_public = package.meeting.is_public and all(existing[pk] for existing, ids in wanted for pk in ids)
-            if not still_public:
+            # Fassungen ohne Angabe stammen aus der Zeit vor der Angabe (Aufbau 1)
+            if not still_public or int(contents.get("format") or 1) < PUBLIC_MIN_FORMAT:
                 blocked.add(package.pk)
     return blocked
 

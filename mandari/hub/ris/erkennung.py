@@ -87,9 +87,10 @@ from django.utils import timezone
 from mandari_dokumente import (
     MEMORY_LIMIT_REASON,
     METHOD_NONE,
+    ExtractionConfig,
+    ExtractionResult,
     IsolationLimits,
     OcrMemoryLimitError,
-    extract_text,
     extract_text_layer_isolated,
     limit_text,
 )
@@ -616,6 +617,17 @@ def _inhalt(datei: OParlFile, beanspruchung: Beanspruchung, stufe: str) -> tuple
     except OSError:
         logger.warning("Datei %s: Ablage nicht lesbar, Texterkennung später erneut", datei.pk, exc_info=True)
         return _spaeter(beanspruchung, stufe)
+
+
+def extract_text(pfad: Path, mime_type: str, file_name: str, config: ExtractionConfig) -> ExtractionResult:
+    """
+    Texterkennung der zweiten Stufe. Auch hier liest die Textebene ein eigener Prozess mit Speicher- und Zeitgrenze
+    (``document_extraction.extract_text_isolated``), nie der Worker selbst: In dieser Stufe landen gerade die
+    Dateien, an denen der Prozess der ersten Stufe an einer Grenze endete.
+    """
+    from insight_core.services.document_extraction import extract_text_isolated
+
+    return extract_text_isolated(pfad, mime_type, file_name, config)
 
 
 def _erkennen(datei: OParlFile, beanspruchung: Beanspruchung) -> str:

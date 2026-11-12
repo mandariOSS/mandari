@@ -161,6 +161,9 @@ class TestVoruebergehend:
 
         for url in (
             f"/insight/termine/{welt['meeting'].pk}/",
+            f"/insight/termine/{welt['meeting'].pk}/live/",
+            f"/insight/termine/{welt['meeting'].pk}/live/?teil=stand",
+            f"/insight/termine/{welt['meeting'].pk}/live/kino/",
             f"/insight/vorgaenge/{welt['paper'].pk}/",
             f"/insight/dokumente/{welt['datei'].pk}/preview/",
             "/insight/termine/",
