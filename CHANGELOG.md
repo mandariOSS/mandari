@@ -6,6 +6,21 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+## [0.11.2] – 2026-11-12
+
+Patch-Release der Linie 0.11 mit Sicherheitskorrekturen, ohne neue Funktionen und ohne Migration.
+Dieselben Korrekturen enthält 0.12.1. Wer mandari 0.11 selbst betreibt, sollte zügig aktualisieren.
+
+### Vor dem Update lesen
+- **Ordner-Freigaben an Gäste:** Eine Ordner-Freigabe mit „Kommentieren“ oder „Bearbeiten“ gilt an Dokumenten anderer Mitglieder nur noch so weit, wie die Person, die den Ordner freigegeben hat, diese Dokumente selbst kommentieren oder bearbeiten darf. Lesen bleibt. Ist diese Person kein aktives Mitglied mehr, gilt die Freigabe zum Lesen. Soll ein Gast weiter mehr dürfen, vergibt eine Person mit den nötigen Rechten die Freigabe neu (gleicher Gast, gleicher Ordner).
+- **Nach einem Passwortwechsel** enden alle anderen Sitzungen des Kontos sofort; andere Geräte melden sich neu an.
+
+### Sicherheit
+- Konto: Nach einem Passwortwechsel bleibt die eigene Sitzung in der Geräteliste, alle übrigen Sitzungen des Kontos enden sofort. „Alle anderen Sitzungen beenden“ erfasst auch laufende Sitzungen, die in der Geräteliste fehlen (#1319).
+- Work, Dokumente und Gäste: Eine Ordner-Freigabe gibt einem Gast je Dokument höchstens die Stufe, die die freigebende Person dort selbst hat (#1357).
+- Work, Aufgaben: Der Datei-Import ändert nur Aufgaben, die die Person bearbeiten darf; geprüft wird beim Einteilen der Zeilen und erneut vor dem Schreiben (#1318).
+- Work, Eingaben: Farbangaben im Editor-HTML haben eine Längengrenze und werden in linearer Zeit geprüft. Der Trello-Import begrenzt Namen und Labels je Karte und bricht bei mehr als 1000 Karten ab (#1322).
+
 ## [0.11.1] – 2026-11-03
 
 Patch-Release der Linie 0.11 mit Sicherheitskorrekturen, ohne neue Funktionen und ohne Migration.
