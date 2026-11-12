@@ -156,7 +156,7 @@
                     {% endif %}
 
                     <!-- Finanzielle Auswirkungen (Issue #81) -->
-                    <div x-data="{ fin: '{{ form.has_financial_impact.value|default_if_none:'' }}' }">
+                    <div x-data="{ fin: '{{ form.has_financial_impact.value|default_if_none:''|escapejs }}' }">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Finanzielle Auswirkungen <span class="text-red-500">*</span>
                         </label>
