@@ -139,8 +139,8 @@ class User(AbstractBaseUser, PermissionsMixin):
           dieser Regel) – sonst ließe es sich nicht mehr speichern.
         - Eine neue oder geänderte Adresse wird abgelehnt (``ValidationError`` am Feld ``email``).
 
-        ``check_all=False`` (Speichern eines bestehenden Kontos) fragt die Datenbank nur, wenn die Adresse
-        Großbuchstaben enthält: Der gewöhnliche Fall kostet keine Abfrage, die exakte Dublette fängt ``unique``.
+        ``check_all=False`` (Speichern eines bestehenden Kontos mit unveränderter Adresse) fragt die Datenbank
+        nur, wenn die Adresse Großbuchstaben enthält: Der gewöhnliche Fall kostet keine Abfrage.
         """
         manager = type(self).objects
         wanted = manager.normalize_email(self.email)
@@ -161,12 +161,23 @@ class User(AbstractBaseUser, PermissionsMixin):
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Speichert die Adresse immer klein geschrieben, auch am Formular vorbei (Admin, Shell, Dienste)."""
         update_fields = kwargs.get("update_fields")
-        if update_fields is None or "email" in update_fields:
+        writes_email = (update_fields is None or "email" in update_fields) and "email" not in self.get_deferred_fields()
+        if writes_email:
+            changed = self._state.adding or self.email != getattr(self, "_loaded_email", None)
             try:
-                self._normalize_email(check_all=self._state.adding)
+                self._normalize_email(check_all=changed)
             except ValidationError as error:
                 raise IntegrityError("accounts.User: Adresse gibt es in anderer Schreibweise schon") from error
         super().save(*args, **kwargs)
+        if writes_email:
+            self._loaded_email = self.email
+
+    @classmethod
+    def from_db(cls, *args: Any, **kwargs: Any) -> Any:
+        """Merkt sich die geladene Adresse: ``save`` prüft Dubletten nur, wenn sie sich geändert hat."""
+        instance = super().from_db(*args, **kwargs)
+        instance._loaded_email = instance.__dict__.get("email")
+        return instance
 
     @property
     def full_name(self) -> str:

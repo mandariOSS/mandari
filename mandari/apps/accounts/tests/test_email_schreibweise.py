@@ -66,6 +66,22 @@ def test_anlage_und_speichern_schreiben_die_adresse_klein() -> None:
     assert User.objects.get(pk=direkt.pk).email == "erika.muster@example.org"
 
 
+def test_speichern_ohne_adressaenderung_kostet_keine_abfrage(django_assert_num_queries: Any) -> None:
+    konto = User.objects.get(pk=make_user("otto.gross@example.org").pk)
+    konto.first_name = "Otto"
+    with django_assert_num_queries(1):
+        konto.save()
+    with django_assert_num_queries(1):
+        konto.save()
+
+    # Ist die Adresse gar nicht geladen, lädt ``save`` sie auch nicht nach
+    nur_name = User.objects.only("first_name").get(pk=konto.pk)
+    nur_name.first_name = "Otto Karl"
+    nur_name.save()
+    assert "email" in nur_name.get_deferred_fields()
+    assert User.objects.get(pk=konto.pk).email == "otto.gross@example.org"
+
+
 @pytest.mark.parametrize("eingabe", ["otto.gross@example.org", "Otto.Gross@Example.org", "OTTO.GROSS@EXAMPLE.ORG"])
 def test_anmeldung_in_jeder_schreibweise(eingabe: str) -> None:
     make_user("Otto.Gross@example.org")
@@ -127,9 +143,15 @@ def test_geaenderte_adresse_darf_kein_neues_paar_bilden() -> None:
         with pytest.raises(ValidationError) as fehler:
             alice.full_clean()
         assert "email" in fehler.value.message_dict
-    alice.email = "Bob@example.org"
-    with pytest.raises(IntegrityError), transaction.atomic():
-        alice.save()
+    # Auch am Formular vorbei, mit Großbuchstaben wie schon klein geschrieben
+    for adresse in ("Bob@example.org", "carla@example.org"):
+        alice.email = adresse
+        with pytest.raises(IntegrityError), transaction.atomic():
+            alice.save()
+        geladen = User.objects.get(pk=alice.pk)
+        geladen.email = adresse
+        with pytest.raises(IntegrityError), transaction.atomic():
+            geladen.save()
     assert User.objects.get(pk=alice.pk).email == "alice@example.org"
 
     # Eine freie Adresse geht weiter und wird klein gespeichert
