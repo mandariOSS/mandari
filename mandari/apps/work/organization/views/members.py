@@ -69,7 +69,11 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         if member.is_guest:
             # „Was sieht dieser Gast?“ (Issue #77): alle wirksamen Freigaben mit Entzugs-Möglichkeit
             context["guest_has_password"] = member.user.has_usable_password()
-            context["guest_document_shares"] = selectors.guest_document_shares(self.organization, member.user)
+            # Nur Freigaben, deren Dokument die betrachtende Person sehen oder verwalten darf; den Rest als Anzahl
+            alle = selectors.guest_document_shares(self.organization, member.user)
+            sichtbar = selectors.guest_document_shares(self.organization, member.user, viewer=self.membership)
+            context["guest_document_shares"] = sichtbar
+            context["guest_document_shares_hidden"] = len(alle) - len(sichtbar)
             context["guest_folder_shares"] = selectors.guest_folder_shares(self.organization, member.user)
             context["can_manage_guest_shares"] = (
                 checker.has_permission("guests.manage") or checker.has_permission("motions.share") or checker.is_admin()

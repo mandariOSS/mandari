@@ -454,16 +454,42 @@ def profile_committee_context(organization: Organization, membership: Membership
 # ---------------------------------------------------------------------------
 
 
-def guest_document_shares(organization: Organization, user: User) -> list[MotionShare]:
-    """Persönliche Dokument-Freigaben eines Gastes (ohne gelöschte Dokumente)."""
-    from apps.work.motions.models import MotionShare
+def guest_document_shares(
+    organization: Organization, user: User, viewer: Membership | None = None
+) -> list[MotionShare]:
+    """
+    Persönliche Dokument-Freigaben eines Gastes (ohne gelöschte Dokumente).
 
-    return list(
+    Mit ``viewer`` nur die Freigaben, deren Dokument die betrachtende Person sehen darf (``Motion.visible_to``)
+    oder deren Freigabe sie entziehen darf (dieselbe Regel wie ``MotionShareRemoveView``). Titel anderer Dokumente
+    nennt die Gastseite nicht.
+    """
+    from apps.work.motions.models import Motion, MotionShare
+
+    shares = list(
         MotionShare.objects.filter(motion__organization=organization, scope="user", user=user)
         .exclude(motion__status="deleted")
         .select_related("motion", "created_by")
         .order_by("-created_at")
     )
+    if viewer is None:
+        return shares
+    visible = set(
+        Motion.visible_to(viewer)  # type: ignore[no-untyped-call]
+        .filter(pk__in=[share.motion_id for share in shares])
+        .values_list("pk", flat=True)
+    )
+    # Entziehen darf mit ``motions.share``, wer das Dokument verfasst hat, alle Dokumente bearbeitet oder Gäste
+    # verwaltet (die Freigaben hier sind persönliche Freigaben eines Gastes)
+    may_remove_any = viewer.has_permission("motions.share") and (
+        viewer.has_permission("motions.edit_all") or viewer.has_permission("guests.manage")
+    )
+    may_remove_own = viewer.has_permission("motions.share")
+    return [
+        share
+        for share in shares
+        if share.motion_id in visible or may_remove_any or (may_remove_own and share.motion.author_id == viewer.id)
+    ]
 
 
 def guest_folder_shares(organization: Organization, user: User) -> list[FolderGuestShare]:

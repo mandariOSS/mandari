@@ -16,6 +16,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
 from apps.work.files import attachment_response
 
+from .. import agenda
 from ..models import (
     FactionAgendaItem,
     FactionAgendaItemAttachment,
@@ -100,9 +101,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         except FactionDecision.DoesNotExist:
             decision = None
 
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
 
         is_protocol_phase = meeting.status in ["ongoing", "completed"] and not meeting.protocol_approved
         can_protocol = is_protocol_phase and (
@@ -204,9 +203,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         action = request.POST.get("action")
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
 
         handlers = {
             "update": self._update,

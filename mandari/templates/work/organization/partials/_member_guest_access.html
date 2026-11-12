@@ -36,6 +36,9 @@
     <c-slot name="actions">
         <span class="text-sm text-gray-500">{{ guest_document_shares|length }} Dokument{{ guest_document_shares|length|pluralize:"e" }} &middot; {{ guest_folder_shares|length }} Ordner</span>
     </c-slot>
+    {% if guest_document_shares_hidden %}
+    <p class="px-6 py-3 text-sm text-gray-500 dark:text-gray-400">{% if guest_document_shares_hidden == 1 %}Ein weiteres Dokument ist freigegeben, hier aber nicht sichtbar.{% else %}{{ guest_document_shares_hidden }} weitere Dokumente sind freigegeben, hier aber nicht sichtbar.{% endif %}</p>
+    {% endif %}
     {% if guest_document_shares or guest_folder_shares %}
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for share in guest_folder_shares %}
@@ -86,7 +89,7 @@
         </div>
         {% endfor %}
     </div>
-    {% else %}
+    {% elif not guest_document_shares_hidden %}
     <p class="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">Dieser Gast hat aktuell keine Freigaben und sieht keine Dokumente.</p>
     {% endif %}
 </c-ui.card>

@@ -12,6 +12,7 @@ from django.views.generic import View
 
 from apps.common.mixins import WorkViewMixin
 
+from .. import agenda
 from .. import services as faction_services
 from ..models import (
     FactionAgendaItem,
@@ -129,8 +130,8 @@ class FactionActionView(WorkViewMixin, View):
     # -- Permission helpers ----------------------------------------------
 
     def _can_manage_agenda(self, meeting):
-        """Ersteller der Sitzung oder faction.manage — entspricht can_edit in der UI."""
-        return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
+        """Ersteller der Sitzung oder faction.manage, nie nach genehmigtem Protokoll (``agenda.manages``)."""
+        return agenda.manages(meeting, self.membership)
 
     def _can_protocol(self, meeting):
         """Wer darf Protokolleinträge/Beschlüsse erfassen (solange Protokoll nicht genehmigt)."""
@@ -222,9 +223,7 @@ class FactionActionView(WorkViewMixin, View):
     # -- Meeting update ------------------------------------------------
 
     def _update_meeting(self, request, meeting):
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
 
         if not can_edit:
             messages.error(request, "Keine Berechtigung zum Bearbeiten.")
@@ -1011,8 +1010,9 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, "Nur Aufgaben-Einträge können ins Task-Board übernommen werden.")
             return self._redirect_detail(meeting)
 
-        from apps.work.tasks.models import Task
-
+        # Aufgaben legt an, wer Aufgaben anlegen darf; das Recht an der Sitzung allein reicht nicht
+        if not self.membership.has_permission("tasks.create"):
+            return HttpResponse(status=403)
         content = entry.get_content_decrypted() or ""
         task_title = content[:200] if content else f"Aufgabe aus Fraktionssitzung {meeting.title}"
 
@@ -1021,6 +1021,8 @@ class FactionActionView(WorkViewMixin, View):
             description_parts.append(f"TOP: {entry.agenda_item.title}")
         else:
             description_parts.append("TOP: Allgemein")
+
+        from apps.work.tasks.models import Task
 
         Task.objects.create(
             organization=self.organization,
@@ -1032,9 +1034,9 @@ class FactionActionView(WorkViewMixin, View):
             related_faction_meeting=meeting,
         )
 
-        # Endgültig genehmigte Protokolle sind unveränderbar (Issue #63) —
-        # die Aufgabe wird trotzdem angelegt, nur das Flag bleibt unberührt
-        if not meeting.protocol_approved:
+        # Den Erledigt-Stand am Eintrag setzt nur, wer das Protokoll bearbeiten darf; genehmigte Protokolle sind
+        # unveränderbar (Issue #63). Die Aufgabe entsteht in beiden Fällen, nur das Flag bleibt unberührt.
+        if self._can_protocol(meeting):
             entry.action_completed = True
             entry.save()
 

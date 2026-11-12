@@ -113,6 +113,20 @@ def _org_member_ids(organization_id: Any, raw_ids: Sequence[str]) -> list[Any]:
     )
 
 
+def reset_shares_on_reshare(task: Task, old_visibility: str) -> None:
+    """
+    Aufgabe ohne Freigabedialog (Panel, Dateiimport) auf „geteilt“ gestellt: frühere Empfänger entfallen.
+
+    Freigabezeilen zählen nur bei Sichtbarkeit „geteilt“ (``selectors.visible_tasks``, ``Task.can_access``). Wechselt
+    eine Aufgabe über Panel oder Import auf eine andere Sichtbarkeit, bleiben sie ohne Wirkung stehen; ein
+    veraltetes Panel kann so keine neuen Freigaben löschen. Wird die Aufgabe später auf demselben Weg wieder
+    geteilt, bekämen die früheren Empfänger ungefragt wieder Zugriff: Deshalb beginnt sie dann ohne Empfänger,
+    sie werden im Freigabedialog gewählt (``update_visibility``).
+    """
+    if task.visibility == "shared" and old_visibility != "shared":
+        TaskShare.objects.filter(task=task).delete()
+
+
 @transaction.atomic
 def update_visibility(task: Task, membership: Membership, visibility: str, share_with_ids: Sequence[str]) -> None:
     """Sichtbarkeit setzen und Freigaben angleichen (nur bei ``shared`` bleiben Freigaben bestehen)."""
@@ -342,6 +356,7 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
     """
     _sync_completion(task)
     task.save()
+    reset_shares_on_reshare(task, old_values["visibility_raw"])
     _log_changes(task, membership, old_values)
     return task
 
