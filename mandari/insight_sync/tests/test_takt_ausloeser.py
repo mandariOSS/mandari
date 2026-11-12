@@ -139,7 +139,10 @@ def _meldungen(antwort: Any) -> list[tuple[str, str]]:
 
 
 def _aktion(admin_client: Client, quelle: OParlSource, art: str) -> list[tuple[str, str]]:
-    antwort = admin_client.get(f"/admin/insight_core/oparlsource/{quelle.pk}/{art}/")
+    adresse = f"/admin/insight_core/oparlsource/{quelle.pk}/{art}/"
+    # Der Aufruf (GET) zeigt nur die Bestätigung; ausgelöst wird mit dem abgeschickten Formular
+    assert admin_client.get(adresse).status_code == 200
+    antwort = admin_client.post(adresse)
     assert antwort.status_code == 302
     assert antwort["Location"].endswith(f"{quelle.pk}/change/")
     return _meldungen(antwort)

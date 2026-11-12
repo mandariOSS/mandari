@@ -19,7 +19,7 @@ from apps.common.params import uuid_param
 
 from ..models import SessionAttendance, SessionAttendanceDisruption, SessionMeeting, SessionPerson
 from ..permissions import SessionViewMixin
-from ..services import attendance_service, participation_service, protocol_lock
+from ..services import allowance_service, attendance_service, participation_service, protocol_lock
 from ..visibility import meeting_q
 
 #: Meldung, wenn in einer Präsenzsitzung jemand zugeschaltet werden soll (Issue #139)
@@ -173,8 +173,12 @@ class AttendanceDeleteView(SessionViewMixin, View):
         gesperrt = _locked(self, meeting)
         if gesperrt:
             return gesperrt
+        # Geprüftes oder überwiesenes Sitzungsgeld hängt an der Zeile und darf nicht mit ihr verschwinden
         name = attendance.person.display_name
-        attendance.delete()
+        grund = allowance_service.remove_attendance(attendance)
+        if grund:
+            messages.error(request, grund)
+            return _done(self, meeting)
         messages.success(request, f"{name} wurde von der Anwesenheitsliste entfernt.")
         if self.is_htmx:
             from django.http import HttpResponse
