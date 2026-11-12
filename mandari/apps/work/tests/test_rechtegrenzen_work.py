@@ -139,6 +139,28 @@ def test_tagesordnung_nach_genehmigung_auch_nach_zurueckgesetztem_status_fest(
     assert FactionAgendaItem.objects.filter(pk=top.pk).exists()
 
 
+def test_vorschlag_wird_nach_genehmigtem_protokoll_nicht_mehr_angenommen(
+    org: Any, make_member: Any, client_for: Any, sitzung: FactionMeeting
+) -> None:
+    vorsitz = make_member(org, ["faction.view_public", "agenda.manage"], email="vorsitz@example.org")
+    vorschlag = FactionAgendaItem.objects.create(
+        meeting=sitzung,
+        number="",
+        title="Nachträglicher Punkt",
+        visibility="public",
+        order=5,
+        proposal_status="proposed",
+        proposed_by=vorsitz,
+    )
+    url = reverse("work:faction_action", kwargs={"org_slug": org.slug, "meeting_id": sitzung.pk})
+    _genehmigen(sitzung)
+
+    client_for(vorsitz.user).post(url, {"action": "accept_proposal", "item_id": str(vorschlag.pk)})
+
+    vorschlag.refresh_from_db()
+    assert vorschlag.proposal_status == "proposed"
+
+
 # --- Aufgaben: Freigaben nur bei „geteilt“ -----------------------------------------------------------------------
 
 
