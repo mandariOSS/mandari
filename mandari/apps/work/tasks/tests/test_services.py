@@ -359,6 +359,69 @@ def test_parse_upload_detects_format_and_reads_csv() -> None:
         import_service.parse_upload("kaputt.json", b"{nicht json")
 
 
+def test_trello_import_kuerzt_namen_einmal_und_begrenzt_karten() -> None:
+    """Lange Namen von Labels und Listen stehen einmal gekürzt im Ergebnis, nicht je Verweis in voller Länge."""
+    import tracemalloc
+
+    langer_name = " " + "L" * 100_000 + " "
+    board: dict[str, Any] = {
+        "lists": [{"id": "l1", "name": "Erledigt"}, {"id": ["kaputt"], "name": "x"}],
+        "labels": [{"id": "a", "name": langer_name}, {"id": "b", "name": "Kultur"}],
+        "cards": [
+            {"name": "Karte", "idList": "l1", "idLabels": ["a"] * 5_000 + ["b", ["kaputt"], "fehlt"]},
+            "kein Objekt",
+        ],
+    }
+    raw = json.dumps(board).encode()
+
+    tracemalloc.start()
+    _, rows = import_service.parse_upload("trello.json", raw)
+    data, errors, _warnings = import_service.normalize_row(rows[0], {})
+    _aktuell, spitze = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert not errors
+    assert rows[0]["status"] == "done"
+    assert rows[0]["labels"] == ["L" * import_service.LABEL_NAME_LENGTH, "Kultur"]
+    assert data["labels"] == ["L" * 50, "Kultur"]
+    # Ohne Kürzung beim Sammeln wären es rund 500 MB (5.000 Verweise mal 100.000 Zeichen)
+    assert spitze < 20 * 1024 * 1024
+
+    # Leere Einträge zählen nicht auf die Obergrenze
+    assert import_service.split_labels(["", " "] * 40 + ["Kultur"]) == ["Kultur"]
+    assert import_service.split_labels("," * 80 + " Kultur , Sport") == ["Kultur", "Sport"]
+    assert len(import_service.split_labels([f"L{i}" for i in range(200)])) == import_service.MAX_LABELS_PER_ROW
+    assert import_service.split_labels(" Bau und Verkehr ,Kultur,, \t Sport ") == ["Bau und Verkehr", "Kultur", "Sport"]
+    # Ein Text aus Millionen kurzer Einträge wird nicht vollständig zerlegt
+    text = "ab," * 1_500_000
+    tracemalloc.start()
+    viele = import_service.split_labels(text)
+    _aktuell, spitze_text = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert viele == ["ab"] * import_service.MAX_LABELS_PER_ROW
+    assert spitze_text < 1024 * 1024
+    assert import_service.split_labels("," * 2_000_000 + "Kultur") == ["Kultur"]
+
+    # Namen, die erst nach dem Kürzen gleich sind, belegen zusammen einen Platz; das Sammeln endet beim Limit
+    gleich = "G" * 60
+    viele_labels: dict[str, Any] = {
+        "labels": [{"id": f"g{i}", "name": f"{gleich}{i}"} for i in range(60)] + [{"id": "k", "name": "Kultur"}],
+        "cards": [{"name": "Karte", "idLabels": [f"g{i}" for i in range(60)] + ["k"]}],
+    }
+    _, gekuerzt = import_service.parse_upload("trello.json", json.dumps(viele_labels).encode())
+    assert gekuerzt[0]["labels"] == ["G" * 50, "Kultur"]
+
+    # Archivierte Karten zählen nicht mit
+    mit_archiv = {
+        "cards": [{"name": "Offen"}] + [{"name": "Alt", "closed": True}] * (import_service.MAX_IMPORT_ROWS + 5)
+    }
+    assert len(import_service.parse_upload("trello.json", json.dumps(mit_archiv).encode())[1]) == 1
+
+    zu_viele = {"cards": [{"name": f"Karte {i}"} for i in range(import_service.MAX_IMPORT_ROWS + 1)]}
+    with pytest.raises(import_service.TaskImportError, match="Zu viele Zeilen"):
+        import_service.parse_upload("trello.json", json.dumps(zu_viele).encode())
+
+
 @pytest.mark.django_db
 def test_classify_and_apply_import_is_idempotent(org: Any, make_member: Any) -> None:
     # Neue Labels legt der Import nur mit dem Recht an, Labels zu verwalten
@@ -405,3 +468,41 @@ def test_import_updates_by_id_only_with_edit_permission(org: Any, member: Any, o
     own.refresh_from_db()
     assert own.title == "Eigene neu" and own.is_completed
     assert own.activities.filter(activity_type="completed").exists()
+
+
+@pytest.mark.django_db
+def test_import_mit_verwaltungsrecht_aendert_nur_sichtbare_aufgaben(org: Any, manager: Any, other: Any) -> None:
+    """``tasks.manage`` reicht für den Import wie in der Oberfläche nur für Aufgaben, die die Person sehen darf."""
+    privat = make_task(org, other, "Privat fremd", visibility="private")
+    offen = make_task(org, other, "Offen fremd", visibility="organization")
+    payload: dict[str, Any] = {
+        "tasks": [
+            {"id": str(privat.id), "title": "Übernommen", "visibility": "organization", "status": "todo"},
+            {"id": str(offen.id), "title": "Offen neu", "visibility": "organization", "status": "todo"},
+        ]
+    }
+    _, rows = import_service.parse_upload("import.json", json.dumps(payload).encode())
+
+    report = import_service.classify_rows(org, manager, rows)
+    assert [entry["task"] for entry in report.update] == [offen]
+    assert [entry["reason"] for entry in report.skip] == ["keine Berechtigung"]
+
+    # Zwischen Einteilen und Schreiben stellt die Erstellerin die zweite Aufgabe privat: Geprüft wird der Stand der
+    # Datenbank, nicht der des Berichts. Der Bericht nennt die Zeile danach als übersprungen.
+    Task.objects.filter(pk=offen.pk).update(visibility="private")
+    import_service.apply_import(org, manager, report)
+
+    privat.refresh_from_db()
+    offen.refresh_from_db()
+    assert privat.title == "Privat fremd" and privat.visibility == "private"
+    assert offen.title == "Offen fremd" and offen.visibility == "private"
+    assert report.update == [] and report.summary()["updated"] == 0
+    assert [entry["reason"] for entry in report.skip] == ["keine Berechtigung", "keine Berechtigung"]
+    assert any("übersprungen" in warnung for warnung in report.warnings)
+
+    # Mit Zugang schreibt der Import wie bisher
+    Task.objects.filter(pk=offen.pk).update(visibility="organization")
+    erneut = import_service.classify_rows(org, manager, rows)
+    import_service.apply_import(org, manager, erneut)
+    offen.refresh_from_db()
+    assert offen.title == "Offen neu" and erneut.summary()["updated"] == 1

@@ -319,7 +319,14 @@ class DocumentFolderUpdateView(WorkViewMixin, View):
         # Verschieben: "" = Wurzelebene, sonst Ziel-Ordner der Organisation
         if "parent" in request.POST:
             parent_id = request.POST.get("parent", "").strip()
-            folder.parent = _get_org_folder_or_404(self.organization, parent_id, self.membership) if parent_id else None
+            parent = _get_org_folder_or_404(self.organization, parent_id, self.membership) if parent_id else None
+            # Unter einen für Gäste freigegebenen Ordner nur, wer die Dokumente darunter freigeben darf
+            if (parent.id if parent else None) != folder.parent_id:
+                denied = folder.guest_move_denied(parent, self.membership)
+                if denied:
+                    messages.error(request, denied)
+                    return redirect(back_url)
+            folder.parent = parent
 
         try:
             folder.save_checked(mover=self.membership)
@@ -495,13 +502,12 @@ class MotionFolderMoveView(WorkViewMixin, View):
 
         motions = Motion.objects.filter(organization=self.organization, id__in=motion_ids).exclude(status="deleted")
 
-        guest_folder = folder is not None and folder.is_shared_with_guests()
         moved = 0
         for motion in motions:
             # „Nichtöffentliche Vorgänge“: weder heraus noch hinein (Motion.folder_move_denied, #873)
             if motion.folder_move_denied(folder):
                 continue
-            if motion.can_edit(self.membership) and (not guest_folder or motion.can_share(self.membership)):
+            if motion.can_edit(self.membership) and not motion.guest_folder_move_denied(folder, self.membership):
                 motion.folder = folder
                 motion.save(update_fields=["folder", "updated_at"])
                 moved += 1
