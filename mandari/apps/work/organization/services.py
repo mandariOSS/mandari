@@ -485,6 +485,22 @@ def send_guest_access_email(
     return success
 
 
+def _grantable_guest_level(motion: Any, inviter: Membership, wanted: str) -> str:
+    """
+    Freigabestufe, die ``inviter`` einem Gast an diesem Dokument geben darf.
+
+    Mit Freigaberecht (``Motion.can_share``) die gewünschte Stufe. Ohne Freigaberecht lädt eine Gasteinladung nur
+    zum Mitlesen organisationsweiter Dokumente ein: höchstens die eigene Stufe der einladenden Person, damit ein
+    Gast an einem fremden Dokument nie mehr darf als sie selbst.
+    """
+    if motion.can_share(inviter):
+        return wanted
+    order = [level for level, _label in GUEST_SHARE_LEVELS]
+    own = motion.access_level(inviter, status_lock=False)
+    cap = "edit" if own == "admin" else own if own in order else "view"
+    return min(wanted, cap, key=order.index)
+
+
 @transaction.atomic
 def invite_guest(
     organization: Organization,
@@ -541,12 +557,12 @@ def invite_guest(
     shared_docs = []
     if document_ids:
         for motion in selectors.shareable_documents(organization, inviter).filter(id__in=document_ids):
-            MotionShare.objects.get_or_create(
+            share, _created = MotionShare.objects.get_or_create(
                 motion=motion,
                 scope="user",
                 user=user,
                 defaults={
-                    "level": share_level,
+                    "level": _grantable_guest_level(motion, inviter, share_level),
                     "created_by": inviter_user,
                     "message": note,
                     "allow_download": allow_download,
@@ -554,7 +570,7 @@ def invite_guest(
             )
             shared_docs.append(motion)
             # In-App-Hinweis; die E-Mail bündelt alle Freigaben (keine Mail-Flut)
-            hub.notify_document_shared(motion, guest_membership, share_level, inviter, send_email=False)
+            hub.notify_document_shared(motion, guest_membership, share.level, inviter, send_email=False)
 
     shared_folders = []
     if folder_ids:
