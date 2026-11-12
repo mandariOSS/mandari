@@ -21,6 +21,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,12 +30,18 @@ from typing import Any, Final
 import httpx
 from django.conf import settings
 from mandari_dokumente import (
+    LAYER_NEEDS_OCR,
+    LAYER_OK,
     METHOD_NONE,
     ExtractionConfig,
+    ExtractionResult,
+    IsolationLimits,
     MistralConfig,
     OcrLimits,
     OcrMemoryLimitError,
+    TextLayer,
     extract_text,
+    extract_text_layer_isolated,
 )
 
 from apps.common.ki_anbieter import erlaubte_hosts
@@ -266,6 +273,57 @@ def _http_get(
     return response
 
 
+#: Höchstens so viele Prozesse lesen für diesen Anwendungsprozess zugleich eine Textebene (je bis zur Speichergrenze)
+_TEXT_LAYER_SLOTS = threading.BoundedSemaphore(2)
+
+
+def text_layer_limits() -> IsolationLimits:
+    """Speichergrenze des Prozesses, der die Textebene eines PDFs liest (``TEXT_LAYER_MEMORY_LIMIT_MB``)."""
+    return IsolationLimits(memory_limit_mb=int(getattr(settings, "TEXT_LAYER_MEMORY_LIMIT_MB", 512)))
+
+
+def extract_text_isolated(
+    path: Path, mime_type: str | None, file_name: str, config: ExtractionConfig
+) -> ExtractionResult:
+    """
+    Wie ``extract_text``, aber die Textebene eines PDFs liest ein eigener Prozess mit Speicher- und Zeitgrenze
+    (``extract_text_layer_isolated``), nie der aufrufende: pypdf ist reines Python, hält die entpackten Inhalte
+    aller gelesenen Seiten und hielte im Webprozess währenddessen alle anderen Anfragen an.
+
+    Reicht die Textebene nicht, geht die Datei mit der dort gelesenen Textebene an die Erkennung aus dem Bild;
+    endet der Prozess an einer Grenze, mit einer leeren (dieselbe Regel wie im Ingestor). Dateien, die keine PDFs
+    sind, erkennt die Bibliothek wie bisher ohne eigenen Prozess.
+    """
+    with _TEXT_LAYER_SLOTS:
+        stufe = extract_text_layer_isolated(path, mime_type or "", file_name, config, text_layer_limits())
+    if stufe.result is not None:
+        return stufe.result
+    layer = stufe.layer if stufe.layer is not None else TextLayer()
+    return extract_text(path, mime_type, file_name, config, layer=layer)
+
+
+def pdf_readable_within_limits(data: bytes, file_name: str = "") -> bool:
+    """
+    Lässt sich die Textebene dieses PDFs in einem eigenen Prozess innerhalb der Grenzen lesen?
+
+    Vorprüfung für Stellen, die ein PDF danach selbst mit pypdf lesen (Import mit Zeilen und Abständen): Endet der
+    Prozess an Speicher oder Zeit oder bricht er ab, liest der Aufrufer die Datei nicht im eigenen Prozess.
+    """
+    purge_now_and_then()
+    handle, name = tempfile.mkstemp(suffix=".bin", prefix=TEMP_FILE_PREFIX)
+    path = Path(name)
+    try:
+        with os.fdopen(handle, "wb") as target:
+            target.write(data)
+        with _TEXT_LAYER_SLOTS:
+            stufe = extract_text_layer_isolated(
+                path, "application/pdf", file_name, extraction_config(), text_layer_limits()
+            )
+    finally:
+        path.unlink(missing_ok=True)
+    return stufe.reason in (LAYER_OK, LAYER_NEEDS_OCR)
+
+
 def extract_text_from_file(
     data: bytes,
     mime_type: str | None = None,
@@ -293,7 +351,7 @@ def extract_text_from_file(
     try:
         with os.fdopen(handle, "wb") as target:
             target.write(data)
-        result = extract_text(
+        result = extract_text_isolated(
             path, mime_type, file_name, extraction_config(ocr_max_pages, allow_external=allow_external)
         )
     except OcrMemoryLimitError:

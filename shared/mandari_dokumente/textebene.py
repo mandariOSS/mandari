@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 MIN_PAGE_CHARS: Final = 20
 #: So tief sucht die Bildprüfung in verschachtelten Formularen (Form-XObjects)
 _MAX_FORM_DEPTH: Final = 3
+#: Höchstens so viele Einträge prüft die Bildsuche je Seite; darüber gilt: im Zweifel ja
+_MAX_IMAGE_CHECKS: Final = 5000
 #: Text liefern höchstens so viele Seiten; die Seitenzahl bleibt die der Datei
 MAX_TEXT_PAGES: Final = 3000
 #: Höchstens so viele Zeichen liest die Textebene insgesamt (rund 1500 dicht beschriebene Seiten). Hält auch die
@@ -191,25 +193,40 @@ def _resolve(objekt: Any) -> Any:
 def _has_image(page: Any) -> bool:
     """Trägt die Seite ein Bild (auch in einem Formular)? Im Zweifel ja: Dann liest die Erkennung die Seite."""
     try:
-        return _contains_image(page.get("/Resources"), 0)
+        return _contains_image(page.get("/Resources"), 0, set(), [_MAX_IMAGE_CHECKS])
     except MemoryError:
         raise
     except Exception:  # noqa: BLE001 - nicht lesbare Ressourcen: lieber einmal zu viel erkennen
         return True
 
 
-def _contains_image(resources: Any, depth: int) -> bool:
+def _contains_image(resources: Any, depth: int, geprueft: set[tuple[int, int]], budget: list[int]) -> bool:
+    """
+    Bildsuche in den Ressourcen einer Seite und ihrer Formulare.
+
+    ``geprueft`` merkt sich je Seite, welches Verzeichnis in welcher Tiefe schon ohne Fund durchsucht ist:
+    Verweisen viele Einträge auf dasselbe Formular, wüchse die Zahl der Besuche sonst mit jeder Ebene um diesen
+    Faktor. ``budget`` begrenzt die geprüften Einträge je Seite; ist es aufgebraucht, gilt wie bei nicht lesbaren
+    Ressourcen: im Zweifel ja.
+    """
     resources = _resolve(resources)
     if not resources or depth > _MAX_FORM_DEPTH:
         return False
+    schluessel = (id(resources), depth)
+    if schluessel in geprueft:
+        return False
+    geprueft.add(schluessel)
     xobjects = _resolve(resources.get("/XObject"))
     if not xobjects:
         return False
     for name in xobjects:
+        budget[0] -= 1
+        if budget[0] < 0:
+            return True
         objekt = _resolve(xobjects[name])
         art = objekt.get("/Subtype")
         if art == "/Image":
             return True
-        if art == "/Form" and _contains_image(objekt.get("/Resources"), depth + 1):
+        if art == "/Form" and _contains_image(objekt.get("/Resources"), depth + 1, geprueft, budget):
             return True
     return False
