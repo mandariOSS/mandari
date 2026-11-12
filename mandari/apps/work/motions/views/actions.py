@@ -303,10 +303,12 @@ class MotionMetaUpdateView(WorkViewMixin, View):
 
         elif action == "set_folder":
             folder_id = request.POST.get("folder", "").strip()
-            if folder_id:
-                motion.folder = _get_org_folder_or_404(self.organization, folder_id)
-            else:
-                motion.folder = None
+            target = _get_org_folder_or_404(self.organization, folder_id) if folder_id else None
+            # In einen für Gäste freigegebenen Ordner nur mit Freigaberecht (wie MotionFolderMoveView)
+            denied = motion.guest_folder_move_denied(target, self.membership)
+            if denied:
+                return JsonResponse({"error": denied}, status=403)
+            motion.folder = target
             motion.save(update_fields=["folder", "updated_at"])
 
         elif action == "set_due_date":

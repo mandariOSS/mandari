@@ -383,6 +383,35 @@ class DocumentFolder(models.Model):
         folder_ids = [self.id, *(ancestor.id for ancestor in self.get_ancestors())]
         return FolderGuestShare.objects.filter(folder_id__in=folder_ids).exists()
 
+    def guest_move_denied(self, new_parent: "DocumentFolder | None", membership) -> str:
+        """
+        Feste Meldung, wenn das Umhängen unter ``new_parent`` Dokumente dieses Ordners (samt Unterordnern) für
+        Gäste öffnen würde, die ``membership`` nicht freigeben darf, sonst ``""``.
+
+        Ordner-Freigaben gelten für alles darunter. Wer einen Ordner unter einen freigegebenen hängt, erweitert
+        also den Kreis der Lesenden seiner Dokumente; das darf nur, wer jedes betroffene Dokument freigeben
+        darf (``Motion.can_share``), wie beim Verschieben einzelner Dokumente. Geprüft werden nur Freigaben, die
+        neu hinzukommen, und nur Dokumente, für die sie gelten (``Motion._folder_share_applies``).
+        """
+        if new_parent is None:
+            return ""
+        new_ids = [new_parent.id, *(ancestor.id for ancestor in new_parent.get_ancestors())]
+        old_ids = [ancestor.id for ancestor in self.get_ancestors()]
+        creators = set(
+            FolderGuestShare.objects.filter(folder_id__in=new_ids)
+            .exclude(folder_id__in=old_ids)
+            .values_list("created_by_id", flat=True)
+        )
+        if not creators:
+            return ""
+        folder_ids = [self.id, *(folder.id for folder in self.get_descendants())]
+        motions = Motion.objects.filter(folder_id__in=folder_ids).exclude(visibility="private")
+        for motion in motions.select_related("author", "folder"):
+            opens = any(motion._folder_share_applies(created_by_id) for created_by_id in creators)
+            if opens and not motion.can_share(membership):
+                return GUEST_FOLDER_SUBTREE_DENIED
+        return ""
+
     def get_descendants(self) -> list["DocumentFolder"]:
         """Alle Unterordner (rekursiv)."""
         result = []
@@ -583,6 +612,15 @@ class FolderGuestShare(models.Model):
                 stack.extend(children.get(folder_id, []))
             scopes.append((subtree, created_by_id))
         return scopes
+
+
+#: Feste Meldungen zu Ordnern, die für Gäste freigegeben sind (Issue #582)
+GUEST_FOLDER_MOVE_DENIED = (
+    "Dieser Ordner ist für Gäste freigegeben. Dorthin verschiebt nur, wer das Dokument freigeben darf."
+)
+GUEST_FOLDER_SUBTREE_DENIED = (
+    "Der Zielordner ist für Gäste freigegeben, und dieser Ordner enthält Dokumente, die Sie nicht freigeben dürfen."
+)
 
 
 class StatusTransitionError(ValueError):
@@ -1255,6 +1293,19 @@ class Motion(EncryptionMixin, models.Model):
         if getattr(membership, "is_guest", False) or not self.can_access(membership):
             return False
         return self.author_id == membership.id or membership.has_permission("motions.share")
+
+    def guest_folder_move_denied(self, target, membership) -> str:
+        """
+        Feste Meldung, wenn ``membership`` das Dokument nicht nach ``target`` verschieben darf, weil der Ordner
+        für Gäste freigegeben ist, sonst ``""``.
+
+        In einem freigegebenen Ordner (auch über einen übergeordneten) lesen Gäste mit: Das Verschieben dorthin
+        ist eine Freigabe und braucht das Freigaberecht (``can_share``). Eine Regel für alle Wege, auf denen
+        ein Dokument seinen Ordner wechselt.
+        """
+        if target is None or not target.is_shared_with_guests() or self.can_share(membership):
+            return ""
+        return GUEST_FOLDER_MOVE_DENIED
 
     def _folder_share_applies(self, created_by_id) -> bool:
         """
