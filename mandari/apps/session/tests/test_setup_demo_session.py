@@ -9,7 +9,7 @@ Niederschriften – ohne die Geschichten der Basisdemo zu stören. Die Tests lau
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time
 from io import StringIO
 from pathlib import Path
 from typing import Any, cast
@@ -40,6 +40,9 @@ from apps.session.models import (
 from apps.tenants.models import Organization
 
 AUFBAUTAG = date(2026, 11, 11)
+#: „Jetzt“ der Prüfungen: Mittag des festen Aufbautags. Die echte Uhr läuft dem Aufbautag davon, kommende Sitzungen
+#: des Plans lägen dann in der Vergangenheit.
+STICHZEIT = timezone.make_aware(datetime.combine(AUFBAUTAG, time(12, 0)))
 BESTAND_SITZUNG = r"^[0-9]+\. Sitzung "
 
 
@@ -78,7 +81,7 @@ class TestSessionBestand:
             assert [s for s in stationen if s in erwartet] and set(stationen) == set(erwartet), vorgang.titel
 
     def test_vergangene_sitzungen_mit_anwesenheit_ergebnis_und_niederschrift(self, demo: Any) -> None:
-        vergangen = _bestand_sitzungen().filter(start__lt=timezone.now())
+        vergangen = _bestand_sitzungen().filter(start__lt=STICHZEIT)
         assert vergangen.exists()
         for sitzung in vergangen:
             assert sitzung.meeting_state == "completed"
@@ -98,7 +101,7 @@ class TestSessionBestand:
         assert SessionProtocol.objects.filter(meeting__in=vergangen, status="review").exists()
 
     def test_kommende_sitzungen_sind_offen(self, demo: Any) -> None:
-        kommend = _bestand_sitzungen().filter(start__gt=timezone.now())
+        kommend = _bestand_sitzungen().filter(start__gt=STICHZEIT)
         assert kommend.exists()
         assert set(kommend.values_list("meeting_state", flat=True)) <= {"scheduled", "invitation_sent"}
         assert not SessionAgendaItem.objects.filter(meeting__in=kommend).exclude(vote_result="pending").exists()
