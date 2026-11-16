@@ -281,6 +281,10 @@ def _read_limited(
                 return b"".join(parts)
             parts.append(chunk)
             size += len(chunk)
+        if decoder is not None and decoder.eof:
+            # Ende des gepackten Stroms: Was der Server danach noch sendet, wird nicht mehr gelesen. Es ergäbe keine
+            # Ausgabe mehr, zählte also nicht gegen die Grenze, sammelte sich aber im Entpacker.
+            break
         if deadline is not None and time.monotonic() > deadline:
             raise httpx.ReadTimeout("Antwort dauert insgesamt zu lange", request=response.request)
     return b"".join(parts)

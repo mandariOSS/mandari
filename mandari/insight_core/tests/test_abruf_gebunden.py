@@ -364,6 +364,34 @@ def test_daten_hinter_dem_ende_des_gepackten_stroms_beenden_das_lesen(
     assert redirects.read_limited(_in_teilen(gepackt, "gzip", 7), 10_000) == inhalt
 
 
+def _danach_fehler(gepackt: bytes, kodierung: str) -> httpx.Response:
+    """Antwort, deren Rumpf nach dem gepackten Inhalt nicht weiter gelesen werden darf."""
+
+    class Strom(httpx.SyncByteStream):
+        def __iter__(self) -> Any:
+            yield gepackt
+            raise AssertionError("nach dem Ende des gepackten Stroms wurde weitergelesen")
+
+    return httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, stream=Strom(), headers={"Content-Encoding": kodierung})
+        )
+    ).send(httpx.Request("GET", "https://ris.example.org/x"), stream=True)
+
+
+def test_nach_dem_ende_des_gepackten_stroms_wird_nichts_mehr_gelesen() -> None:
+    """Füllstücke hinter einem kleinen gepackten Inhalt ergäben keine Ausgabe und zählten nie gegen die Grenze."""
+    import zlib
+
+    inhalt = b"Tagesordnung"
+    packer = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    roh = packer.compress(inhalt) + packer.flush()
+
+    for gepackt, kodierung in ((gzip.compress(inhalt), "gzip"), (zlib.compress(inhalt), "deflate"), (roh, "deflate")):
+        assert redirects.read_limited(_danach_fehler(gepackt, kodierung), 1000) == inhalt
+        assert b"".join(redirects.iter_decoded(_danach_fehler(gepackt, kodierung))) == inhalt
+
+
 def test_robots_txt_wird_nur_bis_zur_grenze_gelesen(monkeypatch: pytest.MonkeyPatch, echte_robots: Any) -> None:
     gross = b"User-agent: *\nDisallow: /intern\n" + b"# Kommentar\n" * 500_000
     assert len(gross) > 4 * MAX_BYTES
