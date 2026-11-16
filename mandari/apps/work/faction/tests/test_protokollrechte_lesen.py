@@ -158,6 +158,24 @@ def test_wer_das_protokoll_fuehrt_liest_es(org: Any, make_member: Any, welt: dic
     assert len(sitzung.protokolleintraege(FactionAgendaItem.objects.get(pk=welt["offen"].pk), leitung)) == 1
 
 
+@pytest.mark.django_db
+def test_seitenleiste_zaehlt_nur_lesbare_eintraege(
+    org: Any, make_member: Any, vorsitz: Any, welt: dict[str, Any], client_for: Any
+) -> None:
+    """Die Zahl der Einträge in der Seitenleiste folgt denselben Rechten wie die Einträge selbst."""
+    ohne = _mitglied(org, make_member, "ohne", ["faction.view_public"])
+    mit = _mitglied(org, make_member, "mit", ["faction.view_public", "protocols.view_public"])
+    meeting = welt["meeting"]
+
+    def zahl(member: Any) -> int:
+        url = reverse("work:faction_detail", kwargs={"org_slug": org.slug, "meeting_id": meeting.pk})
+        antwort = client_for(member.user).get(url, {"ansicht": "bisher"})
+        assert antwort.status_code == 200
+        return cast(int, antwort.context["protocol_entry_count"])
+
+    assert (zahl(ohne), zahl(mit), zahl(vorsitz)) == (0, 1, 3)
+
+
 # ---- Vorige Sitzung am Genehmigungs-TOP ----------------------------------------------------------------------
 
 

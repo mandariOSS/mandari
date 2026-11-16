@@ -141,6 +141,10 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
 
         linked_papers = item.related_papers.all().order_by("-date")
 
+        # Abstimmung erfassen: auf dem Genehmigungs-TOP erst, wenn die Sitzung begonnen hat
+        darf_abstimmung_erfassen = meeting.abstimmungen_erlaubt and (can_edit or can_protocol)
+        erfassbar = abstimmung_erfassbar(item)
+
         context.update(
             {
                 "item": item,
@@ -150,10 +154,10 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
                 "can_edit": can_edit,
                 "is_protocol_phase": is_protocol_phase,
                 "can_protocol": can_protocol,
-                # Abstimmung erfassen: auf dem Genehmigungs-TOP erst, wenn die Sitzung begonnen hat
-                "can_record_decision": (
-                    meeting.abstimmungen_erlaubt and (can_edit or can_protocol) and abstimmung_erfassbar(item)
-                ),
+                "can_record_decision": darf_abstimmung_erfassen and erfassbar,
+                # Wer sonst erfassen dürfte, liest am Genehmigungs-TOP vor Sitzungsbeginn, ab wann es geht: Ohne den
+                # Satz fehlte der Knopf ohne Erklärung
+                "decision_hint": GENEHMIGUNG_NUR_IN_SITZUNG if darf_abstimmung_erfassen and not erfassbar else "",
                 "attendances": attendances,
                 # Einträge nach den Rechten am Protokoll (``protocols.view_*``), wie das PDF der Niederschrift
                 "protocol_entries": sitzung.protokolleintraege(item, self.membership),
@@ -362,8 +366,8 @@ class FactionItemPanelActionView(WorkViewMixin, View):
                 # Nichtöffentlicher TOP: zuständig nur, wer ihn sehen darf (aus dem Eintrag wird eine Aufgabe)
                 try:
                     entry.action_assignee = faction_services.zustaendige_person(self.organization, assignee_id, item)
-                except faction_services.ZustaendigNurVereidigteError as exc:
-                    return HttpResponse(str(exc), status=400)
+                except faction_services.ZustaendigNurVereidigteError:
+                    return HttpResponse(faction_services.ZUSTAENDIG_NUR_VEREIDIGTE, status=400)
             if due_date:
                 entry.action_due_date = due_date
 
@@ -601,8 +605,8 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         # Nichtöffentlicher TOP: zuständig nur, wer ihn sehen darf (die Aufgabe nennt Nummer und Titel des TOPs)
         try:
             assigned_to = faction_services.zustaendige_person(self.organization, assigned_to_id, item)
-        except faction_services.ZustaendigNurVereidigteError as exc:
-            return HttpResponse(str(exc), status=400)
+        except faction_services.ZustaendigNurVereidigteError:
+            return HttpResponse(faction_services.ZUSTAENDIG_NUR_VEREIDIGTE, status=400)
 
         task = Task.objects.create(
             organization=self.organization,

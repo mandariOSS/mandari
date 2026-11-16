@@ -183,6 +183,39 @@ def test_andere_tops_nehmen_vor_der_sitzung_weiter_abstimmungen_an(
     assert client.get(url).context["can_record_decision"] is True
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("neu", [False, True], ids=["bisher", "neu"])
+def test_panel_nennt_am_genehmigungs_top_vor_der_sitzung_den_grund(
+    org: Any, vorige: FactionMeeting, vorsitz: Any, make_member: Any, client_for: Any, neu: bool
+) -> None:
+    """Wer die Sitzung verwaltet, liest vor dem Beginn statt des Knopfs, ab wann sich die Abstimmung erfassen lässt."""
+    org.work_new_design = neu
+    org.save(update_fields=["work_new_design"])
+    folge, top = _folge(org, vorige, vorsitz, "planned")
+    haushalt = FactionAgendaItem.objects.create(meeting=folge, number="2", title="Haushalt", order=1)
+    lesend = make_member(org, ["faction.view_public", "protocols.view_public"], email="lesend@example.org")
+
+    def panel(member: Any, item: FactionAgendaItem) -> str:
+        url = reverse(
+            "work:faction_item_panel", kwargs={"org_slug": org.slug, "meeting_id": folge.pk, "item_id": item.pk}
+        )
+        antwort = client_for(member.user).get(url)
+        assert antwort.status_code == 200
+        return cast(str, antwort.content.decode())
+
+    html = panel(vorsitz, top)
+    assert GENEHMIGUNG_NUR_IN_SITZUNG in html and "Keine Abstimmung erfasst" not in html
+    # Andere TOPs und Mitglieder, die ohnehin nicht erfassen, sehen den Satz nicht
+    assert GENEHMIGUNG_NUR_IN_SITZUNG not in panel(vorsitz, haushalt)
+    html = panel(lesend, top)
+    assert GENEHMIGUNG_NUR_IN_SITZUNG not in html and "Keine Abstimmung erfasst" in html
+
+    # Mit dem Beginn der Sitzung steht dort wieder der Knopf zum Erfassen
+    FactionMeeting.objects.filter(pk=folge.pk).update(status="ongoing")
+    html = panel(vorsitz, top)
+    assert GENEHMIGUNG_NUR_IN_SITZUNG not in html and "Keine Abstimmung erfasst" not in html
+
+
 # ---- Genehmigung bleibt bestehen -----------------------------------------------------------------------------
 
 
