@@ -3,7 +3,7 @@
                             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
                             <input type="text" name="neighborhood_name"
                                    x-model="neighborhoodName"
-                                   @input.debounce.300ms="fetchSuggestions()"
+                                   @input.debounce.500ms="fetchSuggestions()"
                                    @keydown.escape="suggestions = []"
                                    placeholder="z.B. Wolbecker Stra&szlig;e..."
                                    class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">

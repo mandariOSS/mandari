@@ -20,6 +20,36 @@ from ._helpers import get_active_body
 # =============================================================================
 
 
+def _oeffentliche_tops(meeting, kandidaten) -> list:
+    """
+    TOPs aus ``kandidaten``, die zum öffentlichen Teil gehören: Weder der TOP selbst noch ein übergeordneter
+    ist nichtöffentlich.
+
+    Dieselbe Regel wie in Work (``apps.work.faction.visibility.is_item_internal``): Ein Unterpunkt erbt den
+    nichtöffentlichen Teil, auch wenn an seiner eigenen Zeile „öffentlich“ steht (etwa nachdem der übergeordnete
+    TOP verschoben wurde). Die Elternkette wird aus einer Abfrage über die Sitzung gelesen; ein Verweis, der sich
+    nicht auflösen lässt, zählt als nichtöffentlich.
+    """
+    zeilen = {
+        pk: (parent_id, visibility)
+        for pk, parent_id, visibility in meeting.agenda_items.values_list("id", "parent_id", "visibility")
+    }
+
+    def oeffentlich(pk) -> bool:
+        gesehen = set()
+        while pk is not None:
+            if pk in gesehen or pk not in zeilen:
+                return False
+            gesehen.add(pk)
+            parent_id, visibility = zeilen[pk]
+            if visibility != "public":
+                return False
+            pk = parent_id
+        return True
+
+    return [item for item in kandidaten if oeffentlich(item.pk)]
+
+
 class PublicProtocolListView(TemplateView):
     """
     Öffentliches Dashboard für genehmigte Fraktionsprotokolle.
@@ -105,7 +135,7 @@ class PublicProtocolDetailView(TemplateView):
     """
     Öffentliche Detailansicht eines genehmigten Fraktionsprotokolls.
 
-    Zeigt nur öffentliche TOPs (visibility='public').
+    Zeigt nur TOPs des öffentlichen Teils (``_oeffentliche_tops``).
     Keine Authentifizierung erforderlich.
     """
 
@@ -133,15 +163,16 @@ class PublicProtocolDetailView(TemplateView):
         context["organization"] = meeting.organization
         context["body"] = meeting.organization.get_primary_body() if meeting.organization else None
 
-        # Only show public agenda items
+        # Only show public agenda items; Unterpunkte erben den nichtöffentlichen Teil vom übergeordneten TOP
         # Abstimmungsergebnis aus FactionDecision (recorded_decision), nicht aus der Kopie am TOP
-        agenda_items = (
+        agenda_items = _oeffentliche_tops(
+            meeting,
             meeting.agenda_items.filter(
                 visibility="public",
                 proposal_status="active",  # Only accepted items
             )
             .select_related("decision")
-            .order_by("order", "number")
+            .order_by("order", "number"),
         )
 
         context["agenda_items"] = agenda_items
@@ -149,7 +180,7 @@ class PublicProtocolDetailView(TemplateView):
         # Get public protocol entries — AUSSCHLIESSLICH Einträge, die einem
         # öffentlichen TOP zugeordnet sind. TOP-lose Einträge (agenda_item=None)
         # können interne Notizen sein und werden nie öffentlich ausgegeben.
-        public_item_ids = agenda_items.values_list("id", flat=True)
+        public_item_ids = [item.pk for item in agenda_items]
         protocol_entries = (
             meeting.protocol_entries.filter(agenda_item_id__in=public_item_ids)
             .select_related("agenda_item", "speaker__user")

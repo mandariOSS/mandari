@@ -25,7 +25,7 @@ aufheben, löschen) sind Knöpfe mit 32 px und stehen ab sm rechts, am Handy unt
         {% if item.consultation_chain %}
         <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words" title="Beratungsfolge der Vorlage (Issue #34)">
             Beratungsfolge:
-            {% for station in item.consultation_chain %}<span class="{% if station.agenda_item_id == item.id %}font-semibold text-gray-800 dark:text-gray-200{% endif %}">{{ station.organization.short_name|default:station.organization.name }} ({{ station.get_role_display }}{% if station.result != "pending" %}: {{ station.get_result_display }}{% endif %})</span>{% if not forloop.last %} › {% endif %}{% endfor %}
+            {% for station in item.consultation_chain %}<span class="{% if station.agenda_item_id == item.id %}font-semibold text-gray-800 dark:text-gray-200{% endif %}">{% if station.noe_hidden %}nichtöffentliche Beratung{% else %}{{ station.organization.short_name|default:station.organization.name }} ({{ station.get_role_display }}{% if station.result != "pending" %}: {{ station.get_result_display }}{% endif %}){% endif %}</span>{% if not forloop.last %} › {% endif %}{% endfor %}
         </p>
         {% endif %}
     </div>

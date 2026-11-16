@@ -36,6 +36,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models.functions import Substr
 from django.utils import timezone
 
@@ -65,6 +66,9 @@ logger = logging.getLogger(__name__)
 
 #: Höchstens so viele Anlagen je Anfrage werden mit Vorrang zur Texterkennung eingeplant (Last der Warteschlange ocr)
 MAX_PRIORITY_EXTRACTIONS: Final = 3
+#: Höchstens so viele Aufträge mit Vorrang warten zugleich in der Warteschlange ocr, über alle Anfragen zusammen:
+#: so viele, wie eine Anfrage einplanen darf
+MAX_PRIORITY_WAITING: Final = MAX_PRIORITY_EXTRACTIONS
 #: Priorität dieser Aufträge: vor denen aus Zeitplan und Ereignissen (Standard 0), damit der Text bald vorliegt
 EXTRACTION_PRIORITY: Final = 80
 #: Stände der Texterkennung, in denen der Text noch kommen kann
@@ -284,23 +288,33 @@ class SummaryService:
             # Save to paper if requested – nicht, wenn inzwischen neuer Text vorliegt: Das Abonnement hätte die
             # Zusammenfassung verworfen, sie stammt aus dem älteren Text
             if save:
-                if self._text_changed_since(paper, started_at):
-                    logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
-                else:
-                    paper.summary = summary
-                    paper.summary_einfach = einfach or None
-                    paper.summary_stand = vorbereitung.stand
-                    paper.summary_prompt_fassung = PROMPT_FASSUNG
-                    paper.save(
-                        update_fields=[
-                            "summary",
-                            "summary_hinweis",
-                            "summary_einfach",
-                            "summary_stand",
-                            "summary_prompt_fassung",
-                        ]
-                    )
-                    logger.info(f"Summary saved to paper {paper.id}")
+                from insight_core.services import summary_store
+
+                # Prüfen und Speichern unter der Sperre des Vorgangs. Zwischen der Prüfung oben und dem Speichern
+                # liegen weitere Schritte; eine Rücknahme in dieser Zeit fände noch keine Zusammenfassung vor, die
+                # sie verwerfen könnte, und das Speichern legte danach eine ab, die Inhalte der zurückgenommenen
+                # Anlage enthalten kann. Die Rücknahme schreibt dieselbe Zeile (``_forget_summaries``): Entweder
+                # ist sie abgeschlossen und die Prüfung hier sieht sie, oder sie wartet und verwirft danach.
+                with transaction.atomic():
+                    if not summary_store.sperren(paper.pk) or self._withdrawn_since(paper, started):
+                        raise SummaryRevokedError("Vorgang oder Anlage wurde während der Erstellung zurückgenommen.")
+                    if self._text_changed_since(paper, started_at):
+                        logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
+                    else:
+                        paper.summary = summary
+                        paper.summary_einfach = einfach or None
+                        paper.summary_stand = vorbereitung.stand
+                        paper.summary_prompt_fassung = PROMPT_FASSUNG
+                        paper.save(
+                            update_fields=[
+                                "summary",
+                                "summary_hinweis",
+                                "summary_einfach",
+                                "summary_stand",
+                                "summary_prompt_fassung",
+                            ]
+                        )
+                        logger.info(f"Summary saved to paper {paper.id}")
 
             return summary
 
@@ -586,31 +600,24 @@ def priority_extraction_enabled() -> bool:
 
 def plan_priority_extraction(file_ids: list[Any]) -> int:
     """
-    Reiht ``file.extract_text`` je Datei mit Vorrang ein (``EXTRACTION_PRIORITY``); Rückgabe: Zahl der Aufträge.
+    Reiht die Texterkennung je Datei mit Vorrang ein (``EXTRACTION_PRIORITY``); Rückgabe: Zahl der Aufträge.
 
     Nur aufrufen, wenn ``priority_extraction_enabled()``. Wartet für eine Datei schon ein Auftrag mit Vorrang (ein
     früherer Klick), entsteht kein zweiter. Einen gewöhnlichen wartenden Auftrag überholt der neue; welcher zuerst
     beansprucht, erkennt, der andere endet ohne Wirkung.
+
+    In welche Stufe eine Datei kommt und wie viele Aufträge mit Vorrang zugleich warten dürfen, entscheidet die
+    Dokumentkette (``hub.ris.erkennung.mit_vorrang_einplanen``): Die Zusammenfassung lässt sich ohne Anmeldung
+    auslösen und darf die Verteilung der Texterkennung über die Quellen nicht aussetzen. Eingereiht wird über das
+    Auftragsmodul; ``insight_ai`` selbst lädt keine Dateien und erkennt keinen Text.
     """
-    from apps.events.models import Task, TaskStatus
-    from insight_core.background_tasks import file_extract_text
+    from insight_core import background_tasks
 
     if not file_ids:
         return 0
-    schon_vorrang: set[str] = set()
-    for args in Task.objects.filter(
-        task_path=file_extract_text.module_path, status=TaskStatus.WARTEND, priority__gte=EXTRACTION_PRIORITY
-    ).values_list("args", flat=True):
-        werte = args.get("args") if isinstance(args, dict) else None
-        if werte:
-            schon_vorrang.add(str(werte[0]))
-    vorrang = file_extract_text.using(priority=EXTRACTION_PRIORITY)
-    eingereiht = 0
-    for file_id in file_ids:
-        if str(file_id) in schon_vorrang:
-            continue
-        vorrang.enqueue(str(file_id))
-        eingereiht += 1
+    eingereiht = background_tasks.texterkennung_mit_vorrang(
+        file_ids, priority=EXTRACTION_PRIORITY, max_wartend=MAX_PRIORITY_WAITING
+    )
     if eingereiht:
         logger.info("Texterkennung: %d Anlagen für eine Zusammenfassung mit Vorrang eingereiht", eingereiht)
     return eingereiht

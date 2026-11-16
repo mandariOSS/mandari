@@ -325,6 +325,14 @@ def accounts_password_reset(org: Any, make_member: Any) -> dict[str, Any]:
     return {"protocol": "https", "domain": "mandari.example", "uid": "MTIz", "token": "cabc12-0123456789abcdef"}
 
 
+def accounts_registration_existing_account(org: Any, make_member: Any) -> dict[str, Any]:
+    return {
+        "organization": org,
+        "login_url": f"{SITE_URL}/accounts/login/?next=/accounts/register/{org.slug}/",
+        "reset_url": f"{SITE_URL}/accounts/password-reset/",
+    }
+
+
 def accounts_security_notification(org: Any, make_member: Any) -> dict[str, Any]:
     notification = _ns(
         title="Passwort geändert",
@@ -720,6 +728,11 @@ CASES = [
     MailCase("questions_answer_reminder", "emails/questions/answer_reminder.html", questions_answer_reminder),
     MailCase("questions_moderation", "emails/questions/moderation.html", questions_moderation),
     MailCase("accounts_password_reset", "accounts/emails/password_reset.html", accounts_password_reset),
+    MailCase(
+        "accounts_registration_existing_account",
+        "accounts/emails/registration_existing_account.html",
+        accounts_registration_existing_account,
+    ),
     MailCase(
         "accounts_security_notification",
         "accounts/emails/security_notification.html",

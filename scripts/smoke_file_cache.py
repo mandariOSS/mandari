@@ -417,11 +417,19 @@ finally:
 # =============================================================================
 print()
 print("=== Phase 3: Monitor + Admin ===")
-checks = source_health.collect_system_health()
+# Die Zahlen ermittelt der stündliche Prüflauf (dokument_cache_neu), Seitenaufrufe lesen seinen Stand (Issue #1409)
+checks = source_health.collect_system_health(dokument_cache_neu=True)
 cache_check = next((c for c in checks if c["name"] == "Dokument-Cache"), None)
 check(
     "Betriebsmonitor hat Dokument-Cache-Check",
     cache_check is not None and "Dokumenten lokal" in cache_check["detail"],
+    str(cache_check),
+)
+checks = source_health.collect_system_health()
+cache_check = next((c for c in checks if c["name"] == "Dokument-Cache"), None)
+check(
+    "Seitenaufruf zeigt den Stand des Prüflaufs",
+    cache_check is not None and "Dokumenten lokal" in cache_check["detail"] and "(Stand " in cache_check["detail"],
     str(cache_check),
 )
 actions = source_health.collect_action_items()

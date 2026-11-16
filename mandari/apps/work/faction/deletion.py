@@ -49,6 +49,9 @@ NOT_CONFIRMED_MEETING = "Bitte zur Bestätigung das Datum oder den Titel der Sit
 NOT_CONFIRMED_SCHEDULE = "Bitte zur Bestätigung den Namen der Sitzungsreihe eingeben."
 NOT_CONFIRMED_ITEM = "Bitte zur Bestätigung die Nummer oder den Titel des TOPs eingeben."
 PROTOCOL_APPROVED_ITEM = "Das Protokoll dieser Sitzung ist genehmigt. Der TOP lässt sich nicht mehr löschen."
+HIDDEN_SUBITEMS = (
+    "Dieser TOP hat nichtöffentliche Unterpunkte. Löschen kann ihn nur, wer den nichtöffentlichen Teil sieht."
+)
 BLOCKED = "Löschen nicht möglich: Andere Daten verweisen noch auf diesen Eintrag."
 
 #: Was mit verschwindet: Bezeichnung je Modell (``app_label.modelname``); andere Modelle mit ihrem Pluralnamen
@@ -347,9 +350,34 @@ def deletable_item(meeting: FactionMeeting, item_id: Any) -> FactionAgendaItem |
         return None
 
 
+def has_hidden_subitems(item: FactionAgendaItem, membership: Membership | None) -> bool:
+    """
+    Verschwänden mit dem TOP Unterpunkte (jede Ebene), die das Mitglied nicht sehen darf?
+
+    Ein öffentlicher TOP kann nichtöffentliche Unterpunkte haben. Die Kaskade löschte sie samt Notizen,
+    Protokolleinträgen, Beschluss und Anlagen mit, obwohl dieselbe Person sie einzeln nicht löschen darf
+    (Nichtöffentliches nur für Vereidigte, Issue #64).
+    """
+    from .visibility import can_view_internal, is_item_internal
+
+    if can_view_internal(membership):
+        return False
+    pending = [item]
+    while pending:
+        for child in pending.pop().children.all():
+            if is_item_internal(child):
+                return True
+            pending.append(child)
+    return False
+
+
 @transaction.atomic
-def delete_agenda_item(item: FactionAgendaItem, confirmation: Any) -> DeletionImpact:
-    """TOP löschen; verschwinden Inhalte mit, nur mit passender Eingabe (Nummer oder Titel)."""
+def delete_agenda_item(item: FactionAgendaItem, confirmation: Any, membership: Membership) -> DeletionImpact:
+    """
+    TOP löschen; verschwinden Inhalte mit, nur mit passender Eingabe (Nummer oder Titel). Nicht, wenn dabei
+    Unterpunkte verschwänden, die das Mitglied nicht sehen darf (``DeletionNotAllowedError``); ``membership`` ist
+    deshalb Pflicht.
+    """
     from .agenda import lock_meeting
     from .models import FactionMeeting
 
@@ -359,6 +387,8 @@ def delete_agenda_item(item: FactionAgendaItem, confirmation: Any) -> DeletionIm
         lock_meeting(item.meeting)
         if FactionMeeting.objects.filter(pk=item.meeting_id, protocol_approved=True).exists():
             raise DeletionBlockedError(PROTOCOL_APPROVED_ITEM)
+        if has_hidden_subitems(item, membership):
+            raise DeletionNotAllowedError(HIDDEN_SUBITEMS)
         impact = impact_of(item)
         if impact.has_content and not confirmed(confirmation, item_phrases(item)):
             raise DeletionNotConfirmedError(NOT_CONFIRMED_ITEM)

@@ -6,7 +6,8 @@ Eine Vorlage durchläuft mehrere Gremien (Vorberatung im Fachausschuss ->
 Entscheidung im Rat). Die Views verwalten die Kette der Beratungsstationen
 (SessionConsultation) aus der Vorlagen-Detailansicht heraus:
 
-- Station anlegen/bearbeiten/löschen/umsortieren (Berechtigung: edit_papers)
+- Station anlegen/bearbeiten/löschen/umsortieren (Berechtigung: edit_papers);
+  ein Ergebnis von Hand (Station ohne TOP) nur an einer freigegebenen Vorlage
 - Station terminieren = TOP auf der Zielsitzung anlegen (edit_meetings),
   mit Ö/NÖ- und Nachtrags-Logik der Tagesordnungsverwaltung (Issue #26);
   nur für freigegebene Vorlagen (Issue #721) – Stationen planen lässt sich schon im Entwurf
@@ -34,10 +35,13 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import agenda_service, protocol_lock
-from ..visibility import agenda_item_q, meeting_q, meeting_visible, optional, paper_q
+from ..visibility import agenda_item_q, meeting_q, meeting_visible, optional, paper_q, paper_visible
 
 ROLE_VALUES = {value for value, _ in SessionConsultation.ROLE_CHOICES}
 RESULT_VALUES = {value for value, _ in SessionConsultation.RESULT_CHOICES}
+
+#: Die Station wurde zwischen Laden und Speichern terminiert, von ihrem TOP gelöst oder entfernt
+STATION_CHANGED = "Die Beratungsstation hat sich inzwischen geändert. Bitte laden Sie die Seite neu."
 
 
 class ConsultationBaseView(SessionViewMixin, View):
@@ -176,11 +180,45 @@ class ConsultationUpdateView(ConsultationBaseView):
         # Manuelles Ergebnis nur für Stationen ohne TOP (sonst schreibt der
         # TOP das Ergebnis über das Signal zurück und bleibt führend).
         result = request.POST.get("result", "")
-        if result and result in RESULT_VALUES and not consultation.agenda_item_id:
-            consultation.result = result
+        loaded_item_id = consultation.agenda_item_id
 
         # Drehscheibe (Issue #534): Rolle, Zielsitzung, Entscheidungsbefugnis, Ergebnis
-        with hub_events.track(self.session_tenant) as tracked:
+        with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+            if not loaded_item_id:
+                # Station ohne TOP: erst die Vorlage sperren und frisch lesen, dann die Station – dieselbe
+                # Reihenfolge wie beim Terminieren (``schedule_consultation``), sonst warten zwei Anfragen an
+                # derselben Station aufeinander. Eine Station mit TOP braucht die Vorlage hier nicht: Ihr Ergebnis
+                # schreibt der TOP, und dessen Weg sperrt erst die Station, dann die Vorlage.
+                paper.refresh_from_db(
+                    from_queryset=SessionPaper.objects.select_for_update(of=("self",)).select_related("tenant")
+                )
+            # Ergebnis und TOP-Verweis am gespeicherten Stand der Station: Hat eine zweite Anfrage das Ergebnis
+            # inzwischen zurückgenommen, zählt das, nicht der beim Laden gelesene Stand
+            stored = (
+                SessionConsultation.objects.select_for_update(of=("self",))
+                .filter(pk=consultation.pk)
+                .values("result", "agenda_item_id")
+                .first()
+            )
+            if stored is None or stored["agenda_item_id"] != loaded_item_id:
+                # Zielsitzung und Ergebnis oben galten dem geladenen Stand. Mit einem inzwischen angelegten TOP
+                # zeigte die Station sonst auf eine andere Sitzung als ihr TOP; eine entfernte entstünde neu.
+                messages.error(request, STATION_CHANGED)
+                return self.redirect_to_paper(paper)
+            consultation.result = stored["result"]
+            new_result = result in RESULT_VALUES and not loaded_item_id and result != consultation.result
+            if new_result and result != "pending":
+                # Ein Ergebnis setzt eine freigegebene Vorlage voraus: „Angenommen“ an der entscheidenden Station
+                # kennzeichnet die beschlossene Fassung, unveränderlich und nur einmal je Vorlage. Geprüft wird
+                # der oben unter Sperre gelesene Stand – die Vorlage kann seit dem Laden zurückgewiesen worden
+                # sein. Stationen planen (Rolle, Zielsitzung) bleibt im Entwurf möglich: Das Formular sendet das
+                # unveränderte Ergebnis mit, und „Ausstehend“ nimmt ein Ergebnis nur zurück.
+                blocker = agenda_service.manual_result_error(paper)
+                if blocker:
+                    messages.error(request, blocker)
+                    return self.redirect_to_paper(paper)
+            if new_result:
+                consultation.result = result
             tracked.paper(paper)
             consultation.save()
         messages.success(request, f"Beratungsstation {consultation.order} wurde aktualisiert.")
@@ -281,6 +319,19 @@ def schedule_consultation(view, request, consultation):
     # Drehscheibe (Issues #533, #534): neuer TOP auf der Zielsitzung, die neue Nummerierung, die terminierte
     # Station und der Stand der Vorlage
     with transaction.atomic(), hub_events.track(view.session_tenant) as tracked:
+        # Vorlage sperren und frisch lesen: Status und Ö/NÖ können sich seit dem Laden geändert haben. Der TOP
+        # übernimmt die gespeicherte Sichtbarkeit, eine inzwischen zurückgezogene oder für diese Person nicht mehr
+        # sichtbare Vorlage wird nicht terminiert, und gespeichert wird nur der Status – nie der früher gelesene
+        # Stand der übrigen Felder (eine Ö→NÖ-Entscheidung bliebe sonst nicht bestehen).
+        paper.refresh_from_db(
+            from_queryset=SessionPaper.objects.select_for_update(of=("self",)).select_related("tenant")
+        )
+        blocker = agenda_service.scheduling_error(paper)
+        if not blocker and not paper_visible(view.session_permissions, paper):
+            blocker = "Die Vorlage hat sich inzwischen geändert. Bitte laden Sie die Seite neu."
+        if blocker:
+            messages.error(request, blocker)
+            return False
         tracked.paper(paper)
         tracked.agenda(meeting)
         item = SessionAgendaItem.objects.create(
@@ -301,7 +352,7 @@ def schedule_consultation(view, request, consultation):
         # Vorlage gilt mit der ersten Terminierung als „Terminiert“
         if paper.status == "approved":
             paper.status = "scheduled"
-            paper.save()
+            paper.save(update_fields=["status", "updated_at"])
 
     item.refresh_from_db(fields=["number"])
     messages.success(

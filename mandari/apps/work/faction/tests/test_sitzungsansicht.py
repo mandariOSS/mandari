@@ -28,6 +28,7 @@ from apps.work.faction.models import (
     FactionMeeting,
     FactionProtocolEntry,
 )
+from apps.work.faction.regeln import GENEHMIGUNG_NUR_IN_SITZUNG, GenehmigungNurInSitzungError
 from apps.work.tasks.models import Task
 
 pytestmark = pytest.mark.django_db
@@ -335,6 +336,25 @@ def test_beschluss_nur_mit_protokollrecht(
         aktion_url(org, sitzung_laeuft), {"action": "beschluss", "item_id": tops["oe"].pk, "votes_yes": "1"}
     )
     assert antwort.status_code == 403
+    assert not FactionDecision.objects.filter(agenda_item=tops["oe"]).exists()
+
+
+def test_beschluss_am_genehmigungs_top_ausserhalb_der_sitzung_meldet_den_grund(
+    org: Any, vorsitz: Any, sitzung_laeuft: Any, tops: Any, client_for: Any, monkeypatch: Any
+) -> None:
+    # Die Ansicht lässt Abstimmungen nur in einer begonnenen Sitzung zu. Endet sie zwischen dieser Prüfung und dem
+    # Schreiben, lehnt der Dienst ab: Die Antwort ist dann die feste Meldung, kein Serverfehler
+    schalter_an(org)
+
+    def abgelehnt(*args: Any, **kwargs: Any) -> None:
+        raise GenehmigungNurInSitzungError()
+
+    monkeypatch.setattr("apps.work.faction.services.record_decision", abgelehnt)
+    antwort = client_for(vorsitz.user).post(
+        aktion_url(org, sitzung_laeuft), {"action": "beschluss", "item_id": tops["oe"].pk, "votes_yes": "1"}
+    )
+    assert antwort.status_code == 400
+    assert GENEHMIGUNG_NUR_IN_SITZUNG in antwort.content.decode()
     assert not FactionDecision.objects.filter(agenda_item=tops["oe"]).exists()
 
 
@@ -998,3 +1018,23 @@ def test_videolink_im_kopf_nur_bei_online_sitzung(
     sitzung_laeuft.save(update_fields=["is_virtual"])
     html = client.get(seite(org, sitzung_laeuft)).content.decode()
     assert "per Video" in html and "Videoraum öffnen" in html
+
+
+def test_notizen_nur_fuer_die_mitgliedschaft_der_seite(
+    org: Any, vorsitz: Any, mitglied: Any, sitzung_laeuft: Any, tops: Any, client_for: Any
+) -> None:
+    """Ein offenes Fenster speichert nicht unter einem Konto, das sich inzwischen im selben Browser angemeldet hat."""
+    schalter_an(org)
+    item = tops["oe"]
+    daten = {"action": "notizen", "item_id": item.pk, "html": "<p>Notiz</p>", "stand": sitzung.fingerabdruck("")}
+    client = client_for(vorsitz.user)
+
+    fremd = client.post(aktion_url(org, sitzung_laeuft), {**daten, "mitglied": str(mitglied.pk)})
+    assert fremd.status_code == 403 and fremd.json()["anderes_konto"] is True
+    item.refresh_from_db()
+    assert sitzung.notizen(item) == ""
+
+    eigen = client.post(aktion_url(org, sitzung_laeuft), {**daten, "mitglied": str(vorsitz.pk)})
+    assert eigen.status_code == 200
+    item.refresh_from_db()
+    assert "Notiz" in sitzung.notizen(item)

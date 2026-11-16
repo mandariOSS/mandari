@@ -186,3 +186,98 @@ def test_zustellweg_portal_nur_mit_portalzugang(portal: Portal) -> None:
     recipient = _versenden(portal)
     assert recipient.channel == "email", "ohne Portalzugang Rückfall auf E-Mail"
     assert len(mail.outbox[0].attachments) == 2
+
+
+# --- Tagesordnung im Portal: Fassung nach dem heutigen Empfängerkreis --------------------------------------------
+
+NOE_TOP = "Grundstücksverkauf Musterweg"
+
+
+def _abruf(portal: Portal, recipient: SessionInvitationRecipient, monkeypatch: pytest.MonkeyPatch) -> tuple[bool, str]:
+    """Tagesordnung im Portal abrufen: gewählte Fassung (mit NÖ-Teil?) und das HTML, aus dem das PDF entsteht."""
+    fassungen: list[bool] = []
+    seiten: list[str] = []
+    original = invitation_service.build_agenda_pdf
+
+    def _fassung(meeting: SessionMeeting, **kwargs: Any) -> bytes:
+        fassungen.append(kwargs["include_non_public"])
+        return original(meeting, **kwargs)
+
+    def _seite(html: str, *args: Any, **kwargs: Any) -> bytes:
+        seiten.append(html)
+        return b"%PDF-1.4"
+
+    monkeypatch.setattr(invitation_service, "build_agenda_pdf", _fassung)
+    monkeypatch.setattr(invitation_service, "html_to_pdf", _seite)
+    response = portal.client.get(_url(portal, f"{recipient.id}/tagesordnung.pdf"))
+    assert response.status_code == 200 and response["Content-Type"] == "application/pdf"
+    return fassungen[-1], seiten[-1]
+
+
+def _geladen_mit_noe_top(portal: Portal) -> SessionInvitationRecipient:
+    recipient = _versenden(portal)
+    assert recipient.includes_non_public, "Mitglieder erhalten die vollständige Ladung"
+    # Nach dem Versand ergänzt: Der Abruf im Portal zeigt den heutigen Stand der Tagesordnung
+    SessionAgendaItem.objects.create(meeting=portal.meeting, number="N1", order=5, name=NOE_TOP, is_public=False)
+    return recipient
+
+
+def _mitgliedschaft(portal: Portal) -> SessionOrganizationMembership:
+    return SessionOrganizationMembership.objects.get(organization=portal.meeting.organization, person=portal.person)
+
+
+def test_tagesordnung_mit_noe_teil_fuer_mitglied_und_stellvertretung(
+    portal: Portal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recipient = _geladen_mit_noe_top(portal)
+
+    vollstaendig, html = _abruf(portal, recipient, monkeypatch)
+    assert vollstaendig and NOE_TOP in html
+
+    # Stellvertretung eines anderen Mitglieds: weiter ein Sitz mit vollständiger Tagesordnung
+    anderes = SessionPerson.objects.create(tenant=portal.tenant, given_name="Vera", family_name="Vertreten")
+    SessionOrganizationMembership.objects.create(organization=portal.meeting.organization, person=anderes)
+    SessionOrganizationMembership.objects.filter(pk=_mitgliedschaft(portal).pk).update(
+        role="deputy_chair", substitute_for=anderes
+    )
+    vollstaendig, html = _abruf(portal, recipient, monkeypatch)
+    assert vollstaendig and NOE_TOP in html
+
+
+def test_tagesordnung_ohne_noe_teil_nach_ausscheiden_vor_dem_sitzungstag(
+    portal: Portal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recipient = _geladen_mit_noe_top(portal)
+    sitzungstag = timezone.localtime(portal.meeting.start).date()
+    SessionOrganizationMembership.objects.filter(pk=_mitgliedschaft(portal).pk).update(
+        end_date=sitzungstag - timedelta(days=1)
+    )
+
+    vollstaendig, html = _abruf(portal, recipient, monkeypatch)
+
+    assert not vollstaendig, "Wer zum Sitzungstag nicht mehr dem Gremium angehört, erhält die öffentliche Fassung"
+    assert NOE_TOP not in html
+
+
+def test_tagesordnung_ohne_noe_teil_nach_wechsel_zu_gast(portal: Portal, monkeypatch: pytest.MonkeyPatch) -> None:
+    recipient = _geladen_mit_noe_top(portal)
+    SessionOrganizationMembership.objects.filter(pk=_mitgliedschaft(portal).pk).update(role="guest")
+
+    vollstaendig, html = _abruf(portal, recipient, monkeypatch)
+
+    assert not vollstaendig and NOE_TOP not in html
+
+
+def test_tagesordnung_bleibt_vollstaendig_bei_ende_nach_dem_sitzungstag(
+    portal: Portal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Endet die Mitgliedschaft erst nach dem Sitzungstag, gehört die Person zum Empfängerkreis dieser Sitzung."""
+    recipient = _geladen_mit_noe_top(portal)
+    sitzungstag = timezone.localtime(portal.meeting.start).date()
+    SessionOrganizationMembership.objects.filter(pk=_mitgliedschaft(portal).pk).update(
+        end_date=sitzungstag + timedelta(days=1)
+    )
+
+    vollstaendig, html = _abruf(portal, recipient, monkeypatch)
+
+    assert vollstaendig and NOE_TOP in html

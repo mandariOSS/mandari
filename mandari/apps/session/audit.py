@@ -49,6 +49,24 @@ _MAX_VALUE_LENGTH = audit_core.MAX_VALUE_LENGTH
 # Platzhalter für verschlüsselte/binäre Felder
 _MASKED = audit_core.MASKED
 
+#: Platzhalter für Inhaltsfelder: Das Protokoll hält fest, dass sie sich geändert haben, nie ihren Wert
+CHANGED = "[geändert]"
+
+#: Inhaltsfelder je Modell (Datensparsamkeit, docs/PROTOKOLLIERUNG.md: „nie Inhalte“). Texte von Vorlagen,
+#: Tagesordnungspunkten, Niederschriften, Anträgen und Anlagen stehen nicht im Änderungsprotokoll, auch nicht
+#: gekürzt: Wer das Protokoll prüft, braucht keinen Zugriff auf Sitzungs- oder Vorlageninhalte, und der Diff
+#: unterscheidet nicht zwischen öffentlich und nichtöffentlich. Dazu Kontaktangaben und Vermerke, die der
+#: Löschlauf nach Fristablauf entfernt: Ein früherer Diff hielte sie sonst über die Löschung hinaus fest.
+CONTENT_FIELDS: dict[str, frozenset[str]] = {
+    "SessionPaper": frozenset({"main_text", "resolution_text", "financial_impact_note"}),
+    "SessionAgendaItem": frozenset({"resolution_text", "protocol_note"}),
+    "SessionProtocol": frozenset({"content"}),
+    "SessionApplication": frozenset({"justification", "resolution_proposal", "financial_impact"}),
+    "SessionFile": frozenset({"text_content"}),
+    "SessionPerson": frozenset({"email", "contact_consent_evidence"}),
+    "SessionAttendanceDisruption": frozenset({"note"}),
+}
+
 _serialize_value = audit_core.serialize_value
 
 # Kaskadenlösch-Schutz-Scope für Session-Mandanten (Issue #56)
@@ -584,6 +602,10 @@ def changed_event(old_instance: Any, instance: Any, *, tenant: Any = None) -> An
     changes = build_changes(old_instance, instance)
     if not changes:
         return None
+    # Inhaltsfelder: nur die Tatsache der Änderung (wie bei verschlüsselten Feldern), nie alter oder neuer Wert
+    for name in CONTENT_FIELDS.get(instance.__class__.__name__, ()):
+        if name in changes:
+            changes[name] = {"alt": CHANGED, "neu": CHANGED}
     action = _special_action(old_instance, instance) or "update"
     return build_event(action, instance, tenant=tenant, changes=changes)
 

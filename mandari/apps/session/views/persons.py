@@ -7,6 +7,7 @@ Provides views for the Session RIS administration interface.
 
 from django import forms
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -79,6 +80,8 @@ class SessionPersonForm(forms.ModelForm):
             if value:
                 self.initial[name] = value.isoformat()
         self.show_bank_fields = show_bank_fields
+        #: Hat dieses Speichern das Empfängerkonto einer vorhandenen Person geändert? (nach ``save``)
+        self.bank_account_changed = False
         if not show_bank_fields:
             for field in ("bank_account_holder", "bank_iban", "bank_bic"):
                 del self.fields[field]
@@ -146,9 +149,14 @@ class SessionPersonForm(forms.ModelForm):
         person.set_phone_encrypted(self.cleaned_data.get("phone", ""))
         person.set_address_encrypted(self.cleaned_data.get("address", ""))
         if self.show_bank_fields:
+            konto_vorher = allowance_service.bank_account(person)
             person.set_bank_account_holder_encrypted(self.cleaned_data.get("bank_account_holder", ""))
             person.set_bank_iban_encrypted(self.cleaned_data.get("bank_iban", ""))
             person.set_bank_bic_encrypted(self.cleaned_data.get("bank_bic", ""))
+            # Auch das erste Eintragen zählt: Eine Position ohne Konto ist genehmigt, aber noch nicht überweisbar
+            self.bank_account_changed = not person._state.adding and konto_vorher != allowance_service.bank_account(
+                person
+            )
         if commit:
             person.save()
         return person
@@ -268,8 +276,24 @@ class PersonUpdateView(PersonFormMixin, SessionViewMixin, UpdateView):
     pk_url_kwarg = "person_id"
 
     def form_valid(self, form):
+        # Konto und Genehmigungen in einer Transaktion: Ein neues Empfängerkonto gelangt nie mit einer Genehmigung
+        # in einen Export, die noch dem alten Konto galt
+        with transaction.atomic():
+            response = super().form_valid(form)
+            verfallen = (
+                allowance_service.reset_approvals_after_account_change(self.object, self.session_user)
+                if form.bank_account_changed
+                else 0
+            )
         messages.success(self.request, "Person wurde aktualisiert.")
-        return super().form_valid(form)
+        if verfallen:
+            messages.warning(
+                self.request,
+                f"Das Empfängerkonto wurde geändert: {verfallen} bereits genehmigte Auszahlung(en) an "
+                f"{self.object.display_name} stehen wieder auf „Ausstehend“ und müssen von einer anderen Person "
+                "erneut genehmigt werden.",
+            )
+        return response
 
 
 class PersonDeactivateView(SessionViewMixin, View):

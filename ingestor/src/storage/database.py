@@ -1662,15 +1662,15 @@ class DatabaseStorage:
         über die öffentliche Zusammenfassung weiterleben, bis der Löschlauf der Anwendung sie nach Wochen verwirft.
         Dieselben Felder wie ``insight_core.models.SourceDeletionModel._forget_summaries``; die Anwendung erstellt
         die Zusammenfassung bei Bedarf neu, ohne diese Anlage. Sitzungsdokumente haben keinen Vorgang.
+
+        Ohne Bedingung auf eine vorhandene Zusammenfassung: Das UPDATE trifft die Zeile des Vorgangs immer und wartet
+        damit auf die Anwendung, wenn sie gerade eine Zusammenfassung speichert; danach verwirft es auch diese.
         """
         if paper_id is None:
             return
         await session.execute(
             update(OParlPaper)
-            .where(
-                OParlPaper.id == paper_id,
-                or_(OParlPaper.summary.isnot(None), OParlPaper.summary_einfach.isnot(None)),
-            )
+            .where(OParlPaper.id == paper_id)
             .values(summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0)
         )
 

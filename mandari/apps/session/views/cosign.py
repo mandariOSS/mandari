@@ -22,7 +22,7 @@ from ..models import (
     SessionPaper,
     SessionUser,
 )
-from ..permissions import SessionViewMixin
+from ..permissions import SessionViewMixin, is_admin_user
 from ..rahmen import neues_design
 from ..services import cosign_service, delegation_service
 from .bodies import BodyFilterMixin
@@ -296,6 +296,17 @@ class DepartmentAssignmentView(SessionViewMixin, View):
             session_user.departments.remove(department)
             action_label = "entfernt"
         else:
+            # Keine selbst verschaffte Zuständigkeit (wie bei Vertretungen): Die Zuordnung entscheidet über die
+            # Mitzeichnungsstation des Amts – auch die einer Person, die man gerade im Arbeitsvorrat vertritt
+            if not is_admin_user(self.session_user):
+                vertretene = delegation_service.principals(self.session_user, delegation_service.SCOPE_WORKLIST)
+                if session_user.pk == self.session_user.pk or any(p.pk == session_user.pk for p in vertretene):
+                    messages.error(
+                        request,
+                        "Sich selbst oder eine gerade vertretene Person einem Amt zuordnen kann nur ein "
+                        "Administrator – bitte eine zweite Person mit der Benutzerverwaltung darum bitten.",
+                    )
+                    return redirect("session:settings_cosign", tenant_slug=tenant_slug)
             session_user.departments.add(department)
             action_label = "zugeordnet"
 

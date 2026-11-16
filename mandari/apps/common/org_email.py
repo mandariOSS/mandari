@@ -12,7 +12,9 @@ SPF/DKIM für die eigene Absender-Domain verantwortet die Organisation —
 darauf weist die Einstellungs-UI ausdrücklich hin.
 """
 
+import ipaddress
 import logging
+import socket
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,22 @@ class OrgMailError(Exception):
 SMTP_PORTS = (25, 465, 587, 2525)
 
 
+def _oeffentlich(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Liegt die Adresse im öffentlichen Netz (nicht privat, Loopback, Link-Local, reserviert, Multicast)?"""
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    return address.is_global and not address.is_multicast
+
+
+def _adressen(name: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Adressen eines Servers: die angegebene IP-Adresse oder alle, auf die der Name auflöst (``OSError`` ohne)."""
+    try:
+        return [ipaddress.ip_address(name)]
+    except ValueError:
+        infos = socket.getaddrinfo(name, None)
+    return [ipaddress.ip_address(str(info[4][0]).split("%")[0]) for info in infos]
+
+
 def check_smtp_server(host: str, port: int) -> None:
     """
     Der eigene SMTP-Server muss öffentlich erreichbar sein und einen Mail-Port nutzen.
@@ -33,24 +51,31 @@ def check_smtp_server(host: str, port: int) -> None:
     aufgelöst – in privaten, Loopback-, Link-Local-, reservierten oder Multicast-Netzen.
     Nicht auflösbare Namen bleiben erlaubt; der Versand scheitert dann ohnehin.
     """
-    import ipaddress
-    import socket
-
     if port not in SMTP_PORTS:
         raise OrgMailError("Der SMTP-Port ist nicht zulässig.")
     name = (host or "").strip().strip("[]")
     if not name:
         return
     try:
-        addresses = [ipaddress.ip_address(name)]
-    except ValueError:
-        try:
-            infos = socket.getaddrinfo(name, None)
-        except (OSError, UnicodeError):
-            return
-        addresses = [ipaddress.ip_address(str(info[4][0]).split("%")[0]) for info in infos]
-    for address in addresses:
-        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
-            address = address.ipv4_mapped
-        if not address.is_global or address.is_multicast:
-            raise OrgMailError("Der SMTP-Server liegt in einem internen Netz.")
+        addresses = _adressen(name)
+    except (OSError, UnicodeError):
+        return
+    if not all(_oeffentlich(address) for address in addresses):
+        raise OrgMailError("Der SMTP-Server liegt in einem internen Netz.")
+
+
+def public_addresses(host: str) -> list[str]:
+    """
+    Die Adressen, zu denen die Verbindung zum eigenen SMTP-Server aufgebaut werden darf: in der Reihenfolge der
+    Auflösung, jede einmal.
+
+    Der Name wird hier aufgelöst und geprüft, und die Verbindung geht nur an die geprüften Adressen. Löste der
+    Verbindungsaufbau den Namen ein zweites Mal auf, könnte die zweite Antwort eine andere sein als die geprüfte.
+    Alle Adressen statt nur der ersten: Hat der Server IPv6 und IPv4 und ist ein Weg gestört, führt der andere hin.
+    Wirft ``OrgMailError`` für interne Adressen und ``OSError`` für Namen, die sich nicht auflösen lassen.
+    """
+    name = (host or "").strip().strip("[]")
+    addresses = _adressen(name)
+    if not addresses or not all(_oeffentlich(address) for address in addresses):
+        raise OrgMailError("Der SMTP-Server liegt in einem internen Netz.")
+    return list(dict.fromkeys(str(address) for address in addresses))

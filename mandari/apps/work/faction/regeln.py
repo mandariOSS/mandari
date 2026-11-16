@@ -199,3 +199,48 @@ def pruefe_abstimmung(ziel: Any) -> None:
     """Server-Prüfung vor dem Erfassen oder Ändern einer Abstimmung: ``AbstimmungenAusError``, wenn die Art keine hat."""
     if not abstimmungen_erlaubt(ziel):
         raise AbstimmungenAusError()
+
+
+GENEHMIGUNG_NUR_IN_SITZUNG = (
+    "Über das Protokoll der vorigen Sitzung stimmt die Fraktion in der Sitzung ab. "
+    "Die Abstimmung lässt sich erfassen, sobald die Sitzung begonnen hat."
+)
+
+
+class GenehmigungNurInSitzungError(ValueError):
+    """Abstimmung auf dem Genehmigungs-TOP einer Sitzung, die nicht begonnen hat."""
+
+    def __init__(self) -> None:
+        super().__init__(GENEHMIGUNG_NUR_IN_SITZUNG)
+
+
+def abstimmung_erfassbar(item: Any) -> bool:
+    """
+    Lässt sich auf dem TOP jetzt eine Abstimmung erfassen? Auf dem Genehmigungs-TOP erst, wenn seine Sitzung begonnen
+    hat: Eine angenommene Abstimmung genehmigt dort das Protokoll der vorigen Sitzung endgültig, und das beschließt
+    die Fraktion in der Sitzung. Vor dem Beginn bliebe sonst nur der direkte Weg mit ``protocols.approve`` ungeprüft.
+    Alle anderen TOPs sind davon nicht berührt.
+    """
+    from .kette import hat_stattgefunden
+
+    if not item.is_approval_item or not item.approves_meeting_id:
+        return True
+    return hat_stattgefunden(item.meeting)
+
+
+def pruefe_genehmigung_in_sitzung(item: Any, *, gespeichert: bool = False) -> None:
+    """
+    Server-Prüfung vor dem Erfassen einer Abstimmung: ``GenehmigungNurInSitzungError`` (:func:`abstimmung_erfassbar`).
+
+    Mit ``gespeichert`` gilt der Status der Sitzung in der Datenbank, nicht der am geladenen Objekt: unter der Sperre
+    der Sitzung aufgerufen, sieht die Prüfung eine Absage, die nach dem Laden kam.
+    """
+    if gespeichert and item.is_approval_item and item.approves_meeting_id:
+        from .kette import BEGONNEN
+        from .models import FactionMeeting
+
+        if not FactionMeeting.objects.filter(pk=item.meeting_id, status__in=BEGONNEN).exists():
+            raise GenehmigungNurInSitzungError()
+        return
+    if not abstimmung_erfassbar(item):
+        raise GenehmigungNurInSitzungError()

@@ -47,6 +47,25 @@ TRANSITIONS = {
     "unpublish": (("published",), "approved"),
 }
 
+#: Felder, die ein Workflow-Schritt schreibt: nie den Inhalt und nie den Verweis auf die öffentliche Fassung.
+#: Was der Schritt nicht ändert, bleibt, wie es in der Datenbank steht.
+WORKFLOW_FIELDS = (
+    "status",
+    "review_requested_by",
+    "review_requested_at",
+    "approved_by",
+    "approved_on_behalf_of",
+    "approved_at",
+    "approval_mode",
+    "approval_meeting",
+    "approval_agenda_item",
+    "approval_note",
+    "published_at",
+    "updated_at",
+)
+#: Felder, die das Bearbeiten des allgemeinen Teils schreibt (ohne Status, Vermerke und Dateiverweis)
+EDIT_FIELDS = ("content", "chair_name", "recorder_name", "updated_at")
+
 #: Folgesitzungen, deren TOPs zur Genehmigung angeboten werden
 APPROVAL_MEETINGS_LIMIT = 10
 #: Stichworte eines TOP „Genehmigung der Niederschrift“
@@ -60,6 +79,25 @@ class WorkflowError(Exception):
         super().__init__(user_message)
         #: fester, für Nutzer formulierter Text – nur diesen in Antworten ausgeben
         self.user_message = user_message
+
+
+def lock_protocol(protocol: SessionProtocol) -> None:
+    """
+    Sitzung und Niederschrift bis zum Ende der Transaktion sperren und die Niederschrift frisch lesen.
+
+    Bearbeiten, Workflow-Schritte und die Erneuerung der öffentlichen Fassung nehmen dieselben Sperren in derselben
+    Reihenfolge: erst die Sitzung (wie Cockpit und Abstimmungserfassung), dann die Niederschrift. So laufen sie
+    nacheinander, und jeder Schritt prüft Status, Bearbeitungsvermerk und Dateiverweis am gespeicherten Stand statt
+    an dem, den die Anfrage vorher gelesen hat. Nur die eigene Zeile (``of=("self",)``), nicht Sitzung und Mandant.
+    """
+    from apps.session.services import cockpit_service
+
+    cockpit_service.lock_meeting(protocol.meeting_id)
+    protocol.refresh_from_db(
+        from_queryset=SessionProtocol.objects.select_for_update(of=("self",)).select_related(
+            "meeting__tenant", "meeting__organization"
+        )
+    )
 
 
 def get_or_create_protocol(meeting: SessionMeeting, created_by=None) -> tuple[SessionProtocol, bool]:
@@ -160,11 +198,16 @@ def perform_action(
     """
     Workflow-Schritt ausführen (siehe ``_perform_action``) und an die Drehscheibe melden (Issue #535): Prüfung und
     Entwurf intern, Genehmigung, Veröffentlichung und Rücknahme der öffentlichen Fassung.
+
+    Der Schritt läuft unter der Sperre von Sitzung und Niederschrift (:func:`lock_protocol`): Statusübergang und
+    Vier-Augen-Prinzip gelten für den gespeicherten Stand, auch wenn gleichzeitig jemand die Niederschrift
+    bearbeitet oder denselben Schritt ein zweites Mal auslöst.
     """
     from apps.session import hub_events
 
     meeting = protocol.meeting
-    with hub_events.track(meeting.tenant) as tracked:
+    with transaction.atomic(), hub_events.track(meeting.tenant) as tracked:
+        lock_protocol(protocol)
         tracked.protocol(meeting)
         return _perform_action(
             protocol, action, user=user, data=data, request=request, include_non_public=include_non_public
@@ -219,13 +262,13 @@ def _perform_action(
     if action == "submit":
         protocol.review_requested_by = user
         protocol.review_requested_at = now
-        protocol.save()
+        protocol.save(update_fields=WORKFLOW_FIELDS)
         return "Protokoll wurde zur Prüfung gegeben."
 
     if action == "reject":
         comment = str(data.get("comment", "")).strip()
         with audit.in_vertretung(vertreten):
-            protocol.save()
+            protocol.save(update_fields=WORKFLOW_FIELDS)
         # Audit: Zurückweisung mit Kommentar nachvollziehbar machen
         audit.log_event(
             "update",
@@ -271,7 +314,7 @@ def _perform_action(
             top = f" unter TOP {item.number}" if item is not None and public_item else ""
             protocol.approval_note = f"Genehmigt in der Sitzung am {start_local.strftime('%d.%m.%Y')}{top}."
         with audit.in_vertretung(vertreten):
-            protocol.save()  # Audit: approve-Aktion über Signal
+            protocol.save(update_fields=WORKFLOW_FIELDS)  # Audit: approve-Aktion über Signal
         return f"Niederschrift wurde genehmigt{vermerk}. Ergebnis, Stimmen und Texte sind jetzt schreibgeschützt."
 
     if action == "publish":
@@ -285,7 +328,7 @@ def _perform_action(
         try:
             with transaction.atomic():
                 with audit.in_vertretung(vertreten):
-                    protocol.save()  # Audit: publish-Aktion über Signal
+                    protocol.save(update_fields=WORKFLOW_FIELDS)  # Audit: publish-Aktion über Signal
                 public_file = protocol_publication.publish(protocol, user=user)
         except Exception as exc:
             logger.exception("Öffentliche Fassung der Niederschrift %s konnte nicht erzeugt werden", protocol.pk)
@@ -305,7 +348,7 @@ def _perform_action(
     with transaction.atomic():
         protocol_publication.withdraw(protocol)
         with audit.in_vertretung(vertreten):
-            protocol.save()  # Audit: unpublish-Aktion über Signal
+            protocol.save(update_fields=WORKFLOW_FIELDS)  # Audit: unpublish-Aktion über Signal
     return f"Veröffentlichung wurde zurückgenommen{vermerk}. Die öffentliche Fassung ist aus OParl und Bürgerportal entfernt."
 
 

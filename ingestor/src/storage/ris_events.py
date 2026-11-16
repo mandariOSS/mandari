@@ -94,6 +94,8 @@ NICHTOEFFENTLICH: Final = "nichtoeffentlich"
 INTERN: Final = "intern"
 UPSERT: Final = "upsert"
 DELETE: Final = "delete"
+#: Entfernung aus Datenschutzgründen: Abnehmer des Änderungsfeeds entfernen das Objekt auch aus Kopien
+REDACT: Final = "redact"
 
 #: Gründe einer Rücknahme (wie im Änderungsfeed).
 REASON_DELETED_AT_SOURCE: Final = "quelle_geloescht"
@@ -715,10 +717,19 @@ def text_extracted_events(file_id: UUID, method: str | None, characters: int | N
 
 
 def depublished_draft(entity_type: str, object_id: UUID, reason: str = REASON_DELETED_AT_SOURCE) -> Draft:
-    """``ris.object.depublished``: Das Objekt ist nicht mehr öffentlich (Operation ``delete``)."""
+    """
+    ``ris.object.depublished``: Das Objekt ist nicht mehr öffentlich (Operation ``delete``, beim Grund
+    ``datenschutz`` ``redact``).
+
+    Dieselbe Regel wie in der Anwendung (``hub.ris.retraction.operation_for``; ein Test dort vergleicht beide über
+    alle Gründe): Der Vertrag des Ereignisses verlangt beim Grund ``datenschutz`` die Operation ``redact``. Der
+    Abgleich selbst setzt diesen Grund nie (``REASON_PRIVACY``); wer ihn hier übergibt, bekommt trotzdem die
+    Meldung, die der Vertrag vorsieht.
+    """
     aggregate_type = AGGREGATE_TYPES[entity_type]
     payload = {"object_type": aggregate_type, "object": str(object_id), "reason": reason}
-    return Draft("ris.object.depublished", aggregate_type, object_id, payload, OEFFENTLICH, DELETE)
+    operation = REDACT if reason == REASON_PRIVACY else DELETE
+    return Draft("ris.object.depublished", aggregate_type, object_id, payload, OEFFENTLICH, operation)
 
 
 def depublished_events(

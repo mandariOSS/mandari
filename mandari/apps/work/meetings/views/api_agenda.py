@@ -179,7 +179,9 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         item_id = self.kwargs["item_id"]
         agenda_item = selectors.find_agenda_item(item_id)
 
-        result = [serialize_agenda_note(n, membership) for n in selectors.thread_notes(self.organization, item_id)]
+        result = [
+            serialize_agenda_note(n, membership) for n in selectors.thread_notes(self.organization, item_id, membership)
+        ]
         if agenda_item:
             foreign = selectors.consulting_notes(self.organization, [agenda_item]).get(agenda_item.id, [])
             foreign = sorted(foreign, key=lambda n: n.created_at, reverse=True)

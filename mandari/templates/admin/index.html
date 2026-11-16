@@ -19,6 +19,11 @@
             <p class="text-gray-500 dark:text-gray-400 mt-1">
                 Willkommen bei Mandari Admin - Kommunalpolitische Transparenz
             </p>
+            {% if kennzahlen_stand %}
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Zahlen und Diagramme: Stand {{ kennzahlen_stand|date:"d.m.Y H:i" }} Uhr, stündlich aktualisiert
+            </p>
+            {% endif %}
         </div>
     </div>
 

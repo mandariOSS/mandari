@@ -7,7 +7,9 @@ Gedacht für einen täglichen Cron-Lauf, z. B.:
     python manage.py send_task_due_reminders
 
 Aufgaben: Benachrichtigt die zugewiesene Person (Fallback: Ersteller) über
-Aufgaben, die morgen oder heute fällig oder bereits überfällig sind.
+Aufgaben, die morgen oder heute fällig oder bereits überfällig sind. Darf die
+zugewiesene Person eine Aufgabe aus einem nichtöffentlichen TOP nicht öffnen,
+geht die Erinnerung an die erstellende Person, sofern sie die Aufgabe öffnen darf.
 
 Dokumente: Benachrichtigt die Federführung (Fallback: Autor) 3 Tage vor der
 Frist und am Tag der Frist.
@@ -62,13 +64,21 @@ class Command(EinmaligMixin, BaseCommand):
                 status__in=["todo", "in_progress"],
                 is_completed=False,
             )
-            .select_related("assigned_to__user", "created_by__user", "organization")
+            .select_related(
+                "assigned_to__user", "created_by__user", "organization", "related_faction_agenda_item__parent"
+            )
             .order_by("due_date")
         )
 
         sent = skipped = 0
         for task in due_tasks:
             recipient = task.assigned_to or task.created_by
+            if recipient and recipient.is_active and task.noe_gesperrt(recipient):
+                # Aufgabe aus einem nichtöffentlichen TOP, die diese Person nicht (mehr) öffnen darf: Sie könnte die
+                # Erinnerung nicht beenden und erführe den Titel. Erinnert wird, wer die Aufgabe angelegt hat und sie
+                # öffnen darf – dort lässt sie sich neu zuweisen.
+                ersatz = task.created_by
+                recipient = ersatz if ersatz and ersatz.is_active and not task.noe_gesperrt(ersatz) else None
             if not recipient or not recipient.is_active:
                 skipped += 1
                 continue

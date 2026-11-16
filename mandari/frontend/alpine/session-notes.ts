@@ -25,6 +25,7 @@ import * as Y from 'yjs'
 import type { CollabResult, CollabStatus } from '../editor/collaboration'
 import type { ErwaehnbarePerson } from '../editor/extensions/erwaehnung'
 import { defineComponent } from '../js/alpine/component'
+import { showToast } from '../js/alpine/toast'
 import { readJsonScript } from '../js/json-script'
 import { aktion, notizenAbmelden, notizenAnmelden, vorAnfragenSichern } from './faction-session'
 import { zusammenfuehren } from './notizen-zusammenfuehren'
@@ -49,6 +50,8 @@ interface Antwort {
   gespeichert_um?: string
   html?: string
   konflikt?: boolean
+  /** Im Browser ist inzwischen ein anderes Konto angemeldet als das, für das die Seite aufgebaut wurde */
+  anderes_konto?: boolean
 }
 
 export interface NotizenFormat {
@@ -120,6 +123,8 @@ export const sitzungsNotizen = defineComponent(() => {
   // Nach einem Neuaufbau: eigene, zusammengeführte Fassung, die noch in den gemeinsamen Zustand muss
   let nachholen: string | null = null
   let konfliktNachAufbau = false
+  /** Der Server hat das Speichern abgelehnt, weil im Browser ein anderes Konto angemeldet ist: kein neuer Versuch */
+  let fremdesKonto = false
   let wartenTimer = 0
   let leser: WebSocket | null = null
   let leserVersuche = 0
@@ -281,8 +286,15 @@ export const sitzungsNotizen = defineComponent(() => {
     nachricht(msg: any, ausgang: string, zusammengefuehrt: boolean) {
       if (!msg || typeof msg.type !== 'string' || !editor) return
       if (msg.type === 'connected') {
+        const konto = String(msg.user?.user ?? '')
+        if (this.ich && konto && konto !== this.ich) {
+          // Nach dem Ende der Anmeldung kam die Verbindung mit einem anderen Konto wieder zustande: Im Browser hat sich
+          // inzwischen jemand anders angemeldet. Über dessen Verbindung geht nichts aus diesem Fenster
+          this.anderesKonto()
+          return
+        }
         verbunden = true
-        this.ich = String(msg.user?.user ?? '')
+        this.ich = konto
         const person = msg.user as Anwesend | undefined
         if (person && collab) {
           // Eigener Name und eigene Farbe am Cursor, wie sie die anderen sehen
@@ -477,7 +489,41 @@ export const sitzungsNotizen = defineComponent(() => {
       if (ausstehend) this.geaendert()
     },
 
+    /** Im Browser ist ein anderes Konto angemeldet: Der Text bleibt zum Sichern stehen, gespeichert wird nichts. */
+    anderesKonto() {
+      fremdesKonto = true
+      window.clearTimeout(timer)
+      editor?.setEditable(false)
+      this.status = 'fehler'
+      const alt = collab
+      collab = null
+      alt?.destroy()
+      this.anwesende = []
+    },
+
     zugriffGeaendert(grund?: string) {
+      if (grund === 'session_ended') {
+        // Die Anmeldung gilt nicht mehr (abgemeldet, Sitzung beendet, Passwort an anderer Stelle neu gesetzt), auch
+        // der neue Versuch kam nicht zustande. Kein stummer Lesemodus.
+        // Auch ein laufendes Speichern zählt: Schloss die Verbindung mittendrin, kommt seine Bestätigung nicht mehr
+        const offen = ausstehend || laufend !== null || ['ungespeichert', 'speichert', 'fehler'].includes(this.status)
+        if (!offen) {
+          // Nichts offen: Die Seite lädt neu und führt zur Anmeldung
+          window.location.reload()
+          return
+        }
+        // Offene Eingabe: Ein Neuladen verwürfe sie, und über die beendete Sitzung lässt sich nichts sichern. Der Text
+        // bleibt stehen; das Speichern über das Formular versucht es weiter („Nicht gespeichert, neuer Versuch
+        // läuft“) und gelingt, sobald die Anmeldung in einem anderen Tab erneuert ist.
+        ausstehend = true
+        this.zumFormular(ausgangAktuell)
+        showToast(
+          'Ihre Anmeldung gilt nicht mehr. Ihr Text bleibt hier stehen und wird gespeichert, sobald Sie sich in einem ' +
+            'anderen Tab neu angemeldet haben.',
+          'warning',
+        )
+        return
+      }
       // Nach der Genehmigung oder ohne Protokollrecht: nur noch lesen; ohne Zugriff: Verbindung beenden
       window.clearTimeout(timer)
       ausstehend = false
@@ -589,7 +635,13 @@ export const sitzungsNotizen = defineComponent(() => {
       const lauf = (async () => {
         try {
           let res = await aktion(
-            { action: 'notizen', item_id: config?.itemId ?? '', html, stand: this.stand },
+            {
+              action: 'notizen',
+              item_id: config?.itemId ?? '',
+              html,
+              stand: this.stand,
+              mitglied: config?.ich ?? '',
+            },
             keepalive,
           )
           let daten = (await res.json()) as Antwort
@@ -609,12 +661,19 @@ export const sitzungsNotizen = defineComponent(() => {
             }
             gesendet = ergebnis.html
             res = await aktion(
-              { action: 'notizen', item_id: config?.itemId ?? '', html: gesendet, stand: daten.stand ?? '' },
+              {
+                action: 'notizen',
+                item_id: config?.itemId ?? '',
+                html: gesendet,
+                stand: daten.stand ?? '',
+                mitglied: config?.ich ?? '',
+              },
               keepalive,
             )
             daten = (await res.json()) as Antwort
           }
           if (res.ok) {
+            fremdesKonto = false
             this.stand = daten.stand ?? this.stand
             this.gespeichertUm = daten.gespeichert_um ?? ''
             basisFassung = gesendet
@@ -640,6 +699,8 @@ export const sitzungsNotizen = defineComponent(() => {
               ausstehend = true
             }
           } else {
+            // Mit einem anderen Konto im Browser speichert der Server nichts: Der Text bleibt stehen, ohne neuen Versuch
+            if (res.status === 403 && daten.anderes_konto) fremdesKonto = true
             this.status = 'fehler'
             ausstehend = true
           }
@@ -651,7 +712,7 @@ export const sitzungsNotizen = defineComponent(() => {
       laufend = lauf
       await lauf
       if (laufend === lauf) laufend = null
-      if (ausstehend && !keepalive && this.art === 'formular') {
+      if (ausstehend && !keepalive && this.art === 'formular' && !fremdesKonto) {
         window.clearTimeout(timer)
         const fehlgeschlagen = (this.status as Status) === 'fehler'
         timer = window.setTimeout(() => void this.sichern(), fehlgeschlagen ? WIEDERHOLEN_MS : 0)
@@ -661,6 +722,9 @@ export const sitzungsNotizen = defineComponent(() => {
     statusText(): string {
       if (this.status === 'speichert') return 'Wird gespeichert …'
       if (this.status === 'ungespeichert') return 'Änderungen werden gleich gespeichert'
+      if (this.status === 'fehler' && fremdesKonto) {
+        return 'Nicht gespeichert: Im Browser ist ein anderes Konto angemeldet. Bitte den Text sichern und neu anmelden.'
+      }
       if (this.status === 'fehler') return 'Nicht gespeichert, neuer Versuch läuft'
       if (this.status === 'getrennt') return 'Verbindung unterbrochen, Ihre Eingaben bleiben erhalten'
       if (this.status === 'lesen') return 'Nur lesen'

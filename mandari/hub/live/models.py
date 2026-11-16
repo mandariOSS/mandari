@@ -17,6 +17,7 @@ Keine Tabelle enthält Bild- oder Tondaten. Verweise auf den RIS-Bestand sind ``
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 from django.core.exceptions import ValidationError
@@ -224,6 +225,45 @@ class BroadcastSpeech(models.Model):
 
     def __str__(self) -> str:
         return self.name_read
+
+
+def wortmeldungen_zu_personen(personen: Iterable[OParlPerson]) -> models.QuerySet[BroadcastSpeech]:
+    """
+    Wortmeldungen mit Verweis auf eine dieser Personen, auch mit falsch gelesenem Namen (für das endgültige Löschen
+    einer Person).
+
+    Name, Fraktion und Funktion einer Wortmeldung sind Kopien als Freitext; der Verweis auf die Person ist
+    ``SET_NULL``. Mit der Person verschwände deshalb nur der Verweis, die Angaben blieben auf der Live-Seite stehen.
+    """
+    return BroadcastSpeech.objects.filter(person_id__in=[person.pk for person in personen])
+
+
+def namensgleiche_wortmeldungen(personen: Iterable[OParlPerson]) -> models.QuerySet[BroadcastSpeech]:
+    """
+    Wortmeldungen ohne Verweis auf eine Person in derselben Kommune, deren gelesener Name in Vergleichsform zu einer
+    dieser Personen passt (``hub.live.zuordnung``).
+
+    Ohne Verweis bleibt eine Wortmeldung etwa bei zwei gleichnamigen Personen. Wer gesprochen hat, lässt sich aus der
+    Zeile nicht sagen: Sie kann der namensgleichen anderen Person gehören. Diese Treffer sind deshalb zum Prüfen von
+    Hand gedacht, nicht zum Löschen ohne Rückfrage. Unscharf gelesene Namen ohne Verweis findet der Vergleich nicht.
+    """
+    # Erst hier: zuordnung importiert dieses Modul
+    from .zuordnung import _namen, vergleichsname
+
+    namen_je_kommune: dict[uuid.UUID, set[str]] = {}
+    for person in personen:
+        namen_je_kommune.setdefault(person.body_id, set()).update(_namen(person))
+
+    treffer: list[uuid.UUID] = []
+    for body_id, namen in namen_je_kommune.items():
+        if not namen:
+            continue
+        offene = BroadcastSpeech.objects.filter(person__isnull=True, broadcast__source__body_id=body_id)
+        for pk, gelesen in offene.values_list("pk", "name_read").iterator():
+            if vergleichsname(gelesen) in namen:
+                treffer.append(pk)
+
+    return BroadcastSpeech.objects.filter(pk__in=treffer)
 
 
 class LogKind(models.TextChoices):

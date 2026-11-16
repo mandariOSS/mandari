@@ -17,6 +17,7 @@ Zentrale Logik für:
 import logging
 from typing import Any, cast
 
+from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -325,15 +326,11 @@ def send_invitations(
             failed_count += 1
         row.save(update_fields=["status", "error", "sent_at"])
 
-    # Erstladung: Sitzungsstatus fortschreiben
-    if not supplementary and meeting.invitation_sent_at is None:
-        # Drehscheibe (Issue #533): Mit der Ladung ist die Tagesordnung veröffentlicht (Status „Einladung versandt“)
-        with hub_events.track(meeting.tenant) as tracked:
-            tracked.meeting(meeting)
-            meeting.invitation_sent_at = timezone.now()
-            if meeting.meeting_state in ("draft", "scheduled"):
-                meeting.meeting_state = "invitation_sent"
-            meeting.save()  # Audit: invitation_sent-Aktion über Signal
+    # Erstladung: Sitzungsstatus fortschreiben – außer wenn jede Zustellung gescheitert ist. Dann hat die Ladung
+    # niemanden erreicht: Die Sitzung gilt nicht als geladen, und die Fristwarnung bleibt bestehen.
+    reached_nobody = failed_count and not (sent_count or letter_count)
+    if not supplementary and not reached_nobody:
+        _mark_invitation_sent(meeting)
 
     # Audit: Versand mit Zusammenfassung protokollieren (wer, wann, an wen)
     audit.log_event(
@@ -351,6 +348,29 @@ def send_invitations(
     )
 
     return dispatch
+
+
+def _mark_invitation_sent(meeting: SessionMeeting) -> None:
+    """
+    Abschluss der Erstladung: Versanddatum und Status am gesperrten, frisch gelesenen Stand der Sitzung setzen.
+
+    Der Versand dauert (zwei PDFs, je Empfänger eine Mail), und das Sitzungsobjekt stammt vom Beginn der Anfrage.
+    Geschrieben werden deshalb nur die Felder der Ladung: Was andere in dieser Zeit festgeschrieben haben (Absage,
+    Nichtöffentlichkeit, Ort), bleibt erhalten. Das übergebene Objekt wird danach neu geladen.
+    """
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #533): Mit der Ladung ist die Tagesordnung veröffentlicht (Status „Einladung versandt“)
+    with transaction.atomic(), hub_events.track(meeting.tenant) as tracked:
+        locked = SessionMeeting.objects.select_for_update(of=("self",)).get(pk=meeting.pk)
+        if locked.invitation_sent_at is None:
+            tracked.meeting(locked)
+            locked.invitation_sent_at = timezone.now()
+            if locked.meeting_state in ("draft", "scheduled"):
+                locked.meeting_state = "invitation_sent"
+            # Audit: invitation_sent-Aktion über Signal
+            locked.save(update_fields=["invitation_sent_at", "meeting_state", "updated_at"])
+    meeting.refresh_from_db()
 
 
 def _default_subject(meeting: SessionMeeting, supplementary: bool) -> str:

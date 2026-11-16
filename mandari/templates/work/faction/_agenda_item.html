@@ -47,9 +47,9 @@
             <div class="flex items-start justify-between gap-2">
                 <div>
                     <h4 class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=is_internal %}</h4>
-                    {% if item.is_approval_item and item.approves_meeting %}
+                    {% if item.is_approval_item and item.approves_meeting_shown %}
                     <p class="text-xs text-primary-600 dark:text-primary-400 mt-0.5">
-                        Genehmigt: {{ item.approves_meeting.title }} ({{ item.approves_meeting.start|date:"d.m.Y" }})
+                        Genehmigt: {{ item.approves_meeting_shown.title }} ({{ item.approves_meeting_shown.start|date:"d.m.Y" }})
                     </p>
                     {% endif %}
                     {% with desc=item.get_description_decrypted %}

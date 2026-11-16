@@ -29,7 +29,16 @@ from ..models import (
 )
 
 logger = logging.getLogger(__name__)
-from ..regeln import ABSTIMMUNGEN_AUS, NOE_AUS, NichtOeffentlichAusError
+from ..regeln import (
+    ABSTIMMUNGEN_AUS,
+    GENEHMIGUNG_NUR_IN_SITZUNG,
+    NOE_AUS,
+    PROTOKOLL_GENEHMIGT,
+    GenehmigungNurInSitzungError,
+    NichtOeffentlichAusError,
+    ProtokollGenehmigtError,
+    abstimmung_erfassbar,
+)
 from ..sitzungsarten import sitzung_oder_404
 from ..visibility import can_view_internal, can_view_item, is_item_internal
 from ._helpers import (
@@ -227,6 +236,15 @@ class FactionActionView(WorkViewMixin, View):
 
     # -- Status handlers -----------------------------------------------
 
+    @staticmethod
+    def _save_fields(meeting, *fields: str) -> None:
+        """
+        Nur die Felder der Aktion schreiben. Die Sitzung wurde am Anfang der Anfrage gelesen: Ein Speichern aller
+        Spalten schriebe diesen Stand zurück und nähme eine Protokollgenehmigung, die inzwischen erteilt wurde,
+        wieder weg (Issue #63: Die Genehmigung ist endgültig).
+        """
+        meeting.save(update_fields=[*fields, "updated_at"])
+
     def _start(self, request, meeting):
         if not self.membership.has_permission("faction.start"):
             messages.error(request, "Keine Berechtigung zum Starten.")
@@ -235,7 +253,7 @@ class FactionActionView(WorkViewMixin, View):
             meeting.status = "ongoing"
             # Tatsächlicher Beginn für die Sitzungsansicht („Läuft seit …“, Issue #874)
             meeting.started_at = timezone.now()
-            meeting.save()
+            self._save_fields(meeting, "status", "started_at")
         return self._refresh_or_redirect(request, meeting, "Sitzung gestartet.")
 
     def _end(self, request, meeting):
@@ -245,7 +263,7 @@ class FactionActionView(WorkViewMixin, View):
         if meeting.status == "ongoing":
             meeting.status = "completed"
             meeting.end = timezone.now()
-            meeting.save()
+            self._save_fields(meeting, "status", "end")
         return self._refresh_or_redirect(request, meeting, "Sitzung beendet.")
 
     def _cancel(self, request, meeting):
@@ -262,7 +280,7 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, meldung)
             return self._refresh_or_redirect(request, meeting)
         meeting.status = "cancelled"
-        meeting.save()
+        self._save_fields(meeting, "status")
         return self._refresh_or_redirect(request, meeting, "Sitzung abgesagt.")
 
     def _rejected(self, request, meeting, message, status):
@@ -330,7 +348,7 @@ class FactionActionView(WorkViewMixin, View):
             if new_status == "ongoing" and meeting.status != "ongoing" and meeting.started_at is None:
                 meeting.started_at = timezone.now()
             meeting.status = new_status
-            meeting.save()
+            self._save_fields(meeting, "status", "started_at")
         return self._refresh_or_redirect(request, meeting, "Status geändert.")
 
     # -- Meeting update ------------------------------------------------
@@ -400,7 +418,18 @@ class FactionActionView(WorkViewMixin, View):
         if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES) and self._may_set_status(new_status):
             meeting.status = new_status
 
-        meeting.save()
+        self._save_fields(
+            meeting,
+            "title",
+            "description",
+            "start",
+            "end",
+            "location",
+            "is_virtual",
+            "video_link",
+            "rsvp_enabled",
+            "status",
+        )
         response = self._refresh_or_redirect(request, meeting, "Änderungen gespeichert.")
         if start_notice:
             messages.warning(request, start_notice)
@@ -627,6 +656,9 @@ class FactionActionView(WorkViewMixin, View):
         # NÖ strikt (Issue #64): Nicht-Vereidigte können NÖ-TOPs nicht löschen
         if item and not can_view_item(item, self.membership):
             return None, HttpResponse(status=403)
+        # Auch nicht über den übergeordneten TOP: Nichtöffentliche Unterpunkte verschwänden sonst mit
+        if item and deletion.has_hidden_subitems(item, self.membership):
+            return None, self._rejected(request, meeting, deletion.HIDDEN_SUBITEMS, 403)
         return item, None
 
     def _delete_item(self, request, meeting):
@@ -637,7 +669,9 @@ class FactionActionView(WorkViewMixin, View):
         if item:
             # Verschwinden Inhalte mit, nur mit Nummer oder Titel als Eingabe (Issue #897)
             try:
-                deletion.delete_agenda_item(item, request.POST.get("confirmation", ""))
+                deletion.delete_agenda_item(item, request.POST.get("confirmation", ""), self.membership)
+            except deletion.DeletionNotAllowedError:
+                return self._rejected(request, meeting, deletion.HIDDEN_SUBITEMS, 403)
             except deletion.DeletionNotConfirmedError:
                 return self._rejected(request, meeting, deletion.NOT_CONFIRMED_ITEM, 400)
             except deletion.DeletionBlockedError:
@@ -931,7 +965,13 @@ class FactionActionView(WorkViewMixin, View):
             assignee_id = request.POST.get("action_assignee")
             due_date = request.POST.get("action_due_date")
             if assignee_id:
-                entry.action_assignee = faction_services.org_member(self.organization, assignee_id)
+                # Nichtöffentlicher TOP oder Eintrag ohne TOP: zuständig nur, wer den nichtöffentlichen Teil sehen darf
+                try:
+                    entry.action_assignee = faction_services.zustaendige_person(
+                        self.organization, assignee_id, agenda_item
+                    )
+                except faction_services.ZustaendigNurVereidigteError:
+                    return self._rejected(request, meeting, faction_services.ZUSTAENDIG_NUR_VEREIDIGTE, 400)
             if due_date:
                 entry.action_due_date = due_date
 
@@ -1056,6 +1096,9 @@ class FactionActionView(WorkViewMixin, View):
         # Art ohne Abstimmungen (Issue #1240): erfasste bleiben lesbar, neue gibt es nicht
         if not meeting.abstimmungen_erlaubt:
             return self._rejected(request, meeting, ABSTIMMUNGEN_AUS, 400)
+        # Genehmigungs-TOP: Über das Protokoll der vorigen Sitzung wird in der Sitzung abgestimmt, nicht davor
+        if not abstimmung_erfassbar(agenda_item):
+            return self._rejected(request, meeting, GENEHMIGUNG_NUR_IN_SITZUNG, 400)
 
         try:
             votes_yes = int(request.POST.get("votes_yes", 0))
@@ -1065,16 +1108,23 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse("Ungültige Stimmzahlen.", status=400)
 
         # Erfassen, Kopie am TOP und Genehmigungs-TOP (angenommene Abstimmung genehmigt das Vorprotokoll)
-        faction_services.record_decision(
-            agenda_item,
-            self.membership,
-            votes_yes=votes_yes,
-            votes_no=votes_no,
-            votes_abstain=votes_abstain,
-            result=request.POST.get("result", "accepted"),
-            decision_text=request.POST.get("decision_text", "").strip(),
-            notes=request.POST.get("notes", "").strip(),
-        )
+        try:
+            faction_services.record_decision(
+                agenda_item,
+                self.membership,
+                votes_yes=votes_yes,
+                votes_no=votes_no,
+                votes_abstain=votes_abstain,
+                result=request.POST.get("result", "accepted"),
+                decision_text=request.POST.get("decision_text", "").strip(),
+                notes=request.POST.get("notes", "").strip(),
+            )
+        except GenehmigungNurInSitzungError:
+            # Die Sitzung wurde seit der Prüfung oben abgesagt
+            return self._rejected(request, meeting, GENEHMIGUNG_NUR_IN_SITZUNG, 400)
+        except ProtokollGenehmigtError:
+            # Das Protokoll wurde seit der Prüfung oben genehmigt
+            return self._rejected(request, meeting, PROTOKOLL_GENEHMIGT, 400)
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)
@@ -1370,14 +1420,13 @@ class FactionActionView(WorkViewMixin, View):
         if visibility == "internal" and item.visibility != "internal" and not meeting.nichtoeffentlich_erlaubt:
             return self._rejected(request, meeting, NOE_AUS, 400)
 
-        from ..regeln import ProtokollGenehmigtError
         from ..services import AgendaProposalService
 
         assign_number = request.POST.get("number", "").strip()
         try:
             AgendaProposalService.accept_proposal(item, self.membership, assign_number or None, visibility)
-        except ProtokollGenehmigtError as exc:
-            return self._rejected(request, meeting, str(exc), 400)
+        except ProtokollGenehmigtError:
+            return self._rejected(request, meeting, PROTOKOLL_GENEHMIGT, 400)
 
         messages.success(request, f"Vorschlag '{item.title}' angenommen.")
         return self._refresh_or_redirect(request, meeting)
@@ -1419,6 +1468,12 @@ class FactionActionView(WorkViewMixin, View):
         # Aufgaben legt an, wer Aufgaben anlegen darf; das Recht an der Sitzung allein reicht nicht
         if not self.membership.has_permission("tasks.create"):
             return HttpResponse(status=403)
+        # Die Aufgabe trägt den Text des Eintrags und geht an die eingetragene Person. Erneut prüfen: Der Eintrag
+        # kann älter sein als die Regel, oder sein TOP ist erst danach in den nichtöffentlichen Teil gegangen.
+        if entry.action_assignee_id and not faction_services.darf_zustaendig_sein(
+            entry.action_assignee, entry.agenda_item
+        ):
+            return self._rejected(request, meeting, faction_services.ZUSTAENDIG_NUR_VEREIDIGTE, 400)
         content = entry.get_content_decrypted() or ""
         task_title = content[:200] if content else f"Aufgabe aus Fraktionssitzung {meeting.title}"
 

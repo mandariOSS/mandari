@@ -11,6 +11,7 @@ Alle Views erfordern die Berechtigung ``manage_devices``.
 
 import logging
 from decimal import Decimal
+from typing import Any
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -305,6 +306,8 @@ class DeviceGrantActionView(SessionViewMixin, View):
         "pay": ("approved", "paid"),
         "cancel": (None, "cancelled"),
     }
+    #: Ausgangsstatus je Aktion, wie er beim Schreiben noch gespeichert sein muss
+    ALLOWED_FROM = {"approve": ("pending",), "pay": ("approved",), "cancel": ("pending", "approved")}
 
     def post(self, request, tenant_slug, grant_id, action):
         grant = get_object_or_404(
@@ -323,23 +326,38 @@ class DeviceGrantActionView(SessionViewMixin, View):
             messages.error(request, "Ausgezahlte Zuschüsse können nicht storniert werden.")
             return redirect("session:devices", tenant_slug=tenant_slug)
         # Vier-Augen-Prinzip für Auszahlungen (Einstellung „Sitzungsgeld und Pauschalen“): Wer den
-        # Zuschuss erfasst hat, genehmigt ihn nicht selbst
+        # Zuschuss erfasst oder danach das Empfängerkonto geändert hat, genehmigt ihn nicht selbst
         if (
             action == "approve"
             and self.session_tenant.four_eyes_allowances
             and grant.created_by_id is not None
             and grant.created_by_id == self.session_user.pk
         ):
-            messages.error(request, "Genehmigen muss eine andere Person als die, die den Zuschuss erfasst hat.")
+            messages.error(
+                request,
+                "Genehmigen muss eine andere Person als die, die den Zuschuss erfasst oder das Empfängerkonto "
+                "geändert hat.",
+            )
             return redirect("session:devices", tenant_slug=tenant_slug)
 
-        grant.status = new_status
+        # Der Wechsel gelingt nur aus dem gespeicherten Ausgangsstatus (ein UPDATE mit Bedingung): Der oben
+        # geprüfte Stand stammt vom Beginn der Anfrage. Hat inzwischen jemand anderes entschieden (ausgezahlt,
+        # storniert, nach einer Kontoänderung neu festgesetzt), bleibt dessen Entscheidung stehen.
+        now = timezone.now()
+        fields: dict[str, Any] = {"status": new_status, "updated_at": now}
+        current = SessionDeviceGrant.objects.filter(
+            pk=grant.pk, tenant=self.session_tenant, status__in=self.ALLOWED_FROM[action]
+        )
         if action == "approve":
-            grant.approved_by = self.session_user
-            grant.approved_at = timezone.now()
+            fields.update(approved_by=self.session_user, approved_at=now)
+            if self.session_tenant.four_eyes_allowances:
+                current = current.exclude(created_by=self.session_user)
         elif action == "pay":
-            grant.paid_at = timezone.now()
-        grant.save()
+            fields["paid_at"] = now
+        if not current.update(**fields):
+            messages.error(request, "Der Zuschuss wurde inzwischen geändert. Bitte die Seite neu laden.")
+            return redirect("session:devices", tenant_slug=tenant_slug)
+        grant.refresh_from_db()
         audit.log_event(
             "approve" if action == "approve" else "update",
             grant,

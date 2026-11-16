@@ -34,10 +34,11 @@ import re
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Final
 
 from django.db.models import Q
+from django.utils import timezone
 
 from insight_core.models import OParlAgendaItem, OParlMeeting, OParlMembership, OParlPerson
 
@@ -253,12 +254,20 @@ def gremiumsmitglieder(organization_id: uuid.UUID, stichtag: date) -> list[OParl
     return list(personen.values())
 
 
+def sitzungstag(zeitpunkt: datetime) -> date:
+    """
+    Kalendertag eines Zeitpunkts in Ortszeit. Gespeichert ist UTC: Ohne Umrechnung läge eine Sitzung kurz nach
+    Mitternacht am Vortag, und eine am Vortag beendete Mitgliedschaft zählte noch.
+    """
+    return timezone.localtime(zeitpunkt).date() if timezone.is_aware(zeitpunkt) else zeitpunkt.date()
+
+
 def person_zuordnen(gelesen: str, *, meeting: OParlMeeting, organization_id: uuid.UUID) -> Personentreffer:
     """Ordnet einen gelesenen Namen einer Person zu (siehe Moduldokumentation)."""
     name = vergleichsname(gelesen)
     if len(name) < 3:
         return KEIN_TREFFER
-    stichtag = meeting.start.date() if meeting.start else date.today()
+    stichtag = sitzungstag(meeting.start) if meeting.start else date.today()
     mitglieder = gremiumsmitglieder(organization_id, stichtag)
     treffer = _exakt(name, mitglieder)
     if len(treffer) == 1:

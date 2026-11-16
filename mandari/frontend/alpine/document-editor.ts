@@ -362,6 +362,9 @@ export const documentEditor = defineComponent(() => {
     // wird bis dahin nur vorgemerkt, ohne Meldung
     _eigenerStatuswechsel: false,
     _neuladenVorgemerkt: false,
+    // Die Anmeldung endete, während Ungesichertes offen war: Der Text bleibt stehen, das Speichern ohne Verbindung
+    // sichert ihn nach der erneuten Anmeldung; erst danach lädt das Fenster neu
+    _sitzungBeendet: false,
     // Suchen & Ersetzen
     searchOpen: false,
     searchTerm: '',
@@ -827,7 +830,20 @@ export const documentEditor = defineComponent(() => {
               this._neuladenVorgemerkt = true
               return
             }
-            if (reason === 'access_revoked') {
+            if (reason === 'session_ended' && this.hasUnsavedChanges()) {
+              // Ungesichertes ginge mit dem Neuladen verloren: Es käme die Anmeldeseite, und über die beendete Sitzung
+              // lässt sich nichts mehr sichern. Der Text bleibt stehen, die Rückfrage beim Verlassen gilt weiter, und
+              // das Speichern ohne Verbindung übernimmt: Es zeigt die abgelaufene Anmeldung an und sichert, sobald sie
+              // in einem anderen Tab erneuert ist. Danach lädt das Fenster neu und ist wieder verbunden.
+              this.collabStatus = 'disconnected'
+              this._sitzungBeendet = true
+              void this.save()
+              return
+            }
+            if (reason === 'session_ended') {
+              // Abgemeldet, Sitzung beendet oder Passwort an anderer Stelle neu gesetzt: Der Zugriff ist nicht entzogen
+              showToast('Ihre Anmeldung gilt nicht mehr. Die Seite wird neu geladen.', 'info')
+            } else if (reason === 'access_revoked') {
               showToast('Ihr Zugriff auf dieses Dokument wurde entzogen. Die Seite wird neu geladen.', 'info')
             } else if (reason === 'access_changed') {
               showToast('Ihre Berechtigung für dieses Dokument wurde geändert. Die Seite wird neu geladen.', 'info')
@@ -1712,6 +1728,21 @@ export const documentEditor = defineComponent(() => {
           if (mitText) {
             this._savedSeq = seq
             if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash
+          }
+          if (this._sitzungBeendet && !this.hasUnsavedChanges()) {
+            // Nach dem Ende der Anmeldung ohne Verbindung gesichert: neu laden, damit die Zusammenarbeit wieder steht.
+            // Wer in der kurzen Wartezeit weiterschreibt, behält die Eingabe: Dann sichert erst der nächste Lauf, und
+            // die Rückfrage beim Verlassen gilt bis unmittelbar vor dem Neuladen.
+            window.setTimeout(() => {
+              if (!this._sitzungBeendet) return
+              if (this.hasUnsavedChanges()) {
+                void this.save()
+                return
+              }
+              this._sitzungBeendet = false
+              this.leaveIntentionally()
+              window.location.reload()
+            }, 800)
           }
           return true
         }

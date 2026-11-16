@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import IO
 
 from django.conf import settings
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -457,34 +457,60 @@ def remote_bytes() -> int:
 def cache_stats() -> dict:
     from hub.ris import abruf
 
-    from ..models import OParlFile
+    from ..models import OParlBody, OParlFile
     from . import file_cache_limit
 
     qs = OParlFile.objects.filter(deleted=False)
     abzulegen = abruf.storable_q()
     jetzt = timezone.now()
-    total = qs.count()
-    by_status = dict(Counter(qs.values_list("local_status", flat=True)))
     # Gemessene Größe der Kopie (#786); für Kopien vor deren Einführung die Angabe aus der Quelle
     stored = Coalesce("local_size", "size")
-    # Je Datei gezählt: Dateien mit gleichem Inhalt zählen mehrfach (Ablage nach SHA-256, #788)
-    cached_bytes = qs.filter(local_status="ok").aggregate(s=Sum(stored))["s"] or 0
-    without_size = qs.filter(local_status="ok", local_size__isnull=True).count()
+    # Ein Durchlauf je Kommune und Zustand statt einer Abfrage je Kennzahl (Issue #1409): In Produktion
+    # (1,66 Mio. Dateien) kostete allein die Zählung der Schonung über den Join zu Kommune und Quelle 43 s.
+    zeilen = (
+        qs.order_by()
+        .values("body_id", "local_status")
+        .annotate(
+            n=Count("id"),
+            # Je Datei gezählt: Dateien mit gleichem Inhalt zählen mehrfach (Ablage nach SHA-256, #788)
+            belegt=Sum(stored),
+            ohne_groesse=Count("id", filter=Q(local_size__isnull=True)),
+            faellig=Count("id", filter=Q(fetch_next_at__lte=jetzt)),
+        )
+    )
+    # Quellen-Schonung: Fehlversuche in Folge oder Dateiabruf abgeschaltet (wenige Kommunen, in Python abgeglichen)
+    geschont = set(
+        OParlBody.objects.filter(
+            Q(source__consecutive_failures__gte=backoff_failures()) | Q(source_id__in=sources_without_downloads())
+        ).values_list("pk", flat=True)
+    )
+    by_status: Counter = Counter()
+    je_kommune: dict = {}
+    cached_bytes = without_size = retry_due = paused = 0
+    for zeile in zeilen:
+        status, anzahl = zeile["local_status"], zeile["n"]
+        by_status[status] += anzahl
+        kommune = je_kommune.setdefault(zeile["body_id"], {"files": 0, "cached_bytes": 0})
+        kommune["files"] += anzahl
+        if status == "ok":
+            cached_bytes += zeile["belegt"] or 0
+            kommune["cached_bytes"] += zeile["belegt"] or 0
+            without_size += zeile["ohne_groesse"]
+        elif status == "retry":
+            retry_due += zeile["faellig"]
+        elif status == "none" and zeile["body_id"] in geschont:
+            paused += anzahl
+    total = sum(by_status.values())
     ok = by_status.get("ok", 0)
-    paused = qs.filter(
-        Q(body__source__consecutive_failures__gte=backoff_failures())
-        | Q(body__source_id__in=sources_without_downloads()),
-        local_status="none",
-    ).count()
     # Mit Objektspeicher liegt nur ein Teil lokal: tatsächliche Belegung aus dem Durchlauf über die Platte (wie die
     # Obergrenze, #961), getrennt von dem, was im Objektspeicher liegt. Ohne ist die Summe aus der Datenbank genau.
     with_remote = file_cache_limit.mode() == file_cache_limit.MODE_REMOTE
     stored_total = stored_bytes()
-    per_body = []
-    for row in (
-        qs.values("body__name").annotate(n=Sum(1), cached=Sum(stored, filter=Q(local_status="ok"))).order_by("-n")
-    ):
-        per_body.append({"body": row["body__name"], "files": row["n"], "cached_bytes": row["cached"] or 0})
+    namen = dict(OParlBody.objects.filter(pk__in=[pk for pk in je_kommune if pk]).values_list("pk", "name"))
+    per_body = sorted(
+        ({"body": namen.get(pk), **werte} for pk, werte in je_kommune.items()),
+        key=lambda eintrag: -eintrag["files"],
+    )
     return {
         "root": str(cache_root()),
         "total": total,
@@ -495,7 +521,7 @@ def cache_stats() -> dict:
         "not_stored": qs.exclude(abzulegen).count(),
         "fetching": by_status.get("fetching", 0),
         "retry": by_status.get("retry", 0),
-        "retry_due": qs.filter(local_status="retry", fetch_next_at__lte=jetzt).count(),
+        "retry_due": retry_due,
         "missing": by_status.get("missing", 0),
         "refused": by_status.get("refused", 0),
         "error": by_status.get("error", 0),
@@ -523,3 +549,35 @@ def cache_stats() -> dict:
         "evict_target_percent": file_cache_limit.target_percent(),
         "per_body": per_body,
     }
+
+
+#: Stand der Statistik für Betriebsmonitor und Admin-Startseite (Issue #1409)
+STATS_SNAPSHOT_KEY = "insight:dokument-cache:stand:v1"
+#: Der stündliche Prüflauf schreibt ihn neu; die Frist überbrückt zwei ausgefallene Läufe
+STATS_SNAPSHOT_TTL = 3 * 3600
+
+
+def cache_stats_snapshot(*, refresh: bool = False) -> dict | None:
+    """
+    Zuletzt ermittelte ``cache_stats`` mit Zeitpunkt (``ermittelt_am``), ohne sie im Seitenaufruf zu rechnen.
+
+    ``cache_stats`` läuft über alle Dateien (in Produktion 1,66 Mio. Zeilen) und machte jeden Aufruf der
+    Admin-Startseite fast eine Minute langsam (Issue #1409). Den Stand schreibt ``check_source_health`` stündlich
+    (``refresh=True``); ohne gespeicherten Stand ``None``.
+    """
+    from django.core.cache import cache
+
+    if not refresh:
+        try:
+            return cache.get(STATS_SNAPSHOT_KEY)
+        except Exception:  # noqa: BLE001 – ohne Cache zeigt der Monitor nur den freien Speicher
+            logger.warning("Stand des Dokument-Caches nicht lesbar", exc_info=True)
+            return None
+    stats = cache_stats()
+    stats.pop("per_body", None)
+    stats["ermittelt_am"] = timezone.now()
+    try:
+        cache.set(STATS_SNAPSHOT_KEY, stats, STATS_SNAPSHOT_TTL)
+    except Exception:  # noqa: BLE001
+        logger.warning("Stand des Dokument-Caches nicht speicherbar", exc_info=True)
+    return stats

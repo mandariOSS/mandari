@@ -14,9 +14,11 @@ services/delegation_service.py).
 """
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -43,7 +45,7 @@ from ..models import (
 from ..permissions import SessionViewMixin, role_permissions
 from ..rahmen import neues_design
 from ..services import agenda_service, body_service, delegation_service, four_eyes_service, paper_version_service
-from ..visibility import agenda_item_visible, meeting_visible, paper_visible
+from ..visibility import consultation_hidden, paper_visible
 from .bodies import BodyFilterMixin
 from .nexturl import safe_next_url
 
@@ -434,22 +436,21 @@ class PaperDetailView(SessionViewMixin, DetailView):
             .order_by("-meeting__start")
         )
 
-        # Beratungsfolge (Issue #34): Stationen + Formulardaten; Sitzung/TOP einer Station ohne
-        # NÖ-Sichtrecht nur als „nichtöffentliche Sitzung“
+        # Beratungsfolge (Issue #34): Stationen + Formulardaten; eine Station auf einem TOP oder in einer Sitzung
+        # ohne NÖ-Sichtrecht nur als „nichtöffentliche Beratung“ (ohne Gremium, Rolle und Ergebnis)
         context["consultations"] = list(
             paper.consultations.select_related("organization", "meeting", "agenda_item__meeting").order_by(
                 "order", "created_at"
             )
         )
         for station in context["consultations"]:
-            station.noe_hidden = bool(
-                (station.agenda_item_id and not agenda_item_visible(permissions, station.agenda_item))
-                or (station.meeting_id and not meeting_visible(permissions, station.meeting))
-            )
+            station.noe_hidden = consultation_hidden(permissions, station)
         context["consultation_can_edit"] = self.has_permission("edit_papers")
         context["consultation_can_schedule"] = self.has_permission("edit_meetings")
         # Terminieren erst nach der Freigabe (Issue #721); Stationen planen geht schon im Entwurf
         context["consultation_schedule_blocker"] = agenda_service.scheduling_error(paper)
+        # Auch ein Ergebnis von Hand (Station ohne TOP) erst nach der Freigabe: Das Formular sperrt die Auswahl
+        context["consultation_result_blocker"] = agenda_service.manual_result_error(paper)
 
         # Mitzeichnungslauf (Issue #81)
         from ..services import cosign_service
@@ -690,7 +691,20 @@ class PaperWorkflowView(SessionViewMixin, View):
         self.check_permissions()
 
     def post(self, request, tenant_slug, paper_id, action):
-        qs = SessionPaper.objects.filter(tenant=self.session_tenant)
+        # Jeder Schritt läuft in einer Transaktion unter der Zeilensperre der Vorlage: Der Status „In Prüfung“ wird
+        # erst zusammen mit der Mitzeichnungskette sichtbar, und eine Freigabe prüft Status und offene
+        # Mitzeichnungen am gesperrten, frisch gelesenen Stand. Sonst fände eine Freigabe zwischen Statuswechsel
+        # und Aufbau der Kette keine offene Station.
+        nachlauf: list[Callable[[], None]] = []
+        with transaction.atomic():
+            response = self._schritt(request, paper_id, action, nachlauf)
+        # E-Mails erst nach dem Festschreiben: nicht unter der Sperre und nie für einen zurückgerollten Stand
+        for aufruf in nachlauf:
+            aufruf()
+        return response
+
+    def _schritt(self, request, paper_id, action, nachlauf):
+        qs = SessionPaper.objects.select_for_update(of=("self",)).filter(tenant=self.session_tenant)
         if not self.has_permission("view_non_public_papers"):
             qs = qs.filter(is_public=True)
         paper = get_object_or_404(qs, pk=paper_id)
@@ -745,7 +759,7 @@ class PaperWorkflowView(SessionViewMixin, View):
                 paper.save()  # Audit: update über Signal
             # Mitzeichnungskette aus den Regeln aufbauen (Issue #81)
             chain_count = cosign_service.build_chain(paper)
-            self._notify_approvers(paper)
+            nachlauf.append(lambda: self._notify_approvers(paper))
             if chain_count:
                 messages.success(
                     request,
@@ -794,7 +808,7 @@ class PaperWorkflowView(SessionViewMixin, View):
                     "zurueckweisungs_kommentar": comment[:300],
                 },
             )
-            self._notify_creator(paper, comment)
+            nachlauf.append(lambda: self._notify_creator(paper, comment))
             messages.success(
                 request, f"Vorlage {paper.display_reference} wurde mit Anmerkungen zurückgewiesen{vermerk}."
             )

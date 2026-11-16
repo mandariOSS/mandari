@@ -23,6 +23,7 @@ from pathlib import Path, PurePosixPath
 
 from django.conf import settings
 from django.core.exceptions import DisallowedHost
+from django.core.files.storage import InvalidStorageError, storages
 from django.http import Http404, HttpRequest, HttpResponseBase
 from django.urls import Resolver404, resolve
 from django.views.static import serve as static_serve
@@ -70,21 +71,45 @@ _PROTECTED_ROOT_SETTINGS = ("OPARL_FILES_ROOT", "AUDIT_ARCHIVE_ROOT", "REPORTS_R
 MEDIA_URL_PREFIX = "/media/"
 
 
-def _protected_prefixes() -> tuple[str, ...]:
-    """``PROTECTED_MEDIA_PREFIXES`` plus die eingestellten Ablagen, sofern sie unter ``MEDIA_ROOT`` liegen."""
+def _protected_locations() -> list[str]:
+    """
+    Verzeichnisse der eigenen Ablagen: die ``*_ROOT``-Einstellungen und der Speicher der Archivpakete, wenn
+    ``AUDIT_ARCHIVE_STORAGE`` einen Alias mit lokalem Verzeichnis nennt (``apps.common.audit_archive``).
+    """
+    locations = [str(value) for name in _PROTECTED_ROOT_SETTINGS if (value := getattr(settings, name, None))]
+    alias = getattr(settings, "AUDIT_ARCHIVE_STORAGE", "")
+    if alias:
+        try:
+            location = getattr(storages[alias], "location", None)
+        except InvalidStorageError:
+            location = None
+        if location:
+            locations.append(str(location))
+    return locations
+
+
+def _protected_prefixes() -> tuple[tuple[str, ...], bool]:
+    """
+    ``PROTECTED_MEDIA_PREFIXES`` plus die eingestellten Ablagen, sofern sie unter ``MEDIA_ROOT`` liegen; dazu, ob
+    eine Ablage ``MEDIA_ROOT`` selbst ist.
+
+    Ist eine Ablage ``MEDIA_ROOT`` selbst, liegen ihre Dateien ohne eigenes Präfix zwischen den Uploads (etwa
+    Archivpakete des Protokolls unter ``session/<Mandant>/``). Ein Präfix lässt sich dann nicht nennen; ausgeliefert
+    wird in diesem Fall nur, was eindeutig öffentlich ist (``_is_protected``).
+    """
     root = Path(settings.MEDIA_ROOT).resolve()
     extra: list[str] = []
-    for name in _PROTECTED_ROOT_SETTINGS:
-        value = getattr(settings, name, None)
-        if not value:
-            continue
+    whole_root = False
+    for value in _protected_locations():
         try:
             relative = Path(value).resolve().relative_to(root).as_posix()
         except (ValueError, OSError):
             continue
-        if relative != ".":
+        if relative == ".":
+            whole_root = True
+        else:
             extra.append(f"{relative.lower()}/")
-    return PROTECTED_MEDIA_PREFIXES + tuple(extra)
+    return PROTECTED_MEDIA_PREFIXES + tuple(extra), whole_root
 
 
 def _media_path(path: str) -> str | None:
@@ -119,7 +144,11 @@ def _media_path(path: str) -> str | None:
 
 
 def _is_protected(path: str) -> bool:
-    return path.lower().startswith(_protected_prefixes())
+    prefixes, whole_root = _protected_prefixes()
+    if path.lower().startswith(prefixes):
+        return True
+    # Eine Ablage ohne eigenes Verzeichnis: Was nicht eindeutig öffentlich ist, könnte aus ihr stammen
+    return whole_root and not _is_public(path)
 
 
 def _is_public(path: str) -> bool:

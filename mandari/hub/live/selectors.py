@@ -31,6 +31,7 @@ from insight_core.models import OParlConsultation, OParlMeeting
 from .anbieter import anbieter
 from .models import Broadcast, BroadcastSection, BroadcastSource, BroadcastSpeech, BroadcastStatus, SpeechAssignment
 from .services import NICHT_UEBERTRAGEN_NACH, WIEDERAUFNAHME
+from .zuordnung import gremiumsmitglieder, sitzungstag
 
 
 @dataclass(frozen=True)
@@ -232,19 +233,40 @@ class WortmeldungDaten:
     zuordnung: str
     lesungen: int
     begonnen_am: datetime
+    #: Die Person gehört dem Gremium der Übertragung am Sitzungstag an (nicht nur namensgleich in der Kommune)
+    mitglied_am_sitzungstag: bool = False
 
     @property
     def eindeutig(self) -> bool:
-        """Person eindeutig zugeordnet und mehrfach gleich gelesen (Bedingung für eine Fraktionszuordnung)."""
-        return self.zuordnung == SpeechAssignment.EINDEUTIG and self.person_id is not None and self.lesungen >= 2
+        """
+        Bedingung für eine Fraktionszuordnung ohne Bestätigung von Hand: Person eindeutig zugeordnet, mehrfach
+        gleich gelesen und am Sitzungstag Mitglied des Gremiums.
+
+        Die Mitgliedschaft ist der Beleg außerhalb des Bildes: Die Namenssuche ordnet auch eine einzige
+        namensgleiche Person der Kommune eindeutig zu, die dem Gremium gar nicht angehört. Deren gelesene Fraktion
+        wartet als Vorschlag.
+        """
+        return (
+            self.zuordnung == SpeechAssignment.EINDEUTIG
+            and self.person_id is not None
+            and self.lesungen >= 2
+            and self.mitglied_am_sitzungstag
+        )
 
 
 def wortmeldung(speech_id: uuid.UUID | str) -> WortmeldungDaten | None:
     """Angaben einer Wortmeldung (für Abonnenten von ``ris.broadcast.speaker_changed``)."""
-    speech = BroadcastSpeech.objects.filter(pk=speech_id).select_related("broadcast__source").first()
+    speech = (
+        BroadcastSpeech.objects.filter(pk=speech_id).select_related("broadcast__source", "broadcast__meeting").first()
+    )
     if speech is None:
         return None
     quelle = speech.broadcast.source
+    mitglied = False
+    if speech.person_id is not None:
+        # Stichtag wie bei der Namenssuche (``zuordnung.person_zuordnen``): der Sitzungstag in Ortszeit
+        stichtag = sitzungstag(speech.broadcast.meeting.start or speech.started_at)
+        mitglied = any(p.pk == speech.person_id for p in gremiumsmitglieder(quelle.organization_id, stichtag))
     return WortmeldungDaten(
         speech_id=speech.pk,
         broadcast_id=speech.broadcast_id,
@@ -257,6 +279,7 @@ def wortmeldung(speech_id: uuid.UUID | str) -> WortmeldungDaten | None:
         zuordnung=speech.assignment,
         lesungen=speech.readings,
         begonnen_am=speech.started_at,
+        mitglied_am_sitzungstag=mitglied,
     )
 
 

@@ -4,11 +4,12 @@
 import logging
 from datetime import timedelta
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from .. import sitzung
 from ..models import (
     FactionAttendance,
     FactionMeeting,
@@ -36,14 +37,16 @@ def _get_meeting_context(view, meeting):
 
     checker = PermissionChecker(view.membership)
 
+    # Einträge nach den Rechten am Protokoll (``protocols.view_*``), wie das PDF der Niederschrift; dieselbe Abfrage
+    # zählt unten die Einträge für die Seitenleiste
+    lesbare_eintraege = sitzung.lesbare_eintraege(view.membership, meeting)
+
     # Agenda items (top-level only, children via prefetch) — Vorschläge stehen erst nach der
     # Genehmigung auf der Tagesordnung (Issue #872), offene erscheinen nur unter „Offene Vorschläge“
     agenda_items = (
         meeting.agenda_items.filter(parent__isnull=True, proposal_status="active")
         .select_related("related_agenda_item", "approves_meeting", "decision")
-        .prefetch_related(
-            "protocol_entries", "protocol_entries__speaker__user", "protocol_entries__action_assignee__user", "children"
-        )
+        .prefetch_related(Prefetch("protocol_entries", queryset=lesbare_eintraege), "children")
         .order_by("order", "number")
     )
 
@@ -54,8 +57,13 @@ def _get_meeting_context(view, meeting):
     internal_items = [i for i in agenda_items if i.visibility == "internal"] if can_view_internal else []
     locked_internal_count = 0 if can_view_internal else sum(1 for i in agenda_items if i.visibility == "internal")
     # Unterpunkte: NÖ-Unterpunkte öffentlicher TOPs nur für Vereidigte (Children sind vorab geladen)
+    from ..sitzungsarten import darf_sehen
+
     for item in agenda_items:
         item.visible_children = visible_children(item, include_internal=can_view_internal)
+        # Genehmigungs-TOP: Titel und Datum der vorigen Sitzung nur, wer sie sehen darf (Sitzungsarten, Issue #1239)
+        vorige = item.approves_meeting if item.is_approval_item and item.approves_meeting_id else None
+        item.approves_meeting_shown = vorige if vorige is not None and darf_sehen(view.membership, vorige) else None
 
     # Attendance
     attendances = meeting.attendances.select_related("membership__user")
@@ -164,9 +172,7 @@ def _get_meeting_context(view, meeting):
 
     # Protocol entries (sidebar summary) — NÖ strikt (Issue #64):
     # Einträge zu NÖ-TOPs erscheinen für Nicht-Vereidigte nirgends
-    protocol_entries_qs = meeting.protocol_entries.select_related(
-        "agenda_item", "speaker__user", "created_by__user"
-    ).order_by("-created_at")
+    protocol_entries_qs = lesbare_eintraege.select_related("agenda_item", "created_by__user").order_by("-created_at")
     if not can_view_internal:
         protocol_entries_qs = protocol_entries_qs.exclude(
             Q(agenda_item__visibility="internal") | Q(agenda_item__parent__visibility="internal")

@@ -57,6 +57,42 @@ _CHUNK = 1024 * 1024
 NOTE_BACKFILLED = "Nachträglich erfasst"
 
 
+class ContentLockedError(Exception):
+    """Der Inhalt der Vorlage ist festgeschrieben; die Meldung ist für die Oberfläche formuliert."""
+
+
+def ensure_content_unlocked(session_file: SessionFile) -> None:
+    """
+    Anlage einer Vorlage: Vorlage bis zum Ende der Transaktion sperren und die Festschreibung am gespeicherten
+    Stand prüfen.
+
+    Zwischen der Prüfung beim Laden und dem Speichern liegen Virenscan und Textauslese. Wird die Vorlage in
+    dieser Zeit zur Freigabe vorgelegt oder freigegeben, gehörte die Anlage sonst nicht zum vorgelegten Stand.
+    Die Zeilensperre hält den Statuswechsel zurück, bis die Anlage gespeichert ist; ein schon vollzogener
+    Wechsel weist sie ab. Anlagen an Sitzung, TOP oder Antrag haben keine Vorlage und bleiben unberührt.
+
+    Die Schreibwege der Oberfläche rufen die Prüfung in ihrer Transaktion auf, unmittelbar vor dem Speichern
+    (und vor dem Ablegen eines neuen Inhalts, damit bei einer Ablehnung keine Datei im Speicher zurückbleibt).
+    Das Speichern selbst (:func:`attach_upload`, :func:`replace_content`) prüft nicht; es dient auch Wegen ohne
+    Vorlage, etwa den Anhängen eines Antrags.
+
+    Raises:
+        ContentLockedError: Der Inhalt der Vorlage ist festgeschrieben.
+    """
+    if not session_file.paper_id:
+        return
+    from apps.session.services import paper_version_service
+
+    status = (
+        SessionPaper.objects.select_for_update()
+        .filter(pk=session_file.paper_id)
+        .values_list("status", flat=True)
+        .first()
+    )
+    if status in paper_version_service.CONTENT_LOCKED_STATUSES:
+        raise ContentLockedError(paper_version_service.CONTENT_LOCKED_MESSAGE)
+
+
 class PurgeRefusedError(Exception):
     """Datenschutz-Löschung nicht möglich (nutzerfreundliche Meldung)."""
 

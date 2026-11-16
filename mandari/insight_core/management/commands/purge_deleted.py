@@ -27,7 +27,18 @@ Hinweise:
   verweisenden Datensätze je Typ (Issue #421).
 - Elasticsearch wird über die bestehenden post_delete-Signale aufgeräumt
   (ELASTICSEARCH_AUTO_INDEX). Lokale Dateikopien (OParlFile.local_path)
-  werden vor dem Löschen der DB-Zeile vom Datenträger entfernt.
+  werden vor dem Löschen der DB-Zeile vom Datenträger entfernt, das Foto
+  einer Person nach dem Löschen ihrer Zeile.
+- Wortmeldungen der Live-Übertragung mit Verweis auf eine markierte Person
+  (gelesener Name, Fraktion, Funktion als Freitext) werden mit --yes
+  entfernt, auch wenn die Person selbst wegen anderer Verweise erhalten
+  bleibt (hub.live.models.wortmeldungen_zu_personen). Wortmeldungen ohne
+  Verweis, deren gelesener Name zu einer markierten Person passt, bleiben
+  stehen und werden einzeln genannt: Sie können einer namensgleichen
+  anderen Person gehören und sind von Hand zu prüfen.
+- Der Änderungsfeed der betroffenen Quellen beginnt einen neuen Abschnitt,
+  vor und nach dem Löschen: Ohne die Zeile nennt er ein früher gemeldetes
+  Löschen nicht mehr, ein älterer Cursor verweist deshalb auf den Snapshot.
 """
 
 from __future__ import annotations
@@ -37,8 +48,11 @@ from datetime import timedelta
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.utils import timezone
 
+from hub.live.models import namensgleiche_wortmeldungen, wortmeldungen_zu_personen
+from insight_core import publication
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -51,6 +65,7 @@ from insight_core.models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    OParlSource,
 )
 from insight_core.services.external_references import external_references, split_by_references
 
@@ -110,6 +125,37 @@ def _remove_local_files(file_qs) -> int:
             # Fehlende/gesperrte Datei blockiert die Löschung nicht
             continue
     return removed
+
+
+def _affected_sources(steps) -> set:
+    """Quellen der Objekte, die gelöscht werden (Dateien ohne eigene Kommune über Vorgang bzw. Sitzung)."""
+    source_ids: set = set()
+    for (name, _model, body_path), (_name, _qs, deletable, _protected) in zip(ENTITY_STEPS, steps, strict=True):
+        paths = [body_path] + (["paper__body", "meeting__body"] if name == "files" else [])
+        for path in paths:
+            source_ids.update(deletable.values_list(f"{path}__source_id", flat=True).distinct())
+    source_ids.discard(None)
+    return source_ids
+
+
+def _begin_feed_epoch(source_ids: set) -> None:
+    """
+    Neuen Abschnitt des Änderungsfeeds an den Quellen festhalten (``publication.note_retraction``).
+
+    Das physische Löschen ändert den Bestand am Journal vorbei: Der Feed nennt einen Eintrag nur, solange es die
+    Zeile gibt, ein früher gemeldetes Löschen fiele also weg und ein Abnehmer mit älterem Cursor erführe nichts
+    davon. Mit dem neuen Abschnitt gilt sein Cursor nicht mehr; er steigt über den Snapshot neu ein
+    (``hub.api.changes``, ``Feed.epoch``).
+    """
+    if not source_ids:
+        return
+    now = timezone.now()
+    with transaction.atomic():
+        for source in OParlSource.objects.select_for_update().filter(pk__in=source_ids):
+            config = dict(source.sync_config) if isinstance(source.sync_config, dict) else {}
+            publication.note_retraction(config, now)
+            source.sync_config = config
+            source.save(update_fields=["sync_config", "updated_at"])
 
 
 class Command(BaseCommand):
@@ -186,6 +232,25 @@ class Command(BaseCommand):
             deletable, protected = split_by_references(qs)
             steps.append((name, qs, deletable, protected))
 
+        # Gelesene Angaben markierter Personen in den Wortmeldungen der Live-Übertragung. Vor der Auswertung der
+        # Verweise: Der Verweis einer Wortmeldung hielte die Person sonst zurück. Das gilt auch, wenn die Person aus
+        # anderem Grund erhalten bleibt. Wortmeldungen ohne Verweis mit gleich gelesenem Namen werden nur genannt:
+        # Ob die markierte oder eine namensgleiche andere Person gesprochen hat, lässt sich nicht sagen.
+        marked_persons = list(
+            next(qs for name, qs, _, _ in steps if name == "persons").only(
+                "id", "body_id", "name", "given_name", "family_name"
+            )
+        )
+        same_name = list(
+            namensgleiche_wortmeldungen(marked_persons)
+            .select_related("broadcast__meeting")
+            .order_by("broadcast__meeting__start", "started_at")
+        )
+        speeches = wortmeldungen_zu_personen(marked_persons)
+        speech_count = speeches.count()
+        if speech_count and execute:
+            speeches.delete()
+
         total = sum(qs.count() for _, qs, _, _ in steps)
         protected_total = 0
         mode = "LÖSCHUNG" if execute else "DRY-RUN (nichts wird gelöscht, --yes zum Ausführen)"
@@ -195,6 +260,26 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING(f"purge_deleted — {mode}"))
         self.stdout.write(f"Umfang: {scope}" + (f", Markierung älter als {older_than} Tage" if older_than else ""))
         self.stdout.write(f"Markierte Objekte gesamt: {total}\n")
+        if speech_count:
+            self.stdout.write(
+                f"  Wortmeldungen der Live-Übertragung mit Verweis auf markierte Personen: {speech_count} "
+                + ("(entfernt)" if execute else "(werden mit --yes entfernt)")
+            )
+        if same_name:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  Wortmeldungen ohne Personenverweis mit gleich gelesenem Namen: {len(same_name)}. Sie bleiben "
+                    "stehen (auch mit --yes), weil sie einer namensgleichen anderen Person gehören können. Bitte von "
+                    "Hand prüfen und in der Verwaltung unter „Wortmeldungen“ löschen, was zur markierten Person gehört:"
+                )
+            )
+            for speech in same_name:
+                meeting = speech.broadcast.meeting
+                day = f" am {timezone.localtime(meeting.start):%d.%m.%Y}" if meeting.start else ""
+                self.stdout.write(
+                    f"    - „{speech.name_read}“, {meeting.name or 'Sitzung'}{day},"
+                    f" {timezone.localtime(speech.started_at):%H:%M} Uhr ({speech.pk})"
+                )
 
         for name, qs, _deletable, protected in steps:
             count = qs.count()
@@ -255,12 +340,22 @@ class Command(BaseCommand):
         if removed_files:
             self.stdout.write(f"Lokale Dateikopien entfernt: {removed_files}")
 
+        # Vor dem Löschen: Bricht der Lauf ab, gilt der neue Abschnitt schon für das bis dahin Gelöschte
+        sources = _affected_sources(steps)
+        _begin_feed_epoch(sources)
+
         deleted_total = 0
         for name, _qs, deletable, _protected in steps:
             deleted_rows = _chunked_delete(deletable)
             if deleted_rows:
                 self.stdout.write(f"  {name}: {deleted_rows} Zeilen gelöscht (inkl. Kaskaden)")
             deleted_total += deleted_rows
+
+        # Und danach noch einmal: Ein Snapshot, der während des Laufs entstand, trägt schon einen Cursor des neuen
+        # Abschnitts, kann aber unmarkierte Kindobjekte enthalten, die erst die Kaskade entfernt hat (etwa die
+        # Tagesordnungspunkte einer gelöschten Sitzung). Das Journal meldet sie nicht; mit dem zweiten Wechsel
+        # steigt auch dieser Abnehmer über den Snapshot neu ein.
+        _begin_feed_epoch(sources)
 
         kept_total = sum(protected.count() for _, _, _, protected in steps)
         self.stdout.write(

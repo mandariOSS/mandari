@@ -16,10 +16,11 @@ import logging
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandParser
+from django.db import transaction
 
 from apps.events import event_context, system_ref
 from apps.session.models import SessionProtocol
-from apps.session.services import protocol_publication
+from apps.session.services import protocol_publication, protocol_service
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,10 @@ class Command(BaseCommand):
                 self.stdout.write(f"würde erzeugen: {label}")
                 continue
             try:
-                protocol_publication.publish(protocol, force=bool(options.get("force")))
+                # Unter der Sperre der Niederschrift und mit frisch gelesenem Stand, wie jeder andere Weg
+                with transaction.atomic():
+                    protocol_service.lock_protocol(protocol)
+                    protocol_publication.publish(protocol, force=bool(options.get("force")))
             except Exception:  # noqa: BLE001 – eine fehlerhafte Niederschrift hält die übrigen nicht auf
                 failed += 1
                 logger.exception("Öffentliche Fassung der Niederschrift %s konnte nicht erzeugt werden", protocol.pk)

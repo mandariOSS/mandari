@@ -22,6 +22,8 @@ DEFAULTS: dict[str, int] = {
     "INSIGHT_SUMMARY_PER_IP_HOUR": 6,
     "INSIGHT_SUMMARY_PER_IP_DAY": 20,
     "INSIGHT_SUMMARY_DAILY_LIMIT": 300,
+    # KI-Assistent: so viele Antworten laufen höchstens zugleich (Belegung vor dem Anbieteraufruf)
+    "INSIGHT_CHAT_MAX_CONCURRENT": 8,
     # Formulare, die E-Mails auslösen (Kontakt, Abos, Beschluss-Abos, Ratsfragen)
     "INSIGHT_MAILS_PER_IP_HOUR": 10,
     "INSIGHT_MAILS_PER_ADDRESS_DAY": 3,
@@ -31,6 +33,11 @@ DEFAULTS: dict[str, int] = {
     "INSIGHT_TILE_FETCHES_PER_IP_MINUTE": 300,
     "INSIGHT_TILE_FETCHES_PER_MINUTE": 1200,
     "INSIGHT_TILE_CACHE_MAX_TILES": 500_000,
+    # Adresssuche der Nachbarschaftsseite (nur Abrufe bei Photon, Treffer aus dem Cache sind frei). Insgesamt
+    # unter dem Takt von 60 je Minute, damit die Verortung Zeitpunkte behält. Je Aufrufer so viele, dass eine
+    # langsam getippte Adresse (ein Abruf je Tipp-Pause) ihre Vorschläge bis zum letzten Zeichen bekommt
+    "INSIGHT_PHOTON_PER_IP_MINUTE": 25,
+    "INSIGHT_PHOTON_PER_MINUTE": 40,
     # Feeds (Issue #1274): nur Neubauten zählen, Feeds aus dem Cache sind frei
     "INSIGHT_FEEDS_PER_IP_MINUTE": 30,
     # Dateivorschau (nur Abrufe beim Quell-RIS, Dateien aus dem Cache sind frei)

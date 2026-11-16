@@ -16,11 +16,13 @@ from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from .models import (
+    REASON_PRIVACY,
     OParlFile,
     OParlMeeting,
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    SubscriptionAlert,
 )
 from .services.search_documents import file_to_doc as _file_to_doc
 from .services.search_documents import meeting_to_doc as _meeting_to_doc
@@ -100,8 +102,9 @@ def index_paper(sender, instance, **kwargs):
 
 @receiver(post_delete, sender=OParlPaper)
 def delete_paper(sender, instance, **kwargs):
-    """Löscht einen Vorgang aus dem Index."""
+    """Löscht einen Vorgang aus dem Index und verwirft Abo-Hinweise, die seinen Titel als Kopie festhalten."""
     _delete_document("papers", str(instance.id))
+    SubscriptionAlert.objects.filter(entity_type="paper", entity_id=instance.pk).delete()
 
 
 @receiver(post_save, sender=OParlMeeting)
@@ -120,11 +123,45 @@ def delete_meeting(sender, instance, **kwargs):
     _delete_document("meetings", str(instance.id))
 
 
+def _remove_photo(person: OParlPerson) -> None:
+    """
+    Foto der Person aus der Ablage nehmen, und zwar erst nach dem Commit (``transaction.on_commit``).
+
+    Ein ``FileField`` entfernt seine Datei beim Löschen der Zeile nicht; sie bliebe unter ihrer Adresse abrufbar.
+    Rollt die Transaktion zurück, bleibt die Datei stehen (die Zeile gibt es dann auch noch). Ein Fehler der Ablage
+    (gesperrte oder fehlende Datei, bei einer entfernten Ablage auch ein Netz- oder Dienstfehler) wird nur vermerkt:
+    Er darf weder das Löschen der Zeile aufhalten noch einen Lauf über viele Zeilen abbrechen (``purge_deleted``).
+    Welche Fehler eine Ablage wirft, legt sie selbst fest; deshalb jede Ausnahme, und ``robust`` als zweite Sicherung.
+    Die Meldung nennt den Namen der Datei in der Ablage: Der Verweis an der Zeile ist dann schon entfernt, und ohne
+    den Namen ließe sich die liegen gebliebene Datei nicht mehr finden und von Hand löschen.
+    """
+    if not person.photo:
+        return
+    storage, name, pk = person.photo.storage, person.photo.name, person.pk
+
+    def remove() -> None:
+        try:
+            storage.delete(name)
+        except Exception:
+            logger.exception("Foto der Person %s konnte nicht gelöscht werden, Datei in der Ablage: %s", pk, name)
+
+    transaction.on_commit(remove, robust=True)
+
+
 @receiver(post_save, sender=OParlPerson)
 def index_person(sender, instance, **kwargs):
-    """Indexiert eine Person nach dem Speichern (Tombstones werden entfernt)."""
+    """Indexiert eine Person nach dem Speichern (Tombstones werden entfernt, bei Datenschutz auch das Foto)."""
     if instance.deleted:
         _delete_document("persons", str(instance.id))
+        # Nur die Entfernung aus Datenschutzgründen nimmt das Foto sofort. Andere Markierungen lassen sich
+        # aufheben (Abgleich mit der Quelle, Reaktivieren eines Mandanten); die Person käme sonst ohne Foto
+        # zurück. Ihr Foto geht mit dem endgültigen Löschen der Zeile (``delete_person``).
+        if instance.photo and instance.deletion_reason == REASON_PRIVACY:
+            _remove_photo(instance)
+            # „missing“: Die Anzeige fällt nicht auf die Adresse im RIS zurück (``OParlPerson.photo_src``)
+            OParlPerson.objects.filter(pk=instance.pk).update(photo=None, photo_status="missing")
+            instance.photo = None
+            instance.photo_status = "missing"
         return
     doc = _person_to_doc(instance)
     _index_document("persons", str(instance.id), doc)
@@ -132,8 +169,9 @@ def index_person(sender, instance, **kwargs):
 
 @receiver(post_delete, sender=OParlPerson)
 def delete_person(sender, instance, **kwargs):
-    """Löscht eine Person aus dem Index."""
+    """Löscht eine Person aus dem Index und ihr Foto aus der Ablage."""
     _delete_document("persons", str(instance.id))
+    _remove_photo(instance)
 
 
 @receiver(post_save, sender=OParlOrganization)

@@ -1,7 +1,8 @@
 {% comment %}
 Formular einer Station der Beratungsfolge im neuen Rahmen (Issues #34, #944): klappt unter der Station auf („Bearbeiten“
 in session/neu/_beratungsfolge.html). Rolle, Zielsitzung (fest, solange ein TOP existiert), Ergebnis von Hand (nur ohne
-TOP, sonst kommt es aus der Sitzung) und „entscheidend“; Felder wie session/papers/consultation_section.html.
+TOP, sonst kommt es aus der Sitzung; vor der Freigabe der Vorlage sind die Ergebnisse gesperrt, consultation_result_blocker)
+und „entscheidend“; Felder wie session/papers/consultation_section.html.
 Kontext: station und der Kontext der Beratungsfolge.
 {% endcomment %}
 <form id="station-{{ station.id }}" method="post" action="{% url 'session:consultation_update' tenant_slug=tenant_slug consultation_id=station.id %}"
@@ -24,8 +25,8 @@ Kontext: station und der Kontext der Beratungsfolge.
     {% if station.agenda_item %}
     <input type="hidden" name="meeting" value="{{ station.meeting_id }}">
     {% else %}
-    <c-form.select name="result" id="station-ergebnis-{{ station.id }}" label="Ergebnis (ohne TOP)" dicht class="min-w-0 w-48">
-        {% for value, label in consultation_results %}<option value="{{ value }}" {% if station.result == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    <c-form.select name="result" id="station-ergebnis-{{ station.id }}" label="{% if consultation_result_blocker %}Ergebnis (nach Freigabe){% else %}Ergebnis (ohne TOP){% endif %}" dicht class="min-w-0 w-48">
+        {% for value, label in consultation_results %}<option value="{{ value }}" {% if station.result == value %}selected{% elif consultation_result_blocker and value != "pending" %}disabled{% endif %}>{{ label }}</option>{% endfor %}
     </c-form.select>
     {% endif %}
     <c-form.checkbox name="authoritative" id="station-entscheidend-{{ station.id }}" label="entscheidend" checked="{% if station.authoritative %}1{% endif %}" class="h-9" />

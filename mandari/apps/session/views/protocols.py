@@ -30,7 +30,6 @@ from ..permissions import SessionViewMixin
 from ..rahmen import neues_design
 from ..services import (
     agenda_service,
-    cockpit_service,
     four_eyes_service,
     participation_service,
     protocol_correction_service,
@@ -233,32 +232,36 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
         if protocol is None:
             messages.error(request, "Für diese Sitzung existiert noch kein Protokoll.")
             return _protocol_redirect(self, meeting)
-        if protocol.status not in ("draft", "review"):
+        can_view_np = self.has_permission("view_non_public_meetings")
+
+        # Allgemeiner Teil, Unterschriften, TOP-weise Protokolltexte und Beschlussergebnisse in einer Transaktion
+        # unter der Sperre von Sitzung und Niederschrift (wie Cockpit und Workflow-Schritte). Der Status wird unter
+        # der Sperre geprüft, und gespeichert werden nur die Inhaltsfelder: Eine gleichzeitige Genehmigung oder
+        # Veröffentlichung sieht entweder diese Bearbeitung oder weist sie ab, ihr Stand wird nie überschrieben.
+        # Die Niederschrift wird oft parallel zur Sitzung geschrieben: TOPs erst unter der Sperre laden, Ergebnis
+        # und Summen nur übernehmen, wenn sie hier geändert wurden, Zeiten des Cockpits nie mitspeichern (Issue #140)
+        # Drehscheibe (Issue #535): Ergebnisse, Summen und Beschlusstexte der TOPs
+        with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+            protocol_service.lock_protocol(protocol)
+            editable = protocol.status in ("draft", "review")
+            if editable:
+                protocol.content = request.POST.get("content", "")
+                protocol.chair_name = request.POST.get("chair_name", "").strip()[:255]
+                protocol.recorder_name = request.POST.get("recorder_name", "").strip()[:255]
+                fields = list(protocol_service.EDIT_FIELDS)
+                if can_view_np:
+                    protocol.set_content_encrypted(request.POST.get("content_np", ""))
+                    fields.append("content_encrypted")
+                protocol.save(update_fields=fields)
+                tracked.agenda(meeting)
+                self._save_items(request, meeting, can_view_np)
+        if not editable:
             messages.error(
                 request,
                 "Genehmigte/veröffentlichte Niederschriften sind nicht mehr bearbeitbar. "
                 "Korrekturen laufen über eine Berichtigung.",
             )
             return _protocol_redirect(self, meeting)
-
-        can_view_np = self.has_permission("view_non_public_meetings")
-
-        # Allgemeiner Teil + Unterschriften
-        protocol.content = request.POST.get("content", "")
-        protocol.chair_name = request.POST.get("chair_name", "").strip()[:255]
-        protocol.recorder_name = request.POST.get("recorder_name", "").strip()[:255]
-        if can_view_np:
-            protocol.set_content_encrypted(request.POST.get("content_np", ""))
-        protocol.save()
-
-        # TOP-weise Protokolltexte + Beschlussergebnisse. Die Niederschrift wird oft parallel zur Sitzung
-        # geschrieben: Sperre auf der Sitzung wie im Cockpit, TOPs erst unter der Sperre laden, Ergebnis und
-        # Summen nur übernehmen, wenn sie hier geändert wurden, Zeiten des Cockpits nie mitspeichern (Issue #140)
-        # Drehscheibe (Issue #535): Ergebnisse, Summen und Beschlusstexte der TOPs
-        with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
-            cockpit_service.lock_meeting(meeting.pk)
-            tracked.agenda(meeting)
-            self._save_items(request, meeting, can_view_np)
 
         messages.success(request, "Protokoll wurde gespeichert.")
         if request.POST.get("continue") == "1":

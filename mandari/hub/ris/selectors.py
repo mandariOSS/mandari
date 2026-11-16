@@ -229,6 +229,14 @@ def meetings_by_external_id(external_ids: Iterable[str]) -> QuerySet[OParlMeetin
     return OParlMeeting.objects.filter(external_id__in=list(external_ids))
 
 
+def meetings_by_external_id_suffix(suffix: str) -> QuerySet[OParlMeeting]:
+    """
+    Sitzungen, deren OParl-Kennung auf ``suffix`` endet: der Spiegel eines Session-Mandanten, dessen Kennungen mit
+    der Adresse der Installation beginnen (``…/session/<slug>/api/oparl/meeting/<id>/``).
+    """
+    return OParlMeeting.objects.filter(external_id__endswith=suffix)
+
+
 # =============================================================================
 # Tagesordnungspunkte
 # =============================================================================
@@ -442,6 +450,10 @@ def papers_on_agendas(
         .exclude(withdrawn_q("paper"))
         .exclude(paper_id__in=list(exclude_papers))
         .select_related("paper")
+        # Ohne Rohdaten und Zusammenfassungen: Die Abfrage liefert je Beratung eine Zeile samt Vorlage. Eine
+        # Vorlage mit vielen Beratungen käme sonst mit ihrem ganzen Rohobjekt je Zeile erneut; die Grenze auf
+        # ``limit`` Vorlagen wirkt erst danach. Wer die Felder braucht, lädt sie für die wenigen Treffer nach.
+        .defer("raw_json", "paper__raw_json", "paper__summary", "paper__summary_einfach", "paper__locations")
         .order_by("-paper__date", "-paper__oparl_created")
     )
     gefunden: dict[uuid.UUID, PaperOnAgenda] = {}

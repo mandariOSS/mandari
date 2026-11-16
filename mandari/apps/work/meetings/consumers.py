@@ -75,7 +75,8 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
 
     Der Zugriff wird während der Verbindung nachgeprüft: sofort, wenn sich Mitgliedschaft, Rolle, Konto oder
     Organisation ändern (Gruppe der Person, ``access_recheck``), und spätestens nach
-    ``ACCESS_RECHECK_INTERVAL_SECONDS`` vor dem nächsten Ereignis. Ohne Zugriff endet die Verbindung mit 4403.
+    ``ACCESS_RECHECK_INTERVAL_SECONDS`` vor dem nächsten Ereignis. Ohne Zugriff endet die Verbindung mit 4403; gilt nur
+    ihre Sitzung nicht mehr (abgemeldet, beendet, neues Passwort), mit 4440.
     """
 
     async def connect(self):
@@ -87,6 +88,8 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
         self.user_group = None
         self.user = None
         self.entzogen = False
+        # Die Zugriffsprüfung ist an der Sitzung gescheitert, nicht am Zugriff der Person: eigener Schließcode
+        self.sitzung_beendet = False
         self._geprueft_um = time.monotonic()
 
         user = self.scope.get("user")
@@ -148,7 +151,10 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
             return
         self.entzogen = True
         await self._gruppen_verlassen()
-        await self.close(code=4403)
+        from apps.accounts.websocket import CLOSE_SESSION_ENDED
+
+        # Gilt nur die Sitzung nicht mehr, endet die Verbindung mit eigenem Code (die Seite fragt dann wieder über HTTP)
+        await self.close(code=CLOSE_SESSION_ENDED if self.sitzung_beendet else 4403)
 
     @database_sync_to_async
     def _check_access(self, user):
@@ -176,9 +182,14 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
         if membership is None:
             return None
 
-        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
-        from apps.accounts.websocket import requirement_open
+        from apps.accounts.websocket import requirement_open, session_valid
 
+        # Sitzung beendet (Abmelden, Geräteliste, neues Passwort): Die Verbindung endet wie der Zugriff über HTTP
+        if not session_valid(self, user):
+            self.sitzung_beendet = True
+            return None
+
+        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
         if requirement_open(user):
             return None
 

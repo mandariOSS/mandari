@@ -155,6 +155,64 @@ def test_ablagen_ausserhalb_von_media_root_aendern_nichts(
     assert _geliefert(client.get("/media/sonstiges/notiz.txt"))
 
 
+ARCHIVPAKET = "session/3f6c1d2e/20261101-020000-protokoll-2026-10.zip"
+
+
+@pytest.fixture
+def archivpaket(media: Path) -> str:
+    """Archivpaket des Protokolls, wie es ohne eigenes Verzeichnis unter MEDIA_ROOT läge."""
+    ziel = media / ARCHIVPAKET
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    ziel.write_bytes(INHALT)
+    return f"/media/{ARCHIVPAKET}"
+
+
+@pytest.mark.parametrize("einstellung", ["AUDIT_ARCHIVE_ROOT", "REPORTS_ROOT", "OPARL_FILES_ROOT"])
+def test_ablage_gleich_media_root_liefert_nur_oeffentliches(
+    media: Path, client: Client, settings: Any, archivpaket: str, einstellung: str
+) -> None:
+    """Ohne eigenes Verzeichnis liegen die Dateien der Ablage zwischen den Uploads: nichts davon geht hinaus."""
+    client.force_login(cast(Any, UserFactory)())
+    assert _geliefert(client.get(archivpaket)), "mit eigener Ablage ist der Pfad ein gewöhnlicher Upload"
+
+    setattr(settings, einstellung, str(media))
+
+    for url in (archivpaket, "/media/sonstiges/notiz.txt"):
+        antwort = client.get(url)
+        assert not _geliefert(antwort), url
+        assert antwort.status_code == 404
+    assert _geliefert(client.get("/media/demo/logo.png"))
+    assert _geliefert(Client().get("/media/avatars/bild.png"))
+
+
+def test_archivspeicher_ueber_alias_ist_geschuetzt(
+    media: Path, client: Client, settings: Any, archivpaket: str
+) -> None:
+    """``AUDIT_ARCHIVE_STORAGE`` nennt einen lokalen Speicher: Sein Verzeichnis zählt wie ``AUDIT_ARCHIVE_ROOT``."""
+    client.force_login(cast(Any, UserFactory)())
+
+    # Der Standardspeicher ist MEDIA_ROOT selbst
+    settings.AUDIT_ARCHIVE_STORAGE = "default"
+    assert client.get(archivpaket).status_code == 404
+    assert _geliefert(client.get("/media/demo/logo.png"))
+
+    # Ein eigener lokaler Speicher unter MEDIA_ROOT: sein Verzeichnis ist geschützt, alles andere wie zuvor
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "archiv": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+            "OPTIONS": {"location": str(media / "session")},
+        },
+    }
+    settings.AUDIT_ARCHIVE_STORAGE = "archiv"
+    assert client.get(archivpaket).status_code == 404
+    assert _geliefert(client.get("/media/sonstiges/notiz.txt"))
+
+    # Ein unbekannter Alias stört die Auslieferung nicht
+    settings.AUDIT_ARCHIVE_STORAGE = "gibt-es-nicht"
+    assert _geliefert(client.get("/media/sonstiges/notiz.txt"))
+
+
 def test_umweg_auf_oeffentliche_datei_ist_nicht_oeffentlich_gecacht(media: Path, client: Client) -> None:
     """Ein Umweg über ``..`` wird nicht ausgeliefert – auch nicht zu einer öffentlichen Datei."""
     antwort = client.get("/media/avatars/../demo/logo.png")

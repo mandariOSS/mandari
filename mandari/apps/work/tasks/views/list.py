@@ -222,7 +222,7 @@ class TaskBoardAPIView(WorkViewMixin, View):
         new_status = request.POST.get("status")
         if new_status not in services.VALID_STATUSES:
             return JsonResponse({"error": "Ungültiger Status."}, status=400)
-        services.set_status(task, new_status)
+        services.set_status(task, self.membership, new_status)
         return JsonResponse({"success": True})
 
     def _toggle_complete(self, request):

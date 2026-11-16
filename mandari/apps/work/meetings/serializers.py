@@ -154,6 +154,22 @@ def serialize_position(position: AgendaItemPosition | None) -> dict[str, Any]:
     }
 
 
+def linked_document_ref(note: AgendaSpeechNote | None, membership: Membership | None) -> dict[str, Any] | None:
+    """
+    Verweis auf das als Redebeitrag verknüpfte Dokument, für alle Ausgaben derselbe.
+
+    Den Titel gibt es nur mit aktuellem Zugriff. Die Verknüpfung wird beim Setzen geprüft; danach kann die
+    Freigabe entzogen oder das Dokument privat gestellt worden sein. Dann bleibt nur die Kennung mit
+    ``access: False``, und die Oberfläche zeigt „Dokument ohne Zugriff“.
+    """
+    doc = note.linked_document if note is not None else None
+    if doc is None:
+        return None
+    if membership is not None and doc.can_access(membership):
+        return {"id": str(doc.id), "title": doc.title}
+    return {"id": str(doc.id), "title": None, "access": False}
+
+
 def serialize_speech_note(note: AgendaSpeechNote | None, membership: Membership) -> dict[str, Any]:
     """Redebeitrag inkl. aufgelöstem linked_document-Inhalt (read-only, can_access-geprüft)."""
     if note is None:
@@ -165,20 +181,14 @@ def serialize_speech_note(note: AgendaSpeechNote | None, membership: Membership)
             "linked_document": None,
             "content_readonly": False,
         }
-    linked: dict[str, Any] | None = None
     content = decrypted(note, "content")
     readonly = False
     doc = note.linked_document
-    if doc is not None:
-        if doc.can_access(membership):
-            linked = {"id": str(doc.id), "title": doc.title}
-            content = decrypted(doc, "content")
-            readonly = True
-        else:
-            # Verknüpfung existiert, aber kein Zugriff (z.B. entzogene Freigabe)
-            linked = {"id": str(doc.id), "title": None, "access": False}
-            content = ""
-            readonly = True
+    linked = linked_document_ref(note, membership)
+    if doc is not None and linked is not None:
+        # Ohne Zugriff (z. B. entzogene Freigabe) bleibt die Verknüpfung sichtbar, der Inhalt nicht
+        content = decrypted(doc, "content") if linked.get("access", True) else ""
+        readonly = True
     return {
         # Redetext ist Editor-HTML: nur die Positivliste geht an den Client (auch Altbestand)
         "content": sanitize_editor_html(content),
@@ -349,8 +359,15 @@ def _serialize_ris_file(f: OParlFile, annotation_counts: dict[Any, int]) -> dict
     }
 
 
-def serialize_prepared_item(entry: PreparedItem, index: int, data: PreparationData) -> dict[str, Any]:
-    """Ein TOP mit allen Sektionen für ``preparationApp`` (Feldnamen sind Vertrag mit dem Frontend)."""
+def serialize_prepared_item(
+    entry: PreparedItem, index: int, data: PreparationData, membership: Membership | None = None
+) -> dict[str, Any]:
+    """
+    Ein TOP mit allen Sektionen für ``preparationApp`` (Feldnamen sind Vertrag mit dem Frontend).
+
+    ``membership`` ist das Mitglied, für das die Seite entsteht: Der Titel eines als Redebeitrag verknüpften
+    Dokuments erscheint nur mit dessen aktuellem Zugriff (ohne Angabe nie).
+    """
     item = entry.item
     position = entry.position
     speech = entry.own_speech
@@ -382,9 +399,7 @@ def serialize_prepared_item(entry: PreparedItem, index: int, data: PreparationDa
         "speechContent": sanitize_editor_html(decrypted(speech, "content")) if speech else "",
         "speechDuration": speech.estimated_duration if speech else 0,
         "speechShared": speech.is_shared if speech else False,
-        "speechLinkedDocument": {"id": str(speech.linked_document.id), "title": speech.linked_document.title}
-        if speech and speech.linked_document is not None
-        else None,
+        "speechLinkedDocument": linked_document_ref(speech, membership),
         "sharedSpeeches": [serialize_shared_speech(s) for s in entry.shared_speeches],
         # Vorlage
         "paper": {
@@ -435,9 +450,12 @@ def build_prepare_config(
     data: PreparationData,
     current_user_name: str,
     account_id: str,
+    membership: Membership | None = None,
 ) -> dict[str, Any]:
     """
     Ein JSON-Objekt für den Client (``json_script`` im Template) — keine String-Interpolation in JS.
+
+    ``membership``: das Mitglied, für das die Seite entsteht (Zugriff auf ein verknüpftes Dokument).
 
     ``accountId`` (Kennung des Kontos, nie der Name) und ``orgId`` trennen die Sicherung ungespeicherter Eingaben im
     Browser je Konto und Organisation (#854, frontend/js/eingaben-sicherung.ts): Dieselbe Ratssitzung wird in jeder
@@ -453,7 +471,9 @@ def build_prepare_config(
         "currentUser": current_user_name,
         "positionLabels": {code: str(label) for code, label in AgendaItemPosition.POSITION_CHOICES},
         "orgNotes": decrypted(preparation, "notes") or "",
-        "items": [serialize_prepared_item(entry, idx, data) for idx, entry in enumerate(data.prepared_items)],
+        "items": [
+            serialize_prepared_item(entry, idx, data, membership) for idx, entry in enumerate(data.prepared_items)
+        ],
         "urls": {
             "summary": reverse(
                 "work:meeting_summary", kwargs={"org_slug": organization.slug, "meeting_id": meeting.id}

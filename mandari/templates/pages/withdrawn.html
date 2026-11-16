@@ -1,7 +1,8 @@
 {% extends "base_insight.html" %}
 {% comment %}
-Zurückgenommene Veröffentlichung (Session: nicht-öffentlich gestellt oder gelöscht). Zeigt bewusst
-weder Titel noch Inhalt des Objekts.
+Zurückgenommene Veröffentlichung (Session: nicht-öffentlich gestellt oder gelöscht; fremde Systeme: mit einem
+Grund der Rücknahme markiert). Zeigt bewusst weder Titel noch Inhalt des Objekts, bei fremden Systemen auch
+weder Urheber noch Grund.
 {% endcomment %}
 {% block title %}Nicht mehr öffentlich{% endblock %}
 {% block content %}
@@ -9,8 +10,13 @@ weder Titel noch Inhalt des Objekts.
     <i data-lucide="eye-off" class="mx-auto h-10 w-10 text-gray-400"></i>
     <h1 class="mt-4 text-2xl font-bold text-gray-900 dark:text-white">Nicht mehr öffentlich</h1>
     <p class="mt-3 text-gray-600 dark:text-gray-300">
+        {% if von_verwaltung %}
         Die Verwaltung hat diesen Eintrag{% if withdrawn_at %} am {{ withdrawn_at|date:"d.m.Y" }}{% endif %}
         aus der Veröffentlichung zurückgenommen, etwa weil er in nicht-öffentlicher Sitzung beraten wird.
+        {% else %}
+        Dieser Eintrag wurde{% if withdrawn_at %} am {{ withdrawn_at|date:"d.m.Y" }}{% endif %}
+        aus der Veröffentlichung zurückgenommen.
+        {% endif %}
         Er erscheint nicht mehr in Listen, Suche und Schnittstellen.
     </p>
     <a href="/" class="mt-6 inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:underline">Zur Startseite</a>

@@ -145,6 +145,10 @@ def preference_hint(notification_type: str) -> str:
 #: aus, die Benachrichtigung bleibt gespeichert
 ANNOUNCEMENT_WITHDRAWN_KEY = "zurueckgezogen_am"
 
+#: Metadaten-Schlüssel einer Nachricht zu einer Aufgabe, die beim Löschen zu einem nichtöffentlichen TOP gehörte:
+#: Nach dem Löschen lässt sich das nicht mehr feststellen, der gespeicherte Text nennt aber Titel und Auszug
+TASK_NON_PUBLIC_KEY = "aufgabe_nichtoeffentlich"
+
 #: Immer aktive Arten – nicht im Formular, gespeicherte Einstellungen werden ignoriert:
 #: - Registrierungsanfrage: Hinweis an die Verwaltenden; ohne ihn bliebe eine Anfrage unbemerkt liegen.
 ALWAYS_ACTIVE_TYPES: frozenset[str] = frozenset({NotificationType.REGISTRATION_REQUEST.value})

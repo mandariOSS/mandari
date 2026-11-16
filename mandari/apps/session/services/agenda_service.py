@@ -40,6 +40,30 @@ def scheduling_error(paper: Any) -> str:
     )
 
 
+#: Stände vor der Freigabe: Für eine Vorlage im Entwurf oder in Prüfung gibt es noch kein Beratungsergebnis
+NOT_YET_RELEASED_PAPER_STATUSES = frozenset({"draft", "review"})
+
+
+def manual_result_error(paper: Any) -> str:
+    """
+    Grund, warum an einer Beratungsstation dieser Vorlage (noch) kein Ergebnis von Hand eingetragen wird; leer,
+    sobald sie freigegeben war.
+
+    Ein Ergebnis ohne TOP hält eine Beratung fest, die nicht über eine Tagesordnung dieses Systems lief. Beraten
+    wird aber erst eine freigegebene Vorlage (:func:`scheduling_error`): Im Entwurf und in Prüfung gibt es noch
+    nichts festzuhalten. An einer zurückgezogenen Vorlage bleibt das Ergebnis möglich, etwa „Zurückgezogen“ an den
+    Stationen, die noch ausstanden, oder ein nachgetragenes oder berichtigtes Ergebnis. Die beschlossene Fassung
+    kennzeichnet ein Ergebnis ohne TOP ohnehin nur an einer freigegebenen Vorlage
+    (``paper_version_service.record_consultation``).
+    """
+    if paper is None or paper.status not in NOT_YET_RELEASED_PAPER_STATUSES:
+        return ""
+    return (
+        f"Die Vorlage {paper.display_reference} ist noch nicht freigegeben (Status „{paper.get_status_display()}“). "
+        "Ein Beratungsergebnis lässt sich erst nach der Freigabe eintragen."
+    )
+
+
 def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
     """
     Ö/NÖ-Regeln eines TOPs (Feld -> Meldung; leer = in Ordnung).

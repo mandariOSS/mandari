@@ -10,7 +10,10 @@ Ohne ffmpeg-Programm: Die Playlists liest ``httpx``, das Segment dekodiert PyAV 
 3. Erstes dekodierbares Bild → Pillow-Bild.
 
 Segment und Bild liegen nur im Speicher; weder Datei noch Datenbank noch Protokoll bekommen Bilddaten. Grenzen:
-Größe des Segments (``http.MAX_SEGMENT``), Zeitgrenzen der Abrufe, höchstens ``MAX_PAKETE`` dekodierte Pakete.
+Größe des Segments (``http.MAX_SEGMENT``), Zeitgrenzen der Abrufe, höchstens ``MAX_PAKETE`` dekodierte Pakete,
+höchstens ``MAX_BILDPUNKTE`` je Bild (die Größe des Segments begrenzt die Bildmaße nicht) und höchstens
+``MAX_VARIANTEN`` Varianten und ``MAX_ZEILE`` Zeichen je ausgewerteter Playlist-Zeile. Playlists werden Zeile für
+Zeile in einem Durchlauf gelesen, ohne Muster über den ganzen Text.
 """
 
 from __future__ import annotations
@@ -32,8 +35,17 @@ ZIELHOEHE: Final = 1080
 MINDESTHOEHE: Final = 720
 #: So viele Pakete werden höchstens dekodiert, bis ein Bild entsteht
 MAX_PAKETE: Final = 600
+#: Größtes Bild, das dekodiert wird (4K); üblich sind 1280x720 und 1920x1080
+MAX_BILDPUNKTE: Final = 3840 * 2160
+#: FFmpeg lehnt größere Bilder schon beim Öffnen ab, bevor es Speicher für sie anlegt
+_DEKODER_GRENZE: Final = {"max_pixels": str(MAX_BILDPUNKTE)}
+#: So viele Varianten einer Master-Playlist werden höchstens gelesen
+MAX_VARIANTEN: Final = 200
+#: Längere Zeilen einer Playlist werden nicht nach Angaben durchsucht
+MAX_ZEILE: Final = 2048
 _AUFLOESUNG = re.compile(r"RESOLUTION=(\d{2,5})x(\d{2,5})", re.IGNORECASE)
-_MAP_URI = re.compile(r'#EXT-X-MAP:.*?URI="([^"]+)"', re.IGNORECASE)
+_MAP: Final = "#EXT-X-MAP:"
+_URI = re.compile(r'URI="([^"]+)"', re.IGNORECASE)
 
 
 class KeinBildError(AnbieterError):
@@ -48,17 +60,20 @@ class Variante:
 
 def varianten(master: str, basis: str) -> list[Variante]:
     """Varianten einer Master-Playlist (Adresse absolut, Höhe aus ``RESOLUTION``)."""
+    # Ein Durchlauf: Jede Adresszeile gehört zu allen Angaben ``#EXT-X-STREAM-INF`` seit der letzten Adresszeile.
+    # Für jede Angabe den Rest der Playlist nach ihrer Adresse abzusuchen, kostete bei vielen Angaben ohne
+    # Adresse quadratische Zeit und hielte den Worker minutenlang auf.
     ergebnis: list[Variante] = []
-    zeilen = [z.strip() for z in master.splitlines()]
-    for nummer, zeile in enumerate(zeilen):
-        if not zeile.startswith("#EXT-X-STREAM-INF"):
-            continue
-        hoehe_treffer = _AUFLOESUNG.search(zeile)
-        hoehe = int(hoehe_treffer.group(2)) if hoehe_treffer else None
-        for folge in zeilen[nummer + 1 :]:
-            if folge and not folge.startswith("#"):
-                ergebnis.append(Variante(urljoin(basis, folge), hoehe))
-                break
+    offen: list[int | None] = []
+    for zeile in map(str.strip, master.splitlines()):
+        if zeile.startswith("#EXT-X-STREAM-INF"):
+            hoehe_treffer = _AUFLOESUNG.search(zeile) if len(zeile) <= MAX_ZEILE else None
+            offen.append(int(hoehe_treffer.group(2)) if hoehe_treffer else None)
+        elif zeile and not zeile.startswith("#"):
+            ergebnis.extend(Variante(urljoin(basis, zeile), hoehe) for hoehe in offen)
+            offen.clear()
+        if len(ergebnis) + len(offen) > MAX_VARIANTEN:
+            raise KeinBildError("Master-Playlist mit zu vielen Varianten")
     return ergebnis
 
 
@@ -80,8 +95,22 @@ def letztes_segment(medien: str, basis: str) -> tuple[str, str | None]:
     segmente = [z.strip() for z in medien.splitlines() if z.strip() and not z.strip().startswith("#")]
     if not segmente:
         raise KeinBildError("Playlist ohne Segment")
-    karte = _MAP_URI.search(medien)
-    return urljoin(basis, segmente[-1]), urljoin(basis, karte.group(1)) if karte else None
+    return urljoin(basis, segmente[-1]), _initialisierung(medien, basis)
+
+
+def _initialisierung(medien: str, basis: str) -> str | None:
+    """
+    Adresse des Initialisierungssegments: die erste Zeile ``#EXT-X-MAP:`` mit ``URI``.
+
+    Zeile für Zeile, die Adresse nur in der Zeile selbst gesucht: Ein Muster über den ganzen Text sucht von jeder
+    Fundstelle bis zum Zeilenende und braucht bei vielen Fundstellen ohne Adresse in einer Zeile quadratische Zeit.
+    """
+    for zeile in map(str.strip, medien.splitlines()):
+        if zeile[: len(_MAP)].upper() == _MAP and len(zeile) <= MAX_ZEILE:
+            treffer = _URI.search(zeile)
+            if treffer:
+                return urljoin(basis, str(treffer.group(1)))
+    return None
 
 
 def bild_aus_segment(daten: bytes) -> Image.Image:
@@ -89,10 +118,14 @@ def bild_aus_segment(daten: bytes) -> Image.Image:
     import av  # erst hier: FFmpeg-Bibliotheken nur laden, wo Bilder gelesen werden
 
     try:
-        with av.open(io.BytesIO(daten), mode="r") as container:
+        # Die Grenze schon beim Öffnen: Bereits die Analyse der Spuren legt Speicher nach den Bildmaßen an
+        with av.open(io.BytesIO(daten), mode="r", options=dict(_DEKODER_GRENZE)) as container:
             if not container.streams.video:
                 raise KeinBildError("Segment ohne Videospur")
             spur = container.streams.video[0]
+            spur.codec_context.options = dict(_DEKODER_GRENZE)
+            if spur.codec_context.width * spur.codec_context.height > MAX_BILDPUNKTE:
+                raise KeinBildError("Bild zu groß")
             for nummer, paket in enumerate(container.demux(spur)):
                 if nummer >= MAX_PAKETE:
                     break

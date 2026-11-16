@@ -29,7 +29,8 @@ from apps.tenants.models import (
     Topic,
     UserInvitation,
 )
-from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson
+from hub.ris import selectors as ris
+from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson, withdrawn_q
 
 from .models import DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
 
@@ -350,8 +351,11 @@ def get_team_member_or_404(organization: Organization, member_id: Any) -> Member
 
 
 def find_active_member(organization: Organization, member_id: Any) -> Membership | None:
-    """Aktives Mitglied per ID oder ``None`` (z. B. Stellvertretung)."""
-    return Membership.objects.filter(id=member_id, organization=organization, is_active=True).first()
+    """
+    Aktives Mitglied per ID oder ``None`` (Stellvertretung bei Abwesenheit). Gastzugänge zählen nicht: An sie wird
+    nichts weitergeleitet, eine solche Vertretung bliebe stumm.
+    """
+    return Membership.objects.filter(id=member_id, organization=organization, is_active=True, is_guest=False).first()
 
 
 def find_membership(organization: Organization, user: User) -> Membership | None:
@@ -376,9 +380,9 @@ def admin_members(organization: Organization, *, exclude: Membership) -> list[Me
 
 
 def available_deputies(organization: Organization, membership: Membership) -> QuerySet[Membership]:
-    """Andere aktive Mitglieder als mögliche Stellvertretung."""
+    """Andere aktive Mitglieder als mögliche Stellvertretung, ohne Gastzugänge (an sie wird nichts weitergeleitet)."""
     return (
-        Membership.objects.filter(organization=organization, is_active=True)
+        Membership.objects.filter(organization=organization, is_active=True, is_guest=False)
         .exclude(id=membership.id)
         .select_related("user")
         .order_by("user__first_name", "user__last_name")
@@ -415,17 +419,18 @@ def team_members(organization: Organization, search_query: str) -> QuerySet[Memb
 
 
 def active_committees(bodies: QuerySet[OParlBody], today: date) -> QuerySet[OParlOrganization]:
-    """Gremien ohne Enddatum oder mit Enddatum in der Zukunft."""
+    """Gremien ohne Enddatum oder mit Enddatum in der Zukunft; von mandari Session zurückgenommene gibt es nicht."""
     return (
         OParlOrganization.objects.filter(body__in=bodies)
         .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+        .exclude(withdrawn_q())
         .order_by("name")
     )
 
 
 def inactive_committees(bodies: QuerySet[OParlBody], today: date) -> QuerySet[OParlOrganization]:
-    """Gremien, deren Enddatum überschritten ist."""
-    return OParlOrganization.objects.filter(body__in=bodies, end_date__lt=today).order_by("name")
+    """Gremien, deren Enddatum überschritten ist; von mandari Session zurückgenommene gibt es nicht."""
+    return OParlOrganization.objects.filter(body__in=bodies, end_date__lt=today).exclude(withdrawn_q()).order_by("name")
 
 
 def committees_by_ids(bodies: QuerySet[OParlBody], committee_ids: list[str]) -> QuerySet[OParlOrganization]:
@@ -454,7 +459,8 @@ def find_matching_persons(user: User, bodies: QuerySet[OParlBody]) -> list[OParl
         )
     elif last:
         query &= Q(family_name__iexact=last) | Q(name__icontains=last)
-    return list(OParlPerson.objects.filter(query)[:5])
+    # Ohne Personen, die mandari Session aus der Veröffentlichung zurückgenommen hat (wie die RIS-Ansicht)
+    return list(OParlPerson.objects.filter(query).exclude(withdrawn_q())[:5])
 
 
 def suggested_committees(
@@ -464,14 +470,17 @@ def suggested_committees(
     memberships = (
         OParlMembership.objects.filter(person=oparl_person, organization__body__in=bodies)
         .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+        # Zurückgenommene Mitgliedschaften und Gremien schlägt die Mitgliederverwaltung nicht vor
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("organization"))
         .select_related("organization")
     )
     return [m.organization for m in memberships if m.organization.is_active]
 
 
 def get_oparl_person_or_404(bodies: QuerySet[OParlBody], person_id: Any) -> OParlPerson:
-    """RIS-Person innerhalb der Körperschaften oder 404."""
-    return get_object_or_404(OParlPerson, id=person_id, body__in=bodies)
+    """RIS-Person innerhalb der Körperschaften oder 404; von mandari Session zurückgenommene gibt es hier nicht."""
+    return get_object_or_404(ris.persons(bodies).exclude(withdrawn_q()), id=person_id)
 
 
 def committee_context(organization: Organization, member: Membership) -> dict[str, Any]:
@@ -905,9 +914,12 @@ def activity_statistics(organization: Organization, membership: Membership) -> d
     from apps.work.meetings.models import AgendaItemNote, MeetingPreparation
     from apps.work.motions.models import Motion, MotionComment
     from apps.work.tasks.models import Task
+    from apps.work.tasks.selectors import ohne_gesperrte_tops
 
-    my_tasks = Task.objects.filter(organization=organization).filter(
-        Q(created_by=membership) | Q(assigned_to=membership)
+    # Ohne Aufgaben aus nichtöffentlichen TOPs, die das Mitglied nicht öffnen darf: Die Zahlen passen zur Liste
+    my_tasks = ohne_gesperrte_tops(
+        Task.objects.filter(organization=organization).filter(Q(created_by=membership) | Q(assigned_to=membership)),
+        membership,
     )
     attendance = FactionAttendance.objects.filter(membership=membership, meeting__organization=organization)
     return {
@@ -934,10 +946,13 @@ def activity_timeline(organization: Organization, membership: Membership, *, lim
     from apps.work.meetings.models import MeetingPreparation
     from apps.work.motions.models import Motion, exclude_sworn_in_only
     from apps.work.tasks.models import Task
+    from apps.work.tasks.selectors import ohne_gesperrte_tops
 
     timeline: list[dict[str, Any]] = []
-    my_tasks = Task.objects.filter(organization=organization).filter(
-        Q(created_by=membership) | Q(assigned_to=membership)
+    # Aufgaben aus nichtöffentlichen TOPs nennt die Übersicht nur Vereidigten, wie das Aufgabenboard
+    my_tasks = ohne_gesperrte_tops(
+        Task.objects.filter(organization=organization).filter(Q(created_by=membership) | Q(assigned_to=membership)),
+        membership,
     )
     for t in my_tasks.order_by("-updated_at")[:5]:
         timeline.append(

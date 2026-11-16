@@ -367,8 +367,13 @@ def _ingestor_checks() -> list[dict]:
     return checks
 
 
-def collect_system_health() -> list[dict]:
-    """Datenbank, Cache, Elasticsearch, Ingestor-Daemon, Sync-Läufe, Worker."""
+def collect_system_health(*, dokument_cache_neu: bool = False) -> list[dict]:
+    """
+    Datenbank, Cache, Elasticsearch, Dokument-Cache, Ingestor-Daemon, Sync-Läufe, Worker.
+
+    ``dokument_cache_neu``: Statistik des Dokument-Caches neu ermitteln und ablegen (stündlicher Prüflauf); sonst
+    zeigt der Check den abgelegten Stand (Issue #1409).
+    """
     checks = []
 
     # Datenbank
@@ -425,20 +430,24 @@ def collect_system_health() -> list[dict]:
     else:
         checks.append(_check("Elasticsearch", "inactive", "Nicht konfiguriert"))
 
-    # Dokument-Cache (Issue #87): Abdeckung + freier Speicher am Cache-Verzeichnis
+    # Dokument-Cache (Issue #87): Abdeckung + freier Speicher am Cache-Verzeichnis. Die Zahlen über alle Dokumente
+    # schreibt der stündliche Prüflauf (Issue #1409, ``dokument_cache_neu``); Seitenaufrufe lesen nur dessen Stand.
+    # Den freien Speicher misst jeder Aufruf selbst.
     try:
-        from .file_cache import cache_stats
+        from .file_cache import cache_stats_snapshot, disk_free_bytes, min_free_bytes
 
-        stats = cache_stats()
-        free_gb = stats["disk_free_bytes"] / 1024**3
+        stats = cache_stats_snapshot(refresh=dokument_cache_neu)
+        free_gb = disk_free_bytes() / 1024**3
         if free_gb < 2:
             status = "critical"
-        elif free_gb < stats["min_free_gb"]:
+        elif free_gb < min_free_bytes() // 1024**3:
             status = "warning"
         else:
             status = "ok"
         gb = 1024**3
-        if stats.get("object_storage"):
+        if stats is None:
+            belegung = "Dokumentzahlen folgen mit dem nächsten stündlichen Prüflauf"
+        elif stats.get("object_storage"):
             # Mit Objektspeicher liegt nur ein Teil lokal (#961): Platte und Objektspeicher getrennt
             belegung = (
                 f"{stats['ok']} von {stats['total']} Dokumenten abgelegt ({stats['coverage']} %), "
@@ -449,12 +458,14 @@ def collect_system_health() -> list[dict]:
                 f"{stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
                 f"{stats['local_bytes'] / gb:.2f} GB belegt"
             )
+        if stats and stats.get("ermittelt_am"):
+            belegung += f" (Stand {timezone.localtime(stats['ermittelt_am']):%H:%M} Uhr)"
         checks.append(
             _check(
                 "Dokument-Cache",
                 status,
                 f"{belegung}, {free_gb:.0f} GB frei"
-                + (f", {stats['paused']} warten auf Quellen in Schonung" if stats.get("paused") else ""),
+                + (f", {stats['paused']} warten auf Quellen in Schonung" if stats and stats.get("paused") else ""),
             )
         )
     except Exception as exc:
@@ -582,10 +593,10 @@ def collect_action_items() -> list[dict]:
     return items
 
 
-def collect_health() -> dict:
-    """Gesamtbild für Dashboard und Betriebsmonitor."""
+def collect_health(*, dokument_cache_neu: bool = False) -> dict:
+    """Gesamtbild für Dashboard und Betriebsmonitor (``dokument_cache_neu`` siehe ``collect_system_health``)."""
     sources = collect_source_health()
-    system = collect_system_health()
+    system = collect_system_health(dokument_cache_neu=dokument_cache_neu)
     system_statuses = [c["status"] for c in system]
     if sources["overall"] == "critical" or "critical" in system_statuses:
         overall = "critical"
@@ -682,7 +693,13 @@ def send_health_alerts(dry_run: bool = False) -> dict:
             source.health_alert_sent_at = None
             source.save(update_fields=["health_alert_sent_at"])
 
-    daemon_check = next((c for c in collect_system_health() if c["name"] == "Ingestor-Daemon"), None)
+    # Nur die Ingestor-Checks: die übrigen Systemchecks braucht der Alarm nicht (Issue #1409)
+    try:
+        ingestor = _ingestor_checks()
+    except Exception as exc:  # noqa: BLE001 – wie in collect_system_health: kein Alarm ohne Befund
+        logger.warning("Ingestor-Status nicht ermittelbar: %s", type(exc).__name__)
+        ingestor = []
+    daemon_check = next((c for c in ingestor if c["name"] == "Ingestor-Daemon"), None)
     if daemon_check and daemon_check["status"] == "critical":
         if dry_run:
             result["daemon_alert"] = True

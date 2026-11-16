@@ -1,7 +1,8 @@
 {% comment %}
 Beratungsfolge einer Vorlage (Issue #34).
 Kontext: paper, consultations, consultation_can_edit, consultation_can_schedule,
-consultation_schedule_blocker (Terminieren erst nach der Freigabe, Issue #721), consultation_roles, consultation_results, consultation_organizations,
+consultation_schedule_blocker (Terminieren erst nach der Freigabe, Issue #721), consultation_result_blocker (Ergebnis
+von Hand erst nach der Freigabe), consultation_roles, consultation_results, consultation_organizations,
 consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sichtrecht nicht nennen.
 {% endcomment %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden" data-testid="beratungsfolge">
@@ -13,9 +14,9 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Weg der Vorlage durch die Gremien — Vorberatung bis Entscheidung.
         </p>
-        {% if consultation_can_schedule and consultation_schedule_blocker and consultations %}
+        {% if consultations and consultation_result_blocker or consultations and consultation_can_schedule and consultation_schedule_blocker %}
         <p class="text-xs text-amber-700 dark:text-amber-400 mt-1" data-testid="terminieren-nach-freigabe">
-            Tagesordnungspunkte lassen sich erst nach der Freigabe der Vorlage anlegen.
+            {% if consultation_can_schedule and consultation_schedule_blocker %}Tagesordnungspunkte lassen sich erst nach der Freigabe der Vorlage anlegen.{% endif %}{% if consultation_result_blocker %} Beratungsergebnisse lassen sich erst nach der Freigabe der Vorlage eintragen.{% endif %}
         </p>
         {% endif %}
     </div>
@@ -26,13 +27,16 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
         <div class="px-6 py-4">
             <div class="flex items-start gap-4">
                 <span class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
-                    {% if station.is_done %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
-                    {% elif station.is_scheduled %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                    {% if station.is_done and not station.noe_hidden %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                    {% elif station.is_scheduled and not station.noe_hidden %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
                     {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
                     {{ station.order }}
                 </span>
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 flex-wrap">
+                        {% if station.noe_hidden %}
+                        <span class="font-medium text-gray-900 dark:text-white text-sm">Nichtöffentliche Beratung</span>
+                        {% else %}
                         <span class="font-medium text-gray-900 dark:text-white text-sm">{{ station.organization.name }}</span>
                         <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
                             {{ station.get_role_display }}
@@ -51,6 +55,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                             {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
                             {{ station.get_result_display }}
                         </span>
+                        {% endif %}
                         {% endif %}
                     </div>
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -103,9 +108,9 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                         {% endif %}
                         {% if not station.agenda_item %}
                         <select name="result" class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                title="Manuelles Ergebnis (nur ohne TOP — sonst kommt das Ergebnis aus der Sitzung)">
+                                title="{% if consultation_result_blocker %}Ein Ergebnis lässt sich erst nach der Freigabe der Vorlage eintragen{% else %}Manuelles Ergebnis (nur ohne TOP — sonst kommt das Ergebnis aus der Sitzung){% endif %}">
                             {% for value, label in consultation_results %}
-                            <option value="{{ value }}" {% if station.result == value %}selected{% endif %}>{{ label }}</option>
+                            <option value="{{ value }}" {% if station.result == value %}selected{% elif consultation_result_blocker and value != "pending" %}disabled{% endif %}>{{ label }}</option>
                             {% endfor %}
                         </select>
                         {% endif %}
@@ -131,7 +136,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                         </button>
                     </form>
                     {% endif %}
-                    {% if consultation_can_schedule and not consultation_schedule_blocker and station.is_done and not forloop.last %}
+                    {% if consultation_can_schedule and not consultation_schedule_blocker and station.is_done and not station.noe_hidden and not forloop.last %}
                     <form method="post" action="{% url 'session:consultation_forward' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
                         {% csrf_token %}
                         <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"

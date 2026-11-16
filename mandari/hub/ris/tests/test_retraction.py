@@ -187,8 +187,70 @@ def test_scheitert_die_meldung_bleibt_die_ruecknahme(
 
 def test_unbekannter_grund_wird_abgelehnt(bestand: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
-        retraction.retract(bestand["vorlage"], reason="datenschutz")
+        retraction.retract(bestand["vorlage"], reason="irgendwas")
+    with pytest.raises(ValueError):
+        retraction.report_withdrawal(bestand["vorlage"], reason="irgendwas")
     assert OParlPaper.objects.get(pk=bestand["vorlage"].pk).deleted is False
+    assert not Event.objects.exists()
+
+
+def test_entfernung_aus_datenschutzgruenden_meldet_redact(bestand: dict[str, Any]) -> None:
+    """
+    Der Vertrag sieht beim Grund ``datenschutz`` die Operation ``redact`` vor: Abnehmer entfernen das Objekt dann auch
+    aus Kopien und Weitergaben. Ein ``delete`` verlangte das nicht.
+    """
+    vorlage = bestand["vorlage"]
+
+    assert retraction.retract(vorlage, reason="datenschutz") is True
+
+    vorlage.refresh_from_db()
+    assert (vorlage.deleted, vorlage.deletion_reason) == (True, "datenschutz")
+    (ereignis,) = Event.objects.all()
+    assert (ereignis.type, ereignis.visibility, ereignis.operation) == (
+        "ris.object.depublished",
+        "oeffentlich",
+        "redact",
+    )
+    assert ereignis.payload == {"object_type": "Paper", "object": str(vorlage.pk), "reason": "datenschutz"}
+    assert ereignis.occurred_at == vorlage.deleted_at
+
+
+@pytest.mark.parametrize(
+    ("grund", "operation"),
+    [("quelle_geloescht", "delete"), ("zurueckgenommen", "delete"), ("datenschutz", "redact")],
+)
+def test_nachmeldung_einer_schon_markierten_zeile_traegt_die_operation_des_grunds(
+    bestand: dict[str, Any], grund: str, operation: str
+) -> None:
+    """``report_withdrawal`` markiert nicht, meldet aber wie ``retract``: mit ``datenschutz`` als ``redact``."""
+    vorlage = bestand["vorlage"]
+    vorlage.mark_deleted(reason="quelle_geloescht")
+    zeitpunkt = timezone.now().replace(microsecond=0)
+
+    assert retraction.report_withdrawal(vorlage, reason=grund, when=zeitpunkt) is True
+
+    (ereignis,) = Event.objects.all()
+    assert (ereignis.type, ereignis.operation, ereignis.occurred_at) == (
+        "ris.object.depublished",
+        operation,
+        zeitpunkt,
+    )
+    assert ereignis.payload["reason"] == grund
+
+
+def test_nichtoeffentlicher_punkt_aus_datenschutzgruenden_bleibt_nichtoeffentlich(bestand: dict[str, Any]) -> None:
+    """Auch hier nennt kein öffentliches Ereignis die Kennung; die Empfänger des nichtöffentlichen sehen ``redact``."""
+    punkt = bestand["punkt"]
+    OParlAgendaItem.objects.filter(pk=punkt.pk).update(public=False)
+
+    retraction.retract(punkt, reason="datenschutz")
+
+    (ereignis,) = Event.objects.all()
+    assert (ereignis.type, ereignis.visibility, ereignis.operation) == (
+        "ris.agendaitem.changed",
+        "nichtoeffentlich",
+        "redact",
+    )
 
 
 def test_zeitpunkt_der_ruecknahme(bestand: dict[str, Any]) -> None:
@@ -208,7 +270,10 @@ def test_zeitpunkt_der_ruecknahme(bestand: dict[str, Any]) -> None:
 @pytest.mark.parametrize("modell", list(retraction.AGGREGATE_TYPES))
 @pytest.mark.parametrize("grund", sorted(retraction.REASONS))
 def test_dieselben_ereignisse_wie_der_ingestor(modell: type, grund: str) -> None:
-    """Typ, Aggregat, Sichtbarkeit, Operation und Nutzlast wie ``ris_events.depublished_draft``."""
+    """
+    Typ, Aggregat, Sichtbarkeit, Operation und Nutzlast wie ``ris_events.depublished_draft``, für jeden Grund: Beim
+    Grund ``datenschutz`` bilden beide Seiten ``redact``, sonst ``delete``.
+    """
     ris_events = _ingestor_ris_events()
     kennung = uuid.uuid4()
     art = next(art for art, name in ris_events.AGGREGATE_TYPES.items() if name == retraction.AGGREGATE_TYPES[modell])
@@ -218,6 +283,7 @@ def test_dieselben_ereignisse_wie_der_ingestor(modell: type, grund: str) -> None
 
     assert (unser.type, unser.aggregate_type, unser.aggregate_id) == (ihrer.type, ihrer.aggregate_type, kennung)
     assert (unser.visibility, unser.operation, unser.payload) == (ihrer.visibility, ihrer.operation, ihrer.payload)
+    assert unser.operation == ("redact" if grund == "datenschutz" else "delete")
 
 
 def test_nichtoeffentlicher_punkt_wie_der_ingestor() -> None:

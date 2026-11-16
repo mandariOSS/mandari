@@ -168,12 +168,14 @@ def attendance_defaults(
     Vorbelegung einer Anwesenheitszeile aus der Besetzung.
 
     Funktion und Stimmrecht kommen aus der Mitgliedschaft; Vertreter erhalten den Hinweis,
-    für wen sie vertreten. Ohne Mitgliedschaft (z. B. ausgeschieden) gilt: Mitglied ohne Notiz.
+    für wen sie vertreten. Ohne Mitgliedschaft (z. B. ausgeschieden) gilt: Gast ohne Stimmrecht.
     ``has_voting_rights`` überschreibt das Stimmrecht (gemeinsame Sitzung: Stimmrecht in einem
     der beteiligten Gremien genügt).
     """
     if membership is None:
-        return {"status": "invited", "role": "member", "has_voting_rights": True, "notes": ""}
+        # Kein Sitz in der Sitzung: Stimmrecht und Sitzzahl folgen der Besetzung zum Sitzungsdatum. Wer dort nicht
+        # (mehr) steht, zählt weder zu den Sitzen noch zu den Stimmberechtigten – wie manuell ergänzte Personen.
+        return {"status": "invited", "role": "guest", "has_voting_rights": False, "notes": ""}
     notes = ""
     if membership.substitute_for_id and membership.substitute_for is not None:
         notes = f"Vertretung für {membership.substitute_for.display_name}"

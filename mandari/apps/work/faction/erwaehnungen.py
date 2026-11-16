@@ -16,7 +16,8 @@ in mandari mit Link zum TOP.
 - **Auslöser:** wer die Erwähnung eingefügt hat, beim gemeinsamen Schreiben speichert oft jemand anders. ``data-von``
   kommt vom Browser und zählt nur, wenn die Person die Notizen dieser Sitzung schreiben darf; sonst gilt, wer
   gespeichert hat.
-- **Ohne Inhalt:** Die Nachricht nennt nur TOP und Sitzung, keine Notizen; keine E-Mail.
+- **Ohne Inhalt:** Die Nachricht nennt nur TOP und Sitzung, keine Notizen; keine E-Mail. Bei nichtöffentlichen TOPs
+  nennt sie nur die Sitzung, weder Nummer noch Titel des TOPs.
 """
 
 from __future__ import annotations
@@ -137,6 +138,14 @@ def benachrichtigen(
         if person.pk in schon or (autor is not None and autor.pk == person.pk):
             continue
         wer = autor.user.get_display_name() if autor is not None else "Jemand"
+        # Bei nichtöffentlichen TOPs ohne Nummer und Titel (wie bei Vorschlägen, ``services._notify_decision``): Der
+        # Text bleibt gespeichert und stünde sonst weiter in der Nachricht, wenn die Person den TOP später nicht mehr
+        # sehen darf. Der Link führt zum TOP, den nur öffnet, wer ihn sehen darf.
+        nachricht = (
+            f"{wer} hat Sie im Protokoll zu einem nichtöffentlichen TOP ({meeting.title}) erwähnt."
+            if intern
+            else f"{wer} hat Sie im Protokoll zu TOP {item.number} „{item.title}“ ({meeting.title}) erwähnt."
+        )
         try:
             # Eigener Sicherungspunkt: Speichern zwei Schreibende gleichzeitig, verliert eine Seite am eindeutigen
             # Schlüssel, ohne die Transaktion des Speicherns zu stören
@@ -145,7 +154,7 @@ def benachrichtigen(
                     recipient=person,
                     notification_type=NotificationType.FACTION_MENTION,
                     title="Erwähnung im Protokoll",
-                    message=f"{wer} hat Sie im Protokoll zu TOP {item.number} „{item.title}“ ({meeting.title}) erwähnt.",
+                    message=nachricht,
                     link=f"{link}?top={item.pk}",
                     actor=autor,
                     metadata={"meeting_id": str(meeting.pk), "item_id": str(item.pk)},

@@ -73,6 +73,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
             data=data,
             current_user_name=self.request.user.get_display_name(),
             account_id=str(self.request.user.pk),
+            membership=self.membership,
         )
         if self.neue_ansicht():
             context["aufgaben_config"] = vorbereitung.aufgaben_config(

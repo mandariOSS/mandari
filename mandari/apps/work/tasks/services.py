@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+from django.core.exceptions import PermissionDenied
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.utils import timezone
@@ -30,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 VALID_STATUSES = ("todo", "in_progress", "done")
 VALID_VISIBILITIES = ("private", "shared", "organization")
+#: Felder, die das Panel-Formular ändert (``forms.TaskPanelForm``); nur sie schreibt :func:`apply_panel_update`
+PANEL_FELDER = ("title", "description", "status", "priority", "due_date", "assigned_to", "visibility")
 
 
 class InvalidTaskStatusError(ValueError):
@@ -50,10 +53,43 @@ def _erledigt(task: Task, membership: Membership) -> None:
 
 
 def can_edit_task(task: Task, membership: Membership) -> bool:
-    """Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen."""
+    """
+    Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen.
+
+    Aufgaben aus einem nichtöffentlichen TOP ändert nur, wer den TOP heute sehen darf (``Task.noe_gesperrt``): Wer sie
+    nicht mehr öffnen kann, hakt sie auch über Board und Sitzungsansicht nicht mehr ab.
+    """
+    if task.noe_gesperrt(membership):
+        return False
     if task.created_by == membership or task.assigned_to == membership:
         return True
     return membership.has_permission("tasks.manage") and task.can_access(membership)
+
+
+NICHT_MEHR_AENDERBAR = "Diese Aufgabe lässt sich nicht mehr ändern."
+
+
+def _aktueller_stand(task: Task, membership: Membership) -> Task:
+    """
+    Aufgabe unter Zeilensperre neu lesen und das Bearbeitungsrecht am jetzigen Stand prüfen.
+
+    Nur innerhalb einer Transaktion aufrufen. Das Objekt aus dem View kann überholt sein: Hat die erstellende Person
+    die Aufgabe inzwischen privat gestellt oder neu zugewiesen, führt die laufende Aktion nichts mehr aus
+    (``PermissionDenied``, Antwort 403). Die Sperre hält den geprüften Stand bis zum Schreiben fest.
+    """
+    aktuell = Task.objects.select_for_update().filter(pk=task.pk).first()
+    if aktuell is None or not can_edit_task(aktuell, membership):
+        raise PermissionDenied(NICHT_MEHR_AENDERBAR)
+    return aktuell
+
+
+def _auf_aktuellen_stand(task: Task, membership: Membership) -> None:
+    """
+    Wie :func:`_aktueller_stand`, bringt aber das übergebene Objekt selbst auf den Stand der Datenbank: Die
+    Statusaktionen arbeiten so mit den jetzigen Werten weiter, und der Aufrufer sieht das Ergebnis am selben Objekt.
+    """
+    _aktueller_stand(task, membership)
+    task.refresh_from_db()
 
 
 def _sync_completion(task: Task, *, previous_status: str | None = None) -> None:
@@ -183,7 +219,11 @@ def task_from_protocol_entry(entry: Any, membership: Membership, *, title: str, 
 
 @transaction.atomic
 def update_visibility(task: Task, membership: Membership, visibility: str, share_with_ids: Sequence[str]) -> None:
-    """Sichtbarkeit setzen und Freigaben angleichen (nur bei ``shared`` bleiben Freigaben bestehen)."""
+    """
+    Sichtbarkeit setzen und Freigaben angleichen (nur bei ``shared`` bleiben Freigaben bestehen). Das
+    Bearbeitungsrecht gilt am jetzigen Stand der Datenbank (:func:`_aktueller_stand`).
+    """
+    _aktueller_stand(task, membership)
     if visibility in VALID_VISIBILITIES:
         task.visibility = visibility
         task.save(update_fields=["visibility"])
@@ -207,6 +247,15 @@ def delete_personal_tasks(membership: Membership) -> int:
     """
     task_ids = list(selectors.personal_tasks(membership).values_list("pk", flat=True))
     files = [attachment.file for attachment in TaskAttachment.objects.filter(task_id__in=task_ids)]
+    # Wie in ``delete_task``: Nachrichten zu Aufgaben aus nichtöffentlichen TOPs vorher kennzeichnen. Sie können bei
+    # anderen liegen, etwa bei einer Vertretung, an die weitergeleitet wurde.
+    nichtoeffentlich = (
+        Task.objects.filter(pk__in=task_ids)
+        .filter(selectors.noe_top_q())
+        .select_related("related_faction_agenda_item__parent")
+    )
+    for task in nichtoeffentlich:
+        _hub().aufgabe_wird_geloescht(task)
     Task.objects.filter(pk__in=task_ids).delete()
     remove_files_on_commit(files)
     return len(task_ids)
@@ -292,16 +341,19 @@ def move_task(task: Task, membership: Membership, *, new_status: str, new_positi
     Drag-and-drop: Aufgabe in Spalte/Position verschieben.
 
     Aktualisiert Erledigt-Flags, protokolliert Statuswechsel, benachrichtigt bei
-    Erledigung und sortiert Ziel- und Quellspalte lückenlos nach.
+    Erledigung und sortiert Ziel- und Quellspalte lückenlos nach. Geprüft und geschrieben wird am jetzigen Stand
+    (:func:`_auf_aktuellen_stand`), und zwar nur Status, Position und Erledigung: Sichtbarkeit und Zuweisung
+    bleiben, wie sie in der Datenbank stehen.
     """
     if new_status not in VALID_STATUSES:
         raise InvalidTaskStatusError(new_status)
+    _auf_aktuellen_stand(task, membership)
     organization = task.organization
     old_status = task.status
     task.status = new_status
     task.position = new_position
     _sync_completion(task, previous_status=old_status)
-    task.save()
+    task.save(update_fields=["status", "position", "is_completed", "completed_at", "updated_at"])
 
     if old_status != new_status:
         if new_status == "done":
@@ -332,8 +384,13 @@ def move_task(task: Task, membership: Membership, *, new_status: str, new_positi
     return task
 
 
-def set_status(task: Task, new_status: str) -> Task:
-    """Status ohne Protokoll setzen (Board-Aktion ``update_status``)."""
+@transaction.atomic
+def set_status(task: Task, membership: Membership, new_status: str) -> Task:
+    """
+    Status ohne Protokoll setzen (Board-Aktion ``update_status``); geprüft und geschrieben wird am jetzigen Stand,
+    und zwar nur Status und Erledigung (wie :func:`move_task`).
+    """
+    _auf_aktuellen_stand(task, membership)
     old_status = task.status
     task.status = new_status
     if new_status == "done" and old_status != "done":
@@ -342,7 +399,7 @@ def set_status(task: Task, new_status: str) -> Task:
     elif new_status != "done":
         task.is_completed = False
         task.completed_at = None
-    task.save()
+    task.save(update_fields=["status", "is_completed", "completed_at", "updated_at"])
     return task
 
 
@@ -354,8 +411,10 @@ def toggle_completion(
     Erledigt-Status umschalten.
 
     Board-Karte: ``reopen_status="todo"`` ohne Protokoll; Panel: ``in_progress`` mit
-    Protokolleintrag und Benachrichtigung bei Erledigung.
+    Protokolleintrag und Benachrichtigung bei Erledigung. Geprüft und geschrieben wird am jetzigen Stand, und zwar
+    nur Status und Erledigung (wie :func:`move_task`).
     """
+    _auf_aktuellen_stand(task, membership)
     if task.is_completed:
         task.is_completed = False
         task.completed_at = None
@@ -368,7 +427,7 @@ def toggle_completion(
         task.status = "done"
         if record_activity:
             log_activity(task, membership, "completed")
-    task.save()
+    task.save(update_fields=["status", "is_completed", "completed_at", "updated_at"])
     if task.is_completed and record_activity:
         _erledigt(task, membership)
     return task
@@ -441,11 +500,21 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
 
     Gleicht die Erledigt-Flags an den Status an, protokolliert Feldänderungen und
     benachrichtigt Betroffene. ``old_values`` stammt aus :func:`capture_old_values`.
+
+    Das Bearbeitungsrecht gilt am jetzigen Stand der Datenbank (:func:`_aktueller_stand`), nicht an dem, den der View
+    gelesen hat. Geschrieben werden nur die Felder des Formulars und die Erledigung.
     """
+    aktuell = _aktueller_stand(task, membership)
+    # Erledigung und Verlauf gehen vom jetzigen Stand der Datenbank aus, nicht von dem beim Öffnen des Panels: Ein
+    # überholtes Panel schriebe sonst einen alten Erledigungszeitpunkt zurück oder trüge die Erledigung noch einmal ein.
+    task.is_completed = aktuell.is_completed
+    task.completed_at = aktuell.completed_at
     _sync_completion(task)
-    task.save()
-    reset_shares_on_reshare(task, old_values["visibility_raw"])
-    _log_changes(task, membership, old_values)
+    task.save(update_fields=[*PANEL_FELDER, "is_completed", "completed_at", "updated_at"])
+    # Ausgangswert ist die Sichtbarkeit in der Datenbank, nicht die beim Öffnen des Panels gelesene: Hat inzwischen
+    # jemand im Freigabedialog Empfänger gewählt, bleiben sie stehen.
+    reset_shares_on_reshare(task, aktuell.visibility)
+    _log_changes(task, membership, {**old_values, **capture_old_values(aktuell)})
     return task
 
 
@@ -458,8 +527,15 @@ def add_comment(task: Task, membership: Membership, content: str) -> TaskActivit
     return activity
 
 
+@transaction.atomic
 def delete_task(task: Task) -> None:
-    """Aufgabe mit allen abhängigen Objekten löschen."""
+    """
+    Aufgabe mit allen abhängigen Objekten löschen.
+
+    Benachrichtigungen zur Aufgabe bleiben gespeichert. Gehört sie zu einem nichtöffentlichen TOP, werden sie vorher
+    gekennzeichnet, damit sie für nicht Vereidigte verborgen bleiben (``NotificationHub.aufgabe_wird_geloescht``).
+    """
+    _hub().aufgabe_wird_geloescht(task)
     task.delete()
 
 

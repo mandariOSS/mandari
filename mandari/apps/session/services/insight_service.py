@@ -38,6 +38,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from django.conf import settings as django_settings
+from django.db import transaction
 from django.db.models import Max, Q
 from django.urls import reverse
 from django.utils import timezone
@@ -348,13 +349,18 @@ def restore_source(tenant: Any, *, activate: bool = True) -> PortalChange:
     change = PortalChange()
     if not tenant.is_active or (activate and not (tenant.insight_publish and tenant.oparl_public)):
         return change
-    tombstoned = {
-        f"{kind}/{object_id}"
-        for kind, object_id in SessionOParlTombstone.objects.filter(tenant=tenant).values_list(
-            "oparl_type", "object_id"
-        )
-    }
+
+    def zurueckgenommen() -> set[str]:
+        return {
+            f"{kind}/{object_id}"
+            for kind, object_id in SessionOParlTombstone.objects.filter(tenant=tenant).values_list(
+                "oparl_type", "object_id"
+            )
+        }
+
+    tombstoned = zurueckgenommen()
     now = timezone.now()
+    restored: list[Any] = []
     for source in session_sources(tenant):
         config = dict(source.sync_config) if isinstance(source.sync_config, dict) else {}
         record = config.pop(RETRACTION_KEY, None)
@@ -375,15 +381,35 @@ def restore_source(tenant: Any, *, activate: bool = True) -> PortalChange:
                         continue
                     obj.deleted, obj.deleted_at, obj.oparl_modified = False, None, now
                     obj.save(update_fields=["deleted", "deleted_at", "oparl_modified", "updated_at"])
+                    restored.append(obj)
                     change.entries += 1
         if activate:
             source.is_active = True
         source.sync_config = config
         source.save(update_fields=["is_active", "sync_config", "updated_at"])
         change.sources += 1
+    if restored:
+        # Nachprüfung nach dem Commit: Wird ein Objekt während der Wiederherstellung nichtöffentlich oder
+        # gelöscht, fand seine eigene Rücknahme die Zeile noch als zurückgenommen vor und änderte nichts, während
+        # die oben gelesene Liste es noch nicht kannte. Solche Zeilen gehen wieder aus dem Portal.
+        transaction.on_commit(lambda: _retract_overtaken(restored, zurueckgenommen, tombstoned), robust=True)
     if change.sources:
         logger.info("[Insight] Bürgerportal-Quelle für Session-Mandant '%s' wiederhergestellt.", tenant.slug)
     return change
+
+
+def _retract_overtaken(restored: list[Any], current: Any, known: set[str]) -> int:
+    """Wiederhergestellte Einträge zurücknehmen, deren Rücknahme in Session erst während des Laufs entstand."""
+    from hub.ris import retraction
+
+    neu = current() - known
+    if not neu:
+        return 0
+    anzahl = 0
+    for obj in restored:
+        if _oparl_tail(obj.external_id) in neu and retraction.retract(obj, reason=retraction.REASON_WITHDRAWN):
+            anzahl += 1
+    return anzahl
 
 
 def _retraction_stamp(body_ids: list[Any], *, after: datetime | None = None) -> datetime:

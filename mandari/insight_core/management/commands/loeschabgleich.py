@@ -23,13 +23,17 @@ Von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitplan``; ``
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
+from collections.abc import Callable
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandParser
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db.models import Q
 
 from apps.common.einmalig import EinmaligMixin
+
+logger = logging.getLogger(__name__)
 
 
 class Command(EinmaligMixin, BaseCommand):
@@ -76,25 +80,66 @@ class Command(EinmaligMixin, BaseCommand):
             return
 
         run = file_reconcile.Run(options["interval"], max_missing=options["max_fehlend"])
+        # Die Schritte hängen nicht aneinander: Scheitert einer unerwartet (etwa an einer Adresse aus einer Quelle,
+        # die sich nicht auswerten lässt), laufen die übrigen trotzdem. Sonst unterbliebe mit dem Abgleich auch das
+        # Löschen nach Frist für alle Quellen. Am Ende meldet der Lauf den Fehlschlag (Exit-Code 1).
+        gescheitert: list[str] = []
         with file_reconcile.fetch_client() as client:
             if not options["nur_loeschen"]:
-                changed = file_reconcile.check_changed(body, limit=options["changed_limit"], client=client, run=run)
-                self._report("Geänderte Dokumente", changed)
-                heads = file_reconcile.sample_heads(body, per_source=options["head_limit"], client=client, run=run)
-                self._report("Stichproben", heads)
+                # Bricht ein Abgleich ab, verfallen seine Vormerkungen: Der nächste Schritt sperrte sie sonst ungeprüft
+                self._schritt(
+                    gescheitert,
+                    "Geänderte Dokumente",
+                    lambda: file_reconcile.check_changed(body, limit=options["changed_limit"], client=client, run=run),
+                    bei_fehler=run.discard_pending,
+                )
+                self._schritt(
+                    gescheitert,
+                    "Stichproben",
+                    lambda: file_reconcile.sample_heads(body, per_source=options["head_limit"], client=client, run=run),
+                    bei_fehler=run.discard_pending,
+                )
             if not options["ohne_loeschen"]:
-                restored = file_reconcile.restore_reappeared()
+                restored = self._schritt(gescheitert, None, file_reconcile.restore_reappeared)
                 if restored:
                     self.stdout.write(f"Wieder freigegeben (Text wird neu erkannt): {restored}")
-                purged = file_reconcile.purge_expired(body=body, client=client, run=run)
-                self._report(f"Gelöscht nach {file_reconcile.purge_after_days()} Tagen Sperre", purged)
+                self._schritt(
+                    gescheitert,
+                    f"Gelöscht nach {file_reconcile.purge_after_days()} Tagen Sperre",
+                    lambda: file_reconcile.purge_expired(body=body, client=client, run=run),
+                )
         if not options["ohne_loeschen"] and file_store.uses_blobs():
-            self._report("Verwaiste Inhalte", file_store.cleanup_orphans())
+            self._schritt(gescheitert, "Verwaiste Inhalte", file_store.cleanup_orphans)
         if run.braked:
             self.stderr.write(
                 f"Bremse: {len(run.braked)} Quelle(n) lieferten zu viele Dokumente nicht mehr; nichts davon "
                 "gesperrt. Quelle prüfen (Umstellung, Wartung, Sperre) und den Lauf danach wiederholen."
             )
+        if gescheitert:
+            raise CommandError("Schritte unerwartet gescheitert: " + ", ".join(gescheitert))
+
+    def _schritt(
+        self,
+        gescheitert: list[str],
+        title: str | None,
+        schritt: Callable[[], Any],
+        bei_fehler: Callable[[], None] | None = None,
+    ) -> Any:
+        """
+        Einen Schritt des Laufs ausführen und melden; eine unerwartete Ausnahme beendet nur diesen Schritt.
+        ``bei_fehler`` räumt danach auf, was der Schritt halb fertig hinterlassen hat.
+        """
+        try:
+            ergebnis = schritt()
+        except Exception as exc:
+            logger.exception("Löschabgleich: Schritt unerwartet gescheitert")
+            gescheitert.append(f"{title or 'Wieder freigeben'} ({type(exc).__name__})")
+            if bei_fehler is not None:
+                bei_fehler()
+            return None
+        if title is not None:
+            self._report(title, ergebnis)
+        return ergebnis
 
     def _report(self, title: str, results: Counter[str]) -> None:
         summary = ", ".join(f"{key}={value}" for key, value in sorted(results.items())) or "nichts zu tun"

@@ -134,12 +134,16 @@ class SessionSearchView(SessionViewMixin, TemplateView):
 
             # TOPs / Beschlüsse
             if wants("resolutions") and self.has_permission("view_meetings"):
-                items = SessionAgendaItem.objects.filter(meeting__in=meetings_scope).filter(
+                bedingung = (
                     Q(name__icontains=query)
                     | Q(resolution_text__icontains=query)
                     | Q(resolution_number__icontains=query)
-                    | Q(protocol_note__icontains=query)
                 )
+                # Protokolltext nur mit dem Recht für Niederschriften: Sonst zeigten Treffer und Nichttreffer,
+                # was in einer Niederschrift steht, die die Person nicht öffnen darf
+                if self.has_permission("view_protocols"):
+                    bedingung |= Q(protocol_note__icontains=query)
+                items = SessionAgendaItem.objects.filter(meeting__in=meetings_scope).filter(bedingung)
                 if not self.has_permission("view_non_public_meetings"):
                     items = items.filter(is_public=True)
                 results["resolutions"] = list(

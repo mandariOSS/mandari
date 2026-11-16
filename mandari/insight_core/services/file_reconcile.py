@@ -108,6 +108,21 @@ def is_blocked(file_obj: Any) -> bool:
     return bool(getattr(file_obj, "deleted", False) or getattr(file_obj, "source_missing_since", None))
 
 
+def parent_withdrawn(file_obj: Any) -> bool:
+    """
+    Ist der Vorgang oder die Sitzung der Datei zurückgenommen (``withdrawn_q``)?
+
+    Eine Rücknahme markiert nur das Objekt selbst. Seine Anlagen tragen dann keine eigene Markierung, gehören
+    aber zu einem Eintrag, den es öffentlich nicht mehr gibt: Für sie gibt es weder Bytes noch erkannten Text.
+    Je Elternobjekt eine Abfrage; gedacht für die Auslieferung einer einzelnen Datei, nicht für Listen.
+    """
+    from ..models import OParlMeeting, OParlPaper, withdrawn_q
+
+    if file_obj.paper_id and OParlPaper.objects.filter(withdrawn_q(), pk=file_obj.paper_id).exists():
+        return True
+    return bool(file_obj.meeting_id and OParlMeeting.objects.filter(withdrawn_q(), pk=file_obj.meeting_id).exists())
+
+
 # =============================================================================
 # Sperren, Entsperren, Ersetzen
 # =============================================================================
@@ -117,8 +132,11 @@ def _forget_summary(file_obj: Any) -> None:
     from ..models import OParlPaper
 
     if file_obj.paper_id:
-        OParlPaper.objects.filter(pk=file_obj.paper_id, summary__isnull=False).update(
-            summary=None, summary_hinweis="", summary_einfach=None, summary_stand=""
+        # Ohne Bedingung auf eine vorhandene Zusammenfassung, wie ``SourceDeletionModel._forget_summaries``: Das
+        # UPDATE trifft die Zeile des Vorgangs immer und wartet damit auf jemanden, der gerade eine Zusammenfassung
+        # speichert (``summary_store.sperren``); danach verwirft es auch die eben gespeicherte.
+        OParlPaper.objects.filter(pk=file_obj.paper_id).update(
+            summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
         )
 
 
@@ -280,6 +298,13 @@ class Run:
                 self.resting.add(host)
         else:
             self._errors[host] = 0
+
+    def discard_pending(self) -> None:
+        """
+        Vormerkungen verwerfen, ohne zu sperren: Der Schritt, der sie gesammelt hat, ist abgebrochen und hat sie
+        nicht zu Ende geprüft. Der nächste Lauf prüft diese Dokumente erneut. Ruhende Hosts und die Bremse bleiben.
+        """
+        self._pending.clear()
 
     def defer_missing(self, file_obj: Any, now: datetime) -> None:
         """Neu fehlendes Dokument vormerken; über der Schwelle greift die Bremse für die Quelle."""
@@ -562,14 +587,28 @@ def _check_each(
             continue
         seen.add(file_obj.pk)
         url = _url(file_obj)
+        if url and not abruf.adresse_gueltig(url):
+            # Die Adresse kommt aus der Quelle und lässt sich nicht auswerten: Fehlschlag dieser einen Datei, ohne
+            # Anfrage. Der Abgleich der übrigen läuft weiter.
+            results[ERROR] += 1
+            continue
         if (url and not run.may_fetch(file_obj, url)) or abruf.is_being_fetched(file_obj):
             # Ruhe je Host, Bremse – oder ein Abruf läuft gerade: in diesem Lauf nicht anfragen
             results[SKIPPED] += 1
             continue
         if url:
             run.pacer.wait(url)
-        result = check(file_obj, client, run=run)
-        if url:
+        unerwartet = False
+        try:
+            result = check(file_obj, client, run=run)
+        except Exception:
+            # Eine Datei, deren Prüfung unerwartet scheitert, beendet den Abgleich nicht für alle dahinter
+            logger.exception("Löschabgleich: Prüfung der Datei %s unerwartet gescheitert", file_obj.pk)
+            result = ERROR
+            unerwartet = True
+        # Ein unerwarteter Fehler kann aus der eigenen Verarbeitung stammen (Ablage, Datenbank): Er zählt nicht als
+        # Fehler des Hosts, sonst ruhte der Host und die Dateien dahinter blieben ohne Anfrage
+        if url and not unerwartet:
             run.record(url, result)
         results[result] += 1
 
@@ -712,11 +751,25 @@ def purge_expired(
     client = client or fetch_client()
     try:
         for file_obj in missing:
+            unerwartet = False
             url = _url(file_obj)
-            if url and run.may_fetch(file_obj, url) and not abruf.is_being_fetched(file_obj):
+            if url and not abruf.adresse_gueltig(url):
+                # Nicht auswertbare Adresse: Die Quelle lässt sich für diese Datei nicht befragen (Nachfrist unten)
+                result = ERROR
+            elif url and run.may_fetch(file_obj, url) and not abruf.is_being_fetched(file_obj):
                 run.pacer.wait(url)
-                result = verify(file_obj, client, now=now)
-                run.record(url, result)
+                try:
+                    result = verify(file_obj, client, now=now)
+                except Exception:
+                    # Eine Datei, deren Rückfrage unerwartet scheitert, hält das Löschen nach Frist der übrigen nicht auf
+                    logger.exception("Löschabgleich: Rückfrage zur Datei %s unerwartet gescheitert", file_obj.pk)
+                    result = ERROR
+                    # Kann nach einer Antwort der Quelle passiert sein (etwa beim Ablegen des neuen Inhalts): nie
+                    # ohne Rückfrage löschen, der nächste Lauf fragt erneut. Er zählt auch nicht als Fehler des
+                    # Hosts: Sonst ruhte der Host, und die Dateien dahinter würden nach der Nachfrist ungefragt gelöscht
+                    unerwartet = True
+                if not unerwartet:
+                    run.record(url, result)
             else:
                 result = SKIPPED
             if result == MISSING:
@@ -724,7 +777,9 @@ def purge_expired(
             elif result in (UNCHANGED, CHANGED):
                 # Die Quelle liefert das Dokument wieder: Sperre aufgehoben, nichts gelöscht
                 results["entsperrt"] += 1
-            elif file_obj.source_missing_since and file_obj.source_missing_since <= unconfirmed_cutoff:
+            elif (
+                not unerwartet and file_obj.source_missing_since and file_obj.source_missing_since <= unconfirmed_cutoff
+            ):
                 # Auch nach der Nachfrist nicht zu befragen: ohne Rückfrage löschen
                 _purge(file_obj, now, results)
                 results["ohne_rueckfrage"] += 1

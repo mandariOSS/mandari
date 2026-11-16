@@ -253,6 +253,10 @@ def record_response(
     wants_substitute = decision == "decline" and substitute_requested
     with transaction.atomic():
         attendance = attendance_service.ensure_attendance(meeting, person)
+        # Unter der Zeilensperre frisch lesen: Überlappende Rückmeldungen derselben Person schrieben sonst einen
+        # überholten Stand zurück, etwa den Merker einer gerade ausgelösten Vertretungsanfrage
+        attendance = SessionAttendance.objects.select_for_update(of=("self",)).get(pk=attendance.pk)
+        attendance.person = person
         withdraw = bool(attendance.substitutes_notified_at) and not wants_substitute
         attendance.meeting = meeting  # Mandant für die Verschlüsselung ohne Nachladen
         attendance.status = "confirmed" if decision == "confirm" else "declined"
@@ -304,42 +308,75 @@ def notify_substitutes(attendance: SessionAttendance) -> SubstituteOutcome:
     ``MAX_SUBSTITUTION_ROUNDS`` Vertretungsanfragen je Sitzung aus und den Hinweis an den
     Sitzungsdienst höchstens einmal je Stunde.
     """
-    if attendance.substitutes_notified_at is not None:
-        return SubstituteOutcome(already_done=True)
-
     meeting = attendance.meeting
     absent = attendance.person
-    rounds = (
-        SessionInvitationDispatch.objects.filter(
-            meeting=meeting, dispatch_type="substitution", recipients__substitute_for=absent
+    # Erst reservieren, dann versenden: Merker und Rundenzahl werden unter der Zeilensperre geprüft, der Merker
+    # gesetzt und der Versand samt Empfängerzeilen noch in dieser Transaktion angelegt. Überlappende Absagen
+    # derselben Person lösen so je Absage eine Anfrage aus und zusammen höchstens ``MAX_SUBSTITUTION_ROUNDS``;
+    # eine laufende Runde zählt schon mit. Mails und PDF folgen danach, außerhalb der Sperre.
+    with transaction.atomic():
+        stored = (
+            SessionAttendance.objects.select_for_update()
+            .filter(pk=attendance.pk)
+            .values("substitutes_notified_at")
+            .first()
         )
-        .distinct()
-        .count()
-    )
-    if rounds >= MAX_SUBSTITUTION_ROUNDS:
-        return SubstituteOutcome(limit_reached=True)
-    memberships = substitute_memberships(meeting, absent)
-    declined = set(
-        SessionAttendance.objects.filter(
-            meeting=meeting, person_id__in=[m.person_id for m in memberships], status="declined"
-        ).values_list("person_id", flat=True)
-    )
-    candidates = [m for m in memberships if m.person_id not in declined]
+        if stored is None or stored["substitutes_notified_at"] is not None:
+            if stored is not None:
+                attendance.substitutes_notified_at = stored["substitutes_notified_at"]
+            return SubstituteOutcome(already_done=True)
+        rounds = (
+            SessionInvitationDispatch.objects.filter(
+                meeting=meeting, dispatch_type="substitution", recipients__substitute_for=absent
+            )
+            .distinct()
+            .count()
+        )
+        if rounds >= MAX_SUBSTITUTION_ROUNDS:
+            return SubstituteOutcome(limit_reached=True)
+        memberships = substitute_memberships(meeting, absent)
+        declined = set(
+            SessionAttendance.objects.filter(
+                meeting=meeting, person_id__in=[m.person_id for m in memberships], status="declined"
+            ).values_list("person_id", flat=True)
+        )
+        candidates = [m for m in memberships if m.person_id not in declined]
+        reserved_at = timezone.now()
+        attendance.substitutes_notified_at = reserved_at
+        attendance.save(update_fields=["substitutes_notified_at", "updated_at"])
+        prepared = _prepare_substitution(meeting, absent, candidates) if candidates else None
 
     outcome = SubstituteOutcome()
-    if candidates:
-        outcome = _send_substitution(meeting, absent, candidates)
-    if not outcome.notified:
-        outcome.staff_informed = _notify_staff_without_substitute(attendance, outcome)
-
-    attendance.substitutes_notified_at = timezone.now()
-    attendance.save(update_fields=["substitutes_notified_at", "updated_at"])
+    try:
+        if prepared is not None:
+            outcome = _deliver_substitution(meeting, absent, prepared)
+        if not outcome.notified:
+            outcome.staff_informed = _notify_staff_without_substitute(attendance, outcome)
+    except Exception:
+        # Unerwarteter Abbruch außerhalb der Fehlerbehandlung je Empfänger (etwa bei der PDF-Erzeugung): die
+        # Reservierung zurücknehmen, damit die Absage die Anfrage erneut auslösen kann
+        SessionAttendance.objects.filter(pk=attendance.pk, substitutes_notified_at=reserved_at).update(
+            substitutes_notified_at=None
+        )
+        attendance.substitutes_notified_at = None
+        raise
     return outcome
 
 
-def _send_substitution(meeting: SessionMeeting, absent: SessionPerson, memberships: list[Any]) -> SubstituteOutcome:
-    from apps.session.services import invitation_service
+@dataclass
+class _PreparedSubstitution:
+    """Angelegter Versand „Vertretungsanfrage“: Empfängerzeilen stehen, Mails sind noch nicht verschickt."""
 
+    dispatch: SessionInvitationDispatch
+    #: je Stellvertretung mit Mail- oder Portalzustellung: Mitgliedschaft und Empfängerzeile
+    pending: list[tuple[Any, SessionInvitationRecipient]]
+    outcome: SubstituteOutcome
+
+
+def _prepare_substitution(
+    meeting: SessionMeeting, absent: SessionPerson, memberships: list[Any]
+) -> _PreparedSubstitution:
+    """Versandvorgang und Empfängerzeilen anlegen (in der Transaktion der Reservierung, ohne Mails)."""
     outcome = SubstituteOutcome()
     date_str = timezone.localtime(meeting.start).strftime("%d.%m.%Y")
     from apps.session import hub_events
@@ -356,8 +393,7 @@ def _send_substitution(meeting: SessionMeeting, absent: SessionPerson, membershi
         tracked.invited(meeting, dispatch)
     needs_portal = any(m.person.delivery_channel == "portal" for m in memberships)
     portal_ids = portal_link_service.portal_person_ids(meeting.tenant) if needs_portal else set()
-    pdfs: dict[bool, bytes] = {}
-    format_infos: dict[bool, meeting_format_service.MeetingFormatInfo] = {}
+    pending: list[tuple[Any, SessionInvitationRecipient]] = []
 
     for membership in memberships:
         person = membership.person
@@ -365,14 +401,13 @@ def _send_substitution(meeting: SessionMeeting, absent: SessionPerson, membershi
         if channel != "letter" and not person.email:
             outcome.failed.append(person.display_name)
             continue
-        include_np = membership.role != "guest"
         recipient = SessionInvitationRecipient.objects.create(
             dispatch=dispatch,
             person=person,
             name=person.display_name,
             email=person.email,
             membership_role=membership.get_role_display(),
-            includes_non_public=include_np,
+            includes_non_public=membership.role != "guest",
             channel=channel,
             status="letter_pending" if channel == "letter" else "failed",
             error="" if channel == "letter" else "Versand nicht abgeschlossen",
@@ -381,6 +416,24 @@ def _send_substitution(meeting: SessionMeeting, absent: SessionPerson, membershi
         if channel == "letter":
             outcome.by_letter.append(person.display_name)
             continue
+        pending.append((membership, recipient))
+    return _PreparedSubstitution(dispatch=dispatch, pending=pending, outcome=outcome)
+
+
+def _deliver_substitution(
+    meeting: SessionMeeting, absent: SessionPerson, prepared: _PreparedSubstitution
+) -> SubstituteOutcome:
+    """Vorbereitete Vertretungsanfragen zustellen und den Zustellstatus je Empfänger festhalten."""
+    from apps.session.services import invitation_service
+
+    dispatch, outcome = prepared.dispatch, prepared.outcome
+    pdfs: dict[bool, bytes] = {}
+    format_infos: dict[bool, meeting_format_service.MeetingFormatInfo] = {}
+
+    for membership, recipient in prepared.pending:
+        person = membership.person
+        channel = recipient.channel
+        include_np = recipient.includes_non_public
         attachments: list[tuple[str, Any, str]] | None = None
         # Formatangaben einmal je Fassung (mit bzw. ohne Zugangsweg), nicht je Empfänger
         if include_np not in format_infos:

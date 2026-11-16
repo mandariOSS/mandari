@@ -568,6 +568,25 @@ def test_loeschmarkierung_jedes_typs(entity_type: str) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("grund", "operation"),
+    [("quelle_geloescht", "delete"), ("nichtoeffentlich", "delete"), ("datenschutz", "redact")],
+)
+def test_ruecknahme_traegt_die_operation_ihres_grunds(grund: str, operation: str) -> None:
+    """
+    Der Vertrag ``ris.object.depublished`` verlangt beim Grund ``datenschutz`` die Operation ``redact``: Abnehmer des
+    Änderungsfeeds entfernen das Objekt dann auch aus Kopien. Die Anwendung bildet dieselbe Meldung
+    (``hub.ris.retraction``); beide Seiten müssen übereinstimmen.
+    """
+    ereignis = ris_events.depublished_draft("person", cid(f"{BASE}/person/1"), grund)
+    assert (ereignis.type, ereignis.operation, ereignis.visibility) == (
+        "ris.object.depublished",
+        operation,
+        "oeffentlich",
+    )
+    assert ereignis.payload["reason"] == grund
+
+
 def test_loeschmarkierung_eines_nichtoeffentlichen_punkts_bleibt_nichtoeffentlich() -> None:
     """Öffentliche Empfänger haben den Punkt nie gesehen; eine Rücknahme nennte ihnen erstmals seine Kennung."""
     (ereignis,) = ris_events.depublished_events("agendaitem", cid(ITEM), public=False, meeting_id=cid(MEETING))

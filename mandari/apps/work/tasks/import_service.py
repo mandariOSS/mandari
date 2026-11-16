@@ -36,7 +36,7 @@ from apps.common import csv_safety
 from apps.tenants.models import Membership, Organization
 
 from . import selectors
-from .activity import log_activity
+from .activity import log_activity, log_field_change
 from .models import Task, TaskChecklistItem, TaskLabel
 
 MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
@@ -734,6 +734,16 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
     from . import services
 
     services.reset_shares_on_reshare(task, old_visibility)
+    # Wie das Panel-Formular: Ein Wechsel der Sichtbarkeit steht im Verlauf der Aufgabe
+    sichtbarkeiten = dict(Task.VISIBILITY_CHOICES)
+    log_field_change(
+        task,
+        membership,
+        "visibility",
+        sichtbarkeiten.get(old_visibility, old_visibility),
+        task.get_visibility_display(),
+        "visibility_changed",
+    )
     if data["labels"]:
         resolved = labels.resolve(data["labels"])
         if labels.complete(data["labels"]):

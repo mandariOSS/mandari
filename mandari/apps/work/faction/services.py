@@ -737,6 +737,43 @@ def org_member(organization, raw_id):
     return Membership.objects.filter(id=member_id, organization=organization, is_active=True, is_guest=False).first()
 
 
+ZUSTAENDIG_NUR_VEREIDIGTE = (
+    "Dieser Punkt ist nichtöffentlich. Zuständig kann nur sein, wer den nichtöffentlichen Teil sehen darf."
+)
+
+
+class ZustaendigNurVereidigteError(ValueError):
+    """Zuständige Person für Nichtöffentliches, die den nichtöffentlichen Teil nicht sehen darf."""
+
+    def __init__(self) -> None:
+        super().__init__(ZUSTAENDIG_NUR_VEREIDIGTE)
+
+
+def darf_zustaendig_sein(member, item) -> bool:
+    """
+    Darf die Person eine Aufgabe aus diesem TOP bekommen? Bei nichtöffentlichen TOPs (auch als Unterpunkt) nur
+    Vereidigte, wie in der Sitzungsansicht (``sitzung.empfaenger_aufloesen``): Die Aufgabe trägt den Titel des TOPs
+    oder den Text des Protokolleintrags, und wer zuständig ist, liest sie. Einträge ohne TOP gelten als intern
+    (``item`` ist ``None``).
+    """
+    from .visibility import is_item_internal, is_sworn_member
+
+    if item is not None and not is_item_internal(item):
+        return True
+    return is_sworn_member(member)
+
+
+def zustaendige_person(organization, raw_id, item):
+    """
+    Zuständige Person aus einer Formular-ID (:func:`org_member`); ``ZustaendigNurVereidigteError``, wenn sie den TOP
+    nicht sehen darf (:func:`darf_zustaendig_sein`).
+    """
+    member = org_member(organization, raw_id)
+    if member is not None and not darf_zustaendig_sein(member, item):
+        raise ZustaendigNurVereidigteError()
+    return member
+
+
 def discard_open_invitations(membership) -> int:
     """
     Teilnahmen eines Mitglieds an noch nicht begonnenen Sitzungen löschen (Issue #420).
@@ -792,15 +829,20 @@ def record_decision(
     Hält die Kopie am TOP (``has_decision``/``votes_*``) aktuell und genehmigt über den Genehmigungs-TOP das
     Vorprotokoll. ``notes=None`` lässt vorhandene Anmerkungen unverändert (die Sitzungsansicht hat kein Feld dafür).
     In einer Sitzungsart ohne Abstimmungen meldet sie ``regeln.AbstimmungenAusError`` (Issue #1240); die Wege der
-    Oberfläche prüfen das vorher selbst.
+    Oberfläche prüfen das vorher selbst. Auf dem Genehmigungs-TOP einer Sitzung, die nicht begonnen hat, meldet sie
+    ``regeln.GenehmigungNurInSitzungError``.
     """
-    from .regeln import pruefe_abstimmung, pruefe_protokoll_offen
+    from .regeln import pruefe_abstimmung, pruefe_genehmigung_in_sitzung, pruefe_protokoll_offen
 
     pruefe_abstimmung(item.meeting)
+    pruefe_genehmigung_in_sitzung(item)
     with transaction.atomic():
         # Beschlüsse einer Sitzung mit genehmigtem Protokoll sind fest (Issue #63), gleich über welchen Weg;
         # Prüfung und Schreiben unter der Sperre der Sitzung
         pruefe_protokoll_offen(item.meeting)
+        # Unter derselben Sperre: Wurde die Sitzung seit dem Laden abgesagt, entsteht am Genehmigungs-TOP keine
+        # Abstimmung mehr
+        pruefe_genehmigung_in_sitzung(item, gespeichert=True)
         return _record_decision(
             item,
             membership,
@@ -881,9 +923,15 @@ def apply_approval_item_decision(agenda_item, decision, meeting, membership):
     if decision is None or not decision.passed:
         return False
     # Die Kette reicht in die Zukunft (Issue #1295): Genehmigt wird nur das Protokoll einer Sitzung, die stattfand
-    from .kette import hat_stattgefunden
+    from .kette import BEGONNEN, hat_stattgefunden
 
     if not hat_stattgefunden(agenda_item.approves_meeting):
+        return False
+    # Die Fraktion genehmigt in der Sitzung: Eine Abstimmung vor deren Beginn (oder in einer abgesagten Sitzung)
+    # genehmigt nichts, gleich über welchen Weg sie erfasst wurde. Stand der Datenbank, nicht der des geladenen Objekts.
+    from .models import FactionMeeting
+
+    if not FactionMeeting.objects.filter(pk=meeting.pk, status__in=BEGONNEN).exists():
         return False
     return ProtocolApprovalService.approve_protocol(
         agenda_item.approves_meeting,
@@ -1315,20 +1363,30 @@ class ProtocolApprovalService:
         if meeting.protocol_approved:
             return False
 
-        meeting.protocol_status = "approved"
-        meeting.protocol_approved = True
-        meeting.protocol_approved_at = timezone.now()
-        meeting.protocol_approved_by = approved_by
-        meeting.protocol_approved_in = approved_in_meeting
-        meeting.save(
-            update_fields=[
-                "protocol_status",
-                "protocol_approved",
-                "protocol_approved_at",
-                "protocol_approved_by",
-                "protocol_approved_in",
-            ]
-        )
+        from .agenda import lock_meeting
+        from .models import FactionMeeting
+
+        with transaction.atomic():
+            # Unter der Sperre der Sitzung und mit dem Stand der Datenbank: Das geladene Objekt kann älter sein als
+            # eine Genehmigung auf dem anderen Weg (direkt oder über den Genehmigungs-TOP). Die erste Genehmigung
+            # gilt, Person und Zeitpunkt werden nicht ersetzt.
+            lock_meeting(meeting)
+            if FactionMeeting.objects.filter(pk=meeting.pk, protocol_approved=True).exists():
+                return False
+            meeting.protocol_status = "approved"
+            meeting.protocol_approved = True
+            meeting.protocol_approved_at = timezone.now()
+            meeting.protocol_approved_by = approved_by
+            meeting.protocol_approved_in = approved_in_meeting
+            meeting.save(
+                update_fields=[
+                    "protocol_status",
+                    "protocol_approved",
+                    "protocol_approved_at",
+                    "protocol_approved_by",
+                    "protocol_approved_in",
+                ]
+            )
 
         logger.info(
             f"Protocol approved: meeting {meeting.id} "

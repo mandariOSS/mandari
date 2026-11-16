@@ -218,3 +218,132 @@ def test_umwandlung_ueber_die_oberflaeche_meldet_den_entwurf(welt: Welt) -> None
     assert vorlage.status == "draft"
     formular = welt.client.get(welt.url(f"/applications/{_antrag(welt).pk}/convert/")).content.decode()
     assert "neue Vorlage im Entwurf" in formular
+
+
+# =============================================================================
+# Terminieren und Umwandeln gelten für den gespeicherten Stand
+# =============================================================================
+
+
+def _station_nach_dem_laden(**aenderung: Any) -> Any:
+    """Die Anfrage lädt Station und Vorlage; erst danach ändert jemand die Vorlage."""
+    from unittest import mock
+
+    from apps.session.views.consultations import ConsultationBaseView
+
+    echt: Any = ConsultationBaseView.get_consultation
+
+    def laden(view: Any, consultation_id: Any) -> SessionConsultation:
+        station = cast(SessionConsultation, echt(view, consultation_id))
+        SessionPaper.objects.filter(pk=station.paper_id).update(**aenderung)
+        return station
+
+    return mock.patch.object(ConsultationBaseView, "get_consultation", laden)
+
+
+def _sitzungsdienst(w: Welt) -> Client:
+    """Terminieren ohne das Recht auf nichtöffentliche Vorlagen."""
+    role = SessionRole.objects.create(
+        tenant=w.tenant, name="Sitzungsdienst", can_view_papers=True, can_view_meetings=True, can_edit_meetings=True
+    )
+    user = cast(User, UserFactory(email="sitzungsdienst@terminhausen.example"))  # type: ignore[no-untyped-call]
+    SessionUser.objects.create(user=user, tenant=w.tenant).roles.add(role)
+    client = Client()
+    client.force_login(user)
+    return client
+
+
+def _oeffentliche_station(w: Welt) -> tuple[SessionPaper, SessionConsultation]:
+    vorlage = SessionPaper.objects.create(tenant=w.tenant, name="Radweg Hauptstraße", status="approved", is_public=True)
+    station = SessionConsultation.objects.create(paper=vorlage, organization=w.rat, meeting=w.sitzung, order=1)
+    return vorlage, station
+
+
+def test_terminieren_uebernimmt_die_gespeicherte_sichtbarkeit(welt: Welt) -> None:
+    vorlage, station = _oeffentliche_station(welt)
+
+    with _station_nach_dem_laden(is_public=False):
+        welt.client.post(welt.url(f"/consultations/{station.pk}/schedule/"))
+
+    vorlage.refresh_from_db()
+    assert vorlage.is_public is False, "die Entscheidung für nichtöffentlich bleibt bestehen"
+    assert vorlage.status == "scheduled"
+    top = SessionAgendaItem.objects.get(meeting=welt.sitzung, paper=vorlage)
+    assert top.is_public is False
+
+
+def test_terminieren_ohne_sichtrecht_auf_den_gespeicherten_stand(welt: Welt) -> None:
+    vorlage, station = _oeffentliche_station(welt)
+
+    with _station_nach_dem_laden(is_public=False):
+        antwort = _sitzungsdienst(welt).post(welt.url(f"/consultations/{station.pk}/schedule/"))
+
+    assert antwort.status_code == 302
+    assert "hat sich inzwischen geändert" in _meldungen(antwort)
+    vorlage.refresh_from_db()
+    station.refresh_from_db()
+    assert (vorlage.is_public, vorlage.status, station.agenda_item_id) == (False, "approved", None)
+    assert not SessionAgendaItem.objects.filter(meeting=welt.sitzung).exists()
+
+
+def test_terminieren_nach_zurueckziehen_wird_abgewiesen(welt: Welt) -> None:
+    vorlage, station = _oeffentliche_station(welt)
+
+    with _station_nach_dem_laden(status="withdrawn"):
+        antwort = welt.client.post(welt.url(f"/consultations/{station.pk}/schedule/"))
+
+    assert "ist nicht freigegeben" in _meldungen(antwort)
+    vorlage.refresh_from_db()
+    assert vorlage.status == "withdrawn"
+    assert not SessionAgendaItem.objects.filter(meeting=welt.sitzung).exists()
+
+
+def test_umwandlung_nach_ablehnung_wird_abgewiesen(welt: Welt) -> None:
+    from apps.session.services.application_service import ConversionError
+
+    antrag = _antrag(welt)
+    # Nach dem Laden lehnt jemand den Antrag ab
+    SessionApplication.objects.filter(pk=antrag.pk).update(status="rejected")
+
+    with pytest.raises(ConversionError):
+        convert_to_paper(antrag, session_user=welt.admin)
+
+    assert not SessionPaper.objects.filter(source_application=antrag).exists()
+    assert SessionApplication.objects.get(pk=antrag.pk).status == "rejected"
+
+
+def test_zweite_umwandlung_liefert_die_vorhandene_vorlage(welt: Welt) -> None:
+    antrag = _antrag(welt)
+    gelesen = SessionApplication.objects.get(pk=antrag.pk)
+    erste, neu = convert_to_paper(antrag, session_user=welt.admin)
+    assert neu
+
+    zweite, nochmal = convert_to_paper(gelesen, session_user=welt.admin)
+
+    assert (zweite.pk, nochmal) == (erste.pk, False)
+    assert SessionPaper.objects.filter(source_application=antrag).count() == 1
+
+
+def test_antragsbearbeitung_sperrt_den_antrag_beim_speichern(welt: Welt) -> None:
+    from unittest import mock
+
+    from django.db.models import QuerySet
+
+    antrag = _antrag(welt)
+    echt = QuerySet.select_for_update
+    gesperrt: list[Any] = []
+
+    def merken(queryset: Any, *args: Any, **kwargs: Any) -> Any:
+        gesperrt.append(queryset.model)
+        return echt(queryset, *args, **kwargs)
+
+    with mock.patch.object(QuerySet, "select_for_update", merken):
+        seite = welt.client.get(welt.url(f"/applications/{antrag.pk}/process/"))
+        assert SessionApplication not in gesperrt, "Lesen sperrt nicht"
+        antwort = welt.client.post(
+            welt.url(f"/applications/{antrag.pk}/process/"), {"status": "rejected", "processing_notes": "Abgelehnt."}
+        )
+
+    assert seite.status_code == 200 and antwort.status_code == 302
+    assert SessionApplication in gesperrt
+    assert SessionApplication.objects.get(pk=antrag.pk).status == "rejected"

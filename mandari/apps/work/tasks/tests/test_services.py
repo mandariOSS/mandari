@@ -303,9 +303,13 @@ def test_toggle_label_and_comment(org: Any, member: Any, other: Any) -> None:
 
 
 @pytest.mark.django_db
-def test_import_protocol_entries_creates_tasks(org: Any, member: Any, other: Any) -> None:
+def test_import_protocol_entries_creates_tasks(org: Any, make_member: Any, other: Any) -> None:
     from apps.work.faction.models import FactionMeeting
 
+    # Einträge ohne TOP gelten als intern: übernehmen kann sie nur, wer vereidigt ist und Nichtöffentliches sieht
+    member = make_member(org, ["tasks.view", "tasks.create", "faction.view_non_public"], email="vereidigt@example.org")
+    member.is_sworn_in = True
+    member.save(update_fields=["is_sworn_in"])
     meeting = FactionMeeting.objects.create(organization=org, title="Fraktionssitzung", start=timezone.now())
     entry = make_entry(meeting, "Antrag vorbereiten", entry_type="action", action_assignee=other, created_by=member)
     note = make_entry(meeting, "Notiz", entry_type="note", created_by=member)

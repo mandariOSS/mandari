@@ -77,6 +77,7 @@ def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict
     """
     from apps.work.motions.models import Motion, MotionApproval
     from apps.work.tasks.models import Task
+    from apps.work.tasks.selectors import ohne_gesperrte_tops
 
     slug = organization.slug
     eintraege: list[dict[str, Any]] = []
@@ -98,8 +99,10 @@ def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict
             }
         )
 
-    aufgaben = Task.objects.filter(
-        organization=organization, assigned_to=membership, status__in=("todo", "in_progress")
+    # Aufgaben aus nichtöffentlichen TOPs nur für Vereidigte, wie auf dem Aufgabenboard
+    aufgaben = ohne_gesperrte_tops(
+        Task.objects.filter(organization=organization, assigned_to=membership, status__in=("todo", "in_progress")),
+        membership,
     ).order_by("due_date", "-created_at")[:limit]
     for aufgabe in sorted(aufgaben, key=lambda a: (a.priority not in PRIORITAET, a.due_date or date.max)):
         teile = ["Aufgabe"]

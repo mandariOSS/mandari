@@ -97,13 +97,40 @@ def visible_tasks(
     aus_sichtbarer_sitzung = (Q(related_faction_meeting__isnull=True) | Q(related_faction_meeting__in=sitzungen)) & (
         Q(related_faction_agenda_item__isnull=True) | Q(related_faction_agenda_item__meeting__in=sitzungen)
     )
-    return qs.filter(
-        (Q(visibility="organization") & aus_sichtbarer_sitzung)
-        | Q(created_by=membership)
-        | Q(assigned_to=membership)
-        # Freigaben zählen nur, solange die Aufgabe geteilt ist (übrig gebliebene Zeilen öffnen nichts)
-        | Q(visibility="shared", shares__membership=membership)
+    return ohne_gesperrte_tops(
+        qs.filter(
+            (Q(visibility="organization") & aus_sichtbarer_sitzung)
+            | Q(created_by=membership)
+            | Q(assigned_to=membership)
+            # Freigaben zählen nur, solange die Aufgabe geteilt ist (übrig gebliebene Zeilen öffnen nichts)
+            | Q(visibility="shared", shares__membership=membership)
+        ),
+        membership,
     ).distinct()
+
+
+def noe_top_q() -> Q:
+    """Aufgabe aus einem nichtöffentlichen TOP einer Fraktionssitzung, als Bedingung (``Task.noe_top`` je Zeile)."""
+    return Q(related_faction_agenda_item__visibility="internal") | Q(
+        related_faction_agenda_item__parent__visibility="internal"
+    )
+
+
+def ohne_gesperrte_tops(qs: QuerySet[Task], membership: Membership) -> QuerySet[Task]:
+    """
+    Aufgaben aus nichtöffentlichen TOPs einer Fraktionssitzung nur für Vereidigte: dieselbe Grenze wie
+    ``Task.noe_gesperrt``, als Bedingung der Abfrage statt einer Prüfung je Zeile.
+
+    Sie gilt auch für eigene, zugewiesene, geteilte und organisationsweite Aufgaben und am heutigen Stand: Wer nicht
+    mehr vereidigt ist, sieht die Aufgabe nicht mehr, ebenso alle Nicht-Vereidigten, sobald der TOP nichtöffentlich
+    wird. Unterpunkte erben den Stand vom übergeordneten TOP (eine Ebene, ``visibility.is_item_internal``). Aufgaben
+    ohne Fraktions-TOP bleiben unberührt.
+    """
+    from apps.work.faction.visibility import is_sworn_member
+
+    if is_sworn_member(membership):
+        return qs
+    return qs.exclude(noe_top_q())
 
 
 def _sichtbare_sitzungen(organization: Organization, membership: Membership) -> QuerySet[Any]:
@@ -169,9 +196,15 @@ def personal_tasks(membership: Membership) -> QuerySet[Task]:
 
 
 def own_tasks(membership: Membership, *, base: QuerySet[Task]) -> QuerySet[Task]:
-    """Ansicht "Meine Aufgaben": erstellt, zugewiesen oder mit dem Mitglied geteilt."""
-    return base.filter(
-        Q(assigned_to=membership) | Q(created_by=membership) | Q(visibility="shared", shares__membership=membership)
+    """
+    Ansicht "Meine Aufgaben": erstellt, zugewiesen oder mit dem Mitglied geteilt; Aufgaben aus nichtöffentlichen TOPs
+    nur für Vereidigte (:func:`ohne_gesperrte_tops`).
+    """
+    return ohne_gesperrte_tops(
+        base.filter(
+            Q(assigned_to=membership) | Q(created_by=membership) | Q(visibility="shared", shares__membership=membership)
+        ),
+        membership,
     ).distinct()
 
 
@@ -274,6 +307,21 @@ def assignable_members(organization: Organization) -> QuerySet[Membership]:
     return active_members(organization).filter(is_guest=False)
 
 
+def zustaendige_fuer_noe_aufgabe(organization: Organization, task: Task) -> list[Any]:
+    """
+    Kennungen der Mitglieder, die für eine Aufgabe aus einem nichtöffentlichen TOP zuständig sein können: Vereidigte,
+    wie beim Anlegen in der Sitzung (``faction.sitzung.personen_und_gruppen``). Die bisher zuständige Person bleibt
+    wählbar, damit sich die übrigen Felder weiter speichern lassen, auch wenn sie nicht mehr vereidigt ist.
+    """
+    from apps.work.faction.sitzung import personen_und_gruppen
+
+    personen, _gruppen = personen_und_gruppen(organization, nur_vereidigte=True)
+    kennungen = [m.pk for m in personen]
+    if task.assigned_to_id is not None:
+        kennungen.append(task.assigned_to_id)
+    return kennungen
+
+
 def memberships_by_email(organization: Organization) -> dict[str, Membership]:
     """Aktive Mitglieder, indiziert nach kleingeschriebener E-Mail (Import-Zuordnung)."""
     return {ms.user.email.lower(): ms for ms in active_members(organization)}
@@ -334,7 +382,13 @@ def find_motion(organization: Organization, membership: Membership, motion_id: A
 
 
 def _visible_protocol_entries(organization: Organization, membership: Membership) -> QuerySet[FactionProtocolEntry]:
-    """Protokolleinträge der Organisation; Einträge nicht-öffentlicher TOPs nur für Vereidigte."""
+    """
+    Protokolleinträge der Organisation; Einträge nicht-öffentlicher TOPs und Einträge ohne TOP nur für Vereidigte.
+
+    Einträge ohne TOP gelten wie auf der Protokollseite, in der Niederschrift und im Nachtragsdialog als intern
+    (``faction.sitzung.lesbare_eintraege``). Die Bedingung steht ausdrücklich in der Abfrage: Der Ausschluss über die
+    Sichtbarkeit des TOPs allein trifft Einträge ohne TOP nicht.
+    """
     from apps.work.faction.models import FactionProtocolEntry
     from apps.work.faction.visibility import can_view_internal
 
@@ -343,7 +397,9 @@ def _visible_protocol_entries(organization: Organization, membership: Membership
         meeting__organization=organization, meeting__in=_sichtbare_sitzungen(organization, membership)
     )
     if not can_view_internal(membership):
-        qs = qs.exclude(Q(agenda_item__visibility="internal") | Q(agenda_item__parent__visibility="internal"))
+        qs = qs.filter(agenda_item__isnull=False).exclude(
+            Q(agenda_item__visibility="internal") | Q(agenda_item__parent__visibility="internal")
+        )
     return qs
 
 

@@ -938,6 +938,12 @@ INSIGHT_CHAT_TIME_LIMIT_SECONDS = int(os.environ.get("INSIGHT_CHAT_TIME_LIMIT_SE
 # Chat-Nutzungen seit Mitternacht). Ist eine erreicht, fragt der Assistent den Anbieter bis zum nächsten Tag nicht.
 INSIGHT_CHAT_DAILY_MAX_CALLS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_CALLS", "500"))
 INSIGHT_CHAT_DAILY_MAX_TOKENS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_TOKENS", "1000000"))
+# Höchstens so viele Antworten des KI-Assistenten laufen zugleich (Belegung vor dem Anbieteraufruf)
+INSIGHT_CHAT_MAX_CONCURRENT = int(os.environ.get("INSIGHT_CHAT_MAX_CONCURRENT", "8"))
+# Adresssuche der Nachbarschaftsseite ohne Straßenverzeichnis: Abrufe beim Geokodierdienst je Aufrufer und insgesamt
+# je Minute (Treffer aus dem Cache zählen nicht)
+INSIGHT_PHOTON_PER_IP_MINUTE = int(os.environ.get("INSIGHT_PHOTON_PER_IP_MINUTE", "25"))
+INSIGHT_PHOTON_PER_MINUTE = int(os.environ.get("INSIGHT_PHOTON_PER_MINUTE", "40"))
 # Öffentlicher, nur lesender MCP-Server unter /insight/mcp (Issue #899, docs/KI.md#4-mcp-server). Standard aus; die
 # Freischaltung entscheidet der Betrieb. Grenzen je Adresse und Minute (alle Anfragen), je Adresse und Tag
 # (Werkzeugaufrufe) und insgesamt je Minute; 0 schaltet eine Grenze ab. INSIGHT_MCP_ALLOWED_ORIGINS: weitere Hosts,

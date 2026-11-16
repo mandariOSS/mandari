@@ -39,7 +39,7 @@
         <label for="id_message" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Was ist passiert? <span class="text-red-500">*</span>
         </label>
-        <textarea name="message" id="id_message" rows="5" required minlength="10"
+        <textarea name="message" id="id_message" rows="5" required minlength="10" maxlength="10000"
                   placeholder="Beschreibe kurz, was du gemacht hast und was schiefgelaufen ist…"
                   class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ message_value|default:'' }}</textarea>
     </div>

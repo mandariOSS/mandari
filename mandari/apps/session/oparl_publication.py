@@ -223,6 +223,36 @@ def _retract_location(tenant_id, meeting_id, reason=GELOESCHT):
     Bestand geschrieben, bliebe er dort sonst nach der Rücknahme der Sitzung öffentlich abrufbar.
     """
     transaction.on_commit(lambda: retract_from_portal(tenant_id, "location", meeting_id, reason))
+    # Bleibt die Sitzung selbst sichtbar (nur Termin, Ort entfernt), verschwindet auch der Text an ihr sofort
+    transaction.on_commit(lambda: clear_portal_location(tenant_id, meeting_id), robust=True)
+
+
+def clear_portal_location(tenant_id, meeting_id) -> int:
+    """
+    Ortsangabe an der gespiegelten Sitzung im Bürgerportal leeren.
+
+    Der Spiegel führt den Ort als Text an der Sitzung (``location_name``, ``location_address``) und in ihren
+    Rohdaten. Steht die Sitzung nur noch mit ihrem Termin im Portal oder hat sie keinen Ort mehr, zeigten
+    Sitzungsseite, Suche, Kalender und Feed ihn sonst bis zum nächsten Abgleich weiter. Der Abgleich schreibt
+    dieselben leeren Werte; einzeln gespeichert, damit der Suchindex folgt.
+    """
+    from hub.ris import selectors as ris
+
+    slug = SessionTenant.objects.filter(pk=tenant_id).values_list("slug", flat=True).first()
+    if slug is None:
+        return 0
+    anzahl = 0
+    treffer = ris.meetings_by_external_id_suffix(f"/session/{slug}/api/oparl/meeting/{meeting_id}/")
+    for gespiegelt in treffer:
+        roh = gespiegelt.raw_json if isinstance(gespiegelt.raw_json, dict) else {}
+        if not (gespiegelt.location_name or gespiegelt.location_address or "location" in roh):
+            continue
+        gespiegelt.location_name = None
+        gespiegelt.location_address = None
+        gespiegelt.raw_json = {name: value for name, value in roh.items() if name != "location"}
+        gespiegelt.save(update_fields=["location_name", "location_address", "raw_json", "updated_at"])
+        anzahl += 1
+    return anzahl
 
 
 def _has_location(meeting) -> bool:

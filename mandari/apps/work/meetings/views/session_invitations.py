@@ -82,18 +82,29 @@ class SessionInvitationRespondView(WorkViewMixin, View):
 
 
 class SessionInvitationAgendaView(WorkViewMixin, View):
-    """Tagesordnung als PDF in der Fassung, die die Person erhalten hat (Ö/NÖ, Nachtrag)."""
+    """
+    Tagesordnung als PDF in der Variante, die die Person erhalten hat (Ö/NÖ, Nachtrag).
+
+    Das PDF entsteht bei jedem Abruf aus dem heutigen Stand der Tagesordnung. Den nichtöffentlichen Teil und den
+    Zugangsweg für Zugeschaltete gibt es deshalb nur, solange die Person zum Empfängerkreis der vollständigen
+    Ladung gehört (Sitz in einem beteiligten Gremium zum Sitzungsdatum, mehr als Gast). Wer vor der Sitzung
+    ausgeschieden oder Gast geworden ist, erhält die öffentliche Fassung.
+    """
 
     http_method_names = ["get"]
     permission_required = "meetings.view"
 
     def get(self, request: HttpRequest, org_slug: str, recipient_id: Any) -> HttpResponse:
-        _person, recipient = _recipient_or_404(self, recipient_id)
+        person, recipient = _recipient_or_404(self, recipient_id)
+        meeting = recipient.dispatch.meeting
         supplementary = recipient.dispatch.dispatch_type == "supplementary"
+        # Dieselbe Regel wie beim Versand: Empfängerkreis nach heutigem Stand, nicht nach dem der Ladung
+        full_agenda = recipient.includes_non_public and any(
+            entry["person"].pk == person.pk and entry["include_non_public"]
+            for entry in invitation_service.get_recipients(meeting)
+        )
         pdf = invitation_service.build_agenda_pdf(
-            recipient.dispatch.meeting,
-            include_non_public=recipient.includes_non_public,
-            supplementary_only=supplementary,
+            meeting, include_non_public=full_agenda, supplementary_only=supplementary
         )
         filename = "nachtrags-tagesordnung.pdf" if supplementary else "einladung-tagesordnung.pdf"
         response = HttpResponse(pdf, content_type="application/pdf")

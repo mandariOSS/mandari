@@ -16,7 +16,7 @@
 
 [[eintrag]]
 datum = 2026-11-07
-version = ""
+version = "0.13.0"
 titel = "Sehen Sie auf einen Blick, was entschieden wurde."
 text = """Unter „Beschlüsse“ stehen jetzt die Ergebnisse der öffentlichen Sitzungen, nach Sitzung geordnet und das \
 Neueste zuerst: beschlossen, abgelehnt, vertagt und mehr, dazu wer den Antrag gestellt hat. Sie können nach Rat und \
@@ -25,7 +25,7 @@ Auswahl weitergeben."""
 
 [[eintrag]]
 datum = 2026-11-07
-version = ""
+version = "0.13.0"
 titel = "Neues abonnieren, ohne Konto und ohne E-Mail-Adresse."
 text = """Auf der Seite eines Vorgangs, eines Gremiums, unter jeder Vorgangsliste und unter jeder Suche finden Sie \
 jetzt „Abonnieren“. Ihr Feed-Reader zeigt Ihnen dann neue Vorlagen, angesetzte Beratungen und Ergebnisse von \
@@ -33,7 +33,7 @@ selbst. Eine kurze Anleitung erklärt, wie das geht."""
 
 [[eintrag]]
 datum = 2026-11-07
-version = ""
+version = "0.13.0"
 titel = "Sitzungstermine im eigenen Kalender speichern."
 text = """Bei kommenden Sitzungen übernehmen Sie den Termin mit „Termin speichern“ in Ihren Kalender. Öffnen Sie \
 die Datei nach einer Verschiebung erneut, ändert sich der Termin, statt doppelt zu erscheinen. Sitzungen, deren \
@@ -41,7 +41,7 @@ Tagesordnung noch fehlt, tragen das Etikett „angekündigt“."""
 
 [[eintrag]]
 datum = 2026-11-07
-version = ""
+version = "0.13.0"
 titel = "Sagen Sie uns, was fehlt."
 text = """Wenn Sie bei „War diese Seite hilfreich?“ mit Nein antworten, können Sie jetzt angeben, ob Sie einen \
 Fehler gefunden haben, eine Idee für eine neue Funktion haben oder eine Kommune vorschlagen möchten. Ein Satz \
@@ -49,14 +49,14 @@ genügt. Wir speichern dazu keine IP-Adresse und setzen kein Cookie."""
 
 [[eintrag]]
 datum = 2026-11-07
-version = ""
+version = "0.13.0"
 titel = "Alle Neuigkeiten an einem Ort."
 text = """Auf dieser Seite stellen wir vor, was im Bürgerportal neu ist, das Neueste zuerst. Sie erreichen sie \
 jederzeit über die Versionsnummer im Fuß jeder Seite."""
 
 [[eintrag]]
 datum = 2026-11-06
-version = ""
+version = "0.13.0"
 titel = "Zusammenfassungen in Einfacher Sprache lesen."
 text = """Auf der Seite eines Vorgangs schalten Sie mit „In Einfacher Sprache“ auf eine zweite Fassung der \
 KI-Zusammenfassung um: kurze Sätze, Wörter aus dem Alltag und erklärte Fachbegriffe. Maßgeblich bleiben die \
@@ -64,21 +64,21 @@ Originaldokumente der Kommune."""
 
 [[eintrag]]
 datum = 2026-11-06
-version = ""
+version = "0.13.0"
 titel = "Zusammenfassungen kommen schneller zum Punkt."
 text = """Der erste Satz sagt jetzt, worum es geht und was zu entscheiden ist. Die Zusammenfassungen sind kürzer, \
 und ein Vorschlag liest sich nicht mehr so, als wäre er schon beschlossen."""
 
 [[eintrag]]
 datum = 2026-11-06
-version = ""
+version = "0.13.0"
 titel = "Mit einem Klick sagen, ob eine Zusammenfassung hilft."
 text = """Unter jeder KI-Zusammenfassung fragen wir, ob sie hilfreich war. Ihr Daumen hoch oder runter zeigt uns, wo \
 die Zusammenfassungen besser werden müssen. Dafür brauchen Sie kein Konto, und wir setzen kein Cookie."""
 
 [[eintrag]]
 datum = 2026-11-06
-version = ""
+version = "0.13.0"
 titel = "Orte auf der Karte werden ein zweites Mal geprüft."
 text = """In ersten Kommunen vergleicht eine KI die automatisch gefundenen Orte eines Vorgangs mit seinem Text. \
 Passt ein Ort nicht, verschwindet er von der Karte. Fehlt einer, sucht ihn das Straßenverzeichnis der Kommune."""

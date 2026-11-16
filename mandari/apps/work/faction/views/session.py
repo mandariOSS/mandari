@@ -32,7 +32,13 @@ from hub.ris import selectors as ris
 from .. import sitzung
 from ..models import FactionAgendaItem, FactionDecision, FactionMeeting
 from ..quorum import quorum_der_sitzung
-from ..regeln import ABSTIMMUNGEN_AUS
+from ..regeln import (
+    ABSTIMMUNGEN_AUS,
+    GENEHMIGUNG_NUR_IN_SITZUNG,
+    PROTOKOLL_GENEHMIGT,
+    GenehmigungNurInSitzungError,
+    ProtokollGenehmigtError,
+)
 from ..sitzungsarten import darf_sehen
 from ..visibility import can_view_internal, is_item_internal
 from ._helpers import offene_vorschlaege
@@ -52,6 +58,7 @@ ANWESENHEIT = "work/faction/sitzung/_anwesenheit.html"
 
 #: Feste Meldungen (nie Ausnahmetexte an den Browser)
 KEINE_BERECHTIGUNG = "Keine Berechtigung für diese Aktion."
+ANDERES_KONTO = "In diesem Browser ist inzwischen ein anderes Konto angemeldet. Die Notizen wurden nicht gespeichert."
 UNGUELTIG = "Ungültige Eingabe."
 SITZUNG_LAEUFT_NICHT = "Die Sitzung läuft nicht mehr. TOPs ergänzen Sie hier nur während der Sitzung."
 
@@ -193,10 +200,10 @@ def top_kontext(
         "verlauf": sitzung.beratungsverlauf(item, meeting.organization)
         if sitzung.darf_beratungsverlauf_sehen(membership)
         else [],
-        "herkunft": sitzung.herkunft(item),
+        "herkunft": sitzung.herkunft(item, membership),
         "beschreibung": cast(Any, item).get_description_decrypted() or "",
         "notizen_html": safe_editor_html(notizen),
-        "eintraege": sitzung.protokolleintraege(item),
+        "eintraege": sitzung.protokolleintraege(item, membership),
         "aufgaben": sitzung.aufgaben_des_tops(item, membership),
         "decision": decision,
         "beschluss_punkt": PUNKT_ERGEBNIS.get(decision.result, "andere") if decision else "",
@@ -373,6 +380,11 @@ class FactionSessionActionView(_SitzungsView):
         item = self._top(request, meeting)
         if not sitzung.darf_protokollieren(self.mitglied, meeting):
             return JsonResponse({"fehler": KEINE_BERECHTIGUNG}, status=403)
+        # Die Seite nennt die Mitgliedschaft, für die sie aufgebaut wurde. Blieb ein Fenster mit ungesicherten Notizen
+        # offen und ist im Browser inzwischen ein anderes Konto angemeldet, wird nichts unter dessen Namen gespeichert
+        seite_von = str(request.POST.get("mitglied") or "")
+        if seite_von and seite_von != str(self.mitglied.pk):
+            return JsonResponse({"fehler": ANDERES_KONTO, "anderes_konto": True}, status=403)
         html = str(request.POST.get("html") or "")
         if len(html) > sitzung.NOTIZEN_MAX_ZEICHEN:
             return JsonResponse({"fehler": "Die Notizen sind zu lang."}, status=400)
@@ -407,15 +419,22 @@ class FactionSessionActionView(_SitzungsView):
             return HttpResponse(UNGUELTIG, status=400)
         from .. import services as faction_services
 
-        faction_services.record_decision(
-            item,
-            self.mitglied,
-            votes_yes=stimmen[0],
-            votes_no=stimmen[1],
-            votes_abstain=stimmen[2],
-            result=result,
-            decision_text=_wert(request, "decision_text"),
-        )
+        try:
+            faction_services.record_decision(
+                item,
+                self.mitglied,
+                votes_yes=stimmen[0],
+                votes_no=stimmen[1],
+                votes_abstain=stimmen[2],
+                result=result,
+                decision_text=_wert(request, "decision_text"),
+            )
+        except GenehmigungNurInSitzungError:
+            # Genehmigungs-TOP, und die Sitzung läuft (noch oder schon) nicht: feste Meldung wie im Panel
+            return HttpResponse(GENEHMIGUNG_NUR_IN_SITZUNG, status=400)
+        except ProtokollGenehmigtError:
+            # Das Protokoll wurde seit der Prüfung oben genehmigt
+            return HttpResponse(PROTOKOLL_GENEHMIGT, status=400)
         item.refresh_from_db()
         kontext = self._top_basis(meeting, item) | {"oob_zeile": True}
         return _mit_meldung(self._render(request, UNTEN, kontext), "Beschluss erfasst")

@@ -70,6 +70,7 @@ import errno
 import hashlib
 import logging
 import random
+import uuid
 from collections import Counter, deque
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
@@ -501,6 +502,82 @@ def _fuellen(stufe: str, tiefe: int, *, ocr_vermerkt: bool | None, warteschlange
     if eingereiht:
         logger.info("Texterkennung: %d Aufträge in %s eingereiht", eingereiht, stufe)
     return eingereiht
+
+
+def mit_vorrang_einplanen(file_ids: Iterable[Any], *, priority: int, max_wartend: int) -> int:
+    """
+    Erkennung einzelner Dateien mit Vorrang einreihen, in den Grenzen der Dokumentkette. Rückgabe: Zahl der Aufträge.
+
+    Auslöser ist ein Seitenaufruf (die Zusammenfassung eines Vorgangs, auch ohne Anmeldung). Der Vorrang darf die
+    Anlagen dieses Vorgangs beschleunigen, aber nicht die Schutzmechanismen der Kette aushebeln:
+
+    - Wartet für eine Datei schon ein Auftrag mit Vorrang (ein früherer Aufruf), entsteht kein zweiter.
+    - Dateien ohne Vermerk der ersten Stufe gehen an ``text``, solange ein Worker die Stufe bedient: Für die meisten
+      reicht die Textebene, und sie belegen den Platz in ``ocr`` nie.
+    - In ``ocr`` (ein Platz, bis zu 30 Minuten je Auftrag) landen Aufträge mit Vorrang nur unter
+      ``TEXT_EXTRACTION_QUEUE_DEPTH``, höchstens ``max_wartend`` wartende über alle Aufrufe zusammen, und keine
+      weiteren für eine Quelle, für die aus einem früheren Aufruf schon einer wartet. Sonst könnte eine Folge von
+      Aufrufen den Platz für eine Quelle belegen, die Warteschlange über ihre Tiefe füllen und damit die Verteilung
+      reihum (``_reihum``) für alle anderen Quellen aussetzen.
+    """
+    from apps.events.models import Task as TaskRow
+    from apps.events.models import TaskStatus
+    from insight_core.background_tasks import file_extract_text, file_read_text_layer
+
+    gewuenscht = [str(file_id) for file_id in file_ids]
+    if not gewuenscht:
+        return 0
+    wartend: dict[str, set[str]] = {TEXT_LAYER_QUEUE: set(), TASK_QUEUE: set()}
+    zeilen = TaskRow.objects.filter(
+        task_path__in=list(STAGES.values()), status=TaskStatus.WARTEND, priority__gte=priority
+    ).values_list("queue", "args")
+    for queue, args in zeilen:
+        werte = args.get("args") if isinstance(args, dict) else None
+        if werte and queue in wartend:
+            wartend[queue].add(str(werte[0]))
+    schon = wartend[TEXT_LAYER_QUEUE] | wartend[TASK_QUEUE]
+    ocr_frei = max_wartend - len(wartend[TASK_QUEUE])
+    # Quellen, für die aus früheren Aufrufen schon ein Auftrag mit Vorrang in ocr wartet; die Anlagen dieses
+    # Aufrufs zählen untereinander nicht, sie gehören zu einem Vorgang
+    ocr_quellen = set(_quellen_der_dateien(wartend[TASK_QUEUE]).values())
+    dateien = {
+        str(pk): (sha256, vermerk, quelle)
+        for pk, sha256, vermerk, quelle in OParlFile.objects.filter(pk__in=gewuenscht).values_list(
+            "pk", "sha256_hash", "text_ocr_needed_sha256", "body__source_id"
+        )
+    }
+    zwei_stufen = text_stufe_aktiv()
+    eingereiht = 0
+    for file_id in gewuenscht:
+        if file_id in schon or file_id not in dateien:
+            continue
+        sha256, vermerk, quelle = dateien[file_id]
+        if zwei_stufen and not (sha256 and vermerk == sha256):
+            auftrag = file_read_text_layer
+        elif ocr_frei > 0 and quelle not in ocr_quellen and waiting_tasks(TASK_QUEUE) < queue_depth():
+            auftrag = file_extract_text
+            ocr_frei -= 1
+        else:
+            continue
+        auftrag.using(priority=priority).enqueue(file_id)
+        schon.add(file_id)
+        eingereiht += 1
+    return eingereiht
+
+
+def _quellen_der_dateien(file_ids: Iterable[str]) -> dict[str, Any]:
+    """Quelle je Datei; Kennungen aus Auftragszeilen, die keine UUID sind, entfallen."""
+    gueltig: list[uuid.UUID] = []
+    for file_id in file_ids:
+        try:
+            gueltig.append(uuid.UUID(file_id))
+        except ValueError:
+            continue
+    if not gueltig:
+        return {}
+    return {
+        str(pk): quelle for pk, quelle in OParlFile.objects.filter(pk__in=gueltig).values_list("pk", "body__source_id")
+    }
 
 
 def einplanen(now: datetime | None = None) -> int:

@@ -11,6 +11,7 @@ from typing import Any, Final
 
 from django import forms
 from django.contrib import admin, messages
+from django.db import transaction
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -21,7 +22,13 @@ from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
-from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin, confirm_before_change, status_text
+from apps.common.admin_mixins import (
+    NoAddAdminMixin,
+    ReadOnlyAdminMixin,
+    confirm_before_change,
+    confirm_selected,
+    status_text,
+)
 
 from .models import (
     ChatUsage,
@@ -773,8 +780,159 @@ class OParlBodyGeoSuggestionAdmin(NoAddAdminMixin, ModelAdmin):
         return redirect(reverse("admin:insight_core_oparlbody_change", args=[body.pk]))
 
 
+#: Ergebnis der dauerhaften Rücknahme eines Objekts (``_withdraw_for_good``)
+_WITHDRAWN: Final = "zurueckgenommen"
+_RAISED: Final = "war_markiert"
+_REPORTED: Final = "nachgemeldet"
+_FROM_SESSION: Final = "session"
+_UNCHANGED: Final = "unveraendert"
+
+
+def _withdraw_for_good(obj: Any) -> str:
+    """
+    Ein Objekt des RIS-Bestands dauerhaft aus der Veröffentlichung nehmen (Aktion ``RetractAdminMixin``).
+
+    - Ein unmarkiertes Objekt wird markiert und im Änderungsfeed gemeldet (``retraction.retract``).
+    - Ein schon markiertes Objekt behält seine Markierung. Gemeldet wird es trotzdem: War es nur als in der Quelle
+      gelöscht markiert, blieb es mit Hinweis öffentlich, und Abnehmer, die das genauso halten, erführen sonst nie
+      von der Rücknahme. War es von Hand zurückgenommen, gab es dazu noch gar keine Meldung.
+    - In beiden Fällen trägt die Zeile danach den Grund „aus Datenschutzgründen entfernt“. Nur diese Markierung lässt
+      der Abgleich mit der Quelle stehen (Ingestor, ``keeps_withdrawal``); jede andere hebt er auf, sobald die Quelle
+      das Objekt wieder liefert. Gespeichert wird über ``save``: Erst das Signal der Person löscht ihr Foto.
+    - Gemeldet wird mit demselben Grund, den die Zeile trägt: Der Änderungsfeed nennt die Rücknahme als ``redact``
+      (``retraction.operation_for``), nicht als gewöhnliches ``delete``. Abnehmer entfernen das Objekt dann auch aus
+      Kopien und Weitergaben; ein ``delete`` verlangte das nicht, obwohl die Rücknahme hier endgültig ist.
+    - Trägt die Zeile diesen Grund schon, ohne dass der Feed eine solche Meldung kennt (im Formular von Hand
+      markiert, oder zurückgenommen, als dafür noch ``delete`` gemeldet wurde), holt die Aktion nur die Meldung nach.
+    - Ein Objekt aus dem Spiegel von mandari Session bleibt unverändert. Session nimmt selbst zurück und
+      veröffentlicht wieder; mit dem dauerhaften Grund bliebe ein dort wieder veröffentlichtes Objekt hier für
+      immer zurückgenommen.
+    """
+    from hub.ris import retraction
+
+    from .models import REASON_PRIVACY, SESSION_OPARL_MARKERS
+    from .services import ruecknahme_stand
+
+    external_id = getattr(obj, "external_id", "") or ""
+    if all(marker in external_id for marker in SESSION_OPARL_MARKERS):
+        return _FROM_SESSION
+    with transaction.atomic():
+        # Neu Markiertes: Markierung mit dem dauerhaften Grund, Meldung, Foto, Zusammenfassung und Abo-Hinweise in
+        # einem Zug (``mark_deleted`` speichert über ``save``)
+        if retraction.retract(obj, reason=retraction.REASON_PRIVACY):
+            return _WITHDRAWN
+        row = type(obj)._default_manager.select_for_update(no_key=True).filter(pk=obj.pk, deleted=True).first()
+        if row is None:
+            return _UNCHANGED  # inzwischen gelöscht
+        if row.deletion_reason == REASON_PRIVACY:
+            # Schon dauerhaft zurückgenommen: An der Zeile ändert sich nichts. Nur die Meldung fehlt womöglich noch
+            if retraction.redaction_reported(row):
+                return _UNCHANGED
+            reported = retraction.report_withdrawal(row, reason=retraction.REASON_PRIVACY, when=timezone.now())
+            return _REPORTED if reported else _UNCHANGED
+        retraction.report_withdrawal(row, reason=retraction.REASON_PRIVACY, when=timezone.now())
+        row.deletion_reason = REASON_PRIVACY
+        row.save(update_fields=["deletion_reason", "updated_at"])
+        # Was ``retract`` für neu Markiertes selbst erledigt
+        row._forget_summaries()
+        row._forget_alerts()
+        transaction.on_commit(ruecknahme_stand.forget, robust=True)
+    return _RAISED
+
+
+class RetractAdminMixin:
+    """
+    Aktion „Dauerhaft aus der Veröffentlichung zurücknehmen“ für Objekte des RIS-Bestands aus fremden Quellen.
+
+    Danach antworten die Seiten der Objekte ohne Inhalt; andere Seiten, Suche, Schnittstelle und Digest nennen sie
+    nicht mehr, und der Änderungsfeed meldet die Rücknahme. Die Anlagen eines Vorgangs oder einer Sitzung gehen mit,
+    das Foto einer Person wird gelöscht. Die Rücknahme bleibt bestehen, auch wenn die Quelle das Objekt weiter
+    liefert (``_withdraw_for_good``); eine Aktion, die sie aufhebt, gibt es nicht. Deshalb führt erst die bestätigte
+    Zwischenseite aus (``confirm_selected``).
+
+    Das Häkchen „In Quelle gelöscht“ allein leistet das nicht: Ohne Grund der Rücknahme bleibt ein Objekt mit Hinweis
+    sichtbar, und Abnehmer des Feeds erfahren nichts.
+    """
+
+    model: Any
+
+    @admin.action(
+        description="Dauerhaft aus der Veröffentlichung zurücknehmen (mit Anlagen, bei Personen mit Foto)",
+        permissions=["change"],
+    )
+    def retract_selected(self, request: HttpRequest, queryset: QuerySet[Any]) -> HttpResponse | None:
+        from hub.ris import retraction
+
+        bestaetigung = confirm_selected(
+            self,
+            request,
+            queryset,
+            action="retract_selected",
+            title="Dauerhaft aus der Veröffentlichung zurücknehmen",
+            text=(
+                "Die folgenden Objekte verlassen die Veröffentlichung dauerhaft, Vorgänge und Sitzungen samt ihren "
+                "Anlagen: Ihre Seiten antworten ohne Inhalt, und Suche, Schnittstelle und Digest nennen sie nicht "
+                "mehr. Der Abgleich mit der Quelle stellt sie nicht wieder her, und die Verwaltung bietet keine "
+                "Aktion, die das aufhebt. Fotos von Personen, Zusammenfassungen und offene Abo-Hinweise werden "
+                "sofort gelöscht. Objekte aus mandari Session bleiben unverändert; sie werden in Session "
+                "zurückgenommen."
+            ),
+        )
+        if bestaetigung is not None:
+            return bestaetigung
+
+        counts = dict.fromkeys((_WITHDRAWN, _RAISED, _REPORTED, _FROM_SESSION, _UNCHANGED), 0)
+        attachments = 0
+        for obj in queryset:
+            outcome = _withdraw_for_good(obj)
+            counts[outcome] += 1
+            # Vorgang und Sitzung: Anlagen tragen keine eigene Markierung und blieben sonst im Suchindex; schon
+            # markierte Anlagen bekommen den dauerhaften Grund, sonst kämen sie mit dem nächsten Abgleich zurück
+            if outcome != _FROM_SESSION and isinstance(obj, OParlPaper | OParlMeeting):
+                for attachment in obj.files.all():
+                    if _withdraw_for_good(attachment) in (_WITHDRAWN, _RAISED):
+                        attachments += 1
+
+        parts = []
+        if counts[_WITHDRAWN]:
+            parts.append(f"{counts[_WITHDRAWN]} zurückgenommen")
+        if counts[_RAISED]:
+            parts.append(f"{counts[_RAISED]} waren schon markiert und sind jetzt dauerhaft zurückgenommen")
+        if attachments:
+            parts.append(f"{attachments} Anlagen mitgenommen")
+        if parts:
+            fotos = " Die Fotos dieser Personen sind gelöscht." if self.model is OParlPerson else ""
+            messages.success(
+                request,
+                "Dauerhaft aus der Veröffentlichung genommen: "
+                + ", ".join(parts)
+                + f". Der Abgleich mit der Quelle stellt diese Objekte nicht wieder her.{fotos}",
+            )
+        if counts[_REPORTED]:
+            messages.success(
+                request,
+                f"{counts[_REPORTED]} waren schon dauerhaft zurückgenommen; der Änderungsfeed nennt die Rücknahme "
+                "jetzt.",
+            )
+        if counts[_UNCHANGED]:
+            messages.info(request, f"{counts[_UNCHANGED]} waren schon dauerhaft zurückgenommen (unverändert).")
+        if counts[_FROM_SESSION]:
+            messages.warning(
+                request,
+                f"{counts[_FROM_SESSION]} stammen aus mandari Session und bleiben unverändert: Solche Objekte "
+                "werden in Session zurückgenommen (nichtöffentlich stellen oder löschen), das Bürgerportal folgt.",
+            )
+        if parts and not retraction.events_enabled():
+            messages.warning(
+                request,
+                "Diese Installation schreibt keine Ereignisse zum RIS-Bestand (INGESTOR_EVENTS_ENABLED): "
+                "Der Änderungsfeed nennt die Rücknahme nicht.",
+            )
+        return None
+
+
 @admin.register(OParlOrganization)
-class OParlOrganizationAdmin(ModelAdmin):
+class OParlOrganizationAdmin(RetractAdminMixin, ModelAdmin):
     list_display = [
         "name",
         "short_name",
@@ -786,15 +944,16 @@ class OParlOrganizationAdmin(ModelAdmin):
     list_filter = ["body", "organization_type", "deleted"]
     search_fields = ["name", "short_name"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
+    actions = ["retract_selected"]
 
 
 @admin.register(OParlPerson)
-class OParlPersonAdmin(ModelAdmin):
+class OParlPersonAdmin(RetractAdminMixin, ModelAdmin):
     list_display = ["display_name", "email", "body", "photo_status", "created_at"]
     list_filter = ["body", "deleted", "photo_status"]
     search_fields = ["name", "family_name", "given_name", "email"]
     readonly_fields = ["id", "external_id", "photo_fetched_at", "photo_error", "created_at", "updated_at"]
-    actions = ["refetch_photos"]
+    actions = ["refetch_photos", "retract_selected"]
 
     def save_model(self, request, obj, form, change):
         # Manuell hochgeladene Fotos nie durch den RIS-Abruf überschreiben
@@ -816,12 +975,13 @@ class OParlPersonAdmin(ModelAdmin):
 
 
 @admin.register(OParlMeeting)
-class OParlMeetingAdmin(ModelAdmin):
+class OParlMeetingAdmin(RetractAdminMixin, ModelAdmin):
     list_display = ["name", "start", "location_name", "cancelled", "body"]
     list_filter = ["body", "cancelled", "meeting_state", "deleted"]
     search_fields = ["name", "location_name"]
     date_hierarchy = "start"
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
+    actions = ["retract_selected"]
 
 
 from .models import Municipality, MunicipalityTerm
@@ -864,13 +1024,13 @@ class PaperLocationInline(NoAddAdminMixin, TabularInline):
 
 
 @admin.register(OParlPaper)
-class OParlPaperAdmin(ModelAdmin):
+class OParlPaperAdmin(RetractAdminMixin, ModelAdmin):
     list_display = ["reference", "name", "paper_type", "date", "georef_status_display", "body"]
     list_filter = ["body", "paper_type", "georef_status", "deleted"]
     search_fields = ["name", "reference"]
     date_hierarchy = "date"
     inlines = [PaperLocationInline]
-    actions = ["rebuild_paper_locations"]
+    actions = ["rebuild_paper_locations", "retract_selected"]
     readonly_fields = [
         "id",
         "external_id",
@@ -952,7 +1112,7 @@ class OParlAgendaItemAdmin(ModelAdmin):
 
 
 @admin.register(OParlFile)
-class OParlFileAdmin(ModelAdmin):
+class OParlFileAdmin(RetractAdminMixin, ModelAdmin):
     list_display = ["name", "file_name", "mime_type", "size_human", "local_status", "paper"]
     list_filter = ["local_status", "mime_type", "deleted"]
     search_fields = ["name", "file_name"]
@@ -970,7 +1130,7 @@ class OParlFileAdmin(ModelAdmin):
         "created_at",
         "updated_at",
     ]
-    actions = ["cache_locally"]
+    actions = ["cache_locally", "retract_selected"]
 
     @admin.action(description="Lokal zwischenspeichern (max. 50)", permissions=["change"])
     def cache_locally(self, request, queryset):

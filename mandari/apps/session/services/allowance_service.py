@@ -284,25 +284,47 @@ def remove_attendance(attendance: Any) -> str:
     return ""
 
 
+def _stored_state(allowance: Any) -> dict[str, Any] | None:
+    """
+    Gespeicherter Stand einer Position (Sitzungsgeld oder Monatspauschale) unter Zeilensperre; ``None``: gelöscht.
+
+    Genehmigung und Stornierung prüfen den Status an diesem Stand, nicht am übergebenen Objekt: Das stammt vom
+    Beginn der Anfrage und kann überholt sein (inzwischen storniert, genehmigt oder exportiert). Die Sperre gilt
+    bis zum Ende der umgebenden Transaktion – ein gleichzeitiger Export wartet oder ist schon festgeschrieben.
+    """
+    state: dict[str, Any] | None = (
+        type(allowance)
+        .objects.select_for_update()
+        .filter(pk=allowance.pk)
+        .values("status", "export_reference", "created_by_id")
+        .first()
+    )
+    return state
+
+
 def cancel_allowances(allowances: Iterable[Any], *, note: str) -> int:
     """
     Offene, noch nicht exportierte Positionen stornieren (Sitzungsgeld oder Monatspauschalen).
 
     Ausgezahlte oder bereits exportierte Positionen bleiben unverändert – sie sind überwiesen bzw. stehen in
-    einer Überweisungsdatei. Das Protokoll vermerkt jede Stornierung über das Audit-Signal
-    („Entschädigung storniert“). ``note`` landet bei Sitzungsgeld-Positionen im Notizfeld.
+    einer Überweisungsdatei; maßgeblich ist der gespeicherte Stand (:func:`_stored_state`). Das Protokoll vermerkt
+    jede Stornierung über das Audit-Signal („Entschädigung storniert“). ``note`` landet bei
+    Sitzungsgeld-Positionen im Notizfeld.
     """
     count = 0
     for allowance in allowances:
-        if allowance.status not in OPEN_STATUSES or allowance.export_reference:
-            continue
-        allowance.status = "cancelled"
-        update_fields = ["status", "updated_at"]
-        if hasattr(allowance, "notes"):
-            allowance.notes = note
-            update_fields.append("notes")
-        allowance.save(update_fields=update_fields)
-        count += 1
+        # Je Position eine eigene Transaktion: Die Sperren bleiben kurz
+        with transaction.atomic():
+            state = _stored_state(allowance)
+            if state is None or state["status"] not in OPEN_STATUSES or state["export_reference"]:
+                continue
+            allowance.status = "cancelled"
+            update_fields = ["status", "updated_at"]
+            if hasattr(allowance, "notes"):
+                allowance.notes = note
+                update_fields.append("notes")
+            allowance.save(update_fields=update_fields)
+            count += 1
     return count
 
 
@@ -460,17 +482,105 @@ def approve_allowances(allowances, approver, *, four_eyes: bool = True) -> dict:
     stats = {"approved": 0, "blocked_four_eyes": 0}
     now = timezone.now()
     for allowance in allowances:
-        if allowance.status != "pending":
-            continue
-        if four_eyes and allowance.created_by_id is not None and allowance.created_by_id == approver.pk:
-            stats["blocked_four_eyes"] += 1
-            continue
+        outcome = _approve(allowance, approver, now, four_eyes=four_eyes)
+        if outcome:
+            stats[outcome] += 1
+    return stats
+
+
+def _approve(allowance: Any, approver: Any, now: datetime, *, four_eyes: bool) -> str:
+    """
+    Eine Position (Sitzungsgeld oder Monatspauschale) genehmigen: ``approved``, ``blocked_four_eyes`` oder leer.
+
+    Geprüft wird der gespeicherte Stand unter Zeilensperre (:func:`_stored_state`): Nur ausstehende Positionen
+    werden genehmigt – eine inzwischen stornierte bleibt storniert, eine ausgezahlte ausgezahlt. Auch die Person,
+    die die Position festgesetzt hat, kommt von dort (nach einer Kontoänderung ist das die ändernde Person,
+    :func:`reset_approvals_after_account_change`).
+    """
+    with transaction.atomic():
+        state = _stored_state(allowance)
+        if state is None or state["status"] != "pending" or state["export_reference"]:
+            return ""
+        if four_eyes and state["created_by_id"] is not None and state["created_by_id"] == approver.pk:
+            return "blocked_four_eyes"
+        # Das Audit-Signal vergleicht das ganze Objekt mit dem gespeicherten Stand: Nach einer Kontoänderung
+        # zwischen Laden und Genehmigen trüge es sonst die überholte festsetzende Person als Änderung ein
+        allowance.created_by_id = state["created_by_id"]
         allowance.status = "approved"
         allowance.approved_by = approver
         allowance.approved_at = now
         allowance.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
-        stats["approved"] += 1
-    return stats
+    return "approved"
+
+
+# =============================================================================
+# Empfängerkonto
+# =============================================================================
+
+
+def bank_account(person: Any) -> tuple[str, str, str]:
+    """Empfängerkonto einer Person in vergleichbarer Form: Kontoinhaber, IBAN und BIC (ohne Leerraum, groß)."""
+    return (
+        (person.get_bank_account_holder_decrypted() or "").strip(),
+        normalize_account_code(person.get_bank_iban_decrypted()),
+        normalize_account_code(person.get_bank_bic_decrypted()),
+    )
+
+
+def reset_approvals_after_account_change(person: Any, changed_by: Any = None) -> int:
+    """
+    Genehmigungen offener Auszahlungen an diese Person verfallen lassen, weil sich ihr Empfängerkonto geändert hat.
+
+    Die Exporte lesen das Konto erst beim Abruf aus der Person. Eine Genehmigung im Vier-Augen-Prinzip gilt aber
+    der Auszahlung, wie sie bei der Genehmigung vorlag – auch dem Konto. Genehmigte, noch nicht exportierte
+    Sitzungsgeld-Positionen und Monatspauschalen und genehmigte, noch nicht ausgezahlte Endgeräte-Zuschüsse gehen
+    deshalb zurück auf „ausstehend“ und brauchen eine neue Genehmigung. ``changed_by`` gilt danach als die Person,
+    die die Auszahlung festgesetzt hat: Wer das Konto geändert hat, genehmigt sie nicht selbst (wie beim
+    Wiederaufleben einer Position im Abrechnungslauf). Ausstehende, stornierte, exportierte und ausgezahlte
+    Positionen bleiben unverändert.
+
+    In der Transaktion aufrufen, die auch das Konto speichert, und zwar danach: Ein gleichzeitiger Export hält die
+    Positionen gesperrt und sieht bis zu seinem Abschluss nur das bisherige Konto.
+
+    Returns:
+        Anzahl der zurückgesetzten Positionen und Zuschüsse
+    """
+    from apps.session import audit
+    from apps.session.models import SessionAllowance, SessionDeviceGrant, SessionMonthlyAllowance
+
+    querysets: tuple[QuerySet[Any], ...] = (
+        SessionAllowance.objects.filter(attendance__person=person, status="approved", export_reference=""),
+        SessionMonthlyAllowance.objects.filter(person=person, status="approved", export_reference=""),
+        SessionDeviceGrant.objects.filter(person=person, status="approved"),
+    )
+    update_fields = ["status", "approved_by", "approved_at", "updated_at"]
+    if changed_by is not None:
+        update_fields.append("created_by")
+    count = 0
+    with transaction.atomic():
+        for queryset in querysets:
+            for position in queryset.select_for_update(of=("self",)):
+                is_grant = isinstance(position, SessionDeviceGrant)
+                # Wer den Zuschuss bisher erfasst hatte, steht nach dem Wechsel nur noch im Audit-Eintrag unten
+                recorded_by = position.created_by if is_grant and changed_by is not None else None
+                position.status = "pending"
+                position.approved_by = None
+                position.approved_at = None
+                if changed_by is not None:
+                    position.created_by = changed_by
+                position.save(update_fields=update_fields)
+                if is_grant:
+                    # Zuschüsse laufen nicht über das Audit-Signal (die View protokolliert jeden Schritt selbst)
+                    changes: dict[str, Any] = {
+                        "person": person.display_name,
+                        "status": position.get_status_display(),
+                        "grund": "Empfängerkonto geändert",
+                    }
+                    if changed_by is not None:
+                        changes["erfasst_von_bisher"] = recorded_by.user.email if recorded_by is not None else None
+                    audit.log_event("update", position, tenant=position.tenant, user=changed_by, changes=changes)
+                count += 1
+    return count
 
 
 # =============================================================================
@@ -1031,21 +1141,13 @@ def approve_monthly_allowances(allowances, approver, *, four_eyes: bool = True) 
     Posten, die der/die Genehmigende selbst erzeugt hat (Monatslauf), werden
     NICHT genehmigt (blocked_four_eyes), analog zu ``approve_allowances``.
     """
-    approved = 0
-    blocked = 0
+    stats = {"approved": 0, "blocked_four_eyes": 0}
     now = timezone.now()
     for allowance in allowances:
-        if allowance.status != "pending":
-            continue
-        if four_eyes and allowance.created_by_id is not None and allowance.created_by_id == approver.pk:
-            blocked += 1
-            continue
-        allowance.status = "approved"
-        allowance.approved_by = approver
-        allowance.approved_at = now
-        allowance.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
-        approved += 1
-    return {"approved": approved, "blocked_four_eyes": blocked}
+        outcome = _approve(allowance, approver, now, four_eyes=four_eyes)
+        if outcome:
+            stats[outcome] += 1
+    return stats
 
 
 def build_monthly_export_csv(allowances) -> str:

@@ -68,16 +68,19 @@ class NeighborhoodView(ActiveBodyRequiredMixin, TemplateView):
 @require_GET
 def neighborhood_autocomplete(request):
     """Adress-Autocomplete aus dem eigenen Straßen-/Adressverzeichnis; Photon nur als Fallback."""
-    from ..services.neighborhood import autocomplete_places, photon_autocomplete
+    from .. import throttle
+    from ..services.neighborhood import MAX_QUERY_LEN, autocomplete_places, photon_autocomplete
 
-    query = request.GET.get("q", "").strip()
+    query = request.GET.get("q", "").strip()[:MAX_QUERY_LEN]
     if not query or len(query) < 2:
         return JsonResponse([], safe=False)
 
+    # Der Rückfall auf Photon zählt je Aufrufer: Der Takt dort gilt für alle Besucher zusammen
+    aufrufer = throttle.client_ip(request)
     body = get_active_body(request)
     if body is None:
-        return JsonResponse(photon_autocomplete(None, query), safe=False)
-    return JsonResponse(autocomplete_places(body, query), safe=False)
+        return JsonResponse(photon_autocomplete(None, query, client_key=aufrufer), safe=False)
+    return JsonResponse(autocomplete_places(body, query, client_key=aufrufer), safe=False)
 
 
 @require_GET

@@ -43,7 +43,8 @@ export interface CollabOptions {
   /**
    * Called when the server requests a document reload (e.g. after a revision
    * restore). Default behavior: window.location.reload(). `reason` is set when
-   * access was downgraded or revoked (#582).
+   * access was downgraded or revoked (#582), or when the session of the connection
+   * ended and the one new attempt failed (`session_ended`).
    */
   onReloadRequired?: (reason?: ReloadReason) => void
   /**
@@ -77,8 +78,12 @@ export interface CollabOptions {
   autoSave?: boolean
 }
 
-/** Grund einer Reload-Aufforderung: Zugriff herabgestuft bzw. entzogen (#582); ohne Grund = neuer Stand. */
-export type ReloadReason = 'access_changed' | 'access_revoked'
+/**
+ * Grund einer Reload-Aufforderung: Zugriff herabgestuft bzw. entzogen (#582); ohne Grund = neuer Stand.
+ * `session_ended` meldet der Provider selbst: Die Sitzung der Verbindung gilt nicht mehr, und auch der eine neue
+ * Versuch kam nicht zustande (abgemeldet, Sitzung beendet, Passwort an anderer Stelle neu gesetzt).
+ */
+export type ReloadReason = 'access_changed' | 'access_revoked' | 'session_ended'
 
 export interface CollabUser {
   name: string
@@ -111,6 +116,18 @@ const MSG_SYNC = 0
 const MSG_AWARENESS = 1
 
 /**
+ * Schließcode des Servers: Die Sitzung, über die die Verbindung aufgebaut wurde, gilt nicht mehr
+ * (apps/accounts/websocket.py, CLOSE_SESSION_ENDED). Der Zugriff selbst besteht; nach einer erneuten Anmeldung oder
+ * einem Passwortwechsel im eigenen Profil hat der Browser schon ein neues Cookie.
+ */
+const CLOSE_SESSION_ENDED = 4440
+/**
+ * Wartezeit vor dem einen neuen Versuch nach CLOSE_SESSION_ENDED. Der Server schließt, sobald das Passwort gespeichert
+ * ist; die Antwort mit dem neuen Cookie ist dann noch unterwegs.
+ */
+const SESSION_RETRY_MS = 2000
+
+/**
  * Custom WebSocket provider for Django Channels + Yjs.
  *
  * Instead of using y-websocket's built-in provider (which expects a
@@ -131,6 +148,8 @@ class DjangoYjsProvider {
   private destroyed = false
   /** Nach einer Reload-Aufforderung des Servers ist unser Stand veraltet: nichts mehr persistieren (#184). */
   private reloadRequested = false
+  /** Der laufende Verbindungsaufbau ist der eine neue Versuch nach CLOSE_SESSION_ENDED. */
+  private sessionRetry = false
   private initialStateReceived = false
   private onStatusChange?: (status: CollabStatus) => void
   private onInitialState?: (hasState: boolean) => void
@@ -214,6 +233,8 @@ class DjangoYjsProvider {
       this.ws.onopen = () => {
         this.connected = true
         this.reconnectAttempts = 0
+        // Der Server nimmt eine Verbindung nur mit gültiger Sitzung an: Der neue Versuch ist gelungen
+        this.sessionRetry = false
         this.onStatusChange?.('connected')
 
         // Send initial sync step 1
@@ -242,7 +263,7 @@ class DjangoYjsProvider {
         }
       }
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         this.connected = false
         // Bestätigungen kommen nur über die Verbindung, auf der gesendet wurde
         this.offeneSicherungen = []
@@ -250,6 +271,18 @@ class DjangoYjsProvider {
         // das Formular aus (Notizen der Fraktionssitzung, Issue #1166)
         if (this.destroyed) return
         this.onStatusChange?.('disconnected')
+        if (this.sessionRetry) {
+          // Auch mit dem aktuellen Cookie keine Verbindung: Die Anmeldung gilt nicht mehr
+          this._sessionEnded()
+          return
+        }
+        if (event.code === CLOSE_SESSION_ENDED) {
+          // Genau ein neuer Versuch, mit dem Cookie, das der Browser dann hat
+          this.sessionRetry = true
+          if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+          this.reconnectTimer = setTimeout(() => this.connect(), SESSION_RETRY_MS)
+          return
+        }
         this._scheduleReconnect()
       }
 
@@ -258,8 +291,18 @@ class DjangoYjsProvider {
       }
     } catch (e) {
       this.onStatusChange?.('disconnected')
-      this._scheduleReconnect()
+      if (this.sessionRetry) this._sessionEnded()
+      else this._scheduleReconnect()
     }
+  }
+
+  /** Die Sitzung gilt nicht mehr und der neue Versuch ist gescheitert: nichts mehr sichern, die Seite lädt neu. */
+  private _sessionEnded() {
+    if (this.reloadRequested) return
+    this.reloadRequested = true
+    if (this.saveTimer) clearInterval(this.saveTimer)
+    if (this.onReloadRequired) this.onReloadRequired('session_ended')
+    else window.location.reload()
   }
 
   private _handleJsonMessage(msg: any) {
