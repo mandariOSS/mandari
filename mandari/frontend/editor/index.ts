@@ -29,6 +29,7 @@ import {
   sitzungsMenue,
   sitzungsUnterlagen,
   topKopf,
+  topNeu,
   unterlageAnhaengen,
   zustaendigAuswahl,
 } from '../alpine/faction-session'
@@ -525,5 +526,6 @@ Alpine.data('sitzungsUnterlagen', sitzungsUnterlagen)
 Alpine.data('unterlageAnhaengen', unterlageAnhaengen)
 Alpine.data('beschlussLeiste', beschlussLeiste)
 Alpine.data('anwesenheitsListe', anwesenheitsListe)
+Alpine.data('topNeu', topNeu)
 Alpine.data('zustaendigAuswahl', zustaendigAuswahl)
 Alpine.data('sitzungsNotizen', sitzungsNotizen)

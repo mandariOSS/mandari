@@ -60,7 +60,7 @@ ANWESENHEIT = "work/faction/sitzung/_anwesenheit.html"
 KEINE_BERECHTIGUNG = "Keine Berechtigung für diese Aktion."
 ANDERES_KONTO = "In diesem Browser ist inzwischen ein anderes Konto angemeldet. Die Notizen wurden nicht gespeichert."
 UNGUELTIG = "Ungültige Eingabe."
-SITZUNG_LAEUFT_NICHT = "Die Sitzung läuft nicht mehr. TOPs ergänzen Sie hier nur während der Sitzung."
+SITZUNG_LAEUFT_NICHT = "Die Sitzung läuft nicht mehr. TOPs ergänzen und verschieben Sie hier nur während der Sitzung."
 
 ERGEBNISSE = dict(FactionDecision.RESULT_CHOICES)
 PUNKT_ERGEBNIS = {"accepted": "zustimmung", "modified": "zustimmung", "rejected": "ablehnung", "postponed": "andere"}
@@ -125,6 +125,8 @@ def _rechte(membership: Any, meeting: FactionMeeting) -> dict[str, bool]:
         "beenden": membership.has_permission("faction.start"),
         "intern": can_view_internal(membership),
         "top_neu": sitzung.darf_top_hinzufuegen(membership, meeting),
+        # TOP in der laufenden Sitzung verschieben, auch in den anderen Teil (Issue #1436)
+        "top_verschieben": sitzung.darf_top_verschieben(membership, meeting),
         # Regeln der Sitzungsart (Issue #1240): neue nichtöffentliche TOPs, Abstimmungen
         "noe_neu": can_view_internal(membership) and meeting.nichtoeffentlich_erlaubt,
         "abstimmungen": meeting.abstimmungen_erlaubt,
@@ -163,6 +165,14 @@ def _kopf_kontext(
         "anw": sitzung.anwesenheit(meeting, mit_uebrigen=rechte.get("nachtragen", False)),
         "rollen_auswahl": sitzung.rollen_auswahl(meeting.organization),
     }
+
+
+def _verschieben(membership: Any, meeting: FactionMeeting, item: FactionAgendaItem) -> dict[str, bool]:
+    """Was das Menü „Verschieben“ am TOP anbietet; leer ohne Recht oder wenn nichts geht."""
+    if not sitzung.darf_top_verschieben(membership, meeting):
+        return {}
+    moeglich = sitzung.verschiebbar(meeting, membership, item)
+    return moeglich if any(moeglich.values()) else {}
 
 
 def seiten_kontext(view: Any, meeting: FactionMeeting, top_id: Any = None) -> dict[str, Any]:
@@ -214,6 +224,8 @@ def top_kontext(
         "beschluss_punkt": PUNKT_ERGEBNIS.get(decision.result, "andere") if decision else "",
         "ergebnisse": ERGEBNISSE,
         "aktuelle_zeile": ordnung.finde(item.pk),
+        # Menü „Verschieben“ am TOP (Issue #1436): leer ohne Recht oder ohne Möglichkeit
+        "verschieben": _verschieben(membership, meeting, item),
         "notizen_config": {
             "itemId": str(item.pk),
             "stand": sitzung.fingerabdruck(notizen),
@@ -362,6 +374,7 @@ class FactionSessionActionView(_SitzungsView):
             "gast": self._gast,
             "rollen": self._rollen,
             "top_neu": self._top_neu,
+            "top_verschieben": self._top_verschieben,
         }
         handler = handlers.get(_wert(request, "action"))
         if handler is None:
@@ -601,11 +614,19 @@ class FactionSessionActionView(_SitzungsView):
             return HttpResponse(SITZUNG_LAEUFT_NICHT, status=409)
         if not sitzung.darf_top_hinzufuegen(self.mitglied, meeting):
             return HttpResponse(KEINE_BERECHTIGUNG, status=403)
+        titel = _wert(request, "title")
+        if titel and not _wert(request, "doppelt"):
+            # Gleicher Titel wie ein vorhandener TOP (Issue #1436): erst warnen, mit ``doppelt`` trotzdem anlegen
+            gleiche = sitzung.gleichnamige_tops(meeting, self.mitglied, titel)
+            if gleiche:
+                warnung = HttpResponse(sitzung.doppelt_meldung(gleiche), status=409)
+                warnung["X-Top-Doppelt"] = "1"
+                return warnung
         try:
             neu = sitzung.top_hinzufuegen(
                 meeting,
                 self.mitglied,
-                titel=_wert(request, "title"),
+                titel=titel,
                 teil=_wert(request, "visibility") or "public",
                 eltern_id=_wert(request, "parent_id"),
                 beschreibung=_wert(request, "description"),
@@ -615,11 +636,32 @@ class FactionSessionActionView(_SitzungsView):
         adresse = f"{_urls(meeting)['seite']}?top={neu.pk}"
         if _wert(request, "neu_laden"):
             return HttpResponseClientRedirect(adresse)
-        item = _top_oder_404(self, meeting, neu.pk)
+        return self._top_antwort(request, meeting, neu.pk, "hinzugefügt")
+
+    def _top_antwort(self, request: HttpRequest, meeting: FactionMeeting, top_id: Any, was: str) -> HttpResponse:
+        """Antwort wie ein TOP-Wechsel auf diesen TOP, dazu Tagesordnung, Leiste unten und Kopf; Meldung „TOP n was“."""
+        item = _top_oder_404(self, meeting, top_id)
         ordnung = sitzung.tagesordnung(meeting, self.mitglied)
         kontext = _basis(self, meeting)
         kontext |= _kopf_kontext(meeting, ordnung, kontext["quorum"], kontext["rechte"])
         kontext |= top_kontext(self, meeting, item, ordnung=ordnung) | {"oob": True, "oob_kopf": True}
         antwort = self._render(request, TOP, kontext)
-        antwort["HX-Push-Url"] = adresse
-        return _mit_meldung(antwort, f"TOP {item.number} hinzugefügt")
+        antwort["HX-Push-Url"] = f"{_urls(meeting)['seite']}?top={item.pk}"
+        return _mit_meldung(antwort, f"TOP {item.number} {was}")
+
+    def _top_verschieben(self, request: HttpRequest, meeting: FactionMeeting) -> HttpResponse:
+        """
+        TOP in der laufenden Sitzung verschieben (Issue #1436): nach oben, nach unten oder in den anderen Teil der
+        Tagesordnung. Antwort wie ein TOP-Wechsel auf denselben TOP mit neuer Nummer; die Notizen sichert der Browser
+        vorher (``data-sichern-vorher``). Andere sehen die neue Reihenfolge beim nächsten TOP-Wechsel.
+        """
+        if meeting.status != "ongoing":
+            return HttpResponse(SITZUNG_LAEUFT_NICHT, status=409)
+        if not sitzung.darf_top_verschieben(self.mitglied, meeting):
+            return HttpResponse(KEINE_BERECHTIGUNG, status=403)
+        item = self._top(request, meeting)
+        try:
+            sitzung.top_verschieben(meeting, self.mitglied, item, _wert(request, "richtung"))
+        except sitzung.TopVerschiebenError as abgelehnt:
+            return HttpResponse(abgelehnt.meldung, status=abgelehnt.status)
+        return self._top_antwort(request, meeting, item.pk, "verschoben")

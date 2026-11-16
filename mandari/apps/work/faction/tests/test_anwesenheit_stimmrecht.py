@@ -282,17 +282,17 @@ def test_reihenfolge_nach_angezeigtem_namen_ohne_gross_klein_und_umlaute(org: An
     meeting = FactionMeeting.objects.create(
         organization=org, title="Reihenfolge", start=timezone.now(), status="ongoing", created_by=vorsitz
     )
-    for vorname, nachname in (("Oezlem", "Aksoy"), ("otto", "Zimmer"), ("Anke", "Zobel"), ("Paul", "Albers")):
+    for vorname, nachname in (("Oemer", "Aksoy"), ("otto", "Zimmer"), ("Anke", "Zobel"), ("Paul", "Albers")):
         m = person(org, make_member, vorname, nachname, MITGLIED)
         FactionAttendance.objects.create(meeting=meeting, membership=m, status="invited")
     # Umlaut erst im Namen, nicht in der E-Mail-Adresse
-    User.objects.filter(first_name="Oezlem").update(first_name="Özlem")
+    User.objects.filter(first_name="Oemer").update(first_name="Ömer")
 
     gruppe = sitzung.anwesenheit(meeting).gruppen[0]
     assert [a.get_display_name() for a in gruppe.teilnahmen] == [
         "Anke Zobel",
+        "Ömer Aksoy",
         "otto Zimmer",
-        "Özlem Aksoy",
         "Paul Albers",
     ]
 
@@ -342,6 +342,13 @@ def test_ein_klick_traegt_ein_mitglied_ohne_einladung_ein(
     assert "Nicht eingeladen" not in html
     assert _gedrueckt(html, "Nora Neu") == ["online"]
     assert "Stimmberechtigt · 4" in html and "1 von 4 Stimmberechtigten anwesend" in html
+
+    # Nach bestätigter Anwesenheit entsteht keine Teilnahme mehr, auch wenn die Prüfung des Rechts schon durch ist
+    spaet = person(org, make_member, "Sven", "Spaet", MITGLIED)
+    FactionMeeting.objects.filter(pk=meeting.pk).update(attendance_confirmed_at=timezone.now())
+    assert sitzung.teilnahme_nachtragen(meeting, spaet.pk, status="present", art="onsite") is False
+    assert not meeting.attendances.filter(membership=spaet).exists()
+    FactionMeeting.objects.filter(pk=meeting.pk).update(attendance_confirmed_at=None)
 
     # Derselbe Klick noch einmal (doppelt gesendet): keine zweite Teilnahme, die Angabe wird gesetzt
     antwort = client.post(url, {"action": "anwesenheit", "membership_id": neu.pk, "status": "excused"})
