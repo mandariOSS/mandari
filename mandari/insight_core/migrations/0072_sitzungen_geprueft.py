@@ -28,17 +28,16 @@ def pruefen(apps, schema_editor):
 
     meeting = apps.get_model("insight_core", "OParlMeeting")
 
-    # 1. Ende nicht nach dem Beginn: gilt als nicht angegeben
-    ids = list(
-        meeting.objects.filter(start__isnull=False, end__isnull=False, end__lte=F("start")).values_list("pk", flat=True)
-    )
+    # 1. Ende nicht nach dem Beginn: gilt als nicht angegeben. Die Bedingung gilt auch beim Schreiben: Hat der
+    # Ingestor inzwischen ein gültiges Ende gespeichert, bleibt es stehen.
+    ungueltig = meeting.objects.filter(start__isnull=False, end__isnull=False, end__lte=F("start"))
+    ids = list(ungueltig.values_list("pk", flat=True))
     for start in range(0, len(ids), BATCH):
-        meeting.objects.filter(pk__in=ids[start : start + BATCH]).update(end=None)
+        ungueltig.filter(pk__in=ids[start : start + BATCH]).update(end=None)
 
     # 2. Absage nur im Namen: abgesagt, Name ohne Vermerk
     ids = list(meeting.objects.filter(name__iregex=ABSAGE).values_list("pk", flat=True))
     for start in range(0, len(ids), BATCH):
-        geaendert = []
         sitzungen = meeting.objects.filter(pk__in=ids[start : start + BATCH]).only(
             "pk", "name", "cancelled", "meeting_state", "raw_json"
         )
@@ -54,10 +53,8 @@ def pruefen(apps, schema_editor):
             )
             if angaben.vermerk is None:
                 continue
-            sitzung.name = angaben.name
-            sitzung.cancelled = True
-            geaendert.append(sitzung)
-        meeting.objects.bulk_update(geaendert, ["name", "cancelled"])
+            # Nur, wenn der Name noch der gelesene ist: Schreibt der Ingestor die Sitzung gerade neu, gilt sein Stand
+            meeting.objects.filter(pk=sitzung.pk, name=sitzung.name).update(name=angaben.name, cancelled=True)
 
 
 class Migration(migrations.Migration):

@@ -128,12 +128,13 @@ def plausibles_ende(start: datetime | None, ende: datetime | None) -> datetime |
 
     Viele Quellen liefern als ``end`` nur das Datum; als Zeitpunkt gelesen ist das Mitternacht am Sitzungstag und liegt
     vor dem Beginn. Ein falsches Ende schadet mehr als ein fehlendes („17:00 bis 00:00 Uhr“, Kalendereinträge mit
-    negativer Dauer). Ohne Beginn bleibt das Ende, wie es ist.
+    negativer Dauer). Ohne Beginn bleibt das Ende, wie es ist. Verglichen wird auf die Sekunde, so genau wie die
+    Ausgabe: Ein Ende in derselben Sekunde wie der Beginn stünde dort mit demselben Zeitpunkt.
     """
     if ende is None or start is None:
         return ende
     try:
-        return ende if ende > start else None
+        return ende if ende.replace(microsecond=0) > start.replace(microsecond=0) else None
     except TypeError:
         # Zeitpunkte mit und ohne Zeitzone lassen sich nicht vergleichen: nicht raten, nichts verwerfen
         return ende

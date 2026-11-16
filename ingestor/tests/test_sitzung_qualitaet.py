@@ -133,6 +133,9 @@ def test_ende_nur_nach_dem_beginn() -> None:
     # Datum ohne Uhrzeit: Mitternacht am Sitzungstag liegt vor dem Beginn
     assert plausibles_ende(start, datetime(2026, 11, 18, 0, 0, tzinfo=UTC)) is None
     assert plausibles_ende(start, start) is None
+    # Auf die Sekunde, wie die Ausgabe: Bruchteile derselben Sekunde sind kein späteres Ende
+    assert plausibles_ende(start.replace(microsecond=100_000), start.replace(microsecond=900_000)) is None
+    assert plausibles_ende(start.replace(microsecond=900_000), start + timedelta(seconds=1)) is not None
     assert plausibles_ende(start, None) is None
     # Ohne Beginn nichts verwerfen
     assert plausibles_ende(None, spaeter) == spaeter

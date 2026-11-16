@@ -113,24 +113,61 @@ def test_sitzungen_lassen_sich_weiterblaettern(ctx: ToolContext, stadt: Musterst
 
     erste = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31")
     assert erste["anzahl"] == chat_tools.MAX_MEETINGS
-    assert erste["weitere"] == "ja, die Liste ist unvollständig: weiter mit seite=2"
-    assert "seite" not in erste
+    assert erste["weitere"] == "ja, die Liste ist unvollständig: weiter mit ab=30"
+    assert "ab" not in erste
 
-    zweite = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", seite=2)
-    assert (zweite["anzahl"], zweite["seite"]) == (4, 2)
+    zweite = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=30)
+    assert (zweite["anzahl"], zweite["ab"]) == (4, 30)
     assert "weitere" not in zweite
-    # Keine Sitzung doppelt, keine fällt zwischen die Seiten, auch nicht bei gleichem Beginn
+    # Keine Sitzung doppelt, keine fällt zwischen zwei Aufrufe, auch nicht bei gleichem Beginn
     links = [zeile.split(" | ")[3] for zeile in erste["sitzungen"] + zweite["sitzungen"]]
     assert len(links) == len(set(links)) == 34
 
-    # Unlesbare oder fehlende Angaben ergeben die erste Seite; hinter dem Ende ist die Liste leer
-    for seite in ("x", 0, -3, None):
-        assert (
-            rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", seite=seite)["sitzungen"]
-            == (erste["sitzungen"])
-        )
-    leer = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", seite=3)
+    # Unlesbare oder fehlende Angaben ergeben den Anfang; hinter dem Ende ist die Liste leer
+    for ab in ("x", 0, -3, None):
+        teil = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=ab)
+        assert teil["sitzungen"] == erste["sitzungen"]
+    leer = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=90)
     assert "sitzungen" not in leer and "weitere" not in leer
+
+
+def test_weiterblaettern_zaehlt_die_ausgelieferten_sitzungen(
+    ctx: ToolContext, stadt: Musterstadt, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lange Zeilen: Es kommen weniger Sitzungen je Aufruf, und die Fortsetzung beginnt genau dahinter."""
+    from datetime import datetime
+
+    from insight_core.models import OParlMeeting
+
+    from .musterstadt import BERLIN
+
+    for nr in range(34):
+        OParlMeeting.objects.create(
+            external_id=kennung("meetings"),
+            body=stadt.body,
+            start=datetime(2026, 12, 1 + nr // 3, 17, 0, tzinfo=BERLIN),
+            name=f"Sitzung {nr} " + "des Ausschusses für sehr lange Namen " * 6,
+            location_name="Rathaus, großer Sitzungssaal im ersten Obergeschoss " * 4,
+        )
+    monkeypatch.setattr(chat_tools, "ZEILEN_BUDGET", 3000)
+
+    gesehen: list[str] = []
+    ab = 0
+    for _aufruf in range(20):
+        teil = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=ab)
+        assert "weggelassen" not in teil
+        assert 0 < teil["anzahl"] < chat_tools.MAX_MEETINGS
+        gesehen += [zeile.split(" | ")[3] for zeile in teil["sitzungen"]]
+        if "weitere" not in teil:
+            break
+        ab += teil["anzahl"]
+        assert teil["weitere"] == f"ja, die Liste ist unvollständig: weiter mit ab={ab}"
+    assert len(gesehen) == len(set(gesehen)) == 34
+
+    # An der Grenze des Weiterblätterns nennt das Ergebnis keinen Schritt, den es nicht gibt
+    monkeypatch.setattr(chat_tools, "MAX_AB", 5)
+    grenze = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31")
+    assert grenze["weitere"] == "ja, die Liste ist unvollständig: bitte den Zeitraum enger fassen"
 
 
 def test_sitzungen_eines_gremiums(ctx: ToolContext, stadt: Musterstadt) -> None:

@@ -153,13 +153,13 @@ TOOLS: list[dict[str, Any]] = [
         "sitzungen_im_zeitraum",
         f"Sitzungen im Zeitraum (höchstens {MAX_RANGE_DAYS} Tage), optional eines Gremiums; "
         f"tagesordnung=true liefert bei bis zu {MAX_AGENDAS} Sitzungen die Tagesordnungen mit. "
-        f"Je Aufruf {MAX_MEETINGS} Sitzungen; nennt das Ergebnis „weitere“, mit seite fortsetzen.",
+        f"Je Aufruf bis zu {MAX_MEETINGS} Sitzungen; nennt das Ergebnis „weitere“, mit ab fortsetzen.",
         {
             "von": _VON,
             "bis": _BIS,
             "gremium": _GREMIUM,
             "tagesordnung": {"type": "boolean"},
-            "seite": {"type": "integer"},
+            "ab": {"type": "integer"},
         },
         ["von", "bis"],
     ),
@@ -246,17 +246,20 @@ def _date_arg(args: Mapping[str, Any], name: str, *, required: bool = False) -> 
     raise ToolError(f"Datum „{name}“ ist ungültig (JJJJ-MM-TT erwartet).")
 
 
-#: Höchste Seite beim Weiterblättern; darüber ist ein engerer Zeitraum der bessere Weg
-MAX_SEITE = 20
+#: Höchster Versatz beim Weiterblättern; darüber ist ein engerer Zeitraum der bessere Weg
+MAX_AB = 600
+#: Zeichen für die Zeilen der Sitzungen je Aufruf, deutlich unter der Grenze des Ergebnisses: So fällt beim Kürzen
+#: des Ergebnisses (``dump``) keine Zeile weg, und die Fortsetzung zählt genau die ausgelieferten Sitzungen
+ZEILEN_BUDGET = 9000
 
 
-def _seite_arg(args: Mapping[str, Any]) -> int:
-    """Seite ab 1 aus ``seite``; fehlende oder unlesbare Angaben ergeben die erste Seite."""
+def _ab_arg(args: Mapping[str, Any]) -> int:
+    """Wie viele Sitzungen übersprungen werden (``ab``); fehlende oder unlesbare Angaben ergeben den Anfang."""
     try:
-        seite = int(args.get("seite") or 1)
+        ab = int(args.get("ab") or 0)
     except (TypeError, ValueError):
-        return 1
-    return min(max(seite, 1), MAX_SEITE)
+        return 0
+    return min(max(ab, 0), MAX_AB)
 
 
 def _as_uuid(value: object) -> uuid.UUID | None:
@@ -364,38 +367,46 @@ def sitzungen_im_zeitraum(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str
     mit_tagesordnung = args.get("tagesordnung") in (True, "true", "ja", 1)
     start = timezone.make_aware(datetime.combine(von, time.min))
     ende = timezone.make_aware(datetime.combine(bis, time.max))
-    # Weiterblättern (Issue #1441): Ohne Seite sah ein Zeitraum mit mehr Sitzungen vollständig aus, obwohl die
-    # späteren fehlten. Feste Reihenfolge auch bei gleichem Beginn, damit keine Sitzung zwischen zwei Seiten fällt.
-    seite = _seite_arg(args)
-    beginn = (seite - 1) * MAX_MEETINGS
+    # Weiterblättern (Issue #1441): Ohne Fortsetzung sah ein Zeitraum mit mehr Sitzungen vollständig aus, obwohl die
+    # späteren fehlten. Feste Reihenfolge auch bei gleichem Beginn, damit keine Sitzung zwischen zwei Aufrufe fällt.
+    beginn = _ab_arg(args)
     found = ris.public_meetings_between(ctx.bodies, start, ende, organizations=gremien).order_by("start", "pk")
     sitzungen = list(found[beginn : beginn + MAX_MEETINGS + 1])
     tagesordnungen = mit_tagesordnung and 0 < len(sitzungen) <= MAX_AGENDAS
-    eintraege = []
+    eintraege: list[str] = []
+    groesse = 0
     for meeting in sitzungen[:MAX_MEETINGS]:
         url = ctx.link("meeting_detail", meeting.pk)
         titel = _meeting_title(meeting)
-        ctx.note(url, f"{titel} ({_when(meeting.start)})", "meeting")
-        eintraege.append(
-            _line(
-                _when(meeting.start),
-                _short(titel, 160),
-                _short(meeting.location_name, 120) or "-",
-                url,
-                "abgesagt" if meeting.cancelled else None,
-            )
+        zeile = _line(
+            _when(meeting.start),
+            _short(titel, 160),
+            _short(meeting.location_name, 120) or "-",
+            url,
+            "abgesagt" if meeting.cancelled else None,
         )
+        # Nur so viele Zeilen, wie sicher ins Ergebnis passen; die übrigen kommen mit dem nächsten Aufruf
+        if eintraege and groesse + len(zeile) > ZEILEN_BUDGET:
+            break
+        groesse += len(zeile) + 4
+        ctx.note(url, f"{titel} ({_when(meeting.start)})", "meeting")
+        eintraege.append(zeile)
+    naechste = beginn + len(eintraege)
+    if len(sitzungen) <= len(eintraege):
+        weitere = None
+    elif naechste > MAX_AB:
+        weitere = "ja, die Liste ist unvollständig: bitte den Zeitraum enger fassen"
+    else:
+        weitere = f"ja, die Liste ist unvollständig: weiter mit ab={naechste}"
     return _compact(
         {
             "kommune": ctx.body_name,
             "zeitraum": f"{_day(von)}–{_day(bis)}",
             "gremium": [g.get_display_name() for g in gremien] if gremien else None,
             "anzahl": len(eintraege),
-            "seite": seite if seite > 1 else None,
+            "ab": beginn or None,
             # Ausdrücklich, wie es weitergeht: Die Liste ist sonst nicht als unvollständig zu erkennen
-            "weitere": f"ja, die Liste ist unvollständig: weiter mit seite={seite + 1}"
-            if len(sitzungen) > MAX_MEETINGS
-            else None,
+            "weitere": weitere,
             "hinweis": hinweis,
             "spalten": "Beginn | Gremium | Ort | Link | abgesagt",
             "sitzungen": eintraege,
