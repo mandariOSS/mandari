@@ -1,0 +1,16 @@
+{% extends "accounts/base_auth.html" %}
+{% block title %}Demozeit abgelaufen{% endblock %}
+{% block header_title %}Demozeit abgelaufen{% endblock %}
+{% block header_subtitle %}Der Zugang zu dieser Demo ist beendet{% endblock %}
+{% block content %}
+    <div class="text-center">
+        <p class="text-gray-600 dark:text-gray-400 mb-6">{{ hinweis }}</p>
+        <div class="space-y-3">
+            <a href="/"
+               class="block w-full py-3 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-center transition-colors">
+                Zur Startseite
+            </a>
+        </div>
+    </div>
+{% endblock %}
+{% block footer %}{% endblock %}

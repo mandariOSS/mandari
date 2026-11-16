@@ -681,6 +681,32 @@ class LoggedOutView(TemplateView):
     template_name = "accounts/logged_out.html"
 
 
+class DemoAbgelaufenView(View):
+    """
+    Hinweis „Demozeit abgelaufen“ (Issue #1406). Work leitet angemeldete Personen hierher, wenn sie nur noch über eine
+    abgelaufene Demo-Organisation Zugang hätten; die Seite meldet sie ab, eine neue Anmeldung lehnt das Formular ab.
+    Mit weiterem Zugang geht es zurück zu Work.
+    """
+
+    template_name = "accounts/demo_abgelaufen.html"
+
+    def get(self, request):
+        from apps.tenants import demo
+
+        if not request.user.is_authenticated:
+            return render(request, self.template_name, {"hinweis": demo.HINWEIS})
+        organization = demo.abgelaufene_demo_fuer(request.user)
+        if organization is None:
+            return redirect("work:root")
+        session_key = request.session.session_key
+        if session_key:
+            from .models import UserSession
+
+            UserSession.objects.filter(session_key=session_key).delete()
+        auth_logout(request)
+        return render(request, self.template_name, {"hinweis": demo.hinweis(organization)})
+
+
 # =============================================================================
 # Password Reset Views (using Django's built-in views with custom templates)
 # =============================================================================

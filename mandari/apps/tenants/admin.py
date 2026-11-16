@@ -202,12 +202,17 @@ class OrganizationAdmin(ModelAdmin):
                     "provisioning_ref",
                     "provisioning_status",
                     "provisioning_status_changed_at",
+                    "demo_laufzeit_tage",
+                    "demo_endet_am",
                 ),
                 "description": (
                     "Gäste zählen nicht gegen das Mitglieder-Limit, reguläre Mitglieder "
                     "nicht gegen das Gast-Limit (Standard 25, per Addon erweiterbar). "
                     "Referenz und Status setzt die Provisioning-API v2; ein leeres Feld "
-                    "„Bereitstellungs-Referenz“ löst die Verknüpfung."
+                    "„Bereitstellungs-Referenz“ löst die Verknüpfung. "
+                    "Demo: Die Laufzeit beginnt mit der ersten angenommenen Einladung; danach sperrt der "
+                    "Zeitplan die Organisation (Daten bleiben). Verlängern: „Demo endet am“ verschieben und "
+                    "„Aktiv“ wieder setzen (Issue #1406)."
                 ),
                 "classes": ("collapse",),
             },

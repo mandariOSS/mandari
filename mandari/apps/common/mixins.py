@@ -8,7 +8,7 @@ Provides:
 - HTMXMixin: HTMX-Erkennung (auch für Session- und Insight-Views)
 """
 
-from typing import cast
+from typing import NoReturn, cast
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
@@ -17,6 +17,10 @@ from django.shortcuts import redirect
 from django_htmx.middleware import HtmxDetails
 
 from .permissions import PermissionChecker
+
+
+class DemoAbgelaufenError(Exception):
+    """Die Demo-Organisation ist abgelaufen und die Person hat sonst keinen Zugang mehr (Issue #1406)."""
 
 
 class OrganizationMixin(LoginRequiredMixin):
@@ -68,6 +72,24 @@ class OrganizationMixin(LoginRequiredMixin):
             return None
         return redirect("work:guest_documents", org_slug=self.organization.slug)
 
+    @staticmethod
+    def _nicht_erreichbar(request, org_slug) -> NoReturn:
+        """
+        Organisation gesperrt oder unbekannt: Hinweis „Demozeit abgelaufen“ (Issue #1406), wenn sie eine abgelaufene
+        Demo ist und die Person sonst keinen Zugang mehr hat, sonst 404.
+        """
+        from apps.tenants import demo
+        from apps.tenants.models import Organization
+
+        organization = Organization.objects.filter(slug=org_slug).first()
+        if (
+            organization is not None
+            and demo.ist_abgelaufen(organization)
+            and demo.abgelaufene_demo_fuer(request.user) is not None
+        ):
+            raise DemoAbgelaufenError
+        raise Http404("Organisation nicht gefunden")
+
     def setup_organization_context(self, request, **kwargs):
         """
         Set up organization and membership context.
@@ -87,7 +109,12 @@ class OrganizationMixin(LoginRequiredMixin):
         try:
             self.organization = Organization.objects.get(slug=org_slug, is_active=True)
         except Organization.DoesNotExist:
-            raise Http404("Organisation nicht gefunden") from None
+            self._nicht_erreichbar(request, org_slug)
+        # Demo-Organisation (Issue #1406): Ende erreicht, der Zeitplan sperrt erst zur nächsten vollen Stunde
+        from apps.tenants import demo
+
+        if demo.ist_abgelaufen(self.organization):
+            self._nicht_erreichbar(request, org_slug)
 
         # Get membership for current user
         try:
@@ -126,7 +153,10 @@ class OrganizationMixin(LoginRequiredMixin):
             return self.handle_no_permission()
 
         # Set up organization context
-        self.setup_organization_context(request, **kwargs)
+        try:
+            self.setup_organization_context(request, **kwargs)
+        except DemoAbgelaufenError:
+            return redirect("accounts:demo_abgelaufen")
 
         # Auslauf: nur die Auslauf-Seite
         expiry_response = self.handle_expiry_restriction(request)
@@ -191,7 +221,10 @@ class PermissionRequiredMixin(OrganizationMixin):
             return self.handle_no_permission()
 
         # Set up organization context (reuses parent's method)
-        self.setup_organization_context(request, **kwargs)
+        try:
+            self.setup_organization_context(request, **kwargs)
+        except DemoAbgelaufenError:
+            return redirect("accounts:demo_abgelaufen")
 
         # Auslauf „Nur Lesen“: nur die Auslauf-Seite, dort ohne Rechteprüfung (Issue #1237)
         expiry_response = self.handle_expiry_restriction(request)
