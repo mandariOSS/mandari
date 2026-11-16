@@ -489,12 +489,16 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
     gelesen hat. Geschrieben werden nur die Felder des Formulars und die Erledigung.
     """
     aktuell = _aktueller_stand(task, membership)
+    # Erledigung und Verlauf gehen vom jetzigen Stand der Datenbank aus, nicht von dem beim Öffnen des Panels: Ein
+    # überholtes Panel schriebe sonst einen alten Erledigungszeitpunkt zurück oder trüge die Erledigung noch einmal ein.
+    task.is_completed = aktuell.is_completed
+    task.completed_at = aktuell.completed_at
     _sync_completion(task)
     task.save(update_fields=[*PANEL_FELDER, "is_completed", "completed_at", "updated_at"])
     # Ausgangswert ist die Sichtbarkeit in der Datenbank, nicht die beim Öffnen des Panels gelesene: Hat inzwischen
     # jemand im Freigabedialog Empfänger gewählt, bleiben sie stehen.
     reset_shares_on_reshare(task, aktuell.visibility)
-    _log_changes(task, membership, old_values)
+    _log_changes(task, membership, {**old_values, **capture_old_values(aktuell)})
     return task
 
 
