@@ -5,9 +5,21 @@
 <div class="fs-dok{% if u.art == 'ris_datei' and not text and ist_pdf or u.art == 'anlage' and ist_pdf or u.art == 'protokoll' %} mit-rahmen{% endif %}" id="fs-dok"
      role="tabpanel" aria-labelledby="fs-reiter-{{ u.schluessel }}" tabindex="0">
     {% if u.art == 'protokoll' %}
-        {# Niederschrift der vorigen Sitzung zur Genehmigung, in der Fassung, die das Mitglied lesen darf #}
-        <iframe class="fs-dok-rahmen" src="{% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=o.pk variant=u.fassung %}?vorschau"
+        {# Niederschrift der vorigen Sitzung zur Genehmigung. Der Genehmigungs-TOP ist öffentlich und steht am Beamer: #}
+        {# eingebettet ist die öffentliche Fassung; die vollständige (mit NÖ-Teil) nur für Vereidigte und erst, wenn #}
+        {# Nichtöffentliches eingeblendet ist (Sichtschutz, apps/work/sichtschutz.py, Alpine-Store noe). #}
+        {% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=o.pk variant='oeffentlich' as pdf_oeffentlich %}
+        {% if u.fassung == 'intern' %}
+        {% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=o.pk variant='intern' as pdf_intern %}
+        {# Ohne Recht auf die öffentliche Fassung bleibt die verdeckte Vorschau leer (about:blank), nie die vollständige #}
+        <iframe class="fs-dok-rahmen" src="{% if noe_sichtbar %}{{ pdf_intern }}?vorschau{% elif u.oeffentlich_lesbar %}{{ pdf_oeffentlich }}?vorschau{% else %}about:blank{% endif %}"
+                data-oeffentlich="{% if u.oeffentlich_lesbar %}{{ pdf_oeffentlich }}?vorschau{% else %}about:blank{% endif %}" data-intern="{{ pdf_intern }}?vorschau"
+                x-data :src="$store.noe.sichtbar ? $el.dataset.intern : $el.dataset.oeffentlich"
                 title="{{ u.titel }}: {{ o.title }}" loading="lazy"></iframe>
+        {% else %}
+        <iframe class="fs-dok-rahmen" src="{{ pdf_oeffentlich }}?vorschau"
+                title="{{ u.titel }}: {{ o.title }}" loading="lazy"></iframe>
+        {% endif %}
     {% elif u.art == 'ris_datei' %}
         {% if text %}
         <p class="fs-dok-meta">
