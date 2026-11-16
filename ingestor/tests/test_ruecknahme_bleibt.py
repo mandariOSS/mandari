@@ -70,8 +70,13 @@ MODELLE = (
 MARKIERUNG = ("oparl_modified", "deleted", "deleted_at", "deletion_reason")
 
 
+def _uebersetzt(stmt: Any) -> Any:
+    """Die Anweisung, wie sie an PostgreSQL ginge (Text über ``str``, Werte unter ``params``)."""
+    return stmt.compile(dialect=postgresql.dialect())  # type: ignore[no-untyped-call]
+
+
 def _sql(stmt: Any) -> str:
-    return re.sub(r"\s+", " ", str(stmt.compile(dialect=postgresql.dialect())))
+    return re.sub(r"\s+", " ", str(_uebersetzt(stmt)))
 
 
 # --- Anweisungen und Ereignisweg, ohne Datenbank -----------------------------------------------------------
@@ -91,7 +96,7 @@ def test_baustein_erhaelt_die_markierung_nur_bei_datenschutz(modell: Any) -> Non
             f"{tabelle}.{spalte}: {sql}"
         )
     assert "ELSE excluded.oparl_modified END" in sql
-    assert ris_events.REASON_PRIVACY in stmt.compile(dialect=postgresql.dialect()).params.values()
+    assert ris_events.REASON_PRIVACY in _uebersetzt(stmt).params.values()
 
 
 def test_alle_elf_upserts_nutzen_den_baustein() -> None:
@@ -218,8 +223,8 @@ async def test_geloeschte_anlage_verwirft_die_zusammenfassung_des_vorgangs() -> 
     assert await storage.mark_entity_deleted("file", f"{BASE}/file/1", body_id=kommune) == datei
 
     assert len(anweisungen) == 2
-    verwerfen = anweisungen[1].compile(dialect=postgresql.dialect())
-    sql = re.sub(r"\s+", " ", str(verwerfen))
+    verwerfen = _uebersetzt(anweisungen[1])
+    sql = _sql(anweisungen[1])
     assert sql.startswith("UPDATE oparl_papers SET ")
     assert "WHERE oparl_papers.id = " in sql
     werte = verwerfen.params
@@ -318,6 +323,7 @@ async def _schreiben(storage: DatabaseStorage, body_id: uuid.UUID, art: str, nam
     """Ein Objekt der Art wie im Abgleich verarbeiten und schreiben; liefert (Modell, UUID, verarbeitetes Objekt)."""
     processor = OParlProcessor()
     daten = {"id": f"{BASE}/{art}/1", "name": name, "modified": modified}
+    objekt: Any
     if art == "person":
         objekt = processor.process_person({**daten, "type": f"{OPARL}Person"}, KOMMUNE)
         return OParlPerson, await storage.upsert_person(objekt, body_id), objekt

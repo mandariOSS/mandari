@@ -131,7 +131,7 @@ async def test_nach_der_frist_ist_die_quelle_erst_nach_derselben_dauer_wieder_fa
     echte_frist = asyncio.timeout
     # Die drei Stunden im Zeitraffer: Die Frist läuft sofort ab, gerechnet wird mit ihrer Dauer
     with pytest.MonkeyPatch.context() as zeitraffer:
-        zeitraffer.setattr(takt_modul.asyncio, "timeout", lambda _dauer: echte_frist(0.02))
+        zeitraffer.setattr(asyncio, "timeout", lambda _dauer: echte_frist(0.02))
         await durchlauf(scheduler)
         await asyncio.sleep(0.1)
 

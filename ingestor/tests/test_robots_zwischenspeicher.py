@@ -18,7 +18,6 @@ import httpx
 import pytest
 from mandari_oparl.robots import KIND_API, MAX_BYTES, RobotsTxt
 
-from src.client import robots
 from src.client.robots import ENTRY_COST_BYTES, RULE_COST_BYTES, RobotsGate
 
 UA = "x/1"
@@ -148,7 +147,7 @@ async def test_grosse_datei_wird_im_eigenen_thread_ausgewertet(
         im_thread.append(len(args[1]))
         return await echter_thread(funktion, *args)
 
-    monkeypatch.setattr(robots.asyncio, "to_thread", mitzaehlen)
+    monkeypatch.setattr(asyncio, "to_thread", mitzaehlen)
     gross = _regeln(30_000)
     assert len(gross) > MAX_BYTES
     gate = RobotsGate()

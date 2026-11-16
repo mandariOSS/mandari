@@ -150,7 +150,7 @@ class _Inflater:
 
 def _content_encoding(response: httpx.Response) -> str | None:
     """Das eine Kompressionsverfahren der Antwort (``None``: keines); sonst ``httpx.DecodingError``."""
-    encodings = [
+    encodings: list[str] = [
         value.strip().lower()
         for value in response.headers.get("content-encoding", "").split(",")
         if value.strip() and value.strip().lower() != "identity"
