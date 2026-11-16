@@ -6,7 +6,8 @@ Bietet Volltextsuche über Elasticsearch für alle OParl-Entitäten.
 """
 
 import logging
-from collections.abc import Callable, Mapping
+import uuid
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -84,6 +85,41 @@ GROUP_KEY_SCRIPT = (
 SORT_RELEVANCE = "relevance"
 SORT_NEWEST = "newest"
 RANKING_VERSIONS = ("v1", "v2")
+
+
+def marked_in_bestand(index_name: str, ids: Iterable[str]) -> set[str]:
+    """
+    Kennungen aus ``ids``, die der Bestand als gelöscht oder zurückgenommen führt; bei Dateien auch die, die in der
+    Quelle nicht mehr abrufbar sind oder deren Vorgang bzw. Sitzung zurückgenommen ist.
+
+    Der Index verliert ein Dokument über die Signale der Modelle (``insight_core.signals``). Scheitert dieser Aufruf,
+    weil der Suchdienst gerade nicht erreichbar ist, oder ist die automatische Indexierung aus, stünde ein
+    zurückgenommener Eintrag sonst weiter mit Titel und Ausschnitt in der Trefferliste. Die Treffer einer Seite
+    werden deshalb gegen den Bestand geprüft: je Index eine Abfrage. Kennungen, die keine des Bestands sind, bleiben.
+    """
+    from django.db.models import Q
+
+    from ..models import OParlFile, OParlMeeting, OParlOrganization, OParlPaper, OParlPerson, withdrawn_q
+
+    model = {
+        INDEX_PAPERS: OParlPaper,
+        INDEX_MEETINGS: OParlMeeting,
+        INDEX_PERSONS: OParlPerson,
+        INDEX_ORGANIZATIONS: OParlOrganization,
+        INDEX_FILES: OParlFile,
+    }.get(index_name)
+    kennungen = []
+    for doc_id in ids:
+        try:
+            kennungen.append(uuid.UUID(str(doc_id)))
+        except ValueError:
+            continue
+    if model is None or not kennungen:
+        return set()
+    marked = Q(deleted=True)
+    if index_name == INDEX_FILES:
+        marked |= Q(source_missing_since__isnull=False) | withdrawn_q("paper") | withdrawn_q("meeting")
+    return {str(pk) for pk in model.objects.filter(pk__in=kennungen).filter(marked).values_list("pk", flat=True)}
 
 
 def ranking_version(override: str | None = None) -> str:
@@ -640,10 +676,11 @@ class ElasticsearchService:
         if other_files:
             body = {"query": {"ids": {"values": other_files}}, "size": len(other_files), "_source": FILE_LABEL_FIELDS}
             try:
-                for hit in self.client.search(index=INDEX_FILES, body=body)["hits"]["hits"]:
-                    docs[(INDEX_FILES, hit["_id"])] = self._to_result(hit, INDEX_FILES)
+                hits = self.client.search(index=INDEX_FILES, body=body)["hits"]["hits"]
             except Exception as e:  # Namen weiterer Dokumente sind Beiwerk: ohne sie bleibt die Gruppe
                 logger.warning(f"Weitere Dokumente nicht ladbar: {e}")
+            else:
+                docs.update(self._results(INDEX_FILES, hits))
 
         result: list[dict[str, Any]] = []
         for group in page_groups:
@@ -690,7 +727,12 @@ class ElasticsearchService:
             except Exception as e2:
                 logger.error(f"Unerwarteter Fehler beim Laden der Treffer aus Index '{index_name}': {e2}")
                 return {}
-        return {(index_name, hit["_id"]): self._to_result(hit, index_name) for hit in hits}
+        return self._results(index_name, hits)
+
+    def _results(self, index_name: str, hits: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+        """Treffer als Ergebnisse, ohne die, die der Bestand als gelöscht oder zurückgenommen führt."""
+        marked = marked_in_bestand(index_name, [hit["_id"] for hit in hits])
+        return {(index_name, hit["_id"]): self._to_result(hit, index_name) for hit in hits if hit["_id"] not in marked}
 
     def _group_counts(self, ranked: RankedHits) -> dict[str, Any]:
         """Ehrliche Zahl: Vorgänge (Vorgang oder Datei mit Vorgang) und Sitzungsunterlagen ohne Vorgang.
@@ -814,13 +856,12 @@ class ElasticsearchService:
                 except Exception as e2:
                     logger.error(f"Unerwarteter Fehler beim Laden der Treffer aus Index '{index_name}': {e2}")
                     continue
-            for hit in result["hits"]["hits"]:
-                docs[(index_name, hit["_id"])] = self._to_result(hit, index_name)
+            docs.update(self._results(index_name, result["hits"]["hits"]))
 
         results = []
         for score, _position, index_name, doc_id in page_hits:
             doc = docs.get((index_name, doc_id))
-            if doc is not None:  # zwischen beiden Schritten gelöscht → auslassen
+            if doc is not None:  # zwischen beiden Schritten gelöscht oder im Bestand markiert → auslassen
                 doc["_rankingScore"] = score
                 results.append(doc)
         return results

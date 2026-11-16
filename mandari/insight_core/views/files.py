@@ -278,7 +278,8 @@ def _deliver_file(request, file_obj):
 
     from ..services import file_cache
 
-    if file_obj.withdrawn_by_publisher:
+    # Zurückgenommen ist die Datei selbst oder ihr Vorgang bzw. ihre Sitzung: keine Bytes, auch nicht aus der Kopie
+    if file_obj.withdrawn_by_publisher or file_reconcile.parent_withdrawn(file_obj):
         from ._withdrawn import withdrawn_response
 
         return file_access.mark_blocked(withdrawn_response(request, file_obj))

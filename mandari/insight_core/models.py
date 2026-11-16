@@ -63,16 +63,17 @@ def validate_body_slug(value: str) -> None:
 
 def withdrawn_q(prefix: str = "") -> Q:
     """
-    Queryset-Gegenstück zu ``withdrawn_by_publisher``: von mandari Session zurückgenommen.
+    Queryset-Gegenstück zu ``withdrawn_by_publisher``: von mandari Session zurückgenommen oder mit einem
+    Grund der Rücknahme markiert (``DEPUBLISHED_REASONS``).
 
     ``prefix`` gilt für Beziehungen, z. B. ``OParlConsultation.objects.exclude(withdrawn_q("paper"))``.
     Ein leerer Fremdschlüssel zählt nicht als zurückgenommen.
     """
     feld = f"{prefix}__" if prefix else ""
-    bedingung = Q(**{f"{feld}deleted": True})
+    session = Q()
     for marker in SESSION_OPARL_MARKERS:
-        bedingung &= Q(**{f"{feld}external_id__contains": marker})
-    return bedingung
+        session &= Q(**{f"{feld}external_id__contains": marker})
+    return Q(**{f"{feld}deleted": True}) & (session | Q(**{f"{feld}deletion_reason__in": DEPUBLISHED_REASONS}))
 
 
 class CanonicalIdModel(models.Model):
@@ -167,6 +168,12 @@ class SourceDeletionModel(CanonicalIdModel):
         self.save(update_fields=["deleted", "deleted_at", "deletion_reason", "oparl_modified", "updated_at"])
         if self.withdrawn_by_publisher:
             self._forget_summaries()
+            self._forget_alerts()
+
+    def _forget_alerts(self) -> None:
+        """Abo-Hinweise auf einen zurückgenommenen Vorgang verwerfen: Sie halten seinen Titel als Kopie fest."""
+        if isinstance(self, OParlPaper):
+            SubscriptionAlert.objects.filter(entity_type="paper", entity_id=self.pk).delete()
 
     def _forget_summaries(self) -> None:
         """KI-Zusammenfassungen, die zurückgenommene Inhalte enthalten können, verwerfen.
@@ -209,14 +216,21 @@ class SourceDeletionModel(CanonicalIdModel):
     @property
     def withdrawn_by_publisher(self) -> bool:
         """
-        Von mandari Session selbst zurückgenommen (nicht-öffentlich gestellt oder gelöscht).
+        Zurückgenommen: von mandari Session selbst (nicht-öffentlich gestellt oder gelöscht) oder mit einem
+        Grund der Rücknahme markiert (``DEPUBLISHED_REASONS``: zurückgezogen, nicht mehr öffentlich, aus
+        Datenschutzgründen entfernt).
 
-        Fremde Ratsinformationssysteme: Gelöschtes bleibt aus Transparenzgründen mit Hinweis
-        sichtbar. Eigene Session-Daten dagegen verlassen die Öffentlichkeit vollständig – eine
-        Ö→NÖ-Umstellung darf im Bürgerportal keinen Inhalt mehr zeigen.
+        Fremde Ratsinformationssysteme: In der Quelle Gelöschtes bleibt aus Transparenzgründen mit Hinweis
+        sichtbar. Zurückgenommenes dagegen verlässt die Öffentlichkeit vollständig – eine Ö→NÖ-Umstellung
+        oder eine Entfernung aus Datenschutzgründen darf im Bürgerportal keinen Inhalt mehr zeigen, gleich
+        aus welchem System das Objekt stammt.
         """
+        if not self.deleted:
+            return False
+        if self.deletion_reason in DEPUBLISHED_REASONS:
+            return True
         ext = getattr(self, "external_id", "") or ""
-        return bool(self.deleted) and all(marker in ext for marker in SESSION_OPARL_MARKERS)
+        return all(marker in ext for marker in SESSION_OPARL_MARKERS)
 
 
 class OParlSource(models.Model):

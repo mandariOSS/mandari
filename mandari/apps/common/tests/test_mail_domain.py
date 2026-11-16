@@ -19,7 +19,6 @@ import smtplib
 import socket
 import subprocess
 import sys
-import uuid
 from collections.abc import Iterator
 from email.message import Message
 from io import StringIO
@@ -460,7 +459,7 @@ def test_insight_digest(
     im_container: str, smtp_server: list[AufzeichnenderServer], smtp_aus_der_umgebung: None, settings: Any
 ) -> None:
     """Verwaltungsbefehl ``send_digest`` mit eigenem Absender (``INSIGHT_DIGEST_FROM_EMAIL``)."""
-    from insight_core.models import InsightSubscriber, OParlBody, OParlSource, SubscriptionAlert
+    from insight_core.models import InsightSubscriber, OParlBody, OParlPaper, OParlSource, SubscriptionAlert
 
     settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True
     settings.INSIGHT_DIGEST_FROM_EMAIL = "digest@digest.example"
@@ -471,11 +470,15 @@ def test_insight_digest(
     abonnent = InsightSubscriber.objects.create(
         email="leser@example.org", body=body, keyword="Radweg", keyword_active=True, confirmed=True
     )
+    # Der Versand nennt nur Vorgänge, die es im Bestand gibt
+    vorgang = OParlPaper.objects.create(
+        external_id="https://ris.beispiel.example/oparl/paper/1", body=body, name="Radweg an der Hauptstraße"
+    )
     SubscriptionAlert.objects.create(
         subscriber=abonnent,
         alert_type="keyword",
         entity_type="paper",
-        entity_id=uuid.uuid4(),
+        entity_id=vorgang.pk,
         entity_title="Radweg an der Hauptstraße",
         entity_url="/insight/vorlagen/1/",
     )

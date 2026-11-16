@@ -66,6 +66,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
 )
+from insight_core.services import file_reconcile
 
 # Zeitfilter -> Vergleich auf den zusammengeführten Zeitstempeln (``_annotated``), damit die Filter genau
 # zu den ausgegebenen Werten von ``created``/``modified`` passen
@@ -616,4 +617,9 @@ def object_view(request: HttpRequest, kind: str, pk: uuid.UUID) -> HttpResponse:
         paused = _paused_response(publication.body_id_of(spec.model, pk))
         if paused is not None:
             return paused
-    return json_response(spec.render(output, obj, spec.context([obj])))
+    data = spec.render(output, obj, spec.context([obj]))
+    if kind == "file" and file_reconcile.parent_withdrawn(obj):
+        # Vorgang oder Sitzung zurückgenommen: Die Datei trägt keine eigene Markierung, ihr erkannter Text gehört
+        # aber zu einem Eintrag, den es öffentlich nicht mehr gibt (wie die Auslieferung der Datei selbst)
+        data.pop("text", None)
+    return json_response(data)

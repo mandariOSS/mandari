@@ -108,6 +108,21 @@ def is_blocked(file_obj: Any) -> bool:
     return bool(getattr(file_obj, "deleted", False) or getattr(file_obj, "source_missing_since", None))
 
 
+def parent_withdrawn(file_obj: Any) -> bool:
+    """
+    Ist der Vorgang oder die Sitzung der Datei zurückgenommen (``withdrawn_q``)?
+
+    Eine Rücknahme markiert nur das Objekt selbst. Seine Anlagen tragen dann keine eigene Markierung, gehören
+    aber zu einem Eintrag, den es öffentlich nicht mehr gibt: Für sie gibt es weder Bytes noch erkannten Text.
+    Je Elternobjekt eine Abfrage; gedacht für die Auslieferung einer einzelnen Datei, nicht für Listen.
+    """
+    from ..models import OParlMeeting, OParlPaper, withdrawn_q
+
+    if file_obj.paper_id and OParlPaper.objects.filter(withdrawn_q(), pk=file_obj.paper_id).exists():
+        return True
+    return bool(file_obj.meeting_id and OParlMeeting.objects.filter(withdrawn_q(), pk=file_obj.meeting_id).exists())
+
+
 # =============================================================================
 # Sperren, Entsperren, Ersetzen
 # =============================================================================

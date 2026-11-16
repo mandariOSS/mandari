@@ -773,8 +773,63 @@ class OParlBodyGeoSuggestionAdmin(NoAddAdminMixin, ModelAdmin):
         return redirect(reverse("admin:insight_core_oparlbody_change", args=[body.pk]))
 
 
+class RetractAdminMixin:
+    """
+    Aktion „Aus der Veröffentlichung zurücknehmen“ für Objekte des RIS-Bestands.
+
+    Markiert die Objekte mit dem Grund „Zurückgezogen“ und meldet die Rücknahme im Änderungsfeed
+    (``hub.ris.retraction.retract``). Danach antworten ihre Seiten ohne Inhalt, und andere Seiten nennen sie nicht
+    mehr. Die Anlagen eines Vorgangs oder einer Sitzung gehen mit. Das Häkchen „In Quelle gelöscht“ allein leistet
+    das nicht: Ohne Grund der Rücknahme bleibt ein Objekt mit Hinweis sichtbar, und Abnehmer des Feeds erfahren
+    nichts. Ist ein Objekt schon ohne solchen Grund markiert, setzt die Aktion den Grund; gemeldet wird dann nichts,
+    weil die Markierung selbst schon bestand.
+    """
+
+    @admin.action(description="Aus der Veröffentlichung zurücknehmen (mit Anlagen)", permissions=["change"])
+    def retract_selected(self, request, queryset):
+        from hub.ris import retraction
+
+        from .models import DEPUBLISHED_REASONS, REASON_WITHDRAWN
+
+        retracted = attachments = marked_before = 0
+        for obj in queryset:
+            if retraction.retract(obj, reason=retraction.REASON_WITHDRAWN):
+                retracted += 1
+            else:
+                row = (
+                    type(obj)
+                    ._default_manager.filter(pk=obj.pk, deleted=True)
+                    .exclude(deletion_reason__in=DEPUBLISHED_REASONS)
+                    .first()
+                )
+                if row is not None:
+                    row.deletion_reason = REASON_WITHDRAWN
+                    row.save(update_fields=["deletion_reason", "updated_at"])
+                    row._forget_summaries()
+                    row._forget_alerts()
+                    marked_before += 1
+            # Vorgang und Sitzung: Anlagen tragen keine eigene Markierung und blieben sonst im Suchindex
+            if isinstance(obj, OParlPaper | OParlMeeting):
+                for attachment in obj.files.filter(deleted=False):
+                    if retraction.retract(attachment, reason=retraction.REASON_WITHDRAWN):
+                        attachments += 1
+
+        parts = [f"{retracted} zurückgenommen"]
+        if attachments:
+            parts.append(f"{attachments} Anlagen mitgenommen")
+        if marked_before:
+            parts.append(f"{marked_before} waren schon markiert (Grund gesetzt, ohne Meldung im Änderungsfeed)")
+        messages.success(request, "Aus der Veröffentlichung genommen: " + ", ".join(parts) + ".")
+        if not retraction.events_enabled():
+            messages.warning(
+                request,
+                "Diese Installation schreibt keine Ereignisse zum RIS-Bestand (INGESTOR_EVENTS_ENABLED): "
+                "Der Änderungsfeed nennt die Rücknahme nicht.",
+            )
+
+
 @admin.register(OParlOrganization)
-class OParlOrganizationAdmin(ModelAdmin):
+class OParlOrganizationAdmin(RetractAdminMixin, ModelAdmin):
     list_display = [
         "name",
         "short_name",
@@ -786,15 +841,16 @@ class OParlOrganizationAdmin(ModelAdmin):
     list_filter = ["body", "organization_type", "deleted"]
     search_fields = ["name", "short_name"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
+    actions = ["retract_selected"]
 
 
 @admin.register(OParlPerson)
-class OParlPersonAdmin(ModelAdmin):
+class OParlPersonAdmin(RetractAdminMixin, ModelAdmin):
     list_display = ["display_name", "email", "body", "photo_status", "created_at"]
     list_filter = ["body", "deleted", "photo_status"]
     search_fields = ["name", "family_name", "given_name", "email"]
     readonly_fields = ["id", "external_id", "photo_fetched_at", "photo_error", "created_at", "updated_at"]
-    actions = ["refetch_photos"]
+    actions = ["refetch_photos", "retract_selected"]
 
     def save_model(self, request, obj, form, change):
         # Manuell hochgeladene Fotos nie durch den RIS-Abruf überschreiben
@@ -816,12 +872,13 @@ class OParlPersonAdmin(ModelAdmin):
 
 
 @admin.register(OParlMeeting)
-class OParlMeetingAdmin(ModelAdmin):
+class OParlMeetingAdmin(RetractAdminMixin, ModelAdmin):
     list_display = ["name", "start", "location_name", "cancelled", "body"]
     list_filter = ["body", "cancelled", "meeting_state", "deleted"]
     search_fields = ["name", "location_name"]
     date_hierarchy = "start"
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
+    actions = ["retract_selected"]
 
 
 from .models import Municipality, MunicipalityTerm
@@ -864,13 +921,13 @@ class PaperLocationInline(NoAddAdminMixin, TabularInline):
 
 
 @admin.register(OParlPaper)
-class OParlPaperAdmin(ModelAdmin):
+class OParlPaperAdmin(RetractAdminMixin, ModelAdmin):
     list_display = ["reference", "name", "paper_type", "date", "georef_status_display", "body"]
     list_filter = ["body", "paper_type", "georef_status", "deleted"]
     search_fields = ["name", "reference"]
     date_hierarchy = "date"
     inlines = [PaperLocationInline]
-    actions = ["rebuild_paper_locations"]
+    actions = ["rebuild_paper_locations", "retract_selected"]
     readonly_fields = [
         "id",
         "external_id",
@@ -952,7 +1009,7 @@ class OParlAgendaItemAdmin(ModelAdmin):
 
 
 @admin.register(OParlFile)
-class OParlFileAdmin(ModelAdmin):
+class OParlFileAdmin(RetractAdminMixin, ModelAdmin):
     list_display = ["name", "file_name", "mime_type", "size_human", "local_status", "paper"]
     list_filter = ["local_status", "mime_type", "deleted"]
     search_fields = ["name", "file_name"]
@@ -970,7 +1027,7 @@ class OParlFileAdmin(ModelAdmin):
         "created_at",
         "updated_at",
     ]
-    actions = ["cache_locally"]
+    actions = ["cache_locally", "retract_selected"]
 
     @admin.action(description="Lokal zwischenspeichern (max. 50)", permissions=["change"])
     def cache_locally(self, request, queryset):

@@ -21,6 +21,17 @@ from apps.common.email import render_email
 logger = logging.getLogger(__name__)
 
 
+def _stale_alerts(alerts) -> set:
+    """Kennungen der Hinweise auf Vorgänge, die es im Bestand nicht mehr gibt oder die markiert sind."""
+    from insight_core.models import OParlPaper
+
+    papers = [a.entity_id for a in alerts if a.entity_type == "paper"]
+    if not papers:
+        return set()
+    current = set(OParlPaper.objects.filter(pk__in=papers, deleted=False).values_list("pk", flat=True))
+    return {a.pk for a in alerts if a.entity_type == "paper" and a.entity_id not in current}
+
+
 class Command(EinmaligMixin, BaseCommand):
     sperre = "send_digest"  # Singleton je Cache/Redis, #55
     sperre_ttl = 3600
@@ -82,6 +93,16 @@ class Command(EinmaligMixin, BaseCommand):
                 continue
 
             alerts_list = list(unsent_alerts)
+            # Ein Hinweis hält Titel und Adresse des Vorgangs vom Tag seiner Entstehung fest. Ist der Vorgang
+            # inzwischen gelöscht, zurückgenommen oder endgültig entfernt, geht sein Titel nicht mehr hinaus:
+            # Geprüft wird gegen den Bestand unmittelbar vor dem Versand, gleich auf welchem Weg markiert wurde.
+            veraltet = _stale_alerts(alerts_list)
+            if veraltet:
+                if not dry_run:
+                    SubscriptionAlert.objects.filter(pk__in=veraltet).delete()
+                alerts_list = [a for a in alerts_list if a.pk not in veraltet]
+            if not alerts_list:
+                continue
             alert_count = len(alerts_list)
 
             # Group alerts by type
