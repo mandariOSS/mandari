@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import time
+
 import httpx
 import pytest
 
+from hub.live import einzelbild as einzelbild_modul
 from hub.live.anbieter import AnbieterError
 from hub.live.einzelbild import (
     KeinBildError,
@@ -63,6 +66,79 @@ def test_letztes_segment_und_initialisierung() -> None:
     )
     with pytest.raises(KeinBildError):
         letztes_segment("#EXTM3U\n", "https://cdn.example/x/live.m3u8")
+
+
+def test_initialisierung_nur_aus_der_eigenen_zeile() -> None:
+    basis = "https://cdn.example/x/live.m3u8"
+    segment = "#EXTINF:6,\nseg1.m4s\n"
+
+    def karte(playlist: str) -> str | None:
+        return letztes_segment(playlist + segment, basis)[1]
+
+    assert karte('#EXTM3U\r\n  #ext-x-map:BYTERANGE="720@0",uri="init.mp4"\r\n') == "https://cdn.example/x/init.mp4"
+    # Die erste Zeile mit Adresse gilt; eine Zeile ohne Adresse übernimmt nicht die der nächsten
+    assert karte('#EXT-X-MAP:BYTERANGE="1@0"\n#EXT-X-MAP:URI="a.mp4"\n#EXT-X-MAP:URI="b.mp4"\n') == (
+        "https://cdn.example/x/a.mp4"
+    )
+    assert karte('#EXT-X-MAP:BYTERANGE="1@0"\n#EXT-X-KEY:METHOD=NONE,URI="k"\n') is None
+    # Überlange Zeilen werden nicht ausgewertet
+    assert karte("#EXT-X-MAP:" + "X" * einzelbild_modul.MAX_ZEILE + 'URI="init.mp4"\n') is None
+
+
+def test_playlists_werden_in_linearer_zeit_gelesen() -> None:
+    """
+    Eine Playlist darf 1 MiB groß sein. Viele Angaben ohne Adresse, in einer Zeile oder in vielen, dürfen den Worker
+    nicht aufhalten: Mit einem Muster über den ganzen Text bzw. einer Suche je Angabe dauerte das Minuten.
+    """
+    megabyte = 1024 * 1024
+    eine_zeile = "#EXTM3U\n" + "#EXT-X-MAP:" * (megabyte // 11) + "\n#EXTINF:6,\nseg1.m4s\n"
+    viele_zeilen = "#EXTM3U\n" + "#EXT-X-MAP:BYTERANGE\n" * (megabyte // 21) + "#EXTINF:6,\nseg1.m4s\n"
+    master = "#EXTM3U\n" + "#EXT-X-STREAM-INF:BANDWIDTH=1\n" * 50_000
+
+    beginn = time.perf_counter()
+    assert letztes_segment(eine_zeile, "https://cdn.example/x/live.m3u8")[1] is None
+    assert letztes_segment(viele_zeilen, "https://cdn.example/x/live.m3u8")[1] is None
+    with pytest.raises(KeinBildError, match="zu vielen Varianten"):
+        varianten(master, "https://cdn.example/s/master.m3u8")
+    assert time.perf_counter() - beginn < 5.0
+
+
+def test_mehrere_angaben_vor_einer_adresse_und_obergrenze() -> None:
+    basis = "https://cdn.example/s/master.m3u8"
+    doppelt = "#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360\n#EXT-X-STREAM-INF:RESOLUTION=1280x720\n\n# x\na.m3u8\n"
+    assert varianten(doppelt, basis) == [
+        Variante("https://cdn.example/s/a.m3u8", 360),
+        Variante("https://cdn.example/s/a.m3u8", 720),
+    ]
+    # Angabe ohne folgende Adresse: keine Variante
+    assert varianten("#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360\n", basis) == []
+    voll = "#EXTM3U\n" + "#EXT-X-STREAM-INF:RESOLUTION=1280x720\nv.m3u8\n" * einzelbild_modul.MAX_VARIANTEN
+    assert len(varianten(voll, basis)) == einzelbild_modul.MAX_VARIANTEN
+    with pytest.raises(KeinBildError):
+        varianten(voll + "#EXT-X-STREAM-INF:RESOLUTION=1280x720\nv.m3u8\n", basis)
+
+
+def test_zu_grosses_bild_wird_nicht_dekodiert(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Die Größe des Segments begrenzt die Bildmaße nicht: Wenige Kilobyte können ein Bild mit vielen Megapixeln
+    beschreiben. Der Test senkt die Grenze, statt ein riesiges Bild zu erzeugen.
+    """
+    segment = mpegts(groesse=(320, 180))
+
+    # Grenze des Dekoders (greift beim Öffnen und Dekodieren, vor dem Bild im Speicher)
+    with monkeypatch.context() as gesenkt:
+        gesenkt.setattr(einzelbild_modul, "_DEKODER_GRENZE", {"max_pixels": str(100 * 100)})
+        with pytest.raises(KeinBildError):
+            bild_aus_segment(segment)
+
+    # Eigene Prüfung der gemeldeten Maße
+    with monkeypatch.context() as gesenkt:
+        gesenkt.setattr(einzelbild_modul, "MAX_BILDPUNKTE", 100 * 100)
+        with pytest.raises(KeinBildError, match="Bild zu groß"):
+            bild_aus_segment(segment)
+
+    assert {"max_pixels": str(3840 * 2160)} == einzelbild_modul._DEKODER_GRENZE
+    assert bild_aus_segment(segment).size == (320, 180)
 
 
 def test_bild_aus_segment_im_speicher() -> None:
