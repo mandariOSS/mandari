@@ -171,6 +171,33 @@ def test_weiterblaettern_zaehlt_die_ausgelieferten_sitzungen(
     assert grenze["weitere"] == "ja, die Liste ist unvollständig: bitte den Zeitraum enger fassen"
 
 
+def test_umfangreiche_tagesordnungen_kuerzen_nicht_die_sitzungsliste(
+    ctx: ToolContext, stadt: Musterstadt, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mit tagesordnung=true: Reicht der Platz nicht, fallen Tagesordnungen weg, nie Sitzungen ohne Hinweis."""
+    from insight_core.models import OParlAgendaItem
+
+    for sitzung in (stadt.rat_sitzung, stadt.ausschuss_sitzung):
+        for nr in range(40, 70):
+            OParlAgendaItem.objects.create(
+                external_id=kennung("agendaitems"),
+                meeting=sitzung,
+                number=str(nr),
+                order=nr,
+                name=f"Bebauungsplan Nr. {nr} „Wohngebiet am Musterpark“ – Satzungsbeschluss und Abwägung",
+            )
+    voll = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    assert (voll["anzahl"], len(voll["tagesordnungen"])) == (2, 2)
+    assert "hinweis_tagesordnung" not in voll
+
+    monkeypatch.setitem(chat_tools.RESULT_LIMITS, "sitzungen_im_zeitraum", 5000)
+    knapp = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    assert "weggelassen" not in knapp
+    assert (knapp["anzahl"], knapp["sitzungen"]) == (2, voll["sitzungen"])
+    assert len(knapp.get("tagesordnungen", [])) < 2
+    assert "einzeln mit sitzung" in knapp["hinweis_tagesordnung"]
+
+
 def test_sitzungen_eines_gremiums(ctx: ToolContext, stadt: Musterstadt) -> None:
     ergebnis = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-07", gremium="rat")
     assert [s.split(" | ")[3] for s in ergebnis["sitzungen"]] == [link("meeting", stadt.rat_sitzung.pk)]

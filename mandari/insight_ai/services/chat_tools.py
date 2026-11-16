@@ -383,9 +383,9 @@ def sitzungen_im_zeitraum(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str
             "abgesagt" if meeting.cancelled else None,
         )
         kandidaten.append((zeile, url, f"{titel} ({_when(meeting.start)})"))
-    details = [_sitzung_details(ctx, m) for m in sitzungen[:MAX_AGENDAS]] if tagesordnungen else None
+    details = [_sitzung_details(ctx, m) for m in sitzungen[:MAX_AGENDAS]] if tagesordnungen else []
 
-    def ergebnis(anzahl: int) -> dict[str, Any]:
+    def ergebnis(anzahl: int, mit_details: int) -> dict[str, Any]:
         naechste = beginn + anzahl
         if len(sitzungen) <= anzahl:
             weitere = None
@@ -405,23 +405,32 @@ def sitzungen_im_zeitraum(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str
                 "hinweis": hinweis,
                 "spalten": "Beginn | Gremium | Ort | Link | abgesagt",
                 "sitzungen": [zeile for zeile, _url, _name in kandidaten[:anzahl]],
-                "tagesordnungen": details,
-                "hinweis_tagesordnung": (
-                    f"Tagesordnungen nur bei höchstens {MAX_AGENDAS} Sitzungen; sonst einzeln mit sitzung."
-                    if mit_tagesordnung and len(sitzungen) > MAX_AGENDAS
-                    else None
-                ),
+                "tagesordnungen": details[:mit_details],
+                "hinweis_tagesordnung": hinweis_tagesordnung(mit_details),
             }
         )
 
+    def hinweis_tagesordnung(mit_details: int) -> str | None:
+        if mit_tagesordnung and len(sitzungen) > MAX_AGENDAS:
+            return f"Tagesordnungen nur bei höchstens {MAX_AGENDAS} Sitzungen; sonst einzeln mit sitzung."
+        if mit_details < len(details):
+            # Zu umfangreich für ein Ergebnis: Die Liste der Sitzungen bleibt vollständig, Tagesordnungen fehlen
+            wie_viele = f"nur für die ersten {mit_details} Sitzungen" if mit_details else "zu umfangreich"
+            return f"Tagesordnungen {wie_viele}; die übrigen einzeln mit sitzung."
+        return None
+
     # Gemessen wird das fertige Ergebnis, so wie es an das Modell geht (mit den Zeichen, die JSON maskiert): Kürzte erst
-    # ``dump`` die Liste, begänne die Fortsetzung hinter Sitzungen, die nie ausgeliefert wurden.
+    # ``dump`` die Liste, begänne die Fortsetzung hinter Sitzungen, die nie ausgeliefert wurden. Zuerst fallen
+    # Tagesordnungen weg (mit Hinweis), dann Sitzungen vom Ende der Liste (mit Fortsetzung).
     grenze = RESULT_LIMITS.get("sitzungen_im_zeitraum", MAX_RESULT_CHARS)
-    anzahl = len(kandidaten)
-    fertig = ergebnis(anzahl)
-    while anzahl > 1 and details is None and len(_json(fertig)) > grenze:
-        anzahl -= 1
-        fertig = ergebnis(anzahl)
+    anzahl, mit_details = len(kandidaten), len(details)
+    fertig = ergebnis(anzahl, mit_details)
+    while len(_json(fertig)) > grenze and (mit_details > 0 or anzahl > 1):
+        if mit_details > 0:
+            mit_details -= 1
+        else:
+            anzahl -= 1
+        fertig = ergebnis(anzahl, mit_details)
     for _zeile, url, name in kandidaten[:anzahl]:
         ctx.note(url, name, "meeting")
     return fertig
