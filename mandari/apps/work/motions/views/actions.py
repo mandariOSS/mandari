@@ -10,6 +10,7 @@ from typing import Any
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
@@ -41,7 +42,7 @@ from ..models import (
     MotionType,
     StatusTransitionError,
 )
-from ..services import MotionAIService
+from ..services import MotionAIService, lock_for_save
 from ._helpers import _broadcast_doc_reload, _get_org_folder_or_404, _share_download_response
 
 
@@ -827,6 +828,15 @@ class MotionShareUpdateView(WorkViewMixin, View):
         if not motion.can_share(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
+        # Beide Schreibwege dieser Ansicht sperren dieselbe Dokumentzeile: Sonst könnte zwischen dem Lesen der
+        # Gast-Freigaben und ihrem Beenden eine gleichzeitige Anfrage eine neue anlegen, die den Wechsel auf
+        # „Privat“ überlebt
+        with transaction.atomic():
+            lock_for_save(motion)
+            return self._apply(request, motion)
+
+    def _apply(self, request, motion):
+        """Sichtbarkeit und Freigabe ändern; läuft unter der Sperre des Dokuments (``post``)."""
         # Update visibility
         new_visibility = request.POST.get("visibility")
         if new_visibility in ["private", "shared", "organization"]:
@@ -880,13 +890,16 @@ class MotionShareUpdateView(WorkViewMixin, View):
                     # neue Freigaben erlauben es ohne Angabe
                     defaults={"level": level, "created_by": request.user, **freigaben.download_update(request.POST)},
                 )
-                # Benachrichtigung bei neuer Freigabe oder geänderter Stufe (Issue #75)
+                # Benachrichtigung bei neuer Freigabe oder geänderter Stufe (Issue #75), nach dem Festschreiben und
+                # damit außerhalb der Sperre
                 if previous is None or previous.level != level:
                     target = Membership.objects.filter(
                         user=user, organization=self.organization, is_active=True
                     ).first()
                     if target is not None:
-                        NotificationHub.notify_document_shared(motion, target, level, self.membership)
+                        transaction.on_commit(
+                            lambda: NotificationHub.notify_document_shared(motion, target, level, self.membership)
+                        )
 
         # Return success for HTMX
         from django.http import HttpResponse
