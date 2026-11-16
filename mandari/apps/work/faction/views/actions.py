@@ -33,8 +33,10 @@ from ..regeln import (
     ABSTIMMUNGEN_AUS,
     GENEHMIGUNG_NUR_IN_SITZUNG,
     NOE_AUS,
+    PROTOKOLL_GENEHMIGT,
     GenehmigungNurInSitzungError,
     NichtOeffentlichAusError,
+    ProtokollGenehmigtError,
     abstimmung_erfassbar,
 )
 from ..sitzungsarten import sitzung_oder_404
@@ -1120,6 +1122,9 @@ class FactionActionView(WorkViewMixin, View):
         except GenehmigungNurInSitzungError:
             # Die Sitzung wurde seit der Prüfung oben abgesagt
             return self._rejected(request, meeting, GENEHMIGUNG_NUR_IN_SITZUNG, 400)
+        except ProtokollGenehmigtError:
+            # Das Protokoll wurde seit der Prüfung oben genehmigt
+            return self._rejected(request, meeting, PROTOKOLL_GENEHMIGT, 400)
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)
@@ -1415,7 +1420,6 @@ class FactionActionView(WorkViewMixin, View):
         if visibility == "internal" and item.visibility != "internal" and not meeting.nichtoeffentlich_erlaubt:
             return self._rejected(request, meeting, NOE_AUS, 400)
 
-        from ..regeln import PROTOKOLL_GENEHMIGT, ProtokollGenehmigtError
         from ..services import AgendaProposalService
 
         assign_number = request.POST.get("number", "").strip()

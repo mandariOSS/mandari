@@ -731,6 +731,11 @@ class InvitationAcceptView(View):
         einladende Person im selben Moment deaktiviert, wartet die eine Seite auf die andere. Die Deaktivierung
         ändert die Zeile der Person und löscht danach deren offene Einladungen; gesperrt wird hier in derselben
         Reihenfolge, erst die Person, dann die Einladung.
+
+        Die Person bekommt die schwächere Sperre (``no_key``): Sie hält Änderungen an der Zeile auf, nicht aber
+        Einträge, die auf die Person verweisen. Ihre eigenen protokollierten Aktionen laufen so weiter und verklemmen
+        nicht mit der Annahme, die danach selbst ins Protokoll schreibt. Die Einladung wird unter der Sperre über das
+        Token gesucht: Ein inzwischen ersetzter Link (erneut gesendet) gilt nicht mehr.
         """
         invitation = SessionInvitation.find_by_token(
             token, SessionInvitation.objects.select_related("tenant", "invited_by__user")
@@ -740,7 +745,7 @@ class InvitationAcceptView(View):
         if lock:
             if invitation.invited_by_id:
                 inviter = (
-                    SessionUser.objects.select_for_update(of=("self",))
+                    SessionUser.objects.select_for_update(of=("self",), no_key=True)
                     .select_related("user")
                     .filter(pk=invitation.invited_by_id)
                     .first()
@@ -748,9 +753,11 @@ class InvitationAcceptView(View):
                 if inviter is None:
                     return None
                 invitation.invited_by = inviter
-            offen = SessionInvitation.objects.select_for_update().filter(pk=invitation.pk, accepted_at__isnull=True)
-            if offen.first() is None:
-                # Inzwischen angenommen oder mit der Deaktivierung zurückgezogen
+            offen = SessionInvitation.find_by_token(
+                token, SessionInvitation.objects.select_for_update().filter(accepted_at__isnull=True)
+            )
+            if offen is None or offen.pk != invitation.pk:
+                # Inzwischen angenommen, mit der Deaktivierung zurückgezogen oder mit neuem Link erneut gesendet
                 return None
         # Eine Einladung gilt nur, solange der Zugang der einladenden Person besteht: Mit deren Deaktivierung enden
         # auch die Rollen, die sie weitergegeben hat. Einladungen der Mandanteneinrichtung haben keine einladende

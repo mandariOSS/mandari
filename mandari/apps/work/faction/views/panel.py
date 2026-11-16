@@ -30,7 +30,9 @@ from ..regeln import (
     ABSTIMMUNGEN_AUS,
     GENEHMIGUNG_NUR_IN_SITZUNG,
     NOE_AUS,
+    PROTOKOLL_GENEHMIGT,
     GenehmigungNurInSitzungError,
+    ProtokollGenehmigtError,
     abstimmung_erfassbar,
 )
 from ..sitzungsarten import sitzung_oder_404
@@ -458,6 +460,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         except GenehmigungNurInSitzungError:
             # Die Sitzung wurde seit der Prüfung oben abgesagt
             return HttpResponse(GENEHMIGUNG_NUR_IN_SITZUNG, status=400)
+        except ProtokollGenehmigtError:
+            # Das Protokoll wurde seit der Prüfung oben genehmigt
+            return HttpResponse(PROTOKOLL_GENEHMIGT, status=400)
 
         return self._panel_response(request, meeting, item, "Abstimmung erfasst")
 
@@ -470,7 +475,6 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
 
         from .. import services as faction_services
-        from ..regeln import PROTOKOLL_GENEHMIGT, ProtokollGenehmigtError
 
         try:
             faction_services.clear_decision(item)

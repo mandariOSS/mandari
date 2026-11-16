@@ -32,7 +32,13 @@ from hub.ris import selectors as ris
 from .. import sitzung
 from ..models import FactionAgendaItem, FactionDecision, FactionMeeting
 from ..quorum import quorum_der_sitzung
-from ..regeln import ABSTIMMUNGEN_AUS, GENEHMIGUNG_NUR_IN_SITZUNG, GenehmigungNurInSitzungError
+from ..regeln import (
+    ABSTIMMUNGEN_AUS,
+    GENEHMIGUNG_NUR_IN_SITZUNG,
+    PROTOKOLL_GENEHMIGT,
+    GenehmigungNurInSitzungError,
+    ProtokollGenehmigtError,
+)
 from ..sitzungsarten import darf_sehen
 from ..visibility import can_view_internal, is_item_internal
 from ._helpers import offene_vorschlaege
@@ -426,6 +432,9 @@ class FactionSessionActionView(_SitzungsView):
         except GenehmigungNurInSitzungError:
             # Genehmigungs-TOP, und die Sitzung läuft (noch oder schon) nicht: feste Meldung wie im Panel
             return HttpResponse(GENEHMIGUNG_NUR_IN_SITZUNG, status=400)
+        except ProtokollGenehmigtError:
+            # Das Protokoll wurde seit der Prüfung oben genehmigt
+            return HttpResponse(PROTOKOLL_GENEHMIGT, status=400)
         item.refresh_from_db()
         kontext = self._top_basis(meeting, item) | {"oob_zeile": True}
         return _mit_meldung(self._render(request, UNTEN, kontext), "Beschluss erfasst")
