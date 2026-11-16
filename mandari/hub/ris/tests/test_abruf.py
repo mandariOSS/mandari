@@ -8,6 +8,10 @@ Ohne Netz: Die Quelle bildet ein ``httpx.MockTransport`` nach, die robots.txt de
 
 from __future__ import annotations
 
+import gzip
+import hashlib
+import io
+import tracemalloc
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import timedelta
@@ -307,9 +311,190 @@ def test_liegen_gebliebene_beanspruchungen_werden_freigegeben() -> None:
 
     assert abruf.release_stale() == 2
 
-    assert OParlFile.objects.get(pk=neu.pk).local_status == "none"
-    assert OParlFile.objects.get(pk=wieder.pk).local_status == "retry"
+    # Sofort wieder fällig, und der Abbruch zählt als Versuch
+    for datei, versuche in ((neu, 1), (wieder, 3)):
+        datei.refresh_from_db()
+        assert (datei.local_status, datei.fetch_attempts) == ("retry", versuche)
+        assert datei.fetch_next_at is not None and datei.fetch_next_at <= timezone.now()
     assert OParlFile.objects.get(pk=laeuft.pk).local_status == "fetching"
+
+
+def test_wiederholt_abgebrochener_abruf_ruht_und_haelt_den_lauf_nicht_mehr_auf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Beendet eine Datei den Lauf immer wieder (Absturz mitten im Abruf), bleibt ihre Beanspruchung liegen. Jede
+    Freigabe zählt; nach so vielen Abbrüchen wie Wiederholungen ruht die Datei, und die nächste kommt dran.
+    """
+    body = _quelle()
+    stoerer, harmlos = _datei(body), _datei(body)
+    vorbei = timezone.now() - timedelta(minutes=1)
+
+    for abbruch in range(1, len(abruf.BACKOFF) + 1):
+        OParlFile.objects.filter(pk=stoerer.pk).update(local_status="fetching", fetch_next_at=vorbei)
+        assert abruf.release_stale() == 1
+        stoerer.refresh_from_db()
+        assert (stoerer.local_status, stoerer.fetch_attempts) == ("retry", abbruch)
+        assert stoerer.pk in set(abruf.pending_queryset().values_list("pk", flat=True))
+
+    OParlFile.objects.filter(pk=stoerer.pk).update(local_status="fetching", fetch_next_at=vorbei)
+    assert abruf.release_stale() == 1
+    stoerer.refresh_from_db()
+    assert (stoerer.local_status, stoerer.fetch_error) == ("error", abruf.CODE_ABORTED)
+    assert stoerer.fetch_next_at is not None and stoerer.fetch_next_at > timezone.now() + timedelta(days=6)
+
+    client, abrufe = _quelle_antwortet(_pdf)
+    monkeypatch.setattr(abruf, "fetch_client", lambda: client)
+    assert abruf.nachladen(limit=10, sleep=0)["ok"] == 1
+    assert abrufe == [harmlos.download_url]
+
+
+# =============================================================================
+# Kodierte Antworten und nicht auswertbare Adressen
+# =============================================================================
+
+
+class _Strom(httpx.SyncByteStream):
+    """Antwortrumpf, der erst beim Lesen entsteht (wie aus dem Netz); ``content=`` läse httpx sofort ganz."""
+
+    def __init__(self, *teile: bytes) -> None:
+        self._teile = teile
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield from self._teile
+
+
+def _kodiert(kodierung: str, rumpf: bytes) -> Callable[[httpx.Request], httpx.Response]:
+    kopf = {"content-type": "application/pdf", "content-encoding": kodierung}
+    return lambda _request: httpx.Response(200, headers=kopf, stream=_Strom(rumpf))
+
+
+def test_gepackte_datei_wird_begrenzt_entpackt_und_richtig_abgelegt() -> None:
+    """Eine Lage gzip: Abgelegt und gehasht wird der entpackte Inhalt, auch über viele Stücke hinweg."""
+    inhalt = b"%PDF-1.4 " + bytes(range(256)) * 20_000  # rund 5 MiB, mehrere Stücke von 1 MiB
+    datei = _datei(_quelle())
+    client, abrufe = _quelle_antwortet(_kodiert("gzip", gzip.compress(inhalt)))
+
+    assert abruf.abrufen(datei, client=client) == "ok"
+
+    datei.refresh_from_db()
+    abgelegt = Path(datei.local_path or "").read_bytes()
+    assert len(abgelegt) == len(inhalt) and hashlib.sha256(abgelegt).digest() == hashlib.sha256(inhalt).digest()
+    assert len(abrufe) == 1
+
+
+def test_groessengrenze_gilt_fuer_den_entpackten_strom(settings: Any) -> None:
+    """Wenige Kilobyte, die entpackt weit über der Grenze liegen: ``too_large``, ohne dass der Inhalt entsteht."""
+    settings.FILE_CACHE_MAX_MB = 1
+    megabyte = 1024 * 1024
+    datei = _datei(_quelle())
+    client, _ = _quelle_antwortet(_kodiert("gzip", gzip.compress(bytes(64 * megabyte))))
+
+    tracemalloc.start()
+    try:
+        ergebnis = abruf.abrufen(datei, client=client)
+        _, spitze = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert ergebnis == "too_large"
+    assert spitze < 8 * megabyte, spitze
+
+
+@pytest.mark.parametrize("kodierung", ["gzip, gzip", "br", "zstd"])
+def test_mehrfach_oder_anders_kodierte_antwort_ist_ein_fehlschlag_der_datei(kodierung: str) -> None:
+    datei = _datei(_quelle())
+    client, _ = _quelle_antwortet(_kodiert(kodierung, gzip.compress(gzip.compress(PDF))))
+
+    assert abruf.abrufen(datei, client=client) == "retry"
+
+    datei.refresh_from_db()
+    assert (datei.fetch_error, datei.local_error, datei.fetch_attempts) == ("verbindung", "DecodingError", 1)
+
+
+def test_abruf_fordert_nur_kodierungen_an_die_er_begrenzt_entpackt() -> None:
+    gesehen: list[httpx.Request] = []
+
+    def antwort(request: httpx.Request) -> httpx.Response:
+        gesehen.append(request)
+        return _pdf(request)
+
+    client, _ = _quelle_antwortet(antwort)
+    body = _quelle(sync_config={"download_headers": {"accept-encoding": "br, zstd", "X-Test": "1"}})
+
+    assert abruf.abrufen(_datei(body), client=client) == "ok"
+    assert gesehen[0].headers["Accept-Encoding"] == "gzip, deflate"
+
+
+ADRESSEN_NICHT_AUSWERTBAR = [
+    "http://[bad/x.pdf",
+    "https://ris.example.org:abc/x.pdf",
+    "https://ris.exa\x07mple.org/x.pdf",
+    "https://ris.example.org/dokumente/x\x07.pdf",
+]
+
+
+def _datei_mit_adresse(body: OParlBody, adresse: str, **felder: Any) -> OParlFile:
+    """Datei, deren Adresse die Quelle so gemeldet hat (der Ingestor speichert sie ungeprüft)."""
+    datei = _datei(body, **felder)
+    OParlFile.objects.filter(pk=datei.pk).update(download_url=adresse)
+    datei.refresh_from_db()
+    return datei
+
+
+@pytest.mark.parametrize("adresse", ADRESSEN_NICHT_AUSWERTBAR)
+def test_nicht_auswertbare_adresse_ist_ein_fehlschlag_der_datei(adresse: str) -> None:
+    """Die Adresse stammt aus der Quelle. Lässt sie sich nicht auswerten, endet nur der Abruf dieser Datei."""
+    assert not abruf.adresse_gueltig(adresse)
+    datei = _datei_mit_adresse(_quelle(), adresse)
+    client, abrufe = _quelle_antwortet(_pdf)
+
+    assert abruf.abrufen(datei, client=client) == "error"
+
+    datei.refresh_from_db()
+    assert (datei.fetch_error, datei.fetch_attempts) == (abruf.CODE_BAD_URL, 1)
+    assert datei.fetch_next_at is not None and datei.fetch_next_at > timezone.now() + timedelta(days=6)
+    assert abrufe == []
+    # Als Netzfehler, damit auch Stichprobe und Abgleich sie als Fehlschlag der Datei behandeln
+    with pytest.raises(httpx.HTTPError):
+        abruf.head(client, adresse)
+    with pytest.raises(httpx.HTTPError):
+        abruf.stream(client, adresse, io.BytesIO())
+    assert abruf.code_for_exception(abruf.BadUrlError("x")) == abruf.CODE_BAD_URL
+
+
+def test_lauf_geht_nach_einer_nicht_auswertbaren_adresse_und_einem_unerwarteten_fehler_weiter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Eine Datei beendet den Lauf nicht für alle dahinter, weder mit ihrer Adresse noch mit einer Ausnahme."""
+    body = _quelle()
+    morgen = timezone.now() + timedelta(days=1)
+    # Mit einem Datum in der Zukunft stehen sie vorn in der Auswahl
+    for adresse in ADRESSEN_NICHT_AUSWERTBAR:
+        _datei_mit_adresse(body, adresse, file_date=morgen)
+    kaputt = _datei(body, file_date=morgen)
+    harmlos = _datei(body)
+    client, abrufe = _quelle_antwortet(_pdf)
+    monkeypatch.setattr(abruf, "fetch_client", lambda: client)
+    echt = abruf._abrufen_beansprucht
+
+    def beansprucht(file_obj: Any, *args: Any, **kwargs: Any) -> str:
+        if file_obj.pk == kaputt.pk:
+            raise ValueError("unerwartet")
+        return echt(file_obj, *args, **kwargs)
+
+    monkeypatch.setattr(abruf, "_abrufen_beansprucht", beansprucht)
+
+    ergebnis = abruf.nachladen(limit=10, sleep=0)
+
+    assert (ergebnis["error"], ergebnis[abruf.UNEXPECTED], ergebnis["ok"]) == (4, 1, 1), ergebnis
+    assert abrufe == [harmlos.download_url]
+    assert OParlFile.objects.get(pk=harmlos.pk).local_status == "ok"
+    # Die unerwartet gescheiterte Datei ist nicht mehr beansprucht
+    assert OParlFile.objects.get(pk=kaputt.pk).local_status == "none"
+    assert set(OParlFile.objects.filter(fetch_error=abruf.CODE_BAD_URL).values_list("local_status", flat=True)) == {
+        "error"
+    }
 
 
 # =============================================================================

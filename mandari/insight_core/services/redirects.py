@@ -128,6 +128,62 @@ def _bounded_reads(response: httpx.Response, deadline: float | None) -> Iterator
             del stream.read
 
 
+def _decoder(response: httpx.Response) -> Any:
+    """
+    Entpacker für die Kodierung der Antwort: gzip oder deflate (``ACCEPT_ENCODING``), ohne Kodierung ``None``.
+
+    Andere und mehrfach kodierte Antworten weisen wir ab (``httpx.DecodingError``): Jede weitere Lage vervielfacht,
+    was aus wenigen Bytes werden kann.
+    """
+    encodings = [
+        teil.strip().lower()
+        for teil in response.headers.get("content-encoding", "").split(",")
+        if teil.strip() and teil.strip().lower() != "identity"
+    ]
+    if len(encodings) > 1:
+        raise httpx.DecodingError("Mehrfach kodierte Antwort", request=response.request)
+    if not encodings:
+        return None
+    if encodings[0] in ("gzip", "x-gzip"):
+        return zlib.decompressobj(16 + zlib.MAX_WBITS)
+    if encodings[0] == "deflate":
+        return zlib.decompressobj()
+    raise httpx.DecodingError(f"Kodierung {encodings[0]} wird nicht gelesen", request=response.request)
+
+
+def iter_decoded(response: httpx.Response, max_chunk: int = 1024 * 1024) -> Iterator[bytes]:
+    """
+    Rumpf einer gestreamten Antwort Stück für Stück, entpackt wie bei :func:`read_limited`.
+
+    Für Inhalte, die nicht in den Speicher sollen (Dateien): Jedes Stück ist entpackt höchstens ``max_chunk`` Bytes
+    groß. Der Aufrufer zählt die Stücke und bricht an seiner Größengrenze ab; mehr als ein Stück liegt nie entpackt
+    im Speicher. Mit ``iter_bytes`` entpackte ``httpx`` dagegen jedes empfangene Stück ganz, auch mehrere Lagen,
+    bevor ein Aufrufer die Größe sieht.
+    """
+    if response.is_stream_consumed:
+        # Der Rumpf liegt schon im Speicher (Ersatz-Transport im Test): Es gibt nichts mehr zu begrenzen
+        yield response.content
+        return
+    decoder = _decoder(response)
+    for raw in response.iter_raw():
+        if decoder is None:
+            yield raw
+            continue
+        pending = raw
+        while True:
+            try:
+                chunk = decoder.decompress(pending, max_chunk)
+            except zlib.error as exc:
+                raise httpx.DecodingError(str(exc), request=response.request) from None
+            pending = decoder.unconsumed_tail
+            if chunk:
+                yield chunk
+            # Ein volles Stück kann Ausgabe zurückgelassen haben, auch wenn die Eingabe verbraucht ist: weiter
+            # entpacken, bis ein Stück nicht mehr voll wird
+            if not pending and len(chunk) < max_chunk:
+                break
+
+
 def read_limited(
     response: httpx.Response, max_bytes: int, *, truncate: bool = False, deadline: float | None = None
 ) -> bytes:
@@ -159,21 +215,7 @@ def _read_limited(
                 raise ResponseTooLargeError("Antwort zu groß")
             return ready[:max_bytes]
         return ready
-    encodings = [
-        teil.strip().lower()
-        for teil in response.headers.get("content-encoding", "").split(",")
-        if teil.strip() and teil.strip().lower() != "identity"
-    ]
-    if len(encodings) > 1:
-        raise httpx.DecodingError("Mehrfach kodierte Antwort", request=response.request)
-    decoder: Any = None
-    if encodings:
-        if encodings[0] in ("gzip", "x-gzip"):
-            decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
-        elif encodings[0] == "deflate":
-            decoder = zlib.decompressobj()
-        else:
-            raise httpx.DecodingError(f"Kodierung {encodings[0]} wird nicht gelesen", request=response.request)
+    decoder = _decoder(response)
     parts: list[bytes] = []
     size = 0
     # Ohne Stückgröße: Mit einer festen Größe sammelte httpx so lange, bis sie erreicht ist, und die Frist unten
