@@ -18,9 +18,17 @@ import httpx
 import pytest
 from mandari_oparl.robots import KIND_API, MAX_BYTES, RobotsTxt
 
-from src.client.robots import ENTRY_COST_BYTES, RULE_COST_BYTES, RobotsGate
+from src.client.robots import (
+    AGENT_COST_BYTES,
+    ENTRY_COST_BYTES,
+    GROUP_COST_BYTES,
+    RULE_COST_BYTES,
+    RobotsGate,
+)
 
 UA = "x/1"
+#: Die eine Gruppe „User-agent: *“ der Beispieldateien
+GRUPPE = GROUP_COST_BYTES + AGENT_COST_BYTES + 2 * len("*")
 
 
 def _server(inhalte: dict[str, str], gesehen: list[str]) -> httpx.MockTransport:
@@ -40,7 +48,7 @@ async def _pruefen(gate: RobotsGate, client: httpx.AsyncClient, host: str, pfad:
 
 
 async def test_mehr_hostnamen_als_das_budget_verdraengen_die_aeltesten(echte_robots: None) -> None:
-    je_eintrag = ENTRY_COST_BYTES + 100 * (RULE_COST_BYTES + 2 * len("/000000xxxxxxxxxx"))
+    je_eintrag = ENTRY_COST_BYTES + GRUPPE + 100 * (RULE_COST_BYTES + 2 * len("/000000xxxxxxxxxx"))
     gate = RobotsGate(budget=10 * je_eintrag)
     gesehen: list[str] = []
     hosts = [f"h{nummer}.example.de" for nummer in range(50)]
@@ -65,7 +73,7 @@ async def test_mehr_hostnamen_als_das_budget_verdraengen_die_aeltesten(echte_rob
 
 
 async def test_gebrauchte_eintraege_bleiben_vor_ungebrauchten(echte_robots: None) -> None:
-    gate = RobotsGate(budget=3 * (ENTRY_COST_BYTES + RULE_COST_BYTES + 2 * len("/intern")))
+    gate = RobotsGate(budget=3 * (ENTRY_COST_BYTES + GRUPPE + RULE_COST_BYTES + 2 * len("/intern")))
     gesehen: list[str] = []
 
     async with httpx.AsyncClient(transport=_server({}, gesehen)) as client:
@@ -81,7 +89,7 @@ async def test_gebrauchte_eintraege_bleiben_vor_ungebrauchten(echte_robots: None
 async def test_wenige_sehr_lange_regeln_zaehlen_mit_ihrer_laenge(echte_robots: None) -> None:
     # Zehn Regeln von je 40.000 Zeichen: nach der Zahl der Regeln fast nichts, nach dem Speicher viel
     lang = _regeln(10, laenge=40_000)
-    je_eintrag = ENTRY_COST_BYTES + 10 * (RULE_COST_BYTES + 2 * 40_007)
+    je_eintrag = ENTRY_COST_BYTES + GRUPPE + 10 * (RULE_COST_BYTES + 2 * 40_007)
     gate = RobotsGate(budget=2 * je_eintrag)
     hosts = [f"lang{nummer}.example.de" for nummer in range(6)]
 
@@ -93,6 +101,25 @@ async def test_wenige_sehr_lange_regeln_zaehlen_mit_ihrer_laenge(echte_robots: N
     assert len(gate._entries) == 2
     musterlaenge = sum(len(r.pattern) for e in gate._entries.values() for _, regeln in e.robots.groups for r in regeln)
     assert musterlaenge == 2 * 10 * 40_007
+
+
+async def test_gruppen_ohne_regeln_zaehlen_mit(echte_robots: None) -> None:
+    # Tausende Gruppen mit leerem „Allow:“: keine einzige Regel, aber Speicher für jede Gruppe und ihren Namen
+    gruppen = "".join(f"User-agent: a{nummer}\nAllow:\n" for nummer in range(2000))
+    je_eintrag = ENTRY_COST_BYTES + sum(
+        GROUP_COST_BYTES + AGENT_COST_BYTES + 2 * len(f"a{nummer}") for nummer in range(2000)
+    )
+    gate = RobotsGate(budget=2 * je_eintrag)
+    hosts = [f"gruppen{nummer}.example.de" for nummer in range(6)]
+
+    async with httpx.AsyncClient(transport=_server(dict.fromkeys(hosts, gruppen), [])) as client:
+        for host in hosts:
+            assert await _pruefen(gate, client, host)
+            assert gate._cost <= gate._budget
+
+    assert len(gate._entries) == 2
+    assert all(eintrag.cost == je_eintrag for eintrag in gate._entries.values())
+    assert not any(regeln for e in gate._entries.values() for _, regeln in e.robots.groups)
 
 
 async def test_einzelner_eintrag_ueber_dem_budget_bleibt_bis_zum_naechsten(echte_robots: None) -> None:

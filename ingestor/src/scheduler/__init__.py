@@ -95,6 +95,9 @@ _EARLIEST = datetime.min.replace(tzinfo=UTC)
 #: So lange wartet eine Quelle nach einem abgebrochenen Lauf höchstens darauf, dass der Pool leer ist; danach
 #: startet sie auch neben anderen Läufen
 SUSPECT_MAX_WAIT = timedelta(minutes=30)
+#: So lange wartet ein abgebrochener Lauf höchstens darauf, dass sein Ende gespeichert ist. Kürzer als die Frist,
+#: die ``docker stop`` dem Prozess lässt (10 s)
+CANCEL_SAVE_SECONDS = 5.0
 #: Fehlertexte an der Quelle (Betriebsmonitor), ohne Fehlerklasse: Es gilt die gewöhnliche Schonung
 DEADLINE_ERROR = "Gesamtfrist des Laufs überschritten"
 ABORTED_RUN_ERROR = "Lauf nicht beendet: Der Daemon endete erneut mitten im Lauf dieser Quelle"
@@ -672,14 +675,19 @@ class SyncScheduler:
         started = self._clock()
         state = self._state_of(source)
         state = replace(state, run_started=started, full_attempted=started if full else state.full_attempted)
-        await self._save_state(source, state)
         key = str(source.id)
         try:
+            # Im geschützten Teil: Kommt der Abbruch während dieses Speicherns, kann der Beginn schon in der
+            # Datenbank stehen, und der Abbruch unten nimmt ihn wieder heraus
+            await self._save_state(source, state)
             await self._sync_and_record(source, full, triggered_by, started, state)
         except asyncio.CancelledError:
             # Geordnetes Ende (Daemon stoppt, Quelle abgeschaltet): kein abgebrochener Lauf. Das Speichern läuft zu
-            # Ende, auch wenn der Abbruch noch einmal kommt
-            await asyncio.shield(self._save_state(source, replace(self._current.get(key, state), run_started=None)))
+            # Ende, auch wenn der Abbruch noch einmal kommt, hält das Ende des Daemons aber nur begrenzt auf: Hängt
+            # die Datenbank, ordnet der nächste Start den Lauf zu (``_recover_aborted``)
+            ended = replace(self._current.get(key, state), run_started=None)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(self._save_state(source, ended)), CANCEL_SAVE_SECONDS)
             raise
         except Exception:
             # Fehler neben dem Abgleich (Zustand, Protokoll, Ausgabe): Ohne neuen Zeitpunkt bliebe die Quelle fällig

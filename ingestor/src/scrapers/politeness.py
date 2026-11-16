@@ -225,8 +225,9 @@ class PoliteFetcher:
                 await asyncio.sleep(2.0 * (attempt + 1))
                 continue
             # 4xx (außer 404/410): nicht wiederholen
-            console.print(f"[yellow]Scraper: HTTP {response.status_code} für {url}[/yellow]")
+            console.print(f"[yellow]Scraper: HTTP {response.status_code} für {escape(url)}[/yellow]")
             return None
 
-        console.print(f"[red]Scraper: Abruf fehlgeschlagen ({last_error}): {url}[/red]")
+        # Fehlertext und Adresse stammen vom fremden Server (etwa ein Kopfzeilenwert): nie als Markup auswerten
+        console.print(f"[red]Scraper: Abruf fehlgeschlagen ({escape(str(last_error))}): {escape(url)}[/red]")
         return None

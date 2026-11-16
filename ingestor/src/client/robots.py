@@ -63,16 +63,29 @@ CACHE_BUDGET_BYTES = 64 * 1024 * 1024
 #: Geschätzter Speicher eines Eintrags ohne Regeln und einer Regel ohne ihr Muster (Objekt, Teilstücke)
 ENTRY_COST_BYTES = 1024
 RULE_COST_BYTES = 512
+#: Geschätzter Speicher einer Gruppe ohne Regeln (Menge der Namen, Tupel) und eines Namens ohne seine Zeichen. Auch
+#: eine Gruppe ohne jede Regel („User-agent: x“ und ein leeres „Allow:“) belegt Speicher: Aus ``MAX_BYTES`` solcher
+#: Zeilen werden Zehntausende Gruppen
+GROUP_COST_BYTES = 512
+AGENT_COST_BYTES = 64
 #: Ab dieser Größe wird eine robots.txt in einem eigenen Thread ausgewertet: Eine große Datei hielte sonst alle
 #: Abgleiche des Prozesses an, solange sie ausgewertet wird
 PARSE_IN_THREAD_BYTES = 16 * 1024
 
 
 def _rules_cost(robots: RobotsTxt | None) -> int:
-    """Geschätzter Speicher der Regeln einer ausgewerteten robots.txt: je Regel ein Sockel und ihr Muster."""
+    """
+    Geschätzter Speicher einer ausgewerteten robots.txt: je Gruppe ein Sockel und ihre Namen, je Regel ein Sockel
+    und ihr Muster.
+    """
     if robots is None:
         return 0
-    return sum(RULE_COST_BYTES + 2 * len(rule.pattern) for _agents, rules in robots.groups for rule in rules)
+    return sum(
+        GROUP_COST_BYTES
+        + sum(AGENT_COST_BYTES + 2 * len(agent) for agent in agents)
+        + sum(RULE_COST_BYTES + 2 * len(rule.pattern) for rule in rules)
+        for agents, rules in robots.groups
+    )
 
 
 @dataclass

@@ -3018,6 +3018,36 @@ class DatabaseStorage:
             await session.commit()
             return None if attempts is None else int(attempts)
 
+    async def release_cancelled_extractions(self, file_ids: list[UUID], *, undo_attempt: bool) -> int:
+        """
+        Dateien eines abgebrochenen Durchgangs der Texterkennung zurückstellen (Gesamtfrist des Laufs, Daemon stoppt,
+        Quelle abgeschaltet): wieder ``pending``, aber nur, was noch ``processing`` ist. Fertige und gescheiterte
+        Dateien behalten ihr Ergebnis.
+
+        ``undo_attempt=True`` für Dateien, deren Bearbeitung begonnen hatte (``mark_extraction_started``): Der
+        Abbruch sagt nichts über die Datei, der begonnene Versuch zählt nicht; frühere Abbrüche bleiben gezählt.
+        Ohne das Zurückstellen blieben die Dateien liegen, bis ``release_stale_extractions`` sie nach
+        ``TEXT_EXTRACTION_STALE_MINUTES`` freigibt, und jeder Abbruch zählte als Versuch der Datei.
+        Rückgabe: Zahl der zurückgestellten Dateien.
+        """
+        if not file_ids:
+            return 0
+        values: dict[str, Any] = {
+            "text_extraction_status": "pending",
+            "text_extraction_started_at": None,
+            "updated_at": func.now(),
+        }
+        if undo_attempt:
+            values["text_extraction_attempts"] = func.greatest(OParlFile.text_extraction_attempts - 1, 0)
+        async with self.get_session() as session:
+            result = await session.execute(
+                update(OParlFile)
+                .where(OParlFile.id.in_(file_ids), OParlFile.text_extraction_status == "processing")
+                .values(**values)
+            )
+            await session.commit()
+            return int(getattr(result, "rowcount", 0) or 0)
+
     async def update_file_text(
         self,
         file_id: UUID,

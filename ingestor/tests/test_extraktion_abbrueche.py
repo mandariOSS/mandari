@@ -46,6 +46,8 @@ class _Speicher:
         self.ablauf: list[str] = []
         self.aufloesungen: list[dict[str, Any]] = []
         self.updates: list[dict[str, Any]] = []
+        # Nach einem Abbruch zurückgestellt: (Dateien, begonnener Versuch zählt nicht)
+        self.freigaben: list[tuple[list[Any], bool]] = []
         # Je Beanspruchen: (höchstens, retried, beansprucht)
         self.anfragen: list[tuple[int, bool | None, list[str]]] = []
 
@@ -72,6 +74,10 @@ class _Speicher:
 
     async def update_file_text(self, **werte: Any) -> None:
         self.updates.append(werte)
+
+    async def release_cancelled_extractions(self, file_ids: list[Any], *, undo_attempt: bool) -> int:
+        self.freigaben.append((list(file_ids), undo_attempt))
+        return len(file_ids)
 
 
 def _datei(name: str, versuche: int = 0) -> SimpleNamespace:
@@ -117,6 +123,30 @@ async def test_datei_nicht_mehr_in_bearbeitung_wird_nicht_geladen(monkeypatch: p
     monkeypatch.setattr(extractor, "_download_to_file", kein_download)
     assert await extractor._process_file(_datei("a")) is False
     assert speicher.updates == []
+
+
+async def test_abgebrochener_durchgang_stellt_seine_dateien_zurueck(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Endet der Durchgang vorzeitig (Gesamtfrist des Laufs, Daemon stoppt), bleibt keine Datei in Bearbeitung."""
+    speicher = _Speicher()
+    extractor = TextExtractor(speicher)
+    extractor.concurrency = 1
+    laedt = asyncio.Event()
+
+    async def download(*_args: Any) -> DownloadedFile:
+        laedt.set()
+        await asyncio.sleep(3600)
+        raise AssertionError("der Durchgang wird vorher abgebrochen")
+
+    monkeypatch.setattr(extractor, "_download_to_file", download)
+    durchgang = asyncio.create_task(extractor._process_claimed([_datei("a"), _datei("b")]))
+    await laedt.wait()
+    durchgang.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await durchgang
+
+    # „a“ hatte begonnen: Der gezählte Versuch entfällt. „b“ wartete noch auf seinen Platz
+    assert speicher.freigaben == [(["a"], True), (["b"], False)]
+    assert speicher.updates == [] and extractor._begun == set()
 
 
 async def test_dateien_nach_abbruch_laufen_zuletzt_und_einzeln(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -330,6 +360,30 @@ async def test_zaehler_beim_start_und_zuruecksetzen_beim_ende(speicher: tuple[Da
     assert (status, versuche, beginn) == ("completed", 0, None)
     # Erledigte Dateien nimmt niemand mehr in Bearbeitung
     assert await storage.mark_extraction_started(datei) is None
+
+
+@pytest.mark.integration
+async def test_abgebrochene_bearbeitung_geht_zurueck_in_die_warteschlange(
+    speicher: tuple[DatabaseStorage, uuid.UUID],
+) -> None:
+    """Nur was noch in Bearbeitung steht, wird zurückgestellt; der begonnene Versuch zählt dann nicht."""
+    storage, body_id = speicher
+    begonnen = await _datei_anlegen(storage, body_id, 1, text_extraction_attempts=1)
+    wartend = await _datei_anlegen(storage, body_id, 2)
+    fertig = await _datei_anlegen(storage, body_id, 3)
+    await storage.get_pending_files(body_id=body_id)
+    assert await storage.mark_extraction_started(begonnen) == 2
+    assert await storage.mark_extraction_started(fertig) == 1
+    await storage.update_file_text(fertig, text_content="Beschluss", method="pypdf", status="completed")
+
+    assert await storage.release_cancelled_extractions([begonnen, fertig], undo_attempt=True) == 1
+    assert await storage.release_cancelled_extractions([wartend], undo_attempt=False) == 1
+    assert await storage.release_cancelled_extractions([], undo_attempt=True) == 0
+
+    # Der frühere Abbruch von „begonnen“ bleibt gezählt, die fertige Datei behält ihr Ergebnis
+    assert (await _zeile(storage, begonnen))[:3] == ("pending", 1, None)
+    assert (await _zeile(storage, wartend))[:3] == ("pending", 0, None)
+    assert (await _zeile(storage, fertig))[:2] == ("completed", 0)
 
 
 @pytest.mark.integration
