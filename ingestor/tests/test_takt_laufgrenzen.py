@@ -5,7 +5,8 @@ Kein Lauf hält seinen Platz auf Dauer, und kein Lauf bleibt ohne Folge.
 - Gesamtfrist je Lauf: Danach endet er, zählt als Fehlversuch der Quelle und gibt seinen Platz zurück.
 - Quellen eines Servers belegen höchstens den halben Pool; der Lauf einer abgeschalteten Quelle endet.
 - Der Beginn jedes Laufs steht im Zustand. Endete der Daemon mitten im Lauf, laufen die Beteiligten danach zuletzt
-  und einzeln; endet ein Einzellauf wieder mit dem Daemon, zählt das als Fehlversuch dieser Quelle.
+  und nie zwei zugleich; endet der Daemon wieder mitten in einem solchen Lauf, zählt das als Fehlversuch dieser
+  Quelle. Andere Quellen hält das nie auf.
 - Namen fremder Quellen werden nie als Markup ausgewertet, und keine Ausgabe beendet einen Lauf oder den Daemon.
 
 Mit fester Uhr, ohne Datenbank und ohne Netz; die Nachbildungen stammen aus ``test_scheduler_takt``.
@@ -247,7 +248,7 @@ async def test_beginn_steht_vor_dem_lauf_und_entfaellt_mit_seinem_ende(uhr: Uhr)
     assert (stand(a).run_started, stand(a).suspect) == (None, False)
 
 
-async def test_nach_hartem_ende_laufen_die_beteiligten_zuletzt_und_einzeln(uhr: Uhr) -> None:
+async def test_nach_hartem_ende_laufen_die_beteiligten_zuletzt_und_nie_zwei_zugleich(uhr: Uhr) -> None:
     a, b, c = quelle("A"), quelle("B"), quelle("C", sync_config=zustand(uhr.jetzt + timedelta(minutes=5)))
     scheduler, orchestrator, speicher = daemon(uhr, [a, b, c])
     orchestrator.festhalten("A")
@@ -264,29 +265,32 @@ async def test_nach_hartem_ende_laufen_die_beteiligten_zuletzt_und_einzeln(uhr: 
     assert (stand(a).suspect, stand(b).suspect, stand(a).run_started) == (True, True, None)
     assert speicher.fehlversuche == []
 
-    # Der Pool ist leer und nichts anderes fällig: eine der beiden läuft, allein
-    sperre = orchestrator.festhalten("A")
+    # Der Pool ist leer und nichts anderes fällig: eine der beiden läuft, die andere wartet
+    orchestrator.festhalten("A")
     orchestrator.festhalten("B")
     await durchlauf(scheduler)
-    einzeln = scheduler.get_status()["running"]
-    assert len(einzeln) == 1 and einzeln[0] in "AB"
+    erste = scheduler.get_status()["running"]
+    assert len(erste) == 1 and erste[0] in "AB"
+    # C wird wieder fällig und läuft daneben: Andere Quellen hält die beteiligte nicht auf
     uhr.weiter(minutes=15)
     await durchlauf(scheduler)
-    assert scheduler.get_status()["running"] == einzeln, "solange sie läuft, startet nichts daneben, auch C nicht"
+    assert orchestrator.laeufe.count(("C", False)) == 2
+    assert scheduler.get_status()["running"] == erste, "die zweite beteiligte Quelle startet nicht neben der ersten"
 
-    # Ihr Lauf endet gewöhnlich: Der Verdacht entfällt, die anderen sind wieder an der Reihe
-    for name in "AB":
-        orchestrator.sperren[name].set()
-    sperre.set()
+    # Ihr Lauf endet gewöhnlich: Der Verdacht entfällt, die zweite ist an der Reihe
+    zuerst, danach = (a, b) if erste == ["A"] else (b, a)
+    orchestrator.sperren[zuerst.name].set()
     await durchlauf(scheduler)
-    beendet = a if einzeln == ["A"] else b
-    assert (stand(beendet).suspect, stand(beendet).run_started) == (False, None)
+    assert (stand(zuerst).suspect, stand(zuerst).run_started) == (False, None)
     await durchlauf(scheduler)
-    assert ("C", False) in orchestrator.laeufe[1:]
+    assert scheduler.get_status()["running"] == [danach.name]
+    orchestrator.sperren[danach.name].set()
+    await durchlauf(scheduler)
+    assert not stand(danach).suspect
     assert speicher.fehlversuche == []
 
 
-async def test_einzellauf_der_wieder_mit_dem_daemon_endet_fuehrt_zur_schonung(uhr: Uhr) -> None:
+async def test_lauf_der_wieder_mit_dem_daemon_endet_fuehrt_zur_schonung(uhr: Uhr) -> None:
     feind, andere = quelle("Feind"), quelle("Andere")
     speicher: SpeicherMitFehlversuchen | None = None
     laeufe_der_anderen = 0
@@ -304,10 +308,10 @@ async def test_einzellauf_der_wieder_mit_dem_daemon_endet_fuehrt_zur_schonung(uh
         orchestrator.aenderungen["Andere"] = 1  # mit Änderungen bleibt ihr Takt bei zehn Minuten
         await durchlauf(scheduler)
         laeufe_der_anderen += orchestrator.laeufe.count(("Andere", False))
-        assert len(speicher.fehlversuche) == neustart - 1, "gezählt wird erst das Ende eines Einzellaufs"
+        assert len(speicher.fehlversuche) == neustart - 1, "gezählt wird erst das zweite Ende mitten im Lauf"
         await durchlauf(scheduler)
         if neustart <= BACKOFF_AFTER_FAILURES:
-            assert scheduler.get_status()["running"] == ["Feind"], "allein, nach der anderen Quelle"
+            assert scheduler.get_status()["running"] == ["Feind"], "erst nach der anderen Quelle"
             await hart_beenden(scheduler, [feind])
         else:
             assert scheduler.get_status()["running"] == [], "in Schonung startet die Quelle nicht mehr"
@@ -334,11 +338,12 @@ async def test_geordnetes_ende_zaehlt_nicht_als_abbruch(uhr: Uhr) -> None:
     assert speicher.fehlversuche == []
 
 
-async def test_wartet_eine_beteiligte_quelle_zu_lange_startet_nichts_neues(uhr: Uhr) -> None:
+async def test_wird_der_pool_nicht_leer_startet_die_beteiligte_quelle_nach_der_wartezeit(uhr: Uhr) -> None:
     beteiligt = quelle("Beteiligt", sync_config=zustand(uhr.jetzt, suspect=True))
     lang, kurz = quelle("Lang"), quelle("Kurz")
     scheduler, orchestrator, _ = daemon(uhr, [beteiligt, lang, kurz])
     sperre = orchestrator.festhalten("Lang")
+    orchestrator.aenderungen["Kurz"] = 1  # mit Änderungen bleibt ihr Takt bei zehn Minuten
 
     await durchlauf(scheduler)
     assert orchestrator.laeufe.count(("Kurz", False)) == 1
@@ -346,16 +351,17 @@ async def test_wartet_eine_beteiligte_quelle_zu_lange_startet_nichts_neues(uhr: 
 
     uhr.weiter(minutes=11)
     await durchlauf(scheduler)
-    assert orchestrator.laeufe.count(("Kurz", False)) == 2, "innerhalb der Wartezeit laufen die anderen weiter"
+    assert orchestrator.laeufe.count(("Kurz", False)) == 2, "die anderen laufen in ihrem Takt weiter"
+    assert ("Beteiligt", False) not in orchestrator.laeufe
 
     uhr.jetzt += SUSPECT_MAX_WAIT
     await durchlauf(scheduler)
-    assert orchestrator.laeufe.count(("Kurz", False)) == 2, "jetzt startet nichts Neues mehr"
+    assert ("Beteiligt", False) in orchestrator.laeufe, "nach der Wartezeit auch neben dem langen Lauf"
+    assert orchestrator.laeufe.count(("Kurz", False)) == 3, "und ohne die anderen aufzuhalten"
+    assert scheduler.get_status()["running"] == ["Lang"]
+    assert not stand(beteiligt).suspect
     sperre.set()
     await durchlauf(scheduler)
-    await durchlauf(scheduler)
-    assert ("Beteiligt", False) in orchestrator.laeufe
-    assert not stand(beteiligt).suspect
 
 
 # --- Fremde Namen in der Ausgabe ---------------------------------------------------------------------------

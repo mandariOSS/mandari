@@ -33,8 +33,8 @@ Kein Lauf hält seinen Platz auf Dauer, und kein Lauf bleibt ohne Folge:
   eines Sammelservers belegen den Pool nicht allein.
 - Wird eine Quelle abgeschaltet, endet ihr laufender Abgleich mit dem nächsten Durchlauf.
 - Der Beginn jedes Laufs steht in ``sync_state`` (``run_started``). Findet der Daemon ihn beim Start noch vor, endete
-  der Prozess mitten im Lauf, etwa am Speicherlimit. Solche Quellen laufen danach zuletzt und einzeln; endet ein
-  Einzellauf wieder mit dem Prozess, zählt das als Fehlversuch dieser Quelle, und die Schonung greift
+  der Prozess mitten im Lauf, etwa am Speicherlimit. Solche Quellen laufen danach zuletzt und nie zwei zugleich;
+  endet der Prozess wieder mitten in ihrem Lauf, zählt das als Fehlversuch dieser Quelle, und die Schonung greift
   (``_recover_aborted``). Ein geordnetes Ende (SIGTERM, ``docker stop``) zählt nicht.
 """
 
@@ -92,12 +92,12 @@ ALL_SOURCES = "*"
 #: Wartezeit vor einem neuen Versuch, wenn der Empfang der Auslöser (Redis) scheitert
 TRIGGER_RETRY_SECONDS = 60
 _EARLIEST = datetime.min.replace(tzinfo=UTC)
-#: So lange wartet eine Quelle nach einem abgebrochenen Lauf höchstens darauf, dass der Pool von selbst leer wird;
-#: danach starten keine anderen Quellen mehr, bis sie allein gelaufen ist
+#: So lange wartet eine Quelle nach einem abgebrochenen Lauf höchstens darauf, dass der Pool leer ist; danach
+#: startet sie auch neben anderen Läufen
 SUSPECT_MAX_WAIT = timedelta(minutes=30)
 #: Fehlertexte an der Quelle (Betriebsmonitor), ohne Fehlerklasse: Es gilt die gewöhnliche Schonung
 DEADLINE_ERROR = "Gesamtfrist des Laufs überschritten"
-ABORTED_RUN_ERROR = "Lauf nicht beendet: Der Daemon endete während des Einzellaufs dieser Quelle erneut"
+ABORTED_RUN_ERROR = "Lauf nicht beendet: Der Daemon endete erneut mitten im Lauf dieser Quelle"
 
 
 def _deadline_seconds(minutes: int) -> float | None:
@@ -210,8 +210,8 @@ class SyncScheduler:
         self._full_running: set[str] = set()
         #: Abgebrochene Läufe des vorigen Prozesses sind zugeordnet (einmal je Start, ``_recover_aborted``)
         self._recovered = False
-        #: Quelle, die nach einem abgebrochenen Lauf gerade allein läuft
-        self._solo: str | None = None
+        #: Quelle aus einem abgebrochenen Lauf, die gerade läuft (höchstens eine zugleich)
+        self._suspect_running: str | None = None
         #: Seit wann eine solche Quelle fällig ist und auf einen leeren Pool wartet
         self._suspect_since: dict[str, datetime] = {}
         #: Zuletzt gespeicherter Zustand der laufenden Quellen: Ein Lauf, der vorzeitig endet, schreibt ihn fort
@@ -429,7 +429,8 @@ class SyncScheduler:
         dann). Ebenso eine Quelle außerhalb ihres Abruffensters (``sync_window``, Issue #1186).
 
         Je Server starten höchstens ``host_slots`` Quellen zugleich. Quellen aus einem abgebrochenen Lauf starten
-        zuletzt und einzeln (``_without_suspects``). Der Lauf einer inzwischen abgeschalteten Quelle wird beendet.
+        zuletzt und nie zwei zugleich (``_suspects_last``). Der Lauf einer inzwischen abgeschalteten Quelle wird
+        beendet.
         """
         now = now or self._clock()
         if not self._recovered:
@@ -487,7 +488,7 @@ class SyncScheduler:
             want_full = full_due or (trigger is not None and trigger.full)
             candidates.append(_Candidate(source, state, want_full, incremental_due, trigger))
 
-        candidates = self._without_suspects(candidates, now)
+        candidates = self._suspects_last(candidates, now)
         free_full = max(0, self.full_slots - len(self._full_running))
         granted = {c.key for c in sorted((c for c in candidates if c.want_full), key=_Candidate.full_rank)[:free_full]}
         # Auslöser zuerst, dann die Vollabgleiche mit Platz, dann nach Fälligkeit
@@ -516,38 +517,39 @@ class SyncScheduler:
             if full:
                 self._full_running.add(key)
             if candidate.state.suspect:
-                self._solo = key
+                self._suspect_running = key
             started.append(task)
         metrics.set_active_syncs(len(self._tasks))
         await self._heartbeat(now)
         return started
 
-    def _without_suspects(self, candidates: list[_Candidate], now: datetime) -> list[_Candidate]:
+    def _suspects_last(self, candidates: list[_Candidate], now: datetime) -> list[_Candidate]:
         """
-        Fällige Quellen dieses Durchlaufs ohne die aus einem abgebrochenen Lauf (``SyncState.suspect``), solange
-        andere fällig sind oder laufen.
+        Fällige Quellen dieses Durchlaufs; die aus einem abgebrochenen Lauf (``SyncState.suspect``) nur, wenn sie an
+        der Reihe sind.
 
         Endete der Daemon mitten in mehreren Läufen, ist offen, welche Quelle der Auslöser war. Die Beteiligten
-        laufen deshalb zuletzt und einzeln: Erst wenn nichts anderes fällig ist und der Pool leer ist, startet eine
-        von ihnen, und solange sie läuft, startet nichts daneben. Endet der Prozess dabei wieder, steht die Ursache
-        fest. Die übrigen Quellen sind bis dahin gelaufen und kommen bei jedem Neustart wieder zuerst an die Reihe.
-        Wartet eine solche Quelle länger als ``SUSPECT_MAX_WAIT`` auf einen leeren Pool, starten keine anderen mehr,
-        bis sie an der Reihe war.
+        starten deshalb zuletzt: erst wenn nichts anderes fällig und der Pool leer ist, und nie zwei von ihnen
+        zugleich. Die übrigen Quellen sind bis dahin gelaufen und kommen bei jedem Neustart wieder zuerst an die
+        Reihe. Endet der Prozess wieder mitten im Lauf einer solchen Quelle, zählt das als ihr Fehlversuch.
+
+        Andere Quellen hält das nie auf: Sie starten wie sonst, auch während eine solche Quelle läuft. Wird der Pool
+        nicht leer (lange Vollabgleiche), startet die Quelle nach ``SUSPECT_MAX_WAIT`` neben den anderen.
         """
         suspects = sorted((c for c in candidates if c.state.suspect), key=_Candidate.due_rank)
         waiting = {c.key for c in suspects}
         self._suspect_since = {key: since for key, since in self._suspect_since.items() if key in waiting}
         for candidate in suspects:
             self._suspect_since.setdefault(candidate.key, now)
-        if self._solo is not None:
-            return []
-        overdue = any(now - since >= SUSPECT_MAX_WAIT for since in self._suspect_since.values())
         regular = [c for c in candidates if not c.state.suspect]
-        if regular and not overdue:
+        if not suspects or self._suspect_running is not None:
             return regular
-        if suspects and not self._tasks:
-            return suspects[:1]
-        return []
+        first = suspects[0]
+        if not regular and not self._tasks:
+            return [first]
+        if now - self._suspect_since[first.key] >= SUSPECT_MAX_WAIT:
+            return [*regular, first]
+        return regular
 
     async def _recover_aborted(self, sources: list[Any]) -> None:
         """
@@ -555,10 +557,10 @@ class SyncScheduler:
 
         Der Zustand eines Laufs entsteht erst an seinem Ende. Endet der Prozess vorher hart (Speicherlimit), blieb
         die Quelle bisher unverändert fällig, ohne Fehlversuch und ohne Schonung, und war bei jedem Neustart wieder
-        unter den ersten. Jetzt gilt: Wer in einem abgebrochenen Lauf steckte, läuft als Nächstes zuletzt und einzeln
-        (``suspect``), noch ohne Fehlversuch, denn andere Quellen liefen mit. Endet auch der Einzellauf mit dem
-        Prozess, zählt das als Fehlversuch dieser Quelle; nach den üblichen drei greift die Schonung, und der
-        Betriebsmonitor nennt Quelle und Grund.
+        unter den ersten. Jetzt gilt: Wer in einem abgebrochenen Lauf steckte, läuft als Nächstes zuletzt
+        (``suspect``, ``_suspects_last``), noch ohne Fehlversuch, denn andere Quellen liefen mit. Endet der Prozess
+        auch mitten in diesem Lauf, zählt das als Fehlversuch dieser Quelle; nach den üblichen drei greift die
+        Schonung, und der Betriebsmonitor nennt Quelle und Grund.
         """
         for source in sources:
             state = self._state_of(source)
@@ -567,11 +569,11 @@ class SyncScheduler:
             name = escape(source.name)
             if state.suspect:
                 await self._record_failure(source, ABORTED_RUN_ERROR)
-                console.print(f"[red]Quelle {name}: Einzellauf endete erneut mit dem Daemon, Fehlversuch gezählt[/red]")
+                console.print(f"[red]Quelle {name}: Lauf endete erneut mit dem Daemon, Fehlversuch gezählt[/red]")
             else:
                 console.print(
                     f"[yellow]Quelle {name}: Lauf vom {state.run_started:%d.%m. %H:%M} UTC nicht beendet, "
-                    "nächster Lauf einzeln[/yellow]"
+                    "nächster Lauf nach den übrigen Quellen[/yellow]"
                 )
             await self._save_state(source, replace(state, run_started=None, suspect=True))
 
@@ -652,8 +654,8 @@ class SyncScheduler:
             self._task_hosts.pop(key, None)
             self._current.pop(key, None)
             self._full_running.discard(key)
-            if self._solo == key:
-                self._solo = None
+            if self._suspect_running == key:
+                self._suspect_running = None
             metrics.set_active_syncs(len(self._tasks))
             self._maybe_clear_caches()
             self._event().set()

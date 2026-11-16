@@ -261,8 +261,8 @@ class SyncState:
     #: Beginn eines Laufs, der noch nicht beendet ist. Steht er beim Start des Daemons noch da, endete der Prozess
     #: mitten im Lauf (etwa am Speicherlimit), ohne dass ein Fehlversuch gezählt werden konnte
     run_started: datetime | None = None
-    #: Die Quelle lief, als der Daemon hart endete; ob sie der Auslöser war, ist offen. Sie läuft bis zu ihrem
-    #: nächsten beendeten Lauf zuletzt und einzeln (``SyncScheduler._recover_aborted``)
+    #: Die Quelle lief, als der Daemon hart endete; ob sie der Auslöser war, ist offen. Bis zu ihrem nächsten
+    #: beendeten Lauf startet sie zuletzt (``SyncScheduler._recover_aborted``)
     suspect: bool = False
 
     @classmethod
