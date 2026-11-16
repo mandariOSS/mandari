@@ -20,6 +20,7 @@ bewusst nicht als Fehler.
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -27,6 +28,7 @@ from django.utils import timezone
 from playwright.sync_api import expect
 
 from apps.work.faction.models import FactionAgendaItem, FactionMeeting
+from apps.work.meetings.services import save_meeting_notes
 from apps.work.motions.models import Motion
 from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlSource
 from tests_e2e.conftest import ADMIN_PASSWORD as PASSWORD
@@ -141,3 +143,59 @@ class TestSeitenkomponenten:
             arg=item_ids[1],
         )
         problems.assert_clean("Sitzungsvorbereitung")
+
+    def test_sitzungsnotizen_klappen_ganz_auf(
+        self, page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems
+    ) -> None:
+        """
+        Bisherige Ansicht am Handy: Das Notizfeld maß seine Höhe im zugeklappten Zustand (0) und blieb nach dem
+        Aufklappen ein Strich, bis jemand tippte. Leer zeigt es drei Zeilen, mit Text den ganzen Text.
+        """
+        source = OParlSource.objects.create(name="E2E-RIS", url="https://ris.example.org/system")
+        body = OParlBody.objects.create(external_id="https://ris.example.org/body/1", source=source, name="Stadt E2E")
+        admin.organization.body = body
+        admin.organization.save(update_fields=["body"])
+        leer, gefuellt = (
+            OParlMeeting.objects.create(external_id=f"https://ris.example.org/meeting/{nr}", body=body, name=name)
+            for nr, name in ((1, "Ausschuss ohne Notizen"), (2, "Ausschuss mit Notizen"))
+        )
+        for nr, meeting in enumerate((leer, gefuellt), start=1):
+            OParlAgendaItem.objects.create(
+                external_id=f"https://ris.example.org/agenda/{nr}",
+                meeting=meeting,
+                number="1",
+                name="Haushalt",
+                order=1,
+            )
+        save_meeting_notes(
+            admin.organization, gefuellt, admin, "\n".join(f"Absprache {nr} zur Sitzung" for nr in range(1, 9))
+        )
+        page.set_viewport_size({"width": 360, "height": 740})
+        login(admin.user.email, PASSWORD)
+        feld = page.locator("textarea[x-model='orgNotes']")
+        # So viele Zeilen hoch und nichts abgeschnitten (zwei Pixel Rahmen zählt scrollHeight nicht mit)
+        ganz_zu_sehen = (
+            "([el, zeilen]) => el.getBoundingClientRect().height >= zeilen * parseFloat(getComputedStyle(el).lineHeight)"
+            " && el.scrollHeight <= el.clientHeight + 2"
+        )
+
+        goto(f"/work/{admin.organization.slug}/meetings/{leer.id}/prepare/")
+        wait_for_component(page, "preparationApp")
+        expect(feld).to_be_hidden()
+        page.get_by_role("button", name="Sitzungsnotizen").click()
+        expect(feld).to_be_visible()
+        page.wait_for_function(ganz_zu_sehen, arg=[feld.element_handle(), 3], timeout=5000)
+
+        goto(f"/work/{admin.organization.slug}/meetings/{gefuellt.id}/prepare/")
+        wait_for_component(page, "preparationApp")
+        page.get_by_role("button", name="Sitzungsnotizen").click()
+        expect(feld).to_be_visible()
+        expect(feld).to_have_value(re.compile("Absprache 8"))
+        page.wait_for_function(ganz_zu_sehen, arg=[feld.element_handle(), 8], timeout=5000)
+        # Zu- und wieder aufgeklappt bleibt die Höhe
+        page.get_by_role("button", name="Sitzungsnotizen").click()
+        expect(feld).to_be_hidden()
+        page.get_by_role("button", name="Sitzungsnotizen").click()
+        expect(feld).to_be_visible()
+        page.wait_for_function(ganz_zu_sehen, arg=[feld.element_handle(), 8], timeout=5000)
+        problems.assert_clean("Sitzungsnotizen der bisherigen Vorbereitung")
