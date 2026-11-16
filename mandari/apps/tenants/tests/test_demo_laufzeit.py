@@ -111,6 +111,30 @@ def test_annahme_als_schon_bestehendes_mitglied_startet_die_laufzeit(
     assert demo_org.demo_endet_am is not None
 
 
+def test_zweite_annahme_ueberschreibt_das_ende_nicht(demo_org: Organization) -> None:
+    """Zwei vorab geladene Instanzen (gleichzeitige Annahmen): Das zuerst gesetzte Ende bleibt."""
+    erste = Organization.objects.get(pk=demo_org.pk)
+    zweite = Organization.objects.get(pk=demo_org.pk)
+    jetzt = timezone.now()
+
+    assert demo.laufzeit_starten(erste, jetzt) is True
+    assert demo.laufzeit_starten(zweite, jetzt + 3 * TAG) is False
+
+    demo_org.refresh_from_db()
+    assert demo_org.demo_endet_am == jetzt + 14 * TAG
+    assert zweite.demo_endet_am is None
+
+
+def test_geleerte_laufzeit_ist_keine_demo(demo_org: Organization, mitglied: Membership) -> None:
+    abgelaufen(demo_org)
+    demo_org.demo_laufzeit_tage = None
+    demo_org.save(update_fields=["demo_laufzeit_tage"])
+
+    assert demo.ist_abgelaufen(demo_org) is False
+    assert demo.abgelaufene_sperren() == []
+    assert demo.abgelaufene_demo_fuer(mitglied.user) is None
+
+
 def test_ohne_laufzeit_keine_demo(org: Organization) -> None:
     assert demo.laufzeit_starten(org) is False
     org.refresh_from_db()
@@ -180,7 +204,7 @@ def test_falsches_passwort_verraet_keine_demo(demo_org: Organization, mitglied: 
     assert "Demozeit" not in antwort.content.decode()
 
 
-@pytest.mark.parametrize("zugang", ["andere_organisation", "staff", "offene_einladung", "weiterer_zugang"])
+@pytest.mark.parametrize("zugang", ["andere_organisation", "auslauf", "staff", "offene_einladung", "weiterer_zugang"])
 def test_anmeldung_bleibt_mit_weiterem_zugang(
     zugang: str, demo_org: Organization, mitglied: Membership, org: Organization, make_member: Any, monkeypatch: Any
 ) -> None:
@@ -189,6 +213,15 @@ def test_anmeldung_bleibt_mit_weiterem_zugang(
     if zugang == "andere_organisation":
         rolle = fabrik.RoleFactory(organization=org, permissions=["dashboard.view"])
         fabrik.MembershipFactory(user=person, organization=org, roles=[rolle])
+    elif zugang == "auslauf":
+        rolle = fabrik.RoleFactory(organization=org, permissions=["dashboard.view"])
+        fabrik.MembershipFactory(
+            user=person,
+            organization=org,
+            roles=[rolle],
+            is_active=False,
+            deletion_scheduled_at=timezone.now() + 30 * TAG,
+        )
     elif zugang == "staff":
         person.is_staff = True
         person.save(update_fields=["is_staff"])

@@ -42,15 +42,29 @@ def weiteren_zugang_melden(pruefung: Callable[[Any], bool]) -> None:
 
 
 def abgelaufen_q(jetzt: datetime | None = None, *, prefix: str = "") -> Q:
-    """Bedingung „Demo abgelaufen“ für Organisationen (``prefix`` z. B. ``"organization__"``)."""
+    """
+    Bedingung „Demo abgelaufen“ für Organisationen (``prefix`` z. B. ``"organization__"``). Ohne Laufzeit ist eine
+    Organisation keine Demo, auch wenn noch ein Enddatum gespeichert ist (Laufzeit im Admin geleert).
+    """
     jetzt = jetzt or timezone.now()
-    return Q(**{f"{prefix}demo_endet_am__lte": jetzt, f"{prefix}provisioning_ref__isnull": True})
+    return Q(
+        **{
+            f"{prefix}demo_endet_am__lte": jetzt,
+            f"{prefix}demo_laufzeit_tage__isnull": False,
+            f"{prefix}provisioning_ref__isnull": True,
+        }
+    )
 
 
 def ist_abgelaufen(organization: Organization, jetzt: datetime | None = None) -> bool:
     """True, wenn die Demo-Zeit der Organisation vorbei ist."""
     ende = organization.demo_endet_am
-    return organization.provisioning_ref is None and ende is not None and ende <= (jetzt or timezone.now())
+    return (
+        organization.provisioning_ref is None
+        and organization.demo_laufzeit_tage is not None
+        and ende is not None
+        and ende <= (jetzt or timezone.now())
+    )
 
 
 def laufzeit_starten(organization: Organization, jetzt: datetime | None = None) -> bool:
@@ -61,8 +75,18 @@ def laufzeit_starten(organization: Organization, jetzt: datetime | None = None) 
     tage = organization.demo_laufzeit_tage
     if not tage or organization.demo_endet_am is not None or organization.provisioning_ref is not None:
         return False
-    organization.demo_endet_am = (jetzt or timezone.now()) + timedelta(days=tage)
-    Organization.objects.filter(pk=organization.pk).update(demo_endet_am=organization.demo_endet_am)
+    ende = (jetzt or timezone.now()) + timedelta(days=tage)
+    # Bedingungen im UPDATE: Eine zweite Annahme mit einer vorher geladenen Organisation überschreibt weder ein
+    # schon gesetztes Ende noch eine Verlängerung
+    gesetzt = Organization.objects.filter(
+        pk=organization.pk,
+        demo_endet_am__isnull=True,
+        demo_laufzeit_tage__isnull=False,
+        provisioning_ref__isnull=True,
+    ).update(demo_endet_am=ende)
+    if not gesetzt:
+        return False
+    organization.demo_endet_am = ende
     logger.info("Demo %s läuft bis %s", organization.slug, organization.demo_endet_am.isoformat())
     return True
 
@@ -72,7 +96,8 @@ def abgelaufene_demo_fuer(user: Any, jetzt: datetime | None = None) -> Organizat
     Die abgelaufene Demo, wenn das Konto außer ihr keinen Zugang mehr hat, sonst None.
 
     Zugang behalten: Plattform-Administration, aktive Mitgliedschaften in einer aktiven Organisation, die keine
-    abgelaufene Demo ist, und Zugänge anderer Module (:func:`weiteren_zugang_melden`, z. B. Session).
+    abgelaufene Demo ist, eine Mitgliedschaft im Auslauf (Datenexport), offene Einladungen und Zugänge anderer
+    Module (:func:`weiteren_zugang_melden`, z. B. Session).
     """
     if not getattr(user, "is_authenticated", False) or user.is_staff or user.is_superuser:
         return None
@@ -87,7 +112,11 @@ def abgelaufene_demo_fuer(user: Any, jetzt: datetime | None = None) -> Organizat
     if demo is None:
         return None
     andere = mitgliedschaften.filter(organization__is_active=True).exclude(abgelaufen_q(jetzt, prefix="organization__"))
-    if andere.exists() or any(pruefung(user) for pruefung in _weitere_zugaenge):
+    # Mitgliedschaft im Auslauf „Nur Lesen“ (Issue #1237): Die Auslauf-Seite mit dem eigenen Datenexport bleibt
+    auslauf = Membership.objects.filter(
+        user=user, is_active=False, is_guest=False, deletion_scheduled_at__isnull=False, organization__is_active=True
+    ).exclude(abgelaufen_q(jetzt, prefix="organization__"))
+    if andere.exists() or auslauf.exists() or any(pruefung(user) for pruefung in _weitere_zugaenge):
         return None
     # Eine offene Einladung in eine andere Organisation braucht die Anmeldung, um sie anzunehmen
     einladungen = UserInvitation.objects.filter(
