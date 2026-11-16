@@ -142,7 +142,10 @@ class PersonDataExportView(SessionViewMixin, View):
         person = get_object_or_404(SessionPerson, pk=person_id, tenant=self.session_tenant)
 
         include_bank = SessionPermissionChecker(self.session_user).has_permission("manage_allowances")
-        data = privacy_service.subject_access_export(self.session_tenant, person, include_bank=include_bank)
+        # Mit den Rechten der abrufenden Person: Ohne NÖ-Recht nennt die Auskunft keine nichtöffentlichen Titel
+        data = privacy_service.subject_access_export(
+            self.session_tenant, person, include_bank=include_bank, permissions=self.session_permissions
+        )
 
         audit.log_event(
             "download",

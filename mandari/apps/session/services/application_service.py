@@ -130,6 +130,21 @@ def convert_to_paper(
 
     # Drehscheibe (Issue #534): ris.paper.created mit der Einreichung, Anhänge nichtöffentlich an der Vorlage
     with transaction.atomic(), hub_events.track(tenant) as tracked:
+        # Antrag sperren und frisch lesen, dann erneut prüfen: Zwei gleichzeitige Umwandlungen legen sonst zwei
+        # Vorlagen an, und eine Ablehnung nach dem Laden würde zu „In Vorlage umgewandelt“ überschrieben
+        application.refresh_from_db(
+            from_queryset=SessionApplication.objects.select_for_update(of=("self",)).select_related("tenant")
+        )
+        existing = (
+            SessionPaper.objects.filter(tenant=tenant, source_application=application)
+            .order_by("created_at", "pk")
+            .first()
+        )
+        if existing is not None:
+            return existing, False
+        blocker = conversion_blocker(application)
+        if blocker:
+            raise ConversionError(blocker)
         paper = SessionPaper.objects.create(
             tenant=tenant,
             name=(name or "").strip()[:500] or application.title,

@@ -200,6 +200,9 @@ def withdraw(protocol: SessionProtocol) -> bool:
     Öffentliche Fassung zurücknehmen: Datei löschen (Tombstone, sofortige Rücknahme aus dem
     Bürgerportal über die Signale in ``oparl_publication``).
 
+    Der Verweis kommt aus ``protocol``: Wer zurücknimmt, hält die Sperre aus ``protocol_service.lock_protocol``
+    und hat die Niederschrift darunter frisch gelesen.
+
     Returns:
         True, wenn es eine öffentliche Fassung gab.
     """
@@ -232,6 +235,7 @@ def publish(
     Nicht veröffentlichte Niederschriften und nichtöffentliche Sitzungen haben keine öffentliche
     Fassung – eine vorhandene wird zurückgenommen. Ist der Text unverändert, bleibt die Datei.
     ``text`` und ``pdf`` übergibt, wer sie schon vor dem ersten Schreiben erzeugt hat (kurze Transaktion).
+    Wie bei :func:`withdraw` hält der Aufrufer die Sperre der Niederschrift und hat sie darunter frisch gelesen.
 
     Returns:
         Die aktuelle öffentliche Datei oder None.
@@ -322,28 +326,49 @@ def refresh_meeting(meeting_id: Any) -> None:
         _refresh(protocol)
 
 
+def _build_pdf(protocol: SessionProtocol) -> bytes | None:
+    try:
+        return protocol_service.build_protocol_pdf(protocol, internal=False)
+    except Exception:
+        logger.exception("Öffentliche Fassung der Niederschrift %s konnte nicht erzeugt werden", protocol.pk)
+        return None
+
+
+def _unchanged(current: SessionFile | None, text: str | None) -> bool:
+    return current is not None and text is not None and bool(current.is_public) and current.text_content == text
+
+
 def _refresh(protocol: SessionProtocol) -> None:
     text = public_text(protocol) if is_publishable(protocol) else None
-    current = _current_file(protocol)
-    unchanged = current is not None and text is not None and current.is_public and current.text_content == text
-    if unchanged:
+    if _unchanged(_current_file(protocol), text):
         return
     # Das PDF entsteht vor dem ersten Schreiben: Die Transaktion (mit den Ereignissen) bleibt kurz und hält den
     # Sequenzierer nicht für die Dauer der Erzeugung auf
-    pdf = None
-    if text is not None:
+    pdf = _build_pdf(protocol) if text is not None else None
+    with transaction.atomic():
+        # Unter der Sperre von Sitzung und Niederschrift gilt nur der gespeicherte Stand: Status, Dateiverweis und
+        # Text werden frisch gelesen. Eine überlappende Erneuerung, Veröffentlichung oder Rücknahme hat sonst mit
+        # einem alten Verweis gearbeitet (ihre Datei blieb ohne Verweis öffentlich stehen) oder einen Text
+        # geschrieben, aus dem ein TOP inzwischen herausgenommen war.
+        protocol_service.lock_protocol(protocol)
+        locked_text = public_text(protocol) if is_publishable(protocol) else None
+        current = _current_file(protocol)
+        if _unchanged(current, locked_text):
+            return
+        if locked_text != text:
+            # Während der Erzeugung geändert: Text und PDF aus dem Stand unter der Sperre
+            text = locked_text
+            pdf = _build_pdf(protocol) if text is not None else None
+        if current is not None:
+            withdraw(protocol)
+        if text is None or pdf is None:
+            return
         try:
-            pdf = protocol_service.build_protocol_pdf(protocol, internal=False)
+            # Eigener Sicherungspunkt: Scheitert die neue Fassung, bleibt die Rücknahme der alten bestehen
+            with transaction.atomic():
+                publish(protocol, text=text, pdf=pdf)
         except Exception:
-            logger.exception("Öffentliche Fassung der Niederschrift %s konnte nicht erzeugt werden", protocol.pk)
-    if current is not None:
-        withdraw(protocol)
-    if text is None or pdf is None:
-        return
-    try:
-        publish(protocol, text=text, pdf=pdf)
-    except Exception:
-        logger.exception("Öffentliche Fassung der Niederschrift %s konnte nicht erneuert werden", protocol.pk)
+            logger.exception("Öffentliche Fassung der Niederschrift %s konnte nicht erneuert werden", protocol.pk)
 
 
 def schedule_refresh(meeting_id: Any) -> None:

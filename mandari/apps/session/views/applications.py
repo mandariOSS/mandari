@@ -6,6 +6,7 @@ Provides views for the Session RIS administration interface.
 """
 
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -136,6 +137,16 @@ class ApplicationProcessView(SessionViewMixin, UpdateView):
     def get_template_names(self):
         # Neues Erscheinungsbild je Mandant (Issue #944), auch für die Fehleransicht nach POST
         return ["session/neu/antrag_bearbeiten.html"] if neues_design(self.session_tenant) else [self.template_name]
+
+    def get_queryset(self):
+        # Beim Speichern die Zeile sperren (Transaktion aus ``post``): Die Statusregel gilt für den gespeicherten
+        # Stand, nicht für einen, den eine gleichzeitige Umwandlung gerade überholt
+        queryset = super().get_queryset()
+        return queryset.select_for_update(of=("self",)) if self.request.method == "POST" else queryset
+
+    def post(self, request, *args, **kwargs):
+        with transaction.atomic():
+            return super().post(request, *args, **kwargs)
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)

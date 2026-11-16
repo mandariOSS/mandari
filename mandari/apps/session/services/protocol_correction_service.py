@@ -441,13 +441,18 @@ def _apply(correction: SessionProtocolCorrection) -> None:
         protocol_lock.permit(protocol.meeting_id),
         hub_events.track(protocol.meeting.tenant) as tracked,
     ):
+        # Sperren in derselben Reihenfolge wie Bearbeiten und Workflow der Niederschrift (erst die Sitzung, dann
+        # die eigene Zeile): sonst blockieren sich Berichtigung und Veröffentlichung gegenseitig
+        from apps.session.services import cockpit_service
+
+        cockpit_service.lock_meeting(protocol.meeting_id)
         tracked.agenda(protocol.meeting)
         source: Model
         if correction.target == Correction.TARGET_ITEM:
             if correction.agenda_item_id is None:
                 raise CorrectionError("Der Tagesordnungspunkt existiert nicht mehr.")
             item = (
-                SessionAgendaItem.objects.select_for_update()
+                SessionAgendaItem.objects.select_for_update(of=("self",))
                 .select_related("meeting__tenant")
                 .get(pk=correction.agenda_item_id)
             )
@@ -455,7 +460,11 @@ def _apply(correction: SessionProtocolCorrection) -> None:
             specs = {spec.name: spec for spec in ITEM_FIELDS}
         else:
             item = None
-            source = SessionProtocol.objects.select_for_update().select_related("meeting__tenant").get(pk=protocol.pk)
+            source = (
+                SessionProtocol.objects.select_for_update(of=("self",))
+                .select_related("meeting__tenant")
+                .get(pk=protocol.pk)
+            )
             specs = {spec.name: spec for spec in (*GENERAL_FIELDS, *GENERAL_NP_FIELDS)}
         for name, value in old.items():
             if name not in specs or _read(source, specs[name]) != value:
@@ -572,15 +581,16 @@ def internal_rows(
     """
     Berichtigungen für die interne Ansicht der Niederschrift.
 
-    Ohne NÖ-Recht erscheinen nur Berichtigungen des öffentlichen Teils; mit NÖ-Recht wird der
-    Grund nichtöffentlicher Berichtigungen entschlüsselt (Lesezugriff protokolliert die View).
+    Ohne NÖ-Recht erscheinen nur Berichtigungen des öffentlichen Teils, deren Gegenstand auch heute öffentlich ist
+    (:func:`currently_public`); mit NÖ-Recht wird der Grund nichtöffentlicher Berichtigungen entschlüsselt
+    (Lesezugriff protokolliert die View).
     """
     rows: list[dict[str, Any]] = []
-    corrections = protocol.corrections.select_related("agenda_item", "requested_by__user", "decided_by__user").order_by(
-        "requested_at"
-    )
+    corrections = protocol.corrections.select_related(
+        "agenda_item__parent", "requested_by__user", "decided_by__user"
+    ).order_by("requested_at")
     for correction in corrections:
-        if not correction.is_public and not can_view_np:
+        if not can_view_np and not currently_public(correction, protocol):
             continue
         decision = None
         if actor is not None and correction.status == Correction.STATUS_PENDING:
@@ -595,6 +605,25 @@ def internal_rows(
             }
         )
     return rows
+
+
+def currently_public(correction: SessionProtocolCorrection, protocol: SessionProtocol) -> bool:
+    """
+    Gehört die Berichtigung auch heute zum öffentlichen Teil?
+
+    ``is_public`` hält die Sichtbarkeit zum Zeitpunkt des Antrags fest. Wird der TOP oder die Sitzung später
+    nichtöffentlich, blendet die Tagesordnung den TOP ohne NÖ-Recht aus; Grund und geänderte Werte seiner
+    Berichtigungen folgen dem, wie in der öffentlichen Fassung (``protocol_service.correction_notes``).
+    """
+    if not correction.is_public or not protocol.meeting.is_public:
+        return False
+    if correction.target != Correction.TARGET_ITEM:
+        return True
+    item = correction.agenda_item
+    if item is None or not item.is_public:
+        return False
+    # Unterpunkt eines nichtöffentlichen TOP: mit dem Oberpunkt ausgeblendet
+    return item.parent is None or bool(item.parent.is_public)
 
 
 def _change_lines(correction: SessionProtocolCorrection) -> list[str]:

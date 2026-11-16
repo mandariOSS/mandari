@@ -181,3 +181,57 @@ class TestNummernImPortal:
             agenda_service.renumber_agenda(welt["sitzung"])
         spiegel.refresh_from_db()
         assert spiegel.number == "1"  # keine Lücke „2“ nach dem Wegfall von TOP 1
+
+
+class TestSitzungsort:
+    """Der Spiegel führt den Ort als Text an der Sitzung: Er verschwindet mit dem Ort, nicht erst beim Abgleich."""
+
+    @staticmethod
+    def _mit_ort(welt: dict[str, Any]) -> None:
+        sitzung = welt["sitzung"]
+        sitzung.location = "Rathaus"
+        sitzung.room = "Saal 1"
+        sitzung.save()
+        gespiegelt = welt["m"]
+        gespiegelt.location_name = "Rathaus, Saal 1"
+        gespiegelt.location_address = "Markt 1, 12345 Nordstadt"
+        gespiegelt.raw_json = {"name": "Sitzung HA", "location": {"description": "Rathaus", "streetAddress": "Markt 1"}}
+        gespiegelt.save()
+
+    def test_nur_termin_nimmt_den_ort_sofort_zurueck(
+        self, welt: dict[str, Any], django_capture_on_commit_callbacks: Any
+    ) -> None:
+        self._mit_ort(welt)
+        with django_capture_on_commit_callbacks(execute=True):
+            welt["sitzung"].is_public = False
+            welt["sitzung"].date_public = True
+            welt["sitzung"].save()
+
+        welt["m"].refresh_from_db()
+        assert welt["m"].deleted is False, "der Termin bleibt sichtbar"
+        assert (welt["m"].location_name, welt["m"].location_address) == (None, None)
+        assert welt["m"].raw_json == {"name": "Sitzung HA"}
+        seite = Client().get(f"/insight/termine/{welt['m'].id}/").content.decode()
+        assert "Rathaus" not in seite and "Markt 1" not in seite
+
+    def test_entfernter_ort_verschwindet_bei_oeffentlicher_sitzung(
+        self, welt: dict[str, Any], django_capture_on_commit_callbacks: Any
+    ) -> None:
+        self._mit_ort(welt)
+        with django_capture_on_commit_callbacks(execute=True):
+            welt["sitzung"].location = ""
+            welt["sitzung"].room = ""
+            welt["sitzung"].save()
+
+        welt["m"].refresh_from_db()
+        assert welt["m"].deleted is False
+        assert (welt["m"].location_name, welt["m"].location_address) == (None, None)
+
+    def test_ort_bleibt_ohne_aenderung(self, welt: dict[str, Any], django_capture_on_commit_callbacks: Any) -> None:
+        self._mit_ort(welt)
+        with django_capture_on_commit_callbacks(execute=True):
+            welt["sitzung"].name = "Sitzung HA (verlegt)"
+            welt["sitzung"].save()
+
+        welt["m"].refresh_from_db()
+        assert welt["m"].location_name == "Rathaus, Saal 1"

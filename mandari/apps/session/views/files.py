@@ -24,6 +24,7 @@ eines Inhalts braucht das Einstellungsrecht.
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
@@ -201,9 +202,16 @@ class FileUploadView(SessionMixin, View):
             else:
                 session_file.agenda_item = target
             # Speichert Inhalt (dedupliziert) und Anlage, legt Fassung 1 an (Issue #226); Drehscheibe (Issue #534)
-            with hub_events.track(self.session_tenant) as tracked:
-                tracked.file(session_file)
-                file_version_service.attach_upload(session_file, uploaded, user=self.session_user)
+            try:
+                with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+                    # Festschreibung am gespeicherten Stand der Vorlage: Virenscan und Textauslese oben dauern
+                    file_version_service.ensure_content_unlocked(session_file)
+                    tracked.file(session_file)
+                    file_version_service.attach_upload(session_file, uploaded, user=self.session_user)
+            except file_version_service.ContentLockedError as exc:
+                # Während der Verarbeitung vorgelegt oder freigegeben: auch die übrigen Dateien nicht mehr
+                messages.error(request, str(exc))
+                break
             created += 1
 
         if created:
@@ -246,10 +254,12 @@ class FileUpdateView(SessionMixin, View):
     def post(self, request, tenant_slug, file_id):
         session_file = _editable_file(self, file_id)
 
+        renamed = False
         if "name" in request.POST and request.POST["name"].strip():
             new_name = request.POST["name"].strip()[:500]
+            renamed = new_name != session_file.name
             # Ö/NÖ bleibt umstellbar (Datenschutz); der Name gehört ab der Freigabe zum festgeschriebenen Inhalt
-            if new_name != session_file.name and paper_version_service.content_locked(session_file.paper):
+            if renamed and paper_version_service.content_locked(session_file.paper):
                 messages.error(request, paper_version_service.CONTENT_LOCKED_MESSAGE)
                 return _redirect_to_parent(tenant_slug, session_file)
             session_file.name = new_name
@@ -258,9 +268,16 @@ class FileUpdateView(SessionMixin, View):
             session_file
         )
         # Drehscheibe (Issue #534): umbenannt, veröffentlicht oder zurückgenommen
-        with hub_events.track(self.session_tenant) as tracked:
-            tracked.file(session_file)
-            session_file.save()
+        try:
+            with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+                if renamed:
+                    # Festschreibung am gespeicherten Stand der Vorlage, unmittelbar vor dem Schreiben
+                    file_version_service.ensure_content_unlocked(session_file)
+                tracked.file(session_file)
+                session_file.save()
+        except file_version_service.ContentLockedError as exc:
+            messages.error(request, str(exc))
+            return _redirect_to_parent(tenant_slug, session_file)
 
         messages.success(request, f"Anlage „{session_file.name}“ wurde aktualisiert.")
         return _redirect_to_parent(tenant_slug, session_file)
@@ -300,11 +317,18 @@ class FileReplaceView(SessionMixin, View):
 
         text_content = file_service.extract_text(data, mime_type, uploaded.name)
         # Neue Fassung; die bisherige bleibt im Verlauf abrufbar (Issue #226); Drehscheibe (Issue #534)
-        with hub_events.track(self.session_tenant) as tracked:
-            tracked.file(session_file)
-            new_version = file_version_service.replace_content(
-                session_file, uploaded, user=self.session_user, mime_type=mime_type, text_content=text_content
-            )
+        try:
+            with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+                # Festschreibung am gespeicherten Stand der Vorlage: Virenscan und Textauslese oben dauern
+                file_version_service.ensure_content_unlocked(session_file)
+                tracked.file(session_file)
+                new_version = file_version_service.replace_content(
+                    session_file, uploaded, user=self.session_user, mime_type=mime_type, text_content=text_content
+                )
+        except file_version_service.ContentLockedError as exc:
+            # Während der Verarbeitung vorgelegt oder freigegeben: Die Anlage bleibt, wie sie vorgelegt wurde
+            messages.error(request, str(exc))
+            return _redirect_to_parent(tenant_slug, session_file)
         if new_version is None:
             messages.info(request, "Die Datei gleicht der aktuellen Fassung – es wurde nichts geändert.")
             return _redirect_to_parent(tenant_slug, session_file)
@@ -339,9 +363,15 @@ class FileDeleteView(SessionMixin, View):
             return response
         name = session_file.name
         # Drehscheibe (Issue #534): Wer die Anlage öffentlich kannte, erfährt die Rücknahme
-        with hub_events.track(self.session_tenant) as tracked:
-            tracked.file(session_file)
-            session_file.delete()
+        try:
+            with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+                # Festschreibung am gespeicherten Stand der Vorlage, unmittelbar vor dem Löschen
+                file_version_service.ensure_content_unlocked(session_file)
+                tracked.file(session_file)
+                session_file.delete()
+        except file_version_service.ContentLockedError as exc:
+            messages.error(request, str(exc))
+            return response
         messages.success(self.request, f"Anlage „{name}“ wurde gelöscht.")
         return response
 

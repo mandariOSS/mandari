@@ -663,3 +663,192 @@ class TestSichtbarkeit:
         response = welt.viewer.get(f"{welt.base}/papers/{welt.paper.pk}/")
         assert b'data-testid="fassungen"' in response.content
         assert b"Fassung 1" in response.content
+
+
+# =============================================================================
+# Festschreibung und Wiederherstellen gelten für den gespeicherten Stand
+# =============================================================================
+
+
+class TestGespeicherterStand:
+    @staticmethod
+    def _vorlegen_waehrend_der_auslese(welt: Welt) -> Any:
+        """Die Textauslese eines Uploads dauert; in dieser Zeit wird die Vorlage zur Freigabe vorgelegt."""
+        from unittest import mock
+
+        from apps.session.services import file_service
+
+        def auslese(*args: Any, **kwargs: Any) -> str:
+            SessionPaper.objects.filter(pk=welt.paper.pk).update(status="review")
+            return ""
+
+        return mock.patch.object(file_service, "extract_text", auslese)
+
+    def test_upload_nach_vorlegen_wird_abgewiesen(self, welt: Welt) -> None:
+        from django.contrib.messages import get_messages
+
+        payload: dict[str, Any] = {
+            "target_type": "paper",
+            "target_id": str(welt.paper.pk),
+            "files": [_upload("eins.txt", b"EINS"), _upload("zwei.txt", b"ZWEI")],
+            "is_public": "on",
+        }
+        with self._vorlegen_waehrend_der_auslese(welt):
+            response = welt.clerk.post(f"{welt.base}/files/upload/", payload)
+
+        assert response.status_code == 302
+        assert not SessionFile.objects.filter(paper=welt.paper).exists()
+        meldungen = [str(m) for m in get_messages(cast(Any, response).wsgi_request)]
+        assert meldungen == [paper_version_service.CONTENT_LOCKED_MESSAGE]
+
+    def test_ersetzen_nach_vorlegen_wird_abgewiesen(self, welt: Welt) -> None:
+        anlage = welt.upload(welt.clerk, "gutachten.txt", b"Gutachten Fassung eins")
+
+        with self._vorlegen_waehrend_der_auslese(welt):
+            response = welt.replace(welt.clerk, anlage, "gutachten-v2.txt", b"Gutachten Fassung zwei")
+
+        assert response.status_code == 302
+        anlage.refresh_from_db()
+        assert (anlage.version, anlage.name) == (1, "gutachten.txt")
+        assert _download(welt.clerk, f"{welt.base}/files/{anlage.pk}/download/")[1] == b"Gutachten Fassung eins"
+
+    def test_anlage_an_sitzung_bleibt_unberuehrt(self, welt: Welt) -> None:
+        gremium = SessionOrganization.objects.create(tenant=welt.tenant, name="Rat")
+        sitzung = SessionMeeting.objects.create(
+            tenant=welt.tenant, name="Ratssitzung", organization=gremium, start=timezone.now(), is_public=True
+        )
+        client = _client(welt.tenant, "sitzungsdienst", {"view_meetings", "edit_meetings"})
+        with self._vorlegen_waehrend_der_auslese(welt):
+            anlage = welt.upload(client, "einladung.txt", b"EINLADUNG", meeting=sitzung.pk)
+        assert anlage.meeting_id == sitzung.pk
+
+    def test_wiederherstellen_laesst_sichtbarkeit_wie_gespeichert(self, welt: Welt) -> None:
+        fassung = paper_version_service.snapshot(welt.paper, trigger=Version.TRIGGER_MANUAL)
+        gelesen = SessionPaper.objects.select_related("tenant").get(pk=welt.paper.pk)
+        # Nach dem Laden stellt jemand die Vorlage auf nichtöffentlich und ändert den Text
+        SessionPaper.objects.filter(pk=welt.paper.pk).update(is_public=False, resolution_text="Anderer Text")
+
+        paper_version_service.restore(gelesen, fassung, user=None)
+
+        welt.paper.refresh_from_db()
+        assert welt.paper.is_public is False
+        assert welt.paper.resolution_text == "Der Rat beschließt den Ausbau des Radwegs."
+
+    def test_wiederherstellen_nach_vorlegen_wird_abgewiesen(self, welt: Welt) -> None:
+        fassung = paper_version_service.snapshot(welt.paper, trigger=Version.TRIGGER_MANUAL)
+        gelesen = SessionPaper.objects.select_related("tenant").get(pk=welt.paper.pk)
+        SessionPaper.objects.filter(pk=welt.paper.pk).update(status="review", resolution_text="Vorgelegter Text")
+
+        with pytest.raises(paper_version_service.RestoreRefusedError):
+            paper_version_service.restore(gelesen, fassung, user=None)
+
+        welt.paper.refresh_from_db()
+        assert (welt.paper.status, welt.paper.resolution_text) == ("review", "Vorgelegter Text")
+
+
+class TestVergleichAufwand:
+    @staticmethod
+    def _aufwand() -> Any:
+        """Zeichnet je Vergleich der Standardbibliothek das Produkt der Längen auf."""
+        import difflib
+        from unittest import mock
+
+        echt = difflib.SequenceMatcher
+        aufwand: list[int] = []
+
+        def gezaehlt(*args: Any, **kwargs: Any) -> Any:
+            aufwand.append(len(kwargs["a"]) * len(kwargs["b"]))
+            return echt(*args, **kwargs)
+
+        return mock.patch.object(difflib, "SequenceMatcher", gezaehlt), aufwand
+
+    def test_gleiche_texte_kosten_nichts(self) -> None:
+        text = "gleich\n" * 16_000
+        patch, aufwand = self._aufwand()
+        with patch:
+            html = str(paper_version_diff.word_diff(text, text))
+        assert html == text
+        assert aufwand == []
+
+    def test_wechselzeilen_bleiben_im_budget(self) -> None:
+        alt = "".join(f"x\nalt {i}\n" for i in range(2_000))
+        neu = "".join(f"x\nneu {i}\n" for i in range(2_000))
+        patch, aufwand = self._aufwand()
+        with patch:
+            html = str(paper_version_diff.word_diff(alt, neu))
+        assert sum(aufwand) <= paper_version_diff._FIELD_BUDGET
+        # Oberhalb der Grenze erscheint der geänderte Bereich als Ganzes ersetzt
+        assert html.count("<del>") == 1 and html.count("<ins>") == 1
+        assert "alt 1998" in html and "neu 1998" in html
+
+    def test_viele_absaetze_teilen_sich_ein_budget(self) -> None:
+        alt = "".join(" ".join(f"a{i}" for i in range(250)) + f" ende{n}\n" for n in range(40))
+        neu = "".join(" ".join(f"b{i}" for i in range(250)) + f" ende{n}\n" for n in range(40))
+        patch, aufwand = self._aufwand()
+        with patch:
+            paper_version_diff.word_diff(alt, neu)
+        assert sum(aufwand) <= paper_version_diff._FIELD_BUDGET
+
+    def test_kleine_aenderung_in_langem_absatz_bleibt_wortgenau(self) -> None:
+        woerter = [f"wort{i}" for i in range(5_000)]
+        alt = " ".join(woerter)
+        woerter[2_500] = "geändert"
+        neu = " ".join(woerter)
+        html = str(paper_version_diff.word_diff(alt, neu))
+        assert "<del>wort2500</del><ins>geändert</ins>" in html
+        assert html.count("<del>") == 1
+
+    def test_anfang_und_ende_bleiben_gleich(self) -> None:
+        html = str(paper_version_diff.word_diff("Kopf\nA B C\nFuß\n", "Kopf\nA X C\nFuß\n"))
+        assert html == "Kopf\nA <del>B</del><ins>X</ins> C\nFuß\n"
+
+
+class TestFestschreibungBeimSchreiben:
+    """Umbenennen und Löschen prüfen die Festschreibung der Vorlage am gespeicherten Stand."""
+
+    @staticmethod
+    def _vorgelegt_nach_dem_laden(welt: Welt) -> Any:
+        """Die Anfrage lädt die Anlage samt Vorlage; erst danach wird die Vorlage zur Freigabe vorgelegt."""
+        from unittest import mock
+
+        from apps.session.views import files as file_views
+
+        echt = file_views._editable_file
+
+        def laden(view: Any, file_id: Any) -> SessionFile:
+            session_file = echt(view, file_id)
+            assert session_file.paper is not None and session_file.paper.status == "draft"
+            SessionPaper.objects.filter(pk=welt.paper.pk).update(status="review")
+            return session_file
+
+        return mock.patch.object(file_views, "_editable_file", laden)
+
+    def test_loeschen_nach_vorlegen_wird_abgewiesen(self, welt: Welt) -> None:
+        anlage = welt.upload(welt.clerk, "gutachten.txt", b"GUTACHTEN")
+
+        with self._vorgelegt_nach_dem_laden(welt):
+            response = welt.clerk.post(f"{welt.base}/files/{anlage.pk}/delete/")
+
+        assert response.status_code == 302
+        assert SessionFile.objects.filter(pk=anlage.pk).exists()
+
+    def test_umbenennen_nach_vorlegen_wird_abgewiesen(self, welt: Welt) -> None:
+        anlage = welt.upload(welt.clerk, "gutachten.txt", b"GUTACHTEN")
+
+        with self._vorgelegt_nach_dem_laden(welt):
+            response = welt.clerk.post(
+                f"{welt.base}/files/{anlage.pk}/update/", {"name": "anders.txt", "is_public": "on"}
+            )
+
+        assert response.status_code == 302
+        anlage.refresh_from_db()
+        assert anlage.name == "gutachten.txt"
+
+    def test_sichtbarkeit_bleibt_nach_vorlegen_umstellbar(self, welt: Welt) -> None:
+        anlage = welt.upload(welt.clerk, "gutachten.txt", b"GUTACHTEN")
+
+        with self._vorgelegt_nach_dem_laden(welt):
+            welt.clerk.post(f"{welt.base}/files/{anlage.pk}/update/", {"name": "gutachten.txt"})
+
+        anlage.refresh_from_db()
+        assert anlage.is_public is False, "Ö/NÖ bleibt umstellbar (Datenschutz)"
