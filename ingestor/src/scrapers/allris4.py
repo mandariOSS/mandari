@@ -93,13 +93,25 @@ def _block_lines(node: Tag) -> list[str]:
 
 
 def _walk(node: Tag, lines: list[str]) -> None:
+    # Textstücke einer Zeile, ohne eingefügte Trenner: Word teilt Absätze in viele Spans, auch mitten in Zahlen
     pending: list[str] = []
 
     def flush() -> None:
-        text = _clean(" ".join(pending))
+        text = _clean("".join(pending))
         pending.clear()
         if text:
             lines.append(text)
+
+    def inline(tag: Tag) -> None:
+        for part in tag.children:
+            if isinstance(part, NavigableString):
+                if not isinstance(part, (Comment, Declaration, Doctype, ProcessingInstruction)):
+                    pending.append(str(part))
+            elif isinstance(part, Tag) and part.name not in ("script", "style"):
+                if part.name == "br":
+                    flush()
+                else:
+                    inline(part)
 
     for child in node.children:
         if isinstance(child, NavigableString):
@@ -108,9 +120,11 @@ def _walk(node: Tag, lines: list[str]) -> None:
             continue
         if not isinstance(child, Tag) or child.name in ("script", "style"):
             continue
-        if child.name == "tr":
+        if child.name == "br":
             flush()
-            cells = [_clean(cell.get_text(" ", strip=True)) for cell in child.find_all(["td", "th"])]
+        elif child.name == "tr":
+            flush()
+            cells = [" ".join(_block_lines(cell)) for cell in child.find_all(["td", "th"], recursive=False)]
             row = " | ".join(cell for cell in cells if cell)
             if row:
                 lines.append(row)
@@ -118,7 +132,7 @@ def _walk(node: Tag, lines: list[str]) -> None:
             flush()
             _walk(child, lines)
         else:
-            pending.append(child.get_text(" ", strip=False))
+            inline(child)
     flush()
 
 

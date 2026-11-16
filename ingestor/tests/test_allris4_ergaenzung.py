@@ -530,3 +530,32 @@ class TestNachtraege:
         assert options.skip_lists == frozenset({"file", "consultation", "location"})
         assert SourceFetchOptions.from_sync_config({"skip_lists": "file"}).skip_lists == frozenset()
         assert SourceFetchOptions.from_sync_config({}).skip_lists == frozenset()
+
+
+class TestZweiteRunde:
+    def test_zahl_ueber_mehrere_spans(self):
+        from bs4 import BeautifulSoup
+
+        from src.scrapers.allris4 import _block_lines
+
+        teil = BeautifulSoup(
+            '<div class="docPart"><p><span>Ja-Stimmen:</span><span style="display:inline-block"> </span>'
+            "<span>1</span><span>2</span></p><p>Zeile<br/>umbrochen</p>"
+            "<table><tr><td><p>A</p><p>B</p></td><td>C</td></tr></table></div>",
+            "html.parser",
+        ).div
+        assert teil is not None
+        assert _block_lines(teil) == ["Ja-Stimmen: 12", "Zeile", "umbrochen", "A B | C"]
+
+    async def test_nur_neuerer_stand_laedt_neu(self):
+        quelle = Quelle()
+        quelle.seiten[f"{PUBLIC}/to020?TOLFDNR=1"] = Antwort(text=TOP_SEITE)
+        lauf = ergaenzung(quelle)
+        objekt = punkt(1)  # stand 2026-10-05T07:16:50+02:00
+        await lauf.ergaenze("agendaitem", objekt)
+        quelle.speichern(objekt)
+        for modified in ("2026-10-05T05:16:50Z", "2026-10-04T10:00:00+02:00", "kein Datum"):
+            await lauf.ergaenze("agendaitem", punkt(1, modified=modified))
+        assert len(quelle.abrufe) == 1
+        await lauf.ergaenze("agendaitem", punkt(1, modified="2026-10-05T05:16:51Z"))
+        assert len(quelle.abrufe) == 2

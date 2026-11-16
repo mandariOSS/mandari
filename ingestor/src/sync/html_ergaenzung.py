@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 
@@ -110,6 +111,17 @@ class ErgaenzungStats:
             "verschoben": self.deferred,
             "ohne_seite": self.skipped,
         }
+
+
+def _stamp(value: Any) -> datetime | None:
+    """Zeitpunkt aus einem OParl-Stempel; ohne Zeitzone oder unlesbar ``None``."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def detail_page(entity_type: str, web: Any, hosts: Iterable[str]) -> str | None:
@@ -217,7 +229,10 @@ class HtmlErgaenzung:
         """Hat sich das Objekt seit der Ergänzung geändert? Unzuverlässige Stempel zählen nicht als Änderung."""
         if timestamps_unreliable(dict(data)):
             return False
-        return data.get("modified") != marker.get("stand")
+        modified, stand = _stamp(data.get("modified")), _stamp(marker.get("stand"))
+        if modified is None:
+            return False  # nicht vergleichbar: nicht neu laden
+        return stand is None or modified > stand
 
     @staticmethod
     def _reuse(kind: str, data: dict[str, Any], stored: Mapping[str, Any] | None, marker: Mapping[str, Any]) -> None:
