@@ -65,7 +65,9 @@ from insight_core.models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    withdrawn_q,
 )
+from insight_core.services import file_reconcile
 
 # Zeitfilter -> Vergleich auf den zusammengeführten Zeitstempeln (``_annotated``), damit die Filter genau
 # zu den ausgegebenen Werten von ``created``/``modified`` passen
@@ -537,7 +539,9 @@ def _kommparl_snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed
         section(OBJECT_TYPES["agendaitem"], Q(meeting__body_id=pk)),
         section(_PAPER, own),
         section(OBJECT_TYPES["consultation"], own),
-        section(_SNAPSHOT_FILE, own),
+        # Ohne die Anlagen zurückgenommener Vorgänge und Sitzungen: Sie tragen keine eigene Markierung, der
+        # Objekt-Endpunkt gibt sie aber nur gekürzt aus (``object_view``)
+        section(_SNAPSHOT_FILE, own & ~withdrawn_q("paper") & ~withdrawn_q("meeting")),
         section(_LOCATION, own),
         _meeting_locations(output, pk),
     ]
@@ -616,4 +620,9 @@ def object_view(request: HttpRequest, kind: str, pk: uuid.UUID) -> HttpResponse:
         paused = _paused_response(publication.body_id_of(spec.model, pk))
         if paused is not None:
             return paused
+    if kind == "file" and file_reconcile.parent_withdrawn(obj):
+        # Vorgang oder Sitzung zurückgenommen: Die Datei trägt keine eigene Markierung, gehört aber zu einem
+        # Eintrag, den es öffentlich nicht mehr gibt. Wie die Auslieferung der Datei selbst gibt die Schnittstelle
+        # dann weder ihren erkannten Text noch Name, Dateiname und Adressen aus, nur das gekürzte Objekt.
+        return json_response(output.tombstone(kind, obj))
     return json_response(spec.render(output, obj, spec.context([obj])))

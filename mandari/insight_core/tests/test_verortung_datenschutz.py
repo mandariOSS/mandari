@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import httpx
 import pytest
 
 from insight_core.models import (
@@ -23,7 +24,7 @@ from insight_core.models import (
     PaperLocation,
     Street,
 )
-from insight_core.services import verortung_pruefung
+from insight_core.services import georeferencing, verortung_pruefung
 from insight_core.services.gazetteer import StreetGazetteer
 from insight_core.services.georeferencing import (
     collect_paper_text,
@@ -208,6 +209,94 @@ class TestOrteDerKommune:
         self._ort(paper, "Wolbecker Straße 12a", *HAUS)
         apply_oparl_locations(paper)
         assert [(o["name"], o["lat"]) for o in _orte(paper)] == [("Wolbecker Straße 12a", HAUS[0])]
+
+
+#: Beide in der Kommune (``geo_body``); der Hof ist ein einzelnes Objekt, die Straße nicht
+GEBAEUDE = (51.98, 7.65)
+STRASSE_IM_GEOCODER = (51.97, 7.64)
+#: Punkt an der Straße vor dem Hof, benannt wie der Hof
+HALTESTELLE = (51.9801, 7.6501)
+
+
+class TestGeocoderOhneAdresspunkt:
+    """
+    Orte, die das Straßenverzeichnis nicht kennt, liefert der Geocoder. Bei Privatanschriften zählt nur ein Treffer
+    auf Straßen- oder Ortsebene: Ein benanntes Gebäude oder ein Hof wäre so genau wie ein Adresspunkt.
+    """
+
+    @staticmethod
+    def _treffer(art: str, wert: str, punkt: tuple[float, float], name: str) -> dict[str, Any]:
+        return {
+            "geometry": {"coordinates": [punkt[1], punkt[0]]},
+            "properties": {"osm_key": art, "osm_value": wert, "name": name},
+        }
+
+    def _geocoder(self, monkeypatch: pytest.MonkeyPatch, *, mit_strasse: bool, mit_haltestelle: bool = False) -> None:
+        """
+        Attrappe: Photon nennt zuerst den Hof, danach (``mit_haltestelle``) die Haltestelle davor und
+        (``mit_strasse``) die Straße; Nominatim nur den Hof.
+        """
+        treffer = [self._treffer("building", "farm", GEBAEUDE, "Gut Sonnenhof")]
+        if mit_haltestelle:
+            treffer.append(self._treffer("highway", "bus_stop", HALTESTELLE, "Sonnenhof"))
+        if mit_strasse:
+            treffer.append(self._treffer("highway", "residential", STRASSE_IM_GEOCODER, "Sonnenhof"))
+        hof = {"lat": str(GEBAEUDE[0]), "lon": str(GEBAEUDE[1]), "class": "building", "type": "farm"}
+
+        def get(url: str, **kwargs: Any) -> httpx.Response:
+            inhalt: Any = {"features": treffer} if "photon" in url else [{**hof, "display_name": "Gut Sonnenhof"}]
+            return httpx.Response(200, json=inhalt, request=httpx.Request("GET", url))
+
+        monkeypatch.setattr("insight_core.services.georeferencing.httpx.get", get)
+        monkeypatch.setattr(georeferencing, "_rate_limit", lambda: None)
+        monkeypatch.setattr("insight_core.services.dienste.warten", lambda *args, **kwargs: None)
+
+    def test_gewoehnlicher_vorgang_behaelt_den_punkt_des_gebaeudes(
+        self, kommune: OParlBody, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._geocoder(monkeypatch, mit_strasse=True)
+        punkt = georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=True)
+        assert punkt is not None and (punkt["lat"], punkt["lon"]) == GEBAEUDE
+
+    def test_privatanschrift_bekommt_die_strasse_statt_des_gebaeudes(
+        self, kommune: OParlBody, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._geocoder(monkeypatch, mit_strasse=True)
+        punkt = georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=False)
+        assert punkt is not None and (punkt["lat"], punkt["lon"]) == STRASSE_IM_GEOCODER
+
+    def test_privatanschrift_ohne_treffer_auf_strassenebene_bleibt_ohne_punkt(
+        self, kommune: OParlBody, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._geocoder(monkeypatch, mit_strasse=False)
+        assert georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=False) is None
+        # Ohne Schutz bleibt es beim bisherigen Verhalten
+        assert georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=True) is not None
+
+    def test_haltestelle_gleichen_namens_gilt_nicht_als_strasse(
+        self, kommune: OParlBody, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Ein Punkt an der Straße (``highway=bus_stop``) liegt vor dem Hof und heißt wie er."""
+        self._geocoder(monkeypatch, mit_strasse=True, mit_haltestelle=True)
+        punkt = georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=False)
+        assert punkt is not None and (punkt["lat"], punkt["lon"]) == STRASSE_IM_GEOCODER
+
+        self._geocoder(monkeypatch, mit_strasse=False, mit_haltestelle=True)
+        assert georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=False) is None
+
+    def test_ki_pruefung_uebernimmt_kein_gebaeude(
+        self, kommune: OParlBody, make_paper: Callable[..., OParlPaper], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._geocoder(monkeypatch, mit_strasse=True)
+        verzeichnis = StreetGazetteer(kommune)
+
+        geschuetzt = make_paper(kommune, name="Lärm am Sonnenhof", paper_type="Anregungen und Beschwerden")
+        punkt = verortung_pruefung._geokodieren("Sonnenhof", geschuetzt, verzeichnis)
+        assert punkt is not None and (punkt["lat"], punkt["lon"]) == STRASSE_IM_GEOCODER
+
+        normal = make_paper(kommune, name="Sanierung Gut Sonnenhof", paper_type="Beschlussvorlage")
+        punkt = verortung_pruefung._geokodieren("Sonnenhof", normal, verzeichnis)
+        assert punkt is not None and (punkt["lat"], punkt["lon"]) == GEBAEUDE
 
 
 def test_ki_pruefung_ergaenzt_nur_die_strasse(kommune: OParlBody, make_paper: Callable[..., OParlPaper]) -> None:

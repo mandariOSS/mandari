@@ -180,8 +180,11 @@ def event_source_id(body_id: uuid.UUID | None) -> uuid.UUID | None:
     return source_id
 
 
-def _report(row: Any, reason: str) -> int:
-    """Rücknahme melden (in der laufenden Transaktion); Zahl der geschriebenen Ereignisse."""
+def _report(row: Any, reason: str, when: datetime | None = None) -> int:
+    """
+    Rücknahme melden (in der laufenden Transaktion); Zahl der geschriebenen Ereignisse. ``when``: Zeitpunkt der
+    Rücknahme, wenn er nicht der der Markierung ist (``report_withdrawal``).
+    """
     aggregate_type = AGGREGATE_TYPES.get(type(row))
     if aggregate_type is None or not events_enabled():
         return 0
@@ -201,7 +204,7 @@ def _report(row: Any, reason: str) -> int:
             body_id=body_id,
             visibility=draft.visibility,
             operation=draft.operation,
-            occurred_at=row.deleted_at,
+            occurred_at=when or row.deleted_at,
             payload=draft.payload,
         )
         written += 1
@@ -236,3 +239,24 @@ def retract(obj: Any, *, reason: str, when: datetime | None = None) -> bool:
 
     transaction.on_commit(ruecknahme_stand.forget, robust=True)
     return True
+
+
+def report_withdrawal(row: Any, *, reason: str, when: datetime | None = None) -> bool:
+    """
+    Rücknahme einer schon markierten Zeile melden, ohne sie zu markieren (``True``: gemeldet).
+
+    Für die Verwaltungsaktion des Bürgerportals (``insight_core.admin.RetractAdminMixin``): Eine Zeile, die nur als
+    in der Quelle gelöscht markiert war, blieb mit Hinweis öffentlich. Nimmt der Betrieb sie zurück, ändert sich ihr
+    Grund, nicht die Markierung; ``retract`` meldete dann nichts, und Abnehmer, die in der Quelle Gelöschtes weiter
+    zeigen, behielten ihre Kopie. Der Aufrufer sperrt die Zeile und setzt den Grund in derselben Transaktion. Wie bei
+    ``retract`` geht die Rücknahme vor: Scheitert das Schreiben, bleibt sie bestehen, und der Fehler wird
+    protokolliert.
+    """
+    if reason not in REASONS:
+        raise ValueError(f"Unbekannter Grund einer Rücknahme; erlaubt: {', '.join(sorted(REASONS))}")
+    try:
+        with transaction.atomic():
+            return _report(row, reason, when) > 0
+    except Exception:
+        logger.exception("Rücknahme von %s %s ohne Ereignis im Journal", type(row).__name__, row.pk)
+        return False
