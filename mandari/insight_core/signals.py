@@ -132,6 +132,8 @@ def _remove_photo(person: OParlPerson) -> None:
     (gesperrte oder fehlende Datei, bei einer entfernten Ablage auch ein Netz- oder Dienstfehler) wird nur vermerkt:
     Er darf weder das Löschen der Zeile aufhalten noch einen Lauf über viele Zeilen abbrechen (``purge_deleted``).
     Welche Fehler eine Ablage wirft, legt sie selbst fest; deshalb jede Ausnahme, und ``robust`` als zweite Sicherung.
+    Die Meldung nennt den Namen der Datei in der Ablage: Der Verweis an der Zeile ist dann schon entfernt, und ohne
+    den Namen ließe sich die liegen gebliebene Datei nicht mehr finden und von Hand löschen.
     """
     if not person.photo:
         return
@@ -141,7 +143,7 @@ def _remove_photo(person: OParlPerson) -> None:
         try:
             storage.delete(name)
         except Exception:
-            logger.exception("Foto der Person %s konnte nicht gelöscht werden", pk)
+            logger.exception("Foto der Person %s konnte nicht gelöscht werden, Datei in der Ablage: %s", pk, name)
 
     transaction.on_commit(remove, robust=True)
 

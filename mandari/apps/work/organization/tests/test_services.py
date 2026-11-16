@@ -540,6 +540,20 @@ def test_absence_flow_notifies_deputy(org: Any, member: Any, editor: Any) -> Non
 
 
 @pytest.mark.django_db
+def test_absence_with_unavailable_deputy_is_rejected(org: Any, member: Any, editor: Any) -> None:
+    """Steht die gewählte Vertretung nicht mehr zur Wahl (hier: nur noch Gastzugang), wird nichts gespeichert."""
+    Membership.objects.filter(pk=editor.pk).update(is_guest=True)
+    today = timezone.now().date().isoformat()
+
+    with pytest.raises(ServiceError, match="Stellvertretung"):
+        services.create_absence(
+            org, member, services.AbsenceInput(start_date=today, end_date=today, deputy_id=str(editor.id))
+        )
+
+    assert not MemberAbsence.objects.filter(membership=member).exists()
+
+
+@pytest.mark.django_db
 def test_profile_and_notification_preferences(org: Any, member: Any) -> None:
     services.save_profile_visibility(
         member.user, bio="x" * 600, show_email=False, show_phone=True, preferred_contact="signal", contact_signal="s"
