@@ -208,6 +208,22 @@ class TestEinblendung:
         assert (zuordnung.pk, zuordnung.status, zuordnung.belege) == (vorschlag.pk, "abgelehnt", 2)
         assert fraktionen.aktuelle_fraktion(person, person.body, stichtag=HEUTE) is None
 
+    def test_nach_einer_ablehnung_wird_auch_eine_andere_bezeichnung_nur_vorschlag(self, person: OParlPerson) -> None:
+        """Lag die Einblendung bei der Person schon einmal falsch, bestätigt die nächste Lesung nicht von selbst."""
+        falsch = _lesen(person, "Fraktion B", eindeutig=False)
+        assert falsch is not None
+        fraktionen.ablehnen(falsch)
+
+        andere = _lesen(person, "Fraktion A", eindeutig=True)
+        nochmal = _lesen(person, "Fraktion A", eindeutig=True, zeitpunkt=LESUNG + timedelta(minutes=1))
+
+        assert andere is not None and nochmal is not None and andere.pk == nochmal.pk
+        assert (nochmal.bezeichnung, nochmal.status, nochmal.belege) == ("Fraktion A", "vorschlag", 2)
+        assert fraktionen.aktuelle_fraktion(person, person.body, stichtag=HEUTE) is None
+        # Von Hand bestätigt gilt sie
+        fraktionen.bestaetigen(nochmal)
+        assert fraktionen.aktuelle_fraktion(person, person.body, stichtag=HEUTE) == nochmal
+
     def test_beendete_zuordnung_kommt_nicht_von_selbst_zurueck(self, person: OParlPerson) -> None:
         _hand(person, "Fraktion A", gueltig_ab=date(2025, 1, 1), gueltig_bis=HEUTE - timedelta(days=7))
 

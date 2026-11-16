@@ -27,11 +27,12 @@ from apps.events import registry
 from apps.events.dispatch import deliver_batch, ensure_subscription, rewind
 from apps.events.models import Event, ParkedEvent
 from apps.events.registry import Delivery, Subscriber, get
+from hub.live import selectors as live_selectors
 from hub.live import services
 from hub.live.lesung import Lesung
 from hub.live.models import Broadcast, BroadcastSpeech, BroadcastStatus, SpeechAssignment
 from hub.live.profil import lade_profil, vorlage
-from hub.live.tests.conftest import Welt, jetzt, welt  # noqa: F401 – Fixtures der Live-Übertragungen
+from hub.live.tests.conftest import Welt, jetzt, mitglied, person, welt  # noqa: F401 – Fixtures der Live-Übertragungen
 from insight_core import subscribers
 from insight_core.models import PersonFraktion, PersonFraktionBeleg
 from insight_core.services import fraktionen_live
@@ -169,6 +170,29 @@ def test_unsicher_oder_einmal_gelesen_ergibt_vorschlag(welt: Welt, laufend: Broa
     einmal = _wortmeldung(welt, laufend, person=welt.beispiel, name_read="Max Beispiel", readings=1)
     assert fraktionen_live.aus_wortmeldung(einmal.pk) == Ergebnis.VERBUCHT
     assert PersonFraktion.objects.get(person=welt.beispiel).status == "vorschlag"
+
+
+def test_ohne_mitgliedschaft_am_sitzungstag_ergibt_nur_vorschlag(welt: Welt, laufend: Broadcast) -> None:  # noqa: F811
+    """
+    Die Namenssuche ordnet auch eine einzige namensgleiche Person der Kommune eindeutig zu. Bestätigt wird die
+    gelesene Fraktion nur für Mitglieder des Gremiums am Sitzungstag; für alle anderen wartet sie als Vorschlag.
+    """
+    gast = person(welt.body, "Gerda", "Gast")
+    ehemalig = person(welt.body, "Egon", "Ehemalig")
+    mitglied(ehemalig, welt.rat, end_date=(welt.jetzt - timedelta(days=30)).date())
+    for wer, name in ((gast, "Gerda Gast"), (ehemalig, "Egon Ehemalig")):
+        wortmeldung = _wortmeldung(welt, laufend, person=wer, name_read=name, readings=3)
+        daten = live_selectors.wortmeldung(wortmeldung.pk)
+        assert daten is not None and not daten.mitglied_am_sitzungstag and not daten.eindeutig
+        assert fraktionen_live.aus_wortmeldung(wortmeldung.pk) == Ergebnis.VERBUCHT
+        assert PersonFraktion.objects.get(person=wer).status == "vorschlag"
+
+    # Gegenprobe: dieselbe Lesung für ein Mitglied des Gremiums wird bestätigt
+    eigene = _wortmeldung(welt, laufend, readings=3)
+    daten = live_selectors.wortmeldung(eigene.pk)
+    assert daten is not None and daten.mitglied_am_sitzungstag and daten.eindeutig
+    assert fraktionen_live.aus_wortmeldung(eigene.pk) == Ergebnis.VERBUCHT
+    assert PersonFraktion.objects.get(person=welt.muster).status == "bestaetigt"
 
 
 def test_funktion_oder_ohne_person_ergibt_nichts(welt: Welt, laufend: Broadcast) -> None:  # noqa: F811

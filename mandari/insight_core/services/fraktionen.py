@@ -9,9 +9,11 @@ Live-Erkennung, Issue #915), von Hand im Admin (``speichern``, ``bestaetigen``, 
 Regeln der automatischen Übernahme (``fraktion_aus_einblendung``):
 
 - **Gleiche bestätigte Zuordnung:** zählt eine Lesung mehr (``belege``) und merkt sich den Zeitpunkt.
-- **Keine bestätigte Zuordnung:** Ist die Person eindeutig zugeordnet und mehrfach gleich gelesen (``eindeutig``),
-  entsteht eine bestätigte Zuordnung mit Quelle ``einblendung``; sonst ein Vorschlag. Ein vorhandener Vorschlag
-  gleicher Bezeichnung zählt hoch bzw. wird bestätigt.
+- **Keine bestätigte Zuordnung:** Ist die Person eindeutig zugeordnet, am Sitzungstag Mitglied des Gremiums und
+  mehrfach gleich gelesen (``eindeutig``), entsteht eine bestätigte Zuordnung mit Quelle ``einblendung``; sonst ein
+  Vorschlag. Ein vorhandener Vorschlag gleicher Bezeichnung zählt hoch bzw. wird bestätigt.
+- **Nach einer Ablehnung** für dieselbe Person entstehen nur noch Vorschläge, auch für eine andere Bezeichnung:
+  Bestätigt wird dann von Hand.
 - **Abweichende Bezeichnung** bei bestehender bestätigter Zuordnung: nur ein Vorschlag, nie ein Überschreiben.
   Von Hand gepflegte Werte ändert der automatische Weg damit nie; sie gehen bei der Anzeige auch vor.
 - **Entscheidungen bleiben:** Eine abgelehnte Bezeichnung oder eine beendete Zuordnung gleicher Bezeichnung
@@ -397,7 +399,10 @@ def _verbuchen(
         vorschlag.save(update_fields=["bezeichnung", "geaendert"])
     # Eine beendete Zuordnung gleicher Bezeichnung hat jemand beendet; sie kommt nicht von selbst zurück
     beendet = any(z.status == PersonFraktion.STATUS_BESTAETIGT and _gleich(z, name) for z in zuordnungen)
-    if eindeutig and not laufend and not beendet:
+    # Nach einer Ablehnung für diese Person entscheidet wieder ein Mensch, auch über eine andere Bezeichnung: Die
+    # Ablehnung zeigt, dass die Einblendung bei dieser Person schon einmal falsch lag
+    abgelehnt = any(z.status == PersonFraktion.STATUS_ABGELEHNT for z in zuordnungen)
+    if eindeutig and not laufend and not beendet and not abgelehnt:
         if vorschlag is not None:
             vorschlag.status = PersonFraktion.STATUS_BESTAETIGT
             vorschlag.gueltig_ab = vorschlag.gueltig_ab or stichtag
