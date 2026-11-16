@@ -83,6 +83,7 @@ nicht.
 | `INSIGHT_CHAT_TIME_LIMIT_SECONDS` | 90 | Zeitlimit je Antwort (mindestens 45) |
 | `INSIGHT_CHAT_DAILY_MAX_CALLS` | 500 | Modellaufrufe aller Antworten zusammen je Tag (Kostenbremse, mindestens 1) |
 | `INSIGHT_CHAT_DAILY_MAX_TOKENS` | 1.000.000 | Token aller Antworten zusammen je Tag (Kostenbremse, mindestens 1) |
+| `INSIGHT_CHAT_MAX_CONCURRENT` | 8 | Antworten, die zugleich laufen dürfen; je Besucher läuft ohnehin nur eine (mindestens 1) |
 
 Die Standardwerte der Kostenbremse reichen nach der Messung unten (2 bis 4 Modellaufrufe und 3.000 bis 8.000 Token
 je Frage) für etwa 125 bis 250 Fragen am Tag. Sie sind bewusst knapp; den Kostenrahmen legt der Betreiber fest.

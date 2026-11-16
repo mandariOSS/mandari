@@ -47,7 +47,7 @@
                     <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
                     <input type="text"
                            x-model="searchQuery"
-                           @input.debounce.300ms="fetchSuggestions()"
+                           @input.debounce.500ms="fetchSuggestions()"
                            @keydown.escape="suggestions = []"
                            placeholder="z.B. Wolbecker Stra&szlig;e, Prinzipalmarkt&hellip;"
                            class="w-full pl-11 pr-4 py-3 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">

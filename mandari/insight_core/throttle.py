@@ -34,8 +34,9 @@ DEFAULTS: dict[str, int] = {
     "INSIGHT_TILE_FETCHES_PER_MINUTE": 1200,
     "INSIGHT_TILE_CACHE_MAX_TILES": 500_000,
     # Adresssuche der Nachbarschaftsseite (nur Abrufe bei Photon, Treffer aus dem Cache sind frei). Insgesamt
-    # unter dem Takt von 60 je Minute, damit die Verortung Zeitpunkte behält
-    "INSIGHT_PHOTON_PER_IP_MINUTE": 15,
+    # unter dem Takt von 60 je Minute, damit die Verortung Zeitpunkte behält. Je Aufrufer so viele, dass eine
+    # langsam getippte Adresse (ein Abruf je Tipp-Pause) ihre Vorschläge bis zum letzten Zeichen bekommt
+    "INSIGHT_PHOTON_PER_IP_MINUTE": 25,
     "INSIGHT_PHOTON_PER_MINUTE": 40,
     # Feeds (Issue #1274): nur Neubauten zählen, Feeds aus dem Cache sind frei
     "INSIGHT_FEEDS_PER_IP_MINUTE": 30,
