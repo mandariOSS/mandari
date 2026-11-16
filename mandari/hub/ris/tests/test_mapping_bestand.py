@@ -259,7 +259,7 @@ def test_sitzung_bettet_ort_einladung_und_tagesordnung_ein(welt: dict[str, Any])
 def _sitzung_mit(welt: dict[str, Any], **werte: Any) -> dict[str, Any]:
     OParlMeeting.objects.filter(pk=welt["meeting"].pk).update(**werte)
     cache.clear()
-    return cast(dict[str, Any], _json(f"/oparl/v1/meeting/{welt['meeting'].pk}"))
+    return _json(f"/oparl/v1/meeting/{welt['meeting'].pk}")
 
 
 def test_absage_nur_im_namen_der_sitzung_ist_abgesagt_und_als_abgeleitet_gekennzeichnet(welt: dict[str, Any]) -> None:
