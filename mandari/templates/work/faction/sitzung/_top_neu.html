@@ -22,7 +22,7 @@ Kontext: ordnung (sitzung.Tagesordnung), item, rechte, sitzung_urls.
         <label class="fs-feldname" for="fs-top-neu-titel">Titel</label>
         <input id="fs-top-neu-titel" class="wf-eingabe w-full" type="text" name="title" required maxlength="500" autocomplete="off"
                @input="doppelt = ''" :aria-describedby="doppelt ? 'fs-top-neu-doppelt' : null">
-        <p class="fs-hinweis" id="fs-top-neu-doppelt" role="alert" x-show="doppelt" x-cloak x-text="doppelt" data-testid="fs-top-neu-doppelt"></p>
+        <p class="fs-top-neu-warnung" id="fs-top-neu-doppelt" role="alert" x-show="doppelt" x-cloak x-text="doppelt" data-testid="fs-top-neu-doppelt"></p>
         {% if rechte.noe_neu %}
         <label class="fs-feldname" for="fs-top-neu-teil">Teil</label>
         <select id="fs-top-neu-teil" class="wf-eingabe wf-auswahl w-full" name="visibility">
