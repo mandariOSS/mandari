@@ -8,17 +8,25 @@ den normalisierten Namen: Präfix-Treffer zuerst, dann Teilstring-Treffer, höch
 Kommune kein Straßenverzeichnis importiert ist; dann mit Kennung und Takt je Host wie alle
 Abrufe bei Diensten (``dienste``, Issue #1036). Ist binnen ``PHOTON_MAX_WAIT_SECONDS`` kein
 Zeitpunkt frei, gibt es keine Vorschläge statt einer Anfrage.
+
+Der Takt bei Photon gilt für die ganze Plattform. Damit ihn nicht ein einzelner Aufrufer belegt, zählt die
+Adresssuche vor jedem Abruf je Aufrufer und insgesamt (``INSIGHT_PHOTON_PER_IP_MINUTE``,
+``INSIGHT_PHOTON_PER_MINUTE``); die Gesamtgrenze liegt unter dem Takt, damit die Verortung Zeitpunkte behält.
+Gleiche Eingaben kommen aus dem Cache, ohne zu zählen und ohne einen Zeitpunkt zu belegen.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import TYPE_CHECKING, Any
 
 import httpx
 from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Avg, Min, Q
 
+from insight_core import throttle
 from insight_core.services import dienste
 from insight_core.services.gazetteer import normalize_house_number, normalize_street_name, strip_house_number
 
@@ -32,9 +40,15 @@ MIN_QUERY_LEN = 2
 PHOTON_LIMIT = 5
 #: Die Adresssuche wartet im Seitenaufruf höchstens so lange auf einen Zeitpunkt bei Photon
 PHOTON_MAX_WAIT_SECONDS = 2.0
+#: Längere Eingaben werden gekürzt: Eine Adresse braucht nicht mehr
+MAX_QUERY_LEN = 100
+#: So lange gelten Vorschläge von Photon für dieselbe Eingabe
+PHOTON_CACHE_SECONDS = 24 * 60 * 60
 
 
-def autocomplete_places(body: OParlBody, query: str, limit: int = AUTOCOMPLETE_LIMIT) -> list[dict[str, Any]]:
+def autocomplete_places(
+    body: OParlBody, query: str, limit: int = AUTOCOMPLETE_LIMIT, *, client_key: str | None = None
+) -> list[dict[str, Any]]:
     """Vorschläge ``{name, lat, lon}`` für die Adresssuche der Nachbarschaftsseite."""
     from insight_core.models import Street
 
@@ -43,7 +57,7 @@ def autocomplete_places(body: OParlBody, query: str, limit: int = AUTOCOMPLETE_L
         return []
 
     if not Street.objects.filter(body=body).exists():
-        return photon_autocomplete(body, query)
+        return photon_autocomplete(body, query, client_key=client_key)
 
     base, house_number = strip_house_number(query)
     normalized = normalize_street_name(base)
@@ -98,8 +112,30 @@ def _street_rows(body: OParlBody, condition: Q, limit: int) -> list[dict[str, An
     return [{"name": row["name"], "lat": float(row["lat"]), "lon": float(row["lon"])} for row in rows]
 
 
-def photon_autocomplete(body: OParlBody | None, query: str) -> list[dict[str, Any]]:
-    """Fallback ohne Straßenverzeichnis: Photon-Suche mit Bias auf das Zentrum der Kommune."""
+def photon_autocomplete(body: OParlBody | None, query: str, *, client_key: str | None = None) -> list[dict[str, Any]]:
+    """
+    Fallback ohne Straßenverzeichnis: Photon-Suche mit Bias auf das Zentrum der Kommune.
+
+    ``client_key`` ist die Adresse des Aufrufers (``throttle.client_ip``). Über seiner Grenze oder der Gesamtgrenze
+    gibt es keine Vorschläge und keinen Abruf; Treffer aus dem Cache sind frei.
+    """
+    query = " ".join(query[:MAX_QUERY_LEN].split())
+    kennung = f"{getattr(body, 'pk', '')}|{query.lower()}"
+    cache_key = "insight:photon:" + hashlib.sha256(kennung.encode()).hexdigest()
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return list(cached)
+    # Vor dem Takt zählen: Wer über seiner Grenze liegt, reserviert keinen Zeitpunkt und zählt nicht ins Gesamte
+    if throttle.hit(
+        "photon-ip",
+        client_key or "unbekannt",
+        limit=throttle.setting("INSIGHT_PHOTON_PER_IP_MINUTE"),
+        window=throttle.MINUTE,
+    ) or throttle.hit(
+        "photon-all", "alle", limit=throttle.setting("INSIGHT_PHOTON_PER_MINUTE"), window=throttle.MINUTE
+    ):
+        return []
+
     params: dict[str, str] = {"q": query, "limit": str(PHOTON_LIMIT), "lang": "de"}
     if body and body.latitude and body.longitude:
         params["lat"] = str(body.latitude)
@@ -131,6 +167,8 @@ def photon_autocomplete(body: OParlBody | None, query: str) -> list[dict[str, An
         if body and not _inside_bbox(body, lat, lon):
             continue
         results.append({"name": _photon_label(props, query), "lat": lat, "lon": lon})
+    # Nur beantwortete Abrufe: Ein Fehlschlag oder ein fehlender Zeitpunkt soll sich nicht festschreiben
+    cache.set(cache_key, results, PHOTON_CACHE_SECONDS)
     return results
 
 

@@ -234,9 +234,14 @@ class AIRateLimiter:
     }
 
     @classmethod
-    def check_limit(cls, user_id: int, organization_id: str = None) -> tuple[bool, str]:
+    def reserve(cls, user_id: int, organization_id: str = None) -> tuple[bool, str]:
         """
-        Check if user has exceeded rate limits.
+        Check if user has exceeded rate limits, und den Aufruf im selben Schritt zählen.
+
+        Geprüft wird vor dem Anbieteraufruf. Läse die Prüfung nur den Stand und zählte erst nach der Antwort, sähen
+        alle Anfragen, die während des Aufrufs eintreffen, denselben alten Stand. Hier entscheidet der Wert, den
+        das Erhöhen selbst zurückgibt. Ist eine Grenze erreicht, werden die schon erhöhten Zähler zurückgenommen:
+        Eine abgewiesene Anfrage zählt wie bisher nicht.
 
         Args:
             user_id: The user's ID
@@ -245,14 +250,21 @@ class AIRateLimiter:
         Returns:
             Tuple of (allowed: bool, message: str)
         """
+        belegt: list[str] = []
         for period, limit in cls.LIMITS.items():
             key = cls._get_key(user_id, period)
-            count = cache.get(key, 0)
-
-            if count >= limit:
+            belegt.append(key)
+            if cls._erhoehen(key, cls.TTL_SECONDS[period]) > limit:
+                for schluessel in belegt:
+                    cls._zuruecknehmen(schluessel)
                 return False, cls._get_limit_message(period)
-
         return True, ""
+
+    @classmethod
+    def release(cls, user_id: int, organization_id: str = None) -> None:
+        """Eine Belegung aus ``reserve`` zurückgeben, wenn der Aufruf nicht zählen soll."""
+        for period in cls.LIMITS:
+            cls._zuruecknehmen(cls._get_key(user_id, period))
 
     @classmethod
     def increment(cls, user_id: int, organization_id: str = None) -> None:
@@ -264,12 +276,31 @@ class AIRateLimiter:
             organization_id: Optional organization ID
         """
         for period, ttl in cls.TTL_SECONDS.items():
-            key = cls._get_key(user_id, period)
+            cls._erhoehen(cls._get_key(user_id, period), ttl)
+
+    @staticmethod
+    def _erhoehen(key: str, ttl: int) -> int:
+        """Zähler atomar erhöhen; ``add`` legt ihn an, ohne eine gleichzeitige Zählung zu überschreiben."""
+        cache.add(key, 0, ttl)
+        try:
+            return int(cache.incr(key))
+        except ValueError:
+            # Zwischen add und incr abgelaufen: neu anlegen und noch einmal zählen
+            cache.add(key, 0, ttl)
             try:
-                cache.incr(key)
+                return int(cache.incr(key))
             except ValueError:
-                # Key doesn't exist yet, create it
                 cache.set(key, 1, ttl)
+                return 1
+
+    @staticmethod
+    def _zuruecknehmen(key: str) -> None:
+        try:
+            if int(cache.decr(key)) < 0:
+                # Das Zeitfenster der Belegung ist abgelaufen und neu begonnen: nicht unter null zählen
+                cache.incr(key)
+        except ValueError:
+            pass  # Zeitfenster abgelaufen, es gibt nichts mehr zurückzunehmen
 
     @classmethod
     def get_remaining(cls, user_id: int, period: str = "per_minute") -> int:

@@ -14,7 +14,8 @@ im Ingestor (``insight_sync.daemon.trigger_sync``). ``quelle_synchronisieren`` b
 from __future__ import annotations
 
 import logging
-from typing import Final
+from collections.abc import Iterable
+from typing import Any, Final
 
 from django.core.cache import cache
 from django.tasks import task
@@ -72,6 +73,21 @@ def file_extract_text(file_id: str) -> None:
 
     ergebnis = erkennen(file_id)
     logger.info("Texterkennung Datei %s: %s", file_id, ergebnis)
+
+
+def texterkennung_mit_vorrang(file_ids: Iterable[Any], *, priority: int, max_wartend: int) -> int:
+    """
+    Erkennung einzelner Dateien mit Vorrang einreihen (``file.read_text_layer`` bzw. ``file.extract_text``); Rückgabe:
+    Zahl der Aufträge.
+
+    Eingang für Aufrufer, die selbst weder Dateien laden noch Text erkennen (``insight_ai``, siehe die
+    Fitnessfunktion „insight_ai lädt keine Dateien“): Sie reihen nur Aufträge ein. In welche Stufe eine Datei kommt und
+    wie viele Aufträge mit Vorrang zugleich warten, entscheidet die Dokumentkette
+    (``hub.ris.erkennung.mit_vorrang_einplanen``).
+    """
+    from hub.ris.erkennung import mit_vorrang_einplanen
+
+    return mit_vorrang_einplanen(file_ids, priority=priority, max_wartend=max_wartend)
 
 
 @task

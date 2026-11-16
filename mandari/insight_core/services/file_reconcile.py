@@ -296,6 +296,13 @@ class Run:
         else:
             self._errors[host] = 0
 
+    def discard_pending(self) -> None:
+        """
+        Vormerkungen verwerfen, ohne zu sperren: Der Schritt, der sie gesammelt hat, ist abgebrochen und hat sie
+        nicht zu Ende geprüft. Der nächste Lauf prüft diese Dokumente erneut. Ruhende Hosts und die Bremse bleiben.
+        """
+        self._pending.clear()
+
     def defer_missing(self, file_obj: Any, now: datetime) -> None:
         """Neu fehlendes Dokument vormerken; über der Schwelle greift die Bremse für die Quelle."""
         key = _source_key(file_obj)

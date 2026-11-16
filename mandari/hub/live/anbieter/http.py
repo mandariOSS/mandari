@@ -14,6 +14,10 @@ Adresse vor jeder Anfrage und verbindet nur mit der geprüften Adresse (``safe_f
 Anbieter liegen nie im eigenen Netz, deshalb gilt die strenge Prüfung: ohne die Ausnahmen für den eigenen Host und
 für private Netze (``INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS``), die Abrufe bei Ratsinformationssystemen brauchen.
 
+Die Größengrenze gilt für den entpackten Inhalt: Gelesen werden die rohen Bytes, entpackt wird selbst und nie über
+die Grenze hinaus (``redirects.read_limited``). Angefordert und angenommen wird höchstens eine Lage gzip oder
+deflate; anders oder mehrfach kodierte Antworten weist der Abruf ab.
+
 Fehler werden zu ``AnbieterError`` mit festem Text (Statuscode, Zeitgrenze, zu groß); Antwortinhalte gelangen
 nie in Meldungen.
 """
@@ -26,7 +30,7 @@ from typing import Any, Final
 
 import httpx
 
-from insight_core.services import dienste, safe_fetch
+from insight_core.services import dienste, redirects, safe_fetch
 
 from . import AnbieterError
 
@@ -90,7 +94,10 @@ def hole(url: str, *, max_bytes: int = MAX_TEXT, http: httpx.Client | None = Non
         for _ in range(MAX_WEITERLEITUNGEN + 1):
             # Takt je Host, auch für das Ziel jeder Weiterleitung
             dienste.warten(ziel, dienste.LIVE)
-            with verbindung.stream("GET", ziel, follow_redirects=False) as antwort:
+            # Nur Kodierungen anfordern, die ``_inhalt`` begrenzt entpackt (httpx böte sonst auch br und zstd an)
+            with verbindung.stream(
+                "GET", ziel, headers={"Accept-Encoding": redirects.ACCEPT_ENCODING}, follow_redirects=False
+            ) as antwort:
                 if antwort.is_redirect:
                     ziel = ziel_pruefen(antwort.url.join(antwort.headers["location"]))
                     continue
@@ -115,14 +122,14 @@ def _inhalt(antwort: httpx.Response, max_bytes: int) -> bytes:
     laenge = antwort.headers.get("content-length")
     if laenge and laenge.isdigit() and int(laenge) > max_bytes:
         raise AnbieterError("Antwort zu groß")
-    teile: list[bytes] = []
-    gelesen = 0
-    for teil in antwort.iter_bytes():
-        gelesen += len(teil)
-        if gelesen > max_bytes:
-            raise AnbieterError("Antwort zu groß")
-        teile.append(teil)
-    return b"".join(teile)
+    # Nicht über ``iter_bytes``: httpx entpackt dort jedes empfangene Stück ganz, bevor die Grenze es sieht, und
+    # auch mehrere Lagen. Wenige hundert Bytes ergäben so Hunderte Megabyte im Speicher des Workers.
+    try:
+        return redirects.read_limited(antwort, max_bytes)
+    except redirects.ResponseTooLargeError as fehler:
+        raise AnbieterError("Antwort zu groß") from fehler
+    except httpx.DecodingError as fehler:
+        raise AnbieterError("Antwort nicht lesbar kodiert") from fehler
 
 
 def hole_json(url: str, *, http: httpx.Client | None = None) -> Any:

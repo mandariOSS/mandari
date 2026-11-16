@@ -6,8 +6,9 @@ Abonnement ``insight.fraktionen_live`` auf ``ris.broadcast.speaker_changed`` (re
 ``insight_core/subscribers.py``, solange ``LIVE_UEBERTRAGUNG_AKTIV`` an ist). Für jede neue Wortmeldung liest es die
 Angaben über ``hub.live.selectors.wortmeldung``. Nennt sie eine Person und eine gelesene Fraktion (keine
 Funktionsbezeichnung), verbucht ``fraktionen.fraktion_aus_einblendung`` die Fraktion: eindeutig, wenn die Person
-eindeutig zugeordnet und mindestens zweimal gleich gelesen ist (``WortmeldungDaten.eindeutig``), dann entsteht eine
-bestätigte Zuordnung; sonst ein Vorschlag, der im Admin auf Bestätigung wartet.
+eindeutig zugeordnet, am Sitzungstag Mitglied des Gremiums und mindestens zweimal gleich gelesen ist
+(``WortmeldungDaten.eindeutig``), dann entsteht eine bestätigte Zuordnung; sonst ein Vorschlag, der im Admin auf
+Bestätigung wartet. Nach einer Ablehnung für dieselbe Person entstehen nur noch Vorschläge.
 
 - **Idempotent:** ``PersonFraktionBeleg`` hält jede verbuchte Wortmeldung im selben Sicherungspunkt fest. Eine erneute
   Zustellung, ein Nachspielen (``events_dispatch --replay``) oder ``nachholen`` zählt sie nicht noch einmal.

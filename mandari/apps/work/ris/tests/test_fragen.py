@@ -411,3 +411,55 @@ def test_im_bisherigen_rahmen_fuehrt_die_frage_zur_suche(
     assert antwort.status_code == 302
     assert antwort["Location"] == reverse("work:ris_search", kwargs={"org_slug": org.slug})
     assert fake.aufrufe == []
+
+
+def _ueberlappende_fragen(
+    org: Any, stadt: Musterstadt, mitglied: Any, monkeypatch: pytest.MonkeyPatch, anzahl: int
+) -> tuple[list[str], list[fragen.Antwort]]:
+    """Ersetzt den Antwortdienst: Während die erste Antwort „läuft“, treffen ``anzahl`` weitere Fragen ein."""
+    anbieter(monkeypatch)
+    aufrufe: list[str] = []
+    ueberlappend: list[fragen.Antwort] = []
+
+    def antworten(frage: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        aufrufe.append(frage)
+        if len(aufrufe) == 1:
+            ueberlappend.extend(
+                fragen.beantworten(org, mitglied, f"Welche Sitzungen gibt es im Monat {n}?", stadt.body)
+                for n in range(anzahl)
+            )
+        return {"response": "Der Rat tagt am Dienstag.", "sources": [], "tokens_used": 800}
+
+    monkeypatch.setattr(chat_service, "process_chat_message", antworten)
+    erste = fragen.beantworten(org, mitglied, "Welche Sitzungen finden diese Woche statt?", stadt.body)
+    assert erste.html and not erste.hinweis
+    return aufrufe, ueberlappend
+
+
+def test_grenze_je_person_gilt_fuer_ueberlappende_fragen(
+    org: Any, stadt: Musterstadt, mitglied: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zwölf Fragen, von denen elf während der ersten eintreffen: Höchstens zehn je Minute gehen zum Anbieter."""
+    aufrufe, ueberlappend = _ueberlappende_fragen(org, stadt, mitglied, monkeypatch, 11)
+
+    assert len(aufrufe) == AIRateLimiter.LIMITS["per_minute"] == 10
+    assert [a.hinweis for a in ueberlappend if a.hinweis] == ["Zu viele Anfragen. Bitte warten Sie eine Minute."] * 2
+    assert AIRateLimiter.get_remaining(mitglied.user_id, "per_minute") == 0
+    # Die Schätzung je Frage ist auf den echten Verbrauch berichtigt; abgewiesene Fragen belegen nichts
+    assert OrganizationAITokenUsage.get_tokens_used(org, OrganizationAITokenUsage.PERIOD_DAY) == 10 * 800
+
+
+def test_kontingent_gilt_fuer_ueberlappende_fragen(
+    org: Any, stadt: Musterstadt, mitglied: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reicht das Tageskontingent nur für eine geschätzte Frage, geht während der laufenden keine weitere hinaus."""
+    org.ai_token_limit_daily = fragen.GESCHAETZTE_TOKEN + 100
+    org.save(update_fields=["ai_token_limit_daily"])
+
+    aufrufe, ueberlappend = _ueberlappende_fragen(org, stadt, mitglied, monkeypatch, 2)
+
+    assert len(aufrufe) == 1
+    assert [a.hinweis for a in ueberlappend] == ["Tageslimit für KI-Tokens erreicht."] * 2
+    assert OrganizationAITokenUsage.get_tokens_used(org, OrganizationAITokenUsage.PERIOD_DAY) == 800
+    # Nur die Frage, die lief, zählt für die Grenze je Person
+    assert AIRateLimiter.get_remaining(mitglied.user_id, "per_minute") == 9

@@ -16,7 +16,8 @@ unverändert.
   Beanspruchung; ``fetch_next_at`` hält dann das Ende der Beanspruchung (``DOCUMENT_FETCH_STALE_MINUTES``).
   Zeitpläne wählen nur aus und beanspruchen nicht. Endet ein Abruf ohne Ergebnis (Platte, Ablage, Takt,
   Quelle in Schonung), stellt er den Zustand davor wieder her und zählt keinen Versuch. Liegen gebliebene
-  Beanspruchungen gibt ``release_stale`` zu Beginn jedes Laufs von ``cache_files`` frei.
+  Beanspruchungen gibt ``release_stale`` zu Beginn jedes Laufs von ``cache_files`` frei; jede Freigabe zählt als
+  Versuch, und nach wiederholtem Abbruch ruht die Datei als ``error`` (sie beendete sonst jeden Lauf aufs Neue).
 - ``retry``: Zeitüberschreitung, Verbindungsfehler, 429, 5xx, leere Antwort, robots.txt nicht erreichbar, sowie
   404/410 in den ersten sieben Tagen nach unserer Erfassung (``created_at``). Wiederholt nach 15 min, 1 h,
   6 h, 24 h und 72 h (``fetch_attempts``, ``fetch_next_at``), danach ``error`` bzw. bei 404/410 ``missing``.
@@ -24,8 +25,9 @@ unverändert.
 - ``refused``: robots.txt verbietet, oder die Quelle liefert eine HTML-Seite statt der Datei (Bot-Schutz).
   Zurück auf ``none`` nur nach Freigabe (``robots_override`` bzw. ``dokumentkette freigeben``). Bewusst nicht
   „gesperrt“ im Sinn des Löschabgleichs (#787).
-- ``too_large``: größer als ``FILE_CACHE_MAX_MB``.
-- ``error``: sonstige Fehler (etwa 403) und erschöpfte Wiederholungen; ein neuer Versuch nach einer Woche.
+- ``too_large``: größer als ``FILE_CACHE_MAX_MB`` (gemessen am entpackten Inhalt).
+- ``error``: sonstige Fehler (etwa 403, eine Adresse, die sich nicht auswerten lässt) und erschöpfte
+  Wiederholungen; ein neuer Versuch nach einer Woche.
 - ``evicted``: von der Obergrenze des Dokument-Caches verdrängt (#961, ``insight_core/services/file_cache_limit.py``,
   nur ohne Objektspeicher). **Kein** Zustand, aus dem der Abruf von selbst beansprucht (nicht in ``due_q``,
   ``pending_queryset`` und Kennzahlen), sonst lüde der nächste Lauf wieder, was die Grenze eben verdrängt hat.
@@ -66,11 +68,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import IO, Any, Final
+from urllib.parse import urlsplit
 
 import httpx
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Case, Count, IntegerField, Q, QuerySet, Value, When
+from django.db.models import Case, Count, F, IntegerField, Q, QuerySet, Value, When
 from django.utils import timezone
 from mandari_oparl.abgleich import GONE_STATUS, looks_like_html
 from prometheus_client import Counter as PromCounter
@@ -116,6 +119,8 @@ STORAGE_ERROR: Final = "storage_error"
 BUSY: Final = "busy"
 #: Obergrenze des Dokument-Caches erreicht (#961): ``nachladen`` endet, Platz schafft das stündliche Aufräumen
 LIMIT: Final = "limit"
+#: Der Abruf einer Datei ist mit einer unerwarteten Ausnahme geendet: ``nachladen`` läuft mit der nächsten weiter
+UNEXPECTED: Final = "unerwartet"
 
 # --- Fehlercodes (``OParlFile.fetch_error``) -------------------------------------------------------------
 CODE_TIMEOUT: Final = "timeout"
@@ -131,6 +136,10 @@ CODE_TOO_LARGE: Final = "zu_gross"
 CODE_CLIENT: Final = "http_4xx"
 CODE_BLOCKED_DESTINATION: Final = "ziel_gesperrt"
 CODE_NO_URL: Final = "keine_adresse"
+#: Die Adresse aus der Quelle lässt sich nicht auswerten (kein Abruf möglich)
+CODE_BAD_URL: Final = "adresse"
+#: Ein Abruf blieb liegen (Absturz, Speicher): zählt als Versuch, siehe ``release_stale``
+CODE_ABORTED: Final = "abbruch"
 #: Vorübergehende Fehler: Wiederholung mit wachsendem Abstand
 RETRY_CODES: Final = frozenset(
     {CODE_TIMEOUT, CODE_CONNECTION, CODE_THROTTLED, CODE_SERVER, CODE_EMPTY, CODE_ROBOTS_UNREACHABLE}
@@ -443,16 +452,33 @@ def restore(beanspruchung: Claim) -> None:
 
 
 def release_stale(now: datetime | None = None) -> int:
-    """Liegen gebliebene Beanspruchungen freigeben (Absturz eines Abrufs). Rückgabe: Anzahl."""
+    """
+    Liegen gebliebene Beanspruchungen freigeben (Absturz eines Abrufs). Rückgabe: Anzahl.
+
+    Jede Freigabe zählt als Versuch. Die Datei ist sofort wieder fällig; beendet sie den Lauf aber immer wieder
+    (etwa am Speicher), stünde sie sonst bei jedem Lauf wieder vorn und hielte alle Dateien dahinter auf. Nach so
+    vielen Fehlschlägen in Folge wie bei den anderen Wiederholungen (``BACKOFF``) ruht sie deshalb als ``error`` und
+    kommt erst nach ``ERROR_RETRY`` wieder dran.
+    """
     now = now or timezone.now()
     verfallen = Q(local_status=FETCHING) & (Q(fetch_next_at__lt=now) | Q(fetch_next_at__isnull=True))
-    wiederholen = OParlFile.objects.filter(verfallen, fetch_attempts__gt=0).update(
-        local_status=RETRY, fetch_next_at=now
+    aufgegeben = OParlFile.objects.filter(verfallen, fetch_attempts__gte=len(BACKOFF)).update(
+        local_status=ERROR,
+        local_error="Abruf mehrfach abgebrochen",
+        fetch_error=CODE_ABORTED,
+        fetch_attempts=F("fetch_attempts") + 1,
+        fetch_next_at=now + ERROR_RETRY,
     )
-    neu = OParlFile.objects.filter(verfallen).update(local_status=NONE, fetch_next_at=None)
-    if wiederholen or neu:
-        logger.warning("Abruf: %d liegen gebliebene Beanspruchungen freigegeben", wiederholen + neu)
-    return wiederholen + neu
+    wiederholen = OParlFile.objects.filter(verfallen).update(
+        local_status=RETRY, fetch_attempts=F("fetch_attempts") + 1, fetch_next_at=now
+    )
+    if aufgegeben:
+        logger.warning(
+            "Abruf: %d Dateien nach wiederholtem Abbruch zurückgestellt, neuer Versuch in einer Woche", aufgegeben
+        )
+    if wiederholen:
+        logger.warning("Abruf: %d liegen gebliebene Beanspruchungen freigegeben", wiederholen)
+    return aufgegeben + wiederholen
 
 
 def failure_state(code: str, attempts: int, created_at: datetime | None, now: datetime) -> tuple[str, datetime | None]:
@@ -574,6 +600,29 @@ class TooLargeError(Exception):
     """Die Datei überschreitet die Größengrenze (``FILE_CACHE_MAX_MB``)."""
 
 
+class BadUrlError(httpx.RequestError):
+    """
+    Die Adresse aus der Quelle lässt sich nicht auswerten.
+
+    Als ``httpx.RequestError``: Wer Netzfehler eines Abrufs behandelt, behandelt damit auch sie als Fehlschlag
+    genau dieser Datei. ``ValueError`` und ``httpx.InvalidURL`` sind keine Netzfehler und beendeten sonst den
+    ganzen Lauf.
+    """
+
+
+def adresse_gueltig(url: str) -> bool:
+    """
+    Lässt sich die Adresse auswerten? Adressen stammen aus fremden Daten (``downloadUrl``, ``accessUrl``) und
+    können alles enthalten: eine offene Klammer im Host, Steuerzeichen, einen Port aus Buchstaben.
+    """
+    try:
+        urlsplit(url).port  # noqa: B018 - der Zugriff prüft den Port
+        httpx.URL(url)
+    except (ValueError, TypeError, httpx.InvalidURL):
+        return False
+    return True
+
+
 @dataclass
 class Antwort:
     """Ergebnis eines GET: Status, bei 200 Größe, SHA-256, Inhaltstyp und Anfang der Datei."""
@@ -617,8 +666,14 @@ def stream(
     Ausnahme und im Standardtakt). Folgen wir nicht, ``redirects.RedirectBlockedError`` bzw. ``RedirectBusyError``.
     """
     grenze = file_cache.max_bytes() if max_bytes is None else max_bytes
+    if not adresse_gueltig(url):
+        raise BadUrlError("Adresse nicht auswertbar")
+    # Nur Kodierungen anfordern, die unten begrenzt entpackt werden, auch wenn die Kopfzeilen der Quelle anderes
+    # nennen (httpx böte sonst auch br und zstd an)
+    kopfzeilen = {name: wert for name, wert in (headers or {}).items() if name.lower() != "accept-encoding"}
+    kopfzeilen["Accept-Encoding"] = redirects.ACCEPT_ENCODING
     with redirects.stream(
-        client, "GET", url, headers=headers, before_redirect=before_redirect or redirects.guard()
+        client, "GET", url, headers=kopfzeilen, before_redirect=before_redirect or redirects.guard()
     ) as response:
         if response.status_code != 200:
             return Antwort(response.status_code)
@@ -627,7 +682,10 @@ def stream(
         digest = hashlib.sha256()
         size = 0
         head = b""
-        for chunk in response.iter_bytes(1024 * 1024):
+        # Die Grenze gilt für den entpackten Strom: Entpackt wird selbst, in Stücken von höchstens 1 MiB und nur
+        # eine Lage. ``content-length`` oben nennt nur die gepackte Größe, und über ``iter_bytes`` entpackte httpx
+        # jedes empfangene Stück ganz, bevor die Prüfung hier es sieht.
+        for chunk in redirects.iter_decoded(response):
             size += len(chunk)
             if size > grenze:
                 raise TooLargeError
@@ -646,6 +704,8 @@ def head(
     before_redirect: redirects.BeforeRedirect | None = None,
 ) -> httpx.Response:
     """HEAD-Anfrage (Stichprobe des Löschabgleichs); Weiterleitungen wie bei :func:`stream`."""
+    if not adresse_gueltig(url):
+        raise BadUrlError("Adresse nicht auswertbar")
     request = client.build_request("HEAD", url, headers=headers or {})
     return redirects.send(client, request, before_redirect=before_redirect or redirects.guard())
 
@@ -704,6 +764,8 @@ def code_for_exception(exc: BaseException) -> str:
     """Fehlercode eines Netzfehlers."""
     if isinstance(exc, redirects.RedirectBlockedError):
         return code_for_redirect(exc)
+    if isinstance(exc, BadUrlError):
+        return CODE_BAD_URL
     if isinstance(exc, safe_fetch.BlockedDestinationError):
         return CODE_BLOCKED_DESTINATION
     if isinstance(exc, httpx.TimeoutException | safe_fetch.DeadlineExceededError):
@@ -791,6 +853,11 @@ def _abrufen_beansprucht(
     if file_cache.local_file(file_obj) is not None:
         mark_present(file_obj)
         return SKIPPED
+    if not adresse_gueltig(url):
+        # Vor robots.txt und Takt, die die Adresse schon auswerten: ein Fehlschlag dieser Datei, kein Abbruch des
+        # Laufs. Kein Eintrag in ``failure_state``: ``error``, neuer Versuch nach einer Woche (die Quelle kann
+        # die Adresse berichtigen).
+        return fail(file_obj, beanspruchung, CODE_BAD_URL, "Adresse nicht auswertbar", now)
     sync_config = robots.sync_config_of(file_obj)
     # Mit Höchstwartezeit eine Frist für robots.txt, Takt und alle Weiterleitungen zusammen
     deadline = redirects.deadline_after(max_wait)
@@ -937,7 +1004,12 @@ def nachladen(
             if je_quelle[schluessel] >= grenze:
                 continue
             je_quelle[schluessel] += 1
-            status = abrufen(file_obj, client=client, include_errors=retry_errors, include_evicted=retry_evicted)
+            try:
+                status = abrufen(file_obj, client=client, include_errors=retry_errors, include_evicted=retry_evicted)
+            except Exception:
+                # Eine Datei, deren Abruf unerwartet scheitert, beendet nicht den Lauf für alle Quellen dahinter
+                logger.exception("Abruf der Datei %s unerwartet gescheitert", file_obj.pk)
+                status = UNEXPECTED
             results[status] += 1
             erledigt += 1
             if status == DISK_FULL:

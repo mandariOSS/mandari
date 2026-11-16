@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import gzip
+import tracemalloc
+import zlib
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -183,6 +187,58 @@ def test_abruf_nur_https_mit_user_agent_und_grenzen(monkeypatch: pytest.MonkeyPa
     kennung = "mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)"
     assert gesehen[0].headers["User-Agent"] == kennung
     assert abruf.client().headers["User-Agent"] == kennung
+
+
+class _Strom(httpx.SyncByteStream):
+    """Antwortrumpf, der erst beim Lesen entsteht (wie aus dem Netz); ``content=`` läse httpx sofort ganz."""
+
+    def __init__(self, *teile: bytes) -> None:
+        self._teile = teile
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield from self._teile
+
+
+def test_groessengrenze_gilt_fuer_den_entpackten_inhalt() -> None:
+    """Entpackt wird höchstens bis zur Grenze, und nur eine Lage gzip oder deflate."""
+    megabyte = 1024 * 1024
+    gepackt = gzip.compress(bytes(48 * megabyte))
+    assert len(gepackt) < 64 * 1024
+    antworten: dict[str, tuple[str, bytes]] = {
+        "/klein": ("gzip", gzip.compress(b"x" * 600)),
+        "/deflate": ("deflate", zlib.compress(b"y" * 600)),
+        "/gross": ("gzip", gepackt),
+        "/doppelt": ("gzip, gzip", gzip.compress(gzip.compress(b"z" * 600))),
+        "/brotli": ("br", b"abc"),
+        "/genau": ("identity", b"x" * 1024),
+    }
+    gesehen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesehen.append(request)
+        kodierung, rumpf = antworten[request.url.path]
+        return httpx.Response(200, headers={"content-encoding": kodierung}, stream=_Strom(rumpf))
+
+    with _client(handler) as client:
+        assert abruf.hole("https://a.example/klein", max_bytes=1024, http=client) == b"x" * 600
+        assert abruf.hole("https://a.example/deflate", max_bytes=1024, http=client) == b"y" * 600
+        assert abruf.hole("https://a.example/genau", max_bytes=1024, http=client) == b"x" * 1024
+        # Angefordert wird nur, was der Abruf begrenzt entpackt
+        assert {anfrage.headers["Accept-Encoding"] for anfrage in gesehen} == {"gzip, deflate"}
+
+        tracemalloc.start()
+        try:
+            with pytest.raises(AnbieterError, match="zu groß"):
+                abruf.hole("https://a.example/gross", max_bytes=megabyte, http=client)
+            _, spitze = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        # Die 48 MiB der Antwort entstehen nie: Der Speicher bleibt nahe der Grenze von 1 MiB
+        assert spitze < 6 * megabyte, spitze
+
+        for pfad in ("/doppelt", "/brotli"):
+            with pytest.raises(AnbieterError, match="nicht lesbar kodiert"):
+                abruf.hole(f"https://a.example{pfad}", max_bytes=megabyte, http=client)
 
 
 def test_takt_je_host_vor_jeder_anfrage_und_weiterleitung(monkeypatch: pytest.MonkeyPatch) -> None:

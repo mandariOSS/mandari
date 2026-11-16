@@ -8,11 +8,12 @@ Server-Side Rendering mit Django Templates + HTMX.
 import json
 import logging
 from datetime import timedelta
+from typing import Any
 
 from django.conf import settings
 from django.db import DatabaseError
 from django.db.models import Sum
-from django.http import JsonResponse
+from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
@@ -23,6 +24,7 @@ from apps.common.ki_anbieter import KiEndpunkt, KiHinweis, endpunkt_fuer_insight
 from ..models import (
     ChatUsage,
 )
+from ..services import chat_guard
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 #: Sitzungsschlüssel der Einwilligung; der Wert ist die Kennung des Anbieters, für den sie gilt
@@ -156,7 +158,7 @@ def _tagesgrenze(name: str, standard: int) -> int:
         return standard
 
 
-def _tagesobergrenze_erreicht() -> bool:
+def _tagesobergrenze_erreicht(aufrufe_vorbelegt: int = 0, token_vorbelegt: int = 0) -> bool:
     """
     Kostenbremse (Issue #899): Tagesobergrenze für alle Antworten des KI-Assistenten zusammen.
 
@@ -164,10 +166,15 @@ def _tagesobergrenze_erreicht() -> bool:
     ``INSIGHT_CHAT_DAILY_MAX_CALLS`` oder ``INSIGHT_CHAT_DAILY_MAX_TOKENS`` erreicht, geht bis zum nächsten Tag keine
     Anfrage mehr an den Anbieter. Die Grenzen je Besucher und Konto (``_check_rate_limit``) lassen sich über viele
     Adressen und Konten umgehen; diese nicht. Eine laufende Antwort kann sie um höchstens eine Antwort überschreiten.
+
+    Gebucht wird erst nach der Antwort. Damit das auch für gleichzeitige Anfragen gilt, zählen die anderen gerade
+    laufenden Antworten mit ihrem höchsten möglichen Verbrauch mit (``aufrufe_vorbelegt``, ``token_vorbelegt`` aus
+    ``chat_guard.platz_belegen``).
     """
     beginn = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
     summen = ChatUsage.objects.filter(created_at__gte=beginn).aggregate(aufrufe=Sum("rounds"), token=Sum("tokens_used"))
-    aufrufe, token = summen["aufrufe"] or 0, summen["token"] or 0
+    aufrufe = (summen["aufrufe"] or 0) + aufrufe_vorbelegt
+    token = (summen["token"] or 0) + token_vorbelegt
     max_aufrufe = _tagesgrenze("INSIGHT_CHAT_DAILY_MAX_CALLS", 500)
     max_token = _tagesgrenze("INSIGHT_CHAT_DAILY_MAX_TOKENS", 1_000_000)
     if aufrufe < max_aufrufe and token < max_token:
@@ -248,6 +255,38 @@ def chat_message(request):
     session_key = request.session.session_key or ""
     user = request.user if request.user.is_authenticated else None
 
+    # Je Besucher höchstens eine laufende Antwort, belegt vor der Nutzungsgrenze und freigegeben nach dem Buchen:
+    # Die Grenze zählt gebuchte Antworten, und überlappende Anfragen sähen sonst alle denselben alten Stand. Belegt
+    # wird, woran die Grenze zählt: beim Konto das Konto, sonst Sitzung und Adresse. Staff ist ohne Grenze.
+    sperre: list[str] | None = []
+    if user is None:
+        sperre = chat_guard.besucher_sperren([f"sitzung:{session_key}", f"adresse:{ip_address}"])
+    elif not user.is_staff:
+        sperre = chat_guard.besucher_sperren([f"konto:{user.pk}"])
+    if sperre is None:
+        return JsonResponse(
+            {
+                "error": "answer_in_progress",
+                "message": "Ihre vorherige Frage wird noch beantwortet. Bitte warten Sie auf die Antwort.",
+            },
+            status=429,
+        )
+    try:
+        return _anfrage_pruefen(request, message, history, endpunkt, session_key, ip_address, user)
+    finally:
+        chat_guard.freigeben(sperre)
+
+
+def _anfrage_pruefen(
+    request: HttpRequest,
+    message: str,
+    history: Any,
+    endpunkt: KiEndpunkt,
+    session_key: str,
+    ip_address: str,
+    user: Any,
+) -> JsonResponse:
+    """Schritte 4 und 5: Nutzungsgrenze und Inhaltsfilter, danach ein Platz für die laufende Antwort."""
     # 4. Check rate limit
     is_allowed, rate_info = _check_rate_limit(request)
     if not is_allowed:
@@ -300,8 +339,38 @@ def chat_message(request):
             status=422,
         )
 
-    # Kostenbremse: Tagesobergrenze aller Antworten zusammen
-    if _tagesobergrenze_erreicht():
+    # Platz für die laufende Antwort: Die Kostenbremse rechnet die anderen laufenden Antworten mit ein, und mehr
+    # als ``INSIGHT_CHAT_MAX_CONCURRENT`` laufen nicht zugleich
+    platz = chat_guard.platz_belegen()
+    if platz is None:
+        return JsonResponse(
+            {
+                "error": "busy",
+                "message": "Der KI-Assistent ist gerade ausgelastet. Bitte versuchen Sie es in einer Minute erneut.",
+            },
+            status=503,
+        )
+    try:
+        return _antworten(request, message, history, endpunkt, session_key, ip_address, user, rate_info, platz)
+    finally:
+        # Erst nach dem Buchen: Dazwischen zählte die Antwort sonst weder als laufend noch als gebucht
+        chat_guard.freigeben([platz.schluessel])
+
+
+def _antworten(
+    request: HttpRequest,
+    message: str,
+    history: Any,
+    endpunkt: KiEndpunkt,
+    session_key: str,
+    ip_address: str,
+    user: Any,
+    rate_info: dict[str, Any],
+    platz: chat_guard.Platz,
+) -> JsonResponse:
+    """Kostenbremse, dann Schritte 6 bis 9: Antwort über den Anbieter, Verbrauch buchen, Antwort ausliefern."""
+    # Kostenbremse: Tagesobergrenze aller Antworten zusammen, gebuchte und gerade laufende
+    if _tagesobergrenze_erreicht(platz.aufrufe_vorbelegt, platz.token_vorbelegt):
         return JsonResponse(
             {
                 "error": "daily_budget_reached",

@@ -277,6 +277,121 @@ def test_gzip_und_deflate_werden_entpackt() -> None:
         redirects.read_limited(_kodiert(b"kein gzip", "gzip"), 1000)
 
 
+def test_deflate_ohne_zlib_huelle_wird_gelesen() -> None:
+    """Manche Server senden unter „deflate“ den rohen Strom (RFC 1951); ``httpx`` las ihn, wir lesen ihn weiter."""
+    import zlib
+
+    text = b"Vorlage 2026/0815 " * 500
+    packer = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    roh = packer.compress(text) + packer.flush()
+
+    assert redirects.read_limited(_kodiert(roh, "deflate"), 20_000) == text
+    assert b"".join(redirects.iter_decoded(_kodiert(roh, "deflate"))) == text
+    assert b"".join(redirects.iter_decoded(_kodiert(zlib.compress(text), "deflate"))) == text
+    with pytest.raises(redirects.ResponseTooLargeError):
+        redirects.read_limited(_kodiert(roh, "deflate"), 100)
+
+
+def _in_teilen(inhalt: bytes, kodierung: str, groesse: int) -> httpx.Response:
+    """Antwort, deren Rumpf in Stücken von ``groesse`` Bytes aus dem Netz kommt."""
+
+    class Strom(httpx.SyncByteStream):
+        def __iter__(self) -> Any:
+            for anfang in range(0, len(inhalt), groesse):
+                yield inhalt[anfang : anfang + groesse]
+
+    return httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, stream=Strom(), headers={"Content-Encoding": kodierung})
+        )
+    ).send(httpx.Request("GET", "https://ris.example.org/x"), stream=True)
+
+
+def test_deflate_wird_auch_byteweise_erkannt() -> None:
+    import zlib
+
+    text = b"Niederschrift " * 200
+    packer = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    roh = packer.compress(text) + packer.flush()
+
+    assert b"".join(redirects.iter_decoded(_in_teilen(roh, "deflate", 1))) == text
+    assert redirects.read_limited(_in_teilen(zlib.compress(text), "deflate", 1), 10_000) == text
+
+
+class _Gezaehlt:
+    """Entpacker, der nach zu vielen Aufrufen abbricht: Aus einer Endlosschleife wird ein gescheiterter Test."""
+
+    def __init__(self, echter: Any) -> None:
+        self._echter = echter
+        self._aufrufe = 0
+
+    def decompress(self, data: bytes, max_length: int) -> bytes:
+        self._aufrufe += 1
+        assert self._aufrufe <= 200, "das Entpacken endet nicht"
+        return bytes(self._echter.decompress(data, max_length))
+
+    @property
+    def unconsumed_tail(self) -> bytes:
+        return bytes(self._echter.unconsumed_tail)
+
+    @property
+    def eof(self) -> bool:
+        return bool(self._echter.eof)
+
+
+@pytest.mark.parametrize(
+    "anhang",
+    [b"!", b"\x00" * 512, gzip.compress(b"zweites Glied")],
+    ids=["ein Byte", "Füllbytes", "weiteres gzip-Glied"],
+)
+def test_daten_hinter_dem_ende_des_gepackten_stroms_beenden_das_lesen(
+    anhang: bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Sendet ein Server nach dem Ende des gzip-Stroms noch etwas, endet das Lesen mit dem Inhalt des Stroms.
+
+    Nach einem vollen Stück blieb der Anhang sonst für immer als unverbrauchte Eingabe stehen: Die Schleife lief
+    ohne Ausgabe weiter und endete nie.
+    """
+    echter_entpacker = redirects._decoder
+    monkeypatch.setattr(redirects, "_decoder", lambda response: _Gezaehlt(echter_entpacker(response)))
+    inhalt = b"x" * 3000
+    gepackt = gzip.compress(inhalt) + anhang
+
+    assert b"".join(redirects.iter_decoded(_kodiert(gepackt, "gzip"), max_chunk=1000)) == inhalt
+    assert b"".join(redirects.iter_decoded(_in_teilen(gepackt, "gzip", 7), max_chunk=1000)) == inhalt
+    assert redirects.read_limited(_kodiert(gepackt, "gzip"), 10_000) == inhalt
+    assert redirects.read_limited(_in_teilen(gepackt, "gzip", 7), 10_000) == inhalt
+
+
+def _danach_fehler(gepackt: bytes, kodierung: str) -> httpx.Response:
+    """Antwort, deren Rumpf nach dem gepackten Inhalt nicht weiter gelesen werden darf."""
+
+    class Strom(httpx.SyncByteStream):
+        def __iter__(self) -> Any:
+            yield gepackt
+            raise AssertionError("nach dem Ende des gepackten Stroms wurde weitergelesen")
+
+    return httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, stream=Strom(), headers={"Content-Encoding": kodierung})
+        )
+    ).send(httpx.Request("GET", "https://ris.example.org/x"), stream=True)
+
+
+def test_nach_dem_ende_des_gepackten_stroms_wird_nichts_mehr_gelesen() -> None:
+    """Füllstücke hinter einem kleinen gepackten Inhalt ergäben keine Ausgabe und zählten nie gegen die Grenze."""
+    import zlib
+
+    inhalt = b"Tagesordnung"
+    packer = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    roh = packer.compress(inhalt) + packer.flush()
+
+    for gepackt, kodierung in ((gzip.compress(inhalt), "gzip"), (zlib.compress(inhalt), "deflate"), (roh, "deflate")):
+        assert redirects.read_limited(_danach_fehler(gepackt, kodierung), 1000) == inhalt
+        assert b"".join(redirects.iter_decoded(_danach_fehler(gepackt, kodierung))) == inhalt
+
+
 def test_robots_txt_wird_nur_bis_zur_grenze_gelesen(monkeypatch: pytest.MonkeyPatch, echte_robots: Any) -> None:
     gross = b"User-agent: *\nDisallow: /intern\n" + b"# Kommentar\n" * 500_000
     assert len(gross) > 4 * MAX_BYTES
