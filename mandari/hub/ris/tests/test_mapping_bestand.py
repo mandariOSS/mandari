@@ -311,6 +311,15 @@ def test_gremium_das_die_quelle_nicht_ausgibt_bleibt_als_verweis_erhalten(welt: 
     assert sitzung["organization"] == [f"{API}/organization/{welt['organization'].pk}"]
     assert sitzung["mandari:organizationNotPublished"] == [gesperrt]
 
+    # Ein Gremium im Bestand ohne Zuordnung zur Sitzung gilt nicht als fehlend, ein eingebettetes zählt mit seiner
+    # Kennung
+    welt["meeting"].organizations.clear()
+    eingebettet = {"id": f"{RIS}/organization/902", "name": "Aufsichtsrat"}
+    rohdaten = {**welt["meeting"].raw_json, "organization": [welt["organization"].external_id, eingebettet]}
+    ohne_zuordnung = _sitzung_mit(welt, raw_json=rohdaten)
+    assert "organization" not in ohne_zuordnung
+    assert ohne_zuordnung["mandari:organizationNotPublished"] == [f"{RIS}/organization/902"]
+
 
 def test_ende_einer_sitzung_nur_nach_dem_beginn(welt: dict[str, Any]) -> None:
     """Issue #1441: Viele Quellen liefern als Ende das Datum ohne Uhrzeit, also Mitternacht vor dem Beginn."""
