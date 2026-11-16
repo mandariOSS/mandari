@@ -146,16 +146,17 @@ def test_weiterblaettern_zaehlt_die_ausgelieferten_sitzungen(
             external_id=kennung("meetings"),
             body=stadt.body,
             start=datetime(2026, 12, 1 + nr // 3, 17, 0, tzinfo=BERLIN),
-            name=f"Sitzung {nr} " + "des Ausschusses für sehr lange Namen " * 6,
+            name=f"Sitzung {nr} " + 'des Ausschusses „für" sehr \\ lange "Namen" ' * 6,
             location_name="Rathaus, großer Sitzungssaal im ersten Obergeschoss " * 4,
         )
-    monkeypatch.setattr(chat_tools, "ZEILEN_BUDGET", 3000)
+    # Kleine Grenze und Zeichen, die JSON maskiert: Gemessen wird das fertige Ergebnis, nicht die rohe Zeile
+    monkeypatch.setitem(chat_tools.RESULT_LIMITS, "sitzungen_im_zeitraum", 4000)
 
     gesehen: list[str] = []
     ab = 0
     for _aufruf in range(20):
         teil = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=ab)
-        assert "weggelassen" not in teil
+        assert "weggelassen" not in teil and len(teil["sitzungen"]) == teil["anzahl"]
         assert 0 < teil["anzahl"] < chat_tools.MAX_MEETINGS
         gesehen += [zeile.split(" | ")[3] for zeile in teil["sitzungen"]]
         if "weitere" not in teil:
@@ -168,6 +169,42 @@ def test_weiterblaettern_zaehlt_die_ausgelieferten_sitzungen(
     monkeypatch.setattr(chat_tools, "MAX_AB", 5)
     grenze = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31")
     assert grenze["weitere"] == "ja, die Liste ist unvollständig: bitte den Zeitraum enger fassen"
+
+
+def test_umfangreiche_tagesordnungen_kuerzen_nicht_die_sitzungsliste(
+    ctx: ToolContext, stadt: Musterstadt, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mit tagesordnung=true: Reicht der Platz nicht, fallen Tagesordnungen weg, nie Sitzungen ohne Hinweis."""
+    from insight_core.models import OParlAgendaItem
+
+    for sitzung in (stadt.rat_sitzung, stadt.ausschuss_sitzung):
+        for nr in range(40, 70):
+            OParlAgendaItem.objects.create(
+                external_id=kennung("agendaitems"),
+                meeting=sitzung,
+                number=str(nr),
+                order=nr,
+                name=f"Bebauungsplan Nr. {nr} „Wohngebiet am Musterpark“ – Satzungsbeschluss und Abwägung",
+            )
+    voll = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    assert (voll["anzahl"], len(voll["tagesordnungen"])) == (2, 2)
+    assert "hinweis_tagesordnung" not in voll
+
+    monkeypatch.setitem(chat_tools.RESULT_LIMITS, "sitzungen_im_zeitraum", 5000)
+    knapp = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    assert "weggelassen" not in knapp
+    assert (knapp["anzahl"], knapp["sitzungen"]) == (2, voll["sitzungen"])
+    assert len(knapp.get("tagesordnungen", [])) < 2
+    assert "einzeln mit sitzung" in knapp["hinweis_tagesordnung"]
+
+    # Als Quelle mit Einzelheiten gilt nur, was im Ergebnis steht: nicht die Sitzung einer weggefallenen Tagesordnung
+    frisch = context_for(stadt.body.pk, now=JETZT)
+    assert frisch is not None
+    teil = rufe(frisch, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    geliefert = len(teil.get("tagesordnungen", []))
+    assert len(frisch.detail_urls) == geliefert < 2
+    # Die Zeilen der Sitzungen bleiben mögliche Quellen
+    assert all(zeile.split(" | ")[3] in frisch.sources for zeile in teil["sitzungen"])
 
 
 def test_sitzungen_eines_gremiums(ctx: ToolContext, stadt: Musterstadt) -> None:
