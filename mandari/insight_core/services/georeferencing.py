@@ -544,8 +544,31 @@ _VALID_OSM_KEYS = {
     "boundary",  # administrative boundaries
 }
 
+#: Ortsangaben der Art ``place``, die eine Fläche benennen (Ortsteil, Siedlung), kein einzelnes Haus oder Gehöft
+_PLACE_AREAS = {
+    "city",
+    "town",
+    "village",
+    "hamlet",
+    "suburb",
+    "quarter",
+    "neighbourhood",
+    "borough",
+    "district",
+    "municipality",
+    "locality",
+}
 
-def geocode_address(address: str, body) -> dict | None:
+
+def _street_level(kind: str, value: str) -> bool:
+    """
+    Treffer auf Straßen- oder Ortsebene (OSM-Schlüssel und -Wert)? Ein Gebäude, eine Einrichtung oder ein Grundstück
+    liefert die Koordinaten des Objekts selbst und ist damit so genau wie ein Adresspunkt.
+    """
+    return kind in ("highway", "boundary") or (kind == "place" and value in _PLACE_AREAS)
+
+
+def geocode_address(address: str, body, *, nur_strassenebene: bool = False) -> dict | None:
     """
     Geocode an address using Photon API, biased towards the body's location.
     Validates that the result actually matches the search term.
@@ -556,6 +579,9 @@ def geocode_address(address: str, body) -> dict | None:
     Args:
         address: Address string to geocode
         body: OParlBody instance for location bias
+        nur_strassenebene: nur Treffer auf Straßen- oder Ortsebene (``_street_level``). Für Vorgänge mit
+            Privatanschriften (``ortsschutz``, Issue #1269): Dort gibt es nie einen Adresspunkt, also auch nicht
+            den Punkt eines benannten Gebäudes oder Hofs.
 
     Returns:
         Dict with lat, lon, name or None if not found
@@ -563,7 +589,7 @@ def geocode_address(address: str, body) -> dict | None:
     _rate_limit()
 
     # Try full address first
-    result = _geocode_photon(address, body)
+    result = _geocode_photon(address, body, nur_strassenebene=nur_strassenebene)
     if result:
         return result
 
@@ -571,15 +597,25 @@ def geocode_address(address: str, body) -> dict | None:
     street_only = re.sub(r"\s+\d{1,4}\s*[a-zA-Z]?\s*$", "", address).strip()
     if street_only != address:
         _rate_limit()
-        result = _geocode_photon(street_only, body)
+        result = _geocode_photon(street_only, body, nur_strassenebene=nur_strassenebene)
         if result:
             return result
 
     # Fallback: Nominatim (höchstens eine Anfrage je Sekunde, Takt je Host in _geocode_nominatim)
-    return _geocode_nominatim(address, body)
+    return _geocode_nominatim(address, body, nur_strassenebene=nur_strassenebene)
 
 
-def _geocode_photon(address: str, body) -> dict | None:
+def geocode_fallback(address: str, body, *, adresspunkte: bool) -> dict | None:
+    """
+    Geocoder für Orte, die das Straßenverzeichnis nicht kennt. Ohne ``adresspunkte`` (Privatanschriften, #1269) nur
+    Treffer auf Straßen- oder Ortsebene.
+    """
+    if adresspunkte:
+        return geocode_address(address, body)
+    return geocode_address(address, body, nur_strassenebene=True)
+
+
+def _geocode_photon(address: str, body, *, nur_strassenebene: bool = False) -> dict | None:
     """Geocode via Photon API (komoot.io) with result validation."""
     params = {
         "q": f"{address}, {body.name}",
@@ -615,6 +651,9 @@ def _geocode_photon(address: str, body) -> dict | None:
 
             # Validation 1: Must be a geographic feature, not random POI
             if osm_key not in _VALID_OSM_KEYS:
+                continue
+            # Privatanschriften: kein Punkt eines einzelnen Objekts, der nächste Treffer kann die Straße sein
+            if nur_strassenebene and not _street_level(osm_key, props.get("osm_value", "")):
                 continue
 
             # Validation 2: Result must be related to the search query.
@@ -705,7 +744,7 @@ def _result_matches_query(
     return bool(q_words and result_words and q_words & result_words)
 
 
-def _geocode_nominatim(address: str, body) -> dict | None:
+def _geocode_nominatim(address: str, body, *, nur_strassenebene: bool = False) -> dict | None:
     """Geocode via Nominatim (OpenStreetMap) as fallback."""
     params = {
         "q": f"{address}, {body.name}",
@@ -733,6 +772,8 @@ def _geocode_nominatim(address: str, body) -> dict | None:
             return None
 
         result = results[0]
+        if nur_strassenebene and not _street_level(result.get("class", ""), result.get("type", "")):
+            return None
         return {
             "lat": float(result["lat"]),
             "lon": float(result["lon"]),
@@ -1037,7 +1078,7 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
                 if not adresspunkte:
                     # Privatanschrift: nur die Straße geokodieren (#1269)
                     address, house_number = ortsschutz.ort_ohne_hausnummer(address), None
-                result = geocode_address(address, body)
+                result = geocode_fallback(address, body, adresspunkte=adresspunkte)
                 if result and is_within_body(result["lat"], result["lon"], body):
                     source = "address_match" if house_number else "street_match"
                     result["source"] = source
@@ -1074,8 +1115,8 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
                     )
                     continue
 
-            # POIs/sonstige Orte: Photon/Nominatim-Fallback mit BBox-Check
-            result = geocode_address(address, body)
+            # POIs/sonstige Orte: Photon/Nominatim-Fallback mit BBox-Check; bei Privatanschriften nur die Straße
+            result = geocode_fallback(address, body, adresspunkte=adresspunkte)
             if result and is_within_body(result["lat"], result["lon"], body):
                 result["source"] = "ai"
                 result["confidence"] = CONFIDENCE["ai"]

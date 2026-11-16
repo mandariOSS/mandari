@@ -239,7 +239,7 @@ def _geokodieren(name: str, paper: OParlPaper, gazetteer: Any) -> dict[str, Any]
     Einwohnerschaft und Bauanträgen nur die Straße, nie der Adresspunkt (``ortsschutz``, Issue #1269).
     """
     from insight_core.services import ortsschutz
-    from insight_core.services.georeferencing import geocode_address, is_within_body
+    from insight_core.services.georeferencing import geocode_fallback, is_within_body
 
     if paper.body is None:
         return None
@@ -253,7 +253,8 @@ def _geokodieren(name: str, paper: OParlPaper, gazetteer: Any) -> dict[str, Any]
         bezeichnung = treffer["name"] + (f" {treffer['house_number']}" if treffer.get("house_number") else "")
         konfidenz = KONFIDENZ_VERZEICHNIS
     else:
-        gefunden = geocode_address(name, paper.body)
+        # Ohne Adresspunkt auch kein Punkt eines benannten Gebäudes: nur Treffer auf Straßen- oder Ortsebene
+        gefunden = geocode_fallback(name, paper.body, adresspunkte=adresspunkt)
         if not gefunden or not is_within_body(gefunden["lat"], gefunden["lon"], paper.body):
             return None
         lat, lon = float(gefunden["lat"]), float(gefunden["lon"])
