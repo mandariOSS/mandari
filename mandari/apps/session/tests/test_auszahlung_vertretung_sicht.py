@@ -685,7 +685,9 @@ def test_erneut_senden_bindet_die_einladung_an_die_sendende_person() -> None:
     assert eintrag.changes["eingeladen_von_bisher"] == einladende.user.email
 
 
-def test_erneut_senden_protokolliert_den_wechsel_auch_bei_gescheitertem_versand(monkeypatch) -> None:
+def test_erneut_senden_protokolliert_den_wechsel_auch_bei_gescheitertem_versand(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     tenant = _tenant("nord")
     verwaltung = nutzer(tenant, "verwaltung", "manage_users")
     einladende = nutzer(tenant, "einladende", "manage_users")
