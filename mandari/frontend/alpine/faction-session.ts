@@ -620,6 +620,16 @@ interface AntwortDetail {
  */
 export const topNeu = defineComponent(() => ({
   doppelt: '',
+  /** Titel der laufenden Anfrage: Die Warnung gilt nur ihm, das Feld bleibt währenddessen bearbeitbar */
+  gesendet: '',
+
+  titel(): string {
+    return (this.$root as HTMLElement).querySelector<HTMLInputElement>('input[name="title"]')?.value ?? ''
+  },
+
+  merken() {
+    this.gesendet = this.titel()
+  },
 
   antwort(event: Event) {
     const xhr = (event as CustomEvent<AntwortDetail>).detail?.xhr
@@ -627,7 +637,8 @@ export const topNeu = defineComponent(() => ({
     if (xhr.status === 409 && xhr.getResponseHeader('X-Top-Doppelt')) {
       // htmx verarbeitet die Antwort nicht weiter: kein Austausch, keine Fehlermeldung, die Warnung steht im Dialog
       event.preventDefault()
-      this.doppelt = xhr.responseText
+      // Wurde der Titel inzwischen geändert, gehört die Warnung nicht mehr zu ihm: Der nächste Versuch prüft neu
+      this.doppelt = this.titel() === this.gesendet ? xhr.responseText : ''
       return
     }
     const formular = this.$root as HTMLFormElement
