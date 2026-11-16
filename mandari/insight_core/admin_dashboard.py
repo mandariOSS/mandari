@@ -5,8 +5,10 @@ Dashboard-Konfiguration für Django Unfold Admin.
 Zeigt Statistiken und Übersichten für das Mandari-Projekt.
 """
 
+import logging
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.db.models import Count
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
@@ -16,14 +18,16 @@ from apps.common.formatting import MONTH_ABBREVIATIONS
 # Diagrammdaten landen im Skript der Admin-Startseite; Kommunennamen stammen aus den Quellen
 from .seo import script_json
 
+logger = logging.getLogger(__name__)
 
-def dashboard_callback(request, context):
-    """
-    Bereitet die Dashboard-Daten für die Admin-Startseite vor.
+#: Vorberechnete Kennzahlen der Admin-Startseite (Issue #1409)
+KENNZAHLEN_KEY = "insight:admin-startseite:kennzahlen:v1"
+#: ``check_source_health`` rechnet sie stündlich neu; die Frist überbrückt zwei ausgefallene Läufe
+KENNZAHLEN_TTL = 3 * 3600
 
-    Diese Funktion wird von Unfold aufgerufen und fügt
-    statistische Daten zum Template-Context hinzu.
-    """
+
+def _kennzahlen_berechnen() -> dict:
+    """Zählwerte und Diagrammdaten über die großen OParl-Tabellen (in Produktion rund 11 s)."""
     from insight_core.models import (
         OParlAgendaItem,
         OParlBody,
@@ -36,25 +40,96 @@ def dashboard_callback(request, context):
         OParlSource,
     )
 
-    # Zeitraum für "kürzlich"
-    recent_date = timezone.now() - timedelta(days=7)
-    twelve_months_ago = timezone.now() - timedelta(days=365)
+    now = timezone.now()
+    recent_date = now - timedelta(days=7)
+    twelve_months_ago = now - timedelta(days=365)
 
-    # OParl Statistiken
-    context["stats"] = {
+    stats = {
         "sources": OParlSource.objects.count(),
         "sources_active": OParlSource.objects.filter(is_active=True).count(),
         "bodies": OParlBody.objects.count(),
         "organizations": OParlOrganization.objects.count(),
         "persons": OParlPerson.objects.count(),
         "meetings": OParlMeeting.objects.count(),
-        "meetings_upcoming": OParlMeeting.objects.filter(start__gte=timezone.now()).count(),
+        "meetings_upcoming": OParlMeeting.objects.filter(start__gte=now).count(),
         "papers": OParlPaper.objects.count(),
         "papers_recent": OParlPaper.objects.filter(created_at__gte=recent_date).count(),
         "agenda_items": OParlAgendaItem.objects.count(),
         "files": OParlFile.objects.count(),
         "memberships": OParlMembership.objects.count(),
     }
+
+    papers_monthly = list(
+        OParlPaper.objects.filter(date__gte=twelve_months_ago, date__isnull=False)
+        .annotate(month=TruncMonth("date"))
+        .values("month")
+        .annotate(count=Count("id"))
+        .order_by("month")
+    )
+    meetings_monthly = list(
+        OParlMeeting.objects.filter(start__gte=twelve_months_ago)
+        .annotate(month=TruncMonth("start"))
+        .values("month")
+        .annotate(count=Count("id"))
+        .order_by("month")
+    )
+    meetings_by_month = {m["month"]: m["count"] for m in meetings_monthly}
+    chart_months, chart_papers, chart_meetings = [], [], []
+    for item in papers_monthly:
+        if item["month"]:
+            chart_months.append(MONTH_ABBREVIATIONS[item["month"].month - 1])
+            chart_papers.append(item["count"])
+            chart_meetings.append(meetings_by_month.get(item["month"], 0))
+
+    papers_by_body = list(OParlPaper.objects.values("body__name").annotate(count=Count("id")).order_by("-count")[:10])
+
+    return {
+        "stats": stats,
+        "chart_months": chart_months,
+        "chart_papers": chart_papers,
+        "chart_meetings": chart_meetings,
+        "papers_by_body_labels": [p["body__name"] or "Unbekannt" for p in papers_by_body],
+        "papers_by_body_data": [p["count"] for p in papers_by_body],
+        "ermittelt_am": now,
+    }
+
+
+def dashboard_kennzahlen(*, refresh: bool = False) -> dict:
+    """
+    Kennzahlen der Admin-Startseite aus dem Cache (Issue #1409).
+
+    Die Zählungen über Vorgänge, Dateien und Tagesordnungspunkte dauern in Produktion rund 11 s. Der stündliche
+    Prüflauf ``check_source_health`` rechnet sie vor (``refresh=True``); fehlt der Stand, rechnet ihn der erste
+    Aufruf einmal selbst.
+    """
+    if not refresh:
+        try:
+            stand = cache.get(KENNZAHLEN_KEY)
+        except Exception:  # noqa: BLE001 – ohne Cache rechnet der Aufruf selbst
+            stand = None
+        if stand is not None:
+            return stand
+    stand = _kennzahlen_berechnen()
+    try:
+        cache.set(KENNZAHLEN_KEY, stand, KENNZAHLEN_TTL)
+    except Exception:  # noqa: BLE001
+        logger.warning("Kennzahlen der Admin-Startseite nicht speicherbar", exc_info=True)
+    return stand
+
+
+def dashboard_callback(request, context):
+    """
+    Bereitet die Dashboard-Daten für die Admin-Startseite vor.
+
+    Diese Funktion wird von Unfold aufgerufen und fügt
+    statistische Daten zum Template-Context hinzu.
+    """
+    from insight_core.models import OParlMeeting, OParlPaper, OParlSource
+
+    # Zählwerte und Diagramme: vorberechnet (Issue #1409)
+    kennzahlen = dashboard_kennzahlen()
+    context["stats"] = kennzahlen["stats"]
+    context["kennzahlen_stand"] = kennzahlen["ermittelt_am"]
 
     # Betriebsstatus (Quellen-Gesundheit, Systemchecks, Handlungsbedarf)
     try:
@@ -96,47 +171,10 @@ def dashboard_callback(request, context):
     context["recent_papers"] = OParlPaper.objects.order_by("-created_at")[:5]
 
     # === CHART DATA ===
-
-    # Papers per month
-    papers_monthly = list(
-        OParlPaper.objects.filter(date__gte=twelve_months_ago, date__isnull=False)
-        .annotate(month=TruncMonth("date"))
-        .values("month")
-        .annotate(count=Count("id"))
-        .order_by("month")
-    )
-
-    # Meetings per month
-    meetings_monthly = list(
-        OParlMeeting.objects.filter(start__gte=twelve_months_ago)
-        .annotate(month=TruncMonth("start"))
-        .values("month")
-        .annotate(count=Count("id"))
-        .order_by("month")
-    )
-
-    # Build chart data
-    chart_months = []
-    chart_papers = []
-    chart_meetings = []
-
-    # Create month lookup
-    meetings_by_month = {m["month"]: m["count"] for m in meetings_monthly}
-
-    for item in papers_monthly:
-        if item["month"]:
-            chart_months.append(MONTH_ABBREVIATIONS[item["month"].month - 1])
-            chart_papers.append(item["count"])
-            chart_meetings.append(meetings_by_month.get(item["month"], 0))
-
-    context["chart_months"] = script_json(chart_months)
-    context["chart_papers"] = script_json(chart_papers)
-    context["chart_meetings"] = script_json(chart_meetings)
-
-    # Papers by body (for doughnut chart)
-    papers_by_body = list(OParlPaper.objects.values("body__name").annotate(count=Count("id")).order_by("-count")[:10])
-
-    context["papers_by_body_labels"] = script_json([p["body__name"] or "Unbekannt" for p in papers_by_body])
-    context["papers_by_body_data"] = script_json([p["count"] for p in papers_by_body])
+    context["chart_months"] = script_json(kennzahlen["chart_months"])
+    context["chart_papers"] = script_json(kennzahlen["chart_papers"])
+    context["chart_meetings"] = script_json(kennzahlen["chart_meetings"])
+    context["papers_by_body_labels"] = script_json(kennzahlen["papers_by_body_labels"])
+    context["papers_by_body_data"] = script_json(kennzahlen["papers_by_body_data"])
 
     return context

@@ -24,9 +24,16 @@ class Command(EinmaligMixin, BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Alarme nur anzeigen, nicht senden")
 
     def handle(self, *args, **options):
+        from insight_core.admin_dashboard import dashboard_kennzahlen
         from insight_core.services.source_health import collect_health, send_health_alerts
 
-        health = collect_health()
+        # Teure Zählungen für Betriebsmonitor und Admin-Startseite vorberechnen, die Seiten lesen nur den Stand
+        # (Issue #1409)
+        health = collect_health(dokument_cache_neu=True)
+        try:
+            dashboard_kennzahlen(refresh=True)
+        except Exception as exc:  # noqa: BLE001 – die Startseite rechnet dann beim ersten Aufruf selbst
+            self.stderr.write(f"Kennzahlen der Admin-Startseite nicht ermittelt: {type(exc).__name__}")
         self.stdout.write(f"Gesamtstatus: {health['overall_meta']['label']}")
         for check in health["system"]:
             self.stdout.write(f"  [{check['label']:8}] {check['name']}: {check['detail']}")
