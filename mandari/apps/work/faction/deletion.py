@@ -372,12 +372,11 @@ def has_hidden_subitems(item: FactionAgendaItem, membership: Membership | None) 
 
 
 @transaction.atomic
-def delete_agenda_item(
-    item: FactionAgendaItem, confirmation: Any, membership: Membership | None = None
-) -> DeletionImpact:
+def delete_agenda_item(item: FactionAgendaItem, confirmation: Any, membership: Membership) -> DeletionImpact:
     """
-    TOP löschen; verschwinden Inhalte mit, nur mit passender Eingabe (Nummer oder Titel). Mit ``membership``: nicht,
-    wenn dabei Unterpunkte verschwänden, die das Mitglied nicht sehen darf (``DeletionNotAllowedError``).
+    TOP löschen; verschwinden Inhalte mit, nur mit passender Eingabe (Nummer oder Titel). Nicht, wenn dabei
+    Unterpunkte verschwänden, die das Mitglied nicht sehen darf (``DeletionNotAllowedError``); ``membership`` ist
+    deshalb Pflicht.
     """
     from .agenda import lock_meeting
     from .models import FactionMeeting
@@ -388,7 +387,7 @@ def delete_agenda_item(
         lock_meeting(item.meeting)
         if FactionMeeting.objects.filter(pk=item.meeting_id, protocol_approved=True).exists():
             raise DeletionBlockedError(PROTOCOL_APPROVED_ITEM)
-        if membership is not None and has_hidden_subitems(item, membership):
+        if has_hidden_subitems(item, membership):
             raise DeletionNotAllowedError(HIDDEN_SUBITEMS)
         impact = impact_of(item)
         if impact.has_content and not confirmed(confirmation, item_phrases(item)):

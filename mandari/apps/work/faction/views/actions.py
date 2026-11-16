@@ -967,8 +967,8 @@ class FactionActionView(WorkViewMixin, View):
                     entry.action_assignee = faction_services.zustaendige_person(
                         self.organization, assignee_id, agenda_item
                     )
-                except faction_services.ZustaendigNurVereidigteError as exc:
-                    return self._rejected(request, meeting, str(exc), 400)
+                except faction_services.ZustaendigNurVereidigteError:
+                    return self._rejected(request, meeting, faction_services.ZUSTAENDIG_NUR_VEREIDIGTE, 400)
             if due_date:
                 entry.action_due_date = due_date
 
