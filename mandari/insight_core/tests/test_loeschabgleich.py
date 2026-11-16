@@ -760,3 +760,53 @@ class TestKeinTextGesperrter:
         doc = str(paper_to_doc(paper))
         assert "Sichtbarer Text" in doc
         assert "Entfernter Text" not in doc
+
+
+class TestEinzelneDateiHaeltDenLaufNichtAuf:
+    """Eine Datei mit nicht auswertbarer Adresse oder unerwartetem Fehler beendet den Schritt nicht für die übrigen."""
+
+    def _dateien(self, body: OParlBody, tmp_path: Path, **felder: Any) -> tuple[OParlFile, OParlFile, OParlFile]:
+        kaputt = _datei(body, tmp_path, "kaputt.pdf", download_url="https://[kaputt/files/kaputt.pdf", **felder)
+        wirft = _datei(body, tmp_path, "wirft.pdf", **felder)
+        gut = _datei(body, tmp_path, "gut.pdf", **felder)
+        return kaputt, wirft, gut
+
+    def _pruefung_wirft_fuer(self, monkeypatch: pytest.MonkeyPatch, datei: OParlFile) -> None:
+        echt = file_reconcile.verify
+
+        def pruefen(file_obj: Any, client: Any, **kwargs: Any) -> str:
+            if file_obj.pk == datei.pk:
+                raise ValueError("unerwartet")
+            return str(echt(file_obj, client, **kwargs))
+
+        monkeypatch.setattr(file_reconcile, "verify", pruefen)
+
+    def test_abgleich_geaenderter_dokumente(
+        self, body: OParlBody, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _kaputt, wirft, _gut = self._dateien(body, tmp_path, oparl_modified=timezone.now() - timedelta(days=1))
+        self._pruefung_wirft_fuer(monkeypatch, wirft)
+
+        aufrufe: list[str] = []
+        ergebnis = file_reconcile.check_changed(interval=0, client=_client(_liefert(PDF_ALT), aufrufe))
+
+        assert ergebnis == {file_reconcile.ERROR: 2, file_reconcile.UNCHANGED: 1}
+        assert aufrufe == ["GET /files/gut.pdf"]
+
+    def test_loeschen_nach_frist(self, body: OParlBody, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        jetzt = timezone.now()
+        kaputt, wirft, gut = self._dateien(body, tmp_path, source_missing_since=jetzt - timedelta(days=31))
+        self._pruefung_wirft_fuer(monkeypatch, wirft)
+
+        aufrufe: list[str] = []
+        quelle = _client(_liefert(b"", get_status=404), aufrufe)
+        ergebnis = file_reconcile.purge_expired(now=jetzt, client=quelle, interval=0)
+
+        # Die befragbare Datei ist gelöscht, die beiden anderen warten die Nachfrist ab
+        assert ergebnis["purged"] == 1 and ergebnis["zurueckgestellt"] == 2
+        assert aufrufe == ["GET /files/gut.pdf"]
+        gut.refresh_from_db()
+        assert gut.content_purged_at == jetzt
+        for datei in (kaputt, wirft):
+            datei.refresh_from_db()
+            assert datei.content_purged_at is None

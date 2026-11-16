@@ -584,13 +584,23 @@ def _check_each(
             continue
         seen.add(file_obj.pk)
         url = _url(file_obj)
+        if url and not abruf.adresse_gueltig(url):
+            # Die Adresse kommt aus der Quelle und lässt sich nicht auswerten: Fehlschlag dieser einen Datei, ohne
+            # Anfrage. Der Abgleich der übrigen läuft weiter.
+            results[ERROR] += 1
+            continue
         if (url and not run.may_fetch(file_obj, url)) or abruf.is_being_fetched(file_obj):
             # Ruhe je Host, Bremse – oder ein Abruf läuft gerade: in diesem Lauf nicht anfragen
             results[SKIPPED] += 1
             continue
         if url:
             run.pacer.wait(url)
-        result = check(file_obj, client, run=run)
+        try:
+            result = check(file_obj, client, run=run)
+        except Exception:
+            # Eine Datei, deren Prüfung unerwartet scheitert, beendet den Abgleich nicht für alle dahinter
+            logger.exception("Löschabgleich: Prüfung der Datei %s unerwartet gescheitert", file_obj.pk)
+            result = ERROR
         if url:
             run.record(url, result)
         results[result] += 1
@@ -735,9 +745,17 @@ def purge_expired(
     try:
         for file_obj in missing:
             url = _url(file_obj)
-            if url and run.may_fetch(file_obj, url) and not abruf.is_being_fetched(file_obj):
+            if url and not abruf.adresse_gueltig(url):
+                # Nicht auswertbare Adresse: Die Quelle lässt sich für diese Datei nicht befragen (Nachfrist unten)
+                result = ERROR
+            elif url and run.may_fetch(file_obj, url) and not abruf.is_being_fetched(file_obj):
                 run.pacer.wait(url)
-                result = verify(file_obj, client, now=now)
+                try:
+                    result = verify(file_obj, client, now=now)
+                except Exception:
+                    # Eine Datei, deren Rückfrage unerwartet scheitert, hält das Löschen nach Frist der übrigen nicht auf
+                    logger.exception("Löschabgleich: Rückfrage zur Datei %s unerwartet gescheitert", file_obj.pk)
+                    result = ERROR
                 run.record(url, result)
             else:
                 result = SKIPPED
