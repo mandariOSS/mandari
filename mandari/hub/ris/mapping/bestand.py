@@ -38,6 +38,7 @@ from datetime import date
 from typing import Any, Final
 
 from django.db.models import Prefetch, Q, QuerySet
+from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben
 
 from hub.ris.canonical import (
     ORGANIZATION_TYPES,
@@ -84,8 +85,10 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 #: 4: antragstellende Fraktionen ``originatorOrganization``, ``mandari:originator…``, Issue #1138;
 #: 5: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216;
 #: 6: ``Body.web`` auf die Seite der Kommune, ``Body.ags``/``rgs`` aus der eigenen Pflege, Datumsfelder ohne Uhrzeit,
-#: Issue #1282)
-VERSION: Final = 6
+#: Issue #1282;
+#: 7: Sitzungen mit geprüften Angaben: Absage aus dem Namen (``cancelled``, ``mandari:cancelledDerived``,
+#: ``mandari:cancelledNote``, Name ohne Vermerk), ``end`` nur nach dem Beginn, Issue #1441)
+VERSION: Final = 7
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
 #: Der Änderungsfeed nennt danach auch das einbettende Objekt (``hub.api.changes``, Issue #1229); ein Test prüft die
@@ -686,15 +689,29 @@ class BestandMapping:
         location = ctx.location_by_ext.get(_location_ext(raw) or "")
         location_data = self.location(location) if location else self.meeting_location(meeting)
 
+        # Name, Absage und Ende geprüft wie beim Abruf (Issue #1441): Die Ausgabe stimmt damit auch für Sitzungen, die
+        # der Ingestor seit der Einführung der Prüfung nicht neu geschrieben hat. Maßgeblich ist der Name der Quelle
+        # aus den Rohdaten, ohne Rohdaten der gespeicherte.
+        quellname = raw.get("name")
+        angaben = sitzungsangaben(
+            {
+                "name": quellname if isinstance(quellname, str) and quellname else meeting.name,
+                "cancelled": raw.get("cancelled"),
+                "meetingState": meeting.meeting_state,
+            }
+        )
+        im_namen = angaben.vermerk is not None
+        cancelled = bool(meeting.cancelled) or angaben.abgesagt
+
         return clean(
             {
                 "id": self.uris.obj("meeting", meeting.id),
                 "type": schema_type("meeting"),
-                "name": meeting.name,
+                "name": angaben.name if im_namen else meeting.name,
                 "meetingState": meeting.meeting_state,
-                "cancelled": meeting.cancelled,
+                "cancelled": cancelled,
                 "start": iso(meeting.start),
-                "end": iso(meeting.end),
+                "end": iso(plausibles_ende(meeting.start, meeting.end)),
                 "location": location_data,
                 "organization": [self.uris.obj("organization", org.id) for org in meeting.organizations.all()],
                 "invitation": self.file(invitation) if invitation else None,
@@ -706,6 +723,10 @@ class BestandMapping:
                 "web": self.uris.web(f"termine/{meeting.id}/"),
                 **_timestamps(meeting),
                 "mandari:originalId": meeting.external_id,
+                # Absage, die die Quelle nicht in ``cancelled``, sondern nur in den Namen schreibt (Issue #1441):
+                # als abgeleitet gekennzeichnet, mit dem Vermerk im Wortlaut der Quelle
+                "mandari:cancelledDerived": True if im_namen and angaben.abgeleitet else None,
+                "mandari:cancelledNote": angaben.vermerk if im_namen else None,
                 # Abgekündigt: Der Ort steht als Location-Objekt in ``location``
                 "mandari:locationName": meeting.location_name if not location else None,
                 "mandari:locationAddress": meeting.location_address if not location else None,

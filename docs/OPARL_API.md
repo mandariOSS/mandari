@@ -551,6 +551,8 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
 | `mandari:sha256`, `mandari:pageCount` | File | SHA-256-Hash / Seitenzahl |
 | `mandari:locationName`, `mandari:locationAddress` | Meeting | abgekündigt: Ortsangabe als Text, wenn die Quelle kein Location-Objekt liefert; steht jetzt in `Meeting.location` |
+| `mandari:cancelledDerived` | Meeting | `true`, wenn mandari die Absage aus dem Namen der Sitzung abgeleitet hat: Die Quelle setzt `cancelled` nicht, schreibt aber „abgesagt“, „entfällt“ oder „fällt aus“ in den Namen. `cancelled` ist dann `true`, `name` steht ohne den Vermerk da (siehe „Geprüfte Angaben der Quelle“) |
+| `mandari:cancelledNote` | Meeting | Absagevermerk aus dem Namen im Wortlaut der Quelle, etwa „Sitzung fällt aus und wurde auf den 24.06. verlegt“; ohne Verwaltungsvermerke hinter einem senkrechten Strich |
 | `mandari:protocolApproval` | Meeting | Genehmigung der veröffentlichten Niederschrift: `mode` (`follow_up`, `direct`), `date`, `meeting` (genehmigende Sitzung, nur wenn sie im Bestand ist) |
 | `mandari:resolutionNumber` | AgendaItem | Beschlussnummer |
 | `mandari:vote` | AgendaItem | Abstimmung: `method`, `methodLabel`, `result`, `resultLabel`, `yes`, `no`, `abstain` |
