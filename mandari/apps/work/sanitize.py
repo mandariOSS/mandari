@@ -12,7 +12,7 @@ eigene, bewusst enge Positivliste auf Basis von ``html.parser``:
 - Links nur mit http(s), mailto, tel oder relativ; Bilder nur http(s), relativ oder als
   eingebettetes Rasterbild (``data:image/png|jpeg|gif|webp;base64``), dessen Daten mit der Signatur eines
   dieser Formate beginnen
-- Tabellenzellen überspannen höchstens ``MAX_TABLE_SPAN`` Spalten und Zeilen
+- Tabellenzellen überspannen höchstens ``MAX_TABLE_SPAN`` Spalten und ``MAX_TABLE_ROW_SPAN`` Zeilen
 - ``style`` nur mit Ausrichtung, Einzug, Farben und Breiten; Klassen nur die des Editors
 - Inhalt von ``script``, ``style``, ``iframe`` & Co. entfällt ganz, andere unbekannte
   Elemente fallen weg, ihr Text bleibt
@@ -164,7 +164,9 @@ STYLE_RULES: dict[str, re.Pattern[str]] = {
 }
 
 _NUMBER_LIST_RE = re.compile(r"^\d{1,5}(?:,\d{1,5})*$")
-_NUMBER_RE = re.compile(r"^\d{1,5}$")
+# \Z statt $: „$“ ließe einen abschließenden Zeilenumbruch zu, den int() schluckt, die Zählung der Tabellenfelder im
+# Export aber nicht als Zahl erkennt
+_NUMBER_RE = re.compile(r"^\d{1,5}\Z")
 _COMMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _COLOR_RE = re.compile(rf"^{_COLOR}$")
@@ -175,9 +177,13 @@ _DATA_IMAGE_RE = re.compile(r"^data:image/(?:png|jpeg|jpg|gif|webp);base64,([A-Z
 _SIGNATURE_CHARS = 16
 _SIGNATURE_PREFIX_RE = re.compile(r"^[A-Za-z0-9+/]{16}")
 
-#: Größte Spannweite einer Tabellenzelle. Der Editor verbindet nur vorhandene Zellen; größere Werte kosten beim
-#: Anzeigen und beim PDF-Export Speicher für jedes überspannte Feld, ohne dass es die Zellen dazu gibt.
+#: Größte Spannweite einer Tabellenzelle über Spalten. Der Editor verbindet nur vorhandene Zellen; größere Werte kosten
+#: beim Anzeigen und beim PDF-Export Speicher für jedes überspannte Feld, ohne dass es die Zellen dazu gibt.
 MAX_TABLE_SPAN = 64
+#: Größte Spannweite über Zeilen. Lange Tabellen mit einer verbundenen Zelle am Rand (eine Rubrik über viele Zeilen)
+#: sind üblich: Eine enge Grenze nähme ihnen beim Öffnen im Editor still die Verbindung. Die Kosten im PDF-Export
+#: begrenzt die Zählung der Tabellenfelder (``export_service.MAX_PDF_TABLE_CELLS``).
+MAX_TABLE_ROW_SPAN = 1000
 
 LINK_SCHEMES = frozenset({"http", "https", "mailto", "tel"})
 IMAGE_SCHEMES = frozenset({"http", "https"})
@@ -267,7 +273,8 @@ def _clean_attr(tag: str, name: str, value: str | None) -> str | None:
         tokens = [t for t in value.lower().split() if t in REL_TOKENS]
         return " ".join(tokens) or None
     if name in ("colspan", "rowspan"):
-        return value if _NUMBER_RE.match(value) and 1 <= int(value) <= MAX_TABLE_SPAN else None
+        limit = MAX_TABLE_SPAN if name == "colspan" else MAX_TABLE_ROW_SPAN
+        return value if _NUMBER_RE.match(value) and 1 <= int(value) <= limit else None
     if name in ("span", "start", "width", "height"):
         return value if _NUMBER_RE.match(value) else None
     if name == "colwidth":

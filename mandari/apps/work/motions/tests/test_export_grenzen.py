@@ -32,7 +32,7 @@ from apps.work.motions.export_service import (
 )
 from apps.work.motions.models import Motion
 from apps.work.motions.ris_submission import SubmissionError
-from apps.work.sanitize import MAX_TABLE_SPAN, sanitize_editor_html
+from apps.work.sanitize import MAX_TABLE_ROW_SPAN, MAX_TABLE_SPAN, sanitize_editor_html
 
 ZEITGRENZE = 3.0
 
@@ -105,11 +105,33 @@ def test_uebliche_spannweiten_bleiben(wert: str) -> None:
     assert sanitize_editor_html(html) == html
 
 
-@pytest.mark.parametrize("wert", ["0", str(MAX_TABLE_SPAN + 1), "3000", "99999"])
+@pytest.mark.parametrize("wert", ["0", "3000", "99999"])
 def test_zu_grosse_spannweiten_entfallen(wert: str) -> None:
     html = f'<table><tbody><tr><th colspan="{wert}" rowspan="{wert}"><p>x</p></th></tr></tbody></table>'
 
     assert sanitize_editor_html(html) == "<table><tbody><tr><th><p>x</p></th></tr></tbody></table>"
+
+
+def test_verbundene_zeilen_duerfen_weiter_reichen_als_spalten() -> None:
+    """Eine Rubrik über viele Zeilen ist üblich und bleibt verbunden; über Spalten gilt die engere Grenze."""
+    zeilen = f'<table><tbody><tr><td rowspan="{MAX_TABLE_ROW_SPAN}"><p>x</p></td></tr></tbody></table>'
+    assert sanitize_editor_html(zeilen) == zeilen
+    achtzig = zeilen.replace(str(MAX_TABLE_ROW_SPAN), "80")
+    assert sanitize_editor_html(achtzig) == achtzig
+
+    ohne = "<table><tbody><tr><td><p>x</p></td></tr></tbody></table>"
+    assert sanitize_editor_html(zeilen.replace(str(MAX_TABLE_ROW_SPAN), str(MAX_TABLE_ROW_SPAN + 1))) == ohne
+    assert (
+        sanitize_editor_html(f'<table><tbody><tr><td colspan="{MAX_TABLE_SPAN + 1}"><p>x</p></td></tr></tbody></table>')
+        == ohne
+    )
+
+
+def test_spannweite_mit_zeilenumbruch_entfaellt() -> None:
+    """Sonst läse die Umwandlung die Zahl, während die Zählung der Tabellenfelder sie übergeht."""
+    html = '<table><tbody><tr><td colspan="64\n" rowspan="64\n"><p>x</p></td></tr></tbody></table>'
+
+    assert sanitize_editor_html(html) == "<table><tbody><tr><td><p>x</p></td></tr></tbody></table>"
 
 
 def test_tabellenfelder_werden_je_tabelle_gezaehlt() -> None:

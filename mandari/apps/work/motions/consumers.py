@@ -32,6 +32,9 @@ REVISION_MIN_INTERVAL_SECONDS = 600
 # weitergeleitet bekommt – falls die Nachricht über einen Entzug sie nicht erreicht hat (Änderung ohne Signal,
 # Kanal-Layer gestört; Issue #582, apps/work/motions/freigaben.py).
 ACCESS_RECHECK_INTERVAL_SECONDS = 30
+#: In diesem Abstand entsteht je Person und Dokument höchstens ein Eintrag „zur Live-Bearbeitung verbunden“ im
+#: Zugriffsprotokoll nichtöffentlicher Vorgänge
+LIVE_ACCESS_LOG_SECONDS = 600
 
 # Rangfolge der Stufen im Editor: niedriger = herabgestuft
 ACCESS_RANK = {"view": 0, "comment": 1, "edit": 2}
@@ -447,7 +450,13 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         if motion is None or not motion.is_sworn_in_only():
             return
         membership = Membership.objects.filter(id=self.membership_id).first()
-        if membership is not None:
+        if membership is None:
+            return
+        # Der Editor verbindet nach jedem Abbruch neu: ein Eintrag je Person und Dokument in zehn Minuten, nicht einer
+        # je Verbindungsaufbau
+        from django.core.cache import cache
+
+        if cache.add(f"work:noe-zugriff:live:{membership.id}:{motion.id}", 1, timeout=LIVE_ACCESS_LOG_SECONDS):
             non_public.log_access(motion, membership, None, non_public.ACCESS_COLLABORATION)
 
     @database_sync_to_async
