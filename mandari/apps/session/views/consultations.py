@@ -6,7 +6,8 @@ Eine Vorlage durchläuft mehrere Gremien (Vorberatung im Fachausschuss ->
 Entscheidung im Rat). Die Views verwalten die Kette der Beratungsstationen
 (SessionConsultation) aus der Vorlagen-Detailansicht heraus:
 
-- Station anlegen/bearbeiten/löschen/umsortieren (Berechtigung: edit_papers)
+- Station anlegen/bearbeiten/löschen/umsortieren (Berechtigung: edit_papers);
+  ein Ergebnis von Hand (Station ohne TOP) nur an einer freigegebenen Vorlage
 - Station terminieren = TOP auf der Zielsitzung anlegen (edit_meetings),
   mit Ö/NÖ- und Nachtrags-Logik der Tagesordnungsverwaltung (Issue #26);
   nur für freigegebene Vorlagen (Issue #721) – Stationen planen lässt sich schon im Entwurf
@@ -176,11 +177,25 @@ class ConsultationUpdateView(ConsultationBaseView):
         # Manuelles Ergebnis nur für Stationen ohne TOP (sonst schreibt der
         # TOP das Ergebnis über das Signal zurück und bleibt führend).
         result = request.POST.get("result", "")
-        if result and result in RESULT_VALUES and not consultation.agenda_item_id:
-            consultation.result = result
+        new_result = result in RESULT_VALUES and not consultation.agenda_item_id and result != consultation.result
 
         # Drehscheibe (Issue #534): Rolle, Zielsitzung, Entscheidungsbefugnis, Ergebnis
-        with hub_events.track(self.session_tenant) as tracked:
+        with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+            if new_result and result != "pending":
+                # Ein Ergebnis setzt eine freigegebene Vorlage voraus: „Angenommen“ an der entscheidenden Station
+                # kennzeichnet die beschlossene Fassung, unveränderlich und nur einmal je Vorlage. Geprüft wird
+                # der gespeicherte Stand unter Sperre – die Vorlage kann seit dem Laden zurückgewiesen oder
+                # zurückgezogen worden sein. Stationen planen (Rolle, Zielsitzung) bleibt im Entwurf möglich: Das
+                # Formular sendet das unveränderte Ergebnis mit, und „Ausstehend“ nimmt ein Ergebnis nur zurück.
+                paper.refresh_from_db(
+                    from_queryset=SessionPaper.objects.select_for_update(of=("self",)).select_related("tenant")
+                )
+                blocker = agenda_service.manual_result_error(paper)
+                if blocker:
+                    messages.error(request, blocker)
+                    return self.redirect_to_paper(paper)
+            if new_result:
+                consultation.result = result
             tracked.paper(paper)
             consultation.save()
         messages.success(request, f"Beratungsstation {consultation.order} wurde aktualisiert.")
