@@ -256,6 +256,58 @@ def test_sitzung_bettet_ort_einladung_und_tagesordnung_ein(welt: dict[str, Any])
     assert sitzung["organization"] == [f"{API}/organization/{welt['organization'].pk}"]
 
 
+def _sitzung_mit(welt: dict[str, Any], **werte: Any) -> dict[str, Any]:
+    OParlMeeting.objects.filter(pk=welt["meeting"].pk).update(**werte)
+    cache.clear()
+    return _json(f"/oparl/v1/meeting/{welt['meeting'].pk}")
+
+
+def test_absage_nur_im_namen_der_sitzung_ist_abgesagt_und_als_abgeleitet_gekennzeichnet(welt: dict[str, Any]) -> None:
+    """Issue #1441: Die Quelle setzt ``cancelled`` nicht und schreibt die Absage in den Namen."""
+    roh = "Ratssitzung Sitzung wurde abgesagt | Mail Zettelkasten vom 10.11."
+    rohdaten = {**welt["meeting"].raw_json, "name": roh, "cancelled": False}
+
+    # Bestand, den der Ingestor seit der Prüfung nicht neu geschrieben hat: Name und Absage stehen roh in den Spalten
+    alt = _sitzung_mit(welt, name=roh, cancelled=False, raw_json=rohdaten)
+    assert (alt["name"], alt["cancelled"]) == ("Ratssitzung", True)
+    assert alt["mandari:cancelledDerived"] is True
+    assert alt["mandari:cancelledNote"] == "Sitzung wurde abgesagt"
+    # Der Verwaltungsvermerk hinter dem Strich steht nirgends in der Ausgabe
+    assert "Zettelkasten" not in str(alt)
+
+    # Nach dem nächsten Abruf stehen die geprüften Werte in den Spalten: dieselbe Ausgabe
+    neu = _sitzung_mit(welt, name="Ratssitzung", cancelled=True, raw_json=rohdaten)
+    assert neu == alt
+
+
+def test_absage_der_quelle_ist_nicht_abgeleitet_und_andere_sitzungen_bleiben(welt: dict[str, Any]) -> None:
+    unveraendert = _sitzung_mit(welt)
+    assert (unveraendert["name"], unveraendert["cancelled"]) == ("Ratssitzung", False)
+    assert "mandari:cancelledDerived" not in unveraendert and "mandari:cancelledNote" not in unveraendert
+
+    rohdaten = {**welt["meeting"].raw_json, "name": "Ratssitzung - ENTFÄLLT -", "cancelled": True}
+    quelle = _sitzung_mit(welt, name="Ratssitzung - ENTFÄLLT -", cancelled=True, raw_json=rohdaten)
+    assert (quelle["name"], quelle["cancelled"]) == ("Ratssitzung", True)
+    assert "mandari:cancelledDerived" not in quelle
+    assert quelle["mandari:cancelledNote"] == "ENTFÄLLT"
+
+    # Hat die Sitzung laut Quelle stattgefunden, ist ein Wort im Namen keine Absage
+    rohdaten = {**welt["meeting"].raw_json, "name": "Ratssitzung (Ersatz, da die Sitzung im Mai entfällt)"}
+    gehalten = _sitzung_mit(
+        welt, name=rohdaten["name"], cancelled=False, meeting_state="durchgeführt", raw_json=rohdaten
+    )
+    assert (gehalten["name"], gehalten["cancelled"]) == (rohdaten["name"], False)
+    assert "mandari:cancelledDerived" not in gehalten
+
+
+def test_ende_einer_sitzung_nur_nach_dem_beginn(welt: dict[str, Any]) -> None:
+    """Issue #1441: Viele Quellen liefern als Ende das Datum ohne Uhrzeit, also Mitternacht vor dem Beginn."""
+    mitternacht = ZEIT.replace(hour=0)
+    assert "end" not in _sitzung_mit(welt, end=mitternacht)
+    assert "end" not in _sitzung_mit(welt, end=ZEIT)
+    assert _sitzung_mit(welt, end=ZEIT.replace(hour=10))["end"] == "2026-09-01T10:00:00+00:00"
+
+
 def _ohne_erweiterungen(wert: Any) -> Any:
     if isinstance(wert, dict):
         return {name: _ohne_erweiterungen(inhalt) for name, inhalt in wert.items() if not name.startswith("mandari:")}

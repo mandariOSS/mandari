@@ -152,8 +152,15 @@ TOOLS: list[dict[str, Any]] = [
     _function(
         "sitzungen_im_zeitraum",
         f"Sitzungen im Zeitraum (höchstens {MAX_RANGE_DAYS} Tage), optional eines Gremiums; "
-        f"tagesordnung=true liefert bei bis zu {MAX_AGENDAS} Sitzungen die Tagesordnungen mit.",
-        {"von": _VON, "bis": _BIS, "gremium": _GREMIUM, "tagesordnung": {"type": "boolean"}},
+        f"tagesordnung=true liefert bei bis zu {MAX_AGENDAS} Sitzungen die Tagesordnungen mit. "
+        f"Je Aufruf bis zu {MAX_MEETINGS} Sitzungen; nennt das Ergebnis „weitere“, mit ab fortsetzen.",
+        {
+            "von": _VON,
+            "bis": _BIS,
+            "gremium": _GREMIUM,
+            "tagesordnung": {"type": "boolean"},
+            "ab": {"type": "integer"},
+        },
         ["von", "bis"],
     ),
     _function("sitzung", "Sitzung mit Tagesordnung, Ergebnissen und Vorlagen.", {"id": _ID}, ["id"]),
@@ -237,6 +244,19 @@ def _date_arg(args: Mapping[str, Any], name: str, *, required: bool = False) -> 
         except ValueError:
             continue
     raise ToolError(f"Datum „{name}“ ist ungültig (JJJJ-MM-TT erwartet).")
+
+
+#: Höchster Versatz beim Weiterblättern; darüber ist ein engerer Zeitraum der bessere Weg
+MAX_AB = 600
+
+
+def _ab_arg(args: Mapping[str, Any]) -> int:
+    """Wie viele Sitzungen übersprungen werden (``ab``); fehlende oder unlesbare Angaben ergeben den Anfang."""
+    try:
+        ab = int(args.get("ab") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return min(max(ab, 0), MAX_AB)
 
 
 def _as_uuid(value: object) -> uuid.UUID | None:
@@ -344,41 +364,87 @@ def sitzungen_im_zeitraum(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str
     mit_tagesordnung = args.get("tagesordnung") in (True, "true", "ja", 1)
     start = timezone.make_aware(datetime.combine(von, time.min))
     ende = timezone.make_aware(datetime.combine(bis, time.max))
-    found = ris.public_meetings_between(ctx.bodies, start, ende, organizations=gremien)
-    sitzungen = list(found[: MAX_MEETINGS + 1])
+    # Weiterblättern (Issue #1441): Ohne Fortsetzung sah ein Zeitraum mit mehr Sitzungen vollständig aus, obwohl die
+    # späteren fehlten. Feste Reihenfolge auch bei gleichem Beginn, damit keine Sitzung zwischen zwei Aufrufe fällt.
+    beginn = _ab_arg(args)
+    found = ris.public_meetings_between(ctx.bodies, start, ende, organizations=gremien).order_by("start", "pk")
+    sitzungen = list(found[beginn : beginn + MAX_MEETINGS + 1])
     tagesordnungen = mit_tagesordnung and 0 < len(sitzungen) <= MAX_AGENDAS
-    eintraege = []
+    # Zeile, Link und Beschriftung je Sitzung; ausgeliefert werden nur so viele, wie ins Ergebnis passen
+    kandidaten: list[tuple[str, str, str]] = []
     for meeting in sitzungen[:MAX_MEETINGS]:
         url = ctx.link("meeting_detail", meeting.pk)
         titel = _meeting_title(meeting)
-        ctx.note(url, f"{titel} ({_when(meeting.start)})", "meeting")
-        eintraege.append(
-            _line(
-                _when(meeting.start),
-                _short(titel, 160),
-                _short(meeting.location_name, 120) or "-",
-                url,
-                "abgesagt" if meeting.cancelled else None,
-            )
+        zeile = _line(
+            _when(meeting.start),
+            _short(titel, 160),
+            _short(meeting.location_name, 120) or "-",
+            url,
+            "abgesagt" if meeting.cancelled else None,
         )
-    return _compact(
-        {
-            "kommune": ctx.body_name,
-            "zeitraum": f"{_day(von)}–{_day(bis)}",
-            "gremium": [g.get_display_name() for g in gremien] if gremien else None,
-            "anzahl": len(eintraege),
-            "weitere": "ja" if len(sitzungen) > MAX_MEETINGS else None,
-            "hinweis": hinweis,
-            "spalten": "Beginn | Gremium | Ort | Link | abgesagt",
-            "sitzungen": eintraege,
-            "tagesordnungen": [_sitzung_details(ctx, m) for m in sitzungen[:MAX_AGENDAS]] if tagesordnungen else None,
-            "hinweis_tagesordnung": (
-                f"Tagesordnungen nur bei höchstens {MAX_AGENDAS} Sitzungen; sonst einzeln mit sitzung."
-                if mit_tagesordnung and len(sitzungen) > MAX_AGENDAS
-                else None
-            ),
-        }
-    )
+        kandidaten.append((zeile, url, f"{titel} ({_when(meeting.start)})"))
+    # Die Tagesordnungen merken ihre Sitzungen und Vorlagen als Quellen; der Stand davor wird gebraucht, falls nicht
+    # alle ausgeliefert werden
+    quellen_vorher, details_vorher = dict(ctx.sources), list(ctx.detail_urls)
+    details = [_sitzung_details(ctx, m) for m in sitzungen[:MAX_AGENDAS]] if tagesordnungen else []
+
+    def ergebnis(anzahl: int, mit_details: int) -> dict[str, Any]:
+        naechste = beginn + anzahl
+        if len(sitzungen) <= anzahl:
+            weitere = None
+        elif naechste > MAX_AB:
+            weitere = "ja, die Liste ist unvollständig: bitte den Zeitraum enger fassen"
+        else:
+            weitere = f"ja, die Liste ist unvollständig: weiter mit ab={naechste}"
+        return _compact(
+            {
+                "kommune": ctx.body_name,
+                "zeitraum": f"{_day(von)}–{_day(bis)}",
+                "gremium": [g.get_display_name() for g in gremien] if gremien else None,
+                "anzahl": anzahl,
+                "ab": beginn or None,
+                # Ausdrücklich, wie es weitergeht: Die Liste ist sonst nicht als unvollständig zu erkennen
+                "weitere": weitere,
+                "hinweis": hinweis,
+                "spalten": "Beginn | Gremium | Ort | Link | abgesagt",
+                "sitzungen": [zeile for zeile, _url, _name in kandidaten[:anzahl]],
+                "tagesordnungen": details[:mit_details],
+                "hinweis_tagesordnung": hinweis_tagesordnung(mit_details),
+            }
+        )
+
+    def hinweis_tagesordnung(mit_details: int) -> str | None:
+        if mit_tagesordnung and len(sitzungen) > MAX_AGENDAS:
+            return f"Tagesordnungen nur bei höchstens {MAX_AGENDAS} Sitzungen; sonst einzeln mit sitzung."
+        if mit_details < len(details):
+            # Zu umfangreich für ein Ergebnis: Die Liste der Sitzungen bleibt vollständig, Tagesordnungen fehlen
+            wie_viele = f"nur für die ersten {mit_details} Sitzungen" if mit_details else "zu umfangreich"
+            return f"Tagesordnungen {wie_viele}; die übrigen einzeln mit sitzung."
+        return None
+
+    # Gemessen wird das fertige Ergebnis, so wie es an das Modell geht (mit den Zeichen, die JSON maskiert): Kürzte erst
+    # ``dump`` die Liste, begänne die Fortsetzung hinter Sitzungen, die nie ausgeliefert wurden. Zuerst fallen
+    # Tagesordnungen weg (mit Hinweis), dann Sitzungen vom Ende der Liste (mit Fortsetzung).
+    grenze = RESULT_LIMITS.get("sitzungen_im_zeitraum", MAX_RESULT_CHARS)
+    anzahl, mit_details = len(kandidaten), len(details)
+    fertig = ergebnis(anzahl, mit_details)
+    while len(_json(fertig)) > grenze and (mit_details > 0 or anzahl > 1):
+        if mit_details > 0:
+            mit_details -= 1
+        else:
+            anzahl -= 1
+        fertig = ergebnis(anzahl, mit_details)
+    if mit_details < len(details):
+        # Quellen nur aus Tagesordnungen, die im Ergebnis stehen: sonst erschiene eine Sitzung als Quelle, deren
+        # Tagesordnung das Modell nie gesehen hat
+        ctx.sources.clear()
+        ctx.sources.update(quellen_vorher)
+        ctx.detail_urls[:] = details_vorher
+        for meeting in sitzungen[:mit_details]:
+            _sitzung_details(ctx, meeting)
+    for _zeile, url, name in kandidaten[:anzahl]:
+        ctx.note(url, name, "meeting")
+    return fertig
 
 
 def sitzung(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, Any]:

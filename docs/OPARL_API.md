@@ -551,6 +551,8 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
 | `mandari:sha256`, `mandari:pageCount` | File | SHA-256-Hash / Seitenzahl |
 | `mandari:locationName`, `mandari:locationAddress` | Meeting | abgekündigt: Ortsangabe als Text, wenn die Quelle kein Location-Objekt liefert; steht jetzt in `Meeting.location` |
+| `mandari:cancelledDerived` | Meeting | `true`, wenn mandari die Absage aus dem Namen der Sitzung abgeleitet hat: Die Quelle setzt `cancelled` nicht, schreibt aber „abgesagt“, „entfällt“ oder „fällt aus“ in den Namen. `cancelled` ist dann `true`, `name` steht ohne den Vermerk da (siehe „Geprüfte Angaben der Quelle“) |
+| `mandari:cancelledNote` | Meeting | Absagevermerk aus dem Namen im Wortlaut der Quelle, etwa „Sitzung fällt aus und wurde auf den 24.06. verlegt“; ohne Verwaltungsvermerke hinter einem senkrechten Strich |
 | `mandari:protocolApproval` | Meeting | Genehmigung der veröffentlichten Niederschrift: `mode` (`follow_up`, `direct`), `date`, `meeting` (genehmigende Sitzung, nur wenn sie im Bestand ist) |
 | `mandari:resolutionNumber` | AgendaItem | Beschlussnummer |
 | `mandari:vote` | AgendaItem | Abstimmung: `method`, `methodLabel`, `result`, `resultLabel`, `yes`, `no`, `abstain` |
@@ -560,6 +562,26 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 Die Felder der Beschlussfassung (Issue #525) liefern Quellen, die mandari Session betreiben. Der Bestand
 speichert sie in eigenen Spalten (`mandari_oparl/extensions.py` übersetzt für Ingestor und Spiegel gleich);
 die Schnittstelle gibt sie aus diesen Spalten aus, nicht aus den Rohdaten der Quelle.
+
+## Geprüfte Angaben der Quelle (Meeting)
+
+mandari gibt die Angaben der Quelle nicht ungeprüft weiter, wo sie erkennbar falsch sind (Issue #1441). Die Regeln
+gelten für alle Quellen; der Ingestor wendet sie beim Schreiben an, die Ausgabe beim Lesen. Die Angabe der Quelle
+bleibt über `mandari:originalId` nachvollziehbar.
+
+- **Absage im Namen.** Viele Ratsinformationssysteme setzen `cancelled` nicht, sondern schreiben die Absage in den
+  Namen der Sitzung („… - ENTFÄLLT -“, „… Sitzung wurde abgesagt“, „… fällt aus und wurde auf den 24.06. verlegt“).
+  Nennt der Name „abgesagt“, „entfällt“ oder „fällt aus“ als ganzes Wort, ist `cancelled` `true`,
+  `mandari:cancelledDerived` kennzeichnet die Ableitung, und `mandari:cancelledNote` trägt den Vermerk im Wortlaut.
+  `name` steht ohne den Vermerk da. Hat die Sitzung laut `meetingState` stattgefunden („durchgeführt“,
+  „abgeschlossen“), gilt das Wort im Namen nicht als Absage.
+- **Verwaltungsvermerke.** Hinter einem senkrechten Strich führen Quellen interne Vermerke zur Absage. Dieser Teil
+  steht weder in `name` noch in `mandari:cancelledNote`.
+- **Ende vor dem Beginn.** Viele Quellen liefern als `end` das Datum ohne Uhrzeit; als Zeitpunkt gelesen liegt es
+  vor dem Beginn. `end` steht nur in der Ausgabe, wenn es nach `start` liegt.
+
+Eine Ableitung aus dem Namen kann danebenliegen. Wer es genau wissen muss, prüft `mandari:cancelledDerived` und
+sieht bei der Quelle nach.
 
 ## Antragstellende Fraktionen (Paper)
 
