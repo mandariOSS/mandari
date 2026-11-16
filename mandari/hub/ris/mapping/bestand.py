@@ -87,7 +87,8 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 #: 6: ``Body.web`` auf die Seite der Kommune, ``Body.ags``/``rgs`` aus der eigenen Pflege, Datumsfelder ohne Uhrzeit,
 #: Issue #1282;
 #: 7: Sitzungen mit geprüften Angaben: Absage aus dem Namen (``cancelled``, ``mandari:cancelledDerived``,
-#: ``mandari:cancelledNote``, Name ohne Vermerk), ``end`` nur nach dem Beginn, Issue #1441)
+#: ``mandari:cancelledNote``, Name ohne Vermerk), ``end`` nur nach dem Beginn; ``mandari:organizationNotPublished``
+#: für Gremien, die die Quelle nennt, aber nicht ausgibt, Issue #1441)
 VERSION: Final = 7
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
@@ -352,6 +353,15 @@ def _location_ext(raw_json: Any) -> str | None:
     return _reference((raw_json or {}).get("location"))
 
 
+def _organization_exts(raw: Any) -> list[str]:
+    """Gremien, die die Quelle an einer Sitzung nennt: Kennungen im Quellsystem, in ihrer Reihenfolge."""
+    genannt = raw.get("organization") if isinstance(raw, dict) else None
+    if not isinstance(genannt, list):
+        return []
+    verweise = [g if isinstance(g, str) else g.get("id") if isinstance(g, dict) else None for g in genannt]
+    return list(dict.fromkeys(v for v in verweise if isinstance(v, str) and v))
+
+
 class RefContext:
     """Löst Verweise über Kennungen der Quelle für eine ganze Seite in einer Abfrage je Typ auf."""
 
@@ -368,6 +378,8 @@ class RefContext:
         self.consultations_with_agenda_item: set[Any] = set()
         # Vorgang -> antragstellende Fraktionen (Issue #1138)
         self.urheber_by_paper: dict[Any, list[VorgangUrheber]] = {}
+        # Kennungen der Quelle von Gremien, die Sitzungen nennen und die im Bestand stehen (Issue #1441)
+        self.organization_exts: set[str] = set()
 
     @classmethod
     def empty(cls, objects: Iterable[Any]) -> RefContext:
@@ -383,10 +395,12 @@ class RefContext:
         location_exts = set()
         agenda_exts = set()
         approving_exts = set()
+        organization_exts: set[str] = set()
         for meeting in meetings:
             ext = _location_ext(meeting.raw_json)
             if ext:
                 location_exts.add(ext)
+            organization_exts.update(_organization_exts(meeting.raw_json))
             if meeting.protocol_approved_in_external_id:
                 approving_exts.add(meeting.protocol_approved_in_external_id)
             for item in meeting.agenda_items.all():
@@ -395,6 +409,13 @@ class RefContext:
             ctx.meeting_by_ext = dict(
                 OParlMeeting.objects.filter(external_id__in=approving_exts, deleted=False).values_list(
                     "external_id", "id"
+                )
+            )
+        if organization_exts:
+            # Im Bestand, auch ohne Zuordnung zur Sitzung: nur was hier fehlt, gibt die Quelle nicht aus
+            ctx.organization_exts = set(
+                OParlOrganization.objects.filter(external_id__in=organization_exts, deleted=False).values_list(
+                    "external_id", flat=True
                 )
             )
         if location_exts:
@@ -703,6 +724,10 @@ class BestandMapping:
         im_namen = angaben.vermerk is not None
         cancelled = bool(meeting.cancelled) or angaben.abgesagt
 
+        # Gremien, die die Quelle nennt, die aber im Bestand fehlen (Issue #1441): Die Quelle gibt sie nicht öffentlich
+        # aus. Der Verweis geht nicht verloren, steht aber als Angabe der Quelle in einer Erweiterung.
+        fehlend = [verweis for verweis in _organization_exts(raw) if verweis not in ctx.organization_exts]
+
         return clean(
             {
                 "id": self.uris.obj("meeting", meeting.id),
@@ -727,6 +752,7 @@ class BestandMapping:
                 # als abgeleitet gekennzeichnet, mit dem Vermerk im Wortlaut der Quelle
                 "mandari:cancelledDerived": True if im_namen and angaben.abgeleitet else None,
                 "mandari:cancelledNote": angaben.vermerk if im_namen else None,
+                "mandari:organizationNotPublished": fehlend,
                 # Abgekündigt: Der Ort steht als Location-Objekt in ``location``
                 "mandari:locationName": meeting.location_name if not location else None,
                 "mandari:locationAddress": meeting.location_address if not location else None,

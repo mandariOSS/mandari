@@ -868,6 +868,10 @@ class OParlPerson(SourceDeletionModel):
         return "".join(parts).upper() if parts else "?"
 
 
+#: Anzeigename einer Sitzung, deren Gremium die Quelle nennt, aber nicht öffentlich ausgibt (Issue #1441)
+GREMIUM_NICHT_VEROEFFENTLICHT = "Sitzung eines nicht veröffentlichten Gremiums"
+
+
 class OParlMeeting(SourceDeletionModel):
     """Eine Sitzung."""
 
@@ -938,10 +942,12 @@ class OParlMeeting(SourceDeletionModel):
 
         # 2. Auflösung über raw_json.organization URLs → DB-Lookup
         org_urls = self.raw_json.get("organization", []) if self.raw_json else []
+        im_bestand = False
         if org_urls:
             from .models import OParlOrganization as OrgModel
 
-            resolved = OrgModel.objects.filter(external_id__in=org_urls[:2]).values_list("name", flat=True)
+            resolved = list(OrgModel.objects.filter(external_id__in=org_urls[:2]).values_list("name", flat=True))
+            im_bestand = bool(resolved)
             names = [n for n in resolved if n]
             if names:
                 return ", ".join(names)
@@ -949,6 +955,10 @@ class OParlMeeting(SourceDeletionModel):
         # 3. Fallback
         if self.name and self.name.lower() != "sitzung":
             return self.name
+        # Die Quelle nennt ein Gremium, das im Bestand fehlt: Sie gibt es nicht öffentlich aus (Issue #1441). Das ist
+        # etwas anderes als eine Sitzung ohne Gremium, und „Sitzung“ allein sähe wie ein Gremienname aus.
+        if org_urls and not im_bestand:
+            return GREMIUM_NICHT_VEROEFFENTLICHT
         return "Sitzung"
 
     def get_organization_names(self):
