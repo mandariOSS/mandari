@@ -226,8 +226,8 @@ class NotificationHub:
     def _aufgabe_verschlossen(recipient, metadata: dict | None) -> bool:
         """
         Betrifft die Benachrichtigung (``task_id``) eine Aufgabe aus einem nichtöffentlichen TOP, die der Empfänger
-        heute nicht öffnen darf? Für Vereidigte und ohne Aufgabenbezug ohne Abfrage; eine unbekannte oder gelöschte
-        Aufgabe verbirgt nichts.
+        heute nicht öffnen darf? Für Vereidigte und ohne Aufgabenbezug ohne Abfrage. Eine gelöschte Aufgabe verbirgt
+        nur, wenn sie beim Löschen zu einem nichtöffentlichen TOP gehörte (``aufgabe_wird_geloescht``).
         """
         task_id = (metadata or {}).get("task_id")
         if not task_id:
@@ -239,6 +239,8 @@ class NotificationHub:
 
         if is_sworn_member(recipient):
             return False
+        if (metadata or {}).get(TASK_NON_PUBLIC_KEY):
+            return True
         try:
             task = (
                 Task.objects.filter(pk=task_id, organization_id=recipient.organization_id)

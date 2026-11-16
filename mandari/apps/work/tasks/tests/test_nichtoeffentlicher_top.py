@@ -362,6 +362,25 @@ def test_nachrichten_bleiben_nach_dem_loeschen_der_aufgabe_verborgen(
     assert sum(TITEL in text for text in _nachrichten(_frisch(person))) == 1
 
 
+def test_persoenliche_aufgaben_kennzeichnen_ihre_nachrichten_vor_dem_loeschen(
+    org: Any, vorsitz: Any, person: Any, noe_top: FactionAgendaItem, top: FactionAgendaItem
+) -> None:
+    """Mit der Mitgliedschaft entfallen persönliche Aufgaben; Nachrichten dazu können bei einer Vertretung liegen."""
+    eigene = _aufgabe(noe_top, vorsitz, vorsitz, visibility="private")
+    andere = _aufgabe(top, vorsitz, vorsitz, title="Plakate kleben", visibility="private")
+    # Weitergeleitet an die Vertretung: dieselbe Nachricht mit dem Bezug zur Aufgabe
+    NotificationHub.notify_task_due_soon(eigene, person, 0)
+    NotificationHub.notify_task_due_soon(andere, person, 0)
+    assert sum(TITEL in text for text in _nachrichten(person)) == 1
+
+    assert services.delete_personal_tasks(vorsitz) == 2
+
+    entzogen = _entziehen(person)
+    nachrichten = _nachrichten(entzogen)
+    assert [text for text in nachrichten if TITEL in text] == []
+    assert sum("Plakate kleben" in text for text in nachrichten) == 1, "Andere Nachrichten bleiben"
+
+
 def test_mail_geht_nicht_mehr_raus_wenn_die_aufgabe_inzwischen_verschlossen_ist(
     org: Any, vorsitz: Any, person: Any, noe_top: FactionAgendaItem, top: FactionAgendaItem, mailoutbox: Any
 ) -> None:
@@ -377,6 +396,11 @@ def test_mail_geht_nicht_mehr_raus_wenn_die_aufgabe_inzwischen_verschlossen_ist(
 
     send_notification_email_task.func(str(nachricht.id))
     assert mailoutbox == [], "Zwischen Anlegen und Versand entzogen: keine Mail mit Titel"
+
+    # Auch nach dem Löschen der Aufgabe nicht: Das Kennzeichen an der Nachricht gilt für den Versand mit
+    services.delete_task(Task.objects.get(pk=nachricht.metadata["task_id"]))
+    send_notification_email_task.func(str(nachricht.id))
+    assert mailoutbox == []
 
     # Normalfall: Die Mail zu einer anderen Aufgabe geht weiter raus
     send_notification_email_task.func(str(andere.id))

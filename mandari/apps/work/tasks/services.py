@@ -247,6 +247,15 @@ def delete_personal_tasks(membership: Membership) -> int:
     """
     task_ids = list(selectors.personal_tasks(membership).values_list("pk", flat=True))
     files = [attachment.file for attachment in TaskAttachment.objects.filter(task_id__in=task_ids)]
+    # Wie in ``delete_task``: Nachrichten zu Aufgaben aus nichtöffentlichen TOPs vorher kennzeichnen. Sie können bei
+    # anderen liegen, etwa bei einer Vertretung, an die weitergeleitet wurde.
+    nichtoeffentlich = (
+        Task.objects.filter(pk__in=task_ids)
+        .filter(selectors.noe_top_q())
+        .select_related("related_faction_agenda_item__parent")
+    )
+    for task in nichtoeffentlich:
+        _hub().aufgabe_wird_geloescht(task)
     Task.objects.filter(pk__in=task_ids).delete()
     remove_files_on_commit(files)
     return len(task_ids)
