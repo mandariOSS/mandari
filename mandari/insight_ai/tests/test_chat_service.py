@@ -200,6 +200,76 @@ def test_leere_antwort_fuehrt_zur_schlussrunde(monkeypatch: pytest.MonkeyPatch, 
     assert ergebnis["response"] == "Es gibt den Rat."
 
 
+# --- Werkzeugaufruf als Text in der Antwort (Issue #1436) ---------------------------------------------------
+
+AUFRUF_ALS_TEXT = "<tool_call>gremien<arg_key>suchtext</arg_key><arg_value>Rat</arg_value></tool_call>"
+
+
+def test_werkzeugaufruf_als_text_wird_ausgefuehrt(monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt) -> None:
+    fake = anbieter(monkeypatch, f"Ich sehe nach.{AUFRUF_ALS_TEXT}", "Es gibt den Rat.")
+    ergebnis = frage(stadt, "Welche Gremien gibt es?")
+
+    assert ergebnis["tool_calls"] == ["gremien"]
+    assert ergebnis["response"] == "Es gibt den Rat."
+    assistent, werkzeug = fake.aufrufe[1]["messages"][-2:]
+    assert assistent["content"] == "Ich sehe nach."
+    assert assistent["tool_calls"][0]["function"] == {"name": "gremien", "arguments": '{"suchtext": "Rat"}'}
+    assert werkzeug["role"] == "tool" and werkzeug["tool_call_id"] == assistent["tool_calls"][0]["id"]
+    assert "Rat" in werkzeug["content"]
+
+
+def test_aufruf_als_text_in_der_schlussrunde_fragt_einmal_nach(
+    monkeypatch: pytest.MonkeyPatch, settings: Any, stadt: Musterstadt
+) -> None:
+    settings.INSIGHT_CHAT_MAX_TOOL_ROUNDS = 1
+    fake = anbieter(
+        monkeypatch, werkzeuge(("gremien", {})), f"Ich rufe noch etwas auf.{AUFRUF_ALS_TEXT}", "Es gibt den Rat."
+    )
+    ergebnis = frage(stadt, "Welche Gremien gibt es?")
+
+    assert [a["tool_choice"] for a in fake.aufrufe] == ["auto", "none", "none"]
+    assert ergebnis["response"] == "Es gibt den Rat."
+    assert ergebnis["tool_calls"] == ["gremien"]  # der Aufruf aus der Schlussrunde läuft nicht mehr
+    assert ergebnis["rounds"] == 3
+    assert fake.aufrufe[2]["messages"][-2:] == [
+        {"role": "assistant", "content": "Ich rufe noch etwas auf."},
+        {"role": "user", "content": chat_service.KEINE_WERKZEUGE_MEHR},
+    ]
+
+
+def test_aufruf_als_text_erscheint_nie_in_der_antwort(
+    monkeypatch: pytest.MonkeyPatch, settings: Any, stadt: Musterstadt
+) -> None:
+    settings.INSIGHT_CHAT_MAX_TOOL_ROUNDS = 1
+    fake = anbieter(monkeypatch, werkzeuge(("gremien", {})), AUFRUF_ALS_TEXT, f"Gleich.{AUFRUF_ALS_TEXT}")
+    ergebnis = frage(stadt, "Welche Gremien gibt es?")
+
+    assert len(fake.aufrufe) == 3
+    assert fake.aufrufe[2]["messages"][-2] == {"role": "assistant", "content": chat_service.WOLLTE_WERKZEUG}
+    assert ergebnis["response"] == chat_service.NO_ANSWER
+
+
+def test_unlesbarer_aufruf_als_text_fuehrt_zur_schlussrunde(
+    monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt
+) -> None:
+    fake = anbieter(monkeypatch, "Ich sehe nach.<tool_call>unbekannt</tool_call>", "Es gibt den Rat.")
+    ergebnis = frage(stadt, "Welche Gremien gibt es?")
+
+    assert [a["tool_choice"] for a in fake.aufrufe] == ["auto", "none"]
+    assert ergebnis["response"] == "Es gibt den Rat."
+    assert ergebnis["tool_calls"] == []
+
+
+def test_nachfrage_nur_mit_restzeit(monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt) -> None:
+    uhr = iter([0.0, 0.0])  # Beginn und erste Runde; danach ist die Zeit abgelaufen
+    monkeypatch.setattr("insight_ai.services.chat_service.time.monotonic", lambda: next(uhr, 1000.0))
+    fake = anbieter(monkeypatch, werkzeuge(("gremien", {})), AUFRUF_ALS_TEXT, "Käme zu spät.")
+    ergebnis = frage(stadt, "Welche Gremien gibt es?")
+
+    assert [a["tool_choice"] for a in fake.aufrufe] == ["auto", "none"]
+    assert ergebnis["response"] == chat_service.NO_ANSWER
+
+
 def test_nicht_eingerichtet_ohne_anfrage(monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt) -> None:
     # Ohne KI-Einstellungen liefert die zentrale Konfiguration keinen Endpunkt: keine Anfrage, fester Fehler
     cache.delete(AISettings.CACHE_KEY)

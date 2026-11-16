@@ -12,6 +12,10 @@ Ablauf je Frage:
 Scheitert eine Werkzeugrunde, antwortet die Schlussrunde mit den bis dahin geholten Ergebnissen; lehnt der Anbieter
 Werkzeuge ab, antwortet das Modell ohne sie (``OpenAIKompatiblerProvider.chat_with_tools``).
 
+Schreibt das Modell einen Werkzeugaufruf als Text in seine Antwort (``werkzeugtext``, Issue #1436), wird er in einer
+Werkzeugrunde ausgeführt wie ein strukturierter Aufruf. In der Schlussrunde fragt der Dienst einmal ausdrücklich
+nach der Antwort; solcher Text erscheint nie in einer Antwort.
+
 Anbieter ist der KI-Endpunkt des Bürgerportals aus der zentralen KI-Konfiguration (Issue #950): Die View übergibt
 den Endpunkt, für den die Einwilligung gilt; ohne Angabe löst ``get_insight_provider`` ihn auf. Anbieter,
 Bürgerportal-Modell und Ausweichmodell stehen im Admin, die Adresse ist gegen ``KI_ERLAUBTE_HOSTS`` geprüft. Ohne
@@ -29,6 +33,7 @@ Einstellungen: ``INSIGHT_CHAT_MAX_TOOL_ROUNDS`` und ``INSIGHT_CHAT_TIME_LIMIT_SE
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -40,8 +45,9 @@ from django.utils import timezone
 
 from apps.common.db_connections import release_idle_thread_connections
 from insight_ai.providers import OpenAIKompatiblerProvider, get_insight_provider
-from insight_ai.providers.base import ToolChatProvider, ToolChatResponse
-from insight_ai.services.chat_tools import TOOLS, ToolContext, context_for, run_tool, select_sources
+from insight_ai.providers.base import ToolCall, ToolChatProvider, ToolChatResponse
+from insight_ai.services import werkzeugtext
+from insight_ai.services.chat_tools import TOOL_NAMES, TOOLS, ToolContext, context_for, run_tool, select_sources
 from insight_ai.services.prompts import build_chat_system_prompt
 
 if TYPE_CHECKING:
@@ -63,6 +69,14 @@ MIN_TIME_LIMIT_SECONDS = 45
 CHARS_PER_TOKEN = 3
 
 NO_ANSWER = "Ich konnte dazu gerade keine Antwort erstellen. Bitte formulieren Sie Ihre Frage etwas anders."
+
+#: Nachfrage, wenn die Schlussrunde statt einer Antwort einen Werkzeugaufruf als Text liefert (Issue #1436)
+KEINE_WERKZEUGE_MEHR = (
+    "Es stehen keine Werkzeuge mehr zur Verfügung. Beantworten Sie die Frage jetzt abschließend aus den bisherigen "
+    "Ergebnissen, ohne einen weiteren Aufruf. Was sich daraus nicht belegen lässt, benennen Sie als offen."
+)
+#: Platz des Assistenten vor der Nachfrage, wenn er außer dem Aufruf nichts geschrieben hat
+WOLLTE_WERKZEUG = "Ich wollte ein weiteres Werkzeug aufrufen."
 
 
 def _estimate_tokens(text: str) -> int:
@@ -129,6 +143,59 @@ def _setting_int(name: str, default: int, minimum: int) -> int:
         return max(minimum, int(getattr(settings, name, default)))
     except (TypeError, ValueError):
         return default
+
+
+def _aufrufe_aus_text(gelesen: werkzeugtext.Gelesen, runde: int) -> tuple[list[ToolCall], dict[str, Any]]:
+    """Aufrufe aus dem Antworttext als strukturierte Aufrufe, dazu die Nachricht des Assistenten für den Verlauf."""
+    calls = [
+        ToolCall(id=f"text_{runde}_{index}", name=name, arguments=json.dumps(argumente, ensure_ascii=False))
+        for index, (name, argumente) in enumerate(gelesen.aufrufe)
+    ]
+    echo = {
+        "role": "assistant",
+        "content": gelesen.text,
+        "tool_calls": [
+            {"id": call.id, "type": "function", "function": {"name": call.name, "arguments": call.arguments}}
+            for call in calls
+        ],
+    }
+    return calls, echo
+
+
+def _nachfragen(
+    provider: ToolChatProvider,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    bisher: str,
+    deadline: float,
+    usage: Usage,
+) -> str:
+    """
+    Die Schlussrunde lieferte einen Werkzeugaufruf als Text: einmal ausdrücklich um die Antwort aus den vorliegenden
+    Ergebnissen bitten. Ohne Zeit dafür, bei einem Fehler des Anbieters oder einem weiteren Aufruf als Text gibt es
+    den festen Hinweis ``NO_ANSWER``.
+    """
+    rest = deadline - time.monotonic()
+    if rest < FINAL_ANSWER_RESERVE_SECONDS:
+        return NO_ANSWER
+    verlauf = [
+        *messages,
+        {"role": "assistant", "content": bisher.strip() or WOLLTE_WERKZEUG},
+        {"role": "user", "content": KEINE_WERKZEUGE_MEHR},
+    ]
+    release_idle_thread_connections()
+    try:
+        response = provider.chat_with_tools(
+            verlauf, tools=tools, tool_choice="none", max_tokens=MAX_RESPONSE_TOKENS, temperature=0.3, timeout=rest
+        )
+    except ValueError:
+        logger.warning("KI-Assistent: Nachfrage nach der Antwort gescheitert")
+        return NO_ANSWER
+    usage.add(response)
+    gelesen = werkzeugtext.lesen(response.content, TOOL_NAMES)
+    if gelesen.markiert:
+        return NO_ANSWER
+    return gelesen.text.strip() or NO_ANSWER
 
 
 def process_chat_message(
@@ -205,12 +272,24 @@ def process_chat_message(
             logger.warning("KI-Assistent: Werkzeugrunde %s gescheitert, weiter mit der Schlussrunde", _round + 1)
             break
         usage.add(response)
-        if not response.tool_calls or ctx is None:
-            if response.content.strip():
-                answer = response.content
+        calls, text, echo, unlesbar = response.tool_calls, response.content, response.message, False
+        if not calls:
+            # Aufruf als Text statt strukturiert (Issue #1436): ausführen, wenn er lesbar ist; nie als Antwort zeigen
+            gelesen = werkzeugtext.lesen(response.content, TOOL_NAMES)
+            text = gelesen.text
+            if gelesen.aufrufe and ctx is not None:
+                calls, echo = _aufrufe_aus_text(gelesen, _round)
+            unlesbar = gelesen.markiert and not calls
+            if gelesen.markiert:
+                logger.warning(
+                    "KI-Assistent: Werkzeugaufruf als Text in Runde %s (%s lesbar)", _round + 1, len(gelesen.aufrufe)
+                )
+        if not calls or ctx is None:
+            if text.strip() and not unlesbar:
+                answer = text
             break
-        messages.append(response.message)
-        for index, call in enumerate(response.tool_calls):
+        messages.append(echo)
+        for index, call in enumerate(calls):
             if index < MAX_CALLS_PER_ROUND:
                 result = run_tool(call.name, call.arguments, ctx)
             else:
@@ -234,7 +313,13 @@ def process_chat_message(
                 raise ChatAbbruchError(str(exc), usage) from exc
             raise
         usage.add(response)
-        answer = response.content.strip() or NO_ANSWER
+        gelesen = werkzeugtext.lesen(response.content, TOOL_NAMES)
+        if gelesen.markiert:
+            # Statt der Antwort ein weiterer Aufruf als Text (Issue #1436): einmal ausdrücklich nachfragen
+            logger.warning("KI-Assistent: Werkzeugaufruf als Text in der Schlussrunde, Nachfrage")
+            answer = _nachfragen(provider, messages, tools, gelesen.text, deadline, usage)
+        else:
+            answer = gelesen.text.strip() or NO_ANSWER
 
     sources = select_sources(ctx, answer) if ctx is not None else []
     tool_calls = list(ctx.calls) if ctx is not None else []
