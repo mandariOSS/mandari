@@ -998,3 +998,23 @@ def test_videolink_im_kopf_nur_bei_online_sitzung(
     sitzung_laeuft.save(update_fields=["is_virtual"])
     html = client.get(seite(org, sitzung_laeuft)).content.decode()
     assert "per Video" in html and "Videoraum öffnen" in html
+
+
+def test_notizen_nur_fuer_die_mitgliedschaft_der_seite(
+    org: Any, vorsitz: Any, mitglied: Any, sitzung_laeuft: Any, tops: Any, client_for: Any
+) -> None:
+    """Ein offenes Fenster speichert nicht unter einem Konto, das sich inzwischen im selben Browser angemeldet hat."""
+    schalter_an(org)
+    item = tops["oe"]
+    daten = {"action": "notizen", "item_id": item.pk, "html": "<p>Notiz</p>", "stand": sitzung.fingerabdruck("")}
+    client = client_for(vorsitz.user)
+
+    fremd = client.post(aktion_url(org, sitzung_laeuft), {**daten, "mitglied": str(mitglied.pk)})
+    assert fremd.status_code == 403 and fremd.json()["anderes_konto"] is True
+    item.refresh_from_db()
+    assert sitzung.notizen(item) == ""
+
+    eigen = client.post(aktion_url(org, sitzung_laeuft), {**daten, "mitglied": str(vorsitz.pk)})
+    assert eigen.status_code == 200
+    item.refresh_from_db()
+    assert "Notiz" in sitzung.notizen(item)

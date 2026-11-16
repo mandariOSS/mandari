@@ -52,6 +52,7 @@ ANWESENHEIT = "work/faction/sitzung/_anwesenheit.html"
 
 #: Feste Meldungen (nie Ausnahmetexte an den Browser)
 KEINE_BERECHTIGUNG = "Keine Berechtigung für diese Aktion."
+ANDERES_KONTO = "In diesem Browser ist inzwischen ein anderes Konto angemeldet. Die Notizen wurden nicht gespeichert."
 UNGUELTIG = "Ungültige Eingabe."
 SITZUNG_LAEUFT_NICHT = "Die Sitzung läuft nicht mehr. TOPs ergänzen Sie hier nur während der Sitzung."
 
@@ -373,6 +374,11 @@ class FactionSessionActionView(_SitzungsView):
         item = self._top(request, meeting)
         if not sitzung.darf_protokollieren(self.mitglied, meeting):
             return JsonResponse({"fehler": KEINE_BERECHTIGUNG}, status=403)
+        # Die Seite nennt die Mitgliedschaft, für die sie aufgebaut wurde. Blieb ein Fenster mit ungesicherten Notizen
+        # offen und ist im Browser inzwischen ein anderes Konto angemeldet, wird nichts unter dessen Namen gespeichert
+        seite_von = str(request.POST.get("mitglied") or "")
+        if seite_von and seite_von != str(self.mitglied.pk):
+            return JsonResponse({"fehler": ANDERES_KONTO, "anderes_konto": True}, status=403)
         html = str(request.POST.get("html") or "")
         if len(html) > sitzung.NOTIZEN_MAX_ZEICHEN:
             return JsonResponse({"fehler": "Die Notizen sind zu lang."}, status=400)

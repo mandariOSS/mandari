@@ -1730,10 +1730,19 @@ export const documentEditor = defineComponent(() => {
             if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash
           }
           if (this._sitzungBeendet && !this.hasUnsavedChanges()) {
-            // Nach dem Ende der Anmeldung ohne Verbindung gesichert: neu laden, damit die Zusammenarbeit wieder steht
-            this._sitzungBeendet = false
-            this.leaveIntentionally()
-            window.setTimeout(() => window.location.reload(), 800)
+            // Nach dem Ende der Anmeldung ohne Verbindung gesichert: neu laden, damit die Zusammenarbeit wieder steht.
+            // Wer in der kurzen Wartezeit weiterschreibt, behält die Eingabe: Dann sichert erst der nächste Lauf, und
+            // die Rückfrage beim Verlassen gilt bis unmittelbar vor dem Neuladen.
+            window.setTimeout(() => {
+              if (!this._sitzungBeendet) return
+              if (this.hasUnsavedChanges()) {
+                void this.save()
+                return
+              }
+              this._sitzungBeendet = false
+              this.leaveIntentionally()
+              window.location.reload()
+            }, 800)
           }
           return true
         }
