@@ -503,6 +503,9 @@ def _approve(allowance: Any, approver: Any, now: datetime, *, four_eyes: bool) -
             return ""
         if four_eyes and state["created_by_id"] is not None and state["created_by_id"] == approver.pk:
             return "blocked_four_eyes"
+        # Das Audit-Signal vergleicht das ganze Objekt mit dem gespeicherten Stand: Nach einer Kontoänderung
+        # zwischen Laden und Genehmigen trüge es sonst die überholte festsetzende Person als Änderung ein
+        allowance.created_by_id = state["created_by_id"]
         allowance.status = "approved"
         allowance.approved_by = approver
         allowance.approved_at = now

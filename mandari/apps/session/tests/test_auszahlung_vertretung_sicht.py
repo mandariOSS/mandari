@@ -685,6 +685,26 @@ def test_erneut_senden_bindet_die_einladung_an_die_sendende_person() -> None:
     assert eintrag.changes["eingeladen_von_bisher"] == einladende.user.email
 
 
+def test_erneut_senden_protokolliert_den_wechsel_auch_bei_gescheitertem_versand(monkeypatch) -> None:
+    tenant = _tenant("nord")
+    verwaltung = nutzer(tenant, "verwaltung", "manage_users")
+    einladende = nutzer(tenant, "einladende", "manage_users")
+    einladung = SessionInvitation.create_for_tenant(tenant, "neu@example.org", invited_by=einladende)
+    monkeypatch.setattr("apps.session.services.user_invitations.send_user_invitation", lambda invitation: False)
+
+    antwort = client(verwaltung).post(
+        reverse("session:invitation_resend", kwargs={"tenant_slug": tenant.slug, "invitation_id": einladung.pk})
+    )
+
+    assert "konnte nicht versendet werden" in _meldungen(antwort)
+    einladung.refresh_from_db()
+    assert einladung.invited_by_id == verwaltung.pk
+    # Gespeichert ist der Wechsel trotzdem: Er steht mit dem Ergebnis des Versands im Protokoll
+    eintrag = SessionAuditLog.objects.get(tenant=tenant, object_id=einladung.pk, changes__erneut_gesendet=False)
+    assert eintrag.changes["eingeladen_von"] == verwaltung.user.email
+    assert eintrag.changes["eingeladen_von_bisher"] == einladende.user.email
+
+
 def test_einladung_gilt_nur_solange_der_zugang_der_einladenden_person_besteht() -> None:
     tenant = _tenant("nord")
     einladende = nutzer(tenant, "einladende", "manage_users")

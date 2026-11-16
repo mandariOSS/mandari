@@ -679,11 +679,13 @@ class InvitationResendView(SessionViewMixin, View):
             return redirect("session:users", tenant_slug=self.session_tenant.slug)
         # Wer erneut sendet, lädt jetzt ein (der eigene Rechteumfang ist oben geprüft): Die Einladung hängt danach
         # am Zugang dieser Person und nicht mehr an dem der ursprünglich einladenden. Der Wechsel steht im Audit-Log.
-        extra = {"erneut_gesendet": True}
+        extra = {}
         if invitation.invited_by_id and invitation.invited_by_id != self.session_user.pk:
             extra["eingeladen_von_bisher"] = invitation.invited_by.user.email
-        if resend_user_invitation(invitation, invited_by=self.session_user):
-            _log_invitation(request, self.session_user, "update", invitation, **extra)
+        sent = resend_user_invitation(invitation, invited_by=self.session_user)
+        # Auch nach einem gescheiterten Versand: Neuer Link, neue Frist und die einladende Person sind gespeichert
+        _log_invitation(request, self.session_user, "update", invitation, erneut_gesendet=sent, **extra)
+        if sent:
             messages.success(request, f"Einladung an {invitation.email} wurde erneut versendet.")
         else:
             messages.error(request, f"Die Einladung an {invitation.email} konnte nicht versendet werden.")
