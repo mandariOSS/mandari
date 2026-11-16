@@ -128,6 +128,42 @@ def _bounded_reads(response: httpx.Response, deadline: float | None) -> Iterator
             del stream.read
 
 
+class _Deflate:
+    """
+    Entpacker für ``Content-Encoding: deflate`` mit derselben Schnittstelle wie ``zlib.decompressobj``.
+
+    Gemeint ist der zlib-Strom (RFC 1950); manche Server senden unter diesem Namen den rohen Strom ohne Hülle
+    (RFC 1951). Wie ``httpx`` versuchen wir zuerst die Hülle und lesen sonst roh. Die Entscheidung fällt am Anfang
+    der Antwort: Die ersten zwei Bytes werden gesammelt, auch wenn sie einzeln eintreffen.
+    """
+
+    def __init__(self) -> None:
+        self._decoder: Any = None
+        self._start = b""
+
+    def decompress(self, data: bytes, max_length: int) -> bytes:
+        if self._decoder is not None:
+            return bytes(self._decoder.decompress(data, max_length))
+        self._start += data
+        if len(self._start) < 2:
+            return b""
+        start, self._start = self._start, b""
+        self._decoder = zlib.decompressobj()
+        try:
+            return bytes(self._decoder.decompress(start, max_length))
+        except zlib.error:
+            self._decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+            return bytes(self._decoder.decompress(start, max_length))
+
+    @property
+    def unconsumed_tail(self) -> bytes:
+        return b"" if self._decoder is None else bytes(self._decoder.unconsumed_tail)
+
+    @property
+    def eof(self) -> bool:
+        return self._decoder is not None and bool(self._decoder.eof)
+
+
 def _decoder(response: httpx.Response) -> Any:
     """
     Entpacker für die Kodierung der Antwort: gzip oder deflate (``ACCEPT_ENCODING``), ohne Kodierung ``None``.
@@ -147,7 +183,7 @@ def _decoder(response: httpx.Response) -> Any:
     if encodings[0] in ("gzip", "x-gzip"):
         return zlib.decompressobj(16 + zlib.MAX_WBITS)
     if encodings[0] == "deflate":
-        return zlib.decompressobj()
+        return _Deflate()
     raise httpx.DecodingError(f"Kodierung {encodings[0]} wird nicht gelesen", request=response.request)
 
 
@@ -175,9 +211,14 @@ def iter_decoded(response: httpx.Response, max_chunk: int = 1024 * 1024) -> Iter
                 chunk = decoder.decompress(pending, max_chunk)
             except zlib.error as exc:
                 raise httpx.DecodingError(str(exc), request=response.request) from None
-            pending = decoder.unconsumed_tail
             if chunk:
                 yield chunk
+            if decoder.eof:
+                # Ende des gepackten Stroms. Was der Server danach noch sendet (Füllbytes, ein weiteres Glied),
+                # gehört nicht zum Inhalt und wird wie bei ``httpx`` übergangen. Ohne diese Prüfung bliebe der Rest
+                # nach einem vollen Stück für immer als unverbrauchte Eingabe stehen, und die Schleife endete nie.
+                return
+            pending = decoder.unconsumed_tail
             # Ein volles Stück kann Ausgabe zurückgelassen haben, auch wenn die Eingabe verbraucht ist: weiter
             # entpacken, bis ein Stück nicht mehr voll wird
             if not pending and len(chunk) < max_chunk:
@@ -231,7 +272,8 @@ def _read_limited(
                     chunk = decoder.decompress(pending, max_bytes - size + 1)
                 except zlib.error as exc:
                     raise httpx.DecodingError(str(exc), request=response.request) from None
-                pending = decoder.unconsumed_tail
+                # Nach dem Ende des gepackten Stroms gibt es nichts mehr zu entpacken (siehe ``iter_decoded``)
+                pending = b"" if decoder.eof else decoder.unconsumed_tail
             if size + len(chunk) > max_bytes:
                 if not truncate:
                     raise ResponseTooLargeError("Antwort zu groß")

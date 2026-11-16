@@ -86,15 +86,18 @@ class Command(EinmaligMixin, BaseCommand):
         gescheitert: list[str] = []
         with file_reconcile.fetch_client() as client:
             if not options["nur_loeschen"]:
+                # Bricht ein Abgleich ab, verfallen seine Vormerkungen: Der nächste Schritt sperrte sie sonst ungeprüft
                 self._schritt(
                     gescheitert,
                     "Geänderte Dokumente",
                     lambda: file_reconcile.check_changed(body, limit=options["changed_limit"], client=client, run=run),
+                    bei_fehler=run.discard_pending,
                 )
                 self._schritt(
                     gescheitert,
                     "Stichproben",
                     lambda: file_reconcile.sample_heads(body, per_source=options["head_limit"], client=client, run=run),
+                    bei_fehler=run.discard_pending,
                 )
             if not options["ohne_loeschen"]:
                 restored = self._schritt(gescheitert, None, file_reconcile.restore_reappeared)
@@ -115,13 +118,24 @@ class Command(EinmaligMixin, BaseCommand):
         if gescheitert:
             raise CommandError("Schritte unerwartet gescheitert: " + ", ".join(gescheitert))
 
-    def _schritt(self, gescheitert: list[str], title: str | None, schritt: Callable[[], Any]) -> Any:
-        """Einen Schritt des Laufs ausführen und melden; eine unerwartete Ausnahme beendet nur diesen Schritt."""
+    def _schritt(
+        self,
+        gescheitert: list[str],
+        title: str | None,
+        schritt: Callable[[], Any],
+        bei_fehler: Callable[[], None] | None = None,
+    ) -> Any:
+        """
+        Einen Schritt des Laufs ausführen und melden; eine unerwartete Ausnahme beendet nur diesen Schritt.
+        ``bei_fehler`` räumt danach auf, was der Schritt halb fertig hinterlassen hat.
+        """
         try:
             ergebnis = schritt()
         except Exception as exc:
             logger.exception("Löschabgleich: Schritt unerwartet gescheitert")
             gescheitert.append(f"{title or 'Wieder freigeben'} ({type(exc).__name__})")
+            if bei_fehler is not None:
+                bei_fehler()
             return None
         if title is not None:
             self._report(title, ergebnis)

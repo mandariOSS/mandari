@@ -14,6 +14,7 @@ import pytest
 from django.core.cache import cache
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.utils import timezone
 
 from insight_core.services import file_reconcile, file_store
 
@@ -76,3 +77,26 @@ def test_ohne_fehler_endet_der_lauf_wie_bisher(monkeypatch: pytest.MonkeyPatch) 
 
     assert gelaufen == ["geaendert", "stichproben", "freigeben", "loeschen", "verwaist"]
     assert "Geänderte Dokumente: unchanged=2" in out.getvalue() and "purged=4" in out.getvalue()
+
+
+def test_abgebrochener_abgleich_verwirft_seine_vormerkungen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bricht ein Abgleich mitten im Lauf ab, sperrt der nächste Schritt nicht dessen ungeprüfte Vormerkungen."""
+    vorgemerkt: list[int] = []
+
+    def geaendert(*args: Any, run: Any, **kwargs: Any) -> Any:
+        run.defer_missing(object(), timezone.now())
+        raise ValueError("abgebrochen")
+
+    def stichproben(*args: Any, run: Any, **kwargs: Any) -> Any:
+        vorgemerkt.append(sum(len(eintraege) for eintraege in run._pending.values()))
+        return Counter({"present": 1})
+
+    _schritte(monkeypatch, "keiner")
+    monkeypatch.setattr(file_reconcile, "check_changed", geaendert)
+    monkeypatch.setattr(file_reconcile, "sample_heads", stichproben)
+    monkeypatch.setattr(file_reconcile, "_source_key", lambda file_obj: "quelle")
+
+    with pytest.raises(CommandError, match="Geänderte Dokumente"):
+        call_command("loeschabgleich", "--interval", "0", stdout=StringIO())
+
+    assert vorgemerkt == [0]
