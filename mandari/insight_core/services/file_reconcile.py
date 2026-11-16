@@ -132,8 +132,11 @@ def _forget_summary(file_obj: Any) -> None:
     from ..models import OParlPaper
 
     if file_obj.paper_id:
-        OParlPaper.objects.filter(pk=file_obj.paper_id, summary__isnull=False).update(
-            summary=None, summary_hinweis="", summary_einfach=None, summary_stand=""
+        # Ohne Bedingung auf eine vorhandene Zusammenfassung, wie ``SourceDeletionModel._forget_summaries``: Das
+        # UPDATE trifft die Zeile des Vorgangs immer und wartet damit auf jemanden, der gerade eine Zusammenfassung
+        # speichert (``summary_store.sperren``); danach verwirft es auch die eben gespeicherte.
+        OParlPaper.objects.filter(pk=file_obj.paper_id).update(
+            summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
         )
 
 

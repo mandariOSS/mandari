@@ -356,8 +356,14 @@ def sperren(vorgang_id: Any) -> bool:
     wenn noch keine Zusammenfassung da ist (``SourceDeletionModel._forget_summaries``): Ist sie abgeschlossen, sieht
     die Prüfung sie; läuft sie noch, wartet eine der beiden Seiten, und die Rücknahme verwirft am Ende auch eine
     eben gespeicherte Zusammenfassung. Nur innerhalb von ``transaction.atomic()`` aufrufen.
+
+    ``FOR NO KEY UPDATE`` wie bei der Rücknahme (``hub.ris.retraction``): Das Schreiben der Rücknahme wartet darauf,
+    das Einfügen einer Anlage oder Beratung zu diesem Vorgang nicht.
     """
-    return OParlPaper.objects.select_for_update().filter(pk=vorgang_id).values_list("pk", flat=True).first() is not None
+    return (
+        OParlPaper.objects.select_for_update(no_key=True).filter(pk=vorgang_id).values_list("pk", flat=True).first()
+        is not None
+    )
 
 
 def speichern(
