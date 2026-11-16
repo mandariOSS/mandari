@@ -15,7 +15,8 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
 from apps.work.files import attachment_response
 
-from .. import agenda
+from .. import agenda, sitzung
+from .. import services as faction_services
 from ..models import (
     FactionAgendaItem,
     FactionAgendaItemAttachment,
@@ -25,7 +26,7 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
-from ..regeln import ABSTIMMUNGEN_AUS, NOE_AUS
+from ..regeln import ABSTIMMUNGEN_AUS, GENEHMIGUNG_NUR_IN_SITZUNG, NOE_AUS, abstimmung_erfassbar
 from ..sitzungsarten import sitzung_oder_404
 from ..visibility import can_view_item, can_view_item_with_parents, is_item_internal
 
@@ -56,6 +57,22 @@ def _org_member(organization, raw_id):
     from .. import services as faction_services
 
     return faction_services.org_member(organization, raw_id)
+
+
+def _available_members(organization, item):
+    """
+    Wer eine Aufgabe aus dem TOP bekommen kann. Bei nichtöffentlichen TOPs (auch als Unterpunkt) nur, wer sie sehen
+    darf, wie in der Sitzungsansicht; der Server lehnt alle anderen beim Anlegen ab.
+    """
+    if is_item_internal(item):
+        return sitzung.personen_und_gruppen(organization, nur_vereidigte=True)[0]
+    from apps.tenants.models import Membership
+
+    return (
+        Membership.objects.filter(organization=organization, is_active=True)
+        .select_related("user")
+        .order_by("user__last_name", "user__first_name")
+    )
 
 
 def _safe_link(url: str) -> bool:
@@ -122,16 +139,11 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
             .order_by("-created_at")[:50]
         )
 
-        # Available members for task assignment
-        from apps.tenants.models import Membership
-
-        available_members = (
-            Membership.objects.filter(organization=self.organization, is_active=True)
-            .select_related("user")
-            .order_by("user__last_name", "user__first_name")
-        )
-
         linked_papers = item.related_papers.all().order_by("-date")
+
+        # Abstimmung erfassen: auf dem Genehmigungs-TOP erst, wenn die Sitzung begonnen hat
+        darf_abstimmung_erfassen = meeting.abstimmungen_erlaubt and (can_edit or can_protocol)
+        erfassbar = abstimmung_erfassbar(item)
 
         context.update(
             {
@@ -142,16 +154,19 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
                 "can_edit": can_edit,
                 "is_protocol_phase": is_protocol_phase,
                 "can_protocol": can_protocol,
+                "can_record_decision": darf_abstimmung_erfassen and erfassbar,
+                # Wer sonst erfassen dürfte, liest am Genehmigungs-TOP vor Sitzungsbeginn, ab wann es geht: Ohne den
+                # Satz fehlte der Knopf ohne Erklärung
+                "decision_hint": GENEHMIGUNG_NUR_IN_SITZUNG if darf_abstimmung_erfassen and not erfassbar else "",
                 "attendances": attendances,
-                "protocol_entries": item.protocol_entries.select_related(
-                    "speaker__user", "action_assignee__user", "created_by__user"
-                ).order_by("order", "created_at"),
+                # Einträge nach den Rechten am Protokoll (``protocols.view_*``), wie das PDF der Niederschrift
+                "protocol_entries": sitzung.protokolleintraege(item, self.membership),
                 "attachments": item.attachments.select_related("uploaded_by__user").order_by("-created_at"),
                 "tasks": _visible_tasks(item, self.membership),
                 "linked_motions": _visible_motions(item, self.membership),
                 "linked_papers": linked_papers,
                 "available_motions": available_motions,
-                "available_members": available_members,
+                "available_members": _available_members(self.organization, item),
                 "reference_links": item.reference_links or [],
                 "visible_children": _visible_children(item, self.membership),
                 "organization": self.organization,
@@ -348,7 +363,11 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             assignee_id = request.POST.get("action_assignee")
             due_date = request.POST.get("action_due_date")
             if assignee_id:
-                entry.action_assignee = _org_member(self.organization, assignee_id)
+                # Nichtöffentlicher TOP: zuständig nur, wer ihn sehen darf (aus dem Eintrag wird eine Aufgabe)
+                try:
+                    entry.action_assignee = faction_services.zustaendige_person(self.organization, assignee_id, item)
+                except faction_services.ZustaendigNurVereidigteError:
+                    return HttpResponse(faction_services.ZUSTAENDIG_NUR_VEREIDIGTE, status=400)
             if due_date:
                 entry.action_due_date = due_date
 
@@ -405,6 +424,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         # Art ohne Abstimmungen (Issue #1240): erfasste bleiben lesbar, neue gibt es nicht
         if not meeting.abstimmungen_erlaubt:
             return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
+        # Genehmigungs-TOP: Über das Protokoll der vorigen Sitzung wird in der Sitzung abgestimmt, nicht davor
+        if not abstimmung_erfassbar(item):
+            return HttpResponse(GENEHMIGUNG_NUR_IN_SITZUNG, status=400)
 
         try:
             votes_yes = int(request.POST.get("votes_yes", 0))
@@ -580,12 +602,17 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
         assigned_to_id = request.POST.get("assigned_to")
         due_date = request.POST.get("due_date") or None
+        # Nichtöffentlicher TOP: zuständig nur, wer ihn sehen darf (die Aufgabe nennt Nummer und Titel des TOPs)
+        try:
+            assigned_to = faction_services.zustaendige_person(self.organization, assigned_to_id, item)
+        except faction_services.ZustaendigNurVereidigteError:
+            return HttpResponse(faction_services.ZUSTAENDIG_NUR_VEREIDIGTE, status=400)
 
         task = Task.objects.create(
             organization=self.organization,
             title=title,
             description=f"Aus Fraktionssitzung: {meeting.title}\nTOP: {item.number} {item.title}",
-            assigned_to=_org_member(self.organization, assigned_to_id) if assigned_to_id else None,
+            assigned_to=assigned_to,
             due_date=due_date,
             created_by=self.membership,
             related_faction_meeting=meeting,

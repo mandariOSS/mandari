@@ -265,17 +265,25 @@ class Unterlage:
     fassung: str = ""
 
 
-def vorige_mit_protokoll(item: FactionAgendaItem) -> FactionMeeting | None:
+def vorige_mit_protokoll(item: FactionAgendaItem, membership: Membership | None = None) -> FactionMeeting | None:
     """
     Sitzung, deren Protokoll dieser Genehmigungs-TOP vorliegen hat. Nur wenn sie stattgefunden hat: Die Protokollkette
     reicht in die Zukunft (Issue #1295), vor der Sitzung davor gibt es kein Protokoll zu zeigen.
+
+    Mit ``membership`` nur, wenn das Mitglied die vorige Sitzung sehen darf (Sitzungsarten, Issue #1239): Wer einzeln
+    zu dieser Sitzung eingeladen ist, gehört nicht zwingend zu den Teilnehmenden der Art.
     """
     from .kette import hat_stattgefunden
+    from .sitzungsarten import darf_sehen
 
     if not item.is_approval_item or not item.approves_meeting_id:
         return None
     vorige = item.approves_meeting
-    return vorige if vorige is not None and hat_stattgefunden(vorige) else None
+    if vorige is None or not hat_stattgefunden(vorige):
+        return None
+    if membership is not None and not darf_sehen(membership, vorige):
+        return None
+    return vorige
 
 
 def protokoll_fassung(membership: Membership) -> str:
@@ -285,6 +293,49 @@ def protokoll_fassung(membership: Membership) -> str:
     if membership.has_permission("protocols.view_public"):
         return "oeffentlich"
     return ""
+
+
+def fuehrt_protokoll(membership: Membership, meeting: FactionMeeting) -> bool:
+    """Wer das Protokoll der Sitzung führt, unabhängig von ihrem Stand: wie :func:`darf_protokollieren` ohne Phase."""
+    return (
+        darf_verwalten(membership, meeting)
+        or membership.has_permission("protocols.create")
+        or membership.has_permission("protocols.edit")
+        or ist_schriftfuehrung(membership, meeting)
+    )
+
+
+def darf_eintraege_lesen(membership: Membership, meeting: FactionMeeting, *, intern: bool) -> bool:
+    """
+    Protokolleinträge eines TOPs lesen: mit denselben Rechten wie die Niederschrift als PDF und der Protokollversand
+    (:func:`protokoll_fassung`), also ``protocols.view_public`` für öffentliche TOPs und Vereidigung mit
+    ``protocols.view_full`` für nichtöffentliche (``intern``). Ein in der Rollenverwaltung entzogenes Recht schließt
+    so auch die Seiten der Sitzung, nicht nur das PDF. Wer das Protokoll führt, liest, was er schreibt. Ob das
+    Mitglied den TOP überhaupt sieht, prüft der Aufrufer wie bisher.
+    """
+    if fuehrt_protokoll(membership, meeting):
+        return True
+    fassung = protokoll_fassung(membership)
+    return fassung == "intern" if intern else bool(fassung)
+
+
+def lesbare_eintraege(membership: Membership, meeting: FactionMeeting) -> Any:
+    """
+    Protokolleinträge der Sitzung, die das Mitglied lesen darf (:func:`darf_eintraege_lesen`), als Abfrage für Listen,
+    die die Einträge je TOP vorab laden. Einträge ohne TOP gelten wie überall als intern.
+    """
+    from django.db.models import Q
+
+    from .models import FactionProtocolEntry
+
+    qs = FactionProtocolEntry.objects.filter(meeting=meeting).select_related("speaker__user", "action_assignee__user")
+    if darf_eintraege_lesen(membership, meeting, intern=True):
+        return qs
+    if not darf_eintraege_lesen(membership, meeting, intern=False):
+        return qs.none()
+    return qs.filter(agenda_item__isnull=False).exclude(
+        Q(agenda_item__visibility="internal") | Q(agenda_item__parent__visibility="internal")
+    )
 
 
 def _haupt_datei_kennung(paper: Any) -> str:
@@ -305,7 +356,7 @@ def unterlagen(item: FactionAgendaItem, membership: Membership) -> list[Unterlag
     from . import services as faction_services
 
     liste: list[Unterlage] = []
-    vorige = vorige_mit_protokoll(item)
+    vorige = vorige_mit_protokoll(item, membership)
     fassung = protokoll_fassung(membership) if vorige is not None else ""
     if vorige is not None and fassung:
         protokoll = f"Protokoll vom {timezone.localtime(vorige.start):%d.%m.%Y}" if vorige.start else "Protokoll"
@@ -366,8 +417,11 @@ def _gremium_und_datum(agenda_item: Any) -> tuple[str, str, str | None]:
     return namen or (meeting.name or ""), datum, str(meeting.pk)
 
 
-def herkunft(item: FactionAgendaItem) -> str:
-    """Zweite Zeile im Kopf des TOPs: übergeordneter TOP, vorbereiteter Gremien-TOP, Standard-TOP."""
+def herkunft(item: FactionAgendaItem, membership: Membership | None = None) -> str:
+    """
+    Zweite Zeile im Kopf des TOPs: übergeordneter TOP, vorbereiteter Gremien-TOP, Standard-TOP. Beim Genehmigungs-TOP
+    nennt sie die vorige Sitzung; mit ``membership`` Titel und Datum nur, wenn das Mitglied sie sehen darf.
+    """
     teile: list[str] = []
     if item.parent_id and item.parent is not None:
         teile.append(f"Unter {item.parent.title}")
@@ -386,8 +440,11 @@ def herkunft(item: FactionAgendaItem) -> str:
     # Genehmigungs-TOP: welches Protokoll vorliegt (wie „Genehmigt: …“ in der bisherigen Ansicht)
     vorige = vorige_mit_protokoll(item)
     if vorige is not None:
-        datum = f" vom {timezone.localtime(vorige.start):%d.%m.%Y}" if vorige.start else ""
-        satz = f"Das Protokoll von „{vorige.title}“{datum} liegt zur Genehmigung vor."
+        if membership is not None and vorige_mit_protokoll(item, membership) is None:
+            satz = "Das Protokoll der vorigen Sitzung liegt zur Genehmigung vor."
+        else:
+            datum = f" vom {timezone.localtime(vorige.start):%d.%m.%Y}" if vorige.start else ""
+            satz = f"Das Protokoll von „{vorige.title}“{datum} liegt zur Genehmigung vor."
         text = f"{text} {satz}" if text else satz
     return text
 
@@ -873,8 +930,13 @@ def top_hinzufuegen(
     return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung)
 
 
-def protokolleintraege(item: FactionAgendaItem) -> list[Any]:
-    """Bisherige Protokolleinträge des TOPs (auch Wortbeiträge), unverändert in ihrer Reihenfolge."""
+def protokolleintraege(item: FactionAgendaItem, membership: Membership | None = None) -> list[Any]:
+    """
+    Bisherige Protokolleinträge des TOPs (auch Wortbeiträge), unverändert in ihrer Reihenfolge. Mit ``membership`` nur,
+    wenn das Mitglied sie lesen darf (:func:`darf_eintraege_lesen`), sonst keine.
+    """
+    if membership is not None and not darf_eintraege_lesen(membership, item.meeting, intern=is_item_internal(item)):
+        return []
     return list(
         item.protocol_entries.select_related("speaker__user", "action_assignee__user", "created_by__user").order_by(
             "order", "created_at"

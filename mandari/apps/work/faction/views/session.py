@@ -32,7 +32,7 @@ from hub.ris import selectors as ris
 from .. import sitzung
 from ..models import FactionAgendaItem, FactionDecision, FactionMeeting
 from ..quorum import quorum_der_sitzung
-from ..regeln import ABSTIMMUNGEN_AUS
+from ..regeln import ABSTIMMUNGEN_AUS, GENEHMIGUNG_NUR_IN_SITZUNG, GenehmigungNurInSitzungError
 from ..sitzungsarten import darf_sehen
 from ..visibility import can_view_internal, is_item_internal
 from ._helpers import offene_vorschlaege
@@ -193,10 +193,10 @@ def top_kontext(
         "verlauf": sitzung.beratungsverlauf(item, meeting.organization)
         if sitzung.darf_beratungsverlauf_sehen(membership)
         else [],
-        "herkunft": sitzung.herkunft(item),
+        "herkunft": sitzung.herkunft(item, membership),
         "beschreibung": cast(Any, item).get_description_decrypted() or "",
         "notizen_html": safe_editor_html(notizen),
-        "eintraege": sitzung.protokolleintraege(item),
+        "eintraege": sitzung.protokolleintraege(item, membership),
         "aufgaben": sitzung.aufgaben_des_tops(item, membership),
         "decision": decision,
         "beschluss_punkt": PUNKT_ERGEBNIS.get(decision.result, "andere") if decision else "",
@@ -407,15 +407,19 @@ class FactionSessionActionView(_SitzungsView):
             return HttpResponse(UNGUELTIG, status=400)
         from .. import services as faction_services
 
-        faction_services.record_decision(
-            item,
-            self.mitglied,
-            votes_yes=stimmen[0],
-            votes_no=stimmen[1],
-            votes_abstain=stimmen[2],
-            result=result,
-            decision_text=_wert(request, "decision_text"),
-        )
+        try:
+            faction_services.record_decision(
+                item,
+                self.mitglied,
+                votes_yes=stimmen[0],
+                votes_no=stimmen[1],
+                votes_abstain=stimmen[2],
+                result=result,
+                decision_text=_wert(request, "decision_text"),
+            )
+        except GenehmigungNurInSitzungError:
+            # Genehmigungs-TOP, und die Sitzung läuft (noch oder schon) nicht: feste Meldung wie im Panel
+            return HttpResponse(GENEHMIGUNG_NUR_IN_SITZUNG, status=400)
         item.refresh_from_db()
         kontext = self._top_basis(meeting, item) | {"oob_zeile": True}
         return _mit_meldung(self._render(request, UNTEN, kontext), "Beschluss erfasst")

@@ -178,6 +178,21 @@ def renumber(meeting: FactionMeeting, visibility: str) -> None:
                 child.save(update_fields=["number"])
 
 
+def _take_descendants_along(item: FactionAgendaItem) -> None:
+    """
+    Alle Unterpunkte eines TOPs, der in den nicht-öffentlichen Teil geht, mitnehmen: auch tiefere Ebenen aus dem
+    Bestand (das Panel legt Unterpunkte von Unterpunkten an). Jeder bekommt so seinen eigenen Eintrag in der
+    Änderungshistorie, der ihn dort für Nicht-Vereidigte sperrt.
+    """
+    pending = [item]
+    while pending:
+        for child in pending.pop().children.all():
+            if child.visibility != "internal":
+                child.visibility = "internal"
+                child.save(update_fields=["visibility", "updated_at"])
+            pending.append(child)
+
+
 def move_to_part(meeting: FactionMeeting, item: FactionAgendaItem, visibility: str) -> None:
     """
     TOP in den anderen Teil der Tagesordnung legen und beide Teile neu nummerieren (Issue #1160). Rechte prüft der Aufrufer.
@@ -201,9 +216,7 @@ def move_to_part(meeting: FactionMeeting, item: FactionAgendaItem, visibility: s
         item.visibility = visibility
         item.save(update_fields=["visibility", "updated_at"])
         if visibility == "internal":
-            for child in item.children.filter(visibility="public"):
-                child.visibility = visibility
-                child.save(update_fields=["visibility", "updated_at"])
+            _take_descendants_along(item)
         renumber(meeting, previous)
         renumber(meeting, visibility)
         # renumber arbeitet auf eigenen Instanzen: Ein späteres save() überschriebe die neue Nummer sonst
@@ -322,9 +335,7 @@ def place_item(
         if changed:
             item.save(update_fields=[*changed, "updated_at"])
         if "visibility" in changed and target == "internal":
-            for child in item.children.filter(visibility="public"):
-                child.visibility = target
-                child.save(update_fields=["visibility", "updated_at"])
+            _take_descendants_along(item)
         for touched in dict.fromkeys((previous_part, part)):
             renumber(meeting, touched)
         # renumber arbeitet auf eigenen Instanzen: Ein späteres save() überschriebe die neue Nummer sonst

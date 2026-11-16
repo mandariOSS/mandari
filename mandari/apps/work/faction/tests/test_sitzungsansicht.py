@@ -28,6 +28,7 @@ from apps.work.faction.models import (
     FactionMeeting,
     FactionProtocolEntry,
 )
+from apps.work.faction.regeln import GENEHMIGUNG_NUR_IN_SITZUNG, GenehmigungNurInSitzungError
 from apps.work.tasks.models import Task
 
 pytestmark = pytest.mark.django_db
@@ -335,6 +336,25 @@ def test_beschluss_nur_mit_protokollrecht(
         aktion_url(org, sitzung_laeuft), {"action": "beschluss", "item_id": tops["oe"].pk, "votes_yes": "1"}
     )
     assert antwort.status_code == 403
+    assert not FactionDecision.objects.filter(agenda_item=tops["oe"]).exists()
+
+
+def test_beschluss_am_genehmigungs_top_ausserhalb_der_sitzung_meldet_den_grund(
+    org: Any, vorsitz: Any, sitzung_laeuft: Any, tops: Any, client_for: Any, monkeypatch: Any
+) -> None:
+    # Die Ansicht lässt Abstimmungen nur in einer begonnenen Sitzung zu. Endet sie zwischen dieser Prüfung und dem
+    # Schreiben, lehnt der Dienst ab: Die Antwort ist dann die feste Meldung, kein Serverfehler
+    schalter_an(org)
+
+    def abgelehnt(*args: Any, **kwargs: Any) -> None:
+        raise GenehmigungNurInSitzungError()
+
+    monkeypatch.setattr("apps.work.faction.services.record_decision", abgelehnt)
+    antwort = client_for(vorsitz.user).post(
+        aktion_url(org, sitzung_laeuft), {"action": "beschluss", "item_id": tops["oe"].pk, "votes_yes": "1"}
+    )
+    assert antwort.status_code == 400
+    assert GENEHMIGUNG_NUR_IN_SITZUNG in antwort.content.decode()
     assert not FactionDecision.objects.filter(agenda_item=tops["oe"]).exists()
 
 

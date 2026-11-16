@@ -167,7 +167,7 @@ def test_top_nach_genehmigung_nicht_loeschen(leitung: Any, sitzung: FactionMeeti
     _genehmigen(sitzung)
 
     with pytest.raises(deletion.DeletionBlockedError):
-        deletion.delete_agenda_item(top, top.title)
+        deletion.delete_agenda_item(top, top.title, leitung)
 
     assert FactionAgendaItem.objects.filter(pk=top.pk).exists()
     assert FactionProtocolEntry.objects.filter(pk=eintrag.pk).exists()

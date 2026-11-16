@@ -221,16 +221,21 @@ def dokument(meeting: FactionMeeting, membership: Membership) -> Dokument:
     allgemein: list[Eintrag] = []
     zahlen = {"alle": 0, "speech": 0, "note": 0, "action": 0, "decision": 0}
     darf_intern = can_view_internal(membership)
+    # Einträge nach den Rechten am Protokoll, wie das PDF derselben Niederschrift (``protocols.view_*``)
+    lesen = {teil: sitzung.darf_eintraege_lesen(membership, meeting, intern=teil) for teil in (False, True)}
+    intern_von = {z.item.pk: z.intern for z in zeilen}
     qs = meeting.protocol_entries.select_related(
         "speaker__user", "action_assignee__user", "created_by__user", "agenda_item"
     ).order_by("order", "created_at")
     for entry in qs:
         if entry.agenda_item_id is None:
-            if darf_intern:
+            if darf_intern and lesen[True]:
                 allgemein.append(_eintrag(entry))
             continue
         if entry.agenda_item_id not in eintraege:
             # TOP nicht sichtbar (nichtöffentlich) oder kein angenommener TOP
+            continue
+        if not lesen[bool(intern_von[entry.agenda_item_id])]:
             continue
         eintraege[entry.agenda_item_id].append(_eintrag(entry))
         zahlen["alle"] += 1

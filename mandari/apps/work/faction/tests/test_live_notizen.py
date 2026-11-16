@@ -381,6 +381,92 @@ def test_speichern_ohne_verbindung_laesst_neu_aufbauen(
     assert not FactionNotesState.objects.filter(item=top).exists()
 
 
+async def _bis_zum_ende(kommunikator: WebsocketCommunicator) -> tuple[list[dict[str, Any]], int | None]:
+    """Alle Nachrichten bis zur Trennung durch den Server (mit Code) oder bis nichts mehr kommt (``None``)."""
+    import json
+
+    nachrichten: list[dict[str, Any]] = []
+    while True:
+        try:
+            ausgabe = await kommunikator.receive_output(timeout=1)
+        except TimeoutError:
+            return nachrichten, None
+        if ausgabe["type"] == "websocket.close":
+            return nachrichten, ausgabe.get("code")
+        nachrichten.append(json.loads(ausgabe["text"]))
+
+
+@pytest.fixture
+def vereidigt(org: Any, make_member: Any) -> Any:
+    """Liest nichtöffentliche TOPs mit, protokolliert aber nicht."""
+    m = make_member(org, ["faction.view_public", "faction.view_non_public"], email="vereidigt@example.org")
+    m.is_sworn_in = True
+    m.save(update_fields=["is_sworn_in"])
+    return m
+
+
+def _vereidigung_entziehen(membership: Any) -> None:
+    """Ohne Signale: Die Verbindung erfährt vom Entzug erst durch ihre eigene Nachprüfung."""
+    type(membership).objects.filter(pk=membership.pk).update(is_sworn_in=False)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_neu_aufbauen_erreicht_keine_verbindung_ohne_zugriff(vorsitz: Any, vereidigt: Any, noe_top: Any) -> None:
+    """Das Ereignis trägt den Notizentext: Vor dem Senden prüft jede Verbindung ihren Zugriff neu."""
+    from asgiref.sync import sync_to_async
+
+    from apps.work.faction import live
+
+    async def lauf() -> tuple[list[dict[str, Any]], int | None, dict[str, Any]]:
+        entzogen, _, _ = await _verbinden(vereidigt.user, noe_top)
+        berechtigt, _, _ = await _verbinden(vorsitz.user, noe_top)
+        await sync_to_async(_vereidigung_entziehen)(vereidigt)
+
+        await sync_to_async(live.neu_aufbauen)(noe_top.pk, "<p>Vertraulich neu</p>", vorher="<p>Vertraulich alt</p>")
+
+        nachrichten, code = await _bis_zum_ende(entzogen)
+        neu = await _bis(berechtigt, "neu_aufbauen")
+        await berechtigt.disconnect()
+        return nachrichten, code, neu
+
+    nachrichten, code, neu = asyncio.run(lauf())
+
+    assert code == 4403
+    assert "neu_aufbauen" not in {n["type"] for n in nachrichten}
+    assert "Vertraulich" not in str(nachrichten)
+    assert {"type": "reload", "reason": "access_revoked"} in nachrichten
+    # Wer weiter Zugriff hat, bekommt das Ereignis wie bisher
+    assert neu["html"] == "<p>Vertraulich neu</p>" and neu["vorher"] == "<p>Vertraulich alt</p>"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_anwesenheit_erreicht_keine_verbindung_ohne_zugriff(
+    vorsitz: Any, vereidigt: Any, noe_top: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wer den TOP betritt (Name, Kürzel), erfährt nach Ablauf der Prüffrist nur, wer noch Zugriff hat."""
+    from asgiref.sync import sync_to_async
+
+    from apps.work.faction import live
+
+    async def lauf() -> tuple[list[dict[str, Any]], int | None]:
+        entzogen, _, _ = await _verbinden(vereidigt.user, noe_top)
+        await sync_to_async(_vereidigung_entziehen)(vereidigt)
+        # Die Frist der gedrosselten Nachprüfung ist abgelaufen
+        monkeypatch.setattr(live, "ZUGRIFF_NEU_PRUEFEN", 0)
+
+        dritte, _, _ = await _verbinden(vorsitz.user, noe_top)
+
+        nachrichten, code = await _bis_zum_ende(entzogen)
+        await dritte.disconnect()
+        return nachrichten, code
+
+    nachrichten, code = asyncio.run(lauf())
+
+    assert code == 4403
+    assert "praesenz" not in {n["type"] for n in nachrichten}
+    assert vorsitz.user.get_display_name() not in str(nachrichten)
+
+
 @pytest.mark.django_db
 def test_live_speichern_mit_veraltetem_stand_ueberschreibt_nichts(vorsitz: Any, top: Any) -> None:
     sitzung.notizen_speichern(top, "<p>Neu aus dem Formular</p>", basis=None, membership=vorsitz)

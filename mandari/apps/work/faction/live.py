@@ -277,7 +277,9 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
             await self.send_json({"type": "yjs_sync", "data": event["data"]})
 
     async def notizen_cursor(self, event: dict[str, Any]) -> None:
-        if event.get("von") == self.channel_name or self.entzogen or self.stufe != "edit":
+        if event.get("von") == self.channel_name or self.entzogen or not await self._gedrosselt_pruefen():
+            return
+        if self.stufe != "edit":
             return
         await self.send_json({"type": "awareness", "data": event["data"]})
 
@@ -300,11 +302,17 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
     async def notizen_neu(self, event: dict[str, Any]) -> None:
         if self.entzogen:
             return
+        # Das Ereignis trägt den neuen und den vorherigen Text der Notizen: vor dem Senden immer neu prüfen, nicht
+        # nur alle ZUGRIFF_NEU_PRUEFEN Sekunden. Es ist selten (Speichern ohne Verbindung), die Abfrage also billig.
+        await self._neu_pruefen()
+        if self.entzogen:
+            return
         self.veraltet = self.stufe == "edit"
         await self.send_json({"type": "neu_aufbauen", "html": event.get("html", ""), "vorher": event.get("vorher")})
 
     async def notizen_praesenz(self, event: dict[str, Any]) -> None:
-        if event.get("von") == self.channel_name or self.entzogen:
+        # Auch wer gerade da ist (Name, Kürzel), geht nur an Verbindungen mit Zugriff
+        if event.get("von") == self.channel_name or self.entzogen or not await self._gedrosselt_pruefen():
             return
         await self.send_json({"type": "praesenz", "art": event["art"], "person": event["person"]})
         if event.get("frage"):
