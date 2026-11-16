@@ -8,7 +8,9 @@ abgerufen und nennt das Objekt noch, dann stellt die Verwaltung es nichtöffentl
 
 - Eine Zeile, die nach dem Abruf markiert wurde, behält ihre Markierung; unter ihr entsteht nichts.
 - Eine Zeile, die es beim Abruf noch nicht gab, ist am Ende des Laufs markiert (Rücknahmen seit Beginn des Laufs).
-- Eine dauerhafte Rücknahme („aus Datenschutzgründen entfernt“) übersteht jeden Lauf, wie beim Abgleich des Ingestors.
+- Eine dauerhafte Rücknahme („aus Datenschutzgründen entfernt“) übersteht jeden Lauf, wie beim Abgleich des Ingestors,
+  auch an einer Zeile, die ein anderer Schreiber gerade erst angelegt hat.
+- Die Rücknahmen liest ein Lauf nur nach, wenn er etwas neu angelegt oder wieder veröffentlicht hat.
 - Der Normalfall bleibt: Veröffentlicht die Verwaltung wieder, hebt der nächste Lauf die Markierung auf.
 """
 
@@ -16,9 +18,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, cast
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from django.core.cache import cache
@@ -34,6 +36,7 @@ from apps.session.models import (
     SessionTenant,
 )
 from apps.session.services import insight_service
+from hub.ris import uebernahme
 from insight_core.models import (
     REASON_NOT_PUBLIC,
     REASON_PRIVACY,
@@ -43,7 +46,7 @@ from insight_core.models import (
     OParlPaper,
     OParlSource,
 )
-from insight_sync.session_mirror import SessionMirror
+from insight_sync.session_mirror import BODY_LISTS, SessionMirror
 
 pytestmark = pytest.mark.django_db
 
@@ -246,6 +249,83 @@ def test_ohne_abruf_gilt_nur_die_dauerhafte_ruecknahme(db: None) -> None:
     assert (sitzung.deleted, sitzung.deletion_reason) == (True, REASON_PRIVACY)
     assert not OParlAgendaItem.objects.filter(external_id=f"{BASIS}agendaitem/1/").exists()
     assert mirror.stats["withheld"] == 2
+
+
+class _SpaeteZeile:
+    """Manager, dessen erste Suche die Zeile noch nicht findet: Ein anderer Schreiber legt sie gerade an."""
+
+    def __init__(self, manager: Any) -> None:
+        self.manager = manager
+        self.suchen = 0
+
+    def select_for_update(self, **optionen: Any) -> Any:
+        self.suchen += 1
+        return self.manager.none() if self.suchen == 1 else self.manager.select_for_update(**optionen)
+
+    def update_or_create(self, **felder: Any) -> Any:
+        return self.manager.update_or_create(**felder)
+
+
+def test_gleichzeitig_angelegte_zeile_behaelt_die_dauerhafte_ruecknahme(db: None) -> None:
+    """Zwischen Suche und Anlegen entstanden und dauerhaft zurückgenommen: Der Lauf überschreibt die Zeile nicht."""
+    source = OParlSource.objects.create(name="Nord (Session)", url=BASIS)
+    body = OParlBody.objects.create(external_id=f"{BASIS}body/", source=source, name="Nord", slug="nord")
+    mirror = cast(Any, SessionMirror)(source, fetch=lambda url: {})
+    daten = {"id": f"{BASIS}meeting/1/", "name": "Rat"}
+    mirror._upsert_meeting(body, daten)
+    sitzung = OParlMeeting.objects.get(external_id=daten["id"])
+    sitzung.mark_deleted(reason=REASON_PRIVACY)
+    werte = {"body": body, **uebernahme.meeting(daten), **mirror._base_defaults(daten)}
+
+    zeile, uebernommen = mirror._uebernehmen(_SpaeteZeile(OParlMeeting.objects), daten, werte)
+
+    assert (zeile.pk, uebernommen) == (sitzung.pk, False)
+    sitzung.refresh_from_db()
+    assert (sitzung.deleted, sitzung.deletion_reason) == (True, REASON_PRIVACY)
+    assert mirror.stats["withheld"] == 1
+    # Normalfall: Ohne Markierung übernimmt derselbe Weg die inzwischen angelegte Zeile
+    OParlMeeting.objects.filter(pk=sitzung.pk).update(deleted=False, deleted_at=None, deletion_reason=None)
+    _zeile, uebernommen = mirror._uebernehmen(_SpaeteZeile(OParlMeeting.objects), {**daten, "name": "Stadtrat"}, werte)
+    assert uebernommen is True
+
+
+# =============================================================================
+# Abschluss eines Laufs: Rücknahmen nur nachlesen, wenn der Lauf etwas angelegt oder wieder veröffentlicht hat
+# =============================================================================
+
+
+def _gezaehlt(aufrufe: list[str]) -> Abruf:
+    def abruf(url: str) -> dict[str, Any]:
+        aufrufe.append(url)
+        return _abruf(url)
+
+    return abruf
+
+
+def test_lauf_ohne_neues_liest_keine_ruecknahmen_nach(welt: Welt) -> None:
+    _spiegeln(welt, voll=True)
+
+    aufrufe: list[str] = []
+    _spiegeln(welt, abruf=_gezaehlt(aufrufe))
+
+    # System, Liste der Körperschaften und je Liste ein Abruf: so viele wie vor dem Abschlussschritt
+    assert len(aufrufe) == 2 + len(BODY_LISTS)
+
+
+def test_lauf_mit_neuem_objekt_liest_die_ruecknahmen_mit_ueberlappung_nach(welt: Welt) -> None:
+    _spiegeln(welt, voll=True)
+    SessionPaper.objects.create(
+        tenant=welt.tenant, reference="V/2", name="Grundstück Nordufer", is_public=True, status="approved"
+    )
+    beginn = timezone.now()
+
+    aufrufe: list[str] = []
+    _spiegeln(welt, abruf=_gezaehlt(aufrufe))
+
+    assert len(aufrufe) == 2 + 2 * len(BODY_LISTS)
+    for url in aufrufe[-len(BODY_LISTS) :]:
+        seit = datetime.fromisoformat(parse_qs(urlsplit(url).query)["modified_since"][0])
+        assert seit <= beginn - timedelta(minutes=4), url
 
 
 # =============================================================================

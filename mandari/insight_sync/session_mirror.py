@@ -23,13 +23,15 @@ Rücknahmen gehen vor: Jede Zeile entsteht an einer Stelle (``SessionMirror._ueb
 wenn die Zeile dauerhaft zurückgenommen ist oder ihre Löschmarkierung jünger ist als die Seite, aus der der Eintrag
 stammt. Session nimmt im Bürgerportal sofort zurück (``apps.session.oparl_publication.retract_from_portal``), ein
 Lauf verarbeitet seine Seiten aber erst nach dem Abruf; ohne diese Regel höbe er eine Rücknahme wieder auf, die
-während des Laufs entstand. Am Ende liest jeder Lauf noch einmal die Rücknahmen seit seinem Beginn
-(``_spaete_ruecknahmen``). Eine Wiederveröffentlichung aus Session kommt mit dem nächsten Lauf an.
+während des Laufs entstand. Hat ein Lauf eine Zeile neu angelegt oder eine Markierung aufgehoben, liest er am Ende
+noch einmal die Rücknahmen seit seinem Beginn (``_spaete_ruecknahmen``). Eine Wiederveröffentlichung aus Session
+kommt mit dem nächsten Lauf an.
 """
 
 import json
 import logging
 import urllib.request
+from datetime import timedelta
 from urllib.parse import quote
 
 from django.db import transaction
@@ -69,6 +71,11 @@ MODEL_BY_TYPE_SUFFIX = {
 #: Listen einer Körperschaft, deren Rücknahmen der Abschluss eines Laufs liest (``_spaete_ruecknahmen``)
 BODY_LISTS = ("organization", "person", "membership", "meeting", "agendaItem", "paper", "consultation", "file")
 
+#: So weit vor den Beginn des Laufs reicht der Abschluss zurück: Eine Rücknahme trägt den Zeitpunkt, zu dem Session
+#: sie schreibt, sichtbar wird sie erst mit dem Ende von dessen Transaktion. Zu viel Gelesenes schadet nicht – die
+#: Listen nennen als zurückgenommen nur, was es gerade ist.
+ABSCHLUSS_UEBERLAPPUNG = timedelta(minutes=5)
+
 #: Zeitpunkte wie bei jedem Schreiber des Bestands; die Spalten je Typ stehen in ``hub.ris.uebernahme``
 _parse_dt = uebernahme.parse_dt
 
@@ -93,6 +100,9 @@ class SessionMirror:
         #: Zeitpunkt, zu dem die Seite des gerade verarbeiteten Eintrags angefordert wurde (``_iter_list``).
         #: ``None``: Der Eintrag stammt nicht aus einem Abruf dieses Laufs, sein Alter ist unbekannt.
         self._abgerufen = None
+        #: Hat der Lauf für die laufende Körperschaft eine Zeile neu angelegt oder eine Löschmarkierung aufgehoben?
+        #: Nur dann kann ihm eine Rücknahme entgangen sein, und nur dann liest er sie zum Abschluss nach.
+        self._nachlesen = False
         self.stats = {
             "bodies": 0,
             "organizations": 0,
@@ -174,17 +184,40 @@ class SessionMirror:
         Gremium) sie behält: Unter einem zurückgenommenen Objekt entsteht nichts und wird nichts wieder sichtbar.
         Der Aufrufer übernimmt dann auch nichts, was der Eintrag einbettet.
 
-        Die Zeile wird gesperrt wie bei der Rücknahme (``hub.ris.retraction.retract``, ``FOR NO KEY UPDATE``):
-        Eine gleichzeitige Rücknahme wartet auf das Schreiben und markiert danach, oder sie ist schon geschrieben
-        und wird hier gesehen.
+        Die Zeile wird gesperrt, bevor ihre Markierung geprüft wird, mit derselben Stärke wie beim Schreiben
+        (``update_or_create`` nimmt ``FOR UPDATE``): Eine gleichzeitige Rücknahme (``hub.ris.retraction.retract``)
+        wartet auf das Schreiben und markiert danach, oder sie ist schon geschrieben und wird hier gesehen. Das gilt
+        auch für eine Zeile, die ein anderer Schreiber zwischen Suche und Anlegen angelegt hat.
+
+        Bezugsobjekte werden hier nicht gesperrt: Die Rücknahme einer Datei sperrt erst die Datei, dann ihren Vorgang;
+        die umgekehrte Reihenfolge an dieser Stelle ließe beide aufeinander warten. Der Spiegel hält je Eintrag
+        deshalb nur die Sperre der einen Zeile.
         """
         external_id = data.get("id", "")
+        args = self._upsert_args(data, defaults)
         with transaction.atomic():
-            row = manager.select_for_update(no_key=True).filter(external_id=external_id).first()
+            row = manager.select_for_update().filter(external_id=external_id).first()
             if self._markierung_bleibt(row) or any(self._markierung_bleibt(bezug) for bezug in eltern):
                 self.stats["withheld"] += 1
                 return row, False
-            row, _created = manager.update_or_create(external_id=external_id, **self._upsert_args(data, defaults))
+            if row is None:
+                # Noch keine Zeile: anlegen. Hat sie inzwischen ein anderer Schreiber angelegt, liefert
+                # ``get_or_create`` dessen Zeile unter Sperre; ihre Markierung wird geprüft, bevor etwas
+                # überschrieben wird.
+                row, created = manager.select_for_update().get_or_create(
+                    external_id=external_id, defaults=args.get("create_defaults", defaults)
+                )
+                if created:
+                    self._nachlesen = True
+                    return row, True
+                if self._markierung_bleibt(row):
+                    self.stats["withheld"] += 1
+                    return row, False
+            if row.deleted:
+                # Die Markierung wird aufgehoben: Nimmt Session erneut zurück, während der Lauf schreibt, findet die
+                # sofortige Rücknahme eine schon markierte Zeile vor und ändert nichts
+                self._nachlesen = True
+            row, _created = manager.update_or_create(external_id=external_id, **args)
         return row, True
 
     def _handle_tombstone(self, data) -> bool:
@@ -357,11 +390,16 @@ class SessionMirror:
         Nimmt Session ein Objekt zurück, das der Lauf schon abgerufen, aber noch nicht geschrieben hat, und gibt es
         die Zeile noch nicht, findet die sofortige Rücknahme im Bürgerportal nichts vor; der Lauf legte die Zeile
         danach aus dem älteren Stand an, und sie bliebe bis zum nächsten Lauf sichtbar. Die Listen der Quelle nennen
-        solche Rücknahmen ab dem Beginn des Laufs. Hier zählen nur sie; geänderte Objekte übernimmt der nächste Lauf
-        (``modified_since`` ab diesem Beginn).
+        solche Rücknahmen ab dem Beginn des Laufs, mit etwas Überlappung davor (``ABSCHLUSS_UEBERLAPPUNG``). Hier
+        zählen nur sie; geänderte Objekte übernimmt der nächste Lauf (``modified_since`` ab diesem Beginn).
+
+        Nötig ist das nur, wenn der Lauf eine Zeile neu angelegt oder eine Markierung aufgehoben hat
+        (``_nachlesen``): Eine vorhandene, unmarkierte Zeile markiert die Rücknahme sofort, und ``_uebernehmen``
+        erhält diese Markierung. Ein Lauf ohne Neues kommt so ohne die zusätzlichen Abrufe aus.
         """
+        seit = started_at - ABSCHLUSS_UEBERLAPPUNG
         for name in BODY_LISTS:
-            for entry in self._iter_list(body_data.get(name), started_at):
+            for entry in self._iter_list(body_data.get(name), seit):
                 self._handle_tombstone(entry)
 
     # ------------------------------------------------------------------
@@ -387,6 +425,7 @@ class SessionMirror:
         for body_data in self._iter_list(body_list_url):
             if body_data.get("deleted"):
                 continue
+            self._nachlesen = False
             body = self._upsert_body(body_data)
             if body is None:
                 continue
@@ -439,7 +478,8 @@ class SessionMirror:
                     if paper is not None or meeting is not None:
                         self._upsert_file(body, entry, paper=paper, meeting=meeting)
 
-            self._spaete_ruecknahmen(body_data, started_at)
+            if self._nachlesen:
+                self._spaete_ruecknahmen(body_data, started_at)
 
             body.last_sync = started_at
             body.save(update_fields=["last_sync", "updated_at"])
