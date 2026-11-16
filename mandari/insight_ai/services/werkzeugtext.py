@@ -73,7 +73,12 @@ def _aufruf(rumpf: str) -> tuple[str, dict[str, Any]] | None:
     kopf = _NAME_RE.match(rumpf)
     if kopf is None:
         return None
-    return kopf.group(1), {name: _wert(wert) for name, wert in _PAAR_RE.findall(rumpf)}
+    argumentteil = rumpf[kopf.end() :]
+    # Bleibt neben den gelesenen Argumenten etwas übrig (abgeschnittener Aufruf, andere Schreibweise), ist der Aufruf
+    # unlesbar: Sonst liefe er ohne oder mit halben Argumenten
+    if _PAAR_RE.sub("", argumentteil).strip():
+        return None
+    return kopf.group(1), {name: _wert(wert) for name, wert in _PAAR_RE.findall(argumentteil)}
 
 
 def lesen(inhalt: str, namen: Collection[str]) -> Gelesen:
