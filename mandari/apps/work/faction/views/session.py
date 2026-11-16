@@ -118,6 +118,8 @@ def _rechte(membership: Any, meeting: FactionMeeting) -> dict[str, bool]:
     return {
         "protokollieren": sitzung.darf_protokollieren(membership, meeting),
         "anwesenheit": sitzung.darf_anwesenheit_pflegen(membership, meeting),
+        # Mitglieder ohne Einladung in die Anwesenheit aufnehmen (Issue #1436)
+        "nachtragen": sitzung.darf_teilnahme_nachtragen(membership, meeting),
         "rollen": sitzung.darf_rollen_setzen(membership, meeting),
         "anhaengen": sitzung.darf_unterlagen_anhaengen(membership, meeting),
         "beenden": membership.has_permission("faction.start"),
@@ -149,13 +151,16 @@ def _basis(view: Any, meeting: FactionMeeting) -> dict[str, Any]:
 
 
 def _kopf_kontext(
-    meeting: FactionMeeting, ordnung: sitzung.Tagesordnung, quorum: dict[str, Any] | None
+    meeting: FactionMeeting, ordnung: sitzung.Tagesordnung, quorum: dict[str, Any] | None, rechte: dict[str, bool]
 ) -> dict[str, Any]:
-    """Kopf und Anwesenheit: Ablaufleiste, Anwesenheit, Auswahl für Sitzungsleitung und Schriftführung."""
+    """
+    Kopf und Anwesenheit: Ablaufleiste, Anwesenheit, Auswahl für Sitzungsleitung und Schriftführung. Wer Mitglieder
+    nachtragen darf (``rechte``), bekommt auch die Mitglieder ohne Einladung (Issue #1436).
+    """
     return {
         "ordnung": ordnung,
         "stufen": _stufen(meeting, ordnung, quorum),
-        "anw": sitzung.anwesenheit(meeting),
+        "anw": sitzung.anwesenheit(meeting, mit_uebrigen=rechte.get("nachtragen", False)),
         "rollen_auswahl": sitzung.rollen_auswahl(meeting.organization),
     }
 
@@ -165,7 +170,7 @@ def seiten_kontext(view: Any, meeting: FactionMeeting, top_id: Any = None) -> di
     ordnung = sitzung.tagesordnung(meeting, view.membership)
     zeile = sitzung.aktueller_top(ordnung, top_id)
     kontext = _basis(view, meeting)
-    kontext |= _kopf_kontext(meeting, ordnung, kontext["quorum"])
+    kontext |= _kopf_kontext(meeting, ordnung, kontext["quorum"], kontext["rechte"])
     if zeile is not None:
         kontext |= top_kontext(view, meeting, zeile.item, ordnung=ordnung)
     return kontext
@@ -548,18 +553,21 @@ class FactionSessionActionView(_SitzungsView):
         meeting.refresh_from_db()
         kontext = _basis(self, meeting)
         ordnung = sitzung.tagesordnung(meeting, self.mitglied)
-        kontext |= _kopf_kontext(meeting, ordnung, kontext["quorum"]) | {"oob_kopf": True}
+        kontext |= _kopf_kontext(meeting, ordnung, kontext["quorum"], kontext["rechte"]) | {"oob_kopf": True}
         return self._render(request, ANWESENHEIT, kontext)
 
     def _anwesenheit(self, request: HttpRequest, meeting: FactionMeeting) -> HttpResponse:
         if not sitzung.darf_anwesenheit_pflegen(self.mitglied, meeting):
             return HttpResponse(KEINE_BERECHTIGUNG, status=403)
-        gesetzt = sitzung.anwesenheit_setzen(
-            meeting,
-            _wert(request, "attendance_id"),
-            status=_wert(request, "status"),
-            art=_wert(request, "participation_type"),
-        )
+        status, art = _wert(request, "status"), _wert(request, "participation_type")
+        mitglied_id = _wert(request, "membership_id")
+        if mitglied_id:
+            # Mitglied ohne Einladung (Issue #1436): Teilnahme anlegen und setzen
+            if not sitzung.darf_teilnahme_nachtragen(self.mitglied, meeting):
+                return HttpResponse(KEINE_BERECHTIGUNG, status=403)
+            gesetzt = sitzung.teilnahme_nachtragen(meeting, mitglied_id, status=status, art=art)
+        else:
+            gesetzt = sitzung.anwesenheit_setzen(meeting, _wert(request, "attendance_id"), status=status, art=art)
         if not gesetzt:
             return HttpResponse(UNGUELTIG, status=400)
         return self._anwesenheit_antwort(request, meeting)
@@ -610,7 +618,7 @@ class FactionSessionActionView(_SitzungsView):
         item = _top_oder_404(self, meeting, neu.pk)
         ordnung = sitzung.tagesordnung(meeting, self.mitglied)
         kontext = _basis(self, meeting)
-        kontext |= _kopf_kontext(meeting, ordnung, kontext["quorum"])
+        kontext |= _kopf_kontext(meeting, ordnung, kontext["quorum"], kontext["rechte"])
         kontext |= top_kontext(self, meeting, item, ordnung=ordnung) | {"oob": True, "oob_kopf": True}
         antwort = self._render(request, TOP, kontext)
         antwort["HX-Push-Url"] = adresse
