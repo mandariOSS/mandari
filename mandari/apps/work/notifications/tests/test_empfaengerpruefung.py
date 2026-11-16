@@ -29,6 +29,7 @@ from apps.work.faction.models import FactionAgendaItem, FactionMeeting
 from apps.work.motions.models import DocumentFolder, Motion, MotionApproval, MotionComment, MotionShare
 from apps.work.notifications.models import Notification, NotificationType
 from apps.work.notifications.services import NotificationHub
+from apps.work.organization import selectors
 from apps.work.organization.models import MemberAbsence
 from apps.work.tasks.models import Task
 
@@ -174,6 +175,19 @@ def test_keine_weiterleitung_an_gastzugang_oder_deaktivierte_vertretung(
     MemberAbsence.objects.filter(pk=absenz.pk).update(deputy=aktiv)
     hub.notify_task_assigned(aufgabe, abwesend, autorin)
     assert "Plakate kleben" in _texte(aktiv)
+
+
+def test_gastzugang_steht_nicht_zur_wahl_als_vertretung(org: Any, make_member: Any, abwesend: Any) -> None:
+    """Sonst ließe sich eine Vertretung eintragen, an die nichts weitergeleitet wird."""
+    gast = cast(Any, MembershipFactory)(
+        user=cast(Any, UserFactory)(email="gast-wahl@example.org"), organization=org, is_guest=True
+    )
+    kollegin = _mitglied(org, make_member, "kollegin", vereidigt=False)
+
+    zur_wahl = list(selectors.available_deputies(org, abwesend))
+    assert kollegin in zur_wahl and gast not in zur_wahl
+    assert selectors.find_active_member(org, gast.id) is None
+    assert selectors.find_active_member(org, kollegin.id) == kollegin
 
 
 @pytest.fixture
