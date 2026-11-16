@@ -171,9 +171,16 @@ class SourceDeletionModel(CanonicalIdModel):
             self._forget_alerts()
 
     def _forget_alerts(self) -> None:
-        """Abo-Hinweise auf einen zurückgenommenen Vorgang verwerfen: Sie halten seinen Titel als Kopie fest."""
+        """
+        Offene Abo-Hinweise auf einen zurückgenommenen Vorgang verwerfen: Sie halten seinen Titel als Kopie fest und
+        gingen sonst mit dem nächsten Digest hinaus. Schon versandte bleiben: Der Hinweis ist zugleich die Sperre gegen
+        eine zweite Meldung desselben Vorgangs (``unique_together``), etwa wenn er später wieder veröffentlicht wird.
+        Mit dem endgültigen Löschen des Vorgangs gehen auch sie (``signals.delete_paper``).
+        """
         if isinstance(self, OParlPaper):
-            SubscriptionAlert.objects.filter(entity_type="paper", entity_id=self.pk).delete()
+            SubscriptionAlert.objects.filter(
+                entity_type="paper", entity_id=self.pk, sent_in_digest__isnull=True
+            ).delete()
 
     def _forget_summaries(self) -> None:
         """KI-Zusammenfassungen, die zurückgenommene Inhalte enthalten können, verwerfen.

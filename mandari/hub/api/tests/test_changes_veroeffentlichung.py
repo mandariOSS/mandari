@@ -333,6 +333,34 @@ def test_endgueltiges_loeschen_beginnt_einen_neuen_abschnitt(welt: dict[str, Any
     assert [eintrag["id"] for eintrag in _feed(welt, after=neu)["data"]] == [adresse]
 
 
+def test_snapshot_waehrend_des_loeschens_gilt_danach_nicht_mehr(
+    welt: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Ein Snapshot, der während des Laufs entsteht, kann Kindobjekte enthalten, die erst die Kaskade entfernt. Sein
+    Cursor stammt schon aus dem neuen Abschnitt; nach dem Löschen beginnt deshalb noch einer.
+    """
+    from insight_core.management.commands import purge_deleted
+
+    vorlage = welt["vorlagen"][0]
+    vorlage.mark_deleted()
+    waehrenddessen: list[str] = []
+    loeschen = purge_deleted._chunked_delete
+
+    def beobachtet(queryset: Any) -> int:
+        if not waehrenddessen:
+            waehrenddessen.append(_snapshot_cursor(welt))
+        return int(loeschen(queryset))
+
+    monkeypatch.setattr(purge_deleted, "_chunked_delete", beobachtet)
+
+    call_command("purge_deleted", "--ids", str(vorlage.pk), "--yes", stdout=StringIO())
+
+    assert not OParlPaper.objects.filter(pk=vorlage.pk).exists()
+    assert Client().get(_pfad(welt), {"after": waehrenddessen[0]}).status_code == 410
+    assert _feed(welt, after=_snapshot_cursor(welt))["data"] == []
+
+
 def test_cursor_eines_abschnitts_gilt_nur_in_diesem() -> None:
     kommune = uuid.uuid4()
     erster = changes.encode_cursor(kommune, 7, HEUTE)

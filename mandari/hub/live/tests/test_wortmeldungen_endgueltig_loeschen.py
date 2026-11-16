@@ -3,8 +3,9 @@
 Endgültiges Löschen einer Person nimmt ihre gelesenen Angaben aus den Wortmeldungen der Live-Übertragung.
 
 Name, Fraktion und Funktion einer Wortmeldung sind Kopien als Freitext. ``purge_deleted`` entfernt deshalb die
-Wortmeldungen, die Angaben zu einer markierten Person tragen: mit Verweis auf sie und ohne Verweis bei gleichem
-Namen in derselben Kommune. Der Verweis einer Wortmeldung hält die Person nicht mehr zurück.
+Wortmeldungen mit Verweis auf eine markierte Person; ihr Verweis hält die Person nicht mehr zurück. Wortmeldungen
+ohne Verweis mit gleich gelesenem Namen in derselben Kommune können einer namensgleichen anderen Person gehören:
+Sie bleiben stehen, und der Lauf nennt jede einzeln (Name, Sitzung) zum Prüfen von Hand.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import pytest
 from django.core.management import call_command
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from hub.live.models import (
     Broadcast,
@@ -23,6 +25,7 @@ from hub.live.models import (
     BroadcastSpeech,
     BroadcastStatus,
     SpeechAssignment,
+    namensgleiche_wortmeldungen,
     wortmeldungen_zu_personen,
 )
 from hub.live.tests.conftest import Welt, kennung
@@ -63,7 +66,7 @@ def wortmeldungen(welt: Welt, laufend: Broadcast) -> dict[str, BroadcastSpeech]:
     }
 
 
-def test_endgueltiges_loeschen_entfernt_die_gelesenen_angaben(
+def test_endgueltiges_loeschen_entfernt_die_wortmeldungen_mit_verweis(
     welt: Welt, laufend: Broadcast, wortmeldungen: dict[str, BroadcastSpeech]
 ) -> None:
     welt.muster.mark_deleted()
@@ -71,16 +74,32 @@ def test_endgueltiges_loeschen_entfernt_die_gelesenen_angaben(
 
     ausgabe = _purge("--ids", str(welt.muster.pk), "--yes")
 
-    assert "Wortmeldungen der Live-Übertragung mit gelesenen Angaben zu markierten Personen: 3 (entfernt)" in ausgabe
+    assert "Wortmeldungen der Live-Übertragung mit Verweis auf markierte Personen: 2 (entfernt)" in ausgabe
     # Der Verweis der Wortmeldungen hält die Person nicht zurück
     assert not OParlPerson.objects.filter(pk=welt.muster.pk).exists()
     html = _live_seite(welt)
-    for text in ("Erika Muster", "Erika Mustre", "Fraktion A"):
-        assert text not in html, text
+    assert "Erika Mustre" not in html
     assert "Gisela Gast" in html and "Max Beispiel" in html
     laufend.refresh_from_db()
     assert laufend.current_speech is None, "am Wort war die gelöschte Person"
     assert BroadcastSpeech.objects.filter(pk=wortmeldungen["andere"].pk).exists()
+
+
+def test_namensgleiche_wortmeldung_ohne_verweis_bleibt_und_wird_einzeln_genannt(
+    welt: Welt, laufend: Broadcast, wortmeldungen: dict[str, BroadcastSpeech]
+) -> None:
+    """Sie kann einer namensgleichen anderen Person gehören: prüfen von Hand statt löschen ohne Rückfrage."""
+    welt.muster.mark_deleted()
+    ohne_verweis = wortmeldungen["ohne_verweis"]
+
+    ausgabe = _purge("--ids", str(welt.muster.pk), "--yes")
+
+    assert "Wortmeldungen ohne Personenverweis mit gleich gelesenem Namen: 1." in ausgabe
+    zeile = next(zeile for zeile in ausgabe.splitlines() if str(ohne_verweis.pk) in zeile)
+    assert "„Dr. Erika Muster“" in zeile and (welt.sitzung.name or "") in zeile
+    assert f"am {timezone.localtime(welt.sitzung.start):%d.%m.%Y}" in zeile
+    ohne_verweis.refresh_from_db()
+    assert (ohne_verweis.name_read, ohne_verweis.faction_read) == ("Dr. Erika Muster", "Fraktion A")
 
 
 def test_probelauf_nennt_die_treffer_und_aendert_nichts(
@@ -91,7 +110,9 @@ def test_probelauf_nennt_die_treffer_und_aendert_nichts(
 
     ausgabe = _purge("--ids", str(welt.muster.pk))
 
-    assert "zu markierten Personen: 3 (werden mit --yes entfernt)" in ausgabe
+    assert "mit Verweis auf markierte Personen: 2 (werden mit --yes entfernt)" in ausgabe
+    assert "ohne Personenverweis mit gleich gelesenem Namen: 1." in ausgabe
+    assert f"({wortmeldungen['ohne_verweis'].pk})" in ausgabe
     assert BroadcastSpeech.objects.count() == vorher
     assert OParlPerson.objects.filter(pk=welt.muster.pk).exists()
 
@@ -116,7 +137,8 @@ def test_gleicher_name_in_anderer_kommune_bleibt(welt: Welt, laufend: Broadcast)
     nachbar = Broadcast.objects.create(source=quelle, meeting=sitzung, status=BroadcastStatus.BEENDET)
     fremd = BroadcastSpeech.objects.create(broadcast=nachbar, name_read="Erika Muster", started_at=welt.jetzt)
 
-    treffer = wortmeldungen_zu_personen([welt.muster])
+    eigene = BroadcastSpeech.objects.create(broadcast=laufend, name_read="Erika Muster", started_at=welt.jetzt)
 
-    assert fremd not in treffer
-    assert treffer.count() == 1, "nur die Wortmeldung mit Verweis aus der eigenen Kommune"
+    assert wortmeldungen_zu_personen([welt.muster]).count() == 1, "nur die Wortmeldung mit Verweis"
+    assert list(namensgleiche_wortmeldungen([welt.muster])) == [eigene]
+    assert fremd not in namensgleiche_wortmeldungen([welt.muster])

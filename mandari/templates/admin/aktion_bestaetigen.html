@@ -1,8 +1,10 @@
 {% extends "admin/base_site.html" %}
-{% load i18n unfold %}
+{% load i18n l10n unfold %}
 
 {% comment %}
-Bestätigung vor einer ändernden Admin-Aktion hinter einem Link: Erst das abgeschickte Formular (POST) führt sie aus.
+Bestätigung vor einer ändernden Admin-Aktion: Erst das abgeschickte Formular (POST) führt sie aus. Hinter einem Link
+(apps.common.admin_mixins.confirm_before_change) ohne weitere Angaben; bei einer Sammelaktion der Liste
+(confirm_selected) nennt die Seite die gewählten Objekte (objects) und gibt sie mit den Feldern aus hidden zurück.
 {% endcomment %}
 
 {% block breadcrumbs %}
@@ -23,7 +25,14 @@ Bestätigung vor einer ändernden Admin-Aktion hinter einem Link: Erst das abges
         {% component "unfold/components/card.html" with title=title %}
             <form method="post" novalidate>
                 {% csrf_token %}
+                {% for name, value in hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+                {% for obj in objects %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk|unlocalize }}">{% endfor %}
                 <p class="mb-4">{{ text }}</p>
+                {% if objects %}
+                    <ul class="leading-relaxed mb-4">
+                        {% for obj in objects %}<li>{{ obj }}</li>{% endfor %}
+                    </ul>
+                {% endif %}
                 <div class="flex gap-4 items-center">
                     {% component "unfold/components/button.html" with submit=1 %}{{ title }}{% endcomponent %}
                     <a href="{{ back_url }}">Abbrechen</a>

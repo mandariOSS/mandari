@@ -89,15 +89,17 @@ RANKING_VERSIONS = ("v1", "v2")
 
 def marked_in_bestand(index_name: str, ids: Iterable[str]) -> set[str]:
     """
-    Kennungen aus ``ids``, die der Bestand als gelöscht oder zurückgenommen führt; bei Dateien auch die, die in der
-    Quelle nicht mehr abrufbar sind oder deren Vorgang bzw. Sitzung zurückgenommen ist.
+    Kennungen aus ``ids``, die die Trefferliste nicht nennen darf: Der Bestand führt sie als gelöscht oder
+    zurückgenommen, oder er kennt sie nicht mehr (endgültig gelöscht). Bei Dateien auch die, die in der Quelle nicht
+    mehr abrufbar sind oder deren Vorgang bzw. Sitzung zurückgenommen ist.
 
     Der Index verliert ein Dokument über die Signale der Modelle (``insight_core.signals``). Scheitert dieser Aufruf,
     weil der Suchdienst gerade nicht erreichbar ist, oder ist die automatische Indexierung aus, stünde ein
-    zurückgenommener Eintrag sonst weiter mit Titel und Ausschnitt in der Trefferliste. Die Treffer einer Seite
-    werden deshalb gegen den Bestand geprüft: je Index eine Abfrage. Kennungen, die keine des Bestands sind, bleiben.
+    zurückgenommener oder endgültig gelöschter Eintrag sonst weiter mit Titel und Ausschnitt in der Trefferliste. Die
+    Treffer einer Seite werden deshalb gegen den Bestand geprüft: je Index eine Abfrage. Kennungen, die keine UUID
+    sind, und Indizes ohne Modell des Bestands bleiben ungeprüft.
     """
-    from django.db.models import Q
+    from django.db.models import BooleanField, Case, Q, Value, When
 
     from ..models import OParlFile, OParlMeeting, OParlOrganization, OParlPaper, OParlPerson, withdrawn_q
 
@@ -108,10 +110,10 @@ def marked_in_bestand(index_name: str, ids: Iterable[str]) -> set[str]:
         INDEX_ORGANIZATIONS: OParlOrganization,
         INDEX_FILES: OParlFile,
     }.get(index_name)
-    kennungen = []
+    kennungen: dict[str, uuid.UUID] = {}
     for doc_id in ids:
         try:
-            kennungen.append(uuid.UUID(str(doc_id)))
+            kennungen[str(doc_id)] = uuid.UUID(str(doc_id))
         except ValueError:
             continue
     if model is None or not kennungen:
@@ -119,7 +121,14 @@ def marked_in_bestand(index_name: str, ids: Iterable[str]) -> set[str]:
     marked = Q(deleted=True)
     if index_name == INDEX_FILES:
         marked |= Q(source_missing_since__isnull=False) | withdrawn_q("paper") | withdrawn_q("meeting")
-    return {str(pk) for pk in model.objects.filter(pk__in=kennungen).filter(marked).values_list("pk", flat=True)}
+    # Eine Abfrage für beides: Welche Zeilen gibt es, und welche davon sind markiert?
+    rows = (
+        model.objects.filter(pk__in=set(kennungen.values()))
+        .annotate(_marked=Case(When(marked, then=Value(True)), default=Value(False), output_field=BooleanField()))
+        .values_list("pk", "_marked")
+    )
+    allowed = {pk for pk, is_marked in rows if not is_marked}
+    return {doc_id for doc_id, pk in kennungen.items() if pk not in allowed}
 
 
 def ranking_version(override: str | None = None) -> str:
@@ -702,8 +711,9 @@ class ElasticsearchService:
                 docs[(INDEX_FILES, doc_id)] for doc_id in files[1:MAX_DOCS_PER_GROUP] if (INDEX_FILES, doc_id) in docs
             ]
             entry["more"] = max(0, len(files) - 1)
-            if kind != "file" and entry.get(kind) is None and entry["file"] is None:
-                continue  # zwischen den Schritten gelöscht
+            # Auch eine Gruppe aus einem einzelnen Dokument (``kind`` „file“) entfällt ohne ihr Dokument
+            if entry.get(kind) is None and entry["file"] is None:
+                continue  # zwischen den Schritten gelöscht oder im Bestand markiert
             result.append(entry)
         return result
 
@@ -730,7 +740,7 @@ class ElasticsearchService:
         return self._results(index_name, hits)
 
     def _results(self, index_name: str, hits: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
-        """Treffer als Ergebnisse, ohne die, die der Bestand als gelöscht oder zurückgenommen führt."""
+        """Treffer als Ergebnisse, ohne die, die der Bestand als gelöscht oder zurückgenommen führt oder nicht kennt."""
         marked = marked_in_bestand(index_name, [hit["_id"] for hit in hits])
         return {(index_name, hit["_id"]): self._to_result(hit, index_name) for hit in hits if hit["_id"] not in marked}
 

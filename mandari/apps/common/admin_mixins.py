@@ -9,6 +9,7 @@ als auch zu ``InlineModelAdmin.has_add_permission(request, obj)``.
 
 from typing import Any
 
+from django.contrib.admin import helpers
 from django.http import HttpRequest, HttpResponse
 from django.template.response import TemplateResponse
 from django.utils.html import format_html
@@ -66,6 +67,33 @@ def confirm_before_change(
         "title": title,
         "text": text,
         "back_url": back_url,
+    }
+    return TemplateResponse(request, "admin/aktion_bestaetigen.html", context)
+
+
+def confirm_selected(
+    model_admin: Any, request: HttpRequest, queryset: Any, *, action: str, title: str, text: str
+) -> HttpResponse | None:
+    """
+    Ändernde Sammelaktion der Listenansicht, die sich nicht zurücknehmen lässt: Das Formular der Liste zeigt erst
+    eine Bestätigung mit den gewählten Objekten; ausgeführt wird mit dem abgeschickten Formular dieser Seite
+    (``post=ja``), nach dem Muster der Löschbestätigung von Django. Ein Klick in der falschen Zeile oder auf „alle
+    auswählen“ löst so allein nichts aus. ``action`` ist der Name der Aktion, unter dem die Liste sie erneut aufruft.
+
+    ``None`` heißt: Die Anfrage ist die bestätigte, die Aktion läuft. Sonst die Bestätigungsseite.
+    """
+    if request.POST.get("post") == "ja":
+        return None
+    context = {
+        **model_admin.admin_site.each_context(request),
+        "opts": model_admin.model._meta,
+        "title": title,
+        "text": text,
+        # Zurück in die Liste mit ihren Filtern; dorthin geht auch das Formular
+        "back_url": request.get_full_path(),
+        "objects": list(queryset),
+        "hidden": [("action", action), ("post", "ja")],
+        "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
     }
     return TemplateResponse(request, "admin/aktion_bestaetigen.html", context)
 

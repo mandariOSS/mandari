@@ -10,6 +10,7 @@ Usage: python manage.py send_digest
 """
 
 import logging
+from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -21,15 +22,53 @@ from apps.common.email import render_email
 logger = logging.getLogger(__name__)
 
 
-def _stale_alerts(alerts) -> set:
-    """Kennungen der Hinweise auf Vorgänge, die es im Bestand nicht mehr gibt oder die markiert sind."""
+def _pick_alerts(unsent: Any, limit: int) -> tuple[list[Any], set[Any]]:
+    """
+    Die ersten ``limit`` Hinweise aus ``unsent`` (sortiert), die hinausgehen dürfen, und die Kennungen derer, die zu
+    verwerfen sind.
+
+    Ein Hinweis hält Titel und Adresse des Vorgangs vom Tag seiner Entstehung fest. Geprüft wird gegen den Bestand
+    unmittelbar vor dem Versand, gleich auf welchem Weg markiert wurde:
+
+    - Den Vorgang gibt es nicht mehr, oder er ist zurückgenommen: Der Hinweis wird verworfen, sein Titel geht nicht
+      mehr hinaus.
+    - Der Vorgang ist nur als in der Quelle gelöscht markiert: Der Hinweis wird übersprungen, nicht verworfen. Eine
+      solche Markierung kann vorübergehend sein (der Abgleich hebt sie auf, sobald die Quelle den Vorgang wieder
+      liefert); ein verworfener Hinweis entstünde dann nicht neu.
+
+    Begrenzt wird die Zahl der gültigen Hinweise, nicht die der geprüften: Stehen vorn lauter verworfene oder
+    übersprungene, rücken die dahinter nach, statt bis zum nächsten Lauf zu warten. Je Abschnitt zwei Abfragen.
+    """
     from insight_core.models import OParlPaper
 
-    papers = [a.entity_id for a in alerts if a.entity_type == "paper"]
-    if not papers:
-        return set()
-    current = set(OParlPaper.objects.filter(pk__in=papers, deleted=False).values_list("pk", flat=True))
-    return {a.pk for a in alerts if a.entity_type == "paper" and a.entity_id not in current}
+    sendable: list[Any] = []
+    discard: set[Any] = set()
+    offset = 0
+    while len(sendable) < limit:
+        batch = list(unsent[offset : offset + limit])
+        if not batch:
+            break
+        offset += len(batch)
+        paper_ids = {a.entity_id for a in batch if a.entity_type == "paper"}
+        papers = (
+            {
+                p.pk: p
+                for p in OParlPaper.objects.filter(pk__in=paper_ids).only("external_id", "deleted", "deletion_reason")
+            }
+            if paper_ids
+            else {}
+        )
+        for alert in batch:
+            if alert.entity_type == "paper":
+                paper = papers.get(alert.entity_id)
+                if paper is None or paper.withdrawn_by_publisher:
+                    discard.add(alert.pk)
+                    continue
+                if paper.deleted:
+                    continue
+            if len(sendable) < limit:
+                sendable.append(alert)
+    return sendable, discard
 
 
 class Command(EinmaligMixin, BaseCommand):
@@ -84,23 +123,15 @@ class Command(EinmaligMixin, BaseCommand):
         error_count = 0
 
         for subscriber in subscribers:
+            # „id“ als letzter Schlüssel: Die Auswahl liest in Abschnitten und braucht eine feste Reihenfolge
             unsent_alerts = SubscriptionAlert.objects.filter(
                 subscriber=subscriber,
                 sent_in_digest__isnull=True,
-            ).order_by("alert_type", "-created_at")[:max_alerts]
+            ).order_by("alert_type", "-created_at", "id")
 
-            if not unsent_alerts.exists():
-                continue
-
-            alerts_list = list(unsent_alerts)
-            # Ein Hinweis hält Titel und Adresse des Vorgangs vom Tag seiner Entstehung fest. Ist der Vorgang
-            # inzwischen gelöscht, zurückgenommen oder endgültig entfernt, geht sein Titel nicht mehr hinaus:
-            # Geprüft wird gegen den Bestand unmittelbar vor dem Versand, gleich auf welchem Weg markiert wurde.
-            veraltet = _stale_alerts(alerts_list)
-            if veraltet:
-                if not dry_run:
-                    SubscriptionAlert.objects.filter(pk__in=veraltet).delete()
-                alerts_list = [a for a in alerts_list if a.pk not in veraltet]
+            alerts_list, veraltet = _pick_alerts(unsent_alerts, max_alerts)
+            if veraltet and not dry_run:
+                SubscriptionAlert.objects.filter(pk__in=veraltet).delete()
             if not alerts_list:
                 continue
             alert_count = len(alerts_list)

@@ -128,8 +128,10 @@ def _remove_photo(person: OParlPerson) -> None:
     Foto der Person aus der Ablage nehmen, und zwar erst nach dem Commit (``transaction.on_commit``).
 
     Ein ``FileField`` entfernt seine Datei beim Löschen der Zeile nicht; sie bliebe unter ihrer Adresse abrufbar.
-    Rollt die Transaktion zurück, bleibt die Datei stehen (die Zeile gibt es dann auch noch). Ein Dateifehler
-    (gesperrte oder fehlende Datei) wird nur vermerkt: Er darf das Löschen der Zeile nicht aufhalten.
+    Rollt die Transaktion zurück, bleibt die Datei stehen (die Zeile gibt es dann auch noch). Ein Fehler der Ablage
+    (gesperrte oder fehlende Datei, bei einer entfernten Ablage auch ein Netz- oder Dienstfehler) wird nur vermerkt:
+    Er darf weder das Löschen der Zeile aufhalten noch einen Lauf über viele Zeilen abbrechen (``purge_deleted``).
+    Welche Fehler eine Ablage wirft, legt sie selbst fest; deshalb jede Ausnahme, und ``robust`` als zweite Sicherung.
     """
     if not person.photo:
         return
@@ -138,10 +140,10 @@ def _remove_photo(person: OParlPerson) -> None:
     def remove() -> None:
         try:
             storage.delete(name)
-        except OSError:
+        except Exception:
             logger.exception("Foto der Person %s konnte nicht gelöscht werden", pk)
 
-    transaction.on_commit(remove)
+    transaction.on_commit(remove, robust=True)
 
 
 @receiver(post_save, sender=OParlPerson)

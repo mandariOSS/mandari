@@ -229,39 +229,41 @@ class BroadcastSpeech(models.Model):
 
 def wortmeldungen_zu_personen(personen: Iterable[OParlPerson]) -> models.QuerySet[BroadcastSpeech]:
     """
-    Wortmeldungen, die gelesene Angaben zu einer dieser Personen tragen (für das endgültige Löschen einer Person).
+    Wortmeldungen mit Verweis auf eine dieser Personen, auch mit falsch gelesenem Namen (für das endgültige Löschen
+    einer Person).
 
     Name, Fraktion und Funktion einer Wortmeldung sind Kopien als Freitext; der Verweis auf die Person ist
     ``SET_NULL``. Mit der Person verschwände deshalb nur der Verweis, die Angaben blieben auf der Live-Seite stehen.
-    Dazu gehören:
+    """
+    return BroadcastSpeech.objects.filter(person_id__in=[person.pk for person in personen])
 
-    - jede Wortmeldung mit Verweis auf eine der Personen, auch mit falsch gelesenem Namen,
-    - Wortmeldungen ohne Verweis in derselben Kommune, deren gelesener Name in Vergleichsform zur Person passt
-      (``hub.live.zuordnung``). Ohne Verweis bleibt eine Wortmeldung etwa bei zwei gleichnamigen Personen; die
-      Zeilen der namensgleichen Person sind dann mit erfasst, weil sich nicht sagen lässt, wer gesprochen hat.
 
-    Unscharf gelesene Namen ohne Verweis findet der Vergleich nicht; sie bleiben eine Prüfung von Hand.
+def namensgleiche_wortmeldungen(personen: Iterable[OParlPerson]) -> models.QuerySet[BroadcastSpeech]:
+    """
+    Wortmeldungen ohne Verweis auf eine Person in derselben Kommune, deren gelesener Name in Vergleichsform zu einer
+    dieser Personen passt (``hub.live.zuordnung``).
+
+    Ohne Verweis bleibt eine Wortmeldung etwa bei zwei gleichnamigen Personen. Wer gesprochen hat, lässt sich aus der
+    Zeile nicht sagen: Sie kann der namensgleichen anderen Person gehören. Diese Treffer sind deshalb zum Prüfen von
+    Hand gedacht, nicht zum Löschen ohne Rückfrage. Unscharf gelesene Namen ohne Verweis findet der Vergleich nicht.
     """
     # Erst hier: zuordnung importiert dieses Modul
     from .zuordnung import _namen, vergleichsname
 
-    personen = list(personen)
     namen_je_kommune: dict[uuid.UUID, set[str]] = {}
     for person in personen:
         namen_je_kommune.setdefault(person.body_id, set()).update(_namen(person))
 
-    ohne_verweis: list[uuid.UUID] = []
+    treffer: list[uuid.UUID] = []
     for body_id, namen in namen_je_kommune.items():
         if not namen:
             continue
         offene = BroadcastSpeech.objects.filter(person__isnull=True, broadcast__source__body_id=body_id)
         for pk, gelesen in offene.values_list("pk", "name_read").iterator():
             if vergleichsname(gelesen) in namen:
-                ohne_verweis.append(pk)
+                treffer.append(pk)
 
-    return BroadcastSpeech.objects.filter(
-        models.Q(person_id__in=[person.pk for person in personen]) | models.Q(pk__in=ohne_verweis)
-    )
+    return BroadcastSpeech.objects.filter(pk__in=treffer)
 
 
 class LogKind(models.TextChoices):

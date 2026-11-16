@@ -11,6 +11,7 @@ from typing import Any, Final
 
 from django import forms
 from django.contrib import admin, messages
+from django.db import transaction
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -21,7 +22,13 @@ from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
-from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin, confirm_before_change, status_text
+from apps.common.admin_mixins import (
+    NoAddAdminMixin,
+    ReadOnlyAdminMixin,
+    confirm_before_change,
+    confirm_selected,
+    status_text,
+)
 
 from .models import (
     ChatUsage,
@@ -773,59 +780,143 @@ class OParlBodyGeoSuggestionAdmin(NoAddAdminMixin, ModelAdmin):
         return redirect(reverse("admin:insight_core_oparlbody_change", args=[body.pk]))
 
 
+#: Ergebnis der dauerhaften Rücknahme eines Objekts (``_withdraw_for_good``)
+_WITHDRAWN: Final = "zurueckgenommen"
+_RAISED: Final = "war_markiert"
+_FROM_SESSION: Final = "session"
+_UNCHANGED: Final = "unveraendert"
+
+
+def _withdraw_for_good(obj: Any) -> str:
+    """
+    Ein Objekt des RIS-Bestands dauerhaft aus der Veröffentlichung nehmen (Aktion ``RetractAdminMixin``).
+
+    - Ein unmarkiertes Objekt wird markiert und im Änderungsfeed gemeldet (``retraction.retract``, Grund
+      „zurückgezogen“).
+    - Ein schon markiertes Objekt behält seine Markierung. Gemeldet wird es trotzdem: War es nur als in der Quelle
+      gelöscht markiert, blieb es mit Hinweis öffentlich, und Abnehmer, die das genauso halten, erführen sonst nie
+      von der Rücknahme. War es von Hand zurückgenommen, gab es dazu noch gar keine Meldung.
+    - In beiden Fällen trägt die Zeile danach den Grund „aus Datenschutzgründen entfernt“. Nur diese Markierung lässt
+      der Abgleich mit der Quelle stehen (Ingestor, ``keeps_withdrawal``); jede andere hebt er auf, sobald die Quelle
+      das Objekt wieder liefert. Gespeichert wird über ``save``: Erst das Signal der Person löscht ihr Foto.
+    - Ein Objekt aus dem Spiegel von mandari Session bleibt unverändert. Session nimmt selbst zurück und
+      veröffentlicht wieder; mit dem dauerhaften Grund bliebe ein dort wieder veröffentlichtes Objekt hier für
+      immer zurückgenommen.
+    """
+    from hub.ris import retraction
+
+    from .models import REASON_PRIVACY, SESSION_OPARL_MARKERS
+    from .services import ruecknahme_stand
+
+    external_id = getattr(obj, "external_id", "") or ""
+    if all(marker in external_id for marker in SESSION_OPARL_MARKERS):
+        return _FROM_SESSION
+    with transaction.atomic():
+        fresh = retraction.retract(obj, reason=retraction.REASON_WITHDRAWN)
+        row = (
+            type(obj)
+            ._default_manager.select_for_update(no_key=True)
+            .filter(pk=obj.pk, deleted=True)
+            .exclude(deletion_reason=REASON_PRIVACY)
+            .first()
+        )
+        if row is None:
+            return _UNCHANGED  # schon dauerhaft zurückgenommen oder inzwischen gelöscht
+        if not fresh:
+            retraction.report_withdrawal(row, reason=retraction.REASON_WITHDRAWN, when=timezone.now())
+        row.deletion_reason = REASON_PRIVACY
+        row.save(update_fields=["deletion_reason", "updated_at"])
+        if not fresh:
+            # Was ``retract`` für neu Markiertes selbst erledigt
+            row._forget_summaries()
+            row._forget_alerts()
+            transaction.on_commit(ruecknahme_stand.forget, robust=True)
+    return _WITHDRAWN if fresh else _RAISED
+
+
 class RetractAdminMixin:
     """
-    Aktion „Aus der Veröffentlichung zurücknehmen“ für Objekte des RIS-Bestands.
+    Aktion „Dauerhaft aus der Veröffentlichung zurücknehmen“ für Objekte des RIS-Bestands aus fremden Quellen.
 
-    Markiert die Objekte mit dem Grund „Zurückgezogen“ und meldet die Rücknahme im Änderungsfeed
-    (``hub.ris.retraction.retract``). Danach antworten ihre Seiten ohne Inhalt, und andere Seiten nennen sie nicht
-    mehr. Die Anlagen eines Vorgangs oder einer Sitzung gehen mit. Das Häkchen „In Quelle gelöscht“ allein leistet
-    das nicht: Ohne Grund der Rücknahme bleibt ein Objekt mit Hinweis sichtbar, und Abnehmer des Feeds erfahren
-    nichts. Ist ein Objekt schon ohne solchen Grund markiert, setzt die Aktion den Grund; gemeldet wird dann nichts,
-    weil die Markierung selbst schon bestand.
+    Danach antworten die Seiten der Objekte ohne Inhalt; andere Seiten, Suche, Schnittstelle und Digest nennen sie
+    nicht mehr, und der Änderungsfeed meldet die Rücknahme. Die Anlagen eines Vorgangs oder einer Sitzung gehen mit,
+    das Foto einer Person wird gelöscht. Die Rücknahme bleibt bestehen, auch wenn die Quelle das Objekt weiter
+    liefert (``_withdraw_for_good``); eine Aktion, die sie aufhebt, gibt es nicht. Deshalb führt erst die bestätigte
+    Zwischenseite aus (``confirm_selected``).
+
+    Das Häkchen „In Quelle gelöscht“ allein leistet das nicht: Ohne Grund der Rücknahme bleibt ein Objekt mit Hinweis
+    sichtbar, und Abnehmer des Feeds erfahren nichts.
     """
 
-    @admin.action(description="Aus der Veröffentlichung zurücknehmen (mit Anlagen)", permissions=["change"])
-    def retract_selected(self, request, queryset):
+    model: Any
+
+    @admin.action(
+        description="Dauerhaft aus der Veröffentlichung zurücknehmen (mit Anlagen, bei Personen mit Foto)",
+        permissions=["change"],
+    )
+    def retract_selected(self, request: HttpRequest, queryset: QuerySet[Any]) -> HttpResponse | None:
         from hub.ris import retraction
 
-        from .models import DEPUBLISHED_REASONS, REASON_WITHDRAWN
+        bestaetigung = confirm_selected(
+            self,
+            request,
+            queryset,
+            action="retract_selected",
+            title="Dauerhaft aus der Veröffentlichung zurücknehmen",
+            text=(
+                "Die folgenden Objekte verlassen die Veröffentlichung dauerhaft, Vorgänge und Sitzungen samt ihren "
+                "Anlagen: Ihre Seiten antworten ohne Inhalt, und Suche, Schnittstelle und Digest nennen sie nicht "
+                "mehr. Der Abgleich mit der Quelle stellt sie nicht wieder her, und die Verwaltung bietet keine "
+                "Aktion, die das aufhebt. Fotos von Personen, Zusammenfassungen und offene Abo-Hinweise werden "
+                "sofort gelöscht. Objekte aus mandari Session bleiben unverändert; sie werden in Session "
+                "zurückgenommen."
+            ),
+        )
+        if bestaetigung is not None:
+            return bestaetigung
 
-        retracted = attachments = marked_before = 0
+        counts = dict.fromkeys((_WITHDRAWN, _RAISED, _FROM_SESSION, _UNCHANGED), 0)
+        attachments = 0
         for obj in queryset:
-            if retraction.retract(obj, reason=retraction.REASON_WITHDRAWN):
-                retracted += 1
-            else:
-                row = (
-                    type(obj)
-                    ._default_manager.filter(pk=obj.pk, deleted=True)
-                    .exclude(deletion_reason__in=DEPUBLISHED_REASONS)
-                    .first()
-                )
-                if row is not None:
-                    row.deletion_reason = REASON_WITHDRAWN
-                    row.save(update_fields=["deletion_reason", "updated_at"])
-                    row._forget_summaries()
-                    row._forget_alerts()
-                    marked_before += 1
-            # Vorgang und Sitzung: Anlagen tragen keine eigene Markierung und blieben sonst im Suchindex
-            if isinstance(obj, OParlPaper | OParlMeeting):
-                for attachment in obj.files.filter(deleted=False):
-                    if retraction.retract(attachment, reason=retraction.REASON_WITHDRAWN):
+            outcome = _withdraw_for_good(obj)
+            counts[outcome] += 1
+            # Vorgang und Sitzung: Anlagen tragen keine eigene Markierung und blieben sonst im Suchindex; schon
+            # markierte Anlagen bekommen den dauerhaften Grund, sonst kämen sie mit dem nächsten Abgleich zurück
+            if outcome != _FROM_SESSION and isinstance(obj, OParlPaper | OParlMeeting):
+                for attachment in obj.files.all():
+                    if _withdraw_for_good(attachment) in (_WITHDRAWN, _RAISED):
                         attachments += 1
 
-        parts = [f"{retracted} zurückgenommen"]
+        parts = []
+        if counts[_WITHDRAWN]:
+            parts.append(f"{counts[_WITHDRAWN]} zurückgenommen")
+        if counts[_RAISED]:
+            parts.append(f"{counts[_RAISED]} waren schon markiert und sind jetzt dauerhaft zurückgenommen")
         if attachments:
             parts.append(f"{attachments} Anlagen mitgenommen")
-        if marked_before:
-            parts.append(f"{marked_before} waren schon markiert (Grund gesetzt, ohne Meldung im Änderungsfeed)")
-        messages.success(request, "Aus der Veröffentlichung genommen: " + ", ".join(parts) + ".")
-        if not retraction.events_enabled():
+        if parts:
+            fotos = " Die Fotos dieser Personen sind gelöscht." if self.model is OParlPerson else ""
+            messages.success(
+                request,
+                "Dauerhaft aus der Veröffentlichung genommen: "
+                + ", ".join(parts)
+                + f". Der Abgleich mit der Quelle stellt diese Objekte nicht wieder her.{fotos}",
+            )
+        if counts[_UNCHANGED]:
+            messages.info(request, f"{counts[_UNCHANGED]} waren schon dauerhaft zurückgenommen (unverändert).")
+        if counts[_FROM_SESSION]:
+            messages.warning(
+                request,
+                f"{counts[_FROM_SESSION]} stammen aus mandari Session und bleiben unverändert: Solche Objekte "
+                "werden in Session zurückgenommen (nichtöffentlich stellen oder löschen), das Bürgerportal folgt.",
+            )
+        if parts and not retraction.events_enabled():
             messages.warning(
                 request,
                 "Diese Installation schreibt keine Ereignisse zum RIS-Bestand (INGESTOR_EVENTS_ENABLED): "
                 "Der Änderungsfeed nennt die Rücknahme nicht.",
             )
+        return None
 
 
 @admin.register(OParlOrganization)

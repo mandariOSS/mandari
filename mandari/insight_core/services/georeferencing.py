@@ -560,12 +560,44 @@ _PLACE_AREAS = {
 }
 
 
+#: Werte der Art ``highway``, die einen Weg benennen (eine Linie). Punkte an einem Weg gehören nicht dazu: Eine
+#: Haltestelle, eine Ampel oder ein Übergang liegt an einer bestimmten Stelle und heißt oft wie der Hof oder das
+#: Gebäude daneben. Unbekannte Werte gelten nicht als Weg.
+_HIGHWAY_WAYS = {
+    "motorway",
+    "trunk",
+    "primary",
+    "secondary",
+    "tertiary",
+    "motorway_link",
+    "trunk_link",
+    "primary_link",
+    "secondary_link",
+    "tertiary_link",
+    "unclassified",
+    "residential",
+    "living_street",
+    "service",
+    "pedestrian",
+    "track",
+    "road",
+    "footway",
+    "cycleway",
+    "path",
+    "bridleway",
+    "steps",
+}
+
+
 def _street_level(kind: str, value: str) -> bool:
     """
     Treffer auf Straßen- oder Ortsebene (OSM-Schlüssel und -Wert)? Ein Gebäude, eine Einrichtung oder ein Grundstück
-    liefert die Koordinaten des Objekts selbst und ist damit so genau wie ein Adresspunkt.
+    liefert die Koordinaten des Objekts selbst und ist damit so genau wie ein Adresspunkt; ebenso ein Punkt an einer
+    Straße (``highway=bus_stop``).
     """
-    return kind in ("highway", "boundary") or (kind == "place" and value in _PLACE_AREAS)
+    if kind == "highway":
+        return value in _HIGHWAY_WAYS
+    return kind == "boundary" or (kind == "place" and value in _PLACE_AREAS)
 
 
 def geocode_address(address: str, body, *, nur_strassenebene: bool = False) -> dict | None:

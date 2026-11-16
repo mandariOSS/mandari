@@ -214,6 +214,8 @@ class TestOrteDerKommune:
 #: Beide in der Kommune (``geo_body``); der Hof ist ein einzelnes Objekt, die Straße nicht
 GEBAEUDE = (51.98, 7.65)
 STRASSE_IM_GEOCODER = (51.97, 7.64)
+#: Punkt an der Straße vor dem Hof, benannt wie der Hof
+HALTESTELLE = (51.9801, 7.6501)
 
 
 class TestGeocoderOhneAdresspunkt:
@@ -229,9 +231,14 @@ class TestGeocoderOhneAdresspunkt:
             "properties": {"osm_key": art, "osm_value": wert, "name": name},
         }
 
-    def _geocoder(self, monkeypatch: pytest.MonkeyPatch, *, mit_strasse: bool) -> None:
-        """Attrappe: Photon nennt zuerst den Hof, danach (``mit_strasse``) die Straße; Nominatim nur den Hof."""
+    def _geocoder(self, monkeypatch: pytest.MonkeyPatch, *, mit_strasse: bool, mit_haltestelle: bool = False) -> None:
+        """
+        Attrappe: Photon nennt zuerst den Hof, danach (``mit_haltestelle``) die Haltestelle davor und
+        (``mit_strasse``) die Straße; Nominatim nur den Hof.
+        """
         treffer = [self._treffer("building", "farm", GEBAEUDE, "Gut Sonnenhof")]
+        if mit_haltestelle:
+            treffer.append(self._treffer("highway", "bus_stop", HALTESTELLE, "Sonnenhof"))
         if mit_strasse:
             treffer.append(self._treffer("highway", "residential", STRASSE_IM_GEOCODER, "Sonnenhof"))
         hof = {"lat": str(GEBAEUDE[0]), "lon": str(GEBAEUDE[1]), "class": "building", "type": "farm"}
@@ -265,6 +272,17 @@ class TestGeocoderOhneAdresspunkt:
         assert georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=False) is None
         # Ohne Schutz bleibt es beim bisherigen Verhalten
         assert georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=True) is not None
+
+    def test_haltestelle_gleichen_namens_gilt_nicht_als_strasse(
+        self, kommune: OParlBody, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Ein Punkt an der Straße (``highway=bus_stop``) liegt vor dem Hof und heißt wie er."""
+        self._geocoder(monkeypatch, mit_strasse=True, mit_haltestelle=True)
+        punkt = georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=False)
+        assert punkt is not None and (punkt["lat"], punkt["lon"]) == STRASSE_IM_GEOCODER
+
+        self._geocoder(monkeypatch, mit_strasse=False, mit_haltestelle=True)
+        assert georeferencing.geocode_fallback("Sonnenhof", kommune, adresspunkte=False) is None
 
     def test_ki_pruefung_uebernimmt_kein_gebaeude(
         self, kommune: OParlBody, make_paper: Callable[..., OParlPaper], monkeypatch: pytest.MonkeyPatch

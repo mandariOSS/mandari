@@ -5,22 +5,27 @@ Zurückgenommene Objekte fremder Ratsinformationssysteme verlassen das Bürgerpo
 - Eine Markierung mit einem Grund der Rücknahme (zurückgezogen, nicht mehr öffentlich, aus Datenschutzgründen
   entfernt) wirkt wie eine Rücknahme durch mandari Session: Die Seite antwortet mit 410 ohne Inhalt, andere
   Seiten nennen das Objekt nicht mehr. In der Quelle Gelöschtes bleibt mit Hinweis sichtbar.
-- Anlagen eines zurückgenommenen Vorgangs oder einer zurückgenommenen Sitzung werden nicht ausgeliefert, auch
-  nicht ihr erkannter Text über die Schnittstelle.
+- Anlagen eines zurückgenommenen Vorgangs oder einer zurückgenommenen Sitzung werden nicht ausgeliefert; die
+  Schnittstelle gibt sie nur gekürzt aus, der Snapshot nennt sie nicht.
 - Das Foto einer Person verschwindet mit ihrer Zeile, bei einer Entfernung aus Datenschutzgründen sofort.
-- Der Digest nennt keinen Vorgang, den es beim Versand nicht mehr gibt.
-- Die Verwaltungsaktion „Aus der Veröffentlichung zurücknehmen“ markiert mit Grund, nimmt die Anlagen mit und
-  meldet die Rücknahme im Änderungsfeed.
+- Der Digest nennt keinen Vorgang, den es beim Versand nicht mehr gibt oder der markiert ist. Hinweise auf
+  zurückgenommene Vorgänge verwirft er; solche auf nur in der Quelle gelöschte überspringt er.
+- Die Verwaltungsaktion „Dauerhaft aus der Veröffentlichung zurücknehmen“ fragt nach, markiert mit dem Grund, den
+  der Abgleich mit der Quelle stehen lässt, nimmt die Anlagen mit und meldet die Rücknahme im Änderungsfeed.
+  Objekte aus mandari Session lässt sie unverändert.
 """
 
 from __future__ import annotations
 
+import uuid
+from datetime import timedelta
 from io import StringIO
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.messages import get_messages
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.management import call_command
@@ -30,9 +35,11 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.events.models import Event
+from hub.api import aggregator, snapshot
 from insight_core.models import (
     DEPUBLISHED_REASONS,
     REASON_DELETED_AT_SOURCE,
+    REASON_NOT_PUBLIC,
     REASON_PRIVACY,
     REASON_WITHDRAWN,
     InsightSubscriber,
@@ -207,17 +214,35 @@ def test_anlage_eines_zurueckgenommenen_eintrags_wird_nicht_ausgeliefert(
     assert not file_reconcile.parent_withdrawn(welt["frei"])
 
 
-def test_schnittstelle_gibt_den_text_solcher_anlagen_nicht_aus(welt: dict[str, Any], settings: Any) -> None:
+def test_schnittstelle_gibt_solche_anlagen_nur_gekuerzt_aus(welt: dict[str, Any], settings: Any) -> None:
+    """Nur der Vorgang trägt die Markierung (von Hand gesetzt, ohne die Aktion): Die Anlage folgt ihm."""
     settings.OPARL_API_RATE_LIMIT = 0
     settings.OPARL_API_CACHE_SECONDS = 0
     adresse = f"/oparl/v1/file/{welt['anlage'].pk}"
-    assert Client().get(adresse).json()["text"] == "Erkannter Text mit Namen"
+    vorher = Client().get(adresse).json()
+    assert vorher["text"] == "Erkannter Text mit Namen" and vorher["fileName"] == "lageplan.pdf"
 
     welt["vorgang"].mark_deleted(reason=REASON_PRIVACY)
 
     antwort = Client().get(adresse)
-    assert antwort.status_code == 200 and "text" not in antwort.json()
+    assert antwort.status_code == 200
+    gekuerzt = antwort.json()
+    assert gekuerzt["deleted"] is True and gekuerzt["id"] == vorher["id"]
+    assert set(gekuerzt) == {"id", "type", "created", "modified", "deleted"}, "weder Text noch Name noch Adressen"
     assert "text" in Client().get(f"/oparl/v1/file/{welt['frei'].pk}").json()
+
+
+def test_snapshot_nennt_solche_anlagen_nicht(welt: dict[str, Any]) -> None:
+    def dateien() -> set[str]:
+        objekte = snapshot.objects(aggregator.snapshot_for_measurement(welt["body"].pk))
+        return {str(o["id"]).rsplit("/", 1)[1] for o in objekte if str(o["type"]).endswith("/File")}
+
+    anlage, niederschrift, frei = (str(welt[name].pk) for name in ("anlage", "niederschrift", "frei"))
+    assert dateien() == {anlage, niederschrift, frei}
+
+    welt["vorgang"].mark_deleted(reason=REASON_PRIVACY)
+
+    assert dateien() == {niederschrift, frei}
 
 
 # --- Personenfoto -----------------------------------------------------------------------------------------
@@ -262,13 +287,19 @@ def test_foto_bleibt_wenn_das_loeschen_zurueckgerollt_wird(foto: Any, django_cap
     assert ablage.exists(name)
 
 
-def test_dateifehler_haelt_das_loeschen_nicht_auf(
-    foto: Any, django_capture_on_commit_callbacks: Any, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "fehler",
+    [PermissionError("Datei in Benutzung"), RuntimeError("Ablage nicht erreichbar")],
+    ids=["dateisystem", "entfernte_ablage"],
+)
+def test_fehler_der_ablage_haelt_das_loeschen_nicht_auf(
+    foto: Any, django_capture_on_commit_callbacks: Any, monkeypatch: pytest.MonkeyPatch, fehler: Exception
 ) -> None:
+    """Welche Fehler eine Ablage wirft, legt sie selbst fest (eine entfernte Ablage etwa keinen ``OSError``)."""
     person, ablage, _name = foto
 
     def gesperrt(name: str) -> None:
-        raise PermissionError("Datei in Benutzung")
+        raise fehler
 
     monkeypatch.setattr(ablage, "delete", gesperrt)
     person.mark_deleted()
@@ -341,29 +372,83 @@ def _digest(*argumente: str) -> None:
     call_command("send_digest", *argumente, stdout=StringIO())
 
 
-def test_digest_nennt_keinen_inzwischen_markierten_vorgang(welt: dict[str, Any], abo: dict[str, Any]) -> None:
-    # Wie der Ingestor: Markierung ohne die Anwendung
-    OParlPaper.objects.filter(pk=welt["vorgang"].pk).update(deleted=True, deleted_at=timezone.now())
+def _markiert(vorgang: OParlPaper, grund: str | None = None) -> None:
+    """Markierung am Modell vorbei, wie der Ingestor sie setzt."""
+    OParlPaper.objects.filter(pk=vorgang.pk).update(deleted=True, deleted_at=timezone.now(), deletion_reason=grund)
+
+
+def test_digest_ueberspringt_einen_in_der_quelle_geloeschten_vorgang(welt: dict[str, Any], abo: dict[str, Any]) -> None:
+    _markiert(welt["vorgang"])
 
     _digest()
 
     assert len(abo["mails"]) == 1
     assert VORGANG not in abo["mails"][0] and "Radwegekonzept" in abo["mails"][0]
-    assert not SubscriptionAlert.objects.filter(entity_id=welt["vorgang"].pk).exists()
     assert SubscriptionAlert.objects.get(entity_id=abo["anderer"].pk).sent_in_digest is not None
+    # Die Markierung kann vorübergehend sein: Der Hinweis bleibt offen ...
+    assert SubscriptionAlert.objects.get(entity_id=welt["vorgang"].pk).sent_in_digest is None
+
+    # ... und geht hinaus, sobald der Abgleich sie aufgehoben hat
+    OParlPaper.objects.filter(pk=welt["vorgang"].pk).update(deleted=False, deleted_at=None, deletion_reason=None)
+    _digest()
+
+    assert len(abo["mails"]) == 2 and VORGANG in abo["mails"][1]
+
+
+def test_digest_verwirft_hinweise_auf_zurueckgenommene_und_fehlende_vorgaenge(
+    welt: dict[str, Any], abo: dict[str, Any]
+) -> None:
+    _markiert(welt["vorgang"], REASON_WITHDRAWN)
+    verwaist = SubscriptionAlert.objects.create(
+        subscriber=abo["abonnent"],
+        alert_type="keyword",
+        entity_type="paper",
+        entity_id=uuid.uuid4(),
+        entity_title="Endgültig gelöschter Vorgang",
+        entity_url="/insight/vorgaenge/gibt-es-nicht/",
+    )
+
+    _digest()
+
+    assert len(abo["mails"]) == 1
+    assert VORGANG not in abo["mails"][0] and "Endgültig gelöschter Vorgang" not in abo["mails"][0]
+    assert "Radwegekonzept" in abo["mails"][0]
+    assert not SubscriptionAlert.objects.filter(pk__in=[verwaist.pk, abo["hinweise"][welt["vorgang"].pk].pk]).exists()
 
 
 def test_digest_ohne_mail_wenn_kein_hinweis_uebrig_bleibt(welt: dict[str, Any], abo: dict[str, Any]) -> None:
-    OParlPaper.objects.filter(body=welt["body"]).update(deleted=True, deleted_at=timezone.now())
+    _markiert(welt["vorgang"], REASON_WITHDRAWN)
+    _markiert(abo["anderer"])
 
     _digest()
 
     assert abo["mails"] == []
-    assert not SubscriptionAlert.objects.exists()
+    assert [h.entity_id for h in SubscriptionAlert.objects.all()] == [abo["anderer"].pk], (
+        "übersprungen, nicht verworfen"
+    )
+
+
+@pytest.mark.parametrize("grund", [None, REASON_WITHDRAWN], ids=["uebersprungen", "verworfen"])
+def test_digest_fuellt_hinter_ausgelassenen_hinweisen_auf(
+    welt: dict[str, Any], abo: dict[str, Any], settings: Any, grund: str | None
+) -> None:
+    """Begrenzt wird die Zahl der gültigen Hinweise: Ein ausgelassener vorn hält die dahinter nicht bis zum nächsten Lauf auf."""
+    settings.INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL = 1
+    # Neueste zuerst: Der Hinweis auf den markierten Vorgang steht vorn
+    SubscriptionAlert.objects.filter(entity_id=welt["vorgang"].pk).update(
+        created_at=timezone.now() - timedelta(hours=1)
+    )
+    _markiert(abo["anderer"], grund)
+
+    _digest()
+
+    assert len(abo["mails"]) == 1 and VORGANG in abo["mails"][0]
+    assert "Radwegekonzept" not in abo["mails"][0]
+    assert SubscriptionAlert.objects.filter(entity_id=abo["anderer"].pk).exists() is (grund is None)
 
 
 def test_probelauf_des_digests_verwirft_nichts(welt: dict[str, Any], abo: dict[str, Any]) -> None:
-    OParlPaper.objects.filter(pk=welt["vorgang"].pk).update(deleted=True, deleted_at=timezone.now())
+    _markiert(welt["vorgang"], REASON_WITHDRAWN)
 
     _digest("--dry-run")
 
@@ -382,6 +467,21 @@ def test_ruecknahme_und_endgueltiges_loeschen_verwerfen_die_hinweise(welt: dict[
     assert not SubscriptionAlert.objects.exists()
 
 
+def test_ruecknahme_behaelt_schon_versandte_hinweise(welt: dict[str, Any], abo: dict[str, Any]) -> None:
+    """
+    Der versandte Hinweis ist die Sperre gegen eine zweite Meldung desselben Vorgangs, falls er später wieder
+    veröffentlicht wird. Mit dem endgültigen Löschen geht auch er.
+    """
+    _digest()
+    assert SubscriptionAlert.objects.filter(sent_in_digest__isnull=False).count() == 2
+
+    welt["vorgang"].mark_deleted(reason=REASON_WITHDRAWN)
+
+    assert SubscriptionAlert.objects.get(entity_id=welt["vorgang"].pk).sent_in_digest is not None
+    call_command("purge_deleted", "--ids", str(welt["vorgang"].pk), "--yes", stdout=StringIO())
+    assert not SubscriptionAlert.objects.filter(entity_id=welt["vorgang"].pk).exists()
+
+
 # --- Verwaltungsaktion ------------------------------------------------------------------------------------
 
 
@@ -396,46 +496,146 @@ def verwaltung(db: Any, settings: Any) -> Client:
     return client
 
 
-def _aktion(verwaltung: Client, modell: str, *objekte: Any) -> None:
-    antwort = verwaltung.post(
-        reverse(f"admin:insight_core_{modell}_changelist"),
-        {"action": "retract_selected", "_selected_action": [str(objekt.pk) for objekt in objekte]},
-    )
-    assert antwort.status_code == 302
+def _aktion(verwaltung: Client, modell: str, *objekte: Any, bestaetigt: bool = True) -> Any:
+    """Aktion aus der Liste aufrufen; ``bestaetigt``: das Formular der Zwischenseite, sonst das der Liste."""
+    daten: dict[str, Any] = {"action": "retract_selected", "_selected_action": [str(objekt.pk) for objekt in objekte]}
+    if bestaetigt:
+        daten["post"] = "ja"
+    antwort = verwaltung.post(reverse(f"admin:insight_core_{modell}_changelist"), daten)
+    assert antwort.status_code == (302 if bestaetigt else 200)
+    return antwort
 
 
-def test_aktion_nimmt_vorgang_mit_anlagen_zurueck_und_meldet_es(welt: dict[str, Any], verwaltung: Client) -> None:
+def _meldungen(antwort: Any) -> str:
+    return " | ".join(str(meldung) for meldung in get_messages(antwort.wsgi_request))
+
+
+def _gemeldet() -> list[tuple[str, Any, str, str]]:
+    ereignisse = Event.objects.filter(type="ris.object.depublished").order_by("aggregate_type")
+    return [(e.aggregate_type, e.aggregate_id, e.operation, e.payload["reason"]) for e in ereignisse]
+
+
+def test_aktion_fragt_nach_und_aendert_bis_dahin_nichts(welt: dict[str, Any], verwaltung: Client) -> None:
+    vorgang = welt["vorgang"]
+
+    antwort = _aktion(verwaltung, "oparlpaper", vorgang, bestaetigt=False)
+
+    html = antwort.content.decode()
+    assert "Dauerhaft aus der Veröffentlichung zurücknehmen" in html
+    assert "stellt sie nicht wieder her" in html and "Fotos von Personen" in html
+    assert str(vorgang) in html, "die Seite nennt, was gewählt ist"
+    # Das Formular der Seite ruft dieselbe Aktion mit denselben Objekten erneut auf
+    for feld in ('name="action" value="retract_selected"', 'name="post" value="ja"', f'value="{vorgang.pk}"'):
+        assert feld in html, feld
+    vorgang.refresh_from_db()
+    assert not vorgang.deleted and not OParlFile.objects.filter(deleted=True).exists()
+    assert _gemeldet() == []
+
+
+def test_aktion_nimmt_vorgang_mit_anlagen_dauerhaft_zurueck_und_meldet_es(
+    welt: dict[str, Any], verwaltung: Client
+) -> None:
     vorgang, anlage = welt["vorgang"], welt["anlage"]
 
-    _aktion(verwaltung, "oparlpaper", vorgang)
+    antwort = _aktion(verwaltung, "oparlpaper", vorgang)
 
     vorgang.refresh_from_db()
     anlage.refresh_from_db()
-    assert (vorgang.deleted, vorgang.deletion_reason) == (True, REASON_WITHDRAWN)
-    assert (anlage.deleted, anlage.deletion_reason) == (True, REASON_WITHDRAWN)
+    # Der Grund an der Zeile ist der, den der Abgleich mit der Quelle stehen lässt (Ingestor: ``keeps_withdrawal``
+    # vergleicht mit genau diesem Wert); jeden anderen höbe er auf, sobald die Quelle das Objekt wieder liefert
+    assert REASON_PRIVACY == "datenschutz"
+    assert (vorgang.deleted, vorgang.deletion_reason) == (True, REASON_PRIVACY)
+    assert (anlage.deleted, anlage.deletion_reason) == (True, REASON_PRIVACY)
     assert Client().get(_seite("paper_detail", vorgang)).status_code == 410
     assert _vorschau(anlage).status_code == 410
-    # Je Objekt eine öffentliche Meldung für Abnehmer des Änderungsfeeds
-    gemeldet = Event.objects.filter(type="ris.object.depublished")
-    assert {(e.aggregate_type, e.aggregate_id) for e in gemeldet} == {("Paper", vorgang.pk), ("File", anlage.pk)}
-    assert all((e.visibility, e.operation) == ("oeffentlich", "delete") for e in gemeldet)
-    assert all(e.payload["reason"] == REASON_WITHDRAWN for e in gemeldet)
+    # Je Objekt eine öffentliche Meldung für Abnehmer des Änderungsfeeds, als Rücknahme
+    assert _gemeldet() == [
+        ("File", anlage.pk, "delete", REASON_WITHDRAWN),
+        ("Paper", vorgang.pk, "delete", REASON_WITHDRAWN),
+    ]
+    assert all(e.visibility == "oeffentlich" for e in Event.objects.filter(type="ris.object.depublished"))
+    meldungen = _meldungen(antwort)
+    assert "Dauerhaft aus der Veröffentlichung genommen: 1 zurückgenommen, 1 Anlagen mitgenommen" in meldungen
+    assert "stellt diese Objekte nicht wieder her" in meldungen
     # Andere Objekte bleiben unberührt
     assert not OParlFile.objects.get(pk=welt["frei"].pk).deleted
 
+    # Ein zweiter Aufruf ändert und meldet nichts mehr
+    assert "schon dauerhaft zurückgenommen" in _meldungen(_aktion(verwaltung, "oparlpaper", vorgang))
+    assert len(_gemeldet()) == 2
 
-def test_aktion_setzt_den_grund_einer_bestehenden_markierung(welt: dict[str, Any], verwaltung: Client) -> None:
-    """Nur das Häkchen gesetzt (ohne Grund): Das Objekt bleibt sichtbar, bis die Aktion es zurücknimmt."""
+
+@pytest.mark.parametrize(
+    ("grund", "vorher"),
+    [(None, 200), (REASON_DELETED_AT_SOURCE, 200), (REASON_WITHDRAWN, 410), (REASON_NOT_PUBLIC, 410)],
+    ids=["ohne_grund", "quelle_geloescht", "zurueckgenommen", "nichtoeffentlich"],
+)
+def test_aktion_nimmt_schon_markiertes_dauerhaft_zurueck_und_meldet_es(
+    welt: dict[str, Any], verwaltung: Client, grund: str | None, vorher: int
+) -> None:
+    """
+    Nur das Häkchen gesetzt oder in der Quelle gelöscht: Das Objekt bleibt sichtbar, bis die Aktion es zurücknimmt.
+    Auch eine Rücknahme von Hand bekommt den dauerhaften Grund; sonst höbe der nächste Abgleich sie auf.
+    """
     person = welt["person"]
-    OParlPerson.objects.filter(pk=person.pk).update(deleted=True, deleted_at=timezone.now())
-    assert Client().get(_seite("person_detail", person)).status_code == 200
+    OParlPerson.objects.filter(pk=person.pk).update(deleted=True, deleted_at=timezone.now(), deletion_reason=grund)
+    assert Client().get(_seite("person_detail", person)).status_code == vorher
 
-    _aktion(verwaltung, "oparlperson", person)
+    antwort = _aktion(verwaltung, "oparlperson", person)
 
     person.refresh_from_db()
-    assert person.deletion_reason == REASON_WITHDRAWN
+    assert person.deletion_reason == REASON_PRIVACY
     assert Client().get(_seite("person_detail", person)).status_code == 410
-    assert not Event.objects.filter(type="ris.object.depublished").exists(), "die Markierung bestand schon"
+    # Die Markierung bestand schon, die Rücknahme ist neu: Abnehmer erfahren sie
+    assert _gemeldet() == [("Person", person.pk, "delete", REASON_WITHDRAWN)]
+    assert "1 waren schon markiert und sind jetzt dauerhaft zurückgenommen" in _meldungen(antwort)
+
+
+def test_aktion_nimmt_schon_markierte_anlagen_mit(welt: dict[str, Any], verwaltung: Client) -> None:
+    """Eine in der Quelle gelöschte Anlage käme mit dem nächsten Abgleich zurück, wenn die Quelle sie wieder liefert."""
+    anlage = welt["anlage"]
+    anlage.mark_deleted(reason=REASON_DELETED_AT_SOURCE)
+
+    _aktion(verwaltung, "oparlpaper", welt["vorgang"])
+
+    anlage.refresh_from_db()
+    assert (anlage.deleted, anlage.deletion_reason) == (True, REASON_PRIVACY)
+
+
+def test_aktion_loescht_das_foto_der_person(
+    foto: Any, verwaltung: Client, django_capture_on_commit_callbacks: Any
+) -> None:
+    person, ablage, name = foto
+
+    with django_capture_on_commit_callbacks(execute=True):
+        antwort = _aktion(verwaltung, "oparlperson", person)
+
+    assert not ablage.exists(name)
+    person.refresh_from_db()
+    assert not person.photo and person.deletion_reason == REASON_PRIVACY
+    assert "Die Fotos dieser Personen sind gelöscht." in _meldungen(antwort)
+
+
+def test_aktion_laesst_objekte_aus_session_unveraendert(welt: dict[str, Any], verwaltung: Client) -> None:
+    """
+    Session nimmt selbst zurück und veröffentlicht wieder. Mit dem dauerhaften Grund bliebe ein dort wieder
+    veröffentlichtes Objekt hier für immer zurückgenommen.
+    """
+    session = "https://mandari.example/session/beispielstadt/api/oparl"
+    offen = OParlPaper.objects.create(external_id=f"{session}/paper/1", body=welt["body"], name="Haushalt")
+    markiert = OParlPaper.objects.create(external_id=f"{session}/paper/2", body=welt["body"], name="Satzung")
+    markiert.mark_deleted(reason=REASON_NOT_PUBLIC)
+
+    antwort = _aktion(verwaltung, "oparlpaper", offen, markiert, welt["vorgang"])
+
+    offen.refresh_from_db()
+    markiert.refresh_from_db()
+    assert not offen.deleted
+    assert markiert.deletion_reason == REASON_NOT_PUBLIC
+    assert [zeile[:2] for zeile in _gemeldet()] == [("File", welt["anlage"].pk), ("Paper", welt["vorgang"].pk)]
+    meldungen = _meldungen(antwort)
+    assert "2 stammen aus mandari Session und bleiben unverändert" in meldungen
+    assert "1 zurückgenommen" in meldungen
 
 
 # --- Suche ------------------------------------------------------------------------------------------------
@@ -464,7 +664,7 @@ class _Suchindex:
         return {"count": len(self.dokumente.get(index, []))}
 
 
-def _gefunden(welt: dict[str, Any]) -> set[str]:
+def _dienst(welt: dict[str, Any]) -> Any:
     dienst = cast(Any, ElasticsearchService).__new__(ElasticsearchService)
     dienst.client = _Suchindex(
         {
@@ -475,7 +675,11 @@ def _gefunden(welt: dict[str, Any]) -> set[str]:
             ],
         }
     )
-    ergebnis = dienst.search_all("Bauantrag", index_names=["papers", "files"])
+    return dienst
+
+
+def _gefunden(welt: dict[str, Any]) -> set[str]:
+    ergebnis = _dienst(welt).search_all("Bauantrag", index_names=["papers", "files"])
     return {treffer["id"] for treffer in ergebnis["results"]}
 
 
@@ -500,3 +704,23 @@ def test_suche_behaelt_die_anlage_eines_in_der_quelle_geloeschten_vorgangs(welt:
     assert _gefunden(welt) == {anlage, frei}
     OParlFile.objects.filter(pk=anlage).update(source_missing_since=timezone.now())
     assert _gefunden(welt) == {frei}
+
+
+def test_suche_nennt_keinen_treffer_ohne_zeile_im_bestand(welt: dict[str, Any]) -> None:
+    """Endgültig gelöscht, das Dokument steht aber noch im Index: Titel und Ausschnitt gehen nicht mehr hinaus."""
+    vorgang, anlage, frei = (str(welt[name].pk) for name in ("vorgang", "anlage", "frei"))
+
+    OParlFile.objects.filter(pk=frei).delete()
+
+    assert _gefunden(welt) == {vorgang, anlage}
+
+
+def test_gruppe_aus_einem_gesperrten_dokument_entfaellt(welt: dict[str, Any]) -> None:
+    """Ein einzelnes Dokument ohne Vorgang und Sitzung bildet eine eigene Gruppe; ohne das Dokument bleibt nichts."""
+    frei = str(welt["frei"].pk)
+    gruppen = [{"kind": "file", "key": frei, "members": {"files": [frei]}}]
+    assert [gruppe["key"] for gruppe in _dienst(welt)._load_groups(gruppen, {})] == [frei]
+
+    OParlFile.objects.filter(pk=frei).update(source_missing_since=timezone.now())
+
+    assert _dienst(welt)._load_groups(gruppen, {}) == []
