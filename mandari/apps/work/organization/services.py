@@ -137,9 +137,31 @@ def _site_url(default: str = "") -> str:
     return str(getattr(django_settings, "SITE_URL", default)).rstrip("/")
 
 
-def _save_organization(organization: Organization, **kwargs: Any) -> None:
-    """``Organization.save`` ist im Modell untypisiert überschrieben (Slug-/Schlüsselpflege)."""
-    cast(Any, organization).save(**kwargs)
+def _guest_slot_free(organization: Organization) -> bool:
+    """
+    Ist unter ``guest_limit`` noch ein Gast-Platz frei?
+
+    Nur innerhalb einer Transaktion aufrufen: Wie beim Mitglieder-Limit wird die Organisationszeile vor dem Zählen
+    gesperrt, damit gleichzeitige Einladungen und Reaktivierungen das Limit nicht gemeinsam überschreiten. Die Sperre
+    lässt Einfügungen mit Fremdschlüssel auf die Organisation zu (``no_key``); nur die Limitprüfungen warten
+    aufeinander. Das Limit selbst kommt aus der Sperrabfrage: Das übergebene Objekt stammt vom Beginn der Anfrage
+    und kennt eine inzwischen geänderte Grenze nicht.
+    """
+    gesperrt = Organization.objects.select_for_update(no_key=True).filter(pk=organization.pk)
+    for limit in gesperrt.values_list("guest_limit", flat=True):
+        organization.guest_limit = limit
+    return organization.has_free_guest_slot()
+
+
+def _save_organization(organization: Organization, *, update_fields: list[str]) -> None:
+    """
+    Nur die genannten Spalten der Organisation schreiben (``Organization.save`` ist im Modell untypisiert
+    überschrieben).
+
+    Die Instanz stammt vom Beginn der Anfrage. Ein vollständiges Speichern schriebe alle Spalten aus diesem Stand
+    zurück, auch solche, die inzwischen ein anderer Weg geändert hat (Vertragsstatus, Limits, Zwei-Faktor-Pflicht).
+    """
+    cast(Any, organization).save(update_fields=update_fields)
 
 
 # ---------------------------------------------------------------------------
@@ -397,9 +419,14 @@ def accept_invitation(invitation: UserInvitation, user: User) -> str:
                 actor=membership,
                 reason="Einladung angenommen" + (f" (eingeladen von {display_name(inviter)})" if inviter else ""),
             )
-        if not organization.owner:
-            organization.owner = user
-            _save_organization(organization)
+        if not organization.owner_id:
+            # Nur die Eigentümerspalte und nur, solange sie in der Datenbank leer ist: Die Organisation wurde mit
+            # der Einladung geladen, ihr übriger Stand kann überholt sein
+            gesetzt = Organization.objects.filter(pk=organization.pk, owner__isnull=True).update(
+                owner=user, updated_at=timezone.now()
+            )
+            if gesetzt:
+                organization.owner = user
         message = f"Willkommen bei {organization.name}!"
 
     invitation.accepted_at = timezone.now()
@@ -502,7 +529,7 @@ def _grantable_guest_level(motion: Any, inviter: Membership, wanted: str) -> str
 
 
 @transaction.atomic
-def invite_guest(
+def _create_guest_access(
     organization: Organization,
     inviter: Membership,
     *,
@@ -511,19 +538,16 @@ def invite_guest(
     share_level: str,
     document_ids: list[str],
     folder_ids: list[str],
-    allow_download: bool = True,
-) -> GuestInviteResult:
+    allow_download: bool,
+) -> tuple[User, bool, list[Any], list[Any]]:
     """
-    Gast einladen: Konto anlegen (falls nötig), Gast-Mitgliedschaft ohne Rollen, optionale
-    Dokument-/Ordner-Freigaben (rekursiv) und Zugangs-Mail. Prüft das Gast-Limit.
+    Schreibender Teil von :func:`invite_guest`: Gast-Limit prüfen, Konto, Mitgliedschaft und Freigaben anlegen.
 
-    ``allow_download``: Die Freigaben erlauben Export (PDF/DOCX) und Anhänge (Issue #582).
+    Liefert das Konto, ob es neu angelegt wurde, und die freigegebenen Dokumente und Ordner für die Zugangs-Mail.
     """
     from apps.work.motions.models import FolderGuestShare, MotionShare
 
-    if share_level not in dict(GUEST_SHARE_LEVELS):
-        share_level = "view"
-    if not organization.has_free_guest_slot():
+    if not _guest_slot_free(organization):
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
 
     inviter_user = inviter.user
@@ -587,6 +611,43 @@ def invite_guest(
             shared_folders.append(folder)
             hub.notify_folder_shared(folder, guest_membership, share_level, inviter, send_email=False)
 
+    return user, user_created, shared_docs, shared_folders
+
+
+def invite_guest(
+    organization: Organization,
+    inviter: Membership,
+    *,
+    email: str,
+    note: str,
+    share_level: str,
+    document_ids: list[str],
+    folder_ids: list[str],
+    allow_download: bool = True,
+) -> GuestInviteResult:
+    """
+    Gast einladen: Konto anlegen (falls nötig), Gast-Mitgliedschaft ohne Rollen, optionale
+    Dokument-/Ordner-Freigaben (rekursiv) und Zugangs-Mail. Prüft das Gast-Limit.
+
+    ``allow_download``: Die Freigaben erlauben Export (PDF/DOCX) und Anhänge (Issue #582).
+
+    Die Zugangs-Mail geht erst nach dem Festschreiben hinaus (wie bei :func:`reactivate_member`): Die Sperre der
+    Organisationszeile aus der Limitprüfung endet so vor dem Versand, und andere Vorgänge der Organisation warten
+    nicht auf den Mailserver.
+    """
+    if share_level not in dict(GUEST_SHARE_LEVELS):
+        share_level = "view"
+    user, user_created, shared_docs, shared_folders = _create_guest_access(
+        organization,
+        inviter,
+        email=email,
+        note=note,
+        share_level=share_level,
+        document_ids=document_ids,
+        folder_ids=folder_ids,
+        allow_download=allow_download,
+    )
+    inviter_user = inviter.user
     send_guest_access_email(
         organization,
         user,
@@ -797,7 +858,7 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
         acting is not None and acting.has_permission("members.invite")
     ):
         raise ServiceError(APPROVAL_NEEDS_INVITE)
-    if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
+    if member.is_guest and not member.is_active and not _guest_slot_free(organization):
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
     if not member.is_guest and not member.is_active:
         _ensure_free_member_slot(organization)
@@ -896,24 +957,29 @@ def transfer_ownership(organization: Organization, member: Membership, actor_use
     if not member.is_active:
         raise ServiceError("Die Eigentümerschaft lässt sich nur auf aktive Mitglieder übertragen.")
     organization.owner = member.user
-    _save_organization(organization)
+    _save_organization(organization, update_fields=["owner", "updated_at"])
 
 
 def link_oparl_person(organization: Organization, member: Membership, person_id: str | None) -> str:
-    """RIS-Person (innerhalb der Körperschaften) verknüpfen; liefert deren Anzeigenamen."""
+    """
+    RIS-Person (innerhalb der Körperschaften) verknüpfen; liefert deren Anzeigenamen.
+
+    Geschrieben wird nur die Verknüpfung: Zugang und Vereidigung der Mitgliedschaft bleiben, wie sie in der
+    Datenbank stehen, auch wenn sie sich seit dem Laden geändert haben.
+    """
     bodies = selectors.organization_bodies(organization)
     if not bodies.exists() or not person_id:
         raise ServiceError("Keine Kommune verknüpft oder ungültige Person.")
     oparl_person = selectors.get_oparl_person_or_404(bodies, person_id)
     member.oparl_person = oparl_person
-    member.save()
+    member.save(update_fields=["oparl_person", "updated_at"])
     return str(oparl_person.display_name)
 
 
 def unlink_oparl_person(member: Membership) -> None:
-    """RIS-Verknüpfung entfernen."""
+    """RIS-Verknüpfung entfernen; wie beim Verknüpfen wird nur diese Spalte geschrieben."""
     member.oparl_person = None
-    member.save()
+    member.save(update_fields=["oparl_person", "updated_at"])
 
 
 def apply_committee_suggestions(organization: Organization, member: Membership) -> int:
@@ -934,9 +1000,12 @@ def update_sworn_in(member: Membership, actor: Membership, is_sworn_in: bool) ->
     """
     if member.user == actor.user and not selectors.permission_checker(actor).is_admin():
         raise ServiceError("Den eigenen Vereidigungsstatus können nur Administratoren setzen.")
+    # Unter Sperre neu lesen und nur die Vereidigung schreiben: Das Objekt stammt aus dem View, ein vollständiges
+    # Speichern schriebe eine inzwischen erfolgte Deaktivierung zurück. Die Historie nennt so den wirklichen Übergang.
+    _lock_membership(member)
     was_sworn_in = bool(member.is_sworn_in)
     member.is_sworn_in = is_sworn_in
-    member.save()
+    member.save(update_fields=["is_sworn_in", "updated_at"])
     audit.log_sworn_in(member, was_sworn_in, bool(is_sworn_in), actor=actor)
 
 
@@ -1422,7 +1491,21 @@ def save_email_settings(organization: Organization, data: EmailSettingsInput) ->
         organization.set_smtp_password(data.smtp_password)
     elif data.smtp_password_clear or verbindung_geaendert:
         organization.set_smtp_password("")
-    _save_organization(organization)
+    _save_organization(
+        organization,
+        update_fields=[
+            "mail_sender_mode",
+            "smtp_fallback_to_mandari",
+            "smtp_host",
+            "smtp_port",
+            "smtp_username",
+            "smtp_use_tls",
+            "smtp_from_email",
+            "smtp_from_name",
+            "smtp_password_encrypted",
+            "updated_at",
+        ],
+    )
     return mode == "smtp" and not organization.smtp_host
 
 
@@ -1662,10 +1745,13 @@ def request_account_deletion(organization: Organization, membership: Membership,
         )
     if not user.check_password(password):
         raise ServiceError("Falsches Passwort.")
+    # Unter Sperre neu lesen und nur den Zugang schreiben: Die Mitgliedschaft stammt vom Beginn der Anfrage, ihre
+    # übrigen Spalten (etwa die Vereidigung) bleiben, wie sie in der Datenbank stehen
+    _lock_membership(membership)
     membership.is_active = False
     # Ein altes Löschdatum (Rückfall auf ein älteres Image) darf hier nicht wieder scharf werden (Issue #1237)
     _clear_deletion(membership)
-    membership.save()
+    membership.save(update_fields=["is_active", "deletion_scheduled_at", "deletion_reminder_days", "updated_at"])
     _discard_open_invitations(organization, user)
 
 
@@ -1678,25 +1764,33 @@ def delete_export(export: DataExport) -> None:
 def update_profile(
     user: User, *, first_name: str, last_name: str, phone: str, avatar: UploadedFile[Any] | None
 ) -> None:
-    """Profildaten und optional das Profilbild (JPG/PNG/WebP, max. 5 MB) speichern."""
+    """
+    Profildaten und optional das Profilbild (JPG/PNG/WebP, max. 5 MB) speichern.
+
+    Geschrieben werden nur diese Spalten. Das Konto stammt vom Beginn der Anfrage; ein vollständiges Speichern
+    schriebe seinen übrigen Stand zurück (Passwort, Sperre, Plattformrechte), auch wenn er sich inzwischen geändert
+    hat.
+    """
     user.first_name = first_name
     user.last_name = last_name
     user.phone = phone
+    felder = ["first_name", "last_name", "phone"]
     if avatar is not None:
         _pruefe_bild(avatar, "Profilbild")
         if user.avatar:
             user.avatar.delete(save=False)
         user.avatar = avatar
-    user.save()
+        felder.append("avatar")
+    user.save(update_fields=felder)
 
 
 def remove_avatar(user: User) -> bool:
-    """Profilbild entfernen; ``False``, wenn keines vorhanden war."""
+    """Profilbild entfernen; ``False``, wenn keines vorhanden war. Geschrieben wird nur diese Spalte."""
     if not user.avatar:
         return False
     user.avatar.delete(save=False)
     user.avatar = None
-    user.save()
+    user.save(update_fields=["avatar"])
     return True
 
 
@@ -2047,19 +2141,26 @@ def update_general_settings(
         raise ServiceError("Der Name darf nicht leer sein.")
     organization.name = name
     organization.description = description
+    # Farben und Logo stehen nur in der Feldliste, wenn dieser Aufruf sie ändert: Sonst schriebe er den Stand vom
+    # Beginn der Anfrage zurück, etwa den Pfad eines Logos, das eine zweite Person gerade ersetzt hat.
+    felder = ["name", "description", "updated_at"]
     if primary_color and HEX_COLOR_RE.match(primary_color):
         organization.primary_color = primary_color
+        felder.append("primary_color")
     if secondary_color and HEX_COLOR_RE.match(secondary_color):
         organization.secondary_color = secondary_color
+        felder.append("secondary_color")
     if logo is not None:
         _pruefe_bild(logo, "Logo")
         if organization.logo:
             organization.logo.delete(save=False)
         organization.logo = logo
+        felder.append("logo")
     if remove_logo and organization.logo:
         organization.logo.delete(save=False)
         organization.logo = None
-    _save_organization(organization)
+        felder.append("logo")
+    _save_organization(organization, update_fields=felder)
 
 
 def update_contact_settings(
@@ -2080,7 +2181,9 @@ def update_contact_settings(
     organization.contact_phone = contact_phone
     organization.website = website
     organization.address = address
-    _save_organization(organization)
+    _save_organization(
+        organization, update_fields=["contact_email", "contact_phone", "website", "address", "updated_at"]
+    )
 
 
 @transaction.atomic
@@ -2291,25 +2394,24 @@ def save_faction_settings(
     (Issue #1071: die Einstellungsseite speichert jede Änderung sofort); alle anderen Einstellungen bleiben, wie sie
     in der Datenbank stehen, auch wenn eine zweite Person gleichzeitig etwas anderes ändert. Ungültige Werte melden
     dann einen ``ServiceError``, statt still übergangen oder begrenzt zu werden.
-    """
-    if fields is None:
-        _apply_faction_settings(organization, membership, form, None, strict=False)
-        _save_organization(organization)
-        _protokollkette_ordnen(organization)
-        return
 
-    wanted = {f for f in fields if f}
-    if not wanted or wanted - FACTION_SETTINGS_FIELDS:
-        raise ServiceError("Unbekannte Einstellung.")
-    if "publish_protocols" in wanted and not membership.has_permission("protocols.publish"):
-        raise ServiceError("Öffentliche Protokolle ändern nur Personen mit dem Recht „Protokolle veröffentlichen“.")
+    Beide Wege lesen die Organisation unter Sperre neu und schreiben nur die Einstellungen der Fraktionssitzungen:
+    Alle übrigen Spalten der Organisation bleiben, wie sie in der Datenbank stehen.
+    """
+    wanted: set[str] | None = None
+    if fields is not None:
+        wanted = {f for f in fields if f}
+        if not wanted or wanted - FACTION_SETTINGS_FIELDS:
+            raise ServiceError("Unbekannte Einstellung.")
+        if "publish_protocols" in wanted and not membership.has_permission("protocols.publish"):
+            raise ServiceError("Öffentliche Protokolle ändern nur Personen mit dem Recht „Protokolle veröffentlichen“.")
     with transaction.atomic():
         locked = Organization.objects.select_for_update().get(pk=organization.pk)
-        _apply_faction_settings(locked, membership, form, wanted, strict=True)
+        _apply_faction_settings(locked, membership, form, wanted, strict=wanted is not None)
         _save_organization(locked, update_fields=["settings", "publish_protocols", "updated_at"])
     organization.settings = locked.settings
     organization.publish_protocols = locked.publish_protocols
-    if "link_previous_meeting" in wanted:
+    if wanted is None or "link_previous_meeting" in wanted:
         _protokollkette_ordnen(organization)
 
 

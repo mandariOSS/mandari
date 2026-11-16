@@ -29,7 +29,8 @@ from apps.tenants.models import (
     Topic,
     UserInvitation,
 )
-from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson
+from hub.ris import selectors as ris
+from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson, withdrawn_q
 
 from .models import DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
 
@@ -457,7 +458,8 @@ def find_matching_persons(user: User, bodies: QuerySet[OParlBody]) -> list[OParl
         )
     elif last:
         query &= Q(family_name__iexact=last) | Q(name__icontains=last)
-    return list(OParlPerson.objects.filter(query)[:5])
+    # Ohne Personen, die mandari Session aus der Veröffentlichung zurückgenommen hat (wie die RIS-Ansicht)
+    return list(OParlPerson.objects.filter(query).exclude(withdrawn_q())[:5])
 
 
 def suggested_committees(
@@ -473,8 +475,8 @@ def suggested_committees(
 
 
 def get_oparl_person_or_404(bodies: QuerySet[OParlBody], person_id: Any) -> OParlPerson:
-    """RIS-Person innerhalb der Körperschaften oder 404."""
-    return get_object_or_404(OParlPerson, id=person_id, body__in=bodies)
+    """RIS-Person innerhalb der Körperschaften oder 404; von mandari Session zurückgenommene gibt es hier nicht."""
+    return get_object_or_404(ris.persons(bodies).exclude(withdrawn_q()), id=person_id)
 
 
 def committee_context(organization: Organization, member: Membership) -> dict[str, Any]:
