@@ -11,6 +11,7 @@
  * - `beschlussLeiste`: Stimmenzähler der Leiste unten
  * - `anwesenheitsListe`: Anwesenheit je Person mit einem Klick (vor Ort, online, entschuldigt), Sitzungsleitung und
  *   Schriftführung
+ * - `topNeu`: Dialog „TOP hinzufügen“ mit Warnung, wenn es den Titel schon gibt
  * - `zustaendigAuswahl`: Personen und Personengruppen für Aufgaben (Suche und Auswahl kombiniert)
  *
  * Markup: `templates/work/faction/sitzung/`. Server-Daten per `json_script` (`fs-sitzung-config`,
@@ -601,6 +602,39 @@ export const anwesenheitsListe = defineComponent(() => ({
     const feld = el.dataset.feld ?? ''
     if (!feld) return
     this.senden({ action: 'rollen', [feld]: el.value })
+  },
+}))
+
+// ---- TOP hinzufügen: Warnung bei gleichem Titel -------------------------------------------------------
+
+interface AntwortDetail {
+  xhr?: XMLHttpRequest
+}
+
+/**
+ * Dialog „TOP hinzufügen“ (Issue #1436): Gibt es den Titel schon, antwortet der Server mit 409 und der Kennung
+ * `X-Top-Doppelt`. Der Dialog bleibt dann offen und zeigt die Warnung; „Trotzdem hinzufügen“ sendet erneut mit
+ * `doppelt=1`. Jede andere Antwort schließt den Dialog wie bisher vor dem Austausch, damit der Fokus auf den neuen
+ * TOP gehen kann; nach Erfolg ist das Formular leer, nach einem Fehler bleiben die Eingaben für die Meldung stehen.
+ */
+export const topNeu = defineComponent(() => ({
+  doppelt: '',
+
+  antwort(event: Event) {
+    const xhr = (event as CustomEvent<AntwortDetail>).detail?.xhr
+    if (!xhr) return
+    if (xhr.status === 409 && xhr.getResponseHeader('X-Top-Doppelt')) {
+      // htmx verarbeitet die Antwort nicht weiter: kein Austausch, keine Fehlermeldung, die Warnung steht im Dialog
+      event.preventDefault()
+      this.doppelt = xhr.responseText
+      return
+    }
+    const formular = this.$root as HTMLFormElement
+    formular.closest('dialog')?.close()
+    if (xhr.status < 400) {
+      formular.reset()
+      this.doppelt = ''
+    }
   },
 }))
 
