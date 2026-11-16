@@ -509,6 +509,19 @@ def source_backoff_until(source, now: datetime | None = None) -> datetime | None
 console = MaskingConsole()
 
 
+def end_with_current_task(task: asyncio.Task[Any]) -> None:
+    """
+    ``task`` endet spätestens mit der laufenden Aufgabe: Endet sie vorzeitig, wird ``task`` abgebrochen.
+
+    Für die Texterkennung, die neben dem Abgleich einer Kommune läuft. Endet der Abgleich vorzeitig (Gesamtfrist des
+    Laufs, Daemon stoppt, Quelle abgeschaltet), liefe sie sonst ohne Lauf weiter, und mit jedem Abbruch käme eine
+    dazu. Am gewöhnlichen Ende ist sie schon fertig.
+    """
+    owner = asyncio.current_task()
+    if owner is not None:
+        owner.add_done_callback(lambda _done: task.cancel())
+
+
 @dataclass
 class SyncResult:
     """Result of a sync operation."""
@@ -1467,6 +1480,7 @@ class SyncOrchestrator:
                     return e
 
             extraction_task = asyncio.create_task(_run_extraction())
+            end_with_current_task(extraction_task)
             console.print("[dim]  Text extraction started in background[/dim]")
 
         # Drossel für Entity-Typ-Parallelität innerhalb eines Bodies

@@ -1000,6 +1000,7 @@ Ingestor (`ingestor/src/config.py`; Groß- und Kleinschreibung egal):
 | `OPARL_SERVER_ERROR_SERIES_THRESHOLD` | `5` | Serverfehler in Folge bis zur 5xx-Serie |
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD`, `CIRCUIT_BREAKER_RECOVERY_TIMEOUT` | `5`, `60` | Schutzschalter je Server |
 | `INGESTOR_SYNC_POOL_SIZE` | `4` | Quellen gleichzeitig im Daemon, je Quelle ein Lauf; Vollabgleiche auf höchstens allen Plätzen bis auf einen |
+| `INGESTOR_SYNC_RUN_DEADLINE_MINUTES`, `INGESTOR_SYNC_FULL_DEADLINE_MINUTES` | `180`, `1440` | Gesamtfrist je Lauf im Daemon (Änderungsabgleich, Vollabgleich) in Minuten; danach endet der Lauf, zählt als Fehlversuch der Quelle und gibt seinen Platz frei. `0` schaltet ab |
 | `SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY` | `2`, `2` | Kommunen je Quelle und Listen je Kommune gleichzeitig |
 | `SYNC_SOURCE_CONCURRENCY` | `2` | Quellen gleichzeitig bei `sync --all` (nicht im Daemon) |
 | `TEXT_EXTRACTION_ENABLED` | `true` | Texterkennung im Abgleich |

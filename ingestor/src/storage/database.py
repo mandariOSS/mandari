@@ -33,7 +33,7 @@ from mandari_oparl import (
     ProcessedPerson,
 )
 from mandari_oparl.extensions import AGENDA_ITEM_COLUMNS, MEETING_COLUMNS
-from sqlalchemy import Text, and_, bindparam, func, literal, literal_column, or_, select, text, update
+from sqlalchemy import Text, and_, bindparam, case, func, literal, literal_column, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -187,6 +187,44 @@ def _owned_by_source_of(model: type, body_id: UUID | None) -> Any:
             .exists()
         )
     return _bodies_of_source_of(model.body_id, body_id)  # type: ignore[attr-defined]
+
+
+def keeps_withdrawal(model: type) -> Any:
+    """
+    Bedingung auf eine Bestandszeile von ``model``: Sie ist aus Datenschutzgründen zurückgenommen
+    (``ris_events.REASON_PRIVACY``). Nur die Spalten der Zeile selbst: Im ON-CONFLICT-Teil wertet PostgreSQL sie am
+    zuletzt festgeschriebenen Stand aus, auch wenn die Markierung erst während des Upserts gesetzt wurde.
+    """
+    return and_(model.deleted, model.deletion_reason == ris_events.REASON_PRIVACY)  # type: ignore[attr-defined]
+
+
+def _withheld(prior: ris_events.Prior | None) -> bool:
+    """
+    Der Upsert trifft eine aus Datenschutzgründen zurückgenommene Zeile: Er schreibt dann kein Ereignis. Die Markierung
+    bleibt stehen (``_tombstone_update``), und ein Ereignis nennte Abnehmern Kennung und Inhalt erneut.
+    """
+    return prior is not None and prior.withheld
+
+
+def _tombstone_update(model: type, stmt: Any) -> dict[str, Any]:
+    """
+    Teil des ``update_set`` jedes Upserts: Löschmarkierung und ``oparl_modified``.
+
+    Liefert die Quelle ein markiertes Objekt wieder regulär, hebt der Abgleich die Markierung auf: Die Quelle hat es
+    gelöscht und wieder eingestellt, oder Session hat es zurückgenommen und wieder veröffentlicht. Eine Rücknahme aus
+    Datenschutzgründen (``keeps_withdrawal``) setzt dagegen der Betrieb, gerade weil die Quelle das Objekt weiter
+    liefert. Sie bleibt, bis der Betrieb sie selbst aufhebt; sonst stünde das Objekt nach dem nächsten Abgleich wieder
+    in Portal, Suche und Schnittstelle. Die übrigen Felder folgen weiter der Quelle. ``oparl_modified`` bleibt dabei
+    der Zeitpunkt der Rücknahme, damit die Löschmarkierung in den ``modified_since``-Abfragen der eigenen
+    OParl-Schnittstelle an ihrer Stelle bleibt.
+    """
+    held = keeps_withdrawal(model)
+    return {
+        "oparl_modified": case((held, model.oparl_modified), else_=stmt.excluded.oparl_modified),  # type: ignore[attr-defined]
+        "deleted": case((held, model.deleted), else_=False),  # type: ignore[attr-defined]
+        "deleted_at": case((held, model.deleted_at), else_=None),  # type: ignore[attr-defined]
+        "deletion_reason": case((held, model.deletion_reason), else_=None),  # type: ignore[attr-defined]
+    }
 
 
 #: Abgelöste Kennung eines Tagesordnungspunkts in ``raw_json`` (Umstellung der Kennungen aus Sitzungsseiten,
@@ -1243,7 +1281,7 @@ class DatabaseStorage:
           Datei, die in einer Sitzung und in einer Vorlage eingebettet ist), sieht der zweite die
           Zeile des ersten und meldet das Objekt nicht ein zweites Mal als neu.
         """
-        columns = [model.raw_json, model.deleted]
+        columns = [model.raw_json, model.deleted, model.deletion_reason]
         if model is OParlAgendaItem:
             columns += [OParlAgendaItem.meeting_id, OParlAgendaItem.public]
         elif model is OParlFile:
@@ -1258,13 +1296,12 @@ class DatabaseStorage:
             row = (await session.execute(stmt)).first()
             if row is None:
                 return None
+        stand: dict[str, Any] = {"raw_json": row[0] or {}, "deleted": bool(row[1]), "deletion_reason": row[2]}
         if model is OParlAgendaItem:
-            return ris_events.Prior(
-                raw_json=row[0] or {}, deleted=bool(row[1]), meeting_id=row[2], public=row[3] is not False
-            )
+            return ris_events.Prior(**stand, meeting_id=row[3], public=row[4] is not False)
         if model is OParlFile:
-            return ris_events.Prior(raw_json=row[0] or {}, deleted=bool(row[1]), meeting_id=row[2], paper_id=row[3])
-        return ris_events.Prior(raw_json=row[0] or {}, deleted=bool(row[1]))
+            return ris_events.Prior(**stand, meeting_id=row[3], paper_id=row[4])
+        return ris_events.Prior(**stand)
 
     async def _emit(
         self,
@@ -1368,6 +1405,7 @@ class DatabaseStorage:
             sync_config = await self._source_config(session, source_id)
             emit = self._source_emits(sync_config)
             prior = await self._prior(session, OParlBody, body.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlBody).values(
                 id=body.id,
                 external_id=body.external_id,
@@ -1408,12 +1446,9 @@ class DatabaseStorage:
                 "agenda_item_list_url": stmt.excluded.agenda_item_list_url,
                 "file_list_url": stmt.excluded.file_list_url,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlBody, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1526,6 +1561,9 @@ class DatabaseStorage:
         Markiert wird nur ein Objekt derselben Quelle wie ``body_id`` (``_owned_by_source_of``); die
         Löschmarkierung einer anderen Quelle zählt als abgewiesen (Sync-Log ``foreign``).
 
+        Mit einer Datei verfällt die KI-Zusammenfassung ihres Vorgangs, in derselben Transaktion und unabhängig vom
+        Schalter der Ereignisse (``_forget_summary``).
+
         Args:
             entity_type: Type of entity
             external_id: The OParl external ID
@@ -1565,6 +1603,8 @@ class DatabaseStorage:
         if entity_type == "agendaitem":
             # Ein nichtöffentlicher Punkt meldet seine Löschung nicht öffentlich.
             returning.append(OParlAgendaItem.public)
+        elif entity_type == "file":
+            returning.append(OParlFile.paper_id)
         async with self.get_session() as session:
             stmt = (
                 update(model)
@@ -1592,6 +1632,8 @@ class DatabaseStorage:
                 )
                 if found.first() is not None:
                     _note_foreign(f"{entity_type}{FOREIGN_DELETION}", external_id)
+            if row is not None and entity_type == "file":
+                await self._forget_summary(session, row[2])
             if row is not None and self.events_enabled:
                 # Rücknahme melden, in derselben Transaktion wie die Markierung
                 public, meeting_id = True, None
@@ -1610,6 +1652,27 @@ class DatabaseStorage:
                     await self._emit(session, body_id, drafts, modified)
             await session.commit()
             return entity_id
+
+    @staticmethod
+    async def _forget_summary(session: AsyncSession, paper_id: UUID | None) -> None:
+        """
+        KI-Zusammenfassung eines Vorgangs verwerfen, dessen Anlage die Quelle gelöscht hat (ohne eigenen Commit).
+
+        Die Zusammenfassung fasst alle Anlagen zusammen. Eine gelöschte Anlage ist gesperrt: Ihr Inhalt darf nicht
+        über die öffentliche Zusammenfassung weiterleben, bis der Löschlauf der Anwendung sie nach Wochen verwirft.
+        Dieselben Felder wie ``insight_core.models.SourceDeletionModel._forget_summaries``; die Anwendung erstellt
+        die Zusammenfassung bei Bedarf neu, ohne diese Anlage. Sitzungsdokumente haben keinen Vorgang.
+        """
+        if paper_id is None:
+            return
+        await session.execute(
+            update(OParlPaper)
+            .where(
+                OParlPaper.id == paper_id,
+                or_(OParlPaper.summary.isnot(None), OParlPaper.summary_einfach.isnot(None)),
+            )
+            .values(summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0)
+        )
 
     # ========== Meeting Operations ==========
 
@@ -1639,6 +1702,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlMeeting, meeting.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlMeeting).values(
                 id=meeting.id,
                 external_id=meeting.external_id,
@@ -1667,12 +1731,9 @@ class DatabaseStorage:
                 "location_address": stmt.excluded.location_address,
                 **{name: getattr(stmt.excluded, name) for name in MEETING_COLUMNS},
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlMeeting, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1813,6 +1874,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlPaper, paper.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlPaper).values(
                 id=paper.id,
                 external_id=paper.external_id,
@@ -1833,12 +1895,9 @@ class DatabaseStorage:
                 "paper_type": stmt.excluded.paper_type,
                 "date": stmt.excluded.date,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlPaper, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1975,6 +2034,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlPerson, person.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlPerson).values(
                 id=person.id,
                 external_id=person.external_id,
@@ -2001,12 +2061,9 @@ class DatabaseStorage:
                 "email": stmt.excluded.email,
                 "phone": stmt.excluded.phone,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlPerson, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -2036,6 +2093,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlOrganization, org.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlOrganization).values(
                 id=org.id,
                 external_id=org.external_id,
@@ -2062,12 +2120,9 @@ class DatabaseStorage:
                 "end_date": stmt.excluded.end_date,
                 "website": stmt.excluded.website,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlOrganization, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -2316,6 +2371,7 @@ class DatabaseStorage:
             body_id = await self._body_of_meeting(session, meeting_id)
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlAgendaItem, item.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlAgendaItem).values(
                 id=item.id,
                 external_id=item.external_id,
@@ -2343,12 +2399,9 @@ class DatabaseStorage:
                 "resolution_text": stmt.excluded.resolution_text,
                 **{name: getattr(stmt.excluded, name) for name in AGENDA_ITEM_COLUMNS},
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlAgendaItem, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -2385,6 +2438,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlFile, file.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlFile).values(
                 id=file.id,
                 external_id=file.external_id,
@@ -2418,12 +2472,9 @@ class DatabaseStorage:
                 "download_url": stmt.excluded.download_url,
                 "file_date": stmt.excluded.file_date,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlFile, stmt),
                 "updated_at": func.now(),
             }
 
@@ -2461,6 +2512,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlLocation, location.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlLocation).values(
                 id=location.id,
                 external_id=location.external_id,
@@ -2485,12 +2537,9 @@ class DatabaseStorage:
                 "locality": stmt.excluded.locality,
                 "geojson": stmt.excluded.geojson,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlLocation, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -2524,6 +2573,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlConsultation, consultation.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlConsultation).values(
                 id=consultation.id,
                 external_id=consultation.external_id,
@@ -2557,12 +2607,9 @@ class DatabaseStorage:
                 "role": stmt.excluded.role,
                 "authoritative": stmt.excluded.authoritative,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlConsultation, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -2669,6 +2716,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlMembership, membership.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlMembership).values(
                 id=membership.id,
                 external_id=membership.external_id,
@@ -2692,12 +2740,9 @@ class DatabaseStorage:
                 "start_date": stmt.excluded.start_date,
                 "end_date": stmt.excluded.end_date,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlMembership, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -2731,6 +2776,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlLegislativeTerm, term.external_id) if emit else None
+            emit = emit and not _withheld(prior)
             stmt = pg_insert(OParlLegislativeTerm).values(
                 id=term.id,
                 external_id=term.external_id,
@@ -2749,12 +2795,9 @@ class DatabaseStorage:
                 "start_date": stmt.excluded.start_date,
                 "end_date": stmt.excluded.end_date,
                 "oparl_created": stmt.excluded.oparl_created,
-                "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
-                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
-                "deleted": False,
-                "deleted_at": None,
-                "deletion_reason": None,
+                # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
+                **_tombstone_update(OParlLegislativeTerm, stmt),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -2974,6 +3017,36 @@ class DatabaseStorage:
             attempts = result.scalar()
             await session.commit()
             return None if attempts is None else int(attempts)
+
+    async def release_cancelled_extractions(self, file_ids: list[UUID], *, undo_attempt: bool) -> int:
+        """
+        Dateien eines abgebrochenen Durchgangs der Texterkennung zurückstellen (Gesamtfrist des Laufs, Daemon stoppt,
+        Quelle abgeschaltet): wieder ``pending``, aber nur, was noch ``processing`` ist. Fertige und gescheiterte
+        Dateien behalten ihr Ergebnis.
+
+        ``undo_attempt=True`` für Dateien, deren Bearbeitung begonnen hatte (``mark_extraction_started``): Der
+        Abbruch sagt nichts über die Datei, der begonnene Versuch zählt nicht; frühere Abbrüche bleiben gezählt.
+        Ohne das Zurückstellen blieben die Dateien liegen, bis ``release_stale_extractions`` sie nach
+        ``TEXT_EXTRACTION_STALE_MINUTES`` freigibt, und jeder Abbruch zählte als Versuch der Datei.
+        Rückgabe: Zahl der zurückgestellten Dateien.
+        """
+        if not file_ids:
+            return 0
+        values: dict[str, Any] = {
+            "text_extraction_status": "pending",
+            "text_extraction_started_at": None,
+            "updated_at": func.now(),
+        }
+        if undo_attempt:
+            values["text_extraction_attempts"] = func.greatest(OParlFile.text_extraction_attempts - 1, 0)
+        async with self.get_session() as session:
+            result = await session.execute(
+                update(OParlFile)
+                .where(OParlFile.id.in_(file_ids), OParlFile.text_extraction_status == "processing")
+                .values(**values)
+            )
+            await session.commit()
+            return int(getattr(result, "rowcount", 0) or 0)
 
     async def update_file_text(
         self,

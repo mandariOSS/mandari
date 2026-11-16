@@ -98,6 +98,9 @@ DELETE: Final = "delete"
 #: Gründe einer Rücknahme (wie im Änderungsfeed).
 REASON_DELETED_AT_SOURCE: Final = "quelle_geloescht"
 REASON_NOT_PUBLIC: Final = "nichtoeffentlich"
+#: Aus Datenschutzgründen entfernt (``insight_core.models.REASON_PRIVACY``). Diesen Grund setzt nur der Betrieb, nie
+#: der Abgleich; eine solche Markierung hebt der Abgleich auch nicht auf (``database.keeps_withdrawal``).
+REASON_PRIVACY: Final = "datenschutz"
 
 #: Entity-Typ des Ingestors -> kanonischer Typ (``aggregate_type`` der Hülle).
 AGGREGATE_TYPES: Final[dict[str, str]] = {
@@ -178,6 +181,17 @@ class Prior:
     paper_id: UUID | None = None
     #: Kennzeichen ``public`` eines Tagesordnungspunkts vor dem Upsert
     public: bool = True
+    #: Grund der Löschmarkierung vor dem Upsert (leer ohne Markierung und bei Markierungen ohne Grund)
+    deletion_reason: str | None = None
+
+    @property
+    def withheld(self) -> bool:
+        """
+        Die Zeile ist aus Datenschutzgründen zurückgenommen: Der Upsert lässt die Markierung stehen, und das Objekt
+        erscheint in keinem Ereignis. Ohne diese Prüfung gälte die stehen gebliebene Markierung in jedem Abgleich
+        als „wieder geliefert“ (``added``), und Abnehmer erführen Kennung und Inhalt erneut.
+        """
+        return self.deleted and self.deletion_reason == REASON_PRIVACY
 
 
 @dataclass(frozen=True)

@@ -701,6 +701,9 @@ services:
       TZ: ${TZ:-Europe/Berlin}
       # So viele Quellen gleichzeitig, je Quelle höchstens ein Lauf; Vollabgleiche lassen einen Platz frei (#1026)
       INGESTOR_SYNC_POOL_SIZE: ${INGESTOR_SYNC_POOL_SIZE:-4}
+      # Gesamtfrist je Lauf in Minuten (0: keine): Danach endet der Lauf und zählt als Fehlversuch der Quelle
+      INGESTOR_SYNC_RUN_DEADLINE_MINUTES: ${INGESTOR_SYNC_RUN_DEADLINE_MINUTES:-180}
+      INGESTOR_SYNC_FULL_DEADLINE_MINUTES: ${INGESTOR_SYNC_FULL_DEADLINE_MINUTES:-1440}
       # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
       INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
       # Dateien für den Text gleich in der Ablage der Anwendung ablegen (ein Abruf je Datei, #788)

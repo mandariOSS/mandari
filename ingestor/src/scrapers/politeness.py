@@ -21,6 +21,7 @@ from typing import Any
 
 import httpx
 from mandari_oparl.robots import KIND_API, Decision, RobotsOverride
+from rich.markup import escape
 
 from src.client import redirects
 from src.client.host_pacing import HostSlot, host_pacer
@@ -30,6 +31,13 @@ from src.metrics import metrics
 from src.redaction import MaskingConsole
 
 console = MaskingConsole()
+
+#: Höchstens so viele entpackte Bytes einer Seite kommen in den Speicher; Seiten der Ratsinformationssysteme liegen
+#: weit darunter. Eine größere Antwort gilt als nicht abrufbar.
+MAX_PAGE_BYTES = 16 * 1024 * 1024
+#: Gesamtfrist für den Abruf einer Seite samt Weiterleitungen (Zeit im Netz); das Zeitlimit des Clients gilt nur je
+#: Lesevorgang
+PAGE_DEADLINE = 180.0
 
 
 class RobotsDisallowedError(Exception):
@@ -175,11 +183,17 @@ class PoliteFetcher:
                 self._check_deadline(url)
 
                 try:
+                    # Gestreamt und mit Obergrenze gelesen (redirects.read_limited): Die Seite eines fremden Servers
+                    # belegt nur begrenzt Speicher, auch komprimiert. Nur gzip anbieten, das entpacken wir selbst
+                    deadline = redirects.Deadline(PAGE_DEADLINE)
                     response = await redirects.send(
                         self._client,
-                        self._client.build_request("GET", url),
+                        self._client.build_request("GET", url, headers={"Accept-Encoding": "gzip"}),
                         before_redirect=self._before_redirect(slot),
+                        stream=True,
+                        deadline=deadline,
                     )
+                    body = await redirects.read_limited(response, MAX_PAGE_BYTES + 1, deadline=deadline)
                 except redirects.RedirectRefusedError as refused:
                     # Ziel einer Weiterleitung gesperrt bzw. seine robots.txt nicht erreichbar: wie beim Ziel selbst
                     if refused.decision.unreachable:
@@ -197,8 +211,12 @@ class PoliteFetcher:
             self.last_url = str(response.url)
 
             if response.status_code == 200:
-                self.last_content = response.content
-                return response.text
+                if len(body) > MAX_PAGE_BYTES:
+                    console.print(f"[red]Scraper: Seite über der Größengrenze, nicht ausgewertet: {escape(url)}[/red]")
+                    return None
+                self.last_content = body
+                # Zeichensatz laut Antwort, sonst UTF-8; nicht darstellbare Bytes ersetzt (wie ``Response.text``)
+                return body.decode(response.encoding or "utf-8", errors="replace")
             if response.status_code in (404, 410):
                 return None
             if response.status_code >= 500:
@@ -207,8 +225,9 @@ class PoliteFetcher:
                 await asyncio.sleep(2.0 * (attempt + 1))
                 continue
             # 4xx (außer 404/410): nicht wiederholen
-            console.print(f"[yellow]Scraper: HTTP {response.status_code} für {url}[/yellow]")
+            console.print(f"[yellow]Scraper: HTTP {response.status_code} für {escape(url)}[/yellow]")
             return None
 
-        console.print(f"[red]Scraper: Abruf fehlgeschlagen ({last_error}): {url}[/red]")
+        # Fehlertext und Adresse stammen vom fremden Server (etwa ein Kopfzeilenwert): nie als Markup auswerten
+        console.print(f"[red]Scraper: Abruf fehlgeschlagen ({escape(str(last_error))}): {escape(url)}[/red]")
         return None

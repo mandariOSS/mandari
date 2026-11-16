@@ -130,6 +130,21 @@ class Settings(BaseSettings):
         default=4,
         validation_alias=AliasChoices("INGESTOR_SYNC_POOL_SIZE", "sync_pool_size"),
     )
+    # Gesamtfrist je Lauf im Daemon, in Minuten (0: keine): Danach endet der Lauf, zählt als Fehlversuch der Quelle
+    # und gibt seinen Platz im Pool zurück. Ohne sie hält eine Quelle, die endlos neue Seiten liefert oder tropfend
+    # antwortet, ihren Platz beliebig lange. Großzügig gewählt: Ein abgebrochener Änderungsabgleich rückt sein
+    # Änderungsfenster nicht vor; nur die Texterkennung behält, was sie geschafft hat.
+    sync_run_deadline_minutes: int = Field(
+        default=180,
+        ge=0,
+        validation_alias=AliasChoices("INGESTOR_SYNC_RUN_DEADLINE_MINUTES", "sync_run_deadline_minutes"),
+    )
+    # Dasselbe für Vollabgleiche; Fenster und Zeitscheiben der Quelle beenden sie meist früher
+    sync_full_deadline_minutes: int = Field(
+        default=24 * 60,
+        ge=0,
+        validation_alias=AliasChoices("INGESTOR_SYNC_FULL_DEADLINE_MINUTES", "sync_full_deadline_minutes"),
+    )
     # Max entity-type syncs running concurrently within one body
     # (organizations/persons, meetings/papers, locations/agenda items/
     # files/consultations). Env-overridable (SYNC_ENTITY_CONCURRENCY).

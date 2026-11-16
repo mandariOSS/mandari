@@ -227,6 +227,13 @@ class OParlPaper(Base):
 
     # AI-enhanced fields
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Begleitfelder der Zusammenfassung (Django verwaltet). Der Ingestor schreibt sie nur, wenn er die Zusammenfassung
+    # verwirft, weil die Quelle eine Anlage löscht (``DatabaseStorage.mark_entity_deleted``); beim Anlegen gelten die
+    # Standardwerte der Datenbank
+    summary_hinweis: Mapped[str] = mapped_column(String(300), server_default="")
+    summary_einfach: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_stand: Mapped[str] = mapped_column(String(64), server_default="")
+    summary_prompt_fassung: Mapped[int] = mapped_column(SmallInteger, server_default="0")
     locations: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Georeferenzierung (Django verwaltet, Ingestor setzt Default)
