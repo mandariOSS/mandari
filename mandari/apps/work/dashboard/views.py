@@ -102,19 +102,23 @@ class DashboardView(WorkViewMixin, TemplateView):
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         meetings = []
 
-        # Faction meetings (not completed/cancelled, starting from today), nur sichtbare (Issue #1239)
-        faction_meetings = (
-            sichtbar_fuer(
-                self.membership,
-                FactionMeeting.objects.filter(
-                    organization=self.organization,
-                    start__gte=today_start,
-                    status__in=["draft", "planned", "invited", "ongoing"],
-                ),
+        # Faction meetings (not completed/cancelled, starting from today), nur sichtbare (Issue #1239).
+        # Wie Liste, Detail und Kalender-Feed der Fraktionssitzungen nur mit dem Recht ``faction.view_public``:
+        # Ohne das Recht nennt auch die Startseite weder Titel noch Termin und Ort.
+        faction_meetings: Any = []
+        if self.has_permission("faction.view_public"):
+            faction_meetings = (
+                sichtbar_fuer(
+                    self.membership,
+                    FactionMeeting.objects.filter(
+                        organization=self.organization,
+                        start__gte=today_start,
+                        status__in=["draft", "planned", "invited", "ongoing"],
+                    ),
+                )
+                .select_related("organization")
+                .order_by("start")[:5]
             )
-            .select_related("organization")
-            .order_by("start")[:5]
-        )
 
         for meeting in faction_meetings:
             meetings.append(
