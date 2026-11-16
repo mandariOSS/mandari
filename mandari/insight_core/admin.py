@@ -783,6 +783,7 @@ class OParlBodyGeoSuggestionAdmin(NoAddAdminMixin, ModelAdmin):
 #: Ergebnis der dauerhaften Rücknahme eines Objekts (``_withdraw_for_good``)
 _WITHDRAWN: Final = "zurueckgenommen"
 _RAISED: Final = "war_markiert"
+_REPORTED: Final = "nachgemeldet"
 _FROM_SESSION: Final = "session"
 _UNCHANGED: Final = "unveraendert"
 
@@ -791,14 +792,18 @@ def _withdraw_for_good(obj: Any) -> str:
     """
     Ein Objekt des RIS-Bestands dauerhaft aus der Veröffentlichung nehmen (Aktion ``RetractAdminMixin``).
 
-    - Ein unmarkiertes Objekt wird markiert und im Änderungsfeed gemeldet (``retraction.retract``, Grund
-      „zurückgezogen“).
+    - Ein unmarkiertes Objekt wird markiert und im Änderungsfeed gemeldet (``retraction.retract``).
     - Ein schon markiertes Objekt behält seine Markierung. Gemeldet wird es trotzdem: War es nur als in der Quelle
       gelöscht markiert, blieb es mit Hinweis öffentlich, und Abnehmer, die das genauso halten, erführen sonst nie
       von der Rücknahme. War es von Hand zurückgenommen, gab es dazu noch gar keine Meldung.
     - In beiden Fällen trägt die Zeile danach den Grund „aus Datenschutzgründen entfernt“. Nur diese Markierung lässt
       der Abgleich mit der Quelle stehen (Ingestor, ``keeps_withdrawal``); jede andere hebt er auf, sobald die Quelle
       das Objekt wieder liefert. Gespeichert wird über ``save``: Erst das Signal der Person löscht ihr Foto.
+    - Gemeldet wird mit demselben Grund, den die Zeile trägt: Der Änderungsfeed nennt die Rücknahme als ``redact``
+      (``retraction.operation_for``), nicht als gewöhnliches ``delete``. Abnehmer entfernen das Objekt dann auch aus
+      Kopien und Weitergaben; ein ``delete`` verlangte das nicht, obwohl die Rücknahme hier endgültig ist.
+    - Trägt die Zeile diesen Grund schon, ohne dass der Feed eine solche Meldung kennt (im Formular von Hand
+      markiert, oder zurückgenommen, als dafür noch ``delete`` gemeldet wurde), holt die Aktion nur die Meldung nach.
     - Ein Objekt aus dem Spiegel von mandari Session bleibt unverändert. Session nimmt selbst zurück und
       veröffentlicht wieder; mit dem dauerhaften Grund bliebe ein dort wieder veröffentlichtes Objekt hier für
       immer zurückgenommen.
@@ -812,26 +817,27 @@ def _withdraw_for_good(obj: Any) -> str:
     if all(marker in external_id for marker in SESSION_OPARL_MARKERS):
         return _FROM_SESSION
     with transaction.atomic():
-        fresh = retraction.retract(obj, reason=retraction.REASON_WITHDRAWN)
-        row = (
-            type(obj)
-            ._default_manager.select_for_update(no_key=True)
-            .filter(pk=obj.pk, deleted=True)
-            .exclude(deletion_reason=REASON_PRIVACY)
-            .first()
-        )
+        # Neu Markiertes: Markierung mit dem dauerhaften Grund, Meldung, Foto, Zusammenfassung und Abo-Hinweise in
+        # einem Zug (``mark_deleted`` speichert über ``save``)
+        if retraction.retract(obj, reason=retraction.REASON_PRIVACY):
+            return _WITHDRAWN
+        row = type(obj)._default_manager.select_for_update(no_key=True).filter(pk=obj.pk, deleted=True).first()
         if row is None:
-            return _UNCHANGED  # schon dauerhaft zurückgenommen oder inzwischen gelöscht
-        if not fresh:
-            retraction.report_withdrawal(row, reason=retraction.REASON_WITHDRAWN, when=timezone.now())
+            return _UNCHANGED  # inzwischen gelöscht
+        if row.deletion_reason == REASON_PRIVACY:
+            # Schon dauerhaft zurückgenommen: An der Zeile ändert sich nichts. Nur die Meldung fehlt womöglich noch
+            if retraction.redaction_reported(row):
+                return _UNCHANGED
+            reported = retraction.report_withdrawal(row, reason=retraction.REASON_PRIVACY, when=timezone.now())
+            return _REPORTED if reported else _UNCHANGED
+        retraction.report_withdrawal(row, reason=retraction.REASON_PRIVACY, when=timezone.now())
         row.deletion_reason = REASON_PRIVACY
         row.save(update_fields=["deletion_reason", "updated_at"])
-        if not fresh:
-            # Was ``retract`` für neu Markiertes selbst erledigt
-            row._forget_summaries()
-            row._forget_alerts()
-            transaction.on_commit(ruecknahme_stand.forget, robust=True)
-    return _WITHDRAWN if fresh else _RAISED
+        # Was ``retract`` für neu Markiertes selbst erledigt
+        row._forget_summaries()
+        row._forget_alerts()
+        transaction.on_commit(ruecknahme_stand.forget, robust=True)
+    return _RAISED
 
 
 class RetractAdminMixin:
@@ -875,7 +881,7 @@ class RetractAdminMixin:
         if bestaetigung is not None:
             return bestaetigung
 
-        counts = dict.fromkeys((_WITHDRAWN, _RAISED, _FROM_SESSION, _UNCHANGED), 0)
+        counts = dict.fromkeys((_WITHDRAWN, _RAISED, _REPORTED, _FROM_SESSION, _UNCHANGED), 0)
         attachments = 0
         for obj in queryset:
             outcome = _withdraw_for_good(obj)
@@ -901,6 +907,12 @@ class RetractAdminMixin:
                 "Dauerhaft aus der Veröffentlichung genommen: "
                 + ", ".join(parts)
                 + f". Der Abgleich mit der Quelle stellt diese Objekte nicht wieder her.{fotos}",
+            )
+        if counts[_REPORTED]:
+            messages.success(
+                request,
+                f"{counts[_REPORTED]} waren schon dauerhaft zurückgenommen; der Änderungsfeed nennt die Rücknahme "
+                "jetzt.",
             )
         if counts[_UNCHANGED]:
             messages.info(request, f"{counts[_UNCHANGED]} waren schon dauerhaft zurückgenommen (unverändert).")

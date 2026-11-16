@@ -233,6 +233,23 @@ class TestAbgleichPerHash:
         assert datei.source_missing_since is not None
         assert file_reconcile.is_blocked(datei)
 
+    def test_sperre_verwirft_die_zusammenfassung_in_jedem_stand(self, body: OParlBody, tmp_path: Path) -> None:
+        """Verworfen wird ohne Bedingung: auch, wenn nur die Fassung in Einfacher Sprache und der Stand da sind."""
+        paper = OParlPaper.objects.create(
+            external_id="https://ris.fremd.example/oparl/paper/2",
+            body=body,
+            name="Vorlage",
+            summary=None,
+            summary_einfach="mit Namen",
+            summary_stand="Stand mit Namen",
+            summary_prompt_fassung=3,
+        )
+        datei = _datei(body, tmp_path, paper=paper)
+        assert file_reconcile.verify(datei, _client(_liefert(b"", get_status=404))) == file_reconcile.MISSING
+        paper.refresh_from_db()
+        assert (paper.summary, paper.summary_einfach, paper.summary_stand) == (None, None, "")
+        assert paper.summary_prompt_fassung == 0
+
     def test_hinweisseite_statt_datei_aendert_nichts(self, body: OParlBody, tmp_path: Path) -> None:
         datei = _datei(body, tmp_path)
         seite = b"<!doctype html><html><body>Wartung</body></html>"

@@ -17,6 +17,10 @@ beide):
 - **Ereignis:** ``ris.object.depublished`` (öffentlich, Operation ``delete``) mit Typ, Kennung und Grund.
   Ein nichtöffentlicher Tagesordnungspunkt war für öffentliche Empfänger nie sichtbar; seine Löschung geht
   als ``ris.agendaitem.changed`` (``deleted``) nur an Empfänger der Sichtbarkeit ``nichtoeffentlich``.
+- **Grund ``datenschutz``:** Die Hülle trägt ``redact`` statt ``delete`` (Vertrag ``ris.object.depublished``,
+  ``docs/adr/20260929-aenderungsfeed-format.md``). Der Änderungsfeed gibt das so aus; Abnehmer entfernen das
+  Objekt dann auch aus Kopien, Zwischenspeichern und Weitergaben. Diesen Grund setzt nur der Betrieb
+  (``insight_core.admin.RetractAdminMixin``), nie der Abgleich mit der Quelle.
 - **Herkunft wie beim Ingestor:** Mandant ist die Quelle der Kommune (``source:<uuid>``), ``body_id`` die
   Kommune des Objekts (beim Tagesordnungspunkt die seiner Sitzung, bei der Mitgliedschaft die ihres
   Gremiums). Ohne Kommune gibt es kein Ereignis.
@@ -49,7 +53,7 @@ from django.conf import settings
 from django.db import transaction
 
 from apps.events import CanonicalRef, publish, tenant_ref
-from apps.events.models import Operation, Visibility
+from apps.events.models import Event, Operation, Visibility
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -71,12 +75,14 @@ VERSION: Final = 1
 DEPUBLISHED: Final = "ris.object.depublished"
 AGENDA_ITEM_CHANGED: Final = "ris.agendaitem.changed"
 
-#: Gründe einer Rücknahme (Vertrag ``ris.object.depublished``, Feld ``reason``). ``datenschutz`` gehört
-#: nicht hierher: Es verlangt ``redact`` und das Entfernen aus Kopien, nicht nur eine Löschmarkierung.
+#: Gründe einer Rücknahme (Vertrag ``ris.object.depublished``, Feld ``reason``), gleichlautend mit
+#: ``insight_core.models.DELETION_REASON_CHOICES``. ``datenschutz`` meldet ``redact`` statt ``delete``
+#: (``operation_for``): Abnehmer sollen das Objekt auch aus ihren Kopien entfernen.
 REASON_DELETED_AT_SOURCE: Final = "quelle_geloescht"
 REASON_WITHDRAWN: Final = "zurueckgenommen"
 REASON_NOT_PUBLIC: Final = "nichtoeffentlich"
-REASONS: Final = frozenset({REASON_DELETED_AT_SOURCE, REASON_WITHDRAWN, REASON_NOT_PUBLIC})
+REASON_PRIVACY: Final = "datenschutz"
+REASONS: Final = frozenset({REASON_DELETED_AT_SOURCE, REASON_WITHDRAWN, REASON_NOT_PUBLIC, REASON_PRIVACY})
 #: Felder des Vertrags für die Objekte, in die ein zurückgenommenes eingebettet war (Issue #1229)
 EMBEDDING_FIELDS: Final = frozenset({"meeting", "paper", "agenda_item", "person"})
 
@@ -112,6 +118,17 @@ class Draft:
     payload: dict[str, Any]
 
 
+def operation_for(reason: str) -> str:
+    """
+    Operation der Hülle zu einem Grund: ``redact`` bei ``datenschutz``, sonst ``delete`` (wie
+    ``ris_events.depublished_draft`` des Ingestors).
+
+    Ohne diese Unterscheidung erführen Abnehmer eine Entfernung aus Datenschutzgründen nur als gewöhnliche
+    Rücknahme und behielten Kopien und Weitergaben.
+    """
+    return Operation.REDACT if reason == REASON_PRIVACY else Operation.DELETE
+
+
 def drafts(
     aggregate_type: str,
     object_id: uuid.UUID,
@@ -139,7 +156,14 @@ def drafts(
             return []
         payload = {"agenda_item": str(object_id), "meeting": str(meeting_id), "change": "deleted"}
         return [
-            Draft(AGENDA_ITEM_CHANGED, "AgendaItem", object_id, Visibility.NICHTOEFFENTLICH, Operation.DELETE, payload)
+            Draft(
+                AGENDA_ITEM_CHANGED,
+                "AgendaItem",
+                object_id,
+                Visibility.NICHTOEFFENTLICH,
+                operation_for(reason),
+                payload,
+            )
         ]
     payload = {"object_type": aggregate_type, "object": str(object_id), "reason": reason}
     for name, parent in (embedded_in or {}).items():
@@ -147,7 +171,7 @@ def drafts(
             raise ValueError(f"Unbekanntes Feld für das einbettende Objekt: {name}")
         if parent is not None:
             payload[name] = str(parent)
-    return [Draft(DEPUBLISHED, aggregate_type, object_id, Visibility.OEFFENTLICH, Operation.DELETE, payload)]
+    return [Draft(DEPUBLISHED, aggregate_type, object_id, Visibility.OEFFENTLICH, operation_for(reason), payload)]
 
 
 def events_enabled() -> bool:
@@ -215,7 +239,9 @@ def retract(obj: Any, *, reason: str, when: datetime | None = None) -> bool:
     """
     Objekt des Bestands als gelöscht markieren und die Rücknahme melden.
 
-    ``False``: Das Objekt war schon markiert (oder gibt es nicht mehr); dann geschieht nichts.
+    ``False``: Das Objekt war schon markiert (oder gibt es nicht mehr); dann geschieht nichts. Mit dem Grund
+    ``datenschutz`` trägt die Meldung ``redact`` (``operation_for``); diese Markierung lässt der Abgleich mit der
+    Quelle stehen (Ingestor, ``keeps_withdrawal``).
     """
     if reason not in REASONS:
         raise ValueError(f"Unbekannter Grund einer Rücknahme; erlaubt: {', '.join(sorted(REASONS))}")
@@ -241,6 +267,18 @@ def retract(obj: Any, *, reason: str, when: datetime | None = None) -> bool:
     return True
 
 
+def redaction_reported(row: Any) -> bool:
+    """
+    Steht zu dieser Zeile schon eine Meldung ``redact`` im Journal?
+
+    Eine Zeile kann den Grund ``datenschutz`` tragen, ohne dass Abnehmer davon wissen: im Formular der Verwaltung von
+    Hand markiert, oder zurückgenommen, als dafür noch ``delete`` gemeldet wurde. Die Verwaltungsaktion holt die
+    Meldung dann nach (``insight_core.admin``). Ist das Journal inzwischen aufgeräumt, lautet die Antwort wieder
+    ``False``; eine zweite Meldung schadet nicht, Abnehmer verarbeiten Einträge wiederholbar.
+    """
+    return Event.objects.filter(aggregate_id=row.pk, type=DEPUBLISHED, operation=Operation.REDACT).exists()
+
+
 def report_withdrawal(row: Any, *, reason: str, when: datetime | None = None) -> bool:
     """
     Rücknahme einer schon markierten Zeile melden, ohne sie zu markieren (``True``: gemeldet).
@@ -250,7 +288,8 @@ def report_withdrawal(row: Any, *, reason: str, when: datetime | None = None) ->
     Grund, nicht die Markierung; ``retract`` meldete dann nichts, und Abnehmer, die in der Quelle Gelöschtes weiter
     zeigen, behielten ihre Kopie. Der Aufrufer sperrt die Zeile und setzt den Grund in derselben Transaktion. Wie bei
     ``retract`` geht die Rücknahme vor: Scheitert das Schreiben, bleibt sie bestehen, und der Fehler wird
-    protokolliert.
+    protokolliert. ``reason`` ist der Grund, den die Zeile danach trägt; mit ``datenschutz`` trägt die Meldung
+    ``redact``.
     """
     if reason not in REASONS:
         raise ValueError(f"Unbekannter Grund einer Rücknahme; erlaubt: {', '.join(sorted(REASONS))}")

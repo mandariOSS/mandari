@@ -11,8 +11,9 @@ Zurückgenommene Objekte fremder Ratsinformationssysteme verlassen das Bürgerpo
 - Der Digest nennt keinen Vorgang, den es beim Versand nicht mehr gibt oder der markiert ist. Hinweise auf
   zurückgenommene Vorgänge verwirft er; solche auf nur in der Quelle gelöschte überspringt er.
 - Die Verwaltungsaktion „Dauerhaft aus der Veröffentlichung zurücknehmen“ fragt nach, markiert mit dem Grund, den
-  der Abgleich mit der Quelle stehen lässt, nimmt die Anlagen mit und meldet die Rücknahme im Änderungsfeed.
-  Objekte aus mandari Session lässt sie unverändert.
+  der Abgleich mit der Quelle stehen lässt, nimmt die Anlagen mit und meldet die Rücknahme im Änderungsfeed, und
+  zwar als ``redact``: Abnehmer entfernen das Objekt dann auch aus ihren Kopien. Objekte aus mandari Session lässt
+  sie unverändert.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.management import call_command
 from django.db import transaction
+from django.db.models import Max
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -548,10 +550,11 @@ def test_aktion_nimmt_vorgang_mit_anlagen_dauerhaft_zurueck_und_meldet_es(
     assert (anlage.deleted, anlage.deletion_reason) == (True, REASON_PRIVACY)
     assert Client().get(_seite("paper_detail", vorgang)).status_code == 410
     assert _vorschau(anlage).status_code == 410
-    # Je Objekt eine öffentliche Meldung für Abnehmer des Änderungsfeeds, als Rücknahme
+    # Je Objekt eine öffentliche Meldung für Abnehmer des Änderungsfeeds, mit dem Grund der Zeile: Der Vertrag
+    # sieht dafür ``redact`` vor (auch aus Kopien entfernen), nicht ``delete``
     assert _gemeldet() == [
-        ("File", anlage.pk, "delete", REASON_WITHDRAWN),
-        ("Paper", vorgang.pk, "delete", REASON_WITHDRAWN),
+        ("File", anlage.pk, "redact", REASON_PRIVACY),
+        ("Paper", vorgang.pk, "redact", REASON_PRIVACY),
     ]
     assert all(e.visibility == "oeffentlich" for e in Event.objects.filter(type="ris.object.depublished"))
     meldungen = _meldungen(antwort)
@@ -587,8 +590,91 @@ def test_aktion_nimmt_schon_markiertes_dauerhaft_zurueck_und_meldet_es(
     assert person.deletion_reason == REASON_PRIVACY
     assert Client().get(_seite("person_detail", person)).status_code == 410
     # Die Markierung bestand schon, die Rücknahme ist neu: Abnehmer erfahren sie
-    assert _gemeldet() == [("Person", person.pk, "delete", REASON_WITHDRAWN)]
+    assert _gemeldet() == [("Person", person.pk, "redact", REASON_PRIVACY)]
     assert "1 waren schon markiert und sind jetzt dauerhaft zurückgenommen" in _meldungen(antwort)
+
+
+def _nummerieren() -> None:
+    """Folgenummern vergeben, wie es der Sequenzierer nach dem Commit täte."""
+    for pk in Event.objects.filter(seq__isnull=True).order_by("id").values_list("pk", flat=True):
+        hoechste = Event.objects.aggregate(hoechste=Max("seq"))["hoechste"] or 0
+        Event.objects.filter(pk=pk).update(seq=hoechste + 1)
+
+
+@pytest.mark.parametrize("grund", [None, REASON_DELETED_AT_SOURCE], ids=["unmarkiert", "quelle_geloescht"])
+def test_aktion_steht_im_aenderungsfeed_als_redact(
+    welt: dict[str, Any], verwaltung: Client, settings: Any, grund: str | None
+) -> None:
+    """
+    Abnehmer handeln nur auf Einträge des Feeds: Eine leere Seite heißt für sie „aktuell“. Die dauerhafte Rücknahme
+    steht deshalb ab ihrem Cursor im Feed, und zwar als ``redact`` mit dem Grund der Entfernung (in der Form nach
+    kommParl ``privacy``), nicht als gewöhnliches ``delete``.
+    """
+    settings.SITE_URL = "https://mandari.example"
+    settings.OPARL_BASE_URL = "https://mandari.example/oparl"
+    settings.OPARL_API_RATE_LIMIT = 0
+    settings.OPARL_API_CACHE_SECONDS = 0
+    settings.OPARL_CHANGES_ENABLED = True
+    person = welt["person"]
+    if grund:
+        OParlPerson.objects.filter(pk=person.pk).update(deleted=True, deleted_at=timezone.now(), deletion_reason=grund)
+    pfad = f"/oparl/v1/body/{welt['body'].pk}"
+    vorher = Client().get(f"{pfad}/changes").json()
+    assert vorher["data"] == []
+
+    _aktion(verwaltung, "oparlperson", person)
+    _nummerieren()
+
+    seitdem = Client().get(f"{pfad}/changes", {"after": vorher["cursor"]}).json()["data"]
+    assert [(e["operation"], e["reason"]) for e in seitdem] == [("redact", "datenschutz")]
+    assert seitdem[0]["id"].endswith(f"/person/{person.pk}")
+    nach_kommparl = Client().get(f"{pfad}/kommparl/changes").json()["data"]
+    assert [(e["operation"], e["reason"]) for e in nach_kommparl] == [("redact", "privacy")]
+
+
+@pytest.mark.parametrize("frueher_gemeldet", [False, True], ids=["ohne_meldung", "als_delete_gemeldet"])
+def test_aktion_holt_die_meldung_einer_schon_entfernten_zeile_nach(
+    welt: dict[str, Any], verwaltung: Client, frueher_gemeldet: bool
+) -> None:
+    """
+    Im Formular von Hand als „aus Datenschutzgründen entfernt“ markiert, oder zurückgenommen, als dafür noch
+    ``delete`` gemeldet wurde: Die Zeile ist schon dauerhaft zurückgenommen, Abnehmer des Feeds wissen aber nichts
+    von der Entfernung. Die Aktion holt die Meldung nach, genau einmal.
+    """
+    from hub.ris import retraction
+
+    person = welt["person"]
+    OParlPerson.objects.filter(pk=person.pk).update(
+        deleted=True, deleted_at=timezone.now(), deletion_reason=REASON_PRIVACY
+    )
+    if frueher_gemeldet:
+        assert retraction.report_withdrawal(OParlPerson.objects.get(pk=person.pk), reason=REASON_WITHDRAWN)
+
+    antwort = _aktion(verwaltung, "oparlperson", person)
+
+    erwartet = [("Person", person.pk, "redact", REASON_PRIVACY)]
+    if frueher_gemeldet:
+        erwartet.append(("Person", person.pk, "delete", REASON_WITHDRAWN))
+    assert sorted(_gemeldet(), key=lambda zeile: zeile[2]) == sorted(erwartet, key=lambda zeile: zeile[2])
+    assert "1 waren schon dauerhaft zurückgenommen; der Änderungsfeed nennt die Rücknahme jetzt." in _meldungen(antwort)
+
+    # Ein zweiter Aufruf meldet nicht noch einmal
+    assert "schon dauerhaft zurückgenommen (unverändert)" in _meldungen(_aktion(verwaltung, "oparlperson", person))
+    assert len(_gemeldet()) == len(erwartet)
+
+
+def test_aktion_meldet_ohne_ereignisse_nichts_nach(welt: dict[str, Any], verwaltung: Client, settings: Any) -> None:
+    """Schreibt die Installation keine Ereignisse zum RIS-Bestand, bleibt die Zeile unverändert und ohne Meldung."""
+    settings.INGESTOR_EVENTS_ENABLED = False
+    person = welt["person"]
+    OParlPerson.objects.filter(pk=person.pk).update(
+        deleted=True, deleted_at=timezone.now(), deletion_reason=REASON_PRIVACY
+    )
+
+    antwort = _aktion(verwaltung, "oparlperson", person)
+
+    assert _gemeldet() == []
+    assert "schon dauerhaft zurückgenommen (unverändert)" in _meldungen(antwort)
 
 
 def test_aktion_nimmt_schon_markierte_anlagen_mit(welt: dict[str, Any], verwaltung: Client) -> None:
