@@ -23,6 +23,19 @@ mit dem Fenster (``SyncOrchestrator.sync_body_url``). Status und Metrik (``manda
 das Fenster, ``sync_state["reason"]`` und das Sync-Protokoll (``details.takt``) den Grund für den späteren Lauf.
 
 Jeder Lauf schreibt sein eigenes Sync-Protokoll (``insight_sync_synclog`` mit ``source_id``) und Metriken je Quelle.
+
+Kein Lauf hält seinen Platz auf Dauer, und kein Lauf bleibt ohne Folge:
+
+- Gesamtfrist je Lauf (``INGESTOR_SYNC_RUN_DEADLINE_MINUTES``, für Vollabgleiche
+  ``INGESTOR_SYNC_FULL_DEADLINE_MINUTES``): Danach endet der Lauf, zählt als Fehlversuch der Quelle und gibt seinen
+  Platz zurück; die Quelle ist frühestens nach derselben Dauer wieder fällig.
+- Je Server laufen höchstens halb so viele Quellen zugleich, wie der Pool Plätze hat (mindestens eine): Die Quellen
+  eines Sammelservers belegen den Pool nicht allein.
+- Wird eine Quelle abgeschaltet, endet ihr laufender Abgleich mit dem nächsten Durchlauf.
+- Der Beginn jedes Laufs steht in ``sync_state`` (``run_started``). Findet der Daemon ihn beim Start noch vor, endete
+  der Prozess mitten im Lauf, etwa am Speicherlimit. Solche Quellen laufen danach zuletzt und einzeln; endet ein
+  Einzellauf wieder mit dem Prozess, zählt das als Fehlversuch dieser Quelle, und die Schonung greift
+  (``_recover_aborted``). Ein geordnetes Ende (SIGTERM, ``docker stop``) zählt nicht.
 """
 
 from __future__ import annotations
@@ -31,11 +44,15 @@ import asyncio
 import contextlib
 import json
 import logging
+import signal
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
+from mandari_oparl.pacing import host_of
+from rich.markup import escape
 from rich.panel import Panel
 
 from src.client.source_options import FullSyncWindow, SourceFetchOptions
@@ -75,6 +92,17 @@ ALL_SOURCES = "*"
 #: Wartezeit vor einem neuen Versuch, wenn der Empfang der Auslöser (Redis) scheitert
 TRIGGER_RETRY_SECONDS = 60
 _EARLIEST = datetime.min.replace(tzinfo=UTC)
+#: So lange wartet eine Quelle nach einem abgebrochenen Lauf höchstens darauf, dass der Pool von selbst leer wird;
+#: danach starten keine anderen Quellen mehr, bis sie allein gelaufen ist
+SUSPECT_MAX_WAIT = timedelta(minutes=30)
+#: Fehlertexte an der Quelle (Betriebsmonitor), ohne Fehlerklasse: Es gilt die gewöhnliche Schonung
+DEADLINE_ERROR = "Gesamtfrist des Laufs überschritten"
+ABORTED_RUN_ERROR = "Lauf nicht beendet: Der Daemon endete während des Einzellaufs dieser Quelle erneut"
+
+
+def _deadline_seconds(minutes: int) -> float | None:
+    """Gesamtfrist in Sekunden; ``None`` (keine Frist) bei 0."""
+    return float(minutes * 60) if minutes > 0 else None
 
 
 @dataclass
@@ -164,6 +192,12 @@ class SyncScheduler:
         self.pool_size = max(1, pool_size if pool_size is not None else settings.sync_pool_size)
         # Vollabgleiche lassen immer einen Platz für Änderungsabgleiche frei (bei einem Platz geht das nicht)
         self.full_slots = max(1, self.pool_size - 1)
+        # Quellen eines Servers belegen höchstens den halben Pool: Hält ein Server seine Läufe fest, bleibt Platz für
+        # die übrigen. Der Takt je Server begrenzt ihre Anfragen ohnehin gemeinsam
+        self.host_slots = max(1, self.pool_size // 2)
+        #: Gesamtfrist je Lauf in Sekunden (``None``: keine), getrennt für Änderungs- und Vollabgleich
+        self.run_deadline = _deadline_seconds(settings.sync_run_deadline_minutes)
+        self.full_deadline = _deadline_seconds(settings.sync_full_deadline_minutes)
         self.default_window = default_full_sync_window(full_sync_hour)
         self._clock = clock or (lambda: datetime.now(UTC))
         self._orchestrator = orchestrator
@@ -171,7 +205,17 @@ class SyncScheduler:
         self._heartbeat_enabled = heartbeat
 
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        #: Server der laufenden Quellen (Schlüssel wie ``_tasks``), für die Grenze je Server
+        self._task_hosts: dict[str, str] = {}
         self._full_running: set[str] = set()
+        #: Abgebrochene Läufe des vorigen Prozesses sind zugeordnet (einmal je Start, ``_recover_aborted``)
+        self._recovered = False
+        #: Quelle, die nach einem abgebrochenen Lauf gerade allein läuft
+        self._solo: str | None = None
+        #: Seit wann eine solche Quelle fällig ist und auf einen leeren Pool wartet
+        self._suspect_since: dict[str, datetime] = {}
+        #: Zuletzt gespeicherter Zustand der laufenden Quellen: Ein Lauf, der vorzeitig endet, schreibt ihn fort
+        self._current: dict[str, SyncState] = {}
         self._triggers: dict[str, _Trigger] = {}
         self._wake: asyncio.Event | None = None
         self._loop_task: asyncio.Task[None] | None = None
@@ -298,7 +342,7 @@ class SyncScheduler:
             elif key.startswith("url:") and key[4:] in by_url:
                 targets = [by_url[key[4:]]]
             else:
-                console.print(f"[yellow]Sync-Auslöser verworfen: keine aktive Quelle ({key})[/yellow]")
+                console.print(f"[yellow]Sync-Auslöser verworfen: keine aktive Quelle ({escape(key)})[/yellow]")
                 continue
             for target in targets:
                 existing = self._triggers.get(target)
@@ -357,8 +401,9 @@ class SyncScheduler:
         trace_id = data.get("trace_id") or None
         span_id = data.get("span_id") or None
         console.print(
-            f"\n[bold yellow]Sync-Trigger empfangen (full={full}, Quelle={source_id or source_url or 'alle'}, "
-            f"request_id={request_id or '-'}, trace_id={trace_id or '-'})[/bold yellow]"
+            f"\n[bold yellow]Sync-Trigger empfangen (full={full}, "
+            f"Quelle={escape(str(source_id or source_url or 'alle'))}, "
+            f"request_id={escape(str(request_id or '-'))}, trace_id={escape(str(trace_id or '-'))})[/bold yellow]"
         )
         with trigger_context("sync.trigger", request_id, trace_id, span_id):
             logger.info("Sync-Trigger empfangen", extra={"full": full, "source": source_id or source_url or "*"})
@@ -382,11 +427,22 @@ class SyncScheduler:
         vor den übrigen ohne Auslöser. So verdrängen lange Vollabgleiche nicht Nacht für Nacht dieselben Quellen aus
         dem Fenster. Eine Quelle in Schonung startet nie, auch nicht auf einen Auslöser hin (der Auslöser entfällt
         dann). Ebenso eine Quelle außerhalb ihres Abruffensters (``sync_window``, Issue #1186).
+
+        Je Server starten höchstens ``host_slots`` Quellen zugleich. Quellen aus einem abgebrochenen Lauf starten
+        zuletzt und einzeln (``_without_suspects``). Der Lauf einer inzwischen abgeschalteten Quelle wird beendet.
         """
         now = now or self._clock()
+        if not self._recovered:
+            await self._recover_aborted(list(await self.orchestrator.storage.get_all_sources()))
+            self._recovered = True
         sources = list(await self.orchestrator.storage.get_all_sources())
         self._expand_triggers(sources)
         active = {str(source.id) for source in sources}
+        for key, task in list(self._tasks.items()):
+            if key not in active:
+                # Abgeschaltet (im Admin oder mit der Rücknahme einer Veröffentlichung): Der Lauf schriebe sonst
+                # weiter in den Bestand und hielte seinen Platz, bis er von selbst endet
+                task.cancel()
         for gone in [key for key in self._overview if key not in active]:
             self._overview.pop(gone, None)
         for gone in [key for key in self._unsaved if key not in active]:
@@ -404,17 +460,16 @@ class SyncScheduler:
                 self._note_backoff(source, until)
                 if self._triggers.pop(key, None) is not None:
                     console.print(
-                        f"[yellow]Sync-Auslöser für {source.name} verworfen: Schonung bis {until:%d.%m. %H:%M} UTC"
-                        "[/yellow]"
+                        f"[yellow]Sync-Auslöser für {escape(source.name)} verworfen: Schonung bis "
+                        f"{until:%d.%m. %H:%M} UTC[/yellow]"
                     )
                 continue
             if window is not None and window.closes_at(now) is None:
                 # Außerhalb des Abruffensters: kein Start, weder nach Takt noch auf einen Auslöser hin
                 self._note_window(source, window, now)
                 if self._triggers.pop(key, None) is not None:
-                    console.print(
-                        f"[yellow]Sync-Auslöser verworfen: {outside_window_note(source.name, window, now)}[/yellow]"
-                    )
+                    note = escape(outside_window_note(source.name, window, now))
+                    console.print(f"[yellow]Sync-Auslöser verworfen: {note}[/yellow]")
                 continue
             if key in self._tasks:
                 continue  # höchstens ein Lauf je Quelle; ein Auslöser wartet auf das Ende
@@ -432,15 +487,20 @@ class SyncScheduler:
             want_full = full_due or (trigger is not None and trigger.full)
             candidates.append(_Candidate(source, state, want_full, incremental_due, trigger))
 
+        candidates = self._without_suspects(candidates, now)
         free_full = max(0, self.full_slots - len(self._full_running))
         granted = {c.key for c in sorted((c for c in candidates if c.want_full), key=_Candidate.full_rank)[:free_full]}
         # Auslöser zuerst, dann die Vollabgleiche mit Platz, dann nach Fälligkeit
         candidates.sort(key=lambda c: (c.trigger is None, c.key not in granted, c.due_rank()))
+        running_on = Counter(self._task_hosts.values())
         started: list[asyncio.Task[None]] = []
         for candidate in candidates:
             if len(self._tasks) >= self.pool_size:
                 break
             source, trigger, key = candidate.source, candidate.trigger, candidate.key
+            host = host_of(source.url)
+            if running_on[host] >= self.host_slots:
+                continue  # der Server hat seinen Anteil am Pool; die Quelle bleibt fällig, ein Auslöser wartet
             full = candidate.want_full
             if full and key not in granted:
                 # Kein Platz für einen weiteren Vollabgleich: Ein ausdrücklich angeforderter wartet; sonst läuft der
@@ -451,12 +511,76 @@ class SyncScheduler:
             self._triggers.pop(key, None)
             task = asyncio.create_task(self._run_source(source, full, trigger), name=f"sync:{source.name}")
             self._tasks[key] = task
+            self._task_hosts[key] = host
+            running_on[host] += 1
             if full:
                 self._full_running.add(key)
+            if candidate.state.suspect:
+                self._solo = key
             started.append(task)
         metrics.set_active_syncs(len(self._tasks))
         await self._heartbeat(now)
         return started
+
+    def _without_suspects(self, candidates: list[_Candidate], now: datetime) -> list[_Candidate]:
+        """
+        Fällige Quellen dieses Durchlaufs ohne die aus einem abgebrochenen Lauf (``SyncState.suspect``), solange
+        andere fällig sind oder laufen.
+
+        Endete der Daemon mitten in mehreren Läufen, ist offen, welche Quelle der Auslöser war. Die Beteiligten
+        laufen deshalb zuletzt und einzeln: Erst wenn nichts anderes fällig ist und der Pool leer ist, startet eine
+        von ihnen, und solange sie läuft, startet nichts daneben. Endet der Prozess dabei wieder, steht die Ursache
+        fest. Die übrigen Quellen sind bis dahin gelaufen und kommen bei jedem Neustart wieder zuerst an die Reihe.
+        Wartet eine solche Quelle länger als ``SUSPECT_MAX_WAIT`` auf einen leeren Pool, starten keine anderen mehr,
+        bis sie an der Reihe war.
+        """
+        suspects = sorted((c for c in candidates if c.state.suspect), key=_Candidate.due_rank)
+        waiting = {c.key for c in suspects}
+        self._suspect_since = {key: since for key, since in self._suspect_since.items() if key in waiting}
+        for candidate in suspects:
+            self._suspect_since.setdefault(candidate.key, now)
+        if self._solo is not None:
+            return []
+        overdue = any(now - since >= SUSPECT_MAX_WAIT for since in self._suspect_since.values())
+        regular = [c for c in candidates if not c.state.suspect]
+        if regular and not overdue:
+            return regular
+        if suspects and not self._tasks:
+            return suspects[:1]
+        return []
+
+    async def _recover_aborted(self, sources: list[Any]) -> None:
+        """
+        Einmal nach dem Start: Läufe zuordnen, die begonnen und nie beendet wurden.
+
+        Der Zustand eines Laufs entsteht erst an seinem Ende. Endet der Prozess vorher hart (Speicherlimit), blieb
+        die Quelle bisher unverändert fällig, ohne Fehlversuch und ohne Schonung, und war bei jedem Neustart wieder
+        unter den ersten. Jetzt gilt: Wer in einem abgebrochenen Lauf steckte, läuft als Nächstes zuletzt und einzeln
+        (``suspect``), noch ohne Fehlversuch, denn andere Quellen liefen mit. Endet auch der Einzellauf mit dem
+        Prozess, zählt das als Fehlversuch dieser Quelle; nach den üblichen drei greift die Schonung, und der
+        Betriebsmonitor nennt Quelle und Grund.
+        """
+        for source in sources:
+            state = self._state_of(source)
+            if state.run_started is None:
+                continue
+            name = escape(source.name)
+            if state.suspect:
+                await self._record_failure(source, ABORTED_RUN_ERROR)
+                console.print(f"[red]Quelle {name}: Einzellauf endete erneut mit dem Daemon, Fehlversuch gezählt[/red]")
+            else:
+                console.print(
+                    f"[yellow]Quelle {name}: Lauf vom {state.run_started:%d.%m. %H:%M} UTC nicht beendet, "
+                    "nächster Lauf einzeln[/yellow]"
+                )
+            await self._save_state(source, replace(state, run_started=None, suspect=True))
+
+    async def _record_failure(self, source: Any, message: str) -> None:
+        """Fehlversuch an der Quelle festhalten (Zähler für Schonung und Betriebsmonitor); stört den Takt nie."""
+        try:
+            await self.orchestrator.storage.record_source_failure(source.url, message)
+        except Exception as e:  # noqa: BLE001 - ohne Zähler gilt weiter der Takt
+            logger.warning("Fehlversuch der Quelle %s nicht gespeichert: %s", source.name, type(e).__name__)
 
     def _note_backoff(self, source: Any, until: datetime) -> None:
         """Schonung einmal je Frist melden, nicht in jedem Durchlauf."""
@@ -469,8 +593,8 @@ class SyncScheduler:
             f"{getattr(source, 'consecutive_failures', 0)} Fehlversuche in Folge",
         )
         console.print(
-            f"[yellow]Quelle {source.name}: {reason} — Schonung, nächster Versuch nach {until:%d.%m. %H:%M} UTC"
-            "[/yellow]"
+            f"[yellow]Quelle {escape(source.name)}: {reason} — Schonung, nächster Versuch nach "
+            f"{until:%d.%m. %H:%M} UTC[/yellow]"
         )
 
     def _note_window(self, source: Any, window: FullSyncWindow, now: datetime) -> None:
@@ -481,7 +605,7 @@ class SyncScheduler:
             return
         self._window_shown[key] = opens
         console.print(
-            f"[dim]Quelle {source.name}: außerhalb des Abruffensters {window.label()}, nächster Lauf ab "
+            f"[dim]Quelle {escape(source.name)}: außerhalb des Abruffensters {window.label()}, nächster Lauf ab "
             f"{opens.astimezone(window.tz):%d.%m. %H:%M} Uhr[/dim]"
         )
 
@@ -525,33 +649,84 @@ class SyncScheduler:
             logger.exception("Takt: Lauf der Quelle %s fehlgeschlagen", getattr(source, "name", key))
         finally:
             self._tasks.pop(key, None)
+            self._task_hosts.pop(key, None)
+            self._current.pop(key, None)
             self._full_running.discard(key)
+            if self._solo == key:
+                self._solo = None
             metrics.set_active_syncs(len(self._tasks))
             self._maybe_clear_caches()
             self._event().set()
 
     async def _sync_one(self, source: Any, full: bool, triggered_by: str) -> None:
+        """
+        Ein Lauf mit Buchführung: Beginn festhalten, abgleichen, Zustand fortschreiben.
+
+        Der Beginn steht in der Datenbank, bevor die erste Anfrage hinausgeht (``run_started``; beim Vollabgleich
+        dazu ``full_attempted``, einmal je Fenster). Jedes Ende schreibt ihn fort: das gewöhnliche über
+        ``SyncState.after_run``, ein geordneter Abbruch und ein Fehler neben dem Abgleich hier. Nur wenn der Prozess
+        endet, bleibt er stehen, und der nächste Start ordnet ihn zu (``_recover_aborted``).
+        """
         started = self._clock()
         state = self._state_of(source)
-        if full:
-            # Einmal je Fenster: Ein abgebrochener Vollabgleich wird im nächsten Fenster wiederholt
-            state = replace(state, full_attempted=started)
-            await self._save_state(source, state)
-        art = "Vollabgleich" if full else "Änderungsabgleich"
-        console.print(f"\n[blue][{started:%H:%M:%S} UTC] {source.name}: {art} beginnt ({triggered_by})[/blue]")
-
+        state = replace(state, run_started=started, full_attempted=started if full else state.full_attempted)
+        await self._save_state(source, state)
+        key = str(source.id)
         try:
-            # Das Standardfenster begrenzt den Vollabgleich in Zeitscheiben ohne eigenes Fenster (Issue #1033)
-            result = await self.orchestrator.sync_body_url(source.url, full=full, default_window=self.default_window)
+            await self._sync_and_record(source, full, triggered_by, started, state)
+        except asyncio.CancelledError:
+            # Geordnetes Ende (Daemon stoppt, Quelle abgeschaltet): kein abgebrochener Lauf. Das Speichern läuft zu
+            # Ende, auch wenn der Abbruch noch einmal kommt
+            await asyncio.shield(self._save_state(source, replace(self._current.get(key, state), run_started=None)))
+            raise
+        except Exception:
+            # Fehler neben dem Abgleich (Zustand, Protokoll, Ausgabe): Ohne neuen Zeitpunkt bliebe die Quelle fällig
+            # und begänne sofort wieder, ohne Pause und ohne Grenze
+            await self._save_state(source, self._deferred(source, self._current.get(key, state)))
+            raise
+
+    def _deferred(self, source: Any, state: SyncState) -> SyncState:
+        """Zustand nach einem Lauf, der mit einem Fehler neben dem Abgleich endete: nächster Lauf nach dem Takt."""
+        if state.run_started is None:
+            return state  # das Ende des Laufs ist schon fortgeschrieben
+        schedule = SyncSchedule.from_sync_config(source.sync_config, self.sync_interval)
+        window = SourceFetchOptions.from_sync_config(source.sync_config).sync_window
+        return state.after_run(schedule, self._clock(), success=False, changes=0, full=False, window=window)
+
+    async def _sync_and_record(
+        self, source: Any, full: bool, triggered_by: str, started: datetime, state: SyncState
+    ) -> None:
+        art = "Vollabgleich" if full else "Änderungsabgleich"
+        name = escape(source.name)
+        console.print(f"\n[blue][{started:%H:%M:%S} UTC] {name}: {art} beginnt ({triggered_by})[/blue]")
+
+        limit = self.full_deadline if full else self.run_deadline
+        deadline = asyncio.timeout(limit)
+        overrun = False
+        try:
+            async with deadline:
+                # Das Standardfenster begrenzt den Vollabgleich in Zeitscheiben ohne eigenes Fenster (Issue #1033)
+                result = await self.orchestrator.sync_body_url(
+                    source.url, full=full, default_window=self.default_window
+                )
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.exception("Sync der Quelle %s fehlgeschlagen", source.name)
+            overrun = deadline.expired()
+            if overrun and limit is not None:
+                # Der Lauf hielt seinen Platz bis zur Gesamtfrist: beendet, Platz frei, Fehlversuch der Quelle. Der
+                # Orchestrator hält ihn in diesem Fall nicht selbst fest
+                message = f"{DEADLINE_ERROR} ({limit / 60:.0f} min)"
+                logger.warning("Sync der Quelle %s beendet: %s", source.name, message)
+                await self._record_failure(source, message)
+            else:
+                logger.exception("Sync der Quelle %s fehlgeschlagen", source.name)
+                message = f"{type(e).__name__}: {e}"
             result = SyncResult(
                 source_url=source.url,
                 source_name=source.name,
                 success=False,
-                errors=[f"{type(e).__name__}: {e}"],
+                errors=[message],
                 full=full,
             )
         finished = self._clock()
@@ -564,10 +739,11 @@ class SyncScheduler:
             closes = window.closes_at(finished)
             if reopens <= finished and closes is not None:
                 reopens = window.next_open(closes)
-            skipped = replace(state, next_due=reopens, reason=REASON_WINDOW)
+            skipped = replace(state, next_due=reopens, reason=REASON_WINDOW, run_started=None)
             await self._save_state(source, skipped)
             self._publish_schedule(source, skipped, None, window)
-            console.print(f"[yellow]{'; '.join(result.errors) or outside_window_note(source.name, window)}[/yellow]")
+            note = escape("; ".join(result.errors) or outside_window_note(source.name, window))
+            console.print(f"[yellow]{note}[/yellow]")
             return
         changes = entities_of(result) if result.success else 0
 
@@ -582,6 +758,10 @@ class SyncScheduler:
             meeting_days=meeting_days,
             window=window,
         )
+        if overrun and limit is not None and new_state.next_due is not None:
+            # Wer seinen Platz bis zur Frist gehalten hat, ist frühestens nach derselben Dauer wieder an der Reihe:
+            # Eine Quelle, die jeden Lauf bis zur Frist hält, belegt so höchstens die halbe Zeit einen Platz
+            new_state = replace(new_state, next_due=max(new_state.next_due, finished + timedelta(seconds=limit)))
         await self._save_state(source, new_state)
 
         requests = result.http_stats.http_requests if result.http_stats is not None else 0
@@ -608,11 +788,11 @@ class SyncScheduler:
         next_local = new_state.next_due.astimezone(schedule.tz) if new_state.next_due else None
         held = f"; Abruffenster {window.label()}" if window is not None and new_state.reason == REASON_WINDOW else ""
         console.print(
-            f"[green]{source.name}: {art} fertig in {duration:.1f}s, {requests} Abrufe, {changes} Änderungen; "
+            f"[green]{name}: {art} fertig in {duration:.1f}s, {requests} Abrufe, {changes} Änderungen; "
             f"nächster Lauf {next_local:%d.%m. %H:%M} ({new_state.interval_minutes} min, {new_state.period}, "
             f"{new_state.idle_runs} Läufe ohne Änderung{held})[/green]"
             if next_local is not None
-            else f"[green]{source.name}: {art} fertig in {duration:.1f}s[/green]"
+            else f"[green]{name}: {art} fertig in {duration:.1f}s[/green]"
         )
 
     async def _meeting_days(self, source: Any, schedule: SyncSchedule, at: datetime) -> frozenset[Any]:
@@ -645,6 +825,8 @@ class SyncScheduler:
     async def _save_state(self, source: Any, state: SyncState) -> None:
         """Zustand des Takts an der Quelle speichern (nur der eigene Schlüssel, unter Zeilensperre)."""
         key = str(source.id)
+        if key in self._tasks:
+            self._current[key] = state
         try:
             await self.orchestrator.storage.set_source_sync_config_value(source.id, STATE_KEY, state.to_dict())
         except Exception as e:  # noqa: BLE001 - bis zum nächsten Speichern gilt der Zustand im Speicher
@@ -713,7 +895,9 @@ class SyncScheduler:
                 triggered_by=triggered_by,
             )
         except Exception as e:  # noqa: BLE001 - das Protokoll darf den Takt nie stören
-            console.print(f"[yellow]Warning: SyncLog für {source.name} nicht geschrieben: {type(e).__name__}[/yellow]")
+            console.print(
+                f"[yellow]Warning: SyncLog für {escape(source.name)} nicht geschrieben: {type(e).__name__}[/yellow]"
+            )
 
     def _maybe_clear_caches(self) -> None:
         """
@@ -770,6 +954,22 @@ class SyncScheduler:
         }
 
 
+def print_overview(scheduler: SyncScheduler) -> None:
+    """
+    Kurzer Überblick des Takts auf der Konsole: laufende Abgleiche und die nächsten fälligen Quellen.
+
+    Die Namen stammen aus fremden Quellen und werden nicht als Markup ausgewertet. Ein Fehler hier bleibt ohne Folge
+    für den Daemon: Die Ausgabe steht in der Hauptschleife, eine Ausnahme beendete sonst alle laufenden Abgleiche.
+    """
+    try:
+        status = scheduler.get_status()
+        running = escape(", ".join(status["running"]) or "–")
+        upcoming = escape(", ".join(f"{name} {due}" for name, due in status["next_due"][:3]) or "–")
+        console.print(f"[dim]Takt: laufend {running}; nächste fällig {upcoming}[/dim]", highlight=False)
+    except Exception:  # noqa: BLE001 - die Übersicht darf den Daemon und seine Läufe nie beenden
+        logger.exception("Takt: Übersicht nicht ausgegeben")
+
+
 async def run_scheduler(
     sync_interval: int | None = None,
     full_sync_hour: int | None = 3,
@@ -800,6 +1000,13 @@ async def run_scheduler(
 
     fuehrung = Fuehrung(settings.database_url)
 
+    # ``docker stop`` und jeder Deploy senden SIGTERM. Ohne eigene Behandlung endete der Prozess sofort: Laufende
+    # Abgleiche gälten beim nächsten Start als abgebrochen. So endet der Daemon geordnet wie nach Strg+C
+    main_task = asyncio.current_task()
+    if main_task is not None:
+        with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):  # Windows kennt das nicht
+            asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, main_task.cancel)
+
     try:
         await metrics.start_server(port=metrics_port)
 
@@ -812,12 +1019,7 @@ async def run_scheduler(
         # Alle zehn Minuten ein kurzer Überblick
         while True:
             await asyncio.sleep(600)
-            status = scheduler.get_status()
-            console.print(
-                f"[dim]Takt: laufend {', '.join(status['running']) or '–'}; "
-                f"nächste fällig {', '.join(f'{name} {due}' for name, due in status['next_due'][:3]) or '–'}[/dim]",
-                highlight=False,
-            )
+            print_overview(scheduler)
     except (asyncio.CancelledError, KeyboardInterrupt):
         pass
     finally:

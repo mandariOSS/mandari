@@ -21,6 +21,7 @@ import re
 from typing import Any
 
 from rich.console import Console
+from rich.errors import MarkupError
 
 MASK = "***"
 
@@ -51,7 +52,17 @@ def mask_credentials(text: str) -> str:
 
 
 class MaskingConsole(Console):
-    """Rich-Konsole, die Zugangsdaten in ausgegebenen Texten maskiert (siehe ``mask_credentials``)."""
+    """
+    Rich-Konsole, die Zugangsdaten in ausgegebenen Texten maskiert (siehe ``mask_credentials``).
+
+    Ausgaben enthalten Texte fremder Quellen: Namen von Kommunen, Fehlermeldungen, Adressen. Sehen sie wie Markup
+    aus und sind unzulässig geschachtelt, scheitert die Auswertung. Eine Ausgabe darf aber nie einen Lauf oder den
+    Daemon beenden: Der Text erscheint dann unverändert, ohne Auswertung.
+    """
 
     def print(self, *objects: Any, **kwargs: Any) -> None:
-        super().print(*(mask_credentials(o) if isinstance(o, str) else o for o in objects), **kwargs)
+        masked = [mask_credentials(o) if isinstance(o, str) else o for o in objects]
+        try:
+            super().print(*masked, **kwargs)
+        except MarkupError:
+            super().print(*masked, **{**kwargs, "markup": False})

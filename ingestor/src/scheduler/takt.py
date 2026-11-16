@@ -258,6 +258,12 @@ class SyncState:
     full_attempted: datetime | None = None
     #: Warum ``next_due`` später liegt als nach dem Takt: ``REASON_WINDOW`` (Abruffenster), sonst ``None``
     reason: str | None = None
+    #: Beginn eines Laufs, der noch nicht beendet ist. Steht er beim Start des Daemons noch da, endete der Prozess
+    #: mitten im Lauf (etwa am Speicherlimit), ohne dass ein Fehlversuch gezählt werden konnte
+    run_started: datetime | None = None
+    #: Die Quelle lief, als der Daemon hart endete; ob sie der Auslöser war, ist offen. Sie läuft bis zu ihrem
+    #: nächsten beendeten Lauf zuletzt und einzeln (``SyncScheduler._recover_aborted``)
+    suspect: bool = False
 
     @classmethod
     def from_sync_config(cls, sync_config: Any) -> SyncState:
@@ -278,6 +284,8 @@ class SyncState:
             last_changes=changes if isinstance(changes, int) and not isinstance(changes, bool) else None,
             full_attempted=_stamp(value.get("full_attempted")),
             reason=value.get("reason") if isinstance(value.get("reason"), str) else None,
+            run_started=_stamp(value.get("run_started")),
+            suspect=value.get("suspect") is True,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -294,6 +302,8 @@ class SyncState:
             "last_changes": self.last_changes,
             "full_attempted": iso(self.full_attempted),
             "reason": self.reason,
+            "run_started": iso(self.run_started),
+            "suspect": self.suspect,
         }
 
     def after_run(
@@ -317,6 +327,8 @@ class SyncState:
         ``window``: Abruffenster der Quelle (``sync_window``, Issue #1186). Liegt der nächste Lauf nach dem Takt
         außerhalb, ist er zu Beginn des nächsten Fensters fällig (``reason`` = ``REASON_WINDOW``); der Abstand
         (``interval_minutes``) bleibt der des Takts.
+
+        Der Lauf ist beendet, gleich mit welchem Ergebnis: ``run_started`` und ``suspect`` entfallen.
         """
         base_minutes, period = schedule.base(finished, meeting_days)
         idle = self.idle_runs if self.base_minutes == base_minutes else 0
@@ -336,6 +348,8 @@ class SyncState:
             last_run=finished,
             last_changes=changes,
             reason=reason,
+            run_started=None,
+            suspect=False,
         )
 
 
