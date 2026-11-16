@@ -534,44 +534,67 @@ export const beschlussLeiste = defineComponent(() => ({
 
 /** Nach dem Austausch der Anwesenheit den Fokus auf dasselbe Bedienelement zurücksetzen (Tastaturbedienung) */
 let fokusNachAustausch = ''
+/**
+ * Die Liste ist ihr eigener Rollbereich und kommt nach jedem Klick neu vom Server: ohne das Merken spränge sie an den
+ * Anfang, und wer weiter unten steht, müsste nach jeder Person neu suchen (Issue #1436).
+ */
+let rollstandNachAustausch = 0
 
 export const anwesenheitsListe = defineComponent(() => ({
   init() {
-    if (!fokusNachAustausch) return
     const auswahl = fokusNachAustausch
+    const rollstand = rollstandNachAustausch
     fokusNachAustausch = ''
-    // Erst nach dem Aufbau fokussieren: Beim Einfügen ist die Liste noch verborgen (x-cloak, x-show), focus() ginge
-    // sonst ins Leere
+    rollstandNachAustausch = 0
+    if (!auswahl && !rollstand) return
+    // Erst nach dem Aufbau: Beim Einfügen ist die Liste noch verborgen (x-cloak, x-show), focus() ginge sonst ins
+    // Leere und der Rollstand ließe sich nicht setzen. Vor dem nächsten Bild, also ohne sichtbaren Sprung.
     const liste = this.$el
-    window.requestAnimationFrame(() => liste.querySelector<HTMLElement>(auswahl)?.focus({ preventScroll: true }))
+    window.requestAnimationFrame(() => {
+      if (rollstand) liste.scrollTop = rollstand
+      if (auswahl) liste.querySelector<HTMLElement>(auswahl)?.focus({ preventScroll: true })
+    })
   },
 
   senden(werte: Record<string, string>) {
     const aktiv = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const id = aktiv?.dataset.id
+    const mitglied = aktiv?.dataset.mitglied
+    const wahl = aktiv?.dataset.wahl ? `[data-wahl="${CSS.escape(aktiv.dataset.wahl)}"]` : ''
     if (id) {
-      const wahl = aktiv?.dataset.wahl ? `[data-wahl="${CSS.escape(aktiv.dataset.wahl)}"]` : ''
       const feld = aktiv?.dataset.feld ? `[data-feld="${CSS.escape(aktiv.dataset.feld)}"]` : ''
       fokusNachAustausch = `${aktiv?.tagName.toLowerCase()}[data-id="${CSS.escape(id)}"]${wahl}${feld}`
+    } else if (mitglied) {
+      // Mitglied ohne Einladung: Nach dem Eintragen steht es mit neuer Kennung in seiner Gruppe
+      fokusNachAustausch = `button[data-mitglied="${CSS.escape(mitglied)}"]${wahl}`
     } else if (aktiv?.dataset.feld) {
       fokusNachAustausch = `select[data-feld="${CSS.escape(aktiv.dataset.feld)}"]`
     }
+    this.rollstandMerken()
     void window.htmx.ajax('post', urls().aktion, { target: '#fs-anwesenheit', swap: 'outerHTML', values: werte })
+  },
+
+  /** Vor jeder Anfrage, die die Liste austauscht (auch „Gast hinzufügen“): wo die Liste gerade steht */
+  rollstandMerken() {
+    // $root ist die Liste; $el wäre in einem Klick das angeklickte Bedienelement
+    rollstandNachAustausch = (this.$root as HTMLElement).scrollTop
   },
 
   /**
    * Ein Klick je Person (Issue #1166): „vor Ort“ und „online“ setzen anwesend samt Teilnahmeart, „entschuldigt“ den
-   * Status; ein Klick auf die schon gewählte Angabe setzt auf abwesend.
+   * Status; ein Klick auf die schon gewählte Angabe setzt auf abwesend. Mitglieder ohne Einladung (`data-mitglied`
+   * ohne `data-id`, Issue #1436) trägt derselbe Klick in die Anwesenheit ein.
    */
   waehlen(el: HTMLElement) {
     const id = el.dataset.id ?? ''
+    const mitglied = el.dataset.mitglied ?? ''
     const wahl = el.dataset.wahl ?? ''
-    if (!id || !wahl) return
+    if ((!id && !mitglied) || !wahl) return
     let werte: Record<string, string>
     if (el.getAttribute('aria-pressed') === 'true') werte = { status: 'absent' }
     else if (wahl === 'excused') werte = { status: 'excused' }
     else werte = { status: 'present', participation_type: wahl }
-    this.senden({ action: 'anwesenheit', attendance_id: id, ...werte })
+    this.senden({ action: 'anwesenheit', ...(id ? { attendance_id: id } : { membership_id: mitglied }), ...werte })
   },
 
   rolle(el: HTMLSelectElement) {
