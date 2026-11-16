@@ -90,8 +90,9 @@ def test_kein_verweis_auf_den_ris_bestand_mit_cascade() -> None:
 def test_gruende_wie_im_vertrag_der_ruecknahme() -> None:
     codes = {code for code, _ in DELETION_REASON_CHOICES}
     assert codes == {REASON_DELETED_AT_SOURCE, REASON_WITHDRAWN, REASON_NOT_PUBLIC, REASON_PRIVACY}
-    # Die Rücknahme mit Ereignis kennt alle außer datenschutz (das verlangt redact, nicht nur eine Markierung)
-    assert codes - {REASON_PRIVACY} == retraction.REASONS
+    # Die Rücknahme mit Ereignis kennt jeden Grund der Markierung; datenschutz meldet sie als redact
+    assert codes == retraction.REASONS
+    assert {grund for grund in codes if retraction.operation_for(grund) == "redact"} == {REASON_PRIVACY}
 
 
 @pytest.fixture
