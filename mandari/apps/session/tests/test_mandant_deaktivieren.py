@@ -326,3 +326,47 @@ class TestLeitstelle:
         tenant_provisioning.set_tenant_active(nord, True, actor="Test")
         wieder = client.get("/session/leitstelle/bezirke/")
         assert {a.tenant.slug for a in wieder.context["accesses"]} == {"nord", "sued"}
+
+
+def test_ruecknahme_waehrend_der_wiederherstellung_bleibt_wirksam(
+    welt: dict[str, Any], django_capture_on_commit_callbacks: Any
+) -> None:
+    from unittest import mock
+
+    tenant = welt["tenant"]
+    tenant_provisioning.set_tenant_active(tenant, False, actor="Test")
+    echt = insight_service._entry_querysets
+
+    def waehrenddessen(body_ids: list[Any]) -> Any:
+        # Die Rücknahmen sind gelesen; jetzt wird der TOP in Session nichtöffentlich. Seine eigene Rücknahme
+        # findet die Zeile im Portal noch als zurückgenommen vor und ändert nichts.
+        SessionOParlTombstone.objects.get_or_create(
+            tenant=tenant,
+            oparl_type="agendaitem",
+            object_id=welt["ids"]["t"],
+            defaults={"object_created_at": timezone.now()},
+        )
+        return echt(body_ids)
+
+    with (
+        mock.patch.object(insight_service, "_entry_querysets", waehrenddessen),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        tenant_provisioning.set_tenant_active(tenant, True, actor="Test")
+
+    eintraege = _neu_geladen(welt["eintraege"])
+    top = next(obj for obj in eintraege if isinstance(obj, OParlAgendaItem))
+    assert top.deleted is True and top.withdrawn_by_publisher
+    assert not any(obj.deleted for obj in eintraege if obj.pk != top.pk)
+
+
+def test_wiederherstellung_ohne_neue_ruecknahme_laesst_alles_stehen(
+    welt: dict[str, Any], django_capture_on_commit_callbacks: Any
+) -> None:
+    tenant = welt["tenant"]
+    tenant_provisioning.set_tenant_active(tenant, False, actor="Test")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        tenant_provisioning.set_tenant_active(tenant, True, actor="Test")
+
+    assert not any(obj.deleted for obj in _neu_geladen(welt["eintraege"]))

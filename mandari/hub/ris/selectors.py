@@ -229,6 +229,14 @@ def meetings_by_external_id(external_ids: Iterable[str]) -> QuerySet[OParlMeetin
     return OParlMeeting.objects.filter(external_id__in=list(external_ids))
 
 
+def meetings_by_external_id_suffix(suffix: str) -> QuerySet[OParlMeeting]:
+    """
+    Sitzungen, deren OParl-Kennung auf ``suffix`` endet: der Spiegel eines Session-Mandanten, dessen Kennungen mit
+    der Adresse der Installation beginnen (``…/session/<slug>/api/oparl/meeting/<id>/``).
+    """
+    return OParlMeeting.objects.filter(external_id__endswith=suffix)
+
+
 # =============================================================================
 # Tagesordnungspunkte
 # =============================================================================

@@ -34,7 +34,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import agenda_service, protocol_lock
-from ..visibility import agenda_item_q, meeting_q, meeting_visible, optional, paper_q
+from ..visibility import agenda_item_q, meeting_q, meeting_visible, optional, paper_q, paper_visible
 
 ROLE_VALUES = {value for value, _ in SessionConsultation.ROLE_CHOICES}
 RESULT_VALUES = {value for value, _ in SessionConsultation.RESULT_CHOICES}
@@ -281,6 +281,19 @@ def schedule_consultation(view, request, consultation):
     # Drehscheibe (Issues #533, #534): neuer TOP auf der Zielsitzung, die neue Nummerierung, die terminierte
     # Station und der Stand der Vorlage
     with transaction.atomic(), hub_events.track(view.session_tenant) as tracked:
+        # Vorlage sperren und frisch lesen: Status und Ö/NÖ können sich seit dem Laden geändert haben. Der TOP
+        # übernimmt die gespeicherte Sichtbarkeit, eine inzwischen zurückgezogene oder für diese Person nicht mehr
+        # sichtbare Vorlage wird nicht terminiert, und gespeichert wird nur der Status – nie der früher gelesene
+        # Stand der übrigen Felder (eine Ö→NÖ-Entscheidung bliebe sonst nicht bestehen).
+        paper.refresh_from_db(
+            from_queryset=SessionPaper.objects.select_for_update(of=("self",)).select_related("tenant")
+        )
+        blocker = agenda_service.scheduling_error(paper)
+        if not blocker and not paper_visible(view.session_permissions, paper):
+            blocker = "Die Vorlage hat sich inzwischen geändert. Bitte laden Sie die Seite neu."
+        if blocker:
+            messages.error(request, blocker)
+            return False
         tracked.paper(paper)
         tracked.agenda(meeting)
         item = SessionAgendaItem.objects.create(
@@ -301,7 +314,7 @@ def schedule_consultation(view, request, consultation):
         # Vorlage gilt mit der ersten Terminierung als „Terminiert“
         if paper.status == "approved":
             paper.status = "scheduled"
-            paper.save()
+            paper.save(update_fields=["status", "updated_at"])
 
     item.refresh_from_db(fields=["number"])
     messages.success(

@@ -327,14 +327,69 @@ def run_privacy_purge(
 # =============================================================================
 
 
-def subject_access_export(tenant, person, *, include_bank=False) -> dict:
+#: Platzhalter für Bezeichnungen, die die abrufende Person nicht sehen darf
+NOT_PUBLIC = "nichtöffentlich"
+MASKED_NOTICE = (
+    "Bezeichnungen nichtöffentlicher Sitzungen, Tagesordnungspunkte und Vorlagen sind in dieser Datei "
+    "ausgeblendet. Die vollständige Auskunft erstellt, wer die Rechte für Nichtöffentliches hat."
+)
+
+
+class _Titles:
+    """
+    Bezeichnungen in der Auskunft nach der Ö/NÖ-Regel der abrufenden Person (``apps.session.visibility``).
+
+    Die Auskunft erstellt die Verwaltung mit dem Einstellungsrecht, nicht zwingend mit dem Recht auf
+    Nichtöffentliches. Was Listen und Detailseiten dieser Person verweigern, nennt auch die Auskunft nicht: Die
+    Zeile bleibt (Datum, Status, eigene Stimme), die Bezeichnung erscheint als „nichtöffentlich“.
+    """
+
+    def __init__(self, permissions: Any) -> None:
+        self.permissions = frozenset(permissions or ())
+        self.masked = False
+
+    def _shown(self, visible: bool, value: str) -> str:
+        if visible:
+            return value
+        self.masked = True
+        return NOT_PUBLIC
+
+    def meeting(self, meeting: Any) -> str:
+        from apps.session.visibility import meeting_visible
+
+        return self._shown(meeting_visible(self.permissions, meeting), meeting.name)
+
+    def item(self, item: Any) -> str:
+        """
+        Betreff eines TOP: Den eines nichtöffentlichen TOP nennt die Auskunft nie (wie bisher); den eines öffentlich
+        markierten TOP einer nichtöffentlichen Sitzung nur mit dem Recht auf nichtöffentliche Sitzungen.
+        """
+        from apps.session.visibility import agenda_item_visible
+
+        if not agenda_item_visible(self.permissions, item):
+            self.masked = True
+            return NOT_PUBLIC
+        return item.name if item.is_public else NOT_PUBLIC
+
+    def paper(self, paper: Any, value: str) -> str:
+        from apps.session.visibility import paper_visible
+
+        return self._shown(paper_visible(self.permissions, paper), value)
+
+
+def subject_access_export(tenant, person, *, include_bank=False, permissions=None) -> dict:
     """
     Alle zu einer Person gespeicherten Daten als Export-Dict (Issue #43).
 
     Bankdaten werden nur mit include_bank=True (manage_allowances)
     entschlüsselt — sonst wird lediglich vermerkt, OB Daten vorliegen.
+
+    ``permissions`` sind die Rechte der abrufenden Person: Ohne das Recht auf nichtöffentliche Sitzungen bzw.
+    Vorlagen erscheinen deren Bezeichnungen als „nichtöffentlich“ (ohne Angabe gilt das für alle).
     """
     from apps.session.models import SessionAllowance, SessionPaper
+
+    titles = _Titles(permissions)
 
     data = {
         "auskunft": {
@@ -389,7 +444,7 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
 
     data["anwesenheiten"] = [
         {
-            "sitzung": a.meeting.name,
+            "sitzung": titles.meeting(a.meeting),
             "gremium": a.meeting.organization.name,
             "datum": timezone.localtime(a.meeting.start).date().isoformat(),
             "status": a.get_status_display(),
@@ -418,7 +473,7 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
 
     data["ladungen"] = [
         {
-            "sitzung": r.dispatch.meeting.name,
+            "sitzung": titles.meeting(r.dispatch.meeting),
             "versandart": r.dispatch.get_dispatch_type_display(),
             "zustellweg": r.get_channel_display(),
             "zustellstatus": r.get_status_display(),
@@ -432,7 +487,7 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
 
     data["sitzungsgelder"] = [
         {
-            "sitzung": allowance.attendance.meeting.name,
+            "sitzung": titles.meeting(allowance.attendance.meeting),
             "datum": timezone.localtime(allowance.attendance.meeting.start).date().isoformat(),
             "betrag": str(allowance.amount),
             "waehrung": allowance.currency,
@@ -445,12 +500,18 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
     ]
 
     data["vorlagen_als_verfasser"] = [
-        {"referenz": paper.reference, "name": paper.name, "datum": paper.date.isoformat() if paper.date else None}
+        {
+            "referenz": titles.paper(paper, paper.reference),
+            "name": titles.paper(paper, paper.name),
+            "datum": paper.date.isoformat() if paper.date else None,
+        }
         for paper in SessionPaper.objects.filter(tenant=tenant, originator_person=person)
     ]
 
     data.update(_allowance_and_device_sections(person))
-    data.update(_vote_sections(person))
+    data.update(_vote_sections(person, titles))
+    if titles.masked:
+        data["auskunft"]["hinweis"] = MASKED_NOTICE
     return data
 
 
@@ -513,21 +574,22 @@ def _allowance_and_device_sections(person: Any) -> dict[str, Any]:
     }
 
 
-def _vote_sections(person: Any) -> dict[str, Any]:
+def _vote_sections(person: Any, titles: _Titles) -> dict[str, Any]:
     """
     Namentliche Stimmen, Umlauf-Rückläufe und Vertretungen der Person (Art. 15 DSGVO).
 
     Die Auskunft erstellt die Verwaltung mit dem Einstellungsrecht, nicht zwingend mit dem Recht auf
-    Nichtöffentliches: Betreffe nichtöffentlicher Tagesordnungspunkte und Umlaufbeschlüsse erscheinen
-    deshalb nur als „nichtöffentlich“, die eigene Stimme und das Datum vollständig.
+    Nichtöffentliches: Namen nichtöffentlicher Sitzungen und Betreffe ihrer Tagesordnungspunkte (ein TOP ist nur
+    öffentlich, wenn auch seine Sitzung es ist) erscheinen ohne dieses Recht nur als „nichtöffentlich“, Betreffe
+    nichtöffentlicher Tagesordnungspunkte und Umlaufbeschlüsse immer; die eigene Stimme und das Datum vollständig.
     """
     return {
         "stimmabgaben": [
             {
-                "sitzung": vote.agenda_item.meeting.name,
+                "sitzung": titles.meeting(vote.agenda_item.meeting),
                 "datum": timezone.localtime(vote.agenda_item.meeting.start).date().isoformat(),
                 "top": vote.agenda_item.number,
-                "betreff": vote.agenda_item.name if vote.agenda_item.is_public else "nichtöffentlich",
+                "betreff": titles.item(vote.agenda_item),
                 "stimme": vote.get_vote_display(),
             }
             for vote in person.votes.select_related("agenda_item__meeting").order_by("agenda_item__meeting__start")
@@ -535,7 +597,7 @@ def _vote_sections(person: Any) -> dict[str, Any]:
         "umlaufbeschluesse": [
             {
                 "umlauf": vote.circular.reference,
-                "betreff": vote.circular.title if vote.circular.is_public else "nichtöffentlich",
+                "betreff": vote.circular.title if vote.circular.is_public else NOT_PUBLIC,
                 "stimme": vote.get_vote_display(),
                 "eingegangen_am": _iso(vote.received_at),
             }
@@ -543,7 +605,7 @@ def _vote_sections(person: Any) -> dict[str, Any]:
         ],
         "vertretungen_in_ladungen": [
             {
-                "sitzung": receipt.dispatch.meeting.name,
+                "sitzung": titles.meeting(receipt.dispatch.meeting),
                 "vertretung_fuer": receipt.substitute_for.display_name,
             }
             for receipt in person.invitation_receipts.filter(substitute_for__isnull=False).select_related(
@@ -551,7 +613,7 @@ def _vote_sections(person: Any) -> dict[str, Any]:
             )
         ],
         "vertreten_durch_in_ladungen": [
-            {"sitzung": receipt.dispatch.meeting.name, "vertretung": receipt.name}
+            {"sitzung": titles.meeting(receipt.dispatch.meeting), "vertretung": receipt.name}
             for receipt in person.substitution_requests.select_related("dispatch__meeting")
         ],
     }

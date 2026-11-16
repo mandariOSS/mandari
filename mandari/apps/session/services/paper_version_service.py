@@ -504,6 +504,15 @@ def restore(
 
     # Drehscheibe (Issue #534): Angaben und Anlagen der wiederhergestellten Fassung
     with transaction.atomic(), hub_events.track(paper.tenant) as tracked:
+        # Vorlage sperren und frisch lesen: Wiederhergestellt wird nur im Entwurf, und Status, Ö/NÖ und Vermerke
+        # bleiben, wie sie gespeichert sind – nicht wie die Anfrage sie vorher gelesen hat (ein gleichzeitiges
+        # Vorlegen oder Nichtöffentlich-Setzen würde sonst zurückgeschrieben)
+        paper.refresh_from_db(
+            from_queryset=SessionPaper.objects.select_for_update(of=("self",)).select_related("tenant")
+        )
+        blocker = restore_blocker(paper)
+        if blocker:
+            raise RestoreRefusedError(blocker)
         tracked.paper(paper)
         latest = Version.objects.filter(paper=paper).order_by("-number").first()
         if latest is None or latest.fingerprint != current_fingerprint(paper):

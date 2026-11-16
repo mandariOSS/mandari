@@ -115,7 +115,20 @@ PAPER_CONTENT_FIELDS = (
     "confidential_text_encrypted",
 )
 PROTOCOL_CONTENT_FIELDS = ("content", "chair_name", "recorder_name", "content_encrypted")
+# Beim TOP zählt alles, was so in der Niederschrift steht oder über Stimmrecht und Beschlussfähigkeit entscheidet:
+# auch Betreff, Nachtrag, Vorlage, Absetzung, Abstimmungsart, Wahl und die Behandlungszeiten
+# (``paper_id`` statt ``paper``: Der Vergleich lädt keine Beziehung nach)
 AGENDA_PROTOCOL_FIELDS = (
+    "name",
+    "number",
+    "is_supplementary",
+    "paper_id",
+    "is_withdrawn",
+    "withdrawn_reason",
+    "voting_method",
+    "is_election",
+    "start_time",
+    "end_time",
     "protocol_note",
     "resolution_text",
     "vote_result",

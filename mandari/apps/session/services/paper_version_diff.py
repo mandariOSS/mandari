@@ -29,8 +29,14 @@ from apps.common.formatting import human_size
 from apps.session.models import SessionPaper, SessionPaperVersion, SessionPaperVersionFile
 
 _TOKEN_RE = re.compile(r"\s+|[^\s]+")
-#: Oberhalb dieser Größe (Wörter alt × Wörter neu) wird ein Absatzblock als Ganzes ersetzt
-_WORD_DIFF_LIMIT = 4_000_000
+#: Aufwandsgrenzen des Vergleichs. Der Aufwand eines Abschnitts ist das Produkt seiner Längen (Zeilen alt × Zeilen
+#: neu bzw. Wörter alt × Wörter neu), nachdem der gemeinsame Anfang und das gemeinsame Ende abgezogen sind. Der
+#: Vergleich der Standardbibliothek braucht bei ungünstigen Texten (viele gleiche kurze Zeilen oder Wörter) ein
+#: Vielfaches davon, und die Rechnung läuft im Thread der Anfrage: Oberhalb der Grenze je Abschnitt und des
+#: Budgets je Textfeld erscheint der geänderte Bereich deshalb als Ganzes ersetzt.
+_LINE_DIFF_LIMIT = 250_000
+_WORD_DIFF_LIMIT = 250_000
+_FIELD_BUDGET = 250_000
 
 TEXT_FIELDS = (
     ("name", "Betreff"),
@@ -63,17 +69,57 @@ def _inserted(text: str) -> str:
     return str(format_html("<ins>{}</ins>", text)) if text else ""
 
 
-def _word_parts(old: str, new: str) -> list[str]:
+class _Budget:
+    """Verbleibender Aufwand für ein Textfeld (Zeilen- und Wortvergleiche zusammen)."""
+
+    def __init__(self, remaining: int = _FIELD_BUDGET) -> None:
+        self.remaining = remaining
+
+    def take(self, cost: int, limit: int) -> bool:
+        """Aufwand verbuchen; False, wenn er die Grenze je Abschnitt oder das restliche Budget übersteigt."""
+        if cost > limit or cost > self.remaining:
+            return False
+        self.remaining -= cost
+        return True
+
+
+def _common_affixes(old: list[str], new: list[str]) -> tuple[int, int]:
+    """Länge des gemeinsamen Anfangs und des gemeinsamen Endes zweier Folgen (ohne Überschneidung)."""
+    limit = min(len(old), len(new))
+    head = 0
+    while head < limit and old[head] == new[head]:
+        head += 1
+    tail = 0
+    while tail < limit - head and old[-1 - tail] == new[-1 - tail]:
+        tail += 1
+    return head, tail
+
+
+def _word_parts(old: str, new: str, budget: _Budget | None = None) -> list[str]:
+    budget = budget or _Budget()
     old_tokens = _TOKEN_RE.findall(old)
     new_tokens = _TOKEN_RE.findall(new)
-    if len(old_tokens) * len(new_tokens) > _WORD_DIFF_LIMIT:
-        return [_deleted(old), _inserted(new)]
-    matcher = difflib.SequenceMatcher(a=old_tokens, b=new_tokens, autojunk=False)
+    # Gemeinsamer Anfang und gemeinsames Ende kosten nichts: Eine kleine Änderung in einem langen Absatz bleibt
+    # wortgenau, auch wenn der ganze Absatz über der Grenze läge
+    head, tail = _common_affixes(old_tokens, new_tokens)
+    old_mid = old_tokens[head : len(old_tokens) - tail]
+    new_mid = new_tokens[head : len(new_tokens) - tail]
     # (gleich?, alt, neu) je Abschnitt
-    chunks = [
-        (tag == "equal", "".join(old_tokens[i1:i2]), "".join(new_tokens[j1:j2]))
-        for tag, i1, i2, j1, j2 in matcher.get_opcodes()
-    ]
+    chunks: list[tuple[bool, str, str]] = []
+    if head:
+        prefix = "".join(old_tokens[:head])
+        chunks.append((True, prefix, prefix))
+    if budget.take(len(old_mid) * len(new_mid), _WORD_DIFF_LIMIT):
+        matcher = difflib.SequenceMatcher(a=old_mid, b=new_mid, autojunk=False)
+        chunks.extend(
+            (tag == "equal", "".join(old_mid[i1:i2]), "".join(new_mid[j1:j2]))
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes()
+        )
+    elif old_mid or new_mid:
+        chunks.append((False, "".join(old_mid), "".join(new_mid)))
+    if tail:
+        suffix = "".join(old_tokens[len(old_tokens) - tail :])
+        chunks.append((True, suffix, suffix))
     # Reiner Leerraum zwischen zwei Änderungen zählt zur Änderung – sonst zerfiele ein
     # umgeschriebener Satz in einzelne Wörter mit „gleichen“ Leerzeichen dazwischen
     merged: list[tuple[bool, str, str]] = []
@@ -96,21 +142,41 @@ def _word_parts(old: str, new: str) -> list[str]:
 
 
 def word_diff(old: str | None, new: str | None) -> SafeString:
-    """Wortgenauer Vergleich als HTML mit ``<del>``/``<ins>``; jedes Textstück ist escaped."""
-    old_lines = _normalize(old).splitlines(keepends=True)
-    new_lines = _normalize(new).splitlines(keepends=True)
-    parts: list[str] = []
-    matcher = difflib.SequenceMatcher(a=old_lines, b=new_lines, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        before = "".join(old_lines[i1:i2])
-        after = "".join(new_lines[j1:j2])
+    """
+    Wortgenauer Vergleich als HTML mit ``<del>``/``<ins>``; jedes Textstück ist escaped.
+
+    Der Aufwand je Aufruf ist begrenzt (``_LINE_DIFF_LIMIT``, ``_WORD_DIFF_LIMIT``, ``_FIELD_BUDGET``): Gleiche
+    Texte und gleiche Zeilen am Anfang und Ende kosten nichts, ein zu großer geänderter Bereich erscheint als
+    Ganzes ersetzt.
+    """
+    old_text = _normalize(old)
+    new_text = _normalize(new)
+    if old_text == new_text:
+        return mark_safe(str(escape(old_text)))  # escaped
+    old_lines = old_text.splitlines(keepends=True)
+    new_lines = new_text.splitlines(keepends=True)
+    budget = _Budget()
+    head, tail = _common_affixes(old_lines, new_lines)
+    old_mid = old_lines[head : len(old_lines) - tail]
+    new_mid = new_lines[head : len(new_lines) - tail]
+    parts: list[str] = [str(escape("".join(old_lines[:head])))]
+    if budget.take(len(old_mid) * len(new_mid), _LINE_DIFF_LIMIT):
+        opcodes = difflib.SequenceMatcher(a=old_mid, b=new_mid, autojunk=False).get_opcodes()
+    else:
+        # Zu viele geänderte Zeilen für einen Zeilenvergleich: der ganze Bereich als ein Abschnitt
+        opcodes = [("replace", 0, len(old_mid), 0, len(new_mid))]
+    for tag, i1, i2, j1, j2 in opcodes:
+        before = "".join(old_mid[i1:i2])
+        after = "".join(new_mid[j1:j2])
         if tag == "equal":
             parts.append(str(escape(before)))
         elif tag == "replace":
-            parts.extend(_word_parts(before, after))
+            parts.extend(_word_parts(before, after, budget))
         else:
             parts.append(_deleted(before))
             parts.append(_inserted(after))
+    if tail:
+        parts.append(str(escape("".join(old_lines[len(old_lines) - tail :]))))
     # Alle Teile sind oben escaped bzw. über format_html entstanden
     return mark_safe("".join(parts))
 
