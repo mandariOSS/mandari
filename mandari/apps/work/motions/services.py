@@ -13,13 +13,17 @@ Key goals:
 import json
 import logging
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 import httpx
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db import DatabaseError, transaction
 from django.db.models import F
+from django.db.models.functions import Greatest
 from django.http import HttpRequest, JsonResponse
+from django.utils import timezone
 
 from apps.common.db_connections import release_idle_thread_connections
 from apps.common.ki_anbieter import KiEndpunkt, endpunkt_fuer_work, laengenlimit_hinweis
@@ -82,6 +86,19 @@ class AIResponse:
             self.suggestions = []
 
 
+@dataclass(frozen=True)
+class _Belegung:
+    """
+    Vor einem Aufruf im Kontingent der Organisation gebuchte Token.
+
+    ``stichtag`` ist der Tag der Buchung: Berichtigung und Rücknahme treffen dieselben Zeilen (Tag, Woche, Monat),
+    auch wenn der Aufruf über Mitternacht läuft. Ohne Organisation gibt es keine Zeilen (``stichtag`` ist ``None``).
+    """
+
+    stichtag: date | None
+    token: int
+
+
 class MotionAIService:
     """
     AI-powered assistance for collaborative document editing.
@@ -114,6 +131,8 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         self.user_id = user_id
         # Nur für Tests (httpx.MockTransport); im Betrieb der Standard-Transport von httpx
         self._transport = transport
+        # Belegung aus ``kontingent_reservieren``, bis ``verbrauch_buchen`` sie auf den echten Verbrauch berichtigt
+        self._belegung: _Belegung | None = None
 
     def _resolve_provider_config(self) -> KiEndpunkt | None:
         """
@@ -125,16 +144,22 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         """
         return endpunkt_fuer_work(self.organization)
 
-    def _check_rate_limit(self) -> tuple[bool, str]:
-        if not self.user_id:
-            return True, ""
-        organization_id = str(self.organization.id) if self.organization else None
-        return AIRateLimiter.check_limit(self.user_id, organization_id=organization_id)
-
     def _increment_rate_limit(self) -> None:
         if self.user_id:
             organization_id = str(self.organization.id) if self.organization else None
             AIRateLimiter.increment(self.user_id, organization_id=organization_id)
+
+    def _reserve_rate_limit(self) -> tuple[bool, str]:
+        """Grenze je Person prüfen und den Aufruf im selben Schritt zählen (``AIRateLimiter.reserve``)."""
+        if not self.user_id:
+            return True, ""
+        organization_id = str(self.organization.id) if self.organization else None
+        return AIRateLimiter.reserve(self.user_id, organization_id=organization_id)
+
+    def _release_rate_limit(self) -> None:
+        if self.user_id:
+            organization_id = str(self.organization.id) if self.organization else None
+            AIRateLimiter.release(self.user_id, organization_id=organization_id)
 
     QUOTA_EXCEEDED_MESSAGE = (
         "KI-Kontingent aufgebraucht — im nächsten Monat wieder verfügbar. "
@@ -175,6 +200,85 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             return False, self.QUOTA_EXCEEDED_MESSAGE
         return True, ""
 
+    def _reserve_org_tokens(self, estimated_tokens: int) -> tuple[bool, str, _Belegung | None]:
+        """
+        Kontingent der Organisation prüfen und ``estimated_tokens`` im selben Schritt buchen.
+
+        Gebucht wird je Zeitraum mit einem UPDATE, das die Grenze als Bedingung trägt: Zwei Anfragen, die zugleich
+        eintreffen, können nicht beide denselben alten Stand sehen. Passt die Schätzung in einen der Zeiträume nicht
+        mehr, bleibt keiner gebucht. Die Transaktion endet vor dem Anbieteraufruf; danach berichtigt
+        ``_adjust_org_tokens`` die Schätzung auf den echten Verbrauch oder nimmt sie zurück.
+        """
+        if not self.organization:
+            return True, "", _Belegung(None, estimated_tokens)
+
+        monthly_limit = self._effective_monthly_limit()
+        if monthly_limit == 0:
+            return False, "KI ist für diese Organisation deaktiviert.", None
+
+        grenzen = (
+            (
+                OrganizationAITokenUsage.PERIOD_DAY,
+                self.organization.ai_token_limit_daily,
+                "Tageslimit für KI-Tokens erreicht.",
+            ),
+            (
+                OrganizationAITokenUsage.PERIOD_WEEK,
+                self.organization.ai_token_limit_weekly,
+                "Wochenlimit für KI-Tokens erreicht.",
+            ),
+            (OrganizationAITokenUsage.PERIOD_MONTH, monthly_limit, self.QUOTA_EXCEEDED_MESSAGE),
+        )
+        stichtag = timezone.localdate()
+        with transaction.atomic():
+            for period_type, limit, meldung in grenzen:
+                if limit is not None and estimated_tokens > limit:
+                    transaction.set_rollback(True)
+                    return False, meldung, None
+                period_start = OrganizationAITokenUsage._period_start(period_type, stichtag)
+                OrganizationAITokenUsage.objects.get_or_create(
+                    organization=self.organization,
+                    period_type=period_type,
+                    period_start=period_start,
+                    defaults={"tokens_used": 0, "requests_count": 0},
+                )
+                zeilen = OrganizationAITokenUsage.objects.filter(
+                    organization=self.organization, period_type=period_type, period_start=period_start
+                )
+                if limit is not None:
+                    zeilen = zeilen.filter(tokens_used__lte=limit - estimated_tokens)
+                if not zeilen.update(
+                    tokens_used=F("tokens_used") + estimated_tokens, requests_count=F("requests_count") + 1
+                ):
+                    transaction.set_rollback(True)
+                    return False, meldung, None
+        return True, "", _Belegung(stichtag, estimated_tokens)
+
+    def _adjust_org_tokens(self, belegung: _Belegung, delta_tokens: int, delta_requests: int = 0) -> None:
+        """Gebuchte Belegung berichtigen (echter Verbrauch statt Schätzung) oder zurücknehmen; nie unter null."""
+        if not self.organization or belegung.stichtag is None or (delta_tokens == 0 and delta_requests == 0):
+            return
+        for period_type in (
+            OrganizationAITokenUsage.PERIOD_DAY,
+            OrganizationAITokenUsage.PERIOD_WEEK,
+            OrganizationAITokenUsage.PERIOD_MONTH,
+        ):
+            OrganizationAITokenUsage.objects.filter(
+                organization=self.organization,
+                period_type=period_type,
+                period_start=OrganizationAITokenUsage._period_start(period_type, belegung.stichtag),
+            ).update(
+                tokens_used=Greatest(F("tokens_used") + delta_tokens, 0),
+                requests_count=Greatest(F("requests_count") + delta_requests, 0),
+            )
+
+    def _belegung_zuruecknehmen(self, belegung: _Belegung) -> None:
+        """Belegte Token zurückgeben; scheitert das an der Datenbank, bleibt die Schätzung gebucht (nie zu wenig)."""
+        try:
+            self._adjust_org_tokens(belegung, -belegung.token, -1)
+        except DatabaseError as exc:
+            logger.warning("KI-Kontingent: Belegung nicht zurückgenommen (%s)", type(exc).__name__)
+
     def get_quota_status(self) -> dict:
         """
         Monats-Kontingent der Organisation für die Anzeige im KI-Panel.
@@ -201,23 +305,39 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             return False
         return not self.organization.ai_enabled or self._effective_monthly_limit() == 0
 
-    def kontingent_pruefen(self, geschaetzte_token: int) -> tuple[bool, str]:
-        """
-        Vor einem Aufruf: Grenze je Person (``AIRateLimiter``) und Token-Kontingent der Organisation (Tag, Woche,
-        Monat) für ``geschaetzte_token``. ``(False, Meldung)``, wenn eine Grenze erreicht ist.
-        """
-        for erlaubt, meldung in (self._check_rate_limit(), self._check_org_token_limits(geschaetzte_token)):
-            if not erlaubt:
-                return False, meldung
-        return True, ""
-
     def verbrauch_buchen(self, total_tokens: int) -> None:
         """
         Nach einem Aufruf, auch einem gescheiterten: Er zählt für die Grenze je Person, seine Token zählen für das
         Kontingent der Organisation.
+
+        Nach ``kontingent_reservieren`` ist die Grenze je Person schon gezählt; die geschätzten Token werden auf den
+        echten Verbrauch berichtigt.
         """
-        self._increment_rate_limit()
-        self._record_token_usage(total_tokens)
+        belegung, self._belegung = self._belegung, None
+        if belegung is None:
+            self._increment_rate_limit()
+            self._record_token_usage(total_tokens)
+            return
+        # Ein Aufruf ohne Verbrauch zählte bisher nicht als Anfrage der Organisation; dabei bleibt es
+        self._adjust_org_tokens(belegung, total_tokens - belegung.token, 0 if total_tokens > 0 else -1)
+
+    def kontingent_reservieren(self, geschaetzte_token: int) -> tuple[bool, str]:
+        """
+        Vor einem Aufruf: Grenze je Person (``AIRateLimiter``) und Token-Kontingent der Organisation (Tag, Woche,
+        Monat) für ``geschaetzte_token`` prüfen und im selben Schritt belegen.
+
+        Der Aufruf zählt damit schon, bevor er zum Anbieter geht: Anfragen, die während einer laufenden Antwort
+        eintreffen, sehen ihn. ``(False, Meldung)``, wenn eine Grenze erreicht ist; dann ist nichts belegt. Danach folgt immer ``verbrauch_buchen``, auch nach einem gescheiterten Aufruf.
+        """
+        erlaubt, meldung = self._reserve_rate_limit()
+        if not erlaubt:
+            return False, meldung
+        erlaubt, meldung, belegung = self._reserve_org_tokens(geschaetzte_token)
+        if not erlaubt:
+            self._release_rate_limit()
+            return False, meldung
+        self._belegung = belegung
+        return True, ""
 
     def _call_api(
         self,
@@ -230,23 +350,42 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             return AIResponse(success=False, error="KI-Funktionen sind in der Demo-Umgebung abgeschaltet.")
         if self.organization is not None and not self.organization.ai_enabled:
             return AIResponse(success=False, error="KI ist für diese Organisation deaktiviert.")
-        allowed, limit_message = self._check_rate_limit()
+        # Prüfen und Zählen in einem Schritt, vor dem Anbieteraufruf: Der Aufruf dauert bis zu 90 s, und Anfragen,
+        # die in dieser Zeit eintreffen, müssen ihn in der Grenze je Person und im Kontingent schon sehen.
+        allowed, limit_message = self._reserve_rate_limit()
         if not allowed:
             return AIResponse(success=False, error=limit_message)
+        # Wie bisher zählt nur eine gelungene Antwort; jeder andere Ausgang gibt die Belegung zurück
+        gezaehlt = False
+        belegung: _Belegung | None = None
+        try:
+            endpunkt = self._resolve_provider_config()
+            if endpunkt is None:
+                return AIResponse(success=False, error=self.NICHT_EINGERICHTET)
+            antwort, belegung, gezaehlt = self._call_endpunkt(endpunkt, messages, max_tokens, temperature)
+            return antwort
+        finally:
+            if not gezaehlt:
+                self._release_rate_limit()
+            if belegung is not None:
+                self._belegung_zuruecknehmen(belegung)
 
-        endpunkt = self._resolve_provider_config()
-        if endpunkt is None:
-            return AIResponse(success=False, error=self.NICHT_EINGERICHTET)
-
+    def _call_endpunkt(
+        self, endpunkt: KiEndpunkt, messages: list[dict], max_tokens: int, temperature: float
+    ) -> tuple[AIResponse, _Belegung | None, bool]:
+        """
+        Anbieteraufruf mit vorab gebuchten Token. Rückgabe: Antwort, noch offene Belegung (der Aufrufer nimmt sie
+        zurück) und ob der Aufruf für die Grenze je Person zählt.
+        """
         # Obergrenze für die Antwortlänge (AISettings.max_output_tokens; 0 = keine)
         if endpunkt.max_output_tokens > 0:
             max_tokens = min(max_tokens, endpunkt.max_output_tokens)
 
         estimated_prompt_tokens = sum(_estimate_tokens(str(m.get("content", ""))) for m in messages)
         estimated_total = estimated_prompt_tokens + max_tokens
-        allowed, budget_message = self._check_org_token_limits(estimated_total)
-        if not allowed:
-            return AIResponse(success=False, error=budget_message)
+        allowed, budget_message, belegung = self._reserve_org_tokens(estimated_total)
+        if not allowed or belegung is None:
+            return AIResponse(success=False, error=budget_message), None, False
 
         # OpenAI-kompatible Chat-Completions; die Adresse ist geprüft (KI_ERLAUBTE_HOSTS)
         payload = {
@@ -288,16 +427,21 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
                 total_tokens,
             )
 
-            # Strong post-check to enforce budget strictly.
-            allowed, budget_message = self._check_org_token_limits(total_tokens)
-            if not allowed:
-                return AIResponse(success=False, error=budget_message)
+            # Die Schätzung auf den echten Verbrauch berichtigen. Ab hier bleibt gebucht, was gebucht ist: Die Token
+            # sind verbraucht, auch wenn das Berichtigen oder die Nachprüfung unten scheitert. Sonst ließe sich
+            # derselbe Aufruf beliebig oft wiederholen, ohne dass das Kontingent ihn je sieht.
+            gebucht, belegung = belegung, None
+            self._adjust_org_tokens(gebucht, total_tokens - gebucht.token)
 
-            self._record_token_usage(total_tokens)
-            self._increment_rate_limit()
+            # Strong post-check to enforce budget strictly: nur wenn der Aufruf mehr verbraucht hat als vorab
+            # gebucht. Sonst hat er das Kontingent nicht über den vorab geprüften Stand hinaus belastet.
+            if total_tokens > gebucht.token:
+                allowed, budget_message = self._check_org_token_limits(0)
+                if not allowed:
+                    return AIResponse(success=False, error=budget_message), None, False
 
             safe_content = AIOutputFilter.filter(content, allow_html=True)
-            return AIResponse(success=True, content=safe_content, total_tokens=total_tokens)
+            return AIResponse(success=True, content=safe_content, total_tokens=total_tokens), None, True
         except httpx.HTTPStatusError as e:
             # Ohne Antworttext: Er kann Teile der Anfrage enthalten
             hinweis = laengenlimit_hinweis(e.response.status_code, e.response.text)
@@ -311,7 +455,7 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
                     endpunkt.modell,
                     max_tokens,
                 )
-                return AIResponse(success=False, error="Die Anfrage ist für das KI-Modell zu lang.")
+                return AIResponse(success=False, error="Die Anfrage ist für das KI-Modell zu lang."), belegung, False
             logger.warning(
                 "KI-Aufruf gescheitert: anbieter=%s host=%s modell=%s status=%s",
                 endpunkt.anbieter,
@@ -319,7 +463,7 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
                 endpunkt.modell,
                 e.response.status_code,
             )
-            return AIResponse(success=False, error=f"KI-Provider Fehler: {e.response.status_code}")
+            return AIResponse(success=False, error=f"KI-Provider Fehler: {e.response.status_code}"), belegung, False
         except Exception as e:
             logger.warning(
                 "KI-Aufruf gescheitert: anbieter=%s host=%s modell=%s fehler=%s",
@@ -328,7 +472,7 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
                 endpunkt.modell,
                 type(e).__name__,
             )
-            return AIResponse(success=False, error="KI-Service nicht verfügbar.")
+            return AIResponse(success=False, error="KI-Service nicht verfügbar."), belegung, False
 
     def improve_text(self, text: str, instruction: str, motion_type: str = "motion", context: str = "") -> AIResponse:
         if not text.strip():

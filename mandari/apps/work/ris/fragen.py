@@ -201,15 +201,17 @@ def beantworten(organization: Any, membership: Any, frage: str, body: Any, *, no
     pruefung = check_message(frage, f"work-{membership.pk}")
     if pruefung.get("blocked"):
         return Antwort(frage=frage, hinweis=str(pruefung.get("message") or KEIN_ZUGANG))
-    dienst = MotionAIService(organization=organization, user_id=membership.user_id)
-    erlaubt, meldung = dienst.kontingent_pruefen(GESCHAETZTE_TOKEN)
-    if not erlaubt:
-        return Antwort(frage=frage, hinweis=meldung)
-
     now = now or timezone.now()
     basis = context_for(body.pk, now=now) if body is not None else None
     if basis is None:
         return Antwort(frage=frage, hinweis=KEINE_RATSDATEN)
+    # Erst jetzt, unmittelbar vor dem Aufruf: Grenze je Person und Kontingent prüfen und im selben Schritt belegen.
+    # Die Antwort dauert bis zu 90 s; Fragen, die in dieser Zeit eintreffen, müssen diese hier schon mitzählen.
+    # Jeder Ausgang danach bucht den Verbrauch (``_verbrauch_buchen``), auch ein Fehlschlag.
+    dienst = MotionAIService(organization=organization, user_id=membership.user_id)
+    erlaubt, meldung = dienst.kontingent_reservieren(GESCHAETZTE_TOKEN)
+    if not erlaubt:
+        return Antwort(frage=frage, hinweis=meldung)
     ctx = WorkToolContext(body_id=basis.body_id, body_name=basis.body_name, now=now, org_slug=organization.slug)
     try:
         ergebnis = process_chat_message(
