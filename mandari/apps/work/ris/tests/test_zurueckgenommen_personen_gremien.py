@@ -199,6 +199,24 @@ def test_verknuepfen_ueber_die_kennung_findet_keine_zurueckgenommene_person(org:
         assert organisation.get_oparl_person_or_404(bodies, daten[f"person_{art}"].pk) == daten[f"person_{art}"]
 
 
+def test_gremienauswahl_und_vorschlaege_am_mitglied_ohne_zurueckgenommene(org: Any, daten: dict[str, Any]) -> None:
+    """Auswahllisten und Vorschläge der Mitgliederverwaltung nennen weder zurückgenommene Gremien noch Mitgliedschaften."""
+    bodies = selectors.bodies_for_organization(org)
+    heute = timezone.now().date()
+
+    assert _namen(organisation.active_committees(bodies, heute)) == GREMIEN
+    OParlOrganization.objects.all().update(end_date=heute - timedelta(days=1))
+    assert _namen(organisation.inactive_committees(bodies, heute)) == GREMIEN
+    OParlOrganization.objects.all().update(end_date=None)
+
+    # Die sichtbare Person sitzt in jedem Gremium: vorgeschlagen werden nur die nicht zurückgenommenen
+    assert _namen(organisation.suggested_committees(daten["person_sichtbar"], bodies, heute)) == GREMIEN
+    OParlMembership.objects.filter(person=daten["person_sichtbar"], organization=daten["gremium_quelle"]).update(
+        deleted=True, external_id=f"{SESSION}/membership/einzeln/"
+    )
+    assert _namen(organisation.suggested_committees(daten["person_sichtbar"], bodies, heute)) == {"Ausschuss sichtbar"}
+
+
 @pytest.mark.parametrize("neu", [False, True], ids=["bisher", "neu"])
 @pytest.mark.parametrize(
     ("art", "adresse", "kennung"),

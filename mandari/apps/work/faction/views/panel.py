@@ -460,12 +460,12 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
 
         from .. import services as faction_services
-        from ..regeln import ProtokollGenehmigtError
+        from ..regeln import PROTOKOLL_GENEHMIGT, ProtokollGenehmigtError
 
         try:
             faction_services.clear_decision(item)
-        except ProtokollGenehmigtError as exc:
-            return HttpResponse(str(exc), status=400)
+        except ProtokollGenehmigtError:
+            return HttpResponse(PROTOKOLL_GENEHMIGT, status=400)
 
         return self._panel_response(request, meeting, item, "Abstimmung entfernt")
 
