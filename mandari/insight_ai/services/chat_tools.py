@@ -383,6 +383,9 @@ def sitzungen_im_zeitraum(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str
             "abgesagt" if meeting.cancelled else None,
         )
         kandidaten.append((zeile, url, f"{titel} ({_when(meeting.start)})"))
+    # Die Tagesordnungen merken ihre Sitzungen und Vorlagen als Quellen; der Stand davor wird gebraucht, falls nicht
+    # alle ausgeliefert werden
+    quellen_vorher, details_vorher = dict(ctx.sources), list(ctx.detail_urls)
     details = [_sitzung_details(ctx, m) for m in sitzungen[:MAX_AGENDAS]] if tagesordnungen else []
 
     def ergebnis(anzahl: int, mit_details: int) -> dict[str, Any]:
@@ -431,6 +434,14 @@ def sitzungen_im_zeitraum(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str
         else:
             anzahl -= 1
         fertig = ergebnis(anzahl, mit_details)
+    if mit_details < len(details):
+        # Quellen nur aus Tagesordnungen, die im Ergebnis stehen: sonst erschiene eine Sitzung als Quelle, deren
+        # Tagesordnung das Modell nie gesehen hat
+        ctx.sources.clear()
+        ctx.sources.update(quellen_vorher)
+        ctx.detail_urls[:] = details_vorher
+        for meeting in sitzungen[:mit_details]:
+            _sitzung_details(ctx, meeting)
     for _zeile, url, name in kandidaten[:anzahl]:
         ctx.note(url, name, "meeting")
     return fertig

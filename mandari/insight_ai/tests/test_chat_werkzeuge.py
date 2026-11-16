@@ -197,6 +197,15 @@ def test_umfangreiche_tagesordnungen_kuerzen_nicht_die_sitzungsliste(
     assert len(knapp.get("tagesordnungen", [])) < 2
     assert "einzeln mit sitzung" in knapp["hinweis_tagesordnung"]
 
+    # Als Quelle mit Einzelheiten gilt nur, was im Ergebnis steht: nicht die Sitzung einer weggefallenen Tagesordnung
+    frisch = context_for(stadt.body.pk, now=JETZT)
+    assert frisch is not None
+    teil = rufe(frisch, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    geliefert = len(teil.get("tagesordnungen", []))
+    assert len(frisch.detail_urls) == geliefert < 2
+    # Die Zeilen der Sitzungen bleiben mögliche Quellen
+    assert all(zeile.split(" | ")[3] in frisch.sources for zeile in teil["sitzungen"])
+
 
 def test_sitzungen_eines_gremiums(ctx: ToolContext, stadt: Musterstadt) -> None:
     ergebnis = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-07", gremium="rat")
