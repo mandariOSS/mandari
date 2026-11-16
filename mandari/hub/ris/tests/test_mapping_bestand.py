@@ -300,6 +300,27 @@ def test_absage_der_quelle_ist_nicht_abgeleitet_und_andere_sitzungen_bleiben(wel
     assert "mandari:cancelledDerived" not in gehalten
 
 
+def test_gremium_das_die_quelle_nicht_ausgibt_bleibt_als_verweis_erhalten(welt: dict[str, Any]) -> None:
+    """Issue #1441: Die Quelle nennt ein Gremium, das sie nicht öffentlich ausgibt; es fehlt im Bestand."""
+    assert "mandari:organizationNotPublished" not in _sitzung_mit(welt)
+
+    gesperrt = f"{RIS}/organization/901"
+    rohdaten = {**welt["meeting"].raw_json, "organization": [welt["organization"].external_id, gesperrt, "", 7]}
+    sitzung = _sitzung_mit(welt, raw_json=rohdaten)
+    # In organization stehen nur Gremien aus dem Bestand, der Verweis der Quelle steht in der Erweiterung
+    assert sitzung["organization"] == [f"{API}/organization/{welt['organization'].pk}"]
+    assert sitzung["mandari:organizationNotPublished"] == [gesperrt]
+
+    # Ein Gremium im Bestand ohne Zuordnung zur Sitzung gilt nicht als fehlend, ein eingebettetes zählt mit seiner
+    # Kennung
+    welt["meeting"].organizations.clear()
+    eingebettet = {"id": f"{RIS}/organization/902", "name": "Aufsichtsrat"}
+    rohdaten = {**welt["meeting"].raw_json, "organization": [welt["organization"].external_id, eingebettet]}
+    ohne_zuordnung = _sitzung_mit(welt, raw_json=rohdaten)
+    assert "organization" not in ohne_zuordnung
+    assert ohne_zuordnung["mandari:organizationNotPublished"] == [f"{RIS}/organization/902"]
+
+
 def test_ende_einer_sitzung_nur_nach_dem_beginn(welt: dict[str, Any]) -> None:
     """Issue #1441: Viele Quellen liefern als Ende das Datum ohne Uhrzeit, also Mitternacht vor dem Beginn."""
     mitternacht = ZEIT.replace(hour=0)
