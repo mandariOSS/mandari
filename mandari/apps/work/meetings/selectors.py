@@ -400,14 +400,34 @@ def find_linkable_document(organization: Organization, membership: Membership, d
     return document
 
 
-def thread_notes(organization: Organization, item_id: Any) -> list[AgendaItemNote]:
-    """Org-lokale Diskussionsnotizen eines TOPs (migrierte ausgeschlossen)."""
+def readable_notes_q(membership: Membership | None) -> Q:
+    """
+    Bedingung für Diskussionsnotizen, die ``membership`` lesen darf.
+
+    Für die Organisation gelten nur die heutigen Sichtbarkeiten. Notizen aus der Zeit vor dem Umbau der
+    Sitzungsvorbereitung können noch einen anderen Wert tragen (früher „Nur ich“): Sie liest nur, wer sie
+    geschrieben hat. Ohne Mitglied oder ohne Autor:in bleiben sie verborgen.
+    """
+    org_wide = Q(visibility__in=[code for code, _label in AgendaItemNote.VISIBILITY_CHOICES])
+    if membership is None:
+        return org_wide
+    return org_wide | Q(author=membership)
+
+
+def thread_notes(
+    organization: Organization, item_id: Any, membership: Membership | None = None
+) -> list[AgendaItemNote]:
+    """
+    Org-lokale Diskussionsnotizen eines TOPs (migrierte ausgeschlossen), soweit ``membership`` sie lesen darf
+    (:func:`readable_notes_q`).
+    """
     return list(
         AgendaItemNote.objects.filter(
             organization=organization,
             agenda_item_id=item_id,
             migrated_to_paper_comment__isnull=True,
         )
+        .filter(readable_notes_q(membership))
         .select_related("author", "author__user")
         .order_by("-is_pinned", "-is_decision", "-created_at")
     )
@@ -718,11 +738,16 @@ def load_preparation_data(organization: Organization, membership: Membership, me
             shared_speeches_by_item.setdefault(sn.agenda_item_id, []).append(sn)
 
     # Org-weite Diskussionsnotizen (nach PaperComment migrierte ausschließen,
-    # sonst Doppelanzeige mit dem Vorlagen-Thread) plus Consulting-Notizen
+    # sonst Doppelanzeige mit dem Vorlagen-Thread) plus Consulting-Notizen. Altnotizen mit einer früheren
+    # Sichtbarkeit zählen nur für die Person, die sie geschrieben hat (wie im Thread).
     notes_by_item: dict[Any, list[AgendaItemNote]] = {}
-    for note in AgendaItemNote.objects.filter(
-        organization=organization, agenda_item__in=agenda_items, migrated_to_paper_comment__isnull=True
-    ).select_related("author", "author__user"):
+    for note in (
+        AgendaItemNote.objects.filter(
+            organization=organization, agenda_item__in=agenda_items, migrated_to_paper_comment__isnull=True
+        )
+        .filter(readable_notes_q(membership))
+        .select_related("author", "author__user")
+    ):
         notes_by_item.setdefault(note.agenda_item_id, []).append(note)
     for item_id, foreign in consulting_notes(organization, agenda_items).items():
         notes_by_item.setdefault(item_id, []).extend(foreign)
