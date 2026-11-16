@@ -177,10 +177,21 @@ class ConsultationUpdateView(ConsultationBaseView):
         # Manuelles Ergebnis nur für Stationen ohne TOP (sonst schreibt der
         # TOP das Ergebnis über das Signal zurück und bleibt führend).
         result = request.POST.get("result", "")
-        new_result = result in RESULT_VALUES and not consultation.agenda_item_id and result != consultation.result
 
         # Drehscheibe (Issue #534): Rolle, Zielsitzung, Entscheidungsbefugnis, Ergebnis
         with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+            # Ergebnis und TOP-Verweis am gespeicherten Stand der Station: Hat eine zweite Anfrage das Ergebnis
+            # inzwischen zurückgenommen oder die Station terminiert, zählt das, nicht der beim Laden gelesene Stand
+            stored = (
+                SessionConsultation.objects.select_for_update(of=("self",))
+                .filter(pk=consultation.pk)
+                .values("result", "agenda_item_id")
+                .first()
+            )
+            if stored is not None:
+                consultation.result = stored["result"]
+                consultation.agenda_item_id = stored["agenda_item_id"]
+            new_result = result in RESULT_VALUES and not consultation.agenda_item_id and result != consultation.result
             if new_result and result != "pending":
                 # Ein Ergebnis setzt eine freigegebene Vorlage voraus: „Angenommen“ an der entscheidenden Station
                 # kennzeichnet die beschlossene Fassung, unveränderlich und nur einmal je Vorlage. Geprüft wird

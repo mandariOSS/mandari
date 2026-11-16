@@ -291,8 +291,10 @@ def record_consultation(
     """
 
     def record() -> SessionPaperVersion:
-        # Frisch aus der Datenbank: Das Objekt am TOP bzw. an der Station kann älter sein als der gespeicherte Stand
-        current = SessionPaper.objects.get(pk=paper.pk)
+        # Frisch aus der Datenbank und unter der Sperre der Vorlage (``_safely`` hält die Transaktion): Das Objekt am
+        # TOP bzw. an der Station kann älter sein als der gespeicherte Stand, und die Freigabe darf zwischen der
+        # Prüfung unten und der Fassung nicht zurückgezogen werden. ``snapshot`` sperrt dieselbe Zeile danach erneut.
+        current = SessionPaper.objects.select_for_update(of=("self",)).get(pk=paper.pk)
         parts = [result_label]
         if consultation is not None:
             parts.append(f"{consultation.organization.name} ({consultation.get_role_display()})")

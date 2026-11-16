@@ -14,9 +14,9 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Weg der Vorlage durch die Gremien — Vorberatung bis Entscheidung.
         </p>
-        {% if consultation_can_schedule and consultation_schedule_blocker and consultations %}
+        {% if consultations and consultation_result_blocker or consultations and consultation_can_schedule and consultation_schedule_blocker %}
         <p class="text-xs text-amber-700 dark:text-amber-400 mt-1" data-testid="terminieren-nach-freigabe">
-            Tagesordnungspunkte lassen sich erst nach der Freigabe der Vorlage anlegen.
+            {% if consultation_can_schedule and consultation_schedule_blocker %}Tagesordnungspunkte lassen sich erst nach der Freigabe der Vorlage anlegen.{% endif %}{% if consultation_result_blocker %} Beratungsergebnisse lassen sich erst nach der Freigabe der Vorlage eintragen.{% endif %}
         </p>
         {% endif %}
     </div>

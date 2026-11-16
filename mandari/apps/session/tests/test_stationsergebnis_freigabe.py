@@ -42,6 +42,8 @@ pytestmark = pytest.mark.django_db
 
 FREIGEGEBEN = ("approved", "scheduled", "completed")
 NICHT_FREIGEGEBEN = ("draft", "review", "withdrawn")
+#: Stände vor der Freigabe: Nur dort ist das Ergebnis von Hand gesperrt
+VOR_DER_FREIGABE = ("draft", "review")
 Version = SessionPaperVersion
 
 
@@ -128,7 +130,22 @@ def test_ergebnis_der_vorberatung_kennzeichnet_nicht(welt: Welt) -> None:
 # =============================================================================
 
 
-@pytest.mark.parametrize("status", NICHT_FREIGEGEBEN)
+@pytest.mark.parametrize("ergebnis", ["withdrawn", "approved"])
+def test_ergebnis_von_hand_an_zurueckgezogener_vorlage(welt: Welt, ergebnis: str) -> None:
+    """Nach dem Rückzug trägt die Verwaltung an den ausstehenden Stationen weiter ein Ergebnis ein, ohne Kennzeichen."""
+    vorlage = welt.vorlage("withdrawn")
+    station = welt.station(vorlage)
+
+    antwort = welt.speichern(station, result=ergebnis)
+    assert antwort.status_code == 302
+    assert "wurde aktualisiert" in _meldungen(antwort)
+    station.refresh_from_db()
+    assert station.result == ergebnis
+    assert Version.objects.filter(paper=vorlage, trigger=Version.TRIGGER_CONSULTATION).count() == 1
+    assert not Version.objects.filter(paper=vorlage, is_resolved=True).exists()
+
+
+@pytest.mark.parametrize("status", VOR_DER_FREIGABE)
 @pytest.mark.parametrize("ergebnis", ["approved", "rejected"])
 def test_kein_ergebnis_von_hand_vor_der_freigabe(welt: Welt, status: str, ergebnis: str) -> None:
     vorlage = welt.vorlage(status)
@@ -136,7 +153,7 @@ def test_kein_ergebnis_von_hand_vor_der_freigabe(welt: Welt, status: str, ergebn
 
     antwort = welt.speichern(station, result=ergebnis)
     assert antwort.status_code == 302
-    assert "ist nicht freigegeben" in _meldungen(antwort)
+    assert "ist noch nicht freigegeben" in _meldungen(antwort)
     station.refresh_from_db()
     assert station.result == "pending"
     assert not Version.objects.filter(paper=vorlage).exists()
@@ -156,7 +173,7 @@ def test_geprueft_wird_der_gespeicherte_stand_der_vorlage(welt: Welt, monkeypatc
 
     monkeypatch.setattr(consultation_views.ConsultationBaseView, "get_consultation", laden_und_zurueckweisen)
     antwort = welt.speichern(station, result="approved")
-    assert "ist nicht freigegeben" in _meldungen(antwort)
+    assert "ist noch nicht freigegeben" in _meldungen(antwort)
     station.refresh_from_db()
     assert station.result == "pending"
     assert not Version.objects.filter(paper=vorlage, is_resolved=True).exists()
@@ -185,7 +202,7 @@ def test_ergebnis_aus_dem_bestand_laesst_sich_im_entwurf_zuruecknehmen(welt: Wel
     assert (station.role, station.result) == ("hearing", "approved")
 
     # Ein anderes Ergebnis wird abgelehnt, zurücknehmen geht
-    assert "ist nicht freigegeben" in _meldungen(welt.speichern(station, result="rejected"))
+    assert "ist noch nicht freigegeben" in _meldungen(welt.speichern(station, result="rejected"))
     station.refresh_from_db()
     assert station.result == "approved"
     assert "wurde aktualisiert" in _meldungen(welt.speichern(station, result="pending"))
@@ -206,10 +223,13 @@ def test_formular_sperrt_ergebnisse_vor_der_freigabe(welt: Welt) -> None:
 
     seite = welt.client.get(welt.url(f"/papers/{vorlage.pk}/")).content.decode()
     assert gesperrt in seite and '<option value="pending" selected>' in seite
+    # Der Grund steht sichtbar auf der Seite, nicht nur als Hinweis am Feld
+    assert "Beratungsergebnisse lassen sich erst nach der Freigabe der Vorlage eintragen." in seite
 
     SessionPaper.objects.filter(pk=vorlage.pk).update(status="approved")
     seite = welt.client.get(welt.url(f"/papers/{vorlage.pk}/")).content.decode()
     assert gesperrt not in seite and '<option value="approved" >' in seite
+    assert "Beratungsergebnisse lassen sich erst nach der Freigabe der Vorlage eintragen." not in seite
 
 
 # =============================================================================
@@ -232,7 +252,7 @@ def test_ergebnis_ohne_top_kennzeichnet_vor_der_freigabe_keine_fassung(welt: Wel
 def test_spaetere_entscheidung_ueber_den_top_erhaelt_die_kennzeichnung(welt: Welt) -> None:
     vorlage = welt.vorlage("draft")
     station = welt.station(vorlage)
-    assert "ist nicht freigegeben" in _meldungen(welt.speichern(station, result="approved"))
+    assert "ist noch nicht freigegeben" in _meldungen(welt.speichern(station, result="approved"))
 
     # Freigabe, Terminierung und Beschluss in der Sitzung
     SessionPaper.objects.filter(pk=vorlage.pk).update(status="scheduled")
