@@ -29,7 +29,7 @@ from apps.tenants.models import (
     Topic,
     UserInvitation,
 )
-from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson
+from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson, withdrawn_q
 
 from .models import DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
 
@@ -454,7 +454,8 @@ def find_matching_persons(user: User, bodies: QuerySet[OParlBody]) -> list[OParl
         )
     elif last:
         query &= Q(family_name__iexact=last) | Q(name__icontains=last)
-    return list(OParlPerson.objects.filter(query)[:5])
+    # Ohne Personen, die mandari Session aus der Veröffentlichung zurückgenommen hat (wie die RIS-Ansicht)
+    return list(OParlPerson.objects.filter(query).exclude(withdrawn_q())[:5])
 
 
 def suggested_committees(

@@ -9,7 +9,8 @@ zusätzlich die Session-Mandanten, die mit diesen Kommunen verknüpft sind.
 Was mandari Session aus der Veröffentlichung zurückgenommen hat (``withdrawn_by_publisher``, etwa eine Sitzung, die
 nicht-öffentlich wurde), zeigt Work wie das Bürgerportal nicht mehr: weder in Listen noch in Suche, Übersicht und
 Beratungsfolge (``withdrawn_q``). Die Detailseite antwortet mit einem neutralen Hinweis (``withdrawn_meeting``,
-``withdrawn_paper``; Issue #853).
+``withdrawn_paper``; Issue #853). Dasselbe gilt für Personen und Gremien samt ihren Mitgliedschaften
+(``withdrawn_person``, ``withdrawn_organization``).
 """
 
 from __future__ import annotations
@@ -79,7 +80,7 @@ def overview_stats(bodies: Bodies) -> dict[str, int]:
     """Kennzahlen der Übersichtsseite (Vorgänge, Sitzungen, Gremien, Personen)."""
     now = timezone.now()
     today = now.date()
-    organizations = OParlOrganization.objects.filter(body__in=bodies)
+    organizations = OParlOrganization.objects.filter(body__in=bodies).exclude(withdrawn_q())
     papers = papers_in_bodies(bodies)
     meetings = meetings_in_bodies(bodies)
     return {
@@ -89,7 +90,7 @@ def overview_stats(bodies: Bodies) -> dict[str, int]:
         "meetings_upcoming": meetings.filter(start__gt=now, cancelled=False).count(),
         "organizations_total": organizations.count(),
         "organizations_active": organizations.filter(_active_filter(today)).count(),
-        "persons_total": OParlPerson.objects.filter(body__in=bodies).count(),
+        "persons_total": OParlPerson.objects.filter(body__in=bodies).exclude(withdrawn_q()).count(),
     }
 
 
@@ -154,7 +155,7 @@ def meeting_years(bodies: Bodies) -> QuerySet[OParlMeeting, date]:
 
 def organizations_for_filter(bodies: Bodies) -> QuerySet[OParlOrganization]:
     """Gremien der Kommunen alphabetisch (Filter-Dropdown)."""
-    return OParlOrganization.objects.filter(body__in=bodies).order_by("name")
+    return OParlOrganization.objects.filter(body__in=bodies).exclude(withdrawn_q()).order_by("name")
 
 
 def agenda_items_with_papers(meeting: OParlMeeting) -> list[dict[str, Any]]:
@@ -171,24 +172,36 @@ def agenda_items_with_papers(meeting: OParlMeeting) -> list[dict[str, Any]]:
 
 
 def organizations_in_bodies(bodies: Bodies) -> QuerySet[OParlOrganization]:
-    """Gremien der Kommunen (Basis für Detail-Lookups)."""
-    return OParlOrganization.objects.filter(body__in=bodies)
+    """Gremien der Kommunen (Basis für Listen und Detail-Lookups), ohne die von Session zurückgenommenen."""
+    return OParlOrganization.objects.filter(body__in=bodies).exclude(withdrawn_q())
+
+
+def organization_in_bodies(bodies: Bodies, organization_id: Any) -> OParlOrganization | None:
+    """Ein Gremium der Kommunen für die Detailseite, ``None`` wenn es das dort nicht gibt oder es zurückgenommen ist."""
+    return organizations_in_bodies(bodies).filter(pk=organization_id).first()
+
+
+def withdrawn_organization(bodies: Bodies, organization_id: Any) -> OParlOrganization | None:
+    """Von Session zurückgenommenes Gremium der Kommunen (für den Hinweis statt der Detailseite), sonst ``None``."""
+    return ris.organizations(bodies).filter(withdrawn_q(), pk=organization_id).first()
 
 
 def _has_any_meeting() -> Exists:
-    return Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
+    return Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")).exclude(withdrawn_q()))
 
 
 def organizations_with_meeting_info(bodies: Bodies) -> QuerySet[OParlOrganization]:
-    """Gremien mit Annotationen ``next_meeting``, ``last_meeting`` und ``has_meetings``."""
+    """Gremien mit Annotationen ``next_meeting``, ``last_meeting`` und ``has_meetings`` (ohne zurückgenommene Sitzungen)."""
     today_start = _start_of_today(timezone.now())
     next_meeting = Subquery(
         OParlMeeting.objects.filter(organizations=OuterRef("pk"), start__gte=today_start, cancelled=False)
+        .exclude(withdrawn_q())
         .order_by("start")
         .values("start")[:1]
     )
     last_meeting = Subquery(
         OParlMeeting.objects.filter(organizations=OuterRef("pk"), start__lt=today_start)
+        .exclude(withdrawn_q())
         .order_by("-start")
         .values("start")[:1]
     )
@@ -228,9 +241,11 @@ def organization_tab_counts(bodies: Bodies) -> dict[str, int]:
 
 
 def organization_members(organization: OParlOrganization) -> dict[str, QuerySet[OParlMembership]]:
-    """Aktive und ehemalige Mitglieder eines Gremiums."""
+    """Aktive und ehemalige Mitglieder eines Gremiums, ohne zurückgenommene Mitgliedschaften und Personen."""
     today = timezone.now().date()
-    memberships = organization.memberships.select_related("person")
+    memberships = (
+        organization.memberships.exclude(withdrawn_q()).exclude(withdrawn_q("person")).select_related("person")
+    )
     return {
         "active": memberships.filter(_active_filter(today)).order_by("person__family_name", "person__name"),
         "past": memberships.filter(end_date__lt=today).order_by("-end_date"),
@@ -255,14 +270,24 @@ def organization_meetings(
 
 
 def persons_in_bodies(bodies: Bodies) -> QuerySet[OParlPerson]:
-    """Personen der Kommunen (Basis für Detail-Lookups)."""
-    return OParlPerson.objects.filter(body__in=bodies)
+    """Personen der Kommunen (Basis für Listen und Detail-Lookups), ohne die von Session zurückgenommenen."""
+    return OParlPerson.objects.filter(body__in=bodies).exclude(withdrawn_q())
+
+
+def person_in_bodies(bodies: Bodies, person_id: Any) -> OParlPerson | None:
+    """Eine Person der Kommunen für die Detailseite, ``None`` wenn es sie dort nicht gibt oder sie zurückgenommen ist."""
+    return persons_in_bodies(bodies).filter(pk=person_id).first()
+
+
+def withdrawn_person(bodies: Bodies, person_id: Any) -> OParlPerson | None:
+    """Von Session zurückgenommene Person der Kommunen (für den Hinweis statt der Detailseite), sonst ``None``."""
+    return ris.persons(bodies).filter(withdrawn_q(), pk=person_id).first()
 
 
 def persons_queryset(bodies: Bodies, *, search: str = "") -> QuerySet[OParlPerson]:
     """Personenliste mit Ratsrolle (falls ein Gremium "Rat" existiert), Suche und Mitgliedschaftszahl."""
     persons = persons_in_bodies(bodies)
-    rat_orgs = OParlOrganization.objects.filter(body__in=bodies, name="Rat")
+    rat_orgs = OParlOrganization.objects.filter(body__in=bodies, name="Rat").exclude(withdrawn_q())
     if rat_orgs.exists():
         council_role = Subquery(
             OParlMembership.objects.filter(person=OuterRef("pk"), organization__in=rat_orgs)
@@ -281,9 +306,11 @@ def persons_queryset(bodies: Bodies, *, search: str = "") -> QuerySet[OParlPerso
 
 
 def person_memberships(person: OParlPerson) -> dict[str, QuerySet[OParlMembership]]:
-    """Aktive und ehemalige Mitgliedschaften einer Person."""
+    """Aktive und ehemalige Mitgliedschaften einer Person, ohne zurückgenommene Mitgliedschaften und Gremien."""
     today = timezone.now().date()
-    memberships = person.memberships.select_related("organization")
+    memberships = (
+        person.memberships.exclude(withdrawn_q()).exclude(withdrawn_q("organization")).select_related("organization")
+    )
     return {
         "active": memberships.filter(_active_filter(today)).order_by("organization__name"),
         "past": memberships.filter(end_date__lt=today).order_by("-end_date"),
@@ -522,6 +549,7 @@ def orm_search(
     meetings = meetings.prefetch_related("organizations").order_by("-start")[:limit]
     organizations = (
         OParlOrganization.objects.filter(body_id__in=ids)
+        .exclude(withdrawn_q())
         .filter(Q(name__icontains=query) | Q(short_name__icontains=query))
         .order_by("name")[:limit]
         if query
@@ -529,6 +557,7 @@ def orm_search(
     )
     persons = (
         OParlPerson.objects.filter(body_id__in=ids)
+        .exclude(withdrawn_q())
         .filter(Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query))
         .order_by("family_name")[:limit]
         if query
