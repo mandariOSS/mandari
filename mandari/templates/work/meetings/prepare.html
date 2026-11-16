@@ -149,7 +149,7 @@
             </div>
             <textarea x-model="orgNotes" rows="3"
                       @input="autoGrow($event.target); queue('org-notes', () => saveOrgNotes())"
-                      x-init="autoGrow($el)"
+                      x-effect="orgNotesOpen && $nextTick(() => autoGrow($el))"
                       class="prep-autogrow w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100"
                       placeholder="Organisatorisches, Absprachen, Hinweise zur ganzen Sitzung..."></textarea>
         </div>

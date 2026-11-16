@@ -1425,6 +1425,9 @@ export const preparationApp = defineComponent(() => {
 
     autoGrow(el: HTMLElement, maxRem = 20): void {
       el.style.height = 'auto'
+      // In einem zugeklappten Bereich misst der Browser 0. Dann bleibt die Höhe offen (es gilt `rows`), sonst
+      // wäre das Feld nach dem Aufklappen nur ein Strich.
+      if (!el.scrollHeight) return
       const max = maxRem * 16
       el.style.height = Math.min(max, el.scrollHeight) + 'px'
       el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
