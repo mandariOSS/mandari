@@ -12,6 +12,7 @@ Features:
 """
 
 import asyncio
+import contextlib
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Mapping
@@ -90,6 +91,8 @@ class FetchResult:
     #: HTTP 403, und die Vergleichsanfrage mit neutralem Client bekam ebenfalls eine Absage: keine Sperre unseres
     #: User-Agents, die Quelle verweigert den Zugriff allen (``HostHealth.forbidden_for_all``, Issue #1086)
     forbidden_for_all: bool = False
+    #: Inhalt einer HTML-Seite (``OParlClient.fetch_page``, Issue #1431); bei JSON-Abrufen leer
+    text: str | None = None
 
 
 #: Grund im Vermerk einer Liste, die die Quelle nicht freigibt (HTTP 403 für alle Clients, Issue #1086)
@@ -415,6 +418,11 @@ class OParlClient:
         # Seite nannte; Wert ist die nicht mehr angefragte Folgeseite (Issue #869). Ohne Eintrag war die Liste ganz.
         self.page_limit_lists: dict[str, str] = {}
 
+        # Hosts, die jede Anfrage per http:// auf dieselbe Adresse per https:// umleiten (Issue #1431): ALLRIS 4 nennt
+        # Kennungen und Folgeseiten mit http://, der Server leitet jede auf https:// um. Nach der ersten solchen
+        # Weiterleitung fragt der Client den Host gleich per https:// an, statt jede Anfrage doppelt zu stellen.
+        self.https_hosts: set[str] = set()
+
         # Caching
         self.etag_cache: dict[str, str] = {}
         self.modified_cache: dict[str, str] = {}
@@ -688,13 +696,54 @@ class OParlClient:
         async with self._semaphore:
             return await self._fetch_with_retry(url, use_cache, skip_wait)
 
+    async def fetch_page(self, url: str) -> FetchResult:
+        """
+        HTML-Seite der Quelle abrufen (Detailseiten für die Ergänzung, Issue #1431): gleicher Takt je Host, gleiche
+        Kennung, robots.txt (Art ``api``) und Ausnahme der Quelle wie beim OParl-Abruf. Der Inhalt steht in
+        ``FetchResult.text``, ``data`` bleibt leer.
+        """
+        if not self._client or not self._semaphore:
+            raise RuntimeError("Client not initialized. Use 'async with' context manager.")
+
+        async with self._semaphore:
+            return await self._fetch_with_retry(url, False, False, as_text=True)
+
+    def https_upgrade(self, url: str) -> str:
+        """Adresse per https://, wenn der Host jede http://-Anfrage dorthin umleitet (``https_hosts``)."""
+        if url.startswith("http://"):
+            parts = urlparse(url)
+            if parts.netloc.lower() in self.https_hosts:
+                return parts._replace(scheme="https").geturl()
+        return url
+
+    def _note_https_redirect(self, requested: str, final: str) -> None:
+        """Merkt den Host, wenn eine Kette nur das Schema von http:// auf https:// geändert hat (``https_hosts``)."""
+        before, after = urlparse(requested), urlparse(final)
+        if (
+            before.scheme == "http"
+            and after.scheme == "https"
+            and before.netloc.lower() == after.netloc.lower()
+            and before.path == after.path
+            and before.query == after.query
+        ):
+            host = before.netloc.lower()
+            if host not in self.https_hosts:
+                self.https_hosts.add(host)
+                console.print(
+                    f"[dim]{host}: leitet http:// auf https:// um, Anfragen ab jetzt gleich per https://[/dim]"
+                )
+
     async def _fetch_with_retry(
         self,
         url: str,
         use_cache: bool,
         skip_wait: bool,
+        as_text: bool = False,
     ) -> FetchResult:
         """Fetch with exponential backoff retry and circuit breaker."""
+        url = self.https_upgrade(url)
+        # Nur bei Seitenabrufen weitergeben: Tests ersetzen ``_do_fetch`` durch Funktionen mit drei Parametern
+        page_mode: dict[str, bool] = {"as_text": True} if as_text else {}
         blocked = await self._robots_blocked(url)
         if blocked is not None:
             return blocked
@@ -707,7 +756,7 @@ class OParlClient:
             # Try to execute through circuit breaker
             for attempt in range(self.max_retries):
                 try:
-                    return await circuit_breaker.call(self._do_fetch, url, use_cache, skip_wait)
+                    return await circuit_breaker.call(self._do_fetch, url, use_cache, skip_wait, **page_mode)
 
                 except CircuitOpenError as e:
                     # Circuit is open - fail fast
@@ -783,11 +832,12 @@ class OParlClient:
         url: str,
         use_cache: bool,
         skip_wait: bool,
+        as_text: bool = False,
     ) -> FetchResult:
-        """Perform the actual HTTP fetch with metrics."""
+        """Perform the actual HTTP fetch with metrics (``as_text``: HTML-Seite statt JSON, ``fetch_page``)."""
         assert self._client is not None
 
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = {"Accept": "text/html,application/xhtml+xml"} if as_text else {}
 
         # Add caching headers
         if use_cache:
@@ -820,6 +870,8 @@ class OParlClient:
             except redirects.RedirectRefusedError as refused:
                 return self._robots_refusal(url, refused.url, refused.decision)
             fetch_time = time.time() - start
+        with contextlib.suppress(RuntimeError):  # Antwort ohne Anfrage (Testattrappen)
+            self._note_https_redirect(url, str(response.request.url))
 
         self.stats.http_requests += 1
         self.stats.http_time += fetch_time
@@ -867,6 +919,15 @@ class OParlClient:
             self.etag_cache[url] = response.headers["ETag"]
         if "Last-Modified" in response.headers:
             self.modified_cache[url] = response.headers["Last-Modified"]
+
+        if as_text:
+            return FetchResult(
+                url=url,
+                data=None,
+                status_code=response.status_code,
+                fetch_time=fetch_time,
+                text=response.text,
+            )
 
         return FetchResult(
             url=url,

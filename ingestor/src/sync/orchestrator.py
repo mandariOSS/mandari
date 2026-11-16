@@ -81,6 +81,9 @@ from src.storage.database import (
 )
 from src.storage.events import start_correlation
 from src.storage.ris_events import content_fingerprint
+from src.sync.html_ergaenzung import FIELDS as ERGAENZUNG_FIELDS
+from src.sync.html_ergaenzung import MARKER_KEY as ERGAENZUNG_MARKER
+from src.sync.html_ergaenzung import HtmlErgaenzung, HtmlErgaenzungConfig
 from src.sync.processor import OParlProcessor, session_location_id
 from src.sync.slices import (
     FILTER_IGNORED_RECHECK,
@@ -1045,6 +1048,8 @@ class SyncOrchestrator:
                     url, missing_lists_of(source_config), missing_list_reasons_of(source_config)
                 )
                 timed_lists = TimedLists(url, timed_lists_of(source_config))
+                # Ergänzung aus Detailseiten (Issue #1431), ein Kontingent für alle Kommunen der Quelle
+                ergaenzung = self._html_ergaenzung(url, source_config, client)
 
                 async def sync_body_wrapper(body_data):
                     async with body_semaphore:
@@ -1058,6 +1063,7 @@ class SyncOrchestrator:
                                 missing_lists=missing_lists,
                                 timed_lists=timed_lists,
                                 slices=slice_run,
+                                ergaenzung=ergaenzung,
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
@@ -1067,6 +1073,8 @@ class SyncOrchestrator:
                     *[sync_body_wrapper(bd) for bd in bodies_data],
                     return_exceptions=False,
                 )
+                if ergaenzung is not None:
+                    console.print(f"[dim]{ergaenzung.summary()}[/dim]")
 
                 # Aggregate results
                 for body_result in body_results:
@@ -1352,6 +1360,7 @@ class SyncOrchestrator:
         missing_lists: MissingLists | None = None,
         timed_lists: TimedLists | None = None,
         slices: SliceRun | None = None,
+        ergaenzung: HtmlErgaenzung | None = None,
     ) -> dict[str, Any]:
         """
         Sync a single body and all its entities.
@@ -1461,6 +1470,7 @@ class SyncOrchestrator:
                 "item_check": item_check,
                 "timed_lists": timed_lists,
                 "slices": body_slices,
+                "ergaenzung": ergaenzung,
             }
 
         # Phase 2 (parallel): Start text extraction as background task
@@ -1878,6 +1888,7 @@ class SyncOrchestrator:
         item_check: BodyItemCheck | None = None,
         timed_lists: TimedLists | None = None,
         slices: BodySlices | None = None,
+        ergaenzung: HtmlErgaenzung | None = None,
     ) -> int:
         """
         Sync all entities of a specific type.
@@ -2034,6 +2045,7 @@ class SyncOrchestrator:
                         # Lauf unveränderte Objekte ohne Zeitstempel erkennt (#122)
                         if timestamps_unreliable(item):
                             item[CONTENT_HASH_FIELD] = content_fingerprint(item)
+                        await self._ergaenze(ergaenzung, entity_type, item)
                         processed = self.processor.process(item, body_external_id)
                         if processed:
                             stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -2086,6 +2098,7 @@ class SyncOrchestrator:
                                 skipped_count += 1
                                 continue
                             item[CONTENT_HASH_FIELD] = item_hash
+                            await self._ergaenze(ergaenzung, entity_type, item)
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -2103,6 +2116,7 @@ class SyncOrchestrator:
 
                         if db_modified is None:
                             # New item: save
+                            await self._ergaenze(ergaenzung, entity_type, item)
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -2113,6 +2127,7 @@ class SyncOrchestrator:
                                     item_check.note_unstored(entity_type, item, server_modified_since)
                         elif item_modified and db_modified and item_modified > db_modified:
                             # Modified item: update (upsert handles ON CONFLICT)
+                            await self._ergaenze(ergaenzung, entity_type, item)
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -2168,6 +2183,37 @@ class SyncOrchestrator:
             )
 
         return total
+
+    def _html_ergaenzung(self, url: str, sync_config: Any, client: OParlClient) -> HtmlErgaenzung | None:
+        """Ergänzung aus Detailseiten für diesen Lauf, wenn die Quelle sie eingeschaltet hat (Issue #1431)."""
+        config = HtmlErgaenzungConfig.parse(sync_config)
+        if config is None:
+            return None
+        storage = self.storage
+
+        async def load_stored(entity_type: str, external_ids: list[str]) -> dict[str, dict[str, Any]]:
+            return await storage.get_html_ergaenzung(
+                entity_type, external_ids, ERGAENZUNG_FIELDS[entity_type], ERGAENZUNG_MARKER
+            )
+
+        console.print(f"[dim]{url}: Ergänzung aus Detailseiten ({config.art}), bis {config.pages_per_run} Seiten[/dim]")
+        return HtmlErgaenzung(
+            config,
+            hosts=[urlparse(url).netloc],
+            fetch_page=client.fetch_page,
+            load_stored=load_stored,
+            deadline_passed=client.deadline_passed,
+        )
+
+    @staticmethod
+    async def _ergaenze(ergaenzung: HtmlErgaenzung | None, entity_type: str, item: dict[str, Any]) -> None:
+        """Objekt aus der Detailseite ergänzen; ein Fehler dabei hält das Objekt nicht auf (Issue #1431)."""
+        if ergaenzung is None:
+            return
+        try:
+            await ergaenzung.ergaenze(entity_type, item)
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[yellow]  Ergänzung für {item.get('id', '?')} übersprungen: {exc}[/yellow]")
 
     async def _list_pages(
         self,

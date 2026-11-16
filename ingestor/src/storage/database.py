@@ -1126,6 +1126,32 @@ class DatabaseStorage:
                 hashes[external_id] = stored_hash
             return hashes
 
+    async def get_html_ergaenzung(
+        self,
+        entity_type: str,
+        external_ids: list[str],
+        fields: tuple[str, ...],
+        marker_key: str,
+    ) -> dict[str, dict[str, Any]]:
+        """
+        Gespeicherte Ergänzung aus Detailseiten (Issue #1431): je Kennung der Vermerk ``marker_key`` und die
+        ergänzbaren Felder ``fields`` aus dem ``raw_json``. Objekte ohne Vermerk fehlen im Ergebnis.
+        """
+        model = _ENTITY_MODEL_MAP.get(entity_type)
+        if not model or not external_ids:
+            return {}
+        columns = [model.raw_json[marker_key], *(model.raw_json[name] for name in fields)]
+        async with self.get_session() as session:
+            stmt = select(model.external_id, *columns).where(
+                model.external_id.in_(external_ids), model.raw_json.has_key(marker_key)
+            )
+            result = await session.execute(stmt)
+            stored: dict[str, dict[str, Any]] = {}
+            for row in result.all():
+                values = dict(zip((marker_key, *fields), row[1:], strict=True))
+                stored[row[0]] = {key: value for key, value in values.items() if value is not None}
+            return stored
+
     async def get_active_external_ids_for_body(
         self,
         entity_type: str,
