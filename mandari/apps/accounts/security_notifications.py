@@ -55,11 +55,12 @@ LOGIN_BLOCKED_INTERVAL = 24 * 60 * 60
 
 def notify(
     user: Any, notification_type: str, title: str, message: str, *, request: Any = None, mail: bool | None = None
-) -> None:
+) -> bool:
     """
     Hinweis anlegen und – bei wichtigen Ereignissen – nach dem Commit per E-Mail melden.
 
-    ``mail`` legt den Versand ausdrücklich fest; ohne Angabe entscheidet die Art (``MAIL_TYPES``).
+    ``mail`` legt den Versand ausdrücklich fest; ohne Angabe entscheidet die Art (``MAIL_TYPES``). ``False``, wenn
+    der Hinweis nicht angelegt werden konnte (nie eine Ausnahme).
     """
     try:
         ip_address, device_info = _client(request)
@@ -73,11 +74,12 @@ def notify(
         )
     except Exception:
         logger.exception("Sicherheitshinweis %s konnte nicht angelegt werden", notification_type)
-        return
+        return False
     email = str(getattr(user, "email", None) or "")
     if (notification_type in MAIL_TYPES if mail is None else mail) and email:
         notification_id = notification.pk
         transaction.on_commit(lambda: send_mail(notification_id))
+    return True
 
 
 def notify_login_blocked(identifier: str, *, request: Any = None) -> None:
@@ -96,12 +98,15 @@ def notify_login_blocked(identifier: str, *, request: Any = None) -> None:
 
     try:
         user = User.objects.filter(email__iexact=normalize_identifier(identifier), is_active=True).first()
-        if user is None or not cache.add(f"login-blocked-notice:{user.pk}", 1, LOGIN_BLOCKED_INTERVAL):
+        if user is None:
+            return
+        reservation = f"login-blocked-notice:{user.pk}"
+        if not cache.add(reservation, 1, LOGIN_BLOCKED_INTERVAL):
             return
     except Exception:
         logger.exception("Hinweis auf gesperrte Anmeldungen konnte nicht vorbereitet werden")
         return
-    notify(
+    created = notify(
         user,
         LOGIN_BLOCKED,
         "Anmeldung vorübergehend gesperrt",
@@ -111,6 +116,12 @@ def notify_login_blocked(identifier: str, *, request: Any = None) -> None:
         request=request,
         mail=queue_enabled("konto.sicherheit"),
     )
+    if not created:
+        # Nicht angelegt: Die Reservierung für den Tag freigeben, sonst bliebe der Hinweis bis morgen ganz aus
+        try:
+            cache.delete(reservation)
+        except Exception:
+            logger.exception("Reservierung des Hinweises auf gesperrte Anmeldungen blieb stehen")
 
 
 def send_mail(notification_id: Any) -> bool:

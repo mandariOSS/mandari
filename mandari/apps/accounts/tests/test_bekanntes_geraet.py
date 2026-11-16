@@ -241,6 +241,27 @@ def test_person_erfaehrt_von_der_sperre_einmal_am_tag(
     assert mail.outbox == []
 
 
+def test_gescheiterter_hinweis_gibt_den_tag_wieder_frei(konto: User, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lässt sich der Hinweis einmal nicht anlegen, kommt er beim nächsten Anlass und nicht erst am Folgetag."""
+    echtes_anlegen = SecurityNotification.objects.create
+    aufrufe = []
+
+    def anlegen(**felder: Any) -> SecurityNotification:
+        aufrufe.append(felder)
+        if len(aufrufe) == 1:
+            raise RuntimeError("Datenbank nicht erreichbar")
+        return echtes_anlegen(**felder)
+
+    monkeypatch.setattr(SecurityNotification.objects, "create", anlegen)
+
+    security_notifications.notify_login_blocked(ADRESSE)
+    assert not SecurityNotification.objects.filter(user=konto).exists()
+
+    security_notifications.notify_login_blocked(ADRESSE)
+    security_notifications.notify_login_blocked(ADRESSE)
+    assert SecurityNotification.objects.filter(user=konto).count() == 1, "danach wieder höchstens einmal am Tag"
+
+
 def test_hinweis_geht_per_mail_wenn_sie_als_auftrag_rausgeht(
     konto: User, settings: Any, django_capture_on_commit_callbacks: Callable[..., Any]
 ) -> None:

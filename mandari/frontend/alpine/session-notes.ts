@@ -25,6 +25,7 @@ import * as Y from 'yjs'
 import type { CollabResult, CollabStatus } from '../editor/collaboration'
 import type { ErwaehnbarePerson } from '../editor/extensions/erwaehnung'
 import { defineComponent } from '../js/alpine/component'
+import { showToast } from '../js/alpine/toast'
 import { readJsonScript } from '../js/json-script'
 import { aktion, notizenAbmelden, notizenAnmelden, vorAnfragenSichern } from './faction-session'
 import { zusammenfuehren } from './notizen-zusammenfuehren'
@@ -480,8 +481,23 @@ export const sitzungsNotizen = defineComponent(() => {
     zugriffGeaendert(grund?: string) {
       if (grund === 'session_ended') {
         // Die Anmeldung gilt nicht mehr (abgemeldet, Sitzung beendet, Passwort an anderer Stelle neu gesetzt), auch
-        // der neue Versuch kam nicht zustande. Kein stummer Lesemodus: Die Seite lädt neu und führt zur Anmeldung.
-        window.location.reload()
+        // der neue Versuch kam nicht zustande. Kein stummer Lesemodus.
+        const offen = ausstehend || ['ungespeichert', 'speichert', 'fehler'].includes(this.status)
+        if (!offen) {
+          // Nichts offen: Die Seite lädt neu und führt zur Anmeldung
+          window.location.reload()
+          return
+        }
+        // Offene Eingabe: Ein Neuladen verwürfe sie, und über die beendete Sitzung lässt sich nichts sichern. Der Text
+        // bleibt stehen; das Speichern über das Formular versucht es weiter („Nicht gespeichert, neuer Versuch
+        // läuft“) und gelingt, sobald die Anmeldung in einem anderen Tab erneuert ist.
+        ausstehend = true
+        this.zumFormular(ausgangAktuell)
+        showToast(
+          'Ihre Anmeldung gilt nicht mehr. Ihr Text bleibt hier stehen und wird gespeichert, sobald Sie sich in einem ' +
+            'anderen Tab neu angemeldet haben.',
+          'warning',
+        )
         return
       }
       // Nach der Genehmigung oder ohne Protokollrecht: nur noch lesen; ohne Zugriff: Verbindung beenden

@@ -362,6 +362,9 @@ export const documentEditor = defineComponent(() => {
     // wird bis dahin nur vorgemerkt, ohne Meldung
     _eigenerStatuswechsel: false,
     _neuladenVorgemerkt: false,
+    // Die Anmeldung endete, während Ungesichertes offen war: Der Text bleibt stehen, das Speichern ohne Verbindung
+    // sichert ihn nach der erneuten Anmeldung; erst danach lädt das Fenster neu
+    _sitzungBeendet: false,
     // Suchen & Ersetzen
     searchOpen: false,
     searchTerm: '',
@@ -825,6 +828,16 @@ export const documentEditor = defineComponent(() => {
             if (this._eigenerStatuswechsel) {
               // Gesichert ist schon, und dieses Fenster lädt gleich selbst neu (#1018)
               this._neuladenVorgemerkt = true
+              return
+            }
+            if (reason === 'session_ended' && this.hasUnsavedChanges()) {
+              // Ungesichertes ginge mit dem Neuladen verloren: Es käme die Anmeldeseite, und über die beendete Sitzung
+              // lässt sich nichts mehr sichern. Der Text bleibt stehen, die Rückfrage beim Verlassen gilt weiter, und
+              // das Speichern ohne Verbindung übernimmt: Es zeigt die abgelaufene Anmeldung an und sichert, sobald sie
+              // in einem anderen Tab erneuert ist. Danach lädt das Fenster neu und ist wieder verbunden.
+              this.collabStatus = 'disconnected'
+              this._sitzungBeendet = true
+              void this.save()
               return
             }
             if (reason === 'session_ended') {
@@ -1715,6 +1728,12 @@ export const documentEditor = defineComponent(() => {
           if (mitText) {
             this._savedSeq = seq
             if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash
+          }
+          if (this._sitzungBeendet && !this.hasUnsavedChanges()) {
+            // Nach dem Ende der Anmeldung ohne Verbindung gesichert: neu laden, damit die Zusammenarbeit wieder steht
+            this._sitzungBeendet = false
+            this.leaveIntentionally()
+            window.setTimeout(() => window.location.reload(), 800)
           }
           return true
         }
