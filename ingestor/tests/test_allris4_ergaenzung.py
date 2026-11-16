@@ -471,3 +471,62 @@ class TestBestand:
         assert "oparl_agenda_items.raw_json ? " in sql
         assert sql.count("oparl_agenda_items.raw_json[") == 4
         assert await speicher.get_html_ergaenzung("unbekannt", ["x"], AGENDA_ITEM_FIELDS, MARKER_KEY) == {}
+
+
+# ---------------------------------------------------------------------------
+# Nachträge aus der Prüfung (CodeRabbit) und Listen, die die Quelle nicht liefert
+# ---------------------------------------------------------------------------
+
+
+class TestNachtraege:
+    def test_ueberschrift_nur_als_ganzes_wort(self):
+        felder = parse_agenda_item_page(
+            seite("1 Punkt", {}, {"Beschluss": ["Beschlussfassung über die Satzung: Der Rat stimmt zu."]})
+        )
+        assert felder is not None
+        assert felder["resolutionText"] == "Beschlussfassung über die Satzung: Der Rat stimmt zu."
+
+    def test_einstimmig_abgelehnt_setzt_keine_zahlen(self):
+        assert parse_vote(["Einstimmig abgelehnt."], "abgelehnt") == {"method": "summary", "result": "rejected"}
+
+    def test_text_direkt_im_block_neben_absaetzen(self):
+        from bs4 import BeautifulSoup
+
+        from src.scrapers.allris4 import _block_lines
+
+        teil = BeautifulSoup(
+            '<div class="docPart"><div>Vorweg<p>Absatz eins</p>dazwischen <b>fett</b><p>Absatz zwei</p></div></div>',
+            "html.parser",
+        ).div
+        assert teil is not None
+        assert _block_lines(teil) == ["Vorweg", "Absatz eins", "dazwischen fett", "Absatz zwei"]
+
+    async def test_kontingent_bei_parallelen_abrufen(self):
+        quelle = Quelle()
+        freigabe = asyncio.Event()
+
+        async def langsam(url: str) -> Antwort:
+            quelle.abrufe.append(url)
+            await freigabe.wait()
+            return Antwort(text=TOP_SEITE)
+
+        lauf = HtmlErgaenzung(
+            HtmlErgaenzungConfig("allris4", 1), hosts=[HOST], fetch_page=langsam, load_stored=quelle.load_stored
+        )
+        aufgaben = [asyncio.create_task(lauf.ergaenze("agendaitem", punkt(n))) for n in (1, 2, 3)]
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        freigabe.set()
+        await asyncio.gather(*aufgaben)
+        assert len(quelle.abrufe) == 1
+        assert (lauf.stats.loaded, lauf.stats.deferred) == (1, 2)
+
+    def test_skip_lists(self):
+        from src.client.source_options import SKIPPABLE_LIST_TYPES, SourceFetchOptions
+        from src.sync.orchestrator import OPTIONAL_LIST_TYPES
+
+        assert SKIPPABLE_LIST_TYPES == OPTIONAL_LIST_TYPES
+        options = SourceFetchOptions.from_sync_config({"skip_lists": ["file", "consultation", "location", "paper", 3]})
+        assert options.skip_lists == frozenset({"file", "consultation", "location"})
+        assert SourceFetchOptions.from_sync_config({"skip_lists": "file"}).skip_lists == frozenset()
+        assert SourceFetchOptions.from_sync_config({}).skip_lists == frozenset()

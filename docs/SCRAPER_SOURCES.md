@@ -773,7 +773,14 @@ Weitere Eigenheiten von ALLRIS 4, die der Ingestor ohne Einstellung behandelt:
   Uhrzeit des Abrufs, und die Liste der Mitgliedschaften ignoriert `modified_since`. Solche Objekte vergleicht der
   Abgleich am Inhalt (`timestamps_unreliable`), sonst schriebe jeder Lauf alle Mitgliedschaften neu.
 - **Listen `files`, `consultations`, `locations`** antworten mit HTTP 500; Dateien und Beratungen stecken
-  eingebettet in Vorlagen und Sitzungen.
+  eingebettet in Vorlagen und Sitzungen. Die Fehlversuche öffneten den Schutzschalter des Hosts und brachen
+  parallel laufende Listen ab (im Erstabgleich die Tagesordnungspunkte nach Seite 6). Abhilfe je Quelle:
+  `sync_config["skip_lists"] = ["file", "consultation", "location"]` – diese optionalen Listen fragt kein Lauf an
+  (nur Typen aus `OPTIONAL_LIST_TYPES`, Pflichtlisten nie).
+- **Personenliste ohne frühere Mandatsträger:** Die Liste der Personen enthält nur einen Teil der Personen, auf
+  die Mitgliedschaften verweisen (Herzogenrath: 189 Personen, 2.344 Mitgliedschaften, davon 1.446 zu nicht
+  gelisteten Personen). Solche Mitgliedschaften speichert der Abgleich nicht; die Personen einzeln nachzuladen
+  ist bewusst nicht vorgesehen (ihre Datensätze enthalten teils private Anschriften).
 
 ### Grenzen
 

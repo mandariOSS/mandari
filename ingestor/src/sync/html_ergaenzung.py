@@ -149,10 +149,13 @@ class HtmlErgaenzung:
         self._load_stored = load_stored
         self._deadline_passed = deadline_passed
         self.stats = ErgaenzungStats()
+        # Begonnene Abrufe (auch laufende): Sitzungen und Vorlagen laufen parallel, das Kontingent wird deshalb vor
+        # dem Abruf ohne dazwischenliegendes ``await`` belegt
+        self._started = 0
 
     @property
     def budget_left(self) -> int:
-        return max(0, self.config.pages_per_run - self.stats.loaded - self.stats.failed)
+        return max(0, self.config.pages_per_run - self._started)
 
     async def ergaenze(self, entity_type: str, item: dict[str, Any]) -> None:
         """
@@ -193,6 +196,7 @@ class HtmlErgaenzung:
             if marker is not None:
                 self._reuse(kind, data, stored, marker)
             return
+        self._started += 1
         fields = await self._load(kind, page, data)
         if fields is None:
             self.stats.failed += 1

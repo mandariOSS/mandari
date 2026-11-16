@@ -113,11 +113,24 @@ SLICE_LIST_TYPES = frozenset(
     {"organization", "person", "membership", "meeting", "paper", "location", "agendaitem", "file", "consultation"}
 )
 MODIFIED_SINCE_MARGIN_KEY = "modified_since_margin_minutes"
+#: Optionale Listen, die der Abgleich dieser Quelle gar nicht anfragt (Issue #1431): etwa Listen, die die Quelle
+#: dauerhaft mit HTTP 500 beantwortet, deren Objekte sie aber eingebettet liefert (ALLRIS 4 in Herzogenrath:
+#: ``files``, ``consultations``, ``locations``). Ohne Eintrag fragt jeder Lauf sie an, und die Fehlversuche öffnen
+#: den Schutzschalter des Hosts für die übrigen Listen. Nur Typen aus ``SKIPPABLE_LIST_TYPES`` (wie
+#: ``OPTIONAL_LIST_TYPES`` im Orchestrator), Pflichtlisten nie.
+SKIP_LISTS_KEY = "skip_lists"
+SKIPPABLE_LIST_TYPES = frozenset({"membership", "agendaitem", "consultation", "file", "location", "legislativeterm"})
 MAX_MODIFIED_SINCE_MARGIN_MINUTES = 7 * 24 * 60
 DEFAULT_WINDOW_TZ = "Europe/Berlin"
 
 
 _PARAM_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,39}$")
+
+
+def _skip_lists(value: Any) -> frozenset[str]:
+    if not isinstance(value, list):
+        return frozenset()
+    return frozenset(name for name in value if isinstance(name, str) and name in SKIPPABLE_LIST_TYPES)
 
 
 def _list_params(value: Any) -> dict[str, str]:
@@ -331,6 +344,8 @@ class SourceFetchOptions:
     full_sync_every_days: int | None = None
     modified_since_margin_minutes: int | None = None
     full_sync_slices: FullSyncSlices | None = None
+    #: Optionale Listen, die der Abgleich nicht anfragt (``skip_lists``, Issue #1431)
+    skip_lists: frozenset[str] = frozenset()
 
     @classmethod
     def from_sync_config(cls, sync_config: Any) -> SourceFetchOptions:
@@ -354,6 +369,7 @@ class SourceFetchOptions:
             full_sync_every_days=_every_days(sync_config.get(FULL_SYNC_EVERY_DAYS_KEY)),
             modified_since_margin_minutes=_margin_minutes(sync_config.get(MODIFIED_SINCE_MARGIN_KEY)),
             full_sync_slices=FullSyncSlices.parse(sync_config.get(FULL_SYNC_SLICES_KEY)),
+            skip_lists=_skip_lists(sync_config.get(SKIP_LISTS_KEY)),
         )
 
     def outside_sync_window(self, now: datetime | None = None) -> bool:

@@ -1454,11 +1454,16 @@ class SyncOrchestrator:
         # index does not keep documents for source-deleted objects.
         es_deletions: dict[str, list[str]] = {}
 
+        # Optionale Listen, die die Quelle nicht angefragt haben will (``skip_lists``, Issue #1431)
+        skip_lists = options.skip_lists if options is not None else frozenset()
+        if skip_lists:
+            console.print(f"[dim]  Listen nicht angefragt (skip_lists): {', '.join(sorted(skip_lists))}[/dim]")
+
         # Helper to build common kwargs for _sync_entity_type
         def sync_kwargs(list_url: str | None, entity_type: str) -> dict:
             return {
                 "client": client,
-                "list_url": list_url,
+                "list_url": None if entity_type in skip_lists else list_url,
                 "entity_type": entity_type,
                 "body_id": body_id,
                 "body_external_id": body_external_id,

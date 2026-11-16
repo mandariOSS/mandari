@@ -25,7 +25,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Comment, Declaration, Doctype, NavigableString, ProcessingInstruction, Tag
 
 #: Ergebnis der Beschlussfassung (``result`` aus OParl, Text von ALLRIS) -> Code von ``mandari:vote.result``
 _RESULT_CODES: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -78,24 +78,48 @@ def basic_data(soup: BeautifulSoup) -> dict[str, str]:
     return data
 
 
+def _clean(text: str) -> str:
+    return _SPACE_RE.sub(" ", text).strip()
+
+
 def _block_lines(node: Tag) -> list[str]:
-    """Text eines Abschnitts als Zeilen: ein Block (Absatz, Listenpunkt, Tabellenzeile) je Zeile, ohne Leerzeilen."""
+    """
+    Text eines Abschnitts als Zeilen in Dokumentreihenfolge: ein Block (Absatz, Listenpunkt, Tabellenzeile) je Zeile,
+    ohne Leerzeilen. Text, der direkt in einem Block mit weiteren Blöcken steht, bildet eigene Zeilen zwischen ihnen.
+    """
     lines: list[str] = []
-    for element in node.find_all(_BLOCKS):
-        if element.find(_BLOCKS) is not None:
-            continue  # nur innerste Blöcke, sonst stünde der Text doppelt da
-        if element.name == "tr":
-            cells = [_SPACE_RE.sub(" ", c.get_text(" ", strip=True)).strip() for c in element.find_all(["td", "th"])]
-            text = " | ".join(cell for cell in cells if cell)
-        else:
-            text = _SPACE_RE.sub(" ", element.get_text(" ", strip=True)).strip()
-        if text:
-            lines.append(text)
-    if not lines:
-        text = _SPACE_RE.sub(" ", node.get_text(" ", strip=True)).strip()
-        if text:
-            lines.append(text)
+    _walk(node, lines)
     return lines
+
+
+def _walk(node: Tag, lines: list[str]) -> None:
+    pending: list[str] = []
+
+    def flush() -> None:
+        text = _clean(" ".join(pending))
+        pending.clear()
+        if text:
+            lines.append(text)
+
+    for child in node.children:
+        if isinstance(child, NavigableString):
+            if not isinstance(child, (Comment, Declaration, Doctype, ProcessingInstruction)):
+                pending.append(str(child))
+            continue
+        if not isinstance(child, Tag) or child.name in ("script", "style"):
+            continue
+        if child.name == "tr":
+            flush()
+            cells = [_clean(cell.get_text(" ", strip=True)) for cell in child.find_all(["td", "th"])]
+            row = " | ".join(cell for cell in cells if cell)
+            if row:
+                lines.append(row)
+        elif child.name in _BLOCKS or child.find(_BLOCKS) is not None:
+            flush()
+            _walk(child, lines)
+        else:
+            pending.append(child.get_text(" ", strip=False))
+    flush()
 
 
 def _sections(soup: BeautifulSoup) -> dict[str, list[str]]:
@@ -120,7 +144,8 @@ def _drop_label(lines: list[str], label: str) -> list[str]:
     if not lines:
         return lines
     first = lines[0]
-    pattern = re.compile(rf"^{re.escape(label)}\s*:?\s*", re.IGNORECASE)
+    # Nur die Überschrift selbst („Beschluss“, „Beschluss:“), nicht ein Wort, das mit ihr beginnt („Beschlussfassung“)
+    pattern = re.compile(rf"^{re.escape(label)}(?:\s*:\s*|\s*$)", re.IGNORECASE)
     if pattern.fullmatch(first):
         return lines[1:]
     stripped = pattern.sub("", first, count=1)
@@ -147,24 +172,26 @@ def result_code(result: Any) -> str | None:
 def parse_vote(lines: list[str], result: Any = None) -> dict[str, Any] | None:
     """
     Abstimmungsergebnis als ``mandari:vote`` (nur Summen): ``{"method": "summary", "yes", "no", "abstain"}`` und,
-    wenn aus ``result`` ablesbar, ``result``. „Einstimmig“ statt einer Zahl lässt ``yes`` offen (die Zahl der
-    Anwesenden nennt die Seite nicht). ``None``, wenn die Seite keine Summe nennt.
+    wenn aus ``result`` ablesbar, ``result``. „Ja-Stimmen: einstimmig“ lässt ``yes`` offen (die Zahl der Anwesenden
+    nennt die Seite nicht) und setzt fehlende Nein-Stimmen und Enthaltungen auf 0. Ein „einstimmig“ an anderer Stelle
+    (etwa „einstimmig abgelehnt“) setzt keine Zahl. ``None``, wenn die Seite keine Summe nennt.
     """
     text = " ".join(lines)
     yes_match, no_match, abstain_match = _YES_RE.search(text), _NO_RE.search(text), _ABSTAIN_RE.search(text)
     unanimous = _UNANIMOUS_RE.search(text) is not None
     if not (yes_match or no_match or abstain_match or unanimous):
         return None
+    unanimous_yes = yes_match is not None and not yes_match.group(1).isdigit()
     vote: dict[str, Any] = {"method": "summary"}
     if yes_match and yes_match.group(1).isdigit():
         vote["yes"] = int(yes_match.group(1))
     if no_match:
         vote["no"] = int(no_match.group(1))
-    elif unanimous:
+    elif unanimous_yes:
         vote["no"] = 0
     if abstain_match:
         vote["abstain"] = int(abstain_match.group(1))
-    elif unanimous:
+    elif unanimous_yes:
         vote["abstain"] = 0
     code = result_code(result)
     if code is not None:
