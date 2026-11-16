@@ -877,6 +877,15 @@ def test_genehmigungs_top_zeigt_das_vorige_protokoll(
     html = client_for(oe_leser.user).get(seite(org, sitzung_laeuft), {"top": str(item.pk)}).content.decode()
     assert f'src="{pdf_oeffentlich}?vorschau"' in html and pdf_url not in html
 
+    # Vereidigt mit vollständiger, ohne öffentliche Fassung: verdeckt keine Vorschau (kein 403, nie die vollständige)
+    nur_voll = make_member(org, [*VORSITZ, "protocols.view_full"], email="voll@example.org")
+    nur_voll.is_sworn_in = True
+    nur_voll.save(update_fields=["is_sworn_in"])
+    assert sitzung.unterlagen(item, nur_voll)[0].oeffentlich_lesbar is False
+    html = client_for(nur_voll.user).get(seite(org, sitzung_laeuft), {"top": str(item.pk)}).content.decode()
+    assert 'src="about:blank"' in html and f'src="{pdf_url}?vorschau"' not in html
+    assert f'data-intern="{pdf_url}?vorschau"' in html
+
     # Die Vorschau bettet das PDF ein, der Download bleibt ein Download
     monkeypatch.setattr(faction_services, "build_faction_protocol_pdf", lambda meeting, internal: b"%PDF-")
     assert client.get(f"{pdf_url}?vorschau")["Content-Disposition"].startswith("inline;")

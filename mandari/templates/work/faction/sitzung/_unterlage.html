@@ -11,8 +11,9 @@
         {% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=o.pk variant='oeffentlich' as pdf_oeffentlich %}
         {% if u.fassung == 'intern' %}
         {% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=o.pk variant='intern' as pdf_intern %}
-        <iframe class="fs-dok-rahmen" src="{% if noe_sichtbar %}{{ pdf_intern }}{% else %}{{ pdf_oeffentlich }}{% endif %}?vorschau"
-                data-oeffentlich="{{ pdf_oeffentlich }}?vorschau" data-intern="{{ pdf_intern }}?vorschau"
+        {# Ohne Recht auf die öffentliche Fassung bleibt die verdeckte Vorschau leer (about:blank), nie die vollständige #}
+        <iframe class="fs-dok-rahmen" src="{% if noe_sichtbar %}{{ pdf_intern }}?vorschau{% elif u.oeffentlich_lesbar %}{{ pdf_oeffentlich }}?vorschau{% else %}about:blank{% endif %}"
+                data-oeffentlich="{% if u.oeffentlich_lesbar %}{{ pdf_oeffentlich }}?vorschau{% else %}about:blank{% endif %}" data-intern="{{ pdf_intern }}?vorschau"
                 x-data :src="$store.noe.sichtbar ? $el.dataset.intern : $el.dataset.oeffentlich"
                 title="{{ u.titel }}: {{ o.title }}" loading="lazy"></iframe>
         {% else %}
