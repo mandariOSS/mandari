@@ -28,6 +28,10 @@ Server → Client
     ``yjs_saved`` (``content_hash`` = Stand, ``gespeichert_um``), ``inhalt`` (gespeicherte Notizen für Lesende),
     ``praesenz`` (``da``/``weg`` einer Verbindung), ``neu_aufbauen`` (``html``, ``vorher``),
     ``reload`` mit ``reason`` ``access_changed``/``access_revoked`` (danach Trennung mit 4403).
+
+Gilt nur die Sitzung der Verbindung nicht mehr (abgemeldet, beendet, neues Passwort), trennt der Server ohne Nachricht
+mit 4440 (``apps.accounts.websocket.CLOSE_SESSION_ENDED``): Der Editor verbindet einmal neu und lädt die Seite neu,
+wenn das nicht gelingt.
 """
 
 from __future__ import annotations
@@ -122,6 +126,8 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         # Nach „neu_aufbauen“ ist der Zustand dieser Verbindung veraltet: nichts mehr speichern
         self.veraltet = False
         self.entzogen = False
+        # Die Zugriffsprüfung ist an der Sitzung gescheitert, nicht am Zugriff der Person: eigener Schließcode
+        self.sitzung_beendet = False
         self._geprueft_um = 0.0
 
     # -- Verbindung ------------------------------------------------------------------------------------------
@@ -281,6 +287,8 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
             return
         if self.stufe != "edit":
             return
+        if not await self._gedrosselt_pruefen():
+            return
         await self.send_json({"type": "awareness", "data": event["data"]})
 
     async def notizen_inhalt(self, event: dict[str, Any]) -> None:
@@ -300,7 +308,7 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         await self.send_json({"type": "inhalt", "html": event["html"]})
 
     async def notizen_neu(self, event: dict[str, Any]) -> None:
-        if self.entzogen:
+        if self.entzogen or not await self._gedrosselt_pruefen():
             return
         # Das Ereignis trägt den neuen und den vorherigen Text der Notizen: vor dem Senden immer neu prüfen, nicht
         # nur alle ZUGRIFF_NEU_PRUEFEN Sekunden. Es ist selten (Speichern ohne Verbindung), die Abfrage also billig.
@@ -313,6 +321,8 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
     async def notizen_praesenz(self, event: dict[str, Any]) -> None:
         # Auch wer gerade da ist (Name, Kürzel), geht nur an Verbindungen mit Zugriff
         if event.get("von") == self.channel_name or self.entzogen or not await self._gedrosselt_pruefen():
+            return
+        if not await self._gedrosselt_pruefen():
             return
         await self.send_json({"type": "praesenz", "art": event["art"], "person": event["person"]})
         if event.get("frage"):
@@ -350,6 +360,13 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
                 await self.channel_layer.group_discard(self.group_name, self.channel_name)
             if self.user_group:
                 await self.channel_layer.group_discard(self.user_group, self.channel_name)
+            if self.sitzung_beendet:
+                # Die Sitzung gilt nicht mehr, das Protokollrecht besteht: Der Editor bleibt nicht schreibgeschützt
+                # stehen, sondern verbindet mit dem Cookie neu, das der Browser jetzt hat
+                from apps.accounts.websocket import CLOSE_SESSION_ENDED
+
+                await self.close(code=CLOSE_SESSION_ENDED)
+                return
             await self.send_json({"type": "reload", "reason": "access_revoked"})
             await self.close(code=4403)
             return
@@ -398,9 +415,13 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         )
         if membership is None or not membership.has_permission("faction.view_public"):
             return None
-        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
-        from apps.accounts.websocket import requirement_open
+        from apps.accounts.websocket import requirement_open, session_valid
 
+        # Sitzung beendet (Abmelden, Geräteliste, neues Passwort): Die Verbindung endet wie der Zugriff über HTTP
+        if not session_valid(self, membership.user):
+            self.sitzung_beendet = True
+            return None
+        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
         if requirement_open(membership.user):
             return None
         # Sitzungsarten (Issue #1239): nur wer die Sitzung sieht; die Prüfung läuft auch während der Verbindung

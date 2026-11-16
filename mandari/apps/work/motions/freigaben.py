@@ -415,8 +415,14 @@ def _role_permissions_changed(sender: Any, instance: Any, action: str, reverse: 
     recheck_open_editors(user_ids=_role_users(instance))
 
 
+def _sessions_ended(sender: Any, user: Any, **kwargs: Any) -> None:
+    """Abgemeldet, Sitzung beendet oder Passwort neu: Die Verbindungen der Person prüfen ihre Sitzung sofort nach."""
+    recheck_open_editors(user_ids=[user.pk])
+
+
 def register() -> None:
     from apps.accounts.models import User
+    from apps.accounts.signals import sessions_ended
     from apps.tenants.models import Membership, Organization, Role
 
     from .models import DocumentFolder, FolderGuestShare, Motion, MotionShare
@@ -443,6 +449,7 @@ def register() -> None:
     post_save.connect(_role_saved, sender=Role, dispatch_uid=f"{uid}_role_save")
     pre_delete.connect(_role_deleting, sender=Role, dispatch_uid=f"{uid}_role_delete")
     post_save.connect(_user_saved, sender=User, dispatch_uid=f"{uid}_user_save")
+    sessions_ended.connect(_sessions_ended, dispatch_uid=f"{uid}_sessions_ended")
     post_save.connect(_organization_saved, sender=Organization, dispatch_uid=f"{uid}_organization_save")
     m2m_changed.connect(
         _role_permissions_changed, sender=Role.permissions.through, dispatch_uid=f"{uid}_role_permissions"

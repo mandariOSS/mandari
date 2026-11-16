@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 # Rate-Limit: höchstens N Meldungen pro IP und Stunde
 MAX_REPORTS_PER_HOUR = 5
+# Längste gespeicherte Beschreibung (Zeichen), wie beim Kontaktformular; das Formular ist ohne Anmeldung erreichbar
+MAX_MESSAGE_LENGTH = 10_000
 
 
 def _client_ip(request):
@@ -43,7 +45,7 @@ class ProblemReportView(View):
         return render(request, self.template_name, context)
 
     def post(self, request):
-        message = request.POST.get("message", "").strip()
+        message = request.POST.get("message", "").strip()[:MAX_MESSAGE_LENGTH]
         error_id = request.POST.get("error_id", "").strip()[:64]
         page_url = request.POST.get("url", "").strip()[:1000]
         browser_info = request.POST.get("browser_info", "").strip()[:2000]

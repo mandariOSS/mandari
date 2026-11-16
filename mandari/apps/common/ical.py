@@ -7,6 +7,7 @@ Einladungs-E-Mails — wiederverwendbar für Session-Ladungen und
 Work-Fraktionssitzungen.
 """
 
+import re
 from datetime import UTC, datetime
 
 from django.utils import timezone
@@ -14,13 +15,28 @@ from django.utils import timezone
 PRODID = "-//mandari//Sitzungsdienst//DE"
 
 
+#: Steuerzeichen (C0 ohne Tabulator, DEL, C1) sowie die Unicode-Zeilen- und Absatztrenner
+_STEUERZEICHEN = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f  ]")
+
+
 def _escape(value: str) -> str:
-    """Text nach RFC 5545 escapen (Backslash, Semikolon, Komma, Zeilenumbruch)."""
+    """
+    Text nach RFC 5545 escapen (Backslash, Semikolon, Komma, Zeilenumbruch).
+
+    Jede Schreibweise eines Zeilenumbruchs wird zu ``\\n``, auch ein einzelnes CR; übrige Steuerzeichen entfallen.
+    Der Text bleibt so im Wert einer Eigenschaft: Mailprogramme und die E-Mail-Bibliothek behandeln auch ein
+    einzelnes CR und weitere Trennzeichen als Zeilenende, und eine neue Zeile wäre eine neue Eigenschaft.
+    """
     if not value:
         return ""
-    return (
-        value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\\n").replace("\n", "\\n")
-    )
+    value = value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+    value = value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+    return _STEUERZEICHEN.sub("", value)
+
+
+def _einzeilig(value: str) -> str:
+    """Wert, der nicht wie Text maskiert wird (Adresse, URL): ohne Zeilenumbrüche und Steuerzeichen."""
+    return _STEUERZEICHEN.sub("", value.replace("\r", "").replace("\n", "").replace("\t", ""))
 
 
 def _fold(line: str) -> str:
@@ -80,10 +96,10 @@ def _vevent_lines(
         lines.append(f"DESCRIPTION:{_escape(description)}")
     if url:
         # URI-Wert (RFC 5545, 3.8.4.6): nicht wie Text maskieren
-        lines.append(f"URL:{url}")
+        lines.append(f"URL:{_einzeilig(url)}")
     if organizer_email:
         cn = f";CN={_escape(organizer_name)}" if organizer_name else ""
-        lines.append(f"ORGANIZER{cn}:mailto:{organizer_email}")
+        lines.append(f"ORGANIZER{cn}:mailto:{_einzeilig(organizer_email)}")
     lines.extend(
         [
             f"SEQUENCE:{sequence}",

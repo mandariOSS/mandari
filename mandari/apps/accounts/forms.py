@@ -134,6 +134,9 @@ class PasswordResetForm(DjangoPasswordResetForm):
 
         Die Textfassung kommt weiterhin aus ``email_template_name`` (gepflegtes ``.txt``). Versand über
         den Mail-Dienst auf dem Weg der Plattform (Mailart ``konto.passwort``).
+
+        Scheitert der Versand, steht das wie bei Django nur im Protokoll: Diese Methode läuft nur für Adressen
+        mit Konto, eine Fehlerseite verriete also, dass es das Konto gibt.
         """
         subject = "".join(render_to_string(subject_template_name, context).splitlines())
         if html_email_template_name:
@@ -142,7 +145,13 @@ class PasswordResetForm(DjangoPasswordResetForm):
             html_body, body = None, render_to_string(email_template_name, context)
 
         mail.send(
-            kind="konto.passwort", subject=subject, body=body, html_body=html_body, from_email=from_email, to=[to_email]
+            kind="konto.passwort",
+            subject=subject,
+            body=body,
+            html_body=html_body,
+            from_email=from_email,
+            to=[to_email],
+            fail_silently=True,
         )
 
 

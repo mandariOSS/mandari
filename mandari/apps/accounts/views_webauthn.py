@@ -18,7 +18,7 @@ from django.views import View
 
 from apps.common.next_url import safe_next_url
 
-from . import security_notifications, webauthn_service
+from . import known_device, security_notifications, webauthn_service
 from .models import User, WebAuthnCredential
 from .services import TwoFactorService
 from .two_factor_policy import POLICY_CACHE_SESSION_KEY
@@ -168,4 +168,5 @@ class LoginVerifyView(View):
         step._log(request, user, success=True)
         complete_login(request, user, bool(data.get("remember")), second_factor=True)
         success_url = LoginView().get_success_url(request, data.get("next") or None)  # type: ignore[no-untyped-call]
-        return JsonResponse({"redirect": success_url})
+        response: HttpResponse = known_device.remember(request, JsonResponse({"redirect": success_url}), user.email)
+        return response

@@ -17,7 +17,8 @@ Mail-Dienst der Plattform (Issue #528): der einzige Einstieg für ausgehende Mai
   eigenes SMTP der Organisation mit Ersatzweg.
 - **Versand als Auftrag:** Passt die Mailart zu ``MAIL_QUEUE`` und läuft das Backend ``journal``,
   landet die Mail verschlüsselt im Postausgang und ein Auftrag der Warteschlange ``mail`` versendet sie
-  mit Wiederholung (``apps.common.mail.outbox``). Sonst – und mit ``sofort=True``, etwa für Testmails,
+  mit Wiederholung (``apps.common.mail.outbox``). Die Mailarten in ``ALWAYS_QUEUED`` gehen mit dem Backend
+  ``journal`` auch ohne ``MAIL_QUEUE`` diesen Weg. Sonst – und mit ``sofort=True``, etwa für Testmails,
   deren Ergebnis die Oberfläche anzeigt – geht sie wie bisher im Aufruf raus. Ebenfalls sofort geht eine
   Mail über das eigene SMTP einer Organisation, die keinen Ersatzweg erlaubt: Ihr Scheitern muss der
   Auslöser sehen (#65), im Auftrag stünde es nur im Protokoll. ``MAIL_QUEUE`` leeren ist der Rückweg; was
@@ -53,9 +54,17 @@ logger = logging.getLogger("apps.common.mail")
 DEFAULT_QUEUE_MAX_BYTES: Final = 20 * 1024 * 1024
 
 
+#: Mailarten, die mit dem Backend ``journal`` immer als Auftrag rausgehen, auch ohne ``MAIL_QUEUE``: Die Antwort
+#: auf „Passwort vergessen“ soll für jede Adresse gleich schnell kommen, und der Versand in der Anfrage liefe nur
+#: für Adressen mit Konto. Dasselbe gilt für Sicherheitshinweise: Den Hinweis auf gesperrte Anmeldungen löst eine
+#: Anmeldung ohne Konto aus, er geht deshalb nur als Auftrag per Mail raus (``security_notifications``); die
+#: übrigen Hinweise halten so auch die Anfrage nicht mehr auf, die sie auslöst.
+ALWAYS_QUEUED: Final = ("konto.passwort", "konto.sicherheit")
+
+
 def queue_enabled(kind: str) -> bool:
     """Geht eine Mail dieser Art als Auftrag raus? ``MAIL_QUEUE`` passt und das Backend ist ``journal``."""
-    muster = getattr(settings, "MAIL_QUEUE", ()) or ()
+    muster = (*ALWAYS_QUEUED, *(getattr(settings, "MAIL_QUEUE", ()) or ()))
     if not any(fnmatchcase(kind, str(m)) for m in muster):
         return False
     from django.tasks import task_backends

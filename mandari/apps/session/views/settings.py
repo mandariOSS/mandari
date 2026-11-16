@@ -21,6 +21,7 @@ from django.views.generic import (
     TemplateView,
 )
 
+from apps.accounts.services import SessionService
 from apps.common.params import uuid_param
 
 from ..models import (
@@ -800,6 +801,9 @@ class InvitationAcceptView(View):
                 email_verified=True,
             )
             login(request, user)
+            # In die Geräteliste wie jede Anmeldung: Dort lässt sich die Sitzung sehen und beenden
+            if request.session.session_key:
+                SessionService.create_session(user, request, request.session.session_key)
 
         from .. import audit
 

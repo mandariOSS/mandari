@@ -19,7 +19,7 @@
 
 import { defineComponent } from '../js/alpine/component'
 import { showToast } from '../js/alpine/toast'
-import { csrfToken } from '../js/csrf'
+import { csrfTokenAktuell } from '../js/csrf'
 import { readJsonScript } from '../js/json-script'
 import type { NoeStore } from './noe-sichtschutz'
 
@@ -91,7 +91,9 @@ export async function aktion(werte: Record<string, string>, keepalive = false): 
     body,
     credentials: 'same-origin',
     keepalive,
-    headers: { 'X-CSRFToken': csrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
+    // Token aus dem Cookie zuerst: Nach einer neuen Anmeldung in einem anderen Tab ist nur das Cookie aktuell, und
+    // ein wiederholtes Speichern der Notizen käme mit dem Token der offenen Seite nicht mehr an
+    headers: { 'X-CSRFToken': csrfTokenAktuell(), 'X-Requested-With': 'XMLHttpRequest' },
   })
 }
 

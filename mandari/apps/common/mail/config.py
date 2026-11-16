@@ -28,7 +28,7 @@ from typing import Any, Final
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 
-from apps.common.mail_backends import SMTP_BACKEND, build_backend
+from apps.common.mail_backends import BEGRENZTES_SMTP_BACKEND, SMTP_BACKEND, build_backend
 
 #: Name der Wege in Protokoll und Metrik
 PLATTFORM: Final = "plattform"
@@ -125,14 +125,15 @@ def organization_backend(organization: Any) -> BaseEmailBackend:
 
     Das Passwort wird nur hier über den Accessor entschlüsselt (Mandantenschlüssel) und nie
     protokolliert. Vor dem Aufbau wird der Server geprüft (``check_smtp_server``), auch für ältere
-    Einstellungen.
+    Einstellungen. Den Server hat die Organisation gewählt, nicht der Betreiber: Die Verbindung läuft deshalb über
+    den begrenzten Client (Antwortgröße, Gesamtdauer, geprüfte Adresse; ``BegrenzterSMTP``).
     """
     from apps.common.org_email import check_smtp_server
 
     port = organization.smtp_port or 587
     check_smtp_server(organization.smtp_host, port)
     return build_backend(
-        SMTP_BACKEND,
+        BEGRENZTES_SMTP_BACKEND,
         host=organization.smtp_host,
         port=port,
         username=organization.smtp_username,

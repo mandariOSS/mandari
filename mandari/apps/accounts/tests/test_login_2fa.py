@@ -243,10 +243,11 @@ class TestSelbstregistrierung:
             reverse("accounts:self_register", kwargs={"org_slug": org.slug}),
             self._data("Opfer@Example.org"),
         )
-        assert response.status_code == 302
-        assert response["Location"].startswith(reverse("accounts:login"))
+        # Dieselbe Antwort wie für eine neue Adresse (test_selbstregistrierung_neutral); übernommen wird nichts
+        assert response.status_code == 200
         assert not is_logged_in(client)
         assert not Membership.objects.filter(user=victim, organization=org).exists()
+        assert User.objects.filter(email__iexact="opfer@example.org").count() == 1
         victim.refresh_from_db()
         assert victim.check_password(PASSWORD)
 
