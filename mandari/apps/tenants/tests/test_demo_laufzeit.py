@@ -96,6 +96,21 @@ def test_erste_angenommene_einladung_startet_die_laufzeit(demo_org: Organization
     assert demo_org.demo_endet_am == ende
 
 
+def test_annahme_als_schon_bestehendes_mitglied_startet_die_laufzeit(
+    demo_org: Organization, mitglied: Membership
+) -> None:
+    """Etwa ein Gast, der danach seine offene Mitglieds-Einladung annimmt (Hinweis aus der Prüfung von #1413)."""
+    admin = fabrik.UserFactory(email="admin@example.org", is_superuser=True)
+    einladung = UserInvitation.create_for_organization(
+        organization=demo_org, email=mitglied.user.email, invited_by=admin
+    )
+
+    services.accept_invitation(einladung, mitglied.user)
+
+    demo_org.refresh_from_db()
+    assert demo_org.demo_endet_am is not None
+
+
 def test_ohne_laufzeit_keine_demo(org: Organization) -> None:
     assert demo.laufzeit_starten(org) is False
     org.refresh_from_db()

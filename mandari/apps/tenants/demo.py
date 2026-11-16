@@ -19,6 +19,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -126,9 +127,14 @@ def hinweis(organization: Organization) -> str:
 def abgelaufene_sperren(jetzt: datetime | None = None) -> list[Organization]:
     """Aktive Demos nach ihrem Ende sperren (nur ``is_active``); liefert die gesperrten Organisationen."""
     jetzt = jetzt or timezone.now()
-    faellig = list(Organization.objects.filter(abgelaufen_q(jetzt), is_active=True).order_by("slug"))
-    if faellig:
-        Organization.objects.filter(pk__in=[org.pk for org in faellig]).update(is_active=False, updated_at=jetzt)
+    # Bedingung unter Zeilensperre prüfen: Eine gleichzeitige Verlängerung im Admin oder eine Übernahme durch die
+    # Bereitstellung wartet und wird danach nicht mehr gesperrt
+    with transaction.atomic():
+        faellig = list(
+            Organization.objects.select_for_update().filter(abgelaufen_q(jetzt), is_active=True).order_by("slug")
+        )
+        if faellig:
+            Organization.objects.filter(pk__in=[org.pk for org in faellig]).update(is_active=False, updated_at=jetzt)
     for org in faellig:
         org.is_active = False
         logger.info("Demo %s abgelaufen (Ende %s), Organisation gesperrt", org.slug, org.demo_endet_am)
