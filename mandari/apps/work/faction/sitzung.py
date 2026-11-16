@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -99,6 +100,15 @@ def darf_anwesenheit_pflegen(membership: Membership, meeting: FactionMeeting) ->
     if meeting.attendance_confirmed_at is not None or meeting.status != "ongoing":
         return False
     return membership.has_permission("faction.manage") or ist_schriftfuehrung(membership, meeting)
+
+
+def darf_teilnahme_nachtragen(membership: Membership, meeting: FactionMeeting) -> bool:
+    """
+    Mitglieder ohne Einladung in die Anwesenheit aufnehmen (Issue #1436): solange die Anwesenheit gepflegt wird, mit
+    ``faction.manage`` wie in der bisherigen Ansicht. Eine Teilnahme macht die Sitzung für das Mitglied sichtbar
+    (:func:`apps.work.faction.sitzungsarten.darf_sehen`); die Schriftführung allein vergibt das nicht.
+    """
+    return darf_anwesenheit_pflegen(membership, meeting) and membership.has_permission("faction.manage")
 
 
 def darf_rollen_setzen(membership: Membership, meeting: FactionMeeting) -> bool:
@@ -966,16 +976,45 @@ class Anwesenheit:
     gesamt: int
     #: Stimmberechtigte zuerst, dann weitere Mitglieder, dann Gäste (Issue #1166); leere Gruppen fehlen
     gruppen: list[AnwesenheitGruppe] = field(default_factory=list)
+    #: Aktive Mitglieder der Organisation ohne Teilnahme an dieser Sitzung, nach Namen (Issue #1436)
+    uebrige: list[Any] = field(default_factory=list)
 
 
-def anwesenheit(meeting: FactionMeeting) -> Anwesenheit:
+def _nach_namen(name: str) -> str:
+    """Sortierschlüssel für angezeigte Namen: ohne Groß- und Kleinschreibung, Umlaute bei ihrem Grundbuchstaben."""
+    return unicodedata.normalize("NFKD", name or "").casefold()
+
+
+def uebrige_mitglieder(meeting: FactionMeeting, teilnahmen: list[Any]) -> list[Membership]:
+    """
+    Aktive Mitglieder der Organisation ohne Gastzugang, die in ``teilnahmen`` nicht vorkommen, nach dem angezeigten
+    Namen (Issue #1436). Das sind Mitglieder, die zur Sitzung nicht eingeladen wurden: Sie gehören nicht zu den
+    Teilnehmenden der Sitzungsart oder kamen erst nach dem Beginn dazu.
+    """
+    from apps.tenants.models import Membership
+
+    vorhanden = {a.membership_id for a in teilnahmen if a.membership_id}
+    qs = (
+        Membership.objects.filter(organization_id=meeting.organization_id, is_active=True, is_guest=False)
+        .exclude(pk__in=vorhanden)
+        .select_related("user")
+        .prefetch_related("roles")
+    )
+    return sorted(qs, key=lambda m: _nach_namen(m.user.get_display_name()))
+
+
+def anwesenheit(meeting: FactionMeeting, *, mit_uebrigen: bool = False) -> Anwesenheit:
     """
     Teilnahmen (Mitglieder, dann Gäste), wie viele Mitglieder anwesend sind, und die Gruppen der Liste.
 
     Gruppen (Issue #1166): „Stimmberechtigt“ nach derselben Regel wie die Beschlussfähigkeit
     (:func:`.quorum.stimmberechtigt`, die Administrator-Rolle allein gibt kein Stimmrecht), dann „Weitere Mitglieder“,
-    dann „Gäste“, je nach Namen. Rollen und Rechte sind vorgeladen, ohne eigene Abfragen je Teilnahme. In einer
-    Sitzungsart ohne Abstimmungen (Issue #1240) stehen alle Mitglieder in einer Gruppe „Mitglieder“.
+    dann „Gäste“. Rollen und Rechte sind vorgeladen, ohne eigene Abfragen je Teilnahme. In einer Sitzungsart ohne
+    Abstimmungen (Issue #1240) stehen alle Mitglieder in einer Gruppe „Mitglieder“.
+
+    Reihenfolge (Issue #1436): Die Gruppen sind nach dem angezeigten Namen sortiert (Vorname zuerst), so wie man die
+    Liste liest. ``teilnahmen`` bleibt nach Nachnamen, in dieser Reihenfolge nennt die Niederschrift die Personen.
+    ``mit_uebrigen`` liefert dazu die aktiven Mitglieder ohne Teilnahme (:func:`uebrige_mitglieder`).
     """
     from .quorum import stimmberechtigt
 
@@ -997,11 +1036,17 @@ def anwesenheit(meeting: FactionMeeting) -> Anwesenheit:
         # Sitzungsart ohne Abstimmungen (Issue #1240): ohne Stimmrecht keine Trennung der Mitglieder
         aufteilung = [("mitglieder", "Mitglieder", mitglieder)]
     gruppen = [
-        AnwesenheitGruppe(schluessel, titel, liste)
+        AnwesenheitGruppe(schluessel, titel, sorted(liste, key=lambda a: _nach_namen(a.get_display_name())))
         for schluessel, titel, liste in (*aufteilung, ("gaeste", "Gäste", gaeste))
         if liste
     ]
-    return Anwesenheit(teilnahmen, sum(1 for a in mitglieder if a.status == "present"), len(mitglieder), gruppen)
+    return Anwesenheit(
+        teilnahmen,
+        sum(1 for a in mitglieder if a.status == "present"),
+        len(mitglieder),
+        gruppen,
+        uebrige_mitglieder(meeting, mitglieder) if mit_uebrigen else [],
+    )
 
 
 def rollen_auswahl(organization: Organization) -> list[Membership]:
@@ -1039,6 +1084,42 @@ def anwesenheit_setzen(meeting: FactionMeeting, attendance_id: Any, *, status: s
         return False
     teilnahme.save(update_fields=felder)
     return True
+
+
+def teilnahme_nachtragen(meeting: FactionMeeting, membership_id: Any, *, status: str, art: str) -> bool:
+    """
+    Aktives Mitglied der Organisation ohne Einladung in die Anwesenheit der Sitzung aufnehmen und zugleich Status
+    und Teilnahmeart setzen (Issue #1436). Hat das Mitglied inzwischen eine Teilnahme, wird nur sie gesetzt.
+
+    ``False`` bei unbekannter Kennung, fremder Organisation, inaktivem Mitglied, Gastzugang oder ohne gültigen
+    Status. Die Sitzung ist währenddessen gesperrt, damit zwei Klicks nicht zwei Teilnahmen anlegen. Das Recht
+    (:func:`darf_teilnahme_nachtragen`) prüft der Aufrufer.
+    """
+    from apps.tenants.models import Membership
+
+    from . import agenda
+    from .models import FactionAttendance
+
+    pk = _kennung(membership_id)
+    if pk is None or status not in ANWESENHEIT_STATUS:
+        return False
+    mitglied = Membership.objects.filter(
+        pk=pk, organization_id=meeting.organization_id, is_active=True, is_guest=False
+    ).first()
+    if mitglied is None:
+        return False
+    with transaction.atomic():
+        agenda.lock_meeting(meeting)
+        teilnahme = meeting.attendances.filter(membership=mitglied).first()
+        if teilnahme is None:
+            werte: dict[str, Any] = {"status": status}
+            if status == "present":
+                werte["checked_in_at"] = timezone.now()
+            if art in dict(FactionAttendance.PARTICIPATION_TYPE_CHOICES):
+                werte["participation_type"] = art
+            FactionAttendance.objects.create(meeting=meeting, membership=mitglied, **werte)
+            return True
+    return anwesenheit_setzen(meeting, teilnahme.pk, status=status, art=art)
 
 
 def gast_hinzufuegen(meeting: FactionMeeting, name: str) -> Any:
