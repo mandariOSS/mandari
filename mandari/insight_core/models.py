@@ -190,7 +190,11 @@ class SourceDeletionModel(CanonicalIdModel):
         """
         paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
         if isinstance(self, OParlPaper | OParlFile) and paper_id:
-            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(
+            # Ohne Bedingung auf eine vorhandene Zusammenfassung: So sperrt das UPDATE die Zeile des Vorgangs in jedem
+            # Fall. Speichert gerade jemand eine Zusammenfassung (``summary_store.sperren``, ``speichern``), wartet es
+            # auf dessen Transaktion und verwirft danach auch die eben gespeicherte. Mit der Bedingung träfe es keine
+            # Zeile, wartete nicht, und eine Zusammenfassung aus der zurückgenommenen Anlage bliebe stehen.
+            OParlPaper.objects.filter(pk=paper_id).update(
                 summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
             )
             if isinstance(self, OParlPaper):

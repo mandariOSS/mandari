@@ -36,6 +36,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models.functions import Substr
 from django.utils import timezone
 
@@ -287,23 +288,33 @@ class SummaryService:
             # Save to paper if requested – nicht, wenn inzwischen neuer Text vorliegt: Das Abonnement hätte die
             # Zusammenfassung verworfen, sie stammt aus dem älteren Text
             if save:
-                if self._text_changed_since(paper, started_at):
-                    logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
-                else:
-                    paper.summary = summary
-                    paper.summary_einfach = einfach or None
-                    paper.summary_stand = vorbereitung.stand
-                    paper.summary_prompt_fassung = PROMPT_FASSUNG
-                    paper.save(
-                        update_fields=[
-                            "summary",
-                            "summary_hinweis",
-                            "summary_einfach",
-                            "summary_stand",
-                            "summary_prompt_fassung",
-                        ]
-                    )
-                    logger.info(f"Summary saved to paper {paper.id}")
+                from insight_core.services import summary_store
+
+                # Prüfen und Speichern unter der Sperre des Vorgangs. Zwischen der Prüfung oben und dem Speichern
+                # liegen weitere Schritte; eine Rücknahme in dieser Zeit fände noch keine Zusammenfassung vor, die
+                # sie verwerfen könnte, und das Speichern legte danach eine ab, die Inhalte der zurückgenommenen
+                # Anlage enthalten kann. Die Rücknahme schreibt dieselbe Zeile (``_forget_summaries``): Entweder
+                # ist sie abgeschlossen und die Prüfung hier sieht sie, oder sie wartet und verwirft danach.
+                with transaction.atomic():
+                    if not summary_store.sperren(paper.pk) or self._withdrawn_since(paper, started):
+                        raise SummaryRevokedError("Vorgang oder Anlage wurde während der Erstellung zurückgenommen.")
+                    if self._text_changed_since(paper, started_at):
+                        logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
+                    else:
+                        paper.summary = summary
+                        paper.summary_einfach = einfach or None
+                        paper.summary_stand = vorbereitung.stand
+                        paper.summary_prompt_fassung = PROMPT_FASSUNG
+                        paper.save(
+                            update_fields=[
+                                "summary",
+                                "summary_hinweis",
+                                "summary_einfach",
+                                "summary_stand",
+                                "summary_prompt_fassung",
+                            ]
+                        )
+                        logger.info(f"Summary saved to paper {paper.id}")
 
             return summary
 

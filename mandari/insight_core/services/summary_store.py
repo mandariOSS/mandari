@@ -347,6 +347,19 @@ def stichprobe(kommune_id: Any, *, anzahl: int, startwert: str, bis: date | None
     return [gefunden[kennung] for kennung in kennungen if kennung in gefunden]
 
 
+def sperren(vorgang_id: Any) -> bool:
+    """
+    Sperrt die Zeile des Vorgangs bis zum Ende der laufenden Transaktion; ``False``, wenn es ihn nicht mehr gibt.
+
+    Wer eine Zusammenfassung speichert, prüft unter dieser Sperre, ob der Vorgang und die verwendeten Anlagen noch
+    gelten (Erstellung auf Abruf, ``insight_ai.services.summarizer``). Eine Rücknahme schreibt dieselbe Zeile, auch
+    wenn noch keine Zusammenfassung da ist (``SourceDeletionModel._forget_summaries``): Ist sie abgeschlossen, sieht
+    die Prüfung sie; läuft sie noch, wartet eine der beiden Seiten, und die Rücknahme verwirft am Ende auch eine
+    eben gespeicherte Zusammenfassung. Nur innerhalb von ``transaction.atomic()`` aufrufen.
+    """
+    return OParlPaper.objects.select_for_update().filter(pk=vorgang_id).values_list("pk", flat=True).first() is not None
+
+
 def speichern(
     vorgang_id: Any,
     zusammenfassung: str,
