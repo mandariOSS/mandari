@@ -156,11 +156,15 @@ class TaskPanelForm(forms.ModelForm):
             if self.instance.pk and self.instance.noe_top:
                 # Aufgabe aus einem nichtöffentlichen TOP: zuständig nur, wer sie auch öffnen darf. Sonst ginge der
                 # Titel mit der Benachrichtigung an eine Person, für die die Aufgabe verschlossen bleibt.
+                from apps.work.faction.services import ZUSTAENDIG_NUR_VEREIDIGTE
+
                 from . import selectors
 
                 mitglieder = mitglieder.filter(
                     pk__in=selectors.zustaendige_fuer_noe_aufgabe(organization, self.instance)
                 )
+                # Ein vor der Änderung geöffnetes Panel bietet noch alle an: Die Meldung nennt den Grund
+                self.fields["assigned_to"].error_messages["invalid_choice"] = ZUSTAENDIG_NUR_VEREIDIGTE
             self.fields["assigned_to"].queryset = mitglieder
             self.fields["assigned_to"].label_from_instance = lambda obj: obj.user.get_display_name()
         self.fields["assigned_to"].required = False

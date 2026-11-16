@@ -914,9 +914,12 @@ def activity_statistics(organization: Organization, membership: Membership) -> d
     from apps.work.meetings.models import AgendaItemNote, MeetingPreparation
     from apps.work.motions.models import Motion, MotionComment
     from apps.work.tasks.models import Task
+    from apps.work.tasks.selectors import ohne_gesperrte_tops
 
-    my_tasks = Task.objects.filter(organization=organization).filter(
-        Q(created_by=membership) | Q(assigned_to=membership)
+    # Ohne Aufgaben aus nichtöffentlichen TOPs, die das Mitglied nicht öffnen darf: Die Zahlen passen zur Liste
+    my_tasks = ohne_gesperrte_tops(
+        Task.objects.filter(organization=organization).filter(Q(created_by=membership) | Q(assigned_to=membership)),
+        membership,
     )
     attendance = FactionAttendance.objects.filter(membership=membership, meeting__organization=organization)
     return {

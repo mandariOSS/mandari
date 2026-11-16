@@ -109,6 +109,13 @@ def visible_tasks(
     ).distinct()
 
 
+def noe_top_q() -> Q:
+    """Aufgabe aus einem nichtöffentlichen TOP einer Fraktionssitzung, als Bedingung (``Task.noe_top`` je Zeile)."""
+    return Q(related_faction_agenda_item__visibility="internal") | Q(
+        related_faction_agenda_item__parent__visibility="internal"
+    )
+
+
 def ohne_gesperrte_tops(qs: QuerySet[Task], membership: Membership) -> QuerySet[Task]:
     """
     Aufgaben aus nichtöffentlichen TOPs einer Fraktionssitzung nur für Vereidigte: dieselbe Grenze wie
@@ -123,10 +130,7 @@ def ohne_gesperrte_tops(qs: QuerySet[Task], membership: Membership) -> QuerySet[
 
     if is_sworn_member(membership):
         return qs
-    return qs.exclude(
-        Q(related_faction_agenda_item__visibility="internal")
-        | Q(related_faction_agenda_item__parent__visibility="internal")
-    )
+    return qs.exclude(noe_top_q())
 
 
 def _sichtbare_sitzungen(organization: Organization, membership: Membership) -> QuerySet[Any]:

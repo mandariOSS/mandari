@@ -6,6 +6,8 @@ Aufgaben und Protokolleinträge aus dem nichtöffentlichen Teil einer Fraktionss
   alle Aktionen stehen nur Vereidigten offen, auch der erstellenden und der zugewiesenen Person, und zwar am
   heutigen Stand von TOP und Mitgliedschaft. Unterpunkte erben den Stand vom übergeordneten TOP.
 - Zuständig für eine solche Aufgabe wird im Panel nur, wer sie öffnen darf.
+- Benachrichtigungen und Erinnerungen zu einer solchen Aufgabe gehen nur an Personen, die sie öffnen dürfen; ältere
+  erscheinen für andere nicht mehr. Die Erinnerung geht dann an die erstellende Person.
 - Die Übernahme aus Protokollen bietet Einträge ohne TOP nur Vereidigten an, wie Protokollseite und Niederschrift.
 
 Zu jedem Fall gehört der Normalfall: Vereidigte sehen alles weiter, und Aufgaben ohne nichtöffentlichen TOP bleiben
@@ -14,16 +16,21 @@ für erstellende und zugewiesene Personen, wie sie waren.
 
 from __future__ import annotations
 
+import uuid
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from django.core.exceptions import PermissionDenied
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.tenants.models import Membership
 from apps.work.faction.models import FactionAgendaItem, FactionMeeting, FactionProtocolEntry
+from apps.work.notifications.models import Notification, NotificationType
+from apps.work.notifications.services import NotificationHub
 from apps.work.tasks import selectors, services
 from apps.work.tasks.models import Task, TaskAttachment, TaskShare
 
@@ -279,6 +286,99 @@ def test_startseite_und_aktivitaet_nennen_die_aufgabe_nur_vereidigten(
     assert nachher.count("Plakate kleben") >= 3, "Andere Aufgaben bleiben"
 
 
+def test_kennzahlen_der_aktivitaet_zaehlen_wie_die_liste(
+    org: Any, vorsitz: Any, person: Any, noe_top: FactionAgendaItem
+) -> None:
+    from apps.work.organization import selectors as profil
+
+    _aufgabe(noe_top, vorsitz, person)
+    _aufgabe(None, vorsitz, person, title="Plakate kleben")
+
+    vorher = profil.activity_statistics(org, person)
+    assert (vorher["tasks_total"], vorher["tasks_open"]) == (2, 2)
+
+    nachher = profil.activity_statistics(org, _entziehen(person))
+    assert (nachher["tasks_total"], nachher["tasks_open"]) == (1, 1)
+
+
+# --- Benachrichtigungen und Erinnerungen ----------------------------------------------------------------------------
+
+
+def _nachrichten(member: Any) -> list[str]:
+    return [f"{n.title} {n.message}" for n in NotificationHub.for_recipient(member)]
+
+
+def test_benachrichtigungen_zu_verschlossener_aufgabe_entstehen_nicht_und_erscheinen_nicht(
+    org: Any, vorsitz: Any, person: Any, noe_top: FactionAgendaItem, top: FactionAgendaItem
+) -> None:
+    aufgabe = _aufgabe(noe_top, vorsitz, person)
+    offen = _aufgabe(top, vorsitz, person, title="Plakate kleben")
+    kommentar = SimpleNamespace(id=uuid.uuid4(), content="Angebot liegt bei 480.000 Euro")
+
+    # Normalfall: Vereidigte erfahren Zuweisung und Kommentar wie bisher
+    assert NotificationHub.notify_task_assigned(aufgabe, person, vorsitz, send_email=False) is not None
+    assert len(NotificationHub.notify_task_comment(aufgabe, kommentar, vorsitz, send_email=False)) == 1
+    assert NotificationHub.notify_task_assigned(offen, person, vorsitz, send_email=False) is not None
+    assert sum(TITEL in text for text in _nachrichten(person)) == 2
+
+    entzogen = _entziehen(person)
+    aufgabe, offen = Task.objects.get(pk=aufgabe.pk), Task.objects.get(pk=offen.pk)
+
+    # Ältere Nachrichten erscheinen nicht mehr, auch nicht im Zähler; die zur anderen Aufgabe bleibt
+    assert [text for text in _nachrichten(entzogen) if TITEL in text] == []
+    assert sum("Plakate kleben" in text for text in _nachrichten(entzogen)) == 1
+    # Neue entstehen nicht: weder Kommentar mit Auszug noch Erinnerung
+    vorher = Notification.objects.filter(recipient=entzogen).count()
+    assert NotificationHub.notify_task_comment(aufgabe, kommentar, vorsitz, send_email=False) == []
+    assert NotificationHub.notify_task_due_soon(aufgabe, entzogen, 0) is None
+    assert Notification.objects.filter(recipient=entzogen).count() == vorher
+    # Normalfall: Zu einer anderen Aufgabe geht der Kommentar weiter an die Person
+    assert len(NotificationHub.notify_task_comment(offen, kommentar, vorsitz, send_email=False)) == 1
+
+
+def test_datenexport_nennt_nachrichten_zu_verschlossener_aufgabe_ohne_text(
+    org: Any, vorsitz: Any, person: Any, noe_top: FactionAgendaItem
+) -> None:
+    from apps.work.organization import export_service
+
+    aufgabe = _aufgabe(noe_top, vorsitz, person)
+    NotificationHub.notify_task_assigned(aufgabe, person, vorsitz, send_email=False)
+
+    def texte(member: Any) -> str:
+        daten = export_service.DsgvoExportService()._collect_notifications(member)
+        return str(daten)
+
+    assert TITEL in texte(person)
+    nachher = texte(_entziehen(person))
+    assert TITEL not in nachher
+    assert export_service.NO_ACCESS_TASK in nachher
+
+
+def test_erinnerung_geht_an_die_erstellende_person_wenn_die_zustaendige_die_aufgabe_nicht_oeffnen_darf(
+    org: Any, vorsitz: Any, unvereidigt: Any, noe_top: FactionAgendaItem, top: FactionAgendaItem
+) -> None:
+    heute = timezone.localdate()
+    verschlossen = _aufgabe(noe_top, vorsitz, unvereidigt, due_date=heute)
+    offen = _aufgabe(top, vorsitz, unvereidigt, title="Plakate kleben", due_date=heute)
+    # Niemand darf sie öffnen: keine Erinnerung
+    niemand = _aufgabe(noe_top, unvereidigt, unvereidigt, title="Ohne Vereidigte", due_date=heute)
+
+    call_command("send_task_due_reminders")
+
+    def erinnert(member: Any, aufgabe: Task) -> int:
+        return Notification.objects.filter(
+            recipient=member, notification_type=NotificationType.TASK_DUE_SOON, metadata__task_id=str(aufgabe.id)
+        ).count()
+
+    assert (erinnert(unvereidigt, verschlossen), erinnert(vorsitz, verschlossen)) == (0, 1)
+    assert (erinnert(unvereidigt, offen), erinnert(vorsitz, offen)) == (1, 0), "Normalfall: zuständige Person"
+    assert (erinnert(unvereidigt, niemand), erinnert(vorsitz, niemand)) == (0, 0)
+
+    # Zweiter Lauf am selben Tag: keine doppelte Erinnerung, auch nicht an die erstellende Person
+    call_command("send_task_due_reminders")
+    assert (erinnert(vorsitz, verschlossen), erinnert(unvereidigt, offen)) == (1, 1)
+
+
 # --- Zuständigkeit im Panel -----------------------------------------------------------------------------------------
 
 
@@ -309,7 +409,9 @@ def test_panel_weist_aufgaben_aus_nichtoeffentlichem_top_nur_vereidigten_zu(
     aufgabe = _aufgabe(noe_top, vorsitz, vorsitz)
     client = client_for(vorsitz.user)
 
-    assert _speichern(client, org, aufgabe, unvereidigt).status_code == 422
+    abgelehnt = _speichern(client, org, aufgabe, unvereidigt)
+    assert abgelehnt.status_code == 422
+    assert "Zuständig kann nur sein, wer den nichtöffentlichen Teil sehen darf." in abgelehnt.content.decode()
     assert Task.objects.get(pk=aufgabe.pk).assigned_to_id == vorsitz.pk
     assert str(unvereidigt.pk) not in _panel(client, org, aufgabe).content.decode()
 

@@ -1182,8 +1182,9 @@ class DsgvoExportService:
         # deren Entzug – nur Art und Zeitpunkt, nicht Titel und Auszüge
         hidden = set(hidden_document_ids(membership))
         # Dieselbe Grenze wie Glocke und Benachrichtigungsseite (``NotificationHub.for_recipient``): Erwähnungen zu
-        # einem TOP, der für die Person heute nichtöffentlich ist, und Nachrichten zu endgültig gelöschten
-        # Unterlagen. Der gespeicherte Text nennt Titel; geprüft wird der heutige Stand, einmal für alle Zeilen.
+        # einem TOP, der für die Person heute nichtöffentlich ist, Nachrichten zu einer Aufgabe aus einem solchen TOP
+        # und Nachrichten zu endgültig gelöschten Unterlagen. Der gespeicherte Text nennt Titel; geprüft wird der
+        # heutige Stand, einmal für alle Zeilen.
         unverifiable = set(NotificationHub.hidden_reference_ids(membership))
 
         notif_list = []
@@ -1193,9 +1194,12 @@ class DsgvoExportService:
             if hidden and str(metadata.get("motion_id") or "") in hidden:
                 placeholder = NON_PUBLIC_DOCUMENT
             elif n.pk in unverifiable:
-                placeholder = (
-                    NO_ACCESS_ITEM if n.notification_type == NotificationType.FACTION_MENTION else NO_ACCESS_DOCUMENT
-                )
+                if n.notification_type == NotificationType.FACTION_MENTION:
+                    placeholder = NO_ACCESS_ITEM
+                elif "motion_id" not in metadata and "task_id" in metadata:
+                    placeholder = NO_ACCESS_TASK
+                else:
+                    placeholder = NO_ACCESS_DOCUMENT
             locked = bool(placeholder)
             notif_list.append(
                 {

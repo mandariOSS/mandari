@@ -124,6 +124,11 @@ class NotificationHub:
         if cls._sitzung_verborgen(recipient, notification_type, metadata):
             return None
 
+        # Aufgabe aus einem nichtöffentlichen TOP, die der Empfänger nicht öffnen darf (``Task.noe_gesperrt``): Titel
+        # und Kommentarauszug gehören zum nichtöffentlichen Teil der Sitzung, in der Anwendung wie per E-Mail.
+        if cls._aufgabe_verschlossen(recipient, metadata):
+            return None
+
         # Typ-Einstellung (Issue #70): In-App-Benachrichtigungen sind je Typ
         # in den Benachrichtigungseinstellungen abschaltbar (Default: an).
         # Der E-Mail-Kanal wird separat in _queue_email geprüft.
@@ -210,6 +215,33 @@ class NotificationHub:
         except (ValueError, TypeError, ValidationError):
             return False
         return meeting is not None and not darf_sehen(recipient, meeting)
+
+    @staticmethod
+    def _aufgabe_verschlossen(recipient, metadata: dict | None) -> bool:
+        """
+        Betrifft die Benachrichtigung (``task_id``) eine Aufgabe aus einem nichtöffentlichen TOP, die der Empfänger
+        heute nicht öffnen darf? Für Vereidigte und ohne Aufgabenbezug ohne Abfrage; eine unbekannte oder gelöschte
+        Aufgabe verbirgt nichts.
+        """
+        task_id = (metadata or {}).get("task_id")
+        if not task_id:
+            return False
+        from django.core.exceptions import ValidationError
+
+        from apps.work.faction.visibility import is_sworn_member
+        from apps.work.tasks.models import Task
+
+        if is_sworn_member(recipient):
+            return False
+        try:
+            task = (
+                Task.objects.filter(pk=task_id, organization_id=recipient.organization_id)
+                .select_related("related_faction_agenda_item__parent")
+                .first()
+            )
+        except (ValueError, TypeError, ValidationError):
+            return False
+        return task is not None and task.noe_gesperrt(recipient)
 
     @classmethod
     def already_direct(cls, recipient, notification_type: str, metadata: dict | None, since: datetime) -> bool:
@@ -985,9 +1017,12 @@ class NotificationHub:
           unter einem nichtöffentlichen TOP, oder es gibt ihn nicht mehr.
         - Nachricht zu einer Unterlage (``motion_id``), die endgültig gelöscht ist: Ob sie in „Nichtöffentliche
           Vorgänge“ lag, lässt sich dann nicht mehr feststellen.
+        - Nachricht zu einer Aufgabe (``task_id``) aus einem nichtöffentlichen TOP: Sie ist für nicht Vereidigte
+          verschlossen (``Task.noe_gesperrt``), auch wenn der TOP erst später nichtöffentlich wurde oder die
+          Vereidigung entzogen ist. Eine gelöschte Aufgabe verbirgt nichts.
 
         Für vereidigte Mitglieder leer, ohne Abfrage. Sonst eine Abfrage nach den eigenen Nachrichten mit
-        solchem Bezug und, nur wenn es sie gibt, je eine nach den Unterlagen und den TOPs.
+        solchem Bezug und, nur wenn es sie gibt, je eine nach den Unterlagen, den TOPs und den Aufgaben.
         """
         from apps.work.faction.models import FactionAgendaItem
         from apps.work.faction.visibility import is_item_internal, is_sworn_member
@@ -997,7 +1032,11 @@ class NotificationHub:
             return []
         rows = list(
             Notification.objects.filter(recipient=membership)
-            .filter(Q(metadata__has_key="motion_id") | Q(notification_type=NotificationType.FACTION_MENTION))
+            .filter(
+                Q(metadata__has_key="motion_id")
+                | Q(metadata__has_key="task_id")
+                | Q(notification_type=NotificationType.FACTION_MENTION)
+            )
             .values_list("pk", "notification_type", "metadata")
         )
         if not rows:
@@ -1006,14 +1045,27 @@ class NotificationHub:
         org_id = membership.organization_id
         by_motion: dict[uuid.UUID | None, list[Any]] = {}
         by_item: dict[uuid.UUID | None, list[Any]] = {}
+        by_task: dict[uuid.UUID | None, list[Any]] = {}
         for pk, notification_type, metadata in rows:
             metadata = metadata if isinstance(metadata, dict) else {}
             if notification_type == NotificationType.FACTION_MENTION:
                 by_item.setdefault(_as_uuid(metadata.get("item_id")), []).append(pk)
             if "motion_id" in metadata:
                 by_motion.setdefault(_as_uuid(metadata.get("motion_id")), []).append(pk)
+            if "task_id" in metadata:
+                by_task.setdefault(_as_uuid(metadata.get("task_id")), []).append(pk)
 
         hidden: set[Any] = set()
+        if by_task:
+            from apps.work.tasks.models import Task
+            from apps.work.tasks.selectors import noe_top_q
+
+            locked = set(
+                Task.objects.filter(pk__in=[k for k in by_task if k is not None], organization_id=org_id)
+                .filter(noe_top_q())
+                .values_list("pk", flat=True)
+            )
+            hidden.update(pk for key, pks in by_task.items() if key in locked for pk in pks)
         if by_motion:
             known = set(
                 Motion.objects.filter(
