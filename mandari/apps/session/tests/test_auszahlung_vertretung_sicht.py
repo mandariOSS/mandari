@@ -11,11 +11,13 @@ Auszahlungen, Vertretung, Mitzeichnung und Sicht auf Nichtöffentliches im Sitzu
 - Vorlegen schreibt Status und Mitzeichnungskette zusammen fest.
 - Die Beratungsfolge nennt von einer nichtöffentlichen Beratung ohne NÖ-Sichtrecht weder Gremium noch Ergebnis,
   die Suche findet Protokolltexte nur mit dem Recht für Niederschriften.
-- Mit der Deaktivierung eines Zugangs verfallen die offenen Einladungen an die Person und von ihr.
+- Mit der Deaktivierung eines Zugangs verfallen die offenen Einladungen an die Person und von ihr; die Meldung
+  nennt sie. Wer eine Einladung erneut sendet, gilt danach als einladende Person.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -23,6 +25,7 @@ from typing import Any, cast
 
 import pytest
 from django.contrib.messages import get_messages
+from django.core import mail
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -202,8 +205,10 @@ def test_kontoaenderung_laesst_genehmigungen_offener_auszahlungen_verfallen(kass
     assert ausgezahlt.status == "paid" and ausgezahlt.created_by_id == kasse.lauf.pk
     assert ausstehend.status == "pending" and ausstehend.created_by_id == kasse.lauf.pk
     assert "3 bereits genehmigte Auszahlung(en)" in _meldungen(antwort)
-    # Der Verfall der Genehmigung eines Zuschusses steht im Protokoll (Zuschüsse laufen nicht über das Signal)
-    assert SessionAuditLog.objects.filter(object_id=zuschuss.pk, changes__grund="Empfängerkonto geändert").exists()
+    # Der Verfall der Genehmigung eines Zuschusses steht im Protokoll (Zuschüsse laufen nicht über das Signal),
+    # mit der Person, die ihn bisher erfasst hatte
+    eintrag = SessionAuditLog.objects.get(object_id=zuschuss.pk, changes__grund="Empfängerkonto geändert")
+    assert eintrag.changes["erfasst_von_bisher"] == kasse.lauf.user.email
 
 
 def test_nach_kontoaenderung_kein_export_ohne_neue_genehmigung_durch_eine_andere_person(kasse: Kasse) -> None:
@@ -245,10 +250,33 @@ def test_zuschuss_nach_kontoaenderung_nicht_von_der_aendernden_person_genehmigt(
     selbst = client(kasse.stamm).post(url)
     zuschuss.refresh_from_db()
     assert zuschuss.status == "pending" and "andere Person" in _meldungen(selbst)
+    # Die Meldung nennt auch den Grund, der hier zutrifft
+    assert "das Empfängerkonto geändert hat" in _meldungen(selbst)
 
     client(kasse.pruefung).post(url)
     zuschuss.refresh_from_db()
     assert zuschuss.status == "approved" and zuschuss.approved_by_id == kasse.pruefung.pk
+
+
+def test_meldungen_nennen_die_kontoaenderung_als_grund_der_sperre(kasse: Kasse) -> None:
+    kasse.sitzungsgeld()
+    kasse.pauschale()
+    kasse.konto_aendern(kasse.stamm)
+    slug = {"tenant_slug": kasse.tenant.slug}
+
+    sitzungsgeld = client(kasse.stamm).post(
+        reverse("session:allowance_approve", kwargs=slug),
+        {"from": (HEUTE - timedelta(days=7)).isoformat(), "to": HEUTE.isoformat()},
+    )
+    pauschalen = client(kasse.stamm).post(
+        reverse("session:monthly_approve", kwargs=slug), {"year": str(HEUTE.year), "month": "1"}
+    )
+
+    # Den Abrechnungs- oder Monatslauf hat hier jemand anderes erzeugt: Gesperrt ist, wer das Konto geändert hat
+    assert "1 Position(en) nicht genehmigt" in _meldungen(sitzungsgeld)
+    assert "das Empfängerkonto geändert" in _meldungen(sitzungsgeld)
+    assert "1 Posten nicht genehmigt" in _meldungen(pauschalen)
+    assert "das Empfängerkonto geändert" in _meldungen(pauschalen)
 
 
 def test_speichern_ohne_kontoaenderung_laesst_genehmigungen_bestehen(kasse: Kasse) -> None:
@@ -539,6 +567,7 @@ def test_beratungsfolge_nennt_nichtoeffentliche_beratung_nur_mit_sichtrecht(neue
         reverse("session:meeting_detail", kwargs={"tenant_slug": tenant.slug, "meeting_id": ratssitzung.pk}),
     ]
 
+    farben = []
     for seite in seiten:
         ohne = client(leser).get(seite)
         mit = client(leser_noe).get(seite)
@@ -549,6 +578,10 @@ def test_beratungsfolge_nennt_nichtoeffentliche_beratung_nur_mit_sichtrecht(neue
         assert "Anhörung" not in text_ohne and "Abgelehnt" not in text_ohne
         assert "ichtöffentliche Beratung" in text_ohne
         assert "MARKER" in text_mit and "Anhörung" in text_mit and "Abgelehnt" in text_mit
+        # Bisheriger Rahmen: Die Stationsnummer trägt eine Farbe je Stand (grün, blau, grau)
+        farben += re.findall(r'font-bold\s+bg-(\w+)-100[^"]*">\s*1\s*</span>', text_ohne)
+    # Auch die Farbe verrät von der verborgenen Station nichts: weder das Ergebnis noch den angelegten TOP
+    assert farben == ([] if neues_design else ["gray"])
 
 
 def test_suche_findet_protokolltext_nur_mit_recht_fuer_niederschriften() -> None:
@@ -590,7 +623,7 @@ def test_deaktivierung_zieht_offene_einladungen_an_und_von_der_person_zurueck() 
     fremd = SessionInvitation.create_for_tenant(tenant, "kollegin@example.org", invited_by=verwaltung)
     url = reverse("session:user_deactivate", kwargs={"tenant_slug": tenant.slug, "session_user_id": ziel.pk})
 
-    client(verwaltung).post(url)
+    antwort = client(verwaltung).post(url)
 
     ziel.refresh_from_db()
     assert ziel.is_active is False
@@ -600,11 +633,56 @@ def test_deaktivierung_zieht_offene_einladungen_an_und_von_der_person_zurueck() 
         tenant=tenant, action="delete", changes__grund="Zugang deaktiviert"
     ).values_list("object_id", flat=True)
     assert set(protokolliert) == {von_ziel.pk, an_ziel.pk}
+    # Die Verwaltung liest, welche Einladungen mit der Deaktivierung verfallen sind
+    meldung = _meldungen(antwort)
+    assert f"2 offene Einladungen wurden zurückgezogen: {ziel.user.email}, zweitadresse@example.org." in meldung
+    assert "kollegin@example.org" not in meldung
 
     # Reaktivieren und eine danach neu ausgestellte Einladung bleiben der Weg zurück
-    client(verwaltung).post(url)
+    antwort = client(verwaltung).post(url)
     ziel.refresh_from_db()
     assert ziel.is_active is True
+    assert "zurückgezogen" not in _meldungen(antwort)
+
+
+def test_deaktivierung_ohne_offene_einladungen_meldet_keinen_rueckzug() -> None:
+    tenant = _tenant("nord")
+    verwaltung = nutzer(tenant, "verwaltung", "manage_users")
+    ziel = nutzer(tenant, "ziel", "manage_users")
+    SessionInvitation.create_for_tenant(tenant, "kollegin@example.org", invited_by=verwaltung)
+    url = reverse("session:user_deactivate", kwargs={"tenant_slug": tenant.slug, "session_user_id": ziel.pk})
+
+    meldung = _meldungen(client(verwaltung).post(url))
+
+    assert "wurde deaktiviert" in meldung and "zurückgezogen" not in meldung
+
+
+def test_erneut_senden_bindet_die_einladung_an_die_sendende_person() -> None:
+    tenant = _tenant("nord")
+    verwaltung = nutzer(tenant, "verwaltung", "manage_users")
+    einladende = nutzer(tenant, "einladende", "manage_users")
+    einladung = SessionInvitation.create_for_tenant(tenant, "neu@example.org", invited_by=einladende)
+    # Der Zugang der einladenden Person endet an der Benutzerverwaltung vorbei (etwa über den Django-Admin):
+    # Die Einladung steht weiter unter „Offene Einladungen“, ihr Link gilt nicht mehr
+    SessionUser.objects.filter(pk=einladende.pk).update(is_active=False)
+    alter_link = reverse("session:invitation_accept", kwargs={"token": cast(Any, einladung).plain_token})
+    assert Client().get(alter_link).status_code == 404
+    mail.outbox = []
+
+    antwort = client(verwaltung).post(
+        reverse("session:invitation_resend", kwargs={"tenant_slug": tenant.slug, "invitation_id": einladung.pk})
+    )
+
+    assert "erneut versendet" in _meldungen(antwort)
+    einladung.refresh_from_db()
+    assert einladung.invited_by_id == verwaltung.pk
+    # Der neue Link aus der Mail gilt: Die Einladung hängt jetzt am Zugang der sendenden Person
+    treffer = re.search(r"/session/invite/([^/\s\"]+)/", str(mail.outbox[-1].body))
+    assert treffer is not None
+    assert Client().get(reverse("session:invitation_accept", kwargs={"token": treffer.group(1)})).status_code == 200
+    eintrag = SessionAuditLog.objects.get(tenant=tenant, object_id=einladung.pk, changes__erneut_gesendet=True)
+    assert eintrag.changes["eingeladen_von"] == verwaltung.user.email
+    assert eintrag.changes["eingeladen_von_bisher"] == einladende.user.email
 
 
 def test_einladung_gilt_nur_solange_der_zugang_der_einladenden_person_besteht() -> None:

@@ -612,31 +612,45 @@ class UserDeactivateView(SessionViewMixin, View):
                 messages.error(request, "Der letzte aktive Administrator kann nicht deaktiviert werden.")
                 return redirect("session:users", tenant_slug=tenant_slug)
 
+        withdrawn: list[str] = []
         with transaction.atomic():
             target.is_active = not target.is_active
             target.save()
             if not target.is_active:
-                self._discard_open_invitations(request, target)
+                withdrawn = self._discard_open_invitations(request, target)
         state = "reaktiviert" if target.is_active else "deaktiviert"
-        messages.success(request, f"{target.user.email} wurde {state}.")
+        message = f"{target.user.email} wurde {state}."
+        if withdrawn:
+            # Die Eingeladenen erfahren es sonst erst am ungültigen Link: Die Verwaltung sieht, wen sie neu einlädt
+            anzahl = (
+                "1 offene Einladung wurde" if len(withdrawn) == 1 else f"{len(withdrawn)} offene Einladungen wurden"
+            )
+            message += f" {anzahl} zurückgezogen: {', '.join(withdrawn)}."
+        messages.success(request, message)
         return redirect("session:users", tenant_slug=tenant_slug)
 
-    def _discard_open_invitations(self, request, target) -> None:
+    def _discard_open_invitations(self, request, target) -> list[str]:
         """
         Offene Einladungen an die deaktivierte Person und von ihr zurückziehen (wie in Work).
 
         Nach einer Deaktivierung gibt nur eine Entscheidung der Verwaltung den Zugang zurück: direktes Reaktivieren
         oder eine danach neu ausgestellte Einladung. Ältere Einladungen an die Person und von ihr verfallen deshalb
         mit der Deaktivierung. Jeder Rückzug steht im Audit-Log.
+
+        Returns:
+            Adressen der zurückgezogenen Einladungen (für die Meldung an die Verwaltung)
         """
         offene = SessionInvitation.objects.filter(tenant=self.session_tenant, accepted_at__isnull=True).filter(
             Q(email__iexact=target.user.email) | Q(invited_by=target)
         )
+        withdrawn = []
         for invitation in offene.select_related("invited_by__user").prefetch_related("roles"):
             _log_invitation(
                 request, self.session_user, "delete", invitation, zurueckgezogen=True, grund="Zugang deaktiviert"
             )
+            withdrawn.append(invitation.email)
         offene.delete()
+        return sorted(withdrawn)
 
 
 class InvitationResendView(SessionViewMixin, View):
@@ -663,8 +677,13 @@ class InvitationResendView(SessionViewMixin, View):
         if not roles_within_scope(self.session_user, invitation.roles.all()):
             messages.error(request, OUTSIDE_SCOPE)
             return redirect("session:users", tenant_slug=self.session_tenant.slug)
-        if resend_user_invitation(invitation):
-            _log_invitation(request, self.session_user, "update", invitation, erneut_gesendet=True)
+        # Wer erneut sendet, lädt jetzt ein (der eigene Rechteumfang ist oben geprüft): Die Einladung hängt danach
+        # am Zugang dieser Person und nicht mehr an dem der ursprünglich einladenden. Der Wechsel steht im Audit-Log.
+        extra = {"erneut_gesendet": True}
+        if invitation.invited_by_id and invitation.invited_by_id != self.session_user.pk:
+            extra["eingeladen_von_bisher"] = invitation.invited_by.user.email
+        if resend_user_invitation(invitation, invited_by=self.session_user):
+            _log_invitation(request, self.session_user, "update", invitation, **extra)
             messages.success(request, f"Einladung an {invitation.email} wurde erneut versendet.")
         else:
             messages.error(request, f"Die Einladung an {invitation.email} konnte nicht versendet werden.")

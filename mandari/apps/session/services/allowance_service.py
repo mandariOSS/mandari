@@ -557,25 +557,25 @@ def reset_approvals_after_account_change(person: Any, changed_by: Any = None) ->
     with transaction.atomic():
         for queryset in querysets:
             for position in queryset.select_for_update(of=("self",)):
+                is_grant = isinstance(position, SessionDeviceGrant)
+                # Wer den Zuschuss bisher erfasst hatte, steht nach dem Wechsel nur noch im Audit-Eintrag unten
+                recorded_by = position.created_by if is_grant and changed_by is not None else None
                 position.status = "pending"
                 position.approved_by = None
                 position.approved_at = None
                 if changed_by is not None:
                     position.created_by = changed_by
                 position.save(update_fields=update_fields)
-                if isinstance(position, SessionDeviceGrant):
+                if is_grant:
                     # Zuschüsse laufen nicht über das Audit-Signal (die View protokolliert jeden Schritt selbst)
-                    audit.log_event(
-                        "update",
-                        position,
-                        tenant=position.tenant,
-                        user=changed_by,
-                        changes={
-                            "person": person.display_name,
-                            "status": position.get_status_display(),
-                            "grund": "Empfängerkonto geändert",
-                        },
-                    )
+                    changes: dict[str, Any] = {
+                        "person": person.display_name,
+                        "status": position.get_status_display(),
+                        "grund": "Empfängerkonto geändert",
+                    }
+                    if changed_by is not None:
+                        changes["erfasst_von_bisher"] = recorded_by.user.email if recorded_by is not None else None
+                    audit.log_event("update", position, tenant=position.tenant, user=changed_by, changes=changes)
                 count += 1
     return count
 

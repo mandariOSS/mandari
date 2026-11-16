@@ -413,7 +413,7 @@ class AllowanceApproveView(SessionViewMixin, View):
             messages.warning(
                 request,
                 f"{stats['blocked_four_eyes']} Position(en) nicht genehmigt — Vier-Augen-Prinzip: "
-                "der Abrechnungslauf wurde von Ihnen selbst erzeugt.",
+                "Sie haben den Abrechnungslauf selbst erzeugt oder das Empfängerkonto geändert.",
             )
         if stats["approved"]:
             messages.success(request, f"{stats['approved']} Position(en) genehmigt.")

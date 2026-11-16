@@ -326,14 +326,18 @@ class DeviceGrantActionView(SessionViewMixin, View):
             messages.error(request, "Ausgezahlte Zuschüsse können nicht storniert werden.")
             return redirect("session:devices", tenant_slug=tenant_slug)
         # Vier-Augen-Prinzip für Auszahlungen (Einstellung „Sitzungsgeld und Pauschalen“): Wer den
-        # Zuschuss erfasst hat, genehmigt ihn nicht selbst
+        # Zuschuss erfasst oder danach das Empfängerkonto geändert hat, genehmigt ihn nicht selbst
         if (
             action == "approve"
             and self.session_tenant.four_eyes_allowances
             and grant.created_by_id is not None
             and grant.created_by_id == self.session_user.pk
         ):
-            messages.error(request, "Genehmigen muss eine andere Person als die, die den Zuschuss erfasst hat.")
+            messages.error(
+                request,
+                "Genehmigen muss eine andere Person als die, die den Zuschuss erfasst oder das Empfängerkonto "
+                "geändert hat.",
+            )
             return redirect("session:devices", tenant_slug=tenant_slug)
 
         # Der Wechsel gelingt nur aus dem gespeicherten Ausgangsstatus (ein UPDATE mit Bedingung): Der oben

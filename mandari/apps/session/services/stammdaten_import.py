@@ -616,6 +616,8 @@ class ImportPlan:
     memberships: list[Item] = field(default_factory=list)
     cross_check: list[dict[str, Any]] = field(default_factory=list)
     applied: bool = False
+    #: Bereits genehmigte Auszahlungen, die der Import wegen eines geänderten Empfängerkontos zurückgesetzt hat
+    approvals_reset: int = 0
     _bodies: _Bodies | None = field(default=None, repr=False)
     _orgs: _Orgs | None = field(default=None, repr=False)
 
@@ -663,6 +665,7 @@ class ImportPlan:
         return {
             "mandant": self.tenant.slug,
             "ausgefuehrt": self.applied,
+            "genehmigungen_zurueckgesetzt": self.approvals_reset,
             "dateien": self.files,
             "zaehlabgleich": {
                 LABELS[kind]: {
@@ -714,6 +717,12 @@ class ImportPlan:
         if changed:
             lines += ["", f"Änderungen an vorhandenen Datensätzen ({len(changed)})"]
             lines += [f"  {i.file}, Zeile {i.line}: {i.label} – {', '.join(i.changes)}" for i in changed]
+        if self.approvals_reset:
+            lines += [
+                "",
+                f"Empfängerkonto geändert: {self.approvals_reset} bereits genehmigte Auszahlung(en) stehen wieder auf "
+                "„Ausstehend“ und brauchen eine neue Genehmigung.",
+            ]
         if self.cross_check:
             lines += ["", "Gegenprobe mit den öffentlichen Mitgliederlisten"]
             for entry in self.cross_check:
@@ -1592,6 +1601,7 @@ def apply_plan(plan: ImportPlan) -> None:
                 orgs[org_key].save()
 
         persons: dict[str, SessionPerson] = {}
+        approvals_reset = 0
         for kennung, item in plan.persons.items():
             if item.action == UNCHANGED:
                 persons[kennung] = item.instance
@@ -1604,7 +1614,7 @@ def apply_plan(plan: ImportPlan) -> None:
             person.save()
             if konto_vorher is not None and konto_vorher != allowance_service.bank_account(person):
                 # Neues Empfängerkonto: Bereits genehmigte, offene Auszahlungen brauchen eine neue Genehmigung
-                allowance_service.reset_approvals_after_account_change(person)
+                approvals_reset += allowance_service.reset_approvals_after_account_change(person)
             persons[kennung] = person
 
         for item in plan.memberships:
@@ -1621,6 +1631,8 @@ def apply_plan(plan: ImportPlan) -> None:
             membership.save()
 
     plan.applied = True
+    # Für den Bericht: Wer den Import startet, sieht, dass Auszahlungen neu zu genehmigen sind
+    plan.approvals_reset = approvals_reset
     for kind, tally in plan.tallies.items():
         tally.after = _stock(tenant, kind)
 
