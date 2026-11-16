@@ -244,7 +244,7 @@ def test_person_erfaehrt_von_der_sperre_einmal_am_tag(
 def test_gescheiterter_hinweis_gibt_den_tag_wieder_frei(konto: User, monkeypatch: pytest.MonkeyPatch) -> None:
     """Lässt sich der Hinweis einmal nicht anlegen, kommt er beim nächsten Anlass und nicht erst am Folgetag."""
     echtes_anlegen = SecurityNotification.objects.create
-    aufrufe = []
+    aufrufe: list[dict[str, Any]] = []
 
     def anlegen(**felder: Any) -> SecurityNotification:
         aufrufe.append(felder)
