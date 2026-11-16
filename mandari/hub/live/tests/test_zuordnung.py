@@ -6,9 +6,10 @@ Punkten, Titelprüfung), gelesener Name → Person (eindeutig, unsicher, keine).
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
+from django.utils import timezone
 
 from hub.live.models import SectionConfidence, SpeechAssignment
 from hub.live.tests.conftest import TAGESORDNUNG, Tagesordnung, Welt, kennung, mitglied, person
@@ -200,3 +201,12 @@ def test_unbekannt_und_andere_kommune(welt: Welt) -> None:
     treffer = person_zuordnen("Erika Muster", meeting=welt.sitzung, organization_id=andere.pk)
     assert treffer.person == welt.muster, "ohne Mitgliedschaft über die Kommune"
     assert person_zuordnen("ab", meeting=welt.sitzung, organization_id=welt.rat.pk).zuordnung == SpeechAssignment.KEINE
+
+
+def test_sitzungstag_ist_der_kalendertag_in_ortszeit() -> None:
+    """Gespeichert ist UTC: Eine Sitzung um 0:30 Uhr Ortszeit liegt nicht am Vortag."""
+    from hub.live.zuordnung import sitzungstag
+
+    with timezone.override("Europe/Berlin"):
+        assert sitzungstag(datetime(2026, 10, 7, 22, 30, tzinfo=UTC)) == date(2026, 10, 8)
+        assert sitzungstag(datetime(2026, 10, 7, 12, 0, tzinfo=UTC)) == date(2026, 10, 7)

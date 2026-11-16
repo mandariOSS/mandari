@@ -1929,6 +1929,12 @@ def create_absence(organization: Organization, membership: Membership, data: Abs
     """Abwesenheit eintragen, optional Sitzungen absagen und Stellvertretung benachrichtigen."""
     start, end = _parse_absence_dates(data)
     deputy = selectors.find_active_member(organization, data.deputy_id) if data.deputy_id else None
+    if data.deputy_id and deputy is None:
+        # Die gewählte Person steht nicht (mehr) zur Wahl, etwa inzwischen deaktiviert oder nur noch Gastzugang: nicht
+        # still ohne Vertretung speichern, sonst verlässt sich die abwesende Person auf eine Weiterleitung, die es nicht gibt
+        raise ServiceError(
+            "Die gewählte Stellvertretung steht nicht mehr zur Wahl. Bitte wählen Sie eine andere Person."
+        )
 
     absence = MemberAbsence.objects.create(
         organization=organization,

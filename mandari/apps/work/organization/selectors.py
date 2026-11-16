@@ -419,17 +419,18 @@ def team_members(organization: Organization, search_query: str) -> QuerySet[Memb
 
 
 def active_committees(bodies: QuerySet[OParlBody], today: date) -> QuerySet[OParlOrganization]:
-    """Gremien ohne Enddatum oder mit Enddatum in der Zukunft."""
+    """Gremien ohne Enddatum oder mit Enddatum in der Zukunft; von mandari Session zurückgenommene gibt es nicht."""
     return (
         OParlOrganization.objects.filter(body__in=bodies)
         .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+        .exclude(withdrawn_q())
         .order_by("name")
     )
 
 
 def inactive_committees(bodies: QuerySet[OParlBody], today: date) -> QuerySet[OParlOrganization]:
-    """Gremien, deren Enddatum überschritten ist."""
-    return OParlOrganization.objects.filter(body__in=bodies, end_date__lt=today).order_by("name")
+    """Gremien, deren Enddatum überschritten ist; von mandari Session zurückgenommene gibt es nicht."""
+    return OParlOrganization.objects.filter(body__in=bodies, end_date__lt=today).exclude(withdrawn_q()).order_by("name")
 
 
 def committees_by_ids(bodies: QuerySet[OParlBody], committee_ids: list[str]) -> QuerySet[OParlOrganization]:
@@ -469,6 +470,9 @@ def suggested_committees(
     memberships = (
         OParlMembership.objects.filter(person=oparl_person, organization__body__in=bodies)
         .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+        # Zurückgenommene Mitgliedschaften und Gremien schlägt die Mitgliederverwaltung nicht vor
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("organization"))
         .select_related("organization")
     )
     return [m.organization for m in memberships if m.organization.is_active]

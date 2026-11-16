@@ -26,7 +26,15 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
-from ..regeln import ABSTIMMUNGEN_AUS, GENEHMIGUNG_NUR_IN_SITZUNG, NOE_AUS, abstimmung_erfassbar
+from ..regeln import (
+    ABSTIMMUNGEN_AUS,
+    GENEHMIGUNG_NUR_IN_SITZUNG,
+    NOE_AUS,
+    PROTOKOLL_GENEHMIGT,
+    GenehmigungNurInSitzungError,
+    ProtokollGenehmigtError,
+    abstimmung_erfassbar,
+)
 from ..sitzungsarten import sitzung_oder_404
 from ..visibility import can_view_item, can_view_item_with_parents, is_item_internal
 
@@ -438,16 +446,23 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         from .. import services as faction_services
 
         # Erfassen, Kopie am TOP und Genehmigungs-TOP (angenommene Abstimmung genehmigt das Vorprotokoll)
-        faction_services.record_decision(
-            item,
-            self.membership,
-            votes_yes=votes_yes,
-            votes_no=votes_no,
-            votes_abstain=votes_abstain,
-            result=request.POST.get("result", "accepted"),
-            decision_text=request.POST.get("decision_text", "").strip(),
-            notes=request.POST.get("notes", "").strip(),
-        )
+        try:
+            faction_services.record_decision(
+                item,
+                self.membership,
+                votes_yes=votes_yes,
+                votes_no=votes_no,
+                votes_abstain=votes_abstain,
+                result=request.POST.get("result", "accepted"),
+                decision_text=request.POST.get("decision_text", "").strip(),
+                notes=request.POST.get("notes", "").strip(),
+            )
+        except GenehmigungNurInSitzungError:
+            # Die Sitzung wurde seit der Prüfung oben abgesagt
+            return HttpResponse(GENEHMIGUNG_NUR_IN_SITZUNG, status=400)
+        except ProtokollGenehmigtError:
+            # Das Protokoll wurde seit der Prüfung oben genehmigt
+            return HttpResponse(PROTOKOLL_GENEHMIGT, status=400)
 
         return self._panel_response(request, meeting, item, "Abstimmung erfasst")
 
@@ -460,12 +475,11 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(ABSTIMMUNGEN_AUS, status=400)
 
         from .. import services as faction_services
-        from ..regeln import ProtokollGenehmigtError
 
         try:
             faction_services.clear_decision(item)
-        except ProtokollGenehmigtError as exc:
-            return HttpResponse(str(exc), status=400)
+        except ProtokollGenehmigtError:
+            return HttpResponse(PROTOKOLL_GENEHMIGT, status=400)
 
         return self._panel_response(request, meeting, item, "Abstimmung entfernt")
 

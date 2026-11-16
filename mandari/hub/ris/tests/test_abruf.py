@@ -490,8 +490,16 @@ def test_lauf_geht_nach_einer_nicht_auswertbaren_adresse_und_einem_unerwarteten_
     assert (ergebnis["error"], ergebnis[abruf.UNEXPECTED], ergebnis["ok"]) == (4, 1, 1), ergebnis
     assert abrufe == [harmlos.download_url]
     assert OParlFile.objects.get(pk=harmlos.pk).local_status == "ok"
-    # Die unerwartet gescheiterte Datei ist nicht mehr beansprucht
-    assert OParlFile.objects.get(pk=kaputt.pk).local_status == "none"
+    # Die unerwartet gescheiterte Datei ist nicht mehr beansprucht und ruht bis zur Wiederholungsfrist: Sie steht im
+    # nächsten Lauf nicht wieder vorn
+    gescheitert = OParlFile.objects.get(pk=kaputt.pk)
+    assert (gescheitert.local_status, gescheitert.fetch_error, gescheitert.fetch_attempts) == (
+        "retry",
+        abruf.CODE_ABORTED,
+        1,
+    )
+    assert gescheitert.fetch_next_at is not None and gescheitert.fetch_next_at > timezone.now()
+    assert kaputt.pk not in set(abruf.pending_queryset(None).values_list("pk", flat=True))
     assert set(OParlFile.objects.filter(fetch_error=abruf.CODE_BAD_URL).values_list("local_status", flat=True)) == {
         "error"
     }

@@ -29,7 +29,12 @@ from apps.work.faction.models import (
     FactionDecision,
     FactionMeeting,
 )
-from apps.work.faction.regeln import GENEHMIGUNG_NUR_IN_SITZUNG, abstimmung_erfassbar
+from apps.work.faction.regeln import (
+    GENEHMIGUNG_NUR_IN_SITZUNG,
+    PROTOKOLL_GENEHMIGT,
+    ProtokollGenehmigtError,
+    abstimmung_erfassbar,
+)
 from apps.work.faction.services import ProtocolApprovalService, apply_approval_item_decision
 from apps.work.faction.views import actions
 
@@ -116,6 +121,51 @@ def test_abstimmung_vor_der_sitzung_genehmigt_das_vorprotokoll_nicht(
     assert GENEHMIGUNG_NUR_IN_SITZUNG in antwort.content.decode()
     assert not _genehmigt(vorige)
     assert not FactionDecision.objects.filter(agenda_item=top).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("weg", ["aktion", "panel"])
+def test_absage_nach_dem_laden_verhindert_die_abstimmung_am_genehmigungs_top(
+    org: Any, vorige: FactionMeeting, personal: Any, client_for: Any, monkeypatch: pytest.MonkeyPatch, weg: str
+) -> None:
+    """Die Ansicht sah die Sitzung noch laufen; gespeichert ist sie abgesagt. Es entsteht keine Abstimmung."""
+    folge, top = _folge(org, vorige, personal, "cancelled")
+    # Der Stand, den die Anfrage geladen hat: Die Sitzung läuft
+    monkeypatch.setattr("apps.work.faction.regeln.abstimmung_erfassbar", lambda item: True)
+    monkeypatch.setattr(actions, "abstimmung_erfassbar", lambda item: True)
+    monkeypatch.setattr("apps.work.faction.views.panel.abstimmung_erfassbar", lambda item: True)
+
+    if weg == "aktion":
+        antwort = _aktion(client_for, personal, folge, action="record_decision", agenda_item_id=str(top.pk), **STIMMEN)
+    else:
+        antwort = _panel(client_for, personal, top, action="record_decision", **STIMMEN)
+
+    assert antwort.status_code == 400
+    assert GENEHMIGUNG_NUR_IN_SITZUNG in antwort.content.decode()
+    assert not _genehmigt(vorige)
+    assert not FactionDecision.objects.filter(agenda_item=top).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("weg", ["aktion", "panel"])
+def test_genehmigung_waehrend_des_erfassens_meldet_den_grund(
+    org: Any, vorige: FactionMeeting, personal: Any, client_for: Any, monkeypatch: pytest.MonkeyPatch, weg: str
+) -> None:
+    """Wird das Protokoll zwischen Prüfung und Speichern genehmigt, kommt die feste Meldung statt eines Serverfehlers."""
+    folge, top = _folge(org, vorige, personal, "ongoing")
+
+    def genehmigt(*args: Any, **kwargs: Any) -> None:
+        raise ProtokollGenehmigtError()
+
+    monkeypatch.setattr("apps.work.faction.services.record_decision", genehmigt)
+
+    if weg == "aktion":
+        antwort = _aktion(client_for, personal, folge, action="record_decision", agenda_item_id=str(top.pk), **STIMMEN)
+    else:
+        antwort = _panel(client_for, personal, top, action="record_decision", **STIMMEN)
+
+    assert antwort.status_code == 400
+    assert PROTOKOLL_GENEHMIGT in antwort.content.decode()
 
 
 @pytest.mark.django_db

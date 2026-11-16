@@ -33,7 +33,10 @@ from ..regeln import (
     ABSTIMMUNGEN_AUS,
     GENEHMIGUNG_NUR_IN_SITZUNG,
     NOE_AUS,
+    PROTOKOLL_GENEHMIGT,
+    GenehmigungNurInSitzungError,
     NichtOeffentlichAusError,
+    ProtokollGenehmigtError,
     abstimmung_erfassbar,
 )
 from ..sitzungsarten import sitzung_oder_404
@@ -1105,16 +1108,23 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse("Ungültige Stimmzahlen.", status=400)
 
         # Erfassen, Kopie am TOP und Genehmigungs-TOP (angenommene Abstimmung genehmigt das Vorprotokoll)
-        faction_services.record_decision(
-            agenda_item,
-            self.membership,
-            votes_yes=votes_yes,
-            votes_no=votes_no,
-            votes_abstain=votes_abstain,
-            result=request.POST.get("result", "accepted"),
-            decision_text=request.POST.get("decision_text", "").strip(),
-            notes=request.POST.get("notes", "").strip(),
-        )
+        try:
+            faction_services.record_decision(
+                agenda_item,
+                self.membership,
+                votes_yes=votes_yes,
+                votes_no=votes_no,
+                votes_abstain=votes_abstain,
+                result=request.POST.get("result", "accepted"),
+                decision_text=request.POST.get("decision_text", "").strip(),
+                notes=request.POST.get("notes", "").strip(),
+            )
+        except GenehmigungNurInSitzungError:
+            # Die Sitzung wurde seit der Prüfung oben abgesagt
+            return self._rejected(request, meeting, GENEHMIGUNG_NUR_IN_SITZUNG, 400)
+        except ProtokollGenehmigtError:
+            # Das Protokoll wurde seit der Prüfung oben genehmigt
+            return self._rejected(request, meeting, PROTOKOLL_GENEHMIGT, 400)
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)
@@ -1410,14 +1420,13 @@ class FactionActionView(WorkViewMixin, View):
         if visibility == "internal" and item.visibility != "internal" and not meeting.nichtoeffentlich_erlaubt:
             return self._rejected(request, meeting, NOE_AUS, 400)
 
-        from ..regeln import ProtokollGenehmigtError
         from ..services import AgendaProposalService
 
         assign_number = request.POST.get("number", "").strip()
         try:
             AgendaProposalService.accept_proposal(item, self.membership, assign_number or None, visibility)
-        except ProtokollGenehmigtError as exc:
-            return self._rejected(request, meeting, str(exc), 400)
+        except ProtokollGenehmigtError:
+            return self._rejected(request, meeting, PROTOKOLL_GENEHMIGT, 400)
 
         messages.success(request, f"Vorschlag '{item.title}' angenommen.")
         return self._refresh_or_redirect(request, meeting)

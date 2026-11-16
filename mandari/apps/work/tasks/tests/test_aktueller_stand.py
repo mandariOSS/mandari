@@ -127,6 +127,44 @@ def test_panel_schreibt_nur_die_felder_des_formulars(org: Any, erstellerin: Any,
     assert aktuell.activities.filter(activity_type="status_changed").exists()
 
 
+def test_ueberholtes_panel_traegt_die_erledigung_nicht_noch_einmal_ein(
+    org: Any, erstellerin: Any, zugewiesen: Any
+) -> None:
+    """Das Panel las „offen“; inzwischen hat jemand die Aufgabe erledigt. Speichern mit „erledigt“ ändert daran nichts."""
+    aufgabe = _aufgabe(org, erstellerin, zugewiesen)
+    alte_werte = services.capture_old_values(aufgabe)
+    services.toggle_completion(Task.objects.get(pk=aufgabe.pk), erstellerin)
+    erledigt_um = Task.objects.get(pk=aufgabe.pk).completed_at
+    assert erledigt_um is not None
+
+    aufgabe.status = "done"
+    services.apply_panel_update(aufgabe, zugewiesen, alte_werte)
+
+    aktuell = Task.objects.get(pk=aufgabe.pk)
+    assert aktuell.is_completed and aktuell.completed_at == erledigt_um
+    assert aktuell.activities.filter(activity_type="completed").count() == 1
+
+
+def test_ueberholtes_panel_erledigt_eine_wieder_geoeffnete_aufgabe_neu(
+    org: Any, erstellerin: Any, zugewiesen: Any
+) -> None:
+    """Das Panel las „erledigt“; inzwischen ist die Aufgabe wieder offen. Erledigen setzt einen neuen Zeitpunkt."""
+    aufgabe = _aufgabe(org, erstellerin, zugewiesen)
+    services.toggle_completion(aufgabe, erstellerin)
+    geladen = Task.objects.get(pk=aufgabe.pk)
+    alter_zeitpunkt = geladen.completed_at
+    alte_werte = services.capture_old_values(geladen)
+    services.toggle_completion(Task.objects.get(pk=aufgabe.pk), erstellerin)
+    assert not Task.objects.get(pk=aufgabe.pk).is_completed
+
+    geladen.status = "done"
+    services.apply_panel_update(geladen, zugewiesen, alte_werte)
+
+    aktuell = Task.objects.get(pk=aufgabe.pk)
+    assert aktuell.is_completed and aktuell.completed_at is not None and aktuell.completed_at != alter_zeitpunkt
+    assert aktuell.activities.filter(activity_type="completed").count() == 2
+
+
 def test_panel_laesst_inzwischen_gewaehlte_empfaenger_stehen(org: Any, erstellerin: Any, zugewiesen: Any) -> None:
     """Das Panel las „Organisation“; inzwischen ist die Aufgabe im Freigabedialog mit Empfängern geteilt."""
     aufgabe = _aufgabe(org, erstellerin, zugewiesen)

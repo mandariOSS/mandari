@@ -31,7 +31,7 @@ from insight_core.models import OParlConsultation, OParlMeeting
 from .anbieter import anbieter
 from .models import Broadcast, BroadcastSection, BroadcastSource, BroadcastSpeech, BroadcastStatus, SpeechAssignment
 from .services import NICHT_UEBERTRAGEN_NACH, WIEDERAUFNAHME
-from .zuordnung import gremiumsmitglieder
+from .zuordnung import gremiumsmitglieder, sitzungstag
 
 
 @dataclass(frozen=True)
@@ -264,8 +264,8 @@ def wortmeldung(speech_id: uuid.UUID | str) -> WortmeldungDaten | None:
     quelle = speech.broadcast.source
     mitglied = False
     if speech.person_id is not None:
-        # Stichtag wie bei der Namenssuche (``zuordnung.person_zuordnen``): der Sitzungstag
-        stichtag = (speech.broadcast.meeting.start or speech.started_at).date()
+        # Stichtag wie bei der Namenssuche (``zuordnung.person_zuordnen``): der Sitzungstag in Ortszeit
+        stichtag = sitzungstag(speech.broadcast.meeting.start or speech.started_at)
         mitglied = any(p.pk == speech.person_id for p in gremiumsmitglieder(quelle.organization_id, stichtag))
     return WortmeldungDaten(
         speech_id=speech.pk,

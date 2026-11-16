@@ -228,7 +228,19 @@ def abstimmung_erfassbar(item: Any) -> bool:
     return hat_stattgefunden(item.meeting)
 
 
-def pruefe_genehmigung_in_sitzung(item: Any) -> None:
-    """Server-Prüfung vor dem Erfassen einer Abstimmung: ``GenehmigungNurInSitzungError`` (:func:`abstimmung_erfassbar`)."""
+def pruefe_genehmigung_in_sitzung(item: Any, *, gespeichert: bool = False) -> None:
+    """
+    Server-Prüfung vor dem Erfassen einer Abstimmung: ``GenehmigungNurInSitzungError`` (:func:`abstimmung_erfassbar`).
+
+    Mit ``gespeichert`` gilt der Status der Sitzung in der Datenbank, nicht der am geladenen Objekt: unter der Sperre
+    der Sitzung aufgerufen, sieht die Prüfung eine Absage, die nach dem Laden kam.
+    """
+    if gespeichert and item.is_approval_item and item.approves_meeting_id:
+        from .kette import BEGONNEN
+        from .models import FactionMeeting
+
+        if not FactionMeeting.objects.filter(pk=item.meeting_id, status__in=BEGONNEN).exists():
+            raise GenehmigungNurInSitzungError()
+        return
     if not abstimmung_erfassbar(item):
         raise GenehmigungNurInSitzungError()

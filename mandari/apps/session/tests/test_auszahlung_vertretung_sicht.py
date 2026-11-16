@@ -729,3 +729,66 @@ def test_einladung_gilt_nur_solange_der_zugang_der_einladenden_person_besteht() 
     assert not SessionUser.objects.filter(tenant=tenant, user__email="neu@example.org").exists()
     # Einladungen der Mandanteneinrichtung haben keine einladende Person und bleiben gültig
     assert annahme(einrichtung) == 200
+
+
+def test_annahme_prueft_den_zugang_der_einladenden_person_beim_vergeben(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wird die einladende Person zwischen Laden und Annahme deaktiviert, entsteht kein Zugang."""
+    tenant = _tenant("nord")
+    einladende = nutzer(tenant, "einladende", "manage_users")
+    einladung = SessionInvitation.create_for_tenant(tenant, "neu@example.org", invited_by=einladende)
+    token = cast(Any, einladung).plain_token
+    # Der geladene Stand: einladende Person aktiv. In der Datenbank ist sie es danach nicht mehr
+    geladen = SessionInvitation.objects.select_related("tenant", "invited_by__user").get(pk=einladung.pk)
+    assert geladen.invited_by is not None and geladen.invited_by.is_active
+    SessionUser.objects.filter(pk=einladende.pk).update(is_active=False)
+    monkeypatch.setattr(SessionInvitation, "find_by_token", classmethod(lambda cls, *args, **kwargs: geladen))
+
+    antwort = Client().post(
+        reverse("session:invitation_accept", kwargs={"token": token}),
+        {"password": "Sehr-Langes-Passwort-2026!", "password_confirm": "Sehr-Langes-Passwort-2026!"},
+    )
+
+    assert antwort.status_code == 404
+    assert not SessionUser.objects.filter(tenant=tenant, user__email="neu@example.org").exists()
+    assert not User.objects.filter(email="neu@example.org").exists()
+
+
+def test_annahme_mit_inzwischen_ersetztem_link_vergibt_keinen_zugang(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Die Annahme lud die Einladung, dann wurde sie erneut gesendet: Unter der Sperre gilt der alte Link nicht mehr."""
+    from apps.session.services.user_invitations import resend_user_invitation
+
+    tenant = _tenant("nord")
+    einladende = nutzer(tenant, "einladende", "manage_users")
+    einladung = SessionInvitation.create_for_tenant(tenant, "neu@example.org", invited_by=einladende)
+    alter_link = cast(Any, einladung).plain_token
+    geladen = SessionInvitation.objects.select_related("tenant", "invited_by__user").get(pk=einladung.pk)
+    assert resend_user_invitation(SessionInvitation.objects.get(pk=einladung.pk))
+    echte_suche = cast(Any, SessionInvitation.find_by_token).__func__
+    aufrufe: list[object] = []
+
+    def suchen(cls: Any, raw: object, queryset: Any = None) -> Any:
+        aufrufe.append(raw)
+        # Erster Aufruf: der Stand vor dem erneuten Senden. Danach die echte Suche unter der Sperre
+        return geladen if len(aufrufe) == 1 else echte_suche(cls, raw, queryset)
+
+    monkeypatch.setattr(SessionInvitation, "find_by_token", classmethod(suchen))
+
+    antwort = Client().post(
+        reverse("session:invitation_accept", kwargs={"token": alter_link}),
+        {"password": "Sehr-Langes-Passwort-2026!", "password_confirm": "Sehr-Langes-Passwort-2026!"},
+    )
+
+    assert antwort.status_code == 404 and len(aufrufe) == 2
+    assert not SessionUser.objects.filter(tenant=tenant, user__email="neu@example.org").exists()
+
+
+def test_einladung_laesst_sich_nur_einmal_annehmen() -> None:
+    tenant = _tenant("nord")
+    einladende = nutzer(tenant, "einladende", "manage_users")
+    einladung = SessionInvitation.create_for_tenant(tenant, "neu@example.org", invited_by=einladende)
+    url = reverse("session:invitation_accept", kwargs={"token": cast(Any, einladung).plain_token})
+    daten = {"password": "Sehr-Langes-Passwort-2026!", "password_confirm": "Sehr-Langes-Passwort-2026!"}
+
+    assert Client().post(url, daten).status_code == 302
+    assert SessionUser.objects.filter(tenant=tenant, user__email="neu@example.org", is_active=True).count() == 1
+    assert Client().post(url, daten).status_code == 404

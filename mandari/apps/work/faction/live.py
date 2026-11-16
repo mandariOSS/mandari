@@ -287,8 +287,6 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
             return
         if self.stufe != "edit":
             return
-        if not await self._gedrosselt_pruefen():
-            return
         await self.send_json({"type": "awareness", "data": event["data"]})
 
     async def notizen_inhalt(self, event: dict[str, Any]) -> None:
@@ -321,8 +319,6 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
     async def notizen_praesenz(self, event: dict[str, Any]) -> None:
         # Auch wer gerade da ist (Name, Kürzel), geht nur an Verbindungen mit Zugriff
         if event.get("von") == self.channel_name or self.entzogen or not await self._gedrosselt_pruefen():
-            return
-        if not await self._gedrosselt_pruefen():
             return
         await self.send_json({"type": "praesenz", "art": event["art"], "person": event["person"]})
         if event.get("frage"):
