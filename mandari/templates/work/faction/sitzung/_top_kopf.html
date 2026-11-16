@@ -32,6 +32,22 @@
     {% if intern %}{% include "work/faction/sitzung/_noe_schalter.html" %}{% endif %}
     <button type="button" class="wf-textlink fs-kopf-mehr" x-show="gekuerzt || offen" x-cloak
             :aria-expanded="offen ? 'true' : 'false'" @click="offen = !offen" x-text="offen ? 'Weniger' : 'Mehr'">Mehr</button>
+    {% if verschieben %}
+    {# TOP in der laufenden Sitzung verschieben, auch in den anderen Teil der Tagesordnung (Issue #1436); Kontext: verschieben (sitzung.verschiebbar) #}
+    {# Antwort wie ein TOP-Wechsel auf denselben TOP; data-sichern-vorher sichert vorher die Notizen (faction-session.ts) #}
+    <div class="wf-menue-anker" x-data="{ menue: false }" @click.outside="menue = false" @keydown.escape="menue = false">
+        <button type="button" class="wf-knopf wf-klein wf-leise" aria-haspopup="menu" :aria-expanded="menue ? 'true' : 'false'"
+                @click="menue = !menue" data-testid="fs-top-verschieben">
+            <i data-lucide="arrow-up-down" aria-hidden="true"></i>Verschieben
+        </button>
+        <div class="wf-menue rechts" role="menu" x-show="menue" x-cloak>
+            {% if verschieben.up %}<button type="button" role="menuitem" hx-post="{{ sitzung_urls.aktion }}" hx-vals='{"action": "top_verschieben", "item_id": "{{ item.pk }}", "richtung": "up"}' hx-target="#fs-fokus" hx-swap="outerHTML" data-sichern-vorher><i data-lucide="arrow-up" aria-hidden="true"></i>Nach oben</button>{% endif %}
+            {% if verschieben.down %}<button type="button" role="menuitem" hx-post="{{ sitzung_urls.aktion }}" hx-vals='{"action": "top_verschieben", "item_id": "{{ item.pk }}", "richtung": "down"}' hx-target="#fs-fokus" hx-swap="outerHTML" data-sichern-vorher><i data-lucide="arrow-down" aria-hidden="true"></i>Nach unten</button>{% endif %}
+            {% if verschieben.internal %}<button type="button" role="menuitem" hx-post="{{ sitzung_urls.aktion }}" hx-vals='{"action": "top_verschieben", "item_id": "{{ item.pk }}", "richtung": "internal"}' hx-target="#fs-fokus" hx-swap="outerHTML" data-sichern-vorher><i data-lucide="lock" aria-hidden="true"></i>In den nichtöffentlichen Teil</button>{% endif %}
+            {% if verschieben.public %}<button type="button" role="menuitem" hx-post="{{ sitzung_urls.aktion }}" hx-vals='{"action": "top_verschieben", "item_id": "{{ item.pk }}", "richtung": "public"}' hx-target="#fs-fokus" hx-swap="outerHTML" data-sichern-vorher><i data-lucide="lock-open" aria-hidden="true"></i>In den öffentlichen Teil</button>{% endif %}
+        </div>
+    </div>
+    {% endif %}
     {% if not unterlagen and rechte.anhaengen %}
     {% include "work/faction/sitzung/_anhaengen.html" with ziel="fokus" %}
     {% endif %}

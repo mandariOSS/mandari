@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -101,6 +103,15 @@ def darf_anwesenheit_pflegen(membership: Membership, meeting: FactionMeeting) ->
     return membership.has_permission("faction.manage") or ist_schriftfuehrung(membership, meeting)
 
 
+def darf_teilnahme_nachtragen(membership: Membership, meeting: FactionMeeting) -> bool:
+    """
+    Mitglieder ohne Einladung in die Anwesenheit aufnehmen (Issue #1436): solange die Anwesenheit gepflegt wird, mit
+    ``faction.manage`` wie in der bisherigen Ansicht. Eine Teilnahme macht die Sitzung für das Mitglied sichtbar
+    (:func:`apps.work.faction.sitzungsarten.darf_sehen`); die Schriftführung allein vergibt das nicht.
+    """
+    return darf_anwesenheit_pflegen(membership, meeting) and membership.has_permission("faction.manage")
+
+
 def darf_rollen_setzen(membership: Membership, meeting: FactionMeeting) -> bool:
     """Sitzungsleitung und Schriftführung festlegen: wer die Sitzung verwaltet."""
     return meeting.status in ("planned", "invited", "ongoing") and darf_verwalten(membership, meeting)
@@ -135,6 +146,21 @@ def darf_top_hinzufuegen(membership: Membership, meeting: FactionMeeting) -> boo
         or membership.has_permission("agenda.create")
         or ist_schriftfuehrung(membership, meeting)
     )
+
+
+def darf_top_verschieben(membership: Membership, meeting: FactionMeeting) -> bool:
+    """
+    TOP in der laufenden Sitzung verschieben (Issue #1436), etwa wenn sich zeigt, dass ein Punkt in den
+    nichtöffentlichen Teil gehört: wer die Tagesordnung verwaltet (wie „Verschieben“ in der Vorbereitung,
+    ``agenda.manages``), dazu die Schriftführung der Sitzung, die eine geänderte Tagesordnung nachträgt. Wer nur
+    ``agenda.create`` hat, trägt TOPs ein, ordnet sie aber nicht um. Nur solange die Sitzung läuft und das Protokoll
+    nicht genehmigt ist.
+    """
+    from . import agenda
+
+    if meeting.status != "ongoing" or meeting.protocol_approved:
+        return False
+    return agenda.manages(meeting, membership) or ist_schriftfuehrung(membership, meeting)
 
 
 # =============================================================================
@@ -878,6 +904,12 @@ TOP_TITEL_MAX = 500
 TOP_BESCHREIBUNG_MAX = 5000
 
 
+#: Richtungen, in die die Sitzungsansicht einen TOP verschiebt (:func:`top_verschieben`)
+VERSCHIEBEN = ("up", "down", "internal", "public")
+#: Meldung, wenn die Sitzung zwischen Klick und Sperre beendet oder ihr Protokoll genehmigt wurde
+VERSCHIEBEN_VORBEI = "Die Tagesordnung lässt sich nicht mehr ändern. Bitte laden Sie die Seite neu."
+
+
 class TopNeuError(Exception):
     """Neuer TOP abgelehnt: ``meldung`` für den Browser, ``status`` 400 (Eingabe) oder 403 (Nichtöffentliches)."""
 
@@ -936,6 +968,153 @@ def top_hinzufuegen(
     return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung)
 
 
+#: Nummer aus der Überschrift eines TOPs vor dem Titel („TOP 3.2 “, „TOP NÖ 4 “), wie sie beim Kopieren mitkommt
+#: Auch mehrfach hintereinander („TOP 7 TOP 3.2 …“); in einem Durchgang, damit der Aufwand mit der Länge wächst
+_TOP_VORSATZ_RE = re.compile(r"^(?:TOP\s+(?:NÖ\s*)?\d+(?:\.\d+)*[.:]?\s+)+", re.IGNORECASE)
+
+
+def _titel_schluessel(titel: str) -> str:
+    """Titel zum Vergleichen: Leerraum zusammengezogen, ohne vorangestellte TOP-Nummern, ohne Groß und Klein."""
+    text = " ".join((titel or "").split())
+    # Besteht der Titel nur aus Nummern, bleibt die letzte stehen: Sie hat keinen Leerraum mehr hinter sich
+    text = _TOP_VORSATZ_RE.sub("", text) or text
+    return unicodedata.normalize("NFKC", text).casefold()
+
+
+def gleichnamige_tops(meeting: FactionMeeting, membership: Membership, titel: str) -> list[FactionAgendaItem]:
+    """
+    TOPs der Sitzung, deren Titel dem neuen gleicht (Issue #1436): ohne Groß- und Kleinschreibung, ohne mehrfachen
+    Leerraum und ohne vorangestellte TOP-Nummer. In der gemeldeten Sitzung entstanden so „TOP 3.2 …“ und
+    „TOP 7 TOP 3.2 …“ als neue TOPs, weil ein vorhandener TOP an eine andere Stelle sollte.
+
+    Nur TOPs, die das Mitglied sehen darf: Sonst verriete die Warnung, dass es einen nichtöffentlichen TOP dieses
+    Titels gibt.
+    """
+    # Zu lange Titel lehnt das Anlegen ohnehin ab; verglichen wird nur, was ein Titel sein kann
+    if len(titel or "") > TOP_TITEL_MAX:
+        return []
+    schluessel = _titel_schluessel(titel)
+    if not schluessel:
+        return []
+    kandidaten = (
+        meeting.agenda_items.filter(proposal_status="active").select_related("parent").order_by("order", "number")
+    )
+    return [i for i in kandidaten if _titel_schluessel(i.title) == schluessel and darf_top_sehen(i, membership)]
+
+
+def doppelt_meldung(gleiche: list[FactionAgendaItem]) -> str:
+    """Warnung im Dialog „TOP hinzufügen“; nennt nur Nummern, keine Titel (Sichtschutz für Nichtöffentliches)."""
+    nummern = ", ".join(f"TOP {i.number}" for i in gleiche[:3])
+    return (
+        f"Diesen Titel gibt es schon: {nummern}. Einen vorhandenen TOP legen Sie über „Verschieben“ am TOP an eine "
+        "andere Stelle oder in den anderen Teil der Tagesordnung."
+    )
+
+
+class TopVerschiebenError(Exception):
+    """Verschieben abgelehnt: ``meldung`` für den Browser, ``status`` 400 (geht nicht) oder 403 (Nichtöffentliches)."""
+
+    def __init__(self, meldung: str, status: int = 400) -> None:
+        super().__init__(meldung)
+        self.meldung = meldung
+        self.status = status
+
+
+def verschiebbar(meeting: FactionMeeting, membership: Membership, item: FactionAgendaItem) -> dict[str, bool]:
+    """
+    Wohin sich der TOP in der laufenden Sitzung legen lässt (Menü „Verschieben“ am TOP, Issue #1436): ``up`` und
+    ``down`` unter seinen Geschwistern, ``internal`` in den nichtöffentlichen und ``public`` in den öffentlichen
+    Teil. Leer für den Genehmigungs-TOP. Das Recht (:func:`darf_top_verschieben`) prüft der Aufrufer.
+    """
+    from . import agenda
+
+    if item.is_approval_item:
+        return {}
+    kennungen = [
+        s.pk for s in agenda.siblings(meeting, item.parent, agenda.part_of(item)) if darf_top_sehen(s, membership)
+    ]
+    stelle = kennungen.index(item.pk) if item.pk in kennungen else None
+    intern = is_item_internal(item)
+    return {
+        "up": stelle is not None and stelle > 0,
+        "down": stelle is not None and stelle < len(kennungen) - 1,
+        "internal": not intern and meeting.nichtoeffentlich_erlaubt and can_view_internal(membership),
+        "public": intern,
+    }
+
+
+def top_verschieben(meeting: FactionMeeting, membership: Membership, item: FactionAgendaItem, richtung: str) -> None:
+    """
+    TOP in der laufenden Sitzung verschieben (Issue #1436), auf demselben Weg wie in der Vorbereitung
+    (:func:`apps.work.faction.agenda.place_item`): ``up``/``down`` unter seinen Geschwistern, ``internal`` ans Ende
+    des nichtöffentlichen Teils (Unterpunkte gehen mit, ein Unterpunkt wird dort ein eigener TOP), ``public`` zurück
+    in den öffentlichen Teil (ein nichtöffentlicher Unterpunkt eines öffentlichen TOPs bleibt an seiner Stelle, alles
+    andere kommt ans Ende). Nummern beider Teile werden neu vergeben; Notizen, Beschluss, Aufgaben und Unterlagen
+    bleiben am TOP.
+
+    Nichtöffentliches nur für Vereidigte (Issue #64); der Genehmigungs-TOP bleibt an seiner Stelle. Das Recht
+    (:func:`darf_top_verschieben`) prüft der Aufrufer vorab; hier gilt es noch einmal mit dem Stand nach der Sperre
+    der Sitzung: Wurde inzwischen das Protokoll genehmigt oder die Sitzung beendet, bleibt alles, wie es ist
+    (Status 409).
+    """
+    from . import agenda
+
+    if richtung not in VERSCHIEBEN:
+        raise TopVerschiebenError("Ungültige Eingabe.")
+    with transaction.atomic():
+        agenda.lock_meeting(meeting)
+        meeting.refresh_from_db(fields=["status", "protocol_approved"])
+        if not darf_top_verschieben(membership, meeting):
+            raise TopVerschiebenError(VERSCHIEBEN_VORBEI, status=409)
+        _top_verschieben_gesperrt(meeting, membership, item, richtung)
+
+
+def _top_verschieben_gesperrt(
+    meeting: FactionMeeting, membership: Membership, item: FactionAgendaItem, richtung: str
+) -> None:
+    """Die Verschiebung selbst; die Sitzung ist gesperrt und ihr Stand frisch gelesen (:func:`top_verschieben`)."""
+    from . import agenda
+    from .regeln import NOE_AUS, NichtOeffentlichAusError
+
+    def sichtbar(eintrag: Any) -> bool:
+        return darf_top_sehen(eintrag, membership)
+
+    if not sichtbar(item):
+        raise TopVerschiebenError("Gesperrte Information", status=403)
+    moeglich = verschiebbar(meeting, membership, item)
+    try:
+        if richtung in ("up", "down"):
+            if not moeglich.get(richtung):
+                raise TopVerschiebenError("Der TOP steht schon am Rand. Weiter lässt er sich nicht verschieben.")
+            geschwister = [s for s in agenda.siblings(meeting, item.parent, agenda.part_of(item)) if sichtbar(s)]
+            stelle = next(i for i, s in enumerate(geschwister) if s.pk == item.pk)
+            neu = stelle - 1 if richtung == "up" else stelle + 1
+            agenda.place_item(meeting, item, parent=item.parent, position=neu, visible=sichtbar)
+        elif richtung == "internal":
+            if not can_view_internal(membership):
+                raise TopVerschiebenError("Gesperrte Information", status=403)
+            if not meeting.nichtoeffentlich_erlaubt:
+                raise TopVerschiebenError(NOE_AUS)
+            if is_item_internal(item):
+                raise TopVerschiebenError("Der TOP steht schon im nichtöffentlichen Teil.")
+            agenda.place_item(meeting, item, parent=None, position=None, visibility="internal", visible=sichtbar)
+        else:
+            if not is_item_internal(item):
+                raise TopVerschiebenError("Der TOP steht schon im öffentlichen Teil.")
+            eltern = item.parent
+            if eltern is not None and eltern.visibility == "public":
+                # Nichtöffentlicher Unterpunkt eines öffentlichen TOPs: bleibt Unterpunkt an seiner Stelle
+                geschwister = [s for s in agenda.siblings(meeting, eltern, eltern.visibility) if sichtbar(s)]
+                platz = next((i for i, s in enumerate(geschwister) if s.pk == item.pk), None)
+                agenda.place_item(meeting, item, parent=eltern, position=platz, visibility="public", visible=sichtbar)
+            else:
+                agenda.place_item(meeting, item, parent=None, position=None, visibility="public", visible=sichtbar)
+    except agenda.VerschiebenError as abgelehnt:
+        raise TopVerschiebenError(str(abgelehnt)) from abgelehnt
+    except NichtOeffentlichAusError as abgelehnt:
+        raise TopVerschiebenError(NOE_AUS) from abgelehnt
+
+
 def protokolleintraege(item: FactionAgendaItem, membership: Membership | None = None) -> list[Any]:
     """
     Bisherige Protokolleinträge des TOPs (auch Wortbeiträge), unverändert in ihrer Reihenfolge. Mit ``membership`` nur,
@@ -966,16 +1145,49 @@ class Anwesenheit:
     gesamt: int
     #: Stimmberechtigte zuerst, dann weitere Mitglieder, dann Gäste (Issue #1166); leere Gruppen fehlen
     gruppen: list[AnwesenheitGruppe] = field(default_factory=list)
+    #: Aktive Mitglieder der Organisation ohne Teilnahme an dieser Sitzung, nach Namen (Issue #1436)
+    uebrige: list[Any] = field(default_factory=list)
 
 
-def anwesenheit(meeting: FactionMeeting) -> Anwesenheit:
+def _nach_namen(name: str) -> str:
+    """
+    Sortierschlüssel für angezeigte Namen: ohne Groß- und Kleinschreibung, Umlaute und Akzente wie ihr Grundbuchstabe
+    („Ömer“ vor „Otto“, wie im Wörterbuch).
+    """
+    zerlegt = unicodedata.normalize("NFKD", name or "")
+    return "".join(zeichen for zeichen in zerlegt if not unicodedata.combining(zeichen)).casefold()
+
+
+def uebrige_mitglieder(meeting: FactionMeeting, teilnahmen: list[Any]) -> list[Membership]:
+    """
+    Aktive Mitglieder der Organisation ohne Gastzugang, die in ``teilnahmen`` nicht vorkommen, nach dem angezeigten
+    Namen (Issue #1436). Das sind Mitglieder, die zur Sitzung nicht eingeladen wurden: Sie gehören nicht zu den
+    Teilnehmenden der Sitzungsart oder kamen erst nach dem Beginn dazu.
+    """
+    from apps.tenants.models import Membership
+
+    vorhanden = {a.membership_id for a in teilnahmen if a.membership_id}
+    qs = (
+        Membership.objects.filter(organization_id=meeting.organization_id, is_active=True, is_guest=False)
+        .exclude(pk__in=vorhanden)
+        .select_related("user")
+        .prefetch_related("roles")
+    )
+    return sorted(qs, key=lambda m: _nach_namen(m.user.get_display_name()))
+
+
+def anwesenheit(meeting: FactionMeeting, *, mit_uebrigen: bool = False) -> Anwesenheit:
     """
     Teilnahmen (Mitglieder, dann Gäste), wie viele Mitglieder anwesend sind, und die Gruppen der Liste.
 
     Gruppen (Issue #1166): „Stimmberechtigt“ nach derselben Regel wie die Beschlussfähigkeit
     (:func:`.quorum.stimmberechtigt`, die Administrator-Rolle allein gibt kein Stimmrecht), dann „Weitere Mitglieder“,
-    dann „Gäste“, je nach Namen. Rollen und Rechte sind vorgeladen, ohne eigene Abfragen je Teilnahme. In einer
-    Sitzungsart ohne Abstimmungen (Issue #1240) stehen alle Mitglieder in einer Gruppe „Mitglieder“.
+    dann „Gäste“. Rollen und Rechte sind vorgeladen, ohne eigene Abfragen je Teilnahme. In einer Sitzungsart ohne
+    Abstimmungen (Issue #1240) stehen alle Mitglieder in einer Gruppe „Mitglieder“.
+
+    Reihenfolge (Issue #1436): Die Gruppen sind nach dem angezeigten Namen sortiert (Vorname zuerst), so wie man die
+    Liste liest. ``teilnahmen`` bleibt nach Nachnamen, in dieser Reihenfolge nennt die Niederschrift die Personen.
+    ``mit_uebrigen`` liefert dazu die aktiven Mitglieder ohne Teilnahme (:func:`uebrige_mitglieder`).
     """
     from .quorum import stimmberechtigt
 
@@ -997,11 +1209,17 @@ def anwesenheit(meeting: FactionMeeting) -> Anwesenheit:
         # Sitzungsart ohne Abstimmungen (Issue #1240): ohne Stimmrecht keine Trennung der Mitglieder
         aufteilung = [("mitglieder", "Mitglieder", mitglieder)]
     gruppen = [
-        AnwesenheitGruppe(schluessel, titel, liste)
+        AnwesenheitGruppe(schluessel, titel, sorted(liste, key=lambda a: _nach_namen(a.get_display_name())))
         for schluessel, titel, liste in (*aufteilung, ("gaeste", "Gäste", gaeste))
         if liste
     ]
-    return Anwesenheit(teilnahmen, sum(1 for a in mitglieder if a.status == "present"), len(mitglieder), gruppen)
+    return Anwesenheit(
+        teilnahmen,
+        sum(1 for a in mitglieder if a.status == "present"),
+        len(mitglieder),
+        gruppen,
+        uebrige_mitglieder(meeting, mitglieder) if mit_uebrigen else [],
+    )
 
 
 def rollen_auswahl(organization: Organization) -> list[Membership]:
@@ -1039,6 +1257,49 @@ def anwesenheit_setzen(meeting: FactionMeeting, attendance_id: Any, *, status: s
         return False
     teilnahme.save(update_fields=felder)
     return True
+
+
+def teilnahme_nachtragen(meeting: FactionMeeting, membership_id: Any, *, status: str, art: str) -> bool:
+    """
+    Aktives Mitglied der Organisation ohne Einladung in die Anwesenheit der Sitzung aufnehmen und zugleich Status
+    und Teilnahmeart setzen (Issue #1436). Hat das Mitglied inzwischen eine Teilnahme, wird nur sie gesetzt.
+
+    ``False`` bei unbekannter Kennung, fremder Organisation, inaktivem Mitglied, Gastzugang oder ohne gültigen
+    Status, ebenso wenn die Anwesenheit inzwischen bestätigt oder die Sitzung beendet ist. Die Sitzung ist
+    währenddessen gesperrt, damit zwei Klicks nicht zwei Teilnahmen anlegen. Das Recht
+    (:func:`darf_teilnahme_nachtragen`) prüft der Aufrufer.
+    """
+    from apps.tenants.models import Membership
+
+    from . import agenda
+    from .models import FactionAttendance
+
+    pk = _kennung(membership_id)
+    if pk is None or status not in ANWESENHEIT_STATUS:
+        return False
+    mitglied = Membership.objects.filter(
+        pk=pk, organization_id=meeting.organization_id, is_active=True, is_guest=False
+    ).first()
+    if mitglied is None:
+        return False
+    with transaction.atomic():
+        agenda.lock_meeting(meeting)
+        # Stand nach der Sperre: Wurde die Anwesenheit inzwischen bestätigt oder die Sitzung beendet, entsteht keine
+        # neue Teilnahme mehr (die Prüfung des Aufrufers lief vor der Sperre)
+        stand = type(meeting).objects.filter(pk=meeting.pk).values("status", "attendance_confirmed_at").first()
+        if stand is None or stand["status"] != "ongoing" or stand["attendance_confirmed_at"] is not None:
+            return False
+        teilnahme = meeting.attendances.filter(membership=mitglied).first()
+        if teilnahme is None:
+            werte: dict[str, Any] = {"status": status}
+            if status == "present":
+                werte["checked_in_at"] = timezone.now()
+            if art in dict(FactionAttendance.PARTICIPATION_TYPE_CHOICES):
+                werte["participation_type"] = art
+            FactionAttendance.objects.create(meeting=meeting, membership=mitglied, **werte)
+            return True
+        # Auch die vorhandene Teilnahme innerhalb der Sperre setzen: Danach könnte die Anwesenheit schon bestätigt sein
+        return anwesenheit_setzen(meeting, teilnahme.pk, status=status, art=art)
 
 
 def gast_hinzufuegen(meeting: FactionMeeting, name: str) -> Any:

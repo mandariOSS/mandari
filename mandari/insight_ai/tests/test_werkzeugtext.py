@@ -79,9 +79,25 @@ def test_unbekanntes_werkzeug_und_unlesbares_werden_nur_entfernt() -> None:
 
 
 def test_abgeschnittener_aufruf_und_einzelne_marken() -> None:
+    # Ein abgeschnittener oder anders geschriebener Aufruf läuft nicht ohne seine Argumente
     abgeschnitten = lesen("Moment.<tool_call>dokumente_suchen<arg_key>text</arg_key><arg_value>Haush", TOOL_NAMES)
     assert abgeschnitten.text == "Moment."
-    assert abgeschnitten.aufrufe == [("dokumente_suchen", {})]
+    assert abgeschnitten.aufrufe == []
+    assert abgeschnitten.markiert is True
+    assert lesen('<tool_call>gremien(suchtext="Rat")</tool_call>', TOOL_NAMES).aufrufe == []
+    assert lesen("<tool_call>gremiensuchtextRat", TOOL_NAMES).aufrufe == []
+    assert lesen("<tool_call> gremien </tool_call>", TOOL_NAMES).aufrufe == [("gremien", {})]
+    # Ohne Blockende können Argumente fehlen: Der Aufruf läuft nicht, der Rest fällt aus dem Text
+    ohne_ende = lesen("Gleich.<tool_call>gremien", TOOL_NAMES)
+    assert (ohne_ende.text, ohne_ende.aufrufe, ohne_ende.markiert) == ("Gleich.", [], True)
+    vollstaendig_ohne_ende = "<tool_call>gremien<arg_key>suchtext</arg_key><arg_value>Rat</arg_value>"
+    assert lesen(vollstaendig_ohne_ende, TOOL_NAMES).aufrufe == []
+    # Fehlt ein Wertende, reicht der Wert nicht über das nächste Argument hinweg: unlesbar statt zusammengesetzt
+    verschluckt = (
+        "<tool_call>dokument_abschnitt<arg_key>id</arg_key><arg_value>abc"
+        "<arg_key>frage</arg_key><arg_value>Kosten</arg_value></tool_call>"
+    )
+    assert lesen(verschluckt, TOOL_NAMES).aufrufe == []
 
     marke = lesen("Die Antwort.</tool_call>", TOOL_NAMES)
     assert marke.text == "Die Antwort."
