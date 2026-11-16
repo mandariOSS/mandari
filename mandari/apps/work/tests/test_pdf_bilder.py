@@ -146,6 +146,22 @@ def test_nicht_ladbare_bilder_verlieren_ihre_adresse(monkeypatch: pytest.MonkeyP
     assert ergebnis == '<img src="" alt="x">'
 
 
+@pytest.mark.parametrize(
+    "inhalt",
+    [
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+        b"\xef\xbb\xbf<svg xmlns='http://www.w3.org/2000/svg'/>",
+        b"\x1f\x8b\x08\x00gepackt",
+        b"kein Bild",
+    ],
+)
+def test_nur_rasterbilder_werden_eingebettet(monkeypatch: pytest.MonkeyPatch, inhalt: bytes) -> None:
+    """Der Server nennt die Bildart nur: Eingebettet wird, was an der Signatur ein Rasterbild ist."""
+    _server(monkeypatch, {"https://bilder.example.org/a.png": (inhalt, "image/png")})
+
+    assert pdf_bilder.inline_remote_images('<img src="https://bilder.example.org/a.png">') == '<img src="">'
+
+
 def test_zu_grosses_bild_wird_nicht_eingebettet(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pdf_bilder, "MAX_IMAGE_BYTES", 10)
     _server(monkeypatch, {"https://bilder.example.org/gross.png": (PNG, "image/png")})
@@ -244,6 +260,7 @@ def test_logo_wird_eingebettet(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -
     assert pdf_bilder.file_data_uri(_datei(tmp_path, "logo.png", PNG)).startswith("data:image/png;base64,")
     # Kein Bild, zu groß oder ohne Datei: kein Logo
     assert pdf_bilder.file_data_uri(_datei(tmp_path, "logo.svg", b"<svg/>")) == ""
+    assert pdf_bilder.file_data_uri(_datei(tmp_path, "vektor.png", b"<svg xmlns='http://www.w3.org/2000/svg'/>")) == ""
     assert pdf_bilder.file_data_uri(None) == ""
     monkeypatch.setattr(pdf_bilder, "MAX_FILE_BYTES", 10)
     assert pdf_bilder.file_data_uri(_datei(tmp_path, "gross.png", PNG)) == ""

@@ -261,6 +261,108 @@ def test_suche_nur_mit_bearbeitungsrecht(
 
 
 # ---------------------------------------------------------------------------
+# Aus der Veröffentlichung Zurückgenommenes (wie in der RIS-Ansicht von Work)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def zurueckgenommen(ris: dict[str, Any]) -> dict[str, Any]:
+    """Vorlage und Sitzung, die mandari Session zurückgenommen hat, dazu eine in der Quelle gelöschte Vorlage."""
+    body = ris["vorlage"].body
+    start = timezone.make_aware(datetime(2026, 4, 2, 18, 0))
+    return {
+        "vorlage": OParlPaper.objects.create(
+            external_id="https://ris.example.org/session/stadt-test/api/oparl/paper/9",
+            body=body,
+            name="Grundstück am Hafen",
+            reference="V/2026/99",
+            deleted=True,
+        ),
+        "sitzung": OParlMeeting.objects.create(
+            external_id="https://ris.example.org/session/stadt-test/api/oparl/meeting/9",
+            body=body,
+            name="Hafenausschuss",
+            start=start,
+            deleted=True,
+        ),
+        "quelle_geloescht": OParlPaper.objects.create(
+            external_id="https://ris.example.org/paper/8",
+            body=body,
+            name="Hafenfest",
+            reference="V/2026/8",
+            deleted=True,
+        ),
+    }
+
+
+@pytest.mark.django_db
+def test_suche_zeigt_zurueckgenommenes_nicht(
+    org: Any, autorin: Any, dokumente: dict[str, Motion], zurueckgenommen: dict[str, Any], client_for: Any
+) -> None:
+    client = client_for(autorin.user)
+    motion = dokumente["haupt"]
+
+    for anfrage in ("Hafen", "V/2026/99"):
+        html = _suche(client, org, motion, "antrag", anfrage).content.decode()
+        assert "Grundstück am Hafen" not in html and "V/2026/99" not in html, anfrage
+    for anfrage in ("Hafen", "02.04.2026"):
+        html = _suche(client, org, motion, "sitzung", anfrage).content.decode()
+        assert "Hafenausschuss" not in html, anfrage
+    # In der Quelle Gelöschtes bleibt wie bisher auffindbar
+    assert "V/2026/8 – Hafenfest" in _suche(client, org, motion, "antrag", "Hafen").content.decode()
+
+
+@pytest.mark.django_db
+def test_zurueckgenommenes_laesst_sich_nicht_als_bezug_setzen(
+    org: Any, autorin: Any, dokumente: dict[str, Motion], zurueckgenommen: dict[str, Any], client_for: Any
+) -> None:
+    client = client_for(autorin.user)
+    motion = dokumente["aenderung"]
+
+    vorlage = _meta(client, org, motion, action="set_parent", parent_paper=str(zurueckgenommen["vorlage"].id))
+    sitzung = _meta(client, org, motion, action="set_reference_meeting", meeting=str(zurueckgenommen["sitzung"].id))
+
+    assert vorlage.status_code == 400 and sitzung.status_code == 400
+    motion.refresh_from_db()
+    assert motion.parent_paper_id is None and motion.related_meeting_id is None
+    # Dieselbe Antwort wie bei einer unbekannten Kennung
+    unbekannt = _meta(client, org, motion, action="set_parent", parent_paper="00000000-0000-4000-8000-000000000000")
+    assert vorlage.content == unbekannt.content
+
+
+@pytest.mark.django_db
+def test_bestehender_bezug_auf_zurueckgenommenes_zeigt_nur_einen_hinweis(
+    org: Any, autorin: Any, dokumente: dict[str, Motion], ris: dict[str, Any], client_for: Any
+) -> None:
+    """Der Bezug wurde gesetzt, als Vorlage und Sitzung noch veröffentlicht waren."""
+    client = client_for(autorin.user)
+    motion = dokumente["aenderung"]
+    vorlage = OParlPaper.objects.create(
+        external_id="https://ris.example.org/session/stadt-test/api/oparl/paper/7",
+        body=ris["vorlage"].body,
+        name="Grundstück am Hafen",
+        reference="V/2026/77",
+    )
+    sitzung = OParlMeeting.objects.create(
+        external_id="https://ris.example.org/session/stadt-test/api/oparl/meeting/7",
+        body=ris["vorlage"].body,
+        name="Hafenausschuss",
+        start=timezone.make_aware(datetime(2026, 4, 2, 18, 0)),
+    )
+    assert _meta(client, org, motion, action="set_parent", parent_paper=str(vorlage.id)).status_code == 200
+    assert _meta(client, org, motion, action="set_reference_meeting", meeting=str(sitzung.id)).status_code == 200
+    assert "V/2026/77 – Grundstück am Hafen" in _editor(client, org, motion)
+
+    OParlPaper.objects.filter(pk=vorlage.pk).update(deleted=True)
+    OParlMeeting.objects.filter(pk=sitzung.pk).update(deleted=True)
+
+    html = _editor(client, org, motion)
+    assert "Zurückgezogene Vorlage" in html and "Zurückgezogene Sitzung" in html
+    for angabe in ("Grundstück am Hafen", "V/2026/77", "Hafenausschuss", "02.04.2026"):
+        assert angabe not in html, angabe
+
+
+# ---------------------------------------------------------------------------
 # Toter Speicherweg, Liste (#616), Migration
 # ---------------------------------------------------------------------------
 

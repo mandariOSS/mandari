@@ -23,6 +23,8 @@ from typing import Any
 
 import httpx
 
+from apps.work.sanitize import is_raster_image
+
 logger = logging.getLogger(__name__)
 
 #: Bildarten, die eingebettet werden (wie die Positivliste des Editors für ``data:``-Bilder)
@@ -70,7 +72,8 @@ def file_data_uri(field_file: Any) -> str:
             data = handle.read(MAX_FILE_BYTES + 1)
     except (OSError, ValueError):
         return ""
-    if not data or len(data) > MAX_FILE_BYTES:
+    # Die Endung nennt die Bildart nur; eingebettet wird, was an der Signatur ein Rasterbild ist
+    if not data or len(data) > MAX_FILE_BYTES or not is_raster_image(data):
         return ""
     return _data_uri(content_type, data)
 
@@ -127,7 +130,10 @@ def _fetch(url: str, deadline: float) -> str:
     except httpx.HTTPError as exc:
         logger.info("Bild für das PDF nicht geladen (%s)", type(exc).__name__)
         return ""
-    return _data_uri(content_type, b"".join(parts)) if parts else ""
+    data = b"".join(parts)
+    # Der Antwortkopf nennt die Bildart nur; eingebettet wird, was an der Signatur ein Rasterbild ist
+    # (wie bei eingebetteten Bildern im Editor, apps/work/sanitize.py)
+    return _data_uri(content_type, data) if is_raster_image(data) else ""
 
 
 def inline_remote_images(html: str) -> str:

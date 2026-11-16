@@ -391,14 +391,17 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
 
         # Wie bei der Anmeldung: jede Schreibweise, bei Mehrdeutigkeit kein Konto (Issue #1397)
         user = User.objects.find_by_email(email) if email else None
-        if user is None:
-            return JsonResponse({"error": f"Benutzer '{email}' nicht gefunden."}, status=400)
-
         # Nur Nutzer mit aktivem Zugang zu DIESER Organisation — sonst wäre
-        # die Freigabe wirkungslos bzw. liefe an der Org-Grenze vorbei.
-        target = Membership.objects.filter(user=user, organization=self.organization, is_active=True).first()
+        # die Freigabe wirkungslos bzw. liefe an der Org-Grenze vorbei. Eine
+        # Antwort für alle anderen Adressen (wie MotionShareUpdateView): Ob
+        # zu einer Adresse ein Konto besteht, geht daraus nicht hervor.
+        target = (
+            Membership.objects.filter(user=user, organization=self.organization, is_active=True).first()
+            if user is not None
+            else None
+        )
         if target is None:
-            return JsonResponse({"error": "Der Nutzer hat keinen Zugang zu dieser Organisation."}, status=400)
+            return JsonResponse({"error": f"'{email}' ist kein Mitglied bzw. Gast dieser Organisation."}, status=400)
         # Ordner-Freigaben wirken ausschließlich für Gastzugänge – Mitglieder
         # sehen Dokumente über deren Sichtbarkeit (Motion.visibility/MotionShare).
         if not target.is_guest:

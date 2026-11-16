@@ -56,9 +56,22 @@
                                 <i data-lucide="lock" class="w-4 h-4 text-gray-500"></i>
                                 <span class="font-medium text-gray-900 dark:text-white">Privat</span>
                             </div>
-                            <p class="text-sm text-gray-500 mt-0.5">Nur Sie können dieses Dokument sehen</p>
+                            <p class="text-sm text-gray-500 mt-0.5">Nur Autor:in, Federführung und Mitarbeit sehen dieses Dokument</p>
                         </div>
                     </label>
+                    {# Persönliche Freigaben an Gäste gelten auch an privaten Dokumenten: Beim Wechsel auf „Privat“ enden oder bleiben sie nur nach dieser Wahl (ohne Wahl nennt der Server die betroffenen Gäste und ändert nichts) #}
+                    <fieldset x-show="shareVisibility === 'private'" x-transition class="ml-3 pl-4 border-l-2 border-gray-200 dark:border-gray-700 text-sm" data-testid="teilen-gast-freigaben">
+                        <legend class="font-medium text-gray-700 dark:text-gray-300">Persönliche Freigaben an Gäste</legend>
+                        <p class="text-xs text-gray-500 mt-1">Gäste mit einer persönlichen Freigabe öffnen auch ein privates Dokument, bis ihre Freigabe endet.</p>
+                        <label class="flex items-center gap-2 mt-2 text-gray-700 dark:text-gray-300 cursor-pointer">
+                            <input type="radio" name="guest_shares" value="revoke" :disabled="shareVisibility !== 'private'" class="text-primary-600 focus:ring-primary-500">
+                            Freigaben an Gäste beenden
+                        </label>
+                        <label class="flex items-center gap-2 mt-1 text-gray-700 dark:text-gray-300 cursor-pointer">
+                            <input type="radio" name="guest_shares" value="keep" :disabled="shareVisibility !== 'private'" class="text-primary-600 focus:ring-primary-500">
+                            Freigaben an Gäste behalten
+                        </label>
+                    </fieldset>
 
                     <!-- Shared with specific people -->
                     <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all"

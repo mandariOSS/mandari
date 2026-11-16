@@ -89,7 +89,8 @@ class MotionRestoreView(WorkViewMixin, View):
         # Restore to draft
         motion.status = "draft"
         motion.deleted_at = None
-        motion.save()
+        # Nur diese Felder: Was inzwischen an anderer Stelle gespeichert wurde, bleibt unberührt
+        motion.save(update_fields=["status", "deleted_at", "updated_at"])
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse({"success": True})
