@@ -9,6 +9,7 @@ Mitglieder-Unterabfrage lief je Sitzung statt je Gremium (Köln: 7 s je Aufruf).
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any, cast
 
 import pytest
 from django.test import Client
@@ -48,7 +49,7 @@ def test_letzte_sitzung_und_reihenfolge(body: OParlBody) -> None:
     _gremium(body, "Ausschuss für Bau", 5, 2)
     _gremium(body, "Beirat ohne Sitzung")
 
-    qs = sort_organizations_by_ranking(OParlOrganization.objects.filter(body=body))
+    qs = cast(Any, sort_organizations_by_ranking)(OParlOrganization.objects.filter(body=body))
     assert "GROUP BY" not in str(qs.query), "kein Aggregat über den Join mit den Sitzungen"
     zeilen = {o.name: o for o in qs}
 
