@@ -53,7 +53,14 @@ def _erledigt(task: Task, membership: Membership) -> None:
 
 
 def can_edit_task(task: Task, membership: Membership) -> bool:
-    """Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen."""
+    """
+    Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen.
+
+    Aufgaben aus einem nichtöffentlichen TOP ändert nur, wer den TOP heute sehen darf (``Task.noe_gesperrt``): Wer sie
+    nicht mehr öffnen kann, hakt sie auch über Board und Sitzungsansicht nicht mehr ab.
+    """
+    if task.noe_gesperrt(membership):
+        return False
     if task.created_by == membership or task.assigned_to == membership:
         return True
     return membership.has_permission("tasks.manage") and task.can_access(membership)
@@ -240,6 +247,15 @@ def delete_personal_tasks(membership: Membership) -> int:
     """
     task_ids = list(selectors.personal_tasks(membership).values_list("pk", flat=True))
     files = [attachment.file for attachment in TaskAttachment.objects.filter(task_id__in=task_ids)]
+    # Wie in ``delete_task``: Nachrichten zu Aufgaben aus nichtöffentlichen TOPs vorher kennzeichnen. Sie können bei
+    # anderen liegen, etwa bei einer Vertretung, an die weitergeleitet wurde.
+    nichtoeffentlich = (
+        Task.objects.filter(pk__in=task_ids)
+        .filter(selectors.noe_top_q())
+        .select_related("related_faction_agenda_item__parent")
+    )
+    for task in nichtoeffentlich:
+        _hub().aufgabe_wird_geloescht(task)
     Task.objects.filter(pk__in=task_ids).delete()
     remove_files_on_commit(files)
     return len(task_ids)
@@ -511,8 +527,15 @@ def add_comment(task: Task, membership: Membership, content: str) -> TaskActivit
     return activity
 
 
+@transaction.atomic
 def delete_task(task: Task) -> None:
-    """Aufgabe mit allen abhängigen Objekten löschen."""
+    """
+    Aufgabe mit allen abhängigen Objekten löschen.
+
+    Benachrichtigungen zur Aufgabe bleiben gespeichert. Gehört sie zu einem nichtöffentlichen TOP, werden sie vorher
+    gekennzeichnet, damit sie für nicht Vereidigte verborgen bleiben (``NotificationHub.aufgabe_wird_geloescht``).
+    """
+    _hub().aufgabe_wird_geloescht(task)
     task.delete()
 
 

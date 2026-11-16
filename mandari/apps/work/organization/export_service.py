@@ -57,6 +57,10 @@ class Vermerk:
 NON_PUBLIC_DOCUMENT = "[nichtöffentliche Unterlage]"
 NON_PUBLIC_CONTENT = "[nichtöffentlicher Inhalt]"
 
+#: Vermerke an einer Aufgabe: Der Fraktions-TOP samt übergeordnetem TOP gehört zur Zugriffsprüfung
+#: (``Task.noe_gesperrt``) und wird mitgeladen statt je Aufgabe nachgefragt
+AUFGABE_MIT_TOP = ("task", "task__related_faction_agenda_item__parent")
+
 
 def _motion_title(obj: Any) -> str:
     return str(obj.motion.title)
@@ -302,7 +306,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "task__organization",
         "created_at",
         lambda o: f"{o.task.title}: {o.get_activity_type_display()}",
-        select=("task",),
+        select=AUFGABE_MIT_TOP,
         exclude={"activity_type": "comment"},  # Kommentare stehen mit Inhalt bei den Aufgaben
     ),
     Vermerk(
@@ -312,7 +316,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "task__organization",
         "created_at",
         lambda o: f"{o.task.title}: {o.filename}",
-        select=("task",),
+        select=AUFGABE_MIT_TOP,
     ),
     Vermerk(
         "TaskShare.shared_by",
@@ -321,7 +325,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "task__organization",
         "shared_at",
         lambda o: o.task.title,
-        select=("task",),
+        select=AUFGABE_MIT_TOP,
     ),
     # Organisation
     Vermerk(
@@ -601,7 +605,9 @@ class DsgvoExportService:
                 | Q(id__in=shared_ids)
                 | Q(id__in=list(comments_by_task))
             )
-            .select_related("created_by", "assigned_to", "organization")
+            # Der Fraktions-TOP samt übergeordnetem TOP gehört zur Zugriffsprüfung (``Task.noe_gesperrt``): mitladen
+            # statt einer Abfrage je Aufgabe
+            .select_related("created_by", "assigned_to", "organization", "related_faction_agenda_item__parent")
             .distinct()
             .order_by("-created_at")
         )
@@ -616,7 +622,8 @@ class DsgvoExportService:
             zugriff = t.can_access(membership) and (darf_aufgaben_sehen or is_creator or is_assignee)
             if not zugriff:
                 # Eigene Kommentare gehören zur Auskunft, der heutige Stand der Aufgabe nicht mehr: Die Person hat
-                # keinen Zugriff mehr (Aufgabe inzwischen privat oder Freigabe entzogen)
+                # keinen Zugriff mehr (Aufgabe inzwischen privat, Freigabe entzogen oder aus einem nichtöffentlichen
+                # TOP, den sie nicht mehr sehen darf)
                 result.append(
                     {
                         "title": NO_ACCESS_TASK,
@@ -882,23 +889,51 @@ class DsgvoExportService:
         """Eigene TOP-Vorschläge, Protokolleinträge über die Person und ihre Teilnahmebescheinigungen."""
         from django.db.models import Q
 
-        from apps.work.faction.models import FactionAgendaItem, FactionAttendanceCertificate, FactionProtocolEntry
-        from apps.work.faction.sitzungsarten import darf_sehen
-        from apps.work.faction.visibility import can_view_item_with_parents
+        from apps.work.faction.models import (
+            FactionAgendaItem,
+            FactionAttendanceCertificate,
+            FactionMeeting,
+            FactionProtocolEntry,
+        )
+        from apps.work.faction.sitzungsarten import sichtbar_fuer
+        from apps.work.faction.visibility import can_view_internal, is_item_internal
 
-        proposals = []
-        for i in (
+        vorschlaege = list(
             FactionAgendaItem.objects.filter(proposed_by=membership, meeting__organization=organization)
             .select_related("meeting", "parent")
             .order_by("-created_at")
-        ):
+        )
+        eintraege = list(
+            FactionProtocolEntry.objects.filter(meeting__organization=organization)
+            .filter(Q(speaker=membership) | Q(action_assignee=membership))
+            .select_related("meeting", "agenda_item__parent")
+            .order_by("-created_at")
+        )
+        # Beide Prüfungen einmal für den ganzen Abschnitt statt je Zeile: welche der genannten Sitzungen die Person
+        # heute sieht (Sitzungsarten, Issue #1239; dieselbe Regel wie ``darf_sehen``) und ob sie Nichtöffentliches
+        # sehen darf (Issue #64)
+        genannt = {i.meeting_id for i in vorschlaege} | {e.meeting_id for e in eintraege}
+        sichtbare_sitzungen = (
+            set(
+                sichtbar_fuer(
+                    membership, FactionMeeting.objects.filter(organization=organization, pk__in=genannt)
+                ).values_list("pk", flat=True)
+            )
+            if genannt
+            else set()
+        )
+        darf_intern = can_view_internal(membership)
+
+        proposals = []
+        for i in vorschlaege:
             # Wie die Oberfläche: Eigene Vorschläge im nichtöffentlichen Teil sind ohne Vereidigung nicht mehr
             # sichtbar, ebenso Vorschläge zu Sitzungen, die die Person nicht (mehr) sieht. Der Zeitpunkt des
             # eigenen Vorschlags bleibt; Titel, Stand der Entscheidung und Ablehnungsgrund nicht.
-            sichtbar = darf_sehen(membership, i.meeting) and can_view_item_with_parents(i, membership)
+            sitzung_sichtbar = i.meeting_id in sichtbare_sitzungen
+            sichtbar = sitzung_sichtbar and (darf_intern or not is_item_internal(i))
             proposals.append(
                 {
-                    "meeting": i.meeting.title if darf_sehen(membership, i.meeting) else NO_ACCESS_MEETING,
+                    "meeting": i.meeting.title if sitzung_sichtbar else NO_ACCESS_MEETING,
                     "title": i.title if sichtbar else NO_ACCESS_ITEM,
                     "status": i.proposal_status if sichtbar else "",
                     "rejection_reason": (i.rejection_reason or "") if sichtbar else "",
@@ -907,20 +942,26 @@ class DsgvoExportService:
             )
 
         entries = []
-        for e in (
-            FactionProtocolEntry.objects.filter(meeting__organization=organization)
-            .filter(Q(speaker=membership) | Q(action_assignee=membership))
-            .select_related("meeting", "agenda_item")
-            .order_by("-created_at")
-        ):
-            # NÖ strikt (Issue #64): Inhalt nichtöffentlicher TOPs nur, wenn die Person ihn sehen darf
-            visible = e.agenda_item is None or can_view_item_with_parents(e.agenda_item, membership)
+        for e in eintraege:
+            # Wie die Oberfläche: Der Inhalt eines Eintrags steht nur im Export, wenn die Person die Sitzung heute
+            # sieht und den Eintrag dort lesen dürfte. Eine Nennung als Rednerin oder Zuständige allein öffnet
+            # weder eine Sitzung „nur für Teilnehmende“ noch den nichtöffentlichen Teil (Issue #64); Einträge ohne
+            # TOP gelten wie auf der Protokollseite als intern. Art, Rolle, Frist und Zeitpunkt bleiben.
+            sitzung_sichtbar = e.meeting_id in sichtbare_sitzungen
+            if not sitzung_sichtbar:
+                inhalt = NO_ACCESS_MEETING
+            elif e.agenda_item is None:
+                inhalt = _safe_decrypt(e, "content") if darf_intern else NON_PUBLIC_CONTENT
+            elif darf_intern or not is_item_internal(e.agenda_item):
+                inhalt = _safe_decrypt(e, "content")
+            else:
+                inhalt = NO_ACCESS_ITEM
             entries.append(
                 {
-                    "meeting": e.meeting.title,
+                    "meeting": e.meeting.title if sitzung_sichtbar else NO_ACCESS_MEETING,
                     "type": e.get_entry_type_display(),
                     "role": "Redebeitrag" if e.speaker_id == membership.id else "Aufgabe",
-                    "content": _safe_decrypt(e, "content") if visible else "[nichtöffentlicher Tagesordnungspunkt]",
+                    "content": inhalt,
                     "action_due_date": _date(e.action_due_date),
                     "created_at": _dt(e.created_at),
                 }
@@ -1132,23 +1173,39 @@ class DsgvoExportService:
 
     def _collect_notifications(self, membership) -> dict:
         from apps.work.motions.non_public import hidden_document_ids
-        from apps.work.notifications.models import Notification, NotificationPreference
+        from apps.work.notifications.models import Notification, NotificationPreference, NotificationType
+        from apps.work.notifications.services import NotificationHub
 
         # All notifications (not limited to 100)
         notifications = Notification.objects.filter(recipient=membership).order_by("-created_at")
         # Nachrichten zu Unterlagen in „Nichtöffentliche Vorgänge“ (Issue #873): ohne Vereidigung – auch nach
         # deren Entzug – nur Art und Zeitpunkt, nicht Titel und Auszüge
         hidden = set(hidden_document_ids(membership))
+        # Dieselbe Grenze wie Glocke und Benachrichtigungsseite (``NotificationHub.for_recipient``): Erwähnungen zu
+        # einem TOP, der für die Person heute nichtöffentlich ist, Nachrichten zu einer Aufgabe aus einem solchen TOP
+        # und Nachrichten zu endgültig gelöschten Unterlagen. Der gespeicherte Text nennt Titel; geprüft wird der
+        # heutige Stand, einmal für alle Zeilen.
+        unverifiable = set(NotificationHub.hidden_reference_ids(membership))
 
         notif_list = []
         for n in notifications:
             metadata = n.metadata if isinstance(n.metadata, dict) else {}
-            locked = bool(hidden) and str(metadata.get("motion_id") or "") in hidden
+            placeholder = ""
+            if hidden and str(metadata.get("motion_id") or "") in hidden:
+                placeholder = NON_PUBLIC_DOCUMENT
+            elif n.pk in unverifiable:
+                if n.notification_type == NotificationType.FACTION_MENTION:
+                    placeholder = NO_ACCESS_ITEM
+                elif "motion_id" not in metadata and "task_id" in metadata:
+                    placeholder = NO_ACCESS_TASK
+                else:
+                    placeholder = NO_ACCESS_DOCUMENT
+            locked = bool(placeholder)
             notif_list.append(
                 {
                     "type": n.notification_type,
-                    "title": NON_PUBLIC_DOCUMENT if locked else n.title,
-                    "message": NON_PUBLIC_DOCUMENT if locked else (n.message or ""),
+                    "title": placeholder if locked else n.title,
+                    "message": placeholder if locked else (n.message or ""),
                     "link": n.link or "",
                     "is_read": n.is_read,
                     "created_at": _dt(n.created_at),

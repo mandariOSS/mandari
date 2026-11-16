@@ -23,9 +23,16 @@ from apps.work.tasks.models import Task
 
 @pytest.fixture
 def mitglied(org: Any, make_member: Any) -> Any:
-    return make_member(
-        org, ["tasks.view", "tasks.create", "faction.view_public", "protocols.create"], email="m@example.org"
+    # Vereidigt mit Sicht auf den nichtöffentlichen Teil: Die Einträge dieser Tests haben keinen TOP und gelten damit
+    # als intern (tests/test_nichtoeffentlicher_top.py)
+    member = make_member(
+        org,
+        ["tasks.view", "tasks.create", "faction.view_public", "faction.view_non_public", "protocols.create"],
+        email="m@example.org",
     )
+    member.is_sworn_in = True
+    member.save(update_fields=["is_sworn_in"])
+    return member
 
 
 @pytest.fixture

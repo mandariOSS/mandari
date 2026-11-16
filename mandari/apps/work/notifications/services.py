@@ -36,7 +36,13 @@ from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
-from .models import ANNOUNCEMENT_WITHDRAWN_KEY, Notification, NotificationPreference, NotificationType
+from .models import (
+    ANNOUNCEMENT_WITHDRAWN_KEY,
+    TASK_NON_PUBLIC_KEY,
+    Notification,
+    NotificationPreference,
+    NotificationType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +128,11 @@ class NotificationHub:
         # Sitzungsarten (Issue #1239): nichts zu einer Fraktionssitzung, die der Empfänger nicht sehen darf. Gilt für
         # jeden Weg, auch für die Weiterleitung an eine Vertretung.
         if cls._sitzung_verborgen(recipient, notification_type, metadata):
+            return None
+
+        # Aufgabe aus einem nichtöffentlichen TOP, die der Empfänger nicht öffnen darf (``Task.noe_gesperrt``): Titel
+        # und Kommentarauszug gehören zum nichtöffentlichen Teil der Sitzung, in der Anwendung wie per E-Mail.
+        if cls._aufgabe_verschlossen(recipient, metadata):
             return None
 
         # Typ-Einstellung (Issue #70): In-App-Benachrichtigungen sind je Typ
@@ -210,6 +221,71 @@ class NotificationHub:
         except (ValueError, TypeError, ValidationError):
             return False
         return meeting is not None and not darf_sehen(recipient, meeting)
+
+    @staticmethod
+    def _aufgabe_verschlossen(recipient, metadata: dict | None) -> bool:
+        """
+        Betrifft die Benachrichtigung (``task_id``) eine Aufgabe aus einem nichtöffentlichen TOP, die der Empfänger
+        heute nicht öffnen darf? Für Vereidigte und ohne Aufgabenbezug ohne Abfrage. Eine gelöschte Aufgabe verbirgt
+        nur, wenn sie beim Löschen zu einem nichtöffentlichen TOP gehörte (``aufgabe_wird_geloescht``).
+        """
+        task_id = (metadata or {}).get("task_id")
+        if not task_id:
+            return False
+        from django.core.exceptions import ValidationError
+
+        from apps.work.faction.visibility import is_sworn_member
+        from apps.work.tasks.models import Task
+
+        if is_sworn_member(recipient):
+            return False
+        if (metadata or {}).get(TASK_NON_PUBLIC_KEY):
+            return True
+        try:
+            task = (
+                Task.objects.filter(pk=task_id, organization_id=recipient.organization_id)
+                .select_related("related_faction_agenda_item__parent")
+                .first()
+            )
+        except (ValueError, TypeError, ValidationError):
+            return False
+        return task is not None and task.noe_gesperrt(recipient)
+
+    @classmethod
+    def bezug_verborgen(cls, recipient, notification_type: str, metadata: Any) -> bool:
+        """
+        Die Prüfungen aus ``send`` zum Bezug einer Nachricht (Fraktionssitzung, Aufgabe), am heutigen Stand.
+
+        Der Versand der E-Mail läuft nach dem Anlegen in einem eigenen Auftrag. Dazwischen kann die Vereidigung
+        entzogen, der TOP nichtöffentlich gestellt oder die Sitzungsart geändert sein; eine versandte Mail lässt sich
+        nicht zurückholen.
+        """
+        metadata = metadata if isinstance(metadata, dict) else None
+        return cls._sitzung_verborgen(recipient, notification_type, metadata) or cls._aufgabe_verschlossen(
+            recipient, metadata
+        )
+
+    @classmethod
+    def aufgabe_wird_geloescht(cls, task: Any) -> int:
+        """
+        Vor dem Löschen einer Aufgabe aus einem nichtöffentlichen TOP: ihre Nachrichten kennzeichnen.
+
+        Die Nachrichten bleiben gespeichert und nennen Titel und Kommentarauszug. Ohne die Aufgabe ließe sich nicht
+        mehr feststellen, dass sie zum nichtöffentlichen Teil gehörte, und die Nachrichten erschienen für nicht
+        Vereidigte wieder (``hidden_reference_ids``). Für Vereidigte ändert sich nichts. Liefert die Zahl der
+        gekennzeichneten Nachrichten; andere Aufgaben bleiben unberührt.
+        """
+        if not task.noe_top:
+            return 0
+        betroffen = list(
+            Notification.objects.filter(metadata__has_key="task_id", metadata__task_id=str(task.pk)).exclude(
+                metadata__has_key=TASK_NON_PUBLIC_KEY
+            )
+        )
+        for notification in betroffen:
+            notification.metadata = {**notification.metadata, TASK_NON_PUBLIC_KEY: True}
+            notification.save(update_fields=["metadata"])
+        return len(betroffen)
 
     @classmethod
     def already_direct(cls, recipient, notification_type: str, metadata: dict | None, since: datetime) -> bool:
@@ -985,9 +1061,13 @@ class NotificationHub:
           unter einem nichtöffentlichen TOP, oder es gibt ihn nicht mehr.
         - Nachricht zu einer Unterlage (``motion_id``), die endgültig gelöscht ist: Ob sie in „Nichtöffentliche
           Vorgänge“ lag, lässt sich dann nicht mehr feststellen.
+        - Nachricht zu einer Aufgabe (``task_id``) aus einem nichtöffentlichen TOP: Sie ist für nicht Vereidigte
+          verschlossen (``Task.noe_gesperrt``), auch wenn der TOP erst später nichtöffentlich wurde oder die
+          Vereidigung entzogen ist. Das gilt nach dem Löschen der Aufgabe weiter (``aufgabe_wird_geloescht``
+          kennzeichnet ihre Nachrichten); Nachrichten zu anderen gelöschten Aufgaben bleiben sichtbar.
 
         Für vereidigte Mitglieder leer, ohne Abfrage. Sonst eine Abfrage nach den eigenen Nachrichten mit
-        solchem Bezug und, nur wenn es sie gibt, je eine nach den Unterlagen und den TOPs.
+        solchem Bezug und, nur wenn es sie gibt, je eine nach den Unterlagen, den TOPs und den Aufgaben.
         """
         from apps.work.faction.models import FactionAgendaItem
         from apps.work.faction.visibility import is_item_internal, is_sworn_member
@@ -997,7 +1077,11 @@ class NotificationHub:
             return []
         rows = list(
             Notification.objects.filter(recipient=membership)
-            .filter(Q(metadata__has_key="motion_id") | Q(notification_type=NotificationType.FACTION_MENTION))
+            .filter(
+                Q(metadata__has_key="motion_id")
+                | Q(metadata__has_key="task_id")
+                | Q(notification_type=NotificationType.FACTION_MENTION)
+            )
             .values_list("pk", "notification_type", "metadata")
         )
         if not rows:
@@ -1006,14 +1090,30 @@ class NotificationHub:
         org_id = membership.organization_id
         by_motion: dict[uuid.UUID | None, list[Any]] = {}
         by_item: dict[uuid.UUID | None, list[Any]] = {}
+        by_task: dict[uuid.UUID | None, list[Any]] = {}
+        geloescht_nichtoeffentlich: set[Any] = set()
         for pk, notification_type, metadata in rows:
             metadata = metadata if isinstance(metadata, dict) else {}
             if notification_type == NotificationType.FACTION_MENTION:
                 by_item.setdefault(_as_uuid(metadata.get("item_id")), []).append(pk)
             if "motion_id" in metadata:
                 by_motion.setdefault(_as_uuid(metadata.get("motion_id")), []).append(pk)
+            if "task_id" in metadata:
+                by_task.setdefault(_as_uuid(metadata.get("task_id")), []).append(pk)
+                if metadata.get(TASK_NON_PUBLIC_KEY):
+                    geloescht_nichtoeffentlich.add(pk)
 
-        hidden: set[Any] = set()
+        hidden: set[Any] = set(geloescht_nichtoeffentlich)
+        if by_task:
+            from apps.work.tasks.models import Task
+            from apps.work.tasks.selectors import noe_top_q
+
+            locked = set(
+                Task.objects.filter(pk__in=[k for k in by_task if k is not None], organization_id=org_id)
+                .filter(noe_top_q())
+                .values_list("pk", flat=True)
+            )
+            hidden.update(pk for key, pks in by_task.items() if key in locked for pk in pks)
         if by_motion:
             known = set(
                 Motion.objects.filter(

@@ -307,7 +307,12 @@ def test_aufgaben_und_protokolleintraege(
     aufgabe.save(update_fields=["assigned_to"])
     assert aufgabe in aufgaben.visible_tasks(org, mitglied) and aufgabe.can_access(mitglied)
 
-    eintrag = FactionProtocolEntry.objects.create(meeting=geheim, entry_type="action", created_by=verwaltung, order=1)
+    # Eintrag an einem öffentlichen TOP: Einträge ohne TOP gelten als intern und stehen nur Vereidigten offen, hier
+    # geht es um die Sichtbarkeit der Sitzung
+    punkt = FactionAgendaItem.objects.create(meeting=geheim, number="1", title="Kasse", visibility="public", order=1)
+    eintrag = FactionProtocolEntry.objects.create(
+        meeting=geheim, agenda_item=punkt, entry_type="action", created_by=verwaltung, order=1
+    )
     assert aufgaben.open_protocol_action_items(org, mitglied) == []
     assert aufgaben.find_protocol_entry(org, mitglied, eintrag.pk) is None
     assert aufgaben.open_protocol_action_items(org, kern) == [eintrag]

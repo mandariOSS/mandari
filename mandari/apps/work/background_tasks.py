@@ -50,6 +50,14 @@ def send_notification_email_task(notification_id: str):
         logger.info("Notification email %s skipped, recipient is no longer active", notification_id)
         return
 
+    # Zwischen Anlegen und Versand kann die Person den Bezug verloren haben (Vereidigung entzogen, TOP nichtöffentlich
+    # gestellt, Sitzungsart geändert): dieselben Prüfungen wie beim Anlegen, denn eine Mail lässt sich nicht zurückholen
+    from apps.work.notifications.services import NotificationHub
+
+    if NotificationHub.bezug_verborgen(notification.recipient, notification.notification_type, notification.metadata):
+        logger.info("Notification email %s skipped, reference is no longer visible to the recipient", notification_id)
+        return
+
     recipient_email = notification.recipient.user.email
     if not recipient_email:
         logger.warning(f"No email for notification recipient {notification_id}")
