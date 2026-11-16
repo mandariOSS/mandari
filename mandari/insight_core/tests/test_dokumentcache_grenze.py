@@ -904,7 +904,7 @@ class TestKennzahlen:
         assert "2 von 2 Dokumenten abgelegt" in out.getvalue()
         assert "(Platte), im Objektspeicher" in out.getvalue()
 
-        zustand = next(c for c in collect_system_health() if c["name"] == "Dokument-Cache")
+        zustand = next(c for c in collect_system_health(dokument_cache_neu=True) if c["name"] == "Dokument-Cache")
         assert "Dokumenten abgelegt" in zustand["detail"] and "im Objektspeicher" in zustand["detail"]
 
     def test_ohne_objektspeicher_wie_bisher(self, ablage: Path, body: OParlBody) -> None:
@@ -917,7 +917,7 @@ class TestKennzahlen:
         out = StringIO()
         call_command("cache_files", "--stats", stdout=out)
         assert "1 von 1 Dokumenten lokal" in out.getvalue() and "im Objektspeicher" not in out.getvalue()
-        zustand = next(c for c in collect_system_health() if c["name"] == "Dokument-Cache")
+        zustand = next(c for c in collect_system_health(dokument_cache_neu=True) if c["name"] == "Dokument-Cache")
         assert "Dokumenten lokal" in zustand["detail"] and "im Objektspeicher" not in zustand["detail"]
 
 
