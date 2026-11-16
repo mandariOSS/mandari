@@ -29,6 +29,7 @@ from apps.tenants.models import (
     Topic,
     UserInvitation,
 )
+from hub.ris import selectors as ris
 from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson, withdrawn_q
 
 from .models import DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
@@ -472,7 +473,7 @@ def suggested_committees(
 
 def get_oparl_person_or_404(bodies: QuerySet[OParlBody], person_id: Any) -> OParlPerson:
     """RIS-Person innerhalb der Körperschaften oder 404; von mandari Session zurückgenommene gibt es hier nicht."""
-    return get_object_or_404(OParlPerson.objects.exclude(withdrawn_q()), id=person_id, body__in=bodies)
+    return get_object_or_404(ris.persons(bodies).exclude(withdrawn_q()), id=person_id)
 
 
 def committee_context(organization: Organization, member: Membership) -> dict[str, Any]:
