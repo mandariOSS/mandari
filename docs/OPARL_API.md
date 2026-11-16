@@ -553,6 +553,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 | `mandari:locationName`, `mandari:locationAddress` | Meeting | abgekündigt: Ortsangabe als Text, wenn die Quelle kein Location-Objekt liefert; steht jetzt in `Meeting.location` |
 | `mandari:cancelledDerived` | Meeting | `true`, wenn mandari die Absage aus dem Namen der Sitzung abgeleitet hat: Die Quelle setzt `cancelled` nicht, schreibt aber „abgesagt“, „entfällt“ oder „fällt aus“ in den Namen. `cancelled` ist dann `true`, `name` steht ohne den Vermerk da (siehe „Geprüfte Angaben der Quelle“) |
 | `mandari:cancelledNote` | Meeting | Absagevermerk aus dem Namen im Wortlaut der Quelle, etwa „Sitzung fällt aus und wurde auf den 24.06. verlegt“; ohne Verwaltungsvermerke hinter einem senkrechten Strich |
+| `mandari:organizationNotPublished` | Meeting | Gremien, die die Quelle an der Sitzung nennt, aber nicht öffentlich ausgibt (etwa HTTP 401 auf das Objekt): die Adressen im Quellsystem. In `organization` stehen nur Gremien aus dem Bestand |
 | `mandari:protocolApproval` | Meeting | Genehmigung der veröffentlichten Niederschrift: `mode` (`follow_up`, `direct`), `date`, `meeting` (genehmigende Sitzung, nur wenn sie im Bestand ist) |
 | `mandari:resolutionNumber` | AgendaItem | Beschlussnummer |
 | `mandari:vote` | AgendaItem | Abstimmung: `method`, `methodLabel`, `result`, `resultLabel`, `yes`, `no`, `abstain` |
@@ -579,6 +580,11 @@ bleibt über `mandari:originalId` nachvollziehbar.
   steht weder in `name` noch in `mandari:cancelledNote`.
 - **Ende vor dem Beginn.** Viele Quellen liefern als `end` das Datum ohne Uhrzeit; als Zeitpunkt gelesen liegt es
   vor dem Beginn. `end` steht nur in der Ausgabe, wenn es nach `start` liegt.
+
+- **Gremium nicht veröffentlicht.** Nennt die Quelle an einer Sitzung ein Gremium, das sie nicht öffentlich ausgibt,
+  fehlt es im Bestand. Der Verweis geht nicht verloren: `mandari:organizationNotPublished` nennt die Adressen im
+  Quellsystem. Trägt die Sitzung keinen eigenen Namen, heißt sie in mandari „Sitzung eines nicht veröffentlichten
+  Gremiums“ statt nur „Sitzung“.
 
 Eine Ableitung aus dem Namen kann danebenliegen. Wer es genau wissen muss, prüft `mandari:cancelledDerived` und
 sieht bei der Quelle nach.
