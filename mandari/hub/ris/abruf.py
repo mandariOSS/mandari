@@ -142,7 +142,7 @@ CODE_BAD_URL: Final = "adresse"
 CODE_ABORTED: Final = "abbruch"
 #: Vorübergehende Fehler: Wiederholung mit wachsendem Abstand
 RETRY_CODES: Final = frozenset(
-    {CODE_TIMEOUT, CODE_CONNECTION, CODE_THROTTLED, CODE_SERVER, CODE_EMPTY, CODE_ROBOTS_UNREACHABLE}
+    {CODE_TIMEOUT, CODE_CONNECTION, CODE_THROTTLED, CODE_SERVER, CODE_EMPTY, CODE_ROBOTS_UNREACHABLE, CODE_ABORTED}
 )
 #: Die Quelle lässt uns nicht laden: erst nach Freigabe erneut
 REFUSED_CODES: Final = frozenset({CODE_HTML, CODE_ROBOTS})
@@ -839,6 +839,15 @@ def abrufen(
     file_obj.local_status = FETCHING
     try:
         return _abrufen_beansprucht(file_obj, beanspruchung, client, max_wait, now)
+    except Exception as exc:
+        # Unerwarteter Fehler an genau dieser Datei: wie die anderen wiederholbaren Fehlschläge vermerken
+        # (Versuchszähler, Wiederholungsfrist). Ohne Vermerk bliebe sie fällig, stünde in jedem Lauf wieder vorn und
+        # hielte bei kleinem Limit alle Dateien dahinter auf. Der Aufrufer erfährt die Ausnahme trotzdem.
+        try:
+            fail(file_obj, beanspruchung, CODE_ABORTED, f"Unerwarteter Fehler: {type(exc).__name__}", now)
+        except Exception:
+            restore(beanspruchung)
+        raise
     except BaseException:
         restore(beanspruchung)
         raise
