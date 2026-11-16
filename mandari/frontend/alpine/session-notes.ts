@@ -286,8 +286,15 @@ export const sitzungsNotizen = defineComponent(() => {
     nachricht(msg: any, ausgang: string, zusammengefuehrt: boolean) {
       if (!msg || typeof msg.type !== 'string' || !editor) return
       if (msg.type === 'connected') {
+        const konto = String(msg.user?.user ?? '')
+        if (this.ich && konto && konto !== this.ich) {
+          // Nach dem Ende der Anmeldung kam die Verbindung mit einem anderen Konto wieder zustande: Im Browser hat sich
+          // inzwischen jemand anders angemeldet. Über dessen Verbindung geht nichts aus diesem Fenster
+          this.anderesKonto()
+          return
+        }
         verbunden = true
-        this.ich = String(msg.user?.user ?? '')
+        this.ich = konto
         const person = msg.user as Anwesend | undefined
         if (person && collab) {
           // Eigener Name und eigene Farbe am Cursor, wie sie die anderen sehen
@@ -482,6 +489,18 @@ export const sitzungsNotizen = defineComponent(() => {
       if (ausstehend) this.geaendert()
     },
 
+    /** Im Browser ist ein anderes Konto angemeldet: Der Text bleibt zum Sichern stehen, gespeichert wird nichts. */
+    anderesKonto() {
+      fremdesKonto = true
+      window.clearTimeout(timer)
+      editor?.setEditable(false)
+      this.status = 'fehler'
+      const alt = collab
+      collab = null
+      alt?.destroy()
+      this.anwesende = []
+    },
+
     zugriffGeaendert(grund?: string) {
       if (grund === 'session_ended') {
         // Die Anmeldung gilt nicht mehr (abgemeldet, Sitzung beendet, Passwort an anderer Stelle neu gesetzt), auch
@@ -654,6 +673,7 @@ export const sitzungsNotizen = defineComponent(() => {
             daten = (await res.json()) as Antwort
           }
           if (res.ok) {
+            fremdesKonto = false
             this.stand = daten.stand ?? this.stand
             this.gespeichertUm = daten.gespeichert_um ?? ''
             basisFassung = gesendet
