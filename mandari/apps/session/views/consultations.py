@@ -40,6 +40,9 @@ from ..visibility import agenda_item_q, meeting_q, meeting_visible, optional, pa
 ROLE_VALUES = {value for value, _ in SessionConsultation.ROLE_CHOICES}
 RESULT_VALUES = {value for value, _ in SessionConsultation.RESULT_CHOICES}
 
+#: Die Station wurde zwischen Laden und Speichern terminiert, von ihrem TOP gelöst oder entfernt
+STATION_CHANGED = "Die Beratungsstation hat sich inzwischen geändert. Bitte laden Sie die Seite neu."
+
 
 class ConsultationBaseView(SessionViewMixin, View):
     """Basisklasse: POST-only, Tenant- und Ö/NÖ-gefilterte Objektzugriffe."""
@@ -177,30 +180,39 @@ class ConsultationUpdateView(ConsultationBaseView):
         # Manuelles Ergebnis nur für Stationen ohne TOP (sonst schreibt der
         # TOP das Ergebnis über das Signal zurück und bleibt führend).
         result = request.POST.get("result", "")
+        loaded_item_id = consultation.agenda_item_id
 
         # Drehscheibe (Issue #534): Rolle, Zielsitzung, Entscheidungsbefugnis, Ergebnis
         with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+            if not loaded_item_id:
+                # Station ohne TOP: erst die Vorlage sperren und frisch lesen, dann die Station – dieselbe
+                # Reihenfolge wie beim Terminieren (``schedule_consultation``), sonst warten zwei Anfragen an
+                # derselben Station aufeinander. Eine Station mit TOP braucht die Vorlage hier nicht: Ihr Ergebnis
+                # schreibt der TOP, und dessen Weg sperrt erst die Station, dann die Vorlage.
+                paper.refresh_from_db(
+                    from_queryset=SessionPaper.objects.select_for_update(of=("self",)).select_related("tenant")
+                )
             # Ergebnis und TOP-Verweis am gespeicherten Stand der Station: Hat eine zweite Anfrage das Ergebnis
-            # inzwischen zurückgenommen oder die Station terminiert, zählt das, nicht der beim Laden gelesene Stand
+            # inzwischen zurückgenommen, zählt das, nicht der beim Laden gelesene Stand
             stored = (
                 SessionConsultation.objects.select_for_update(of=("self",))
                 .filter(pk=consultation.pk)
                 .values("result", "agenda_item_id")
                 .first()
             )
-            if stored is not None:
-                consultation.result = stored["result"]
-                consultation.agenda_item_id = stored["agenda_item_id"]
-            new_result = result in RESULT_VALUES and not consultation.agenda_item_id and result != consultation.result
+            if stored is None or stored["agenda_item_id"] != loaded_item_id:
+                # Zielsitzung und Ergebnis oben galten dem geladenen Stand. Mit einem inzwischen angelegten TOP
+                # zeigte die Station sonst auf eine andere Sitzung als ihr TOP; eine entfernte entstünde neu.
+                messages.error(request, STATION_CHANGED)
+                return self.redirect_to_paper(paper)
+            consultation.result = stored["result"]
+            new_result = result in RESULT_VALUES and not loaded_item_id and result != consultation.result
             if new_result and result != "pending":
                 # Ein Ergebnis setzt eine freigegebene Vorlage voraus: „Angenommen“ an der entscheidenden Station
                 # kennzeichnet die beschlossene Fassung, unveränderlich und nur einmal je Vorlage. Geprüft wird
-                # der gespeicherte Stand unter Sperre – die Vorlage kann seit dem Laden zurückgewiesen oder
-                # zurückgezogen worden sein. Stationen planen (Rolle, Zielsitzung) bleibt im Entwurf möglich: Das
-                # Formular sendet das unveränderte Ergebnis mit, und „Ausstehend“ nimmt ein Ergebnis nur zurück.
-                paper.refresh_from_db(
-                    from_queryset=SessionPaper.objects.select_for_update(of=("self",)).select_related("tenant")
-                )
+                # der oben unter Sperre gelesene Stand – die Vorlage kann seit dem Laden zurückgewiesen worden
+                # sein. Stationen planen (Rolle, Zielsitzung) bleibt im Entwurf möglich: Das Formular sendet das
+                # unveränderte Ergebnis mit, und „Ausstehend“ nimmt ein Ergebnis nur zurück.
                 blocker = agenda_service.manual_result_error(paper)
                 if blocker:
                     messages.error(request, blocker)

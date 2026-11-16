@@ -4,8 +4,9 @@ Ergebnis von Hand an einer Beratungsstation: nur an einer freigegebenen Vorlage 
 
 - Freigegeben, Terminiert, Abgeschlossen: Das Ergebnis einer Station ohne TOP lässt sich wie bisher eintragen;
   „Angenommen“ an der entscheidenden Station kennzeichnet die beschlossene Fassung
-- Entwurf, Prüfung, Zurückgezogen: Das Ergebnis wird mit einer Meldung abgelehnt, es entsteht keine Fassung;
-  geprüft wird der gespeicherte Stand der Vorlage
+- Entwurf, Prüfung: Das Ergebnis wird mit einer Meldung abgelehnt, es entsteht keine Fassung; geprüft wird der
+  gespeicherte Stand der Vorlage. An einer zurückgezogenen Vorlage bleibt das Ergebnis möglich, ohne Kennzeichen
+- Wird die Station zwischen Laden und Speichern terminiert oder entfernt, wird nichts gespeichert
 - Stationen planen (Rolle, Zielsitzung, „entscheidend“) bleibt im Entwurf möglich, ein Ergebnis aus dem Bestand
   lässt sich dort auf „Ausstehend“ zurücknehmen
 - Die Fassungen kennzeichnen ein Ergebnis ohne TOP auch auf anderen Wegen nur an einer freigegebenen Vorlage; die
@@ -177,6 +178,49 @@ def test_geprueft_wird_der_gespeicherte_stand_der_vorlage(welt: Welt, monkeypatc
     station.refresh_from_db()
     assert station.result == "pending"
     assert not Version.objects.filter(paper=vorlage, is_resolved=True).exists()
+
+
+def test_inzwischen_terminierte_station_wird_nicht_ueberschrieben(welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zielsitzung und Ergebnis galten dem geladenen Stand: Mit einem inzwischen angelegten TOP bleibt alles stehen."""
+    vorlage = welt.vorlage("scheduled")
+    station = welt.station(vorlage, meeting=welt.sitzung)
+    andere = SessionMeeting.objects.create(
+        tenant=welt.tenant, name="Sondersitzung", organization=welt.rat, start=timezone.now() + timedelta(days=21)
+    )
+    laden = consultation_views.ConsultationBaseView.get_consultation
+
+    def laden_und_terminieren(view: Any, consultation_id: Any) -> SessionConsultation:
+        geladen = cast(SessionConsultation, laden(view, consultation_id))  # type: ignore[no-untyped-call]
+        top = SessionAgendaItem.objects.create(meeting=welt.sitzung, number="3", name="Radweg", paper=vorlage)
+        SessionConsultation.objects.filter(pk=station.pk).update(agenda_item=top)
+        assert geladen.agenda_item_id is None
+        return geladen
+
+    monkeypatch.setattr(consultation_views.ConsultationBaseView, "get_consultation", laden_und_terminieren)
+    antwort = welt.speichern(station, meeting=str(andere.pk), result="approved")
+    assert antwort.status_code == 302
+    assert "hat sich inzwischen geändert" in _meldungen(antwort)
+    station.refresh_from_db()
+    assert station.agenda_item_id is not None
+    assert (station.meeting_id, station.result) == (welt.sitzung.pk, "pending")
+    assert not Version.objects.filter(paper=vorlage, trigger=Version.TRIGGER_CONSULTATION).exists()
+
+
+def test_inzwischen_entfernte_station_entsteht_nicht_neu(welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
+    vorlage = welt.vorlage("approved")
+    station = welt.station(vorlage)
+    laden = consultation_views.ConsultationBaseView.get_consultation
+
+    def laden_und_entfernen(view: Any, consultation_id: Any) -> SessionConsultation:
+        geladen = cast(SessionConsultation, laden(view, consultation_id))  # type: ignore[no-untyped-call]
+        SessionConsultation.objects.filter(pk=station.pk).delete()
+        return geladen
+
+    monkeypatch.setattr(consultation_views.ConsultationBaseView, "get_consultation", laden_und_entfernen)
+    antwort = welt.speichern(station, result="approved")
+    assert "hat sich inzwischen geändert" in _meldungen(antwort)
+    assert not SessionConsultation.objects.filter(paper=vorlage).exists()
+    assert not Version.objects.filter(paper=vorlage).exists()
 
 
 def test_station_im_entwurf_bleibt_planbar(welt: Welt) -> None:
