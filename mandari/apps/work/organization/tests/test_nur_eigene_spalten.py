@@ -15,6 +15,8 @@ from typing import Any, cast
 
 import pytest
 from django.contrib.auth.hashers import make_password
+from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.db.models.query import QuerySet
 
@@ -28,6 +30,7 @@ from insight_core.models import OParlBody, OParlPerson, OParlSource
 pytestmark = pytest.mark.django_db
 
 RIS = "https://ris.example.org/oparl"
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 
 @pytest.fixture
@@ -205,6 +208,50 @@ def test_allgemeine_und_kontakt_einstellungen_schreiben_nur_ihre_spalten(org: An
     assert _vertrag(org) == GEAENDERT
 
 
+def test_allgemeine_einstellungen_speichern_logo_und_zweitfarbe(org: Any, settings: Any, tmp_path: Any) -> None:
+    """Der Normalfall: Was der Aufruf ändert, steht danach in der Datenbank; das Logo lässt sich wieder entfernen."""
+    settings.MEDIA_ROOT = str(tmp_path)
+
+    services.update_general_settings(
+        org,
+        name="Fraktion Neu",
+        description="",
+        primary_color="#112233",
+        secondary_color="#445566",
+        logo=SimpleUploadedFile("logo.png", PNG),
+        remove_logo=False,
+    )
+
+    aktuell = Organization.objects.get(pk=org.pk)
+    assert (aktuell.primary_color, aktuell.secondary_color) == ("#112233", "#445566")
+    pfad = str(aktuell.logo.name)
+    assert pfad.startswith("organizations/logos/") and aktuell.logo.storage.exists(pfad)
+
+    services.update_general_settings(
+        aktuell, name="Fraktion Neu", description="", primary_color="", logo=None, remove_logo=True
+    )
+
+    danach = Organization.objects.get(pk=org.pk)
+    assert not danach.logo
+    # Leere Farbfelder lassen die gespeicherten Farben stehen
+    assert (danach.primary_color, danach.secondary_color) == ("#112233", "#445566")
+
+
+def test_allgemeine_einstellungen_ohne_logo_und_farben_lassen_beides_stehen(org: Any) -> None:
+    """Zwei Personen speichern „Allgemein“ zugleich: Wer nur den Namen ändert, schreibt Logo und Farben nicht zurück."""
+    geladen = Organization.objects.get(pk=org.pk)
+    # Inzwischen hat eine zweite Person Logo und Zweitfarbe ersetzt
+    Organization.objects.filter(pk=org.pk).update(logo="organizations/logos/neu.png", secondary_color="#abcdef")
+
+    services.update_general_settings(
+        geladen, name="Fraktion Neu", description="", primary_color="", logo=None, remove_logo=False
+    )
+
+    aktuell = Organization.objects.get(pk=org.pk)
+    assert aktuell.name == "Fraktion Neu"
+    assert (aktuell.logo.name, aktuell.secondary_color) == ("organizations/logos/neu.png", "#abcdef")
+
+
 def test_mail_einstellungen_schreiben_nur_ihre_spalten(org: Any) -> None:
     geladen = _vertrag_geaendert(org)
 
@@ -319,6 +366,47 @@ def test_gast_limit_wird_unter_sperre_der_organisation_gezaehlt(admin: Any, monk
 
     assert ablauf == ["sperre", "zaehlen"]
     assert Membership.objects.get(pk=gast.pk).is_active is True
+
+
+@pytest.mark.django_db(transaction=True)
+def test_gast_zugangsmail_geht_nach_dem_festschreiben_hinaus(admin: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Die Sperre der Organisationszeile aus der Limitprüfung endet vor dem Versand der Zugangs-Mail."""
+    in_transaktion: list[bool] = []
+    senden = services.send_guest_access_email
+
+    def gesendet(*args: Any, **kwargs: Any) -> bool:
+        in_transaktion.append(connection.in_atomic_block)
+        return senden(*args, **kwargs)
+
+    monkeypatch.setattr(services, "send_guest_access_email", gesendet)
+
+    ergebnis = services.invite_guest(
+        admin.organization, admin, email="gast@example.org", note="", share_level="view", document_ids=[], folder_ids=[]
+    )
+
+    assert in_transaktion == [False]
+    assert ergebnis.message == "Gastzugang für gast@example.org wurde eingerichtet."
+    assert [nachricht.to for nachricht in mail.outbox] == [["gast@example.org"]]
+
+
+def test_gast_limit_stammt_aus_der_datenbank(org: Any, admin: Any) -> None:
+    """Das Objekt der Anfrage kennt noch das alte Limit; geprüft und gemeldet wird das inzwischen gespeicherte."""
+    Organization.objects.filter(pk=org.pk).update(guest_limit=1)
+    geladen = Organization.objects.get(pk=org.pk)
+    Organization.objects.filter(pk=org.pk).update(guest_limit=0)
+
+    with pytest.raises(ServiceError, match=r"Gast-Limit erreicht \(0\)"):
+        services.invite_guest(
+            geladen, admin, email="gast@example.org", note="", share_level="view", document_ids=[], folder_ids=[]
+        )
+
+    assert not Membership.objects.filter(organization=org, is_guest=True).exists()
+    # Umgekehrt gilt ein inzwischen erhöhtes Limit sofort
+    Organization.objects.filter(pk=org.pk).update(guest_limit=1)
+    services.invite_guest(
+        geladen, admin, email="gast@example.org", note="", share_level="view", document_ids=[], folder_ids=[]
+    )
+    assert Membership.objects.filter(organization=org, is_guest=True, is_active=True).count() == 1
 
 
 def test_gast_limit_gilt_bei_einladung_und_reaktivierung(org: Any, admin: Any) -> None:

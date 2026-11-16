@@ -19,7 +19,7 @@ from django.core.exceptions import PermissionDenied
 from django.urls import reverse
 
 from apps.work.tasks import import_service, services
-from apps.work.tasks.models import Task
+from apps.work.tasks.models import Task, TaskShare
 
 pytestmark = pytest.mark.django_db
 
@@ -125,6 +125,32 @@ def test_panel_schreibt_nur_die_felder_des_formulars(org: Any, erstellerin: Any,
     aktuell = Task.objects.get(pk=aufgabe.pk)
     assert (aktuell.title, aktuell.status, aktuell.position) == ("Haushalt 2027", "in_progress", 7)
     assert aktuell.activities.filter(activity_type="status_changed").exists()
+
+
+def test_panel_laesst_inzwischen_gewaehlte_empfaenger_stehen(org: Any, erstellerin: Any, zugewiesen: Any) -> None:
+    """Das Panel las „Organisation“; inzwischen ist die Aufgabe im Freigabedialog mit Empfängern geteilt."""
+    aufgabe = _aufgabe(org, erstellerin, zugewiesen)
+    alte_werte = services.capture_old_values(aufgabe)
+    Task.objects.filter(pk=aufgabe.pk).update(visibility="shared")
+    TaskShare.objects.create(task=aufgabe, membership=zugewiesen, shared_by=erstellerin)
+
+    aufgabe.visibility = "shared"
+    services.apply_panel_update(aufgabe, erstellerin, alte_werte)
+
+    assert TaskShare.objects.filter(task=aufgabe, membership=zugewiesen).exists()
+
+
+def test_panel_teilt_ohne_die_frueheren_empfaenger(org: Any, erstellerin: Any, zugewiesen: Any) -> None:
+    """Wie bisher: Wechselt die Aufgabe erst über das Panel auf „geteilt“, beginnt sie ohne Empfänger."""
+    aufgabe = _aufgabe(org, erstellerin, zugewiesen)
+    TaskShare.objects.create(task=aufgabe, membership=zugewiesen, shared_by=erstellerin)
+    alte_werte = services.capture_old_values(aufgabe)
+
+    aufgabe.visibility = "shared"
+    services.apply_panel_update(aufgabe, erstellerin, alte_werte)
+
+    assert Task.objects.get(pk=aufgabe.pk).visibility == "shared"
+    assert not TaskShare.objects.filter(task=aufgabe).exists()
 
 
 def test_board_aktionen_arbeiten_weiter(org: Any, erstellerin: Any, zugewiesen: Any, client_for: Any) -> None:

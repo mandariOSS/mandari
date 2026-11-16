@@ -144,9 +144,12 @@ def _guest_slot_free(organization: Organization) -> bool:
     Nur innerhalb einer Transaktion aufrufen: Wie beim Mitglieder-Limit wird die Organisationszeile vor dem Zählen
     gesperrt, damit gleichzeitige Einladungen und Reaktivierungen das Limit nicht gemeinsam überschreiten. Die Sperre
     lässt Einfügungen mit Fremdschlüssel auf die Organisation zu (``no_key``); nur die Limitprüfungen warten
-    aufeinander.
+    aufeinander. Das Limit selbst kommt aus der Sperrabfrage: Das übergebene Objekt stammt vom Beginn der Anfrage
+    und kennt eine inzwischen geänderte Grenze nicht.
     """
-    list(Organization.objects.select_for_update(no_key=True).filter(pk=organization.pk).values_list("pk", flat=True))
+    gesperrt = Organization.objects.select_for_update(no_key=True).filter(pk=organization.pk)
+    for limit in gesperrt.values_list("guest_limit", flat=True):
+        organization.guest_limit = limit
     return organization.has_free_guest_slot()
 
 
@@ -526,7 +529,7 @@ def _grantable_guest_level(motion: Any, inviter: Membership, wanted: str) -> str
 
 
 @transaction.atomic
-def invite_guest(
+def _create_guest_access(
     organization: Organization,
     inviter: Membership,
     *,
@@ -535,18 +538,15 @@ def invite_guest(
     share_level: str,
     document_ids: list[str],
     folder_ids: list[str],
-    allow_download: bool = True,
-) -> GuestInviteResult:
+    allow_download: bool,
+) -> tuple[User, bool, list[Any], list[Any]]:
     """
-    Gast einladen: Konto anlegen (falls nötig), Gast-Mitgliedschaft ohne Rollen, optionale
-    Dokument-/Ordner-Freigaben (rekursiv) und Zugangs-Mail. Prüft das Gast-Limit.
+    Schreibender Teil von :func:`invite_guest`: Gast-Limit prüfen, Konto, Mitgliedschaft und Freigaben anlegen.
 
-    ``allow_download``: Die Freigaben erlauben Export (PDF/DOCX) und Anhänge (Issue #582).
+    Liefert das Konto, ob es neu angelegt wurde, und die freigegebenen Dokumente und Ordner für die Zugangs-Mail.
     """
     from apps.work.motions.models import FolderGuestShare, MotionShare
 
-    if share_level not in dict(GUEST_SHARE_LEVELS):
-        share_level = "view"
     if not _guest_slot_free(organization):
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
 
@@ -611,6 +611,43 @@ def invite_guest(
             shared_folders.append(folder)
             hub.notify_folder_shared(folder, guest_membership, share_level, inviter, send_email=False)
 
+    return user, user_created, shared_docs, shared_folders
+
+
+def invite_guest(
+    organization: Organization,
+    inviter: Membership,
+    *,
+    email: str,
+    note: str,
+    share_level: str,
+    document_ids: list[str],
+    folder_ids: list[str],
+    allow_download: bool = True,
+) -> GuestInviteResult:
+    """
+    Gast einladen: Konto anlegen (falls nötig), Gast-Mitgliedschaft ohne Rollen, optionale
+    Dokument-/Ordner-Freigaben (rekursiv) und Zugangs-Mail. Prüft das Gast-Limit.
+
+    ``allow_download``: Die Freigaben erlauben Export (PDF/DOCX) und Anhänge (Issue #582).
+
+    Die Zugangs-Mail geht erst nach dem Festschreiben hinaus (wie bei :func:`reactivate_member`): Die Sperre der
+    Organisationszeile aus der Limitprüfung endet so vor dem Versand, und andere Vorgänge der Organisation warten
+    nicht auf den Mailserver.
+    """
+    if share_level not in dict(GUEST_SHARE_LEVELS):
+        share_level = "view"
+    user, user_created, shared_docs, shared_folders = _create_guest_access(
+        organization,
+        inviter,
+        email=email,
+        note=note,
+        share_level=share_level,
+        document_ids=document_ids,
+        folder_ids=folder_ids,
+        allow_download=allow_download,
+    )
+    inviter_user = inviter.user
     send_guest_access_email(
         organization,
         user,
@@ -2104,22 +2141,26 @@ def update_general_settings(
         raise ServiceError("Der Name darf nicht leer sein.")
     organization.name = name
     organization.description = description
+    # Farben und Logo stehen nur in der Feldliste, wenn dieser Aufruf sie ändert: Sonst schriebe er den Stand vom
+    # Beginn der Anfrage zurück, etwa den Pfad eines Logos, das eine zweite Person gerade ersetzt hat.
+    felder = ["name", "description", "updated_at"]
     if primary_color and HEX_COLOR_RE.match(primary_color):
         organization.primary_color = primary_color
+        felder.append("primary_color")
     if secondary_color and HEX_COLOR_RE.match(secondary_color):
         organization.secondary_color = secondary_color
+        felder.append("secondary_color")
     if logo is not None:
         _pruefe_bild(logo, "Logo")
         if organization.logo:
             organization.logo.delete(save=False)
         organization.logo = logo
+        felder.append("logo")
     if remove_logo and organization.logo:
         organization.logo.delete(save=False)
         organization.logo = None
-    _save_organization(
-        organization,
-        update_fields=["name", "description", "primary_color", "secondary_color", "logo", "updated_at"],
-    )
+        felder.append("logo")
+    _save_organization(organization, update_fields=felder)
 
 
 def update_contact_settings(

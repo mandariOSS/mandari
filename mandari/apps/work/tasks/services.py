@@ -488,10 +488,12 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
     Das Bearbeitungsrecht gilt am jetzigen Stand der Datenbank (:func:`_aktueller_stand`), nicht an dem, den der View
     gelesen hat. Geschrieben werden nur die Felder des Formulars und die Erledigung.
     """
-    _aktueller_stand(task, membership)
+    aktuell = _aktueller_stand(task, membership)
     _sync_completion(task)
     task.save(update_fields=[*PANEL_FELDER, "is_completed", "completed_at", "updated_at"])
-    reset_shares_on_reshare(task, old_values["visibility_raw"])
+    # Ausgangswert ist die Sichtbarkeit in der Datenbank, nicht die beim Öffnen des Panels gelesene: Hat inzwischen
+    # jemand im Freigabedialog Empfänger gewählt, bleiben sie stehen.
+    reset_shares_on_reshare(task, aktuell.visibility)
     _log_changes(task, membership, old_values)
     return task
 

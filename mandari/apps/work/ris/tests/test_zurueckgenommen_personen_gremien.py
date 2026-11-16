@@ -15,6 +15,7 @@ from datetime import timedelta
 from typing import Any, cast
 
 import pytest
+from django.http import Http404
 from django.urls import reverse
 from django.utils import timezone
 
@@ -130,6 +131,36 @@ def test_zurueckgenommene_mitgliedschaft_fehlt_auf_beiden_seiten(daten: dict[str
     assert list(selectors.person_memberships(daten["person_quelle"])["active"]) == []
 
 
+def test_personenliste_ratsrolle_und_zaehler_ohne_zurueckgenommene_mitgliedschaft(
+    org: Any, kommune: OParlBody, daten: dict[str, Any]
+) -> None:
+    """Die Liste nennt nur, was die Detailseite der Person auch zeigt."""
+    rat = OParlOrganization.objects.create(external_id=f"{SESSION}/organization/rat/", body=kommune, name="Rat")
+    for art, deleted, rolle in (("sichtbar", True, "Ratsmitglied"), ("quelle", False, "Vorsitz")):
+        OParlMembership.objects.create(
+            external_id=f"{SESSION}/membership/rat-{art}/",
+            person=daten[f"person_{art}"],
+            organization=rat,
+            role=rolle,
+            deleted=deleted,
+        )
+    bodies = selectors.bodies_for_organization(org)
+
+    # Die Annotationen der Abfrage kennt die Typprüfung nicht
+    personen = {person.name: cast(Any, person) for person in selectors.persons_queryset(bodies)}
+
+    # Kim sichtbar: Die Ratsmitgliedschaft ist zurückgenommen; es bleiben das sichtbare und das in der Quelle
+    # gelöschte Gremium, nicht das zurückgenommene
+    assert personen["Kim sichtbar"].council_role is None
+    assert personen["Kim sichtbar"].membership_count == 2
+    assert personen["Kim sichtbar"].membership_count == sum(
+        gruppe.count() for gruppe in selectors.person_memberships(daten["person_sichtbar"]).values()
+    )
+    # Eine veröffentlichte Ratsmitgliedschaft nennt ihre Rolle weiter und zählt mit
+    assert personen["Kim quelle"].council_role == "Vorsitz"
+    assert personen["Kim quelle"].membership_count == 2
+
+
 def test_gremienliste_nennt_keine_zurueckgenommene_sitzung(org: Any, kommune: OParlBody, daten: dict[str, Any]) -> None:
     """Nächster Termin und „hat Sitzungen“ zählen nur, was noch veröffentlicht ist."""
     morgen = timezone.now() + timedelta(days=1)
@@ -155,6 +186,17 @@ def test_vorschlag_zur_verknuepfung_ohne_zurueckgenommene_person(org: Any, daten
 
     assert vorschlaege("Sichtbar") == {"Kim sichtbar"}
     assert vorschlaege("Zurueck") == set()
+
+
+def test_verknuepfen_ueber_die_kennung_findet_keine_zurueckgenommene_person(org: Any, daten: dict[str, Any]) -> None:
+    """Auch wer die Kennung kennt, verknüpft eine Mitgliedschaft nicht mit einer zurückgenommenen Person."""
+    bodies = selectors.bodies_for_organization(org)
+
+    with pytest.raises(Http404):
+        organisation.get_oparl_person_or_404(bodies, daten["person_zurueck"].pk)
+
+    for art in ("sichtbar", "quelle"):
+        assert organisation.get_oparl_person_or_404(bodies, daten[f"person_{art}"].pk) == daten[f"person_{art}"]
 
 
 @pytest.mark.parametrize("neu", [False, True], ids=["bisher", "neu"])

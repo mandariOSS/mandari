@@ -291,6 +291,7 @@ def persons_queryset(bodies: Bodies, *, search: str = "") -> QuerySet[OParlPerso
     if rat_orgs.exists():
         council_role = Subquery(
             OParlMembership.objects.filter(person=OuterRef("pk"), organization__in=rat_orgs)
+            .exclude(withdrawn_q())
             .filter(_active_filter(timezone.now().date()))
             .values("role")[:1]
         )
@@ -302,7 +303,11 @@ def persons_queryset(bodies: Bodies, *, search: str = "") -> QuerySet[OParlPerso
             | Q(given_name__icontains=search)
             | Q(email__icontains=search)
         )
-    return persons.annotate(membership_count=Count("memberships")).order_by("family_name", "given_name")
+    # Gezählt wird, was die Detailseite auch zeigt (``person_memberships``)
+    sichtbar = ~withdrawn_q("memberships") & ~withdrawn_q("memberships__organization")
+    return persons.annotate(membership_count=Count("memberships", filter=sichtbar)).order_by(
+        "family_name", "given_name"
+    )
 
 
 def person_memberships(person: OParlPerson) -> dict[str, QuerySet[OParlMembership]]:

@@ -471,8 +471,8 @@ def suggested_committees(
 
 
 def get_oparl_person_or_404(bodies: QuerySet[OParlBody], person_id: Any) -> OParlPerson:
-    """RIS-Person innerhalb der Körperschaften oder 404."""
-    return get_object_or_404(OParlPerson, id=person_id, body__in=bodies)
+    """RIS-Person innerhalb der Körperschaften oder 404; von mandari Session zurückgenommene gibt es hier nicht."""
+    return get_object_or_404(OParlPerson.objects.exclude(withdrawn_q()), id=person_id, body__in=bodies)
 
 
 def committee_context(organization: Organization, member: Membership) -> dict[str, Any]:
