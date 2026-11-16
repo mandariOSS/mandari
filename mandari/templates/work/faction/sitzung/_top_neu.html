@@ -14,7 +14,7 @@ Kontext: ordnung (sitzung.Tagesordnung), item, rechte, sitzung_urls.
 <c-ui.modal id="fs-top-neu" title="TOP hinzufügen" size="sm">
     <form class="wf-dialog" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-fokus" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]"
           data-sichern-vorher data-testid="fs-top-neu-form"
-          x-data="topNeu" @htmx:before-on-load="antwort($event)">
+          x-data="topNeu" @htmx:before-request="merken()" @htmx:before-on-load="antwort($event)">
         <input type="hidden" name="action" value="top_neu">
         <input type="hidden" name="doppelt" :value="doppelt ? '1' : ''">
         {% if not item %}<input type="hidden" name="neu_laden" value="1">{% endif %}
