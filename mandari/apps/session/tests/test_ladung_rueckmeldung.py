@@ -38,6 +38,7 @@ from apps.session.models import (
     SessionUser,
 )
 from apps.session.services import (
+    attendance_service,
     invitation_response_service,
     invitation_service,
     invitation_token,
@@ -697,3 +698,142 @@ def test_serienbrief_mit_nichtoeffentlichem_teil_nur_mit_sichtrecht(welt: Welt) 
     assert f"{_serienbrief(welt, dispatch)}/pdf/" not in seite
     daten = ohne_noe.get(f"{_serienbrief(welt, dispatch)}/csv/")
     assert daten.status_code == 200 and "GEHEIMER-TOP" not in daten.content.decode("utf-8-sig")
+
+
+# =============================================================================
+# Abschluss der Erstladung und Rückmeldung ohne Sitz
+# =============================================================================
+
+
+def _mail_gestoert(monkeypatch: pytest.MonkeyPatch) -> None:
+    def kaputt(**_kwargs: Any) -> bool:
+        raise ConnectionError("SMTP nicht erreichbar")
+
+    monkeypatch.setattr("apps.common.mail.send", kaputt)
+
+
+def test_erstladung_ohne_eine_zustellung_gilt_nicht_als_versandt(welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Nur Mail-Empfänger: Ein vorbereiteter Brief zählt als Ladung
+    SessionOrganizationMembership.objects.filter(person=welt.letter).delete()
+    _mail_gestoert(monkeypatch)
+
+    dispatch = _versenden(welt)
+
+    assert set(dispatch.recipients.values_list("status", flat=True)) == {"failed"}
+    welt.meeting.refresh_from_db()
+    assert welt.meeting.invitation_sent_at is None and welt.meeting.meeting_state == "scheduled"
+    # Ohne Erstladung keine Nachladung, und die Fristüberwachung führt die Sitzung weiter
+    assert invitation_service.dispatch_blocker(welt.meeting, "supplementary")
+    assert SessionMeeting.objects.filter(pk=welt.meeting.pk, invitation_sent_at__isnull=True).exists()
+
+    # Der erste Lauf, der jemanden erreicht, setzt Datum und Status
+    monkeypatch.undo()
+    _versenden(welt)
+    welt.meeting.refresh_from_db()
+    assert welt.meeting.invitation_sent_at is not None and welt.meeting.meeting_state == "invitation_sent"
+
+
+def test_meldung_nennt_gescheiterte_erstladung_nicht_versandt(welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
+    SessionOrganizationMembership.objects.filter(person=welt.letter).delete()
+    _mail_gestoert(monkeypatch)
+    url = f"/session/{welt.tenant.slug}/meetings/{welt.meeting.id}/invitation/"
+
+    antwort = welt.staff_client.post(url, {"dispatch_type": "invitation"}, follow=True)
+
+    meldungen = " ".join(str(m) for m in antwort.context["messages"])
+    assert "nicht versandt" in meldungen and "fehlgeschlagen" in meldungen
+
+
+@pytest.mark.parametrize(
+    "inzwischen",
+    [
+        {"is_public": False, "location": "Kreishaus"},
+        {"cancelled": True, "meeting_state": "cancelled", "cancellation_reason": "Sturmwarnung"},
+    ],
+)
+def test_abschluss_der_erstladung_laesst_aenderungen_waehrend_des_versands_bestehen(
+    welt: Welt, monkeypatch: pytest.MonkeyPatch, inzwischen: dict[str, Any]
+) -> None:
+    echt = invitation_response_service.send_invitation_mail
+
+    def waehrend_des_versands(*args: Any, **kwargs: Any) -> Any:
+        # Eine zweite Person ändert die Sitzung, während die Mails hinausgehen
+        SessionMeeting.objects.filter(pk=welt.meeting.pk).update(**inzwischen)
+        return echt(*args, **kwargs)
+
+    monkeypatch.setattr(invitation_response_service, "send_invitation_mail", waehrend_des_versands)
+
+    _versenden(welt)
+
+    gespeichert = SessionMeeting.objects.get(pk=welt.meeting.pk)
+    for feld, wert in inzwischen.items():
+        assert getattr(gespeichert, feld) == wert, feld
+    assert gespeichert.invitation_sent_at is not None
+    if "cancelled" not in inzwischen:
+        assert gespeichert.meeting_state == "invitation_sent"
+
+
+def test_rueckmeldung_ohne_sitz_gibt_weder_sitz_noch_stimmrecht(welt: Welt) -> None:
+    dispatch = _versenden(welt)
+    recipient = _empfaenger(dispatch, welt.member)
+    attendance_service.generate_attendance(welt.meeting)
+    # Die Person scheidet vor dem Sitzungstag aus; der Link aus der Ladung gilt bis Sitzungsbeginn weiter
+    SessionAttendance.objects.filter(meeting=welt.meeting, person=welt.member).delete()
+    SessionOrganizationMembership.objects.filter(person=welt.member).update(
+        end_date=timezone.localdate() + timedelta(days=1)
+    )
+    vorher = attendance_service.quorum_status(SessionMeeting.objects.get(pk=welt.meeting.pk))
+
+    Client().post(_link(recipient), {"action": "confirm"})
+
+    zeile = SessionAttendance.objects.get(meeting=welt.meeting, person=welt.member)
+    assert zeile.status == "confirmed"
+    assert zeile.has_voting_rights is False and zeile.role == "guest"
+    nachher = attendance_service.quorum_status(SessionMeeting.objects.get(pk=welt.meeting.pk))
+    assert nachher["voting_total"] == vorher["voting_total"]
+    assert nachher["required"] == vorher["required"]
+
+
+def test_ueberlappende_absagen_loesen_eine_vertretungsanfrage_aus(welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
+    dispatch = _versenden(welt)
+    recipient = _empfaenger(dispatch, welt.member)
+    echt = invitation_response_service._send
+    zweite: list[Any] = []
+
+    def waehrend_des_versands(template: str, *args: Any, **kwargs: Any) -> Any:
+        # Während die Anfrage hinausgeht, trifft dieselbe Absage ein zweites Mal ein (Zeile frisch gelesen)
+        if template.endswith("substitute_request.html") and not zweite:
+            zeile = SessionAttendance.objects.select_related("meeting__tenant", "meeting__organization", "person").get(
+                meeting=welt.meeting, person=welt.member
+            )
+            zweite.append(invitation_response_service.notify_substitutes(zeile))
+        return echt(template, *args, **kwargs)
+
+    monkeypatch.setattr(invitation_response_service, "_send", waehrend_des_versands)
+
+    Client().post(_link(recipient), {"action": "decline", "reason": GRUND, "substitute": "1"})
+
+    assert zweite and zweite[0].already_done
+    runden = SessionInvitationDispatch.objects.filter(meeting=welt.meeting, dispatch_type="substitution")
+    assert runden.count() == 1
+    assert (
+        len([m for m in mail.outbox if m.to == ["vertretung@example.org"] and "Vertretungsanfrage" in m.subject]) == 1
+    )
+
+
+def test_abbruch_des_versands_nimmt_die_reservierung_der_vertretungsanfrage_zurueck(
+    welt: Welt, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dispatch = _versenden(welt)
+    recipient = _empfaenger(dispatch, welt.member)
+
+    def kein_pdf(*_args: Any, **_kwargs: Any) -> bytes:
+        raise RuntimeError("PDF nicht erzeugt")
+
+    monkeypatch.setattr(invitation_service, "build_agenda_pdf", kein_pdf)
+    with pytest.raises(RuntimeError):
+        Client().post(_link(recipient), {"action": "decline", "reason": GRUND, "substitute": "1"})
+
+    # Die Absage steht, der Merker nicht: Eine erneute Absage löst die Anfrage wieder aus
+    zeile = SessionAttendance.objects.get(meeting=welt.meeting, person=welt.member)
+    assert zeile.status == "declined" and zeile.substitutes_notified_at is None

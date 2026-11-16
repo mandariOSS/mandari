@@ -363,8 +363,8 @@ class MonthlyApproveView(SessionViewMixin, View):
         if result.get("blocked_four_eyes"):
             messages.warning(
                 request,
-                f"{result['blocked_four_eyes']} Posten nicht genehmigt: Wer den Monatslauf erzeugt hat, "
-                "darf ihn nicht selbst genehmigen (Vier-Augen-Prinzip).",
+                f"{result['blocked_four_eyes']} Posten nicht genehmigt: Wer den Monatslauf erzeugt oder das "
+                "Empfängerkonto geändert hat, darf die Posten nicht selbst genehmigen (Vier-Augen-Prinzip).",
             )
         audit.log_event(
             "approve",

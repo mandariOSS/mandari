@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib
 from datetime import timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -26,13 +27,18 @@ from apps.common.tests.factories import UserFactory
 from apps.session import audit
 from apps.session.models import (
     SessionAgendaItem,
+    SessionAllowance,
+    SessionAttendance,
     SessionAuditLog,
     SessionCosignature,
     SessionDelegation,
     SessionFile,
     SessionMeeting,
+    SessionMonthlyAllowance,
+    SessionMonthlyRate,
     SessionOrganization,
     SessionPaper,
+    SessionPerson,
     SessionProtocol,
     SessionResolutionForwarding,
     SessionRole,
@@ -517,25 +523,29 @@ class TestNiederschrift:
 # =============================================================================
 
 
-class _Posten:
-    def __init__(self, created_by_id: Any) -> None:
-        self.created_by_id = created_by_id
-        self.status = "pending"
-        self.approved_by: Any = None
-        self.approved_at: Any = None
-
-    def save(self, update_fields: list[str] | None = None) -> None:
-        pass
-
-
 class TestSitzungsgeld:
     def test_abschaltbar_je_mandant(self) -> None:
         tenant = _tenant(four_eyes_allowances=False)
         assert not four_eyes_service.required(tenant, four_eyes_service.PROCESS_ALLOWANCE)
-        approver = SimpleNamespace(pk=7)
-        ergebnis = allowance_service.approve_allowances([_Posten(7)], approver, four_eyes=False)
+        # Gespeicherte Posten: Die Genehmigung prüft den Stand in der Datenbank
+        approver = _nutzer(tenant, "kasse", "manage_allowances")
+        person = SessionPerson.objects.create(tenant=tenant, given_name="P", family_name="Amsel")
+        gremium = SessionOrganization.objects.create(tenant=tenant, name="Rat")
+        sitzung = SessionMeeting.objects.create(tenant=tenant, name="Rat", organization=gremium, start=timezone.now())
+        anwesenheit = SessionAttendance.objects.create(meeting=sitzung, person=person, status="present")
+        position = SessionAllowance.objects.create(attendance=anwesenheit, amount=Decimal("25.00"), created_by=approver)
+        rate = SessionMonthlyRate.objects.create(tenant=tenant, name="Pauschale", amount=Decimal("100.00"))
+        pauschale = SessionMonthlyAllowance.objects.create(
+            tenant=tenant,
+            person=person,
+            rate=rate,
+            period=HEUTE.replace(day=1),
+            amount=rate.amount,
+            created_by=approver,
+        )
+        ergebnis = allowance_service.approve_allowances([position], approver, four_eyes=False)
         assert ergebnis == {"approved": 1, "blocked_four_eyes": 0}
-        ergebnis = allowance_service.approve_monthly_allowances([_Posten(7)], approver, four_eyes=True)
+        ergebnis = allowance_service.approve_monthly_allowances([pauschale], approver, four_eyes=True)
         assert ergebnis == {"approved": 0, "blocked_four_eyes": 1}
 
 

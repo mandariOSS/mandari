@@ -20,7 +20,7 @@ from django.utils import timezone
 
 from apps.common import mail
 from apps.common.email import get_from_email
-from apps.session.models import SessionInvitation
+from apps.session.models import SessionInvitation, SessionUser
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +69,25 @@ def send_user_invitation(invitation: SessionInvitation) -> bool:
         return False
 
 
-def resend_user_invitation(invitation: SessionInvitation, *, valid_days: int = INVITATION_VALID_DAYS) -> bool:
+def resend_user_invitation(
+    invitation: SessionInvitation,
+    *,
+    invited_by: SessionUser | None = None,
+    valid_days: int = INVITATION_VALID_DAYS,
+) -> bool:
     """
     Offene Einladung mit neuem Link erneut senden; die Gültigkeit läuft ab jetzt neu.
 
     Gespeichert ist nur der Hash des bisherigen Tokens; der Link der ersten Mail wird damit ungültig.
+    ``invited_by`` ist die Person, die erneut sendet: Sie gilt danach als einladende Person. Eine Einladung gilt
+    nur, solange der Zugang der einladenden Person besteht – ohne den Wechsel bliebe der neue Link einer
+    Einladung, deren ursprünglich einladende Person inzwischen gesperrt ist, ungültig.
     """
+    update_fields = ["expires_at", "token"]
+    if invited_by is not None:
+        invitation.invited_by = invited_by
+        update_fields.append("invited_by")
     invitation.expires_at = timezone.now() + timedelta(days=valid_days)
     invitation.issue_token()
-    invitation.save(update_fields=["expires_at", "token"])
+    invitation.save(update_fields=update_fields)
     return send_user_invitation(invitation)

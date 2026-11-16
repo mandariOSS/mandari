@@ -40,7 +40,7 @@ from ..services import (
     meeting_format_service,
     state_law_service,
 )
-from ..visibility import paper_visible
+from ..visibility import consultation_hidden, paper_visible
 from .bodies import BodyFilterMixin
 
 # =============================================================================
@@ -416,10 +416,13 @@ class MeetingDetailView(SessionViewMixin, DetailView):
             chains = {}
             stations = (
                 SessionConsultation.objects.filter(paper_id__in=paper_ids)
-                .select_related("organization", "meeting")
+                .select_related("organization", "meeting", "agenda_item__meeting")
                 .order_by("paper_id", "order", "created_at")
             )
             for station in stations:
+                # Stationen anderer, nichtöffentlicher Beratungen derselben Vorlage: ohne NÖ-Sichtrecht weder
+                # Gremium noch Rolle oder Ergebnis (wie auf der Vorlagenseite)
+                station.noe_hidden = consultation_hidden(permissions, station)
                 chains.setdefault(station.paper_id, []).append(station)
             for item in all_items:
                 if item.paper_id and item.paper_visible:

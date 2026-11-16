@@ -126,6 +126,9 @@ def incoming(deputy: SessionUser, *, day: date | None = None) -> list[SessionDel
             tenant_id=deputy.tenant_id,
             deputy_id=deputy.pk,
             principal__is_active=True,
+            # Gesperrtes Konto der vertretenen Person: Sie darf selbst nichts mehr, also auch ihre Vertretung
+            # nicht in ihrem Namen („nur solange beide Konten aktiv sind“)
+            principal__user__is_active=True,
         )
         .select_related("principal__user")
         .prefetch_related("principal__roles")

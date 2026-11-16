@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import zipfile
 from datetime import date
+from decimal import Decimal
 from io import StringIO
 from pathlib import Path
 from typing import Any, cast
@@ -23,6 +24,7 @@ from django.core.management import CommandError, call_command
 from apps.session.models import (
     SessionAuditLog,
     SessionBody,
+    SessionDeviceGrant,
     SessionLegislativeTerm,
     SessionOrganization,
     SessionOrganizationMembership,
@@ -239,6 +241,31 @@ def test_aenderungen_werden_gemeldet_und_leere_zellen_aendern_nichts(tenant: Ses
     assert erika.get_bank_iban_decrypted() == IBAN_NEU
     assert erika.get_phone_decrypted() == "0123 4567"
     assert SessionAuditLog.objects.filter(tenant=tenant, action="update", model_name="SessionPerson").count() == 1
+
+
+def test_import_nennt_zurueckgesetzte_genehmigungen_nach_kontoaenderung(tenant: SessionTenant, daten: Path) -> None:
+    run("--tenant", "musterdorf", str(daten))
+    erika = SessionPerson.objects.get(tenant=tenant, family_name="Musterfrau")
+    zuschuss = SessionDeviceGrant.objects.create(
+        tenant=tenant, person=erika, amount=Decimal("400.00"), status="approved"
+    )
+    write(daten, "personen.csv", PERSONEN.replace(IBAN, IBAN_NEU))
+
+    # Der Prüflauf schreibt nichts und setzt nichts zurück
+    out = run("--tenant", "musterdorf", str(daten), "--dry-run")
+    zuschuss.refresh_from_db()
+    assert zuschuss.status == "approved" and "Empfängerkonto geändert" not in out
+
+    out = run("--tenant", "musterdorf", str(daten), "--bericht", str(daten / "bericht.json"))
+
+    zuschuss.refresh_from_db()
+    assert zuschuss.status == "pending"
+    assert "Empfängerkonto geändert: 1 bereits genehmigte Auszahlung(en) stehen wieder auf „Ausstehend“" in out
+    report = json.loads((daten / "bericht.json").read_text(encoding="utf-8"))
+    assert report["genehmigungen_zurueckgesetzt"] == 1
+
+    # Ein Lauf ohne Kontoänderung nennt nichts
+    assert "Empfängerkonto geändert" not in run("--tenant", "musterdorf", str(daten))
 
 
 def test_fehler_zeilengenau_und_nichts_geschrieben(tenant: SessionTenant, daten: Path) -> None:
