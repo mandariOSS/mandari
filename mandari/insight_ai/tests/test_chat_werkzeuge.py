@@ -94,6 +94,45 @@ def test_sitzungen_diese_woche_mit_links(ctx: ToolContext, stadt: Musterstadt) -
     assert str(stadt.fremde_sitzung.pk) not in text
 
 
+def test_sitzungen_lassen_sich_weiterblaettern(ctx: ToolContext, stadt: Musterstadt) -> None:
+    """Issue #1441: Mehr Sitzungen als die Grenze je Aufruf sahen vollständig aus, obwohl die späteren fehlten."""
+    from datetime import datetime
+
+    from insight_core.models import OParlMeeting
+
+    from .musterstadt import BERLIN
+
+    # 34 weitere Sitzungen im Dezember, mehrere mit demselben Beginn
+    for nr in range(34):
+        OParlMeeting.objects.create(
+            external_id=kennung("meetings"),
+            body=stadt.body,
+            start=datetime(2026, 12, 1 + nr // 3, 17, 0, tzinfo=BERLIN),
+            name=f"Sitzung {nr}",
+        )
+
+    erste = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31")
+    assert erste["anzahl"] == chat_tools.MAX_MEETINGS
+    assert erste["weitere"] == "ja, die Liste ist unvollständig: weiter mit seite=2"
+    assert "seite" not in erste
+
+    zweite = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", seite=2)
+    assert (zweite["anzahl"], zweite["seite"]) == (4, 2)
+    assert "weitere" not in zweite
+    # Keine Sitzung doppelt, keine fällt zwischen die Seiten, auch nicht bei gleichem Beginn
+    links = [zeile.split(" | ")[3] for zeile in erste["sitzungen"] + zweite["sitzungen"]]
+    assert len(links) == len(set(links)) == 34
+
+    # Unlesbare oder fehlende Angaben ergeben die erste Seite; hinter dem Ende ist die Liste leer
+    for seite in ("x", 0, -3, None):
+        assert (
+            rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", seite=seite)["sitzungen"]
+            == (erste["sitzungen"])
+        )
+    leer = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", seite=3)
+    assert "sitzungen" not in leer and "weitere" not in leer
+
+
 def test_sitzungen_eines_gremiums(ctx: ToolContext, stadt: Musterstadt) -> None:
     ergebnis = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-07", gremium="rat")
     assert [s.split(" | ")[3] for s in ergebnis["sitzungen"]] == [link("meeting", stadt.rat_sitzung.pk)]

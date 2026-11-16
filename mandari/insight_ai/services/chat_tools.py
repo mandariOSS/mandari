@@ -152,8 +152,15 @@ TOOLS: list[dict[str, Any]] = [
     _function(
         "sitzungen_im_zeitraum",
         f"Sitzungen im Zeitraum (höchstens {MAX_RANGE_DAYS} Tage), optional eines Gremiums; "
-        f"tagesordnung=true liefert bei bis zu {MAX_AGENDAS} Sitzungen die Tagesordnungen mit.",
-        {"von": _VON, "bis": _BIS, "gremium": _GREMIUM, "tagesordnung": {"type": "boolean"}},
+        f"tagesordnung=true liefert bei bis zu {MAX_AGENDAS} Sitzungen die Tagesordnungen mit. "
+        f"Je Aufruf {MAX_MEETINGS} Sitzungen; nennt das Ergebnis „weitere“, mit seite fortsetzen.",
+        {
+            "von": _VON,
+            "bis": _BIS,
+            "gremium": _GREMIUM,
+            "tagesordnung": {"type": "boolean"},
+            "seite": {"type": "integer"},
+        },
         ["von", "bis"],
     ),
     _function("sitzung", "Sitzung mit Tagesordnung, Ergebnissen und Vorlagen.", {"id": _ID}, ["id"]),
@@ -237,6 +244,19 @@ def _date_arg(args: Mapping[str, Any], name: str, *, required: bool = False) -> 
         except ValueError:
             continue
     raise ToolError(f"Datum „{name}“ ist ungültig (JJJJ-MM-TT erwartet).")
+
+
+#: Höchste Seite beim Weiterblättern; darüber ist ein engerer Zeitraum der bessere Weg
+MAX_SEITE = 20
+
+
+def _seite_arg(args: Mapping[str, Any]) -> int:
+    """Seite ab 1 aus ``seite``; fehlende oder unlesbare Angaben ergeben die erste Seite."""
+    try:
+        seite = int(args.get("seite") or 1)
+    except (TypeError, ValueError):
+        return 1
+    return min(max(seite, 1), MAX_SEITE)
 
 
 def _as_uuid(value: object) -> uuid.UUID | None:
@@ -344,8 +364,12 @@ def sitzungen_im_zeitraum(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str
     mit_tagesordnung = args.get("tagesordnung") in (True, "true", "ja", 1)
     start = timezone.make_aware(datetime.combine(von, time.min))
     ende = timezone.make_aware(datetime.combine(bis, time.max))
-    found = ris.public_meetings_between(ctx.bodies, start, ende, organizations=gremien)
-    sitzungen = list(found[: MAX_MEETINGS + 1])
+    # Weiterblättern (Issue #1441): Ohne Seite sah ein Zeitraum mit mehr Sitzungen vollständig aus, obwohl die
+    # späteren fehlten. Feste Reihenfolge auch bei gleichem Beginn, damit keine Sitzung zwischen zwei Seiten fällt.
+    seite = _seite_arg(args)
+    beginn = (seite - 1) * MAX_MEETINGS
+    found = ris.public_meetings_between(ctx.bodies, start, ende, organizations=gremien).order_by("start", "pk")
+    sitzungen = list(found[beginn : beginn + MAX_MEETINGS + 1])
     tagesordnungen = mit_tagesordnung and 0 < len(sitzungen) <= MAX_AGENDAS
     eintraege = []
     for meeting in sitzungen[:MAX_MEETINGS]:
@@ -367,7 +391,11 @@ def sitzungen_im_zeitraum(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str
             "zeitraum": f"{_day(von)}–{_day(bis)}",
             "gremium": [g.get_display_name() for g in gremien] if gremien else None,
             "anzahl": len(eintraege),
-            "weitere": "ja" if len(sitzungen) > MAX_MEETINGS else None,
+            "seite": seite if seite > 1 else None,
+            # Ausdrücklich, wie es weitergeht: Die Liste ist sonst nicht als unvollständig zu erkennen
+            "weitere": f"ja, die Liste ist unvollständig: weiter mit seite={seite + 1}"
+            if len(sitzungen) > MAX_MEETINGS
+            else None,
             "hinweis": hinweis,
             "spalten": "Beginn | Gremium | Ort | Link | abgesagt",
             "sitzungen": eintraege,
