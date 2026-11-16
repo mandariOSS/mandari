@@ -334,3 +334,16 @@ def test_vorlagen_auf_tagesordnungen_mit_fruehester_sitzung(bestand: Bestand, je
     ]
     assert len(ris.papers_on_agendas(sitzungen, limit=1)) == 1
     assert ris.papers_on_agendas(OParlMeeting.objects.none()) == []
+
+
+def test_vorlagen_auf_tagesordnungen_ohne_rohdaten(bestand: Bestand) -> None:
+    """Je Beratung kommt eine Zeile samt Vorlage: Rohdaten und Zusammenfassungen werden dabei nicht mitgeladen."""
+    OParlPaper.objects.filter(pk=bestand.vorlage.pk).update(raw_json={"anlage": "x" * 2000}, summary="Lang " * 400)
+    sitzungen = OParlMeeting.objects.filter(pk=bestand.kommend.pk)
+
+    [treffer] = [t for t in ris.papers_on_agendas(sitzungen, limit=5) if t.paper.pk == bestand.vorlage.pk]
+
+    assert {"raw_json", "summary", "summary_einfach", "locations"} <= treffer.paper.get_deferred_fields()
+    # Anzeigefelder sind da, und was fehlt, lässt sich für die wenigen Treffer nachladen
+    assert treffer.paper.name == bestand.vorlage.name and treffer.paper.reference == bestand.vorlage.reference
+    assert treffer.paper.raw_json == {"anlage": "x" * 2000}
