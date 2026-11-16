@@ -639,7 +639,7 @@ class MotionExportView(WorkViewMixin, View):
     def get(self, request, *args, **kwargs):
         from django.http import HttpResponse
 
-        from ..export_service import ExportTooLargeError, motion_export_service
+        from ..export_service import PDF_TABLES_TOO_LARGE, ExportTooLargeError, motion_export_service
 
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
@@ -669,9 +669,9 @@ class MotionExportView(WorkViewMixin, View):
                 freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_PDF)
                 return response
 
-            except ExportTooLargeError as zu_gross:
-                # Feste Meldung des Exports (keine Angaben aus dem Dokument)
-                return JsonResponse({"error": str(zu_gross)}, status=400)
+            except ExportTooLargeError:
+                # Feste Meldung, nie der Text der Ausnahme (keine Angaben aus dem Dokument)
+                return JsonResponse({"error": PDF_TABLES_TOO_LARGE}, status=400)
             except Exception as e:
                 logger.exception(f"[MotionExport] PDF export failed: {e}")
                 return JsonResponse({"error": "PDF-Export fehlgeschlagen."}, status=500)
