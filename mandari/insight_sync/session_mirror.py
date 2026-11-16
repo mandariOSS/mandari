@@ -18,6 +18,13 @@ zusätzliche Abhängigkeiten (urllib).
 Sicherheit: Es wird ausschließlich gespeichert, was die Quelle liefert —
 die Session-OParl-API liefert per Konstruktion nur öffentliche Daten
 (Beweis: scripts/smoke_session_oparl.py).
+
+Rücknahmen gehen vor: Jede Zeile entsteht an einer Stelle (``SessionMirror._uebernehmen``). Sie schreibt nicht,
+wenn die Zeile dauerhaft zurückgenommen ist oder ihre Löschmarkierung jünger ist als die Seite, aus der der Eintrag
+stammt. Session nimmt im Bürgerportal sofort zurück (``apps.session.oparl_publication.retract_from_portal``), ein
+Lauf verarbeitet seine Seiten aber erst nach dem Abruf; ohne diese Regel höbe er eine Rücknahme wieder auf, die
+während des Laufs entstand. Am Ende liest jeder Lauf noch einmal die Rücknahmen seit seinem Beginn
+(``_spaete_ruecknahmen``). Eine Wiederveröffentlichung aus Session kommt mit dem nächsten Lauf an.
 """
 
 import json
@@ -25,10 +32,12 @@ import logging
 import urllib.request
 from urllib.parse import quote
 
+from django.db import transaction
 from django.utils import timezone
 
 from hub.ris import uebernahme
 from insight_core.models import (
+    REASON_PRIVACY,
     OParlAgendaItem,
     OParlBody,
     OParlConsultation,
@@ -57,6 +66,9 @@ MODEL_BY_TYPE_SUFFIX = {
 }
 
 
+#: Listen einer Körperschaft, deren Rücknahmen der Abschluss eines Laufs liest (``_spaete_ruecknahmen``)
+BODY_LISTS = ("organization", "person", "membership", "meeting", "agendaItem", "paper", "consultation", "file")
+
 #: Zeitpunkte wie bei jedem Schreiber des Bestands; die Spalten je Typ stehen in ``hub.ris.uebernahme``
 _parse_dt = uebernahme.parse_dt
 
@@ -78,6 +90,9 @@ class SessionMirror:
         self.fetch = fetch or _default_fetch
         #: Kanonische Kennungen wie im Ingestor (festgeschriebene Basis der Quelle, Issue #733)
         self.ids = source.id_bases()
+        #: Zeitpunkt, zu dem die Seite des gerade verarbeiteten Eintrags angefordert wurde (``_iter_list``).
+        #: ``None``: Der Eintrag stammt nicht aus einem Abruf dieses Laufs, sein Alter ist unbekannt.
+        self._abgerufen = None
         self.stats = {
             "bodies": 0,
             "organizations": 0,
@@ -90,6 +105,7 @@ class SessionMirror:
             "consultations": 0,
             "legislative_terms": 0,
             "tombstones": 0,
+            "withheld": 0,
         }
 
     # ------------------------------------------------------------------
@@ -97,13 +113,18 @@ class SessionMirror:
     # ------------------------------------------------------------------
 
     def _iter_list(self, url, modified_since=None):
-        """Alle Einträge einer externen Liste (folgt links.next)."""
+        """Alle Einträge einer externen Liste (folgt links.next); merkt je Eintrag, wann seine Seite abgerufen wurde."""
         if url and modified_since is not None:
             separator = "&" if "?" in url else "?"
             url = f"{url}{separator}modified_since={quote(modified_since.isoformat())}"
         while url:
+            # Vor dem Abruf gelesen: Der Stand der Seite ist nie älter als dieser Zeitpunkt
+            abgerufen = timezone.now()
             page = self.fetch(url)
-            yield from page.get("data", [])
+            for entry in page.get("data", []):
+                # Je Eintrag neu: Zwischen zwei Einträgen dieser Liste laufen Abrufe anderer Listen (``sync``)
+                self._abgerufen = abgerufen
+                yield entry
             url = (page.get("links") or {}).get("next")
 
     # ------------------------------------------------------------------
@@ -125,6 +146,47 @@ class SessionMirror:
     def _base_defaults(self, data):
         return uebernahme.base(data)
 
+    def _markierung_bleibt(self, row) -> bool:
+        """
+        Bleibt die Löschmarkierung der Zeile gegenüber dem abgerufenen Eintrag bestehen?
+
+        - Aus Datenschutzgründen entfernt: Diese Markierung setzt der Betrieb, gerade weil die Quelle das Objekt
+          weiter liefert. Wie beim Abgleich des Ingestors (``keeps_withdrawal``) hebt sie kein Lauf auf.
+        - Markiert, nachdem die Seite des Eintrags angefordert wurde: Der abgerufene Stand ist älter als die
+          Markierung. Session nimmt im Bürgerportal sofort zurück, ebenso die Rücknahme einer ganzen Quelle; der
+          Lauf darf das nicht mit einem Stand von vorher überschreiben. Bei gleichem Zeitpunkt gilt die Markierung.
+
+        Jede andere Markierung hebt ein regulär gelieferter Eintrag auf: Die Quelle hat das Objekt wieder
+        veröffentlicht, und die Seite wurde danach abgerufen.
+        """
+        if row is None or not row.deleted:
+            return False
+        if row.deletion_reason == REASON_PRIVACY:
+            return True
+        return self._abgerufen is not None and row.deleted_at is not None and row.deleted_at >= self._abgerufen
+
+    def _uebernehmen(self, manager, data, defaults, eltern=()):
+        """
+        Eine Zeile anlegen oder aktualisieren – die eine Stelle, an der der Spiegel Zeilen des Bestands schreibt.
+
+        Liefert ``(Zeile, übernommen)``. Nicht übernommen wird ein Eintrag, dessen Zeile ihre Löschmarkierung
+        behält (``_markierung_bleibt``), und einer, dessen Bezugsobjekt (``eltern``: Sitzung, Vorlage, Person,
+        Gremium) sie behält: Unter einem zurückgenommenen Objekt entsteht nichts und wird nichts wieder sichtbar.
+        Der Aufrufer übernimmt dann auch nichts, was der Eintrag einbettet.
+
+        Die Zeile wird gesperrt wie bei der Rücknahme (``hub.ris.retraction.retract``, ``FOR NO KEY UPDATE``):
+        Eine gleichzeitige Rücknahme wartet auf das Schreiben und markiert danach, oder sie ist schon geschrieben
+        und wird hier gesehen.
+        """
+        external_id = data.get("id", "")
+        with transaction.atomic():
+            row = manager.select_for_update(no_key=True).filter(external_id=external_id).first()
+            if self._markierung_bleibt(row) or any(self._markierung_bleibt(bezug) for bezug in eltern):
+                self.stats["withheld"] += 1
+                return row, False
+            row, _created = manager.update_or_create(external_id=external_id, **self._upsert_args(data, defaults))
+        return row, True
+
     def _handle_tombstone(self, data) -> bool:
         """Tombstone (deleted: true) auf den lokalen Spiegel anwenden."""
         if not data.get("deleted"):
@@ -140,13 +202,13 @@ class SessionMirror:
         return True
 
     def _upsert_body(self, data):
-        body, _created = OParlBody.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {"source": self.source, **uebernahme.body(data), **self._base_defaults(data)},
-            ),
+        body, uebernommen = self._uebernehmen(
+            OParlBody.objects,
+            data,
+            {"source": self.source, **uebernahme.body(data), **self._base_defaults(data)},
         )
+        if not uebernommen:
+            return None
         if not body.slug:
             from django.utils.text import slugify
 
@@ -161,30 +223,27 @@ class SessionMirror:
         return body
 
     def _upsert_legislative_term(self, body, data):
-        OParlLegislativeTerm.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {"body": body, **uebernahme.legislative_term(data), **self._base_defaults(data)},
-            ),
+        _term, uebernommen = self._uebernehmen(
+            OParlLegislativeTerm.objects,
+            data,
+            {"body": body, **uebernahme.legislative_term(data), **self._base_defaults(data)},
         )
-        self.stats["legislative_terms"] += 1
+        self.stats["legislative_terms"] += int(uebernommen)
 
     def _upsert_organization(self, body, data):
-        OParlOrganization.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {"body": body, **uebernahme.organization(data), **self._base_defaults(data)},
-            ),
+        _organization, uebernommen = self._uebernehmen(
+            OParlOrganization.objects,
+            data,
+            {"body": body, **uebernahme.organization(data), **self._base_defaults(data)},
         )
-        self.stats["organizations"] += 1
+        self.stats["organizations"] += int(uebernommen)
 
     def _upsert_person(self, body, data):
-        person, _created = OParlPerson.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(data, {"body": body, **uebernahme.person(data), **self._base_defaults(data)}),
+        person, uebernommen = self._uebernehmen(
+            OParlPerson.objects, data, {"body": body, **uebernahme.person(data), **self._base_defaults(data)}
         )
+        if not uebernommen:
+            return None
         self.stats["persons"] += 1
         for membership in data.get("membership", []) or []:
             if isinstance(membership, dict):
@@ -196,42 +255,41 @@ class SessionMirror:
         organization = OParlOrganization.objects.filter(external_id=org_ref).first() if org_ref else None
         if organization is None:
             return
-        OParlMembership.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {
-                    "person": person,
-                    "organization": organization,
-                    **uebernahme.membership(data),
-                    **self._base_defaults(data),
-                },
-            ),
+        _membership, uebernommen = self._uebernehmen(
+            OParlMembership.objects,
+            data,
+            {
+                "person": person,
+                "organization": organization,
+                **uebernahme.membership(data),
+                **self._base_defaults(data),
+            },
+            eltern=(person, organization),
         )
-        self.stats["memberships"] += 1
+        self.stats["memberships"] += int(uebernommen)
 
     def _upsert_file(self, body, data, paper=None, meeting=None):
-        OParlFile.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {
-                    "body": body,
-                    "paper": paper,
-                    "meeting": meeting,
-                    **uebernahme.file(data),
-                    **self._base_defaults(data),
-                },
-            ),
+        _file, uebernommen = self._uebernehmen(
+            OParlFile.objects,
+            data,
+            {
+                "body": body,
+                "paper": paper,
+                "meeting": meeting,
+                **uebernahme.file(data),
+                **self._base_defaults(data),
+            },
+            eltern=tuple(bezug for bezug in (paper, meeting) if bezug is not None),
         )
-        self.stats["files"] += 1
+        self.stats["files"] += int(uebernommen)
 
     def _upsert_meeting(self, body, data):
         # Ort als Text an der Sitzung, Genehmigung der Niederschrift (Issue #525): ``uebernahme.meeting``
-        meeting, _created = OParlMeeting.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(data, {"body": body, **uebernahme.meeting(data), **self._base_defaults(data)}),
+        meeting, uebernommen = self._uebernehmen(
+            OParlMeeting.objects, data, {"body": body, **uebernahme.meeting(data), **self._base_defaults(data)}
         )
+        if not uebernommen:
+            return None
         org_refs = [ref for ref in data.get("organization", []) if isinstance(ref, str)]
         if org_refs:
             meeting.organizations.set(OParlOrganization.objects.filter(external_id__in=org_refs))
@@ -250,28 +308,27 @@ class SessionMirror:
         return meeting
 
     def _upsert_agenda_item(self, meeting, data):
-        OParlAgendaItem.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {
-                    "meeting": meeting,
-                    # Beschlussfassung: Nummer, Abstimmung, Einzelstimmen, Umsetzung (Issue #525)
-                    **uebernahme.agenda_item(data),
-                    **self._base_defaults(data),
-                },
-            ),
+        _item, uebernommen = self._uebernehmen(
+            OParlAgendaItem.objects,
+            data,
+            {
+                "meeting": meeting,
+                # Beschlussfassung: Nummer, Abstimmung, Einzelstimmen, Umsetzung (Issue #525)
+                **uebernahme.agenda_item(data),
+                **self._base_defaults(data),
+            },
+            eltern=(meeting,),
         )
-        self.stats["agenda_items"] += 1
+        self.stats["agenda_items"] += int(uebernommen)
 
     def _upsert_paper(self, body, data):
-        paper, _created = OParlPaper.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {"body": body, **uebernahme.paper(data), **self._base_defaults(data)},
-            ),
+        paper, uebernommen = self._uebernehmen(
+            OParlPaper.objects,
+            data,
+            {"body": body, **uebernahme.paper(data), **self._base_defaults(data)},
         )
+        if not uebernommen:
+            return None
         main_file = data.get("mainFile")
         if isinstance(main_file, dict):
             self._upsert_file(body, main_file, paper=paper)
@@ -285,13 +342,27 @@ class SessionMirror:
         return paper
 
     def _upsert_consultation(self, body, paper, data):
-        OParlConsultation.objects.update_or_create(
-            external_id=data.get("id", ""),
-            **self._upsert_args(
-                data, {"body": body, "paper": paper, **uebernahme.consultation(data), **self._base_defaults(data)}
-            ),
+        _consultation, uebernommen = self._uebernehmen(
+            OParlConsultation.objects,
+            data,
+            {"body": body, "paper": paper, **uebernahme.consultation(data), **self._base_defaults(data)},
+            eltern=(paper,),
         )
-        self.stats["consultations"] += 1
+        self.stats["consultations"] += int(uebernommen)
+
+    def _spaete_ruecknahmen(self, body_data, started_at):
+        """
+        Abschluss eines Laufs: Rücknahmen übernehmen, die seit seinem Beginn entstanden sind.
+
+        Nimmt Session ein Objekt zurück, das der Lauf schon abgerufen, aber noch nicht geschrieben hat, und gibt es
+        die Zeile noch nicht, findet die sofortige Rücknahme im Bürgerportal nichts vor; der Lauf legte die Zeile
+        danach aus dem älteren Stand an, und sie bliebe bis zum nächsten Lauf sichtbar. Die Listen der Quelle nennen
+        solche Rücknahmen ab dem Beginn des Laufs. Hier zählen nur sie; geänderte Objekte übernimmt der nächste Lauf
+        (``modified_since`` ab diesem Beginn).
+        """
+        for name in BODY_LISTS:
+            for entry in self._iter_list(body_data.get(name), started_at):
+                self._handle_tombstone(entry)
 
     # ------------------------------------------------------------------
     # Sync
@@ -317,6 +388,8 @@ class SessionMirror:
             if body_data.get("deleted"):
                 continue
             body = self._upsert_body(body_data)
+            if body is None:
+                continue
 
             # Reihenfolge: Gremien vor Personen (Membership-Auflösung),
             # beide vor Sitzungen/Vorlagen (M2M-/Referenz-Auflösung).
@@ -365,6 +438,8 @@ class SessionMirror:
                     meeting = OParlMeeting.objects.filter(external_id=meeting_refs[0]).first() if meeting_refs else None
                     if paper is not None or meeting is not None:
                         self._upsert_file(body, entry, paper=paper, meeting=meeting)
+
+            self._spaete_ruecknahmen(body_data, started_at)
 
             body.last_sync = started_at
             body.save(update_fields=["last_sync", "updated_at"])
