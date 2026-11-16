@@ -132,6 +132,9 @@ namen = [
     # Speicher und E-Mail-Backends
     "send_messages",
     "get_available_name",
+    # smtplib.SMTP: Verbindungsaufbau und Lesen der Antwort ruft die Standardbibliothek auf (BegrenzterSMTP)
+    "getreply",
+    "_get_socket",
     # Sitemaps und Feeds
     "items",
     "lastmod",

@@ -12,7 +12,11 @@ von Django vorgesehene, nicht deprecatete Schnittstelle (``BaseEmailBackend`` mi
 
 from __future__ import annotations
 
-from typing import Any
+import contextlib
+import smtplib
+import socket
+import threading
+from typing import Any, ClassVar
 
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
@@ -20,6 +24,8 @@ from django.core.mail.backends.smtp import EmailBackend as SMTPEmailBackend
 from django.utils.module_loading import import_string
 
 SMTP_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+#: Backend für Server, die eine Organisation selbst eingetragen hat (``BegrenztesSMTPBackend``)
+BEGRENZTES_SMTP_BACKEND = "apps.common.mail_backends.BegrenztesSMTPBackend"
 #: Alias für zur Laufzeit aufgebaute Backends (SiteSettings, Organisations-SMTP)
 LAUFZEIT_ALIAS = "laufzeit"
 
@@ -66,6 +72,103 @@ def build_backend(backend: str, **options: Any) -> BaseEmailBackend:
     options.setdefault("alias", LAUFZEIT_ALIAS)
     instanz: BaseEmailBackend = klasse(**options)
     return instanz
+
+
+class BegrenzterSMTP(smtplib.SMTP):
+    """
+    SMTP-Client für Server, die nicht der Betreiber gewählt hat (eigenes SMTP einer Organisation).
+
+    Der Versand läuft in Prozessen, die alle Mandanten teilen. Deshalb gelten für einen fremden Server drei Grenzen,
+    die ``smtplib`` nicht kennt:
+
+    - Eine Antwort (auch der Gruß) ist höchstens ``max_antwort`` Bytes lang. ``smtplib`` begrenzt nur die einzelne
+      Zeile und sammelt beliebig viele Fortsetzungszeilen im Speicher.
+    - Die ganze Verbindung dauert höchstens ``gesamtfrist`` Sekunden. Die Zeitgrenze des Sockets beginnt mit jedem
+      Lesevorgang neu und hält einen Server nicht auf, der seine Antwort in kleinen Stücken streckt.
+    - Die Verbindung geht an die Adresse, die ``public_address`` geprüft hat, nicht an eine zweite Auflösung
+      desselben Namens. Für TLS gilt weiter der eingetragene Name.
+    """
+
+    #: Antworten eines Mailservers sind wenige hundert Bytes lang, mit vielen Erweiterungen wenige KiB
+    max_antwort: ClassVar[int] = 64 * 1024
+    #: Längste Zeile einer Antwort (wie ``smtplib``)
+    max_zeile: ClassVar[int] = 8192
+    #: Sekunden für Aufbau, Anmeldung und Übergabe einer Mail zusammen
+    gesamtfrist: ClassVar[float] = 60.0
+
+    _zeitgeber: threading.Timer | None = None
+    _notaus: socket.socket | None = None
+
+    def _get_socket(self, host: str, port: int, timeout: float) -> socket.socket:
+        from apps.common.org_email import public_address
+
+        sock = socket.create_connection((public_address(host), port), timeout, self.source_address)
+        # Die Frist wirkt über ein Duplikat: STARTTLS ersetzt das Socket-Objekt, die Verbindung bleibt dieselbe
+        try:
+            self._notaus = sock.dup()
+        except OSError:
+            sock.close()
+            raise
+        self._zeitgeber = threading.Timer(self.gesamtfrist, self._abbrechen)
+        self._zeitgeber.daemon = True
+        self._zeitgeber.start()
+        return sock
+
+    def _abbrechen(self) -> None:
+        """Frist abgelaufen: Verbindung in beide Richtungen beenden; der wartende Lesevorgang endet damit."""
+        notaus = self._notaus
+        if notaus is not None:
+            with contextlib.suppress(OSError):
+                notaus.shutdown(socket.SHUT_RDWR)
+
+    def close(self) -> None:
+        zeitgeber, self._zeitgeber = self._zeitgeber, None
+        if zeitgeber is not None:
+            zeitgeber.cancel()
+        notaus, self._notaus = self._notaus, None
+        if notaus is not None:
+            with contextlib.suppress(OSError):
+                notaus.close()
+        super().close()
+
+    def getreply(self) -> tuple[int, bytes]:
+        """Antwort lesen wie ``smtplib``, aber nur bis ``max_antwort`` Bytes; darüber endet die Verbindung."""
+        if self.sock is None:
+            raise smtplib.SMTPServerDisconnected("please run connect() first")
+        if self.file is None:
+            self.file = self.sock.makefile("rb")
+        zeilen: list[bytes] = []
+        gelesen = 0
+        while True:
+            try:
+                zeile = self.file.readline(self.max_zeile + 1)
+            except OSError as exc:
+                self.close()
+                raise smtplib.SMTPServerDisconnected("Connection unexpectedly closed") from exc
+            if not zeile:
+                self.close()
+                raise smtplib.SMTPServerDisconnected("Connection unexpectedly closed")
+            gelesen += len(zeile)
+            if len(zeile) > self.max_zeile or gelesen > self.max_antwort:
+                self.close()
+                raise smtplib.SMTPResponseException(500, "Reply too long.")
+            zeilen.append(zeile[4:].strip(b" \t\r\n"))
+            try:
+                code = int(zeile[:3])
+            except ValueError:
+                code = -1
+                break
+            if zeile[3:4] != b"-":
+                break
+        return code, b"\n".join(zeilen)
+
+
+class BegrenztesSMTPBackend(SMTPEmailBackend):
+    """SMTP-Backend für das eigene SMTP einer Organisation: Verbindungen über :class:`BegrenzterSMTP`."""
+
+    @property
+    def connection_class(self) -> type[smtplib.SMTP]:
+        return BegrenzterSMTP
 
 
 def send_with(backend: BaseEmailBackend, message: Any) -> int:

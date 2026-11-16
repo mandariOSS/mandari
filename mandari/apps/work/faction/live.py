@@ -279,6 +279,8 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
     async def notizen_cursor(self, event: dict[str, Any]) -> None:
         if event.get("von") == self.channel_name or self.entzogen or self.stufe != "edit":
             return
+        if not await self._gedrosselt_pruefen():
+            return
         await self.send_json({"type": "awareness", "data": event["data"]})
 
     async def notizen_inhalt(self, event: dict[str, Any]) -> None:
@@ -298,13 +300,15 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         await self.send_json({"type": "inhalt", "html": event["html"]})
 
     async def notizen_neu(self, event: dict[str, Any]) -> None:
-        if self.entzogen:
+        if self.entzogen or not await self._gedrosselt_pruefen():
             return
         self.veraltet = self.stufe == "edit"
         await self.send_json({"type": "neu_aufbauen", "html": event.get("html", ""), "vorher": event.get("vorher")})
 
     async def notizen_praesenz(self, event: dict[str, Any]) -> None:
         if event.get("von") == self.channel_name or self.entzogen:
+            return
+        if not await self._gedrosselt_pruefen():
             return
         await self.send_json({"type": "praesenz", "art": event["art"], "person": event["person"]})
         if event.get("frage"):
@@ -390,9 +394,12 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         )
         if membership is None or not membership.has_permission("faction.view_public"):
             return None
-        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
-        from apps.accounts.websocket import requirement_open
+        from apps.accounts.websocket import requirement_open, session_valid
 
+        # Sitzung beendet (Abmelden, Geräteliste, neues Passwort): Die Verbindung endet wie der Zugriff über HTTP
+        if not session_valid(self, membership.user):
+            return None
+        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
         if requirement_open(membership.user):
             return None
         # Sitzungsarten (Issue #1239): nur wer die Sitzung sieht; die Prüfung läuft auch während der Verbindung

@@ -1,0 +1,20 @@
+# Sie haben bereits ein Konto
+
+Fraktion Test
+
+Guten Tag,
+
+mit dieser E-Mail-Adresse wurde gerade eine Registrierung bei Fraktion Test auf mandari begonnen. Für die Adresse gibt es bereits ein Konto, deshalb wurde kein neues angelegt.
+
+Melden Sie sich mit Ihrem Konto an, um Fraktion Test beizutreten:
+
+[Anmelden und beitreten](https://mandari.example/accounts/login/?next=/accounts/register/fraktion-test/)
+
+Passwort vergessen? Hier setzen Sie es neu:
+https://mandari.example/accounts/password-reset/
+
+Sie haben sich nicht registriert? Dann ignorieren Sie diese E-Mail. An Ihrem Konto hat sich nichts geändert, und niemand erhält Zugang.
+
+Diese E-Mail wurde automatisch über mandari versendet.
+
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

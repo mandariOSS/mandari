@@ -415,9 +415,13 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         except Membership.DoesNotExist:
             return None, None
 
-        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
-        from apps.accounts.websocket import requirement_open
+        from apps.accounts.websocket import requirement_open, session_valid
 
+        # Sitzung beendet (Abmelden, Geräteliste, neues Passwort): Die Verbindung endet wie der Zugriff über HTTP
+        if not session_valid(self, self.user):
+            return None, None
+
+        # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
         if requirement_open(self.user):
             return None, None
 

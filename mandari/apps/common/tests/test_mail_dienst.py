@@ -410,8 +410,8 @@ def test_passwort_links_nie_ueber_fremdes_smtp(journal: JournalBackend, org: Any
 
 def test_schalter_je_mailart(journal: JournalBackend, settings: Any) -> None:
     settings.MAIL_QUEUE = ["work.*"]
-    assert mail.queue_enabled("work.fraktion.einladung") and not mail.queue_enabled("konto.passwort")
-    _senden(kind="konto.passwort")
+    assert mail.queue_enabled("work.fraktion.einladung") and not mail.queue_enabled("konto.sicherheit")
+    _senden(kind="konto.sicherheit")
     assert len(django_mail.outbox) == 1 and not MailOutbox.objects.exists()
     _senden(kind="work.benachrichtigung")
     assert len(django_mail.outbox) == 1 and MailOutbox.objects.count() == 1

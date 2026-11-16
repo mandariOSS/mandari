@@ -17,6 +17,7 @@ from urllib.parse import quote, urlencode
 from django.contrib import messages
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.views import (
     PasswordResetCompleteView as DjangoPasswordResetCompleteView,
 )
@@ -40,9 +41,10 @@ from django.views.generic import TemplateView
 
 from apps.common.next_url import safe_next_url
 
-from . import security_audit, security_notifications, webauthn_service
+from . import known_device, security_audit, security_notifications, webauthn_service
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
+from .registration_notice import send_existing_account_notice
 from .second_factor import (
     CONFIRMED,
     FAILURE_WINDOW_MINUTES,
@@ -54,6 +56,7 @@ from .second_factor import (
     recent_failures,
 )
 from .services import SessionService, TwoFactorService, revoke_oidc_after_password_change
+from .signals import announce_sessions_ended
 from .two_factor_policy import (
     POLICY_CACHE_SESSION_KEY,
     security_key_required,
@@ -189,8 +192,13 @@ class LoginView(View):
         # Check for pending invitation
         invitation = self._get_pending_invitation(request)
 
-        limit = self.rate_limit_reason(ip_address, email)
+        # Browser, mit dem sich das Konto schon angemeldet hat: Die Sperre je Konto zählt für ihn getrennt
+        device = known_device.device_id(request, email)
+        limit = self.rate_limit_reason(ip_address, email, device=device)
         if limit:
+            if limit == security_audit.LIMIT_ACCOUNT and not device:
+                # Die Sperre je Konto kann jeder auslösen, der die Adresse kennt: Die Person erfährt davon
+                security_notifications.notify_login_blocked(email, request=request)
             # Sicherheitsprotokoll, höchstens ein Eintrag je Adresse und Zeitfenster (Issue #366)
             security_audit.record_throttled(
                 request,
@@ -233,9 +241,11 @@ class LoginView(View):
 
             messages.success(request, "Erfolgreich angemeldet.")
 
-            return redirect(self.get_success_url(request, next_url))
+            return known_device.remember(request, redirect(self.get_success_url(request, next_url)), user.email)
         # Log failed attempt
         self.log_attempt(request, email, success=False)
+        if device:
+            known_device.count_failure(device, LOGIN_WINDOW_MINUTES * 60)
 
         return render(
             request,
@@ -296,12 +306,14 @@ class LoginView(View):
         """Greift die Drosselung (siehe :meth:`rate_limit_reason`)?"""
         return bool(self.rate_limit_reason(ip_address, email))
 
-    def rate_limit_reason(self, ip_address, email) -> str:
+    def rate_limit_reason(self, ip_address, email, device: str = "") -> str:
         """
         Fehlversuche der letzten 15 Minuten: je Adresse, je IPv6-/64-Netz und je Konto.
 
         Die Zählung je Konto greift auch dann, wenn die Versuche von vielen Adressen kommen;
         ihre Schwelle liegt höher, damit Tippfehler der Person selbst nicht sofort sperren.
+        Für ein bekanntes Gerät (``device``, siehe ``known_device``) zählen statt der Versuche aller die eigenen:
+        Fehlversuche Dritter sperren die Person dort nicht aus.
 
         Returns: die gegriffene Schwelle (``security_audit.LIMIT_*``) oder ``""``.
         """
@@ -313,7 +325,10 @@ class LoginView(View):
         if netz and cache.get(_network_failure_key(netz), 0) >= LOGIN_FAILURES_PER_IP:
             return security_audit.LIMIT_NETWORK
         email = security_audit.normalize_identifier(email)
-        if email and failures.filter(email__iexact=email).count() >= LOGIN_FAILURES_PER_ACCOUNT:
+        if email and device:
+            if known_device.failures(device) >= LOGIN_FAILURES_PER_ACCOUNT:
+                return security_audit.LIMIT_ACCOUNT
+        elif email and failures.filter(email__iexact=email).count() >= LOGIN_FAILURES_PER_ACCOUNT:
             return security_audit.LIMIT_ACCOUNT
         return ""
 
@@ -434,7 +449,9 @@ class LoginTwoFactorView(View):
             self._log(request, user, success=True)
             complete_login(request, user, bool(data.get("remember")), second_factor=True)
             messages.success(request, "Erfolgreich angemeldet.")
-            return redirect(LoginView().get_success_url(request, data.get("next") or None))
+            return known_device.remember(
+                request, redirect(LoginView().get_success_url(request, data.get("next") or None)), user.email
+            )
 
         self._log(request, user, success=False)
         return render(
@@ -580,7 +597,8 @@ class TwoFactorEnrollView(View):
                 messages.success(request, "Zweiter Faktor eingerichtet – du bist angemeldet.")
             else:
                 messages.success(request, "Zweiter Faktor eingerichtet.")
-            return redirect(LoginView().get_success_url(request, next_url or None))
+            response = redirect(LoginView().get_success_url(request, next_url or None))
+            return known_device.remember(request, response, user.email) if pending is not None else response
 
         if service.is_2fa_enabled(user):
             # Ein aktiver zweiter Faktor wird hier nie ersetzt (Gerät, Secret und Backup-Codes bleiben);
@@ -647,7 +665,11 @@ class LogoutView(View):
 
             UserSession.objects.filter(session_key=session_key).delete()
 
+        user = request.user if request.user.is_authenticated else None
         auth_logout(request)
+        if user is not None:
+            # Offene WebSocket-Verbindungen dieser Sitzung enden mit ihr
+            announce_sessions_ended(user)
         return redirect("accounts:logged_out")
 
 
@@ -706,6 +728,8 @@ class PasswordResetConfirmView(DjangoPasswordResetConfirmView):
         # Der Link kam per E-Mail – wer ihn einlöst, kontrolliert das Postfach
         user = form.user
         revoke_oidc_after_password_change(self.request, user)
+        # Mit dem alten Passwort gilt keine Sitzung mehr, also auch keine ihrer offenen WebSocket-Verbindungen
+        announce_sessions_ended(user)
         if not user.email_verified:
             user.email_verified = True
             user.save(update_fields=["email_verified"])
@@ -716,7 +740,8 @@ class PasswordResetConfirmView(DjangoPasswordResetConfirmView):
             "Das Passwort deines Kontos wurde über den Link aus der E-Mail „Passwort zurücksetzen“ neu gesetzt.",
             request=self.request,
         )
-        return response
+        # Wer den Link einlöst, hat das Konto nachgewiesen: Fehlversuche Dritter sperren diesen Browser nicht aus
+        return known_device.remember(self.request, response, user.email)
 
 
 class PasswordResetCompleteView(DjangoPasswordResetCompleteView):
@@ -939,15 +964,6 @@ class SelfRegisterView(View):
             form.add_error("email", f"Nur E-Mail-Adressen mit folgenden Domains sind erlaubt: {', '.join(domains)}")
             return render(request, self.template_name, {"form": form, "org": self.org})
 
-        # Ein bestehendes Konto wird nie ohne Anmeldung übernommen (sonst Kontoübernahme per E-Mail-Adresse)
-        if not request.user.is_authenticated and User.objects.filter(email__iexact=email).exists():
-            messages.info(
-                request,
-                "Für diese E-Mail-Adresse besteht bereits ein Konto. Bitte melde dich an, um beizutreten.",
-            )
-            login_next = safe_next_url(request, request.path)
-            return redirect(f"{reverse('accounts:login')}?next={quote(login_next)}")
-
         if request.user.is_authenticated and request.user.email_verified:
             membership = organization_services.join_by_self_registration(self.org, request.user)
             if membership.is_active:
@@ -960,7 +976,13 @@ class SelfRegisterView(View):
             return render(request, self.template_name, {"form": form, "org": self.org})
 
         if request.user.is_authenticated:
-            user = request.user
+            mail_sent = organization_services.start_self_registration(self.org, request.user)
+        elif User.objects.filter(email__iexact=email).exists():
+            # Ein bestehendes Konto wird nie ohne Anmeldung übernommen (sonst Kontoübernahme per E-Mail-Adresse).
+            # Die Antwort ist dieselbe wie für eine neue Adresse, auch in der Rechenzeit für das Passwort: Dass es
+            # das Konto gibt, steht nur in der Mail an die Adresse.
+            make_password(form.cleaned_data["password1"])
+            mail_sent = send_existing_account_notice(self.org, email)
         else:
             user = User.objects.create_user(
                 email=email,
@@ -968,11 +990,11 @@ class SelfRegisterView(View):
                 first_name=form.cleaned_data["first_name"],
                 last_name=form.cleaned_data["last_name"],
             )
-        mail_sent = organization_services.start_self_registration(self.org, user)
+            mail_sent = organization_services.start_self_registration(self.org, user)
         return render(
             request,
             "accounts/registration_pending.html",
-            {"org": self.org, "state": "confirm", "email": user.email, "mail_failed": not mail_sent},
+            {"org": self.org, "state": "confirm", "email": email, "mail_failed": not mail_sent},
         )
 
 

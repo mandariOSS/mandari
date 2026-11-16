@@ -23,13 +23,14 @@ import logging
 from typing import Any
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
 from .device_names import device_name
-from .models import SecurityNotification
+from .models import SecurityNotification, User
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ TWO_FACTOR_DISABLED = "2fa_disabled"
 DEVICE_ADDED = "device_added"
 DEVICE_REMOVED = "device_removed"
 SESSION_REVOKED = "session_revoked"
+#: Die Sperre nach Fehlversuchen hat für das Konto gegriffen (Art „Verdächtige Aktivität“)
+LOGIN_BLOCKED = "suspicious_activity"
 
 #: Ereignisse, die zusätzlich per E-Mail gemeldet werden
 MAIL_TYPES = frozenset({PASSWORD_CHANGED, TWO_FACTOR_ENABLED, TWO_FACTOR_DISABLED, DEVICE_ADDED, DEVICE_REMOVED})
@@ -46,9 +49,18 @@ MAIL_TYPES = frozenset({PASSWORD_CHANGED, TWO_FACTOR_ENABLED, TWO_FACTOR_DISABLE
 #: So viele Hinweise zeigt die Sicherheitsseite
 RECENT_LIMIT = 10
 
+#: Höchstens ein Hinweis auf gesperrte Anmeldungen je Konto in dieser Zeit (Sekunden)
+LOGIN_BLOCKED_INTERVAL = 24 * 60 * 60
 
-def notify(user: Any, notification_type: str, title: str, message: str, *, request: Any = None) -> None:
-    """Hinweis anlegen und – bei wichtigen Ereignissen – nach dem Commit per E-Mail melden."""
+
+def notify(
+    user: Any, notification_type: str, title: str, message: str, *, request: Any = None, mail: bool | None = None
+) -> None:
+    """
+    Hinweis anlegen und – bei wichtigen Ereignissen – nach dem Commit per E-Mail melden.
+
+    ``mail`` legt den Versand ausdrücklich fest; ohne Angabe entscheidet die Art (``MAIL_TYPES``).
+    """
     try:
         ip_address, device_info = _client(request)
         notification = SecurityNotification.objects.create(
@@ -63,9 +75,40 @@ def notify(user: Any, notification_type: str, title: str, message: str, *, reque
         logger.exception("Sicherheitshinweis %s konnte nicht angelegt werden", notification_type)
         return
     email = str(getattr(user, "email", None) or "")
-    if notification_type in MAIL_TYPES and email:
+    if (notification_type in MAIL_TYPES if mail is None else mail) and email:
         notification_id = notification.pk
         transaction.on_commit(lambda: send_mail(notification_id))
+
+
+def notify_login_blocked(identifier: str, *, request: Any = None) -> None:
+    """
+    Die Sperre nach Fehlversuchen je Konto hat gegriffen: Die Person erfährt es, höchstens einmal am Tag.
+
+    Auslösen kann die Sperre jeder, der die Adresse kennt. Der Hinweis nennt deshalb die beiden Wege, die trotzdem
+    hineinführen. Per E-Mail geht er nur, wenn Mails dieser Art als Auftrag rausgehen: Ein Versand in der Anfrage
+    liefe nur für Adressen mit Konto und machte an der Antwortzeit sichtbar, ob es das Konto gibt.
+    """
+    from apps.common.mail import queue_enabled
+
+    from .security_audit import normalize_identifier
+
+    try:
+        user = User.objects.filter(email__iexact=normalize_identifier(identifier), is_active=True).first()
+        if user is None or not cache.add(f"login-blocked-notice:{user.pk}", 1, LOGIN_BLOCKED_INTERVAL):
+            return
+    except Exception:
+        logger.exception("Hinweis auf gesperrte Anmeldungen konnte nicht vorbereitet werden")
+        return
+    notify(
+        user,
+        LOGIN_BLOCKED,
+        "Anmeldung vorübergehend gesperrt",
+        "Für dein Konto gab es in kurzer Zeit viele fehlgeschlagene Anmeldeversuche. Neue Anmeldungen sind deshalb "
+        "für kurze Zeit gesperrt. Mit einem Browser, mit dem du schon angemeldet warst, kommst du weiter hinein; "
+        "sonst über „Passwort vergessen“ auf der Anmeldeseite.",
+        request=request,
+        mail=queue_enabled("konto.sicherheit"),
+    )
 
 
 def send_mail(notification_id: Any) -> bool:

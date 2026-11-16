@@ -40,6 +40,7 @@ from .models import (
     UserSession,
     WebAuthnCredential,
 )
+from .signals import announce_sessions_ended
 
 logger = logging.getLogger(__name__)
 
@@ -519,6 +520,8 @@ class SessionService:
             cls._end_django_session(session_key)
 
             session.delete()
+            # Offene WebSocket-Verbindungen der Sitzung enden mit ihr
+            announce_sessions_ended(user)
 
             security_notifications.notify(
                 user,
@@ -555,6 +558,8 @@ class SessionService:
         count = len(keys)
         sessions.delete()
         oidc_services.revoke_all_for_user(request, user, by=oidc_audit.BY_PERSON)
+        if count:
+            announce_sessions_ended(user)
 
         if count > 0:
             security_notifications.notify(
@@ -665,6 +670,8 @@ class PasswordService:
         user.set_password(new_password)
         user.save()
         revoke_oidc_after_password_change(request, user)
+        # Mit dem alten Passwort gilt keine Sitzung mehr, also auch keine ihrer offenen WebSocket-Verbindungen
+        announce_sessions_ended(user)
 
         security_notifications.notify(
             user,

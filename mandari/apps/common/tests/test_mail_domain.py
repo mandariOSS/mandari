@@ -110,6 +110,8 @@ def smtp_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Aufzeichnender
     """Jede SMTP-Verbindung geht an den aufzeichnenden Server; liefert die Verbindungen."""
     AufzeichnenderServer.verbindungen = []
     monkeypatch.setattr(smtplib, "SMTP", AufzeichnenderServer)
+    # Das eigene SMTP einer Organisation nutzt einen eigenen Client (Grenzen für fremde Server)
+    monkeypatch.setattr("apps.common.mail_backends.BegrenzterSMTP", AufzeichnenderServer)
     cache.delete(SiteSettings.CACHE_KEY)
     yield AufzeichnenderServer.verbindungen
     cache.delete(SiteSettings.CACHE_KEY)
