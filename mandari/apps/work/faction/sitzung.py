@@ -906,6 +906,8 @@ TOP_BESCHREIBUNG_MAX = 5000
 
 #: Richtungen, in die die Sitzungsansicht einen TOP verschiebt (:func:`top_verschieben`)
 VERSCHIEBEN = ("up", "down", "internal", "public")
+#: Meldung, wenn die Sitzung zwischen Klick und Sperre beendet oder ihr Protokoll genehmigt wurde
+VERSCHIEBEN_VORBEI = "Die Tagesordnung lässt sich nicht mehr ändern. Bitte laden Sie die Seite neu."
 
 
 class TopNeuError(Exception):
@@ -967,17 +969,15 @@ def top_hinzufuegen(
 
 
 #: Nummer aus der Überschrift eines TOPs vor dem Titel („TOP 3.2 “, „TOP NÖ 4 “), wie sie beim Kopieren mitkommt
-_TOP_VORSATZ_RE = re.compile(r"^TOP\s+(?:NÖ\s*)?\d+(?:\.\d+)*[.:]?\s+", re.IGNORECASE)
+#: Auch mehrfach hintereinander („TOP 7 TOP 3.2 …“); in einem Durchgang, damit der Aufwand mit der Länge wächst
+_TOP_VORSATZ_RE = re.compile(r"^(?:TOP\s+(?:NÖ\s*)?\d+(?:\.\d+)*[.:]?\s+)+", re.IGNORECASE)
 
 
 def _titel_schluessel(titel: str) -> str:
     """Titel zum Vergleichen: Leerraum zusammengezogen, ohne vorangestellte TOP-Nummern, ohne Groß und Klein."""
     text = " ".join((titel or "").split())
-    while True:
-        ohne = _TOP_VORSATZ_RE.sub("", text, count=1)
-        if ohne == text or not ohne:
-            break
-        text = ohne
+    # Besteht der Titel nur aus Nummern, bleibt die letzte stehen: Sie hat keinen Leerraum mehr hinter sich
+    text = _TOP_VORSATZ_RE.sub("", text) or text
     return unicodedata.normalize("NFKC", text).casefold()
 
 
@@ -990,6 +990,9 @@ def gleichnamige_tops(meeting: FactionMeeting, membership: Membership, titel: st
     Nur TOPs, die das Mitglied sehen darf: Sonst verriete die Warnung, dass es einen nichtöffentlichen TOP dieses
     Titels gibt.
     """
+    # Zu lange Titel lehnt das Anlegen ohnehin ab; verglichen wird nur, was ein Titel sein kann
+    if len(titel or "") > TOP_TITEL_MAX:
+        return []
     schluessel = _titel_schluessel(titel)
     if not schluessel:
         return []
@@ -1050,8 +1053,26 @@ def top_verschieben(meeting: FactionMeeting, membership: Membership, item: Facti
     bleiben am TOP.
 
     Nichtöffentliches nur für Vereidigte (Issue #64); der Genehmigungs-TOP bleibt an seiner Stelle. Das Recht
-    (:func:`darf_top_verschieben`) prüft der Aufrufer.
+    (:func:`darf_top_verschieben`) prüft der Aufrufer vorab; hier gilt es noch einmal mit dem Stand nach der Sperre
+    der Sitzung: Wurde inzwischen das Protokoll genehmigt oder die Sitzung beendet, bleibt alles, wie es ist
+    (Status 409).
     """
+    from . import agenda
+
+    if richtung not in VERSCHIEBEN:
+        raise TopVerschiebenError("Ungültige Eingabe.")
+    with transaction.atomic():
+        agenda.lock_meeting(meeting)
+        meeting.refresh_from_db(fields=["status", "protocol_approved"])
+        if not darf_top_verschieben(membership, meeting):
+            raise TopVerschiebenError(VERSCHIEBEN_VORBEI, status=409)
+        _top_verschieben_gesperrt(meeting, membership, item, richtung)
+
+
+def _top_verschieben_gesperrt(
+    meeting: FactionMeeting, membership: Membership, item: FactionAgendaItem, richtung: str
+) -> None:
+    """Die Verschiebung selbst; die Sitzung ist gesperrt und ihr Stand frisch gelesen (:func:`top_verschieben`)."""
     from . import agenda
     from .regeln import NOE_AUS, NichtOeffentlichAusError
 
@@ -1061,8 +1082,6 @@ def top_verschieben(meeting: FactionMeeting, membership: Membership, item: Facti
     if not sichtbar(item):
         raise TopVerschiebenError("Gesperrte Information", status=403)
     moeglich = verschiebbar(meeting, membership, item)
-    if richtung not in VERSCHIEBEN:
-        raise TopVerschiebenError("Ungültige Eingabe.")
     try:
         if richtung in ("up", "down"):
             if not moeglich.get(richtung):

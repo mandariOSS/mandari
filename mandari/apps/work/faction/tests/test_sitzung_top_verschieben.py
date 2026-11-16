@@ -255,6 +255,24 @@ def test_nur_in_der_laufenden_sitzung_und_nicht_nach_der_genehmigung(
     assert nummern(sitzung_laeuft)["Termine"] == "3"
 
 
+def test_genehmigung_zwischen_klick_und_sperre_verschiebt_nichts(
+    org: Any, vorsitz: Any, sitzung_laeuft: Any, tops: Any
+) -> None:
+    """Die Prüfung des Aufrufers lief mit dem geladenen Stand; maßgeblich ist der Stand nach der Sperre."""
+    assert sitzung.darf_top_verschieben(vorsitz, sitzung_laeuft) is True
+    FactionMeeting.objects.filter(pk=sitzung_laeuft.pk).update(protocol_approved=True)
+    with pytest.raises(sitzung.TopVerschiebenError) as abgelehnt:
+        sitzung.top_verschieben(sitzung_laeuft, vorsitz, tops["termine"], "down")
+    assert abgelehnt.value.status == 409
+    assert nummern(sitzung_laeuft)["Termine"] == "3"
+
+    FactionMeeting.objects.filter(pk=sitzung_laeuft.pk).update(protocol_approved=False, status="completed")
+    with pytest.raises(sitzung.TopVerschiebenError) as abgelehnt:
+        sitzung.top_verschieben(sitzung_laeuft, vorsitz, tops["termine"], "down")
+    assert abgelehnt.value.status == 409
+    assert nummern(sitzung_laeuft)["Termine"] == "3"
+
+
 # ---- Dopplung beim Hinzufügen ------------------------------------------------------------------------------
 
 
@@ -305,9 +323,24 @@ def test_warnung_verraet_keine_nichtoeffentlichen_titel(
     assert neu(client_for(mitglied.user), org, sitzung_laeuft, title=titel, visibility="public").status_code == 200
 
 
+def test_ueberlange_titel_werden_nicht_verglichen(
+    org: Any, vorsitz: Any, sitzung_laeuft: Any, tops: Any, client_for: Any
+) -> None:
+    """Die Längengrenze gilt vor dem Vergleich: Ein Titel aus sehr vielen Nummern kostet keine Rechenzeit."""
+    riesig = "TOP 1 " * 100_000 + "Termine"
+    assert sitzung.gleichnamige_tops(sitzung_laeuft, vorsitz, riesig) == []
+    antwort = neu(client_for(vorsitz.user), org, sitzung_laeuft, title=riesig, visibility="public")
+    assert antwort.status_code == 400 and "zu lang" in antwort.content.decode()
+    # Viele Nummern unterhalb der Grenze werden in einem Durchgang gelöst
+    assert sitzung.gleichnamige_tops(sitzung_laeuft, vorsitz, "TOP 1 " * 80 + "Termine") == [tops["termine"]]
+    # Nur Nummern: die letzte bleibt stehen und gleicht keinem Titel
+    assert sitzung.gleichnamige_tops(sitzung_laeuft, vorsitz, "TOP 1 TOP 2") == []
+
+
 def test_dialog_zeigt_warnung_und_bestaetigung(
     org: Any, vorsitz: Any, sitzung_laeuft: Any, tops: Any, client_for: Any
 ) -> None:
     html = client_for(vorsitz.user).get(seite(org, sitzung_laeuft)).content.decode()
     assert 'x-data="topNeu"' in html and '@htmx:before-on-load="antwort($event)"' in html
+    assert '@htmx:before-request="merken()"' in html
     assert 'name="doppelt"' in html and 'data-testid="fs-top-neu-doppelt"' in html
