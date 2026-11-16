@@ -72,7 +72,7 @@
     </ul>
     {% endif %}
     {% if rechte.anwesenheit %}
-    <form class="fs-anw-fuss" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-anwesenheit" hx-swap="outerHTML" autocomplete="off" @submit="rollstandMerken()">
+    <form class="fs-anw-fuss" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-anwesenheit" hx-swap="outerHTML" autocomplete="off">
         <input type="hidden" name="action" value="gast">
         <label class="sr-only" for="fs-gast">Name des Gasts</label>
         <input class="wf-eingabe" id="fs-gast" type="text" name="guest_name" maxlength="200" required placeholder="Gast hinzufügen">
