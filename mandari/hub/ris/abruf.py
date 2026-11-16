@@ -844,7 +844,8 @@ def abrufen(
         # (Versuchszähler, Wiederholungsfrist). Ohne Vermerk bliebe sie fällig, stünde in jedem Lauf wieder vorn und
         # hielte bei kleinem Limit alle Dateien dahinter auf. Der Aufrufer erfährt die Ausnahme trotzdem.
         try:
-            fail(file_obj, beanspruchung, CODE_ABORTED, f"Unerwarteter Fehler: {type(exc).__name__}", now)
+            # Ohne ``now``: Die Wiederholungsfrist beginnt beim Fehler, nicht beim Start eines langen Abrufs
+            fail(file_obj, beanspruchung, CODE_ABORTED, f"Unerwarteter Fehler: {type(exc).__name__}")
         except Exception:
             restore(beanspruchung)
         raise

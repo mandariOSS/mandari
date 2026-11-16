@@ -744,6 +744,7 @@ def purge_expired(
     client = client or fetch_client()
     try:
         for file_obj in missing:
+            unerwartet = False
             url = _url(file_obj)
             if url and not abruf.adresse_gueltig(url):
                 # Nicht auswertbare Adresse: Die Quelle lässt sich für diese Datei nicht befragen (Nachfrist unten)
@@ -756,6 +757,9 @@ def purge_expired(
                     # Eine Datei, deren Rückfrage unerwartet scheitert, hält das Löschen nach Frist der übrigen nicht auf
                     logger.exception("Löschabgleich: Rückfrage zur Datei %s unerwartet gescheitert", file_obj.pk)
                     result = ERROR
+                    # Kann nach einer Antwort der Quelle passiert sein (etwa beim Ablegen des neuen Inhalts): nie
+                    # ohne Rückfrage löschen, der nächste Lauf fragt erneut
+                    unerwartet = True
                 run.record(url, result)
             else:
                 result = SKIPPED
@@ -764,7 +768,9 @@ def purge_expired(
             elif result in (UNCHANGED, CHANGED):
                 # Die Quelle liefert das Dokument wieder: Sperre aufgehoben, nichts gelöscht
                 results["entsperrt"] += 1
-            elif file_obj.source_missing_since and file_obj.source_missing_since <= unconfirmed_cutoff:
+            elif (
+                not unerwartet and file_obj.source_missing_since and file_obj.source_missing_since <= unconfirmed_cutoff
+            ):
                 # Auch nach der Nachfrist nicht zu befragen: ohne Rückfrage löschen
                 _purge(file_obj, now, results)
                 results["ohne_rueckfrage"] += 1

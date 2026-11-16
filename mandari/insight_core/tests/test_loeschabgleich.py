@@ -810,3 +810,21 @@ class TestEinzelneDateiHaeltDenLaufNichtAuf:
         for datei in (kaputt, wirft):
             datei.refresh_from_db()
             assert datei.content_purged_at is None
+
+    def test_unerwarteter_fehler_loescht_auch_nach_der_nachfrist_nicht(
+        self, body: OParlBody, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die Ausnahme kann nach einer Antwort der Quelle kommen (Ablegen des Inhalts): Die Kopie bleibt stehen."""
+        jetzt = timezone.now()
+        # Länger gesperrt als Frist und Nachfrist zusammen
+        lange = jetzt - timedelta(days=400)
+        _kaputt, wirft, _gut = self._dateien(body, tmp_path, source_missing_since=lange)
+        self._pruefung_wirft_fuer(monkeypatch, wirft)
+
+        ergebnis = file_reconcile.purge_expired(now=jetzt, client=_client(_liefert(b"", get_status=404)), interval=0)
+
+        wirft.refresh_from_db()
+        assert wirft.content_purged_at is None and Path(wirft.local_path or "").exists()
+        assert ergebnis["zurueckgestellt"] == 1
+        # Die nicht auswertbare Adresse lässt sich nie befragen: Für sie gilt die Nachfrist wie bisher
+        assert ergebnis["ohne_rueckfrage"] == 1
