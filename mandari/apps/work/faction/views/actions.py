@@ -33,6 +33,7 @@ from ..regeln import (
     ABSTIMMUNGEN_AUS,
     GENEHMIGUNG_NUR_IN_SITZUNG,
     NOE_AUS,
+    GenehmigungNurInSitzungError,
     NichtOeffentlichAusError,
     abstimmung_erfassbar,
 )
@@ -1105,16 +1106,20 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse("Ungültige Stimmzahlen.", status=400)
 
         # Erfassen, Kopie am TOP und Genehmigungs-TOP (angenommene Abstimmung genehmigt das Vorprotokoll)
-        faction_services.record_decision(
-            agenda_item,
-            self.membership,
-            votes_yes=votes_yes,
-            votes_no=votes_no,
-            votes_abstain=votes_abstain,
-            result=request.POST.get("result", "accepted"),
-            decision_text=request.POST.get("decision_text", "").strip(),
-            notes=request.POST.get("notes", "").strip(),
-        )
+        try:
+            faction_services.record_decision(
+                agenda_item,
+                self.membership,
+                votes_yes=votes_yes,
+                votes_no=votes_no,
+                votes_abstain=votes_abstain,
+                result=request.POST.get("result", "accepted"),
+                decision_text=request.POST.get("decision_text", "").strip(),
+                notes=request.POST.get("notes", "").strip(),
+            )
+        except GenehmigungNurInSitzungError:
+            # Die Sitzung wurde seit der Prüfung oben abgesagt
+            return self._rejected(request, meeting, GENEHMIGUNG_NUR_IN_SITZUNG, 400)
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)

@@ -119,6 +119,29 @@ def test_abstimmung_vor_der_sitzung_genehmigt_das_vorprotokoll_nicht(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("weg", ["aktion", "panel"])
+def test_absage_nach_dem_laden_verhindert_die_abstimmung_am_genehmigungs_top(
+    org: Any, vorige: FactionMeeting, personal: Any, client_for: Any, monkeypatch: pytest.MonkeyPatch, weg: str
+) -> None:
+    """Die Ansicht sah die Sitzung noch laufen; gespeichert ist sie abgesagt. Es entsteht keine Abstimmung."""
+    folge, top = _folge(org, vorige, personal, "cancelled")
+    # Der Stand, den die Anfrage geladen hat: Die Sitzung läuft
+    monkeypatch.setattr("apps.work.faction.regeln.abstimmung_erfassbar", lambda item: True)
+    monkeypatch.setattr(actions, "abstimmung_erfassbar", lambda item: True)
+    monkeypatch.setattr("apps.work.faction.views.panel.abstimmung_erfassbar", lambda item: True)
+
+    if weg == "aktion":
+        antwort = _aktion(client_for, personal, folge, action="record_decision", agenda_item_id=str(top.pk), **STIMMEN)
+    else:
+        antwort = _panel(client_for, personal, top, action="record_decision", **STIMMEN)
+
+    assert antwort.status_code == 400
+    assert GENEHMIGUNG_NUR_IN_SITZUNG in antwort.content.decode()
+    assert not _genehmigt(vorige)
+    assert not FactionDecision.objects.filter(agenda_item=top).exists()
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("status", ["ongoing", "completed"])
 @pytest.mark.parametrize("weg", ["aktion", "panel"])
 def test_abstimmung_in_der_sitzung_genehmigt_wie_bisher(

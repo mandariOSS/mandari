@@ -840,6 +840,9 @@ def record_decision(
         # Beschlüsse einer Sitzung mit genehmigtem Protokoll sind fest (Issue #63), gleich über welchen Weg;
         # Prüfung und Schreiben unter der Sperre der Sitzung
         pruefe_protokoll_offen(item.meeting)
+        # Unter derselben Sperre: Wurde die Sitzung seit dem Laden abgesagt, entsteht am Genehmigungs-TOP keine
+        # Abstimmung mehr
+        pruefe_genehmigung_in_sitzung(item, gespeichert=True)
         return _record_decision(
             item,
             membership,
