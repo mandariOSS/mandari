@@ -26,18 +26,27 @@ Usage:
 """
 
 import logging
+import uuid
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any, cast
 
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from .models import ANNOUNCEMENT_WITHDRAWN_KEY, Notification, NotificationPreference, NotificationType
 
 logger = logging.getLogger(__name__)
+
+
+def _as_uuid(value: Any) -> uuid.UUID | None:
+    """Kennung aus ``Notification.metadata`` (dort als Text) oder ``None``, wenn sie keine ist."""
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError, AttributeError):
+        return None
 
 
 class NotificationHub:
@@ -227,7 +236,14 @@ class NotificationHub:
         direct_since=None,
         send_email=True,
     ):
-        """Forward notification to deputy if recipient is currently absent."""
+        """
+        Forward notification to deputy if recipient is currently absent.
+
+        Vertretung ist nur ein aktives Mitglied mit aktivem Konto und ohne Gastzugang; geprüft wird zum Versand,
+        weil eine eingetragene Vertretung später deaktiviert oder Gast geworden sein kann. Für den Bezug der
+        Nachricht gilt bei ihr dieselbe Regel wie beim ursprünglichen Empfänger (``_deputy_may_see``): Die
+        Prüfungen der ``notify_*``-Methoden laufen vor dem ersten ``send`` und kennen die Vertretung nicht.
+        """
         try:
             from apps.work.organization.models import MemberAbsence
 
@@ -239,13 +255,15 @@ class NotificationHub:
                     start_date__lte=today,
                     end_date__gte=today,
                     notify_deputy=True,
-                    deputy__isnull=False,
+                    deputy__is_active=True,
+                    deputy__is_guest=False,
+                    deputy__user__is_active=True,
                 )
                 .select_related("deputy")
                 .first()
             )
 
-            if active_absence and active_absence.deputy:
+            if active_absence and active_absence.deputy and cls._deputy_may_see(active_absence.deputy, metadata):
                 cls.send(
                     recipient=active_absence.deputy,
                     notification_type=notification_type,
@@ -261,6 +279,45 @@ class NotificationHub:
                 )
         except Exception as e:
             logger.error(f"Failed to forward notification to deputy: {e}")
+
+    @classmethod
+    def _deputy_may_see(cls, deputy, metadata: dict | None) -> bool:
+        """
+        Darf die Vertretung den Bezug der Benachrichtigung sehen? Titel und Auszüge stehen im Text und gehen ihr
+        auch per E-Mail zu.
+
+        Unterlagen aus „Nichtöffentliche Vorgänge“ erhält nur, wer sie öffnen darf (``_hidden_from``); dasselbe
+        gilt für Aufgaben zu einer solchen Unterlage oder aus einem nichtöffentlichen TOP einer Fraktionssitzung.
+        Lässt sich der Bezug nicht mehr auflösen, wird nicht weitergeleitet. Alles andere geht wie bisher an die
+        Vertretung, auch gewöhnliche private Aufgaben: Die Sperre reicht nicht weiter als beim Empfänger selbst.
+        """
+        from django.core.exceptions import ValidationError
+
+        from apps.work.faction.visibility import can_view_item_with_parents
+        from apps.work.motions.models import Motion
+        from apps.work.tasks.models import Task
+
+        metadata = metadata or {}
+        org_id = deputy.organization_id
+        try:
+            if metadata.get("motion_id"):
+                motion = Motion.objects.filter(pk=metadata["motion_id"], organization_id=org_id).first()
+                return motion is not None and not cls._hidden_from(motion, deputy)
+            if metadata.get("task_id"):
+                task = (
+                    Task.objects.filter(pk=metadata["task_id"], organization_id=org_id)
+                    .select_related("related_faction_agenda_item__parent", "related_motion")
+                    .first()
+                )
+                if task is None:
+                    return False
+                item = task.related_faction_agenda_item
+                if item is not None and not can_view_item_with_parents(item, deputy):
+                    return False
+                return task.related_motion is None or not cls._hidden_from(task.related_motion, deputy)
+        except (ValueError, TypeError, ValidationError):
+            return False
+        return True
 
     @classmethod
     def send_bulk(
@@ -650,7 +707,9 @@ class NotificationHub:
         actor_name = actor.user.get_display_name() if hasattr(actor.user, "get_display_name") else actor.user.email
         sent = []
         for recipient in recipients.values():
-            if not recipient.is_active or cls._hidden_from(motion, recipient):
+            # Die Liste stammt aus früheren Kommentaren. Wer das Dokument inzwischen nicht mehr öffnen darf
+            # (Freigabe entzogen, Dokument privat gestellt, Recht genommen), erfährt weder Titel noch Auszug.
+            if not recipient.is_active or not motion.can_access(recipient):
                 continue
             notification = cls.send(
                 recipient=recipient,
@@ -754,7 +813,9 @@ class NotificationHub:
     ):
         """Notify document owner about an approval decision."""
         motion = approval.motion
-        if cls._hidden_from(motion, recipient):
+        # Autor:in und Federführung stehen am Dokument, auch wenn sie es nicht mehr öffnen dürfen (etwa ohne
+        # ``motions.view``): dann keine Nachricht mit Titel und Ergebnis
+        if not motion.can_access(recipient):
             return None
         decision = "erteilt" if approval.approved else "abgelehnt"
         return cls.send(
@@ -893,7 +954,8 @@ class NotificationHub:
 
         Nachrichten zu Unterlagen in „Nichtöffentliche Vorgänge“, die die Person nicht (mehr) öffnen darf – etwa
         nach Entzug der Vereidigung –, bleiben gespeichert, erscheinen aber nicht (Issue #873). Dasselbe gilt für
-        zurückgezogene Ankündigungen (Issue #857).
+        zurückgezogene Ankündigungen (Issue #857) und für Nachrichten, deren Bezug sich für die Person nicht
+        (mehr) prüfen lässt oder nichtöffentlich ist (``hidden_reference_ids``).
         """
         from apps.work.motions.non_public import hidden_document_ids
 
@@ -904,8 +966,73 @@ class NotificationHub:
         )
         hidden = hidden_document_ids(membership)
         if hidden:
-            notifications = notifications.exclude(metadata__motion_id__in=hidden)
+            # Nur Nachrichten mit ``motion_id``: Ohne diese Bedingung fiele jede Nachricht ohne die Angabe mit
+            # heraus (NOT über NULL), also auch Aufgaben, Einladungen und Erwähnungen.
+            notifications = notifications.exclude(Q(metadata__has_key="motion_id") & Q(metadata__motion_id__in=hidden))
+        unverifiable = cls.hidden_reference_ids(membership)
+        if unverifiable:
+            notifications = notifications.exclude(pk__in=unverifiable)
         return notifications
+
+    @classmethod
+    def hidden_reference_ids(cls, membership: Any) -> list[Any]:
+        """
+        Kennungen der Benachrichtigungen der Person, deren Text Nichtöffentliches nennen kann und die
+        ``hidden_document_ids`` nicht erfasst. Titel und Auszüge stehen im gespeicherten Text; geprüft wird
+        deshalb beim Lesen gegen den heutigen Stand, nicht nur beim Anlegen:
+
+        - Erwähnung im Protokoll (``item_id``): Der TOP ist nichtöffentlich, auch nachträglich so gestellt oder
+          unter einem nichtöffentlichen TOP, oder es gibt ihn nicht mehr.
+        - Nachricht zu einer Unterlage (``motion_id``), die endgültig gelöscht ist: Ob sie in „Nichtöffentliche
+          Vorgänge“ lag, lässt sich dann nicht mehr feststellen.
+
+        Für vereidigte Mitglieder leer, ohne Abfrage. Sonst eine Abfrage nach den eigenen Nachrichten mit
+        solchem Bezug und, nur wenn es sie gibt, je eine nach den Unterlagen und den TOPs.
+        """
+        from apps.work.faction.models import FactionAgendaItem
+        from apps.work.faction.visibility import is_item_internal, is_sworn_member
+        from apps.work.motions.models import Motion
+
+        if membership is None or is_sworn_member(membership):
+            return []
+        rows = list(
+            Notification.objects.filter(recipient=membership)
+            .filter(Q(metadata__has_key="motion_id") | Q(notification_type=NotificationType.FACTION_MENTION))
+            .values_list("pk", "notification_type", "metadata")
+        )
+        if not rows:
+            return []
+
+        org_id = membership.organization_id
+        by_motion: dict[uuid.UUID | None, list[Any]] = {}
+        by_item: dict[uuid.UUID | None, list[Any]] = {}
+        for pk, notification_type, metadata in rows:
+            metadata = metadata if isinstance(metadata, dict) else {}
+            if notification_type == NotificationType.FACTION_MENTION:
+                by_item.setdefault(_as_uuid(metadata.get("item_id")), []).append(pk)
+            if "motion_id" in metadata:
+                by_motion.setdefault(_as_uuid(metadata.get("motion_id")), []).append(pk)
+
+        hidden: set[Any] = set()
+        if by_motion:
+            known = set(
+                Motion.objects.filter(
+                    pk__in=[k for k in by_motion if k is not None], organization_id=org_id
+                ).values_list("pk", flat=True)
+            )
+            hidden.update(pk for key, pks in by_motion.items() if key not in known for pk in pks)
+        if by_item:
+            items = {
+                item.pk: item
+                for item in FactionAgendaItem.objects.filter(
+                    pk__in=[k for k in by_item if k is not None], meeting__organization_id=org_id
+                ).select_related("parent__parent")
+            }
+            for key, pks in by_item.items():
+                item = items.get(key)
+                if item is None or is_item_internal(item):
+                    hidden.update(pks)
+        return list(hidden)
 
     @classmethod
     def get_unread_count(cls, membership) -> int:
