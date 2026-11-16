@@ -350,8 +350,11 @@ def get_team_member_or_404(organization: Organization, member_id: Any) -> Member
 
 
 def find_active_member(organization: Organization, member_id: Any) -> Membership | None:
-    """Aktives Mitglied per ID oder ``None`` (z. B. Stellvertretung)."""
-    return Membership.objects.filter(id=member_id, organization=organization, is_active=True).first()
+    """
+    Aktives Mitglied per ID oder ``None`` (Stellvertretung bei Abwesenheit). Gastzugänge zählen nicht: An sie wird
+    nichts weitergeleitet, eine solche Vertretung bliebe stumm.
+    """
+    return Membership.objects.filter(id=member_id, organization=organization, is_active=True, is_guest=False).first()
 
 
 def find_membership(organization: Organization, user: User) -> Membership | None:
@@ -376,9 +379,9 @@ def admin_members(organization: Organization, *, exclude: Membership) -> list[Me
 
 
 def available_deputies(organization: Organization, membership: Membership) -> QuerySet[Membership]:
-    """Andere aktive Mitglieder als mögliche Stellvertretung."""
+    """Andere aktive Mitglieder als mögliche Stellvertretung, ohne Gastzugänge (an sie wird nichts weitergeleitet)."""
     return (
-        Membership.objects.filter(organization=organization, is_active=True)
+        Membership.objects.filter(organization=organization, is_active=True, is_guest=False)
         .exclude(id=membership.id)
         .select_related("user")
         .order_by("user__first_name", "user__last_name")
