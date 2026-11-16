@@ -193,10 +193,10 @@ def top_kontext(
         "verlauf": sitzung.beratungsverlauf(item, meeting.organization)
         if sitzung.darf_beratungsverlauf_sehen(membership)
         else [],
-        "herkunft": sitzung.herkunft(item),
+        "herkunft": sitzung.herkunft(item, membership),
         "beschreibung": cast(Any, item).get_description_decrypted() or "",
         "notizen_html": safe_editor_html(notizen),
-        "eintraege": sitzung.protokolleintraege(item),
+        "eintraege": sitzung.protokolleintraege(item, membership),
         "aufgaben": sitzung.aufgaben_des_tops(item, membership),
         "decision": decision,
         "beschluss_punkt": PUNKT_ERGEBNIS.get(decision.result, "andere") if decision else "",

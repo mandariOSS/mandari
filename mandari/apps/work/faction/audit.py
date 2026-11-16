@@ -88,15 +88,46 @@ def resolve_meeting_id(instance):
     return None
 
 
+def _top_ist_intern(item) -> bool:
+    """
+    Gehört der TOP zum nichtöffentlichen Teil? Wie alle Lesewege über die Elternkette (``visibility.is_item_internal``):
+    Unterpunkte eines nichtöffentlichen TOPs sind nichtöffentlich, auch wenn an ihnen selbst „öffentlich“ gespeichert
+    ist.
+
+    Wird ein TOP samt Unterpunkten gelöscht, ist der übergeordnete TOP beim Eintrag des Unterpunkts schon entfernt.
+    Dann sagt seine Historie, ob er nichtöffentlich war; ohne diesen Rückgriff gälte jeder mitgelöschte Unterpunkt
+    eines öffentlichen TOPs im Zweifel als nichtöffentlich.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from .models import FactionAuditLog
+
+    node = item
+    while node is not None:
+        if node.visibility == "internal":
+            return True
+        if node.parent_id is None:
+            return False
+        try:
+            node = node.parent
+        except ObjectDoesNotExist:
+            return FactionAuditLog.objects.filter(
+                model_name="FactionAgendaItem", object_id=node.parent_id, is_internal=True
+            ).exists()
+    return False
+
+
 def resolve_is_internal(instance) -> bool:
     """Betrifft das Objekt den nicht-öffentlichen Teil (Issue #64)?"""
     try:
         model_name = instance.__class__.__name__
-        if model_name in ("FactionAgendaItem", "FactionStandardAgendaItem"):
+        if model_name == "FactionStandardAgendaItem":
             return instance.visibility == "internal"
+        if model_name == "FactionAgendaItem":
+            return _top_ist_intern(instance)
         agenda_item = getattr(instance, "agenda_item", None)
         if agenda_item is not None:
-            return agenda_item.visibility == "internal"
+            return _top_ist_intern(agenda_item)
     except Exception:
         # Im Zweifel (z. B. Relation bereits gelöscht) als NÖ behandeln,
         # damit niemals Inhalte an Nicht-Vereidigte durchsickern
@@ -148,6 +179,74 @@ def locked_object_ids(organization: Any, object_ids: set[Any]) -> set[Any]:
             organization=organization, is_internal=True, object_id__in=object_ids
         ).values_list("object_id", flat=True)
     )
+
+
+#: Objekte, die über ``agenda_item`` zu einem TOP gehören (Protokolleintrag, Beschluss, Anlage)
+_TOP_BEZUG = ("FactionProtocolEntry", "FactionDecision", "FactionAgendaItemAttachment")
+
+
+def nichtoeffentliche_eintraege(organization: Any, entries: Any) -> set[Any]:
+    """
+    Schlüssel der Einträge aus ``entries``, die zum nichtöffentlichen Teil gehören (Sperre beim Lesen).
+
+    Einträge sind unveränderlich und tragen den Stand ihres Schreibens (``is_internal``). Dazu kommen beim Lesen:
+
+    - alle Einträge eines Objekts mit mindestens einem gesperrten Eintrag (:func:`locked_object_ids`),
+    - Einträge zu einem TOP, der heute über seine Elternkette nichtöffentlich ist,
+    - Einträge zu Protokolleinträgen, Beschlüssen und Anlagen, deren TOP heute nichtöffentlich ist oder gesperrte
+      Einträge hat: Dateiname, Beschlusstext und Anmerkungen stünden sonst weiter offen in der Historie, nachdem der
+      TOP in den nichtöffentlichen Teil gelegt wurde.
+
+    Der Bezug zum TOP entsteht aus dem heutigen Objekt, der Eintrag selbst kennt ihn nicht. Für gelöschte Protokoll-
+    einträge, Beschlüsse und Anlagen gilt deshalb allein der Stand beim Schreiben.
+    """
+    from .models import (
+        FactionAgendaItem,
+        FactionAgendaItemAttachment,
+        FactionDecision,
+        FactionProtocolEntry,
+    )
+    from .visibility import is_item_internal
+
+    entries = list(entries)
+    gesperrt = {entry.pk for entry in entries if entry.is_internal}
+    # Objekt des Eintrags → sein TOP (der TOP selbst oder der TOP des Protokolleintrags, Beschlusses, der Anlage)
+    top_von: dict[Any, Any] = {
+        entry.object_id: entry.object_id
+        for entry in entries
+        if entry.model_name == "FactionAgendaItem" and entry.object_id
+    }
+    modelle = {
+        "FactionProtocolEntry": FactionProtocolEntry,
+        "FactionDecision": FactionDecision,
+        "FactionAgendaItemAttachment": FactionAgendaItemAttachment,
+    }
+    for name in _TOP_BEZUG:
+        ids = {entry.object_id for entry in entries if entry.model_name == name and entry.object_id}
+        if not ids:
+            continue
+        bezuege = (
+            modelle[name]
+            .objects.filter(pk__in=ids, agenda_item__meeting__organization=organization)
+            .values_list("pk", "agenda_item_id")
+        )
+        top_von.update({pk: top_id for pk, top_id in bezuege if top_id})
+
+    objekt_ids = {entry.object_id for entry in entries if entry.object_id}
+    top_ids = set(top_von.values())
+    mit_sperre = locked_object_ids(organization, objekt_ids | top_ids)
+    heute_intern = {
+        top.pk
+        for top in FactionAgendaItem.objects.filter(pk__in=top_ids, meeting__organization=organization).select_related(
+            "parent__parent"
+        )
+        if is_item_internal(top)
+    }
+    for entry in entries:
+        top_id = top_von.get(entry.object_id)
+        if entry.object_id in mit_sperre or (top_id is not None and (top_id in mit_sperre or top_id in heute_intern)):
+            gesperrt.add(entry.pk)
+    return gesperrt
 
 
 # =============================================================================
@@ -333,9 +432,18 @@ def audit_post_save(sender, instance, created, **kwargs):
     # Gesicherte Namen (Issue #591) nicht in die unveränderbare Historie: Der Wechsel der Person
     # steht dort schon als Verweis, der Name wäre zusätzlicher Personenbezug.
     snapshot_fields = set(getattr(instance, "MEMBER_NAME_SNAPSHOTS", {}).values())
-    changes = audit_core.build_changes(
-        old_instance, instance, skip_fields=audit_core.DEFAULT_SKIP_FIELDS | snapshot_fields
-    )
+    skip_fields = audit_core.DEFAULT_SKIP_FIELDS | snapshot_fields
+    # Mit ``update_fields`` wurden nur diese Felder geschrieben. Die übrigen trägt das Objekt im Stand, in dem es
+    # gelesen wurde, der alte Zustand ist aber frisch aus der Datenbank: Ein Vergleich meldete Änderungen anderer
+    # (etwa eine inzwischen erteilte Genehmigung als zurückgenommen), die dieses Speichern nicht vorgenommen hat.
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None:
+        skip_fields = skip_fields | {
+            field.name
+            for field in instance._meta.concrete_fields
+            if field.name not in update_fields and field.attname not in update_fields
+        }
+    changes = audit_core.build_changes(old_instance, instance, skip_fields=skip_fields)
     if not changes:
         return
     action = _special_action(old_instance, instance) or "update"

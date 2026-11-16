@@ -4,11 +4,12 @@
 import logging
 from datetime import timedelta
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from .. import sitzung
 from ..models import (
     FactionAttendance,
     FactionMeeting,
@@ -42,7 +43,9 @@ def _get_meeting_context(view, meeting):
         meeting.agenda_items.filter(parent__isnull=True, proposal_status="active")
         .select_related("related_agenda_item", "approves_meeting", "decision")
         .prefetch_related(
-            "protocol_entries", "protocol_entries__speaker__user", "protocol_entries__action_assignee__user", "children"
+            # Einträge nach den Rechten am Protokoll (``protocols.view_*``), wie das PDF der Niederschrift
+            Prefetch("protocol_entries", queryset=sitzung.lesbare_eintraege(view.membership, meeting)),
+            "children",
         )
         .order_by("order", "number")
     )
@@ -54,8 +57,13 @@ def _get_meeting_context(view, meeting):
     internal_items = [i for i in agenda_items if i.visibility == "internal"] if can_view_internal else []
     locked_internal_count = 0 if can_view_internal else sum(1 for i in agenda_items if i.visibility == "internal")
     # Unterpunkte: NÖ-Unterpunkte öffentlicher TOPs nur für Vereidigte (Children sind vorab geladen)
+    from ..sitzungsarten import darf_sehen
+
     for item in agenda_items:
         item.visible_children = visible_children(item, include_internal=can_view_internal)
+        # Genehmigungs-TOP: Titel und Datum der vorigen Sitzung nur, wer sie sehen darf (Sitzungsarten, Issue #1239)
+        vorige = item.approves_meeting if item.is_approval_item and item.approves_meeting_id else None
+        item.approves_meeting_shown = vorige if vorige is not None and darf_sehen(view.membership, vorige) else None
 
     # Attendance
     attendances = meeting.attendances.select_related("membership__user")

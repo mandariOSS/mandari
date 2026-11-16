@@ -1,5 +1,5 @@
 {# TOP-Panel: Beschreibung (Autosave), Beschluss mit Inline-Formular, Protokolleinträge #}
-{# Kontext: item, meeting, org_slug, membership, can_edit, can_protocol, decision, protocol_entries; Zustand showDecisionForm/showEntryForm aus x-data="agendaItemPanel" #}
+{# Kontext: item, meeting, org_slug, membership, can_edit, can_protocol, can_record_decision, decision, protocol_entries; Zustand showDecisionForm/showEntryForm aus x-data="agendaItemPanel" #}
 
 {# 1. Beschreibung #}
 <c-ui.panel-section title="Beschreibung">
@@ -34,7 +34,7 @@
 {# 2. Beschluss; in einer Sitzungsart ohne Abstimmungen nur ein schon erfasster, nur lesbar (Issue #1240) #}
 {% if decision or meeting.abstimmungen_erlaubt %}
 <c-ui.panel-section title="Beschluss">
-    {% if can_edit and meeting.abstimmungen_erlaubt or can_protocol and meeting.abstimmungen_erlaubt %}
+    {% if can_record_decision %}
     <c-slot name="action">
         <c-ui.text-button icon="{% if decision %}edit-2{% else %}plus{% endif %}" @click="showDecisionForm = !showDecisionForm">
             {% if decision %}Bearbeiten{% else %}Erfassen{% endif %}
@@ -70,7 +70,7 @@
         </form>
         {% endif %}
     </div>
-    {% elif not can_edit and not can_protocol %}
+    {% elif not can_record_decision %}
     <p class="text-sm text-gray-400 italic">Keine Abstimmung erfasst</p>
     {% endif %}
 

@@ -27,7 +27,7 @@ from apps.common.params import uuid_param
 from apps.work.motions.freigaben import guest_download_rows
 from apps.work.rahmen import NeueVorlageMixin
 
-from ..audit import locked_object_ids, unsichtbare_eintraege
+from ..audit import nichtoeffentliche_eintraege, unsichtbare_eintraege
 from ..models import FactionAuditLog
 from ..visibility import LOCKED_PLACEHOLDER, can_view_internal
 
@@ -82,14 +82,13 @@ class FactionAuditLogView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         sworn = can_view_internal(self.membership)
         # Gast-Downloads (Issue #582): Titel und Dateiname nur, wer das Dokument sieht, sonst gesperrt
         downloads = guest_download_rows(page_entries, self.membership)
-        # Auch frühere Einträge eines TOPs, der inzwischen nichtöffentlich ist (Issue #1160). Für Vereidigte dieselbe
-        # Menge für den Sichtschutz (Issue #1201): Ihre NÖ-Einträge stehen weichgezeichnet, bis sie eingeblendet sind.
-        noe_objekte = locked_object_ids(
-            self.organization, {entry.object_id for entry in page_entries if entry.object_id}
-        )
+        # Auch frühere Einträge eines TOPs, der inzwischen nichtöffentlich ist (Issue #1160), samt denen seiner
+        # Protokolleinträge, Beschlüsse und Anlagen. Für Vereidigte dieselbe Menge für den Sichtschutz (Issue #1201):
+        # Ihre NÖ-Einträge stehen weichgezeichnet, bis sie eingeblendet sind.
+        noe_eintraege = nichtoeffentliche_eintraege(self.organization, page_entries)
         entries = []
         for entry in page_entries:
-            noe = bool(entry.is_internal or entry.object_id in noe_objekte)
+            noe = entry.pk in noe_eintraege
             locked = not sworn and noe
             object_repr = entry.object_repr
             changes = entry.changes

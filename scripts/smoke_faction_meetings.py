@@ -402,18 +402,27 @@ check(
     meeting1.protocol_approved is False and meeting1.protocol_status == "pending",
 )
 
-# Abstimmung auf dem Genehmigungs-TOP (angenommen) -> Vorprotokoll genehmigt
-resp = chair.post(
-    f"{base}/faction/{meeting2.id}/action/",
-    {
-        "action": "record_decision",
-        "agenda_item_id": str(approval2.id),
-        "votes_yes": "5",
-        "votes_no": "0",
-        "votes_abstain": "1",
-        "result": "accepted",
-    },
+# Abstimmung auf dem Genehmigungs-TOP (angenommen) -> Vorprotokoll genehmigt; die Fraktion stimmt in der Sitzung ab
+abstimmung = {
+    "action": "record_decision",
+    "agenda_item_id": str(approval2.id),
+    "votes_yes": "5",
+    "votes_no": "0",
+    "votes_abstain": "1",
+    "result": "accepted",
+}
+resp = chair.post(f"{base}/faction/{meeting2.id}/action/", abstimmung)
+meeting1.refresh_from_db()
+check(
+    "Abstimmung auf dem Genehmigungs-TOP vor Sitzungsbeginn: abgelehnt, nichts genehmigt",
+    resp.status_code in (302, 400) and meeting1.protocol_approved is False,
+    f"got {resp.status_code}",
 )
+# Sitzung läuft (ohne Signale: die übrigen Prüfungen erwarten die Sitzung danach wieder vor dem Beginn)
+status_vorher = meeting2.status
+FactionMeeting.objects.filter(pk=meeting2.pk).update(status="ongoing")
+resp = chair.post(f"{base}/faction/{meeting2.id}/action/", abstimmung)
+FactionMeeting.objects.filter(pk=meeting2.pk).update(status=status_vorher)
 check("Abstimmung erfasst -> OK", resp.status_code in (200, 302), f"got {resp.status_code}")
 meeting1.refresh_from_db()
 check("Vorprotokoll genehmigt (Flag)", meeting1.protocol_approved is True)
