@@ -46,6 +46,7 @@ from ..services import (
     document_type_for,
     hat_meta_felder,
     letterhead_for,
+    lock_for_save,
     meta_ueberholt,
     speicherkonflikt,
 )
@@ -577,10 +578,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         # Check edit permission
         access_level = self._get_access_level(motion)
         if access_level not in ("edit", "admin"):
-            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                return JsonResponse({"error": "Keine Berechtigung"}, status=403)
-            messages.error(request, "Keine Berechtigung.")
-            return redirect("work:documents", org_slug=self.organization.slug)
+            return self._keine_berechtigung(request)
 
         action = request.POST.get("action", "save")
         # Gäste bearbeiten nur Titel und Inhalt; Papierkorb, Metadaten und das Formular
@@ -599,7 +597,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             try:
                 motion.status = "deleted"
                 motion.deleted_at = timezone.now()
-                motion.save()
+                # Nur diese Felder: Was inzwischen an anderer Stelle gespeichert wurde, bleibt unberührt
+                motion.save(update_fields=["status", "deleted_at", "updated_at"])
 
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return JsonResponse({"success": True, "redirect": True})
@@ -619,24 +618,27 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             if not {"content", "title", "document_type_id", "letterhead_id", "summary"} & set(request.POST):
                 return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
             try:
+                # Mitgeschickte Angaben (Feld des Dokuments: neuer Wert). Sie werden auf den Stand angewandt, der
+                # gespeichert wird, und nur diese Felder werden geschrieben.
+                aenderungen: dict[str, Any] = {}
                 title = request.POST.get("title", "").strip()
                 if title:
-                    motion.title = title
+                    aenderungen["title"] = title
 
                 if not is_guest:
                     # Nur übernehmen, wenn mitgeschickt: Der Editor sendet die beim Anlegen
                     # erfasste Zusammenfassung nicht mit und würde sie sonst leeren (#183).
                     if "summary" in request.POST:
-                        motion.summary = request.POST.get("summary", "").strip()
+                        aenderungen["summary"] = request.POST.get("summary", "").strip()
 
                     # Dokumenttyp und Briefkopf nur aus der eigenen Organisation (leer = keiner), nur wenn mitgeschickt
                     try:
                         if "document_type_id" in request.POST:
-                            motion.document_type = document_type_for(
+                            aenderungen["document_type"] = document_type_for(
                                 self.organization, request.POST.get("document_type_id", "").strip()
                             )
                         if "letterhead_id" in request.POST:
-                            motion.letterhead = letterhead_for(
+                            aenderungen["letterhead"] = letterhead_for(
                                 self.organization, request.POST.get("letterhead_id", "").strip()
                             )
                     except FremdeAuswahlError:
@@ -647,19 +649,9 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                     # von Titel, Dokumenttyp und Briefpapier (#1018). Nur die mitgeschickten Felder schreiben: Text und
                     # Kollaborationsstand bleiben unberührt, ein gleichzeitiges Sichern über die Verbindung oder aus
                     # einem anderen Fenster wird nicht mit dem hier geladenen Stand überschrieben.
-                    felder = ["updated_at"]
-                    if title:
-                        felder.append("title")
-                    if not is_guest:
-                        felder += [
-                            spalte
-                            for feld, spalte in (
-                                ("summary", "summary"),
-                                ("document_type_id", "document_type"),
-                                ("letterhead_id", "letterhead"),
-                            )
-                            if feld in request.POST
-                        ]
+                    for feld, wert in aenderungen.items():
+                        setattr(motion, feld, wert)
+                    felder = ["updated_at", *aenderungen]
                     with transaction.atomic():
                         # Überholte Requests schreiben nichts; die Zeilensperre des Zählers hält bis zum Schreiben (#1199)
                         ueberholt = meta_ueberholt(request, motion)
@@ -677,23 +669,34 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                     messages.success(request, "Änderungen gespeichert.")
                     return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
-                try:
-                    old_content = motion.get_content_decrypted()
-                except Exception:
-                    old_content = ""
-
-                # Gespeichert wird nur die Positivliste des Editors (apps/work/sanitize.py)
+                # Gespeichert wird nur die Positivliste des Editors (apps/work/sanitize.py). Die Bereinigung läuft vor
+                # der Zeilensperre, damit eine lange Eingabe die Zeile nicht hält.
                 new_content = sanitize_editor_html(request.POST.get("content", ""))
 
-                # Konflikt sichtbar machen statt still überschreiben (#184)
-                konflikt = speicherkonflikt(request, old_content, new_content)
-                if konflikt is not None:
-                    if isinstance(konflikt, JsonResponse):
-                        return konflikt
-                    messages.error(request, konflikt)
-                    return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
-
                 with transaction.atomic():
+                    # Frisch und mit Zeilensperre lesen: Seit dem Laden oben können Status, Sichtbarkeit, Ordner,
+                    # Papierkorb oder die Einreichung an anderer Stelle geändert worden sein. Die Stufe gilt für
+                    # diesen Stand (ein inzwischen freigegebenes Dokument nimmt keinen Text mehr an), und geschrieben
+                    # werden unten nur die Felder dieses Speicherns.
+                    motion = lock_for_save(motion)
+                    if self._get_access_level(motion) not in ("edit", "admin"):
+                        return self._keine_berechtigung(request)
+                    for feld, wert in aenderungen.items():
+                        setattr(motion, feld, wert)
+
+                    try:
+                        old_content = motion.get_content_decrypted()
+                    except Exception:
+                        old_content = ""
+
+                    # Konflikt sichtbar machen statt still überschreiben (#184)
+                    konflikt = speicherkonflikt(request, old_content, new_content)
+                    if konflikt is not None:
+                        if isinstance(konflikt, JsonResponse):
+                            return konflikt
+                        messages.error(request, konflikt)
+                        return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
+
                     # Gehen Titel, Dokumenttyp oder Briefpapier mit, gilt deren Reihenfolge auch hier: Ein überholter
                     # Request schreibt nichts, auch nicht den Text (#1199)
                     ueberholt = meta_ueberholt(request, motion)
@@ -718,7 +721,11 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                             logger.exception(f"[DocumentEditor] REVISION CREATION FAILED: {e}")
 
                     content_changed = _store_content(motion, new_content, old_content)
-                    motion.save()
+                    felder = ["content_encrypted", "updated_at", *aenderungen]
+                    if content_changed:
+                        # Nur dann wurde der Kollaborationsstand verworfen
+                        felder += Motion.YJS_FIELDS
+                    motion.save(update_fields=felder)
                 if content_changed:
                     _broadcast_doc_reload(motion)
 
@@ -744,6 +751,13 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         # Metadaten (Bezug, Zuständigkeit …) setzt document_meta (Issue #586)
         return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
+
+    def _keine_berechtigung(self, request: HttpRequest) -> HttpResponse:
+        """Antwort ohne Schreibstufe: 403 für den Editor, sonst Hinweis und zurück zur Liste."""
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+        messages.error(request, "Keine Berechtigung.")
+        return redirect("work:documents", org_slug=self.organization.slug)
 
     def _meta_ueberholt(self, request: HttpRequest, motion: Motion, ueberholt: JsonResponse | str) -> HttpResponse:
         """Antwort auf einen überholten Speicher-POST (#1199): 409 für den Editor, sonst Hinweis und zurück."""

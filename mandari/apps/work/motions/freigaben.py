@@ -189,6 +189,46 @@ def guest_download_rows(entries: Iterable[Any], membership: Membership) -> dict[
 
 
 # =============================================================================
+# Wechsel auf „Privat“: persönliche Freigaben an Gäste
+# =============================================================================
+
+#: Wahl im Teilen-Dialog (Feld ``guest_shares``) beim Wechsel auf „Privat“
+GUEST_SHARES_REVOKE = "revoke"
+GUEST_SHARES_KEEP = "keep"
+
+
+def personal_guest_shares(motion: Motion) -> list[Any]:
+    """
+    Persönliche Freigaben dieses Dokuments an Gäste der Organisation.
+
+    Sie gelten unabhängig von der Sichtbarkeit (Issue #582): Auch ein privates Dokument bleibt für diese Gäste
+    offen. Wer ein Dokument auf „Privat“ stellt, entscheidet deshalb ausdrücklich, ob sie enden oder bleiben
+    (``MotionShareUpdateView``). Deaktivierte Gastzugänge zählen mit, ihre Freigabe gälte nach dem Reaktivieren
+    wieder.
+    """
+    from apps.tenants.models import Membership as MembershipModel
+
+    guests = MembershipModel.objects.filter(organization_id=motion.organization_id, is_guest=True)
+    return list(
+        cast(Any, motion)
+        .shares.filter(scope="user", user_id__in=guests.values_list("user_id", flat=True))
+        .select_related("user")
+        .order_by("created_at")
+    )
+
+
+def guest_share_names(shares: Iterable[Any]) -> list[str]:
+    """Anzeigenamen der Gäste zu ihren Freigaben, ohne Wiederholungen."""
+    return list(dict.fromkeys(share.user.get_display_name() for share in shares))
+
+
+def revoke_shares(shares: Iterable[Any]) -> None:
+    """Freigaben einzeln löschen: Das Signal trennt offene Bearbeitungen (``_motion_share_changed``)."""
+    for share in shares:
+        share.delete()
+
+
+# =============================================================================
 # Entzug in offenen Bearbeitungen
 # =============================================================================
 

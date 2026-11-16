@@ -550,6 +550,20 @@ def speicherkonflikt(request: HttpRequest, old_content: str, new_content: str) -
     return KONFLIKT_HINWEIS
 
 
+def lock_for_save(motion: Any) -> Any:
+    """
+    Das Dokument frisch und mit Zeilensperre lesen (in einer Transaktion aufrufen).
+
+    Zwischen dem Laden zu Beginn einer Anfrage und ihrem Schreiben können Status, Sichtbarkeit, Ordner, Papierkorb
+    oder die Einreichung an anderer Stelle geändert worden sein. Wer Inhalt speichert, prüft seine Stufe deshalb auf
+    diesem Stand und schreibt nur seine eigenen Felder; ein gleichzeitiger Statuswechsel wartet auf die Sperre.
+    """
+    from .models import Motion
+
+    # Ohne den Editor-Zustand: Er kann mehrere MB groß sein und wird hier nur ersetzt, nie gelesen
+    return Motion.objects.select_for_update().defer(*Motion.YJS_FIELDS).get(pk=motion.pk)
+
+
 # ---------------------------------------------------------------------------
 # Reihenfolge der Speicher-POSTs für Titel, Dokumenttyp und Briefpapier (#1199)
 # ---------------------------------------------------------------------------

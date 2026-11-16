@@ -151,9 +151,13 @@ def planned_attachments(motion: Motion) -> list[MailAttachment]:
 
 def _read_attachments(motion: Motion) -> list[tuple[str, bytes, str]]:
     """Antrags-PDF und Anhänge als (Name, Inhalt, Typ) – mit Größenprüfung."""
-    from .export_service import motion_export_service
+    from .export_service import PDF_TABLES_TOO_LARGE, ExportTooLargeError, motion_export_service
 
-    pdf = motion_export_service.export_to_pdf(motion)
+    try:
+        pdf = motion_export_service.export_to_pdf(motion)
+    except ExportTooLargeError as zu_gross:
+        # Feste Meldung, nie der Text der Ausnahme; ohne Antrags-PDF geht keine Mail hinaus
+        raise SubmissionError(PDF_TABLES_TOO_LARGE) from zu_gross
     result: list[tuple[str, bytes, str]] = [(pdf_filename(motion), pdf, PDF_MIME)]
     total = len(pdf)
     for item in planned_attachments(motion):

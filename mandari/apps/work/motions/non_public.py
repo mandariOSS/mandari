@@ -11,8 +11,9 @@ Ordner „Nichtöffentliche Vorgänge“ abgelegt (``DocumentFolder.non_public_f
   Suchkopie am Anhang (``MotionDocument.text_content``) entsteht bewusst nicht.
 - Die Texterkennung läuft nur im eigenen Betrieb (pypdf, Tesseract), nie über einen externen Dienst.
 - Ablage und Lesezugriffe stehen in der Änderungshistorie der Fraktionssitzungen (``FactionAuditLog``, als
-  nichtöffentlich gekennzeichnet): Aufruf im Editor, frühere Fassungen, Download, Export und die TOP-Auswahl der
-  Fraktionssitzung. Live-Bearbeitung und Kommentare laufen im bereits protokollierten Editoraufruf.
+  nichtöffentlich gekennzeichnet): Aufruf im Editor, Verbindung zur Live-Bearbeitung (sie liefert den Editorzustand
+  auch ohne vorherigen Editoraufruf), Einreichungsvorschau, frühere Fassungen, Download, Export und die TOP-Auswahl
+  der Fraktionssitzung. Kommentare laufen im bereits protokollierten Editoraufruf.
 """
 
 from __future__ import annotations
@@ -46,6 +47,8 @@ ACCESS_DOWNLOADED = "heruntergeladen"
 ACCESS_EXPORTED = "exportiert"
 ACCESS_REVISION = "frühere Fassung geöffnet"
 ACCESS_PROPOSALS = "zur TOP-Auswahl geöffnet"
+ACCESS_COLLABORATION = "zur Live-Bearbeitung verbunden"
+ACCESS_SUBMISSION_PREVIEW = "in der Einreichungsvorschau geöffnet"
 
 #: Feste Meldungen
 UNREADABLE = "Die Datei konnte nicht gelesen werden. Bitte prüfen Sie, ob es eine unbeschädigte PDF-Datei ist."

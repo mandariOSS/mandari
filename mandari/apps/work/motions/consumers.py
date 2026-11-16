@@ -17,6 +17,7 @@ from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from django.db import transaction
 from django.utils import timezone
 
 from apps.work.sanitize import sanitize_editor_html
@@ -31,6 +32,9 @@ REVISION_MIN_INTERVAL_SECONDS = 600
 # weitergeleitet bekommt – falls die Nachricht über einen Entzug sie nicht erreicht hat (Änderung ohne Signal,
 # Kanal-Layer gestört; Issue #582, apps/work/motions/freigaben.py).
 ACCESS_RECHECK_INTERVAL_SECONDS = 30
+#: In diesem Abstand entsteht je Person und Dokument höchstens ein Eintrag „zur Live-Bearbeitung verbunden“ im
+#: Zugriffsprotokoll nichtöffentlicher Vorgänge
+LIVE_ACCESS_LOG_SECONDS = 600
 
 # Rangfolge der Stufen im Editor: niedriger = herabgestuft
 ACCESS_RANK = {"view": 0, "comment": 1, "edit": 2}
@@ -174,6 +178,9 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4403)
             return
         self.membership_id = membership_id
+        # „Nichtöffentliche Vorgänge“ (Issue #873): Die Verbindung liefert den Editorzustand, auch ohne dass die
+        # Editorseite vorher geöffnet wurde. Der Eintrag entsteht deshalb hier, vor der Annahme der Verbindung.
+        await self._log_non_public_access()
 
         # Assign cursor color deterministically
         color_index = hash(str(self.user.id)) % len(CURSOR_COLORS)
@@ -427,6 +434,32 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         return level, membership.id
 
     @database_sync_to_async
+    def _log_non_public_access(self):
+        """Verbindung zu einem Dokument in „Nichtöffentliche Vorgänge“ in die Änderungshistorie schreiben."""
+        from apps.tenants.models import Membership
+
+        from . import non_public
+        from .models import Motion
+
+        motion = (
+            Motion.objects.select_related("folder", "organization")
+            .defer("content_encrypted", *Motion.YJS_FIELDS)
+            .filter(id=self.document_id)
+            .first()
+        )
+        if motion is None or not motion.is_sworn_in_only():
+            return
+        membership = Membership.objects.filter(id=self.membership_id).first()
+        if membership is None:
+            return
+        # Der Editor verbindet nach jedem Abbruch neu: ein Eintrag je Person und Dokument in zehn Minuten, nicht einer
+        # je Verbindungsaufbau
+        from django.core.cache import cache
+
+        if cache.add(f"work:noe-zugriff:live:{membership.id}:{motion.id}", 1, timeout=LIVE_ACCESS_LOG_SECONDS):
+            non_public.log_access(motion, membership, None, non_public.ACCESS_COLLABORATION)
+
+    @database_sync_to_async
     def _get_display_name(self):
         return self.user.get_full_name() or self.user.email
 
@@ -472,10 +505,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             # persistieren. Serverseitig nachprüfen statt dem Client vertrauen;
             # motions.edit_all behält über get_collab_access_level 'edit'.
             if can_write and motion.is_status_locked:
-                from apps.tenants.models import Membership
-
-                membership = Membership.objects.filter(id=self.membership_id, is_active=True).first()
-                can_write = membership is not None and motion.get_collab_access_level(membership) == "edit"
+                can_write = self._schreibt_gesperrt(motion)
             # Auch der Yjs-Binärzustand darf nur von Schreibberechtigten
             # persistiert werden - sonst könnte ein Nutzer mit view/comment den
             # gemeinsamen Dokumentzustand überschreiben (wird beim naechsten
@@ -499,7 +529,19 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                 stored_content = html if html else old_content
 
             if update_fields:
-                motion.save(update_fields=update_fields + ["updated_at"])
+                with transaction.atomic():
+                    # Zwischen der Prüfung oben und dem Schreiben liegt die Bereinigung. Wird das Dokument in
+                    # dieser Zeit freigegeben oder eingereicht, darf der Text nicht mehr hinein: Den Status unter
+                    # der Zeilensperre neu lesen (ein gleichzeitiger Statuswechsel wartet darauf) und die Stufe
+                    # für diesen Stand neu bestimmen. Die Bereinigung bleibt außerhalb der Sperre.
+                    aktuell = (
+                        Motion.objects.select_for_update()
+                        .defer("content_encrypted", *Motion.YJS_FIELDS)
+                        .get(id=self.document_id)
+                    )
+                    if aktuell.is_status_locked and not self._schreibt_gesperrt(aktuell):
+                        return None
+                    motion.save(update_fields=update_fields + ["updated_at"])
 
             if content_changed:
                 self._create_revision_if_due(motion, html)
@@ -507,6 +549,13 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             logger.warning(f"Failed to persist Yjs state for {self.document_id}: {e}")
             return None
         return content_fingerprint(stored_content) if stored_content is not None else None
+
+    def _schreibt_gesperrt(self, motion) -> bool:
+        """Darf diese Verbindung in ein Dokument mit Status-Sperre schreiben? (nur mit ``motions.edit_all``)"""
+        from apps.tenants.models import Membership
+
+        membership = Membership.objects.filter(id=self.membership_id, is_active=True).first()
+        return membership is not None and motion.get_collab_access_level(membership) == "edit"
 
     def _create_revision_if_due(self, motion, content, force=False):
         """

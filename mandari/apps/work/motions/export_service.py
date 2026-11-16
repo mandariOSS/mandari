@@ -10,6 +10,7 @@ TipTap editor HTML is cleaned before export (comment marks stripped etc.).
 import io
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from django.template.loader import render_to_string
@@ -97,25 +98,116 @@ def generated_letterhead_context(letterhead: "OrganizationLetterhead") -> dict:
     }
 
 
+class ExportTooLargeError(ValueError):
+    """Der Inhalt lässt sich nicht als PDF ausgeben; ``str()`` ist eine feste Meldung für die Oberfläche."""
+
+
+#: Größte Zahl an Tabellenfeldern eines Dokuments im PDF-Export. Die Umwandlung legt für jedes Feld des Rasters
+#: einer Tabelle Einträge an (auch für überspannte und für aufgefüllte Felder) und läuft im Webprozess, der alle
+#: Anfragen bedient. Eine Tabelle ohne verbundene Zellen zählt doppelt (Zellen und Raster): 20.000 entspricht
+#: 500 Zeilen mit 20 Spalten.
+MAX_PDF_TABLE_CELLS = 20_000
+PDF_TABLES_TOO_LARGE = (
+    "Die Tabellen dieses Dokuments sind für die Ausgabe als PDF zu groß. Bitte die Tabellen kürzen oder aufteilen."
+)
+
+_TABLE_PART_RE = re.compile(r"<(/?)(table|tr|td|th)\b([^<>]*)>", re.IGNORECASE)
+_SPAN_ATTR_RE = re.compile(r'\b(colspan|rowspan)="(\d{1,5})"')
+#: Startmarken und darin die Attribute, die nur der Editor braucht. Beide Muster beginnen mit einem festen Zeichen
+#: und laufen je Marke einmal: Ein vorangestelltes ``\s+`` über den ganzen Inhalt brauchte bei langem Leerraum
+#: quadratische Zeit.
+_START_TAG_RE = re.compile(r"<[a-zA-Z][^<>]*>")
+_EDITOR_ATTR_RE = re.compile(r'\sdata-[a-z-]+="[^"]*"|\sclass="(?:comment-mark[^"]*|is-editor-empty)"')
+_COMMENT_MARK_RE = re.compile(r"<(?:mark|span)\b[^<>]*\bdata-comment-id[^<>]*>(.*?)</(?:mark|span)>", flags=re.DOTALL)
+
+
 def clean_editor_html(html: str) -> str:
     """
-    Clean TipTap editor HTML for export.
+    Editor-HTML für den Export vorbereiten.
 
-    Strips comment marks, data attributes, and other editor-specific
-    elements that shouldn't appear in exported documents.
+    Der gespeicherte Inhalt geht zuerst durch die Positivliste des Editors (``apps/work/sanitize.py``), auch
+    Altbestand von vor einer Regel: Danach ist das HTML wohlgeformt, ``<`` und ``>`` stehen nur noch in Marken, und
+    es gelten die heutigen Grenzen für Bilder und Tabellen. Anschließend entfallen Kommentar-Markierungen,
+    ``data-``-Attribute und Klassen, die nur der Editor braucht.
     """
     if not html:
         return ""
+    from apps.work.sanitize import sanitize_editor_html
 
-    # Remove comment mark wrappers (mark/span) and keep inner text
-    html = re.sub(r"<(?:mark|span)[^>]*data-comment-id[^>]*>(.*?)</(?:mark|span)>", r"\1", html, flags=re.DOTALL)
+    html = sanitize_editor_html(html)
 
-    # Remove any remaining data- attributes from all elements
-    html = re.sub(r'\s+data-[a-z-]+="[^"]*"', "", html)
+    # Kommentar-Markierungen (mark/span) entfernen, ihr Text bleibt
+    html = _COMMENT_MARK_RE.sub(r"\1", html)
 
-    # Remove editor-specific CSS classes
-    html = re.sub(r'\s+class="comment-mark[^"]*"', "", html)
-    return re.sub(r'\s+class="is-editor-empty"', "", html)
+    # Übrige data-Attribute und Editor-Klassen aus den Startmarken entfernen
+    return _START_TAG_RE.sub(lambda marke: _EDITOR_ATTR_RE.sub("", marke.group(0)), html)
+
+
+@dataclass
+class _TableGrid:
+    """Zählwerk für eine Tabelle: belegte Felder ihrer Zellen und das Raster aus Zeilen und breitester Zeile."""
+
+    cells: int = 0
+    rows: int = 0
+    width: int = 0
+    #: Breite der laufenden Zeile aus ihren eigenen Zellen
+    row_width: int = 0
+    #: Breite der Zellen der laufenden Zeile, die in folgende Zeilen reichen
+    row_started: int = 0
+    #: Breite, die Zellen früherer Zeilen in der laufenden Zeile belegen
+    carried: int = 0
+    #: Zeile, nach der eine Spannweite endet: ihre Breite
+    ending: dict[int, int] = field(default_factory=dict)
+
+    def add_cell(self, columns: int, rows: int) -> None:
+        self.cells += columns * rows
+        self.row_width += columns
+        if rows > 1:
+            self.row_started += columns
+            last_row = self.rows + rows - 1
+            self.ending[last_row] = self.ending.get(last_row, 0) + columns
+
+    def close_row(self) -> None:
+        self.width = max(self.width, self.row_width + self.carried)
+        self.carried += self.row_started - self.ending.pop(self.rows, 0)
+        self.rows += 1
+        self.row_width = 0
+        self.row_started = 0
+
+    def total(self) -> int:
+        if self.row_width:
+            self.close_row()
+        return self.cells + self.rows * self.width
+
+
+def table_cell_count(html: str) -> int:
+    """
+    Obergrenze der Tabellenfelder, die die PDF-Umwandlung für bereinigtes Editor-HTML anlegt.
+
+    Je Tabelle die Felder aller Zellen (Spalten mal Zeilen ihrer Spannweite) und dazu das Raster aus Zeilen mal
+    breitester Zeile, denn kürzere Zeilen werden aufgefüllt. Zellen, die aus einer früheren Zeile herunterreichen,
+    zählen zur Breite der Zeile. Verschachtelte Tabellen zählen einzeln.
+    """
+    total = 0
+    tables: list[_TableGrid] = []
+    for closing, name, attrs in _TABLE_PART_RE.findall(html):
+        name = name.lower()
+        if name == "table":
+            if not closing:
+                tables.append(_TableGrid())
+            elif tables:
+                total += tables.pop().total()
+            continue
+        if not tables:
+            # Zeilen und Zellen ohne Tabelle: wie eine eigene Tabelle zählen
+            tables.append(_TableGrid())
+        if name == "tr":
+            if closing:
+                tables[-1].close_row()
+        elif not closing:
+            spans = {key: int(value) for key, value in _SPAN_ATTR_RE.findall(attrs)}
+            tables[-1].add_cell(max(spans.get("colspan", 1), 1), max(spans.get("rowspan", 1), 1))
+    return total + sum(table.total() for table in tables)
 
 
 class MotionExportService:
@@ -170,6 +262,8 @@ class MotionExportService:
         """Render the motion content as HTML for PDF generation."""
         # Clean editor-specific HTML before rendering
         content = clean_editor_html(motion.content or "")
+        if table_cell_count(content) > MAX_PDF_TABLE_CELLS:
+            raise ExportTooLargeError(PDF_TABLES_TOO_LARGE)
 
         letterhead = motion.letterhead
         margins = self._pdf_margins(letterhead)

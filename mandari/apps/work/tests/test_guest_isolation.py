@@ -437,6 +437,25 @@ def test_share_folder_rejects_user_without_org_access(guests: Guests) -> None:
 
 
 @pytest.mark.django_db
+def test_share_folder_answers_alike_for_unknown_and_foreign_accounts(guests: Guests) -> None:
+    """Ob zu einer Adresse ein Konto besteht, lässt die Antwort nicht erkennen."""
+
+    def antwort(email: str) -> tuple[int, str]:
+        response = guests.c_admin.post(
+            _share_url(ORG_SLUG_A, guests.folder_secret),
+            {"email": email, "level": "view"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        return response.status_code, response.content.decode().replace(email, "<adresse>")
+
+    unbekannt = antwort("unbekannt@example.org")
+    fremdes_konto = antwort(guests.user_admin_c.email)
+
+    assert unbekannt[0] == 400
+    assert unbekannt == fremdes_konto, "Antwort unterscheidet vorhandene von unbekannten Konten"
+
+
+@pytest.mark.django_db
 def test_member_without_permission_cannot_share_folder(guests: Guests) -> None:
     # Mitglied ohne guests.manage/motions.share kommt nicht an den Endpunkt
     response = _login(guests.user_plain).post(
