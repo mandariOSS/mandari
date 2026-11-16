@@ -827,7 +827,10 @@ export const documentEditor = defineComponent(() => {
               this._neuladenVorgemerkt = true
               return
             }
-            if (reason === 'access_revoked') {
+            if (reason === 'session_ended') {
+              // Abgemeldet, Sitzung beendet oder Passwort an anderer Stelle neu gesetzt: Der Zugriff ist nicht entzogen
+              showToast('Ihre Anmeldung gilt nicht mehr. Die Seite wird neu geladen.', 'info')
+            } else if (reason === 'access_revoked') {
               showToast('Ihr Zugriff auf dieses Dokument wurde entzogen. Die Seite wird neu geladen.', 'info')
             } else if (reason === 'access_changed') {
               showToast('Ihre Berechtigung für dieses Dokument wurde geändert. Die Seite wird neu geladen.', 'info')

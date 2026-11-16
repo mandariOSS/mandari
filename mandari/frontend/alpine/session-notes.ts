@@ -478,6 +478,12 @@ export const sitzungsNotizen = defineComponent(() => {
     },
 
     zugriffGeaendert(grund?: string) {
+      if (grund === 'session_ended') {
+        // Die Anmeldung gilt nicht mehr (abgemeldet, Sitzung beendet, Passwort an anderer Stelle neu gesetzt), auch
+        // der neue Versuch kam nicht zustande. Kein stummer Lesemodus: Die Seite lädt neu und führt zur Anmeldung.
+        window.location.reload()
+        return
+      }
       // Nach der Genehmigung oder ohne Protokollrecht: nur noch lesen; ohne Zugriff: Verbindung beenden
       window.clearTimeout(timer)
       ausstehend = false

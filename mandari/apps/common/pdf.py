@@ -11,6 +11,7 @@ Bausteine:
 - overlay_pdf_letterhead: erzeugtes PDF auf ein Briefkopf-PDF legen
 """
 
+import contextlib
 import io
 import logging
 import re
@@ -202,6 +203,14 @@ def _page_content_length(page: Any, limit: int) -> int | None:
     return total
 
 
+def _read_from_start(datei: Any) -> bytes:
+    """Den ganzen Inhalt eines dateiartigen Objekts lesen, unabhängig davon, wo es gerade steht."""
+    # Nicht jede Ablage kann zurückspringen; ein frisch geöffnetes Objekt steht ohnehin am Anfang
+    with contextlib.suppress(AttributeError, OSError, ValueError):
+        datei.seek(0)
+    return bytes(datei.read())
+
+
 def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
     """
     Erzeugtes PDF seitenweise auf die erste Seite eines Briefkopf-PDFs legen.
@@ -222,9 +231,13 @@ def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
 
         from pypdf import PdfReader, PdfWriter
 
+        # Aus der Ablage lesen, bevor die Sperre gilt: Ein langsamer Abruf (Objektspeicher) hielte sonst die Exporte
+        # aller anderen im selben Prozess auf. Unter der Sperre steht nur noch das Zusammenführen im Speicher.
+        letterhead_bytes = _read_from_start(letterhead_pdf_file)
+
         with _LETTERHEAD_LOCK:
             content_pdf = PdfReader(io.BytesIO(pdf_content))
-            letterhead_pdf = PdfReader(letterhead_pdf_file)
+            letterhead_pdf = PdfReader(io.BytesIO(letterhead_bytes))
             letterhead_page = letterhead_pdf.pages[0]
 
             length = _page_content_length(letterhead_page, LETTERHEAD_MAX_CONTENT_BYTES)

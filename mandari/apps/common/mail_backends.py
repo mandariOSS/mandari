@@ -12,10 +12,10 @@ von Django vorgesehene, nicht deprecatete Schnittstelle (``BaseEmailBackend`` mi
 
 from __future__ import annotations
 
-import contextlib
+import math
 import smtplib
 import socket
-import threading
+import time
 from typing import Any, ClassVar
 
 from django.conf import settings
@@ -74,6 +74,39 @@ def build_backend(backend: str, **options: Any) -> BaseEmailBackend:
     return instanz
 
 
+class _Zeilenleser:
+    """
+    Leseseite der Verbindung wie ``socket.makefile("rb")``, aber mit der Gesamtfrist vor jedem einzelnen Empfang.
+
+    Eine gepufferte Datei ruft ``recv`` für eine Zeile beliebig oft auf, jedes Mal mit der vollen Zeitgrenze des
+    Sockets: Ein Server, der eine Zeile byteweise streckt, hielte die Verbindung so fast beliebig lange offen.
+    """
+
+    def __init__(self, verbindung: BegrenzterSMTP) -> None:
+        self._verbindung = verbindung
+        self._puffer = bytearray()
+
+    def readline(self, limit: int) -> bytes:
+        """Die nächste Zeile samt Zeilenende, höchstens ``limit`` Bytes; ``b""`` am Ende der Verbindung."""
+        while b"\n" not in self._puffer and len(self._puffer) < limit:
+            sock = self._verbindung.sock
+            if sock is None:
+                break
+            self._verbindung._frist_setzen()
+            stueck = sock.recv(4096)
+            if not stueck:
+                break
+            self._puffer += stueck
+        zeilenende = self._puffer.find(b"\n")
+        laenge = min(limit, zeilenende + 1 if zeilenende != -1 else len(self._puffer))
+        zeile = bytes(self._puffer[:laenge])
+        del self._puffer[:laenge]
+        return zeile
+
+    def close(self) -> None:
+        self._puffer.clear()
+
+
 class BegrenzterSMTP(smtplib.SMTP):
     """
     SMTP-Client für Server, die nicht der Betreiber gewählt hat (eigenes SMTP einer Organisation).
@@ -83,65 +116,99 @@ class BegrenzterSMTP(smtplib.SMTP):
 
     - Eine Antwort (auch der Gruß) ist höchstens ``max_antwort`` Bytes lang. ``smtplib`` begrenzt nur die einzelne
       Zeile und sammelt beliebig viele Fortsetzungszeilen im Speicher.
-    - Die ganze Verbindung dauert höchstens ``gesamtfrist`` Sekunden. Die Zeitgrenze des Sockets beginnt mit jedem
-      Lesevorgang neu und hält einen Server nicht auf, der seine Antwort in kleinen Stücken streckt.
-    - Die Verbindung geht an die Adresse, die ``public_address`` geprüft hat, nicht an eine zweite Auflösung
+    - Die ganze Verbindung hat eine Frist (``gesamtfrist``; die Zeit, in der mandari selbst sendet, zählt nicht
+      dagegen). Die Zeitgrenze des Sockets beginnt mit jedem Lesevorgang neu und hält einen Server nicht auf, der
+      seine Antwort in kleinen Stücken streckt. Die Frist braucht keinen eigenen Faden: Vor jedem Verbinden,
+      Empfangen und Senden bekommt der Socket als Zeitgrenze höchstens den Rest der Frist; ist sie abgelaufen, endet
+      die Verbindung. Das gilt auch nach STARTTLS, weil immer der aktuelle Socket gesetzt wird.
+    - Die Verbindung geht nur an Adressen, die ``public_addresses`` geprüft hat, nicht an eine zweite Auflösung
       desselben Namens. Für TLS gilt weiter der eingetragene Name.
+
+    Der Mail-Dienst baut je Mail eine Verbindung auf (``send_with``); die Frist gilt damit je Mail.
     """
 
     #: Antworten eines Mailservers sind wenige hundert Bytes lang, mit vielen Erweiterungen wenige KiB
     max_antwort: ClassVar[int] = 64 * 1024
     #: Längste Zeile einer Antwort (wie ``smtplib``)
     max_zeile: ClassVar[int] = 8192
-    #: Sekunden für Aufbau, Anmeldung und Übergabe einer Mail zusammen
-    gesamtfrist: ClassVar[float] = 60.0
+    #: Sekunden für Aufbau, STARTTLS, Anmeldung und alle Antworten des Servers zusammen. Jeder einzelne Schritt wartet
+    #: ohnehin höchstens die Zeitgrenze des Sockets (15 s beim eigenen SMTP). Ein gewöhnlicher Server braucht für alle
+    #: Schritte zusammen wenige Sekunden, mit Virenprüfung eines Anhangs und einer nicht erreichbaren ersten Adresse
+    #: einige zehn; zwei Minuten brechen deshalb keine gewöhnliche Mail ab. Die Übertragung der Mail selbst zählt
+    #: nicht mit (siehe ``send``): Für sie gilt wie bisher allein die Zeitgrenze des Sockets, auch bei großem Anhang.
+    #: Ein Server, der hängt oder Antworten streckt, bindet den Prozess höchstens so lange statt unbegrenzt.
+    gesamtfrist: ClassVar[float] = 120.0
 
-    _zeitgeber: threading.Timer | None = None
-    _notaus: socket.socket | None = None
+    #: Zeitpunkt (``time.monotonic``), an dem die Verbindung spätestens endet; gesetzt beim Verbindungsaufbau
+    _frist_ende: float = math.inf
+
+    def _wartezeit(self) -> float:
+        """Sekunden, die der nächste Schritt warten darf: die Zeitgrenze des Sockets, höchstens der Rest der Frist."""
+        rest = self._frist_ende - time.monotonic()
+        if rest <= 0:
+            self.close()
+            raise smtplib.SMTPServerDisconnected("Connection deadline exceeded")
+        grenze = self.timeout
+        if isinstance(grenze, int | float) and grenze > 0:
+            return min(float(grenze), rest)
+        return rest
+
+    def _frist_setzen(self) -> None:
+        """Zeitgrenze des aktuellen Sockets für den nächsten Schritt setzen (auch nach STARTTLS der richtige)."""
+        wartezeit = self._wartezeit()
+        if self.sock is None:
+            return
+        try:
+            self.sock.settimeout(wartezeit)
+        except OSError as exc:
+            self.close()
+            raise smtplib.SMTPServerDisconnected("Server not connected") from exc
 
     def _get_socket(self, host: str, port: int, timeout: float) -> socket.socket:
-        from apps.common.org_email import public_address
+        from apps.common.org_email import public_addresses
 
-        sock = socket.create_connection((public_address(host), port), timeout, self.source_address)
-        # Die Frist wirkt über ein Duplikat: STARTTLS ersetzt das Socket-Objekt, die Verbindung bleibt dieselbe
+        self._frist_ende = time.monotonic() + self.gesamtfrist
+        fehler: OSError | None = None
+        # Wie ``socket.create_connection`` alle Adressen des Namens der Reihe nach (etwa IPv6 gestört, IPv4
+        # erreichbar), aber nur die geprüften und ohne zweite Auflösung
+        for adresse in public_addresses(host):
+            try:
+                return socket.create_connection((adresse, port), self._wartezeit(), self.source_address)
+            except OSError as exc:
+                fehler = exc
+        raise fehler if fehler is not None else OSError("SMTP-Server ohne Adresse")
+
+    def send(self, s: Any) -> None:
+        """
+        Senden wie ``smtplib``, mit dem Rest der Frist als Zeitgrenze.
+
+        Die Dauer des Sendens zählt nicht gegen die Frist: Eine Mail mit Anhang an einen langsamen Server soll nicht
+        an der Frist für Aufbau und Antworten scheitern. Unbegrenzt wird die Verbindung dadurch nicht, denn ein
+        Sendevorgang dauert als Ganzes höchstens die Zeitgrenze des Sockets, und nur so viel kommt je Vorgang dazu.
+        """
+        if self.sock is not None:
+            self._frist_setzen()
+        beginn = time.monotonic()
         try:
-            self._notaus = sock.dup()
-        except OSError:
-            sock.close()
-            raise
-        self._zeitgeber = threading.Timer(self.gesamtfrist, self._abbrechen)
-        self._zeitgeber.daemon = True
-        self._zeitgeber.start()
-        return sock
-
-    def _abbrechen(self) -> None:
-        """Frist abgelaufen: Verbindung in beide Richtungen beenden; der wartende Lesevorgang endet damit."""
-        notaus = self._notaus
-        if notaus is not None:
-            with contextlib.suppress(OSError):
-                notaus.shutdown(socket.SHUT_RDWR)
-
-    def close(self) -> None:
-        zeitgeber, self._zeitgeber = self._zeitgeber, None
-        if zeitgeber is not None:
-            zeitgeber.cancel()
-        notaus, self._notaus = self._notaus, None
-        if notaus is not None:
-            with contextlib.suppress(OSError):
-                notaus.close()
-        super().close()
+            super().send(s)
+        finally:
+            self._frist_ende += time.monotonic() - beginn
 
     def getreply(self) -> tuple[int, bytes]:
         """Antwort lesen wie ``smtplib``, aber nur bis ``max_antwort`` Bytes; darüber endet die Verbindung."""
         if self.sock is None:
             raise smtplib.SMTPServerDisconnected("please run connect() first")
         if self.file is None:
-            self.file = self.sock.makefile("rb")
+            # ``smtplib`` verwirft die Leseseite nach STARTTLS (``file = None``): Vor TLS Gepuffertes zählt nicht
+            self.file = _Zeilenleser(self)
         zeilen: list[bytes] = []
         gelesen = 0
         while True:
             try:
                 zeile = self.file.readline(self.max_zeile + 1)
+            except smtplib.SMTPServerDisconnected:
+                # Frist abgelaufen: Die Verbindung ist schon beendet
+                raise
             except OSError as exc:
                 self.close()
                 raise smtplib.SMTPServerDisconnected("Connection unexpectedly closed") from exc

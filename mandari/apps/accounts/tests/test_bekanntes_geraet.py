@@ -128,6 +128,45 @@ def test_bekanntes_geraet_hat_eine_eigene_grenze(konto: User) -> None:
     assert not _angemeldet(browser)
 
 
+def test_mehrere_bekannte_geraete_teilen_sich_die_grenze(konto: User) -> None:
+    """
+    Jede Anmeldung ohne Cookie ergibt ein neues Cookie. Zusammen haben sie je Zeitfenster so viele Versuche wie eines
+    allein: Wer Cookies sammelt, vervielfacht die Versuche nicht.
+    """
+    erster, zweiter = Client(), Client()
+    for browser in (erster, zweiter):
+        _anmelden(browser)
+        _abmelden(browser)
+    assert erster.cookies[known_device.COOKIE_NAME].value != zweiter.cookies[known_device.COOKIE_NAME].value
+
+    haelfte = LOGIN_FAILURES_PER_ACCOUNT // 2
+    for nummer in range(haelfte):
+        # Wechselnde Adressen, damit nicht die Schwelle je Adresse greift
+        _anmelden(erster, "falsches-passwort", ip=f"192.0.2.{nummer + 1}")
+    for nummer in range(LOGIN_FAILURES_PER_ACCOUNT - haelfte):
+        _anmelden(zweiter, "falsches-passwort", ip=f"192.0.2.{nummer + 101}")
+
+    _anmelden(erster, ip="192.0.2.200")
+    assert not _angemeldet(erster), "die Fehlversuche beider Geräte zählen zusammen"
+    _anmelden(zweiter, ip="192.0.2.201")
+    assert not _angemeldet(zweiter)
+
+
+def test_bekannte_geraete_eines_anderen_kontos_zaehlen_nicht_mit(konto: User) -> None:
+    User.objects.create_user(email="andere@example.org", password=PASSWORT)  # type: ignore[no-untyped-call]
+    fremder, eigener = Client(), Client()
+    _anmelden(fremder, email="andere@example.org")
+    _abmelden(fremder)
+    _anmelden(eigener)
+    _abmelden(eigener)
+
+    for nummer in range(LOGIN_FAILURES_PER_ACCOUNT):
+        _anmelden(fremder, "falsches-passwort", ip=f"192.0.2.{nummer + 1}", email="andere@example.org")
+
+    _anmelden(eigener, ip="192.0.2.200")
+    assert _angemeldet(eigener)
+
+
 def test_schwelle_je_adresse_gilt_auch_fuer_bekannte_browser(konto: User) -> None:
     browser = Client()
     _anmelden(browser)
@@ -205,8 +244,9 @@ def test_person_erfaehrt_von_der_sperre_einmal_am_tag(
 def test_hinweis_geht_per_mail_wenn_sie_als_auftrag_rausgeht(
     konto: User, settings: Any, django_capture_on_commit_callbacks: Callable[..., Any]
 ) -> None:
+    """Mit dem Backend ``journal`` immer, auch ohne Eintrag in ``MAIL_QUEUE``: Sonst erführe die Person nichts."""
     settings.TASKS = {"default": {**settings.TASKS["default"], "BACKEND": "apps.events.tasks_backend.JournalBackend"}}
-    settings.MAIL_QUEUE = ["konto.*"]
+    settings.MAIL_QUEUE = []
 
     with django_capture_on_commit_callbacks(execute=True):
         _fremde_fehlversuche(LOGIN_FAILURES_PER_ACCOUNT + 1)

@@ -73,7 +73,8 @@ def test_gescheiterter_versand_aendert_die_antwort_nicht(konto: Any) -> None:
 
 def test_mit_journal_geht_die_mail_als_auftrag_raus(konto: Any, journal: JournalBackend) -> None:
     assert mail.queue_enabled("konto.passwort")
-    assert not mail.queue_enabled("konto.sicherheit"), "andere Mailarten folgen weiter MAIL_QUEUE"
+    assert mail.queue_enabled("konto.sicherheit"), "Sicherheitshinweise ebenso"
+    assert not mail.queue_enabled("work.fraktion.einladung"), "andere Mailarten folgen weiter MAIL_QUEUE"
 
     with mock.patch("apps.common.mail.delivery.deliver") as versand:
         antwort = _anfordern(ADRESSE)

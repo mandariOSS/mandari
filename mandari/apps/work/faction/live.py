@@ -28,6 +28,10 @@ Server → Client
     ``yjs_saved`` (``content_hash`` = Stand, ``gespeichert_um``), ``inhalt`` (gespeicherte Notizen für Lesende),
     ``praesenz`` (``da``/``weg`` einer Verbindung), ``neu_aufbauen`` (``html``, ``vorher``),
     ``reload`` mit ``reason`` ``access_changed``/``access_revoked`` (danach Trennung mit 4403).
+
+Gilt nur die Sitzung der Verbindung nicht mehr (abgemeldet, beendet, neues Passwort), trennt der Server ohne Nachricht
+mit 4440 (``apps.accounts.websocket.CLOSE_SESSION_ENDED``): Der Editor verbindet einmal neu und lädt die Seite neu,
+wenn das nicht gelingt.
 """
 
 from __future__ import annotations
@@ -122,6 +126,8 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         # Nach „neu_aufbauen“ ist der Zustand dieser Verbindung veraltet: nichts mehr speichern
         self.veraltet = False
         self.entzogen = False
+        # Die Zugriffsprüfung ist an der Sitzung gescheitert, nicht am Zugriff der Person: eigener Schließcode
+        self.sitzung_beendet = False
         self._geprueft_um = 0.0
 
     # -- Verbindung ------------------------------------------------------------------------------------------
@@ -346,6 +352,13 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
                 await self.channel_layer.group_discard(self.group_name, self.channel_name)
             if self.user_group:
                 await self.channel_layer.group_discard(self.user_group, self.channel_name)
+            if self.sitzung_beendet:
+                # Die Sitzung gilt nicht mehr, das Protokollrecht besteht: Der Editor bleibt nicht schreibgeschützt
+                # stehen, sondern verbindet mit dem Cookie neu, das der Browser jetzt hat
+                from apps.accounts.websocket import CLOSE_SESSION_ENDED
+
+                await self.close(code=CLOSE_SESSION_ENDED)
+                return
             await self.send_json({"type": "reload", "reason": "access_revoked"})
             await self.close(code=4403)
             return
@@ -398,6 +411,7 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
 
         # Sitzung beendet (Abmelden, Geräteliste, neues Passwort): Die Verbindung endet wie der Zugriff über HTTP
         if not session_valid(self, membership.user):
+            self.sitzung_beendet = True
             return None
         # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)
         if requirement_open(membership.user):

@@ -64,16 +64,18 @@ def check_smtp_server(host: str, port: int) -> None:
         raise OrgMailError("Der SMTP-Server liegt in einem internen Netz.")
 
 
-def public_address(host: str) -> str:
+def public_addresses(host: str) -> list[str]:
     """
-    Die Adresse, zu der die Verbindung zum eigenen SMTP-Server aufgebaut wird.
+    Die Adressen, zu denen die Verbindung zum eigenen SMTP-Server aufgebaut werden darf: in der Reihenfolge der
+    Auflösung, jede einmal.
 
-    Der Name wird hier aufgelöst und geprüft, und die Verbindung geht genau an die geprüfte Adresse. Löste der
+    Der Name wird hier aufgelöst und geprüft, und die Verbindung geht nur an die geprüften Adressen. Löste der
     Verbindungsaufbau den Namen ein zweites Mal auf, könnte die zweite Antwort eine andere sein als die geprüfte.
+    Alle Adressen statt nur der ersten: Hat der Server IPv6 und IPv4 und ist ein Weg gestört, führt der andere hin.
     Wirft ``OrgMailError`` für interne Adressen und ``OSError`` für Namen, die sich nicht auflösen lassen.
     """
     name = (host or "").strip().strip("[]")
     addresses = _adressen(name)
     if not addresses or not all(_oeffentlich(address) for address in addresses):
         raise OrgMailError("Der SMTP-Server liegt in einem internen Netz.")
-    return str(addresses[0])
+    return list(dict.fromkeys(str(address) for address in addresses))

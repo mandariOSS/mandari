@@ -56,8 +56,10 @@ DEFAULT_QUEUE_MAX_BYTES: Final = 20 * 1024 * 1024
 
 #: Mailarten, die mit dem Backend ``journal`` immer als Auftrag rausgehen, auch ohne ``MAIL_QUEUE``: Die Antwort
 #: auf „Passwort vergessen“ soll für jede Adresse gleich schnell kommen, und der Versand in der Anfrage liefe nur
-#: für Adressen mit Konto.
-ALWAYS_QUEUED: Final = ("konto.passwort",)
+#: für Adressen mit Konto. Dasselbe gilt für Sicherheitshinweise: Den Hinweis auf gesperrte Anmeldungen löst eine
+#: Anmeldung ohne Konto aus, er geht deshalb nur als Auftrag per Mail raus (``security_notifications``); die
+#: übrigen Hinweise halten so auch die Anfrage nicht mehr auf, die sie auslöst.
+ALWAYS_QUEUED: Final = ("konto.passwort", "konto.sicherheit")
 
 
 def queue_enabled(kind: str) -> bool:

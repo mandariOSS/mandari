@@ -5,12 +5,16 @@ Bekanntes Gerät: Die Sperre nach Fehlversuchen je Konto trifft keine Browser, d
 Die Anmeldung zählt Fehlversuche je Konto über alle Adressen hinweg. Das bremst verteiltes Raten, lässt sich aber
 von jedem auslösen, der nur die E-Mail-Adresse kennt. Deshalb bekommt ein Browser nach einer abgeschlossenen
 Anmeldung und nach einem eingelösten Link „Passwort zurücksetzen“ ein signiertes Cookie. Mit ihm gilt für dieses
-Konto statt der Zählung über alle Adressen eine eigene, gleich hohe Zählung für dieses Gerät; die Schwellen je
-Adresse und Netz gelten unverändert.
+Konto statt der Zählung über alle Adressen eine eigene, gleich hohe Zählung für die bekannten Geräte des Kontos; die
+Schwellen je Adresse und Netz gelten unverändert.
+
+Die bekannten Geräte eines Kontos teilen sich diese Zählung. Zählte jedes Cookie für sich, vervielfachte jede weitere
+Anmeldung die Versuche: Wer das Passwort einmal kannte, sammelte Cookies und riete nach einem Passwortwechsel mit
+jedem davon bis zur Schwelle.
 
 Das Cookie meldet niemanden an und ersetzt weder Passwort noch zweiten Faktor. Es ist an das Konto gebunden (Hash der
-Kennung, nicht die Adresse) und an den Hauptschlüssel der Installation (Signatur). Wer es kopiert, gewinnt je
-Zeitfenster so viele Versuche, wie die Sperre je Konto ohnehin zulässt.
+Kennung, nicht die Adresse) und an den Hauptschlüssel der Installation (Signatur). Wer es kopiert oder mehrere davon
+hat, gewinnt je Zeitfenster zusammen so viele Versuche, wie die Sperre je Konto ohnehin zulässt.
 """
 
 from __future__ import annotations
@@ -59,17 +63,19 @@ def remember(request: Any, response: Any, identifier: str) -> Any:
     return response
 
 
-def _failure_key(device: str) -> str:
-    return f"login-failures:device:{device}"
+def _failure_key(identifier: str) -> str:
+    # Je Konto, nicht je Gerät: Alle bekannten Geräte des Kontos teilen sich die Versuche
+    return f"login-failures:known-devices:{security_audit.identifier_hash(identifier)}"
 
 
-def failures(device: str) -> int:
-    """Fehlversuche dieses Geräts im laufenden Zeitfenster."""
-    return int(cache.get(_failure_key(device), 0))
+def failures(identifier: str) -> int:
+    """Fehlversuche aller bekannten Geräte des Kontos zu ``identifier`` im laufenden Zeitfenster."""
+    return int(cache.get(_failure_key(identifier), 0))
 
 
-def count_failure(device: str, window_seconds: int) -> None:
-    key = _failure_key(device)
+def count_failure(identifier: str, window_seconds: int) -> None:
+    """Fehlversuch eines bekannten Geräts zählen (gemeinsam für alle bekannten Geräte des Kontos)."""
+    key = _failure_key(identifier)
     cache.add(key, 0, window_seconds)
     with contextlib.suppress(ValueError):  # zwischenzeitlich abgelaufen
         cache.incr(key)

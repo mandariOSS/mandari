@@ -85,8 +85,10 @@ def notify_login_blocked(identifier: str, *, request: Any = None) -> None:
     Die Sperre nach Fehlversuchen je Konto hat gegriffen: Die Person erfährt es, höchstens einmal am Tag.
 
     Auslösen kann die Sperre jeder, der die Adresse kennt. Der Hinweis nennt deshalb die beiden Wege, die trotzdem
-    hineinführen. Per E-Mail geht er nur, wenn Mails dieser Art als Auftrag rausgehen: Ein Versand in der Anfrage
-    liefe nur für Adressen mit Konto und machte an der Antwortzeit sichtbar, ob es das Konto gibt.
+    hineinführen. Per E-Mail geht er nur, wenn Mails dieser Art als Auftrag rausgehen, mit dem Backend ``journal``
+    also immer (``apps.common.mail.ALWAYS_QUEUED``): Ein Versand in der Anfrage liefe nur für Adressen mit Konto und
+    machte an der Antwortzeit sichtbar, ob es das Konto gibt. Ohne ``journal`` steht der Hinweis auf der
+    Sicherheitsseite des Kontos.
     """
     from apps.common.mail import queue_enabled
 

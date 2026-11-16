@@ -123,6 +123,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                  #1018): Es hat vorher gesichert und lädt selbst neu; sein letztes Sichern gilt nicht als veraltet.
     - reload mit Grund: {"type": "reload", "reason": "access_changed" | "access_revoked"} — Zugriff herabgestuft
                  bzw. entzogen (Issue #582); bei „access_revoked“ schließt der Server die Verbindung danach (4403)
+    - Gilt nur die Sitzung der Verbindung nicht mehr (abgemeldet, beendet, neues Passwort), schließt der Server ohne
+                 Nachricht mit 4440 (``apps.accounts.websocket.CLOSE_SESSION_ENDED``); der Editor verbindet einmal neu
     - yjs_save_rejected: {"type": "yjs_save_rejected", "reason": "reload_pending"} — Server → Client, yjs_save nach reload verworfen
 
     Entzug wirkt sofort (Issue #582): Jede Verbindung ist zusätzlich in der Gruppe ihrer Person
@@ -147,6 +149,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         self.user_group = None
         # Zugriff entzogen: Die Verbindung wird geschlossen und nimmt nichts mehr an (Issue #582)
         self.entzogen = False
+        # Die Zugriffsprüfung ist an der Sitzung gescheitert, nicht am Zugriff der Person: eigener Schließcode
+        self.sitzung_beendet = False
         self._zugriff_geprueft_um = 0.0
         self.user = None
         self.user_info = None
@@ -341,6 +345,13 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
         if self.user_group:
             await self.channel_layer.group_discard(self.user_group, self.channel_name)
+        if self.sitzung_beendet:
+            # Die Sitzung gilt nicht mehr, der Zugriff der Person besteht: kein „Zugriff entzogen“. Der Editor
+            # verbindet mit dem Cookie neu, das der Browser jetzt hat (erneute Anmeldung, Passwortwechsel im Profil).
+            from apps.accounts.websocket import CLOSE_SESSION_ENDED
+
+            await self.close(code=CLOSE_SESSION_ENDED)
+            return
         await self.send_json({"type": "reload", "reason": "access_revoked"})
         await self.close(code=4403)
 
@@ -419,6 +430,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
         # Sitzung beendet (Abmelden, Geräteliste, neues Passwort): Die Verbindung endet wie der Zugriff über HTTP
         if not session_valid(self, self.user):
+            self.sitzung_beendet = True
             return None, None
 
         # Offene Pflicht zum zweiten Faktor: erst einrichten (über HTTP leitet die Middleware dorthin)

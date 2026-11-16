@@ -192,7 +192,8 @@ class LoginView(View):
         # Check for pending invitation
         invitation = self._get_pending_invitation(request)
 
-        # Browser, mit dem sich das Konto schon angemeldet hat: Die Sperre je Konto zählt für ihn getrennt
+        # Browser, mit dem sich das Konto schon angemeldet hat: Für die bekannten Geräte zählt die Sperre je Konto
+        # getrennt von den Versuchen aller anderen
         device = known_device.device_id(request, email)
         limit = self.rate_limit_reason(ip_address, email, device=device)
         if limit:
@@ -245,7 +246,7 @@ class LoginView(View):
         # Log failed attempt
         self.log_attempt(request, email, success=False)
         if device:
-            known_device.count_failure(device, LOGIN_WINDOW_MINUTES * 60)
+            known_device.count_failure(email, LOGIN_WINDOW_MINUTES * 60)
 
         return render(
             request,
@@ -312,8 +313,9 @@ class LoginView(View):
 
         Die Zählung je Konto greift auch dann, wenn die Versuche von vielen Adressen kommen;
         ihre Schwelle liegt höher, damit Tippfehler der Person selbst nicht sofort sperren.
-        Für ein bekanntes Gerät (``device``, siehe ``known_device``) zählen statt der Versuche aller die eigenen:
-        Fehlversuche Dritter sperren die Person dort nicht aus.
+        Für ein bekanntes Gerät (``device``, siehe ``known_device``) zählen statt der Versuche aller die der bekannten
+        Geräte des Kontos zusammen: Fehlversuche Dritter sperren die Person dort nicht aus, und mehrere Cookies
+        ergeben nicht mehr Versuche.
 
         Returns: die gegriffene Schwelle (``security_audit.LIMIT_*``) oder ``""``.
         """
@@ -326,7 +328,7 @@ class LoginView(View):
             return security_audit.LIMIT_NETWORK
         email = security_audit.normalize_identifier(email)
         if email and device:
-            if known_device.failures(device) >= LOGIN_FAILURES_PER_ACCOUNT:
+            if known_device.failures(email) >= LOGIN_FAILURES_PER_ACCOUNT:
                 return security_audit.LIMIT_ACCOUNT
         elif email and failures.filter(email__iexact=email).count() >= LOGIN_FAILURES_PER_ACCOUNT:
             return security_audit.LIMIT_ACCOUNT

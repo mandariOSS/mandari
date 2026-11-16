@@ -154,3 +154,21 @@ def test_nur_ein_export_zugleich_fuehrt_zusammen(monkeypatch: pytest.MonkeyPatch
 
     assert len(ergebnisse) == 3 and all(ergebnis != INHALT for ergebnis in ergebnisse)
     assert max(gleichzeitig) == 1
+
+
+def test_briefkopf_wird_vor_der_sperre_aus_der_ablage_gelesen() -> None:
+    """Ein langsamer Abruf aus der Ablage hält die Exporte der anderen nicht auf: Gelesen wird ohne die Sperre."""
+    gesperrt_beim_lesen: list[bool] = []
+
+    class Ablage(io.BytesIO):
+        def read(self, *args: Any) -> bytes:
+            gesperrt_beim_lesen.append(pdf._LETTERHEAD_LOCK.locked())
+            return super().read(*args)
+
+    ablage = Ablage(_seite("Fraktion im Rat der Stadt"))
+    ablage.seek(0, io.SEEK_END)  # die Stelle, an der das Objekt gerade steht, spielt keine Rolle
+
+    ergebnis = pdf.overlay_pdf_letterhead(INHALT, ablage)
+
+    assert "Fraktion im Rat der Stadt" in _text(ergebnis)
+    assert gesperrt_beim_lesen and not any(gesperrt_beim_lesen)
