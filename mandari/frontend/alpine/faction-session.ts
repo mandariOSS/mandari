@@ -571,13 +571,14 @@ export const anwesenheitsListe = defineComponent(() => ({
     } else if (aktiv?.dataset.feld) {
       fokusNachAustausch = `select[data-feld="${CSS.escape(aktiv.dataset.feld)}"]`
     }
-    this.rollstandMerken()
     void window.htmx.ajax('post', urls().aktion, { target: '#fs-anwesenheit', swap: 'outerHTML', values: werte })
   },
 
-  /** Vor jeder Anfrage, die die Liste austauscht (auch „Gast hinzufügen“): wo die Liste gerade steht */
+  /**
+   * Unmittelbar vor dem Austausch der Liste (`htmx:beforeSwap`, auch nach „Gast hinzufügen“): wo sie gerade steht.
+   * Nicht schon beim Absenden, sonst zöge eine späte Antwort die Liste dorthin zurück, wo sie beim Klick stand.
+   */
   rollstandMerken() {
-    // $root ist die Liste; $el wäre in einem Klick das angeklickte Bedienelement
     rollstandNachAustausch = (this.$root as HTMLElement).scrollTop
   },
 

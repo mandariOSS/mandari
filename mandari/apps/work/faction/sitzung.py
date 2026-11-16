@@ -1131,8 +1131,12 @@ class Anwesenheit:
 
 
 def _nach_namen(name: str) -> str:
-    """Sortierschlüssel für angezeigte Namen: ohne Groß- und Kleinschreibung, Umlaute bei ihrem Grundbuchstaben."""
-    return unicodedata.normalize("NFKD", name or "").casefold()
+    """
+    Sortierschlüssel für angezeigte Namen: ohne Groß- und Kleinschreibung, Umlaute und Akzente wie ihr Grundbuchstabe
+    („Ömer“ vor „Otto“, wie im Wörterbuch).
+    """
+    zerlegt = unicodedata.normalize("NFKD", name or "")
+    return "".join(zeichen for zeichen in zerlegt if not unicodedata.combining(zeichen)).casefold()
 
 
 def uebrige_mitglieder(meeting: FactionMeeting, teilnahmen: list[Any]) -> list[Membership]:
@@ -1242,7 +1246,8 @@ def teilnahme_nachtragen(meeting: FactionMeeting, membership_id: Any, *, status:
     und Teilnahmeart setzen (Issue #1436). Hat das Mitglied inzwischen eine Teilnahme, wird nur sie gesetzt.
 
     ``False`` bei unbekannter Kennung, fremder Organisation, inaktivem Mitglied, Gastzugang oder ohne gültigen
-    Status. Die Sitzung ist währenddessen gesperrt, damit zwei Klicks nicht zwei Teilnahmen anlegen. Das Recht
+    Status, ebenso wenn die Anwesenheit inzwischen bestätigt oder die Sitzung beendet ist. Die Sitzung ist
+    währenddessen gesperrt, damit zwei Klicks nicht zwei Teilnahmen anlegen. Das Recht
     (:func:`darf_teilnahme_nachtragen`) prüft der Aufrufer.
     """
     from apps.tenants.models import Membership
@@ -1260,6 +1265,11 @@ def teilnahme_nachtragen(meeting: FactionMeeting, membership_id: Any, *, status:
         return False
     with transaction.atomic():
         agenda.lock_meeting(meeting)
+        # Stand nach der Sperre: Wurde die Anwesenheit inzwischen bestätigt oder die Sitzung beendet, entsteht keine
+        # neue Teilnahme mehr (die Prüfung des Aufrufers lief vor der Sperre)
+        stand = type(meeting).objects.filter(pk=meeting.pk).values("status", "attendance_confirmed_at").first()
+        if stand is None or stand["status"] != "ongoing" or stand["attendance_confirmed_at"] is not None:
+            return False
         teilnahme = meeting.attendances.filter(membership=mitglied).first()
         if teilnahme is None:
             werte: dict[str, Any] = {"status": status}
