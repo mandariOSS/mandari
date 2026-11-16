@@ -146,16 +146,17 @@ def test_weiterblaettern_zaehlt_die_ausgelieferten_sitzungen(
             external_id=kennung("meetings"),
             body=stadt.body,
             start=datetime(2026, 12, 1 + nr // 3, 17, 0, tzinfo=BERLIN),
-            name=f"Sitzung {nr} " + "des Ausschusses für sehr lange Namen " * 6,
+            name=f"Sitzung {nr} " + 'des Ausschusses „für" sehr \\ lange "Namen" ' * 6,
             location_name="Rathaus, großer Sitzungssaal im ersten Obergeschoss " * 4,
         )
-    monkeypatch.setattr(chat_tools, "ZEILEN_BUDGET", 3000)
+    # Kleine Grenze und Zeichen, die JSON maskiert: Gemessen wird das fertige Ergebnis, nicht die rohe Zeile
+    monkeypatch.setitem(chat_tools.RESULT_LIMITS, "sitzungen_im_zeitraum", 4000)
 
     gesehen: list[str] = []
     ab = 0
     for _aufruf in range(20):
         teil = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=ab)
-        assert "weggelassen" not in teil
+        assert "weggelassen" not in teil and len(teil["sitzungen"]) == teil["anzahl"]
         assert 0 < teil["anzahl"] < chat_tools.MAX_MEETINGS
         gesehen += [zeile.split(" | ")[3] for zeile in teil["sitzungen"]]
         if "weitere" not in teil:
