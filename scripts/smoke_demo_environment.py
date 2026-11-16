@@ -48,6 +48,8 @@ import django  # noqa: E402
 sys.argv = ["manage.py", "smoke_demo_environment"]
 django.setup()
 
+from apps.common.demo_stadt import FRAKTIONEN, GREMIEN, PERSONEN, demo_umfang, stadtplan  # noqa: E402
+from apps.common.management.commands.setup_demo_environment import DEMO_USERS, aufbautag  # noqa: E402
 from django.core.management import call_command  # noqa: E402
 from django.test import Client, override_settings  # noqa: E402
 from django.test.utils import setup_test_environment  # noqa: E402
@@ -120,6 +122,7 @@ def demo_counts() -> dict:
         "work_orgs": Organization.objects.filter(slug="musterfraktion-demo").count(),
         "party_groups": PartyGroup.objects.filter(slug="musterpartei-demo").count(),
         "users": User.objects.filter(email__endswith="@demo.mandari.de").count(),
+        "demo_users": User.objects.filter(email__in=[u["email"] for u in DEMO_USERS.values()]).count(),
         "memberships": Membership.objects.filter(organization__slug="musterfraktion-demo").count(),
         "folders": DocumentFolder.objects.filter(organization__slug="musterfraktion-demo").count(),
         "guest_shares": FolderGuestShare.objects.filter(folder__organization__slug="musterfraktion-demo").count(),
@@ -168,29 +171,38 @@ counts_first = demo_counts()
 output_second = run_command()
 counts_second = demo_counts()
 
-check("Erster Lauf legt Demo-Daten an", counts_first["bodies"] == 1 and counts_first["users"] == 9)
+# Geschichten der Basisdemo plus Musterstadt-Bestand (apps/common/demo_stadt.py, hier im vollen Umfang wie in der
+# öffentlichen Demo)
+plan = stadtplan(aufbautag(), demo_umfang())
+bestand_sitzungen = sum(1 for s in plan.sitzungen if not s.basis)
+check("Erster Lauf legt Demo-Daten an", counts_first["bodies"] == 1 and counts_first["demo_users"] == 9)
 check(
     "Zweiter Lauf dupliziert nichts (alle Zähler stabil)",
     counts_first == counts_second,
     detail=f"first={counts_first}\nsecond={counts_second}",
 )
-check("Insight: 5 Gremien/Fraktionen", counts_second["oparl_orgs"] == 5)
-check("Insight: 8 Personen", counts_second["oparl_persons"] == 8)
-check("Insight: 6 Sitzungen", counts_second["oparl_meetings"] == 6)
-check("Insight: 12 Vorlagen", counts_second["oparl_papers"] == 12)
-check("Insight: 5 PDF-Dateien", counts_second["oparl_files"] == 5)
-check("Insight: Beratungen vorhanden", counts_second["oparl_consultations"] >= 10)
-check("Work: 5 Mitgliedschaften", counts_second["memberships"] == 5)
-check("Work: 4 Dokumente (2 Anträge, 2 Änderungsanträge)", counts_second["motions"] == 4)
-check("Work: 3 Aufgaben", counts_second["tasks"] == 3)
+check("Bestand im vollen Umfang", demo_umfang() == "voll" and len(plan.vorgaenge) >= 150)
+check(
+    "Insight: alle Gremien und Fraktionen",
+    counts_second["oparl_orgs"] == len(GREMIEN) + len(FRAKTIONEN),
+    detail=str(counts_second["oparl_orgs"]),
+)
+check("Insight: alle Personen", counts_second["oparl_persons"] == len(PERSONEN))
+check("Insight: Sitzungen (6 + Bestand)", counts_second["oparl_meetings"] == 6 + bestand_sitzungen)
+check("Insight: Vorlagen (12 + Bestand)", counts_second["oparl_papers"] == 12 + len(plan.vorgaenge))
+check("Insight: PDF-Dateien je Vorlage", counts_second["oparl_files"] >= 5 + len(plan.vorgaenge))
+check("Insight: Beratungen vorhanden", counts_second["oparl_consultations"] >= 10 + len(plan.vorgaenge))
+check("Work: Demo-Konten und Fraktionsmitglieder", counts_second["memberships"] > 5)
+check("Work: Dokumente aus Basis und Bestand", counts_second["motions"] >= 4 + 20)
+check("Work: Aufgaben aus Basis und Bestand", counts_second["tasks"] >= 3 + 15)
 check("Work: Fraktionssitzungen und Reihe", counts_second["faction_meetings"] >= 3)
-check("Work: Ordner-Freigabe für Gast", counts_second["guest_shares"] == 1)
-check("Session: 3 Sitzungen", counts_second["session_meetings"] == 3)
-check("Session: 5 Vorlagen (eine aus dem Trinkwasser-Antrag)", counts_second["session_papers"] == 5)
-check("Session: 2 Anträge", counts_second["session_applications"] == 2)
+check("Work: Ordner-Freigaben für den Gast", counts_second["guest_shares"] >= 1)
+check("Session: Sitzungen (3 + Bestand)", counts_second["session_meetings"] >= 3 + bestand_sitzungen)
+check("Session: Vorlagen (5 + Bestand)", counts_second["session_papers"] >= 5 + len(plan.vorgaenge))
+check("Session: Anträge aus Basis und Bestand", counts_second["session_applications"] > 2)
 check("Session: 4 Verwaltungsnutzer (je Rolle)", counts_second["session_users"] == 4)
-check("Session: 3 Anwesenheiten (vergangene Sitzung)", counts_second["session_attendances"] == 3)
-check("Session: 1 genehmigtes Protokoll", counts_second["session_protocols"] == 1)
+check("Session: Anwesenheiten", counts_second["session_attendances"] > 3)
+check("Session: Niederschriften", counts_second["session_protocols"] > 1)
 
 demo_logins = parse_demo_logins(output_second)
 check("Passwörter im Output (9 Nutzer)", len(demo_logins) == 9, detail=f"{len(demo_logins)} gefunden")

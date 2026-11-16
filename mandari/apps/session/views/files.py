@@ -87,7 +87,8 @@ def _edit_permission(session_file: SessionFile) -> str:
 def _editable_file(view, file_id) -> SessionFile:
     """
     Anlage zum Ändern, Ersetzen oder Löschen laden: Bearbeitungsrecht des Elternobjekts (sonst 403),
-    nichtöffentliche Anlage oder Anlage an einem NÖ-Objekt nur mit NÖ-Sichtrecht (sonst 404).
+    nichtöffentliche Anlage oder Anlage an einem NÖ-Objekt nur mit NÖ-Sichtrecht (sonst 404). Die öffentliche
+    Fassung der Niederschrift ist keine gewöhnliche Anlage: Sie ändert nur der Ablauf der Niederschrift (403).
     """
     session_file = get_object_or_404(
         SessionFile.objects.select_related("paper", "meeting", "agenda_item__meeting"),
@@ -98,6 +99,8 @@ def _editable_file(view, file_id) -> SessionFile:
         raise PermissionDenied("Fehlende Berechtigung")
     if not file_service.non_public_allowed(view.session_permissions, session_file):
         raise Http404("Anlage nicht gefunden")
+    if file_service.is_public_protocol_file(session_file):
+        raise PermissionDenied(file_service.PROTOCOL_FILE_MESSAGE)
     return session_file
 
 

@@ -151,6 +151,11 @@ ASGI_APPLICATION = "mandari.asgi.application"
 # Datenbank und nur synthetischen Daten. Schaltet Mailversand und KI ab, sperrt Änderungen an
 # Passwort, zweitem Faktor und Konto und blendet einen Hinweis ein. In Produktion nie setzen.
 DEMO_INSTANCE = os.environ.get("DEMO_INSTANCE", "false").lower() in ("1", "true", "yes")
+# Umfang des Musterstadt-Bestands in setup_demo_environment (apps/common/demo_stadt.py): voll (Demo) oder klein
+DEMO_UMFANG = os.environ.get("DEMO_UMFANG", "voll").strip() or "voll"
+# Zeiten des automatischen Neuaufbaus der Demo in UTC, kommagetrennt (z. B. "03:30,15:30"); der Hinweis nennt sie
+# in Ortszeit. Leer: kein fester Zeitplan bekannt.
+DEMO_NEUAUFBAU_UTC = os.environ.get("DEMO_NEUAUFBAU_UTC", "").strip()
 
 # SEITENHINWEIS (apps/common/seitenhinweis.py): kurzer Betriebshinweis oben in Insight und Work, etwa bei Störungen
 # außerhalb von mandari (leer = aus). Ein- und Ausschalten nur über die Umgebung, ohne Deploy.
@@ -735,7 +740,7 @@ FILE_RECONCILE_MAX_MISSING = int(os.environ.get("FILE_RECONCILE_MAX_MISSING", "1
 # Layout je Kommune, ohne Deduplizierung und ohne Objektspeicher)
 FILE_STORE_LAYOUT = os.environ.get("FILE_STORE_LAYOUT", "sha256")
 # Sieht dieser Dienst die gemeinsame Ablage (Anwendungsserver oder gemeinsam eingehängt)? false nur auf einem Server,
-# der die Inhalte allein über den Objektspeicher sieht (eigener Erkennungsserver, docs/MEHR_SERVER_BETRIEB.md): Was
+# der die Inhalte allein über den Objektspeicher sieht (eigener Erkennungsserver, DEPLOYMENT.md#-mehrere-server-rollen-data--web--worker): Was
 # weder dort noch im Objektspeicher liegt, gilt dann als gestört statt als fehlend und löst keinen Abruf aus.
 FILE_STORE_SHARED = os.environ.get("FILE_STORE_SHARED", "true").lower() in ("1", "true", "yes")
 # Der Ingestor legt Dateien, die er für den Text lädt, selbst in der Ablage ab (OPARL_FILES_ROOT im
@@ -798,7 +803,7 @@ SECURITY_AUDIT_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_RETENTION_DAY
 # (purge_security_audit_log, Issue #366)
 SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS", "0"))
 # Aufbewahrung der Anmeldeversuche (LoginAttempt, Drosselung) in Tagen, 0 = keine Löschung (purge_login_attempts,
-# Issue #366); 30 Tage, festgelegt durch den Betreiber am 16.10.2026 (docs/PROTOKOLLE.md)
+# Issue #366); 30 Tage, festgelegt durch den Betreiber am 16.10.2026 (docs/PROTOKOLLIERUNG.md#12-systemprotokolle-der-installation)
 LOGIN_ATTEMPT_RETENTION_DAYS = int(os.environ.get("LOGIN_ATTEMPT_RETENTION_DAYS", "30"))
 
 
@@ -933,17 +938,28 @@ INSIGHT_CHAT_TIME_LIMIT_SECONDS = int(os.environ.get("INSIGHT_CHAT_TIME_LIMIT_SE
 # Chat-Nutzungen seit Mitternacht). Ist eine erreicht, fragt der Assistent den Anbieter bis zum nächsten Tag nicht.
 INSIGHT_CHAT_DAILY_MAX_CALLS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_CALLS", "500"))
 INSIGHT_CHAT_DAILY_MAX_TOKENS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_TOKENS", "1000000"))
-# Öffentlicher, nur lesender MCP-Server unter /insight/mcp (Issue #899, docs/INSIGHT_MCP.md). Standard aus; die
+# Öffentlicher, nur lesender MCP-Server unter /insight/mcp (Issue #899, docs/KI.md#4-mcp-server). Standard aus; die
 # Freischaltung entscheidet der Betrieb. Grenzen je Adresse und Minute (alle Anfragen), je Adresse und Tag
 # (Werkzeugaufrufe) und insgesamt je Minute; 0 schaltet eine Grenze ab. INSIGHT_MCP_ALLOWED_ORIGINS: weitere Hosts,
 # deren Browser-Clients (Kopfzeile Origin) zugreifen dürfen, kommagetrennt; ALLOWED_HOSTS gelten immer.
 INSIGHT_MCP_ENABLED = os.environ.get("INSIGHT_MCP_ENABLED", "false").lower() in ("true", "1", "yes")
+
 INSIGHT_MCP_PER_IP_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_IP_MINUTE", "30"))
 INSIGHT_MCP_PER_IP_DAY = int(os.environ.get("INSIGHT_MCP_PER_IP_DAY", "500"))
 INSIGHT_MCP_PER_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_MINUTE", "300"))
 INSIGHT_MCP_ALLOWED_ORIGINS = [
     host.strip() for host in os.environ.get("INSIGHT_MCP_ALLOWED_ORIGINS", "").split(",") if host.strip()
 ]
+
+# Seite „Offene Daten“ außerhalb des Bürgerportals (Issue #1309): Steht die Übersicht der Schnittstelle mit den
+# Adressen je Kommune auf einer anderen Seite desselben Auftritts (auf mandari.de die Website unter /offene-daten/),
+# nennt der Betrieb hier deren vollständige Adresse. Dann leitet /insight/offene-daten/ dorthin weiter, die Fußzeile
+# und das Feld bodyDirectory der Schnittstelle verweisen dorthin, und die Seite einer Kommune liegt unter
+# <Adresse><Name der Kommune>/. Leer (Standard): Das Bürgerportal zeigt die Übersicht selbst.
+# Geprüft wird beim Start: vollständige Adresse mit Host, ohne Abfrage und Sprungmarke.
+from mandari.adressen import basis_adresse  # noqa: E402
+
+INSIGHT_OFFENE_DATEN_URL = basis_adresse(os.environ.get("INSIGHT_OFFENE_DATEN_URL", ""), "INSIGHT_OFFENE_DATEN_URL")
 
 # Mistral-kompatible Texterkennung (optional): nur mit Schlüssel UND Basis-URL, deren Host in KI_ERLAUBTE_HOSTS
 # steht; sonst bleibt die Texterkennung lokal (pypdf, Tesseract). Nur für öffentliche RIS-Dateien.

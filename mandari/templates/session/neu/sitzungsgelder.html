@@ -92,7 +92,7 @@ Kontext wie AllowanceListView. Die bisherige Seite bleibt session/allowances/ind
             <li class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 py-2.5">
                 <div class="min-w-0">
                     <p class="font-medium text-gray-900 dark:text-white break-words">{{ allowance.attendance.person.display_name }}</p>
-                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ allowance.attendance.meeting.organization.short_name|default:allowance.attendance.meeting.organization.name }}: {{ allowance.attendance.meeting.name }} · <span class="tabular-nums">{{ allowance.attendance.meeting.start|date:"d.m.Y" }}</span> · {{ allowance.attendance.get_role_display }}</p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ allowance.attendance.meeting.organization.short_name|default:allowance.attendance.meeting.organization.name }}: {{ allowance.meeting_label }} · <span class="tabular-nums">{{ allowance.attendance.meeting.start|date:"d.m.Y" }}</span> · {{ allowance.attendance.get_role_display }}</p>
                     <p class="mt-0.5 flex flex-wrap gap-x-3 text-[0.8125rem] text-gray-700 dark:text-gray-300">
                         <span>{% include "session/neu/_status.html" with wert=allowance.status text=allowance.get_status_display %}</span>
                         {% if allowance.export_reference %}<span class="tabular-nums">Referenz {{ allowance.export_reference }}</span>{% endif %}

@@ -21,7 +21,7 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20260929-adapter-rahmen.md](20260929-adapter-rahmen.md) | Datendrehscheibe A9: Adapter-Rahmen: übersetzen ohne Geschäftsregeln, Zustellprotokoll, dünne Webhooks mit HMAC | angenommen |
 | [20260929-aenderungsfeed-format.md](20260929-aenderungsfeed-format.md) | Datendrehscheibe A10: Änderungsfeed: Cursor, upsert/delete/redact, Snapshot-Übergabe, 410 | angenommen |
 | [20260929-portal-modul.md](20260929-portal-modul.md) | Datendrehscheibe A11: Bürgerportal als eigenes Fachmodul; `insight_core` wird reiner RIS-Bestand | vorgeschlagen |
-| [20260930-pdf-seitenanalyse-bibliothek.md](20260930-pdf-seitenanalyse-bibliothek.md) | PDF-Seitenanalyse mit pypdfium2 und pypdf statt PyMuPDF (Lizenz, OEM) | angenommen |
+| [20260930-pdf-seitenanalyse-bibliothek.md](20260930-pdf-seitenanalyse-bibliothek.md) | PDF-Seitenanalyse mit pypdfium2 und pypdf statt PyMuPDF (Lizenz) | angenommen |
 | [20261002-koerperschaften-im-mandanten.md](20261002-koerperschaften-im-mandanten.md) | Körperschaften im Mandanten: Der Mandant ist die Verwaltung, die Körperschaft die rechtliche Einheit | angenommen |
 | [20261003-rechte-mit-geltungsbereich.md](20261003-rechte-mit-geltungsbereich.md) | Rechte mit Geltungsbereich in Session: Objektart und Aktion, Zuweisung für Bereich und Zeitraum | angenommen |
 | [20261004-texterkennung-shared.md](20261004-texterkennung-shared.md) | Texterkennung als eine Bibliothek in `shared/` und als Auftrag `file.extract_text` | angenommen, teilweise abgelöst |
@@ -30,3 +30,6 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20261105-eine-schnittstelle-api-first.md](20261105-eine-schnittstelle-api-first.md) | Eine Schnittstelle: API-first auf OParl, kommParl und OpenAPI | angenommen |
 
 Die Einträge „Datendrehscheibe A1–A11“ gehören zusammen (Epic #476); die Reihenfolge der Nummern entspricht den Abhängigkeiten.
+
+Nachträge vom 11.11.2026 (#1341) gleichen A1, A4, A5, A6, A9, A10, die Dokumentkette und „Eine Schnittstelle“
+mit dem Code ab. Überholte Stellen tragen einen datierten Vermerk; Entscheidungen und Status bleiben.

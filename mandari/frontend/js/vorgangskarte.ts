@@ -1,5 +1,5 @@
 /**
- * Gemeinsames Kartenmodul für Vorgänge mit Ortsbezug (Issue #853, docs/CSP.md Abschnitt 4): die Karte in Insight
+ * Gemeinsames Kartenmodul für Vorgänge mit Ortsbezug (Issue #853, docs/ENGINEERING_STANDARDS.md, Abschnitt 4.2): die Karte in Insight
  * (templates/pages/map.html, Alpine-Komponente `insightKarte`) und die Karte der Recherche in Work
  * (templates/work/ris/partials/_karte.html, `risKarte`). Vorher stand die Karte von Insight als Inline-Skript in
  * der Seite, Work hatte eine eigene Kopie.

@@ -30,7 +30,7 @@ ZUORDNUNG: dict[str, set[str]] = {
     "meetings.MeetingUpdateView": {"sitzung.bearbeiten", "sitzung.absagen"},
     "calendar.MeetingPlanView": {"sitzung.planen"},
     "invitations.MeetingInvitationView": {"sitzung.laden"},
-    "invitation_responses.MeetingSerialLetterView": {"sitzung.laden"},
+    "invitation_responses.MeetingSerialLetterView": {"sitzung.laden", "sitzung.anwesenheit_fuehren"},
     "invitation_responses.MeetingInvitationReminderView": {"sitzung.laden"},
     "invitation_responses.MeetingLettersSentView": {"sitzung.laden"},
     "invitation_responses.MeetingInvitationStatusView": {"sitzung.laden"},

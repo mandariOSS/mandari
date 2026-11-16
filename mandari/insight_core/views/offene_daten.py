@@ -8,6 +8,9 @@ zeigt an einem Beispiel, wie man die Vorlagen einer Kommune abruft, und listet j
 damit Suchmaschinen und Sprachmodelle die Adressen auch ohne die Tabelle finden.
 
 Auf einem eigenen Portal-Host einer Kommune nennt sie nur diese Kommune.
+
+Steht die Übersicht auf einer anderen Seite des Auftritts (``INSIGHT_OFFENE_DATEN_URL``, Issue #1309; auf mandari.de
+die Website), leitet diese Adresse dauerhaft dorthin weiter.
 """
 
 from __future__ import annotations
@@ -15,12 +18,12 @@ from __future__ import annotations
 from typing import Any
 
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
 from hub.api import verzeichnis
-from hub.api.aggregator import DOCUMENTATION_URL
+from hub.api.aggregator import DOCUMENTATION_URL, directory_url
 from hub.api.http import rate_limit
 from hub.api.serialization import page_size
 from hub.ris.mapping.bestand import BestandUris
@@ -80,8 +83,13 @@ def _katalog(eintraege: list[verzeichnis.Eintrag], system: str, seite: str) -> d
 
 @require_safe
 def offene_daten(request: HttpRequest) -> HttpResponse:
-    eintraege = verzeichnis.eintraege()
     portal = get_portal(request)
+    if settings.INSIGHT_OFFENE_DATEN_URL:
+        # Die Übersicht steht auf einer anderen Seite des Auftritts (Issue #1309); das Portal einer Kommune unter
+        # eigener Adresse führt gleich zu deren Seite
+        slug = portal.body.slug if portal is not None and portal.via_host and portal.body.slug else ""
+        return HttpResponsePermanentRedirect(directory_url(slug))
+    eintraege = verzeichnis.eintraege()
     if portal is not None and portal.via_host:
         eintraege = [eintrag for eintrag in eintraege if eintrag.body_id == str(portal.body.pk)]
     uris = BestandUris(settings.OPARL_BASE_URL, settings.SITE_URL)

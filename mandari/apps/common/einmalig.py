@@ -25,7 +25,7 @@ Ohne laufenden Worker läuft er wie bisher. Aufrufe, die nur lesen oder berichte
 ``liest_nur`` auch selbst entscheiden). ``--trotz-zeitplan`` erzwingt einen echten Lauf von Hand.
 
 Mit dem lokalen Speicher-Cache (Entwicklung, Tests) schützt die Sperre nur innerhalb eines
-Prozesses; der Mehr-Server-Betrieb setzt den Redis-Cache voraus (docs/MEHR_SERVER_BETRIEB.md).
+Prozesses; der Mehr-Server-Betrieb setzt den Redis-Cache voraus (DEPLOYMENT.md#-mehrere-server-rollen-data--web--worker).
 """
 
 from __future__ import annotations

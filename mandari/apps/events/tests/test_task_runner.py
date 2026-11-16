@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import uuid
+from collections import Counter
 from datetime import timedelta
 from typing import Any, cast
 from unittest import mock
@@ -66,6 +67,10 @@ def journal(settings: Any) -> JournalBackend:
 def _runner(backend: JournalBackend, **kwargs: Any) -> TaskRunner:
     kwargs.setdefault("poll_interval", 0.05)
     kwargs.setdefault("burst", True)
+    # Ohne Speichergrenze, solange ein Test sie nicht selbst setzt: Gemessen wird der Testprozess. Liegt der beim
+    # Start knapp unter den 400 MB des Betriebs und wächst darüber, nimmt der Runner mitten im Test keine Aufträge
+    # mehr an (Issue #1305).
+    kwargs.setdefault("max_memory_mb", 0)
     return TaskRunner(backend.config, list(backend.config.concurrency), **kwargs)
 
 
@@ -622,9 +627,16 @@ def test_zwei_runner_fuehren_jeden_auftrag_genau_einmal_aus(journal: JournalBack
     faden.start()
     _laufen(_runner(journal))
     faden.join(30)
+    assert not faden.is_alive(), "Der zweite Runner läuft nach 30 s noch"
 
-    assert sorted(aufruf[1][0] for aufruf in auftraege.aufrufe) == sorted(str(n) for n in range(20))
-    assert set(TaskRow.objects.values_list("status", "attempts")) == {(TaskStatus.ERLEDIGT, 1)}
+    ausgefuehrt = Counter(aufruf[1][0] for aufruf in auftraege.aufrufe)
+    erwartet = {str(n) for n in range(20)}
+    stand = sorted(TaskRow.objects.values_list("status", "attempts"))
+    assert ausgefuehrt == Counter(erwartet), (
+        f"fehlend: {sorted(erwartet - set(ausgefuehrt), key=int)}, "
+        f"doppelt: {sorted(k for k, n in ausgefuehrt.items() if n > 1)}, Zeilen (Status, Versuche): {stand}"
+    )
+    assert set(stand) == {(TaskStatus.ERLEDIGT, 1)}
 
 
 def test_optionen_des_runners_aus_der_konfiguration() -> None:

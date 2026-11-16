@@ -21,6 +21,7 @@ from apps.work.rahmen import fragment_neu
 from .. import agenda, deletion
 from .. import services as faction_services
 from ..models import (
+    AGENDA_PARTS,
     FactionAgendaItem,
     FactionAttendance,
     FactionMeeting,
@@ -179,8 +180,8 @@ class FactionActionView(WorkViewMixin, View):
     # -- Permission helpers ----------------------------------------------
 
     def _can_manage_agenda(self, meeting):
-        """Ersteller der Sitzung oder faction.manage — entspricht can_edit in der UI."""
-        return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
+        """Ersteller der Sitzung oder faction.manage, nie nach genehmigtem Protokoll (``agenda.manages``)."""
+        return agenda.manages(meeting, self.membership)
 
     def _can_add_items(self, meeting):
         """
@@ -335,9 +336,7 @@ class FactionActionView(WorkViewMixin, View):
     # -- Meeting update ------------------------------------------------
 
     def _update_meeting(self, request, meeting):
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
 
         if not can_edit:
             messages.error(request, "Keine Berechtigung zum Bearbeiten.")
@@ -428,9 +427,7 @@ class FactionActionView(WorkViewMixin, View):
 
     def _set_rsvp(self, request, meeting):
         """Zu- und Absagen für diese Sitzung ein- oder ausschalten (Issue #871), wie das Feld im Bearbeiten-Dialog."""
-        can_edit = (
-            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        can_edit = agenda.editable_by(meeting, self.membership)
         if not can_edit:
             if self.is_htmx:
                 return HttpResponse(status=403)
@@ -542,6 +539,8 @@ class FactionActionView(WorkViewMixin, View):
         title = request.POST.get("title", "").strip()
         visibility = request.POST.get("visibility", "public")
         parent_id = request.POST.get("parent_id", "").strip()
+        if visibility not in AGENDA_PARTS:
+            return self._rejected(request, meeting, "Unbekannter Teil der Tagesordnung.", 400)
 
         # NÖ strikt (Issue #64): NÖ-TOPs (auch Unterpunkte von NÖ-TOPs)
         # dürfen nur Vereidigte anlegen — serverseitig geprüft
@@ -557,8 +556,12 @@ class FactionActionView(WorkViewMixin, View):
         parent = None
         if parent_id:
             parent = get_object_or_404(FactionAgendaItem, id=parent_id, meeting=meeting)
-            visibility = parent.visibility
-            # NÖ strikt: Unterpunkte erben die Sichtbarkeit des Eltern-TOPs
+            # Wie in der laufenden Sitzung (sitzung.top_hinzufuegen): Unter einem nichtöffentlichen TOP ist jeder
+            # Unterpunkt nichtöffentlich. Wer „nichtöffentlich“ wählt, bekommt auch unter einem öffentlichen TOP
+            # einen nichtöffentlichen Unterpunkt, damit nichts ungewollt öffentlich wird.
+            if parent.visibility == "internal":
+                visibility = "internal"
+            # NÖ strikt: nichtöffentliche Unterpunkte nur für Vereidigte
             if visibility == "internal" and not can_view_internal(self.membership):
                 return HttpResponse(status=403)
         # Art ohne nichtöffentlichen Teil (Issue #1240): keine neuen NÖ-TOPs, auch keine Unterpunkte bestehender
@@ -1313,6 +1316,9 @@ class FactionActionView(WorkViewMixin, View):
         title = request.POST.get("title", "").strip()
         description = request.POST.get("description", "").strip()
         visibility = request.POST.get("visibility", "public")
+        if visibility not in AGENDA_PARTS:
+            messages.error(request, "Unbekannter Teil der Tagesordnung.")
+            return self._redirect_detail(meeting)
 
         # NÖ strikt (Issue #64): auch das VORSCHLAGEN von NÖ-TOPs ist nur
         # Vereidigten erlaubt — serverseitig geprüft
@@ -1364,10 +1370,14 @@ class FactionActionView(WorkViewMixin, View):
         if visibility == "internal" and item.visibility != "internal" and not meeting.nichtoeffentlich_erlaubt:
             return self._rejected(request, meeting, NOE_AUS, 400)
 
+        from ..regeln import ProtokollGenehmigtError
         from ..services import AgendaProposalService
 
         assign_number = request.POST.get("number", "").strip()
-        AgendaProposalService.accept_proposal(item, self.membership, assign_number or None, visibility)
+        try:
+            AgendaProposalService.accept_proposal(item, self.membership, assign_number or None, visibility)
+        except ProtokollGenehmigtError as exc:
+            return self._rejected(request, meeting, str(exc), 400)
 
         messages.success(request, f"Vorschlag '{item.title}' angenommen.")
         return self._refresh_or_redirect(request, meeting)
@@ -1406,8 +1416,9 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, "Nur Aufgaben-Einträge können ins Task-Board übernommen werden.")
             return self._redirect_detail(meeting)
 
-        from apps.work.tasks.models import Task
-
+        # Aufgaben legt an, wer Aufgaben anlegen darf; das Recht an der Sitzung allein reicht nicht
+        if not self.membership.has_permission("tasks.create"):
+            return HttpResponse(status=403)
         content = entry.get_content_decrypted() or ""
         task_title = content[:200] if content else f"Aufgabe aus Fraktionssitzung {meeting.title}"
 
@@ -1417,20 +1428,22 @@ class FactionActionView(WorkViewMixin, View):
         else:
             description_parts.append("TOP: Allgemein")
 
-        Task.objects.create(
-            organization=self.organization,
+        from apps.work.tasks import services as task_services
+
+        # Je Eintrag eine Aufgabe, auch bei gleichzeitigen Aufrufen (Sperre des Eintrags im Dienst)
+        task = task_services.task_from_protocol_entry(
+            entry,
+            self.membership,
             title=task_title,
             description="\n".join(description_parts),
-            assigned_to=entry.action_assignee,
-            due_date=entry.action_due_date,
-            created_by=self.membership,
-            related_faction_meeting=meeting,
-            related_protocol_entry=entry,
         )
+        if task is None:
+            messages.info(request, "Aus diesem Eintrag wurde bereits eine Aufgabe angelegt.")
+            return self._redirect_detail(meeting)
 
-        # Endgültig genehmigte Protokolle sind unveränderbar (Issue #63) —
-        # die Aufgabe wird trotzdem angelegt, nur das Flag bleibt unberührt
-        if not meeting.protocol_approved:
+        # Den Erledigt-Stand am Eintrag setzt nur, wer das Protokoll bearbeiten darf; genehmigte Protokolle sind
+        # unveränderbar (Issue #63). Die Aufgabe entsteht in beiden Fällen, nur das Flag bleibt unberührt.
+        if self._can_protocol(meeting):
             entry.action_completed = True
             entry.save()
 

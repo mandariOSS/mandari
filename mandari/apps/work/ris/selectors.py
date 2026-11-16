@@ -26,7 +26,6 @@ from apps.session.models import SessionAgendaItem, SessionOrganization, SessionT
 from apps.session.services.resolution_service import DECIDED_ITEMS_ORDERING, DECIDED_RESULTS
 from apps.tenants.models import Organization
 from hub.ris import selectors as ris
-from hub.ris.selectors import agenda_number_key
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -159,9 +158,11 @@ def organizations_for_filter(bodies: Bodies) -> QuerySet[OParlOrganization]:
 
 
 def agenda_items_with_papers(meeting: OParlMeeting) -> list[dict[str, Any]]:
-    """Tagesordnung natürlich sortiert, je TOP mit verknüpften Vorgängen."""
-    items = sorted(meeting.agenda_items.all(), key=lambda item: agenda_number_key(item.number))
-    return [{"item": item, "papers": cast(Any, item).get_papers()} for item in items]
+    """
+    Tagesordnung natürlich sortiert, je TOP mit verknüpften Vorgängen. Dieselbe Auswahl wie die neuen Seiten
+    (``ris.visible_agenda_items``): ohne in der Quelle gelöschte und vom Herausgeber zurückgenommene Punkte.
+    """
+    return [{"item": item, "papers": cast(Any, item).get_papers()} for item in ris.visible_agenda_items(meeting)]
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +393,14 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
         meetings_by_id = {m.external_id: m for m in meetings}
     agenda_items_by_id: dict[str, OParlAgendaItem] = {}
     if agenda_item_ids:
-        agenda_items_by_id = {a.external_id: a for a in OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids)}
+        # Wie der Verlauf der neuen Seiten (hub/ris/selectors.py): keine gelöschten oder zurückgenommenen Punkte und
+        # keine Punkte einer zurückgenommenen Sitzung
+        agenda_items_by_id = {
+            a.external_id: a
+            for a in OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids, deleted=False)
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("meeting"))
+        }
 
     result: list[dict[str, Any]] = []
     for consultation in consultations:

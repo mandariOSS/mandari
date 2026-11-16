@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Kennzeichnung der KI-Zusammenfassung eines Vorgangs (EU AI Act Art. 50, Issue #938, docs/KI_TRANSPARENZ.md).
+Kennzeichnung der KI-Zusammenfassung eines Vorgangs (EU AI Act Art. 50, Issue #938, docs/KI.md#6-kennzeichnung-nach-eu-ai-act-art-50).
 
 Sichtbar stehen am Titel „KI-Kurzfassung“ und unter dem Text „Mit KI zusammengefasst; Fehler sind möglich. Maßgeblich
 sind die Dokumente.“ (Bürgerportal, Issue #1271; Work: „Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann

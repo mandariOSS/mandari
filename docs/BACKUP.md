@@ -33,8 +33,8 @@ Zeitpläne und Aufbewahrung sind über die `.env` des Stacks einstellbar.
   `rotate_encryption --master-only` ausgeführt (siehe `docs/KRYPTOKONZEPT.md`,
   Abschnitt 5).
 - **Protokolle:** das systemd-Journal des Hosts (`/var/log/journal`, Container- und
-  Anwendungslogs, 90 Tage) und die Zugriffslogs im Caddy-Volume; Fristen und
-  Zugriffsschutz in `docs/PROTOKOLLE.md`.
+  Anwendungslogs, 90 Tage) und das Zugriffslog im Caddy-Volume; Fristen und
+  Zugriffsschutz in `docs/PROTOKOLLIERUNG.md` (Übersicht und Abschnitt 12).
 - Weitere Verzeichnisse lassen sich per `docker-compose.override.yml` unter
   `/source/…` einhängen.
 
@@ -234,20 +234,7 @@ deshalb bewusst vom Host aus.
 7. mandari-Stack starten; Suchindex neu aufbauen (Elasticsearch wird nicht gesichert).
 8. Backup-Stack starten und eine Sicherung auslösen.
 
-### Restore-Probe mit Journal (4. Oktober 2026)
-
-Erprobt mit PostgreSQL 16 und `pg_dump`/`pg_restore` wie im Backup-Stack:
-
-1. Quelle: 1 000 nummerierte Ereignisse, ein Abonnement mit Cursor 1 000, ein laufender und ein
-   wartender Auftrag. Dump erstellt.
-2. Nach dem Dump 500 weitere Ereignisse nummeriert (Folgenummern bis 1 500). Sie gehen mit der
-   Wiederherstellung verloren, Abnehmer kennen sie aber.
-3. Dump in eine neue Datenbank eingespielt: 1 000 Ereignisse, Cursor 1 000, Sequenz 1 000, beide
-   Aufträge da.
-4. `events_after_restore` zeigte den Stand, `--apply` hob die Sequenz von 1 000 auf 100 001 000, ein
-   zweiter Aufruf änderte nichts.
-5. Drei neue Ereignisse bekamen 100 001 001 bis 100 001 003, also keine der verlorenen Nummern.
-   Prüfung wie im monatlichen Test: kein Cursor hinter dem Journal, Sequenz nicht darunter.
+### Wiederherstellung mit Journal: Tests
 
 Nachspielen einer Datenbank-Sicht nach der Wiederherstellung (Sicht leeren, ab Folgenummer 1
 zustellen, gleiche Prüfsumme) und das Verhalten eines externen Ziels mit externer Version prüft

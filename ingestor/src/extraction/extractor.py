@@ -71,6 +71,7 @@ from mandari_dokumente import (
 )
 from mandari_oparl.abgleich import looks_like_html
 from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS
+from mandari_oparl.ziel import BlockedDestinationError, PinnedAsyncTransport, UnresolvableHostError
 
 from src.client import redirects
 from src.client.host_pacing import host_pacer
@@ -102,6 +103,29 @@ TRANSIENT_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
 MAX_DEFER_SECONDS = 6 * 60 * 60
 #: Nach so vielen vorübergehenden Fehlschlägen derselben Datei in Folge gilt sie doch als gescheitert
 MAX_TRANSIENT_FAILURES = 3
+#: So lange wartet ein abgebrochener Durchgang höchstens darauf, dass seine Dateien zurückgestellt sind
+CANCEL_RELEASE_SECONDS = 5.0
+
+
+def _download_transport() -> httpx.AsyncHTTPTransport:
+    """Transport für Datei-Downloads: verbindet nur mit geprüften, öffentlichen Adressen (``mandari_oparl.ziel``)."""
+    return PinnedAsyncTransport(
+        allow_private=settings.fetch_allow_private_networks,
+        allowed_hosts=_internal_hosts(),
+    )
+
+
+def _internal_hosts() -> list[str]:
+    return [host for host in settings.fetch_internal_hosts.split(",") if host.strip()]
+
+
+def _content_encodings(response: httpx.Response) -> list[str]:
+    """Kompressionsverfahren der Antwort laut ``Content-Encoding``, ohne ``identity``."""
+    return [
+        teil.strip().lower()
+        for teil in response.headers.get("content-encoding", "").split(",")
+        if teil.strip() and teil.strip().lower() != "identity"
+    ]
 
 
 class FileTooLargeError(Exception):
@@ -246,6 +270,8 @@ class TextExtractor:
         # Zurückgestellte Bodies (robots.txt oder Quelle nicht erreichbar), geteilt mit den anderen Extraktoren
         # am selben Speicher (Issue #1121)
         self._backoff = _backoff_of(storage)
+        #: Dateien dieses Durchgangs, deren Bearbeitung begonnen hat (Versuch gezählt), für einen Abbruch
+        self._begun: set[Any] = set()
 
     async def release_stale(self) -> tuple[int, int]:
         """
@@ -380,17 +406,49 @@ class TextExtractor:
 
         suspects = [f for f in files if (getattr(f, "text_extraction_attempts", 0) or 0) > 0]
         regular = [f for f in files if (getattr(f, "text_extraction_attempts", 0) or 0) <= 0]
-        await asyncio.gather(
-            *(process_one(f) for f in regular),
-            return_exceptions=True,
-        )
-        for file_row in suspects:
-            try:
-                if await self._process_file(file_row):
-                    extracted += 1
-            except Exception as e:  # noqa: BLE001 - wie gather(return_exceptions=True)
-                logger.warning("Textextraktion für Datei %s fehlgeschlagen: %s", file_row.id, e)
+        try:
+            await asyncio.gather(
+                *(process_one(f) for f in regular),
+                return_exceptions=True,
+            )
+            for file_row in suspects:
+                try:
+                    if await self._process_file(file_row):
+                        extracted += 1
+                except Exception as e:  # noqa: BLE001 - wie gather(return_exceptions=True)
+                    logger.warning("Textextraktion für Datei %s fehlgeschlagen: %s", file_row.id, e)
+        except asyncio.CancelledError:
+            await self._release_cancelled(files)
+            raise
+        finally:
+            self._begun.difference_update(f.id for f in files)
         return extracted
+
+    async def _release_cancelled(self, files: list[Any]) -> None:
+        """
+        Der Durchgang wurde abgebrochen (Gesamtfrist des Laufs, Daemon stoppt, Quelle abgeschaltet): Was noch in
+        Bearbeitung steht, geht zurück in die Warteschlange. Der Abbruch sagt nichts über die Dateien; ohne das
+        Zurückstellen lägen sie bis zur Freigabe nach ``TEXT_EXTRACTION_STALE_MINUTES`` fest, und nach wenigen
+        Abbrüchen gälten sie als gescheitert, ihr Text fehlte in der Suche.
+
+        Läuft zu Ende, auch wenn der Abbruch noch einmal kommt, hält das Ende aber nur begrenzt auf.
+        """
+        release = getattr(self.storage, "release_cancelled_extractions", None)
+        if release is None:
+            return
+        begun = [f.id for f in files if f.id in self._begun]
+        waiting = [f.id for f in files if f.id not in self._begun]
+
+        async def zurueckstellen() -> None:
+            await release(begun, undo_attempt=True)
+            await release(waiting, undo_attempt=False)
+
+        try:
+            await asyncio.wait_for(asyncio.shield(zurueckstellen()), CANCEL_RELEASE_SECONDS)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - die Freigabe nach TEXT_EXTRACTION_STALE_MINUTES fängt es auf
+            logger.warning("Abgebrochene Texterkennung nicht zurückgestellt: %s", type(e).__name__)
 
     async def _process_file(self, file_row) -> bool:
         """Download a single file and extract its text."""
@@ -494,6 +552,12 @@ class TextExtractor:
             )
             return False
         except Exception as e:
+            if isinstance(e, BlockedDestinationError) and not isinstance(e, UnresolvableHostError):
+                # Das Ziel einer Weiterleitung liegt nicht im öffentlichen Netz: nie abrufen. Ein nicht auflösbarer
+                # Name ist dagegen vorübergehend und läuft wie jeder Verbindungsfehler weiter unten.
+                logger.warning("Datei %s nicht abgerufen: %s", file_id, e)
+                await self.storage.update_file_text(file_id=file_id, status="skipped", error=f"Blocked: {e}")
+                return False
             if is_transient(e) and await self._defer_after_transient(file_row, download_url, e):
                 return False
             logger.warning("Download failed for %s: %s", download_url, _error_text(e))
@@ -616,6 +680,7 @@ class TextExtractor:
         if attempts is None:
             logger.info("Datei %s nicht mehr in Bearbeitung, übersprungen", file_id)
             return False
+        self._begun.add(file_id)
         if attempts > 1:
             logger.warning("Datei %s: Versuch %d nach Abbruch, läuft einzeln", file_id, attempts)
         return True
@@ -701,6 +766,9 @@ class TextExtractor:
             )
 
         headers = {
+            # Dateien unkomprimiert anfordern: Die Größengrenze unten zählt entpackte Bytes, und eine komprimierte
+            # Antwort belegt beim Entpacken ein Vielfaches, bevor das erste Stück gezählt ist
+            "Accept-Encoding": "identity",
             **{key: value for key, value in (extra_headers or {}).items() if key.lower() != "user-agent"},
             "User-Agent": _user_agent_of(extra_headers),
         }
@@ -716,11 +784,15 @@ class TextExtractor:
         head = b""
         try:
             with os.fdopen(handle, "wb") as target:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with httpx.AsyncClient(timeout=self.timeout, transport=_download_transport()) as client:
                     request = client.build_request("GET", url, headers=headers)
                     response = await redirects.send(client, request, before_redirect=before_redirect, stream=True)
                     try:
                         response.raise_for_status()
+                        # Mehrere Kompressionslagen übereinander vervielfachen, was ein gelesenes Stück entpackt
+                        # belegt; so etwas liefert kein Dateiserver
+                        if len(_content_encodings(response)) > 1:
+                            raise FileTooLargeError
                         declared = response.headers.get("content-length")
                         if declared and declared.isdigit() and int(declared) > self.max_size_bytes:
                             raise FileTooLargeError

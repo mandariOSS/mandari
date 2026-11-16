@@ -22,10 +22,13 @@ from importlib import import_module
 
 from cryptography.fernet import InvalidToken, MultiFernet
 from django.conf import settings
+from django.contrib.auth import SESSION_KEY, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.db import transaction
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 
 from apps.common.audit_core import get_client_meta
 from apps.common.encryption import two_factor_keys
@@ -310,28 +313,38 @@ class TwoFactorService:
         return False
 
     def _use_backup_code(self, device: TwoFactorDevice, code: str) -> bool:
-        """Try to use a backup code."""
-        if not device.backup_codes_encrypted:
-            return False
+        """
+        Backup-Code einlösen: jeder Code genau einmal.
 
-        try:
-            codes = json.loads(self._decrypt(device.backup_codes_encrypted))
-        except (json.JSONDecodeError, Exception):
-            return False
-
+        Gelesen, gestrichen und gespeichert wird unter der Sperre der Zeile: Zwei gleichzeitige Anmeldungen mit
+        demselben Code laufen nacheinander, die zweite findet ihn nicht mehr, und ein Speichern aus altem Lesestand
+        schreibt keine neu erzeugte Liste zurück.
+        """
         # Normalize code (remove dashes/spaces)
         code = self._normalize_backup_code(code)
         if not code:
             return False
 
-        for i, stored_code in enumerate(codes):
-            if stored_code and hmac.compare_digest(code, self._normalize_backup_code(stored_code)):
-                # Mark code as used
-                codes[i] = None
-                device.backup_codes_encrypted = self._encrypt(json.dumps(codes))
-                device.last_used_at = timezone.now()
-                device.save()
-                return True
+        with transaction.atomic():
+            locked = TwoFactorDevice.objects.select_for_update().filter(pk=device.pk).first()
+            if locked is None or not locked.backup_codes_encrypted:
+                return False
+            try:
+                codes = json.loads(self._decrypt(locked.backup_codes_encrypted))
+            except (json.JSONDecodeError, Exception):
+                return False
+
+            for i, stored_code in enumerate(codes):
+                if stored_code and hmac.compare_digest(code, self._normalize_backup_code(stored_code)):
+                    # Mark code as used
+                    codes[i] = None
+                    locked.backup_codes_encrypted = self._encrypt(json.dumps(codes))
+                    locked.last_used_at = timezone.now()
+                    locked.save(update_fields=["backup_codes_encrypted", "last_used_at"])
+                    # Das Objekt des Aufrufers trägt den neuen Stand (spätere Speicherungen schreiben ihn nicht zurück)
+                    device.backup_codes_encrypted = locked.backup_codes_encrypted
+                    device.last_used_at = locked.last_used_at
+                    return True
 
         return False
 
@@ -361,8 +374,15 @@ class TwoFactorService:
             return []
 
         codes = self.generate_backup_codes()
-        device.backup_codes_encrypted = self._encrypt(json.dumps(codes))
-        device.save()
+        with transaction.atomic():
+            # Unter der Sperre der Zeile und nur dieses Feld: Eine gleichzeitige Anmeldung mit einem alten Code
+            # wartet und findet danach die neue Liste
+            locked = TwoFactorDevice.objects.select_for_update().filter(pk=device.pk).first()
+            if locked is None or not locked.is_confirmed:
+                return []
+            locked.backup_codes_encrypted = self._encrypt(json.dumps(codes))
+            locked.save(update_fields=["backup_codes_encrypted"])
+        device.backup_codes_encrypted = locked.backup_codes_encrypted
 
         return codes
 
@@ -385,6 +405,16 @@ class TwoFactorService:
             return True
         except TwoFactorDevice.DoesNotExist:
             return False
+
+    def is_active_secret(self, user, secret: str) -> bool:
+        """Ist ``secret`` das Secret des bestätigten, aktiven Geräts des Kontos?"""
+        try:
+            device = user.totp_device
+        except TwoFactorDevice.DoesNotExist:
+            return False
+        if not secret or not device.is_confirmed or not device.is_active:
+            return False
+        return constant_time_compare(self._decrypt(device.secret_encrypted), secret)
 
     def is_2fa_enabled(self, user) -> bool:
         """Check if a user has 2FA enabled."""
@@ -427,6 +457,51 @@ class SessionService:
             },
         )
         return session
+
+    @classmethod
+    def keep_session_after_password_change(cls, request, user) -> None:
+        """
+        Nach dem Passwortwechsel angemeldet bleiben, ohne dass die Sitzung aus der Geräteliste fällt.
+
+        Django vergibt dabei einen neuen Sitzungsschlüssel. Der Eintrag der Geräteliste zieht auf ihn um, sonst
+        ließe sich genau diese Sitzung später weder einzeln noch mit „Alle anderen Sitzungen beenden“ beenden.
+        Die übrigen Sitzungen des Kontos gelten mit dem alten Passwort nicht mehr; sie enden hier sofort samt
+        ihren Einträgen.
+        """
+        previous_key = request.session.session_key
+        update_session_auth_hash(request, user)
+        current_key = request.session.session_key
+        if not current_key:
+            return
+        moved = 0
+        if previous_key and previous_key != current_key:
+            moved = UserSession.objects.filter(user=user, session_key=previous_key).update(session_key=current_key)
+        if not moved and not UserSession.objects.filter(user=user, session_key=current_key).exists():
+            cls.create_session(user, request, current_key)
+        others = UserSession.objects.filter(user=user).exclude(session_key=current_key)
+        for key in list(others.values_list("session_key", flat=True)):
+            cls._end_django_session(key)
+        others.delete()
+
+    @staticmethod
+    def _untracked_session_keys(user, known: set[str]) -> set[str]:
+        """
+        Laufende Sitzungen des Kontos, die in der Geräteliste fehlen.
+
+        Betrifft Sitzungen, deren Schlüssel vor der Korrektur beim Passwortwechsel gewechselt hat, und Anmeldungen
+        an der Geräteliste vorbei. Beide eingestellten Sitzungsspeicher (``db``, ``cached_db``) führen die Tabelle;
+        mit einem anderen Speicher gibt es nichts zu durchsuchen.
+        """
+        if not settings.SESSION_ENGINE.endswith((".db", ".cached_db")):
+            return set()
+        from django.contrib.sessions.models import Session
+
+        user_id = str(user.pk)
+        found = set()
+        for session in Session.objects.filter(expire_date__gt=timezone.now()).iterator(chunk_size=500):
+            if session.session_key not in known and session.get_decoded().get(SESSION_KEY) == user_id:
+                found.add(session.session_key)
+        return found
 
     @staticmethod
     def _end_django_session(session_key: str) -> None:
@@ -471,10 +546,13 @@ class SessionService:
         if except_current:
             sessions = sessions.exclude(session_key=except_current)
 
-        for session in sessions:
-            cls._end_django_session(session.session_key)
+        keys = set(sessions.values_list("session_key", flat=True))
+        # Auch Sitzungen ohne Eintrag in der Geräteliste enden: „alle“ heißt alle
+        keys |= cls._untracked_session_keys(user, keys | ({except_current} if except_current else set()))
+        for key in keys:
+            cls._end_django_session(key)
 
-        count = sessions.count()
+        count = len(keys)
         sessions.delete()
         oidc_services.revoke_all_for_user(request, user, by=oidc_audit.BY_PERSON)
 

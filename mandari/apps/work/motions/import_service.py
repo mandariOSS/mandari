@@ -100,9 +100,13 @@ class MotionImportService:
                 author=author,
                 title=title,
                 status="draft",
-                visibility=visibility,
+                visibility="private",
                 responsible=author,
             )
+            # Wie beim Anlegen (references.apply_to_new_document): eine andere Sichtbarkeit als „privat“ nur mit
+            # dem Recht, die Sichtbarkeit des neuen Dokuments zu ändern
+            if visibility != "private" and motion.can_share(author):
+                motion.visibility = visibility
             if motion_type:
                 motion.document_type = motion_type
             motion.set_content_encrypted(html)
@@ -141,6 +145,12 @@ class MotionImportService:
             parsed = import_text.pdf_page_lines(file_content)
             paragraphs = import_text.paragraphs_from_lines(parsed[0]) if parsed else []
             page_count = parsed[1] if parsed else None
+            if parsed and paragraphs and len(parsed[0]) < parsed[1]:
+                # Seiten- oder Zeitgrenze des Imports (import_text.MAX_PDF_IMPORT_*)
+                notice = (
+                    f"Text der ersten {len(parsed[0])} von {parsed[1]} Seiten übernommen. "
+                    "Die vollständige Datei liegt als Anhang am Dokument."
+                )
 
             if not paragraphs:
                 # Keine Textebene (Scan) oder pypdf kann die Datei nicht öffnen: Texterkennung

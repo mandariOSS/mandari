@@ -54,6 +54,7 @@ from apps.session.models import SessionFile
 from apps.session.services import invitation_service
 from apps.session.services.meeting_package_plan import (
     AGENDA_ZIP_PATH,
+    VARIANT_PERMISSIONS,
     MeetingPackagePlan,
     PlannedFile,
     PlannedPaper,
@@ -208,8 +209,13 @@ class PackagePdfBuilder:
         Zugeschaltete: Die Mappe wird gespeichert und von allen Berechtigten abgerufen; den Zugangsweg
         erhalten die Mitglieder mit der Ladung (Issue #138).
         """
+        # Mit den Rechten der Fassung: Die öffentliche Mappe nennt keine Aktenzeichen nichtöffentlicher Vorlagen,
+        # die an einem öffentlichen Punkt hängen (dieselbe Regel wie beim Plan der Mappe)
         pdf = invitation_service.build_agenda_pdf(
-            self.plan.meeting, include_non_public=self.plan.is_internal, include_remote_access=False
+            self.plan.meeting,
+            include_non_public=self.plan.is_internal,
+            include_remote_access=False,
+            permissions=VARIANT_PERMISSIONS[self.plan.variant],
         )
         self.generated[AGENDA_ZIP_PATH] = pdf
         entry = self._entry("Einladung und Tagesordnung", 0)

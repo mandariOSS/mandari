@@ -18,6 +18,12 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+#: Platzhalter im Export für Inhalte, an denen die Person beteiligt war, die sie heute aber nicht mehr sehen darf
+NO_ACCESS_TASK = "[Aufgabe, auf die kein Zugriff mehr besteht]"
+NO_ACCESS_DOCUMENT = "[Dokument, auf das kein Zugriff mehr besteht]"
+NO_ACCESS_ITEM = "[nichtöffentlicher Tagesordnungspunkt]"
+NO_ACCESS_MEETING = "[Sitzung, die nicht mehr sichtbar ist]"
+
 
 # =============================================================================
 # Einordnung aller Personenbezüge in Work
@@ -581,9 +587,11 @@ class DsgvoExportService:
             comments_by_task.setdefault(c.task_id, []).append({"content": c.content, "created_at": _dt(c.created_at)})
 
         shared_ids = set(
-            TaskShare.objects.filter(membership=membership, task__organization=organization).values_list(
-                "task_id", flat=True
-            )
+            # Freigaben gelten nur für geteilte Aufgaben; Zeilen aus einer früheren Freigabe zählen nicht, weder für
+            # die Auswahl noch für die Angabe „freigegeben“
+            TaskShare.objects.filter(
+                membership=membership, task__organization=organization, task__visibility="shared"
+            ).values_list("task_id", flat=True)
         )
         tasks = (
             Task.objects.filter(organization=organization)
@@ -593,15 +601,37 @@ class DsgvoExportService:
                 | Q(id__in=shared_ids)
                 | Q(id__in=list(comments_by_task))
             )
+            .select_related("created_by", "assigned_to", "organization")
             .distinct()
             .order_by("-created_at")
         )
 
+        darf_aufgaben_sehen = membership.has_permission("tasks.view")
         result = []
         for t in tasks:
             is_creator = t.created_by_id == membership.id
             is_assignee = t.assigned_to_id == membership.id
             is_shared = t.id in shared_ids
+            # Fremde Aufgaben nur mit ``tasks.view`` (wie die Aufgabenansicht); eigene und zugewiesene bleiben
+            zugriff = t.can_access(membership) and (darf_aufgaben_sehen or is_creator or is_assignee)
+            if not zugriff:
+                # Eigene Kommentare gehören zur Auskunft, der heutige Stand der Aufgabe nicht mehr: Die Person hat
+                # keinen Zugriff mehr (Aufgabe inzwischen privat oder Freigabe entzogen)
+                result.append(
+                    {
+                        "title": NO_ACCESS_TASK,
+                        "description": "",
+                        "status": "",
+                        "priority": "",
+                        "due_date": None,
+                        "is_creator": False,
+                        "is_assignee": False,
+                        "is_shared_with": False,
+                        "created_at": "",
+                        "comments": comments_by_task.get(t.id, []),
+                    }
+                )
+                continue
             result.append(
                 {
                     "title": t.title,
@@ -642,11 +672,42 @@ class DsgvoExportService:
 
         result = []
         for m in motions:
+            comments = MotionComment.objects.filter(motion=m, author=membership).order_by("created_at")
+            if not m.can_access(membership):
+                # Kein Zugriff mehr (etwa ``motions.view`` entzogen): Der heutige Stand des Dokuments gehört nicht
+                # mehr zur Auskunft, andere können es seither geändert haben. Die eigenen Fassungen und Kommentare
+                # bleiben.
+                result.append(
+                    {
+                        "title": NO_ACCESS_DOCUMENT,
+                        "status": "",
+                        "summary": "",
+                        "content": "",
+                        "visibility": "",
+                        "created_at": _dt(m.created_at),
+                        "submitted_at": _dt(None),
+                        "revisions": [
+                            {
+                                "version": r.version,
+                                "content": _safe_decrypt(r, "content"),
+                                "change_summary": r.change_summary or "",
+                                "changed_by": membership.user.get_full_name(),
+                                "created_at": _dt(r.created_at),
+                            }
+                            for r in MotionRevision.objects.filter(motion=m, changed_by=membership).order_by("version")
+                        ],
+                        "comments": [{"content": c.content, "created_at": _dt(c.created_at)} for c in comments],
+                        "approvals": [],
+                        "shares": [],
+                        "documents": [],
+                    }
+                )
+                continue
+
             # Decrypt content safely
             content = _safe_decrypt(m, "content")
 
             revisions = MotionRevision.objects.filter(motion=m).order_by("version")
-            comments = MotionComment.objects.filter(motion=m, author=membership).order_by("created_at")
             approvals = MotionApproval.objects.filter(motion=m).select_related("approver__user")
             shares = MotionShare.objects.filter(motion=m).order_by("-created_at")
             documents = MotionDocument.objects.filter(motion=m).order_by("-uploaded_at")
@@ -777,10 +838,13 @@ class DsgvoExportService:
                 roles.append("Federführung")
             if m.id in contributor_ids:
                 roles.append("Mitarbeit")
+            # Eigene Kommentare und Entscheidungen gehören zur Auskunft; Titel und Status nur, solange die Person
+            # das Dokument noch sehen darf (Freigabe entzogen oder Dokument inzwischen privat)
+            zugriff = m.can_access(membership)
             result.append(
                 {
-                    "title": m.title,
-                    "status": m.status,
+                    "title": m.title if zugriff else NO_ACCESS_DOCUMENT,
+                    "status": m.status if zugriff else "",
                     "roles": roles,
                     "comments": comments_by_motion.get(m.id, []),
                     "approvals": approvals_by_motion.get(m.id, []),
@@ -819,20 +883,28 @@ class DsgvoExportService:
         from django.db.models import Q
 
         from apps.work.faction.models import FactionAgendaItem, FactionAttendanceCertificate, FactionProtocolEntry
+        from apps.work.faction.sitzungsarten import darf_sehen
         from apps.work.faction.visibility import can_view_item_with_parents
 
-        proposals = [
-            {
-                "meeting": i.meeting.title,
-                "title": i.title,
-                "status": i.proposal_status,
-                "rejection_reason": i.rejection_reason or "",
-                "proposed_at": _dt(i.proposed_at),
-            }
-            for i in FactionAgendaItem.objects.filter(proposed_by=membership, meeting__organization=organization)
-            .select_related("meeting")
+        proposals = []
+        for i in (
+            FactionAgendaItem.objects.filter(proposed_by=membership, meeting__organization=organization)
+            .select_related("meeting", "parent")
             .order_by("-created_at")
-        ]
+        ):
+            # Wie die Oberfläche: Eigene Vorschläge im nichtöffentlichen Teil sind ohne Vereidigung nicht mehr
+            # sichtbar, ebenso Vorschläge zu Sitzungen, die die Person nicht (mehr) sieht. Der Zeitpunkt des
+            # eigenen Vorschlags bleibt; Titel, Stand der Entscheidung und Ablehnungsgrund nicht.
+            sichtbar = darf_sehen(membership, i.meeting) and can_view_item_with_parents(i, membership)
+            proposals.append(
+                {
+                    "meeting": i.meeting.title if darf_sehen(membership, i.meeting) else NO_ACCESS_MEETING,
+                    "title": i.title if sichtbar else NO_ACCESS_ITEM,
+                    "status": i.proposal_status if sichtbar else "",
+                    "rejection_reason": (i.rejection_reason or "") if sichtbar else "",
+                    "proposed_at": _dt(i.proposed_at),
+                }
+            )
 
         entries = []
         for e in (
@@ -1171,6 +1243,9 @@ class DsgvoExportService:
 
         Nichtöffentliches (``Vermerk.non_public``) beschreiben die Vermerke nur für vereidigte Mitglieder; alle
         anderen – auch nach Entzug der Vereidigung – erhalten Art und Zeitpunkt mit einem Platzhalter (Issue #873).
+        Vermerke an einem Dokument oder einer Aufgabe nennen den heutigen Titel nur, solange die Person darauf noch
+        zugreifen darf (dieselben Regeln wie in den Abschnitten der Dokumente und Aufgaben); sonst steht ein
+        Platzhalter.
         """
         from django.apps import apps as django_apps
         from django.db.models import BooleanField, Case, Value, When
@@ -1179,6 +1254,26 @@ class DsgvoExportService:
         from apps.work.faction.visibility import is_sworn_member
 
         sworn = is_sworn_member(membership)
+        may_see_tasks = membership.has_permission("tasks.view")
+        access: dict[tuple[str, Any], bool] = {}
+
+        def no_access(vermerk: Vermerk, obj: Any) -> str:
+            """Platzhalter, wenn der Vermerk an einem Dokument oder einer Aufgabe ohne Zugriff hängt, sonst ``""``."""
+            if "motion" in vermerk.select:
+                key = ("motion", obj.motion_id)
+                if key not in access:
+                    access[key] = obj.motion.can_access(membership)
+                return "" if access[key] else NO_ACCESS_DOCUMENT
+            if "task" in vermerk.select:
+                task = obj.task
+                key = ("task", task.pk)
+                if key not in access:
+                    # Fremde Aufgaben nur mit ``tasks.view``, eigene und zugewiesene bleiben (wie ``_collect_tasks``)
+                    own = membership.id in (task.created_by_id, task.assigned_to_id)
+                    access[key] = task.can_access(membership) and (may_see_tasks or own)
+                return "" if access[key] else NO_ACCESS_TASK
+            return ""
+
         rows: list[tuple[Any, dict]] = []
         for vermerk in VERMERKE:
             model_name, field_name = vermerk.ref.split(".")
@@ -1199,7 +1294,7 @@ class DsgvoExportService:
                 if masked and obj.export_locked:
                     description = vermerk.describe_locked(obj) if vermerk.describe_locked else NON_PUBLIC_DOCUMENT
                 else:
-                    description = vermerk.describe(obj)
+                    description = no_access(vermerk, obj) or vermerk.describe(obj)
                 rows.append(
                     (
                         when,

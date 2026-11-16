@@ -10,6 +10,9 @@ Bezug eines Dokuments: Bezugsantrag und Bezugssitzung (Issue #586).
 
 RIS-Vorlagen und -Sitzungen stammen nur aus den Kommunen der Organisation (``get_all_bodies``). Wer ein
 Dokument ansieht, erfährt den Titel eines Bezugsdokuments nur, wenn er dieses Dokument auch sehen darf.
+Was mandari Session aus der Veröffentlichung zurückgenommen hat, ist wie in der RIS-Ansicht von Work
+(``apps/work/ris/selectors.py``) weder zu finden noch wählbar; ein bestehender Bezug darauf zeigt nur noch
+einen neutralen Hinweis ohne Namen, Nummer und Datum.
 
 **Sichtbarkeit eines Änderungsantrags** (Issue #735): Änderungsanträge behalten eigene Rechte. Beim Anlegen
 (``?bezug=<id>``) und nach dem Setzen des Bezugsantrags wird nur die *Sichtbarkeit* des Bezugsantrags
@@ -30,6 +33,7 @@ from django.db.models import QuerySet
 from django.urls import reverse
 
 from hub.ris import selectors as ris
+from insight_core.models import withdrawn_q
 
 if TYPE_CHECKING:
     from apps.tenants.models import Membership, Organization
@@ -48,6 +52,9 @@ DOCUMENT_NOT_FOUND = "Dokument nicht gefunden."
 CYCLE = "Ein Dokument kann sich nicht auf sich selbst oder einen eigenen Änderungsantrag beziehen."
 PAPER_NOT_FOUND = "Vorlage nicht gefunden."
 MEETING_NOT_FOUND = "Sitzung nicht gefunden."
+#: Anzeige eines Bezugs, den mandari Session aus der Veröffentlichung zurückgenommen hat
+WITHDRAWN_PAPER = "Zurückgezogene Vorlage"
+WITHDRAWN_MEETING = "Zurückgezogene Sitzung"
 
 #: Sichtbarkeiten eines Dokuments mit den Beschriftungen des Teilen-Dialogs (Reihenfolge wie dort)
 VISIBILITY_LABELS = {
@@ -131,7 +138,7 @@ def search_papers(organization: Organization, query: str) -> list[Any]:
     query = query.strip()
     if len(query) < MIN_QUERY_LENGTH:
         return []
-    return list(ris.search_papers(_bodies(organization), query)[:RESULT_LIMIT])
+    return list(ris.search_papers(_bodies(organization), query).exclude(withdrawn_q())[:RESULT_LIMIT])
 
 
 def search_meetings(organization: Organization, query: str) -> list[Any]:
@@ -139,7 +146,7 @@ def search_meetings(organization: Organization, query: str) -> list[Any]:
     query = query.strip()
     if len(query) < MIN_QUERY_LENGTH:
         return []
-    found = ris.search_meetings(_bodies(organization), query, on=_parse_german_date(query))
+    found = ris.search_meetings(_bodies(organization), query, on=_parse_german_date(query)).exclude(withdrawn_q())
     return list(found[:RESULT_LIMIT])
 
 
@@ -174,7 +181,8 @@ def set_parent(motion: Motion, membership: Membership, *, motion_id: str = "", p
             return CYCLE
     elif paper_id:
         paper = ris.paper(_bodies(motion.organization), paper_id)
-        if paper is None:
+        # Zurückgenommenes ist nicht wählbar, mit derselben Meldung wie Unbekanntes
+        if paper is None or paper.withdrawn_by_publisher:
             return PAPER_NOT_FOUND
     motion.parent_motion = parent
     motion.parent_paper = paper
@@ -187,7 +195,7 @@ def set_reference_meeting(motion: Motion, meeting_id: str = "") -> str | None:
     meeting = None
     if meeting_id:
         meeting = ris.meeting(_bodies(motion.organization), meeting_id)
-        if meeting is None:
+        if meeting is None or meeting.withdrawn_by_publisher:
             return MEETING_NOT_FOUND
     motion.related_meeting = meeting
     motion.save(update_fields=["related_meeting", "updated_at"])
@@ -288,12 +296,16 @@ def _amendment_create_url(motion: Motion, membership: Membership, slug: str) -> 
 
 
 def paper_label(paper: Any) -> str:
-    """Anzeige einer RIS-Vorlage: Drucksachennummer – Name."""
+    """Anzeige einer RIS-Vorlage: Drucksachennummer – Name; für Zurückgenommenes nur ein neutraler Hinweis."""
+    if paper.withdrawn_by_publisher:
+        return WITHDRAWN_PAPER
     return " – ".join(part for part in (paper.reference, paper.name) if part) or "Vorlage"
 
 
 def meeting_label(meeting: Any) -> str:
-    """Anzeige einer RIS-Sitzung: Name, Datum."""
+    """Anzeige einer RIS-Sitzung: Name, Datum; für Zurückgenommenes nur ein neutraler Hinweis."""
+    if meeting.withdrawn_by_publisher:
+        return WITHDRAWN_MEETING
     name = meeting.name or "Sitzung"
     return f"{name}, {meeting.start:%d.%m.%Y}" if meeting.start else name
 

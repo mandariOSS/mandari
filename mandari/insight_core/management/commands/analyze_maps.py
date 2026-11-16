@@ -12,7 +12,7 @@ kein Netz – und speichert nichts in der Datenbank:
 
 Die Kennzahlen: Kartenseiten, davon mit Maßstab im PDF, GeoPDF, Koordinatenbeschriftung, mindestens
 vier Straßennamen aus dem Straßenverzeichnis, Scans ohne Text; dazu Formate, Erzeuger und Laufzeit.
-Auf dem Server in einem eigenen Container starten, nicht im Web-Dienst (docs/INSIGHT_KARTENANALYSE.md).
+Auf dem Server in einem eigenen Container starten, nicht im Web-Dienst (docs/INSIGHT_GEO.md).
 Das Ablegen der Ergebnisse und der Auftrag im Dokument-Worker folgen.
 """
 

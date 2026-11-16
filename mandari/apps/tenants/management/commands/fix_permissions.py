@@ -286,7 +286,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.HTTP_INFO(f"\n[3] PERSON: {user_email}"))
         self.stdout.write("-" * 40)
 
-        user = User.objects.filter(email=user_email).first()
+        # Wie bei der Anmeldung: exakt, sonst eindeutig ohne Beachtung der Schreibweise (Issue #1397)
+        user = User.objects.find_by_email(user_email)
         if user is None:
             self.stdout.write(self.style.ERROR("  Konto nicht gefunden."))
             return

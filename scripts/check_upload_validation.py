@@ -79,7 +79,7 @@ def main() -> int:
         print("Upload-Stellen ohne gemeinsame Prüfung:\n")
         for f in fehler:
             print(f"  ✗ {f}")
-        print("\nRegel: docs/UPLOADS.md – jede Upload-Stelle ruft validate_upload mit einem Profil auf.")
+        print("\nRegel: docs/ENGINEERING_STANDARDS.md#41-uploads – jede Upload-Stelle ruft validate_upload mit einem Profil auf.")
         return 1
     print(f"OK: {geprueft} Upload-Stellen benutzen die gemeinsame Prüfung ({len(DELEGIERT)} davon über eine prüfende Stelle).")
     return 0

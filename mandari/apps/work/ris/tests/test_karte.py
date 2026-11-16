@@ -140,8 +140,13 @@ def test_demo_zeigt_punkte_auch_nach_dem_neuaufbau(client_for: Any) -> None:
 
     from django.core.management import call_command
 
-    from apps.common.management.commands.setup_demo_environment import DEMO_ORG_SLUG, DEMO_ORTE
+    from apps.common.demo_stadt import demo_umfang, stadtplan
+    from apps.common.management.commands.setup_demo_environment import DEMO_ORG_SLUG, DEMO_ORTE, aufbautag
     from apps.tenants.models import Membership
+
+    # Geschichten der Basisdemo plus Musterstadt-Bestand (apps/common/demo_stadt.py)
+    erwartet = sum(len(orte) for orte in DEMO_ORTE.values())
+    erwartet += sum(len(v.orte) for v in stadtplan(aufbautag(), demo_umfang()).vorgaenge)
 
     call_command("setup_demo_environment", stdout=io.StringIO())
     call_command("setup_demo_environment", stdout=io.StringIO())
@@ -149,6 +154,6 @@ def test_demo_zeigt_punkte_auch_nach_dem_neuaufbau(client_for: Any) -> None:
 
     daten = client_for(vorsitz.user).get(reverse("work:ris_map_data", kwargs={"org_slug": DEMO_ORG_SLUG})).json()
 
-    assert len(daten["features"]) == sum(len(orte) for orte in DEMO_ORTE.values())
+    assert len(daten["features"]) == erwartet
     brunnen = [f for f in daten["features"] if "Trinkwasserbrunnen" in f["properties"]["title"]]
     assert sorted(f["properties"]["location_name"] for f in brunnen) == ["Bahnhofsvorplatz", "Marktplatz", "Stadtpark"]

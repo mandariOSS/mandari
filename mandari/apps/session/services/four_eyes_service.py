@@ -347,6 +347,25 @@ def track_agenda_protocol_edit(sender: Any, instance: Any, created: bool, **kwar
     ).exclude(content_edited_by=session_user).update(content_edited_by=session_user)
 
 
+def mark_protocol_edited(meeting_id: Any, session_user: Any) -> None:
+    """
+    Einzelstimmen eines TOP geändert: Wer sie geschrieben hat, gilt als letzter Bearbeiter der Niederschrift.
+
+    Einzelstimmen werden gesammelt geschrieben und gelöscht (ohne Signale), und ein Tausch von Stimmen zwischen
+    Personen lässt die Summen des TOP gleich. ``track_agenda_protocol_edit`` sieht solche Änderungen nicht; die
+    Stimmenerfassung ruft deshalb diese Funktion in derselben Transaktion auf.
+    """
+    from apps.session.models import SessionProtocol
+
+    if session_user is None:
+        return
+    SessionProtocol.objects.filter(
+        meeting_id=meeting_id,
+        meeting__tenant_id=session_user.tenant_id,
+        status__in=("draft", "review"),
+    ).exclude(content_edited_by=session_user).update(content_edited_by=session_user)
+
+
 def _track_file(instance: Any, *, deleted: bool, created: bool = False) -> None:
     from apps.session.models import SessionPaper
 

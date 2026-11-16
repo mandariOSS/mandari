@@ -47,7 +47,7 @@ MAX_OBJECTS_PER_PAGE = 2_000_000
 MAX_FORM_DEPTH = 8
 PALETTE_DPI = 40
 
-# Regeln aus dem Machbarkeitstest (Stufe C), siehe docs/INSIGHT_KARTENANALYSE.md
+# Regeln aus dem Machbarkeitstest (Stufe C), siehe docs/INSIGHT_GEO.md
 VECTOR_MIN_SEGMENTS = 5_000
 VECTOR_MIN_DENSITY = 10.0  # Segmente je cm²
 TEXT_HEAVY_CHARS = 1_500

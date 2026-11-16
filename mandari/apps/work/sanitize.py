@@ -10,7 +10,9 @@ eigene, bewusst enge Positivliste auf Basis von ``html.parser``:
 
 - nur Elemente und Attribute des Editor-Schemas; Ereignis-Attribute gibt es nie
 - Links nur mit http(s), mailto, tel oder relativ; Bilder nur http(s), relativ oder als
-  eingebettetes Rasterbild (``data:image/png|jpeg|gif|webp;base64``)
+  eingebettetes Rasterbild (``data:image/png|jpeg|gif|webp;base64``), dessen Daten mit der Signatur eines
+  dieser Formate beginnen
+- Tabellenzellen überspannen höchstens ``MAX_TABLE_SPAN`` Spalten und ``MAX_TABLE_ROW_SPAN`` Zeilen
 - ``style`` nur mit Ausrichtung, Einzug, Farben und Breiten; Klassen nur die des Editors
 - Inhalt von ``script``, ``style``, ``iframe`` & Co. entfällt ganz, andere unbekannte
   Elemente fallen weg, ihr Text bleibt
@@ -19,7 +21,9 @@ eigene, bewusst enge Positivliste auf Basis von ``html.parser``:
 
 from __future__ import annotations
 
+import base64
 import re
+from collections import Counter
 from html import escape
 from html.parser import HTMLParser
 
@@ -144,7 +148,11 @@ ALLOWED_CLASSES = frozenset(
 )
 _CLASS_PATTERN_RE = re.compile(r"^language-[A-Za-z0-9_+-]{1,40}$")
 
-_COLOR = r"(?:#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.,%\s]+\)|hsla?\(\s*[\d.,%\sdeg]+\)|[a-zA-Z]{3,20})"
+#: Längster Wert einer erlaubten Stilangabe; längere verwirft die Bereinigung, bevor ein Muster läuft
+MAX_STYLE_VALUE = 64
+# Die Klammerinhalte haben eine feste Obergrenze und keinen vorangestellten Leerraum-Teil: Zwei Wiederholungen,
+# die dieselben Leerzeichen annehmen, brauchen bei langen Eingaben quadratische Zeit
+_COLOR = r"(?:#[0-9a-fA-F]{3,8}|rgba?\([\d.,%\s]{1,48}\)|hsla?\([\d.,%\sdeg]{1,48}\)|[a-zA-Z]{3,20})"
 _LENGTH = r"(?:0|\d{1,5}(?:\.\d{1,3})?(?:px|em|rem|%|pt|mm|cm))"
 STYLE_RULES: dict[str, re.Pattern[str]] = {
     "text-align": re.compile(r"^(?:left|right|center|justify|start|end)$"),
@@ -156,13 +164,27 @@ STYLE_RULES: dict[str, re.Pattern[str]] = {
 }
 
 _NUMBER_LIST_RE = re.compile(r"^\d{1,5}(?:,\d{1,5})*$")
-_NUMBER_RE = re.compile(r"^\d{1,5}$")
+# \Z statt $: „$“ ließe einen abschließenden Zeilenumbruch zu, den int() schluckt, die Zählung der Tabellenfelder im
+# Export aber nicht als Zahl erkennt
+_NUMBER_RE = re.compile(r"^\d{1,5}\Z")
 _COMMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _COLOR_RE = re.compile(rf"^{_COLOR}$")
 _SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*):")
 _CONTROL_RE = re.compile(r"[\x00-\x20\x7f]+")
-_DATA_IMAGE_RE = re.compile(r"^data:image/(?:png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$")
+_DATA_IMAGE_RE = re.compile(r"^data:image/(?:png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/=]+)$")
+#: So viele Zeichen der Base64-Daten genügen für die Dateisignatur (16 Zeichen ergeben 12 Bytes)
+_SIGNATURE_CHARS = 16
+_SIGNATURE_PREFIX_RE = re.compile(r"^[A-Za-z0-9+/]{16}")
+
+#: Größte Spannweite einer Tabellenzelle über Spalten. Der Editor verbindet nur vorhandene Zellen; größere Werte kosten
+#: beim Anzeigen und beim PDF-Export Speicher für jedes überspannte Feld, ohne dass es die Zellen dazu gibt.
+MAX_TABLE_SPAN = 64
+#: Größte Spannweite über Zeilen. Lange Tabellen mit einer verbundenen Zelle am Rand (eine Rubrik über viele Zeilen)
+#: sind üblich: Eine enge Grenze nähme ihnen beim Öffnen im Editor still die Verbindung. Die Kosten im PDF-Export
+#: begrenzt die Zählung der Tabellenfelder (``export_service.MAX_PDF_TABLE_CELLS``).
+MAX_TABLE_ROW_SPAN = 1000
+
 LINK_SCHEMES = frozenset({"http", "https", "mailto", "tel"})
 IMAGE_SCHEMES = frozenset({"http", "https"})
 REL_TOKENS = frozenset({"noopener", "noreferrer", "nofollow", "ugc"})
@@ -180,6 +202,33 @@ def _safe_url(value: str, schemes: frozenset[str]) -> str | None:
     return value.strip() if match.group(1).lower() in schemes else None
 
 
+def is_raster_image(data: bytes) -> bool:
+    """
+    Beginnen die Bytes mit der Dateisignatur eines Rasterbilds (PNG, JPEG, GIF, WebP)?
+
+    Die Angabe der Bildart in einer ``data:``-Adresse oder im Antwortkopf eines Servers ist frei wählbar. Was ein
+    Programm später mit den Daten tut, entscheidet es am Inhalt: Die PDF-Erzeugung etwa behandelt alles, was wie
+    Text beginnt, als Vektorgrafik. Zugelassen ist deshalb nur, was an der Signatur als Rasterbild erkennbar ist.
+    """
+    return (
+        data.startswith(b"\x89PNG\r\n\x1a\n")
+        or data.startswith(b"\xff\xd8\xff")
+        or data.startswith((b"GIF87a", b"GIF89a"))
+        or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
+    )
+
+
+def _is_raster_data_url(payload: str) -> bool:
+    """Signatur am Anfang der Base64-Daten prüfen, ohne das ganze Bild zu dekodieren."""
+    if not _SIGNATURE_PREFIX_RE.match(payload):
+        # Kürzer als jede Bilddatei oder Füllzeichen am Anfang: nicht eindeutig dekodierbar
+        return False
+    try:
+        return is_raster_image(base64.b64decode(payload[:_SIGNATURE_CHARS]))
+    except ValueError:
+        return False
+
+
 def _clean_style(value: str) -> str | None:
     kept = []
     for declaration in value.split(";"):
@@ -189,7 +238,7 @@ def _clean_style(value: str) -> str | None:
         prop = prop.strip().lower()
         raw = raw.strip()
         rule = STYLE_RULES.get(prop)
-        if rule is not None and rule.match(raw):
+        if rule is not None and len(raw) <= MAX_STYLE_VALUE and rule.match(raw):
             kept.append(f"{prop}: {raw}")
     return "; ".join(kept) or None
 
@@ -213,15 +262,20 @@ def _clean_attr(tag: str, name: str, value: str | None) -> str | None:
         return _safe_url(value, LINK_SCHEMES)
     if name == "src":
         compact = _CONTROL_RE.sub("", value)
-        if _DATA_IMAGE_RE.match(compact):
-            return compact
+        embedded = _DATA_IMAGE_RE.match(compact)
+        if embedded is not None:
+            # Die Bildart der Adresse genügt nicht: Die Daten selbst müssen ein Rasterbild sein
+            return compact if _is_raster_data_url(embedded.group(1)) else None
         return None if compact.lower().startswith("data:") else _safe_url(value, IMAGE_SCHEMES)
     if name == "target":
         return "_blank" if value == "_blank" else None
     if name == "rel":
         tokens = [t for t in value.lower().split() if t in REL_TOKENS]
         return " ".join(tokens) or None
-    if name in ("colspan", "rowspan", "span", "start", "width", "height"):
+    if name in ("colspan", "rowspan"):
+        limit = MAX_TABLE_SPAN if name == "colspan" else MAX_TABLE_ROW_SPAN
+        return value if _NUMBER_RE.match(value) and 1 <= int(value) <= limit else None
+    if name in ("span", "start", "width", "height"):
         return value if _NUMBER_RE.match(value) else None
     if name == "colwidth":
         return value if _NUMBER_LIST_RE.match(value) else None
@@ -238,7 +292,7 @@ def _clean_attr(tag: str, name: str, value: str | None) -> str | None:
     if name == "data-comment-id":
         return value if _COMMENT_ID_RE.match(value) else None
     if name == "data-color":
-        return value if _COLOR_RE.match(value) else None
+        return value if len(value) <= MAX_STYLE_VALUE and _COLOR_RE.match(value) else None
     if name == "contenteditable":
         return "false" if value == "false" else None
     if name in ("alt", "title"):
@@ -251,6 +305,9 @@ class _EditorHtmlParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.open_tags: list[str] = []
+        # Wie oft jede Marke gerade offen ist: Die Frage „ist sie offen?“ kostet so nichts, statt bei jeder
+        # Endmarke die ganze Liste zu durchsuchen (quadratisch bei vielen offenen Marken)
+        self._open_count: Counter[str] = Counter()
         self._drop_depth = 0
 
     def _render_start(self, tag: str, attrs: list[tuple[str, str | None]]) -> str | None:
@@ -291,6 +348,7 @@ class _EditorHtmlParser(HTMLParser):
         self.parts.append(rendered)
         if tag not in VOID_TAGS:
             self.open_tags.append(tag)
+            self._open_count[tag] += 1
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
@@ -312,10 +370,11 @@ class _EditorHtmlParser(HTMLParser):
             if tag in DROP_CONTENT_TAGS:
                 self._drop_depth -= 1
             return
-        if tag in VOID_TAGS or tag not in self.open_tags:
+        if tag in VOID_TAGS or self._open_count[tag] <= 0:
             return
         while self.open_tags:
             open_tag = self.open_tags.pop()
+            self._open_count[open_tag] -= 1
             self.parts.append(f"</{open_tag}>")
             if open_tag == tag:
                 break

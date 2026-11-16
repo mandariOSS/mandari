@@ -60,6 +60,8 @@ _CACHE_PREFIX = "robots-txt:v3:"
 #: Eintrag samt letzter gültiger Fassung bleibt so lange im Cache (Frische regelt ``fetched_at``)
 _CACHE_TIMEOUT = 30 * 24 * 3600
 _TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
+#: Gesamtdauer für das Lesen einer robots.txt: Die Zeitwerte oben gelten nur je Lesevorgang
+_TOTAL_SECONDS = 30.0
 
 __all__ = [
     "KIND_API",
@@ -104,9 +106,20 @@ def _fetch(
     before_redirect = redirects.guard(sync_config=sync_config, deadline=deadline, check_robots=False)
     try:
         with guarded_client(timeout=_TIMEOUT) as client:
-            request = client.build_request("GET", target, headers={"User-Agent": agent, "Accept": "text/plain"})
-            response = redirects.send(client, request, before_redirect=before_redirect)
-            return response.status_code, response.content[:MAX_BYTES]
+            request = client.build_request(
+                "GET",
+                target,
+                headers={"User-Agent": agent, "Accept": "text/plain", "Accept-Encoding": redirects.ACCEPT_ENCODING},
+            )
+            response = redirects.send(client, request, before_redirect=before_redirect, stream=True)
+            try:
+                # Nur der Anfang zählt (MAX_BYTES); mehr lesen wir gar nicht erst, und nie länger als die Frist
+                body = redirects.read_limited(
+                    response, MAX_BYTES, truncate=True, deadline=redirects.deadline_after(_TOTAL_SECONDS)
+                )
+            finally:
+                response.close()
+            return response.status_code, body
     except redirects.RedirectBusyError as exc:
         raise host_pacing.PacingBusyError(target) from exc
     except httpx.HTTPError as exc:

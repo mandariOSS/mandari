@@ -140,6 +140,42 @@ def test_invite_guest_creates_account_and_respects_limit(org: Any, admin: Any, m
         services.reactivate_member(org, guest, admin)
 
 
+@pytest.mark.django_db
+def test_invite_guest_vergibt_an_fremden_dokumenten_hoechstens_die_eigene_stufe(org: Any, make_member: Any) -> None:
+    """Ohne Freigaberecht bekommt ein Gast an einem fremden Dokument nie mehr als die einladende Person selbst."""
+    from apps.work.motions.models import Motion, MotionShare
+
+    lesen = ["motions.view", "motions.view_drafts", "motions.comment"]
+    autorin = make_member(org, [*lesen, "motions.edit", "motions.share"], email="autorin@example.org")
+    einladend = make_member(org, [*lesen, "guests.invite"], email="einladend@example.org")
+    fremd = Motion.objects.create(organization=org, author=autorin, title="Für alle", visibility="organization")
+    assert fremd.access_level(einladend, status_lock=False) == "comment" and not fremd.can_share(einladend)
+
+    services.invite_guest(
+        org,
+        einladend,
+        email="gast@example.org",
+        note="",
+        share_level="edit",
+        document_ids=[str(fremd.id)],
+        folder_ids=[],
+    )
+
+    assert MotionShare.objects.get(motion=fremd, user__email="gast@example.org").level == "comment"
+
+    # Mit Freigaberecht gilt die gewünschte Stufe
+    services.invite_guest(
+        org,
+        autorin,
+        email="zweiter@example.org",
+        note="",
+        share_level="edit",
+        document_ids=[str(fremd.id)],
+        folder_ids=[],
+    )
+    assert MotionShare.objects.get(motion=fremd, user__email="zweiter@example.org").level == "edit"
+
+
 # ---------------------------------------------------------------------------
 # Mitglieder-Detail: Rechte-Eskalationsschutz
 # ---------------------------------------------------------------------------

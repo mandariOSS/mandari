@@ -16,7 +16,7 @@
         <tr><td><strong>Ort:</strong></td><td>{{ meeting.location }}</td></tr>
         {% endif %}
         {% if meeting.protocol_approved %}
-        <tr><td><strong>Genehmigt:</strong></td><td>am {{ meeting.protocol_approved_at|date:"d.m.Y" }}{% if meeting.protocol_approved_in %} in der Sitzung „{{ meeting.protocol_approved_in.title }}“ vom {{ meeting.protocol_approved_in.start|date:"d.m.Y" }}{% endif %}</td></tr>
+        <tr><td><strong>Genehmigt:</strong></td><td>am {{ meeting.protocol_approved_at|date:"d.m.Y" }}{% if meeting.protocol_approved_in %} in einer späteren Sitzung{% endif %}</td></tr>
         {% endif %}
     </table>
 

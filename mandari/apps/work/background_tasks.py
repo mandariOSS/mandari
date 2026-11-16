@@ -45,6 +45,11 @@ def send_notification_email_task(notification_id: str):
         logger.info("Notification email %s already sent, skipping", notification_id)
         return
 
+    # Zwischen Anlegen und Versand deaktiviert (Mitgliedschaft oder Konto): keine Mail mehr
+    if not notification.recipient.is_active or not notification.recipient.user.is_active:
+        logger.info("Notification email %s skipped, recipient is no longer active", notification_id)
+        return
+
     recipient_email = notification.recipient.user.email
     if not recipient_email:
         logger.warning(f"No email for notification recipient {notification_id}")

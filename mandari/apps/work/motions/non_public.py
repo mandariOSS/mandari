@@ -11,8 +11,9 @@ Ordner „Nichtöffentliche Vorgänge“ abgelegt (``DocumentFolder.non_public_f
   Suchkopie am Anhang (``MotionDocument.text_content``) entsteht bewusst nicht.
 - Die Texterkennung läuft nur im eigenen Betrieb (pypdf, Tesseract), nie über einen externen Dienst.
 - Ablage und Lesezugriffe stehen in der Änderungshistorie der Fraktionssitzungen (``FactionAuditLog``, als
-  nichtöffentlich gekennzeichnet): Aufruf im Editor, frühere Fassungen, Download, Export und die TOP-Auswahl der
-  Fraktionssitzung. Live-Bearbeitung und Kommentare laufen im bereits protokollierten Editoraufruf.
+  nichtöffentlich gekennzeichnet): Aufruf im Editor, Verbindung zur Live-Bearbeitung (sie liefert den Editorzustand
+  auch ohne vorherigen Editoraufruf), Einreichungsvorschau, frühere Fassungen, Download, Export und die TOP-Auswahl
+  der Fraktionssitzung. Kommentare laufen im bereits protokollierten Editoraufruf.
 """
 
 from __future__ import annotations
@@ -46,6 +47,8 @@ ACCESS_DOWNLOADED = "heruntergeladen"
 ACCESS_EXPORTED = "exportiert"
 ACCESS_REVISION = "frühere Fassung geöffnet"
 ACCESS_PROPOSALS = "zur TOP-Auswahl geöffnet"
+ACCESS_COLLABORATION = "zur Live-Bearbeitung verbunden"
+ACCESS_SUBMISSION_PREVIEW = "in der Einreichungsvorschau geöffnet"
 
 #: Feste Meldungen
 UNREADABLE = "Die Datei konnte nicht gelesen werden. Bitte prüfen Sie, ob es eine unbeschädigte PDF-Datei ist."
@@ -81,11 +84,18 @@ def extract(data: bytes, file_name: str) -> ExtractedUnterlage | None:
     page_count = parsed[1] if parsed else None
     lines = [line.strip() for page in pages for line in page]
     if any(lines):
-        return ExtractedUnterlage(
+        result = ExtractedUnterlage(
             lines=lines,
             paragraphs=import_text.paragraphs_from_lines(pages),
             page_count=page_count,
         )
+        if page_count and len(pages) < page_count:
+            # Seiten- oder Zeitgrenze des Imports (import_text.MAX_PDF_IMPORT_*)
+            result.notice = (
+                f"Text der ersten {len(pages)} von {page_count} Seiten übernommen. "
+                "Die vollständige Unterlage liegt als Anhang am Dokument."
+            )
+        return result
 
     limit = ocr_max_pages()
     text, ocr_performed, ocr_page_count, _method = extract_text_from_file(

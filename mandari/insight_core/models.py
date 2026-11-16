@@ -1854,7 +1854,7 @@ class Municipality(models.Model):
     Enthält alle Gemeinden, Gemeindeverbände und kreisfreien Städte, nicht nur die mit Daten. Wählbar ist
     ein Eintrag, wenn eine gelistete Kommune denselben Regionalschlüssel oder AGS trägt; die Zuordnung
     entsteht bei jeder Abfrage neu (``services/kommunenverzeichnis.py``). Befüllt per
-    ``manage.py kommunenverzeichnis_importieren`` (docs/INSIGHT_KOMMUNENWECHSEL.md).
+    ``manage.py kommunenverzeichnis_importieren`` (docs/INSIGHT.md#1-kommunenwechsel-und-kommunenverzeichnis).
     """
 
     key = models.CharField(

@@ -303,7 +303,7 @@ class TestQuelleAnlegen:
         echter_client = httpx.Client
         monkeypatch.setattr(
             "insight_core.management.commands.add_oparl_source.httpx.Client",
-            lambda **kw: echter_client(transport=httpx.MockTransport(handler), **kw),
+            lambda **kw: echter_client(**{**kw, "transport": httpx.MockTransport(handler)}),
         )
         ausgabe = StringIO()
         call_command("add_oparl_source", url, stdout=ausgabe)

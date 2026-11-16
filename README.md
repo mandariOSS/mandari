@@ -122,8 +122,8 @@ cd mandari
 ./install-k8s.sh
 ```
 
-Der Installer prüft die Cluster-Verbindung, installiert Helm falls nötig, bietet fehlende
-Bausteine (ingress-nginx, cert-manager) zur Installation an und spielt das Chart ein.
+Der Installer prüft die Cluster-Verbindung, installiert Helm falls nötig, erkennt den vorhandenen
+Ingress-Controller (er installiert keinen), bietet cert-manager bei Bedarf an und spielt das Chart ein.
 Details, Werte-Tabelle und Betriebshinweise: [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md).
 
 Direkt mit Helm:
@@ -139,9 +139,14 @@ Ohne Helm liegen fertige Manifeste unter [`deploy/kubernetes/manifests/`](deploy
 ### Betrieb
 
 ```bash
-./update.sh     # Aktualisieren mit Sicherung und Rückfallebene
-./backup.sh     # Datenbanken, Uploads, Dokument-Cache und verschlüsselte Konfiguration sichern
+./update.sh --tag v0.12.0   # Aktualisieren mit Sicherung und Rückfallebene
+./backup.sh                 # Datenbanken, Uploads, Dokument-Cache und verschlüsselte Konfiguration sichern
 ```
+
+Den automatischen Rückfall gibt es nur, wenn schon die bisherige Installation eine feste Version nutzt und das
+Update auf eine feste Version geht (`--tag v<Version>`): Der Rückfall stellt die bisherige `.env` wieder her,
+und ein bewegliches Tag wie `latest` zeigt nach dem Update schon auf das neue Image. Welche Versionen unterstützt werden, steht in
+[SECURITY.md](SECURITY.md#unterstützte-versionen).
 
 Vollständige Betriebsanleitung: <https://docs.mandari.de/betrieb/>
 
@@ -150,8 +155,8 @@ Vollständige Betriebsanleitung: <https://docs.mandari.de/betrieb/>
 ```
 mandari/
 ├── mandari/          Django-Anwendung (Insight, Work, Session)
-│   ├── apps/         Fachmodule: accounts, tenants, work, session, events, minutes,
-│   │                 provisioning, common
+│   ├── apps/         Fachmodule session, work, minutes; Plattform accounts, tenants,
+│   │                 events, provisioning, common
 │   ├── hub/          Datendrehscheibe: Verträge, Befehle, RIS-Modell, Adapter
 │   ├── insight_core/ OParl-Datenmodelle, Suche, SEO
 │   ├── frontend/     TypeScript (Vite), Alpine-Komponenten
@@ -195,14 +200,17 @@ Der Betriebsstatus ist öffentlich einsehbar: <https://status.mandari.de>.
 
 | Schnittstelle | Pfad | Zugriff |
 |---------------|------|---------|
+| Einstieg und Beschreibung | `/api/`, `/api/openapi.json` | öffentlich |
 | OParl-Aggregation | `/oparl/` | öffentlich, anonym |
-| OParl je Kommune | `/session/<kommune>/api/oparl/` | öffentlich, anonym |
-| Session-API v1 | `/api/v1/session/<kommune>/` | Token oder Sitzung, [OpenAPI](https://docs.mandari.de/session/api-v1/) |
+| OParl je Kommune | `/session/<kommune>/api/oparl/` | öffentlich, anonym; Einreichung und Nichtöffentliches mit Anmeldung |
+| Session-API v1 | `/api/v1/session/<kommune>/` | Token, Sitzung oder Anmeldung für Anwendungen (OpenID Connect), [OpenAPI](https://docs.mandari.de/session/api-v1/) |
 | Fraktions-API | `/api/public/v1/` | Token |
+
+Einzelheiten zu allen Bereichen: [docs/SCHNITTSTELLE.md](docs/SCHNITTSTELLE.md).
 
 Für den SaaS-Betrieb kann ein System des Betreibers Organisationen über `/api/provisioning/` anlegen;
 Version 2 unter `/api/provisioning/v2/` setzt den Soll-Zustand deklarativ und wiederholbar
-([docs/PROVISIONING_API.md](docs/PROVISIONING_API.md)). Ohne gesetzten `PROVISIONING_API_KEY` bzw.
+([docs/SCHNITTSTELLE.md](docs/SCHNITTSTELLE.md#provisioning-api)). Ohne gesetzten `PROVISIONING_API_KEY` bzw.
 `PROVISIONING_V2_API_KEY` ist die jeweilige Version vollständig abgeschaltet — bei
 selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläche.
 
@@ -210,7 +218,7 @@ selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläc
 
 | Bereich | Technologie |
 |---------|-------------|
-| Backend | Django 6.1, Python 3.14 (Image; 3.12+ unterstützt) |
+| Backend | Django 6.1, Python 3.14 (Image; unterstützt 3.12 bis 3.14) |
 | Frontend | Django-Templates, HTMX, Alpine.js, Tailwind CSS, Vite |
 | Ingestor | Python 3.14 (httpx, SQLAlchemy, asyncio) |
 | Datenbank | PostgreSQL 16 |

@@ -121,7 +121,7 @@ Hauptsatzung und Geschäftsordnung gelten je Körperschaft (Einstellungen → Si
 - **Übertragung** (Adresse für die Öffentlichkeit an der Sitzung): Die Detailseite weist intern auf einen
   fehlenden Nachweis in der Hauptsatzung hin – bis 31.10.2026 für Bild- und Tonaufnahmen (§ 64 Abs. 2), ab
   01.11.2026 für die Öffentlichkeit per Video (§ 64 Abs. 9) – und nennt Mitglieder, die Aufnahmen ihrer Person
-  widersprochen haben (Kennzeichen an der Person). Livestream und Aufzeichnung selbst: #146.
+  widersprochen haben (Kennzeichen an der Person). Livestream: #146.
 - **Notlage:** Digitale Sitzungen nach § 182 NKomVG sind „nur in Notlagen“ zulässig und brauchen den Beschluss
   im Ortsrecht (siehe Prüfregeln).
 
@@ -144,7 +144,7 @@ Hauptsatzung und Geschäftsordnung gelten je Körperschaft (Einstellungen → Si
   Fassung vom 01.11.2026 lehnt mandari dann eine erneute Benennung derselben Person in diesem Ausschuss und dieser
   Wahlperiode ab (§ 71 Abs. 8 NKomVG). Das Kästchen gibt es nur beim Vorsitz eines Ausschusses; ein versehentlich
   gesetzter Vermerk lässt sich in der Bearbeitung der Besetzung zurücknehmen (Prüfprotokoll).
-- **Vorlagen je Körperschaftstyp** und **konstituierende Sitzung:** siehe `docs/SESSION_MANDANT_ANLEGEN.md`.
+- **Vorlagen je Körperschaftstyp** und **konstituierende Sitzung:** siehe `docs/SESSION_MANDANTEN.md`.
 - **TOP-Art Einwohnerfragestunde:** nur im öffentlichen Teil. Tagesordnung, Ladung und Serienbrief nennen am TOP
   den Zeitrahmen aus der Geschäftsordnung der Körperschaft („Höchstens 30 Minuten (Geschäftsordnung).“) und ab der
   Fassung vom 01.11.2026 „Fragen nur von anwesenden Einwohnerinnen und Einwohnern (§ 62 Abs. 1 NKomVG)“.

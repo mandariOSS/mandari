@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load member_tags %}
 {% comment %}
 Mitgliedsprofil im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit Namen, Rollen und „Mitglied seit“ im
 Satz, „Profil bearbeiten“ nur auf dem eigenen Profil. Darunter die Angaben als Begriff und Wert (c-ui.angaben) statt
@@ -6,11 +7,11 @@ sechs Kästen: Kontakt nach den Sichtbarkeitseinstellungen der Person, Gremien u
 Punkt mit Text samt Stellvertretung. Kontext: TeamMemberProfileView; die bisherige Seite bleibt work/team/profile.html.
 {% endcomment %}
 
-{% block page_title %}{{ member.user.get_full_name|default:member.user.email }}{% endblock %}
+{% block page_title %}{{ member.user|team_name }}{% endblock %}
 {% block gestaltung %}neu{% endblock %}
 
 {% block work_header %}
-<c-rahmen.kopfband titel="{{ member.user.get_full_name|default:member.user.email }}" dicht data-testid="team-profil-kopf"
+<c-rahmen.kopfband titel="{{ member.user|team_name }}" dicht data-testid="team-profil-kopf"
     text="{% for role in roles %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if roles %}. {% endif %}Mitglied seit {{ joined_at|date:'j. F Y' }}.">
     <c-slot name="oben">
         <nav aria-label="Zurück" class="lg:hidden mb-2">
@@ -29,7 +30,7 @@ Punkt mit Text samt Stellvertretung. Kontext: TeamMemberProfileView; die bisheri
         {% if member.user.avatar %}
         <img src="{{ member.user.avatar.url }}" alt="" class="w-14 h-14 rounded-full object-cover shrink-0">
         {% else %}
-        <span class="w-14 h-14 shrink-0 rounded-full bg-band-grau inline-flex items-center justify-center text-lg font-semibold text-gray-700 dark:text-gray-300" aria-hidden="true">{{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}</span>
+        <span class="w-14 h-14 shrink-0 rounded-full bg-band-grau inline-flex items-center justify-center text-lg font-semibold text-gray-700 dark:text-gray-300" aria-hidden="true">{{ member.user|team_initial }}</span>
         {% endif %}
         <div class="min-w-0 pt-1">
             {% if bio %}
@@ -61,7 +62,7 @@ Punkt mit Text samt Stellvertretung. Kontext: TeamMemberProfileView; die bisheri
         <p class="mt-2 inline-flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white"><span class="w-2 h-2 rounded-full bg-amber-500" aria-hidden="true"></span>Abwesend vom {{ current_absence.start_date|date:"d.m.Y" }} bis {{ current_absence.end_date|date:"d.m.Y" }}</p>
         {% if current_absence.reason %}<c-rahmen.satz eng>{{ current_absence.reason }}</c-rahmen.satz>{% endif %}
         {% if current_absence.deputy %}
-        <c-rahmen.satz eng>Stellvertretung: <c-ui.textlink href="{% url 'work:team_profile' org_slug=organization.slug member_id=current_absence.deputy.id %}">{{ current_absence.deputy.user.get_full_name|default:current_absence.deputy.user.email }}</c-ui.textlink></c-rahmen.satz>
+        <c-rahmen.satz eng>Stellvertretung: <c-ui.textlink href="{% url 'work:team_profile' org_slug=organization.slug member_id=current_absence.deputy.id %}">{{ current_absence.deputy.user|team_name }}</c-ui.textlink></c-rahmen.satz>
         {% endif %}
         {% else %}
         <p class="mt-2 inline-flex items-center gap-2 text-sm text-gray-900 dark:text-white"><span class="w-2 h-2 rounded-full bg-green-600" aria-hidden="true"></span>Verfügbar</p>

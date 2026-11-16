@@ -109,7 +109,10 @@ _ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird ang
 _ = TenantEncryption(org2).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 creator_user, creator_ms, creator_c = make_member(
-    org, "creator@example.org", ["tasks.view", "tasks.create", "tasks.edit"]
+    # tasks.manage: Der Import legt unbekannte Labels nur für Mitglieder an, die Labels verwalten dürfen
+    org,
+    "creator@example.org",
+    ["tasks.view", "tasks.create", "tasks.edit", "tasks.manage"],
 )
 other_user, other_ms, other_c = make_member(org, "other@example.org", ["tasks.view"])
 viewer_user, viewer_ms, viewer_c = make_member(org, "viewer@example.org", ["tasks.view"])

@@ -130,6 +130,24 @@ def test_offener_vorschlag_steht_nicht_auf_der_tagesordnung(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("aktion", ["add_item", "propose"])
+def test_teil_der_tagesordnung_nur_aus_den_festen_werten(
+    rollen: dict[str, Any], sitzung: FactionMeeting, client_for: Any, aktion: str
+) -> None:
+    """Der Teil steht in Skript-Ausdrücken der Vorlagen: Andere Werte als die beiden Teile werden nie gespeichert."""
+    mitglied = rollen["faction_member"]
+    fremd = "'});alert(1);({a:'"
+
+    _aktion(client_for, mitglied, sitzung, action=aktion, title="Präpariert", visibility=fremd)
+
+    assert not sitzung.agenda_items.filter(title="Präpariert").exists()
+    assert set(sitzung.agenda_items.values_list("visibility", flat=True)) <= {"public", "internal"}
+    # Auch am Modell vorbei an den Wegen der Oberfläche
+    with pytest.raises(ValueError, match="Teil der Tagesordnung"):
+        FactionAgendaItem.objects.create(meeting=sitzung, title="Direkt", number="9", visibility=fremd)
+
+
+@pytest.mark.django_db
 def test_ratsmitglieder_tragen_direkt_ein(rollen: dict[str, Any], sitzung: FactionMeeting, client_for: Any) -> None:
     mitglied = rollen["faction_member"]
     _vorschlag(sitzung, rollen["expert_citizen"])

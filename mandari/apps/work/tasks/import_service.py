@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -207,12 +208,40 @@ def parse_date(value: Any) -> tuple[date | None, str | None]:
         return None, f"Ungültiges Datum: {text!r} (erwartet YYYY-MM-DD oder TT.MM.JJJJ)"
 
 
+#: Grenzen für Labels und Schlagworte einer Zeile: Anzahl und Länge je Eintrag. Gekürzt wird beim Sammeln, damit
+#: ein langer Name, auf den viele Einträge verweisen, nicht je Verweis in voller Länge im Speicher steht
+MAX_LABELS_PER_ROW = 50
+MAX_LABEL_LENGTH = 100
+#: Länge, mit der der Name eines Labels gespeichert wird (``normalize_row``)
+LABEL_NAME_LENGTH = 50
+
+
+#: Ein Eintrag eines kommagetrennten Texts: beginnt am ersten Zeichen, das weder Komma noch Leerraum ist. Leere
+#: Felder überspringt die Suche, ohne sie einzeln anzulegen
+_LABEL_IN_TEXT = re.compile(r"[^,\s][^,]*")
+
+
 def split_labels(value: Any) -> list[str]:
+    """
+    Labels aus einer Liste oder einem Text mit Kommas: die ersten ``MAX_LABELS_PER_ROW`` nicht leeren, gekürzt.
+
+    Der Text wird schrittweise gelesen und nach dem letzten gebrauchten Eintrag nicht weiter zerlegt; ein Feld aus
+    Millionen kurzer Einträge legt so keine Liste aller Teile an.
+    """
     if isinstance(value, list):
-        return [str(v).strip() for v in value if str(v).strip()]
-    if not value:
+        parts: Any = (str(v) for v in value)
+    elif value:
+        parts = (match.group() for match in _LABEL_IN_TEXT.finditer(str(value)))
+    else:
         return []
-    return [part.strip() for part in str(value).split(",") if part.strip()]
+    labels: list[str] = []
+    for part in parts:
+        label = part.strip()[:MAX_LABEL_LENGTH]
+        if label:
+            labels.append(label)
+            if len(labels) >= MAX_LABELS_PER_ROW:
+                break
+    return labels
 
 
 def rows_from_csv(text: str) -> tuple[list[Row], list[str]]:
@@ -279,26 +308,48 @@ def rows_from_mandari_json(data: dict[str, Any]) -> tuple[list[Row], list[str]]:
     return rows, []
 
 
+def _dicts(value: Any) -> list[dict[str, Any]]:
+    """Die Einträge einer Liste, die Objekte sind; alles andere (auch keine Liste) ergibt nichts."""
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
 def rows_from_trello_json(data: dict[str, Any]) -> tuple[list[Row], list[str]]:
     """Basis-Mapping für Trello-Board-Exporte (cards/lists/labels)."""
-    lists_by_id = {lst.get("id"): lst.get("name", "") for lst in data.get("lists") or [] if isinstance(lst, dict)}
-    labels_by_id = {
-        lbl.get("id"): lbl.get("name") or lbl.get("color") or ""
-        for lbl in data.get("labels") or []
-        if isinstance(lbl, dict)
+    # Listen und Labels je einmal auflösen und kürzen: Karten verweisen nur darauf, und ein langer Name würde sonst
+    # für jede Karte bzw. jeden Verweis erneut verarbeitet
+    status_by_list = {
+        lst["id"]: STATUS_ALIASES.get(str(lst.get("name") or "").strip().lower(), "todo")
+        for lst in _dicts(data.get("lists"))
+        if isinstance(lst.get("id"), str)
     }
+    # Auf die Länge gekürzt, mit der ein Label gespeichert wird: So fallen Namen, die erst dort gleich würden, schon
+    # beim Entdoppeln zusammen
+    labels_by_id = {
+        lbl["id"]: str(lbl.get("name") or lbl.get("color") or "").strip()[:LABEL_NAME_LENGTH]
+        for lbl in _dicts(data.get("labels"))
+        if isinstance(lbl.get("id"), str)
+    }
+    # Archivierte Karten zählen nicht. Zu viele Karten weist der Import ab, bevor er eine davon umwandelt
+    cards = [(idx, card) for idx, card in enumerate(_dicts(data.get("cards")), start=1) if not card.get("closed")]
+    if len(cards) > MAX_IMPORT_ROWS:
+        raise TaskImportError(f"Zu viele Zeilen (max. {MAX_IMPORT_ROWS}).")
 
     rows: list[Row] = []
-    for idx, card in enumerate(data.get("cards") or [], start=1):
-        if not isinstance(card, dict) or card.get("closed"):
-            continue  # archivierte Karten überspringen
-        list_name = (lists_by_id.get(card.get("idList")) or "").lower()
+    for idx, card in cards:
+        list_id, label_ids = card.get("idList"), card.get("idLabels")
+        labels: dict[str, None] = {}
+        for lid in label_ids if isinstance(label_ids, list) else []:
+            name = labels_by_id.get(lid) if isinstance(lid, str) else None
+            if name:
+                labels[name] = None
+                if len(labels) >= MAX_LABELS_PER_ROW:
+                    break
         row: Row = {
             "_line": idx,
             "title": card.get("name", ""),
             "description": card.get("desc", ""),
-            "status": STATUS_ALIASES.get(list_name, "todo"),
-            "labels": [labels_by_id[lid] for lid in card.get("idLabels") or [] if labels_by_id.get(lid)],
+            "status": status_by_list.get(list_id, "todo") if isinstance(list_id, str) else "todo",
+            "labels": list(labels),
         }
         if card.get("due"):
             row["due_date"] = card["due"]
@@ -472,6 +523,8 @@ def normalize_row(row: Row, memberships_by_email: dict[str, Membership]) -> tupl
     )
     if visibility is not None:
         data["visibility"] = visibility
+        # Ohne Angabe in der Datei bleibt bei bestehenden Aufgaben die bisherige Sichtbarkeit (``_update_from_row``)
+        data["visibility_given"] = bool(str(row.get("visibility") or "").strip())
 
     due_date, date_error = parse_date(row.get("due_date"))
     if date_error:
@@ -494,7 +547,7 @@ def normalize_row(row: Row, memberships_by_email: dict[str, Membership]) -> tupl
         else:
             data["assigned_to"] = membership
 
-    data["labels"] = [name[:50] for name in split_labels(row.get("labels"))]
+    data["labels"] = list(dict.fromkeys(name[:LABEL_NAME_LENGTH] for name in split_labels(row.get("labels"))))
     raw_tags = row.get("tags")
     data["tags"] = (
         [str(t) for t in raw_tags if str(t).strip()] if isinstance(raw_tags, list) else split_labels(raw_tags)
@@ -503,12 +556,18 @@ def normalize_row(row: Row, memberships_by_email: dict[str, Membership]) -> tupl
     return data, errors, warnings
 
 
+def _darf_aendern(task: Task, membership: Membership) -> bool:
+    """Bearbeitungsrecht an einer bestehenden Aufgabe, wie ``services.can_edit_task`` (dort importiert dieses Modul nicht)."""
+    from . import services
+
+    return services.can_edit_task(task, membership)
+
+
 def classify_rows(organization: Organization, membership: Membership, rows: list[Row]) -> ImportReport:
     """Validiert alle Zeilen und teilt sie in create/update/skip/errors ein (nur Lesezugriffe)."""
     report = ImportReport(total=len(rows))
     memberships_by_email = selectors.memberships_by_email(organization)
     existing_titles = selectors.visible_task_titles(organization, membership)
-    can_manage = membership.has_permission("tasks.manage")
     seen_in_file: set[str] = set()
 
     for row in rows:
@@ -524,7 +583,9 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
         # Update-Pfad: bekannte ID in dieser Organisation
         existing = selectors.find_task(organization, data["id"]) if data.get("id") else None
         if existing is not None:
-            if existing.can_edit(membership) or can_manage:
+            # Dieselbe Regel wie beim Bearbeiten in der Oberfläche: ``tasks.manage`` gilt nur für Aufgaben,
+            # die die Person sehen darf – sonst ließen sich private Aufgaben anderer per Kennung überschreiben
+            if _darf_aendern(existing, membership):
                 report.update.append({"line": line, "data": data, "task": existing})
             else:
                 report.skip.append({"line": line, "reason": "keine Berechtigung"})
@@ -541,6 +602,14 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
         seen_in_file.add(title_key)
         report.create.append({"line": line, "data": data})
 
+    # Hinweis zu Labels schon in der Vorschau, nach denselben Regeln und in derselben Reihenfolge wie beim Schreiben
+    # (erst neue, dann bestehende Aufgaben). Vorn im Bericht, damit ihn die Kürzung der Warnungen nicht trifft.
+    labels = _LabelResolver(organization, membership, dry_run=True)
+    for entry in [*report.create, *report.update]:
+        labels.resolve(entry["data"].get("labels") or [])
+    hinweis = labels.warning()
+    if hinweis:
+        report.warnings.insert(0, hinweis)
     return report
 
 
@@ -549,21 +618,64 @@ def classify_rows(organization: Organization, membership: Membership, rows: list
 # ---------------------------------------------------------------------------
 
 
-class _LabelResolver:
-    """Labels per Name auflösen und bei Bedarf anlegen (Cache über den ganzen Import)."""
+#: Höchstens so viele neue Labels legt ein Import im gemeinsamen Katalog der Organisation an
+MAX_NEW_LABELS_PER_IMPORT = 50
 
-    def __init__(self, organization: Organization) -> None:
+
+class _LabelResolver:
+    """
+    Labels per Name auflösen (Cache über den ganzen Import).
+
+    Der Katalog gehört der ganzen Organisation: Unbekannte Namen legt der Import nur für Mitglieder an, die Labels
+    verwalten dürfen (``tasks.manage``, wie die Label-Verwaltung selbst), und höchstens
+    ``MAX_NEW_LABELS_PER_IMPORT`` je Import. Andere Namen bleiben weg und stehen in ``skipped``.
+    """
+
+    def __init__(
+        self, organization: Organization, membership: Membership | None = None, *, dry_run: bool = False
+    ) -> None:
         self.organization = organization
-        self.cache = selectors.labels_by_name(organization)
+        self.cache: dict[str, TaskLabel | None] = dict(selectors.labels_by_name(organization))
+        self.may_create = membership is not None and membership.has_permission("tasks.manage")
+        #: Vorschau: dieselben Regeln in derselben Reihenfolge, aber ohne Labels anzulegen
+        self.dry_run = dry_run
+        self.created = 0
+        self.skipped: dict[str, str] = {}
 
     def resolve(self, names: list[str]) -> list[TaskLabel]:
         resolved = []
         for name in names:
             key = name.lower()
             if key not in self.cache:
-                self.cache[key] = TaskLabel.objects.create(organization=self.organization, name=name, color="blue")
-            resolved.append(self.cache[key])
+                if not self.may_create or self.created >= MAX_NEW_LABELS_PER_IMPORT:
+                    self.skipped.setdefault(key, name)
+                    continue
+                self.cache[key] = (
+                    None
+                    if self.dry_run
+                    else TaskLabel.objects.create(organization=self.organization, name=name, color="blue")
+                )
+                self.created += 1
+            label = self.cache[key]
+            if label is not None:
+                resolved.append(label)
         return resolved
+
+    def complete(self, names: list[str]) -> bool:
+        """Lassen sich alle Namen auflösen (vorhanden oder in diesem Import angelegt)?"""
+        return all(name.lower() in self.cache for name in names)
+
+    def warning(self) -> str:
+        """Hinweis für den Bericht zu nicht übernommenen Labels (leer: alle übernommen)."""
+        if not self.skipped:
+            return ""
+        names = sorted(self.skipped.values(), key=str.lower)
+        shown = ", ".join(names[:10]) + (" …" if len(names) > 10 else "")
+        if not self.may_create:
+            reason = "neue Labels legt an, wer Labels verwalten darf"
+        else:
+            reason = f"höchstens {MAX_NEW_LABELS_PER_IMPORT} neue Labels je Import"
+        return f"{len(names)} unbekannte Labels nicht übernommen ({reason}): {shown}"
 
 
 def _create_from_row(
@@ -604,7 +716,9 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
     task.title = data["title"]
     task.description = data["description"]
     task.priority = data["priority"]
-    task.visibility = data["visibility"]
+    old_visibility = task.visibility
+    if data.get("visibility_given"):
+        task.visibility = data["visibility"]
     task.due_date = data["due_date"]
     old_status = task.status
     task.status = data["status"]
@@ -617,8 +731,17 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
     if data["assigned_to"] is not None:
         task.assigned_to = data["assigned_to"]
     task.save()
+    from . import services
+
+    services.reset_shares_on_reshare(task, old_visibility)
     if data["labels"]:
-        task.labels.set(labels.resolve(data["labels"]))
+        resolved = labels.resolve(data["labels"])
+        if labels.complete(data["labels"]):
+            task.labels.set(resolved)
+        else:
+            # Nicht alle Namen ließen sich auflösen (kein Recht, neue anzulegen, oder Obergrenze): Die bisherigen
+            # Labels der Aufgabe bleiben, die aufgelösten kommen hinzu
+            task.labels.add(*resolved)
     if old_status != task.status:
         if task.status == "done":
             log_activity(task, membership, "completed")
@@ -630,7 +753,7 @@ def _update_from_row(task: Task, membership: Membership, data: Row, labels: _Lab
 @transaction.atomic
 def apply_import(organization: Organization, membership: Membership, report: ImportReport) -> None:
     """Schreibt die klassifizierten Zeilen in die Datenbank (eine Transaktion)."""
-    labels = _LabelResolver(organization)
+    labels = _LabelResolver(organization, membership)
     position_counters = selectors.position_counters(organization)
     now = timezone.now()
 
@@ -640,5 +763,19 @@ def apply_import(organization: Organization, membership: Membership, report: Imp
         _create_from_row(organization, membership, data, position_counters[status], labels, now)
         position_counters[status] += 1
 
+    # Erneut prüfen, und zwar am aktuellen Stand der Datenbank: Seit dem Einteilen kann jemand die Aufgabe privat
+    # gestellt oder gelöscht haben. Die Zeilensperre hält den geprüften Stand bis zum Schreiben fest.
+    updated = []
     for entry in report.update:
-        _update_from_row(entry["task"], membership, entry["data"], labels, now)
+        task = Task.objects.select_for_update().filter(pk=entry["task"].pk, organization=organization).first()
+        if task is None or not _darf_aendern(task, membership):
+            report.skip.append({"line": entry["line"], "reason": "keine Berechtigung"})
+            report.warnings.append(
+                f"Zeile {entry['line']}: Aufgabe {entry['task'].pk} ließ sich nicht ändern "
+                "(keine Bearbeitungsberechtigung mehr) – übersprungen."
+            )
+            continue
+        entry["task"] = task
+        _update_from_row(task, membership, entry["data"], labels, now)
+        updated.append(entry)
+    report.update[:] = updated

@@ -713,37 +713,37 @@ class SupportTicketAdmin(NoAddAdminMixin, ModelAdmin):
         super().save_model(request, obj, form, change)
 
     # Admin actions
-    @admin.action(description="➡️ Mir zuweisen")
+    @admin.action(description="➡️ Mir zuweisen", permissions=["change"])
     def assign_to_me(self, request, queryset):
         count = queryset.update(assigned_to=request.user)
         self.message_user(request, f"{count} Ticket(s) Ihnen zugewiesen.")
 
-    @admin.action(description="🔄 In Bearbeitung")
+    @admin.action(description="🔄 In Bearbeitung", permissions=["change"])
     def mark_in_progress(self, request, queryset):
         count = queryset.update(status="in_progress")
         self.message_user(request, f"{count} Ticket(s) als 'In Bearbeitung' markiert.")
 
-    @admin.action(description="⏳ Wartet auf Antwort")
+    @admin.action(description="⏳ Wartet auf Antwort", permissions=["change"])
     def mark_waiting(self, request, queryset):
         count = queryset.update(status="waiting")
         self.message_user(request, f"{count} Ticket(s) als 'Wartet auf Antwort' markiert.")
 
-    @admin.action(description="🚨 Eskalieren")
+    @admin.action(description="🚨 Eskalieren", permissions=["change"])
     def mark_escalated(self, request, queryset):
         count = queryset.update(status="escalated", escalated_at=timezone.now())
         self.message_user(request, f"{count} Ticket(s) eskaliert.")
 
-    @admin.action(description="⏸️ Zurückstellen")
+    @admin.action(description="⏸️ Zurückstellen", permissions=["change"])
     def mark_on_hold(self, request, queryset):
         count = queryset.update(status="on_hold", on_hold_at=timezone.now())
         self.message_user(request, f"{count} Ticket(s) zurückgestellt.")
 
-    @admin.action(description="✅ Als gelöst markieren")
+    @admin.action(description="✅ Als gelöst markieren", permissions=["change"])
     def mark_resolved(self, request, queryset):
         count = queryset.update(status="resolved", resolved_at=timezone.now())
         self.message_user(request, f"{count} Ticket(s) als gelöst markiert.")
 
-    @admin.action(description="🔒 Schließen")
+    @admin.action(description="🔒 Schließen", permissions=["change"])
     def mark_closed(self, request, queryset):
         count = queryset.update(status="closed", closed_at=timezone.now())
         self.message_user(request, f"{count} Ticket(s) geschlossen.")

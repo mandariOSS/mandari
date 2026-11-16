@@ -10,7 +10,7 @@ Zeitpläne des Bürgerportals (``apps.events.schedule``, Issue #515).
   wird einmal nachgeholt.
 - ``kommunenverzeichnis_abgleichen``: stündlich die gelisteten Kommunen ins Kommunenverzeichnis übernehmen, soweit
   sie dort fehlen (Issue #783). Nach dem Deploy und nach dem Listen einer Kommune ist der Kommunenwechsel so ohne
-  Handgriff vollständig; der Import der CSV-Datei bleibt ein eigener Schritt (docs/INSIGHT_KOMMUNENWECHSEL.md).
+  Handgriff vollständig; der Import der CSV-Datei bleibt ein eigener Schritt (docs/INSIGHT.md#1-kommunenwechsel-und-kommunenverzeichnis).
 - ``texterkennung_einplanen``: alle zwei Minuten, nur mit ``TEXT_EXTRACTION_RUNNER=worker`` (Issues #530, #919,
   #1107): liegen gebliebene Beanspruchungen freigeben und je Datei mit abgelegtem Inhalt, deren Erkennung wartet oder
   veraltet ist, einen Auftrag einreihen, ohne zu beanspruchen (``hub.ris.erkennung.einplanen``): zuerst

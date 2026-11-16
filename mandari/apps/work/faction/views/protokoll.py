@@ -40,7 +40,7 @@ def dokument_kontext(view: Any, meeting: FactionMeeting) -> dict[str, Any]:
     membership = view.membership
     r = protokoll.rechte(membership, meeting)
     d = protokoll.dokument(meeting, membership)
-    g = protokoll.genehmigung(meeting)
+    g = protokoll.genehmigung(meeting, membership)
     editierbar = r.protokollieren and meeting.status == "completed"
     if editierbar:
         # @-Erwähnen auch nach der Sitzung (Issue #874); bei nichtöffentlichen TOPs nur Vereidigte

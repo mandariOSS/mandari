@@ -105,3 +105,37 @@ def test_meldungen_von_browser_erweiterungen_werden_verworfen(client: Client, ca
     assert not any("CSP-Verstoß" in r.getMessage() for r in caplog.records)
     assert csp.from_extension({"source-file": "", "blocked-uri": "chrome-extension://abc/x.js"})
     assert not csp.from_extension({"source-file": "https://mandari.example/x.js", "blocked-uri": "eval"})
+
+
+def _meldung(direktive: str) -> str:
+    return json.dumps({"csp-report": {**LEGACY["csp-report"], "effective-directive": direktive}})
+
+
+def _reihen() -> int:
+    return sum(len(metrik.samples) for metrik in csp.VIOLATIONS.collect())
+
+
+def test_fremde_direktiven_legen_keine_eigenen_reihen_an(client: Client) -> None:
+    """Die Meldungen kommen ohne Anmeldung: Nur bekannte Direktiven werden zum Label der Metrik."""
+    client.post("/csp-report/", data=_meldung("fantasie-0"), content_type="application/csp-report")
+    vorher_reihen, vorher_unbekannt = _reihen(), _zaehler(csp.UNKNOWN_DIRECTIVE)
+
+    for nummer in range(1, 40):
+        client.post("/csp-report/", data=_meldung(f"fantasie-{nummer}"), content_type="application/csp-report")
+
+    assert _reihen() == vorher_reihen
+    assert _zaehler(csp.UNKNOWN_DIRECTIVE) == vorher_unbekannt + 39
+    assert csp.directive_label("IMG-SRC https://example.org") == "img-src"
+    assert csp.directive_label("") == csp.UNKNOWN_DIRECTIVE
+
+
+def test_einzelnes_surrogat_stoert_die_metrikausgabe_nicht(client: Client) -> None:
+    from prometheus_client import generate_latest
+
+    surrogat = chr(0xD800)
+    antwort = client.post("/csp-report/", data=_meldung(surrogat), content_type="application/csp-report")
+
+    assert antwort.status_code == 204
+    assert b"mandari_csp_violations_total" in generate_latest()
+    gelesen = csp.parse_reports(_meldung(surrogat).encode(), "application/csp-report")
+    assert gelesen[0]["effective-directive"] == "?"

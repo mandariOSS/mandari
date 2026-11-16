@@ -108,9 +108,11 @@ def aufgabe_zugewiesen(event: Event, **optionen: Any) -> list[Any]:
     task = _aufgabe(event)
     if task is None:
         return []
+    # Auch eine inzwischen deaktivierte Mitgliedschaft geht an den NotificationHub: Er stellt ihr nichts zu, leitet
+    # aber an eine eingetragene Vertretung weiter
     assignee = (
         Membership.objects.select_related("user")
-        .filter(pk=_uuid(event.payload.get("assignee")), organization_id=task.organization_id, is_active=True)
+        .filter(pk=_uuid(event.payload.get("assignee")), organization_id=task.organization_id)
         .first()
     )
     if assignee is None:

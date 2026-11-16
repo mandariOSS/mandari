@@ -9,7 +9,8 @@ als auch zu ``InlineModelAdmin.has_add_permission(request, obj)``.
 
 from typing import Any
 
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponse
+from django.template.response import TemplateResponse
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
 
@@ -45,6 +46,28 @@ class SingletonAdminMixin:
 
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         return False
+
+
+def confirm_before_change(
+    model_admin: Any, request: HttpRequest, *, title: str, text: str, back_url: str
+) -> HttpResponse | None:
+    """
+    Ändernde Admin-Aktion hinter einem Link (Zeilen- und Detailknöpfe): Der Aufruf (GET) zeigt nur eine Bestätigung,
+    ausgeführt wird erst mit dem abgeschickten Formular (POST, CSRF-geschützt über ``admin_view``). Sonst genügte ein
+    fremder Link oder eine fremde Seite, um die Aktion im Namen eines angemeldeten Admin-Kontos auszulösen.
+
+    ``None`` heißt: Die Anfrage ist das abgeschickte Formular, die Aktion läuft. Sonst die Bestätigungsseite.
+    """
+    if request.method == "POST":
+        return None
+    context = {
+        **model_admin.admin_site.each_context(request),
+        "opts": model_admin.model._meta,
+        "title": title,
+        "text": text,
+        "back_url": back_url,
+    }
+    return TemplateResponse(request, "admin/aktion_bestaetigen.html", context)
 
 
 def status_text(color: str, label: object) -> SafeString:

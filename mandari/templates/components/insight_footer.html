@@ -23,7 +23,7 @@
                 <li><a href="{% url 'insight_core:insight:notifications' %}" class="hover:text-white underline-offset-4 hover:underline">Benachrichtigungen</a></li>
                 {% endif %}
                 {# Schnittstelle mit den Adressen je Kommune, auf Seiten einer Kommune gleich an ihrer Zeile (Issue #1282) #}
-                <li><a href="{% url 'insight_core:insight:offene_daten' %}{% if page_body_oparl %}#kommune-{% firstof page_body.slug page_body.pk %}{% endif %}" class="hover:text-white underline-offset-4 hover:underline">Offene Daten</a></li>
+                <li><a href="{% if offene_daten_url %}{{ offene_daten_url }}{% else %}{% url 'insight_core:insight:offene_daten' %}{% endif %}" class="hover:text-white underline-offset-4 hover:underline">Offene Daten</a></li>
                 {% if not request.user.is_authenticated %}
                 <li><a href="{% url 'accounts:login' %}" class="hover:text-white underline-offset-4 hover:underline">Anmelden</a></li>
                 {% endif %}

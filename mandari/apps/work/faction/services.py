@@ -12,12 +12,14 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
 from apps.common.email import render_email
 from apps.common.ical import build_ics_event
 from apps.common.pdf import html_to_pdf
+from apps.work.pdf_bilder import inline_remote_images
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +217,7 @@ class FactionMeetingEmailService:
             "generated_at": timezone.localtime(),
         }
         html = render_to_string("work/faction/pdf/agenda.html", context)
-        return html_to_pdf(html)
+        return html_to_pdf(inline_remote_images(html))
 
     def _include_internal(self, membership) -> bool:
         """NÖ-Teil nur für Vereidigte — zentrale Sichtbarkeitsfunktion (Issue #64)."""
@@ -792,10 +794,55 @@ def record_decision(
     In einer Sitzungsart ohne Abstimmungen meldet sie ``regeln.AbstimmungenAusError`` (Issue #1240); die Wege der
     Oberfläche prüfen das vorher selbst.
     """
-    from .models import FactionDecision
-    from .regeln import pruefe_abstimmung
+    from .regeln import pruefe_abstimmung, pruefe_protokoll_offen
 
     pruefe_abstimmung(item.meeting)
+    with transaction.atomic():
+        # Beschlüsse einer Sitzung mit genehmigtem Protokoll sind fest (Issue #63), gleich über welchen Weg;
+        # Prüfung und Schreiben unter der Sperre der Sitzung
+        pruefe_protokoll_offen(item.meeting)
+        return _record_decision(
+            item,
+            membership,
+            votes_yes=votes_yes,
+            votes_no=votes_no,
+            votes_abstain=votes_abstain,
+            result=result,
+            decision_text=decision_text,
+            notes=notes,
+        )
+
+
+def clear_decision(item) -> None:
+    """Beschluss eines TOPs entfernen (TOP-Panel); nicht nach genehmigtem Protokoll (``ProtokollGenehmigtError``)."""
+    from .models import FactionDecision
+    from .regeln import pruefe_protokoll_offen
+
+    with transaction.atomic():
+        pruefe_protokoll_offen(item.meeting)
+        FactionDecision.objects.filter(agenda_item=item).delete()
+        item.has_decision = False
+        item.votes_for = 0
+        item.votes_against = 0
+        item.votes_abstain = 0
+        # Wie beim Erfassen nur die Felder des Beschlusses schreiben: Notizen, die die Schriftführung gleichzeitig
+        # speichert, bleiben erhalten. Ihren Stand vorher nachladen, damit die Änderungshistorie nichts erfindet.
+        item.refresh_from_db(fields=["notes_encrypted", "notes_updated_at"])
+        item.save(update_fields=["has_decision", "votes_for", "votes_against", "votes_abstain", "updated_at"])
+
+
+def _record_decision(
+    item,
+    membership,
+    *,
+    votes_yes: int,
+    votes_no: int,
+    votes_abstain: int,
+    result: str,
+    decision_text: str,
+    notes: str | None,
+):
+    from .models import FactionDecision
 
     defaults = {
         "votes_yes": votes_yes,
@@ -964,7 +1011,7 @@ def build_faction_protocol_pdf(meeting, *, internal: bool) -> bytes:
         "generated_at": timezone.localtime(),
     }
     html = render_to_string("work/faction/pdf/protocol.html", context)
-    return html_to_pdf(html)
+    return html_to_pdf(inline_remote_images(html))
 
 
 class AgendaProposalService:
@@ -1131,16 +1178,20 @@ class AgendaProposalService:
 
         Returns:
             True if accepted, False if already processed
+
+        Nach genehmigtem Protokoll ändert sich die Tagesordnung nicht mehr: ``ProtokollGenehmigtError``.
         """
         from django.db import transaction
 
         from . import agenda
         from .models import FactionAgendaItem
+        from .regeln import pruefe_protokoll_offen
 
         with transaction.atomic():
             # Sitzung und Vorschlag sperren: gleichzeitige Annahmen erhalten verschiedene Nummern, ein doppelter
-            # Klick entscheidet (und benachrichtigt) nur einmal (Issue #872)
-            agenda.lock_meeting(item.meeting)
+            # Klick entscheidet (und benachrichtigt) nur einmal (Issue #872). Dieselbe Sperre wie die Genehmigung
+            # des Protokolls; ist es genehmigt, kommt kein TOP mehr auf die Tagesordnung.
+            pruefe_protokoll_offen(item.meeting)
             current = (
                 FactionAgendaItem.objects.select_for_update().filter(pk=item.pk, proposal_status="proposed").first()
             )

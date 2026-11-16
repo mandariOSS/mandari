@@ -105,6 +105,6 @@ sind oft nicht wiederherstellbar.
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),
   [A10 Feed-Format](20260929-aenderungsfeed-format.md)
-- `docs/DSGVO_LOESCHKONZEPT.md`
+- `docs/DATENSCHUTZ.md`, Abschnitt 3 (Löschkonzept)
 - Django, `ForeignKey.on_delete`:
   https://docs.djangoproject.com/en/stable/ref/models/fields/#django.db.models.ForeignKey.on_delete

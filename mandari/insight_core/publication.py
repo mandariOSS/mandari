@@ -296,6 +296,9 @@ DETAIL_PAGES: dict[str, tuple[str, str]] = {
     "paper_feed": ("OParlPaper", "pk"),
     "organization_feed": ("OParlOrganization", "pk"),
     "meeting_ics": ("OParlMeeting", "pk"),
+    # Live-Seite und Kinomodus einer Sitzung samt ihren Teilansichten
+    "meeting_live": ("OParlMeeting", "pk"),
+    "meeting_live_kino": ("OParlMeeting", "pk"),
 }
 
 #: Seiten der gewählten Kommune (Liste, Kalender, Karte, Suche …) und ihre HTMX-Teile

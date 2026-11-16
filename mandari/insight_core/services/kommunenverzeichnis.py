@@ -114,7 +114,7 @@ def get_bundesland_for_body(body: OParlBody) -> str | None:
 # Namensnennung der Quellen
 # ---------------------------------------------------------------------------
 
-#: Quellen eines aus der CSV-Datei importierten Verzeichnisses (Format und Herkunft: docs/INSIGHT_KOMMUNENWECHSEL.md).
+#: Quellen eines aus der CSV-Datei importierten Verzeichnisses (Format und Herkunft: docs/INSIGHT.md#1-kommunenwechsel-und-kommunenverzeichnis).
 #: Wer andere Quellen nutzt, setzt ``INSIGHT_KOMMUNENVERZEICHNIS_QUELLEN`` in den Einstellungen.
 QUELLEN: tuple[dict[str, str], ...] = (
     {

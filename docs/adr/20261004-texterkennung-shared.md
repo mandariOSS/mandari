@@ -1,7 +1,7 @@
 # Texterkennung als eine Bibliothek in `shared/` und als Auftrag `file.extract_text`
 
-- Status: angenommen; „Aufrufer behalten Abruf und Speichern“ und „nicht sofort auf Aufträge umstellen“ abgelöst durch
-  [Dokumentkette](20261007-dokumentkette.md)
+- Status: angenommen; „Aufrufer behalten Abruf und Speichern“, „nicht sofort auf Aufträge umstellen“ und das
+  Beanspruchen beim Einplanen abgelöst durch [Dokumentkette](20261007-dokumentkette.md) (Nachtrag 11.11.2026)
 - Datum: 2026-10-04
 - Issue: #530 (Epic #476), Vorarbeit #817
 - Bezug: [A1 Schichtenmodell](20260929-schichtenmodell.md), [A4 Aufträge und Zeitpläne](20260929-auftraege-und-zeitplaene.md),
@@ -75,3 +75,8 @@ eine eigene Warteschlange `ocr` im Worker der Anwendung vor.
   Mistral-Anbindung mehr.
 - `ingestor/tests/test_ocr_grenzen.py` und `ingestor/tests/test_texterkennung_shared.py` prüfen die Bibliothek,
   in der CI mit Poppler und Tesseract.
+
+## Nachtrag (11.11.2026)
+
+Der Zeitplan `texterkennung_einplanen` beansprucht keine Dateien mehr, er plant nur ein; beansprucht wird erst beim
+Start des Auftrags (`mandari/hub/ris/erkennung.py`, [Dokumentkette](20261007-dokumentkette.md)).

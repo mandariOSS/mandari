@@ -151,9 +151,16 @@ def _split_compound(token: str) -> tuple[str, str] | None:
     return None
 
 
+#: Obergrenzen der Zerlegung, unabhängig vom Aufrufer (Suche, Assistent, Feeds, Benachrichtigungen): Jede Lesart
+#: ist eine Kopie der Anfrage und wird je Suchindex zu einer eigenen Klausel
+MAX_PARSE_LENGTH: Final = 500
+MAX_PARSE_TOKENS: Final = 32
+MAX_ALTERNATIVES: Final = 16
+
+
 def parse(query: str) -> ParsedQuery:
     """Zerlegt die Anfrage in Lesarten für die Hauptklausel (Straßen, Gleichbedeutungen)."""
-    text = normalize(query)
+    text = " ".join(normalize(query)[:MAX_PARSE_LENGTH].split()[:MAX_PARSE_TOKENS])
     parsed = ParsedQuery(original=text)
     core: list[str] = []
     compound: tuple[int, str, str] | None = None
@@ -196,6 +203,8 @@ def parse(query: str) -> ParsedQuery:
         parsed.name_part_alternative = Alternative(" ".join(bare))
     for position, token in enumerate(core):
         for synonym in CURATED_SYNONYMS.get(token, ()):
+            if len(parsed.alternatives) >= MAX_ALTERNATIVES:
+                return parsed
             replaced = [*core[:position], synonym, *core[position + 1 :]]
             parsed.alternatives.append(Alternative(" ".join(replaced), boost=SYNONYM_BOOST))
     return parsed

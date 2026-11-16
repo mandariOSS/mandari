@@ -8,7 +8,7 @@ Prüft Schalter, Signaturschlüssel (lesbar, RSA, mindestens 2048 Bit, auch die 
 Aussteller (``SITE_URL``: https, ohne Pfad, Host in ``ALLOWED_HOSTS``) und ob Discovery und JWKS über den
 Test-Client antworten, mit passender Schlüssel-ID. Läuft auch bei ausgeschaltetem Anbieter und zeigt dann, was zum
 Einschalten fehlt. Rückgabewert 1 bei mindestens einem Fehler. Einzelheiten: :mod:`apps.accounts.oidc.readiness`,
-Anleitung: ``docs/schnittstelle/anmeldung-betrieb.md``.
+Anleitung: ``docs/schnittstelle/anmeldung.md#teil-b-betrieb``.
 """
 
 from __future__ import annotations

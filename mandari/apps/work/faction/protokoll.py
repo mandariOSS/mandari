@@ -390,19 +390,34 @@ class Genehmigung:
     direkt: bool = False
     #: Die Sitzungsart verkettet nicht (Issue #1297): Keine Sitzung genehmigt das Protokoll, nur der direkte Weg
     ohne_kette: bool = False
+    #: Es gibt eine genehmigende Sitzung, das Mitglied sieht sie aber nicht (Art „nur Teilnehmende“): ohne Nummer,
+    #: Datum und TOP
+    verborgen: bool = False
 
     @property
     def wo(self) -> str:
-        """„Nr. 25 am Mo 26.10. unter TOP 1“ bzw. „der nächsten Sitzung unter TOP 1“."""
+        """„Nr. 25 am Mo 26.10. unter TOP 1“ bzw. „der nächsten Sitzung unter TOP 1“; verborgen „einer späteren Sitzung“."""
         if self.sitzung is None:
+            if self.verborgen:
+                return "einer späteren Sitzung"
             return "der nächsten Sitzung unter TOP 1"
         nr = f"Nr. {self.sitzung.meeting_number}" if self.sitzung.meeting_number else "der Sitzung"
         top = f" unter TOP {self.top_nr}" if self.top_nr else ""
         return f"{nr} am {_tag(self.sitzung.start)}{top}"
 
 
-def genehmigung(meeting: FactionMeeting) -> Genehmigung:
+def genehmigung(meeting: FactionMeeting, membership: Any = None) -> Genehmigung:
+    """
+    Wo und wann das Protokoll genehmigt wird oder wurde.
+
+    Mit ``membership``: Die genehmigende Sitzung (Nummer, Datum, TOP) steht nur darin, wenn das Mitglied sie sehen
+    darf (``sitzungsarten.darf_sehen``); sonst bleibt sie leer und ``verborgen`` ist gesetzt.
+    """
     from .models import FactionAgendaItem
+    from .sitzungsarten import darf_sehen
+
+    def sichtbar(andere: Any) -> bool:
+        return membership is None or darf_sehen(membership, andere)
 
     if meeting.protocol_approved:
         g = Genehmigung(
@@ -410,7 +425,9 @@ def genehmigung(meeting: FactionMeeting) -> Genehmigung:
             am=meeting.protocol_approved_at,
             von=meeting.protocol_approved_by.user.get_display_name() if meeting.protocol_approved_by else "",
         )
-        if meeting.protocol_approved_in_id:
+        if meeting.protocol_approved_in_id and not sichtbar(meeting.protocol_approved_in):
+            g.verborgen = True
+        elif meeting.protocol_approved_in_id:
             g.sitzung = meeting.protocol_approved_in
             top = FactionAgendaItem.objects.filter(meeting=g.sitzung, approves_meeting=meeting).first()
             g.top_nr = top.number if top else ""
@@ -428,6 +445,8 @@ def genehmigung(meeting: FactionMeeting) -> Genehmigung:
         from .kette import verkettet
 
         return Genehmigung(genehmigt=False, ohne_kette=not verkettet(meeting))
+    if not sichtbar(top.meeting):
+        return Genehmigung(genehmigt=False, verborgen=True)
     return Genehmigung(genehmigt=False, sitzung=top.meeting, top_nr=top.number or "")
 
 

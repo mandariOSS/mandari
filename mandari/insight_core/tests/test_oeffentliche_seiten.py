@@ -135,7 +135,30 @@ class _KaputteSuche:
         raise ConnectionError("Elasticsearch nicht erreichbar")
 
 
+class _MerkendeSuche:
+    """Hält fest, mit welchem Suchtext der Endpunkt den Suchdienst aufruft."""
+
+    def __init__(self) -> None:
+        self.texte: list[str] = []
+
+    def search_all(self, **kwargs: Any) -> Any:
+        self.texte.append(kwargs["query"])
+        raise ConnectionError("Elasticsearch nicht erreichbar")
+
+
 class TestSuche:
+    def test_suchtext_des_ergebnisbereichs_ist_begrenzt(self, body: OParlBody, monkeypatch: Any) -> None:
+        """Der Endpunkt kürzt wie die Suchseite auf 200 Zeichen, bevor die Rangfolge die Anfrage vervielfacht."""
+        suche = _MerkendeSuche()
+        monkeypatch.setattr("insight_core.services.search_service.get_search_service", lambda: suche)
+        client = Client()
+        client.get(f"/insight/kommune/{body.id}/")
+
+        antwort = client.get("/insight/suche/partials/results/", {"q": "kita " * 3000, "dropdown": "1"})
+
+        assert antwort.status_code == 200
+        assert suche.texte and all(len(text) <= 200 for text in suche.texte)
+
     def test_rueckfall_ohne_elasticsearch_maskiert(self, body: OParlBody, monkeypatch: Any) -> None:
         monkeypatch.setattr("insight_core.services.search_service.get_search_service", lambda: _KaputteSuche())
         OParlPaper.objects.create(external_id="https://ris.fremd.example/oparl/paper/1", body=body, name=f"Bad {XSS}")
@@ -288,12 +311,25 @@ class TestLinksAusEmails:
 @pytest.fixture
 def beschluss_abo(db: Any) -> Any:
     from apps.session.models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionTenant
-    from insight_core.models import DecisionSubscription
+    from insight_core.models import DecisionSubscription, OParlBody, OParlSource
 
-    tenant = SessionTenant.objects.create(name="Bezirk Süd", slug="sued")
+    # Ein veröffentlichter Beschluss: Bestätigen geht nur, solange er lesbar ist
+    tenant = SessionTenant.objects.create(
+        name="Bezirk Süd",
+        slug="sued",
+        insight_publish=True,
+        implementation_publish=True,
+        oparl_public_since=timezone.now(),
+    )
+    source = OParlSource.objects.get(sync_config__session_tenant="sued")
+    body = OParlBody.objects.create(external_id=f"{source.url}body/", source=source, name="Bezirk Süd", slug="sued")
+    tenant.oparl_body = body
+    tenant.save(update_fields=["oparl_body"])
     gremium = SessionOrganization.objects.create(tenant=tenant, name="Hauptausschuss", short_name="HA")
     sitzung = SessionMeeting.objects.create(
         tenant=tenant, name="Sitzung HA", organization=gremium, start=timezone.now(), is_public=True
     )
-    top = SessionAgendaItem.objects.create(meeting=sitzung, name="Radweg", number="1", order=1)
+    top = SessionAgendaItem.objects.create(
+        meeting=sitzung, name="Radweg", number="1", order=1, vote_result="approved", implementation_public=True
+    )
     return DecisionSubscription.objects.create(agenda_item=top, email="buergerin@example.org")

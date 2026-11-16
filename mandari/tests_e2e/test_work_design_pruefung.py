@@ -2,7 +2,7 @@
 """
 Prüfskript für das neue Work-Design im Browser (``scripts/pruefe_work_design.py``, Issue #884).
 
-Derselbe Ablauf wie vor dem Ausrollen (docs/WORK_NEUES_DESIGN.md), verkleinert für das CI: Demo aufbauen, alle fünf
+Derselbe Ablauf wie vor dem Ausrollen (docs/WORK.md#3-neues-design-in-work-ausrollen), verkleinert für das CI: Demo aufbauen, alle fünf
 Rollen anmelden, die Work-Seiten über die sichtbaren Links erkunden, je Seite am Handy (390 px) und breit (1440 px)
 messen – einmal mit eingeschaltetem und einmal mit ausgeschaltetem Schalter. Danach steht der Schalter wieder wie
 vorher. Es darf keinen Serverfehler, keinen toten Link, keine Fehler in der Konsole und keinen seitlichen Überlauf

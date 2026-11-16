@@ -282,12 +282,12 @@ class DocumentFolderCreateView(WorkViewMixin, View):
             position=DocumentFolder.objects.filter(organization=self.organization, parent=parent).count(),
         )
         try:
-            folder.full_clean()
+            # Unter derselben Sperre wie Verschiebungen: Die Tiefenprüfung sieht den Stand anderer Anfragen
+            folder.save_checked()
         except ValidationError as e:
             messages.error(request, " ".join(m for msgs in e.message_dict.values() for m in msgs))
             return redirect(back_url)
 
-        folder.save()
         messages.success(request, f"Ordner '{folder.name}' erstellt.")
         return redirect(f"{list_url}?ordner={folder.id}")
 
@@ -319,15 +319,21 @@ class DocumentFolderUpdateView(WorkViewMixin, View):
         # Verschieben: "" = Wurzelebene, sonst Ziel-Ordner der Organisation
         if "parent" in request.POST:
             parent_id = request.POST.get("parent", "").strip()
-            folder.parent = _get_org_folder_or_404(self.organization, parent_id, self.membership) if parent_id else None
+            parent = _get_org_folder_or_404(self.organization, parent_id, self.membership) if parent_id else None
+            # Unter einen für Gäste freigegebenen Ordner nur, wer die Dokumente darunter freigeben darf
+            if (parent.id if parent else None) != folder.parent_id:
+                denied = folder.guest_move_denied(parent, self.membership)
+                if denied:
+                    messages.error(request, denied)
+                    return redirect(back_url)
+            folder.parent = parent
 
         try:
-            folder.full_clean()
+            folder.save_checked(mover=self.membership)
         except ValidationError as e:
             messages.error(request, " ".join(m for msgs in e.message_dict.values() for m in msgs))
             return redirect(back_url)
 
-        folder.save()
         messages.success(request, f"Ordner '{folder.name}' aktualisiert.")
         return redirect(back_url)
 
@@ -378,20 +384,24 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
         if not _can_manage_folder(self.membership, folder):
             return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
 
-        email = request.POST.get("email", "").strip().lower()
+        email = request.POST.get("email", "").strip()
         level = request.POST.get("level", "view")
         if level not in dict(FolderGuestShare.LEVEL_CHOICES):
             level = "view"
 
-        user = User.objects.filter(email=email).first() if email else None
-        if user is None:
-            return JsonResponse({"error": f"Benutzer '{email}' nicht gefunden."}, status=400)
-
+        # Wie bei der Anmeldung: jede Schreibweise, bei Mehrdeutigkeit kein Konto (Issue #1397)
+        user = User.objects.find_by_email(email) if email else None
         # Nur Nutzer mit aktivem Zugang zu DIESER Organisation — sonst wäre
-        # die Freigabe wirkungslos bzw. liefe an der Org-Grenze vorbei.
-        target = Membership.objects.filter(user=user, organization=self.organization, is_active=True).first()
+        # die Freigabe wirkungslos bzw. liefe an der Org-Grenze vorbei. Eine
+        # Antwort für alle anderen Adressen (wie MotionShareUpdateView): Ob
+        # zu einer Adresse ein Konto besteht, geht daraus nicht hervor.
+        target = (
+            Membership.objects.filter(user=user, organization=self.organization, is_active=True).first()
+            if user is not None
+            else None
+        )
         if target is None:
-            return JsonResponse({"error": "Der Nutzer hat keinen Zugang zu dieser Organisation."}, status=400)
+            return JsonResponse({"error": f"'{email}' ist kein Mitglied bzw. Gast dieser Organisation."}, status=400)
         # Ordner-Freigaben wirken ausschließlich für Gastzugänge – Mitglieder
         # sehen Dokumente über deren Sichtbarkeit (Motion.visibility/MotionShare).
         if not target.is_guest:
@@ -496,13 +506,12 @@ class MotionFolderMoveView(WorkViewMixin, View):
 
         motions = Motion.objects.filter(organization=self.organization, id__in=motion_ids).exclude(status="deleted")
 
-        guest_folder = folder is not None and folder.is_shared_with_guests()
         moved = 0
         for motion in motions:
             # „Nichtöffentliche Vorgänge“: weder heraus noch hinein (Motion.folder_move_denied, #873)
             if motion.folder_move_denied(folder):
                 continue
-            if motion.can_edit(self.membership) and (not guest_folder or motion.can_share(self.membership)):
+            if motion.can_edit(self.membership) and not motion.guest_folder_move_denied(folder, self.membership):
                 motion.folder = folder
                 motion.save(update_fields=["folder", "updated_at"])
                 moved += 1

@@ -171,7 +171,7 @@
                     {% for allowance in allowances %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <td class="px-4 py-2 text-gray-900 dark:text-white">{{ allowance.attendance.person.display_name }}</td>
-                        <td class="px-4 py-2 text-gray-600 dark:text-gray-400">{{ allowance.attendance.meeting.organization.short_name|default:allowance.attendance.meeting.organization.name }}: {{ allowance.attendance.meeting.name }}</td>
+                        <td class="px-4 py-2 text-gray-600 dark:text-gray-400">{{ allowance.attendance.meeting.organization.short_name|default:allowance.attendance.meeting.organization.name }}: {{ allowance.meeting_label }}</td>
                         <td class="px-4 py-2 text-gray-600 dark:text-gray-400">{{ allowance.attendance.meeting.start|date:"d.m.Y" }}</td>
                         <td class="px-4 py-2 text-gray-600 dark:text-gray-400">{{ allowance.attendance.get_role_display }}</td>
                         <td class="px-4 py-2 text-right font-medium text-gray-900 dark:text-white">{{ allowance.amount }} €</td>

@@ -3,8 +3,10 @@
 Motion/Antrag views for the Work module.
 """
 
+import json
 import logging
 import uuid
+from typing import Any
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -284,7 +286,8 @@ class MotionMetaUpdateView(WorkViewMixin, View):
             folder_id = request.POST.get("folder", "").strip()
             target = _get_org_folder_or_404(self.organization, folder_id, self.membership) if folder_id else None
             # „Nichtöffentliche Vorgänge“: weder heraus noch hinein (Motion.folder_move_denied, #873)
-            denied = motion.folder_move_denied(target)
+            # In einen für Gäste freigegebenen Ordner nur mit Freigaberecht (wie MotionFolderMoveView)
+            denied = motion.folder_move_denied(target) or motion.guest_folder_move_denied(target, self.membership)
             if denied:
                 return JsonResponse({"error": denied}, status=403)
             motion.folder = target
@@ -636,7 +639,7 @@ class MotionExportView(WorkViewMixin, View):
     def get(self, request, *args, **kwargs):
         from django.http import HttpResponse
 
-        from ..export_service import motion_export_service
+        from ..export_service import PDF_TABLES_TOO_LARGE, ExportTooLargeError, motion_export_service
 
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
@@ -666,6 +669,9 @@ class MotionExportView(WorkViewMixin, View):
                 freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_PDF)
                 return response
 
+            except ExportTooLargeError:
+                # Feste Meldung, nie der Text der Ausnahme (keine Angaben aus dem Dokument)
+                return JsonResponse({"error": PDF_TABLES_TOO_LARGE}, status=400)
             except Exception as e:
                 logger.exception(f"[MotionExport] PDF export failed: {e}")
                 return JsonResponse({"error": "PDF-Export fehlgeschlagen."}, status=500)
@@ -792,6 +798,23 @@ class MotionImportView(NeueVorlageMixin, WorkViewMixin, TemplateView):
 SHARE_DIALOG_LEVELS = ("view", "comment", "edit")
 
 
+def _guest_share_choice_required(guest_shares: list[Any]) -> JsonResponse:
+    """
+    Antwort auf den Wechsel zu „Privat“ ohne Wahl, obwohl Gäste eine persönliche Freigabe haben: nichts geändert.
+
+    Die Meldung nennt die Gäste und erscheint im Dialog als Hinweis (``HX-Trigger``); der Dialog bleibt offen.
+    """
+    names = freigaben.guest_share_names(guest_shares)
+    message = (
+        "Dieses Dokument ist persönlich für Gäste freigegeben: "
+        + ", ".join(names)
+        + ". Bitte wählen Sie im Dialog, ob diese Freigaben enden oder bestehen bleiben."
+    )
+    response = JsonResponse({"error": message, "guests": names}, status=409)
+    response["HX-Trigger"] = json.dumps({"showToast": {"message": message, "type": "error"}})
+    return response
+
+
 class MotionShareUpdateView(WorkViewMixin, View):
     """HTMX endpoint for updating share settings via modal."""
 
@@ -807,12 +830,24 @@ class MotionShareUpdateView(WorkViewMixin, View):
         # Update visibility
         new_visibility = request.POST.get("visibility")
         if new_visibility in ["private", "shared", "organization"]:
+            if new_visibility == "private":
+                # Persönliche Freigaben an Gäste gelten auch an privaten Dokumenten (Issue #582). Der Wechsel auf
+                # „Privat“ ließe sie sonst still bestehen: Erst die ausdrückliche Wahl beendet oder behält sie.
+                # An einem schon privaten Dokument bleibt die Wahl freiwillig; „beenden“ gilt auch dort.
+                guest_shares = freigaben.personal_guest_shares(motion)
+                choice = request.POST.get("guest_shares")
+                chosen = choice in (freigaben.GUEST_SHARES_REVOKE, freigaben.GUEST_SHARES_KEEP)
+                if guest_shares and not chosen and motion.visibility != "private":
+                    return _guest_share_choice_required(guest_shares)
+                if choice == freigaben.GUEST_SHARES_REVOKE:
+                    freigaben.revoke_shares(guest_shares)
             motion.visibility = new_visibility
-            motion.save()
+            # Nur die Sichtbarkeit: Ein gleichzeitig geänderter Status oder Ordner bleibt, wie er ist
+            motion.save(update_fields=["visibility", "updated_at"])
 
         # Handle adding users for shared visibility
         if new_visibility == "shared":
-            add_user_email = request.POST.get("add_user_email", "").strip().lower()
+            add_user_email = request.POST.get("add_user_email", "").strip()
             if add_user_email:
                 from apps.accounts.models import User
                 from apps.tenants.models import Membership
@@ -823,7 +858,8 @@ class MotionShareUpdateView(WorkViewMixin, View):
                 if level not in SHARE_DIALOG_LEVELS:
                     level = "view"
 
-                user = User.objects.filter(email=add_user_email).first()
+                # Wie bei der Anmeldung: jede Schreibweise, bei Mehrdeutigkeit kein Konto (Issue #1397)
+                user = User.objects.find_by_email(add_user_email)
                 # Nur Nutzer mit aktivem Zugang zu DIESER Organisation – sonst
                 # wäre die Freigabe wirkungslos (und die Antwort ließe
                 # Rückschlüsse zu, welche E-Mail-Adressen ein Konto haben).

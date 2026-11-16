@@ -14,7 +14,8 @@ from datetime import timedelta
 from typing import Any
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, models
 from django.utils import timezone
 
 from apps.common.tokens import HashedTokenMixin, unusable_token_hash
@@ -22,6 +23,41 @@ from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 
 class UserManager(BaseUserManager):
     """Custom user manager with email as the unique identifier."""
+
+    @classmethod
+    def normalize_email(cls, email: str | None) -> str:
+        """
+        Adresse eines Kontos in der gespeicherten Form: ohne Rand und ganz in Kleinbuchstaben (Issue #1397).
+
+        Django schreibt nur den Teil hinter dem ``@`` klein. Für Menschen ist ``Otto.Gross@…`` dieselbe
+        Adresse wie ``otto.gross@…``; mit einer einzigen Schreibweise gilt ``unique`` auch dafür.
+        """
+        return (email or "").strip().lower()
+
+    def get_by_natural_key(self, email: str | None) -> Any:
+        """
+        Konto zur Adresse der Anmeldung, ohne Beachtung der Groß-/Kleinschreibung (Issue #1397).
+
+        Die exakte Schreibweise hat Vorrang. So bleiben zwei Konten aus der Zeit vor dieser Regel, die sich
+        nur in der Schreibweise unterscheiden, je mit ihrer eigenen Schreibweise erreichbar; passt keine
+        genau und kommen mehrere in Frage, gilt keins.
+        """
+        email = (email or "").strip()
+        for kandidat in dict.fromkeys((email, self.normalize_email(email))):
+            konto = self.filter(email=kandidat).first()
+            if konto is not None:
+                return konto
+        konten = list(self.filter(email__iexact=email)[:2])
+        if len(konten) == 1:
+            return konten[0]
+        raise self.model.DoesNotExist(f"{self.model._meta.object_name} matching query does not exist.")
+
+    def find_by_email(self, email: str | None) -> Any:
+        """Konto zur Adresse wie bei der Anmeldung (:meth:`get_by_natural_key`), sonst ``None``."""
+        try:
+            return self.get_by_natural_key(email)
+        except self.model.DoesNotExist:
+            return None
 
     def create_user(self, email, password=None, **extra_fields):
         """Create and return a regular user."""
@@ -92,6 +128,56 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+    def _normalize_email(self, *, check_all: bool) -> None:
+        """
+        Adresse in die gespeicherte Form bringen (klein geschrieben, Issue #1397).
+
+        Trägt ein anderes Konto dieselbe Adresse in irgendeiner Schreibweise, gilt:
+
+        - Ein bestehendes Konto mit unveränderter Adresse behält seine Schreibweise (Bestand aus der Zeit vor
+          dieser Regel) – sonst ließe es sich nicht mehr speichern.
+        - Eine neue oder geänderte Adresse wird abgelehnt (``ValidationError`` am Feld ``email``).
+
+        ``check_all=False`` (Speichern eines bestehenden Kontos mit unveränderter Adresse) fragt die Datenbank
+        nur, wenn die Adresse Großbuchstaben enthält: Der gewöhnliche Fall kostet keine Abfrage.
+        """
+        manager = type(self).objects
+        wanted = manager.normalize_email(self.email)
+        if wanted == self.email and not check_all:
+            return
+        if manager.filter(email__iexact=wanted).exclude(pk=self.pk).exists():
+            stored = None if self._state.adding else manager.filter(pk=self.pk).values_list("email", flat=True).first()
+            if stored is not None and stored == self.email:
+                return
+            raise ValidationError({"email": "Ein Konto mit dieser E-Mail-Adresse gibt es bereits."})
+        self.email = wanted
+
+    def clean(self) -> None:
+        """Vor der Eindeutigkeitsprüfung der Formulare: Adresse klein schreiben, andere Schreibweisen ablehnen."""
+        super().clean()
+        self._normalize_email(check_all=True)
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Speichert die Adresse immer klein geschrieben, auch am Formular vorbei (Admin, Shell, Dienste)."""
+        update_fields = kwargs.get("update_fields")
+        writes_email = (update_fields is None or "email" in update_fields) and "email" not in self.get_deferred_fields()
+        if writes_email:
+            changed = self._state.adding or self.email != getattr(self, "_loaded_email", None)
+            try:
+                self._normalize_email(check_all=changed)
+            except ValidationError as error:
+                raise IntegrityError("accounts.User: Adresse gibt es in anderer Schreibweise schon") from error
+        super().save(*args, **kwargs)
+        if writes_email:
+            self._loaded_email = self.email
+
+    @classmethod
+    def from_db(cls, *args: Any, **kwargs: Any) -> Any:
+        """Merkt sich die geladene Adresse: ``save`` prüft Dubletten nur, wenn sie sich geändert hat."""
+        instance = super().from_db(*args, **kwargs)
+        instance._loaded_email = instance.__dict__.get("email")
+        return instance
 
     @property
     def full_name(self) -> str:

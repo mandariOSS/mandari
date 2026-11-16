@@ -43,6 +43,8 @@ TWO_FACTOR_EXEMPT_PREFIXES = (
     "/favicon.ico",
     "/manifest",
     "/sw.js",
+    # Allgemeine Offline-Seite der PWA: ohne Inhalte eines Kontos, der Service Worker legt sie in den Cache
+    "/offline/",
 )
 POLICY_CACHE_SECONDS = 300
 

@@ -19,7 +19,7 @@ from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
 from ..models import TileCache
-from ..services import dienste, karten_punkte
+from ..services import dienste, karten_punkte, ruecknahme_stand
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 #: Höchste Zoomstufe der Karten (Leaflet maxZoom) und Größengrenze einer Kachel
@@ -141,7 +141,9 @@ def map_markers(request):
     # Bürgerportal: Titel und Orte ohne Hausnummer bei Privatanschriften (Issue #1269; neuer Cache-Schlüssel)
     if area is not None:
         return JsonResponse(karten_punkte.geojson([body], area=area, since=since, url=vorgang_url, oeffentlich=True))
-    cache_key = f"map_markers:1269:{body.id}:{'all' if show_all else weeks}"
+    # Mit dem Stand der Rücknahmen der Kommune: Ein zurückgenommener Vorgang fällt aus der Antwort, statt bis zum
+    # Ablauf des Eintrags mit Titel und Koordinaten ausgeliefert zu werden
+    cache_key = f"map_markers:1269:{body.id}:{'all' if show_all else weeks}:{ruecknahme_stand.stand(body.id)}"
     daten = cache.get(cache_key)
     if daten is None:
         daten = karten_punkte.geojson([body], since=since, url=vorgang_url, oeffentlich=True)

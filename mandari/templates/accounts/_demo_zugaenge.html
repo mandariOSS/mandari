@@ -1,0 +1,35 @@
+{% comment %}
+Öffentliche Demo (Issue #99): alle Zugänge mit dem veröffentlichten Passwort; je Rolle ein kleines Formular, das
+direkt anmeldet und auf die passende Startseite führt. Steht nur in der Demo-Instanz (apps/common/demo.py).
+{% endcomment %}
+<section id="demo-zugaenge" aria-labelledby="demo-zugaenge-titel" class="mb-6">
+    <h2 id="demo-zugaenge-titel" class="text-sm font-semibold text-gray-900 dark:text-white">Rolle wählen</h2>
+    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        Passwort für alle Konten: <code class="font-mono text-gray-800 dark:text-gray-200 select-all">{{ demo.passwort }}</code>.
+        Oder ohne Anmeldung: <a href="{{ demo.kommune_url }}" class="text-primary-600 dark:text-primary-400 hover:underline">Bürgerportal der Musterstadt</a>.
+    </p>
+    {% for gruppe in demo.gruppen %}
+    <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ gruppe.titel }}</h3>
+    <ul class="mt-1 divide-y divide-gray-100 dark:divide-gray-700">
+        {% for zugang in gruppe.zugaenge %}
+        <li class="flex items-center justify-between gap-3 py-2">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ zugang.rolle }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 truncate" title="{{ zugang.email }}">{{ zugang.hinweis }}</p>
+            </div>
+            <form method="post" class="flex-none">
+                {% csrf_token %}
+                <input type="hidden" name="email" value="{{ zugang.email }}">
+                <input type="hidden" name="password" value="{{ demo.passwort }}">
+                <input type="hidden" name="next" value="{{ zugang.ziel }}">
+                <button type="submit" aria-label="Als {{ zugang.rolle }} anmelden"
+                        class="h-7 px-3 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-200 hover:border-primary-500 hover:text-primary-700 dark:hover:text-primary-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+                    Anmelden
+                </button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endfor %}
+</section>
+<p class="mb-6 text-center text-xs text-gray-500 dark:text-gray-400">oder mit E-Mail-Adresse und Passwort</p>

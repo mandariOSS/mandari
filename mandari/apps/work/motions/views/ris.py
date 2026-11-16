@@ -17,7 +17,7 @@ from apps.session.services.application_service import ApplicationService
 from apps.work.rahmen import NeueVorlageMixin
 from apps.work.sanitize import safe_editor_html
 
-from .. import administration_feedback, email_submission, ris_submission
+from .. import administration_feedback, email_submission, non_public, ris_submission
 from ..models import Motion
 
 APPLICATION_TYPE_CHOICES = [
@@ -52,6 +52,10 @@ class MotionSubmitToAdministrationView(NeueVorlageMixin, WorkViewMixin, Template
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         motion = kwargs.get("motion") or self._get_motion()
+        if motion.is_sworn_in_only():
+            # „Nichtöffentliche Vorgänge“ (Issue #873): Die Seite zeigt den Inhalt als Vorschau, auch wenn sich
+            # solche Dokumente nicht einreichen lassen. Jeder Aufruf steht in der Änderungshistorie.
+            non_public.log_access(motion, self.membership, self.request, non_public.ACCESS_SUBMISSION_PREVIEW)
         connection = ris_submission.get_connection(self.organization)
         usable, reason = ris_submission.connection_state(connection)
         allowed, block_reason = ris_submission.can_submit(motion, self.membership)

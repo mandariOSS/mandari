@@ -55,8 +55,10 @@ MeetingInvitationStatusView.
                     <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ batch.total }} Brief{{ batch.total|pluralize:"e" }}{% if batch.pending %}, {{ batch.pending }} noch nicht als versandt vermerkt{% else %}, alle versandt{% endif %}</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <c-ui.textlink href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='pdf' %}" class="text-sm">Serienbrief (PDF)</c-ui.textlink>
+                    {% if can_export_letters %}
+                    {% if batch.dispatch.pk not in letter_pdf_blocked %}<c-ui.textlink href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='pdf' %}" class="text-sm">Serienbrief (PDF)</c-ui.textlink>{% endif %}
                     <c-ui.textlink href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='csv' %}" class="text-sm">Daten (CSV)</c-ui.textlink>
+                    {% endif %}
                     {% if batch.pending %}
                     <form method="post" action="{% url 'session:meeting_letters_sent' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id %}">
                         {% csrf_token %}

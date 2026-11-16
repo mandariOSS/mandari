@@ -437,6 +437,25 @@ def test_share_folder_rejects_user_without_org_access(guests: Guests) -> None:
 
 
 @pytest.mark.django_db
+def test_share_folder_answers_alike_for_unknown_and_foreign_accounts(guests: Guests) -> None:
+    """Ob zu einer Adresse ein Konto besteht, lässt die Antwort nicht erkennen."""
+
+    def antwort(email: str) -> tuple[int, str]:
+        response = guests.c_admin.post(
+            _share_url(ORG_SLUG_A, guests.folder_secret),
+            {"email": email, "level": "view"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        return response.status_code, response.content.decode().replace(email, "<adresse>")
+
+    unbekannt = antwort("unbekannt@example.org")
+    fremdes_konto = antwort(guests.user_admin_c.email)
+
+    assert unbekannt[0] == 400
+    assert unbekannt == fremdes_konto, "Antwort unterscheidet vorhandene von unbekannten Konten"
+
+
+@pytest.mark.django_db
 def test_member_without_permission_cannot_share_folder(guests: Guests) -> None:
     # Mitglied ohne guests.manage/motions.share kommt nicht an den Endpunkt
     response = _login(guests.user_plain).post(
@@ -468,6 +487,43 @@ def test_admin_can_revoke_folder_share(guests: Guests) -> None:
     )
     assert response.status_code == 200, f"Freigabe entziehen: erhalten {response.status_code}"
     assert not guests.doc_secret.can_access(guests.m_guest_a), "Zugriff nach Entzug nicht dicht"
+
+
+@pytest.mark.django_db
+def test_ordnerfreigabe_gibt_hoechstens_die_stufe_der_freigebenden_person(guests: Guests, make_member: Any) -> None:
+    """„Bearbeiten“ am Ordner gilt an Dokumenten anderer nur so weit, wie die freigebende Person sie selbst bearbeiten darf."""
+    rechte = ["motions.view", "motions.view_drafts", "motions.create", "motions.edit", "motions.comment"]
+    kollegin = make_member(guests.org_a, [*rechte, "motions.share"], email="kollegin@example.org")
+    ordner = DocumentFolder.objects.create(organization=guests.org_a, name="Arbeitskreis", created_by=kollegin)
+    eigenes = Motion.objects.create(
+        organization=guests.org_a, author=kollegin, title="Eigener Antrag", visibility="organization", folder=ordner
+    )
+    fremdes = Motion.objects.create(
+        organization=guests.org_a,
+        author=guests.m_admin,
+        title="Antrag der Vorsitzenden",
+        visibility="organization",
+        folder=ordner,
+    )
+    FolderGuestShare.objects.create(folder=ordner, user=guests.user_multi, level="edit", created_by=kollegin.user)
+    gast = guests.m_guest_a
+
+    # Die Kollegin darf das fremde Dokument nur kommentieren, also auch der Gast
+    assert fremdes.access_level(kollegin, status_lock=False) == "comment"
+    assert eigenes.get_guest_share_level(gast) == "edit"
+    assert fremdes.get_guest_share_level(gast) == "comment"
+    assert fremdes.access_level(gast, status_lock=False) == "comment" and fremdes.can_access(gast)
+
+    # Vergibt jemand die Freigabe neu, der das Dokument selbst bearbeiten darf, gilt wieder „Bearbeiten“
+    FolderGuestShare.objects.filter(folder=ordner, user=guests.user_multi).update(created_by=guests.user_admin)
+    assert fremdes.get_guest_share_level(gast) == "edit"
+
+    # Ohne aktive freigebende Person lässt sich nichts prüfen: lesen bleibt, mehr nicht
+    FolderGuestShare.objects.filter(folder=ordner, user=guests.user_multi).update(created_by=kollegin.user)
+    Membership.objects.filter(pk=kollegin.pk).update(is_active=False)
+    assert eigenes.get_guest_share_level(gast) == "view" and fremdes.get_guest_share_level(gast) == "view"
+    FolderGuestShare.objects.filter(folder=ordner, user=guests.user_multi).update(created_by=None)
+    assert fremdes.get_guest_share_level(gast) == "view"
 
 
 # =============================================================================

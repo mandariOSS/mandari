@@ -78,6 +78,19 @@ class Settings(BaseSettings):
         default=DEFAULT_INTERVAL,
         validation_alias=AliasChoices("INGESTOR_REQUEST_INTERVAL", "request_interval"),
     )
+    # Datei-Downloads gehen nur an öffentliche Adressen (mandari_oparl.ziel): Die Adressen nennt die Quelle, und
+    # eine Antwort aus dem internen Netz landete als Text im öffentlichen Bestand. Private Netze nur mit diesem
+    # Schalter (Selbstbetrieb im Intranet, derselbe wie in der Anwendung); Loopback und Link-Local nie.
+    fetch_allow_private_networks: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS", "fetch_allow_private_networks"),
+    )
+    # Hostnamen, die von der Prüfung ausgenommen sind (kommagetrennt), etwa der eigene Dienst im internen Netz,
+    # wenn der Ingestor veröffentlichte Dateien von mandari Session unter einem internen Namen abruft.
+    fetch_internal_hosts: str = Field(
+        default="",
+        validation_alias=AliasChoices("INGESTOR_FETCH_INTERNAL_HOSTS", "fetch_internal_hosts"),
+    )
     # Höchstens so viele laufende Anfragen je Host in einem Prozess (Reservierung des Takts und Anfrage
     # zusammen). Hält den reservierten Takt kurz: Ohne Grenze reservierte jeder Abrufplatz einen eigenen
     # Zeitpunkt, der Horizont je Host lag bei 20 Plätzen 20 s voraus, und die Vorschau fand keinen freien
@@ -116,6 +129,21 @@ class Settings(BaseSettings):
     sync_pool_size: int = Field(
         default=4,
         validation_alias=AliasChoices("INGESTOR_SYNC_POOL_SIZE", "sync_pool_size"),
+    )
+    # Gesamtfrist je Lauf im Daemon, in Minuten (0: keine): Danach endet der Lauf, zählt als Fehlversuch der Quelle
+    # und gibt seinen Platz im Pool zurück. Ohne sie hält eine Quelle, die endlos neue Seiten liefert oder tropfend
+    # antwortet, ihren Platz beliebig lange. Großzügig gewählt: Ein abgebrochener Änderungsabgleich rückt sein
+    # Änderungsfenster nicht vor; nur die Texterkennung behält, was sie geschafft hat.
+    sync_run_deadline_minutes: int = Field(
+        default=180,
+        ge=0,
+        validation_alias=AliasChoices("INGESTOR_SYNC_RUN_DEADLINE_MINUTES", "sync_run_deadline_minutes"),
+    )
+    # Dasselbe für Vollabgleiche; Fenster und Zeitscheiben der Quelle beenden sie meist früher
+    sync_full_deadline_minutes: int = Field(
+        default=24 * 60,
+        ge=0,
+        validation_alias=AliasChoices("INGESTOR_SYNC_FULL_DEADLINE_MINUTES", "sync_full_deadline_minutes"),
     )
     # Max entity-type syncs running concurrently within one body
     # (organizations/persons, meetings/papers, locations/agenda items/

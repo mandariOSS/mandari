@@ -484,6 +484,8 @@ def make_png():
 class FakeResponse:
     # Keine Weiterleitung: Fotoabrufe folgen ihnen selbst (insight_core/services/redirects.py, Issue #1027)
     next_request = None
+    # Der Rumpf liegt schon im Speicher: Das begrenzte Lesen (redirects.read_limited) nimmt dann ``content``
+    is_stream_consumed = True
 
     def __init__(self, status, content=b"", ctype="image/png"):
         self.status_code = status

@@ -54,6 +54,9 @@ def _allowance_queryset(view, period_start, period_end, organization_id="", stat
             "approved_by__user",
         )
         .order_by("attendance__person__family_name", "attendance__meeting__start")
+        # Name der Sitzung, wie ihn Liste, CSV und Bescheid zeigen: Die Abrechnung braucht Person, Gremium, Datum
+        # und Betrag jeder Position, den Namen einer nichtöffentlichen Sitzung aber nur mit dem Sichtrecht dafür
+        .annotate(meeting_label=allowance_service.meeting_label_expression(view.session_permissions))
     )
     if organization_id:
         organization_pk = uuid_param(organization_id)

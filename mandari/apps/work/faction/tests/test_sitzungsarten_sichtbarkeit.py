@@ -326,6 +326,66 @@ def test_aenderungshistorie_ohne_unsichtbare_sitzungen_und_reihen(
     assert GEHEIM not in html and "Vorstandsrunde" not in html
 
 
+@pytest.mark.django_db
+def test_aenderungshistorie_ohne_eintraege_geloeschter_sitzungen(
+    org: Any, make_member: Any, client_for: Any, verwaltung: Membership, geheim: FactionMeeting, offen: Any
+) -> None:
+    """Nach dem Löschen lässt sich eine Sitzung keiner Art mehr zuordnen: Ihre Einträge sieht nur die Verwaltung."""
+    from apps.work.faction.models import FactionAuditLog
+
+    FactionAuditLog.objects.create(
+        organization=org,
+        membership=verwaltung,
+        action="delete",
+        model_name="FactionMeeting",
+        object_id=geheim.pk,
+        object_repr=GEHEIM,
+        meeting_id_ref=geheim.pk,
+    )
+    geheim.delete()
+    pruefer = make_member(org, ["faction.view_public", "faction.view_audit"], email="pruefer@example.org")
+    url = reverse("work:faction_audit", kwargs={"org_slug": org.slug})
+
+    assert GEHEIM not in client_for(pruefer.user).get(url).content.decode()
+    assert GEHEIM in client_for(verwaltung.user).get(url).content.decode()
+
+
+@pytest.mark.django_db
+def test_genehmigende_sitzung_nur_mit_sicht(
+    org: Any, mitglied: Membership, kern: Membership, geheim: FactionMeeting, offen: FactionMeeting
+) -> None:
+    """Wird das Protokoll in einer Sitzung „nur Teilnehmende“ genehmigt, nennt die Protokollseite sie nur Teilnehmenden."""
+    from apps.work.faction import protokoll
+    from apps.work.faction.services import build_faction_protocol_pdf
+
+    FactionAgendaItem.objects.create(
+        meeting=geheim, number="1", title="Protokoll genehmigen", order=1, is_approval_item=True, approves_meeting=offen
+    )
+    geplant_kern = protokoll.genehmigung(offen, kern)
+    geplant_mitglied = protokoll.genehmigung(offen, mitglied)
+    assert geplant_kern.sitzung == geheim and "Nr. 1" in geplant_kern.wo
+    assert geplant_mitglied.sitzung is None and geplant_mitglied.verborgen
+    assert geplant_mitglied.wo == "einer späteren Sitzung"
+
+    FactionMeeting.objects.filter(pk=offen.pk).update(
+        status="completed", protocol_approved=True, protocol_approved_at=timezone.now(), protocol_approved_in=geheim
+    )
+    offen.refresh_from_db()
+    erfolgt_kern = protokoll.genehmigung(offen, kern)
+    erfolgt_mitglied = protokoll.genehmigung(offen, mitglied)
+    assert erfolgt_kern.sitzung == geheim and not erfolgt_kern.verborgen
+    assert erfolgt_mitglied.sitzung is None and erfolgt_mitglied.verborgen and not erfolgt_mitglied.direkt
+
+    # Das PDF gibt es einmal für alle Empfänger: ohne Titel und Datum der genehmigenden Sitzung
+    from django.template.loader import render_to_string
+
+    html = render_to_string(
+        "work/faction/pdf/protocol.html", {"meeting": offen, "organization": org, "participants": {"all": []}}
+    )
+    assert "Genehmigt:" in html and "in einer späteren Sitzung" in html and GEHEIM not in html
+    assert build_faction_protocol_pdf(offen, internal=False)[:4] == b"%PDF"
+
+
 # =============================================================================
 # Benachrichtigungen und Live-Notizen
 # =============================================================================

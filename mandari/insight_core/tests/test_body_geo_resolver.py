@@ -499,7 +499,10 @@ def test_admin_apply_suggestion(admin_client_: Client, montabaur: dict[str, OPar
     assert body_page.status_code == 200
     assert "Geo-Vorschläge" in body_page.content.decode()
 
-    response = admin_client_.get(reverse("admin:insight_core_oparlbodygeosuggestion_apply_detail", args=[right.pk]))
+    url = reverse("admin:insight_core_oparlbodygeosuggestion_apply_detail", args=[right.pk])
+    # Der Aufruf (GET) zeigt nur die Bestätigung; übernommen wird mit dem abgeschickten Formular
+    assert admin_client_.get(url).status_code == 200
+    response = admin_client_.post(url)
     assert response.status_code == 302
     nomborn.refresh_from_db()
     assert (nomborn.osm_relation_id, nomborn.ags) == (453847, "07143055")

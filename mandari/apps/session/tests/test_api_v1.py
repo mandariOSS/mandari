@@ -284,7 +284,7 @@ class TestDeprecatedPaths:
         assert response.status_code == 200
         # RFC 9745: Zeitpunkt der Abkündigung (27.09.2026, Release 0.11.0) als Structured-Field-Date
         assert response["Deprecation"] == "@1790467200"
-        # Dasselbe Datum steht im CHANGELOG („Abgekündigt“) und in docs/API_V1_SESSION.md
+        # Dasselbe Datum steht im CHANGELOG („Abgekündigt“) und in docs/SCHNITTSTELLE.md#session-api-v1
         assert response["Sunset"] == "Mon, 31 May 2027 00:00:00 GMT"
         assert response["Link"] == f'</api/v1/session/{tenant.slug}/meetings/>; rel="successor-version"'
         root = client.get(f"/session/{tenant.slug}/api/").json()

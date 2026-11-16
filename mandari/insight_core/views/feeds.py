@@ -248,7 +248,7 @@ def paper_list_feed(request: HttpRequest) -> HttpResponse:
             body,
         )
 
-    return feeds.antwort(request, f"vorgaenge|{body.pk}|{abfrage}", bauen)
+    return feeds.antwort(request, f"vorgaenge|{body.pk}|{abfrage}", bauen, body_id=body.pk)
 
 
 def _suchtreffer(params: Any, body: OParlBody | None, body_ids: list[Any]) -> list[OParlPaper]:
@@ -313,7 +313,12 @@ def search_feed(request: HttpRequest) -> HttpResponse:
             body,
         )
 
-    return feeds.antwort(request, f"suche|{body.pk if body is not None else 'alle'}|{abfrage}", bauen)
+    return feeds.antwort(
+        request,
+        f"suche|{body.pk if body is not None else 'alle'}|{abfrage}",
+        bauen,
+        body_id=body.pk if body is not None else None,
+    )
 
 
 @require_safe
@@ -359,7 +364,7 @@ def paper_feed(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
             paper.body,
         )
 
-    return feeds.antwort(request, f"vorgang|{paper.pk}", bauen)
+    return feeds.antwort(request, f"vorgang|{paper.pk}", bauen, body_id=paper.body_id)
 
 
 def kommende_sitzungen(gremium: OParlOrganization, jetzt: Any) -> QuerySet[OParlMeeting]:
@@ -417,7 +422,7 @@ def organization_feed(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
             body,
         )
 
-    return feeds.antwort(request, f"gremium|{gremium.pk}", bauen)
+    return feeds.antwort(request, f"gremium|{gremium.pk}", bauen, body_id=gremium.body_id)
 
 
 def _beschluss_auswahl(request: HttpRequest, body: OParlBody) -> tuple[OParlOrganization | None, str]:
@@ -459,7 +464,7 @@ def decision_feed(request: HttpRequest) -> HttpResponse:
             body,
         )
 
-    return feeds.antwort(request, f"beschluesse|{body.pk}|{abfrage}", bauen)
+    return feeds.antwort(request, f"beschluesse|{body.pk}|{abfrage}", bauen, body_id=body.pk)
 
 
 # ---------------------------------------------------------------------------

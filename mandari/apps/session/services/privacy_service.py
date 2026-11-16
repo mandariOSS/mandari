@@ -17,8 +17,8 @@ DSGVO-Paket für das Session RIS (Issue #43).
   zu einer Person gespeicherten Daten (Art. 15 DSGVO). Bankdaten werden
   nur mit der Berechtigung manage_allowances entschlüsselt.
 
-Dokumentation: docs/DSGVO_LOESCHKONZEPT.md, docs/DSGVO_AVV_MUSTER.md,
-docs/DSGVO_TOM.md.
+Dokumentation: docs/DATENSCHUTZ.md#3-löschkonzept, docs/DATENSCHUTZ.md#1-muster-auftragsverarbeitungsvertrag-avv-für-mandari-session,
+docs/DATENSCHUTZ.md#2-technische-und-organisatorische-maßnahmen-tom.
 """
 
 import contextlib

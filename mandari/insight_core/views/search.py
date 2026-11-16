@@ -23,6 +23,7 @@ from ..models import (
     OParlPerson,
 )
 from ..services import fraktionskuerzel
+from ..services.search_filters import MAX_QUERY_LENGTH
 from ._helpers import get_active_body, is_all_bodies_mode, page_number
 
 # =============================================================================
@@ -119,7 +120,9 @@ def search_results(request):
 
     Nutzt Elasticsearch für Volltextsuche.
     """
-    query = request.GET.get("q", "").strip()
+    # Dieselbe Grenze wie die Suchseite (SearchQuery.from_get): Die Rangfolge legt je Wort mit Gleichbedeutung eine
+    # Kopie der Anfrage an, ohne Grenze wächst das quadratisch mit der Länge
+    query = request.GET.get("q", "").strip()[:MAX_QUERY_LENGTH].strip()
     search_type = request.GET.get("type", "all")
     page = page_number(request)
     is_dropdown = request.GET.get("dropdown") == "1"

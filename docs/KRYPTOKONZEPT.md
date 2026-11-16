@@ -6,9 +6,8 @@ Zugriff auf Schlüssel hat und was bei Verlust passiert.
 Bezug: BSI IT-Grundschutz **CON.1 Kryptokonzept**, Parameterwahl abgeglichen mit
 **BSI TR-02102-1** (kryptografische Verfahren) und **TR-02102-2** (TLS).
 
-Stand: 16.09.2026, geprüft gegen Version 0.10.0 im Produktivbetrieb. Schlüsselwechsel
-(Abschnitt 5) überarbeitet am 26.09.2026; am selben Tag Systemeinstellungen und
-Editor-Zustand in die Verschlüsselung aufgenommen (Abschnitt 1).
+Stand: erstellt am 16.09.2026, Schlüsselwechsel (Abschnitt 5) überarbeitet am 26.09.2026,
+Zahl der verschlüsselten Felder (Abschnitt 1) abgeglichen im November 2026.
 
 ---
 
@@ -28,15 +27,16 @@ Verschlüsselung folgt dieser Unterscheidung, statt pauschal alles zu verschlüs
 | Öffentliche Ratsinformationen (OParl-Bestand) | **keine** | Sind per Gesetz öffentlich; Verschlüsselung brächte keinen Schutz, aber Kosten bei Suche und Auslieferung |
 | Protokolle und Audit-Log | **keine Inhaltsverschlüsselung** | Enthalten bewusst keine personenbezogenen Inhalte; Schutz über Zugriffsrechte |
 
-Insgesamt sind **41 Felder** verschlüsselt:
+Insgesamt sind **47 Felder** verschlüsselt:
 
-- **34 mit dem Mandantenschlüssel** – Verwaltungs-RIS (14), Sitzungsvorbereitung und
-  Fraktionsarbeit (11), Anträge (3: Inhalt, Versionen und der Zustand des gemeinsamen
-  Editors), Support (2), Protokollassistenz (2) sowie SMTP-Passwort und KI-Schlüssel der
-  Organisation (2)
-- **5 mit dem Hauptschlüssel** – plattformweite Zugangsdaten: SMTP-Passwort und
-  früherer KI-Schlüssel der Systemeinstellungen (seit Issue #950 geleert und ungenutzt), KI-Anbieter, GPU-Rechenknoten (2)
-- **2 für den zweiten Faktor** – TOTP-Geheimnis und Backup-Codes
+- **38 mit dem Mandantenschlüssel**: Work (18, u. a. Sitzungsvorbereitung, Fraktionsarbeit,
+  Anträge mit dem Zustand des gemeinsamen Editors), Verwaltungs-RIS (15), SMTP-Passwort und
+  KI-Schlüssel der Organisation (2), Protokollassistenz (2) und die Mail-Warteschlange (1)
+- **7 mit dem Hauptschlüssel**: plattformweite Zugangsdaten, nämlich SMTP-Passwort und früherer
+  KI-Schlüssel der Systemeinstellungen (seit Issue #950 geleert und ungenutzt), die beiden
+  Schlüssel der KI-Einstellungen (Anbieter und Zusammenfassungen), GPU-Rechenknoten (2) und
+  Mails der Plattform in der Warteschlange (1)
+- **2 für den zweiten Faktor**: TOTP-Geheimnis und Backup-Codes
 
 Dazu kommen die Mandantenschlüssel selbst, eingepackt mit dem Hauptschlüssel. Maßgeblich
 ist das Verzeichnis `mandari/apps/common/crypto_registry.py`: Dort steht jedes
@@ -145,8 +145,10 @@ Der 2FA-Schlüssel wird nicht gespeichert, sondern zweckgebunden aus dem Hauptsc
 abgeleitet (SHA-256 mit festem Kontext) und mit Fernet genutzt (AES-128-CBC mit
 HMAC-SHA256, ebenfalls authentifiziert). Er wechselt deshalb mit dem Hauptschlüssel.
 
-Der Hauptschlüssel liegt ausschließlich in der Umgebung des Anwendungscontainers
-(`.env` beziehungsweise Kubernetes-Secret) und wird **nie** persistiert. Die
+Der Hauptschlüssel liegt ausschließlich in der Umgebung der Container, die ihn brauchen
+(Anwendung, die Worker `worker`, `worker-heavy` und `worker-live`, die Steuerung der
+Rechenknoten und der Migrationsjob; Quelle ist die `.env` beziehungsweise das
+Kubernetes-Secret) und wird **nie** persistiert. Die
 Mandantenschlüssel liegen verschlüsselt in der Datenbank. Daraus folgt: Eine
 Kopie der Datenbank allein — etwa ein entwendetes Backup — gibt keine
 verschlüsselten Inhalte preis.
@@ -220,7 +222,7 @@ gehört eine frische Datenbanksicherung dazu.
    „unlesbar“ muss überall 0 zeigen.
 2. Neuen Schlüssel erzeugen und getrennt vom Server sicher hinterlegen:
    `python -c "import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"`
-3. In der Umgebung aller Dienste, die `ENCRYPTION_MASTER_KEY` erhalten (Anwendung,
+3. In der Umgebung aller Dienste, die `ENCRYPTION_MASTER_KEY` erhalten (Anwendung, Worker,
    Steuerung der Rechenknoten, Migrationsjob), den neuen Schlüssel eintragen und den
    bisherigen in `ENCRYPTION_MASTER_KEY_PREVIOUS`. Dienste neu starten. Ab jetzt wird mit
    dem neuen Schlüssel geschrieben, alles Bisherige bleibt lesbar.

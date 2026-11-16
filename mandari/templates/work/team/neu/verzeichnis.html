@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load member_tags %}
 {% comment %}
 Team im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit der Zahl im Satz, Suche (GET q) und eine Tabelle
 mit Linien – Name mit Eigentum und Vereidigung als Text, Rollen als Text statt farbiger Pillen, Verfügbarkeit als Punkt
@@ -39,10 +40,10 @@ bleibt work/team/directory.html.
                         {% if member.user.avatar %}
                         <img src="{{ member.user.avatar.url }}" alt="" class="mt-0.5 w-7 h-7 rounded-full object-cover shrink-0">
                         {% else %}
-                        <span class="mt-0.5 w-7 h-7 shrink-0 rounded-full bg-band-grau inline-flex items-center justify-center text-xs font-semibold text-gray-700 dark:text-gray-300" aria-hidden="true">{{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}</span>
+                        <span class="mt-0.5 w-7 h-7 shrink-0 rounded-full bg-band-grau inline-flex items-center justify-center text-xs font-semibold text-gray-700 dark:text-gray-300" aria-hidden="true">{{ member.user|team_initial }}</span>
                         {% endif %}
                         <div class="min-w-0">
-                            <a href="{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ member.user.get_full_name|default:member.user.email }}</a>
+                            <a href="{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ member.user|team_name }}</a>
                             {% if is_owner_user == member.user or member.is_sworn_in %}
                             <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if is_owner_user == member.user %}Eigentümer{% if member.is_sworn_in %} · {% endif %}{% endif %}{% if member.is_sworn_in %}vereidigt{% endif %}</p>
                             {% endif %}

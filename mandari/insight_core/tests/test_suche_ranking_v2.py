@@ -72,6 +72,21 @@ def test_kurze_woerter_sind_kein_kompositum_und_gleichbedeutungen_zaehlen_wenig(
     assert not any("schule" in a.text for a in kita.alternatives)
 
 
+def test_zerlegung_begrenzt_laenge_woerter_und_lesarten() -> None:
+    """Jede Lesart kopiert die Anfrage: Länge, Wörter und Lesarten haben feste Obergrenzen, für jeden Aufrufer."""
+    lang = search_ranking.parse("kita " * 3200)
+
+    assert len(lang.original) <= search_ranking.MAX_PARSE_LENGTH
+    assert len(lang.original.split()) <= search_ranking.MAX_PARSE_TOKENS
+    assert len(lang.alternatives) <= search_ranking.MAX_ALTERNATIVES
+    assert sum(len(lesart.text) for lesart in lang.alternatives) < 16 * search_ranking.MAX_PARSE_LENGTH
+
+    # Gewöhnliche Anfragen bleiben unverändert
+    kurz = search_ranking.parse("Kita Hafenstraße")
+    assert kurz.original == "kita hafenstraße"
+    assert any("kindertagesstätte" in lesart.text for lesart in kurz.alternatives)
+
+
 @pytest.mark.parametrize(
     ("eingabe", "erwartet"),
     [("V/0624/2016", True), ("A-R/0055/2026", True), ("AJR-W/0001/2026", True), ("Haushalt/Finanzen", False)],

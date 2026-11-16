@@ -42,7 +42,7 @@ der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Wo
             <div class="wf-menue rechts" role="menu" x-show="offen" x-cloak>
                 <button type="button" role="menuitem" @click="offen = false; $dispatch('open-item-panel', { id: '{{ item.pk }}' })"><i data-lucide="panel-right" aria-hidden="true"></i>Unterlagen und Weiteres …</button>
                 {% if not item.is_approval_item and not z.unter %}
-                <button type="button" role="menuitem" @click="offen = false; $dispatch('open-add-sub', { parent_id: '{{ item.pk }}', visibility: '{{ item.visibility }}' })"><i data-lucide="plus" aria-hidden="true"></i>Unterpunkt …</button>
+                <button type="button" role="menuitem" @click="offen = false; $dispatch('open-add-sub', { parent_id: '{{ item.pk }}', visibility: '{{ item.visibility|escapejs }}' })"><i data-lucide="plus" aria-hidden="true"></i>Unterpunkt …</button>
                 {% endif %}
                 {% if z.verschiebbar %}
                 {% if not z.erster %}
@@ -106,7 +106,7 @@ der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Wo
         {% if can_edit %}
         <div class="fs-detail-aktionen">
             {% if not z.unter and not item.is_approval_item %}
-            <button type="button" class="wf-knopf" @click="$dispatch('open-add-sub', { parent_id: '{{ item.pk }}', visibility: '{{ item.visibility }}' })"><i data-lucide="plus" aria-hidden="true"></i>Unterpunkt</button>
+            <button type="button" class="wf-knopf" @click="$dispatch('open-add-sub', { parent_id: '{{ item.pk }}', visibility: '{{ item.visibility|escapejs }}' })"><i data-lucide="plus" aria-hidden="true"></i>Unterpunkt</button>
             {% endif %}
             <button type="button" class="wf-knopf wf-leise" @click="$dispatch('open-item-panel', { id: '{{ item.pk }}' })"><i data-lucide="panel-right" aria-hidden="true"></i>Weitere Angaben …</button>
             {% if not item.is_approval_item %}

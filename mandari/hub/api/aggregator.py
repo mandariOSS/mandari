@@ -199,9 +199,17 @@ def _list_response(request: HttpRequest, base_url: str, queryset: QuerySet[Any],
 DOCUMENTATION_URL: Final = "https://docs.mandari.de/insight/oparl-api/"
 
 
-def directory_url() -> str:
-    """Seite „Offene Daten“ im Bürgerportal: alle Kommunen mit ihren Adressen (Issue #1282)."""
-    return f"{settings.SITE_URL.rstrip('/')}{reverse('insight_core:insight:offene_daten')}"
+def directory_url(slug: str = "") -> str:
+    """Seite „Offene Daten“: alle Kommunen mit ihren Adressen (Issue #1282), mit ``slug`` die einer Kommune.
+
+    Mit ``INSIGHT_OFFENE_DATEN_URL`` die dort eingestellte Seite (Issue #1309) und je Kommune ``<Adresse><slug>/``,
+    sonst die Seite im Bürgerportal mit der Kommune als Sprungmarke.
+    """
+    extern = getattr(settings, "INSIGHT_OFFENE_DATEN_URL", "")
+    if extern:
+        return f"{extern}{slug}/" if slug else extern
+    seite = f"{settings.SITE_URL.rstrip('/')}{reverse('insight_core:insight:offene_daten')}"
+    return f"{seite}#kommune-{slug}" if slug else seite
 
 
 @endpoint

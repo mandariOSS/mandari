@@ -670,3 +670,133 @@ def test_mitgliedschaft_nennt_person_und_gremium_nur_wenn_bekannt() -> None:
     assert beide.payload["organization"] == str(cid(ORG))
     (ohne,) = ris_events.membership_events(objekt_id, {}, None)
     assert ohne.payload == {"membership": str(objekt_id), "change": "added"}
+
+
+# --- Obergrenzen des Vergleichs ------------------------------------------------------------------
+
+#: Objekte mit den Schachtelungen echter Quellen und ihre Prüfsummen vor Einführung der Obergrenzen. Ändert sich
+#: eine davon, schreibt der nächste Abgleich jedes Objekt von Quellen ohne verlässliche Zeitstempel neu.
+BESTAND: dict[str, tuple[dict[str, Any], str]] = {
+    "person": (
+        {
+            "id": "https://ris.example/person/1",
+            "type": "https://schema.oparl.org/1.1/Person",
+            "name": 'Dr. "Max" Müller',
+            "modified": "2026-01-01T00:00:00+01:00",
+            "membership": [
+                {"id": "https://ris.example/m/2", "organization": "https://ris.example/o/1", "votingRight": True},
+                {"id": "https://ris.example/m/1", "organization": "https://ris.example/o/2", "role": r"Vorsitz\Stv."},
+            ],
+            "title": ["Dr.", "Prof."],
+            "email": [],
+        },
+        "sha256:308ec25a353ca0163b6eaab559e6f0cefa0b214896c16c1d377671a3a9f0bead",
+    ),
+    "sitzung": (
+        {
+            "id": "https://ris.example/meeting/7",
+            "type": "https://schema.oparl.org/1.1/Meeting",
+            "organization": ["https://ris.example/o/2", "https://ris.example/o/1"],
+            "agendaItem": [
+                {
+                    "id": "https://ris.example/ai/1",
+                    "auxiliaryFile": [
+                        {
+                            "id": "https://ris.example/f/1",
+                            "name": 'Anlage "A"',
+                            "text": "Zeile 1\nZeile 2\t\\Pfad",
+                            "derivativeFile": ["https://ris.example/f/3", "https://ris.example/f/2"],
+                        }
+                    ],
+                },
+                {"id": "https://ris.example/ai/2", "keyword": ["b", "a", "a"]},
+            ],
+            "location": {
+                "geojson": {"type": "Polygon", "coordinates": [[[7.6, 51.9], [7.7, 51.9], [7.7, 52.0], [7.6, 51.9]]]}
+            },
+        },
+        "sha256:571619e88a2dc8a170e39a4fe5b30342d03af0d6d22df9181394477a331f7d75",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(BESTAND))
+def test_pruefsumme_des_bestands_bleibt(name: str) -> None:
+    objekt, erwartet = BESTAND[name]
+
+    assert ris_events.content_fingerprint(objekt) == erwartet
+
+
+def _geschachtelt(tiefe: int) -> dict[str, Any]:
+    wert: Any = "x"
+    for _ in range(tiefe):
+        wert = [wert]
+    return {"id": "https://ris.example/paper/1", "beliebig": wert}
+
+
+@pytest.mark.parametrize("tiefe", [28, 40, 400, 5000])
+def test_tief_geschachtelte_listen_bleiben_im_rahmen(tiefe: int) -> None:
+    """Wenige hundert Byte einer Quelle dürfen im Vergleich nicht zu Gigabytes werden."""
+    import time
+    import tracemalloc
+
+    objekt = _geschachtelt(tiefe)
+    tracemalloc.start()
+    start = time.perf_counter()
+    summe = ris_events.content_fingerprint(objekt)
+    dauer = time.perf_counter() - start
+    _aktuell, spitze = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert summe.startswith("sha256:")
+    assert spitze < 64 * 1024 * 1024
+    assert dauer < 5
+    # Gleicher Inhalt, gleiche Prüfsumme; anderer Inhalt, andere Prüfsumme
+    assert ris_events.content_fingerprint(_geschachtelt(tiefe)) == summe
+    anders = _geschachtelt(tiefe)
+    anders["beliebig"] = [anders["beliebig"]]
+    assert ris_events.content_fingerprint(anders) != summe
+
+
+def test_ersatz_pruefsumme_ist_bestimmt_und_unabhaengig_von_der_rekursionsgrenze() -> None:
+    """Die Ersatz-Prüfsumme durchläuft den Wert ohne Rekursion: auch sehr tiefe Werte ergeben immer dasselbe."""
+    import sys
+
+    tief = _geschachtelt(50_000)
+    grenze = sys.getrecursionlimit()
+    sys.setrecursionlimit(200)
+    try:
+        summe = ris_events._digest(tief)
+        assert ris_events._digest(_geschachtelt(50_000)) == summe
+        assert ris_events._digest(_geschachtelt(50_001)) != summe
+    finally:
+        sys.setrecursionlimit(grenze)
+    # Reihenfolge der Schlüssel zählt nicht, die der Listen schon; flüchtige Felder der obersten Ebene zählen nicht
+    assert ris_events._digest({"a": 1, "b": [1, 2], "modified": "x"}) == ris_events._digest({"b": [1, 2], "a": 1})
+    assert ris_events._digest({"a": [1, 2]}) != ris_events._digest({"a": [2, 1]})
+    assert ris_events._digest({"a": {"modified": "x"}}) != ris_events._digest({"a": {"modified": "y"}})
+    assert ris_events._digest([["a"], "b"]) != ris_events._digest([["a", "b"]])
+    # Derselbe Behälter an zwei Stellen ist kein Kreis
+    doppelt = ["x"]
+    assert ris_events._digest([doppelt, doppelt]) == ris_events._digest([["x"], ["x"]])
+
+
+def test_nicht_darstellbarer_wert_gilt_nie_als_gleich() -> None:
+    """Enthält ein Wert sich selbst, gilt er als geändert, statt eine Änderung zu verschlucken."""
+    kreis: list[Any] = []
+    kreis.append(kreis)
+
+    assert ris_events._digest(kreis) != ris_events._digest(kreis)
+    assert ris_events.content_fingerprint({"id": "x", "a": kreis}) != ris_events.content_fingerprint(
+        {"id": "x", "a": kreis}
+    )
+
+
+def test_vergleich_ueber_der_grenze_ignoriert_weiter_die_zeitstempel() -> None:
+    objekt = _geschachtelt(40)
+
+    assert ris_events.content_fingerprint({**objekt, "modified": "2026-01-01"}) == ris_events.content_fingerprint(
+        {**objekt, "modified": "2026-02-02"}
+    )
+    assert ris_events.differing_keys(objekt, {**objekt, "modified": "2026-02-02"}) == []
+    assert ris_events.differing_keys(objekt, _geschachtelt(41)) == ["beliebig"]

@@ -26,9 +26,12 @@ einreicht, braucht sofort eine Eingangsnummer oder einen verständlichen Fehler.
 - **In-Process:** `hub.commands.dispatch(SubmitApplication(...)) -> Receipt`. Der Handler liegt
   beim Eigentümer (z. B. `apps/session/commands.py`), läuft in dessen Transaktion, schreibt die
   Fachdaten und veröffentlicht Ereignisse wie `submission.received`. `hub.commands` enthält nur
-  Dispatcher, Verträge und Clients, keine Fachregeln.
+  Dispatcher, Verträge und Clients, keine Fachregeln. (Vermerk 11.11.2026: Die Handler in
+  `apps/session/commands.py` veröffentlichen bisher keine Ereignisse; `submission.received` hat noch keinen
+  Erzeuger.)
 - **HTTP (Profil Einreichung):** django-ninja mit OpenAPI, z. B.
-  `POST /api/v1/einreichung/antraege`. Pflicht-Header `Idempotency-Key`. Fehler als
+  `POST /api/v1/einreichung/antraege` (Vermerk 11.11.2026: Diese Adresse entsteht nicht; das Profil liegt an der
+  OParl-Ausgabe je Mandant, Nachtrag #1228 unten). Pflicht-Header `Idempotency-Key`. Fehler als
   `application/problem+json` nach RFC 9457. Erfolg mit `201` und Quittung: Eingangsnummer,
   Eingangszeit, Inhalts-Hash. Zugriff über Tokens mit Berechtigungsumfang.
 - **Idempotenz:** Beide Wege tragen einen Idempotenzschlüssel. Der Eigentümer speichert Schlüssel,
@@ -127,7 +130,7 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
   Paket, das der Vertrag als `x-owner` nennt; sonst bricht der Start ab.
 - **Zwei HTTP-Ebenen, eine Entscheidung.** Die Entscheidung oben nennt für das Profil Einreichung
   django-ninja mit OpenAPI und sprechenden Adressen (`POST /api/v1/einreichung/antraege`). Das
-  bleibt so: Es ist die öffentliche, dokumentierte Schnittstelle für Fremdsysteme und entsteht mit
+  bleibt so (Vermerk 11.11.2026: überholt, siehe Nachtrag #1228): Es ist die öffentliche, dokumentierte Schnittstelle für Fremdsysteme und entsteht mit
   dem Profil (#540). Der allgemeine Weg `POST …/<befehl>/v<version>` aus `hub.commands.http` ist
   etwas anderes: die Verbindung zwischen zwei mandari-Installationen, über die der `HttpClient`
   jeden Befehl des Registers senden kann (JSON-Objekt, `Idempotency-Key` mit oder ohne
@@ -183,7 +186,8 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
   Fehler und der Wiederholung, entsteht ein zweiter Eingang.
 - **API v1:** `Idempotency-Key` ist dort optional, weil die bestehende Schnittstelle sonst brechen würde. Ohne
   Schlüssel gilt jede Anfrage als neue Einreichung wie bisher. Die Pflicht gilt für das Profil Einreichung
-  unter eigener Adresse (`POST /api/v1/einreichung/antraege`), das noch aussteht. Die Antwort trägt zusätzlich
+  unter eigener Adresse (`POST /api/v1/einreichung/antraege`), das noch aussteht. (Vermerk 11.11.2026: Das
+  Profil ist mit #1228 umgesetzt, unter `…/api/oparl/body/kommparl/submissions/`.) Die Antwort trägt zusätzlich
   `submitted_at` (Eingangszeit der Quittung; `received_at` heißt im Rückmeldestand schon der Eingang bei der
   Verwaltung) und `content_hash`.
 - **Inhalts-Hash gewollt.** Die offene Frage zu HMAC und abschaltbarem Inhalts-Hash (#541) betrifft erst
@@ -213,8 +217,8 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
 ## Bezug
 
 - [A5 Verträge](20260929-ereignisvertraege.md), [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md)
-- `docs/ENGINEERING_STANDARDS.md`, Abschnitt 6; `docs/API_V1_SESSION.md`;
-  `docs/WORK_SESSION_SUBMISSION.md`; `docs/RELEASE_POLITIK.md`
+- `docs/ENGINEERING_STANDARDS.md`, Abschnitt 6; `docs/SCHNITTSTELLE.md` (Session-API v1, Profil Einreichung);
+  `docs/WORK.md` (Anträge einreichen); `docs/RELEASE_POLITIK.md`
 - RFC 9457, Problem Details for HTTP APIs: https://www.rfc-editor.org/rfc/rfc9457
 - IETF-Entwurf „The Idempotency-Key HTTP Header Field“:
   https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/

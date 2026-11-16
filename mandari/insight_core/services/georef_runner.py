@@ -53,6 +53,8 @@ def has_text_q() -> Any:
             paper=OuterRef("pk"),
             text_extraction_status="completed",
             text_content__isnull=False,
+            deleted=False,
+            source_missing_since__isnull=True,
         ).exclude(text_content="")
     )
 

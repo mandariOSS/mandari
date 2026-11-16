@@ -144,3 +144,83 @@ def test_verschieben_in_gastordner_nur_mit_freigaberecht(
     client_for(autorin.user).post(url, {"folder": str(ordner.id), "motion_ids": [str(dokument.id)]})
     dokument.refresh_from_db()
     assert dokument.folder_id == ordner.id
+
+
+def _gastordner(org: Any, freigebende: Any, name: str = "Extern") -> tuple[DocumentFolder, Any]:
+    ordner = DocumentFolder.objects.create(organization=org, name=name, created_by=freigebende)
+    gast = _gast(org, f"gast-{name.lower()}@example.org")
+    FolderGuestShare.objects.create(folder=ordner, user=gast.user, level="view", created_by=freigebende.user)
+    return ordner, gast
+
+
+@pytest.mark.django_db
+def test_ordnerwechsel_ueber_die_metadaten_in_gastordner_nur_mit_freigaberecht(
+    org: Any, autorin: Any, kollegin: Any, freigebende: Any, client_for: Any
+) -> None:
+    """Der Metadaten-Endpunkt folgt derselben Regel wie „Verschieben nach“."""
+    ordner, gast = _gastordner(org, freigebende)
+    dokument = Motion.objects.create(organization=org, author=autorin, title="Für alle", visibility="organization")
+    MotionShare.objects.create(motion=dokument, scope="user", user=kollegin.user, level="edit", created_by=autorin.user)
+    url = reverse("work:document_meta", kwargs={"org_slug": org.slug, "motion_id": dokument.id})
+    daten = {"action": "set_folder", "folder": str(ordner.id)}
+
+    assert dokument.can_edit(kollegin) and not dokument.can_share(kollegin)
+    antwort = client_for(kollegin.user).post(url, daten, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+    assert antwort.status_code == 403
+    dokument.refresh_from_db()
+    assert dokument.folder_id is None
+    assert not dokument.can_access(gast)
+
+    assert client_for(autorin.user).post(url, daten, HTTP_X_REQUESTED_WITH="XMLHttpRequest").status_code == 200
+    dokument.refresh_from_db()
+    assert dokument.folder_id == ordner.id
+
+
+@pytest.mark.django_db
+def test_ordner_unter_gastordner_haengen_nur_mit_freigaberecht_an_den_dokumenten(
+    org: Any, autorin: Any, make_member: Any, freigebende: Any, client_for: Any
+) -> None:
+    """Wer einen Ordner unter einen freigegebenen hängt, braucht das Freigaberecht an den Dokumenten darunter."""
+    gastordner, gast = _gastordner(org, freigebende)
+    kollegin = make_member(org, [*RECHTE, "motions.create"], email="ordner@example.org")
+    eigener = DocumentFolder.objects.create(organization=org, name="Sammlung", created_by=kollegin)
+    unterordner = DocumentFolder.objects.create(organization=org, name="Tiefer", parent=eigener, created_by=kollegin)
+    fremd = Motion.objects.create(
+        organization=org, author=autorin, title="Fremd für alle", visibility="organization", folder=unterordner
+    )
+    url = reverse("work:document_folder_update", kwargs={"org_slug": org.slug, "folder_id": eigener.id})
+
+    client_for(kollegin.user).post(url, {"parent": str(gastordner.id)})
+    eigener.refresh_from_db()
+    assert eigener.parent_id is None
+    assert not fremd.can_access(gast)
+
+    # Private Dokumente erfasst keine Ordner-Freigabe: Sie halten das Umhängen nicht auf
+    fremd.visibility = "private"
+    fremd.save(update_fields=["visibility"])
+    client_for(kollegin.user).post(url, {"parent": str(gastordner.id)})
+    eigener.refresh_from_db()
+    assert eigener.parent_id == gastordner.id
+
+    # Umbenennen und Umhängen innerhalb desselben freigegebenen Bereichs bleiben möglich
+    fremd.visibility = "organization"
+    fremd.save(update_fields=["visibility"])
+    client_for(kollegin.user).post(url, {"name": "Sammlung neu", "parent": str(gastordner.id)})
+    eigener.refresh_from_db()
+    assert eigener.name == "Sammlung neu" and eigener.parent_id == gastordner.id
+
+
+@pytest.mark.django_db
+def test_ordner_mit_eigenen_dokumenten_unter_gastordner(org: Any, freigebende: Any, client_for: Any) -> None:
+    gastordner, gast = _gastordner(org, freigebende)
+    eigener = DocumentFolder.objects.create(organization=org, name="Meine", created_by=freigebende)
+    dokument = Motion.objects.create(
+        organization=org, author=freigebende, title="Eigenes", visibility="organization", folder=eigener
+    )
+    url = reverse("work:document_folder_update", kwargs={"org_slug": org.slug, "folder_id": eigener.id})
+
+    client_for(freigebende.user).post(url, {"parent": str(gastordner.id)})
+
+    eigener.refresh_from_db()
+    assert eigener.parent_id == gastordner.id
+    assert Motion.objects.get(pk=dokument.pk).can_access(gast)

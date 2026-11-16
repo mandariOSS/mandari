@@ -40,7 +40,7 @@ Auswirkungen (Alpine: Erläuterung nur bei „Ja“) und Urheber. Felder, Option
         {% endif %}
 
         {# Finanzielle Auswirkungen (Issue #81): Erläuterung nur bei „Ja“ #}
-        <fieldset x-data="{ fin: '{{ form.has_financial_impact.value|default_if_none:'' }}' }" data-testid="finanzielle-auswirkungen">
+        <fieldset x-data="{ fin: '{{ form.has_financial_impact.value|default_if_none:''|escapejs }}' }" data-testid="finanzielle-auswirkungen">
             <c-form.beschriftung als="legend">Finanzielle Auswirkungen <span class="text-red-500" aria-hidden="true">*</span></c-form.beschriftung>
             <div class="mt-1 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-800 dark:text-gray-200">
                 <label class="inline-flex min-h-[24px] cursor-pointer items-center gap-2">

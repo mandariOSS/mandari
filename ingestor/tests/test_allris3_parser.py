@@ -3,8 +3,9 @@
 Golden-File-Tests der Parser des ALLRIS-3-Adapters (Issue #121).
 
 Seiten von sieben ALLRIS-3-Instanzen und Sonderfälle aus dem Projekt bv-hh (MIT), dazu synthetische Seiten
-(``fixtures/scrapers/allris3/README.md``). Ohne Netz. Bricht ein Umbau der Parser Felder, schlagen die Vergleiche mit
-``expected/*.json`` fehl; die Sonderfälle prüfen Zeichensatz, leere Abschnitte und nicht öffentliche Seiten.
+(``fixtures/scrapers/README.md``, Abschnitt „allris3/“). Ohne Netz. Bricht ein Umbau der Parser Felder,
+schlagen die Vergleiche mit ``expected/*.json`` fehl; die Sonderfälle prüfen Zeichensatz, leere Abschnitte
+und nicht öffentliche Seiten.
 """
 
 from __future__ import annotations

@@ -25,7 +25,7 @@ from django.core.files.base import ContentFile
 from django.db.models import Q
 from django.utils import timezone
 
-from . import file_cache, host_pacing, redirects, robots
+from . import file_cache, host_pacing, redirects, robots, safe_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 USER_AGENT = robots.USER_AGENT
 MAX_BYTES = 5 * 1024 * 1024
 MAX_SIZE = (400, 400)
+#: Höchstens so viele Bildpunkte dekodieren wir (ein 40-Megapixel-Foto passt)
+MAX_PIXELS = 40_000_000
 
 #: Bekannte RIS mit funktionierendem Foto-Muster (greift, wenn eine Kommune
 #: noch keine Konfiguration hat). Der Schlüssel wird gegen Quelle/Body-ID
@@ -65,9 +67,14 @@ def _normalize_image(data: bytes) -> bytes:
     """Bild auf max. 400 px verkleinern und als JPEG speichern (Pillow)."""
     from PIL import Image
 
-    with Image.open(io.BytesIO(data)) as img:
-        img = img.convert("RGB")
+    with Image.open(io.BytesIO(data), formats=("JPEG", "PNG", "WEBP", "GIF")) as img:
+        # Die Maße stehen im Kopf der Datei: Ein stark komprimiertes Bild mit riesiger Fläche wird abgewiesen, bevor
+        # es dekodiert ist. Verkleinert wird vor dem Umwandeln (JPEG dekodiert dann schon in kleinerer Auflösung).
+        if img.width * img.height > MAX_PIXELS:
+            raise ValueError("Bild hat zu viele Bildpunkte")
+        img.draft("RGB", MAX_SIZE)
         img.thumbnail(MAX_SIZE)
+        img = img.convert("RGB")
         out = io.BytesIO()
         img.save(out, format="JPEG", quality=85, optimize=True)
         return out.getvalue()
@@ -93,8 +100,12 @@ def _mark(person, status: str, error: str = "") -> str:
 
 
 def _client() -> httpx.Client:
-    """Client für Fotoabrufe: Weiterleitungen folgt ``fetch_person_photo`` selbst (``redirects``)."""
-    return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=False)
+    """
+    Client für Fotoabrufe: Weiterleitungen folgt ``fetch_person_photo`` selbst (``redirects``). Die Adresse des
+    Fotos stammt aus den Angaben der Quelle; der geschützte Client prüft deshalb schon das erste Ziel und verbindet
+    nur mit öffentlichen Adressen (``safe_fetch.guarded_client``).
+    """
+    return safe_fetch.guarded_client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=False)
 
 
 def _source_blocked(body) -> str | None:
@@ -147,8 +158,12 @@ def fetch_person_photo(person, client=None) -> str:
     try:
         try:
             # Weiterleitungen nur nach der robots.txt ihres Ziels und im Takt (Issue #1027)
-            request = client.build_request("GET", url, headers={"User-Agent": agent})
-            response = redirects.send(client, request, before_redirect=redirects.guard(sync_config=sync_config))
+            request = client.build_request(
+                "GET", url, headers={"User-Agent": agent, "Accept-Encoding": redirects.ACCEPT_ENCODING}
+            )
+            response = redirects.send(
+                client, request, before_redirect=redirects.guard(sync_config=sync_config), stream=True
+            )
         except redirects.RedirectBlockedError as exc:
             if exc.decision.unreachable:
                 return "deferred"
@@ -156,19 +171,29 @@ def fetch_person_photo(person, client=None) -> str:
         except httpx.HTTPError as exc:
             return _mark(person, "error", f"{type(exc).__name__}: {exc}")
 
-        content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-        if response.status_code in (404, 410) or (
-            response.status_code == 200 and not content_type.startswith("image/")
-        ):
-            _discard_photo(person)
-            return _mark(person, "missing")
-        if response.status_code != 200:
-            return _mark(person, "error", f"HTTP {response.status_code}")
-        if not response.content or len(response.content) > MAX_BYTES:
+        try:
+            content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+            if response.status_code in (404, 410) or (
+                response.status_code == 200 and not content_type.startswith("image/")
+            ):
+                _discard_photo(person)
+                return _mark(person, "missing")
+            if response.status_code != 200:
+                return _mark(person, "error", f"HTTP {response.status_code}")
+            # Gestreamt und höchstens bis zur Grenze lesen: Die Größe prüfen wir, bevor der Rumpf im Speicher liegt
+            try:
+                content = redirects.read_limited(response, MAX_BYTES, deadline=redirects.deadline_after(60.0))
+            except redirects.ResponseTooLargeError:
+                content = b""
+            except httpx.HTTPError as exc:
+                return _mark(person, "error", f"{type(exc).__name__}: {exc}")
+        finally:
+            response.close()
+        if not content:
             return _mark(person, "error", "Leere oder zu große Datei")
 
         try:
-            normalized = _normalize_image(response.content)
+            normalized = _normalize_image(content)
         except Exception as exc:  # Pillow kann exotische Formate ablehnen
             return _mark(person, "error", f"Bild nicht lesbar: {exc}")
 

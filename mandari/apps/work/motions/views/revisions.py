@@ -5,6 +5,7 @@ Motion/Antrag views for the Work module.
 
 import logging
 
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.generic import View
@@ -19,6 +20,7 @@ from ..models import (
     Motion,
     MotionRevision,
 )
+from ..services import lock_for_save
 from ._helpers import _broadcast_doc_reload
 
 # =============================================================================
@@ -101,47 +103,59 @@ class DocumentRevisionRestoreView(WorkViewMixin, View):
 
     permission_required = "motions.edit"
 
+    def _darf_wiederherstellen(self, motion) -> bool:
+        """
+        Verwaltungsrecht (Autor:in oder motions.edit_all mit Zugang) und Schreibstufe inkl. Status-Sperre – eine
+        Wiederherstellung ändert den Inhalt wie der Editor.
+        """
+        return motion.can_manage(self.membership) and motion.editor_access_level(self.membership) in ("edit", "admin")
+
     def post(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
         revision = get_object_or_404(MotionRevision, id=kwargs.get("revision_id"), motion=motion)
 
-        # Verwaltungsrecht (Autor:in oder motions.edit_all mit Zugang) und Schreibstufe inkl.
-        # Status-Sperre – eine Wiederherstellung ändert den Inhalt wie der Editor
-        if not motion.can_manage(self.membership) or motion.editor_access_level(self.membership) not in (
-            "edit",
-            "admin",
-        ):
+        if not self._darf_wiederherstellen(motion):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
-        # Save current content as a new revision (safety net)
-        current_version = motion.revisions.count() + 1
-        safety_revision = MotionRevision(
-            motion=motion,
-            version=current_version,
-            changed_by=self.membership,
-            change_summary=f"Automatische Sicherung vor Wiederherstellung von v{revision.version}",
-        )
-        safety_revision.set_content_encrypted(motion.get_content_decrypted())
-        safety_revision.save()
-
-        # Restore the revision content
+        # Vor der Zeilensperre bereinigen, damit ein langer Inhalt die Zeile nicht hält
         restored_content = sanitize_editor_html(revision.get_content_decrypted())
-        motion.set_content_encrypted(restored_content)
-        # Kollaboration: Yjs-Zustand verwerfen, damit alle Clients nach dem
-        # Reload frisch aus dem wiederhergestellten HTML seeden.
-        motion.set_yjs_state(None)
-        motion.save()
 
-        # Create another revision marking the restore
-        restore_version = current_version + 1
-        restore_revision = MotionRevision(
-            motion=motion,
-            version=restore_version,
-            changed_by=self.membership,
-            change_summary=f"Wiederhergestellt von Version {revision.version}",
-        )
-        restore_revision.set_content_encrypted(restored_content)
-        restore_revision.save()
+        with transaction.atomic():
+            # Frisch und gesperrt lesen (wie beim Speichern im Editor): Ist das Dokument inzwischen freigegeben oder
+            # eingereicht, ändert die Wiederherstellung den Inhalt nicht mehr
+            motion = lock_for_save(motion)
+            if not self._darf_wiederherstellen(motion):
+                return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+
+            # Save current content as a new revision (safety net)
+            current_version = motion.revisions.count() + 1
+            safety_revision = MotionRevision(
+                motion=motion,
+                version=current_version,
+                changed_by=self.membership,
+                change_summary=f"Automatische Sicherung vor Wiederherstellung von v{revision.version}",
+            )
+            safety_revision.set_content_encrypted(motion.get_content_decrypted())
+            safety_revision.save()
+
+            # Restore the revision content
+            motion.set_content_encrypted(restored_content)
+            # Kollaboration: Yjs-Zustand verwerfen, damit alle Clients nach dem
+            # Reload frisch aus dem wiederhergestellten HTML seeden.
+            motion.set_yjs_state(None)
+            # Nur Inhalt und Kollaborationsstand: Status, Sichtbarkeit oder Ordner bleiben, wie sie gespeichert sind
+            motion.save(update_fields=["content_encrypted", *Motion.YJS_FIELDS, "updated_at"])
+
+            # Create another revision marking the restore
+            restore_version = current_version + 1
+            restore_revision = MotionRevision(
+                motion=motion,
+                version=restore_version,
+                changed_by=self.membership,
+                change_summary=f"Wiederhergestellt von Version {revision.version}",
+            )
+            restore_revision.set_content_encrypted(restored_content)
+            restore_revision.save()
 
         # Alle verbundenen Kollaborations-Clients zum Neuladen auffordern
         # (Best-Effort — Restore selbst ist bereits erfolgt).

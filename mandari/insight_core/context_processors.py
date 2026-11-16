@@ -59,6 +59,21 @@ def _kommunenverzeichnis_quellen() -> list[dict[str, str]]:
         return []
 
 
+def _offene_daten_url(body: Any) -> str:
+    """
+    Seite „Offene Daten“, für eine Kommune der Schnittstelle gleich deren Eintrag: im Bürgerportal die Sprungmarke,
+    mit ``INSIGHT_OFFENE_DATEN_URL`` die Seite der Kommune dort (nur mit Namen in der Adresse).
+    """
+    if settings.INSIGHT_OFFENE_DATEN_URL:
+        from hub.api.aggregator import directory_url
+
+        return directory_url(body.slug if body is not None and body.slug else "")
+    from django.urls import reverse
+
+    seite = reverse("insight_core:insight:offene_daten")
+    return f"{seite}#kommune-{body.slug or body.pk}" if body is not None else seite
+
+
 def _oparl_body(body: Any) -> str:
     """
     Adresse des Body einer Kommune in der OParl-Schnittstelle, wenn das Verzeichnis sie nennt (gelistet, nicht
@@ -274,7 +289,9 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
         "page_body_stadtseite": stadtseite_url(page_body) if portal is None else "",
         # OParl-Body der Kommune der Seite (Issue #1282): <link rel="alternate"> im Kopf und „Offene Daten“ im Fuß;
         # leer für nicht gelistete Kommunen, die das Verzeichnis nicht nennt
-        "page_body_oparl": _oparl_body(page_body),
+        "page_body_oparl": (oparl_body := _oparl_body(page_body)),
+        # Ziel von „Offene Daten“ im Fuß: die Übersicht, auf Seiten einer Kommune gleich deren Eintrag (Issue #1309)
+        "offene_daten_url": _offene_daten_url(page_body if oparl_body else None),
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
         "active_body_stale_days": stale_days,

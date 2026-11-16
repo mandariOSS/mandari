@@ -120,8 +120,18 @@ Grenze zur Datenbank sichert der Schema-Vertrag
 
 Die Entscheidung bleibt. Die Kennzahlen erhebt `scripts/architektur_kennzahlen.py` aus dem Quellstand, je
 Etappe der Datendrehscheibe und mit dem Aufräumen jeder Umstellung statt je Release. Zählregeln, Stand und
-Verlauf stehen in [`docs/ARCHITEKTUR_KENNZAHLEN.md`](../ARCHITEKTUR_KENNZAHLEN.md); die Fortschreibung ist ein
-Punkt der Checkliste in [`docs/DREHSCHEIBE_UMSTELLUNG.md`](../DREHSCHEIBE_UMSTELLUNG.md), Abschnitt 2.5.
+Verlauf stehen in [`docs/DATENDREHSCHEIBE.md`](../DATENDREHSCHEIBE.md), Abschnitt 5; die Fortschreibung ist ein
+Punkt der Checkliste dort, Abschnitt 4.2.5.
+
+## Nachtrag vom 11.11.2026: Stand der Pakete und Verträge
+
+- **Bürgerportal:** Ein Paket `apps/portal` gibt es nicht. Das [Portal-Modul](20260929-portal-modul.md) ist
+  vorgeschlagen und wird überarbeitet (eigenständiges Portal über die Schnittstelle); bis dahin liegt das
+  Bürgerportal in `insight_core` und den übrigen `insight_*`-Paketen.
+- **Plattform:** Zur Plattform gehört auch `apps/provisioning` (Vertrag `plattform-fachfrei` in
+  `mandari/pyproject.toml`).
+- **Verträge:** Zu den drei Verträgen `schichten`, `module-unabhaengig` und `plattform-fachfrei` kam
+  `abruf-ein-weg` (ein Weg zur Quelle über `hub.ris.abruf`, #919).
 
 ## Bezug
 

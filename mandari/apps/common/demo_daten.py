@@ -19,7 +19,12 @@ from django.utils import timezone
 #: Präfix aller Demo-Kennungen im RIS-Bestand (kollidiert nie mit echten OParl-Quellen)
 DEMO_OPARL_PREFIX = "https://demo.mandari.invalid/oparl"
 DEMO_ORG_SLUG = "musterfraktion-demo"
+#: Kommune in Insight und Session-Mandant der Basisdemo
+DEMO_BODY_SLUG = "musterstadt-demo"
+DEMO_SESSION_SLUG = "stadtverwaltung-musterstadt-demo"
 DEMO_EMAIL_DOMAIN = "demo.mandari.de"
+#: Fester Mandatsbeginn aller Mitgliedschaften (Teil natürlicher Schlüssel in Session, Idempotenz)
+DEMO_START_DATE = date(2024, 7, 1)
 #: Anträge der Musterfraktion (natürliche Schlüssel in Work). Den Trinkwasser-Antrag hat die Verwaltung in eine
 #: Vorlage umgewandelt und auf die kommende Ratssitzung gesetzt (durchgehende Vorführung Work → Session).
 DEMO_ANTRAG_TRINKBRUNNEN = "Antrag: Öffentliche Trinkwasserbrunnen in der Innenstadt (Demo)"
@@ -76,6 +81,10 @@ DEMO_USERS = {
         "last_name": "Lesezugriff",
     },
 }
+
+
+#: Leitstelle der Präsentationsumgebung (setup_demo_praesentation): Administrator in zwei Session-Mandanten
+DEMO_LEITSTELLE_EMAIL = f"demo-leitstelle@{DEMO_EMAIL_DOMAIN}"
 
 
 def demo_ext(kind: str, key: str) -> str:

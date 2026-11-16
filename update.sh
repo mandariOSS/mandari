@@ -291,7 +291,7 @@ check_image_tag() {
         echo ""
         warn "Für die Version „$tag“ gibt es nicht alle Images (fehlt:$fehlend)."
         echo "  Mögliche Werte für --tag:"
-        echo "    latest     neuester stabiler Stand (Vorgabe)"
+        echo "    latest     jüngster Stand von main (Vorgabe; keine feste Version, kein automatischer Rückfall)"
         echo "    dev        Entwicklungsstand (Zweig dev, instabil, nicht für den Produktivbetrieb)"
         echo "    v0.11.0    eine veröffentlichte Version mit führendem „v“, siehe $RELEASES_URL"
         return 1

@@ -189,6 +189,46 @@ def guest_download_rows(entries: Iterable[Any], membership: Membership) -> dict[
 
 
 # =============================================================================
+# Wechsel auf „Privat“: persönliche Freigaben an Gäste
+# =============================================================================
+
+#: Wahl im Teilen-Dialog (Feld ``guest_shares``) beim Wechsel auf „Privat“
+GUEST_SHARES_REVOKE = "revoke"
+GUEST_SHARES_KEEP = "keep"
+
+
+def personal_guest_shares(motion: Motion) -> list[Any]:
+    """
+    Persönliche Freigaben dieses Dokuments an Gäste der Organisation.
+
+    Sie gelten unabhängig von der Sichtbarkeit (Issue #582): Auch ein privates Dokument bleibt für diese Gäste
+    offen. Wer ein Dokument auf „Privat“ stellt, entscheidet deshalb ausdrücklich, ob sie enden oder bleiben
+    (``MotionShareUpdateView``). Deaktivierte Gastzugänge zählen mit, ihre Freigabe gälte nach dem Reaktivieren
+    wieder.
+    """
+    from apps.tenants.models import Membership as MembershipModel
+
+    guests = MembershipModel.objects.filter(organization_id=motion.organization_id, is_guest=True)
+    return list(
+        cast(Any, motion)
+        .shares.filter(scope="user", user_id__in=guests.values_list("user_id", flat=True))
+        .select_related("user")
+        .order_by("created_at")
+    )
+
+
+def guest_share_names(shares: Iterable[Any]) -> list[str]:
+    """Anzeigenamen der Gäste zu ihren Freigaben, ohne Wiederholungen."""
+    return list(dict.fromkeys(share.user.get_display_name() for share in shares))
+
+
+def revoke_shares(shares: Iterable[Any]) -> None:
+    """Freigaben einzeln löschen: Das Signal trennt offene Bearbeitungen (``_motion_share_changed``)."""
+    for share in shares:
+        share.delete()
+
+
+# =============================================================================
 # Entzug in offenen Bearbeitungen
 # =============================================================================
 
@@ -338,6 +378,37 @@ def _user_saved(
     recheck_open_editors(user_ids=[instance.pk])
 
 
+def _organization_saved(
+    sender: Any, instance: Any, created: bool, raw: bool = False, update_fields: Any = None, **kwargs: Any
+) -> None:
+    """
+    Organisation gesperrt oder beendet (``is_active``) oder mit Pflicht zum zweiten Faktor gespeichert (``require_2fa``).
+
+    Die Mitgliedschaften bleiben in beiden Fällen aktiv, der Zugriff offener Verbindungen kann trotzdem enden: bei
+    der Sperre für alle, bei der Pflicht für Mitglieder ohne zweiten Faktor. Den früheren Stand kennt der Empfänger
+    nicht, deshalb prüfen die Verbindungen bei jedem Speichern mit gesetzter Pflicht neu (selten, und die Prüfung
+    ändert für Mitglieder mit Faktor nichts).
+    """
+    if created or raw:
+        return
+    reasons = set()
+    if not instance.is_active:
+        reasons.add("is_active")
+    if instance.require_2fa:
+        reasons.add("require_2fa")
+    if not reasons:
+        return
+    if update_fields is not None and not reasons & set(update_fields):
+        return
+    from apps.tenants.models import Membership
+
+    recheck_open_editors(
+        user_ids=list(
+            Membership.objects.filter(organization=instance, is_active=True).values_list("user_id", flat=True)
+        )
+    )
+
+
 def _role_permissions_changed(sender: Any, instance: Any, action: str, reverse: bool, **kwargs: Any) -> None:
     if action not in ("post_add", "post_remove", "post_clear") or reverse:
         return
@@ -346,7 +417,7 @@ def _role_permissions_changed(sender: Any, instance: Any, action: str, reverse: 
 
 def register() -> None:
     from apps.accounts.models import User
-    from apps.tenants.models import Membership, Role
+    from apps.tenants.models import Membership, Organization, Role
 
     from .models import DocumentFolder, FolderGuestShare, Motion, MotionShare
 
@@ -372,6 +443,7 @@ def register() -> None:
     post_save.connect(_role_saved, sender=Role, dispatch_uid=f"{uid}_role_save")
     pre_delete.connect(_role_deleting, sender=Role, dispatch_uid=f"{uid}_role_delete")
     post_save.connect(_user_saved, sender=User, dispatch_uid=f"{uid}_user_save")
+    post_save.connect(_organization_saved, sender=Organization, dispatch_uid=f"{uid}_organization_save")
     m2m_changed.connect(
         _role_permissions_changed, sender=Role.permissions.through, dispatch_uid=f"{uid}_role_permissions"
     )

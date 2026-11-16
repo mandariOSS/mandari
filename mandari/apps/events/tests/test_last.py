@@ -6,7 +6,7 @@ Der Worker läuft als eigener Prozess (``prozess.py``) mit Sequenzierer, Zustell
 Abonnements ``probe.sicht`` (Datenbank-Sicht) und ``probe.extern`` (externer Effekt), Batch 200.
 Geschrieben wird wie vom Ingestor: eine Transaktion je Objekt mit einer Anweisung, mehrere Schreiber
 gleichzeitig. Gemessen wird auf der Uhr der Datenbank vom Erfassen im Journal (``recorded_at``) bis
-zum Effekt; Ergebnisse und Einordnung in ``docs/EREIGNISTECHNIK_NACHWEISE.md``.
+zum Effekt; Ergebnisse und Einordnung in ``docs/DATENDREHSCHEIBE.md#2-zusagen-der-ereignistechnik-und-nachweise``.
 
 1. **Normalbetrieb:** 100 Ereignisse im Abstand von 50 ms. Zusage: Latenz p95 ≤ 5 s.
 2. **Vollabgleich:** ``EVENTS_LAST_EREIGNISSE`` Ereignisse (Standard 10 000) so schnell wie möglich

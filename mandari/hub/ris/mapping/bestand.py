@@ -807,7 +807,7 @@ class BestandMapping:
                 **_timestamps(paper),
                 "mandari:originalId": paper.external_id,
                 "mandari:summary": paper.summary,
-                # Die Zusammenfassung erzeugt eine KI, ungeprüft (EU AI Act Art. 50, Issue #938, docs/KI_TRANSPARENZ.md)
+                # Die Zusammenfassung erzeugt eine KI, ungeprüft (EU AI Act Art. 50, Issue #938, docs/KI.md#6-kennzeichnung-nach-eu-ai-act-art-50)
                 "mandari:summaryAiGenerated": True if paper.summary else None,
                 **self._urheber(ctx.urheber_by_paper.get(paper.id, [])),
             }

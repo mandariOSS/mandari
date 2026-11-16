@@ -101,8 +101,10 @@ def _vermerk(daten: dict[str, Any], vorgang: str) -> list[dict[str, Any]]:
 
 @pytest.mark.django_db
 def test_aufgabenkommentare_stammen_aus_der_aktivitaet_auch_bei_fremden_aufgaben(
-    org: Any, person: Any, andere: Any
+    org: Any, make_member: Any, andere: Any
 ) -> None:
+    # Titel und Stand fremder Aufgaben nennt der Export nur mit dem Recht, Aufgaben zu sehen
+    person = make_member(org, ["dashboard.view", "tasks.view"], email="kommentiert@example.org")
     fremd = Task.objects.create(organization=org, title="Plakate", created_by=andere, visibility="organization")
     eigen = Task.objects.create(organization=org, title="Rede", created_by=person)
     task_services.add_comment(fremd, person, "Ich übernehme die Hälfte")
@@ -118,7 +120,11 @@ def test_aufgabenkommentare_stammen_aus_der_aktivitaet_auch_bei_fremden_aufgaben
 
 
 @pytest.mark.django_db
-def test_kommentare_und_rollen_an_dokumenten_anderer(org: Any, person: Any, andere: Any) -> None:
+def test_kommentare_und_rollen_an_dokumenten_anderer(org: Any, make_member: Any, andere: Any) -> None:
+    # Titel und Stand eines fremden Dokuments nennt der Export nur, solange die Person es sehen darf
+    person = make_member(
+        org, ["dashboard.view", "motions.view", "motions.view_drafts"], email="federfuehrung@example.org"
+    )
     motion = Motion.objects.create(
         organization=org, author=andere, title="Radweg", visibility="organization", responsible=person
     )
@@ -179,7 +185,9 @@ def test_fraktion_und_bearbeitungsvermerke(org: Any, person: Any, andere: Any) -
     rede: Any = FactionProtocolEntry(meeting=sitzung, agenda_item=top, entry_type="speech", speaker=person)
     rede.set_content_encrypted("Wir stimmen zu")
     rede.save()
-    aufgabe = Task.objects.create(organization=org, title="Flyer", created_by=andere)
+    # Der Person zugewiesen: Vermerke nennen den Titel einer Aufgabe nur mit Zugriff, ohne ``tasks.view`` also nur bei
+    # eigenen und zugewiesenen Aufgaben
+    aufgabe = Task.objects.create(organization=org, title="Flyer", created_by=andere, assigned_to=person)
     TaskActivity.objects.create(task=aufgabe, actor=person, activity_type="status_changed")
 
     daten = _export(org, person)

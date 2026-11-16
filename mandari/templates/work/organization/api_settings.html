@@ -123,21 +123,7 @@
                     <span x-show="copied" x-cloak>Kopiert ✓</span>
                 </button>
             </div>
-            <pre x-ref="snippet" class="text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 overflow-x-auto text-gray-700 dark:text-gray-300"><code>&lt;div id="fraktions-termine"&gt;Termine werden geladen…&lt;/div&gt;
-&lt;script&gt;
-fetch("{{ api_meetings_url }}")
-  .then(r =&gt; r.json())
-  .then(data =&gt; {
-    const el = document.getElementById("fraktions-termine");
-    const kommende = data.meetings.filter(m =&gt; new Date(m.start) &gt;= new Date() &amp;&amp; !m.cancelled);
-    if (!kommende.length) { el.textContent = "Aktuell keine öffentlichen Termine."; return; }
-    el.innerHTML = kommende.map(m =&gt;
-      "&lt;p&gt;&lt;strong&gt;" + new Date(m.start).toLocaleString("de-DE", {dateStyle: "medium", timeStyle: "short"}) +
-      "&lt;/strong&gt; — " + m.title + (m.location ? " (" + m.location + ")" : "") + "&lt;/p&gt;"
-    ).join("");
-  })
-  .catch(() =&gt; { document.getElementById("fraktions-termine").textContent = "Termine derzeit nicht verfügbar."; });
-&lt;/script&gt;</code></pre>
+            <pre x-ref="snippet" class="text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 overflow-x-auto text-gray-700 dark:text-gray-300"><code>{% include "work/organization/partials/_termine_snippet.html" %}</code></pre>
         </div>
 
         <form method="post"

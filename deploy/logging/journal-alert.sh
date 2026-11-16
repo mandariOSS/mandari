@@ -55,6 +55,6 @@ send_mail(
     'Aeltester Eintrag: ${AELTESTER}\n\n'
     'Pruefen:  journalctl --disk-usage; journalctl -S -1h -p warning\n'
     'Ursache eingrenzen: journalctl -S -24h -o cat | cut -c1-60 | sort | uniq -c | sort -rn | head\n'
-    'Siehe docs/PROTOKOLLE.md im mandari-Repo.',
+    'Siehe docs/PROTOKOLLIERUNG.md#12-systemprotokolle-der-installation im mandari-Repo.',
     None, ['${EMPFAENGER}'],
 )" >/dev/null 2>&1 && touch "$STAMP"

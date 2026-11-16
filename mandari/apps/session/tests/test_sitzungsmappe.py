@@ -249,6 +249,34 @@ def welt(media: Path) -> Welt:
 
 
 class TestSichtbarkeit:
+    def test_oeffentliche_tagesordnung_ohne_aktenzeichen_nichtoeffentlicher_vorlagen(self, welt: Welt) -> None:
+        """Hängt eine nichtöffentliche Vorlage an einem öffentlichen Punkt, nennt nur die interne Fassung sie."""
+        geheim = SessionPaper.objects.get(tenant=welt.tenant, reference="V/2026/0002")
+        SessionAgendaItem.objects.create(
+            meeting=welt.meeting, number="3", name="Grundstücksfragen", order=4, paper=geheim
+        )
+
+        oeffentlich = "\n".join(_texts(_pdf_of(_build(welt.meeting, PUBLIC))))
+        intern = "\n".join(_texts(_pdf_of(_build(welt.meeting, INTERNAL))))
+
+        assert "Grundstücksfragen" in oeffentlich and "V/2026/0001" in oeffentlich
+        assert "V/2026/0002" not in oeffentlich
+        assert "V/2026/0002" in intern
+
+    def test_oeffentliche_fassung_mit_aelterem_aufbau_wird_nicht_mehr_ausgeliefert(self, welt: Welt) -> None:
+        """Vor dem Aufbau 2 konnte die Tagesordnung der öffentlichen Mappe solche Aktenzeichen nennen."""
+        oeffentlich = _build(welt.meeting, PUBLIC)
+        intern = _build(welt.meeting, INTERNAL)
+        assert service.blocked_packages([oeffentlich, intern]) == set()
+
+        for package in (oeffentlich, intern):
+            inhalt = dict(package.contents)
+            del inhalt["format"]
+            Package.objects.filter(pk=package.pk).update(contents=inhalt)
+            package.refresh_from_db()
+
+        assert service.blocked_packages([oeffentlich, intern]) == {oeffentlich.pk}
+
     def test_oeffentliche_fassung_ohne_noe_inhalte(self, welt: Welt) -> None:
         package = _build(welt.meeting, PUBLIC)
         reader = _pdf_of(package)

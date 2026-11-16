@@ -12,10 +12,10 @@ Geprüft wird:
   leben im Web-Prozess und beginnen bei jedem Neustart bei null; deshalb merkt sich der Lauf
   den letzten Zählerstand im Cache und bewertet die Differenz seit dem letzten Lauf – bei
   täglichem Cron also die letzten ~24 h. Nach einem Neustart zählt der Stand seit dem Start.
-- **Warteschlangenstau**: Django-Tasks laufen hier mit dem ``ImmediateBackend`` (keine
-  Warteschlange). Eine echte Warteschlange gibt es nur für die Transkription
-  (``minutes.TranscriptionJob``); gemeldet wird, wenn der älteste wartende Auftrag länger als
-  ``SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES`` unbearbeitet ist.
+- **Warteschlange der Transkription** (``minutes.TranscriptionJob``): gemeldet wird, wenn der
+  älteste wartende Auftrag länger als ``SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES`` unbearbeitet ist. Die
+  Aufträge und Zeitpläne im Journal (``apps.events``, Metriken ``mandari_tasks_*``) prüft diese Liste
+  nicht; ihren Rückstand meldet ``/health/worker/`` (``docs/MONITORING.md``).
 - **Tote Ereignisse** der Ereignistechnik (``apps.events``): Ereignisse, deren Zustellung an ein
   Abonnement nach allen Versuchen aufgegeben wurde. Die Zustellung ruft diese Prüfung auch sofort
   auf, wenn ein Ereignis tot ist; die 24-h-Sperre gilt für beide Wege gemeinsam.

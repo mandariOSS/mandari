@@ -43,7 +43,7 @@
     {% if noe %}<div class="fs-noe-inhalt">{% endif %}
     <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between flex-shrink-0">
         <c-ui.text-button variant="muted" icon="plus"
-                          @click="$dispatch('open-add-sub', { parent_id: '{{ item.id }}', visibility: '{{ item.visibility }}' }); $dispatch('close-item-panel')">Unterpunkt</c-ui.text-button>
+                          @click="$dispatch('open-add-sub', { parent_id: '{{ item.id }}', visibility: '{{ item.visibility|escapejs }}' }); $dispatch('close-item-panel')">Unterpunkt</c-ui.text-button>
         <c-ui.text-button variant="danger" icon="trash-2"
                           @click="$dispatch('open-delete-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}' }); $dispatch('close-item-panel')">TOP löschen</c-ui.text-button>
     </div>

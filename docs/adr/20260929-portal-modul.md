@@ -94,6 +94,7 @@ alle Modelle haben feste Tabellennamen (`db_table`).
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),
   [A7 Kanonisches Modell](20260929-kanonisches-modell.md)
-- `docs/INSIGHT_QUESTIONS.md`, `docs/INSIGHT_DECISION_TRACKING.md`
+- `docs/INSIGHT.md`, Abschnitt 3 (Ratsfragen); Benutzerdoku „Beschlüsse verfolgen“
+  (https://docs.mandari.de/insight/beschluesse/)
 - Django, `SeparateDatabaseAndState`:
   https://docs.djangoproject.com/en/stable/ref/migration-operations/#separatedatabaseandstate

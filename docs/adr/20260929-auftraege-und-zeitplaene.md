@@ -127,6 +127,13 @@ der Standard-Parallelität 0: Sie ruht, solange `LIVE_UEBERTRAGUNG_AKTIV` aus is
 erwartet dann keinen Worker für sie. Eingeschaltet setzt die Anwendung 2; bedient wird sie vom eigenen Dienst
 `worker-live`, damit Leseaufträge (je rund 50 Sekunden) nie hinter Texterkennung oder Mailversand warten.
 
+## Nachtrag vom 11.11.2026: Warteschlange `text`
+
+Zur Liste der Warteschlangen kam `text` (#1107): Sie liest die Textebene abgelegter Dokumente
+(`file.read_text_layer`) im Dienst `worker` mit drei Plätzen, wenn `TEXT_EXTRACTION_RUNNER=worker` gilt. Die
+Erkennung mit Tesseract bleibt in `ocr` im Dienst `worker-heavy`. Die vollständige Liste mit Parallelität steht in
+`TASK_QUEUES` (`mandari/mandari/settings.py`).
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md) (Worker, Leases, Überwachung)

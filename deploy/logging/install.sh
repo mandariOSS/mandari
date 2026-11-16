@@ -8,7 +8,7 @@
 #   1. journald-Drop-in (persistent, 90 Tage, höchstens 2 GB)
 #   2. logrotate für die Cron-Logdateien unter /var/log/mandari-*.log
 #   3. stündliche Überlaufwarnung (journal-alert.sh) per Cron
-# Nicht enthalten (siehe docs/PROTOKOLLE.md): Compose-Override für den journald-Treiber
+# Nicht enthalten (siehe docs/PROTOKOLLIERUNG.md#12-systemprotokolle-der-installation): Compose-Override für den journald-Treiber
 # beim nächsten Deploy und die zeitliche Begrenzung der Caddy-Zugriffslogs.
 set -eu
 

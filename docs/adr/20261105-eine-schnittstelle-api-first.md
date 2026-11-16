@@ -18,7 +18,7 @@ mandari hat heute zehn Schnittstellen nach außen. Sie sind unabhängig voneinan
 |---|---|---|---|
 | OParl-Aggregator der Drehscheibe | `/oparl/` | offen | OParl-Anwendungen, Open Data |
 | OParl je Session-Mandant | `/session/<mandant>/api/oparl/` | offen nach Freischaltung | OParl-Anwendungen |
-| alte Session-API | `/session/<mandant>/api/` | Token | abgekündigt, Sunset 31.05.2027 (#543) |
+| alte Session-API | `/session/<mandant>/api/session/` (Berichtigung 11.11.2026: abgekündigt sind nur diese Pfade, der Einstieg `/session/<mandant>/api/` bleibt) | Token | abgekündigt, Sunset 31.05.2027 (#543) |
 | Session-API v1 | `/api/v1/session/` | `SessionAPIToken` oder Sitzung | Work (Einreichung), Integrationen |
 | Fraktions-API | `/api/public/v1/` | Token je Organisation | Websites von Fraktionen |
 | Website-API | `/api/stats/`, `/api/contact/` | offen | Website |
@@ -52,7 +52,7 @@ Dienste wie die Schnittstelle.**
 |---|---|---|
 | OParl 1.1 | die Typen des RIS-Kerns, unverändert | Typ-URL `https://schema.oparl.org/1.1/…` |
 | kommParl | offene Erweiterungen, die jedes RIS umsetzen kann: Änderungsfeed, Snapshot, Nichtöffentliches, Einreichung, Abstimmungen | Präfix `kommparl:`, Namensraum `https://schema.kommparl.de/<version>/` |
-| mandari | nur mandari-spezifisch: Work, Sitzungsgeld, Ladungsrückmeldung, Bereitstellung | Präfix `mandari:` |
+| mandari | nur mandari-spezifisch: Work, Sitzungsgeld, Ladungsrückmeldung, Bereitstellung (Vermerk 11.11.2026: die Ladungsrückmeldung kam mit #1228 als `kommparl:attendanceResponse` und `kommparl:invitationReceipt` ins Profil Einreichung) | Präfix `mandari:` |
 
 1. **Ratsdaten werden immer als OParl-Objekte ausgegeben.** Eine Anwendung für OParl 1.1 liest jede
    mandari-Schnittstelle ohne Anpassung und übergeht unbekannte Felder (A7).
@@ -69,7 +69,8 @@ Dienste wie die Schnittstelle.**
 ### Ein Einstieg, eine Beschreibung, gemeinsame Regeln
 
 - **Einstieg `/api/`:** liefert das OParl-`System`-Objekt der Installation mit den unterstützten Profilen
-  (`kommparl:conformsTo`) und Verweisen auf alle Bereiche.
+  (`kommparl:conformsTo`) und Verweisen auf alle Bereiche. (Vermerk 11.11.2026: überholt durch den Nachtrag
+  #1205: Der Einstieg ist ein eigenes Dokument und verweist auf das System des Aggregators.)
 - **Adressen der OParl-Objekte bleiben unverändert:** `/oparl/` und `/session/<mandant>/api/oparl/`, denn die
   Adresse ist zugleich die Kennung (A7). Bereiche nur für mandari liegen unter `/api/mandari/v<n>/`.
 - **Eine Beschreibung nach OpenAPI 3.1** unter `/api/openapi.json` umfasst alle Bereiche, auch die OParl-Pfade.
@@ -99,7 +100,8 @@ Dienste wie die Schnittstelle.**
 - **Nichtöffentliches gibt es nur für Tokens, die einer Person gehören.** Das gilt erst, wenn das
   Zugriffsmodell abgestimmt und ein Penetrationstest bestanden ist (#565). Ein Dienst liest Nichtöffentliches
   nur für einen Auftrag, den eine berechtigte Person gestartet hat. Jeder solche Zugriff landet im
-  Prüfprotokoll.
+  Prüfprotokoll. (Vermerk 11.11.2026: überholt durch den Nachtrag #565: Ein an einen Mandanten gebundener Dienst
+  mit `sitzung:lesen` liest alles Nichtöffentliche dieses Mandanten.)
 - **Die eigene Oberfläche** nutzt die Browser-Sitzung mit CSRF-Schutz, alles andere ein Token.
 - **Die bisherigen Schlüssel werden abgelöst:** `SessionAPIToken`, die Tokens der Fraktions-API und die
   Betreiberschlüssel der Bereitstellung. Feed-Tokens für Kalender bleiben, weil Kalender-Anwendungen kein
@@ -239,7 +241,7 @@ Die Entscheidung bleibt. Etappe 3 legt Folgendes fest ([SCHNITTSTELLE.md](../SCH
 - Der Feed nach dem Profil nennt jetzt auch die einbettenden Objekte (Nachtrag #1229 in
   [A10](20260929-aenderungsfeed-format.md)). `kommparl:conformsTo` nennt die Profile trotzdem noch nicht: Die
   Prüfung aller Muss-Anforderungen hat weitere offene gefunden (Ereignisse für Gremien, Personen, Mitgliedschaften und
-  Wahlperioden aus Session, `modified` ohne öffentliches Ereignis, Übernahme gespiegelter Mandanten, nichtöffentlich
+  Wahlperioden aus Session, Vermerk 11.11.2026: ebenso für die Körperschaft, `modified` ohne öffentliches Ereignis, Übernahme gespiegelter Mandanten, nichtöffentlich
   gewordene Tagesordnungspunkte des Bestands, Wechsel der Vorlage einer Datei im Bestand). Sie bleiben unter #1229
   offen. Die Regel bleibt: Die Profile kommen erst hinzu, wenn alle erfüllt sind, und nur, wenn die Installation den
   Feed anbietet.
@@ -292,3 +294,17 @@ eine Aussage des Abschnitts „Ein Login für alle Zugänge“:
 - **Prüfprotokoll:** Jeder Abruf mit Nichtöffentlichem steht im Protokoll des Mandanten; ohne Eintrag gibt es keine
   Inhalte.
 - **Einschalten** (`OPARL_NONPUBLIC_ENABLED`) erst nach einem externen Penetrationstest.
+
+## Nachtrag vom 11.11.2026 (Abgleich mit dem Code, #1341)
+
+- **Weitere Schnittstelle nach außen:** Der MCP-Server unter `/insight/mcp` (#899, seit 10.10.2026) fehlt in der
+  Tabelle im Kontext. Er bleibt vorerst außerhalb der gemeinsamen Beschreibung, wie `/api/public/v1/`,
+  `/api/provisioning/`, `/api/insight/ki-bewertungen/` (seit #1221, mit dem Betreiberschlüssel der Bereitstellung),
+  `/api/stats/`, `/api/contact/`, `/data/dcat/` und `/oauth/`. Welche Bereiche die Beschreibung umfasst, steht in
+  `docs/SCHNITTSTELLE.md`.
+- **Gemeinsame Regeln mit Ausnahmen:** Die OParl-Ausgaben melden Fehler mit dem Fehlerobjekt nach OParl 1.1
+  (`{"error", "status"}`, `hub/api/http.py`), nicht als `application/problem+json`. Die nichtöffentliche Ausgabe
+  liefert kein `ETag`. Die Session-API v1 behält ihre eigenen Titel je Status. Die Regel „für alle Bereiche“ gilt
+  für neue Bereiche unter `/api/mandari/v<n>/`.
+- **Liste in `kommparl:conformsTo`:** Einstieg und Aggregator nennen dieselbe Grundliste; Session ergänzt die
+  Profile Einreichung und Nichtöffentliches, sobald sie eingeschaltet sind.
