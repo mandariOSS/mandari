@@ -236,13 +236,13 @@ def clear_portal_location(tenant_id, meeting_id) -> int:
     Sitzungsseite, Suche, Kalender und Feed ihn sonst bis zum nächsten Abgleich weiter. Der Abgleich schreibt
     dieselben leeren Werte; einzeln gespeichert, damit der Suchindex folgt.
     """
-    from insight_core.models import OParlMeeting
+    from hub.ris import selectors as ris
 
     slug = SessionTenant.objects.filter(pk=tenant_id).values_list("slug", flat=True).first()
     if slug is None:
         return 0
     anzahl = 0
-    treffer = OParlMeeting.objects.filter(external_id__endswith=f"/session/{slug}/api/oparl/meeting/{meeting_id}/")
+    treffer = ris.meetings_by_external_id_suffix(f"/session/{slug}/api/oparl/meeting/{meeting_id}/")
     for gespiegelt in treffer:
         roh = gespiegelt.raw_json if isinstance(gespiegelt.raw_json, dict) else {}
         if not (gespiegelt.location_name or gespiegelt.location_address or "location" in roh):
