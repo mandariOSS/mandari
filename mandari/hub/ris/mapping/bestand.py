@@ -87,7 +87,8 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 #: 6: ``Body.web`` auf die Seite der Kommune, ``Body.ags``/``rgs`` aus der eigenen Pflege, Datumsfelder ohne Uhrzeit,
 #: Issue #1282;
 #: 7: Sitzungen mit geprüften Angaben: Absage aus dem Namen (``cancelled``, ``mandari:cancelledDerived``,
-#: ``mandari:cancelledNote``, Name ohne Vermerk), ``end`` nur nach dem Beginn, Issue #1441)
+#: ``mandari:cancelledNote``, Name ohne Vermerk), ``end`` nur nach dem Beginn; ``mandari:organizationNotPublished``
+#: für Gremien, die die Quelle nennt, aber nicht ausgibt, Issue #1441)
 VERSION: Final = 7
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
@@ -703,6 +704,17 @@ class BestandMapping:
         im_namen = angaben.vermerk is not None
         cancelled = bool(meeting.cancelled) or angaben.abgesagt
 
+        # Gremien, die die Quelle nennt, die aber im Bestand fehlen (Issue #1441): Die Quelle gibt sie nicht öffentlich
+        # aus. Der Verweis geht nicht verloren, steht aber als Angabe der Quelle in einer Erweiterung.
+        gremien = list(meeting.organizations.all())
+        bekannt = {org.external_id for org in gremien}
+        genannt = raw.get("organization")
+        fehlend = [
+            verweis
+            for verweis in (genannt if isinstance(genannt, list) else [])
+            if isinstance(verweis, str) and verweis and verweis not in bekannt
+        ]
+
         return clean(
             {
                 "id": self.uris.obj("meeting", meeting.id),
@@ -713,7 +725,7 @@ class BestandMapping:
                 "start": iso(meeting.start),
                 "end": iso(plausibles_ende(meeting.start, meeting.end)),
                 "location": location_data,
-                "organization": [self.uris.obj("organization", org.id) for org in meeting.organizations.all()],
+                "organization": [self.uris.obj("organization", org.id) for org in gremien],
                 "invitation": self.file(invitation) if invitation else None,
                 "resultsProtocol": self.file(results_protocol) if results_protocol else None,
                 "verbatimProtocol": self.file(verbatim_protocol) if verbatim_protocol else None,
@@ -727,6 +739,7 @@ class BestandMapping:
                 # als abgeleitet gekennzeichnet, mit dem Vermerk im Wortlaut der Quelle
                 "mandari:cancelledDerived": True if im_namen and angaben.abgeleitet else None,
                 "mandari:cancelledNote": angaben.vermerk if im_namen else None,
+                "mandari:organizationNotPublished": fehlend,
                 # Abgekündigt: Der Ort steht als Location-Objekt in ``location``
                 "mandari:locationName": meeting.location_name if not location else None,
                 "mandari:locationAddress": meeting.location_address if not location else None,
