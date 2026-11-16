@@ -30,6 +30,7 @@ from django.utils import timezone
 from apps.accounts.adoption import can_adopt_by_email
 from apps.accounts.models import EmailVerificationToken, User
 from apps.common.uploads import IMAGES, validate_upload
+from apps.tenants import demo
 from apps.tenants.models import (
     AdministrationContact,
     CouncilParty,
@@ -429,6 +430,9 @@ def accept_invitation(invitation: UserInvitation, user: User) -> str:
                 organization.owner = user
         message = f"Willkommen bei {organization.name}!"
 
+    # Demo-Organisation (Issue #1406): Die Laufzeit beginnt mit der ersten angenommenen Einladung, auch wenn das
+    # Konto schon Mitglied ist (etwa als Gast); eine laufende Demo bleibt unverändert
+    demo.laufzeit_starten(organization)
     invitation.accepted_at = timezone.now()
     invitation.accepted_by = user
     invitation.save()

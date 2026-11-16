@@ -7,6 +7,7 @@ from django.urls import path
 
 from .oidc.views import ConnectedApplicationsView
 from .views import (
+    DemoAbgelaufenView,
     LoggedOutView,
     LoginTwoFactorView,
     LoginView,
@@ -49,6 +50,8 @@ urlpatterns = [
     path("verbundene-anwendungen/", ConnectedApplicationsView.as_view(), name="connected_applications"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("logged-out/", LoggedOutView.as_view(), name="logged_out"),
+    # Demo-Organisation abgelaufen (Issue #1406)
+    path("demo-abgelaufen/", DemoAbgelaufenView.as_view(), name="demo_abgelaufen"),
     # Registration (for invited users)
     path("register/", RegisterView.as_view(), name="register"),
     # Self-registration (for organizations with open registration)

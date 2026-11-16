@@ -526,3 +526,26 @@ def test_loeschen_gibt_es_nicht(api: Client, system_user: Any, body: OParlBody, 
     put(api, "kunde-1", desired())
     assert api.delete(f"{URL}kunde-1").status_code == 405
     assert Organization.objects.filter(provisioning_ref="kunde-1").exists()
+
+
+@pytest.mark.django_db
+def test_uebernahme_beendet_die_demo(api: Client, body: OParlBody, party: PartyGroup) -> None:
+    """Abschluss nach einer Demo (Issue #1406): Die Demo-Angaben entfallen, es gilt der Status der Bereitstellung."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    org = cast(Any, OrganizationFactory)(name="Demo", slug="fraktion-demo", body=body, party_group=party)
+    org.demo_laufzeit_tage = 14
+    org.demo_endet_am = timezone.now() - timedelta(days=1)
+    org.is_active = False
+    org.save()
+    data = desired(slug="fraktion-demo", name="Demo", adopt=True)
+    del data["admin_email"]
+
+    response = put(api, "kunde-demo", data)
+
+    assert response.status_code == 200 and response.json()["adopted"] is True
+    org.refresh_from_db()
+    assert org.is_active is True and org.provisioning_ref == "kunde-demo"
+    assert org.demo_laufzeit_tage is None and org.demo_endet_am is None

@@ -29,8 +29,11 @@ def _work_root_redirect(request):
     from django.shortcuts import redirect
 
     if request.user.is_authenticated:
+        from apps.tenants import demo
+
         membership = (
             request.user.memberships.filter(is_active=True, organization__is_active=True)
+            .exclude(demo.abgelaufen_q(prefix="organization__"))
             .select_related("organization")
             .first()
         )
@@ -46,6 +49,9 @@ def _work_root_redirect(request):
         )
         if expiring:
             return redirect("work:membership_expiry", org_slug=expiring.organization.slug)
+        # Nur noch eine abgelaufene Demo-Organisation (Issue #1406): Hinweis, die Seite meldet ab
+        if demo.abgelaufene_demo_fuer(request.user) is not None:
+            return redirect("accounts:demo_abgelaufen")
         return redirect("/insight/")
     return redirect("/accounts/login/?next=/work/")
 

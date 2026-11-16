@@ -98,6 +98,14 @@ class LoginForm(forms.Form):
                     code="inactive",
                 )
 
+            # Demo-Organisation (Issue #1406): Wer nur noch über eine abgelaufene Demo Zugang hätte, meldet sich
+            # nicht mehr an. Erst nach dem richtigen Passwort, damit der Hinweis nichts über fremde Konten verrät.
+            from apps.tenants import demo
+
+            abgelaufen = demo.abgelaufene_demo_fuer(self.user_cache)
+            if abgelaufen is not None:
+                raise ValidationError(demo.hinweis(abgelaufen), code="demo_abgelaufen")
+
         return cleaned_data
 
     def get_user(self):
