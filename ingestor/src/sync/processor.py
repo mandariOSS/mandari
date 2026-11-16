@@ -30,6 +30,7 @@ from mandari_oparl import (
     parse_datetime,
 )
 from mandari_oparl.extensions import agenda_item_columns, meeting_columns
+from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben
 
 from src.client.oparl_compat import consultation_agenda_item, oparl_type_url
 
@@ -252,8 +253,16 @@ class OParlProcessor:
         data: dict[str, Any],
         body_external_id: str | None = None,
     ) -> ProcessedMeeting:
-        """Process an OParl Meeting."""
+        """
+        Process an OParl Meeting.
+
+        Name, Absage und Ende sind geprüft (Issue #1441, ``mandari_oparl.qualitaet``): Eine Absage, die die Quelle nur
+        in den Namen schreibt, setzt ``cancelled`` und fällt aus dem Namen; ein Ende, das nicht nach dem Beginn liegt,
+        gilt als nicht angegeben. Die Angaben der Quelle bleiben in ``raw_json``.
+        """
         external_id = data.get("id", "")
+        angaben = sitzungsangaben(data)
+        start = parse_datetime(data.get("start"))
 
         meeting = ProcessedMeeting(
             id=self.generate_uuid(external_id),
@@ -263,11 +272,11 @@ class OParlProcessor:
             body_external_id=body_external_id or self._extract_body_id(data),
             oparl_created=parse_datetime(data.get("created")),
             oparl_modified=parse_datetime(data.get("modified")),
-            name=data.get("name"),
+            name=angaben.name,
             meeting_state=data.get("meetingState"),
-            cancelled=data.get("cancelled", False),
-            start=parse_datetime(data.get("start")),
-            end=parse_datetime(data.get("end")),
+            cancelled=angaben.abgesagt,
+            start=start,
+            end=plausibles_ende(start, parse_datetime(data.get("end"))),
             protocol_approval=meeting_columns(data),
         )
 
