@@ -53,7 +53,14 @@ def _erledigt(task: Task, membership: Membership) -> None:
 
 
 def can_edit_task(task: Task, membership: Membership) -> bool:
-    """Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen."""
+    """
+    Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen.
+
+    Aufgaben aus einem nichtöffentlichen TOP ändert nur, wer den TOP heute sehen darf (``Task.noe_gesperrt``): Wer sie
+    nicht mehr öffnen kann, hakt sie auch über Board und Sitzungsansicht nicht mehr ab.
+    """
+    if task.noe_gesperrt(membership):
+        return False
     if task.created_by == membership or task.assigned_to == membership:
         return True
     return membership.has_permission("tasks.manage") and task.can_access(membership)

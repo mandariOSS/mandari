@@ -943,10 +943,13 @@ def activity_timeline(organization: Organization, membership: Membership, *, lim
     from apps.work.meetings.models import MeetingPreparation
     from apps.work.motions.models import Motion, exclude_sworn_in_only
     from apps.work.tasks.models import Task
+    from apps.work.tasks.selectors import ohne_gesperrte_tops
 
     timeline: list[dict[str, Any]] = []
-    my_tasks = Task.objects.filter(organization=organization).filter(
-        Q(created_by=membership) | Q(assigned_to=membership)
+    # Aufgaben aus nichtöffentlichen TOPs nennt die Übersicht nur Vereidigten, wie das Aufgabenboard
+    my_tasks = ohne_gesperrte_tops(
+        Task.objects.filter(organization=organization).filter(Q(created_by=membership) | Q(assigned_to=membership)),
+        membership,
     )
     for t in my_tasks.order_by("-updated_at")[:5]:
         timeline.append(

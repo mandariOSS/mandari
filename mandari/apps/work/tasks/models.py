@@ -236,6 +236,22 @@ class Task(models.Model):
 
         return is_item_internal(self.related_faction_agenda_item)
 
+    def noe_gesperrt(self, membership) -> bool:
+        """
+        Aufgabe aus einem nichtöffentlichen TOP einer Fraktionssitzung, den das Mitglied heute nicht sehen darf.
+
+        Titel, Beschreibung, Kommentare und Anhänge einer solchen Aufgabe gehören zum nichtöffentlichen Teil der
+        Sitzung (Issue #64): Ohne Vereidigung bleibt sie verschlossen, auch für die erstellende und die zugewiesene
+        Person und auch dann, wenn der TOP erst nachträglich nichtöffentlich wurde. Geprüft wird beim Lesen am
+        heutigen Stand von TOP und Mitgliedschaft; die Listen ziehen dieselbe Grenze
+        (``selectors.ohne_gesperrte_tops``). Für Vereidigte und für Aufgaben ohne Fraktions-TOP ohne Abfrage.
+        """
+        if not self.related_faction_agenda_item_id:
+            return False
+        from apps.work.faction.visibility import is_sworn_member
+
+        return not is_sworn_member(membership) and self.noe_top
+
     @property
     def is_personal(self) -> bool:
         """Check if this is a personal task (assigned to creator)."""
@@ -269,12 +285,18 @@ class Task(models.Model):
         - User is assigned to the task
         - Task visibility is 'organization' (aus einer Fraktionssitzung nur, wenn die Sitzung sichtbar ist, Issue #1239)
         - Task visibility is 'shared' and user is in shares
+
+        Aufgaben aus einem nichtöffentlichen TOP nur für Vereidigte, auch für Erstellende und Zugewiesene
+        (:meth:`noe_gesperrt`).
         """
-        # Creator always has access
+        if self.noe_gesperrt(membership):
+            return False
+
+        # Creator has access
         if self.created_by == membership:
             return True
 
-        # Assigned user always has access
+        # Assigned user has access
         if self.assigned_to == membership:
             return True
 
@@ -306,7 +328,9 @@ class Task(models.Model):
 
     def can_edit(self, membership) -> bool:
         """Check if membership can edit this task."""
-        # Creator can always edit
+        if self.noe_gesperrt(membership):
+            return False
+        # Creator can edit
         if self.created_by == membership:
             return True
         # Assigned user can edit

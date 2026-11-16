@@ -223,12 +223,17 @@ class DashboardView(WorkViewMixin, TemplateView):
     def get_my_tasks(self):
         """Get open tasks assigned to the current user."""
         from apps.work.tasks.models import Task
+        from apps.work.tasks.selectors import ohne_gesperrte_tops
 
+        # Aufgaben aus nichtöffentlichen TOPs nur für Vereidigte, wie auf dem Aufgabenboard
         return (
-            Task.objects.filter(
-                organization=self.organization,
-                assigned_to=self.membership,
-                status__in=["todo", "in_progress"],
+            ohne_gesperrte_tops(
+                Task.objects.filter(
+                    organization=self.organization,
+                    assigned_to=self.membership,
+                    status__in=["todo", "in_progress"],
+                ),
+                self.membership,
             )
             .select_related("assigned_to__user", "created_by__user", "related_faction_agenda_item__parent")
             .order_by("-priority", "due_date", "-created_at")[:5]
