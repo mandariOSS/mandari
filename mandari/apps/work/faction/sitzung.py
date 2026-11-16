@@ -263,6 +263,9 @@ class Unterlage:
     vorlage: Any = None
     #: Protokoll zur Genehmigung: Fassung der Niederschrift („intern“ oder „oeffentlich“), die das Mitglied sehen darf
     fassung: str = ""
+    #: Protokoll zur Genehmigung: darf das Mitglied die öffentliche Fassung lesen (``protocols.view_public``)? Ohne
+    #: dieses Recht bleibt die Vorschau bei verdecktem Sichtschutz leer, statt die vollständige Fassung zu zeigen.
+    oeffentlich_lesbar: bool = True
 
 
 def vorige_mit_protokoll(item: FactionAgendaItem, membership: Membership | None = None) -> FactionMeeting | None:
@@ -360,7 +363,10 @@ def unterlagen(item: FactionAgendaItem, membership: Membership) -> list[Unterlag
     fassung = protokoll_fassung(membership) if vorige is not None else ""
     if vorige is not None and fassung:
         protokoll = f"Protokoll vom {timezone.localtime(vorige.start):%d.%m.%Y}" if vorige.start else "Protokoll"
-        liste.append(Unterlage(f"p-{vorige.pk}", "protokoll", protokoll, vorige, fassung=fassung))
+        oeffentlich = fassung == "oeffentlich" or membership.has_permission("protocols.view_public")
+        liste.append(
+            Unterlage(f"p-{vorige.pk}", "protokoll", protokoll, vorige, fassung=fassung, oeffentlich_lesbar=oeffentlich)
+        )
     for paper in item.related_papers.all().order_by("-date"):
         dateien = list(ris.files_of_paper(paper).defer("text_content", "raw_json"))
         haupt = _haupt_datei_kennung(paper)
