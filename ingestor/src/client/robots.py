@@ -33,6 +33,7 @@ import httpx
 from mandari_oparl.crawler import PRODUCT_TOKEN, product_token
 from mandari_oparl.robots import (
     CACHE_SECONDS,
+    MAX_BYTES,
     RETRY_UNREACHABLE_SECONDS,
     STATE_UNREACHABLE,
     Decision,
@@ -47,8 +48,11 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-#: Zeitlimit für den Abruf einer robots.txt
+#: Zeitlimit für den Abruf einer robots.txt, je Netzvorgang
 ROBOTS_TIMEOUT = 15.0
+#: Gesamtfrist für den Abruf einer robots.txt samt Weiterleitungen: Tropft die Antwort, greift das Zeitlimit je
+#: Vorgang nie
+ROBOTS_DEADLINE = 60.0
 
 
 @dataclass
@@ -111,9 +115,7 @@ class RobotsGate:
             try:
                 if pace is not None:
                     await pace(target)
-                response = await self._get(client, target, user_agent, pace)
-                status = response.status_code
-                body = response.content
+                status, body = await self._get(client, target, user_agent, pace)
             except httpx.HTTPError as exc:
                 if isinstance(exc, BlockedDestinationError) and not isinstance(exc, UnresolvableHostError):
                     # Der Host liegt nicht im öffentlichen Netz: kein Abruf dorthin, auch keine Datei. Das ist ein
@@ -143,19 +145,33 @@ class RobotsGate:
         target: str,
         user_agent: str,
         pace: Callable[[str], Awaitable[None]] | None = None,
-    ) -> httpx.Response:
+    ) -> tuple[int, bytes]:
         """
-        robots.txt abrufen; Weiterleitungen (RFC 9309: mindestens fünf, auch auf andere Hosts) folgen wir selbst,
-        jede mit eigenem Zeitpunkt in der Drossel je Host (``pace``). Mehr als fünf: ``httpx.TooManyRedirects``,
-        also „nicht erreichbar“.
-        """
-        from src.client.redirects import pace_only, send
+        robots.txt abrufen, Rückgabe Status und Inhalt; Weiterleitungen (RFC 9309: mindestens fünf, auch auf andere
+        Hosts) folgen wir selbst, jede mit eigenem Zeitpunkt in der Drossel je Host (``pace``). Mehr als fünf:
+        ``httpx.TooManyRedirects``, also „nicht erreichbar“.
 
-        headers = {"User-Agent": user_agent, "Accept": "text/plain"}
+        Gelesen werden höchstens die ``MAX_BYTES``, die auch ausgewertet werden, und der Abruf endet nach
+        ``ROBOTS_DEADLINE`` (``httpx.ReadTimeout``): Die Datei eines fremden Hosts belegt weder beliebig viel Speicher
+        noch hält sie den Abruf beliebig lange offen.
+        """
+        from src.client.redirects import Deadline, pace_only, read_limited, send
+
+        # Nur gzip anbieten: Das entpackt read_limited selbst, mit Obergrenze
+        headers = {"User-Agent": user_agent, "Accept": "text/plain", "Accept-Encoding": "gzip"}
         before_redirect = pace_only(pace if pace is not None else _no_pace)
+        deadline = Deadline(ROBOTS_DEADLINE)
+
+        async def fetch(http: httpx.AsyncClient, request: httpx.Request) -> tuple[int, bytes]:
+            response = await send(http, request, before_redirect=before_redirect, stream=True, deadline=deadline)
+            if not 200 <= response.status_code < 300:
+                # Ausgewertet wird nur der Inhalt einer erfolgreichen Antwort
+                await response.aclose()
+                return response.status_code, b""
+            return response.status_code, await read_limited(response, MAX_BYTES, deadline=deadline)
+
         if client is not None:
-            request = client.build_request("GET", target, headers=headers, timeout=ROBOTS_TIMEOUT)
-            return await send(client, request, before_redirect=before_redirect)
+            return await fetch(client, client.build_request("GET", target, headers=headers, timeout=ROBOTS_TIMEOUT))
         # Ohne Client der Quelle geht es um Dateien und Ziele von Weiterleitungen, deren Adressen die Quelle nennt:
         # Auch ihre robots.txt rufen wir nur bei öffentlichen Adressen ab (mandari_oparl.ziel)
         transport = PinnedAsyncTransport(
@@ -163,7 +179,7 @@ class RobotsGate:
             allowed_hosts=[host for host in settings.fetch_internal_hosts.split(",") if host.strip()],
         )
         async with httpx.AsyncClient(timeout=ROBOTS_TIMEOUT, transport=transport) as own:
-            return await send(own, own.build_request("GET", target, headers=headers), before_redirect=before_redirect)
+            return await fetch(own, own.build_request("GET", target, headers=headers))
 
     def seed(self, url: str, robots: RobotsTxt, *, user_agent: str | None = None) -> None:
         """Ergebnis für den Host einer URL vorgeben (Tests, Werkzeuge); ohne ``user_agent`` für alle."""
