@@ -597,13 +597,14 @@ def plan_priority_extraction(file_ids: list[Any]) -> int:
 
     In welche Stufe eine Datei kommt und wie viele Aufträge mit Vorrang zugleich warten dürfen, entscheidet die
     Dokumentkette (``hub.ris.erkennung.mit_vorrang_einplanen``): Die Zusammenfassung lässt sich ohne Anmeldung
-    auslösen und darf die Verteilung der Texterkennung über die Quellen nicht aussetzen.
+    auslösen und darf die Verteilung der Texterkennung über die Quellen nicht aussetzen. Eingereiht wird über das
+    Auftragsmodul; ``insight_ai`` selbst lädt keine Dateien und erkennt keinen Text.
     """
-    from hub.ris import erkennung
+    from insight_core import background_tasks
 
     if not file_ids:
         return 0
-    eingereiht = erkennung.mit_vorrang_einplanen(
+    eingereiht = background_tasks.texterkennung_mit_vorrang(
         file_ids, priority=EXTRACTION_PRIORITY, max_wartend=MAX_PRIORITY_WAITING
     )
     if eingereiht:
