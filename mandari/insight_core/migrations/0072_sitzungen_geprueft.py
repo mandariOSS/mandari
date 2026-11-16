@@ -53,8 +53,11 @@ def pruefen(apps, schema_editor):
             )
             if angaben.vermerk is None:
                 continue
-            # Nur, wenn der Name noch der gelesene ist: Schreibt der Ingestor die Sitzung gerade neu, gilt sein Stand
-            meeting.objects.filter(pk=sitzung.pk, name=sitzung.name).update(name=angaben.name, cancelled=True)
+            # Nur, wenn Name, Zustand und Absage noch die gelesenen sind: Schreibt der Ingestor die Sitzung gerade
+            # neu (er schreibt Rohdaten und Spalten in einem Zug), gilt sein Stand
+            meeting.objects.filter(
+                pk=sitzung.pk, name=sitzung.name, meeting_state=sitzung.meeting_state, cancelled=sitzung.cancelled
+            ).update(name=angaben.name, cancelled=True)
 
 
 class Migration(migrations.Migration):
