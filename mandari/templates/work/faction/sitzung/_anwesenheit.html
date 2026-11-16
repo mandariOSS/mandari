@@ -3,6 +3,7 @@
 {# Je Gruppe nach dem angezeigten Namen; „Nicht eingeladen“: aktive Mitglieder ohne Teilnahme, ein Klick trägt sie ein (Issue #1436) #}
 {# Kontext: meeting, anw, quorum, rechte, rollen_auswahl, sitzung_urls, oob_kopf (Antwort einer Aktion: Kopf mit austauschen) #}
 <aside class="fs-anw" id="fs-anwesenheit" aria-labelledby="fs-anw-h" x-show="anwesenheitOffen || breit" x-cloak x-data="anwesenheitsListe"
+       @htmx:before-swap="rollstandMerken()"
        @click.outside="anwesenheitAussen($event)">
     <div class="fs-anw-kopf">
         <h2 id="fs-anw-h">Anwesenheit</h2>
@@ -71,7 +72,7 @@
     </ul>
     {% endif %}
     {% if rechte.anwesenheit %}
-    <form class="fs-anw-fuss" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-anwesenheit" hx-swap="outerHTML" autocomplete="off" @submit="rollstandMerken()">
+    <form class="fs-anw-fuss" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-anwesenheit" hx-swap="outerHTML" autocomplete="off">
         <input type="hidden" name="action" value="gast">
         <label class="sr-only" for="fs-gast">Name des Gasts</label>
         <input class="wf-eingabe" id="fs-gast" type="text" name="guest_name" maxlength="200" required placeholder="Gast hinzufügen">
