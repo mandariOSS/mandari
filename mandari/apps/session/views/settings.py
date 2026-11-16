@@ -11,6 +11,8 @@ import logging
 
 from django.contrib import messages
 from django.contrib.auth import login
+from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
@@ -610,11 +612,31 @@ class UserDeactivateView(SessionViewMixin, View):
                 messages.error(request, "Der letzte aktive Administrator kann nicht deaktiviert werden.")
                 return redirect("session:users", tenant_slug=tenant_slug)
 
-        target.is_active = not target.is_active
-        target.save()
+        with transaction.atomic():
+            target.is_active = not target.is_active
+            target.save()
+            if not target.is_active:
+                self._discard_open_invitations(request, target)
         state = "reaktiviert" if target.is_active else "deaktiviert"
         messages.success(request, f"{target.user.email} wurde {state}.")
         return redirect("session:users", tenant_slug=tenant_slug)
+
+    def _discard_open_invitations(self, request, target) -> None:
+        """
+        Offene Einladungen an die deaktivierte Person und von ihr zurückziehen (wie in Work).
+
+        Nach einer Deaktivierung gibt nur eine Entscheidung der Verwaltung den Zugang zurück: direktes Reaktivieren
+        oder eine danach neu ausgestellte Einladung. Ältere Einladungen an die Person und von ihr verfallen deshalb
+        mit der Deaktivierung. Jeder Rückzug steht im Audit-Log.
+        """
+        offene = SessionInvitation.objects.filter(tenant=self.session_tenant, accepted_at__isnull=True).filter(
+            Q(email__iexact=target.user.email) | Q(invited_by=target)
+        )
+        for invitation in offene.select_related("invited_by__user").prefetch_related("roles"):
+            _log_invitation(
+                request, self.session_user, "delete", invitation, zurueckgezogen=True, grund="Zugang deaktiviert"
+            )
+        offene.delete()
 
 
 class InvitationResendView(SessionViewMixin, View):
@@ -680,8 +702,16 @@ class InvitationAcceptView(View):
     template_name = "session/settings/invitation_accept.html"
 
     def _get_invitation(self, token):
-        invitation = SessionInvitation.find_by_token(token, SessionInvitation.objects.select_related("tenant"))
+        invitation = SessionInvitation.find_by_token(
+            token, SessionInvitation.objects.select_related("tenant", "invited_by__user")
+        )
         if invitation is None or not invitation.is_valid:
+            return None
+        # Eine Einladung gilt nur, solange der Zugang der einladenden Person besteht: Mit deren Deaktivierung enden
+        # auch die Rollen, die sie weitergegeben hat. Einladungen der Mandanteneinrichtung haben keine einladende
+        # Person und bleiben gültig.
+        inviter = invitation.invited_by if invitation.invited_by_id else None
+        if inviter is not None and not (inviter.is_active and inviter.user.is_active):
             return None
         return invitation
 

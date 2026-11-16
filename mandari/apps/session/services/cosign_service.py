@@ -88,9 +88,21 @@ def acting_for(session_user: SessionUser, cosignature: SessionCosignature) -> Se
     from .delegation_service import SCOPE_WORKLIST, principals
 
     for principal in principals(session_user, SCOPE_WORKLIST):
-        if _decides_own(principal, cosignature.department_id):
+        if _decides_own(principal, cosignature.department_id) and _principal_sees(principal, cosignature.paper):
             return principal
     return None
+
+
+def _principal_sees(principal: SessionUser, paper: SessionPaper) -> bool:
+    """
+    Darf die vertretene Person die Vorlage selbst sehen?
+
+    Eine Vertretung entscheidet nie mehr als die vertretene Person: Eine Station, die diese mangels Sichtrecht
+    nicht selbst entscheiden könnte, entscheidet auch niemand in ihrem Namen (wie bei der Freigabe).
+    """
+    from .four_eyes_service import PROCESS_PAPER, visible_to
+
+    return visible_to(PROCESS_PAPER, paper, principal)
 
 
 def can_decide(session_user: SessionUser, cosignature: SessionCosignature) -> bool:
@@ -128,8 +140,15 @@ def my_pending_cosignatures(session_user: SessionUser, permissions=None):
 
         represented = principals(session_user, SCOPE_WORKLIST)
         if not any(_is_admin(principal) for principal in represented):
+            from ..permissions import role_permissions
+
             departments = Q(department__in=session_user.departments.all())
             for principal in represented:
-                departments |= Q(department__in=principal.departments.all())
+                # Ämter der vertretenen Person nur mit deren eigener Sicht auf die Vorlage – sonst stünde die
+                # Station im Arbeitsvorrat, obwohl sie sich in Vertretung nicht entscheiden lässt
+                rechte = role_permissions(principal)
+                if "view_papers" not in rechte:
+                    continue
+                departments |= Q(department__in=principal.departments.all()) & paper_q(rechte, "paper__")
             qs = qs.filter(departments)
     return qs.select_related("paper__main_organization", "department").order_by("paper__created_at", "order")

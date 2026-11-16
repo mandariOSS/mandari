@@ -134,6 +134,20 @@ def paper_visible(permissions: Collection[str], paper: Any) -> bool:
     return NON_PUBLIC_PAPERS in permissions or bool(paper.is_public)
 
 
+def consultation_hidden(permissions: Collection[str], station: Any) -> bool:
+    """
+    Station der Beratungsfolge auf einem TOP oder in einer Sitzung, die die Person nicht sehen darf.
+
+    Eine öffentliche Vorlage kann nichtöffentlich beraten werden (etwa im stets nichtöffentlichen Hauptausschuss).
+    Von einer solchen Station zeigt die Beratungsfolge ohne NÖ-Sichtrecht nur, dass es sie gibt: weder Sitzung und
+    TOP noch Gremium, Rolle und Ergebnis – wie die OParl-Ausgabe und die Rückmeldung an Fraktionen.
+    """
+    return bool(
+        (station.agenda_item_id and not agenda_item_visible(permissions, station.agenda_item))
+        or (station.meeting_id and not meeting_visible(permissions, station.meeting))
+    )
+
+
 class MeetingQuerySet(models.QuerySet["SessionMeeting"]):
     def visible_to(self, permissions: Collection[str]) -> MeetingQuerySet:
         return self.filter(meeting_q(permissions))

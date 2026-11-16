@@ -1597,10 +1597,14 @@ def apply_plan(plan: ImportPlan) -> None:
                 persons[kennung] = item.instance
                 continue
             person = item.instance or SessionPerson(tenant=tenant)
+            konto_vorher = allowance_service.bank_account(person) if item.instance is not None else None
             _assign(person, item.values)
             for secret, value in item.secrets.items():
                 getattr(person, f"set_{secret}_encrypted")(value)
             person.save()
+            if konto_vorher is not None and konto_vorher != allowance_service.bank_account(person):
+                # Neues Empfängerkonto: Bereits genehmigte, offene Auszahlungen brauchen eine neue Genehmigung
+                allowance_service.reset_approvals_after_account_change(person)
             persons[kennung] = person
 
         for item in plan.memberships:

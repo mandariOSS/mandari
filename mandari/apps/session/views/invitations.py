@@ -134,7 +134,14 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
         sent = dispatch.recipients.filter(status="sent").count()
         failed = dispatch.recipients.filter(status="failed").count()
         letters = dispatch.recipients.filter(status="letter_pending").count()
-        if failed:
+        if failed and not (sent or letters):
+            # Niemand erreicht: Die Sitzung gilt nicht als geladen, die Fristwarnung bleibt bestehen
+            messages.error(
+                request,
+                f"{dispatch.get_dispatch_type_display()} nicht versandt: Alle {failed} Zustellungen sind "
+                "fehlgeschlagen. Bitte den Mailversand prüfen und erneut versenden.",
+            )
+        elif failed:
             messages.warning(
                 request,
                 f"{dispatch.get_dispatch_type_display()} versandt: {sent} erfolgreich, {failed} fehlgeschlagen.",

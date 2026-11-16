@@ -51,19 +51,23 @@ consultation_organizations, consultation_meetings, tenant_slug).
         <li class="grid grid-cols-[2rem_minmax(0,1fr)] sm:grid-cols-[2rem_minmax(0,1fr)_auto] gap-x-3 gap-y-2 py-3" x-data="{ bearbeiten: false }">
             <span class="pt-px tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ station.order }}</span>
             <div class="min-w-0">
+                {% if station.noe_hidden %}
+                <p class="font-medium text-gray-900 dark:text-white break-words">Nichtöffentliche Beratung</p>
+                {% else %}
                 <p class="font-medium text-gray-900 dark:text-white break-words">{{ station.organization.name }}</p>
                 <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
                     <span>{{ station.get_role_display }}</span>
                     {% if station.authoritative %}<span title="Entscheidende Beratung (OParl: authoritative)">entscheidend</span>{% endif %}
                     {% if station.result != "pending" %}<span>{% include "session/neu/_status.html" with wert=station.result text=station.get_result_display %}</span>{% endif %}
                 </p>
+                {% endif %}
                 <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400 break-words">
                     {% if station.noe_hidden %}Nichtöffentliche Sitzung
                     {% elif station.agenda_item %}<c-ui.textlink href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.agenda_item.meeting_id %}">TOP {{ station.agenda_item.number }}, {{ station.agenda_item.meeting.name }} ({{ station.agenda_item.meeting.start|date:"d.m.Y" }})</c-ui.textlink>
                     {% elif station.meeting %}Noch kein TOP in der Zielsitzung <c-ui.textlink href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.meeting.id %}">{{ station.meeting.name }} ({{ station.meeting.start|date:"d.m.Y" }})</c-ui.textlink>
                     {% else %}Noch nicht terminiert{% endif %}
                 </p>
-                {% if consultation_can_schedule and not consultation_schedule_blocker %}{% if station.meeting and not station.agenda_item and not station.noe_hidden or station.is_done and not forloop.last %}
+                {% if consultation_can_schedule and not consultation_schedule_blocker %}{% if station.meeting and not station.agenda_item and not station.noe_hidden or station.is_done and not station.noe_hidden and not forloop.last %}
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                     {% if consultation_can_schedule and not consultation_schedule_blocker and not station.agenda_item and station.meeting and not station.noe_hidden %}
                     <form method="post" action="{% url 'session:consultation_schedule' tenant_slug=tenant_slug consultation_id=station.id %}">
@@ -71,7 +75,7 @@ consultation_organizations, consultation_meetings, tenant_slug).
                         <c-ui.button type="submit" variant="secondary" size="sm" title="TOP auf der Zielsitzung anlegen">TOP anlegen</c-ui.button>
                     </form>
                     {% endif %}
-                    {% if consultation_can_schedule and not consultation_schedule_blocker and station.is_done and not forloop.last %}
+                    {% if consultation_can_schedule and not consultation_schedule_blocker and station.is_done and not station.noe_hidden and not forloop.last %}
                     <form method="post" action="{% url 'session:consultation_forward' tenant_slug=tenant_slug consultation_id=station.id %}">
                         {% csrf_token %}
                         <c-ui.button type="submit" variant="secondary" size="sm" title="An die nächste Station weiterleiten (TOP anlegen)">Weiterleiten</c-ui.button>
