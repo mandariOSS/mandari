@@ -449,6 +449,8 @@ class PaperDetailView(SessionViewMixin, DetailView):
         context["consultation_can_schedule"] = self.has_permission("edit_meetings")
         # Terminieren erst nach der Freigabe (Issue #721); Stationen planen geht schon im Entwurf
         context["consultation_schedule_blocker"] = agenda_service.scheduling_error(paper)
+        # Auch ein Ergebnis von Hand (Station ohne TOP) erst nach der Freigabe: Das Formular sperrt die Auswahl
+        context["consultation_result_blocker"] = agenda_service.manual_result_error(paper)
 
         # Mitzeichnungslauf (Issue #81)
         from ..services import cosign_service

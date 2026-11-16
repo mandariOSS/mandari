@@ -7,7 +7,8 @@ Wann entsteht eine Fassung?
   jedem Statuswechsel der Vorlage – ob Freigabelauf, Mitzeichnung, Terminierung oder
   Bearbeiten-Formular. Der Workflow-Code selbst bleibt unberührt.
 - Bei jedem erfassten Beratungsergebnis (``record_consultation``). „Angenommen“ in der
-  entscheidenden Beratung kennzeichnet die beschlossene Fassung – genau eine je Vorlage.
+  entscheidenden Beratung kennzeichnet die beschlossene Fassung – genau eine je Vorlage; ohne TOP
+  nur an einer freigegebenen Vorlage.
 - Von Hand („Fassung sichern“, ``snapshot``).
 
 Eine Fassung hält Texte, Angaben und die Anlagen mit ihrem Inhalt fest (``SessionPaperVersionFile``
@@ -46,6 +47,7 @@ from apps.session.models import (
     SessionUser,
 )
 from apps.session.services import file_service, file_version_service
+from apps.session.services.agenda_service import RELEASED_PAPER_STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -282,11 +284,17 @@ def record_consultation(
     """
     Fassung zu einem erfassten Beratungsergebnis. „Angenommen“ in der entscheidenden Beratung
     kennzeichnet die beschlossene Fassung, sofern die Vorlage noch keine hat.
+
+    Ein Ergebnis ohne TOP (von Hand an der Station) kennzeichnet nur an einer freigegebenen Vorlage: Die
+    Kennzeichnung ist unveränderlich und je Vorlage einmalig, ein Ergebnis an einem Entwurf nähme sie der
+    späteren Entscheidung des Gremiums. Die Fassung selbst entsteht in jedem Fall.
     """
 
     def record() -> SessionPaperVersion:
-        # Frisch aus der Datenbank: Das Objekt am TOP bzw. an der Station kann älter sein als der gespeicherte Stand
-        current = SessionPaper.objects.get(pk=paper.pk)
+        # Frisch aus der Datenbank und unter der Sperre der Vorlage (``_safely`` hält die Transaktion): Das Objekt am
+        # TOP bzw. an der Station kann älter sein als der gespeicherte Stand, und die Freigabe darf zwischen der
+        # Prüfung unten und der Fassung nicht zurückgezogen werden. ``snapshot`` sperrt dieselbe Zeile danach erneut.
+        current = SessionPaper.objects.select_for_update(of=("self",)).get(pk=paper.pk)
         parts = [result_label]
         if consultation is not None:
             parts.append(f"{consultation.organization.name} ({consultation.get_role_display()})")
@@ -296,6 +304,7 @@ def record_consultation(
         resolved = (
             result == RESOLVED_RESULT
             and _decisive(current, consultation)
+            and (agenda_item is not None or current.status in RELEASED_PAPER_STATUSES)
             and not Version.objects.filter(paper=current, is_resolved=True).exists()
         )
         return snapshot(

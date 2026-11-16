@@ -18,8 +18,8 @@ consultation_organizations, consultation_meetings, tenant_slug).
     </c-slot>
     {% endif %}
     <c-rahmen.satz eng>Weg der Vorlage durch die Gremien, von der Vorberatung bis zur Entscheidung.</c-rahmen.satz>
-    {% if consultation_can_schedule and consultation_schedule_blocker and consultations %}
-    <p class="mt-1 text-sm text-amber-800 dark:text-amber-300" data-testid="terminieren-nach-freigabe">Tagesordnungspunkte lassen sich erst nach der Freigabe der Vorlage anlegen.</p>
+    {% if consultations and consultation_result_blocker or consultations and consultation_can_schedule and consultation_schedule_blocker %}
+    <p class="mt-1 text-sm text-amber-800 dark:text-amber-300" data-testid="terminieren-nach-freigabe">{% if consultation_can_schedule and consultation_schedule_blocker %}Tagesordnungspunkte lassen sich erst nach der Freigabe der Vorlage anlegen.{% endif %}{% if consultation_result_blocker %} Beratungsergebnisse lassen sich erst nach der Freigabe der Vorlage eintragen.{% endif %}</p>
     {% endif %}
 
     {% if consultation_can_edit %}
