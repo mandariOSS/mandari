@@ -350,6 +350,12 @@ def test_ein_klick_traegt_ein_mitglied_ohne_einladung_ein(
     assert not meeting.attendances.filter(membership=spaet).exists()
     FactionMeeting.objects.filter(pk=meeting.pk).update(attendance_confirmed_at=None)
 
+    # Auch eine vorhandene Teilnahme ändert sich nach bestätigter Anwesenheit nicht mehr über das Nachtragen
+    FactionMeeting.objects.filter(pk=meeting.pk).update(attendance_confirmed_at=timezone.now())
+    assert sitzung.teilnahme_nachtragen(meeting, neu.pk, status="excused", art="") is False
+    assert meeting.attendances.get(membership=neu).status == "present"
+    FactionMeeting.objects.filter(pk=meeting.pk).update(attendance_confirmed_at=None)
+
     # Derselbe Klick noch einmal (doppelt gesendet): keine zweite Teilnahme, die Angabe wird gesetzt
     antwort = client.post(url, {"action": "anwesenheit", "membership_id": neu.pk, "status": "excused"})
     assert antwort.status_code == 200

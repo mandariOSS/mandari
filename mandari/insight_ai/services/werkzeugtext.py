@@ -20,14 +20,18 @@ from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
-#: Ein Aufruf; fehlt das Ende (abgeschnittene Antwort), gehört der Rest des Textes dazu
-_BLOCK_RE = re.compile(r"<tool_call>(.*?)(?:</tool_call>|\Z)", re.DOTALL | re.IGNORECASE)
+#: Ein Aufruf; fehlt das Ende (abgeschnittene Antwort), gehört der Rest des Textes dazu und fällt mit weg, der Aufruf
+#: selbst läuft dann nicht (zweite Gruppe leer)
+_BLOCK_RE = re.compile(r"<tool_call>(.*?)(</tool_call>|\Z)", re.DOTALL | re.IGNORECASE)
 #: Einzelne Marken, die ohne ihren Aufruf stehen geblieben sind
 _MARKE_RE = re.compile(r"</?(?:tool_call|arg_key|arg_value)>", re.IGNORECASE)
 _NAME_RE = re.compile(r"\s*([A-Za-z_][A-Za-z0-9_]*)")
 #: Ein Argument; statt ``<arg_key>`` schreiben Modelle gelegentlich eine öffnende Klammer
 _PAAR_RE = re.compile(
-    r"(?:<arg_key>|\()\s*([A-Za-z_][A-Za-z0-9_]*)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>",
+    # Der Wert reicht nicht über den Anfang eines weiteren Arguments hinweg: Fehlt ein Wertende, bleibt der Teil als
+    # Rest stehen und der Aufruf gilt als unlesbar
+    r"(?:<arg_key>|\()\s*([A-Za-z_][A-Za-z0-9_]*)\s*</arg_key>\s*"
+    r"<arg_value>((?:(?!</?arg_(?:key|value)>).)*?)</arg_value>",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -95,8 +99,9 @@ def lesen(inhalt: str, namen: Collection[str]) -> Gelesen:
     if not inhalt or "<" not in inhalt or not _MARKE_RE.search(inhalt):
         return Gelesen(inhalt or "")
     aufrufe: list[tuple[str, dict[str, Any]]] = []
-    for rumpf in _BLOCK_RE.findall(inhalt):
-        aufruf = _aufruf(rumpf)
+    for rumpf, blockende in _BLOCK_RE.findall(inhalt):
+        # Ohne Blockende ist die Antwort abgeschnitten: Dem Aufruf können Argumente fehlen, er läuft nicht
+        aufruf = _aufruf(rumpf) if blockende else None
         if aufruf is not None and aufruf[0] in namen:
             aufrufe.append(aufruf)
     text = _MARKE_RE.sub("", _BLOCK_RE.sub("", inhalt)).strip()
