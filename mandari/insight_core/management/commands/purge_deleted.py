@@ -27,7 +27,15 @@ Hinweise:
   verweisenden Datensätze je Typ (Issue #421).
 - Elasticsearch wird über die bestehenden post_delete-Signale aufgeräumt
   (ELASTICSEARCH_AUTO_INDEX). Lokale Dateikopien (OParlFile.local_path)
-  werden vor dem Löschen der DB-Zeile vom Datenträger entfernt.
+  werden vor dem Löschen der DB-Zeile vom Datenträger entfernt, das Foto
+  einer Person nach dem Löschen ihrer Zeile.
+- Wortmeldungen der Live-Übertragung mit gelesenen Angaben zu einer
+  markierten Person (Name, Fraktion, Funktion als Freitext) werden mit --yes
+  entfernt, auch wenn die Person selbst wegen anderer Verweise erhalten
+  bleibt (hub.live.models.wortmeldungen_zu_personen).
+- Der Änderungsfeed der betroffenen Quellen beginnt einen neuen Abschnitt:
+  Ohne die Zeile nennt er ein früher gemeldetes Löschen nicht mehr, ein
+  älterer Cursor verweist deshalb auf den Snapshot.
 """
 
 from __future__ import annotations
@@ -37,8 +45,11 @@ from datetime import timedelta
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.utils import timezone
 
+from hub.live.models import wortmeldungen_zu_personen
+from insight_core import publication
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -51,6 +62,7 @@ from insight_core.models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    OParlSource,
 )
 from insight_core.services.external_references import external_references, split_by_references
 
@@ -110,6 +122,37 @@ def _remove_local_files(file_qs) -> int:
             # Fehlende/gesperrte Datei blockiert die Löschung nicht
             continue
     return removed
+
+
+def _affected_sources(steps) -> set:
+    """Quellen der Objekte, die gelöscht werden (Dateien ohne eigene Kommune über Vorgang bzw. Sitzung)."""
+    source_ids: set = set()
+    for (name, _model, body_path), (_name, _qs, deletable, _protected) in zip(ENTITY_STEPS, steps, strict=True):
+        paths = [body_path] + (["paper__body", "meeting__body"] if name == "files" else [])
+        for path in paths:
+            source_ids.update(deletable.values_list(f"{path}__source_id", flat=True).distinct())
+    source_ids.discard(None)
+    return source_ids
+
+
+def _begin_feed_epoch(source_ids: set) -> None:
+    """
+    Neuen Abschnitt des Änderungsfeeds an den Quellen festhalten (``publication.note_retraction``).
+
+    Das physische Löschen ändert den Bestand am Journal vorbei: Der Feed nennt einen Eintrag nur, solange es die
+    Zeile gibt, ein früher gemeldetes Löschen fiele also weg und ein Abnehmer mit älterem Cursor erführe nichts
+    davon. Mit dem neuen Abschnitt gilt sein Cursor nicht mehr; er steigt über den Snapshot neu ein
+    (``hub.api.changes``, ``Feed.epoch``).
+    """
+    if not source_ids:
+        return
+    now = timezone.now()
+    with transaction.atomic():
+        for source in OParlSource.objects.select_for_update().filter(pk__in=source_ids):
+            config = dict(source.sync_config) if isinstance(source.sync_config, dict) else {}
+            publication.note_retraction(config, now)
+            source.sync_config = config
+            source.save(update_fields=["sync_config", "updated_at"])
 
 
 class Command(BaseCommand):
@@ -186,6 +229,15 @@ class Command(BaseCommand):
             deletable, protected = split_by_references(qs)
             steps.append((name, qs, deletable, protected))
 
+        # Gelesene Angaben markierter Personen in den Wortmeldungen der Live-Übertragung. Vor der Auswertung der
+        # Verweise: Der Verweis einer Wortmeldung hielte die Person sonst zurück, und ohne Verweis bliebe der
+        # gelesene Name auf der Live-Seite stehen. Das gilt auch, wenn die Person aus anderem Grund erhalten bleibt.
+        marked_persons = next(qs for name, qs, _, _ in steps if name == "persons")
+        speeches = wortmeldungen_zu_personen(marked_persons.only("id", "body_id", "name", "given_name", "family_name"))
+        speech_count = speeches.count()
+        if speech_count and execute:
+            speeches.delete()
+
         total = sum(qs.count() for _, qs, _, _ in steps)
         protected_total = 0
         mode = "LÖSCHUNG" if execute else "DRY-RUN (nichts wird gelöscht, --yes zum Ausführen)"
@@ -195,6 +247,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING(f"purge_deleted — {mode}"))
         self.stdout.write(f"Umfang: {scope}" + (f", Markierung älter als {older_than} Tage" if older_than else ""))
         self.stdout.write(f"Markierte Objekte gesamt: {total}\n")
+        if speech_count:
+            self.stdout.write(
+                f"  Wortmeldungen der Live-Übertragung mit gelesenen Angaben zu markierten Personen: {speech_count} "
+                + ("(entfernt)" if execute else "(werden mit --yes entfernt)")
+            )
 
         for name, qs, _deletable, protected in steps:
             count = qs.count()
@@ -254,6 +311,9 @@ class Command(BaseCommand):
         removed_files = _remove_local_files(steps[0][2])
         if removed_files:
             self.stdout.write(f"Lokale Dateikopien entfernt: {removed_files}")
+
+        # Vor dem Löschen: Bricht der Lauf ab, gilt der neue Abschnitt schon für das bis dahin Gelöschte
+        _begin_feed_epoch(_affected_sources(steps))
 
         deleted_total = 0
         for name, _qs, deletable, _protected in steps:

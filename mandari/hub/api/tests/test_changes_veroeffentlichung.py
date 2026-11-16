@@ -19,17 +19,19 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import date
+from io import StringIO
 from typing import Any, cast
 
 import pytest
 from django.core.cache import cache
+from django.core.management import call_command
 from django.test import Client, override_settings
 from django.utils import timezone
 
 from apps.session.models import SessionTenant
 from apps.session.services import portal_publication, tenant_provisioning
 from hub.api import changes
-from hub.api.tests.ereignisse import ereignis
+from hub.api.tests.ereignisse import ereignis, ruecknahme
 from insight_core import publication
 from insight_core.models import OParlBody, OParlPaper, OParlSource
 
@@ -297,6 +299,38 @@ def test_wiederholte_ruecknahme_behaelt_ihren_abschnitt(welt: dict[str, Any]) ->
     welt["source"].refresh_from_db()
     assert publication.retracted_at(welt["source"].sync_config) not in ("", zeitpunkt)
     assert Client().get(_pfad(welt), {"after": cursor}).status_code == 410
+
+
+def test_endgueltiges_loeschen_beginnt_einen_neuen_abschnitt(welt: dict[str, Any]) -> None:
+    """
+    ``purge_deleted`` entfernt die Zeile, und ohne Zeile nennt der Feed ein früher gemeldetes Löschen nicht mehr.
+    Ein Abnehmer mit älterem Cursor bekäme sonst eine leere Seite und gälte als aktuell; er steigt über den
+    Snapshot neu ein.
+    """
+    vorlage = welt["vorlagen"][0]
+    _aenderung(welt)
+    alt = _feed(welt)["cursor"]
+    vorlage.mark_deleted()
+    ruecknahme(welt["body"].pk, "Paper", vorlage.pk, "zurueckgenommen")
+    assert len(_feed(welt, after=alt)["data"]) == 1, "solange es die Zeile gibt, nennt der Feed das Löschen"
+
+    # Der Probelauf ändert nichts
+    call_command("purge_deleted", "--ids", str(vorlage.pk), stdout=StringIO())
+    assert len(_feed(welt, after=alt)["data"]) == 1
+
+    call_command("purge_deleted", "--ids", str(vorlage.pk), "--yes", stdout=StringIO())
+
+    assert not OParlPaper.objects.filter(pk=vorlage.pk).exists()
+    abgelaufen = Client().get(_pfad(welt), {"after": alt})
+    assert abgelaufen.status_code == 410
+    problem = abgelaufen.json()
+    assert problem["type"] == "https://docs.mandari.de/api/probleme/cursor-abgelaufen"
+    assert problem["snapshot"] == f"{API}{_pfad(welt, 'snapshot').removeprefix('/oparl/v1')}"
+    # Über den Snapshot geht es weiter
+    neu = _snapshot_cursor(welt)
+    assert _feed(welt, after=neu)["data"] == []
+    adresse = _aenderung(welt, 1)
+    assert [eintrag["id"] for eintrag in _feed(welt, after=neu)["data"]] == [adresse]
 
 
 def test_cursor_eines_abschnitts_gilt_nur_in_diesem() -> None:
