@@ -1298,7 +1298,8 @@ def teilnahme_nachtragen(meeting: FactionMeeting, membership_id: Any, *, status:
                 werte["participation_type"] = art
             FactionAttendance.objects.create(meeting=meeting, membership=mitglied, **werte)
             return True
-    return anwesenheit_setzen(meeting, teilnahme.pk, status=status, art=art)
+        # Auch die vorhandene Teilnahme innerhalb der Sperre setzen: Danach könnte die Anwesenheit schon bestätigt sein
+        return anwesenheit_setzen(meeting, teilnahme.pk, status=status, art=art)
 
 
 def gast_hinzufuegen(meeting: FactionMeeting, name: str) -> Any:
