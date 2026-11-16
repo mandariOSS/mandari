@@ -518,8 +518,15 @@ def add_comment(task: Task, membership: Membership, content: str) -> TaskActivit
     return activity
 
 
+@transaction.atomic
 def delete_task(task: Task) -> None:
-    """Aufgabe mit allen abhängigen Objekten löschen."""
+    """
+    Aufgabe mit allen abhängigen Objekten löschen.
+
+    Benachrichtigungen zur Aufgabe bleiben gespeichert. Gehört sie zu einem nichtöffentlichen TOP, werden sie vorher
+    gekennzeichnet, damit sie für nicht Vereidigte verborgen bleiben (``NotificationHub.aufgabe_wird_geloescht``).
+    """
+    _hub().aufgabe_wird_geloescht(task)
     task.delete()
 
 

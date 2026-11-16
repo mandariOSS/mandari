@@ -336,6 +336,53 @@ def test_benachrichtigungen_zu_verschlossener_aufgabe_entstehen_nicht_und_ersche
     assert len(NotificationHub.notify_task_comment(offen, kommentar, vorsitz, send_email=False)) == 1
 
 
+def test_nachrichten_bleiben_nach_dem_loeschen_der_aufgabe_verborgen(
+    org: Any, vorsitz: Any, person: Any, noe_top: FactionAgendaItem, top: FactionAgendaItem
+) -> None:
+    from apps.work.organization import export_service
+
+    aufgabe = _aufgabe(noe_top, vorsitz, person)
+    offen = _aufgabe(top, vorsitz, person, title="Plakate kleben")
+    NotificationHub.notify_task_assigned(aufgabe, person, vorsitz, send_email=False)
+    NotificationHub.notify_task_assigned(offen, person, vorsitz, send_email=False)
+    entzogen = _entziehen(person)
+    assert [text for text in _nachrichten(entzogen) if TITEL in text] == []
+
+    services.delete_task(Task.objects.get(pk=aufgabe.pk))
+    services.delete_task(Task.objects.get(pk=offen.pk))
+
+    assert Notification.objects.filter(recipient=person).count() == 2, "Die Nachrichten bleiben gespeichert"
+    nachrichten = _nachrichten(_frisch(entzogen))
+    assert [text for text in nachrichten if TITEL in text] == []
+    export = str(export_service.DsgvoExportService()._collect_notifications(_frisch(entzogen)))
+    assert TITEL not in export and export_service.NO_ACCESS_TASK in export
+    # Normalfall: Nachrichten zu einer anderen gelöschten Aufgabe bleiben, und Vereidigte sehen beide weiter
+    assert sum("Plakate kleben" in text for text in nachrichten) == 1 and "Plakate kleben" in export
+    Membership.objects.filter(pk=person.pk).update(is_sworn_in=True)
+    assert sum(TITEL in text for text in _nachrichten(_frisch(person))) == 1
+
+
+def test_mail_geht_nicht_mehr_raus_wenn_die_aufgabe_inzwischen_verschlossen_ist(
+    org: Any, vorsitz: Any, person: Any, noe_top: FactionAgendaItem, top: FactionAgendaItem, mailoutbox: Any
+) -> None:
+    from apps.work.background_tasks import send_notification_email_task
+
+    nachricht = NotificationHub.notify_task_assigned(
+        _aufgabe(noe_top, vorsitz, person), person, vorsitz, send_email=False
+    )
+    andere = NotificationHub.notify_task_assigned(
+        _aufgabe(top, vorsitz, person, title="Plakate kleben"), person, vorsitz, send_email=False
+    )
+    _entziehen(person)
+
+    send_notification_email_task.func(str(nachricht.id))
+    assert mailoutbox == [], "Zwischen Anlegen und Versand entzogen: keine Mail mit Titel"
+
+    # Normalfall: Die Mail zu einer anderen Aufgabe geht weiter raus
+    send_notification_email_task.func(str(andere.id))
+    assert len(mailoutbox) == 1 and "Plakate kleben" in str(mailoutbox[0].body)
+
+
 def test_datenexport_nennt_nachrichten_zu_verschlossener_aufgabe_ohne_text(
     org: Any, vorsitz: Any, person: Any, noe_top: FactionAgendaItem
 ) -> None:
