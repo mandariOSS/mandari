@@ -828,3 +828,34 @@ class TestEinzelneDateiHaeltDenLaufNichtAuf:
         assert ergebnis["zurueckgestellt"] == 1
         # Die nicht auswertbare Adresse lässt sich nie befragen: Für sie gilt die Nachfrist wie bisher
         assert ergebnis["ohne_rueckfrage"] == 1
+
+    def test_unerwartete_fehler_lassen_den_host_nicht_ruhen(
+        self, body: OParlBody, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scheitern mehrere Rückfragen an der eigenen Verarbeitung, wird die Datei dahinter trotzdem befragt."""
+        jetzt = timezone.now()
+        lange = jetzt - timedelta(days=400)
+        scheitern = [
+            _datei(body, tmp_path, f"wirft-{nummer}.pdf", source_missing_since=lange - timedelta(days=nummer + 1))
+            for nummer in range(file_reconcile.MAX_ERRORS_PER_HOST + 1)
+        ]
+        danach = _datei(body, tmp_path, "danach.pdf", source_missing_since=lange)
+        echt = file_reconcile.verify
+
+        def pruefen(file_obj: Any, client: Any, **kwargs: Any) -> str:
+            if file_obj.pk != danach.pk:
+                raise OSError("Ablage nicht beschreibbar")
+            return str(echt(file_obj, client, **kwargs))
+
+        monkeypatch.setattr(file_reconcile, "verify", pruefen)
+        aufrufe: list[str] = []
+
+        ergebnis = file_reconcile.purge_expired(now=jetzt, client=_client(_liefert(PDF_ALT), aufrufe), interval=0)
+
+        # Die Quelle liefert das Dokument: entsperrt statt gelöscht, und zwar nach einer echten Anfrage
+        assert aufrufe == ["GET /files/danach.pdf"]
+        assert ergebnis["entsperrt"] == 1 and ergebnis["zurueckgestellt"] == len(scheitern)
+        assert "ohne_rueckfrage" not in ergebnis and "purged" not in ergebnis
+        for datei in [*scheitern, danach]:
+            datei.refresh_from_db()
+            assert datei.content_purged_at is None

@@ -595,13 +595,17 @@ def _check_each(
             continue
         if url:
             run.pacer.wait(url)
+        unerwartet = False
         try:
             result = check(file_obj, client, run=run)
         except Exception:
             # Eine Datei, deren Prüfung unerwartet scheitert, beendet den Abgleich nicht für alle dahinter
             logger.exception("Löschabgleich: Prüfung der Datei %s unerwartet gescheitert", file_obj.pk)
             result = ERROR
-        if url:
+            unerwartet = True
+        # Ein unerwarteter Fehler kann aus der eigenen Verarbeitung stammen (Ablage, Datenbank): Er zählt nicht als
+        # Fehler des Hosts, sonst ruhte der Host und die Dateien dahinter blieben ohne Anfrage
+        if url and not unerwartet:
             run.record(url, result)
         results[result] += 1
 
@@ -758,9 +762,11 @@ def purge_expired(
                     logger.exception("Löschabgleich: Rückfrage zur Datei %s unerwartet gescheitert", file_obj.pk)
                     result = ERROR
                     # Kann nach einer Antwort der Quelle passiert sein (etwa beim Ablegen des neuen Inhalts): nie
-                    # ohne Rückfrage löschen, der nächste Lauf fragt erneut
+                    # ohne Rückfrage löschen, der nächste Lauf fragt erneut. Er zählt auch nicht als Fehler des
+                    # Hosts: Sonst ruhte der Host, und die Dateien dahinter würden nach der Nachfrist ungefragt gelöscht
                     unerwartet = True
-                run.record(url, result)
+                if not unerwartet:
+                    run.record(url, result)
             else:
                 result = SKIPPED
             if result == MISSING:
