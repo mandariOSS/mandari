@@ -723,12 +723,35 @@ class InvitationAcceptView(View):
 
     template_name = "session/settings/invitation_accept.html"
 
-    def _get_invitation(self, token):
+    def _get_invitation(self, token, *, lock: bool = False):
+        """
+        Gültige Einladung zum Token oder ``None``.
+
+        Mit ``lock`` (nur in einer Transaktion, für die Annahme) gilt der Stand unter Zeilensperre: Wird die
+        einladende Person im selben Moment deaktiviert, wartet die eine Seite auf die andere. Die Deaktivierung
+        ändert die Zeile der Person und löscht danach deren offene Einladungen; gesperrt wird hier in derselben
+        Reihenfolge, erst die Person, dann die Einladung.
+        """
         invitation = SessionInvitation.find_by_token(
             token, SessionInvitation.objects.select_related("tenant", "invited_by__user")
         )
         if invitation is None or not invitation.is_valid:
             return None
+        if lock:
+            if invitation.invited_by_id:
+                inviter = (
+                    SessionUser.objects.select_for_update(of=("self",))
+                    .select_related("user")
+                    .filter(pk=invitation.invited_by_id)
+                    .first()
+                )
+                if inviter is None:
+                    return None
+                invitation.invited_by = inviter
+            offen = SessionInvitation.objects.select_for_update().filter(pk=invitation.pk, accepted_at__isnull=True)
+            if offen.first() is None:
+                # Inzwischen angenommen oder mit der Deaktivierung zurückgezogen
+                return None
         # Eine Einladung gilt nur, solange der Zugang der einladenden Person besteht: Mit deren Deaktivierung enden
         # auch die Rollen, die sie weitergegeben hat. Einladungen der Mandanteneinrichtung haben keine einladende
         # Person und bleiben gültig.
@@ -754,9 +777,15 @@ class InvitationAcceptView(View):
         )
 
     def post(self, request, token):
+        # Prüfung und Vergabe des Zugangs in einer Transaktion unter Sperre: Zwischen beidem darf die einladende
+        # Person nicht deaktiviert und die Einladung nicht zurückgezogen werden
+        with transaction.atomic():
+            return self._annehmen(request, token)
+
+    def _annehmen(self, request, token):
         from apps.accounts.models import User
 
-        invitation = self._get_invitation(token)
+        invitation = self._get_invitation(token, lock=True)
         if invitation is None:
             return render(request, self.template_name, {"invalid": True}, status=404)
 
