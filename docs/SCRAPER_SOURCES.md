@@ -410,7 +410,8 @@ Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf
 ## 2. ALLRIS via oparl-bridge (externer Container)
 
 **ALLRIS 4/net** (CC e-gov) rendert sein Frontend per Apache-Wicket/Ajax —
-klassisches HTML-Scraping reicht dort nicht. Für die klassische Oberfläche von
+klassisches HTML-Scraping reicht dort nicht. Bietet die Instanz OParl, gilt Abschnitt 8: OParl liefert die
+Struktur, die Detailseiten (feste Adressen, serverseitig gerendert) ergänzen Beschlüsse und Texte. Für die klassische Oberfläche von
 ALLRIS 3 (`/bi/*.asp`) gibt es den Adapter `scraper:allris3` (Abschnitt 7).
 [Aeroid/oparl-bridge](https://github.com/Aeroid/oparl-bridge) (MIT,
 FastAPI + Playwright + SQLite) scrapt eine ALLRIS-Instanz (Wicket-UI plus
@@ -732,3 +733,60 @@ Admin → Insight → OParl-Quellen → Hinzufügen, die URL ist die Basis-URL:
   `mandari:proposal`, `mandari:minutes`); Suche und Bürgerportal zeigen sie noch nicht.
 - Kein Datum an Drucksachen (`vo020` nennt keines), keine Wahlperioden, keine Personenseiten (`kp020`).
 - Protokolle (`to020`) nur für vergangene Sitzungen.
+
+## 8. ALLRIS 4 mit OParl: Ergänzung aus den Detailseiten
+
+Viele ALLRIS-4-Instanzen bieten OParl 1.1 unter `/public/oparl/system`. Die Schnittstelle liefert die Struktur
+vollständig, aber nicht die Inhalte (Stand Herzogenrath, 11/2026, Issue #1431):
+
+| Inhalt | OParl | Detailseite |
+|---|---|---|
+| Beschlusstext des Tagesordnungspunkts | leer | `to020?TOLFDNR=…`, Abschnitt „Beschluss“ |
+| Abstimmungsergebnis | fehlt | `to020`, Abschnitt „Abstimmungsergebnis“ |
+| Wortprotokoll je Tagesordnungspunkt | fehlt | `to020`, Abschnitt „Wortprotokoll“ |
+| Beschlussvorschlag, Sachverhalt der Vorlage | fehlen | `vo020?VOLFDNR=…` |
+
+Die Detailseiten sind serverseitig gerendert und unter der Adresse abrufbar, die im OParl-Objekt als `web` steht.
+Mit `sync_config["html_ergaenzung"] = "allris4"` liest der normale OParl-Abgleich sie mit
+(`ingestor/src/sync/html_ergaenzung.py`, Parser `ingestor/src/scrapers/allris4.py`):
+
+- **Felder:** am Tagesordnungspunkt `resolutionText` (Beschluss, darunter das Abstimmungsergebnis als Text),
+  `mandari:vote` (Summen `yes`/`no`/`abstain`, Art `summary`, Ergebnis aus der Beschlussart) und `mandari:minutes`;
+  an der Vorlage `mandari:proposal` und `mandari:explanation`. Was OParl selbst liefert, hat Vorrang.
+- **Einmal je Änderung:** Den Abruf vermerkt der Rohdatensatz (`mandari:htmlErgaenzung`: Seite, `modified` beim
+  Abruf, ergänzte Felder). Jeder weitere Upsert übernimmt die gespeicherte Ergänzung, statt die Seite neu zu laden;
+  eingebettete und gelistete Tagesordnungspunkte schreiben so denselben Rohdatensatz. Neu geladen wird nur, wenn
+  `modified` des Objekts neuer ist und die Stempel verlässlich sind.
+- **Kontingent:** höchstens `html_ergaenzung_je_lauf` Seiten je Lauf (Standard 1.500, `0` = nur Übernahme aus dem
+  Bestand). Der Bestand kommt so über mehrere Läufe nach; für einen schnellen Erstabgleich den Wert einmalig
+  erhöhen. Mit dem Ende des Abruffensters lädt die Ergänzung nichts mehr.
+- **Abruf:** gleicher Takt je Host, gleiche Kennung und dieselbe robots.txt-Prüfung (Art `api`, Ausnahme der
+  Quelle) wie der OParl-Abruf; nur Seiten auf dem Host der Quelle und nur `to020`/`vo020`. Eine gestörte Seite
+  bricht den Lauf nicht ab, das Objekt behält die bisherige Ergänzung.
+
+Weitere Eigenheiten von ALLRIS 4, die der Ingestor ohne Einstellung behandelt:
+
+- **Kennungen mit `http://`:** Kennungen und Folgeseiten nennen `http://`, der Server leitet jede Anfrage auf
+  `https://` um. Nach der ersten Weiterleitung, die nur das Schema ändert, fragt der Client den Host gleich per
+  `https://` an (`OParlClient.https_hosts`); die Kennungen bleiben, wie die Quelle sie nennt.
+- **Stempel des Abrufs:** Mitgliedschaften und ältere Tagesordnungspunkte tragen als `created` und `modified` die
+  Uhrzeit des Abrufs, und die Liste der Mitgliedschaften ignoriert `modified_since`. Solche Objekte vergleicht der
+  Abgleich am Inhalt (`timestamps_unreliable`), sonst schriebe jeder Lauf alle Mitgliedschaften neu.
+- **Listen `files`, `consultations`, `locations`** antworten mit HTTP 500; Dateien und Beratungen stecken
+  eingebettet in Vorlagen und Sitzungen. Die Fehlversuche öffneten den Schutzschalter des Hosts und brachen
+  parallel laufende Listen ab (im Erstabgleich die Tagesordnungspunkte nach Seite 6). Abhilfe je Quelle:
+  `sync_config["skip_lists"] = ["file", "consultation", "location"]` – diese optionalen Listen fragt kein Lauf an
+  (nur Typen aus `OPTIONAL_LIST_TYPES`, Pflichtlisten nie).
+- **Personenliste ohne frühere Mandatsträger:** Die Liste der Personen enthält nur einen Teil der Personen, auf
+  die Mitgliedschaften verweisen (Herzogenrath: 189 Personen, 2.344 Mitgliedschaften, davon 1.446 zu nicht
+  gelisteten Personen). Solche Mitgliedschaften speichert der Abgleich nicht; die Personen einzeln nachzuladen
+  ist bewusst nicht vorgesehen (ihre Datensätze enthalten teils private Anschriften).
+
+### Grenzen
+
+- **Keine einzelnen Anlagen:** ALLRIS 4 verlinkt Anlagen nur über sitzungsgebundene Wicket-Adressen
+  (`…attachment-link`). Ohne Sitzung liefert der Server dafür eine HTML-Seite statt der Datei; die Datei-Pipeline
+  kann sie nicht abrufen. Ihr Inhalt steckt im Sammeldokument, das OParl als `mainFile` der Vorlage liefert.
+- Den Sitzungsort nennen weder OParl noch die Detailseiten.
+- Wie bei ALLRIS 3 zeigen Suche und Bürgerportal Sachverhalt, Beschlussvorschlag und Wortprotokoll noch nicht;
+  Beschlusstext und Abstimmung stehen in den Spalten des Tagesordnungspunkts.

@@ -6,6 +6,12 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+### Hinzugefügt
+- Ingestor: ALLRIS 4 mit OParl, Ergänzung aus den Detailseiten (#1431). Mit `sync_config["html_ergaenzung"] = "allris4"` liest der OParl-Abgleich für Tagesordnungspunkte und Vorlagen die Detailseite (`web`) und ergänzt, was die Schnittstelle leer lässt: Beschlusstext mit Abstimmungsergebnis, Abstimmung als Summen (`mandari:vote`), Wortprotokoll, Beschlussvorschlag und Sachverhalt. Je Objekt höchstens ein Abruf je Änderung, gespeicherte Ergänzungen werden übernommen, höchstens `html_ergaenzung_je_lauf` Seiten je Lauf (Standard 1.500), gleicher Takt und dieselbe robots.txt-Prüfung wie der OParl-Abruf.
+
+### Geändert
+- Ingestor: Leitet ein Host jede `http://`-Anfrage auf dieselbe Adresse per `https://` um, fragt der Client ihn danach gleich per `https://` an (#1431); bei ALLRIS 4 halbiert das die Anfragen. Gleiche `created`/`modified` im Abstand von höchstens 30 Minuten zum Abruf gelten als Stempel des Abrufs: Solche Objekte (Mitgliedschaften bei ALLRIS 4) vergleicht der Abgleich am Inhalt, statt sie in jedem Lauf neu zu schreiben. Neue Option je Quelle `skip_lists`: optionale Listen, die der Abgleich gar nicht anfragt (etwa Listen, die die Quelle dauerhaft mit HTTP 500 beantwortet und deren Objekte sie eingebettet liefert); ohne sie öffneten die Fehlversuche den Schutzschalter des Hosts für die übrigen Listen.
+
 ## [0.13.0] – 2026-11-17
 
 ### Hinzugefügt
