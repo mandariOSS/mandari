@@ -1086,8 +1086,8 @@ def top_verschieben(meeting: FactionMeeting, membership: Membership, item: Facti
             if eltern is not None and eltern.visibility == "public":
                 # Nichtöffentlicher Unterpunkt eines öffentlichen TOPs: bleibt Unterpunkt an seiner Stelle
                 geschwister = [s for s in agenda.siblings(meeting, eltern, eltern.visibility) if sichtbar(s)]
-                stelle = next((i for i, s in enumerate(geschwister) if s.pk == item.pk), None)
-                agenda.place_item(meeting, item, parent=eltern, position=stelle, visibility="public", visible=sichtbar)
+                platz = next((i for i, s in enumerate(geschwister) if s.pk == item.pk), None)
+                agenda.place_item(meeting, item, parent=eltern, position=platz, visibility="public", visible=sichtbar)
             else:
                 agenda.place_item(meeting, item, parent=None, position=None, visibility="public", visible=sichtbar)
     except agenda.VerschiebenError as abgelehnt:
