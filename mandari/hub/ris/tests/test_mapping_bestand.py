@@ -244,6 +244,42 @@ def test_system_und_body_aus_der_abbildung(welt: dict[str, Any]) -> None:
     assert body["legislativeTerm"] == [abbildung.legislative_term(welt["legislativeterm"])]
 
 
+def test_body_nennt_den_stand_des_abrufs_und_nur_echte_adressen(welt: dict[str, Any]) -> None:
+    """Issue #1441: eigener Abrufzeitpunkt am Body; leere Einträge der Quelle in ``equivalent`` fallen weg."""
+    body = welt["body"]
+    pfad = f"/oparl/v1/body/{body.pk}"
+    assert "mandari:freshness" not in _json(pfad) and "equivalent" not in _json(pfad)
+
+    OParlSource.objects.filter(pk=body.source_id).update(
+        last_successful_sync=ZEIT.replace(hour=9), last_successful_full_sync=ZEIT
+    )
+    OParlBody.objects.filter(pk=body.pk).update(
+        raw_json={
+            "equivalent": [
+                "",
+                "  ",
+                "https://www.wikidata.org/entity/Q1",
+                7,
+                "keine Adresse",
+                "mailto:x@example.org",
+                "https://[",
+                "https://@",
+                "https://keine adresse",
+            ]
+        }
+    )
+    cache.clear()
+    ausgabe = _json(pfad)
+    assert ausgabe["mandari:freshness"] == {
+        "synced_at": "2026-09-01T09:00:00+00:00",
+        "full_synced_at": "2026-09-01T08:00:00+00:00",
+    }
+    assert ausgabe["equivalent"] == ["https://www.wikidata.org/entity/Q1"]
+    # Liste und Einzelobjekt geben dasselbe aus, ebenso die Abbildung ohne Vorladen
+    assert _json("/oparl/v1/bodies")["data"] == [ausgabe]
+    assert _abbildung().body(OParlBody.objects.get(pk=body.pk)) == ausgabe
+
+
 def test_sitzung_bettet_ort_einladung_und_tagesordnung_ein(welt: dict[str, Any]) -> None:
     abbildung = _abbildung()
     sitzung = _json(f"/oparl/v1/meeting/{welt['meeting'].pk}")
@@ -254,6 +290,124 @@ def test_sitzung_bettet_ort_einladung_und_tagesordnung_ein(welt: dict[str, Any])
     assert [top["id"] for top in sitzung["agendaItem"]] == [f"{API}/agendaitem/{welt['agendaitem'].pk}"]
     assert sitzung["agendaItem"][0]["consultation"] == f"{API}/consultation/{welt['consultation'].pk}"
     assert sitzung["organization"] == [f"{API}/organization/{welt['organization'].pk}"]
+
+
+def test_einladung_die_an_einer_anderen_sitzung_haengt_fehlt_nicht(welt: dict[str, Any]) -> None:
+    """
+    Issue #1441: Eine Datei hat nur eine Sitzung. Nennen zwei Sitzungen dieselbe Einladung (gemeinsame Sitzung),
+    fehlte sie in der Ausgabe der zweiten; ebenso eine Einladung ohne zugeordnete Sitzung.
+    """
+    abbildung = _abbildung()
+    einladung = welt["einladung"]
+    zweite = OParlMeeting.objects.create(
+        external_id=f"{RIS}/meeting/2",
+        body=welt["body"],
+        name="Gemeinsame Sitzung",
+        start=ZEIT,
+        raw_json={"invitation": {"id": einladung.external_id}, "resultsProtocol": f"{RIS}/file/9"},
+    )
+    ohne_sitzung = OParlFile.objects.create(external_id=f"{RIS}/file/9", body=welt["body"], name="Niederschrift")
+    cache.clear()
+    sitzung = _json(f"/oparl/v1/meeting/{zweite.pk}")
+    assert sitzung["invitation"] == abbildung.file(einladung)
+    assert sitzung["resultsProtocol"] == abbildung.file(ohne_sitzung)
+    assert "auxiliaryFile" not in sitzung
+    # Die erste Sitzung behält ihre Einladung, auch in der Liste
+    liste = _json(f"/oparl/v1/body/{welt['body'].pk}/meetings")["data"]
+    assert [bool(s.get("invitation")) for s in liste] == [True, True]
+
+    # Gelöschte Dateien und Dateien anderer Kommunen gelten nicht
+    andere_quelle = OParlSource.objects.create(name="Nachbarstadt", url="https://ris.example.net/system")
+    fremd = OParlBody.objects.create(
+        source=andere_quelle, external_id="https://ris.example.net/body/1", name="Nachbarstadt"
+    )
+    OParlFile.objects.filter(pk=ohne_sitzung.pk).update(deleted=True)
+    OParlFile.objects.create(external_id=f"{RIS}/file/10", body=fremd, name="Fremde Einladung")
+    OParlMeeting.objects.filter(pk=zweite.pk).update(
+        raw_json={"invitation": f"{RIS}/file/10", "resultsProtocol": f"{RIS}/file/9"}
+    )
+    cache.clear()
+    sitzung = _json(f"/oparl/v1/meeting/{zweite.pk}")
+    assert "invitation" not in sitzung and "resultsProtocol" not in sitzung
+
+
+def test_sitzungen_ohne_fehlende_dateien_kosten_keine_weitere_abfrage(welt: dict[str, Any]) -> None:
+    """Die Dateien der Sitzung sind vorgeladen; nur wenn eine genannte Datei darunter fehlt, wird nachgeladen."""
+    ohne = RefContext.for_meetings(bestand.prepare_meetings(OParlMeeting.objects.filter(pk=welt["meeting"].pk)))
+    assert ohne.file_by_ext == {}
+
+
+def _sitzung_mit(welt: dict[str, Any], **werte: Any) -> dict[str, Any]:
+    OParlMeeting.objects.filter(pk=welt["meeting"].pk).update(**werte)
+    cache.clear()
+    return _json(f"/oparl/v1/meeting/{welt['meeting'].pk}")
+
+
+def test_absage_nur_im_namen_der_sitzung_ist_abgesagt_und_als_abgeleitet_gekennzeichnet(welt: dict[str, Any]) -> None:
+    """Issue #1441: Die Quelle setzt ``cancelled`` nicht und schreibt die Absage in den Namen."""
+    roh = "Ratssitzung Sitzung wurde abgesagt | Mail Zettelkasten vom 10.11."
+    rohdaten = {**welt["meeting"].raw_json, "name": roh, "cancelled": False}
+
+    # Bestand, den der Ingestor seit der Prüfung nicht neu geschrieben hat: Name und Absage stehen roh in den Spalten
+    alt = _sitzung_mit(welt, name=roh, cancelled=False, raw_json=rohdaten)
+    assert (alt["name"], alt["cancelled"]) == ("Ratssitzung", True)
+    assert alt["mandari:cancelledDerived"] is True
+    assert alt["mandari:cancelledNote"] == "Sitzung wurde abgesagt"
+    # Der Verwaltungsvermerk hinter dem Strich steht nirgends in der Ausgabe
+    assert "Zettelkasten" not in str(alt)
+
+    # Nach dem nächsten Abruf stehen die geprüften Werte in den Spalten: dieselbe Ausgabe
+    neu = _sitzung_mit(welt, name="Ratssitzung", cancelled=True, raw_json=rohdaten)
+    assert neu == alt
+
+
+def test_absage_der_quelle_ist_nicht_abgeleitet_und_andere_sitzungen_bleiben(welt: dict[str, Any]) -> None:
+    unveraendert = _sitzung_mit(welt)
+    assert (unveraendert["name"], unveraendert["cancelled"]) == ("Ratssitzung", False)
+    assert "mandari:cancelledDerived" not in unveraendert and "mandari:cancelledNote" not in unveraendert
+
+    rohdaten = {**welt["meeting"].raw_json, "name": "Ratssitzung - ENTFÄLLT -", "cancelled": True}
+    quelle = _sitzung_mit(welt, name="Ratssitzung - ENTFÄLLT -", cancelled=True, raw_json=rohdaten)
+    assert (quelle["name"], quelle["cancelled"]) == ("Ratssitzung", True)
+    assert "mandari:cancelledDerived" not in quelle
+    assert quelle["mandari:cancelledNote"] == "ENTFÄLLT"
+
+    # Hat die Sitzung laut Quelle stattgefunden, ist ein Wort im Namen keine Absage
+    rohdaten = {**welt["meeting"].raw_json, "name": "Ratssitzung (Ersatz, da die Sitzung im Mai entfällt)"}
+    gehalten = _sitzung_mit(
+        welt, name=rohdaten["name"], cancelled=False, meeting_state="durchgeführt", raw_json=rohdaten
+    )
+    assert (gehalten["name"], gehalten["cancelled"]) == (rohdaten["name"], False)
+    assert "mandari:cancelledDerived" not in gehalten
+
+
+def test_gremium_das_die_quelle_nicht_ausgibt_bleibt_als_verweis_erhalten(welt: dict[str, Any]) -> None:
+    """Issue #1441: Die Quelle nennt ein Gremium, das sie nicht öffentlich ausgibt; es fehlt im Bestand."""
+    assert "mandari:organizationNotPublished" not in _sitzung_mit(welt)
+
+    gesperrt = f"{RIS}/organization/901"
+    rohdaten = {**welt["meeting"].raw_json, "organization": [welt["organization"].external_id, gesperrt, "", 7]}
+    sitzung = _sitzung_mit(welt, raw_json=rohdaten)
+    # In organization stehen nur Gremien aus dem Bestand, der Verweis der Quelle steht in der Erweiterung
+    assert sitzung["organization"] == [f"{API}/organization/{welt['organization'].pk}"]
+    assert sitzung["mandari:organizationNotPublished"] == [gesperrt]
+
+    # Ein Gremium im Bestand ohne Zuordnung zur Sitzung gilt nicht als fehlend, ein eingebettetes zählt mit seiner
+    # Kennung
+    welt["meeting"].organizations.clear()
+    eingebettet = {"id": f"{RIS}/organization/902", "name": "Aufsichtsrat"}
+    rohdaten = {**welt["meeting"].raw_json, "organization": [welt["organization"].external_id, eingebettet]}
+    ohne_zuordnung = _sitzung_mit(welt, raw_json=rohdaten)
+    assert "organization" not in ohne_zuordnung
+    assert ohne_zuordnung["mandari:organizationNotPublished"] == [f"{RIS}/organization/902"]
+
+
+def test_ende_einer_sitzung_nur_nach_dem_beginn(welt: dict[str, Any]) -> None:
+    """Issue #1441: Viele Quellen liefern als Ende das Datum ohne Uhrzeit, also Mitternacht vor dem Beginn."""
+    mitternacht = ZEIT.replace(hour=0)
+    assert "end" not in _sitzung_mit(welt, end=mitternacht)
+    assert "end" not in _sitzung_mit(welt, end=ZEIT)
+    assert _sitzung_mit(welt, end=ZEIT.replace(hour=10))["end"] == "2026-09-01T10:00:00+00:00"
 
 
 def _ohne_erweiterungen(wert: Any) -> Any:

@@ -60,6 +60,11 @@ Es erscheinen dieselben Kommunen wie im Bürgerportal: gelistet, nicht gelöscht
 | `GET /oparl/v1/body/<uuid>/meetings` | Sitzungen der Kommune (paginiert, filterbar) |
 | `GET /oparl/v1/body/<uuid>/papers` | Vorlagen/Drucksachen der Kommune (paginiert, filterbar) |
 | `GET /oparl/v1/body/<uuid>/locations` | Orte der Kommune (paginiert; am Body im Standardfeld `locationList`) |
+| `GET /oparl/v1/body/<uuid>/memberships` | Mitgliedschaften der Kommune (paginiert, filterbar; am Body im Feld `membership`) |
+| `GET /oparl/v1/body/<uuid>/agendaitems` | Tagesordnungspunkte der Kommune (paginiert, filterbar; am Body im Feld `agendaItem`) |
+| `GET /oparl/v1/body/<uuid>/consultations` | Beratungen der Kommune (paginiert, filterbar; am Body im Feld `consultation`) |
+| `GET /oparl/v1/body/<uuid>/files` | Dateien der Kommune, ohne den erkannten Text (paginiert, filterbar; am Body im Feld `file`) |
+| `GET /oparl/v1/body/<uuid>/legislativeterms` | Wahlperioden der Kommune (paginiert, filterbar; am Body im Feld `legislativeTermList`) |
 | `GET /oparl/v1/body/<uuid>/kommparl/changes` | Änderungsfeed der Kommune nach dem kommParl-Profil (nur wenn eingeschaltet; Abschnitt „Änderungsfeed“) |
 | `GET /oparl/v1/body/<uuid>/kommparl/snapshot` | Snapshot der Kommune nach dem kommParl-Profil (NDJSON, Einstieg in den Änderungsfeed) |
 | `GET /oparl/v1/body/<uuid>/changes` | Änderungsfeed in der älteren Form, abgekündigt (Wegfall frühestens am 01.12.2027) |
@@ -74,6 +79,16 @@ Einbettungen gemäß OParl 1.1: `Body.legislativeTerm`, `Person.membership`,
 `Paper.consultation`, `Paper.mainFile`/`auxiliaryFile` werden als vollständige
 Objekte eingebettet; alle übrigen Referenzen sind URLs auf diese API.
 
+Die eingebetteten Objekte gibt es je Kommune zusätzlich als externe Listen (OParl 1.1, optional):
+`memberships`, `agendaitems`, `consultations`, `files` und `legislativeterms`. Sie nennen dieselben Objekte
+wie die Objekt-Endpunkte, mit Blättern und Zeitfiltern wie die übrigen Listen. Wer alle Dateien oder
+Tagesordnungspunkte einer Kommune braucht, muss sie so nicht aus Sitzungen und Vorlagen zusammensuchen.
+
+- `files` liefert die Dateien ohne den erkannten Text; `text` steht nur am Objekt-Endpunkt. Anlagen
+  zurückgenommener Vorlagen und Sitzungen fehlen in der Liste (der Objekt-Endpunkt gibt sie gekürzt aus);
+  die Rücknahme selbst steht an der Vorlage bzw. Sitzung.
+- `memberships` nennt eine Mitgliedschaft bei der Kommune ihrer Person und bei der ihres Gremiums.
+
 ## Konformität zu OParl 1.1
 
 | Eigenschaft | Ausgabe |
@@ -87,6 +102,7 @@ Objekte eingebettet; alle übrigen Referenzen sind URLs auf diese API.
 | `Meeting.location` | immer ein Location-Objekt: das der Quelle oder, wenn der Ort im Bestand nur als Text an der Sitzung steht, eines mit der Kennung der Sitzung (`…/v1/location/<Kennung der Sitzung>`, `description` aus Ort und Anschrift). Das gilt für Quellen, die den Ort nur als Text nennen, und für Session-Mandanten (siehe „Orte aus Text“) |
 | `Body.locationList` | URL der Orte-Liste (Standardfeld; zuvor nur `mandari:locationList`) |
 | `Body.legislativeTerm` | immer vorhanden (Pflichtfeld), ohne Wahlperiode als leere Liste |
+| `Body.membership`, `Body.agendaItem`, `Body.consultation`, `Body.file`, `Body.legislativeTermList` | URLs der externen Listen der sonst eingebetteten Objekte (Issue #1441) |
 | `System.license` | nur, wenn der Betreiber `OPARL_LICENSE_URL` setzt; sonst gilt die Lizenz der Kommune am Body |
 | `System.kommparl:conformsTo` | Kennungen aus kommParl, deren Anforderungen die Ausgabe vollständig erfüllt; bisher die Fassung `https://schema.kommparl.de/0.1/` (Abschnitt „Änderungsfeed“) |
 | Bedingte Anfragen | `ETag` an jeder erfolgreichen Antwort, `If-None-Match` ergibt `304` |
@@ -192,6 +208,10 @@ aufsteigend (stabil für inkrementelle Clients), im OParl-Listen-Envelope:
 
 Zusätzlich werden die Links als HTTP-`Link`-Header (`rel="first|prev|next|last"`)
 ausgeliefert.
+
+Seiten einer Liste ohne Zeitfilter und ihre Gesamtzahl (`totalElements`) liegen kurz im Cache
+(`OPARL_API_CACHE_SECONDS`, Standard 60 Sekunden). Ein neues Objekt, das eine weitere Seite eröffnet,
+erscheint deshalb mit dieser Verzögerung; Listen mit Zeitfilter sind immer aktuell.
 
 ## Zeitfilter (Zeitzonen-Pflicht!)
 
@@ -539,6 +559,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 |----------|--------|--------|
 | `mandari:originalId` | alle | Original-URL des Objekts im kommunalen Quellsystem |
 | `mandari:slug`, `mandari:displayName` | Body | URL-Slug / Anzeigename der Kommune |
+| `mandari:freshness` | Body | Stand des Abrufs bei mandari: `synced_at` (letzter erfolgreicher Abgleich mit der Quelle) und `full_synced_at` (letzter vollständiger Abgleich). `modified` der Objekte stammt von der Quelle und sagt nichts über die Frische des Bestands. Dieselben Angaben stehen im Änderungsfeed |
 | `mandari:locationList` | Body | abgekündigt: URL der Orte-Liste, jetzt im Standardfeld `locationList` |
 | `mandari:changes` | Body | abgekündigt (Wegfall frühestens am 01.12.2027): Adresse des Änderungsfeeds in der älteren Form; Nachfolger `kommparl:changes` (nur wenn eingeschaltet und die Kommune gelistet ist) |
 | `mandari:snapshot` | Body | abgekündigt (Wegfall frühestens am 01.12.2027): Adresse des Snapshots in der älteren Form; Nachfolger `kommparl:snapshot` |
@@ -551,6 +572,9 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
 | `mandari:sha256`, `mandari:pageCount` | File | SHA-256-Hash / Seitenzahl |
 | `mandari:locationName`, `mandari:locationAddress` | Meeting | abgekündigt: Ortsangabe als Text, wenn die Quelle kein Location-Objekt liefert; steht jetzt in `Meeting.location` |
+| `mandari:cancelledDerived` | Meeting | `true`, wenn mandari die Absage aus dem Namen der Sitzung abgeleitet hat: Die Quelle setzt `cancelled` nicht, schreibt aber „abgesagt“, „entfällt“ oder „fällt aus“ in den Namen. `cancelled` ist dann `true`, `name` steht ohne den Vermerk da (siehe „Geprüfte Angaben der Quelle“) |
+| `mandari:cancelledNote` | Meeting | Absagevermerk aus dem Namen im Wortlaut der Quelle, etwa „Sitzung fällt aus und wurde auf den 24.06. verlegt“; ohne Verwaltungsvermerke hinter einem senkrechten Strich |
+| `mandari:organizationNotPublished` | Meeting | Gremien, die die Quelle an der Sitzung nennt, aber nicht öffentlich ausgibt (etwa HTTP 401 auf das Objekt): die Adressen im Quellsystem. In `organization` stehen nur Gremien aus dem Bestand |
 | `mandari:protocolApproval` | Meeting | Genehmigung der veröffentlichten Niederschrift: `mode` (`follow_up`, `direct`), `date`, `meeting` (genehmigende Sitzung, nur wenn sie im Bestand ist) |
 | `mandari:resolutionNumber` | AgendaItem | Beschlussnummer |
 | `mandari:vote` | AgendaItem | Abstimmung: `method`, `methodLabel`, `result`, `resultLabel`, `yes`, `no`, `abstain` |
@@ -560,6 +584,32 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 Die Felder der Beschlussfassung (Issue #525) liefern Quellen, die mandari Session betreiben. Der Bestand
 speichert sie in eigenen Spalten (`mandari_oparl/extensions.py` übersetzt für Ingestor und Spiegel gleich);
 die Schnittstelle gibt sie aus diesen Spalten aus, nicht aus den Rohdaten der Quelle.
+
+## Geprüfte Angaben der Quelle (Meeting)
+
+mandari gibt die Angaben der Quelle nicht ungeprüft weiter, wo sie erkennbar falsch sind (Issue #1441). Die Regeln
+gelten für alle Quellen; der Ingestor wendet sie beim Schreiben an, die Ausgabe beim Lesen. Die Angabe der Quelle
+bleibt über `mandari:originalId` nachvollziehbar.
+
+- **Absage im Namen.** Viele Ratsinformationssysteme setzen `cancelled` nicht, sondern schreiben die Absage in den
+  Namen der Sitzung („… - ENTFÄLLT -“, „… Sitzung wurde abgesagt“, „… fällt aus und wurde auf den 24.06. verlegt“).
+  Nennt der Name „abgesagt“, „entfällt“ oder „fällt aus“ als ganzes Wort, ist `cancelled` `true`,
+  `mandari:cancelledDerived` kennzeichnet die Ableitung, und `mandari:cancelledNote` trägt den Vermerk im Wortlaut.
+  `name` steht ohne den Vermerk da. Hat die Sitzung laut `meetingState` stattgefunden („durchgeführt“,
+  „abgeschlossen“), gilt das Wort im Namen nicht als Absage.
+  Ebenso wenig gilt eine Verneinung direkt am Wort („nicht abgesagt“, „entfällt nicht“).
+- **Verwaltungsvermerke.** Hinter einem senkrechten Strich führen Quellen interne Vermerke zur Absage. Dieser Teil
+  steht weder in `name` noch in `mandari:cancelledNote`.
+- **Ende vor dem Beginn.** Viele Quellen liefern als `end` das Datum ohne Uhrzeit; als Zeitpunkt gelesen liegt es
+  vor dem Beginn. `end` steht nur in der Ausgabe, wenn es nach `start` liegt.
+
+- **Gremium nicht veröffentlicht.** Nennt die Quelle an einer Sitzung ein Gremium, das sie nicht öffentlich ausgibt,
+  fehlt es im Bestand. Der Verweis geht nicht verloren: `mandari:organizationNotPublished` nennt die Adressen im
+  Quellsystem. Trägt die Sitzung keinen eigenen Namen, heißt sie in mandari „Sitzung eines nicht veröffentlichten
+  Gremiums“ statt nur „Sitzung“.
+
+Eine Ableitung aus dem Namen kann danebenliegen. Wer es genau wissen muss, prüft `mandari:cancelledDerived` und
+sieht bei der Quelle nach.
 
 ## Antragstellende Fraktionen (Paper)
 

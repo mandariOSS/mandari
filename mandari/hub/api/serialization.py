@@ -25,13 +25,14 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from django.conf import settings
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
+from django.utils.functional import cached_property
 
 from apps.common.api.pages import list_envelope
 from hub.api.http import BadRequestError, error_response, json_response, parse_client_datetime, restore_offset_plus
@@ -184,6 +185,37 @@ def list_cache_key(base_url: str, number: int) -> str:
     return f"oparl_api:list:{base_url}:p{number}"
 
 
+if TYPE_CHECKING:
+    _Paginator = Paginator[Any]
+else:  # zur Laufzeit ist die Klasse nicht parametrisierbar
+    _Paginator = Paginator
+
+
+def list_count_cache_key(base_url: str) -> str:
+    """Schlüssel, unter dem die Anzahl der Einträge einer ungefilterten Liste zwischengespeichert ist."""
+    return f"oparl_api:list:{base_url}:count"
+
+
+class KnownCountPaginator(_Paginator):
+    """
+    Paginator, der die Anzahl der Einträge kennen kann, statt sie für jede Seite neu zu zählen.
+
+    Wer eine große Liste durchblättert, ruft Seite um Seite ab; das Zählen kostet dabei oft mehr als die Seite
+    selbst (Issue #1441). Ist die Anzahl älter als der Bestand, zeigt sich das wie bei einer zwischengespeicherten
+    Seite: Eine neue letzte Seite erscheint erst nach Ablauf, eine entfallene ist bis dahin leer.
+    """
+
+    def __init__(self, entries: Any, per_page: int, known_count: int | None = None) -> None:
+        super().__init__(entries, per_page)
+        self.known_count = known_count
+
+    @cached_property
+    def count(self) -> int:
+        if self.known_count is not None:
+            return self.known_count
+        return int(super().count)
+
+
 def list_response(
     request: HttpRequest,
     base_url: str,
@@ -201,20 +233,24 @@ def list_response(
     hinter der letzten ergibt 404.
 
     Mit ``cache_seconds`` wird die Seite einer Liste ohne Zeitfilter so lange zwischengespeichert
-    (samt ``Link``-Header); gefilterte Listen nie.
+    (samt ``Link``-Header), ebenso die Anzahl ihrer Einträge für die übrigen Seiten; gefilterte Listen nie.
     """
     number = page_number(request)
     cache_key = list_cache_key(base_url, number) if cache_seconds and not filters else None
+    known_count = None
     if cache_key:
         cached = cache.get(cache_key)
         if cached is not None:
             return json_response(cached["envelope"], headers=cached["headers"])
+        known_count = cache.get(list_count_cache_key(base_url))
 
-    paginator: Paginator[Any] = Paginator(entries, page_size())
+    paginator = KnownCountPaginator(entries, page_size(), known_count if isinstance(known_count, int) else None)
     if number > paginator.num_pages:
         return error_response(404, f"Seite {number} existiert nicht (letzte Seite: {paginator.num_pages}).")
     page = paginator.page(number)
     envelope, headers = list_envelope(base_url, filters.sent, paginator, page, render(list(page.object_list)))
     if cache_key:
         cache.set(cache_key, {"envelope": envelope, "headers": headers}, cache_seconds)
+        if paginator.known_count is None:
+            cache.set(list_count_cache_key(base_url), paginator.count, cache_seconds)
     return json_response(envelope, headers=headers)

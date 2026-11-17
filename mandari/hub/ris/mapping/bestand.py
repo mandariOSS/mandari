@@ -36,8 +36,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Any, Final
+from urllib.parse import urlsplit
 
-from django.db.models import Prefetch, Q, QuerySet
+from django.db.models import F, Prefetch, Q, QuerySet
+from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben
 
 from hub.ris.canonical import (
     ORGANIZATION_TYPES,
@@ -84,8 +86,14 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 #: 4: antragstellende Fraktionen ``originatorOrganization``, ``mandari:originator…``, Issue #1138;
 #: 5: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216;
 #: 6: ``Body.web`` auf die Seite der Kommune, ``Body.ags``/``rgs`` aus der eigenen Pflege, Datumsfelder ohne Uhrzeit,
-#: Issue #1282)
-VERSION: Final = 6
+#: Issue #1282;
+#: 7: Sitzungen mit geprüften Angaben: Absage aus dem Namen (``cancelled``, ``mandari:cancelledDerived``,
+#: ``mandari:cancelledNote``, Name ohne Vermerk), ``end`` nur nach dem Beginn; ``mandari:organizationNotPublished``
+#: für Gremien, die die Quelle nennt, aber nicht ausgibt; ``mandari:freshness`` am Body, ``equivalent`` ohne leere
+#: Einträge, Issue #1441;
+#: 8: der Body nennt die externen Listen ``membership``, ``agendaItem``, ``consultation``, ``file`` und
+#: ``legislativeTermList``, Issue #1441)
+VERSION: Final = 8
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
 #: Der Änderungsfeed nennt danach auch das einbettende Objekt (``hub.api.changes``, Issue #1229); ein Test prüft die
@@ -282,9 +290,57 @@ def prepare_persons(queryset: QuerySet[OParlPerson]) -> QuerySet[OParlPerson]:
 
 
 def prepare_bodies(queryset: QuerySet[OParlBody]) -> QuerySet[OParlBody]:
-    return queryset.prefetch_related(
+    # Stand des Abrufs der Quelle (Issue #1441) in derselben Abfrage, ohne die Quelle selbst zu laden
+    return queryset.annotate(
+        source_synced_at=F("source__last_successful_sync"),
+        source_full_synced_at=F("source__last_successful_full_sync"),
+    ).prefetch_related(
         Prefetch("legislative_terms", queryset=OParlLegislativeTerm.objects.filter(deleted=False)),
     )
+
+
+def _freshness(body: OParlBody) -> Objekt | None:
+    """
+    Stand des Abrufs bei mandari für die Kommune: letzter erfolgreicher und letzter vollständiger Abgleich mit der
+    Quelle, wie ``mandari:freshness`` im Änderungsfeed. ``modified`` der Objekte stammt von der Quelle und sagt
+    nichts darüber, wie frisch der Bestand ist. Ohne Quelle oder ohne erfolgreichen Abgleich ``None``.
+    """
+    if hasattr(body, "source_synced_at"):
+        # Annotation aus prepare_bodies
+        synced_at = getattr(body, "source_synced_at", None)
+        full_synced_at = getattr(body, "source_full_synced_at", None)
+    else:
+        # Nicht über prepare_bodies geladen (Einbettung, Tests): die Quelle einzeln lesen
+        source = body.source
+        synced_at = source.last_successful_sync if source is not None else None
+        full_synced_at = source.last_successful_full_sync if source is not None else None
+    return clean({"synced_at": iso(synced_at), "full_synced_at": iso(full_synced_at)}) or None
+
+
+def _adressen(wert: Any) -> list[str]:
+    """
+    Liste von Adressen aus den Rohdaten: nur Einträge mit ``http``/``https`` und Host. Leere Einträge
+    (``equivalent: [\"\"]``) und anderer Text fallen weg, das Schema verlangt Adressen.
+    """
+    if not isinstance(wert, list):
+        return []
+    adressen = []
+    for eintrag in wert:
+        if not isinstance(eintrag, str):
+            continue
+        adresse = eintrag.strip()
+        # Leerraum oder Steuerzeichen mitten im Eintrag: Text, keine Adresse („https://keine adresse“)
+        if any(zeichen.isspace() or not zeichen.isprintable() for zeichen in adresse):
+            continue
+        try:
+            teile = urlsplit(adresse)
+            host = teile.hostname
+        except ValueError:
+            # Unlesbare Adresse (etwa eine offene eckige Klammer): wie jeder andere ungültige Eintrag
+            continue
+        if teile.scheme in ("http", "https") and host:
+            adressen.append(adresse)
+    return adressen
 
 
 # =============================================================================
@@ -349,6 +405,27 @@ def _location_ext(raw_json: Any) -> str | None:
     return _reference((raw_json or {}).get("location"))
 
 
+#: Felder einer Sitzung, die genau eine Datei nennen
+SPECIAL_MEETING_FILES: Final = ("invitation", "resultsProtocol", "verbatimProtocol")
+
+
+def _special_file_exts(raw: Any) -> list[str]:
+    """Kennungen von Einladung und Niederschriften aus den Rohdaten einer Sitzung."""
+    if not isinstance(raw, dict):
+        return []
+    verweise = (_reference(raw.get(feld)) for feld in SPECIAL_MEETING_FILES)
+    return [v for v in verweise if v]
+
+
+def _organization_exts(raw: Any) -> list[str]:
+    """Gremien, die die Quelle an einer Sitzung nennt: Kennungen im Quellsystem, in ihrer Reihenfolge."""
+    genannt = raw.get("organization") if isinstance(raw, dict) else None
+    if not isinstance(genannt, list):
+        return []
+    verweise = [g if isinstance(g, str) else g.get("id") if isinstance(g, dict) else None for g in genannt]
+    return list(dict.fromkeys(v for v in verweise if isinstance(v, str) and v))
+
+
 class RefContext:
     """Löst Verweise über Kennungen der Quelle für eine ganze Seite in einer Abfrage je Typ auf."""
 
@@ -365,6 +442,11 @@ class RefContext:
         self.consultations_with_agenda_item: set[Any] = set()
         # Vorgang -> antragstellende Fraktionen (Issue #1138)
         self.urheber_by_paper: dict[Any, list[VorgangUrheber]] = {}
+        # Kennungen der Quelle von Gremien, die Sitzungen nennen und die im Bestand stehen (Issue #1441)
+        self.organization_exts: set[str] = set()
+        # Kennung der Quelle -> Einladung oder Niederschrift, die an einer anderen oder keiner Sitzung hängt
+        # (Issue #1441)
+        self.file_by_ext: dict[str, OParlFile] = {}
 
     @classmethod
     def empty(cls, objects: Iterable[Any]) -> RefContext:
@@ -380,10 +462,22 @@ class RefContext:
         location_exts = set()
         agenda_exts = set()
         approving_exts = set()
+        organization_exts: set[str] = set()
+        file_exts: set[str] = set()
+        bodies: set[Any] = set()
         for meeting in meetings:
             ext = _location_ext(meeting.raw_json)
             if ext:
                 location_exts.add(ext)
+            organization_exts.update(_organization_exts(meeting.raw_json))
+            # Einladung und Niederschriften, die die Rohdaten nennen, die aber nicht unter den Dateien der Sitzung
+            # stehen: Eine Datei hat nur eine Sitzung; nennen mehrere Sitzungen dieselbe Einladung, fehlte sie
+            # allen bis auf eine
+            eigene = {f.external_id for f in meeting.files.all()}
+            fehlend = {v for v in _special_file_exts(meeting.raw_json) if v not in eigene}
+            if fehlend:
+                file_exts.update(fehlend)
+                bodies.add(meeting.body_id)
             if meeting.protocol_approved_in_external_id:
                 approving_exts.add(meeting.protocol_approved_in_external_id)
             for item in meeting.agenda_items.all():
@@ -394,6 +488,18 @@ class RefContext:
                     "external_id", "id"
                 )
             )
+        if organization_exts:
+            # Im Bestand, auch ohne Zuordnung zur Sitzung: nur was hier fehlt, gibt die Quelle nicht aus
+            ctx.organization_exts = set(
+                OParlOrganization.objects.filter(external_id__in=organization_exts, deleted=False).values_list(
+                    "external_id", flat=True
+                )
+            )
+        if file_exts:
+            # Nur wenn etwas fehlt (sonst keine weitere Abfrage), nur aus den Kommunen dieser Sitzungen
+            ctx.file_by_ext = {
+                f.external_id: f for f in _embedded_files().filter(external_id__in=file_exts, body_id__in=bodies)
+            }
         if location_exts:
             ctx.location_by_ext = {
                 loc.external_id: loc
@@ -557,7 +663,8 @@ class BestandMapping:
                 # Systeme nennen keinen, und Abnehmer finden eine Kommune am sichersten über ihn (Issue #1282)
                 "ags": gemeindeschluessel(body) or raw.get("ags"),
                 "rgs": _schluessel(body.rgs) or raw.get("rgs"),
-                "equivalent": raw.get("equivalent"),
+                # Nur Adressen: Quellen liefern hier auch eine Liste mit einem leeren Eintrag (Issue #1441)
+                "equivalent": _adressen(raw.get("equivalent")),
                 "contactEmail": raw.get("contactEmail"),
                 "contactName": raw.get("contactName"),
                 "classification": body.classification,
@@ -566,11 +673,19 @@ class BestandMapping:
                 "meeting": self.uris.list(body.id, "meetings"),
                 "paper": self.uris.list(body.id, "papers"),
                 "locationList": self.uris.list(body.id, "locations"),
+                # Externe Listen der Objekte, die sonst eingebettet in ihrem Träger stehen (OParl 1.1, Issue #1441)
+                "membership": self.uris.list(body.id, "memberships"),
+                "agendaItem": self.uris.list(body.id, "agendaitems"),
+                "consultation": self.uris.list(body.id, "consultations"),
+                "file": self.uris.list(body.id, "files"),
+                "legislativeTermList": self.uris.list(body.id, "legislativeterms"),
                 "web": self.uris.web(body_page(body)),
                 **_timestamps(body),
                 "mandari:originalId": body.external_id,
                 "mandari:slug": body.slug,
                 "mandari:displayName": body.get_display_name(),
+                # Wie frisch der Bestand der Kommune bei mandari ist (Issue #1441)
+                "mandari:freshness": _freshness(body),
                 # Abgekündigt: dieselbe URL steht im Standardfeld ``locationList``
                 "mandari:locationList": self.uris.list(body.id, "locations"),
                 # Änderungsfeed und Snapshot nach den Profilen von kommParl; die älteren Formen sind abgekündigt
@@ -677,24 +792,47 @@ class BestandMapping:
         files = list(meeting.files.all())
         files_by_ext = {f.external_id: f for f in files}
 
-        invitation = files_by_ext.get(_reference(raw.get("invitation")) or "")
-        results_protocol = files_by_ext.get(_reference(raw.get("resultsProtocol")) or "")
-        verbatim_protocol = files_by_ext.get(_reference(raw.get("verbatimProtocol")) or "")
+        def besondere(feld: str) -> OParlFile | None:
+            """Datei der Sitzung; hängt sie an einer anderen oder keiner Sitzung, über die Kennung der Quelle."""
+            ext = _reference(raw.get(feld)) or ""
+            return files_by_ext.get(ext) or ctx.file_by_ext.get(ext)
+
+        invitation = besondere("invitation")
+        results_protocol = besondere("resultsProtocol")
+        verbatim_protocol = besondere("verbatimProtocol")
         special = {f.pk for f in (invitation, results_protocol, verbatim_protocol) if f is not None}
         auxiliary = [f for f in files if f.pk not in special]
 
         location = ctx.location_by_ext.get(_location_ext(raw) or "")
         location_data = self.location(location) if location else self.meeting_location(meeting)
 
+        # Name, Absage und Ende geprüft wie beim Abruf (Issue #1441): Die Ausgabe stimmt damit auch für Sitzungen, die
+        # der Ingestor seit der Einführung der Prüfung nicht neu geschrieben hat. Maßgeblich ist der Name der Quelle
+        # aus den Rohdaten, ohne Rohdaten der gespeicherte.
+        quellname = raw.get("name")
+        angaben = sitzungsangaben(
+            {
+                "name": quellname if isinstance(quellname, str) and quellname else meeting.name,
+                "cancelled": raw.get("cancelled"),
+                "meetingState": meeting.meeting_state,
+            }
+        )
+        im_namen = angaben.vermerk is not None
+        cancelled = bool(meeting.cancelled) or angaben.abgesagt
+
+        # Gremien, die die Quelle nennt, die aber im Bestand fehlen (Issue #1441): Die Quelle gibt sie nicht öffentlich
+        # aus. Der Verweis geht nicht verloren, steht aber als Angabe der Quelle in einer Erweiterung.
+        fehlend = [verweis for verweis in _organization_exts(raw) if verweis not in ctx.organization_exts]
+
         return clean(
             {
                 "id": self.uris.obj("meeting", meeting.id),
                 "type": schema_type("meeting"),
-                "name": meeting.name,
+                "name": angaben.name if im_namen else meeting.name,
                 "meetingState": meeting.meeting_state,
-                "cancelled": meeting.cancelled,
+                "cancelled": cancelled,
                 "start": iso(meeting.start),
-                "end": iso(meeting.end),
+                "end": iso(plausibles_ende(meeting.start, meeting.end)),
                 "location": location_data,
                 "organization": [self.uris.obj("organization", org.id) for org in meeting.organizations.all()],
                 "invitation": self.file(invitation) if invitation else None,
@@ -706,6 +844,11 @@ class BestandMapping:
                 "web": self.uris.web(f"termine/{meeting.id}/"),
                 **_timestamps(meeting),
                 "mandari:originalId": meeting.external_id,
+                # Absage, die die Quelle nicht in ``cancelled``, sondern nur in den Namen schreibt (Issue #1441):
+                # als abgeleitet gekennzeichnet, mit dem Vermerk im Wortlaut der Quelle
+                "mandari:cancelledDerived": True if im_namen and angaben.abgeleitet else None,
+                "mandari:cancelledNote": angaben.vermerk if im_namen else None,
+                "mandari:organizationNotPublished": fehlend,
                 # Abgekündigt: Der Ort steht als Location-Objekt in ``location``
                 "mandari:locationName": meeting.location_name if not location else None,
                 "mandari:locationAddress": meeting.location_address if not location else None,

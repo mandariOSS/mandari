@@ -85,6 +85,7 @@ from typing import Any, Final
 from uuid import UUID, uuid4
 
 from mandari_oparl.ids import IdBases, canonical_id
+from mandari_oparl.qualitaet import sitzungsangaben
 
 #: Schemaversion aller Ereignisse dieses Moduls.
 VERSION: Final = 1
@@ -460,7 +461,8 @@ def meeting_events(
     if not names:
         return []
     payload["changed"] = names
-    payload["cancelled"] = raw.get("cancelled") is True
+    # Wie in der Spalte: auch eine Absage, die die Quelle nur in den Namen schreibt (Issue #1441)
+    payload["cancelled"] = sitzungsangaben(raw).abgesagt
     if 0 < len(organizations) <= MAX_ORGANIZATIONS:
         payload["organizations"] = organizations
     return [Draft("ris.meeting.changed", "Meeting", meeting_id, payload)]

@@ -94,6 +94,119 @@ def test_sitzungen_diese_woche_mit_links(ctx: ToolContext, stadt: Musterstadt) -
     assert str(stadt.fremde_sitzung.pk) not in text
 
 
+def test_sitzungen_lassen_sich_weiterblaettern(ctx: ToolContext, stadt: Musterstadt) -> None:
+    """Issue #1441: Mehr Sitzungen als die Grenze je Aufruf sahen vollständig aus, obwohl die späteren fehlten."""
+    from datetime import datetime
+
+    from insight_core.models import OParlMeeting
+
+    from .musterstadt import BERLIN
+
+    # 34 weitere Sitzungen im Dezember, mehrere mit demselben Beginn
+    for nr in range(34):
+        OParlMeeting.objects.create(
+            external_id=kennung("meetings"),
+            body=stadt.body,
+            start=datetime(2026, 12, 1 + nr // 3, 17, 0, tzinfo=BERLIN),
+            name=f"Sitzung {nr}",
+        )
+
+    erste = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31")
+    assert erste["anzahl"] == chat_tools.MAX_MEETINGS
+    assert erste["weitere"] == "ja, die Liste ist unvollständig: weiter mit ab=30"
+    assert "ab" not in erste
+
+    zweite = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=30)
+    assert (zweite["anzahl"], zweite["ab"]) == (4, 30)
+    assert "weitere" not in zweite
+    # Keine Sitzung doppelt, keine fällt zwischen zwei Aufrufe, auch nicht bei gleichem Beginn
+    links = [zeile.split(" | ")[3] for zeile in erste["sitzungen"] + zweite["sitzungen"]]
+    assert len(links) == len(set(links)) == 34
+
+    # Unlesbare oder fehlende Angaben ergeben den Anfang; hinter dem Ende ist die Liste leer
+    for ab in ("x", 0, -3, None):
+        teil = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=ab)
+        assert teil["sitzungen"] == erste["sitzungen"]
+    leer = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=90)
+    assert "sitzungen" not in leer and "weitere" not in leer
+
+
+def test_weiterblaettern_zaehlt_die_ausgelieferten_sitzungen(
+    ctx: ToolContext, stadt: Musterstadt, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lange Zeilen: Es kommen weniger Sitzungen je Aufruf, und die Fortsetzung beginnt genau dahinter."""
+    from datetime import datetime
+
+    from insight_core.models import OParlMeeting
+
+    from .musterstadt import BERLIN
+
+    for nr in range(34):
+        OParlMeeting.objects.create(
+            external_id=kennung("meetings"),
+            body=stadt.body,
+            start=datetime(2026, 12, 1 + nr // 3, 17, 0, tzinfo=BERLIN),
+            name=f"Sitzung {nr} " + 'des Ausschusses „für" sehr \\ lange "Namen" ' * 6,
+            location_name="Rathaus, großer Sitzungssaal im ersten Obergeschoss " * 4,
+        )
+    # Kleine Grenze und Zeichen, die JSON maskiert: Gemessen wird das fertige Ergebnis, nicht die rohe Zeile
+    monkeypatch.setitem(chat_tools.RESULT_LIMITS, "sitzungen_im_zeitraum", 4000)
+
+    gesehen: list[str] = []
+    ab = 0
+    for _aufruf in range(20):
+        teil = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31", ab=ab)
+        assert "weggelassen" not in teil and len(teil["sitzungen"]) == teil["anzahl"]
+        assert 0 < teil["anzahl"] < chat_tools.MAX_MEETINGS
+        gesehen += [zeile.split(" | ")[3] for zeile in teil["sitzungen"]]
+        if "weitere" not in teil:
+            break
+        ab += teil["anzahl"]
+        assert teil["weitere"] == f"ja, die Liste ist unvollständig: weiter mit ab={ab}"
+    assert len(gesehen) == len(set(gesehen)) == 34
+
+    # An der Grenze des Weiterblätterns nennt das Ergebnis keinen Schritt, den es nicht gibt
+    monkeypatch.setattr(chat_tools, "MAX_AB", 5)
+    grenze = rufe(ctx, "sitzungen_im_zeitraum", von="2026-12-01", bis="2026-12-31")
+    assert grenze["weitere"] == "ja, die Liste ist unvollständig: bitte den Zeitraum enger fassen"
+
+
+def test_umfangreiche_tagesordnungen_kuerzen_nicht_die_sitzungsliste(
+    ctx: ToolContext, stadt: Musterstadt, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mit tagesordnung=true: Reicht der Platz nicht, fallen Tagesordnungen weg, nie Sitzungen ohne Hinweis."""
+    from insight_core.models import OParlAgendaItem
+
+    for sitzung in (stadt.rat_sitzung, stadt.ausschuss_sitzung):
+        for nr in range(40, 70):
+            OParlAgendaItem.objects.create(
+                external_id=kennung("agendaitems"),
+                meeting=sitzung,
+                number=str(nr),
+                order=nr,
+                name=f"Bebauungsplan Nr. {nr} „Wohngebiet am Musterpark“ – Satzungsbeschluss und Abwägung",
+            )
+    voll = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    assert (voll["anzahl"], len(voll["tagesordnungen"])) == (2, 2)
+    assert "hinweis_tagesordnung" not in voll
+
+    monkeypatch.setitem(chat_tools.RESULT_LIMITS, "sitzungen_im_zeitraum", 5000)
+    knapp = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    assert "weggelassen" not in knapp
+    assert (knapp["anzahl"], knapp["sitzungen"]) == (2, voll["sitzungen"])
+    assert len(knapp.get("tagesordnungen", [])) < 2
+    assert "einzeln mit sitzung" in knapp["hinweis_tagesordnung"]
+
+    # Als Quelle mit Einzelheiten gilt nur, was im Ergebnis steht: nicht die Sitzung einer weggefallenen Tagesordnung
+    frisch = context_for(stadt.body.pk, now=JETZT)
+    assert frisch is not None
+    teil = rufe(frisch, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-08", tagesordnung=True)
+    geliefert = len(teil.get("tagesordnungen", []))
+    assert len(frisch.detail_urls) == geliefert < 2
+    # Die Zeilen der Sitzungen bleiben mögliche Quellen
+    assert all(zeile.split(" | ")[3] in frisch.sources for zeile in teil["sitzungen"])
+
+
 def test_sitzungen_eines_gremiums(ctx: ToolContext, stadt: Musterstadt) -> None:
     ergebnis = rufe(ctx, "sitzungen_im_zeitraum", von="2026-10-07", bis="2026-10-07", gremium="rat")
     assert [s.split(" | ")[3] for s in ergebnis["sitzungen"]] == [link("meeting", stadt.rat_sitzung.pk)]
