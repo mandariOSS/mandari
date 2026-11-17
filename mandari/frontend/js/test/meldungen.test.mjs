@@ -253,6 +253,11 @@ test('sichererLink: nur Adressen dieser Anwendung, als Pfad', () => {
   assert.equal(sichererLink('//boese.example/x', HERKUNFT), '')
   assert.equal(sichererLink('/\\boese.example/x', HERKUNFT), '')
   assert.equal(sichererLink('https://boese.example/', HERKUNFT), '')
+  // Eigene Herkunft mit einem Pfad, der als href wieder eine fremde Adresse wäre
+  assert.equal(sichererLink(`${HERKUNFT}//boese.example/x`, HERKUNFT), '')
+  assert.equal(sichererLink('/.//boese.example/x', HERKUNFT), '')
+  assert.equal(sichererLink('/a/..//boese.example/x', HERKUNFT), '')
+  assert.equal(sichererLink(`${HERKUNFT}/\\boese.example/x`, HERKUNFT), '')
   assert.equal(sichererLink('javascript:alert(1)', HERKUNFT), '')
   assert.equal(sichererLink('', HERKUNFT), '')
   assert.equal(sichererLink(undefined, HERKUNFT), '')
@@ -261,9 +266,21 @@ test('sichererLink: nur Adressen dieser Anwendung, als Pfad', () => {
 
 test('gleicheMeldung findet nur sichtbare Meldungen', () => {
   const liste = [{ id: 1, message: 'A', type: 'info', visible: false, titel: '', link: '' }]
-  assert.equal(gleicheMeldung(liste, 'A', 'info', ''), undefined)
+  assert.equal(gleicheMeldung(liste, 'A', 'info', '', ''), undefined)
   liste[0].visible = true
-  assert.equal(gleicheMeldung(liste, 'A', 'info', '')?.id, 1)
+  assert.equal(gleicheMeldung(liste, 'A', 'info', '', '')?.id, 1)
+})
+
+test('Gleicher Hinweis mit anderem Ziel ist eine eigene Meldung: Kein Ziel geht verloren', () => {
+  const k = anzeige()
+  k.addToast('Bitte prüfen', 'info', { titel: 'Neue Aufgabe', link: '/work/fraktion/tasks/7/' })
+  k.addToast('Bitte prüfen', 'info', { titel: 'Neue Aufgabe', link: '/work/fraktion/tasks/8/' })
+  k.addToast('Bitte prüfen', 'info', { titel: 'Neue Aufgabe', link: '/work/fraktion/tasks/8/' })
+  assert.deepEqual(
+    k.toasts.map((t) => t.link),
+    ['/work/fraktion/tasks/7/', '/work/fraktion/tasks/8/'],
+  )
+  uhr.vor(6000)
 })
 
 // ---------- Meldungen des Servers ----------
@@ -374,12 +391,24 @@ function seite(browser, antworten) {
         this.detail = init?.detail
       }
     },
-    console,
+    console: { ...console, error() {} },
     setInterval: () => 1,
+    // Die Frist eines Abrufs läuft über die Uhr des Tests
+    setTimeout: uhr.setTimeout,
+    clearTimeout: uhr.clearTimeout,
+    AbortController,
     encodeURIComponent,
-    fetch: async (adresse) => {
+    fetch: async (adresse, angaben) => {
       abrufe.push(adresse)
-      const antwort = antworten.shift() ?? { notifications: [], count: 0 }
+      if (antworten[0] === HAENGT) {
+        antworten.shift()
+        // Eine Antwort, die nie kommt: endet nur durch den Abbruch
+        await new Promise((_, abgelehnt) => {
+          angaben.signal.addEventListener('abort', () => abgelehnt(new Error('abgebrochen')))
+        })
+      }
+      // Ein Eintrag darf ein Versprechen sein: So lässt sich eine Antwort im Test verzögern
+      const antwort = await (antworten.shift() ?? { notifications: [], count: 0 })
       return { ok: true, json: async () => antwort }
     },
   }
@@ -388,6 +417,8 @@ function seite(browser, antworten) {
 }
 
 const warten = () => new Promise((fertig) => setImmediate(fertig))
+/** Platzhalter in der Liste der Antworten: Dieser Abruf bekommt keine Antwort */
+const HAENGT = Symbol('hängt')
 const meldung = (nr, zeit) => ({
   id: `n${nr}`,
   title: `Titel ${nr}`,
@@ -509,6 +540,104 @@ await asyncTest('Browser ohne Speicher: je Seite einmal, kein Fehler', async () 
   assert.equal(s.abrufe[1], `/work/fraktion/notifications/latest/?since=${encodeURIComponent(T1)}`)
   await s.modul.poll()
   assert.equal(s.gezeigt.length, 1)
+})
+
+await asyncTest('Speicher lässt sich lesen, aber nicht schreiben: trotzdem nur einmal', async () => {
+  const werte = new Map([[SCHLUESSEL, T1]])
+  const nurLesen = {
+    getItem: (schluessel) => (werte.has(schluessel) ? werte.get(schluessel) : null),
+    setItem() {
+      throw new Error('voll')
+    },
+  }
+  const s = seite(nurLesen, [
+    { notifications: [meldung(2, T2)], count: 2 },
+    { notifications: [], count: 2 },
+    { notifications: [], count: 2 },
+  ])
+  await warten()
+  assert.equal(s.gezeigt.length, 1)
+  await s.modul.poll()
+  await s.modul.poll()
+  assert.equal(s.gezeigt.length, 1)
+  // Der Stand dieser Seite ist weiter als der Speicher und gilt für die nächsten Abrufe
+  assert.deepEqual(s.abrufe.slice(1), [
+    `/work/fraktion/notifications/latest/?since=${encodeURIComponent(T2)}`,
+    `/work/fraktion/notifications/latest/?since=${encodeURIComponent(T2)}`,
+  ])
+})
+
+await asyncTest('Ein Abruf zur Zeit: Ein zweiter wartet nicht daneben', async () => {
+  const browser = speicher()
+  browser.setItem(SCHLUESSEL, T1)
+  let antworten
+  const spaet = new Promise((fertig) => {
+    antworten = fertig
+  })
+  const s = seite(browser, [spaet])
+  await warten()
+  await s.modul.poll()
+  await s.modul.poll()
+  assert.equal(s.abrufe.length, 1, 'solange der erste Abruf läuft, geht kein zweiter raus')
+  antworten({ notifications: [meldung(2, T2)], count: 2 })
+  await warten()
+  assert.equal(s.gezeigt.length, 1)
+  await s.modul.poll()
+  assert.equal(s.abrufe.length, 2)
+  assert.equal(s.gezeigt.length, 1)
+})
+
+await asyncTest('Ein Abruf ohne Antwort endet nach der Frist und hält die nächsten nicht auf', async () => {
+  const browser = speicher()
+  browser.setItem(SCHLUESSEL, T1)
+  const s = seite(browser, [HAENGT, { notifications: [meldung(2, T2)], count: 2 }])
+  await warten()
+  await s.modul.poll()
+  assert.equal(s.abrufe.length, 1, 'der hängende Abruf sperrt zunächst')
+  uhr.vor(8100)
+  await warten()
+  await s.modul.poll()
+  assert.equal(s.abrufe.length, 2)
+  assert.equal(s.gezeigt.length, 1)
+})
+
+await asyncTest('Verspätete Antwort eines anderen Reiters: nichts doppelt, der Stand geht nicht zurück', async () => {
+  const browser = speicher()
+  browser.setItem(SCHLUESSEL, T1)
+  let antworten
+  const spaet = new Promise((fertig) => {
+    antworten = fertig
+  })
+  // Reiter A fragt mit dem Stand T1, seine Antwort (nur die zweite Benachrichtigung) lässt auf sich warten
+  const a = seite(browser, [spaet])
+  await warten()
+  // Reiter B bekommt inzwischen beide neuen und merkt sich die neueste
+  const b = seite(browser, [{ notifications: [meldung(3, T3), meldung(2, T2)], count: 3 }])
+  await warten()
+  assert.equal(b.gezeigt.length, 1)
+  assert.equal(browser.getItem(SCHLUESSEL), T3)
+  antworten({ notifications: [meldung(2, T2)], count: 3 })
+  await warten()
+  assert.deepEqual(a.gezeigt, [], 'die zweite Benachrichtigung hat Reiter B schon gezeigt')
+  assert.equal(browser.getItem(SCHLUESSEL), T3, 'eine ältere Antwort setzt den Stand nicht zurück')
+})
+
+await asyncTest('auswerten: nur Späteres zeigen, Stand nie zurück, gleiche Millisekunde nach Schreibweise', async () => {
+  const { modul } = seite(speicher(), [])
+  await warten()
+  const klar = (wert) => JSON.parse(JSON.stringify(wert))
+  assert.deepEqual(klar(modul.auswerten([meldung(2, T2)], T3)), { zeigen: [], stand: T3 })
+  assert.deepEqual(klar(modul.auswerten([meldung(3, T3), meldung(2, T2)], T2)), { zeigen: [meldung(3, T3)], stand: T3 })
+  assert.deepEqual(klar(modul.auswerten([meldung(1, T1)], '')), { zeigen: [meldung(1, T1)], stand: T1 })
+  assert.deepEqual(klar(modul.auswerten([], T1)), { zeigen: [], stand: T1 })
+  assert.deepEqual(klar(modul.auswerten([meldung(1, T1)], undefined)), { zeigen: [], stand: T1 })
+  assert.deepEqual(klar(modul.auswerten('kein Feld', T1)), { zeigen: [], stand: T1 })
+  const frueher = '2026-11-17T09:00:00.100100+00:00'
+  const spaeter = '2026-11-17T09:00:00.100900+00:00'
+  assert.deepEqual(klar(modul.auswerten([meldung(5, spaeter)], frueher)).zeigen.length, 1)
+  assert.deepEqual(klar(modul.auswerten([meldung(4, frueher)], spaeter)), { zeigen: [], stand: spaeter })
+  // Unlesbarer Stand im Speicher (von Hand geändert): alles gilt als neu, danach stimmt der Stand wieder
+  assert.deepEqual(klar(modul.auswerten([meldung(1, T1)], 'kaputt')), { zeigen: [meldung(1, T1)], stand: T1 })
 })
 
 await asyncTest('Benachrichtigung ohne Text: der Titel ist die Meldung; ohne Ziel führt sie zur Übersicht', async () => {

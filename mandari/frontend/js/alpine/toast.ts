@@ -110,15 +110,27 @@ export function sichererLink(link: unknown, herkunft: string): string {
   if (typeof link !== 'string' || !link) return ''
   try {
     const ziel = new URL(link, herkunft)
-    return ziel.origin === herkunft ? `${ziel.pathname}${ziel.search}${ziel.hash}` : ''
+    if (ziel.origin !== herkunft) return ''
+    const pfad = `${ziel.pathname}${ziel.search}${ziel.hash}`
+    // Der Pfad selbst muss wieder hierher führen: „https://hier//fremd.example/x“ hat den Pfad „//fremd.example/x“,
+    // und der wäre als href eine fremde Adresse
+    return new URL(pfad, herkunft).origin === herkunft ? pfad : ''
   } catch {
     return ''
   }
 }
 
-/** Dieselbe Meldung, die gerade schon dasteht */
-export function gleicheMeldung(toasts: Toast[], message: string, type: ToastType, titel: string): Toast | undefined {
-  return toasts.find((t) => t.visible && t.message === message && t.type === type && t.titel === titel)
+/** Dieselbe Meldung, die gerade schon dasteht: gleicher Text, gleiche Art, gleiche Überschrift, gleiches Ziel */
+export function gleicheMeldung(
+  toasts: Toast[],
+  message: string,
+  type: ToastType,
+  titel: string,
+  link: string,
+): Toast | undefined {
+  return toasts.find(
+    (t) => t.visible && t.message === message && t.type === type && t.titel === titel && t.link === link,
+  )
 }
 
 /**
@@ -169,13 +181,13 @@ export const toastManager = defineComponent(() => {
       const art = normalizeType(type)
       const titel = typeof zusatz?.titel === 'string' ? zusatz.titel : ''
       // Dieselbe Meldung noch einmal (etwa der Fehler jedes regelmäßigen Abrufs): bleibt eine, nur länger
-      const vorhanden = gleicheMeldung(this.toasts, message, art, titel)
+      const link = sichererLink(zusatz?.link, window.location.origin)
+      const vorhanden = gleicheMeldung(this.toasts, message, art, titel, link)
       if (vorhanden) {
         this.fristSetzen(vorhanden.id)
         return
       }
       const id = this.nextId++
-      const link = sichererLink(zusatz?.link, window.location.origin)
       this.toasts.push({ id, message, type: art, visible: true, titel, link })
       const sichtbar = this.toasts.filter((t) => t.visible)
       for (const aelteste of sichtbar.slice(0, Math.max(0, sichtbar.length - MAX_SICHTBAR)))
