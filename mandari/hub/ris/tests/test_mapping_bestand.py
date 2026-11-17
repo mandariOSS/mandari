@@ -244,6 +244,42 @@ def test_system_und_body_aus_der_abbildung(welt: dict[str, Any]) -> None:
     assert body["legislativeTerm"] == [abbildung.legislative_term(welt["legislativeterm"])]
 
 
+def test_body_nennt_den_stand_des_abrufs_und_nur_echte_adressen(welt: dict[str, Any]) -> None:
+    """Issue #1441: eigener Abrufzeitpunkt am Body; leere Einträge der Quelle in ``equivalent`` fallen weg."""
+    body = welt["body"]
+    pfad = f"/oparl/v1/body/{body.pk}"
+    assert "mandari:freshness" not in _json(pfad) and "equivalent" not in _json(pfad)
+
+    OParlSource.objects.filter(pk=body.source_id).update(
+        last_successful_sync=ZEIT.replace(hour=9), last_successful_full_sync=ZEIT
+    )
+    OParlBody.objects.filter(pk=body.pk).update(
+        raw_json={
+            "equivalent": [
+                "",
+                "  ",
+                "https://www.wikidata.org/entity/Q1",
+                7,
+                "keine Adresse",
+                "mailto:x@example.org",
+                "https://[",
+                "https://@",
+                "https://keine adresse",
+            ]
+        }
+    )
+    cache.clear()
+    ausgabe = _json(pfad)
+    assert ausgabe["mandari:freshness"] == {
+        "synced_at": "2026-09-01T09:00:00+00:00",
+        "full_synced_at": "2026-09-01T08:00:00+00:00",
+    }
+    assert ausgabe["equivalent"] == ["https://www.wikidata.org/entity/Q1"]
+    # Liste und Einzelobjekt geben dasselbe aus, ebenso die Abbildung ohne Vorladen
+    assert _json("/oparl/v1/bodies")["data"] == [ausgabe]
+    assert _abbildung().body(OParlBody.objects.get(pk=body.pk)) == ausgabe
+
+
 def test_sitzung_bettet_ort_einladung_und_tagesordnung_ein(welt: dict[str, Any]) -> None:
     abbildung = _abbildung()
     sitzung = _json(f"/oparl/v1/meeting/{welt['meeting'].pk}")
