@@ -54,7 +54,8 @@ def _erledigt(task: Task, membership: Membership) -> None:
 
 def can_edit_task(task: Task, membership: Membership) -> bool:
     """
-    Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen.
+    Ersteller, Zuständige (zugewiesene Person und weitere Zuständige, Issue #1462) und Mitglieder mit
+    ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen.
 
     Aufgaben aus einem nichtöffentlichen TOP ändert nur, wer den TOP heute sehen darf (``Task.noe_gesperrt``): Wer sie
     nicht mehr öffnen kann, hakt sie auch über Board und Sitzungsansicht nicht mehr ab.
@@ -63,7 +64,10 @@ def can_edit_task(task: Task, membership: Membership) -> bool:
         return False
     if task.created_by == membership or task.assigned_to == membership:
         return True
-    return membership.has_permission("tasks.manage") and task.can_access(membership)
+    if membership.has_permission("tasks.manage") and task.can_access(membership):
+        return True
+    # Zuletzt, weil es eine Abfrage kosten kann (die Listen laden die weiteren Zuständigen vor)
+    return task.ist_zustaendig(membership)
 
 
 NICHT_MEHR_AENDERBAR = "Diese Aufgabe lässt sich nicht mehr ändern."
@@ -90,6 +94,31 @@ def _auf_aktuellen_stand(task: Task, membership: Membership) -> None:
     """
     _aktueller_stand(task, membership)
     task.refresh_from_db()
+
+
+def weitere_zustaendige_ids(task: Task) -> set[Any]:
+    """Kennungen der weiteren Zuständigen, wie sie jetzt in der Datenbank stehen."""
+    return set(Task.weitere_zustaendige.through.objects.filter(task_id=task.pk).values_list("membership_id", flat=True))
+
+
+def _weitere_bereinigt(task: Task, personen: Iterable[Membership]) -> list[Membership]:
+    """
+    Weitere Zuständige, wie sie gespeichert werden: Mitglieder der Organisation der Aufgabe, ohne Gastzugänge, ohne
+    die zugewiesene Person (sie steht in ``assigned_to``) und ohne Doppelte.
+    """
+    bereinigt: dict[Any, Membership] = {}
+    for person in personen:
+        if person.organization_id != task.organization_id or person.is_guest or person.pk == task.assigned_to_id:
+            continue
+        bereinigt[person.pk] = person
+    return list(bereinigt.values())
+
+
+def _zuweisung_melden(task: Task, person: Membership, membership: Membership, *, created: bool) -> None:
+    """„Aufgabe zugewiesen“ an eine zuständige Person (Datendrehscheibe bzw. wie bisher direkt), nie an sich selbst."""
+    uebernommen = ereignisse.melden(ereignisse.ZUGEWIESEN, task, membership, assignee=person.pk, created=created)
+    if not uebernommen and person != membership:
+        _hub().notify_task_assigned(task, person, membership)
 
 
 def _sync_completion(task: Task, *, previous_status: str | None = None) -> None:
@@ -123,12 +152,15 @@ def create_task(
     *,
     related_motion_id: str | None = None,
     related_agenda_item: Any = None,
+    weitere_zustaendige: Iterable[Membership] = (),
 ) -> Task:
     """
     Speichert eine über das Formular vorbereitete Aufgabe (``form.save(commit=False)``).
 
     Setzt Organisation, Ersteller, Standard-Zuweisung, optionale Dokument-Verknüpfung und
     die Position am Spaltenende; protokolliert und benachrichtigt bei Fremdzuweisung.
+    ``weitere_zustaendige``: zusätzliche Zuständige neben der zugewiesenen Person (Issue #1462); jede wird
+    benachrichtigt wie die zugewiesene.
     ``related_agenda_item``: TOP aus der Sitzungsvorbereitung (#856), vom Aufrufer bereits an
     die Org-Grenze gebunden; die Sitzung wird mit verknüpft.
     """
@@ -145,6 +177,9 @@ def create_task(
         task.related_meeting_id = related_agenda_item.meeting_id
     task.position = selectors.next_position(organization, task.status)
     task.save()
+    weitere = _weitere_bereinigt(task, weitere_zustaendige)
+    if weitere:
+        task.weitere_zustaendige.set(weitere)
     log_activity(task, membership, "created")
     if task.assigned_to:
         uebernommen = ereignisse.melden(
@@ -152,6 +187,8 @@ def create_task(
         )
         if not uebernommen and task.assigned_to != membership:
             _hub().notify_task_assigned(task, task.assigned_to, membership)
+    for person in weitere:
+        _zuweisung_melden(task, person, membership, created=True)
     return task
 
 
@@ -445,18 +482,27 @@ def capture_old_values(task: Task) -> dict[str, Any]:
     Muss vor ``form.is_valid()`` aufgerufen werden, weil ein ModelForm die Instanz
     bereits bei der Validierung überschreibt.
     """
+    weitere = list(Membership.objects.filter(mitzustaendige_aufgaben=task).select_related("user") if task.pk else [])
     return {
         "status": task.get_status_display(),
         "priority": task.get_priority_display(),
         "due_date": str(task.due_date) if task.due_date else "—",
         "assigned_to": task.assigned_to.user.get_display_name() if task.assigned_to else "—",
         "visibility": task.get_visibility_display(),
+        "weitere": _namen(weitere),
         "status_raw": task.status,
         "priority_raw": task.priority,
         "due_date_raw": task.due_date,
         "assigned_to_raw": task.assigned_to_id,
         "visibility_raw": task.visibility,
+        "weitere_raw": frozenset(m.pk for m in weitere),
     }
+
+
+def _namen(personen: Iterable[Membership]) -> str:
+    """Namen für den Verlauf, alphabetisch; ohne Personen ein Strich."""
+    namen = sorted((m.user.get_display_name() for m in personen), key=str.lower)
+    return ", ".join(namen) if namen else "—"
 
 
 def _log_changes(task: Task, membership: Membership, old: dict[str, Any]) -> None:
@@ -486,6 +532,22 @@ def _log_changes(task: Task, membership: Membership, old: dict[str, Any]) -> Non
     if assignee_changed:
         new_assigned = task.assigned_to.user.get_display_name() if task.assigned_to else "—"
         changes.append(("assigned_to", old["assigned_to"], new_assigned, "assigned"))
+    # Weitere Zuständige (Issue #1462): wer neu dazukommt, erfährt es wie die zugewiesene Person
+    alt_weitere = set(old.get("weitere_raw", ()))
+    neu_weitere = weitere_zustaendige_ids(task)
+    if alt_weitere != neu_weitere:
+        personen = {m.pk: m for m in Membership.objects.filter(pk__in=neu_weitere).select_related("user")}
+        changes.append(
+            (
+                "weitere_zustaendige",
+                f"Weitere Zuständige: {old.get('weitere', '—')}",
+                f"Weitere Zuständige: {_namen(personen.values())}",
+                "assigned",
+            )
+        )
+        for kennung in sorted(neu_weitere - alt_weitere, key=str):
+            if kennung in personen:
+                _zuweisung_melden(task, personen[kennung], membership, created=False)
     if old["visibility_raw"] != task.visibility:
         changes.append(("visibility", old["visibility"], task.get_visibility_display(), "visibility_changed"))
 
@@ -494,12 +556,20 @@ def _log_changes(task: Task, membership: Membership, old: dict[str, Any]) -> Non
 
 
 @transaction.atomic
-def apply_panel_update(task: Task, membership: Membership, old_values: dict[str, Any]) -> Task:
+def apply_panel_update(
+    task: Task,
+    membership: Membership,
+    old_values: dict[str, Any],
+    *,
+    weitere_zustaendige: Iterable[Membership] | None = None,
+) -> Task:
     """
     Vom Panel-Formular geänderte Aufgabe (``form.save(commit=False)``) speichern.
 
     Gleicht die Erledigt-Flags an den Status an, protokolliert Feldänderungen und
     benachrichtigt Betroffene. ``old_values`` stammt aus :func:`capture_old_values`.
+    ``weitere_zustaendige``: die neue Auswahl der weiteren Zuständigen; ``None`` lässt sie, wie sie sind (ein Panel
+    von vor der Funktion sendet das Feld nicht mit).
 
     Das Bearbeitungsrecht gilt am jetzigen Stand der Datenbank (:func:`_aktueller_stand`), nicht an dem, den der View
     gelesen hat. Geschrieben werden nur die Felder des Formulars und die Erledigung.
@@ -514,7 +584,13 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
     # Ausgangswert ist die Sichtbarkeit in der Datenbank, nicht die beim Öffnen des Panels gelesene: Hat inzwischen
     # jemand im Freigabedialog Empfänger gewählt, bleiben sie stehen.
     reset_shares_on_reshare(task, aktuell.visibility)
-    _log_changes(task, membership, {**old_values, **capture_old_values(aktuell)})
+    alt = {**old_values, **capture_old_values(aktuell)}
+    if weitere_zustaendige is not None:
+        task.weitere_zustaendige.set(_weitere_bereinigt(task, weitere_zustaendige))
+    elif task.assigned_to is not None and task.assigned_to.pk in alt["weitere_raw"]:
+        # Eine der weiteren Zuständigen ist jetzt die zugewiesene Person: Sie steht nicht doppelt
+        task.weitere_zustaendige.remove(task.assigned_to)
+    _log_changes(task, membership, alt)
     return task
 
 
