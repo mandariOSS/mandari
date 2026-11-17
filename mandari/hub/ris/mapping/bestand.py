@@ -326,8 +326,13 @@ def _adressen(wert: Any) -> list[str]:
     for eintrag in wert:
         if not isinstance(eintrag, str):
             continue
-        teile = urlsplit(eintrag.strip())
-        if teile.scheme in ("http", "https") and teile.netloc:
+        try:
+            teile = urlsplit(eintrag.strip())
+            host = teile.hostname
+        except ValueError:
+            # Unlesbare Adresse (etwa eine offene eckige Klammer): wie jeder andere ungültige Eintrag
+            continue
+        if teile.scheme in ("http", "https") and host:
             adressen.append(eintrag.strip())
     return adressen
 
