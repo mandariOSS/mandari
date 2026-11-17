@@ -33,6 +33,8 @@ from typing import Any
 from django.http import HttpRequest
 from django.urls import NoReverseMatch, reverse
 
+from apps.work import neuigkeiten
+
 #: Kennfarbe von Work, wenn die Organisation keine gültige Farbe hat (Indigo 600)
 STANDARD_FARBE = "#4f46e5"
 _HEX_FARBE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -164,6 +166,8 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "ris_files": ("recherche", "dokumente", None),
     "ris_map": ("recherche", "karte", None),
     "paper_comments_api": ("recherche", None, None),
+    # „Was ist neu?“ (Issue #1463) liegt bei der Hilfe; erreichbar über die Version unten in der Seitenleiste
+    "neuigkeiten": ("hilfe", None, "Was ist neu?"),
 }
 
 #: Übrige Seiten nach dem Anfang ihres Adressnamens (Reihenfolge zählt: längere Anfänge zuerst)
@@ -392,13 +396,18 @@ def brotkrumen(
 def rahmen_kontext(request: HttpRequest) -> dict[str, Any]:
     """
     Kontextprozessor: ``work_neues_design`` für alle Work-Seiten und, wenn eingeschaltet, ``work_rahmen`` mit der
-    Navigation. Außerhalb von Work (keine Organisation an der Anfrage) liefert er nichts.
+    Navigation. Dazu in beiden Erscheinungsbildern ``work_neuigkeiten_neu``: Gibt es unter „Was ist neu?“ etwas, das
+    die Person noch nicht gesehen hat (Punkt neben der Version in der Seitenleiste, Issue #1463; ohne Abfrage)?
+    Außerhalb von Work (keine Organisation an der Anfrage) liefert er nichts.
     """
     organization = getattr(request, "organization", None)
     if organization is None:
         return {}
     aktiv = neues_design(organization)
-    kontext: dict[str, Any] = {"work_neues_design": aktiv}
+    kontext: dict[str, Any] = {
+        "work_neues_design": aktiv,
+        "work_neuigkeiten_neu": neuigkeiten.ungesehen(getattr(request, "user", None)),
+    }
     if aktiv:
         match = getattr(request, "resolver_match", None)
         url_name = match.url_name if match is not None and match.namespace == "work" else ""

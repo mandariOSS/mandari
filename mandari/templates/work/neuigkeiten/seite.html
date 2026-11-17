@@ -1,0 +1,16 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+„Was ist neu?“ in Work im bisherigen Erscheinungsbild (Issue #1463): dieselbe Liste wie im neuen
+(work/neuigkeiten/_liste.html), erreichbar über die Version unten in der Seitenleiste. Kontext: NeuigkeitenView.
+{% endcomment %}
+
+{% block page_title %}Was ist neu?{% endblock %}
+
+{% block header_title %}Was ist neu?{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Die Neuerungen in mandari Work je Version, das Neueste zuerst.{% if mandari_version %} Sie arbeiten mit Version {{ mandari_version }}.{% endif %}</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/neuigkeiten/_liste.html" %}
+{% endblock %}

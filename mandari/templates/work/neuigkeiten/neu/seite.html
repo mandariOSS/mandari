@@ -1,0 +1,18 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+„Was ist neu?“ in Work im neuen Erscheinungsbild (Issue #1463): Kopfband mit der Version der Installation, darunter die
+Neuerungen je Version (work/neuigkeiten/_liste.html). Erreichbar über die Version unten in der Seitenleiste und im
+Blatt „Mehr“. Kontext: NeuigkeitenView; die bisherige Seite ist work/neuigkeiten/seite.html.
+{% endcomment %}
+
+{% block page_title %}Was ist neu?{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Was ist neu?" dicht data-testid="neuigkeiten-kopf"
+    text="Die Neuerungen in mandari Work je Version, das Neueste zuerst.{% if mandari_version %} Sie arbeiten mit Version {{ mandari_version }}.{% endif %}" />
+{% endblock %}
+
+{% block work_content %}
+{% include "work/neuigkeiten/_liste.html" %}
+{% endblock %}

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from functools import cache
@@ -53,8 +54,14 @@ def lies(pfad: Path | None = None) -> list[Neuigkeit]:
     """Einträge der Datei (Standard ``DATEI``), neueste zuerst; ``ValueError`` bei fehlenden oder falschen Feldern."""
     with (pfad or DATEI).open("rb") as datei:
         daten = tomllib.load(datei)
+    liste = daten.get("eintrag", [])
+    if not isinstance(liste, list):
+        raise ValueError("eintrag: eine Liste von Einträgen ([[eintrag]]) erwartet")
     eintraege = []
-    for nummer, roh in enumerate(daten.get("eintrag", []), start=1):
+    for nummer, roh in enumerate(liste, start=1):
+        # Gültiges TOML mit falschem Aufbau (etwa eintrag = ["Text"]) ist ebenfalls ein Fehler der Datei
+        if not isinstance(roh, dict):
+            raise ValueError(f"Eintrag {nummer}: eine Tabelle mit datum, titel und text erwartet")
         datum, titel, text = roh.get("datum"), roh.get("titel"), roh.get("text")
         version = roh.get("version", "")
         if not isinstance(datum, date) or not isinstance(version, str):
@@ -76,12 +83,17 @@ def neuigkeiten() -> tuple[Neuigkeit, ...]:
         return ()
 
 
+def gruppiere(eintraege: Iterable[Neuigkeit]) -> list[Gruppe]:
+    """Einträge (neueste zuerst) je Tag und Version zusammenfassen; auch für die Neuigkeiten in Work (Issue #1463)."""
+    return [
+        Gruppe(datum=datum, version=version, eintraege=tuple(gruppe))
+        for (datum, version), gruppe in groupby(eintraege, key=lambda eintrag: (eintrag.datum, eintrag.version))
+    ]
+
+
 def gruppen() -> list[Gruppe]:
     """Einträge je Tag und Version, neueste zuerst."""
-    return [
-        Gruppe(datum=datum, version=version, eintraege=tuple(eintraege))
-        for (datum, version), eintraege in groupby(neuigkeiten(), key=lambda eintrag: (eintrag.datum, eintrag.version))
-    ]
+    return gruppiere(neuigkeiten())
 
 
 @cache
