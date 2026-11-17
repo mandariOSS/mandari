@@ -4,6 +4,7 @@ Forms for the Tasks module.
 """
 
 import json
+from typing import Any
 
 from django import forms
 
@@ -11,8 +12,42 @@ from apps.common.uploads import DOCUMENTS, MB, validate_upload
 
 from .models import Task, TaskAttachment, TaskChecklistItem, TaskLabel
 
+#: Verstecktes Feld neben der Auswahl der weiteren Zuständigen: Nur wenn es mitkommt, gilt die Auswahl. Eine leere
+#: Auswahl sendet der Browser gar nicht; ohne die Marke wäre sie von „Feld gar nicht im Formular“ nicht zu
+#: unterscheiden, und ein vor dem Update geöffnetes Panel löschte beim Speichern alle weiteren Zuständigen.
+WEITERE_GESENDET = "weitere_zustaendige_gesendet"
 
-class TaskForm(forms.ModelForm):
+
+class WeitereZustaendigeMixin:
+    """Auswahl der weiteren Zuständigen (Issue #1462) für das Formular „Neue Aufgabe“ und das Panel."""
+
+    def weitere_einrichten(self: Any, mitglieder: Any) -> None:
+        feld = forms.ModelMultipleChoiceField(
+            queryset=mitglieder.filter(is_guest=False),
+            required=False,
+            label="Weitere Zuständige",
+            widget=forms.CheckboxSelectMultiple(
+                attrs={
+                    "class": "w-3.5 h-3.5 shrink-0 rounded border-gray-300 dark:border-gray-600 text-primary-600 "
+                    "focus:ring-primary-500 dark:bg-gray-700"
+                }
+            ),
+        )
+        feld.label_from_instance = lambda obj: obj.user.get_display_name()
+        self.fields["weitere_zustaendige"] = feld
+
+    @property
+    def weitere_gesendet(self: Any) -> bool:
+        return WEITERE_GESENDET in self.data
+
+    def weitere_auswahl(self: Any) -> list[Any] | None:
+        """Die gewählten weiteren Zuständigen, oder ``None``, wenn das Formular die Auswahl nicht enthielt."""
+        if not self.weitere_gesendet:
+            return None
+        return list(self.cleaned_data.get("weitere_zustaendige") or [])
+
+
+class TaskForm(WeitereZustaendigeMixin, forms.ModelForm):
     """Form for creating and editing tasks."""
 
     class Meta:
@@ -76,6 +111,7 @@ class TaskForm(forms.ModelForm):
         if organization:
             self.fields["assigned_to"].queryset = organization.memberships.filter(is_active=True).select_related("user")
             self.fields["assigned_to"].label_from_instance = lambda obj: obj.user.get_display_name()
+            self.weitere_einrichten(self.fields["assigned_to"].queryset)
         self.fields["assigned_to"].required = False
         self.fields["due_date"].required = False
 
@@ -91,7 +127,7 @@ class TaskForm(forms.ModelForm):
         return [str(t) for t in wert or [] if str(t).strip()]
 
 
-class TaskPanelForm(forms.ModelForm):
+class TaskPanelForm(WeitereZustaendigeMixin, forms.ModelForm):
     """Form for inline editing in the slide-over panel. Content-first styling."""
 
     class Meta:
@@ -167,6 +203,12 @@ class TaskPanelForm(forms.ModelForm):
                 self.fields["assigned_to"].error_messages["invalid_choice"] = ZUSTAENDIG_NUR_VEREIDIGTE
             self.fields["assigned_to"].queryset = mitglieder
             self.fields["assigned_to"].label_from_instance = lambda obj: obj.user.get_display_name()
+            # Dieselbe Grenze für die weiteren Zuständigen (bei nichtöffentlichen TOPs nur Vereidigte)
+            self.weitere_einrichten(mitglieder)
+            if self.instance.pk and not self.is_bound:
+                self.initial["weitere_zustaendige"] = [
+                    m.pk for m in self.instance.weitere_zustaendige.all() if m.pk != self.instance.assigned_to_id
+                ]
         self.fields["assigned_to"].required = False
         self.fields["due_date"].required = False
 

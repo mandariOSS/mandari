@@ -212,7 +212,9 @@ class TaskPanelActionView(WorkViewMixin, View):
         """Auto-save: hx-swap=none, only OOB card + counts."""
         form, old_values = self._bind_panel_form(request, task)
         if form.is_valid():
-            services.apply_panel_update(form.save(commit=False), self.membership, old_values)
+            services.apply_panel_update(
+                form.save(commit=False), self.membership, old_values, weitere_zustaendige=form.weitere_auswahl()
+            )
             return HttpResponse(self._render_oob_card(task) + self._render_oob_counts())
         # Ungültig (z. B. Titel nur aus Leerzeichen): Panel mit markierten Feldern neu zeichnen. Status 422, damit das
         # automatische Speichern als gescheitert gilt und kein Haken erscheint; frontend/js/htmx-setup.ts zeichnet 422
@@ -227,7 +229,9 @@ class TaskPanelActionView(WorkViewMixin, View):
         """Explicit save button: re-render full panel."""
         form, old_values = self._bind_panel_form(request, task)
         if form.is_valid():
-            services.apply_panel_update(form.save(commit=False), self.membership, old_values)
+            services.apply_panel_update(
+                form.save(commit=False), self.membership, old_values, weitere_zustaendige=form.weitere_auswahl()
+            )
             return self._full_panel_response(task, "Gespeichert.")
         html = self._render_panel(selectors.reload_for_panel(task), form=form)
         return self._make_response(html, "Fehler beim Speichern.", "error")

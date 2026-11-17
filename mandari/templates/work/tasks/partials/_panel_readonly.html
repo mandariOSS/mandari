@@ -60,6 +60,15 @@ Aufgabe aus einem nichtöffentlichen TOP (task.noe_top): Titel weichgezeichnet, 
                 {% if task.assigned_to %}{{ task.assigned_to.user.get_display_name }}{% else %}<span class="text-gray-400">—</span>{% endif %}
             </span>
         </div>
+        {% with weitere=task.weitere_namen %}{% if weitere %}
+        <div class="flex items-start min-h-[40px] gap-3 px-4 py-2" data-testid="aufgabe-weitere-zustaendige">
+            <span class="flex items-start gap-1.5 w-28 flex-shrink-0 pt-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <i data-lucide="users" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary-500"></i>
+                Weitere Zuständige
+            </span>
+            <span class="text-xs text-gray-900 dark:text-white">{{ weitere|join:", " }}</span>
+        </div>
+        {% endif %}{% endwith %}
         <div class="flex items-center h-10 gap-3 px-4">
             <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
                 <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-500"></i>

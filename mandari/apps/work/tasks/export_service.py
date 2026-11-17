@@ -41,6 +41,8 @@ CSV_COLUMNS = (
     "Labels",
     "Tags",
     "Erstellt am",
+    # Am Ende, damit die Spalten davor ihre Stelle behalten (Issue #1462)
+    "Weitere Zuständige",
 )
 
 XML_SCALAR_FIELDS = (
@@ -64,6 +66,11 @@ class UnknownExportFormatError(ValueError):
     """Angefordertes Exportformat wird nicht unterstützt."""
 
 
+def _weitere(task: Task) -> list[str]:
+    """E-Mail-Adressen der weiteren Zuständigen (ohne die zugewiesene Person), nach Namen sortiert."""
+    return [person.user.email for person in task.zustaendige() if person.pk != task.assigned_to_id]
+
+
 def serialize_task(task: Task) -> dict[str, Any]:
     """Serialisiert eine Aufgabe als verschachteltes Dict (JSON/XML-Export)."""
     return {
@@ -77,6 +84,7 @@ def serialize_task(task: Task) -> dict[str, Any]:
         "is_completed": task.is_completed,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "assigned_to": task.assigned_to.user.email if task.assigned_to else None,
+        "weitere_zustaendige": _weitere(task),
         "created_by": task.created_by.user.email if task.created_by else None,
         "labels": [{"name": label.name, "color": label.color} for label in task.labels.all()],
         "checklist": [
@@ -111,6 +119,7 @@ def render_csv(tasks: Iterable[Task]) -> tuple[str, str]:
                 ", ".join(label.name for label in task.labels.all()),
                 ", ".join(str(t) for t in task.tags) if isinstance(task.tags, list) else "",
                 task.created_at.isoformat() if task.created_at else "",
+                ", ".join(_weitere(task)),
             ]
         )
     return BOM + buffer.getvalue(), "text/csv; charset=utf-8"
