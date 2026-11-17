@@ -353,6 +353,18 @@ def _location_ext(raw_json: Any) -> str | None:
     return _reference((raw_json or {}).get("location"))
 
 
+#: Felder einer Sitzung, die genau eine Datei nennen
+SPECIAL_MEETING_FILES: Final = ("invitation", "resultsProtocol", "verbatimProtocol")
+
+
+def _special_file_exts(raw: Any) -> list[str]:
+    """Kennungen von Einladung und Niederschriften aus den Rohdaten einer Sitzung."""
+    if not isinstance(raw, dict):
+        return []
+    verweise = (_reference(raw.get(feld)) for feld in SPECIAL_MEETING_FILES)
+    return [v for v in verweise if v]
+
+
 def _organization_exts(raw: Any) -> list[str]:
     """Gremien, die die Quelle an einer Sitzung nennt: Kennungen im Quellsystem, in ihrer Reihenfolge."""
     genannt = raw.get("organization") if isinstance(raw, dict) else None
@@ -380,6 +392,9 @@ class RefContext:
         self.urheber_by_paper: dict[Any, list[VorgangUrheber]] = {}
         # Kennungen der Quelle von Gremien, die Sitzungen nennen und die im Bestand stehen (Issue #1441)
         self.organization_exts: set[str] = set()
+        # Kennung der Quelle -> Einladung oder Niederschrift, die an einer anderen oder keiner Sitzung hängt
+        # (Issue #1441)
+        self.file_by_ext: dict[str, OParlFile] = {}
 
     @classmethod
     def empty(cls, objects: Iterable[Any]) -> RefContext:
@@ -396,11 +411,21 @@ class RefContext:
         agenda_exts = set()
         approving_exts = set()
         organization_exts: set[str] = set()
+        file_exts: set[str] = set()
+        bodies: set[Any] = set()
         for meeting in meetings:
             ext = _location_ext(meeting.raw_json)
             if ext:
                 location_exts.add(ext)
             organization_exts.update(_organization_exts(meeting.raw_json))
+            # Einladung und Niederschriften, die die Rohdaten nennen, die aber nicht unter den Dateien der Sitzung
+            # stehen: Eine Datei hat nur eine Sitzung; nennen mehrere Sitzungen dieselbe Einladung, fehlte sie
+            # allen bis auf eine
+            eigene = {f.external_id for f in meeting.files.all()}
+            fehlend = {v for v in _special_file_exts(meeting.raw_json) if v not in eigene}
+            if fehlend:
+                file_exts.update(fehlend)
+                bodies.add(meeting.body_id)
             if meeting.protocol_approved_in_external_id:
                 approving_exts.add(meeting.protocol_approved_in_external_id)
             for item in meeting.agenda_items.all():
@@ -418,6 +443,11 @@ class RefContext:
                     "external_id", flat=True
                 )
             )
+        if file_exts:
+            # Nur wenn etwas fehlt (sonst keine weitere Abfrage), nur aus den Kommunen dieser Sitzungen
+            ctx.file_by_ext = {
+                f.external_id: f for f in _embedded_files().filter(external_id__in=file_exts, body_id__in=bodies)
+            }
         if location_exts:
             ctx.location_by_ext = {
                 loc.external_id: loc
@@ -701,9 +731,14 @@ class BestandMapping:
         files = list(meeting.files.all())
         files_by_ext = {f.external_id: f for f in files}
 
-        invitation = files_by_ext.get(_reference(raw.get("invitation")) or "")
-        results_protocol = files_by_ext.get(_reference(raw.get("resultsProtocol")) or "")
-        verbatim_protocol = files_by_ext.get(_reference(raw.get("verbatimProtocol")) or "")
+        def besondere(feld: str) -> OParlFile | None:
+            """Datei der Sitzung; hängt sie an einer anderen oder keiner Sitzung, über die Kennung der Quelle."""
+            ext = _reference(raw.get(feld)) or ""
+            return files_by_ext.get(ext) or ctx.file_by_ext.get(ext)
+
+        invitation = besondere("invitation")
+        results_protocol = besondere("resultsProtocol")
+        verbatim_protocol = besondere("verbatimProtocol")
         special = {f.pk for f in (invitation, results_protocol, verbatim_protocol) if f is not None}
         auxiliary = [f for f in files if f.pk not in special]
 
