@@ -266,6 +266,8 @@ test('sichererLink: nur Adressen dieser Anwendung, als Pfad', () => {
   assert.equal(sichererLink(`${HERKUNFT}//boese.example/x`, HERKUNFT), '')
   assert.equal(sichererLink('/.//boese.example/x', HERKUNFT), '')
   assert.equal(sichererLink('/a/..//boese.example/x', HERKUNFT), '')
+  // Auch zur eigenen Herkunft: Als href hieße das Ziel sonst „/x“ statt „//mandari.example/x“
+  assert.equal(sichererLink(`${HERKUNFT}//mandari.example/x`, HERKUNFT), '')
   assert.equal(sichererLink(`${HERKUNFT}/\\boese.example/x`, HERKUNFT), '')
   assert.equal(sichererLink('javascript:alert(1)', HERKUNFT), '')
   assert.equal(sichererLink('', HERKUNFT), '')
