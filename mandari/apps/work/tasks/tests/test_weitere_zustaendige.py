@@ -374,6 +374,28 @@ def test_panel_wendet_nur_den_unterschied_zu_seinem_stand_an(
     assert f'value="{cem.pk}" hx-swap-oob="true"' in antwort.content.decode()
 
 
+def test_zuweisung_hin_und_zurueck_laesst_die_angekreuzte_person_zustaendig(
+    org: Any, anna: Any, ben: Any, cem: Any, client_for: Any
+) -> None:
+    """
+    Cem ist weitere zuständige Person und wird im stehenden Panel zur zugewiesenen gemacht: Er steht dann nicht mehr
+    unter den weiteren, sein Kästchen bleibt aber angekreuzt. Geht die Zuweisung zurück an Ben, ist Cem wieder weitere
+    zuständige Person, wie das Panel es zeigt.
+    """
+    aufgabe = _aufgabe(org, anna, ben, cem)
+    client = client_for(anna.user)
+
+    antwort = _panel(client, org, aufgabe, assigned_to=str(cem.pk), **_mit_stand([cem], [cem]))
+    aufgabe.refresh_from_db()
+    assert aufgabe.assigned_to_id == cem.pk and _weitere(aufgabe) == set()
+    # Der nachgezogene Stand nennt nur, was gespeichert ist: Cem nicht
+    assert f'name="{WEITERE_STAND}" value="" hx-swap-oob="true"' in antwort.content.decode()
+
+    _panel(client, org, aufgabe, assigned_to=str(ben.pk), **_mit_stand([], [cem]))
+    aufgabe.refresh_from_db()
+    assert aufgabe.assigned_to_id == ben.pk and _weitere(aufgabe) == {cem.pk}
+
+
 def test_weitere_zustaendige_person_wird_zugewiesen_und_steht_nicht_doppelt(
     org: Any, anna: Any, ben: Any, cem: Any, client_for: Any
 ) -> None:

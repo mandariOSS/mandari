@@ -219,11 +219,13 @@ class TaskPanelActionView(WorkViewMixin, View):
         )
 
     @staticmethod
-    def _oob_weitere_stand(form) -> str:
+    def _oob_weitere_stand(form, task) -> str:
         """
         Stand der weiteren Zuständigen im Panel nachziehen. Das Formular bleibt nach dem automatischen Speichern stehen
-        (hx-swap=none); sein verstecktes Feld nennt danach die Auswahl, die es jetzt zeigt, damit das nächste Speichern
-        wieder nur den Unterschied anwendet.
+        (hx-swap=none); sein verstecktes Feld nennt danach, was aus seiner Auswahl gespeichert ist, damit das nächste
+        Speichern wieder nur den Unterschied anwendet. Nicht die ganze Auswahl: Wer angekreuzt und zugleich zugewiesen
+        ist, steht nicht unter den weiteren Zuständigen und muss nach einem Wechsel der Zuweisung wieder dazukommen.
+        Auch nicht der Bestand der Datenbank: Was andere inzwischen ergänzt haben, kennt dieses Panel nicht.
         """
         auswahl = form.weitere_auswahl()
         if auswahl is None:
@@ -231,7 +233,7 @@ class TaskPanelActionView(WorkViewMixin, View):
         return format_html(
             '<input type="hidden" id="weitere-zustaendige-stand" name="{}" value="{}" hx-swap-oob="true">',
             WEITERE_STAND,
-            ",".join(str(person.pk) for person in auswahl),
+            ",".join(str(person.pk) for person in services.weitere_gespeichert(task, auswahl)),
         )
 
     def _handle_update(self, request, task):
@@ -239,7 +241,9 @@ class TaskPanelActionView(WorkViewMixin, View):
         form, old_values = self._bind_panel_form(request, task)
         if form.is_valid():
             self._speichern(form, old_values)
-            return HttpResponse(self._render_oob_card(task) + self._render_oob_counts() + self._oob_weitere_stand(form))
+            return HttpResponse(
+                self._render_oob_card(task) + self._render_oob_counts() + self._oob_weitere_stand(form, task)
+            )
         # Ungültig (z. B. Titel nur aus Leerzeichen): Panel mit markierten Feldern neu zeichnen. Status 422, damit das
         # automatische Speichern als gescheitert gilt und kein Haken erscheint; frontend/js/htmx-setup.ts zeichnet 422
         # dieser Formulare trotzdem ein. Den Hinweis zeigt das Panel selbst, ohne zusätzlichen Toast (#854).

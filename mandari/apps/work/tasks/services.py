@@ -114,6 +114,15 @@ def _weitere_bereinigt(task: Task, personen: Iterable[Membership]) -> list[Membe
     return list(bereinigt.values())
 
 
+def weitere_gespeichert(task: Task, auswahl: Iterable[Membership]) -> list[Membership]:
+    """
+    Was aus der Auswahl eines Panels als weitere Zuständige gespeichert ist: die Auswahl ohne die zugewiesene Person
+    und ohne Unzulässige (:func:`_weitere_bereinigt`). Das Panel merkt sich diesen Stand; eine Person, die es zwar
+    angekreuzt zeigt, die aber gerade zugewiesen ist, gilt beim nächsten Speichern wieder als neu gewählt.
+    """
+    return _weitere_bereinigt(task, auswahl)
+
+
 def _weitere_nach_stand(task: Task, auswahl: Iterable[Membership], stand: set[str]) -> list[Membership]:
     """
     Auswahl eines Panels auf den jetzigen Stand der Datenbank anwenden. ``stand`` sind die Kennungen, die das Panel
