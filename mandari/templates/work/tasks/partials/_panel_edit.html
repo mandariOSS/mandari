@@ -105,7 +105,7 @@ Kontext: task, form, organization, membership, shared_members, activities
                     </span>
                     <div class="flex-1 min-w-0">{{ form.assigned_to }}</div>
                 </div>
-                {# Weitere Zuständige (Issue #1462). Die Marke daneben sagt dem Server, dass die Auswahl gilt, auch eine leere #}
+                {# Weitere Zuständige (Issue #1462). Die Marke daneben sagt dem Server, dass die Auswahl gilt, auch eine leere; der Stand nennt die Auswahl, die das Panel zuletzt kannte (forms.WEITERE_STAND) #}
                 <div class="flex items-start min-h-[40px] gap-3 px-4 py-2" data-testid="aufgabe-weitere-zustaendige">
                     <span class="flex items-start gap-1.5 w-28 flex-shrink-0 pt-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
                         <i data-lucide="users" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary-500"></i>
@@ -113,6 +113,7 @@ Kontext: task, form, organization, membership, shared_members, activities
                     </span>
                     <div class="flex-1 min-w-0">
                         <input type="hidden" name="weitere_zustaendige_gesendet" value="1">
+                        <input type="hidden" id="weitere-zustaendige-stand" name="weitere_zustaendige_stand" value="{{ form.weitere_stand_wert }}">
                         <ul class="max-h-32 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 pr-1" data-autosave-feld="weitere-zustaendige">
                             {% for wahl in form.weitere_zustaendige %}
                             <li class="min-w-0"><label for="{{ wahl.id_for_label }}" class="flex items-center gap-1.5 min-w-0 text-xs text-gray-900 dark:text-white cursor-pointer">{{ wahl.tag }}<span class="truncate">{{ wahl.choice_label }}</span></label></li>

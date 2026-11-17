@@ -13,6 +13,7 @@ from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
+from django.utils.html import format_html
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
@@ -20,7 +21,7 @@ from apps.work.files import attachment_response
 from apps.work.rahmen import fragment_neu
 
 from .. import selectors, services
-from ..forms import TaskAttachmentForm, TaskChecklistItemForm, TaskPanelForm
+from ..forms import WEITERE_STAND, TaskAttachmentForm, TaskChecklistItemForm, TaskPanelForm
 from ..models import TaskAttachment, TaskChecklistItem, TaskLabel
 
 logger = logging.getLogger(__name__)
@@ -208,14 +209,41 @@ class TaskPanelActionView(WorkViewMixin, View):
         form = TaskPanelForm(request.POST, instance=task, organization=self.organization)
         return form, old_values
 
+    def _speichern(self, form, old_values):
+        return services.apply_panel_update(
+            form.save(commit=False),
+            self.membership,
+            old_values,
+            weitere_zustaendige=form.weitere_auswahl(),
+            weitere_stand=form.weitere_stand(),
+        )
+
+    @staticmethod
+    def _oob_weitere_stand(form, task) -> str:
+        """
+        Stand der weiteren Zuständigen im Panel nachziehen. Das Formular bleibt nach dem automatischen Speichern stehen
+        (hx-swap=none); sein verstecktes Feld nennt danach, was aus seiner Auswahl gespeichert ist, damit das nächste
+        Speichern wieder nur den Unterschied anwendet. Nicht die ganze Auswahl: Wer angekreuzt und zugleich zugewiesen
+        ist, steht nicht unter den weiteren Zuständigen und muss nach einem Wechsel der Zuweisung wieder dazukommen.
+        Auch nicht der Bestand der Datenbank: Was andere inzwischen ergänzt haben, kennt dieses Panel nicht.
+        """
+        auswahl = form.weitere_auswahl()
+        if auswahl is None:
+            return ""
+        return format_html(
+            '<input type="hidden" id="weitere-zustaendige-stand" name="{}" value="{}" hx-swap-oob="true">',
+            WEITERE_STAND,
+            ",".join(str(person.pk) for person in services.weitere_gespeichert(task, auswahl)),
+        )
+
     def _handle_update(self, request, task):
         """Auto-save: hx-swap=none, only OOB card + counts."""
         form, old_values = self._bind_panel_form(request, task)
         if form.is_valid():
-            services.apply_panel_update(
-                form.save(commit=False), self.membership, old_values, weitere_zustaendige=form.weitere_auswahl()
+            self._speichern(form, old_values)
+            return HttpResponse(
+                self._render_oob_card(task) + self._render_oob_counts() + self._oob_weitere_stand(form, task)
             )
-            return HttpResponse(self._render_oob_card(task) + self._render_oob_counts())
         # Ungültig (z. B. Titel nur aus Leerzeichen): Panel mit markierten Feldern neu zeichnen. Status 422, damit das
         # automatische Speichern als gescheitert gilt und kein Haken erscheint; frontend/js/htmx-setup.ts zeichnet 422
         # dieser Formulare trotzdem ein. Den Hinweis zeigt das Panel selbst, ohne zusätzlichen Toast (#854).
@@ -229,9 +257,7 @@ class TaskPanelActionView(WorkViewMixin, View):
         """Explicit save button: re-render full panel."""
         form, old_values = self._bind_panel_form(request, task)
         if form.is_valid():
-            services.apply_panel_update(
-                form.save(commit=False), self.membership, old_values, weitere_zustaendige=form.weitere_auswahl()
-            )
+            self._speichern(form, old_values)
             return self._full_panel_response(task, "Gespeichert.")
         html = self._render_panel(selectors.reload_for_panel(task), form=form)
         return self._make_response(html, "Fehler beim Speichern.", "error")

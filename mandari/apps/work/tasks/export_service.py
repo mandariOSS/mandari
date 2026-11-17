@@ -138,7 +138,7 @@ def render_json(tasks: Iterable[Task], organization: Organization) -> tuple[str,
 
 
 def render_xml(tasks: Iterable[Task], organization: Organization) -> tuple[bytes, str]:
-    """XML mit ``<tasks>``-Wurzel; Labels, Checkliste und Tags als Unterelemente."""
+    """XML mit ``<tasks>``-Wurzel; Labels, Checkliste, Tags und weitere Zuständige als Unterelemente."""
     root = ET.Element(
         "tasks",
         {
@@ -174,6 +174,9 @@ def render_xml(tasks: Iterable[Task], organization: Organization) -> tuple[bytes
         for tag in data["tags"]:
             tag_el = ET.SubElement(tags_el, "tag")
             tag_el.text = str(tag)
+        weitere_el = ET.SubElement(task_el, "weitere_zustaendige")
+        for adresse in data["weitere_zustaendige"]:
+            ET.SubElement(weitere_el, "person").text = str(adresse)
     ET.indent(root)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True), "application/xml; charset=utf-8"
 

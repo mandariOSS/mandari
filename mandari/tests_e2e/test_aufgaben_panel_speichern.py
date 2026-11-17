@@ -78,10 +78,11 @@ def test_jedes_feld_des_panels_speichert_sofort(
     aufgabe.refresh_from_db()
     assert aufgabe.priority == "urgent"
 
-    # Letzte Wahl der Sichtbarkeit
-    _speichert(page, lambda: form.locator('input[name="visibility"][value="private"]').check())
-    aufgabe.refresh_from_db()
-    assert aufgabe.visibility == "private"
+    # Sichtbarkeit: „Privat“ ist die erste Wahl und speicherte schon immer, „Organisation“ die letzte
+    for wahl in ("private", "organization"):
+        _speichert(page, lambda wahl=wahl: form.locator(f'input[name="visibility"][value="{wahl}"]').check())
+        aufgabe.refresh_from_db()
+        assert aufgabe.visibility == wahl
 
     # Weitere Zuständige: beide Kästchen, nicht nur das erste
     for person in (anna, ben):
@@ -90,6 +91,9 @@ def test_jedes_feld_des_panels_speichert_sofort(
             lambda person=person: form.locator(f'input[name="weitere_zustaendige"][value="{person.pk}"]').check(),
         )
     assert set(aufgabe.weitere_zustaendige.values_list("pk", flat=True)) == {anna.pk, ben.pk}
+    # Abwählen nimmt die Person heraus: Das stehende Formular kennt nach jedem Speichern seinen neuen Stand
+    _speichert(page, lambda: form.locator(f'input[name="weitere_zustaendige"][value="{anna.pk}"]').uncheck())
+    assert set(aufgabe.weitere_zustaendige.values_list("pk", flat=True)) == {ben.pk}
 
     # Erstes Auswahlfeld speichert weiter
     _speichert(page, lambda: form.locator('select[name="status"]').select_option("in_progress"))

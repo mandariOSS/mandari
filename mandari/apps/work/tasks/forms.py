@@ -16,6 +16,10 @@ from .models import Task, TaskAttachment, TaskChecklistItem, TaskLabel
 #: Auswahl sendet der Browser gar nicht; ohne die Marke wäre sie von „Feld gar nicht im Formular“ nicht zu
 #: unterscheiden, und ein vor dem Update geöffnetes Panel löschte beim Speichern alle weiteren Zuständigen.
 WEITERE_GESENDET = "weitere_zustaendige_gesendet"
+#: Auswahl der weiteren Zuständigen, die das Panel zuletzt kannte (Kennungen, durch Komma getrennt). Das Panel sendet
+#: bei jeder Änderung alle Felder. Mit diesem Stand wendet der Server nur den Unterschied an: Ein Panel, das vor einer
+#: fremden Änderung geöffnet wurde und etwa nur den Termin speichert, nimmt niemanden heraus, den es noch nicht kannte.
+WEITERE_STAND = "weitere_zustaendige_stand"
 
 
 class WeitereZustaendigeMixin:
@@ -45,6 +49,22 @@ class WeitereZustaendigeMixin:
         if not self.weitere_gesendet:
             return None
         return list(self.cleaned_data.get("weitere_zustaendige") or [])
+
+    def weitere_stand(self: Any) -> set[str] | None:
+        """Kennungen der Auswahl, die das Formular zuletzt kannte; ``None`` ohne Angabe (Formular „Neue Aufgabe“)."""
+        if WEITERE_STAND not in self.data:
+            return None
+        return {teil.strip() for teil in str(self.data.get(WEITERE_STAND) or "").split(",") if teil.strip()}
+
+    @property
+    def weitere_stand_wert(self: Any) -> str:
+        """
+        Wert des versteckten Felds: die Auswahl, die das gezeichnete Formular zeigt. Ein abgelehntes Formular zeigt die
+        gesendete Auswahl und behält deshalb den gesendeten Stand, sonst gilt die Auswahl der Aufgabe.
+        """
+        if self.is_bound:
+            return ",".join(sorted(self.weitere_stand() or ()))
+        return ",".join(str(pk) for pk in self.initial.get("weitere_zustaendige") or [])
 
 
 class TaskForm(WeitereZustaendigeMixin, forms.ModelForm):
