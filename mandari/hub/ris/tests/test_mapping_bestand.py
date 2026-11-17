@@ -264,6 +264,7 @@ def test_body_nennt_den_stand_des_abrufs_und_nur_echte_adressen(welt: dict[str, 
                 "mailto:x@example.org",
                 "https://[",
                 "https://@",
+                "https://keine adresse",
             ]
         }
     )

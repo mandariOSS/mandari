@@ -326,14 +326,18 @@ def _adressen(wert: Any) -> list[str]:
     for eintrag in wert:
         if not isinstance(eintrag, str):
             continue
+        adresse = eintrag.strip()
+        # Leerraum oder Steuerzeichen mitten im Eintrag: Text, keine Adresse („https://keine adresse“)
+        if any(zeichen.isspace() or not zeichen.isprintable() for zeichen in adresse):
+            continue
         try:
-            teile = urlsplit(eintrag.strip())
+            teile = urlsplit(adresse)
             host = teile.hostname
         except ValueError:
             # Unlesbare Adresse (etwa eine offene eckige Klammer): wie jeder andere ungültige Eintrag
             continue
         if teile.scheme in ("http", "https") and host:
-            adressen.append(eintrag.strip())
+            adressen.append(adresse)
     return adressen
 
 
