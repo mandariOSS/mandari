@@ -254,7 +254,9 @@ def test_body_nennt_den_stand_des_abrufs_und_nur_echte_adressen(welt: dict[str, 
         last_successful_sync=ZEIT.replace(hour=9), last_successful_full_sync=ZEIT
     )
     OParlBody.objects.filter(pk=body.pk).update(
-        raw_json={"equivalent": ["", "  ", "https://www.wikidata.org/entity/Q1", 7]}
+        raw_json={
+            "equivalent": ["", "  ", "https://www.wikidata.org/entity/Q1", 7, "keine Adresse", "mailto:x@example.org"]
+        }
     )
     cache.clear()
     ausgabe = _json(pfad)

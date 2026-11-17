@@ -36,6 +36,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 from django.db.models import F, Prefetch, Q, QuerySet
 from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben
@@ -315,10 +316,20 @@ def _freshness(body: OParlBody) -> Objekt | None:
 
 
 def _adressen(wert: Any) -> list[str]:
-    """Liste von Adressen aus den Rohdaten ohne leere oder unlesbare Einträge (``equivalent: [\"\"]``)."""
+    """
+    Liste von Adressen aus den Rohdaten: nur Einträge mit ``http``/``https`` und Host. Leere Einträge
+    (``equivalent: [\"\"]``) und anderer Text fallen weg, das Schema verlangt Adressen.
+    """
     if not isinstance(wert, list):
         return []
-    return [eintrag.strip() for eintrag in wert if isinstance(eintrag, str) and eintrag.strip()]
+    adressen = []
+    for eintrag in wert:
+        if not isinstance(eintrag, str):
+            continue
+        teile = urlsplit(eintrag.strip())
+        if teile.scheme in ("http", "https") and teile.netloc:
+            adressen.append(eintrag.strip())
+    return adressen
 
 
 # =============================================================================
