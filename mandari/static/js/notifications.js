@@ -14,6 +14,7 @@
     const CONFIG = {
         pollInterval: 10000,  // Abstand der Abfragen in Millisekunden
         limit: 5,             // so viele liefert der Server höchstens je Abfrage
+        abrufFrist: 8000,     // danach gilt ein Abruf als gescheitert, vor dem nächsten
     };
 
     let pollingInterval = null;
@@ -100,16 +101,20 @@
     async function poll() {
         if (laeuft) return;
         laeuft = true;
+        // Bleibt eine Antwort aus, endet der Abruf nach der Frist; sonst stünden alle weiteren still
+        const abbruch = new AbortController();
+        const frist = setTimeout(() => abbruch.abort(), CONFIG.abrufFrist);
         const gemerkt = standLesen();
         const since = gemerkt ? `?since=${encodeURIComponent(gemerkt)}` : '';
         try {
-            const response = await fetch(`/work/${orgSlug}/notifications/latest/${since}`);
+            const response = await fetch(`/work/${orgSlug}/notifications/latest/${since}`, { signal: abbruch.signal });
             if (response.ok) {
                 handleNotificationUpdate(await response.json());
             }
         } catch (error) {
             console.error('Notifications: Polling error', error);
         } finally {
+            clearTimeout(frist);
             laeuft = false;
         }
     }

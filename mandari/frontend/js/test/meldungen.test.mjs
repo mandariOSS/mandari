@@ -386,11 +386,22 @@ function seite(browser, antworten) {
         this.detail = init?.detail
       }
     },
-    console,
+    console: { ...console, error() {} },
     setInterval: () => 1,
+    // Die Frist eines Abrufs läuft über die Uhr des Tests
+    setTimeout: uhr.setTimeout,
+    clearTimeout: uhr.clearTimeout,
+    AbortController,
     encodeURIComponent,
-    fetch: async (adresse) => {
+    fetch: async (adresse, angaben) => {
       abrufe.push(adresse)
+      if (antworten[0] === HAENGT) {
+        antworten.shift()
+        // Eine Antwort, die nie kommt: endet nur durch den Abbruch
+        await new Promise((_, abgelehnt) => {
+          angaben.signal.addEventListener('abort', () => abgelehnt(new Error('abgebrochen')))
+        })
+      }
       // Ein Eintrag darf ein Versprechen sein: So lässt sich eine Antwort im Test verzögern
       const antwort = await (antworten.shift() ?? { notifications: [], count: 0 })
       return { ok: true, json: async () => antwort }
@@ -401,6 +412,8 @@ function seite(browser, antworten) {
 }
 
 const warten = () => new Promise((fertig) => setImmediate(fertig))
+/** Platzhalter in der Liste der Antworten: Dieser Abruf bekommt keine Antwort */
+const HAENGT = Symbol('hängt')
 const meldung = (nr, zeit) => ({
   id: `n${nr}`,
   title: `Titel ${nr}`,
@@ -564,6 +577,20 @@ await asyncTest('Ein Abruf zur Zeit: Ein zweiter wartet nicht daneben', async ()
   antworten({ notifications: [meldung(2, T2)], count: 2 })
   await warten()
   assert.equal(s.gezeigt.length, 1)
+  await s.modul.poll()
+  assert.equal(s.abrufe.length, 2)
+  assert.equal(s.gezeigt.length, 1)
+})
+
+await asyncTest('Ein Abruf ohne Antwort endet nach der Frist und hält die nächsten nicht auf', async () => {
+  const browser = speicher()
+  browser.setItem(SCHLUESSEL, T1)
+  const s = seite(browser, [HAENGT, { notifications: [meldung(2, T2)], count: 2 }])
+  await warten()
+  await s.modul.poll()
+  assert.equal(s.abrufe.length, 1, 'der hängende Abruf sperrt zunächst')
+  uhr.vor(8100)
+  await warten()
   await s.modul.poll()
   assert.equal(s.abrufe.length, 2)
   assert.equal(s.gezeigt.length, 1)
