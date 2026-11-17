@@ -16,6 +16,9 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Abruf und OParl-Ausgabe: Ein Ende, das nicht nach dem Beginn der Sitzung liegt, gilt als nicht angegeben (#1441). Viele Quellen liefern als `end` das Datum ohne Uhrzeit, in Münster bei 429 von 765 Sitzungen der letzten zwei Jahre; daraus wurden Sitzungen „17:00 bis 00:00 Uhr“ in Work, im Kalender-JSON, in den strukturierten Daten der Sitzungsseiten und in der OParl-Ausgabe. Der Bestand wird mit Migration `insight_core.0072` bereinigt.
 - Ingestor: Leitet ein Host jede `http://`-Anfrage auf dieselbe Adresse per `https://` um, fragt der Client ihn danach gleich per `https://` an (#1431); bei ALLRIS 4 halbiert das die Anfragen. Gleiche `created`/`modified` im Abstand von höchstens 30 Minuten zum Abruf gelten als Stempel des Abrufs: Solche Objekte (Mitgliedschaften bei ALLRIS 4) vergleicht der Abgleich am Inhalt, statt sie in jedem Lauf neu zu schreiben. Neue Option je Quelle `skip_lists`: optionale Listen, die der Abgleich gar nicht anfragt (etwa Listen, die die Quelle dauerhaft mit HTTP 500 beantwortet und deren Objekte sie eingebettet liefert); ohne sie öffneten die Fehlversuche den Schutzschalter des Hosts für die übrigen Listen.
 
+### Behoben
+- OParl-Ausgabe: Die Einladung und die Niederschriften einer Sitzung fehlen nicht mehr, wenn die Datei an einer anderen oder an keiner Sitzung hängt (#1441). Eine Datei hat im Bestand nur eine Sitzung; nennen mehrere Sitzungen dieselbe Einladung, etwa bei gemeinsamen Sitzungen, stand `invitation` bisher nur bei einer. Die Ausgabe löst `invitation`, `resultsProtocol` und `verbatimProtocol` jetzt zusätzlich über die Kennung der Quelle auf, innerhalb derselben Kommune und ohne gelöschte Dateien. Im Bestand betraf das mehrere Quellen, in einer 17 von 86 Sitzungen des letzten Jahres.
+
 ## [0.13.0] – 2026-11-17
 
 ### Hinzugefügt
