@@ -1,4 +1,4 @@
-{% comment %}Toast-Container für work/base_work.html und session/base_session.html; endet ohne Zeilenumbruch, damit die Ausgabe byte-gleich bleibt. Unten rechts, am Handy über der Leiste unten: Oben verdeckte eine Meldung Glocke und Kürzel (Issue #851), den Modus-Knopf im Editor und die Hauptaktion im Kopfband (Issue #1018). Feste Leisten unten tragen data-meldungen-darueber, die Meldungen stehen dann über ihnen (frontend/js/alpine/toast.ts).{% endcomment %}<div x-data="toastManager" @show-toast.window="addToast($event.detail.message, $event.detail.type)" role="status" aria-live="polite" class="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-4 right-4 z-[100] max-w-[calc(100vw-2rem)] space-y-3 pointer-events-none">
+{% comment %}Toast-Container für work/base_work.html und session/base_session.html; endet ohne Zeilenumbruch, damit die Ausgabe byte-gleich bleibt. Unten rechts, am Handy über der Leiste unten: Oben verdeckte eine Meldung Glocke und Kürzel (Issue #851), den Modus-Knopf im Editor und die Hauptaktion im Kopfband (Issue #1018). Feste Leisten unten tragen data-meldungen-darueber, die Meldungen stehen dann über ihnen (frontend/js/alpine/toast.ts). Hinweise auf neue Benachrichtigungen (static/js/notifications.js) kommen mit Überschrift und Ziel über dasselbe Ereignis. data-marke kennzeichnet den Seitenstand, damit eine aus dem Verlauf zurückgeholte Seite ihre Meldungen nicht noch einmal zeigt; nur mit Meldungen, sonst bliebe keine Ausgabe gleich.{% endcomment %}<div x-data="toastManager"{% if messages %} data-marke="{% now 'U.u' %}"{% endif %} @show-toast.window="addToast($event.detail.message, $event.detail.type, $event.detail)" role="status" aria-live="polite" class="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-4 right-4 z-[100] max-w-[calc(100vw-2rem)] space-y-3 pointer-events-none">
         <template x-for="toast in toasts" :key="toast.id">
             <div x-show="toast.visible"
                  x-transition:enter="transition ease-out duration-300"
@@ -38,11 +38,23 @@
                         </template>
                     </div>
                     <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="toast.message"></p>
+                        <template x-if="!toast.link">
+                            <div>
+                                <p x-show="toast.titel" class="text-sm font-semibold text-gray-900 dark:text-white break-words" x-text="toast.titel"></p>
+                                <p class="text-sm break-words" :class="toast.titel ? 'text-gray-600 dark:text-gray-300' : 'font-medium text-gray-900 dark:text-white'" x-text="toast.message"></p>
+                            </div>
+                        </template>
+                        <template x-if="toast.link">
+                            <a :href="toast.link" class="block rounded-md hover:underline">
+                                <span x-show="toast.titel" class="block text-sm font-semibold text-gray-900 dark:text-white break-words" x-text="toast.titel"></span>
+                                <span class="block text-sm break-words" :class="toast.titel ? 'text-gray-600 dark:text-gray-300' : 'font-medium text-gray-900 dark:text-white'" x-text="toast.message"></span>
+                            </a>
+                        </template>
                     </div>
+                    {# Trefferfläche wie die Knöpfe der Kopfzeile (44 px am Handy, 36 px am Rechner); der Rand der Meldung bleibt durch die negativen Abstände, wo er war #}
                     <button type="button" @click="removeToast(toast.id)" aria-label="Meldung schließen"
-                            class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-                        <i data-lucide="x" class="w-4 h-4"></i>
+                            class="flex-shrink-0 -m-2 inline-flex items-center justify-center w-11 h-11 lg:w-9 lg:h-9 lg:-m-1 rounded-lg text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <i data-lucide="x" class="w-5 h-5 lg:w-4 lg:h-4"></i>
                     </button>
                 </div>
             </div>

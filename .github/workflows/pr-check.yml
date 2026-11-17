@@ -677,6 +677,11 @@ jobs:
         if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
         run: cd mandari && npm run test:icons
 
+      # Meldungen unten rechts und Hinweise auf neue Benachrichtigungen: jede einmal, schließbar (#1454)
+      - name: Frontend-Unit-Tests (Meldungen und Benachrichtigungs-Hinweise)
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run test:meldungen
+
       # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
       # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
       - name: JS-Vorlagen sind gültiges JavaScript
