@@ -61,6 +61,19 @@ Quelle die Kennung einer Kommune, die zu einer anderen Quelle gehört, bricht ih
 Sync-Protokoll ab. Die Anwendung verbindet Beratungen nur mit Sitzungen und Tagesordnungspunkten derselben
 Quelle (`hub/ris/selectors.py`).
 
+Verweise, die sich im Bestand nicht auflösen lassen, zählen die Details des Sync-Protokolls je Art unter
+`unresolved` (Issue #1441): `meeting.organization` für Gremien, die eine Sitzung nennt, die die Quelle aber nicht
+ausgibt (gesperrt, HTTP 401) oder die einer anderen Quelle gehören, `membership.person` und
+`membership.organization` für Mitgliedschaften ohne Person bzw. Gremium im Bestand. Die Sitzung bleibt
+gespeichert und behält den Verweis in den Rohdaten (die Ausgabe kennzeichnet sie mit
+`mandari:organizationNotPublished`); eine solche Mitgliedschaft wird nicht gespeichert. Gezählt wird je
+geschriebenem Objekt eines Laufs. Eine dauerhaft hohe Zahl zeigt, dass die Quelle Objekte nennt, die sie nicht
+veröffentlicht, und ist ein Hinweis an die Kommune, kein Fehler des Abgleichs.
+
+Nennt ein Body die Liste `legislativeTermList`, bettet aber keine Wahlperiode ein, liest der Vollabgleich die
+Liste (höchstens drei Seiten) und übernimmt die Wahlperioden. Eine leere, gesperrte oder gestörte Liste ändert
+nichts daran, ob der Abgleich als vollständig gilt.
+
 Gehört eine Kommune tatsächlich zu der Quelle, die sie abgleicht (etwa nach einer doppelt angelegten Quelle),
 wird sie im Admin bei der Kommune der richtigen Quelle zugeordnet; ihre Objekte folgen ihr. Vorher prüfen,
 welche Quelle die Objekte der Kommune bisher geschrieben hat (Sync-Protokolle beider Quellen, Adressen der

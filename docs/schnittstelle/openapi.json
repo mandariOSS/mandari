@@ -864,6 +864,160 @@
         ]
       }
     },
+    "/oparl/v1/body/{id}/agendaitems": {
+      "get": {
+        "operationId": "oparl_list_agendaitems",
+        "summary": "Externe Liste AgendaItem",
+        "responses": {
+          "200": {
+            "description": "Externe Liste AgendaItem",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlAgendaItemList"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Körperschaft",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "tags": [
+          "OParl-Aggregator"
+        ]
+      }
+    },
     "/oparl/v1/body/{id}/changes": {
       "get": {
         "operationId": "oparl_changes",
@@ -1046,6 +1200,314 @@
         "deprecated": true,
         "x-sunset": "2027-12-01",
         "description": "Abgekündigt, entfällt frühestens am 01.12.2027. Nachfolger: kommparl:changes (Profil von kommParl 0.1); die Antworten nennen ihn im Header Link.",
+        "tags": [
+          "OParl-Aggregator"
+        ]
+      }
+    },
+    "/oparl/v1/body/{id}/consultations": {
+      "get": {
+        "operationId": "oparl_list_consultations",
+        "summary": "Externe Liste Consultation",
+        "responses": {
+          "200": {
+            "description": "Externe Liste Consultation",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlConsultationList"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Körperschaft",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "tags": [
+          "OParl-Aggregator"
+        ]
+      }
+    },
+    "/oparl/v1/body/{id}/files": {
+      "get": {
+        "operationId": "oparl_list_files",
+        "summary": "Externe Liste File",
+        "responses": {
+          "200": {
+            "description": "Externe Liste File",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlFileList"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Körperschaft",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
         "tags": [
           "OParl-Aggregator"
         ]
@@ -1275,6 +1737,160 @@
         ]
       }
     },
+    "/oparl/v1/body/{id}/legislativeterms": {
+      "get": {
+        "operationId": "oparl_list_legislativeterms",
+        "summary": "Externe Liste LegislativeTerm",
+        "responses": {
+          "200": {
+            "description": "Externe Liste LegislativeTerm",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlLegislativeTermList"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Körperschaft",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "tags": [
+          "OParl-Aggregator"
+        ]
+      }
+    },
     "/oparl/v1/body/{id}/locations": {
       "get": {
         "operationId": "oparl_list_locations",
@@ -1454,6 +2070,160 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OParlMeetingList"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Zeitfilter oder ungültige Seitennummer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Körperschaft",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "created_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt angelegt wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_since",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die ab diesem Zeitpunkt geändert wurden; enthält auch Gelöschtes (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "modified_until",
+            "in": "query",
+            "required": false,
+            "description": "Nur Objekte, die bis zu diesem Zeitpunkt geändert wurden (ISO 8601 mit Zeitzone)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Seite, ab 1",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "tags": [
+          "OParl-Aggregator"
+        ]
+      }
+    },
+    "/oparl/v1/body/{id}/memberships": {
+      "get": {
+        "operationId": "oparl_list_memberships",
+        "summary": "Externe Liste Membership",
+        "responses": {
+          "200": {
+            "description": "Externe Liste Membership",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Blätter-Verweise (first, prev, next, last) nach RFC 8288",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlMembershipList"
                 }
               }
             }

@@ -13,6 +13,11 @@ Endpunkte (alle rein lesend, anonym, JSON, CORS offen):
 - ``/oparl/v1/body/<uuid>/meetings``
 - ``/oparl/v1/body/<uuid>/papers``
 - ``/oparl/v1/body/<uuid>/locations``
+- ``/oparl/v1/body/<uuid>/memberships``           externe Listen der Objekte, die sonst eingebettet in ihrem
+- ``/oparl/v1/body/<uuid>/agendaitems``           Träger stehen (OParl 1.1: ``membership``, ``agendaItem``,
+- ``/oparl/v1/body/<uuid>/consultations``         ``consultation``, ``file``, ``legislativeTermList``)
+- ``/oparl/v1/body/<uuid>/files``
+- ``/oparl/v1/body/<uuid>/legislativeterms``
 - ``/oparl/v1/body/<uuid>/kommparl/changes``      Änderungsfeed nach kommParl (wenn eingeschaltet, ``hub.api.changes``)
 - ``/oparl/v1/body/<uuid>/kommparl/snapshot``     Snapshot nach kommParl mit Cursor-Übergabe (``hub.api.snapshot``)
 - ``/oparl/v1/body/<uuid>/changes``               Änderungsfeed in der älteren Form (abgekündigt)
@@ -25,7 +30,7 @@ weiter: Wie ein Objekt aussieht, legt ``hub.ris.mapping.bestand`` fest, wie eine
 
 - Listen laden nur die nötigen Beziehungen vor (keine Abfrage je Objekt) und sind nach ``modified``
   sortiert – stabil für inkrementelle Abnehmer.
-- Seiten ungefilterter Listen liegen kurz im Cache (``OPARL_API_CACHE_SECONDS``).
+- Seiten ungefilterter Listen liegen kurz im Cache (``OPARL_API_CACHE_SECONDS``), ebenso die Anzahl der Einträge.
 - In der Quelle Gelöschtes erscheint nur in Listen mit ``modified_since`` (als gekürztes Objekt) und
   bleibt unter seiner Adresse abrufbar (OParl 1.1 §2.8).
 """
@@ -88,18 +93,65 @@ class Spec:
     render: Callable[[BestandMapping, Any, RefContext], Objekt]
     prepare: Callable[[QuerySet[Any]], QuerySet[Any]] | None = None
     context: Callable[[list[Any]], RefContext] = RefContext.empty
+    #: Welche Objekte in der externen Liste einer Kommune stehen; ohne Angabe die mit ihrer ``body_id``
+    of_body: Callable[[uuid.UUID], Q] | None = None
 
-    def queryset(self, **filters: Any) -> QuerySet[Any]:
-        queryset: QuerySet[Any] = self.model._default_manager.filter(**filters)
+    def queryset(self, *conditions: Q, **filters: Any) -> QuerySet[Any]:
+        queryset: QuerySet[Any] = self.model._default_manager.filter(*conditions, **filters)
         return self.prepare(queryset) if self.prepare else queryset
+
+    def for_body(self, pk: uuid.UUID) -> QuerySet[Any]:
+        """Die Objekte der Kommune für ihre externe Liste, auch Gelöschtes."""
+        return self.queryset(self.of_body(pk) if self.of_body else Q(body_id=pk))
+
+
+def _memberships_of(pk: uuid.UUID) -> Q:
+    # Über Person oder Gremium: Eine Mitgliedschaft kann beide Kommunen betreffen (Person der Stadt im Gremium des
+    # Kreises) und steht dann bei beiden
+    return Q(person__body_id=pk) | Q(organization__body_id=pk)
+
+
+def _agenda_items_of(pk: uuid.UUID) -> Q:
+    return Q(meeting__body_id=pk)
+
+
+def _files_of(pk: uuid.UUID) -> Q:
+    """
+    Dateien der Kommune ohne die Anlagen zurückgenommener Vorgänge und Sitzungen: Sie tragen keine eigene Markierung,
+    der Objekt-Endpunkt gibt sie aber nur gekürzt aus (``object_view``). Als Unterabfragen, damit die Datenbank beim
+    Zählen und Sortieren bei den Dateien bleibt; zurückgenommen ist wenig.
+    """
+    papers = OParlPaper.objects.filter(withdrawn_q()).values("pk")
+    meetings = OParlMeeting.objects.filter(withdrawn_q()).values("pk")
+    return Q(body_id=pk) & ~Q(paper__in=papers) & ~Q(meeting__in=meetings)
 
 
 _BODY = Spec("body", OParlBody, BestandMapping.body, bestand.prepare_bodies)
 _ORGANIZATION = Spec("organization", OParlOrganization, BestandMapping.organization, bestand.prepare_organizations)
 _PERSON = Spec("person", OParlPerson, BestandMapping.person, bestand.prepare_persons)
+_MEMBERSHIP = Spec("membership", OParlMembership, BestandMapping.membership, of_body=_memberships_of)
 _MEETING = Spec("meeting", OParlMeeting, BestandMapping.meeting, bestand.prepare_meetings, RefContext.for_meetings)
+_AGENDA_ITEM = Spec(
+    "agendaitem",
+    OParlAgendaItem,
+    BestandMapping.agenda_item,
+    context=RefContext.for_agenda_items,
+    of_body=_agenda_items_of,
+)
 _PAPER = Spec("paper", OParlPaper, BestandMapping.paper, bestand.prepare_papers, RefContext.for_papers)
+_CONSULTATION = Spec(
+    "consultation", OParlConsultation, BestandMapping.consultation, context=RefContext.for_consultations
+)
+#: Dateien in Listen und im Snapshot: ohne den erkannten Text. Er steht nur am Objekt-Endpunkt; Dateiinhalte ruft der
+#: Abnehmer über ``accessUrl`` ab.
+_LISTED_FILE = Spec(
+    "file", OParlFile, BestandMapping.file, lambda queryset: queryset.defer("text_content"), of_body=_files_of
+)
 _LOCATION = Spec("location", OParlLocation, BestandMapping.location)
+_LEGISLATIVE_TERM = Spec("legislativeterm", OParlLegislativeTerm, BestandMapping.legislative_term)
+
+#: Listen des Snapshots in der älteren Form (abgekündigt): ihre Objekte mit den Einbettungen
+_SNAPSHOT_LISTS: Final[tuple[Spec, ...]] = (_ORGANIZATION, _PERSON, _MEETING, _PAPER, _LOCATION)
 
 #: Externe Listen je Kommune: Segment der Adresse -> Objekttyp
 BODY_LISTS: Final[dict[str, Spec]] = {
@@ -109,6 +161,12 @@ BODY_LISTS: Final[dict[str, Spec]] = {
     "papers": _PAPER,
     # Erweiterung: nicht Teil der Pflichtlisten der Spezifikation
     "locations": _LOCATION,
+    # OParl 1.1, optional: Objekte, die sonst eingebettet in ihrem Träger stehen (Issue #1441)
+    "memberships": _MEMBERSHIP,
+    "agendaitems": _AGENDA_ITEM,
+    "consultations": _CONSULTATION,
+    "files": _LISTED_FILE,
+    "legislativeterms": _LEGISLATIVE_TERM,
 }
 
 #: Objekt-Endpunkte: Typ in der Adresse -> Objekttyp
@@ -116,17 +174,15 @@ OBJECT_TYPES: Final[dict[str, Spec]] = {
     "body": _BODY,
     "organization": _ORGANIZATION,
     "person": _PERSON,
-    "membership": Spec("membership", OParlMembership, BestandMapping.membership),
+    "membership": _MEMBERSHIP,
     "meeting": _MEETING,
-    "agendaitem": Spec("agendaitem", OParlAgendaItem, BestandMapping.agenda_item, context=RefContext.for_agenda_items),
+    "agendaitem": _AGENDA_ITEM,
     "paper": _PAPER,
-    "consultation": Spec(
-        "consultation", OParlConsultation, BestandMapping.consultation, context=RefContext.for_consultations
-    ),
+    "consultation": _CONSULTATION,
     # Der erkannte Text nur am Objekt-Endpunkt, nicht in Listen und Einbettungen, und höchstens bis zur Obergrenze
     "file": Spec("file", OParlFile, BestandMapping.file_with_text, bestand.prepare_files),
     "location": _LOCATION,
-    "legislativeterm": Spec("legislativeterm", OParlLegislativeTerm, BestandMapping.legislative_term),
+    "legislativeterm": _LEGISLATIVE_TERM,
 }
 
 
@@ -269,7 +325,7 @@ def body_sub_list(request: HttpRequest, pk: uuid.UUID, segment: str) -> HttpResp
     if paused is not None:
         return paused
 
-    queryset = _annotated(spec.queryset(body_id=pk))
+    queryset = _annotated(spec.for_body(pk))
 
     # Ob es die Kommune gibt, prüft nur der Weg ohne Cache-Treffer
     cached = (
@@ -497,13 +553,8 @@ def _body(output: BestandMapping, pk: uuid.UUID) -> Callable[[], Objekt]:
 
 def _snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed) -> snapshot.Snapshot:
     """Snapshot in der älteren Form: der Body und die Objekte der externen Listen mit ihren Einbettungen."""
-    sections = [_section(output, spec, spec.queryset(body_id=pk, deleted=False)) for spec in BODY_LISTS.values()]
+    sections = [_section(output, spec, spec.queryset(body_id=pk, deleted=False)) for spec in _SNAPSHOT_LISTS]
     return snapshot.Snapshot(feed, _body(output, pk), sections)
-
-
-#: Dateien im Snapshot nach kommParl: wie in den Listen ohne den erkannten Text. Dateiinhalte gehören nach dem Profil
-#: nicht in den Snapshot; der Abnehmer ruft sie über ``accessUrl`` ab, den Text am Objekt-Endpunkt.
-_SNAPSHOT_FILE = Spec("file", OParlFile, BestandMapping.file, lambda queryset: queryset.defer("text_content"))
 
 
 def _meeting_locations(output: BestandMapping, pk: uuid.UUID) -> snapshot.Section:
@@ -531,17 +582,18 @@ def _kommparl_snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed
 
     own = Q(body_id=pk)
     sections = [
-        section(OBJECT_TYPES["legislativeterm"], own),
+        section(_LEGISLATIVE_TERM, own),
         section(_ORGANIZATION, own),
         section(_PERSON, own),
-        section(OBJECT_TYPES["membership"], Q(person__body_id=pk) | Q(organization__body_id=pk)),
+        section(_MEMBERSHIP, _memberships_of(pk)),
         section(_MEETING, own),
-        section(OBJECT_TYPES["agendaitem"], Q(meeting__body_id=pk)),
+        section(_AGENDA_ITEM, _agenda_items_of(pk)),
         section(_PAPER, own),
-        section(OBJECT_TYPES["consultation"], own),
+        section(_CONSULTATION, own),
         # Ohne die Anlagen zurückgenommener Vorgänge und Sitzungen: Sie tragen keine eigene Markierung, der
-        # Objekt-Endpunkt gibt sie aber nur gekürzt aus (``object_view``)
-        section(_SNAPSHOT_FILE, own & ~withdrawn_q("paper") & ~withdrawn_q("meeting")),
+        # Objekt-Endpunkt gibt sie aber nur gekürzt aus (``object_view``). Dateiinhalte gehören nach dem Profil
+        # nicht in den Snapshot (``_LISTED_FILE``)
+        section(_LISTED_FILE, own & ~withdrawn_q("paper") & ~withdrawn_q("meeting")),
         section(_LOCATION, own),
         _meeting_locations(output, pk),
     ]
