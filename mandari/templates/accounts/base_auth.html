@@ -8,6 +8,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="{% block meta_description %}mandari - Anmeldung{% endblock %}">
+    {# Kontoseiten (Passwort zurücksetzen, Registrierung, zweiter Faktor) gehören nicht in den Suchindex; die Anmeldeseite stellt sich selbst frei #}
+    <meta name="robots" content="{% block robots %}noindex, follow{% endblock %}">
+    {% block canonical %}{% endblock %}
     <meta name="theme-color" content="#4f46e5">
     {% include "pwa/meta.html" %}
 

@@ -12,6 +12,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ### Geändert
 - Ingestor: Leitet ein Host jede `http://`-Anfrage auf dieselbe Adresse per `https://` um, fragt der Client ihn danach gleich per `https://` an (#1431); bei ALLRIS 4 halbiert das die Anfragen. Gleiche `created`/`modified` im Abstand von höchstens 30 Minuten zum Abruf gelten als Stempel des Abrufs: Solche Objekte (Mitgliedschaften bei ALLRIS 4) vergleicht der Abgleich am Inhalt, statt sie in jedem Lauf neu zu schreiben. Neue Option je Quelle `skip_lists`: optionale Listen, die der Abgleich gar nicht anfragt (etwa Listen, die die Quelle dauerhaft mit HTTP 500 beantwortet und deren Objekte sie eingebettet liefert); ohne sie öffneten die Fehlversuche den Schutzschalter des Hosts für die übrigen Listen.
+- Anmeldeseite: Seitentitel „Anmelden bei Work und Session“, eine Beschreibung und eine kanonische Adresse aus `SITE_URL` für Suchmaschinen (#939); bisher standen dort „Anmelden“ und „mandari - Anmeldung“. Die übrigen Kontoseiten (Passwort zurücksetzen, Registrierung, zweiter Faktor) tragen `noindex`.
 
 ## [0.13.0] – 2026-11-17
 
