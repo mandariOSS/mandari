@@ -11,6 +11,7 @@ Provides Trello-style task management with:
 """
 
 import uuid
+from typing import Any
 
 from django.db import models
 
@@ -134,6 +135,16 @@ class Task(models.Model):
         related_name="assigned_tasks",
         verbose_name="Zugewiesen an",
     )
+    # Weitere Zuständige (Issue #1462): gleichberechtigt mit der zugewiesenen Person. Sie sehen und bearbeiten die
+    # Aufgabe, finden sie unter „Meine Aufgaben“ und werden benachrichtigt und erinnert. Die Aufgabe hat einen
+    # gemeinsamen Stand: Wer sie abhakt, erledigt sie für alle. ``assigned_to`` bleibt die erste zuständige Person
+    # und steht hier nicht noch einmal (:meth:`zustaendige` nennt alle).
+    weitere_zustaendige = models.ManyToManyField(
+        "tenants.Membership",
+        blank=True,
+        related_name="mitzustaendige_aufgaben",
+        verbose_name="Weitere Zuständige",
+    )
 
     # Links to other objects
     related_meeting = models.ForeignKey(
@@ -252,10 +263,51 @@ class Task(models.Model):
 
         return not is_sworn_member(membership) and self.noe_top
 
+    def zustaendige(self) -> list[Any]:
+        """
+        Alle Zuständigen der Aufgabe, die zugewiesene Person zuerst, dann die weiteren nach Namen (ohne Doppelte).
+
+        Liest die weiteren Zuständigen aus dem vorgeladenen Bestand, wenn es einen gibt (Karten, Panel), sonst mit
+        einer Abfrage.
+        """
+        personen = [self.assigned_to] if self.assigned_to_id else []
+        if self._state.adding:
+            return personen
+        weitere = [m for m in self.weitere_zustaendige.all() if m.pk != self.assigned_to_id]
+        weitere.sort(key=lambda m: m.user.get_display_name().lower())
+        return personen + weitere
+
+    @property
+    def zustaendige_anzeige(self) -> dict[str, Any] | None:
+        """
+        Für Karten und Listen: Name der ersten zuständigen Person, Zahl der übrigen und alle Namen in einer Zeile;
+        ``None`` ohne Zuständige.
+        """
+        namen = [person.user.get_display_name() for person in self.zustaendige()]
+        if not namen:
+            return None
+        return {"erste": namen[0], "weitere": len(namen) - 1, "alle": ", ".join(namen)}
+
+    def weitere_namen(self) -> list[str]:
+        """Namen der weiteren Zuständigen (ohne die zugewiesene Person), nach Namen sortiert."""
+        return [person.user.get_display_name() for person in self.zustaendige() if person.pk != self.assigned_to_id]
+
+    def ist_zustaendig(self, membership) -> bool:
+        """Zugewiesene Person oder eine der weiteren Zuständigen (eine Abfrage, wenn nichts vorgeladen ist)."""
+        if membership is None:
+            return False
+        if self.assigned_to_id is not None and self.assigned_to_id == membership.pk:
+            return True
+        if self._state.adding:
+            return False
+        return any(m.pk == membership.pk for m in self.weitere_zustaendige.all())
+
     @property
     def is_personal(self) -> bool:
-        """Check if this is a personal task (assigned to creator)."""
-        return self.assigned_to == self.created_by or self.assigned_to is None
+        """Check if this is a personal task (assigned to creator, niemand sonst zuständig)."""
+        if not (self.assigned_to == self.created_by or self.assigned_to is None):
+            return False
+        return self._state.adding or not self.weitere_zustaendige.exists()
 
     @property
     def checklist_progress(self) -> tuple[int, int]:
@@ -282,7 +334,7 @@ class Task(models.Model):
 
         Access is granted if:
         - User is the creator
-        - User is assigned to the task
+        - User is assigned to the task (zugewiesene Person oder eine der weiteren Zuständigen)
         - Task visibility is 'organization' (aus einer Fraktionssitzung nur, wenn die Sitzung sichtbar ist, Issue #1239)
         - Task visibility is 'shared' and user is in shares
 
@@ -300,17 +352,18 @@ class Task(models.Model):
         if self.assigned_to == membership:
             return True
 
-        # Check visibility
-        if self.visibility == "private":
-            return False
+        # Check visibility; die weiteren Zuständigen zuletzt, weil sie eine Abfrage kosten können
+        if (
+            self.visibility == "organization"
+            and membership.organization == self.organization
+            and self._sitzung_sichtbar(membership)
+        ):
+            return True
 
-        if self.visibility == "organization":
-            return membership.organization == self.organization and self._sitzung_sichtbar(membership)
+        if self.visibility == "shared" and self.shares.filter(membership=membership).exists():
+            return True
 
-        if self.visibility == "shared":
-            return self.shares.filter(membership=membership).exists()
-
-        return False
+        return self.ist_zustaendig(membership)
 
     def _sitzung_sichtbar(self, membership) -> bool:
         """Sieht das Mitglied die Fraktionssitzung, aus der die Aufgabe stammt (Sitzungsarten, Issue #1239)?"""
@@ -333,8 +386,8 @@ class Task(models.Model):
         # Creator can edit
         if self.created_by == membership:
             return True
-        # Assigned user can edit
-        return self.assigned_to == membership
+        # Assigned users can edit
+        return self.ist_zustaendig(membership)
 
 
 class TaskShare(models.Model):

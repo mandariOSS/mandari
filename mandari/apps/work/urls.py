@@ -822,6 +822,8 @@ urlpatterns = [
     ),
     # Support
     path("<slug:org_slug>/support/", support_views.SupportListView.as_view(), name="support"),
+    # „Was ist neu?“: die Neuerungen in Work je Version (Issue #1463)
+    path("<slug:org_slug>/neuigkeiten/", support_views.NeuigkeitenView.as_view(), name="neuigkeiten"),
     path(
         "<slug:org_slug>/support/create/",
         support_views.SupportCreateView.as_view(),

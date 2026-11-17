@@ -67,39 +67,36 @@ class Command(EinmaligMixin, BaseCommand):
             .select_related(
                 "assigned_to__user", "created_by__user", "organization", "related_faction_agenda_item__parent"
             )
+            .prefetch_related("weitere_zustaendige__user")
             .order_by("due_date")
         )
 
         sent = skipped = 0
         for task in due_tasks:
-            recipient = task.assigned_to or task.created_by
-            if recipient and recipient.is_active and task.noe_gesperrt(recipient):
-                # Aufgabe aus einem nichtöffentlichen TOP, die diese Person nicht (mehr) öffnen darf: Sie könnte die
-                # Erinnerung nicht beenden und erführe den Titel. Erinnert wird, wer die Aufgabe angelegt hat und sie
-                # öffnen darf – dort lässt sie sich neu zuweisen.
-                ersatz = task.created_by
-                recipient = ersatz if ersatz and ersatz.is_active and not task.noe_gesperrt(ersatz) else None
-            if not recipient or not recipient.is_active:
+            empfaenger = self._empfaenger(task)
+            if not empfaenger:
                 skipped += 1
                 continue
+            for recipient in empfaenger:
+                # Dedupe: heute schon an diese Person zu dieser Aufgabe erinnert?
+                already_sent_today = Notification.objects.filter(
+                    recipient=recipient,
+                    notification_type=NotificationType.TASK_DUE_SOON,
+                    metadata__task_id=str(task.id),
+                    created_at__date=today,
+                ).exists()
+                if already_sent_today:
+                    skipped += 1
+                    continue
 
-            # Dedupe: heute schon an diese Person zu dieser Aufgabe erinnert?
-            already_sent_today = Notification.objects.filter(
-                recipient=recipient,
-                notification_type=NotificationType.TASK_DUE_SOON,
-                metadata__task_id=str(task.id),
-                created_at__date=today,
-            ).exists()
-            if already_sent_today:
-                skipped += 1
-                continue
-
-            days_left = (task.due_date - today).days
-            if dry_run:
-                self.stdout.write(f"DRY-RUN: '{task.title}' -> {recipient.user.email} (faellig in {days_left} Tagen)")
-            else:
-                NotificationHub.notify_task_due_soon(task, recipient, days_left)
-            sent += 1
+                days_left = (task.due_date - today).days
+                if dry_run:
+                    self.stdout.write(
+                        f"DRY-RUN: '{task.title}' -> {recipient.user.email} (faellig in {days_left} Tagen)"
+                    )
+                else:
+                    NotificationHub.notify_task_due_soon(task, recipient, days_left)
+                sent += 1
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -115,6 +112,28 @@ class Command(EinmaligMixin, BaseCommand):
                 f"{motion_sent} Erinnerungen, {motion_skipped} uebersprungen."
             )
         )
+
+    @staticmethod
+    def _empfaenger(task):
+        """
+        Wer an die Aufgabe erinnert wird: alle Zuständigen (zugewiesene Person und weitere, Issue #1462), die aktiv
+        sind und die Aufgabe öffnen dürfen; ohne Zuständige, wer sie angelegt hat.
+
+        Aufgabe aus einem nichtöffentlichen TOP, die eine zuständige Person nicht (mehr) öffnen darf: Sie könnte die
+        Erinnerung nicht beenden und erführe den Titel. Bleibt so niemand übrig, wird erinnert, wer die Aufgabe
+        angelegt hat und sie öffnen darf – dort lässt sie sich neu zuweisen.
+        """
+
+        def darf(person) -> bool:
+            return bool(person) and person.is_active and not task.noe_gesperrt(person)
+
+        zustaendige = task.zustaendige()
+        empfaenger = [person for person in zustaendige if darf(person)]
+        if not empfaenger and darf(task.created_by):
+            gesperrt = any(person.is_active and task.noe_gesperrt(person) for person in zustaendige)
+            if not zustaendige or gesperrt:
+                empfaenger = [task.created_by]
+        return empfaenger
 
     def _send_motion_reminders(self, today, dry_run):
         """Erinnerungen an die Federführung (Fallback: Autor) für Dokument-Fristen."""

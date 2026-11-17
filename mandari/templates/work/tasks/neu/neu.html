@@ -4,7 +4,8 @@ Neue Aufgabe im neuen Erscheinungsbild (Issue #951, Teilpaket 4): ein Formular o
 Herkunft (Protokoll, Dokument) als Satz im Kopfband statt Farbkästen. Zuweisung mit Rückfrage wie bisher
 (assignmentHandler), der Dialog über c-ui.alpine-modal. Sichtbarkeit als ruhige Auswahl (Vorauswahl vom Server), Tags
 als Liste zum Entfernen. Der Rückweg ist „Abbrechen“ am Formular.
-Felder wie bisher: title, description, due_date, priority, status, assigned_to, visibility, tags, related_motion.
+Felder wie bisher: title, description, due_date, priority, status, assigned_to, visibility, tags, related_motion;
+dazu weitere_zustaendige (Issue #1462) mit der Marke weitere_zustaendige_gesendet.
 Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
 {% endcomment %}
 
@@ -55,6 +56,17 @@ Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
             </c-ui.alpine-modal>
         </div>
     </div>
+
+    <fieldset data-testid="aufgabe-weitere-zustaendige">
+        <c-form.beschriftung als="legend">Weitere Zuständige</c-form.beschriftung>
+        <c-form.hinweis>Optional. Alle Zuständigen sehen und bearbeiten die Aufgabe; wer sie abhakt, erledigt sie für alle.</c-form.hinweis>
+        <input type="hidden" name="weitere_zustaendige_gesendet" value="1">
+        <ul class="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 max-h-48 overflow-y-auto">
+            {% for wahl in form.weitere_zustaendige %}
+            <li><c-form.checkbox name="weitere_zustaendige" id="{{ wahl.id_for_label }}" value="{{ wahl.data.value }}" label="{{ wahl.choice_label }}" checked="{% if wahl.data.selected %}1{% endif %}" dicht /></li>
+            {% endfor %}
+        </ul>
+    </fieldset>
 
     <fieldset>
         <c-form.beschriftung als="legend">Sichtbarkeit</c-form.beschriftung>

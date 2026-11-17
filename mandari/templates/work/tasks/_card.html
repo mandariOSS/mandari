@@ -1,5 +1,5 @@
 {% load i18n %}
-<div id="task-card-{{ task.id }}"
+<div id="task-card-{{ task.id }}"{% if oob %} hx-swap-oob="outerHTML"{% endif %}
    @click="$dispatch('open-panel', { id: '{{ task.id }}' })"
    class="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 hover:shadow-md transition-all cursor-pointer task-card border-l-4
    {% if task.priority == 'urgent' %}border-l-red-500 hover:border-l-red-600
@@ -68,12 +68,12 @@
         {% endif %}
 
         <!-- Assignee -->
-        {% if task.assigned_to %}
-        <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
-            <i data-lucide="user" class="w-3 h-3"></i>
-            {{ task.assigned_to.user.get_display_name|truncatechars:15 }}
+        {% with z=task.zustaendige_anzeige %}{% if z %}
+        <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400"{% if z.weitere %} title="{{ z.alle }}"{% endif %}>
+            <i data-lucide="{% if z.weitere %}users{% else %}user{% endif %}" class="w-3 h-3"></i>
+            {{ z.erste|truncatechars:15 }}{% if z.weitere %}<span aria-hidden="true">+{{ z.weitere }}</span><span class="sr-only"> und {{ z.weitere }} weitere</span>{% endif %}
         </span>
-        {% endif %}
+        {% endif %}{% endwith %}
 
         <!-- Priority badge (for urgent/high) -->
         {% if task.priority == 'urgent' %}

@@ -350,6 +350,7 @@ VERMERKE: tuple[Vermerk, ...] = (
 IM_EXPORT: dict[str, str] = {
     "Task.created_by": "tasks",
     "Task.assigned_to": "tasks",
+    "Task.weitere_zustaendige": "tasks",
     "TaskShare.membership": "tasks",
     "Motion.author": "motions",
     "MotionApproval.approver": "motions / document_involvement",
@@ -597,17 +598,21 @@ class DsgvoExportService:
                 membership=membership, task__organization=organization, task__visibility="shared"
             ).values_list("task_id", flat=True)
         )
+        mit_zustaendig_ids = _mit_zustaendig_ids(membership, organization)
         tasks = (
             Task.objects.filter(organization=organization)
             .filter(
                 Q(created_by=membership)
                 | Q(assigned_to=membership)
+                | Q(id__in=mit_zustaendig_ids)
                 | Q(id__in=shared_ids)
                 | Q(id__in=list(comments_by_task))
             )
             # Der Fraktions-TOP samt übergeordnetem TOP gehört zur Zugriffsprüfung (``Task.noe_gesperrt``): mitladen
             # statt einer Abfrage je Aufgabe
             .select_related("created_by", "assigned_to", "organization", "related_faction_agenda_item__parent")
+            # ``Task.can_access`` fragt bei privaten Aufgaben nach den weiteren Zuständigen: einmal für alle laden
+            .prefetch_related("weitere_zustaendige")
             .distinct()
             .order_by("-created_at")
         )
@@ -616,7 +621,7 @@ class DsgvoExportService:
         result = []
         for t in tasks:
             is_creator = t.created_by_id == membership.id
-            is_assignee = t.assigned_to_id == membership.id
+            is_assignee = t.assigned_to_id == membership.id or t.id in mit_zustaendig_ids
             is_shared = t.id in shared_ids
             # Fremde Aufgaben nur mit ``tasks.view`` (wie die Aufgabenansicht); eigene und zugewiesene bleiben
             zugriff = t.can_access(membership) and (darf_aufgaben_sehen or is_creator or is_assignee)
@@ -1312,6 +1317,7 @@ class DsgvoExportService:
 
         sworn = is_sworn_member(membership)
         may_see_tasks = membership.has_permission("tasks.view")
+        mit_zustaendig_ids = _mit_zustaendig_ids(membership, organization)
         access: dict[tuple[str, Any], bool] = {}
 
         def no_access(vermerk: Vermerk, obj: Any) -> str:
@@ -1326,7 +1332,7 @@ class DsgvoExportService:
                 key = ("task", task.pk)
                 if key not in access:
                     # Fremde Aufgaben nur mit ``tasks.view``, eigene und zugewiesene bleiben (wie ``_collect_tasks``)
-                    own = membership.id in (task.created_by_id, task.assigned_to_id)
+                    own = membership.id in (task.created_by_id, task.assigned_to_id) or task.pk in mit_zustaendig_ids
                     access[key] = task.can_access(membership) and (may_see_tasks or own)
                 return "" if access[key] else NO_ACCESS_TASK
             return ""
@@ -1420,6 +1426,17 @@ class DsgvoExportService:
 # =============================================================================
 # Helpers
 # =============================================================================
+
+
+def _mit_zustaendig_ids(membership: Any, organization: Any) -> set[Any]:
+    """Aufgaben der Organisation, für die die Person als weitere Zuständige eingetragen ist (Issue #1462)."""
+    from apps.work.tasks.models import Task
+
+    return set(
+        Task.weitere_zustaendige.through.objects.filter(
+            membership_id=membership.id, task__organization=organization
+        ).values_list("task_id", flat=True)
+    )
 
 
 def _dt(value) -> str | None:

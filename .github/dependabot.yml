@@ -115,6 +115,12 @@ updates:
       npm-sicherheit:
         applies-to: security-updates
         patterns: ["*"]
+    ignore:
+      # Tailwind CSS 4 ist ein Umbau, kein Versionssprung (Konfiguration in CSS statt tailwind.config.js, anderes
+      # Build-Werkzeug, geänderte Klassen) und in #1461 geplant. Bis dahin keine PRs für die Major-Version; Minor
+      # und Patch kommen weiter über npm-minor-und-patch.
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
     labels: [dependencies]
   - package-ecosystem: github-actions
     target-branch: dev

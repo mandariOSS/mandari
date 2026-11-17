@@ -363,9 +363,11 @@
     [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-eintrag {
       @apply justify-center px-0;
     }
-    /* Unterpunkte (Recherche) haben kein Symbol: in der schmalen Leiste führen Bereich und Reiter dorthin */
+    /* Unterpunkte (Recherche) haben kein Symbol: in der schmalen Leiste führen Bereich und Reiter dorthin. Auch die
+       Zeile mit der Version (Issue #1463) ist nur Text und entfällt */
     [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-unterpunkte,
-    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-aufklapper {
+    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-aufklapper,
+    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-version {
       display: none !important;
     }
   }
@@ -1154,7 +1156,8 @@
   }
   /* Wie in der schmalen Leiste (#908): Unterpunkte der Recherche und ihr Aufklapper entfallen */
   [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-unterpunkte,
-  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-aufklapper {
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-aufklapper,
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-version {
     display: none !important;
   }
 }
