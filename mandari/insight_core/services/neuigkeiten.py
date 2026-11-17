@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from functools import cache
@@ -76,12 +77,17 @@ def neuigkeiten() -> tuple[Neuigkeit, ...]:
         return ()
 
 
+def gruppiere(eintraege: Iterable[Neuigkeit]) -> list[Gruppe]:
+    """Einträge (neueste zuerst) je Tag und Version zusammenfassen; auch für die Neuigkeiten in Work (Issue #1463)."""
+    return [
+        Gruppe(datum=datum, version=version, eintraege=tuple(gruppe))
+        for (datum, version), gruppe in groupby(eintraege, key=lambda eintrag: (eintrag.datum, eintrag.version))
+    ]
+
+
 def gruppen() -> list[Gruppe]:
     """Einträge je Tag und Version, neueste zuerst."""
-    return [
-        Gruppe(datum=datum, version=version, eintraege=tuple(eintraege))
-        for (datum, version), eintraege in groupby(neuigkeiten(), key=lambda eintrag: (eintrag.datum, eintrag.version))
-    ]
+    return gruppiere(neuigkeiten())
 
 
 @cache
