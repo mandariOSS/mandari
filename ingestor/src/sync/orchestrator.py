@@ -207,8 +207,6 @@ def day_start_window(modified_since: datetime, now: datetime | None = None) -> d
 OPTIONAL_LIST_TYPES = frozenset({"membership", "agendaitem", "consultation", "file", "location", "legislativeterm"})
 #: Vermerkte Listen fragt auch der inkrementelle Lauf wieder an, wenn ihre letzte Prüfung so lange zurückliegt
 MISSING_LIST_RECHECK = timedelta(days=1)
-#: So viele Seiten der Liste der Wahlzeiten liest ein Vollabgleich höchstens (``_sync_legislative_terms``)
-MAX_TERM_PAGES = 3
 
 
 class RequiredListMissingError(Exception):
@@ -1643,12 +1641,6 @@ class SyncOrchestrator:
                 stats["consultations"] = consultation_result
                 progress.update(task9, completed=consultation_result, total=consultation_result)
 
-        # Wahlzeiten, die die Quelle nur als Liste führt (OParl 1.1 ``legislativeTermList``, Issue #1441)
-        if full and "legislativeterm" not in skip_lists:
-            terms = await self._sync_legislative_terms(client, processed_body, body_id, body_external_id)
-            if terms:
-                stats["legislative_terms"] = terms
-
         if list_check is not None:
             await self._settle_missing_lists(list_check, stats)
         if body_slices is not None:
@@ -1896,44 +1888,6 @@ class SyncOrchestrator:
         location_id = session_location_id(meeting_external_id)
         if location_id is not None:
             await self.storage.mark_entity_deleted("location", location_id, modified=modified, body_id=body_id)
-
-    async def _sync_legislative_terms(
-        self,
-        client: OParlClient,
-        body: Any,
-        body_id: UUID,
-        body_external_id: str,
-    ) -> int:
-        """
-        Wahlzeiten aus der Liste ``legislativeTermList`` übernehmen, wenn der Body keine einbettet (Issue #1441).
-
-        Die meisten Quellen betten ihre Wahlzeiten in den Body ein (``OParlProcessor.process_body``); manche nennen
-        nur die Liste. Sie ist kurz und ändert sich alle paar Jahre: Gelesen wird sie nur im Vollabgleich, höchstens
-        ``MAX_TERM_PAGES`` Seiten, und nur ohne eingebettete Wahlzeiten. Scheitert der Abruf oder eine Wahlzeit,
-        bleibt der Abgleich der Kommune vollständig: Wahlzeiten sind eine Ergänzung, keine Lücke im Bestand.
-
-        Rückgabe: Anzahl der gespeicherten Wahlzeiten.
-        """
-        list_url = getattr(body, "legislative_term_list_url", None)
-        if not isinstance(list_url, str) or not list_url or body.nested_entities:
-            return 0
-        count = 0
-        try:
-            async for page in client.fetch_list(list_url, max_pages=MAX_TERM_PAGES):
-                for item in page:
-                    if not isinstance(item, dict) or not item.get("id") or item.get("deleted") is True:
-                        continue
-                    try:
-                        term = self.processor.process_legislative_term(item, body_external_id)
-                        await self.storage.upsert_legislative_term(term, body_id)
-                        count += 1
-                    except Exception as e:  # noqa: BLE001 - eine Wahlzeit, etwa die einer anderen Quelle
-                        console.print(f"[yellow]  Wahlzeit nicht übernommen: {e}[/yellow]")
-        except Exception as e:  # noqa: BLE001 - Ergänzung; der Abgleich der Kommune läuft weiter
-            console.print(f"[yellow]  Wahlzeiten: Liste {list_url} nicht gelesen ({e})[/yellow]")
-        if count:
-            console.print(f"[dim]  Wahlzeiten aus der Liste: {count}[/dim]")
-        return count
 
     async def _sync_entity_type(
         self,

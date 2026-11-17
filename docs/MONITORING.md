@@ -70,10 +70,6 @@ gespeichert und behält den Verweis in den Rohdaten (die Ausgabe kennzeichnet si
 geschriebenem Objekt eines Laufs. Eine dauerhaft hohe Zahl zeigt, dass die Quelle Objekte nennt, die sie nicht
 veröffentlicht, und ist ein Hinweis an die Kommune, kein Fehler des Abgleichs.
 
-Nennt ein Body die Liste `legislativeTermList`, bettet aber keine Wahlperiode ein, liest der Vollabgleich die
-Liste (höchstens drei Seiten) und übernimmt die Wahlperioden. Eine leere, gesperrte oder gestörte Liste ändert
-nichts daran, ob der Abgleich als vollständig gilt.
-
 Gehört eine Kommune tatsächlich zu der Quelle, die sie abgleicht (etwa nach einer doppelt angelegten Quelle),
 wird sie im Admin bei der Kommune der richtigen Quelle zugeordnet; ihre Objekte folgen ihr. Vorher prüfen,
 welche Quelle die Objekte der Kommune bisher geschrieben hat (Sync-Protokolle beider Quellen, Adressen der
