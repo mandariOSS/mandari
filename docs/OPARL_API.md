@@ -539,6 +539,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 
 |----------|--------|--------|
 | `mandari:originalId` | alle | Original-URL des Objekts im kommunalen Quellsystem |
 | `mandari:slug`, `mandari:displayName` | Body | URL-Slug / Anzeigename der Kommune |
+| `mandari:freshness` | Body | Stand des Abrufs bei mandari: `synced_at` (letzter erfolgreicher Abgleich mit der Quelle) und `full_synced_at` (letzter vollständiger Abgleich). `modified` der Objekte stammt von der Quelle und sagt nichts über die Frische des Bestands. Dieselben Angaben stehen im Änderungsfeed |
 | `mandari:locationList` | Body | abgekündigt: URL der Orte-Liste, jetzt im Standardfeld `locationList` |
 | `mandari:changes` | Body | abgekündigt (Wegfall frühestens am 01.12.2027): Adresse des Änderungsfeeds in der älteren Form; Nachfolger `kommparl:changes` (nur wenn eingeschaltet und die Kommune gelistet ist) |
 | `mandari:snapshot` | Body | abgekündigt (Wegfall frühestens am 01.12.2027): Adresse des Snapshots in der älteren Form; Nachfolger `kommparl:snapshot` |

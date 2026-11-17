@@ -37,7 +37,7 @@ from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Any, Final
 
-from django.db.models import Prefetch, Q, QuerySet
+from django.db.models import F, Prefetch, Q, QuerySet
 from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben
 
 from hub.ris.canonical import (
@@ -88,7 +88,8 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 #: Issue #1282;
 #: 7: Sitzungen mit geprüften Angaben: Absage aus dem Namen (``cancelled``, ``mandari:cancelledDerived``,
 #: ``mandari:cancelledNote``, Name ohne Vermerk), ``end`` nur nach dem Beginn; ``mandari:organizationNotPublished``
-#: für Gremien, die die Quelle nennt, aber nicht ausgibt, Issue #1441)
+#: für Gremien, die die Quelle nennt, aber nicht ausgibt; ``mandari:freshness`` am Body, ``equivalent`` ohne leere
+#: Einträge, Issue #1441)
 VERSION: Final = 7
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
@@ -286,9 +287,38 @@ def prepare_persons(queryset: QuerySet[OParlPerson]) -> QuerySet[OParlPerson]:
 
 
 def prepare_bodies(queryset: QuerySet[OParlBody]) -> QuerySet[OParlBody]:
-    return queryset.prefetch_related(
+    # Stand des Abrufs der Quelle (Issue #1441) in derselben Abfrage, ohne die Quelle selbst zu laden
+    return queryset.annotate(
+        source_synced_at=F("source__last_successful_sync"),
+        source_full_synced_at=F("source__last_successful_full_sync"),
+    ).prefetch_related(
         Prefetch("legislative_terms", queryset=OParlLegislativeTerm.objects.filter(deleted=False)),
     )
+
+
+def _freshness(body: OParlBody) -> Objekt | None:
+    """
+    Stand des Abrufs bei mandari für die Kommune: letzter erfolgreicher und letzter vollständiger Abgleich mit der
+    Quelle, wie ``mandari:freshness`` im Änderungsfeed. ``modified`` der Objekte stammt von der Quelle und sagt
+    nichts darüber, wie frisch der Bestand ist. Ohne Quelle oder ohne erfolgreichen Abgleich ``None``.
+    """
+    if hasattr(body, "source_synced_at"):
+        # Annotation aus prepare_bodies
+        synced_at = getattr(body, "source_synced_at", None)
+        full_synced_at = getattr(body, "source_full_synced_at", None)
+    else:
+        # Nicht über prepare_bodies geladen (Einbettung, Tests): die Quelle einzeln lesen
+        source = body.source
+        synced_at = source.last_successful_sync if source is not None else None
+        full_synced_at = source.last_successful_full_sync if source is not None else None
+    return clean({"synced_at": iso(synced_at), "full_synced_at": iso(full_synced_at)}) or None
+
+
+def _adressen(wert: Any) -> list[str]:
+    """Liste von Adressen aus den Rohdaten ohne leere oder unlesbare Einträge (``equivalent: [\"\"]``)."""
+    if not isinstance(wert, list):
+        return []
+    return [eintrag.strip() for eintrag in wert if isinstance(eintrag, str) and eintrag.strip()]
 
 
 # =============================================================================
@@ -581,7 +611,8 @@ class BestandMapping:
                 # Systeme nennen keinen, und Abnehmer finden eine Kommune am sichersten über ihn (Issue #1282)
                 "ags": gemeindeschluessel(body) or raw.get("ags"),
                 "rgs": _schluessel(body.rgs) or raw.get("rgs"),
-                "equivalent": raw.get("equivalent"),
+                # Nur Adressen: Quellen liefern hier auch eine Liste mit einem leeren Eintrag (Issue #1441)
+                "equivalent": _adressen(raw.get("equivalent")),
                 "contactEmail": raw.get("contactEmail"),
                 "contactName": raw.get("contactName"),
                 "classification": body.classification,
@@ -595,6 +626,8 @@ class BestandMapping:
                 "mandari:originalId": body.external_id,
                 "mandari:slug": body.slug,
                 "mandari:displayName": body.get_display_name(),
+                # Wie frisch der Bestand der Kommune bei mandari ist (Issue #1441)
+                "mandari:freshness": _freshness(body),
                 # Abgekündigt: dieselbe URL steht im Standardfeld ``locationList``
                 "mandari:locationList": self.uris.list(body.id, "locations"),
                 # Änderungsfeed und Snapshot nach den Profilen von kommParl; die älteren Formen sind abgekündigt
