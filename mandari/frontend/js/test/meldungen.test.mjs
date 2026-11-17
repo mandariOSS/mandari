@@ -253,6 +253,11 @@ test('sichererLink: nur Adressen dieser Anwendung, als Pfad', () => {
   assert.equal(sichererLink('//boese.example/x', HERKUNFT), '')
   assert.equal(sichererLink('/\\boese.example/x', HERKUNFT), '')
   assert.equal(sichererLink('https://boese.example/', HERKUNFT), '')
+  // Eigene Herkunft mit einem Pfad, der als href wieder eine fremde Adresse wäre
+  assert.equal(sichererLink(`${HERKUNFT}//boese.example/x`, HERKUNFT), '')
+  assert.equal(sichererLink('/.//boese.example/x', HERKUNFT), '')
+  assert.equal(sichererLink('/a/..//boese.example/x', HERKUNFT), '')
+  assert.equal(sichererLink(`${HERKUNFT}/\\boese.example/x`, HERKUNFT), '')
   assert.equal(sichererLink('javascript:alert(1)', HERKUNFT), '')
   assert.equal(sichererLink('', HERKUNFT), '')
   assert.equal(sichererLink(undefined, HERKUNFT), '')

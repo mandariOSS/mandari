@@ -110,7 +110,11 @@ export function sichererLink(link: unknown, herkunft: string): string {
   if (typeof link !== 'string' || !link) return ''
   try {
     const ziel = new URL(link, herkunft)
-    return ziel.origin === herkunft ? `${ziel.pathname}${ziel.search}${ziel.hash}` : ''
+    if (ziel.origin !== herkunft) return ''
+    const pfad = `${ziel.pathname}${ziel.search}${ziel.hash}`
+    // Der Pfad selbst muss wieder hierher führen: „https://hier//fremd.example/x“ hat den Pfad „//fremd.example/x“,
+    // und der wäre als href eine fremde Adresse
+    return new URL(pfad, herkunft).origin === herkunft ? pfad : ''
   } catch {
     return ''
   }
