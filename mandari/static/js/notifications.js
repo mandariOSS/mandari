@@ -1,336 +1,194 @@
 /**
- * Real-time Notifications Module
+ * Benachrichtigungen in Work: Zahl im Seitentitel und ein Hinweis, sobald neue eintreffen.
  *
- * Uses Server-Sent Events (SSE) for real-time notification updates.
- * Falls back to polling if SSE is not supported or connection fails.
+ * Fragt regelmäßig die ungelesenen Benachrichtigungen ab. Jede Benachrichtigung wird in einem Browser höchstens
+ * einmal eingeblendet: Der Zeitpunkt der neuesten schon gezeigten steht im Speicher des Browsers, der Server liefert
+ * nur neuere (`?since=`). Vorher erschien die neueste ungelesene bei jedem Seitenaufruf erneut. Die Einblendung
+ * selbst übernimmt die gemeinsame Anzeige unten rechts (templates/partials/toasts.html, Ereignis `show-toast`);
+ * eine eigene oben rechts verdeckte Glocke und Kopfzeile.
  */
 
 (function() {
     'use strict';
 
-    // Configuration
     const CONFIG = {
-        pollInterval: 10000,  // 10 seconds for polling fallback
-        sseReconnectDelay: 5000,  // 5 seconds before reconnecting SSE
-        maxReconnectAttempts: 10,
-        toastDuration: 5000,  // 5 seconds for toast notifications
+        pollInterval: 10000,  // Abstand der Abfragen in Millisekunden
+        limit: 5,             // so viele liefert der Server höchstens je Abfrage
+        abrufFrist: 8000,     // danach gilt ein Abruf als gescheitert, vor dem nächsten
     };
 
-    // State
-    let eventSource = null;
-    let reconnectAttempts = 0;
     let pollingInterval = null;
     let lastCount = 0;
     let orgSlug = null;
+    let konto = '';
+    // Stand dieser Seite; er gilt, wenn der Browser nichts speichern lässt oder das Schreiben scheitert
+    let merker;
+    // Ein Abruf zur Zeit: Zwei gleichzeitige Antworten könnten sich überholen
+    let laeuft = false;
 
-    /**
-     * Initialize the notification system
-     */
     function init() {
-        // Get org slug from data attribute or URL
         const container = document.querySelector('[data-org-slug]');
         if (container) {
             orgSlug = container.dataset.orgSlug;
+            konto = container.dataset.konto || '';
         } else {
-            // Try to extract from URL
             const match = window.location.pathname.match(/\/work\/([^\/]+)/);
             if (match) {
                 orgSlug = match[1];
             }
         }
-
         if (!orgSlug) {
-            console.log('Notifications: No org slug found, skipping initialization');
             return;
         }
-
-        // Use polling for notification updates
         startPolling();
-
-        // Listen for visibility changes to reconnect when page becomes visible
         document.addEventListener('visibilitychange', handleVisibilityChange);
     }
 
-    /**
-     * Connect to SSE endpoint
-     */
-    function connectSSE() {
-        if (eventSource) {
-            eventSource.close();
-        }
-
-        const streamUrl = `/work/${orgSlug}/notifications/stream/`;
-        console.log('Notifications: Connecting to SSE at', streamUrl);
-
-        eventSource = new EventSource(streamUrl);
-
-        eventSource.onopen = function() {
-            console.log('Notifications: SSE connection established');
-            reconnectAttempts = 0;
-            stopPolling();
-        };
-
-        eventSource.onmessage = function(event) {
-            try {
-                const data = JSON.parse(event.data);
-                handleNotificationUpdate(data);
-            } catch (e) {
-                console.error('Notifications: Failed to parse SSE data', e);
-            }
-        };
-
-        eventSource.onerror = function(error) {
-            console.warn('Notifications: SSE error, attempting reconnect...', error);
-            eventSource.close();
-
-            if (reconnectAttempts < CONFIG.maxReconnectAttempts) {
-                reconnectAttempts++;
-                setTimeout(connectSSE, CONFIG.sseReconnectDelay);
-            } else {
-                console.log('Notifications: Max reconnect attempts reached, falling back to polling');
-                startPolling();
-            }
-        };
-    }
-
-    /**
-     * Start polling fallback
-     */
     function startPolling() {
         if (pollingInterval) return;
-
-        console.log('Notifications: Starting polling');
         pollingInterval = setInterval(poll, CONFIG.pollInterval);
-        poll(); // Initial poll
+        poll();
+    }
+
+    function schluessel() {
+        return `mandari:hinweise-stand:${konto}:${orgSlug}`;
     }
 
     /**
-     * Stop polling
+     * Zeitpunkt der neuesten schon gezeigten Benachrichtigung. `undefined`: in diesem Browser noch nie gemerkt;
+     * leer: gemerkt, aber es gab noch keine ungelesene.
      */
-    function stopPolling() {
-        if (pollingInterval) {
-            clearInterval(pollingInterval);
-            pollingInterval = null;
+    function standLesen() {
+        let gespeichert;
+        try {
+            const wert = window.localStorage.getItem(schluessel());
+            if (wert !== null) gespeichert = wert;
+        } catch (e) {
+            // Speicher gesperrt: der Merker dieser Seite gilt
+        }
+        // Der spätere von beiden: Ein anderer Reiter kann weiter sein als diese Seite, und nach einem gescheiterten
+        // Schreiben ist diese Seite weiter als der Speicher
+        return spaeterer(gespeichert, merker);
+    }
+
+    /** Ob Zeitpunkt `a` nach `b` liegt; gleiche Millisekunde entscheidet die Schreibweise (Mikrosekunden) */
+    function istSpaeter(a, b) {
+        const za = Date.parse(a);
+        const zb = Date.parse(b);
+        if (Number.isNaN(za)) return false;
+        if (Number.isNaN(zb)) return true;
+        return za === zb ? a > b : za > zb;
+    }
+
+    /** Der spätere zweier Stände; `undefined` (nie gemerkt) und leer (noch keine Benachrichtigung) zählen als früher */
+    function spaeterer(a, b) {
+        if (a === undefined) return b;
+        if (b === undefined) return a;
+        if (a === '') return b;
+        if (b === '') return a;
+        return istSpaeter(b, a) ? b : a;
+    }
+
+    function standMerken(stand) {
+        merker = stand;
+        try {
+            window.localStorage.setItem(schluessel(), stand);
+        } catch (e) {
+            // Speicher gesperrt oder voll: der Merker dieser Seite gilt
         }
     }
 
-    /**
-     * Poll for notifications
-     */
     async function poll() {
+        if (laeuft) return;
+        laeuft = true;
+        // Bleibt eine Antwort aus, endet der Abruf nach der Frist; sonst stünden alle weiteren still
+        const abbruch = new AbortController();
+        const frist = setTimeout(() => abbruch.abort(), CONFIG.abrufFrist);
+        const gemerkt = standLesen();
+        const since = gemerkt ? `?since=${encodeURIComponent(gemerkt)}` : '';
         try {
-            const response = await fetch(`/work/${orgSlug}/notifications/latest/`);
+            const response = await fetch(`/work/${orgSlug}/notifications/latest/${since}`, { signal: abbruch.signal });
             if (response.ok) {
-                const data = await response.json();
-                handleNotificationUpdate({
-                    type: 'update',
-                    count: data.count,
-                    notifications: data.notifications,
-                });
+                handleNotificationUpdate(await response.json());
             }
         } catch (error) {
             console.error('Notifications: Polling error', error);
+        } finally {
+            clearTimeout(frist);
+            laeuft = false;
         }
     }
 
     /**
-     * Handle notification update from SSE or polling
+     * Was aus einer Antwort einzublenden ist und welcher Stand danach gilt. Die Antwort enthält ungelesene
+     * Benachrichtigungen, die neueste zuerst. `gemerkt` ist der Stand beim Auswerten, nicht beim Absenden: Eingeblendet
+     * wird nur, was danach liegt, und der Stand geht nie zurück. Eine verspätete Antwort (anderer Reiter) zeigt so
+     * nichts doppelt. Beim ersten Besuch in einem Browser wird nichts nachgeholt: Die ungelesenen stehen in der Glocke.
      */
-    function handleNotificationUpdate(data) {
-        const { type, count, notification, notifications } = data;
-
-        // Update badge count
-        updateBadgeCount(count);
-
-        // Show toast for new notifications
-        if (type === 'update' && count > lastCount) {
-            if (notification) {
-                showToast(notification);
-            } else if (notifications && notifications.length > 0) {
-                showToast(notifications[0]);
-            }
+    function auswerten(notifications, gemerkt) {
+        const liste = (Array.isArray(notifications) ? notifications : []).filter(
+            (eintrag) => eintrag && typeof eintrag.created_at === 'string'
+        );
+        const neueste = liste.length ? liste[0].created_at : '';
+        if (gemerkt === undefined) {
+            return { zeigen: [], stand: neueste };
         }
+        const zeigen = gemerkt === '' ? liste : liste.filter((eintrag) => istSpaeter(eintrag.created_at, gemerkt));
+        return { zeigen: zeigen, stand: spaeterer(gemerkt, neueste) };
+    }
 
+    /** Inhalt der Einblendung: eine Benachrichtigung mit Titel und Ziel, mehrere als ein Hinweis auf die Übersicht */
+    function hinweis(zeigen, uebersicht) {
+        if (zeigen.length === 1) {
+            const eine = zeigen[0];
+            const text = eine.message || eine.title || 'Neue Benachrichtigung';
+            return { message: text, titel: eine.message ? (eine.title || '') : '', link: eine.link || uebersicht, type: 'info' };
+        }
+        const anzahl = zeigen.length >= CONFIG.limit ? 'mehrere' : String(zeigen.length);
+        return { message: `Sie haben ${anzahl} neue Benachrichtigungen.`, titel: '', link: uebersicht, type: 'info' };
+    }
+
+    function handleNotificationUpdate(data) {
+        const count = Number(data.count) || 0;
+        updateTitle(count);
         lastCount = count;
 
-        // Dispatch custom event for other components to react
+        const gemerkt = standLesen();
+        const ergebnis = auswerten(data.notifications, gemerkt);
+        if (ergebnis.stand !== gemerkt) {
+            standMerken(ergebnis.stand);
+        }
+        if (ergebnis.zeigen.length) {
+            window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: hinweis(ergebnis.zeigen, `/work/${orgSlug}/notifications/`),
+            }));
+        }
+
         window.dispatchEvent(new CustomEvent('notification:update', {
-            detail: { count, notification, notifications }
+            detail: { count, notifications: data.notifications },
         }));
     }
 
-    /**
-     * Update notification badge count in UI
-     */
-    function updateBadgeCount(count) {
-        // Update all elements with notification count
-        const badges = document.querySelectorAll('[data-notification-count]');
-        badges.forEach(badge => {
-            badge.textContent = count > 99 ? '99+' : count;
-            badge.style.display = count > 0 ? '' : 'none';
-        });
-
-        // Update title if there are unread notifications
-        if (count > 0 && !document.title.startsWith('(')) {
-            document.title = `(${count}) ${document.title}`;
-        } else if (count === 0 && document.title.startsWith('(')) {
-            document.title = document.title.replace(/^\(\d+\)\s*/, '');
-        }
+    /** Zahl der ungelesenen Benachrichtigungen vor dem Seitentitel, etwa „(3) Aufgaben“ */
+    function updateTitle(count) {
+        const ohne = document.title.replace(/^\(\d+\+?\)\s*/, '');
+        document.title = count > 0 ? `(${count > 99 ? '99+' : count}) ${ohne}` : ohne;
     }
 
-    /**
-     * Validate icon name against allowlist to prevent XSS
-     */
-    function getSafeIconName(icon) {
-        // Allowlist of valid Lucide icon names used in notifications
-        const allowedIcons = [
-            'bell', 'check', 'info', 'alert-circle', 'alert-triangle',
-            'message-circle', 'mail', 'calendar', 'file-text', 'users',
-            'user-plus', 'settings', 'star', 'heart', 'thumbs-up',
-            'clock', 'check-circle', 'x-circle', 'plus', 'minus'
-        ];
-        return allowedIcons.includes(icon) ? icon : 'bell';
-    }
-
-    /**
-     * Show toast notification
-     * SECURITY: Uses DOM API instead of innerHTML to prevent XSS
-     */
-    function showToast(notification) {
-        // Check if toast container exists, create if not
-        let container = document.getElementById('notification-toast-container');
-        if (!container) {
-            container = document.createElement('div');
-            container.id = 'notification-toast-container';
-            container.className = 'fixed top-4 right-4 z-50 space-y-2';
-            document.body.appendChild(container);
-        }
-
-        // Create toast element using DOM API (secure, no innerHTML)
-        const toast = document.createElement('div');
-        toast.className = 'notification-toast bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4 max-w-sm transform transition-all duration-300 translate-x-full opacity-0';
-
-        // Build toast structure with DOM API
-        const flexContainer = document.createElement('div');
-        flexContainer.className = 'flex items-start gap-3';
-
-        // Icon container
-        const iconContainer = document.createElement('div');
-        iconContainer.className = 'flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center';
-        const icon = document.createElement('i');
-        icon.setAttribute('data-lucide', getSafeIconName(notification.icon));
-        icon.className = 'w-4 h-4 text-primary-600 dark:text-primary-400';
-        iconContainer.appendChild(icon);
-
-        // Content container
-        const contentContainer = document.createElement('div');
-        contentContainer.className = 'flex-1 min-w-0';
-
-        const titleEl = document.createElement('p');
-        titleEl.className = 'text-sm font-medium text-gray-900 dark:text-white';
-        titleEl.textContent = notification.title || '';  // textContent is safe
-
-        const messageEl = document.createElement('p');
-        messageEl.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2';
-        messageEl.textContent = notification.message || '';  // textContent is safe
-
-        contentContainer.appendChild(titleEl);
-        contentContainer.appendChild(messageEl);
-
-        // Close button
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        // Name für Bildschirmleser: der Knopf zeigt nur ein Symbol (axe button-name)
-        closeBtn.setAttribute('aria-label', 'Hinweis schließen');
-        closeBtn.className = 'flex-shrink-0 text-gray-400 hover:text-gray-500';
-        closeBtn.addEventListener('click', () => toast.remove());
-        const closeIcon = document.createElement('i');
-        closeIcon.setAttribute('data-lucide', 'x');
-        closeIcon.className = 'w-4 h-4';
-        closeBtn.appendChild(closeIcon);
-
-        // Assemble
-        flexContainer.appendChild(iconContainer);
-        flexContainer.appendChild(contentContainer);
-        flexContainer.appendChild(closeBtn);
-        toast.appendChild(flexContainer);
-
-        // Add click handler for the toast body
-        // SECURITY: Only allow same-origin redirects to prevent Open Redirect attacks
-        if (notification.link && isSafeUrl(notification.link)) {
-            toast.style.cursor = 'pointer';
-            toast.addEventListener('click', (e) => {
-                if (!e.target.closest('button')) {
-                    window.location.href = notification.link;
-                }
-            });
-        }
-
-        container.appendChild(toast);
-
-        // Trigger Lucide icon replacement
-        if (window.lucide) {
-            window.lucide.createIcons({ icons: window.lucide.icons, node: toast });
-        }
-
-        // Animate in
-        requestAnimationFrame(() => {
-            toast.classList.remove('translate-x-full', 'opacity-0');
-        });
-
-        // Auto-remove after duration
-        setTimeout(() => {
-            toast.classList.add('translate-x-full', 'opacity-0');
-            setTimeout(() => toast.remove(), 300);
-        }, CONFIG.toastDuration);
-    }
-
-    /**
-     * Handle visibility change
-     */
     function handleVisibilityChange() {
-        if (document.visibilityState === 'visible') {
-            // Reconnect SSE or poll immediately when page becomes visible
-            if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-                connectSSE();
-            } else if (!eventSource && pollingInterval) {
-                poll();
-            }
+        if (document.visibilityState === 'visible' && pollingInterval) {
+            poll();
         }
     }
 
-    /**
-     * Check if URL is safe for redirect (same-origin only)
-     * Prevents Open Redirect attacks from malicious notification data
-     */
-    function isSafeUrl(url) {
-        if (!url) return false;
-
-        // Allow relative URLs (starting with /)
-        if (url.startsWith('/') && !url.startsWith('//')) {
-            return true;
-        }
-
-        // For absolute URLs, check if same origin
-        try {
-            const parsed = new URL(url, window.location.origin);
-            return parsed.origin === window.location.origin;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    /**
-     * Public API
-     */
     window.MandariNotifications = {
         init: init,
         poll: poll,
-        reconnect: connectSSE,
         getCount: () => lastCount,
+        auswerten: auswerten,
+        hinweis: hinweis,
     };
 
-    // Auto-initialize when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
