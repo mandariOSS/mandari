@@ -90,8 +90,10 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 #: 7: Sitzungen mit geprüften Angaben: Absage aus dem Namen (``cancelled``, ``mandari:cancelledDerived``,
 #: ``mandari:cancelledNote``, Name ohne Vermerk), ``end`` nur nach dem Beginn; ``mandari:organizationNotPublished``
 #: für Gremien, die die Quelle nennt, aber nicht ausgibt; ``mandari:freshness`` am Body, ``equivalent`` ohne leere
-#: Einträge, Issue #1441)
-VERSION: Final = 7
+#: Einträge, Issue #1441;
+#: 8: der Body nennt die externen Listen ``membership``, ``agendaItem``, ``consultation``, ``file`` und
+#: ``legislativeTermList``, Issue #1441)
+VERSION: Final = 8
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
 #: Der Änderungsfeed nennt danach auch das einbettende Objekt (``hub.api.changes``, Issue #1229); ein Test prüft die
@@ -671,6 +673,12 @@ class BestandMapping:
                 "meeting": self.uris.list(body.id, "meetings"),
                 "paper": self.uris.list(body.id, "papers"),
                 "locationList": self.uris.list(body.id, "locations"),
+                # Externe Listen der Objekte, die sonst eingebettet in ihrem Träger stehen (OParl 1.1, Issue #1441)
+                "membership": self.uris.list(body.id, "memberships"),
+                "agendaItem": self.uris.list(body.id, "agendaitems"),
+                "consultation": self.uris.list(body.id, "consultations"),
+                "file": self.uris.list(body.id, "files"),
+                "legislativeTermList": self.uris.list(body.id, "legislativeterms"),
                 "web": self.uris.web(body_page(body)),
                 **_timestamps(body),
                 "mandari:originalId": body.external_id,

@@ -59,6 +59,15 @@ from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben, sitzungsna
         ("Sitzung entfällt!", None, "Sitzung entfällt"),
         # Vermerk erst hinter dem Strich
         ("Seniorenvertretung | abgesagt, siehe Mail", "Seniorenvertretung", "abgesagt"),
+        # „nicht öffentlich“ im Namen ist keine Verneinung der Absage
+        (
+            "öffentliche/nicht öffentliche Sitzung des Sportausschusses ENTFÄLLT",
+            "öffentliche/nicht öffentliche Sitzung des Sportausschusses",
+            "ENTFÄLLT",
+        ),
+        ("ENTFÄLLT nicht öffentliche Sitzung des Rates", "nicht öffentliche Sitzung des Rates", "ENTFÄLLT"),
+        ("Entfällt: nichtöffentliche Sitzung des Rates", "nichtöffentliche Sitzung des Rates", "Entfällt"),
+        ("Rat - Sitzung entfällt, nicht verschoben", "Rat", "Sitzung entfällt, nicht verschoben"),
     ],
 )
 def test_absage_im_namen(roh: str, name: str | None, vermerk: str) -> None:
@@ -78,6 +87,13 @@ def test_absage_im_namen(roh: str, name: str | None, vermerk: str) -> None:
         "Arbeitskreis Entfallende Buslinien",
         "Rat | Sondersitzung",
         "Ausfallbürgschaften",
+        # Verneinung direkt am Absagewort: Die Sitzung findet statt
+        "Rat – Sitzung entfällt nicht",
+        "Rat - Sitzung ENTFÄLLT NICHT!",
+        "Bauausschuss (nicht abgesagt)",
+        "Hauptausschuss: Sitzung wurde nicht abgesagt",
+        "Schulausschuss  ist  nicht\tabgesagt",
+        "Sportausschuss, fällt nicht aus",
         "",
     ],
 )

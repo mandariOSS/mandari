@@ -77,6 +77,7 @@ from src.storage.database import (
     slice_filter_ignored_of,
     slow_lists_of,
     start_foreign_rejections,
+    start_unresolved_references,
     timed_lists_of,
 )
 from src.storage.events import start_correlation
@@ -553,6 +554,9 @@ class SyncResult:
     # Abgewiesene Kennungen anderer Quellen je Art über alle Kommunen (Upsert, Löschung, Verweis), im Sync-Log unter
     # ``foreign`` (``start_foreign_rejections``)
     foreign: Counter[str] = field(default_factory=Counter)
+    # Verweise, die sich im Bestand nicht auflösen ließen, je Art über alle Kommunen (Issue #1441), im Sync-Log unter
+    # ``unresolved`` (``start_unresolved_references``)
+    unresolved: Counter[str] = field(default_factory=Counter)
     # Lief der Abgleich als Vollabgleich? Außerhalb des Zeitfensters der Quelle wird aus einem angeforderten
     # Vollabgleich ein inkrementeller (``_full_sync_plan``); der Daemon protokolliert, was tatsächlich lief
     full: bool = False
@@ -1091,6 +1095,7 @@ class SyncOrchestrator:
                     result.errors.extend(body_result.get("errors", []))
                     result.unstored.update(body_result.get("unstored") or {})
                     result.foreign.update(body_result.get("foreign") or {})
+                    result.unresolved.update(body_result.get("unresolved") or {})
                     merge_slice_details(result.slice_details, body_result)
 
                 # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556), der
@@ -1405,6 +1410,8 @@ class SyncOrchestrator:
         start_correlation()
         # Kennungen anderer Quellen, die der Speicher in diesem Abgleich abweist (Sync-Log ``foreign``)
         foreign = start_foreign_rejections()
+        # Verweise, die sich in diesem Abgleich nicht auflösen lassen (Sync-Log ``unresolved``, Issue #1441)
+        unresolved = start_unresolved_references()
 
         # Process and store body; eine Kommune einer anderen Quelle bricht hier ab (ForeignObjectError)
         processed_body = self.processor.process_body(body_data, body_external_id)
@@ -1638,6 +1645,10 @@ class SyncOrchestrator:
             await self._settle_missing_lists(list_check, stats)
         if body_slices is not None:
             await self._settle_slices(body_slices, stats, full)
+        if unresolved:
+            stats["unresolved"] = dict(sorted(unresolved.items()))
+            summary = ", ".join(f"{name}: {count}" for name, count in sorted(unresolved.items()))
+            console.print(f"[dim]  Verweise nicht auflösbar ({summary})[/dim]")
         if foreign:
             stats["foreign"] = dict(sorted(foreign.items()))
             summary = ", ".join(f"{name}: {count}" for name, count in sorted(foreign.items()))
@@ -2987,6 +2998,7 @@ class SyncOrchestrator:
                 **self._finding_details(result),
                 **({"unstored": dict(sorted(result.unstored.items()))} if result.unstored else {}),
                 **({"foreign": dict(sorted(result.foreign.items()))} if result.foreign else {}),
+                **({"unresolved": dict(sorted(result.unresolved.items()))} if result.unresolved else {}),
                 **result.slice_details,
             }
 
