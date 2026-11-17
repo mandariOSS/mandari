@@ -11,9 +11,18 @@ Kontext: task, form, organization, membership, shared_members, activities
      class="flex-1 flex flex-col overflow-hidden">
 
     {# autosave-erneut: erneutes Senden nach einem Fehler (frontend/js/htmx-setup.ts) #}
+    {# Auslöser je Feld: „from:find“ hört nur auf das erste passende Element. Mehrere Felder einer Art (Auswahlfelder, Sichtbarkeit, weitere Zuständige) brauchen deshalb je einen Eintrag bzw. eine Hülle mit data-autosave-feld, an der ihr change ankommt #}
     <form id="task-update-form"
           hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
-          hx-trigger="change from:find select, change from:find input[type=radio], change from:find input[name=weitere_zustaendige], focusout from:find input[type=text] changed delay:300ms, focusout from:find input[type=date] changed delay:300ms, focusout from:find textarea changed delay:300ms, autosave-erneut"
+          hx-trigger="change from:find select[name=status],
+                      change from:find select[name=priority],
+                      change from:find select[name=assigned_to],
+                      change from:find [data-autosave-feld=sichtbarkeit],
+                      change from:find [data-autosave-feld=weitere-zustaendige],
+                      focusout from:find input[name=title] changed delay:300ms,
+                      focusout from:find input[type=date] changed delay:300ms,
+                      focusout from:find textarea changed delay:300ms,
+                      autosave-erneut"
           hx-swap="none"
           hx-indicator=".autosave-indicator"
           data-autosave="task"
@@ -104,7 +113,7 @@ Kontext: task, form, organization, membership, shared_members, activities
                     </span>
                     <div class="flex-1 min-w-0">
                         <input type="hidden" name="weitere_zustaendige_gesendet" value="1">
-                        <ul class="max-h-32 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 pr-1">
+                        <ul class="max-h-32 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 pr-1" data-autosave-feld="weitere-zustaendige">
                             {% for wahl in form.weitere_zustaendige %}
                             <li class="min-w-0"><label for="{{ wahl.id_for_label }}" class="flex items-center gap-1.5 min-w-0 text-xs text-gray-900 dark:text-white cursor-pointer">{{ wahl.tag }}<span class="truncate">{{ wahl.choice_label }}</span></label></li>
                             {% endfor %}
@@ -124,7 +133,7 @@ Kontext: task, form, organization, membership, shared_members, activities
                         Sichtbarkeit
                     </span>
                     <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2.5">
+                        <div class="flex items-center gap-2.5" data-autosave-feld="sichtbarkeit">
                             {% for radio in form.visibility %}
                             <label class="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 cursor-pointer hover:text-gray-900 dark:hover:text-gray-200 transition-colors">
                                 {{ radio.tag }}

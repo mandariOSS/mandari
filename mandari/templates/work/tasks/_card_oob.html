@@ -1,1 +1,2 @@
-{% load i18n %}<div id="task-card-{{ task.id }}" hx-swap-oob="outerHTML:#task-card-{{ task.id }}">{% include "work/tasks/_card.html" %}</div>
+{# OOB-Austausch einer Karte im bisherigen Board: Die Karte selbst trägt hx-swap-oob. Eine Hülle mit derselben Kennung setzte htmx 2 mit ein, die Karte stand danach doppelt verschachtelt im Board. Kontext: task, organization #}
+{% load i18n %}{% include "work/tasks/_card.html" with oob=True %}
