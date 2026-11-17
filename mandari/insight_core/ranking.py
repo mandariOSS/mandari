@@ -29,7 +29,7 @@ Inactive penalty:
 
 from datetime import timedelta
 
-from django.db.models import Case, IntegerField, Max, Value, When
+from django.db.models import Case, IntegerField, OuterRef, Subquery, Value, When
 from django.utils import timezone
 
 # Penalty for organizations without recent activity (no meeting in 12 months)
@@ -129,6 +129,23 @@ def get_ranking_annotation():
     return Case(*whens, default=Value(300), output_field=IntegerField())
 
 
+def last_meeting_subquery() -> Subquery:
+    """
+    Beginn der letzten Sitzung eines Gremiums (``None`` ohne Sitzung), wie ``Max("meetings__start")``.
+
+    Als Unterabfrage statt als Aggregat über den Join mit den Sitzungen (Issue #1415): Das Aggregat gruppierte die
+    Liste über alle Sitzungen, sodass weitere Unterabfragen der Liste (Mitglieder) je Sitzung statt je Gremium liefen;
+    die Gremienliste von Köln brauchte so 7 s statt 0,2 s.
+    """
+    from .models import OParlMeeting
+
+    return Subquery(
+        OParlMeeting.objects.filter(organizations=OuterRef("pk"), start__isnull=False)
+        .order_by("-start")
+        .values("start")[:1]
+    )
+
+
 def get_inactivity_penalty_annotation():
     """
     Create a Django Case/When annotation for inactivity penalty.
@@ -138,7 +155,7 @@ def get_inactivity_penalty_annotation():
 
     Usage:
         organizations.annotate(
-            last_meeting_date=Max('meetings__start'),
+            last_meeting_date=last_meeting_subquery(),
             inactivity_penalty=get_inactivity_penalty_annotation()
         )
 
@@ -186,7 +203,7 @@ def sort_organizations_by_ranking(queryset, include_activity=True):
         return (
             queryset.annotate(
                 ranking_priority=get_ranking_annotation(),
-                last_meeting_date=Max("meetings__start"),
+                last_meeting_date=last_meeting_subquery(),
             )
             .annotate(inactivity_penalty=get_inactivity_penalty_annotation())
             .annotate(final_priority=F("ranking_priority") + F("inactivity_penalty"))
