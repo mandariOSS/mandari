@@ -169,6 +169,12 @@ export const toastManager = defineComponent(() => {
       }
       document.body.addEventListener('htmx:afterSettle', nachfuehren)
       window.addEventListener('resize', nachfuehren)
+      // Erst nach diesem Durchlauf hört der Container auf „show-toast“. Hinweise auf neue Benachrichtigungen, die
+      // schon vorher fertig waren, warten auf diese Meldung (static/js/notifications.js).
+      this.$nextTick(() => {
+        document.documentElement.dataset.meldungen = 'bereit'
+        window.dispatchEvent(new Event('meldungen-bereit'))
+      })
     },
 
     ueberLeistenLegen() {
