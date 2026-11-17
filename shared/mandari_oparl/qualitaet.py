@@ -21,11 +21,16 @@ from datetime import datetime
 from typing import Any
 
 _BUCHSTABE = "A-Za-zÄÖÜäöüß"
+#: „entfällt nicht“: Verneinung hinter dem Wort. „ENTFÄLLT nicht öffentliche Sitzung“ ist keine, dort gehört „nicht“
+#: zum Namen.
+_NICHT_DANACH = rf"(?!\s+nicht(?![{_BUCHSTABE}])(?!\s*-?\s*(?:ö|oe)ffentlich))"
 #: Absage im Namen einer Sitzung: „abgesagt“, „entfällt“, „fällt aus“ als ganze Wörter, in jeder Schreibweise.
-#: „abgesagte Veranstaltungen“ ist keine Absage der Sitzung.
+#: „abgesagte Veranstaltungen“ ist keine Absage der Sitzung, ebenso wenig die Verneinung direkt am Wort („nicht
+#: abgesagt“, „entfällt nicht“): Eine Sitzung, die stattfindet, als abgesagt zu zeigen, wäre der größere Fehler.
+#: Gesucht wird im Namen mit einfachen Leerzeichen (``sitzungsname``).
 _ABSAGE_RE = re.compile(
-    rf"(?<![{_BUCHSTABE}])(?:(?:Sitzung|Termin)\s+)?(?:(?:wurde|wird|ist)\s+)?"
-    rf"(?:abgesagt|entf(?:ä|ae)llt|f(?:ä|ae)llt\s+aus)(?![{_BUCHSTABE}])",
+    rf"(?<![{_BUCHSTABE}])(?:(?:Sitzung|Termin)\s+)?(?:(?:wurde|wird|ist)\s+)?(?<!nicht )"
+    rf"(?:abgesagt|entf(?:ä|ae)llt{_NICHT_DANACH}|f(?:ä|ae)llt\s+aus)(?![{_BUCHSTABE}])",
     re.IGNORECASE,
 )
 #: Zierzeichen, mit denen Quellen den Vermerk absetzen („ - “, „***“, „+++“, Klammern)

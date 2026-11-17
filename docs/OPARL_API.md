@@ -597,6 +597,7 @@ bleibt über `mandari:originalId` nachvollziehbar.
   `mandari:cancelledDerived` kennzeichnet die Ableitung, und `mandari:cancelledNote` trägt den Vermerk im Wortlaut.
   `name` steht ohne den Vermerk da. Hat die Sitzung laut `meetingState` stattgefunden („durchgeführt“,
   „abgeschlossen“), gilt das Wort im Namen nicht als Absage.
+  Ebenso wenig gilt eine Verneinung direkt am Wort („nicht abgesagt“, „entfällt nicht“).
 - **Verwaltungsvermerke.** Hinter einem senkrechten Strich führen Quellen interne Vermerke zur Absage. Dieser Teil
   steht weder in `name` noch in `mandari:cancelledNote`.
 - **Ende vor dem Beginn.** Viele Quellen liefern als `end` das Datum ohne Uhrzeit; als Zeitpunkt gelesen liegt es
