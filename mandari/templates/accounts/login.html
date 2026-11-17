@@ -1,7 +1,11 @@
 {% extends "accounts/base_auth.html" %}
-{% load demo_tags %}
+{% load demo_tags seitenkopf %}
 
-{% block title %}Anmelden{% endblock %}
+{# Titel und Beschreibung für die Trefferliste: „Anmelden | mandari“ und „mandari - Anmeldung“ meldeten die Bing Webmaster Tools als zu kurz (Issue #939) #}
+{% block title %}Anmelden bei Work und Session{% endblock %}
+{% block meta_description %}Anmeldung bei mandari: Work für Fraktionen und politische Organisationen, Session für den Sitzungsdienst der Verwaltung, mit E-Mail-Adresse und Passwort.{% endblock %}
+{% block robots %}index, follow{% endblock %}
+{% block canonical %}<link rel="canonical" href="{% kanonische_adresse 'accounts:login' %}">{% endblock %}
 
 {% block header_title %}{% demo_anmeldung as demo %}{% if demo %}mandari ausprobieren{% else %}Willkommen zurück{% endif %}{% endblock %}
 {% block header_subtitle %}{% demo_anmeldung as demo %}{% if demo %}Demo-Umgebung der fiktiven Stadt Musterstadt{% else %}Melde dich an, um fortzufahren{% endif %}{% endblock %}
