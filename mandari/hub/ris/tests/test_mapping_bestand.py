@@ -292,6 +292,51 @@ def test_sitzung_bettet_ort_einladung_und_tagesordnung_ein(welt: dict[str, Any])
     assert sitzung["organization"] == [f"{API}/organization/{welt['organization'].pk}"]
 
 
+def test_einladung_die_an_einer_anderen_sitzung_haengt_fehlt_nicht(welt: dict[str, Any]) -> None:
+    """
+    Issue #1441: Eine Datei hat nur eine Sitzung. Nennen zwei Sitzungen dieselbe Einladung (gemeinsame Sitzung),
+    fehlte sie in der Ausgabe der zweiten; ebenso eine Einladung ohne zugeordnete Sitzung.
+    """
+    abbildung = _abbildung()
+    einladung = welt["einladung"]
+    zweite = OParlMeeting.objects.create(
+        external_id=f"{RIS}/meeting/2",
+        body=welt["body"],
+        name="Gemeinsame Sitzung",
+        start=ZEIT,
+        raw_json={"invitation": {"id": einladung.external_id}, "resultsProtocol": f"{RIS}/file/9"},
+    )
+    ohne_sitzung = OParlFile.objects.create(external_id=f"{RIS}/file/9", body=welt["body"], name="Niederschrift")
+    cache.clear()
+    sitzung = _json(f"/oparl/v1/meeting/{zweite.pk}")
+    assert sitzung["invitation"] == abbildung.file(einladung)
+    assert sitzung["resultsProtocol"] == abbildung.file(ohne_sitzung)
+    assert "auxiliaryFile" not in sitzung
+    # Die erste Sitzung behält ihre Einladung, auch in der Liste
+    liste = _json(f"/oparl/v1/body/{welt['body'].pk}/meetings")["data"]
+    assert [bool(s.get("invitation")) for s in liste] == [True, True]
+
+    # Gelöschte Dateien und Dateien anderer Kommunen gelten nicht
+    andere_quelle = OParlSource.objects.create(name="Nachbarstadt", url="https://ris.example.net/system")
+    fremd = OParlBody.objects.create(
+        source=andere_quelle, external_id="https://ris.example.net/body/1", name="Nachbarstadt"
+    )
+    OParlFile.objects.filter(pk=ohne_sitzung.pk).update(deleted=True)
+    OParlFile.objects.create(external_id=f"{RIS}/file/10", body=fremd, name="Fremde Einladung")
+    OParlMeeting.objects.filter(pk=zweite.pk).update(
+        raw_json={"invitation": f"{RIS}/file/10", "resultsProtocol": f"{RIS}/file/9"}
+    )
+    cache.clear()
+    sitzung = _json(f"/oparl/v1/meeting/{zweite.pk}")
+    assert "invitation" not in sitzung and "resultsProtocol" not in sitzung
+
+
+def test_sitzungen_ohne_fehlende_dateien_kosten_keine_weitere_abfrage(welt: dict[str, Any]) -> None:
+    """Die Dateien der Sitzung sind vorgeladen; nur wenn eine genannte Datei darunter fehlt, wird nachgeladen."""
+    ohne = RefContext.for_meetings(bestand.prepare_meetings(OParlMeeting.objects.filter(pk=welt["meeting"].pk)))
+    assert ohne.file_by_ext == {}
+
+
 def _sitzung_mit(welt: dict[str, Any], **werte: Any) -> dict[str, Any]:
     OParlMeeting.objects.filter(pk=welt["meeting"].pk).update(**werte)
     cache.clear()
