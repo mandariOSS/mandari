@@ -26,7 +26,7 @@ from insight_core.services import neuigkeiten as portal
 logger = logging.getLogger(__name__)
 
 DATEI = Path(__file__).resolve().parent / "neuigkeiten.toml"
-#: Schlüssel in ``User.settings``: Kennung der neuesten Neuigkeit, die die Person gesehen hat (:func:`stand`)
+#: Schlüssel in ``User.settings``: Stand der Neuigkeiten, den die Person gesehen hat (:func:`stand`)
 GESEHEN_SCHLUESSEL = "work_neuigkeiten_gesehen"
 
 
@@ -47,14 +47,17 @@ def gruppen() -> list[portal.Gruppe]:
 
 def stand() -> str:
     """
-    Kennung der neuesten Neuigkeit (Tag und Titel); leer ohne Einträge.
+    Stand der Neuigkeiten: der jüngste Tag und die Zahl seiner Einträge; leer ohne Einträge.
 
-    Der Tag allein genügte nicht: Kommt am selben Tag ein weiterer Eintrag dazu, soll der Punkt wieder erscheinen.
+    Der Tag allein genügte nicht: Kommt am selben Tag ein weiterer Eintrag dazu, soll der Punkt wieder erscheinen,
+    gleich an welcher Stelle der Datei er steht. Ein berichtigter Tippfehler oder das Entfernen alter Einträge ändert
+    den Stand nicht.
     """
     eintraege = neuigkeiten()
     if not eintraege:
         return ""
-    return f"{eintraege[0].datum.isoformat()}|{eintraege[0].titel}"
+    juengster = eintraege[0].datum
+    return f"{juengster.isoformat()}|{sum(1 for eintrag in eintraege if eintrag.datum == juengster)}"
 
 
 def _gesehen(user: Any) -> Any:
@@ -71,7 +74,7 @@ def ungesehen(user: Any) -> bool:
 
 
 def als_gesehen_merken(user: Any) -> None:
-    """Die neueste Neuigkeit als gesehen merken; schreibt nur, wenn sich der Stand ändert."""
+    """Den jetzigen Stand als gesehen merken; schreibt nur, wenn er sich ändert."""
     aktuell = stand()
     if not aktuell or _gesehen(user) == aktuell:
         return

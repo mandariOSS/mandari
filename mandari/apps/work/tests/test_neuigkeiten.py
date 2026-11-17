@@ -10,6 +10,7 @@ Er steht, bis die Person das Neueste gesehen hat, und kommt mit einem neuen Eint
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any, cast
@@ -97,12 +98,33 @@ def test_gruppen_eine_je_version() -> None:
     assert len(versionen) == len(set(versionen))
 
 
-def test_stand_folgt_dem_obersten_eintrag(monkeypatch: pytest.MonkeyPatch) -> None:
-    erster = neuigkeiten.neuigkeiten()[0]
-    assert neuigkeiten.stand() == f"{erster.datum.isoformat()}|{erster.titel}"
+def test_stand_ist_juengster_tag_und_zahl_seiner_eintraege(monkeypatch: pytest.MonkeyPatch) -> None:
+    eintraege = neuigkeiten.neuigkeiten()
+    juengster = eintraege[0].datum
+    erwartet = f"{juengster.isoformat()}|{sum(1 for e in eintraege if e.datum == juengster)}"
+    assert neuigkeiten.stand() == erwartet
+
+    # Ein berichtigter Titel ändert den Stand nicht
+    berichtigt = (replace(eintraege[0], titel="Berichtigt."), *eintraege[1:])
+    monkeypatch.setattr(neuigkeiten, "neuigkeiten", lambda: berichtigt)
+    assert neuigkeiten.stand() == erwartet
+
+    # Ein Eintrag mehr am selben Tag schon, gleich an welcher Stelle er steht
+    weiterer = replace(eintraege[0], titel="Noch etwas Neues.")
+    monkeypatch.setattr(neuigkeiten, "neuigkeiten", lambda: (*berichtigt, weiterer))
+    assert neuigkeiten.stand() != erwartet
 
     monkeypatch.setattr(neuigkeiten, "neuigkeiten", lambda: ())
     assert neuigkeiten.stand() == ""
+
+
+def test_falscher_aufbau_ist_ein_fehler_der_datei(tmp_path: Path) -> None:
+    """Gültiges TOML, aber kein Eintrag mit Feldern: Der Leser meldet es wie fehlende Pflichtfelder."""
+    datei = tmp_path / "neu.toml"
+    for inhalt in ('eintrag = ["nur Text"]\n', 'eintrag = "kein Eintrag"\n', "[eintrag]\ntitel = 1\n"):
+        datei.write_text(inhalt, encoding="utf-8")
+        with pytest.raises(ValueError):
+            portal.lies(datei)
 
 
 # ---------------------------------------------------------------------------
@@ -138,18 +160,20 @@ def test_kaputte_datei_bricht_keine_seite(
     org: Any, person: Any, client_for: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     datei = tmp_path / "kaputt.toml"
-    datei.write_text("[[eintrag]\n", encoding="utf-8")
     monkeypatch.setattr(neuigkeiten, "DATEI", datei)
-    neuigkeiten.neuigkeiten.cache_clear()
-    try:
-        kunde = client_for(person.user)
-        html = kunde.get(_seite(org)).content.decode()
-        start = kunde.get(_start(org))
-    finally:
+    kunde = client_for(person.user)
+    # Kein TOML, und gültiges TOML mit falschem Aufbau: Beides lässt die Liste leer
+    for inhalt in ("[[eintrag]\n", 'eintrag = ["nur Text"]\n'):
+        datei.write_text(inhalt, encoding="utf-8")
         neuigkeiten.neuigkeiten.cache_clear()
+        try:
+            html = kunde.get(_seite(org)).content.decode()
+            start = kunde.get(_start(org))
+        finally:
+            neuigkeiten.neuigkeiten.cache_clear()
 
-    assert "Gerade gibt es hier nichts zu lesen." in html
-    assert start.status_code == 200 and not _hat_punkt(start.content.decode())
+        assert "Gerade gibt es hier nichts zu lesen." in html
+        assert start.status_code == 200 and not _hat_punkt(start.content.decode())
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +220,8 @@ def test_punkt_kommt_mit_einem_neuen_eintrag_wieder(
 
     bisher = neuigkeiten.neuigkeiten()
     neu = portal.Neuigkeit(datum=bisher[0].datum, version=bisher[0].version, titel="Noch etwas Neues.", text="Text.")
-    monkeypatch.setattr(neuigkeiten, "neuigkeiten", lambda: (neu, *bisher))
+    # Am Ende der Datei, nicht oben: Der Punkt hängt nicht an der Stelle des Eintrags
+    monkeypatch.setattr(neuigkeiten, "neuigkeiten", lambda: (*bisher, neu))
 
     assert _hat_punkt(kunde.get(_start(org)).content.decode()), "auch ein weiterer Eintrag am selben Tag zählt"
 
