@@ -17,6 +17,7 @@ from django.views.generic import TemplateView
 from apps.common.hilfe import HILFETHEMEN, alte_wissensdatenbank_url
 from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
+from apps.work import neuigkeiten
 from apps.work.files import attachment_response
 from apps.work.notifications.services import NotificationHub
 from apps.work.rahmen import NeueVorlageMixin, fragment_neu
@@ -67,6 +68,26 @@ class SupportListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         # Anleitungen in der Dokumentation (ersetzt die frühere Wissensdatenbank, Issue #589)
         context["hilfethemen"] = HILFETHEMEN
 
+        return context
+
+
+class NeuigkeitenView(NeueVorlageMixin, WorkViewMixin, TemplateView):
+    """
+    „Was ist neu?“: die Neuerungen in Work je Version (Issue #1463), für alle Mitglieder ohne besonderes Recht.
+
+    Mit dem Öffnen gilt das Neueste als gesehen: Der Punkt neben der Version in der Seitenleiste entfällt, schon auf
+    dieser Seite (der Kontextprozessor liest den Stand erst beim Zeichnen).
+    """
+
+    template_name = "work/neuigkeiten/seite.html"
+    neue_vorlage = "work/neuigkeiten/neu/seite.html"
+    permission_required = None
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "neuigkeiten"
+        context["gruppen"] = neuigkeiten.gruppen()
+        neuigkeiten.als_gesehen_merken(self.request.user)
         return context
 
 

@@ -205,5 +205,11 @@
                 </div>
             </div>
         </div>
+        {% if mandari_version and not membership.is_guest %}
+        <a href="{% url 'work:neuigkeiten' org_slug=organization.slug %}" data-testid="work-version"
+           class="user-info-details mt-3 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            <span class="truncate">Version {{ mandari_version }}: Was ist neu?</span>{% include "work/neuigkeiten/_punkt.html" %}
+        </a>
+        {% endif %}
     </div>
 </aside>
