@@ -66,7 +66,7 @@ auf „Mehr“ zurück. Bausteine wie in Insight (c-rahmen.tab, c-rahmen.blatt-l
         </ul>
         {% if mandari_version and not work_rahmen.ist_gast %}
         <a href="{% url 'work:neuigkeiten' org_slug=organization.slug %}" data-testid="work-version-mobil"
-           class="mx-2 mt-1 flex items-center gap-1.5 min-h-11 px-3 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-band-grau">
+           class="mx-2 mt-1 flex items-center gap-1.5 min-h-12 px-3 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-band-grau">
             <span>Version {{ mandari_version }}: Was ist neu?</span>{% include "work/neuigkeiten/_punkt.html" %}
         </a>
         {% endif %}
