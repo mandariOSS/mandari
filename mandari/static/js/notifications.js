@@ -20,8 +20,10 @@
     let lastCount = 0;
     let orgSlug = null;
     let konto = '';
-    // Stand, falls der Browser nichts speichern lässt; gilt dann nur für diese Seite
+    // Stand dieser Seite; er gilt, wenn der Browser nichts speichern lässt oder das Schreiben scheitert
     let merker;
+    // Ein Abruf zur Zeit: Zwei gleichzeitige Antworten könnten sich überholen
+    let laeuft = false;
 
     function init() {
         const container = document.querySelector('[data-org-slug]');
@@ -56,13 +58,34 @@
      * leer: gemerkt, aber es gab noch keine ungelesene.
      */
     function standLesen() {
+        let gespeichert;
         try {
-            const gemerkt = window.localStorage.getItem(schluessel());
-            if (gemerkt !== null) return gemerkt;
+            const wert = window.localStorage.getItem(schluessel());
+            if (wert !== null) gespeichert = wert;
         } catch (e) {
             // Speicher gesperrt: der Merker dieser Seite gilt
         }
-        return merker;
+        // Der spätere von beiden: Ein anderer Reiter kann weiter sein als diese Seite, und nach einem gescheiterten
+        // Schreiben ist diese Seite weiter als der Speicher
+        return spaeterer(gespeichert, merker);
+    }
+
+    /** Ob Zeitpunkt `a` nach `b` liegt; gleiche Millisekunde entscheidet die Schreibweise (Mikrosekunden) */
+    function istSpaeter(a, b) {
+        const za = Date.parse(a);
+        const zb = Date.parse(b);
+        if (Number.isNaN(za)) return false;
+        if (Number.isNaN(zb)) return true;
+        return za === zb ? a > b : za > zb;
+    }
+
+    /** Der spätere zweier Stände; `undefined` (nie gemerkt) und leer (noch keine Benachrichtigung) zählen als früher */
+    function spaeterer(a, b) {
+        if (a === undefined) return b;
+        if (b === undefined) return a;
+        if (a === '') return b;
+        if (b === '') return a;
+        return istSpaeter(b, a) ? b : a;
     }
 
     function standMerken(stand) {
@@ -75,31 +98,38 @@
     }
 
     async function poll() {
+        if (laeuft) return;
+        laeuft = true;
         const gemerkt = standLesen();
         const since = gemerkt ? `?since=${encodeURIComponent(gemerkt)}` : '';
         try {
             const response = await fetch(`/work/${orgSlug}/notifications/latest/${since}`);
             if (response.ok) {
-                const data = await response.json();
-                handleNotificationUpdate(data, gemerkt);
+                handleNotificationUpdate(await response.json());
             }
         } catch (error) {
             console.error('Notifications: Polling error', error);
+        } finally {
+            laeuft = false;
         }
     }
 
     /**
      * Was aus einer Antwort einzublenden ist und welcher Stand danach gilt. Die Antwort enthält ungelesene
-     * Benachrichtigungen, die neueste zuerst, mit `gemerkt` nur solche nach diesem Zeitpunkt. Beim ersten Besuch in
-     * einem Browser wird nichts nachgeholt: Die ungelesenen stehen in der Glocke.
+     * Benachrichtigungen, die neueste zuerst. `gemerkt` ist der Stand beim Auswerten, nicht beim Absenden: Eingeblendet
+     * wird nur, was danach liegt, und der Stand geht nie zurück. Eine verspätete Antwort (anderer Reiter) zeigt so
+     * nichts doppelt. Beim ersten Besuch in einem Browser wird nichts nachgeholt: Die ungelesenen stehen in der Glocke.
      */
     function auswerten(notifications, gemerkt) {
-        const liste = Array.isArray(notifications) ? notifications : [];
-        const neueste = liste.length && typeof liste[0].created_at === 'string' ? liste[0].created_at : '';
+        const liste = (Array.isArray(notifications) ? notifications : []).filter(
+            (eintrag) => eintrag && typeof eintrag.created_at === 'string'
+        );
+        const neueste = liste.length ? liste[0].created_at : '';
         if (gemerkt === undefined) {
             return { zeigen: [], stand: neueste };
         }
-        return { zeigen: liste, stand: neueste || gemerkt };
+        const zeigen = gemerkt === '' ? liste : liste.filter((eintrag) => istSpaeter(eintrag.created_at, gemerkt));
+        return { zeigen: zeigen, stand: spaeterer(gemerkt, neueste) };
     }
 
     /** Inhalt der Einblendung: eine Benachrichtigung mit Titel und Ziel, mehrere als ein Hinweis auf die Übersicht */
@@ -113,11 +143,12 @@
         return { message: `Sie haben ${anzahl} neue Benachrichtigungen.`, titel: '', link: uebersicht, type: 'info' };
     }
 
-    function handleNotificationUpdate(data, gemerkt) {
+    function handleNotificationUpdate(data) {
         const count = Number(data.count) || 0;
         updateTitle(count);
         lastCount = count;
 
+        const gemerkt = standLesen();
         const ergebnis = auswerten(data.notifications, gemerkt);
         if (ergebnis.stand !== gemerkt) {
             standMerken(ergebnis.stand);
