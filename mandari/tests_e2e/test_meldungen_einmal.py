@@ -69,6 +69,8 @@ def test_benachrichtigung_wird_einmal_eingeblendet(page: Any, live_server: Any, 
 
     # Eine neue Benachrichtigung erscheint mit dem nächsten Abruf: unten rechts, mit Titel, Text und Ziel
     ziel = f"/work/{org.slug}/tasks/"
+    # Erst die Seite verlassen: Ihr regelmäßiger Abruf könnte die neue Benachrichtigung sonst schon dort zeigen
+    page.goto("about:blank")
     _benachrichtigung(admin, "Neue Aufgabe", link=ziel)
     _oeffnen(page, live_server, org, "tasks/")
     hinweis = page.locator(MELDUNGEN).filter(has_text="Neue Aufgabe")
