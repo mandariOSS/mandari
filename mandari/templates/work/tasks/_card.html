@@ -1,5 +1,5 @@
 {% load i18n %}
-<div id="task-card-{{ task.id }}"
+<div id="task-card-{{ task.id }}"{% if oob %} hx-swap-oob="outerHTML"{% endif %}
    @click="$dispatch('open-panel', { id: '{{ task.id }}' })"
    class="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 hover:shadow-md transition-all cursor-pointer task-card border-l-4
    {% if task.priority == 'urgent' %}border-l-red-500 hover:border-l-red-600

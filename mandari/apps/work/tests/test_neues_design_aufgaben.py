@@ -211,7 +211,9 @@ def test_panel_tauscht_die_karte_der_anfragenden_seite(
     assert f'id="task-card-{aufgabe.id}" hx-swap-oob="outerHTML"' in neu and "border-l-4" not in neu
     assert neu.count(f'id="task-card-{aufgabe.id}"') == 1
     bisher = client.post(url, daten, HTTP_HX_REQUEST="true").content.decode()
-    assert f'hx-swap-oob="outerHTML:#task-card-{aufgabe.id}"' in bisher and "border-l-4" in bisher
+    # Im bisherigen Board ebenso: keine Hülle mit derselben Kennung um die Karte
+    assert f'id="task-card-{aufgabe.id}" hx-swap-oob="outerHTML"' in bisher and "border-l-4" in bisher
+    assert bisher.count(f'id="task-card-{aufgabe.id}"') == 1
     # Beide Karten bieten dieselben Aktionen
     alt_karte, neu_karte = funktionen(bisher, url, nur_main=False), funktionen(neu, url, nur_main=False)
     assert alt_karte.aufrufe <= neu_karte.aufrufe and alt_karte.ids <= neu_karte.ids
