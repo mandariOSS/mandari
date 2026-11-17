@@ -114,6 +114,25 @@ def _weitere_bereinigt(task: Task, personen: Iterable[Membership]) -> list[Membe
     return list(bereinigt.values())
 
 
+def _weitere_nach_stand(task: Task, auswahl: Iterable[Membership], stand: set[str]) -> list[Membership]:
+    """
+    Auswahl eines Panels auf den jetzigen Stand der Datenbank anwenden. ``stand`` sind die Kennungen, die das Panel
+    zuletzt als gewählt kannte: Hinzu kommt, wen es neu gewählt hat; heraus fällt, wen es abgewählt hat. Wen es noch
+    nicht kannte (inzwischen von anderen hinzugefügt), bleibt; wen andere inzwischen herausgenommen haben, kommt nicht
+    zurück.
+    """
+    gewaehlt = {str(person.pk): person for person in auswahl}
+    # Frisch gelesen (order_by umgeht einen vorgeladenen Bestand): Der Aufrufer hält die Zeile der Aufgabe gesperrt
+    bleiben = [
+        person
+        for person in task.weitere_zustaendige.order_by("pk")
+        if str(person.pk) in gewaehlt or str(person.pk) not in stand
+    ]
+    vorhanden = {str(person.pk) for person in bleiben}
+    neu = [person for kennung, person in gewaehlt.items() if kennung not in stand and kennung not in vorhanden]
+    return [*bleiben, *neu]
+
+
 def _zuweisung_melden(task: Task, person: Membership, membership: Membership, *, created: bool) -> None:
     """„Aufgabe zugewiesen“ an eine zuständige Person (Datendrehscheibe bzw. wie bisher direkt), nie an sich selbst."""
     uebernommen = ereignisse.melden(ereignisse.ZUGEWIESEN, task, membership, assignee=person.pk, created=created)
@@ -562,6 +581,7 @@ def apply_panel_update(
     old_values: dict[str, Any],
     *,
     weitere_zustaendige: Iterable[Membership] | None = None,
+    weitere_stand: set[str] | None = None,
 ) -> Task:
     """
     Vom Panel-Formular geänderte Aufgabe (``form.save(commit=False)``) speichern.
@@ -569,7 +589,8 @@ def apply_panel_update(
     Gleicht die Erledigt-Flags an den Status an, protokolliert Feldänderungen und
     benachrichtigt Betroffene. ``old_values`` stammt aus :func:`capture_old_values`.
     ``weitere_zustaendige``: die neue Auswahl der weiteren Zuständigen; ``None`` lässt sie, wie sie sind (ein Panel
-    von vor der Funktion sendet das Feld nicht mit).
+    von vor der Funktion sendet das Feld nicht mit). ``weitere_stand``: die Auswahl, die das Panel zuletzt kannte;
+    damit gilt nur der Unterschied (:func:`_weitere_nach_stand`), ohne Angabe ersetzt die Auswahl den Bestand.
 
     Das Bearbeitungsrecht gilt am jetzigen Stand der Datenbank (:func:`_aktueller_stand`), nicht an dem, den der View
     gelesen hat. Geschrieben werden nur die Felder des Formulars und die Erledigung.
@@ -586,7 +607,10 @@ def apply_panel_update(
     reset_shares_on_reshare(task, aktuell.visibility)
     alt = {**old_values, **capture_old_values(aktuell)}
     if weitere_zustaendige is not None:
-        task.weitere_zustaendige.set(_weitere_bereinigt(task, weitere_zustaendige))
+        auswahl = list(weitere_zustaendige)
+        if weitere_stand is not None:
+            auswahl = _weitere_nach_stand(task, auswahl, weitere_stand)
+        task.weitere_zustaendige.set(_weitere_bereinigt(task, auswahl))
     elif task.assigned_to is not None and task.assigned_to.pk in alt["weitere_raw"]:
         # Eine der weiteren Zuständigen ist jetzt die zugewiesene Person: Sie steht nicht doppelt
         task.weitere_zustaendige.remove(task.assigned_to)

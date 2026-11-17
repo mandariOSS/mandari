@@ -11,6 +11,7 @@ die Erinnerung an die Fälligkeit gehen an alle. Für andere ändert sich nichts
 from __future__ import annotations
 
 import json
+import xml.etree.ElementTree as ET
 from datetime import timedelta
 from typing import Any, cast
 
@@ -26,7 +27,7 @@ from apps.work.faction.models import FactionAgendaItem, FactionMeeting
 from apps.work.notifications.models import Notification, NotificationType
 from apps.work.organization.export_service import DsgvoExportService
 from apps.work.tasks import export_service, selectors, services
-from apps.work.tasks.forms import WEITERE_GESENDET, TaskPanelForm
+from apps.work.tasks.forms import WEITERE_GESENDET, WEITERE_STAND, TaskPanelForm
 from apps.work.tasks.models import Task, TaskActivity
 
 pytestmark = pytest.mark.django_db
@@ -302,6 +303,77 @@ def test_panel_leere_auswahl_mit_marke_entfernt_alle(org: Any, anna: Any, ben: A
     assert not Task.objects.get(pk=aufgabe.pk).weitere_zustaendige.exists()
 
 
+# ---------------------------------------------------------------------------
+# Veraltetes Panel: Es gilt nur der Unterschied zu dem Stand, den das Panel kannte
+# ---------------------------------------------------------------------------
+
+
+def _mit_stand(stand: list[Any], auswahl: list[Any]) -> dict[str, Any]:
+    """Felder eines Panels, das ``stand`` als gewählt kannte und jetzt ``auswahl`` zeigt."""
+    return {
+        WEITERE_GESENDET: "1",
+        WEITERE_STAND: ",".join(str(person.pk) for person in stand),
+        "weitere_zustaendige": [str(person.pk) for person in auswahl],
+    }
+
+
+def _weitere(aufgabe: Task) -> set[Any]:
+    return set(aufgabe.weitere_zustaendige.values_list("pk", flat=True))
+
+
+def test_panel_nennt_den_stand_seiner_auswahl(org: Any, anna: Any, ben: Any, cem: Any, client_for: Any) -> None:
+    aufgabe = _aufgabe(org, anna, ben, cem)
+    url = reverse("work:task_panel", kwargs={"org_slug": org.slug, "task_id": aufgabe.pk})
+
+    panel = client_for(anna.user).get(url, HTTP_HX_REQUEST="true").content.decode()
+
+    assert f'id="weitere-zustaendige-stand" name="{WEITERE_STAND}" value="{cem.pk}"' in panel
+
+
+def test_veraltetes_panel_nimmt_niemanden_heraus_den_es_nicht_kannte(
+    org: Any, anna: Any, ben: Any, cem: Any, client_for: Any
+) -> None:
+    """Ben öffnet das Panel, danach fügt Anna Cem hinzu; Ben ändert nur die Priorität."""
+    aufgabe = _aufgabe(org, anna, ben)
+    aufgabe.weitere_zustaendige.add(cem)
+
+    antwort = _panel(client_for(ben.user), org, aufgabe, priority="high", **_mit_stand([], []))
+
+    assert antwort.status_code == 200
+    aufgabe.refresh_from_db()
+    assert aufgabe.priority == "high"
+    assert _weitere(aufgabe) == {cem.pk}
+    assert not TaskActivity.objects.filter(task=aufgabe, details__field="weitere_zustaendige").exists()
+
+
+def test_panel_wendet_nur_den_unterschied_zu_seinem_stand_an(
+    org: Any, anna: Any, ben: Any, cem: Any, dora: Any, client_for: Any
+) -> None:
+    aufgabe = _aufgabe(org, anna, ben, cem)
+    client = client_for(anna.user)
+    # Inzwischen hat jemand anderes Dora hinzugefügt; das Panel kennt nur Cem
+    aufgabe.weitere_zustaendige.add(dora)
+
+    # Cem abgewählt: Cem fällt heraus, Dora bleibt
+    antwort = _panel(client, org, aufgabe, **_mit_stand([cem], []))
+    assert antwort.status_code == 200
+    assert _weitere(aufgabe) == {dora.pk}
+    # Die Antwort zieht den Stand im stehenden Formular nach: die Auswahl, die es jetzt zeigt
+    assert (
+        f'<input type="hidden" id="weitere-zustaendige-stand" name="{WEITERE_STAND}" value="" hx-swap-oob="true">'
+        in antwort.content.decode()
+    )
+
+    # Ein zweites Panel zeigt Cem noch als gewählt und speichert etwas anderes: Cem kommt nicht zurück
+    _panel(client, org, aufgabe, priority="low", **_mit_stand([cem], [cem]))
+    assert _weitere(aufgabe) == {dora.pk}
+
+    # Neu gewählt kommt hinzu
+    antwort = _panel(client, org, aufgabe, **_mit_stand([], [cem]))
+    assert _weitere(aufgabe) == {cem.pk, dora.pk}
+    assert f'value="{cem.pk}" hx-swap-oob="true"' in antwort.content.decode()
+
+
 def test_weitere_zustaendige_person_wird_zugewiesen_und_steht_nicht_doppelt(
     org: Any, anna: Any, ben: Any, cem: Any, client_for: Any
 ) -> None:
@@ -418,6 +490,11 @@ def test_export_nennt_die_weiteren_zustaendigen(org: Any, anna: Any, ben: Any, c
     assert kopf.split(";")[-1] == "Weitere Zuständige"
     assert zeile.split(";")[-1] == f"{anna.user.email}, {cem.user.email}"
     assert json.loads(export_service.render_json(aufgaben, org)[0])["tasks"][0]["id"] == str(aufgabe.pk)
+    xml_wurzel = ET.fromstring(export_service.render_xml(aufgaben, org)[0])
+    assert [el.text for el in xml_wurzel.findall("task/weitere_zustaendige/person")] == [
+        anna.user.email,
+        cem.user.email,
+    ]
 
 
 def test_persoenlicher_datenexport_nennt_aufgaben_der_weiteren_zustaendigen(
