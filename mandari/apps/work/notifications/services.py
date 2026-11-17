@@ -586,8 +586,10 @@ class NotificationHub:
         recipients = set()
         commenter_id = commenter.id if commenter is not None else None
 
-        if task.assigned_to and task.assigned_to.id != commenter_id:
-            recipients.add(task.assigned_to)
+        # Alle Zuständigen: die zugewiesene Person und die weiteren (Issue #1462)
+        for person in task.zustaendige():
+            if person.id != commenter_id:
+                recipients.add(person)
         if task.created_by and task.created_by.id != commenter_id:
             recipients.add(task.created_by)
 
@@ -626,8 +628,10 @@ class NotificationHub:
         completer_id = completer.id if completer is not None else None
         if task.created_by and task.created_by.id != completer_id:
             recipients.add(task.created_by)
-        if task.assigned_to and task.assigned_to.id != completer_id:
-            recipients.add(task.assigned_to)
+        # Alle Zuständigen: Wer die gemeinsame Aufgabe nicht selbst abgehakt hat, erfährt es (Issue #1462)
+        for person in task.zustaendige():
+            if person.id != completer_id:
+                recipients.add(person)
 
         if not recipients:
             return []

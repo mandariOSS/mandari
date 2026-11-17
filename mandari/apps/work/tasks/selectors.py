@@ -40,7 +40,19 @@ def _base_queryset() -> QuerySet[Task]:
 
 
 def _with_card_relations(qs: QuerySet[Task]) -> QuerySet[Task]:
-    return qs.prefetch_related("labels", "checklist_items", "attachments")
+    # Weitere Zuständige samt Konto: Karte und Panel nennen sie, die Rechteprüfung liest sie ohne eigene Abfrage
+    return qs.prefetch_related("labels", "checklist_items", "attachments", "weitere_zustaendige__user")
+
+
+def zustaendig_q(membership: Membership) -> Q:
+    """
+    Das Mitglied ist für die Aufgabe zuständig: zugewiesen oder eine der weiteren Zuständigen (Issue #1462).
+
+    Die weiteren Zuständigen als Unterabfrage statt als Verbund: Ein Verbund lieferte eine Aufgabe je weiterer
+    zuständiger Person einmal, und Zählungen stimmten ohne ``distinct`` nicht.
+    """
+    mit = Task.weitere_zustaendige.through.objects.filter(membership_id=membership.pk).values("task_id")
+    return Q(assigned_to=membership) | Q(pk__in=mit)
 
 
 def _with_panel_relations(qs: QuerySet[Task]) -> QuerySet[Task]:
@@ -101,7 +113,7 @@ def visible_tasks(
         qs.filter(
             (Q(visibility="organization") & aus_sichtbarer_sitzung)
             | Q(created_by=membership)
-            | Q(assigned_to=membership)
+            | zustaendig_q(membership)
             # Freigaben zählen nur, solange die Aufgabe geteilt ist (übrig gebliebene Zeilen öffnen nichts)
             | Q(visibility="shared", shares__membership=membership)
         ),
@@ -145,7 +157,11 @@ def tasks_for_motion(organization: Organization, membership: Membership, motion:
     """Mit einem Dokument verknüpfte Aufgaben, die das Mitglied sehen darf; Gastzugänge sehen keine Aufgaben."""
     if membership.is_guest:
         return Task.objects.none()
-    base = Task.objects.filter(organization=organization, related_motion=motion).select_related("assigned_to__user")
+    base = (
+        Task.objects.filter(organization=organization, related_motion=motion)
+        .select_related("assigned_to__user")
+        .prefetch_related("weitere_zustaendige__user")
+    )
     return visible_tasks(organization, membership, base=base).order_by("is_completed", "due_date", "-created_at")
 
 
@@ -158,8 +174,10 @@ def tasks_for_agenda_item(organization: Organization, membership: Membership, ag
     """
     if membership.is_guest:
         return Task.objects.none()
-    base = Task.objects.filter(organization=organization, related_agenda_item_id=agenda_item_id).select_related(
-        "assigned_to__user", "created_by"
+    base = (
+        Task.objects.filter(organization=organization, related_agenda_item_id=agenda_item_id)
+        .select_related("assigned_to__user", "created_by")
+        .prefetch_related("weitere_zustaendige__user")
     )
     return visible_tasks(organization, membership, base=base).order_by("is_completed", "due_date", "-created_at")
 
@@ -183,26 +201,30 @@ def task_counts_for_agenda_items(
 def personal_tasks(membership: Membership) -> QuerySet[Task]:
     """
     Persönliche Aufgaben eines Mitglieds (Issue #420): Aufgaben, die außer dem Mitglied niemand sieht – nicht
-    organisationsweit, von ihm angelegt, ihm oder niemandem zugewiesen und mit niemand anderem geteilt. Sie
-    entfallen mit der Mitgliedschaft (``services.delete_personal_tasks``).
+    organisationsweit, von ihm angelegt, ihm oder niemandem zugewiesen, ohne weitere Zuständige außer ihm und mit
+    niemand anderem geteilt. Sie entfallen mit der Mitgliedschaft (``services.delete_personal_tasks``).
     """
     shared_with_others = TaskShare.objects.filter(task=OuterRef("pk")).exclude(membership=membership)
+    andere_zustaendige = Task.weitere_zustaendige.through.objects.filter(task_id=OuterRef("pk")).exclude(
+        membership_id=membership.pk
+    )
     return (
         Task.objects.filter(organization_id=membership.organization_id, created_by=membership)
         .exclude(visibility="organization")
         .filter(Q(assigned_to=membership) | Q(assigned_to__isnull=True))
         .exclude(Exists(shared_with_others))
+        .exclude(Exists(andere_zustaendige))
     )
 
 
 def own_tasks(membership: Membership, *, base: QuerySet[Task]) -> QuerySet[Task]:
     """
-    Ansicht "Meine Aufgaben": erstellt, zugewiesen oder mit dem Mitglied geteilt; Aufgaben aus nichtöffentlichen TOPs
-    nur für Vereidigte (:func:`ohne_gesperrte_tops`).
+    Ansicht "Meine Aufgaben": erstellt, zugewiesen (auch als weitere zuständige Person) oder mit dem Mitglied
+    geteilt; Aufgaben aus nichtöffentlichen TOPs nur für Vereidigte (:func:`ohne_gesperrte_tops`).
     """
     return ohne_gesperrte_tops(
         base.filter(
-            Q(assigned_to=membership) | Q(created_by=membership) | Q(visibility="shared", shares__membership=membership)
+            zustaendig_q(membership) | Q(created_by=membership) | Q(visibility="shared", shares__membership=membership)
         ),
         membership,
     ).distinct()
@@ -225,7 +247,9 @@ def apply_board_filters(
     if label_id:
         tasks = tasks.filter(labels__id=label_id)
     if assignee_id:
-        tasks = tasks.filter(assigned_to__id=assignee_id)
+        # Auch als weitere zuständige Person; über die Kennungen, damit keine Zeile doppelt erscheint
+        mit = Task.weitere_zustaendige.through.objects.filter(membership_id=assignee_id).values("task_id")
+        tasks = tasks.filter(Q(assigned_to__id=assignee_id) | Q(pk__in=mit))
     if overdue_only:
         tasks = tasks.filter(due_date__lt=timezone.localdate(), status__in=OPEN_STATUSES)
     return tasks
@@ -319,6 +343,10 @@ def zustaendige_fuer_noe_aufgabe(organization: Organization, task: Task) -> list
     kennungen = [m.pk for m in personen]
     if task.assigned_to_id is not None:
         kennungen.append(task.assigned_to_id)
+    # Ebenso die bisherigen weiteren Zuständigen
+    kennungen.extend(
+        Task.weitere_zustaendige.through.objects.filter(task_id=task.pk).values_list("membership_id", flat=True)
+    )
     return kennungen
 
 
@@ -359,7 +387,7 @@ def export_queryset(organization: Organization, membership: Membership) -> Query
     return (
         visible_tasks(organization, membership)
         .select_related("assigned_to__user", "created_by__user")
-        .prefetch_related("labels", "checklist_items")
+        .prefetch_related("labels", "checklist_items", "weitere_zustaendige__user")
         .order_by("status", "position", "created_at")
     )
 

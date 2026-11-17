@@ -13,7 +13,7 @@ Kontext: task, form, organization, membership, shared_members, activities
     {# autosave-erneut: erneutes Senden nach einem Fehler (frontend/js/htmx-setup.ts) #}
     <form id="task-update-form"
           hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
-          hx-trigger="change from:find select, change from:find input[type=radio], focusout from:find input[type=text] changed delay:300ms, focusout from:find input[type=date] changed delay:300ms, focusout from:find textarea changed delay:300ms, autosave-erneut"
+          hx-trigger="change from:find select, change from:find input[type=radio], change from:find input[name=weitere_zustaendige], focusout from:find input[type=text] changed delay:300ms, focusout from:find input[type=date] changed delay:300ms, focusout from:find textarea changed delay:300ms, autosave-erneut"
           hx-swap="none"
           hx-indicator=".autosave-indicator"
           data-autosave="task"
@@ -95,6 +95,21 @@ Kontext: task, form, organization, membership, shared_members, activities
                         Zugewiesen an
                     </span>
                     <div class="flex-1 min-w-0">{{ form.assigned_to }}</div>
+                </div>
+                {# Weitere Zuständige (Issue #1462). Die Marke daneben sagt dem Server, dass die Auswahl gilt, auch eine leere #}
+                <div class="flex items-start min-h-[40px] gap-3 px-4 py-2" data-testid="aufgabe-weitere-zustaendige">
+                    <span class="flex items-start gap-1.5 w-28 flex-shrink-0 pt-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="users" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary-500"></i>
+                        Weitere Zuständige
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        <input type="hidden" name="weitere_zustaendige_gesendet" value="1">
+                        <ul class="max-h-32 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 pr-1">
+                            {% for wahl in form.weitere_zustaendige %}
+                            <li class="min-w-0"><label for="{{ wahl.id_for_label }}" class="flex items-center gap-1.5 min-w-0 text-xs text-gray-900 dark:text-white cursor-pointer">{{ wahl.tag }}<span class="truncate">{{ wahl.choice_label }}</span></label></li>
+                            {% endfor %}
+                        </ul>
+                    </div>
                 </div>
                 <div class="flex items-center h-10 gap-3 px-4">
                     <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">

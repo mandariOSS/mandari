@@ -66,6 +66,7 @@ class TaskCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
                 self.organization,
                 self.membership,
                 related_motion_id=request.POST.get("related_motion"),
+                weitere_zustaendige=form.weitere_auswahl() or (),
             )
             messages.success(request, "Aufgabe erfolgreich erstellt.")
             return redirect("work:tasks", org_slug=self.organization.slug)

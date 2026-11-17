@@ -819,15 +819,23 @@ def aufgaben_des_tops(item: FactionAgendaItem, membership: Membership) -> list[A
 
     zeilen: dict[tuple[str, Any, Any], AufgabenZeile] = {}
     darf: dict[Any, bool] = {}
-    for task in cast(Any, faction_services).visible_item_tasks(item, membership).order_by("created_at"):
+    aufgaben = (
+        cast(Any, faction_services)
+        .visible_item_tasks(item, membership)
+        # Weitere Zuständige (Issue #1462): für die Namen der Zeile und das Recht zum Abhaken ohne Abfrage je Aufgabe
+        .prefetch_related("weitere_zustaendige__user")
+        .order_by("created_at")
+    )
+    for task in aufgaben:
         key = (task.title, task.due_date, task.created_by_id)
         zeile = zeilen.get(key)
         if zeile is None:
             zeile = zeilen[key] = AufgabenZeile(task.title, task.due_date, [], 0, 0, task.pk)
             darf[task.pk] = aufgaben_dienst.can_edit_task(task, membership)
-        name = task.assigned_to.user.get_display_name() if task.assigned_to_id and task.assigned_to else ""
-        if name and name not in zeile.zustaendig:
-            zeile.zustaendig.append(name)
+        for person in task.zustaendige():
+            name = person.user.get_display_name()
+            if name and name not in zeile.zustaendig:
+                zeile.zustaendig.append(name)
         zeile.gesamt += 1
         zeile.erledigt += 1 if task.is_completed else 0
     for zeile in zeilen.values():

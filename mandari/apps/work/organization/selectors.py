@@ -914,11 +914,11 @@ def activity_statistics(organization: Organization, membership: Membership) -> d
     from apps.work.meetings.models import AgendaItemNote, MeetingPreparation
     from apps.work.motions.models import Motion, MotionComment
     from apps.work.tasks.models import Task
-    from apps.work.tasks.selectors import ohne_gesperrte_tops
+    from apps.work.tasks.selectors import ohne_gesperrte_tops, zustaendig_q
 
     # Ohne Aufgaben aus nichtöffentlichen TOPs, die das Mitglied nicht öffnen darf: Die Zahlen passen zur Liste
     my_tasks = ohne_gesperrte_tops(
-        Task.objects.filter(organization=organization).filter(Q(created_by=membership) | Q(assigned_to=membership)),
+        Task.objects.filter(organization=organization).filter(Q(created_by=membership) | zustaendig_q(membership)),
         membership,
     )
     attendance = FactionAttendance.objects.filter(membership=membership, meeting__organization=organization)
@@ -946,12 +946,12 @@ def activity_timeline(organization: Organization, membership: Membership, *, lim
     from apps.work.meetings.models import MeetingPreparation
     from apps.work.motions.models import Motion, exclude_sworn_in_only
     from apps.work.tasks.models import Task
-    from apps.work.tasks.selectors import ohne_gesperrte_tops
+    from apps.work.tasks.selectors import ohne_gesperrte_tops, zustaendig_q
 
     timeline: list[dict[str, Any]] = []
     # Aufgaben aus nichtöffentlichen TOPs nennt die Übersicht nur Vereidigten, wie das Aufgabenboard
     my_tasks = ohne_gesperrte_tops(
-        Task.objects.filter(organization=organization).filter(Q(created_by=membership) | Q(assigned_to=membership)),
+        Task.objects.filter(organization=organization).filter(Q(created_by=membership) | zustaendig_q(membership)),
         membership,
     )
     for t in my_tasks.order_by("-updated_at")[:5]:
