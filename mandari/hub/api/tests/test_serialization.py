@@ -323,3 +323,67 @@ def test_ungefilterte_seite_wird_kurz_zwischengespeichert_gefilterte_nie() -> No
     # ohne cache_seconds nie
     list_response(anfrage, BASIS, [4], TimeFilters.from_request(anfrage), _abbilden(aufrufe))
     assert aufrufe[-1] == [4]
+
+
+class _Zaehlend:
+    """Einträge, die mitzählen, wie oft ihre Anzahl ermittelt wird (bei einem QuerySet ist das eine Abfrage)."""
+
+    def __init__(self, eintraege: list[int]) -> None:
+        self.eintraege = eintraege
+        self.gezaehlt = 0
+
+    def count(self) -> int:
+        self.gezaehlt += 1
+        return len(self.eintraege)
+
+    def __len__(self) -> int:
+        return len(self.eintraege)
+
+    def __getitem__(self, index: slice) -> list[int]:
+        return self.eintraege[index]
+
+
+def _antwort(anfrage: Any, eintraege: Any, **optionen: Any) -> Any:
+    return list_response(anfrage, BASIS, eintraege, TimeFilters.from_request(anfrage), _abbilden([]), **optionen)
+
+
+@override_settings(OPARL_API_PAGE_SIZE=2)
+def test_anzahl_einer_ungefilterten_liste_wird_fuer_die_folgeseiten_gemerkt() -> None:
+    """Wer eine große Liste durchblättert, löst nicht mit jeder Seite eine Zählung aus (Issue #1441)."""
+    eintraege = _Zaehlend([1, 2, 3, 4, 5])
+
+    _antwort(_anfrage(), eintraege, cache_seconds=60)
+    antwort = _antwort(_anfrage("page=2"), eintraege, cache_seconds=60)
+
+    assert eintraege.gezaehlt == 1
+    daten = json.loads(antwort.content)
+    assert daten["pagination"]["totalElements"] == 5
+    assert [eintrag["id"] for eintrag in daten["data"]] == [f"{BASIS}/3", f"{BASIS}/4"]
+    assert daten["links"]["next"] == f"{BASIS}?page=3"
+
+
+@override_settings(OPARL_API_PAGE_SIZE=2)
+def test_gefilterte_liste_und_liste_ohne_cache_zaehlen_selbst() -> None:
+    eintraege = _Zaehlend([1, 2, 3])
+    _antwort(_anfrage(), eintraege, cache_seconds=60)
+    assert eintraege.gezaehlt == 1
+
+    # Die gemerkte Anzahl gilt nur für die ungefilterte Liste
+    gefiltert = _Zaehlend([1])
+    antwort = _antwort(_anfrage("modified_since=2026-09-01T00:00:00Z"), gefiltert, cache_seconds=60)
+    assert gefiltert.gezaehlt == 1
+    assert json.loads(antwort.content)["pagination"]["totalElements"] == 1
+
+    _antwort(_anfrage("page=2"), eintraege)
+    assert eintraege.gezaehlt == 2
+
+
+@override_settings(OPARL_API_PAGE_SIZE=2)
+def test_veraltete_anzahl_ergibt_eine_leere_letzte_seite_statt_eines_fehlers() -> None:
+    _antwort(_anfrage(), _Zaehlend([1, 2, 3, 4, 5]), cache_seconds=60)
+
+    # Inzwischen ist die Liste kürzer; die gemerkte Anzahl nennt noch drei Seiten
+    antwort = _antwort(_anfrage("page=3"), _Zaehlend([1, 2, 3]), cache_seconds=60)
+
+    assert antwort.status_code == 200
+    assert json.loads(antwort.content)["data"] == []

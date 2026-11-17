@@ -130,6 +130,37 @@ def start_foreign_rejections() -> Counter[str]:
     return counts
 
 
+#: Verweise des laufenden Abgleichs, die sich im Bestand nicht auflösen lassen (Art -> Anzahl), siehe
+#: ``start_unresolved_references``
+_unresolved_references: ContextVar[Counter[str] | None] = ContextVar("ingestor_unresolved_references", default=None)
+
+#: Arten nicht auflösbarer Verweise im Sync-Log (``unresolved``)
+UNRESOLVED_MEETING_ORGANIZATION: Final = "meeting.organization"
+UNRESOLVED_MEMBERSHIP_PERSON: Final = "membership.person"
+UNRESOLVED_MEMBERSHIP_ORGANIZATION: Final = "membership.organization"
+
+
+def start_unresolved_references() -> Counter[str]:
+    """
+    Beginnt die Zählung von Verweisen, die sich im Bestand nicht auflösen lassen, etwa für den Abgleich einer Kommune
+    (Issue #1441): das Gremium einer Sitzung, das die Quelle nennt, aber nicht ausgibt (gesperrt, HTTP 401), oder
+    Person und Gremium einer Mitgliedschaft. Gezählt wird je geschriebenem Objekt; die Sitzung bleibt gespeichert und
+    behält den Verweis in den Rohdaten, eine Mitgliedschaft ohne Person oder Gremium wird nicht gespeichert. Gilt
+    wie ``start_foreign_rejections`` für die laufende asyncio-Aufgabe und alle, die sie danach startet. Rückgabe:
+    Art -> Anzahl, für das Sync-Log (``unresolved``).
+    """
+    counts: Counter[str] = Counter()
+    _unresolved_references.set(counts)
+    return counts
+
+
+def _note_unresolved(kind: str, count: int = 1) -> None:
+    """Nicht auflösbare Verweise zählen (nur Art und Anzahl, keine Kennungen)."""
+    counts = _unresolved_references.get()
+    if counts is not None and count > 0:
+        counts[kind] += count
+
+
 def _note_foreign(kind: str, external_id: str) -> None:
     """Abgewiesene Kennung zählen und die ersten je Art protokollieren (nur Art und Kennung, keine Inhalte)."""
     counts = _foreign_rejections.get()
@@ -1698,6 +1729,8 @@ class DatabaseStorage:
         if org_urls:
             org_map = await self.get_organization_ids_by_external_ids(org_urls, body_id)
             org_ids = [org_map[url] for url in org_urls if url in org_map]
+            # Gremien, die die Quelle nennt, die aber nicht im Bestand stehen (Issue #1441)
+            _note_unresolved(UNRESOLVED_MEETING_ORGANIZATION, len(set(org_urls) - set(org_map)))
 
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
@@ -2711,6 +2744,10 @@ class DatabaseStorage:
 
         # Both FKs are NOT NULL in Django schema - skip if unresolved
         if not person_id or not organization_id:
+            if membership.person_external_id and not person_id:
+                _note_unresolved(UNRESOLVED_MEMBERSHIP_PERSON)
+            if membership.organization_external_id and not organization_id:
+                _note_unresolved(UNRESOLVED_MEMBERSHIP_ORGANIZATION)
             return None
 
         async with self.get_session() as session:

@@ -715,6 +715,26 @@ async def test_beratung_mit_sitzung_einer_anderen_quelle_zaehlt_als_verweis(best
     assert gezaehlt == {"consultation (Verweis)": 1}
 
 
+async def test_sitzung_und_mitgliedschaft_zaehlen_nicht_aufloesbare_verweise(bestand: Bestand) -> None:
+    """
+    Nennt die Quelle ein Gremium, das nicht im Bestand steht (gesperrt, andere Quelle), bleibt die Sitzung
+    gespeichert, und der Verweis zählt unter ``unresolved``; eine Mitgliedschaft ohne Person wird nicht gespeichert
+    und zählt ebenfalls (Issue #1441).
+    """
+    body_a = bestand.kommune[KOMMUNE_A]
+    gezaehlt = database.start_unresolved_references()
+
+    gremien = [f"{A}/organization/1", f"{A}/organization/401", f"{B}/organization/1"]
+    sitzung = objekt(A, "meeting", 8, organization=gremien)
+    assert await bestand.schreiben("meeting", sitzung, body_a, KOMMUNE_A) is not None
+    ohne_person = objekt(A, "membership", 8, person=f"{A}/person/404", organization=f"{A}/organization/1")
+    assert await bestand.schreiben("membership", ohne_person, body_a, KOMMUNE_A) is None
+    vollstaendig = objekt(A, "membership", 9, person=f"{A}/person/1", organization=f"{A}/organization/1")
+    assert await bestand.schreiben("membership", vollstaendig, body_a, KOMMUNE_A) is not None
+
+    assert gezaehlt == {"meeting.organization": 2, "membership.person": 1}
+
+
 @pytest.mark.usefixtures("fixture_fetcher")
 async def test_scraper_ueberspringt_objekte_anderer_quellen_einzeln() -> None:
     """Weist der Speicher ein Objekt ab, läuft der Crawl mit den übrigen weiter; das Sync-Log zählt es."""
