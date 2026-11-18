@@ -170,6 +170,13 @@ class ResumeRun:
         entry = self.entries.get(list_url)
         return entry.at - self.margin if entry is not None else None
 
+    def discard(self, list_url: str) -> None:
+        """
+        Stand der Liste verwerfen (Liste verschoben, Nachführung gescheitert): Sie kommt in diesem Lauf ganz, und ein
+        Abbruch vor ihrer ersten Folgeseite stellt den alten Stand nicht wieder her.
+        """
+        self.entries.pop(list_url, None)
+
     def note_finished(self, list_url: str) -> None:
         self.finished.add(list_url)
         self.cut.pop(list_url, None)
