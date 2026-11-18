@@ -94,6 +94,9 @@ class ToolContext:
     #: Links aus Detailwerkzeugen (Sitzung, Vorgang, Dokumentabschnitt) in der Reihenfolge der Aufrufe
     detail_urls: list[str] = field(default_factory=list)
     calls: list[str] = field(default_factory=list)
+    #: Ergebnistexte der Werkzeuge in der Reihenfolge der Aufrufe: das Material, das das Modell gesehen hat. Dagegen
+    #: prüft Work die Zahlen und Daten eines Antwortentwurfs (Issue #1488); lebt nur für diese eine Antwort.
+    ergebnisse: list[str] = field(default_factory=list)
 
     @property
     def bodies(self) -> list[uuid.UUID]:
@@ -839,7 +842,16 @@ def dump(result: Mapping[str, Any], limit: int = MAX_RESULT_CHARS) -> str:
 
 
 def run_tool(name: str, arguments: str | Mapping[str, Any] | None, ctx: ToolContext) -> str:
-    """Ein Werkzeug ausführen; Ergebnis als JSON-Text für das Modell, Fehler mit festem Text."""
+    """
+    Ein Werkzeug ausführen; Ergebnis als JSON-Text für das Modell, Fehler mit festem Text. Der Text steht danach auch
+    in ``ctx.ergebnisse``.
+    """
+    ergebnis = _ausfuehren(name, arguments, ctx)
+    ctx.ergebnisse.append(ergebnis)
+    return ergebnis
+
+
+def _ausfuehren(name: str, arguments: str | Mapping[str, Any] | None, ctx: ToolContext) -> str:
     ctx.calls.append(name)
     handler = HANDLERS.get(name)
     if handler is None:

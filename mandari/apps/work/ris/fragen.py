@@ -122,7 +122,7 @@ def endpunkt(organization: Any) -> KiEndpunkt | None:
     return endpunkt_fuer_work(organization)
 
 
-def _freigegebener_endpunkt(organization: Any) -> KiEndpunkt | None:
+def freigegebener_endpunkt(organization: Any) -> KiEndpunkt | None:
     """Endpunkt, wenn die Organisation fragen darf (Schalter, Kontingent, Demo, freigegebener Endpunkt), sonst None."""
     if organization is None or getattr(settings, "DEMO_INSTANCE", False):
         return None
@@ -135,7 +135,7 @@ def _freigegebener_endpunkt(organization: Any) -> KiEndpunkt | None:
 
 def verfuegbar(organization: Any) -> bool:
     """Darf die Organisation Fragen an die Ratsdaten stellen? (Schalter, Kontingent, Demo, freigegebener Endpunkt)"""
-    return _freigegebener_endpunkt(organization) is not None
+    return freigegebener_endpunkt(organization) is not None
 
 
 def kommune(bodies: Any, kommune_id: str) -> Any:
@@ -165,7 +165,7 @@ def systemprompt(now: datetime, body_name: str, org_slug: str) -> str:
     return build_chat_system_prompt(now, body_name, template=WORK_PROMPT, beispiel=beispiel)
 
 
-def _verbrauch_buchen(dienst: Any, tokens: int) -> None:
+def verbrauch_buchen(dienst: Any, tokens: int) -> None:
     """
     Verbrauch nach dem KI-Aufruf buchen (Grenze je Person, Kontingent der Organisation).
 
@@ -193,7 +193,7 @@ def beantworten(organization: Any, membership: Any, frage: str, body: Any, *, no
 
     frage = " ".join(str(frage or "").split())[:MAX_FRAGE]
     # Der Endpunkt wird je Frage genau einmal aufgelöst; gefragt wird genau dieser, nie der des Bürgerportals
-    gewaehlt = _freigegebener_endpunkt(organization)
+    gewaehlt = freigegebener_endpunkt(organization)
     if gewaehlt is None:
         return Antwort(frage=frage, hinweis=KEIN_ZUGANG)
     if len(frage.split()) < 3:
@@ -207,7 +207,7 @@ def beantworten(organization: Any, membership: Any, frage: str, body: Any, *, no
         return Antwort(frage=frage, hinweis=KEINE_RATSDATEN)
     # Erst jetzt, unmittelbar vor dem Aufruf: Grenze je Person und Kontingent prüfen und im selben Schritt belegen.
     # Die Antwort dauert bis zu 90 s; Fragen, die in dieser Zeit eintreffen, müssen diese hier schon mitzählen.
-    # Jeder Ausgang danach bucht den Verbrauch (``_verbrauch_buchen``), auch ein Fehlschlag.
+    # Jeder Ausgang danach bucht den Verbrauch (``verbrauch_buchen``), auch ein Fehlschlag.
     dienst = MotionAIService(organization=organization, user_id=membership.user_id)
     erlaubt, meldung = dienst.kontingent_reservieren(GESCHAETZTE_TOKEN)
     if not erlaubt:
@@ -226,10 +226,10 @@ def beantworten(organization: Any, membership: Any, frage: str, body: Any, *, no
     except Exception as exc:  # Anbieter nicht konfiguriert oder Fehler: fester Hinweis, Details nur im Log
         # Auch ein Fehlschlag zählt für die Grenze je Person, mit dem Verbrauch der Runden davor
         # (insight_ai.services.chat_service.ChatAbbruchError); sonst ließe er sich beliebig oft wiederholen
-        _verbrauch_buchen(dienst, int(getattr(getattr(exc, "usage", None), "total_tokens", 0) or 0))
+        verbrauch_buchen(dienst, int(getattr(getattr(exc, "usage", None), "total_tokens", 0) or 0))
         logger.warning("Work-Frage an die Ratsdaten gescheitert: %s", type(exc).__name__)
         return Antwort(frage=frage, hinweis=NICHT_ERREICHBAR)
-    _verbrauch_buchen(dienst, int(ergebnis.get("tokens_used") or 0))
+    verbrauch_buchen(dienst, int(ergebnis.get("tokens_used") or 0))
     return Antwort(
         frage=frage,
         html=antwort_html(str(ergebnis.get("response") or ""), organization.slug),

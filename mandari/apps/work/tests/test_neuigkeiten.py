@@ -167,7 +167,11 @@ def test_seite_nennt_version_und_neuerungen(org: Any, person: Any, client_for: A
     abschnitte = [teil.split("</section>")[0] for teil in re.split(r'<section aria-labelledby="neu-\d+"', html)[1:]]
     assert len(abschnitte) == len(versionen)
     for abschnitt, version in zip(abschnitte, versionen, strict=True):
-        assert f'<span class="sr-only">Version </span>{version.version}</h2>' in abschnitt
+        # Neuerungen, die noch in keiner Version stehen, tragen statt der Nummer eine eigene Überschrift
+        kopf = (
+            f'<span class="sr-only">Version </span>{version.version}' if version.version else "Seit der letzten Version"
+        )
+        assert f"{kopf}</h2>" in abschnitt
         teile = re.split(r'<div data-bereich="([^"]+)"', abschnitt)
         assert teile[1::2] == [bereich.schluessel for bereich in version.bereiche]
         for bereich, inhalt in zip(version.bereiche, teile[2::2], strict=True):

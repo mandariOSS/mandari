@@ -380,6 +380,10 @@ CASES: list[Case] = [
     Case("paper_comment_delete", path={"comment_id": "paper_comment"}, method="delete"),
     # Fragen an die Ratsdaten (Issue #853): nur lesend, schreibt höchstens den KI-Verbrauch der eigenen Organisation
     Case("ris_frage", data={"frage": "Welche Sitzungen finden diese Woche statt?"}),
+    # Anfrage beantworten (Issue #1488): wie die Frage nur lesend, gespeichert wird höchstens der KI-Verbrauch
+    Case(
+        "ris_anfrage", data={"anfrage": "Was wurde zum Radweg an der Musterstraße beschlossen, und wann wird gebaut?"}
+    ),
     # --- Dokumente ---
     Case(
         "document_create",

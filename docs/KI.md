@@ -1,6 +1,6 @@
 # KI-Funktionen: Assistent, MCP-Server und Kennzeichnung
 
-Stand: 11/2026 (Issues #899, #938, #950, #1208, #1222). Diese Notiz fasst zusammen, wie mandari Sprachmodelle
+Stand: 11/2026 (Issues #899, #938, #950, #1208, #1222, #1488). Diese Notiz fasst zusammen, wie mandari Sprachmodelle
 einsetzt: den KI-Assistenten im Bürgerportal, den MCP-Server für KI-Werkzeuge anderer Anbieter, beide mit denselben
 Werkzeugen, und die Kennzeichnung aller KI-Texte nach EU AI Act Art. 50.
 
@@ -131,6 +131,38 @@ Kennungen nehmen die Werkzeuge als UUID oder als Insight-Link entgegen. Ergebnis
 Zeilen; zu lange Ergebnisse kürzt `dump` am Ende der längsten Liste und nennt die Zahl der weggelassenen Einträge.
 Fehler kommen mit festen Texten zurück, nie mit Ausnahmetexten.
 
+### Antwortentwurf in Work („Anfrage beantworten“)
+
+Work nutzt dieselben Werkzeuge für zwei Seiten im Bereich Recherche: „Fragen an die Ratsdaten“ unter der Suche
+(`apps/work/ris/fragen.py`, Issue #853) und „Anfrage beantworten“ (`apps/work/ris/anfragen.py`, Issue #1488). Beide
+fragen den Endpunkt der Organisation (`endpunkt_fuer_work`), zählen gegen die Grenze je Person und das Kontingent der
+Organisation und senden nur die Eingabe und öffentliche Ratsdaten an den KI-Dienst, keine Inhalte der Fraktion.
+
+„Anfrage beantworten“ macht aus einer Bürger- oder Presseanfrage (höchstens 2.000 Zeichen) einen Brieftext:
+
+1. Die Filter des Bürgerportals laufen vor dem Aufruf. Enthält die Anfrage Kontaktdaten, geht sie nicht hinaus; die
+   Seite sagt, was zu entfernen ist. Anrede und Absender sind eigene Angaben, kommen erst nach dem Aufruf an den
+   Entwurf und stehen in keiner Nachricht an den KI-Dienst.
+2. Der Systemprompt (`ANFRAGE_PROMPT`) verlangt einen Betreff (`BETREFF:`), den Brieftext mit Markdown-Links auf die
+   Fundstellen aus den Werkzeugergebnissen und danach die Zeile `OFFEN:` mit allem, wozu die Ratsdaten nichts liefern.
+3. `aufbereiten` macht aus jedem Link auf einen Eintrag, dessen Adresse in einem Werkzeugergebnis dieser Antwort
+   steht (`gelieferte_quellen`), eine nummerierte Fußnote; das Verzeichnis daneben trägt dieselben Nummern. Jeder
+   andere Link verliert sein Ziel, und der Absatz wird markiert. Das gilt auch für Einträge, die ein Werkzeug
+   vorgemerkt hat (`ToolContext.sources`), die aber aus einem zu langen Ergebnis gekürzt wurden: Das Modell hat sie
+   nie gesehen.
+4. Prüfung ohne zweiten KI-Aufruf, je Absatz: Zahlen und Daten müssen im Material stehen, das das Modell gesehen hat
+   (`ToolContext.ergebnisse`), in der Anfrage oder das heutige Datum sein; geprüft wird mit den Regeln der
+   Zusammenfassungen (`zusammenfassung_pruefung.fremdes_datum`, `fremde_zahl`, Rundung wie dort), dazu einstellige
+   Zahlen mit Währung, Prozent, Zeit- oder Maßeinheit („7 Euro“). Ein Absatz mit Zahlen oder Daten ohne Fundstelle
+   wird ebenfalls markiert. Markierte Absätze bleiben stehen, der Grund steht darunter; aussortiert wird nichts. Der
+   Betreff erscheint nur, wenn seine Angaben im Material stehen. Die Prüfung arbeitet je Absatz und fängt keine
+   falschen Aussagen ab, die ohne Zahlen und Daten auskommen; die Seite verspricht deshalb keine belegte
+   Einzelaussage. Der Mensch prüft den Entwurf gegen die Fundstellen.
+5. Zum Kopieren gibt es den Brief allein und den Brief mit Quellenverzeichnis. Dort führen die Adressen auf die
+   öffentlichen Seiten im Bürgerportal (`SITE_URL`), in Work auf die Seiten der Recherche.
+
+Gespeichert wird nur der Verbrauch, weder Anfrage noch Entwurf. Versendet wird nichts.
+
 ## 4. MCP-Server
 
 KI-Werkzeuge anderer Anbieter (Desktop-Assistenten, Entwicklungsumgebungen, eigene Agenten) können die öffentlichen
@@ -237,6 +269,7 @@ Einschätzung aus der Entwicklung und ersetzt keine Rechtsberatung.
 | Dieselbe Zusammenfassung in Work | `templates/work/ris/neu/vorgang.html`, `templates/work/ris/paper_detail.html` | intern: Mitglieder der Organisation | keine | Anbieter (Abs. 2) | sichtbar: „Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten.“ (seit #938 auch im bisherigen Rahmen); `data-ai-generated="true"` |
 | KI-Assistent (Insight) | `insight_core/views/chat.py`, `insight_ai/services/chat_service.py`, `templates/partials/chat_nachrichten.html` | nur die fragende Person; Antworten werden nicht gespeichert | keine (Antwort an eine Person, keine Veröffentlichung) | Anbieter (Abs. 1 und 2) | sichtbar: Seitentitel „KI-Assistent“, Einwilligung mit Anbieter und Ort, Satz „Antworten erstellt eine KI aus öffentlichen Ratsdokumenten. Sie können Fehler enthalten.“; maschinenlesbar: `data-ai-generated="true"` an jeder Antwort, Feld `ai_generated: true` in `POST /insight/chat/api/message/` |
 | Fragen an die Ratsdaten (Work) | `apps/work/ris/fragen.py`, `templates/work/ris/partials/frage_antwort.html` | intern: die fragende Person | keine (nur für die eigene Recherche) | Anbieter (Abs. 1 und 2) | sichtbar: „KI-Antwort aus den öffentlichen Ratsdaten – maßgeblich sind die Quellen.“; `data-ai-generated="true"` |
+| Antwortentwurf „Anfrage beantworten“ (Work) | `apps/work/ris/anfragen.py`, `templates/work/ris/partials/anfrage_entwurf.html` | intern: die Person, die den Entwurf erstellt; nach außen erst, wenn sie ihn prüft und selbst versendet | ja, als Arbeitsschritt: Der Entwurf verlässt Work nur durch Kopieren, die Seite markiert Absätze zum Prüfen; den Versand verantwortet die Fraktion | Anbieter (Abs. 1 und 2); die Fraktion ist Betreiberin, Abs. 4 entfällt durch Prüfung und redaktionelle Verantwortung | sichtbar: „KI-Entwurf aus den öffentlichen Ratsdaten …; maßgeblich sind die Fundstellen.“; `data-ai-generated="true"` am Brieftext ohne Anrede, Gruß und Verzeichnis |
 | Schreibhilfe und Co-Editor (Work) | `apps/work/motions/services.py`, `apps/work/motions/views/actions.py`, `templates/work/motions/partials/_editor_ai_panel.html` | intern: die schreibende Person im KI-Bereich des Editors | ja: Vorschläge werden erst mit „Übernehmen“ Teil des Dokuments, das die Fraktion verantwortet | Anbieter (Abs. 1 und 2); die Fraktion ist Betreiberin, Abs. 4 entfällt durch Prüfung und redaktionelle Verantwortung | sichtbar: KI-Bereich mit Hinweis „Ich bin Ihr KI-Assistent“; maschinenlesbar: Feld `ai_generated: true` in `POST /work/<org>/documents/ai/`, `data-ai-generated` an jeder KI-Nachricht |
 | KI-Verortung (Insight) | `insight_core/services/georeferencing.py` | öffentlich als Ort auf der Karte | keine | kein synthetischer Text: Die KI zieht Ortsangaben aus dem vorhandenen Text, die Herkunft steht als `source="ai"` („KI-Extraktion“) an der Verortung | nicht nach Art. 50 Abs. 2 erforderlich |
 | KI-Prüfung der Verortung (Insight) | `insight_core/services/verortung_pruefung.py` (#1222, im Tagesbatch der Zusammenfassungen) | öffentlich nur in der Wirkung: Orte, die Claude als „passt nicht“ beurteilt, verschwinden von der Karte; ergänzte Orte stehen mit Herkunft `ai_check` („KI-Prüfung“) auf der Karte | im Admin: Filter „KI-Prüfung“, ausgeblendete Orte lassen sich mit „Bestätigen“ zurückholen | kein synthetischer Text: Urteil und Begründung bleiben intern, neue Orte geokodiert die bestehende Pipeline, nie die KI | nicht nach Art. 50 Abs. 2 erforderlich; die Herkunft steht an der Verortung |
@@ -284,5 +317,6 @@ Alle Merkmale ergänzen die bestehenden Antworten; kein Feld ist entfallen oder 
 - Kennzeichnung: `insight_core/tests/test_ki_kennzeichnung.py`, `insight_core/tests/test_worum_es_geht.py`
   (Vorschauzeilen), `insight_core/tests/test_seo_titel.py` (Description, JSON-LD),
   `insight_core/tests/test_ki_buergerportal.py` (KI-Assistent), `hub/ris/tests/test_mapping_bestand.py` (OParl),
-  `apps/work/ris/tests/test_fragen.py`, `apps/work/ris/tests/test_neues_design.py` (Vorgangsseite in Work),
+  `apps/work/ris/tests/test_fragen.py`, `apps/work/ris/tests/test_anfragen.py` (Antwortentwurf: Fußnoten, offene
+  Punkte, Prüfung, Anrede bleibt in mandari), `apps/work/ris/tests/test_neues_design.py` (Vorgangsseite in Work),
   `apps/work/motions/tests/test_ki_europa.py` (Schreibhilfe)
