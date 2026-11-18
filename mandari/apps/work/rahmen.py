@@ -116,7 +116,8 @@ HILFE = Ziel("hilfe", "Hilfe und Support", "work:support", "circle-help")
 PERSON = Ziel("person", "Profil", "work:profile", "user")
 BENACHRICHTIGUNGEN = Ziel("benachrichtigungen", "Benachrichtigungen", "work:notifications", "bell")
 
-#: Seiten des Ratsinformationssystems in der Reihenfolge der bisherigen Seitenleiste (Suche zuletzt)
+#: Seiten des Ratsinformationssystems in der Reihenfolge der bisherigen Seitenleiste, danach die Suche und
+#: „Anfrage beantworten“ (Issue #1488)
 _RIS_SEITEN: tuple[Ziel, ...] = (
     Ziel("vorgaenge", "Vorgänge", "work:ris_papers"),
     Ziel("beschluesse", "Beschlüsse", "work:ris_decisions"),
@@ -125,6 +126,7 @@ _RIS_SEITEN: tuple[Ziel, ...] = (
     Ziel("dokumente", "Dokumente", "work:ris_files"),
     Ziel("karte", "Karte", "work:ris_map"),
     Ziel("suche", "Suche", "work:ris_search"),
+    Ziel("anfrage", "Anfrage beantworten", "work:ris_anfrage"),
 )
 
 #: Reiter über den vorhandenen Listen; der erste ist die Startseite des Bereichs. Fraktionssitzungen sind seit der
@@ -155,6 +157,7 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "guest_documents": ("dokumente", None, None),
     "ris_overview": ("recherche", "uebersicht", None),
     "ris_search": ("recherche", "suche", None),
+    "ris_anfrage": ("recherche", "anfrage", None),
     "ris_papers": ("recherche", "vorgaenge", None),
     "ris_paper_detail": ("recherche", "vorgaenge", None),
     "ris_decisions": ("recherche", "beschluesse", None),

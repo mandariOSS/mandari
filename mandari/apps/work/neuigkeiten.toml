@@ -26,6 +26,16 @@
 # Version.
 
 [[eintrag]]
+datum = 2026-11-18
+version = ""
+bereich = "recherche"
+titel = "Anfragen beantworten Sie mit einem Entwurf samt Fundstellen."
+text = """Unter „Recherche“ gibt es die Seite „Anfrage beantworten“. Sie fügen eine Bürger- oder Presseanfrage ein \
+und erhalten aus den öffentlichen Ratsdaten einen Antwortentwurf: An jeder Aussage steht die Fundstelle, offene \
+Punkte stehen getrennt daneben, Absätze mit ungeprüften Zahlen oder Daten sind markiert. Sie prüfen und versenden \
+selbst. Die Seite arbeitet, wenn die KI-Funktionen Ihrer Organisation eingeschaltet sind."""
+
+[[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
 bereich = "aufgaben"
