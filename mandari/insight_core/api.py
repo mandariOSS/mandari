@@ -27,11 +27,11 @@ def stats(request):
     selbst über die großen Tabellen, er liest nur die Kommunen (wenige Zeilen) und summiert die gelisteten.
     """
     stand = portal_stats.api_stand()
-    gelistet = {str(pk) for pk in OParlBody.objects.filter(is_listed=True).values_list("pk", flat=True)}
+    gelistet = {str(pk) for pk in OParlBody.objects.listed().values_list("pk", flat=True)}
     gesamt = portal_stats.api_gesamt(stand, gelistet)
     return JsonResponse(
         {
-            "bodies": OParlBody.objects.listed().count(),
+            "bodies": len(gelistet),
             "organizations": gesamt["organizations"],
             "persons": gesamt["persons"],
             "meetings": gesamt["meetings"],

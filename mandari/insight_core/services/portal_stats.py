@@ -151,6 +151,18 @@ def _api_stand_berechnen() -> dict[str, Any]:
     }
 
 
+#: Die vier Zählungen eines Stands
+_API_ARTEN = ("organizations", "persons", "meetings", "papers")
+
+
+def _api_stand_brauchbar(stand: object) -> bool:
+    """Alle vier Zählungen je Kommune sind da; leere Zählungen sind gültig (Installation ohne Daten)."""
+    if not isinstance(stand, dict):
+        return False
+    je_kommune = stand.get("je_kommune")
+    return isinstance(je_kommune, dict) and all(isinstance(je_kommune.get(art), dict) for art in _API_ARTEN)
+
+
 def api_stand(*, refresh: bool = False) -> dict[str, Any]:
     """
     Zuletzt ermittelte Zahlen je Kommune für ``/api/stats/`` und ``/api/stats/bodies/``, ohne im Abruf zu zählen.
@@ -163,18 +175,26 @@ def api_stand(*, refresh: bool = False) -> dict[str, Any]:
     Lässt sich der Stand nicht ablegen, bekommt ein Abruf trotzdem seine Zahlen (Warnung im Protokoll). Mit
     ``refresh=True`` geht der Fehler an den Aufrufer: Der Lauf des Zeitplans gilt dann als fehlgeschlagen, statt
     still einen alten Stand stehen zu lassen.
+
+    Ein Abruf ohne Stand legt seine Zählung nur ab, wenn inzwischen kein anderer Stand da ist (``cache.add``): Hat
+    der Zeitplan während der Zählung einen neueren abgelegt, bleibt der stehen, und seine Frist verlängert sich nicht.
     """
+    vorhanden: Any = None
     if not refresh:
         try:
-            stand = cache.get(API_STAND_KEY)
+            vorhanden = cache.get(API_STAND_KEY)
         except Exception:  # noqa: BLE001 – ohne Cache zählt der Abruf selbst
             logger.warning("Stand der öffentlichen Zahlen nicht lesbar", exc_info=True)
-            stand = None
-        if isinstance(stand, dict) and isinstance(stand.get("je_kommune"), dict):
+        if _api_stand_brauchbar(vorhanden):
+            stand: dict[str, Any] = vorhanden
             return stand
     stand = _api_stand_berechnen()
     try:
-        cache.set(API_STAND_KEY, stand, API_STAND_TTL_SECONDS)
+        if refresh or vorhanden is not None:
+            # Zeitplan: immer fortschreiben. Abruf mit unbrauchbarem Wert im Cache: ihn ersetzen.
+            cache.set(API_STAND_KEY, stand, API_STAND_TTL_SECONDS)
+        else:
+            cache.add(API_STAND_KEY, stand, API_STAND_TTL_SECONDS)
     except Exception:
         if refresh:
             raise
@@ -184,11 +204,11 @@ def api_stand(*, refresh: bool = False) -> dict[str, Any]:
 
 def api_gesamt(stand: dict[str, Any], gelistet: set[str]) -> dict[str, int]:
     """
-    Summen über die gelisteten Kommunen (``gelistet``: Kennungen als Text), wie bisher
-    ``exclude(body__is_listed=False)``: Die Demo-Kommune zählt nicht mit.
+    Summen über die gelisteten Kommunen (``gelistet``: Kennungen aus ``OParlBody.objects.listed()`` als Text): Die
+    Demo-Kommune und als gelöscht markierte Kommunen zählen nicht mit, wie in der Zahl der Kommunen daneben.
 
     Bewusst eine Positivliste: Der Stand kann bis zum nächsten Lauf noch Zahlen einer Kommune enthalten, die
-    inzwischen gelöscht oder aus der Liste genommen wurde. Sie zählen sofort nicht mehr mit.
+    inzwischen gelöscht, als gelöscht markiert oder aus der Liste genommen wurde. Sie zählen sofort nicht mehr mit.
     """
     return {
         art: sum(anzahl for kommune, anzahl in zahlen.items() if kommune in gelistet)

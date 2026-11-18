@@ -128,19 +128,46 @@ def test_geloeschte_oder_ausgelistete_kommune_zaehlt_sofort_nicht_mehr(bestand: 
     """Der Stand kennt die Kommune bis zum nächsten Lauf noch; die Summe nimmt nur, was gelistet und vorhanden ist."""
     zweite = _kommune(4, "Stadt Beispiel")
     _bestand(zweite, vorgaenge=2, sitzungen=1, gremien=1, personen=1)
+    dritte = _kommune(5, "Stadt Zurückgezogen")
+    _bestand(dritte, vorgaenge=7, sitzungen=1, gremien=1, personen=1)
     demo = str(bestand["demo"].pk)
     portal_stats.api_stand(refresh=True)
 
     bestand["demo"].delete()
     OParlBody.objects.filter(pk=zweite.pk).update(is_listed=False)
+    OParlBody.objects.filter(pk=dritte.pk).update(deleted=True)
     stand = cache.get(portal_stats.API_STAND_KEY)
     assert stand["je_kommune"]["papers"][demo] == 5, "der Stand ist noch der alte"
     assert stand["je_kommune"]["papers"][str(zweite.pk)] == 2
+    assert stand["je_kommune"]["papers"][str(dritte.pk)] == 7
 
     daten, sql = _abruf("/api/stats/")
 
     assert daten == {"bodies": 2, "organizations": 1, "persons": 2, "meetings": 2, "papers": 3}
     assert _zaehlt(sql) == [], "aus dem Stand, ohne neu zu zählen"
+    assert len(sql) == 1, "eine Abfrage: die gelisteten Kommunen"
+
+
+def test_abruf_ueberschreibt_keinen_neueren_stand(
+    bestand: dict[str, OParlBody], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zählt ein Abruf ohne Stand und legt der Zeitplan währenddessen einen neueren ab, bleibt der neuere stehen."""
+    aachen = str(bestand["aachen"].pk)
+    zaehlen = portal_stats._api_stand_berechnen
+
+    def zaehlen_waehrend_der_zeitplan_schreibt() -> dict[str, Any]:
+        gezaehlt = zaehlen()
+        OParlPaper.objects.create(body=bestand["aachen"], external_id="neu", name="Neue Vorlage")
+        monkeypatch.setattr(portal_stats, "_api_stand_berechnen", zaehlen)
+        portal_stats.api_stand(refresh=True)
+        return gezaehlt
+
+    monkeypatch.setattr(portal_stats, "_api_stand_berechnen", zaehlen_waehrend_der_zeitplan_schreibt)
+
+    eigener = portal_stats.api_stand()
+
+    assert eigener["je_kommune"]["papers"][aachen] == 3, "der Abruf bekommt seine eigene Zählung"
+    assert cache.get(portal_stats.API_STAND_KEY)["je_kommune"]["papers"][aachen] == 4, "abgelegt bleibt der neuere"
 
 
 class _CacheOhneSchreiben:
@@ -150,6 +177,9 @@ class _CacheOhneSchreiben:
         return default
 
     def set(self, key: str, value: Any, timeout: int | None = None) -> None:
+        raise ConnectionError("Cache nicht erreichbar")
+
+    def add(self, key: str, value: Any, timeout: int | None = None) -> bool:
         raise ConnectionError("Cache nicht erreichbar")
 
 
@@ -165,13 +195,36 @@ def test_schreibfehler_laesst_den_zeitplan_scheitern_der_abruf_bekommt_zahlen(
         schedules.oeffentliche_zahlen_fortschreiben.call()
 
 
-def test_unbrauchbarer_stand_wird_neu_gerechnet(bestand: dict[str, OParlBody]) -> None:
-    cache.set(portal_stats.API_STAND_KEY, "kein Stand", 60)
+@pytest.mark.parametrize(
+    "unbrauchbar",
+    [
+        "kein Stand",
+        {"je_kommune": {}},
+        {"je_kommune": {"organizations": {}, "persons": {}, "meetings": {}}},
+        {"je_kommune": {"organizations": {}, "persons": {}, "meetings": {}, "papers": []}},
+    ],
+    ids=["text", "ohne-zaehlungen", "eine-fehlt", "liste-statt-zuordnung"],
+)
+def test_unbrauchbarer_stand_wird_neu_gerechnet(bestand: dict[str, OParlBody], unbrauchbar: Any) -> None:
+    cache.set(portal_stats.API_STAND_KEY, unbrauchbar, 60)
 
-    stand = portal_stats.api_stand()
+    daten, _sql = _abruf("/api/stats/")
+    kommunen, _sql_kommunen = _abruf("/api/stats/bodies/")
 
-    assert stand["je_kommune"]["meetings"][str(bestand["aachen"].pk)] == 2
-    assert cache.get(portal_stats.API_STAND_KEY) == stand
+    assert daten["meetings"] == 2 and len(kommunen["bodies"]) == 2
+    stand = cache.get(portal_stats.API_STAND_KEY)
+    assert stand["je_kommune"]["meetings"][str(bestand["aachen"].pk)] == 2, "ersetzt den unbrauchbaren Wert"
+
+
+def test_stand_mit_leeren_zaehlungen_ist_gueltig(bestand: dict[str, OParlBody]) -> None:
+    """Vier leere Zählungen sind ein Stand (Installation ohne Daten), kein Anlass, neu zu zählen."""
+    leer: dict[str, Any] = {"je_kommune": {"organizations": {}, "persons": {}, "meetings": {}, "papers": {}}}
+    cache.set(portal_stats.API_STAND_KEY, leer, 60)
+
+    daten, sql = _abruf("/api/stats/")
+
+    assert daten == {"bodies": 2, "organizations": 0, "persons": 0, "meetings": 0, "papers": 0}
+    assert _zaehlt(sql) == []
 
 
 def test_kommunen_mit_ihren_zahlen(bestand: dict[str, OParlBody]) -> None:
