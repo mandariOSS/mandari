@@ -13,8 +13,10 @@ Features:
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import time
-from collections import deque
+from collections import Counter, deque
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -128,6 +130,28 @@ def _is_list_page(data: Any) -> bool:
 REPEATED_PAGES_ERROR = "Folgeseiten liefern immer dieselben Einträge (Liste im Kreis)"
 
 
+def page_keys(items: list[Any]) -> frozenset[str]:
+    """
+    Schlüssel der Einträge einer Seite für die Kreis-Erkennung (Issue #1088): die Kennung (``id``).
+
+    Steht dieselbe Kennung mehrmals auf einer Seite, benennt sie kein Objekt, sondern ist ein Platzhalter: Die Stadt
+    Münster liefert gelöschte Beratungen als ``…/consultations/0`` (Vorlage ``vo/0``, Sitzung ``0``), oft seitenweise.
+    Solche Einträge zählen über ihren Inhalt; sonst sähe jede dieser Seiten wie eine Wiederholung der vorigen aus, und
+    die Liste bräche ab, obwohl jede Seite neue Einträge bringt. Wiederholt die Quelle wirklich dieselben Einträge,
+    ist auch der Inhalt gleich, und die Erkennung greift wie bisher. Einträge ohne Kennung zählen nicht.
+    """
+    entries = [item for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)]
+    seen = Counter(item["id"] for item in entries)
+    keys: set[str] = set()
+    for item in entries:
+        if seen[item["id"]] == 1:
+            keys.add(item["id"])
+            continue
+        canonical = json.dumps(item, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+        keys.add("inhalt:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest())
+    return frozenset(keys)
+
+
 class ListFetchError(Exception):
     """
     Eine Objektliste (oder eine ihrer Seiten) war nicht abrufbar.
@@ -185,12 +209,15 @@ class FetchWindowClosedError(ListFetchError):
     #1186) oder des Fensters ihres Vollabgleichs (``full_sync_window``). Keine weitere Seite.
     """
 
-    def __init__(self, list_url: str, page_url: str) -> None:
+    def __init__(self, list_url: str, page_url: str, last_page_url: str | None = None) -> None:
         super().__init__(
             list_url,
             page_url,
             FetchResult(url=page_url, data=None, status_code=0, error=WINDOW_CLOSED_ERROR),
         )
+        #: Zuletzt ganz gelesene Seite dieser Liste in diesem Abruf (``None``: keine); dort setzt ein abgebrochener
+        #: Vollabgleich fort (``src/sync/fortsetzung.py``)
+        self.last_page_url = last_page_url
 
 
 @dataclass
@@ -1014,6 +1041,8 @@ class OParlClient:
         # Kennungen der zuletzt gelesenen Seite mit Kennungen und Seiten in Folge ohne neue Kennung (Issue #1088)
         previous_ids: frozenset[str] = frozenset()
         stale_pages = 0
+        # Zuletzt ganz gelesene Seite (Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs)
+        last_page_url: str | None = None
         tried_modified_since = False
         # Erste Seite nach „gibt es nicht“ auf die gefilterte Anfrage noch einmal ohne Filter angefragt
         retried_unfiltered = False
@@ -1052,7 +1081,7 @@ class OParlClient:
         while current_url:
             if self.deadline_passed():
                 console.print(f"[yellow]{url}: {WINDOW_CLOSED_ERROR}, Liste bleibt offen[/yellow]")
-                raise FetchWindowClosedError(url, current_url)
+                raise FetchWindowClosedError(url, current_url, last_page_url)
             result = await self.fetch(current_url, use_cache=False)
 
             # Rückfall: Manche Listen lehnen modified_since ab (Stadt Münster: HTTP 401 bei organization und
@@ -1200,9 +1229,7 @@ class OParlClient:
 
             # Bringt die Seite keine Kennung, die nicht schon auf der vorigen stand, zählt sie als Wiederholung;
             # Seiten ohne Kennungen zählen nicht (Issue #1088). Nur die vorige Seite, kein Speicher über die Liste.
-            page_ids = frozenset(
-                item["id"] for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)
-            )
+            page_ids = page_keys(items)
             if page_ids:
                 stale_pages = stale_pages + 1 if page_ids <= previous_ids else 0
                 previous_ids = page_ids
@@ -1210,6 +1237,7 @@ class OParlClient:
             if items:
                 self.stats.objects_processed += len(items)
                 yield items
+            last_page_url = page_url
 
             # Get next page URL (server preserves filter params in links.next)
             if isinstance(result.data, dict):
