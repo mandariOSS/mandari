@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from datetime import date
+from html import unescape
 from pathlib import Path
 from typing import Any, cast
 
@@ -176,16 +177,19 @@ def test_seite_nennt_version_und_neuerungen(org: Any, person: Any, client_for: A
     vorlage = "work/neuigkeiten/neu/seite.html" if erscheinungsbild else "work/neuigkeiten/seite.html"
     assert vorlage in [t.name for t in antwort.templates]
     assert "Was ist neu?" in html and f"Sie arbeiten mit Version {VERSION}." in html
+    # Je Version ein Abschnitt, darin die Bereiche in der Reihenfolge der Datei und darin genau ihre Einträge
     versionen = neuigkeiten.versionen()
-    assert html.count('aria-labelledby="neu-') == len(versionen)
-    assert f'<span class="sr-only">Version </span>{versionen[0].version}</h2>' in html
-    for version in versionen:
-        for bereich in version.bereiche:
-            assert f'data-bereich="{bereich.schluessel}"' in html
-            muster = rf'data-lucide="{bereich.icon}"[^>]*></i>\s*{re.escape(bereich.label)}</h3>'
-            assert re.search(muster, html), f"Überschrift mit Symbol: {bereich.label}"
-    for eintrag in neuigkeiten.neuigkeiten():
-        assert f'dark:text-white">{eintrag.titel}</h4>' in html
+    abschnitte = [teil.split("</section>")[0] for teil in re.split(r'<section aria-labelledby="neu-\d+"', html)[1:]]
+    assert len(abschnitte) == len(versionen)
+    for abschnitt, version in zip(abschnitte, versionen, strict=True):
+        assert f'<span class="sr-only">Version </span>{version.version}</h2>' in abschnitt
+        teile = re.split(r'<div data-bereich="([^"]+)"', abschnitt)
+        assert teile[1::2] == [bereich.schluessel for bereich in version.bereiche]
+        for bereich, inhalt in zip(version.bereiche, teile[2::2], strict=True):
+            symbol = re.escape(f'data-lucide="{bereich.icon}"')
+            assert re.search(symbol + r"[^>]*></i>\s*" + re.escape(bereich.label) + "</h3>", inhalt), bereich.label
+            titel = [unescape(t) for t in re.findall(r'dark:text-white">([^<]+)</h4>', inhalt)]
+            assert titel == [eintrag.titel for eintrag in bereich.eintraege]
 
 
 def test_seite_ohne_anmeldung_und_fuer_gaeste_nicht(org: Any, client: Any, client_for: Any) -> None:

@@ -1,21 +1,23 @@
 {% comment %}
 Neuerungen in Work je Version (Issue #1463), gemeinsam für das neue und das bisherige Erscheinungsbild. Je Version
-steht links die Versionsnummer mit ihrem Tag (ab 1.280 px als Spalte, die beim Lesen stehen bleibt), rechts die
+steht links die Versionsnummer mit ihrem Tag (ab 1.280 px als Spalte, die beim Lesen stehen bleibt; 5rem Abstand oben,
+damit sie unter der haftenden Kopfzeile beider Rahmen bleibt, 48 bzw. 52 px), rechts die
 Neuerungen je Bereich von Work, mit Beschriftung und Symbol wie in der Navigation. Ab 1.600 px stehen die Neuerungen
 in zwei Spalten, damit die Zeilen kurz bleiben und die Breite nicht leer bleibt: Ein Bereich mit mehreren Neuerungen
-nimmt beide Spalten, Bereiche mit einer stehen nebeneinander (grid-flow-dense füllt Lücken). Eine Ebene ohne Kästen;
-nur zwischen den Versionen trennt eine Linie. Einträge ohne Version (noch in keinem Release) stehen unter
+nimmt beide Spalten, aufeinanderfolgende Bereiche mit einer stehen nebeneinander. Die Reihenfolge bleibt die der Datei
+(Lücken werden nicht aufgefüllt: Sichtbare und vorgelesene Reihenfolge sollen gleich sein). Eine Ebene ohne Kästen; nur zwischen
+den Versionen trennt eine Linie. Einträge ohne Version (noch in keinem Release) stehen unter
 „Seit der letzten Version“. Kontext: versionen (apps/work/neuigkeiten.versionen).
 {% endcomment %}
 {% if versionen %}
 <div class="space-y-10" data-testid="work-neuigkeiten">
     {% for version in versionen %}
     <section aria-labelledby="neu-{{ forloop.counter }}" class="grid gap-x-12 gap-y-4 xl:grid-cols-[11rem_minmax(0,1fr)]{% if not forloop.first %} border-t border-gray-200 pt-8 dark:border-gray-800{% endif %}">
-        <div class="flex flex-wrap items-baseline gap-x-3 xl:sticky xl:top-6 xl:block xl:self-start">
+        <div class="flex flex-wrap items-baseline gap-x-3 xl:sticky xl:top-20 xl:block xl:self-start">
             <h2 id="neu-{{ forloop.counter }}" class="text-xl font-semibold tabular-nums tracking-tight text-gray-900 dark:text-white">{% if version.version %}<span class="sr-only">Version </span>{{ version.version }}{% else %}Seit der letzten Version{% endif %}</h2>
             <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 xl:mt-0.5"><time datetime="{{ version.datum|date:'Y-m-d' }}">{{ version.datum|date:'j. F Y' }}</time></p>
         </div>
-        <div class="grid gap-x-12 gap-y-10 min-[1600px]:grid-flow-dense min-[1600px]:grid-cols-[repeat(2,minmax(0,36rem))]">
+        <div class="grid gap-x-12 gap-y-10 min-[1600px]:grid-cols-[repeat(2,minmax(0,36rem))]">
             {% for bereich in version.bereiche %}
             <div data-bereich="{{ bereich.schluessel }}"{% if bereich.mehrere %} class="min-[1600px]:col-span-2"{% endif %}>
                 <h3 class="flex items-center gap-2 text-[0.8125rem] font-semibold text-gray-600 dark:text-gray-400"><c-ui.icon name="{{ bereich.icon }}" />{{ bereich.label }}</h3>
