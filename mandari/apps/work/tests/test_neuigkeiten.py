@@ -2,8 +2,8 @@
 """
 „Was ist neu?“ in Work und der Hinweis auf die Version in der Seitenleiste (Issue #1463).
 
-Geprüft wird die Datei ``apps/work/neuigkeiten.toml`` (Pflichtfelder, Längen, Anrede, ein Tag je Version und derselbe
-Tag wie in der CHANGELOG.md), die Seite in beiden Erscheinungsbildern, die Zeile mit der Version und der Punkt daneben:
+Geprüft wird die Datei ``apps/work/neuigkeiten.toml`` (Pflichtfelder, Bereich, Längen, Anrede, ein Tag je Version und
+derselbe Tag wie in der CHANGELOG.md), die Gliederung je Version und Bereich, die Seite in beiden Erscheinungsbildern, die Zeile mit der Version und der Punkt daneben:
 Er steht, bis die Person das Neueste gesehen hat, und kommt mit einem neuen Eintrag wieder.
 """
 
@@ -68,6 +68,7 @@ def test_datei_vollstaendig_und_in_sie_form() -> None:
         assert "\n" not in eintrag.text, f"ein Absatz: {eintrag.titel}"
         assert not re.search(r"\b(du|dir|dich|dein\w*|euch|euer\w*)\b", f"{eintrag.titel} {eintrag.text}", re.I)
         assert not eintrag.version or re.fullmatch(r"\d+\.\d+\.\d+", eintrag.version), eintrag.version
+        assert eintrag.bereich in neuigkeiten.bereiche(), f"Bereich „{eintrag.bereich}“: {eintrag.titel}"
     assert [e.datum for e in eintraege] == sorted((e.datum for e in eintraege), reverse=True)
     assert len({e.titel for e in eintraege}) == len(eintraege), "kein Titel doppelt"
 
@@ -98,6 +99,35 @@ def test_gruppen_eine_je_version() -> None:
     assert len(versionen) == len(set(versionen))
 
 
+def test_versionen_gliedern_je_bereich_in_der_reihenfolge_der_datei() -> None:
+    """Je Version die Bereiche in der Reihenfolge ihres ersten Eintrags, darin die Einträge wie in der Datei."""
+    versionen, gruppen = neuigkeiten.versionen(), neuigkeiten.gruppen()
+    assert [(v.datum, v.version) for v in versionen] == [(g.datum, g.version) for g in gruppen]
+    for version, gruppe in zip(versionen, gruppen, strict=True):
+        assert [b.schluessel for b in version.bereiche] == list(dict.fromkeys(e.bereich for e in gruppe.eintraege))
+        for bereich in version.bereiche:
+            assert list(bereich.eintraege) == [e for e in gruppe.eintraege if e.bereich == bereich.schluessel]
+            assert (bereich.label, bereich.icon) == neuigkeiten.bereiche()[bereich.schluessel]
+            assert bereich.mehrere == (len(bereich.eintraege) > 1)
+
+
+def test_bereiche_wie_in_der_navigation() -> None:
+    bereiche = neuigkeiten.bereiche()
+    assert bereiche["aufgaben"] == ("Aufgaben", "square-check")
+    assert bereiche["hilfe"] == ("Hilfe und Support", "circle-help")
+    assert bereiche[neuigkeiten.UEBERALL] == ("Überall in Work", "app-window")
+    assert all(label and icon for label, icon in bereiche.values())
+
+
+def test_unbekannter_bereich_zaehlt_als_ueberall(monkeypatch: pytest.MonkeyPatch) -> None:
+    eintrag = replace(neuigkeiten.neuigkeiten()[0], bereich="gibt-es-nicht")
+    monkeypatch.setattr(neuigkeiten, "neuigkeiten", lambda: (eintrag,))
+    [version] = neuigkeiten.versionen()
+    assert [(b.schluessel, b.label, b.eintraege) for b in version.bereiche] == [
+        (neuigkeiten.UEBERALL, "Überall in Work", (eintrag,))
+    ]
+
+
 def test_stand_ist_juengster_tag_und_zahl_seiner_eintraege(monkeypatch: pytest.MonkeyPatch) -> None:
     eintraege = neuigkeiten.neuigkeiten()
     juengster = eintraege[0].datum
@@ -121,7 +151,13 @@ def test_stand_ist_juengster_tag_und_zahl_seiner_eintraege(monkeypatch: pytest.M
 def test_falscher_aufbau_ist_ein_fehler_der_datei(tmp_path: Path) -> None:
     """Gültiges TOML, aber kein Eintrag mit Feldern: Der Leser meldet es wie fehlende Pflichtfelder."""
     datei = tmp_path / "neu.toml"
-    for inhalt in ('eintrag = ["nur Text"]\n', 'eintrag = "kein Eintrag"\n', "[eintrag]\ntitel = 1\n"):
+    falscher_bereich = '[[eintrag]]\ndatum = 2026-01-05\ntitel = "Neu."\ntext = "Text."\nbereich = 1\n'
+    for inhalt in (
+        'eintrag = ["nur Text"]\n',
+        'eintrag = "kein Eintrag"\n',
+        "[eintrag]\ntitel = 1\n",
+        falscher_bereich,
+    ):
         datei.write_text(inhalt, encoding="utf-8")
         with pytest.raises(ValueError):
             portal.lies(datei)
@@ -140,11 +176,16 @@ def test_seite_nennt_version_und_neuerungen(org: Any, person: Any, client_for: A
     vorlage = "work/neuigkeiten/neu/seite.html" if erscheinungsbild else "work/neuigkeiten/seite.html"
     assert vorlage in [t.name for t in antwort.templates]
     assert "Was ist neu?" in html and f"Sie arbeiten mit Version {VERSION}." in html
-    gruppen = neuigkeiten.gruppen()
-    assert html.count('aria-labelledby="neu-') == len(gruppen)
-    assert f"Version {gruppen[0].version}" in html
+    versionen = neuigkeiten.versionen()
+    assert html.count('aria-labelledby="neu-') == len(versionen)
+    assert f'<span class="sr-only">Version </span>{versionen[0].version}</h2>' in html
+    for version in versionen:
+        for bereich in version.bereiche:
+            assert f'data-bereich="{bereich.schluessel}"' in html
+            muster = rf'data-lucide="{bereich.icon}"[^>]*></i>\s*{re.escape(bereich.label)}</h3>'
+            assert re.search(muster, html), f"Überschrift mit Symbol: {bereich.label}"
     for eintrag in neuigkeiten.neuigkeiten():
-        assert f'<h3 class="text-sm font-semibold text-gray-900 dark:text-white">{eintrag.titel}</h3>' in html
+        assert f'dark:text-white">{eintrag.titel}</h4>' in html
 
 
 def test_seite_ohne_anmeldung_und_fuer_gaeste_nicht(org: Any, client: Any, client_for: Any) -> None:
