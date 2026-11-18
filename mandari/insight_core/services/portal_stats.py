@@ -18,11 +18,13 @@ von Django durchläuft.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.core.cache import cache
 from django.db.models import Count
+from django.utils import timezone
 
 from ..models import (
     OParlFile,
@@ -36,8 +38,16 @@ from ..models import (
 if TYPE_CHECKING:
     from ..models import OParlBody
 
+logger = logging.getLogger(__name__)
+
 #: Gültigkeitsdauer der Kennzahlen.
 STATS_TTL_SECONDS = 10 * 60
+
+#: Vorberechneter Stand der öffentlichen Zahlen für ``/api/stats/`` und ``/api/stats/bodies/`` (Issue #1478)
+API_STAND_KEY = "insight:api-stats:stand:v1"
+#: Der Zeitplan ``oeffentliche_zahlen_fortschreiben`` schreibt ihn alle zehn Minuten neu. Die Frist begrenzt das Alter
+#: der Zahlen, wenn der Worker steht oder Web und Worker keinen gemeinsamen Cache haben: Dann zählt ein Abruf je Frist.
+API_STAND_TTL_SECONDS = 30 * 60
 
 _CACHE_PREFIX = "insight:portal-stats"
 _VERSION_KEY = f"{_CACHE_PREFIX}:version"
@@ -70,7 +80,9 @@ def _cached[T](name: str, compute: Callable[[], T]) -> T:
     return value
 
 
-def _counts_by_body(model: type[OParlPaper] | type[OParlOrganization] | type[OParlMeeting]) -> dict[str, int]:
+def _counts_by_body(
+    model: type[OParlPaper] | type[OParlOrganization] | type[OParlMeeting] | type[OParlPerson],
+) -> dict[str, int]:
     rows = model.objects.filter(deleted=False).values("body").annotate(n=Count("id"))
     return {str(row["body"]): int(row["n"]) for row in rows}
 
@@ -119,3 +131,57 @@ def body_stats(body: OParlBody) -> dict[str, int]:
         }
 
     return _cached(f"body:{body.pk}", compute)
+
+
+# ---------------------------------------------------------------------------
+# Öffentliche Zahlen für /api/stats/ und /api/stats/bodies/ (Issue #1478)
+# ---------------------------------------------------------------------------
+
+
+def _api_stand_berechnen() -> dict[str, Any]:
+    """Gremien, Personen, Sitzungen und Vorgänge je Kommune: vier Abfragen, je eine über die ganze Tabelle."""
+    return {
+        "ermittelt_am": timezone.now().isoformat(timespec="seconds"),
+        "je_kommune": {
+            "organizations": _counts_by_body(OParlOrganization),
+            "persons": _counts_by_body(OParlPerson),
+            "meetings": _counts_by_body(OParlMeeting),
+            "papers": _counts_by_body(OParlPaper),
+        },
+    }
+
+
+def api_stand(*, refresh: bool = False) -> dict[str, Any]:
+    """
+    Zuletzt ermittelte Zahlen je Kommune für ``/api/stats/`` und ``/api/stats/bodies/``, ohne im Abruf zu zählen.
+
+    Die Zählungen laufen über die größten Tabellen des Portals (in Produktion rund 590.000 Vorgänge) und brauchten
+    im Abruf 3 bis 5 s, unter Last über 10 s (Issue #1478). Der Zeitplan ``oeffentliche_zahlen_fortschreiben``
+    schreibt den Stand alle zehn Minuten (``refresh=True``). Fehlt er (erster Start, geleerter Cache), zählt der
+    erste Abruf einmal selbst und legt ihn ab.
+    """
+    if not refresh:
+        try:
+            stand = cache.get(API_STAND_KEY)
+        except Exception:  # noqa: BLE001 – ohne Cache zählt der Abruf selbst
+            logger.warning("Stand der öffentlichen Zahlen nicht lesbar", exc_info=True)
+            stand = None
+        if isinstance(stand, dict) and isinstance(stand.get("je_kommune"), dict):
+            return stand
+    stand = _api_stand_berechnen()
+    try:
+        cache.set(API_STAND_KEY, stand, API_STAND_TTL_SECONDS)
+    except Exception:  # noqa: BLE001
+        logger.warning("Stand der öffentlichen Zahlen nicht speicherbar", exc_info=True)
+    return stand
+
+
+def api_gesamt(stand: dict[str, Any], nicht_gelistet: set[str]) -> dict[str, int]:
+    """
+    Summen über alle Kommunen außer den nicht gelisteten (``nicht_gelistet``: Kennungen als Text), wie bisher
+    ``exclude(body__is_listed=False)``: Die Demo-Kommune zählt nicht mit.
+    """
+    return {
+        art: sum(anzahl for kommune, anzahl in zahlen.items() if kommune not in nicht_gelistet)
+        for art, zahlen in stand["je_kommune"].items()
+    }

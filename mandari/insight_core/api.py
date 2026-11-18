@@ -10,14 +10,8 @@ from django.http import JsonResponse
 from django.views.decorators.cache import cache_page
 from django.views.decorators.http import require_GET
 
-from .models import (
-    ContactRequest,
-    OParlBody,
-    OParlMeeting,
-    OParlOrganization,
-    OParlPaper,
-    OParlPerson,
-)
+from .models import ContactRequest, OParlBody
+from .services import portal_stats
 
 
 @require_GET
@@ -28,14 +22,20 @@ def stats(request):
 
     GET /api/stats/
     Returns aggregate counts of all OParl data.
+
+    Die Zahlen kommen aus dem vorberechneten Stand (``portal_stats.api_stand``, Issue #1478): Der Abruf zählt nicht
+    selbst über die großen Tabellen, er liest nur die Kommunen (wenige Zeilen), um die nicht gelisteten auszunehmen.
     """
+    stand = portal_stats.api_stand()
+    nicht_gelistet = {str(pk) for pk in OParlBody.objects.filter(is_listed=False).values_list("pk", flat=True)}
+    gesamt = portal_stats.api_gesamt(stand, nicht_gelistet)
     return JsonResponse(
         {
             "bodies": OParlBody.objects.listed().count(),
-            "organizations": OParlOrganization.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-            "persons": OParlPerson.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-            "meetings": OParlMeeting.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-            "papers": OParlPaper.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+            "organizations": gesamt["organizations"],
+            "persons": gesamt["persons"],
+            "meetings": gesamt["meetings"],
+            "papers": gesamt["papers"],
         }
     )
 
@@ -50,8 +50,11 @@ def stats_bodies(request):
     Returns list of all bodies with basic info.
     """
     bodies = OParlBody.objects.listed().order_by("name")
+    # Zahlen je Kommune aus dem vorberechneten Stand statt vier Zählungen je Kommune (Issue #1478)
+    je_kommune = portal_stats.api_stand()["je_kommune"]
     data = []
     for body in bodies:
+        kennung = str(body.id)
         data.append(
             {
                 "id": str(body.id),
@@ -62,10 +65,10 @@ def stats_bodies(request):
                 "website": body.website or "",
                 "latitude": float(body.latitude) if body.latitude else None,
                 "longitude": float(body.longitude) if body.longitude else None,
-                "organizations_count": OParlOrganization.objects.filter(body=body, deleted=False).count(),
-                "persons_count": OParlPerson.objects.filter(body=body, deleted=False).count(),
-                "meetings_count": OParlMeeting.objects.filter(body=body, deleted=False).count(),
-                "papers_count": OParlPaper.objects.filter(body=body, deleted=False).count(),
+                "organizations_count": je_kommune["organizations"].get(kennung, 0),
+                "persons_count": je_kommune["persons"].get(kennung, 0),
+                "meetings_count": je_kommune["meetings"].get(kennung, 0),
+                "papers_count": je_kommune["papers"].get(kennung, 0),
             }
         )
     return JsonResponse({"bodies": data})
