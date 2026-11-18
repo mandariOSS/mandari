@@ -20,6 +20,9 @@ Zeitpläne des Bürgerportals (``apps.events.schedule``, Issue #515).
 - ``sitemap_aufteilen``: alle 30 Minuten die Aufteilung der Sitemaps vorberechnen (Issue #1259), je gelistete Kommune
   und Art, fehlende zuerst, sonst die älter als drei Stunden (``services.sitemaps.aufteilungen_erneuern``). Der
   Sitemap-Index liest nur diese Werte und antwortet so auch ohne Cache schnell.
+- ``oeffentliche_zahlen_fortschreiben``: alle zehn Minuten die Zahlen je Kommune für ``/api/stats/`` und
+  ``/api/stats/bodies/`` zählen und ablegen (Issue #1478, ``services.portal_stats.api_stand``). Die Abrufe lesen nur
+  diesen Stand; ohne Stand zählt der erste Abruf einmal selbst.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from apps.events.schedule import cron, every
 from .services.georef_runner import run_auto_georef_pass
 from .services.kommunenverzeichnis_import import aus_koerperschaften
 from .services.page_feedback import purge_expired
+from .services.portal_stats import api_stand
 from .services.sitemaps import aufteilungen_erneuern
 
 
@@ -61,6 +65,17 @@ def kommunenverzeichnis_abgleichen() -> int:
 def sitemap_aufteilen() -> int:
     """Aufteilung der Sitemaps vorberechnen (fehlende und veraltete); Rückgabe: Zahl der neu berechneten."""
     return aufteilungen_erneuern()
+
+
+@every(minutes=10)
+@task
+def oeffentliche_zahlen_fortschreiben() -> int:
+    """
+    Zahlen für ``/api/stats/`` vorberechnen (Issue #1478); Rückgabe: Zahl der Kommunen mit Vorgängen.
+
+    Lässt sich der Stand nicht ablegen, scheitert der Lauf (sichtbar in den Aufträgen), statt Erfolg zu melden.
+    """
+    return len(api_stand(refresh=True)["je_kommune"]["papers"])
 
 
 @task
