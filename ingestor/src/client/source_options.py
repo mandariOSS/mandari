@@ -50,14 +50,16 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     ``Europe/Berlin``, abweichend über ``"tz"``; über Mitternacht erlaubt). Ein Vollabgleich außerhalb des
     Fensters, ob geplant, aus dem Admin oder per ``sync --full``, läuft als inkrementeller Abgleich. Ein
     laufender Vollabgleich holt nach dem Ende des Fensters keine weitere Seite mehr; die offenen Listen gelten
-    als unvollständig und kommen beim nächsten Vollabgleich wieder dran. Mit ``sync_window`` gilt nur der Teil
-    innerhalb des Abruffensters (siehe dort); liegt es ganz außerhalb oder in einer anderen Zeitzone, gilt es als
-    nicht gesetzt.
+    als unvollständig, und der nächste Vollabgleich setzt sie ab der zuletzt gelesenen Seite fort
+    (``src/sync/fortsetzung.py``), mit ``full_sync_slices`` stattdessen ab der letzten ganz gelesenen Zeitscheibe.
+    Mit ``sync_window`` gilt nur der Teil innerhalb des Abruffensters (siehe dort); liegt es ganz außerhalb oder in
+    einer anderen Zeitzone, gilt es als nicht gesetzt.
 ``full_sync_every_days``
     Mindestabstand in Tagen (1 bis 365) zwischen zwei vollständig erfolgreichen Vollabgleichen
     (``last_successful_full_sync``). Für Quellen, die zuverlässig mit ``modified_since`` filtern: Der
     nächtliche Vollabgleich läuft dann nur alle paar Wochen, sonst inkrementell. Ein abgebrochener
-    Vollabgleich zählt nicht, er wird in der nächsten Nacht wiederholt.
+    Vollabgleich zählt nicht, er wird in der nächsten Nacht wiederholt (nach einem Abbruch am Fensterende als
+    Fortsetzung, ``src/sync/fortsetzung.py``, mit ``full_sync_slices`` über deren Fortschritt).
 ``full_sync_slices``
     Vollabgleich in Zeitscheiben (Issue #1033), z. B. ``{"days": 30, "since": "2010-01-01"}``: für Quellen, deren
     ungefilterte Listen abbrechen (Stadt Hamm, SD.NET RIM: HTTP 504 nach 60 Sekunden). Der Vollabgleich fragt dann

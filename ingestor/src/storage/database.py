@@ -410,6 +410,9 @@ SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY: Final = "full_sync_progress"
 #: Schlüssel in ``OParlSource.sync_config``: Befund „Server ignoriert den Filter einer Zeitscheibe“ (``checked_at``,
 #: ``list``, ``detail``); solange er gilt, läuft der Vollabgleich der Quelle nicht in Zeitscheiben (Issue #1033)
 SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY: Final = "full_sync_filter_ignored"
+#: Schlüssel in ``OParlSource.sync_config``: Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs je Liste
+#: (Adresse -> ``page`` und ``at`` bzw. ``done`` und ``at``; ``src/sync/fortsetzung.py``)
+SYNC_CONFIG_FULL_SYNC_RESUME_KEY: Final = "full_sync_resume"
 #: Schlüssel in ``OParlSource.sync_config``: optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind (Adresse ->
 #: ``failures``, ``until``, ``since``, ``reason``; Issue #1033)
 SYNC_CONFIG_SLOW_LISTS_KEY: Final = "slow_lists"
@@ -466,6 +469,12 @@ def timed_lists_of(sync_config: Any) -> set[str]:
     if not isinstance(stored, dict):
         return set()
     return {url for url in stored if isinstance(url, str) and url}
+
+
+def full_sync_resume_of(sync_config: Any) -> dict[str, Any]:
+    """Einträge der Fortsetzung eines abgebrochenen Vollabgleichs (``sync_config["full_sync_resume"]``), roh."""
+    stored = sync_config.get(SYNC_CONFIG_FULL_SYNC_RESUME_KEY) if isinstance(sync_config, dict) else None
+    return dict(stored) if isinstance(stored, dict) else {}
 
 
 def full_sync_progress_of(sync_config: Any) -> dict[str, datetime]:
@@ -1080,6 +1089,20 @@ class DatabaseStorage:
 
         def change(sync_config: dict[str, Any]) -> bool:
             return _put_entry(sync_config, SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY, list_url, value)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def set_full_sync_resume(self, source_url: str, changes: Mapping[str, dict[str, Any] | None]) -> None:
+        """
+        Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs festhalten (``sync_config["full_sync_resume"]``,
+        ``src/sync/fortsetzung.py``): Eintrag je Liste setzen oder löschen (``None``). Unter Zeilensperre.
+        """
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            changed = False
+            for list_url, entry in changes.items():
+                changed = _put_entry(sync_config, SYNC_CONFIG_FULL_SYNC_RESUME_KEY, list_url, entry) or changed
+            return changed
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 
