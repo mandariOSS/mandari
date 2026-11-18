@@ -159,6 +159,10 @@ def api_stand(*, refresh: bool = False) -> dict[str, Any]:
     im Abruf 3 bis 5 s, unter Last über 10 s (Issue #1478). Der Zeitplan ``oeffentliche_zahlen_fortschreiben``
     schreibt den Stand alle zehn Minuten (``refresh=True``). Fehlt er (erster Start, geleerter Cache), zählt der
     erste Abruf einmal selbst und legt ihn ab.
+
+    Lässt sich der Stand nicht ablegen, bekommt ein Abruf trotzdem seine Zahlen (Warnung im Protokoll). Mit
+    ``refresh=True`` geht der Fehler an den Aufrufer: Der Lauf des Zeitplans gilt dann als fehlgeschlagen, statt
+    still einen alten Stand stehen zu lassen.
     """
     if not refresh:
         try:
@@ -171,17 +175,22 @@ def api_stand(*, refresh: bool = False) -> dict[str, Any]:
     stand = _api_stand_berechnen()
     try:
         cache.set(API_STAND_KEY, stand, API_STAND_TTL_SECONDS)
-    except Exception:  # noqa: BLE001
+    except Exception:
+        if refresh:
+            raise
         logger.warning("Stand der öffentlichen Zahlen nicht speicherbar", exc_info=True)
     return stand
 
 
-def api_gesamt(stand: dict[str, Any], nicht_gelistet: set[str]) -> dict[str, int]:
+def api_gesamt(stand: dict[str, Any], gelistet: set[str]) -> dict[str, int]:
     """
-    Summen über alle Kommunen außer den nicht gelisteten (``nicht_gelistet``: Kennungen als Text), wie bisher
+    Summen über die gelisteten Kommunen (``gelistet``: Kennungen als Text), wie bisher
     ``exclude(body__is_listed=False)``: Die Demo-Kommune zählt nicht mit.
+
+    Bewusst eine Positivliste: Der Stand kann bis zum nächsten Lauf noch Zahlen einer Kommune enthalten, die
+    inzwischen gelöscht oder aus der Liste genommen wurde. Sie zählen sofort nicht mehr mit.
     """
     return {
-        art: sum(anzahl for kommune, anzahl in zahlen.items() if kommune not in nicht_gelistet)
+        art: sum(anzahl for kommune, anzahl in zahlen.items() if kommune in gelistet)
         for art, zahlen in stand["je_kommune"].items()
     }

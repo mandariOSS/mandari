@@ -70,7 +70,11 @@ def sitemap_aufteilen() -> int:
 @every(minutes=10)
 @task
 def oeffentliche_zahlen_fortschreiben() -> int:
-    """Zahlen für ``/api/stats/`` vorberechnen (Issue #1478); Rückgabe: Zahl der Kommunen mit Vorgängen."""
+    """
+    Zahlen für ``/api/stats/`` vorberechnen (Issue #1478); Rückgabe: Zahl der Kommunen mit Vorgängen.
+
+    Lässt sich der Stand nicht ablegen, scheitert der Lauf (sichtbar in den Aufträgen), statt Erfolg zu melden.
+    """
     return len(api_stand(refresh=True)["je_kommune"]["papers"])
 
 

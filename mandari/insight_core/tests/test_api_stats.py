@@ -112,15 +112,57 @@ def test_ohne_stand_zaehlt_der_erste_abruf_einmal_und_legt_ihn_ab(bestand: dict[
 def test_stand_gilt_bis_der_zeitplan_ihn_fortschreibt(bestand: dict[str, OParlBody]) -> None:
     from insight_core import schedules
 
+    alle = {str(bestand["aachen"].pk), str(bestand["demo"].pk)}
     portal_stats.api_stand(refresh=True)
     OParlPaper.objects.create(body=bestand["aachen"], external_id="neu", name="Neue Vorlage")
 
-    assert portal_stats.api_gesamt(portal_stats.api_stand(), set())["papers"] == 8, "noch der abgelegte Stand"
+    assert portal_stats.api_gesamt(portal_stats.api_stand(), alle)["papers"] == 8, "noch der abgelegte Stand"
 
     assert schedules.oeffentliche_zahlen_fortschreiben.call() == 2, "zwei Kommunen mit Vorgängen"
     stand = portal_stats.api_stand()
-    assert portal_stats.api_gesamt(stand, set())["papers"] == 9
-    assert portal_stats.api_gesamt(stand, {str(bestand["demo"].pk)})["papers"] == 4
+    assert portal_stats.api_gesamt(stand, alle)["papers"] == 9
+    assert portal_stats.api_gesamt(stand, {str(bestand["aachen"].pk)})["papers"] == 4
+
+
+def test_geloeschte_oder_ausgelistete_kommune_zaehlt_sofort_nicht_mehr(bestand: dict[str, OParlBody]) -> None:
+    """Der Stand kennt die Kommune bis zum nächsten Lauf noch; die Summe nimmt nur, was gelistet und vorhanden ist."""
+    zweite = _kommune(4, "Stadt Beispiel")
+    _bestand(zweite, vorgaenge=2, sitzungen=1, gremien=1, personen=1)
+    demo = str(bestand["demo"].pk)
+    portal_stats.api_stand(refresh=True)
+
+    bestand["demo"].delete()
+    OParlBody.objects.filter(pk=zweite.pk).update(is_listed=False)
+    stand = cache.get(portal_stats.API_STAND_KEY)
+    assert stand["je_kommune"]["papers"][demo] == 5, "der Stand ist noch der alte"
+    assert stand["je_kommune"]["papers"][str(zweite.pk)] == 2
+
+    daten, sql = _abruf("/api/stats/")
+
+    assert daten == {"bodies": 2, "organizations": 1, "persons": 2, "meetings": 2, "papers": 3}
+    assert _zaehlt(sql) == [], "aus dem Stand, ohne neu zu zählen"
+
+
+class _CacheOhneSchreiben:
+    """Liest nichts, Schreiben scheitert (Redis nicht erreichbar)."""
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return default
+
+    def set(self, key: str, value: Any, timeout: int | None = None) -> None:
+        raise ConnectionError("Cache nicht erreichbar")
+
+
+def test_schreibfehler_laesst_den_zeitplan_scheitern_der_abruf_bekommt_zahlen(
+    bestand: dict[str, OParlBody], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from insight_core import schedules
+
+    monkeypatch.setattr(portal_stats, "cache", _CacheOhneSchreiben())
+
+    assert portal_stats.api_stand()["je_kommune"]["papers"][str(bestand["aachen"].pk)] == 3, "Abruf zählt selbst"
+    with pytest.raises(ConnectionError):
+        schedules.oeffentliche_zahlen_fortschreiben.call()
 
 
 def test_unbrauchbarer_stand_wird_neu_gerechnet(bestand: dict[str, OParlBody]) -> None:

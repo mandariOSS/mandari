@@ -24,11 +24,11 @@ def stats(request):
     Returns aggregate counts of all OParl data.
 
     Die Zahlen kommen aus dem vorberechneten Stand (``portal_stats.api_stand``, Issue #1478): Der Abruf zählt nicht
-    selbst über die großen Tabellen, er liest nur die Kommunen (wenige Zeilen), um die nicht gelisteten auszunehmen.
+    selbst über die großen Tabellen, er liest nur die Kommunen (wenige Zeilen) und summiert die gelisteten.
     """
     stand = portal_stats.api_stand()
-    nicht_gelistet = {str(pk) for pk in OParlBody.objects.filter(is_listed=False).values_list("pk", flat=True)}
-    gesamt = portal_stats.api_gesamt(stand, nicht_gelistet)
+    gelistet = {str(pk) for pk in OParlBody.objects.filter(is_listed=True).values_list("pk", flat=True)}
+    gesamt = portal_stats.api_gesamt(stand, gelistet)
     return JsonResponse(
         {
             "bodies": OParlBody.objects.listed().count(),
