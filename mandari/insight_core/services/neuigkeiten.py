@@ -39,6 +39,8 @@ class Neuigkeit:
     version: str
     titel: str
     text: str
+    #: Bereich von Work, in dem die Neuerung steht (nur ``apps/work/neuigkeiten.toml``); im Bürgerportal leer
+    bereich: str = ""
 
 
 @dataclass(frozen=True)
@@ -63,12 +65,16 @@ def lies(pfad: Path | None = None) -> list[Neuigkeit]:
         if not isinstance(roh, dict):
             raise ValueError(f"Eintrag {nummer}: eine Tabelle mit datum, titel und text erwartet")
         datum, titel, text = roh.get("datum"), roh.get("titel"), roh.get("text")
-        version = roh.get("version", "")
-        if not isinstance(datum, date) or not isinstance(version, str):
-            raise ValueError(f"Eintrag {nummer}: datum (JJJJ-MM-TT) und version (Text) prüfen")
+        version, bereich = roh.get("version", ""), roh.get("bereich", "")
+        if not isinstance(datum, date) or not isinstance(version, str) or not isinstance(bereich, str):
+            raise ValueError(f"Eintrag {nummer}: datum (JJJJ-MM-TT), version und bereich (Text) prüfen")
         if not isinstance(titel, str) or not titel.strip() or not isinstance(text, str) or not text.strip():
             raise ValueError(f"Eintrag {nummer}: titel und text sind Pflicht")
-        eintraege.append(Neuigkeit(datum=datum, version=version.strip(), titel=titel.strip(), text=text.strip()))
+        eintraege.append(
+            Neuigkeit(
+                datum=datum, version=version.strip(), titel=titel.strip(), text=text.strip(), bereich=bereich.strip()
+            )
+        )
     # Stabil sortiert: Innerhalb eines Tags bleibt die Reihenfolge der Datei
     return sorted(eintraege, key=lambda eintrag: eintrag.datum, reverse=True)
 

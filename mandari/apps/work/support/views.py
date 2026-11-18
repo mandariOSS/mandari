@@ -86,7 +86,7 @@ class NeuigkeitenView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "neuigkeiten"
-        context["gruppen"] = neuigkeiten.gruppen()
+        context["versionen"] = neuigkeiten.versionen()
         neuigkeiten.als_gesehen_merken(self.request.user)
         return context
 
