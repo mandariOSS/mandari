@@ -55,6 +55,7 @@ from src.client.oparl_client import (
     ListMissingError,
     OParlClient,
     SyncStats,
+    unique_page_ids,
 )
 from src.client.oparl_compat import (
     detect_oparl_version,
@@ -1987,12 +1988,6 @@ class SyncOrchestrator:
         if track_resume and resume is not None:
             how, entry = resume.plan(list_url)
             since = resume.since(list_url)
-            if how == RESUME and entry is not None and await self._resume_shifted(client, entry):
-                console.print(
-                    f"[yellow]  {entity_type}: Liste hat sich seit dem Abbruch um mehr als eine Seite verschoben "
-                    f"({entry.page}), Liste ganz[/yellow]"
-                )
-                how = FULL
             if how in (CHANGES, RESUME) and since is not None:
                 was = (
                     "im Durchgang schon ganz gelesen, nur Änderungen"
@@ -2027,9 +2022,19 @@ class SyncOrchestrator:
                         f"Liste ganz[/yellow]"
                     )
                     how, carried = FULL, 0
+                    resume.discard(list_url)
                 else:
                     if how == CHANGES:
                         return carried
+            # Verschiebung direkt vor dem Weiterlesen prüfen, nach der Nachführung: Was die Quelle bis dahin ändert,
+            # soll die Prüfung noch sehen
+            if how == RESUME and entry is not None and await self._resume_shifted(client, entry):
+                console.print(
+                    f"[yellow]  {entity_type}: Liste hat sich seit dem Abbruch um mehr als eine Seite verschoben "
+                    f"({entry.page}), Liste ganz[/yellow]"
+                )
+                how = FULL
+                resume.discard(list_url)
             if how == RESUME and entry is not None and entry.page is not None:
                 resume_page = entry.page
                 console.print(f"[dim]  {entity_type}: Fortsetzung des Vollabgleichs ab {resume_page}[/dim]")
@@ -2522,16 +2527,19 @@ class SyncOrchestrator:
     async def _resume_shifted(client: OParlClient, entry: ResumeEntry) -> bool:
         """
         Hat sich die Liste seit dem Abbruch um mehr als eine Seite verschoben? Dann trägt die Fortsetzungsseite keine
-        der gemerkten Kennungen mehr, und Einträge, die noch nicht gelesen waren, könnten jetzt vor ihr stehen. Ohne
-        gemerkte Kennungen, nach dem Fensterende oder bei einem Fehler: nein (den Fehler zeigt das Weiterlesen).
+        der gemerkten Kennungen mehr, und Einträge, die noch nicht gelesen waren, könnten jetzt vor ihr stehen.
+        Gemerkt und verglichen werden nur Kennungen, die genau einmal auf der Seite stehen (``unique_page_ids``). Ohne
+        gemerkte Kennungen lässt sich die Lage nicht prüfen: ja, die Liste kommt ganz. Nach dem Fensterende oder bei
+        einem Fehler: nein (das Weiterlesen bricht dann ab bzw. zeigt den Fehler).
         """
-        if not entry.ids or entry.page is None or client.deadline_passed():
+        if entry.page is None or client.deadline_passed():
             return False
+        if not entry.ids:
+            return True
         result = await client.fetch(entry.page, use_cache=False)
         if result.error or result.data is None:
             return False
-        ids = {item.get("id") for item in OParlClient._extract_items(result.data) if isinstance(item, dict)}
-        return not (ids & set(entry.ids))
+        return not (set(unique_page_ids(OParlClient._extract_items(result.data))) & set(entry.ids))
 
     async def _settle_resume(self, resume: ResumeRun, complete: bool) -> None:
         """

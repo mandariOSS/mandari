@@ -21,7 +21,7 @@ from uuid import UUID
 import httpx
 import pytest
 
-from src.client.oparl_client import FetchWindowClosedError, OParlClient
+from src.client.oparl_client import FetchWindowClosedError, OParlClient, unique_page_ids
 from src.client.source_options import SourceFetchOptions
 from src.storage.database import SYNC_CONFIG_FULL_SYNC_RESUME_KEY, _put_entry, full_sync_resume_of
 from src.sync import orchestrator as orchestrator_module
@@ -158,16 +158,16 @@ async def test_abgebrochener_vollabgleich_setzt_in_der_naechsten_nacht_fort() ->
     beginn = stand[PAPER]["at"]
     assert all(stand[liste]["at"] == beginn for liste in stand)
 
-    # Nacht 2: Gelesene Listen nur mit Filter. Die Vorlagen: Prüfung der Fortsetzungsseite, Änderungen seit Nacht 1
-    # (keine), dann ab Seite 3 bis zum Ende
+    # Nacht 2: Gelesene Listen nur mit Filter. Die Vorlagen: Änderungen seit Nacht 1 (keine), Prüfung der
+    # Fortsetzungsseite, dann ab Seite 3 bis zum Ende
     stats, run = await _nacht(quelle, speicher)
 
     assert stats["incomplete"] == []
     for liste in ("organization", "person", "meeting"):
         anfragen = _anfragen(quelle, liste)
         assert anfragen and all(gefiltert for _seite, gefiltert in anfragen), liste
-    assert _anfragen(quelle, "paper") == [(3, False), (1, True), (3, False), (4, False), (5, False)]
-    assert quelle.filter_der_anfragen("paper")[1] == datetime.fromisoformat(beginn).isoformat()
+    assert _anfragen(quelle, "paper") == [(1, True), (3, False), (3, False), (4, False), (5, False)]
+    assert quelle.filter_der_anfragen("paper")[0] == datetime.fromisoformat(beginn).isoformat()
     # Vollständig: Der Durchgang ist fertig, die Fortsetzung gelöscht
     assert SYNC_CONFIG_FULL_SYNC_RESUME_KEY not in speicher.config
     assert speicher.aenderungen[-1] == dict.fromkeys(sorted({ORGANIZATION, PERSON, MEETING, PAPER}))
@@ -208,8 +208,8 @@ async def test_verschobene_liste_kommt_ganz() -> None:
     stats, _run = await _nacht(quelle, speicher)
 
     assert stats["incomplete"] == []
-    # Prüfung der Seite 3, dann die ganze Liste ab Seite 1 (ohne eigenen Änderungsabgleich: sie kommt ja ganz)
-    assert _anfragen(quelle, "paper") == [(3, False), (1, False), (2, False), (3, False)]
+    # Änderungen, Prüfung der Seite 3, dann die ganze Liste ab Seite 1
+    assert _anfragen(quelle, "paper") == [(1, True), (3, False), (1, False), (2, False), (3, False)]
     assert SYNC_CONFIG_FULL_SYNC_RESUME_KEY not in speicher.config
 
 
@@ -247,9 +247,7 @@ async def test_fortsetzungsseite_mit_fehler_beginnt_beim_naechsten_mal_von_vorn(
     speicher = FortsetzungsSpeicher()
     speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
         MEETING: ResumeEntry(at=jetzt, done=True).to_entry(),
-        PAPER: ResumeEntry(
-            at=jetzt, page=f"https://ris.example.org{PAPER.split('ris.example.org')[1]}?page=9"
-        ).to_entry(),
+        PAPER: ResumeEntry(at=jetzt, page=f"{PAPER}?page=9", ids=(f"{BASE}/paper/16",)).to_entry(),
     }
 
     stats, run = await _nacht(quelle, speicher)
@@ -323,7 +321,9 @@ async def test_scheitert_der_aenderungsabgleich_einer_gelesenen_liste_kommt_sie_
     speicher = FortsetzungsSpeicher()
     speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
         PERSON: ResumeEntry(at=jetzt - timedelta(days=1), done=True).to_entry(),
-        PAPER: ResumeEntry(at=jetzt - timedelta(days=1), page=f"{PAPER}?page=4").to_entry(),
+        PAPER: ResumeEntry(
+            at=jetzt - timedelta(days=1), page=f"{PAPER}?page=4", ids=(f"{BASE}/paper/6", f"{BASE}/paper/7")
+        ).to_entry(),
     }
 
     stats, _run = await _nacht(quelle, speicher)
@@ -331,8 +331,8 @@ async def test_scheitert_der_aenderungsabgleich_einer_gelesenen_liste_kommt_sie_
     assert stats["incomplete"] == []
     # Erst der Änderungsabgleich (zweite Seite abgelehnt), dann die ganze Liste ohne Filter
     assert _anfragen(quelle, "person") == [(1, True), (2, True), (1, False), (2, False)]
-    # Vorlagen ohne gemerkte Kennungen: keine Prüfung der Seite, Änderungen, dann ab Seite 4
-    assert _anfragen(quelle, "paper") == [(1, True), (4, False), (5, False)]
+    # Vorlagen: Änderungen, Prüfung der Seite 4, dann ab Seite 4
+    assert _anfragen(quelle, "paper") == [(1, True), (4, False), (4, False), (5, False)]
     assert SYNC_CONFIG_FULL_SYNC_RESUME_KEY not in speicher.config
 
 
@@ -548,3 +548,43 @@ async def test_nachfuehrung_liest_alle_gefilterten_seiten_und_uebernimmt_alles()
     assert stats["incomplete"] == []
     assert _anfragen(quelle, "meeting") == [(n, True) for n in range(1, 8)]
     assert stats["meetings"] == 14
+
+
+async def test_ohne_gemerkte_kennungen_kommt_die_liste_ganz() -> None:
+    """Prüfbefund (CodeRabbit): Lässt sich die Lage der Fortsetzungsseite nicht prüfen, kommt die Liste ganz."""
+    quelle = _koeln(datetime.now(UTC) - timedelta(days=30))
+    speicher = FortsetzungsSpeicher()
+    speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
+        PAPER: ResumeEntry(at=datetime.now(UTC), page=f"{PAPER}?page=4").to_entry(),
+    }
+
+    stats, _run = await _nacht(quelle, speicher)
+
+    assert stats["incomplete"] == []
+    assert _anfragen(quelle, "paper") == [(1, True), (1, False), (2, False), (3, False), (4, False), (5, False)]
+
+
+async def test_verworfener_stand_kommt_bei_abbruch_nicht_zurueck() -> None:
+    """
+    Prüfbefund (CodeRabbit): Hat sich die Liste verschoben und endet das Fenster gleich nach ihrer ersten Seite, bleibt
+    der alte Stand verworfen; der nächste Lauf beginnt die Liste von vorn statt wieder mit der Prüfung.
+    """
+    quelle = _koeln(datetime.now(UTC) - timedelta(days=30))
+    speicher = FortsetzungsSpeicher()
+    speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
+        MEETING: ResumeEntry(at=datetime.now(UTC), done=True).to_entry(),
+        PAPER: ResumeEntry(at=datetime.now(UTC), page=f"{PAPER}?page=3", ids=(f"{BASE}/paper/99",)).to_entry(),
+    }
+
+    # Änderungen (1), Prüfung (3), erste Seite der ganzen Liste (1), dann schließt das Fenster
+    stats, _run = await _nacht(quelle, speicher, lambda: quelle.anfragen_je_liste()["paper"] >= 3)
+
+    assert "paper" in stats["incomplete"]
+    assert _anfragen(quelle, "paper") == [(1, True), (3, False), (1, False)]
+    assert PAPER not in speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY]
+
+
+def test_platzhalter_sind_keine_gemerkten_kennungen() -> None:
+    platzhalter = {"id": f"{BASE}/consultations/0", "deleted": True}
+    seite = [platzhalter, {**platzhalter, "agendaItem": "x"}, {"id": f"{BASE}/paper/1"}, {"id": []}, {"name": "ohne"}]
+    assert unique_page_ids(seite) == (f"{BASE}/paper/1",)

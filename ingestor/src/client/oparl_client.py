@@ -162,6 +162,19 @@ def page_keys(items: list[Any]) -> frozenset[str]:
     return frozenset(keys)
 
 
+def unique_page_ids(items: list[Any]) -> tuple[str, ...]:
+    """
+    Kennungen, die genau einmal auf der Seite stehen, in ihrer Reihenfolge. Ein Platzhalter wie ``…/consultations/0``
+    steht auf vielen Seiten und sagt nichts darüber, wo eine Seite in der Liste liegt (Fortsetzung eines Vollabgleichs,
+    ``src/sync/fortsetzung.py``).
+    """
+    ids = [item["id"] for item in items if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]]
+    counts: dict[str, int] = {}
+    for item_id in ids:
+        counts[item_id] = counts.get(item_id, 0) + 1
+    return tuple(item_id for item_id in ids if counts[item_id] == 1)
+
+
 class ListFetchError(Exception):
     """
     Eine Objektliste (oder eine ihrer Seiten) war nicht abrufbar.
@@ -1260,9 +1273,7 @@ class OParlClient:
             # neuer Lauf ohnehin an, als Fortsetzung liefe sie im Kreis (``read_pages``)
             if next_page is not None or pages_fetched > 1:
                 last_page_url = page_url
-                last_page_ids = tuple(
-                    item["id"] for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)
-                )
+                last_page_ids = unique_page_ids(items)
 
             # Get next page URL (server preserves filter params in links.next)
             if isinstance(result.data, dict):

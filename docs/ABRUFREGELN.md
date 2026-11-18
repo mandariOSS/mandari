@@ -730,8 +730,11 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Fortsetzung über mehrere Fenster** (`ingestor/src/sync/fortsetzung.py`): Der nächste Vollabgleich beginnt nicht
   wieder bei Seite 1. Eine am Fensterende offene Liste holt er zuerst mit `modified_since` ab dem Beginn ihres ersten
   Laufs (abzüglich Sicherheitsabstand) nach, denn die schon gelesenen Seiten können sich seitdem geändert haben, und
-  liest sie dann ab ihrer zuletzt ganz gelesenen Seite (eine Seite Überlappung) bis zum Ende. Trägt diese Seite keine
-  der gemerkten Kennungen mehr, hat sich die Liste um mehr als eine Seite verschoben, und er liest sie ganz. Listen, die
+  liest sie dann ab ihrer zuletzt ganz gelesenen Folgeseite (eine Seite Überlappung) bis zum Ende. Endete das Fenster
+  schon nach der ersten Seite, gibt es keine Fortsetzungsseite, und die Liste beginnt wieder bei Seite 1. Trägt die
+  Fortsetzungsseite keine der gemerkten Kennungen mehr (gemerkt werden nur Kennungen, die genau einmal auf ihr
+  stehen, keine Platzhalter), hat sich die Liste um mehr als eine Seite verschoben, und er liest sie ganz; ebenso,
+  wenn sich keine Kennung merken ließ. Listen, die
   der Durchgang schon ganz gelesen hat, holt er nur mit `modified_since` ab demselben Zeitpunkt, damit sie aktuell
   bleiben, ohne das Fenster zu verbrauchen. Diese Nachführung übernimmt jedes gelieferte Objekt und bricht nicht nach
   Seiten ohne Änderung ab. Scheitert sie (die Stadt Köln lehnte gefilterte Folgeseiten zeitweise mit HTTP 401 ab),
