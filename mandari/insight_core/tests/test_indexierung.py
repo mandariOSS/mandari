@@ -800,7 +800,7 @@ class TestPersonenseite:
         _mitgliedschaft(person, rat, end_date=timezone.localdate() - timedelta(days=1))
         html = self._seite(client, person)
         assert _robots(html) == "noindex, follow"
-        assert _canonical(html) == f"{settings.SITE_URL}/insight/personen/{person.pk}/"
+        assert _canonical(html) is None, "kein Canonical neben noindex"
 
     def test_ausgeschieden_noindex_auch_nach_mitternacht_ortszeit(
         self, client: Client, rat: OParlOrganization, monkeypatch: pytest.MonkeyPatch
@@ -912,7 +912,8 @@ class TestListen:
         assert antwort.status_code == 200
         html = antwort.content.decode()
         assert _robots(html) == "noindex, follow"
-        assert _canonical(html) == f"{settings.SITE_URL}{self.KANONISCH.get(pfad, pfad)}", "Canonical ohne Parameter"
+        # Kein Canonical neben noindex: Beides zusammen widerspricht sich (Search Console, 18.11.2026)
+        assert _canonical(html) is None
 
     def test_weiterleitung_ohne_kommune_per_kopf(self, gewaehlt: OParlBody) -> None:
         """Ohne gewählte Kommune leiten Listen zur Auswahl weiter; mit Parametern trägt die Weiterleitung noindex."""
@@ -1044,7 +1045,7 @@ class TestBeschluesse:
         assert _canonical(html) == f"{settings.SITE_URL}/insight/beschluesse/umsetzung/"
         gefiltert = client.get("/insight/beschluesse/umsetzung/", {"status": "open"}).content.decode()
         assert _robots(gefiltert) == "noindex, follow"
-        assert _canonical(gefiltert) == f"{settings.SITE_URL}/insight/beschluesse/umsetzung/"
+        assert _canonical(gefiltert) is None, "kein Canonical neben noindex"
 
     def test_detail_mit_robots_und_canonical(self, client: Client, beschluss: Any) -> None:
         antwort = client.get(f"/insight/beschluesse/{beschluss.pk}/")

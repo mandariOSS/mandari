@@ -183,7 +183,32 @@ def fehlerseite(
 
 
 #: Fehlerseiten mit eigener Fassung im Stil des Bürgerportals (Issue #1261): Status → Vorlage
-INSIGHT_FEHLERSEITEN = {404: "errors/insight_404.html", 500: "errors/insight_500.html"}
+INSIGHT_FEHLERSEITEN = {
+    404: "errors/insight_404.html",
+    410: "errors/insight_410.html",
+    500: "errors/insight_500.html",
+}
+
+#: Detailseiten des Bürgerportals, deren Kennung sich nie ändert (``uuid5`` der Adresse in der Quelle, ADR
+#: ``docs/adr/20260929-kanonisches-modell.md``). Ihre Ansicht meldet „nicht gefunden“ nur, wenn es das Objekt
+#: nicht mehr gibt; vorübergehend abgeschaltete Kommunen antworten vorher mit 503, zurückgenommene Einträge mit 410.
+ENTFERNTE_DETAILSEITEN = frozenset({"paper_detail", "meeting_detail", "person_detail", "organization_detail"})
+
+
+def entfernte_detailseite(request: HttpRequest) -> bool:
+    """Gilt die 404 einer Detailseite des Bürgerportals, deren Objekt nicht mehr existiert?
+
+    Dann antwortet die Seite mit ``410 Gone`` statt 404 (Search Console „Nicht gefunden (404)“, 18.11.2026: rund
+    18.000 Adressen von Einträgen, die Kommunen entfernt oder neu angelegt haben). Suchmaschinen geben eine 410
+    schneller auf und fragen sie seltener erneut ab. Die Adresse ist schon aufgelöst (``resolver_match``), also
+    ohne Datenbankzugriff.
+    """
+    treffer = getattr(request, "resolver_match", None)
+    return (
+        treffer is not None
+        and treffer.url_name in ENTFERNTE_DETAILSEITEN
+        and treffer.namespace.split(":")[-1] == "insight"
+    )
 
 
 def im_buergerportal(request: HttpRequest) -> bool:
@@ -223,7 +248,9 @@ def handler_403(request: HttpRequest, exception: Exception | None = None) -> Htt
 
 @releases_db_connections
 def handler_404(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
-    """Page Not Found error handler."""
+    """Page Not Found error handler; entfernte Detailseiten des Bürgerportals mit 410 (``entfernte_detailseite``)."""
+    if entfernte_detailseite(request):
+        return fehlerseite_fuer(request, "404.html", 410)
     return fehlerseite_fuer(request, "404.html", 404)
 
 

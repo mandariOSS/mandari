@@ -205,15 +205,18 @@ class TestBlaettern:
         [
             ("vorgaenge/?page=1", "index, follow", "vorgaenge/"),
             ("vorgaenge/?page=2&utm_source=x", "index, follow", "vorgaenge/?page=2"),
-            ("vorgaenge/?page=last", "noindex, follow", "vorgaenge/"),
-            ("vorgaenge/?page=2&q=Vorgang", "noindex, follow", "vorgaenge/"),
-            ("vorgaenge/?period=past", "noindex, follow", "vorgaenge/"),
+            # noindex ohne Canonical: Beides zusammen widerspricht sich (Search Console, 18.11.2026)
+            ("vorgaenge/?page=last", "noindex, follow", None),
+            ("vorgaenge/?page=2&q=Vorgang", "noindex, follow", None),
+            ("vorgaenge/?period=past", "noindex, follow", None),
             ("termine/?period=past", "index, follow", "termine/?period=past"),
             ("termine/?page=2&period=past", "index, follow", "termine/?period=past&page=2"),
-            ("termine/?period=all", "noindex, follow", "termine/"),
+            ("termine/?period=all", "noindex, follow", None),
         ],
     )
-    def test_blaetteransichten(self, kommunen: dict[str, Any], anfrage: str, robots: str, kanonisch: str) -> None:
+    def test_blaetteransichten(
+        self, kommunen: dict[str, Any], anfrage: str, robots: str, kanonisch: str | None
+    ) -> None:
         _vorgaenge(kommunen["nord"], 30)
         for nummer in range(30):
             OParlMeeting.objects.create(
@@ -226,7 +229,10 @@ class TestBlaettern:
         html = Client().get(f"/insight/k/nord/{anfrage}").content.decode()
 
         assert _robots(html) == robots
-        assert (_canonical(html) or "").replace("&amp;", "&") == f"{settings.SITE_URL}/insight/k/nord/{kanonisch}"
+        if kanonisch is None:
+            assert _canonical(html) is None
+        else:
+            assert (_canonical(html) or "").replace("&amp;", "&") == f"{settings.SITE_URL}/insight/k/nord/{kanonisch}"
 
     def test_vergangene_sitzungen_haben_einen_eigenen_titel(self, kommunen: dict[str, Any]) -> None:
         html = Client().get("/insight/k/nord/termine/?period=past").content.decode()
@@ -250,7 +256,7 @@ class TestBlaettern:
         html = client.get("/insight/vorgaenge/?page=2").content.decode()
 
         assert _robots(html) == "noindex, follow"
-        assert _canonical(html) == f"{settings.SITE_URL}/insight/k/nord/vorgaenge/"
+        assert _canonical(html) is None, "kein Canonical neben noindex"
 
     def test_hoechstens_so_viele_seiten(self, kommunen: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_helpers, "LISTEN_SEITEN_HOECHSTENS", 1)

@@ -1,0 +1,15 @@
+{% extends "errors/insight_base.html" %}
+{# 410 im Bürgerportal: Detailseite eines Eintrags, den es nicht mehr gibt (mandari/urls.py: entfernte_detailseite) #}
+
+{% block title %}Seite nicht mehr verfügbar (410){% endblock %}
+
+{% block ueberschrift %}Diesen Eintrag gibt es nicht mehr{% endblock %}
+
+{% block erklaerung %}
+Die Kommune hat ihn in ihrem Ratsinformationssystem entfernt oder neu angelegt. Suchen Sie nach dem Thema, der Sitzung
+oder der Person, um den aktuellen Stand zu finden.
+{% endblock %}
+
+{% block hauptaktion %}{% include "errors/insight_suche.html" %}{% endblock %}
+
+{% block fussnote %}Fehler 410{% endblock %}

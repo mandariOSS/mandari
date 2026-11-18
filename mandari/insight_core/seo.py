@@ -553,18 +553,27 @@ def _gremien_der_sitzung(meeting: Any) -> list[dict[str, str]]:
     return gremien
 
 
-def ist_oeffentlich(tagesordnung: Iterable[Any]) -> bool:
-    """Hat die Sitzung laut Quelle einen öffentlichen Teil?
+def _ausdruecklich_nichtoeffentlich(punkt: Any) -> bool:
+    """Gibt die Quelle den Tagesordnungspunkt ausdrücklich als nichtöffentlich an?
 
-    Ja, wenn mindestens ein angezeigter Tagesordnungspunkt ausdrücklich öffentlich ist (OParl
-    ``AgendaItem.public: true`` in den Rohdaten). Fehlt die Angabe, steht die Spalte ``public`` nur auf ihrem
-    Standardwert – dann gilt die Sitzung hier nicht als öffentlich. An der Sitzung selbst kennt OParl keine
-    Angabe zur Öffentlichkeit.
+    Die Spalte ``public`` steht ohne Angabe der Quelle auf ihrem Standardwert ``True``; ``False`` ist deshalb immer
+    eine Angabe der Quelle, ebenso OParl ``AgendaItem.public: false`` in den Rohdaten.
     """
-    return any(
-        getattr(punkt, "public", False) and isinstance(punkt.raw_json, dict) and punkt.raw_json.get("public") is True
-        for punkt in tagesordnung
-    )
+    rohdaten = getattr(punkt, "raw_json", None)
+    return getattr(punkt, "public", True) is False or (isinstance(rohdaten, dict) and rohdaten.get("public") is False)
+
+
+def ist_nichtoeffentlich(tagesordnung: Iterable[Any]) -> bool:
+    """Ist die Sitzung laut Quelle ganz nichtöffentlich?
+
+    Sitzungen der Räte, Kreistage und ihrer Ausschüsse sind nach den Kommunalverfassungen grundsätzlich öffentlich
+    (etwa § 48 Abs. 2 GO NRW, § 64 NKomVG); ausgeschlossen wird die Öffentlichkeit nur für einzelne Punkte. An der
+    Sitzung selbst kennt OParl keine Angabe dazu. Nichtöffentlich ist eine Sitzung hier deshalb nur, wenn die Seite
+    Tagesordnungspunkte zeigt und die Quelle jeden davon ausdrücklich als nichtöffentlich angibt. Ohne Tagesordnung
+    (noch nicht veröffentlicht) oder ohne Angabe gilt der Grundsatz (Search Console „Feld offers fehlt“, 18.11.2026).
+    """
+    punkte = list(tagesordnung)
+    return bool(punkte) and all(_ausdruecklich_nichtoeffentlich(punkt) for punkt in punkte)
 
 
 def _gueltig_ab(meeting: Any) -> str | None:
@@ -600,9 +609,11 @@ def get_meeting_seo(
 
     Die Veranstaltung (``Event``) erscheint nur mit Beginn und einem verlässlichen Ort samt Postanschrift
     (``services.sitzungsort``, Issue #939) – Google wertet sie sonst als ungültig. Ohne beides trägt die Seite nur
-    die Brotkrumen. Veranstalter ist die Verwaltung der Kommune (mit der Seite der Kommune, ohne erreichbare Seite
-    mit ihrer Webseite), Mitwirkende sind die Gremien (mit ihren Seiten). Eintritt frei (``offers`` mit Preis 0, ``isAccessibleForFree``) nur bei einer
-    Sitzung mit ausdrücklich öffentlichem Teil, die nicht abgesagt ist.
+    die Brotkrumen, ebenso bei einer laut Quelle ganz nichtöffentlichen Sitzung (``ist_nichtoeffentlich``): Zu ihr
+    kann niemand kommen. Veranstalter ist die Verwaltung der Kommune (mit der Seite der Kommune, ohne erreichbare
+    Seite mit ihrer Webseite), Mitwirkende sind die Gremien (mit ihren Seiten). Der Eintritt ist frei (``offers`` mit
+    Preis 0, ``isAccessibleForFree``), auch bei einer abgesagten Sitzung: Google erwartet dort dieselben Angaben mit
+    ``EventCancelled``.
     """
     from .services.sitzungsort import ist_platzhalter, sitzungsort
 
@@ -631,10 +642,9 @@ def get_meeting_seo(
     description = beschreibung(*teile) or haupt
     canonical = build_canonical_url(request)
 
-    ort = sitzungsort(meeting, body) if meeting.start else None
+    ort = sitzungsort(meeting, body) if meeting.start and not ist_nichtoeffentlich(tagesordnung) else None
     json_ld = None
     if ort is not None:
-        eintritt_frei = not meeting.cancelled and ist_oeffentlich(tagesordnung)
         json_ld = _ohne_leere(
             {
                 "@context": "https://schema.org",
@@ -656,7 +666,7 @@ def get_meeting_seo(
                 or {"@type": "Organization", "name": "Kommune"},
                 "performer": _gremien_der_sitzung(meeting),
                 "sameAs": original or None,
-                "isAccessibleForFree": True if eintritt_frei else None,
+                "isAccessibleForFree": True,
                 "offers": {
                     "@type": "Offer",
                     "price": "0",
@@ -664,9 +674,7 @@ def get_meeting_seo(
                     "availability": "https://schema.org/InStock",
                     "url": canonical,
                     "validFrom": _gueltig_ab(meeting),
-                }
-                if eintritt_frei
-                else None,
+                },
             }
         )
 
@@ -950,7 +958,8 @@ def get_list_seo(request: HttpRequest, liste: str, title: str, description: str,
 
     Kanonisch ist die Adresse je Kommune (``/insight/k/<slug>/vorgaenge/``) – auch für die Liste im gemeinsamen
     Portal mit gewählter Kommune (``/insight/vorgaenge/``), die Suchmaschinen ohne Sitzung nur als Weiterleitung
-    sehen. Filter verweisen auf dieselbe Adresse und tragen ``noindex, follow`` (``services.indexierung.listenseite``).
+    sehen. Filter tragen ``noindex, follow`` (``services.indexierung.listenseite``) und dann keinen Canonical: Die
+    Vorlage lässt ihn neben ``noindex`` weg, beides zusammen widerspricht sich.
     Weitere Seiten und vergangene Sitzungen unter der Adresse je Kommune sind eigene Seiten mit eigener kanonischer
     Adresse (Issue #1145): Google rät davon ab, Folgeseiten auf die erste zu kanonisieren, und folgt deren Links dann
     nicht mehr. Ohne eigene Adresse (Kommune ohne Slug) bleibt alles wie bei ``get_page_seo``.
