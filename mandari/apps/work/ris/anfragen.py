@@ -2,21 +2,26 @@
 """
 Anfrage beantworten in Work (Issue #1488, Schritt 1): Antwortentwurf mit Fundstellen aus den öffentlichen Ratsdaten.
 
-Eine Geschäftsstelle fügt eine Bürger- oder Presseanfrage ein und bekommt einen Brieftext zurück, in dem an jeder
-Aussage steht, woher sie stammt. Der Entwurf entsteht mit denselben Werkzeugen, demselben Endpunkt und denselben
+Eine Geschäftsstelle fügt eine Bürger- oder Presseanfrage ein und bekommt einen Brieftext zurück, der seine
+Fundstellen als Fußnoten nennt. Der Entwurf entsteht mit denselben Werkzeugen, demselben Endpunkt und denselben
 Grenzen wie „Fragen an die Ratsdaten“ (``apps.work.ris.fragen``, Issues #853, #899, #950). Neu ist, was danach mit
 der Antwort des Modells geschieht:
 
-* **Fußnoten statt Links.** Jeder Markdown-Link auf einen Eintrag, den die Werkzeuge in dieser Antwort geliefert
-  haben, wird zu einer nummerierten Fundstelle; das Verzeichnis trägt dieselben Nummern. Ein Link auf etwas anderes
-  wird nie zur Fundstelle (``ctx.sources`` ist die einzige Quelle für Nummern).
+* **Fußnoten statt Links.** Jeder Markdown-Link auf einen Eintrag, den das Modell in einem Werkzeugergebnis dieser
+  Antwort bekommen hat, wird zu einer nummerierten Fundstelle; das Verzeichnis trägt dieselben Nummern. Ein Link auf
+  etwas anderes wird nie zur Fundstelle, auch nicht auf einen Eintrag, den ein Werkzeug vorgemerkt, aber aus einem zu
+  langen Ergebnis gekürzt hat (``gelieferte_quellen``).
 * **Offene Punkte getrennt.** Wozu die Ratsdaten nichts hergeben, steht hinter der Zeile ``OFFEN:`` und erscheint als
   eigener Abschnitt, nicht als Behauptung im Brief.
-* **Prüfung ohne zweiten KI-Aufruf.** Zahlen und Daten jedes Absatzes müssen im Material stehen, das das Modell
-  gesehen hat (Ergebnisse der Werkzeuge, ``ToolContext.ergebnisse``), oder in der Anfrage selbst; geprüft wird mit
-  den Regeln der Zusammenfassungen (``insight_ai.services.zusammenfassung_pruefung``, Issue #1271). Ein Absatz mit
-  Zahlen oder Daten ohne Fundstelle wird ebenfalls markiert. Markiert heißt: Der Absatz bleibt stehen, der Grund
-  steht darunter, der Mensch entscheidet.
+* **Prüfung ohne zweiten KI-Aufruf, je Absatz.** Zahlen und Daten müssen im Material stehen, das das Modell gesehen
+  hat (Ergebnisse der Werkzeuge, ``ToolContext.ergebnisse``), oder in der Anfrage selbst; geprüft wird mit den Regeln
+  der Zusammenfassungen (``insight_ai.services.zusammenfassung_pruefung``, Issue #1271), dazu einstellige Zahlen mit
+  Einheit („7 Euro“). Ein Absatz mit Zahlen oder Daten ohne Fundstelle wird ebenfalls markiert. Markiert heißt: Der
+  Absatz bleibt stehen, der Grund steht darunter, der Mensch entscheidet. Der Betreff erscheint nur, wenn seine
+  Angaben im Material stehen.
+* **Was die Prüfung nicht leistet.** Sie arbeitet je Absatz, nicht je Satz: Eine Aussage ohne Zahl und Datum in einem
+  Absatz mit Fundstelle fällt nicht auf. Die Seite verspricht deshalb keine belegte Einzelaussage; den Entwurf prüft
+  der Mensch gegen die Fundstellen.
 * **Anrede und Absender bleiben in mandari.** Sie kommen erst nach dem Aufruf an den Entwurf und stehen in keiner
   Nachricht an den KI-Dienst.
 
@@ -34,6 +39,7 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Final
 
 from django.conf import settings
@@ -393,6 +399,12 @@ _NICHTS: Final = re.compile(r"^(?:nichts|keine?|keine offenen punkte|entfällt|[
 _PLATZHALTER: Final = re.compile(r"\[([^\[\]\n]{3,120})\](?!\()")
 _HOST: Final = re.compile(r"^https?://[^/\s]+")
 _SATZZEICHEN: Final = ".,;:!?"
+#: Einstellige Zahl, die für sich steht (kein Teil von „7,5“, „7.000“, „07.10.“ oder „V/7“), mit Einheit dahinter
+_EINSTELLIG: Final = re.compile(
+    r"(?<![\w.,:/-])(\d)(?![\d.,:]*\d)\s*"
+    r"(?:€|%|(?:Euro|EUR|Cent|Prozent|Jahr(?:e|en|es)?|Monat(?:e|en|s)?|Wochen?|Tag(?:e|en|es)?|Stunden?|Minuten?|Uhr"
+    r"|Metern?|Kilometern?|Quadratmetern?|Hektar|km|qm|ha)\b)"
+)
 
 
 def _auszeichnen(maskiert: str) -> str:
@@ -404,6 +416,18 @@ def _auszeichnen(maskiert: str) -> str:
 def _schlicht(text: str) -> str:
     """Text ohne Markdown-Fettdruck (für die Kopierfassung)."""
     return _FETT.sub(r"\1", text)
+
+
+def gelieferte_quellen(ctx: AnfrageToolContext) -> dict[str, Source]:
+    """
+    Einträge, deren Adresse in einem Werkzeugergebnis steht, das das Modell bekommen hat.
+
+    ``ctx.sources`` allein reicht nicht: Die Werkzeuge merken jeden Eintrag vor, bevor ein zu langes Ergebnis gekürzt
+    wird (``chat_tools.dump``, etwa die Gremienliste). Ein vorgemerkter, aber weggekürzter Eintrag ist keine
+    Fundstelle; das Modell hat ihn nie gesehen. Die Adressen enden auf die Kennung und einen Schrägstrich, eine
+    Adresse ist deshalb nie der Anfang einer anderen.
+    """
+    return {url: eintrag for url, eintrag in ctx.sources.items() if any(url in roh for roh in ctx.ergebnisse)}
 
 
 def _quelle(ziel: str, quellen: dict[str, Source]) -> str | None:
@@ -447,6 +471,35 @@ def material(ergebnisse: list[str], anfrage: str, now: datetime) -> Quelle:
 _LEER: Final = Quelle(text="")
 
 
+def _einstellige_angaben(text: str) -> list[tuple[str, Decimal]]:
+    """
+    Einstellige Zahlen mit Währung, Prozent, Zeit- oder Maßeinheit („7 Euro“, „5 %“, „3 Jahre“) als (Text, Wert).
+
+    Die Regeln der Zusammenfassungen lassen einstellige Zahlen aus, weil sie dort meist für Zahlwörter stehen. Mit
+    Einheit ist auch eine einstellige Zahl eine Angabe, die im Material stehen und eine Fundstelle tragen muss.
+    """
+    return [(treffer.group(0), Decimal(treffer.group(1))) for treffer in _EINSTELLIG.finditer(text or "")]
+
+
+def _gepruefter_betreff(betreff: str, quelle: Quelle) -> str:
+    """
+    Betreff nur, wenn seine Zahlen und Daten im Material stehen, sonst leer (die Seite zeigt dann „Antwortentwurf“).
+
+    Der Betreff steht über dem Entwurf, gehört aber nicht zum Brief; ein Betreff mit einer fremden Angabe erscheint
+    deshalb gar nicht, statt den Entwurf als zu prüfen zu markieren.
+    """
+    try:
+        fremd = (
+            fremdes_datum(betreff, quelle)
+            or fremde_zahl(betreff, quelle)
+            or any(not quelle.hat_wert(wert) for _roh, wert in _einstellige_angaben(betreff))
+        )
+    except Exception:
+        logger.exception("Prüfung des Betreffs eines Antwortentwurfs gescheitert")
+        return ""
+    return "" if fremd else betreff
+
+
 def _hinweise(text: str, *, belegt: bool, fremd: int, quelle: Quelle) -> tuple[str, ...]:
     """Gründe, aus denen ein Absatz geprüft werden muss (leer: kein Befund)."""
     hinweise: list[str] = []
@@ -454,9 +507,10 @@ def _hinweise(text: str, *, belegt: bool, fremd: int, quelle: Quelle) -> tuple[s
         hinweise.append(FREMDE_FUNDSTELLE)
     try:
         datum = fremdes_datum(text, quelle)
-        zahl = fremde_zahl(text, quelle)
+        einstellig = _einstellige_angaben(text)
+        zahl = fremde_zahl(text, quelle) or next((roh for roh, wert in einstellig if not quelle.hat_wert(wert)), None)
         # Gegen eine leere Quelle ist jede Angabe fremd: So zeigt sich, ob der Absatz überhaupt Zahlen oder Daten nennt
-        hat_angabe = bool(datum or zahl or fremdes_datum(text, _LEER) or fremde_zahl(text, _LEER))
+        hat_angabe = bool(datum or zahl or einstellig or fremdes_datum(text, _LEER) or fremde_zahl(text, _LEER))
     except Exception:
         logger.exception("Prüfung eines Antwortentwurfs gescheitert")
         return (*hinweise, PRUEFUNG_GESCHEITERT)
@@ -477,7 +531,7 @@ def _fussnote(nummer: int, titel: str, url: str) -> str:
     )
 
 
-def _absatz(zeile: str, *, liste: bool, ctx: AnfrageToolContext, nummern: dict[str, int], quelle: Quelle) -> Absatz:
+def _absatz(zeile: str, *, liste: bool, quellen: dict[str, Source], nummern: dict[str, int], quelle: Quelle) -> Absatz:
     """Eine Zeile des Modells als Absatz: Links auf gelieferte Einträge werden Fußnoten, alle anderen bloßer Text."""
     html: list[str] = []
     text: list[str] = []
@@ -491,7 +545,7 @@ def _absatz(zeile: str, *, liste: bool, ctx: AnfrageToolContext, nummern: dict[s
         text.append(_schlicht(davor))
         belegt.append(_schlicht(davor))
         label = treffer.group(1)
-        ziel = _quelle(treffer.group(2), ctx.sources)
+        ziel = _quelle(treffer.group(2), quellen)
         html.append(_auszeichnen(escape(label)))
         text.append(_schlicht(label))
         belegt.append(_schlicht(label))
@@ -509,7 +563,7 @@ def _absatz(zeile: str, *, liste: bool, ctx: AnfrageToolContext, nummern: dict[s
             text.append(zeichen)
             belegt.append(zeichen)
             rest += 1
-        html.append(_fussnote(nummer, ctx.sources[ziel]["title"], ziel))
+        html.append(_fussnote(nummer, quellen[ziel]["title"], ziel))
     schluss = zeile[rest:]
     html.append(_auszeichnen(escape(schluss)))
     text.append(_schlicht(schluss))
@@ -546,12 +600,16 @@ def aufbereiten(entwurf: Entwurf, antwort: str, ctx: AnfrageToolContext, *, now:
         offen = [(trennzeile.group(1) if trennzeile else "") or "", *zeilen[offen_ab + 1 :]]
         zeilen = zeilen[:offen_ab]
     quelle = material(ctx.ergebnisse, entwurf.anfrage, now)
+    quellen = gelieferte_quellen(ctx)
     nummern: dict[str, int] = {}
     absatz: list[str] = []
 
+    def als_absatz(text: str, *, liste: bool = False) -> None:
+        entwurf.absaetze.append(_absatz(text, liste=liste, quellen=quellen, nummern=nummern, quelle=quelle))
+
     def absatz_schliessen() -> None:
         if absatz:
-            entwurf.absaetze.append(_absatz(" ".join(absatz), liste=False, ctx=ctx, nummern=nummern, quelle=quelle))
+            als_absatz(" ".join(absatz))
             absatz.clear()
 
     for zeile in zeilen:
@@ -560,24 +618,22 @@ def aufbereiten(entwurf: Entwurf, antwort: str, ctx: AnfrageToolContext, *, now:
             continue
         betreff = _BETREFF.match(zeile)
         if betreff and not entwurf.betreff and not entwurf.absaetze and not absatz:
-            entwurf.betreff = _schlicht(_LINK.sub(r"\1", betreff.group(1)))[:200]
+            entwurf.betreff = _gepruefter_betreff(_schlicht(_LINK.sub(r"\1", betreff.group(1)))[:200], quelle)
             continue
         eintrag = _LISTE.match(zeile)
         ueberschrift = _UEBERSCHRIFT.match(zeile)
         if eintrag:
             absatz_schliessen()
-            entwurf.absaetze.append(_absatz(eintrag.group(1), liste=True, ctx=ctx, nummern=nummern, quelle=quelle))
+            als_absatz(eintrag.group(1), liste=True)
         elif ueberschrift:
             absatz_schliessen()
-            entwurf.absaetze.append(
-                _absatz(ueberschrift.group(1), liste=False, ctx=ctx, nummern=nummern, quelle=quelle)
-            )
+            als_absatz(ueberschrift.group(1))
         else:
             absatz.append(zeile.strip())
     absatz_schliessen()
 
     def fundstelle(url: str, nummer: int) -> Fundstelle:
-        eintrag = ctx.sources[url]
+        eintrag = quellen[url]
         return Fundstelle(
             nummer=nummer,
             titel=eintrag["title"],
@@ -587,7 +643,7 @@ def aufbereiten(entwurf: Entwurf, antwort: str, ctx: AnfrageToolContext, *, now:
         )
 
     entwurf.fundstellen = [fundstelle(url, nummer) for url, nummer in nummern.items()]
-    entwurf.weitere = [fundstelle(url, 0) for url in ctx.detail_urls if url in ctx.sources and url not in nummern][
+    entwurf.weitere = [fundstelle(url, 0) for url in ctx.detail_urls if url in quellen and url not in nummern][
         :MAX_WEITERE
     ]
     entwurf.offen = _offene_punkte(offen)

@@ -12,7 +12,7 @@ alles andere 32–36 px (Maße der Arbeitsflächen).
 
 {% block work_header %}
 <c-rahmen.kopfband titel="Anfrage beantworten" dicht data-testid="anfrage-kopf"
-    text="Aus einer Bürger- oder Presseanfrage entsteht ein Antwortentwurf, bei dem an jeder Aussage steht, woher sie stammt. Sie prüfen und versenden selbst." />
+    text="Aus einer Bürger- oder Presseanfrage entsteht ein Antwortentwurf, der seine Fundstellen aus den Ratsdaten als Fußnoten nennt. Sie prüfen und versenden selbst." />
 {% endblock %}
 
 {% block work_content %}
@@ -26,7 +26,8 @@ alles andere 32–36 px (Maße der Arbeitsflächen).
 <div class="grid gap-x-12 gap-y-6 xl:grid-cols-[minmax(0,46rem)_minmax(16rem,22rem)] xl:items-start">
     <form id="anfrage-form" action="{% url 'work:ris_anfrage' org_slug=organization.slug %}" method="post"
           hx-post="{% url 'work:ris_anfrage' org_slug=organization.slug %}" hx-target="#anfrage-entwurf" hx-swap="innerHTML show:#anfrage-entwurf:top"
-          hx-indicator="#anfrage-laden" hx-disabled-elt="#anfrage-senden" class="min-w-0 space-y-4">
+          hx-indicator="#anfrage-laden" hx-disabled-elt="#anfrage-senden" class="min-w-0 space-y-4"
+          data-lade-meldung="Der Entwurf wird erstellt, das dauert bis zu anderthalb Minuten.">
         {% csrf_token %}
         <c-form.textarea name="anfrage" id="anfrage-text" label="Text der Anfrage" rows="8" maxlength="{{ max_anfrage }}" :value="anfrage_text" dicht required
             placeholder="Fügen Sie das Anliegen ein, zum Beispiel: Was wurde zum Radweg an der Musterstraße beschlossen, und wann wird gebaut?"
@@ -57,9 +58,9 @@ alles andere 32–36 px (Maße der Arbeitsflächen).
     <c-rahmen.band ton="grau" dicht titel="So entsteht der Entwurf" titel_id="anfrage-ablauf" data-testid="anfrage-ablauf">
         <ol class="mt-2 space-y-2 text-sm text-gray-800 dark:text-gray-200 list-decimal pl-5">
             <li>mandari zerlegt die Anfrage in Einzelfragen und sucht dazu in den öffentlichen Ratsdaten{% if body and not has_multiple_bodies %} von {{ body.get_display_name }}{% endif %}: Vorlagen, Beschlüsse, Sitzungen, Dokumente.</li>
-            <li>Der Entwurf nennt zu jeder Aussage die Fundstelle. Wozu nichts vorliegt, steht getrennt daneben und nicht im Brief.</li>
-            <li>Ein Programm prüft Fundstellen, Zahlen und Daten gegen das, was abgerufen wurde, und markiert, was Sie ansehen müssen.</li>
-            <li>Sie ergänzen die Haltung Ihrer Fraktion, prüfen und versenden aus Ihrem Mailprogramm.</li>
+            <li>Der Entwurf nennt seine Fundstellen als Fußnoten. Wozu nichts vorliegt, steht getrennt daneben und nicht im Brief.</li>
+            <li>Ein Programm prüft Fundstellen, Zahlen und Daten gegen das, was abgerufen wurde, und markiert Absätze, die Sie ansehen müssen. Aussagen ohne Zahlen und Daten prüft es nicht.</li>
+            <li>Sie ergänzen die Haltung Ihrer Fraktion, prüfen den Entwurf gegen die Fundstellen und versenden aus Ihrem Mailprogramm.</li>
         </ol>
         <p class="mt-3 text-[0.8125rem] text-gray-600 dark:text-gray-400">An den KI-Dienst gehen nur das Anliegen und öffentliche Ratsdaten. Anrede, Ihr Name und alle Inhalte Ihrer Fraktion bleiben in mandari. Gespeichert wird der Entwurf nicht.</p>
     </c-rahmen.band>

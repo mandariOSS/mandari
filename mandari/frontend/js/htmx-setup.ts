@@ -186,6 +186,14 @@ export function setupHtmx(): void {
     window.dispatchEvent(new CustomEvent<AutosaveMeldung>(`${form.dataset.autosave}-autosaving`, { detail }))
   })
 
+  // Lange Anfragen (KI-Antworten in Work, bis zu anderthalb Minuten) kündigen ihren Beginn an (Issue #1488): Der
+  // sichtbare Hinweis (.htmx-indicator) erreicht Screenreader nicht, der Abschluss kommt erst mit htmx:afterSettle.
+  // `data-lade-meldung` am Formular trägt den Text.
+  document.body.addEventListener('htmx:beforeRequest', (event) => {
+    const meldung = requestSource(event)?.closest<HTMLElement>('[data-lade-meldung]')?.dataset.ladeMeldung
+    if (meldung) announce(meldung)
+  })
+
   // Die Prüfung im Browser hält die Anfrage an (z. B. Pflichtfeld geleert): nichts gesendet, also nicht gespeichert
   document.body.addEventListener('htmx:validation:halted', (event) => {
     const form = autosaveFormular(event)

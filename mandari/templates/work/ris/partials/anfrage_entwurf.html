@@ -29,8 +29,8 @@ Kennzeichnung nach EU AI Act Art. 50 (Issue #938): sichtbar im Satz unter dem Bl
             </article>
             <p class="mt-2 text-[0.8125rem] text-gray-600 dark:text-gray-400">KI-Entwurf aus den öffentlichen Ratsdaten{% if entwurf.kommune %} von {{ entwurf.kommune }}{% endif %}; maßgeblich sind die Fundstellen. mandari versendet nichts und speichert den Entwurf nicht.</p>
             <div class="mt-3 flex flex-wrap items-center gap-2">
-                <c-ui.button size="sm" data-action="copy" data-target="#entwurf-text" data-status="#entwurf-kopiert" data-copied="Entwurf kopiert.">Entwurf kopieren</c-ui.button>
-                {% if entwurf.fundstellen %}<c-ui.button size="sm" variant="secondary" data-action="copy" data-target="#entwurf-text-quellen" data-status="#entwurf-kopiert" data-copied="Entwurf mit Quellenverzeichnis kopiert.">Mit Quellenverzeichnis kopieren</c-ui.button>{% endif %}
+                <c-ui.button size="sm" data-action="copy" data-target="#entwurf-text" data-status="#entwurf-kopiert" data-copied="Entwurf kopiert." data-failed="Kopieren war nicht möglich. Der Text ist unten markiert, bitte von Hand kopieren.">Entwurf kopieren</c-ui.button>
+                {% if entwurf.fundstellen %}<c-ui.button size="sm" variant="secondary" data-action="copy" data-target="#entwurf-text-quellen" data-status="#entwurf-kopiert" data-copied="Entwurf mit Quellenverzeichnis kopiert." data-failed="Kopieren war nicht möglich. Der Text ist unten markiert, bitte von Hand kopieren.">Mit Quellenverzeichnis kopieren</c-ui.button>{% endif %}
                 <span id="entwurf-kopiert" role="status" aria-live="polite" class="text-sm text-gray-700 dark:text-gray-300"></span>
             </div>
             <details class="mt-3">

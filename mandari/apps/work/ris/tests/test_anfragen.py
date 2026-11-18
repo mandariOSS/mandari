@@ -158,8 +158,12 @@ def test_kopierfassung_mit_oeffentlichen_adressen(
 
 
 def _kontext(org_slug: str = "fraktion-test") -> anfragen.AnfrageToolContext:
-    """Werkzeugkontext wie nach einer Recherche: ein gelieferter Vorgang und dessen Ergebnistext."""
+    """
+    Werkzeugkontext wie nach einer Recherche: ein Vorgang und eine Sitzung, die im Ergebnis stehen, und ein Gremium,
+    das das Werkzeug vorgemerkt, aber aus dem zu langen Ergebnis gekürzt hat (``chat_tools.dump``).
+    """
     link = f"/work/{org_slug}/ris/papers/11111111-1111-4111-8111-111111111111/"
+    sitzung = f"/work/{org_slug}/ris/meetings/22222222-2222-4222-8222-222222222222/"
     ctx = anfragen.AnfrageToolContext(
         body_id=uuid.uuid4(),
         body_name="Stadt Musterstadt",
@@ -168,12 +172,8 @@ def _kontext(org_slug: str = "fraktion-test") -> anfragen.AnfrageToolContext:
         site_url="https://ratsdaten.example",
     )
     ctx.note(link, "Sanierung der Sporthalle", "paper", detail=True)
-    ctx.note(
-        f"/work/{org_slug}/ris/meetings/22222222-2222-4222-8222-222222222222/",
-        "Rat (Di 07.10.2026)",
-        "meeting",
-        detail=True,
-    )
+    ctx.note(sitzung, "Rat (Di 07.10.2026)", "meeting", detail=True)
+    ctx.note(GEKUERZT, "Sportausschuss", "organization", detail=True)
     ctx.ergebnisse.append(
         json.dumps(
             {
@@ -182,6 +182,7 @@ def _kontext(org_slug: str = "fraktion-test") -> anfragen.AnfrageToolContext:
                 "datum": "03.09.2026",
                 "link": link,
                 "beschluss": "Der Rat beschließt die Sanierung.\nKosten: 1.200.000 Euro, Baubeginn im Frühjahr 2027.",
+                "beratungsfolge": [f"Di 07.10.2026 17:00 | Rat | entscheidend | {sitzung}"],
             },
             ensure_ascii=False,
         )
@@ -197,6 +198,44 @@ def _aufbereitet(antwort: str, anfrage: str = "Was kostet die Sporthalle?") -> a
 
 
 LINK = "/work/fraktion-test/ris/papers/11111111-1111-4111-8111-111111111111/"
+#: Vom Werkzeug vorgemerkt, aber nicht im Ergebnis, das das Modell bekam
+GEKUERZT = "/work/fraktion-test/ris/organizations/33333333-3333-4333-8333-333333333333/"
+
+
+def test_vorgemerkte_aber_gekuerzte_eintraege_sind_keine_fundstellen() -> None:
+    """Ein Eintrag, den ein Werkzeug vormerkt, der aber aus dem gekürzten Ergebnis fiel, wurde nie geliefert."""
+    ctx = _kontext()
+    assert GEKUERZT in ctx.sources and GEKUERZT not in anfragen.gelieferte_quellen(ctx)
+
+    entwurf = _aufbereitet(
+        f"Zuständig ist der [Sportausschuss]({GEKUERZT}). Beschlossen ist die [Sanierung]({LINK[:-1]}).\n"
+    )
+
+    [absatz] = entwurf.absaetze
+    assert "33333333" not in absatz.html and absatz.hinweise == (anfragen.FREMDE_FUNDSTELLE,)
+    # Die gelieferte Adresse gilt mit und ohne Schrägstrich am Ende
+    assert [f.titel for f in entwurf.fundstellen] == ["Sanierung der Sporthalle"]
+    assert "Sportausschuss" not in [f.titel for f in entwurf.weitere]
+
+
+def test_einstellige_angaben_mit_einheit_und_der_betreff_werden_geprueft() -> None:
+    entwurf = _aufbereitet(
+        "BETREFF: Sporthalle für 480.000 Euro\n\n"
+        f"Der Eintritt in die [Halle]({LINK}) kostet künftig 8 Euro.\n\n"
+        "Die Arbeiten dauern 3 Jahre.\n\n"
+        "Die drei Hallenteile bleiben getrennt nutzbar.\n"
+    )
+
+    fremd, ohne_fundstelle, zahlwort = entwurf.absaetze
+    # Die 8 steht nirgends im Material (die 3 schon, im Datum); mit Währung ist auch eine einstellige Zahl eine Angabe
+    assert fremd.hinweise == ("Die Angabe 8 Euro steht nicht in den abgerufenen Ratsdaten.",)
+    assert ohne_fundstelle.hinweise == (anfragen.OHNE_FUNDSTELLE,)
+    assert not zahlwort.hinweise
+    # Ein Betreff mit einer Angabe, die nicht im Material steht, erscheint nicht
+    assert entwurf.betreff == ""
+    assert _aufbereitet(f"BETREFF: Sanierung für 1.200.000 Euro\n\nDie [Sanierung]({LINK}) kommt.").betreff == (
+        "Sanierung für 1.200.000 Euro"
+    )
 
 
 def test_nur_gelieferte_eintraege_werden_fundstellen() -> None:

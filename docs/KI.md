@@ -145,15 +145,19 @@ Organisation und senden nur die Eingabe und öffentliche Ratsdaten an den KI-Die
    Entwurf und stehen in keiner Nachricht an den KI-Dienst.
 2. Der Systemprompt (`ANFRAGE_PROMPT`) verlangt einen Betreff (`BETREFF:`), den Brieftext mit Markdown-Links auf die
    Fundstellen aus den Werkzeugergebnissen und danach die Zeile `OFFEN:` mit allem, wozu die Ratsdaten nichts liefern.
-3. `aufbereiten` macht aus jedem Link auf einen Eintrag, den die Werkzeuge in dieser Antwort geliefert haben
-   (`ToolContext.sources`), eine nummerierte Fußnote; das Verzeichnis daneben trägt dieselben Nummern. Jeder andere
-   Link verliert sein Ziel, und der Absatz wird markiert.
-4. Prüfung ohne zweiten KI-Aufruf: Zahlen und Daten jedes Absatzes müssen im Material stehen, das das Modell gesehen
-   hat (`ToolContext.ergebnisse`), in der Anfrage oder das heutige Datum sein; geprüft wird mit den Regeln der
-   Zusammenfassungen (`zusammenfassung_pruefung.fremdes_datum`, `fremde_zahl`, Rundung wie dort). Ein Absatz mit
-   Zahlen oder Daten ohne Fundstelle wird ebenfalls markiert. Markierte Absätze bleiben stehen, der Grund steht
-   darunter; aussortiert wird nichts. Die Prüfung fängt keine falschen Aussagen ab, die ohne Zahlen und Daten
-   auskommen: Der Mensch prüft den Entwurf gegen die Fundstellen.
+3. `aufbereiten` macht aus jedem Link auf einen Eintrag, dessen Adresse in einem Werkzeugergebnis dieser Antwort
+   steht (`gelieferte_quellen`), eine nummerierte Fußnote; das Verzeichnis daneben trägt dieselben Nummern. Jeder
+   andere Link verliert sein Ziel, und der Absatz wird markiert. Das gilt auch für Einträge, die ein Werkzeug
+   vorgemerkt hat (`ToolContext.sources`), die aber aus einem zu langen Ergebnis gekürzt wurden: Das Modell hat sie
+   nie gesehen.
+4. Prüfung ohne zweiten KI-Aufruf, je Absatz: Zahlen und Daten müssen im Material stehen, das das Modell gesehen hat
+   (`ToolContext.ergebnisse`), in der Anfrage oder das heutige Datum sein; geprüft wird mit den Regeln der
+   Zusammenfassungen (`zusammenfassung_pruefung.fremdes_datum`, `fremde_zahl`, Rundung wie dort), dazu einstellige
+   Zahlen mit Währung, Prozent, Zeit- oder Maßeinheit („7 Euro“). Ein Absatz mit Zahlen oder Daten ohne Fundstelle
+   wird ebenfalls markiert. Markierte Absätze bleiben stehen, der Grund steht darunter; aussortiert wird nichts. Der
+   Betreff erscheint nur, wenn seine Angaben im Material stehen. Die Prüfung arbeitet je Absatz und fängt keine
+   falschen Aussagen ab, die ohne Zahlen und Daten auskommen; die Seite verspricht deshalb keine belegte
+   Einzelaussage. Der Mensch prüft den Entwurf gegen die Fundstellen.
 5. Zum Kopieren gibt es den Brief allein und den Brief mit Quellenverzeichnis. Dort führen die Adressen auf die
    öffentlichen Seiten im Bürgerportal (`SITE_URL`), in Work auf die Seiten der Recherche.
 

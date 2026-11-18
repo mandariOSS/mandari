@@ -11,7 +11,8 @@ Feld und Knopf 32 px mit 14 px Schrift: Die Suche bleibt die eine Hauptaktion (4
     </summary>
     <form id="frage-form" action="{% url 'work:ris_frage' org_slug=organization.slug %}" method="post"
           hx-post="{% url 'work:ris_frage' org_slug=organization.slug %}" hx-target="#ki-antwort" hx-swap="innerHTML show:#ki-antwort:top"
-          hx-include="#suche-kommune" hx-indicator="#frage-laden" hx-disabled-elt="#frage-senden" class="mt-2 flex gap-2">
+          hx-include="#suche-kommune" hx-indicator="#frage-laden" hx-disabled-elt="#frage-senden" class="mt-2 flex gap-2"
+          data-lade-meldung="Die Antwort wird erstellt, das dauert bis zu anderthalb Minuten.">
         {% csrf_token %}
         <label for="frage-eingabe" class="sr-only">Ihre Frage an die Ratsdaten</label>
         <input id="frage-eingabe" type="text" name="frage" required maxlength="500" autocomplete="off"
