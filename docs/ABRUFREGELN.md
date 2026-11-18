@@ -728,14 +728,20 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
   vollständig, und das Änderungsfenster rückt nicht vor.
 - **Fortsetzung über mehrere Fenster** (`ingestor/src/sync/fortsetzung.py`): Der nächste Vollabgleich beginnt nicht
-  wieder bei Seite 1. Eine am Fensterende offene Liste liest er ab ihrer zuletzt ganz gelesenen Seite (eine Seite
-  Überlappung) bis zum Ende; Listen, die der Durchgang schon ganz gelesen hat, nur mit `modified_since` (Änderungsfenster
-  der Kommune), damit sie aktuell bleiben, ohne das Fenster zu verbrauchen. Den Stand hält
-  `sync_config["full_sync_resume"]`. Ist ein Lauf vollständig, endet der Durchgang: `last_successful_full_sync` rückt
-  vor, der Stand wird gelöscht. Einträge gelten 14 Tage, danach liest der Vollabgleich die Liste wieder ganz. Anlass:
-  Die Stadt Köln erlaubt Abrufe nur von 23 bis 1 Uhr; der Vollabgleich las jede Nacht dieselben gut tausend Seiten der
-  Tagesordnungspunkte und Dateien und erreichte die Beratungen nie. Ohne Abbruch am Fensterende schreibt der
-  Vollabgleich keinen Stand. Vollabgleiche in Zeitscheiben haben ihre eigene Fortsetzung.
+  wieder bei Seite 1. Eine am Fensterende offene Liste holt er zuerst mit `modified_since` ab dem Beginn ihres ersten
+  Laufs (abzüglich Sicherheitsabstand) nach, denn die schon gelesenen Seiten können sich seitdem geändert haben, und
+  liest sie dann ab ihrer zuletzt ganz gelesenen Seite (eine Seite Überlappung) bis zum Ende. Trägt diese Seite keine
+  der gemerkten Kennungen mehr, hat sich die Liste um mehr als eine Seite verschoben, und er liest sie ganz. Listen, die
+  der Durchgang schon ganz gelesen hat, holt er nur mit `modified_since` ab demselben Zeitpunkt, damit sie aktuell
+  bleiben, ohne das Fenster zu verbrauchen; scheitert dieser Änderungsabgleich (die Stadt Köln lehnte gefilterte
+  Folgeseiten zeitweise mit HTTP 401 ab), liest er sie ganz. Eine Liste, die es bei der Quelle nicht gibt (404,
+  Fehlerobjekt), gilt nicht als gelesen; scheitert eine Liste aus anderem Grund als dem Fensterende, fällt ihr Eintrag
+  weg. Den Stand hält `sync_config["full_sync_resume"]`. Ist ein Lauf vollständig, endet der Durchgang:
+  `last_successful_full_sync` rückt vor, der Stand wird gelöscht. Einträge gelten 14 Tage, danach liest der
+  Vollabgleich die Liste wieder ganz. Anlass: Die Stadt Köln erlaubt Abrufe nur von 23 bis 1 Uhr; der Vollabgleich las
+  jede Nacht dieselben gut tausend Seiten der Tagesordnungspunkte und Dateien und erreichte die Beratungen nie. Ohne
+  Abbruch am Fensterende schreibt der Vollabgleich keinen Stand. Vollabgleiche in Zeitscheiben haben ihre eigene
+  Fortsetzung.
   Scraper-Quellen kennen diese Frist des Vollabgleichs nicht: Ein begonnener Vollabgleich läuft bei ihnen zu Ende,
   auch nach dem Ende ihres eigenen Fensters; nur das [Abruffenster](#abruffenster) beendet einen Crawl.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
@@ -986,7 +992,7 @@ Befund zurückzusetzen:
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, und Listen, die sie nicht freigibt (HTTP 403 für alle), mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
 | `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |
 | `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
-| `full_sync_resume` | Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs ohne Zeitscheiben: je Liste die zuletzt ganz gelesene Seite (`page`) oder „im Durchgang ganz gelesen“ (`done`), jeweils mit Zeitpunkt (`at`, UTC). Einträge gelten 14 Tage. Löschen lässt den nächsten Vollabgleich alle Listen wieder ganz lesen |
+| `full_sync_resume` | Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs ohne Zeitscheiben: je Liste die zuletzt ganz gelesene Seite (`page`) mit ihren Kennungen (`ids`) oder „im Durchgang ganz gelesen“ (`done`), jeweils mit dem Beginn des ersten Laufs der Liste im Durchgang (`at`, UTC). Einträge gelten 14 Tage. Löschen lässt den nächsten Vollabgleich alle Listen wieder ganz lesen |
 | `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
 | `unfiltered_lists` | Listen, die `modified_since` ablehnen oder nur gefiltert nicht finden, mit Grund und letzter Prüfung (Adresse → `reason`, `checked_at` UTC). Sie laufen ohne Filter, die übrigen Listen der Quelle mit; nach einem Tag fragt der nächste Lauf wieder mit Filter. Löschen lässt den nächsten Lauf die Listen gleich wieder mit Filter anfragen |
 | `unfiltered_hosts` | Server, auf denen die Quelle den Filter nachweislich ganz ignoriert (Host → `reason`, `checked_at` UTC); gilt nur für diese Quelle und nicht mit `carry_modified_since`. Löschen lässt den nächsten Lauf wieder mit Filter anfragen; ignoriert der Server ihn weiter, steht er danach wieder hier |

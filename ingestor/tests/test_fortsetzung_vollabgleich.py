@@ -4,8 +4,9 @@ Fortsetzung eines Vollabgleichs, den das Zeitfenster der Quelle abbricht (``src/
 
 Nachgebildet ist die Stadt Köln (Abrufe nur von 23 bis 1 Uhr): Der Vollabgleich liest Gremien, Personen und Sitzungen
 ganz, die lange Liste der Vorlagen bricht am Fensterende ab. Bisher begann der nächste Vollabgleich wieder bei Seite 1
-und kam nie weiter; jetzt setzt er an der zuletzt gelesenen Seite fort und holt die schon gelesenen Listen nur mit
-``modified_since``. Antworten aus ``httpx.MockTransport``, keine Abrufe, keine Datenbank.
+und kam nie weiter; jetzt holt er die Änderungen seit dem ersten Lauf nach, setzt an der zuletzt gelesenen Seite fort
+und liest schon gelesene Listen nur mit ``modified_since``. Antworten aus ``httpx.MockTransport``, keine Abrufe, keine
+Datenbank.
 """
 
 from __future__ import annotations
@@ -20,11 +21,11 @@ from uuid import UUID
 import httpx
 import pytest
 
-from src.client.oparl_client import OParlClient
+from src.client.oparl_client import FetchWindowClosedError, OParlClient
 from src.client.source_options import SourceFetchOptions
 from src.storage.database import SYNC_CONFIG_FULL_SYNC_RESUME_KEY, _put_entry, full_sync_resume_of
 from src.sync import orchestrator as orchestrator_module
-from src.sync.fortsetzung import CHANGES, FULL, RESUME, RESUME_MAX_AGE, ResumeEntry, ResumeRun
+from src.sync.fortsetzung import CHANGES, FULL, MAX_PAGE_IDS, RESUME, RESUME_MAX_AGE, ResumeEntry, ResumeRun
 from src.sync.orchestrator import MissingLists, TimedLists
 from src.sync.slices import SliceRun
 from tests.test_abruffenster import LISTE as KOMMUNENLISTE
@@ -46,6 +47,7 @@ PAPER = f"{BODY}/paper"
 MEETING = f"{BODY}/meeting"
 ORGANIZATION = f"{BODY}/organization"
 PERSON = f"{BODY}/person"
+CONSULTATION = f"{BODY}/consultation"
 
 
 class FortsetzungsSpeicher(Speicher):
@@ -62,25 +64,28 @@ class FortsetzungsSpeicher(Speicher):
             _put_entry(self.config, SYNC_CONFIG_FULL_SYNC_RESUME_KEY, list_url, entry)
 
 
+def _vorlage(i: int, modified: datetime) -> dict[str, Any]:
+    return {
+        "id": f"{BASE}/paper/{i}",
+        "type": "https://schema.oparl.org/1.1/Paper",
+        "name": f"Vorlage {i}",
+        "modified": modified.isoformat(),
+    }
+
+
 def _koeln(alt: datetime) -> Quelle:
     """Gremien, Personen je zwei Seiten, Sitzungen eine Seite, Vorlagen fünf Seiten (je zwei Objekte)."""
     quelle = Quelle(geaendert=alt)
     quelle.listen["/oparl/body/1/meeting"] = quelle.listen["/oparl/body/1/meeting"][:2]
-    quelle.listen["/oparl/body/1/paper"] = [
-        {
-            "id": f"{BASE}/paper/{i}",
-            "type": "https://schema.oparl.org/1.1/Paper",
-            "name": f"Vorlage {i}",
-            "modified": alt.isoformat(),
-        }
-        for i in range(10)
-    ]
+    quelle.listen["/oparl/body/1/paper"] = [_vorlage(i, alt) for i in range(10)]
     return quelle
 
 
 @asynccontextmanager
-async def _client(quelle: Quelle, fensterende: Callable[[], bool] | None) -> AsyncIterator[OParlClient]:
-    async with OParlClient(max_concurrent=2, wait_time=0) as client:
+async def _client(
+    quelle: Quelle, fensterende: Callable[[], bool] | None, list_params: dict[str, str] | None = None
+) -> AsyncIterator[OParlClient]:
+    async with OParlClient(max_concurrent=2, wait_time=0, list_params=list_params) as client:
         assert client._client is not None
         await client._client.aclose()
         client._client = httpx.AsyncClient(transport=httpx.MockTransport(quelle))
@@ -90,7 +95,10 @@ async def _client(quelle: Quelle, fensterende: Callable[[], bool] | None) -> Asy
 
 
 async def _nacht(
-    quelle: Quelle, speicher: FortsetzungsSpeicher, fensterende: Callable[[], bool] | None = None
+    quelle: Quelle,
+    speicher: FortsetzungsSpeicher,
+    fensterende: Callable[[], bool] | None = None,
+    kommune: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], ResumeRun]:
     """Vollabgleich der Kommune wie im Betrieb: Fortsetzung aus ``sync_config``, danach gespeichert."""
     run = ResumeRun.build(SOURCE, full_sync_resume_of(speicher.config))
@@ -99,7 +107,7 @@ async def _nacht(
     async with _client(quelle, fensterende) as client:
         stats = await orchestrator._sync_body(
             client=client,
-            body_data=_kommune(),
+            body_data=kommune or _kommune(),
             source_id=UUID(int=9),
             full=True,
             options=SourceFetchOptions(),
@@ -112,12 +120,22 @@ async def _nacht(
     return stats, run
 
 
-def _seiten(quelle: Quelle, liste: str) -> list[int]:
+def _seitennummer(url: str) -> int:
+    return int(parse_qs(urlparse(url).query).get("page", ["1"])[0])
+
+
+def _anfragen(quelle: Quelle, liste: str) -> list[tuple[int, bool]]:
+    """Anfragen an eine Liste: (Seite, mit Filter)."""
     return [
-        int(parse_qs(urlparse(str(url)).query).get("page", ["1"])[0])
+        (_seitennummer(str(url)), "modified_since" in url.params)
         for url in quelle.anfragen
         if url.path.endswith(f"/{liste}")
     ]
+
+
+def _bis_seite_drei(quelle: Quelle) -> Callable[[], bool]:
+    """Das Fenster schließt nach drei Seiten der Vorlagen."""
+    return lambda: quelle.anfragen_je_liste()["paper"] >= 3
 
 
 async def test_abgebrochener_vollabgleich_setzt_in_der_naechsten_nacht_fort() -> None:
@@ -125,26 +143,30 @@ async def test_abgebrochener_vollabgleich_setzt_in_der_naechsten_nacht_fort() ->
     quelle = _koeln(alt)
     speicher = FortsetzungsSpeicher()
 
-    # Nacht 1: Das Fenster schließt nach drei Seiten der Vorlagen
-    stats, run = await _nacht(quelle, speicher, lambda: quelle.anfragen_je_liste()["paper"] >= 3)
+    # Nacht 1: abgebrochen nach Seite 3 der Vorlagen
+    stats, run = await _nacht(quelle, speicher, _bis_seite_drei(quelle))
 
     assert stats["incomplete"] == ["paper"]
-    assert _seiten(quelle, "paper") == [1, 2, 3]
+    assert _anfragen(quelle, "paper") == [(1, False), (2, False), (3, False)]
     assert run.finished == {ORGANIZATION, PERSON, MEETING}
     stand = speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY]
     assert set(stand) == {ORGANIZATION, PERSON, MEETING, PAPER}
     assert all(stand[liste]["done"] is True for liste in (ORGANIZATION, PERSON, MEETING))
-    # Fortgesetzt wird ab der zuletzt ganz gelesenen Seite (eine Seite Überlappung)
-    assert _seiten_nummer(stand[PAPER]["page"]) == 3
+    # Fortgesetzt wird ab der zuletzt ganz gelesenen Seite (eine Seite Überlappung), mit ihren Kennungen
+    assert _seitennummer(stand[PAPER]["page"]) == 3
+    assert stand[PAPER]["ids"] == [f"{BASE}/paper/4", f"{BASE}/paper/5"]
+    beginn = stand[PAPER]["at"]
+    assert all(stand[liste]["at"] == beginn for liste in stand)
 
-    # Nacht 2: Gelesene Listen nur mit modified_since, die Vorlagen ab Seite 3 bis zum Ende
+    # Nacht 2: Gelesene Listen nur mit Filter. Die Vorlagen: Prüfung der Fortsetzungsseite, Änderungen seit Nacht 1
+    # (keine), dann ab Seite 3 bis zum Ende
     stats, run = await _nacht(quelle, speicher)
 
     assert stats["incomplete"] == []
     for liste in ("organization", "person", "meeting"):
-        assert all(filter_ is not None for filter_ in quelle.filter_der_anfragen(liste)), liste
-    assert _seiten(quelle, "paper") == [3, 4, 5]
-    assert quelle.filter_der_anfragen("paper") == [None, None, None]
+        assert all(gefiltert for _seite, gefiltert in _anfragen(quelle, liste)), liste
+    assert _anfragen(quelle, "paper") == [(3, False), (1, True), (3, False), (4, False), (5, False)]
+    assert quelle.filter_der_anfragen("paper")[1] == datetime.fromisoformat(beginn).isoformat()
     # Vollständig: Der Durchgang ist fertig, die Fortsetzung gelöscht
     assert SYNC_CONFIG_FULL_SYNC_RESUME_KEY not in speicher.config
     assert speicher.aenderungen[-1] == dict.fromkeys(sorted({ORGANIZATION, PERSON, MEETING, PAPER}))
@@ -152,8 +174,105 @@ async def test_abgebrochener_vollabgleich_setzt_in_der_naechsten_nacht_fort() ->
     # Nacht 3 (nächster fälliger Vollabgleich): wieder alles ganz, ohne Filter
     stats, run = await _nacht(quelle, speicher)
     assert stats["incomplete"] == []
-    assert _seiten(quelle, "paper") == [1, 2, 3, 4, 5]
+    assert _anfragen(quelle, "paper") == [(n, False) for n in range(1, 6)]
     assert quelle.filter_der_anfragen("meeting") == [None]
+
+
+async def test_aenderung_auf_einer_schon_gelesenen_seite_kommt_mit() -> None:
+    """Prüfbefund: Ändert sich zwischen zwei Nächten eine Vorlage vor der Fortsetzungsseite, geht sie nicht verloren."""
+    alt = datetime.now(UTC) - timedelta(days=30)
+    quelle = _koeln(alt)
+    speicher = FortsetzungsSpeicher()
+    await _nacht(quelle, speicher, _bis_seite_drei(quelle))
+    assert speicher.modified[f"{BASE}/paper/0"] == alt
+
+    # Tagsüber ändert die Quelle Vorlage 0 (Seite 1)
+    geaendert = datetime.now(UTC).replace(microsecond=0)
+    quelle.listen["/oparl/body/1/paper"][0] = _vorlage(0, geaendert)
+    stats, _run = await _nacht(quelle, speicher)
+
+    assert stats["incomplete"] == []
+    assert speicher.modified[f"{BASE}/paper/0"] == geaendert
+
+
+async def test_verschobene_liste_kommt_ganz() -> None:
+    """Prüfbefund: Trägt die Fortsetzungsseite keine gemerkte Kennung mehr, liest der Lauf die Liste von vorn."""
+    alt = datetime.now(UTC) - timedelta(days=30)
+    quelle = _koeln(alt)
+    speicher = FortsetzungsSpeicher()
+    await _nacht(quelle, speicher, _bis_seite_drei(quelle))
+
+    # Die Quelle entfernt vier Vorlagen am Anfang ohne Löschvermerk: alles rückt zwei Seiten nach vorn
+    quelle.listen["/oparl/body/1/paper"] = quelle.listen["/oparl/body/1/paper"][4:]
+    stats, _run = await _nacht(quelle, speicher)
+
+    assert stats["incomplete"] == []
+    # Prüfung der Seite 3, dann die ganze Liste ab Seite 1 (ohne eigenen Änderungsabgleich: sie kommt ja ganz)
+    assert _anfragen(quelle, "paper") == [(3, False), (1, False), (2, False), (3, False)]
+    assert SYNC_CONFIG_FULL_SYNC_RESUME_KEY not in speicher.config
+
+
+async def test_fehlende_liste_gilt_nicht_als_gelesen() -> None:
+    """Prüfbefund: Antwortet eine Liste im laufenden Durchgang mit 404, ist sie nicht „gelesen“."""
+    quelle = _koeln(datetime.now(UTC) - timedelta(days=30))
+    speicher = FortsetzungsSpeicher()
+    speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
+        PAPER: ResumeEntry(at=datetime.now(UTC), page=f"{PAPER}?page=4").to_entry()
+    }
+    kommune = _kommune(consultation=CONSULTATION)  # die Quelle antwortet auf die Beratungen mit 404
+
+    stats, run = await _nacht(quelle, speicher, kommune=kommune)
+
+    assert stats["missing_lists"] == [CONSULTATION]
+    assert CONSULTATION not in run.finished
+    assert CONSULTATION not in run.changes(complete=False)
+
+
+class _OhneSeiteNeun(Quelle):
+    """Die Vorlagenliste kennt die Seite 9 nicht (mehr): HTTP 404."""
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/paper") and request.url.params.get("page") == "9":
+            self.anfragen.append(request.url)
+            return httpx.Response(404)
+        return super().__call__(request)
+
+
+async def test_fortsetzungsseite_mit_fehler_beginnt_beim_naechsten_mal_von_vorn() -> None:
+    """Gibt es die Fortsetzungsseite nicht mehr (404), fällt der Eintrag weg; der nächste Lauf liest die Liste ganz."""
+    jetzt = datetime.now(UTC)
+    quelle = _OhneSeiteNeun(geaendert=jetzt - timedelta(days=30))
+    quelle.listen.update(_koeln(jetzt - timedelta(days=30)).listen)
+    speicher = FortsetzungsSpeicher()
+    speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
+        MEETING: ResumeEntry(at=jetzt, done=True).to_entry(),
+        PAPER: ResumeEntry(
+            at=jetzt, page=f"https://ris.example.org{PAPER.split('ris.example.org')[1]}?page=9"
+        ).to_entry(),
+    }
+
+    stats, run = await _nacht(quelle, speicher)
+
+    assert "paper" in stats["incomplete"]
+    assert PAPER in run.failed
+    stand = speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY]
+    assert PAPER not in stand and stand[MEETING]["done"] is True
+
+
+async def test_abbruch_nach_der_ersten_seite_ist_keine_fortsetzung() -> None:
+    """Prüfbefund: Auch mit ``list_params`` meldet der Client die erste Seite nie als Fortsetzungsseite."""
+    quelle = _koeln(datetime.now(UTC) - timedelta(days=30))
+    async with _client(quelle, lambda: quelle.anfragen_je_liste()["paper"] >= 1, list_params={"size": "2"}) as client:
+        with pytest.raises(FetchWindowClosedError) as erste:
+            [page async for page in client.fetch_list(PAPER)]
+    assert erste.value.last_page_url is None and erste.value.last_page_ids == ()
+
+    quelle.anfragen.clear()
+    async with _client(quelle, lambda: quelle.anfragen_je_liste()["paper"] >= 2, list_params={"size": "2"}) as client:
+        with pytest.raises(FetchWindowClosedError) as zweite:
+            [page async for page in client.fetch_list(PAPER)]
+    assert zweite.value.last_page_url is not None and _seitennummer(zweite.value.last_page_url) == 2
+    assert zweite.value.last_page_ids == (f"{BASE}/paper/2", f"{BASE}/paper/3")
 
 
 async def test_ohne_abbruch_schreibt_der_vollabgleich_keine_fortsetzung() -> None:
@@ -175,12 +294,42 @@ async def test_abbruch_vor_der_ersten_seite_beginnt_die_liste_von_vorn() -> None
     stats, run = await _nacht(quelle, speicher, lambda: quelle.anfragen_je_liste()["meeting"] >= 1)
 
     assert "paper" in stats["incomplete"]
-    assert run.cut.get(PAPER) is None
+    assert run.cut.get(PAPER) == (None, ())
     assert PAPER not in speicher.config.get(SYNC_CONFIG_FULL_SYNC_RESUME_KEY, {})
 
 
-def _seiten_nummer(url: str) -> int:
-    return int(parse_qs(urlparse(url).query).get("page", ["1"])[0])
+class _KoelnMitAbsage(Quelle):
+    """Lehnt gefilterte Folgeseiten der Personen mit HTTP 401 ab, wie die Stadt Köln Anfang November 2026."""
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if request.url.path.endswith("/person") and "modified_since" in params and params.get("page", "1") != "1":
+            self.anfragen.append(request.url)
+            return httpx.Response(401)
+        return super().__call__(request)
+
+
+async def test_scheitert_der_aenderungsabgleich_einer_gelesenen_liste_kommt_sie_ganz() -> None:
+    jetzt = datetime.now(UTC)
+    quelle = _KoelnMitAbsage(geaendert=jetzt - timedelta(days=30))
+    quelle.listen.update(_koeln(jetzt - timedelta(days=30)).listen)
+    # Drei Personen, nach dem Beginn des Durchgangs geändert: Der Änderungsabgleich braucht zwei Seiten
+    for person in quelle.listen["/oparl/body/1/person"]:
+        person["modified"] = (jetzt - timedelta(hours=1)).isoformat()
+    speicher = FortsetzungsSpeicher()
+    speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
+        PERSON: ResumeEntry(at=jetzt - timedelta(days=1), done=True).to_entry(),
+        PAPER: ResumeEntry(at=jetzt - timedelta(days=1), page=f"{PAPER}?page=4").to_entry(),
+    }
+
+    stats, _run = await _nacht(quelle, speicher)
+
+    assert stats["incomplete"] == []
+    # Erst der Änderungsabgleich (zweite Seite abgelehnt), dann die ganze Liste ohne Filter
+    assert _anfragen(quelle, "person") == [(1, True), (2, True), (1, False), (2, False)]
+    # Vorlagen ohne gemerkte Kennungen: keine Prüfung der Seite, Änderungen, dann ab Seite 4
+    assert _anfragen(quelle, "paper") == [(1, True), (4, False), (5, False)]
+    assert SYNC_CONFIG_FULL_SYNC_RESUME_KEY not in speicher.config
 
 
 # ---------------------------------------------------------------------------
@@ -188,20 +337,26 @@ def _seiten_nummer(url: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _eintrag(at: datetime, page: str | None = None, done: bool = False) -> dict[str, Any]:
-    return ResumeEntry(at=at, page=page, done=done).to_entry()
+def _eintrag(at: datetime, page: str | None = None, done: bool = False, ids: tuple[str, ...] = ()) -> dict[str, Any]:
+    return ResumeEntry(at=at, page=page, done=done, ids=ids).to_entry()
 
 
-def test_plan_je_liste() -> None:
+def test_plan_je_liste_und_aenderungsfenster() -> None:
     jetzt = datetime.now(UTC)
+    gestern = jetzt - timedelta(days=1)
     run = ResumeRun.build(
         SOURCE,
-        {MEETING: _eintrag(jetzt, done=True), PAPER: _eintrag(jetzt, page=f"{PAPER}?page=7")},
+        {MEETING: _eintrag(gestern, done=True), PAPER: _eintrag(gestern, page=f"{PAPER}?page=7", ids=("a", "b"))},
         jetzt,
+        margin=timedelta(hours=2),
     )
-    assert run.plan(MEETING) == (CHANGES, None)
-    assert run.plan(PAPER) == (RESUME, f"{PAPER}?page=7")
+    assert run.plan(MEETING) == (CHANGES, ResumeEntry(at=gestern.replace(microsecond=0), done=True))
+    how, entry = run.plan(PAPER)
+    assert how == RESUME and entry is not None and entry.page == f"{PAPER}?page=7" and entry.ids == ("a", "b")
     assert run.plan(PERSON) == (FULL, None)
+    # Änderungen seit dem ersten Lauf der Liste abzüglich Sicherheitsabstand
+    assert run.since(MEETING) == gestern.replace(microsecond=0) - timedelta(hours=2)
+    assert run.since(PERSON) is None
 
 
 @pytest.mark.parametrize(
@@ -223,21 +378,21 @@ def test_alte_eintraege_gelten_nicht_und_werden_geloescht() -> None:
     )
 
     assert run.plan(PAPER) == (FULL, None)
-    run.note_cut(PAPER, f"{PAPER}?page=2")
-    aenderungen = run.changes(complete=False, now=jetzt)
-    # Neuer Eintrag mit neuem Zeitpunkt; die gelesene Sitzungsliste behält ihren
-    assert aenderungen[PAPER] == _eintrag(jetzt, page=f"{PAPER}?page=2")
+    run.note_cut(PAPER, f"{PAPER}?page=2", ["x"])
+    aenderungen = run.changes(complete=False)
+    # Neuer Eintrag mit dem Beginn dieses Laufs; die gelesene Sitzungsliste bleibt unverändert
+    assert aenderungen[PAPER] == _eintrag(jetzt, page=f"{PAPER}?page=2", ids=("x",))
     assert MEETING not in aenderungen
 
 
 def test_abbruch_ohne_gelesene_seite_behaelt_die_fruehere_fortsetzung() -> None:
     jetzt = datetime.now(UTC)
     beginn = jetzt - timedelta(days=2)
-    run = ResumeRun.build(SOURCE, {PAPER: _eintrag(beginn, page=f"{PAPER}?page=7")}, jetzt)
+    run = ResumeRun.build(SOURCE, {PAPER: _eintrag(beginn, page=f"{PAPER}?page=7", ids=("x",))}, jetzt)
 
     run.note_cut(PAPER, None)
 
-    assert run.changes(complete=False, now=jetzt) == {PAPER: _eintrag(beginn, page=f"{PAPER}?page=7")}
+    assert run.changes(complete=False) == {PAPER: _eintrag(beginn, page=f"{PAPER}?page=7", ids=("x",))}
 
 
 def test_erste_seite_ist_keine_fortsetzung() -> None:
@@ -247,23 +402,32 @@ def test_erste_seite_ist_keine_fortsetzung() -> None:
     assert run.changes(complete=False) == {}
 
 
-def test_gelesene_listen_behalten_den_zeitpunkt_ihres_ersten_eintrags() -> None:
+def test_eintraege_behalten_den_beginn_ihres_ersten_laufs() -> None:
     jetzt = datetime.now(UTC)
     gestern = jetzt - timedelta(days=1)
     run = ResumeRun.build(
-        SOURCE, {MEETING: _eintrag(gestern, done=True), PAPER: _eintrag(gestern, page=f"{PAPER}?page=3")}, jetzt
+        SOURCE,
+        {MEETING: _eintrag(gestern, done=True), PAPER: _eintrag(gestern, page=f"{PAPER}?page=3")},
+        jetzt,
     )
 
     run.note_finished(MEETING)
-    run.note_cut(PAPER, f"{PAPER}?page=6")
+    run.note_cut(PAPER, f"{PAPER}?page=6", [f"{BASE}/paper/{i}" for i in range(MAX_PAGE_IDS + 5)])
     run.note_finished(PERSON)
 
-    assert run.changes(complete=False, now=jetzt) == {
-        MEETING: _eintrag(gestern, done=True),
-        PAPER: _eintrag(gestern, page=f"{PAPER}?page=6"),
-        PERSON: _eintrag(jetzt, done=True),
-    }
+    aenderungen = run.changes(complete=False)
+    assert aenderungen[MEETING] == _eintrag(gestern, done=True)
+    assert aenderungen[PERSON] == _eintrag(jetzt, done=True)
+    assert aenderungen[PAPER] is not None and aenderungen[PAPER]["at"] == _eintrag(gestern, done=True)["at"]
+    assert len(aenderungen[PAPER]["ids"]) == MAX_PAGE_IDS
     assert run.changes(complete=True) == {MEETING: None, PAPER: None}
+
+
+def test_gescheiterte_liste_verliert_ihren_eintrag() -> None:
+    jetzt = datetime.now(UTC)
+    run = ResumeRun.build(SOURCE, {PAPER: _eintrag(jetzt, page=f"{PAPER}?page=3"), MEETING: _eintrag(jetzt, done=True)})
+    run.note_failed(PAPER)
+    assert run.changes(complete=False) == {PAPER: None}
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +460,7 @@ def _kommunenliste(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def test_lauf_der_quelle_speichert_und_beendet_die_fortsetzung(monkeypatch: pytest.MonkeyPatch) -> None:
     _kommunenliste(monkeypatch)
-    speicher = _Quellenspeicher({"sync_window": fenster_um_jetzt(offen=True)})
+    speicher = _Quellenspeicher({"sync_window": fenster_um_jetzt(offen=True), "modified_since_margin_minutes": 30})
     orchestrator = _quellen_orchestrator(speicher)
     erhalten: list[ResumeRun | None] = []
     ergebnis: dict[str, Any] = {"incomplete": ["paper"]}
@@ -306,7 +470,7 @@ async def test_lauf_der_quelle_speichert_und_beendet_die_fortsetzung(monkeypatch
         erhalten.append(resume)
         if resume is not None and ergebnis["incomplete"]:
             resume.note_finished(MEETING)
-            resume.note_cut(PAPER, f"{PAPER}?page=3")
+            resume.note_cut(PAPER, f"{PAPER}?page=3", [f"{BASE}/paper/4"])
         return dict(ergebnis)
 
     orchestrator._sync_body = sync_body  # type: ignore[method-assign]
@@ -319,48 +483,15 @@ async def test_lauf_der_quelle_speichert_und_beendet_die_fortsetzung(monkeypatch
     stand = speicher.sync_config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY]
     assert stand[MEETING]["done"] is True and stand[PAPER]["page"] == f"{PAPER}?page=3"
 
-    # Nacht 2: Der Lauf bekommt den Stand, wird vollständig, die Fortsetzung endet
+    # Nacht 2: Der Lauf bekommt den Stand samt Sicherheitsabstand, wird vollständig, die Fortsetzung endet
     ergebnis["incomplete"] = []
     await orchestrator.sync_body_url(KOMMUNENLISTE, full=True)
-    assert erhalten[1] is not None and erhalten[1].plan(PAPER) == (RESUME, f"{PAPER}?page=3")
+    zweite = erhalten[1]
+    assert zweite is not None and zweite.margin == timedelta(minutes=30)
+    how, entry = zweite.plan(PAPER)
+    assert how == RESUME and entry is not None and entry.page == f"{PAPER}?page=3"
     assert SYNC_CONFIG_FULL_SYNC_RESUME_KEY not in speicher.sync_config
 
     # Änderungsabgleich: keine Fortsetzung
     await orchestrator.sync_body_url(KOMMUNENLISTE, full=False)
     assert erhalten[2] is None
-
-
-class _KoelnMitAbsage(Quelle):
-    """Lehnt gefilterte Folgeseiten der Personen mit HTTP 401 ab, wie die Stadt Köln Anfang November 2026."""
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        params = dict(request.url.params)
-        if request.url.path.endswith("/person") and "modified_since" in params and params.get("page", "1") != "1":
-            self.anfragen.append(request.url)
-            return httpx.Response(401)
-        return super().__call__(request)
-
-
-async def test_scheitert_der_aenderungsabgleich_einer_gelesenen_liste_kommt_sie_ganz() -> None:
-    jetzt = datetime.now(UTC)
-    quelle = _KoelnMitAbsage(geaendert=jetzt - timedelta(days=30))
-    neu = _koeln(jetzt - timedelta(days=30))
-    quelle.listen.update(neu.listen)
-    # Drei Personen, gestern geändert: Der Änderungsabgleich braucht zwei Seiten
-    for person in quelle.listen["/oparl/body/1/person"]:
-        person["modified"] = (jetzt - timedelta(days=1)).isoformat()
-    speicher = FortsetzungsSpeicher()
-    speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
-        PERSON: _eintrag(jetzt - timedelta(days=1), done=True),
-        PAPER: _eintrag(jetzt - timedelta(days=1), page=f"{PAPER}?page=4"),
-    }
-
-    stats, run = await _nacht(quelle, speicher)
-
-    assert stats["incomplete"] == []
-    filter_personen = quelle.filter_der_anfragen("person")
-    # Erst der Änderungsabgleich (zweite Seite abgelehnt), dann die ganze Liste ohne Filter
-    assert filter_personen[:2] == [filter_personen[0], filter_personen[0]] and filter_personen[0] is not None
-    assert filter_personen[2:] == [None, None]
-    assert _seiten(quelle, "paper") == [4, 5]
-    assert SYNC_CONFIG_FULL_SYNC_RESUME_KEY not in speicher.config

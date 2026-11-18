@@ -83,7 +83,7 @@ from src.storage.database import (
 )
 from src.storage.events import start_correlation
 from src.storage.ris_events import content_fingerprint
-from src.sync.fortsetzung import CHANGES, RESUME, ResumeRun
+from src.sync.fortsetzung import CHANGES, FULL, RESUME, ResumeEntry, ResumeRun
 from src.sync.html_ergaenzung import FIELDS as ERGAENZUNG_FIELDS
 from src.sync.html_ergaenzung import MARKER_KEY as ERGAENZUNG_MARKER
 from src.sync.html_ergaenzung import HtmlErgaenzung, HtmlErgaenzungConfig
@@ -979,7 +979,11 @@ class SyncOrchestrator:
             result.errors.append(slice_note)
         # Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs (ohne Zeitscheiben, src/sync/fortsetzung.py)
         resume_run = (
-            ResumeRun.build(url, full_sync_resume_of(getattr(source_row, "sync_config", None)))
+            ResumeRun.build(
+                url,
+                full_sync_resume_of(getattr(source_row, "sync_config", None)),
+                margin=options.modified_since_margin(),
+            )
             if full and slice_run.config is None
             else None
         )
@@ -1384,8 +1388,8 @@ class SyncOrchestrator:
         Sync a single body and all its entities.
 
         Mit ``resume``: Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs (``src/sync/fortsetzung.py``).
-        Listen, die der Durchgang schon ganz gelesen hat, liest der Vollabgleich nur mit dem Änderungsfenster der
-        Kommune, abgebrochene ab ihrer Fortsetzungsseite.
+        Listen, die der Durchgang schon ganz gelesen hat, liest der Vollabgleich nur mit ihren Änderungen seit dem
+        ersten Lauf des Durchgangs, abgebrochene nach diesen Änderungen ab ihrer Fortsetzungsseite.
 
         Mit ``slices`` (Issue #1033): Ein Vollabgleich mit ``full_sync_slices`` liest die Listen in Zeitscheiben, und
         optionale Listen werden nach Zeitüberschreitungen ausgesetzt (``src/sync/slices.py``).
@@ -1464,20 +1468,6 @@ class SyncOrchestrator:
             console.print("[dim]Full sync: Listen in Zeitscheiben (full_sync_slices)[/dim]")
         else:
             console.print("[dim]Full sync: fetching ALL pages[/dim]")
-        # Fortsetzung (src/sync/fortsetzung.py): Änderungsfenster für Listen, die der Durchgang schon ganz gelesen hat
-        resume_since: datetime | None = None
-        if full and resume is not None and resume.entries:
-            try:
-                resume_started = await self.storage.get_body_sync_started(source_id, body_external_id)
-            except Exception as e:  # noqa: BLE001 - ohne Zeitpunkt gilt das breite Fenster
-                console.print(f"[yellow]  Letzter vollständiger Abgleich nicht lesbar ({e}), Fenster 7 Tage[/yellow]")
-                resume_started = None
-            resume_since = modified_since_for(resume_started, (options or SourceFetchOptions()).modified_since_margin())
-            console.print(
-                f"[dim]Full sync: Fortsetzung des Durchgangs, gelesene Listen nur mit "
-                f"modified_since={resume_since.isoformat()}[/dim]"
-            )
-
         # Fehlende Listen dieser Kommune (Issue #1025), vermerkt am Ende des Laufs
         list_check = BodyListCheck(missing_lists) if missing_lists is not None else None
         # Nicht gespeicherte Objekte bestimmen den nächsten Fensteranfang, Stempel der Änderungen der letzten sieben
@@ -1514,7 +1504,6 @@ class SyncOrchestrator:
                 "slices": body_slices,
                 "ergaenzung": ergaenzung,
                 "resume": resume,
-                "resume_since": resume_since,
             }
 
         # Phase 2 (parallel): Start text extraction as background task
@@ -1938,15 +1927,16 @@ class SyncOrchestrator:
         slices: BodySlices | None = None,
         ergaenzung: HtmlErgaenzung | None = None,
         resume: ResumeRun | None = None,
-        resume_since: datetime | None = None,
     ) -> int:
         """
         Sync all entities of a specific type.
 
         Mit ``resume`` im Vollabgleich ohne Zeitscheiben (``src/sync/fortsetzung.py``): Hat der Durchgang die Liste
-        schon ganz gelesen, kommt sie nur mit ``resume_since`` wie im inkrementellen Lauf; brach ein früherer Lauf sie
-        am Fensterende ab, ab der zuletzt gelesenen Seite. Endet das Fenster mitten in der Liste, merkt sich der Lauf
-        die Seite; liest er sie ganz, gilt sie im Durchgang als gelesen.
+        schon ganz gelesen, kommen nur ihre Änderungen seit dem ersten Lauf des Durchgangs (``ResumeRun.since``) wie im
+        inkrementellen Lauf; brach ein früherer Lauf sie am Fensterende ab, zuerst diese Änderungen, dann die Liste ab
+        der zuletzt gelesenen Seite. Scheitert der Änderungsabgleich oder hat sich die Liste verschoben, kommt sie ganz.
+        Endet das Fenster mitten in der Liste, merkt sich der Lauf die Seite; liest er sie ganz, gilt sie im Durchgang
+        als gelesen, nicht aber eine Liste, die es bei der Quelle nicht gibt.
 
         Optionale Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), und Listen, die sie nicht
         freigibt (Issue #1086), fragt der inkrementelle Lauf einmal am Tag an, der Vollabgleich jedes Mal (in
@@ -1986,23 +1976,33 @@ class SyncOrchestrator:
         sliced_full = full and run is not None and run.config is not None and run.config.covers(entity_type)
         # Fortsetzung eines abgebrochenen Vollabgleichs: ganz, ab der Fortsetzungsseite oder nur die Änderungen
         resume_page: str | None = None
+        carried = 0
         track_resume = full and resume is not None and not sliced_full
         if track_resume and resume is not None:
-            how, planned_page = resume.plan(list_url)
-            if how == CHANGES and resume_since is not None:
+            how, entry = resume.plan(list_url)
+            since = resume.since(list_url)
+            if how == RESUME and entry is not None and await self._resume_shifted(client, entry):
                 console.print(
-                    f"[dim]  {entity_type}: im Durchgang schon ganz gelesen, nur Änderungen seit "
-                    f"{resume_since.isoformat()}[/dim]"
+                    f"[yellow]  {entity_type}: Liste hat sich seit dem Abbruch um mehr als eine Seite verschoben "
+                    f"({entry.page}), Liste ganz[/yellow]"
                 )
+                how = FULL
+            if how in (CHANGES, RESUME) and since is not None:
+                was = (
+                    "im Durchgang schon ganz gelesen, nur Änderungen"
+                    if how == CHANGES
+                    else "Änderungen der gelesenen Seiten"
+                )
+                console.print(f"[dim]  {entity_type}: {was} seit {since.isoformat()}[/dim]")
                 try:
-                    return await self._sync_entity_type(
+                    carried = await self._sync_entity_type(
                         client,
                         list_url,
                         entity_type,
                         body_id,
                         body_external_id,
                         body_name=body_name,
-                        modified_since=resume_since,
+                        modified_since=since,
                         full=False,
                         es_deletions=es_deletions,
                         list_check=list_check,
@@ -2020,8 +2020,12 @@ class SyncOrchestrator:
                         f"[yellow]  {entity_type}: Änderungsabgleich der Liste gescheitert ({error.result.error}), "
                         f"Liste ganz[/yellow]"
                     )
-            elif how == RESUME and planned_page is not None:
-                resume_page = planned_page
+                    how, carried = FULL, 0
+                else:
+                    if how == CHANGES:
+                        return carried
+            if how == RESUME and entry is not None and entry.page is not None:
+                resume_page = entry.page
                 console.print(f"[dim]  {entity_type}: Fortsetzung des Vollabgleichs ab {resume_page}[/dim]")
         # Vermerkt sind optionale Listen, die es nicht gibt, und Listen, die die Quelle nicht freigibt (HTTP 403 für
         # alle Clients); nur so stehen auch Pflichtlisten hier (Issue #1086)
@@ -2273,11 +2277,15 @@ class SyncOrchestrator:
                         await self._clear_slow_list(slices, list_url)
                     break
 
-        # Ganz gelesen (eine ausgesetzte langsame Liste nicht): im Durchgang erledigt
-        if track_resume and resume is not None and not (slices is not None and list_url in slices.suspended):
+        # Ganz gelesen: im Durchgang erledigt. Nicht eine ausgesetzte langsame Liste und keine, die bei der Quelle fehlt
+        # (404 oder Fehlerobjekt auf der ersten Seite): Ist die Schnittstelle nur gestört, bliebe sie sonst bis zum
+        # Ende des Durchgangs ungelesen
+        suspended = slices is not None and list_url in slices.suspended
+        absent = list_check is not None and (list_url in list_check.missing or list_url in list_check.required_errors)
+        if track_resume and resume is not None and not suspended and not absent:
             resume.note_finished(list_url)
 
-        total = count + updated_count
+        total = count + updated_count + carried
         if not full and (count > 0 or updated_count > 0 or deleted_count > 0 or skipped_count > 0):
             console.print(
                 f"[dim]  {entity_type} summary: {count} new, {updated_count} updated, "
@@ -2495,8 +2503,27 @@ class SyncOrchestrator:
             async for page in pages:
                 yield page
         except FetchWindowClosedError as error:
-            resume.note_cut(list_url, error.last_page_url)
+            resume.note_cut(list_url, error.last_page_url, error.last_page_ids)
             raise
+        except ListFetchError:
+            # Anderer Fehler (etwa eine Fortsetzungsseite, die es nicht mehr gibt): Der nächste Lauf liest ganz
+            resume.note_failed(list_url)
+            raise
+
+    @staticmethod
+    async def _resume_shifted(client: OParlClient, entry: ResumeEntry) -> bool:
+        """
+        Hat sich die Liste seit dem Abbruch um mehr als eine Seite verschoben? Dann trägt die Fortsetzungsseite keine
+        der gemerkten Kennungen mehr, und Einträge, die noch nicht gelesen waren, könnten jetzt vor ihr stehen. Ohne
+        gemerkte Kennungen, nach dem Fensterende oder bei einem Fehler: nein (den Fehler zeigt das Weiterlesen).
+        """
+        if not entry.ids or entry.page is None or client.deadline_passed():
+            return False
+        result = await client.fetch(entry.page, use_cache=False)
+        if result.error or result.data is None:
+            return False
+        ids = {item.get("id") for item in OParlClient._extract_items(result.data) if isinstance(item, dict)}
+        return not (ids & set(entry.ids))
 
     async def _settle_resume(self, resume: ResumeRun, complete: bool) -> None:
         """

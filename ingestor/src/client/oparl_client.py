@@ -130,6 +130,10 @@ def _is_list_page(data: Any) -> bool:
 REPEATED_PAGES_ERROR = "Folgeseiten liefern immer dieselben Einträge (Liste im Kreis)"
 
 
+#: Zeitstempel, die beim Vergleich von Einträgen mit Platzhalter-Kennung nicht zählen (``page_keys``)
+_STAMP_FIELDS = frozenset({"created", "modified"})
+
+
 def page_keys(items: list[Any]) -> frozenset[str]:
     """
     Schlüssel der Einträge einer Seite für die Kreis-Erkennung (Issue #1088): die Kennung (``id``).
@@ -138,7 +142,9 @@ def page_keys(items: list[Any]) -> frozenset[str]:
     Münster liefert gelöschte Beratungen als ``…/consultations/0`` (Vorlage ``vo/0``, Sitzung ``0``), oft seitenweise.
     Solche Einträge zählen über ihren Inhalt; sonst sähe jede dieser Seiten wie eine Wiederholung der vorigen aus, und
     die Liste bräche ab, obwohl jede Seite neue Einträge bringt. Wiederholt die Quelle wirklich dieselben Einträge,
-    ist auch der Inhalt gleich, und die Erkennung greift wie bisher. Einträge ohne Kennung zählen nicht.
+    ist auch der Inhalt gleich, und die Erkennung greift wie bisher. ``created`` und ``modified`` zählen dabei nicht:
+    Manche Quellen stempeln sie mit dem Zeitpunkt des Abrufs (more! rubin, Issue #122), eine Wiederholung sähe sonst
+    jedes Mal neu aus. Einträge ohne Kennung zählen nicht.
     """
     entries = [item for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)]
     seen = Counter(item["id"] for item in entries)
@@ -147,7 +153,8 @@ def page_keys(items: list[Any]) -> frozenset[str]:
         if seen[item["id"]] == 1:
             keys.add(item["id"])
             continue
-        canonical = json.dumps(item, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+        content = {name: value for name, value in item.items() if name not in _STAMP_FIELDS}
+        canonical = json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
         keys.add("inhalt:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest())
     return frozenset(keys)
 
@@ -209,7 +216,13 @@ class FetchWindowClosedError(ListFetchError):
     #1186) oder des Fensters ihres Vollabgleichs (``full_sync_window``). Keine weitere Seite.
     """
 
-    def __init__(self, list_url: str, page_url: str, last_page_url: str | None = None) -> None:
+    def __init__(
+        self,
+        list_url: str,
+        page_url: str,
+        last_page_url: str | None = None,
+        last_page_ids: tuple[str, ...] = (),
+    ) -> None:
         super().__init__(
             list_url,
             page_url,
@@ -218,6 +231,8 @@ class FetchWindowClosedError(ListFetchError):
         #: Zuletzt ganz gelesene Seite dieser Liste in diesem Abruf (``None``: keine); dort setzt ein abgebrochener
         #: Vollabgleich fort (``src/sync/fortsetzung.py``)
         self.last_page_url = last_page_url
+        #: Kennungen dieser Seite; der Fortsetzung zeigen sie, ob sich die Liste bis dahin verschoben hat
+        self.last_page_ids = last_page_ids
 
 
 @dataclass
@@ -1043,6 +1058,7 @@ class OParlClient:
         stale_pages = 0
         # Zuletzt ganz gelesene Seite (Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs)
         last_page_url: str | None = None
+        last_page_ids: tuple[str, ...] = ()
         tried_modified_since = False
         # Erste Seite nach „gibt es nicht“ auf die gefilterte Anfrage noch einmal ohne Filter angefragt
         retried_unfiltered = False
@@ -1081,7 +1097,7 @@ class OParlClient:
         while current_url:
             if self.deadline_passed():
                 console.print(f"[yellow]{url}: {WINDOW_CLOSED_ERROR}, Liste bleibt offen[/yellow]")
-                raise FetchWindowClosedError(url, current_url, last_page_url)
+                raise FetchWindowClosedError(url, current_url, last_page_url, last_page_ids)
             result = await self.fetch(current_url, use_cache=False)
 
             # Rückfall: Manche Listen lehnen modified_since ab (Stadt Münster: HTTP 401 bei organization und
@@ -1237,7 +1253,13 @@ class OParlClient:
             if items:
                 self.stats.objects_processed += len(items)
                 yield items
-            last_page_url = page_url
+            # Fortsetzungsseite ist nur eine Folgeseite: Die erste Seite (mit ``list_params`` und Filtern) fragt ein
+            # neuer Lauf ohnehin an, als Fortsetzung liefe sie im Kreis (``read_pages``)
+            if next_page is not None or pages_fetched > 1:
+                last_page_url = page_url
+                last_page_ids = tuple(
+                    item["id"] for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)
+                )
 
             # Get next page URL (server preserves filter params in links.next)
             if isinstance(result.data, dict):
