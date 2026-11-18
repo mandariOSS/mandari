@@ -54,11 +54,17 @@ function statusRegion(): HTMLElement {
   return live
 }
 
-/** Meldung für Screenreader: erst leeren, dann setzen, damit auch dieselbe Meldung zweimal hintereinander ankommt. */
+let ankuendigung: number | undefined
+
+/**
+ * Meldung für Screenreader: erst leeren, dann setzen, damit auch dieselbe Meldung zweimal hintereinander ankommt.
+ * Eine neue Meldung ersetzt eine, die noch nicht gesetzt ist; es gilt die jüngste.
+ */
 function announce(text: string): void {
   const live = statusRegion()
+  window.clearTimeout(ankuendigung)
   live.textContent = ''
-  window.setTimeout(() => {
+  ankuendigung = window.setTimeout(() => {
     live.textContent = text
   }, 50)
 }
