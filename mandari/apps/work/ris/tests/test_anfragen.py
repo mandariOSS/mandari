@@ -233,6 +233,12 @@ def test_einstellige_angaben_mit_einheit_und_der_betreff_werden_geprueft() -> No
     assert not zahlwort.hinweise
     # Ein Betreff mit einer Angabe, die nicht im Material steht, erscheint nicht
     assert entwurf.betreff == ""
+    # Ein Vorzeichen gehört zur Angabe; Aktenzeichen („V-8“) und Spannen („4-6“) sind keine einstelligen Beträge
+    negativ, aktenzeichen = _aufbereitet(
+        f"Der Saldo der [Halle]({LINK}) beträgt -8 Euro.\n\nDie [Vorlage]({LINK}) V-8 Euro nennt 4-6 Jahre.\n"
+    ).absaetze
+    assert negativ.hinweise == ("Die Angabe -8 Euro steht nicht in den abgerufenen Ratsdaten.",)
+    assert not aktenzeichen.hinweise
     assert _aufbereitet(f"BETREFF: Sanierung für 1.200.000 Euro\n\nDie [Sanierung]({LINK}) kommt.").betreff == (
         "Sanierung für 1.200.000 Euro"
     )

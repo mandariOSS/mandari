@@ -399,9 +399,10 @@ _NICHTS: Final = re.compile(r"^(?:nichts|keine?|keine offenen punkte|entfällt|[
 _PLATZHALTER: Final = re.compile(r"\[([^\[\]\n]{3,120})\](?!\()")
 _HOST: Final = re.compile(r"^https?://[^/\s]+")
 _SATZZEICHEN: Final = ".,;:!?"
-#: Einstellige Zahl, die für sich steht (kein Teil von „7,5“, „7.000“, „07.10.“ oder „V/7“), mit Einheit dahinter
+#: Einstellige Zahl, die für sich steht (kein Teil von „7,5“, „7.000“, „07.10.“, „V/7“, „V-7“ oder „3-5“), mit
+#: Einheit dahinter; ein Minuszeichen davor gehört als Vorzeichen dazu („-8 Euro“)
 _EINSTELLIG: Final = re.compile(
-    r"(?<![\w.,:/-])(\d)(?![\d.,:]*\d)\s*"
+    r"(?<![\w.,:/−-])([-−]?\d)(?![\d.,:]*\d)\s*"
     r"(?:€|%|(?:Euro|EUR|Cent|Prozent|Jahr(?:e|en|es)?|Monat(?:e|en|s)?|Wochen?|Tag(?:e|en|es)?|Stunden?|Minuten?|Uhr"
     r"|Metern?|Kilometern?|Quadratmetern?|Hektar|km|qm|ha)\b)"
 )
@@ -476,9 +477,13 @@ def _einstellige_angaben(text: str) -> list[tuple[str, Decimal]]:
     Einstellige Zahlen mit Währung, Prozent, Zeit- oder Maßeinheit („7 Euro“, „5 %“, „3 Jahre“) als (Text, Wert).
 
     Die Regeln der Zusammenfassungen lassen einstellige Zahlen aus, weil sie dort meist für Zahlwörter stehen. Mit
-    Einheit ist auch eine einstellige Zahl eine Angabe, die im Material stehen und eine Fundstelle tragen muss.
+    Einheit ist auch eine einstellige Zahl eine Angabe, die im Material stehen und eine Fundstelle tragen muss. Der
+    Wert ist der Betrag ohne Vorzeichen: So führt ihn auch das Material (``Quelle.werte``).
     """
-    return [(treffer.group(0), Decimal(treffer.group(1))) for treffer in _EINSTELLIG.finditer(text or "")]
+    return [
+        (treffer.group(0), abs(Decimal(treffer.group(1).replace("−", "-"))))
+        for treffer in _EINSTELLIG.finditer(text or "")
+    ]
 
 
 def _gepruefter_betreff(betreff: str, quelle: Quelle) -> str:

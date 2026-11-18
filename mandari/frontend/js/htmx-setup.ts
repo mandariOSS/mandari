@@ -36,15 +36,31 @@ import { csrfToken, csrfTokenAktuell } from './csrf'
 
 export { csrfToken }
 
-function announce(text: string): void {
+let statusregion: HTMLElement | null = null
+
+/**
+ * Statusregion für Screenreader, einmal leer im Dokument angelegt (`setupHtmx`): Angekündigt wird verlässlich nur die
+ * Änderung einer Region, die schon da ist, nicht eine Region, die mit ihrem Text neu eingefügt wird.
+ */
+function statusRegion(): HTMLElement {
+  if (statusregion?.isConnected) return statusregion
   const live = document.createElement('div')
   live.setAttribute('role', 'status')
   live.setAttribute('aria-live', 'polite')
   live.setAttribute('aria-atomic', 'true')
   live.className = 'sr-only'
-  live.textContent = text
   document.body.appendChild(live)
-  window.setTimeout(() => live.remove(), 1000)
+  statusregion = live
+  return live
+}
+
+/** Meldung für Screenreader: erst leeren, dann setzen, damit auch dieselbe Meldung zweimal hintereinander ankommt. */
+function announce(text: string): void {
+  const live = statusRegion()
+  live.textContent = ''
+  window.setTimeout(() => {
+    live.textContent = text
+  }, 50)
 }
 
 /** Fokus auf das erste `[autofocus]`-Element eines eingetauschten Fragments. */
@@ -165,6 +181,9 @@ export function setupHtmx(): void {
   // unsafe-eval (#172). Nachbearbeitung läuft über die data-*-Attribute oben.
   htmx.config.allowEval = false
   htmx.config.selfRequestsOnly = true
+
+  // Statusregion für Screenreader leer anlegen, bevor die erste Anfrage startet
+  statusRegion()
 
   // Textfelder mit eigenem Sofort-Speichern (data-sofort-tippen, Issue #1071) speichern über ihren eigenen Auslöser
   // (input mit Verzögerung). Ihr change darf den umgebenden Abschnitt mit eigenem hx-post nicht noch einmal auslösen,
