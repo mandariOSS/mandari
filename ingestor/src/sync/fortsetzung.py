@@ -140,13 +140,20 @@ class ResumeRun:
         stored: Mapping[str, Any],
         now: datetime | None = None,
         margin: timedelta = timedelta(0),
+        not_before: datetime | None = None,
     ) -> ResumeRun:
-        """``stored``: Einträge aus ``sync_config["full_sync_resume"]`` (``full_sync_resume_of``)."""
+        """
+        ``stored``: Einträge aus ``sync_config["full_sync_resume"]`` (``full_sync_resume_of``). ``not_before``: letzter
+        vollständiger Vollabgleich der Quelle; ältere Einträge gehören zu einem abgeschlossenen Durchgang (etwa weil
+        das Löschen danach scheiterte) und gelten nicht.
+        """
         now = now or datetime.now(UTC)
         names = {name for name in stored if isinstance(name, str)}
-        return cls(
-            source_url=source_url, started=now, margin=margin, entries=resume_entries_of(stored, now), stored=names
-        )
+        entries = resume_entries_of(stored, now)
+        if not_before is not None:
+            limit = not_before.replace(tzinfo=UTC) if not_before.tzinfo is None else not_before.astimezone(UTC)
+            entries = {name: entry for name, entry in entries.items() if entry.at > limit}
+        return cls(source_url=source_url, started=now, margin=margin, entries=entries, stored=names)
 
     def plan(self, list_url: str) -> tuple[str, ResumeEntry | None]:
         """
@@ -189,8 +196,12 @@ class ResumeRun:
             self.failed.add(list_url)
 
     def active(self) -> bool:
-        """Läuft ein Durchgang (früherer Abbruch oder Abbruch in diesem Lauf)?"""
-        return bool(self.entries) or any(page is not None for page, _ids_ in self.cut.values())
+        """
+        Läuft ein Durchgang (früherer Abbruch oder Abbruch in diesem Lauf)? Auch ein Abbruch vor der ersten Seite einer
+        Liste zählt: Die schon gelesenen Listen werden dann nur noch nachgeführt, und die Liste kommt im nächsten Lauf
+        früher dran.
+        """
+        return bool(self.entries) or bool(self.cut)
 
     def changes(self, complete: bool, now: datetime | None = None) -> dict[str, dict[str, Any] | None]:
         """

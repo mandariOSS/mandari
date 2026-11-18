@@ -164,7 +164,8 @@ async def test_abgebrochener_vollabgleich_setzt_in_der_naechsten_nacht_fort() ->
 
     assert stats["incomplete"] == []
     for liste in ("organization", "person", "meeting"):
-        assert all(gefiltert for _seite, gefiltert in _anfragen(quelle, liste)), liste
+        anfragen = _anfragen(quelle, liste)
+        assert anfragen and all(gefiltert for _seite, gefiltert in anfragen), liste
     assert _anfragen(quelle, "paper") == [(3, False), (1, True), (3, False), (4, False), (5, False)]
     assert quelle.filter_der_anfragen("paper")[1] == datetime.fromisoformat(beginn).isoformat()
     # Vollständig: Der Durchgang ist fertig, die Fortsetzung gelöscht
@@ -295,7 +296,10 @@ async def test_abbruch_vor_der_ersten_seite_beginnt_die_liste_von_vorn() -> None
 
     assert "paper" in stats["incomplete"]
     assert run.cut.get(PAPER) == (None, ())
-    assert PAPER not in speicher.config.get(SYNC_CONFIG_FULL_SYNC_RESUME_KEY, {})
+    # Der Durchgang beginnt trotzdem: Die gelesenen Listen werden nur noch nachgeführt, die Vorlagen kommen von vorn
+    stand = speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY]
+    assert PAPER not in stand
+    assert stand[ORGANIZATION]["done"] is True and stand[PERSON]["done"] is True
 
 
 class _KoelnMitAbsage(Quelle):
@@ -398,8 +402,25 @@ def test_abbruch_ohne_gelesene_seite_behaelt_die_fruehere_fortsetzung() -> None:
 def test_erste_seite_ist_keine_fortsetzung() -> None:
     run = ResumeRun.build(SOURCE, {})
     run.note_cut(PAPER, PAPER)
-    assert not run.active()
-    assert run.changes(complete=False) == {}
+    # Der Abbruch beginnt den Durchgang, die Liste aber ohne Fortsetzungsseite
+    assert run.active()
+    assert run.changes(complete=False) == {PAPER: None}
+
+
+def test_stand_vor_dem_letzten_vollabgleich_gilt_nicht() -> None:
+    """Scheiterte das Löschen nach einem vollständigen Durchgang, gilt der alte Stand im nächsten nicht."""
+    jetzt = datetime.now(UTC)
+    vor_zwei_tagen = jetzt - timedelta(days=2)
+    run = ResumeRun.build(
+        SOURCE,
+        {MEETING: _eintrag(vor_zwei_tagen, done=True), PAPER: _eintrag(jetzt, page=f"{PAPER}?page=3")},
+        jetzt,
+        not_before=jetzt - timedelta(days=1),
+    )
+    assert run.plan(MEETING) == (FULL, None)
+    assert run.plan(PAPER)[0] == RESUME
+    # Der alte Eintrag fällt beim nächsten Speichern weg
+    assert run.changes(complete=False)[MEETING] is None
 
 
 def test_eintraege_behalten_den_beginn_ihres_ersten_laufs() -> None:
@@ -495,3 +516,35 @@ async def test_lauf_der_quelle_speichert_und_beendet_die_fortsetzung(monkeypatch
     # Änderungsabgleich: keine Fortsetzung
     await orchestrator.sync_body_url(KOMMUNENLISTE, full=False)
     assert erhalten[2] is None
+
+
+async def test_nachfuehrung_liest_alle_gefilterten_seiten_und_uebernimmt_alles() -> None:
+    """
+    Prüfbefund (CodeRabbit): Die Nachführung einer gelesenen Liste bricht nicht nach fünf Seiten ohne Änderung ab und
+    übernimmt jedes gelieferte Objekt, auch mit gleichem ``modified`` (Korrektur am selben Tag).
+    """
+    jetzt = datetime.now(UTC).replace(microsecond=0)
+    quelle = _koeln(jetzt - timedelta(days=30))
+    stempel = jetzt - timedelta(hours=1)
+    quelle.listen["/oparl/body/1/meeting"] = [
+        {
+            "id": f"{BASE}/meeting/{i}",
+            "type": "https://schema.oparl.org/1.1/Meeting",
+            "name": f"Sitzung {i}" + (" (korrigiert)" if i == 13 else ""),
+            "modified": stempel.isoformat(),
+        }
+        for i in range(14)
+    ]
+    speicher = FortsetzungsSpeicher()
+    # Alle Sitzungen schon mit diesem Stand gespeichert: inkrementell sähe der Lauf nur unveränderte Seiten
+    speicher.modified.update({f"{BASE}/meeting/{i}": stempel for i in range(14)})
+    speicher.config[SYNC_CONFIG_FULL_SYNC_RESUME_KEY] = {
+        MEETING: ResumeEntry(at=jetzt - timedelta(days=1), done=True).to_entry(),
+        PAPER: ResumeEntry(at=jetzt - timedelta(days=1), page=f"{PAPER}?page=4").to_entry(),
+    }
+
+    stats, _run = await _nacht(quelle, speicher)
+
+    assert stats["incomplete"] == []
+    assert _anfragen(quelle, "meeting") == [(n, True) for n in range(1, 8)]
+    assert stats["meetings"] == 14

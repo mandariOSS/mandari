@@ -722,8 +722,8 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Je Quelle in eigenem Zeitfenster:** `full_sync_window`, etwa `{"start": "00:00", "end": "06:00"}` (Ortszeit,
   Standard `Europe/Berlin`, abweichend mit `"tz"`, über Mitternacht erlaubt, Beginn und Ende verschieden). Der
   Vollabgleich der Quelle beginnt dann in ihrem Fenster, unabhängig von `--full-sync-hour`. Außerhalb des Fensters
-  läuft ein Vollabgleich als inkrementeller Abgleich, ob aus dem Admin oder per `sync --full`. Das Fenster muss lang
-  genug für einen ganzen Vollabgleich der Quelle sein.
+  läuft ein Vollabgleich als inkrementeller Abgleich, ob aus dem Admin oder per `sync --full`. Reicht das Fenster
+  nicht für einen ganzen Vollabgleich, setzt der nächste fort (siehe unten); er braucht dann mehrere Fenster.
 - **Nach dem Ende des eigenen Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das
   vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
   vollständig, und das Änderungsfenster rückt nicht vor.
@@ -733,15 +733,17 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   liest sie dann ab ihrer zuletzt ganz gelesenen Seite (eine Seite Überlappung) bis zum Ende. Trägt diese Seite keine
   der gemerkten Kennungen mehr, hat sich die Liste um mehr als eine Seite verschoben, und er liest sie ganz. Listen, die
   der Durchgang schon ganz gelesen hat, holt er nur mit `modified_since` ab demselben Zeitpunkt, damit sie aktuell
-  bleiben, ohne das Fenster zu verbrauchen; scheitert dieser Änderungsabgleich (die Stadt Köln lehnte gefilterte
-  Folgeseiten zeitweise mit HTTP 401 ab), liest er sie ganz. Eine Liste, die es bei der Quelle nicht gibt (404,
+  bleiben, ohne das Fenster zu verbrauchen. Diese Nachführung übernimmt jedes gelieferte Objekt und bricht nicht nach
+  Seiten ohne Änderung ab. Scheitert sie (die Stadt Köln lehnte gefilterte Folgeseiten zeitweise mit HTTP 401 ab),
+  liest er die Liste ganz; das kann einen großen Teil des Fensters kosten. Eine Liste, die es bei der Quelle nicht gibt (404,
   Fehlerobjekt), gilt nicht als gelesen; scheitert eine Liste aus anderem Grund als dem Fensterende, fällt ihr Eintrag
   weg. Den Stand hält `sync_config["full_sync_resume"]`. Ist ein Lauf vollständig, endet der Durchgang:
   `last_successful_full_sync` rückt vor, der Stand wird gelöscht. Einträge gelten 14 Tage, danach liest der
   Vollabgleich die Liste wieder ganz. Anlass: Die Stadt Köln erlaubt Abrufe nur von 23 bis 1 Uhr; der Vollabgleich las
   jede Nacht dieselben gut tausend Seiten der Tagesordnungspunkte und Dateien und erreichte die Beratungen nie. Ohne
-  Abbruch am Fensterende schreibt der Vollabgleich keinen Stand. Vollabgleiche in Zeitscheiben haben ihre eigene
-  Fortsetzung.
+  Abbruch am Fensterende schreibt der Vollabgleich keinen Stand; ein Stand, der älter ist als der letzte
+  vollständige Vollabgleich, gilt nicht. Vollabgleiche in Zeitscheiben (`full_sync_slices`) nutzen diese Fortsetzung
+  nicht, sie setzen über `full_sync_progress` fort.
   Scraper-Quellen kennen diese Frist des Vollabgleichs nicht: Ein begonnener Vollabgleich läuft bei ihnen zu Ende,
   auch nach dem Ende ihres eigenen Fensters; nur das [Abruffenster](#abruffenster) beendet einen Crawl.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung

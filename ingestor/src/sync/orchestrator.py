@@ -983,6 +983,7 @@ class SyncOrchestrator:
                 url,
                 full_sync_resume_of(getattr(source_row, "sync_config", None)),
                 margin=options.modified_since_margin(),
+                not_before=getattr(source_row, "last_successful_full_sync", None),
             )
             if full and slice_run.config is None
             else None
@@ -1927,9 +1928,14 @@ class SyncOrchestrator:
         slices: BodySlices | None = None,
         ergaenzung: HtmlErgaenzung | None = None,
         resume: ResumeRun | None = None,
+        changes_since: datetime | None = None,
     ) -> int:
         """
         Sync all entities of a specific type.
+
+        ``changes_since`` im Vollabgleich: Nachführung einer Liste im Durchgang der Fortsetzung. Die Quelle filtert mit
+        ``modified_since``, verarbeitet wird wie im Vollabgleich: jedes gelieferte Objekt, ohne Abbruch nach Seiten ohne
+        Änderung (eine Korrektur mit gleichem ``modified`` ginge sonst verloren).
 
         Mit ``resume`` im Vollabgleich ohne Zeitscheiben (``src/sync/fortsetzung.py``): Hat der Durchgang die Liste
         schon ganz gelesen, kommen nur ihre Änderungen seit dem ersten Lauf des Durchgangs (``ResumeRun.since``) wie im
@@ -2002,8 +2008,8 @@ class SyncOrchestrator:
                         body_id,
                         body_external_id,
                         body_name=body_name,
-                        modified_since=since,
-                        full=False,
+                        full=True,
+                        changes_since=since,
                         es_deletions=es_deletions,
                         list_check=list_check,
                         item_check=item_check,
@@ -2058,6 +2064,8 @@ class SyncOrchestrator:
         timed = timed_lists is not None and list_url in timed_lists.known
         if modified_since is not None and timed_lists is not None and not timed:
             modified_since = day_start_window(modified_since)
+        if changes_since is not None and timed_lists is not None and not timed:
+            changes_since = day_start_window(changes_since)
 
         # Zeitscheiben (Issue #1033): Vollabgleich ab dem Fortschritt der Liste, langsame Liste ab ihrem Fensteranfang;
         # in Tagesscheiben nur, wenn die Quelle die Liste filtert, sonst wie bisher ohne Scheiben ab dort
@@ -2086,7 +2094,7 @@ class SyncOrchestrator:
         stale_pages_to_stop = 5
 
         # For incremental: send modified_since to server as pre-filter
-        server_modified_since = modified_since if not full else None
+        server_modified_since = modified_since if not full else changes_since
         if slow_since is not None:
             server_modified_since = slow_since  # langsame Liste: ab ihrem eigenen Fensteranfang
 

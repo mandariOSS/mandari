@@ -16,7 +16,7 @@ import contextlib
 import hashlib
 import json
 import time
-from collections import Counter, deque
+from collections import deque
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -138,24 +138,27 @@ def page_keys(items: list[Any]) -> frozenset[str]:
     """
     Schlüssel der Einträge einer Seite für die Kreis-Erkennung (Issue #1088): die Kennung (``id``).
 
-    Steht dieselbe Kennung mehrmals auf einer Seite, benennt sie kein Objekt, sondern ist ein Platzhalter: Die Stadt
-    Münster liefert gelöschte Beratungen als ``…/consultations/0`` (Vorlage ``vo/0``, Sitzung ``0``), oft seitenweise.
-    Solche Einträge zählen über ihren Inhalt; sonst sähe jede dieser Seiten wie eine Wiederholung der vorigen aus, und
-    die Liste bräche ab, obwohl jede Seite neue Einträge bringt. Wiederholt die Quelle wirklich dieselben Einträge,
-    ist auch der Inhalt gleich, und die Erkennung greift wie bisher. ``created`` und ``modified`` zählen dabei nicht:
-    Manche Quellen stempeln sie mit dem Zeitpunkt des Abrufs (more! rubin, Issue #122), eine Wiederholung sähe sonst
-    jedes Mal neu aus. Einträge ohne Kennung zählen nicht.
+    Trägt eine Kennung auf einer Seite verschiedene Einträge, benennt sie kein Objekt, sondern ist ein Platzhalter: Die
+    Stadt Münster liefert gelöschte Beratungen als ``…/consultations/0`` (Vorlage ``vo/0``, Sitzung ``0``), oft
+    seitenweise. Solche Einträge zählen über ihren Inhalt; sonst sähe jede dieser Seiten wie eine Wiederholung der
+    vorigen aus, und die Liste bräche ab, obwohl jede Seite neue Einträge bringt. Gleiche Kopien eines Eintrags
+    zählen weiter als seine Kennung: Liefert die Quelle abwechselnd ``[A]`` und ``[A, A]``, ist das eine
+    Wiederholung. Wiederholt die Quelle Platzhalter wörtlich, gleicht auch der Inhalt, und die Erkennung greift wie
+    bisher. ``created`` und ``modified`` zählen dabei nicht: Manche Quellen stempeln sie mit dem Zeitpunkt des Abrufs
+    (more! rubin, Issue #122), eine Wiederholung sähe sonst jedes Mal neu aus. Einträge ohne Kennung zählen nicht.
     """
-    entries = [item for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)]
-    seen = Counter(item["id"] for item in entries)
+    contents: dict[str, set[str]] = {}
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            content = {name: value for name, value in item.items() if name not in _STAMP_FIELDS}
+            canonical = json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+            contents.setdefault(item["id"], set()).add(hashlib.sha256(canonical.encode("utf-8")).hexdigest())
     keys: set[str] = set()
-    for item in entries:
-        if seen[item["id"]] == 1:
-            keys.add(item["id"])
-            continue
-        content = {name: value for name, value in item.items() if name not in _STAMP_FIELDS}
-        canonical = json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
-        keys.add("inhalt:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest())
+    for item_id, digests in contents.items():
+        if len(digests) == 1:
+            keys.add(item_id)
+        else:
+            keys.update(f"inhalt:{digest}" for digest in digests)
     return frozenset(keys)
 
 

@@ -283,3 +283,25 @@ def test_seitenschluessel_kennung_oder_inhalt() -> None:
     assert page_keys([geloeschte_beratung(7), umgestellt]) == page_keys(
         [geloeschte_beratung(7), geloeschte_beratung(7)]
     )
+
+
+@pytest.mark.parametrize("weg", WEGE)
+async def test_abwechselnd_einfache_und_doppelte_kopien_brechen_ab(weg: str) -> None:
+    """Prüfbefund (CodeRabbit): ``[A]`` und ``[A, A]`` mit gleichem Inhalt im Wechsel sind eine Wiederholung."""
+    quelle = Seiten(lambda n: vorlagen(1) if n % 2 else vorlagen(1, 1))
+    client = _client(quelle)
+    try:
+        with pytest.raises(ListFetchError) as excinfo:
+            [page async for page in _lesen(client, weg)]
+    finally:
+        await client._client.aclose()
+
+    assert len(quelle.anfragen) == 3
+    assert excinfo.value.result.error == REPEATED_PAGES_ERROR
+
+
+def test_seitenschluessel_gleiche_kopien_zaehlen_als_kennung() -> None:
+    assert page_keys(vorlagen(1, 1)) == page_keys(vorlagen(1)) == frozenset({f"{BASE}/paper/1"})
+    # Zeitstempel zählen nicht: gleiche Platzhalter mit anderem modified sind dieselbe Kopie
+    a, b = geloeschte_beratung(7), {**geloeschte_beratung(7), "modified": "2026-11-14T00:00:00+01:00"}
+    assert page_keys([a, b]) == frozenset({PLATZHALTER})
