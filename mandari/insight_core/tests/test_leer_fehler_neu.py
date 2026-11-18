@@ -20,6 +20,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 import mandari.urls as urls
+from apps.common.tests.versionstage import pruefe_tag_je_version
 from apps.session.models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionTenant
 from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlSource
 from insight_core.services import neuigkeiten
@@ -194,6 +195,10 @@ class TestNeuigkeiten:
             assert not re.search(r"\b(du|dir|dich|dein\w*|euch|euer\w*)\b", f"{eintrag.titel} {eintrag.text}", re.I)
             assert not eintrag.version or re.fullmatch(r"\d+\.\d+\.\d+", eintrag.version), eintrag.version
         assert [e.datum for e in eintraege] == sorted((e.datum for e in eintraege), reverse=True)
+
+    def test_je_version_ein_tag_und_derselbe_wie_im_changelog(self) -> None:
+        """Im Portal steht eine Neuerung ab dem Release: Tag aus der CHANGELOG.md, nicht der Übernahme nach dev."""
+        pruefe_tag_je_version(neuigkeiten.lies())
 
     def test_fehlende_pflichtfelder(self, tmp_path: Path) -> None:
         datei = tmp_path / "neu.toml"
