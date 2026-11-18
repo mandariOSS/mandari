@@ -11,16 +11,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from datetime import date
 from html import unescape
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from django.conf import settings
 from django.urls import reverse
 
 from apps.common.tests import factories
+from apps.common.tests.versionstage import pruefe_tag_je_version
 from apps.work import neuigkeiten
 from insight_core.services import neuigkeiten as portal
 
@@ -76,21 +75,7 @@ def test_datei_vollstaendig_und_in_sie_form() -> None:
 
 def test_je_version_ein_tag_und_derselbe_wie_im_changelog() -> None:
     """Die Seite zeigt eine Überschrift je Version; ihr Tag ist der aus der Überschrift der CHANGELOG.md."""
-    tage: dict[str, set[date]] = {}
-    for eintrag in portal.lies(neuigkeiten.DATEI):
-        if eintrag.version:
-            tage.setdefault(eintrag.version, set()).add(eintrag.datum)
-    assert tage and all(len(menge) == 1 for menge in tage.values()), tage
-
-    changelog = Path(settings.BASE_DIR).parent / "CHANGELOG.md"
-    if not changelog.exists():
-        pytest.skip("CHANGELOG.md liegt nicht neben dem Projekt (Image)")
-    kopf = dict(
-        re.findall(r"^## \[(\d+\.\d+\.\d+)\] – (\d{4}-\d{2}-\d{2})", changelog.read_text(encoding="utf-8"), re.M)
-    )
-    for version, menge in tage.items():
-        assert version in kopf, f"Version {version} steht nicht in der CHANGELOG.md"
-        assert {date.fromisoformat(kopf[version])} == menge, f"Tag der Version {version}"
+    pruefe_tag_je_version(portal.lies(neuigkeiten.DATEI))
 
 
 def test_gruppen_eine_je_version() -> None:
