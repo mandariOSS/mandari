@@ -411,7 +411,10 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   läuft auch eine Liste, deren Folgeseiten unter immer neuer Adresse dieselben Einträge liefern (Sammelserver von
   OWL-IT, Issue [#1088](https://github.com/mandariOSS/mandari/issues/1088)): Bringen zwei Seiten in Folge keine
   Kennung, die nicht schon auf ihrer vorigen Seite stand, und nennt die Quelle noch eine Folgeseite, bricht die Liste
-  ab; Seiten ohne Kennungen zählen nicht, verglichen wird nur mit der vorigen Seite.
+  ab; Seiten ohne Kennungen zählen nicht, verglichen wird nur mit der vorigen Seite. Steht dieselbe Kennung mehrmals
+  auf einer Seite, ist sie ein Platzhalter und zählt über den Inhalt des Eintrags: Die Stadt Münster liefert gelöschte
+  Beratungen seitenweise als `…/consultations/0` (13.11.2026); jede dieser Seiten bringt andere Einträge und ist keine
+  Wiederholung (`page_keys`).
 - Neu entdeckte Kommunen sind nicht gelistet (`upsert_body`, siehe
   [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)).
 - **Auslöser:** „Jetzt synchronisieren“ auf der Startseite des Admins (alle aktiven Quellen) und die Aktionen
@@ -714,7 +717,8 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Je Quelle seltener:** `full_sync_every_days` (ganze Zahl von 1 bis 365) verlangt so viele Tage Abstand zum
   letzten vollständig erfolgreichen Vollabgleich (`last_successful_full_sync`), mit einer Stunde Spielraum. Ist er
   nicht fällig, gleicht die Quelle nur Änderungen ab. Ein Vollabgleich mit Lücke zählt nicht; er wird im nächsten
-  Fenster wiederholt (`ingestor/src/client/source_options.py`, `full_sync_plan`).
+  Fenster wiederholt (`ingestor/src/client/source_options.py`, `full_sync_plan`), nach einem Abbruch am Fensterende
+  als Fortsetzung (siehe unten).
 - **Je Quelle in eigenem Zeitfenster:** `full_sync_window`, etwa `{"start": "00:00", "end": "06:00"}` (Ortszeit,
   Standard `Europe/Berlin`, abweichend mit `"tz"`, über Mitternacht erlaubt, Beginn und Ende verschieden). Der
   Vollabgleich der Quelle beginnt dann in ihrem Fenster, unabhängig von `--full-sync-hour`. Außerhalb des Fensters
@@ -722,7 +726,16 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   genug für einen ganzen Vollabgleich der Quelle sein.
 - **Nach dem Ende des eigenen Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das
   vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
-  vollständig, das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
+  vollständig, und das Änderungsfenster rückt nicht vor.
+- **Fortsetzung über mehrere Fenster** (`ingestor/src/sync/fortsetzung.py`): Der nächste Vollabgleich beginnt nicht
+  wieder bei Seite 1. Eine am Fensterende offene Liste liest er ab ihrer zuletzt ganz gelesenen Seite (eine Seite
+  Überlappung) bis zum Ende; Listen, die der Durchgang schon ganz gelesen hat, nur mit `modified_since` (Änderungsfenster
+  der Kommune), damit sie aktuell bleiben, ohne das Fenster zu verbrauchen. Den Stand hält
+  `sync_config["full_sync_resume"]`. Ist ein Lauf vollständig, endet der Durchgang: `last_successful_full_sync` rückt
+  vor, der Stand wird gelöscht. Einträge gelten 14 Tage, danach liest der Vollabgleich die Liste wieder ganz. Anlass:
+  Die Stadt Köln erlaubt Abrufe nur von 23 bis 1 Uhr; der Vollabgleich las jede Nacht dieselben gut tausend Seiten der
+  Tagesordnungspunkte und Dateien und erreichte die Beratungen nie. Ohne Abbruch am Fensterende schreibt der
+  Vollabgleich keinen Stand. Vollabgleiche in Zeitscheiben haben ihre eigene Fortsetzung.
   Scraper-Quellen kennen diese Frist des Vollabgleichs nicht: Ein begonnener Vollabgleich läuft bei ihnen zu Ende,
   auch nach dem Ende ihres eigenen Fensters; nur das [Abruffenster](#abruffenster) beendet einen Crawl.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
@@ -973,6 +986,7 @@ Befund zurückzusetzen:
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, und Listen, die sie nicht freigibt (HTTP 403 für alle), mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
 | `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |
 | `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
+| `full_sync_resume` | Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs ohne Zeitscheiben: je Liste die zuletzt ganz gelesene Seite (`page`) oder „im Durchgang ganz gelesen“ (`done`), jeweils mit Zeitpunkt (`at`, UTC). Einträge gelten 14 Tage. Löschen lässt den nächsten Vollabgleich alle Listen wieder ganz lesen |
 | `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
 | `unfiltered_lists` | Listen, die `modified_since` ablehnen oder nur gefiltert nicht finden, mit Grund und letzter Prüfung (Adresse → `reason`, `checked_at` UTC). Sie laufen ohne Filter, die übrigen Listen der Quelle mit; nach einem Tag fragt der nächste Lauf wieder mit Filter. Löschen lässt den nächsten Lauf die Listen gleich wieder mit Filter anfragen |
 | `unfiltered_hosts` | Server, auf denen die Quelle den Filter nachweislich ganz ignoriert (Host → `reason`, `checked_at` UTC); gilt nur für diese Quelle und nicht mit `carry_modified_since`. Löschen lässt den nächsten Lauf wieder mit Filter anfragen; ignoriert der Server ihn weiter, steht er danach wieder hier |
