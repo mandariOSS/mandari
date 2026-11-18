@@ -470,7 +470,7 @@ class TestAdresseUndReiter:
         assert antwort.status_code == 200
         html = antwort.content.decode()
         assert "Radweg" in html
-        assert '<link rel="canonical" href="' in html and "/insight/k/beschlussstadt/beschluesse/" in html
+        assert '<link rel="canonical" href="' not in html, "kein Canonical neben noindex"
         assert '<meta name="robots" content="noindex, follow">' in html, "gefiltert nicht im Index"
 
     def test_umsetzung_als_reiter_nur_mit_daten(self, besucher: Client, welt: Welt) -> None:

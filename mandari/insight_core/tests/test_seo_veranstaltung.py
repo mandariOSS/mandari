@@ -6,8 +6,9 @@ Die Search Console meldete im Bericht „Veranstaltungen“ Sitzungen ohne ``loc
 zu ``organizer.url``, ``offers``, ``image``, ``performer``, ``location.address`` und ``description``. Eine
 Sitzung erscheint deshalb nur noch mit Beginn und einem Ort samt Postanschrift als ``Event``; ohne verlässlichen
 Ort trägt die Seite nur die Brotkrumen. Veranstalter ist die Verwaltung mit der Seite der Kommune, Mitwirkende
-sind die Gremien mit ihren Seiten, Eintritt frei nur bei einer ausdrücklich öffentlichen Sitzung. Die Brotkrumen
-führen nur über Adressen, die eine Suchmaschine ohne gewählte Kommune direkt (Status 200) erreicht.
+sind die Gremien mit ihren Seiten. Der Eintritt ist frei (``offers``), denn Sitzungen sind grundsätzlich öffentlich;
+eine laut Quelle ganz nichtöffentliche Sitzung erscheint nicht als Veranstaltung. Die Brotkrumen führen nur über
+Adressen, die eine Suchmaschine ohne gewählte Kommune direkt (Status 200) erreicht.
 """
 
 from __future__ import annotations
@@ -150,21 +151,20 @@ def _pruefe_event(event: dict[str, Any]) -> None:
     assert event["organizer"]["name"] and _absolut(event["organizer"]["url"])
     for gremium in event.get("performer", []):
         assert gremium["@type"] == "Organization" and gremium["name"] and _absolut(gremium["url"])
-    if "offers" in event:
-        angebot = event["offers"]
-        gueltig_ab = angebot.pop("validFrom")
+    # Search Console „Feld offers fehlt“ (18.11.2026): Jede Veranstaltung trägt den freien Eintritt
+    angebot = event["offers"]
+    gueltig_ab = angebot.pop("validFrom", None)
+    if gueltig_ab is not None:
         assert ISO_MIT_VERSATZ.match(gueltig_ab), gueltig_ab
         assert gueltig_ab <= event["startDate"] or gueltig_ab[:10] <= event["startDate"][:10]
-        assert angebot == {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "EUR",
-            "availability": "https://schema.org/InStock",
-            "url": event["url"],
-        }
-        assert event["isAccessibleForFree"] is True
-    else:
-        assert "isAccessibleForFree" not in event
+    assert angebot == {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "EUR",
+        "availability": "https://schema.org/InStock",
+        "url": event["url"],
+    }
+    assert event["isAccessibleForFree"] is True
     _ohne_leere_werte(event)
 
 
@@ -464,8 +464,10 @@ class TestOrtsnameUndGueltigAb:
 
 
 class TestEintrittFrei:
+    """Sitzungen sind grundsätzlich öffentlich; nur eine laut Quelle ganz nichtöffentliche ist keine Veranstaltung."""
+
     @pytest.mark.parametrize(
-        ("punkte", "abgesagt", "frei"),
+        ("punkte", "abgesagt", "veranstaltung"),
         [
             ([{"public": True, "raw_json": {"public": True}}], False, True),
             # Ein öffentlicher Teil genügt
@@ -474,34 +476,43 @@ class TestEintrittFrei:
                 False,
                 True,
             ),
-            # Ohne Angabe der Quelle steht die Spalte nur auf ihrem Standardwert: kein Hinweis auf Öffentlichkeit
-            ([{"public": True, "raw_json": {}}], False, False),
+            # Ohne Angabe der Quelle gilt der Grundsatz der Öffentlichkeit
+            ([{"public": True, "raw_json": {}}], False, True),
+            # Tagesordnung noch nicht veröffentlicht (Search Console, 18.11.2026: „Wahlausschuss … am 07.12.2026“)
+            ([], False, True),
+            # Ganz nichtöffentlich, aus den Rohdaten oder aus der Spalte (False ist nie der Standardwert)
             ([{"public": False, "raw_json": {"public": False}}], False, False),
-            ([], False, False),
-            # Abgesagt: kein Angebot
-            ([{"public": True, "raw_json": {"public": True}}], True, False),
+            ([{"public": False, "raw_json": {}}, {"public": True, "raw_json": {"public": False}}], False, False),
+            # Abgesagt: dieselben Angaben, nur mit EventCancelled
+            ([{"public": True, "raw_json": {"public": True}}], True, True),
+            ([], True, True),
         ],
     )
-    def test_angebot(self, muenster: OParlBody, punkte: list[dict[str, Any]], abgesagt: bool, frei: bool) -> None:
+    def test_angebot(
+        self, muenster: OParlBody, punkte: list[dict[str, Any]], abgesagt: bool, veranstaltung: bool
+    ) -> None:
         sitzung = _sitzung(muenster, _gremium(muenster), location_name="Rathaus", cancelled=abgesagt)
         for nummer, felder in enumerate(punkte, start=1):
             _punkt(sitzung, str(nummer), **felder)
 
-        event = _event(_seite(f"/insight/termine/{sitzung.id}/"))
+        seite = _seite(f"/insight/termine/{sitzung.id}/")
+        event = _event(seite)
 
+        if not veranstaltung:
+            assert event is None
+            assert any(d.get("@type") == "BreadcrumbList" for d in _json_ld(seite)), "Brotkrumen bleiben"
+            return
         assert event is not None
         _pruefe_event(event)
-        assert ("offers" in event) is frei
-        assert event.get("isAccessibleForFree") is (True if frei else None)
         assert event["eventStatus"].endswith("EventCancelled" if abgesagt else "EventScheduled")
 
-    def test_nicht_oeffentlicher_punkt_aus_der_tagesordnung_entfernt(self, muenster: OParlBody) -> None:
+    def test_geloeschter_punkt_zaehlt_nicht(self, muenster: OParlBody) -> None:
+        """Ein entfernter öffentlicher Punkt macht eine sonst nichtöffentliche Sitzung nicht öffentlich."""
         sitzung = _sitzung(muenster, _gremium(muenster), location_name="Rathaus")
         _punkt(sitzung, "1", public=True, raw_json={"public": True}, deleted=True)
+        _punkt(sitzung, "2", public=False, raw_json={"public": False})
 
-        event = _event(_seite(f"/insight/termine/{sitzung.id}/"))
-
-        assert event is not None and "offers" not in event
+        assert _event(_seite(f"/insight/termine/{sitzung.id}/")) is None
 
 
 # =============================================================================

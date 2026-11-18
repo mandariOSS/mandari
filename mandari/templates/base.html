@@ -16,7 +16,8 @@
     <title>{% block title %}Mandari{% endblock %} | Mandari Insight</title>
 
     <!-- Canonical URL -->
-    {% if seo.canonical_url %}
+    {# Nicht neben noindex (wie base_insight.html) #}
+    {% if seo.canonical_url and "noindex" not in seo.robots|default:"" %}
     <link rel="canonical" href="{{ seo.canonical_url }}">
     {% endif %}
 
