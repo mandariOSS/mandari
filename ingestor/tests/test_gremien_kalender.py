@@ -6,8 +6,8 @@ herausgibt (Münster: Interfraktionelle Arbeitsgruppe Internationales, HTTP 401 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -180,3 +180,32 @@ async def test_geaenderte_sitzung_wird_nicht_benannt() -> None:
 
     stats = await ergaenzen(_lauf(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
     assert stats.benannt == 0 and stats.seiten == 1
+
+
+@pytest.mark.asyncio
+async def test_geprueft_monate_kommen_nach_den_ungeprueften() -> None:
+    """Auch bei Läufen im Tagesabstand verdrängen die nahen, schon geprüften Monate die übrigen nicht."""
+    monate = [(2026 + (11 + i - 1) // 12, (11 + i - 1) % 12 + 1) for i in range(MONATE_JE_LAUF + 2)]
+    sitzungen = []
+    for i, (jahr, monat) in enumerate(monate):
+        sitzung = _sitzung(1000 + i, 10, monat, jahr)
+        if i < MONATE_JE_LAUF:
+            # Die nahen Monate wurden zuletzt ohne Ergebnis geprüft, der nächste am frühesten
+            sitzung = replace(sitzung, geprueft=JETZT - timedelta(days=3) + timedelta(hours=i))
+        sitzungen.append(sitzung)
+
+    async def lade_ohne_gremium(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
+        return sitzungen
+
+    geladen: list[str] = []
+
+    async def lade_seite(url: str) -> Seite:
+        geladen.append(url)
+        return Seite(text=KALENDER)
+
+    async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
+        return True
+
+    await ergaenzen(_lauf(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
+    erwartet = [monate[MONATE_JE_LAUF], monate[MONATE_JE_LAUF + 1], *monate[: MONATE_JE_LAUF - 2]]
+    assert geladen == [f"{BASIS}si0040.php?__cjahr={jahr}&__cmonat={monat}" for jahr, monat in erwartet]

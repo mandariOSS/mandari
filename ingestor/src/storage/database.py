@@ -1208,16 +1208,19 @@ class DatabaseStorage:
 
     async def get_meetings_ohne_gremium(
         self, body_id: UUID, von: datetime, bis: datetime, erneut_ab: datetime, schluessel: str
-    ) -> list[tuple[UUID, str, datetime, datetime]]:
+    ) -> list[tuple[UUID, str, datetime, datetime, datetime | None]]:
         """
         Sitzungen der Kommune im Zeitraum, die ein Gremium nennen, dem keines im Bestand zugeordnet ist (die Quelle
         gibt es nicht heraus, Issue #1441), und die unter ``schluessel`` weder einen Namen noch eine Prüfung nach
-        ``erneut_ab`` haben (``src/sync/gremien_kalender.py``). Mit Änderungszeit als Stand für das Schreiben.
+        ``erneut_ab`` haben (``src/sync/gremien_kalender.py``). Mit Änderungszeit als Stand für das Schreiben und dem
+        Zeitpunkt der letzten Prüfung (sonst ``None``).
         """
         async with self.get_session() as session:
             result = await session.execute(
                 text(
-                    "SELECT m.id, m.external_id, m.start, m.updated_at FROM oparl_meetings m "
+                    "SELECT m.id, m.external_id, m.start, m.updated_at, "
+                    "CAST(m.raw_json -> CAST(:schluessel AS text) ->> 'geprueft' AS timestamptz) "
+                    "FROM oparl_meetings m "
                     "WHERE m.body_id = :body AND m.deleted = false AND m.start BETWEEN :von AND :bis "
                     "AND jsonb_typeof(m.raw_json->'organization') = 'array' "
                     "AND jsonb_array_length(m.raw_json->'organization') > 0 "
@@ -1230,7 +1233,7 @@ class DatabaseStorage:
                 ),
                 {"body": body_id, "von": von, "bis": bis, "erneut_ab": erneut_ab, "schluessel": schluessel},
             )
-            return [(row[0], row[1], row[2], row[3]) for row in result.all()]
+            return [(row[0], row[1], row[2], row[3], row[4]) for row in result.all()]
 
     async def set_meeting_raw_extension(
         self, meeting_id: UUID, schluessel: str, wert: Mapping[str, Any], *, stand: datetime | None

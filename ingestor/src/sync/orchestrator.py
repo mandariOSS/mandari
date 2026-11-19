@@ -2348,7 +2348,7 @@ class SyncOrchestrator:
 
         async def lade(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
             zeilen = await storage.get_meetings_ohne_gremium(body_id, von, bis, erneut_ab, GREMIUM_WEB)
-            return [OhneGremium(id=z[0], external_id=z[1], start=z[2], stand=z[3]) for z in zeilen]
+            return [OhneGremium(id=z[0], external_id=z[1], start=z[2], stand=z[3], geprueft=z[4]) for z in zeilen]
 
         async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
             return await storage.set_meeting_raw_extension(sitzung.id, GREMIUM_WEB, wert, stand=sitzung.stand)

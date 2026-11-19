@@ -16,7 +16,8 @@ Abrufe: nur Sitzungen ohne zugeordnetes Gremium und ohne gespeicherten Namen, nu
 ``VORAUS``, eine Kalenderseite je Monat und höchstens ``MONATE_JE_LAUF`` Monate je Lauf einer Quelle (alle Kommunen
 der Quelle zusammen, ``KalenderLauf``), Takt, Kennung und robots.txt wie beim OParl-Abruf (``OParlClient.fetch_page``).
 Steht eine Sitzung nicht im Kalender oder lässt sich die Seite nicht lesen, merkt sich der Rohdatensatz die Prüfung
-(``geprueft``); der Monat kommt erst nach ``ERNEUT_NACH`` wieder an die Reihe und blockiert die übrigen nicht.
+(``geprueft``); der Monat kommt frühestens nach ``ERNEUT_NACH`` und erst nach den ungeprüften Monaten wieder an die
+Reihe, blockiert die übrigen also auch bei seltenen Läufen nicht.
 Geschrieben wird nur, wenn sich die Sitzung seit dem Lesen nicht geändert hat; überschreibt ein späterer Abgleich sie,
 fehlt die Angabe wieder und der nächste Lauf liest sie neu. Fehler beim Laden oder Lesen halten den Abgleich nicht auf.
 """
@@ -91,12 +92,16 @@ class KalenderLauf:
 
 @dataclass(frozen=True)
 class OhneGremium:
-    """Sitzung im Bestand, deren Gremium die Quelle nennt, aber nicht herausgibt; ``stand``: Änderung beim Lesen."""
+    """
+    Sitzung im Bestand, deren Gremium die Quelle nennt, aber nicht herausgibt; ``stand``: Änderung beim Lesen,
+    ``geprueft``: letzte Prüfung ohne Ergebnis (sonst ``None``).
+    """
 
     id: Any
     external_id: str
     start: datetime
     stand: Any = None
+    geprueft: datetime | None = None
 
 
 @dataclass
@@ -173,10 +178,20 @@ async def ergaenzen(
         ortszeit = sitzung.start.astimezone(ZONE)
         je_monat[(ortszeit.year, ortszeit.month)].append(sitzung)
     heute = jetzt.astimezone(ZONE)
-    # Kommende Monate zuerst (dort sucht man), dann die vergangenen
-    reihenfolge = sorted(
-        je_monat, key=lambda m: (m < (heute.year, heute.month), abs(m[0] * 12 + m[1] - heute.year * 12 - heute.month))
-    )
+
+    def zuletzt_geprueft(sitzungen: list[OhneGremium]) -> datetime | None:
+        """Letzte Prüfung des Monats; ``None``, solange eine seiner Sitzungen noch nie geprüft wurde."""
+        zeiten = [sitzung.geprueft for sitzung in sitzungen]
+        return None if any(zeit is None for zeit in zeiten) else max(zeit for zeit in zeiten if zeit is not None)
+
+    def rang(m: tuple[int, int]) -> tuple[bool, datetime, bool, int]:
+        # Ungeprüfte Monate zuerst, dann die am längsten nicht geprüften (auch bei Läufen im Tagesabstand kommt so
+        # jeder Monat dran); innerhalb davon kommende Monate zuerst (dort sucht man), dann die vergangenen
+        zuletzt = zuletzt_geprueft(je_monat[m])
+        abstand = abs(m[0] * 12 + m[1] - heute.year * 12 - heute.month)
+        return (zuletzt is not None, zuletzt or jetzt, m < (heute.year, heute.month), abstand)
+
+    reihenfolge = sorted(je_monat, key=rang)
     for jahr, monat in reihenfolge:
         sitzungen = je_monat[(jahr, monat)]
         url = lauf.config.monat(jahr, monat)
