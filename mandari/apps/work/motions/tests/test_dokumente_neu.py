@@ -396,13 +396,48 @@ def test_liste_zeigt_stand_ordner_und_zeilenangaben(
     html = antwort.content.decode()
     assert antwort.status_code == 200
     assert "work/motions/neu/liste.html" in _vorlagen(antwort)
-    assert 'data-testid="dokumente-kopf"' in html and "Dokumente:" in html  # Stand als Satz im Kopfband
+    assert 'data-testid="dokumente-kopf"' in html and "Dokumente</a>:" in html  # Stand als Satz im Kopfband
     assert "Haushalt" in html and "Anträge 2026" in html
     assert "Änderungsantrag zu „Antrag Spielplatz" in html
     assert "Interne Absprache" in html and "überfällig" in html
     assert "Verkehr" in html and "Freigaben 0 von 1" in html
     assert 'x-data="documentManager"' in html and 'id="document-manager-config"' in html
     assert 'data-testid="dokumente-tabelle"' in html and 'data-testid="dokumente-kacheln"' in html
+
+
+def test_satz_im_kopf_filtert_und_zaehlt_in_einer_abfrage(org: Any, autorin: Any, client_for: Any) -> None:
+    """Jede Zahl im Satz führt in die gefilterte Liste (Issue #1492); gezählt wird je Status in einer Abfrage."""
+    from apps.work.motions.views import list as liste
+
+    heute = timezone.localdate()
+    for status, frist in (
+        ("draft", None),
+        ("draft", heute - timedelta(days=2)),
+        ("submitted", None),
+        ("adopted", heute - timedelta(days=2)),
+    ):
+        Motion.objects.create(
+            organization=org, author=autorin, title=f"Dokument {status}", status=status, due_date=frist
+        )
+
+    stand = liste._stand_nach_status(Motion.visible_to(autorin), heute)  # type: ignore[no-untyped-call]
+    # Überfällig zählt nur, was nicht abgeschlossen ist
+    assert stand == {"total": 4, "draft": 2, "submitted": 1, "completed": 1, "in_consultation": 0, "overdue": 1}
+
+    html = client_for(autorin.user).get(_url("documents", org)).content.decode()
+    kopf = html[
+        html.index('data-testid="dokumente-kopf"') : html.index(
+            "</section>", html.index('data-testid="dokumente-kopf"')
+        )
+    ]
+    adresse = _url("documents", org)
+    assert f'<a href="{adresse}"' in kopf and ">4 Dokumente</a>" in kopf
+    assert f'<a href="{adresse}?status=draft"' in kopf and ">2 Entwürfe</a>" in kopf
+    assert f'<a href="{adresse}?status=completed&amp;status=adopted"' in kopf and ">1 erledigt</a>" in kopf
+    assert "Überfällig: 1." in kopf
+    # Der Link filtert wirklich: nur die beiden Entwürfe stehen in der Tabelle
+    gefiltert = client_for(autorin.user).get(adresse, {"status": "draft"}).content.decode()
+    assert gefiltert.count("Dokument draft") >= 2 and "Dokument submitted" not in gefiltert
 
 
 def test_leere_liste_und_filter_ohne_treffer(org: Any, autorin: Any, client_for: Any) -> None:
