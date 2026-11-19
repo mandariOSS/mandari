@@ -123,8 +123,11 @@ def test_fehlerquote_zu_wenige_anfragen() -> None:
 
 def test_fehlerquote_metriken_nicht_abrufbar(settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     settings.METRICS_URL = "http://127.0.0.1:1/metrics/"
+    monkeypatch.setattr(sl, "METRIKEN_PAUSE_SEKUNDEN", 0)
+    aufrufe: list[float] = []
 
     def weg(url: str, token: str = "", timeout: float = 5.0) -> str:
+        aufrufe.append(timeout)
         raise OSError("Verbindung abgelehnt")
 
     monkeypatch.setattr(sl, "lade_metriken", weg)
@@ -133,6 +136,30 @@ def test_fehlerquote_metriken_nicht_abrufbar(settings: Any, monkeypatch: pytest.
 
     assert not befund.ok
     assert "nicht abrufbar" in befund.detail
+    assert f"{sl.METRIKEN_VERSUCHE} Versuche" in befund.detail
+    assert aufrufe == [sl.METRIKEN_ZEITLIMIT_SEKUNDEN] * sl.METRIKEN_VERSUCHE
+
+
+def test_fehlerquote_einzelne_zeitueberschreitung_ist_kein_alarm(
+    settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ein langsamer Abruf in einer Lastspitze ist kein Befund über die Fehlerquote (#1502)."""
+    settings.METRICS_URL = "http://127.0.0.1:1/metrics/"
+    monkeypatch.setattr(sl, "METRIKEN_PAUSE_SEKUNDEN", 0)
+    aufrufe: list[str] = []
+
+    def erst_langsam(url: str, token: str = "", timeout: float = 5.0) -> str:
+        aufrufe.append(url)
+        if len(aufrufe) == 1:
+            raise TimeoutError("timed out")
+        return _metriken(1000, 0)
+
+    monkeypatch.setattr(sl, "lade_metriken", erst_langsam)
+
+    [befund] = sl.pruefe_fehlerquote()
+
+    assert befund.ok
+    assert len(aufrufe) == 2
 
 
 @pytest.mark.django_db

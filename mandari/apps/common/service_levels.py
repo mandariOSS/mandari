@@ -49,6 +49,11 @@ ALARM_SPERRE_SEKUNDEN = 24 * 3600
 SNAPSHOT_KEY = "service-level:http-snapshot"
 #: Der Zählerstand überlebt ausgelassene Läufe, wird aber nach einigen Tagen bedeutungslos.
 SNAPSHOT_TTL = 7 * 24 * 3600
+#: Abruf von ``/metrics/``: Ein einzelner langsamer Abruf (Lastspitze im Web-Prozess) sagt nichts über
+#: die Fehlerquote; erst wenn alle Versuche scheitern, ist das ein Befund (#1502).
+METRIKEN_VERSUCHE = 3
+METRIKEN_ZEITLIMIT_SEKUNDEN = 10.0
+METRIKEN_PAUSE_SEKUNDEN = 5.0
 
 
 @dataclass(frozen=True)
@@ -184,6 +189,19 @@ def lade_metriken(url: str, token: str = "", timeout: float = 5.0, host: str | N
         return str(antwort.read().decode("utf-8"))
 
 
+def lade_metriken_mit_wiederholung(url: str, token: str = "") -> str:
+    """``lade_metriken`` mit ``METRIKEN_VERSUCHE`` Versuchen; wirft den Fehler des letzten Versuchs."""
+    for versuch in range(1, METRIKEN_VERSUCHE + 1):
+        try:
+            return lade_metriken(url, token, timeout=METRIKEN_ZEITLIMIT_SEKUNDEN)
+        except (OSError, ValueError) as exc:
+            if versuch == METRIKEN_VERSUCHE:
+                raise
+            logger.warning("Metriken nicht abrufbar (Versuch %s von %s): %s", versuch, METRIKEN_VERSUCHE, exc)
+            time.sleep(METRIKEN_PAUSE_SEKUNDEN)
+    raise ValueError("METRIKEN_VERSUCHE muss mindestens 1 sein")
+
+
 def http_zaehler(metriken_text: str) -> tuple[float, float]:
     """(Anfragen gesamt, Antworten 5xx) aus dem Prometheus-Text."""
     anfragen = fehler = 0.0
@@ -210,9 +228,10 @@ def pruefe_fehlerquote(
         if not url:
             return []
         try:
-            metriken_text = lade_metriken(url, str(getattr(settings, "METRICS_TOKEN", "") or ""))
+            metriken_text = lade_metriken_mit_wiederholung(url, str(getattr(settings, "METRICS_TOKEN", "") or ""))
         except (OSError, ValueError) as exc:
-            return [Befund("http:metrics", False, "Fehlerquote 5xx", f"Metriken nicht abrufbar ({url}): {exc}")]
+            detail = f"Metriken nicht abrufbar ({url}, {METRIKEN_VERSUCHE} Versuche): {exc}"
+            return [Befund("http:metrics", False, "Fehlerquote 5xx", detail)]
 
     anfragen, fehler = http_zaehler(metriken_text)
     jetzt = time.time()
