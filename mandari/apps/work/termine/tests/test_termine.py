@@ -14,6 +14,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.common.tests import factories
+from apps.work.faction.feeds import build_personal_feed
 from apps.work.faction.models import FactionMeeting, FactionMeetingType
 from apps.work.notifications.models import Notification, NotificationType
 from apps.work.termine import termine
@@ -216,3 +217,44 @@ def test_wege_zum_termin(org: Any, vera: Any, karim: Any, client_for: Any) -> No
 
     ohne = client_for(karim.user).get(_url("meetings_calendar", org)).content.decode()
     assert "data-neu=" not in ohne and "Termin anlegen" not in ohne and 'id="kalender-art-termin"' in ohne
+    # Der Weg in den eigenen Kalender (Google, Apple, Outlook) steht für alle am Kalender und führt ins Profil
+    assert _url("profile", org) + "#profil-kalender" in ohne
+    profil = client_for(karim.user).get(_url("profile", org)).content.decode()
+    assert 'id="profil-kalender"' in profil and 'data-testid="kalender-abo-wege"' in profil
+
+
+def test_persoenlicher_abruf_enthaelt_termine(org: Any, vera: Any, karim: Any, make_member: Any) -> None:
+    """Der persönliche Abruf (iCal) trägt die sichtbaren Termine in den eigenen Kalender, ohne ihre Inhalte."""
+    ohne_recht = make_member(org, ["dashboard.view"])
+    gast = cast(Any, factories).MembershipFactory(organization=org, is_guest=True)
+
+    def anlegen(titel: str, **felder: Any) -> Termin:
+        form = termine.TerminForm(_formular(title=titel, **felder), membership=vera)
+        assert form.is_valid(), form.errors
+        return form.speichern(termine.neu(org, vera))
+
+    def abruf(mitglied: Any) -> str:
+        # Lange Zeilen sind im Abruf umbrochen (RFC 5545); zum Prüfen wieder zusammensetzen
+        return build_personal_feed(mitglied.user).decode().replace("\r\n ", "")
+
+    tag = timezone.localdate() + timedelta(days=3)
+    anlegen("Ortstermin Brücke")
+    anlegen("Klausur", all_day="on", tag=tag.isoformat(), bis_tag=(tag + timedelta(days=1)).isoformat())
+    privat = anlegen("Vorgespräch", visibility=Termin.PRIVAT, eingeladene=[str(karim.pk)])
+    anlegen("Nur Vera", visibility=Termin.PRIVAT)
+
+    feed = abruf(karim)
+    assert "SUMMARY:Ortstermin Brücke" in feed and "SUMMARY:Vorgespräch" in feed and "Nur Vera" not in feed
+    assert "LOCATION:Mühlenweg 4" in feed and f"/work/{org.slug}/termine/{privat.pk}/" in feed
+    # Beschreibung und Videolink bleiben in Work
+    assert "Sanierung" not in feed and "meet.example.org" not in feed
+    # Ganztägig über zwei Tage: Kalendertage, das Ende ist der Tag danach
+    assert f"DTSTART;VALUE=DATE:{tag:%Y%m%d}" in feed
+    assert f"DTEND;VALUE=DATE:{tag + timedelta(days=2):%Y%m%d}" in feed
+
+    # Wer abgesagt hat, bekommt den Termin nicht in den eigenen Kalender
+    assert termine.antworten(privat, karim, "abgesagt")
+    assert "Vorgespräch" not in abruf(karim) and "Ortstermin Brücke" in abruf(karim)
+    assert "Vorgespräch" in abruf(vera) and "Nur Vera" in abruf(vera)
+    # Ohne das Recht auf Sitzungen und als Gast: keine Termine
+    assert "Ortstermin" not in abruf(ohne_recht) and "Ortstermin" not in abruf(gast)

@@ -39,6 +39,16 @@ Recht „Termine im Kalender anlegen“, das eine Rolle in den Einstellungen bek
 datum = 2026-11-19
 version = ""
 bereich = "sitzungen"
+titel = "Ihre Termine auch im Kalender auf dem Handy."
+text = """Am Kalender führt „Im eigenen Kalender abonnieren“ in Ihr Profil. Dort erzeugen Sie eine persönliche \
+Adresse und tragen sie in Google Kalender, auf dem iPhone, in Outlook oder Thunderbird ein; die Schritte stehen \
+dabei. Ihr Kalender zeigt dann die internen Sitzungen, die Sitzungen Ihrer Gremien und jetzt auch die Termine, mit \
+Titel, Zeit und Ort."""
+
+[[eintrag]]
+datum = 2026-11-19
+version = ""
+bereich = "sitzungen"
 titel = "Der Kalender zeigt auch Fraktionssitzungen, Fristen und Aufgaben."
 text = """Im Kalender unter „Sitzungen“ stehen neben den Sitzungen der Gremien jetzt auch die Fraktionssitzungen, die \
 Fristen Ihrer Dokumente und die Aufgaben mit Fälligkeit, je Art in einer eigenen Farbe. Über dem Kalender blenden \

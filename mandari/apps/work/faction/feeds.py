@@ -10,6 +10,8 @@ Je Benutzer:in ein abonnierbarer Kalender-Feed mit:
 - den RIS-Terminen der OParl-Gremien, denen die Person über ihre
   Mitgliedschaften zugeordnet ist (``Membership.oparl_committees``,
   Grundlage von "Meine Sitzungen")
+- den eigenen Terminen aus dem Kalender (Issue #1489), die die Person
+  in ihren Organisationen sieht (nur Titel, Zeit, Ort)
 
 Zugriff OHNE Login (Kalender-Clients können sich nicht anmelden) —
 Sicherheit ausschließlich über das opake Token
@@ -114,5 +116,46 @@ def build_personal_feed(user) -> bytes:
                 }
             )
 
+    events.extend(_eigene_termine(memberships, window_start, window_end, base))
+
     events.sort(key=lambda event: event["start"])
     return build_ics_feed(events, name="mandari Sitzungen")
+
+
+def _eigene_termine(memberships, window_start, window_end, base: str) -> list[dict]:
+    """
+    Eigene Termine aus dem Kalender von Work (Issue #1489): je Organisation die Termine, die die Person dort sieht.
+
+    Wie bei den Fraktionssitzungen nur Titel, Zeit und Ort, dazu der Weg zur Seite des Termins. Die Beschreibung
+    (verschlüsselt gespeichert) und der Link zur Videokonferenz bleiben in Work: Die Adresse des Abrufs kennt auch
+    der Anbieter des Kalenders. Termine, zu denen die Person abgesagt hat, erscheinen nicht.
+    """
+    from apps.work.termine import termine as eigene
+    from apps.work.termine.models import TerminTeilnahme
+
+    events = []
+    for membership in memberships:
+        if membership.is_guest or not membership.has_permission("meetings.view"):
+            continue
+        organization = membership.organization
+        abgesagt = TerminTeilnahme.objects.filter(membership=membership, status=TerminTeilnahme.ABGESAGT)
+        sichtbar = (
+            eigene.sichtbare(membership)
+            .filter(start__gte=window_start, start__lte=window_end)
+            .exclude(pk__in=abgesagt.values("termin_id"))
+        )
+        for termin in sichtbar:
+            events.append(
+                {
+                    "uid": f"termin-{termin.pk}@mandari",
+                    "summary": termin.title,
+                    "start": termin.start,
+                    "end": termin.end,
+                    "all_day": termin.all_day,
+                    "location": termin.location or ("Online" if termin.video_url else ""),
+                    "description": (
+                        f"Termin von {organization.name}\n{base}/work/{organization.slug}/termine/{termin.pk}/"
+                    ),
+                }
+            )
+    return events

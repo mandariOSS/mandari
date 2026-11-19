@@ -5,10 +5,11 @@ Kalender im neuen Erscheinungsbild (Issue #951, Teilpaket 2): Kopfband mit einem
 Textlink, darunter der Kalender direkt auf der Fläche (kein Kasten). Seit Issue #1489 zeigt er neben den Sitzungen
 der Gremien auch Fraktionssitzungen, Fristen der Dokumente und Aufgaben (apps/work/meetings/kalender.py); über dem
 Kalender lässt sich jede Art aus- und einblenden (kalender_arten, die Auswahl merkt sich der Browser). Wer Termine
-anlegen darf, bekommt den Knopf „Termin anlegen“; ein Klick auf einen Tag öffnet das Formular für diesen Tag (data-neu). FullCalendar wie bisher lokal; Einstellungen und
-Klick auf einen Termin in frontend/alpine/sitzungs-kalender.ts, Farben als Tokens in static/css/sitzungs-kalender.css
-(kein Inline-Skript, kein Inline-CSS). Termine aus derselben Adresse (work:meetings_calendar_events). Die bisherige
-Seite bleibt work/meetings/calendar.html.
+anlegen darf, bekommt den Knopf „Termin anlegen“; ein Klick auf einen Tag öffnet das Formular für diesen Tag
+(data-neu). „Im eigenen Kalender abonnieren“ führt zum persönlichen Abruf im Profil (iCal, #profil-kalender).
+FullCalendar wie bisher lokal; Einstellungen und Klick auf einen Termin in frontend/alpine/sitzungs-kalender.ts,
+Farben als Tokens in static/css/sitzungs-kalender.css (kein Inline-Skript, kein Inline-CSS). Termine aus derselben
+Adresse (work:meetings_calendar_events). Die bisherige Seite bleibt work/meetings/calendar.html.
 {% endcomment %}
 
 {% block page_title %}Kalender{% endblock %}
@@ -19,6 +20,7 @@ Seite bleibt work/meetings/calendar.html.
     <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings' org_slug=organization.slug %}">Meine Sitzungen</c-insight.zurueck></c-slot>
     <c-slot name="aktionen">
         <c-ui.textlink href="{% url 'work:meetings' org_slug=organization.slug %}" class="text-sm">Als Liste anzeigen</c-ui.textlink>
+        <c-ui.textlink href="{% url 'work:profile' org_slug=organization.slug %}#profil-kalender" class="text-sm">Im eigenen Kalender abonnieren</c-ui.textlink>
         {% if darf_termin_anlegen %}<c-ui.button href="{% url 'work:termin_neu' org_slug=organization.slug %}" icon="plus" size="sm">Termin anlegen</c-ui.button>{% endif %}
     </c-slot>
 </c-rahmen.kopfband>
