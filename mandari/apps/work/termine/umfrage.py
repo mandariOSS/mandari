@@ -47,6 +47,7 @@ ART: Final = "art"
 AUSWAHL: Final = "auswahl"
 WEN: Final = [(ALLE, "Alle Mitglieder"), (ART, "Teilnehmende einer Sitzungsart"), (AUSWAHL, "Ausgewählte Mitglieder")]
 TAGE: Final = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+MONATE: Final = ("Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sept.", "Okt.", "Nov.", "Dez.")
 
 
 def sichtbare(membership: Any) -> QuerySet[Terminumfrage]:
@@ -267,8 +268,31 @@ def uebersicht(umfrage: Terminumfrage, membership: Any) -> dict[str, Any]:
             True
         )
     beantwortet = {mitglied_id for je_vorschlag in antworten.values() for mitglied_id in je_vorschlag}
+    ich = getattr(membership, "pk", None)
+    for zeile in zeilen:
+        start = timezone.localtime(zeile["vorschlag"].start)
+        ende = timezone.localtime(zeile["vorschlag"].end) if zeile["vorschlag"].end else None
+        # Kopf der Spalte wie ein Kalenderblatt: Monat, Tag, Wochentag, Uhrzeit
+        zeile.update(
+            monat=MONATE[start.month - 1],
+            tag=start.day,
+            wochentag=TAGE[start.weekday()],
+            uhrzeit=f"{start:%H:%M}–{ende:%H:%M}" if ende else f"{start:%H:%M}",
+        )
+    # Raster Person mal Vorschlag; die eigene Zeile zeigt die Seite für sich (zum Ankreuzen)
+    personen = [
+        {
+            "name": name,
+            "kuerzel": "".join(teil[0] for teil in name.split()[:2]).upper(),
+            "wahlen": [antworten[zeile["vorschlag"].pk].get(mitglied_id, "") for zeile in zeilen],
+        }
+        for mitglied_id, name in namen.items()
+        if mitglied_id != ich
+    ]
     return {
         "zeilen": zeilen,
+        "personen": personen,
+        "ich_gefragt": ich in namen,
         "gefragt": len(gefragte),
         "beantwortet": len(beantwortet & set(namen)),
         "ohne_antwort": [name for mitglied_id, name in namen.items() if mitglied_id not in beantwortet],

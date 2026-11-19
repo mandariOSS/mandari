@@ -162,6 +162,17 @@ def offene_einladungen(membership: Any, *, limit: int = 6) -> list[TerminTeilnah
     )
 
 
+def einladungsliste(form: TerminForm, teilnahmen: list[TerminTeilnahme]) -> list[dict[str, Any]]:
+    """Mitglieder zum Einladen für die Seite: ob angehakt und, wer schon eingeladen ist, die Antwort."""
+    antwort = {teilnahme.membership_id: teilnahme for teilnahme in teilnahmen}
+    gewaehlt = form.gewaehlt["eingeladene"]
+    felder: Any = form.fields
+    return [
+        {"mitglied": mitglied, "gewaehlt": str(mitglied.pk) in gewaehlt, "teilnahme": antwort.get(mitglied.pk)}
+        for mitglied in felder["eingeladene"].queryset
+    ]
+
+
 def meine_teilnahme(termin: Termin, membership: Any) -> TerminTeilnahme | None:
     return termin.teilnahmen.filter(membership=membership).first()
 

@@ -51,6 +51,7 @@ class TerminNeuView(WorkViewMixin, TemplateView):
         context["active_nav"] = "meetings"
         context["form"] = kwargs.get("form") or self._formular()
         context["darf_aendern"] = True
+        context["einladung"] = termine.einladungsliste(context["form"], [])
         return context
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -98,6 +99,8 @@ class TerminView(WorkViewMixin, TemplateView):
         context["zeit"] = termine.zeitangabe(termin)
         context["teilnahmen"] = termine.teilnahmen(termin)
         context["meine_teilnahme"] = termine.meine_teilnahme(termin, eigene.membership)
+        if context["darf_aendern"]:
+            context["einladung"] = termine.einladungsliste(context["form"], context["teilnahmen"])
         return context
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:

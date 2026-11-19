@@ -11,7 +11,7 @@ Speichern über die Protokollkette (``kette.py``). Die Einladung selbst verschic
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from .agenda import apply_standard_agenda
 from .models import FactionAttendance, FactionMeeting, FactionMeetingType
@@ -61,7 +61,7 @@ def neue_sitzung(
 
     # Über den Service, damit das Vorprotokoll gleichzeitig in den Status „Zur Genehmigung“ wechselt
     if meeting.get_faction_settings().get("auto_create_approval_item", True):
-        ProtocolApprovalService.auto_create_approval_item(meeting)
+        cast(Any, ProtocolApprovalService).auto_create_approval_item(meeting)  # Service noch ohne Annotationen
 
     if standard_agenda:
         apply_standard_agenda(meeting)

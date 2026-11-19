@@ -3,6 +3,8 @@
 @import "./work-vorbereitung.css";
 /* Sitzungskalender in Work (Issue #951): FullCalendar-Farben aus den Tokens der Arbeitsflächen */
 @import "./sitzungs-kalender.css";
+/* Termine und Terminumfragen (Issue #1489) */
+@import "./termine.css";
 /* Sitzungsansicht der laufenden Fraktionssitzung (Issue #874) – eigene Datei, @import muss vor @tailwind stehen */
 @import "./fraktionssitzung.css";
 
