@@ -83,16 +83,23 @@ def test_fuer_sie_nennt_offene_einladungen_und_umfragen(org: Any, vera: Any, kar
     _termin(org, vera, "Pressegespräch", 5, [karim])
     vorbei = _termin(org, vera, "Vorbei", 2, [karim])
     Termin.objects.filter(pk=vorbei.pk).update(start=timezone.now() - timedelta(days=2))
+    # Heute, aber schon zu Ende: zählt nicht mehr; ein laufender Termin dagegen schon
+    jetzt = timezone.now()
+    heute_frueh = _termin(org, vera, "Heute früh", 2, [karim])
+    Termin.objects.filter(pk=heute_frueh.pk).update(start=jetzt - timedelta(hours=3), end=jetzt - timedelta(hours=2))
+    laeuft = _termin(org, vera, "Läuft gerade", 2, [karim])
+    Termin.objects.filter(pk=laeuft.pk).update(start=jetzt - timedelta(minutes=30), end=jetzt + timedelta(minutes=30))
     klausur = _umfrage(org, vera, "Klausur im Frühjahr", bis=4, gefragt=[karim])
 
     eintraege = selectors.fuer_sie(org, karim)
     titel = [eintrag["titel"] for eintrag in eintraege]
-    # Nächster Termin zuerst, vergangene nicht, dann die Umfrage mit ihrer Frist
-    assert titel[:3] == ["Ortstermin Brücke", "Pressegespräch", "Klausur im Frühjahr"] and "Vorbei" not in titel
-    assert eintraege[0]["url"] == reverse("work:termin", kwargs={"org_slug": org.slug, "termin_id": ortstermin.pk})
-    assert eintraege[0]["zeile"].endswith("Bitte sagen Sie zu oder ab.")
-    assert eintraege[2]["art"].startswith("Terminumfrage, Antwort bis ")
-    assert eintraege[2]["url"] == reverse("work:terminumfrage", kwargs={"org_slug": org.slug, "umfrage_id": klausur.pk})
+    # Nächster Termin zuerst, vorbei ist vorbei, dann die Umfrage mit ihrer Frist
+    assert titel[:4] == ["Läuft gerade", "Ortstermin Brücke", "Pressegespräch", "Klausur im Frühjahr"]
+    assert "Vorbei" not in titel and "Heute früh" not in titel
+    assert eintraege[1]["url"] == reverse("work:termin", kwargs={"org_slug": org.slug, "termin_id": ortstermin.pk})
+    assert eintraege[1]["zeile"].endswith("Bitte sagen Sie zu oder ab.")
+    assert eintraege[3]["art"].startswith("Terminumfrage, Antwort bis ")
+    assert eintraege[3]["url"] == reverse("work:terminumfrage", kwargs={"org_slug": org.slug, "umfrage_id": klausur.pk})
 
     # Wer geantwortet hat, findet den Eintrag nicht mehr; wer anlegt, ist nicht eingeladen
     assert termine.antworten(ortstermin, karim, "abgesagt")
