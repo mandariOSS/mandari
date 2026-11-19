@@ -1,6 +1,6 @@
 {% comment %}
 Person unten in der Leiste (Issue #852): Name und Rolle, Menü mit Profil, Sicherheit, Verbundene Anwendungen (nur bei
-eingeschaltetem OIDC-Anbieter, #1215), Benachrichtigungen, App installieren (nur wenn der Browser es anbietet) und
+eingeschaltetem OIDC-Anbieter, #1215), Benachrichtigungen, Tastaturkürzel (Übersicht, Issue #1492), App installieren (nur wenn der Browser es anbietet) und
 Abmelden. Escape und Klick daneben schließen das Menü.
 {% endcomment %}
 <div x-data="workPerson" class="relative" @keydown.escape="schliessen()" @click.outside="schliessen(false)"
@@ -22,6 +22,7 @@ Abmelden. Escape und Klick daneben schließen das Menü.
         <a role="menuitem" href="{% url 'work:security' org_slug=organization.slug %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="shield" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Sicherheit</a>
         {% if oidc_provider_enabled %}<a role="menuitem" href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="plug" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Verbundene Anwendungen</a>{% endif %}
         <a role="menuitem" href="{% url 'work:profile_notifications' org_slug=organization.slug %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="bell" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Benachrichtigungen einstellen</a>
+        <button type="button" role="menuitem" @click="schliessen(false); kuerzelOeffnen($refs.knopf)" aria-haspopup="dialog" aria-controls="kuerzel-dialog" class="w-full flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="keyboard" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Tastaturkürzel</button>
         <div x-show="canInstall && !installHidden" x-cloak class="flex items-center">
             <button type="button" role="menuitem" @click="installApp()" class="flex-1 flex items-center gap-3 h-9 px-3.5 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="download" class="w-4 h-4 shrink-0" aria-hidden="true"></i>App installieren</button>
             <button type="button" @click.stop="hideInstall()" class="w-8 h-8 mr-1.5 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-800 dark:hover:text-gray-200" aria-label="Installationshinweis ausblenden"><i data-lucide="x" class="w-3.5 h-3.5" aria-hidden="true"></i></button>

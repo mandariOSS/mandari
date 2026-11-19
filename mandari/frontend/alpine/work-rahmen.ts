@@ -1,6 +1,6 @@
 /**
  * Neuer Rahmen von Work (Issue #852, templates/work/base_work_neu.html): Dunkelmodus, schmale Seitenleiste,
- * Raum-Dialog, Blatt „Mehr“ am Handy, Suche mit Strg+K, Glocke und Personenmenü. Vorher Inline-Objekte im Layout
+ * Raum-Dialog, Blatt „Mehr“ am Handy, Suche mit Strg+K, Tastaturkürzel, Glocke und Personenmenü. Vorher Inline-Objekte im Layout
  * (templates/work/base_work_alt.html); die Engineering Standards verlangen Alpine.data() in frontend/.
  *
  * Markup: `<html x-data="workRahmen" data-rahmen="neu">`. Dialoge und Blätter sind modal: Escape schließt sie, der
@@ -36,6 +36,26 @@ export function istSuchKuerzel(event: KeyboardEvent): boolean {
   return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k'
 }
 
+/**
+ * Darf ein Kürzel aus einem einzelnen Zeichen gelten (Issue #1492)? Nicht mit Strg, Alt oder ⌘, nicht während einer
+ * Eingabe (Felder, Editor, Auswahllisten) und nicht in Dialogen und Menüs: Dort gehört jede Taste dem Inhalt.
+ */
+export function kuerzelErlaubt(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false
+  const ziel = event.target
+  if (!(ziel instanceof Element)) return true
+  return !ziel.closest(
+    'input, textarea, select, [contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="listbox"]'
+  )
+}
+
+/** Stelle des Bereichs in der Seitenleiste zu einer Zifferntaste („1“ ist der erste), sonst null. */
+export function bereichZurTaste(taste: string, anzahl: number): number | null {
+  if (!/^[1-9]$/.test(taste)) return null
+  const stelle = Number(taste) - 1
+  return stelle < anzahl ? stelle : null
+}
+
 function fokusZurueck(element: HTMLElement | null): void {
   if (element && document.contains(element)) element.focus()
 }
@@ -47,6 +67,11 @@ export const workRahmen = defineComponent(() => ({
   mehrOffen: false,
   raumOffen: false,
   _raumAusloeser: null as HTMLElement | null,
+  /** Übersicht der Tastaturkürzel (templates/work/rahmen/_kuerzel_dialog.html) */
+  kuerzelOffen: false,
+  /** Kürzel aus einem einzelnen Zeichen; abschaltbar in der Übersicht, gemerkt je Browser (WCAG 2.1.4) */
+  kuerzelAn: lesen('workKuerzelAus') !== 'true',
+  _kuerzelAusloeser: null as HTMLElement | null,
   docViewerUrl: '',
   docViewerName: '',
   docViewerMeta: '',
@@ -62,11 +87,60 @@ export const workRahmen = defineComponent(() => ({
       html.dataset.leiste = value ? 'schmal' : 'breit'
       schreiben('sidebarCollapsed', String(value))
     })
+    this.$watch('kuerzelAn', (value: boolean) => schreiben('workKuerzelAus', String(!value)))
     window.addEventListener('keydown', (event: KeyboardEvent) => {
-      if (!istSuchKuerzel(event)) return
+      if (!istSuchKuerzel(event)) {
+        this.kuerzel(event)
+        return
+      }
       event.preventDefault()
       this.sucheOeffnen()
     })
+  },
+
+  /** Kürzel aus einem Zeichen: „?“ Übersicht, „/“ Suche, „n“ Neu, Ziffern für die Bereiche der Seitenleiste. */
+  kuerzel(event: KeyboardEvent) {
+    // Nur wo es die Übersicht gibt (Work): Der Sitzungsdienst nutzt denselben Rahmen ohne diese Kürzel
+    if (!document.getElementById('kuerzel-dialog')) return
+    if (!kuerzelErlaubt(event) || this.raumOffen || this.mehrOffen || this.kuerzelOffen) return
+    // Die Übersicht öffnet sich immer: Dort lassen sich die Kürzel wieder einschalten
+    if (event.key === '?') {
+      event.preventDefault()
+      this.kuerzelOeffnen()
+      return
+    }
+    if (!this.kuerzelAn) return
+    if (event.key === '/') {
+      event.preventDefault()
+      this.sucheOeffnen()
+      return
+    }
+    if (event.key.toLowerCase() === 'n' && !event.shiftKey) {
+      const knopf = document.querySelector<HTMLElement>('[aria-controls="neu-menue"]')
+      if (!knopf || knopf.offsetParent === null) return
+      event.preventDefault()
+      knopf.click()
+      return
+    }
+    const bereiche = document.querySelectorAll<HTMLAnchorElement>(
+      '#work-navigation nav[aria-label="Bereiche"] > ul > li > a'
+    )
+    const stelle = bereichZurTaste(event.key, bereiche.length)
+    if (stelle === null) return
+    event.preventDefault()
+    bereiche[stelle].click()
+  },
+
+  kuerzelOeffnen(ausloeser?: HTMLElement) {
+    this._kuerzelAusloeser = ausloeser ?? (document.activeElement as HTMLElement | null)
+    this.kuerzelOffen = true
+  },
+
+  kuerzelSchliessen() {
+    if (!this.kuerzelOffen) return
+    this.kuerzelOffen = false
+    const ausloeser = this._kuerzelAusloeser
+    this.$nextTick(() => fokusZurueck(ausloeser))
   },
 
   leisteUmschalten() {

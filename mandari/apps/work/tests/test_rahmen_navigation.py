@@ -147,6 +147,28 @@ def test_zaehler_kommen_mit_dem_abruf_der_glocke(neu: Organization, make_member:
     assert "zaehler" not in client_for(gast.user).get(_url("notification_count", neu)).json()
 
 
+@pytest.mark.django_db
+def test_uebersicht_der_tastaturkuerzel_passt_zum_rahmen(neu: Organization, make_member: Any, client_for: Any) -> None:
+    alles = make_member(neu, ["dashboard.view", "motions.create", "ris.view"])
+    html = _html(client_for(alles.user).get(_url("dashboard", neu)))
+    liste = _teil(html, 'data-testid="kuerzel-liste"', "</dl>")
+    assert re.findall(r"<dt[^>]*>([^<]+)</dt>", liste) == [
+        "Diese Übersicht",
+        "Suche öffnen",
+        "Neu anlegen",
+        "Bereich der Seitenleiste öffnen",
+    ]
+    assert re.findall(r"<kbd[^>]*>([^<]+)</kbd>", liste) == ["?", "/", "Strg K", "N", "1", "7"]
+    # Erreichbar auch ohne die Taste: Eintrag im Personenmenü; abschaltbar in der Übersicht (WCAG 2.1.4)
+    assert 'aria-controls="kuerzel-dialog"' in _leiste(html) and 'x-model="kuerzelAn"' in html
+
+    # Ohne Recht zum Anlegen fehlt die Zeile „Neu anlegen“
+    ohne = make_member(neu, ["dashboard.view"])
+    liste = _teil(_html(client_for(ohne.user).get(_url("dashboard", neu))), 'data-testid="kuerzel-liste"', "</dl>")
+    assert "Neu anlegen" not in liste and "Suche öffnen" in liste
+    assert rahmen.kuerzel(1, neu=False, suche=False) == [{"text": "Diese Übersicht", "tasten": ["?"], "zwischen": ""}]
+
+
 # ---- Seitenleiste ------------------------------------------------------------------------------------------------
 
 
