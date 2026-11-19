@@ -5,11 +5,12 @@ Motion/Antrag views for the Work module.
 
 import logging
 import uuid
+from datetime import date
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q, QuerySet
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -47,13 +48,11 @@ def _spalten_mit_wert(motions: list[Motion]) -> dict[str, bool]:
     }
 
 
-def _stand_nach_status(visible, today) -> dict[str, int]:
+def _stand_nach_status(visible: QuerySet[Motion], today: date) -> dict[str, int]:
     """
     Zahlen für den Satz über der Liste in einer Abfrage statt in sechs: je Status die Dokumente und davon die mit
     überschrittener Frist. ``order_by()`` leert die Meta-Sortierung, sonst zerfiele die Gruppierung.
     """
-    from django.db.models import Count
-
     zeilen = list(
         visible.order_by()
         .values("status")
@@ -215,8 +214,6 @@ class MotionListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         # === Ordner-Spalte ===
         # Zähler sichtbarkeitsabhängig: nur Dokumente, die der aktuelle
         # Nutzer sehen darf (Ordner machen nichts sichtbar!)
-        from django.db.models import Count
-
         # order_by() leert die Meta-Sortierung (-updated_at), sonst wandert
         # updated_at ins GROUP BY und die Zähler zerfallen in Einzelgruppen
         direct_counts = {
