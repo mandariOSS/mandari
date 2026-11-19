@@ -100,6 +100,7 @@ from apps.work.notifications.models import Notification, NotificationType
 from apps.work.organization.models import DataExport, MemberAbsence, MemberChangeRequest
 from apps.work.support.models import SupportTicket
 from apps.work.tasks.models import Task, TaskAttachment, TaskChecklistItem, TaskLabel
+from apps.work.termine.models import Termin, TerminTeilnahme
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -236,6 +237,8 @@ AUFGABE_FORMULAR = {
     "priority": "high",
     "visibility": "organization",
 }
+TERMIN = {"termin_id": "termin"}
+TERMIN_FORMULAR = {"title": "Ortstermin Brücke", "tag": "2027-01-12", "beginn": "18:00", "visibility": "organization"}
 REDNER = {"entry_type": "speech", "speaker": "{a_member}"}
 ZUSTAENDIG = {"entry_type": "action", "action_assignee": "{a_member}"}
 
@@ -776,6 +779,11 @@ CASES: list[Case] = [
             "related_motion": "{motion}",
         },
     ),
+    # Eigene Termine im Kalender (Issue #1489): anlegen, ändern, löschen, auf eine Einladung antworten
+    Case("termin_neu", data=TERMIN_FORMULAR, foreign={"mitglied": {"eingeladene": ["{a_member}"]}}),
+    Case("termin", path=TERMIN, data=TERMIN_FORMULAR, foreign={"mitglied": {"eingeladene": ["{a_member}"]}}),
+    Case("termin_loeschen", path=TERMIN),
+    Case("termin_antwort", path=TERMIN, data={"antwort": "zugesagt"}),
     Case("task_labels", data={"name": "Neu", "color": "green"}),
     Case("task_label_delete", path={"label_id": "label"}, method="delete"),
     Case(
@@ -1317,6 +1325,11 @@ class _Builder:
             organization=org, title="Aufgabe", created_by=admin, assigned_to=admin, visibility="organization"
         )
         label = TaskLabel.objects.create(organization=org, name="Wichtig", color="red")
+        # Eigener Termin im Kalender mit einer Einladung (Issue #1489)
+        termin = Termin.objects.create(
+            organization=org, title="Ortstermin", start=now + timedelta(days=3), created_by=admin
+        )
+        TerminTeilnahme.objects.create(termin=termin, membership=kollege)
         task_checklist = TaskChecklistItem.objects.create(task=task, title="Schritt 1", position=0)
         task_checklist2 = TaskChecklistItem.objects.create(task=task, title="Schritt 2", position=1)
         task_attachment = TaskAttachment.objects.create(
@@ -1415,6 +1428,7 @@ class _Builder:
             "rule": rule,
             "standard_item": standard_item,
             "task": task,
+            "termin": termin,
             "label": label,
             "task_checklist": task_checklist,
             "task_checklist2": task_checklist2,

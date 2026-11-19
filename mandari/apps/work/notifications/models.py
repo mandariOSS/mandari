@@ -29,6 +29,9 @@ class NotificationType(models.TextChoices):
     TASK_COMPLETED = "task_completed", "Aufgabe erledigt"
     TASK_COMMENT = "task_comment", "Kommentar zur Aufgabe"
 
+    # Eigene Termine im Kalender (Issue #1489)
+    TERMIN_EINLADUNG = "termin_einladung", "Einladung zu einem Termin"
+
     # Motions
     MOTION_SHARED = "motion_shared", "Antrag geteilt"
     MOTION_COMMENT = "motion_comment", "Kommentar zum Antrag"
@@ -81,6 +84,7 @@ PREFERENCE_CATEGORIES: dict[str, tuple[str, ...]] = {
         NotificationType.MEETING_REMINDER.value,
         NotificationType.MEETING_UPDATED.value,
         NotificationType.MEETING_CANCELLED.value,
+        NotificationType.TERMIN_EINLADUNG.value,
     ),
     "tasks": (
         NotificationType.TASK_ASSIGNED.value,
@@ -250,6 +254,7 @@ class Notification(models.Model):
             NotificationType.MEETING_REMINDER: "calendar-clock",
             NotificationType.MEETING_UPDATED: "calendar-check",
             NotificationType.MEETING_CANCELLED: "calendar-x",
+            NotificationType.TERMIN_EINLADUNG: "calendar-plus",
             NotificationType.TASK_ASSIGNED: "clipboard-list",
             NotificationType.TASK_DUE_SOON: "alarm-clock",
             NotificationType.TASK_COMPLETED: "check-circle",
@@ -291,6 +296,7 @@ class Notification(models.Model):
             NotificationType.MEETING_REMINDER: "blue",
             NotificationType.MEETING_UPDATED: "green",
             NotificationType.MEETING_CANCELLED: "red",
+            NotificationType.TERMIN_EINLADUNG: "blue",
             NotificationType.TASK_ASSIGNED: "purple",
             NotificationType.TASK_DUE_SOON: "orange",
             NotificationType.TASK_COMPLETED: "green",

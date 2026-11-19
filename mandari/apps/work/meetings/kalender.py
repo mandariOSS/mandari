@@ -5,7 +5,9 @@ Kalender in Work (Issue #1489, Schritt 1): alle Termine, die es schon gibt, in e
 Der Kalender unter „Sitzungen“ zeigte nur die Sitzungen der Gremien. Jetzt laufen dort zusammen:
 
 * **Sitzungen der Gremien** aus dem Ratsinformationssystem (wie bisher),
-* **Fraktionssitzungen**, soweit das Mitglied sie sehen darf (Sitzungsarten, Issue #1239),
+* **interne Sitzungen** (Fraktionssitzungen, Arbeitskreise und weitere Sitzungsarten), soweit das Mitglied sie
+  sehen darf (Issue #1239),
+* **eigene Termine** der Organisation, soweit das Mitglied sie sehen darf (``apps.work.termine``),
 * **Fristen der Dokumente** (sichtbare, nicht abgeschlossene Dokumente mit Frist),
 * **Aufgaben** mit Fälligkeit (sichtbare, offene Aufgaben).
 
@@ -13,7 +15,7 @@ Jede Art erscheint nur mit dem Recht, das ihre eigene Seite verlangt, und lässt
 Sichtbarkeit und Schutz nichtöffentlicher Inhalte kommen aus den bestehenden Regeln der Bereiche; der Kalender zeigt
 nur Titel, Zeit und den Weg zur Seite. Fristen und Fälligkeiten sind ganztägige Einträge.
 
-Eigene Termine der Organisation und die Terminumfrage folgen in eigenen Schritten.
+Die Terminumfrage folgt in einem eigenen Schritt.
 """
 
 from __future__ import annotations
@@ -41,7 +43,8 @@ class Art:
 
 ARTEN: Final[tuple[Art, ...]] = (
     Art("sitzung", "Sitzungen der Gremien", "meetings.view"),
-    Art("fraktion", "Fraktionssitzungen", "faction.view_public"),
+    Art("fraktion", "Interne Sitzungen", "faction.view_public"),
+    Art("termin", "Termine", "meetings.view"),
     Art("dokument", "Fristen der Dokumente", "motions.view"),
     Art("aufgabe", "Aufgaben", "tasks.view"),
 )
@@ -126,6 +129,30 @@ def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end
     ]
 
 
+def _termine(organization: Any, membership: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
+    from apps.work.termine import termine as eigene
+
+    # Auch Termine, die vor dem Fenster beginnen und hineinreichen (mehrtägig); ohne Ende zählt der Beginn
+    im_fenster = Q(start__lte=end) & (Q(end__gte=start) | Q(end__isnull=True, start__gte=start))
+    return [
+        _eintrag(
+            "termin",
+            termin.pk,
+            termin.title,
+            reverse("work:termin", kwargs={"org_slug": organization.slug, "termin_id": termin.pk}),
+            # Ganztägig: nur das Datum, das Ende ist wie in Kalenderprogrammen der Folgetag
+            start=timezone.localtime(termin.start).date().isoformat() if termin.all_day else termin.start.isoformat(),
+            end=(
+                (timezone.localtime(termin.end).date().isoformat() if termin.all_day else termin.end.isoformat())
+                if termin.end
+                else None
+            ),
+            allDay=termin.all_day,
+        )
+        for termin in eigene.sichtbare(membership).filter(im_fenster).order_by("start")[:MAX_JE_ART]
+    ]
+
+
 def _dokumentfristen(organization: Any, membership: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
     from apps.work.motions.models import Motion
 
@@ -182,6 +209,8 @@ def termine(
         eintraege += _sitzungen(organization, start, end)
     if "fraktion" in wahl:
         eintraege += _fraktionssitzungen(organization, membership, start, end)
+    if "termin" in wahl:
+        eintraege += _termine(organization, membership, start, end)
     if "dokument" in wahl:
         eintraege += _dokumentfristen(organization, membership, start, end)
     if "aufgabe" in wahl:

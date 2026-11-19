@@ -55,9 +55,24 @@ export function gewaehlteArten(erlaubt: string[], abgewaehlt: string | null): st
   return erlaubt.filter((art) => !aus.has(art))
 }
 
-/** Einstellungen des Kalenders; `schmal` für Handys, `arten` liefert die gewählten Arten für jeden Abruf */
-export function kalenderOptionen(ereignisse: string, schmal: boolean, arten?: () => string[]): Record<string, unknown> {
+/**
+ * Einstellungen des Kalenders; `schmal` für Handys, `arten` liefert die gewählten Arten für jeden Abruf. Mit `neu`
+ * (Adresse des Formulars für einen Termin) öffnet ein Klick auf einen Tag das Formular für diesen Tag.
+ */
+export function kalenderOptionen(
+  ereignisse: string,
+  schmal: boolean,
+  arten?: () => string[],
+  neu?: string,
+): Record<string, unknown> {
   return {
+    ...(neu
+      ? {
+          dateClick(info: { dateStr: string }) {
+            window.location.href = `${neu}?tag=${encodeURIComponent(info.dateStr.slice(0, 10))}`
+          },
+        }
+      : {}),
     initialView: schmal ? 'listMonth' : 'dayGridMonth',
     locale: 'de',
     headerToolbar: schmal
@@ -111,7 +126,8 @@ export const sitzungsKalender = defineComponent(() => ({
     const ereignisse = this.$el.dataset.ereignisse ?? ''
     if (!fc || !flaeche || !ereignisse) return
     const wahl = this.erlaubt.length ? () => [...this.arten] : undefined
-    this.kalender = new fc.Calendar(flaeche, kalenderOptionen(ereignisse, window.matchMedia(SCHMAL).matches, wahl))
+    const optionen = kalenderOptionen(ereignisse, window.matchMedia(SCHMAL).matches, wahl, this.$el.dataset.neu)
+    this.kalender = new fc.Calendar(flaeche, optionen)
     this.kalender.render()
   },
 

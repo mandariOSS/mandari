@@ -364,6 +364,7 @@ class NotificationHub:
 
         Unterlagen aus „Nichtöffentliche Vorgänge“ erhält nur, wer sie öffnen darf (``_hidden_from``); dasselbe
         gilt für Aufgaben zu einer solchen Unterlage oder aus einem nichtöffentlichen TOP einer Fraktionssitzung.
+        Einladungen zu eigenen Terminen erhält nur, wer den Termin sehen darf (``termine.sichtbare``).
         Lässt sich der Bezug nicht mehr auflösen, wird nicht weitergeleitet. Alles andere geht wie bisher an die
         Vertretung, auch gewöhnliche private Aufgaben: Die Sperre reicht nicht weiter als beim Empfänger selbst.
         """
@@ -391,6 +392,11 @@ class NotificationHub:
                 if item is not None and not can_view_item_with_parents(item, deputy):
                     return False
                 return task.related_motion is None or not cls._hidden_from(task.related_motion, deputy)
+            if metadata.get("termin_id"):
+                # Eigene Termine (Issue #1489): nur, wenn die Vertretung den Termin selbst sehen darf
+                from apps.work.termine import termine
+
+                return bool(termine.sichtbare(deputy).filter(pk=metadata["termin_id"]).exists())
         except (ValueError, TypeError, ValidationError):
             return False
         return True

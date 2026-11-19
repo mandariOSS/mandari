@@ -1,0 +1,142 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Eigener Termin im Kalender (Issue #1489): eine Seite zum Anlegen, Ansehen und Ändern. Wer ändern darf, bekommt das
+Formular (Felder c-form.* dicht, ohne Kästen), alle anderen dieselben Angaben zum Lesen (c-ui.angaben). Eingeladene
+antworten oben mit Zusage, „vielleicht“ oder Absage; darunter steht, wer eingeladen ist und was geantwortet hat.
+Kontext: TerminNeuView bzw. TerminView (apps/work/termine/views.py): form (TerminForm mit werte und gewaehlt),
+darf_aendern, dazu bei einem bestehenden Termin termin, zeit, beschreibung, teilnahmen, meine_teilnahme und sitzung
+(die verknüpfte interne Sitzung, nur wenn die Person sie sehen darf).
+{% endcomment %}
+
+{% block page_title %}{% if termin %}{{ termin.title }}{% else %}Neuer Termin{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if termin %}{{ termin.title }}{% else %}Neuer Termin{% endif %}" dicht data-testid="termin-kopf"
+    text="{% if termin %}{{ zeit }}{% if termin.location %} · {{ termin.location }}{% endif %}{% else %}Ortstermin, Pressegespräch, Klausur: alles, was keine Sitzung mit Tagesordnung ist.{% endif %}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings_calendar' org_slug=organization.slug %}">Kalender</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl space-y-8">
+    {% if termin and meine_teilnahme %}
+    <form method="post" action="{% url 'work:termin_antwort' org_slug=organization.slug termin_id=termin.id %}" data-testid="termin-antwort">
+        {% csrf_token %}
+        <c-rahmen.abschnitt titel="Sie sind eingeladen">
+            <c-form.hinweis>Ihre Antwort: {{ meine_teilnahme.get_status_display }}.</c-form.hinweis>
+            <div class="mt-3 flex flex-wrap gap-2">
+                <c-ui.button type="submit" size="sm" name="antwort" value="zugesagt" variant="{% if meine_teilnahme.status == 'zugesagt' %}primary{% else %}secondary{% endif %}">Zusagen</c-ui.button>
+                <c-ui.button type="submit" size="sm" name="antwort" value="vielleicht" variant="{% if meine_teilnahme.status == 'vielleicht' %}primary{% else %}secondary{% endif %}">Vielleicht</c-ui.button>
+                <c-ui.button type="submit" size="sm" name="antwort" value="abgesagt" variant="{% if meine_teilnahme.status == 'abgesagt' %}primary{% else %}secondary{% endif %}">Absagen</c-ui.button>
+            </div>
+        </c-rahmen.abschnitt>
+    </form>
+    {% endif %}
+
+    {% if darf_aendern %}
+    <form method="post" class="space-y-5" data-testid="termin-formular">
+        {% csrf_token %}
+        {% if form.errors %}
+        <div role="alert" class="rounded-md bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-800 dark:text-red-300">
+            {% for field in form %}{% for error in field.errors %}<p>{{ field.label }}: {{ error }}</p>{% endfor %}{% endfor %}
+            {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+        </div>
+        {% endif %}
+
+        <c-form.field :field="form.title" id="termin-titel" label="Titel" maxlength="200" dicht required />
+
+        <div class="grid gap-5 sm:grid-cols-3">
+            <c-form.field name="tag" id="termin-tag" type="date" label="Tag" value="{{ form.werte.tag }}" dicht required />
+            <c-form.field name="beginn" id="termin-beginn" type="time" label="Beginn" value="{{ form.werte.beginn }}" dicht />
+            <c-form.field name="ende" id="termin-ende" type="time" label="Ende" value="{{ form.werte.ende }}" dicht />
+        </div>
+        <div class="grid gap-5 sm:grid-cols-3 sm:items-start">
+            <c-form.checkbox name="all_day" id="termin-ganztaegig" label="Ganztägig" checked="{% if form.gewaehlt.all_day %}1{% endif %}" dicht class="sm:pt-8" />
+            <c-form.field name="bis_tag" id="termin-bis" type="date" label="Letzter Tag" value="{{ form.werte.bis_tag }}" help="Nur bei ganztägigen Terminen über mehrere Tage." dicht class="sm:col-span-2" />
+        </div>
+
+        <c-form.field :field="form.location" id="termin-ort" label="Ort" maxlength="500" dicht />
+        <c-form.field :field="form.video_url" id="termin-video" type="url" label="Link zur Videokonferenz" placeholder="https://…" maxlength="500" dicht />
+        <c-form.textarea :field="form.description" id="termin-beschreibung" label="Beschreibung" rows="4" maxlength="5000" dicht />
+
+        {% if form.faction_meeting.field.queryset %}
+        <c-form.select name="faction_meeting" id="termin-sitzung" label="Gehört zu einer internen Sitzung" dicht>
+            <option value="">Keine</option>
+            {% for sitzung in form.faction_meeting.field.queryset %}
+            <option value="{{ sitzung.id }}" {% if form.gewaehlt.faction_meeting == sitzung.id|stringformat:'s' %}selected{% endif %}>{{ sitzung.title }} ({{ sitzung.start|date:"d.m.Y" }})</option>
+            {% endfor %}
+        </c-form.select>
+        {% endif %}
+
+        <fieldset data-testid="termin-eingeladene">
+            <c-form.beschriftung als="legend">Eingeladene</c-form.beschriftung>
+            <c-form.hinweis>Eingeladene bekommen eine Benachrichtigung, sehen den Termin immer und sagen zu oder ab.</c-form.hinweis>
+            <ul class="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 max-h-56 overflow-y-auto">
+                {% for mitglied in form.eingeladene.field.queryset %}
+                <li><c-form.checkbox name="eingeladene" id="termin-eingeladen-{{ mitglied.id }}" value="{{ mitglied.id }}" label="{{ mitglied.user.get_display_name }}" checked="{% if mitglied.id|stringformat:'s' in form.gewaehlt.eingeladene %}1{% endif %}" dicht /></li>
+                {% empty %}
+                <li class="text-sm text-gray-600 dark:text-gray-400">Es gibt noch keine weiteren Mitglieder.</li>
+                {% endfor %}
+            </ul>
+        </fieldset>
+
+        <fieldset data-testid="termin-sichtbarkeit">
+            <c-form.beschriftung als="legend">Wer sieht den Termin?</c-form.beschriftung>
+            <div class="mt-2 space-y-2">
+                <c-form.radio name="visibility" value="organization" label="Alle Mitglieder" checked="{% if form.gewaehlt.visibility == 'organization' %}1{% endif %}" />
+                {% if form.arten %}
+                <c-form.radio name="visibility" value="meeting_type" label="Teilnehmende einer Sitzungsart" hinweis="Etwa ein Arbeitskreis; die Art wählen Sie darunter." checked="{% if form.gewaehlt.visibility == 'meeting_type' %}1{% endif %}" />
+                <c-form.select name="meeting_type" id="termin-art" label="Sitzungsart" dicht class="ml-6 max-w-xs">
+                    <option value="">Bitte wählen</option>
+                    {% for art in form.arten %}
+                    <option value="{{ art.id }}" {% if form.gewaehlt.meeting_type == art.id|stringformat:'s' %}selected{% endif %}>{{ art.name }}</option>
+                    {% endfor %}
+                </c-form.select>
+                {% endif %}
+                <c-form.radio name="visibility" value="private" label="Nur ich und die Eingeladenen" checked="{% if form.gewaehlt.visibility == 'private' %}1{% endif %}" />
+            </div>
+        </fieldset>
+
+        <div class="flex items-center gap-3">
+            <c-ui.button type="submit" size="sm">{% if termin %}Speichern{% else %}Termin anlegen{% endif %}</c-ui.button>
+            <c-ui.textlink href="{% url 'work:meetings_calendar' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+        </div>
+    </form>
+    {% elif termin %}
+    <c-ui.angaben data-testid="termin-angaben">
+        <dt>Wann</dt><dd>{{ zeit }}</dd>
+        {% if termin.location %}<dt>Ort</dt><dd>{{ termin.location }}</dd>{% endif %}
+        {% if termin.video_url %}<dt>Videokonferenz</dt><dd><c-ui.textlink href="{{ termin.video_url }}" extern>{{ termin.video_url }}</c-ui.textlink></dd>{% endif %}
+        {% if sitzung %}<dt>Sitzung</dt><dd><c-ui.textlink href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=sitzung.id %}">{{ sitzung.title }}</c-ui.textlink></dd>{% endif %}
+        {% if beschreibung %}<dt>Beschreibung</dt><dd class="whitespace-pre-line">{{ beschreibung }}</dd>{% endif %}
+        <dt>Sichtbar für</dt><dd>{{ termin.get_visibility_display }}{% if termin.meeting_type %}: {{ termin.meeting_type.name }}{% endif %}</dd>
+        {% if termin.created_by %}<dt>Angelegt von</dt><dd>{{ termin.created_by.user.get_display_name }}</dd>{% endif %}
+    </c-ui.angaben>
+    {% endif %}
+
+    {% if termin and teilnahmen %}
+    <c-rahmen.abschnitt titel="Eingeladen" data-testid="termin-teilnahmen">
+        <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800 text-sm">
+            {% for teilnahme in teilnahmen %}
+            <li class="flex items-baseline justify-between gap-4 py-1.5">
+                <span class="text-gray-900 dark:text-white">{{ teilnahme.membership.user.get_display_name }}</span>
+                <span class="shrink-0 {% if teilnahme.status == 'zugesagt' %}text-green-700 dark:text-green-400{% elif teilnahme.status == 'abgesagt' %}text-red-700 dark:text-red-400{% else %}text-gray-600 dark:text-gray-400{% endif %}">{{ teilnahme.get_status_display }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if termin and darf_aendern %}
+    <form method="post" action="{% url 'work:termin_loeschen' org_slug=organization.slug termin_id=termin.id %}" data-testid="termin-loeschen">
+        {% csrf_token %}
+        <details>
+            <summary class="cursor-pointer text-sm font-medium text-red-700 dark:text-red-400">Termin löschen</summary>
+            <c-form.hinweis>Der Termin verschwindet für alle aus dem Kalender, die Einladungen entfallen. Das lässt sich nicht rückgängig machen.</c-form.hinweis>
+            <c-ui.button type="submit" size="sm" variant="danger" class="mt-3">Endgültig löschen</c-ui.button>
+        </details>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

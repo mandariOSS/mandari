@@ -14,6 +14,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.session.services import portal_link_service
 from apps.work.rahmen import NeueVorlageMixin
+from apps.work.termine import termine as eigene_termine
 
 from .. import kalender, neu, selectors
 
@@ -88,6 +89,7 @@ class MeetingCalendarView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         context["active_nav"] = "meetings"
         # Arten von Terminen, die die Person sehen darf (Issue #1489); die Auswahl merkt sich der Browser
         context["kalender_arten"] = kalender.arten_fuer(self.membership)
+        context["darf_termin_anlegen"] = eigene_termine.darf_anlegen(self.membership)
         return context
 
 

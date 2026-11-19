@@ -17,6 +17,7 @@ from apps.work.organization import views as organization_views
 from apps.work.ris import views as ris_views
 from apps.work.support import views as support_views
 from apps.work.tasks import views as tasks_views
+from apps.work.termine import views as termine_views
 
 app_name = "work"
 
@@ -89,6 +90,19 @@ urlpatterns = [
         "<slug:org_slug>/meetings/calendar/events/",
         meetings_views.MeetingCalendarEventsView.as_view(),
         name="meetings_calendar_events",
+    ),
+    # Eigene Termine der Organisation im Kalender (Issue #1489)
+    path("<slug:org_slug>/termine/neu/", termine_views.TerminNeuView.as_view(), name="termin_neu"),
+    path("<slug:org_slug>/termine/<uuid:termin_id>/", termine_views.TerminView.as_view(), name="termin"),
+    path(
+        "<slug:org_slug>/termine/<uuid:termin_id>/loeschen/",
+        termine_views.TerminLoeschenView.as_view(),
+        name="termin_loeschen",
+    ),
+    path(
+        "<slug:org_slug>/termine/<uuid:termin_id>/antwort/",
+        termine_views.TerminAntwortView.as_view(),
+        name="termin_antwort",
     ),
     # Ladungen der Verwaltung mit Rückmeldung (Issue #225)
     path(
