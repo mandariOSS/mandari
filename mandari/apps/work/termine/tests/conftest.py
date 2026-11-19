@@ -12,9 +12,10 @@ from django.db import transaction
 @pytest.fixture(autouse=True)
 def nach_commit_sofort(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """
-    Benachrichtigungen zu Terminen und Umfragen gehen erst nach dem Commit hinaus (``transaction.on_commit``). Ein
-    Test läuft in einer Transaktion, die nie festgeschrieben wird; hier wird der Aufruf deshalb sofort ausgeführt.
-    Tests, die den Zeitpunkt selbst prüfen (Fixture ``django_capture_on_commit_callbacks``), bleiben unberührt.
+    Benachrichtigungen zu Terminen und Umfragen gehen mit dem sofort ausführenden Auftrags-Backend (wie im Test)
+    erst nach dem Commit hinaus (``apps.work.termine.meldungen``). Ein Test läuft in einer Transaktion, die nie
+    festgeschrieben wird; hier wird der Aufruf deshalb sofort ausgeführt. Tests, die den Zeitpunkt selbst prüfen
+    (Fixture ``django_capture_on_commit_callbacks``), bleiben unberührt.
     """
     if "django_capture_on_commit_callbacks" in request.fixturenames:
         return

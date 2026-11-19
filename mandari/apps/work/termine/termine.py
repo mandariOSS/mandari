@@ -27,6 +27,7 @@ from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
+from .meldungen import melden
 from .models import Termin, TerminTeilnahme
 
 ANLEGEN: Final = "calendar.create"
@@ -166,22 +167,19 @@ def _einladen(termin: Termin, eingeladene: list[Any], einladend: Any) -> None:
     nachricht = f"Sie sind zu „{termin.title}“ am {zeit} eingeladen. Bitte sagen Sie zu oder ab."
     metadata = {"termin_id": str(termin.pk)}
 
-    def senden() -> None:
-        for mitglied in neue:
-            if mitglied.pk == getattr(einladend, "pk", None):
-                continue
-            NotificationHub.send(
-                recipient=mitglied,
-                notification_type=NotificationType.TERMIN_EINLADUNG,
-                title="Einladung zu einem Termin",
-                message=nachricht,
-                link=link,
-                actor=einladend,
-                metadata=metadata,
-            )
+    def senden(mitglied: Any) -> None:
+        NotificationHub.send(
+            recipient=mitglied,
+            notification_type=NotificationType.TERMIN_EINLADUNG,
+            title="Einladung zu einem Termin",
+            message=nachricht,
+            link=link,
+            actor=einladend,
+            metadata=metadata,
+        )
 
-    # Erst nach dem Commit: Scheitert das Speichern, geht keine Einladung zu einem Termin hinaus, den es nicht gibt
-    transaction.on_commit(senden, robust=True)
+    # Nichts geht hinaus, bevor der Termin gespeichert ist (``meldungen.melden``)
+    melden([mitglied for mitglied in neue if mitglied.pk != getattr(einladend, "pk", None)], senden)
 
 
 def _lokal(tag: date, uhrzeit: time) -> datetime:

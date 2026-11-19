@@ -28,6 +28,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from . import termine
+from .meldungen import melden
 from .models import Termin, TerminTeilnahme, Terminumfrage, Terminvorschlag, UmfrageTeilnahme, VorschlagAntwort
 
 #: So viele Zeilen für Vorschläge zeigt das Formular mindestens, so viele nimmt eine Umfrage höchstens auf
@@ -297,22 +298,18 @@ def festlegen(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any) -> Ter
     nachricht = f"Die Terminumfrage „{umfrage.title}“ ist entschieden: {zeit(vorschlag)}."
     metadata = {"termin_id": str(termin.pk), "umfrage_id": str(umfrage.pk)}
 
-    def senden() -> None:
-        for mitglied in gefragte:
-            if mitglied.pk == getattr(membership, "pk", None):
-                continue
-            NotificationHub.send(
-                recipient=mitglied,
-                notification_type=NotificationType.TERMIN_EINLADUNG,
-                title="Termin steht fest",
-                message=nachricht,
-                link=link,
-                actor=membership,
-                metadata=metadata,
-            )
+    def senden(mitglied: Any) -> None:
+        NotificationHub.send(
+            recipient=mitglied,
+            notification_type=NotificationType.TERMIN_EINLADUNG,
+            title="Termin steht fest",
+            message=nachricht,
+            link=link,
+            actor=membership,
+            metadata=metadata,
+        )
 
-    # Erst nach dem Commit: Scheitert das Speichern, kündigt keine Meldung einen Termin an, den es nicht gibt
-    transaction.on_commit(senden, robust=True)
+    melden([mitglied for mitglied in gefragte if mitglied.pk != getattr(membership, "pk", None)], senden)
     return termin
 
 
@@ -360,9 +357,8 @@ def vorschlag_ergaenzen(umfrage: Terminumfrage, post: Any, membership: Any) -> s
 
 def _benachrichtigen(umfrage: Terminumfrage, gefragte: list[Any], fragend: Any, *, text: str = "") -> None:
     """
-    Die Gefragten benachrichtigen (wer fragt, bekommt nichts). Der Versand läuft erst nach dem Commit
-    (``transaction.on_commit``): Scheitert das Speichern, geht keine Meldung und keine E-Mail zu etwas hinaus, das
-    es nicht gibt.
+    Die Gefragten benachrichtigen (wer fragt, bekommt nichts). Zeitpunkt und Fehlerbehandlung: ``meldungen.melden``
+    (nichts geht hinaus, bevor die Änderung gespeichert ist; ein Fehler bei einer Person hält die übrigen nicht auf).
     """
     from apps.work.notifications.models import NotificationType
     from apps.work.notifications.services import NotificationHub
@@ -372,21 +368,18 @@ def _benachrichtigen(umfrage: Terminumfrage, gefragte: list[Any], fragend: Any, 
     nachricht = text or f"Wann passt es Ihnen? „{umfrage.title}“ steht zur Abstimmung.{frist}"
     metadata = {"umfrage_id": str(umfrage.pk)}
 
-    def senden() -> None:
-        for mitglied in gefragte:
-            if mitglied.pk == getattr(fragend, "pk", None):
-                continue
-            NotificationHub.send(
-                recipient=mitglied,
-                notification_type=NotificationType.TERMIN_UMFRAGE,
-                title="Terminumfrage",
-                message=nachricht,
-                link=link,
-                actor=fragend,
-                metadata=metadata,
-            )
+    def senden(mitglied: Any) -> None:
+        NotificationHub.send(
+            recipient=mitglied,
+            notification_type=NotificationType.TERMIN_UMFRAGE,
+            title="Terminumfrage",
+            message=nachricht,
+            link=link,
+            actor=fragend,
+            metadata=metadata,
+        )
 
-    transaction.on_commit(senden, robust=True)
+    melden([mitglied for mitglied in gefragte if mitglied.pk != getattr(fragend, "pk", None)], senden)
 
 
 class UmfrageForm(forms.Form):

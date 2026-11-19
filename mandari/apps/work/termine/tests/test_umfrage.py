@@ -15,9 +15,10 @@ from django.utils import timezone
 
 from apps.work.faction.models import FactionMeetingType
 from apps.work.notifications.models import Notification, NotificationType
+from apps.work.notifications.services import NotificationHub
 from apps.work.organization.export_service import dsgvo_export_service
 from apps.work.organization.models import MemberAbsence
-from apps.work.termine import termine, umfrage
+from apps.work.termine import meldungen, termine, umfrage
 from apps.work.termine.models import Termin, TerminTeilnahme, Terminumfrage, VorschlagAntwort
 
 pytestmark = pytest.mark.django_db
@@ -326,6 +327,37 @@ def test_meldungen_gehen_erst_nach_dem_commit(
     assert an_karim.count() == 1 and len(nach_commit) == 1
     nach_commit[0]()
     assert an_karim.filter(notification_type=NotificationType.TERMIN_EINLADUNG).count() == 1
+
+
+def test_mit_auftragsjournal_entstehen_meldungen_mit_der_aenderung(
+    org: Any,
+    vera: Any,
+    karim: Any,
+    lea: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    django_capture_on_commit_callbacks: Any,
+) -> None:
+    """
+    Mit dem Auftragsjournal entstehen Benachrichtigung und Mailauftrag in der Transaktion der Änderung (der Runner
+    versendet erst nach dem Commit). Ein Fehler bei einer Person hält die übrigen nicht auf und lässt die Umfrage stehen.
+    """
+    monkeypatch.setattr(meldungen, "_im_journal", lambda: True)
+    echtes_senden = NotificationHub.send
+
+    def senden(**angaben: Any) -> Any:
+        if angaben["recipient"].pk == karim.pk:
+            raise RuntimeError("Störung bei einer Person")
+        return echtes_senden(**angaben)
+
+    monkeypatch.setattr(NotificationHub, "send", senden)
+
+    with django_capture_on_commit_callbacks(execute=False):
+        neue = _anlegen(org, vera, wen=umfrage.AUSWAHL, gefragte=[str(karim.pk), str(lea.pk)])
+        # Schon vor dem Commit angelegt, nicht erst in einem Rückruf danach
+        an_lea = Notification.objects.filter(recipient=lea, notification_type=NotificationType.TERMIN_UMFRAGE)
+        assert an_lea.count() == 1
+    assert not Notification.objects.filter(recipient=karim).exists()
+    assert Terminumfrage.objects.filter(pk=neue.pk).exists() and neue.teilnahmen.count() == 3
 
 
 def test_weiteren_vorschlag_ergaenzen(org: Any, vera: Any, karim: Any, client_for: Any) -> None:
