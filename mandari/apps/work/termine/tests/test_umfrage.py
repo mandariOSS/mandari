@@ -16,6 +16,7 @@ from django.utils import timezone
 from apps.work.faction.models import FactionMeetingType
 from apps.work.notifications.models import Notification, NotificationType
 from apps.work.organization.export_service import dsgvo_export_service
+from apps.work.organization.models import MemberAbsence
 from apps.work.termine import termine, umfrage
 from apps.work.termine.models import Termin, TerminTeilnahme, Terminumfrage, VorschlagAntwort
 
@@ -247,6 +248,27 @@ def test_sichtbarkeit_kalender_und_loeschen(
     assert leitung.post(loeschen).status_code == 302
     assert not Terminumfrage.objects.exists() and not VorschlagAntwort.objects.exists()
     assert not vorschlaege(karim)
+
+
+def test_vertretung_bekommt_die_umfrage_nur_wenn_sie_selbst_gefragt_ist(
+    org: Any, vera: Any, karim: Any, lea: Any
+) -> None:
+    heute = timezone.localdate()
+    MemberAbsence.objects.create(
+        organization=org,
+        membership=karim,
+        deputy=lea,
+        start_date=heute - timedelta(days=1),
+        end_date=heute + timedelta(days=7),
+        notify_deputy=True,
+    )
+    an_vertretung = Notification.objects.filter(recipient=lea, title__startswith="[Vertretung]")
+
+    _anlegen(org, vera, title="Vorstandsklausur", wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
+    assert not an_vertretung.exists()
+    # Ist die Vertretung selbst gefragt, sieht sie die Umfrage und bekommt auch die weitergeleitete Meldung
+    _anlegen(org, vera, title="Sommerfest")
+    assert [meldung.notification_type for meldung in an_vertretung] == [NotificationType.TERMIN_UMFRAGE]
 
 
 def test_seite_zeigt_was_am_tag_schon_ansteht(org: Any, vera: Any, karim: Any, client_for: Any) -> None:
