@@ -128,6 +128,9 @@ def test_anlegen_antworten_und_festlegen(org: Any, vera: Any, karim: Any, lea: A
     # Festlegen darf nur, wer angelegt hat: Daraus wird der Termin, die Antworten stehen schon daran
     festlegen = _url("terminumfrage_festlegen", org, umfrage_id=neue.pk)
     assert gast.post(festlegen, {"vorschlag": str(erster.pk)}).status_code == 403
+    # Ohne oder mit unbekanntem Vorschlag passiert nichts
+    assert client.post(festlegen, {"vorschlag": "kein-vorschlag"}).status_code == 302
+    assert client.post(festlegen).status_code == 302 and not Termin.objects.exists()
     antwort = client.post(festlegen, {"vorschlag": str(erster.pk)})
     termin: Any = Termin.objects.get()
     assert antwort.status_code == 302 and antwort.url == _url("termin", org, termin_id=termin.pk)

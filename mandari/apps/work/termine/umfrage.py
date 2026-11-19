@@ -215,12 +215,19 @@ def festlegen(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any) -> Ter
     Einen Vorschlag festlegen: Daraus entsteht ein Termin für die Gefragten, die Umfrage ist abgeschlossen. ``None``,
     wenn die Umfrage schon abgeschlossen ist oder der Vorschlag nicht zu ihr gehört.
     """
+    from django.core.exceptions import ValidationError
+
     from apps.work.notifications.models import NotificationType
     from apps.work.notifications.services import NotificationHub
 
+    # Zeile sperren und neu lesen: Zwei gleichzeitige Klicks legten sonst zwei Termine an
+    umfrage = Terminumfrage.objects.select_for_update().get(pk=umfrage.pk)
     if umfrage.abgeschlossen_am is not None:
         return None
-    vorschlag = umfrage.vorschlaege.filter(pk=vorschlag_id).first()
+    try:
+        vorschlag = umfrage.vorschlaege.filter(pk=vorschlag_id).first()
+    except (ValueError, ValidationError):
+        vorschlag = None  # keine gültige Kennung
     if vorschlag is None:
         return None
     termin = Termin(
