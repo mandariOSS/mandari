@@ -35,6 +35,15 @@ an oder beginnen die Antwort auf eine Anfrage. An „Aufgaben“ steht, wie viel
 sind, an „Dokumente“, wie viele auf Ihre Freigabe warten."""
 
 [[eintrag]]
+datum = 2026-11-19
+version = ""
+bereich = "ueberall"
+titel = "Tastaturkürzel: Übersicht mit dem Fragezeichen."
+text = """Mit „?“ öffnen Sie die Übersicht der Tastaturkürzel: „/“ führt in die Suche, „N“ öffnet „Neu“, die Ziffern \
+wechseln in die Bereiche der Seitenleiste. Die Kürzel gelten nicht, während Sie schreiben, und lassen sich in der \
+Übersicht abschalten. Sie finden sie auch im Menü an Ihrem Namen."""
+
+[[eintrag]]
 datum = 2026-11-18
 version = ""
 bereich = "recherche"

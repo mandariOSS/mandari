@@ -123,6 +123,25 @@ NEU: tuple[tuple[Ziel, str], ...] = (
     (Ziel("aufgabe", "Aufgabe", "work:task_create", "square-plus"), "tasks.create"),
     (Ziel("anfrage", "Antwort auf eine Anfrage", "work:ris_anfrage", "message-square-reply"), "ris.view"),
 )
+
+
+def kuerzel(bereiche: int, *, neu: bool, suche: bool) -> list[dict[str, Any]]:
+    """
+    Zeilen der Übersicht „Tastaturkürzel“ (Issue #1492), passend zu dem, was die Person im Rahmen hat: Beschreibung,
+    Tasten und das Wort zwischen zwei Tasten. Die Tasten selbst wertet ``frontend/alpine/work-rahmen.ts`` aus.
+    """
+    zeilen: list[dict[str, Any]] = [{"text": "Diese Übersicht", "tasten": ["?"], "zwischen": ""}]
+    if suche:
+        zeilen.append({"text": "Suche öffnen", "tasten": ["/", "Strg K"], "zwischen": "oder"})
+    if neu:
+        zeilen.append({"text": "Neu anlegen", "tasten": ["N"], "zwischen": ""})
+    if bereiche > 1:
+        zeilen.append(
+            {"text": "Bereich der Seitenleiste öffnen", "tasten": ["1", str(min(bereiche, 9))], "zwischen": "bis"}
+        )
+    return zeilen
+
+
 #: Bereiche mit einer Zahl an der Navigation: offene Arbeit der Person (``dashboard.selectors.zaehler``)
 ZAEHLER: frozenset[str] = frozenset({"aufgaben", "dokumente"})
 
@@ -360,10 +379,14 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
     if not ist_gast and membership is not None:
         neu = [_eintrag(ziel, slug, False) for ziel, recht in NEU if membership.has_permission(recht)]
 
+    neu = [eintrag for eintrag in neu if eintrag["url"]]
+    suche_url = "" if ist_gast else _url(Ziel("suche", "Suche", "work:ris_search"), slug)
+
     return {
         "bereich": bereich,
         "bereiche": bereiche,
-        "neu": [eintrag for eintrag in neu if eintrag["url"]],
+        "neu": neu,
+        "kuerzel": kuerzel(len(bereiche), neu=bool(neu), suche=bool(suche_url)),
         "unten": unten,
         "leiste_unten": leiste_unten,
         "mehr": mehr,
@@ -373,7 +396,7 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
         "brotkrumen": brotkrumen(organization, hauptbereiche, bereich, reiter_key, seite, url_name),
         "ist_gast": ist_gast,
         "start_url": bereiche[0]["url"],
-        "suche_url": "" if ist_gast else _url(Ziel("suche", "Suche", "work:ris_search"), slug),
+        "suche_url": suche_url,
         "raum_kuerzel": raum_kuerzel(organization.name),
         "raum_farbe": raum_farbe(organization),
         "raum_art": raum_art(organization),
