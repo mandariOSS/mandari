@@ -150,6 +150,9 @@ async def test_schreibt_nur_in_die_unveraenderte_sitzung(storage: DatabaseStorag
 
     assert await storage.set_meeting_raw_extension(eins, SCHLUESSEL, wert, stand=stand["1"]) is True
     assert await storage.set_meeting_raw_extension(zwei, SCHLUESSEL, wert, stand=stand["2"]) is False
+    # Ein zweiter Lauf mit demselben Stand überschreibt den Namen nicht mit einem Prüfvermerk
+    vermerk = {"geprueft": "x", "seite": "https://ris.example.org/si0040.php"}
+    assert await storage.set_meeting_raw_extension(eins, SCHLUESSEL, vermerk, stand=stand["1"]) is False
     async with storage.get_session() as session:
         rohdaten = dict((await session.execute(text("SELECT id, raw_json FROM oparl_meetings"))).all())
     assert rohdaten[eins][SCHLUESSEL]["name"] == "AG Internationales" and rohdaten[eins]["organization"] == [GREMIUM]

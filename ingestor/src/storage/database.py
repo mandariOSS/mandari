@@ -1237,7 +1237,8 @@ class DatabaseStorage:
     ) -> bool:
         """
         Eine Erweiterung in den Rohdatensatz einer Sitzung schreiben, ohne die übrigen Angaben zu ändern; nur, wenn die
-        Sitzung noch den gelesenen Stand (``updated_at``) hat und weiterhin kein Gremium zugeordnet ist.
+        Sitzung noch den gelesenen Stand (``updated_at``) hat und weiterhin kein Gremium zugeordnet ist. Der Stand
+        rückt dabei vor, damit ein zweiter Schreibversuch mit demselben Stand (paralleler Lauf) nichts überschreibt.
         """
         import json
 
@@ -1245,7 +1246,8 @@ class DatabaseStorage:
             result = await session.execute(
                 text(
                     "UPDATE oparl_meetings SET raw_json = COALESCE(raw_json, '{}'::jsonb) "
-                    "|| jsonb_build_object(CAST(:schluessel AS text), CAST(:wert AS jsonb)) "
+                    "|| jsonb_build_object(CAST(:schluessel AS text), CAST(:wert AS jsonb)), "
+                    "updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') "
                     "WHERE id = :id AND updated_at IS NOT DISTINCT FROM CAST(:stand AS timestamptz) "
                     "AND NOT EXISTS (SELECT 1 FROM oparl_meetings_organizations mo "
                     "WHERE mo.oparlmeeting_id = oparl_meetings.id)"
