@@ -289,6 +289,45 @@ def test_vertretung_bekommt_die_umfrage_nur_wenn_sie_selbst_gefragt_ist(
     assert [meldung.notification_type for meldung in an_vertretung] == [NotificationType.TERMIN_UMFRAGE]
 
 
+def test_meldungen_gehen_erst_nach_dem_commit(
+    org: Any, vera: Any, karim: Any, django_capture_on_commit_callbacks: Any
+) -> None:
+    """Umfrage, weiterer Vorschlag, Festlegen und Einladung zum Termin benachrichtigen erst nach dem Speichern."""
+    an_karim = Notification.objects.filter(recipient=karim)
+
+    with django_capture_on_commit_callbacks(execute=False) as nach_commit:
+        neue = _anlegen(org, vera, wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
+    assert not an_karim.exists() and len(nach_commit) == 1
+    nach_commit[0]()
+    assert [meldung.notification_type for meldung in an_karim] == [NotificationType.TERMIN_UMFRAGE]
+
+    with django_capture_on_commit_callbacks(execute=False) as nach_commit:
+        assert umfrage.vorschlag_ergaenzen(neue, {"tag": _tag(14).isoformat(), "beginn": "19:00"}, vera) == ""
+    assert an_karim.count() == 1 and len(nach_commit) == 1
+
+    erster = neue.vorschlaege.order_by("start")[0]
+    with django_capture_on_commit_callbacks(execute=False) as nach_commit:
+        assert umfrage.festlegen(neue, erster.pk, vera) is not None
+    assert an_karim.count() == 1 and len(nach_commit) == 1
+
+    with django_capture_on_commit_callbacks(execute=False) as nach_commit:
+        form = termine.TerminForm(
+            {
+                "title": "Ortstermin",
+                "tag": _tag(3).isoformat(),
+                "beginn": "17:00",
+                "visibility": Termin.PRIVAT,
+                "eingeladene": [str(karim.pk)],
+            },
+            membership=vera,
+        )
+        assert form.is_valid(), form.errors
+        form.speichern(termine.neu(org, vera))
+    assert an_karim.count() == 1 and len(nach_commit) == 1
+    nach_commit[0]()
+    assert an_karim.filter(notification_type=NotificationType.TERMIN_EINLADUNG).count() == 1
+
+
 def test_weiteren_vorschlag_ergaenzen(org: Any, vera: Any, karim: Any, client_for: Any) -> None:
     neue = _anlegen(org, vera, wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
     adresse = _url("terminumfrage_vorschlag", org, umfrage_id=neue.pk)

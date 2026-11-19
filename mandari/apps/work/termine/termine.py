@@ -163,18 +163,25 @@ def _einladen(termin: Termin, eingeladene: list[Any], einladend: Any) -> None:
     link = reverse("work:termin", kwargs={"org_slug": termin.organization.slug, "termin_id": termin.pk})
     wann = timezone.localtime(termin.start)
     zeit = wann.strftime("%d.%m.%Y") if termin.all_day else wann.strftime("%d.%m.%Y, %H:%M Uhr")
-    for mitglied in neue:
-        if mitglied.pk == getattr(einladend, "pk", None):
-            continue
-        NotificationHub.send(
-            recipient=mitglied,
-            notification_type=NotificationType.TERMIN_EINLADUNG,
-            title="Einladung zu einem Termin",
-            message=f"Sie sind zu „{termin.title}“ am {zeit} eingeladen. Bitte sagen Sie zu oder ab.",
-            link=link,
-            actor=einladend,
-            metadata={"termin_id": str(termin.pk)},
-        )
+    nachricht = f"Sie sind zu „{termin.title}“ am {zeit} eingeladen. Bitte sagen Sie zu oder ab."
+    metadata = {"termin_id": str(termin.pk)}
+
+    def senden() -> None:
+        for mitglied in neue:
+            if mitglied.pk == getattr(einladend, "pk", None):
+                continue
+            NotificationHub.send(
+                recipient=mitglied,
+                notification_type=NotificationType.TERMIN_EINLADUNG,
+                title="Einladung zu einem Termin",
+                message=nachricht,
+                link=link,
+                actor=einladend,
+                metadata=metadata,
+            )
+
+    # Erst nach dem Commit: Scheitert das Speichern, geht keine Einladung zu einem Termin hinaus, den es nicht gibt
+    transaction.on_commit(senden, robust=True)
 
 
 def _lokal(tag: date, uhrzeit: time) -> datetime:

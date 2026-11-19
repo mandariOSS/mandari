@@ -294,18 +294,25 @@ def festlegen(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any) -> Ter
     umfrage.save(update_fields=["termin", "abgeschlossen_am", "updated_at"])
 
     link = reverse("work:termin", kwargs={"org_slug": umfrage.organization.slug, "termin_id": termin.pk})
-    for mitglied in gefragte:
-        if mitglied.pk == getattr(membership, "pk", None):
-            continue
-        NotificationHub.send(
-            recipient=mitglied,
-            notification_type=NotificationType.TERMIN_EINLADUNG,
-            title="Termin steht fest",
-            message=f"Die Terminumfrage „{umfrage.title}“ ist entschieden: {zeit(vorschlag)}.",
-            link=link,
-            actor=membership,
-            metadata={"termin_id": str(termin.pk), "umfrage_id": str(umfrage.pk)},
-        )
+    nachricht = f"Die Terminumfrage „{umfrage.title}“ ist entschieden: {zeit(vorschlag)}."
+    metadata = {"termin_id": str(termin.pk), "umfrage_id": str(umfrage.pk)}
+
+    def senden() -> None:
+        for mitglied in gefragte:
+            if mitglied.pk == getattr(membership, "pk", None):
+                continue
+            NotificationHub.send(
+                recipient=mitglied,
+                notification_type=NotificationType.TERMIN_EINLADUNG,
+                title="Termin steht fest",
+                message=nachricht,
+                link=link,
+                actor=membership,
+                metadata=metadata,
+            )
+
+    # Erst nach dem Commit: Scheitert das Speichern, kündigt keine Meldung einen Termin an, den es nicht gibt
+    transaction.on_commit(senden, robust=True)
     return termin
 
 
@@ -352,23 +359,34 @@ def vorschlag_ergaenzen(umfrage: Terminumfrage, post: Any, membership: Any) -> s
 
 
 def _benachrichtigen(umfrage: Terminumfrage, gefragte: list[Any], fragend: Any, *, text: str = "") -> None:
+    """
+    Die Gefragten benachrichtigen (wer fragt, bekommt nichts). Der Versand läuft erst nach dem Commit
+    (``transaction.on_commit``): Scheitert das Speichern, geht keine Meldung und keine E-Mail zu etwas hinaus, das
+    es nicht gibt.
+    """
     from apps.work.notifications.models import NotificationType
     from apps.work.notifications.services import NotificationHub
 
     link = reverse("work:terminumfrage", kwargs={"org_slug": umfrage.organization.slug, "umfrage_id": umfrage.pk})
     frist = f" Bitte antworten Sie bis {umfrage.antwort_bis.strftime('%d.%m.%Y')}." if umfrage.antwort_bis else ""
-    for mitglied in gefragte:
-        if mitglied.pk == getattr(fragend, "pk", None):
-            continue
-        NotificationHub.send(
-            recipient=mitglied,
-            notification_type=NotificationType.TERMIN_UMFRAGE,
-            title="Terminumfrage",
-            message=text or f"Wann passt es Ihnen? „{umfrage.title}“ steht zur Abstimmung.{frist}",
-            link=link,
-            actor=fragend,
-            metadata={"umfrage_id": str(umfrage.pk)},
-        )
+    nachricht = text or f"Wann passt es Ihnen? „{umfrage.title}“ steht zur Abstimmung.{frist}"
+    metadata = {"umfrage_id": str(umfrage.pk)}
+
+    def senden() -> None:
+        for mitglied in gefragte:
+            if mitglied.pk == getattr(fragend, "pk", None):
+                continue
+            NotificationHub.send(
+                recipient=mitglied,
+                notification_type=NotificationType.TERMIN_UMFRAGE,
+                title="Terminumfrage",
+                message=nachricht,
+                link=link,
+                actor=fragend,
+                metadata=metadata,
+            )
+
+    transaction.on_commit(senden, robust=True)
 
 
 class UmfrageForm(forms.Form):
