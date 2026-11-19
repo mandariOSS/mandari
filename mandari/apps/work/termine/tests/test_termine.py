@@ -19,6 +19,7 @@ from apps.work.faction.feeds import build_personal_feed
 from apps.work.faction.models import FactionMeeting, FactionMeetingType
 from apps.work.notifications.models import Notification, NotificationType
 from apps.work.organization.export_service import dsgvo_export_service
+from apps.work.organization.models import MemberAbsence
 from apps.work.termine import termine
 from apps.work.termine.models import Termin, TerminTeilnahme
 
@@ -160,10 +161,9 @@ def test_sichtbarkeit_und_rechte(org: Any, vera: Any, karim: Any, make_member: A
     assert leitung.post(_url("termin_loeschen", org, termin_id=privat.pk)).status_code == 404
 
 
-def test_einladen_benachrichtigen_und_antworten(
-    org: Any, vera: Any, karim: Any, make_member: Any, client_for: Any
-) -> None:
-    lea = make_member(org, LESEN, first_name="Lea", last_name="Lorenz")
+def test_einladen_benachrichtigen_und_antworten(org: Any, karim: Any, make_member: Any, client_for: Any) -> None:
+    vera = make_member(org, [*ANLEGEN, "faction.view_public"], first_name="Vera", last_name="Beispiel")
+    lea = make_member(org, [*LESEN, "faction.view_public"], first_name="Lea", last_name="Lorenz")
     sitzung = FactionMeeting.objects.create(
         organization=org, title="Fraktionssitzung", start=timezone.now() + timedelta(days=2), created_by=vera
     )
@@ -189,7 +189,11 @@ def test_einladen_benachrichtigen_und_antworten(
     gast = client_for(karim.user)
     seite = gast.get(_url("termin", org, termin_id=termin.pk)).content.decode()
     assert 'data-testid="termin-antwort"' in seite and "Noch keine Antwort" in seite and "Lea Lorenz" in seite
-    assert reverse("work:faction_detail", kwargs={"org_slug": org.slug, "meeting_id": sitzung.pk}) in seite
+    # Die verknüpfte Sitzung nennt die Seite nur, wer interne Sitzungen sehen darf (Lea ja, Karim nein)
+    zur_sitzung = reverse("work:faction_detail", kwargs={"org_slug": org.slug, "meeting_id": sitzung.pk})
+    angaben = seite[seite.index('data-testid="termin-angaben"') : seite.index('data-testid="termin-teilnahmen"')]
+    assert zur_sitzung not in seite and "Fraktionssitzung" not in angaben
+    assert zur_sitzung in client_for(lea.user).get(_url("termin", org, termin_id=termin.pk)).content.decode()
     gast.post(_url("termin_antwort", org, termin_id=termin.pk), {"antwort": "zugesagt"})
     teilnahme = TerminTeilnahme.objects.get(termin=termin, membership=karim)
     assert teilnahme.status == "zugesagt" and teilnahme.geantwortet_am is not None
@@ -206,6 +210,91 @@ def test_einladen_benachrichtigen_und_antworten(
     assert list(termin.teilnahmen.values_list("membership_id", "status")) == [(karim.pk, "zugesagt")]
     assert einladungen.count() == 2
     assert not termine.sichtbare(lea).exists()
+
+
+def test_verwaltung_aendert_ohne_zuordnungen_zu_verlieren(
+    org: Any, karim: Any, make_member: Any, client_for: Any
+) -> None:
+    """Wer alle Termine verwaltet, ändert einen fremden Termin, ohne Sitzungsart, Sitzung oder Einladungen zu lösen."""
+    vera = make_member(org, [*ANLEGEN, "faction.view_public"], first_name="Vera", last_name="Beispiel")
+    leitung = make_member(org, [*LESEN, "calendar.manage"], first_name="Lena", last_name="Leitung")
+    arbeitskreis = FactionMeetingType.objects.create(
+        organization=org, name="AK Bauen", participants_mode="persons", visibility="participants"
+    )
+    arbeitskreis.participants.add(vera)
+    # Eine Sitzung des Arbeitskreises vor sechs Wochen: außerhalb der Auswahl für neue Verknüpfungen
+    alt = FactionMeeting.objects.create(
+        organization=org,
+        title="Vertrauliche Runde",
+        start=timezone.now() - timedelta(days=42),
+        meeting_type=arbeitskreis,
+        created_by=vera,
+    )
+    form = termine.TerminForm(
+        _formular(
+            title="Nachbereitung",
+            visibility=Termin.ART,
+            meeting_type=str(arbeitskreis.pk),
+            eingeladene=[str(karim.pk), str(leitung.pk)],
+        ),
+        membership=vera,
+    )
+    assert form.is_valid(), form.errors
+    termin = form.speichern(termine.neu(org, vera))
+    Termin.objects.filter(pk=termin.pk).update(faction_meeting=alt)
+    adresse = _url("termin", org, termin_id=termin.pk)
+
+    # Vera ändert den Titel: Die alte Sitzung steht weiter zur Wahl und bleibt verknüpft
+    seite = client_for(vera.user).get(adresse).content.decode()
+    assert f'value="{alt.pk}" selected' in seite
+    eingaben = {"visibility": Termin.ART, "meeting_type": str(arbeitskreis.pk), "faction_meeting": str(alt.pk)}
+    eingeladen = [str(karim.pk), str(leitung.pk)]
+    client_for(vera.user).post(adresse, _formular(title="Nachbereitung I", eingeladene=eingeladen, **eingaben))
+    assert Termin.objects.get(pk=termin.pk).faction_meeting == alt
+
+    # Die Leitung gehört nicht zum Arbeitskreis und sieht dessen Sitzung nicht: Sie bekommt die Sitzungsart
+    # trotzdem angeboten, die Sitzung nicht, und ihre eigene Einladung steht in der Liste
+    client = client_for(leitung.user)
+    seite = client.get(adresse).content.decode()
+    assert f'value="{arbeitskreis.pk}" selected' in seite and "Vertrauliche Runde" not in seite
+    assert f'id="termin-eingeladen-{leitung.pk}"' in seite
+    eingaben.pop("faction_meeting")
+    antwort = client.post(adresse, _formular(title="Nachbereitung II", eingeladene=eingeladen, **eingaben))
+    assert antwort.status_code == 302, antwort.content.decode()[:2000]
+    termin = Termin.objects.get(pk=termin.pk)
+    assert (termin.title, termin.meeting_type, termin.faction_meeting) == ("Nachbereitung II", arbeitskreis, alt)
+    assert set(termin.teilnahmen.values_list("membership_id", flat=True)) == {karim.pk, leitung.pk}
+
+
+def test_vertretung_bekommt_nur_sichtbare_termine(org: Any, vera: Any, karim: Any, make_member: Any) -> None:
+    """Ist die eingeladene Person abwesend, geht die Einladung nur an eine Vertretung, die den Termin sehen darf."""
+    lea = make_member(org, LESEN, first_name="Lea", last_name="Lorenz")
+    heute = timezone.localdate()
+    MemberAbsence.objects.create(
+        organization=org,
+        membership=karim,
+        deputy=lea,
+        start_date=heute - timedelta(days=1),
+        end_date=heute + timedelta(days=7),
+        notify_deputy=True,
+    )
+
+    def einladen(titel: str, sichtbar: str) -> None:
+        form = termine.TerminForm(
+            _formular(title=titel, visibility=sichtbar, eingeladene=[str(karim.pk)]), membership=vera
+        )
+        assert form.is_valid(), form.errors
+        form.speichern(termine.neu(org, vera))
+
+    einladen("Vertrauliches Vorgespräch", Termin.PRIVAT)
+    einladen("Ortstermin für alle", Termin.ALLE)
+    an_vertretung = Notification.objects.filter(recipient=lea, notification_type=NotificationType.TERMIN_EINLADUNG)
+    assert [("Ortstermin" in meldung.message, "Vertraulich" in meldung.message) for meldung in an_vertretung] == [
+        (True, False)
+    ]
+    assert (
+        Notification.objects.filter(recipient=karim, notification_type=NotificationType.TERMIN_EINLADUNG).count() == 2
+    )
 
 
 def test_wege_zum_termin(org: Any, vera: Any, karim: Any, client_for: Any) -> None:

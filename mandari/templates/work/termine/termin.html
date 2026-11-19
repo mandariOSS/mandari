@@ -4,7 +4,8 @@ Eigener Termin im Kalender (Issue #1489): eine Seite zum Anlegen, Ansehen und Ä
 Formular (Felder c-form.* dicht, ohne Kästen), alle anderen dieselben Angaben zum Lesen (c-ui.angaben). Eingeladene
 antworten oben mit Zusage, „vielleicht“ oder Absage; darunter steht, wer eingeladen ist und was geantwortet hat.
 Kontext: TerminNeuView bzw. TerminView (apps/work/termine/views.py): form (TerminForm mit werte und gewaehlt),
-darf_aendern, dazu bei einem bestehenden Termin termin, zeit, beschreibung, teilnahmen, meine_teilnahme.
+darf_aendern, dazu bei einem bestehenden Termin termin, zeit, beschreibung, teilnahmen, meine_teilnahme und sitzung
+(die verknüpfte interne Sitzung, nur wenn die Person sie sehen darf).
 {% endcomment %}
 
 {% block page_title %}{% if termin %}{{ termin.title }}{% else %}Neuer Termin{% endif %}{% endblock %}
@@ -107,7 +108,7 @@ darf_aendern, dazu bei einem bestehenden Termin termin, zeit, beschreibung, teil
         <dt>Wann</dt><dd>{{ zeit }}</dd>
         {% if termin.location %}<dt>Ort</dt><dd>{{ termin.location }}</dd>{% endif %}
         {% if termin.video_url %}<dt>Videokonferenz</dt><dd><c-ui.textlink href="{{ termin.video_url }}" extern>{{ termin.video_url }}</c-ui.textlink></dd>{% endif %}
-        {% if termin.faction_meeting %}<dt>Sitzung</dt><dd><c-ui.textlink href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=termin.faction_meeting_id %}">{{ termin.faction_meeting.title }}</c-ui.textlink></dd>{% endif %}
+        {% if sitzung %}<dt>Sitzung</dt><dd><c-ui.textlink href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=sitzung.id %}">{{ sitzung.title }}</c-ui.textlink></dd>{% endif %}
         {% if beschreibung %}<dt>Beschreibung</dt><dd class="whitespace-pre-line">{{ beschreibung }}</dd>{% endif %}
         <dt>Sichtbar für</dt><dd>{{ termin.get_visibility_display }}{% if termin.meeting_type %}: {{ termin.meeting_type.name }}{% endif %}</dd>
         {% if termin.created_by %}<dt>Angelegt von</dt><dd>{{ termin.created_by.user.get_display_name }}</dd>{% endif %}

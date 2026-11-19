@@ -91,8 +91,9 @@ class TerminView(WorkViewMixin, TemplateView):
         context["termin"] = termin
         context["darf_aendern"] = termine.darf_aendern(eigene.membership, termin)
         context["form"] = kwargs.get("form") or termine.TerminForm(
-            membership=eigene.membership, initial=termine.anfangswerte(termin)
+            membership=eigene.membership, termin=termin, initial=termine.anfangswerte(termin)
         )
+        context["sitzung"] = termine.sitzung_fuer(termin, eigene.membership)
         context["beschreibung"] = context["form"].initial.get("description", "")
         context["zeit"] = termine.zeitangabe(termin)
         context["teilnahmen"] = termine.teilnahmen(termin)
@@ -104,7 +105,9 @@ class TerminView(WorkViewMixin, TemplateView):
         termin = self._termin()
         if not termine.darf_aendern(ansicht.membership, termin):
             raise PermissionDenied("Keine Berechtigung, diesen Termin zu ändern.")
-        form = termine.TerminForm(request.POST, membership=ansicht.membership, initial=termine.anfangswerte(termin))
+        form = termine.TerminForm(
+            request.POST, membership=ansicht.membership, termin=termin, initial=termine.anfangswerte(termin)
+        )
         if not form.is_valid():
             return self.render_to_response(self.get_context_data(form=form, termin=termin, **kwargs), status=422)
         form.speichern(termin)

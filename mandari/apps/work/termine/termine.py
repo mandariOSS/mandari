@@ -98,6 +98,8 @@ def sitzungen_zur_auswahl(membership: Any) -> QuerySet[Any]:
     from apps.work.faction.models import FactionMeeting
     from apps.work.faction.sitzungsarten import sichtbar_fuer
 
+    if not membership.has_permission("faction.view_public"):
+        return FactionMeeting.objects.none()
     jetzt = timezone.now()
     return sichtbar_fuer(
         membership,
@@ -107,6 +109,19 @@ def sitzungen_zur_auswahl(membership: Any) -> QuerySet[Any]:
             start__lte=jetzt + SITZUNGEN_VORAUS,
         ),
     ).order_by("start")
+
+
+def sitzung_fuer(termin: Termin, membership: Any) -> Any | None:
+    """
+    Die verknüpfte interne Sitzung, wenn das Mitglied sie sehen darf, sonst ``None``: Wer den Termin sieht, aber
+    nicht die Sitzung (etwa die eines Arbeitskreises), erfährt weder ihren Titel noch bekommt er den Link.
+    """
+    from apps.work.faction.sitzungsarten import darf_sehen
+
+    sitzung = termin.faction_meeting
+    if sitzung is None or membership is None or not membership.has_permission("faction.view_public"):
+        return None
+    return sitzung if darf_sehen(membership, sitzung) else None
 
 
 def teilnahmen(termin: Termin) -> list[TerminTeilnahme]:
@@ -186,17 +201,32 @@ class TerminForm(forms.Form):
     visibility = forms.ChoiceField(choices=Termin.SICHTBARKEIT, label="Wer sieht den Termin?")
     meeting_type: Any = forms.ModelChoiceField(queryset=None, label="Sitzungsart", required=False)
 
-    def __init__(self, *args: Any, membership: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, membership: Any, termin: Termin | None = None, **kwargs: Any) -> None:
+        from apps.work.faction.models import FactionMeeting, FactionMeetingType
         from apps.work.faction.sitzungsarten import arten_mit_teilnahme
 
         super().__init__(*args, **kwargs)
         self.membership = membership
+        bestehend = termin if termin is not None and not termin._state.adding else None
         felder: Any = self.fields
         # Nur Arten, zu denen die Person selbst gehört: Sie soll ihren eigenen Termin danach noch sehen
-        arten = arten_mit_teilnahme(membership).filter(is_active=True).order_by("position", "name")
+        eigene_arten = arten_mit_teilnahme(membership).filter(is_active=True).values("pk")
+        sitzungen = sitzungen_zur_auswahl(membership).values("pk")
+        # Was am Termin schon steht, bleibt wählbar: die Sitzungsart auch für jemanden, der alle Termine verwaltet
+        # und ihr nicht angehört, die Sitzung auch außerhalb des Zeitfensters für neue Verknüpfungen
+        art_id = bestehend.meeting_type_id if bestehend else None
+        sitzung_id = bestehend.faction_meeting_id if bestehend and sitzung_fuer(bestehend, membership) else None
+        #: Sitzung am Termin, die die bearbeitende Person nicht sehen darf: Sie steht nicht zur Wahl und bleibt stehen
+        self.sitzung_verborgen = bool(bestehend and bestehend.faction_meeting_id and sitzung_id is None)
+        arten = FactionMeetingType.objects.filter(Q(pk__in=eigene_arten) | Q(pk=art_id)).order_by("position", "name")
         felder["meeting_type"].queryset = arten
-        felder["faction_meeting"].queryset = sitzungen_zur_auswahl(membership)
-        felder["eingeladene"].queryset = mitglieder(membership.organization_id).exclude(pk=membership.pk)
+        felder["faction_meeting"].queryset = FactionMeeting.objects.filter(
+            Q(pk__in=sitzungen) | Q(pk=sitzung_id)
+        ).order_by("start")
+        # Wer den Termin angelegt hat, steht nicht auf der Liste. Bearbeitet ihn jemand anderes (alle Termine
+        # verwalten), bleibt dessen eigene Einladung wählbar und damit erhalten.
+        angelegt_von = bestehend.created_by_id if bestehend and bestehend.created_by_id else membership.pk
+        felder["eingeladene"].queryset = mitglieder(membership.organization_id).exclude(pk=angelegt_von)
         self.arten = list(arten)
 
     def _roh(self, name: str) -> Any:
@@ -269,7 +299,8 @@ class TerminForm(forms.Form):
         termin.all_day = bool(daten.get("all_day"))
         termin.location = daten.get("location", "").strip()
         termin.video_url = daten.get("video_url") or ""
-        termin.faction_meeting = daten.get("faction_meeting")
+        if not self.sitzung_verborgen:
+            termin.faction_meeting = daten.get("faction_meeting")
         termin.visibility = daten["visibility"]
         termin.meeting_type = daten.get("meeting_type")
         ablage: Any = termin  # Verschlüsselungsmethoden ohne Typangaben
