@@ -358,8 +358,8 @@ def test_mitglied_sieht_die_einstellungen_nur_zur_information(
         "Work speichert Änderungen sofort.",
     ):
         assert kein not in seite, kein
-    # Reiter „Fraktionssitzungen“ für Mitglieder mit Einstellungszugang sichtbar
-    assert ">Fraktionssitzungen<" in seite
+    # Reiter „Interne Sitzungen“ für Mitglieder mit Einstellungszugang sichtbar
+    assert ">Interne Sitzungen<" in seite
 
 
 def test_mitglied_bisherige_vorlage_bleibt_gesperrt(org: Any, mitglied: Any, client_for: Any) -> None:

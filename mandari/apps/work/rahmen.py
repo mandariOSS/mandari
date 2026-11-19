@@ -8,7 +8,7 @@ Vorlage. Der Kontextprozessor ``rahmen_kontext`` gibt den Wert als ``work_neues_
 ``work/base_work.html`` erweitert damit entweder den neuen (``work/base_work_neu.html``) oder den bisherigen Rahmen
 (``work/base_work_alt.html``). Der bisherige Rahmen bleibt unverändert, bis Sven den neuen freigibt.
 
-Navigation des neuen Rahmens: kompakte Seitenleiste mit Start, Sitzungen, Fraktionssitzungen, Dokumente, Aufgaben,
+Navigation des neuen Rahmens: kompakte Seitenleiste mit Start, Sitzungen, Interne Sitzungen, Dokumente, Aufgaben,
 Team und Recherche, darunter Einstellungen, Hilfe und die Person (Entscheidung im Issue vom 06.10.2026: kompakt, aber
 „Fraktionssitzungen“ als eigener Eintrag, im Kern die bisherige Gliederung). Welcher Bereich aktiv ist, folgt aus dem
 Namen der aufgerufenen Adresse; die rund 70 Seiten brauchen dafür keine eigene Angabe. Sitzungen und Recherche haben
@@ -99,7 +99,7 @@ class Ziel:
 BEREICHE: tuple[Ziel, ...] = (
     Ziel("start", "Start", "work:dashboard", "house"),
     Ziel("sitzungen", "Sitzungen", "work:meetings", "calendar-days"),
-    Ziel("fraktionssitzungen", "Fraktionssitzungen", "work:faction", "users", kurz="Fraktion"),
+    Ziel("fraktionssitzungen", "Interne Sitzungen", "work:faction", "users", kurz="Intern"),
     Ziel("dokumente", "Dokumente", "work:documents", "file-text"),
     Ziel("aufgaben", "Aufgaben", "work:tasks", "square-check"),
     Ziel("team", "Team", "work:team", "contact"),

@@ -11,8 +11,8 @@ c-liste.seiten (behält alle Filter). Die bisherige Seite bleibt work/faction/au
 {% block gestaltung %}neu{% endblock %}
 
 {% block work_header %}
-<c-rahmen.kopfband titel="Änderungshistorie" dicht text="Wer hat wann was an den Fraktionssitzungen geändert{% if page_obj.paginator.count %}: {{ page_obj.paginator.count }} Eintr{{ page_obj.paginator.count|pluralize:'ag,äge' }}{% if selected_model or selected_action or selected_object or selected_meeting %} für Ihre Auswahl{% endif %}, neueste zuerst{% endif %}. Einträge lassen sich nicht ändern oder löschen.">
-    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:faction' org_slug=organization.slug %}">Fraktionssitzungen</c-insight.zurueck></c-slot>
+<c-rahmen.kopfband titel="Änderungshistorie" dicht text="Wer hat wann was an den internen Sitzungen geändert{% if page_obj.paginator.count %}: {{ page_obj.paginator.count }} Eintr{{ page_obj.paginator.count|pluralize:'ag,äge' }}{% if selected_model or selected_action or selected_object or selected_meeting %} für Ihre Auswahl{% endif %}, neueste zuerst{% endif %}. Einträge lassen sich nicht ändern oder löschen.">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:faction' org_slug=organization.slug %}">Interne Sitzungen</c-insight.zurueck></c-slot>
 </c-rahmen.kopfband>
 {% endblock %}
 

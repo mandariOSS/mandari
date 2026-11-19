@@ -1,8 +1,8 @@
 {% extends "work/base_work.html" %}
 {% load permission_tags %}
 {% comment %}
-Fraktionssitzungen nach dem Muster (Issue #1071, Schritt 1; davor #951): Kopfband mit dem Satz zur nächsten Sitzung und
-der einen Hauptaktion „Fraktionssitzung planen“ (faction.create). Darunter Hauptspalte und Nebenspalte (c-work.neben).
+Interne Sitzungen (Fraktionssitzungen, Arbeitskreise und weitere Sitzungsarten) nach dem Muster (Issue #1071, Schritt 1; davor #951): Kopfband mit dem Satz zur nächsten Sitzung und
+der einen Hauptaktion „Sitzung planen“ (faction.create). Darunter Hauptspalte und Nebenspalte (c-work.neben).
 Hauptspalte: Suche q, Status (data-autosubmit) und Zeitraum time=… wie bisher, Liste mit Datum, Titel und Ort, Stand mit
 Punkt und Erläuterung (apps/work/faction/liste.py), ab 1600 px TOPs und Teilnahme; ohne Filter unter den kommenden die
 letzten drei vergangenen mit „Ältere Sitzungen anzeigen“. Seitenwahl c-liste.seiten. Nebenspalte (_neben.html):
@@ -10,13 +10,13 @@ Sitzungsreihe mit Pausen und Ausfallregeln, was Work automatisch tut, Weiteres. 
 bisher (Ereignis open-create-modal). Die bisherige Seite bleibt work/faction/list.html.
 {% endcomment %}
 
-{% block page_title %}Fraktionssitzungen{% endblock %}
+{% block page_title %}Interne Sitzungen{% endblock %}
 {% block gestaltung %}neu{% endblock %}
 
 {% block work_header %}
-<c-rahmen.kopfband titel="Fraktionssitzungen" dicht text="{{ kopf_satz }}" data-testid="fraktion-stand">
+<c-rahmen.kopfband titel="Interne Sitzungen" dicht text="{{ kopf_satz }}" data-testid="fraktion-stand">
     {% if membership|has_perm:"faction.create" %}
-    <c-slot name="aktionen"><c-ui.button icon="plus" size="sm" @click="$dispatch('open-create-modal')">Fraktionssitzung planen</c-ui.button></c-slot>
+    <c-slot name="aktionen"><c-ui.button icon="plus" size="sm" @click="$dispatch('open-create-modal')">Sitzung planen</c-ui.button></c-slot>
     {% endif %}
 </c-rahmen.kopfband>
 {% endblock %}
@@ -24,7 +24,7 @@ bisher (Ereignis open-create-modal). Die bisherige Seite bleibt work/faction/lis
 {% block work_content %}
 <div class="fs-seite wf" x-data="{ showCreateModal: false }" @open-create-modal.window="showCreateModal = true">
 <div class="fs-liste-flaeche">
-    <section class="fs-liste-haupt" aria-label="Fraktionssitzungen">
+    <section class="fs-liste-haupt" aria-label="Interne Sitzungen">
         <div class="fs-liste-filter">
             <form method="get" role="search" aria-label="Sitzungen filtern">
                 <input type="hidden" name="time" value="{{ selected_time }}">

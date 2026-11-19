@@ -27,7 +27,7 @@ from apps.tenants.models import Organization
 from apps.work import rahmen
 
 ALT_RAHMEN = ("base_work_alt_leiste.html", "base_work_alt_kopf.html")
-SIEBEN = ["Start", "Sitzungen", "Fraktionssitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"]
+SIEBEN = ["Start", "Sitzungen", "Interne Sitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"]
 RECHERCHE_UNTERPUNKTE = {
     "ris_papers": "Vorgänge",
     "ris_decisions": "Beschlüsse",
@@ -207,7 +207,7 @@ def test_fraktionssitzungen_sind_eigener_bereich(neu: Organization, admin: Any, 
     # Kein Reiter „Fraktion“ mehr unter Sitzungen, die Liste steht für sich
     assert '<nav aria-label="Sitzungen"' not in html and ">Für mich</a>" not in html
     krumen = _teil(html, 'aria-label="Brotkrumen"', "</nav>")
-    assert re.search(r'aria-current="page"[^>]*>Fraktionssitzungen<', krumen)
+    assert re.search(r'aria-current="page"[^>]*>Interne Sitzungen<', krumen)
     assert f'href="{_url("meetings", neu)}"' not in krumen
 
 
@@ -307,7 +307,7 @@ def test_leiste_unten_start_sitzungen_fraktion_recherche_mehr(neu: Organization,
     assert re.findall(r'<span class="max-w-full truncate">([^<]+)</span>', leiste_unten) == [
         "Start",
         "Sitzungen",
-        "Fraktion",
+        "Intern",
         "Recherche",
     ]
     assert "<span>Mehr</span>" in leiste_unten

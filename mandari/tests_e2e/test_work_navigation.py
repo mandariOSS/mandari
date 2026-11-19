@@ -49,7 +49,7 @@ class TestNavigation:
         leiste = page.locator("#work-navigation")
         knopf = leiste.locator("button[aria-controls=leiste-recherche]")
         unterpunkte = page.locator("#leiste-recherche")
-        expect(leiste.get_by_role("link", name="Fraktionssitzungen", exact=True)).to_be_visible()
+        expect(leiste.get_by_role("link", name="Interne Sitzungen", exact=True)).to_be_visible()
         expect(knopf).to_have_attribute("aria-expanded", "false")
         expect(unterpunkte).to_be_hidden()
 
@@ -68,7 +68,7 @@ class TestNavigation:
         # Aufgeklappt bleibt aufgeklappt, auch in anderen Bereichen
         goto(f"/work/{slug}/faction/")
         expect(unterpunkte).to_be_visible()
-        expect(leiste.get_by_role("link", name="Fraktionssitzungen", exact=True)).to_have_attribute(
+        expect(leiste.get_by_role("link", name="Interne Sitzungen", exact=True)).to_have_attribute(
             "aria-current", "page"
         )
         knopf.focus()

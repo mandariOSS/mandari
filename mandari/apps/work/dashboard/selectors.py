@@ -240,7 +240,7 @@ def satz_und_hauptaktion(
         }
     fraktion = next((s for s in sitzungen if s["type"] == "faction"), None)
     if fraktion is not None:
-        teile.append(f"Die nächste Fraktionssitzung ist am {kurzdatum(fraktion['start'])}")
+        teile.append(f"Die nächste interne Sitzung ist am {kurzdatum(fraktion['start'])}")
     if not teile:
         teile.append("In den nächsten Wochen stehen keine Sitzungen an.")
     return " ".join(teile), aktion

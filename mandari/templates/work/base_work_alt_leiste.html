@@ -78,9 +78,9 @@
 
         <a href="{% url 'work:faction' org_slug=organization.slug %}"
            class="work-nav-item {% if active_nav == 'faction' %}active{% endif %}" {% if active_nav == 'faction' %}aria-current="page"{% endif %}
-           :title="sidebarCollapsed ? 'Fraktionssitzungen' : ''">
+           :title="sidebarCollapsed ? 'Interne Sitzungen' : ''">
             <i data-lucide="users"></i>
-            <span class="nav-label">Fraktionssitzungen</span>
+            <span class="nav-label">Interne Sitzungen</span>
         </a>
 
         <a href="{% url 'work:tasks' org_slug=organization.slug %}"
