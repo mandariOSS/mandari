@@ -8,7 +8,7 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 import logging
 import os
 from collections import Counter
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -137,6 +137,9 @@ _unresolved_references: ContextVar[Counter[str] | None] = ContextVar("ingestor_u
 #: Arten nicht auflösbarer Verweise im Sync-Log (``unresolved``)
 UNRESOLVED_MEETING_ORGANIZATION: Final = "meeting.organization"
 UNRESOLVED_MEMBERSHIP_PERSON: Final = "membership.person"
+#: Gremienname aus dem öffentlichen Kalender im Rohdatensatz einer Sitzung (``src/sync/gremien_kalender.SCHLUESSEL``);
+#: ``upsert_meeting`` behält ihn, wenn der Abgleich die Sitzung neu schreibt
+KALENDER_ANGABE: Final = "mandari:gremiumWeb"
 UNRESOLVED_MEMBERSHIP_ORGANIZATION: Final = "membership.organization"
 
 
@@ -1206,6 +1209,66 @@ class DatabaseStorage:
                 stored[row[0]] = {key: value for key, value in values.items() if value is not None}
             return stored
 
+    async def get_meetings_ohne_gremium(
+        self, body_ids: Sequence[UUID], von: datetime, bis: datetime, erneut_ab: datetime, schluessel: str
+    ) -> list[tuple[UUID, str, datetime, datetime, datetime | None]]:
+        """
+        Sitzungen der Kommunen im Zeitraum, die ein Gremium nennen, dem keines im Bestand zugeordnet ist (die Quelle
+        gibt es nicht heraus, Issue #1441), und die unter ``schluessel`` weder einen Namen noch eine Prüfung nach
+        ``erneut_ab`` haben (``src/sync/gremien_kalender.py``). Mit Änderungszeit als Stand für das Schreiben und dem
+        Zeitpunkt der letzten Prüfung (sonst ``None``).
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                text(
+                    "SELECT m.id, m.external_id, m.start, m.updated_at, "
+                    "CAST(m.raw_json -> CAST(:schluessel AS text) ->> 'geprueft' AS timestamptz) "
+                    "FROM oparl_meetings m "
+                    "WHERE m.body_id = ANY(CAST(:bodies AS uuid[])) AND m.deleted = false "
+                    "AND m.start BETWEEN :von AND :bis "
+                    "AND jsonb_typeof(m.raw_json->'organization') = 'array' "
+                    "AND jsonb_array_length(m.raw_json->'organization') > 0 "
+                    "AND NOT COALESCE("
+                    "COALESCE(m.raw_json -> CAST(:schluessel AS text) ->> 'name', '') <> '' "
+                    "OR CAST(m.raw_json -> CAST(:schluessel AS text) ->> 'geprueft' AS timestamptz) > :erneut_ab, "
+                    "false) "
+                    "AND NOT EXISTS (SELECT 1 FROM oparl_meetings_organizations mo WHERE mo.oparlmeeting_id = m.id) "
+                    "ORDER BY m.start"
+                ),
+                {"bodies": list(body_ids), "von": von, "bis": bis, "erneut_ab": erneut_ab, "schluessel": schluessel},
+            )
+            return [(row[0], row[1], row[2], row[3], row[4]) for row in result.all()]
+
+    async def set_meeting_raw_extension(
+        self, meeting_id: UUID, schluessel: str, wert: Mapping[str, Any], *, stand: datetime | None
+    ) -> bool:
+        """
+        Eine Erweiterung in den Rohdatensatz einer Sitzung schreiben, ohne die übrigen Angaben zu ändern; nur, wenn die
+        Sitzung noch den gelesenen Stand (``updated_at``) hat und weiterhin kein Gremium zugeordnet ist. Der Stand
+        rückt dabei vor, damit ein zweiter Schreibversuch mit demselben Stand (paralleler Lauf) nichts überschreibt.
+        """
+        import json
+
+        async with self.get_session() as session:
+            result = await session.execute(
+                text(
+                    "UPDATE oparl_meetings SET raw_json = COALESCE(raw_json, '{}'::jsonb) "
+                    "|| jsonb_build_object(CAST(:schluessel AS text), CAST(:wert AS jsonb)), "
+                    "updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') "
+                    "WHERE id = :id AND updated_at IS NOT DISTINCT FROM CAST(:stand AS timestamptz) "
+                    "AND NOT EXISTS (SELECT 1 FROM oparl_meetings_organizations mo "
+                    "WHERE mo.oparlmeeting_id = oparl_meetings.id)"
+                ),
+                {
+                    "id": meeting_id,
+                    "schluessel": schluessel,
+                    "wert": json.dumps(dict(wert), ensure_ascii=False),
+                    "stand": stand,
+                },
+            )
+            await session.commit()
+            return bool(getattr(result, "rowcount", 0))
+
     async def get_active_external_ids_for_body(
         self,
         entity_type: str,
@@ -1813,7 +1876,12 @@ class DatabaseStorage:
                 "location_address": stmt.excluded.location_address,
                 **{name: getattr(stmt.excluded, name) for name in MEETING_COLUMNS},
                 "oparl_created": stmt.excluded.oparl_created,
-                "raw_json": stmt.excluded.raw_json,
+                # Der Name aus dem öffentlichen Kalender (Issue #1505) übersteht den Abgleich, auch den vollen
+                "raw_json": stmt.excluded.raw_json.op("||")(
+                    func.jsonb_strip_nulls(
+                        func.jsonb_build_object(KALENDER_ANGABE, OParlMeeting.raw_json[KALENDER_ANGABE])
+                    )
+                ),
                 # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
                 **_tombstone_update(OParlMeeting, stmt),
                 "updated_at": func.now(),

@@ -956,10 +956,20 @@ class OParlMeeting(SourceDeletionModel):
         if self.name and self.name.lower() != "sitzung":
             return self.name
         # Die Quelle nennt ein Gremium, das im Bestand fehlt: Sie gibt es nicht öffentlich aus (Issue #1441). Das ist
-        # etwas anderes als eine Sitzung ohne Gremium, und „Sitzung“ allein sähe wie ein Gremienname aus.
+        # etwas anderes als eine Sitzung ohne Gremium, und „Sitzung“ allein sähe wie ein Gremienname aus. Steht der
+        # Name im öffentlichen Kalender der Kommune, hat ihn der Abruf dort gelesen (``gremium_aus_kalender``).
         if org_urls and not im_bestand:
-            return GREMIUM_NICHT_VEROEFFENTLICHT
+            return self.gremium_aus_kalender() or GREMIUM_NICHT_VEROEFFENTLICHT
         return "Sitzung"
+
+    def gremium_aus_kalender(self) -> str:
+        """
+        Name eines Gremiums, das die OParl-Schnittstelle nicht herausgibt, aus dem öffentlichen Sitzungskalender der
+        Kommune (Abruf ``ingestor/src/sync/gremien_kalender.py``, Erweiterung ``mandari:gremiumWeb``); sonst leer.
+        """
+        web = (self.raw_json or {}).get("mandari:gremiumWeb")
+        name = web.get("name") if isinstance(web, dict) else None
+        return name.strip() if isinstance(name, str) else ""
 
     def get_organization_names(self):
         """Gibt die Namen der beteiligten Gremien zurück."""
