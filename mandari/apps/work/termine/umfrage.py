@@ -324,12 +324,16 @@ def _zeitpunkt(tag: str, beginn: str, ende: str) -> tuple[datetime, datetime | N
     return start, schluss
 
 
+@transaction.atomic
 def vorschlag_ergaenzen(umfrage: Terminumfrage, post: Any, membership: Any) -> str:
     """
     Einen weiteren Zeitpunkt in eine offene Umfrage aufnehmen (``tag``, ``beginn``, ``ende``) und die Gefragten
     benachrichtigen, damit sie ihre Antwort ergänzen. Gibt den Satz für die Seite zurück, wenn es nicht geht
     (abgeschlossen, unvollständig, schon vorhanden, zu viele Vorschläge), sonst einen leeren Text.
     """
+    # Zeile sperren und neu lesen wie beim Festlegen: kein Vorschlag an eine eben abgeschlossene Umfrage, und zwei
+    # gleichzeitige Ergänzungen kommen nicht beide an der Höchstzahl vorbei
+    umfrage = Terminumfrage.objects.select_for_update().get(pk=umfrage.pk)
     if umfrage.abgeschlossen_am is not None:
         return "Die Umfrage ist abgeschlossen."
     try:
