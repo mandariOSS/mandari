@@ -49,6 +49,17 @@ export function kuerzelErlaubt(event: KeyboardEvent): boolean {
   )
 }
 
+/**
+ * Liegt gerade etwas über der Seite? Dialoge (auch ohne Fokus darin), der Bestätigungsdialog und die Dokumentvorschau
+ * (beide mit `data-ueberlagerung`). Dann ruhen die Kürzel, gleich welches Element den Fokus hat.
+ */
+export function ueberlagerungOffen(wurzel: ParentNode = document): boolean {
+  for (const element of wurzel.querySelectorAll<HTMLElement>('[role="dialog"], [data-ueberlagerung]')) {
+    if (element.getClientRects().length > 0) return true
+  }
+  return false
+}
+
 /** Stelle des Bereichs in der Seitenleiste zu einer Zifferntaste („1“ ist der erste), sonst null. */
 export function bereichZurTaste(taste: string, anzahl: number): number | null {
   if (!/^[1-9]$/.test(taste)) return null
@@ -102,7 +113,7 @@ export const workRahmen = defineComponent(() => ({
   kuerzel(event: KeyboardEvent) {
     // Nur wo es die Übersicht gibt (Work): Der Sitzungsdienst nutzt denselben Rahmen ohne diese Kürzel
     if (!document.getElementById('kuerzel-dialog')) return
-    if (!kuerzelErlaubt(event) || this.raumOffen || this.mehrOffen || this.kuerzelOffen) return
+    if (!kuerzelErlaubt(event) || ueberlagerungOffen()) return
     // Solange der Bereich „Neu“ offen ist, gehört die Tastatur ihm (Tab wechselt, Escape schließt)
     if (document.querySelector('[aria-controls="neu-menue"][aria-expanded="true"]')) return
     // Die Übersicht öffnet sich immer: Dort lassen sich die Kürzel wieder einschalten
