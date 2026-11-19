@@ -112,8 +112,9 @@ def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end
     from apps.work.faction.sitzungsarten import sichtbar_fuer
 
     # Auch Sitzungen, die vor dem Fenster begonnen haben und hineinreichen (über Mitternacht, mehrtägig); ohne Ende
-    # zählt der Beginn
-    im_fenster = Q(start__lte=end) & (Q(end__gte=start) | Q(end__isnull=True, start__gte=start))
+    # zählt der Beginn. Das Fenster ist halboffen: Was es nur berührt (endet genau zu seinem Beginn, beginnt genau
+    # an seinem Ende), gehört nicht hinein.
+    im_fenster = Q(start__lt=end) & (Q(end__gt=start) | Q(end__isnull=True, start__gte=start))
     sitzungen = sichtbar_fuer(
         membership, FactionMeeting.objects.filter(im_fenster, organization=organization)
     ).order_by("start")[:MAX_JE_ART]
@@ -134,7 +135,7 @@ def _termine(organization: Any, membership: Any, start: datetime, end: datetime)
     from apps.work.termine import termine as eigene
 
     # Auch Termine, die vor dem Fenster beginnen und hineinreichen (mehrtägig); ohne Ende zählt der Beginn
-    im_fenster = Q(start__lte=end) & (Q(end__gte=start) | Q(end__isnull=True, start__gte=start))
+    im_fenster = Q(start__lt=end) & (Q(end__gt=start) | Q(end__isnull=True, start__gte=start))
     return [
         _eintrag(
             "termin",
@@ -161,7 +162,7 @@ def _vorschlaege(organization: Any, membership: Any, start: datetime, end: datet
 
     offene = umfrage.sichtbare(membership).filter(abgeschlossen_am__isnull=True)
     vorschlaege = (
-        Terminvorschlag.objects.filter(umfrage__in=offene, start__gte=start, start__lte=end)
+        Terminvorschlag.objects.filter(umfrage__in=offene, start__gte=start, start__lt=end)
         .select_related("umfrage")
         .order_by("start")[:MAX_JE_ART]
     )
