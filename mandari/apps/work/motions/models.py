@@ -1663,9 +1663,9 @@ class Motion(EncryptionMixin, models.Model):
         # Fall back to legacy type
         icons = {
             "motion": "file-text",
-            "inquiry": "help-circle",
+            "inquiry": "circle-question-mark",
             "statement": "message-square",
-            "amendment": "edit",
+            "amendment": "square-pen",
         }
         return icons.get(self.motion_type, "file-text")
 
