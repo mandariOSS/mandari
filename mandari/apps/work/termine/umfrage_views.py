@@ -82,6 +82,10 @@ class UmfrageView(WorkViewMixin, TemplateView):
             gefunden, eigene.membership
         )
         context["darf_aendern"] = umfrage.darf_aendern(eigene.membership, gefunden)
+        # Der Weg zum festgelegten Termin nur für die, die ihn sehen (er gehört den Gefragten)
+        context["termin_sichtbar"] = bool(
+            gefunden.termin_id and termine.finden(eigene.membership, gefunden.termin_id) is not None
+        )
         return context
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -111,6 +115,9 @@ class UmfrageFestlegenView(WorkViewMixin, View):
             messages.error(request, "Der Vorschlag ließ sich nicht festlegen.")
             return redirect("work:terminumfrage", org_slug=ansicht.organization.slug, umfrage_id=gefunden.pk)
         messages.success(request, "Termin festgelegt. Die Gefragten sind benachrichtigt.")
+        if termine.finden(ansicht.membership, termin.pk) is None:
+            # Der Termin gehört den Gefragten: Wer die Umfrage nur verwaltet, sieht ihn nicht und bleibt auf ihrer Seite
+            return redirect("work:terminumfrage", org_slug=ansicht.organization.slug, umfrage_id=gefunden.pk)
         return redirect("work:termin", org_slug=ansicht.organization.slug, termin_id=termin.pk)
 
 

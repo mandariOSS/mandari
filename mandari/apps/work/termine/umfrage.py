@@ -121,22 +121,42 @@ def _am_selben_tag(
 
     if not vorschlaege:
         return {}
-    tage = [timezone.localtime(vorschlag.start).date() for vorschlag in vorschlaege]
+    tage = {timezone.localtime(vorschlag.start).date() for vorschlag in vorschlaege}
     von = timezone.make_aware(datetime.combine(min(tage), time.min))
     bis = timezone.make_aware(datetime.combine(max(tage) + timedelta(days=1), time.min))
     je_tag: dict[date, list[str]] = defaultdict(list)
     for eintrag in kalender.termine(umfrage.organization, membership, von, bis, "sitzung,fraktion,termin"):
-        beginn = str(eintrag.get("start") or "")
-        try:
-            wann = datetime.fromisoformat(beginn)
-        except ValueError:
+        beginn = _ortszeit(eintrag.get("start"))
+        if beginn is None:
             continue
-        if eintrag.get("allDay") or timezone.is_naive(wann):
-            je_tag[wann.date()].append(str(eintrag["title"]))
-        else:
-            lokal = timezone.localtime(wann)
-            je_tag[lokal.date()].append(f"{lokal.strftime('%H:%M')} {eintrag['title']}")
+        titel = str(eintrag["title"])
+        ende = _ortszeit(eintrag.get("end"))
+        # Letzter Tag, den der Eintrag berührt. Ein Ende um 0 Uhr gehört noch zum Vortag; das gilt auch für
+        # ganztägige Einträge, deren Ende der Folgetag ist.
+        letzter = (ende - timedelta(microseconds=1)).date() if ende is not None and ende > beginn else beginn.date()
+        erster = beginn.date()
+        for tag in sorted(tage):
+            if tag == erster:
+                je_tag[tag].append(titel if eintrag.get("allDay") else f"{beginn.strftime('%H:%M')} {titel}")
+            elif erster < tag <= letzter:
+                # Läuft über Mitternacht oder mehrere Tage: auch an den Folgetagen nennen
+                je_tag[tag].append(f"{titel} (seit {beginn.strftime('%d.%m.')})")
     return je_tag
+
+
+def _ortszeit(wert: Any) -> datetime | None:
+    """Zeitpunkt eines Kalendereintrags (ISO-Text; ganztägig nur der Tag) in der Zeit der Anwendung, ohne Zone."""
+    try:
+        wann = datetime.fromisoformat(str(wert or ""))
+    except ValueError:
+        return None
+    return timezone.localtime(wann).replace(tzinfo=None) if timezone.is_aware(wann) else wann
+
+
+def beteiligt(membership: Any, umfrage_id: Any) -> bool:
+    """Ist das Mitglied in der Umfrage gefragt oder hat es sie angelegt? Sehen allein (alle Termine verwalten) zählt nicht."""
+    eigene = Terminumfrage.objects.filter(pk=umfrage_id, organization_id=membership.organization_id)
+    return eigene.filter(Q(created_by=membership) | Q(teilnahmen__membership=membership)).exists()
 
 
 def uebersicht(umfrage: Terminumfrage, membership: Any) -> dict[str, Any]:
@@ -192,11 +212,15 @@ def uebersicht(umfrage: Terminumfrage, membership: Any) -> dict[str, Any]:
     }
 
 
+@transaction.atomic
 def antworten(umfrage: Terminumfrage, membership: Any, post: Any) -> int:
     """
     Antworten der gefragten Person speichern (``wahl-<Vorschlag>`` = ja, notfalls oder nein); gibt die Zahl der
     gespeicherten Antworten zurück, 0 bei einer abgeschlossenen Umfrage oder ohne Einladung.
     """
+    # Unter derselben Zeilensperre wie das Festlegen: Nach dem Abschluss wird keine Antwort mehr gespeichert, die
+    # der Termin nicht mehr übernähme
+    umfrage = Terminumfrage.objects.select_for_update().get(pk=umfrage.pk)
     if umfrage.abgeschlossen_am is not None or not ist_gefragt(umfrage, membership):
         return 0
     gespeichert = 0
@@ -246,6 +270,9 @@ def festlegen(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any) -> Ter
 
     wahl = dict(vorschlag.antworten.values_list("membership_id", "wahl"))
     jetzt = timezone.now()
+    # Wer die Umfrage angelegt hat, bekommt den Termin als eigenen (``created_by``) und steht wie bei jedem Termin
+    # nicht unter den Eingeladenen: ``termine._einladen`` nähme ihn beim nächsten Speichern wieder von der Liste,
+    # und zusagen muss sich niemand selbst. Seine Antworten bleiben in der abgeschlossenen Umfrage nachlesbar.
     gefragte = [
         teilnahme.membership
         for teilnahme in umfrage.teilnahmen.select_related("membership")

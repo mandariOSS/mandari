@@ -32,29 +32,29 @@ funktioniert ohne JavaScript mit den vorhandenen Zeilen; „Weiterer Vorschlag�
     <fieldset x-data="terminVorschlaege" data-testid="umfrage-vorschlaege">
         <c-form.beschriftung als="legend">Vorschläge</c-form.beschriftung>
         <c-form.hinweis>Je Zeile ein Zeitpunkt: Tag, Beginn und auf Wunsch das Ende. Leere Zeilen zählen nicht.</c-form.hinweis>
-        <table class="mt-2 text-sm">
+        <table class="mt-2 w-full max-w-md table-fixed text-sm">
             <thead>
                 <tr class="text-left text-[0.8125rem] text-gray-600 dark:text-gray-400">
-                    <th scope="col" class="pb-1 pr-3 font-medium">Tag</th>
-                    <th scope="col" class="pb-1 pr-3 font-medium">Beginn</th>
+                    <th scope="col" class="w-2/5 pb-1 pr-2 font-medium">Tag</th>
+                    <th scope="col" class="pb-1 pr-2 font-medium">Beginn</th>
                     <th scope="col" class="pb-1 font-medium">Ende</th>
                 </tr>
             </thead>
             <tbody x-ref="liste">
                 {% for zeile in form.zeilen %}
                 <tr>
-                    <td class="pb-2 pr-3"><input type="date" name="vorschlag_tag" value="{{ zeile.tag }}" aria-label="Tag, Vorschlag {{ forloop.counter }}" class="wf-eingabe"></td>
-                    <td class="pb-2 pr-3"><input type="time" name="vorschlag_beginn" value="{{ zeile.beginn }}" aria-label="Beginn, Vorschlag {{ forloop.counter }}" class="wf-eingabe"></td>
-                    <td class="pb-2"><input type="time" name="vorschlag_ende" value="{{ zeile.ende }}" aria-label="Ende, Vorschlag {{ forloop.counter }}" class="wf-eingabe"></td>
+                    <td class="pb-2 pr-2"><input type="date" name="vorschlag_tag" value="{{ zeile.tag }}" aria-label="Tag, Vorschlag {{ forloop.counter }}" class="wf-eingabe w-full"></td>
+                    <td class="pb-2 pr-2"><input type="time" name="vorschlag_beginn" value="{{ zeile.beginn }}" aria-label="Beginn, Vorschlag {{ forloop.counter }}" class="wf-eingabe w-full"></td>
+                    <td class="pb-2"><input type="time" name="vorschlag_ende" value="{{ zeile.ende }}" aria-label="Ende, Vorschlag {{ forloop.counter }}" class="wf-eingabe w-full"></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         <template x-ref="vorlage">
             <tr>
-                <td class="pb-2 pr-3"><input type="date" name="vorschlag_tag" aria-label="Tag, weiterer Vorschlag" class="wf-eingabe"></td>
-                <td class="pb-2 pr-3"><input type="time" name="vorschlag_beginn" aria-label="Beginn, weiterer Vorschlag" class="wf-eingabe"></td>
-                <td class="pb-2"><input type="time" name="vorschlag_ende" aria-label="Ende, weiterer Vorschlag" class="wf-eingabe"></td>
+                <td class="pb-2 pr-2"><input type="date" name="vorschlag_tag" aria-label="Tag, weiterer Vorschlag" class="wf-eingabe w-full"></td>
+                <td class="pb-2 pr-2"><input type="time" name="vorschlag_beginn" aria-label="Beginn, weiterer Vorschlag" class="wf-eingabe w-full"></td>
+                <td class="pb-2"><input type="time" name="vorschlag_ende" aria-label="Ende, weiterer Vorschlag" class="wf-eingabe w-full"></td>
             </tr>
         </template>
         <button type="button" class="wf-textlink text-sm" @click="weitere" data-testid="umfrage-weitere">Weiterer Vorschlag</button>

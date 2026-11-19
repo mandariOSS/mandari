@@ -6,7 +6,8 @@ mit einem Knopf. Wer die Umfrage angelegt hat, ergänzt darunter weitere Vorschl
 Daraus wird der Termin. Zeilen
 statt einer Tabelle Person mal Zeitpunkt: Das bleibt am Handy lesbar und kommt mit vielen Vorschlägen zurecht.
 Kontext: UmfrageView (apps/work/termine/umfrage_views.py): umfrage, beschreibung, uebersicht (zeilen, gefragt,
-beantwortet, ohne_antwort), darf_antworten, darf_aendern.
+beantwortet, ohne_antwort), darf_antworten, darf_aendern, termin_sichtbar (der festgelegte Termin gehört den
+Gefragten; wer die Umfrage nur verwaltet, bekommt keinen Link dorthin).
 {% endcomment %}
 
 {% block page_title %}{{ umfrage.title }}{% endblock %}
@@ -23,7 +24,7 @@ beantwortet, ohne_antwort), darf_antworten, darf_aendern.
 <div class="max-w-3xl space-y-8">
     {% if umfrage.abgeschlossen_am %}
     <c-rahmen.abschnitt titel="Entschieden" data-testid="umfrage-ergebnis">
-        <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">{% for zeile in uebersicht.zeilen %}{% if zeile.festgelegt %}Festgelegt ist {{ zeile.zeit }}. {% endif %}{% endfor %}{% if umfrage.termin %}<c-ui.textlink href="{% url 'work:termin' org_slug=organization.slug termin_id=umfrage.termin_id %}">Zum Termin</c-ui.textlink>{% else %}Der Termin dazu besteht nicht mehr.{% endif %}</p>
+        <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">{% for zeile in uebersicht.zeilen %}{% if zeile.festgelegt %}Festgelegt ist {{ zeile.zeit }}. {% endif %}{% endfor %}{% if termin_sichtbar %}<c-ui.textlink href="{% url 'work:termin' org_slug=organization.slug termin_id=umfrage.termin_id %}">Zum Termin</c-ui.textlink>{% elif not umfrage.termin %}Der Termin dazu besteht nicht mehr.{% endif %}</p>
     </c-rahmen.abschnitt>
     {% endif %}
 

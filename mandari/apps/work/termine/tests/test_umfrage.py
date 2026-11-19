@@ -245,17 +245,31 @@ def test_sichtbarkeit_kalender_und_loeschen(
     client_for(karim.user).post(adresse, {f"wahl-{erster.pk}": "ja"})
     assert "Ihre Antwort fehlt" not in client_for(karim.user).get(_url("meetings_calendar", org)).content.decode()
 
-    # Löschen: nicht die Gefragten, wohl aber wer angelegt hat oder alle Termine verwaltet
+    # Legt die Verwaltung fest, gehört der Termin trotzdem den Gefragten: Sie bleibt auf der Seite der Umfrage und
+    # bekommt keinen Link zu einem Termin, den sie nicht sehen darf
+    antwort = leitung.post(_url("terminumfrage_festlegen", org, umfrage_id=neue.pk), {"vorschlag": str(erster.pk)})
+    termin = Termin.objects.get()
+    assert antwort.status_code == 302 and antwort.url == adresse
+    assert not termine.sichtbare(verwaltung).filter(pk=termin.pk).exists()
+    zum_termin = _url("termin", org, termin_id=termin.pk)
+    seite = leitung.get(adresse).content.decode()
+    assert 'data-testid="umfrage-ergebnis"' in seite and zum_termin not in seite and "Festgelegt ist" in seite
+    assert zum_termin in client_for(karim.user).get(adresse).content.decode()
+
+    # Löschen: nicht die Gefragten, wohl aber wer angelegt hat oder alle Termine verwaltet; der Termin bleibt
     loeschen = _url("terminumfrage_loeschen", org, umfrage_id=neue.pk)
     assert client_for(karim.user).post(loeschen).status_code == 403
     assert leitung.post(loeschen).status_code == 302
     assert not Terminumfrage.objects.exists() and not VorschlagAntwort.objects.exists()
-    assert not vorschlaege(karim)
+    assert not vorschlaege(karim) and Termin.objects.filter(pk=termin.pk).exists()
 
 
 def test_vertretung_bekommt_die_umfrage_nur_wenn_sie_selbst_gefragt_ist(
-    org: Any, vera: Any, karim: Any, lea: Any
+    org: Any, vera: Any, karim: Any, make_member: Any
 ) -> None:
+    # Die Vertretung verwaltet alle Termine und sähe deshalb jede Umfrage; weitergeleitet wird trotzdem nur,
+    # wenn sie selbst gefragt ist
+    lea = make_member(org, [*LESEN, "calendar.manage"], first_name="Lea", last_name="Lorenz")
     heute = timezone.localdate()
     MemberAbsence.objects.create(
         organization=org,
@@ -267,7 +281,8 @@ def test_vertretung_bekommt_die_umfrage_nur_wenn_sie_selbst_gefragt_ist(
     )
     an_vertretung = Notification.objects.filter(recipient=lea, title__startswith="[Vertretung]")
 
-    _anlegen(org, vera, title="Vorstandsklausur", wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
+    vorstand = _anlegen(org, vera, title="Vorstandsklausur", wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
+    assert umfrage.sichtbare(lea).filter(pk=vorstand.pk).exists() and not umfrage.beteiligt(lea, vorstand.pk)
     assert not an_vertretung.exists()
     # Ist die Vertretung selbst gefragt, sieht sie die Umfrage und bekommt auch die weitergeleitete Meldung
     _anlegen(org, vera, title="Sommerfest")
@@ -316,10 +331,25 @@ def test_seite_zeigt_was_am_tag_schon_ansteht(org: Any, vera: Any, karim: Any, c
     )
     assert form.is_valid(), form.errors
     form.speichern(termine.neu(org, vera))
+    # Ein ganztägiger Termin über zwei Tage berührt den zweiten und den dritten Vorschlag
+    mehrtaegig = termine.TerminForm(
+        {
+            "title": "Klausurtagung",
+            "tag": _tag(11).isoformat(),
+            "bis_tag": _tag(12).isoformat(),
+            "all_day": "on",
+            "visibility": Termin.ALLE,
+        },
+        membership=vera,
+    )
+    assert mehrtaegig.is_valid(), mehrtaegig.errors
+    mehrtaegig.speichern(termine.neu(org, vera))
 
     seite = client_for(karim.user).get(_url("terminumfrage", org, umfrage_id=neue.pk)).content.decode()
     assert "Am selben Tag in Ihrem Kalender: 16:00 Ortstermin Brücke" in seite
-    assert seite.count("Am selben Tag in Ihrem Kalender") == 1
+    assert "Am selben Tag in Ihrem Kalender: Klausurtagung<" in seite
+    assert f"Am selben Tag in Ihrem Kalender: Klausurtagung (seit {_tag(11):%d.%m.})" in seite
+    assert seite.count("Am selben Tag in Ihrem Kalender") == 3
 
 
 def test_auskunft_nennt_umfragen_und_eigene_antworten(org: Any, vera: Any, karim: Any) -> None:
