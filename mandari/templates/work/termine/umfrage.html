@@ -1,0 +1,91 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Terminumfrage (Issue #1489): je Vorschlag eine Zeile mit der Zeit, dem, was an dem Tag schon im eigenen Kalender
+steht, und wer wie geantwortet hat. Gefragte wählen je Vorschlag „Ja“, „Wenn nötig“ oder „Nein“ und speichern alles
+mit einem Knopf. Wer die Umfrage angelegt hat, legt darunter einen Vorschlag fest: Daraus wird der Termin. Zeilen
+statt einer Tabelle Person mal Zeitpunkt: Das bleibt am Handy lesbar und kommt mit vielen Vorschlägen zurecht.
+Kontext: UmfrageView (apps/work/termine/umfrage_views.py): umfrage, beschreibung, uebersicht (zeilen, gefragt,
+beantwortet, ohne_antwort), darf_antworten, darf_aendern.
+{% endcomment %}
+
+{% block page_title %}{{ umfrage.title }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{{ umfrage.title }}" dicht data-testid="umfrage-kopf"
+    text="Terminumfrage{% if umfrage.created_by %} von {{ umfrage.created_by.user.get_display_name }}{% endif %}{% if umfrage.abgeschlossen_am %}, abgeschlossen am {{ umfrage.abgeschlossen_am|date:'d.m.Y' }}.{% elif umfrage.antwort_bis %}. Bitte antworten Sie bis {{ umfrage.antwort_bis|date:'d.m.Y' }}.{% else %}.{% endif %}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings_calendar' org_slug=organization.slug %}">Kalender</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-3xl space-y-8">
+    {% if umfrage.abgeschlossen_am %}
+    <c-rahmen.abschnitt titel="Entschieden" data-testid="umfrage-ergebnis">
+        <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">{% for zeile in uebersicht.zeilen %}{% if zeile.festgelegt %}Festgelegt ist {{ zeile.zeit }}. {% endif %}{% endfor %}{% if umfrage.termin %}<c-ui.textlink href="{% url 'work:termin' org_slug=organization.slug termin_id=umfrage.termin_id %}">Zum Termin</c-ui.textlink>{% else %}Der Termin dazu besteht nicht mehr.{% endif %}</p>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if umfrage.location or beschreibung %}
+    <c-ui.angaben data-testid="umfrage-angaben">
+        {% if umfrage.location %}<dt>Ort</dt><dd>{{ umfrage.location }}</dd>{% endif %}
+        {% if beschreibung %}<dt>Beschreibung</dt><dd class="whitespace-pre-line">{{ beschreibung }}</dd>{% endif %}
+    </c-ui.angaben>
+    {% endif %}
+
+    <form method="post" data-testid="umfrage-antworten">
+        {% csrf_token %}
+        <c-rahmen.abschnitt titel="Vorschläge" zusatz="{{ uebersicht.beantwortet }} von {{ uebersicht.gefragt }} haben geantwortet">
+            <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800">
+                {% for zeile in uebersicht.zeilen %}
+                <li class="py-3 sm:flex sm:items-start sm:justify-between sm:gap-6" data-testid="umfrage-vorschlag">
+                    <div class="min-w-0 text-sm">
+                        <p class="font-medium text-gray-900 dark:text-white">{{ zeile.zeit }}{% if zeile.festgelegt %} <span class="font-normal text-green-700 dark:text-green-400">(festgelegt)</span>{% elif zeile.beste and not umfrage.abgeschlossen_am %} <span class="font-normal text-gray-600 dark:text-gray-400">(bisher die meisten Zusagen)</span>{% endif %}</p>
+                        <p class="mt-0.5 text-gray-700 dark:text-gray-300">{{ zeile.ja|length }} Ja{% if zeile.ja %} ({{ zeile.ja|join:", " }}){% endif %}, {{ zeile.notfalls|length }} wenn nötig{% if zeile.notfalls %} ({{ zeile.notfalls|join:", " }}){% endif %}, {{ zeile.nein|length }} Nein{% if zeile.nein %} ({{ zeile.nein|join:", " }}){% endif %}</p>
+                        {% if zeile.am_tag %}<c-form.hinweis>Am selben Tag in Ihrem Kalender: {{ zeile.am_tag|join:", " }}</c-form.hinweis>{% endif %}
+                    </div>
+                    {% if darf_antworten %}
+                    <fieldset class="mt-2 flex shrink-0 items-center gap-4 sm:mt-0">
+                        <legend class="sr-only">Ihre Antwort für {{ zeile.zeit }}</legend>
+                        <c-form.radio name="wahl-{{ zeile.vorschlag.id }}" value="ja" label="Ja" checked="{% if zeile.meine == 'ja' %}1{% endif %}" />
+                        <c-form.radio name="wahl-{{ zeile.vorschlag.id }}" value="notfalls" label="Wenn nötig" checked="{% if zeile.meine == 'notfalls' %}1{% endif %}" />
+                        <c-form.radio name="wahl-{{ zeile.vorschlag.id }}" value="nein" label="Nein" checked="{% if zeile.meine == 'nein' %}1{% endif %}" />
+                    </fieldset>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% if uebersicht.ohne_antwort and not umfrage.abgeschlossen_am %}<c-form.hinweis>Noch keine Antwort: {{ uebersicht.ohne_antwort|join:", " }}</c-form.hinweis>{% endif %}
+            {% if darf_antworten %}<c-ui.button type="submit" size="sm" class="mt-4">Antwort speichern</c-ui.button>{% endif %}
+        </c-rahmen.abschnitt>
+    </form>
+
+    {% if darf_aendern and not umfrage.abgeschlossen_am %}
+    <form method="post" action="{% url 'work:terminumfrage_festlegen' org_slug=organization.slug umfrage_id=umfrage.id %}" data-testid="umfrage-festlegen">
+        {% csrf_token %}
+        <c-rahmen.abschnitt titel="Termin festlegen">
+            <c-form.hinweis>Aus dem gewählten Vorschlag wird ein Termin. Die Gefragten sind dazu eingeladen, ihre Antwort aus der Umfrage steht schon am Termin. Die Umfrage ist danach abgeschlossen.</c-form.hinweis>
+            <div class="mt-3 flex flex-wrap items-end gap-3">
+                <c-form.select name="vorschlag" id="umfrage-vorschlag" label="Vorschlag" dicht>
+                    {% for zeile in uebersicht.zeilen %}
+                    <option value="{{ zeile.vorschlag.id }}" {% if zeile.beste %}selected{% endif %}>{{ zeile.zeit }} ({{ zeile.ja|length }} Ja, {{ zeile.notfalls|length }} wenn nötig, {{ zeile.nein|length }} Nein)</option>
+                    {% endfor %}
+                </c-form.select>
+                <c-ui.button type="submit" variant="secondary" size="sm">Termin festlegen</c-ui.button>
+            </div>
+        </c-rahmen.abschnitt>
+    </form>
+    {% endif %}
+
+    {% if darf_aendern %}
+    <form method="post" action="{% url 'work:terminumfrage_loeschen' org_slug=organization.slug umfrage_id=umfrage.id %}" data-testid="umfrage-loeschen">
+        {% csrf_token %}
+        <details>
+            <summary class="cursor-pointer text-sm font-medium text-red-700 dark:text-red-400">Umfrage löschen</summary>
+            <c-form.hinweis>Die Umfrage und alle Antworten verschwinden.{% if umfrage.termin %} Der festgelegte Termin bleibt.{% endif %} Das lässt sich nicht rückgängig machen.</c-form.hinweis>
+            <c-ui.button type="submit" size="sm" variant="danger" class="mt-3">Endgültig löschen</c-ui.button>
+        </details>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

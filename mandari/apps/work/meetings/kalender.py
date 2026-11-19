@@ -45,6 +45,7 @@ ARTEN: Final[tuple[Art, ...]] = (
     Art("sitzung", "Sitzungen der Gremien", "meetings.view"),
     Art("fraktion", "Interne Sitzungen", "faction.view_public"),
     Art("termin", "Termine", "meetings.view"),
+    Art("umfrage", "Terminvorschläge", "meetings.view"),
     Art("dokument", "Fristen der Dokumente", "motions.view"),
     Art("aufgabe", "Aufgaben", "tasks.view"),
 )
@@ -153,6 +154,30 @@ def _termine(organization: Any, membership: Any, start: datetime, end: datetime)
     ]
 
 
+def _vorschlaege(organization: Any, membership: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
+    """Vorschläge offener Terminumfragen, die das Mitglied sieht; ein Klick führt zur Umfrage."""
+    from apps.work.termine import umfrage
+    from apps.work.termine.models import Terminvorschlag
+
+    offene = umfrage.sichtbare(membership).filter(abgeschlossen_am__isnull=True)
+    vorschlaege = (
+        Terminvorschlag.objects.filter(umfrage__in=offene, start__gte=start, start__lte=end)
+        .select_related("umfrage")
+        .order_by("start")[:MAX_JE_ART]
+    )
+    return [
+        _eintrag(
+            "umfrage",
+            vorschlag.pk,
+            f"Vorschlag: {vorschlag.umfrage.title}",
+            reverse("work:terminumfrage", kwargs={"org_slug": organization.slug, "umfrage_id": vorschlag.umfrage_id}),
+            start=vorschlag.start.isoformat(),
+            end=vorschlag.end.isoformat() if vorschlag.end else None,
+        )
+        for vorschlag in vorschlaege
+    ]
+
+
 def _dokumentfristen(organization: Any, membership: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
     from apps.work.motions.models import Motion
 
@@ -211,6 +236,8 @@ def termine(
         eintraege += _fraktionssitzungen(organization, membership, start, end)
     if "termin" in wahl:
         eintraege += _termine(organization, membership, start, end)
+    if "umfrage" in wahl:
+        eintraege += _vorschlaege(organization, membership, start, end)
     if "dokument" in wahl:
         eintraege += _dokumentfristen(organization, membership, start, end)
     if "aufgabe" in wahl:

@@ -136,6 +136,7 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     *_tenant("work.SupportTicketMessage", "content_encrypted", paths=("ticket__organization",)),
     # Beschreibung eines eigenen Termins im Kalender (Issue #1489)
     *_tenant("work.Termin", "description_encrypted", paths=_ORG),
+    *_tenant("work.Terminumfrage", "description_encrypted", paths=_ORG),
     # --- Session (Verwaltungs-RIS) ---------------------------------------------------------------
     *_tenant(
         "session.SessionPerson",

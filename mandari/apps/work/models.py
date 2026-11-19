@@ -60,7 +60,14 @@ from apps.work.tasks.models import (
 )
 
 # Eigene Termine im Kalender (Issue #1489)
-from apps.work.termine.models import Termin, TerminTeilnahme
+from apps.work.termine.models import (
+    Termin,
+    TerminTeilnahme,
+    Terminumfrage,
+    Terminvorschlag,
+    UmfrageTeilnahme,
+    VorschlagAntwort,
+)
 
 __all__ = [
     # Meetings
@@ -89,6 +96,10 @@ __all__ = [
     # Termine
     "Termin",
     "TerminTeilnahme",
+    "Terminumfrage",
+    "Terminvorschlag",
+    "UmfrageTeilnahme",
+    "VorschlagAntwort",
     # Support
     "SupportTicket",
     "SupportTicketMessage",

@@ -147,6 +147,9 @@
 .sitzungs-kalender .termin-termin {
   --termin-farbe: #be185d;
 }
+.sitzungs-kalender .termin-umfrage {
+  --termin-farbe: #be185d;
+}
 .sitzungs-kalender .termin-dokument {
   --termin-farbe: #b45309;
 }
@@ -159,6 +162,17 @@
 .sitzungs-kalender .fc-event.termin-aufgabe {
   --fc-event-bg-color: var(--termin-farbe);
   --fc-event-border-color: var(--termin-farbe);
+}
+/* Vorschläge offener Terminumfragen: noch nicht entschieden, deshalb nur gestrichelt umrandet */
+.sitzungs-kalender .fc-event.termin-umfrage {
+  --fc-event-bg-color: transparent;
+  --fc-event-border-color: var(--termin-farbe);
+  --fc-event-text-color: var(--wf-tinte);
+  border-style: dashed;
+}
+.sitzungs-kalender .kalender-punkt.termin-umfrage {
+  background: transparent;
+  border: 1px dashed var(--termin-farbe);
 }
 .sitzungs-kalender .kalender-punkt {
   display: inline-block;

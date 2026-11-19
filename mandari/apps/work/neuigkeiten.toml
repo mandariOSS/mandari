@@ -39,6 +39,16 @@ Recht „Termine im Kalender anlegen“, das eine Rolle in den Einstellungen bek
 datum = 2026-11-19
 version = ""
 bereich = "sitzungen"
+titel = "Termine gemeinsam finden: die Terminumfrage."
+text = """Über „Termin abstimmen“ am Kalender schlagen Sie mehrere Zeitpunkte vor und fragen alle Mitglieder, einen \
+Arbeitskreis oder einzelne Personen. Die Gefragten antworten je Vorschlag mit Ja, wenn nötig oder Nein und sehen \
+dabei, was an dem Tag schon in ihrem Kalender steht. Sie legen am Ende einen Vorschlag fest: Daraus wird der Termin, \
+die Zusagen stehen schon daran. Voraussetzung ist das Recht „Termine im Kalender anlegen“."""
+
+[[eintrag]]
+datum = 2026-11-19
+version = ""
+bereich = "sitzungen"
 titel = "Ihre Termine auch im Kalender auf dem Handy."
 text = """Am Kalender führt „Im eigenen Kalender abonnieren“ in Ihr Profil. Dort erzeugen Sie eine persönliche \
 Adresse und tragen sie in Google Kalender, auf dem iPhone, in Outlook oder Thunderbird ein; die Schritte stehen \

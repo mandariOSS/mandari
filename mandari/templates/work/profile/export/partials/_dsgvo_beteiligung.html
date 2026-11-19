@@ -157,3 +157,14 @@
 {% else %}
 <p class="empty">Keine Einladungen vorhanden.</p>
 {% endif %}
+<h3>Terminumfragen</h3>
+{% if data.termine.polls_created or data.termine.polls_asked %}
+{% for u in data.termine.polls_created %}
+<div class="content-block"><strong>Von Ihnen angelegt: {{ u.title }} ({{ u.created_at }}):</strong> Vorschl&auml;ge {{ u.proposals|join:"; " }}{% if u.location %}; Ort: {{ u.location }}{% endif %}{% if u.description %}; {{ u.description }}{% endif %}{% if u.closed_at %}; abgeschlossen am {{ u.closed_at }}{% endif %}</div>
+{% endfor %}
+{% for u in data.termine.polls_asked %}
+<div class="content-block"><strong>{{ u.title }} (gefragt am {{ u.asked_at }}):</strong> {% for a in u.answers %}{{ a.proposal }}: {{ a.answer }}{% if not forloop.last %}; {% endif %}{% empty %}noch keine Antwort{% endfor %}</div>
+{% endfor %}
+{% else %}
+<p class="empty">Keine Terminumfragen vorhanden.</p>
+{% endif %}
