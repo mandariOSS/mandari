@@ -45,6 +45,7 @@ ARTEN: Final[tuple[Art, ...]] = (
     Art("sitzung", "Sitzungen der Gremien", "meetings.view"),
     Art("fraktion", "Interne Sitzungen", "faction.view_public"),
     Art("termin", "Termine", "meetings.view"),
+    Art("umfrage", "Terminvorschläge", "meetings.view"),
     Art("dokument", "Fristen der Dokumente", "motions.view"),
     Art("aufgabe", "Aufgaben", "tasks.view"),
 )
@@ -111,8 +112,9 @@ def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end
     from apps.work.faction.sitzungsarten import sichtbar_fuer
 
     # Auch Sitzungen, die vor dem Fenster begonnen haben und hineinreichen (über Mitternacht, mehrtägig); ohne Ende
-    # zählt der Beginn
-    im_fenster = Q(start__lte=end) & (Q(end__gte=start) | Q(end__isnull=True, start__gte=start))
+    # zählt der Beginn. Das Fenster ist halboffen: Was es nur berührt (endet genau zu seinem Beginn, beginnt genau
+    # an seinem Ende), gehört nicht hinein.
+    im_fenster = Q(start__lt=end) & (Q(end__gt=start) | Q(end__isnull=True, start__gte=start))
     sitzungen = sichtbar_fuer(
         membership, FactionMeeting.objects.filter(im_fenster, organization=organization)
     ).order_by("start")[:MAX_JE_ART]
@@ -133,7 +135,7 @@ def _termine(organization: Any, membership: Any, start: datetime, end: datetime)
     from apps.work.termine import termine as eigene
 
     # Auch Termine, die vor dem Fenster beginnen und hineinreichen (mehrtägig); ohne Ende zählt der Beginn
-    im_fenster = Q(start__lte=end) & (Q(end__gte=start) | Q(end__isnull=True, start__gte=start))
+    im_fenster = Q(start__lt=end) & (Q(end__gt=start) | Q(end__isnull=True, start__gte=start))
     return [
         _eintrag(
             "termin",
@@ -150,6 +152,30 @@ def _termine(organization: Any, membership: Any, start: datetime, end: datetime)
             allDay=termin.all_day,
         )
         for termin in eigene.sichtbare(membership).filter(im_fenster).order_by("start")[:MAX_JE_ART]
+    ]
+
+
+def _vorschlaege(organization: Any, membership: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
+    """Vorschläge offener Terminumfragen, die das Mitglied sieht; ein Klick führt zur Umfrage."""
+    from apps.work.termine import umfrage
+    from apps.work.termine.models import Terminvorschlag
+
+    offene = umfrage.sichtbare(membership).filter(abgeschlossen_am__isnull=True)
+    vorschlaege = (
+        Terminvorschlag.objects.filter(umfrage__in=offene, start__gte=start, start__lt=end)
+        .select_related("umfrage")
+        .order_by("start")[:MAX_JE_ART]
+    )
+    return [
+        _eintrag(
+            "umfrage",
+            vorschlag.pk,
+            f"Vorschlag: {vorschlag.umfrage.title}",
+            reverse("work:terminumfrage", kwargs={"org_slug": organization.slug, "umfrage_id": vorschlag.umfrage_id}),
+            start=vorschlag.start.isoformat(),
+            end=vorschlag.end.isoformat() if vorschlag.end else None,
+        )
+        for vorschlag in vorschlaege
     ]
 
 
@@ -211,6 +237,8 @@ def termine(
         eintraege += _fraktionssitzungen(organization, membership, start, end)
     if "termin" in wahl:
         eintraege += _termine(organization, membership, start, end)
+    if "umfrage" in wahl:
+        eintraege += _vorschlaege(organization, membership, start, end)
     if "dokument" in wahl:
         eintraege += _dokumentfristen(organization, membership, start, end)
     if "aufgabe" in wahl:

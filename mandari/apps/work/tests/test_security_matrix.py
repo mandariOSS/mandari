@@ -100,7 +100,7 @@ from apps.work.notifications.models import Notification, NotificationType
 from apps.work.organization.models import DataExport, MemberAbsence, MemberChangeRequest
 from apps.work.support.models import SupportTicket
 from apps.work.tasks.models import Task, TaskAttachment, TaskChecklistItem, TaskLabel
-from apps.work.termine.models import Termin, TerminTeilnahme
+from apps.work.termine.models import Termin, TerminTeilnahme, Terminumfrage, Terminvorschlag, UmfrageTeilnahme
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -238,6 +238,14 @@ AUFGABE_FORMULAR = {
     "visibility": "organization",
 }
 TERMIN = {"termin_id": "termin"}
+UMFRAGE = {"umfrage_id": "umfrage"}
+UMFRAGE_FORMULAR = {
+    "title": "Klausur im Frühjahr",
+    "vorschlag_tag": ["2027-01-12", "2027-01-13"],
+    "vorschlag_beginn": ["18:00", "18:00"],
+    "vorschlag_ende": ["", ""],
+    "wen": "alle",
+}
 TERMIN_FORMULAR = {"title": "Ortstermin Brücke", "tag": "2027-01-12", "beginn": "18:00", "visibility": "organization"}
 REDNER = {"entry_type": "speech", "speaker": "{a_member}"}
 ZUSTAENDIG = {"entry_type": "action", "action_assignee": "{a_member}"}
@@ -784,6 +792,16 @@ CASES: list[Case] = [
     Case("termin", path=TERMIN, data=TERMIN_FORMULAR, foreign={"mitglied": {"eingeladene": ["{a_member}"]}}),
     Case("termin_loeschen", path=TERMIN),
     Case("termin_antwort", path=TERMIN, data={"antwort": "zugesagt"}),
+    # Terminumfrage (Issue #1489): anlegen, antworten, einen Vorschlag festlegen, löschen
+    Case(
+        "terminumfrage_neu",
+        data=UMFRAGE_FORMULAR,
+        foreign={"mitglied": {"wen": "auswahl", "gefragte": ["{a_member}"]}},
+    ),
+    Case("terminumfrage", path=UMFRAGE, data={}),
+    Case("terminumfrage_vorschlag", path=UMFRAGE, data={"tag": "2027-01-14", "beginn": "18:00"}),
+    Case("terminumfrage_festlegen", path=UMFRAGE, data={"vorschlag": "{vorschlag}"}),
+    Case("terminumfrage_loeschen", path=UMFRAGE),
     Case("task_labels", data={"name": "Neu", "color": "green"}),
     Case("task_label_delete", path={"label_id": "label"}, method="delete"),
     Case(
@@ -1330,6 +1348,12 @@ class _Builder:
             organization=org, title="Ortstermin", start=now + timedelta(days=3), created_by=admin
         )
         TerminTeilnahme.objects.create(termin=termin, membership=kollege)
+        # Terminumfrage mit zwei Vorschlägen; gefragt sind Admin und ein weiteres Mitglied
+        umfrage = Terminumfrage.objects.create(organization=org, title="Klausur", created_by=admin)
+        vorschlag = Terminvorschlag.objects.create(umfrage=umfrage, start=now + timedelta(days=5))
+        Terminvorschlag.objects.create(umfrage=umfrage, start=now + timedelta(days=6))
+        UmfrageTeilnahme.objects.create(umfrage=umfrage, membership=admin)
+        UmfrageTeilnahme.objects.create(umfrage=umfrage, membership=kollege)
         task_checklist = TaskChecklistItem.objects.create(task=task, title="Schritt 1", position=0)
         task_checklist2 = TaskChecklistItem.objects.create(task=task, title="Schritt 2", position=1)
         task_attachment = TaskAttachment.objects.create(
@@ -1429,6 +1453,8 @@ class _Builder:
             "standard_item": standard_item,
             "task": task,
             "termin": termin,
+            "umfrage": umfrage,
+            "vorschlag": vorschlag,
             "label": label,
             "task_checklist": task_checklist,
             "task_checklist2": task_checklist2,

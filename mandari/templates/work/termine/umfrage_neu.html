@@ -1,0 +1,97 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Neue Terminumfrage (Issue #1489): Titel, die vorgeschlagenen Zeitpunkte als Zeilen aus Tag, Beginn und Ende, dazu
+wen die Umfrage fragt (alle Mitglieder, die Teilnehmenden einer Sitzungsart oder ausgewählte Mitglieder). Die Seite
+funktioniert ohne JavaScript mit den vorhandenen Zeilen; „Weiterer Vorschlag“ hängt eine Zeile aus der Vorlage an
+(frontend/alpine/termin-umfrage.ts). Kontext: UmfrageNeuView (apps/work/termine/umfrage_views.py): form
+(UmfrageForm mit zeilen, gewaehlt und arten).
+{% endcomment %}
+
+{% block page_title %}Neue Terminumfrage{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Neue Terminumfrage" dicht data-testid="umfrage-kopf"
+    text="Sie schlagen Zeitpunkte vor, die Gefragten antworten mit Ja, wenn nötig oder Nein. Am Ende legen Sie einen Vorschlag fest, daraus wird der Termin.">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings_calendar' org_slug=organization.slug %}">Kalender</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<form method="post" class="wf max-w-2xl space-y-5" data-testid="umfrage-formular">
+    {% csrf_token %}
+    {% if form.errors %}
+    <div role="alert" class="rounded-md bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-800 dark:text-red-300">
+        {% for field in form %}{% for error in field.errors %}<p>{{ field.label }}: {{ error }}</p>{% endfor %}{% endfor %}
+        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+    {% endif %}
+
+    <c-form.field :field="form.title" id="umfrage-titel" label="Titel" maxlength="200" placeholder="Worum geht es?" dicht required />
+
+    <fieldset x-data="terminVorschlaege" data-testid="umfrage-vorschlaege">
+        <c-form.beschriftung als="legend">Vorschläge</c-form.beschriftung>
+        <c-form.hinweis>Je Zeile ein Zeitpunkt: Tag, Beginn und auf Wunsch das Ende. Leere Zeilen zählen nicht.</c-form.hinweis>
+        <table class="mt-2 w-full max-w-md table-fixed text-sm">
+            <thead>
+                <tr class="text-left text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                    <th scope="col" class="w-2/5 pb-1 pr-2 font-medium">Tag</th>
+                    <th scope="col" class="pb-1 pr-2 font-medium">Beginn</th>
+                    <th scope="col" class="pb-1 font-medium">Ende</th>
+                </tr>
+            </thead>
+            <tbody x-ref="liste">
+                {% for zeile in form.zeilen %}
+                <tr>
+                    <td class="pb-2 pr-2"><input type="date" name="vorschlag_tag" value="{{ zeile.tag }}" aria-label="Tag, Vorschlag {{ forloop.counter }}" class="wf-eingabe w-full"></td>
+                    <td class="pb-2 pr-2"><input type="time" name="vorschlag_beginn" value="{{ zeile.beginn }}" aria-label="Beginn, Vorschlag {{ forloop.counter }}" class="wf-eingabe w-full"></td>
+                    <td class="pb-2"><input type="time" name="vorschlag_ende" value="{{ zeile.ende }}" aria-label="Ende, Vorschlag {{ forloop.counter }}" class="wf-eingabe w-full"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <template x-ref="vorlage">
+            <tr>
+                <td class="pb-2 pr-2"><input type="date" name="vorschlag_tag" aria-label="Tag, weiterer Vorschlag" class="wf-eingabe w-full"></td>
+                <td class="pb-2 pr-2"><input type="time" name="vorschlag_beginn" aria-label="Beginn, weiterer Vorschlag" class="wf-eingabe w-full"></td>
+                <td class="pb-2"><input type="time" name="vorschlag_ende" aria-label="Ende, weiterer Vorschlag" class="wf-eingabe w-full"></td>
+            </tr>
+        </template>
+        <button type="button" class="wf-textlink text-sm" @click="weitere" data-testid="umfrage-weitere">Weiterer Vorschlag</button>
+    </fieldset>
+
+    <c-form.field :field="form.location" id="umfrage-ort" label="Ort" maxlength="500" dicht />
+    <c-form.textarea :field="form.description" id="umfrage-beschreibung" label="Beschreibung" rows="3" maxlength="5000" dicht />
+    <c-form.field name="antwort_bis" id="umfrage-bis" type="date" label="Antwort bis" value="{{ form.antwort_bis.value|default_if_none:'' }}" help="Steht in der Benachrichtigung und über dem Kalender." dicht class="max-w-xs" />
+
+    <fieldset data-testid="umfrage-wen">
+        <c-form.beschriftung als="legend">Wen fragen Sie?</c-form.beschriftung>
+        <c-form.hinweis>Die Gefragten bekommen eine Benachrichtigung. Sie selbst stimmen immer mit ab.</c-form.hinweis>
+        <div class="mt-2 space-y-2">
+            <c-form.radio name="wen" value="alle" label="Alle Mitglieder" checked="{% if form.gewaehlt.wen == 'alle' %}1{% endif %}" />
+            {% if form.arten %}
+            <c-form.radio name="wen" value="art" label="Teilnehmende einer Sitzungsart" hinweis="Etwa ein Arbeitskreis; die Art wählen Sie darunter." checked="{% if form.gewaehlt.wen == 'art' %}1{% endif %}" />
+            <c-form.select name="meeting_type" id="umfrage-art" label="Sitzungsart" dicht class="ml-6 max-w-xs">
+                <option value="">Bitte wählen</option>
+                {% for art in form.arten %}
+                <option value="{{ art.id }}" {% if form.gewaehlt.meeting_type == art.id|stringformat:'s' %}selected{% endif %}>{{ art.name }}</option>
+                {% endfor %}
+            </c-form.select>
+            {% endif %}
+            <c-form.radio name="wen" value="auswahl" label="Ausgewählte Mitglieder" checked="{% if form.gewaehlt.wen == 'auswahl' %}1{% endif %}" />
+            <ul class="ml-6 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 max-h-56 overflow-y-auto">
+                {% for mitglied in form.gefragte.field.queryset %}
+                <li><c-form.checkbox name="gefragte" id="umfrage-gefragt-{{ mitglied.id }}" value="{{ mitglied.id }}" label="{{ mitglied.user.get_display_name }}" checked="{% if mitglied.id|stringformat:'s' in form.gewaehlt.gefragte %}1{% endif %}" dicht /></li>
+                {% empty %}
+                <li class="text-sm text-gray-600 dark:text-gray-400">Es gibt noch keine weiteren Mitglieder.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </fieldset>
+
+    <div class="flex items-center gap-3">
+        <c-ui.button type="submit" size="sm">Umfrage starten</c-ui.button>
+        <c-ui.textlink href="{% url 'work:meetings_calendar' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+    </div>
+</form>
+{% endblock %}

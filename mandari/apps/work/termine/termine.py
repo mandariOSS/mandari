@@ -27,6 +27,7 @@ from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
+from .meldungen import melden
 from .models import Termin, TerminTeilnahme
 
 ANLEGEN: Final = "calendar.create"
@@ -163,18 +164,22 @@ def _einladen(termin: Termin, eingeladene: list[Any], einladend: Any) -> None:
     link = reverse("work:termin", kwargs={"org_slug": termin.organization.slug, "termin_id": termin.pk})
     wann = timezone.localtime(termin.start)
     zeit = wann.strftime("%d.%m.%Y") if termin.all_day else wann.strftime("%d.%m.%Y, %H:%M Uhr")
-    for mitglied in neue:
-        if mitglied.pk == getattr(einladend, "pk", None):
-            continue
+    nachricht = f"Sie sind zu „{termin.title}“ am {zeit} eingeladen. Bitte sagen Sie zu oder ab."
+    metadata = {"termin_id": str(termin.pk)}
+
+    def senden(mitglied: Any) -> None:
         NotificationHub.send(
             recipient=mitglied,
             notification_type=NotificationType.TERMIN_EINLADUNG,
             title="Einladung zu einem Termin",
-            message=f"Sie sind zu „{termin.title}“ am {zeit} eingeladen. Bitte sagen Sie zu oder ab.",
+            message=nachricht,
             link=link,
             actor=einladend,
-            metadata={"termin_id": str(termin.pk)},
+            metadata=metadata,
         )
+
+    # Nichts geht hinaus, bevor der Termin gespeichert ist (``meldungen.melden``)
+    melden([mitglied for mitglied in neue if mitglied.pk != getattr(einladend, "pk", None)], senden)
 
 
 def _lokal(tag: date, uhrzeit: time) -> datetime:

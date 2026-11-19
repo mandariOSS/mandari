@@ -15,6 +15,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.session.services import portal_link_service
 from apps.work.rahmen import NeueVorlageMixin
 from apps.work.termine import termine as eigene_termine
+from apps.work.termine import umfrage as terminumfrage
 
 from .. import kalender, neu, selectors
 
@@ -90,6 +91,8 @@ class MeetingCalendarView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         # Arten von Terminen, die die Person sehen darf (Issue #1489); die Auswahl merkt sich der Browser
         context["kalender_arten"] = kalender.arten_fuer(self.membership)
         context["darf_termin_anlegen"] = eigene_termine.darf_anlegen(self.membership)
+        # Offene Terminumfragen stehen über dem Kalender, mit dem Hinweis, wo die eigene Antwort fehlt
+        context["terminumfragen"] = terminumfrage.offene(self.membership)
         return context
 
 

@@ -107,3 +107,8 @@ Alpine.data('risKarte', risKarte)
 import { sitzungsKalender } from '../alpine/sitzungs-kalender'
 
 Alpine.data('sitzungsKalender', sitzungsKalender)
+
+// ---- Terminumfrage (#1489): weitere Zeile für einen Vorschlag ---------------------------------------------------
+import { terminVorschlaege } from '../alpine/termin-umfrage'
+
+Alpine.data('terminVorschlaege', terminVorschlaege)

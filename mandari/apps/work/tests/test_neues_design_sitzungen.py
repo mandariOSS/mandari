@@ -708,6 +708,19 @@ def test_kalender_zeigt_alle_arten_nach_recht_und_auswahl(welt: Welt, client_for
         end=jetzt + timedelta(days=60, hours=2),
         created_by=vorsitz,
     )
+    # Was das Fenster nur berührt, gehört nicht hinein: Ende genau zu seinem Beginn, Beginn genau an seinem Ende
+    for titel, von, bis in (
+        ("Endet am Rand", timedelta(days=59, hours=20), timedelta(days=60)),
+        ("Beginnt am Rand", timedelta(days=61), timedelta(days=61, hours=2)),
+    ):
+        FactionMeeting.objects.create(
+            organization=org,
+            meeting_type=welt.fraktionssitzung.meeting_type,
+            title=titel,
+            start=jetzt + von,
+            end=jetzt + bis,
+            created_by=vorsitz,
+        )
     folgetag = {
         "start": (jetzt + timedelta(days=60)).isoformat(),
         "end": (jetzt + timedelta(days=61)).isoformat(),
@@ -717,10 +730,11 @@ def test_kalender_zeigt_alle_arten_nach_recht_und_auswahl(welt: Welt, client_for
 
     # Die Seite bietet je Art ein Kästchen an, auch bei nur einer Art (eine gemerkte Abwahl bleibt korrigierbar)
     html = _neu(welt, client_for, "vorsitz", "work:meetings_calendar")
-    assert 'data-arten="sitzung,fraktion,termin,dokument,aufgabe"' in html and html.count('x-model="arten"') == 5
+    assert 'data-arten="sitzung,fraktion,termin,umfrage,dokument,aufgabe"' in html
+    assert html.count('x-model="arten"') == 6
     eine_art = client_for(nur_sitzungen.user).get(reverse("work:meetings_calendar", kwargs={"org_slug": org.slug}))
     # Mit meetings.view allein: Sitzungen der Gremien und eigene Termine
-    assert eine_art.content.decode().count('x-model="arten"') == 2
+    assert eine_art.content.decode().count('x-model="arten"') == 3
 
 
 def test_sitzungsdetail_eine_hauptaktion_und_vorlagen_je_punkt(welt: Welt, client_for: Any) -> None:

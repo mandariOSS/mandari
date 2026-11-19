@@ -17,6 +17,7 @@ from apps.work.organization import views as organization_views
 from apps.work.ris import views as ris_views
 from apps.work.support import views as support_views
 from apps.work.tasks import views as tasks_views
+from apps.work.termine import umfrage_views
 from apps.work.termine import views as termine_views
 
 app_name = "work"
@@ -103,6 +104,28 @@ urlpatterns = [
         "<slug:org_slug>/termine/<uuid:termin_id>/antwort/",
         termine_views.TerminAntwortView.as_view(),
         name="termin_antwort",
+    ),
+    # Terminumfrage: einen Termin gemeinsam finden (Issue #1489)
+    path("<slug:org_slug>/termine/umfragen/neu/", umfrage_views.UmfrageNeuView.as_view(), name="terminumfrage_neu"),
+    path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/",
+        umfrage_views.UmfrageView.as_view(),
+        name="terminumfrage",
+    ),
+    path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/vorschlag/",
+        umfrage_views.UmfrageVorschlagView.as_view(),
+        name="terminumfrage_vorschlag",
+    ),
+    path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/festlegen/",
+        umfrage_views.UmfrageFestlegenView.as_view(),
+        name="terminumfrage_festlegen",
+    ),
+    path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/loeschen/",
+        umfrage_views.UmfrageLoeschenView.as_view(),
+        name="terminumfrage_loeschen",
     ),
     # Ladungen der Verwaltung mit Rückmeldung (Issue #225)
     path(

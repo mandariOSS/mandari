@@ -397,6 +397,12 @@ class NotificationHub:
                 from apps.work.termine import termine
 
                 return bool(termine.sichtbare(deputy).filter(pk=metadata["termin_id"]).exists())
+            if metadata.get("umfrage_id"):
+                # Terminumfrage: nur an eine Vertretung, die selbst gefragt ist oder die Umfrage angelegt hat. Wer
+                # sie nur sehen darf, weil er alle Termine verwaltet, stimmt nicht mit ab.
+                from apps.work.termine import umfrage
+
+                return umfrage.beteiligt(deputy, metadata["umfrage_id"])
         except (ValueError, TypeError, ValidationError):
             return False
         return True
