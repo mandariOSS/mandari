@@ -10,9 +10,14 @@ from datetime import date, timedelta
 from typing import Any
 
 import pytest
+from django.core import mail
+from django.db import transaction
+from django.tasks import task_backends
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.events.models import Task as TaskRow
+from apps.events.tasks_backend import JournalBackend
 from apps.work.faction.models import FactionMeetingType
 from apps.work.notifications.models import Notification, NotificationType
 from apps.work.notifications.services import NotificationHub
@@ -360,6 +365,38 @@ def test_mit_auftragsjournal_entstehen_meldungen_mit_der_aenderung(
         assert an_lea.count() == 1
     assert not Notification.objects.filter(recipient=karim).exists()
     assert Terminumfrage.objects.filter(pk=neue.pk).exists() and neue.teilnahmen.count() == 3
+
+
+@pytest.fixture
+def journal(settings: Any) -> JournalBackend:
+    """Wie im eigenen Betrieb mit ``TASKS_BACKEND=journal``: Mailaufträge sind Zeilen in ``events_task``."""
+    settings.TASKS = {"default": {**settings.TASKS["default"], "BACKEND": "apps.events.tasks_backend.JournalBackend"}}
+    backend = task_backends["default"]
+    assert isinstance(backend, JournalBackend)
+    return backend
+
+
+def test_mit_echtem_journal_teilt_der_mailauftrag_das_schicksal_der_aenderung(
+    journal: JournalBackend, org: Any, vera: Any, karim: Any
+) -> None:
+    """
+    Mit dem echten Auftragsjournal liegt der Mailauftrag als Zeile neben der Umfrage und versendet ist noch nichts.
+    Wird die Transaktion zurückgerollt, gibt es weder Umfrage noch Benachrichtigung noch Auftrag.
+    """
+    assert meldungen._im_journal()
+    an_karim = Notification.objects.filter(recipient=karim)
+
+    with pytest.raises(RuntimeError, match="Speichern scheitert"), transaction.atomic():
+        _anlegen(org, vera, wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
+        assert an_karim.all().count() == 1 and TaskRow.objects.count() == 1 and not mail.outbox
+        raise RuntimeError("Speichern scheitert")
+    assert not Terminumfrage.objects.exists() and not an_karim.all().exists()
+    assert not TaskRow.objects.exists() and not mail.outbox
+
+    # Gelingt das Speichern, bleiben Benachrichtigung und Auftrag; den Versand übernimmt der Runner
+    neue = _anlegen(org, vera, wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
+    assert Terminumfrage.objects.filter(pk=neue.pk).exists() and an_karim.all().count() == 1
+    assert TaskRow.objects.count() == 1 and not mail.outbox
 
 
 def test_weiteren_vorschlag_ergaenzen(org: Any, vera: Any, karim: Any, client_for: Any) -> None:
