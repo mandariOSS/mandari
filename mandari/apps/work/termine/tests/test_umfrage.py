@@ -300,16 +300,18 @@ def test_meldungen_gehen_erst_nach_dem_commit(
         neue = _anlegen(org, vera, wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
     assert not an_karim.exists() and len(nach_commit) == 1
     nach_commit[0]()
-    assert [meldung.notification_type for meldung in an_karim] == [NotificationType.TERMIN_UMFRAGE]
+    # ``.all()``: Die Iteration füllte sonst den Zwischenspeicher von ``an_karim``, und die Zählungen unten
+    # läsen nicht mehr aus der Datenbank
+    assert [meldung.notification_type for meldung in an_karim.all()] == [NotificationType.TERMIN_UMFRAGE]
 
     with django_capture_on_commit_callbacks(execute=False) as nach_commit:
         assert umfrage.vorschlag_ergaenzen(neue, {"tag": _tag(14).isoformat(), "beginn": "19:00"}, vera) == ""
-    assert an_karim.count() == 1 and len(nach_commit) == 1
+    assert an_karim.all().count() == 1 and len(nach_commit) == 1
 
     erster = neue.vorschlaege.order_by("start")[0]
     with django_capture_on_commit_callbacks(execute=False) as nach_commit:
         assert umfrage.festlegen(neue, erster.pk, vera) is not None
-    assert an_karim.count() == 1 and len(nach_commit) == 1
+    assert an_karim.all().count() == 1 and len(nach_commit) == 1
 
     with django_capture_on_commit_callbacks(execute=False) as nach_commit:
         form = termine.TerminForm(
@@ -324,7 +326,7 @@ def test_meldungen_gehen_erst_nach_dem_commit(
         )
         assert form.is_valid(), form.errors
         form.speichern(termine.neu(org, vera))
-    assert an_karim.count() == 1 and len(nach_commit) == 1
+    assert an_karim.all().count() == 1 and len(nach_commit) == 1
     nach_commit[0]()
     assert an_karim.filter(notification_type=NotificationType.TERMIN_EINLADUNG).count() == 1
 
@@ -374,7 +376,7 @@ def test_weiteren_vorschlag_ergaenzen(org: Any, vera: Any, karim: Any, client_fo
     assert client.post(adresse, {"tag": _tag(14).isoformat(), "beginn": "19:00", "ende": "21:00"}).status_code == 302
     assert neue.vorschlaege.count() == 4
     # Die Gefragten erfahren davon, damit sie ihre Antwort ergänzen
-    assert meldungen.count() == 2 and any("Neuer Vorschlag" in meldung.message for meldung in meldungen)
+    assert meldungen.count() == 2 and any("Neuer Vorschlag" in meldung.message for meldung in meldungen.all())
 
     # Derselbe Zeitpunkt, ein unvollständiger und einer mit dem Ende vor dem Beginn ändern nichts
     for eingabe in (
@@ -383,7 +385,7 @@ def test_weiteren_vorschlag_ergaenzen(org: Any, vera: Any, karim: Any, client_fo
         {"tag": _tag(15).isoformat(), "beginn": "19:00", "ende": "18:00"},
     ):
         assert client.post(adresse, eingabe).status_code == 302
-    assert neue.vorschlaege.count() == 4 and meldungen.count() == 2
+    assert neue.vorschlaege.count() == 4 and meldungen.all().count() == 2
 
     # Gefragte ergänzen keine Vorschläge; nach dem Festlegen geht es auch für die anlegende Person nicht mehr
     assert client_for(karim.user).post(adresse, {"tag": _tag(16).isoformat(), "beginn": "19:00"}).status_code == 403
