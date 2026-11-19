@@ -384,6 +384,8 @@ CASES: list[Case] = [
     Case(
         "ris_anfrage", data={"anfrage": "Was wurde zum Radweg an der Musterstraße beschlossen, und wann wird gebaut?"}
     ),
+    # Entwurf als Dokument übernehmen (Issue #1488, Schritt 2): ohne gültig signiertes Paket entsteht nichts
+    Case("ris_anfrage_dokument", data={"siegel": "ungueltig"}),
     # --- Dokumente ---
     Case(
         "document_create",

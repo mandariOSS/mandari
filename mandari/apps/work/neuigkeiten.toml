@@ -32,9 +32,9 @@ bereich = "recherche"
 titel = "Anfragen beantworten Sie mit einem Entwurf samt Fundstellen."
 text = """Unter „Recherche“ gibt es die Seite „Anfrage beantworten“. Sie fügen eine Bürger- oder Presseanfrage ein \
 und erhalten aus den öffentlichen Ratsdaten einen Antwortentwurf mit den Fundstellen als Fußnoten. Offene Punkte \
-stehen getrennt daneben, Absätze mit Zahlen oder Daten, die sich nicht in den Ratsdaten finden, sind markiert. Sie \
-prüfen den Entwurf und versenden selbst. Die Seite arbeitet, wenn die KI-Funktionen Ihrer Organisation \
-eingeschaltet sind."""
+stehen getrennt daneben, auffällige Zahlen und Daten sind markiert. Mit „Als Dokument übernehmen“ wird daraus ein \
+Dokument mit Freigabe, Briefkopf und Export. Sie prüfen und versenden selbst. Voraussetzung: Die KI-Funktionen \
+Ihrer Organisation sind eingeschaltet."""
 
 [[eintrag]]
 datum = 2026-11-17
