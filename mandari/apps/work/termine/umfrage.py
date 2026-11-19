@@ -383,7 +383,8 @@ def festlegen_als_sitzung(umfrage: Terminumfrage, vorschlag_id: Any, membership:
     if offen is None:
         return None
     umfrage, vorschlag = offen
-    quelle: Any = umfrage
+    # Ohne Beschreibung: Sie ist an der Umfrage verschlüsselt, die Beschreibung einer Sitzung nicht. Die Umfrage
+    # bleibt mit der Sitzung verbunden und behält sie.
     sitzung = neue_sitzung(
         umfrage.organization,
         membership,
@@ -391,22 +392,25 @@ def festlegen_als_sitzung(umfrage: Terminumfrage, vorschlag_id: Any, membership:
         start=vorschlag.start,
         end=vorschlag.end,
         location=umfrage.location,
-        description=quelle.get_description_decrypted() or "",
         rsvp_enabled=True,
         meeting_type=art,
     )
     sitzung_id = sitzung.pk
 
-    wahl = dict(vorschlag.antworten.values_list("membership_id", "wahl"))
+    antworten = {
+        mitglied_id: (wahl, beantwortet)
+        for mitglied_id, wahl, beantwortet in vorschlag.antworten.values_list("membership_id", "wahl", "updated_at")
+    }
     jetzt = timezone.now()
     gefragte = [teilnahme.membership for teilnahme in umfrage.teilnahmen.select_related("membership")]
     for mitglied in gefragte:
         anwesenheit, _ = FactionAttendance.objects.get_or_create(
             meeting_id=sitzung_id, membership=mitglied, defaults={"status": "invited"}
         )
-        if mitglied.pk in wahl:
-            anwesenheit.status = ANTWORT_IN_DER_SITZUNG[wahl[mitglied.pk]]
-            anwesenheit.responded_at = jetzt
+        if mitglied.pk in antworten:
+            wahl, beantwortet = antworten[mitglied.pk]
+            anwesenheit.status = ANTWORT_IN_DER_SITZUNG[wahl]
+            anwesenheit.responded_at = beantwortet
             anwesenheit.save(update_fields=["status", "responded_at"])
 
     vorschlag.festgelegt = True

@@ -97,12 +97,16 @@ def test_ergebnis_wird_interne_sitzung(org: Any, vera: Any, karim: Any, lea: Any
         "Rathaus, Raum 2",
     )
     assert sitzung.rsvp_enabled and sitzung.status == "planned" and sitzung.created_by == vera
-    assert sitzung.description == "Haushalt und Arbeitsprogramm."
+    # Die Beschreibung bleibt verschlüsselt an der Umfrage (die einer Sitzung ist es nicht)
+    assert sitzung.description == ""
+    assert neue.get_description_decrypted() == "Haushalt und Arbeitsprogramm."
 
-    # Die Antworten stehen auf der Anwesenheitsliste; die Einladung mit Tagesordnung verschickt die Sitzung
+    # Die Antworten stehen mit ihrem Zeitpunkt auf der Anwesenheitsliste; die Einladung verschickt die Sitzung
     stand = dict(FactionAttendance.objects.filter(meeting=sitzung).values_list("membership_id", "status"))
     assert stand[karim.pk] == "confirmed" and stand[lea.pk] == "tentative" and stand[vera.pk] == "invited"
-    assert FactionAttendance.objects.get(meeting=sitzung, membership=karim).responded_at is not None
+    beantwortet = erster.antworten.get(membership=karim).updated_at
+    assert FactionAttendance.objects.get(meeting=sitzung, membership=karim).responded_at == beantwortet
+    assert FactionAttendance.objects.get(meeting=sitzung, membership=vera).responded_at is None
     meldungen = Notification.objects.filter(
         title="Sitzung steht fest", notification_type=NotificationType.TERMIN_EINLADUNG
     )

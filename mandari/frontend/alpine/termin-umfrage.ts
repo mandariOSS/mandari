@@ -80,7 +80,15 @@ export const terminVorschlaege = defineComponent(() => ({
       this.monat = new Date(jahr, monat - 1, 1)
     }
     this.$el.addEventListener('input', () => this.stand++)
-    this.$el.addEventListener('change', () => this.stand++)
+    this.$el.addEventListener('change', (ereignis: Event) => {
+      // Tag von Hand eingetragen: Uhrzeit wie beim Klick im Monatsblatt vorgeben
+      const feld = ereignis.target
+      if (feld instanceof HTMLInputElement && feld.name === 'vorschlag_tag' && feld.value) {
+        const zeile = feld.closest('tr')
+        if (zeile) this.zeitVorgeben(zeile)
+      }
+      this.stand++
+    })
   },
 
   zeilen(): HTMLTableRowElement[] {
@@ -124,16 +132,22 @@ export const terminVorschlaege = defineComponent(() => ({
     return liste.lastElementChild as HTMLTableRowElement
   },
 
+  /** Leere Zeile anhängen; die Uhrzeit kommt erst mit dem Tag (`zeitVorgeben`), sonst zählte sie als Vorschlag */
   weitere() {
-    const zeit = this.letzteZeit()
     const zeile = this.anhaengen()
     if (!zeile) return
-    const beginn = this.feld(zeile, 'beginn')
-    if (beginn) beginn.value = zeit.beginn
-    const ende = this.feld(zeile, 'ende')
-    if (ende) ende.value = zeit.ende
     this.stand++
     this.feld(zeile, 'tag')?.focus()
+  },
+
+  /** Beginn und Ende des letzten Vorschlags übernehmen, nur gemeinsam und nur in eine Zeile ohne Beginn */
+  zeitVorgeben(zeile: Element) {
+    const beginn = this.feld(zeile, 'beginn')
+    if (!beginn || beginn.value) return
+    const zeit = this.letzteZeit()
+    beginn.value = zeit.beginn
+    const ende = this.feld(zeile, 'ende')
+    if (ende && !ende.value) ende.value = zeit.ende
   },
 
   waehlen(datum: string) {
@@ -144,15 +158,11 @@ export const terminVorschlaege = defineComponent(() => ({
       this.stand++
       return
     }
-    const zeit = this.letzteZeit()
     const zeile = this.zeilen().find((z) => !this.feld(z, 'tag')?.value) ?? this.anhaengen()
     if (!zeile) return
+    this.zeitVorgeben(zeile)
     const tag = this.feld(zeile, 'tag')
     if (tag) tag.value = datum
-    const beginn = this.feld(zeile, 'beginn')
-    if (beginn && !beginn.value) beginn.value = zeit.beginn
-    const ende = this.feld(zeile, 'ende')
-    if (ende && !ende.value) ende.value = zeit.ende
     this.stand++
   },
 
