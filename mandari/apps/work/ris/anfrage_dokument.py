@@ -43,8 +43,9 @@ from . import anfragen
 VERSION: Final = 1
 #: So lange lässt sich ein angezeigter Entwurf übernehmen (Sekunden)
 MAX_ALTER: Final = 24 * 60 * 60
-MAX_PRUEFPUNKTE: Final = 20
 ABSATZ_ANFANG: Final = 60
+#: Rechte für die Übernahme: Wer ein Dokument anlegt, muss es danach im Editor auch öffnen dürfen
+RECHTE: Final = ("ris.view", "motions.create", "motions.view")
 
 TYP_SLUG: Final = "antwortschreiben"
 TYP_NAME: Final = "Antwortschreiben"
@@ -168,8 +169,18 @@ def _anfang(text: str) -> str:
     return text[:ABSATZ_ANFANG].rsplit(" ", 1)[0].rstrip(" ,;:") + " …"
 
 
+def darf(membership: Any) -> bool:
+    """Darf die Person einen Entwurf als Dokument übernehmen (und das Dokument danach öffnen)?"""
+    return all(membership.has_permission(recht) for recht in RECHTE)
+
+
 def pruefpunkte(paket: dict[str, Any]) -> list[str]:
-    """Checkliste des Dokuments: Abgleich mit den Quellen, Prüfhinweise je Absatz, Platzhalter, offene Punkte."""
+    """
+    Checkliste des Dokuments: Abgleich mit den Quellen, Prüfhinweise je Absatz, Platzhalter, offene Punkte.
+
+    Die Liste wird nicht gekürzt: Prüfhinweise und offene Punkte stehen nach der Übernahme nur hier, nicht im Text
+    des Dokuments. Ihre Zahl ist durch die Länge der Antwort des Modells und ``anfragen.MAX_OFFEN`` begrenzt.
+    """
     punkte = [GEGENPRUEFEN]
     platzhalter: list[str] = []
     for text, _ist_liste, hinweise in paket["absaetze"]:
@@ -177,7 +188,7 @@ def pruefpunkte(paket: dict[str, Any]) -> list[str]:
         platzhalter.extend(treffer.group(0) for treffer in _PLATZHALTER.finditer(str(text)))
     punkte.extend(f"Ergänzen: {stelle}" for stelle in dict.fromkeys(platzhalter))
     punkte.extend(f"Offen: {punkt}" for punkt in paket.get("offen") or [])
-    return [punkt[:300] for punkt in punkte][:MAX_PRUEFPUNKTE]
+    return [punkt[:300] for punkt in punkte]
 
 
 def _dokumenttyp(organization: Any) -> Any:

@@ -161,11 +161,13 @@ Organisation und senden nur die Eingabe und öffentliche Ratsdaten an den KI-Die
 5. Zum Kopieren gibt es den Brief allein und den Brief mit Quellenverzeichnis. Dort führen die Adressen auf die
    öffentlichen Seiten im Bürgerportal (`SITE_URL`), in Work auf die Seiten der Recherche.
 
-6. „Als Dokument übernehmen“ (`apps/work/ris/anfrage_dokument.py`, Recht `motions.create`) legt aus dem angezeigten
-   Entwurf ein Dokument an, ohne weiteren KI-Aufruf. Die Seite trägt den Entwurf dafür als signiertes Paket im
-   Formular mit (`django.core.signing`, gebunden an Organisation und Mitgliedschaft, einen Tag gültig); ein Paket
-   ohne gültige Signatur legt nichts an. Das Dokument ist privat und hat den Typ „Antwortschreiben“ (Freigabe ja,
-   Einreichung bei der Verwaltung nein). Es enthält den Brief mit Fußnoten als `[1]`, das Quellenverzeichnis mit den
+6. „Als Dokument übernehmen“ (`apps/work/ris/anfrage_dokument.py`, Rechte `motions.create` und `motions.view`) legt
+   aus dem angezeigten Entwurf ein Dokument an, ohne weiteren KI-Aufruf. Die Seite trägt den Entwurf dafür als
+   signiertes Paket im Formular mit (`django.core.signing`, gebunden an Organisation und Mitgliedschaft, einen Tag
+   gültig); ein Paket ohne gültige Signatur legt nichts an. Das Dokument ist privat und hat den Typ
+   „Antwortschreiben“ (Freigabe ja, Einreichung bei der Verwaltung nein), den das erste Übernehmen anlegt. Hat die
+   Organisation diesen Typ abgeschaltet, bleibt das Dokument ohne eigenen Typ und verhält sich wie eine
+   Stellungnahme. Es enthält den Brief mit Fußnoten als `[1]`, das Quellenverzeichnis mit den
    Adressen der öffentlichen Seiten und, nach einem Seitenumbruch, die Anfrage im Wortlaut. Die Prüfhinweise je
    Absatz, die Platzhalter und die offenen Punkte stehen als Checkliste am Dokument, davor der Punkt „KI-Entwurf:
    Aussagen gegen die Quellen prüfen“. Im Dokument trägt der Text keine maschinenlesbare Kennzeichnung mehr (wie

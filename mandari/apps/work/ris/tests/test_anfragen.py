@@ -478,7 +478,13 @@ def test_entwurf_als_dokument_uebernehmen(
 
 
 def test_dokument_nur_mit_recht_und_gueltigem_paket(
-    org: Any, stadt: Musterstadt, mitglied: Any, verfasserin: Any, client_for: Any, monkeypatch: pytest.MonkeyPatch
+    org: Any,
+    stadt: Musterstadt,
+    mitglied: Any,
+    verfasserin: Any,
+    make_member: Any,
+    client_for: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     anbieter(monkeypatch, *radweg(stadt), *radweg(stadt))
     seite = reverse("work:ris_anfrage", kwargs={"org_slug": org.slug})
@@ -488,8 +494,14 @@ def test_dokument_nur_mit_recht_und_gueltigem_paket(
     ohne = client_for(mitglied.user)
     html_ohne = ohne.post(seite, {"anfrage": ANFRAGE}, headers={"HX-Request": "true"}).content.decode()
     assert 'data-testid="anfrage-entwurf"' in html_ohne and "Als Dokument übernehmen" not in html_ohne
-    fremd = anfrage_dokument.siegel(anfragen.entwerfen(org, mitglied, ANFRAGE, stadt.body), org, mitglied)
+    entwurf = anfragen.entwerfen(org, mitglied, ANFRAGE, stadt.body)
+    fremd = anfrage_dokument.siegel(entwurf, org, mitglied)
     assert fremd and ohne.post(adresse, {"siegel": fremd}).status_code == 403
+    # Anlegen ohne Lesen genügt nicht: Die Übernahme führt in den Editor, und der verlangt das Leserecht
+    nur_anlegen = make_member(org, ["ris.view", "motions.create"])
+    assert not anfrage_dokument.darf(nur_anlegen) and anfrage_dokument.darf(verfasserin)
+    halb = anfrage_dokument.siegel(entwurf, org, nur_anlegen)
+    assert client_for(nur_anlegen.user).post(adresse, {"siegel": halb}).status_code == 403
 
     # Ein Paket einer anderen Person, ein verändertes und ein fehlendes gelten nicht
     client = client_for(verfasserin.user)
@@ -549,5 +561,13 @@ def test_dokument_checkliste_listen_und_abgeschalteter_typ(org: Any, verfasserin
     assert anfrage_dokument.anlegen(org, verfasserin, paket, heute=date(2026, 10, 7)) == (dokument, False)
     dokument.delete()
     assert anfrage_dokument.anlegen(org, verfasserin, paket, heute=date(2026, 10, 7))[1]
+    # Nichts wird gekürzt: Prüfhinweise und offene Punkte stehen nach der Übernahme nur in der Checkliste
+    viele = {
+        **paket,
+        "absaetze": [[f"Absatz {nummer} nennt 12 Euro.", False, ["Bitte gegenlesen."]] for nummer in range(25)],
+        "offen": ["Erster offener Punkt.", "Letzter offener Punkt."],
+    }
+    punkte = anfrage_dokument.pruefpunkte(viele)
+    assert len(punkte) == 28 and punkte[-1] == "Offen: Letzter offener Punkt."
     # Ein Entwurf ohne Brieftext bekommt kein Paket
     assert anfrage_dokument.siegel(anfragen.Entwurf(hinweis=anfragen.KEIN_ENTWURF), org, verfasserin) == ""

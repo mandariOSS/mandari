@@ -67,7 +67,7 @@ class RISAnfrageView(RISBodiesMixin, WorkViewMixin, TemplateView):
         context["anrede"] = anrede
         context["gewaehlte_kommune"] = str(body.pk) if body is not None else ""
         # „Als Dokument übernehmen“ (Schritt 2): Der Entwurf geht signiert im Formular mit, gespeichert wird er nicht
-        if ansicht.membership.has_permission("motions.create"):
+        if anfrage_dokument.darf(ansicht.membership):
             context["siegel"] = anfrage_dokument.siegel(context["entwurf"], ansicht.organization, ansicht.membership)
         return self.response_class(
             request=request,
@@ -80,7 +80,8 @@ class RISAnfrageView(RISBodiesMixin, WorkViewMixin, TemplateView):
 class RISAnfrageDokumentView(WorkViewMixin, View):
     """Aus dem angezeigten Antwortentwurf ein Dokument anlegen (``apps.work.ris.anfrage_dokument``)."""
 
-    permission_required = ["ris.view", "motions.create"]
+    # Auch motions.view: Die Übernahme führt in den Editor, und der verlangt dieses Recht
+    permission_required = list(anfrage_dokument.RECHTE)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         ansicht: Any = self
