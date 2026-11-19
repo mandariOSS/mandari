@@ -254,16 +254,18 @@ def test_verwaltung_aendert_ohne_zuordnungen_zu_verlieren(
 
     # Die Leitung gehört nicht zum Arbeitskreis und sieht dessen Sitzung nicht: Sie bekommt die Sitzungsart
     # trotzdem angeboten, die Sitzung nicht, und ihre eigene Einladung steht in der Liste
+    assert termine.antworten(termin, leitung, "zugesagt")
     client = client_for(leitung.user)
     seite = client.get(adresse).content.decode()
     assert f'value="{arbeitskreis.pk}" selected' in seite and "Vertrauliche Runde" not in seite
-    assert f'id="termin-eingeladen-{leitung.pk}"' in seite
+    assert f'id="termin-eingeladen-{leitung.pk}" value="{leitung.pk}" checked' in seite
     eingaben.pop("faction_meeting")
     antwort = client.post(adresse, _formular(title="Nachbereitung II", eingeladene=eingeladen, **eingaben))
     assert antwort.status_code == 302, antwort.content.decode()[:2000]
     termin = Termin.objects.get(pk=termin.pk)
     assert (termin.title, termin.meeting_type, termin.faction_meeting) == ("Nachbereitung II", arbeitskreis, alt)
-    assert set(termin.teilnahmen.values_list("membership_id", flat=True)) == {karim.pk, leitung.pk}
+    # Die eigene Einladung bleibt samt Antwort stehen
+    assert dict(termin.teilnahmen.values_list("membership_id", "status")) == {karim.pk: "offen", leitung.pk: "zugesagt"}
 
 
 def test_vertretung_bekommt_nur_sichtbare_termine(org: Any, vera: Any, karim: Any, make_member: Any) -> None:
