@@ -979,6 +979,13 @@ class OParlMeeting(SourceDeletionModel):
         name = (self.name or "").strip()
         return "" if name.lower() in {"", "sitzung"} else name
 
+    def bezeichnung(self) -> str:
+        """
+        Wie eine Sitzung in Listen, Kalendern und Bezügen heißt: ihr eigener Name, wenn er mehr sagt als „Sitzung“
+        (etwa „Sondersitzung zum Haushalt“), sonst ihr Gremium (``get_display_name``, Issue #1508).
+        """
+        return self.eigener_name() or self.get_display_name()
+
     def get_organization_names(self):
         """Gibt die Namen der beteiligten Gremien zurück."""
         orgs = self.organizations.all()

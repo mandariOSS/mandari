@@ -87,7 +87,7 @@ class Angebot:
 
 def _sitzung_name(ris: Any) -> str:
     datum = date_format(timezone.localtime(ris.start), "D d.m.Y, H:i") if ris.start else ""
-    name = ris.get_display_name()
+    name = ris.bezeichnung()
     return f"{name}, {datum}" if datum else name
 
 

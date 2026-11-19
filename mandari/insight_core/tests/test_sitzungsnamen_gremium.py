@@ -58,5 +58,10 @@ def test_kalender_suche_und_bezuege_nennen_das_gremium(body: OParlBody) -> None:
     assert meeting_label(sitzung) == "Kulturausschuss, 06.04.2027"
     assert meeting_to_doc(sitzung)["name"] == "Kulturausschuss"
 
+    # Ein eigener Name geht vor, auch mit Gremium
+    sonder = _sitzung(body, 12, "Sondersitzung zum Haushalt", ausschuss)
+    assert sonder.bezeichnung() == "Sondersitzung zum Haushalt" == serialize_calendar_event(sonder, "fraktion")["title"]
+    assert meeting_label(sonder) == "Sondersitzung zum Haushalt, 06.04.2027"
+
     # Ohne Gremium und ohne eigenen Namen bleibt es bei „Sitzung“
     assert serialize_calendar_event(_sitzung(body, 11, "Sitzung", None), "fraktion")["title"] == "Sitzung"

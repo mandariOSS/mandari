@@ -268,7 +268,7 @@ def search_results(request):
             results.append(
                 {
                     "type": "meeting",
-                    "title": meeting.get_display_name(),
+                    "title": meeting.bezeichnung(),
                     "subtitle": meeting.start.strftime("%d.%m.%Y") if meeting.start else None,
                     "url": f"/insight/termine/{meeting.id}/",
                 }
