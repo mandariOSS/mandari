@@ -99,7 +99,8 @@ def test_ergebnis_wird_interne_sitzung(org: Any, vera: Any, karim: Any, lea: Any
     assert sitzung.rsvp_enabled and sitzung.status == "planned" and sitzung.created_by == vera
     # Die Beschreibung bleibt verschlüsselt an der Umfrage (die einer Sitzung ist es nicht)
     assert sitzung.description == ""
-    assert neue.get_description_decrypted() == "Haushalt und Arbeitsprogramm."
+    quelle: Any = neue
+    assert quelle.get_description_decrypted() == "Haushalt und Arbeitsprogramm."
 
     # Die Antworten stehen mit ihrem Zeitpunkt auf der Anwesenheitsliste; die Einladung verschickt die Sitzung
     stand = dict(FactionAttendance.objects.filter(meeting=sitzung).values_list("membership_id", "status"))

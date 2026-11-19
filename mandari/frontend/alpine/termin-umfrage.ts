@@ -81,11 +81,13 @@ export const terminVorschlaege = defineComponent(() => ({
     }
     this.$el.addEventListener('input', () => this.stand++)
     this.$el.addEventListener('change', (ereignis: Event) => {
-      // Tag von Hand eingetragen: Uhrzeit wie beim Klick im Monatsblatt vorgeben
+      // Tag von Hand eingetragen: Uhrzeit wie beim Klick im Monatsblatt vorgeben, das Blatt zeigt seinen Monat
       const feld = ereignis.target
       if (feld instanceof HTMLInputElement && feld.name === 'vorschlag_tag' && feld.value) {
         const zeile = feld.closest('tr')
         if (zeile) this.zeitVorgeben(zeile)
+        const [jahr, monat] = feld.value.split('-').map(Number)
+        if (jahr && monat) this.monat = new Date(jahr, monat - 1, 1)
       }
       this.stand++
     })
