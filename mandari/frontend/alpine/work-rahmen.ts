@@ -162,6 +162,57 @@ export const workGruppe = defineComponent(() => ({
   },
 }))
 
+/** Zahl an der Navigation: leer bei null, ab hundert „99+“ (die Marke bleibt schmal). */
+export function zaehlerText(zahl: number): string {
+  if (!Number.isFinite(zahl) || zahl <= 0) return ''
+  return zahl > 99 ? '99+' : String(Math.trunc(zahl))
+}
+
+/**
+ * Zahlen an der Navigation setzen (Issue #1492): Marken `<span data-zaehler="aufgaben" hidden>` in der Leiste. Für
+ * Bildschirmleser liest sich der Eintrag als „Aufgaben, 3 offen“.
+ */
+export function zaehlerSetzen(zaehler: Record<string, number>, wurzel: ParentNode = document): void {
+  for (const marke of wurzel.querySelectorAll<HTMLElement>('[data-zaehler]')) {
+    const text = zaehlerText(Number(zaehler[marke.dataset.zaehler ?? ''] ?? 0))
+    marke.hidden = !text
+    marke.replaceChildren()
+    if (!text) continue
+    const davor = document.createElement('span')
+    davor.className = 'sr-only'
+    davor.textContent = ', '
+    const danach = document.createElement('span')
+    danach.className = 'sr-only'
+    danach.textContent = ' offen'
+    marke.append(davor, text, danach)
+  }
+}
+
+/**
+ * Knopf „Neu“ oben in der Leiste (Issue #1492): Menü mit den Dingen, die die Person anlegen darf. Das Menü liegt
+ * fest am Fenster (die schmale Leiste schnitte es sonst ab) und wird beim Öffnen unter den Knopf gesetzt.
+ */
+export const workNeu = defineComponent(() => ({
+  offen: false,
+
+  umschalten() {
+    if (this.offen) {
+      this.schliessen(false)
+      return
+    }
+    const knopf = this.$refs.knopf as HTMLElement | undefined
+    const menue = this.$refs.menue as HTMLElement | undefined
+    if (knopf && menue) menue.style.top = `${Math.round(knopf.getBoundingClientRect().bottom + 4)}px`
+    this.offen = true
+  },
+
+  schliessen(fokus = true) {
+    if (!this.offen) return
+    this.offen = false
+    if (fokus) this.$nextTick(() => fokusZurueck((this.$refs.knopf as HTMLElement | undefined) ?? null))
+  },
+}))
+
 /**
  * Glocke in der Kopfzeile: Zahl ungelesener Benachrichtigungen (alle 30 s), Liste beim Öffnen, „Alle gelesen“.
  * Adressen aus data-zahl-url, data-liste-url, data-gelesen-url am Element.
@@ -206,8 +257,9 @@ export const workGlocke = defineComponent(() => ({
     try {
       const antwort = await fetch(this._urls.zahl, { headers: { Accept: 'application/json' } })
       if (!antwort.ok) return
-      const daten = (await antwort.json()) as { count?: number }
+      const daten = (await antwort.json()) as { count?: number; zaehler?: Record<string, number> }
       this.anzahl = Number(daten.count ?? 0)
+      zaehlerSetzen(daten.zaehler ?? {})
     } catch (error) {
       console.warn('Benachrichtigungen: Zahl nicht geladen', error)
     }

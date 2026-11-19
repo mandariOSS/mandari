@@ -80,12 +80,13 @@ import { registerNoeStore } from '../alpine/noe-sichtschutz'
 registerNoeStore(Alpine)
 
 // ---- Neuer Rahmen (#852): Leiste, Raum-Dialog, Blatt „Mehr“, Glocke, Personenmenü -----------------
-import { workGlocke, workGruppe, workPerson, workRahmen } from '../alpine/work-rahmen'
+import { workGlocke, workGruppe, workNeu, workPerson, workRahmen } from '../alpine/work-rahmen'
 
 Alpine.data('workRahmen', workRahmen)
 Alpine.data('workGruppe', workGruppe)
 Alpine.data('workGlocke', workGlocke)
 Alpine.data('workPerson', workPerson)
+Alpine.data('workNeu', workNeu)
 
 // ---- Anzeige automatisch speichernder htmx-Formulare (Aufgaben-Panel, #854) ----------------------
 import { autosaveAnzeige } from '../alpine/autosave-anzeige'

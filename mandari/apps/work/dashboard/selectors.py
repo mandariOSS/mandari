@@ -70,6 +70,27 @@ def vorbereitungsstand(organization: Any, meeting_ids: list[uuid.UUID]) -> dict[
     }
 
 
+def zaehler(organization: Any, membership: Any) -> dict[str, int]:
+    """
+    Zahlen an der Navigation (Issue #1492): Aufgaben, die dem Mitglied zugewiesen und offen sind, und Dokumente,
+    die auf seine Freigabe warten. Dieselbe Auswahl wie die ersten beiden Gruppen von ``fuer_sie``, nur gezählt.
+    """
+    from apps.work.motions.models import Motion, MotionApproval
+    from apps.work.tasks.models import Task
+    from apps.work.tasks.selectors import ohne_gesperrte_tops
+
+    sichtbar = Motion.visible_to(membership)  # type: ignore[no-untyped-call]  # Modell noch ohne Annotationen
+    return {
+        "aufgaben": ohne_gesperrte_tops(
+            Task.objects.filter(organization=organization, assigned_to=membership, status__in=("todo", "in_progress")),
+            membership,
+        ).count(),
+        "dokumente": MotionApproval.objects.filter(approver=membership, approved__isnull=True, motion__in=sichtbar)
+        .exclude(motion__status__in=("archived", "deleted"))
+        .count(),
+    }
+
+
 def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict[str, Any]]:
     """
     Was auf das Mitglied wartet, wichtigstes zuerst: Freigaben, um die es gebeten ist, ihm zugewiesene offene

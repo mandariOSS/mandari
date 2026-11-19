@@ -26,6 +26,15 @@
 # Version.
 
 [[eintrag]]
+datum = 2026-11-19
+version = ""
+bereich = "ueberall"
+titel = "„Neu“ in der Seitenleiste, Zahlen an Aufgaben und Dokumenten."
+text = """Über den Knopf „Neu“ oben in der Seitenleiste legen Sie von jeder Seite aus ein Dokument oder eine Aufgabe \
+an oder beginnen die Antwort auf eine Anfrage. An „Aufgaben“ steht, wie viele offene Aufgaben Ihnen zugewiesen \
+sind, an „Dokumente“, wie viele auf Ihre Freigabe warten."""
+
+[[eintrag]]
 datum = 2026-11-18
 version = ""
 bereich = "recherche"
