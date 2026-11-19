@@ -108,7 +108,7 @@ async def _sitzung(storage: DatabaseStorage, body_id: uuid.UUID, nummer: int, **
 
 async def _offen(storage: DatabaseStorage, body_id: uuid.UUID) -> dict[str, datetime]:
     zeilen = await storage.get_meetings_ohne_gremium(
-        body_id, JETZT - timedelta(days=62), JETZT + timedelta(days=400), JETZT - ERNEUT_NACH, SCHLUESSEL
+        [body_id], JETZT - timedelta(days=62), JETZT + timedelta(days=400), JETZT - ERNEUT_NACH, SCHLUESSEL
     )
     return {kennung.rsplit("/", 1)[-1]: stand for _, kennung, _, stand, _ in zeilen}
 
@@ -133,7 +133,7 @@ async def test_liest_nur_offene_sitzungen_ohne_gremium(storage: DatabaseStorage)
     # Ohne Angabe und mit lange zurückliegender Prüfung; nicht: mit Namen, frisch geprüft, mit Gremium im Bestand
     assert set(await _offen(storage, body_id)) == {"1", "4"}
     zeilen = await storage.get_meetings_ohne_gremium(
-        body_id, JETZT - timedelta(days=62), JETZT + timedelta(days=400), JETZT - ERNEUT_NACH, SCHLUESSEL
+        [body_id], JETZT - timedelta(days=62), JETZT + timedelta(days=400), JETZT - ERNEUT_NACH, SCHLUESSEL
     )
     # Mit dem Zeitpunkt der letzten Prüfung für die Reihenfolge der Monate
     geprueft = {kennung.rsplit("/", 1)[-1]: zeit for _, kennung, _, _, zeit in zeilen}

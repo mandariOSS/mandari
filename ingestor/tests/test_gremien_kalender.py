@@ -56,10 +56,10 @@ def _sitzung(nummer: int, tag: int, monat: int = 11, jahr: int = 2026) -> OhneGr
     )
 
 
-def _lauf() -> KalenderLauf:
+def _config() -> KalenderConfig:
     lauf = KalenderLauf.fuer({"sessionnet_kalender": BASIS})
-    assert lauf is not None
-    return lauf
+    assert lauf is not None and lauf.kommunen == []
+    return lauf.config
 
 
 def test_konfiguration_und_kennung() -> None:
@@ -98,7 +98,7 @@ async def test_ergaenzt_bekannte_merkt_sich_unbekannte_und_liest_je_monat_eine_s
         gespeichert[sitzung.id] = wert
         return True
 
-    stats = await ergaenzen(_lauf(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
+    stats = await ergaenzen(_config(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
     assert gefragt == [JETZT - ERNEUT_NACH]
     assert geladen == [f"{BASIS}si0040.php?__cjahr=2026&__cmonat=11"]
     assert gespeichert["id-14591"]["name"] == "Interfraktionelle Arbeitsgruppe Internationales"
@@ -131,7 +131,7 @@ async def test_grenze_je_lauf_und_fehler_halten_nicht_auf() -> None:
         gespeichert[sitzung.id] = wert
         return True
 
-    stats = await ergaenzen(_lauf(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
+    stats = await ergaenzen(_config(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
     # Nächste Monate zuerst, höchstens MONATE_JE_LAUF Seiten; Fehler zählen, der Lauf geht weiter
     assert len(geladen) == MONATE_JE_LAUF and "__cmonat=11" in geladen[0] and "__cmonat=12" in geladen[1]
     assert stats.fehlgeschlagen == 2 and stats.verschoben == 2 and stats.ohne_eintrag == MONATE_JE_LAUF - 2
@@ -142,8 +142,24 @@ async def test_grenze_je_lauf_und_fehler_halten_nicht_auf() -> None:
 
 
 @pytest.mark.asyncio
-async def test_kommunen_einer_quelle_teilen_seiten_und_kontingent() -> None:
-    lauf = _lauf()
+async def test_zwei_kommunen_einer_quelle_ueber_zwei_tage() -> None:
+    """
+    Ein Lauf je Quelle über die Sitzungen aller Kommunen: Eine Seite dient beiden, das Kontingent gilt für die Quelle,
+    und am nächsten Tag kommen die Monate der zweiten Kommune vor den schon geprüften der ersten dran.
+    """
+    erste = [_sitzung(14591, 19)] + [_sitzung(2000 + m, 10, m, 2027) for m in range(1, MONATE_JE_LAUF)]
+    zweite = [_sitzung(14557, 24)] + [_sitzung(3000 + m, 10, m, 2027) for m in range(MONATE_JE_LAUF, 9)]
+    bestand: dict[Any, dict[str, str]] = {}
+
+    async def lade_ohne_gremium(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
+        offen = []
+        for sitzung in erste + zweite:
+            wert = bestand.get(sitzung.id, {})
+            geprueft = datetime.fromisoformat(wert["geprueft"]) if "geprueft" in wert else None
+            if "name" not in wert and (geprueft is None or geprueft <= erneut_ab):
+                offen.append(replace(sitzung, geprueft=geprueft))
+        return offen
+
     geladen: list[str] = []
 
     async def lade_seite(url: str) -> Seite:
@@ -151,20 +167,23 @@ async def test_kommunen_einer_quelle_teilen_seiten_und_kontingent() -> None:
         return Seite(text=KALENDER)
 
     async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
+        bestand[sitzung.id] = wert
         return True
 
-    async def erste(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
-        return [_sitzung(14591, 19)] + [_sitzung(2000 + m, 10, m + 1, 2027) for m in range(MONATE_JE_LAUF - 2)]
+    config = _config()
+    heute = await ergaenzen(config, lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
+    # November einmal für beide Kommunen; sechs Seiten, die Monate der zweiten Kommune ab Juni warten
+    assert heute.seiten == MONATE_JE_LAUF and len(set(geladen)) == MONATE_JE_LAUF
+    assert bestand["id-14591"]["name"] and bestand["id-14557"]["name"] and heute.verschoben == 3
+    geladen.clear()
 
-    async def zweite(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
-        return [_sitzung(14557, 24), _sitzung(3001, 10, 10, 2027), _sitzung(3002, 10, 11, 2027)]
-
-    eins = await ergaenzen(lauf, erste, lade_seite, speichere, jetzt=JETZT)
-    zwei = await ergaenzen(lauf, zweite, lade_seite, speichere, jetzt=JETZT)
-    # November lädt nur die erste Kommune; das Kontingent reicht danach noch für einen Monat
-    assert len(geladen) == MONATE_JE_LAUF and len(set(geladen)) == MONATE_JE_LAUF
-    assert eins.seiten == MONATE_JE_LAUF - 1 and zwei.seiten == 1
-    assert zwei.benannt == 1 and zwei.verschoben == 1 and lauf.rest == 0
+    morgen = await ergaenzen(
+        config, lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT + ERNEUT_NACH + timedelta(hours=1)
+    )
+    # Die noch nie geprüften Monate der zweiten Kommune zuerst, danach die am längsten geprüften der ersten
+    assert morgen.seiten == MONATE_JE_LAUF
+    assert geladen[:3] == [f"{BASIS}si0040.php?__cjahr=2027&__cmonat={monat}" for monat in (6, 7, 8)]
+    assert {f"id-{3000 + m}" for m in range(MONATE_JE_LAUF, 9)} <= set(bestand)
 
 
 @pytest.mark.asyncio
@@ -178,7 +197,7 @@ async def test_geaenderte_sitzung_wird_nicht_benannt() -> None:
     async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
         return False  # ein paralleler Abgleich hat die Sitzung inzwischen geändert
 
-    stats = await ergaenzen(_lauf(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
+    stats = await ergaenzen(_config(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
     assert stats.benannt == 0 and stats.seiten == 1
 
 
@@ -206,6 +225,6 @@ async def test_geprueft_monate_kommen_nach_den_ungeprueften() -> None:
     async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
         return True
 
-    await ergaenzen(_lauf(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
+    await ergaenzen(_config(), lade_ohne_gremium, lade_seite, speichere, jetzt=JETZT)
     erwartet = [monate[MONATE_JE_LAUF], monate[MONATE_JE_LAUF + 1], *monate[: MONATE_JE_LAUF - 2]]
     assert geladen == [f"{BASIS}si0040.php?__cjahr={jahr}&__cmonat={monat}" for jahr, monat in erwartet]

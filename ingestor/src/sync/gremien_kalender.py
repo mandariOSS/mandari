@@ -13,8 +13,10 @@ den Namen als ``mandari:gremiumWeb`` (Name, Seite, Abrufzeit) im Rohdatensatz ab
 Platzhalters. Die Sitzungsnummer im Kalender (``__ksinr``) ist bei SessionNet das letzte Glied der OParl-Kennung.
 
 Abrufe: nur Sitzungen ohne zugeordnetes Gremium und ohne gespeicherten Namen, nur im Zeitraum ``ZURUECK`` bis
-``VORAUS``, eine Kalenderseite je Monat und höchstens ``MONATE_JE_LAUF`` Monate je Lauf einer Quelle (alle Kommunen
-der Quelle zusammen, ``KalenderLauf``), Takt, Kennung und robots.txt wie beim OParl-Abruf (``OParlClient.fetch_page``).
+``VORAUS``, eine Kalenderseite je Monat und höchstens ``MONATE_JE_LAUF`` Monate je Lauf einer Quelle, Takt, Kennung
+und robots.txt wie beim OParl-Abruf (``OParlClient.fetch_page``). Der Kalender wird einmal je Quelle gelesen, nachdem
+alle ihre Kommunen abgeglichen sind (``KalenderLauf``): ein Kontingent und eine Reihenfolge über die Monate aller
+Kommunen, eine Seite dient allen.
 Steht eine Sitzung nicht im Kalender oder lässt sich die Seite nicht lesen, merkt sich der Rohdatensatz die Prüfung
 (``geprueft``); der Monat kommt frühestens nach ``ERNEUT_NACH`` und erst nach den ungeprüften Monaten wieder an die
 Reihe, blockiert die übrigen also auch bei seltenen Läufen nicht.
@@ -24,7 +26,6 @@ fehlt die Angabe wieder und der nächste Lauf liest sie neu. Fehler beim Laden o
 
 from __future__ import annotations
 
-import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -78,11 +79,11 @@ class KalenderConfig:
 
 @dataclass
 class KalenderLauf:
-    """Ein Lauf über alle Kommunen einer Quelle: ein Kontingent, jede Monatsseite höchstens einmal geladen."""
+    """Ein Lauf einer Quelle: die Kommunen, deren Sitzungen vollständig abgeglichen sind; danach liest der Abgleich
+    den Kalender einmal für alle."""
 
     config: KalenderConfig
-    rest: int = MONATE_JE_LAUF
-    seiten: dict[str, asyncio.Future[dict[int, str]]] = field(default_factory=dict)
+    kommunen: list[Any] = field(default_factory=list)
 
     @classmethod
     def fuer(cls, sync_config: Any) -> KalenderLauf | None:
@@ -158,7 +159,7 @@ async def _lies(url: str, lade_seite: LadeSeite) -> dict[int, str]:
 
 
 async def ergaenzen(
-    lauf: KalenderLauf,
+    config: KalenderConfig,
     lade_ohne_gremium: LadeOhneGremium,
     lade_seite: LadeSeite,
     speichere: Speichere,
@@ -192,22 +193,16 @@ async def ergaenzen(
         return (zuletzt is not None, zuletzt or jetzt, m < (heute.year, heute.month), abstand)
 
     reihenfolge = sorted(je_monat, key=rang)
-    for jahr, monat in reihenfolge:
+    for nummer, (jahr, monat) in enumerate(reihenfolge):
         sitzungen = je_monat[(jahr, monat)]
-        url = lauf.config.monat(jahr, monat)
-        seite = lauf.seiten.get(url)
-        neu = seite is None
-        if seite is None:
-            # Eine andere Kommune der Quelle hat die Seite in diesem Lauf noch nicht geladen
-            if lauf.rest <= 0 or frist_vorbei():
-                stats.verschoben += len(sitzungen)
-                continue
-            lauf.rest -= 1
-            seite = lauf.seiten[url] = asyncio.ensure_future(_lies(url, lade_seite))
+        if nummer >= MONATE_JE_LAUF or frist_vorbei():
+            stats.verschoben += len(sitzungen)
+            continue
+        url = config.monat(jahr, monat)
         try:
-            namen = await seite
+            namen = await _lies(url, lade_seite)
             fehler = False
-            stats.seiten += 1 if neu else 0
+            stats.seiten += 1
         except Exception as exc:  # noqa: BLE001 - eine Seite hält den Abgleich nicht auf
             namen, fehler = {}, True
             stats.fehlgeschlagen += len(sitzungen)

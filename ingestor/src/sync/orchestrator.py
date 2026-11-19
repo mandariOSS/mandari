@@ -1071,8 +1071,8 @@ class SyncOrchestrator:
                 timed_lists = TimedLists(url, timed_lists_of(source_config))
                 # Ergänzung aus Detailseiten (Issue #1431), ein Kontingent für alle Kommunen der Quelle
                 ergaenzung = self._html_ergaenzung(url, source_config, client)
-                # Namen nicht veröffentlichter Gremien aus dem öffentlichen Kalender (SessionNet, Münster);
-                # ein Kontingent und jede Monatsseite einmal für alle Kommunen der Quelle
+                # Namen nicht veröffentlichter Gremien aus dem öffentlichen Kalender (SessionNet, Münster): einmal
+                # nach allen Kommunen der Quelle, ein Kontingent und eine Reihenfolge über alle ihre Monate
                 kalender = KalenderLauf.fuer(source_config)
 
                 async def sync_body_wrapper(body_data):
@@ -1090,7 +1090,6 @@ class SyncOrchestrator:
                                 ergaenzung=ergaenzung,
                                 resume=resume_run,
                                 kalender=kalender,
-                                client_fuer_kalender=client,
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
@@ -1102,6 +1101,8 @@ class SyncOrchestrator:
                 )
                 if ergaenzung is not None:
                     console.print(f"[dim]{ergaenzung.summary()}[/dim]")
+                if kalender is not None and kalender.kommunen:
+                    await self._gremien_aus_kalender(kalender, client)
 
                 # Aggregate results
                 for body_result in body_results:
@@ -1394,7 +1395,6 @@ class SyncOrchestrator:
         ergaenzung: HtmlErgaenzung | None = None,
         resume: ResumeRun | None = None,
         kalender: KalenderLauf | None = None,
-        client_fuer_kalender: OParlClient | None = None,
     ) -> dict[str, Any]:
         """
         Sync a single body and all its entities.
@@ -1674,8 +1674,9 @@ class SyncOrchestrator:
                 stats["consultations"] = consultation_result
                 progress.update(task9, completed=consultation_result, total=consultation_result)
 
-        if kalender is not None and client_fuer_kalender is not None and "meeting" not in stats.get("incomplete", []):
-            await self._gremien_aus_kalender(kalender, client_fuer_kalender, body_id, stats)
+        if kalender is not None and "meeting" not in stats.get("incomplete", []):
+            # Gremiennamen aus dem Kalender liest der Abgleich der Quelle nach allen Kommunen
+            kalender.kommunen.append(body_id)
         if list_check is not None:
             await self._settle_missing_lists(list_check, stats)
         if body_slices is not None:
@@ -2340,14 +2341,16 @@ class SyncOrchestrator:
             deadline_passed=client.deadline_passed,
         )
 
-    async def _gremien_aus_kalender(
-        self, kalender: KalenderLauf, client: OParlClient, body_id: UUID, stats: dict[str, Any]
-    ) -> None:
-        """Namen nicht veröffentlichter Gremien aus dem Kalender ergänzen (``src/sync/gremien_kalender.py``)."""
+    async def _gremien_aus_kalender(self, kalender: KalenderLauf, client: OParlClient) -> None:
+        """
+        Namen nicht veröffentlichter Gremien aus dem Kalender ergänzen, einmal je Quelle für alle Kommunen mit
+        vollständig abgeglichenen Sitzungen (``src/sync/gremien_kalender.py``).
+        """
         storage = self.storage
+        kommunen = list(kalender.kommunen)
 
         async def lade(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
-            zeilen = await storage.get_meetings_ohne_gremium(body_id, von, bis, erneut_ab, GREMIUM_WEB)
+            zeilen = await storage.get_meetings_ohne_gremium(kommunen, von, bis, erneut_ab, GREMIUM_WEB)
             return [OhneGremium(id=z[0], external_id=z[1], start=z[2], stand=z[3], geprueft=z[4]) for z in zeilen]
 
         async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
@@ -2355,13 +2358,12 @@ class SyncOrchestrator:
 
         try:
             ergebnis = await ergaenze_gremien(
-                kalender, lade, client.fetch_page, speichere, frist_vorbei=client.deadline_passed
+                kalender.config, lade, client.fetch_page, speichere, frist_vorbei=client.deadline_passed
             )
-        except Exception as exc:  # noqa: BLE001 - der Abgleich der Kommune ist davon unabhängig
+        except Exception as exc:  # noqa: BLE001 - der Abgleich der Quelle ist davon unabhängig
             console.print(f"[yellow]  Gremien aus dem Kalender übersprungen: {exc}[/yellow]")
             return
-        if ergebnis.benannt or ergebnis.fehlgeschlagen or ergebnis.ohne_eintrag:
-            stats["gremien_kalender"] = ergebnis.as_dict()
+        if ergebnis.benannt or ergebnis.fehlgeschlagen or ergebnis.ohne_eintrag or ergebnis.verschoben:
             console.print(f"[dim]  Gremien aus dem Kalender: {ergebnis.as_dict()}[/dim]")
 
     @staticmethod
