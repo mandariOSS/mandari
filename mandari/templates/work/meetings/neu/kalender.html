@@ -22,7 +22,7 @@ Seite bleibt work/meetings/calendar.html.
 
 {% block work_content %}
 <div x-data="sitzungsKalender" data-ereignisse="{% url 'work:meetings_calendar_events' org_slug=organization.slug %}" data-arten="{% for art in kalender_arten %}{{ art.key }}{% if not forloop.last %},{% endif %}{% endfor %}" class="wf sitzungs-kalender" data-testid="sitzungskalender">
-    {% if kalender_arten|length > 1 %}
+    {% if kalender_arten %}
     <fieldset class="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2" data-testid="kalender-arten">
         <legend class="sr-only">Im Kalender anzeigen</legend>
         {% for art in kalender_arten %}

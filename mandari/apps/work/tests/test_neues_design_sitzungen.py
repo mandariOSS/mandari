@@ -699,9 +699,27 @@ def test_kalender_zeigt_alle_arten_nach_recht_und_auswahl(welt: Welt, client_for
     assert client.get(adresse, {"start": "2026-11-01T00:00:00", "end": fenster["end"]}).json() == []
     assert client.get(adresse, {"start": "x", "end": "y"}).json() == []
 
-    # Die Seite bietet je Art ein Kästchen an
+    # Eine Sitzung über Mitternacht erscheint auch im Fenster des Folgetags
+    nachts = FactionMeeting.objects.create(
+        organization=org,
+        meeting_type=welt.fraktionssitzung.meeting_type,
+        title="Klausur bis in die Nacht",
+        start=jetzt + timedelta(days=60, hours=-2),
+        end=jetzt + timedelta(days=60, hours=2),
+        created_by=vorsitz,
+    )
+    folgetag = {
+        "start": (jetzt + timedelta(days=60)).isoformat(),
+        "end": (jetzt + timedelta(days=61)).isoformat(),
+        "arten": "fraktion",
+    }
+    assert [eintrag["id"] for eintrag in client.get(adresse, folgetag).json()] == [f"fraktion-{nachts.pk}"]
+
+    # Die Seite bietet je Art ein Kästchen an, auch bei nur einer Art (eine gemerkte Abwahl bleibt korrigierbar)
     html = _neu(welt, client_for, "vorsitz", "work:meetings_calendar")
     assert 'data-arten="sitzung,fraktion,dokument,aufgabe"' in html and html.count('x-model="arten"') == 4
+    eine_art = client_for(nur_sitzungen.user).get(reverse("work:meetings_calendar", kwargs={"org_slug": org.slug}))
+    assert eine_art.content.decode().count('x-model="arten"') == 1
 
 
 def test_sitzungsdetail_eine_hauptaktion_und_vorlagen_je_punkt(welt: Welt, client_for: Any) -> None:

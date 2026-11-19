@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final
 
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 
@@ -106,8 +107,11 @@ def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end
     from apps.work.faction.models import FactionMeeting
     from apps.work.faction.sitzungsarten import sichtbar_fuer
 
+    # Auch Sitzungen, die vor dem Fenster begonnen haben und hineinreichen (über Mitternacht, mehrtägig); ohne Ende
+    # zählt der Beginn
+    im_fenster = Q(start__lte=end) & (Q(end__gte=start) | Q(end__isnull=True, start__gte=start))
     sitzungen = sichtbar_fuer(
-        membership, FactionMeeting.objects.filter(organization=organization, start__gte=start, start__lte=end)
+        membership, FactionMeeting.objects.filter(im_fenster, organization=organization)
     ).order_by("start")[:MAX_JE_ART]
     return [
         _eintrag(
