@@ -81,6 +81,9 @@ PERMISSIONS = {
     "tasks.assign": "Aufgaben zuweisen",
     "tasks.edit": "Eigene Aufgaben bearbeiten",
     "tasks.manage": "Alle Aufgaben verwalten",
+    # === KALENDER (eigene Termine der Organisation, Issue #1489) ===
+    "calendar.create": "Termine im Kalender anlegen",
+    "calendar.manage": "Alle Termine verwalten",
     # === RIS (Read-only view of public council data) ===
     "ris.view": "RIS-Daten anzeigen (öffentlich)",
     "ris.notes": "RIS-Notizen erstellen",
@@ -234,6 +237,14 @@ PERMISSION_CATEGORIES = {
             "tasks.manage",
         ],
     },
+    "calendar": {
+        "name": "Kalender",
+        "icon": "calendar_month",
+        "permissions": [
+            "calendar.create",
+            "calendar.manage",
+        ],
+    },
     "ris": {
         "name": "RIS-Daten",
         "icon": "account_balance",
@@ -382,8 +393,10 @@ DEFAULT_ROLES = {
             "tasks.view",
             "tasks.view_all",
             "tasks.create",
+            "calendar.create",
             "tasks.assign",
             "tasks.manage",
+            "calendar.manage",
             # RIS
             "ris.view",
             "ris.notes",
@@ -473,8 +486,10 @@ DEFAULT_ROLES = {
             "tasks.view",
             "tasks.view_all",
             "tasks.create",
+            "calendar.create",
             "tasks.assign",
             "tasks.manage",
+            "calendar.manage",
             "ris.view",
             "ris.notes",
             "ris.subscribe",
@@ -543,6 +558,7 @@ DEFAULT_ROLES = {
             "tasks.view",
             "tasks.view_all",
             "tasks.create",
+            "calendar.create",
             "tasks.assign",
             # RIS
             "ris.view",
@@ -610,6 +626,7 @@ DEFAULT_ROLES = {
             # Tasks - own tasks
             "tasks.view",
             "tasks.create",
+            "calendar.create",
             "tasks.edit",
             # RIS
             "ris.view",
@@ -671,6 +688,7 @@ DEFAULT_ROLES = {
             # Tasks - own tasks
             "tasks.view",
             "tasks.create",
+            "calendar.create",
             "tasks.edit",
             # RIS
             "ris.view",
@@ -738,8 +756,10 @@ DEFAULT_ROLES = {
             "tasks.view",
             "tasks.view_all",
             "tasks.create",
+            "calendar.create",
             "tasks.assign",
             "tasks.manage",
+            "calendar.manage",
             # RIS
             "ris.view",
             "ris.notes",
@@ -878,8 +898,10 @@ DEFAULT_ROLES = {
             "tasks.view",
             "tasks.view_all",
             "tasks.create",
+            "calendar.create",
             "tasks.assign",
             "tasks.manage",
+            "calendar.manage",
             # RIS
             "ris.view",
             "ris.notes",
@@ -960,6 +982,7 @@ DEFAULT_ROLES = {
             "tasks.view",
             "tasks.view_all",
             "tasks.create",
+            "calendar.create",
             "tasks.assign",
             # RIS
             "ris.view",

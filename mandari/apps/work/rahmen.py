@@ -121,6 +121,7 @@ BENACHRICHTIGUNGEN = Ziel("benachrichtigungen", "Benachrichtigungen", "work:noti
 NEU: tuple[tuple[Ziel, str], ...] = (
     (Ziel("dokument", "Dokument", "work:document_create", "file-plus"), "motions.create"),
     (Ziel("aufgabe", "Aufgabe", "work:task_create", "square-plus"), "tasks.create"),
+    (Ziel("termin", "Termin", "work:termin_neu", "calendar-plus"), "calendar.create"),
     (Ziel("anfrage", "Antwort auf eine Anfrage", "work:ris_anfrage", "message-square-reply"), "ris.view"),
 )
 
@@ -179,6 +180,8 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "dashboard_explicit": ("start", None, None),
     "meetings": ("sitzungen", "fuer_mich", None),
     "meetings_calendar": ("sitzungen", None, "Kalender"),
+    "termin_neu": ("sitzungen", None, "Neuer Termin"),
+    "termin": ("sitzungen", None, "Termin"),
     "session_invitations": ("sitzungen", None, "Ladungen der Verwaltung"),
     "ris_meetings": ("sitzungen", "alle_gremien", None),
     "ris_meeting_detail": ("sitzungen", "alle_gremien", None),

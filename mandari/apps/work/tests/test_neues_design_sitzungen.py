@@ -717,9 +717,10 @@ def test_kalender_zeigt_alle_arten_nach_recht_und_auswahl(welt: Welt, client_for
 
     # Die Seite bietet je Art ein Kästchen an, auch bei nur einer Art (eine gemerkte Abwahl bleibt korrigierbar)
     html = _neu(welt, client_for, "vorsitz", "work:meetings_calendar")
-    assert 'data-arten="sitzung,fraktion,dokument,aufgabe"' in html and html.count('x-model="arten"') == 4
+    assert 'data-arten="sitzung,fraktion,termin,dokument,aufgabe"' in html and html.count('x-model="arten"') == 5
     eine_art = client_for(nur_sitzungen.user).get(reverse("work:meetings_calendar", kwargs={"org_slug": org.slug}))
-    assert eine_art.content.decode().count('x-model="arten"') == 1
+    # Mit meetings.view allein: Sitzungen der Gremien und eigene Termine
+    assert eine_art.content.decode().count('x-model="arten"') == 2
 
 
 def test_sitzungsdetail_eine_hauptaktion_und_vorlagen_je_punkt(welt: Welt, client_for: Any) -> None:
