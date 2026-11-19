@@ -7,7 +7,8 @@ Daraus wird der Termin. Zeilen
 statt einer Tabelle Person mal Zeitpunkt: Das bleibt am Handy lesbar und kommt mit vielen Vorschlägen zurecht.
 Kontext: UmfrageView (apps/work/termine/umfrage_views.py): umfrage, beschreibung, uebersicht (zeilen, gefragt,
 beantwortet, ohne_antwort), darf_antworten, darf_aendern, termin_sichtbar (der festgelegte Termin gehört den
-Gefragten; wer die Umfrage nur verwaltet, bekommt keinen Link dorthin).
+Gefragten; wer die Umfrage nur verwaltet, bekommt keinen Link dorthin), aus umfrage.sitzung_kontext: darf_sitzung,
+sitzungsarten (Ergebnis wahlweise als interne Sitzung) und sitzung_sichtbar.
 {% endcomment %}
 
 {% block page_title %}{{ umfrage.title }}{% endblock %}
@@ -24,7 +25,7 @@ Gefragten; wer die Umfrage nur verwaltet, bekommt keinen Link dorthin).
 <div class="max-w-3xl space-y-8">
     {% if umfrage.abgeschlossen_am %}
     <c-rahmen.abschnitt titel="Entschieden" data-testid="umfrage-ergebnis">
-        <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">{% for zeile in uebersicht.zeilen %}{% if zeile.festgelegt %}Festgelegt ist {{ zeile.zeit }}. {% endif %}{% endfor %}{% if termin_sichtbar %}<c-ui.textlink href="{% url 'work:termin' org_slug=organization.slug termin_id=umfrage.termin_id %}">Zum Termin</c-ui.textlink>{% elif not umfrage.termin %}Der Termin dazu besteht nicht mehr.{% endif %}</p>
+        <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">{% for zeile in uebersicht.zeilen %}{% if zeile.festgelegt %}Festgelegt ist {{ zeile.zeit }}. {% endif %}{% endfor %}{% if termin_sichtbar %}<c-ui.textlink href="{% url 'work:termin' org_slug=organization.slug termin_id=umfrage.termin_id %}">Zum Termin</c-ui.textlink>{% elif sitzung_sichtbar %}<c-ui.textlink href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=umfrage.faction_meeting_id %}">Zur Sitzung</c-ui.textlink>{% elif not umfrage.termin and not umfrage.faction_meeting %}Der Termin dazu besteht nicht mehr.{% endif %}</p>
     </c-rahmen.abschnitt>
     {% endif %}
 
@@ -79,7 +80,19 @@ Gefragten; wer die Umfrage nur verwaltet, bekommt keinen Link dorthin).
     <form method="post" action="{% url 'work:terminumfrage_festlegen' org_slug=organization.slug umfrage_id=umfrage.id %}" data-testid="umfrage-festlegen">
         {% csrf_token %}
         <c-rahmen.abschnitt titel="Termin festlegen">
-            <c-form.hinweis>Aus dem gewählten Vorschlag wird ein Termin. Die Gefragten sind dazu eingeladen, ihre Antwort aus der Umfrage steht schon am Termin. Die Umfrage ist danach abgeschlossen.</c-form.hinweis>
+            <c-form.hinweis>Aus dem gewählten Vorschlag wird ein Termin{% if darf_sitzung %} oder eine interne Sitzung{% endif %}. Die Gefragten sind dazu eingeladen, ihre Antwort aus der Umfrage steht schon daran. Die Umfrage ist danach abgeschlossen.</c-form.hinweis>
+            {% if darf_sitzung and sitzungsarten %}
+            <fieldset class="mt-3" data-testid="umfrage-als">
+                <legend class="sr-only">Daraus wird</legend>
+                <div class="space-y-2">
+                    <c-form.radio name="als" value="termin" label="Ein Termin" hinweis="Für die Gefragten; nur sie sehen ihn." checked="1" />
+                    <c-form.radio name="als" value="sitzung" label="Eine interne Sitzung" hinweis="Mit Tagesordnung und Protokoll. Die Einladung verschicken Sie wie gewohnt aus der Sitzung." />
+                    <c-form.select name="meeting_type" id="umfrage-sitzungsart" label="Sitzungsart" dicht class="ml-6 max-w-xs">
+                        {% for art in sitzungsarten %}<option value="{{ art.id }}">{{ art.name }}</option>{% endfor %}
+                    </c-form.select>
+                </div>
+            </fieldset>
+            {% endif %}
             <div class="mt-3 flex flex-wrap items-end gap-3">
                 <c-form.select name="vorschlag" id="umfrage-vorschlag" label="Vorschlag" dicht>
                     {% for zeile in uebersicht.zeilen %}

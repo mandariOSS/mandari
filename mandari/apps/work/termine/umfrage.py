@@ -296,18 +296,13 @@ def antworten(umfrage: Terminumfrage, membership: Any, post: Any) -> int:
     return gespeichert
 
 
-@transaction.atomic
-def festlegen(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any) -> Termin | None:
+def _offen_mit_vorschlag(umfrage: Terminumfrage, vorschlag_id: Any) -> tuple[Terminumfrage, Terminvorschlag] | None:
     """
-    Einen Vorschlag festlegen: Daraus entsteht ein Termin für die Gefragten, die Umfrage ist abgeschlossen. ``None``,
-    wenn die Umfrage schon abgeschlossen ist oder der Vorschlag nicht zu ihr gehört.
+    Umfrage gesperrt neu lesen (zwei gleichzeitige Klicks legten sonst zweimal an) und den Vorschlag finden; ``None``,
+    wenn sie schon abgeschlossen ist oder der Vorschlag nicht zu ihr gehört. Nur in einer Transaktion aufrufen.
     """
     from django.core.exceptions import ValidationError
 
-    from apps.work.notifications.models import NotificationType
-    from apps.work.notifications.services import NotificationHub
-
-    # Zeile sperren und neu lesen: Zwei gleichzeitige Klicks legten sonst zwei Termine an
     umfrage = Terminumfrage.objects.select_for_update().get(pk=umfrage.pk)
     if umfrage.abgeschlossen_am is not None:
         return None
@@ -315,8 +310,149 @@ def festlegen(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any) -> Ter
         vorschlag = umfrage.vorschlaege.filter(pk=vorschlag_id).first()
     except (ValueError, ValidationError):
         vorschlag = None  # keine gültige Kennung
-    if vorschlag is None:
+    return (umfrage, vorschlag) if vorschlag is not None else None
+
+
+#: Antwort in der Umfrage → Anwesenheit in der internen Sitzung, die daraus entsteht
+ANTWORT_IN_DER_SITZUNG: Final = {
+    VorschlagAntwort.JA: "confirmed",
+    VorschlagAntwort.NOTFALLS: "tentative",
+    VorschlagAntwort.NEIN: "declined",
+}
+
+
+def darf_sitzung_anlegen(membership: Any) -> bool:
+    """Darf aus einer Umfrage eine interne Sitzung werden? Wie beim Planen von Hand: ``faction.create``."""
+    return (
+        membership is not None
+        and not getattr(membership, "is_guest", False)
+        and bool(membership.has_permission("faction.create"))
+    )
+
+
+def sitzungsarten_zur_wahl(membership: Any) -> list[Any]:
+    """Sitzungsarten, in denen die Sitzung entstehen kann: aktive, die das Mitglied sieht, die Standardart zuerst."""
+    from apps.work.faction.sitzungsarten import sichtbare_arten
+
+    return list(sichtbare_arten(membership).filter(is_active=True).order_by("-is_default", "position", "name"))
+
+
+@transaction.atomic
+def festlegen_als_sitzung(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any, art_id: Any = None) -> Any:
+    """
+    Einen Vorschlag als interne Sitzung festlegen (mit Tagesordnung und Protokoll statt eines Termins). Die Sitzung
+    entsteht wie beim Planen von Hand (``faction.anlegen.neue_sitzung``) in der gewählten Sitzungsart, mit Zu- und
+    Absagen. Die Gefragten stehen auf der Anwesenheitsliste; ihre Antwort aus der Umfrage steht schon als Zusage,
+    „vielleicht“ oder Absage dort. Die Einladung mit Tagesordnung verschickt wie gewohnt die Sitzung. ``None`` wie
+    bei ``festlegen``, außerdem bei einer Sitzungsart, die das Mitglied nicht wählen kann.
+    """
+    from apps.work.faction.anlegen import neue_sitzung
+    from apps.work.faction.models import FactionAttendance
+    from apps.work.notifications.models import NotificationType
+    from apps.work.notifications.services import NotificationHub
+
+    arten = {str(art.pk): art for art in sitzungsarten_zur_wahl(membership)}
+    art = arten.get(str(art_id)) if art_id else next(iter(arten.values()), None)
+    if art is None:
         return None
+    offen = _offen_mit_vorschlag(umfrage, vorschlag_id)
+    if offen is None:
+        return None
+    umfrage, vorschlag = offen
+    quelle: Any = umfrage
+    sitzung = neue_sitzung(
+        umfrage.organization,
+        membership,
+        title=umfrage.title,
+        start=vorschlag.start,
+        end=vorschlag.end,
+        location=umfrage.location,
+        description=quelle.get_description_decrypted() or "",
+        rsvp_enabled=True,
+        meeting_type=art,
+    )
+    sitzung_id = sitzung.pk
+
+    wahl = dict(vorschlag.antworten.values_list("membership_id", "wahl"))
+    jetzt = timezone.now()
+    gefragte = [teilnahme.membership for teilnahme in umfrage.teilnahmen.select_related("membership")]
+    for mitglied in gefragte:
+        anwesenheit, _ = FactionAttendance.objects.get_or_create(
+            meeting_id=sitzung_id, membership=mitglied, defaults={"status": "invited"}
+        )
+        if mitglied.pk in wahl:
+            anwesenheit.status = ANTWORT_IN_DER_SITZUNG[wahl[mitglied.pk]]
+            anwesenheit.responded_at = jetzt
+            anwesenheit.save(update_fields=["status", "responded_at"])
+
+    vorschlag.festgelegt = True
+    vorschlag.save(update_fields=["festgelegt"])
+    umfrage.faction_meeting = sitzung
+    umfrage.abgeschlossen_am = jetzt
+    umfrage.save(update_fields=["faction_meeting", "abgeschlossen_am", "updated_at"])
+
+    link = reverse("work:faction_detail", kwargs={"org_slug": umfrage.organization.slug, "meeting_id": sitzung_id})
+    nachricht = f"Die Terminumfrage „{umfrage.title}“ ist entschieden: {zeit(vorschlag)}. Daraus wird eine Sitzung."
+    metadata = {"meeting_id": str(sitzung_id), "umfrage_id": str(umfrage.pk)}
+
+    def senden(mitglied: Any) -> None:
+        NotificationHub.send(
+            recipient=mitglied,
+            notification_type=NotificationType.TERMIN_EINLADUNG,
+            title="Sitzung steht fest",
+            message=nachricht,
+            link=link,
+            actor=membership,
+            metadata=metadata,
+        )
+
+    melden([mitglied for mitglied in gefragte if mitglied.pk != getattr(membership, "pk", None)], senden)
+    return sitzung
+
+
+def sitzung_kontext(umfrage: Terminumfrage, membership: Any) -> dict[str, Any]:
+    """Für die Seite der Umfrage: ob eine Sitzung entstehen kann, in welchen Arten, und ob die entstandene sichtbar ist."""
+    from apps.work.faction.sitzungsarten import darf_sehen
+
+    darf = umfrage.abgeschlossen_am is None and darf_sitzung_anlegen(membership)
+    return {
+        "darf_sitzung": darf,
+        "sitzungsarten": sitzungsarten_zur_wahl(membership) if darf else [],
+        "sitzung_sichtbar": bool(umfrage.faction_meeting_id and darf_sehen(membership, umfrage.faction_meeting)),
+    }
+
+
+def festlegen_aus(umfrage: Terminumfrage, post: Any, membership: Any) -> tuple[str, Any]:
+    """
+    Festlegen aus dem Formular der Umfrage: ``vorschlag``, dazu ``als`` (``termin`` oder ``sitzung``) und bei einer
+    Sitzung ``meeting_type``. Gibt die Art des Ergebnisses und das Ergebnis zurück, ``("", None)`` ohne Ergebnis.
+    """
+    from django.core.exceptions import PermissionDenied
+
+    vorschlag_id = str(post["vorschlag"]) if "vorschlag" in post else ""
+    if (str(post["als"]) if "als" in post else "") == "sitzung":
+        if not darf_sitzung_anlegen(membership):
+            raise PermissionDenied("Keine Berechtigung, interne Sitzungen anzulegen.")
+        art_id = str(post["meeting_type"]) if "meeting_type" in post else ""
+        sitzung = festlegen_als_sitzung(umfrage, vorschlag_id, membership, art_id)
+        return ("sitzung", sitzung) if sitzung is not None else ("", None)
+    termin = festlegen(umfrage, vorschlag_id, membership)
+    return ("termin", termin) if termin is not None else ("", None)
+
+
+@transaction.atomic
+def festlegen(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any) -> Termin | None:
+    """
+    Einen Vorschlag festlegen: Daraus entsteht ein Termin für die Gefragten, die Umfrage ist abgeschlossen. ``None``,
+    wenn die Umfrage schon abgeschlossen ist oder der Vorschlag nicht zu ihr gehört.
+    """
+    from apps.work.notifications.models import NotificationType
+    from apps.work.notifications.services import NotificationHub
+
+    offen = _offen_mit_vorschlag(umfrage, vorschlag_id)
+    if offen is None:
+        return None
+    umfrage, vorschlag = offen
     termin = Termin(
         organization=umfrage.organization,
         title=umfrage.title,
