@@ -150,6 +150,15 @@ class Terminumfrage(EncryptionMixin, models.Model):
     termin = models.ForeignKey(
         Termin, on_delete=models.SET_NULL, blank=True, null=True, related_name="umfragen", verbose_name="Termin"
     )
+    # Statt eines Termins kann eine interne Sitzung entstehen (mit Tagesordnung und Protokoll)
+    faction_meeting = models.ForeignKey(
+        "work.FactionMeeting",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="terminumfragen",
+        verbose_name="Interne Sitzung",
+    )
     created_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.SET_NULL,

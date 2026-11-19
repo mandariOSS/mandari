@@ -50,8 +50,8 @@ bereich = "sitzungen"
 titel = "Termine gemeinsam finden: die Terminumfrage."
 text = """Über „Termin abstimmen“ am Kalender schlagen Sie mehrere Zeitpunkte vor und fragen alle Mitglieder, einen \
 Arbeitskreis oder einzelne Personen. Die Gefragten antworten je Vorschlag mit Ja, wenn nötig oder Nein und sehen \
-dabei, was an dem Tag schon in ihrem Kalender steht. Sie legen am Ende einen Vorschlag fest: Daraus wird der Termin, \
-die Zusagen stehen schon daran. Voraussetzung ist das Recht „Termine im Kalender anlegen“."""
+dabei, was an dem Tag schon in ihrem Kalender steht. Am Ende legen Sie einen Vorschlag fest: Daraus wird ein Termin \
+oder eine interne Sitzung, die Zusagen stehen schon daran. Voraussetzung ist das Recht „Termine im Kalender anlegen“."""
 
 [[eintrag]]
 datum = 2026-11-19

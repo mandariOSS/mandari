@@ -19,14 +19,13 @@ from apps.work.rahmen import NeueVorlageMixin
 from apps.work.stats_text import faction_meetings_sentence
 
 from ..models import (
-    FactionAttendance,
     FactionMeeting,
-    FactionMeetingType,
 )
 
 logger = logging.getLogger(__name__)
-from ..agenda import apply_standard_agenda, standard_agenda_preview
-from ..sitzungsarten import sichtbar_fuer, sitzung_oder_404, teilnehmende
+from ..agenda import standard_agenda_preview
+from ..anlegen import neue_sitzung
+from ..sitzungsarten import sichtbar_fuer, sitzung_oder_404
 from ..visibility import can_view_internal
 from ._helpers import VIDEO_LINK_MAX_LENGTH, VIDEO_LINK_TOO_LONG, _get_meeting_context
 
@@ -214,42 +213,22 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             messages.error(request, "Bitte einen gültigen Videolink angeben (https://…).")
             return redirect("work:faction", org_slug=self.organization.slug)
 
-        # Create meeting: von Hand angelegt in der Standardart, Nummer und vorherige Sitzung in ihr (Issue #1231)
-        meeting_type = FactionMeetingType.default_for(self.organization)
-        meeting = FactionMeeting(
-            organization=self.organization,
-            meeting_type=meeting_type,
-            created_by=self.membership,
+        # Von Hand angelegt in der Standardart (Issue #1231); Anwesenheit, Genehmigungspunkt und Standard-Tagesordnung
+        # wie bei jeder von Hand angelegten Sitzung (anlegen.neue_sitzung, auch für Terminumfragen, Issue #1489)
+        meeting = neue_sitzung(
+            self.organization,
+            self.membership,
             title=title,
             start=start_datetime,
             location=request.POST.get("location", "").strip(),
-            is_virtual=request.POST.get("is_virtual") == "on" or bool(video_link),
+            is_virtual=request.POST.get("is_virtual") == "on",
             video_link=video_link,
             description=request.POST.get("description", ""),
             status="draft" if request.POST.get("save_as") == "draft" else "planned",
-            # Zu- und Absagen sind standardmäßig aus und je Sitzung einschaltbar (Issue #871)
             rsvp_enabled=request.POST.get("rsvp_enabled") == "on",
-            meeting_number=FactionMeeting.get_next_meeting_number(self.organization, meeting_type),
+            # Standard-Tagesordnung (Issue #872): im Dialog abwählbar, sonst immer übernommen
+            standard_agenda=_wants_standard_agenda(request.POST),
         )
-
-        # Die vorherige Sitzung (der Termin davor, Issue #1295) setzt das Speichern über die Protokollkette (kette.py)
-        meeting.save()
-
-        # Anwesenheit für die Teilnehmenden der Art (Issue #1239), immer ohne Gastzugänge
-        for member in teilnehmende(meeting_type):
-            FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
-
-        # Auto-create approval agenda item if enabled — über den Service, damit
-        # das Vorprotokoll gleichzeitig in den Status "Zur Genehmigung" wechselt
-        faction_settings = meeting.get_faction_settings()
-        if faction_settings.get("auto_create_approval_item", True):
-            from ..services import ProtocolApprovalService
-
-            ProtocolApprovalService.auto_create_approval_item(meeting)
-
-        # Standard-Tagesordnung (Issue #872): im Dialog abwählbar, sonst immer übernommen
-        if _wants_standard_agenda(request.POST):
-            apply_standard_agenda(meeting)
 
         messages.success(request, "Sitzung erfolgreich erstellt.")
         notice = local_time.ambiguous_notice(meeting.start, label="Beginn")

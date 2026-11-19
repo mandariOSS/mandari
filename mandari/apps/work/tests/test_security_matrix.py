@@ -801,6 +801,12 @@ CASES: list[Case] = [
     Case("terminumfrage", path=UMFRAGE, data={}),
     Case("terminumfrage_vorschlag", path=UMFRAGE, data={"tag": "2027-01-14", "beginn": "18:00"}),
     Case("terminumfrage_festlegen", path=UMFRAGE, data={"vorschlag": "{vorschlag}"}),
+    Case(
+        "terminumfrage_festlegen",
+        "sitzung",
+        path=UMFRAGE,
+        data={"vorschlag": "{vorschlag}", "als": "sitzung"},
+    ),
     Case("terminumfrage_loeschen", path=UMFRAGE),
     Case("task_labels", data={"name": "Neu", "color": "green"}),
     Case("task_label_delete", path={"label_id": "label"}, method="delete"),

@@ -127,9 +127,7 @@ def test_anlegen_antworten_und_festlegen(org: Any, vera: Any, karim: Any, lea: A
     assert stand["zeilen"][0]["ja"] == ["Karim Kaya", "Lea Lorenz"] and stand["zeilen"][2]["notfalls"] == ["Karim Kaya"]
     seite = client.get(adresse).content.decode()
     assert 'data-testid="umfrage-festlegen"' in seite and "2 Ja (Karim Kaya, Lea Lorenz)" in seite
-    assert (
-        "bisher die meisten Zusagen" in seite and "Rathaus, Raum 2" in seite and "Haushalt und Arbeitsprogramm" in seite
-    )
+    assert "meiste Zusagen" in seite and "Rathaus, Raum 2" in seite and "Haushalt und Arbeitsprogramm" in seite
 
     # Festlegen darf nur, wer angelegt hat: Daraus wird der Termin, die Antworten stehen schon daran
     festlegen = _url("terminumfrage_festlegen", org, umfrage_id=neue.pk)
@@ -164,7 +162,7 @@ def test_anlegen_antworten_und_festlegen(org: Any, vera: Any, karim: Any, lea: A
     assert Termin.objects.count() == 1
     seite = gast.get(adresse).content.decode()
     assert 'data-testid="umfrage-ergebnis"' in seite and _url("termin", org, termin_id=termin.pk) in seite
-    assert f'name="wahl-{erster.pk}"' not in seite and "(festgelegt)" in seite
+    assert f'name="wahl-{erster.pk}"' not in seite and 'class="tu-marke">festgelegt<' in seite
     assert termine.sichtbare(karim).filter(pk=termin.pk).exists()
 
 

@@ -86,6 +86,7 @@ class UmfrageView(WorkViewMixin, TemplateView):
         context["termin_sichtbar"] = bool(
             gefunden.termin_id and termine.finden(eigene.membership, gefunden.termin_id) is not None
         )
+        context.update(umfrage.sitzung_kontext(gefunden, eigene.membership))
         return context
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -108,12 +109,20 @@ class UmfrageFestlegenView(WorkViewMixin, View):
         gefunden = _gefunden(ansicht, kwargs["umfrage_id"])
         if not umfrage.darf_aendern(ansicht.membership, gefunden):
             raise PermissionDenied("Keine Berechtigung, diese Terminumfrage abzuschließen.")
-        termin = umfrage.festlegen(
-            gefunden, str(request.POST["vorschlag"]) if "vorschlag" in request.POST else "", ansicht.membership
-        )
-        if termin is None:
+        art, ergebnis = umfrage.festlegen_aus(gefunden, request.POST, ansicht.membership)
+        if ergebnis is None:
             messages.error(request, "Der Vorschlag ließ sich nicht festlegen.")
             return redirect("work:terminumfrage", org_slug=ansicht.organization.slug, umfrage_id=gefunden.pk)
+        if art == "sitzung":
+            from apps.work.faction.sitzungsarten import darf_sehen
+
+            messages.success(
+                request, "Sitzung angelegt. Die Einladung mit Tagesordnung verschicken Sie aus der Sitzung."
+            )
+            if darf_sehen(ansicht.membership, ergebnis):
+                return redirect("work:faction_detail", org_slug=ansicht.organization.slug, meeting_id=ergebnis.pk)
+            return redirect("work:terminumfrage", org_slug=ansicht.organization.slug, umfrage_id=gefunden.pk)
+        termin = ergebnis
         messages.success(request, "Termin festgelegt. Die Gefragten sind benachrichtigt.")
         if termine.finden(ansicht.membership, termin.pk) is None:
             # Der Termin gehört den Gefragten: Wer die Umfrage nur verwaltet, sieht ihn nicht und bleibt auf ihrer Seite
