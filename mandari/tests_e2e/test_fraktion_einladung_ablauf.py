@@ -135,7 +135,8 @@ def _sitzung_planen(page: Any, goto: Any, fraktion: Fraktion) -> FactionMeeting:
     """Dialog „Sitzung planen“: in fünf Tagen, mit Zu- und Absagen. Der geplante Versand liegt noch vor uns."""
     goto(f"/work/{fraktion.org.slug}/faction/")
     wait_for_component(page, "{ showCreateModal")
-    page.get_by_role("button", name="Sitzung planen").click()
+    # Oben im Kopf; ohne Sitzungen steht derselbe Weg noch einmal im leeren Zustand der Liste
+    page.get_by_role("button", name="Sitzung planen").first.click()
     dialog = page.get_by_test_id("neue-sitzung")
     expect(dialog).to_be_visible()
     dialog.locator("#neue-sitzung-titel-feld").fill(TITEL)
