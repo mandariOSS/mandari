@@ -4,6 +4,8 @@ work/ris/anfrage.html. Kontext: entwurf (apps.work.ris.anfragen.Entwurf) mit abs
 fundstellen, weitere, offen, anrede, absender, pruefsatz oder hinweis (fester Text, wenn kein Entwurf möglich war).
 Links der Brief als Blatt (.wf-blatt, work-flaeche.css), rechts offene Punkte und das Verzeichnis mit denselben Nummern
 wie an den Fußnoten. Fundstellen öffnen in einem neuen Fenster, weil der Entwurf nicht gespeichert wird.
+Mit ``siegel`` (signiertes Paket des Entwurfs, nur mit dem Recht motions.create) erscheint „Als Dokument übernehmen“
+(Schritt 2, apps.work.ris.anfrage_dokument); das Formular sendet ohne HTMX und führt in den Editor.
 Kennzeichnung nach EU AI Act Art. 50 (Issue #938): sichtbar im Satz unter dem Blatt, maschinenlesbar über
 ``data-ai-generated`` genau am KI-Text (ohne Anrede, Gruß und Verzeichnis).
 {% endcomment %}
@@ -27,12 +29,20 @@ Kennzeichnung nach EU AI Act Art. 50 (Issue #938): sichtbar im Satz unter dem Bl
                 </div>
                 <p class="mt-3">Mit freundlichen Grüßen{% for zeile in entwurf.absender %}<br>{{ zeile }}{% endfor %}</p>
             </article>
-            <p class="mt-2 text-[0.8125rem] text-gray-600 dark:text-gray-400">KI-Entwurf aus den öffentlichen Ratsdaten{% if entwurf.kommune %} von {{ entwurf.kommune }}{% endif %}; maßgeblich sind die Fundstellen. mandari versendet nichts und speichert den Entwurf nicht.</p>
+            <p class="mt-2 text-[0.8125rem] text-gray-600 dark:text-gray-400">KI-Entwurf aus den öffentlichen Ratsdaten{% if entwurf.kommune %} von {{ entwurf.kommune }}{% endif %}; maßgeblich sind die Fundstellen. mandari versendet nichts und speichert den Entwurf nicht{% if siegel %}, solange Sie ihn nicht als Dokument übernehmen{% endif %}.</p>
             <div class="mt-3 flex flex-wrap items-center gap-2">
                 <c-ui.button size="sm" data-action="copy" data-target="#entwurf-text" data-status="#entwurf-kopiert" data-copied="Entwurf kopiert." data-failed="Kopieren war nicht möglich. Der Text ist unten markiert, bitte von Hand kopieren.">Entwurf kopieren</c-ui.button>
                 {% if entwurf.fundstellen %}<c-ui.button size="sm" variant="secondary" data-action="copy" data-target="#entwurf-text-quellen" data-status="#entwurf-kopiert" data-copied="Entwurf mit Quellenverzeichnis kopiert." data-failed="Kopieren war nicht möglich. Der Text ist unten markiert, bitte von Hand kopieren.">Mit Quellenverzeichnis kopieren</c-ui.button>{% endif %}
+                {% if siegel %}
+                <form method="post" action="{% url 'work:ris_anfrage_dokument' org_slug=organization.slug %}" data-testid="anfrage-dokument">
+                    {% csrf_token %}
+                    <input type="hidden" name="siegel" value="{{ siegel }}">
+                    <c-ui.button size="sm" variant="secondary" type="submit">Als Dokument übernehmen</c-ui.button>
+                </form>
+                {% endif %}
                 <span id="entwurf-kopiert" role="status" aria-live="polite" class="text-sm text-gray-700 dark:text-gray-300"></span>
             </div>
+            {% if siegel %}<c-form.hinweis>Als Dokument: der Brief mit Quellenverzeichnis in Ihren Dokumenten, zunächst nur für Sie sichtbar. Prüfhinweise und offene Punkte stehen dort als Checkliste; Freigabe, Briefkopf und Export als Word oder PDF wie bei jedem Dokument.</c-form.hinweis>{% endif %}
             <details class="mt-3">
                 <summary class="cursor-pointer text-sm font-medium text-primary-700 dark:text-primary-300">Als reinen Text anzeigen</summary>
                 <label for="entwurf-text" class="mt-2 block text-[0.8125rem] text-gray-600 dark:text-gray-400">Entwurf</label>

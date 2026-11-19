@@ -8,14 +8,16 @@ ohne JavaScript die ganze Seite mit ausgefülltem Formular. Logik und Grenzen: `
 
 from typing import Any
 
+from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
-from django.views.generic import TemplateView
+from django.utils import timezone
+from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
 from apps.work.rahmen import neues_design
 
-from .. import anfragen, fragen
+from .. import anfrage_dokument, anfragen, fragen
 from ._mixins import RISBodiesMixin
 
 
@@ -64,9 +66,36 @@ class RISAnfrageView(RISBodiesMixin, WorkViewMixin, TemplateView):
         context["art"] = art
         context["anrede"] = anrede
         context["gewaehlte_kommune"] = str(body.pk) if body is not None else ""
+        # „Als Dokument übernehmen“ (Schritt 2): Der Entwurf geht signiert im Formular mit, gespeichert wird er nicht
+        if ansicht.membership.has_permission("motions.create"):
+            context["siegel"] = anfrage_dokument.siegel(context["entwurf"], ansicht.organization, ansicht.membership)
         return self.response_class(
             request=request,
             template=[anfragen.entwurf_vorlage(request.headers)],
             context=context,
             using=self.template_engine,
         )
+
+
+class RISAnfrageDokumentView(WorkViewMixin, View):
+    """Aus dem angezeigten Antwortentwurf ein Dokument anlegen (``apps.work.ris.anfrage_dokument``)."""
+
+    permission_required = ["ris.view", "motions.create"]
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        ansicht: Any = self
+        organization, membership = ansicht.organization, ansicht.membership
+        paket = anfrage_dokument.oeffnen(request.POST, organization, membership)
+        if paket is None:
+            messages.error(request, anfrage_dokument.UNGUELTIG)
+            return redirect("work:ris_anfrage", org_slug=organization.slug)
+        dokument, neu = anfrage_dokument.anlegen(organization, membership, paket, heute=timezone.localdate())
+        if dokument is None:
+            # Dasselbe Formular läuft gerade ein zweites Mal: Das Dokument steht gleich in der Liste
+            messages.info(request, anfrage_dokument.SCHON_ANGELEGT)
+            return redirect("work:documents", org_slug=organization.slug)
+        if neu:
+            messages.success(request, anfrage_dokument.ANGELEGT)
+        else:
+            messages.info(request, anfrage_dokument.SCHON_ANGELEGT)
+        return redirect("work:document_editor", org_slug=organization.slug, motion_id=dokument.pk)

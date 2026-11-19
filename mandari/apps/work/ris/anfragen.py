@@ -27,7 +27,8 @@ der Antwort des Modells geschieht:
 
 Grenzen wie bei den Fragen: Nur die Anfrage und öffentliche Ratsdaten gehen an den KI-Dienst, keine Inhalte der
 Fraktion. Enthält die Anfrage Kontaktdaten, geht sie nicht hinaus (Filter des Bürgerportals). Gespeichert wird nur
-der Verbrauch, weder Anfrage noch Entwurf. Versendet wird nichts.
+der Verbrauch, weder Anfrage noch Entwurf, solange niemand den Entwurf als Dokument übernimmt (Schritt 2,
+``apps.work.ris.anfrage_dokument``). Versendet wird nichts.
 """
 
 from __future__ import annotations

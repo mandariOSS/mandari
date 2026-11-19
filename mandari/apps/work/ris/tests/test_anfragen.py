@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import date
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -19,8 +20,8 @@ from django.urls import reverse
 
 from apps.common.ki_anbieter import KiEndpunkt
 from apps.work.motions.ai_security import AIRateLimiter
-from apps.work.motions.models import Motion, OrganizationAITokenUsage
-from apps.work.ris import anfragen, fragen
+from apps.work.motions.models import Motion, MotionType, OrganizationAITokenUsage, OrganizationLetterhead
+from apps.work.ris import anfrage_dokument, anfragen, fragen
 from insight_ai.services import chat_service
 from insight_ai.tests.anbieter import SkriptAnbieter, letztes_ergebnis, werkzeuge
 from insight_ai.tests.musterstadt import JETZT, FakeSuche, Musterstadt, baue_musterstadt
@@ -407,3 +408,146 @@ def test_seite_formular_reiter_und_ohne_javascript(
     org.save(update_fields=["work_new_design"])
     assert client.get(adresse).url == reverse("work:ris_search", kwargs={"org_slug": org.slug})
     assert client.post(adresse, {"anfrage": ANFRAGE}).status_code == 302
+
+
+# --- Schritt 2: Entwurf als Dokument übernehmen --------------------------------------------------------
+
+
+@pytest.fixture
+def verfasserin(org: Any, make_member: Any) -> Any:
+    return make_member(org, ["ris.view", "motions.create", "motions.view"], first_name="Vera", last_name="Beispielfrau")
+
+
+def _siegel(html: str) -> str:
+    """Signiertes Paket aus dem Formular „Als Dokument übernehmen“."""
+    formular = html[html.index('data-testid="anfrage-dokument"') :]
+    anfang = formular.index('name="siegel" value="') + len('name="siegel" value="')
+    return formular[anfang : formular.index('"', anfang)]
+
+
+def test_entwurf_als_dokument_uebernehmen(
+    org: Any, stadt: Musterstadt, verfasserin: Any, client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = anbieter(monkeypatch, *radweg(stadt))
+    briefkopf = OrganizationLetterhead.objects.create(
+        organization=org, name="Fraktion", kind="generated", is_default=True
+    )
+    client = client_for(verfasserin.user)
+    html = client.post(
+        reverse("work:ris_anfrage", kwargs={"org_slug": org.slug}),
+        {"anfrage": ANFRAGE, "art": "presse", "anrede": "Sehr geehrter Herr Petersen,"},
+        headers={"HX-Request": "true"},
+    ).content.decode()
+    aufrufe = len(fake.aufrufe)
+    assert "Als Dokument übernehmen" in html and not Motion.objects.exists()
+
+    adresse = reverse("work:ris_anfrage_dokument", kwargs={"org_slug": org.slug})
+    antwort = client.post(adresse, {"siegel": _siegel(html)})
+
+    dokument: Any = Motion.objects.get()  # Verschlüsselungsmethoden ohne Typangaben
+    assert antwort.status_code == 302
+    assert antwort.url == reverse("work:document_editor", kwargs={"org_slug": org.slug, "motion_id": dokument.pk})
+    assert dokument.title == "Antwort: Radweg an der Musterstraße"
+    assert (dokument.status, dokument.visibility) == ("draft", "private")
+    assert dokument.author == verfasserin and dokument.responsible == verfasserin and dokument.letterhead == briefkopf
+    # Eigener Typ: Freigabe ja, Einreichung bei der Verwaltung nein
+    assert dokument.document_type.name == "Antwortschreiben" and not dokument.is_submittable
+    assert dokument.document_type.requires_approval
+    inhalt = dokument.get_content_decrypted()
+    brief, anhang = inhalt.split('<div data-page-break="true" class="page-break"></div>')
+    assert brief.startswith("<p>Sehr geehrter Herr Petersen,</p><p>Die Verwaltung hat die Vorlage V/2026/0123 [1] am")
+    assert "<mark>[Position der Fraktion ergänzen]</mark>" in brief
+    assert f"<p>Mit freundlichen Grüßen<br>Vera Beispielfrau<br>{org.name}</p><h3>Quellen</h3>" in brief
+    # Die Quelle führt auf die öffentliche Seite und steht ausgeschrieben da (der Word-Export kennt keine Linkziele)
+    oeffentlich = f"https://ratsdaten.example/insight/vorgaenge/{stadt.vorlage.pk}/"
+    assert f'<p>[1] Radweg an der Musterstraße<br><a href="{oeffentlich}"' in brief and f">{oeffentlich}</a>" in brief
+    assert "/work/" not in inhalt and "Kosten des Radwegs" not in brief
+    # Die Anfrage gehört zum Vorgang und steht auf einer eigenen Seite
+    assert anhang.startswith("<h3>Anfrage im Wortlaut</h3><blockquote><p>Was wurde zum Radweg")
+    # Was noch zu tun ist, steht in der Checkliste des Dokuments
+    assert list(dokument.checklist_items.values_list("title", flat=True)) == [
+        "KI-Entwurf: Aussagen gegen die Quellen prüfen",
+        "Ergänzen: [Position der Fraktion ergänzen]",
+        "Offen: Zu den Kosten des Radwegs liegt in den Ratsdaten nichts vor.",
+    ]
+    assert len(fake.aufrufe) == aufrufe  # kein weiterer KI-Aufruf
+    # Der Editor öffnet das Dokument; ein zweites Absenden desselben Entwurfs legt kein zweites an
+    assert client.get(antwort.url).status_code == 200
+    nochmal = client.post(adresse, {"siegel": _siegel(html)})
+    assert nochmal.url == antwort.url and Motion.objects.count() == 1
+
+
+def test_dokument_nur_mit_recht_und_gueltigem_paket(
+    org: Any, stadt: Musterstadt, mitglied: Any, verfasserin: Any, client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    anbieter(monkeypatch, *radweg(stadt), *radweg(stadt))
+    seite = reverse("work:ris_anfrage", kwargs={"org_slug": org.slug})
+    adresse = reverse("work:ris_anfrage_dokument", kwargs={"org_slug": org.slug})
+
+    # Ohne das Recht, Dokumente anzulegen: kein Formular, und der Aufruf wird abgelehnt
+    ohne = client_for(mitglied.user)
+    html_ohne = ohne.post(seite, {"anfrage": ANFRAGE}, headers={"HX-Request": "true"}).content.decode()
+    assert 'data-testid="anfrage-entwurf"' in html_ohne and "Als Dokument übernehmen" not in html_ohne
+    fremd = anfrage_dokument.siegel(anfragen.entwerfen(org, mitglied, ANFRAGE, stadt.body), org, mitglied)
+    assert fremd and ohne.post(adresse, {"siegel": fremd}).status_code == 403
+
+    # Ein Paket einer anderen Person, ein verändertes und ein fehlendes gelten nicht
+    client = client_for(verfasserin.user)
+    eigenes = _siegel(client.post(seite, {"anfrage": ANFRAGE}, headers={"HX-Request": "true"}).content.decode())
+    for wert in (fremd, eigenes[:-3] + "abc", ""):
+        antwort = client.post(adresse, {"siegel": wert}, follow=True)
+        assert antwort.redirect_chain[0][0] == seite
+        assert anfrage_dokument.UNGUELTIG in antwort.content.decode()
+    # Nach einem Tag ebenso
+    monkeypatch.setattr(anfrage_dokument, "MAX_ALTER", -1)
+    assert client.post(adresse, {"siegel": eigenes}).url == seite
+    assert not Motion.objects.exists()
+
+
+def test_dokument_checkliste_listen_und_abgeschalteter_typ(org: Any, verfasserin: Any) -> None:
+    lang = "Der Rat hat am 12.03.2026 beschlossen, die Sporthalle für 3,2 Millionen Euro zu sanieren [1]."
+    paket = {
+        "v": anfrage_dokument.VERSION,
+        "id": uuid.uuid4().hex,
+        "anfrage": "Wann wird die Sporthalle saniert?\nUnd was kostet das <b>genau</b>?\n\nDanke.",
+        "art": "buerger",
+        "anrede": "",
+        "betreff": "",
+        "absaetze": [
+            [lang, False, ["Das Datum 12.03.2026 steht nicht in den abgerufenen Ratsdaten."]],
+            ["Erster Bauabschnitt <script>alert(1)</script> [2]", True, []],
+            ["Zweiter Bauabschnitt", True, []],
+            ["[Position der Fraktion ergänzen] und noch einmal [Position der Fraktion ergänzen]", False, []],
+        ],
+        "fundstellen": [[1, "Sanierung der Sporthalle", ""], [2, "Rat <Di>", "javascript:alert(1)"]],
+        "offen": [],
+        "absender": [org.name],
+    }
+    MotionType.objects.create(organization=org, name="Briefe", slug=anfrage_dokument.TYP_SLUG, is_active=False)
+
+    dokument, neu = anfrage_dokument.anlegen(org, verfasserin, paket, heute=date(2026, 10, 7))
+
+    assert neu and dokument.document_type is None  # Die Organisation hat den Typ abgeschaltet
+    assert dokument.title == "Antwort auf eine Bürgeranfrage vom 07.10.2026"
+    inhalt = dokument.get_content_decrypted()
+    assert inhalt.startswith("<p>Sehr geehrte Damen und Herren,</p>")
+    assert "<ul><li><p>Erster Bauabschnitt &lt;script&gt;alert(1)&lt;/script&gt; [2]</p></li><li><p>Zweiter" in inhalt
+    # Ohne öffentliche Adresse steht nur der Titel; eine Adresse mit anderem Schema wird kein Link
+    assert "<p>[1] Sanierung der Sporthalle</p>" in inhalt and 'href="javascript' not in inhalt
+    assert "Rat &lt;Di&gt;" in inhalt
+    assert (
+        "<p>Wann wird die Sporthalle saniert?<br>Und was kostet das &lt;b&gt;genau&lt;/b&gt;?</p><p>Danke.</p>"
+        in inhalt
+    )
+    assert list(dokument.checklist_items.values_list("title", flat=True)) == [
+        "KI-Entwurf: Aussagen gegen die Quellen prüfen",
+        "Prüfen: Das Datum 12.03.2026 steht nicht in den abgerufenen Ratsdaten. "
+        "Absatz „Der Rat hat am 12.03.2026 beschlossen, die Sporthalle für …“",
+        "Ergänzen: [Position der Fraktion ergänzen]",
+    ]
+    # Dasselbe Paket ein zweites Mal: dasselbe Dokument; nach dem Löschen entsteht ein neues
+    assert anfrage_dokument.anlegen(org, verfasserin, paket, heute=date(2026, 10, 7)) == (dokument, False)
+    dokument.delete()
+    assert anfrage_dokument.anlegen(org, verfasserin, paket, heute=date(2026, 10, 7))[1]
+    # Ein Entwurf ohne Brieftext bekommt kein Paket
+    assert anfrage_dokument.siegel(anfragen.Entwurf(hinweis=anfragen.KEIN_ENTWURF), org, verfasserin) == ""
