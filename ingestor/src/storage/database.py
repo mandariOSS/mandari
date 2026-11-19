@@ -1206,6 +1206,43 @@ class DatabaseStorage:
                 stored[row[0]] = {key: value for key, value in values.items() if value is not None}
             return stored
 
+    async def get_meetings_ohne_gremium(
+        self, body_id: UUID, von: datetime, bis: datetime, schluessel: str
+    ) -> list[tuple[UUID, str, datetime]]:
+        """
+        Sitzungen der Kommune im Zeitraum, die ein Gremium nennen, dem keines im Bestand zugeordnet ist (die Quelle
+        gibt es nicht heraus, Issue #1441), und die noch keinen Namen unter ``schluessel`` haben
+        (``src/sync/gremien_kalender.py``).
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                text(
+                    "SELECT m.id, m.external_id, m.start FROM oparl_meetings m "
+                    "WHERE m.body_id = :body AND m.deleted = false AND m.start BETWEEN :von AND :bis "
+                    "AND jsonb_typeof(m.raw_json->'organization') = 'array' "
+                    "AND jsonb_array_length(m.raw_json->'organization') > 0 "
+                    "AND NOT (m.raw_json ? :schluessel) "
+                    "AND NOT EXISTS (SELECT 1 FROM oparl_meetings_organizations mo WHERE mo.oparlmeeting_id = m.id) "
+                    "ORDER BY m.start"
+                ),
+                {"body": body_id, "von": von, "bis": bis, "schluessel": schluessel},
+            )
+            return [(row[0], row[1], row[2]) for row in result.all()]
+
+    async def set_meeting_raw_extension(self, meeting_id: UUID, schluessel: str, wert: Mapping[str, Any]) -> None:
+        """Eine Erweiterung in den Rohdatensatz einer Sitzung schreiben, ohne die übrigen Angaben zu ändern."""
+        import json
+
+        async with self.get_session() as session:
+            await session.execute(
+                text(
+                    "UPDATE oparl_meetings SET raw_json = COALESCE(raw_json, '{}'::jsonb) "
+                    "|| jsonb_build_object(CAST(:schluessel AS text), CAST(:wert AS jsonb)) WHERE id = :id"
+                ),
+                {"id": meeting_id, "schluessel": schluessel, "wert": json.dumps(dict(wert), ensure_ascii=False)},
+            )
+            await session.commit()
+
     async def get_active_external_ids_for_body(
         self,
         entity_type: str,

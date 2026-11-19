@@ -971,6 +971,7 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 | `download_headers` | zusätzliche Header für Datei-Downloads (z. B. `Referer`, `Cookie`, `User-Agent`) | `{"Referer": "https://rat.example.de/bi/"}` |
 | `robots_override` | Ausnahme von der robots.txt, nur mit Freigabe und Vermerk | `{"scope": "files", "note": "Freigabe per E-Mail vom …"}` |
 | `source_type`, `scraper` | Quelle ohne OParl-Schnittstelle, mit `scraper.rate_limit_seconds` (Standard 2, mindestens 1) | siehe [`SCRAPER_SOURCES.md`](SCRAPER_SOURCES.md) |
+| `sessionnet_kalender` | Adresse des öffentlichen SessionNet-Frontends: Für Sitzungen, deren Gremium die OParl-Schnittstelle nicht herausgibt (HTTP 401), liest der Abgleich den Namen aus dem Monatskalender `si0040` (eine Seite je Monat, höchstens sechs Monate je Lauf, Takt und robots.txt wie beim OParl-Abruf; `ingestor/src/sync/gremien_kalender.py`). Mit `sessionnet_kalender_endung` `"asp"` für ältere Installationen | `"https://www.stadt-muenster.de/sessionnet/sessionnetbi/"` |
 | `document_since`, `document_backfill` | Stichtag und Altbestand der Ablage (nur mit `TEXT_EXTRACTION_RUNNER=worker`) | siehe [`FILE_CACHE.md`](FILE_CACHE.md) |
 
 Bedeutung der Schlüssel im Code: `ingestor/src/client/source_options.py`, `shared/mandari_oparl/pacing.py`,
