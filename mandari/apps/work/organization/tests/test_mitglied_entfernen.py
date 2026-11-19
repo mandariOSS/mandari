@@ -58,6 +58,9 @@ PERSOENLICH = {
     "Notification.recipient",
     "NotificationPreference.membership",
     "TaskShare.membership",
+    # Einladung zu einem Termin im Kalender samt Antwort (Issue #1489): wie die Freigabe einer Aufgabe der Zugang
+    # der Person zum Termin; der Termin selbst bleibt (Termin.created_by ist SET_NULL)
+    "TerminTeilnahme.membership",
 }
 
 

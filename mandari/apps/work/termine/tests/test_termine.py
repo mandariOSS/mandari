@@ -10,6 +10,7 @@ from datetime import timedelta
 from typing import Any, cast
 
 import pytest
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
@@ -17,6 +18,7 @@ from apps.common.tests import factories
 from apps.work.faction.feeds import build_personal_feed
 from apps.work.faction.models import FactionMeeting, FactionMeetingType
 from apps.work.notifications.models import Notification, NotificationType
+from apps.work.organization.export_service import dsgvo_export_service
 from apps.work.termine import termine
 from apps.work.termine.models import Termin, TerminTeilnahme
 
@@ -221,6 +223,28 @@ def test_wege_zum_termin(org: Any, vera: Any, karim: Any, client_for: Any) -> No
     assert _url("profile", org) + "#profil-kalender" in ohne
     profil = client_for(karim.user).get(_url("profile", org)).content.decode()
     assert 'id="profil-kalender"' in profil and 'data-testid="kalender-abo-wege"' in profil
+
+
+def test_auskunft_nennt_termine_und_einladungen(org: Any, vera: Any, karim: Any) -> None:
+    """DSGVO-Auskunft: selbst angelegte Termine mit Inhalt, Einladungen mit der eigenen Antwort."""
+    form = termine.TerminForm(_formular(title="Vorgespräch", eingeladene=[str(karim.pk)]), membership=vera)
+    assert form.is_valid(), form.errors
+    termin = form.speichern(termine.neu(org, vera))
+    assert termine.antworten(termin, karim, "zugesagt")
+
+    eigene = dsgvo_export_service.collect_user_data(user=vera.user, membership=vera, organization=org)["termine"]
+    assert [eintrag["title"] for eintrag in eigene["created"]] == ["Vorgespräch"] and not eigene["invitations"]
+    assert eigene["created"][0]["description"].startswith("Zustand vor der Sanierung")
+    assert eigene["created"][0]["invited_count"] == 1 and eigene["created"][0]["start"].endswith("17:30")
+
+    daten = dsgvo_export_service.collect_user_data(user=karim.user, membership=karim, organization=org)
+    assert not daten["termine"]["created"]
+    assert [(e["title"], e["status"]) for e in daten["termine"]["invitations"]] == [("Vorgespräch", "Zugesagt")]
+    seite = render_to_string(
+        "work/profile/export/dsgvo_export.html",
+        {"data": dsgvo_export_service.pdf_data(daten), "user": karim.user, "organization": org},
+    )
+    assert "17. Termine im Kalender" in seite and "Zugesagt" in seite
 
 
 def test_persoenlicher_abruf_enthaelt_termine(org: Any, vera: Any, karim: Any, make_member: Any) -> None:
