@@ -41,6 +41,7 @@ from apps.work.motions.models import (
     MotionApproval,
     MotionDocument,
     MotionShare,
+    MotionType,
 )
 
 pytestmark = pytest.mark.django_db
@@ -438,6 +439,24 @@ def test_satz_im_kopf_filtert_und_zaehlt_in_einer_abfrage(org: Any, autorin: Any
     # Der Link filtert wirklich: nur die beiden Entwürfe stehen in der Tabelle
     gefiltert = client_for(autorin.user).get(adresse, {"status": "draft"}).content.decode()
     assert gefiltert.count("Dokument draft") >= 2 and "Dokument submitted" not in gefiltert
+
+
+def test_zeilen_mit_typsymbol_kuerzel_und_heute(org: Any, autorin: Any, client_for: Any) -> None:
+    """Zeilen zum Überfliegen (Issue #1492): Symbol des Dokumenttyps, Kürzel der Federführung, „heute“ statt Datum."""
+    typ = MotionType.objects.create(organization=org, name="Rede", slug="rede", icon="mic")
+    Motion.objects.create(
+        organization=org, author=autorin, responsible=autorin, title="Redeentwurf Haushalt", document_type=typ
+    )
+    ohne_typ = Motion.objects.create(organization=org, author=autorin, title="Alte Anfrage", motion_type="inquiry")
+
+    html = client_for(autorin.user).get(_url("documents", org)).content.decode()
+    tabelle = html[html.index('data-testid="dokumente-tabelle"') : html.index('data-testid="dokumente-kacheln"')]
+
+    assert '<i data-lucide="mic" class="absolute left-0 top-0.5 w-4 h-4' in tabelle
+    # Ohne eigenen Typ ein Symbol, das der Symbolsatz kennt (die früheren Namen gibt es dort nicht mehr)
+    assert ohne_typ.get_type_icon() == "circle-question-mark" and 'data-lucide="circle-question-mark"' in tabelle
+    assert f'aria-hidden="true">{autorin.user.get_initials()}</span>{autorin.user.get_display_name()}</span>' in tabelle
+    assert ">heute</time>" in tabelle
 
 
 def test_leere_liste_und_filter_ohne_treffer(org: Any, autorin: Any, client_for: Any) -> None:
