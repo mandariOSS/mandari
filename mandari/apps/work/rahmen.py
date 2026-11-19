@@ -116,6 +116,16 @@ HILFE = Ziel("hilfe", "Hilfe und Support", "work:support", "circle-help")
 PERSON = Ziel("person", "Profil", "work:profile", "user")
 BENACHRICHTIGUNGEN = Ziel("benachrichtigungen", "Benachrichtigungen", "work:notifications", "bell")
 
+#: Menü „Neu“ oben in der Seitenleiste (Issue #1492): Eintrag und das Recht, das er verlangt. Es führt nur auf
+#: Seiten, die es schon gibt; ein Eintrag ohne Recht erscheint nicht, ohne jeden Eintrag fehlt der Knopf.
+NEU: tuple[tuple[Ziel, str], ...] = (
+    (Ziel("dokument", "Dokument", "work:document_create", "file-plus"), "motions.create"),
+    (Ziel("aufgabe", "Aufgabe", "work:task_create", "square-plus"), "tasks.create"),
+    (Ziel("anfrage", "Antwort auf eine Anfrage", "work:ris_anfrage", "message-square-reply"), "ris.view"),
+)
+#: Bereiche mit einer Zahl an der Navigation: offene Arbeit der Person (``dashboard.selectors.zaehler``)
+ZAEHLER: frozenset[str] = frozenset({"aufgaben", "dokumente"})
+
 #: Seiten des Ratsinformationssystems in der Reihenfolge der bisherigen Seitenleiste, danach die Suche und
 #: „Anfrage beantworten“ (Issue #1488)
 _RIS_SEITEN: tuple[Ziel, ...] = (
@@ -318,6 +328,8 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
     for eintrag in bereiche:
         unterpunkte = [] if ist_gast else _unterpunkte(eintrag["key"], slug, url_name)
         eintrag["unterpunkte"] = unterpunkte
+        # Die Zahl selbst kommt mit dem Abruf der Glocke; beim Seitenaufruf kostet sie keine Abfrage
+        eintrag["zaehler"] = eintrag["key"] if not ist_gast and eintrag["key"] in ZAEHLER else ""
         # Offen auf den Seiten des Bereichs und auf jeder Seite, die einer der Unterpunkte zeigt
         eintrag["offen"] = bool(unterpunkte) and (eintrag["aktiv"] or any(u["aktiv"] for u in unterpunkte))
 
@@ -344,9 +356,14 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
     reiter_aktuell = next((z for z in reiter_ziele if _ist_seite(z, url_name)), None)
     reiter = [_eintrag(z, slug, z is reiter_aktuell, url_name) for z in reiter_ziele] if reiter_aktuell else []
 
+    neu: list[dict[str, Any]] = []
+    if not ist_gast and membership is not None:
+        neu = [_eintrag(ziel, slug, False) for ziel, recht in NEU if membership.has_permission(recht)]
+
     return {
         "bereich": bereich,
         "bereiche": bereiche,
+        "neu": [eintrag for eintrag in neu if eintrag["url"]],
         "unten": unten,
         "leiste_unten": leiste_unten,
         "mehr": mehr,

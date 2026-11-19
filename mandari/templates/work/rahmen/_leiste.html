@@ -1,7 +1,8 @@
 {% comment %}
 Seitenleiste des neuen Rahmens (Issue #852): graue Fläche wie in Insight, oben Wortmarke und Raum-Knopf (Organisation
 wechseln, immer sichtbar), dann kompakt Start, Sitzungen, Fraktionssitzungen, Dokumente, Aufgaben, Team und Recherche
-(Entscheidung im Issue vom 06.10.2026), unten Einstellungen, Hilfe, die Person und klein die Version mit dem Weg zu
+(Entscheidung im Issue vom 06.10.2026), darüber der Knopf „Neu“ mit seinem Menü und an Aufgaben und Dokumenten die Zahl
+der offenen Arbeit (Issue #1492), unten Einstellungen, Hilfe, die Person und klein die Version mit dem Weg zu
 „Was ist neu?“ (Issue #1463, nicht für Gäste, nicht in der schmalen Leiste). Die Recherche trägt die Seiten des
 Ratsinformationssystems als Unterpunkte: offen auf ihren Seiten, sonst per Knopf aufklappbar (Komponente workGruppe,
 frontend/alpine/work-rahmen.ts). Nur ab lg; am Handy übernehmen Leiste unten und Blatt „Mehr“ (_leiste_unten.html).
@@ -31,6 +32,23 @@ Einklappbar wie bisher: Dann zeigt sie nur Symbole (data-leiste="schmal", static
         </button>
     </div>
 
+    {% if work_rahmen.neu %}
+    {# „Neu“ (Issue #1492): ein fester Ort zum Anlegen, Einträge je nach Recht, als aufklappbarer Bereich mit gewöhnlichen Links (Tab wechselt, Escape schließt); er liegt fest am Fenster, damit die schmale Leiste ihn nicht abschneidet #}
+    <div x-data="workNeu" class="mt-3 px-2.5" @keydown.escape="schliessen()" @click.outside="schliessen(false)">
+        <button type="button" x-ref="knopf" @click="umschalten()" aria-controls="neu-menue" :aria-expanded="offen.toString()" aria-expanded="false"
+                class="rahmen-eintrag w-full flex items-center gap-3 h-9 px-2.5 rounded-md bg-band-hell text-sm font-semibold text-gray-900 dark:text-white shadow-[0_1px_2px_rgba(17,24,39,0.06)] ring-1 ring-gray-200 dark:ring-gray-700 hover:ring-gray-300 dark:hover:ring-gray-600">
+            <i data-lucide="plus" class="w-4 h-4 shrink-0 text-primary-600 dark:text-primary-400" aria-hidden="true"></i>
+            <span class="rahmen-label flex-1 text-left">Neu</span>
+        </button>
+        <div id="neu-menue" x-ref="menue" x-show="offen" x-cloak role="group" aria-label="Neu anlegen"
+             class="neu-menue [&_svg]:text-gray-500 fixed left-2.5 w-60 rounded-lg bg-band-hell py-1.5 shadow-xl ring-1 ring-gray-900/10 dark:ring-white/10 z-50">
+            {% for n in work_rahmen.neu %}
+            <a href="{{ n.url }}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="{{ n.icon }}" class="w-4 h-4 shrink-0" aria-hidden="true"></i>{{ n.label }}</a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <nav class="mt-4 px-2.5" aria-label="Bereiche">
         <ul class="space-y-0.5">
             {% for b in work_rahmen.bereiche %}
@@ -53,7 +71,7 @@ Einklappbar wie bisher: Dann zeigt sie nur Symbole (data-leiste="schmal", static
                 </ul>
             </li>
             {% else %}
-            <li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}" dicht>{{ b.label }}</c-rahmen.nav-link></li>
+            <li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}" zaehler="{{ b.zaehler }}" dicht>{{ b.label }}</c-rahmen.nav-link></li>
             {% endif %}
             {% endfor %}
         </ul>

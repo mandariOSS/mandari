@@ -86,6 +86,67 @@ def admin(org: Organization, make_member: Any) -> Any:
     return make_member(org, [], email="vorsitz@example.org", is_admin=True)
 
 
+# ---- „Neu“ und Zähler (Issue #1492) ------------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_neu_zeigt_nur_was_die_person_anlegen_darf(neu: Organization, make_member: Any, client_for: Any) -> None:
+    nur_dokumente = make_member(neu, ["dashboard.view", "motions.view", "motions.create"])
+    leiste = _leiste(_html(client_for(nur_dokumente.user).get(_url("dashboard", neu))))
+    menue = _teil(leiste, 'id="neu-menue"', "</div>")
+    assert f'href="{_url("document_create", neu)}"' in menue and ">Dokument</a>" in menue
+    assert _url("task_create", neu) not in menue and _url("ris_anfrage", neu) not in menue
+    # Aufklappbereich mit gewöhnlichen Links, keine Menürollen (die verlangten Pfeiltasten)
+    assert 'aria-controls="neu-menue"' in leiste and 'role="menu' not in _teil(leiste, "workNeu", "</nav>")
+
+    alles = make_member(neu, ["dashboard.view", "motions.create", "tasks.create", "ris.view"])
+    menue = _teil(_leiste(_html(client_for(alles.user).get(_url("dashboard", neu)))), 'id="neu-menue"', "</div>")
+    assert re.findall(r"</i>([^<]+)</a>", menue) == ["Dokument", "Aufgabe", "Antwort auf eine Anfrage"]
+
+    # Ohne ein solches Recht und für Gäste gibt es den Knopf nicht
+    ohne = make_member(neu, ["dashboard.view", "motions.view"])
+    assert "neu-menue" not in _html(client_for(ohne.user).get(_url("dashboard", neu)))
+    gast = cast(Any, factories).MembershipFactory(organization=neu, is_guest=True)
+    assert "neu-menue" not in _html(client_for(gast.user).get(_url("guest_documents", neu)))
+
+
+@pytest.mark.django_db
+def test_zaehler_kommen_mit_dem_abruf_der_glocke(neu: Organization, make_member: Any, client_for: Any) -> None:
+    from apps.work.dashboard import selectors
+    from apps.work.motions.models import Motion, MotionApproval
+    from apps.work.tasks.models import Task
+
+    ich = make_member(neu, ["dashboard.view", "motions.view", "tasks.view"])
+    andere = make_member(neu, ["motions.view"])
+    for status, zugewiesen in (("todo", ich), ("in_progress", ich), ("done", ich), ("todo", andere)):
+        Task.objects.create(organization=neu, title="Aufgabe", status=status, assigned_to=zugewiesen, created_by=andere)
+    # Weitere Zuständige sind gleichberechtigt: Die Aufgabe einer anderen Person zählt, wenn ich mit zuständig bin
+    gemeinsam = Task.objects.create(organization=neu, title="Gemeinsam", assigned_to=andere, created_by=andere)
+    gemeinsam.weitere_zustaendige.add(ich)
+    for status in ("internal_review", "archived"):
+        dokument = Motion.objects.create(
+            organization=neu, author=andere, title="Dokument", status=status, visibility="organization"
+        )
+        MotionApproval.objects.create(motion=dokument, approver=ich, approval_type="chair")
+        # Eine zweite Freigabe derselben Person am selben Dokument zählt nicht doppelt
+        MotionApproval.objects.create(motion=dokument, approver=ich, approval_type="council")
+
+    client = client_for(ich.user)
+    antwort = client.get(_url("notification_count", neu)).json()
+    assert antwort["zaehler"] == {"aufgaben": 3, "dokumente": 1}
+    # Dieselbe Auswahl wie „Für Sie“ auf der Startseite
+    fuer_sie = selectors.fuer_sie(neu, ich, limit=20)
+    assert sum(e["art"].startswith("Aufgabe") for e in fuer_sie) == 3
+    assert len({e["url"] for e in fuer_sie if "Wartet auf Ihre Freigabe" in e["zeile"]}) == 1
+    # Die Marken stehen verborgen in der Leiste; die Zahl setzt das Skript der Glocke, die Seite fragt nicht selbst
+    leiste = _leiste(_html(client.get(_url("dashboard", neu))))
+    assert leiste.count('data-zaehler="aufgaben" hidden') == 1 and leiste.count('data-zaehler="dokumente" hidden') == 1
+    assert leiste.count("data-zaehler=") == 2
+
+    gast = cast(Any, factories).MembershipFactory(organization=neu, is_guest=True)
+    assert "zaehler" not in client_for(gast.user).get(_url("notification_count", neu)).json()
+
+
 # ---- Seitenleiste ------------------------------------------------------------------------------------------------
 
 

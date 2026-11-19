@@ -144,7 +144,13 @@ class NotificationCountView(WorkViewMixin, View):
     def get(self, request, *args, **kwargs):
         """Return unread count as JSON."""
         count = NotificationHub.get_unread_count(self.membership)
-        return JsonResponse({"count": count})
+        antwort = {"count": count}
+        # Zahlen an der Navigation (Issue #1492) im selben Abruf: offene Aufgaben und wartende Freigaben der Person
+        if not getattr(self.membership, "is_guest", False):
+            from apps.work.dashboard.selectors import zaehler
+
+            antwort["zaehler"] = zaehler(self.organization, self.membership)
+        return JsonResponse(antwort)
 
 
 class NotificationLatestView(WorkViewMixin, View):
