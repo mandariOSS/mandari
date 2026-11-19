@@ -626,8 +626,9 @@ Metriken der Anwendung über `METRICS_URL` (Compose: `http://mandari:8000/metric
 Zur Fehlerquote ehrlich: Die Zähler leben im Web-Prozess und beginnen bei jedem Neustart bei
 null. Der Lauf merkt sich deshalb den letzten Zählerstand im Cache und bewertet die Differenz
 seit dem letzten Lauf – beim täglichen Zeitplan die letzten ~24 h. Liegt der Zähler unter dem
-gemerkten Stand (Neustart), gilt der Stand seit dem Start. Sind die Metriken nicht abrufbar,
-ist das selbst ein Alarm.
+gemerkten Stand (Neustart), gilt der Stand seit dem Start. Der Abruf versucht es dreimal (je 10 s
+Zeitlimit, 5 s Pause), damit eine kurze Lastspitze im Web-Prozess keinen Fehlalarm auslöst. Scheitern
+alle Versuche, ist das selbst ein Alarm.
 
 Geprüft wird hier nur die Warteschlange der Transkription. Den Rückstand der Aufträge und
 Zeitpläne im Journal (`mandari_tasks_*`) meldet `/health/worker/` (Prüfung `rueckstau`), tote
