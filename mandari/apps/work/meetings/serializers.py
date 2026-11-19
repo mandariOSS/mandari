@@ -331,7 +331,8 @@ def serialize_calendar_event(meeting: OParlMeeting, org_slug: str) -> dict[str, 
         pass
     return {
         "id": str(meeting.id),
-        "title": meeting.name or org_name or "Sitzung",
+        # Eigener Name oder Gremium, nicht „Sitzung“: Manche RIS nennen jede Sitzung so (Issue #1508)
+        "title": meeting.bezeichnung(),
         "start": meeting.start.isoformat() if meeting.start else None,
         "end": meeting.end.isoformat() if meeting.end else None,
         "url": f"/work/{org_slug}/meetings/{meeting.id}/",

@@ -953,8 +953,8 @@ class OParlMeeting(SourceDeletionModel):
                 return ", ".join(names)
 
         # 3. Fallback
-        if self.name and self.name.lower() != "sitzung":
-            return self.name
+        if eigener := self.eigener_name():
+            return eigener
         # Die Quelle nennt ein Gremium, das im Bestand fehlt: Sie gibt es nicht öffentlich aus (Issue #1441). Das ist
         # etwas anderes als eine Sitzung ohne Gremium, und „Sitzung“ allein sähe wie ein Gremienname aus. Steht der
         # Name im öffentlichen Kalender der Kommune, hat ihn der Abruf dort gelesen (``gremium_aus_kalender``).
@@ -970,6 +970,21 @@ class OParlMeeting(SourceDeletionModel):
         web = (self.raw_json or {}).get("mandari:gremiumWeb")
         name = web.get("name") if isinstance(web, dict) else None
         return name.strip() if isinstance(name, str) else ""
+
+    def eigener_name(self) -> str:
+        """
+        Name der Sitzung, wenn er mehr sagt als „Sitzung“; sonst leer. Manche RIS nennen jede Sitzung so (Münster),
+        dann trägt nur das Gremium (``get_display_name``) die Information (Issue #1508).
+        """
+        name = (self.name or "").strip()
+        return "" if name.lower() in {"", "sitzung"} else name
+
+    def bezeichnung(self) -> str:
+        """
+        Wie eine Sitzung in Listen, Kalendern und Bezügen heißt: ihr eigener Name, wenn er mehr sagt als „Sitzung“
+        (etwa „Sondersitzung zum Haushalt“), sonst ihr Gremium (``get_display_name``, Issue #1508).
+        """
+        return self.eigener_name() or self.get_display_name()
 
     def get_organization_names(self):
         """Gibt die Namen der beteiligten Gremien zurück."""
