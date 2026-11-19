@@ -259,14 +259,16 @@ def search_results(request):
             )
 
         # Sitzungen
-        meetings = OParlMeeting.objects.filter(deleted=False, **body_filter).filter(
-            Q(name__icontains=query) | Q(location_name__icontains=query)
-        )[:10]
+        meetings = (
+            OParlMeeting.objects.filter(deleted=False, **body_filter)
+            .filter(Q(name__icontains=query) | Q(location_name__icontains=query))
+            .prefetch_related("organizations")[:10]
+        )
         for meeting in meetings:
             results.append(
                 {
                     "type": "meeting",
-                    "title": meeting.name or "Sitzung",
+                    "title": meeting.get_display_name(),
                     "subtitle": meeting.start.strftime("%d.%m.%Y") if meeting.start else None,
                     "url": f"/insight/termine/{meeting.id}/",
                 }

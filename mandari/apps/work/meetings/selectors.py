@@ -695,7 +695,7 @@ def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) ->
                 "role": c.role or "",
                 "authoritative": c.authoritative,
                 "meetingId": str(m.id) if m else None,
-                "meetingName": (m.name or "") if m else "",
+                "meetingName": m.eigener_name() if m else "",
                 "meetingStart": timezone.localtime(m.start).strftime("%d.%m.%Y") if m and m.start else "",
                 "organization": org_names,
                 "isCurrent": bool(m and m.id == current_meeting.id),

@@ -306,7 +306,7 @@ def meeting_label(meeting: Any) -> str:
     """Anzeige einer RIS-Sitzung: Name, Datum; für Zurückgenommenes nur ein neutraler Hinweis."""
     if meeting.withdrawn_by_publisher:
         return WITHDRAWN_MEETING
-    name = meeting.name or "Sitzung"
+    name = meeting.get_display_name()
     return f"{name}, {meeting.start:%d.%m.%Y}" if meeting.start else name
 
 

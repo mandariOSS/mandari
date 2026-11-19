@@ -342,7 +342,7 @@ def ratssitzungen(meeting: FactionMeeting, membership: Membership) -> list[dict[
         ris = item.related_agenda_item.meeting if item.related_agenda_item else None
         if ris is None or ris.pk in gesehen:
             continue
-        name = ris.name or "Sitzung"
+        name = ris.get_display_name()
         datum = date_format(timezone.localtime(ris.start), "D d.m.Y") if ris.start else ""
         href = ""
         vorbereiten = membership.has_permission("meetings.prepare")

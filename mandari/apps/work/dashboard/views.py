@@ -194,9 +194,9 @@ class DashboardView(WorkViewMixin, TemplateView):
 
                 if orgs:
                     committee_name = orgs[0].name or orgs[0].short_name or "Gremium"
-                    subtitle = meeting.name or ""
+                    subtitle = meeting.eigener_name()
                 else:
-                    committee_name = meeting.name or "RIS-Sitzung"
+                    committee_name = meeting.get_display_name()
                     subtitle = ""
 
                 meetings.append(
