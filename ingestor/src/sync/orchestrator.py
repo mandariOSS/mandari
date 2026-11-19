@@ -86,7 +86,7 @@ from src.storage.events import start_correlation
 from src.storage.ris_events import content_fingerprint
 from src.sync.fortsetzung import CHANGES, FULL, RESUME, ResumeEntry, ResumeRun
 from src.sync.gremien_kalender import SCHLUESSEL as GREMIUM_WEB
-from src.sync.gremien_kalender import KalenderConfig, OhneGremium
+from src.sync.gremien_kalender import KalenderLauf, OhneGremium
 from src.sync.gremien_kalender import ergaenzen as ergaenze_gremien
 from src.sync.html_ergaenzung import FIELDS as ERGAENZUNG_FIELDS
 from src.sync.html_ergaenzung import MARKER_KEY as ERGAENZUNG_MARKER
@@ -1071,8 +1071,9 @@ class SyncOrchestrator:
                 timed_lists = TimedLists(url, timed_lists_of(source_config))
                 # Ergänzung aus Detailseiten (Issue #1431), ein Kontingent für alle Kommunen der Quelle
                 ergaenzung = self._html_ergaenzung(url, source_config, client)
-                # Namen nicht veröffentlichter Gremien aus dem öffentlichen Kalender (SessionNet, Münster)
-                kalender = KalenderConfig.parse(source_config)
+                # Namen nicht veröffentlichter Gremien aus dem öffentlichen Kalender (SessionNet, Münster);
+                # ein Kontingent und jede Monatsseite einmal für alle Kommunen der Quelle
+                kalender = KalenderLauf.fuer(source_config)
 
                 async def sync_body_wrapper(body_data):
                     async with body_semaphore:
@@ -1392,7 +1393,7 @@ class SyncOrchestrator:
         slices: SliceRun | None = None,
         ergaenzung: HtmlErgaenzung | None = None,
         resume: ResumeRun | None = None,
-        kalender: KalenderConfig | None = None,
+        kalender: KalenderLauf | None = None,
         client_fuer_kalender: OParlClient | None = None,
     ) -> dict[str, Any]:
         """
@@ -2340,17 +2341,17 @@ class SyncOrchestrator:
         )
 
     async def _gremien_aus_kalender(
-        self, kalender: KalenderConfig, client: OParlClient, body_id: UUID, stats: dict[str, Any]
+        self, kalender: KalenderLauf, client: OParlClient, body_id: UUID, stats: dict[str, Any]
     ) -> None:
         """Namen nicht veröffentlichter Gremien aus dem Kalender ergänzen (``src/sync/gremien_kalender.py``)."""
         storage = self.storage
 
-        async def lade(von: datetime, bis: datetime) -> list[OhneGremium]:
-            zeilen = await storage.get_meetings_ohne_gremium(body_id, von, bis, GREMIUM_WEB)
-            return [OhneGremium(id=z[0], external_id=z[1], start=z[2]) for z in zeilen]
+        async def lade(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
+            zeilen = await storage.get_meetings_ohne_gremium(body_id, von, bis, erneut_ab, GREMIUM_WEB)
+            return [OhneGremium(id=z[0], external_id=z[1], start=z[2], stand=z[3]) for z in zeilen]
 
-        async def speichere(meeting_id: Any, wert: dict[str, str]) -> None:
-            await storage.set_meeting_raw_extension(meeting_id, GREMIUM_WEB, wert)
+        async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
+            return await storage.set_meeting_raw_extension(sitzung.id, GREMIUM_WEB, wert, stand=sitzung.stand)
 
         try:
             ergebnis = await ergaenze_gremien(

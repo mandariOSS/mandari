@@ -13,13 +13,17 @@ den Namen als ``mandari:gremiumWeb`` (Name, Seite, Abrufzeit) im Rohdatensatz ab
 Platzhalters. Die Sitzungsnummer im Kalender (``__ksinr``) ist bei SessionNet das letzte Glied der OParl-Kennung.
 
 Abrufe: nur Sitzungen ohne zugeordnetes Gremium und ohne gespeicherten Namen, nur im Zeitraum ``ZURUECK`` bis
-``VORAUS``, eine Kalenderseite je Monat und höchstens ``MONATE_JE_LAUF`` Monate je Lauf, Takt, Kennung und
-robots.txt wie beim OParl-Abruf (``OParlClient.fetch_page``). Überschreibt ein späterer Abgleich die Sitzung, fehlt
-der Name wieder und der nächste Lauf liest ihn neu. Fehler beim Laden oder Lesen halten den Abgleich nicht auf.
+``VORAUS``, eine Kalenderseite je Monat und höchstens ``MONATE_JE_LAUF`` Monate je Lauf einer Quelle (alle Kommunen
+der Quelle zusammen, ``KalenderLauf``), Takt, Kennung und robots.txt wie beim OParl-Abruf (``OParlClient.fetch_page``).
+Steht eine Sitzung nicht im Kalender oder lässt sich die Seite nicht lesen, merkt sich der Rohdatensatz die Prüfung
+(``geprueft``); der Monat kommt erst nach ``ERNEUT_NACH`` wieder an die Reihe und blockiert die übrigen nicht.
+Geschrieben wird nur, wenn sich die Sitzung seit dem Lesen nicht geändert hat; überschreibt ein späterer Abgleich sie,
+fehlt die Angabe wieder und der nächste Lauf liest sie neu. Fehler beim Laden oder Lesen halten den Abgleich nicht auf.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -39,6 +43,8 @@ SCHLUESSEL = "mandari:gremiumWeb"
 ZURUECK = timedelta(days=62)
 VORAUS = timedelta(days=400)
 MONATE_JE_LAUF = 6
+#: Sitzungen ohne Eintrag im Kalender (oder mit unlesbarer Seite) erst danach wieder prüfen
+ERNEUT_NACH = timedelta(days=1)
 ZONE = ZoneInfo("Europe/Berlin")
 
 
@@ -69,13 +75,28 @@ class KalenderConfig:
         return f"{self.basis}si0040.{self.endung}?__cjahr={jahr}&__cmonat={monat}"
 
 
+@dataclass
+class KalenderLauf:
+    """Ein Lauf über alle Kommunen einer Quelle: ein Kontingent, jede Monatsseite höchstens einmal geladen."""
+
+    config: KalenderConfig
+    rest: int = MONATE_JE_LAUF
+    seiten: dict[str, asyncio.Future[dict[int, str]]] = field(default_factory=dict)
+
+    @classmethod
+    def fuer(cls, sync_config: Any) -> KalenderLauf | None:
+        config = KalenderConfig.parse(sync_config)
+        return cls(config) if config is not None else None
+
+
 @dataclass(frozen=True)
 class OhneGremium:
-    """Sitzung im Bestand, deren Gremium die Quelle nennt, aber nicht herausgibt."""
+    """Sitzung im Bestand, deren Gremium die Quelle nennt, aber nicht herausgibt; ``stand``: Änderung beim Lesen."""
 
     id: Any
     external_id: str
     start: datetime
+    stand: Any = None
 
 
 @dataclass
@@ -115,13 +136,24 @@ def namen_im_kalender(html: str) -> dict[int, str]:
     return namen
 
 
-LadeOhneGremium = Callable[[datetime, datetime], Awaitable[list[OhneGremium]]]
-Speichere = Callable[[Any, dict[str, str]], Awaitable[None]]
+#: (von, bis, erneut_ab) → Sitzungen ohne Gremium, ohne Namen und ohne Prüfung nach ``erneut_ab``
+LadeOhneGremium = Callable[[datetime, datetime, datetime], Awaitable[list[OhneGremium]]]
+#: schreibt die Angabe, wenn sich die Sitzung seit dem Lesen nicht geändert hat; ``False`` sonst
+Speichere = Callable[[OhneGremium, dict[str, str]], Awaitable[bool]]
 LadeSeite = Callable[[str], Awaitable[Seite]]
 
 
+async def _lies(url: str, lade_seite: LadeSeite) -> dict[int, str]:
+    seite = await lade_seite(url)
+    if seite.error or seite.status_code != 200 or not seite.text:
+        raise ValueError(seite.error or f"HTTP {seite.status_code}")
+    if not is_calendar_page(seite.text):
+        raise ValueError("keine Kalenderseite")
+    return namen_im_kalender(seite.text)
+
+
 async def ergaenzen(
-    config: KalenderConfig,
+    lauf: KalenderLauf,
     lade_ohne_gremium: LadeOhneGremium,
     lade_seite: LadeSeite,
     speichere: Speichere,
@@ -132,7 +164,8 @@ async def ergaenzen(
     """Namen für die Sitzungen ohne Gremium aus dem Kalender ergänzen, Monat für Monat, nächste Monate zuerst."""
     stats = KalenderStats()
     jetzt = jetzt or datetime.now(UTC)
-    offen = await lade_ohne_gremium(jetzt - ZURUECK, jetzt + VORAUS)
+    abgerufen = jetzt.isoformat()
+    offen = await lade_ohne_gremium(jetzt - ZURUECK, jetzt + VORAUS, jetzt - ERNEUT_NACH)
     je_monat: dict[tuple[int, int], list[OhneGremium]] = defaultdict(list)
     for sitzung in offen:
         if sitzungsnummer(sitzung.external_id) is None:
@@ -144,28 +177,34 @@ async def ergaenzen(
     reihenfolge = sorted(
         je_monat, key=lambda m: (m < (heute.year, heute.month), abs(m[0] * 12 + m[1] - heute.year * 12 - heute.month))
     )
-    for nummer, (jahr, monat) in enumerate(reihenfolge):
+    for jahr, monat in reihenfolge:
         sitzungen = je_monat[(jahr, monat)]
-        if nummer >= MONATE_JE_LAUF or frist_vorbei():
-            stats.verschoben += len(sitzungen)
-            continue
-        url = config.monat(jahr, monat)
+        url = lauf.config.monat(jahr, monat)
+        seite = lauf.seiten.get(url)
+        neu = seite is None
+        if seite is None:
+            # Eine andere Kommune der Quelle hat die Seite in diesem Lauf noch nicht geladen
+            if lauf.rest <= 0 or frist_vorbei():
+                stats.verschoben += len(sitzungen)
+                continue
+            lauf.rest -= 1
+            seite = lauf.seiten[url] = asyncio.ensure_future(_lies(url, lade_seite))
         try:
-            seite = await lade_seite(url)
-            if seite.error or seite.status_code != 200 or not seite.text:
-                raise ValueError(seite.error or f"HTTP {seite.status_code}")
-            namen = namen_im_kalender(seite.text)
-            stats.seiten += 1
+            namen = await seite
+            fehler = False
+            stats.seiten += 1 if neu else 0
         except Exception as exc:  # noqa: BLE001 - eine Seite hält den Abgleich nicht auf
+            namen, fehler = {}, True
             stats.fehlgeschlagen += len(sitzungen)
             stats.errors.append(f"{url}: {exc}")
-            continue
-        abgerufen = jetzt.isoformat()
         for sitzung in sitzungen:
             name = namen.get(sitzungsnummer(sitzung.external_id) or -1)
-            if not name:
-                stats.ohne_eintrag += 1
-                continue
-            await speichere(sitzung.id, {"name": name, "seite": url, "abgerufen": abgerufen})
-            stats.benannt += 1
+            if name:
+                wert = {"name": name, "seite": url, "abgerufen": abgerufen}
+            else:
+                # Nicht (oder nicht lesbar) im Kalender: später erneut prüfen, die übrigen Monate kommen dran
+                wert = {"geprueft": abgerufen, "seite": url}
+                stats.ohne_eintrag += 0 if fehler else 1
+            if await speichere(sitzung, wert) and name:
+                stats.benannt += 1
     return stats

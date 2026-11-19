@@ -1207,41 +1207,58 @@ class DatabaseStorage:
             return stored
 
     async def get_meetings_ohne_gremium(
-        self, body_id: UUID, von: datetime, bis: datetime, schluessel: str
-    ) -> list[tuple[UUID, str, datetime]]:
+        self, body_id: UUID, von: datetime, bis: datetime, erneut_ab: datetime, schluessel: str
+    ) -> list[tuple[UUID, str, datetime, datetime]]:
         """
         Sitzungen der Kommune im Zeitraum, die ein Gremium nennen, dem keines im Bestand zugeordnet ist (die Quelle
-        gibt es nicht heraus, Issue #1441), und die noch keinen Namen unter ``schluessel`` haben
-        (``src/sync/gremien_kalender.py``).
+        gibt es nicht heraus, Issue #1441), und die unter ``schluessel`` weder einen Namen noch eine Prüfung nach
+        ``erneut_ab`` haben (``src/sync/gremien_kalender.py``). Mit Änderungszeit als Stand für das Schreiben.
         """
         async with self.get_session() as session:
             result = await session.execute(
                 text(
-                    "SELECT m.id, m.external_id, m.start FROM oparl_meetings m "
+                    "SELECT m.id, m.external_id, m.start, m.updated_at FROM oparl_meetings m "
                     "WHERE m.body_id = :body AND m.deleted = false AND m.start BETWEEN :von AND :bis "
                     "AND jsonb_typeof(m.raw_json->'organization') = 'array' "
                     "AND jsonb_array_length(m.raw_json->'organization') > 0 "
-                    "AND NOT (m.raw_json ? :schluessel) "
+                    "AND NOT COALESCE("
+                    "COALESCE(m.raw_json -> CAST(:schluessel AS text) ->> 'name', '') <> '' "
+                    "OR CAST(m.raw_json -> CAST(:schluessel AS text) ->> 'geprueft' AS timestamptz) > :erneut_ab, "
+                    "false) "
                     "AND NOT EXISTS (SELECT 1 FROM oparl_meetings_organizations mo WHERE mo.oparlmeeting_id = m.id) "
                     "ORDER BY m.start"
                 ),
-                {"body": body_id, "von": von, "bis": bis, "schluessel": schluessel},
+                {"body": body_id, "von": von, "bis": bis, "erneut_ab": erneut_ab, "schluessel": schluessel},
             )
-            return [(row[0], row[1], row[2]) for row in result.all()]
+            return [(row[0], row[1], row[2], row[3]) for row in result.all()]
 
-    async def set_meeting_raw_extension(self, meeting_id: UUID, schluessel: str, wert: Mapping[str, Any]) -> None:
-        """Eine Erweiterung in den Rohdatensatz einer Sitzung schreiben, ohne die übrigen Angaben zu ändern."""
+    async def set_meeting_raw_extension(
+        self, meeting_id: UUID, schluessel: str, wert: Mapping[str, Any], *, stand: datetime | None
+    ) -> bool:
+        """
+        Eine Erweiterung in den Rohdatensatz einer Sitzung schreiben, ohne die übrigen Angaben zu ändern; nur, wenn die
+        Sitzung noch den gelesenen Stand (``updated_at``) hat und weiterhin kein Gremium zugeordnet ist.
+        """
         import json
 
         async with self.get_session() as session:
-            await session.execute(
+            result = await session.execute(
                 text(
                     "UPDATE oparl_meetings SET raw_json = COALESCE(raw_json, '{}'::jsonb) "
-                    "|| jsonb_build_object(CAST(:schluessel AS text), CAST(:wert AS jsonb)) WHERE id = :id"
+                    "|| jsonb_build_object(CAST(:schluessel AS text), CAST(:wert AS jsonb)) "
+                    "WHERE id = :id AND updated_at IS NOT DISTINCT FROM CAST(:stand AS timestamptz) "
+                    "AND NOT EXISTS (SELECT 1 FROM oparl_meetings_organizations mo "
+                    "WHERE mo.oparlmeeting_id = oparl_meetings.id)"
                 ),
-                {"id": meeting_id, "schluessel": schluessel, "wert": json.dumps(dict(wert), ensure_ascii=False)},
+                {
+                    "id": meeting_id,
+                    "schluessel": schluessel,
+                    "wert": json.dumps(dict(wert), ensure_ascii=False),
+                    "stand": stand,
+                },
             )
             await session.commit()
+            return bool(getattr(result, "rowcount", 0))
 
     async def get_active_external_ids_for_body(
         self,
