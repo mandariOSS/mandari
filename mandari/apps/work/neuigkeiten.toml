@@ -38,6 +38,14 @@ Recht „Termine im Kalender anlegen“, das eine Rolle in den Einstellungen bek
 [[eintrag]]
 datum = 2026-11-19
 version = ""
+bereich = "start"
+titel = "Offene Einladungen und Terminumfragen auf der Startseite."
+text = """Unter „Für Sie“ auf der Startseite sehen Sie Einladungen zu Terminen, auf die Sie noch nicht geantwortet haben, \
+und Terminumfragen, in denen Ihre Antwort fehlt. Endet die Frist einer Umfrage morgen, erinnert Work Sie einmal daran."""
+
+[[eintrag]]
+datum = 2026-11-19
+version = ""
 bereich = "sitzungen"
 titel = "Termine gemeinsam finden: die Terminumfrage."
 text = """Über „Termin abstimmen“ am Kalender schlagen Sie mehrere Zeitpunkte vor und fragen alle Mitglieder, einen \

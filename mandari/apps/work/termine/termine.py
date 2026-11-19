@@ -134,6 +134,34 @@ def teilnahmen(termin: Termin) -> list[TerminTeilnahme]:
     )
 
 
+def offene_einladungen(membership: Any, *, limit: int = 6) -> list[TerminTeilnahme]:
+    """
+    Einladungen zu kommenden Terminen, auf die das Mitglied noch nicht geantwortet hat, nächster Termin zuerst
+    (Startseite „Für Sie“). Eine Abfrage; Gäste haben keine Termine.
+    """
+    if membership is None or getattr(membership, "is_guest", False):
+        return []
+    jetzt = timezone.now()
+    heute = timezone.localtime(jetzt).replace(hour=0, minute=0, second=0, microsecond=0)
+    # Noch nicht vorbei: ganztägige bis zum Ende ihres letzten Tags (gespeichert ist der Folgetag, 0 Uhr), andere bis
+    # zu ihrem Ende; ohne Ende zählt der Beginn. Auch laufende und mehrtägige Termine bleiben stehen.
+    nicht_vorbei = (
+        Q(termin__all_day=True, termin__end__gt=heute)
+        | Q(termin__all_day=False, termin__end__gt=jetzt)
+        | Q(termin__all_day=False, termin__end__isnull=True, termin__start__gte=jetzt)
+    )
+    return list(
+        TerminTeilnahme.objects.filter(
+            nicht_vorbei,
+            membership=membership,
+            status=TerminTeilnahme.OFFEN,
+            termin__organization_id=membership.organization_id,
+        )
+        .select_related("termin")
+        .order_by("termin__start")[:limit]
+    )
+
+
 def meine_teilnahme(termin: Termin, membership: Any) -> TerminTeilnahme | None:
     return termin.teilnahmen.filter(membership=membership).first()
 
