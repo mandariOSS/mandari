@@ -14,19 +14,22 @@ import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from src.storage.database import DatabaseStorage
+from src.storage.database import KALENDER_ANGABE, DatabaseStorage
 from src.storage.models import Base, OParlBody, OParlMeeting, OParlOrganization, OParlSource
 from src.sync.gremien_kalender import ERNEUT_NACH, SCHLUESSEL
+from src.sync.processor import OParlProcessor
 
 DATABASE_URL = os.environ.get("INGESTOR_TEST_DATABASE_URL", "")
 SCHEMA = f"ingestor_gremien_{uuid.uuid4().hex[:12]}"
 JETZT = datetime(2026, 11, 19, 12, tzinfo=UTC)
 GREMIUM = "https://ris.example.org/oparl/organization/152"
+KOMMUNE = "https://ris.example.org/oparl/body/1"
 
 pytestmark = pytest.mark.integration
 
@@ -87,7 +90,7 @@ async def _kommune(storage: DatabaseStorage) -> uuid.UUID:
         quelle = OParlSource(name="Stadt", url="https://ris.example.org/oparl/system", sync_config={})
         session.add(quelle)
         await session.flush()
-        kommune = OParlBody(external_id="https://ris.example.org/oparl/body/1", source_id=quelle.id, name="Stadt")
+        kommune = OParlBody(external_id=KOMMUNE, source_id=quelle.id, name="Stadt")
         session.add(kommune)
         await session.commit()
         return kommune.id
@@ -165,3 +168,33 @@ async def test_schreibt_nur_in_die_unveraenderte_sitzung(storage: DatabaseStorag
     assert SCHLUESSEL not in rohdaten[zwei]
     # Der nächste Lauf liest Sitzung 2 wieder, Sitzung 1 nicht mehr
     assert set(await _offen(storage, body_id)) == {"2"}
+
+
+async def test_angabe_uebersteht_den_abgleich_der_sitzung(storage: DatabaseStorage, monkeypatch: Any) -> None:
+    """Der volle Abgleich schreibt jede Sitzung neu; Name und Prüfzeitpunkt aus dem Kalender bleiben."""
+    assert KALENDER_ANGABE == SCHLUESSEL
+    body_id = await _kommune(storage)
+    benannt = await _sitzung(storage, body_id, 1, **{SCHLUESSEL: {"name": "AG Internationales"}})
+    geprueft = await _sitzung(storage, body_id, 2, **{SCHLUESSEL: {"geprueft": JETZT.isoformat()}})
+    ohne = await _sitzung(storage, body_id, 3)
+
+    async def keine_ereignisse(*_: object) -> bool:
+        return False
+
+    monkeypatch.setattr(storage, "_events_for", keine_ereignisse)
+    verarbeiter = OParlProcessor()
+    for nummer in (1, 2, 3):
+        daten = {
+            "id": f"https://ris.example.org/oparl/meeting/{nummer}",
+            "type": "https://schema.oparl.org/1.1/Meeting",
+            "name": "Sitzung",
+            "organization": [GREMIUM],
+            "start": (JETZT + timedelta(days=1)).isoformat(),
+        }
+        await storage.upsert_meeting(verarbeiter.process_meeting(daten, KOMMUNE), body_id)
+
+    async with storage.get_session() as session:
+        rohdaten = dict((await session.execute(text("SELECT id, raw_json FROM oparl_meetings"))).all())
+    assert rohdaten[benannt][SCHLUESSEL] == {"name": "AG Internationales"} and rohdaten[benannt]["name"] == "Sitzung"
+    assert rohdaten[geprueft][SCHLUESSEL] == {"geprueft": JETZT.isoformat()}
+    assert SCHLUESSEL not in rohdaten[ohne] and rohdaten[ohne]["organization"] == [GREMIUM]

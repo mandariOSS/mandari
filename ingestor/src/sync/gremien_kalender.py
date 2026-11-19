@@ -20,8 +20,9 @@ Kommunen, eine Seite dient allen.
 Steht eine Sitzung nicht im Kalender oder lässt sich die Seite nicht lesen, merkt sich der Rohdatensatz die Prüfung
 (``geprueft``); der Monat kommt frühestens nach ``ERNEUT_NACH`` und erst nach den ungeprüften Monaten wieder an die
 Reihe, blockiert die übrigen also auch bei seltenen Läufen nicht.
-Geschrieben wird nur, wenn sich die Sitzung seit dem Lesen nicht geändert hat; überschreibt ein späterer Abgleich sie,
-fehlt die Angabe wieder und der nächste Lauf liest sie neu. Fehler beim Laden oder Lesen halten den Abgleich nicht auf.
+Geschrieben wird nur, wenn sich die Sitzung seit dem Lesen nicht geändert hat. Schreibt der Abgleich die Sitzung neu,
+auch beim vollen Abgleich, bleibt die Angabe erhalten (``upsert_meeting``): Name und Prüfzeitpunkt gehen über die Läufe
+nicht verloren. Fehler beim Laden oder Lesen halten den Abgleich nicht auf.
 """
 
 from __future__ import annotations

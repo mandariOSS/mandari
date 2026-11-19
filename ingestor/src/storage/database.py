@@ -137,6 +137,9 @@ _unresolved_references: ContextVar[Counter[str] | None] = ContextVar("ingestor_u
 #: Arten nicht auflösbarer Verweise im Sync-Log (``unresolved``)
 UNRESOLVED_MEETING_ORGANIZATION: Final = "meeting.organization"
 UNRESOLVED_MEMBERSHIP_PERSON: Final = "membership.person"
+#: Gremienname aus dem öffentlichen Kalender im Rohdatensatz einer Sitzung (``src/sync/gremien_kalender.SCHLUESSEL``);
+#: ``upsert_meeting`` behält ihn, wenn der Abgleich die Sitzung neu schreibt
+KALENDER_ANGABE: Final = "mandari:gremiumWeb"
 UNRESOLVED_MEMBERSHIP_ORGANIZATION: Final = "membership.organization"
 
 
@@ -1873,7 +1876,12 @@ class DatabaseStorage:
                 "location_address": stmt.excluded.location_address,
                 **{name: getattr(stmt.excluded, name) for name in MEETING_COLUMNS},
                 "oparl_created": stmt.excluded.oparl_created,
-                "raw_json": stmt.excluded.raw_json,
+                # Der Name aus dem öffentlichen Kalender (Issue #1505) übersteht den Abgleich, auch den vollen
+                "raw_json": stmt.excluded.raw_json.op("||")(
+                    func.jsonb_strip_nulls(
+                        func.jsonb_build_object(KALENDER_ANGABE, OParlMeeting.raw_json[KALENDER_ANGABE])
+                    )
+                ),
                 # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
                 **_tombstone_update(OParlMeeting, stmt),
                 "updated_at": func.now(),
