@@ -22,8 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from src.storage.database import KALENDER_ANGABE, DatabaseStorage
 from src.storage.models import Base, OParlBody, OParlMeeting, OParlOrganization, OParlSource
-from src.sync.gremien_kalender import ERNEUT_NACH, SCHLUESSEL
+from src.sync.gremien_kalender import ERNEUT_NACH, MONATE_JE_LAUF, SCHLUESSEL, KalenderConfig, OhneGremium, ergaenzen
 from src.sync.processor import OParlProcessor
+from tests.test_gremien_kalender import KALENDER, Seite
 
 DATABASE_URL = os.environ.get("INGESTOR_TEST_DATABASE_URL", "")
 SCHEMA = f"ingestor_gremien_{uuid.uuid4().hex[:12]}"
@@ -96,12 +97,14 @@ async def _kommune(storage: DatabaseStorage) -> uuid.UUID:
         return kommune.id
 
 
-async def _sitzung(storage: DatabaseStorage, body_id: uuid.UUID, nummer: int, **raw: object) -> uuid.UUID:
+async def _sitzung(
+    storage: DatabaseStorage, body_id: uuid.UUID, nummer: int, start: datetime | None = None, **raw: object
+) -> uuid.UUID:
     async with storage.get_session() as session:
         sitzung = OParlMeeting(
             external_id=f"https://ris.example.org/oparl/meeting/{nummer}",
             body_id=body_id,
-            start=JETZT + timedelta(days=1),
+            start=start or JETZT + timedelta(days=1),
             raw_json={"organization": [GREMIUM], **raw},
         )
         session.add(sitzung)
@@ -198,3 +201,55 @@ async def test_angabe_uebersteht_den_abgleich_der_sitzung(storage: DatabaseStora
     assert rohdaten[benannt][SCHLUESSEL] == {"name": "AG Internationales"} and rohdaten[benannt]["name"] == "Sitzung"
     assert rohdaten[geprueft][SCHLUESSEL] == {"geprueft": JETZT.isoformat()}
     assert SCHLUESSEL not in rohdaten[ohne] and rohdaten[ohne]["organization"] == [GREMIUM]
+
+
+async def test_zwei_kalenderlaeufe_mit_vollabgleich_dazwischen(storage: DatabaseStorage, monkeypatch: Any) -> None:
+    """
+    Acht Monate mit Sitzungen ohne Eintrag im Kalender, zwischen zwei Läufen im Tagesabstand ein Vollabgleich, der jede
+    Sitzung neu schreibt: Je Lauf höchstens sechs Seiten, am zweiten Tag kommen die zwei übrigen Monate zuerst dran.
+    """
+    body_id = await _kommune(storage)
+    monate = [(2026 + (11 + i - 1) // 12, (11 + i - 1) % 12 + 1) for i in range(MONATE_JE_LAUF + 2)]
+    for i, (jahr, monat) in enumerate(monate):
+        await _sitzung(storage, body_id, 2000 + i, start=datetime(jahr, monat, 10, 16, tzinfo=UTC))
+    config = KalenderConfig.parse({"sessionnet_kalender": "https://ris.example.org/sessionnet/"})
+    assert config is not None
+    geladen: list[str] = []
+
+    async def lade(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
+        zeilen = await storage.get_meetings_ohne_gremium([body_id], von, bis, erneut_ab, SCHLUESSEL)
+        return [OhneGremium(id=z[0], external_id=z[1], start=z[2], stand=z[3], geprueft=z[4]) for z in zeilen]
+
+    async def lade_seite(url: str) -> Seite:
+        geladen.append(url)
+        return Seite(text=KALENDER)  # die Sitzungen stehen nicht darin
+
+    async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
+        return await storage.set_meeting_raw_extension(sitzung.id, SCHLUESSEL, wert, stand=sitzung.stand)
+
+    def seite(jahr: int, monat: int) -> str:
+        return config.monat(jahr, monat)
+
+    erster = await ergaenzen(config, lade, lade_seite, speichere, jetzt=JETZT)
+    assert erster.seiten == MONATE_JE_LAUF and geladen == [seite(*m) for m in monate[:MONATE_JE_LAUF]]
+
+    # Vollabgleich: jede Sitzung kommt wie von der Quelle neu herein
+    async def keine_ereignisse(*_: object) -> bool:
+        return False
+
+    monkeypatch.setattr(storage, "_events_for", keine_ereignisse)
+    verarbeiter = OParlProcessor()
+    for i, (jahr, monat) in enumerate(monate):
+        daten = {
+            "id": f"https://ris.example.org/oparl/meeting/{2000 + i}",
+            "type": "https://schema.oparl.org/1.1/Meeting",
+            "name": "Sitzung",
+            "organization": [GREMIUM],
+            "start": datetime(jahr, monat, 10, 16, tzinfo=UTC).isoformat(),
+        }
+        await storage.upsert_meeting(verarbeiter.process_meeting(daten, KOMMUNE), body_id)
+
+    geladen.clear()
+    zweiter = await ergaenzen(config, lade, lade_seite, speichere, jetzt=JETZT + ERNEUT_NACH + timedelta(hours=1))
+    assert zweiter.seiten == MONATE_JE_LAUF and len(geladen) == MONATE_JE_LAUF
+    assert geladen[:2] == [seite(*m) for m in monate[MONATE_JE_LAUF:]]
