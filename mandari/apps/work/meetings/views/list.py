@@ -6,8 +6,6 @@ Im neuen Erscheinungsbild (Schalter je Organisation, ``apps.work.rahmen.NeueVorl
 drei Seiten eine Vorlage aus ``work/meetings/neu/``; Filter, Daten und Rechte bleiben gleich.
 """
 
-from datetime import datetime
-
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views import View
@@ -17,8 +15,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.session.services import portal_link_service
 from apps.work.rahmen import NeueVorlageMixin
 
-from .. import neu, selectors
-from ..serializers import serialize_calendar_event
+from .. import kalender, neu, selectors
 
 
 class MeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
@@ -89,27 +86,21 @@ class MeetingCalendarView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "meetings"
+        # Arten von Terminen, die die Person sehen darf (Issue #1489); die Auswahl merkt sich der Browser
+        context["kalender_arten"] = kalender.arten_fuer(self.membership)
         return context
 
 
 class MeetingCalendarEventsView(WorkViewMixin, View):
-    """JSON endpoint for calendar events."""
+    """JSON endpoint for calendar events: Sitzungen, Fraktionssitzungen, Fristen und Aufgaben (Issue #1489)."""
 
     permission_required = "meetings.view"
 
     def get(self, request, *args, **kwargs):
-        bodies = selectors.organization_bodies(self.organization)
-        if bodies is None:
+        fenster = kalender.zeitfenster(request.GET)
+        if fenster is None:
             return JsonResponse([], safe=False)
-
-        try:
-            start = datetime.fromisoformat(request.GET.get("start", "").replace("Z", "+00:00"))
-            end = datetime.fromisoformat(request.GET.get("end", "").replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return JsonResponse([], safe=False)
-
-        meetings = selectors.meetings_between(bodies, start, end)
-        return JsonResponse([serialize_calendar_event(m, self.organization.slug) for m in meetings], safe=False)
+        return JsonResponse(kalender.termine(self.organization, self.membership, *fenster), safe=False)
 
 
 class MeetingDetailView(NeueVorlageMixin, WorkViewMixin, TemplateView):

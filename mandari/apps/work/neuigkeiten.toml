@@ -28,6 +28,15 @@
 [[eintrag]]
 datum = 2026-11-19
 version = ""
+bereich = "sitzungen"
+titel = "Der Kalender zeigt auch Fraktionssitzungen, Fristen und Aufgaben."
+text = """Im Kalender unter „Sitzungen“ stehen neben den Sitzungen der Gremien jetzt auch die Fraktionssitzungen, die \
+Fristen Ihrer Dokumente und die Aufgaben mit Fälligkeit, je Art in einer eigenen Farbe. Über dem Kalender blenden \
+Sie jede Art aus und wieder ein; Ihr Browser merkt sich die Auswahl."""
+
+[[eintrag]]
+datum = 2026-11-19
+version = ""
 bereich = "ueberall"
 titel = "„Neu“ in der Seitenleiste, Zahlen an Aufgaben und Dokumenten."
 text = """Über den Knopf „Neu“ oben in der Seitenleiste legen Sie von jeder Seite aus ein Dokument oder eine Aufgabe \
