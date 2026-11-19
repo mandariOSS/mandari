@@ -77,16 +77,22 @@ def zaehler(organization: Any, membership: Any) -> dict[str, int]:
     """
     from apps.work.motions.models import Motion, MotionApproval
     from apps.work.tasks.models import Task
-    from apps.work.tasks.selectors import ohne_gesperrte_tops
+    from apps.work.tasks.selectors import ohne_gesperrte_tops, zustaendig_q
 
     sichtbar = Motion.visible_to(membership)  # type: ignore[no-untyped-call]  # Modell noch ohne Annotationen
     return {
+        # Zugewiesen oder eine der weiteren Zuständigen (gleichberechtigt, Issue #1462)
         "aufgaben": ohne_gesperrte_tops(
-            Task.objects.filter(organization=organization, assigned_to=membership, status__in=("todo", "in_progress")),
+            Task.objects.filter(organization=organization, status__in=("todo", "in_progress")).filter(
+                zustaendig_q(membership)
+            ),
             membership,
         ).count(),
+        # Dokumente, nicht Freigabezeilen: Zwei Freigaben derselben Person an einem Dokument zählen einmal
         "dokumente": MotionApproval.objects.filter(approver=membership, approved__isnull=True, motion__in=sichtbar)
         .exclude(motion__status__in=("archived", "deleted"))
+        .values("motion_id")
+        .distinct()
         .count(),
     }
 
@@ -98,7 +104,7 @@ def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict
     """
     from apps.work.motions.models import Motion, MotionApproval
     from apps.work.tasks.models import Task
-    from apps.work.tasks.selectors import ohne_gesperrte_tops
+    from apps.work.tasks.selectors import ohne_gesperrte_tops, zustaendig_q
 
     slug = organization.slug
     eintraege: list[dict[str, Any]] = []
@@ -122,7 +128,9 @@ def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict
 
     # Aufgaben aus nichtöffentlichen TOPs nur für Vereidigte, wie auf dem Aufgabenboard
     aufgaben = ohne_gesperrte_tops(
-        Task.objects.filter(organization=organization, assigned_to=membership, status__in=("todo", "in_progress")),
+        Task.objects.filter(organization=organization, status__in=("todo", "in_progress")).filter(
+            zustaendig_q(membership)
+        ),
         membership,
     ).order_by("due_date", "-created_at")[:limit]
     for aufgabe in sorted(aufgaben, key=lambda a: (a.priority not in PRIORITAET, a.due_date or date.max)):

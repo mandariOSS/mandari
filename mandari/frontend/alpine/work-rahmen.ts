@@ -204,6 +204,8 @@ export const workNeu = defineComponent(() => ({
     const menue = this.$refs.menue as HTMLElement | undefined
     if (knopf && menue) menue.style.top = `${Math.round(knopf.getBoundingClientRect().bottom + 4)}px`
     this.offen = true
+    // Gewöhnliche Links statt Menürollen: Der Fokus geht auf den ersten Eintrag, Tab wechselt weiter
+    this.$nextTick(() => menue?.querySelector<HTMLElement>('a')?.focus())
   },
 
   schliessen(fokus = true) {
