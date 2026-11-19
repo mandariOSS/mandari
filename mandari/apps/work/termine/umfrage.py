@@ -282,7 +282,45 @@ def festlegen(umfrage: Terminumfrage, vorschlag_id: Any, membership: Any) -> Ter
     return termin
 
 
-def _benachrichtigen(umfrage: Terminumfrage, gefragte: list[Any], fragend: Any) -> None:
+def _zeitpunkt(tag: str, beginn: str, ende: str) -> tuple[datetime, datetime | None]:
+    """Tag, Beginn und Ende aus dem Formular als Zeitpunkte; ``ValueError`` trägt den Satz für die Seite."""
+    try:
+        am = date.fromisoformat(tag)
+        von = time.fromisoformat(beginn)
+        bis = time.fromisoformat(ende) if ende else None
+    except ValueError:
+        raise ValueError("Jeder Vorschlag braucht einen Tag und eine Uhrzeit für den Beginn.") from None
+    start = timezone.make_aware(datetime.combine(am, von))
+    schluss = timezone.make_aware(datetime.combine(am, bis)) if bis else None
+    if schluss is not None and schluss <= start:
+        raise ValueError(f"Am {am.strftime('%d.%m.%Y')} liegt das Ende nicht nach dem Beginn.")
+    return start, schluss
+
+
+def vorschlag_ergaenzen(umfrage: Terminumfrage, post: Any, membership: Any) -> str:
+    """
+    Einen weiteren Zeitpunkt in eine offene Umfrage aufnehmen (``tag``, ``beginn``, ``ende``) und die Gefragten
+    benachrichtigen, damit sie ihre Antwort ergänzen. Gibt den Satz für die Seite zurück, wenn es nicht geht
+    (abgeschlossen, unvollständig, schon vorhanden, zu viele Vorschläge), sonst einen leeren Text.
+    """
+    if umfrage.abgeschlossen_am is not None:
+        return "Die Umfrage ist abgeschlossen."
+    try:
+        start, schluss = _zeitpunkt(*(str(post.get(name) or "") for name in ("tag", "beginn", "ende")))
+    except ValueError as fehler:
+        return str(fehler)
+    if umfrage.vorschlaege.filter(start=start).exists():
+        return "Diesen Zeitpunkt gibt es in der Umfrage schon."
+    if umfrage.vorschlaege.count() >= MAX_VORSCHLAEGE:
+        return f"Eine Umfrage nimmt höchstens {MAX_VORSCHLAEGE} Vorschläge auf."
+    vorschlag = Terminvorschlag.objects.create(umfrage=umfrage, start=start, end=schluss)
+    gefragte = [teilnahme.membership for teilnahme in umfrage.teilnahmen.select_related("membership")]
+    text = f"Neuer Vorschlag in „{umfrage.title}“: {zeit(vorschlag)}. Bitte ergänzen Sie Ihre Antwort."
+    _benachrichtigen(umfrage, gefragte, membership, text=text)
+    return ""
+
+
+def _benachrichtigen(umfrage: Terminumfrage, gefragte: list[Any], fragend: Any, *, text: str = "") -> None:
     from apps.work.notifications.models import NotificationType
     from apps.work.notifications.services import NotificationHub
 
@@ -295,7 +333,7 @@ def _benachrichtigen(umfrage: Terminumfrage, gefragte: list[Any], fragend: Any) 
             recipient=mitglied,
             notification_type=NotificationType.TERMIN_UMFRAGE,
             title="Terminumfrage",
-            message=f"Wann passt es Ihnen? „{umfrage.title}“ steht zur Abstimmung.{frist}",
+            message=text or f"Wann passt es Ihnen? „{umfrage.title}“ steht zur Abstimmung.{frist}",
             link=link,
             actor=fragend,
             metadata={"umfrage_id": str(umfrage.pk)},
@@ -363,16 +401,9 @@ class UmfrageForm(forms.Form):
             if not (zeile["tag"] or zeile["beginn"] or zeile["ende"]):
                 continue
             try:
-                tag = date.fromisoformat(zeile["tag"])
-                beginn = time.fromisoformat(zeile["beginn"])
-                ende = time.fromisoformat(zeile["ende"]) if zeile["ende"] else None
-            except ValueError:
-                self.add_error(None, "Jeder Vorschlag braucht einen Tag und eine Uhrzeit für den Beginn.")
-                break
-            start = timezone.make_aware(datetime.combine(tag, beginn))
-            schluss = timezone.make_aware(datetime.combine(tag, ende)) if ende else None
-            if schluss is not None and schluss <= start:
-                self.add_error(None, f"Am {tag.strftime('%d.%m.%Y')} liegt das Ende nicht nach dem Beginn.")
+                start, schluss = _zeitpunkt(zeile["tag"], zeile["beginn"], zeile["ende"])
+            except ValueError as fehler:
+                self.add_error(None, str(fehler))
                 break
             if start not in gesehen:
                 gesehen.add(start)

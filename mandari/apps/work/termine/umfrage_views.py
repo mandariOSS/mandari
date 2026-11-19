@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Terminumfrage anlegen, beantworten, festlegen und löschen (Issue #1489, Schritt 4).
+Terminumfrage anlegen, beantworten, um Vorschläge ergänzen, festlegen und löschen (Issue #1489, Schritt 4).
 
 Zwei Seiten ohne Dialog: das Formular für eine neue Umfrage und die Umfrage selbst, auf der die Gefragten antworten
 und die anlegende Person einen Vorschlag festlegt. Sichtbarkeit und Rechte: ``apps.work.termine.umfrage``.
@@ -112,6 +112,24 @@ class UmfrageFestlegenView(WorkViewMixin, View):
             return redirect("work:terminumfrage", org_slug=ansicht.organization.slug, umfrage_id=gefunden.pk)
         messages.success(request, "Termin festgelegt. Die Gefragten sind benachrichtigt.")
         return redirect("work:termin", org_slug=ansicht.organization.slug, termin_id=termin.pk)
+
+
+class UmfrageVorschlagView(WorkViewMixin, View):
+    """Einen weiteren Zeitpunkt in die offene Umfrage aufnehmen; die Gefragten ergänzen danach ihre Antwort."""
+
+    permission_required = "meetings.view"
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        ansicht: Any = self
+        gefunden = _gefunden(ansicht, kwargs["umfrage_id"])
+        if not umfrage.darf_aendern(ansicht.membership, gefunden):
+            raise PermissionDenied("Keine Berechtigung, diese Terminumfrage zu ändern.")
+        fehler = umfrage.vorschlag_ergaenzen(gefunden, request.POST, ansicht.membership)
+        if fehler:
+            messages.error(request, fehler)
+        else:
+            messages.success(request, "Vorschlag ergänzt. Die Gefragten sind benachrichtigt.")
+        return redirect("work:terminumfrage", org_slug=ansicht.organization.slug, umfrage_id=gefunden.pk)
 
 
 class UmfrageLoeschenView(WorkViewMixin, View):

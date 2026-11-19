@@ -274,6 +274,40 @@ def test_vertretung_bekommt_die_umfrage_nur_wenn_sie_selbst_gefragt_ist(
     assert [meldung.notification_type for meldung in an_vertretung] == [NotificationType.TERMIN_UMFRAGE]
 
 
+def test_weiteren_vorschlag_ergaenzen(org: Any, vera: Any, karim: Any, client_for: Any) -> None:
+    neue = _anlegen(org, vera, wen=umfrage.AUSWAHL, gefragte=[str(karim.pk)])
+    adresse = _url("terminumfrage_vorschlag", org, umfrage_id=neue.pk)
+    client = client_for(vera.user)
+    assert (
+        'data-testid="umfrage-vorschlag-neu"'
+        in client.get(_url("terminumfrage", org, umfrage_id=neue.pk)).content.decode()
+    )
+    meldungen = Notification.objects.filter(recipient=karim, notification_type=NotificationType.TERMIN_UMFRAGE)
+    assert meldungen.count() == 1
+
+    assert client.post(adresse, {"tag": _tag(14).isoformat(), "beginn": "19:00", "ende": "21:00"}).status_code == 302
+    assert neue.vorschlaege.count() == 4
+    # Die Gefragten erfahren davon, damit sie ihre Antwort ergänzen
+    assert meldungen.count() == 2 and any("Neuer Vorschlag" in meldung.message for meldung in meldungen)
+
+    # Derselbe Zeitpunkt, ein unvollständiger und einer mit dem Ende vor dem Beginn ändern nichts
+    for eingabe in (
+        {"tag": _tag(14).isoformat(), "beginn": "19:00"},
+        {"tag": _tag(15).isoformat()},
+        {"tag": _tag(15).isoformat(), "beginn": "19:00", "ende": "18:00"},
+    ):
+        assert client.post(adresse, eingabe).status_code == 302
+    assert neue.vorschlaege.count() == 4 and meldungen.count() == 2
+
+    # Gefragte ergänzen keine Vorschläge; nach dem Festlegen geht es auch für die anlegende Person nicht mehr
+    assert client_for(karim.user).post(adresse, {"tag": _tag(16).isoformat(), "beginn": "19:00"}).status_code == 403
+    erster = neue.vorschlaege.order_by("start")[0]
+    assert umfrage.festlegen(neue, erster.pk, vera) is not None
+    neue.refresh_from_db()
+    assert umfrage.vorschlag_ergaenzen(neue, {"tag": _tag(16).isoformat(), "beginn": "19:00"}, vera)
+    assert neue.vorschlaege.count() == 4
+
+
 def test_seite_zeigt_was_am_tag_schon_ansteht(org: Any, vera: Any, karim: Any, client_for: Any) -> None:
     neue = _anlegen(org, vera)
     form = termine.TerminForm(

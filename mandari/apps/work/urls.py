@@ -113,6 +113,11 @@ urlpatterns = [
         name="terminumfrage",
     ),
     path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/vorschlag/",
+        umfrage_views.UmfrageVorschlagView.as_view(),
+        name="terminumfrage_vorschlag",
+    ),
+    path(
         "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/festlegen/",
         umfrage_views.UmfrageFestlegenView.as_view(),
         name="terminumfrage_festlegen",

@@ -799,6 +799,7 @@ CASES: list[Case] = [
         foreign={"mitglied": {"wen": "auswahl", "gefragte": ["{a_member}"]}},
     ),
     Case("terminumfrage", path=UMFRAGE, data={}),
+    Case("terminumfrage_vorschlag", path=UMFRAGE, data={"tag": "2027-01-14", "beginn": "18:00"}),
     Case("terminumfrage_festlegen", path=UMFRAGE, data={"vorschlag": "{vorschlag}"}),
     Case("terminumfrage_loeschen", path=UMFRAGE),
     Case("task_labels", data={"name": "Neu", "color": "green"}),

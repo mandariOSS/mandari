@@ -2,7 +2,8 @@
 {% comment %}
 Terminumfrage (Issue #1489): je Vorschlag eine Zeile mit der Zeit, dem, was an dem Tag schon im eigenen Kalender
 steht, und wer wie geantwortet hat. Gefragte wählen je Vorschlag „Ja“, „Wenn nötig“ oder „Nein“ und speichern alles
-mit einem Knopf. Wer die Umfrage angelegt hat, legt darunter einen Vorschlag fest: Daraus wird der Termin. Zeilen
+mit einem Knopf. Wer die Umfrage angelegt hat, ergänzt darunter weitere Vorschläge und legt am Ende einen fest:
+Daraus wird der Termin. Zeilen
 statt einer Tabelle Person mal Zeitpunkt: Das bleibt am Handy lesbar und kommt mit vielen Vorschlägen zurecht.
 Kontext: UmfrageView (apps/work/termine/umfrage_views.py): umfrage, beschreibung, uebersicht (zeilen, gefragt,
 beantwortet, ohne_antwort), darf_antworten, darf_aendern.
@@ -61,6 +62,19 @@ beantwortet, ohne_antwort), darf_antworten, darf_aendern.
     </form>
 
     {% if darf_aendern and not umfrage.abgeschlossen_am %}
+    <form method="post" action="{% url 'work:terminumfrage_vorschlag' org_slug=organization.slug umfrage_id=umfrage.id %}" class="wf" data-testid="umfrage-vorschlag-neu">
+        {% csrf_token %}
+        <details>
+            <summary class="cursor-pointer text-sm font-medium text-gray-900 dark:text-white">Weiteren Vorschlag ergänzen</summary>
+            <div class="mt-3 flex flex-wrap items-end gap-3 text-sm">
+                <label class="grid gap-1">Tag <input type="date" name="tag" required class="wf-eingabe"></label>
+                <label class="grid gap-1">Beginn <input type="time" name="beginn" required class="wf-eingabe"></label>
+                <label class="grid gap-1">Ende <input type="time" name="ende" class="wf-eingabe"></label>
+                <c-ui.button type="submit" variant="secondary" size="sm">Ergänzen</c-ui.button>
+            </div>
+            <c-form.hinweis>Die Gefragten bekommen eine Benachrichtigung und ergänzen ihre Antwort.</c-form.hinweis>
+        </details>
+    </form>
     <form method="post" action="{% url 'work:terminumfrage_festlegen' org_slug=organization.slug umfrage_id=umfrage.id %}" data-testid="umfrage-festlegen">
         {% csrf_token %}
         <c-rahmen.abschnitt titel="Termin festlegen">
