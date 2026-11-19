@@ -117,7 +117,7 @@ def test_vorsitz_sieht_reihe_automatik_und_verwaltung(welt: dict[str, Any], clie
     assert "<b>Nach der Genehmigung</b><span>Protokoll per E-Mail</span>" in html
     einstellungen = reverse("work:organization_faction_settings", kwargs={"org_slug": slug})
     assert f'href="{einstellungen}#reihen-titel">Sitzungsreihe bearbeiten' in html
-    assert "Fraktionssitzung planen" in html
+    assert "Sitzung planen" in html
     assert reverse("work:faction_audit", kwargs={"org_slug": slug}) in html
 
 
@@ -125,8 +125,8 @@ def test_mitglied_ohne_verwaltungsaktionen(welt: dict[str, Any], client_for: Any
     html = _seite(welt, client_for, "mitglied")
     assert "Wöchentlich montags" in html and "Erinnerung zum Eintragen von TOPs" in html
     assert "Sitzungsreihe bearbeiten" not in html
-    assert "Einstellungen für Fraktionssitzungen" not in html
-    assert "Fraktionssitzung planen" not in html and 'x-show="showCreateModal"' not in html
+    assert "Einstellungen für interne Sitzungen" not in html
+    assert "Sitzung planen" not in html and 'x-show="showCreateModal"' not in html
     assert "Teilnahmenachweis" in html
 
 
@@ -147,7 +147,7 @@ def test_stand_je_zeile_und_vergangene(welt: dict[str, Any], client_for: Any) ->
 
 def test_satz_im_kopfband(welt: dict[str, Any], client_for: Any) -> None:
     html = _seite(welt, client_for, "vorsitz")
-    assert "Die nächste Fraktionssitzung ist am " in html and " eingeladen." in html
+    assert "Die nächste interne Sitzung ist am " in html and " eingeladen." in html
     assert "Offene Protokolle: 1." in html
 
 

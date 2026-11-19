@@ -669,7 +669,7 @@ def test_guest_dashboard_redirects_to_guest_overview(guests: Guests) -> None:
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     ("label", "path"),
-    [("Fraktionssitzungen", "/faction/"), ("Aufgaben", "/tasks/"), ("Mitglieder", "/organization/members/")],
+    [("Interne Sitzungen", "/faction/"), ("Aufgaben", "/tasks/"), ("Mitglieder", "/organization/members/")],
 )
 def test_guest_is_blocked_in_org_a(guests: Guests, label: str, path: str) -> None:
     response = guests.c_guest.get(f"{BASE_A}{path}")
@@ -682,7 +682,7 @@ def test_guest_is_blocked_in_org_a(guests: Guests, label: str, path: str) -> Non
     [
         ("Dashboard", "/"),
         ("Dokumente", "/documents/"),
-        ("Fraktionssitzungen", "/faction/"),
+        ("Interne Sitzungen", "/faction/"),
         ("Mitgliederliste", "/organization/members/"),
     ],
 )

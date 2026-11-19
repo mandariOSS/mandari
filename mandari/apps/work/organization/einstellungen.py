@@ -84,7 +84,7 @@ REITER: tuple[Reiter, ...] = (
             # Mitglieder mit faction.view_public sehen die Seite zur Information (Nur-Lesen, Issue #1071)
             Seite(
                 "fraktion",
-                "Fraktionssitzungen",
+                "Interne Sitzungen",
                 "work:organization_faction_settings",
                 recht=("faction.manage", "faction.view_public"),
             ),
