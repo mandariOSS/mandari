@@ -16,6 +16,8 @@ idempotent und durch eine Cache-Sperre gegen parallele Läufe geschützt:
   (Issue #547); tut nichts, solange ``WORK_RIS_RELINK`` auf ``aus`` (Standard) steht.
 - ``fraktionsprotokolle_versenden``: alle ``FACTION_PROTOCOL_INTERVAL_MINUTES`` (Standard 15) Minuten
   automatischer Protokollversand, falls die Organisation ihn eingeschaltet hat (Issue #871).
+- ``terminumfragen_erinnern``: alle ``WORK_POLL_REMINDER_INTERVAL_MINUTES`` (Standard 60) Minuten Erinnerung an
+  die Gefragten ohne Antwort, wenn die Antwortfrist einer Terminumfrage morgen oder heute endet (Issue #1489).
 - ``mitgliedschaften_auslaufen``: alle ``WORK_MEMBER_EXPIRY_INTERVAL_MINUTES`` (Standard 60) Minuten Erinnerungen
   7 und 3 Tage vor der Löschung und Löschung fälliger Mitgliedschaften im Auslauf „Nur Lesen“ (Issue #1237).
 
@@ -36,6 +38,7 @@ from .faction.protocol_dispatch import run_faction_protocol_pass
 from .faction.services import run_faction_reminder_pass
 from .organization.auslauf import run_membership_expiry_pass
 from .ris.verknuepfungen import abgleichen
+from .termine.umfrage import erinnern
 
 
 def _minuten(name: str, standard: int) -> int:
@@ -75,6 +78,13 @@ def ris_verknuepfungen_abgleichen() -> dict[str, object]:
 def fraktionsprotokolle_versenden() -> None:
     """Versendet fällige Protokolle von Fraktionssitzungen (nur wenn die Organisation es eingeschaltet hat)."""
     run_faction_protocol_pass()
+
+
+@every(minutes=_minuten("WORK_POLL_REMINDER_INTERVAL_MINUTES", 60))
+@task
+def terminumfragen_erinnern() -> dict[str, int]:
+    """Erinnert vor der Antwortfrist einer Terminumfrage (einmal je Umfrage, Issue #1489)."""
+    return erinnern()
 
 
 @every(minutes=_minuten("WORK_MEMBER_EXPIRY_INTERVAL_MINUTES", 60))

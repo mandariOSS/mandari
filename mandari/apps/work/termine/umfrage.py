@@ -23,7 +23,7 @@ from typing import Any, Final
 
 from django import forms
 from django.db import transaction
-from django.db.models import Q, QuerySet
+from django.db.models import F, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -103,6 +103,68 @@ def offene(membership: Any) -> list[dict[str, Any]]:
         }
         for umfrage in umfragen
     ]
+
+
+def ohne_antwort(membership: Any, *, limit: int = 6) -> list[Terminumfrage]:
+    """
+    Offene Umfragen, in denen das Mitglied gefragt ist und noch auf keinen Vorschlag geantwortet hat, früheste Frist
+    zuerst (Startseite „Für Sie“). Eine Abfrage.
+    """
+    if membership is None or getattr(membership, "is_guest", False):
+        return []
+    beantwortet = VorschlagAntwort.objects.filter(membership=membership).values("vorschlag__umfrage_id")
+    return list(
+        Terminumfrage.objects.filter(
+            organization_id=membership.organization_id,
+            abgeschlossen_am__isnull=True,
+            teilnahmen__membership=membership,
+        )
+        .exclude(pk__in=beantwortet)
+        .order_by(F("antwort_bis").asc(nulls_last=True), "created_at")[:limit]
+    )
+
+
+#: Erinnerung, wenn die Frist morgen oder heute endet
+ERINNERN_VOR: Final = timedelta(days=1)
+
+
+def erinnern(heute: date | None = None) -> dict[str, int]:
+    """
+    Erinnerung vor der Antwortfrist (Zeitplan ``terminumfragen_erinnern``): Endet die Frist einer offenen Umfrage
+    morgen oder heute, bekommen die Gefragten ohne Antwort eine Benachrichtigung. Einmal je Umfrage
+    (``erinnert_am``); die Zeile ist dabei gesperrt, ein zweiter Lauf zur selben Zeit überspringt sie.
+    """
+    heute = heute or timezone.localdate()
+    faellig = Terminumfrage.objects.filter(
+        abgeschlossen_am__isnull=True,
+        erinnert_am__isnull=True,
+        antwort_bis__gte=heute,
+        antwort_bis__lte=heute + ERINNERN_VOR,
+    ).values_list("pk", flat=True)
+    umfragen = erinnert = 0
+    for umfrage_id in list(faellig):
+        with transaction.atomic():
+            umfrage = (
+                Terminumfrage.objects.select_for_update(skip_locked=True)
+                .filter(pk=umfrage_id, erinnert_am__isnull=True, abgeschlossen_am__isnull=True)
+                .select_related("organization")
+                .first()
+            )
+            if umfrage is None:
+                continue
+            beantwortet = VorschlagAntwort.objects.filter(vorschlag__umfrage=umfrage).values("membership_id")
+            offen = [
+                teilnahme.membership
+                for teilnahme in umfrage.teilnahmen.exclude(membership_id__in=beantwortet).select_related("membership")
+            ]
+            frist = "heute" if umfrage.antwort_bis == heute else "morgen"
+            text = f"Erinnerung: Die Antwortfrist für „{umfrage.title}“ endet {frist}. Bitte antworten Sie noch."
+            _benachrichtigen(umfrage, offen, umfrage.created_by, text=text)
+            umfrage.erinnert_am = timezone.now()
+            umfrage.save(update_fields=["erinnert_am", "updated_at"])
+            umfragen += 1
+            erinnert += len([person for person in offen if person.pk != umfrage.created_by_id])
+    return {"umfragen": umfragen, "erinnert": erinnert}
 
 
 def zeit(vorschlag: Terminvorschlag) -> str:

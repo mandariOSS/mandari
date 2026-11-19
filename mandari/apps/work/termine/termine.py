@@ -134,6 +134,26 @@ def teilnahmen(termin: Termin) -> list[TerminTeilnahme]:
     )
 
 
+def offene_einladungen(membership: Any, *, limit: int = 6) -> list[TerminTeilnahme]:
+    """
+    Einladungen zu kommenden Terminen, auf die das Mitglied noch nicht geantwortet hat, nächster Termin zuerst
+    (Startseite „Für Sie“). Eine Abfrage; Gäste haben keine Termine.
+    """
+    if membership is None or getattr(membership, "is_guest", False):
+        return []
+    beginn = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+    return list(
+        TerminTeilnahme.objects.filter(
+            membership=membership,
+            status=TerminTeilnahme.OFFEN,
+            termin__organization_id=membership.organization_id,
+            termin__start__gte=beginn,
+        )
+        .select_related("termin")
+        .order_by("termin__start")[:limit]
+    )
+
+
 def meine_teilnahme(termin: Termin, membership: Any) -> TerminTeilnahme | None:
     return termin.teilnahmen.filter(membership=membership).first()
 

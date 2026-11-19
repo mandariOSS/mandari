@@ -144,6 +144,8 @@ class Terminumfrage(EncryptionMixin, models.Model):
     description_encrypted = EncryptedTextField(blank=True, null=True, verbose_name="Beschreibung")
     antwort_bis = models.DateField(blank=True, null=True, verbose_name="Antwort bis")
     abgeschlossen_am = models.DateTimeField(blank=True, null=True, verbose_name="Abgeschlossen am")
+    # Erinnerung vor der Antwortfrist verschickt (einmal je Umfrage, ``umfrage.erinnern``)
+    erinnert_am = models.DateTimeField(blank=True, null=True, editable=False, verbose_name="Erinnert am")
     # Der Termin, der aus der Umfrage entstanden ist; die Umfrage bleibt abgeschlossen, wenn er gelöscht wird
     termin = models.ForeignKey(
         Termin, on_delete=models.SET_NULL, blank=True, null=True, related_name="umfragen", verbose_name="Termin"
