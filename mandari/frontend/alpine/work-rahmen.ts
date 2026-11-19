@@ -45,7 +45,7 @@ export function kuerzelErlaubt(event: KeyboardEvent): boolean {
   const ziel = event.target
   if (!(ziel instanceof Element)) return true
   return !ziel.closest(
-    'input, textarea, select, [contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="listbox"]'
+    'input, textarea, select, [contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="listbox"]',
   )
 }
 
@@ -103,6 +103,8 @@ export const workRahmen = defineComponent(() => ({
     // Nur wo es die Übersicht gibt (Work): Der Sitzungsdienst nutzt denselben Rahmen ohne diese Kürzel
     if (!document.getElementById('kuerzel-dialog')) return
     if (!kuerzelErlaubt(event) || this.raumOffen || this.mehrOffen || this.kuerzelOffen) return
+    // Solange der Bereich „Neu“ offen ist, gehört die Tastatur ihm (Tab wechselt, Escape schließt)
+    if (document.querySelector('[aria-controls="neu-menue"][aria-expanded="true"]')) return
     // Die Übersicht öffnet sich immer: Dort lassen sich die Kürzel wieder einschalten
     if (event.key === '?') {
       event.preventDefault()
@@ -123,7 +125,7 @@ export const workRahmen = defineComponent(() => ({
       return
     }
     const bereiche = document.querySelectorAll<HTMLAnchorElement>(
-      '#work-navigation nav[aria-label="Bereiche"] > ul > li > a'
+      '#work-navigation nav[aria-label="Bereiche"] > ul > li > a',
     )
     const stelle = bereichZurTaste(event.key, bereiche.length)
     if (stelle === null) return
