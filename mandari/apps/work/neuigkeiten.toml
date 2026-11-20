@@ -29,6 +29,15 @@
 datum = 2026-11-20
 version = "0.13.1"
 bereich = "sitzungen"
+titel = "Tagesordnungspunkte zeigen ihre Vorlagen und Unterlagen vollständiger."
+text = """In einigen Kommunen fehlten an Tagesordnungspunkten Vorlagen und Dokumente. Work holt sie jetzt zuverlässiger \
+aus dem Ratsinformationssystem. Neu sind Dokumente, die direkt an einem Punkt hängen, etwa Anträge ohne eigene \
+Vorlage: Sie stehen in der Sitzung und in der Sitzungsvorbereitung am Punkt."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "sitzungen"
 titel = "Eigene Termine im Kalender, mit Einladungen und Antworten."
 text = """Im Kalender legen Sie eigene Termine an, etwa einen Ortstermin oder ein Pressegespräch: über „Termin \
 anlegen“, über „Neu“ in der Seitenleiste oder mit einem Klick auf einen Tag. Sie laden Mitglieder ein, die zu- oder \
@@ -100,6 +109,14 @@ und erhalten aus den öffentlichen Ratsdaten einen Antwortentwurf mit den Fundst
 stehen getrennt daneben, auffällige Zahlen und Daten sind markiert. Mit „Als Dokument übernehmen“ wird daraus ein \
 Dokument mit Freigabe, Briefkopf und Export. Sie prüfen und versenden selbst. Voraussetzung: Die KI-Funktionen \
 Ihrer Organisation sind eingeschaltet."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "dokumente"
+titel = "Hochgeladene PDF-Anhänge öffnen im Browser."
+text = """PDF-Dateien, die Sie an Dokumente, Aufgaben oder Tagesordnungspunkte interner Sitzungen hängen, öffnen jetzt \
+in einem neuen Tab, wie die Dokumente aus dem Ratsinformationssystem. Andere Dateiarten laden Sie wie bisher herunter."""
 
 [[eintrag]]
 datum = 2026-11-17
