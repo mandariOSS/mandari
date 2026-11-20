@@ -97,6 +97,13 @@ urlpatterns = [
         ),
         name="meetings_calendar_bisher",
     ),
+    # Bisherige Abrufadresse: Ein beim Deploy geöffneter Kalender ruft sie beim Blättern weiter auf (bis zum
+    # nächsten Laden der Seite). Dieselbe Ansicht, nur lesend; kann mit einer späteren Version entfallen.
+    path(
+        "<slug:org_slug>/meetings/calendar/events/",
+        meetings_views.MeetingCalendarEventsView.as_view(),
+        name="meetings_calendar_events_bisher",
+    ),
     # Meetings (OParl meeting preparation)
     path("<slug:org_slug>/meetings/", meetings_views.MeetingListView.as_view(), name="meetings"),
     # Eigene Termine der Organisation im Kalender (Issue #1489)

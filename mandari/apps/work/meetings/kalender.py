@@ -54,8 +54,6 @@ ARTEN: Final[tuple[Art, ...]] = (
 ALLE_GREMIEN: Final = Art("sitzung", "Sitzungen der Gremien", "meetings.view")
 #: Höchstzahl je Art und Abruf: Ein Monatsraster zeigt ohnehin nur wenige Einträge je Tag
 MAX_JE_ART: Final = 300
-#: Höchstzahl geprüfter Sitzungen der Gremien je Abruf (eigene und weitere zusammen; schützt vor riesigen Fenstern)
-MAX_GREMIENSITZUNGEN: Final = 1500
 #: Dauer einer Sitzung aus einer Reihe, wenn die Reihe keine nennt (Vorgabe des Modells)
 REIHE_DAUER_VORGABE: Final = 120
 
@@ -133,12 +131,16 @@ def _eintrag(art: str, kennung: Any, titel: str, url: str, **felder: Any) -> dic
     }
 
 
-def _ist_eigene(meeting: Any, eigene: set[Any], eigene_adressen: set[str]) -> bool:
-    """True, wenn eines der Gremien der Sitzung ein eigenes ist (zugeordnet oder nur im Rohdatensatz genannt)."""
-    if any(org.pk in eigene for org in meeting.organizations.all()):
-        return True
-    adressen = (meeting.raw_json or {}).get("organization") or []
-    return isinstance(adressen, list) and any(adresse in eigene_adressen for adresse in adressen)
+def _eigene_bedingung(eigene: set[Any], eigene_adressen: set[str]) -> Q:
+    """
+    Sitzung eines eigenen Gremiums: zugeordnet oder (ohne Zuordnung) mit dessen Adresse an erster oder zweiter Stelle
+    im Rohdatensatz, wie ``OParlMeeting.get_display_name`` die Gremien liest.
+    """
+    bedingung = Q(organizations__in=list(eigene))
+    if eigene_adressen:
+        adressen = list(eigene_adressen)
+        bedingung |= Q(raw_json__organization__0__in=adressen) | Q(raw_json__organization__1__in=adressen)
+    return bedingung
 
 
 def _sitzungen(
@@ -146,30 +148,31 @@ def _sitzungen(
 ) -> list[dict[str, Any]]:
     """
     Sitzungen der Gremien: ``sitzung`` für die eigenen Gremien, ``gremium`` für die weiteren. Ohne eigene Gremien
-    gehören alle zu ``sitzung``. Der Titel nennt zuerst das Gremium (``OParlMeeting.bezeichnung``).
+    gehören alle zu ``sitzung``. Der Titel nennt zuerst das Gremium (``OParlMeeting.bezeichnung``). Jede Art hat ihre
+    eigene, schon in der Datenbank getrennte Abfrage mit eigenem Kontingent: Sitzungen der einen Art verdrängen die
+    der anderen nicht.
     """
     from hub.ris import selectors as ris
 
     bodies = selectors.organization_bodies(organization)
     if bodies is None:
         return []
-    eigene_adressen = ris.organization_external_ids(eigene)
-    gewaehlte = wahl & {"sitzung", "gremium"}
-    je_art: dict[str, int] = dict.fromkeys(gewaehlte, 0)
+    alle = selectors.meetings_between(bodies, start, end).order_by("start", "pk")
+    if eigene:
+        eigene_sitzungen = alle.filter(_eigene_bedingung(eigene, ris.organization_external_ids(eigene))).distinct()
+        abfragen = {"sitzung": eigene_sitzungen, "gremium": alle.exclude(pk__in=eigene_sitzungen.values("pk"))}
+    else:
+        abfragen = {"sitzung": alle}
     eintraege = []
-    # Erst einordnen, dann begrenzen: Ausgeblendete Sitzungen verbrauchen das Kontingent der gewählten Art nicht
-    for meeting in selectors.meetings_between(bodies, start, end).order_by("start")[:MAX_GREMIENSITZUNGEN]:
-        art = "sitzung" if not eigene or _ist_eigene(meeting, eigene, eigene_adressen) else "gremium"
-        if art not in gewaehlte or je_art[art] >= MAX_JE_ART:
+    for art, abfrage in abfragen.items():
+        if art not in wahl:
             continue
-        je_art[art] += 1
-        eintrag = serialize_calendar_event(meeting, organization.slug)
-        eintrag["classNames"] = [f"termin-{art}"]
-        eintrag["extendedProps"]["art"] = art
-        eintrag["extendedProps"]["fullTitle"] = eintrag["title"]
-        eintraege.append(eintrag)
-        if all(zahl >= MAX_JE_ART for zahl in je_art.values()):
-            break
+        for meeting in abfrage[:MAX_JE_ART]:
+            eintrag = serialize_calendar_event(meeting, organization.slug)
+            eintrag["classNames"] = [f"termin-{art}"]
+            eintrag["extendedProps"]["art"] = art
+            eintrag["extendedProps"]["fullTitle"] = eintrag["title"]
+            eintraege.append(eintrag)
     return eintraege
 
 

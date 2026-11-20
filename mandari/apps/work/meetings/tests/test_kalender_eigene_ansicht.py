@@ -210,7 +210,12 @@ def test_kontingent_je_art_nach_der_einordnung(
 
     client = client_for(mitglied.user)
     assert [e["title"] for e in _eintraege(client, org, "sitzung")] == ["Rat"]
-    assert [e["extendedProps"]["art"] for e in _eintraege(client, org)] == ["gremium", "gremium", "sitzung"]
+    assert [e["extendedProps"]["art"] for e in _eintraege(client, org)] == ["sitzung", "gremium", "gremium"]
+    # Je Art getrennt abgefragt: Auch wenn weit mehr weitere Sitzungen davor liegen, kommt die eigene
+    for nr in range(10, 40):
+        _sitzung(body, nr, "Sitzung", beirat, bald + timedelta(minutes=nr))
+    assert [e["title"] for e in _eintraege(client, org, "sitzung")] == ["Rat"]
+    assert len(_eintraege(client, org, "gremium")) == 2
 
 
 # ---- Sitzungsreihe zur festen Zeit ------------------------------------------------------------------------------
@@ -300,6 +305,11 @@ def test_kalender_ist_ein_eigener_bereich(org: Any, mitglied: Any, make_member: 
     # Die bisherige Adresse leitet weiter, mit ihren Parametern
     bisher = client.get(f"/work/{org.slug}/meetings/calendar/?ansicht=bisher")
     assert bisher.status_code == 302 and bisher.headers["Location"] == f"{adresse}?ansicht=bisher"
+    # Ein beim Deploy geöffneter Kalender ruft beim Blättern noch die bisherige Abrufadresse auf
+    jetzt = timezone.now()
+    fenster = {"start": jetzt.isoformat(), "end": (jetzt + timedelta(days=7)).isoformat(), "arten": "fraktion"}
+    abruf = client.get(f"/work/{org.slug}/meetings/calendar/events/", fenster)
+    assert abruf.status_code == 200 and abruf.json() == []
 
     html = client.get(adresse).content.decode()
     leiste = html[html.index('aria-label="Bereiche"') : html.index("</aside>")]
