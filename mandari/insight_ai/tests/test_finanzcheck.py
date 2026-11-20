@@ -278,7 +278,6 @@ class TestAnzeige:
             "Das Fördergeld ist beantragt, aber noch nicht zugesagt. Kommt weniger, zahlt Münster mehr",
             "Das Geld ist erst teilweise im Haushalt eingeplant, der Rest soll in den Haushalt 2028 kommen. "
             "Fehlendes Geld soll aus „Verkehrsflächen, Neubau und Erneuerung“ kommen",
-            "Zinsen für das vorgestreckte Geld während des Baus nennt die Vorlage nicht",
             "Kostenstand: 29.07.2025",
             "Ein Gremium hat mit Änderungen beschlossen, die Zahlen können abweichen",
         ]
@@ -841,3 +840,142 @@ class TestBefundeCodeRabbit3:
         monkeypatch.setattr(finanzcheck, "nachziehen", nachziehen)
         call_command("finanzcheck", "--nachziehen", "--hoechstens", "0")
         assert aufrufe == [0]
+
+
+class TestBefundeCodeRabbit1545:
+    """CodeRabbit zu PR #1545 (Kostencheck, Fassung 2)."""
+
+    def test_zahl_mit_einheit_ist_kein_jahr(self) -> None:
+        material = finanzcheck._Material("Auszahlungen 2028 2000 €")
+        assert finanzcheck._tabelle(material, "Auszahlungen 2028 2000 €") == [(2028, 2000)]
+        assert finanzcheck._jahre_in("Auszahlungen 2028 2000 €") == [2028]
+
+    def test_tausend_ohne_tausenderpunkt_unter_tabellenkopf(self) -> None:
+        material = finanzcheck._Material("Beträge in T€\nAuszahlungen 2028 2029\n500 1.200\n")
+        assert finanzcheck._tabelle(material, "Auszahlungen 2028 2029 500 1.200") == [
+            (2028, 500000),
+            (2029, 1200000),
+        ]
+
+    def test_vertauschte_richtung_fehlt(self) -> None:
+        antwort = _antwort(
+            auszahlungen=ANTWORT["einzahlungen"],
+            auszahlungen_beleg=ANTWORT["einzahlungen_beleg"],
+            einzahlungen=ANTWORT["auszahlungen"],
+            einzahlungen_beleg=ANTWORT["auszahlungen_beleg"],
+            gesamtkosten=None,
+            foerderung=None,
+            eigenanteil=None,
+        )
+        daten = finanzcheck.pruefen(antwort, DOKUMENT).daten
+        assert daten["zahlungen"] == [] and daten["zahlungen_unstimmig"]
+
+    def test_doppelte_einzelzeile_zaehlt_einmal(self) -> None:
+        text = "Baukosten 500.000 €\nAuszahlung 2028: 500.000 €\n"
+        zeile = {"jahr": 2028, "euro": 500000, "beleg": "Auszahlung 2028: 500.000 €"}
+        antwort = _antwort(
+            gesamtkosten={"euro": 500000, "beleg": "Baukosten 500.000 €"},
+            foerderung=None,
+            eigenanteil=None,
+            laufend=[],
+            laufend_gesamt=None,
+            auszahlungen=[zeile, dict(zeile)],
+            auszahlungen_beleg="",
+            einzahlungen=[],
+        )
+        daten = finanzcheck.pruefen(antwort, text).daten
+        assert [(z["jahr"], z["euro"]) for z in daten["zahlungen"]] == [(2028, 500000)]
+
+    def test_fehlende_einzahlungen_bei_foerderung(self) -> None:
+        antwort = _antwort(einzahlungen=[], einzahlungen_beleg="", eigenanteil=None)
+        ergebnis = finanzcheck.pruefen(antwort, DOKUMENT)
+        assert ergebnis.daten["einzahlungen_fehlen"]
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and anzeige.karten is not None
+        assert "Wann das Fördergeld kommt, steht nicht in der Vorlage" in anzeige.karten.offen
+
+    def test_nachmeldung_nur_mit_jahr_des_zielhaushalts(self) -> None:
+        beleg = "für die Jahre 2028 und 2031 werden zum Haushaltsplanentwurf 2028 angemeldet"
+        daten = finanzcheck.pruefen(_antwort(nachmeldung={"jahr": 2031, "beleg": beleg}), DOKUMENT).daten
+        assert daten["nachmeldung"] is None
+
+    def test_kostenstand_braucht_ganzes_datum_und_bezug(self) -> None:
+        text = DOKUMENT + "Baubeginn am 11.02.2026.\n"
+        for datum in ("1.02.2026", "11.02.2026"):
+            antwort = _antwort(kostenstand={"datum": datum, "beleg": "Baubeginn am 11.02.2026."})
+            assert finanzcheck.pruefen(antwort, text).daten["kostenstand"] is None
+
+    def test_verneinung_der_preissteigerung_im_selben_satzteil(self) -> None:
+        satz = "Preissteigerungen sind eingerechnet, nicht jedoch zusätzliche Planungskosten."
+        text = DOKUMENT + satz + "\n"
+        daten = finanzcheck.pruefen(_antwort(preissteigerung="nicht_enthalten", preissteigerung_beleg=satz), text).daten
+        assert daten["preissteigerung"] == "unklar"
+        daten = finanzcheck.pruefen(_antwort(preissteigerung="enthalten", preissteigerung_beleg=satz), text).daten
+        assert daten["preissteigerung"] == "enthalten"
+
+    def test_foerdergeld_auch_ohne_balken(self) -> None:
+        daten = {
+            "finanzen": "kosten",
+            "gesamtkosten": {"euro": 500000, "beleg": ""},
+            "foerderung": {"euro": 500000, "beleg": ""},
+            "foerderung_stand": "zugesagt",
+            "eigenanteil": {"euro": 0, "beleg": ""},
+        }
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and anzeige.karten is not None and anzeige.karten.bau is not None
+        assert anzeige.karten.bau.segmente == []
+        assert anzeige.karten.bau.text == "Fördergeld 500.000 € (zugesagt). Münster zahlt selbst nichts dazu."
+
+    def test_summe_ueber_jahre_nur_mit_belegtem_bauanteil(self) -> None:
+        text = "Baukosten 1.000.000 €\nUnterhaltung jährlich 10.000 €\nNutzungsdauer: 40 Jahre\n"
+        antwort = _antwort(
+            gesamtkosten={"euro": 1000000, "beleg": "Baukosten 1.000.000 €"},
+            foerderung=None,
+            eigenanteil=None,
+            auszahlungen=[],
+            einzahlungen=[],
+            laufend=[{"posten": "unterhalt", "euro": 10000, "beleg": "Unterhaltung jährlich 10.000 €"}],
+            laufend_gesamt={"euro": 10000, "beleg": "Unterhaltung jährlich 10.000 €"},
+            laufend_ab=None,
+        )
+        ergebnis = finanzcheck.pruefen(antwort, text)
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and anzeige.karten is not None and anzeige.karten.haushalt is not None
+        assert "Zusammen" not in anzeige.karten.haushalt.text
+        assert "Anteil am Bau" not in " ".join(anzeige.saetze)
+
+    def test_kuerzen_nur_an_ganzen_zeilen(self) -> None:
+        vorgang = _vorgang(_kommune(), text="Zeile eins\nBaukosten 1.200.000 €")
+        text = finanzcheck.dokumente_lesen(vorgang.files.all(), budget=25)
+        assert "Zeile eins" in text and "1.2" not in text and "[… gekürzt]" in text
+
+    @pytest.mark.parametrize(
+        ("ergebnis", "erwartet"),
+        [
+            ("einstimmig mit Änderungen beschlossen", True),
+            ("nicht mit Änderungen beschlossen", False),
+            ("ohne Änderungen beschlossen", False),
+            ("abgelehnt", False),
+        ],
+    )
+    def test_mit_aenderungen_nur_bei_beschluss(self, ergebnis: str, erwartet: bool) -> None:
+        assert finanzcheck.mit_aenderungen_beschlossen(ergebnis) is erwartet
+
+    def test_ohne_ki_nennt_keine_ki(self) -> None:
+        daten = {"finanzen": "keine_kosten", "keine_kosten_beleg": "Es entstehen keine Kosten"}
+        paper = SimpleNamespace(
+            pk=1,
+            body=SimpleNamespace(name="Stadt Münster"),
+            finanzcheck={"status": "ok", "grund": finanzcheck.OHNE_KI, "daten": daten},
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and anzeige.keine_kosten and not anzeige.mit_ki

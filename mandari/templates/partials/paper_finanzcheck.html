@@ -78,7 +78,7 @@ Zusammenfassung (EU AI Act Art. 50): sichtbar am Titel und im Satz darunter, mas
         {% endwith %}{% endif %}
     </div>
     <p class="mt-3 text-[0.75rem] leading-snug text-gray-600 dark:text-gray-400">
-        {% if finanzcheck.karten and not finanzcheck.karten.stimmt %}Mit KI aus der Vorlage ausgelesen; nicht alle Zahlen der Vorlage gehen zusammen auf.{% else %}Mit KI aus der Vorlage ausgelesen, jede Zahl mit ihrer Fundstelle abgeglichen, Summen nachgerechnet.{% endif %}
+        {% if finanzcheck.mit_ki %}Mit KI aus der Vorlage ausgelesen{% else %}Aus der Vorlage übernommen{% endif %}{% if finanzcheck.karten %}, jede Zahl mit ihrer Fundstelle abgeglichen{% if not finanzcheck.karten.stimmt %}; nicht alle Zahlen der Vorlage gehen zusammen auf{% elif finanzcheck.karten.abgeglichen %}, Summen nachgerechnet{% endif %}{% endif %}.
         {% if finanzcheck.karten.stand %}{{ finanzcheck.karten.stand }}.{% endif %}
         Maßgeblich sind die <a href="#dokumente-titel" class="text-primary-700 dark:text-primary-300 underline underline-offset-2">Dokumente</a>.
     </p>

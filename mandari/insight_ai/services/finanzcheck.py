@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Final
@@ -85,7 +85,11 @@ _TAUSEND: Final = re.compile(
     r"T€|\bTEUR\b|\bT\s?EUR\b|Tsd\.?\s*(?:€|EUR\b|Euro\b)|\bTausend\s+Euro\b|\bin\s+Tausend\b", re.IGNORECASE
 )
 #: Alleinstehende vierstellige Zahl (Jahr), nicht Teil eines Betrags wie „2.028“ oder „12028“
-_JAHRESZAHL: Final = re.compile(r"(?<![\d.,])(\d{4})(?!\d|[.,]\d)")
+_JAHRESZAHL: Final = re.compile(
+    r"(?<![\d.,])(\d{4})(?!\d|[.,]\d|[ \t  ]*(?:€|EUR\b|Euro\b|T€|TEUR\b|Mio\b|Tsd\b))", re.IGNORECASE
+)
+#: Öffnender Tag einer Anlage im Nutzerprompt (``prompts.anlage_block``)
+_ANLAGE_KOPF: Final = re.compile(r'<anlage name="([^"]*)">')
 #: „Keine Kosten“: nur feste Wendungen („Es entstehen keine Kosten“, „keine finanziellen Auswirkungen“, „Finanzielle
 #: Auswirkungen: keine“, „kostenneutral“), Wörter dazwischen ohne Satzzeichen. „Keine zusätzlichen Mittel; die Kosten
 #: betragen …“ zählt nicht; die Fundstelle darf zudem keine Zahl enthalten.
@@ -152,8 +156,10 @@ _EINORDNUNG: Final[dict[tuple[str, str], re.Pattern[str]]] = {
     ),
     ("deckung", "kredit"): re.compile(r"kredit|darlehen", re.IGNORECASE),
 }
-#: Fundstelle einer Nachmeldung im Haushalt („werden zum Haushaltsplanentwurf 2028 angemeldet“)
-_NACHMELDUNG: Final = re.compile(r"anmeld|angemeldet|veranschlag|haushaltsplan|nachtrag", re.IGNORECASE)
+#: Jahr des Zielhaushalts einer Nachmeldung („zum Haushaltsplanentwurf 2028“, „im Haushalt 2028“)
+_ZIELHAUSHALT: Final = re.compile(r"(?:haushalt\w*|nachtrag\w*)[ \t ]+(?:\w+[ \t ]+)?(\d{4})(?!\d)", re.IGNORECASE)
+#: Bezug einer Fundstelle zum Stand der Kosten („Aufgestellt am“, „Kostenberechnung vom“, „Stand“)
+_KOSTENSTAND: Final = re.compile(r"aufgestellt|kosten|stand|berechn|schätz|ermittelt|kalkul", re.IGNORECASE)
 #: Fundstelle zu Preissteigerungen
 _PREISSTEIGERUNG: Final = re.compile(
     r"preissteiger|baupreis|preisindex|index|inflation|teuerung|kostensteigerung|preisentwicklung", re.IGNORECASE
@@ -535,7 +541,7 @@ class _Material:
         anfang = self.text.rfind("<anlage", 0, stelle + 1)
         if anfang < 0:
             return ""
-        treffer = re.match(r'<anlage name="([^"]*)">', self.text[anfang : anfang + 300])
+        treffer = _ANLAGE_KOPF.match(self.text, anfang)
         return treffer.group(1) if treffer else ""
 
     def dokument(self, beleg: str) -> str:
@@ -605,8 +611,10 @@ def _tabelle(material: _Material, beleg: str) -> list[tuple[int, int]] | None:
     Betrag. So passen beide Formen von Tabellen: „2028 2.000.000 2029 2.000.000“ (Jahr neben Betrag) und
     „2028 2029 … 2.000.000 2.000.000 …“ (Jahre und Beträge getrennt untereinander, wie oft im Teilfinanzplan).
     Beträge haben Tausenderpunkte oder eine Einheit direkt dahinter; Prozentwerte, Zeilen- und Produktnummern
-    zählen nicht. Die Einheit gilt wie bei ``_Material.betraege_bei``. ``None``, wenn die Fundstelle nicht im Text
-    steht, die Zahl der Jahre nicht zur Zahl der Beträge passt oder die Einheit offen ist.
+    zählen nicht. Unter einem Tabellenkopf in Tausend Euro („in T€“) zählen auch ganze Zahlen ohne Tausenderpunkt
+    („500“), aber nur, wenn erst damit die Zahl der Beträge zur Zahl der Jahre passt. Eine Zahl mit Einheit direkt
+    dahinter ist nie ein Jahr („2000 €“). Die Einheit gilt wie bei ``_Material.betraege_bei``. ``None``, wenn die
+    Fundstelle nicht im Text steht, die Zahl der Jahre nicht zur Zahl der Beträge passt oder die Einheit offen ist.
     """
     from .zusammenfassung_pruefung import _faktor, _wert
 
@@ -618,27 +626,31 @@ def _tabelle(material: _Material, beleg: str) -> list[tuple[int, int]] | None:
         einheit = _EINHEIT_DANACH.match(material.text, ende + 1)
         ausschnitt = material.text[anfang : einheit.end() if einheit else ende + 1]
         jahre: list[int] = []
-        betraege: list[int] = []
+        # Je Zahl: Wert in Euro und ob sie sicher ein Betrag ist (Tausenderpunkte oder Einheit) oder nur unter T€
+        kandidaten: list[tuple[int, bool]] = []
         for treffer in _ZAHL_IM_TEXT.finditer(ausschnitt):
             zahl = treffer.group(0)
-            if re.fullmatch(r"\d{4}", zahl) and 1990 <= int(zahl) <= 2100:
-                jahre.append(int(zahl))
-                continue
             mit_einheit = _EINHEIT_DANACH.match(ausschnitt, treffer.end())
-            if not _BETRAG_FORMAT.fullmatch(zahl) and not (mit_einheit and mit_einheit.group(0).strip()):
+            hat_einheit = bool(mit_einheit and mit_einheit.group(0).strip())
+            if not hat_einheit and re.fullmatch(r"\d{4}", zahl) and 1990 <= int(zahl) <= 2100:
+                jahre.append(int(zahl))
                 continue
             wert = _wert(zahl)
             if wert is None:
                 continue
-            if mit_einheit and mit_einheit.group(0).strip():
-                wert *= _faktor(ausschnitt, treffer.end())
-            else:
-                art = material.einheit_bei(anfang + treffer.start())
+            if hat_einheit:
+                kandidaten.append((int(wert * _faktor(ausschnitt, treffer.end())), True))
+                continue
+            art = material.einheit_bei(anfang + treffer.start())
+            if _BETRAG_FORMAT.fullmatch(zahl):
                 if art is None:
                     return None
-                if art == "tausend":
-                    wert *= 1000
-            betraege.append(int(wert))
+                kandidaten.append((int(wert * 1000) if art == "tausend" else int(wert), True))
+            elif art == "tausend" and re.fullmatch(r"\d{1,3}", zahl):
+                kandidaten.append((int(wert * 1000), False))
+        betraege = [wert for wert, sicher in kandidaten if sicher]
+        if len(betraege) != len(jahre):
+            betraege = [wert for wert, _sicher in kandidaten]
         if not jahre or len(jahre) != len(betraege):
             return None
         ergebnisse.add(tuple(zip(jahre, betraege, strict=True)))
@@ -647,18 +659,35 @@ def _tabelle(material: _Material, beleg: str) -> list[tuple[int, int]] | None:
     return list(ergebnisse.pop())
 
 
-def _reihe(material: _Material, zeilen: Any, block: str) -> tuple[list[dict[str, Any]], bool]:
+#: Wörter, die die Richtung einer Zahlung tragen (in der Fundstelle oder ihrer Zeile samt der Zeile davor)
+_RICHTUNG: Final[dict[str, re.Pattern[str]]] = {
+    "ausgabe": re.compile(r"auszahl|ausgabe", re.IGNORECASE),
+    "einnahme": re.compile(r"einzahl|einnahme|zuwendung|förder|zuschu|erstattung|erlös", re.IGNORECASE),
+}
+
+
+def _richtung_belegt(material: _Material, beleg: str, richtung: str) -> bool:
+    """Nennt die Fundstelle (oder die Zeile davor) die Richtung („Auszahlungen“, „Einzahlungen“)?"""
+    muster = _RICHTUNG[richtung]
+    return bool(
+        muster.search(beleg) or any(muster.search(material.umfeld(*stelle)) for stelle in material.treffer(beleg))
+    )
+
+
+def _reihe(material: _Material, zeilen: Any, block: str, richtung: str) -> tuple[list[dict[str, Any]], bool]:
     """
     Geprüfte Zahlungen je Jahr einer Richtung und ob die Angabe vollständig belegt ist. Trägt der Tabellenausschnitt
     (``block``) genau die Jahre und Beträge der Antwort, gelten alle; sonst muss jede Zeile ihre eigene Fundstelle mit
-    genau ihrem Jahr und Betrag haben. Fällt eine Zeile durch, ist die Reihe unvollständig.
+    genau ihrem Jahr und Betrag haben. Die Fundstelle muss die Richtung nennen (``_RICHTUNG``), damit Ein- und
+    Auszahlungen nicht vertauscht ankommen. Fällt eine Zeile durch, ist die Reihe unvollständig; dieselbe Zeile
+    doppelt zählt einmal.
     """
     eintraege: list[tuple[int, int, str]] = []
     for zeile in zeilen or []:
         if not isinstance(zeile, dict):
             continue
         jahr, euro = _zahl(zeile.get("jahr")), _zahl(zeile.get("euro"))
-        if 1990 <= jahr <= 2100 and euro > 0:
+        if 1990 <= jahr <= 2100 and euro > 0 and (jahr, euro) not in {(j, e) for j, e, _b in eintraege}:
             eintraege.append((jahr, euro, str(zeile.get("beleg") or "").strip()))
     if not eintraege:
         return [], True
@@ -667,14 +696,18 @@ def _reihe(material: _Material, zeilen: Any, block: str) -> tuple[list[dict[str,
         return [], False
     block = (block or "").strip()
     tabelle = _tabelle(material, block) if block else None
-    if tabelle is not None and set(tabelle) == paare:
+    if tabelle is not None and set(tabelle) == paare and _richtung_belegt(material, block, richtung):
         dokument = material.dokument(block)
         return [
             {"jahr": jahr, "euro": euro, "beleg": block, "dokument": dokument} for jahr, euro in sorted(paare)
         ], True
     geprueft: list[dict[str, Any]] = []
     for jahr, euro, beleg in eintraege:
-        if _jahre_in(beleg) == [jahr] and _betrag_belegt(material, beleg, euro):
+        if (
+            _jahre_in(beleg) == [jahr]
+            and _betrag_belegt(material, beleg, euro)
+            and _richtung_belegt(material, beleg, richtung)
+        ):
             geprueft.append({"jahr": jahr, "euro": euro, "beleg": beleg, "dokument": material.dokument(beleg)})
     vollstaendig = len(geprueft) == len(eintraege)
     return (sorted(geprueft, key=lambda z: z["jahr"]) if vollstaendig else []), vollstaendig
@@ -786,7 +819,9 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
     zahlungen: list[dict[str, Any]] = []
     vollstaendig = True
     for richtung, schluessel in (("ausgabe", "auszahlungen"), ("einnahme", "einzahlungen")):
-        reihe, belegt = _reihe(material, antwort.get(schluessel), str(antwort.get(f"{schluessel}_beleg") or ""))
+        reihe, belegt = _reihe(
+            material, antwort.get(schluessel), str(antwort.get(f"{schluessel}_beleg") or ""), richtung
+        )
         vollstaendig = vollstaendig and belegt
         zahlungen += [{**zeile, "richtung": richtung} for zeile in reihe]
     summe_aus = sum(z["euro"] for z in zahlungen if z["richtung"] == "ausgabe")
@@ -806,6 +841,10 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
     daten["zahlungen_vollstaendig"] = vollstaendig and bool(zahlungen)
     # Es gab Zahlungen je Jahr, aber sie passen nicht zusammen: Hinweis statt Diagramm
     daten["zahlungen_unstimmig"] = not vollstaendig and bool(antwort.get("auszahlungen") or antwort.get("einzahlungen"))
+    # Fördergeld belegt, Auszahlungen je Jahr da, aber keine Einzahlungen: Wann das Geld kommt, ist offen
+    daten["einzahlungen_fehlen"] = bool(
+        daten["zahlungen_vollstaendig"] and daten["foerderung"] and summe_aus and not summe_ein
+    )
 
     laufend: list[dict[str, Any]] = []
     gesehen: set[tuple[Any, ...]] = set()
@@ -852,7 +891,9 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
     if isinstance(nach, dict):
         jahr = _zahl(nach.get("jahr"))
         beleg = str(nach.get("beleg") or "").strip()
-        if 1990 <= jahr <= 2100 and _belegt(material, beleg, jahr) and _NACHMELDUNG.search(beleg):
+        # Das Jahr muss das des Zielhaushalts sein („zum Haushaltsplanentwurf 2028“), nicht eines der Zahlungsjahre
+        ziel = [int(j) for j in _ZIELHAUSHALT.findall(beleg)]
+        if 1990 <= jahr <= 2100 and _belegt(material, beleg, jahr) and ziel == [jahr]:
             daten["nachmeldung"] = {"jahr": jahr, "beleg": beleg}
     # Stand der Kosten: Datum wie im Text
     stand_roh = antwort.get("kostenstand")
@@ -861,22 +902,31 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         datum = str(stand_roh.get("datum") or "").strip()
         beleg = str(stand_roh.get("beleg") or "").strip()
         gefunden = re.fullmatch(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", datum)
+        # Ganzes Datum (nicht „1.02.2026“ in „11.02.2026“) und ein Bezug zur Kostenberechnung in der Fundstelle
+        daten_im_beleg = {
+            (int(t), int(m), int(j)) for t, m, j in re.findall(r"(?<![\d.])(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)", beleg)
+        }
         if (
             gefunden
             and 1 <= int(gefunden.group(1)) <= 31
             and 1 <= int(gefunden.group(2)) <= 12
             and 1990 <= int(gefunden.group(3)) <= 2100
             and material.steht_drin(beleg)
-            and _kern(datum) in _kern(beleg)
+            and (int(gefunden.group(1)), int(gefunden.group(2)), int(gefunden.group(3))) in daten_im_beleg
+            and _KOSTENSTAND.search(beleg)
         ):
             daten["kostenstand"] = {"datum": datum, "beleg": beleg, "dokument": material.dokument(beleg)}
     # Preissteigerungen: nur mit Fundstelle, die sie nennt
     preis = str(antwort.get("preissteigerung") or "unklar")
     beleg = str(antwort.get("preissteigerung_beleg") or "").strip()
-    belegt = material.steht_drin(beleg) and bool(_PREISSTEIGERUNG.search(beleg))
-    if preis == "nicht_enthalten" and belegt and _VERNEINT.search(beleg):
+    # Die Verneinung muss im selben Satzteil stehen wie die Preissteigerung („Preissteigerungen sind eingerechnet,
+    # nicht jedoch Planungskosten“ heißt „enthalten“)
+    satzteile = [teil for teil in re.split(r"[,;.:]", beleg) if _PREISSTEIGERUNG.search(teil)]
+    belegt = material.steht_drin(beleg) and len(satzteile) == 1
+    verneint = belegt and bool(_VERNEINT.search(satzteile[0]))
+    if preis == "nicht_enthalten" and belegt and verneint:
         daten["preissteigerung"] = "nicht_enthalten"
-    elif preis == "enthalten" and belegt and not _VERNEINT.search(beleg):
+    elif preis == "enthalten" and belegt and not verneint:
         daten["preissteigerung"] = "enthalten"
     else:
         daten["preissteigerung"] = "unklar"
@@ -992,6 +1042,8 @@ class Karten:
     offen: list[str]
     #: Alle Summen gehen auf (sonst ein Warnhinweis statt „Summen nachgerechnet“)
     stimmt: bool
+    #: Es gab Summen zum Nachrechnen (sonst sagt die Fußzeile das nicht)
+    abgeglichen: bool
     #: „Stand: Vorlage vom 02.09.2026“
     stand: str
     #: Wer zahlt, kurz („Münster“, „die Stadt“)
@@ -1009,6 +1061,8 @@ class Anzeige:
     seo: str
     #: Kästen für die Seitenleiste; ``None`` bei „keine Kosten“
     karten: Karten | None = None
+    #: Die Zahlen hat eine KI ausgelesen (sonst stammt das Ergebnis ohne KI-Aufruf aus dem Text, etwa „keine Kosten“)
+    mit_ki: bool = True
 
 
 def anzeige(paper: Any, *, mit_aenderungen: bool = False) -> Anzeige | None:
@@ -1023,10 +1077,29 @@ def anzeige(paper: Any, *, mit_aenderungen: bool = False) -> Anzeige | None:
     if not isinstance(daten, dict):
         return None
     try:
-        return _anzeige(paper, daten, mit_aenderungen=mit_aenderungen)
+        ergebnis = _anzeige(paper, daten, mit_aenderungen=mit_aenderungen)
+        # Ohne KI-Aufruf entstanden (``_ohne_ki``, Grund „keine Geldbeträge“): Die Fußzeile nennt keine KI
+        if gespeichert.get("grund") == OHNE_KI:
+            ergebnis = replace(ergebnis, mit_ki=False)
+        return ergebnis
     except (KeyError, TypeError, ValueError):
         logger.warning("Finanzcheck von Vorgang %s nicht lesbar", getattr(paper, "pk", "?"))
         return None
+
+
+def mit_aenderungen_beschlossen(ergebnis_text: Any) -> bool:
+    """
+    Sagt der Ergebnistext einer Beratung, dass mit Änderungen beschlossen wurde? Nur bei einem Beschluss
+    (``ergebnis.einordnen``) und ohne Verneinung davor („nicht mit Änderungen“, „ohne Änderungen“).
+    """
+    from insight_core.services import ergebnis
+
+    text = " ".join(str(ergebnis_text or "").split())
+    treffer = MIT_AENDERUNGEN.search(text)
+    if not treffer or ergebnis.einordnen(text) != ergebnis.BESCHLOSSEN:
+        return False
+    davor = text[max(0, treffer.start() - 25) : treffer.start()]
+    return not re.search(r"\b(?:nicht|ohne|kein\w*)\b", davor, re.IGNORECASE)
 
 
 def ortsname(paper: Any) -> str:
@@ -1146,14 +1219,16 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
                 f"{'des Fördergelds' if foerderung else 'der Einnahmen'} erst später kommt."
             )
         kasten_bau = Kasten(titel=titel, wert=euro_kurz(gesamt), segmente=_segmente(teile), hinweis=hinweis)
-        if not kasten_bau.segmente and eigen is not None:
-            # Ohne Balken: Anteil der Kommune als Satz
-            kasten_bau = Kasten(
-                titel=titel,
-                wert=euro_kurz(gesamt),
-                text=f"Davon zahlt {ort} {euro_kurz(eigen)}." if eigen else f"{ort_satz} zahlt selbst nichts dazu.",
-                hinweis=hinweis,
-            )
+        if not kasten_bau.segmente and (eigen is not None or foerderung):
+            # Ohne Balken: Fördergeld und Anteil der Kommune als Satz
+            teilsaetze = []
+            if foerderung:
+                teilsaetze.append(f"Fördergeld {euro_kurz(foerderung)} ({stand_kurz}).")
+            if eigen == 0:
+                teilsaetze.append(f"{ort_satz} zahlt selbst nichts dazu.")
+            elif eigen is not None:
+                teilsaetze.append(f"{ort_satz} zahlt {euro_kurz(eigen)}.")
+            kasten_bau = Kasten(titel=titel, wert=euro_kurz(gesamt), text=" ".join(teilsaetze), hinweis=hinweis)
     elif eigen is not None:
         kasten_bau = Kasten(titel=f"Zahlt {ort}", wert=euro_kurz(eigen))
 
@@ -1178,9 +1253,13 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
     betrieb = summe("unterhalt", "personal", "miete", "sonstiges") - summe("einnahmen", "einsparung")
     zinsen = summe("zinsen")
     kasten_haushalt: Kasten | None = None
+    # Belegt die Aufteilung einen Anteil am Bau (Wertverlust), gilt die Jahressumme über die Nutzungsdauer des Baus;
+    # nur dann gibt es die Summe über alle Jahre und den Satz „der Anteil am Bau ist darin enthalten“
+    mit_bauanteil = False
     if jaehrlich:
         teile = []
         if zeilen and bauanteil >= 0 and betrieb >= 0 and bauanteil + betrieb + zinsen == jaehrlich:
+            mit_bauanteil = bauanteil > 0
             laufend_text = (
                 "Unterhalt und Zinsen" if betrieb and zinsen else ("Unterhalt" if betrieb else "Zinsen für Kredite")
             )
@@ -1191,7 +1270,9 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         text = " ".join(
             teil
             for teil in (
-                f"Im Schnitt, {dauer} Jahre lang. Zusammen {euro_rund(jaehrlich * dauer)}." if bau and dauer else "",
+                f"Im Schnitt, {dauer} Jahre lang. Zusammen {euro_rund(jaehrlich * dauer)}."
+                if mit_bauanteil and dauer
+                else "",
                 "Aus den Einzelposten zusammengerechnet." if jaehrlich_errechnet else "",
             )
             if teil
@@ -1229,8 +1310,8 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
             quelle = daten.get("deckung_aus") or ""
             satz += f". Fehlendes Geld soll aus „{quelle}“ kommen" if quelle else ", notfalls aus einem anderen Budget"
         offen.append(satz)
-    if vorfinanzierung:
-        offen.append("Zinsen für das vorgestreckte Geld während des Baus nennt die Vorlage nicht")
+    if daten.get("einzahlungen_fehlen"):
+        offen.append("Wann das Fördergeld kommt, steht nicht in der Vorlage")
     if daten.get("preissteigerung") == "nicht_enthalten":
         offen.append("Preissteigerungen bis zum Bau sind nicht eingerechnet")
     kostenstand = (daten.get("kostenstand") or {}).get("datum")
@@ -1242,6 +1323,13 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         offen.append("Die Zahlungen je Jahr ergeben nicht die Gesamtsumme und fehlen deshalb hier")
 
     stimmt = aufteilung_stimmt and not daten.get("zahlungen_unstimmig")
+    # Wurde überhaupt etwas nachgerechnet? Fördergeld und Anteil gegen die Kosten, Zahlungen je Jahr, Aufteilung
+    # der Jahressumme; nur dann sagt die Fußzeile „Summen nachgerechnet“
+    abgeglichen = bool(
+        (gesamt and foerderung and eigen is not None and not eigen_errechnet)
+        or vollstaendig
+        or (zeilen and (daten.get("laufend_gesamt") or {}).get("euro"))
+    )
     datum = getattr(paper, "date", None)
     stand = f"Stand: Vorlage vom {datum:%d.%m.%Y}" if datum else ""
     karten = Karten(
@@ -1251,6 +1339,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         haushalt=kasten_haushalt,
         offen=offen,
         stimmt=stimmt,
+        abgeglichen=abgeglichen,
         stand=stand,
         ort=ort,
     )
@@ -1272,7 +1361,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
     if kasten_bau and kasten_bau.hinweis:
         saetze.append(kasten_bau.hinweis)
     if jaehrlich:
-        if bau and dauer:
+        if mit_bauanteil and dauer:
             saetze.append(
                 f"{f'Ab {ab}' if ab else 'Danach'} belastet das den Haushalt im Schnitt mit {euro_satz(jaehrlich)} "
                 f"pro Jahr, {dauer} Jahre lang; der Anteil am Bau ist darin enthalten."
@@ -1290,7 +1379,8 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         seo_teile.append(f"{'davon ' if gesamt else 'Anteil '}{ort} {euro_kurz(eigen)}")
     if jaehrlich:
         seo_teile.append(
-            f"{f'ab {ab} ' if ab else ''}{'im Schnitt ' if bau and dauer else ''}{euro_kurz(jaehrlich)} pro Jahr im Haushalt"
+            f"{f'ab {ab} ' if ab else ''}{'im Schnitt ' if mit_bauanteil and dauer else ''}"
+            f"{euro_kurz(jaehrlich)} pro Jahr im Haushalt"
         )
     seo = f"Kosten laut Vorlage: {', '.join(seo_teile)}." if seo_teile else ""
     return Anzeige(keine_kosten=False, saetze=saetze, seo=seo, karten=karten)
@@ -1343,10 +1433,18 @@ def dokumente_lesen(dateien: Any, budget: int = TEXT_BUDGET) -> str:
             .values_list("teil", flat=True)
             .first()
             or ""
-        ).strip()
+        )
+        gekuerzt = laengen[datei.pk] > menge
+        if gekuerzt:
+            # Nur ganze Zeilen: Ein angebrochener Betrag („1.200“ aus „1.200.000 €“) darf nicht als Fundstelle taugen
+            schnitt = text.rfind("\n")
+            if schnitt <= 0:
+                schnitt = text.rfind(" ")
+            text = text[: max(schnitt, 0)]
+        text = text.strip()
         if text:
-            gekuerzt = "\n[… gekürzt]" if laengen[datei.pk] > menge else ""
-            bloecke.append(anlage_block(datei.name or datei.file_name or "Dokument", f"{text}{gekuerzt}"))
+            vermerk = "\n[… gekürzt]" if gekuerzt else ""
+            bloecke.append(anlage_block(datei.name or datei.file_name or "Dokument", f"{text}{vermerk}"))
     return "\n\n".join(bloecke)
 
 

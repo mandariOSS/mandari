@@ -265,7 +265,7 @@ class PaperDetailView(DetailView):
 
         # Hat ein Gremium mit Änderungen beschlossen, können die Zahlen der Vorlage abweichen (Hinweis im Finanzcheck)
         mit_aenderungen = any(
-            finanzcheck.MIT_AENDERUNGEN.search(str(beratung.get("result") or "")) for beratung in consultations
+            finanzcheck.mit_aenderungen_beschlossen(beratung.get("result")) for beratung in consultations
         )
         context["finanzcheck"] = finanzcheck.anzeige(paper, mit_aenderungen=mit_aenderungen)
 
