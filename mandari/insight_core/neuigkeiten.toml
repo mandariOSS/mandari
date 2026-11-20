@@ -18,6 +18,14 @@
 # Tag der Version.
 
 [[eintrag]]
+datum = 2026-11-20
+version = ""
+titel = "Sehen Sie, was ein Vorhaben wirklich kostet."
+text = """Auf der Seite einer Vorlage steht in ersten Kommunen jetzt „Was kostet das?“: was ein Vorhaben insgesamt \
+kostet, wie viel davon Fördergeld ist, was die Kommune selbst zahlt und was danach jedes Jahr bleibt. Jede Zahl \
+stammt aus den Dokumenten; unter „Rechnung und Fundstellen“ sehen Sie, wo sie steht."""
+
+[[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
 titel = "Sehen Sie auf einen Blick, was entschieden wurde."
