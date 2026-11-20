@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Beratungen, die ihre Vorlage nicht mehr nennt, gelten als in der Quelle gelöscht (Quellen ohne eigene Beratungsliste).
+Beratungen, die ihre Vorlage nicht mehr nennt, gelten als in der Quelle gelöscht, mit und ohne Beratungsliste am Body.
 
 more! rubin (OParl 1.0) führt keine Beratungsliste am Body; Beratungen kommen nur eingebettet in ihre Vorlage. Bei jeder
 Änderung einer Vorlage legt die Quelle alle ihre Beratungen unter neuen Kennungen an, die alten liefert sie nicht mehr
 (Einzelabruf: leere Liste). Im Bestand standen dadurch Dubletten (Darmstadt: ein Tagesordnungspunkt mit neun
 Beratungen), und die Beratungsfolge zeigte Phantome. ``upsert_paper`` markiert solche Beratungen jetzt in der
 Transaktion der Vorlage (``deleted``, Grund ``quelle_geloescht``) und meldet die Rücknahme wie eine Löschmarkierung der
-Quelle.
+Quelle. Auch Kommunen mit eigener Beratungsliste lassen eine gestrichene Beratung einfach weg (Stadt Münster, statt
+``deleted: true`` in der Liste); sie stand dann mit „Termin unbekannt“ in der Beratungsfolge.
 
 Der erste Teil prüft die Bedingungen ohne Datenbank, der zweite läuft gegen PostgreSQL (``INGESTOR_TEST_DATABASE_URL``,
 in der CI gesetzt; lokal ohne Datenbank übersprungen).
@@ -88,16 +89,11 @@ async def test_unlesbare_liste_markiert_nichts(beratungen: list[Any]) -> None:
     assert markiert == [] and sitzung.anweisungen == []
 
 
-async def test_vorlage_ohne_angabe_und_kommune_mit_beratungsliste_markieren_nichts() -> None:
+async def test_vorlage_ohne_angabe_markiert_nichts() -> None:
     storage = DatabaseStorage(database_url="postgresql+asyncpg://nicht/benutzt", events_enabled=False)
     sitzung = _Sitzung()
-    kommune = uuid.uuid4()
     ohne = OParlProcessor().process_paper({"id": VORLAGE, "type": f"{OPARL}Paper", "name": "Radweg"}, KOMMUNE)
-    assert await storage._mark_unlisted_consultations(sitzung, uuid.uuid4(), ohne, kommune) == []  # type: ignore[arg-type]
-
-    # OParl 1.1 mit Beratungsliste am Body: Löschungen meldet die Quelle dort
-    storage._consultation_list_cache[kommune] = True
-    assert await storage._mark_unlisted_consultations(sitzung, uuid.uuid4(), _vorlage(_beratung(1)), kommune) == []  # type: ignore[arg-type]
+    assert await storage._mark_unlisted_consultations(sitzung, uuid.uuid4(), ohne, uuid.uuid4()) == []  # type: ignore[arg-type]
     assert sitzung.anweisungen == []
 
 
@@ -230,13 +226,29 @@ async def test_leere_liste_markiert_alle_und_ohne_angabe_bleibt_alles(speicher: 
 
 
 @pytest.mark.integration
-async def test_kommune_mit_beratungsliste_markiert_nichts(speicher: DatabaseStorage) -> None:
-    """OParl 1.1: Gelöschte Beratungen meldet die Quelle in ihrer Liste (``deleted: true``), nicht durch Weglassen."""
+async def test_kommune_mit_beratungsliste_markiert_ebenso(speicher: DatabaseStorage) -> None:
+    """
+    OParl 1.1 mit Beratungsliste am Body: Die Stadt Münster streicht eine Beratung aus der Beratungsfolge, ohne sie in
+    der Liste als gelöscht zu melden. Die Vorlage nennt sie nicht mehr, also ist sie in der Quelle gelöscht.
+    """
     kommune = await _kommune(speicher, consultation=f"{KOMMUNE}/consultation")
     await speicher.upsert_paper(_vorlage(_beratung(1), _beratung(2)), kommune)
     await speicher.upsert_paper(_vorlage(_beratung(2)), kommune)
 
-    assert await _stand(speicher) == {"1": AKTIV, "2": AKTIV}
+    assert await _stand(speicher) == {"1": GELOESCHT, "2": AKTIV}
+
+
+@pytest.mark.integration
+async def test_nach_der_vorlage_geaenderte_beratung_bleibt(speicher: DatabaseStorage) -> None:
+    """Hat die Quelle eine Beratung nach dem Stand der Vorlage geändert, kann deren Liste sie noch nicht kennen."""
+    kommune = await _kommune(speicher, consultation=f"{KOMMUNE}/consultation")
+    alt = _beratung(92127, modified="2026-10-21T08:56:19+02:00")
+    neu = _beratung(92125, modified="2026-11-12T08:45:13+01:00")
+    await speicher.upsert_paper(_vorlage(alt, neu, _beratung(92131)), kommune)
+
+    await speicher.upsert_paper(_vorlage(_beratung(92130), modified="2026-11-10T14:12:09+01:00"), kommune)
+
+    assert await _stand(speicher) == {"92127": GELOESCHT, "92125": AKTIV, "92131": GELOESCHT, "92130": AKTIV}
 
 
 @pytest.mark.integration
