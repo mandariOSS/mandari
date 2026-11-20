@@ -38,7 +38,8 @@ def _kennung(art: str, basis: str = RIS) -> str:
 @pytest.fixture
 def body() -> OParlBody:
     source = OParlSource.objects.create(name="TOP-Dateien-RIS", url=f"{RIS}/system")
-    return OParlBody.objects.create(external_id=_kennung("bodies"), source=source, name="Teststadt")
+    kommune: OParlBody = OParlBody.objects.create(external_id=_kennung("bodies"), source=source, name="Teststadt")
+    return kommune
 
 
 @pytest.fixture
