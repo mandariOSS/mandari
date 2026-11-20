@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.test import RequestFactory, override_settings
@@ -111,7 +111,7 @@ def test_collectstatic_laesst_die_tailwind_quelle_aus(tmp_path: Path) -> None:
     from django.contrib.staticfiles.utils import get_files
     from django.core.files.storage import FileSystemStorage
 
-    muster = apps.get_app_config("staticfiles").ignore_patterns
+    muster = cast(Any, apps.get_app_config("staticfiles")).ignore_patterns
     (tmp_path / "css").mkdir()
     for name in ("input.css", "styles.css"):
         (tmp_path / "css" / name).write_text("/* */", encoding="utf-8")
