@@ -399,6 +399,10 @@ class _Origin:
 #: Schlüssel in ``OParlSource.sync_config``: Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune
 #: (Kennung der Kommune -> Zeitpunkt in UTC, ISO 8601), Anfang des Änderungsfensters (Issue #1025)
 SYNC_CONFIG_BODY_SYNC_STARTED_KEY: Final = "body_sync_started"
+#: Schlüssel in ``OParlSource.sync_config``: nicht gespeicherte Objekte, die das Änderungsfenster halten oder
+#: zurückgestellt sind, je Kommune (Kennung der Kommune -> Kennung des Objekts -> ``type``, ``since``, ``seen``,
+#: ``runs``, ``deferred``; Zeitpunkte in UTC, ``src/sync/orchestrator.py``, ``settle_unstored_holds``)
+SYNC_CONFIG_UNSTORED_HOLDS_KEY: Final = "unstored_holds"
 #: Schlüssel in ``OParlSource.sync_config``: Listen, deren ``modified`` nachweislich die Uhrzeit trägt (Adresse ->
 #: Zeitpunkt des Nachweises). Nur sie bekommen das kurze Änderungsfenster, alle übrigen eines ab Tagesbeginn
 #: (Issue #1025).
@@ -521,6 +525,20 @@ def body_sync_started_of(sync_config: Any, body_external_id: str) -> datetime | 
         return None
     stored = sync_config.get(SYNC_CONFIG_BODY_SYNC_STARTED_KEY)
     return _utc_stamp(stored.get(body_external_id) if isinstance(stored, dict) else None)
+
+
+def unstored_holds_of(sync_config: Any, body_external_id: str) -> dict[str, dict[str, Any]]:
+    """Vermerk der nicht gespeicherten Objekte einer Kommune (``sync_config["unstored_holds"]``); nur Einträge als
+    Objekt."""
+    if not isinstance(sync_config, dict):
+        return {}
+    stored = sync_config.get(SYNC_CONFIG_UNSTORED_HOLDS_KEY)
+    entries = stored.get(body_external_id) if isinstance(stored, dict) else None
+    if not isinstance(entries, dict):
+        return {}
+    return {
+        key: dict(entry) for key, entry in entries.items() if isinstance(key, str) and key and isinstance(entry, dict)
+    }
 
 
 def _put_entry(sync_config: dict[str, Any], key: str, entry: str, value: Any) -> bool:
@@ -675,6 +693,14 @@ class DatabaseStorage:
         self._meeting_body_cache: dict[UUID, UUID | None] = {}
         # Gibt es die Zwischentabelle oparl_papers_locations? (None: in diesem Zyklus noch nicht geprüft)
         self._paper_locations_table: bool | None = None
+
+    @property
+    def _consultation_list_cache(self) -> dict[UUID, bool]:
+        """Kommune -> führt eine eigene Beratungsliste (``_lists_consultations``); auch ohne ``__init__`` (Tests)."""
+        cache: dict[UUID, bool] | None = self.__dict__.get("_consultation_lists")
+        if cache is None:
+            cache = self.__dict__["_consultation_lists"] = {}
+        return cache
 
     async def initialize(self) -> None:
         """
@@ -1057,6 +1083,23 @@ class DatabaseStorage:
 
         def change(sync_config: dict[str, Any]) -> bool:
             return _put_entry(sync_config, SYNC_CONFIG_BODY_SYNC_STARTED_KEY, body_external_id, value)
+
+        await self._change_sync_config(OParlSource.id == source_id, change)
+
+    async def get_unstored_holds(self, source_id: UUID, body_external_id: str) -> dict[str, dict[str, Any]]:
+        """Vermerk der nicht gespeicherten Objekte der Kommune (``unstored_holds_of``)."""
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource.sync_config).where(OParlSource.id == source_id))
+            return unstored_holds_of(result.scalar_one_or_none(), body_external_id)
+
+    async def set_unstored_holds(
+        self, source_id: UUID, body_external_id: str, entries: Mapping[str, dict[str, Any]]
+    ) -> None:
+        """Vermerk der nicht gespeicherten Objekte der Kommune ersetzen (leer: löschen). Unter Zeilensperre."""
+        value = dict(sorted(entries.items())) or None
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_UNSTORED_HOLDS_KEY, body_external_id, value)
 
         await self._change_sync_config(OParlSource.id == source_id, change)
 
@@ -1609,6 +1652,7 @@ class DatabaseStorage:
 
             # Cache the UUID
             self._body_uuid_cache[body.external_id] = body_id
+            self._consultation_list_cache[body_id] = bool(body.consultation_list_url)
 
             # Process nested legislative terms; eine Wahlperiode einer anderen Quelle bleibt aus (gezählt)
             for nested in body.nested_entities:
@@ -2066,10 +2110,14 @@ class DatabaseStorage:
             locations_changed = await self._link_paper_locations(
                 session, paper_id, paper.location_external_ids, body_id
             )
+            # Beratungen, die die Vorlage nicht mehr nennt, mit der neuen Liste der Vorlage festschreiben
+            unlisted = await self._mark_unlisted_consultations(session, paper_id, paper, body_id)
             if emit:
                 drafts = ris_events.paper_events(
                     paper_id, paper.raw_json or {}, prior, locations_changed=locations_changed
                 )
+                for consultation_id in unlisted:
+                    drafts += ris_events.depublished_events("consultation", consultation_id)
                 await self._emit(session, body_id, drafts, paper.oparl_modified)
             await session.commit()
 
@@ -2087,6 +2135,77 @@ class DatabaseStorage:
                     continue
 
             return paper_id
+
+    async def _lists_consultations(self, session: AsyncSession, body_id: UUID) -> bool:
+        """
+        Führt die Kommune eine eigene Beratungsliste (``consultation`` bzw. ``consultations`` am Body, OParl 1.1)?
+        Zwischengespeichert; ``upsert_body`` setzt den Wert bei jedem Abgleich der Kommune neu.
+        """
+        known = self._consultation_list_cache.get(body_id)
+        if known is None:
+            found = await session.execute(select(OParlBody.raw_json).where(OParlBody.id == body_id))
+            raw = found.scalar_one_or_none()
+            known = isinstance(raw, dict) and bool(raw.get("consultation") or raw.get("consultations"))
+            self._consultation_list_cache[body_id] = known
+        return known
+
+    async def _mark_unlisted_consultations(
+        self, session: AsyncSession, paper_id: UUID, paper: ProcessedPaper, body_id: UUID
+    ) -> list[UUID]:
+        """
+        Beratungen der Vorlage, die ihre eingebettete Liste nicht mehr nennt, als in der Quelle gelöscht markieren
+        (ohne eigenen Commit, in der Transaktion der Vorlage). Liefert die neu markierten Zeilen.
+
+        Nur für Kommunen ohne eigene Beratungsliste (OParl 1.0, etwa more! rubin): Dort kommen Beratungen nur
+        eingebettet in ihre Vorlage, und deren Liste ist vollständig. more! rubin legt bei jeder Änderung einer
+        Vorlage alle ihre Beratungen unter neuen Kennungen an; die alten liefert die Quelle nicht mehr (Einzelabruf:
+        leere Liste). Ohne Markierung blieben sie als Dubletten stehen, die Beratungsfolge zeigte Phantome.
+        Kommunen mit eigener Liste melden gelöschte Beratungen dort (``deleted: true``).
+
+        Die Vorlage muss ``consultation`` als Liste nennen, jeder Eintrag mit Kennung; sonst bleibt alles, wie es
+        ist (Scraper-Quellen, Vorlagen ohne die Angabe, unlesbare Einträge). Eine leere Liste markiert alle.
+        Markiert wird wie bei ``mark_entity_deleted``: nur unmarkierte Zeilen der eigenen Quelle, Grund
+        ``quelle_geloescht``; eine Rücknahme aus Datenschutzgründen bleibt unberührt. Nennt die Quelle eine solche
+        Beratung später wieder, hebt ``upsert_consultation`` die Markierung auf (``_tombstone_update``).
+        """
+        listed = (paper.raw_json or {}).get("consultation")
+        if not isinstance(listed, list):
+            return []
+        external_ids: list[str] = []
+        for entry in listed:
+            external_id = entry.get("id") if isinstance(entry, dict) else entry
+            if not isinstance(external_id, str) or not external_id:
+                return []
+            external_ids.append(external_id)
+        if await self._lists_consultations(session, body_id):
+            return []
+        now = datetime.now(UTC)
+        conditions = [
+            OParlConsultation.paper_id == paper_id,
+            OParlConsultation.deleted == False,  # noqa: E712
+            _owned_by_source_of(OParlConsultation, body_id),
+        ]
+        if external_ids:
+            conditions.append(OParlConsultation.external_id.not_in(external_ids))
+        result = await session.execute(
+            update(OParlConsultation)
+            .where(*conditions)
+            .values(
+                deleted=True,
+                deleted_at=now,
+                deletion_reason=ris_events.REASON_DELETED_AT_SOURCE,
+                oparl_modified=now,
+                updated_at=func.now(),
+            )
+            .returning(OParlConsultation.id)
+        )
+        marked = [row[0] for row in result.fetchall()]
+        if marked:
+            console.print(
+                f"[dim]  Vorlage {paper.external_id}: {len(marked)} Beratung(en) nicht mehr genannt, "
+                "als gelöscht markiert[/dim]"
+            )
+        return marked
 
     async def _link_paper_locations(
         self,
