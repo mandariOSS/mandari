@@ -97,7 +97,7 @@ def vorgang_finden(schluessel: str, kommune: str | None = None) -> OParlPaper:
     from . import summary_store
 
     try:
-        return OParlPaper.objects.select_related("body").get(pk=uuid.UUID(schluessel))
+        return OParlPaper.objects.select_related("body").get(pk=uuid.UUID(schluessel), deleted=False)
     except (ValueError, OParlPaper.DoesNotExist):
         pass
     auswahl = OParlPaper.objects.select_related("body").filter(reference=schluessel, deleted=False)

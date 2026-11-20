@@ -82,7 +82,7 @@ _WAEHRUNG: Final = re.compile(
     r"€|\bEUR\b|\bEuro\b|\bTEUR\b|\bMio\b|\bMillion|\bMrd\b|\bMilliard|\bTsd\b|\bTausend\b", re.IGNORECASE
 )
 #: Alleinstehende vierstellige Zahl (Jahr), nicht Teil eines Betrags wie „2.028“ oder „12028“
-_JAHRESZAHL: Final = re.compile(r"(?<![\d.,])(\d{4})(?![\d.,]\d)")
+_JAHRESZAHL: Final = re.compile(r"(?<![\d.,])(\d{4})(?!\d|[.,]\d)")
 #: „Keine Kosten“: nur ausdrücklich („Es entstehen keine Kosten“, „Finanzielle Auswirkungen: keine“)
 _KEINE_KOSTEN: Final = re.compile(
     r"\bkeine\b[^.]{0,60}?\b(?:Kosten|finanziellen\s+Auswirkungen|Auswirkungen\s+auf\s+den\s+Haushalt|Mehrkosten"
@@ -341,29 +341,40 @@ class _Material:
         weiter = stelle + schritt
         return text[stelle] in ".," and 0 <= weiter < len(text) and text[weiter].isdigit()
 
-    def steht_drin(self, beleg: str) -> bool:
+    def fundstelle(self, beleg: str) -> int | None:
         """
-        Steht die Fundstelle im Text? Verglichen werden nur Buchstaben und Ziffern (Zeilenumbrüche, Trennstriche und
-        Leerzeichen der Texterkennung zählen nicht). Beginnt oder endet die Fundstelle mit einer Ziffer, darf die Zahl
-        im Text nicht weitergehen: „200.000 € und“ ist keine Fundstelle in „1.200.000 € und“.
+        Stelle der Fundstelle im Text; ``None``, wenn sie nicht darin steht. Verglichen werden nur Buchstaben und
+        Ziffern (Zeilenumbrüche, Trennstriche und Leerzeichen der Texterkennung zählen nicht). Beginnt oder endet die
+        Fundstelle mit einer Ziffer, darf die Zahl im Text nicht weitergehen: „200.000 € und“ ist keine Fundstelle in
+        „1.200.000 € und“.
         """
         kern = _kern(beleg)
         if len(re.sub(r"[.,]", "", kern)) < MIN_BELEG:
-            return False
+            return None
         start = self.kern.find(kern)
         while start >= 0:
             anfang, ende = self.stellen[start], self.stellen[start + len(kern) - 1]
             davor_frei = not kern[0].isdigit() or not self._zahl_geht_weiter(anfang - 1, -1)
             danach_frei = not kern[-1].isdigit() or not self._zahl_geht_weiter(ende + 1, 1)
             if davor_frei and danach_frei:
-                return True
+                return anfang
             start = self.kern.find(kern, start + 1)
-        return False
+        return None
 
-    @property
-    def in_tausend(self) -> bool:
-        """Nennt der Text Beträge in Tausend Euro (Tabellen „in T€“, „TEUR“)?"""
-        return bool(_TAUSEND.search(self.text))
+    def steht_drin(self, beleg: str) -> bool:
+        """Steht die Fundstelle im Text (``fundstelle``)?"""
+        return self.fundstelle(beleg) is not None
+
+    def in_tausend_bei(self, stelle: int) -> bool:
+        """
+        Nennt das Dokument an dieser Stelle Beträge in Tausend Euro (Tabellen „in T€“, „TEUR“)? Geprüft wird nur die
+        Anlage, in der die Stelle steht (``<anlage …>`` bis ``</anlage>``): Eine T€-Tabelle in einer anderen Anlage
+        ändert die Einheit hier nicht.
+        """
+        anfang = self.text.rfind("<anlage", 0, stelle + 1)
+        ende = self.text.find("</anlage>", stelle)
+        abschnitt = self.text[max(anfang, 0) : ende if ende >= 0 else len(self.text)]
+        return bool(_TAUSEND.search(abschnitt))
 
 
 def _werte(beleg: str) -> set[Decimal]:
@@ -398,12 +409,13 @@ def _betrag_belegt(material: _Material, beleg: str, euro: int) -> bool:
     Beträge in Tausend Euro, zählt die Zahl als Tausender („1.200“ → 1.200.000); Beträge unter 1.000 brauchen eine
     Währung. So wird „1.200“ aus einer Tabelle „in T€“ nie zu 1.200 Euro.
     """
-    if euro <= 0 or not material.steht_drin(beleg):
+    stelle = material.fundstelle(beleg) if euro > 0 else None
+    if stelle is None:
         return False
     werte = _werte(beleg)
     if _WAEHRUNG.search(beleg):
         return Decimal(euro) in werte
-    if material.in_tausend:
+    if material.in_tausend_bei(stelle):
         return Decimal(euro) in {wert * 1000 for wert in werte}
     return euro >= 1000 and Decimal(euro) in werte
 
@@ -1040,6 +1052,10 @@ def nachziehen(*, hoechstens: int = JE_LAUF, provider: Any = None, kommunen: dic
             angesehen.append(paper.pk)
             if summary_store.tagesbatch_wartet(paper, verortung=False):
                 continue
+            # Reserve vor jedem Aufruf neu prüfen: Jeder Aufruf (auch ein abgelehnter) kostet
+            if not _budget_reicht(provider):
+                logger.info("Finanzcheck: Reserve des Monatsbudgets für die Zusammenfassungen erreicht")
+                return aufrufe
             try:
                 ergebnis = erstellen(paper, provider=provider)
             except BudgetErschoepftError:

@@ -510,3 +510,45 @@ class TestBefundeCodeRabbit:
         bereit.refresh_from_db()
         wartend.refresh_from_db()
         assert bereit.finanzcheck is not None and wartend.finanzcheck is None
+
+
+class TestBefundeCodeRabbit2:
+    """Zweite Runde CodeRabbit zu PR #1515."""
+
+    def test_jahr_nicht_aus_laengerer_zahl(self) -> None:
+        assert finanzcheck._jahre_in("Zahlung 20281 Euro") == []
+        assert finanzcheck._jahre_in("2028 2.000.000") == [2028]
+
+    def test_tausend_nur_in_der_eigenen_anlage(self) -> None:
+        from insight_ai.services.prompts import anlage_block
+
+        text = "\n\n".join(
+            [
+                anlage_block("Vorlage", "Die Baukosten betragen insgesamt 1.200 Euro für das Schild."),
+                anlage_block("Kostenplan", "Kosten (in T€)\nBaukosten 1.200"),
+            ]
+        )
+        leer: dict[str, Any] = {"foerderung": None, "eigenanteil": None, "laufend": [], "zahlungen": []}
+        eigene = {"euro": 1200, "beleg": "Die Baukosten betragen insgesamt 1.200 Euro für das Schild."}
+        assert finanzcheck.pruefen(_antwort(gesamtkosten=eigene, laufend_gesamt=None, **leer), text).status == "ok"
+        tabelle = {"euro": 1200000, "beleg": "Baukosten 1.200"}
+        assert finanzcheck.pruefen(_antwort(gesamtkosten=tabelle, laufend_gesamt=None, **leer), text).status == "ok"
+
+    def test_reserve_vor_jedem_aufruf(self) -> None:
+        kommune = _kommune()
+        TagesbatchKommune.objects.create(body=kommune, ab=date(2000, 1, 1), verortung_pruefen=False)
+        _vorgang(kommune, tage=1, text=DOKUMENT)
+        _vorgang(kommune, tage=2, text=DOKUMENT)
+        anbieter = _Anbieter(ANTWORT)
+        rest = iter([40, 40, 20, 20])
+        anbieter.endpunkt = SimpleNamespace(monatsbudget_usd=100)  # type: ignore[attr-defined]
+        anbieter.budget_rest = lambda: next(rest)  # type: ignore[attr-defined]
+        assert finanzcheck.nachziehen(provider=anbieter) == 1 and len(anbieter.aufrufe) == 1
+
+    def test_geloeschter_vorgang_nicht_per_kennung(self) -> None:
+        from insight_core.services import finanzcheck_store
+
+        vorgang = _vorgang(_kommune(), text=DOKUMENT)
+        OParlPaper.objects.filter(pk=vorgang.pk).update(deleted=True)
+        with pytest.raises(LookupError):
+            finanzcheck_store.vorgang_finden(str(vorgang.pk))
