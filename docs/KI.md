@@ -220,6 +220,14 @@ Eintrag in einem MCP-Client (Form je nach Client):
 {"mcpServers": {"mandari-insight": {"type": "http", "url": "https://<instanz>/insight/mcp"}}}
 ```
 
+In Claude (Web und Desktop) als eigener Connector: in den Einstellungen unter „Connectors“ einen eigenen Connector
+hinzufügen, Name frei wählbar, Adresse `https://<instanz>/insight/mcp`, ohne Anmeldung. Danach lassen sich Fragen
+wie „Was steht in der nächsten Ratssitzung in Münster an?“ mit Daten aus mandari beantworten; die Antworten
+verlinken die Seiten des Bürgerportals.
+
+Ist der Server eingeschaltet, nennen ihn das OParl-System (`/oparl/v1/system`, Feld `mandari:mcp`) und die
+Übersicht `/oparl/` (Feld `mcp`), damit Assistenten ihn von der Schnittstelle aus finden (Issue #1309).
+
 ### Einstellungen des MCP-Servers
 
 | Variable | Standard | Wirkung |

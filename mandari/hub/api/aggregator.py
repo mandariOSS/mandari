@@ -56,7 +56,7 @@ from hub.api.serialization import TimeFilters, list_cache_key, list_response, pa
 from hub.ris import selectors as ris
 from hub.ris.canonical import Objekt
 from hub.ris.mapping import bestand
-from hub.ris.mapping.bestand import BestandMapping, RefContext
+from hub.ris.mapping.bestand import BestandMapping, RefContext, mcp_url
 from insight_core import publication
 from insight_core.models import (
     OParlAgendaItem,
@@ -292,6 +292,8 @@ def root_view(request: HttpRequest) -> HttpResponse:
             "bodies": uris.bodies(),
             "documentation": DOCUMENTATION_URL,
             "bodyDirectory": directory_url(),
+            # MCP-Server für KI-Assistenten (Issue #1309), nur wenn eingeschaltet
+            **({"mcp": url} if (url := mcp_url()) else {}),
             "specification": "https://oparl.org/spezifikation/",
             "objectEndpoints": {kind: uris.obj(kind, "<uuid>") for kind in OBJECT_TYPES},
             "bodyIndex": [eintrag.als_json() for eintrag in verzeichnis.eintraege()],
