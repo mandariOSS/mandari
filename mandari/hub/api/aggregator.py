@@ -585,7 +585,8 @@ def _kommparl_snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed
 
     own = Q(body_id=pk)
     sections = [
-        section(_LEGISLATIVE_TERM, own),
+        # Eigene und mit anderen Kommunen der Quelle geteilte Wahlperioden, je einmal (Issue #1453)
+        section(_LEGISLATIVE_TERM, OParlLegislativeTerm.of_body(pk)),
         section(_ORGANIZATION, own),
         section(_PERSON, own),
         section(_MEMBERSHIP, _memberships_of(pk)),

@@ -17,7 +17,9 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from mandari_oparl.robots import STATE_PARSED, STATE_UNREACHABLE, Decision
 
+from src.client import oparl_client
 from src.client.oparl_client import OParlClient
 from src.config import settings
 from src.storage.database import ForeignObjectError, legislative_term_lists_of
@@ -211,3 +213,69 @@ async def test_vor_kurzem_gepruefte_liste_wird_nicht_angefragt() -> None:
         await _orchestrator(speicher)._sync_legislative_term_list(client, listen, LISTE, uuid4(), True, {})
 
     assert angefragt == [LISTE], "der Vollabgleich fragt trotzdem an"
+
+
+@pytest.mark.parametrize("zustand", [STATE_PARSED, STATE_UNREACHABLE], ids=["gesperrt", "nicht-erreichbar"])
+async def test_robots_sperre_ohne_befund_am_host(monkeypatch: pytest.MonkeyPatch, zustand: str) -> None:
+    """Sperrt die robots.txt die Liste (oder ist sie nicht erreichbar), steht das nur im Ergebnis der Prüfung."""
+
+    async def entscheiden(*args: Any, **kwargs: Any) -> Decision:
+        return Decision(allowed=False, state=zustand, rule="Disallow: /oparl/")
+
+    monkeypatch.setattr(oparl_client.robots_gate, "decide", entscheiden)
+    async with _client({LISTE: [_wahlperiode(20)]}) as (client, angefragt):
+        gelesen = await lies_liste(client, LISTE)
+        befunde = client.host_findings()
+
+    assert angefragt == [] and gelesen.eintraege == [] and "robots.txt" in gelesen.ergebnis
+    assert befunde == []
+
+
+async def test_abruffenster_zu_keine_anfrage_und_kein_vermerk() -> None:
+    speicher = Speicher()
+    async with _client({LISTE: [_wahlperiode(20)]}) as (client, angefragt):
+        client.fetch_deadline = datetime.now(UTC) - timedelta(minutes=1)
+        await _orchestrator(speicher)._sync_legislative_term_list(
+            client, WahlperiodenListen(QUELLE), LISTE, uuid4(), True, {}
+        )
+
+    assert angefragt == []
+    assert speicher.vermerke == [], "nicht geprüft: Der nächste Lauf fragt die Liste an"
+
+
+async def test_abruffenster_schliesst_nach_der_ersten_seite() -> None:
+    zweite = f"{LISTE}?page=2"
+    async with _client({LISTE: {"data": [_wahlperiode(14)], "links": {"next": zweite}}}) as (client, angefragt):
+        echte_abfrage = client.fetch_optional
+
+        async def erste_seite_dann_zu(url: str) -> Any:
+            ergebnis = await echte_abfrage(url)
+            client.fetch_deadline = datetime.now(UTC) - timedelta(seconds=1)
+            return ergebnis
+
+        client.fetch_optional = erste_seite_dann_zu  # type: ignore[method-assign]
+        gelesen = await lies_liste(client, LISTE)
+
+    assert angefragt == [LISTE]
+    assert gelesen.geprueft and gelesen.ergebnis == "1 gelesen, dann Abruffenster geschlossen"
+
+
+async def test_vermerk_auch_wenn_die_uebernahme_scheitert() -> None:
+    """Scheitert ein Eintrag beim Speichern, gilt der Prüfabstand trotzdem; die Lücke bleibt aus."""
+
+    class Kaputt(Speicher):
+        async def upsert_legislative_term(self, term: Any, body_id: UUID) -> UUID:
+            if term.external_id == _wahlperiode(25)["id"]:
+                raise RuntimeError("deadlock detected")
+            return await super().upsert_legislative_term(term, body_id)
+
+    speicher = Kaputt()
+    stats: dict[str, Any] = {"errors": [], "incomplete": []}
+    async with _client({LISTE: [_wahlperiode(20), _wahlperiode(25)]}) as (client, _):
+        await _orchestrator(speicher)._sync_legislative_term_list(
+            client, WahlperiodenListen(QUELLE), LISTE, uuid4(), False, stats
+        )
+
+    assert speicher.geschrieben == [_wahlperiode(20)["id"]]
+    assert speicher.vermerke == [(QUELLE, LISTE, "2 gelesen, Übernahme abgebrochen (RuntimeError)")]
+    assert stats["incomplete"] == [] and stats["legislative_terms"] == 1

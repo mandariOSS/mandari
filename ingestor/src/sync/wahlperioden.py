@@ -55,6 +55,8 @@ class Gelesen:
 
     eintraege: list[dict[str, Any]]
     ergebnis: str
+    #: Die Liste wurde angefragt; ``False``, wenn das Abruffenster schon vor der ersten Seite zu war (kein Vermerk)
+    geprueft: bool = True
 
 
 def _fehler(result: FetchResult) -> str:
@@ -81,12 +83,18 @@ def _seite(data: Any) -> tuple[list[Any], str | None] | None:
 async def lies_liste(client: OParlClient, list_url: str) -> Gelesen:
     """
     Liste lesen, höchstens ``MAX_SEITEN`` Seiten. Scheitert eine Folgeseite, gilt das Gelesene (die Liste ergänzt nur,
-    sie löscht nichts durch Fehlen); scheitert die erste, ist die Liste leer und das Ergebnis nennt den Grund.
+    sie löscht nichts durch Fehlen); scheitert die erste, ist die Liste leer und das Ergebnis nennt den Grund. Vor jeder
+    Seite gilt das Abruffenster der Quelle (``OParlClient.deadline_passed``).
     """
     eintraege: list[dict[str, Any]] = []
     gelesen: set[str] = set()
     adresse: str | None = list_url
     while adresse is not None and len(gelesen) < MAX_SEITEN and adresse not in gelesen:
+        # Wie fetch_list: Nach dem Ende des Abruffensters geht keine Seite mehr an die Quelle
+        if client.deadline_passed():
+            if not gelesen:
+                return Gelesen([], "Abruffenster geschlossen, nicht angefragt", geprueft=False)
+            return Gelesen(eintraege, f"{len(eintraege)} gelesen, dann Abruffenster geschlossen")
         gelesen.add(adresse)
         result = await client.fetch_optional(adresse)
         seite = _seite(result.data) if result.error is None else None

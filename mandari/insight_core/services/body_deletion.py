@@ -15,6 +15,7 @@ hier schützt jeden anderen Aufrufer.
 """
 
 import logging
+from typing import Any
 
 from django.tasks import task
 
@@ -42,6 +43,32 @@ def body_references(body_id: str) -> list[ExternalReference]:
     from insight_core.models import OParlBody
 
     return external_references(OParlBody.objects.filter(pk=body_id))
+
+
+def _geteilte_wahlperioden_uebergeben(body: Any) -> int:
+    """
+    Wahlperioden der Kommune, die weitere Kommunen über ``shared_bodies`` nennen, bleiben erhalten (Issue #1453):
+    Sie gehen an die Kommune über, die als nächste verknüpft wurde (älteste Verknüpfung), deren Verknüpfung entfällt.
+    Gibt die Zahl der übergebenen Wahlperioden zurück.
+    """
+    from insight_core.models import OParlLegislativeTerm
+
+    zuordnung = OParlLegislativeTerm.shared_bodies.through
+    uebergeben = 0
+    for term in OParlLegislativeTerm.objects.filter(body=body, shared_bodies__isnull=False).distinct():
+        naechste = (
+            zuordnung.objects.filter(oparllegislativeterm_id=term.pk)
+            .exclude(oparlbody_id=body.pk)
+            .order_by("id")
+            .first()
+        )
+        if naechste is None:
+            continue
+        term.body_id = naechste.oparlbody_id
+        term.save(update_fields=["body", "updated_at"])
+        naechste.delete()
+        uebergeben += 1
+    return uebergeben
 
 
 def delete_body_data(body_id: str) -> dict:
@@ -91,6 +118,8 @@ def delete_body_data(body_id: str) -> dict:
     release_queryset(OParlFile.objects.filter(body=body, blob__isnull=False))
 
     counts = {}
+    # Wahlperioden, die andere Kommunen der Quelle mitnutzen, gehen vorher an eine von ihnen über (Issue #1453)
+    counts["legislative_terms_handed_over"] = _geteilte_wahlperioden_uebergeben(body)
     steps = [
         ("files", OParlFile.objects.filter(body=body)),
         ("consultations", OParlConsultation.objects.filter(body=body)),

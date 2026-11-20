@@ -511,6 +511,19 @@ class TestSnapshot:
         laenge = sum(len(json.dumps(zeile, ensure_ascii=False, separators=(",", ":")).encode()) + 1 for zeile in zeilen)
         assert int(antwort["Content-Length"]) == laenge
 
+    def test_geteilte_wahlperiode_in_eigener_zeile_bei_jeder_kommune(self, kommune: OParlBody) -> None:
+        """Eine Wahlperiode, die eine zweite Kommune der Quelle mitnutzt, steht bei beiden genau einmal (#1453)."""
+        gemeinde = OParlBody.objects.create(external_id=f"{RIS}/body/2", source=kommune.source, name="Gemeinde")
+        wahlperiode = OParlLegislativeTerm.objects.create(
+            external_id=f"{RIS}/legislativeterm/1", body=kommune, name="2025–2030"
+        )
+        wahlperiode.shared_bodies.add(gemeinde)
+        adresse = f"{API}/legislativeterm/{wahlperiode.pk}"
+
+        for body in (kommune, gemeinde):
+            _, zeilen = _snapshot(f"{API}/body/{body.pk}/kommparl/snapshot")
+            assert [zeile.get("id") for zeile in zeilen].count(adresse) == 1, body.name
+
     def test_jedes_objekt_in_eigener_zeile(self, kommune: OParlBody, bestand: dict[str, Any]) -> None:
         _, zeilen = _snapshot(f"{API}/body/{kommune.pk}/kommparl/snapshot")
         objekte = zeilen[1:-1]

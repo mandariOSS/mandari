@@ -678,11 +678,12 @@ class OParlClient:
             return None, f"Zugriff verweigert; {note}"
         return None, f"Zugriff verweigert, auch für neutralen Client (HTTP {response.status_code})"
 
-    async def _robots_blocked(self, url: str) -> FetchResult | None:
+    async def _robots_blocked(self, url: str, *, quiet: bool = False) -> FetchResult | None:
         """
         robots.txt des Hosts prüfen (RFC 9309, Art ``api``). Erlaubt: ``None``. Gesperrt: Ergebnis ohne Anfrage
         an die Quelle mit Fehlerklasse ``robots_blocked``. Nicht erreichbar (5xx, 408, 429, Netzfehler): Ergebnis
-        ohne Anfrage, gewertet als Störung (``server_error_series``), nicht als Sperre.
+        ohne Anfrage, gewertet als Störung (``server_error_series``), nicht als Sperre. Mit ``quiet`` (optionaler
+        Abruf, ``fetch_optional``) nur das Ergebnis, ohne Befund am Host.
         """
         assert self._client is not None
         decision = await robots_gate.decide(
@@ -695,6 +696,8 @@ class OParlClient:
         )
         if decision.allowed:
             return None
+        if quiet:
+            return FetchResult(url=url, data=None, status_code=0, error=decision.reason)
         return self._robots_refusal(url, url, decision)
 
     def _robots_refusal(self, url: str, target: str, decision: Decision) -> FetchResult:
@@ -801,12 +804,12 @@ class OParlClient:
             raise RuntimeError("Client not initialized. Use 'async with' context manager.")
 
         url = self.https_upgrade(url)
-        blocked = await self._robots_blocked(url)
+        blocked = await self._robots_blocked(url, quiet=True)
         if blocked is not None:
             return blocked
         async with self._semaphore:
             try:
-                return await self._do_fetch(url, False, False)
+                return await self._do_fetch(url, False, False, quiet=True)
             except httpx.HTTPStatusError as error:
                 status = error.response.status_code
                 return FetchResult(url=url, data=None, status_code=status, error=f"HTTP {status}")
@@ -975,8 +978,13 @@ class OParlClient:
         use_cache: bool,
         skip_wait: bool,
         as_text: bool = False,
+        *,
+        quiet: bool = False,
     ) -> FetchResult:
-        """Perform the actual HTTP fetch with metrics (``as_text``: HTML-Seite statt JSON, ``fetch_page``)."""
+        """
+        Perform the actual HTTP fetch with metrics (``as_text``: HTML-Seite statt JSON, ``fetch_page``). Mit ``quiet``
+        bleibt eine von der robots.txt verweigerte Weiterleitung ohne Befund am Host (``fetch_optional``).
+        """
         assert self._client is not None
 
         headers: dict[str, str] = {"Accept": "text/html,application/xhtml+xml"} if as_text else {}
@@ -1010,6 +1018,8 @@ class OParlClient:
                     ),
                 )
             except redirects.RedirectRefusedError as refused:
+                if quiet:
+                    return FetchResult(url=url, data=None, status_code=0, error=refused.decision.reason)
                 return self._robots_refusal(url, refused.url, refused.decision)
             fetch_time = time.time() - start
         with contextlib.suppress(RuntimeError):  # Antwort ohne Anfrage (Testattrappen)

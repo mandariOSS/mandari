@@ -2100,7 +2100,16 @@ class SyncOrchestrator:
             return
         try:
             gelesen = await lies_liste(client, list_url)
-            geschrieben = 0
+        except Exception as e:  # noqa: BLE001 - optionale Liste: keine Lücke, nächster Versuch im nächsten Lauf
+            console.print(f"[yellow]  Wahlperiodenliste nicht gelesen ({type(e).__name__}: {e})[/yellow]")
+            return
+        if not gelesen.geprueft:
+            # Abruffenster vor der ersten Seite zu: keine Prüfung, also auch kein Vermerk
+            console.print(f"[dim]  Wahlperiodenliste: {gelesen.ergebnis}[/dim]")
+            return
+        ergebnis = gelesen.ergebnis
+        geschrieben = 0
+        try:
             for eintrag in gelesen.eintraege:
                 try:
                     if eintrag.get("deleted") is True:
@@ -2116,11 +2125,15 @@ class SyncOrchestrator:
                 except ForeignObjectError:
                     # Kennung einer anderen Quelle: nicht geschrieben, gezählt (Sync-Log ``foreign``)
                     continue
-            stats["legislative_terms"] = geschrieben
-            await self.storage.note_legislative_term_list(wahlperioden.source_url, list_url, gelesen.ergebnis)
-            console.print(f"[dim]  Wahlperiodenliste: {gelesen.ergebnis}, {geschrieben} übernommen[/dim]")
-        except Exception as e:  # noqa: BLE001 - optionale Liste: keine Lücke, nächster Versuch nach einem Tag
-            console.print(f"[yellow]  Wahlperiodenliste nicht übernommen ({type(e).__name__}: {e})[/yellow]")
+        except Exception as e:  # noqa: BLE001 - optionale Liste: keine Lücke; vermerkt wird trotzdem (Prüfabstand)
+            ergebnis = f"{ergebnis}, Übernahme abgebrochen ({type(e).__name__})"
+            console.print(f"[yellow]  Wahlperiodenliste nicht ganz übernommen ({type(e).__name__}: {e})[/yellow]")
+        stats["legislative_terms"] = geschrieben
+        try:
+            await self.storage.note_legislative_term_list(wahlperioden.source_url, list_url, ergebnis)
+        except Exception as e:  # noqa: BLE001 - ohne Vermerk prüft der nächste Lauf die Liste erneut
+            console.print(f"[yellow]  Prüfung der Wahlperiodenliste nicht vermerkt ({type(e).__name__})[/yellow]")
+        console.print(f"[dim]  Wahlperiodenliste: {ergebnis}, {geschrieben} übernommen[/dim]")
 
     async def _sync_entity_type(
         self,
