@@ -106,7 +106,12 @@ def public_roster(body: OParlBody, day: date) -> PublicRoster:
     am Stichtag eine Besetzung haben; je Person und Gremium zählt eine Besetzung (die erste nach Beginn).
     """
     roster = PublicRoster(
-        terms=list(OParlLegislativeTerm.objects.filter(body=body, deleted=False).order_by("start_date", "name")),
+        # Eigene und mit anderen Kommunen der Quelle geteilte Wahlperioden (Issue #1453)
+        terms=list(
+            OParlLegislativeTerm.objects.filter(OParlLegislativeTerm.of_body(body.pk), deleted=False).order_by(
+                "start_date", "name"
+            )
+        ),
         organizations=[
             org
             for org in OParlOrganization.objects.filter(body=body, deleted=False).order_by("name")

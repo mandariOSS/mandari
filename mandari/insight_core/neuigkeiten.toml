@@ -19,6 +19,15 @@
 
 [[eintrag]]
 datum = 2026-11-20
+version = ""
+titel = "Der Kostencheck zeigt Bau, Zahlungsjahre und die Belastung für den Haushalt."
+text = """„Was kostet das?“ auf der Seite einer Vorlage liest jetzt deutlich mehr aus den Anlagen, in der Regel alle \
+ganz, auch Finanzpläne und Folgekostenberechnungen. Er zeigt getrennt, was der Bau kostet und wer ihn zahlt, wann das Geld fließt und wie stark \
+das Vorhaben den Haushalt jedes Jahr belastet, mit dem Anteil am Bau, ohne ihn doppelt zu zählen. Darunter steht, \
+was noch offen ist, etwa eine fehlende Förderzusage."""
+
+[[eintrag]]
+datum = 2026-11-20
 version = "0.13.1"
 titel = "Sehen Sie, was ein Vorhaben wirklich kostet."
 text = """Auf der Seite einer Vorlage steht in ersten Kommunen jetzt neben der Zusammenfassung „Was kostet das?“: \

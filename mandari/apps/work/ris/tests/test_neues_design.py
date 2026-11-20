@@ -239,6 +239,36 @@ def test_vorgang_mit_stand_verlauf_dokumentzeile_und_fuer_die_fraktion(welt: Wel
     assert "Vorlagen-Nr." in html and "Beschlussvorlage" in html
 
 
+def test_vorgang_mit_geplanter_beratung_und_voraussichtlicher_sitzung(welt: Welt, client_for: Any) -> None:
+    """
+    Die Quelle nennt für den Rat nur Gremium und Rolle. Die Ratssitzung mit veröffentlichter Tagesordnung ist es nicht,
+    voraussichtlich ist die nächste ohne Tagesordnung; der Eintrag verlinkt keine Sitzung.
+    """
+    termin = timezone.now() + timedelta(days=12)
+    naechste = OParlMeeting.objects.create(
+        external_id=_kennung("meetings"), body=welt.body, name="Sitzung", start=termin
+    )
+    naechste.organizations.add(welt.rat)
+    OParlConsultation.objects.create(
+        external_id=_kennung("consultations"),
+        body=welt.body,
+        paper=welt.zweite,
+        role="Entscheidung",
+        raw_json={"organization": [welt.rat.external_id]},
+    )
+
+    html = _seite(client_for, welt.vorsitz, "work:ris_paper_detail", paper_id=welt.zweite.pk).content.decode()
+
+    anfang = html.index('data-testid="vorgang-verlauf"')
+    verlauf = html[anfang : html.index("</ol>", anfang)]
+    assert ">voraussichtlich<" in verlauf and timezone.localtime(termin).strftime("%d.%m.%Y") in verlauf
+    assert "Entscheidung, noch nicht auf der Tagesordnung." in verlauf
+    assert verlauf.index("Hauptausschuss") < verlauf.index(">voraussichtlich<")
+    for sitzung in (welt.ratssitzung, naechste):
+        ziel = reverse("work:ris_meeting_detail", kwargs={"org_slug": welt.org.slug, "meeting_id": sitzung.pk})
+        assert ziel not in verlauf
+
+
 def test_vorgang_ohne_vorbereitungsrecht_ohne_positionen_und_notizen(welt: Welt, client_for: Any) -> None:
     _position(welt.org, welt.top_a, "against", begruendung="Vertraulich in der Fraktion")
 

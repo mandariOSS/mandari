@@ -56,7 +56,7 @@ from hub.api.serialization import TimeFilters, list_cache_key, list_response, pa
 from hub.ris import selectors as ris
 from hub.ris.canonical import Objekt
 from hub.ris.mapping import bestand
-from hub.ris.mapping.bestand import BestandMapping, RefContext
+from hub.ris.mapping.bestand import BestandMapping, RefContext, mcp_url
 from insight_core import publication
 from insight_core.models import (
     OParlAgendaItem,
@@ -148,7 +148,10 @@ _LISTED_FILE = Spec(
     "file", OParlFile, BestandMapping.file, lambda queryset: queryset.defer("text_content"), of_body=_files_of
 )
 _LOCATION = Spec("location", OParlLocation, BestandMapping.location)
-_LEGISLATIVE_TERM = Spec("legislativeterm", OParlLegislativeTerm, BestandMapping.legislative_term)
+# Eigene und mit anderen Kommunen der Quelle geteilte Wahlperioden (Issue #1453)
+_LEGISLATIVE_TERM = Spec(
+    "legislativeterm", OParlLegislativeTerm, BestandMapping.legislative_term, of_body=OParlLegislativeTerm.of_body
+)
 
 #: Listen des Snapshots in der älteren Form (abgekündigt): ihre Objekte mit den Einbettungen
 _SNAPSHOT_LISTS: Final[tuple[Spec, ...]] = (_ORGANIZATION, _PERSON, _MEETING, _PAPER, _LOCATION)
@@ -292,6 +295,8 @@ def root_view(request: HttpRequest) -> HttpResponse:
             "bodies": uris.bodies(),
             "documentation": DOCUMENTATION_URL,
             "bodyDirectory": directory_url(),
+            # MCP-Server für KI-Assistenten (Issue #1309), nur wenn eingeschaltet
+            **({"mcp": url} if (url := mcp_url()) else {}),
             "specification": "https://oparl.org/spezifikation/",
             "objectEndpoints": {kind: uris.obj(kind, "<uuid>") for kind in OBJECT_TYPES},
             "bodyIndex": [eintrag.als_json() for eintrag in verzeichnis.eintraege()],
@@ -582,7 +587,8 @@ def _kommparl_snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed
 
     own = Q(body_id=pk)
     sections = [
-        section(_LEGISLATIVE_TERM, own),
+        # Eigene und mit anderen Kommunen der Quelle geteilte Wahlperioden, je einmal (Issue #1453)
+        section(_LEGISLATIVE_TERM, OParlLegislativeTerm.of_body(pk)),
         section(_ORGANIZATION, own),
         section(_PERSON, own),
         section(_MEMBERSHIP, _memberships_of(pk)),

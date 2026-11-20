@@ -25,7 +25,7 @@ import re
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Final, cast
 
 from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
@@ -760,16 +760,142 @@ def organization_count(meeting: OParlMeeting) -> int | None:
     return 1 if isinstance(urls, list) and len(urls) == 1 else None
 
 
+#: Zeitraum der Terminschätzung für Beratungen ohne Sitzung (``consultation_history``): Der Vorgang wurde in diesem
+#: Zeitraum zuletzt beraten oder vorgelegt, und die geschätzte Sitzung liegt höchstens so weit in der Zukunft.
+VORAUSSICHTLICH_ZEITRAUM: Final = timedelta(days=180)
+
+#: Ende der Beratungsfolge: Dort stehen Beratungen, für die die Quelle noch keine Sitzung nennt und die wir nicht schätzen
+_ENDE: Final = datetime.max.replace(tzinfo=UTC)
+
+
+def _gremien_der_beratung(consultation: OParlConsultation) -> list[str]:
+    """Gremien, die die Beratung selbst nennt (OParl ``Consultation.organization``: Adressen oder Objekte mit ``id``)."""
+    raw = consultation.raw_json if isinstance(consultation.raw_json, dict) else {}
+    werte = raw.get("organization")
+    if isinstance(werte, str | dict):
+        werte = [werte]
+    kennungen: list[str] = []
+    for wert in werte if isinstance(werte, list) else []:
+        kennung = wert.get("id") if isinstance(wert, dict) else wert
+        if isinstance(kennung, str) and kennung:
+            kennungen.append(kennung)
+    return kennungen
+
+
+def _entscheidet(eintrag: dict[str, Any]) -> bool:
+    """Entscheidende Beratung (federführend oder Rolle „Entscheidung“, „Beschlussfassung“): folgt auf Vorberatungen."""
+    rolle = str(eintrag.get("role") or "").lower()
+    return bool(eintrag.get("authoritative")) or "entscheid" in rolle or "beschlussfassung" in rolle
+
+
+def _als_zeitpunkt(wert: date | datetime | None) -> datetime | None:
+    """Datum oder Zeitpunkt als Zeitpunkt mit Zeitzone (``OParlPaper.date`` ist je nach Installation beides)."""
+    if wert is None:
+        return None
+    if isinstance(wert, datetime):
+        return wert if timezone.is_aware(wert) else timezone.make_aware(wert)
+    return timezone.make_aware(datetime.combine(wert, time.min))
+
+
+def _ohne_sitzung_ergaenzen(verlauf: list[dict[str, Any]], paper: OParlPaper, jetzt: datetime) -> None:
+    """
+    Beratungen ohne bekannte Sitzung im Verlauf ergänzen: das Gremium aus der Beratung selbst (``organization``) und
+    für geplante Beratungen (die Quelle nennt noch keine Sitzung) die voraussichtliche Sitzung. Höchstens zwei Abfragen.
+
+    Viele Ratsinformationssysteme (etwa die Stadt Münster) verknüpfen eine Beratung erst mit einer Sitzung, wenn die
+    Vorlage auf deren Tagesordnung steht. Bis dahin nennen sie nur Gremium und Rolle, auch wenn der Termin des Gremiums
+    längst feststeht. Voraussichtlich ist die nächste Sitzung des Gremiums nach dem letzten Schritt mit Termin
+    (frühestens jetzt), die nicht abgesagt ist und noch keine Tagesordnung hat: Steht die Tagesordnung ohne die
+    Vorlage, kommt sie frühestens in die Sitzung danach. Entscheidende Beratungen folgen auf die Vorberatungen: Ihre
+    Sitzung liegt nicht vor deren Sitzungen, und fehlt einer geplanten Vorberatung die Sitzung, schätzen wir die
+    Entscheidung nicht. Geschätzt wird nur für Vorgänge, die in ``VORAUSSICHTLICH_ZEITRAUM`` beraten oder vorgelegt
+    wurden (letzter Termin oder Vorlagedatum), und nur mit Sitzungen, die höchstens so weit in der Zukunft liegen: Bei
+    einem ruhenden Vorgang sagt die nächste Sitzung nichts.
+    """
+    offen = [eintrag for eintrag in verlauf if eintrag["meeting"] is None]
+    kennungen = {id(eintrag): _gremien_der_beratung(eintrag["consultation"]) for eintrag in offen}
+    gesucht = {kennung for liste in kennungen.values() for kennung in liste}
+    if not gesucht or paper.body_id is None:
+        return
+    gremien = {
+        external_id: (pk, " ".join((name or "").split()))
+        for external_id, pk, name in OParlOrganization.objects.filter(
+            body_id=paper.body_id, external_id__in=gesucht, deleted=False
+        )
+        .exclude(name__isnull=True)
+        .exclude(name="")
+        .values_list("external_id", "pk", "name")
+    }
+    gremien_je_eintrag: dict[int, set[uuid.UUID]] = {}
+    for eintrag in offen:
+        bekannt = [gremien[kennung] for kennung in kennungen[id(eintrag)] if kennung in gremien]
+        if bekannt:
+            namen = list(dict.fromkeys(name for _, name in bekannt))
+            eintrag["organization_name"] = ", ".join(namen)
+            eintrag["organization_count"] = min(len(namen), 2)
+            gremien_je_eintrag[id(eintrag)] = {pk for pk, _ in bekannt}
+
+    geplant = [eintrag for eintrag in offen if eintrag["planned"]]
+    if not any(id(eintrag) in gremien_je_eintrag for eintrag in geplant):
+        return
+    termine = [e["date"] for e in verlauf if e["date"] is not None and not getattr(e["meeting"], "cancelled", False)]
+    letzter = max(termine, default=None)
+    zuletzt = max((d for d in (letzter, _als_zeitpunkt(paper.date)) if d is not None), default=None)
+    if zuletzt is None or zuletzt < jetzt - VORAUSSICHTLICH_ZEITRAUM:
+        return
+    bezug = max(jetzt, letzter) if letzter is not None else jetzt
+    zuordnung = OParlMeeting.organizations.through
+    kandidaten = [
+        (z.oparlorganization_id, z.oparlmeeting)
+        for z in zuordnung.objects.filter(
+            oparlorganization_id__in=set().union(*gremien_je_eintrag.values()),
+            oparlmeeting__start__gt=bezug,
+            oparlmeeting__start__lte=jetzt + VORAUSSICHTLICH_ZEITRAUM,
+            oparlmeeting__cancelled=False,
+            oparlmeeting__deleted=False,
+        )
+        .exclude(Exists(OParlAgendaItem.objects.filter(meeting_id=OuterRef("oparlmeeting_id"), deleted=False)))
+        .select_related("oparlmeeting")
+        .order_by("oparlmeeting__start", "oparlmeeting_id")
+    ]
+
+    def schaetzen(eintrag: dict[str, Any], ab: datetime, *, einschliesslich: bool) -> bool:
+        ids = gremien_je_eintrag.get(id(eintrag), set())
+        for gremium, sitzung in kandidaten:
+            beginn = sitzung.start
+            if beginn is not None and gremium in ids and (beginn >= ab if einschliesslich else beginn > ab):
+                eintrag["expected_meeting"] = sitzung
+                eintrag["expected_date"] = beginn
+                return True
+        return False
+
+    vorberatungen = [eintrag for eintrag in geplant if not _entscheidet(eintrag)]
+    geschaetzt = [schaetzen(eintrag, bezug, einschliesslich=False) for eintrag in vorberatungen]
+    if not all(geschaetzt):
+        return
+    spaetester = max([bezug, *(eintrag["expected_date"] for eintrag in vorberatungen)])
+    for eintrag in geplant:
+        if _entscheidet(eintrag):
+            schaetzen(eintrag, spaetester, einschliesslich=bool(vorberatungen))
+
+
 def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
     """
     Beratungsverlauf einer Vorlage, chronologisch, wie ihn der Stand-Satz und der Zeitstrahl
     (``insight_core.services.paper_status``) erwarten: je Beratung ``consultation``, ``meeting``, ``agenda_item``,
-    ``date``, ``organization_name``, ``organization_count``, ``agenda_number``, ``result``, ``public``, ``role`` und
-    ``authoritative``. Beratungen ohne bekannte Sitzung stehen an der Stelle von „jetzt“ (zwischen vergangenen und
-    kommenden). Zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte fehlen – wie in der Session-OParl-API,
+    ``date``, ``organization_name``, ``organization_count``, ``agenda_number``, ``result``, ``public``, ``role``,
+    ``authoritative``, ``planned`` (die Quelle nennt noch keine Sitzung) sowie ``expected_meeting`` und
+    ``expected_date``, die voraussichtliche Sitzung einer geplanten Beratung (``_ohne_sitzung_ergaenzen``).
+
+    Ohne Sitzung nennen wir das Gremium, das die Beratung selbst nennt. Eine geplante Beratung steht an ihrem
+    voraussichtlichen Termin; ohne ihn am Ende, entscheidende Beratungen zuletzt. Nennt die Beratung eine Sitzung, die
+    wir nicht kennen, steht sie an der Stelle von „jetzt“ (zwischen vergangenen und kommenden). ``date`` bleibt bei
+    beiden leer: Stand-Satz und Termine zählen nur Sitzungen, die die Quelle nennt.
+
+    Zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte fehlen – wie in der Session-OParl-API,
     die solche Verweise auslässt. In der Quelle gelöschte Beratungen fehlen ebenfalls: Eine Beratung, die es nicht mehr
     gibt, ist kein Schritt der Beratungsfolge (more! rubin legt sie bei jeder Änderung der Vorlage neu an, der
-    Ingestor markiert die alten). Höchstens vier Abfragen.
+    Ingestor markiert die alten). Höchstens sechs Abfragen.
 
     Grundlage der Vorgangsseiten von Insight und Work (Issue #853, vorher je eine eigene Abfrage).
     """
@@ -812,10 +938,23 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
                 "public": punkt.public if punkt else True,
                 "role": consultation.role,
                 "authoritative": consultation.authoritative,
+                "planned": not consultation.meeting_external_id,
+                "expected_meeting": None,
+                "expected_date": None,
             }
         )
     jetzt = timezone.now()
-    verlauf.sort(key=lambda eintrag: eintrag["date"] or jetzt)
+    _ohne_sitzung_ergaenzen(verlauf, paper, jetzt)
+
+    def reihenfolge(eintrag: dict[str, Any]) -> tuple[datetime, int]:
+        # Zur selben Zeit (auch am Ende) steht die Entscheidung nach der Vorberatung
+        rang = 1 if _entscheidet(eintrag) else 0
+        zeitpunkt = eintrag["date"] or eintrag["expected_date"]
+        if zeitpunkt is not None:
+            return zeitpunkt, rang
+        return (_ENDE if eintrag["planned"] else jetzt), rang
+
+    verlauf.sort(key=reihenfolge)
     return verlauf
 
 

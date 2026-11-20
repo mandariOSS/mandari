@@ -38,7 +38,9 @@ from datetime import date
 from typing import Any, Final
 from urllib.parse import urlsplit
 
+from django.conf import settings
 from django.db.models import F, Prefetch, Q, QuerySet
+from django.urls import reverse
 from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben
 
 from hub.ris.canonical import (
@@ -289,6 +291,16 @@ def prepare_persons(queryset: QuerySet[OParlPerson]) -> QuerySet[OParlPerson]:
     )
 
 
+def mcp_url() -> str | None:
+    """
+    Adresse des MCP-Servers des Bürgerportals (``insight_ai.mcp``), über die KI-Assistenten dieselben Ratsdaten abrufen
+    (Issue #1309); ``None``, solange der Betrieb ihn nicht eingeschaltet hat (``INSIGHT_MCP_ENABLED``).
+    """
+    if not getattr(settings, "INSIGHT_MCP_ENABLED", False):
+        return None
+    return f"{str(getattr(settings, 'SITE_URL', '')).rstrip('/')}{reverse('insight_mcp')}"
+
+
 def prepare_bodies(queryset: QuerySet[OParlBody]) -> QuerySet[OParlBody]:
     # Stand des Abrufs der Quelle (Issue #1441) in derselben Abfrage, ohne die Quelle selbst zu laden
     return queryset.annotate(
@@ -296,6 +308,8 @@ def prepare_bodies(queryset: QuerySet[OParlBody]) -> QuerySet[OParlBody]:
         source_full_synced_at=F("source__last_successful_full_sync"),
     ).prefetch_related(
         Prefetch("legislative_terms", queryset=OParlLegislativeTerm.objects.filter(deleted=False)),
+        # Mit anderen Kommunen der Quelle geteilte Wahlperioden (Issue #1453)
+        Prefetch("shared_legislative_terms", queryset=OParlLegislativeTerm.objects.filter(deleted=False)),
     )
 
 
@@ -641,6 +655,8 @@ class BestandMapping:
                 "website": "https://mandari.de",
                 "vendor": "https://mandari.de",
                 "product": "https://github.com/mandariOSS/mandari",
+                # MCP-Server des Bürgerportals für KI-Assistenten, nur wenn eingeschaltet (Issue #1309)
+                "mandari:mcp": mcp_url(),
             }
         )
 
@@ -696,7 +712,10 @@ class BestandMapping:
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)
-        data["legislativeTerm"] = [self.legislative_term(term) for term in body.legislative_terms.all()]
+        # Eigene und geteilte (Issue #1453): Eine Wahlperiode mit derselben Kennung bei mehreren Kommunen der Quelle
+        # gehört der, die sie zuerst gespeichert hat, und steht bei allen
+        terms = {term.id: term for term in (*body.legislative_terms.all(), *body.shared_legislative_terms.all())}
+        data["legislativeTerm"] = [self.legislative_term(term) for term in terms.values()]
         return data
 
     def legislative_term(self, term: OParlLegislativeTerm, ctx: RefContext | None = None) -> Objekt:

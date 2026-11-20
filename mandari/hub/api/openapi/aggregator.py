@@ -81,6 +81,11 @@ def description() -> Description:
                 "format": "uri",
                 "description": "Seite im Bürgerportal mit allen Kommunen und ihren Adressen",
             },
+            "mcp": {
+                "type": "string",
+                "format": "uri",
+                "description": "MCP-Server des Bürgerportals für KI-Assistenten; nur, wenn der Betrieb ihn eingeschaltet hat",
+            },
             "specification": {"type": "string", "format": "uri"},
             "objectEndpoints": {"type": "object", "additionalProperties": {"type": "string"}},
             "bodyIndex": {
