@@ -1472,7 +1472,7 @@ jobs:
       # github-token leer – kein Kommentar im Pull Request, die Befunde stehen im Protokoll.
       - name: Keine brechenden Änderungen gegenüber dem Basisstand (oasdiff)
         if: steps.basis.outputs.vorhanden == 'true'
-        uses: oasdiff/oasdiff-action/breaking@0b95859a27abaed7445bb05c18a39f1a6610a9a4 # v0.1.24
+        uses: oasdiff/oasdiff-action/breaking@0546e2ebdc9d3589d594cfcef445c61ca02cabf1 # v0.2.0
         with:
           base: openapi-basis.json
           revision: docs/schnittstelle/openapi.json
