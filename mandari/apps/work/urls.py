@@ -6,6 +6,7 @@ All URLs are prefixed with /work/<org_slug>/
 """
 
 from django.urls import path
+from django.views.generic import RedirectView
 
 from apps.work.dashboard import views as dashboard_views
 from apps.work.faction import views as faction_views
@@ -80,18 +81,22 @@ urlpatterns = [
         dashboard_views.ZweiFaktorHinweisSpaeterView.as_view(),
         name="two_factor_hint_later",
     ),
-    # Meetings (OParl meeting preparation)
-    path("<slug:org_slug>/meetings/", meetings_views.MeetingListView.as_view(), name="meetings"),
+    # Kalender: eigener Bereich mit allen Terminen (Issue #1548, vorher /meetings/calendar/ unter „Sitzungen“)
+    path("<slug:org_slug>/kalender/", meetings_views.MeetingCalendarView.as_view(), name="meetings_calendar"),
     path(
-        "<slug:org_slug>/meetings/calendar/",
-        meetings_views.MeetingCalendarView.as_view(),
-        name="meetings_calendar",
-    ),
-    path(
-        "<slug:org_slug>/meetings/calendar/events/",
+        "<slug:org_slug>/kalender/eintraege/",
         meetings_views.MeetingCalendarEventsView.as_view(),
         name="meetings_calendar_events",
     ),
+    # Bisherige Adresse (Lesezeichen): vorübergehende Weiterleitung, damit ein Rückfall auf ein älteres Image sie
+    # wieder selbst bedienen kann
+    path(
+        "<slug:org_slug>/meetings/calendar/",
+        RedirectView.as_view(pattern_name="work:meetings_calendar", query_string=True),
+        name="meetings_calendar_bisher",
+    ),
+    # Meetings (OParl meeting preparation)
+    path("<slug:org_slug>/meetings/", meetings_views.MeetingListView.as_view(), name="meetings"),
     # Eigene Termine der Organisation im Kalender (Issue #1489)
     path("<slug:org_slug>/termine/neu/", termine_views.TerminNeuView.as_view(), name="termin_neu"),
     path("<slug:org_slug>/termine/<uuid:termin_id>/", termine_views.TerminView.as_view(), name="termin"),

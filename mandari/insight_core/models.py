@@ -889,6 +889,8 @@ class OParlPerson(SourceDeletionModel):
 
 #: Anzeigename einer Sitzung, deren Gremium die Quelle nennt, aber nicht öffentlich ausgibt (Issue #1441)
 GREMIUM_NICHT_VEROEFFENTLICHT = "Sitzung eines nicht veröffentlichten Gremiums"
+#: Name einer Sitzung, der nur ihre laufende Nummer trägt („8. Sitzung“): sagt ohne das Gremium nichts
+_LAUFENDE_NUMMER = re.compile(r"^\d+\.\s*sitzung$", re.IGNORECASE)
 
 
 class OParlMeeting(SourceDeletionModel):
@@ -952,34 +954,37 @@ class OParlMeeting(SourceDeletionModel):
 
     def get_display_name(self) -> str:
         """Gibt den Gremiennamen zurück statt des generischen 'Sitzung'."""
-        # 1. M2M-Beziehung (Django-Signals, manuell gepflegt)
-        orgs = self.organizations.all()[:2]
-        if orgs:
-            org_names = [org.name for org in orgs if org.name]
-            if org_names:
-                return ", ".join(org_names)
-
-        # 2. Auflösung über raw_json.organization URLs → DB-Lookup
-        org_urls = self.raw_json.get("organization", []) if self.raw_json else []
-        im_bestand = False
-        if org_urls:
-            from .models import OParlOrganization as OrgModel
-
-            resolved = list(OrgModel.objects.filter(external_id__in=org_urls[:2]).values_list("name", flat=True))
-            im_bestand = bool(resolved)
-            names = [n for n in resolved if n]
-            if names:
-                return ", ".join(names)
-
-        # 3. Fallback
+        gremium, fehlt = self._gremien()
+        if gremium:
+            return gremium
         if eigener := self.eigener_name():
             return eigener
         # Die Quelle nennt ein Gremium, das im Bestand fehlt: Sie gibt es nicht öffentlich aus (Issue #1441). Das ist
-        # etwas anderes als eine Sitzung ohne Gremium, und „Sitzung“ allein sähe wie ein Gremienname aus. Steht der
-        # Name im öffentlichen Kalender der Kommune, hat ihn der Abruf dort gelesen (``gremium_aus_kalender``).
-        if org_urls and not im_bestand:
-            return self.gremium_aus_kalender() or GREMIUM_NICHT_VEROEFFENTLICHT
-        return "Sitzung"
+        # etwas anderes als eine Sitzung ohne Gremium, und „Sitzung“ allein sähe wie ein Gremienname aus.
+        return GREMIUM_NICHT_VEROEFFENTLICHT if fehlt else "Sitzung"
+
+    def _gremien(self) -> tuple[str, bool]:
+        """
+        Namen der Gremien der Sitzung (höchstens zwei, mit Komma) und ob die Quelle ein Gremium nennt, das im Bestand
+        fehlt. Reihenfolge: zugeordnete Gremien (vorgeladen, wenn die Liste ``organizations`` vorlädt), dann die
+        Adressen im Rohdatensatz, zuletzt der Name aus dem öffentlichen Kalender der Kommune (``gremium_aus_kalender``).
+        """
+        orgs = self.organizations.all()[:2]
+        if org_names := [org.name for org in orgs if org.name]:
+            return ", ".join(org_names), False
+
+        org_urls = self.raw_json.get("organization", []) if self.raw_json else []
+        if not org_urls:
+            return "", False
+        from .models import OParlOrganization as OrgModel
+
+        resolved = list(OrgModel.objects.filter(external_id__in=org_urls[:2]).values_list("name", flat=True))
+        if names := [n for n in resolved if n]:
+            return ", ".join(names), False
+        if resolved:
+            return "", False
+        # Steht der Name im öffentlichen Kalender der Kommune, hat ihn der Abruf dort gelesen (Issue #1505)
+        return self.gremium_aus_kalender(), True
 
     def gremium_aus_kalender(self) -> str:
         """
@@ -998,12 +1003,33 @@ class OParlMeeting(SourceDeletionModel):
         name = (self.name or "").strip()
         return "" if name.lower() in {"", "sitzung"} else name
 
+    def zusatz(self) -> str:
+        """
+        Eigener Name, wenn er mehr sagt als „Sitzung“ und als die laufende Nummer („8. Sitzung“): etwa
+        „Sondersitzung zum Haushalt“; sonst leer.
+        """
+        name = self.eigener_name()
+        return "" if _LAUFENDE_NUMMER.match(name) else name
+
     def bezeichnung(self) -> str:
         """
-        Wie eine Sitzung in Listen, Kalendern und Bezügen heißt: ihr eigener Name, wenn er mehr sagt als „Sitzung“
-        (etwa „Sondersitzung zum Haushalt“), sonst ihr Gremium (``get_display_name``, Issue #1508).
+        Wie eine Sitzung in Listen, Kalendern und Bezügen heißt: zuerst ihr Gremium, dahinter ihr eigener Name, wenn
+        er mehr sagt (``zusatz``), etwa „Rat: Sondersitzung zum Haushalt“. Manche RIS nennen jede Sitzung „Sitzung“
+        oder „8. Sitzung“ (Münster), manche tragen dort auch Notizen ein; das Gremium sagt, wo man hingeht
+        (Issues #1508, #1548). Ohne bekanntes Gremium der eigene Name, sonst ``get_display_name``.
         """
-        return self.eigener_name() or self.get_display_name()
+        gremium, fehlt = self._gremien()
+        if gremium:
+            zusatz = self.zusatz()
+            if not zusatz or zusatz.casefold() == gremium.casefold():
+                return gremium
+            # Nennt der eigene Name das Gremium schon („Sitzung Hauptausschuss“), steht er allein
+            if re.search(rf"\b{re.escape(gremium)}\b", zusatz, re.IGNORECASE):
+                return zusatz
+            return f"{gremium}: {zusatz}"
+        if eigener := self.eigener_name():
+            return eigener
+        return GREMIUM_NICHT_VEROEFFENTLICHT if fehlt else "Sitzung"
 
     def get_organization_names(self):
         """Gibt die Namen der beteiligten Gremien zurück."""

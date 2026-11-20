@@ -15,8 +15,8 @@ Kontext: apps/work/meetings/neu.sitzungen; die bisherige Seite bleibt work/meeti
 {% block work_header %}
 <c-rahmen.kopfband titel="Meine Sitzungen" dicht text="{% if has_body %}{{ sitzungen_satz }}{% else %}Ihre Organisation ist noch mit keiner Kommune verknüpft.{% endif %}">
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% url 'work:meetings_calendar' org_slug=organization.slug %}" class="text-sm">Kalender</c-ui.textlink>
-        {% if has_session_connection %}<c-ui.textlink href="{% url 'work:session_invitations' org_slug=organization.slug %}" class="text-sm">Ladungen der Verwaltung</c-ui.textlink>{% endif %}
+        <c-ui.button href="{% url 'work:meetings_calendar' org_slug=organization.slug %}" variant="secondary" size="sm" icon="calendar-range">Kalender</c-ui.button>
+        {% if has_session_connection %}<c-ui.button href="{% url 'work:session_invitations' org_slug=organization.slug %}" variant="secondary" size="sm" icon="inbox">Ladungen der Verwaltung</c-ui.button>{% endif %}
         <c-ui.help-link topic="sitzungen" />
     </c-slot>
     {% if has_body %}

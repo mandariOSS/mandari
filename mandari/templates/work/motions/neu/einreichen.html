@@ -13,7 +13,7 @@ Kontext: MotionSubmitToAdministrationView.
 {% block work_header %}
 <c-rahmen.kopfband titel="Bei der Verwaltung einreichen" text="{{ motion.title }}" dicht>
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}" class="text-sm">Zurück zum Dokument</c-ui.textlink>
+        <c-ui.button href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}" variant="secondary" size="sm" icon="arrow-left">Zurück zum Dokument</c-ui.button>
     </c-slot>
 </c-rahmen.kopfband>
 {% endblock %}

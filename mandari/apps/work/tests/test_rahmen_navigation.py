@@ -27,7 +27,8 @@ from apps.tenants.models import Organization
 from apps.work import rahmen
 
 ALT_RAHMEN = ("base_work_alt_leiste.html", "base_work_alt_kopf.html")
-SIEBEN = ["Start", "Sitzungen", "Interne Sitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"]
+# Seit Issue #1548 mit dem Kalender als eigenem Bereich
+BEREICHE = ["Start", "Kalender", "Sitzungen", "Interne Sitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"]
 RECHERCHE_UNTERPUNKTE = {
     "ris_papers": "Vorgänge",
     "ris_decisions": "Beschlüsse",
@@ -158,7 +159,7 @@ def test_uebersicht_der_tastaturkuerzel_passt_zum_rahmen(neu: Organization, make
         "Neu anlegen",
         "Bereich der Seitenleiste öffnen",
     ]
-    assert re.findall(r"<kbd[^>]*>([^<]+)</kbd>", liste) == ["?", "/", "Strg K", "N", "1", "7"]
+    assert re.findall(r"<kbd[^>]*>([^<]+)</kbd>", liste) == ["?", "/", "Strg K", "N", "1", "8"]
     # Erreichbar auch ohne die Taste: Eintrag im Personenmenü; abschaltbar in der Übersicht (WCAG 2.1.4)
     assert 'aria-controls="kuerzel-dialog"' in _leiste(html) and 'x-model="kuerzelAn"' in html
 
@@ -176,7 +177,7 @@ def test_uebersicht_der_tastaturkuerzel_passt_zum_rahmen(neu: Organization, make
 def test_seitenleiste_kompakt_mit_fraktionssitzungen(neu: Organization, admin: Any, client_for: Any) -> None:
     leiste = _leiste(_html(client_for(admin.user).get(_url("dashboard", neu))))
     bereiche = _teil(leiste, 'aria-label="Bereiche"', "</nav>")
-    assert re.findall(r'<span class="flex-1 min-w-0 truncate rahmen-label">([^<]+)</span>', bereiche) == SIEBEN
+    assert re.findall(r'<span class="flex-1 min-w-0 truncate rahmen-label">([^<]+)</span>', bereiche) == BEREICHE
     assert f'href="{_url("faction", neu)}"' in bereiche
     unten = leiste.split("</nav>", 1)[1]
     assert ">Einstellungen</span>" in unten and ">Hilfe und Support</span>" in unten
@@ -315,6 +316,7 @@ def test_leiste_unten_start_sitzungen_fraktion_recherche_mehr(neu: Organization,
     mehr = _teil(html, 'aria-label="Weitere Bereiche"', "</nav>")
     beschriftungen = re.findall(r'<span class="flex-1 min-w-0 truncate">([^<]+)</span>', mehr)
     assert beschriftungen == [
+        "Kalender",
         "Dokumente",
         "Aufgaben",
         "Team",
@@ -439,7 +441,8 @@ def _krumen(html: str) -> list[tuple[str, str]]:
         ("dashboard_explicit", [("Start", "aktuell")]),
         ("meetings", [("Sitzungen", "aktuell")]),
         ("ris_meetings", [("Sitzungen", "link"), ("Alle Gremien", "aktuell")]),
-        ("meetings_calendar", [("Sitzungen", "link"), ("Kalender", "aktuell")]),
+        # Der Kalender ist ein eigener Bereich (Issue #1548), seine Termine liegen darunter
+        ("meetings_calendar", [("Kalender", "aktuell")]),
         ("ris_papers", [("Recherche", "link"), ("Vorgänge", "aktuell")]),
     ],
 )

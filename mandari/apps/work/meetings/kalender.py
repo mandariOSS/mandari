@@ -4,7 +4,8 @@ Kalender in Work (Issue #1489, Schritt 1): alle Termine, die es schon gibt, in e
 
 Der Kalender unter „Sitzungen“ zeigte nur die Sitzungen der Gremien. Jetzt laufen dort zusammen:
 
-* **Sitzungen der Gremien** aus dem Ratsinformationssystem (wie bisher),
+* **Sitzungen der Gremien** aus dem Ratsinformationssystem (wie bisher), getrennt nach eigenen und weiteren Gremien
+  (Issue #1548, ``eigene_gremien``),
 * **interne Sitzungen** (Fraktionssitzungen, Arbeitskreise und weitere Sitzungsarten), soweit das Mitglied sie
   sehen darf (Issue #1239),
 * **eigene Termine** der Organisation, soweit das Mitglied sie sehen darf (``apps.work.termine``),
@@ -13,15 +14,14 @@ Der Kalender unter „Sitzungen“ zeigte nur die Sitzungen der Gremien. Jetzt l
 
 Jede Art erscheint nur mit dem Recht, das ihre eigene Seite verlangt, und lässt sich im Kalender aus- und einblenden.
 Sichtbarkeit und Schutz nichtöffentlicher Inhalte kommen aus den bestehenden Regeln der Bereiche; der Kalender zeigt
-nur Titel, Zeit und den Weg zur Seite. Fristen und Fälligkeiten sind ganztägige Einträge.
-
-Die Terminumfrage folgt in einem eigenen Schritt.
+nur Titel, Zeit und den Weg zur Seite. Fristen und Fälligkeiten sind ganztägige Einträge. Sitzungen einer Sitzungsreihe
+stehen immer zu ihrer festen Zeit, auch wenn jemand sie erst später beendet hat (``_ende_im_kalender``).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Final
 
 from django.db.models import Q
@@ -42,22 +42,65 @@ class Art:
 
 
 ARTEN: Final[tuple[Art, ...]] = (
-    Art("sitzung", "Sitzungen der Gremien", "meetings.view"),
+    Art("sitzung", "Sitzungen eigener Gremien", "meetings.view"),
+    Art("gremium", "Sitzungen weiterer Gremien", "meetings.view"),
     Art("fraktion", "Interne Sitzungen", "faction.view_public"),
     Art("termin", "Termine", "meetings.view"),
     Art("umfrage", "Terminvorschläge", "meetings.view"),
     Art("dokument", "Fristen der Dokumente", "motions.view"),
     Art("aufgabe", "Aufgaben", "tasks.view"),
 )
+#: Kennt die Organisation keine eigenen Gremien, stehen alle Sitzungen der Gremien unter einer Art
+ALLE_GREMIEN: Final = Art("sitzung", "Sitzungen der Gremien", "meetings.view")
 #: Höchstzahl je Art und Abruf: Ein Monatsraster zeigt ohnehin nur wenige Einträge je Tag
 MAX_JE_ART: Final = 300
+#: Dauer einer Sitzung aus einer Reihe, wenn die Reihe keine nennt (Vorgabe des Modells)
+REIHE_DAUER_VORGABE: Final = 120
 
 
-def arten_fuer(membership: Any) -> list[Art]:
-    """Arten, die das Mitglied im Kalender sehen darf (Gäste: keine)."""
+def eigene_gremien(organization: Any, membership: Any) -> set[Any]:
+    """
+    Gremien, die im Kalender als „eigene“ gelten (Issue #1548): die zugewiesenen Gremien aller aktiven Mitglieder
+    (Einstellungen › Mitglieder), die Gremien, in denen eine mit einem Konto verknüpfte Person derzeit sitzt, die an
+    der Organisation verknüpften Gremien und die Gremien, denen das Mitglied selbst folgt (Profil › Meine Gremien).
+    Vier Abfragen; leer, wenn nichts davon gepflegt ist.
+    """
+    from apps.tenants.models import Membership
+    from insight_core.models import OParlMembership
+
+    if organization is None or membership is None:
+        return set()
+    aktive = Membership.objects.filter(organization=organization, is_active=True, is_guest=False)
+    ids: set[Any] = set(
+        aktive.filter(oparl_committees__isnull=False).values_list("oparl_committees", flat=True).distinct()
+    )
+    heute = timezone.localdate()
+    ids |= set(
+        OParlMembership.objects.filter(person__in=aktive.exclude(oparl_person=None).values("oparl_person"))
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=heute))
+        .values_list("organization_id", flat=True)
+        .distinct()
+    )
+    ids |= set(organization.oparl_organizations.values_list("pk", flat=True))
+    ids |= set(membership.followed_organizations.values_list("pk", flat=True))
+    return ids
+
+
+def arten_fuer(membership: Any, *, mit_eigenen_gremien: bool = True) -> list[Art]:
+    """
+    Arten, die das Mitglied im Kalender sehen darf (Gäste: keine). Ohne eigene Gremien (``eigene_gremien`` leer)
+    gibt es keine Trennung: eine Art „Sitzungen der Gremien“ für alle.
+    """
     if membership is None or getattr(membership, "is_guest", False):
         return []
-    return [art for art in ARTEN if membership.has_permission(art.recht)]
+    arten = []
+    for art in ARTEN:
+        if not membership.has_permission(art.recht):
+            continue
+        if not mit_eigenen_gremien and art.key == "gremium":
+            continue
+        arten.append(ALLE_GREMIEN if not mit_eigenen_gremien and art.key == "sitzung" else art)
+    return arten
 
 
 def gewaehlt(wert: str | None, erlaubt: list[Art]) -> set[str]:
@@ -94,17 +137,52 @@ def _eintrag(art: str, kennung: Any, titel: str, url: str, **felder: Any) -> dic
     }
 
 
-def _sitzungen(organization: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
+def _ist_eigene(meeting: Any, eigene: set[Any], eigene_adressen: set[str]) -> bool:
+    """True, wenn eines der Gremien der Sitzung ein eigenes ist (zugeordnet oder nur im Rohdatensatz genannt)."""
+    if any(org.pk in eigene for org in meeting.organizations.all()):
+        return True
+    adressen = (meeting.raw_json or {}).get("organization") or []
+    return isinstance(adressen, list) and any(adresse in eigene_adressen for adresse in adressen)
+
+
+def _sitzungen(
+    organization: Any, start: datetime, end: datetime, eigene: set[Any], wahl: set[str]
+) -> list[dict[str, Any]]:
+    """
+    Sitzungen der Gremien: ``sitzung`` für die eigenen Gremien, ``gremium`` für die weiteren. Ohne eigene Gremien
+    gehören alle zu ``sitzung``. Der Titel nennt zuerst das Gremium (``OParlMeeting.bezeichnung``).
+    """
+    from insight_core.models import OParlOrganization
+
     bodies = selectors.organization_bodies(organization)
     if bodies is None:
         return []
+    eigene_adressen = set(OParlOrganization.objects.filter(pk__in=eigene).values_list("external_id", flat=True))
     eintraege = []
     for meeting in selectors.meetings_between(bodies, start, end)[:MAX_JE_ART]:
+        art = "sitzung" if not eigene or _ist_eigene(meeting, eigene, eigene_adressen) else "gremium"
+        if art not in wahl:
+            continue
         eintrag = serialize_calendar_event(meeting, organization.slug)
-        eintrag["classNames"] = ["termin-sitzung"]
-        eintrag["extendedProps"]["art"] = "sitzung"
+        eintrag["classNames"] = [f"termin-{art}"]
+        eintrag["extendedProps"]["art"] = art
+        eintrag["extendedProps"]["fullTitle"] = eintrag["title"]
         eintraege.append(eintrag)
     return eintraege
+
+
+def _ende_im_kalender(sitzung: Any) -> datetime | None:
+    """
+    Ende einer internen Sitzung im Kalender. Eine Sitzung aus einer Sitzungsreihe steht immer zu ihrer festen Zeit
+    (Issue #1548): Beginn plus Dauer der Reihe, wenn sie beendet ist („Sitzung beenden“ setzt das Ende auf die Uhrzeit
+    des Klicks, nach Mitternacht ragte sie sonst in den Folgetag) oder kein Ende hat. Sonst das gespeicherte Ende.
+    """
+    beginn: datetime = sitzung.start
+    ende: datetime | None = sitzung.end
+    reihe = sitzung.schedule if sitzung.schedule_id else None
+    if reihe is not None and (sitzung.status == "completed" or ende is None):
+        return beginn + timedelta(minutes=reihe.duration_minutes or REIHE_DAUER_VORGABE)
+    return ende
 
 
 def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
@@ -115,20 +193,25 @@ def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end
     # zählt der Beginn. Das Fenster ist halboffen: Was es nur berührt (endet genau zu seinem Beginn, beginnt genau
     # an seinem Ende), gehört nicht hinein.
     im_fenster = Q(start__lt=end) & (Q(end__gt=start) | Q(end__isnull=True, start__gte=start))
-    sitzungen = sichtbar_fuer(
-        membership, FactionMeeting.objects.filter(im_fenster, organization=organization)
-    ).order_by("start")[:MAX_JE_ART]
-    return [
-        _eintrag(
-            "fraktion",
-            sitzung.pk,
-            f"{sitzung.title} (abgesagt)" if sitzung.status == "cancelled" else sitzung.title,
-            reverse("work:faction_detail", kwargs={"org_slug": organization.slug, "meeting_id": sitzung.pk}),
-            start=sitzung.start.isoformat(),
-            end=sitzung.end.isoformat() if sitzung.end else None,
+    sitzungen = (
+        sichtbar_fuer(membership, FactionMeeting.objects.filter(im_fenster, organization=organization))
+        .select_related("schedule")
+        .order_by("start")[:MAX_JE_ART]
+    )
+    eintraege = []
+    for sitzung in sitzungen:
+        ende = _ende_im_kalender(sitzung)
+        eintraege.append(
+            _eintrag(
+                "fraktion",
+                sitzung.pk,
+                f"{sitzung.title} (abgesagt)" if sitzung.status == "cancelled" else sitzung.title,
+                reverse("work:faction_detail", kwargs={"org_slug": organization.slug, "meeting_id": sitzung.pk}),
+                start=sitzung.start.isoformat(),
+                end=ende.isoformat() if ende else None,
+            )
         )
-        for sitzung in sitzungen
-    ]
+    return eintraege
 
 
 def _termine(organization: Any, membership: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
@@ -229,10 +312,11 @@ def termine(
     organization: Any, membership: Any, start: datetime, end: datetime, arten: str | None = None
 ) -> list[dict[str, Any]]:
     """Einträge für FullCalendar im Zeitfenster: nur Arten, die das Mitglied sehen darf und gewählt hat."""
-    wahl = gewaehlt(arten, arten_fuer(membership))
+    eigene = eigene_gremien(organization, membership)
+    wahl = gewaehlt(arten, arten_fuer(membership, mit_eigenen_gremien=bool(eigene)))
     eintraege: list[dict[str, Any]] = []
-    if "sitzung" in wahl:
-        eintraege += _sitzungen(organization, start, end)
+    if wahl & {"sitzung", "gremium"}:
+        eintraege += _sitzungen(organization, start, end, eigene, wahl)
     if "fraktion" in wahl:
         eintraege += _fraktionssitzungen(organization, membership, start, end)
     if "termin" in wahl:

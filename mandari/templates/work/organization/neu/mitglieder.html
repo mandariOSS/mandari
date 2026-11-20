@@ -14,7 +14,7 @@ Kontext: MemberListView.
 <c-rahmen.kopfband titel="Mitglieder" dicht
     text="{{ members.count }} aktive Mitglieder{% if guests %} und {{ guest_count }} {% if guest_count == 1 %}Gast{% else %}Gäste{% endif %}{% endif %} in {{ organization.name }}.">
     <c-slot name="aktionen">
-        {% if can_invite_guests %}<c-ui.textlink href="{% url 'work:guest_invite' org_slug=organization.slug %}" class="text-sm">Gast einladen</c-ui.textlink>{% endif %}
+        {% if can_invite_guests %}<c-ui.button href="{% url 'work:guest_invite' org_slug=organization.slug %}" variant="secondary" size="sm" icon="user-round-plus">Gast einladen</c-ui.button>{% endif %}
         <c-ui.button href="{% url 'work:member_invite' org_slug=organization.slug %}" size="sm" icon="user-plus">Mitglied einladen</c-ui.button>
     </c-slot>
 </c-rahmen.kopfband>
