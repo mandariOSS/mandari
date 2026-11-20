@@ -419,6 +419,21 @@ SYNC_CONFIG_FULL_SYNC_RESUME_KEY: Final = "full_sync_resume"
 #: Schlüssel in ``OParlSource.sync_config``: optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind (Adresse ->
 #: ``failures``, ``until``, ``since``, ``reason``; Issue #1033)
 SYNC_CONFIG_SLOW_LISTS_KEY: Final = "slow_lists"
+#: Schlüssel in ``OParlSource.sync_config``: Beratungen, deren Nachladen zuletzt versucht wurde (Kennung -> Zeitpunkt;
+#: Issue #1523, ``src/sync/beratungen_nachladen.py``)
+SYNC_CONFIG_CONSULTATION_FETCHES_KEY: Final = "beratungen_nachladen_versuche"
+
+#: Beratungen, die Punkte der Sitzungen einer Kommune in einem Zeitraum nennen und die es nicht gibt (Nachladen,
+#: Issue #1523); je Beratung die früheste Sitzung
+_UNKNOWN_CONSULTATIONS_OF_MEETINGS = text(
+    "SELECT ai.raw_json->>'consultation', min(m.start)"
+    " FROM oparl_agenda_items ai JOIN oparl_meetings m ON m.id = ai.meeting_id"
+    " WHERE m.body_id = :body AND m.start >= :von AND m.start <= :bis"
+    " AND ai.deleted IS NOT TRUE AND m.deleted IS NOT TRUE"
+    " AND jsonb_typeof(ai.raw_json->'consultation') = 'string'"
+    " AND NOT EXISTS (SELECT 1 FROM oparl_consultations c WHERE c.external_id = ai.raw_json->>'consultation')"
+    " GROUP BY 1"
+)
 
 
 def _utc_stamp(value: Any) -> datetime | None:
@@ -2175,6 +2190,51 @@ class DatabaseStorage:
             else:
                 await self._note_foreign_reference(session, OParlPaper, "paper", external_id)
             return uuid
+
+    async def unknown_consultations_of_meetings(
+        self, body_id: UUID, since: datetime, until: datetime
+    ) -> list[tuple[str, datetime | None]]:
+        """
+        Beratungen, die Tagesordnungspunkte der Sitzungen dieser Kommune zwischen ``since`` und ``until`` nennen und
+        die es im Bestand nicht gibt (Nachladen, Issue #1523): Kennung und Beginn der frühesten Sitzung, die sie
+        nennt. Nur nicht gelöschte Punkte und Sitzungen, nur Verweise als Adresse. Eine Abfrage.
+        """
+        async with self.get_session() as session:
+            rows = await session.execute(
+                _UNKNOWN_CONSULTATIONS_OF_MEETINGS, {"body": body_id, "von": since, "bis": until}
+            )
+            return [(row[0], row[1]) for row in rows]
+
+    async def source_sync_config(self, source_id: UUID) -> dict[str, Any]:
+        """``sync_config`` der Quelle (leer, wenn es sie nicht gibt)."""
+        async with self.get_session() as session:
+            return await self._source_config(session, source_id)
+
+    async def note_consultation_fetches(
+        self, source_id: UUID, attempts: Mapping[str, str], keep_after: datetime
+    ) -> None:
+        """
+        Versuche des Nachladens festhalten (``sync_config[key]``: Beratung → Zeitpunkt, Issue #1523), unter
+        Zeilensperre; Einträge vor ``keep_after`` fallen dabei weg.
+        """
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            stored = sync_config.get(SYNC_CONFIG_CONSULTATION_FETCHES_KEY)
+            before = dict(stored) if isinstance(stored, dict) else {}
+            kept: dict[str, str] = {}
+            for ref, stamp in {**before, **attempts}.items():
+                when = _utc_stamp(stamp)
+                if isinstance(ref, str) and when is not None and when >= keep_after:
+                    kept[ref] = stamp
+            if kept == before:
+                return False
+            if kept:
+                sync_config[SYNC_CONFIG_CONSULTATION_FETCHES_KEY] = kept
+            else:
+                sync_config.pop(SYNC_CONFIG_CONSULTATION_FETCHES_KEY, None)
+            return True
+
+        await self._change_sync_config(OParlSource.id == source_id, change)
 
     # ========== Person Operations ==========
 
