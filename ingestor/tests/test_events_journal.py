@@ -1484,3 +1484,46 @@ async def test_ablage_rechte_und_geteilter_pfad_ohne_referenz(bestand: Bestand, 
     assert await bestand.storage.attach_file_blob(zweite, sha_b, 17, quelle_b, root / sha_b[:2] / sha_b)
     assert ziel_a.exists(), "geteilter Inhalt bleibt"
     assert await bestand.wert("SELECT ref_count FROM oparl_file_blobs WHERE sha256 = :s", s=sha_a) == 1
+
+
+async def test_geteilte_wahlperiode_meldet_jede_kommune(bestand: Bestand) -> None:
+    """
+    Issue #1453: Eine Wahlperiode, die zwei Kommunen der Quelle nennen, ist eine Zeile; ihre Ereignisse erreichen den
+    Feed beider Kommunen, gleich welcher Abgleich die Änderung zuerst sieht. Die zweite Kommune bekommt sie als neu.
+    """
+    storage, processor = bestand.storage, bestand.processor
+    zweite = processor.process_body(
+        {"id": f"{BASE}/body/2", "type": "https://schema.oparl.org/1.1/Body", "name": "Gemeinde"}, f"{BASE}/body/2"
+    )
+    zweite_id = await storage.upsert_body(zweite, bestand.source_id)
+    async with storage._engine.begin() as conn:
+        await conn.execute(text("DELETE FROM events_event"))
+    daten: dict[str, Any] = {
+        "id": f"{BASE}/legislativeterm/1",
+        "type": "https://schema.oparl.org/1.1/LegislativeTerm",
+        "name": "2025–2030",
+        "startDate": "2025-11-01",
+        "modified": "2026-09-01T10:00:00+02:00",
+    }
+
+    term_id = await storage.upsert_legislative_term(processor.process_legislative_term(daten), bestand.body_id)
+    assert await storage.upsert_legislative_term(processor.process_legislative_term(daten), zweite_id) == term_id
+    assert [(e["body_id"], e["type"]) for e in await bestand.ereignisse()] == [
+        (bestand.body_id, "ris.legislativeterm.changed"),
+        (zweite_id, "ris.legislativeterm.changed"),
+    ]
+
+    # Die erste Kommune sieht die Änderung: Beide Feeds bekommen sie, der Abgleich der zweiten danach nichts mehr
+    geaendert = {**daten, "name": "Wahlperiode 2025–2030", "modified": "2026-09-02T10:00:00+02:00"}
+    await storage.upsert_legislative_term(processor.process_legislative_term(geaendert), bestand.body_id)
+    await storage.upsert_legislative_term(processor.process_legislative_term(geaendert), zweite_id)
+    assert {e["body_id"] for e in (await bestand.ereignisse())[2:]} == {bestand.body_id, zweite_id}
+    assert len(await bestand.ereignisse()) == 4
+
+    # Löschmarke der Quelle: Sie verschwindet für beide
+    await storage.mark_entity_deleted("legislativeterm", daten["id"], body_id=bestand.body_id)
+    letzte = (await bestand.ereignisse())[4:]
+    assert {(e["body_id"], e["type"]) for e in letzte} == {
+        (bestand.body_id, "ris.object.depublished"),
+        (zweite_id, "ris.object.depublished"),
+    }

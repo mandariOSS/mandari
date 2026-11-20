@@ -334,7 +334,9 @@ def wahlperiode_beginn(body: OParlBody, heute: date | None = None) -> date | Non
     """Beginn der laufenden Wahlperiode der Kommune (``OParlLegislativeTerm``), ``None`` ohne Angabe. Eine Abfrage."""
     heute = heute or timezone.localdate()
     return (
-        OParlLegislativeTerm.objects.filter(body=body, deleted=False, start_date__isnull=False, start_date__lte=heute)
+        OParlLegislativeTerm.objects.filter(
+            OParlLegislativeTerm.of_body(body.pk), deleted=False, start_date__isnull=False, start_date__lte=heute
+        )
         .order_by("-start_date")
         .values_list("start_date", flat=True)
         .first()

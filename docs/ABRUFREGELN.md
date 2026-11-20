@@ -624,8 +624,9 @@ Der Vermerk „filtert nicht“ gilt je Liste und nur für die Quelle, bei der e
 
 - Antwortet schon die erste Seite einer optionalen Liste (Mitgliedschaften, Tagesordnungspunkte, Beratungen,
   Dateien, Orte; `OPTIONAL_LIST_TYPES`) ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt, gibt es die Liste
-  bei dieser Quelle nicht. Wahlperioden liest der Ingestor aus der Kommune selbst (`legislativeTerm`); eine eigene
-  Liste fragt er nicht an, obwohl `OPTIONAL_LIST_TYPES` sie führt. Der Ingestor vermerkt fehlende Listen am Ende des
+  bei dieser Quelle nicht. Wahlperioden liest der Ingestor aus der Kommune selbst (`legislativeTerm`) und aus ihrer
+  Liste `legislativeTermList` auf eigenem Weg (siehe unten, [Wahlperioden](#wahlperioden)). Der Ingestor vermerkt
+  fehlende Listen am Ende des
   Laufs mit Grund und Zeitpunkt der Prüfung in
   `sync_config["missing_lists"]`, aber nur, wenn mindestens eine andere Liste der Kommune lesbar war. Sonst gilt das
   als Störung der Schnittstelle: Lücke im Abgleich, kein Vermerk (`_settle_missing_lists`).
@@ -644,6 +645,21 @@ Der Vermerk „filtert nicht“ gilt je Liste und nur für die Quelle, bei der e
   Code 802), sagt das nichts über die Liste: Der Vermerk bleibt, die nächste Prüfung folgt nach einem Tag
   (`_list_pages`, Issue [#1034](https://github.com/mandariOSS/mandari/issues/1034)).
 - HTTP 404 zählt nie als Fehlversuch für den Schutzschalter je Server.
+
+### Wahlperioden
+
+Viele Kommunen nennen die Liste `legislativeTermList`, betten aber keine Wahlperiode ein; beobachtet wurden leere
+Listen (auch als JSON-Array ohne Hülle), HTTP 401 und HTTP 503 (Issue
+[#1453](https://github.com/mandariOSS/mandari/issues/1453), `ingestor/src/sync/wahlperioden.py`):
+
+- Der inkrementelle Lauf fragt die Liste höchstens einmal am Tag je Kommune an, der Vollabgleich jedes Mal. Ergebnis
+  und Zeitpunkt jeder Prüfung stehen in `sync_config["legislative_term_lists"]`.
+- Je Seite eine Anfrage ohne Wiederholung, höchstens zehn Seiten. Der Abruf ist leise (`OParlClient.fetch_optional`):
+  kein Befund am Server, kein Fehlversuch für den Schutzschalter, keine Serie von Serverfehlern, keine
+  Vergleichsanfrage bei HTTP 403. Ein Fehler macht den Abgleich nicht lückenhaft.
+- Löschmarken (`deleted: true`) übernimmt der Ingestor; eine Wahlperiode, die in der Liste nur fehlt, bleibt.
+- Nennen mehrere Kommunen einer Quelle dieselbe Wahlperiode (gleiche Kennung), bleibt sie eine Zeile bei der ersten
+  Kommune und wird mit den übrigen verknüpft (`oparl_legislative_terms_shared_bodies`).
 
 ### Langsame Listen
 

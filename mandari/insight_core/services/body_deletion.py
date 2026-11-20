@@ -15,7 +15,9 @@ hier schützt jeden anderen Aufrufer.
 """
 
 import logging
+from typing import Any
 
+from django.db import transaction
 from django.tasks import task
 
 from insight_core.services.external_references import ExternalReference, external_references
@@ -42,6 +44,36 @@ def body_references(body_id: str) -> list[ExternalReference]:
     from insight_core.models import OParlBody
 
     return external_references(OParlBody.objects.filter(pk=body_id))
+
+
+def _geteilte_wahlperioden_uebergeben(body: Any) -> int:
+    """
+    Wahlperioden der Kommune, die weitere Kommunen über ``shared_bodies`` nennen, bleiben erhalten (Issue #1453):
+    Sie gehen an die Kommune über, die als nächste verknüpft wurde (älteste Verknüpfung), deren Verknüpfung entfällt.
+    Unter Sperre der Wahlperioden: Eine gleichzeitige Löschung einer anderen Kommune übergibt nicht zugleich an diese.
+    Gibt die Zahl der übergebenen Wahlperioden zurück.
+    """
+    from insight_core.models import OParlLegislativeTerm
+
+    zuordnung = OParlLegislativeTerm.shared_bodies.through
+    geteilt = zuordnung.objects.exclude(oparlbody_id=body.pk).values("oparllegislativeterm_id")
+    uebergeben = 0
+    with transaction.atomic():
+        for term in OParlLegislativeTerm.objects.select_for_update().filter(body=body, pk__in=geteilt):
+            naechste = (
+                zuordnung.objects.select_for_update()
+                .filter(oparllegislativeterm_id=term.pk)
+                .exclude(oparlbody_id=body.pk)
+                .order_by("id")
+                .first()
+            )
+            if naechste is None:
+                continue
+            term.body_id = naechste.oparlbody_id
+            term.save(update_fields=["body", "updated_at"])
+            naechste.delete()
+            uebergeben += 1
+    return uebergeben
 
 
 def delete_body_data(body_id: str) -> dict:
@@ -91,6 +123,8 @@ def delete_body_data(body_id: str) -> dict:
     release_queryset(OParlFile.objects.filter(body=body, blob__isnull=False))
 
     counts = {}
+    # Wahlperioden, die andere Kommunen der Quelle mitnutzen, gehen vorher an eine von ihnen über (Issue #1453)
+    counts["legislative_terms_handed_over"] = _geteilte_wahlperioden_uebergeben(body)
     steps = [
         ("files", OParlFile.objects.filter(body=body)),
         ("consultations", OParlConsultation.objects.filter(body=body)),
@@ -101,7 +135,16 @@ def delete_body_data(body_id: str) -> dict:
         ("persons", OParlPerson.objects.filter(body=body)),
         ("organizations", OParlOrganization.objects.filter(body=body)),
         ("locations", OParlLocation.objects.filter(body=body)),
-        ("legislative_terms", OParlLegislativeTerm.objects.filter(body=body)),
+        # Ohne Wahlperioden, die eine andere Kommune noch nutzt (gleichzeitige Löschung, Issue #1453): Sie gehen
+        # unmittelbar vor dem Löschen der Kommune noch einmal über
+        (
+            "legislative_terms",
+            OParlLegislativeTerm.objects.filter(body=body).exclude(
+                pk__in=OParlLegislativeTerm.shared_bodies.through.objects.exclude(oparlbody_id=body.pk).values(
+                    "oparllegislativeterm_id"
+                )
+            ),
+        ),
     ]
     for name, qs in steps:
         counts[name] = _chunked_delete(qs)
@@ -109,9 +152,11 @@ def delete_body_data(body_id: str) -> dict:
 
     # Restliche kleine Kaskade (Subscriber, LocationMappings, …) über den
     # normalen Delete — jetzt speicherunkritisch.
-    deleted, detail = body.delete()
+    with transaction.atomic():
+        counts["legislative_terms_handed_over"] += _geteilte_wahlperioden_uebergeben(body)
+        deleted, detail = body.delete()
     counts["body_cascade"] = deleted
-    total = sum(counts.values())
+    total = sum(wert for name, wert in counts.items() if name != "legislative_terms_handed_over")
     logger.info(f"[BodyDeletion] '{body_name}' vollständig gelöscht ({total} Zeilen): {counts}")
     return {"deleted": total, "body": body_name, "detail": counts}
 

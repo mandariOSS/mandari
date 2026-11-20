@@ -480,6 +480,9 @@ SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY: Final = "full_sync_slice_page"
 #: Schlüssel in ``OParlSource.sync_config``: Beratungen, deren Nachladen zuletzt versucht wurde (Kennung -> Zeitpunkt;
 #: Issue #1523, ``src/sync/beratungen_nachladen.py``)
 SYNC_CONFIG_CONSULTATION_FETCHES_KEY: Final = "beratungen_nachladen_versuche"
+#: Schlüssel in ``OParlSource.sync_config``: letzte Prüfung der Wahlperiodenliste je Kommune (``legislativeTermList``,
+#: Adresse -> ``checked_at`` in UTC, ISO 8601, und ``result``; ``src/sync/wahlperioden.py``, Issue #1453)
+SYNC_CONFIG_LEGISLATIVE_TERM_LISTS_KEY: Final = "legislative_term_lists"
 
 #: Beratungen, die Punkte der Sitzungen einer Kommune in einem Zeitraum nennen und die es nicht gibt (Nachladen,
 #: Issue #1523); je Beratung die früheste Sitzung
@@ -534,6 +537,18 @@ def missing_list_reasons_of(sync_config: Any) -> dict[str, str]:
         url: entry["reason"]
         for url, entry in _missing_list_entries(sync_config).items()
         if isinstance(entry, dict) and isinstance(entry.get("reason"), str) and entry["reason"]
+    }
+
+
+def legislative_term_lists_of(sync_config: Any) -> dict[str, datetime | None]:
+    """Letzte Prüfung je Wahlperiodenliste (``sync_config["legislative_term_lists"]``); ungültig: ``None``."""
+    stored = sync_config.get(SYNC_CONFIG_LEGISLATIVE_TERM_LISTS_KEY) if isinstance(sync_config, dict) else None
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        url: _utc_stamp(entry.get("checked_at") if isinstance(entry, dict) else None)
+        for url, entry in stored.items()
+        if isinstance(url, str) and url
     }
 
 
@@ -1198,6 +1213,19 @@ class DatabaseStorage:
 
         def change(sync_config: dict[str, Any]) -> bool:
             return _put_entry(sync_config, SYNC_CONFIG_MISSING_LISTS_KEY, list_url, entry)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def note_legislative_term_list(self, source_url: str, list_url: str, result: str) -> None:
+        """
+        Prüfung der Wahlperiodenliste einer Kommune vermerken: Zeitpunkt (jetzt) und Ergebnis, etwa „3 gelesen“,
+        „leer“ oder „HTTP 401“ (Issue #1453). Der Abgleich fragt die Liste danach erst wieder nach einem Tag an.
+        Unter Zeilensperre.
+        """
+        entry = {"checked_at": datetime.now(UTC).isoformat(timespec="seconds"), "result": result}
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_LEGISLATIVE_TERM_LISTS_KEY, list_url, entry)
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 
@@ -1920,9 +1948,16 @@ class DatabaseStorage:
                     body_id = found.scalar_one_or_none()
                 else:
                     body_id = row[1]
-                if await self._events_for(session, body_id):
-                    drafts = ris_events.depublished_events(entity_type, row[0], public=public, meeting_id=meeting_id)
-                    await self._emit(session, body_id, drafts, modified)
+                drafts = ris_events.depublished_events(entity_type, row[0], public=public, meeting_id=meeting_id)
+                # Eine geteilte Wahlperiode verschwindet für jede Kommune, die sie nutzt (Issue #1453)
+                kommunen = (
+                    await self._nutzer_der_wahlperiode(session, row[0], body_id)
+                    if entity_type == "legislativeterm" and body_id is not None
+                    else [body_id]
+                )
+                for kommune in kommunen:
+                    if await self._events_for(session, kommune):
+                        await self._emit(session, kommune, drafts, modified)
             await session.commit()
             return entity_id
 
@@ -3511,11 +3546,16 @@ class DatabaseStorage:
         term: ProcessedLegislativeTerm,
         body_id: UUID,
     ) -> UUID:
-        """Insert or update a legislative term; Zeile und Ereignis (``ris.legislativeterm.changed``) zusammen."""
+        """
+        Insert or update a legislative term; Zeile und Ereignis (``ris.legislativeterm.changed``) zusammen.
+
+        Geteilte Wahlperioden (Issue #1453): Gehört die Zeile einer anderen Kommune derselben Quelle, wird diese Kommune
+        verknüpft (``oparl_legislative_terms_shared_bodies``). Das Ereignis geht an jede Kommune, die die Wahlperiode
+        nutzt; eine neu verknüpfte bekommt sie als neu (``added``). So bleibt der Änderungsfeed jeder Kommune bei ihren
+        Wahlperioden vollständig, gleich welcher Abgleich die Änderung zuerst sieht.
+        """
         async with self.get_session() as session:
-            emit = await self._events_for(session, body_id)
-            prior = await self._prior(session, OParlLegislativeTerm, term.external_id) if emit else None
-            emit = emit and not _withheld(prior)
+            prior = await self._prior(session, OParlLegislativeTerm, term.external_id) if self.events_enabled else None
             stmt = pg_insert(OParlLegislativeTerm).values(
                 id=term.id,
                 external_id=term.external_id,
@@ -3544,14 +3584,46 @@ class DatabaseStorage:
                 index_elements=["external_id"],
                 set_=update_set,
                 where=_owned_by_source_of(OParlLegislativeTerm, body_id),
-            ).returning(OParlLegislativeTerm.id)
+            ).returning(OParlLegislativeTerm.id, OParlLegislativeTerm.body_id)
 
-            term_id = (await self._upserted(session, stmt, "legislativeterm", term.external_id))[0]
-            if emit:
+            term_id, owner = await self._upserted(session, stmt, "legislativeterm", term.external_id)
+            neu_verknuepft = False
+            if owner is not None and owner != body_id:
+                # Dieselbe Kennung bei einer weiteren Kommune der Quelle (Issue #1453): Die Zeile bleibt bei der
+                # ersten, diese Kommune wird verknüpft
+                verknuepft = await session.execute(
+                    text(
+                        "INSERT INTO oparl_legislative_terms_shared_bodies (oparllegislativeterm_id, oparlbody_id) "
+                        "VALUES (:term, :body) ON CONFLICT DO NOTHING RETURNING 1"
+                    ),
+                    {"term": term_id, "body": body_id},
+                )
+                neu_verknuepft = verknuepft.first() is not None
+            if self.events_enabled and not _withheld(prior):
                 drafts = ris_events.legislative_term_events(term_id, term.raw_json or {}, prior)
-                await self._emit(session, body_id, drafts, term.oparl_modified)
+                for kommune in await self._nutzer_der_wahlperiode(session, term_id, owner or body_id):
+                    if not await self._events_for(session, kommune):
+                        continue
+                    if kommune == body_id and neu_verknuepft:
+                        # Für die neu verknüpfte Kommune ist die Wahlperiode neu
+                        neu = ris_events.legislative_term_events(term_id, term.raw_json or {}, None)
+                        await self._emit(session, kommune, neu, term.oparl_modified)
+                    else:
+                        await self._emit(session, kommune, drafts, term.oparl_modified)
             await session.commit()
             return term_id
+
+    @staticmethod
+    async def _nutzer_der_wahlperiode(session: AsyncSession, term_id: UUID, owner: UUID) -> list[UUID]:
+        """Kommunen, die eine Wahlperiode nutzen: die Eigentümerin, dann die verknüpften (Issue #1453)."""
+        found = await session.execute(
+            text(
+                "SELECT oparlbody_id FROM oparl_legislative_terms_shared_bodies WHERE oparllegislativeterm_id = :term"
+                " ORDER BY id"
+            ),
+            {"term": term_id},
+        )
+        return [owner, *(row[0] for row in found if row[0] != owner)]
 
     # ========== Statistics ==========
 

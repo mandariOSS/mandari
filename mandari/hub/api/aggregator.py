@@ -148,7 +148,10 @@ _LISTED_FILE = Spec(
     "file", OParlFile, BestandMapping.file, lambda queryset: queryset.defer("text_content"), of_body=_files_of
 )
 _LOCATION = Spec("location", OParlLocation, BestandMapping.location)
-_LEGISLATIVE_TERM = Spec("legislativeterm", OParlLegislativeTerm, BestandMapping.legislative_term)
+# Eigene und mit anderen Kommunen der Quelle geteilte Wahlperioden (Issue #1453)
+_LEGISLATIVE_TERM = Spec(
+    "legislativeterm", OParlLegislativeTerm, BestandMapping.legislative_term, of_body=OParlLegislativeTerm.of_body
+)
 
 #: Listen des Snapshots in der älteren Form (abgekündigt): ihre Objekte mit den Einbettungen
 _SNAPSHOT_LISTS: Final[tuple[Spec, ...]] = (_ORGANIZATION, _PERSON, _MEETING, _PAPER, _LOCATION)
@@ -584,7 +587,8 @@ def _kommparl_snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed
 
     own = Q(body_id=pk)
     sections = [
-        section(_LEGISLATIVE_TERM, own),
+        # Eigene und mit anderen Kommunen der Quelle geteilte Wahlperioden, je einmal (Issue #1453)
+        section(_LEGISLATIVE_TERM, OParlLegislativeTerm.of_body(pk)),
         section(_ORGANIZATION, own),
         section(_PERSON, own),
         section(_MEMBERSHIP, _memberships_of(pk)),

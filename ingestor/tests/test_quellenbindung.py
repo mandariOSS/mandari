@@ -687,6 +687,26 @@ async def test_kommunen_derselben_quelle_teilen_sich_objekte(speicher: DatabaseS
     assert await speicher.mark_entity_deleted("membership", f"{B}/membership/2", body_id=gemeinde) is not None
 
 
+async def test_geteilte_wahlperiode_wird_mit_der_zweiten_kommune_verknuepft(speicher: DatabaseStorage) -> None:
+    """Dieselbe Wahlperiode bei Kreis und Gemeinde einer Quelle (Issue #1453): eine Zeile, die Gemeinde verknüpft."""
+    zwei = Bestand(speicher)
+    kreis = await zwei.kommune_anlegen(B, quelle=f"{B}/system", nummer=1)
+    gemeinde = await zwei.kommune_anlegen(B, quelle=f"{B}/system", nummer=2)
+    wahlperiode = objekt(B, "legislativeterm", 7, name="Wahlperiode 2025–2030")
+
+    for kommune, kennung in ((kreis, KOMMUNE_B), (gemeinde, f"{B}/body/2"), (gemeinde, f"{B}/body/2")):
+        assert await zwei.schreiben("legislativeterm", wahlperiode, kommune, kennung) is not None
+
+    zeile = await _zeile(speicher, OParlLegislativeTerm, f"{B}/legislativeterm/7")
+    assert zeile.body_id == kreis
+    verknuepft = await _anzahl(
+        speicher,
+        "SELECT array_agg(oparlbody_id) FROM oparl_legislative_terms_shared_bodies WHERE oparllegislativeterm_id = :t",
+        t=zeile.id,
+    )
+    assert verknuepft == [gemeinde], "die Gemeinde genau einmal, der Kreis nicht"
+
+
 async def test_zeile_ohne_kommune_gehoert_keiner_quelle(bestand: Bestand) -> None:
     """Eine Datei ohne Kommune (Altbestand) schreibt keine Quelle um; sie ist vor dem Ausrollen zuzuordnen."""
     storage = bestand.storage
