@@ -14,7 +14,7 @@ import base64
 import io
 import threading
 import zlib
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -97,7 +97,7 @@ def test_seitenformat_kommt_vom_briefkopf() -> None:
 
     assert [float(wert) for wert in ergebnis.mediabox] == [10, 20, 605, 862]
     assert [float(wert) for wert in ergebnis.cropbox] == [20, 30, 595, 852]
-    assert float(ergebnis["/UserUnit"]) == 2.5
+    assert float(cast(FloatObject, ergebnis["/UserUnit"])) == 2.5
     assert "Fraktion im Rat der Stadt" in ergebnis.extract_text()
 
 
