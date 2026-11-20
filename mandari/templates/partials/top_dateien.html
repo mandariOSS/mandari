@@ -1,0 +1,22 @@
+{% comment %}
+Dateien direkt an einem Tagesordnungspunkt (OParl auxiliaryFile/resolutionFile am Punkt, Issue #1528), etwa Anträge,
+die ohne Vorlage nur als Datei am Punkt hängen. Name mit Größe, öffnet die Datei in neuem Fenster über die Auslieferung
+von Insight (Cache, Sperren und Zugriffsprotokoll wie bei Sitzungsdokumenten). In der Quelle nicht mehr abrufbare
+Dateien stehen ohne Link. Für die Tagesordnungen von Insight und Work:
+  {% include "partials/top_dateien.html" with dateien=item.top_dateien %}
+Erwartet ``dateien`` aus hub.ris.selectors.files_of_agenda_items (ohne gelöschte und zurückgenommene).
+{% endcomment %}
+{% if dateien %}
+<ul class="mt-1.5 space-y-1 text-sm" aria-label="Dateien zum Tagesordnungspunkt" data-testid="top-dateien">
+    {% for datei in dateien %}
+    <li class="flex min-w-0 items-baseline gap-1.5">
+        <i data-lucide="file-text" class="h-3.5 w-3.5 shrink-0 translate-y-0.5 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
+        {% if datei.source_missing_since %}
+        <span class="min-w-0 break-words text-gray-600 dark:text-gray-400">{{ datei.name|default:datei.file_name|default:"Dokument" }} (in der Quelle nicht mehr abrufbar)</span>
+        {% else %}
+        <span class="min-w-0 break-words"><c-ui.textlink href="{% url 'insight_core:insight:file_proxy' datei.id %}" extern>{{ datei.name|default:datei.file_name|default:"Dokument" }}</c-ui.textlink>{% if datei.size %}<span class="text-gray-600 dark:text-gray-400"> · {{ datei.size_human }}</span>{% endif %}</span>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

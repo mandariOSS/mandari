@@ -360,6 +360,23 @@ def _serialize_ris_file(f: OParlFile, annotation_counts: dict[Any, int]) -> dict
     }
 
 
+def _ris_files_of(entry: PreparedItem) -> list[OParlFile]:
+    """
+    RIS-Dateien eines TOPs: direkt am Punkt, dann die der Vorlagen; jede Datei einmal. Ein zurückgenommener TOP zeigt
+    keine (auch nicht über die Vorlage), gelöschte und zurückgenommene Dateien fehlen: Die Seite gäbe sonst ihre
+    Originaladresse aus.
+    """
+    if entry.item.withdrawn_by_publisher:
+        return []
+    seen: set[Any] = set()
+    files: list[OParlFile] = []
+    for f in [*entry.files, *(f for p in entry.papers for f in p.files.all())]:
+        if f.id not in seen and not f.deleted:
+            seen.add(f.id)
+            files.append(f)
+    return files
+
+
 def serialize_prepared_item(
     entry: PreparedItem, index: int, data: PreparationData, membership: Membership | None = None
 ) -> dict[str, Any]:
@@ -414,10 +431,10 @@ def serialize_prepared_item(
         if paper
         else None,
         "hasFiles": entry.has_files,
+        # Erst die Dateien direkt am TOP (Issue #1528), dann die der Vorlagen; jede Datei einmal
         "files": [
             _serialize_ris_file(f, data.file_annotation_counts)
-            for p in entry.papers
-            for f in p.files.all()
+            for f in _ris_files_of(entry)
             if f.access_url or f.download_url
         ],
         # Dokumente (TOP-Anhänge + geteilte Vorlagen-Anhänge)

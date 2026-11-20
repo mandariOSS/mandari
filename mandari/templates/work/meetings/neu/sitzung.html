@@ -43,6 +43,7 @@ work/meetings/detail.html; ihre Felder „invitation“ und „location_street�
                     {% for paper in e.papers %}
                     <p class="mt-1 text-sm"><c-ui.textlink href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}" class="break-words">{{ paper.name|default:"Vorgang" }}</c-ui.textlink>{% if paper.reference %}<span class="text-gray-600 dark:text-gray-400"> · {{ paper.reference }}</span>{% endif %}</p>
                     {% endfor %}
+                    {% include "partials/top_dateien.html" with dateien=e.dateien %}
                     {% if e.item.result %}<p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">Ergebnis: {{ e.item.result }}</p>{% endif %}
                 </div>
             </li>

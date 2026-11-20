@@ -122,6 +122,8 @@ class ProcessedFile(ProcessedEntity):
     # when fetched individually (not embedded)
     paper_external_ids: list[str] = Field(default_factory=list)
     meeting_external_ids: list[str] = Field(default_factory=list)
+    # OParl 1.1: Tagesordnungspunkte, an denen die Datei hängt (``agendaItem``)
+    agenda_item_external_ids: list[str] = Field(default_factory=list)
 
 
 class ProcessedLocation(ProcessedEntity):

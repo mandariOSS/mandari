@@ -587,6 +587,8 @@ class PreparedItem:
     papers: list[OParlPaper]
     primary_paper: OParlPaper | None
     has_files: bool
+    #: Dateien direkt am TOP (OParl ``auxiliaryFile``/``resolutionFile``, Issue #1528), vor denen der Vorlagen
+    files: list[OParlFile] = field(default_factory=list)
 
     def as_template_dict(self) -> dict[str, Any]:
         """Darstellung für das Template (bisherige Dict-Struktur ``prepared_items``)."""
@@ -601,6 +603,7 @@ class PreparedItem:
             "papers": self.papers,
             "primary_paper": self.primary_paper,
             "has_files": self.has_files,
+            "files": self.files,
         }
 
 
@@ -659,9 +662,14 @@ def _documents_by_item(
     return docs_by_item
 
 
-def _file_annotation_counts(organization: Organization, papers_by_item: dict[Any, list[OParlPaper]]) -> dict[Any, int]:
-    """Anmerkungs-Zähler für RIS-Dateien (org-weit, wie Fraktionskommentare)."""
+def _file_annotation_counts(
+    organization: Organization,
+    papers_by_item: dict[Any, list[OParlPaper]],
+    files_by_item: dict[Any, list[OParlFile]] | None = None,
+) -> dict[Any, int]:
+    """Anmerkungs-Zähler für RIS-Dateien der Vorlagen und direkt an den TOPs (org-weit, wie Fraktionskommentare)."""
     all_file_ids = {f.id for papers in papers_by_item.values() for p in papers for f in p.files.all()}
+    all_file_ids |= {f.id for files in (files_by_item or {}).values() for f in files}
     if not all_file_ids:
         return {}
     return {
@@ -718,6 +726,8 @@ def load_preparation_data(organization: Organization, membership: Membership, me
     """Alle Sektionen aller TOPs einer Sitzung in wenigen Queries laden."""
     agenda_items = sorted_agenda_items(meeting)
     papers_by_item = prefetch_papers_for_agenda_items(agenda_items)
+    # Dateien direkt an den TOPs (Issue #1528), eine Abfrage
+    files_by_item = ris.files_of_agenda_items(agenda_items)
 
     positions_by_item = {
         pos.agenda_item_id: pos
@@ -760,6 +770,7 @@ def load_preparation_data(organization: Organization, membership: Membership, me
     prepared_items: list[PreparedItem] = []
     for item in agenda_items:
         papers = papers_by_item.get(item.id, [])
+        top_files = files_by_item.get(item.id, [])
         prepared_items.append(
             PreparedItem(
                 item=item,
@@ -771,7 +782,8 @@ def load_preparation_data(organization: Organization, membership: Membership, me
                 documents=docs_by_item.get(item.id, []),
                 papers=papers,
                 primary_paper=papers[0] if papers else None,
-                has_files=any(p.files.exists() for p in papers) if papers else False,
+                has_files=bool(top_files) or (any(p.files.exists() for p in papers) if papers else False),
+                files=top_files,
             )
         )
 
@@ -780,7 +792,7 @@ def load_preparation_data(organization: Organization, membership: Membership, me
         agenda_items=agenda_items,
         prepared_items=prepared_items,
         cross_positions=cross_positions(organization, agenda_items),
-        file_annotation_counts=_file_annotation_counts(organization, papers_by_item),
+        file_annotation_counts=_file_annotation_counts(organization, papers_by_item, files_by_item),
         consultations_by_paper=resolve_consultations(paper_ids, meeting),
         ris_hinweise=hinweise_fuer_tops(organization, (item.id for item in agenda_items)),
     )

@@ -56,6 +56,13 @@ def file_size(value: Any) -> int | None:
     return value
 
 
+def _as_list(value: Any) -> list[Any]:
+    """Verweis oder Liste von Verweisen als Liste (eine einzelne Adresse zerfiele sonst in Zeichen)."""
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
 def unique_nested(entities: list[ProcessedEntity]) -> list[ProcessedEntity]:
     """
     Eingebettete Objekte ohne doppelte Kennung (Issue #1025).
@@ -496,6 +503,10 @@ class OParlProcessor:
         elif isinstance(cons, dict):
             item.references["consultation"] = [cons.get("id", "")]
 
+        # Dateien direkt am Punkt (``auxiliaryFile``, ``resolutionFile``), etwa Anträge ohne Vorlage; gespeichert
+        # mit Bezug zum Punkt (``DatabaseStorage.upsert_agenda_item_files``)
+        self._extract_files(item, data, body_external_id)
+        item.nested_entities = unique_nested(item.nested_entities)
         return item
 
     def process_file(
@@ -515,8 +526,9 @@ class OParlProcessor:
             file_name = file_name[:252] + "..."
 
         # Extract paper and meeting back-references (OParl spec: standalone files have these)
-        paper_external_ids = self._extract_refs(data.get("paper", []))
-        meeting_external_ids = self._extract_refs(data.get("meeting", []))
+        paper_external_ids = self._extract_refs(_as_list(data.get("paper")))
+        meeting_external_ids = self._extract_refs(_as_list(data.get("meeting")))
+        agenda_item_external_ids = self._extract_refs(_as_list(data.get("agendaItem")))
 
         return ProcessedFile(
             id=self.generate_uuid(external_id),
@@ -535,6 +547,7 @@ class OParlProcessor:
             date=parse_datetime(data.get("date")),
             paper_external_ids=paper_external_ids,
             meeting_external_ids=meeting_external_ids,
+            agenda_item_external_ids=agenda_item_external_ids,
         )
 
     def process_location(
@@ -669,6 +682,8 @@ class OParlProcessor:
             "resultsProtocol",
             "verbatimProtocol",
             "derivativeFile",
+            # Tagesordnungspunkt: Beschlussdatei
+            "resolutionFile",
         ]
 
         file_refs: list[str] = []

@@ -1310,6 +1310,17 @@ class OParlFile(SourceDeletionModel):
     body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
     paper = models.ForeignKey(OParlPaper, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
     meeting = models.ForeignKey(OParlMeeting, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
+    # Datei direkt am Tagesordnungspunkt (OParl ``auxiliaryFile``/``resolutionFile`` am AgendaItem, Rückverweis
+    # ``File.agendaItem``; Issue #1528), etwa ein Antrag ohne Vorlage. ``meeting`` nennt dann die Sitzung des Punkts.
+    # Nullable ohne Standardwert: Der Ingestor schreibt die Spalte (``ingestor/src/storage/models.py``).
+    agenda_item = models.ForeignKey(
+        OParlAgendaItem,
+        on_delete=models.SET_NULL,
+        related_name="files",
+        blank=True,
+        null=True,
+        verbose_name="Tagesordnungspunkt",
+    )
 
     name = models.CharField(max_length=500, blank=True, null=True)
     file_name = models.CharField(max_length=255, blank=True, null=True)

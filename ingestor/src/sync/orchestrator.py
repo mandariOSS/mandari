@@ -3157,12 +3157,14 @@ class SyncOrchestrator:
         if isinstance(entity, ProcessedMeeting):
             await self.storage.upsert_meeting(entity, body_id)
             await self._retract_session_location(entity.external_id, body_id=body_id)
-            # Eingebettete TOPs und Dateien speichert upsert_meeting selbst; hier nur zählen
+            # Eingebettete TOPs und Dateien speichert upsert_meeting selbst; hier nur zählen. Dateien an den TOPs
+            # danach, mit Bezug zum Punkt
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedFile):
                     metrics.record_entity_synced("file", body_name or "unknown")
                 elif isinstance(nested, ProcessedAgendaItem):
                     metrics.record_entity_synced("agendaitem", body_name or "unknown")
+                    await self._store_agenda_item_files(nested, body_id, body_name)
         elif isinstance(entity, ProcessedPaper):
             await self.storage.upsert_paper(entity, body_id)
             # Eingebettete Dateien und Beratungen speichert upsert_paper selbst; hier nur zählen
@@ -3205,6 +3207,7 @@ class SyncOrchestrator:
                 return False
             await self.storage.upsert_agenda_item(entity, meeting_id)
             metrics.record_entity_synced("agendaitem", body_name or "unknown")
+            await self._store_agenda_item_files(entity, body_id, body_name)
         elif isinstance(entity, ProcessedFile):
             # Files can belong to papers or meetings
             # Try to resolve paper_id from back-references (OParl spec: standalone files have these)
@@ -3215,7 +3218,16 @@ class SyncOrchestrator:
                 paper_id = await self.storage.get_paper_uuid(entity.paper_external_ids[0], body_id)
             if entity.meeting_external_ids:
                 meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0], body_id)
-            await self.storage.upsert_file(entity, body_id, paper_id=paper_id, meeting_id=meeting_id)
+            # Datei am Tagesordnungspunkt (OParl 1.1 ``agendaItem``): mit Punkt und, ohne eigene Angabe, seiner Sitzung
+            agenda_item_id = None
+            if entity.agenda_item_external_ids:
+                ref = await self.storage.get_agenda_item_ref(entity.agenda_item_external_ids[0], body_id)
+                if ref is not None:
+                    agenda_item_id = ref[0]
+                    meeting_id = meeting_id or ref[1]
+            await self.storage.upsert_file(
+                entity, body_id, paper_id=paper_id, meeting_id=meeting_id, agenda_item_id=agenda_item_id
+            )
             metrics.record_entity_synced("file", body_name or "unknown")
         elif isinstance(entity, ProcessedConsultation):
             # Consultations can belong to papers - try to look it up
@@ -3234,6 +3246,14 @@ class SyncOrchestrator:
             metrics.record_entity_synced("paper", body_name or "unknown")
 
         return True
+
+    async def _store_agenda_item_files(self, item: ProcessedAgendaItem, body_id: UUID, body_name: str | None) -> None:
+        """Dateien direkt am Tagesordnungspunkt speichern (``upsert_agenda_item_files``) und zählen."""
+        if not item.references.get("files"):
+            return
+        stored = await self.storage.upsert_agenda_item_files(item, body_id)
+        for _ in range(stored):
+            metrics.record_entity_synced("file", body_name or "unknown")
 
     # ========== Sync All Sources ==========
 

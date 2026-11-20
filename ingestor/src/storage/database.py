@@ -1488,7 +1488,7 @@ class DatabaseStorage:
         if model is OParlAgendaItem:
             columns += [OParlAgendaItem.meeting_id, OParlAgendaItem.public]
         elif model is OParlFile:
-            columns += [OParlFile.meeting_id, OParlFile.paper_id]
+            columns += [OParlFile.meeting_id, OParlFile.paper_id, OParlFile.agenda_item_id]
         stmt = select(*columns).where(model.external_id == external_id).with_for_update(key_share=True)
         row = (await session.execute(stmt)).first()
         if row is None:
@@ -1503,7 +1503,7 @@ class DatabaseStorage:
         if model is OParlAgendaItem:
             return ris_events.Prior(**stand, meeting_id=row[3], public=row[4] is not False)
         if model is OParlFile:
-            return ris_events.Prior(**stand, meeting_id=row[3], paper_id=row[4])
+            return ris_events.Prior(**stand, meeting_id=row[3], paper_id=row[4], agenda_item_id=row[5])
         return ris_events.Prior(**stand)
 
     async def _emit(
@@ -2772,12 +2772,14 @@ class DatabaseStorage:
         body_id: UUID,
         paper_id: UUID | None = None,
         meeting_id: UUID | None = None,
+        agenda_item_id: UUID | None = None,
     ) -> UUID:
         """
         Insert or update a file.
 
         Eine vorhandene Datei schreibt nur ihre eigene Quelle (``_owned_by_source_of``), sonst ``ForeignObjectError``.
-        ``paper_id`` und ``meeting_id`` kommen aus Verweisen, die nur in der eigenen Quelle auflösen.
+        ``paper_id``, ``meeting_id`` und ``agenda_item_id`` kommen aus Verweisen, die nur in der eigenen Quelle
+        auflösen; ohne Angabe bleibt ein vorhandener Bezug stehen.
         """
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
@@ -2789,6 +2791,7 @@ class DatabaseStorage:
                 body_id=body_id,
                 paper_id=paper_id,
                 meeting_id=meeting_id,
+                agenda_item_id=agenda_item_id,
                 name=file.name,
                 file_name=file.file_name,
                 mime_type=file.mime_type,
@@ -2828,6 +2831,8 @@ class DatabaseStorage:
             # Only update meeting_id if provided
             if meeting_id is not None:
                 update_set["meeting_id"] = meeting_id
+            if agenda_item_id is not None:
+                update_set["agenda_item_id"] = agenda_item_id
 
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
@@ -2839,11 +2844,114 @@ class DatabaseStorage:
             file_id = (await self._upserted(session, stmt, "file", file.external_id))[0]
             if emit:
                 drafts = ris_events.file_events(
-                    file_id, file.raw_json or {}, prior, paper_id=paper_id, meeting_id=meeting_id, ids=self.id_bases
+                    file_id,
+                    file.raw_json or {},
+                    prior,
+                    paper_id=paper_id,
+                    meeting_id=meeting_id,
+                    ids=self.id_bases,
+                    agenda_item_id=agenda_item_id,
                 )
                 await self._emit(session, body_id, drafts, file.oparl_modified)
             await session.commit()
             return file_id
+
+    async def get_agenda_item_ref(self, external_id: str, body_id: UUID) -> tuple[UUID, UUID] | None:
+        """
+        Zeile und Sitzung eines Tagesordnungspunkts derselben Quelle wie die Kommune ``body_id``; ``None``, wenn es
+        ihn dort nicht gibt (ein Punkt einer anderen Quelle zählt als abgewiesener Verweis).
+        """
+        async with self.get_session() as session:
+            found = await session.execute(
+                select(OParlAgendaItem.id, OParlAgendaItem.meeting_id).where(
+                    OParlAgendaItem.external_id == external_id, _owned_by_source_of(OParlAgendaItem, body_id)
+                )
+            )
+            row = found.first()
+            if row is None:
+                await self._note_foreign_reference(session, OParlAgendaItem, "agendaitem", external_id)
+                return None
+            return row[0], row[1]
+
+    async def upsert_agenda_item_files(self, item: ProcessedAgendaItem, body_id: UUID) -> int:
+        """
+        Dateien direkt am Tagesordnungspunkt (``auxiliaryFile``, ``resolutionFile``) mit Bezug zum Punkt und zu seiner
+        Sitzung schreiben, nachdem der Punkt gespeichert ist. Anträge hängen so etwa als Datei am Punkt, ohne
+        Beratung und Vorlage; bisher übernahm der Ingestor sie nicht. Wie Sitzungsdokumente haben sie keinen Vorgang.
+
+        Der Punkt muss im Bestand derselben Quelle stehen; eine Datei einer anderen Quelle bleibt aus (gezählt), die
+        übrigen laufen weiter, auch nach einem anderen Fehler beim Schreiben einer Datei (im Log genannt): Der Punkt
+        ist dann schon geschrieben, und eine fehlende Datei holt die nächste Änderung des Punkts oder der Vollabgleich
+        nach. Nennt der Punkt eine Datei nur als Verweis, bekommt eine schon gespeicherte Datei den Bezug
+        (``_link_agenda_item_files``); die Reihenfolge von Datei- und Punkteliste spielt so keine Rolle. Liefert die
+        Zahl der geschriebenen Dateien.
+        """
+        files = [nested for nested in item.nested_entities if isinstance(nested, ProcessedFile)]
+        embedded = {file.external_id for file in files}
+        referenced = [ref for ref in item.references.get("files", []) if ref and ref not in embedded]
+        if (not files and not referenced) or not item.external_id:
+            return 0
+        ref = await self.get_agenda_item_ref(item.external_id, body_id)
+        if ref is None:
+            return 0
+        item_id, meeting_id = ref
+        stored = 0
+        for file in files:
+            try:
+                await self.upsert_file(file, body_id, meeting_id=meeting_id, agenda_item_id=item_id)
+            except ForeignObjectError:
+                continue
+            except Exception as e:  # noqa: BLE001 - die übrigen Dateien des Punkts trotzdem schreiben
+                console.print(
+                    f"[yellow]  Datei {file.external_id} am Punkt {item.external_id} nicht gespeichert: {e}[/yellow]"
+                )
+                continue
+            stored += 1
+        if referenced:
+            await self._link_agenda_item_files(referenced, item_id, meeting_id, body_id)
+        return stored
+
+    async def _link_agenda_item_files(
+        self, external_ids: list[str], item_id: UUID, meeting_id: UUID, body_id: UUID
+    ) -> None:
+        """
+        Gespeicherten Dateien, die ein Punkt nur als Verweis nennt, den Bezug zum Punkt (und, wenn leer, zur Sitzung)
+        geben; ein vorhandener Bezug zu einem Punkt bleibt. Nur Dateien derselben Quelle; mit ``ris.file.changed``
+        (``added``, neue Zugehörigkeit), in einer Transaktion.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                update(OParlFile)
+                .where(
+                    OParlFile.external_id.in_(external_ids),
+                    OParlFile.agenda_item_id.is_(None),
+                    _owned_by_source_of(OParlFile, body_id),
+                )
+                .values(
+                    agenda_item_id=item_id,
+                    meeting_id=func.coalesce(OParlFile.meeting_id, meeting_id),
+                    updated_at=func.now(),
+                )
+                .returning(OParlFile.id, OParlFile.raw_json, OParlFile.paper_id, OParlFile.deleted)
+            )
+            linked = result.fetchall()
+            if linked and await self._events_for(session, body_id):
+                drafts: list[ris_events.Draft] = []
+                for file_id, raw, paper_id, deleted in linked:
+                    if deleted:
+                        continue
+                    prior = ris_events.Prior(raw_json=raw or {}, paper_id=paper_id, meeting_id=meeting_id)
+                    drafts += ris_events.file_events(
+                        file_id,
+                        raw or {},
+                        prior,
+                        paper_id=paper_id,
+                        meeting_id=meeting_id,
+                        ids=self.id_bases,
+                        agenda_item_id=item_id,
+                    )
+                await self._emit(session, body_id, drafts, None)
+            await session.commit()
 
     # ========== Location Operations ==========
 
