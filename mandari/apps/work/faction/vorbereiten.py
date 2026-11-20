@@ -103,6 +103,8 @@ class Zeile:
     hat_unterpunkte: bool = False
     offen: bool = False
     beschreibung: str = ""
+    #: Wer den Vorschlag aufgenommen hat; nur für Genehmigende gefüllt (Issue #1512)
+    aufgenommen_von: str = ""
 
     @property
     def nummer(self) -> str:
@@ -229,13 +231,24 @@ def _verweise(item: FactionAgendaItem, unterlagen: list[sitzung.Unterlage]) -> l
     return verweise
 
 
-def _bezug(item: FactionAgendaItem, verweise: list[Verweis]) -> str:
-    """Zweite Spalte der Planungsliste: wofür der TOP steht (Genehmigung, Vorschlag, Unterlagen)."""
+def _aufgenommen_von(item: FactionAgendaItem) -> str:
+    """Wer den Vorschlag in die Tagesordnung aufgenommen hat; leer bei TOPs, die kein Vorschlag waren."""
+    if not item.proposed_by_id or item.reviewed_by_id is None or item.reviewed_by is None:
+        return ""
+    return str(item.reviewed_by.user.get_display_name())
+
+
+def _bezug(item: FactionAgendaItem, verweise: list[Verweis], aufgenommen_von: str = "") -> str:
+    """
+    Zweite Spalte der Planungsliste: wofür der TOP steht (Genehmigung, Vorschlag, Unterlagen). Bei Vorschlägen sehen
+    Genehmigende zusätzlich, wer ihn aufgenommen hat (``aufgenommen_von``, Issue #1512).
+    """
     vorige = item.approves_meeting if item.is_approval_item and item.approves_meeting_id else None
     if vorige is not None and vorige.start:
         return f"genehmigt das Protokoll vom {timezone.localtime(vorige.start):%d.%m.}"
     if item.proposed_by_id and item.proposed_by is not None:
-        return f"Vorschlag von {item.proposed_by.user.get_display_name()}"
+        bezug = f"Vorschlag von {item.proposed_by.user.get_display_name()}"
+        return f"{bezug}, aufgenommen von {aufgenommen_von}" if aufgenommen_von else bezug
     if verweise:
         return ", ".join(v.titel for v in verweise)
     if item.standard_item_id:
@@ -253,6 +266,8 @@ def tagesordnung(
     """
     ordnung = sitzung.tagesordnung(meeting, membership)
     darf_verlauf = sitzung.darf_beratungsverlauf_sehen(membership)
+    # Wer einen Vorschlag aufgenommen hat, sehen nur Genehmigende (Issue #1512)
+    darf_genehmigen = membership.has_permission("agenda.approve")
     offen_id = str(offen or "")
     teile: dict[str, list[Zeile]] = {"oeffentlich": [], "intern": []}
     alle_unterlagen = _unterlagen_alle([z.item for z in ordnung.zeilen], membership)
@@ -268,12 +283,14 @@ def tagesordnung(
             verweise = _verweise(item, alle_unterlagen[item.pk])
             gruppe = gruppen.get(item.parent_id, [])
             stelle = oben.index(item.pk) if item.pk in oben else -1
+            aufgenommen_von = _aufgenommen_von(item) if darf_genehmigen else ""
             zeile = Zeile(
                 item=item,
                 unter=z.unter,
                 intern=z.intern,
                 unterlagen=verweise,
-                bezug=_bezug(item, verweise),
+                bezug=_bezug(item, verweise, aufgenommen_von),
+                aufgenommen_von=aufgenommen_von,
                 von_mir=bool(item.proposed_by_id and item.proposed_by_id == membership.pk),
                 verschiebbar=not item.is_approval_item,
                 erster=bool(gruppe) and gruppe[0] == item.pk,

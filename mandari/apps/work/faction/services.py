@@ -1171,6 +1171,8 @@ class AgendaProposalService:
             link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
             actor=proposed_by,
             metadata={"meeting_id": str(meeting.id), "item_id": str(item.id)},
+            # Wer selbst genehmigt, bekommt den Hinweis nicht zusätzlich als Vertretung (Issue #1512)
+            vertretung_nicht={m.id for m in managers},
         )
 
     @classmethod
@@ -1210,6 +1212,75 @@ class AgendaProposalService:
                 "item_id": str(item.id),
                 "decision": "accepted" if accepted else "rejected",
             },
+        )
+
+    @classmethod
+    def _notify_other_approvers(cls, item, reviewed_by, *, accepted: bool, reason: str = "") -> None:
+        """
+        Die übrigen Genehmigenden erfahren, wer über den Vorschlag entschieden hat (Issue #1512): Er verschwindet bei
+        ihnen aus der Liste „Vorschläge“, sonst sähe es so aus, als hätte er sich selbst erledigt. Ihre
+        Benachrichtigungen über den neuen Vorschlag gelten damit als gelesen.
+
+        Entscheidende und vorschlagende Person bekommen diese Nachricht nicht; die vorschlagende erfährt es über
+        ``_notify_decision``. Nicht-öffentlich ohne Titel und Begründung wie bei ``_notify_managers`` (NÖ strikt,
+        Issue #64): Bei Abwesenheit geht die Nachricht auch an die Vertretung, die nicht vereidigt sein muss.
+        """
+        from apps.work.notifications.models import Notification, NotificationType
+        from apps.work.notifications.services import NotificationHub
+
+        meeting = item.meeting
+        erledigt = Notification.objects.filter(
+            notification_type=NotificationType.FACTION_MEETING_UPDATED, metadata__item_id=str(item.id), is_read=False
+        ).exclude(metadata__has_key="decision")
+        gelesen = list(erledigt.values_list("recipient_id", flat=True))
+        if gelesen:
+            erledigt.update(is_read=True, read_at=timezone.now())
+            NotificationHub.invalidate_count_caches(gelesen)
+
+        empfaenger = [m for m in cls.approvers(meeting, item) if m.id != reviewed_by.id and m.id != item.proposed_by_id]
+        if not empfaenger:
+            return
+
+        wer = reviewed_by.user.get_display_name()
+        datum = cls._meeting_date(meeting)
+        if item.visibility == "internal":
+            title = (
+                "Nicht-öffentlicher TOP-Vorschlag aufgenommen"
+                if accepted
+                else "Nicht-öffentlicher TOP-Vorschlag abgelehnt"
+            )
+            ergebnis = "in die Tagesordnung aufgenommen" if accepted else "abgelehnt"
+            message = (
+                f"{wer} hat einen nicht-öffentlichen TOP-Vorschlag für die Sitzung am {datum} {ergebnis}. "
+                "Details stehen nur in der Sitzung."
+            )
+        else:
+            title = "TOP-Vorschlag aufgenommen" if accepted else "TOP-Vorschlag abgelehnt"
+            von = f" von {item.proposed_by.user.get_display_name()}" if item.proposed_by else ""
+            if accepted:
+                message = (
+                    f'{wer} hat den Vorschlag "{item.title}"{von} in die Tagesordnung der Sitzung am {datum} '
+                    "aufgenommen."
+                )
+            else:
+                message = f'{wer} hat den Vorschlag "{item.title}"{von} für die Sitzung am {datum} abgelehnt.'
+                if reason:
+                    message += f" Grund: {reason}"
+
+        NotificationHub.send_bulk(
+            recipients=empfaenger,
+            notification_type=NotificationType.FACTION_MEETING_UPDATED,
+            title=title,
+            message=message,
+            link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
+            actor=reviewed_by,
+            metadata={
+                "meeting_id": str(meeting.id),
+                "item_id": str(item.id),
+                "decision": "accepted" if accepted else "rejected",
+            },
+            # Nicht als Vertretung an Genehmigende, die sie schon selbst bekommen, und nicht an die vorschlagende Person
+            vertretung_nicht={m.id for m in empfaenger} | {reviewed_by.id, item.proposed_by_id},
         )
 
     @classmethod
@@ -1271,6 +1342,7 @@ class AgendaProposalService:
         item.refresh_from_db()
         logger.info(f"Agenda proposal accepted: '{item.title}' by {reviewed_by.user.email}")
         cls._notify_decision(item, reviewed_by, accepted=True)
+        cls._notify_other_approvers(item, reviewed_by, accepted=True)
         return True
 
     @classmethod
@@ -1301,6 +1373,7 @@ class AgendaProposalService:
         item.refresh_from_db()
         logger.info(f"Agenda proposal rejected: '{item.title}' by {reviewed_by.user.email}")
         cls._notify_decision(item, reviewed_by, accepted=False, reason=reason)
+        cls._notify_other_approvers(item, reviewed_by, accepted=False, reason=reason)
         return True
 
     @classmethod

@@ -455,3 +455,131 @@ def test_eigene_noe_vorschlaege_nur_mit_vereidigung(
 
     assert [item.title for item in seite.context["my_proposals"]] == ["Radweg Südring"]
     assert "GEHEIMTITEL" not in seite.content.decode()
+
+
+# -- Übrige Genehmigende erfahren die Entscheidung (Issue #1512) ----------------------------------------------------
+
+
+def _entscheidungen_an(member: Any) -> Any:
+    return Notification.objects.filter(
+        recipient=member, notification_type=NotificationType.FACTION_MEETING_UPDATED, metadata__has_key="decision"
+    )
+
+
+@pytest.mark.django_db
+def test_uebrige_genehmigende_erfahren_wer_aufgenommen_und_abgelehnt_hat(
+    rollen: dict[str, Any], sitzung: FactionMeeting, client_for: Any
+) -> None:
+    sachkundig, vorsitz = rollen["expert_citizen"], rollen["faction_chair"]
+    vorschlag = _vorschlag(sitzung, sachkundig)
+    zweiter = _vorschlag(sitzung, sachkundig, "Spielplatz")
+
+    _aktion(client_for, vorsitz, sitzung, action="accept_proposal", item_id=str(vorschlag.id))
+    _aktion(client_for, vorsitz, sitzung, action="reject_proposal", item_id=str(zweiter.id), reason="Später")
+
+    wer = vorsitz.user.get_display_name()
+    von = sachkundig.user.get_display_name()
+    datum = timezone.localtime(sitzung.start).strftime("%d.%m.%Y")
+    for rolle in ("faction_vice_chair", "managing_director"):
+        texte = set(_entscheidungen_an(rollen[rolle]).values_list("title", "message"))
+        assert texte == {
+            (
+                "TOP-Vorschlag aufgenommen",
+                f'{wer} hat den Vorschlag "Radweg Südring" von {von} in die Tagesordnung der Sitzung am {datum} '
+                "aufgenommen.",
+            ),
+            (
+                "TOP-Vorschlag abgelehnt",
+                f'{wer} hat den Vorschlag "Spielplatz" von {von} für die Sitzung am {datum} abgelehnt. Grund: Später',
+            ),
+        }
+    # Entscheidende und vorschlagende Person nicht; Ratsmitglieder ohne Genehmigungsrecht auch nicht
+    for rolle in ("faction_chair", "expert_citizen", "faction_member"):
+        assert not _entscheidungen_an(rollen[rolle]).exists(), rolle
+
+
+@pytest.mark.django_db
+def test_neuer_vorschlag_gilt_nach_der_entscheidung_als_gelesen(
+    rollen: dict[str, Any], sitzung: FactionMeeting
+) -> None:
+    from apps.work.faction.services import AgendaProposalService
+
+    vorschlag = _vorschlag(sitzung, rollen["expert_citizen"])
+    anderer = _vorschlag(sitzung, rollen["expert_citizen"], "Spielplatz")
+    neue = Notification.objects.filter(
+        notification_type=NotificationType.FACTION_MEETING_UPDATED, metadata__has_key="decision"
+    )
+    assert not neue.exists()
+
+    AgendaProposalService.accept_proposal(vorschlag, rollen["faction_chair"])
+
+    hinweise = Notification.objects.filter(notification_type=NotificationType.FACTION_MEETING_UPDATED).exclude(
+        metadata__has_key="decision"
+    )
+    erledigt = hinweise.filter(metadata__item_id=str(vorschlag.id))
+    assert erledigt.count() == 3 and not erledigt.filter(is_read=False).exists()
+    # Der noch offene Vorschlag bleibt ungelesen
+    assert not hinweise.filter(metadata__item_id=str(anderer.id), is_read=True).exists()
+    # Neue Nachricht über die Entscheidung: ungelesen
+    assert not neue.all().filter(is_read=True).exists() and neue.all().count() == 2
+
+
+@pytest.mark.django_db
+def test_noe_entscheidung_erreicht_uebrige_genehmigende_und_ihre_vertretung_ohne_titel(
+    rollen: dict[str, Any], sitzung: FactionMeeting, make_member: Any, client_for: Any
+) -> None:
+    """NÖ strikt (#64): Die nicht vereidigte Vertretung der Stellvertretung erfährt weder Titel noch Begründung."""
+    from apps.work.faction.services import AgendaProposalService
+
+    sachkundig, vorsitz = rollen["expert_citizen"], rollen["faction_chair"]
+    vertretung = make_member(sitzung.organization, _rolle("faction_member"), email="vertretung@example.org")
+    _abwesend_mit_vertretung(rollen["faction_vice_chair"], vertretung)
+    angenommen = AgendaProposalService.create_proposal(
+        meeting=sitzung, title="GEHEIMSACHE", description="", proposed_by=sachkundig, visibility="internal"
+    )
+    abgelehnt = AgendaProposalService.create_proposal(
+        meeting=sitzung, title="GEHEIMTITEL", description="", proposed_by=sachkundig, visibility="internal"
+    )
+
+    _aktion(client_for, vorsitz, sitzung, action="accept_proposal", item_id=str(angenommen.id))
+    _aktion(client_for, vorsitz, sitzung, action="reject_proposal", item_id=str(abgelehnt.id), reason="GEHEIMGRUND")
+
+    titel = set(_entscheidungen_an(rollen["managing_director"]).values_list("title", flat=True))
+    assert titel == {"Nicht-öffentlicher TOP-Vorschlag aufgenommen", "Nicht-öffentlicher TOP-Vorschlag abgelehnt"}
+    assert _entscheidungen_an(vertretung).count() == 2
+    texte = _texte_aller_benachrichtigungen()
+    for geheim in ("GEHEIMTITEL", "GEHEIMSACHE", "GEHEIMGRUND"):
+        assert geheim not in texte
+
+
+@pytest.mark.django_db
+def test_vertretende_genehmigende_bekommen_jede_nachricht_nur_einmal(
+    rollen: dict[str, Any], sitzung: FactionMeeting, client_for: Any
+) -> None:
+    """Die Geschäftsführung vertritt die abwesende Stellvertretung: kein zweites Exemplar als Vertretung."""
+    geschaeftsfuehrung = rollen["managing_director"]
+    _abwesend_mit_vertretung(rollen["faction_vice_chair"], geschaeftsfuehrung)
+
+    vorschlag = _vorschlag(sitzung, rollen["expert_citizen"])
+    _aktion(client_for, rollen["faction_chair"], sitzung, action="accept_proposal", item_id=str(vorschlag.id))
+
+    an_sie = Notification.objects.filter(
+        recipient=geschaeftsfuehrung, notification_type=NotificationType.FACTION_MEETING_UPDATED
+    )
+    assert sorted(an_sie.values_list("title", flat=True)) == ["Neuer TOP-Vorschlag", "TOP-Vorschlag aufgenommen"]
+
+
+@pytest.mark.django_db
+def test_vorschlagende_person_bekommt_die_entscheidung_nicht_als_vertretung(
+    rollen: dict[str, Any], sitzung: FactionMeeting, client_for: Any
+) -> None:
+    sachkundig = rollen["expert_citizen"]
+    _abwesend_mit_vertretung(rollen["faction_vice_chair"], sachkundig)
+
+    vorschlag = _vorschlag(sitzung, sachkundig)
+    _aktion(client_for, rollen["faction_chair"], sitzung, action="accept_proposal", item_id=str(vorschlag.id))
+
+    assert not _entscheidungen_an(sachkundig).exists()
+    assert set(Notification.objects.filter(recipient=sachkundig).values_list("notification_type", flat=True)) == {
+        NotificationType.FACTION_PROPOSAL_DECIDED
+    }
