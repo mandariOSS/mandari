@@ -1,7 +1,7 @@
 {% load hilfe_tags %}
 {% comment %}
 Kopf der Vorbereitung: zurück zur Sitzung, Gremium und Termin, Speicherstand, Sitzungsnotizen, Zusammenfassung und
-ein Menü für Seltenes (Legende, Hilfe, Sitzungsdetails, bisherige Ansicht). Am Handy wandern Sitzungsnotizen und
+ein Menü für Seltenes (Legende, Hilfe, Sitzungsdetails). Am Handy wandern Sitzungsnotizen und
 Zusammenfassung ins Menü.
 {% endcomment %}
 <header class="vb-kopf">
@@ -47,9 +47,6 @@ Zusammenfassung ins Menü.
             </a>
             <a role="menuitem" href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}">
                 <i data-lucide="calendar" aria-hidden="true"></i>Sitzungsdetails
-            </a>
-            <a role="menuitem" href="?ansicht=bisher">
-                <i data-lucide="history" aria-hidden="true"></i>Bisherige Ansicht
             </a>
         </div>
     </div>

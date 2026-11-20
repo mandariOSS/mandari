@@ -3,15 +3,15 @@
 Sitzungsvorbereitung im neuen Design (#856): Auswahl der Ansicht und feste Werte der Seite.
 
 Die neue Seite (``work/meetings/vorbereitung/seite.html``) erscheint nur, wenn die Organisation das neue
-Erscheinungsbild eingeschaltet hat (``apps.work.rahmen.neues_design``, #852). Mit ``?ansicht=bisher`` bleibt die
-bisherige Seite erreichbar (dieselben Daten, kein Datenbankfeld). Positionen für Leiste, Blatt und Legende kommen
+Erscheinungsbild eingeschaltet hat (``apps.work.rahmen.neues_design``, #852). Der Weg zurück zur bisherigen Seite
+(``?ansicht=bisher``) war für 14 Tage nach der Umstellung vorgesehen und ist entfallen (#856). Positionen für Leiste,
+Blatt und Legende kommen
 aus ``AgendaItemPosition.POSITION_CHOICES``. Der Reiter „Aufgaben“ bekommt Rechte, Zahl der sichtbaren Aufgaben
 je TOP, die Liste der möglichen Zuständigen und den Endpunkt zum Abhaken (``aufgaben_config``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from django.urls import reverse
@@ -27,8 +27,6 @@ if TYPE_CHECKING:
 
 #: Seite im neuen Design: Tagesordnung, Unterlagen groß, Arbeit der Fraktion, Leiste unten
 NEUE_VORLAGE = "work/meetings/vorbereitung/seite.html"
-#: Abfrageparameter für die bisherige Ansicht bei eingeschaltetem neuen Design (dieselben Daten)
-BISHERIGE_ANSICHT = "bisher"
 #: Vier gleichrangige Positionen in der Leiste (in dieser Reihenfolge); alle übrigen stehen unter „Andere …“
 HAUPT_POSITIONEN = ("for", "against", "abstain", "open")
 #: Farbklasse des Positionspunkts (static/css/work-vorbereitung.css), immer zusammen mit dem Text
@@ -43,9 +41,9 @@ class Positionen(TypedDict):
     positionen_alle: list[tuple[str, str, str]]
 
 
-def neue_ansicht(organization: Any, query: Mapping[str, Any]) -> bool:
-    """Neue Seite nur mit Schalter der Organisation und ohne ausdrücklichen Wunsch nach der bisherigen Ansicht."""
-    return neues_design(organization) and query.get("ansicht") != BISHERIGE_ANSICHT
+def neue_ansicht(organization: Any) -> bool:
+    """Neue Seite, sobald die Organisation das neue Erscheinungsbild eingeschaltet hat."""
+    return neues_design(organization)
 
 
 def positionen_fuer_leiste() -> Positionen:
