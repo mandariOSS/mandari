@@ -552,3 +552,24 @@ class TestBefundeCodeRabbit2:
         OParlPaper.objects.filter(pk=vorgang.pk).update(deleted=True)
         with pytest.raises(LookupError):
             finanzcheck_store.vorgang_finden(str(vorgang.pk))
+
+
+def test_gleiche_fundstelle_in_anlagen_mit_verschiedener_einheit_ist_mehrdeutig() -> None:
+    from insight_ai.services.prompts import anlage_block
+
+    text = "\n\n".join(
+        [
+            anlage_block("Kostenplan A", "Beträge in Euro\nBaukosten 1.200"),
+            anlage_block("Kostenplan B", "Beträge in T€\nBaukosten 1.200"),
+        ]
+    )
+    leer: dict[str, Any] = {
+        "foerderung": None,
+        "eigenanteil": None,
+        "laufend": [],
+        "zahlungen": [],
+        "laufend_gesamt": None,
+    }
+    for euro in (1200, 1200000):
+        antwort = _antwort(gesamtkosten={"euro": euro, "beleg": "Baukosten 1.200"}, **leer)
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN

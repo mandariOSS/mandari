@@ -341,29 +341,30 @@ class _Material:
         weiter = stelle + schritt
         return text[stelle] in ".," and 0 <= weiter < len(text) and text[weiter].isdigit()
 
-    def fundstelle(self, beleg: str) -> int | None:
+    def fundstellen(self, beleg: str) -> list[int]:
         """
-        Stelle der Fundstelle im Text; ``None``, wenn sie nicht darin steht. Verglichen werden nur Buchstaben und
+        Alle Stellen der Fundstelle im Text (leer, wenn sie nicht darin steht). Verglichen werden nur Buchstaben und
         Ziffern (Zeilenumbrüche, Trennstriche und Leerzeichen der Texterkennung zählen nicht). Beginnt oder endet die
         Fundstelle mit einer Ziffer, darf die Zahl im Text nicht weitergehen: „200.000 € und“ ist keine Fundstelle in
         „1.200.000 € und“.
         """
         kern = _kern(beleg)
         if len(re.sub(r"[.,]", "", kern)) < MIN_BELEG:
-            return None
+            return []
+        stellen: list[int] = []
         start = self.kern.find(kern)
         while start >= 0:
             anfang, ende = self.stellen[start], self.stellen[start + len(kern) - 1]
             davor_frei = not kern[0].isdigit() or not self._zahl_geht_weiter(anfang - 1, -1)
             danach_frei = not kern[-1].isdigit() or not self._zahl_geht_weiter(ende + 1, 1)
             if davor_frei and danach_frei:
-                return anfang
+                stellen.append(anfang)
             start = self.kern.find(kern, start + 1)
-        return None
+        return stellen
 
     def steht_drin(self, beleg: str) -> bool:
-        """Steht die Fundstelle im Text (``fundstelle``)?"""
-        return self.fundstelle(beleg) is not None
+        """Steht die Fundstelle im Text (``fundstellen``)?"""
+        return bool(self.fundstellen(beleg))
 
     def in_tausend_bei(self, stelle: int) -> bool:
         """
@@ -407,15 +408,19 @@ def _betrag_belegt(material: _Material, beleg: str, euro: int) -> bool:
     """
     Steht der Betrag in Euro in der Fundstelle? Ohne Währung und Größenwort in der Fundstelle gilt: Nennt der Text
     Beträge in Tausend Euro, zählt die Zahl als Tausender („1.200“ → 1.200.000); Beträge unter 1.000 brauchen eine
-    Währung. So wird „1.200“ aus einer Tabelle „in T€“ nie zu 1.200 Euro.
+    Währung. So wird „1.200“ aus einer Tabelle „in T€“ nie zu 1.200 Euro. Steht dieselbe Fundstelle ohne Währung in
+    Anlagen mit verschiedener Einheit (Euro und T€), ist der Betrag mehrdeutig und gilt nicht als belegt.
     """
-    stelle = material.fundstelle(beleg) if euro > 0 else None
-    if stelle is None:
+    stellen = material.fundstellen(beleg) if euro > 0 else []
+    if not stellen:
         return False
     werte = _werte(beleg)
     if _WAEHRUNG.search(beleg):
         return Decimal(euro) in werte
-    if material.in_tausend_bei(stelle):
+    einheiten = {material.in_tausend_bei(stelle) for stelle in stellen}
+    if len(einheiten) > 1:
+        return False
+    if einheiten.pop():
         return Decimal(euro) in {wert * 1000 for wert in werte}
     return euro >= 1000 and Decimal(euro) in werte
 
