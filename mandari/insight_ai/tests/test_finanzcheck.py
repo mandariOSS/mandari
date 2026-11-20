@@ -1043,3 +1043,24 @@ class TestBefundeCodeRabbit1545Runde3:
         # Ohne Bezeichnung in der Fundstelle zählt die eigene Zeile, nicht die Zeile davor
         assert not finanzcheck._richtung_belegt(material, "2028: 100.000 €", "ausgabe")
         assert finanzcheck._richtung_belegt(material, "2028: 100.000 €", "einnahme")
+
+
+def test_summe_ueber_jahre_nur_aus_derselben_folgekostenberechnung() -> None:
+    """Nutzungsdauer und Folgekosten aus verschiedenen Dokumenten: keine Summe über alle Jahre."""
+    from insight_ai.services.prompts import anlage_block
+
+    text = "\n\n".join(
+        [
+            anlage_block("Beschlussvorlage", DOKUMENT.replace("Nutzungsdauer:", "Restlaufzeit:")),
+            anlage_block("Anlage 4 Bauwerksbuch", "Nutzungsdauer: 40 Jahre"),
+        ]
+    )
+    ergebnis = finanzcheck.pruefen(ANTWORT, text)
+    paper = SimpleNamespace(
+        pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+    )
+    anzeige = finanzcheck.anzeige(paper)
+    assert anzeige is not None and anzeige.karten is not None and anzeige.karten.haushalt is not None
+    assert anzeige.karten.haushalt.wert == "124.000 €" and "Zusammen" not in anzeige.karten.haushalt.text
+    # Aus derselben Folgelastenberechnung (hier ohne Anlagen: dasselbe Dokument) gilt die Summe
+    assert "Zusammen rund 5 Mio. €" in TestAnzeige()._anzeige().karten.haushalt.text  # type: ignore[union-attr]

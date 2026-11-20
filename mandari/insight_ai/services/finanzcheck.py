@@ -923,7 +923,7 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         jahre = _zahl(dauer.get("jahre"))
         beleg = str(dauer.get("beleg") or "").strip()
         if 1 <= jahre <= 100 and _belegt(material, beleg, jahre):
-            daten["nutzungsdauer"] = {"jahre": jahre, "beleg": beleg}
+            daten["nutzungsdauer"] = {"jahre": jahre, "beleg": beleg, "dokument": material.dokument(beleg)}
 
     # Woher das Geld bei Umschichtung kommt, wörtlich aus dem Text
     aus = " ".join(str(antwort.get("deckung_aus") or "").split())
@@ -1300,6 +1300,11 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         jaehrlich, jaehrlich_errechnet = netto, True
     ab = (daten.get("laufend_ab") or {}).get("jahr")
     dauer = (daten.get("nutzungsdauer") or {}).get("jahre")
+    # Die Summe über die Nutzungsdauer gilt nur, wenn Nutzungsdauer und Folgekosten aus demselben Dokument stammen
+    # (Folgelastenberechnung): Dann rechnet die Vorlage selbst die Jahressumme über diese Jahre
+    quelle_dauer = (daten.get("nutzungsdauer") or {}).get("dokument")
+    quellen_folgekosten = {z.get("dokument") for z in zeilen} | {(daten.get("laufend_gesamt") or {}).get("dokument")}
+    dauer_belegt = bool(dauer) and quelle_dauer is not None and quelle_dauer in quellen_folgekosten
     bauanteil = summe("wertverlust") - summe("foerderanteil")
     betrieb = summe("unterhalt", "personal", "miete", "sonstiges") - summe("einnahmen", "einsparung")
     zinsen = summe("zinsen")
@@ -1322,7 +1327,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
             teil
             for teil in (
                 f"Im Schnitt, {dauer} Jahre lang. Zusammen {euro_rund(jaehrlich * dauer)}."
-                if mit_bauanteil and dauer
+                if mit_bauanteil and dauer_belegt
                 else "",
                 "Aus den Einzelposten zusammengerechnet." if jaehrlich_errechnet else "",
             )
@@ -1418,7 +1423,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
     if kasten_bau and kasten_bau.hinweis:
         saetze.append(kasten_bau.hinweis)
     if jaehrlich:
-        if mit_bauanteil and dauer:
+        if mit_bauanteil and dauer_belegt:
             saetze.append(
                 f"{f'Ab {ab}' if ab else 'Danach'} belastet das den Haushalt im Schnitt mit {euro_satz(jaehrlich)} "
                 f"pro Jahr, {dauer} Jahre lang; der Anteil am Bau ist darin enthalten."
@@ -1436,7 +1441,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         seo_teile.append(f"{'davon ' if gesamt else 'Anteil '}{ort} {euro_kurz(eigen)}")
     if jaehrlich:
         seo_teile.append(
-            f"{f'ab {ab} ' if ab else ''}{'im Schnitt ' if mit_bauanteil and dauer else ''}"
+            f"{f'ab {ab} ' if ab else ''}{'im Schnitt ' if mit_bauanteil and dauer_belegt else ''}"
             f"{euro_kurz(jaehrlich)} pro Jahr im Haushalt"
         )
     seo = f"Kosten laut Vorlage: {', '.join(seo_teile)}." if seo_teile else ""
