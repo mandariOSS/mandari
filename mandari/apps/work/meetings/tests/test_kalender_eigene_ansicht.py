@@ -276,6 +276,16 @@ def test_sitzung_einer_reihe_steht_zur_festen_zeit(org: Any, mitglied: Any, clie
     assert f"fraktion-{spaet_beendet.pk}" not in fenster(beginn + timedelta(hours=3))
     assert je_id[f"fraktion-{einzeln.pk}"]["end"] == (beginn + timedelta(days=3, hours=9)).isoformat()
 
+    # Eine Reihe über mehr als einen Tag (Klausur, 50 Stunden): Die Sitzung reicht auch in den dritten Tag
+    klausur = FactionMeetingSchedule.objects.create(
+        organization=org, name="Klausur", weekday=4, time=time(9, 0), duration_minutes=50 * 60
+    )
+    lang = FactionMeeting.objects.create(
+        organization=org, title="Klausur", schedule=klausur, start=beginn + timedelta(days=20), created_by=mitglied
+    )
+    assert fenster(lang.start + timedelta(hours=48)) == [f"fraktion-{lang.pk}"]
+    assert fenster(lang.start + timedelta(hours=50)) == []
+
 
 # ---- Eigene Ansicht ---------------------------------------------------------------------------------------------
 

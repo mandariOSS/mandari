@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Final
 
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.urls import reverse
 from django.utils import timezone
 
@@ -188,17 +188,18 @@ def _ende_im_kalender(sitzung: Any) -> datetime | None:
 
 
 def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end: datetime) -> list[dict[str, Any]]:
-    from apps.work.faction.models import FactionMeeting
+    from apps.work.faction.models import FactionMeeting, FactionMeetingSchedule
     from apps.work.faction.sitzungsarten import sichtbar_fuer
 
     # Auch Sitzungen, die vor dem Fenster begonnen haben und hineinreichen (über Mitternacht, mehrtägig); ohne Ende
     # zählt der Beginn. Das Fenster ist halboffen: Was es nur berührt (endet genau zu seinem Beginn, beginnt genau
     # an seinem Ende), gehört nicht hinein. Ausgewählt wird nach der Zeit, die der Kalender zeigt (_ende_im_kalender):
-    # Dafür kommen Sitzungen einer Reihe ab einem Tag vor dem Fenster in Frage, entschieden wird unten.
+    # Dafür kommen Sitzungen einer Reihe ab der längsten Dauer einer Reihe vor dem Fenster in Frage (das Modell begrenzt
+    # die Dauer nicht), entschieden wird unten.
+    laengste = FactionMeetingSchedule.objects.filter(organization=organization).aggregate(m=Max("duration_minutes"))
+    vorlauf = timedelta(minutes=max(laengste["m"] or 0, REIHE_DAUER_VORGABE))
     im_fenster = Q(start__lt=end) & (
-        Q(end__gt=start)
-        | Q(end__isnull=True, start__gte=start)
-        | Q(schedule__isnull=False, start__gte=start - timedelta(days=1))
+        Q(end__gt=start) | Q(end__isnull=True, start__gte=start) | Q(schedule__isnull=False, start__gt=start - vorlauf)
     )
     sitzungen = (
         sichtbar_fuer(membership, FactionMeeting.objects.filter(im_fenster, organization=organization))
