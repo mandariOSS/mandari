@@ -2634,8 +2634,14 @@ class SyncOrchestrator:
                     _note_missing_list(list_check, list_url, missing, optional=optional)
                     return
             except ListFetchError as error:
+                # Rückt der Seitenstand in der Scheibe vor, kommt die Liste voran, auch ohne ganz gelesene Scheibe
+                seite_vorher = run.pages.get(list_url) if full else None
                 if full:
                     await self._remember_slice_page(slices, list_url, window, error)
+                seite_jetzt = run.pages.get(list_url) if full else None
+                seite_vorgerueckt = seite_jetzt is not None and (
+                    seite_vorher is None or seite_jetzt.page != seite_vorher.page
+                )
                 if not full and _filter_rejected(error):
                     fallback = f"Filter abgelehnt (HTTP {error.result.status_code})"
                 elif not (optional and error.timed_out):
@@ -2647,7 +2653,7 @@ class SyncOrchestrator:
                     else:
                         keep_since = window.since or (slow.since if slow is not None else datetime.now(UTC))
                     if not await self._suspend_slow_list(
-                        slices, list_url, entity_type, error, keep_since, progressed=index > 0
+                        slices, list_url, entity_type, error, keep_since, progressed=index > 0 or seite_vorgerueckt
                     ):
                         raise
                     return
@@ -2902,8 +2908,9 @@ class SyncOrchestrator:
         """
         Optionale Liste nach einer Zeitüberschreitung aussetzen: 1, 2, 4, 8, 16, dann 24 Stunden (``slow_backoff``).
         Ihr Fensteranfang ``since`` bleibt, der nächste Lauf nach der Aussetzung holt die Änderungen ab dort nach.
-        Hat dieser Versuch mindestens eine Scheibe ganz gelesen (``progressed``), beginnt die Reihe wieder bei einer
-        Stunde: Die Liste kommt voran. Keine Lücke des Laufs, aber eine Meldung im Sync-Protokoll.
+        Hat dieser Versuch mindestens eine Scheibe ganz gelesen oder ist sein Seitenstand in der Scheibe vorgerückt
+        (``progressed``), beginnt die Reihe wieder bei einer Stunde: Die Liste kommt voran. Keine Lücke des Laufs,
+        aber eine Meldung im Sync-Protokoll.
 
         Liefert ``False``, wenn sich die Aussetzung nicht speichern ließ: Ohne gespeicherten Fensteranfang gingen die
         Änderungen der Liste verloren, sobald das Fenster der Kommune vorrückt. Der Aufrufer wertet die Liste dann
