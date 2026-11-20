@@ -46,6 +46,8 @@ LATEST: Final = "latest"
 UPCOMING: Final = "upcoming"
 CANCELLED: Final = "cancelled"
 UNDATED: Final = "undated"
+#: Geplante Beratung ohne Sitzung in der Quelle, mit voraussichtlicher Sitzung (``expected_date``)
+EXPECTED: Final = "expected"
 
 #: Ergebnisse, nach denen die Sache erneut beraten werden muss (Wortfolgen, klein geschrieben)
 _DEFERRED_PHRASES: Final = (("vertagt",), ("zurückgestellt",), ("abgesetzt",), ("verschoben",), ("nicht", "behandelt"))
@@ -348,6 +350,8 @@ def _detail(entry: Mapping[str, Any]) -> str:
         parts.append("Entscheidung")
     if entry.get("public", True) is False:
         parts.append("nichtöffentlich")
+    if not entry.get("date") and entry.get("expected_date"):
+        parts.append("noch nicht auf der Tagesordnung")
     return ", ".join(parts)
 
 
@@ -357,7 +361,8 @@ def timeline(
     """Einträge des Beratungsverlaufs mit Zustand (``state``) und Detailzeile (``detail``) für den Zeitstrahl.
 
     Reihenfolge wie übergeben (chronologisch); „zuletzt“ trägt nur die Beratung, auf der der Stand beruht,
-    und nur, wenn es mehr als einen Eintrag gibt.
+    und nur, wenn es mehr als einen Eintrag gibt. Eine geplante Beratung mit voraussichtlicher Sitzung
+    (``expected_date``) steht als „voraussichtlich“, ohne sie als „Termin unbekannt“.
     """
     now = now or timezone.now()
     result: list[dict[str, Any]] = []
@@ -365,7 +370,7 @@ def timeline(
         if _is_cancelled(entry):
             state = CANCELLED
         elif not entry.get("date"):
-            state = UNDATED
+            state = EXPECTED if entry.get("expected_date") else UNDATED
         elif entry is status.last and len(entries) > 1:
             state = LATEST
         elif entry["date"] > now:
