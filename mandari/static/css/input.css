@@ -69,6 +69,13 @@
   /* Ring ohne Angaben wie in Tailwind 3: 3 px, Blau mit halber Deckkraft */
   --default-ring-width: 3px;
   --default-ring-color: color-mix(in oklab, var(--color-blue-500) 50%, transparent);
+  /* Bildschirmbreiten in px wie in Tailwind 3: Tailwind 4 sortiert eigene Breiten wie min-[1600px] nur gegen
+     Breakpoints derselben Einheit; mit rem kam min-[1600px]: vor lg: und verlor gegen lg: */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
 }
 
 /* Standardwerte von Tailwind 3, die Tailwind 4 geändert hat */
