@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.template import engines
 from django.test import Client
+from django.utils import timezone
 from django_cotton.compiler_regex import CottonCompiler
 
 from insight_core.models import (
@@ -26,6 +27,7 @@ from insight_core.models import (
     OParlConsultation,
     OParlFile,
     OParlMeeting,
+    OParlOrganization,
     OParlPaper,
     OParlSource,
 )
@@ -33,6 +35,7 @@ from insight_core.services.paper_status import (
     CANCELLED,
     DECIDED,
     DEFERRED,
+    EXPECTED,
     LATEST,
     NO_RESULT,
     NONE,
@@ -309,6 +312,24 @@ class TestZeitstrahl:
         # Die Eingabe bleibt unverändert
         assert "state" not in verlauf[0]
 
+    def test_geplante_beratung_mit_voraussichtlicher_sitzung(self) -> None:
+        """Die Quelle nennt nur Gremium und Rolle; die voraussichtliche Sitzung steht im Zeitstrahl, nicht im Stand."""
+        geplant = {**eintrag(None, "Hauptausschuss", rolle="Vorberatung"), "meeting": None}
+        offen = {**eintrag(None, "Rat", rolle="Entscheidung"), "meeting": None}
+        verlauf = [
+            eintrag(
+                tag(2026, 9, 17), "Bezirksvertretung Mitte", "einstimmig beschlossen", top="6.10", rolle="Anhörung"
+            ),
+            {**geplant, "expected_date": tag(2026, 12, 9)},
+            offen,
+        ]
+        stand = paper_status(verlauf, JETZT)
+        eintraege = timeline(verlauf, stand, JETZT)
+        assert [e["state"] for e in eintraege] == [LATEST, EXPECTED, UNDATED]
+        assert eintraege[1]["detail"] == "Vorberatung, noch nicht auf der Tagesordnung"
+        assert eintraege[2]["detail"] == "Entscheidung"
+        assert stand.upcoming is None and "Hauptausschuss" not in stand.text
+
     def test_einzelne_beratung_ohne_zuletzt(self) -> None:
         verlauf = [eintrag(tag(2026, 5, 4), "Rat der Stadt", "beschlossen")]
         assert [e["state"] for e in timeline(verlauf, paper_status(verlauf, JETZT), JETZT)] == [PAST]
@@ -376,12 +397,14 @@ class TestKomponenten:
             '<c-insight.timeline-entry date="06.12.2011" title="Rat" href="/x/" state="latest">TOP 5</c-insight.timeline-entry>'
             '<c-insight.timeline-entry date="03.11.2026" title="Hauptausschuss" state="upcoming">TOP 2</c-insight.timeline-entry>'
             '<c-insight.timeline-entry date="01.04.2026" title="Bauausschuss" state="cancelled"></c-insight.timeline-entry>'
+            '<c-insight.timeline-entry date="09.12.2026" title="Rat" state="expected">Entscheidung</c-insight.timeline-entry>'
             "</c-insight.timeline>"
         )
         assert html.strip().startswith("<ol")
         assert 'aria-current="step"' in html and "zuletzt" in html
         assert "vorgesehen" in html and "abgesagt" in html
         assert '<a href="/x/"' in html and "Hauptausschuss" in html
+        assert "09.12.2026" in html and "voraussichtlich" in html and "border-dashed border-primary-700" in html
 
 
 @pytest.mark.django_db
@@ -421,6 +444,44 @@ class TestVorgangsseite:
             text_content="Die Verwaltung nimmt wie folgt Stellung.",
         )
         return paper
+
+    def test_geplante_beratungen_voraussichtlich_im_weg_des_vorgangs(self) -> None:
+        """
+        Die Quelle nennt für Hauptausschuss und Rat noch keine Sitzung (Stadt Münster vor der Tagesordnung). Der Weg zeigt
+        die nächsten Sitzungen beider Gremien als voraussichtlich, die Vorberatung vor der Entscheidung, statt
+        „Termin unbekannt“ und „Sitzung“ an der Stelle von heute.
+        """
+        basis = "https://ris.planstadt.example/oparl/"
+        source = OParlSource.objects.create(name="Planquelle", url=basis + "system")
+        body = OParlBody.objects.create(external_id=basis + "body/1", source=source, name="Planstadt")
+        paper = OParlPaper.objects.create(
+            external_id=basis + "paper/1", body=body, name="OGS-Küche", date=timezone.localdate()
+        )
+        rat = OParlOrganization.objects.create(external_id=basis + "org/rat", body=body, name="Rat der Planstadt")
+        haupt = OParlOrganization.objects.create(external_id=basis + "org/ha", body=body, name="Hauptausschuss")
+        beginn = timezone.now() + timedelta(days=12)
+        for nummer, (gremium, minuten) in enumerate([(haupt, 0), (rat, 15)], start=1):
+            sitzung = OParlMeeting.objects.create(
+                external_id=f"{basis}meeting/{nummer}", body=body, start=beginn + timedelta(minutes=minuten)
+            )
+            sitzung.organizations.add(gremium)
+        for nummer, (gremium, rolle) in enumerate([(rat, "Entscheidung"), (haupt, "Vorberatung")], start=1):
+            OParlConsultation.objects.create(
+                external_id=f"{basis}consultation/{nummer}",
+                body=body,
+                paper=paper,
+                role=rolle,
+                raw_json={"organization": [gremium.external_id]},
+            )
+
+        seite = Client().get(f"/insight/vorgaenge/{paper.id}/").content.decode()
+
+        anfang = seite.index('id="verlauf-titel"')
+        verlauf = seite[anfang : seite.index("</ol>", anfang)]
+        assert verlauf.count(">voraussichtlich<") == 2 and "Termin unbekannt" not in verlauf
+        assert verlauf.index("Hauptausschuss") < verlauf.index("Rat der Planstadt")
+        assert "Vorberatung, noch nicht auf der Tagesordnung" in verlauf
+        assert "Noch keine Beratung mit Termin bekannt." in seite
 
     def test_stand_zeitstrahl_und_dokumente(self, vorgang: OParlPaper) -> None:
         seite = Client().get(f"/insight/vorgaenge/{vorgang.id}/").content.decode()

@@ -178,6 +178,126 @@ def test_beratung_ohne_bekannte_sitzung_steht_bei_jetzt_wie_in_insight(body: OPa
     assert verlauf[1]["role"] == "Kenntnisnahme" and verlauf[1]["organization_count"] is None
 
 
+def _gremium(body: OParlBody, name: str) -> OParlOrganization:
+    return OParlOrganization.objects.create(external_id=_kennung("org"), body=body, name=name)
+
+
+def _termin(
+    body: OParlBody, gremium: OParlOrganization, beginn: Any, *, mit_tagesordnung: bool = False
+) -> OParlMeeting:
+    """Sitzung eines Gremiums, wie sie im Kalender steht; mit Tagesordnung, wenn sie schon veröffentlicht ist."""
+    sitzung = OParlMeeting.objects.create(external_id=_kennung("meetings"), body=body, start=beginn)
+    sitzung.organizations.add(gremium)
+    if mit_tagesordnung:
+        OParlAgendaItem.objects.create(external_id=_kennung("items"), meeting=sitzung, number="1")
+    return sitzung
+
+
+def _geplant(vorlage: OParlPaper, gremium: OParlOrganization, rolle: str, **felder: Any) -> OParlConsultation:
+    """Beratung, für die die Quelle nur Gremium und Rolle nennt, noch keine Sitzung (Stadt Münster vor der TO)."""
+    return OParlConsultation.objects.create(
+        external_id=_kennung("consultations"),
+        body=vorlage.body,
+        paper=vorlage,
+        role=rolle,
+        raw_json={"role": rolle, "organization": [gremium.external_id]},
+        **felder,
+    )
+
+
+def test_geplante_beratungen_mit_voraussichtlicher_sitzung_in_der_beratungsfolge(
+    body: OParlBody, django_assert_max_num_queries: Any
+) -> None:
+    """
+    Vorlage V/0535/2026 der Stadt Münster: Bezirksvertretung beraten, zwei Ausschüsse mit Termin, Hauptausschuss und
+    Rat nur geplant – deren Sitzungen am selben Tag stehen fest, haben aber noch keine Tagesordnung. Vorher standen
+    beide als „Termin unbekannt“ und „Sitzung“ zwischen der vergangenen und den kommenden Beratungen.
+    """
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="OGS-Küche")
+    bv, punkt_bv = _sitzung(body, -3, "Bezirksvertretung Mitte")
+    umwelt, punkt_umwelt = _sitzung(body, 4, "Ausschuss für Umweltschutz")
+    jugend, punkt_jugend = _sitzung(body, 6, "Ausschuss für Kinder, Jugendliche und Familien")
+    _beratung(vorlage, jugend, punkt_jugend, role="Vorberatung")
+    _beratung(vorlage, bv, punkt_bv, role="Anhörung")
+    hauptausschuss, rat = _gremium(body, "Hauptausschuss"), _gremium(body, "Rat")
+    _geplant(vorlage, rat, "Entscheidung")
+    _geplant(vorlage, hauptausschuss, "Vorberatung")
+    _beratung(vorlage, umwelt, punkt_umwelt, role="Vorberatung")
+    tag = (timezone.now() + timedelta(days=19)).replace(hour=15, minute=0, second=0, microsecond=0)
+    # Vor der letzten Beratung mit Termin: zu früh. Mit veröffentlichter Tagesordnung ohne die Vorlage: nicht dort.
+    _termin(body, hauptausschuss, timezone.now() + timedelta(days=2))
+    _termin(body, hauptausschuss, timezone.now() + timedelta(days=10), mit_tagesordnung=True)
+    sitzung_ha = _termin(body, hauptausschuss, tag)
+    sitzung_rat = _termin(body, rat, tag + timedelta(minutes=15))
+    _termin(body, rat, tag + timedelta(days=35))
+
+    with django_assert_max_num_queries(6):
+        verlauf = ris.consultation_history(vorlage)
+
+    assert [e["organization_name"] for e in verlauf] == [
+        "Bezirksvertretung Mitte",
+        "Ausschuss für Umweltschutz",
+        "Ausschuss für Kinder, Jugendliche und Familien",
+        "Hauptausschuss",
+        "Rat",
+    ]
+    ha, entscheidung = verlauf[3], verlauf[4]
+    assert ha["planned"] and ha["date"] is None and ha["meeting"] is None and ha["organization_count"] == 1
+    assert ha["expected_meeting"] == sitzung_ha and ha["expected_date"] == tag
+    assert entscheidung["expected_meeting"] == sitzung_rat and entscheidung["role"] == "Entscheidung"
+    assert not any(e["planned"] or e["expected_date"] for e in verlauf[:3])
+    # Der Stand-Satz zählt nur Sitzungen, die die Quelle nennt
+    assert (
+        "Bezirksvertretung Mitte" in paper_status(verlauf).text and "Hauptausschuss" not in paper_status(verlauf).text
+    )
+
+
+def test_geplante_beratungen_ohne_schaetzung_stehen_am_ende_die_entscheidung_zuletzt(body: OParlBody) -> None:
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Radweg")
+    rat, hauptausschuss = _gremium(body, "Rat"), _gremium(body, "Hauptausschuss")
+    _geplant(vorlage, rat, "Beschlussfassung")
+    _geplant(vorlage, hauptausschuss, "Vorberatung")
+    ausschuss, punkt = _sitzung(body, 5, "Bauausschuss")
+    _beratung(vorlage, ausschuss, punkt, role="Vorberatung")
+    # Der Rat hat einen Termin, der Hauptausschuss keinen: Ohne Termin der Vorberatung schätzen wir die Entscheidung nicht
+    _termin(body, rat, timezone.now() + timedelta(days=20))
+
+    verlauf = ris.consultation_history(vorlage)
+
+    assert [e["organization_name"] for e in verlauf] == ["Bauausschuss", "Hauptausschuss", "Rat"]
+    assert all(e["expected_date"] is None for e in verlauf)
+
+
+def test_ruhender_vorgang_bekommt_keinen_voraussichtlichen_termin(body: OParlBody) -> None:
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Alt")
+    ausschuss, punkt = _sitzung(body, -400, "Bauausschuss")
+    _beratung(vorlage, ausschuss, punkt, role="Vorberatung")
+    rat = _gremium(body, "Rat")
+    _geplant(vorlage, rat, "Entscheidung", authoritative=True)
+    _termin(body, rat, timezone.now() + timedelta(days=10))
+
+    verlauf = ris.consultation_history(vorlage)
+
+    assert [e["organization_name"] for e in verlauf] == ["Bauausschuss", "Rat"]
+    assert verlauf[1]["expected_date"] is None and verlauf[1]["planned"]
+    # Ohne Termin der Vorgang, aber mit Vorlagedatum in der Zeit: Die nächste Sitzung des Rats ist voraussichtlich
+    neu = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Neu", date=timezone.localdate())
+    _geplant(neu, rat, "Entscheidung")
+    assert ris.consultation_history(neu)[0]["expected_date"] is not None
+
+
+def test_gremium_einer_anderen_kommune_bleibt_unbekannt(body: OParlBody) -> None:
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Radweg")
+    andere = OParlBody.objects.create(external_id=_kennung("bodies"), source=body.source, name="Nachbarstadt")
+    fremd = OParlOrganization.objects.create(external_id=_kennung("org"), body=andere, name="Rat der Nachbarstadt")
+    _geplant(vorlage, fremd, "Entscheidung")
+    _termin(andere, fremd, timezone.now() + timedelta(days=10))
+
+    eintrag = ris.consultation_history(vorlage)[0]
+
+    assert eintrag["organization_name"] is None and eintrag["expected_date"] is None
+
+
 def test_gremienzahl_aus_den_rohdaten_wenn_kein_gremium_benannt_ist(body: OParlBody) -> None:
     sitzung = OParlMeeting.objects.create(
         external_id=_kennung("meetings"),
