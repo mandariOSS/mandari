@@ -169,3 +169,11 @@ def test_work_sitzungsdetail_und_vorbereitung(body: OParlBody, sitzung: OParlMee
     anlage.deleted = True
     anlage.save(update_fields=["deleted"])
     assert [f.name for f in _ris_files_of(vorbereitet)] == ["Antrag", "Beides"]
+    # Eine Datei der Vorlage, die an einem zurückgenommenen Punkt hängt, auch nicht über den offenen Punkt
+    zurueck = _punkt(sitzung, "9", basis=SESSION, deleted=True)
+    gesperrt = _datei(body, sitzung, "Gesperrt", zurueck)
+    gesperrt.paper = vorlage
+    gesperrt.save(update_fields=["paper"])
+    vorbereitet.papers = [OParlPaper.objects.get(pk=vorlage.pk)]
+    assert "Gesperrt" in [f.name for f in _ris_files_of(vorbereitet)]
+    assert [f.name for f in _ris_files_of(vorbereitet, {zurueck.pk})] == ["Antrag", "Beides"]

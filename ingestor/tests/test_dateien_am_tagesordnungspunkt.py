@@ -296,6 +296,33 @@ async def test_datei_vor_dem_punkt_bekommt_den_bezug_ueber_den_verweis(speicher:
 
 
 @pytest.mark.integration
+async def test_datei_am_nichtoeffentlichen_punkt_meldet_nichtoeffentlich(schema: None) -> None:
+    """Das Ereignis nennt die Kennung des Punkts; ein nichtöffentlicher Punkt erscheint nicht im öffentlichen Strom."""
+    storage = DatabaseStorage(DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1), events_enabled=True)
+    await storage._engine.dispose()
+    storage._engine = _engine()
+    storage._session_factory = async_sessionmaker(storage._engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with storage._engine.begin() as conn:
+            tabellen = ", ".join(f'"{tabelle.name}"' for tabelle in Base.metadata.sorted_tables)
+            await conn.execute(text(f"TRUNCATE {tabellen}, oparl_meetings_organizations CASCADE"))
+        orchestrator, kommune = await _abgleich(storage)
+        sitzung = orchestrator.processor.process_meeting(_sitzung(_punkt(public=False)), KOMMUNE)
+        await orchestrator._store_entity(sitzung, kommune, "meeting")
+        async with storage.get_session() as session:
+            zeilen = await session.execute(
+                text("SELECT visibility, payload FROM events_event WHERE type = 'ris.file.changed' ORDER BY id")
+            )
+            ereignisse = [(zeile[0], zeile[1]) for zeile in zeilen]
+    finally:
+        await storage.close()
+    am_punkt = [sicht for sicht, nutzlast in ereignisse if nutzlast.get("agenda_item")]
+    ohne_punkt = [sicht for sicht, nutzlast in ereignisse if not nutzlast.get("agenda_item")]
+    assert am_punkt == ["nichtoeffentlich"] * 3
+    assert ohne_punkt == ["oeffentlich"]
+
+
+@pytest.mark.integration
 async def test_fehler_bei_einer_datei_haelt_die_uebrigen_nicht_auf(
     speicher: DatabaseStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:

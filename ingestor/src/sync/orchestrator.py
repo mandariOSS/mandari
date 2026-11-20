@@ -3227,13 +3227,19 @@ class SyncOrchestrator:
                 meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0], body_id)
             # Datei am Tagesordnungspunkt (OParl 1.1 ``agendaItem``): mit Punkt und, ohne eigene Angabe, seiner Sitzung
             agenda_item_id = None
+            agenda_item_public = True
             if entity.agenda_item_external_ids:
                 ref = await self.storage.get_agenda_item_ref(entity.agenda_item_external_ids[0], body_id)
                 if ref is not None:
-                    agenda_item_id = ref[0]
-                    meeting_id = meeting_id or ref[1]
+                    agenda_item_id, ref_meeting_id, agenda_item_public = ref
+                    meeting_id = meeting_id or ref_meeting_id
             await self.storage.upsert_file(
-                entity, body_id, paper_id=paper_id, meeting_id=meeting_id, agenda_item_id=agenda_item_id
+                entity,
+                body_id,
+                paper_id=paper_id,
+                meeting_id=meeting_id,
+                agenda_item_id=agenda_item_id,
+                agenda_item_public=agenda_item_public,
             )
             metrics.record_entity_synced("file", body_name or "unknown")
         elif isinstance(entity, ProcessedConsultation):
