@@ -49,11 +49,19 @@ def discard_for_files(file_ids: Iterable[uuid.UUID], *, dry_run: bool = False) -
     if not kennungen:
         return 0
     vorgaenge = OParlFile.objects.filter(pk__in=kennungen, paper_id__isnull=False).values("paper_id")
-    betroffen = OParlPaper.objects.filter(pk__in=vorgaenge, summary__isnull=False)
+    # Mit der Zusammenfassung verfällt der Finanzcheck (Issue #1513): Er liest denselben Text
+    betroffen = OParlPaper.objects.filter(pk__in=vorgaenge).filter(
+        Q(summary__isnull=False) | Q(finanzcheck__isnull=False)
+    )
     if dry_run:
         return betroffen.count()
     return betroffen.update(
-        summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
+        summary=None,
+        summary_hinweis="",
+        summary_einfach=None,
+        summary_stand="",
+        summary_prompt_fassung=0,
+        finanzcheck=None,
     )
 
 

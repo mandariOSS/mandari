@@ -12,6 +12,9 @@ Zeitpläne der KI-Funktionen (``apps.events.schedule``).
   Termin wird einmal nachgeholt.
 - ``zusammenfassungen_abholen``: alle 10 Minuten offene Batches prüfen und beendete übernehmen. Ohne offenen Batch
   bleibt es bei einer Datenbankabfrage.
+- ``finanzcheck_nachziehen``: stündlich in der Warteschlange ``ai`` Finanzchecks für Vorgänge der Kommunen im
+  Tagesbatch (Issue #1513, ``insight_ai.services.finanzcheck.nachziehen``): höchstens ``JE_LAUF`` KI-Aufrufe, Texte
+  ohne Geldbeträge ohne KI. Ohne eingerichtete Claude API oder ohne Budget endet der Lauf ohne Aufruf.
 
 Alle sind idempotent; abschaltbar mit ``EVENTS_SCHEDULES_DISABLED``.
 """
@@ -48,3 +51,12 @@ def zusammenfassungen_abholen() -> int:
     from .services.zusammenfassung_batch import abholen
 
     return abholen()
+
+
+@every(hours=1)
+@task(queue_name="ai")
+def finanzcheck_nachziehen() -> int:
+    """Finanzchecks für Vorgänge der Kommunen im Tagesbatch erstellen; Rückgabe: Zahl der KI-Aufrufe."""
+    from .services.finanzcheck import nachziehen
+
+    return nachziehen()

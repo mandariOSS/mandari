@@ -234,6 +234,9 @@ class OParlPaper(Base):
     summary_einfach: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_stand: Mapped[str] = mapped_column(String(64), server_default="")
     summary_prompt_fassung: Mapped[int] = mapped_column(SmallInteger, server_default="0")
+    # Finanzcheck (Django verwaltet, Issue #1513): der Ingestor setzt ihn nur zurück, wie die Zusammenfassung
+    # ``none_as_null``: ``None`` schreibt SQL-NULL, nicht JSON-``null`` (die Anwendung sucht ``finanzcheck IS NULL``)
+    finanzcheck: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     locations: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Georeferenzierung (Django verwaltet, Ingestor setzt Default)

@@ -58,6 +58,8 @@
     <div class="min-w-0">
         <div id="paper-summary" class="mb-12 empty:hidden" aria-live="polite">{% if paper.summary %}{% include "partials/paper_summary.html" with summary=paper.summary veraltet=zusammenfassung_veraltet %}{% endif %}</div>
 
+        {% if finanzcheck %}{% include "partials/paper_finanzcheck.html" %}{% endif %}
+
         {% if weg.anfrage.beantwortet and not weg.anfrage.in_sitzung %}{% include "pages/papers/_gefragt_geantwortet.html" %}{% endif %}
         {% if weg.zeigen %}{% include "pages/papers/_verlauf.html" %}{% endif %}
 

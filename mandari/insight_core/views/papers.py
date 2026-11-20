@@ -260,11 +260,21 @@ class PaperDetailView(DetailView):
         veraltet = summary_store.veraltet(paper, now=now)
         context["zusammenfassung_veraltet"] = veraltet
 
+        # Finanzcheck (Issue #1513): Kosten, Fördergeld und jährliche Belastung, nur geprüft und bestanden
+        from insight_ai.services import finanzcheck
+
+        context["finanzcheck"] = finanzcheck.anzeige(paper)
+
         # SEO-Kontext
         from ..seo import get_paper_seo
 
         context["seo"] = get_paper_seo(
-            paper, self.request, stand=status, mit_zusammenfassung=not veraltet, original=context["source_url"]
+            paper,
+            self.request,
+            stand=status,
+            mit_zusammenfassung=not veraltet,
+            original=context["source_url"],
+            finanzen=context["finanzcheck"].seo if context["finanzcheck"] else "",
         ).to_dict()
 
         return context

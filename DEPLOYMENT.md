@@ -1467,6 +1467,8 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
    Den übrigen Bestand zieht ein Befehl nach, ein Batch je Lauf, nie neben einem offenen Batch und im Monatsbudget.
    Ohne `--ausfuehren` zählt und schätzt er nur:
 
+   **Finanzcheck (#1513):** Für dieselben Kommunen erstellt der Zeitplan `finanzcheck_nachziehen` stündlich in der Warteschlange `ai` (Worker `worker-heavy`, `--queues ocr,ai`) höchstens sechs Finanzchecks mit demselben Modell und Monatsbudget; er hört auf, wenn weniger als 30 % des Budgets übrig sind. Texte ohne Geldbeträge gehen nicht an die KI. Einzelne Vorgänge: `docker exec mandari python manage.py finanzcheck --vorgang <Vorlagen-Nr.> --kommune <Kommune>` (`--trocken` zeigt das Ergebnis, ohne zu speichern; `--neu` ersetzt einen vorhandenen).
+
    ```bash
    docker exec mandari python manage.py zusammenfassungen_nachziehen --limit 100
    docker exec mandari python manage.py zusammenfassungen_nachziehen --limit 100 --hoechstens-usd 2 --ausfuehren

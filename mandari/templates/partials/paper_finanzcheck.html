@@ -1,0 +1,32 @@
+{% comment %}
+Finanzcheck eines Vorgangs (Issue #1513, insight_ai.services.finanzcheck.anzeige): Was kostet das, woher kommt das Geld,
+was bleibt jedes Jahr. Auf einen Blick: höchstens vier Zahlen und zwei bis vier kurze Sätze in Alltagssprache (Sven
+20.11.2026: „ein kleines Feature“, kein Bericht). Fundstellen und Aufschlüsselung bleiben gespeichert, die Seite zeigt
+sie nicht. Serverseitig gerendert (Suchmaschinen lesen ihn mit), eigener Anker #finanzcheck zum Verlinken. Kennzeichnung wie bei der Zusammenfassung (EU AI Act Art. 50): sichtbar am Titel und
+im Satz darunter, maschinenlesbar über data-ai-generated.
+{% endcomment %}
+<section id="finanzcheck" aria-labelledby="finanzcheck-titel" class="mb-12 scroll-mt-24" data-testid="finanzcheck">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h2 id="finanzcheck-titel" class="abschnitt-titel">Was kostet das?</h2>
+        <span class="inline-flex items-center gap-1 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 shrink-0 text-primary-700 dark:text-primary-300" aria-hidden="true"></i>KI-Finanzcheck
+        </span>
+    </div>
+    <div data-ai-generated="true">
+        {% if finanzcheck.kennzahlen %}
+        <dl class="mt-4 grid max-w-[46rem] grid-cols-2 gap-x-6 gap-y-4 {% with n=finanzcheck.kennzahlen|length %}{% if n >= 4 %}sm:grid-cols-4{% elif n == 3 %}sm:grid-cols-3{% else %}sm:grid-cols-2{% endif %}{% endwith %}">
+            {% for kennzahl in finanzcheck.kennzahlen %}
+            <div class="min-w-0">
+                <dt class="text-[0.875rem] text-gray-600 dark:text-gray-400">{{ kennzahl.titel }}</dt>
+                <dd class="mt-0.5 text-[1.375rem] leading-tight font-semibold tabular-nums text-gray-900 dark:text-white">{{ kennzahl.wert }}</dd>
+                {% if kennzahl.zusatz %}<dd class="mt-0.5 text-[0.875rem] text-gray-700 dark:text-gray-300">{{ kennzahl.zusatz }}</dd>{% endif %}
+            </div>
+            {% endfor %}
+        </dl>
+        {% endif %}
+        <p class="mt-4 max-w-[46rem] text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">{{ finanzcheck.saetze|join:" " }}</p>
+    </div>
+    <p class="mt-4 max-w-[46rem] text-[0.875rem] text-gray-600 dark:text-gray-400">
+        Zahlen aus der Vorlage, mit KI ausgelesen und geprüft. Maßgeblich sind die Dokumente.
+    </p>
+</section>
