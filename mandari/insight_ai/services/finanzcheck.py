@@ -268,8 +268,9 @@ def nutzerprompt(paper: OParlPaper, dokumente: str) -> str:
     from .prompts import ohne_rahmen_tags
 
     zeilen = []
-    if paper.body_id and paper.body:
-        zeilen.append(f"Kommune: {paper.body.name or paper.body.short_name or ''}")
+    kommune = getattr(paper, "body", None) if getattr(paper, "body_id", None) else None
+    if kommune is not None:
+        zeilen.append(f"Kommune: {kommune.name or kommune.short_name or ''}")
     if paper.paper_type:
         zeilen.append(f"Art: {paper.paper_type}")
     if paper.reference:
