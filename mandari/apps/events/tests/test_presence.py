@@ -37,11 +37,18 @@ def test_zeitplaene_brauchen_immer_runner_und_scheduler(ohne_bedarf: Any) -> Non
 
 
 def test_ohne_journal_reichen_die_warteschlangen_der_zeitplaene(ohne_bedarf: Any) -> None:
-    """Webprozesse führen Aufträge sofort aus; im Journal landen nur Zeitpläne und Admin-Aufträge."""
-    assert presence.required_queues() == {"default"}
+    """
+    Webprozesse führen Aufträge sofort aus; im Journal landen nur Zeitpläne und Admin-Aufträge. Der Finanzcheck
+    (Issue #1513) läuft als Zeitplan in der Warteschlange ``ai`` (KI-Aufrufe bis zu 15 Minuten), die der Worker
+    ``worker-heavy`` der Standardinstallation bedient.
+    """
+    assert presence.required_queues() == {"default", "ai"}
 
-    ohne_bedarf.TASKS["default"]["OPTIONS"] = {**ohne_bedarf.TASKS["default"]["OPTIONS"], "concurrency": {"default": 0}}
-    assert presence.required_queues() == frozenset(), "bewusst abgeschaltete Warteschlange"
+    ohne_bedarf.TASKS["default"]["OPTIONS"] = {
+        **ohne_bedarf.TASKS["default"]["OPTIONS"],
+        "concurrency": {"default": 0, "ai": 0},
+    }
+    assert presence.required_queues() == frozenset(), "bewusst abgeschaltete Warteschlangen"
 
 
 def test_warteschlangen_der_zeitplaene_aus_dem_register(ohne_bedarf: Any, monkeypatch: pytest.MonkeyPatch) -> None:
