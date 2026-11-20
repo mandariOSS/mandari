@@ -965,6 +965,7 @@ class TestBefundeCodeRabbit1545:
             ("nicht mit Änderungen beschlossen", False),
             ("ohne Änderungen beschlossen", False),
             ("abgelehnt", False),
+            ("Mit Änderungen entsprechend der Empfehlung des Ausschusses beschlossen.", True),
         ],
     )
     def test_mit_aenderungen_nur_bei_beschluss(self, ergebnis: str, erwartet: bool) -> None:

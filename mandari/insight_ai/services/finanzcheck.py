@@ -1146,8 +1146,9 @@ def mit_aenderungen_beschlossen(ergebnis_text: Any) -> bool:
     treffer = MIT_AENDERUNGEN.search(text)
     if not treffer or ergebnis.einordnen(text) != ergebnis.BESCHLOSSEN:
         return False
-    if re.search(r"empf(?:ohlen|iehlt|ehlung)", text, re.IGNORECASE):
-        # „mit Änderungen zur Beschlussfassung empfohlen“ ist eine Empfehlung, kein Beschluss
+    if re.search(r"\bempf(?:ohlen|iehlt)\b", text, re.IGNORECASE):
+        # „mit Änderungen zur Beschlussfassung empfohlen“ ist eine Empfehlung, kein Beschluss; das Substantiv
+        # („entsprechend der Empfehlung beschlossen“) schließt einen Beschluss nicht aus
         return False
     davor = text[max(0, treffer.start() - 25) : treffer.start()]
     return not re.search(r"\b(?:nicht|ohne|kein\w*)\b", davor, re.IGNORECASE)
