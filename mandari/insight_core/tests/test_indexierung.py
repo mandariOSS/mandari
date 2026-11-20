@@ -378,12 +378,34 @@ class TestNummerierteDateien:
         alle = _locs(eins) + _locs(zwei)
         assert sorted(alle) == sorted(f"{settings.SITE_URL}/insight/termine/{s.pk}/" for s in stadt["sitzungen"])
         assert eins.findtext("s:url/s:changefreq", "", NS) == "weekly"
-        assert eins.findtext("s:url/s:priority", "", NS) == "0.7"
+        assert eins.findtext("s:url/s:priority", "", NS) == "0.6"
 
     def test_eintrag_mit_lastmod(self, client: Client, stadt: dict[str, Any]) -> None:
         datei = _xml(client, "/sitemap-insight-koeln-vorgaenge-3.xml")
         assert datei.findtext("s:url/s:lastmod", "", NS) == "2026-01-01T00:00:00+00:00"
         assert datei.findtext("s:url/s:priority", "", NS) == "0.6"
+
+    def test_aeltere_eintraege_mit_niedriger_prioritaet(self, client: Client, stadt: dict[str, Any]) -> None:
+        # Stadtseite 1.0 vor Listen 0.8 vor aktuellen Einträgen 0.6; was über ein Jahr zurückliegt, 0.3 (yearly).
+        # 500 Tage: älter als ein Jahr, aber jünger als zwei, sonst fiele der Vorgang ohne Text ganz heraus (#1145)
+        alt = stadt["vorgaenge"][0]
+        OParlPaper.objects.filter(pk=alt.pk).update(date=timezone.now().date() - timedelta(days=500))
+        angaben = {
+            url.findtext("s:loc", "", NS): (url.findtext("s:changefreq", "", NS), url.findtext("s:priority", "", NS))
+            for n in (1, 2, 3)
+            for url in _xml(client, f"/sitemap-insight-koeln-vorgaenge-{n}.xml").findall("s:url", NS)
+        }
+
+        assert angaben.pop(f"{settings.SITE_URL}/insight/vorgaenge/{alt.pk}/") == ("yearly", "0.3")
+        assert set(angaben.values()) == {("monthly", "0.6")}
+
+    def test_aktuell_nach_datum_oder_termin(self) -> None:
+        jetzt = datetime(2026, 11, 20, 12, tzinfo=UTC)
+        assert sitemaps.ist_aktuell(date(2026, 1, 1), jetzt)
+        assert not sitemaps.ist_aktuell(date(2025, 1, 1), jetzt)
+        assert sitemaps.ist_aktuell(datetime(2027, 3, 1, 18, tzinfo=UTC), jetzt)
+        assert not sitemaps.ist_aktuell(datetime(2021, 9, 27, 12), jetzt)  # ohne Zeitzone: UTC
+        assert not sitemaps.ist_aktuell(None, jetzt)
 
     def test_hoechstens_zehntausend_je_datei(self) -> None:
         assert sitemaps.EINTRAEGE_JE_DATEI == 10_000
@@ -438,7 +460,7 @@ class TestGrundSitemap:
         erster = grund.find("s:url", NS)
         assert erster is not None
         assert erster.findtext("s:loc", "", NS) == f"{settings.SITE_URL}/insight/k/koeln/"
-        assert erster.findtext("s:priority", "", NS) == "0.9"
+        assert erster.findtext("s:priority", "", NS) == "1.0"
         assert erster.findtext("s:changefreq", "", NS) == "daily"
 
     def test_ohne_slug_keine_stadtseite(self, client: Client) -> None:
@@ -1186,7 +1208,7 @@ class TestNurSeitenMitInhalt:
         return _kommune(1, "Stadt Köln", display_name="Köln", slug="koeln", last_sync=timezone.now())
 
     def _eintraege(self, art: str, body: OParlBody) -> set[Any]:
-        return {kennung for kennung, _ in sitemaps.eintraege(sitemaps.ARTEN[art], body.pk, 1)}
+        return {kennung for kennung, *_ in sitemaps.eintraege(sitemaps.ARTEN[art], body.pk, 1)}
 
     def _datei(self, body: OParlBody, nummer: int, **felder: Any) -> OParlFile:
         return OParlFile.objects.create(
@@ -1218,7 +1240,9 @@ class TestNurSeitenMitInhalt:
         self._datei(body, 1, paper=vorgang, text_extraction_status="completed")
         self._datei(body, 2, paper=vorgang, text_extraction_status="completed")
 
-        assert list(sitemaps.eintraege(sitemaps.ARTEN["vorgaenge"], body.pk, 1)) == [(vorgang.pk, None)]
+        assert [eintrag[:2] for eintrag in sitemaps.eintraege(sitemaps.ARTEN["vorgaenge"], body.pk, 1)] == [
+            (vorgang.pk, None)
+        ]
         assert [datei.eintraege for datei in sitemaps._dateien_berechnen(sitemaps.ARTEN["vorgaenge"], body.pk)] == [1]
 
     def test_sitzungen(self, body: OParlBody) -> None:

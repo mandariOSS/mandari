@@ -676,6 +676,16 @@ class OParlBody(SourceDeletionModel):
         return self.display_name or self.short_name or self.name
 
     @property
+    def aus_mandari_session(self) -> bool:
+        """Veröffentlicht die Kommune selbst mit mandari Session (Kennung aus der OParl-API eines Session-Mandanten)?
+
+        Dann ist das Bürgerportal ihr eigenes Angebot; sonst zeigt mandari die Daten aus ihrem Ratsinformationssystem,
+        und die Seiten sagen das so, damit niemand (auch keine KI-Suche) die Kommune für eine Kundin hält.
+        """
+        external_id = self.external_id or ""
+        return all(marker in external_id for marker in SESSION_OPARL_MARKERS)
+
+    @property
     def is_regional_level(self) -> bool:
         """Gebiet oberhalb der Gemeinde, etwa ein Regierungsbezirk oder Kreis (Issue #54).
 

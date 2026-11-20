@@ -25,6 +25,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import pytest
+from django.conf import settings
 from django.test import Client
 from django.utils import timezone
 
@@ -338,6 +339,10 @@ class TestVorgang:
         assert vorgang["spatialCoverage"] == {"@type": "AdministrativeArea", "name": "Münster"}
         assert vorgang["about"]["name"] == "Münster" and vorgang["identifier"] == "V/0881/2011"
         assert None not in vorgang.values()
+        # Herausgeber mandari mit derselben @id wie auf mandari.de, Teil der Stadtseite; Urheber bleibt die Kommune
+        assert vorgang["publisher"]["@id"] == f"{settings.SITE_URL}/#organisation"
+        assert vorgang["isPartOf"]["url"] == f"{settings.SITE_URL}/insight/k/muenster/"
+        assert vorgang["author"] == {"@type": "GovernmentOrganization", "name": "Münster"}
         assert krumen["@type"] == "BreadcrumbList"
         eintraege = krumen["itemListElement"]
         # Mit Ebene „Vorgänge“: Die Liste hat eine eigene Adresse je Kommune (Issue #939)
@@ -605,6 +610,34 @@ class TestUebersichtDerKommune:
         assert len(description) <= 160
         # Die Überschrift bleibt
         assert re.search(r"<h1[^>]*>Münster transparent</h1>", seite)
+
+    def test_strukturierte_daten_nennen_kommune_und_herausgeber(self, muenster: OParlBody) -> None:
+        OParlBody.objects.filter(pk=muenster.pk).update(website="https://www.stadt-muenster.de", ags="05515000")
+        seite = _seite(Client(), "/insight/k/muenster/")
+        site = settings.SITE_URL
+
+        seite_ld, brotkrumen = _json_ld(seite)
+        assert seite_ld["@type"] == "CollectionPage"
+        assert seite_ld["url"] == f"{site}/insight/k/muenster/"
+        # Worum es geht: die Kommune mit ihrer eigenen Website; wer herausgibt: mandari (dieselbe @id wie mandari.de)
+        assert seite_ld["about"]["@type"] == "GovernmentOrganization"
+        assert seite_ld["about"]["url"] == "https://www.stadt-muenster.de"
+        assert seite_ld["about"]["identifier"] == {"@type": "PropertyValue", "propertyID": "AGS", "value": "05515000"}
+        assert seite_ld["publisher"]["@id"] == f"{site}/#organisation"
+        assert seite_ld["isPartOf"]["name"] == "mandari Insight"
+        assert [eintrag["item"] for eintrag in brotkrumen["itemListElement"]] == [
+            f"{site}/insight/",
+            f"{site}/insight/k/muenster/",
+        ]
+
+    def test_kommune_mit_mandari_session_ist_kein_fremdes_angebot(self, muenster: OParlBody) -> None:
+        OParlBody.objects.filter(pk=muenster.pk).update(
+            external_id="https://mandari.de/session/muenster/api/oparl/body/1"
+        )
+        fuss = _fuss(_seite(Client(), "/insight/k/muenster/"))
+
+        assert "kein offizielles Angebot" not in fuss
+        assert "Dieses Bürgerportal läuft mit" in fuss
 
     def test_lange_kommunennamen_bleiben_unter_160_zeichen(self, muenster: OParlBody) -> None:
         OParlBody.objects.filter(pk=muenster.pk).update(display_name="Bezirksregierung Musterland-Südwest Nord")
@@ -919,9 +952,10 @@ class TestFusszeile:
         fuss = _fuss(_seite(Client(), f"/insight/vorgaenge/{_vorgang(muenster).id}/"))
 
         assert "Die Daten stammen aus dem Ratsinformationssystem von Münster." in fuss
-        assert "Dieses Bürgerportal läuft mit" in fuss
-        link = re.search(r'<a href="https://mandari\.de/ratsinformationssystem/"[^>]*>([^<]*)</a>', fuss)
-        assert link and "Ratsinformationssystem" in link.group(1)
+        # Wer die Seite anbietet, in einem Satz: nicht die Kommune (auch für KI-Suchen, die die Seite zusammenfassen)
+        satz = re.sub(r"<[^>]+>", "", fuss)
+        assert "Ein Angebot von mandari, kein offizielles Angebot von Münster." in satz
+        assert re.search(r'<a href="https://mandari\.de/ratsinformationssystem/"[^>]*>mandari</a>', fuss)
 
     def test_auch_ohne_kommune(self, muenster: OParlBody) -> None:
         client = Client()
