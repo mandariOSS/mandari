@@ -142,12 +142,14 @@ class TestRuhigesErscheinungsbild:
             assert "text-transform: uppercase" not in text, name
 
     def test_kein_lila_cyan_oder_rose_als_schmuckfarbe(self) -> None:
-        # Sitzungsvorbereitung: Positions- und Abschnittsfarben sind dort Kategorien mit Legende (Vertagen und
-        # Redebeitrag = Lila); sie bleiben bis zum Neuentwurf der Vorbereitung (#856) unverändert
+        # Bisherige Sitzungsvorbereitung: Positions- und Abschnittsfarben sind dort Kategorien mit Legende (Vertagen
+        # und Redebeitrag = Lila); gilt für _prepare_main.html und die daraus ausgelagerten Teile (#856)
         vorbereitung = (
             "meetings/_summary.html",
-            "meetings/partials/_prepare_main.html",
-            "meetings/partials/_prepare_modals.html",
+            *(
+                f"meetings/partials/_prepare_{teil}.html"
+                for teil in ("main", "modals", "vorschau", "position", "ris", "redebeitrag", "anhaenge")
+            ),
         )
         muster = re.compile(r"(?<![\w-])(?:[a-z-]+:)*[a-z-]+-(?:purple|violet|cyan|rose|pink|fuchsia)-\d")
         funde = [

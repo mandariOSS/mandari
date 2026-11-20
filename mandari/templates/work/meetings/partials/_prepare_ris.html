@@ -1,0 +1,45 @@
+{% comment %}Sitzungsvorbereitung, bisherige Ansicht: Abschnitt B: Dokumente aus dem Ratsinformationssystem. Teil von _prepare_main.html (#856); Kontext und Alpine-Zustand wie dort.{% endcomment %}
+                    <!-- ===== Abschnitt B: Dokumente aus dem Ratsinformationssystem ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-sky-400 dark:border-l-sky-600 rounded-xl px-5 py-4" aria-labelledby="section-ris">
+                        <h3 id="section-ris" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                            <i data-lucide="landmark" class="w-4 h-4 text-sky-500"></i>
+                            Aus dem Ratsinformationssystem
+                        </h3>
+                        <div class="grid gap-2 sm:grid-cols-2" x-show="selectedItem.files && selectedItem.files.length > 0">
+                            <template x-for="(file, fi) in selectedItem.files" :key="file.id || fi">
+                                <div class="ris-file-card flex flex-col px-3 py-2.5 rounded-lg border bg-sky-50/50 dark:bg-sky-900/10 border-sky-100 dark:border-sky-900/50 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
+                                    <div class="flex items-start gap-2.5 min-w-0">
+                                        <i :data-lucide="file.isPdf ? 'file-text' : 'file'" class="w-5 h-5 mt-0.5 shrink-0"
+                                           :class="file.isPdf ? 'text-red-500' : 'text-sky-500'"></i>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium text-gray-800 dark:text-gray-100 line-clamp-1" :title="file.name" x-text="file.name"></p>
+                                            <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                                                <span x-show="file.size" x-text="file.size"></span>
+                                                <span x-show="file.annotations > 0"
+                                                      class="annotation-badge inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 font-medium">
+                                                    <i data-lucide="message-square-text" class="w-3 h-3"></i>
+                                                    <span x-text="file.annotations + (file.annotations === 1 ? ' Anmerkung' : ' Anmerkungen')"></span>
+                                                </span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2 flex items-center gap-1.5">
+                                        <button type="button" x-show="file.isPdf"
+                                                @click="openPreview('oparl', file.id, file.name, file.previewUrl, file.url, file)"
+                                                class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-sky-600 rounded-lg hover:bg-sky-700 shadow-sm transition-colors">
+                                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                            Vorschau
+                                        </button>
+                                        <a :href="file.url" target="_blank" rel="noopener"
+                                           class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-100/60 dark:hover:bg-sky-900/30 transition-colors">
+                                            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                                            Neuer Tab
+                                        </a>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <p class="text-xs text-gray-400 italic" x-show="!selectedItem.files || selectedItem.files.length === 0">
+                            Keine Dokumente aus dem Ratsinformationssystem.
+                        </p>
+                    </section>
