@@ -2115,6 +2115,8 @@ class SyncOrchestrator:
         server_modified_since = modified_since if not full else changes_since
         if slow_since is not None:
             server_modified_since = slow_since  # langsame Liste: ab ihrem eigenen Fensteranfang
+        # Stopp nach Seiten ohne Änderung nur, wenn die Quelle die Liste nicht nachweislich filtert (Issue #1523)
+        stale_stop = server_modified_since is None or not client.filter_proven(list_url)
 
         pages: AsyncIterator[list[dict[str, Any]]]
         if windows is not None and slices is not None:
@@ -2287,13 +2289,18 @@ class SyncOrchestrator:
                         parts.append(f"{deleted_on_page} deleted")
                     console.print(f"[green]  Page {pages_checked}: {', '.join(parts)}[/green]")
                     consecutive_stale_pages = 0
-                else:
+                elif unchanged_on_page > 0:
+                    # Nur Seiten mit Bekanntem zählen. Eine Seite allein aus Löschsignalen unbekannter Kennungen sagt
+                    # nichts über die Liste: Die Stadt Münster stellt gelöschte Beratungen als Platzhalter
+                    # ``…/consultations/0`` seitenweise vor die echten Änderungen (Issue #1523)
                     consecutive_stale_pages += 1
 
                 # Safety stop: 5 consecutive pages without changes (nicht in Zeitscheiben: jede hat ihren Zeitraum;
-                # nach einem Rückfall auf das Lesen ohne Scheiben wieder)
+                # nach einem Rückfall auf das Lesen ohne Scheiben wieder). Nicht bei einer Liste, die die Quelle
+                # nachweislich filtert: Jede ihrer Seiten ist schon eine Änderung seit dem Fensteranfang, und hinter
+                # Seiten mit Bekanntem (Fenster, das ein nicht gespeichertes Objekt festhält) stehen die neuen Einträge
                 unsliced = windows is None or (slices is not None and list_url in slices.unsliced)
-                if consecutive_stale_pages >= stale_pages_to_stop and unsliced:
+                if consecutive_stale_pages >= stale_pages_to_stop and unsliced and stale_stop:
                     console.print(
                         f"[yellow]  Stopping {entity_type}: "
                         f"{consecutive_stale_pages} consecutive pages without changes[/yellow]"

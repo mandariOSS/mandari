@@ -48,6 +48,8 @@ LEGACY_HOSTS_KEY = "modified_since_unsupported_hosts"
 MODIFIED_SINCE_CHECK_KEY = "modified_since_check"
 #: Ergebnis der Prüfung „Quelle nimmt den Filter an, liefert aber ungefiltert“ (``MODIFIED_SINCE_IGNORED`` im Client)
 _CHECK_IGNORED = "ignored"
+#: Ergebnis der Prüfung „Quelle filtert“ (``MODIFIED_SINCE_SUPPORTED`` im Client)
+_CHECK_SUPPORTED = "supported"
 #: Nach dieser Zeit fragt der inkrementelle Lauf eine vermerkte Liste wieder mit Filter an
 UNFILTERED_LIST_RECHECK = timedelta(days=1)
 
@@ -140,14 +142,25 @@ class FilterNotes:
     #: Geänderte Einträge seit dem Laden bzw. Speichern (``None``: gelöscht)
     changed_lists: dict[str, dict[str, str] | None] = field(default_factory=dict)
     changed_hosts: dict[str, dict[str, str] | None] = field(default_factory=dict)
+    #: Server, für die die letzte Prüfung nach einem Vollabgleich (``modified_since_check``) „filtert“ ergab. Nur
+    #: gelesen, nie gespeichert: Der Befund gehört der Prüfung (Issue #1523, Stopp nach Seiten ohne Änderung)
+    proven_hosts: frozenset[str] = frozenset()
 
     @classmethod
     def from_sync_config(cls, sync_config: Any, source_url: str, oparl_version: str | None = None) -> FilterNotes:
         """Vermerke der Quelle aus ihrer ``sync_config``; alte Einträge je Server werden dabei übernommen."""
         if not isinstance(sync_config, Mapping):
             return cls()
+        check = sync_config.get(MODIFIED_SINCE_CHECK_KEY)
+        proven: frozenset[str] = frozenset()
+        if isinstance(check, Mapping) and check.get("result") == _CHECK_SUPPORTED:
+            host = check.get("host")
+            if isinstance(host, str) and host:
+                proven = frozenset({host})
         notes = cls(
-            lists=_entries(sync_config, UNFILTERED_LISTS_KEY), hosts=_entries(sync_config, UNFILTERED_HOSTS_KEY)
+            lists=_entries(sync_config, UNFILTERED_LISTS_KEY),
+            hosts=_entries(sync_config, UNFILTERED_HOSTS_KEY),
+            proven_hosts=proven,
         )
         legacy = _legacy_hosts(sync_config, source_url, oparl_version)
         if legacy is not None:
@@ -176,6 +189,13 @@ class FilterNotes:
     def unfiltered(self, list_url: str, host: str, *, carry: bool = False) -> bool:
         """Ist die Liste als „filtert nicht“ vermerkt, gleich ob eine Prüfung fällig ist?"""
         return list_url in self.lists or self.host_ignored(host, carry=carry)
+
+    def proven(self, list_url: str, host: str, *, carry: bool = False) -> bool:
+        """
+        Filtert die Quelle diese Liste nachweislich? Ja, wenn die letzte Prüfung für den Server „filtert“ ergab und
+        weder die Liste noch der Server als „filtert nicht“ vermerkt ist.
+        """
+        return host in self.proven_hosts and not self.unfiltered(list_url, host, carry=carry)
 
     def skip_filter(self, list_url: str, host: str, *, carry: bool = False, now: datetime | None = None) -> bool:
         """Liste jetzt ohne Filter anfragen? Nein, sobald die Prüfung eines Vermerks je Liste fällig ist."""

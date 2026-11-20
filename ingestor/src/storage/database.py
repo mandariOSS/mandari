@@ -265,6 +265,47 @@ def _tombstone_update(model: type, stmt: Any) -> dict[str, Any]:
 #: Issue #863). Der Abruf schreibt sie bei jedem Speichern wieder an den Punkt, der Rückweg findet die Zeile daran.
 PREVIOUS_ID_FIELD: Final = "mandari:previousId"
 
+
+def agenda_item_consultation_reference(raw: Any) -> str | None:
+    """Beratung, die ein Tagesordnungspunkt nennt (``AgendaItem.consultation``: Adresse oder Objekt mit ``id``)."""
+    if not isinstance(raw, Mapping):
+        return None
+    value = raw.get("consultation")
+    if isinstance(value, Mapping):
+        value = value.get("id")
+    return value if isinstance(value, str) and value else None
+
+
+@dataclass(frozen=True)
+class PendingConsultationLink:
+    """Beratung ohne Tagesordnungspunkt, die ein Punkt derselben Quelle nennt (Nachziehen, Issue #1523)."""
+
+    consultation_external_id: str
+    agenda_item_external_id: str
+    agenda_item_id: UUID
+    meeting_id: UUID
+    #: Kommune der Sitzung des Punkts (dieselbe Quelle wie die Beratung)
+    body_id: UUID
+    source_id: UUID
+    source_name: str
+
+
+#: Beratungen ohne Tagesordnungspunkt, die ein nicht gelöschter Punkt derselben Quelle nennt. Nennen mehrere Punkte
+#: dieselbe Beratung, gilt der der jüngsten Sitzung. ``:source`` leer: alle Quellen.
+_PENDING_CONSULTATION_LINKS = text(
+    "SELECT DISTINCT ON (c.id) c.external_id, ai.external_id, ai.id, m.id, m.body_id, cb.source_id,"
+    " coalesce(s.name, '')"
+    " FROM oparl_consultations c"
+    " JOIN oparl_bodies cb ON cb.id = c.body_id"
+    " JOIN oparl_agenda_items ai ON ai.raw_json->>'consultation' = c.external_id"
+    " JOIN oparl_meetings m ON m.id = ai.meeting_id"
+    " JOIN oparl_bodies mb ON mb.id = m.body_id AND mb.source_id = cb.source_id"
+    " LEFT JOIN oparl_sources s ON s.id = cb.source_id"
+    " WHERE c.agenda_item_external_id IS NULL AND c.deleted IS NOT TRUE AND ai.deleted IS NOT TRUE"
+    " AND (CAST(:source AS uuid) IS NULL OR cb.source_id = CAST(:source AS uuid))"
+    " ORDER BY c.id, m.start DESC NULLS LAST, ai.external_id"
+)
+
 #: Verweis einer Beratung auf einen umgeschriebenen Tagesordnungspunkt nachziehen (Spalte und ``raw_json``). Über
 #: ``raw_json`` nur unter den Beratungen der Sitzung suchen: Beide Spalten haben einen Index, ``raw_json`` nicht. Nur
 #: Beratungen derselben Quelle (``:source``) und solche ohne Kommune (Altbestand).
@@ -2567,6 +2608,17 @@ class DatabaseStorage:
                     item_id, item.raw_json or {}, prior, meeting_id=meeting_id, public=item.public is not False
                 )
                 await self._emit(session, body_id, drafts, item.oparl_modified)
+            # Rückverweis: Nennt der Punkt eine Beratung ohne Tagesordnungspunkt, bekommt sie diesen (Issue #1523)
+            consultation_ref = agenda_item_consultation_reference(item.raw_json)
+            if consultation_ref is not None:
+                await self._link_consultation_to_agenda_item(
+                    session,
+                    consultation_ref,
+                    agenda_item_external_id=item.external_id,
+                    agenda_item_id=item_id,
+                    meeting_id=meeting_id,
+                    body_id=body_id,
+                )
             await session.commit()
             return item_id
 
@@ -2766,7 +2818,8 @@ class DatabaseStorage:
             # Für das Ereignis die Zeile des Punkts im Bestand, nicht die Kennung aus seiner Adresse (umgeschriebene
             # Punkte, Issue #863); im selben Befehl, ohne eigene Abfrage, nur ein Punkt der eigenen Quelle
             agenda_ref = consultation.agenda_item_external_id if emit else None
-            returning: list[Any] = [OParlConsultation.id]
+            # Zweite Spalte: Tagesordnungspunkt der Zeile nach dem Upsert (auch einer früher gesetzte)
+            returning: list[Any] = [OParlConsultation.id, OParlConsultation.agenda_item_external_id]
             if agenda_ref:
                 returning.append(
                     select(OParlAgendaItem.id)
@@ -2782,11 +2835,31 @@ class DatabaseStorage:
             row = await self._upserted(session, stmt, "consultation", consultation.external_id)
             consultation_id = row[0]
             await self._note_foreign_consultation_references(session, consultation, body_id)
+            # Rückverweis: Nennt die Beratung keinen Tagesordnungspunkt, aber ein Punkt ihrer Sitzung sie, gilt er
+            # (SD.NET RIM setzt ``agendaItem`` nachträglich, ohne ``modified`` zu ändern; Issue #1523)
+            linked: tuple[UUID, str] | None = None
+            if row[1] is None and consultation.meeting_external_id:
+                linked = await self._agenda_item_naming(
+                    session, consultation.external_id, consultation.meeting_external_id, body_id
+                )
+                if linked is not None:
+                    await session.execute(
+                        update(OParlConsultation)
+                        .where(
+                            OParlConsultation.id == consultation_id,
+                            OParlConsultation.agenda_item_external_id.is_(None),
+                        )
+                        .values(agenda_item_external_id=linked[1])
+                    )
             if emit:
-                agenda_item_id = row[1] if agenda_ref else None
+                raw_for_event: Mapping[str, Any] = consultation.raw_json or {}
+                agenda_item_id = row[2] if agenda_ref else None
+                if linked is not None:
+                    raw_for_event = {**raw_for_event, "agendaItem": linked[1]}
+                    agenda_item_id = linked[0]
                 drafts = ris_events.consultation_events(
                     consultation_id,
-                    consultation.raw_json or {},
+                    raw_for_event,
                     prior,
                     paper_id=paper_id,
                     paper_external_id=consultation.paper_external_id,
@@ -2796,6 +2869,133 @@ class DatabaseStorage:
                 await self._emit(session, body_id, drafts, consultation.oparl_modified)
             await session.commit()
             return consultation_id
+
+    @staticmethod
+    async def _agenda_item_naming(
+        session: AsyncSession, consultation_external_id: str, meeting_external_id: str, body_id: UUID
+    ) -> tuple[UUID, str] | None:
+        """
+        Tagesordnungspunkt der Sitzung ``meeting_external_id`` (dieselbe Quelle wie ``body_id``), der die Beratung
+        nennt (``AgendaItem.consultation``): Zeile und Kennung, sonst ``None``. Gesucht wird nur unter den Punkten
+        dieser einen Sitzung (Index auf Sitzung und Punkt, ``raw_json`` hat keinen).
+        """
+        found = await session.execute(
+            select(OParlAgendaItem.id, OParlAgendaItem.external_id)
+            .join(OParlMeeting, OParlMeeting.id == OParlAgendaItem.meeting_id)
+            .where(
+                OParlMeeting.external_id == meeting_external_id,
+                _bodies_of_source_of(OParlMeeting.body_id, body_id),
+                OParlAgendaItem.raw_json["consultation"].astext == consultation_external_id,
+                OParlAgendaItem.deleted.isnot(True),
+            )
+            .order_by(OParlAgendaItem.external_id)
+            .limit(1)
+        )
+        row = found.first()
+        return (row[0], row[1]) if row is not None else None
+
+    async def _link_consultation_to_agenda_item(
+        self,
+        session: AsyncSession,
+        consultation_external_id: str,
+        *,
+        agenda_item_external_id: str,
+        agenda_item_id: UUID,
+        meeting_id: UUID,
+        body_id: UUID | None,
+    ) -> UUID | None:
+        """
+        Rückverweis vom Tagesordnungspunkt auf seine Beratung nachtragen (Issue #1523), in der Transaktion des Aufrufers
+        und ohne eigenen Commit.
+
+        Nur eine nicht gelöschte Beratung derselben Quelle wie ``body_id``, die noch keinen Tagesordnungspunkt hat;
+        ein vorhandener Bezug bleibt (auch einer, den die Quelle selbst nennt). Die Sitzung kommt dazu, wenn die
+        Beratung keine nennt. ``raw_json`` bleibt, wie die Quelle es liefert: Ein späterer Abgleich der Beratung
+        meldet so keine Scheinänderung. Das Ereignis (``ris.consultation.changed`` mit ``agenda_item``) entsteht wie
+        beim Upsert aus dem Stand vorher und dem Stand mit dem Punkt. Rückgabe: Zeile der Beratung, ``None`` ohne
+        Änderung.
+        """
+        meeting_ref = select(OParlMeeting.external_id).where(OParlMeeting.id == meeting_id).scalar_subquery()
+        found = await session.execute(
+            update(OParlConsultation)
+            .where(
+                OParlConsultation.external_id == consultation_external_id,
+                OParlConsultation.agenda_item_external_id.is_(None),
+                OParlConsultation.deleted.isnot(True),
+                _owned_by_source_of(OParlConsultation, body_id),
+            )
+            .values(
+                agenda_item_external_id=agenda_item_external_id,
+                meeting_external_id=func.coalesce(OParlConsultation.meeting_external_id, meeting_ref),
+                updated_at=func.now(),
+            )
+            .returning(
+                OParlConsultation.id,
+                OParlConsultation.body_id,
+                OParlConsultation.raw_json,
+                OParlConsultation.paper_id,
+                OParlConsultation.paper_external_id,
+                OParlConsultation.meeting_external_id,
+                OParlConsultation.deletion_reason,
+            )
+        )
+        row = found.first()
+        if row is None:
+            return None
+        consultation_id, consultation_body_id, raw, paper_id, paper_external_id, meeting_external_id, reason = row
+        if await self._events_for(session, consultation_body_id):
+            stored: Mapping[str, Any] = raw if isinstance(raw, Mapping) else {}
+            prior = ris_events.Prior(raw_json=stored, deleted=False, deletion_reason=reason)
+            linked_raw = {**stored, "agendaItem": agenda_item_external_id}
+            if not linked_raw.get("meeting") and meeting_external_id:
+                linked_raw["meeting"] = meeting_external_id
+            drafts = ris_events.consultation_events(
+                consultation_id,
+                linked_raw,
+                prior,
+                paper_id=paper_id,
+                paper_external_id=paper_external_id,
+                ids=self.id_bases,
+                agenda_item_id=agenda_item_id,
+            )
+            await self._emit(session, consultation_body_id, drafts)
+        return consultation_id
+
+    async def pending_consultation_links(self, source_id: UUID | None = None) -> list[PendingConsultationLink]:
+        """
+        Beratungen ohne Tagesordnungspunkt, die ein Punkt derselben Quelle nennt (Bestand vor Issue #1523), für
+        ``link_pending_consultations``. Eine Abfrage; ``source_id`` beschränkt auf eine Quelle.
+        """
+        async with self.get_session() as session:
+            rows = await session.execute(_PENDING_CONSULTATION_LINKS, {"source": source_id})
+            return [PendingConsultationLink(*row) for row in rows]
+
+    async def link_pending_consultations(self, source_id: UUID | None = None, *, apply: bool = False) -> dict[str, int]:
+        """
+        Rückverweise TOP → Beratung im Bestand nachziehen (Issue #1523). Ohne ``apply`` nur zählen. Je Beratung eine
+        Transaktion mit Ereignis wie im Abgleich (``_link_consultation_to_agenda_item``); idempotent, weil nur
+        Beratungen ohne Tagesordnungspunkt geschrieben werden. Rückgabe: Anzahl je Quelle (Name, sonst Kennung),
+        mit ``apply`` die tatsächlich geschriebenen.
+        """
+        counts: Counter[str] = Counter()
+        for link in await self.pending_consultation_links(source_id):
+            label = link.source_name or str(link.source_id)
+            if not apply:
+                counts[label] += 1
+                continue
+            async with self.get_session() as session:
+                written = await self._link_consultation_to_agenda_item(
+                    session,
+                    link.consultation_external_id,
+                    agenda_item_external_id=link.agenda_item_external_id,
+                    agenda_item_id=link.agenda_item_id,
+                    meeting_id=link.meeting_id,
+                    body_id=link.body_id,
+                )
+                await session.commit()
+            if written is not None:
+                counts[label] += 1
+        return dict(counts)
 
     @staticmethod
     async def _note_foreign_consultation_references(
