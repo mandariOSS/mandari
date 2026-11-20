@@ -151,8 +151,9 @@ async def nachladen(
 ) -> tuple[Ergebnis, dict[str, str]]:
     """
     Beratungen in ``reihenfolge`` einzeln laden und speichern, je Beratung höchstens zwei Abrufe (Beratung und
-    unbekannte Vorlage, die Vorlage zuerst gespeichert). Rückgabe: Ergebnis und die Versuche, die zu merken sind
-    (Kennung → Zeitpunkt; nur, was sich nicht laden oder speichern ließ).
+    unbekannte Vorlage, die Vorlage zuerst gespeichert). Lässt sich die Vorlage nicht laden oder speichern, bleibt
+    auch die Beratung offen. Rückgabe: Ergebnis und die Versuche, die zu merken sind (Kennung → Zeitpunkt; nur, was
+    sich nicht laden oder speichern ließ).
     """
     ergebnis = Ergebnis()
     versuche: dict[str, str] = {}
@@ -182,11 +183,25 @@ async def nachladen(
             continue
         vorlage = _verweis(beratung.get("paper"))
         if vorlage is not None and not await vorlage_bekannt(vorlage):
+            if not weiter():
+                ergebnis.abbruch = "Abruffenster beendet"
+                ergebnis.zurueckgestellt = len(reihenfolge) - index
+                break
             vorlagen_abruf = await abrufen(vorlage)
             ergebnis.abrufe += 1
+            if vorlagen_abruf.error_kind is not None:
+                ergebnis.abbruch = vorlagen_abruf.error or vorlagen_abruf.error_kind
+                ergebnis.fehlgeschlagen += 1
+                ergebnis.zurueckgestellt = len(reihenfolge) - index - 1
+                versuche[kennung] = stempel
+                break
             daten = _objekt(vorlagen_abruf, "Paper", vorlage)
-            if daten is not None and await _speichern(speichern, "paper", daten):
-                ergebnis.vorlagen += 1
+            if daten is None or not await _speichern(speichern, "paper", daten):
+                # Ohne Vorlage hilft die Beratung am Punkt nicht: Sie bleibt offen und kommt nach der Wartezeit wieder
+                ergebnis.fehlgeschlagen += 1
+                versuche[kennung] = stempel
+                continue
+            ergebnis.vorlagen += 1
         if await _speichern(speichern, "consultation", beratung):
             ergebnis.beratungen += 1
         else:

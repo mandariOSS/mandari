@@ -169,3 +169,42 @@ async def test_fensterende_beendet_das_nachladen() -> None:
     lauf.offen = False
     ergebnis, versuche = await lauf.los([f"{GI}/consultation/1"])
     assert lauf.abgerufen == [] and ergebnis.abbruch == "Abruffenster beendet" and versuche == {}
+
+
+async def test_ohne_vorlage_bleibt_die_beratung_offen() -> None:
+    """Lässt sich die unbekannte Vorlage nicht laden, wird die Beratung nicht gespeichert und später erneut versucht."""
+    lauf = Lauf({f"{GI}/consultation/1": Antwort(beratung(1, vorlage=7)), f"{GI}/consultation/2": Antwort(beratung(2))})
+    lauf.bekannte_vorlagen = {f"{GI}/paper/1"}
+    ergebnis, versuche = await lauf.los([f"{GI}/consultation/1", f"{GI}/consultation/2"])
+
+    assert lauf.abgerufen == [f"{GI}/consultation/1", f"{GI}/paper/7", f"{GI}/consultation/2"]
+    assert lauf.gespeichert == [("consultation", f"{GI}/consultation/2")]
+    assert list(versuche) == [f"{GI}/consultation/1"] and ergebnis.fehlgeschlagen == 1
+
+
+async def test_sperre_beim_vorlagenabruf_beendet_das_nachladen() -> None:
+    lauf = Lauf(
+        {
+            f"{GI}/consultation/1": Antwort(beratung(1)),
+            f"{GI}/paper/1": Antwort(error="HTTP 503", error_kind="server_error_series"),
+        }
+    )
+    ergebnis, versuche = await lauf.los([f"{GI}/consultation/1", f"{GI}/consultation/2"])
+    assert lauf.gespeichert == [] and lauf.abgerufen == [f"{GI}/consultation/1", f"{GI}/paper/1"]
+    assert ergebnis.abbruch == "HTTP 503" and ergebnis.zurueckgestellt == 1
+    assert list(versuche) == [f"{GI}/consultation/1"]
+
+
+async def test_fensterende_vor_dem_vorlagenabruf() -> None:
+    lauf = Lauf({f"{GI}/consultation/1": Antwort(beratung(1))})
+    original = lauf.abrufen
+
+    async def abrufen_und_schliessen(url: str) -> Antwort:
+        antwort = await original(url)
+        lauf.offen = False  # das Fenster endet während des Beratungsabrufs
+        return antwort
+
+    lauf.abrufen = abrufen_und_schliessen  # type: ignore[method-assign]
+    ergebnis, versuche = await lauf.los([f"{GI}/consultation/1"])
+    assert lauf.abgerufen == [f"{GI}/consultation/1"] and lauf.gespeichert == []
+    assert ergebnis.abbruch == "Abruffenster beendet" and ergebnis.zurueckgestellt == 1 and versuche == {}

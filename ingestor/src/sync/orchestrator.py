@@ -2505,16 +2505,20 @@ class SyncOrchestrator:
                 speichern=speichern,
                 weiter=lambda: not client.deadline_passed(),
             )
-            if gescheitert:
-                await self.storage.note_consultation_fetches(
-                    source_id, gescheitert, keep_after=jetzt - 2 * beratungen_nachladen.ERNEUT_NACH
-                )
         except Exception as e:  # noqa: BLE001 - das Nachladen ergänzt nur, der Abgleich bleibt gültig
             console.print(f"[yellow]  Nachladen von Beratungen gescheitert: {e}[/yellow]")
             return
+        # Zuerst zählen: Was gespeichert ist, gehört in den Suchindex, auch wenn das Merken der Versuche scheitert
         stats["consultations"] = stats.get("consultations", 0) + ergebnis.beratungen
         stats["papers"] = stats.get("papers", 0) + ergebnis.vorlagen
         stats["nachgeladen"] = ergebnis.als_dict()
+        if gescheitert:
+            try:
+                await self.storage.note_consultation_fetches(
+                    source_id, gescheitert, keep_after=jetzt - 2 * beratungen_nachladen.ERNEUT_NACH
+                )
+            except Exception as e:  # noqa: BLE001 - ohne Vermerk kommt die Beratung im nächsten Lauf wieder
+                console.print(f"[yellow]  Versuche des Nachladens nicht gespeichert: {e}[/yellow]")
         console.print(
             f"[dim]  Beratungen nachgeladen: {ergebnis.beratungen} (Vorlagen {ergebnis.vorlagen}, gescheitert "
             f"{ergebnis.fehlgeschlagen}, zurückgestellt {ergebnis.zurueckgestellt}, {ergebnis.abrufe} Abrufe)"
