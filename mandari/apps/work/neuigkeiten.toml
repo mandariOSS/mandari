@@ -26,8 +26,8 @@
 # Version.
 
 [[eintrag]]
-datum = 2026-11-19
-version = ""
+datum = 2026-11-20
+version = "0.13.1"
 bereich = "sitzungen"
 titel = "Eigene Termine im Kalender, mit Einladungen und Antworten."
 text = """Im Kalender legen Sie eigene Termine an, etwa einen Ortstermin oder ein Pressegespräch: über „Termin \
@@ -36,16 +36,16 @@ absagen, hinterlegen Ort, Videolink und Beschreibung und legen fest, wer den Ter
 Recht „Termine im Kalender anlegen“, das eine Rolle in den Einstellungen bekommt."""
 
 [[eintrag]]
-datum = 2026-11-19
-version = ""
+datum = 2026-11-20
+version = "0.13.1"
 bereich = "start"
 titel = "Offene Einladungen und Terminumfragen auf der Startseite."
 text = """Unter „Für Sie“ auf der Startseite sehen Sie Einladungen zu Terminen, auf die Sie noch nicht geantwortet haben, \
 und Terminumfragen, in denen Ihre Antwort fehlt. Endet die Frist einer Umfrage morgen, erinnert Work Sie einmal daran."""
 
 [[eintrag]]
-datum = 2026-11-19
-version = ""
+datum = 2026-11-20
+version = "0.13.1"
 bereich = "sitzungen"
 titel = "Termine gemeinsam finden: die Terminumfrage."
 text = """Über „Termin abstimmen“ am Kalender schlagen Sie mehrere Zeitpunkte vor und fragen alle Mitglieder, einen \
@@ -54,8 +54,8 @@ dabei, was an dem Tag schon in ihrem Kalender steht. Am Ende legen Sie einen Vor
 oder eine interne Sitzung, die Zusagen stehen schon daran. Voraussetzung ist das Recht „Termine im Kalender anlegen“."""
 
 [[eintrag]]
-datum = 2026-11-19
-version = ""
+datum = 2026-11-20
+version = "0.13.1"
 bereich = "sitzungen"
 titel = "Ihre Termine auch im Kalender auf dem Handy."
 text = """Am Kalender führt „Im eigenen Kalender abonnieren“ in Ihr Profil. Dort erzeugen Sie eine persönliche \
@@ -64,8 +64,8 @@ dabei. Ihr Kalender zeigt dann die internen Sitzungen, die Sitzungen Ihrer Gremi
 Titel, Zeit und Ort."""
 
 [[eintrag]]
-datum = 2026-11-19
-version = ""
+datum = 2026-11-20
+version = "0.13.1"
 bereich = "sitzungen"
 titel = "Der Kalender zeigt auch Fraktionssitzungen, Fristen und Aufgaben."
 text = """Im Kalender unter „Sitzungen“ stehen neben den Sitzungen der Gremien jetzt auch die Fraktionssitzungen, die \
@@ -73,8 +73,8 @@ Fristen Ihrer Dokumente und die Aufgaben mit Fälligkeit, je Art in einer eigene
 Sie jede Art aus und wieder ein; Ihr Browser merkt sich die Auswahl."""
 
 [[eintrag]]
-datum = 2026-11-19
-version = ""
+datum = 2026-11-20
+version = "0.13.1"
 bereich = "ueberall"
 titel = "„Neu“ in der Seitenleiste, Zahlen an Aufgaben und Dokumenten."
 text = """Über den Knopf „Neu“ oben in der Seitenleiste legen Sie von jeder Seite aus ein Dokument oder eine Aufgabe \
@@ -82,8 +82,8 @@ an oder beginnen die Antwort auf eine Anfrage. An „Aufgaben“ steht, wie viel
 sind, an „Dokumente“, wie viele auf Ihre Freigabe warten."""
 
 [[eintrag]]
-datum = 2026-11-19
-version = ""
+datum = 2026-11-20
+version = "0.13.1"
 bereich = "ueberall"
 titel = "Tastaturkürzel: Übersicht mit dem Fragezeichen."
 text = """Mit „?“ öffnen Sie die Übersicht der Tastaturkürzel: „/“ führt in die Suche, „N“ öffnet „Neu“, die Ziffern \
@@ -91,8 +91,8 @@ wechseln in die Bereiche der Seitenleiste. Die Kürzel gelten nicht, während Si
 Übersicht abschalten. Sie finden sie auch im Menü an Ihrem Namen."""
 
 [[eintrag]]
-datum = 2026-11-18
-version = ""
+datum = 2026-11-20
+version = "0.13.1"
 bereich = "recherche"
 titel = "Anfragen beantworten Sie mit einem Entwurf samt Fundstellen."
 text = """Unter „Recherche“ gibt es die Seite „Anfrage beantworten“. Sie fügen eine Bürger- oder Presseanfrage ein \
