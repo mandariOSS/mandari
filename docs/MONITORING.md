@@ -194,13 +194,16 @@ Daemon höchstens einmal täglich je Quelle die erste Seite der Listen Vorlagen,
 jeder Kommune und vergleicht `pagination.totalElements` mit dem Bestand (nicht gelöschte Objekte). Höchstens fünf
 Anfragen je Kommune, ein Versuch je Liste, mit Takt, robots.txt, Kennung und Abruffenster der Quelle
 (`docs/ABRUFREGELN.md`, „Werkzeuge“). Fehlen uns mindestens 20 Objekte und 10 % einer Liste, ist die Kommune
-auffällig, ab 100 und 20 % kritisch. Kleine Abweichungen, mehr Objekte als die Quelle (nicht nachgezogene Löschungen)
-und nicht abrufbare Listen erscheinen als Hinweis. Server ohne `totalElements` (die Angabe ist optional) bekommen nur
+auffällig, ab 100 und 20 % kritisch. Als fehlend zählt nur, was auch mit den als gelöscht markierten Objekten nicht im
+Bestand steht (ob `totalElements` Löschmarkierungen mitzählt, legt OParl nicht fest). Kleine Abweichungen, mehr
+Objekte als die Quelle (nicht nachgezogene Löschungen), nicht abrufbare Listen und die Dateiliste von Quellen mit
+mehreren Kommunen (eine Datei steht im Bestand nur bei einer Kommune) erscheinen als Hinweis. Server ohne `totalElements` (die Angabe ist optional) bekommen nur
 den Bestand. more! rubin (OParl 1.0) führt Vorlagenlisten mit doppelten Einträgen (rund 5 %); deshalb erst ab 10 %.
 
 Befunde stehen an der Quelle in `sync_config.datenabgleich` (Anwendung) und `sync_config.datenabgleich_quelle`
 (Ingestor), je Kennung der Kommune. Ältere als 48 Stunden bzw. 3 Tage zählen nicht mehr; dann steht der Hinweis
-„veraltet“ (Zeitplan bzw. Daemon prüfen).
+„veraltet“ (Zeitplan bzw. Daemon prüfen). Scheitert die interne Prüfung einer Kommune, bleibt ihr bisheriger Befund stehen und die
+Kommune wird mindestens auffällig („interne Prüfung gescheitert“).
 
 ```bash
 # Tabelle aller Kommunen mit Ampel, Gründen, Hinweisen und Beispielen (Kennungen betroffener TOPs)

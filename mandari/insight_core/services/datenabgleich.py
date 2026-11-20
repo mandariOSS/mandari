@@ -148,7 +148,9 @@ def _nennt_dateien(haupt: Any, weitere: Any) -> bool:
             try:
                 wert = json.loads(wert)
             except ValueError:
-                return bool(wert.strip())
+                if wert.strip():
+                    return True
+                continue
         if isinstance(wert, dict | list) and wert:
             return True
     return False
@@ -217,7 +219,7 @@ def pruefe_kommune(body: Any, now: datetime | None = None) -> dict[str, Any]:
     Interne Konsistenz einer Kommune im Messfenster (siehe Moduldokumentation). Wenige Abfragen über Indizes, IN-Listen
     in Happen; die TOPs des Fensters liegen je Kommune im Bereich von Hunderten bis wenigen Tausend.
     """
-    from ..models import OParlAgendaItem, OParlConsultation, OParlFile, OParlPaper
+    from ..models import OParlAgendaItem, OParlConsultation, OParlFile, OParlPaper, withdrawn_q
 
     now = now or timezone.now()
     von, bis = now - timedelta(days=FENSTER_VOR), now + timedelta(days=FENSTER_NACH)
@@ -257,6 +259,9 @@ def pruefe_kommune(body: Any, now: datetime | None = None) -> dict[str, Any]:
             for kennung in OParlConsultation.objects.filter(
                 eigene, agenda_item_external_id__in=happen, paper__isnull=False
             )
+            # Wie ``OParlAgendaItem.get_consultations``: von mandari Session zurückgenommene zählen nicht
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("paper"))
             .values_list("agenda_item_external_id", flat=True)
             .distinct()
             if kennung
@@ -311,11 +316,34 @@ def pruefe_kommune(body: Any, now: datetime | None = None) -> dict[str, Any]:
     }
 
 
-def speichere(source_id: Any, befunde: dict[str, dict[str, Any]], *, ersetzen: bool) -> None:
+def zusammenfuehren(
+    bisher: Any, befunde: dict[str, dict[str, Any]], gescheitert: dict[str, dict[str, Any]], *, ersetzen: bool
+) -> dict[str, dict[str, Any]]:
     """
-    Befunde je Kommune in ``sync_config["datenabgleich"]`` schreiben, unter Zeilensperre (der Ingestor schreibt in
-    dieselbe ``sync_config``). ``ersetzen``: Kommunen ohne neuen Befund fallen weg (Lauf über alle Kommunen der
-    Quelle); sonst bleiben sie stehen (Lauf mit ``--kommune``).
+    Neuer Stand von ``sync_config["datenabgleich"]``. ``ersetzen`` (Lauf über alle Kommunen): Kommunen ohne neuen Befund
+    fallen weg, sonst bleiben sie stehen (Lauf mit ``--kommune``). Eine Kommune, deren Prüfung scheiterte
+    (``gescheitert``), behält ihren bisherigen Befund samt Zeitpunkt und bekommt den Vermerk ``fehlgeschlagen``: Ein
+    kritischer Befund verschwindet so nicht mit einem Fehler der Prüfung, und der Fehler bleibt sichtbar.
+    """
+    alt = bisher if isinstance(bisher, dict) else {}
+    neu: dict[str, dict[str, Any]] = {} if ersetzen else {k: v for k, v in alt.items() if isinstance(v, dict)}
+    neu.update(befunde)
+    for kennung, vermerk in gescheitert.items():
+        vorher = alt.get(kennung)
+        neu[kennung] = {**(vorher if isinstance(vorher, dict) else {}), **vermerk}
+    return dict(sorted(neu.items()))
+
+
+def speichere(
+    source_id: Any,
+    befunde: dict[str, dict[str, Any]],
+    *,
+    ersetzen: bool,
+    gescheitert: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """
+    Befunde je Kommune in ``sync_config["datenabgleich"]`` schreiben (``zusammenfuehren``), unter Zeilensperre: Der
+    Ingestor schreibt in dieselbe ``sync_config``.
     """
     from ..models import OParlSource
 
@@ -324,11 +352,9 @@ def speichere(source_id: Any, befunde: dict[str, dict[str, Any]], *, ersetzen: b
         if source is None:
             return
         config = dict(source.sync_config) if isinstance(source.sync_config, dict) else {}
-        bisher = config.get(SCHLUESSEL_INTERN)
-        neu = {} if ersetzen or not isinstance(bisher, dict) else dict(bisher)
-        neu.update(befunde)
+        neu = zusammenfuehren(config.get(SCHLUESSEL_INTERN), befunde, gescheitert or {}, ersetzen=ersetzen)
         if neu:
-            config[SCHLUESSEL_INTERN] = dict(sorted(neu.items()))
+            config[SCHLUESSEL_INTERN] = neu
         else:
             config.pop(SCHLUESSEL_INTERN, None)
         source.sync_config = config
@@ -348,22 +374,36 @@ def pruefe_alle(kommune: str = "", *, speichern: bool = True, now: datetime | No
     if kommune:
         bodies = bodies.filter(Q(name__icontains=kommune) | Q(external_id__icontains=kommune))
     je_quelle: dict[Any, dict[str, dict[str, Any]]] = {}
+    gescheitert: dict[Any, dict[str, dict[str, Any]]] = {}
     for body in bodies:
         try:
             befund = pruefe_kommune(body, now)
-        except Exception:  # noqa: BLE001 – eine Kommune darf den Lauf der übrigen nicht verhindern
+        except Exception as exc:  # noqa: BLE001 – eine Kommune darf den Lauf der übrigen nicht verhindern
             logger.exception("Datenabgleich: Kommune %s nicht geprüft", body.name)
+            gescheitert.setdefault(body.source_id, {})[body.external_id] = {
+                "name": body.name,
+                "fehlgeschlagen": now.isoformat(timespec="seconds"),
+                "fehler": type(exc).__name__,
+            }
             continue
         je_quelle.setdefault(body.source_id, {})[body.external_id] = befund
+    betroffen = set(je_quelle) | set(gescheitert)
     if speichern:
-        for source_id, befunde in je_quelle.items():
-            speichere(source_id, befunde, ersetzen=not kommune)
-    quellen = list(OParlSource.objects.filter(pk__in=list(je_quelle)).order_by("name"))
-    for source in quellen:
-        config = dict(source.sync_config) if isinstance(source.sync_config, dict) else {}
-        bisher = config.get(SCHLUESSEL_INTERN)
-        config[SCHLUESSEL_INTERN] = {**(bisher if isinstance(bisher, dict) else {}), **je_quelle[source.pk]}
-        source.sync_config = config
+        for source_id in betroffen:
+            speichere(
+                source_id, je_quelle.get(source_id, {}), ersetzen=not kommune, gescheitert=gescheitert.get(source_id)
+            )
+    quellen = list(OParlSource.objects.filter(pk__in=list(betroffen)).order_by("name"))
+    if not speichern:
+        for source in quellen:
+            config = dict(source.sync_config) if isinstance(source.sync_config, dict) else {}
+            config[SCHLUESSEL_INTERN] = zusammenfuehren(
+                config.get(SCHLUESSEL_INTERN),
+                je_quelle.get(source.pk, {}),
+                gescheitert.get(source.pk, {}),
+                ersetzen=False,
+            )
+            source.sync_config = config
     return quellen
 
 
@@ -503,13 +543,19 @@ def _bewerte_quelle(kommune: Kommune, eintrag: dict[str, Any]) -> None:
         quelle, bestand = werte.get("quelle"), werte.get("bestand")
         if not isinstance(quelle, int) or not isinstance(bestand, int):
             continue
-        fehlt = quelle - bestand
+        # Ob ``totalElements`` gelöschte Objekte mitzählt, legt OParl nicht fest: Als fehlend gilt nur, was auch mit den
+        # als gelöscht markierten nicht im Bestand steht (kein Alarm durch Löschmarkierungen)
+        geloescht = werte.get("mit_geloeschten")
+        fehlt = quelle - max(bestand, geloescht if isinstance(geloescht, int) else bestand)
         if fehlt >= SCHWELLEN["fehlbestand"]["warning"][0]:
             stufe = _stufe("fehlbestand", fehlt, quelle)
-            kommune.melde(
-                stufe, f"{name}: Quelle {quelle}, Bestand {bestand} ({fehlt} fehlen, {_prozent(fehlt, quelle)})"
-            )
-        elif fehlt < 0 and -fehlt >= SCHWELLEN["fehlbestand"]["warning"][0]:
+            text = f"{name}: Quelle {quelle}, Bestand {bestand} ({fehlt} fehlen, {_prozent(fehlt, quelle)})"
+            if werte.get("nur_hinweis"):
+                # Dateien einer Quelle mit mehreren Kommunen: Eine Datei gehört im Bestand nur einer davon
+                kommune.hinweise.append(f"{text}; Zuordnung zur Kommune unsicher, nur Hinweis")
+            else:
+                kommune.melde(stufe, text)
+        elif bestand > quelle and bestand - quelle >= SCHWELLEN["fehlbestand"]["warning"][0]:
             kommune.hinweise.append(f"{name}: Bestand {bestand} größer als Quelle {quelle} (Löschungen nachziehen?)")
 
 
@@ -528,6 +574,12 @@ def bewerte_kommunen(source: Any, now: datetime | None = None) -> list[Kommune]:
         name = str((eintrag_intern or eintrag_quelle or {}).get("name") or kennung)
         kommune = Kommune(kennung=kennung, name=name, intern=eintrag_intern, quelle=eintrag_quelle)
         if eintrag_intern is not None:
+            if eintrag_intern.get("fehlgeschlagen"):
+                kommune.melde(
+                    "warning",
+                    f"interne Prüfung gescheitert ({eintrag_intern.get('fehler') or 'Fehler'}, "
+                    f"{str(eintrag_intern['fehlgeschlagen'])[:16]}), bisheriger Befund gilt weiter",
+                )
             at = _zeitpunkt(eintrag_intern.get("at"))
             if at is None or now - at > GUELTIG_INTERN:
                 kommune.hinweise.append("interne Prüfung veraltet (Zeitplan befehl:datenabgleich läuft nicht?)")

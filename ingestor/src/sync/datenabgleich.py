@@ -52,16 +52,23 @@ LISTEN: Final[dict[str, tuple[str, ...]]] = {
     "file": ("file", "files"),
 }
 
-#: Bestand je Kommune: nicht gelöschte Objekte je Liste (TOPs über ihre Sitzung)
+#: Bestand je Kommune und Liste (TOPs über ihre Sitzung): nicht gelöschte Objekte und alle samt Löschmarkierung. Ob
+#: ``totalElements`` gelöschte Objekte mitzählt, legt OParl nicht fest; die Anwendung vergleicht mit beiden Zahlen
 _BESTAND_SQL: Final = text(
     """
     SELECT
-      (SELECT count(*) FROM oparl_papers WHERE body_id = :body AND NOT deleted) AS paper,
-      (SELECT count(*) FROM oparl_meetings WHERE body_id = :body AND NOT deleted) AS meeting,
-      (SELECT count(*) FROM oparl_consultations WHERE body_id = :body AND NOT deleted) AS consultation,
+      (SELECT count(*) FILTER (WHERE NOT deleted) FROM oparl_papers WHERE body_id = :body) AS paper,
+      (SELECT count(*) FROM oparl_papers WHERE body_id = :body) AS paper_alle,
+      (SELECT count(*) FILTER (WHERE NOT deleted) FROM oparl_meetings WHERE body_id = :body) AS meeting,
+      (SELECT count(*) FROM oparl_meetings WHERE body_id = :body) AS meeting_alle,
+      (SELECT count(*) FILTER (WHERE NOT deleted) FROM oparl_consultations WHERE body_id = :body) AS consultation,
+      (SELECT count(*) FROM oparl_consultations WHERE body_id = :body) AS consultation_alle,
+      (SELECT count(*) FILTER (WHERE NOT a.deleted) FROM oparl_agenda_items a JOIN oparl_meetings m
+         ON m.id = a.meeting_id WHERE m.body_id = :body) AS agendaitem,
       (SELECT count(*) FROM oparl_agenda_items a JOIN oparl_meetings m ON m.id = a.meeting_id
-         WHERE m.body_id = :body AND NOT a.deleted) AS agendaitem,
-      (SELECT count(*) FROM oparl_files WHERE body_id = :body AND NOT deleted) AS file
+         WHERE m.body_id = :body) AS agendaitem_alle,
+      (SELECT count(*) FILTER (WHERE NOT deleted) FROM oparl_files WHERE body_id = :body) AS file,
+      (SELECT count(*) FROM oparl_files WHERE body_id = :body) AS file_alle
     """
 )
 _BODIES_SQL: Final = text(
@@ -145,10 +152,11 @@ def _vermerkt(sync_config: Any) -> set[str]:
     return {str(url).rstrip("/") for url in stored}
 
 
-async def _bestand(storage: Any, body_id: Any) -> dict[str, int]:
+async def _bestand(storage: Any, body_id: Any) -> dict[str, tuple[int, int]]:
+    """Je Liste (nicht gelöschte, alle samt Löschmarkierung)."""
     async with storage.get_session() as session:
         row = (await session.execute(_BESTAND_SQL, {"body": body_id})).mappings().one()
-    return {typ: int(row[typ] or 0) for typ in LISTEN}
+    return {typ: (int(row[typ] or 0), int(row[f"{typ}_alle"] or 0)) for typ in LISTEN}
 
 
 async def _kommunen(storage: Any, source_id: Any) -> list[Mapping[str, Any]]:
@@ -188,10 +196,9 @@ async def gleiche_ab(
         return ergebnis
     deadline = options.fetch_deadline(now)
     vermerkt = _vermerkt(sync_config)
+    alle = await _kommunen(storage, source.id)
     kommunen = [
-        k
-        for k in await _kommunen(storage, source.id)
-        if not kommune or kommune.lower() in str(k["name"]).lower() or kommune in str(k["external_id"])
+        k for k in alle if not kommune or kommune.lower() in str(k["name"]).lower() or kommune in str(k["external_id"])
     ]
     async with client_factory(
         max_concurrent=1,
@@ -208,10 +215,17 @@ async def gleiche_ab(
             for typ, adresse in listen_der_kommune(body["raw_json"]).items():
                 if typ in options.skip_lists or adresse.rstrip("/") in vermerkt:
                     continue
-                if deadline is not None and datetime.now(UTC) >= deadline:
+                rest = None if deadline is None else (deadline - datetime.now(UTC)).total_seconds()
+                if rest is not None and rest <= 0:
                     abgebrochen = True
                     break
-                result = await client.fetch(adresse, use_cache=False)
+                try:
+                    # Der Client hält das Ende des Fensters nur in Listen ein; hier gilt es samt Takt und Weiterleitung
+                    async with asyncio.timeout(rest):
+                        result = await client.fetch(adresse, use_cache=False)
+                except TimeoutError:
+                    abgebrochen = True
+                    break
                 ergebnis.abrufe += 1
                 if result.data is None or result.error:
                     fehler = result.error or f"HTTP {result.status_code}"
@@ -222,7 +236,10 @@ async def gleiche_ab(
                 continue
             bestand = await _bestand(storage, body["id"])
             for typ, werte in listen.items():
-                werte["bestand"] = bestand[typ]
+                werte["bestand"], werte["mit_geloeschten"] = bestand[typ]
+                if typ == "file" and len(alle) > 1:
+                    # Eine Datei, die mehrere Kommunen der Quelle nennen, steht im Bestand nur bei einer davon
+                    werte["nur_hinweis"] = True
             eintrag: dict[str, Any] = {"at": _iso(now), "name": body["name"], "listen": listen}
             if abgebrochen:
                 eintrag["abgebrochen"] = "Abruffenster endete"
@@ -235,23 +252,27 @@ async def gleiche_ab(
     return ergebnis
 
 
-_CONFIG_SQL: Final = text("SELECT sync_config FROM oparl_sources WHERE id = :source")
-
-
 async def _speichern(storage: Any, source: Any, kommunen: dict[str, dict[str, Any]], *, ersetzen: bool) -> None:
     """
-    Befunde unter ``sync_config["datenabgleich_quelle"]`` ablegen; die übrigen Schlüssel schreibt
-    ``set_source_sync_config_value`` unter Zeilensperre nicht an. Nur dieser Abgleich schreibt den Schlüssel.
+    Befunde unter ``sync_config["datenabgleich_quelle"]`` ablegen: Lesen, Zusammenführen und Schreiben unter
+    Zeilensperre (wie ``DatabaseStorage._change_sync_config``), die übrigen Schlüssel bleiben. ``ersetzen``: Kommunen
+    ohne neuen Befund fallen weg, sonst kommen die neuen zu den bisherigen dazu.
     """
-    neu: dict[str, Any] = {}
-    if not ersetzen:
-        async with storage.get_session() as session:
-            config = (await session.execute(_CONFIG_SQL, {"source": source.id})).scalar()
-        bisher = config.get(SCHLUESSEL) if isinstance(config, dict) else None
-        if isinstance(bisher, dict):
-            neu.update(bisher)
-    neu.update(kommunen)
-    await storage.set_source_sync_config_value(source.id, SCHLUESSEL, dict(sorted(neu.items())))
+    from sqlalchemy import select
+
+    from src.storage.models import OParlSource
+
+    async with storage.get_session() as session:
+        row = (await session.execute(select(OParlSource).where(OParlSource.id == source.id).with_for_update())).scalar()
+        if row is None:
+            return
+        config = dict(row.sync_config or {})
+        bisher = config.get(SCHLUESSEL)
+        neu: dict[str, Any] = {} if ersetzen or not isinstance(bisher, dict) else dict(bisher)
+        neu.update(kommunen)
+        config[SCHLUESSEL] = dict(sorted(neu.items()))
+        row.sync_config = config
+        await session.commit()
 
 
 async def im_daemon(storage: Any, source: Any, now: datetime | None = None) -> Ergebnis | None:

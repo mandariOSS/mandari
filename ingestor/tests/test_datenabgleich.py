@@ -60,8 +60,8 @@ def lauf(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     async def kommunen(_storage: Any, _source_id: Any) -> list[Mapping[str, Any]]:
         return list(zustand.kommunen)
 
-    async def bestand(_storage: Any, body_id: Any) -> dict[str, int]:
-        return dict(zustand.bestand.get(body_id, dict.fromkeys(datenabgleich.LISTEN, 0)))
+    async def bestand(_storage: Any, body_id: Any) -> dict[str, tuple[int, int]]:
+        return dict(zustand.bestand.get(body_id, dict.fromkeys(datenabgleich.LISTEN, (0, 0))))
 
     async def speichern(_storage: Any, _source: Any, eintraege: dict[str, Any], *, ersetzen: bool) -> None:
         zustand.abgelegt.append((eintraege, ersetzen))
@@ -113,7 +113,15 @@ def _kommune(nummer: int = 1, **raw: Any) -> dict[str, Any]:
 async def test_erste_seite_je_liste_gegen_den_bestand(lauf: SimpleNamespace) -> None:
     kommune = _kommune()
     lauf.kommunen = [kommune]
-    lauf.bestand = {kommune["id"]: {"paper": 1835, "meeting": 900, "consultation": 10, "agendaitem": 0, "file": 7}}
+    lauf.bestand = {
+        kommune["id"]: {
+            "paper": (1835, 1900),
+            "meeting": (900, 900),
+            "consultation": (10, 10),
+            "agendaitem": (0, 0),
+            "file": (7, 7),
+        }
+    }
     quelle = _quelle(
         user_agent="vereinbart/1.0",
         sync_config={"skip_lists": ["file"], "missing_lists": {f"{BASIS}/agendaitem": {"reason": "HTTP 404"}}},
@@ -137,9 +145,9 @@ async def test_erste_seite_je_liste_gegen_den_bestand(lauf: SimpleNamespace) -> 
             "at": "2026-11-20T14:00:00+00:00",
             "name": "Kommune 1",
             "listen": {
-                "paper": {"quelle": 64982, "bestand": 1835},
-                "meeting": {"quelle": None, "bestand": 900},
-                "consultation": {"fehler": "HTTP 504", "bestand": 10},
+                "paper": {"quelle": 64982, "bestand": 1835, "mit_geloeschten": 1900},
+                "meeting": {"quelle": None, "bestand": 900, "mit_geloeschten": 900},
+                "consultation": {"fehler": "HTTP 504", "bestand": 10, "mit_geloeschten": 10},
             },
         }
     }
@@ -192,6 +200,48 @@ async def test_im_fenster_mit_ende(lauf: SimpleNamespace) -> None:
     await datenabgleich.gleiche_ab(object(), quelle, now=nachts, client_factory=lauf.fabrik({}))
 
     assert lauf.clients[0].optionen["fetch_deadline"] == datetime(2026, 11, 21, 0, 0, tzinfo=UTC)
+
+
+async def test_dateien_mehrerer_kommunen_nur_als_hinweis(lauf: SimpleNamespace) -> None:
+    """Eine Datei steht im Bestand nur bei einer Kommune der Quelle: kein Alarm aus der Dateiliste."""
+    lauf.kommunen = [_kommune(1), _kommune(2)]
+    antworten = {f"https://ris.example.org/oparl/v1.1/body/{n}/file": _seite(10) for n in (1, 2)}
+
+    ergebnis = await datenabgleich.gleiche_ab(
+        object(), _quelle(), kommune="kommune 1", now=JETZT, client_factory=lauf.fabrik(antworten)
+    )
+
+    assert ergebnis.kommunen[BASIS]["listen"]["file"]["nur_hinweis"] is True
+    assert "nur_hinweis" not in ergebnis.kommunen[BASIS]["listen"]["paper"]
+
+
+async def test_abruf_endet_mit_dem_fenster(lauf: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wartet ein Abruf (Takt, Weiterleitung) über das Fensterende hinaus, endet der Abgleich als Teilabbruch."""
+    import asyncio
+
+    from src.client.source_options import SourceFetchOptions
+
+    class Langsam(Client):
+        async def fetch(self, url: str, use_cache: bool = True) -> FetchResult:
+            await asyncio.sleep(5)
+            return await super().fetch(url, use_cache)
+
+    def fabrik(**optionen: Any) -> Client:
+        client = Langsam({}, optionen)
+        lauf.clients.append(client)
+        return client
+
+    ende = datetime.now(UTC) + timedelta(seconds=0.2)
+    monkeypatch.setattr(SourceFetchOptions, "fetch_deadline", lambda self, now=None, full_deadline=None: ende)
+    lauf.kommunen = [_kommune()]
+
+    ergebnis = await datenabgleich.gleiche_ab(object(), _quelle(), now=JETZT, client_factory=fabrik)
+
+    assert lauf.clients[0].optionen["fetch_deadline"] == ende
+    assert ergebnis.abrufe == 0
+    assert "Abruffenster endete" in ergebnis.hinweis
+    assert ergebnis.kommunen[BASIS]["abgebrochen"] == "Abruffenster endete"
+    assert lauf.abgelegt == [(ergebnis.kommunen, False)], "Teilergebnis ersetzt die übrigen Kommunen nicht"
 
 
 async def test_kommune_filtert_und_ergaenzt(lauf: SimpleNamespace) -> None:

@@ -351,3 +351,72 @@ def test_kommune_filtert_und_behaelt_die_uebrigen(quelle: OParlSource, kommune: 
     call_command("datenabgleich", "--trotz-zeitplan", stdout=StringIO())
     quelle.refresh_from_db()
     assert set(quelle.sync_config[datenabgleich.SCHLUESSEL_INTERN]) == {BASIS}, "Lauf über alle ersetzt"
+
+
+def test_zurueckgenommene_beratung_zaehlt_nicht_als_vorlage(kommune: OParlBody, bestand: dict[str, Any]) -> None:
+    """Wie ``OParlAgendaItem.get_consultations``: Eine zurückgenommene Beratung versorgt den TOP nicht."""
+    from insight_core.models import REASON_WITHDRAWN
+
+    OParlConsultation.objects.filter(external_id=f"{BASIS}/consultation/1").update(
+        deleted=True, deletion_reason=REASON_WITHDRAWN
+    )
+
+    befund = datenabgleich.pruefe_kommune(kommune)
+
+    assert befund["work_ohne_vorlage"] == 3
+
+
+@pytest.mark.parametrize(
+    ("haupt", "weitere", "erwartet"),
+    [
+        ("", [{"id": "x"}], True),
+        ("", "", False),
+        (None, None, False),
+        ('{"id": "x"}', None, True),
+        ("https://ris.example/file/1", None, True),
+        (None, "[]", False),
+    ],
+)
+def test_nennt_dateien(haupt: Any, weitere: Any, erwartet: bool) -> None:
+    assert datenabgleich._nennt_dateien(haupt, weitere) is erwartet
+
+
+def test_gescheiterte_pruefung_behaelt_den_befund(
+    quelle: OParlSource, kommune: OParlBody, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ein Fehler der Prüfung darf einen kritischen Befund nicht löschen; er bleibt als Warnung sichtbar."""
+    _mit(quelle, datenabgleich={BASIS: _befund(top_luecke=37)})
+
+    def kaputt(*_: Any, **__: Any) -> dict[str, Any]:
+        raise RuntimeError("Abfrage gescheitert")
+
+    monkeypatch.setattr(datenabgleich, "pruefe_kommune", kaputt)
+    datenabgleich.pruefe_alle()
+
+    quelle.refresh_from_db()
+    eintrag = quelle.sync_config[datenabgleich.SCHLUESSEL_INTERN][BASIS]
+    assert eintrag["top_luecke"] == 37
+    assert eintrag["fehler"] == "RuntimeError"
+    (bewertung,) = datenabgleich.bewerte_kommunen(quelle)
+    assert bewertung.status == "critical"
+    assert any(grund.startswith("interne Prüfung gescheitert (RuntimeError") for grund in bewertung.gruende)
+
+
+def test_loeschmarkierungen_und_unsichere_dateien_alarmieren_nicht(quelle: OParlSource) -> None:
+    _mit(
+        quelle,
+        datenabgleich_quelle={
+            BASIS: {
+                "at": timezone.now().isoformat(),
+                "listen": {
+                    "paper": {"quelle": 1000, "bestand": 700, "mit_geloeschten": 1000},
+                    "file": {"quelle": 1000, "bestand": 100, "mit_geloeschten": 100, "nur_hinweis": True},
+                },
+            }
+        },
+    )
+
+    (kommune,) = datenabgleich.bewerte_kommunen(quelle)
+
+    assert kommune.status == "ok"
+    assert any("Zuordnung zur Kommune unsicher" in hinweis for hinweis in kommune.hinweise)
