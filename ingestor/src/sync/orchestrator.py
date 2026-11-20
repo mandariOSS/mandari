@@ -50,6 +50,7 @@ from src.client.oparl_client import (
     MODIFIED_SINCE_INCONCLUSIVE,
     MODIFIED_SINCE_SUPPORTED,
     MODIFIED_SINCE_UNSUPPORTED,
+    FetchResult,
     FetchWindowClosedError,
     ListFetchError,
     ListMissingError,
@@ -70,6 +71,7 @@ from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD
 from src.storage.database import (
+    SYNC_CONFIG_CONSULTATION_FETCHES_KEY,
     DatabaseStorage,
     ForeignObjectError,
     full_sync_progress_of,
@@ -84,6 +86,7 @@ from src.storage.database import (
 )
 from src.storage.events import start_correlation
 from src.storage.ris_events import content_fingerprint
+from src.sync import beratungen_nachladen
 from src.sync.fortsetzung import CHANGES, FULL, RESUME, ResumeEntry, ResumeRun
 from src.sync.gremien_kalender import SCHLUESSEL as GREMIUM_WEB
 from src.sync.gremien_kalender import KalenderLauf, OhneGremium
@@ -1674,6 +1677,9 @@ class SyncOrchestrator:
                 stats["consultations"] = consultation_result
                 progress.update(task9, completed=consultation_result, total=consultation_result)
 
+        # Beratungen, die Punkte anstehender Sitzungen nennen und die es nicht gibt, einzeln nachladen (Issue #1523)
+        await self._beratungen_nachladen(client, source_id, body_id, body_external_id, body_name, stats)
+
         if kalender is not None and "meeting" not in stats.get("incomplete", []):
             # Gremiennamen aus dem Kalender liest der Abgleich der Quelle nach allen Kommunen
             kalender.kommunen.append(body_id)
@@ -2339,6 +2345,79 @@ class SyncOrchestrator:
             fetch_page=client.fetch_page,
             load_stored=load_stored,
             deadline_passed=client.deadline_passed,
+        )
+
+    async def _beratungen_nachladen(
+        self,
+        client: OParlClient,
+        source_id: UUID,
+        body_id: UUID,
+        body_external_id: str,
+        body_name: str | None,
+        stats: dict[str, Any],
+    ) -> None:
+        """
+        Unbekannte Beratungen der Sitzungen um heute einzeln laden (``src/sync/beratungen_nachladen.py``, Issue
+        #1523). Gespeichert wird wie im Abgleich; gezählt in ``stats`` (``nachgeladen``), damit der Suchindex sie
+        aufnimmt. Fehler halten den Abgleich nicht auf.
+        """
+        try:
+            sync_config = await self.storage.source_sync_config(source_id)
+            budget = beratungen_nachladen.kontingent(sync_config)
+            if budget <= 0 or client.deadline_passed():
+                return
+            jetzt = datetime.now(UTC)
+            kandidaten = await self.storage.unknown_consultations_of_meetings(
+                body_id, jetzt - beratungen_nachladen.ZURUECK, jetzt + beratungen_nachladen.VORAUS
+            )
+            if not kandidaten:
+                return
+            versuche = sync_config.get(SYNC_CONFIG_CONSULTATION_FETCHES_KEY)
+            reihenfolge = beratungen_nachladen.faellig(
+                kandidaten,
+                versuche if isinstance(versuche, dict) else {},
+                urlparse(body_external_id).netloc,
+                jetzt,
+            )
+            if not reihenfolge:
+                return
+
+            async def abrufen(url: str) -> FetchResult:
+                return await client.fetch(url, use_cache=False)
+
+            async def vorlage_bekannt(url: str) -> bool:
+                return await self.storage.get_paper_uuid(url, body_id) is not None
+
+            async def speichern(entity_type: str, daten: dict[str, Any]) -> bool:
+                processed = self.processor.process(daten, body_external_id)
+                if not processed:
+                    return False
+                return await self._store_entity(processed, body_id, entity_type, body_name)
+
+            ergebnis, gescheitert = await beratungen_nachladen.nachladen(
+                reihenfolge,
+                kontingent=budget,
+                jetzt=jetzt,
+                abrufen=abrufen,
+                vorlage_bekannt=vorlage_bekannt,
+                speichern=speichern,
+                weiter=lambda: not client.deadline_passed(),
+            )
+            if gescheitert:
+                await self.storage.note_consultation_fetches(
+                    source_id, gescheitert, keep_after=jetzt - 2 * beratungen_nachladen.ERNEUT_NACH
+                )
+        except Exception as e:  # noqa: BLE001 - das Nachladen ergänzt nur, der Abgleich bleibt gültig
+            console.print(f"[yellow]  Nachladen von Beratungen gescheitert: {e}[/yellow]")
+            return
+        stats["consultations"] = stats.get("consultations", 0) + ergebnis.beratungen
+        stats["papers"] = stats.get("papers", 0) + ergebnis.vorlagen
+        stats["nachgeladen"] = ergebnis.als_dict()
+        console.print(
+            f"[dim]  Beratungen nachgeladen: {ergebnis.beratungen} (Vorlagen {ergebnis.vorlagen}, gescheitert "
+            f"{ergebnis.fehlgeschlagen}, zurückgestellt {ergebnis.zurueckgestellt}, {ergebnis.abrufe} Abrufe)"
+            + (f", beendet: {ergebnis.abbruch}" if ergebnis.abbruch else "")
+            + "[/dim]"
         )
 
     async def _gremien_aus_kalender(self, kalender: KalenderLauf, client: OParlClient) -> None:
