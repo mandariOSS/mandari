@@ -104,8 +104,8 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
-    # collectstatic ohne die Tailwind-Quelle static/css/input.css (mandari/static_files.py, Issue #1461)
-    "mandari.static_files.MandariStaticFilesConfig",
+    # Genau dieser Name: pytest-django liefert statische Dateien im Live-Server nur, wenn er wörtlich hier steht
+    "django.contrib.staticfiles",
     "django.contrib.humanize",
     # Third-party apps
     "django_htmx",
