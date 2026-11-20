@@ -22,6 +22,7 @@ import os
 import re
 from posixpath import basename
 
+from django.contrib.staticfiles.apps import StaticFilesConfig
 from whitenoise.storage import CompressedManifestStaticFilesStorage
 
 #: Ausgabe von ``npm run build`` (vite.config.ts: ``base``/``outDir``, Standardmuster ``[name]-[hash]``):
@@ -41,6 +42,19 @@ class ManifestStaticFilesStorage(CompressedManifestStaticFilesStorage):  # type:
         if is_vite_asset(name):
             return name
         return str(super().stored_name(name))
+
+
+class MandariStaticFilesConfig(StaticFilesConfig):
+    """
+    ``collectstatic`` ohne die Eingangsdatei von Tailwind (Issue #1461).
+
+    ``static/css/input.css`` ist nur die Quelle von ``styles.css`` und wird nie ausgeliefert. Seit Tailwind 4 steht
+    darin ``@import "tailwindcss"``; der Manifest-Storage hielte das für einen Verweis auf ``css/tailwindcss`` und
+    bräche ab. Das Muster gilt für den Dateinamen (unter Windows trennt Django Pfade mit Backslash); eine zweite
+    ``input.css`` gibt es unter ``static/`` nicht.
+    """
+
+    ignore_patterns = [*StaticFilesConfig.ignore_patterns, "input.css"]
 
 
 def _static_prefix() -> str:

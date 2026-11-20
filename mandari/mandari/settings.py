@@ -104,7 +104,8 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
-    "django.contrib.staticfiles",
+    # collectstatic ohne die Tailwind-Quelle static/css/input.css (mandari/static_files.py, Issue #1461)
+    "mandari.static_files.MandariStaticFilesConfig",
     "django.contrib.humanize",
     # Third-party apps
     "django_htmx",

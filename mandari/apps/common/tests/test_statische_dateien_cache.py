@@ -103,3 +103,18 @@ def test_cache_header_von_whitenoise(static_root: Path, url: str, cache_control:
 
     assert antwort is not None and antwort.status_code == 200, url
     assert antwort["Cache-Control"] == cache_control
+
+
+def test_collectstatic_laesst_die_tailwind_quelle_aus(tmp_path: Path) -> None:
+    """``static/css/input.css`` (``@import "tailwindcss"``) bricht den Manifest-Storage nicht ab (Issue #1461)."""
+    from django.apps import apps
+    from django.contrib.staticfiles.utils import get_files
+    from django.core.files.storage import FileSystemStorage
+
+    muster = apps.get_app_config("staticfiles").ignore_patterns
+    (tmp_path / "css").mkdir()
+    for name in ("input.css", "styles.css"):
+        (tmp_path / "css" / name).write_text("/* */", encoding="utf-8")
+
+    gesammelt = sorted(name.replace("\\", "/") for name in get_files(FileSystemStorage(location=tmp_path), muster))
+    assert gesammelt == ["css/styles.css"]
