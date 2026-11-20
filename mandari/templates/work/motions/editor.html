@@ -50,7 +50,7 @@
             {% if can_edit %}
             <!-- Statusleiste: Wörter | Zeichen | Seite | Speicherstatus | Teilnehmer -->
             <div id="editor-statusbar"
-                 class="border-t border-gray-200 dark:border-gray-700 px-4 py-1.5 flex items-center gap-3 bg-white dark:bg-gray-800 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                 class="border-t border-gray-200 dark:border-gray-700 px-4 py-1.5 flex items-center gap-3 bg-white dark:bg-gray-800 shrink-0 text-xs text-gray-500 dark:text-gray-400">
                 <span><span x-text="wordCount"></span> Wörter</span>
                 <span class="border-l border-gray-300 dark:border-gray-600 pl-3"><span x-text="charCount"></span> Zeichen</span>
                 <span class="border-l border-gray-300 dark:border-gray-600 pl-3">Seite <span x-text="currentPage"></span>/<span x-text="pageCount"></span></span>
@@ -91,7 +91,7 @@
         <!-- Right Sidebar (Comments / AI / History) -->
         <div class="editor-sidebar" :class="{ 'mobile-open': showMobileSidebar }">
             <!-- Sidebar Tabs: ohne Symbole, damit alle Reiter in die Spalte passen (vorher war der vierte abgeschnitten, Issue #851) -->
-            <div class="flex items-center border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0 overflow-x-auto">
+            <div class="flex items-center border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 overflow-x-auto">
                 <button type="button" @click="sidebarTab = 'comments'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'comments' }">
                     Kommentare
                 </button>
@@ -110,7 +110,7 @@
                     Verlauf
                 </button>
                 <!-- Mobile close button -->
-                <button type="button" @click="showMobileSidebar = false" class="xl:hidden ml-auto p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 mr-2" aria-label="Seitenspalte schließen">
+                <button type="button" @click="showMobileSidebar = false" class="xl:hidden ml-auto p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700 mr-2" aria-label="Seitenspalte schließen">
                     <i data-lucide="x" class="w-5 h-5"></i>
                 </button>
             </div>

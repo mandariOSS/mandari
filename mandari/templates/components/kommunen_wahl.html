@@ -21,7 +21,7 @@ als Text (auch in <template>) läse ein Crawler die Seite als Fehlerseite (Soft-
             <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
             <input id="{{ id }}-eingabe" x-ref="eingabe" x-model="eingabe" name="q" type="search" autocomplete="off"
                 placeholder="Kommune oder Postleitzahl" aria-describedby="{{ id }}-meldung" aria-controls="{{ id }}-ergebnisse"
-                class="h-12 w-full pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                class="h-12 w-full pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         </span>
     </form>
     <button type="button" @click="inDerNaehe()" x-show="!sucheAktiv()" :disabled="standort === 'laedt'" x-cloak="platz"
@@ -73,7 +73,7 @@ als Text (auch in <template>) läse ein Crawler die Seite als Fehlerseite (Soft-
         {# Stöbern in Stufen statt einer flachen Liste #}
         <section x-show="stoebernSichtbar()" class="mt-6" aria-labelledby="{{ id }}-stufe" x-cloak{% if stufe_start.eintraege %}="platz"{% endif %}>
             <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <h{{ im_dialog|yesno:"3,2" }} id="{{ id }}-stufe" x-ref="stufenTitel" tabindex="-1" x-text="stufenTitel()" class="text-[0.95rem] font-semibold text-gray-900 dark:text-white focus:outline-none">Nach Bundesland suchen</h{{ im_dialog|yesno:"3,2" }}>
+                <h{{ im_dialog|yesno:"3,2" }} id="{{ id }}-stufe" x-ref="stufenTitel" tabindex="-1" x-text="stufenTitel()" class="text-[0.95rem] font-semibold text-gray-900 dark:text-white focus:outline-hidden">Nach Bundesland suchen</h{{ im_dialog|yesno:"3,2" }}>
                 <button type="button" x-show="stufe && stufe.zurueck" @click="stoebern(stufe.zurueck)" x-cloak
                     class="inline-flex items-center gap-1 min-h-11 text-[0.9rem] font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">
                     <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i><span class="sr-only">Zurück: </span><span x-text="stufe && stufe.zurueck ? stufe.zurueck.titel : ''"></span>

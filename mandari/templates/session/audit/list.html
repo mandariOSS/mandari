@@ -129,7 +129,7 @@
                                 <summary class="cursor-pointer text-primary-600 dark:text-primary-400 text-xs">
                                     {{ entry.change_rows|length }} Angabe{{ entry.change_rows|length|pluralize:"n" }}
                                 </summary>
-                                <dl class="mt-2 space-y-1 text-xs break-words">
+                                <dl class="mt-2 space-y-1 text-xs wrap-break-word">
                                     {% for row in entry.change_rows %}
                                     <div>
                                         <dt class="font-semibold inline">{{ row.field }}:</dt>

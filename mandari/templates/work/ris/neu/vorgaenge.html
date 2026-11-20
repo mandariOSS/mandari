@@ -25,14 +25,14 @@ ohne den Button und leiten nie weiter). Fehlt die Nummer bei uns, sagt die Seite
 <form method="get" role="search" class="flex flex-wrap items-center gap-2">
     <label for="vorgaenge-suche" class="sr-only">Vorgang suchen</label>
     <input id="vorgaenge-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Titel oder Vorlagen-Nr."
-           class="h-9 w-full sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+           class="h-9 w-full sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
     <label for="vorgaenge-art" class="sr-only">Art</label>
-    <select id="vorgaenge-art" name="type" data-autosubmit class="h-9 max-w-[14rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="vorgaenge-art" name="type" data-autosubmit class="h-9 max-w-56 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Arten</option>
         {% for art in paper_types %}{% if art %}<option value="{{ art }}" {% if selected_type == art %}selected{% endif %}>{{ art }}</option>{% endif %}{% endfor %}
     </select>
     <label for="vorgaenge-jahr" class="sr-only">Jahr</label>
-    <select id="vorgaenge-jahr" name="year" data-autosubmit class="h-9 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="vorgaenge-jahr" name="year" data-autosubmit class="h-9 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Jahre</option>
         {% for year in years %}<option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>{% endfor %}
     </select>

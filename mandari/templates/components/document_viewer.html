@@ -9,10 +9,10 @@
      x-transition:leave-start="opacity-100"
      x-transition:leave-end="opacity-0"
      @keydown.escape.window="docViewerUrl=''; clearTimeout(_docTimeout)"
-     class="fixed inset-0 z-[60] flex items-center justify-center rand-sicher sm:[--rand:1.5rem] lg:[--rand:2rem]">
+     class="fixed inset-0 z-60 flex items-center justify-center rand-sicher sm:[--rand:1.5rem] lg:[--rand:2rem]">
 
     {# Backdrop #}
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="docViewerUrl=''; clearTimeout(_docTimeout)"></div>
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-xs" @click="docViewerUrl=''; clearTimeout(_docTimeout)"></div>
 
     {# Modal Panel #}
     <div x-show="docViewerUrl"
@@ -25,9 +25,9 @@
          class="relative w-full h-full max-w-7xl max-h-[95vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 
         {# Header #}
-        <div class="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
+        <div class="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 shrink-0">
             <div class="flex items-center gap-3 min-w-0 flex-1">
-                <div class="w-9 h-9 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                <div class="w-9 h-9 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
                     <svg class="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
                     </svg>
@@ -37,7 +37,7 @@
                     <p class="text-xs text-gray-500 dark:text-gray-400 truncate" x-text="docViewerMeta || ''"></p>
                 </div>
             </div>
-            <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+            <div class="flex items-center gap-2 shrink-0 ml-4">
                 {# Original im Ratsinformationssystem (Issue #1259), nur mit Adresse aus der Dokumentzeile. Über $data: Work #}
                 {# kennt den Wert nicht, dort bleibt der Link verborgen. Als Textlink, damit er sich von den Knöpfen abhebt.  #}
                 <a href="" x-show="$data.docViewerQuelle" x-cloak :href="$data.docViewerQuelle || ''" target="_blank" rel="noopener noreferrer"

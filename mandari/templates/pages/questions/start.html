@@ -24,7 +24,7 @@
         <div class="relative max-w-md">
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
             <input type="search" name="q" value="{{ filter_q }}" placeholder="Name oder Fraktion suchen…"
-                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
         </div>
     </form>
 
@@ -41,7 +41,7 @@
                 </p>
             </div>
             <a href="{% url 'insight_core:insight:ask_question' p.id %}"
-               class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+               class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">
                 <i data-lucide="message-circle-question" class="w-3.5 h-3.5"></i> Fragen
             </a>
         </div>

@@ -74,7 +74,7 @@
             <!-- Wahl und Zugeschaltete (Issue #139) -->
             <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                 <input type="checkbox" name="is_election" value="1" {% if item.is_election %}checked{% endif %}
-                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                       class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
                 Wahl (Personalentscheidung)
             </label>
             {% if election_hint %}
@@ -169,7 +169,7 @@
                         {% if attendance.current_vote == "excluded" %}Befangenheitsvermerk: Er bleibt.{% else %}Vor Beginn der Störung abgestimmt: {{ attendance.current_vote_label }}. Die Stimme bleibt.{% endif %}
                         <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                             <input type="checkbox" name="remove_vote_{{ attendance.person_id }}" value="1"
-                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                                   class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
                             Stimme entfernen (—)
                         </label>
                     </span>

@@ -16,7 +16,7 @@
             <i data-lucide="search" class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
             <input type="text" name="q" value="{{ search_query }}"
                    placeholder="Name oder E-Mail suchen..."
-                   class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow dark:text-white">
+                   class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden transition-shadow dark:text-white">
             {% if search_query %}
             <a href="{% url 'work:team' org_slug=organization.slug %}"
                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
@@ -48,7 +48,7 @@
                 data-href="{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}">
                 <td class="px-6 py-3">
                     <div class="flex items-center gap-3">
-                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">
+                        <div class="shrink-0 w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">
                             {% if member.user.avatar %}
                             <img src="{{ member.user.avatar.url }}" alt="" class="w-8 h-8 rounded-full object-cover">
                             {% else %}
@@ -61,7 +61,7 @@
                                 {{ member.user|team_name }}
                             </a>
                             {% if is_owner_user == member.user %}
-                            <span class="ml-1.5 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded">Eigentümer</span>
+                            <span class="ml-1.5 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-sm">Eigentümer</span>
                             {% endif %}
                             {% if member.is_sworn_in %}
                             <i data-lucide="shield-check" class="w-3.5 h-3.5 text-green-500 inline -mt-0.5 ml-1" title="Vereidigt"></i>
@@ -98,12 +98,12 @@
                 <td class="px-4 py-3 max-lg:hidden">
                     {% if member.current_absence %}
                     <span class="inline-flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
-                        <span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></span>
+                        <span class="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
                         Abwesend bis {{ member.current_absence.end_date|date:"d.m." }}
                     </span>
                     {% else %}
                     <span class="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
-                        <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                        <span class="w-2 h-2 rounded-full bg-green-500 shrink-0"></span>
                         Verfügbar
                     </span>
                     {% endif %}

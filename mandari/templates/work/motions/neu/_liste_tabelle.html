@@ -34,7 +34,7 @@ Kontext: motion_rows, spalten, current_folder, folder_entries.
                     <div class="pl-6 relative">
                         <i data-lucide="{% if row.is_amendment %}corner-down-right{% else %}{{ motion.get_type_icon }}{% endif %}" class="absolute left-0 top-0.5 w-4 h-4 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
                         <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"
-                           class="font-medium text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 break-words">{{ motion.title }}</a>
+                           class="font-medium text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 wrap-break-word">{{ motion.title }}</a>
                         <i data-lucide="{{ motion.get_visibility_icon }}" class="inline-block ml-1 w-3.5 h-3.5 align-[-2px] text-gray-500 dark:text-gray-400" aria-hidden="true"></i><span class="sr-only">, Sichtbarkeit: {{ motion.get_visibility_display }}</span>
                         {# Art, Ordner, Freigaben; Federführung und Frist hier, solange ihre Spalten fehlen #}
                         <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">

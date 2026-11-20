@@ -51,14 +51,14 @@ Kreis eindeutig.
     <div class="flex flex-wrap gap-x-4 gap-y-1">
         {% for value, label in paper_types %}
         <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
-            <input type="checkbox" name="paper_types" value="{{ value }}" {% if value in rng.paper_types %}checked{% endif %} class="rounded text-primary-600">
+            <input type="checkbox" name="paper_types" value="{{ value }}" {% if value in rng.paper_types %}checked{% endif %} class="rounded-sm text-primary-600">
             {{ label }}
         </label>
         {% endfor %}
     </div>
 </fieldset>
 <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-    <input type="checkbox" name="is_active" {% if not rng or rng.is_active %}checked{% endif %} class="rounded text-primary-600">
+    <input type="checkbox" name="is_active" {% if not rng or rng.is_active %}checked{% endif %} class="rounded-sm text-primary-600">
     Aktiv
 </label>
 {% endwith %}

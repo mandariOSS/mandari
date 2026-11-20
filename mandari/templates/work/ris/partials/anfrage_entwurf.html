@@ -10,7 +10,7 @@ Kennzeichnung nach EU AI Act Art. 50 (Issue #938): sichtbar im Satz unter dem Bl
 ``data-ai-generated`` genau am KI-Text (ohne Anrede, Gruß und Verzeichnis).
 {% endcomment %}
 <section aria-labelledby="entwurf-titel" class="wf mt-8" data-testid="anfrage-entwurf">
-    <h2 id="entwurf-titel" class="text-base font-semibold text-gray-900 dark:text-white break-words">{% if entwurf.hinweis %}Kein Entwurf{% elif entwurf.betreff %}{{ entwurf.betreff }}{% else %}Antwortentwurf{% endif %}</h2>
+    <h2 id="entwurf-titel" class="text-base font-semibold text-gray-900 dark:text-white wrap-break-word">{% if entwurf.hinweis %}Kein Entwurf{% elif entwurf.betreff %}{{ entwurf.betreff }}{% else %}Antwortentwurf{% endif %}</h2>
     {% if entwurf.hinweis %}
     <p role="alert" class="mt-1 max-w-2xl text-sm text-gray-800 dark:text-gray-200">{{ entwurf.hinweis }}</p>
     {% else %}
@@ -71,7 +71,7 @@ Kennzeichnung nach EU AI Act Art. 50 (Issue #938): sichtbar im Satz unter dem Bl
                     {% for fundstelle in entwurf.fundstellen %}
                     <li class="flex gap-2">
                         <span class="w-5 shrink-0 font-semibold tabular-nums text-gray-900 dark:text-white" aria-hidden="true">{{ fundstelle.nummer }}</span>
-                        <div class="min-w-0"><span class="sr-only">Fundstelle {{ fundstelle.nummer }}: </span><c-ui.textlink href="{{ fundstelle.url }}" extern class="break-words">{{ fundstelle.titel }}</c-ui.textlink><c-form.hinweis>{{ fundstelle.art }}</c-form.hinweis></div>
+                        <div class="min-w-0"><span class="sr-only">Fundstelle {{ fundstelle.nummer }}: </span><c-ui.textlink href="{{ fundstelle.url }}" extern class="wrap-break-word">{{ fundstelle.titel }}</c-ui.textlink><c-form.hinweis>{{ fundstelle.art }}</c-form.hinweis></div>
                     </li>
                     {% endfor %}
                 </ol>
@@ -81,7 +81,7 @@ Kennzeichnung nach EU AI Act Art. 50 (Issue #938): sichtbar im Satz unter dem Bl
             <section aria-labelledby="weitere-titel">
                 <h3 id="weitere-titel" class="text-sm font-semibold text-gray-900 dark:text-white">Außerdem abgerufen</h3>
                 <ul class="mt-1 space-y-1 text-sm">
-                    {% for fundstelle in entwurf.weitere %}<li><c-ui.textlink href="{{ fundstelle.url }}" extern class="break-words">{{ fundstelle.titel }}</c-ui.textlink></li>{% endfor %}
+                    {% for fundstelle in entwurf.weitere %}<li><c-ui.textlink href="{{ fundstelle.url }}" extern class="wrap-break-word">{{ fundstelle.titel }}</c-ui.textlink></li>{% endfor %}
                 </ul>
             </section>
             {% endif %}

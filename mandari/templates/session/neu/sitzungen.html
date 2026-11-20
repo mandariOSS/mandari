@@ -24,22 +24,22 @@ session/meetings/list.html.
     <span class="relative block basis-full sm:basis-64 sm:flex-1 min-w-0 max-w-md">
         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden="true"></i>
         <input id="filter-suche" type="search" name="q" value="{{ request.GET.q }}" placeholder="Sitzung oder Gremium suchen"
-               class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+               class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
     </span>
     <label for="filter-gremium" class="sr-only">Gremium</label>
-    <select id="filter-gremium" name="organization" class="h-9 min-w-0 flex-1 basis-40 sm:flex-none sm:max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="filter-gremium" name="organization" class="h-9 min-w-0 flex-1 basis-40 sm:flex-none sm:max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Gremien</option>
         {% include "session/partials/organization_options.html" with groups=organization_groups organizations=organizations selected=request.GET.organization %}
     </select>
     {% include "session/partials/body_filter.html" %}
     <label for="filter-status" class="sr-only">Status</label>
-    <select id="filter-status" name="state" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="filter-status" name="state" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Status</option>
         {% for value, label in meeting_states %}<option value="{{ value }}" {% if request.GET.state == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
     {% if legislative_terms %}
     <label for="filter-periode" class="sr-only">Wahlperiode</label>
-    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Wahlperioden</option>
         {% for term in legislative_terms %}<option value="{{ term.id }}" {% if selected_term == term.id|stringformat:"s" %}selected{% endif %}>{{ term.name }}</option>{% endfor %}
     </select>
@@ -60,8 +60,8 @@ session/meetings/list.html.
         </p>
         <div class="min-w-0">
             <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}"
-               class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0 {% if meeting.cancelled %}line-through{% endif %}">{{ meeting.name }}</a>
-            <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400 break-words">
+               class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word after:absolute after:inset-0 {% if meeting.cancelled %}line-through{% endif %}">{{ meeting.name }}</a>
+            <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400 wrap-break-word">
                 {{ meeting.organizations_label }}{% if meeting.is_joint %} (gemeinsame Sitzung){% endif %}{% if body_choice.active and meeting.organization.body %} · {{ meeting.organization.body.label }}{% endif %}{% if meeting.location %} · {{ meeting.location }}{% endif %}
             </p>
             {% if not meeting.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}

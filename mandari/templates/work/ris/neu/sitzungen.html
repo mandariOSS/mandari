@@ -22,20 +22,20 @@ Liste ist der gemeinsame Baustein von Insight (c-liste.sitzungen) mit der Spalte
     <nav aria-label="Zeitraum" class="inline-flex rounded-md bg-band-grau p-0.5 text-sm">
         {% for wert, name in ansichten %}
         <a href="{% querystring view=wert page=None %}" {% if view_mode == wert %}aria-current="page"{% endif %}
-           class="inline-flex items-center h-8 px-3 rounded font-medium {% if view_mode == wert %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">{{ name }}</a>
+           class="inline-flex items-center h-8 px-3 rounded-sm font-medium {% if view_mode == wert %}bg-band-hell text-gray-900 dark:text-white shadow-xs{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">{{ name }}</a>
         {% endfor %}
     </nav>
     <form method="get" class="flex flex-wrap items-center gap-2">
         <input type="hidden" name="view" value="{{ view_mode }}">
         <label for="filter-gremium" class="sr-only">Gremium</label>
-        <select id="filter-gremium" name="org" data-autosubmit class="h-9 max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <select id="filter-gremium" name="org" data-autosubmit class="h-9 max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
             <option value="">Alle Gremien</option>
             {% for org in organizations %}
             <option value="{{ org.id }}" {% if selected_org == org.id|slugify %}selected{% endif %}>{{ org.short_name|default:org.name }}</option>
             {% endfor %}
         </select>
         <label for="filter-jahr" class="sr-only">Jahr</label>
-        <select id="filter-jahr" name="year" data-autosubmit class="h-9 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <select id="filter-jahr" name="year" data-autosubmit class="h-9 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
             <option value="">Alle Jahre</option>
             {% for year in years %}
             <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>

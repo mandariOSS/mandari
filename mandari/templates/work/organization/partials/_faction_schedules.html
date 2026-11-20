@@ -24,7 +24,7 @@
                     {% if schedule.default_location %} · {{ schedule.default_location }}{% endif %}
                 </p>
             </div>
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="flex items-center gap-2 shrink-0">
                 <form method="post">
                     {% csrf_token %}
                     <input type="hidden" name="section" value="toggle_schedule">

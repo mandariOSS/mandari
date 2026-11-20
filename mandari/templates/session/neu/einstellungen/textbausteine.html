@@ -25,7 +25,7 @@ steht als ruhiges Formular am Ende des Abschnitts. Formulare und Felder wie sess
                 {% for item in standard_items %}
                 <li class="flex items-start gap-2 py-2">
                     <div class="min-w-0 flex-1 {% if not item.is_active %}text-gray-500 dark:text-gray-500{% endif %}">
-                        <p class="text-sm font-medium {% if item.is_active %}text-gray-900 dark:text-white{% endif %} break-words">{{ item.name }}</p>
+                        <p class="text-sm font-medium {% if item.is_active %}text-gray-900 dark:text-white{% endif %} wrap-break-word">{{ item.name }}</p>
                         <p class="text-[0.8125rem] {% if item.is_active %}text-gray-600 dark:text-gray-400{% endif %}">
                             {{ item.get_placement_display }} · Reihenfolge <span class="tabular-nums">{{ item.order }}</span>
                             · {% if item.organization %}{{ item.organization.name }}{% else %}Alle Gremien{% endif %}{% if not item.is_public %} · nichtöffentlich{% endif %}{% if not item.is_active %} · inaktiv{% endif %}
@@ -67,8 +67,8 @@ steht als ruhiges Formular am Ende des Abschnitts. Formulare und Felder wie sess
                 {% for block in text_blocks %}
                 <li class="flex items-start gap-2 py-2">
                     <div class="min-w-0 flex-1 {% if not block.is_active %}text-gray-500 dark:text-gray-500{% endif %}">
-                        <p class="text-sm break-words"><span class="font-medium {% if block.is_active %}text-gray-900 dark:text-white{% endif %}">{{ block.title }}</span> <span class="{% if block.is_active %}text-gray-600 dark:text-gray-400{% endif %}">· {{ block.get_category_display }}{% if not block.is_active %} · inaktiv{% endif %}</span></p>
-                        <p class="mt-0.5 text-[0.8125rem] {% if block.is_active %}text-gray-600 dark:text-gray-400{% endif %} whitespace-pre-line break-words">{{ block.content|truncatechars:160 }}</p>
+                        <p class="text-sm wrap-break-word"><span class="font-medium {% if block.is_active %}text-gray-900 dark:text-white{% endif %}">{{ block.title }}</span> <span class="{% if block.is_active %}text-gray-600 dark:text-gray-400{% endif %}">· {{ block.get_category_display }}{% if not block.is_active %} · inaktiv{% endif %}</span></p>
+                        <p class="mt-0.5 text-[0.8125rem] {% if block.is_active %}text-gray-600 dark:text-gray-400{% endif %} whitespace-pre-line wrap-break-word">{{ block.content|truncatechars:160 }}</p>
                     </div>
                     <form method="post" action="{% url 'session:textblock_manage' tenant_slug=tenant_slug %}" data-confirm="Textbaustein wirklich löschen?" class="shrink-0 text-gray-600 dark:text-gray-400">
                         {% csrf_token %}

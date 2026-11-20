@@ -2,7 +2,7 @@
 Kommune wechseln (Issue #783, Stufe 2): modaler Dialog, am Handy als Blatt über den ganzen Bildschirm mit dem Fokus
 im Suchfeld. Escape schließt, die Fokusfalle hält den Fokus im Dialog und gibt ihn danach an den Auslöser zurück.
 {% endcomment %}
-<div x-show="cityModalOpen" class="fixed inset-0 z-[100]" @keydown.escape.window="cityModalOpen && closeCityModal()" x-cloak>
+<div x-show="cityModalOpen" class="fixed inset-0 z-100" @keydown.escape.window="cityModalOpen && closeCityModal()" x-cloak>
     <div class="absolute inset-0 bg-gray-950/40 dark:bg-black/60" @click="closeCityModal()" aria-hidden="true"></div>
     <div role="dialog" aria-modal="true" aria-labelledby="kommune-dialog-titel" x-trap.noscroll="cityModalOpen"
         class="absolute inset-0 max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)] sm:inset-auto sm:left-1/2 sm:top-[8vh] sm:-translate-x-1/2 sm:w-[min(38rem,calc(100vw-2rem))] sm:max-h-[84vh] flex flex-col bg-band-hell sm:rounded-2xl shadow-2xl ring-1 ring-gray-900/10 dark:ring-white/10 overflow-hidden">

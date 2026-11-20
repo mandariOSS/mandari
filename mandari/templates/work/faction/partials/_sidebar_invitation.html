@@ -31,7 +31,7 @@
 {% elif invitation_auto_schedule and not meeting.invitation_sent and meeting.status in 'draft,planned' %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
     <p class="text-xs text-gray-600 dark:text-gray-300 flex items-start gap-2">
-        <i data-lucide="calendar-clock" class="w-4 h-4 text-primary-600 flex-shrink-0"></i>
+        <i data-lucide="calendar-clock" class="w-4 h-4 text-primary-600 shrink-0"></i>
         <span>Einladung geht automatisch am {{ invitation_dispatch_at|date:"D, d.m.Y H:i" }} Uhr raus, mit der Tagesordnung von diesem Zeitpunkt (Reihe „{{ invitation_auto_schedule.name }}“).</span>
     </p>
 </div>

@@ -18,7 +18,7 @@ Dialog „Aufgaben aus Protokollen importieren“ (natives <dialog>, Alpine-Komp
             <template x-for="item in items" :key="item.id">
                 <label class="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800">
                     <input type="checkbox" x-model="selected" :value="item.id"
-                           class="mt-1 w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                           class="mt-1 w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                     <div class="flex-1">
                         <p class="text-sm text-gray-900 dark:text-white" x-text="item.content"></p>
                         <p class="text-xs text-gray-500 mt-1">

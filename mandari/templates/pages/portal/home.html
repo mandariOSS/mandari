@@ -17,7 +17,7 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
 <section class="bg-primary-100 dark:bg-primary-950">
     <div class="max-w-insight mx-auto px-4 sm:px-8 py-10 sm:py-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] items-center">
         <div>
-            <h1 class="text-[2rem] sm:text-[2.75rem] font-bold tracking-tight leading-[1.1] text-gray-900 dark:text-white break-words">{{ active_body.get_display_name }} transparent</h1>
+            <h1 class="text-[2rem] sm:text-[2.75rem] font-bold tracking-tight leading-[1.1] text-gray-900 dark:text-white wrap-break-word">{{ active_body.get_display_name }} transparent</h1>
             <p class="mt-4 max-w-2xl text-[1.0625rem] sm:text-[1.125rem] leading-relaxed text-gray-800 dark:text-gray-200">
                 {% if active_body.description %}{{ active_body.description }}{% else %}Alle öffentlichen Ratsinformationen Ihrer Kommune: Sitzungen, Vorgänge, Gremien und die Menschen, die entscheiden.{% endif %}
             </p>
@@ -26,7 +26,7 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
                 <span class="relative block w-full sm:w-auto sm:flex-1 min-w-0">
                     <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 pointer-events-none" aria-hidden="true"></i>
                     <input id="uebersicht-suche" type="search" name="q" placeholder="Thema oder Straße" autocomplete="off"
-                        class="h-14 w-full pl-12 pr-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-700 text-[1.0625rem] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                        class="h-14 w-full pl-12 pr-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-700 text-[1.0625rem] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                 </span>
                 <button type="submit" class="h-14 px-6 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-[1.0625rem] font-semibold">Suchen</button>
             </form>
@@ -34,7 +34,7 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
         {% if active_body.hero_image %}
         <figure class="hidden lg:block relative">
             {# Foto der Kommune: Inhalt, nicht Schmuck – mit Beschreibung (Bing meldete alt="" als fehlend, Issue #939) #}
-            <img src="{{ active_body.hero_image.url }}" alt="Ansicht von {{ active_body.get_display_name }}" class="w-full aspect-[4/3] object-cover rounded-2xl">
+            <img src="{{ active_body.hero_image.url }}" alt="Ansicht von {{ active_body.get_display_name }}" class="w-full aspect-4/3 object-cover rounded-2xl">
             {% if active_body.hero_image_credit %}<figcaption class="mt-2 text-[0.75rem] text-gray-700 dark:text-gray-300">Bild: {{ active_body.hero_image_credit }}</figcaption>{% endif %}
         </figure>
         {% endif %}
@@ -59,8 +59,8 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
                             <span class="block text-gray-600 dark:text-gray-400">{{ meeting.start|date:"H:i" }} Uhr</span>
                         </span>
                         <span class="min-w-0">
-                            <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{{ meeting.get_display_name }}</span>
-                            {% if meeting.location_name %}<span class="block mt-0.5 text-[0.9rem] text-gray-600 dark:text-gray-400 break-words">{{ meeting.location_name }}</span>{% endif %}
+                            <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 wrap-break-word">{{ meeting.get_display_name }}</span>
+                            {% if meeting.location_name %}<span class="block mt-0.5 text-[0.9rem] text-gray-600 dark:text-gray-400 wrap-break-word">{{ meeting.location_name }}</span>{% endif %}
                         </span>
                     </a>
                 </li>
@@ -81,7 +81,7 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
                 {% for paper in recent_papers %}
                 <li>
                     <a href="{% url 'insight_core:insight:paper_detail' paper.pk %}" class="group block py-4">
-                        <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% firstof paper.absender.titel paper.titel_oeffentlich paper.reference %}</span>
+                        <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 wrap-break-word">{% firstof paper.absender.titel paper.titel_oeffentlich paper.reference %}</span>
                         <span class="mt-1 flex flex-wrap items-center gap-x-4 text-[0.9rem] text-gray-600 dark:text-gray-400">
                             {% if paper.paper_type %}<span>{{ paper.paper_type }}</span>{% endif %}
                             {% if paper.absender.neben_art %}<c-insight.absender :absender="paper.absender" hinweis="eingebracht von" neben_art />{% endif %}
@@ -111,7 +111,7 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
         <form action="{% url 'insight_core:insight:neighborhood' %}" method="get" class="flex flex-col sm:flex-row gap-3 lg:max-w-2xl">
             <label for="naehe-adresse" class="sr-only">Adresse oder Stadtteil</label>
             <input id="naehe-adresse" type="search" name="q" placeholder="Straße oder Stadtteil" autocomplete="off"
-                class="h-12 w-full sm:w-auto sm:flex-1 min-w-0 px-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-700 text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                class="h-12 w-full sm:w-auto sm:flex-1 min-w-0 px-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-700 text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
             <button type="submit" class="h-12 px-5 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-semibold">Zeigen</button>
         </form>
     </div>

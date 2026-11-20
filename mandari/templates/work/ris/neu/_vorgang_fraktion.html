@@ -12,7 +12,7 @@ Kommentare nur mit meetings.prepare, Dokumente nach ihren eigenen Rechten (apps/
         <li>
             <p class="text-gray-600 dark:text-gray-400">{{ e.organization_name|default:"Sitzung" }}{% if e.date %} am {{ e.date|date:"d.m.Y" }}{% endif %}{% if e.agenda_number %}, TOP {{ e.agenda_number }}{% endif %}</p>
             <p class="mt-0.5 text-gray-900 dark:text-gray-100">{% include "work/ris/neu/_position.html" with position=e.position %}{% if e.position.ergebnis %}<span class="text-gray-700 dark:text-gray-300"> · Ergebnis: {{ e.position.ergebnis }}</span>{% endif %}</p>
-            {% if e.position.begruendung %}<p class="mt-1 text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ e.position.begruendung }}</p>{% endif %}
+            {% if e.position.begruendung %}<p class="mt-1 text-gray-800 dark:text-gray-200 whitespace-pre-line wrap-break-word">{{ e.position.begruendung }}</p>{% endif %}
         </li>
         {% endfor %}
     </ul>
@@ -27,7 +27,7 @@ Kommentare nur mit meetings.prepare, Dokumente nach ihren eigenen Rechten (apps/
     <h3 class="mt-4 text-sm font-semibold text-gray-900 dark:text-white">Dokumente der Fraktion</h3>
     <ul class="mt-1 space-y-2 text-sm">
         {% for d in dokumente %}
-        <li><c-ui.textlink href="{{ d.url }}" class="break-words">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · {{ d.status }} · {{ d.bezug }}</span></li>
+        <li><c-ui.textlink href="{{ d.url }}" class="wrap-break-word">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · {{ d.status }} · {{ d.bezug }}</span></li>
         {% endfor %}
     </ul>
     {% elif not darf_vorbereiten %}

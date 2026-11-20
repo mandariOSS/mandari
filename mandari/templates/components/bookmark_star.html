@@ -28,7 +28,7 @@
 {# Small: Icon only for list rows #}
 <button type="button" x-data x-cloak="platz"
     @click.stop.prevent="$store.bookmarks.toggle('{{ entity_type }}', '{{ entity_id }}')"
-    class="inline-flex items-center justify-center shrink-0 w-6 h-6 rounded transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
+    class="inline-flex items-center justify-center shrink-0 w-6 h-6 rounded-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
     title="Auf Merkliste setzen" :title="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}') ? 'Von Merkliste entfernen' : 'Auf Merkliste setzen'">
     {# Filled star (bookmarked) #}
     <svg x-show="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}')" x-cloak class="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">

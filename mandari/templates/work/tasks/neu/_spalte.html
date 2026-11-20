@@ -10,7 +10,7 @@ Kontext: organization, show_completed.
         <h2 id="spalte-{{ status }}" class="text-sm font-semibold text-gray-900 dark:text-white">{{ title }}</h2>
         <span id="count-{{ status }}" class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ tasks|length }}{% if status == 'done' and not show_completed %}+ Aufgaben{% else %} Aufgabe{{ tasks|length|pluralize:"n" }}{% endif %}</span>
     </div>
-    <div id="column-{{ status }}" data-status="{{ status }}" class="space-y-2 min-h-[12rem] rounded-md bg-band-grau p-2">
+    <div id="column-{{ status }}" data-status="{{ status }}" class="space-y-2 min-h-48 rounded-md bg-band-grau p-2">
         {% for task in tasks %}
         {% include "work/tasks/neu/_karte.html" %}
         {% endfor %}
@@ -25,7 +25,7 @@ Kontext: organization, show_completed.
         <input type="hidden" name="status" value="{{ status }}">
         <label for="schnell-{{ status }}" class="sr-only">Neue Aufgabe in „{{ title }}“</label>
         <input id="schnell-{{ status }}" type="text" name="title" placeholder="Neue Aufgabe …" required
-               class="flex-1 min-w-0 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+               class="flex-1 min-w-0 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
         <c-ui.button type="submit" variant="secondary" size="sm" icon="plus" aria-label="Aufgabe in „{{ title }}“ hinzufügen"></c-ui.button>
     </form>
     {% endif %}

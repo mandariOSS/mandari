@@ -56,7 +56,7 @@ veröffentlicht; ohne sie steht hier der Hinweis aus Issue #1261 (partials/besch
             <option value="">Alle Jahre</option>
             {% for y in years %}<option value="{{ y }}" {% if filter_year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>{% endfor %}
         </select>
-        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" name="offen" value="1" {% if filter_open %}checked{% endif %} class="rounded border-gray-300"> nur offene Beschlüsse</label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" name="offen" value="1" {% if filter_open %}checked{% endif %} class="rounded-sm border-gray-300"> nur offene Beschlüsse</label>
         <button type="submit" class="px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700">Filtern</button>
         {% if has_filter %}<a href="{% url 'insight_core:insight:decision_tracking' %}" class="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white">Zurücksetzen</a>{% endif %}
     </form>

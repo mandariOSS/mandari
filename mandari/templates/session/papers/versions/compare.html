@@ -36,14 +36,14 @@
     {% for text in comparison.texts %}
     {% if text.changed %}
     <c-ui.card title="{{ text.label }}" subtitle="geändert" data-feld="{{ text.label }}">
-        <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words [&_del]:bg-red-100 [&_del]:text-red-800 dark:[&_del]:bg-red-900/40 dark:[&_del]:text-red-300 [&_ins]:bg-green-100 [&_ins]:text-green-800 [&_ins]:no-underline dark:[&_ins]:bg-green-900/40 dark:[&_ins]:text-green-300">{{ text.html }}</div>
+        <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap wrap-break-word [&_del]:bg-red-100 [&_del]:text-red-800 dark:[&_del]:bg-red-900/40 dark:[&_del]:text-red-300 [&_ins]:bg-green-100 [&_ins]:text-green-800 [&_ins]:no-underline dark:[&_ins]:bg-green-900/40 dark:[&_ins]:text-green-300">{{ text.html }}</div>
     </c-ui.card>
     {% elif not text.empty %}
     <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-4" data-feld="{{ text.label }}">
         <summary class="cursor-pointer text-sm text-gray-600 dark:text-gray-300">
             <span class="font-semibold text-gray-900 dark:text-white">{{ text.label }}</span> · unverändert
         </summary>
-        <div class="mt-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{{ text.html }}</div>
+        <div class="mt-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap wrap-break-word">{{ text.html }}</div>
     </details>
     {% endif %}
     {% endfor %}
@@ -83,7 +83,7 @@
                 {% elif item.kind == "changed" %}<c-ui.badge color="amber" icon="pencil">Geändert</c-ui.badge>
                 {% else %}<c-ui.badge icon="equal">Unverändert</c-ui.badge>{% endif %}
                 <div class="min-w-0">
-                    <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ item.name }}</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white wrap-break-word">{{ item.name }}</p>
                     {% if item.kind == "changed" %}
                     <ul class="text-xs text-gray-600 dark:text-gray-300 mt-0.5 space-y-0.5">
                         {% for change in item.changes %}<li>{{ change }}</li>{% endfor %}

@@ -63,7 +63,7 @@
 {% if has_body and not has_my_committees and view_mode == 'my' %}
 <div class="mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
     <div class="flex items-start gap-3">
-        <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"></i>
+        <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"></i>
         <div>
             <h4 class="font-medium text-amber-800 dark:text-amber-200 text-sm">Keine Gremien ausgewählt</h4>
             <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">
@@ -86,13 +86,13 @@
                 <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
                 <input type="text" name="q" value="{{ search_query }}"
                        placeholder="Sitzungen durchsuchen..."
-                       class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                       class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
             </div>
         </div>
 
         {% if view_mode == 'all' %}
         <select name="committee" data-autosubmit
-                class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
             <option value="">Alle Gremien</option>
             {% for committee in all_committees %}
             <option value="{{ committee.id }}" {% if committee_filter == committee.id|stringformat:'s' %}selected{% endif %}>
@@ -103,7 +103,7 @@
         {% endif %}
 
         <select name="time" data-autosubmit
-                class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
             <option value="upcoming" {% if time_filter == 'upcoming' %}selected{% endif %}>Anstehend</option>
             <option value="past" {% if time_filter == 'past' %}selected{% endif %}>Vergangen</option>
             <option value="all" {% if time_filter == 'all' %}selected{% endif %}>Alle</option>
@@ -156,7 +156,7 @@
         <a href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
            class="group flex items-center gap-4 px-4 py-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
             <!-- Date Badge -->
-            <div class="flex flex-col items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg bg-primary-50 dark:bg-primary-900/20 leading-none">
+            <div class="flex flex-col items-center justify-center shrink-0 w-12 h-12 rounded-lg bg-primary-50 dark:bg-primary-900/20 leading-none">
                 <span class="text-lg font-extrabold text-primary-600 dark:text-primary-400">{{ meeting.start|date:"d" }}</span>
                 <span class="text-[10px] font-bold text-primary-500 dark:text-primary-400 mt-0.5">{{ meeting.start|date:"M" }}</span>
             </div>
@@ -168,12 +168,12 @@
                         {{ meeting.committee_name|default:meeting.get_display_name }}
                     </span>
                     {% if meeting.user_prepared %}
-                    <span class="flex-shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400">
+                    <span class="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400">
                         <i data-lucide="check-circle" class="w-3 h-3"></i> Vorbereitet
                     </span>
                     {% endif %}
                     {% if meeting.start < now %}
-                    <span class="flex-shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                    <span class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
                         Vergangen
                     </span>
                     {% endif %}
@@ -181,7 +181,7 @@
                 <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
                     <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> {{ meeting.start|date:"H:i" }}</span>
                     {% if meeting.location_name %}
-                    <span class="flex items-center gap-1 truncate"><i data-lucide="map-pin" class="w-3 h-3 flex-shrink-0"></i> {{ meeting.location_name|truncatechars:30 }}</span>
+                    <span class="flex items-center gap-1 truncate"><i data-lucide="map-pin" class="w-3 h-3 shrink-0"></i> {{ meeting.location_name|truncatechars:30 }}</span>
                     {% endif %}
                     {% if meeting.agenda_count %}
                     <span class="flex items-center gap-1"><i data-lucide="list-ordered" class="w-3 h-3"></i> {{ meeting.agenda_count }} TOP{{ meeting.agenda_count|pluralize:"s" }}</span>
@@ -190,7 +190,7 @@
             </div>
 
             <!-- Action hint -->
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="flex items-center gap-2 shrink-0">
                 <span class="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                     Vorbereiten
                 </span>

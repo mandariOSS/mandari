@@ -17,7 +17,7 @@
                 <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
                 <input type="text" id="name" name="name" required
                        value="{% if letterhead %}{{ letterhead.name }}{% endif %}"
-                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                        placeholder="z.B. Offizieller Briefkopf, Interne Mitteilung">
             </div>
 
@@ -25,7 +25,7 @@
             <div>
                 <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
                 <textarea id="description" name="description" rows="2"
-                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                           placeholder="Kurze Beschreibung des Briefkopfs">{% if letterhead %}{{ letterhead.description }}{% endif %}</textarea>
             </div>
 
@@ -79,7 +79,7 @@
                 <div class="grid grid-cols-2 gap-4">
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" name="header_logo_enabled" x-model="headerLogoEnabled" @change="refreshPreview()"
-                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                               class="rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500">
                         <span class="text-sm text-gray-700 dark:text-gray-300">
                             Logo anzeigen
                             <span class="block text-xs text-gray-500">Logo der Organisation im Kopf</span>
@@ -87,7 +87,7 @@
                     </label>
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" name="accent_color_enabled" x-model="accentColorEnabled" @change="refreshPreview()"
-                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                               class="rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500">
                         <span class="text-sm text-gray-700 dark:text-gray-300">
                             Akzentfarbe
                             <span class="block text-xs text-gray-500">Linie in der Primärfarbe</span>
@@ -98,7 +98,7 @@
                 <div>
                     <label for="sender_line" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Absenderzeile</label>
                     <input type="text" id="sender_line" name="sender_line" x-model="senderLine" @input.debounce.400ms="refreshPreview()"
-                           class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                           class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                            placeholder="Fraktion XYZ · Rathausplatz 1 · 12345 Stadt">
                     <p class="text-xs text-gray-500 mt-1">Einzeilige Absenderzeile über dem Adressfeld.</p>
                 </div>
@@ -106,7 +106,7 @@
                 <div>
                     <label for="address_block" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Absenderblock</label>
                     <textarea id="address_block" name="address_block" rows="4" x-model="addressBlock" @input.debounce.400ms="refreshPreview()"
-                              class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                              class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                               placeholder="Fraktion XYZ&#10;Rathausplatz 1&#10;12345 Stadt"></textarea>
                     <p class="text-xs text-gray-500 mt-1">Wird rechts oben im Briefkopf angezeigt (eine Angabe je Zeile).</p>
                 </div>
@@ -114,7 +114,7 @@
                 <div>
                     <label for="footer_text" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Fußzeile</label>
                     <textarea id="footer_text" name="footer_text" rows="3" x-model="footerText" @input.debounce.400ms="refreshPreview()"
-                              class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                              class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                               placeholder="fraktion@beispielstadt.de · Tel. 0123 456789 · www.beispiel.de"></textarea>
                     <p class="text-xs text-gray-500 mt-1">Erscheint auf jeder Seite unten (z. B. Kontakt/Bank/Web, Angaben mit · trennbar).</p>
                 </div>
@@ -139,25 +139,25 @@
                         <label for="content_margin_top" class="block text-xs text-gray-500 mb-1">Oben</label>
                         <input type="number" id="content_margin_top" name="content_margin_top" min="0" max="200"
                                value="{% if letterhead %}{{ letterhead.content_margin_top }}{% else %}60{% endif %}"
-                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     </div>
                     <div>
                         <label for="content_margin_left" class="block text-xs text-gray-500 mb-1">Links</label>
                         <input type="number" id="content_margin_left" name="content_margin_left" min="0" max="100"
                                value="{% if letterhead %}{{ letterhead.content_margin_left }}{% else %}25{% endif %}"
-                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     </div>
                     <div>
                         <label for="content_margin_right" class="block text-xs text-gray-500 mb-1">Rechts</label>
                         <input type="number" id="content_margin_right" name="content_margin_right" min="0" max="100"
                                value="{% if letterhead %}{{ letterhead.content_margin_right }}{% else %}20{% endif %}"
-                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     </div>
                     <div>
                         <label for="content_margin_bottom" class="block text-xs text-gray-500 mb-1">Unten</label>
                         <input type="number" id="content_margin_bottom" name="content_margin_bottom" min="0" max="100"
                                value="{% if letterhead %}{{ letterhead.content_margin_bottom }}{% else %}30{% endif %}"
-                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     </div>
                 </div>
                 <p class="text-xs text-gray-500 mt-2">Der Textbereich beginnt nach dem oberen Rand und endet vor dem unteren Rand.</p>
@@ -170,7 +170,7 @@
                     <div>
                         <label for="font_family" class="block text-xs text-gray-500 mb-1">Schriftart</label>
                         <select id="font_family" name="font_family"
-                                class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                                class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                             {% with current_font=letterhead.font_family|default:"Arial" %}
                             <option value="Arial" {% if current_font == "Arial" %}selected{% endif %}>Arial</option>
                             <option value="Helvetica" {% if current_font == "Helvetica" %}selected{% endif %}>Helvetica</option>
@@ -184,7 +184,7 @@
                         <label for="font_size" class="block text-xs text-gray-500 mb-1">Schriftgröße (pt)</label>
                         <input type="number" id="font_size" name="font_size" min="8" max="24"
                                value="{% if letterhead %}{{ letterhead.font_size }}{% else %}11{% endif %}"
-                               class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                               class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     </div>
                 </div>
             </div>
@@ -194,7 +194,7 @@
                 <label class="flex items-center gap-3 cursor-pointer">
                     <input type="checkbox" name="is_default"
                            {% if letterhead.is_default %}checked{% endif %}
-                           class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                           class="rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500">
                     <span class="text-sm text-gray-700 dark:text-gray-300">
                         Standard-Briefkopf
                         <span class="block text-xs text-gray-500">Wird als Vorauswahl für neue Dokumente verwendet</span>
@@ -210,7 +210,7 @@
                 Abbrechen
             </a>
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                 <i data-lucide="check" class="w-4 h-4"></i>
                 {% if is_new %}Briefkopf erstellen{% else %}Speichern{% endif %}
             </button>

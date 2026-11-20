@@ -37,7 +37,7 @@ member_reject mit Begründung und Rückfrage). Kontext: pending_invitations, pen
         <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="offene-registrierungen">
             {% for membership in pending_registrations %}
             <li class="py-2.5">
-                <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ membership.user.get_full_name|default:membership.user.email }}</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white wrap-break-word">{{ membership.user.get_full_name|default:membership.user.email }}</p>
                 <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400"><span class="break-all">{{ membership.user.email }}</span>, angefragt am {{ membership.registration_requested_at|date:"d.m.Y H:i" }}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                     <form method="post" action="{% url 'work:member_approve' org_slug=organization.slug membership_id=membership.id %}">
@@ -49,7 +49,7 @@ member_reject mit Begründung und Rückfrage). Kontext: pending_invitations, pen
                         {% csrf_token %}
                         <label for="reason-{{ membership.id }}" class="sr-only">Begründung für {{ membership.user.email }} (optional)</label>
                         <input id="reason-{{ membership.id }}" type="text" name="reason" maxlength="1000" autocomplete="off" placeholder="Begründung (optional, steht in der E-Mail)"
-                               class="w-64 max-w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                               class="w-64 max-w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                         <c-ui.button type="submit" size="sm" variant="ghost" icon="x" class="text-red-700 dark:text-red-400">Ablehnen<span class="sr-only">: {{ membership.user.email }}</span></c-ui.button>
                     </form>
                 </div>

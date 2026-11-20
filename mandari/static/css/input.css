@@ -1,3 +1,7 @@
+/* Tailwind 4 (Issue #1461). Die Reihenfolge der Ebenen steht vor den Importen: Die Seiten-Stylesheets öffnen
+   „components“, bevor Tailwind seine Ebenen anlegt; ohne diese Zeile läge „components“ unter „base“. */
+@layer theme, base, components, utilities;
+
 /* Gemeinsame Bausteine der Arbeitsflächen (vor den Seiten, die sie ergänzen) */
 @import "./work-flaeche.css";
 @import "./work-vorbereitung.css";
@@ -5,12 +9,73 @@
 @import "./sitzungs-kalender.css";
 /* Termine und Terminumfragen (Issue #1489) */
 @import "./termine.css";
-/* Sitzungsansicht der laufenden Fraktionssitzung (Issue #874) – eigene Datei, @import muss vor @tailwind stehen */
+/* Sitzungsansicht der laufenden Fraktionssitzung (Issue #874) – eigene Datei, Importe stehen vor allen Regeln */
 @import "./fraktionssitzung.css";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Klassen nur aus diesen Quellen, wie bisher (content in tailwind.config.js) */
+@import "tailwindcss" source(none);
+@source "../../templates";
+@source "../js";
+@source "../../frontend";
+/* Farben der Aufgaben-Etiketten, die erst im Browser zusammengesetzt werden (bisher safelist) */
+@source inline("{dark:,}bg-{red,orange,amber,green,teal,blue,indigo,purple,pink,gray}-{100,500,900}");
+@source inline("{dark:,}text-{red,orange,amber,green,teal,blue,indigo,purple,pink,gray}-{300,700}");
+@source inline("{dark:,}ring-{red,orange,amber,green,teal,blue,indigo,purple,pink,gray}-{200,700}");
+
+/* Wie in Tailwind 3: dark: greift unter .dark (nicht am Element selbst), hover: auf allen Geräten */
+@custom-variant dark (&:is(.dark *));
+@custom-variant hover (&:hover);
+
+/* Kennfarbe und Bänder aus den Kanälen unten (bisher tailwind.config.js); Deckkraft wie bg-primary-900/20 geht
+   über color-mix */
+@theme inline {
+  --color-primary-50: rgb(var(--primary-50));
+  --color-primary-100: rgb(var(--primary-100));
+  --color-primary-200: rgb(var(--primary-200));
+  --color-primary-300: rgb(var(--primary-300));
+  --color-primary-400: rgb(var(--primary-400));
+  --color-primary-500: rgb(var(--primary-500));
+  --color-primary-600: rgb(var(--primary-600));
+  --color-primary-700: rgb(var(--primary-700));
+  --color-primary-800: rgb(var(--primary-800));
+  --color-primary-900: rgb(var(--primary-900));
+  --color-primary-950: rgb(var(--primary-950));
+  --color-band-hell: rgb(var(--band-hell));
+  --color-band-grau: rgb(var(--band-grau));
+  --color-band-tinte: rgb(var(--band-tinte));
+}
+
+@theme {
+  /* Bürgerportal auf breiten Bildschirmen (Issue #841): max-w-insight */
+  --container-insight: 116rem;
+  --font-sans:
+    Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Ring ohne Angaben wie in Tailwind 3: 3 px, Blau mit halber Deckkraft */
+  --default-ring-width: 3px;
+  --default-ring-color: color-mix(in oklab, var(--color-blue-500) 50%, transparent);
+}
+
+/* Standardwerte von Tailwind 3, die Tailwind 4 geändert hat */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  dialog {
+    margin: auto;
+  }
+}
 
 /* Kennfarbe (Issue #783): Tailwind liest primary-* aus diesen Kanälen (tailwind.config.js).
    Standard Indigo für Work, Session und Konto; das Bürgerportal (data-portal="insight") ist Grün wie auf

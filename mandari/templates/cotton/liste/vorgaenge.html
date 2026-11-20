@@ -49,7 +49,7 @@ Dateityp und Größe.
                 data-href="{{ ziel }}">
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
                     <a href="{{ ziel }}"
-                       class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
+                       class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors wrap-break-word">
                         {% if links %}{{ paper.name|default:"Vorgang" }}{% else %}{% firstof paper.absender.titel paper.titel_oeffentlich paper.name "Vorgang" %}{% endif %}
                     </a>
                     <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
@@ -80,10 +80,10 @@ Dateityp und Größe.
                 </td>
                 {% endif %}
                 {% if sp_stand %}
-                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-700 dark:text-gray-300 max-2xl:hidden w-[26rem]">
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-700 dark:text-gray-300 max-2xl:hidden w-104">
                     {% if paper.stand %}
                     <span class="flex items-baseline gap-2">
-                        {% if paper.stand.etikett %}<c-insight.ergebnis :ergebnis="paper.stand.etikett" klasse="shrink-0" />{% else %}<span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if paper.stand.kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif paper.stand.kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% endif %}
+                        {% if paper.stand.etikett %}<c-insight.ergebnis :ergebnis="paper.stand.etikett" klasse="shrink-0" />{% else %}<span class="shrink-0 w-2 h-2 rounded-full -translate-y-px {% if paper.stand.kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif paper.stand.kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% endif %}
                         <span>{{ paper.stand.text }}</span>
                     </span>
                     {% endif %}

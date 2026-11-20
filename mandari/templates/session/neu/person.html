@@ -42,7 +42,7 @@ erreichbar; Rechte und Kontext wie PersonDetailView. Die bisherige Seite bleibt 
                 {% for membership in memberships %}
                 <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2.5">
                     <div class="min-w-0">
-                        <c-ui.textlink href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=membership.organization.id %}" class="break-words">{{ membership.organization.name }}</c-ui.textlink>
+                        <c-ui.textlink href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=membership.organization.id %}" class="wrap-break-word">{{ membership.organization.name }}</c-ui.textlink>
                         <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ membership.get_role_display }} · {% if membership.has_voting_rights %}stimmberechtigt{% else %}ohne Stimmrecht{% endif %}</p>
                     </div>
                     <span class="text-sm tabular-nums text-gray-600 dark:text-gray-400">{% if membership.start_date %}{{ membership.start_date|date:"d.m.Y" }}{% else %}offen{% endif %}{% if membership.end_date %} bis {{ membership.end_date|date:"d.m.Y" }}{% endif %}</span>
@@ -61,8 +61,8 @@ erreichbar; Rechte und Kontext wie PersonDetailView. Die bisherige Seite bleibt 
                 <li class="relative grid grid-cols-[5.5rem_minmax(0,1fr)] sm:grid-cols-[5.5rem_minmax(0,1fr)_9rem] items-baseline gap-x-4 gap-y-0.5 py-2.5 hover:bg-band-grau/60">
                     <span class="pl-1 text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{{ attendance.meeting.start|date:"d.m.Y" }}</span>
                     <div class="min-w-0">
-                        <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=attendance.meeting.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ attendance.meeting.name }}</a>
-                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ attendance.meeting.organization.name }}</p>
+                        <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=attendance.meeting.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word after:absolute after:inset-0">{{ attendance.meeting.name }}</a>
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">{{ attendance.meeting.organization.name }}</p>
                     </div>
                     <span class="col-start-2 sm:col-start-3 text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=attendance.status text=attendance.get_status_display %}</span>
                 </li>

@@ -10,14 +10,14 @@ Kontext: attendance, mode_column, form (Fehler), tenant_slug.
 <li class="py-2" x-data="{ zeiten: {% if form.errors %}true{% else %}false{% endif %} }" data-testid="anwesenheit-zeile">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <div class="min-w-0 flex-1 basis-40">
-            <p class="font-medium text-gray-900 dark:text-white break-words">{{ attendance.person.display_name }}</p>
-            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ attendance.get_role_display }}{% if attendance.arrival_time %} · Ankunft {{ attendance.arrival_time|time:"H:i" }}{% endif %}{% if attendance.departure_time %} · Abgang {{ attendance.departure_time|time:"H:i" }}{% endif %}{% if attendance.notes %} · {{ attendance.notes }}{% endif %}</p>
+            <p class="font-medium text-gray-900 dark:text-white wrap-break-word">{{ attendance.person.display_name }}</p>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">{{ attendance.get_role_display }}{% if attendance.arrival_time %} · Ankunft {{ attendance.arrival_time|time:"H:i" }}{% endif %}{% if attendance.departure_time %} · Abgang {{ attendance.departure_time|time:"H:i" }}{% endif %}{% if attendance.notes %} · {{ attendance.notes }}{% endif %}</p>
             {% if attendance.participation_note %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="teilnahme-vermerk">{{ attendance.participation_note }}</p>{% endif %}
             {% if form.errors %}<p class="text-[0.8125rem] text-red-700 dark:text-red-400" role="alert">{% for field, errors in form.errors.items %}{{ errors.0 }} {% endfor %}</p>{% endif %}
         </div>
         <div class="flex flex-wrap items-center gap-1 text-gray-600 dark:text-gray-400">
             <select name="status" aria-label="Stand von {{ attendance.person.display_name }}"
-                    class="h-8 w-36 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                    class="h-8 w-36 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                 <option value="invited" {% if attendance.status == 'invited' %}selected{% endif %}>Eingeladen</option>
                 <option value="confirmed" {% if attendance.status == 'confirmed' %}selected{% endif %}>Zugesagt</option>
                 <option value="declined" {% if attendance.status == 'declined' %}selected{% endif %}>Abgesagt</option>
@@ -30,7 +30,7 @@ Kontext: attendance, mode_column, form (Fehler), tenant_slug.
             {% if mode_column %}
             <input type="hidden" name="mode_column" value="1">
             <select name="participation_mode" aria-label="Teilnahmeart von {{ attendance.person.display_name }}"
-                    class="h-8 w-32 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                    class="h-8 w-32 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                 <option value="in_person" {% if not attendance.is_remote %}selected{% endif %}>Vor Ort</option>
                 <option value="remote" {% if attendance.is_remote %}selected{% endif %}>Zugeschaltet</option>
             </select>
@@ -59,13 +59,13 @@ Kontext: attendance, mode_column, form (Fehler), tenant_slug.
     <div id="zeiten-{{ attendance.id }}" x-show="zeiten" x-cloak class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
         <label class="inline-flex items-center gap-1.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">{% if mode_column %}Ankunft bzw. Zuschaltung{% else %}Ankunft{% endif %}
             <input type="time" name="arrival_time" value="{{ attendance.arrival_time|time:'H:i'|default:'' }}"
-                   class="h-8 w-[6.5rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                   class="h-8 w-26 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         </label>
         <label class="inline-flex items-center gap-1.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">{% if mode_column %}Abgang bzw. Trennung{% else %}Abgang{% endif %}
             <input type="time" name="departure_time" value="{{ attendance.departure_time|time:'H:i'|default:'' }}"
-                   class="h-8 w-[6.5rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                   class="h-8 w-26 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         </label>
         <input type="text" name="notes" value="{{ attendance.notes|default:'' }}" placeholder="Notiz" aria-label="Notiz zu {{ attendance.person.display_name }}"
-               class="h-8 min-w-0 flex-1 basis-48 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+               class="h-8 min-w-0 flex-1 basis-48 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
     </div>
 </li>

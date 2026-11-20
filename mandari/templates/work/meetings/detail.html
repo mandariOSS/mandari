@@ -23,7 +23,7 @@
     </a>
     {% if meeting %}
     <a href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}"
-       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
         <i data-lucide="edit-3" class="w-4 h-4"></i>
         Vorbereiten
     </a>
@@ -42,7 +42,7 @@
         <!-- Preparation status -->
         {% if preparation %}
         <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 flex items-center gap-3">
-            <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg flex-shrink-0">
+            <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg shrink-0">
                 <i data-lucide="check-circle" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
             </div>
             <div>
@@ -78,7 +78,7 @@
                 {% for item in agenda_items %}
                 <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                     <div class="flex items-start gap-3">
-                        <span class="flex-shrink-0 w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
+                        <span class="shrink-0 w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
                             {{ item.number|default:forloop.counter }}
                         </span>
                         <div class="flex-1 min-w-0">
@@ -105,7 +105,7 @@
                                 {% for file in item.primary_paper.files.all|slice:":3" %}
                                 <button type="button"
                                    @click="openDoc('{{ file.access_url|escapejs }}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if item.primary_paper.reference %}{{ item.primary_paper.reference|escapejs }} · {% endif %}{{ file.mime_type|default:""|escapejs }}')"
-                                   class="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer">
+                                   class="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer">
                                     <i data-lucide="file" class="w-3 h-3"></i>
                                     {{ file.name|truncatechars:30 }}
                                 </button>
@@ -115,7 +115,7 @@
                         </div>
 
                         {% if item.public == False %}
-                        <span class="flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                        <span class="shrink-0 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
                             Nicht öffentlich
                         </span>
                         {% endif %}

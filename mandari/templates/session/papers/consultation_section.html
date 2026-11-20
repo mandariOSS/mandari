@@ -26,7 +26,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
         {% for station in consultations %}
         <div class="px-6 py-4">
             <div class="flex items-start gap-4">
-                <span class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
+                <span class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
                     {% if station.is_done and not station.noe_hidden %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
                     {% elif station.is_scheduled and not station.noe_hidden %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
                     {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
@@ -116,7 +116,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                         {% endif %}
                         <label class="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400">
                             <input type="checkbox" name="authoritative" {% if station.authoritative %}checked{% endif %}
-                                   class="rounded border-gray-300 dark:border-gray-600">
+                                   class="rounded-sm border-gray-300 dark:border-gray-600">
                             entscheidend
                         </label>
                         <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
@@ -126,7 +126,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                     {% endif %}
                 </div>
 
-                <div class="flex items-center gap-1 flex-shrink-0">
+                <div class="flex items-center gap-1 shrink-0">
                     {% if consultation_can_schedule and not consultation_schedule_blocker and not station.agenda_item and station.meeting and not station.noe_hidden %}
                     <form method="post" action="{% url 'session:consultation_schedule' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
                         {% csrf_token %}
@@ -149,21 +149,21 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                     <form method="post" action="{% url 'session:consultation_move' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
                         {% csrf_token %}
                         <input type="hidden" name="direction" value="up">
-                        <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Nach oben">
+                        <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-sm" title="Nach oben">
                             <i data-lucide="chevron-up" class="w-4 h-4"></i>
                         </button>
                     </form>
                     <form method="post" action="{% url 'session:consultation_move' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
                         {% csrf_token %}
                         <input type="hidden" name="direction" value="down">
-                        <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Nach unten">
+                        <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-sm" title="Nach unten">
                             <i data-lucide="chevron-down" class="w-4 h-4"></i>
                         </button>
                     </form>
                     <form method="post" action="{% url 'session:consultation_delete' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline"
                           data-confirm="Station wirklich aus der Beratungsfolge entfernen? Ein bereits angelegter TOP bleibt bestehen.">
                         {% csrf_token %}
-                        <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded" title="Station entfernen">
+                        <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded-sm" title="Station entfernen">
                             <i data-lucide="trash-2" class="w-4 h-4"></i>
                         </button>
                     </form>

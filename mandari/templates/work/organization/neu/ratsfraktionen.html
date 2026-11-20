@@ -29,7 +29,7 @@ update_party und delete_party wie bisher (work/organization/parties.html); die V
                 <form method="post" action="" class="mt-3 flex flex-wrap items-end gap-3">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="update_coalition">
-                    <c-form.field name="coalition_name" id="koalitionsname" label="Name der Koalition" value="{{ coalition_name }}" placeholder="z. B. Ampel, Rot-Grün" dicht class="flex-1 min-w-[14rem]" />
+                    <c-form.field name="coalition_name" id="koalitionsname" label="Name der Koalition" value="{{ coalition_name }}" placeholder="z. B. Ampel, Rot-Grün" dicht class="flex-1 min-w-56" />
                     <c-ui.button type="submit" size="sm" variant="secondary">Speichern</c-ui.button>
                 </form>
                 {% if coalition_parties %}

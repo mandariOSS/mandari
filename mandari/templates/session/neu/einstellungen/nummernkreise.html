@@ -30,8 +30,8 @@ _numbering_fields.html (hier _nummernkreise_felder.html); Kontext NumberingSetti
                 <li class="py-2.5" x-data="{ offen: false }">
                     <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-1">
                         <div class="min-w-0 flex-1 basis-64 {% if not rng.is_active %}text-gray-500 dark:text-gray-500{% endif %}">
-                            <p class="text-sm font-medium {% if rng.is_active %}text-gray-900 dark:text-white{% endif %} break-words">{{ rng.name }}{% if not rng.is_active %} <span class="font-normal">(inaktiv)</span>{% endif %}</p>
-                            <p class="text-[0.8125rem] {% if rng.is_active %}text-gray-600 dark:text-gray-400{% endif %} break-words">
+                            <p class="text-sm font-medium {% if rng.is_active %}text-gray-900 dark:text-white{% endif %} wrap-break-word">{{ rng.name }}{% if not rng.is_active %} <span class="font-normal">(inaktiv)</span>{% endif %}</p>
+                            <p class="text-[0.8125rem] {% if rng.is_active %}text-gray-600 dark:text-gray-400{% endif %} wrap-break-word">
                                 {% if rng.typ_namen %}{{ rng.typ_namen|join:", " }}{% else %}alle Vorlagenarten ohne eigenen Kreis{% endif %}{% if body_choice.active %} · {% if rng.body %}{{ rng.body.name }}{% else %}alle Körperschaften{% endif %}{% endif %}
                                 · {{ rng.get_reset_display }} · Vergabe: {{ rng.get_assign_on_display }}
                             </p>

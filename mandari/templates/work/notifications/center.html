@@ -18,7 +18,7 @@
 <button type="button" hx-post="{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}"
         hx-swap="none"
         data-after-request="reload"
-        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
     <i data-lucide="check-check" class="w-4 h-4"></i>
     Alle als gelesen markieren
 </button>
@@ -43,13 +43,13 @@
     </div>
 
     <!-- Notification List -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xs border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
         {% if notifications %}
             {% for notification in notifications %}
             <div class="p-4 {% if not notification.is_read %}bg-primary-50/50 dark:bg-primary-900/10{% endif %} hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                 <div class="flex gap-4">
                     <!-- Icon -->
-                    <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center
+                    <div class="shrink-0 w-10 h-10 rounded-full flex items-center justify-center
                                 {% if notification.color == 'blue' %}bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400{% endif %}
                                 {% if notification.color == 'green' %}bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400{% endif %}
                                 {% if notification.color == 'red' %}bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-400{% endif %}
@@ -65,29 +65,29 @@
                     <div class="flex-1 min-w-0">
                         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                             <div class="min-w-0">
-                                <h3 class="text-sm font-semibold text-gray-900 dark:text-white break-words">
+                                <h3 class="text-sm font-semibold text-gray-900 dark:text-white wrap-break-word">
                                     {{ notification.title }}
                                     {% if not notification.is_read %}
                                     <span class="inline-block w-2 h-2 bg-primary-500 rounded-full ml-2"></span>
                                     {% endif %}
                                 </h3>
-                                <p class="text-sm text-gray-600 dark:text-gray-300 mt-1 break-words">
+                                <p class="text-sm text-gray-600 dark:text-gray-300 mt-1 wrap-break-word">
                                     {{ notification.message }}
                                 </p>
                                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
                                     <span>{{ notification.created_at|naturaltime }}</span>
                                     {% if notification.actor %}
                                     <span class="max-sm:hidden">&middot;</span>
-                                    <span class="min-w-0 break-words">Von {{ notification.actor.user.display_name|default:notification.actor.user.email }}</span>
+                                    <span class="min-w-0 wrap-break-word">Von {{ notification.actor.user.display_name|default:notification.actor.user.email }}</span>
                                     {% endif %}
-                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-400">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-sm text-gray-600 dark:text-gray-400">
                                         {{ notification.get_notification_type_display }}
                                     </span>
                                 </div>
                             </div>
 
                             <!-- Actions -->
-                            <div class="flex-shrink-0 flex items-center gap-2">
+                            <div class="shrink-0 flex items-center gap-2">
                                 {% if notification.link %}
                                 <a href="{{ notification.link }}"
                                    class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/50 rounded-lg"
@@ -102,7 +102,7 @@
                                 <button type="button" hx-post="{% url 'work:notification_mark_read' org_slug=organization.slug notification_id=notification.id %}"
                                         hx-swap="none"
                                         data-after-request="notification-read" data-parent=".p-4"
-                                        class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                        class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-sm"
                                         title="Als gelesen markieren">
                                     <i data-lucide="check" class="w-4 h-4"></i>
                                 </button>

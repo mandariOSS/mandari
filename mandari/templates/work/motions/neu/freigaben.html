@@ -30,11 +30,11 @@ Stufe der Freigabe als Text. Alles wie bisher (work/motions/guest_documents.html
 {% block work_content %}
 <div x-data="{ q: '' }">
     <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div class="relative flex-1 min-w-[14rem] max-w-md">
+        <div class="relative flex-1 min-w-56 max-w-md">
             <label for="freigaben-suche" class="sr-only">Freigaben durchsuchen</label>
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
             <input id="freigaben-suche" type="search" x-model="q" placeholder="Dokumente und Ordner durchsuchen"
-                   class="w-full min-h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                   class="w-full min-h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
         </div>
         <p class="sm:ml-auto text-sm text-gray-700 dark:text-gray-300">
             Sortierung:

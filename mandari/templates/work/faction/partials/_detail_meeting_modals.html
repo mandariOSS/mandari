@@ -49,7 +49,7 @@
 
         <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <h3 class="text-lg font-semibold">Teilnehmer hinzufügen</h3>
-            <button type="button" @click="showAddAttendeeModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+            <button type="button" @click="showAddAttendeeModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded-sm">
                 <i data-lucide="x" class="w-5 h-5"></i>
             </button>
         </div>
@@ -87,7 +87,7 @@
 
         <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Sitzung bearbeiten</h3>
-            <button type="button" @click="showEditModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+            <button type="button" @click="showEditModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded-sm">
                 <i data-lucide="x" class="w-5 h-5"></i>
             </button>
         </div>
@@ -101,7 +101,7 @@
             <c-form.field name="location" label="Ort" :value="meeting.location" />
             <div class="space-y-3" x-data="{ isVirtual: {{ meeting.is_virtual|yesno:'true,false' }} }">
                 <div class="flex items-center gap-2">
-                    <input type="checkbox" name="is_virtual" x-model="isVirtual" class="w-4 h-4 text-primary-600 rounded">
+                    <input type="checkbox" name="is_virtual" x-model="isVirtual" class="w-4 h-4 text-primary-600 rounded-sm">
                     <label class="text-sm text-gray-700 dark:text-gray-300">Online-Teilnahme möglich</label>
                 </div>
                 <c-form.field name="video_link" label="Video-Link" type="url" :value="meeting.video_link"

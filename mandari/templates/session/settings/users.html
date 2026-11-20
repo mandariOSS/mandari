@@ -156,11 +156,11 @@
                                     <label class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
                                         <input type="checkbox" name="roles" value="{{ role.id }}"
                                                {% if role in su.roles.all %}checked{% endif %}
-                                               class="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded">
+                                               class="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded-sm">
                                         {{ role.name }}
                                     </label>
                                     {% endfor %}
-                                    <button type="submit" class="w-full px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white rounded">
+                                    <button type="submit" class="w-full px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white rounded-sm">
                                         Rollen speichern
                                     </button>
                                 </form>

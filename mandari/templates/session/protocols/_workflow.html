@@ -55,7 +55,7 @@ Erwartet: protocol, status_tone, meeting, can_edit, can_approve, locked, direct_
                 <option value="{{ top.id }}">{{ top.meeting.start|date:"d.m.Y" }} – TOP {{ top.number }}: {{ top.name|truncatechars:60 }}</option>
                 {% endfor %}
             </c-form.select>
-            <c-form.select name="approval_meeting" label="oder: Genehmigt in Sitzung" class="min-w-[14rem]">
+            <c-form.select name="approval_meeting" label="oder: Genehmigt in Sitzung" class="min-w-56">
                 <option value="">— optional —</option>
                 {% for am in approval_meetings %}
                 <option value="{{ am.id }}">{{ am.name }} ({{ am.start|date:"d.m.Y" }})</option>

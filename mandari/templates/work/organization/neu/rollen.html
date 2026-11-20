@@ -32,13 +32,13 @@ Kontext: RoleListView.
         <ul class="divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="rollen-liste">
             {% for role in roles %}
             <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5">
-                <div class="min-w-[14rem] flex-1">
+                <div class="min-w-56 flex-1">
                     <p class="flex items-center gap-2 text-sm">
                         {% include "work/organization/neu/_farbpunkt.html" with farbe=role.color %}
-                        <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=role.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ role.name }}</a>
+                        <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=role.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ role.name }}</a>
                         {% if role.is_system_role or role.is_admin %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_system_role %}Systemrolle{% endif %}{% if role.is_system_role and role.is_admin %} · {% endif %}{% if role.is_admin %}Administrator{% endif %}</span>{% endif %}
                     </p>
-                    <p class="ml-[1.125rem] text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_admin %}Alle Berechtigungen außer Stimmrecht{% else %}{{ role.permissions.count }} Berechtigungen{% endif %}, {{ role.member_count }} Mitglied{{ role.member_count|pluralize:"er" }}</p>
+                    <p class="ml-4.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_admin %}Alle Berechtigungen außer Stimmrecht{% else %}{{ role.permissions.count }} Berechtigungen{% endif %}, {{ role.member_count }} Mitglied{{ role.member_count|pluralize:"er" }}</p>
                 </div>
                 {% if role.has_default_definition %}
                 <form method="post" action="{% url 'work:role_reset' org_slug=organization.slug role_id=role.id %}"

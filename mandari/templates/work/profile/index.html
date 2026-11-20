@@ -89,14 +89,14 @@
                 <!-- 2FA Status -->
                 <div class="flex items-center gap-3">
                     {% if is_2fa_enabled %}
-                    <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                    <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
                         <i data-lucide="shield-check" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                         <p class="text-sm text-gray-700 dark:text-gray-300">2FA aktiviert</p>
                     </div>
                     {% else %}
-                    <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                    <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
                         <i data-lucide="shield-alert" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
                     </div>
                     <div class="flex-1 min-w-0">
@@ -108,12 +108,12 @@
                 <!-- Email Verified -->
                 <div class="flex items-center gap-3">
                     {% if request.user.email_verified %}
-                    <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                    <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
                         <i data-lucide="mail-check" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
                     </div>
                     <p class="text-sm text-gray-700 dark:text-gray-300">E-Mail verifiziert</p>
                     {% else %}
-                    <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                    <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
                         <i data-lucide="mail-x" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
                     </div>
                     <p class="text-sm text-amber-700 dark:text-amber-400">E-Mail nicht verifiziert</p>
@@ -122,7 +122,7 @@
 
                 <!-- Active Sessions -->
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
                         <i data-lucide="monitor" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
                     </div>
                     <p class="text-sm text-gray-700 dark:text-gray-300">{{ sessions_count }} aktive Sitzung{{ sessions_count|pluralize:"en" }}</p>
@@ -141,11 +141,11 @@
         <!-- Account Info (compact) -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-4">
             <div class="flex items-center gap-3">
-                <div class="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+                <div class="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 shrink-0">
                     <i data-lucide="info" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
                 </div>
                 <div class="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
-                    <p>ID: <code class="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded text-[11px]">{{ request.user.id|truncatechars:13 }}</code></p>
+                    <p>ID: <code class="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded-sm text-[11px]">{{ request.user.id|truncatechars:13 }}</code></p>
                     <p>Registriert seit {{ request.user.date_joined|date:"d.m.Y" }}</p>
                 </div>
             </div>
@@ -186,13 +186,13 @@
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vorname</label>
                             <input type="text" name="first_name" value="{{ request.user.first_name }}"
                                    placeholder="Vorname eingeben"
-                                   class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow">
+                                   class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden transition-shadow">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nachname</label>
                             <input type="text" name="last_name" value="{{ request.user.last_name }}"
                                    placeholder="Nachname eingeben"
-                                   class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow">
+                                   class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden transition-shadow">
                         </div>
                     </div>
 
@@ -201,14 +201,14 @@
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefon</label>
                         <input type="tel" name="phone" value="{{ request.user.phone }}"
                                placeholder="+49 ..."
-                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow">
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden transition-shadow">
                         <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Optional · Wird nur intern verwendet</p>
                     </div>
                 </div>
 
                 <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end">
                     <button type="submit"
-                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs transition-colors">
                         <i data-lucide="save" class="w-4 h-4"></i>
                         Speichern
                     </button>
@@ -229,7 +229,7 @@
                         <dt class="text-sm text-gray-500 dark:text-gray-400">Organisation</dt>
                         <dd class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
                             {% if organization.effective_logo %}
-                            <img src="{{ organization.effective_logo.url }}" alt="" class="w-5 h-5 rounded object-contain">
+                            <img src="{{ organization.effective_logo.url }}" alt="" class="w-5 h-5 rounded-sm object-contain">
                             {% endif %}
                             {{ organization.name }}
                         </dd>

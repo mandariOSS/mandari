@@ -25,7 +25,7 @@
                        hx-swap="innerHTML"
                        hx-indicator="#search-loading"
                        hx-include="#filter-type, #filter-fraktion"
-                       class="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                       class="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 <!-- Loading indicator -->
                 <div id="search-loading" class="htmx-indicator absolute right-3 top-1/2 -translate-y-1/2">
                     <svg class="animate-spin h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -45,7 +45,7 @@
                         hx-push-url="true"
                         hx-swap="innerHTML"
                         hx-include="#search-papers, #filter-fraktion"
-                        class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
+                        class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-hidden">
                     <option value="">Alle Typen</option>
                     {% for type in paper_types %}
                     <option value="{{ type }}" {% if request.GET.type == type %}selected{% endif %}>{{ type }}</option>
@@ -64,7 +64,7 @@
                         hx-push-url="true"
                         hx-swap="innerHTML"
                         hx-include="#search-papers, #filter-type"
-                        class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
+                        class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-hidden">
                     <option value="">Alle Fraktionen</option>
                     {% for fraktion in paper_fraktionen %}
                     <option value="{{ fraktion.wert }}" {% if request.GET.fraktion == fraktion.wert or request.GET.fraktion in fraktion.bezeichnungen %}selected{% endif %}>{{ fraktion.anzeige }}</option>

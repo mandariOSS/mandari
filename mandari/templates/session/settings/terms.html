@@ -70,7 +70,7 @@
                 </form>
                 <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                     {% if current_term and current_term.id == term.id %}
-                    <span class="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 font-medium">Aktuelle Periode</span>
+                    <span class="px-2 py-0.5 rounded-sm bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 font-medium">Aktuelle Periode</span>
                     {% endif %}
                     <span>{{ term.meeting_count }} Sitzung(en)</span>
                     <span>{{ term.membership_count }} Besetzung(en)</span>

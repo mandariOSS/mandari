@@ -13,7 +13,7 @@ file_content_locked, file_content_locked_message, tenant_slug).
         <li class="py-2" x-data="{ ersetzen: false }">
             <div class="flex items-start gap-2">
                 <div class="min-w-0 flex-1">
-                    <a href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ file.name }}</a>
+                    <a href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ file.name }}</a>
                     <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
                         <span class="whitespace-nowrap">{{ file.size_human }}</span>
                         {% if file.version > 1 %}<a href="{% url 'session:file_versions' tenant_slug=tenant_slug file_id=file.id %}" class="whitespace-nowrap hover:underline underline-offset-4" title="Frühere Fassungen dieser Anlage">Version {{ file.version }} (Verlauf)</a>{% endif %}

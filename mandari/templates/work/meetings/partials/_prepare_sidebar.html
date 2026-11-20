@@ -10,13 +10,13 @@
                                 <i data-lucide="sticky-note" class="w-4 h-4 text-amber-500"></i>
                                 Meine Notizen
                             </h3>
-                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
                                 <i data-lucide="lock" class="w-3 h-3"></i> Nur für Sie
                             </span>
                         </div>
                         <textarea rows="3" x-model="selectedItem.privateNote"
                                   @input="autoGrow($event.target, 12); queueItemSave('private-note', selectedItem, item => savePrivateNote(item))"
-                                  class="prep-autogrow w-full px-3 py-2 text-sm bg-amber-50/40 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100"
+                                  class="prep-autogrow w-full px-3 py-2 text-sm bg-amber-50/40 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden dark:text-gray-100"
                                   placeholder="Private Gedanken zu diesem TOP..."></textarea>
                     </div>
 
@@ -57,20 +57,20 @@
                                             <i data-lucide="x" class="w-3.5 h-3.5"></i>
                                         </button>
                                     </div>
-                                    <p class="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-line break-words" x-text="note.content"></p>
+                                    <p class="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-line wrap-break-word" x-text="note.content"></p>
                                     <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
                                         <span x-show="note.is_recommendation || note.is_decision"
-                                              class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
+                                              class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded-sm bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
                                             <i data-lucide="flag" class="w-3 h-3"></i>
                                             Position der Fraktion
                                         </span>
-                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm"
                                               :class="note.visibility === 'consulting'
                                                 ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300'
                                                 : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'"
                                               x-text="note.visibility_display"></span>
                                         <span x-show="note.organization && note.is_own_org === false"
-                                              class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+                                              class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
                                               x-text="note.organization"></span>
                                         <template x-if="note.origin">
                                             <a :href="`/work/${orgSlug}/meetings/${note.origin.meeting_id}/prepare/`"
@@ -92,23 +92,23 @@
                         <div class="px-4 py-3 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
                             <textarea rows="2" x-model="newComment"
                                       @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); postComment(); }"
-                                      class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100 resize-none"
+                                      class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden dark:text-gray-100 resize-none"
                                       placeholder="Beitrag schreiben... (Enter sendet)"></textarea>
                             <div class="mt-1.5 flex items-center gap-2">
                                 <select id="thread-visibility" x-model="commentVisibility" title="Sichtbarkeit"
-                                        class="px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-gray-100 outline-none focus:border-primary-500">
+                                        class="px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-gray-100 outline-hidden focus:border-primary-500">
                                     {% for code, label in visibility_choices %}
                                     <option value="{{ code }}">{{ label }}</option>
                                     {% endfor %}
                                 </select>
                                 <label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer" title="Beitrag als Position der Fraktion markieren">
                                     <input type="checkbox" x-model="commentIsPosition"
-                                           class="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                           class="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                                     Position der Fraktion
                                 </label>
                                 <div class="flex-1"></div>
                                 <button type="button" @click="postComment()" :disabled="!newComment.trim()"
-                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-40 shadow-sm transition-colors">
+                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-40 shadow-xs transition-colors">
                                     <i data-lucide="send" class="w-3.5 h-3.5"></i>
                                     Senden
                                 </button>

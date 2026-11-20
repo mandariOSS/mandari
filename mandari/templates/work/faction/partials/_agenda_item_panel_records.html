@@ -11,7 +11,7 @@
           data-autosave="panel">
         {% csrf_token %}
         <textarea name="description" rows="3" placeholder="Beschreibung hinzufügen..."
-                  class="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none resize-y">{{ item.get_description_decrypted|default:"" }}</textarea>
+                  class="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden resize-y">{{ item.get_description_decrypted|default:"" }}</textarea>
     </form>
     {% else %}
     {% with desc=item.get_description_decrypted %}
@@ -90,27 +90,27 @@
                 <div>
                     <label class="block text-xs font-medium text-green-600 mb-1">Ja</label>
                     <input type="number" name="votes_yes" min="0" value="{{ decision.votes_yes|default:0 }}"
-                           class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-green-500">
+                           class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-hidden focus:border-green-500">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-red-600 mb-1">Nein</label>
                     <input type="number" name="votes_no" min="0" value="{{ decision.votes_no|default:0 }}"
-                           class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-red-500">
+                           class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-hidden focus:border-red-500">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Enthaltung</label>
                     <input type="number" name="votes_abstain" min="0" value="{{ decision.votes_abstain|default:0 }}"
-                           class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-gray-400">
+                           class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-hidden focus:border-gray-400">
                 </div>
             </div>
-            <select name="result" class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500">
+            <select name="result" class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-hidden focus:border-primary-500">
                 <option value="accepted" {% if decision.result == 'accepted' %}selected{% endif %}>Angenommen</option>
                 <option value="rejected" {% if decision.result == 'rejected' %}selected{% endif %}>Abgelehnt</option>
                 <option value="postponed" {% if decision.result == 'postponed' %}selected{% endif %}>Vertagt</option>
                 <option value="modified" {% if decision.result == 'modified' %}selected{% endif %}>Geändert angenommen</option>
             </select>
             <textarea name="decision_text" rows="2" placeholder="Beschlusstext (optional)..."
-                      class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500 resize-none">{{ decision.decision_text|default:"" }}</textarea>
+                      class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-hidden focus:border-primary-500 resize-none">{{ decision.decision_text|default:"" }}</textarea>
             <div class="flex justify-end gap-2">
                 <button type="button" @click="showDecisionForm = false" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 rounded-lg">Abbrechen</button>
                 <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Erfassen</button>
@@ -132,7 +132,7 @@
     <div class="space-y-1">
         {% for entry in protocol_entries %}
         <div class="group/entry flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm">
-            <span class="flex-shrink-0 mt-0.5">
+            <span class="shrink-0 mt-0.5">
                 {% if entry.entry_type == 'speech' %}<i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
                 {% elif entry.entry_type == 'decision' %}<i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
                 {% elif entry.entry_type == 'action' %}<i data-lucide="check-square" class="w-4 h-4 text-orange-500"></i>
@@ -147,13 +147,13 @@
                 {% if entry.entry_type == 'action' and entry.action_assignee_name %}<span class="text-xs text-gray-400">· zuständig: {{ entry.action_assignee_name }}</span>{% endif %}
             </div>
             {% if can_edit or can_protocol or entry.created_by == membership and not meeting.protocol_approved %}
-            <div class="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover/entry:opacity-100 transition-opacity">
+            <div class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/entry:opacity-100 transition-opacity">
                 <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
                       hx-vals='{"action": "delete_entry", "entry_id": "{{ entry.id }}"}'
                       hx-target="#agenda-panel-content" hx-swap="innerHTML"
                       hx-confirm="Eintrag löschen?">
                     {% csrf_token %}
-                    <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded">
+                    <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded-sm">
                         <i data-lucide="x" class="w-3 h-3"></i>
                     </button>
                 </form>
@@ -175,7 +175,7 @@
             {% csrf_token %}
             <input type="hidden" name="entry_type" value="note">
             <textarea name="content" rows="2" placeholder="Notiz hinzufügen..." required
-                      class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500 resize-none"></textarea>
+                      class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-hidden focus:border-primary-500 resize-none"></textarea>
             <div class="flex justify-end gap-2">
                 <button type="button" @click="showEntryForm = false" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 rounded-lg">Abbrechen</button>
                 <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Hinzufügen</button>

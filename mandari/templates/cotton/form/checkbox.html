@@ -11,7 +11,7 @@ Ergänzungen für Arbeitsflächen (Issue #951), ohne sie bleibt das Markup wie b
 {% with fname=field.name|default:name %}{% with auto_id="id_"|add:fname %}{% firstof id field.id_for_label auto_id as fid %}
 <label for="{{ fid }}" class="inline-flex {% if dicht %}items-start{% else %}items-center{% endif %} gap-2 cursor-pointer min-h-[24px] {{ class }}" {{ attrs }}>
     <input type="checkbox" name="{{ fname }}" id="{{ fid }}"{% if value %} value="{{ value }}"{% endif %}{% if modell %} x-model="{{ modell }}"{% endif %}{% if disabled %} disabled{% endif %} {% if checked or field.value %}checked{% endif %}
-        class="{% if dicht %}mt-0.5 shrink-0 {% endif %}w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+        class="{% if dicht %}mt-0.5 shrink-0 {% endif %}w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
     <span class="{% if dicht %}text-sm text-gray-800 dark:text-gray-200{% else %}text-sm text-gray-600 dark:text-gray-400{% endif %}">{{ label }}{{ slot }}</span>
 </label>
 {% endwith %}{% endwith %}

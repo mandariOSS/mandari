@@ -37,7 +37,7 @@ bisherige Seite bleibt session/papers/versions/detail.html.
     </c-slot>
     {% endif %}
     <p class="kopf-angaben">
-        <span class="break-words">{{ version.get_trigger_display }}{% if version.note %}: {{ version.note }}{% endif %}</span>
+        <span class="wrap-break-word">{{ version.get_trigger_display }}{% if version.note %}: {{ version.note }}{% endif %}</span>
         {% if version.is_resolved %}<span>{% include "session/neu/_status.html" with wert="approved" text="Beschlossene Fassung" %}</span>{% endif %}
         {% if not version.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
     </p>
@@ -51,7 +51,7 @@ bisherige Seite bleibt session/papers/versions/detail.html.
     <div class="min-w-0 space-y-10">
         <c-rahmen.abschnitt titel="Sachverhalt" titel_id="sachverhalt-titel">
             {% if version.main_text %}
-            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ version.main_text }}</div>
+            <div class="mt-2 max-w-3xl text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ version.main_text }}</div>
             {% else %}
             <c-rahmen.satz>Kein Sachverhalt erfasst.</c-rahmen.satz>
             {% endif %}
@@ -59,7 +59,7 @@ bisherige Seite bleibt session/papers/versions/detail.html.
 
         <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="beschlussvorschlag-titel">
             {% if version.resolution_text %}
-            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ version.resolution_text }}</div>
+            <div class="mt-2 max-w-3xl text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ version.resolution_text }}</div>
             {% else %}
             <c-rahmen.satz>Kein Beschlussvorschlag erfasst.</c-rahmen.satz>
             {% endif %}
@@ -72,7 +72,7 @@ bisherige Seite bleibt session/papers/versions/detail.html.
                 <li class="py-2.5" data-anlage="{{ entry.name }}">
                     {% if entry.blob and not entry.blob.purged_at %}
                     <a href="{% url 'session:paper_version_file' tenant_slug=tenant_slug paper_id=paper.id number=version.number entry_id=entry.id %}"
-                       class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words"
+                       class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word"
                        title="Anlage in dieser Fassung herunterladen">{{ entry.name }}</a>
                     {% else %}
                     <p class="text-sm liste-name">{{ entry.name }}</p>

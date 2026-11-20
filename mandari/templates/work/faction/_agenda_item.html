@@ -12,12 +12,12 @@
 
         {# Move buttons #}
         {% if can_edit and not item.is_approval_item %}
-        <div class="flex flex-col gap-0.5 flex-shrink-0" @click.stop>
+        <div class="flex flex-col gap-0.5 shrink-0" @click.stop>
             <button type="button" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                     hx-vals='{"action": "move_item", "item_id": "{{ item.id }}", "direction": "up"}'
                     hx-target="#agenda-container"
                     hx-swap="innerHTML"
-                    class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                    class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-sm disabled:opacity-30 disabled:cursor-not-allowed"
                     {% if is_first %}disabled{% endif %}
                     title="Nach oben">
                 <i data-lucide="chevron-up" class="w-4 h-4"></i>
@@ -26,7 +26,7 @@
                     hx-vals='{"action": "move_item", "item_id": "{{ item.id }}", "direction": "down"}'
                     hx-target="#agenda-container"
                     hx-swap="innerHTML"
-                    class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                    class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-sm disabled:opacity-30 disabled:cursor-not-allowed"
                     {% if is_last %}disabled{% endif %}
                     title="Nach unten">
                 <i data-lucide="chevron-down" class="w-4 h-4"></i>
@@ -35,7 +35,7 @@
         {% endif %}
 
         {# Number badge #}
-        <span class="flex-shrink-0 min-w-[2.5rem] h-10 px-3 rounded-lg flex items-center justify-center text-sm font-semibold
+        <span class="shrink-0 min-w-10 h-10 px-3 rounded-lg flex items-center justify-center text-sm font-semibold
             {% if item.is_approval_item %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400
             {% elif is_internal %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400
             {% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400{% endif %}">
@@ -58,7 +58,7 @@
                     {% endif %}
                     {% endwith %}
                 </div>
-                <div class="flex items-center gap-2 flex-shrink-0">
+                <div class="flex items-center gap-2 shrink-0">
                     {% with decision=item.recorded_decision %}
                     {% if decision %}
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
@@ -68,24 +68,24 @@
                     {% endif %}
                     {% endwith %}
                     {% if item.tasks.count > 0 %}
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20">
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20">
                         <i data-lucide="check-square" class="w-3 h-3"></i>
                         {{ item.tasks.count }}
                     </span>
                     {% endif %}
                     {% if item.attachments.count > 0 %}
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-gray-500 bg-gray-100 dark:bg-gray-700">
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs text-gray-500 bg-gray-100 dark:bg-gray-700">
                         <i data-lucide="paperclip" class="w-3 h-3"></i>
                         {{ item.attachments.count }}
                     </span>
                     {% endif %}
                     {% if item.protocol_entries.all|length > 0 %}
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-gray-500 bg-gray-100 dark:bg-gray-700">
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs text-gray-500 bg-gray-100 dark:bg-gray-700">
                         <i data-lucide="file-text" class="w-3 h-3"></i>
                         {{ item.protocol_entries.all|length }}
                     </span>
                     {% endif %}
-                    <button type="button" @click.stop="expanded = !expanded" class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    <button type="button" @click.stop="expanded = !expanded" class="p-1 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                         <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 transition-transform" :class="expanded ? 'rotate-180' : ''"></i>
                     </button>
                 </div>
@@ -99,11 +99,11 @@
 
         {# Sub-items #}
         {% for child in item.visible_children %}
-        <div class="mx-4 mt-3 first:mt-3 p-3 bg-white dark:bg-gray-800 rounded-lg border-l-2 {% if is_internal %}border-amber-300{% else %}border-primary-300{% endif %} cursor-pointer hover:shadow-sm transition-shadow"
+        <div class="mx-4 mt-3 first:mt-3 p-3 bg-white dark:bg-gray-800 rounded-lg border-l-2 {% if is_internal %}border-amber-300{% else %}border-primary-300{% endif %} cursor-pointer hover:shadow-xs transition-shadow"
              @click="$dispatch('open-item-panel', { id: '{{ child.id }}' })">
             <div class="flex items-start justify-between gap-3">
                 <div class="flex items-start gap-2 flex-1 min-w-0">
-                    <span class="flex-shrink-0 px-2 py-0.5 text-xs font-medium rounded
+                    <span class="shrink-0 px-2 py-0.5 text-xs font-medium rounded
                         {% if is_internal %}bg-amber-100 text-amber-700{% else %}bg-gray-200 text-gray-600{% endif %}">
                         {{ child.number }}
                     </span>
@@ -127,13 +127,13 @@
                     </div>
                 </div>
                 {% if can_edit %}
-                <div class="flex items-center gap-1 flex-shrink-0{% if not is_internal and child.visibility == 'internal' %} fs-noe{% endif %}" @click.stop{% if not is_internal and child.visibility == 'internal' %}{% if not noe_sichtbar %} inert{% endif %} x-bind:inert="!$store.noe.sichtbar"{% endif %}>
+                <div class="flex items-center gap-1 shrink-0{% if not is_internal and child.visibility == 'internal' %} fs-noe{% endif %}" @click.stop{% if not is_internal and child.visibility == 'internal' %}{% if not noe_sichtbar %} inert{% endif %} x-bind:inert="!$store.noe.sichtbar"{% endif %}>
                     <button type="button" @click="$dispatch('open-edit-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}', description: '{{ child.get_description_decrypted|default:""|escapejs }}' })"
-                            class="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Bearbeiten">
+                            class="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-sm" title="Bearbeiten">
                         <i data-lucide="edit-2" class="w-3 h-3"></i>
                     </button>
                     <button type="button" @click="$dispatch('open-delete-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}' })"
-                            class="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Löschen">
+                            class="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-sm" title="Löschen">
                         <i data-lucide="trash-2" class="w-3 h-3"></i>
                     </button>
                 </div>
@@ -145,7 +145,7 @@
         {# Protocol entries #}
         {% for entry in item.protocol_entries.all %}
         <div class="px-4 py-2 flex items-start gap-3 text-sm border-b {% if is_internal %}border-amber-100 dark:border-amber-800{% else %}border-gray-200 dark:border-gray-700{% endif %} last:border-0">
-            <span class="flex-shrink-0 mt-0.5">
+            <span class="shrink-0 mt-0.5">
                 {% if entry.entry_type == 'speech' %}<i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
                 {% elif entry.entry_type == 'decision' %}<i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
                 {% elif entry.entry_type == 'action' %}<i data-lucide="check-square" class="w-4 h-4 text-orange-500"></i>
@@ -157,13 +157,13 @@
                 {% if entry.entry_type == 'action' and entry.action_assignee_name %}<span class="text-xs text-gray-400">· zuständig: {{ entry.action_assignee_name }}</span>{% endif %}
             </div>
             {% if can_edit or can_protocol or entry.created_by == membership and not meeting.protocol_approved %}
-            <div class="flex items-center gap-1 flex-shrink-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100" @click.stop>
+            <div class="flex items-center gap-1 shrink-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100" @click.stop>
                 <button type="button" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                         hx-vals='{"action": "delete_entry", "entry_id": "{{ entry.id }}"}'
                         hx-target="#agenda-container"
                         hx-swap="innerHTML"
                         hx-confirm="Protokolleintrag löschen?"
-                        class="p-1 text-gray-400 hover:text-red-600 rounded">
+                        class="p-1 text-gray-400 hover:text-red-600 rounded-sm">
                     <i data-lucide="x" class="w-3 h-3"></i>
                 </button>
             </div>
@@ -188,13 +188,13 @@
                 <input type="hidden" name="action" value="add_entry">
                 <input type="hidden" name="agenda_item_id" value="{{ item.id }}">
                 <div class="flex gap-2">
-                    <select name="entry_type" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    <select name="entry_type" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                         <option value="note">Notiz</option>
                         <option value="speech">Redebeitrag</option>
                         <option value="decision">Beschluss</option>
                         <option value="action">Aufgabe</option>
                     </select>
-                    <select name="speaker" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none flex-1">
+                    <select name="speaker" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden flex-1">
                         <option value="">-- Sprecher --</option>
                         {% for att in attendances %}
                         {% if att.membership and att.status == 'present' %}
@@ -205,8 +205,8 @@
                 </div>
                 <div class="flex gap-2">
                     <input type="text" name="content" placeholder="Protokolleintrag..." required
-                           class="flex-1 text-sm px-3 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-                    <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 shadow-sm rounded-lg hover:bg-primary-700">
+                           class="flex-1 text-sm px-3 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
+                    <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 shadow-xs rounded-lg hover:bg-primary-700">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                     </button>
                 </div>

@@ -176,7 +176,6 @@ jobs:
               - 'mandari/static/**'
               - 'mandari/vite.config.ts'
               - 'mandari/tsconfig.json'
-              - 'mandari/tailwind.config.js'
               - 'mandari/biome.json'
             test:
               - '**'
@@ -260,7 +259,6 @@ jobs:
               - 'mandari/static/**'
               - 'mandari/vite.config.ts'
               - 'mandari/tsconfig.json'
-              - 'mandari/tailwind.config.js'
               - 'mandari/tests_e2e/**'
               # Prüfskript für das neue Work-Design: läuft verkleinert als E2E-Test (test_work_design_pruefung.py)
               - 'scripts/pruefe_work_design.py'
@@ -323,7 +321,6 @@ jobs:
               - 'mandari/static/**'
               - 'mandari/vite.config.ts'
               - 'mandari/tsconfig.json'
-              - 'mandari/tailwind.config.js'
             # Helm-Chart, Roh-Manifeste und Installer (Issue #963); Compose und Dockerfiles, weil das Chart
             # deren Dienste, Befehle und Ports nachbildet
             kubernetes:

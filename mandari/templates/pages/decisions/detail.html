@@ -51,7 +51,7 @@
                 <ol class="relative border-l-2 border-gray-200 dark:border-gray-700 ml-3 space-y-6">
                     {% for step in timeline %}
                     <li class="ml-6">
-                        <span class="absolute -left-[9px] mt-1 w-4 h-4 rounded-full border-2 border-white dark:border-gray-800 {% if step.current %}bg-primary-600 ring-4 ring-primary-100 dark:ring-primary-900/40{% elif step.reached %}bg-primary-400{% else %}bg-gray-300 dark:bg-gray-600{% endif %}"></span>
+                        <span class="absolute left-[-9px] mt-1 w-4 h-4 rounded-full border-2 border-white dark:border-gray-800 {% if step.current %}bg-primary-600 ring-4 ring-primary-100 dark:ring-primary-900/40{% elif step.reached %}bg-primary-400{% else %}bg-gray-300 dark:bg-gray-600{% endif %}"></span>
                         <p class="font-medium {% if step.reached %}text-gray-900 dark:text-white{% else %}text-gray-400 dark:text-gray-500{% endif %}">{{ step.label }}</p>
                         <p class="text-sm text-gray-500 dark:text-gray-400">{% if step.date %}{{ step.date|date:"d.m.Y" }}{% elif step.reached %}Datum nicht gemeldet{% else %}noch offen{% endif %}</p>
                     </li>
@@ -87,7 +87,7 @@
                     <input type="email" name="email" required placeholder="ihre@e-mail.de" autocomplete="email"
                            class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                     <label class="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-400">
-                        <input type="checkbox" name="privacy" class="mt-0.5 rounded border-gray-300" required>
+                        <input type="checkbox" name="privacy" class="mt-0.5 rounded-sm border-gray-300" required>
                         <span>Ich bin einverstanden, dass meine E-Mail-Adresse für Benachrichtigungen zu diesem Beschluss gespeichert wird. Abmeldung jederzeit über den Link in jeder E-Mail.</span>
                     </label>
                     <button type="submit" class="w-full px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700">Beschluss abonnieren</button>

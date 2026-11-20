@@ -6,7 +6,7 @@ und Abmelden. Das Blatt ist ein modaler Dialog: Fokusfalle, Escape schließt, de
 Bausteine wie Work und Insight (c-rahmen.tab, c-rahmen.blatt-link).
 {% endcomment %}
 {% with n=session_rahmen.leiste_unten|length %}
-<nav aria-label="Hauptbereiche" class="lg:hidden print:!hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+<nav aria-label="Hauptbereiche" class="lg:hidden print:hidden! fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-xs border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
     <ul class="grid {% if n >= 4 %}grid-cols-5{% elif n == 3 %}grid-cols-4{% elif n == 2 %}grid-cols-3{% else %}grid-cols-2{% endif %} max-w-xl mx-auto">
         {% for b in session_rahmen.leiste_unten %}
         <li><c-rahmen.tab href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}">{{ b.kurz }}</c-rahmen.tab></li>
@@ -25,7 +25,7 @@ Bausteine wie Work und Insight (c-rahmen.tab, c-rahmen.blatt-link).
 </nav>
 {% endwith %}
 
-<div x-show="mehrOffen" class="lg:hidden print:!hidden fixed inset-0 z-[60]" @keydown.escape.window="mehrOffen && closeMehr()" x-cloak>
+<div x-show="mehrOffen" class="lg:hidden print:hidden! fixed inset-0 z-60" @keydown.escape.window="mehrOffen && closeMehr()" x-cloak>
     <div x-show="mehrOffen" x-transition.opacity class="absolute inset-0 bg-gray-950/40 dark:bg-black/60" @click="closeMehr()" aria-hidden="true"></div>
     <div id="session-mehr" role="dialog" aria-modal="true" aria-labelledby="session-mehr-titel" x-trap.noscroll="mehrOffen" x-show="mehrOffen"
          x-transition:enter="transition-transform duration-200 ease-out motion-reduce:transition-none"

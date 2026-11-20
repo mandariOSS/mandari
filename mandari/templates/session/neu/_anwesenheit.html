@@ -45,8 +45,8 @@ attendance_service.attendance_panel und MeetingDetailView.
         {% else %}
         <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
             <div class="min-w-0">
-                <p class="font-medium text-gray-900 dark:text-white break-words">{{ attendance.person.display_name }}</p>
-                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ attendance.get_role_display }}{% if attendance.notes %} · {{ attendance.notes }}{% endif %}</p>
+                <p class="font-medium text-gray-900 dark:text-white wrap-break-word">{{ attendance.person.display_name }}</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">{{ attendance.get_role_display }}{% if attendance.notes %} · {{ attendance.notes }}{% endif %}</p>
                 {% if attendance.participation_note %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="teilnahme-vermerk">{{ attendance.participation_note }}</p>{% endif %}
             </div>
             <p class="text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=attendance.status text=attendance.get_status_display %}</p>

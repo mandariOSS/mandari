@@ -26,14 +26,14 @@
                         </label>
                         <input type="text" name="name" value="{{ role.name|default:'' }}" required
                                placeholder="z.B. Fraktionsmitglied"
-                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     </div>
 
                     <div x-data="colorPicker" data-color="{{ role.color|default:'#6b7280' }}" data-fallback-color="#6b7280">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Farbe</label>
                         <div class="flex items-center gap-3">
                             <div class="relative">
-                                <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-sm hover:border-primary-400 transition-colors"
+                                <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-xs hover:border-primary-400 transition-colors"
                                      :style="swatchStyle"
                                      @click="$refs.nativePicker.click()"></div>
                                 <input type="color" x-ref="nativePicker" :value="color"
@@ -44,7 +44,7 @@
                                 <span class="pl-3 pr-1 text-gray-400 text-sm font-mono select-none">#</span>
                                 <input type="text" x-model="hex" @input="onHexInput()" maxlength="6"
                                        placeholder="6b7280"
-                                       class="w-full py-2 pr-3 bg-transparent outline-none text-sm font-mono text-gray-900 dark:text-white">
+                                       class="w-full py-2 pr-3 bg-transparent outline-hidden text-sm font-mono text-gray-900 dark:text-white">
                             </div>
                         </div>
                         <input type="hidden" name="color" :value="color">
@@ -55,7 +55,7 @@
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
                     <textarea name="description" rows="2"
                               placeholder="Optionale Beschreibung der Rolle..."
-                              class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">{{ role.description|default:'' }}</textarea>
+                              class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">{{ role.description|default:'' }}</textarea>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -63,14 +63,14 @@
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Prioritaet</label>
                         <input type="number" name="priority" value="{{ role.priority|default:50 }}" min="0" max="100"
                                {% if is_edit and role.is_system_role %}readonly{% endif %}
-                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none {% if is_edit and role.is_system_role %}bg-gray-50 dark:bg-gray-900 text-gray-500{% endif %}">
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden {% if is_edit and role.is_system_role %}bg-gray-50 dark:bg-gray-900 text-gray-500{% endif %}">
                         <p class="mt-1 text-xs text-gray-500">Hoehere Prioritaet bei Berechtigungskonflikten (0-100)</p>
                     </div>
                     <div class="flex items-center">
                         <div class="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg w-full">
                             <input type="checkbox" name="require_2fa" id="require_2fa"
                                    {% if role.require_2fa %}checked{% endif %}
-                                   class="mt-1 w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                                   class="mt-1 w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-sm focus:ring-primary-500">
                             <div>
                                 <label for="require_2fa" class="font-medium text-gray-900 dark:text-white cursor-pointer text-sm">
                                     2FA erforderlich
@@ -90,7 +90,7 @@
                        {% if role.is_admin %}checked{% endif %}
                        {% if is_edit and role.is_system_role %}disabled{% endif %}
                        x-model="isAdmin"
-                       class="mt-1 w-4 h-4 text-amber-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-amber-500">
+                       class="mt-1 w-4 h-4 text-amber-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-sm focus:ring-amber-500">
                 <div>
                     <label for="is_admin" class="font-medium text-amber-900 dark:text-amber-200 cursor-pointer">
                         Administrator-Rolle
@@ -127,19 +127,19 @@
                                    :checked="allChecked('{{ cat_code }}')"
                                    x-effect="syncIndeterminate($el, '{{ cat_code }}')"
                                    @change="toggleAll('{{ cat_code }}', $event.target.checked)"
-                                   class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                                   class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-sm focus:ring-primary-500">
                         </label>
                     </div>
 
                     <!-- Category permissions -->
                     <div x-show="openCategories.includes('{{ cat_code }}')" x-transition class="px-4 py-3 space-y-2 border-t border-gray-200 dark:border-gray-700">
                         {% for perm in cat.permissions %}
-                        <label class="flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 -mx-2 px-2 py-1 rounded">
+                        <label class="flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 -mx-2 px-2 py-1 rounded-sm">
                             <input type="checkbox" name="permissions" value="{{ perm.code }}"
                                    data-category="{{ cat_code }}"
                                    {% if perm.code in role_permissions %}checked{% endif %}
                                    @change="updateState()"
-                                   class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                                   class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-sm focus:ring-primary-500">
                             <div>
                                 <span class="text-sm text-gray-900 dark:text-white">{{ perm.name }}</span>
                                 <span class="text-xs text-gray-400 ml-1">({{ perm.code }})</span>
@@ -171,7 +171,7 @@
                 </button>
                 {% endif %}
                 <button type="submit"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                     <i data-lucide="save" class="w-4 h-4"></i>
                     {% if is_edit %}Speichern{% else %}Erstellen{% endif %}
                 </button>

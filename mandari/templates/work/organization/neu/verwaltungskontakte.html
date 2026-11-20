@@ -39,8 +39,8 @@ Kontext: AdministrationContactListView.
         <form method="post" action="" class="mt-4 flex flex-wrap items-end gap-3">
             {% csrf_token %}
             <input type="hidden" name="action" value="add_admin_contact">
-            <c-form.field name="contact_label" id="kontakt-bezeichnung" label="Bezeichnung" placeholder="z. B. Ratsbüro" dicht required class="flex-1 min-w-[10rem]" />
-            <c-form.field name="contact_email" id="kontakt-email" type="email" label="E-Mail" placeholder="ratsbuero@stadt.de" dicht required class="flex-1 min-w-[12rem]" />
+            <c-form.field name="contact_label" id="kontakt-bezeichnung" label="Bezeichnung" placeholder="z. B. Ratsbüro" dicht required class="flex-1 min-w-40" />
+            <c-form.field name="contact_email" id="kontakt-email" type="email" label="E-Mail" placeholder="ratsbuero@stadt.de" dicht required class="flex-1 min-w-48" />
             <c-ui.button type="submit" size="sm" variant="secondary" icon="plus">Hinzufügen</c-ui.button>
         </form>
     </div>

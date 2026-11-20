@@ -18,14 +18,14 @@ Kontext: permission_categories, role_permissions.
                 <label class="inline-flex items-center gap-2 text-[0.8125rem] text-gray-700 dark:text-gray-300" @click.stop>
                     Alle
                     <input type="checkbox" :checked="allChecked('{{ cat_code }}')" x-effect="syncIndeterminate($el, '{{ cat_code }}')" @change="toggleAll('{{ cat_code }}', $event.target.checked)"
-                           aria-label="Alle Rechte: {{ cat.name }}" class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                           aria-label="Alle Rechte: {{ cat.name }}" class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
                 </label>
             </div>
             <div id="rechte-{{ cat_code }}" x-show="openCategories.includes('{{ cat_code }}')" x-cloak class="pb-3 pl-6 grid gap-x-8 gap-y-1.5 md:grid-cols-2">
                 {% for perm in cat.permissions %}
                 <label class="inline-flex items-start gap-2 cursor-pointer">
                     <input type="checkbox" name="permissions" value="{{ perm.code }}" data-category="{{ cat_code }}" {% if perm.code in role_permissions %}checked{% endif %} @change="updateState()"
-                           class="mt-0.5 w-4 h-4 shrink-0 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                           class="mt-0.5 w-4 h-4 shrink-0 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
                     <span class="text-sm text-gray-800 dark:text-gray-200">{{ perm.name }} <span class="text-[0.8125rem] text-gray-500 dark:text-gray-400 font-mono">{{ perm.code }}</span></span>
                 </label>
                 {% endfor %}

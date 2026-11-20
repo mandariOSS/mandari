@@ -30,12 +30,12 @@
                 <div class="flex-1">
                     <div class="flex items-center gap-2 mb-1">
                         {% if meeting.cancelled %}
-                        <span class="px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                        <span class="px-2 py-0.5 text-xs font-medium rounded-sm bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
                             Abgesagt
                         </span>
                         {% endif %}
                         {% if not meeting.is_public %}
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-sm bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
                             <i data-lucide="lock" class="w-3 h-3"></i>
                             Nicht öffentlich
                         </span>

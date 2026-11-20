@@ -15,7 +15,7 @@
                 <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
                 <input type="text" id="name" name="name" required data-slug-target="slug"
                        value="{% if motion_type %}{{ motion_type.name }}{% endif %}"
-                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                        placeholder="z.B. Antrag, Anfrage, Stellungnahme">
             </div>
 
@@ -24,7 +24,7 @@
                 <label for="slug" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kurzname *</label>
                 <input type="text" id="slug" name="slug" required data-slug-field
                        value="{% if motion_type %}{{ motion_type.slug }}{% endif %}"
-                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                        placeholder="z.B. antrag, anfrage">
                 <p class="text-xs text-gray-500 mt-1">Nur Kleinbuchstaben und Bindestriche</p>
             </div>
@@ -33,7 +33,7 @@
             <div>
                 <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
                 <textarea id="description" name="description" rows="2"
-                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                           placeholder="Kurze Beschreibung des Dokumenttyps">{% if motion_type %}{{ motion_type.description }}{% endif %}</textarea>
             </div>
 
@@ -42,7 +42,7 @@
                 <div>
                     <label for="icon" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Icon</label>
                     <select id="icon" name="icon"
-                            class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                            class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                         {% with current_icon=motion_type.icon|default:"file-text" %}
                         <option value="file-text" {% if current_icon == "file-text" %}selected{% endif %}>📄 Dokument</option>
                         <option value="help-circle" {% if current_icon == "help-circle" %}selected{% endif %}>❓ Anfrage</option>
@@ -58,7 +58,7 @@
                 <div>
                     <label for="color" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Farbe</label>
                     <select id="color" name="color"
-                            class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                            class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                         {% with current_color=motion_type.color|default:"blue" %}
                         <option value="blue" {% if current_color == "blue" %}selected{% endif %}>🔵 Blau</option>
                         <option value="green" {% if current_color == "green" %}selected{% endif %}>🟢 Grün</option>
@@ -81,7 +81,7 @@
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" name="requires_approval"
                                {% if motion_type.requires_approval or is_new %}checked{% endif %}
-                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                               class="rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500">
                         <span class="text-sm text-gray-700 dark:text-gray-300">
                             Freigabe erforderlich
                             <span class="block text-xs text-gray-500">Dokument muss vor Einreichung freigegeben werden</span>
@@ -91,7 +91,7 @@
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" name="is_submittable"
                                {% if motion_type.is_submittable or is_new %}checked{% endif %}
-                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                               class="rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500">
                         <span class="text-sm text-gray-700 dark:text-gray-300">
                             Einreichbar
                             <span class="block text-xs text-gray-500">Kann offiziell an Gremien eingereicht werden</span>
@@ -101,7 +101,7 @@
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" name="is_default"
                                {% if motion_type.is_default %}checked{% endif %}
-                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                               class="rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500">
                         <span class="text-sm text-gray-700 dark:text-gray-300">
                             Standard-Typ
                             <span class="block text-xs text-gray-500">Wird als Vorauswahl bei neuen Dokumenten verwendet</span>
@@ -114,7 +114,7 @@
             <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
                 <label for="default_checklist" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Standard-Checkliste</label>
                 <textarea id="default_checklist" name="default_checklist" rows="5"
-                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none font-mono text-sm"
+                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden font-mono text-sm"
                           placeholder="Recherche abgeschlossen&#10;Abstimmung mit Fraktion&#10;Formale Prüfung">{{ default_checklist_text|default:"" }}</textarea>
                 <p class="text-xs text-gray-500 mt-1">Ein Punkt je Zeile. Wird bei neuen Dokumenten dieses Typs automatisch als Checkliste angelegt.</p>
             </div>
@@ -127,7 +127,7 @@
                 Abbrechen
             </a>
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                 <i data-lucide="check" class="w-4 h-4"></i>
                 {% if is_new %}Typ erstellen{% else %}Speichern{% endif %}
             </button>

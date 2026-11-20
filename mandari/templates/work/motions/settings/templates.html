@@ -9,7 +9,7 @@
 
 {% block header_actions %}
 <a href="{% url 'work:document_template_create' org_slug=organization.slug %}"
-   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
     <i data-lucide="plus" class="w-4 h-4"></i>
     Neue Vorlage
 </a>
@@ -28,10 +28,10 @@
                     <div class="flex items-center gap-2">
                         <h3 class="font-medium text-gray-900 dark:text-white">{{ template.name }}</h3>
                         {% if template.is_default %}
-                        <span class="px-2 py-0.5 text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded">Standard</span>
+                        <span class="px-2 py-0.5 text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-sm">Standard</span>
                         {% endif %}
                         {% if not template.is_active %}
-                        <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">Inaktiv</span>
+                        <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-sm">Inaktiv</span>
                         {% endif %}
                     </div>
                     <p class="text-sm text-gray-500 mt-0.5">
@@ -88,7 +88,7 @@
                 Erstellen Sie Ihre erste Vorlage, um schneller Dokumente zu erstellen.
             </p>
             <a href="{% url 'work:document_template_create' org_slug=organization.slug %}"
-               class="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+               class="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Erste Vorlage erstellen
             </a>

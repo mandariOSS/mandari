@@ -6,7 +6,7 @@ modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf „Mehr“ zur
 seitlich für das Querformat (wirkt nur mit viewport-fit=cover im Layout). Angemeldet steht im Blatt „Verbundene
 Anwendungen“, nur bei eingeschaltetem OIDC-Anbieter (#1215).
 {% endcomment %}
-<nav aria-label="Hauptbereiche" class="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+<nav aria-label="Hauptbereiche" class="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-xs border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
     <ul class="grid grid-cols-5 max-w-xl mx-auto">
         <li><c-insight.tab href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" icon="house" area="uebersicht">Start</c-insight.tab></li>
         <li><c-insight.tab href="{% insight_url 'meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.tab></li>
@@ -25,7 +25,7 @@ Anwendungen“, nur bei eingeschaltetem OIDC-Anbieter (#1215).
     </ul>
 </nav>
 
-<div x-show="mehrOffen" class="lg:hidden fixed inset-0 z-[60]" @keydown.escape.window="mehrOffen && closeMehr()" x-cloak>
+<div x-show="mehrOffen" class="lg:hidden fixed inset-0 z-60" @keydown.escape.window="mehrOffen && closeMehr()" x-cloak>
     <div x-show="mehrOffen" x-transition.opacity class="absolute inset-0 bg-gray-950/40 dark:bg-black/60" @click="closeMehr()" aria-hidden="true"></div>
     <div id="insight-mehr" role="dialog" aria-modal="true" aria-labelledby="insight-mehr-titel" x-trap.noscroll="mehrOffen"
         x-show="mehrOffen"

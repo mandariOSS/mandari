@@ -15,9 +15,9 @@ bilden oder fehlt ein Text, nur ein schlichter Hinweis auf die Dokumente. Kontex
         <div class="grid gap-2 py-4 border-t border-gray-200 dark:border-gray-800 sm:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] sm:gap-8">
             <dt class="flex gap-2.5 font-semibold leading-normal text-gray-900 dark:text-white">
                 <span class="shrink-0 font-medium tabular-nums text-gray-600 dark:text-gray-400">{{ paar.nummer }}</span>
-                <span class="min-w-0 break-words"><span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 sm:sr-only">Gefragt</span>{{ paar.frage }}</span>
+                <span class="min-w-0 wrap-break-word"><span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 sm:sr-only">Gefragt</span>{{ paar.frage }}</span>
             </dt>
-            <dd class="min-w-0 break-words leading-relaxed text-gray-800 dark:text-gray-200"><span class="block text-[0.8125rem] font-semibold text-gray-600 dark:text-gray-400 sm:sr-only">Antwort der Verwaltung</span>{{ paar.antwort|kernzahlen }}</dd>
+            <dd class="min-w-0 wrap-break-word leading-relaxed text-gray-800 dark:text-gray-200"><span class="block text-[0.8125rem] font-semibold text-gray-600 dark:text-gray-400 sm:sr-only">Antwort der Verwaltung</span>{{ paar.antwort|kernzahlen }}</dd>
         </div>
         {% endfor %}
     </dl>

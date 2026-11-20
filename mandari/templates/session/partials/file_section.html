@@ -23,7 +23,7 @@ Erwarteter Kontext:
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for file in files %}
         <div class="px-6 py-3 flex items-center gap-2" x-data="{ editing: false }">
-            <i data-lucide="file" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+            <i data-lucide="file" class="w-5 h-5 text-gray-400 shrink-0"></i>
             <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ file.name }}</p>
                 <!-- Metazeile bricht in der schmalen Seitenleiste um, statt über die Aktionen zu laufen -->
@@ -126,7 +126,7 @@ Erwarteter Kontext:
             <div class="flex items-center justify-between">
                 <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                     <input type="checkbox" name="is_public" checked
-                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                     Öffentliche Anlage(n)
                 </label>
                 <button type="submit"

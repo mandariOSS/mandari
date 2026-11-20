@@ -21,15 +21,15 @@ Kontext: apps/work/ris/neu.gremien; die bisherige Seite bleibt work/ris/organiza
 <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
     <nav aria-label="Auswahl" class="inline-flex rounded-md bg-band-grau p-0.5 text-sm">
         <a href="{% querystring tab='active' page=None %}" {% if tab == 'active' %}aria-current="page"{% endif %}
-           class="inline-flex items-center h-8 px-3 rounded font-medium {% if tab == 'active' %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Aktiv ({{ active_count|default:0 }})</a>
+           class="inline-flex items-center h-8 px-3 rounded-sm font-medium {% if tab == 'active' %}bg-band-hell text-gray-900 dark:text-white shadow-xs{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Aktiv ({{ active_count|default:0 }})</a>
         <a href="{% querystring tab='all' page=None %}" {% if tab == 'all' %}aria-current="page"{% endif %}
-           class="inline-flex items-center h-8 px-3 rounded font-medium {% if tab == 'all' %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Alle ({{ all_count|default:0 }})</a>
+           class="inline-flex items-center h-8 px-3 rounded-sm font-medium {% if tab == 'all' %}bg-band-hell text-gray-900 dark:text-white shadow-xs{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Alle ({{ all_count|default:0 }})</a>
     </nav>
     <form method="get" role="search" class="flex items-center gap-2 w-full sm:w-auto">
         <input type="hidden" name="tab" value="{{ tab }}">
         <label for="gremien-suche" class="sr-only">Gremium suchen</label>
         <input id="gremien-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Gremium suchen"
-               class="h-9 flex-1 sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+               class="h-9 flex-1 sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
     </form>
 </div>

@@ -26,9 +26,9 @@
             <input type="text" name="q" value="{{ search_query|default:'' }}"
                    placeholder="Suche in Vorgängen, Sitzungen, Dokumenten (inkl. PDF-Volltext), Gremien, Personen..."
                    autofocus
-                   class="w-full px-5 py-3 pl-12 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                   class="w-full px-5 py-3 pl-12 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
             <button type="submit"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                    class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 shadow-xs transition-colors">
                 Suchen
             </button>
         </div>
@@ -37,7 +37,7 @@
         <div class="flex flex-wrap items-center gap-2">
             {% if has_multiple_bodies %}
             <select name="kommune" data-autosubmit
-                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500 max-w-[220px]">
+                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden focus:border-primary-500 max-w-[220px]">
                 <option value="">Alle Kommunen</option>
                 {% for b in bodies %}
                 <option value="{{ b.id }}" {% if body_filter == b.id|stringformat:"s" %}selected{% endif %}>{{ b.get_display_name|truncatechars:40 }}</option>
@@ -48,14 +48,14 @@
             <label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                 <i data-lucide="calendar-range" class="w-3.5 h-3.5"></i>
                 <input type="date" name="von" value="{{ date_from|default:'' }}" data-autosubmit
-                       class="px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500">
+                       class="px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden focus:border-primary-500">
                 bis
                 <input type="date" name="bis" value="{{ date_to|default:'' }}" data-autosubmit
-                       class="px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500">
+                       class="px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden focus:border-primary-500">
             </label>
 
             <select name="gremium" data-autosubmit
-                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500 max-w-[220px]">
+                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden focus:border-primary-500 max-w-[220px]">
                 <option value="">Alle Gremien</option>
                 {% for name in committees %}
                 <option value="{{ name }}" {% if committee_filter == name %}selected{% endif %}>{{ name|truncatechars:40 }}</option>
@@ -63,7 +63,7 @@
             </select>
 
             <select name="art" data-autosubmit
-                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500 max-w-[200px]">
+                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden focus:border-primary-500 max-w-[200px]">
                 <option value="">Alle Vorlagen-Arten</option>
                 {% for pt in paper_types %}
                 <option value="{{ pt }}" {% if paper_type_filter == pt %}selected{% endif %}>{{ pt|truncatechars:35 }}</option>
@@ -71,7 +71,7 @@
             </select>
 
             <select name="typ" data-autosubmit
-                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500">
+                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden focus:border-primary-500">
                 <option value="">Alle Bereiche</option>
                 <option value="papers" {% if result_type_filter == 'papers' %}selected{% endif %}>Vorgänge</option>
                 <option value="files" {% if result_type_filter == 'files' %}selected{% endif %}>Dokumente (PDF-Volltext)</option>

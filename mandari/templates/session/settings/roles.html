@@ -33,10 +33,10 @@
                     <p class="text-sm font-medium text-gray-900 dark:text-white">
                         {{ role.name }}
                         {% if role.is_admin %}
-                        <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400">Administrator</span>
+                        <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400">Administrator</span>
                         {% endif %}
                         {% if role.is_system_role %}
-                        <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">Standardrolle</span>
+                        <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">Standardrolle</span>
                         {% endif %}
                         <span class="ml-1 text-xs text-gray-400">{{ role.member_count }} Benutzer</span>
                     </p>
@@ -92,7 +92,7 @@
 
             <label class="flex items-start gap-2 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-sm">
                 <input type="checkbox" name="is_admin" value="1" {% if edit_role.is_admin %}checked{% endif %}
-                       class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500">
+                       class="mt-0.5 rounded-sm border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500">
                 <span class="text-purple-800 dark:text-purple-300">
                     <span class="font-medium">Administrator</span> — volle Fachrechte, unabhängig von der Matrix unten.
                     Ausgenommen sind die Kontrollrechte (Protokoll einsehen, exportieren und prüfen): Sie gelten nur,
@@ -115,7 +115,7 @@
                         <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                             <input type="checkbox" name="{{ field_name }}" value="1"
                                    data-perm="{{ field_name }}"{% if field_name in edit_role_permissions %} checked{% endif %}
-                                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                                   class="rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                             {{ label }}
                         </label>
                         {% endfor %}

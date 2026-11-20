@@ -29,7 +29,7 @@ securitySettings (showSetupModal, setupStep, setupData, showBackupCodesModal, sh
                 <div>
                     <label for="dialog-2fa-code" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Sechsstelliger Code aus Ihrer App</label>
                     <input id="dialog-2fa-code" type="text" name="code" required pattern="[0-9]{6}" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code"
-                           class="w-full h-11 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-center text-xl font-mono tracking-[0.4em] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                           class="w-full h-11 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-center text-xl font-mono tracking-[0.4em] text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                 </div>
                 <div class="flex justify-end gap-2">
                     <c-ui.button variant="ghost" size="sm" @click="setupStep = 1">Zurück</c-ui.button>

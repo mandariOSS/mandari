@@ -196,9 +196,9 @@
     {% include "components/insight_sidebar.html" %}
 
     {# Seitliche Safe-Area (Querformat mit Aussparung) für Kopfzeile, Inhalt und Fuß; ab lg sind die Ränder 0 #}
-    <div class="pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-[17rem] min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
+    <div class="pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-68 min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
         {# Kopfzeile des Inhalts (Variante A, Issue #783): Brotkrumen mit Kommune, Suche, Dunkelmodus #}
-        <header class="sticky top-0 z-30 pt-[env(safe-area-inset-top)] bg-band-hell/95 dark:bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+        <header class="sticky top-0 z-30 pt-[env(safe-area-inset-top)] bg-band-hell/95 dark:bg-band-hell/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800">
             <div class="max-w-insight mx-auto h-16 px-4 sm:px-8 flex items-center gap-2 sm:gap-6">
                 {# Am Handy: Wortmarke, Kommune (öffnet den Wechsel) und Suche; die Bereiche liegen in der Leiste unten #}
                 <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" class="lg:hidden shrink-0 text-[1.15rem] font-bold tracking-tight leading-none text-gray-900 dark:text-white" aria-label="mandari Insight, Übersicht">mandari<span class="text-indigo-600 dark:text-indigo-400" aria-hidden="true">.</span></a>
@@ -240,12 +240,12 @@
                     </ol>
                 </nav>
                 {% if insight_area != "uebersicht" and insight_area != "suche" %}
-                <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="hidden lg:block w-[22rem] max-w-[40%]">
+                <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="hidden lg:block w-88 max-w-[40%]">
                     <label for="kopf-suche" class="sr-only">Ratsinformationen durchsuchen</label>
                     <span class="relative block">
                         <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
                         <input id="kopf-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …" autocomplete="off"
-                            class="w-full h-11 pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-[0.95rem] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                            class="w-full h-11 pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-[0.95rem] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                     </span>
                 </form>
                 {% endif %}

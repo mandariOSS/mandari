@@ -39,8 +39,8 @@ work/support/list.html.
     <c-rahmen.liste class="mt-3" data-testid="hilfe-tickets-liste">
         {% for ticket in tickets %}
         <li class="flex flex-wrap items-baseline gap-x-6 gap-y-1 py-3">
-            <div class="flex-1 min-w-[14rem]">
-                <a href="{% url 'work:support_detail' org_slug=organization.slug ticket_id=ticket.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ ticket.subject }}</a>
+            <div class="flex-1 min-w-56">
+                <a href="{% url 'work:support_detail' org_slug=organization.slug ticket_id=ticket.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ ticket.subject }}</a>
                 <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">#{{ ticket.id.hex|slice:":8" }} · {{ ticket.get_category_display }} · {{ ticket.created_at|date:"d.m.Y H:i" }}</p>
             </div>
             <p class="flex items-center gap-x-4 text-sm">{% include "work/support/neu/_prioritaet.html" %}{% include "work/support/neu/_status.html" %}</p>

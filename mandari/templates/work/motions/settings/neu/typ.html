@@ -28,12 +28,12 @@ form-behaviors.ts), Symbol und Farbe ohne Emojis. Kontext: MotionTypeCreateView,
                         <div>
                             <c-form.beschriftung feld="name" pflicht>Name</c-form.beschriftung>
                             <input type="text" id="name" name="name" required data-slug-target="slug" value="{% if motion_type %}{{ motion_type.name }}{% endif %}" placeholder="z. B. Antrag, Anfrage, Stellungnahme"
-                                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                         </div>
                         <div>
                             <c-form.beschriftung feld="slug" pflicht>Kurzname</c-form.beschriftung>
                             <input type="text" id="slug" name="slug" required data-slug-field value="{% if motion_type %}{{ motion_type.slug }}{% endif %}" placeholder="z. B. antrag" aria-describedby="slug-hilfe"
-                                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm font-mono text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm font-mono text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                             <c-form.hinweis id="slug-hilfe">Nur Kleinbuchstaben und Bindestriche.</c-form.hinweis>
                         </div>
                     </div>

@@ -46,7 +46,7 @@
         <div class="flex items-center gap-2">
             <input type="checkbox" name="active" value="1" id="active_filter"
                    {% if request.GET.active == "1" %}checked{% endif %}
-                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                   class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
             <label for="active_filter" class="text-sm text-gray-700 dark:text-gray-300">Nur aktive</label>
         </div>
 
@@ -82,7 +82,7 @@
     <a href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=org.id %}"
        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow">
         <div class="flex items-start gap-4">
-            <div class="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center flex-shrink-0">
+            <div class="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center shrink-0">
                 <i data-lucide="users" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
             </div>
             <div class="flex-1 min-w-0">
@@ -93,7 +93,7 @@
                         {{ org.member_count }} Mitglieder
                     </span>
                     {% if not org.is_active %}
-                    <span class="px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                    <span class="px-2 py-0.5 text-xs font-medium rounded-sm bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
                         Inaktiv
                     </span>
                     {% endif %}

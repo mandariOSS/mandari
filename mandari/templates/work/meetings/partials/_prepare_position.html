@@ -26,7 +26,7 @@
                             <div>
                                 <label for="outcome-select" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Ergebnis der Beratung</label>
                                 <select id="outcome-select" x-model="selectedItem.outcome" @change="saveOutcome()"
-                                        class="w-full px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100">
+                                        class="w-full px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden dark:text-gray-100">
                                     {% for code, label in outcome_choices %}
                                     <option value="{{ code }}">{{ label }}</option>
                                     {% endfor %}
@@ -36,13 +36,13 @@
                                 <label for="reasoning-input" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Begründung</label>
                                 <textarea id="reasoning-input" rows="1" x-model="selectedItem.reasoning"
                                           @input="autoGrow($event.target, 4.6); queueItemSave('reasoning', selectedItem, item => savePositionFields(item, { reasoning: item.reasoning }))"
-                                          class="prep-autogrow w-full px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100"
+                                          class="prep-autogrow w-full px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden dark:text-gray-100"
                                           placeholder="Kurze Begründung der Position (für die Organisation sichtbar)"></textarea>
                             </div>
                         </div>
                         <label class="mt-2 inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
                             <input type="checkbox" x-model="selectedItem.isFinal" @change="savePositionFields(selectedItem, { is_final: selectedItem.isFinal })"
-                                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                   class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                             Position ist endgültig
                         </label>
 

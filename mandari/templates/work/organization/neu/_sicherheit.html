@@ -25,10 +25,10 @@ Kontext: organization, can_edit, rollen_zweiter_faktor, can_manage_roles.
         <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm" data-testid="rollen-zweiter-faktor">
             {% for eintrag in rollen_zweiter_faktor %}
             <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-2">
-                <span class="flex min-w-0 items-center gap-2 break-words">
+                <span class="flex min-w-0 items-center gap-2 wrap-break-word">
                     {% include "work/organization/neu/_farbpunkt.html" with farbe=eintrag.role.color %}
                     {% if can_manage_roles %}
-                    <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=eintrag.role.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ eintrag.role.name }}</a>
+                    <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=eintrag.role.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ eintrag.role.name }}</a>
                     {% else %}
                     <span class="font-medium text-gray-900 dark:text-white">{{ eintrag.role.name }}</span>
                     {% endif %}

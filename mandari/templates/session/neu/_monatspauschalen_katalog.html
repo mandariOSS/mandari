@@ -17,7 +17,7 @@ Liste mit Entfernen und einer Zeile zum Zuordnen. Formulare und Felder wie sessi
             <li class="py-2" x-data="{ bearbeiten: false }">
                 <div class="flex items-start gap-2">
                     <div class="min-w-0 flex-1 {% if not rate.is_active %}text-gray-500 dark:text-gray-500{% endif %}">
-                        <p class="text-sm font-medium {% if rate.is_active %}text-gray-900 dark:text-white{% endif %} break-words">{{ rate.name }}<span class="font-normal tabular-nums"> · {{ rate.amount }} € im Monat</span>{% if not rate.is_active %} <span class="font-normal">(inaktiv)</span>{% endif %}</p>
+                        <p class="text-sm font-medium {% if rate.is_active %}text-gray-900 dark:text-white{% endif %} wrap-break-word">{{ rate.name }}<span class="font-normal tabular-nums"> · {{ rate.amount }} € im Monat</span>{% if not rate.is_active %} <span class="font-normal">(inaktiv)</span>{% endif %}</p>
                         {% if rate.legal_basis %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ rate.legal_basis }}</p>{% endif %}
                     </div>
                     <span class="flex shrink-0 items-center text-gray-600 dark:text-gray-400">
@@ -59,7 +59,7 @@ Liste mit Entfernen und einer Zeile zum Zuordnen. Formulare und Felder wie sessi
         <c-rahmen.liste class="mt-2 max-h-96 overflow-y-auto">
             {% for assignment in assignments %}
             <li class="flex items-center gap-3 py-1.5 text-sm">
-                <span class="min-w-0 flex-1 break-words"><span class="font-medium text-gray-900 dark:text-white">{{ assignment.person.display_name }}</span> <span class="text-gray-600 dark:text-gray-400">· {{ assignment.rate.name }}{% if assignment.start_date or assignment.end_date %} · <span class="tabular-nums">{{ assignment.start_date|date:"d.m.Y"|default:"…" }} bis {{ assignment.end_date|date:"d.m.Y"|default:"…" }}</span>{% endif %}</span></span>
+                <span class="min-w-0 flex-1 wrap-break-word"><span class="font-medium text-gray-900 dark:text-white">{{ assignment.person.display_name }}</span> <span class="text-gray-600 dark:text-gray-400">· {{ assignment.rate.name }}{% if assignment.start_date or assignment.end_date %} · <span class="tabular-nums">{{ assignment.start_date|date:"d.m.Y"|default:"…" }} bis {{ assignment.end_date|date:"d.m.Y"|default:"…" }}</span>{% endif %}</span></span>
                 <form method="post" action="{% url 'session:monthly_assignment_delete' tenant_slug=tenant_slug %}" class="shrink-0 text-gray-600 dark:text-gray-400">
                     {% csrf_token %}
                     <input type="hidden" name="assignment_id" value="{{ assignment.id }}">

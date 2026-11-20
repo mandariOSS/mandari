@@ -63,7 +63,7 @@ COPY mandari/package.json mandari/package-lock.json* ./
 RUN npm ci --ignore-scripts 2>/dev/null || npm install
 
 # Tailwind + Vite sources
-COPY mandari/tailwind.config.js mandari/vite.config.ts mandari/tsconfig.json ./
+COPY mandari/vite.config.ts mandari/tsconfig.json ./
 COPY mandari/static/ ./static/
 COPY mandari/templates/ ./templates/
 COPY mandari/frontend/ ./frontend/
@@ -79,7 +79,7 @@ COPY mandari/mandari/ ./mandari/
 
 # Build CSS (Tailwind) + JS-Bundles (Vite, Manifest in static/dist/)
 # Build-Fehler muessen den Image-Build abbrechen (kein stilles Ausliefern alter Bundles)
-RUN npx tailwindcss -i ./static/css/input.css -o ./static/css/styles.css --minify
+RUN npx @tailwindcss/cli -i ./static/css/input.css -o ./static/css/styles.css --minify
 RUN npx vite build
 
 # =============================================================================

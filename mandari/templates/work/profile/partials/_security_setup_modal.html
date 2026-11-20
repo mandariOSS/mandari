@@ -3,7 +3,7 @@
 Alpine-Scope: securitySettings (showSetupModal, setupStep, setupData)
 {% endcomment %}
 <div x-show="showSetupModal" x-cloak
-     class="fixed inset-0 z-[60] flex items-center justify-center p-4"
+     class="fixed inset-0 z-60 flex items-center justify-center p-4"
      x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
      x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
     <div class="fixed inset-0 bg-black/50" @click="showSetupModal = false"></div>
@@ -66,7 +66,7 @@ Alpine-Scope: securitySettings (showSetupModal, setupStep, setupData)
                     <input type="hidden" name="action" value="confirm_2fa">
                     <input type="text" name="code" required pattern="[0-9]{6}" maxlength="6"
                            placeholder="000000" inputmode="numeric" autocomplete="one-time-code"
-                           class="w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.5em] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+                           class="w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.5em] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden">
                     <c-ui.button type="submit" full>Aktivieren</c-ui.button>
                 </form>
                 <c-ui.button variant="ghost" full class="mt-2" @click="setupStep = 1">Zurück</c-ui.button>

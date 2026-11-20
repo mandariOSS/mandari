@@ -22,12 +22,12 @@ ab 2xl (Filterspalte daneben) bleibt die Spalte durchgehend, statt bis etwa 1.63
     <p class="text-sm text-gray-600 dark:text-gray-400 [@container(min-width:54rem)]:col-start-2 [@container(min-width:54rem)]:row-start-1 [@container(min-width:54rem)]:pt-0.5">{% for teil in treffer.context %}{% if not forloop.first %}<span class="[@container(min-width:54rem)]:hidden"> · </span>{% endif %}<span class="[@container(min-width:54rem)]:block{% if forloop.first %} font-medium text-gray-800 dark:text-gray-200{% endif %}">{{ teil }}</span>{% if forloop.first and treffer.absender.neben_art %}<span class="[@container(min-width:54rem)]:hidden"> · </span><c-insight.absender :absender="treffer.absender" klasse="align-middle [@container(min-width:54rem)]:flex [@container(min-width:54rem)]:my-0.5" hinweis="eingebracht von" neben_art />{% endif %}{% endfor %}</p>
     {% endif %}
     <div class="min-w-0 [@container(min-width:54rem)]:col-start-1 [@container(min-width:54rem)]:row-start-1">
-    <h3 class="mt-1 [@container(min-width:54rem)]:mt-0 text-[1.0625rem] sm:text-lg font-semibold leading-snug text-gray-900 dark:text-white break-words">
+    <h3 class="mt-1 [@container(min-width:54rem)]:mt-0 text-[1.0625rem] sm:text-lg font-semibold leading-snug text-gray-900 dark:text-white wrap-break-word">
         <a href="{{ treffer.url }}" class="hover:underline underline-offset-4 decoration-primary-600">{{ treffer.title }}</a>
     </h3>
     {% if treffer.status %}
     <p class="mt-1 flex items-baseline gap-2 text-[0.95rem] text-gray-800 dark:text-gray-200">
-        {% if treffer.ergebnis %}<c-insight.ergebnis :ergebnis="treffer.ergebnis" klasse="shrink-0" />{% else %}<span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if treffer.status_kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif treffer.status_kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% endif %}
+        {% if treffer.ergebnis %}<c-insight.ergebnis :ergebnis="treffer.ergebnis" klasse="shrink-0" />{% else %}<span class="shrink-0 w-2 h-2 rounded-full -translate-y-px {% if treffer.status_kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif treffer.status_kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% endif %}
         <span>{{ treffer.status }}</span>
     </p>
     {% endif %}
@@ -40,7 +40,7 @@ ab 2xl (Filterspalte daneben) bleibt die Spalte durchgehend, statt bis etwa 1.63
     {% if treffer.vorschau %}
     <c-insight.ki-vorschau :text="treffer.vorschau" zeilen="3" klasse="mt-2" />
     {% elif treffer.snippet %}
-    <p class="mt-2 max-w-3xl text-[0.95rem] leading-relaxed text-gray-700 dark:text-gray-300 break-words">… {{ treffer.snippet }} …</p>
+    <p class="mt-2 max-w-3xl text-[0.95rem] leading-relaxed text-gray-700 dark:text-gray-300 wrap-break-word">… {{ treffer.snippet }} …</p>
     {% endif %}
     {% if treffer.fundstelle %}
     <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">

@@ -56,7 +56,7 @@
 
         <c-ui.card title="Sachverhalt">
             {% if version.main_text %}
-            <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{{ version.main_text }}</div>
+            <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap wrap-break-word">{{ version.main_text }}</div>
             {% else %}
             <p class="text-sm text-gray-400">Kein Sachverhalt erfasst.</p>
             {% endif %}
@@ -64,7 +64,7 @@
 
         <c-ui.card title="Beschlussvorschlag">
             {% if version.resolution_text %}
-            <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{{ version.resolution_text }}</div>
+            <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap wrap-break-word">{{ version.resolution_text }}</div>
             {% else %}
             <p class="text-sm text-gray-400">Kein Beschlussvorschlag erfasst.</p>
             {% endif %}
@@ -75,9 +75,9 @@
             <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
                 {% for entry in entries %}
                 <li class="px-6 py-3 flex items-start gap-3" data-anlage="{{ entry.name }}">
-                    <i data-lucide="file" class="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" aria-hidden="true"></i>
+                    <i data-lucide="file" class="w-5 h-5 text-gray-400 shrink-0 mt-0.5" aria-hidden="true"></i>
                     <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ entry.name }}</p>
+                        <p class="text-sm font-medium text-gray-900 dark:text-white wrap-break-word">{{ entry.name }}</p>
                         <p class="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-2">
                             <span>{{ entry.size_human }}</span>
                             <span>· Version {{ entry.file_version_number }}</span>

@@ -17,7 +17,7 @@ Kontext: MotionCreateView.
 
 {% block work_content %}
 {{ template_options|json_script:"motion-template-options" }}
-<form method="post" x-data="createMotion" data-default-type="{{ default_document_type }}" class="max-w-[92rem]">
+<form method="post" x-data="createMotion" data-default-type="{{ default_document_type }}" class="max-w-368">
     {% csrf_token %}
     {% if current_folder %}
     <input type="hidden" name="folder" value="{{ current_folder.id }}">

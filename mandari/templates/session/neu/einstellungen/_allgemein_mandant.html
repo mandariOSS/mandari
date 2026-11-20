@@ -11,7 +11,7 @@ Farben als Angaben. Nur lesend wie bisher (session/settings/index.html, Karten M
             {% if session_tenant.short_name %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ session_tenant.short_name }}</p>{% endif %}
         </div>
     </div>
-    {% if session_tenant.description %}<p class="mt-3 text-sm text-gray-700 dark:text-gray-300 break-words">{{ session_tenant.description }}</p>{% endif %}
+    {% if session_tenant.description %}<p class="mt-3 text-sm text-gray-700 dark:text-gray-300 wrap-break-word">{{ session_tenant.description }}</p>{% endif %}
     <c-ui.angaben class="mt-4">
         {% if session_tenant.contact_email %}<dt>E-Mail</dt><dd>{{ session_tenant.contact_email }}</dd>{% endif %}
         {% if session_tenant.contact_phone %}<dt>Telefon</dt><dd>{{ session_tenant.contact_phone }}</dd>{% endif %}

@@ -56,16 +56,16 @@
 {# noe-verdeckt, data-noe-marke: Sichtschutz für Nichtöffentliches, Zustand und Marke der Anmeldung vom Server (apps/work/sichtschutz.py, #1201) #}
 <body class="min-h-screen bg-band-hell print:bg-white text-gray-900 dark:text-gray-100{% if not noe_sichtbar %} noe-verdeckt{% endif %}" data-org-slug="{{ organization.slug }}"{% if user.is_authenticated %} data-konto="{{ user.pk }}"{% endif %} data-noe-marke="{{ noe_marke }}">
     {% if demo_instance %}{% include "partials/demo_hinweis.html" with ueber_leiste=True %}{% endif %}
-    <a href="#inhalt" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white">Zum Inhalt springen</a>
+    <a href="#inhalt" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-100 focus:rounded-md focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white">Zum Inhalt springen</a>
 
     {% include "work/rahmen/_leiste.html" %}
 
     {# Seitliche Safe-Area (Querformat mit Aussparung); unten Platz für die Leiste am Handy; im Druck nur der Inhalt #}
-    <div class="work-main min-h-screen flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-60 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 print:!p-0 print:min-h-0">
+    <div class="work-main min-h-screen flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-60 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 print:p-0! print:min-h-0">
         {% comment %}Kopfzeile: Brotkrumen, Suche (Strg+K), Sichtschutz, Glocke, Dunkelmodus; am Handy Raum, Suche, Sichtschutz und Glocke. Seiten mit
         eigener Kopfzeile (Antragseditor, #856) ersetzen den Block und bringen Glocke, Suche und Dunkelmodus selbst mit.{% endcomment %}
         {% block rahmen_kopf %}
-        <header class="sticky top-0 z-30 shrink-0 print:hidden pt-[env(safe-area-inset-top)] bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+        <header class="sticky top-0 z-30 shrink-0 print:hidden pt-[env(safe-area-inset-top)] bg-band-hell/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800">
             <div class="rahmen-zeile h-12 flex items-center gap-2 sm:gap-4">
                 <button type="button" @click="leisteUmschalten()"
                         class="hidden lg:inline-flex items-center justify-center w-8 h-8 -ml-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-band-grau dark:text-gray-400 dark:hover:text-white"
@@ -87,12 +87,12 @@
                     </ol>
                 </nav>
                 {% if work_rahmen.suche_url %}
-                <form action="{{ work_rahmen.suche_url }}" method="get" role="search" class="hidden lg:block w-[22rem] max-w-[40%]">
+                <form action="{{ work_rahmen.suche_url }}" method="get" role="search" class="hidden lg:block w-88 max-w-[40%]">
                     <label for="kopf-suche" class="sr-only">Ratsinformationen durchsuchen</label>
                     <span class="relative block">
                         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
                         <input id="kopf-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …" autocomplete="off" aria-keyshortcuts="Control+K"
-                               class="w-full h-9 pl-9 pr-16 rounded-md bg-band-grau border border-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                               class="w-full h-9 pl-9 pr-16 rounded-md bg-band-grau border border-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                         <kbd class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-xs text-gray-600 dark:text-gray-400 pointer-events-none" aria-hidden="true">Strg K</kbd>
                     </span>
                 </form>
@@ -113,7 +113,7 @@
         {% endblock %}
 
         {# data-gestaltung: „neu“ setzen Seiten, deren Inhalt schon im neuen Erscheinungsbild steht (Block gestaltung); das Prüfskript zählt die übrigen (Issue #884) #}
-        <main id="inhalt" tabindex="-1" data-gestaltung="{% block gestaltung %}bisher{% endblock %}" class="flex-1 flex flex-col min-h-0 focus:outline-none">
+        <main id="inhalt" tabindex="-1" data-gestaltung="{% block gestaltung %}bisher{% endblock %}" class="flex-1 flex flex-col min-h-0 focus:outline-hidden">
             {% include "partials/seitenhinweis.html" with rahmen="px-4 sm:px-6 lg:px-8 pt-4" %}
             {% block work_header %}
             <header class="work-page-header">

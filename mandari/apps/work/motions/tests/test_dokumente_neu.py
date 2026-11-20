@@ -477,7 +477,7 @@ def _quelle(name: str) -> str:
 def test_neue_vorlagen_ohne_kartenrahmen_ueberlagerung_und_style() -> None:
     for datei in sorted(VORLAGEN.glob("*.html")):
         text = datei.read_text(encoding="utf-8")
-        assert "rounded-xl border" not in text and "shadow-sm" not in text, datei.name
+        assert "rounded-xl border" not in text and "shadow-xs" not in text, datei.name
         assert "fixed inset-0" not in text, datei.name  # Dialoge über c-ui.alpine-modal
         assert ' style="' not in text, datei.name
         assert "uppercase" not in text, datei.name

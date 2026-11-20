@@ -42,11 +42,11 @@ bleibt work/ris/meeting_detail.html.
             <li id="top-{{ e.item.pk }}" class="scroll-mt-20 py-3 grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 target:bg-primary-50 dark:target:bg-primary-900/20">
                 <span class="tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ e.item.number|default:forloop.counter }}</span>
                 <div class="min-w-0">
-                    <p class="font-medium text-gray-900 dark:text-white break-words">{{ e.item.name|default:"Tagesordnungspunkt" }}</p>
+                    <p class="font-medium text-gray-900 dark:text-white wrap-break-word">{{ e.item.name|default:"Tagesordnungspunkt" }}</p>
                     {% if not e.item.public %}<p class="text-sm text-gray-600 dark:text-gray-400">Nichtöffentlich</p>{% endif %}
                     {% if e.item.result %}<p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">Ergebnis: {{ e.item.result }}</p>{% endif %}
                     {% for paper in e.papers %}
-                    <p class="mt-1 text-sm"><c-ui.textlink href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}" class="break-words">{{ paper.name|default:"Vorgang" }}</c-ui.textlink>{% if paper.reference %}<span class="text-gray-600 dark:text-gray-400"> · {{ paper.reference }}</span>{% endif %}</p>
+                    <p class="mt-1 text-sm"><c-ui.textlink href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}" class="wrap-break-word">{{ paper.name|default:"Vorgang" }}</c-ui.textlink>{% if paper.reference %}<span class="text-gray-600 dark:text-gray-400"> · {{ paper.reference }}</span>{% endif %}</p>
                     {% endfor %}
                     {% include "partials/top_dateien.html" with dateien=e.dateien %}
                     {% if e.position or e.notizen %}
@@ -69,7 +69,7 @@ bleibt work/ris/meeting_detail.html.
             {% if dokumente %}
             <ul class="mt-3 space-y-2 text-sm">
                 {% for d in dokumente %}
-                <li><c-ui.textlink href="{{ d.url }}" class="break-words">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · {{ d.status }}</span></li>
+                <li><c-ui.textlink href="{{ d.url }}" class="wrap-break-word">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · {{ d.status }}</span></li>
                 {% endfor %}
             </ul>
             {% elif not stand %}

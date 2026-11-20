@@ -39,7 +39,7 @@ Kontext: apps/work/meetings/neu.sitzungen; die bisherige Seite bleibt work/meeti
     <input type="hidden" name="view" value="{{ view_mode }}">
     <label for="sitzungen-suche" class="sr-only">Sitzungen durchsuchen</label>
     <input id="sitzungen-suche" type="search" name="q" value="{{ search_query }}" placeholder="Sitzungen durchsuchen"
-           class="h-9 w-full sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+           class="h-9 w-full sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
     <c-form.select name="time" id="sitzungen-zeitraum" label="Zeitraum" dicht zeile data-autosubmit>
         {% for wert, name in zeitraeume %}<option value="{{ wert }}" {% if time_filter == wert %}selected{% endif %}>{{ name }}</option>{% endfor %}
     </c-form.select>

@@ -45,7 +45,7 @@
                role="option"
                aria-selected="{% if show_all_bodies %}true{% else %}false{% endif %}"
                class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {% if show_all_bodies %}bg-primary-50 dark:bg-primary-900/30{% endif %}">
-                <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-500 to-gray-600 flex items-center justify-center text-white text-sm font-medium shrink-0" aria-hidden="true">
+                <span class="w-8 h-8 rounded-lg bg-linear-to-br from-gray-500 to-gray-600 flex items-center justify-center text-white text-sm font-medium shrink-0" aria-hidden="true">
                     <i data-lucide="globe" class="w-4 h-4"></i>
                 </span>
                 <div class="flex-1 min-w-0">
@@ -71,7 +71,7 @@
                        aria-selected="{% if active_body and body.id == active_body.id %}true{% else %}false{% endif %}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {% if active_body and body.id == active_body.id %}bg-primary-50 dark:bg-primary-900/30{% endif %}">
                         <!-- Logo oder Initialen -->
-                        <span class="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shrink-0 {% if not body.logo %}bg-gradient-to-br from-primary-500 to-primary-600{% else %}bg-white dark:bg-gray-600{% endif %}" aria-hidden="true">
+                        <span class="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shrink-0 {% if not body.logo %}bg-linear-to-br from-primary-500 to-primary-600{% else %}bg-white dark:bg-gray-600{% endif %}" aria-hidden="true">
                             {% if body.logo %}
                             <img {{ body.logo_img_attrs }}
                                  alt=""

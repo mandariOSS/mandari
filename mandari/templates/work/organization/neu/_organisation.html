@@ -24,7 +24,7 @@ Ohne organization.edit nur die Angaben. Kontext: organization, can_edit.
                 </div>
                 <c-form.datei name="logo" id="org-logo" accept="image/jpeg,image/png,image/webp" ref="logoInput" ziehen="false"
                               labelledby="logo-titel" waehlen="Logo wählen" hinweis="JPG, PNG oder WebP, höchstens 5 MB."
-                              class="flex-1 min-w-[14rem]" @change="handleFile($event)" />
+                              class="flex-1 min-w-56" @change="handleFile($event)" />
             </div>
             <input type="hidden" name="remove_logo" :value="removeLogo ? '1' : ''">
             {% if organization.logo %}

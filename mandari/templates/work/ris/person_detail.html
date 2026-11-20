@@ -26,7 +26,7 @@
     {# Hero Section — gleiches Design wie Insight #}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
         <div class="flex items-center gap-5">
-            <div class="flex-shrink-0 w-16 h-16 bg-amber-50/70 dark:bg-amber-900/20 rounded-full flex items-center justify-center">
+            <div class="shrink-0 w-16 h-16 bg-amber-50/70 dark:bg-amber-900/20 rounded-full flex items-center justify-center">
                 <span class="text-xl font-bold text-amber-600 dark:text-amber-400">
                     {% if person.given_name and person.family_name %}
                         {{ person.given_name|make_list|first }}{{ person.family_name|make_list|first }}

@@ -24,7 +24,7 @@ guest_has_password, guest_document_shares, guest_folder_shares, can_manage_guest
     <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm">
         {% for share in guest_folder_shares %}
         <li class="py-2.5">
-            <a href="{% url 'work:documents' org_slug=organization.slug %}?ordner={{ share.folder.id }}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">Ordner {{ share.folder.name }}</a>
+            <a href="{% url 'work:documents' org_slug=organization.slug %}?ordner={{ share.folder.id }}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">Ordner {{ share.folder.name }}</a>
             <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Stufe {{ share.get_level_display }}, mit {{ share.subfolder_count }} Unterordnern und derzeit {{ share.document_count }} Dokument{{ share.document_count|pluralize:"en" }}; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}. Herunterladen (PDF, Word, Anhänge): {{ share.allow_download|yesno:"erlaubt,aus" }}.</p>
             {% if can_manage_guest_shares %}
             <div class="mt-1.5 flex flex-wrap items-center gap-1">
@@ -46,7 +46,7 @@ guest_has_password, guest_document_shares, guest_folder_shares, can_manage_guest
         {% endfor %}
         {% for share in guest_document_shares %}
         <li class="py-2.5">
-            <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=share.motion.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ share.motion.title }}</a>
+            <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=share.motion.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ share.motion.title }}</a>
             <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Dokument, Stufe {{ share.get_level_display }}; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}. Herunterladen (PDF, Word, Anhänge): {{ share.allow_download|yesno:"erlaubt,aus" }}.</p>
             {% if can_manage_guest_shares %}
             <div class="mt-1.5 flex flex-wrap items-center gap-1">

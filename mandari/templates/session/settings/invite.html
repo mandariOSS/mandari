@@ -47,7 +47,7 @@
                     {% for role in available_roles %}
                     <label class="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <input type="checkbox" name="roles" value="{{ role.id }}"
-                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                               class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                         <span class="flex-1">
                             <span class="text-sm font-medium text-gray-900 dark:text-white">{{ role.name }}</span>
                             {% if role.description %}

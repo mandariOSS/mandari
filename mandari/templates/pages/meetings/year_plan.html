@@ -50,7 +50,7 @@
                             {% for meeting in cell %}
                             <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"
                                title="{{ meeting.get_display_name }} · {{ meeting.start|date:'d.m.Y H:i' }}{% if meeting.cancelled %} · abgesagt{% endif %}"
-                               class="inline-flex items-center justify-center min-w-[26px] px-1 py-0.5 rounded text-xs font-medium {% if meeting.cancelled %}line-through bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400{% else %}bg-primary-50 text-primary-700 hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-300{% endif %}">{{ meeting.start|date:"j" }}.</a>
+                               class="inline-flex items-center justify-center min-w-[26px] px-1 py-0.5 rounded-sm text-xs font-medium {% if meeting.cancelled %}line-through bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400{% else %}bg-primary-50 text-primary-700 hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-300{% endif %}">{{ meeting.start|date:"j" }}.</a>
                             {% endfor %}
                         </div>
                     </td>

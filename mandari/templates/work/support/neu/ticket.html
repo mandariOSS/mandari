@@ -47,7 +47,7 @@ Hilfe. Kontext: SupportDetailView; die bisherige Seite bleibt work/support/detai
                 <span class="font-semibold text-gray-900 dark:text-white">{% if ticket.created_by %}{{ ticket.created_by.user.get_full_name|default:ticket.created_by.user.email }}{% else %}{{ ticket.created_by|member_name }}{% endif %}</span>
                 <time class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ ticket.created_at|date:"d.m.Y H:i" }}</time>
             </p>
-            <p class="mt-1.5 text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ ticket.description }}</p>
+            <p class="mt-1.5 text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-line wrap-break-word">{{ ticket.description }}</p>
             {% if attachments %}
             <ul class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm" aria-label="Anhänge">
                 {% for attachment in attachments %}

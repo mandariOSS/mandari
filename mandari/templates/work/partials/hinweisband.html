@@ -31,11 +31,11 @@ Symbols; ohne „hinweis.link_markiert_gelesen“ ist der Link ein schlichter Li
     {% if hinweis.ausblenden_text %}
     <button type="button"
             hx-post="{{ hinweis.gelesen_url }}" hx-target="#hinweisband" hx-swap="delete"
-            class="-my-0.5 flex-none rounded px-2 py-0.5 font-medium text-gray-600 hover:bg-primary-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-primary-900/40 dark:hover:text-white">{{ hinweis.ausblenden_text }}</button>
+            class="-my-0.5 flex-none rounded-sm px-2 py-0.5 font-medium text-gray-600 hover:bg-primary-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-primary-900/40 dark:hover:text-white">{{ hinweis.ausblenden_text }}</button>
     {% else %}
     <button type="button"
             hx-post="{{ hinweis.gelesen_url }}" hx-target="#hinweisband" hx-swap="delete" data-after-request="follow-href"
-            class="-m-1 flex-none rounded p-1 text-gray-500 hover:bg-primary-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-primary-900/40 dark:hover:text-white"
+            class="-m-1 flex-none rounded-sm p-1 text-gray-500 hover:bg-primary-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-primary-900/40 dark:hover:text-white"
             aria-label="Hinweis ausblenden" title="Ausblenden">
         <i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i>
     </button>

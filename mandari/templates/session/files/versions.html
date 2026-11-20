@@ -40,7 +40,7 @@
 {% block page_content %}
 <div class="space-y-6 max-w-4xl" data-testid="anlagen-verlauf">
     <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white break-words">{{ session_file.name }}</h1>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white wrap-break-word">{{ session_file.name }}</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Aktuell Version {{ session_file.version }} · {{ session_file.size_human }}
             {% if not session_file.is_public %}· <span class="text-red-600 dark:text-red-400">Nichtöffentlich</span>{% endif %}
@@ -61,7 +61,7 @@
             {% for version in older_versions %}
             <li class="px-6 py-3 flex items-start gap-3" data-fassung="{{ version.number }}">
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-900 dark:text-white break-words">Version {{ version.number }} · {{ version.name }}</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white wrap-break-word">Version {{ version.number }} · {{ version.name }}</p>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
                         {{ version.size_human }} · <span class="font-mono" title="SHA-256 {{ version.blob.sha256 }}">{{ version.blob.sha256|slice:":12" }}</span>
                         · {{ version.created_at|date:"d.m.Y, H:i" }} Uhr{% if version.created_by %} · {{ version.created_by.user.email }}{% endif %}

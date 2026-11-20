@@ -14,7 +14,7 @@ Kontext: station und der Kontext der Beratungsfolge.
     <span class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-72">
         <label for="station-sitzung-{{ station.id }}" class="block mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">Zielsitzung</label>
         <select name="meeting" id="station-sitzung-{{ station.id }}" {% if station.agenda_item %}disabled title="Zielsitzung fest, solange ein TOP existiert"{% endif %}
-                class="h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white disabled:opacity-60 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                class="h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white disabled:opacity-60 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
             <option value="">Noch offen</option>
             {% for meeting in consultation_meetings %}
             {% if station.organization_id in meeting.participating_organization_ids %}<option value="{{ meeting.id }}" {% if station.meeting_id == meeting.id %}selected{% endif %}>{{ meeting.start|date:"d.m.Y" }}, {{ meeting.name }}</option>{% endif %}

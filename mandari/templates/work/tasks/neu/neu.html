@@ -86,14 +86,14 @@ Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
             <template x-for="(tag, index) in tags" :key="index">
                 <li class="inline-flex items-center gap-1 h-7 pl-2 pr-1 rounded-md border border-gray-300 dark:border-gray-700 text-sm text-gray-800 dark:text-gray-200">
                     <span x-text="tag"></span>
-                    <button type="button" @click="tags.splice(index, 1)" class="inline-flex items-center justify-center w-6 h-6 rounded text-gray-600 hover:text-red-700 dark:text-gray-400 dark:hover:text-red-400" :aria-label="'Tag entfernen: ' + tag" aria-label="Tag entfernen"><i data-lucide="x" class="w-3.5 h-3.5" aria-hidden="true"></i></button>
+                    <button type="button" @click="tags.splice(index, 1)" class="inline-flex items-center justify-center w-6 h-6 rounded-sm text-gray-600 hover:text-red-700 dark:text-gray-400 dark:hover:text-red-400" :aria-label="'Tag entfernen: ' + tag" aria-label="Tag entfernen"><i data-lucide="x" class="w-3.5 h-3.5" aria-hidden="true"></i></button>
                 </li>
             </template>
         </ul>
         <div class="mt-2 flex gap-2 max-w-sm">
             <label for="aufgabe-tag" class="sr-only">Neuer Tag</label>
             <input id="aufgabe-tag" type="text" x-model="newTag" @keydown.enter.prevent="if(newTag.trim()) { tags.push(newTag.trim()); newTag=''; }" placeholder="Neuer Tag"
-                   class="flex-1 min-w-0 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                   class="flex-1 min-w-0 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
             <c-ui.button variant="secondary" size="sm" @click="if(newTag.trim()) { tags.push(newTag.trim()); newTag=''; }">Hinzufügen</c-ui.button>
         </div>
         <input type="hidden" name="tags" :value="JSON.stringify(tags)">

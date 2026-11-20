@@ -24,12 +24,12 @@ Kontext: motion, checklist_items, checklist_progress, can_edit, organization
         <div class="group flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/40">
             {% if can_edit %}
             <button type="button" data-checklist-action="toggle" data-item-id="{{ item.id }}"
-                    class="mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors
+                    class="mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors
                            {% if item.is_completed %}bg-primary-600 border-primary-600 text-white{% else %}border-gray-300 dark:border-gray-600 hover:border-primary-500{% endif %}">
                 {% if item.is_completed %}<i data-lucide="check" class="w-3 h-3"></i>{% endif %}
             </button>
             {% else %}
-            <span class="mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+            <span class="mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0
                          {% if item.is_completed %}bg-primary-600 border-primary-600 text-white{% else %}border-gray-300 dark:border-gray-600{% endif %}">
                 {% if item.is_completed %}<i data-lucide="check" class="w-3 h-3"></i>{% endif %}
             </span>

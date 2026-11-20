@@ -30,7 +30,7 @@ settings_protocol_approval); Knöpfe ohne Füllfarbe. Kontext: FourEyesSettingsV
                         <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
                             <label for="four_eyes_papers" class="text-sm text-gray-800 dark:text-gray-200">{{ process.label }}</label>
                             <select id="four_eyes_papers" name="four_eyes_papers"
-                                    class="h-9 pl-3 pr-8 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                                    class="h-9 pl-3 pr-8 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                                 {% for value, text in paper_choices %}
                                 <option value="{{ value }}"{% if value == process.value %} selected{% endif %}>{{ text }}</option>
                                 {% endfor %}

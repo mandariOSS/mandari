@@ -21,7 +21,7 @@ Die Sicherheit steht als Wort da; Farbe nur zusätzlich: Grün gesichert, Bernst
     <ul class="space-y-2.5">
         {% for ort in ortsangaben.orte %}
         <li class="text-[0.95rem] leading-snug">
-            <span class="text-gray-900 dark:text-gray-100 break-words">{{ ort.name }}</span>
+            <span class="text-gray-900 dark:text-gray-100 wrap-break-word">{{ ort.name }}</span>
             <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400"><span data-sicherheit="{{ ort.sicherheit }}" title="{{ ort.erklaerung }}" class="font-medium {% if ort.sicherheit == 'gesichert' %}text-primary-700 dark:text-primary-300{% elif ort.sicherheit == 'unsicher' %}text-amber-800 dark:text-amber-300{% else %}text-gray-800 dark:text-gray-200{% endif %}">{{ ort.sicherheit }}</span>, {{ ort.fundstelle }}</span>
         </li>
         {% endfor %}
@@ -30,7 +30,7 @@ Die Sicherheit steht als Wort da; Farbe nur zusätzlich: Grün gesichert, Bernst
     {% if ortsangaben.weitere %}
     <details class="mt-3 text-[0.9rem]">
         <summary class="cursor-pointer font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">{% if ortsangaben.stadtweit %}Genannte Orte ({{ ortsangaben.weitere|length }}){% else %}{{ ortsangaben.weitere|length }} weitere{{ ortsangaben.weitere|length|pluralize:"r Ort, Orte" }}{% endif %}</summary>
-        <p class="mt-1 leading-snug text-gray-700 dark:text-gray-300 break-words">{% for ort in ortsangaben.weitere %}{{ ort.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+        <p class="mt-1 leading-snug text-gray-700 dark:text-gray-300 wrap-break-word">{% for ort in ortsangaben.weitere %}{{ ort.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
     </details>
     {% endif %}
     {% for area in plan_areas %}

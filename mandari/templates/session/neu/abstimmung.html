@@ -40,7 +40,7 @@ session/voting/capture.html; Kontext wie VotingCaptureView. Die bisherige Seite 
                     <div>
                         <c-form.beschriftung feld="abstimmung-art">Abstimmungsart</c-form.beschriftung>
                         <select name="voting_method" id="abstimmung-art" x-model="method"
-                                class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                                class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                             {% for value, label in method_choices %}
                             <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
@@ -49,7 +49,7 @@ session/voting/capture.html; Kontext wie VotingCaptureView. Die bisherige Seite 
                     <div>
                         <c-form.beschriftung feld="abstimmung-ergebnis">Ergebnis</c-form.beschriftung>
                         <select name="vote_result" id="abstimmung-ergebnis"
-                                class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                                class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                             {% for value, label in result_choices %}
                             <option value="{{ value }}" {% if item.vote_result == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
@@ -59,7 +59,7 @@ session/voting/capture.html; Kontext wie VotingCaptureView. Die bisherige Seite 
 
                 <label class="mt-4 inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
                     <input type="checkbox" name="is_election" value="1" {% if item.is_election %}checked{% endif %}
-                           class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-600">
+                           class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-600">
                     Wahl (Personalentscheidung)
                 </label>
                 {% if election_hint %}
@@ -74,17 +74,17 @@ session/voting/capture.html; Kontext wie VotingCaptureView. Die bisherige Seite 
                     <div>
                         <c-form.beschriftung feld="summe-ja">Ja</c-form.beschriftung>
                         <input type="number" name="votes_yes" id="summe-ja" value="{{ item.votes_yes }}" min="0"
-                               class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                               class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm tabular-nums text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                     </div>
                     <div>
                         <c-form.beschriftung feld="summe-nein">Nein</c-form.beschriftung>
                         <input type="number" name="votes_no" id="summe-nein" value="{{ item.votes_no }}" min="0"
-                               class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                               class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm tabular-nums text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                     </div>
                     <div>
                         <c-form.beschriftung feld="summe-enthaltung">Enthaltung</c-form.beschriftung>
                         <input type="number" name="votes_abstain" id="summe-enthaltung" value="{{ item.votes_abstain }}" min="0"
-                               class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                               class="block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm tabular-nums text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                     </div>
                 </div>
                 <c-rahmen.satz x-show="method === 'secret'" x-cloak>Bei geheimer Abstimmung wird kein individuelles Stimmverhalten gespeichert, nur Summen und ggf. Befangenheits-Vermerke.</c-rahmen.satz>
@@ -147,7 +147,7 @@ session/voting/capture.html; Kontext wie VotingCaptureView. Die bisherige Seite 
                             {% if attendance.current_vote == "excluded" %}Befangenheitsvermerk: Er bleibt.{% else %}Vor Beginn der Störung abgestimmt: {{ attendance.current_vote_label }}. Die Stimme bleibt.{% endif %}
                             <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
                                 <input type="checkbox" name="remove_vote_{{ attendance.person_id }}" value="1"
-                                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-600">
+                                       class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-600">
                                 Stimme entfernen (—)
                             </label>
                         </span>

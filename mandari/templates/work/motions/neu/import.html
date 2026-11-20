@@ -16,7 +16,7 @@ Dateien mit Grund), rechts Art und Sichtbarkeit; darunter, wie der Import arbeit
 
 {% block work_content %}
 {{ import_config|json_script:"document-import-config" }}
-<form method="post" enctype="multipart/form-data" x-data="documentImport" @submit="onSubmit($event)" class="max-w-[92rem]">
+<form method="post" enctype="multipart/form-data" x-data="documentImport" @submit="onSubmit($event)" class="max-w-368">
     {% csrf_token %}
     <div class="grid gap-x-12 gap-y-8 xl:grid-cols-2">
         <c-rahmen.abschnitt titel="Dateien" titel_id="dateien-titel">

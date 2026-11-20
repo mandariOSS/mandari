@@ -39,14 +39,14 @@
     <form method="get" class="flex flex-wrap items-center gap-3 pb-2">
         <input type="hidden" name="view" value="{{ view_mode }}">
         <select name="org" data-autosubmit
-                class="max-w-[240px] px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+                class="max-w-[240px] px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden text-gray-900 dark:text-white">
             <option value="">Alle Gremien</option>
             {% for org in organizations %}
             <option value="{{ org.id }}" {% if selected_org == org.id|slugify %}selected{% endif %}>{{ org.short_name|default:org.name }}</option>
             {% endfor %}
         </select>
         <select name="year" data-autosubmit
-                class="max-w-[240px] px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+                class="max-w-[240px] px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden text-gray-900 dark:text-white">
             <option value="">Alle Jahre</option>
             {% for year in years %}
             <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
@@ -76,11 +76,11 @@
                 <td class="px-6 py-3">
                     <div class="flex items-center gap-2">
                         <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
-                           class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
+                           class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors wrap-break-word">
                             {{ meeting.get_display_name }}
                         </a>
                         {% if meeting.cancelled %}
-                        <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
+                        <span class="px-1.5 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
                         {% endif %}
                     </div>
                     {% with orgs=meeting.get_organization_names %}

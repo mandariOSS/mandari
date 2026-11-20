@@ -25,11 +25,11 @@ Treffer der Datenbanksuche (ohne Elasticsearch) im bisherigen Rahmen der Recherc
                 <div class="min-w-0 flex-1">
                     <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ paper.name }}</p>
                     <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {% if paper.reference %}<span class="font-mono bg-gray-50 dark:bg-gray-700/30 px-1.5 py-0.5 rounded">{{ paper.reference }}</span>{% endif %}
+                        {% if paper.reference %}<span class="font-mono bg-gray-50 dark:bg-gray-700/30 px-1.5 py-0.5 rounded-sm">{{ paper.reference }}</span>{% endif %}
                         {% if paper.date %}<span>{{ paper.date|date:"d.m.Y" }}</span>{% endif %}
                     </div>
                 </div>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors flex-shrink-0"></i>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors shrink-0"></i>
             </a>
             {% endfor %}
         </div>
@@ -60,7 +60,7 @@ Treffer der Datenbanksuche (ohne Elasticsearch) im bisherigen Rahmen der Recherc
                         {% if meeting.location_name %}<span>&middot; {{ meeting.location_name }}</span>{% endif %}
                     </div>
                 </div>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors flex-shrink-0"></i>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors shrink-0"></i>
             </a>
             {% endfor %}
         </div>
@@ -90,7 +90,7 @@ Treffer der Datenbanksuche (ohne Elasticsearch) im bisherigen Rahmen der Recherc
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ org.organization_type }}</p>
                     {% endif %}
                 </div>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors flex-shrink-0"></i>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors shrink-0"></i>
             </a>
             {% endfor %}
         </div>
@@ -114,11 +114,11 @@ Treffer der Datenbanksuche (ohne Elasticsearch) im bisherigen Rahmen der Recherc
             {% for person in results.persons %}
             <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=person.id %}"
                class="group flex items-center gap-3 px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                <div class="flex-shrink-0 w-8 h-8 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center">
+                <div class="shrink-0 w-8 h-8 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center">
                     <i data-lucide="user" class="w-4 h-4 text-amber-500 dark:text-amber-400"></i>
                 </div>
                 <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ person.name }}</p>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors flex-shrink-0 ml-auto"></i>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors shrink-0 ml-auto"></i>
             </a>
             {% endfor %}
         </div>

@@ -17,7 +17,7 @@
 </a>
 {% if meeting %}
 <a href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}"
-   class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+   class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 shadow-xs transition-colors">
     <i data-lucide="clipboard-check" class="w-4 h-4"></i>
     Sitzung vorbereiten
 </a>
@@ -35,7 +35,7 @@
         <!-- Meeting Info -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-start gap-4 mb-4">
-                <div class="flex-shrink-0 text-center px-3 py-2 bg-primary-50/70 dark:bg-primary-900/20 rounded-lg">
+                <div class="shrink-0 text-center px-3 py-2 bg-primary-50/70 dark:bg-primary-900/20 rounded-lg">
                     <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
                         {{ meeting.start|date:"d" }}
                     </div>
@@ -88,7 +88,7 @@
                 {% for entry in agenda_items %}
                 <div class="px-6 py-4">
                     <div class="flex items-start gap-3">
-                        <div class="flex-shrink-0 w-8 h-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
+                        <div class="shrink-0 w-8 h-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
                             {% if entry.item.number %}{{ entry.item.number }}{% else %}{{ forloop.counter }}{% endif %}
                         </div>
                         <div class="flex-1 min-w-0">

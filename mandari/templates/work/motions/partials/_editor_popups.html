@@ -78,7 +78,7 @@
             <!-- Main comment -->
             <div class="px-4 py-3">
                 <div class="flex items-center gap-2 mb-1.5">
-                    <div class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                    <div class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
                         <span class="text-xs font-medium text-primary-600 dark:text-primary-400"
                               x-text="markCommentData ? markCommentData.author_initials : ''"></span>
                     </div>
@@ -102,7 +102,7 @@
                 <div class="px-4 pb-3 space-y-2.5 border-t border-gray-100 dark:border-gray-700 pt-3">
                     <template x-for="reply in markCommentData.replies" :key="reply.id">
                         <div class="flex gap-2">
-                            <div class="w-5 h-5 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                            <div class="w-5 h-5 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0">
                                 <span class="text-[10px] font-medium text-gray-600 dark:text-gray-400"
                                       x-text="reply.author_initials"></span>
                             </div>
@@ -132,7 +132,7 @@
                                class="flex-1 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
                         <button type="button" @click="submitMarkReply()"
                                 :disabled="!markReplyText.trim() || markReplySubmitting"
-                                class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
+                                class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
                             <i data-lucide="send" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>
@@ -247,11 +247,11 @@
                     </template>
                     <template x-if="previewMode === 'diff'">
                         <div>
-                            <div class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded border-l-4 border-red-400">
+                            <div class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-sm border-l-4 border-red-400">
                                 <span class="text-xs font-medium text-red-600 dark:text-red-400">Entfernt</span>
                                 <div x-html="aiOriginalContent" class="mt-1 text-sm line-through opacity-70"></div>
                             </div>
-                            <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded border-l-4 border-green-400">
+                            <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded-sm border-l-4 border-green-400">
                                 <span class="text-xs font-medium text-green-600 dark:text-green-400">Hinzugefügt</span>
                                 <div x-html="aiPreviewContent" class="mt-1 text-sm"></div>
                             </div>

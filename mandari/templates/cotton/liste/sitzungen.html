@@ -37,11 +37,11 @@ mit ``eintrag``, etwa „Für die Fraktion“ in Work).
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
                     <div class="flex items-center gap-2">
                         <a href="{{ ziel }}"
-                           class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
+                           class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors wrap-break-word">
                             {{ meeting.get_display_name }}
                         </a>
                         {% if meeting.cancelled %}
-                        <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
+                        <span class="px-1.5 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
                         {% elif meeting.angekuendigt %}
                         <c-insight.ergebnis :ergebnis="meeting.angekuendigt" klasse="shrink-0" />
                         {% endif %}

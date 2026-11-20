@@ -22,9 +22,9 @@ Kontext wie CircularListView; die bisherige Seite bleibt session/voting/circular
             {% for circular in circulars %}
             <li class="relative grid md:grid-cols-[minmax(0,1fr)_13rem] gap-x-4 gap-y-1 py-3 pl-1 hover:bg-band-grau/60">
                 <div class="min-w-0">
-                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums break-words">{% if circular.reference %}{{ circular.reference }} · {% endif %}{{ circular.organization.name }} · Frist {{ circular.deadline|date:"d.m.Y" }}</p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums wrap-break-word">{% if circular.reference %}{{ circular.reference }} · {% endif %}{{ circular.organization.name }} · Frist {{ circular.deadline|date:"d.m.Y" }}</p>
                     <a href="{% url 'session:circular_detail' tenant_slug=tenant_slug circular_id=circular.id %}"
-                       class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ circular.title }}</a>
+                       class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word after:absolute after:inset-0">{{ circular.title }}</a>
                     {% if not circular.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}
                 </div>
                 <p class="md:pt-5 text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_umlauf_stand.html" %}</p>

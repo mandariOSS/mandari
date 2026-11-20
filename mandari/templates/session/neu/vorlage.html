@@ -36,13 +36,13 @@ PaperDetailView. Die bisherige Seite bleibt session/papers/detail.html.
     <div class="min-w-0 space-y-10">
         {% if paper.main_text %}
         <c-rahmen.abschnitt titel="Sachverhalt" titel_id="sachverhalt-titel">
-            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ paper.main_text }}</div>
+            <div class="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ paper.main_text }}</div>
         </c-rahmen.abschnitt>
         {% endif %}
 
         {% if paper.resolution_text %}
         <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="beschlussvorschlag-titel">
-            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ paper.resolution_text }}</div>
+            <div class="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ paper.resolution_text }}</div>
         </c-rahmen.abschnitt>
         {% endif %}
 

@@ -14,7 +14,7 @@ neuem Tab, damit das Video weiterläuft. „Vollbild“ schaltet den ganzen Bere
 {% url 'insight_core:insight:meeting_live' meeting.pk as live_url %}
 <div id="kino" class="flex h-dvh w-full flex-col bg-black pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] [@media(min-aspect-ratio:13/7)]:flex-row">
     <h1 class="sr-only">Kinomodus: {{ meeting.get_display_name }}</h1>
-    <div class="min-h-0 min-w-0 flex-1 [container-type:size]">
+    <div class="min-h-0 min-w-0 flex-1 @container-size">
         {% partialdef bild inline %}
         <div id="kino-bild" class="grid h-full w-full place-items-center"{% if teil %} hx-swap-oob="true"{% endif %}>
             {% if player %}
@@ -60,7 +60,7 @@ neuem Tab, damit das Video weiterläuft. „Vollbild“ schaltet den ganzen Bere
             </a>
             {% endif %}
             <button type="button" hidden data-action="fullscreen" data-target="#kino" aria-pressed="false"
-                    class="h-8 rounded border border-gray-600 px-3 text-gray-100 hover:border-gray-400 hover:text-white">Vollbild</button>
+                    class="h-8 rounded-sm border border-gray-600 px-3 text-gray-100 hover:border-gray-400 hover:text-white">Vollbild</button>
             <a href="{{ live_url }}{% if zustimmung %}?player=1{% endif %}" class="underline underline-offset-4 hover:text-white">Kinomodus verlassen</a>
         </p>
     </aside>

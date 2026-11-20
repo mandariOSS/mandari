@@ -25,7 +25,7 @@ connection_reason, can_manage_contacts, motion_content
                 <div class="space-y-2">
                     {% for contact in email_contacts %}
                     <label class="flex items-center gap-3 text-sm text-gray-700 dark:text-gray-200">
-                        <input type="checkbox" name="contacts" value="{{ contact.id }}" class="rounded border-gray-300"
+                        <input type="checkbox" name="contacts" value="{{ contact.id }}" class="rounded-sm border-gray-300"
                                {% if contact.id|stringformat:"s" in email_form.contact_ids %}checked{% endif %}>
                         <span><strong>{{ contact.label }}</strong> <span class="text-gray-500">{{ contact.email }}</span></span>
                     </label>
@@ -59,7 +59,7 @@ connection_reason, can_manage_contacts, motion_content
 
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-200">
-                <input type="checkbox" name="confirm" class="mt-0.5 rounded border-gray-300" {% if not email_can_submit %}disabled{% endif %}>
+                <input type="checkbox" name="confirm" class="mt-0.5 rounded-sm border-gray-300" {% if not email_can_submit %}disabled{% endif %}>
                 <span>
                     Ich reiche diesen Antrag im Namen von <strong>{{ organization.name }}</strong> verbindlich per E-Mail bei den gewählten
                     Empfängern ein. Übermittelt werden der Antragstext als PDF, die aufgeführten Anhänge, das Anschreiben sowie mein Name

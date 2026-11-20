@@ -28,7 +28,7 @@
                 <button type="button"
                         @click="$dispatch('open-item-panel', { id: '{{ child.id }}' })"
                         class="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm text-left">
-                    <span class="px-2 py-0.5 text-xs font-medium rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ child.number }}</span>
+                    <span class="px-2 py-0.5 text-xs font-medium rounded-sm bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ child.number }}</span>
                     <span class="flex-1 min-w-0 truncate text-gray-700 dark:text-gray-300">{{ child.title }}</span>
                 </button>
                 {% endfor %}
@@ -41,7 +41,7 @@
     {# Fuß #}
     {% if can_edit and not item.is_approval_item %}
     {% if noe %}<div class="fs-noe-inhalt">{% endif %}
-    <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between flex-shrink-0">
+    <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between shrink-0">
         <c-ui.text-button variant="muted" icon="plus"
                           @click="$dispatch('open-add-sub', { parent_id: '{{ item.id }}', visibility: '{{ item.visibility|escapejs }}' }); $dispatch('close-item-panel')">Unterpunkt</c-ui.text-button>
         <c-ui.text-button variant="danger" icon="trash-2"

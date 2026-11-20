@@ -17,7 +17,7 @@ session/partials/agenda_item_form.html. Kontext wie AgendaItemCreateView.
         <div class="min-w-0 w-full sm:w-36">
             <c-form.beschriftung feld="{{ form.parent.id_for_label }}">Unterpunkt von</c-form.beschriftung>
             <select name="parent" id="id_parent"
-                    class="w-full h-9 pl-3 pr-8 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                    class="w-full h-9 pl-3 pr-8 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                 <option value="">Haupt-TOP</option>
                 {% for parent in form.parent.field.queryset %}
                 <option value="{{ parent.id }}">TOP {{ parent.number }}</option>
@@ -27,7 +27,7 @@ session/partials/agenda_item_form.html. Kontext wie AgendaItemCreateView.
         <div class="min-w-0 w-full sm:w-64">
             <c-form.beschriftung feld="{{ form.paper.id_for_label }}">Vorlage</c-form.beschriftung>
             <select name="paper" id="id_paper"{% if form.paper.errors or form.is_public.errors %} aria-invalid="true"{% endif %}
-                    class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.paper.errors or form.is_public.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                    class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.paper.errors or form.is_public.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
                 <option value="">Keine</option>
                 {% for paper in form.paper.field.queryset %}
                 <option value="{{ paper.id }}">{{ paper.display_reference }}: {{ paper.name|truncatechars:30 }}{% if not paper.is_public %} (NÖ){% endif %}</option>

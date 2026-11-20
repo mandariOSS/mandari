@@ -95,7 +95,7 @@ department_assignment); Kontext CosignSettingsView.
                         <input type="hidden" name="session_user" value="{{ su.id }}">
                         <label for="zuordnung-{{ su.id }}" class="sr-only">Amt für {{ su.user.email }}</label>
                         <select id="zuordnung-{{ su.id }}" name="department"
-                                class="h-9 min-w-0 max-w-[14rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                                class="h-9 min-w-0 max-w-56 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                             {% for dep in departments %}<option value="{{ dep.id }}">{{ dep.name }}</option>{% endfor %}
                         </select>
                         <c-ui.button type="submit" variant="secondary" size="sm">Zuordnen</c-ui.button>

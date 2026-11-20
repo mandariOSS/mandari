@@ -17,7 +17,7 @@ session/protocols/form.html.
 <c-rahmen.kopfband titel="Niederschrift bearbeiten" dicht>
     <c-slot name="oben">
         <c-insight.zurueck href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}">Niederschrift</c-insight.zurueck>
-        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.name }}, {{ meeting.organization.name }}, <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span></p>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 wrap-break-word">{{ meeting.name }}, {{ meeting.organization.name }}, <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span></p>
     </c-slot>
     <p class="text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=protocol.status text=protocol.get_status_display %}</p>
 </c-rahmen.kopfband>

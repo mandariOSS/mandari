@@ -13,6 +13,6 @@ an die umgebende Fläche (etwa die Breite).
     <label for="{{ fid }}" class="sr-only">{{ label }}</label>
     <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
     <input id="{{ fid }}" type="search" name="{{ name }}" value="{{ wert }}"{% if platzhalter %} placeholder="{{ platzhalter }}"{% endif %} enterkeyhint="search"
-           class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+           class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
 </div>
 {% endwith %}

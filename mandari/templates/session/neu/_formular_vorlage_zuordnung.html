@@ -17,7 +17,7 @@ Auswirkungen (Alpine: Erläuterung nur bei „Ja“) und Urheber. Felder, Option
         <div>
             <c-form.beschriftung feld="{{ form.main_organization.id_for_label }}">Federführendes Gremium</c-form.beschriftung>
             <select name="main_organization" id="id_main_organization"{% if form.main_organization.errors %} aria-invalid="true" aria-describedby="id_main_organization-error"{% endif %}
-                    class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.main_organization.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                    class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.main_organization.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
                 <option value="">Kein Gremium</option>
                 {% include "session/partials/organization_options.html" with groups=main_organization_groups organizations=form.main_organization.field.queryset selected=form.main_organization.value %}
             </select>
@@ -29,7 +29,7 @@ Auswirkungen (Alpine: Erläuterung nur bei „Ja“) und Urheber. Felder, Option
         <div>
             <c-form.beschriftung feld="{{ form.lead_department.id_for_label }}">Federführendes Amt</c-form.beschriftung>
             <select name="lead_department" id="id_lead_department"{% if form.lead_department.errors %} aria-invalid="true" aria-describedby="id_lead_department-error"{% endif %}
-                    class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.lead_department.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                    class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.lead_department.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
                 <option value="">Kein Amt</option>
                 {% for dep in form.lead_department.field.queryset %}
                 <option value="{{ dep.id }}" {% if form.lead_department.value|stringformat:"s" == dep.id|stringformat:"s" %}selected{% endif %}>{{ dep.name }}</option>
@@ -56,7 +56,7 @@ Auswirkungen (Alpine: Erläuterung nur bei „Ja“) und Urheber. Felder, Option
             <label for="id_financial_impact_note" class="sr-only">Höhe, Haushaltsstelle und Deckung</label>
             <textarea name="financial_impact_note" id="id_financial_impact_note" rows="2" x-show="fin === 'True'" x-cloak {% if content_locked %}readonly{% endif %}
                       placeholder="Höhe, Haushaltsstelle, Deckung …"
-                      class="mt-2 w-full px-3 py-2 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.financial_impact_note.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">{{ form.financial_impact_note.value|default:'' }}</textarea>
+                      class="mt-2 w-full px-3 py-2 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.financial_impact_note.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">{{ form.financial_impact_note.value|default:'' }}</textarea>
             {% include "session/neu/_formular_feldfehler.html" with feld=form.financial_impact_note %}<c-form.hinweis id="{{ form.financial_impact_note.id_for_label }}-help">Pflichtangabe vor der Vorlage zur Freigabe.</c-form.hinweis>
         </fieldset>
 
@@ -64,7 +64,7 @@ Auswirkungen (Alpine: Erläuterung nur bei „Ja“) und Urheber. Felder, Option
             <div>
                 <c-form.beschriftung feld="{{ form.originator_organization.id_for_label }}">Urheber (Organisation)</c-form.beschriftung>
                 <select name="originator_organization" id="id_originator_organization"{% if form.originator_organization.errors %} aria-invalid="true" aria-describedby="id_originator_organization-error"{% endif %}
-                        class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.originator_organization.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                        class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.originator_organization.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
                     <option value="">Keine</option>
                     {% for org in form.originator_organization.field.queryset %}
                     <option value="{{ org.id }}" {% if form.originator_organization.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
@@ -75,7 +75,7 @@ Auswirkungen (Alpine: Erläuterung nur bei „Ja“) und Urheber. Felder, Option
             <div>
                 <c-form.beschriftung feld="{{ form.originator_person.id_for_label }}">Urheber (Person)</c-form.beschriftung>
                 <select name="originator_person" id="id_originator_person"{% if form.originator_person.errors %} aria-invalid="true" aria-describedby="id_originator_person-error"{% endif %}
-                        class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.originator_person.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                        class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.originator_person.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
                     <option value="">Keine</option>
                     {% for person in form.originator_person.field.queryset %}
                     <option value="{{ person.id }}" {% if form.originator_person.value|stringformat:"s" == person.id|stringformat:"s" %}selected{% endif %}>{{ person.display_name }}</option>

@@ -29,7 +29,7 @@ in den übergeordneten Ordner. Kontext: folder_color_choices, folder_entries.
                 <label for="ordner-ziel" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1"
                        x-text="folderModal.mode === 'create' ? 'Anlegen in' : 'Verschieben nach'">Anlegen in</label>
                 <select id="ordner-ziel" x-model="folderModal.parent" aria-describedby="ordner-ziel-hilfe"
-                        class="w-full min-h-9 pl-3 pr-8 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                        class="w-full min-h-9 pl-3 pr-8 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                     <option value="">Alle Dokumente (oberste Ebene)</option>
                     {% for entry in folder_entries %}
                     <option value="{{ entry.folder.id }}" x-show="folderModal.id !== '{{ entry.folder.id }}'">{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }}</option>

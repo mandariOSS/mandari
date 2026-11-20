@@ -62,9 +62,12 @@ class TestSkala:
 
 class TestToken:
     def test_tailwind_liest_kanaele(self) -> None:
-        config = (BASIS / "tailwind.config.js").read_text(encoding="utf-8")
-        assert "rgb(var(--primary-${stufe}) / <alpha-value>)" in config
-        assert "#4f46e5" not in config
+        """Tailwind 4 (#1461): Die Kennfarbe kommt aus den Kanälen, nicht aus festen Werten (@theme in input.css)."""
+        css = (BASIS / "static" / "css" / "input.css").read_text(encoding="utf-8")
+        theme = css.split("@theme inline {", 1)[1].split("}", 1)[0]
+        for stufe in STUFEN:
+            assert f"--color-primary-{stufe}: rgb(var(--primary-{stufe}));" in theme
+        assert "#" not in theme
 
     def test_indigo_standard_und_gruen_im_buergerportal(self) -> None:
         css = (BASIS / "static" / "css" / "input.css").read_text(encoding="utf-8")

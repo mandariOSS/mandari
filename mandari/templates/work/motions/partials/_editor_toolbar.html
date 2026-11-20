@@ -1,13 +1,13 @@
             {% if can_edit %}
             <!-- Toolbar (only shown when editable) -->
-            <div id="editor-toolbar" class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-1 bg-white dark:bg-gray-800 flex-shrink-0">
+            <div id="editor-toolbar" class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-1 bg-white dark:bg-gray-800 shrink-0">
                 <!-- Formatvorlagen (Standard / H1–H3 / Zitat) — folgt dem Cursor -->
                 <div x-data="{ styleMenu: false }" class="flex items-center pr-2 border-r border-gray-200 dark:border-gray-700 relative">
                     <button type="button" @mousedown.prevent="styleMenu = !styleMenu"
-                            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-sm min-w-[7.5rem] justify-between"
+                            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-sm min-w-30 justify-between"
                             title="Formatvorlage">
                         <span class="truncate" x-text="styleLabel"></span>
-                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 opacity-50 flex-shrink-0"></i>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 opacity-50 shrink-0"></i>
                     </button>
                     <div x-show="styleMenu" @click.away="styleMenu = false" x-cloak class="table-actions-dropdown">
                         <button type="button" data-editor-cmd="paragraph" @mousedown="styleMenu = false"
@@ -37,30 +37,30 @@
                 <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
                     <button type="button" data-editor-cmd="bold"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.bold }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Fett (Strg+B)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Fett (Strg+B)">
                         <i data-lucide="bold" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="italic"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.italic }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Kursiv (Strg+I)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Kursiv (Strg+I)">
                         <i data-lucide="italic" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="underline"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.underline }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Unterstrichen (Strg+U)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Unterstrichen (Strg+U)">
                         <i data-lucide="underline" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="strike"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.strike }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Durchgestrichen (Strg+Umschalt+S)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Durchgestrichen (Strg+Umschalt+S)">
                         <i data-lucide="strikethrough" class="w-4 h-4"></i>
                     </button>
                     <!-- Textfarbe -->
                     <div x-data="{ colorMenu: false }" class="relative">
                         <button type="button" @mousedown.prevent="colorMenu = !colorMenu"
-                                class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="Textfarbe">
+                                class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="Textfarbe">
                             <i data-lucide="palette" class="w-4 h-4"></i>
-                            <span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded"
+                            <span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-sm"
                                   :style="formats.textColor ? 'background:' + formats.textColor : 'background:#374151'"></span>
                         </button>
                         <div x-show="colorMenu" @click.away="colorMenu = false" x-cloak class="color-picker-dropdown">
@@ -80,7 +80,7 @@
                     </div>
                     <button type="button" data-editor-cmd="highlight"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.highlight }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Hervorheben (Strg+Umschalt+H)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Hervorheben (Strg+Umschalt+H)">
                         <i data-lucide="highlighter" class="w-4 h-4"></i>
                     </button>
                 </div>
@@ -89,22 +89,22 @@
                 <div class="hidden lg:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
                     <button type="button" data-editor-cmd="align" data-editor-value="left"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'left' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Linksbündig (Strg+Umschalt+L)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Linksbündig (Strg+Umschalt+L)">
                         <i data-lucide="align-left" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="align" data-editor-value="center"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'center' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Zentriert (Strg+Umschalt+E)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Zentriert (Strg+Umschalt+E)">
                         <i data-lucide="align-center" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="align" data-editor-value="right"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'right' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Rechtsbündig (Strg+Umschalt+R)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Rechtsbündig (Strg+Umschalt+R)">
                         <i data-lucide="align-right" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="align" data-editor-value="justify"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'justify' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Blocksatz (Strg+Umschalt+J)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Blocksatz (Strg+Umschalt+J)">
                         <i data-lucide="align-justify" class="w-4 h-4"></i>
                     </button>
                 </div>
@@ -113,25 +113,25 @@
                 <div class="hidden md:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
                     <button type="button" data-editor-cmd="bulletList"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'bullet' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufzählung (Strg+Umschalt+8)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufzählung (Strg+Umschalt+8)">
                         <i data-lucide="list" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="orderedList"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'ordered' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Nummerierung (Strg+Umschalt+7)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Nummerierung (Strg+Umschalt+7)">
                         <i data-lucide="list-ordered" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="taskList"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'task' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufgabenliste (Strg+Umschalt+9)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufgabenliste (Strg+Umschalt+9)">
                         <i data-lucide="list-checks" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="outdent"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Weniger einrücken (Umschalt+Tab)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Weniger einrücken (Umschalt+Tab)">
                         <i data-lucide="indent-decrease" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="indent"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Einrücken (Tab)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Einrücken (Tab)">
                         <i data-lucide="indent-increase" class="w-4 h-4"></i>
                     </button>
                 </div>
@@ -140,13 +140,13 @@
                 <div class="hidden lg:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
                     <button type="button" @mousedown.prevent="openLinkDialog()"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.link }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Link einfügen (Strg+K)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Link einfügen (Strg+K)">
                         <i data-lucide="link" class="w-4 h-4"></i>
                     </button>
                     <div x-data="{ tableMenu: false }" class="relative">
                         <button type="button" @mousedown.prevent="tableMenu = !tableMenu"
                                 :class="{ 'bg-gray-200 dark:bg-gray-600': formats.table }"
-                                class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Tabelle">
+                                class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Tabelle">
                             <i data-lucide="table" class="w-4 h-4"></i>
                         </button>
                         <div x-show="tableMenu" @click.away="tableMenu = false" x-cloak class="table-actions-dropdown">
@@ -177,15 +177,15 @@
                         </div>
                     </div>
                     <button type="button" @mousedown.prevent="showImageModal = true"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Bild einfügen">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Bild einfügen">
                         <i data-lucide="image" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="pageBreak"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Seitenumbruch (Strg+Enter)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Seitenumbruch (Strg+Enter)">
                         <i data-lucide="file-output" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="horizontalRule"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Trennlinie">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Trennlinie">
                         <i data-lucide="minus" class="w-4 h-4"></i>
                     </button>
                 </div>
@@ -193,16 +193,16 @@
                 <!-- Verlauf & Suche -->
                 <div class="flex items-center gap-0.5 px-2">
                     <button type="button" data-editor-cmd="undo"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Rückgängig (Strg+Z)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Rückgängig (Strg+Z)">
                         <i data-lucide="undo" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="redo"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Wiederholen (Strg+Y)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Wiederholen (Strg+Y)">
                         <i data-lucide="redo" class="w-4 h-4"></i>
                     </button>
                     <button type="button" @mousedown.prevent="toggleSearch()"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': searchOpen }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Suchen und Ersetzen (Strg+F)">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Suchen und Ersetzen (Strg+F)">
                         <i data-lucide="search" class="w-4 h-4"></i>
                     </button>
                 </div>
@@ -210,7 +210,7 @@
                 <!-- Überlauf-Menü für schmale Screens -->
                 <div x-data="{ moreMenu: false }" class="lg:hidden relative flex items-center px-1">
                     <button type="button" @mousedown.prevent="moreMenu = !moreMenu"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Weitere Werkzeuge">
+                            class="p-2 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-700" title="Weitere Werkzeuge">
                         <i data-lucide="more-horizontal" class="w-4 h-4"></i>
                     </button>
                     <div x-show="moreMenu" @click.away="moreMenu = false" x-cloak class="table-actions-dropdown">

@@ -22,7 +22,7 @@
     {% if error_id %}
     <div class="flex items-center gap-2 text-sm">
         <span class="text-gray-500 dark:text-gray-400">Fehler-ID:</span>
-        <code class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-mono text-xs">{{ error_id }}</code>
+        <code class="px-2 py-0.5 rounded-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-mono text-xs">{{ error_id }}</code>
         <input type="hidden" name="error_id" value="{{ error_id }}">
     </div>
     {% else %}

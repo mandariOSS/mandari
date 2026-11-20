@@ -177,7 +177,7 @@ def test_suchseite_mit_wachsender_trefferspalte_und_fester_filterspalte(
 
     assert "2xl:grid-cols-[minmax(0,1fr)_16rem]" in html
     assert "2xl:sticky 2xl:top-20 2xl:max-h-[calc(100vh-6rem)] 2xl:overflow-y-auto" in html
-    assert 'id="treffer-liste" class="mt-2 [container-type:inline-size]"' in html
+    assert 'id="treffer-liste" class="mt-2 @container"' in html
     # Ausklapplisten bis 2xl, offene Listen ab 2xl
     assert '<div class="contents 2xl:hidden">' in html and '<div class="hidden 2xl:block' in html
     zeitraum = html.split('aria-labelledby="filterliste-period"', 1)[1].split("</ul>", 1)[0]
@@ -229,13 +229,13 @@ def test_treffer_kontext_als_spalte_ab_54rem_listenbreite() -> None:
 
 
 def test_neue_klassen_stehen_im_gebauten_css() -> None:
-    """styles.css ist eingecheckt: Container-Abfrage, Spalte und Rahmen müssen im Build gelandet sein."""
+    """styles.css ist eingecheckt: Container-Abfrage, Spalte und Rahmen müssen im Build gelandet sein (Tailwind 4)."""
     css = (ROOT / "static/css/styles.css").read_text(encoding="utf-8")
     for teil in (
         "container-type:inline-size",
-        "@container(min-width:54rem)",
-        r".\32xl\:sticky{position:sticky}",
-        r".\32xl\:grid-cols-\[minmax\(0\2c 1fr\)_16rem\]",
-        r".\[\@container\(min-width\:54rem\)\]\:grid-cols-\[minmax\(0\2c 1fr\)_14rem\]",
+        "@container (min-width:54rem)",
+        r".\32 xl\:sticky{position:sticky}",
+        r".\32 xl\:grid-cols-\[minmax\(0\,1fr\)_16rem\]",
+        r".\[\@container\(min-width\:54rem\)\]\:grid-cols-\[minmax\(0\,1fr\)_14rem\]",
     ):
         assert teil in css, teil

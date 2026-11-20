@@ -13,7 +13,7 @@ Kopfzeile X-Work-Gestaltung) zeichnen dasselbe Fragment. Kontext: ticket_message
             {% if message.is_from_support %}<span class="text-primary-700 dark:text-primary-300">Support</span>{% endif %}
             <time class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ message.created_at|date:"d.m.Y H:i" }}</time>
         </p>
-        <p class="mt-1.5 text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ message.content }}</p>
+        <p class="mt-1.5 text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-line wrap-break-word">{{ message.content }}</p>
         {% if message.attachments.exists %}
         <ul class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
             {% for attachment in message.attachments.all %}

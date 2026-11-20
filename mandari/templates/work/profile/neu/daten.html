@@ -59,7 +59,7 @@ Kontext: ProfileDataPrivacyView; die bisherige Seite bleibt work/profile/data_pr
             <form method="post" x-show="showDelete" x-cloak x-transition class="mt-3 flex flex-wrap items-end gap-3 max-w-md">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="request_deletion">
-                <c-form.password name="password" id="daten-passwort" label="Mit Passwort bestätigen" autocomplete="current-password" class="flex-1 min-w-[14rem]" dicht required />
+                <c-form.password name="password" id="daten-passwort" label="Mit Passwort bestätigen" autocomplete="current-password" class="flex-1 min-w-56" dicht required />
                 <c-ui.button type="submit" variant="danger" size="sm">Deaktivieren</c-ui.button>
             </form>
             {% endif %}

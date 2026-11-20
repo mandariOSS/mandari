@@ -56,9 +56,9 @@
                 {{ form.signature_block }}
                 <p class="text-xs text-gray-500 mt-1">
                     Wird beim Export ans Dokumentende angehängt. Unterstützte Platzhalter:
-                    <code class="px-1 bg-gray-100 dark:bg-gray-700 rounded">{% templatetag openvariable %} organisation {% templatetag closevariable %}</code>,
-                    <code class="px-1 bg-gray-100 dark:bg-gray-700 rounded">{% templatetag openvariable %} datum {% templatetag closevariable %}</code>,
-                    <code class="px-1 bg-gray-100 dark:bg-gray-700 rounded">{% templatetag openvariable %} verantwortlich {% templatetag closevariable %}</code>
+                    <code class="px-1 bg-gray-100 dark:bg-gray-700 rounded-sm">{% templatetag openvariable %} organisation {% templatetag closevariable %}</code>,
+                    <code class="px-1 bg-gray-100 dark:bg-gray-700 rounded-sm">{% templatetag openvariable %} datum {% templatetag closevariable %}</code>,
+                    <code class="px-1 bg-gray-100 dark:bg-gray-700 rounded-sm">{% templatetag openvariable %} verantwortlich {% templatetag closevariable %}</code>
                     — sie werden beim Anwenden automatisch ersetzt.
                 </p>
             </div>
@@ -111,7 +111,7 @@
                 </a>
                 {% endif %}
                 <button type="submit"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                     <i data-lucide="check" class="w-4 h-4"></i>
                     {% if is_new %}Vorlage erstellen{% else %}Speichern{% endif %}
                 </button>

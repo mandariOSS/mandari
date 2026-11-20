@@ -12,7 +12,7 @@
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ org.organization_type }}</p>
             {% endif %}
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="flex items-center gap-2 shrink-0">
             {% include "components/bookmark_star.html" with entity_type="organization" entity_id=org.id size="sm" %}
             <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
         </div>

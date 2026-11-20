@@ -9,13 +9,13 @@
                    autosave-erneut"
       hx-swap="none"
       data-autosave="panel"
-      class="flex-shrink-0">
+      class="shrink-0">
     <input type="hidden" name="action" value="update">
 
-    <div class="px-5 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex-shrink-0">
+    <div class="px-5 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 shrink-0">
         <div class="flex items-start gap-3">
             {# Nummern-Badge #}
-            <span class="flex-shrink-0 min-w-[2.5rem] h-10 px-3 rounded-lg flex items-center justify-center text-sm font-semibold
+            <span class="shrink-0 min-w-10 h-10 px-3 rounded-lg flex items-center justify-center text-sm font-semibold
                 {% if item.is_approval_item %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400
                 {% elif item.visibility == 'internal' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400
                 {% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400{% endif %}">
@@ -27,14 +27,14 @@
                 {% if can_edit and not item.is_approval_item %}
                 {% if noe %}<span class="sr-only fs-noe-ersatz">Nichtöffentlicher TOP, ausgeblendet</span>{% endif %}
                 <input type="text" name="title" value="{{ item.title }}" aria-label="Titel des TOPs"{% if noe %}{% if not noe_sichtbar %} inert{% endif %} x-bind:inert="!$store.noe.sichtbar"{% endif %}
-                       class="w-full text-lg font-semibold text-gray-900 dark:text-white bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-primary-500 focus:ring-0 outline-none px-0 py-0.5 transition-colors{% if noe %} fs-noe{% endif %}">
+                       class="w-full text-lg font-semibold text-gray-900 dark:text-white bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-primary-500 focus:ring-0 outline-hidden px-0 py-0.5 transition-colors{% if noe %} fs-noe{% endif %}">
                 {% else %}
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{% include "work/faction/sitzung/_noe_text.html" with text=item.title %}</h2>
                 {% endif %}
             </div>
 
             {# Autosave-Anzeige + Schließen #}
-            <div class="flex items-center gap-1 flex-shrink-0 pt-1">
+            <div class="flex items-center gap-1 shrink-0 pt-1">
                 <span x-cloak x-show="saving" class="text-gray-400 p-1">
                     <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
                 </span>
@@ -58,7 +58,7 @@
         {# Sichtbarkeit + Badges #}
         <div class="flex items-center gap-2 mt-2">
             {% if can_edit and not item.is_approval_item and meeting.nichtoeffentlich_erlaubt %}
-            <select name="visibility" class="text-xs px-2 py-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 outline-none">
+            <select name="visibility" class="text-xs px-2 py-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 outline-hidden">
                 <option value="public" {% if item.visibility == 'public' %}selected{% endif %}>Öffentlich</option>
                 <option value="internal" {% if item.visibility == 'internal' %}selected{% endif %}>Nicht-öffentlich</option>
             </select>

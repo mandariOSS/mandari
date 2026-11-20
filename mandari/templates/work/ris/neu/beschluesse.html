@@ -35,7 +35,7 @@ work/ris/decisions.html.
 <form method="get" role="search" class="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Beschlüsse filtern">
     <label for="beschluesse-suche" class="sr-only">Beschlüsse durchsuchen</label>
     <input id="beschluesse-suche" type="search" name="q" value="{{ search_query }}" placeholder="Betreff, Beschlusstext, Nummer, Amt"
-           class="h-9 w-full sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+           class="h-9 w-full sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
     <c-form.select name="organization" id="beschluesse-gremium" label="Gremium" dicht zeile>
         <option value="">Alle Gremien</option>
         {% for org in organizations %}<option value="{{ org.id }}" {% if filter_organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
@@ -72,7 +72,7 @@ work/ris/decisions.html.
                         {% if item.resolution_number %}<span class="tabular-nums">{{ item.resolution_number }}</span>{% endif %}
                         <span class="inline-flex items-center gap-1.5 text-gray-800 dark:text-gray-200"><span class="w-2 h-2 shrink-0 rounded-full {% if item.vote_result == 'approved' %}bg-green-600{% elif item.vote_result == 'rejected' %}bg-red-600{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>{{ item.get_vote_result_display }}</span>
                     </p>
-                    <a href="{% url 'work:ris_decision_detail' org_slug=organization.slug item_id=item.pk %}" class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:text-primary-700 dark:hover:text-primary-300 hover:underline underline-offset-4 break-words">TOP {{ item.number }} · {{ item.name }}</a>
+                    <a href="{% url 'work:ris_decision_detail' org_slug=organization.slug item_id=item.pk %}" class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:text-primary-700 dark:hover:text-primary-300 hover:underline underline-offset-4 wrap-break-word">TOP {{ item.number }} · {{ item.name }}</a>
                     {% if item.resolution_text %}<p class="mt-0.5 text-gray-600 dark:text-gray-400 line-clamp-2">{{ item.resolution_text }}</p>{% endif %}
                     <p class="md:hidden mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}</p>
                     {% if item.meeting.oparl_meeting_id %}<p class="mt-0.5 text-[0.8125rem]"><c-ui.textlink href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=item.meeting.oparl_meeting_id %}">Sitzung in der Recherche</c-ui.textlink></p>{% endif %}

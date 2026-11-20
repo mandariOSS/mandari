@@ -32,7 +32,7 @@ class WeitereZustaendigeMixin:
             label="Weitere Zuständige",
             widget=forms.CheckboxSelectMultiple(
                 attrs={
-                    "class": "w-3.5 h-3.5 shrink-0 rounded border-gray-300 dark:border-gray-600 text-primary-600 "
+                    "class": "w-3.5 h-3.5 shrink-0 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 "
                     "focus:ring-primary-500 dark:bg-gray-700"
                 }
             ),
@@ -164,14 +164,14 @@ class TaskPanelForm(WeitereZustaendigeMixin, forms.ModelForm):
         widgets = {
             "title": forms.TextInput(
                 attrs={
-                    "class": "w-full text-lg font-semibold bg-transparent border-0 border-b border-transparent hover:border-gray-200 dark:hover:border-gray-700 focus:border-primary-400 rounded-none px-0 py-1 outline-none ring-0 focus:ring-0 text-gray-900 dark:text-white placeholder-gray-400",
+                    "class": "w-full text-lg font-semibold bg-transparent border-0 border-b border-transparent hover:border-gray-200 dark:hover:border-gray-700 focus:border-primary-400 rounded-none px-0 py-1 outline-hidden ring-0 focus:ring-0 text-gray-900 dark:text-white placeholder-gray-400",
                     "placeholder": "Aufgabentitel",
                     "maxlength": "200",
                 }
             ),
             "description": forms.Textarea(
                 attrs={
-                    "class": "w-full text-sm bg-transparent border-0 border-b border-transparent hover:border-gray-200 dark:hover:border-gray-700 focus:border-primary-400 rounded-none px-0 py-1 outline-none ring-0 focus:ring-0 text-gray-600 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 resize-none leading-relaxed",
+                    "class": "w-full text-sm bg-transparent border-0 border-b border-transparent hover:border-gray-200 dark:hover:border-gray-700 focus:border-primary-400 rounded-none px-0 py-1 outline-hidden ring-0 focus:ring-0 text-gray-600 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 resize-none leading-relaxed",
                     "rows": 2,
                     "placeholder": "Beschreibung hinzufügen...",
                     "maxlength": "2000",
@@ -179,23 +179,23 @@ class TaskPanelForm(WeitereZustaendigeMixin, forms.ModelForm):
             ),
             "status": forms.Select(
                 attrs={
-                    "class": "text-[11px] font-semibold bg-transparent border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-400 focus:ring-1 focus:ring-primary-500/20 rounded-md px-2 py-1 outline-none cursor-pointer appearance-none",
+                    "class": "text-[11px] font-semibold bg-transparent border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-400 focus:ring-1 focus:ring-primary-500/20 rounded-md px-2 py-1 outline-hidden cursor-pointer appearance-none",
                 }
             ),
             "priority": forms.Select(
                 attrs={
-                    "class": "text-[11px] font-semibold bg-transparent border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-400 focus:ring-1 focus:ring-primary-500/20 rounded-md px-2 py-1 outline-none cursor-pointer appearance-none",
+                    "class": "text-[11px] font-semibold bg-transparent border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-400 focus:ring-1 focus:ring-primary-500/20 rounded-md px-2 py-1 outline-hidden cursor-pointer appearance-none",
                 }
             ),
             "due_date": forms.DateInput(
                 attrs={
                     "type": "date",
-                    "class": "text-xs bg-transparent border-0 border-b border-transparent hover:border-gray-200 dark:hover:border-gray-700 focus:border-primary-400 rounded-none px-0 py-1 outline-none ring-0 focus:ring-0 text-gray-900 dark:text-white cursor-pointer",
+                    "class": "text-xs bg-transparent border-0 border-b border-transparent hover:border-gray-200 dark:hover:border-gray-700 focus:border-primary-400 rounded-none px-0 py-1 outline-hidden ring-0 focus:ring-0 text-gray-900 dark:text-white cursor-pointer",
                 }
             ),
             "assigned_to": forms.Select(
                 attrs={
-                    "class": "w-full text-xs bg-transparent border-0 border-b border-transparent hover:border-gray-200 dark:hover:border-gray-700 focus:border-primary-400 rounded-none px-0 py-1 outline-none ring-0 focus:ring-0 cursor-pointer text-gray-900 dark:text-white",
+                    "class": "w-full text-xs bg-transparent border-0 border-b border-transparent hover:border-gray-200 dark:hover:border-gray-700 focus:border-primary-400 rounded-none px-0 py-1 outline-hidden ring-0 focus:ring-0 cursor-pointer text-gray-900 dark:text-white",
                 }
             ),
             "visibility": forms.RadioSelect(
@@ -275,7 +275,7 @@ class TaskChecklistItemForm(forms.ModelForm):
         widgets = {
             "title": forms.TextInput(
                 attrs={
-                    "class": "flex-1 min-w-0 px-2 py-1 text-sm bg-transparent border-0 border-b border-gray-200 dark:border-gray-700 focus:border-primary-400 rounded-none outline-none ring-0 focus:ring-0 text-gray-900 dark:text-white placeholder-gray-400",
+                    "class": "flex-1 min-w-0 px-2 py-1 text-sm bg-transparent border-0 border-b border-gray-200 dark:border-gray-700 focus:border-primary-400 rounded-none outline-hidden ring-0 focus:ring-0 text-gray-900 dark:text-white placeholder-gray-400",
                     "placeholder": "Neuen Punkt hinzufügen...",
                     "maxlength": "300",
                 }
@@ -292,14 +292,14 @@ class TaskLabelForm(forms.ModelForm):
         widgets = {
             "name": forms.TextInput(
                 attrs={
-                    "class": "w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-400 focus:ring-1 focus:ring-primary-500/20 outline-none",
+                    "class": "w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-400 focus:ring-1 focus:ring-primary-500/20 outline-hidden",
                     "placeholder": "Label-Name",
                     "maxlength": "50",
                 }
             ),
             "color": forms.Select(
                 attrs={
-                    "class": "px-3 py-1.5 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-400 focus:ring-1 focus:ring-primary-500/20 outline-none",
+                    "class": "px-3 py-1.5 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-400 focus:ring-1 focus:ring-primary-500/20 outline-hidden",
                 }
             ),
         }

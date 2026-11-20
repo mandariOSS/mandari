@@ -31,7 +31,7 @@
                             <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
                                    :class="requestType === 'role_change' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30'">
                                 <input type="radio" name="request_type" value="role_change" x-model="requestType" class="sr-only">
-                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                                      :class="requestType === 'role_change' ? 'bg-primary-100 dark:bg-primary-900/40' : 'bg-gray-100 dark:bg-gray-700'">
                                     <i data-lucide="shield" class="w-4 h-4" :class="requestType === 'role_change' ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'"></i>
                                 </div>
@@ -44,7 +44,7 @@
                             <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
                                    :class="requestType === 'committee_change' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30'">
                                 <input type="radio" name="request_type" value="committee_change" x-model="requestType" class="sr-only">
-                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                                      :class="requestType === 'committee_change' ? 'bg-primary-100 dark:bg-primary-900/40' : 'bg-gray-100 dark:bg-gray-700'">
                                     <i data-lucide="users" class="w-4 h-4" :class="requestType === 'committee_change' ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'"></i>
                                 </div>
@@ -57,7 +57,7 @@
                             <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
                                    :class="requestType === 'permission_request' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30'">
                                 <input type="radio" name="request_type" value="permission_request" x-model="requestType" class="sr-only">
-                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                                      :class="requestType === 'permission_request' ? 'bg-primary-100 dark:bg-primary-900/40' : 'bg-gray-100 dark:bg-gray-700'">
                                     <i data-lucide="key" class="w-4 h-4" :class="requestType === 'permission_request' ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'"></i>
                                 </div>
@@ -77,7 +77,7 @@
                             <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer">
                                 <input type="checkbox" name="requested_roles" value="{{ role.id }}"
                                        {% if role.id in current_role_ids %}checked disabled{% endif %}
-                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-sm focus:ring-primary-500 focus:ring-2">
                                 <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full"
                                       style="background: {{ role.color|default:'#6b7280' }}15; color: {{ role.color|default:'#6b7280' }}; border: 1px solid {{ role.color|default:'#6b7280' }}30;">
                                     {{ role.name }}
@@ -98,7 +98,7 @@
                             <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer">
                                 <input type="checkbox" name="requested_committees" value="{{ committee.id }}"
                                        {% if committee.id in current_committee_ids %}checked{% endif %}
-                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-sm focus:ring-primary-500 focus:ring-2">
                                 <span class="text-sm text-gray-700 dark:text-gray-300">{{ committee.name }}</span>
                                 {% if committee.id in current_committee_ids %}
                                 <span class="text-[10px] text-gray-400">(aktuell)</span>
@@ -118,7 +118,7 @@
                             {% for perm in available_permissions %}
                             <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer">
                                 <input type="checkbox" name="requested_permissions" value="{{ perm.codename }}"
-                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-sm focus:ring-primary-500 focus:ring-2">
                                 <span class="text-sm text-gray-700 dark:text-gray-300">{{ perm.name }}</span>
                             </label>
                             {% endfor %}
@@ -129,13 +129,13 @@
                     <div x-show="requestType" x-cloak>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Begründung</label>
                         <textarea name="reason" rows="3" required placeholder="Warum wird diese Änderung benötigt?"
-                                  class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none resize-none"></textarea>
+                                  class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden resize-none"></textarea>
                     </div>
                 </div>
 
                 <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end" x-show="requestType" x-cloak>
                     <button type="submit"
-                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs transition-colors">
                         <i data-lucide="send" class="w-4 h-4"></i>
                         Antrag einreichen
                     </button>
@@ -156,7 +156,7 @@
                 <div class="px-6 py-4">
                     <div class="flex items-start justify-between">
                         <div class="flex items-start gap-3 min-w-0">
-                            <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5
+                            <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5
                                 {% if req.status == 'pending' %}bg-amber-100 dark:bg-amber-900/30{% elif req.status == 'approved' %}bg-green-100 dark:bg-green-900/30{% elif req.status == 'rejected' %}bg-red-100 dark:bg-red-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
                                 <i data-lucide="{% if req.request_type == 'role_change' %}shield{% elif req.request_type == 'committee_change' %}users{% else %}key{% endif %}"
                                    class="w-4 h-4 {% if req.status == 'pending' %}text-amber-600 dark:text-amber-400{% elif req.status == 'approved' %}text-green-600 dark:text-green-400{% elif req.status == 'rejected' %}text-red-600 dark:text-red-400{% else %}text-gray-400{% endif %}"></i>
@@ -180,7 +180,7 @@
                             </div>
                         </div>
                         {% if req.status == 'pending' %}
-                        <form method="post" class="flex-shrink-0">
+                        <form method="post" class="shrink-0">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="withdraw_request">
                             <input type="hidden" name="request_id" value="{{ req.id }}">
@@ -216,7 +216,7 @@
                 {% for req in pending_requests %}
                 <div class="px-6 py-4">
                     <div class="flex items-start gap-3">
-                        <div class="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <div class="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0 mt-0.5">
                             <i data-lucide="{% if req.request_type == 'role_change' %}shield{% elif req.request_type == 'committee_change' %}users{% else %}key{% endif %}"
                                class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
                         </div>
@@ -257,7 +257,7 @@
                                         <input type="hidden" name="request_id" value="{{ req.id }}">
                                         <div class="flex-1">
                                             <input type="text" name="decision_comment" placeholder="Begründung (optional)"
-                                                   class="w-full px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none">
+                                                   class="w-full px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-hidden">
                                         </div>
                                         <button type="submit"
                                                 class="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors whitespace-nowrap">

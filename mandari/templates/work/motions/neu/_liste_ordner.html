@@ -44,7 +44,7 @@ bisher. Kontext: folder_entries, current_folder, root_document_count, filter_que
                 <a href="?ordner={{ entry.folder.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" {% if current_folder.id == entry.folder.id %}aria-current="page"{% endif %}
                    class="flex-1 min-w-0 flex items-start gap-2 py-1.5 px-2 {% if current_folder.id == entry.folder.id %}text-primary-800 dark:text-primary-200 font-medium{% else %}text-gray-800 dark:text-gray-200{% endif %}">
                     <i data-lucide="{% if entry.folder.sworn_in_only %}folder-lock{% else %}folder{% endif %}" class="mt-0.5 w-4 h-4 shrink-0 {% if entry.folder.color %}text-{{ entry.folder.color }}-700 dark:text-{{ entry.folder.color }}-300{% else %}text-gray-500 dark:text-gray-400{% endif %}" aria-hidden="true"></i>
-                    <span class="flex-1 min-w-0 break-words">{{ entry.folder.name }}</span>
+                    <span class="flex-1 min-w-0 wrap-break-word">{{ entry.folder.name }}</span>
                     {% if entry.folder.sworn_in_only %}<span class="sr-only">(nur für Vereidigte)</span>{% endif %}
                     <span class="text-[0.8125rem] tabular-nums text-gray-600 dark:text-gray-400">{{ entry.count }}</span>
                 </a>

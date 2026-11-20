@@ -34,7 +34,7 @@ steht (Issue #1271).
             {% for anlage in zeile.anlagen_kurz %}
             <li>
                 <a href="{% url 'insight_core:insight:file_proxy' anlage.pk %}" rel="nofollow" class="group/anlage inline-flex flex-wrap items-center gap-x-1.5 {% if dicht %}min-h-6{% else %}min-h-11 sm:min-h-6{% endif %} py-0.5">
-                    <span class="text-gray-800 dark:text-gray-200 break-words group-hover/anlage:underline underline-offset-4">{{ anlage.name|default:anlage.file_name|default:"Anlage" }}<span class="sr-only">,</span></span>
+                    <span class="text-gray-800 dark:text-gray-200 wrap-break-word group-hover/anlage:underline underline-offset-4">{{ anlage.name|default:anlage.file_name|default:"Anlage" }}<span class="sr-only">,</span></span>
                     <span>{{ anlage|dateityp }}{% if anlage.size %}, {{ anlage.size_human }}{% endif %}</span>
                 </a>
             </li>

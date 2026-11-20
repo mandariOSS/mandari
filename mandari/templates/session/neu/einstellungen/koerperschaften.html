@@ -29,7 +29,7 @@ session/settings/bodies.html; Kontext BodyListView.
                 {% for body in bodies %}
                 <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5">
                     <div class="min-w-0 flex-1 basis-64">
-                        <p class="text-sm break-words {% if body.is_active %}text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400{% endif %}"><span class="font-medium">{{ body.name }}</span>{% if body.short_name %} <span class="text-gray-600 dark:text-gray-400">({{ body.short_name }})</span>{% endif %}</p>
+                        <p class="text-sm wrap-break-word {% if body.is_active %}text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400{% endif %}"><span class="font-medium">{{ body.name }}</span>{% if body.short_name %} <span class="text-gray-600 dark:text-gray-400">({{ body.short_name }})</span>{% endif %}</p>
                         <p class="liste-angaben">
                             {% if body.is_default %}{% include "session/neu/_status.html" with wert="scheduled" text="Standard" %}{% elif not body.is_active %}{% include "session/neu/_status.html" with wert="" text="inaktiv" %}{% else %}{% include "session/neu/_status.html" with wert="approved" text="aktiv" %}{% endif %}
                             · {{ body.get_body_type_display|default:"Art nicht angegeben" }}{% if body.parent %} · gehört zu {{ body.parent.name }}{% endif %}{% if body.ags %} · AGS <span class="tabular-nums">{{ body.ags }}</span>{% endif %}

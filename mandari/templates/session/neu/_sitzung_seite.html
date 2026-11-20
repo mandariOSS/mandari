@@ -27,7 +27,7 @@ Ebene: Abschnitte mit Überschrift (c-rahmen.abschnitt), keine Kästen. Kontext 
             <dd class="tabular-nums">versandt am {{ meeting.invitation_sent_at|date:"d.m.Y, H:i" }} Uhr</dd>
             {% elif not meeting.cancelled %}
             <dt>Ladungsfrist</dt>
-            <dd class="tabular-nums {% if meeting.invitation_overdue %}font-medium !text-red-700 dark:!text-red-400{% endif %}">bis {{ meeting.invitation_deadline|date:"d.m.Y" }}{% if meeting.invitation_overdue %}, verstrichen{% endif %}</dd>
+            <dd class="tabular-nums {% if meeting.invitation_overdue %}font-medium text-red-700! dark:text-red-400!{% endif %}">bis {{ meeting.invitation_deadline|date:"d.m.Y" }}{% if meeting.invitation_overdue %}, verstrichen{% endif %}</dd>
             {% endif %}
         </c-ui.angaben>
     </c-rahmen.abschnitt>

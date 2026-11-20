@@ -22,8 +22,8 @@ Die Teile danke, ergaenzt und hinweis liefert views/feedback.py.
             {% partial falle %}
             <h2 class="text-[1.0625rem] font-semibold text-gray-900 dark:text-white">War diese Seite hilfreich?</h2>
             <div class="flex gap-2">
-                <c-ui.button type="submit" variant="secondary" name="helpful" value="ja" class="min-w-[4.5rem]">Ja</c-ui.button>
-                <c-ui.button type="submit" variant="secondary" name="helpful" value="nein" class="min-w-[4.5rem]">Nein</c-ui.button>
+                <c-ui.button type="submit" variant="secondary" name="helpful" value="ja" class="min-w-18">Ja</c-ui.button>
+                <c-ui.button type="submit" variant="secondary" name="helpful" value="nein" class="min-w-18">Nein</c-ui.button>
             </div>
         </form>
     </div>
@@ -36,7 +36,7 @@ Die Teile danke, ergaenzt und hinweis liefert views/feedback.py.
 {% endif %}
 
 {% partialdef danke %}
-<p tabindex="-1" autofocus class="text-[1.0625rem] font-semibold text-gray-900 dark:text-white focus:outline-none">Danke für Ihre Rückmeldung.</p>
+<p tabindex="-1" autofocus class="text-[1.0625rem] font-semibold text-gray-900 dark:text-white focus:outline-hidden">Danke für Ihre Rückmeldung.</p>
 {% if token %}
 <form method="post" action="{% url 'insight_core:insight:page_feedback' %}"
       hx-post="{% url 'insight_core:insight:page_feedback' %}" hx-target="#rueckmeldung-inhalt" hx-swap="innerHTML"
@@ -73,16 +73,16 @@ Die Teile danke, ergaenzt und hinweis liefert views/feedback.py.
 {% endpartialdef %}
 
 {% partialdef ergaenzt %}
-<p tabindex="-1" autofocus class="text-[1.0625rem] font-semibold text-gray-900 dark:text-white focus:outline-none">Danke, Ihre Ergänzung ist angekommen.</p>
+<p tabindex="-1" autofocus class="text-[1.0625rem] font-semibold text-gray-900 dark:text-white focus:outline-hidden">Danke, Ihre Ergänzung ist angekommen.</p>
 {% endpartialdef %}
 
 {% partialdef hinweis %}
-<p tabindex="-1" autofocus class="text-gray-900 dark:text-white focus:outline-none">{{ message }}</p>
+<p tabindex="-1" autofocus class="text-gray-900 dark:text-white focus:outline-hidden">{{ message }}</p>
 {% endpartialdef %}
 
 {% partialdef falle %}
 {# Spamschutz: Menschen sehen und erreichen das Feld nicht, Programme füllen es aus #}
-<div class="absolute -left-[10000px] w-px h-px overflow-hidden" aria-hidden="true">
+<div class="absolute left-[-10000px] w-px h-px overflow-hidden" aria-hidden="true">
     <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
 </div>
 {% endpartialdef %}

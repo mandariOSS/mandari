@@ -29,7 +29,7 @@ consultation_organizations, consultation_meetings, tenant_slug).
         <span class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-60">
             <label for="consultation-add-org" class="block mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">Gremium</label>
             <select name="organization" required id="consultation-add-org" data-filter-options="#consultation-add-meeting" data-filter-attr="org"
-                    class="h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                    class="h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                 <option value="">Bitte wählen</option>
                 {% for org in consultation_organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}
             </select>
@@ -51,7 +51,7 @@ consultation_organizations, consultation_meetings, tenant_slug).
         <li class="grid grid-cols-[2rem_minmax(0,1fr)] sm:grid-cols-[2rem_minmax(0,1fr)_auto] gap-x-3 gap-y-2 py-3" x-data="{ bearbeiten: false }">
             <span class="pt-px tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ station.order }}</span>
             <div class="min-w-0">
-                <p class="font-medium text-gray-900 dark:text-white break-words">{% if station.noe_hidden %}Nichtöffentliche Beratung{% else %}{{ station.organization.name }}{% endif %}</p>
+                <p class="font-medium text-gray-900 dark:text-white wrap-break-word">{% if station.noe_hidden %}Nichtöffentliche Beratung{% else %}{{ station.organization.name }}{% endif %}</p>
                 {% if not station.noe_hidden %}
                 <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
                     <span>{{ station.get_role_display }}</span>
@@ -59,7 +59,7 @@ consultation_organizations, consultation_meetings, tenant_slug).
                     {% if station.result != "pending" %}<span>{% include "session/neu/_status.html" with wert=station.result text=station.get_result_display %}</span>{% endif %}
                 </p>
                 {% endif %}
-                <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400 break-words">
+                <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400 wrap-break-word">
                     {% if station.noe_hidden %}Nichtöffentliche Sitzung
                     {% elif station.agenda_item %}<c-ui.textlink href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.agenda_item.meeting_id %}">TOP {{ station.agenda_item.number }}, {{ station.agenda_item.meeting.name }} ({{ station.agenda_item.meeting.start|date:"d.m.Y" }})</c-ui.textlink>
                     {% elif station.meeting %}Noch kein TOP in der Zielsitzung <c-ui.textlink href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.meeting.id %}">{{ station.meeting.name }} ({{ station.meeting.start|date:"d.m.Y" }})</c-ui.textlink>

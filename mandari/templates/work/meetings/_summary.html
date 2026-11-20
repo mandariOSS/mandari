@@ -17,7 +17,7 @@
                 <span class="font-medium">{{ pos.agenda_item.number }}.</span>
                 <span title="{{ pos.agenda_item.name }}">{{ pos.agenda_item.name|truncatechars:60 }}</span>
                 {% if pos.outcome %}
-                <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">Ergebnis: {{ pos.get_outcome_display }}</span>
+                <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">Ergebnis: {{ pos.get_outcome_display }}</span>
                 {% endif %}
                 {% with reasoning=pos.get_reasoning_decrypted %}
                 {% if reasoning %}

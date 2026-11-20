@@ -29,7 +29,7 @@ Felder, Ziele (role_save, role_delete) und Rückfragen wie bisher; Knöpfe ohne 
                             <span class="liste-name">{{ role.name }}</span>
                             <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_admin %}Administrator · {% endif %}{% if role.is_system_role %}Standardrolle · {% endif %}{{ role.member_count }} Benutzer</span>
                         </p>
-                        {% if role.description %}<p class="ml-[1.125rem] text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ role.description|truncatechars:120 }}</p>{% endif %}
+                        {% if role.description %}<p class="ml-4.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">{{ role.description|truncatechars:120 }}</p>{% endif %}
                     </div>
                     <div class="flex items-center gap-1 text-gray-600 dark:text-gray-400">
                         <c-ui.symbolknopf href="?edit={{ role.id }}#rollen-formular" icon="pencil" titel="Bearbeiten" label="Rolle {{ role.name }} bearbeiten" />

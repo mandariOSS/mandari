@@ -367,7 +367,7 @@
                         <ul class="mt-1 space-y-0.5 max-h-[40vh] overflow-y-auto">
                             {% for t in user_tenants %}{% if t.slug != session_tenant.slug %}
                             <li><a href="{% url 'session:dashboard' tenant_slug=t.slug %}"
-                                   class="block rounded px-2 py-1 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">{{ t.name }}</a></li>
+                                   class="block rounded-sm px-2 py-1 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">{{ t.name }}</a></li>
                             {% endif %}{% endfor %}
                         </ul>
                     </details>

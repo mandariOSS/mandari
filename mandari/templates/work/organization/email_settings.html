@@ -30,7 +30,7 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Versandweg</label>
                     <select name="mail_sender_mode"
-                            class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                            class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                         <option value="mandari" {% if mail_sender_mode == "mandari" %}selected{% endif %}>mandari-Standardversand</option>
                         <option value="smtp" {% if mail_sender_mode == "smtp" %}selected{% endif %}>Eigenes SMTP der Organisation</option>
                     </select>
@@ -40,7 +40,7 @@
                     <div class="flex items-center h-6">
                         <input type="checkbox" id="smtp_fallback_to_mandari" name="smtp_fallback_to_mandari"
                                {% if smtp_fallback_to_mandari %}checked{% endif %}
-                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                               class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                     </div>
                     <div class="flex-1">
                         <label for="smtp_fallback_to_mandari" class="block text-sm font-medium text-gray-900 dark:text-white">
@@ -62,17 +62,17 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">SMTP-Server</label>
                     <input type="text" name="smtp_host" value="{{ smtp_host }}" placeholder="smtp.example.org"
-                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Port</label>
                     <input type="number" name="smtp_port" value="{{ smtp_port }}" min="1" max="65535"
-                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Benutzername</label>
                     <input type="text" name="smtp_username" value="{{ smtp_username }}" autocomplete="off"
-                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -80,13 +80,13 @@
                     </label>
                     <input type="password" name="smtp_password" value="" autocomplete="new-password"
                            placeholder="{% if smtp_password_set %}Unverändert lassen{% else %}Passwort{% endif %}"
-                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     <p class="text-xs text-gray-500 mt-1">
                         Wird verschlüsselt gespeichert und nie angezeigt. Leer lassen = unverändert.
                     </p>
                     {% if smtp_password_set %}
                     <label class="inline-flex items-center gap-2 mt-1 text-xs text-gray-500">
-                        <input type="checkbox" name="smtp_password_clear" class="w-3.5 h-3.5 rounded border-gray-300">
+                        <input type="checkbox" name="smtp_password_clear" class="w-3.5 h-3.5 rounded-sm border-gray-300">
                         Hinterlegtes Passwort löschen
                     </label>
                     {% endif %}
@@ -94,18 +94,18 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Absender-Adresse</label>
                     <input type="email" name="smtp_from_email" value="{{ smtp_from_email }}" placeholder="fraktion@example.org"
-                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Absender-Name</label>
                     <input type="text" name="smtp_from_name" value="{{ smtp_from_name }}" placeholder="{{ organization.name }}"
-                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 </div>
             </div>
 
             <div class="flex items-center gap-3 mt-4">
                 <input type="checkbox" id="smtp_use_tls" name="smtp_use_tls" {% if smtp_use_tls %}checked{% endif %}
-                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                 <label for="smtp_use_tls" class="text-sm font-medium text-gray-900 dark:text-white">TLS verwenden (STARTTLS)</label>
             </div>
         </div>
@@ -127,7 +127,7 @@
 
         <div class="flex items-center justify-end pt-2">
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                 <i data-lucide="save" class="w-4 h-4"></i>
                 Einstellungen speichern
             </button>
