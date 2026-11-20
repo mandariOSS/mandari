@@ -2162,8 +2162,10 @@ class DatabaseStorage:
         leere Liste). Ohne Markierung blieben sie als Dubletten stehen, die Beratungsfolge zeigte Phantome.
         Kommunen mit eigener Liste melden gelöschte Beratungen dort (``deleted: true``).
 
-        Die Vorlage muss ``consultation`` als Liste nennen, jeder Eintrag mit Kennung; sonst bleibt alles, wie es
-        ist (Scraper-Quellen, Vorlagen ohne die Angabe, unlesbare Einträge). Eine leere Liste markiert alle.
+        Die Vorlage muss ``consultation`` als Liste eingebetteter Objekte nennen, jedes mit Kennung; sonst bleibt
+        alles, wie es ist (Scraper-Quellen, Vorlagen ohne die Angabe, unlesbare Einträge, bloße Verweise). Ein
+        bloßer Verweis brächte keine Beratung mit, deren Upsert eine frühere Markierung aufhöbe. Eine leere Liste
+        markiert alle.
         Markiert wird wie bei ``mark_entity_deleted``: nur unmarkierte Zeilen der eigenen Quelle, Grund
         ``quelle_geloescht``; eine Rücknahme aus Datenschutzgründen bleibt unberührt. Nennt die Quelle eine solche
         Beratung später wieder, hebt ``upsert_consultation`` die Markierung auf (``_tombstone_update``).
@@ -2173,7 +2175,7 @@ class DatabaseStorage:
             return []
         external_ids: list[str] = []
         for entry in listed:
-            external_id = entry.get("id") if isinstance(entry, dict) else entry
+            external_id = entry.get("id") if isinstance(entry, dict) else None
             if not isinstance(external_id, str) or not external_id:
                 return []
             external_ids.append(external_id)

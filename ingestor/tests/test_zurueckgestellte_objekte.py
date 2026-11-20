@@ -229,6 +229,26 @@ async def test_zurueckgestellte_im_sync_log() -> None:
     assert "unstored_deferred" not in details["Ruhig"]
 
 
+async def test_zurueckgestellte_im_sync_log_des_daemons() -> None:
+    """Der Daemon schreibt das Sync-Log selbst (``SyncScheduler._write_log``); auch dort steht der Zähler."""
+    from src.scheduler import SyncScheduler
+    from src.scheduler.takt import SyncState
+
+    speicher = SpeicherMitVermerk()
+    scheduler = SyncScheduler.__new__(SyncScheduler)
+    scheduler._orchestrator = _orchestrator(speicher)
+    ergebnis = SyncResult(source_url=SOURCE, source_name="Neuss", success=True)
+    ergebnis.unstored_deferred.update({"membership": 11})
+
+    class Quelle:
+        id = UUID(int=9)
+
+    jetzt = datetime.now(UTC)
+    await scheduler._write_log(Quelle(), ergebnis, jetzt, jetzt, "scheduler", SyncState(), 0)
+
+    assert speicher.protokoll[0]["details"]["unstored_deferred"] == {"membership": 11}
+
+
 async def test_lauf_mit_luecke_zaehlt_nicht() -> None:
     """Ein Lauf mit Lücke rückt das Fenster nicht vor; er schreibt auch den Vermerk nicht fort."""
     quelle = Quelle(geaendert=datetime.now(UTC) - timedelta(minutes=40))

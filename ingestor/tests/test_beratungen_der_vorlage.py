@@ -74,8 +74,10 @@ class _Sitzung:
         # Ein Eintrag ohne Kennung: Ob eine gespeicherte Beratung gemeint ist, lässt sich nicht sagen
         [_beratung(1), {"type": f"{OPARL}Consultation"}],
         [_beratung(1), 7],
+        # Ein bloßer Verweis bringt keine Beratung mit, deren Upsert eine frühere Markierung aufhöbe
+        [_beratung(1), f"{BASE}/consultation/2"],
     ],
-    ids=["ohne_kennung", "kein_objekt"],
+    ids=["ohne_kennung", "kein_objekt", "nur_verweis"],
 )
 async def test_unlesbare_liste_markiert_nichts(beratungen: list[Any]) -> None:
     storage = DatabaseStorage(database_url="postgresql+asyncpg://nicht/benutzt", events_enabled=False)
