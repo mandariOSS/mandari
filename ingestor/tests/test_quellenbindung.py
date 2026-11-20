@@ -106,6 +106,11 @@ async def _schema(anlegen: bool) -> None:
                     "oparlpaper_id uuid NOT NULL REFERENCES oparl_papers (id)",
                     "oparllocation_id uuid NOT NULL REFERENCES oparl_locations (id)",
                 ),
+                (
+                    "oparl_legislative_terms_shared_bodies",
+                    "oparllegislativeterm_id uuid NOT NULL REFERENCES oparl_legislative_terms (id)",
+                    "oparlbody_id uuid NOT NULL REFERENCES oparl_bodies (id)",
+                ),
             ):
                 await conn.execute(
                     text(
@@ -139,7 +144,12 @@ async def speicher(schema: None, request: pytest.FixtureRequest) -> AsyncIterato
     storage._session_factory = async_sessionmaker(storage._engine, class_=AsyncSession, expire_on_commit=False)
     async with storage._engine.begin() as conn:
         tabellen = ", ".join(f'"{tabelle.name}"' for tabelle in Base.metadata.sorted_tables)
-        await conn.execute(text(f"TRUNCATE {tabellen}, oparl_meetings_organizations, oparl_papers_locations CASCADE"))
+        await conn.execute(
+            text(
+                f"TRUNCATE {tabellen}, oparl_meetings_organizations, oparl_papers_locations,"
+                " oparl_legislative_terms_shared_bodies CASCADE"
+            )
+        )
     yield storage
     await storage.close()
 
@@ -685,6 +695,26 @@ async def test_kommunen_derselben_quelle_teilen_sich_objekte(speicher: DatabaseS
     assert await speicher.mark_entity_deleted("paper", f"{B}/paper/1", body_id=gemeinde) is not None
     assert await speicher.mark_entity_deleted("agendaitem", f"{B}/agendaitem/2", body_id=gemeinde) is not None
     assert await speicher.mark_entity_deleted("membership", f"{B}/membership/2", body_id=gemeinde) is not None
+
+
+async def test_geteilte_wahlperiode_wird_mit_der_zweiten_kommune_verknuepft(speicher: DatabaseStorage) -> None:
+    """Dieselbe Wahlperiode bei Kreis und Gemeinde einer Quelle (Issue #1453): eine Zeile, die Gemeinde verknüpft."""
+    zwei = Bestand(speicher)
+    kreis = await zwei.kommune_anlegen(B, quelle=f"{B}/system", nummer=1)
+    gemeinde = await zwei.kommune_anlegen(B, quelle=f"{B}/system", nummer=2)
+    wahlperiode = objekt(B, "legislativeterm", 7, name="Wahlperiode 2025–2030")
+
+    for kommune, kennung in ((kreis, KOMMUNE_B), (gemeinde, f"{B}/body/2"), (gemeinde, f"{B}/body/2")):
+        assert await zwei.schreiben("legislativeterm", wahlperiode, kommune, kennung) is not None
+
+    zeile = await _zeile(speicher, OParlLegislativeTerm, f"{B}/legislativeterm/7")
+    assert zeile.body_id == kreis
+    verknuepft = await _anzahl(
+        speicher,
+        "SELECT array_agg(oparlbody_id) FROM oparl_legislative_terms_shared_bodies WHERE oparllegislativeterm_id = :t",
+        t=zeile.id,
+    )
+    assert verknuepft == [gemeinde], "die Gemeinde genau einmal, der Kreis nicht"
 
 
 async def test_zeile_ohne_kommune_gehoert_keiner_quelle(bestand: Bestand) -> None:

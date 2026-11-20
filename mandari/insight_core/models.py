@@ -1676,6 +1676,14 @@ class OParlLegislativeTerm(SourceDeletionModel):
     body = models.ForeignKey(
         OParlBody, on_delete=models.CASCADE, related_name="legislative_terms", blank=True, null=True
     )
+    #: Weitere Kommunen derselben Quelle, die diese Wahlperiode unter derselben Kennung nennen (Issue #1453). Die
+    #: Zeile gehört der Kommune, die sie zuerst gespeichert hat (``body``); der Ingestor verknüpft die übrigen hier.
+    shared_bodies = models.ManyToManyField(
+        OParlBody,
+        related_name="shared_legislative_terms",
+        blank=True,
+        db_table="oparl_legislative_terms_shared_bodies",
+    )
 
     name = models.CharField(max_length=255, blank=True, null=True)
     start_date = models.DateField(blank=True, null=True)
@@ -1700,6 +1708,15 @@ class OParlLegislativeTerm(SourceDeletionModel):
 
     def __str__(self):
         return self.name or f"Wahlperiode {self.id}"
+
+    @classmethod
+    def of_body(cls, body_id: Any) -> models.Q:
+        """
+        Wahlperioden einer Kommune: eigene (``body``) und geteilte (``shared_bodies``, Issue #1453). Die geteilten als
+        Unterabfrage, damit eine Wahlperiode mit mehreren Verknüpfungen nicht mehrfach erscheint.
+        """
+        geteilt = cls.shared_bodies.through.objects.filter(oparlbody_id=body_id).values("oparllegislativeterm_id")
+        return models.Q(body_id=body_id) | models.Q(id__in=geteilt)
 
     @property
     def is_current(self):

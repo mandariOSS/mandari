@@ -296,6 +296,8 @@ def prepare_bodies(queryset: QuerySet[OParlBody]) -> QuerySet[OParlBody]:
         source_full_synced_at=F("source__last_successful_full_sync"),
     ).prefetch_related(
         Prefetch("legislative_terms", queryset=OParlLegislativeTerm.objects.filter(deleted=False)),
+        # Mit anderen Kommunen der Quelle geteilte Wahlperioden (Issue #1453)
+        Prefetch("shared_legislative_terms", queryset=OParlLegislativeTerm.objects.filter(deleted=False)),
     )
 
 
@@ -696,7 +698,10 @@ class BestandMapping:
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)
-        data["legislativeTerm"] = [self.legislative_term(term) for term in body.legislative_terms.all()]
+        # Eigene und geteilte (Issue #1453): Eine Wahlperiode mit derselben Kennung bei mehreren Kommunen der Quelle
+        # gehört der, die sie zuerst gespeichert hat, und steht bei allen
+        terms = {term.id: term for term in (*body.legislative_terms.all(), *body.shared_legislative_terms.all())}
+        data["legislativeTerm"] = [self.legislative_term(term) for term in terms.values()]
         return data
 
     def legislative_term(self, term: OParlLegislativeTerm, ctx: RefContext | None = None) -> Objekt:

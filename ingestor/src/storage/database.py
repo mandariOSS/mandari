@@ -480,6 +480,9 @@ SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY: Final = "full_sync_slice_page"
 #: Schlüssel in ``OParlSource.sync_config``: Beratungen, deren Nachladen zuletzt versucht wurde (Kennung -> Zeitpunkt;
 #: Issue #1523, ``src/sync/beratungen_nachladen.py``)
 SYNC_CONFIG_CONSULTATION_FETCHES_KEY: Final = "beratungen_nachladen_versuche"
+#: Schlüssel in ``OParlSource.sync_config``: letzte Prüfung der Wahlperiodenliste je Kommune (``legislativeTermList``,
+#: Adresse -> ``checked_at`` in UTC, ISO 8601, und ``result``; ``src/sync/wahlperioden.py``, Issue #1453)
+SYNC_CONFIG_LEGISLATIVE_TERM_LISTS_KEY: Final = "legislative_term_lists"
 
 #: Beratungen, die Punkte der Sitzungen einer Kommune in einem Zeitraum nennen und die es nicht gibt (Nachladen,
 #: Issue #1523); je Beratung die früheste Sitzung
@@ -534,6 +537,18 @@ def missing_list_reasons_of(sync_config: Any) -> dict[str, str]:
         url: entry["reason"]
         for url, entry in _missing_list_entries(sync_config).items()
         if isinstance(entry, dict) and isinstance(entry.get("reason"), str) and entry["reason"]
+    }
+
+
+def legislative_term_lists_of(sync_config: Any) -> dict[str, datetime | None]:
+    """Letzte Prüfung je Wahlperiodenliste (``sync_config["legislative_term_lists"]``); ungültig: ``None``."""
+    stored = sync_config.get(SYNC_CONFIG_LEGISLATIVE_TERM_LISTS_KEY) if isinstance(sync_config, dict) else None
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        url: _utc_stamp(entry.get("checked_at") if isinstance(entry, dict) else None)
+        for url, entry in stored.items()
+        if isinstance(url, str) and url
     }
 
 
@@ -1198,6 +1213,19 @@ class DatabaseStorage:
 
         def change(sync_config: dict[str, Any]) -> bool:
             return _put_entry(sync_config, SYNC_CONFIG_MISSING_LISTS_KEY, list_url, entry)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def note_legislative_term_list(self, source_url: str, list_url: str, result: str) -> None:
+        """
+        Prüfung der Wahlperiodenliste einer Kommune vermerken: Zeitpunkt (jetzt) und Ergebnis, etwa „3 gelesen“,
+        „leer“ oder „HTTP 401“ (Issue #1453). Der Abgleich fragt die Liste danach erst wieder nach einem Tag an.
+        Unter Zeilensperre.
+        """
+        entry = {"checked_at": datetime.now(UTC).isoformat(timespec="seconds"), "result": result}
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_LEGISLATIVE_TERM_LISTS_KEY, list_url, entry)
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 
@@ -3544,9 +3572,19 @@ class DatabaseStorage:
                 index_elements=["external_id"],
                 set_=update_set,
                 where=_owned_by_source_of(OParlLegislativeTerm, body_id),
-            ).returning(OParlLegislativeTerm.id)
+            ).returning(OParlLegislativeTerm.id, OParlLegislativeTerm.body_id)
 
-            term_id = (await self._upserted(session, stmt, "legislativeterm", term.external_id))[0]
+            term_id, owner = await self._upserted(session, stmt, "legislativeterm", term.external_id)
+            if owner is not None and owner != body_id:
+                # Dieselbe Kennung bei einer weiteren Kommune der Quelle (Issue #1453): Die Zeile bleibt bei der
+                # ersten, diese Kommune wird verknüpft
+                await session.execute(
+                    text(
+                        "INSERT INTO oparl_legislative_terms_shared_bodies (oparllegislativeterm_id, oparlbody_id) "
+                        "VALUES (:term, :body) ON CONFLICT DO NOTHING"
+                    ),
+                    {"term": term_id, "body": body_id},
+                )
             if emit:
                 drafts = ris_events.legislative_term_events(term_id, term.raw_json or {}, prior)
                 await self._emit(session, body_id, drafts, term.oparl_modified)

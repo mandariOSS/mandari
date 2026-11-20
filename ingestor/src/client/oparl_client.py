@@ -790,6 +790,31 @@ class OParlClient:
         async with self._semaphore:
             return await self._fetch_with_retry(url, False, False, as_text=True)
 
+    async def fetch_optional(self, url: str) -> FetchResult:
+        """
+        Eine optionale Adresse einmal abrufen, ohne Befund am Host (Wahlperiodenliste, Issue #1453): kein
+        Schutzschalter, keine Serie von Serverfehlern, keine Vergleichsanfrage bei HTTP 403, keine Wiederholung. Takt
+        je Host, Kennung und robots.txt gelten wie beim übrigen Abruf. Antwortet die Quelle mit einem JSON-Array statt
+        einer Liste, steht das Array in ``data``.
+        """
+        if not self._client or not self._semaphore:
+            raise RuntimeError("Client not initialized. Use 'async with' context manager.")
+
+        url = self.https_upgrade(url)
+        blocked = await self._robots_blocked(url)
+        if blocked is not None:
+            return blocked
+        async with self._semaphore:
+            try:
+                return await self._do_fetch(url, False, False)
+            except httpx.HTTPStatusError as error:
+                status = error.response.status_code
+                return FetchResult(url=url, data=None, status_code=status, error=f"HTTP {status}")
+            except (httpx.RequestError, httpx.TimeoutException, ValueError) as error:
+                # ValueError: Antwort ohne gültiges JSON
+                timed_out = isinstance(error, httpx.TimeoutException)
+                return FetchResult(url=url, data=None, status_code=0, error=type(error).__name__, timed_out=timed_out)
+
     def https_upgrade(self, url: str) -> str:
         """Adresse per https://, wenn der Host jede http://-Anfrage dorthin umleitet (``https_hosts``)."""
         if url.startswith("http://"):

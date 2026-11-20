@@ -236,6 +236,24 @@ def test_mitgliedschaft_ueber_zwei_kommunen_steht_bei_beiden(welt: dict[str, Any
     assert _adresse("memberships", welt["mitgliedschaft"]) not in _kennungen(nachbar, "memberships")
 
 
+def test_geteilte_wahlperiode_steht_bei_allen_kommunen(welt: dict[str, Any], nachbar: dict[str, Any]) -> None:
+    """Dieselbe Kennung bei mehreren Kommunen der Quelle (Issue #1453): eine Zeile, bei jeder Kommune genau einmal."""
+    wahlzeit = welt["wahlzeit"]
+    dritte = OParlBody.objects.create(
+        external_id=f"{RIS}/body/3", source=welt["body"].source, name="Dorf am Rand", slug="dorf-am-rand"
+    )
+    wahlzeit.shared_bodies.add(nachbar["body"], dritte)
+    adresse = _adresse("legislativeterms", wahlzeit)
+
+    for kommune in (welt, nachbar, {"body": dritte}):
+        assert [eintrag["id"] for eintrag in _liste(kommune, "legislativeterms")].count(adresse) == 1
+        body = _json(f"/oparl/v1/body/{kommune['body'].id}")
+        assert [term["id"] for term in body["legislativeTerm"]].count(adresse) == 1
+    # Die Nachbarstadt behält ihre eigene daneben; die Wahlperiode gehört weiter der ersten Kommune
+    assert _adresse("legislativeterms", nachbar["wahlzeit"]) in _kennungen(nachbar, "legislativeterms")
+    assert _json(adresse.removeprefix(SITE))["body"] == f"{API}/body/{welt['body'].id}"
+
+
 def test_beratung_nennt_sitzung_und_tagesordnungspunkt(welt: dict[str, Any]) -> None:
     (beratung,) = _liste(welt, "consultations")
 

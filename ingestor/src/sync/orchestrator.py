@@ -78,6 +78,7 @@ from src.storage.database import (
     full_sync_progress_of,
     full_sync_resume_of,
     full_sync_slice_pages_of,
+    legislative_term_lists_of,
     missing_list_reasons_of,
     missing_lists_of,
     slice_filter_ignored_of,
@@ -110,6 +111,7 @@ from src.sync.slices import (
     slow_backoff,
     slow_windows,
 )
+from src.sync.wahlperioden import WahlperiodenListen, lies_liste
 
 if TYPE_CHECKING:
     from src.scrapers.runner import ScraperSyncRunner
@@ -1199,6 +1201,8 @@ class SyncOrchestrator:
                     url, missing_lists_of(source_config), missing_list_reasons_of(source_config)
                 )
                 timed_lists = TimedLists(url, timed_lists_of(source_config))
+                # Letzte Prüfung der Wahlperiodenlisten (Issue #1453)
+                wahlperioden = WahlperiodenListen(url, legislative_term_lists_of(source_config))
                 # Ergänzung aus Detailseiten (Issue #1431), ein Kontingent für alle Kommunen der Quelle
                 ergaenzung = self._html_ergaenzung(url, source_config, client)
                 # Namen nicht veröffentlichter Gremien aus dem öffentlichen Kalender (SessionNet, Münster): einmal
@@ -1220,6 +1224,7 @@ class SyncOrchestrator:
                                 ergaenzung=ergaenzung,
                                 resume=resume_run,
                                 kalender=kalender,
+                                wahlperioden=wahlperioden,
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
@@ -1537,9 +1542,13 @@ class SyncOrchestrator:
         ergaenzung: HtmlErgaenzung | None = None,
         resume: ResumeRun | None = None,
         kalender: KalenderLauf | None = None,
+        wahlperioden: WahlperiodenListen | None = None,
     ) -> dict[str, Any]:
         """
         Sync a single body and all its entities.
+
+        Mit ``wahlperioden``: Die Liste ``legislativeTermList`` der Kommune kommt höchstens einmal am Tag, im
+        Vollabgleich jedes Mal; ein Fehler dort ist keine Lücke (``src/sync/wahlperioden.py``, Issue #1453).
 
         Mit ``resume``: Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs (``src/sync/fortsetzung.py``).
         Listen, die der Durchgang schon ganz gelesen hat, liest der Vollabgleich nur mit ihren Änderungen seit dem
@@ -1818,6 +1827,9 @@ class SyncOrchestrator:
 
         # Beratungen, die Punkte anstehender Sitzungen nennen und die es nicht gibt, einzeln nachladen (Issue #1523)
         await self._beratungen_nachladen(client, source_id, body_id, body_external_id, body_name, stats)
+        terms_url = processed_body.legislative_term_list_url
+        if wahlperioden is not None and terms_url and "legislativeterm" not in skip_lists:
+            await self._sync_legislative_term_list(client, wahlperioden, terms_url, body_id, full, stats)
 
         if kalender is not None and "meeting" not in stats.get("incomplete", []):
             # Gremiennamen aus dem Kalender liest der Abgleich der Quelle nach allen Kommunen
@@ -2069,6 +2081,46 @@ class SyncOrchestrator:
         location_id = session_location_id(meeting_external_id)
         if location_id is not None:
             await self.storage.mark_entity_deleted("location", location_id, modified=modified, body_id=body_id)
+
+    async def _sync_legislative_term_list(
+        self,
+        client: OParlClient,
+        wahlperioden: WahlperiodenListen,
+        list_url: str,
+        body_id: UUID,
+        full: bool,
+        stats: dict[str, Any],
+    ) -> None:
+        """
+        Wahlperioden aus ``legislativeTermList`` übernehmen (Issue #1453): leise abgerufen, Löschmarken übernommen,
+        Ergebnis vermerkt. Ein Fehler zählt weder als Lücke noch als Befund am Host; der nächste Versuch kommt nach
+        einem Tag bzw. mit dem nächsten Vollabgleich.
+        """
+        if not wahlperioden.faellig(list_url, full=full):
+            return
+        try:
+            gelesen = await lies_liste(client, list_url)
+            geschrieben = 0
+            for eintrag in gelesen.eintraege:
+                try:
+                    if eintrag.get("deleted") is True:
+                        modified = self.processor.parse_datetime(eintrag.get("modified"))
+                        markiert = await self.storage.mark_entity_deleted(
+                            "legislativeterm", eintrag["id"], modified=modified, body_id=body_id
+                        )
+                        geschrieben += markiert is not None
+                    else:
+                        term = self.processor.process_legislative_term(eintrag)
+                        await self.storage.upsert_legislative_term(term, body_id)
+                        geschrieben += 1
+                except ForeignObjectError:
+                    # Kennung einer anderen Quelle: nicht geschrieben, gezählt (Sync-Log ``foreign``)
+                    continue
+            stats["legislative_terms"] = geschrieben
+            await self.storage.note_legislative_term_list(wahlperioden.source_url, list_url, gelesen.ergebnis)
+            console.print(f"[dim]  Wahlperiodenliste: {gelesen.ergebnis}, {geschrieben} übernommen[/dim]")
+        except Exception as e:  # noqa: BLE001 - optionale Liste: keine Lücke, nächster Versuch nach einem Tag
+            console.print(f"[yellow]  Wahlperiodenliste nicht übernommen ({type(e).__name__}: {e})[/yellow]")
 
     async def _sync_entity_type(
         self,
