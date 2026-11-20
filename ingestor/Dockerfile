@@ -3,9 +3,9 @@
 # Optimized for faster builds with better caching
 
 # uv mit fester Version (Dependabot hebt sie wie die Python-Basis)
-FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.9 AS uv
 
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -50,7 +50,7 @@ RUN --network=none /opt/build-backend/bin/pip wheel --no-cache-dir --no-deps --n
     && uv pip install --system --no-deps --no-index /tmp/wheels/*.whl
 
 # --- Final stage ---
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
