@@ -98,6 +98,28 @@ def test_beratungsverlauf_chronologisch_ohne_zurueckgenommene(body: OParlBody) -
     assert ris.consultation_history(OParlPaper.objects.create(external_id=_kennung("papers"), body=body)) == []
 
 
+def test_beratungsverlauf_ohne_in_der_quelle_geloeschte_beratungen(body: OParlBody) -> None:
+    """
+    more! rubin legt bei jeder Änderung einer Vorlage alle Beratungen unter neuen Kennungen an; der Ingestor markiert
+    die alten als in der Quelle gelöscht. Sie sind kein Schritt der Beratungsfolge, weder in Insight noch in Work.
+    """
+    from apps.work.meetings.selectors import resolve_consultations
+
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Radweg")
+    rat, punkt_rat = _sitzung(body, 5, "Rat")
+    aktuell = _beratung(vorlage, rat, punkt_rat, role="Entscheidung")
+    for _ in range(3):
+        alt = _beratung(vorlage, rat, punkt_rat, role="Entscheidung")
+        alt.mark_deleted()
+        assert alt.deletion_reason == "quelle_geloescht"
+
+    verlauf = ris.consultation_history(vorlage)
+    assert [e["consultation"] for e in verlauf] == [aktuell]
+    assert len(resolve_consultations({vorlage.pk}, rat)[vorlage.pk]) == 1
+    # Die Vorlage bleibt am Tagesordnungspunkt auffindbar, auch über eine ältere Zeile
+    assert ris.papers_of_agenda_items([punkt_rat]) == {punkt_rat.pk: [vorlage]}
+
+
 def test_punkte_je_vorlage_und_vorlagen_je_punkt(body: OParlBody) -> None:
     eins = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Eins", reference="V/1")
     zwei = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Zwei", reference="V/2")

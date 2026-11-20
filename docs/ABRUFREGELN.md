@@ -558,6 +558,12 @@ Inkrementelle Läufe fragen jede Liste mit `modified_since` ab (`ingestor/src/sy
   höchstens bis zu ihrem ältesten `modified` vor, ohne lesbares `modified` gar nicht (`BodyItemCheck.window_start`).
   Der nächste Lauf fragt diese Objekte also wieder ab. Ausgenommen sind Objekte, die die Quelle trotz Filter liefert
   (`modified` mehr als einen Tag vor dem Fenster); sie halten das Fenster nicht.
+- **Zurückgestellte Objekte:** Ein Objekt, das das Fenster seit mindestens vier vollständigen Läufen und zwölf
+  Stunden hält, ist zurückgestellt (`settle_unstored_holds`): Es hält das Fenster nicht mehr, das Log nennt es
+  („Zurückgestellt …“), das Sync-Log zählt es je Typ unter `unstored_deferred`. Verloren geht es nicht: Der nächste
+  Vollabgleich und jede Änderung an der Quelle liefern es wieder, und gespeichert wird es, sobald sich seine Verweise
+  auflösen lassen. Anlass waren Mitgliedschaften mit Personen, die die Quelle nicht veröffentlicht; sie hielten das
+  Fenster einer Kommune eine Woche lang fest. Den Stand hält `sync_config["unstored_holds"]`.
 - **Format:** Parameter `modified_since` mit Zeitzone, auf die Sekunde, etwa `2026-10-15T06:00:00+00:00` (in der
   Adresse prozentkodiert; `ingestor/src/client/oparl_client.py`, `_append_modified_since`). Beispiel: Begann der
   letzte vollständige Abgleich am 15.10.2026 um 08:00:00 UTC, fragt der nächste Lauf eine Liste mit Uhrzeiten nach
@@ -995,6 +1001,7 @@ Befund zurückzusetzen:
 |---|---|
 | `sync_state` | Takt der Quelle: nächster fälliger Lauf (`next_due`), Läufe ohne Änderung in Folge (`idle_runs`), Abstand und Art des Grundtakts (`interval_minutes`, `base_minutes`, `period`), letzter Lauf und seine Änderungen (`last_run`, `last_changes`), Beginn des letzten Vollabgleichs (`full_attempted`), Grund für einen späteren nächsten Lauf (`reason`, `abruffenster`); Zeitpunkte in UTC. Löschen macht die Quelle sofort fällig und erlaubt einen Vollabgleich im laufenden Fenster |
 | `body_sync_started` | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (UTC), Anfang des Änderungsfensters; nach nicht gespeicherten Objekten höchstens deren ältestes `modified`. Löschen setzt das Änderungsfenster auf sieben Tage zurück |
+| `unstored_holds` | Nicht gespeicherte Objekte, die das Änderungsfenster halten oder zurückgestellt sind, je Kommune (Kennung der Kommune → Kennung des Objekts → `type`, erster Lauf ohne Speichern `since`, letzter `seen`, Läufe `runs`, zurückgestellt seit `deferred`; Zeitpunkte UTC). Zurückgestellte bleiben 30 Tage nach dem letzten Lauf vermerkt, der sie nicht speichern konnte. Löschen setzt die Zählung zurück: Objekte, die ein Lauf erneut liefert, halten das Fenster wieder, bis sie erneut zurückgestellt sind. `body_sync_started` bleibt dabei stehen; Objekte, die schon vor dem Fenster liegen, prüft erst der nächste Vollabgleich wieder |
 | `timed_lists` | Listen, deren `modified` nachweislich eine Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC); nur sie bekommen das kurze Fenster. Löschen lässt die Listen ab Tagesbeginn laufen, bis ein Lauf die Uhrzeit wieder nachweist |
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, und Listen, die sie nicht freigibt (HTTP 403 für alle), mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
 | `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |

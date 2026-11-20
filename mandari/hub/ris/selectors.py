@@ -690,11 +690,13 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
     ``date``, ``organization_name``, ``organization_count``, ``agenda_number``, ``result``, ``public``, ``role`` und
     ``authoritative``. Beratungen ohne bekannte Sitzung stehen an der Stelle von „jetzt“ (zwischen vergangenen und
     kommenden). Zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte fehlen – wie in der Session-OParl-API,
-    die solche Verweise auslässt. Höchstens vier Abfragen.
+    die solche Verweise auslässt. In der Quelle gelöschte Beratungen fehlen ebenfalls: Eine Beratung, die es nicht mehr
+    gibt, ist kein Schritt der Beratungsfolge (more! rubin legt sie bei jeder Änderung der Vorlage neu an, der
+    Ingestor markiert die alten). Höchstens vier Abfragen.
 
     Grundlage der Vorgangsseiten von Insight und Work (Issue #853, vorher je eine eigene Abfrage).
     """
-    consultations = list(with_reference_checks(OParlConsultation.objects.filter(paper=paper).exclude(withdrawn_q())))
+    consultations = list(with_reference_checks(OParlConsultation.objects.filter(paper=paper, deleted=False)))
     if not consultations:
         return []
     meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]

@@ -886,6 +886,9 @@ class SyncScheduler:
         }
         if result.unstored:
             details["unstored"] = dict(sorted(result.unstored.items()))
+        # Davon zurückgestellt: halten das Änderungsfenster nicht mehr (``settle_unstored_holds``, Issue #1528)
+        if result.unstored_deferred:
+            details["unstored_deferred"] = dict(sorted(result.unstored_deferred.items()))
         # Kennungen anderer Quellen, die der Abgleich abgewiesen hat (nichts davon geschrieben)
         if result.foreign:
             details["foreign"] = dict(sorted(result.foreign.items()))

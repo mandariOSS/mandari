@@ -12,7 +12,7 @@ Coordinates the complete OParl synchronization process with:
 
 import asyncio
 from collections import Counter
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -380,6 +380,17 @@ UNSTORED_IDS_LOGGED = 5
 #: Ein nicht gespeichertes Objekt, dessen ``modified`` so weit vor dem Fenster der Liste liegt, liefert die Quelle
 #: ohne Filter. Der Abstand fängt falsch angegebene Zeitzonen ab (höchstens 14 Stunden).
 UNSTORED_BEFORE_WINDOW = timedelta(days=1)
+#: Ein nicht gespeichertes Objekt hält das Änderungsfenster höchstens so viele Läufe ...
+UNSTORED_HOLD_RUNS = 4
+#: ... und mindestens so lange; danach ist es zurückgestellt (``settle_unstored_holds``)
+UNSTORED_HOLD_MIN = timedelta(hours=12)
+#: Zurückgestellte Objekte bleiben so lange nach dem letzten Lauf vermerkt, der sie nicht speichern konnte
+UNSTORED_DEFERRED_KEEP = timedelta(days=30)
+#: Höchstens so viele haltende Objekte je Kommune und Lauf verfolgt der Ingestor einzeln; weitere halten das Fenster
+#: wie bisher, ohne Zurückstellung
+UNSTORED_TRACKED_MAX = 200
+#: Höchstens so viele Einträge je Kommune in ``sync_config["unstored_holds"]`` (die zuletzt gesehenen bleiben)
+UNSTORED_HOLDS_MAX = 500
 
 
 @dataclass
@@ -399,6 +410,12 @@ class BodyItemCheck:
     Bezirksregierung Köln). Sie kommen in jedem Lauf wieder; dauerhaft nicht speicherbare unter ihnen (Mitgliedschaft
     mit Person einer anderen Quelle) hielten das Fenster sonst für immer bei sieben Tagen.
 
+    Die übrigen haltenden Objekte stehen mit Kennung in ``holding``. Hält eines das Fenster seit mindestens
+    ``UNSTORED_HOLD_RUNS`` Läufen und ``UNSTORED_HOLD_MIN``, stellt der Lauf es zurück (``settle_unstored_holds``):
+    Es hält das Fenster nicht mehr, Log und Sync-Log nennen es. Mönchengladbach (ITK Rheinland) nennt in elf
+    Mitgliedschaften Personen, die die Quelle nicht veröffentlicht (Einzelabruf HTTP 404); sie hielten das Fenster
+    der Kommune seit dem 13.11.2026 fest.
+
     Dazu je Liste, wie genau ``modified`` der Änderungen der letzten sieben Tage ist (``TimedLists``).
     """
 
@@ -415,6 +432,13 @@ class BodyItemCheck:
     oldest_unstored: datetime | None = None
     #: Ein nicht gespeichertes Objekt hatte kein lesbares ``modified``
     unstored_without_stamp: bool = False
+    #: Haltende Objekte mit Kennung: Kennung -> (Typ, ``modified`` in UTC oder ``None``), höchstens
+    #: ``UNSTORED_TRACKED_MAX``; nur sie kann ein Lauf zurückstellen
+    holding: dict[str, tuple[str, datetime | None]] = field(default_factory=dict)
+    #: Ältestes ``modified`` der haltenden Objekte ohne Kennung oder über der Grenze (UTC)
+    oldest_untracked: datetime | None = None
+    #: Ein haltendes Objekt ohne Kennung oder über der Grenze hatte kein lesbares ``modified``
+    untracked_without_stamp: bool = False
     #: ``modified`` je Liste (Adresse): [nur Datum, mit Uhrzeit]
     stamps: dict[str, list[int]] = field(default_factory=dict)
 
@@ -434,20 +458,31 @@ class BodyItemCheck:
         """
         self.unstored[entity_type] += 1
         record = item if isinstance(item, dict) else {}
+        raw_id = record.get("id")
+        external_id = raw_id if isinstance(raw_id, str) and raw_id else None
         ids = self.unstored_ids.setdefault(entity_type, [])
         if len(ids) < UNSTORED_IDS_LOGGED:
-            external_id = record.get("id")
-            ids.append(external_id if isinstance(external_id, str) and external_id else "ohne Kennung")
+            ids.append(external_id or "ohne Kennung")
         stamp = _stamp(record.get("modified"))
+        if stamp is not None:
+            stamp = _as_utc(stamp)
+            if window is not None and stamp < _as_utc(window) - UNSTORED_BEFORE_WINDOW:
+                self.unstored_before_window += 1
+                return
+        # Das Objekt hält das Fenster
         if stamp is None:
             self.unstored_without_stamp = True
-            return
-        stamp = _as_utc(stamp)
-        if window is not None and stamp < _as_utc(window) - UNSTORED_BEFORE_WINDOW:
-            self.unstored_before_window += 1
-            return
-        if self.oldest_unstored is None or stamp < self.oldest_unstored:
+        elif self.oldest_unstored is None or stamp < self.oldest_unstored:
             self.oldest_unstored = stamp
+        if external_id is not None and (external_id in self.holding or len(self.holding) < UNSTORED_TRACKED_MAX):
+            earlier = self.holding.get(external_id)
+            if earlier is not None and (earlier[1] is None or (stamp is not None and earlier[1] <= stamp)):
+                return  # Dieselbe Kennung zweimal: Es gilt der Stand, der das Fenster weiter zurück hält
+            self.holding[external_id] = (entity_type, stamp)
+        elif stamp is None:
+            self.untracked_without_stamp = True
+        elif self.oldest_untracked is None or stamp < self.oldest_untracked:
+            self.oldest_untracked = stamp
 
     def day_stamped_lists(self) -> list[str]:
         """Listen mit mindestens einer gelesenen Änderung, deren ``modified`` nur das Datum trägt."""
@@ -457,16 +492,79 @@ class BodyItemCheck:
         """Listen, deren gelesene Änderungen alle eine Uhrzeit tragen."""
         return sorted(url for url, (day, timed) in self.stamps.items() if timed and not day)
 
-    def window_start(self, started: datetime) -> datetime | None:
+    def window_start(self, started: datetime, deferred: Iterable[str] = ()) -> datetime | None:
         """
         Neuer Anfang des Änderungsfensters nach einem Lauf, dessen Listen ganz gelesen wurden: Beginn des Laufs,
-        bei nicht gespeicherten Objekten höchstens ihr ältestes ``modified``; ``None`` = stehen lassen.
+        bei nicht gespeicherten Objekten höchstens ihr ältestes ``modified``; ``None`` = stehen lassen. Objekte in
+        ``deferred`` (Kennungen, zurückgestellt) halten das Fenster nicht.
         """
-        if self.unstored_without_stamp:
+        skipped = set(deferred)
+        if self.untracked_without_stamp:
             return None
-        if self.oldest_unstored is None:
-            return started
-        return min(started, self.oldest_unstored)
+        stamps = [self.oldest_untracked] if self.oldest_untracked is not None else []
+        for external_id, (_entity_type, stamp) in self.holding.items():
+            if external_id in skipped:
+                continue
+            if stamp is None:
+                return None
+            stamps.append(stamp)
+        return min([started, *stamps])
+
+
+def _iso(stamp: datetime) -> str:
+    return _as_utc(stamp).isoformat(timespec="seconds")
+
+
+def _entry_stamp(entry: Mapping[str, Any], key: str) -> datetime | None:
+    stamp = _stamp(entry.get(key))
+    return _as_utc(stamp) if stamp is not None else None
+
+
+def settle_unstored_holds(
+    known: Mapping[str, Mapping[str, Any]], holding: Mapping[str, tuple[str, datetime | None]], now: datetime
+) -> tuple[dict[str, dict[str, Any]], set[str], set[str]]:
+    """
+    Vermerk der nicht gespeicherten Objekte einer Kommune nach einem vollständigen Lauf fortschreiben
+    (``sync_config["unstored_holds"]``, Kennung -> ``type``, ``since``, ``seen``, ``runs``, ``deferred``).
+
+    - Ein haltendes Objekt zählt einen Lauf mehr (``runs``), ``since`` bleibt der erste Lauf, der es nicht speichern
+      konnte. Ab ``UNSTORED_HOLD_RUNS`` Läufen und ``UNSTORED_HOLD_MIN`` seit ``since`` ist es zurückgestellt
+      (``deferred``) und hält das Fenster nicht mehr, auch nicht in späteren Läufen (etwa im nächsten Vollabgleich).
+    - Ein zurückgestelltes Objekt, das kein Lauf mehr sieht, bleibt ``UNSTORED_DEFERRED_KEEP`` nach dem letzten Mal
+      vermerkt; übrige nicht mehr gesehene fallen weg (gespeichert oder nicht mehr geliefert).
+
+    Nichts geht verloren: Die Quelle liefert ein zurückgestelltes Objekt im nächsten Vollabgleich wieder, ebenso
+    nach jeder Änderung, und dann wird es gespeichert, sobald sich seine Verweise auflösen lassen.
+
+    Rückgabe: neuer Vermerk, zurückgestellte Kennungen unter den haltenden, davon in diesem Lauf neu zurückgestellte.
+    """
+    entries: dict[str, dict[str, Any]] = {}
+    deferred: set[str] = set()
+    newly: set[str] = set()
+    for external_id, (entity_type, _modified) in holding.items():
+        prior = known.get(external_id) or {}
+        since = _entry_stamp(prior, "since") or now
+        runs = prior.get("runs")
+        runs = (runs if isinstance(runs, int) and not isinstance(runs, bool) and runs > 0 else 0) + 1
+        entry: dict[str, Any] = {"type": entity_type, "since": _iso(since), "seen": _iso(now), "runs": runs}
+        deferred_at = _entry_stamp(prior, "deferred")
+        if deferred_at is None and runs >= UNSTORED_HOLD_RUNS and now - since >= UNSTORED_HOLD_MIN:
+            deferred_at = now
+            newly.add(external_id)
+        if deferred_at is not None:
+            entry["deferred"] = _iso(deferred_at)
+            deferred.add(external_id)
+        entries[external_id] = entry
+    for external_id, prior in known.items():
+        if external_id in entries or _entry_stamp(prior, "deferred") is None:
+            continue
+        seen = _entry_stamp(prior, "seen")
+        if seen is not None and now - seen <= UNSTORED_DEFERRED_KEEP:
+            entries[external_id] = dict(prior)
+    if len(entries) > UNSTORED_HOLDS_MAX:
+        latest = sorted(entries, key=lambda key: str(entries[key].get("seen") or ""), reverse=True)
+        entries = {key: entries[key] for key in latest[:UNSTORED_HOLDS_MAX]}
+    return entries, deferred, newly
 
 
 # Anzeigetexte der Fehlerklassen (Schonungsmeldung in sync_all, Status in list-sources)
@@ -560,6 +658,9 @@ class SyncResult:
     host_findings: list[dict[str, Any]] = field(default_factory=list)
     # Gelesen, aber nicht gespeichert, je Typ über alle Kommunen (Issue #1025), im Sync-Log unter ``unstored``
     unstored: Counter[str] = field(default_factory=Counter)
+    # Davon zurückgestellt, sie halten das Änderungsfenster nicht mehr (``settle_unstored_holds``), im Sync-Log unter
+    # ``unstored_deferred``
+    unstored_deferred: Counter[str] = field(default_factory=Counter)
     # Abgewiesene Kennungen anderer Quellen je Art über alle Kommunen (Upsert, Löschung, Verweis), im Sync-Log unter
     # ``foreign`` (``start_foreign_rejections``)
     foreign: Counter[str] = field(default_factory=Counter)
@@ -1121,6 +1222,7 @@ class SyncOrchestrator:
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
                     result.unstored.update(body_result.get("unstored") or {})
+                    result.unstored_deferred.update(body_result.get("unstored_deferred") or {})
                     result.foreign.update(body_result.get("foreign") or {})
                     result.unresolved.update(body_result.get("unresolved") or {})
                     merge_slice_details(result.slice_details, body_result)
@@ -2939,11 +3041,12 @@ class SyncOrchestrator:
         - Lücke in einer Liste: stehen lassen.
         - Nicht gespeicherte Objekte: höchstens bis zu ihrem ältesten ``modified``, ohne lesbares ``modified`` gar
           nicht; der nächste Lauf fragt sie so wieder ab. Ausgenommen sind Objekte, die die Quelle trotz Filter
-          liefert (``BodyItemCheck``).
+          liefert (``BodyItemCheck``), und zurückgestellte (``settle_unstored_holds``).
         - Sonst: Beginn dieses Laufs.
 
         Nicht gespeicherte Objekte nennt das Log je Typ mit Anzahl und bis zu fünf Kennungen; je Quelle stehen sie
-        im Sync-Log unter ``unstored``. So fallen dauerhaft nicht speicherbare Objekte auf, die das Fenster halten.
+        im Sync-Log unter ``unstored``, zurückgestellte zusätzlich unter ``unstored_deferred``. So fallen dauerhaft
+        nicht speicherbare Objekte auf.
         """
         if item_check.unstored:
             stats["unstored"] = dict(sorted(item_check.unstored.items()))
@@ -2959,13 +3062,50 @@ class SyncOrchestrator:
                 console.print(f"[yellow]    {name}: {', '.join(ids)}{more}[/yellow]")
         if stats["incomplete"]:
             return
-        start = item_check.window_start(body_started)
+        deferred = await self._settle_unstored_holds(source_id, body_external_id, item_check, stats)
+        start = item_check.window_start(body_started, deferred)
         if start is None:
             return
         try:
             await self.storage.set_body_sync_started(source_id, body_external_id, start)
         except Exception as e:  # noqa: BLE001 - dann gilt beim nächsten Mal der bisherige Zeitpunkt
             console.print(f"[yellow]  Anfang des Änderungsfensters nicht gespeichert: {e}[/yellow]")
+
+    async def _settle_unstored_holds(
+        self, source_id: UUID, body_external_id: str, item_check: BodyItemCheck, stats: dict[str, Any]
+    ) -> set[str]:
+        """
+        Nicht gespeicherte Objekte, die das Fenster seit mehreren Läufen halten, zurückstellen und melden
+        (``settle_unstored_holds``, Vermerk in ``sync_config["unstored_holds"]``). Liefert die Kennungen, die das
+        Fenster in diesem Lauf nicht mehr halten. Fehler gefährden den Abgleich nie: Ohne Vermerk halten alle nicht
+        gespeicherten Objekte das Fenster wie bisher.
+        """
+        try:
+            known = await self.storage.get_unstored_holds(source_id, body_external_id)
+        except Exception as e:  # noqa: BLE001 - ohne Vermerk hält jedes Objekt das Fenster wie bisher
+            console.print(f"[yellow]  Vermerk nicht gespeicherter Objekte nicht lesbar: {e}[/yellow]")
+            return set()
+        if not known and not item_check.holding:
+            return set()
+        entries, deferred, newly = settle_unstored_holds(known, item_check.holding, datetime.now(UTC))
+        if entries != known:
+            try:
+                await self.storage.set_unstored_holds(source_id, body_external_id, entries)
+            except Exception as e:  # noqa: BLE001 - ohne Vermerk zählt der nächste Lauf weiter ab dem alten Stand
+                console.print(f"[yellow]  Vermerk nicht gespeicherter Objekte nicht gespeichert: {e}[/yellow]")
+                return set()
+        if deferred:
+            by_type = Counter(item_check.holding[external_id][0] for external_id in deferred)
+            stats["unstored_deferred"] = dict(sorted(by_type.items()))
+            summary = ", ".join(f"{name}: {count}" for name, count in sorted(by_type.items()))
+            console.print(
+                f"[yellow]  Zurückgestellt ({summary}): seit mindestens {UNSTORED_HOLD_RUNS} Läufen nicht "
+                "speicherbar, sie halten das Fenster nicht mehr; der nächste Vollabgleich versucht sie wieder[/yellow]"
+            )
+            for external_id in sorted(newly)[:UNSTORED_IDS_LOGGED]:
+                entry = entries[external_id]
+                console.print(f"[yellow]    neu zurückgestellt: {external_id} (seit {entry['since']})[/yellow]")
+        return deferred
 
     async def _settle_timed_lists(
         self, timed_lists: TimedLists, item_check: BodyItemCheck, stats: dict[str, Any]
@@ -3285,6 +3425,11 @@ class SyncOrchestrator:
                 "files": result.files_synced,
                 **self._finding_details(result),
                 **({"unstored": dict(sorted(result.unstored.items()))} if result.unstored else {}),
+                **(
+                    {"unstored_deferred": dict(sorted(result.unstored_deferred.items()))}
+                    if result.unstored_deferred
+                    else {}
+                ),
                 **({"foreign": dict(sorted(result.foreign.items()))} if result.foreign else {}),
                 **({"unresolved": dict(sorted(result.unresolved.items()))} if result.unresolved else {}),
                 **result.slice_details,

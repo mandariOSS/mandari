@@ -673,11 +673,14 @@ def _file_annotation_counts(organization: Organization, papers_by_item: dict[Any
 
 
 def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) -> dict[Any, list[dict[str, Any]]]:
-    """Löst je Vorlage die konkrete Beratungsfolge auf: welches Gremium berät wann (mit Sitzungs-Link)."""
+    """
+    Löst je Vorlage die konkrete Beratungsfolge auf: welches Gremium berät wann (mit Sitzungs-Link). Gelöschte und
+    zurückgenommene Beratungen zählen nicht, wie in ``ris.consultation_history``.
+    """
     if not paper_ids:
         return {}
 
-    consults = list(ris.with_reference_checks(OParlConsultation.objects.filter(paper_id__in=paper_ids)))
+    consults = list(ris.with_reference_checks(OParlConsultation.objects.filter(paper_id__in=paper_ids, deleted=False)))
     meeting_ext_ids = {c.meeting_external_id for c in consults if c.meeting_external_id}
     meetings_by_ext = {
         m.external_id: m
