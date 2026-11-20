@@ -19,7 +19,7 @@ from unittest import mock
 
 import pytest
 from pypdf import PageObject, PdfReader, PdfWriter
-from pypdf.generic import ArrayObject, DecodedStreamObject, NameObject, RectangleObject
+from pypdf.generic import ArrayObject, DecodedStreamObject, FloatObject, NameObject, RectangleObject
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
@@ -84,11 +84,12 @@ def test_jede_seite_hat_briefkopf_und_nur_ihren_eigenen_inhalt() -> None:
 
 
 def test_seitenformat_kommt_vom_briefkopf() -> None:
-    """Auch ein Briefkopf, dessen Seite nicht bei null beginnt, bleibt mit seinem Format und Ausschnitt erhalten."""
+    """Format, Ausschnitt und Seiteneinheit des Briefkopfs bleiben, auch wenn seine Seite nicht bei null beginnt."""
     writer = PdfWriter()
     writer.append(PdfReader(io.BytesIO(_seite("Fraktion im Rat der Stadt"))))
     writer.pages[0].mediabox = RectangleObject([10, 20, 605, 862])
     writer.pages[0].cropbox = RectangleObject([20, 30, 595, 852])
+    writer.pages[0][NameObject("/UserUnit")] = FloatObject(2.5)
     puffer = io.BytesIO()
     writer.write(puffer)
 
@@ -96,6 +97,7 @@ def test_seitenformat_kommt_vom_briefkopf() -> None:
 
     assert [float(wert) for wert in ergebnis.mediabox] == [10, 20, 605, 862]
     assert [float(wert) for wert in ergebnis.cropbox] == [20, 30, 595, 852]
+    assert float(ergebnis["/UserUnit"]) == 2.5
     assert "Fraktion im Rat der Stadt" in ergebnis.extract_text()
 
 

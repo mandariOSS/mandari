@@ -228,6 +228,7 @@ def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
     """
     try:
         from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import FloatObject, NameObject
 
         # Aus der Ablage lesen, bevor die Sperre gilt: Ein langsamer Abruf (Objektspeicher) hielte sonst die Exporte
         # aller anderen im selben Prozess auf. Unter der Sperre steht nur noch das Zusammenführen im Speicher.
@@ -256,6 +257,8 @@ def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
                 new_page.cropbox = letterhead_page.cropbox
                 if letterhead_page.rotation:
                     new_page.rotation = letterhead_page.rotation
+                if "/UserUnit" in letterhead_page:
+                    new_page[NameObject("/UserUnit")] = FloatObject(float(letterhead_page["/UserUnit"]))
                 new_page.merge_page(letterhead_page)
                 new_page.merge_page(content_page)
 
