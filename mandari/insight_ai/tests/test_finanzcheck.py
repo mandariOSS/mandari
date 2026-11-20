@@ -91,13 +91,6 @@ ANTWORT: dict[str, Any] = {
     "im_haushalt_beleg": "Produktgruppen nur teilweise veranschlagt",
     "deckung": "umschichtung",
     "deckung_beleg": 'aus der Investitionsmaßnahme 0007 ,,Verkehrsflächen, Neubau und Erneuerung" bereitgestellt',
-    "hinweise": [
-        {
-            "text": "Die Bauzeit beträgt voraussichtlich 42 Monate.",
-            "beleg": "Die Bauzeit wird voraussichtlich 42 Monate betragen.",
-        },
-        {"text": "Die Stadt rechnet mit 99 neuen Stellplätzen.", "beleg": "Die Bauzeit wird voraussichtlich 42"},
-    ],
 }
 
 
@@ -138,8 +131,8 @@ class TestPruefung:
         assert daten["foerderung_stand"] == "beantragt" and daten["im_haushalt"] == "teilweise"
         assert [z["jahr"] for z in daten["zahlungen"]] == [2028, 2029, 2030, 2031]
         assert len(daten["laufend"]) == 4 and daten["nutzungsdauer"]["jahre"] == 40
-        # Der zweite Hinweis nennt eine Zahl, die nirgends steht: Er entfällt
-        assert [h["text"] for h in daten["hinweise"]] == ["Die Bauzeit beträgt voraussichtlich 42 Monate."]
+        # Hinweise der KI entfallen: Sie wären ungeprüfter Text
+        assert "hinweise" not in daten
 
     def test_erfundene_fundstelle_verwirft_alles(self) -> None:
         antwort = _antwort(gesamtkosten={"euro": 9800000, "beleg": "Baukosten in Höhe von ca. 9.800.000 €"})
@@ -595,3 +588,120 @@ def test_karten_fuer_die_seitenleiste() -> None:
     ]
     assert karten.jaehrlich_wofuer == "Unterhalt, Wertverlust und Zinsen" and karten.nutzungsdauer == 40
     assert karten.hinweis == "Das Geld ist erst teilweise im Haushalt eingeplant."
+
+
+class TestBefundeCodeRabbit3:
+    """CodeRabbit zu PR #1526: engere Prüfung von Einheit, Feld, Einordnung und „keine Kosten“."""
+
+    LEER: dict[str, Any] = {
+        "foerderung": None,
+        "eigenanteil": None,
+        "laufend": [],
+        "zahlungen": [],
+        "laufend_gesamt": None,
+    }
+
+    def test_keine_kosten_nur_als_feste_wendung_ohne_zahl(self) -> None:
+        text = "Es entstehen keine zusätzlichen Mittel; die Kosten betragen 20.000 Euro."
+        antwort = _antwort(finanzen="keine_kosten", keine_kosten_beleg=text)
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_KEINE
+        text = "Finanzielle Auswirkungen: keine"
+        antwort = _antwort(finanzen="keine_kosten", keine_kosten_beleg=text)
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_OK
+
+    def test_keine_kosten_ohne_ki(self) -> None:
+        ergebnis = finanzcheck._ohne_ki("Finanzielle Auswirkungen:\nEs entstehen der Stadt keine Kosten.\nBegründung")
+        assert ergebnis.status == finanzcheck.STATUS_OK and ergebnis.grund == finanzcheck.OHNE_KI
+        assert ergebnis.daten["keine_kosten_beleg"] == "Es entstehen der Stadt keine Kosten"
+        assert finanzcheck._ohne_ki("Der Rat nimmt den Bericht zur Kenntnis.").status == finanzcheck.STATUS_KEINE
+
+    def test_waehrung_der_ki_zaehlt_nicht(self) -> None:
+        text = "Kostenplan in T€\nBaukosten 1.200\n"
+        antwort = _antwort(gesamtkosten={"euro": 1200, "beleg": "Baukosten 1.200 €"}, **self.LEER)
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
+        antwort = _antwort(gesamtkosten={"euro": 1200000, "beleg": "Baukosten 1.200 €"}, **self.LEER)
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_OK
+
+    def test_einheit_aus_dem_naechsten_tabellenkopf(self) -> None:
+        text = "Übersicht in T€\nPlanung 500\nKostenaufstellung in Euro\nBaukosten 1.200.000\n"
+        antwort = _antwort(gesamtkosten={"euro": 1200000, "beleg": "Baukosten 1.200.000"}, **self.LEER)
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_OK
+        # „500 T€“ hinter einer Zahl ist kein Tabellenkopf
+        text = "Die Planung kostet rund 500 T€.\nBaukosten 1.200.000\n"
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_OK
+        # Kein Kopf davor, „T€“ erst weiter unten: Einheit offen
+        text = "Baukosten 1.200.000\nTabelle in T€\nPlanung 500\n"
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
+
+    def test_betrag_braucht_passendes_wort(self) -> None:
+        text = "Das Land gibt Zuwendungen in Höhe von 4.650.000 €.\n"
+        antwort = _antwort(gesamtkosten={"euro": 4650000, "beleg": "Zuwendungen in Höhe von 4.650.000 €"}, **self.LEER)
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
+
+    def test_einordnung_braucht_passenden_wortlaut(self) -> None:
+        text = DOKUMENT + "Der Förderbescheid liegt noch nicht vor.\n"
+        for beleg in (
+            "Der Förderbescheid liegt noch nicht vor.",
+            "Für die Maßnahme werden Fördermittel nach den Förderrichtlinien Nahmobilität bzw. kommunaler "
+            "Straßenbau beantragt.",
+        ):
+            antwort = _antwort(foerderung_stand="zugesagt", foerderung_stand_beleg=beleg)
+            daten = finanzcheck.pruefen(antwort, text).daten
+            assert daten["foerderung_stand"] == "unklar" and daten["foerderung_stand_beleg"] == ""
+        daten = finanzcheck.pruefen(ANTWORT, DOKUMENT).daten
+        assert (daten["foerderung_stand"], daten["im_haushalt"], daten["deckung"]) == (
+            "beantragt",
+            "teilweise",
+            "umschichtung",
+        )
+
+    def test_balken_nur_wenn_foerderung_in_die_kosten_passt(self) -> None:
+        daten = {
+            "finanzen": "kosten",
+            "gesamtkosten": {"euro": 1000000, "beleg": ""},
+            "foerderung": {"euro": 1005000, "beleg": ""},
+            "eigenanteil": {"euro": 0, "beleg": ""},
+            "zahlungen": [{"jahr": 2028, "euro": 1000000, "richtung": "ausgabe", "beleg": ""}],
+        }
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and anzeige.karten is not None
+        assert anzeige.karten.anteil_foerderung is None
+        # Ein Zahlungsjahr: keine Säulen, das Jahr steht als Text in der Karte
+        assert anzeige.karten.balken == [] and anzeige.karten.zeitraum == "Gezahlt 2028"
+
+    def test_vorgang_gesperrt_kein_zweiter_aufruf(self) -> None:
+        from django.core.cache import cache
+
+        vorgang = _vorgang(_kommune(), text=DOKUMENT)
+        anbieter = _Anbieter(ANTWORT)
+        cache.add(f"insight:finanzcheck:sperre:{vorgang.pk}", 1, 60)
+        try:
+            assert finanzcheck.erstellen(vorgang, provider=anbieter) is None and anbieter.aufrufe == []
+        finally:
+            cache.delete(f"insight:finanzcheck:sperre:{vorgang.pk}")
+        assert finanzcheck.erstellen(vorgang, provider=anbieter) is not None and len(anbieter.aufrufe) == 1
+
+    def test_verschobene_anlage_verwirft(self) -> None:
+        kommune = _kommune()
+        vorgang = _vorgang(kommune, text=DOKUMENT)
+        anderer = _vorgang(kommune, text=None)
+
+        class _Verschieber(_Anbieter):
+            def chat_completion(self, *args: Any, **kwargs: Any) -> Any:
+                vorgang.files.update(paper=anderer)
+                return super().chat_completion(*args, **kwargs)
+
+        finanzcheck.erstellen(vorgang, provider=_Verschieber(ANTWORT))
+        vorgang.refresh_from_db()
+        assert vorgang.finanzcheck is None
+
+    def test_hoechstens_null_fragt_nicht(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from django.core.management import call_command
+
+        aufrufe: list[int] = []
+        monkeypatch.setattr(finanzcheck, "nachziehen", lambda *, hoechstens: aufrufe.append(hoechstens) or 0)
+        call_command("finanzcheck", "--nachziehen", "--hoechstens", "0")
+        assert aufrufe == [0]
