@@ -1301,11 +1301,16 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         jaehrlich, jaehrlich_errechnet = netto, True
     ab = (daten.get("laufend_ab") or {}).get("jahr")
     dauer = (daten.get("nutzungsdauer") or {}).get("jahre")
-    # Die Summe über die Nutzungsdauer gilt nur, wenn Nutzungsdauer und Folgekosten aus demselben Dokument stammen
-    # (Folgelastenberechnung): Dann rechnet die Vorlage selbst die Jahressumme über diese Jahre
+    # Die Summe über die Nutzungsdauer gilt nur, wenn die Vorlage die Jahressumme für diese Jahre selbst nennt: Die
+    # genannte Jahressumme („Folgelasten pro Jahr insgesamt“) steht im selben Dokument wie die Nutzungsdauer
+    # (Folgelastenberechnung). Ohne genannte Summe müssen alle Posten aus diesem Dokument stammen.
     quelle_dauer = (daten.get("nutzungsdauer") or {}).get("dokument")
-    quellen_folgekosten = {z.get("dokument") for z in zeilen} | {(daten.get("laufend_gesamt") or {}).get("dokument")}
-    dauer_belegt = bool(dauer) and quelle_dauer is not None and quelle_dauer in quellen_folgekosten
+    genannt = daten.get("laufend_gesamt") or {}
+    if genannt:
+        dauer_belegt = bool(dauer) and quelle_dauer is not None and genannt.get("dokument") == quelle_dauer
+    else:
+        quellen_posten = {z.get("dokument") for z in zeilen}
+        dauer_belegt = bool(dauer) and quelle_dauer is not None and quellen_posten == {quelle_dauer}
     bauanteil = summe("wertverlust") - summe("foerderanteil")
     betrieb = summe("unterhalt", "personal", "miete", "sonstiges") - summe("einnahmen", "einsparung")
     zinsen = summe("zinsen")
