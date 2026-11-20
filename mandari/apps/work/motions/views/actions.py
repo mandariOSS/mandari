@@ -11,7 +11,7 @@ from typing import Any
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -549,23 +549,23 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
         if not motion.can_download(self.membership):
             raise PermissionDenied("Herunterladen ist für diese Freigabe nicht erlaubt.")
         document = get_object_or_404(MotionDocument, id=kwargs.get("document_id"), motion=motion)
-        try:
-            handle = document.file.open("rb")
-        except (FileNotFoundError, ValueError):
-            raise Http404("Datei nicht gefunden.") from None
+        if not document.file:
+            raise Http404("Datei nicht gefunden.")
+        # Mit ``?vorschau`` öffnen PDF und Bilder im Browser (wie Sitzungsunterlagen), alles andere bleibt ein
+        # Download; der Inhaltstyp folgt der Dateiendung (``apps.work.files.attachment_response``). Erst die Datei
+        # öffnen, dann protokollieren: Fehlt sie im Speicher (404), steht kein Download in der Hash-Kette
+        from apps.work.files import attachment_response
+
+        response = attachment_response(
+            document.file,
+            document.filename or document.file.name.rsplit("/", 1)[-1],
+            allow_pdf_inline="vorschau" in request.GET,
+        )
         if motion.is_sworn_in_only():
             from .. import non_public
 
             non_public.log_access(motion, self.membership, request, non_public.ACCESS_DOWNLOADED, document=document)
         freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_ATTACHMENT, document=document)
-        response = FileResponse(
-            handle,
-            as_attachment=True,
-            filename=document.filename or document.file.name.rsplit("/", 1)[-1],
-            content_type=document.mime_type or "application/octet-stream",
-        )
-        response["X-Content-Type-Options"] = "nosniff"
-        response["Cache-Control"] = "private, no-store"
         return response
 
 
