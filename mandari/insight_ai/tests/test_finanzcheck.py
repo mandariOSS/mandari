@@ -188,24 +188,22 @@ class TestAnzeige:
     def test_kennzahlen_und_saetze(self) -> None:
         anzeige = self._anzeige()
         assert [(k.titel, k.wert, k.zusatz) for k in anzeige.kennzahlen] == [
-            ("Kosten insgesamt", "6,2 Mio. €", ""),
-            ("Davon Fördergeld", "4,65 Mio. €", "beantragt, noch nicht zugesagt"),
-            ("Zahlt die Stadt selbst", "1,55 Mio. €", ""),
+            ("Kosten", "6,2 Mio. €", ""),
+            ("Fördergeld", "4,65 Mio. €", "beantragt, noch nicht zugesagt"),
+            ("Zahlt die Stadt", "1,55 Mio. €", ""),
             ("Jedes Jahr", "124.000 €", "ab 2032"),
         ]
+        # Kurz und ohne Haushaltsfachwörter (Sven 20.11.2026: „ein kleines Feature“, kein Bericht)
+        assert anzeige.saetze == [
+            "Das kostet insgesamt 6,2 Millionen Euro. 4,65 Millionen Euro davon sollen als Fördergeld kommen "
+            "(beantragt, noch nicht zugesagt).",
+            "Die Stadt zahlt selbst 1,55 Millionen Euro, verteilt auf 2028 bis 2031.",
+            "Ab 2032 kostet es die Stadt jedes Jahr 124.000 Euro für Unterhalt, Wertverlust und Zinsen.",
+            "Das Geld ist erst teilweise im Haushalt eingeplant.",
+        ]
         text = " ".join(anzeige.saetze)
-        assert "Das Vorhaben kostet laut Vorlage insgesamt 6,2 Millionen Euro." in text
-        assert "Das Fördergeld ist beantragt, aber noch nicht zugesagt." in text
-        assert "Die Stadt zahlt selbst 1,55 Millionen Euro." in text
-        assert "Gezahlt wird in den Jahren 2028 bis 2031." in text
-        assert "Ab 2032 kostet das die Stadt jedes Jahr 124.000 Euro." in text
-        assert "(hier 40 Jahre)" in text and "Der Anteil des Fördergelds wird dagegengerechnet." in text
-        assert "Das Geld ist erst teilweise im Haushalt der Stadt eingeplant." in text
-        assert "kein zusätzliches Geld" in text
-        # Keine Fachsprache des Haushaltsrechts in den Sätzen
         for wort in ("Abschreibung", "Sonderposten", "Ergebnisplan", "Finanzplan", "veranschlagt", "Aufwand"):
             assert wort not in text
-        assert len(anzeige.absaetze) == 3
 
     def test_rechnung_aufgeschluesselt(self) -> None:
         anzeige = self._anzeige()
@@ -216,14 +214,13 @@ class TestAnzeige:
 
     def test_eigenanteil_errechnet_und_summe_errechnet(self) -> None:
         anzeige = self._anzeige(_antwort(eigenanteil=None, laufend_gesamt=None))
-        eigen = next(k for k in anzeige.kennzahlen if k.titel == "Zahlt die Stadt selbst")
+        eigen = next(k for k in anzeige.kennzahlen if k.titel == "Zahlt die Stadt")
         assert (eigen.wert, eigen.zusatz) == ("1,55 Mio. €", "errechnet")
         assert next(k for k in anzeige.kennzahlen if k.titel == "Jedes Jahr").wert == "124.000 €"
-        assert "(Kosten minus Fördergeld)" in " ".join(anzeige.saetze)
 
     def test_kreis_und_gemeinde(self) -> None:
         text = " ".join(self._anzeige(name="Landkreis Rotenburg (Wümme)").saetze)
-        assert "Der Kreis zahlt selbst" in text and "kostet das den Kreis" in text and "Haushalt des Kreises" in text
+        assert "Der Kreis zahlt selbst" in text and "kostet es den Kreis" in text
 
     def test_seo_satz(self) -> None:
         assert (
@@ -258,7 +255,7 @@ class TestVorgangsseite:
         )
         html = client.get(reverse("insight_core:insight:paper_detail", args=[vorgang.pk])).content.decode()
         assert 'id="finanzcheck"' in html and "Was kostet das?" in html and "KI-Finanzcheck" in html
-        assert "1,55 Mio. €" in html and "Rechnung und Fundstellen" in html
+        assert "1,55 Mio. €" in html and "Rechnung und Fundstellen" not in html
         beschreibung = html.split('<meta name="description" content="', 1)[1].split('"', 1)[0]
         assert "Kosten laut Vorlage: 6,2 Mio. €" in beschreibung
 

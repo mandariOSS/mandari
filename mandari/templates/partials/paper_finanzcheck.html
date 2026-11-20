@@ -1,8 +1,8 @@
 {% comment %}
 Finanzcheck eines Vorgangs (Issue #1513, insight_ai.services.finanzcheck.anzeige): Was kostet das, woher kommt das Geld,
-was bleibt jedes Jahr. Kennzahlen oben, darunter die Erklärung aus festen Satzbausteinen in Alltagssprache, Hinweise aus
-den Dokumenten, Rechnung und Fundstellen zum Aufklappen. Serverseitig gerendert (Suchmaschinen lesen ihn mit), eigener
-Anker #finanzcheck zum Verlinken. Kennzeichnung wie bei der Zusammenfassung (EU AI Act Art. 50): sichtbar am Titel und
+was bleibt jedes Jahr. Auf einen Blick: höchstens vier Zahlen und zwei bis vier kurze Sätze in Alltagssprache (Sven
+20.11.2026: „ein kleines Feature“, kein Bericht). Fundstellen und Aufschlüsselung bleiben gespeichert, die Seite zeigt
+sie nicht. Serverseitig gerendert (Suchmaschinen lesen ihn mit), eigener Anker #finanzcheck zum Verlinken. Kennzeichnung wie bei der Zusammenfassung (EU AI Act Art. 50): sichtbar am Titel und
 im Satz darunter, maschinenlesbar über data-ai-generated.
 {% endcomment %}
 <section id="finanzcheck" aria-labelledby="finanzcheck-titel" class="mb-12 scroll-mt-24" data-testid="finanzcheck">
@@ -24,76 +24,9 @@ im Satz darunter, maschinenlesbar über data-ai-generated.
             {% endfor %}
         </dl>
         {% endif %}
-        <div class="mt-4 max-w-[46rem] space-y-3 text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">
-            {% for absatz in finanzcheck.absaetze %}<p>{{ absatz }}</p>{% endfor %}
-        </div>
-        {% if finanzcheck.hinweise %}
-        <h3 class="mt-5 text-[1rem] font-semibold text-gray-900 dark:text-white">Gut zu wissen</h3>
-        <ul class="mt-2 max-w-[46rem] list-disc space-y-1 pl-5 text-[1rem] leading-relaxed text-gray-800 dark:text-gray-200">
-            {% for hinweis in finanzcheck.hinweise %}<li>{{ hinweis }}</li>{% endfor %}
-        </ul>
-        {% endif %}
-        {% if finanzcheck.laufend or finanzcheck.jahre or finanzcheck.belege %}
-        <details class="mt-5 max-w-[46rem] group">
-            <summary class="-ml-2 inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
-                <i data-lucide="chevron-right" class="w-4 h-4 transition-transform group-open:rotate-90" aria-hidden="true"></i>Rechnung und Fundstellen
-            </summary>
-            {% if finanzcheck.laufend %}
-            <table class="mt-3 w-full table-fixed text-[0.9375rem]">
-                <caption class="pb-1 text-left font-semibold text-gray-900 dark:text-white">Jedes Jahr</caption>
-                <tbody>
-                    {% for zeile in finanzcheck.laufend %}
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                        <td class="py-1.5 pr-3 text-gray-800 dark:text-gray-200">{{ zeile.text }}</td>
-                        <td class="w-32 py-1.5 text-right tabular-nums text-gray-900 dark:text-gray-100">{% if zeile.entlastung %}− {% endif %}{{ zeile.wert }}</td>
-                    </tr>
-                    {% endfor %}
-                    {% if finanzcheck.laufend_summe %}
-                    <tr>
-                        <td class="py-1.5 pr-3 font-semibold text-gray-900 dark:text-white">Belastung pro Jahr</td>
-                        <td class="w-32 py-1.5 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{{ finanzcheck.laufend_summe }}</td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
-            {% endif %}
-            {% if finanzcheck.jahre %}
-            <table class="mt-5 w-full table-fixed text-[0.9375rem]">
-                <caption class="pb-1 text-left font-semibold text-gray-900 dark:text-white">Zahlungen nach Jahren</caption>
-                <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700 text-left text-gray-600 dark:text-gray-400">
-                        <th scope="col" class="py-1.5 pr-3 font-medium">Jahr</th>
-                        <th scope="col" class="py-1.5 pr-3 text-right font-medium">Ausgaben</th>
-                        {% if finanzcheck.mit_einnahmen %}<th scope="col" class="py-1.5 text-right font-medium">Einnahmen</th>{% endif %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for jahr in finanzcheck.jahre %}
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                        <th scope="row" class="py-1.5 pr-3 text-left font-normal tabular-nums text-gray-800 dark:text-gray-200">{{ jahr.jahr }}</th>
-                        <td class="py-1.5 pr-3 text-right tabular-nums text-gray-900 dark:text-gray-100">{{ jahr.ausgaben }}</td>
-                        {% if finanzcheck.mit_einnahmen %}<td class="py-1.5 text-right tabular-nums text-gray-900 dark:text-gray-100">{{ jahr.einnahmen }}</td>{% endif %}
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% if finanzcheck.mit_einnahmen %}<p class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Einnahmen sind vor allem Fördergeld.</p>{% endif %}
-            {% endif %}
-            {% if finanzcheck.belege %}
-            <h3 class="mt-5 text-[0.9375rem] font-semibold text-gray-900 dark:text-white">Fundstellen in den Dokumenten</h3>
-            <dl class="mt-2 space-y-2 text-[0.9375rem]">
-                {% for titel, beleg in finanzcheck.belege %}
-                <div>
-                    <dt class="text-gray-600 dark:text-gray-400">{{ titel }}</dt>
-                    <dd class="text-gray-800 dark:text-gray-200">„{{ beleg }}“</dd>
-                </div>
-                {% endfor %}
-            </dl>
-            {% endif %}
-        </details>
-        {% endif %}
+        <p class="mt-4 max-w-[46rem] text-[1.0625rem] leading-relaxed text-gray-800 dark:text-gray-200">{{ finanzcheck.saetze|join:" " }}</p>
     </div>
     <p class="mt-4 max-w-[46rem] text-[0.875rem] text-gray-600 dark:text-gray-400">
-        Eine KI hat die Zahlen aus den Dokumenten gelesen. Ein Programm hat jede Zahl mit ihrer Fundstelle abgeglichen und die Summen gerechnet. Maßgeblich sind die Dokumente unten.
+        Zahlen aus der Vorlage, mit KI ausgelesen und geprüft. Maßgeblich sind die Dokumente.
     </p>
 </section>

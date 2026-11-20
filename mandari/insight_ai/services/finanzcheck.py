@@ -638,7 +638,7 @@ def traeger(paper: Any) -> dict[str, str]:
 FOERDERUNG_KURZ: Final[dict[str, str]] = {
     "zugesagt": "zugesagt",
     "beantragt": "beantragt, noch nicht zugesagt",
-    "geplant": "muss noch beantragt werden",
+    "geplant": "noch nicht beantragt",
 }
 FOERDERUNG_SATZ: Final[dict[str, str]] = {
     "zugesagt": "Die Zusage liegt vor.",
@@ -745,91 +745,63 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
     ab = (daten.get("laufend_ab") or {}).get("jahr")
     dauer = (daten.get("nutzungsdauer") or {}).get("jahre")
 
+    stand = FOERDERUNG_KURZ.get(daten.get("foerderung_stand", ""), "")
+    ausgabe_jahre = sorted({z["jahr"] for z in daten.get("zahlungen") or [] if z["richtung"] == "ausgabe"})
+
+    # Auf einen Blick: höchstens vier Zahlen
     kennzahlen: list[Kennzahl] = []
     if gesamt:
-        kennzahlen.append(Kennzahl("Kosten insgesamt", euro_kurz(gesamt)))
+        kennzahlen.append(Kennzahl("Kosten", euro_kurz(gesamt)))
     if foerderung:
-        zusatz = FOERDERUNG_KURZ.get(daten.get("foerderung_stand", ""), "")
-        kennzahlen.append(Kennzahl("Davon Fördergeld", euro_kurz(foerderung), zusatz))
+        kennzahlen.append(Kennzahl("Fördergeld", euro_kurz(foerderung), stand))
     if eigen is not None:
-        kennzahlen.append(
-            Kennzahl(f"Zahlt {wer['nom']} selbst", euro_kurz(eigen), "errechnet" if eigen_errechnet else "")
-        )
+        kennzahlen.append(Kennzahl(f"Zahlt {wer['nom']}", euro_kurz(eigen), "errechnet" if eigen_errechnet else ""))
     if jaehrlich:
         zusatz = ", ".join(
             teil for teil in (f"ab {ab}" if ab else "", "errechnet" if jaehrlich_errechnet else "") if teil
         )
         kennzahlen.append(Kennzahl("Jedes Jahr", euro_kurz(jaehrlich), zusatz))
 
+    # Dazu zwei bis vier kurze Sätze in Alltagssprache
     saetze: list[str] = []
-    if gesamt:
-        saetze.append(f"Das Vorhaben kostet laut Vorlage insgesamt {euro_satz(gesamt)}.")
-    if foerderung:
-        von = daten.get("foerderung_von") or ""
-        satz = (
-            f"{'Davon sollen' if gesamt else 'Als Fördergeld sollen'} {euro_satz(foerderung)}"
-            f"{' als Fördergeld' if gesamt else ''}{f' ({von})' if von else ''} kommen. "
+    if gesamt and foerderung:
+        saetze.append(
+            f"Das kostet insgesamt {euro_satz(gesamt)}. {euro_satz(foerderung)} davon sollen als Fördergeld kommen"
+            f"{f' ({stand})' if stand else ''}."
         )
-        satz += FOERDERUNG_SATZ.get(daten.get("foerderung_stand", ""), FOERDERUNG_SATZ["unklar"])
-        saetze.append(satz)
+    elif gesamt:
+        saetze.append(f"Das kostet insgesamt {euro_satz(gesamt)}.")
+    elif foerderung:
+        saetze.append(f"{euro_satz(foerderung)} sollen als Fördergeld kommen{f' ({stand})' if stand else ''}.")
     if eigen == 0:
         saetze.append(f"{gross} zahlt selbst nichts dazu.")
     elif eigen is not None:
-        if eigen_errechnet:
-            saetze.append(f"{gross} zahlt damit selbst {euro_satz(eigen)} (Kosten minus Fördergeld).")
-        else:
-            saetze.append(f"{gross} zahlt selbst {euro_satz(eigen)}.")
-    deckung = daten.get("deckung", "")
-    if deckung == "umschichtung":
-        saetze.append(
-            f"Dafür kommt kein zusätzliches Geld in den Haushalt: {gross} nimmt es aus Mitteln, die schon für andere "
-            "Vorhaben eingeplant sind."
-        )
-    elif deckung == "zusaetzlich":
-        saetze.append(f"Dafür plant {wer['nom']} zusätzliches Geld im Haushalt ein.")
-    elif deckung == "kredit":
-        saetze.append(f"{gross} bezahlt {wer['sein']} Anteil über Kredite.")
-
-    ausgabe_jahre = sorted({z["jahr"] for z in daten.get("zahlungen") or [] if z["richtung"] == "ausgabe"})
-    if len(ausgabe_jahre) == 1:
-        saetze.append(f"Gezahlt wird im Jahr {ausgabe_jahre[0]}.")
-    elif ausgabe_jahre:
-        saetze.append(f"Gezahlt wird in den Jahren {ausgabe_jahre[0]} bis {ausgabe_jahre[-1]}.")
-
-    grenze_laufend = len(saetze)
+        zeitraum = ""
+        if len(ausgabe_jahre) == 1:
+            zeitraum = f" im Jahr {ausgabe_jahre[0]}"
+        elif ausgabe_jahre:
+            zeitraum = f", verteilt auf {ausgabe_jahre[0]} bis {ausgabe_jahre[-1]}"
+        saetze.append(f"{gross} zahlt selbst {euro_satz(eigen)}{zeitraum}.")
     if jaehrlich:
-        bau = daten.get("art") == "bau_oder_anschaffung" and gesamt
+        posten = {z["posten"] for z in zeilen}
+        wofuer = [
+            text
+            for name, text in (("unterhalt", "Unterhalt"), ("wertverlust", "Wertverlust"), ("zinsen", "Zinsen"))
+            if name in posten or (name == "wertverlust" and dauer)
+        ]
+        grund = f" für {_aufzaehlung(wofuer)}" if wofuer else ""
         if ab:
-            saetze.append(f"Ab {ab} kostet das {wer['akk']} jedes Jahr {euro_satz(jaehrlich)}.")
-        elif bau:
-            saetze.append(f"Danach kostet das {wer['akk']} jedes Jahr {euro_satz(jaehrlich)}.")
+            saetze.append(f"Ab {ab} kostet es {wer['akk']} jedes Jahr {euro_satz(jaehrlich)}{grund}.")
+        elif daten.get("art") == "bau_oder_anschaffung" and gesamt:
+            saetze.append(f"Danach kostet es {wer['akk']} jedes Jahr {euro_satz(jaehrlich)}{grund}.")
         else:
             saetze.append(f"Jedes Jahr kostet das {wer['akk']} {euro_satz(jaehrlich)}.")
-        posten = {z["posten"] for z in zeilen}
-        if daten.get("art") == "bau_oder_anschaffung" and ("wertverlust" in posten or dauer):
-            teile = ["ein Teil der Baukosten"]
-            if "unterhalt" in posten:
-                teile.append("Pflege und Wartung")
-            if "zinsen" in posten:
-                teile.append("Zinsen")
-            erklaerung = (
-                "Das ist viel weniger als die Baukosten, weil die Kosten auf die Jahre verteilt werden, in denen das "
-                f"Gebaute genutzt wird{f' (hier {dauer} Jahre)' if dauer else ''}. In jedem Jahr zählen deshalb nur "
-                f"{_aufzaehlung(teile)}."
-            )
-            if "foerderanteil" in posten:
-                erklaerung += " Der Anteil des Fördergelds wird dagegengerechnet."
-            saetze.append(erklaerung)
-
-    grenze_haushalt = len(saetze)
     im_haushalt = daten.get("im_haushalt", "")
     if im_haushalt == "teilweise":
-        saetze.append(
-            f"Das Geld ist erst teilweise im Haushalt {wer['gen']} eingeplant. Der Rest muss in einem späteren "
-            "Haushalt bereitgestellt werden."
-        )
+        saetze.append("Das Geld ist erst teilweise im Haushalt eingeplant.")
     elif im_haushalt == "nein":
-        saetze.append(f"Das Geld ist noch nicht im Haushalt {wer['gen']} eingeplant.")
+        saetze.append("Das Geld ist noch nicht im Haushalt eingeplant.")
+    grenze_laufend = grenze_haushalt = len(saetze)
 
     # Erst was kostet, dann was entlastet, damit die Rechnung von oben nach unten aufgeht
     zeilen.sort(key=lambda z: z["posten"] in POSTEN_ENTLASTUNG)
