@@ -466,6 +466,10 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   (`details.takt`: Art, Abstand, Läufe ohne Änderung, nächster Lauf, mit Abruffenster auch `window` und, wenn es den
   nächsten Lauf verschoben hat, `reason` = `abruffenster`), dazu gegebenenfalls ausgesetzte Listen
   (`details.suspended_lists`) und den Stand der Zeitscheiben (`details.full_sync_slices`; `SyncScheduler._write_log`).
+  Status: `success`, `failed` oder `partial` („Unvollständig“) für einen Vollabgleich, der nicht alle Listen ganz
+  gelesen hat (Zeitüberschreitung, Schutzschalter, Fensterende, ausgesetzte Liste, gestörter Server; `sync_log_status`,
+  Issue [#1523](https://github.com/mandariOSS/mandari/issues/1523)). Admin, Betriebsmonitor und Dashboard zeigen ihn
+  gelb; die Prüfung „Sync-Läufe (24 h)“ zählt ihn als Lauf mit Erfolg und nennt die Quellen.
   Ein Lauf über die Kommandozeile schreibt eines für den ganzen Aufruf, ohne `source_id`, mit `triggered_by` `cli`,
   dem angeforderten `sync_type` und höchstens 20 Fehlern (`write_results_to_synclog`); `sync --source` schreibt seit
   Issue [#554](https://github.com/mandariOSS/mandari/issues/554) kein zweites Protokoll der Quelle mit `triggered_by`
@@ -642,7 +646,10 @@ mit Eintrag in `sync_config["slow_lists"]` (`ingestor/src/sync/slices.py`; `inge
   Andere Fehler (etwa HTTP 500 oder ein Verbindungsfehler) bleiben wie bisher eine Lücke.
 - **Wachsender Abstand:** 1 Stunde nach der ersten Zeitüberschreitung, nach jeder weiteren in Folge doppelt so lange:
   1, 2, 4, 8, 16, dann höchstens 24 Stunden (`slow_backoff`, `SLOW_LIST_BASE`, `SLOW_LIST_MAX`). Hat ein Versuch
-  mindestens eine Scheibe ganz gelesen, beginnt die Reihe wieder bei 1 Stunde. Während der Aussetzung fragt kein Lauf
+  mindestens eine Scheibe ganz gelesen, beginnt die Reihe wieder bei 1 Stunde. Nach zehn Zeitüberschreitungen in Folge
+  ohne Fortschritt gilt die Liste als festgefahren (`SLOW_LIST_STUCK_AFTER`): einmalige Warnung im Log, `stuck_since`
+  im Eintrag, nächster Versuch erst nach einer Woche (`SLOW_LIST_STUCK_RETRY`) und ein Hinweis in jedem Sync-Protokoll,
+  solange sie ausgesetzt ist (Issue [#1523](https://github.com/mandariOSS/mandari/issues/1523)). Während der Aussetzung fragt kein Lauf
   die Liste an, auch kein Vollabgleich.
 - **Kein Datenverlust:** Die Liste behält ihren eigenen Fensteranfang: Änderungen ab dort hat noch kein Lauf ganz
   gelesen. Nach der Aussetzung holt der inkrementelle Lauf sie in Scheiben zu einem Tag nach (`SLOW_LIST_SLICE`,
@@ -739,8 +746,11 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   bleiben, ohne das Fenster zu verbrauchen. Diese Nachführung übernimmt jedes gelieferte Objekt und bricht nicht nach
   Seiten ohne Änderung ab. Scheitert sie (die Stadt Köln lehnte gefilterte Folgeseiten zeitweise mit HTTP 401 ab),
   liest er die Liste ganz; das kann einen großen Teil des Fensters kosten. Eine Liste, die es bei der Quelle nicht gibt (404,
-  Fehlerobjekt), gilt nicht als gelesen; scheitert eine Liste aus anderem Grund als dem Fensterende, fällt ihr Eintrag
-  weg. Den Stand hält `sync_config["full_sync_resume"]`. Ist ein Lauf vollständig, endet der Durchgang:
+  Fehlerobjekt), gilt nicht als gelesen. Eine Störung der Quelle zählt wie das Fensterende: Zeitüberschreitung,
+  Serverfehler oder Verbindungsfehler nach allen Versuchen oder ein offener Schutzschalter (Issue
+  [#1523](https://github.com/mandariOSS/mandari/issues/1523); bei der Stadt Bochum hing jede Nacht eine einzelne Seite,
+  der Schutzschalter riss die übrigen Listen mit, und der Vollabgleich begann sie wieder bei Seite 1). Scheitert eine
+  Liste aus anderem Grund (Folgeseite fehlt, Teilantwort, Liste im Kreis), fällt ihr Eintrag weg. Den Stand hält `sync_config["full_sync_resume"]`. Ist ein Lauf vollständig, endet der Durchgang:
   `last_successful_full_sync` rückt vor, der Stand wird gelöscht. Einträge gelten 14 Tage, danach liest der
   Vollabgleich die Liste wieder ganz. Anlass: Die Stadt Köln erlaubt Abrufe nur von 23 bis 1 Uhr; der Vollabgleich las
   jede Nacht dieselben gut tausend Seiten der Tagesordnungspunkte und Dateien und erreichte die Beratungen nie. Ohne
@@ -782,6 +792,12 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   der nächste Vollabgleich dort weiter, nicht wieder bei `since`. Listen, die schon fertig waren, fragen dann nur ihre
   letzte Scheibe noch einmal an. Ein Fortschritt vor `since` oder in der Zukunft gilt nicht; dann beginnt die Liste von
   vorn.
+- **Fortsetzung innerhalb einer Scheibe:** Bricht eine Scheibe mittendrin ab (Fensterende, Zeitüberschreitung,
+  Serverfehler, Schutzschalter), merkt sich der Lauf die zuletzt ganz gelesene Folgeseite der Scheibe und ihre
+  Kennungen (`sync_config["full_sync_slice_page"]`). Der nächste Vollabgleich liest dieselbe Scheibe ab dieser Seite
+  weiter, mit einer Seite Überlappung; trägt die Seite keine der gemerkten Kennungen mehr (verschoben) oder ist der
+  Stand älter als 14 Tage, kommt die Scheibe ganz (Issue [#1523](https://github.com/mandariOSS/mandari/issues/1523);
+  bei der Stadt Hamm passte die Scheibe mit dem Massenstempel der Quelle in kein Fenster).
 - **Fertig:** Hat jede Liste der Kommune in einem Lauf ihre letzte Scheibe gelesen und fehlt nichts, ist der
   Durchgang fertig. Der Fortschritt dieser Listen wird gelöscht, der nächste Vollabgleich beginnt wieder bei `since`.
   Erst dann zählt der Vollabgleich als vollständig (`last_successful_full_sync`, `full_sync_every_days`). Ist eine
@@ -917,7 +933,7 @@ Stündlich um :15 gleicht die Anwendung die Ablage mit den Quellen ab
 | HTTP 403 | keine Wiederholung; eine Vergleichsanfrage je Server und Lauf einer Quelle | wie oben |
 | andere 4xx, auch 429 | keine Wiederholung dieser Anfrage | wie oben |
 | 5 Serverfehler in Folge an einen Server | Quelle gilt als gestört (5xx-Serie) | `config.py` `oparl_server_error_series_threshold` |
-| 5 Fehlversuche an einen Server im Lauf einer Quelle (Netzfehler, Zeitüberschreitung, 4xx außer 404, 5xx) | Schutzschalter: 60 s keine Anfragen an diesen Server | `config.py` `circuit_breaker_failure_threshold`, `circuit_breaker_recovery_timeout` |
+| 5 Fehlversuche an einen Server im Lauf einer Quelle (Netzfehler, Zeitüberschreitung, 4xx außer 404, 5xx) | Schutzschalter: 60 s keine Anfragen an diesen Server; ein Abruf in dieser Zeit wartet einmal, bis der Schalter halb öffnet, und bricht erst ab, wenn er dann wieder offen ist (Issue #1523) | `config.py` `circuit_breaker_failure_threshold`, `circuit_breaker_recovery_timeout`, `circuit_breaker_half_open_wait` |
 | 3 fehlgeschlagene Läufe einer Quelle in Folge | Pause 10 Minuten, je weiterem Fehlversuch doppelt so lang, höchstens 360 Minuten (10, 20, 40 … 360) | `ingestor/src/sync/orchestrator.py` `BACKOFF_*`, `source_backoff_until` |
 | User-Agent gesperrt | Pause 60 Minuten; ist die Pause aus der Reihe darüber länger, gilt sie (ab dem 6. Fehlversuch in Folge 80, 160, 320, 360 Minuten) | `BACKOFF_MIN_MINUTES_BY_KIND` |
 | 5xx-Serie oder robots.txt nicht erreichbar | Pause 30 Minuten; ab dem 5. Fehlversuch in Folge die längere Pause aus der Reihe (40, 80 … 360 Minuten) | wie oben |
@@ -999,6 +1015,7 @@ Befund zurückzusetzen:
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, und Listen, die sie nicht freigibt (HTTP 403 für alle), mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
 | `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |
 | `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
+| `full_sync_slice_page` | Fortsetzung innerhalb einer abgebrochenen Zeitscheibe: je Liste Grenzen der Scheibe (`since`, `until`), zuletzt ganz gelesene Seite (`page`) mit ihren Kennungen (`ids`) und Zeitpunkt des Abbruchs (`at`, UTC). Gilt 14 Tage und nur für genau diese Scheibe. Löschen lässt die Scheibe wieder ganz lesen |
 | `full_sync_resume` | Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs ohne Zeitscheiben: je Liste die zuletzt ganz gelesene Seite (`page`) mit ihren Kennungen (`ids`) oder „im Durchgang ganz gelesen“ (`done`), jeweils mit dem Beginn des ersten Laufs der Liste im Durchgang (`at`, UTC). Einträge gelten 14 Tage. Löschen lässt den nächsten Vollabgleich alle Listen wieder ganz lesen |
 | `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
 | `unfiltered_lists` | Listen, die `modified_since` ablehnen oder nur gefiltert nicht finden, mit Grund und letzter Prüfung (Adresse → `reason`, `checked_at` UTC). Sie laufen ohne Filter, die übrigen Listen der Quelle mit; nach einem Tag fragt der nächste Lauf wieder mit Filter. Löschen lässt den nächsten Lauf die Listen gleich wieder mit Filter anfragen |
@@ -1026,6 +1043,7 @@ Ingestor (`ingestor/src/config.py`; Groß- und Kleinschreibung egal):
 | `OPARL_UA_PROBE_ENABLED` | `true` | Vergleichsanfrage nach HTTP 403 (Abgleich und `probe-ris`) |
 | `OPARL_SERVER_ERROR_SERIES_THRESHOLD` | `5` | Serverfehler in Folge bis zur 5xx-Serie |
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD`, `CIRCUIT_BREAKER_RECOVERY_TIMEOUT` | `5`, `60` | Schutzschalter je Server |
+| `CIRCUIT_BREAKER_HALF_OPEN_WAIT` | `90` | so viele Sekunden wartet ein Abruf bei offenem Schutzschalter höchstens einmal auf „halb offen“; `0` = sofort abbrechen |
 | `INGESTOR_SYNC_POOL_SIZE` | `4` | Quellen gleichzeitig im Daemon, je Quelle ein Lauf; Vollabgleiche auf höchstens allen Plätzen bis auf einen |
 | `INGESTOR_SYNC_RUN_DEADLINE_MINUTES`, `INGESTOR_SYNC_FULL_DEADLINE_MINUTES` | `180`, `1440` | Gesamtfrist je Lauf im Daemon (Änderungsabgleich, Vollabgleich) in Minuten; danach endet der Lauf, zählt als Fehlversuch der Quelle und gibt seinen Platz frei. `0` schaltet ab |
 | `SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY` | `2`, `2` | Kommunen je Quelle und Listen je Kommune gleichzeitig |
