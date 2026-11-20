@@ -979,3 +979,47 @@ class TestBefundeCodeRabbit1545:
         )
         anzeige = finanzcheck.anzeige(paper)
         assert anzeige is not None and anzeige.keine_kosten and not anzeige.mit_ki
+
+
+class TestBefundeCodeRabbit1545Runde2:
+    """Zweite Runde CodeRabbit zu PR #1545."""
+
+    def test_prozent_ist_kein_betrag_unter_tausend_kopf(self) -> None:
+        material = finanzcheck._Material("Beträge in T€\nAuszahlungen 2028 2029 1.200 10 %\n")
+        assert finanzcheck._tabelle(material, "Auszahlungen 2028 2029 1.200 10 %") is None
+
+    def test_unberuecksichtigt_ist_nicht_eingerechnet(self) -> None:
+        satz = "Preissteigerungen bleiben unberücksichtigt."
+        text = DOKUMENT + satz + "\n"
+        enthalten = _antwort(preissteigerung="enthalten", preissteigerung_beleg=satz)
+        assert finanzcheck.pruefen(enthalten, text).daten["preissteigerung"] == "unklar"
+        ausgeschlossen = _antwort(preissteigerung="nicht_enthalten", preissteigerung_beleg=satz)
+        assert finanzcheck.pruefen(ausgeschlossen, text).daten["preissteigerung"] == "nicht_enthalten"
+        nur_stichwort = "Die Preissteigerungen der letzten Jahre waren hoch."
+        antwort = _antwort(preissteigerung="enthalten", preissteigerung_beleg=nur_stichwort)
+        assert finanzcheck.pruefen(antwort, DOKUMENT + nur_stichwort + "\n").daten["preissteigerung"] == "unklar"
+
+    def test_widerspruch_in_der_finanzierung(self) -> None:
+        daten = {
+            "finanzen": "kosten",
+            "gesamtkosten": {"euro": 1000000, "beleg": ""},
+            "foerderung": {"euro": 400000, "beleg": ""},
+            "foerderung_stand": "zugesagt",
+            "eigenanteil": {"euro": 700000, "beleg": ""},
+        }
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and anzeige.karten is not None
+        assert not anzeige.karten.stimmt
+        assert "Fördergeld und Anteil von Münster ergeben laut Vorlage nicht die Gesamtkosten" in anzeige.karten.offen
+
+    def test_nur_einzahlungen_bei_belegten_kosten_unvollstaendig(self) -> None:
+        daten = finanzcheck.pruefen(_antwort(auszahlungen=[], auszahlungen_beleg=""), DOKUMENT).daten
+        assert daten["zahlungen"] == [] and daten["zahlungen_unstimmig"]
+
+    def test_empfehlung_ist_kein_beschluss_mit_aenderungen(self) -> None:
+        assert not finanzcheck.mit_aenderungen_beschlossen(
+            "Die Vorlage wird mit Änderungen zur Beschlussfassung empfohlen"
+        )

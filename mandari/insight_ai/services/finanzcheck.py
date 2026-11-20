@@ -88,6 +88,8 @@ _TAUSEND: Final = re.compile(
 _JAHRESZAHL: Final = re.compile(
     r"(?<![\d.,])(\d{4})(?!\d|[.,]\d|[ \t  ]*(?:€|EUR\b|Euro\b|T€|TEUR\b|Mio\b|Tsd\b))", re.IGNORECASE
 )
+#: Prozentangabe direkt hinter einer Zahl („10 %“, „25,81 v. H.“)
+_PROZENT_DANACH: Final = re.compile(r"[ \t  ]*(?:%|v\.\s?H\.|Prozent\b)", re.IGNORECASE)
 #: Öffnender Tag einer Anlage im Nutzerprompt (``prompts.anlage_block``)
 _ANLAGE_KOPF: Final = re.compile(r'<anlage name="([^"]*)">')
 #: „Keine Kosten“: nur feste Wendungen („Es entstehen keine Kosten“, „keine finanziellen Auswirkungen“, „Finanzielle
@@ -163,6 +165,14 @@ _KOSTENSTAND: Final = re.compile(r"aufgestellt|kosten|stand|berechn|schätz|ermi
 #: Fundstelle zu Preissteigerungen
 _PREISSTEIGERUNG: Final = re.compile(
     r"preissteiger|baupreis|preisindex|index|inflation|teuerung|kostensteigerung|preisentwicklung", re.IGNORECASE
+)
+#: Ausdrückliche Einrechnung von Preissteigerungen („sind eingerechnet“, „berücksichtigt“, „inklusive“)
+_PREIS_EINGERECHNET: Final = re.compile(
+    r"eingerechnet|einkalkuliert|eingepreist|(?<!un)berücksichtig|enthalten|inklusive|\binkl\.", re.IGNORECASE
+)
+#: Ausgeschlossene Preissteigerungen ohne „nicht“ („bleiben unberücksichtigt“, „zuzüglich“)
+_PREIS_AUSGESCHLOSSEN: Final = re.compile(
+    r"unberücksichtig|ausgenommen|exklusive|zuzüglich|\bzzgl\.|außer\s+acht", re.IGNORECASE
 )
 #: Diese Einordnungen gelten nicht bei verneinter Fundstelle („Der Bescheid liegt noch nicht vor“)
 _OHNE_VERNEINUNG: Final = {("foerderung_stand", "zugesagt"), ("im_haushalt", "ja")}
@@ -635,6 +645,10 @@ def _tabelle(material: _Material, beleg: str) -> list[tuple[int, int]] | None:
             if not hat_einheit and re.fullmatch(r"\d{4}", zahl) and 1990 <= int(zahl) <= 2100:
                 jahre.append(int(zahl))
                 continue
+            # Im Dokument nachsehen, nicht im Ausschnitt: Das Prozentzeichen kann hinter der Fundstelle stehen
+            if _PROZENT_DANACH.match(material.text, anfang + treffer.end()):
+                # Prozentwerte sind keine Beträge, auch nicht unter einem Tabellenkopf in T€
+                continue
             wert = _wert(zahl)
             if wert is None:
                 continue
@@ -828,6 +842,9 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
     summe_ein = sum(z["euro"] for z in zahlungen if z["richtung"] == "einnahme")
     if daten["gesamtkosten"] and summe_aus and not _gleich(summe_aus, daten["gesamtkosten"]["euro"]):
         vollstaendig = False
+    # Nur Einzahlungen, aber belegte Kosten: Wann die Kosten anfallen, fehlt; die Reihe gilt nicht als vollständig
+    if daten["gesamtkosten"] and summe_ein and not summe_aus:
+        vollstaendig = False
     if daten["foerderung"] and summe_ein and not _gleich(summe_ein, daten["foerderung"]["euro"]):
         vollstaendig = False
     if (
@@ -923,10 +940,13 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
     # nicht jedoch Planungskosten“ heißt „enthalten“)
     satzteile = [teil for teil in re.split(r"[,;.:]", beleg) if _PREISSTEIGERUNG.search(teil)]
     belegt = material.steht_drin(beleg) and len(satzteile) == 1
-    verneint = belegt and bool(_VERNEINT.search(satzteile[0]))
+    teil = satzteile[0] if belegt else ""
+    verneint = bool(_VERNEINT.search(teil) or _PREIS_AUSGESCHLOSSEN.search(teil))
+    # „enthalten“ nur mit ausdrücklicher Einrechnung („eingerechnet“, „berücksichtigt“), ein Stichwort allein reicht nicht
+    eingerechnet = bool(_PREIS_EINGERECHNET.search(teil))
     if preis == "nicht_enthalten" and belegt and verneint:
         daten["preissteigerung"] = "nicht_enthalten"
-    elif preis == "enthalten" and belegt and not verneint:
+    elif preis == "enthalten" and belegt and eingerechnet and not verneint:
         daten["preissteigerung"] = "enthalten"
     else:
         daten["preissteigerung"] = "unklar"
@@ -1097,6 +1117,9 @@ def mit_aenderungen_beschlossen(ergebnis_text: Any) -> bool:
     text = " ".join(str(ergebnis_text or "").split())
     treffer = MIT_AENDERUNGEN.search(text)
     if not treffer or ergebnis.einordnen(text) != ergebnis.BESCHLOSSEN:
+        return False
+    if re.search(r"empf(?:ohlen|iehlt|ehlung)", text, re.IGNORECASE):
+        # „mit Änderungen zur Beschlussfassung empfohlen“ ist eine Empfehlung, kein Beschluss
         return False
     davor = text[max(0, treffer.start() - 25) : treffer.start()]
     return not re.search(r"\b(?:nicht|ohne|kein\w*)\b", davor, re.IGNORECASE)
@@ -1321,8 +1344,14 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         offen.append("Ein Gremium hat mit Änderungen beschlossen, die Zahlen können abweichen")
     if daten.get("zahlungen_unstimmig"):
         offen.append("Die Zahlungen je Jahr ergeben nicht die Gesamtsumme und fehlen deshalb hier")
+    # Fördergeld und belegter Anteil der Kommune ergeben nicht die Kosten: Widerspruch in der Vorlage
+    finanzierung_stimmt = not (
+        gesamt and foerderung and eigen is not None and not eigen_errechnet and not _gleich(foerderung + eigen, gesamt)
+    )
+    if not finanzierung_stimmt:
+        offen.append(f"Fördergeld und Anteil von {ort} ergeben laut Vorlage nicht die Gesamtkosten")
 
-    stimmt = aufteilung_stimmt and not daten.get("zahlungen_unstimmig")
+    stimmt = aufteilung_stimmt and finanzierung_stimmt and not daten.get("zahlungen_unstimmig")
     # Wurde überhaupt etwas nachgerechnet? Fördergeld und Anteil gegen die Kosten, Zahlungen je Jahr, Aufteilung
     # der Jahressumme; nur dann sagt die Fußzeile „Summen nachgerechnet“
     abgeglichen = bool(
