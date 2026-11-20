@@ -224,6 +224,18 @@ def test_system_nennt_lizenz_nur_wenn_festgelegt() -> None:
     assert pruefe(system, "System") == []
 
 
+def test_system_und_uebersicht_nennen_den_mcp_server_nur_eingeschaltet() -> None:
+    """KI-Assistenten finden den MCP-Server über die Schnittstelle (Issue #1309)."""
+    with override_settings(INSIGHT_MCP_ENABLED=False):
+        assert "mandari:mcp" not in _json("/oparl/v1/system")
+        assert "mcp" not in _json("/oparl/")
+    with override_settings(INSIGHT_MCP_ENABLED=True):
+        system = _json("/oparl/v1/system")
+        uebersicht = _json("/oparl/")
+    assert system["mandari:mcp"] == uebersicht["mcp"] == f"{SITE}/insight/mcp"
+    assert pruefe(system, "System") == []
+
+
 def test_body_mit_location_list_und_pflichtfeld_legislative_term(welt: dict[str, Any]) -> None:
     body = _json(f"/oparl/v1/body/{welt['body'].id}")
     orte = f"{API}/body/{welt['body'].id}/locations"

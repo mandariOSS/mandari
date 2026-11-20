@@ -38,7 +38,9 @@ from datetime import date
 from typing import Any, Final
 from urllib.parse import urlsplit
 
+from django.conf import settings
 from django.db.models import F, Prefetch, Q, QuerySet
+from django.urls import reverse
 from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben
 
 from hub.ris.canonical import (
@@ -287,6 +289,16 @@ def prepare_persons(queryset: QuerySet[OParlPerson]) -> QuerySet[OParlPerson]:
     return queryset.prefetch_related(
         Prefetch("memberships", queryset=OParlMembership.objects.filter(deleted=False)),
     )
+
+
+def mcp_url() -> str | None:
+    """
+    Adresse des MCP-Servers des Bürgerportals (``insight_ai.mcp``), über die KI-Assistenten dieselben Ratsdaten abrufen
+    (Issue #1309); ``None``, solange der Betrieb ihn nicht eingeschaltet hat (``INSIGHT_MCP_ENABLED``).
+    """
+    if not getattr(settings, "INSIGHT_MCP_ENABLED", False):
+        return None
+    return f"{str(getattr(settings, 'SITE_URL', '')).rstrip('/')}{reverse('insight_mcp')}"
 
 
 def prepare_bodies(queryset: QuerySet[OParlBody]) -> QuerySet[OParlBody]:
@@ -641,6 +653,8 @@ class BestandMapping:
                 "website": "https://mandari.de",
                 "vendor": "https://mandari.de",
                 "product": "https://github.com/mandariOSS/mandari",
+                # MCP-Server des Bürgerportals für KI-Assistenten, nur wenn eingeschaltet (Issue #1309)
+                "mandari:mcp": mcp_url(),
             }
         )
 
