@@ -66,7 +66,7 @@ def eigene_gremien(organization: Any, membership: Any) -> set[Any]:
     Vier Abfragen; leer, wenn nichts davon gepflegt ist.
     """
     from apps.tenants.models import Membership
-    from insight_core.models import OParlMembership
+    from hub.ris import selectors as ris
 
     if organization is None or membership is None:
         return set()
@@ -74,13 +74,7 @@ def eigene_gremien(organization: Any, membership: Any) -> set[Any]:
     ids: set[Any] = set(
         aktive.filter(oparl_committees__isnull=False).values_list("oparl_committees", flat=True).distinct()
     )
-    heute = timezone.localdate()
-    ids |= set(
-        OParlMembership.objects.filter(person__in=aktive.exclude(oparl_person=None).values("oparl_person"))
-        .filter(Q(end_date__isnull=True) | Q(end_date__gte=heute))
-        .values_list("organization_id", flat=True)
-        .distinct()
-    )
+    ids |= ris.current_organization_ids_of_persons(aktive.exclude(oparl_person=None).values("oparl_person"))
     ids |= set(organization.oparl_organizations.values_list("pk", flat=True))
     ids |= set(membership.followed_organizations.values_list("pk", flat=True))
     return ids
@@ -152,12 +146,12 @@ def _sitzungen(
     Sitzungen der Gremien: ``sitzung`` für die eigenen Gremien, ``gremium`` für die weiteren. Ohne eigene Gremien
     gehören alle zu ``sitzung``. Der Titel nennt zuerst das Gremium (``OParlMeeting.bezeichnung``).
     """
-    from insight_core.models import OParlOrganization
+    from hub.ris import selectors as ris
 
     bodies = selectors.organization_bodies(organization)
     if bodies is None:
         return []
-    eigene_adressen = set(OParlOrganization.objects.filter(pk__in=eigene).values_list("external_id", flat=True))
+    eigene_adressen = ris.organization_external_ids(eigene)
     eintraege = []
     for meeting in selectors.meetings_between(bodies, start, end)[:MAX_JE_ART]:
         art = "sitzung" if not eigene or _ist_eigene(meeting, eigene, eigene_adressen) else "gremium"
