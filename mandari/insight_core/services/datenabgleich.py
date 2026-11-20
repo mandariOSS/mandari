@@ -401,7 +401,7 @@ def pruefe_alle(kommune: str = "", *, speichern: bool = True, now: datetime | No
                 config.get(SCHLUESSEL_INTERN),
                 je_quelle.get(source.pk, {}),
                 gescheitert.get(source.pk, {}),
-                ersetzen=False,
+                ersetzen=not kommune,
             )
             source.sync_config = config
     return quellen
@@ -574,12 +574,14 @@ def bewerte_kommunen(source: Any, now: datetime | None = None) -> list[Kommune]:
         name = str((eintrag_intern or eintrag_quelle or {}).get("name") or kennung)
         kommune = Kommune(kennung=kennung, name=name, intern=eintrag_intern, quelle=eintrag_quelle)
         if eintrag_intern is not None:
-            if eintrag_intern.get("fehlgeschlagen"):
-                kommune.melde(
-                    "warning",
+            gescheitert = _zeitpunkt(eintrag_intern.get("fehlgeschlagen"))
+            if gescheitert is not None:
+                text = (
                     f"interne Prüfung gescheitert ({eintrag_intern.get('fehler') or 'Fehler'}, "
-                    f"{str(eintrag_intern['fehlgeschlagen'])[:16]}), bisheriger Befund gilt weiter",
+                    f"{str(eintrag_intern['fehlgeschlagen'])[:16]}), bisheriger Befund gilt weiter"
                 )
+                # Ein frischer Fehler warnt, ein alter (danach keine Prüfung mehr) bleibt nur ein Hinweis
+                kommune.melde("warning" if now - gescheitert <= GUELTIG_INTERN else "ok", text)
             at = _zeitpunkt(eintrag_intern.get("at"))
             if at is None or now - at > GUELTIG_INTERN:
                 kommune.hinweise.append("interne Prüfung veraltet (Zeitplan befehl:datenabgleich läuft nicht?)")

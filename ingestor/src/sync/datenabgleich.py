@@ -232,7 +232,11 @@ async def gleiche_ab(
                     listen[typ] = {"fehler": str(fehler)[:120]}
                 else:
                     listen[typ] = {"quelle": total_elements(result.data)}
-            if not listen and not abgebrochen:
+            if abgebrochen:
+                # Unvollständig: Der bisherige Befund der Kommune bleibt stehen, der nächste Abgleich holt sie nach
+                ergebnis.hinweis = f"Abruffenster endete bei {body['name']}, nicht alle Kommunen abgeglichen"
+                break
+            if not listen:
                 continue
             bestand = await _bestand(storage, body["id"])
             for typ, werte in listen.items():
@@ -240,13 +244,7 @@ async def gleiche_ab(
                 if typ == "file" and len(alle) > 1:
                     # Eine Datei, die mehrere Kommunen der Quelle nennen, steht im Bestand nur bei einer davon
                     werte["nur_hinweis"] = True
-            eintrag: dict[str, Any] = {"at": _iso(now), "name": body["name"], "listen": listen}
-            if abgebrochen:
-                eintrag["abgebrochen"] = "Abruffenster endete"
-            ergebnis.kommunen[str(body["external_id"])] = eintrag
-            if abgebrochen:
-                ergebnis.hinweis = "Abruffenster endete, nicht alle Kommunen abgeglichen"
-                break
+            ergebnis.kommunen[str(body["external_id"])] = {"at": _iso(now), "name": body["name"], "listen": listen}
     if speichern and ergebnis.kommunen:
         await _speichern(storage, source, ergebnis.kommunen, ersetzen=not kommune and not ergebnis.hinweis)
     return ergebnis

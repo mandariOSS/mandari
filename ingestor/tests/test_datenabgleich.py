@@ -239,9 +239,9 @@ async def test_abruf_endet_mit_dem_fenster(lauf: SimpleNamespace, monkeypatch: p
 
     assert lauf.clients[0].optionen["fetch_deadline"] == ende
     assert ergebnis.abrufe == 0
-    assert "Abruffenster endete" in ergebnis.hinweis
-    assert ergebnis.kommunen[BASIS]["abgebrochen"] == "Abruffenster endete"
-    assert lauf.abgelegt == [(ergebnis.kommunen, False)], "Teilergebnis ersetzt die übrigen Kommunen nicht"
+    assert "Abruffenster endete bei Kommune 1" in ergebnis.hinweis
+    assert ergebnis.kommunen == {}
+    assert lauf.abgelegt == [], "der bisherige Befund der Kommune bleibt stehen"
 
 
 async def test_kommune_filtert_und_ergaenzt(lauf: SimpleNamespace) -> None:

@@ -420,3 +420,13 @@ def test_loeschmarkierungen_und_unsichere_dateien_alarmieren_nicht(quelle: OParl
 
     assert kommune.status == "ok"
     assert any("Zuordnung zur Kommune unsicher" in hinweis for hinweis in kommune.hinweise)
+
+
+def test_alter_fehlervermerk_ist_nur_ein_hinweis(quelle: OParlSource) -> None:
+    alt = (timezone.now() - timedelta(days=3)).isoformat()
+    _mit(quelle, datenabgleich={BASIS: _befund(at=alt, fehlgeschlagen=alt, fehler="RuntimeError")})
+
+    (kommune,) = datenabgleich.bewerte_kommunen(quelle)
+
+    assert kommune.status == "ok"
+    assert any(hinweis.startswith("interne Prüfung gescheitert") for hinweis in kommune.hinweise)
