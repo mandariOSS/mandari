@@ -112,7 +112,10 @@ def test_karte_steht_nach_dem_speichern_genau_einmal_im_board(
 
     karte.click()
     page.locator(PANEL).wait_for()
+    # Die Antwort allein genügt nicht: Bis htmx sie verarbeitet hat, erfüllt die ursprüngliche Karte die Prüfungen
+    vorher = karte.element_handle()
     _speichert(page, lambda: page.locator(f'{PANEL} select[name="priority"]').select_option("urgent"))
+    page.wait_for_function("karte => !karte.isConnected", arg=vorher)
 
     # Genau ein Element mit der Kennung, weiter direkt in seiner Spalte (SortableJS zieht nur direkte Kinder)
     expect(karte).to_have_count(1)

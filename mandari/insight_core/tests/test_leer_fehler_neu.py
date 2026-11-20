@@ -206,6 +206,17 @@ class TestNeuigkeiten:
         with pytest.raises(ValueError, match="Eintrag 1"):
             neuigkeiten.lies(datei)
 
+    def test_zeitstempel_statt_datum_ist_ein_fehler_der_datei(self, tmp_path: Path) -> None:
+        """Ein TOML-Zeitstempel ist in Python auch ein date; sortiert mit reinen Datumswerten gäbe er TypeError."""
+        datei = tmp_path / "neu.toml"
+        datei.write_text(
+            '[[eintrag]]\ndatum = 2026-11-01\ntitel = "Eins."\ntext = "Text."\n'
+            '[[eintrag]]\ndatum = 2026-11-17T00:00:00\ntitel = "Zwei."\ntext = "Text."\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="Eintrag 2"):
+            neuigkeiten.lies(datei)
+
     def test_seite_mit_eintraegen_gruppiert(self, besucher: Client) -> None:
         antwort = besucher.get("/insight/neuigkeiten/")
         assert antwort.status_code == 200
