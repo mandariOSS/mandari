@@ -761,7 +761,7 @@ def organization_count(meeting: OParlMeeting) -> int | None:
 
 
 #: Zeitraum der Terminschätzung für Beratungen ohne Sitzung (``consultation_history``): Der Vorgang wurde in diesem
-#: Zeitraum zuletzt beraten oder vorgelegt, und die geschätzte Sitzung liegt höchstens so weit nach dem Bezugspunkt.
+#: Zeitraum zuletzt beraten oder vorgelegt, und die geschätzte Sitzung liegt höchstens so weit in der Zukunft.
 VORAUSSICHTLICH_ZEITRAUM: Final = timedelta(days=180)
 
 #: Ende der Beratungsfolge: Dort stehen Beratungen, für die die Quelle noch keine Sitzung nennt und die wir nicht schätzen
@@ -809,7 +809,8 @@ def _ohne_sitzung_ergaenzen(verlauf: list[dict[str, Any]], paper: OParlPaper, je
     Vorlage, kommt sie frühestens in die Sitzung danach. Entscheidende Beratungen folgen auf die Vorberatungen: Ihre
     Sitzung liegt nicht vor deren Sitzungen, und fehlt einer geplanten Vorberatung die Sitzung, schätzen wir die
     Entscheidung nicht. Geschätzt wird nur für Vorgänge, die in ``VORAUSSICHTLICH_ZEITRAUM`` beraten oder vorgelegt
-    wurden, und nur mit Sitzungen in diesem Zeitraum: Bei einem ruhenden Vorgang sagt die nächste Sitzung nichts.
+    wurden (letzter Termin oder Vorlagedatum), und nur mit Sitzungen, die höchstens so weit in der Zukunft liegen: Bei
+    einem ruhenden Vorgang sagt die nächste Sitzung nichts.
     """
     offen = [eintrag for eintrag in verlauf if eintrag["meeting"] is None]
     kennungen = {id(eintrag): _gremien_der_beratung(eintrag["consultation"]) for eintrag in offen}
@@ -839,7 +840,7 @@ def _ohne_sitzung_ergaenzen(verlauf: list[dict[str, Any]], paper: OParlPaper, je
         return
     termine = [e["date"] for e in verlauf if e["date"] is not None and not getattr(e["meeting"], "cancelled", False)]
     letzter = max(termine, default=None)
-    zuletzt = letzter or _als_zeitpunkt(paper.date)
+    zuletzt = max((d for d in (letzter, _als_zeitpunkt(paper.date)) if d is not None), default=None)
     if zuletzt is None or zuletzt < jetzt - VORAUSSICHTLICH_ZEITRAUM:
         return
     bezug = max(jetzt, letzter) if letzter is not None else jetzt
@@ -849,7 +850,7 @@ def _ohne_sitzung_ergaenzen(verlauf: list[dict[str, Any]], paper: OParlPaper, je
         for z in zuordnung.objects.filter(
             oparlorganization_id__in=set().union(*gremien_je_eintrag.values()),
             oparlmeeting__start__gt=bezug,
-            oparlmeeting__start__lte=bezug + VORAUSSICHTLICH_ZEITRAUM,
+            oparlmeeting__start__lte=jetzt + VORAUSSICHTLICH_ZEITRAUM,
             oparlmeeting__cancelled=False,
             oparlmeeting__deleted=False,
         )
@@ -946,12 +947,12 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
     _ohne_sitzung_ergaenzen(verlauf, paper, jetzt)
 
     def reihenfolge(eintrag: dict[str, Any]) -> tuple[datetime, int]:
+        # Zur selben Zeit (auch am Ende) steht die Entscheidung nach der Vorberatung
+        rang = 1 if _entscheidet(eintrag) else 0
         zeitpunkt = eintrag["date"] or eintrag["expected_date"]
         if zeitpunkt is not None:
-            return zeitpunkt, 0
-        if eintrag["planned"]:
-            return _ENDE, 1 if _entscheidet(eintrag) else 0
-        return jetzt, 0
+            return zeitpunkt, rang
+        return (_ENDE if eintrag["planned"] else jetzt), rang
 
     verlauf.sort(key=reihenfolge)
     return verlauf

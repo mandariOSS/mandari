@@ -284,6 +284,41 @@ def test_ruhender_vorgang_bekommt_keinen_voraussichtlichen_termin(body: OParlBod
     neu = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Neu", date=timezone.localdate())
     _geplant(neu, rat, "Entscheidung")
     assert ris.consultation_history(neu)[0]["expected_date"] is not None
+    # Lange nicht beraten, aber neu vorgelegt: Das Vorlagedatum zählt auch neben einem alten Termin
+    wieder = OParlPaper.objects.create(
+        external_id=_kennung("papers"), body=body, name="Wieder", date=timezone.localdate()
+    )
+    _beratung(wieder, ausschuss, punkt, role="Vorberatung")
+    _geplant(wieder, rat, "Entscheidung")
+    assert ris.consultation_history(wieder)[1]["expected_date"] is not None
+
+
+def test_voraussichtlich_hoechstens_ein_halbes_jahr_voraus_und_entscheidung_bei_gleicher_zeit_danach(
+    body: OParlBody,
+) -> None:
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Fern")
+    spaet, punkt = _sitzung(body, 170, "Bauausschuss")
+    _beratung(vorlage, spaet, punkt, role="Vorberatung")
+    rat = _gremium(body, "Rat")
+    _geplant(vorlage, rat, "Entscheidung")
+    # Nach dem letzten Termin, aber mehr als ein halbes Jahr voraus: keine Schätzung
+    _termin(body, rat, timezone.now() + timedelta(days=200))
+    assert ris.consultation_history(vorlage)[1]["expected_date"] is None
+
+    gleich = OParlPaper.objects.create(
+        external_id=_kennung("papers"), body=body, name="Gleich", date=timezone.localdate()
+    )
+    hauptausschuss = _gremium(body, "Hauptausschuss")
+    beginn = timezone.now() + timedelta(days=12)
+    _termin(body, rat, beginn)
+    _termin(body, hauptausschuss, beginn)
+    _geplant(gleich, rat, "Entscheidung")
+    _geplant(gleich, hauptausschuss, "Vorberatung")
+
+    verlauf = ris.consultation_history(gleich)
+
+    assert [e["organization_name"] for e in verlauf] == ["Hauptausschuss", "Rat"]
+    assert verlauf[0]["expected_date"] == verlauf[1]["expected_date"] == beginn
 
 
 def test_gremium_einer_anderen_kommune_bleibt_unbekannt(body: OParlBody) -> None:
