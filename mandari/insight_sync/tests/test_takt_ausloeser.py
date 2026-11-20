@@ -313,4 +313,4 @@ def test_unvollstaendig_im_protokoll_und_in_der_auswahl(quelle: OParlSource) -> 
     eintrag = _protokoll(quelle, "partial", 5)
     eintrag.refresh_from_db()
     assert eintrag.get_status_display() == "Unvollständig"
-    assert SyncLog.Status.PARTIAL == "partial"
+    assert SyncLog.Status.PARTIAL.value == "partial"
