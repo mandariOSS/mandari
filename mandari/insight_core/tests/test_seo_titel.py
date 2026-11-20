@@ -630,24 +630,14 @@ class TestUebersichtDerKommune:
             f"{site}/insight/k/muenster/",
         ]
 
-    def test_herkunft_und_anbieter_als_text(self, muenster: OParlBody) -> None:
-        seite = re.sub(r"\s+", " ", _seite(Client(), "/insight/k/muenster/"))
-
-        assert (
-            "Sie kommen aus dem Ratsinformationssystem von Münster, verbindlich ist die Veröffentlichung dort." in seite
-        )
-        assert "kostenloses Bürgerportal von mandari und kein Angebot von Münster" in seite
-        assert 'href="https://mandari.de/fraktionen/"' in seite and 'href="https://mandari.de/kommunen/"' in seite
-
     def test_kommune_mit_mandari_session_ist_kein_fremdes_angebot(self, muenster: OParlBody) -> None:
         OParlBody.objects.filter(pk=muenster.pk).update(
             external_id="https://mandari.de/session/muenster/api/oparl/body/1"
         )
-        seite = re.sub(r"\s+", " ", _seite(Client(), "/insight/k/muenster/"))
+        fuss = _fuss(_seite(Client(), "/insight/k/muenster/"))
 
-        assert "Münster veröffentlicht sie selbst mit mandari Session." in seite
-        assert "kein Angebot von Münster" not in seite
-        assert "Dieses Bürgerportal läuft mit" in _fuss(seite)
+        assert "kein offizielles Angebot" not in fuss
+        assert "Dieses Bürgerportal läuft mit" in fuss
 
     def test_lange_kommunennamen_bleiben_unter_160_zeichen(self, muenster: OParlBody) -> None:
         OParlBody.objects.filter(pk=muenster.pk).update(display_name="Bezirksregierung Musterland-Südwest Nord")
@@ -961,16 +951,11 @@ class TestFusszeile:
     def test_verweis_auf_mandari_als_ratsinformationssystem(self, muenster: OParlBody) -> None:
         fuss = _fuss(_seite(Client(), f"/insight/vorgaenge/{_vorgang(muenster).id}/"))
 
-        assert (
-            "Die Daten stammen aus dem Ratsinformationssystem von Münster, verbindlich ist die Veröffentlichung dort."
-            in fuss
-        )
-        # Wer die Seite betreibt, steht da: nicht die Kommune (auch für KI-Suchen, die die Seite zusammenfassen)
-        assert "mandari Insight ist ein unabhängiges, kostenloses Bürgerportal von" in fuss
-        assert ", kein Angebot von Münster." in fuss
-        link = re.search(r'<a href="https://mandari\.de/ratsinformationssystem/"[^>]*>([^<]*)</a>', fuss)
-        assert link and "Ratsinformationssystem" in link.group(1)
-        assert 'href="https://mandari.de/fraktionen/"' in fuss
+        assert "Die Daten stammen aus dem Ratsinformationssystem von Münster." in fuss
+        # Wer die Seite anbietet, in einem Satz: nicht die Kommune (auch für KI-Suchen, die die Seite zusammenfassen)
+        satz = re.sub(r"<[^>]+>", "", fuss)
+        assert "Ein Angebot von mandari, kein offizielles Angebot von Münster." in satz
+        assert re.search(r'<a href="https://mandari\.de/ratsinformationssystem/"[^>]*>mandari</a>', fuss)
 
     def test_auch_ohne_kommune(self, muenster: OParlBody) -> None:
         client = Client()

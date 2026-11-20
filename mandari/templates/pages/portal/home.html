@@ -128,8 +128,6 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
     </div>
     {% endif %}
 </c-insight.band>
-{# Herkunft und Anbieter als sichtbarer Text, für Menschen und KI-Suchen; nicht auf dem eigenen Host einer Körperschaft #}
-{% if not insight_portal.via_host %}{% include "partials/home_ueber.html" %}{% endif %}
 {% else %}
 {# Keine Kommune ermittelbar (z. B. Datenbestand entfernt); die Auswahl rendert pages/portal/select_body.html #}
 <c-insight.band>
