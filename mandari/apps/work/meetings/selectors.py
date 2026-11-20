@@ -642,6 +642,8 @@ class PreparationData:
     consultations_by_paper: dict[Any, list[dict[str, Any]]] = field(default_factory=dict)
     #: TOPs, deren Arbeitsdaten nach einer Neuveröffentlichung nicht sicher zu ihnen gehören (Issue #547)
     ris_hinweise: dict[Any, Hinweis] = field(default_factory=dict)
+    #: Zurückgenommene TOPs, an denen Dateien der Vorlagen hängen: Diese Dateien nennt die Seite nicht (Issue #1528)
+    withdrawn_file_items: set[Any] = field(default_factory=set)
 
     @property
     def stats(self) -> dict[str, int]:
@@ -812,6 +814,15 @@ def load_preparation_data(organization: Organization, membership: Membership, me
         )
 
     paper_ids = {i.primary_paper.id for i in prepared_items if i.primary_paper}
+    # Dateien der Vorlagen, die an einem zurückgenommenen TOP hängen (eine Abfrage, nur wenn es solche Bezüge gibt)
+    file_items = {
+        f.agenda_item_id
+        for papers in papers_by_item.values()
+        for p in papers
+        for f in p.files.all()
+        if f.agenda_item_id
+    }
+    withdrawn_file_items: set[Any] = set(ris.withdrawn_agenda_item_ids(file_items))
     return PreparationData(
         agenda_items=agenda_items,
         prepared_items=prepared_items,
@@ -819,4 +830,5 @@ def load_preparation_data(organization: Organization, membership: Membership, me
         file_annotation_counts=_file_annotation_counts(organization, papers_by_item, files_by_item),
         consultations_by_paper=resolve_consultations(paper_ids, meeting),
         ris_hinweise=hinweise_fuer_tops(organization, (item.id for item in agenda_items)),
+        withdrawn_file_items=withdrawn_file_items,
     )

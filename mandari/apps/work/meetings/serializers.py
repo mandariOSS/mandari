@@ -10,6 +10,7 @@ gemeinsam genutzt, damit Antwort und Broadcast identisch bleiben.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any, cast
 
 from django.urls import reverse
@@ -360,20 +361,21 @@ def _serialize_ris_file(f: OParlFile, annotation_counts: dict[Any, int]) -> dict
     }
 
 
-def _ris_files_of(entry: PreparedItem) -> list[OParlFile]:
+def _ris_files_of(entry: PreparedItem, withdrawn_items: Collection[Any] = ()) -> list[OParlFile]:
     """
     RIS-Dateien eines TOPs: direkt am Punkt, dann die der Vorlagen; jede Datei einmal. Ein zurückgenommener TOP zeigt
-    keine (auch nicht über die Vorlage), gelöschte und zurückgenommene Dateien fehlen: Die Seite gäbe sonst ihre
-    Originaladresse aus.
+    keine (auch nicht über die Vorlage), gelöschte und zurückgenommene Dateien fehlen, ebenso Dateien der Vorlagen,
+    die an einem zurückgenommenen TOP hängen (``withdrawn_items``): Die Seite gäbe sonst ihre Originaladresse aus.
     """
     if entry.item.withdrawn_by_publisher:
         return []
     seen: set[Any] = set()
     files: list[OParlFile] = []
     for f in [*entry.files, *(f for p in entry.papers for f in p.files.all())]:
-        if f.id not in seen and not f.deleted:
-            seen.add(f.id)
-            files.append(f)
+        if f.id in seen or f.deleted or (f.agenda_item_id and f.agenda_item_id in withdrawn_items):
+            continue
+        seen.add(f.id)
+        files.append(f)
     return files
 
 
@@ -434,7 +436,7 @@ def serialize_prepared_item(
         # Erst die Dateien direkt am TOP (Issue #1528), dann die der Vorlagen; jede Datei einmal
         "files": [
             _serialize_ris_file(f, data.file_annotation_counts)
-            for f in _ris_files_of(entry)
+            for f in _ris_files_of(entry, data.withdrawn_file_items)
             if f.access_url or f.download_url
         ],
         # Dokumente (TOP-Anhänge + geteilte Vorlagen-Anhänge)

@@ -10,7 +10,7 @@ import os
 from collections import Counter
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 from pathlib import Path
@@ -2853,13 +2853,16 @@ class DatabaseStorage:
         paper_id: UUID | None = None,
         meeting_id: UUID | None = None,
         agenda_item_id: UUID | None = None,
+        agenda_item_public: bool = True,
     ) -> UUID:
         """
         Insert or update a file.
 
         Eine vorhandene Datei schreibt nur ihre eigene Quelle (``_owned_by_source_of``), sonst ``ForeignObjectError``.
         ``paper_id``, ``meeting_id`` und ``agenda_item_id`` kommen aus Verweisen, die nur in der eigenen Quelle
-        auflösen; ohne Angabe bleibt ein vorhandener Bezug stehen.
+        auflösen; ohne Angabe bleibt ein vorhandener Bezug stehen. Hängt die Datei an einem nichtöffentlichen Punkt
+        (``agenda_item_public``), geht ihr Ereignis nur an Empfänger der Sichtbarkeit ``nichtoeffentlich``: Es nennt
+        die Kennung des Punkts.
         """
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
@@ -2932,18 +2935,49 @@ class DatabaseStorage:
                     ids=self.id_bases,
                     agenda_item_id=agenda_item_id,
                 )
+                if any(draft.payload.get("agenda_item") for draft in drafts) and not (
+                    agenda_item_public
+                    and await self._agenda_item_public(session, body_id, agenda_item_id, file.raw_json or {})
+                ):
+                    drafts = [replace(draft, visibility=ris_events.NICHTOEFFENTLICH) for draft in drafts]
                 await self._emit(session, body_id, drafts, file.oparl_modified)
             await session.commit()
             return file_id
 
-    async def get_agenda_item_ref(self, external_id: str, body_id: UUID) -> tuple[UUID, UUID] | None:
+    async def _agenda_item_public(
+        self, session: AsyncSession, body_id: UUID, item_id: UUID | None, raw: Mapping[str, Any]
+    ) -> bool:
         """
-        Zeile und Sitzung eines Tagesordnungspunkts derselben Quelle wie die Kommune ``body_id``; ``None``, wenn es
-        ihn dort nicht gibt (ein Punkt einer anderen Quelle zählt als abgewiesener Verweis).
+        Ist der Tagesordnungspunkt, den ein Datei-Ereignis nennt, öffentlich? Gelesen in der Transaktion, die das
+        Ereignis veröffentlicht, und bis zum Commit geteilt gesperrt (``FOR SHARE``): Stellt der Abgleich der Punkte
+        ihn gleichzeitig nichtöffentlich, wartet einer auf den anderen, und das Ereignis trägt die Sichtbarkeit zum
+        Zeitpunkt der Veröffentlichung. Der Punkt kommt aus ``item_id`` oder, bei eingebetteten Dateien, aus dem
+        Rückverweis ``agendaItem`` derselben Quelle. Ist er nicht zu finden, gilt er als nichtöffentlich: Das
+        Ereignis nennt seine Kennung.
+        """
+        query = select(OParlAgendaItem.public)
+        if item_id is not None:
+            query = query.where(OParlAgendaItem.id == item_id)
+        else:
+            ref = raw.get("agendaItem")
+            if isinstance(ref, list | tuple):
+                ref = ref[0] if ref else None
+            if isinstance(ref, Mapping):
+                ref = ref.get("id")
+            if not isinstance(ref, str) or not ref:
+                return False
+            query = query.where(OParlAgendaItem.external_id == ref, _owned_by_source_of(OParlAgendaItem, body_id))
+        row = (await session.execute(query.with_for_update(read=True))).first()
+        return row is not None and row[0] is not False
+
+    async def get_agenda_item_ref(self, external_id: str, body_id: UUID) -> tuple[UUID, UUID, bool] | None:
+        """
+        Zeile, Sitzung und ``public`` eines Tagesordnungspunkts derselben Quelle wie die Kommune ``body_id``;
+        ``None``, wenn es ihn dort nicht gibt (ein Punkt einer anderen Quelle zählt als abgewiesener Verweis).
         """
         async with self.get_session() as session:
             found = await session.execute(
-                select(OParlAgendaItem.id, OParlAgendaItem.meeting_id).where(
+                select(OParlAgendaItem.id, OParlAgendaItem.meeting_id, OParlAgendaItem.public).where(
                     OParlAgendaItem.external_id == external_id, _owned_by_source_of(OParlAgendaItem, body_id)
                 )
             )
@@ -2951,7 +2985,7 @@ class DatabaseStorage:
             if row is None:
                 await self._note_foreign_reference(session, OParlAgendaItem, "agendaitem", external_id)
                 return None
-            return row[0], row[1]
+            return row[0], row[1], row[2] is not False
 
     async def upsert_agenda_item_files(self, item: ProcessedAgendaItem, body_id: UUID) -> int:
         """
@@ -2974,11 +3008,13 @@ class DatabaseStorage:
         ref = await self.get_agenda_item_ref(item.external_id, body_id)
         if ref is None:
             return 0
-        item_id, meeting_id = ref
+        item_id, meeting_id, public = ref
         stored = 0
         for file in files:
             try:
-                await self.upsert_file(file, body_id, meeting_id=meeting_id, agenda_item_id=item_id)
+                await self.upsert_file(
+                    file, body_id, meeting_id=meeting_id, agenda_item_id=item_id, agenda_item_public=public
+                )
             except ForeignObjectError:
                 continue
             except Exception as e:  # noqa: BLE001 - die übrigen Dateien des Punkts trotzdem schreiben
@@ -2988,16 +3024,17 @@ class DatabaseStorage:
                 continue
             stored += 1
         if referenced:
-            await self._link_agenda_item_files(referenced, item_id, meeting_id, body_id)
+            await self._link_agenda_item_files(referenced, item_id, meeting_id, body_id, public=public)
         return stored
 
     async def _link_agenda_item_files(
-        self, external_ids: list[str], item_id: UUID, meeting_id: UUID, body_id: UUID
+        self, external_ids: list[str], item_id: UUID, meeting_id: UUID, body_id: UUID, *, public: bool = True
     ) -> None:
         """
         Gespeicherten Dateien, die ein Punkt nur als Verweis nennt, den Bezug zum Punkt (und, wenn leer, zur Sitzung)
         geben; ein vorhandener Bezug zu einem Punkt bleibt. Nur Dateien derselben Quelle; mit ``ris.file.changed``
-        (``added``, neue Zugehörigkeit), in einer Transaktion.
+        (``added``, neue Zugehörigkeit, Sitzung aus der Zeile), in einer Transaktion. Ein nichtöffentlicher Punkt
+        meldet nur an Empfänger der Sichtbarkeit ``nichtoeffentlich``.
         """
         async with self.get_session() as session:
             result = await session.execute(
@@ -3012,24 +3049,28 @@ class DatabaseStorage:
                     meeting_id=func.coalesce(OParlFile.meeting_id, meeting_id),
                     updated_at=func.now(),
                 )
-                .returning(OParlFile.id, OParlFile.raw_json, OParlFile.paper_id, OParlFile.deleted)
+                .returning(
+                    OParlFile.id, OParlFile.raw_json, OParlFile.paper_id, OParlFile.meeting_id, OParlFile.deleted
+                )
             )
             linked = result.fetchall()
             if linked and await self._events_for(session, body_id):
                 drafts: list[ris_events.Draft] = []
-                for file_id, raw, paper_id, deleted in linked:
+                for file_id, raw, paper_id, file_meeting_id, deleted in linked:
                     if deleted:
                         continue
-                    prior = ris_events.Prior(raw_json=raw or {}, paper_id=paper_id, meeting_id=meeting_id)
+                    prior = ris_events.Prior(raw_json=raw or {}, paper_id=paper_id, meeting_id=file_meeting_id)
                     drafts += ris_events.file_events(
                         file_id,
                         raw or {},
                         prior,
                         paper_id=paper_id,
-                        meeting_id=meeting_id,
+                        meeting_id=file_meeting_id,
                         ids=self.id_bases,
                         agenda_item_id=item_id,
                     )
+                if drafts and not (public and await self._agenda_item_public(session, body_id, item_id, {})):
+                    drafts = [replace(draft, visibility=ris_events.NICHTOEFFENTLICH) for draft in drafts]
                 await self._emit(session, body_id, drafts, None)
             await session.commit()
 
