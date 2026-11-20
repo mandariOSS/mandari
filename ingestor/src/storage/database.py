@@ -324,6 +324,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "summary_einfach",
         "summary_stand",
         "summary_prompt_fassung",
+        # OParlPaper: Finanzcheck (Django-managed, Issue #1513)
+        "finanzcheck",
         "locations",
         "georef_status",
         # OParlBody: Sichtbarkeit im Portal (Django-managed); der Ingestor setzt sie nur beim Anlegen (Issue #555)
@@ -1799,7 +1801,8 @@ class DatabaseStorage:
     @staticmethod
     async def _forget_summary(session: AsyncSession, paper_id: UUID | None) -> None:
         """
-        KI-Zusammenfassung eines Vorgangs verwerfen, dessen Anlage die Quelle gelöscht hat (ohne eigenen Commit).
+        KI-Zusammenfassung und Finanzcheck eines Vorgangs verwerfen, dessen Anlage die Quelle gelöscht hat (ohne
+        eigenen Commit).
 
         Die Zusammenfassung fasst alle Anlagen zusammen. Eine gelöschte Anlage ist gesperrt: Ihr Inhalt darf nicht
         über die öffentliche Zusammenfassung weiterleben, bis der Löschlauf der Anwendung sie nach Wochen verwirft.
@@ -1814,7 +1817,14 @@ class DatabaseStorage:
         await session.execute(
             update(OParlPaper)
             .where(OParlPaper.id == paper_id)
-            .values(summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0)
+            .values(
+                summary=None,
+                summary_hinweis="",
+                summary_einfach=None,
+                summary_stand="",
+                summary_prompt_fassung=0,
+                finanzcheck=None,
+            )
         )
 
     # ========== Meeting Operations ==========

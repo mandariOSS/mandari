@@ -474,6 +474,7 @@ def get_paper_seo(
     *,
     mit_zusammenfassung: bool = True,
     original: str = "",
+    finanzen: str = "",
 ) -> SEOContext:
     """
     SEO-Kontext einer Vorgangsseite.
@@ -483,7 +484,9 @@ def get_paper_seo(
     gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``). Ohne
     ``mit_zusammenfassung`` (sie ist älter als der Beratungsstand, Issue #1257) fehlt sie, damit die Description dem
     Stand nicht widerspricht. ``original`` ist die Seite des Vorgangs im Ratsinformationssystem (``hub.ris.original``,
-    Issue #1259); sie steht als ``isBasedOn`` im JSON-LD.
+    Issue #1259); sie steht als ``isBasedOn`` im JSON-LD. ``finanzen`` ist der Kosten-Satz des Finanzchecks (Issue
+    #1513, „Kosten laut Vorlage: …“); er steht in der Description direkt nach der Kennung, vor Stand und
+    Zusammenfassung. Die Zusammenfassung steht außerdem vollständig als ``abstract`` im JSON-LD.
     """
     body = paper.body
     kommune = _kommune(body)
@@ -497,8 +500,9 @@ def get_paper_seo(
         from .services.ortsschutz import hausnummern_auslassen
 
         text = hausnummern_auslassen(text)
-    zusammenfassung = _ki_zusammenfassung(text, beschreibung(kopf_satz, stand_satz))
-    description = beschreibung(kopf_satz, stand_satz, zusammenfassung)
+    zusammenfassung = _ki_zusammenfassung(text, beschreibung(kopf_satz, finanzen, stand_satz))
+    description = beschreibung(kopf_satz, finanzen, stand_satz, zusammenfassung)
+    abstract = f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {' '.join(text.split())}" if text else None
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)
 
@@ -510,6 +514,7 @@ def get_paper_seo(
             "identifier": paper.reference,
             "genre": paper.paper_type,
             "description": description,
+            "abstract": abstract,
             "url": canonical,
             "inLanguage": "de",
             "dateCreated": paper.date.isoformat() if paper.date else None,

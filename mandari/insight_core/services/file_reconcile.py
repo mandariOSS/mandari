@@ -136,7 +136,12 @@ def _forget_summary(file_obj: Any) -> None:
         # UPDATE trifft die Zeile des Vorgangs immer und wartet damit auf jemanden, der gerade eine Zusammenfassung
         # speichert (``summary_store.sperren``); danach verwirft es auch die eben gespeicherte.
         OParlPaper.objects.filter(pk=file_obj.paper_id).update(
-            summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
+            summary=None,
+            summary_hinweis="",
+            summary_einfach=None,
+            summary_stand="",
+            summary_prompt_fassung=0,
+            finanzcheck=None,
         )
 
 

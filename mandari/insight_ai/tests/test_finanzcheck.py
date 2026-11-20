@@ -1,0 +1,311 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""
+Finanzcheck einer Vorlage (Issue #1513) am Beispiel Münster V/0452/2026 (Veloroute 12, Bohlweg bis Dieckstraße).
+
+- Die KI liest nur aus; jede Zahl braucht eine Fundstelle, die im Dokumenttext steht und die Zahl enthält.
+- Ein Kernbetrag ohne tragende Fundstelle verwirft den ganzen Finanzcheck; Tabellenzeilen entfallen einzeln.
+- Eigenanteil und jährliche Belastung rechnet das Programm; die Sätze kommen aus festen Bausteinen ohne Fachsprache.
+- Die Vorgangsseite zeigt den Block mit Anker #finanzcheck, die Description nennt die Kosten.
+- Der Zeitplan fragt die KI nur bei Texten mit Geldbeträgen; neuer Text verwirft den Finanzcheck.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+from datetime import date
+from types import SimpleNamespace
+from typing import Any, cast
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+
+from insight_ai.models import TagesbatchKommune
+from insight_ai.services import finanzcheck
+from insight_ai.tests.test_zusammenfassung_claude import _sauber, _vorgang  # noqa: F401 (_sauber: Fixture)
+from insight_core.models import OParlBody, OParlPaper, OParlSource
+from insight_core.services import summary_store
+
+pytestmark = pytest.mark.django_db
+
+#: Auszug aus der Beschlussvorlage und der Folgelastenberechnung (Text wie aus dem PDF erkannt)
+DOKUMENT = """Beschlussvorschlag:
+I. Sachentscheidung:
+Der Planung und der baulichen Ausführung wird zugestimmt.
+II. Finanzielle Auswirkungen:
+Es wird zur Kenntnis genommen, dass der Stadt Münster Baukosten in Höhe von ca. 6.200.000 €
+entstehen. Dem gegenüber stehen Einzahlungen in Höhe von ca. 4.650.000 €.
+Teilfinanzplan        Nr.     Bezeichnung                   Haush.-  Betrag
+Auszahlungen               chen und -anlagen
+Einzahlungen          4243 Velorouten Stadtregion
+                                                            2028     2.000.000
+                                                            2029     2.000.000
+                                                            2030     1.500.000
+                                                            2031      700.000
+Saldo                                                               1.550.000
+Die zur Finanzierung erforderlichen Ermächtigungen sind im Haushaltsplan 2026/2027 bei den o.g.
+Investitionsmaßnahmen und den u. g. Produktgruppen nur teilweise veranschlagt. Dabei werden die nicht durch
+Einzahlungen gedeckten Mehrbedarfe innerhalb des investiven Budgets des Dezernates für Planung, Bau und Wirtschaft
+aus der Investitionsmaßnahme 0007 ,,Verkehrsflächen, Neubau und Erneuerung" bereitgestellt.
+Zeile             02 Zuwendungen und allgemeine 2032 ff. 116.250 Folgeertrag
+                  13      Aufwendungen für     Sach-  und 2032 ff.    62.000 Folgeaufwand
+                  14 Bilanzielle Abschreibungen            2032 ff. 155.000 Folgeaufwand
+                  20      Zinsen und   sonst.  Finanzauf- 2032 ff.    23.250 Folgeaufwand
+Der Baubeginn ist derzeit für das Jahr 2028 vorgesehen. Die Bauzeit wird voraussichtlich 42 Monate betragen.
+Für die Maßnahme werden Fördermittel nach den Förderrichtlinien Nahmobilität bzw. kommunaler Straßenbau beantragt.
+Folgelastenberechnung
+Nutzungsdauer:                                                40 Jahre
+H Folgelasten (D-E-F+G) pro Jahr                                    Zeitpunkt        Euro
+           insgesamt                                                                   124.000
+"""
+
+#: Antwort der KI, wie sie das Schema verlangt
+ANTWORT: dict[str, Any] = {
+    "finanzen": "kosten",
+    "art": "bau_oder_anschaffung",
+    "gesamtkosten": {"euro": 6200000, "beleg": "Baukosten in Höhe von ca. 6.200.000 €"},
+    "foerderung": {"euro": 4650000, "beleg": "Dem gegenüber stehen Einzahlungen in Höhe von ca. 4.650.000 €."},
+    "foerderung_stand": "beantragt",
+    "foerderung_stand_beleg": "Für die Maßnahme werden Fördermittel nach den Förderrichtlinien Nahmobilität bzw. "
+    "kommunaler Straßenbau beantragt.",
+    "foerderung_von": "",
+    "eigenanteil": {"euro": 1550000, "beleg": "Saldo 1.550.000"},
+    "zahlungen": [
+        {"jahr": 2028, "euro": 2000000, "richtung": "ausgabe", "beleg": "2028 2.000.000"},
+        {"jahr": 2029, "euro": 2000000, "richtung": "ausgabe", "beleg": "2029 2.000.000"},
+        {"jahr": 2030, "euro": 1500000, "richtung": "ausgabe", "beleg": "2030 1.500.000"},
+        {"jahr": 2031, "euro": 700000, "richtung": "ausgabe", "beleg": "2031 700.000"},
+    ],
+    "laufend": [
+        {"posten": "foerderanteil", "euro": 116250, "beleg": "02 Zuwendungen und allgemeine 2032 ff. 116.250"},
+        {"posten": "unterhalt", "euro": 62000, "beleg": "Aufwendungen für Sach- und 2032 ff. 62.000"},
+        {"posten": "wertverlust", "euro": 155000, "beleg": "14 Bilanzielle Abschreibungen 2032 ff. 155.000"},
+        {"posten": "zinsen", "euro": 23250, "beleg": "20 Zinsen und sonst. Finanzauf- 2032 ff. 23.250"},
+    ],
+    "laufend_gesamt": {"euro": 124000, "beleg": "insgesamt 124.000"},
+    "laufend_ab": {"jahr": 2032, "beleg": "Bilanzielle Abschreibungen 2032 ff. 155.000"},
+    "nutzungsdauer": {"jahre": 40, "beleg": "Nutzungsdauer: 40 Jahre"},
+    "keine_kosten_beleg": "",
+    "im_haushalt": "teilweise",
+    "im_haushalt_beleg": "Produktgruppen nur teilweise veranschlagt",
+    "deckung": "umschichtung",
+    "deckung_beleg": 'aus der Investitionsmaßnahme 0007 ,,Verkehrsflächen, Neubau und Erneuerung" bereitgestellt',
+    "hinweise": [
+        {
+            "text": "Die Bauzeit beträgt voraussichtlich 42 Monate.",
+            "beleg": "Die Bauzeit wird voraussichtlich 42 Monate betragen.",
+        },
+        {"text": "Die Stadt rechnet mit 99 neuen Stellplätzen.", "beleg": "Die Bauzeit wird voraussichtlich 42"},
+    ],
+}
+
+
+def _antwort(**aenderungen: Any) -> dict[str, Any]:
+    antwort = copy.deepcopy(ANTWORT)
+    antwort.update(aenderungen)
+    return antwort
+
+
+def _kommune(name: str = "Stadt Münster") -> OParlBody:
+    quelle = OParlSource.objects.create(name="RIS", url="https://ris.example.org/oparl/system")
+    return OParlBody.objects.create(external_id="https://ris.example.org/oparl/body/1", source=quelle, name=name)
+
+
+class _Anbieter:
+    zusammenfassung_hinweis = "Claude von Anthropic (claude-opus-5-5); Verarbeitungsort: USA"
+
+    def __init__(self, antwort: dict[str, Any]) -> None:
+        self.antwort = antwort
+        self.aufrufe: list[dict[str, Any]] = []
+
+    def is_available(self) -> bool:
+        return True
+
+    def chat_completion(
+        self, messages: Any, max_tokens: int = 0, temperature: float = 0, schema: Any = None, effort: str | None = None
+    ) -> Any:
+        self.aufrufe.append({"nachrichten": messages, "schema": schema, "effort": effort})
+        return SimpleNamespace(content=json.dumps(self.antwort), model="claude-opus-5-5")
+
+
+class TestPruefung:
+    def test_beispiel_besteht(self) -> None:
+        ergebnis = finanzcheck.pruefen(ANTWORT, DOKUMENT)
+        assert ergebnis.status == finanzcheck.STATUS_OK, ergebnis.grund
+        daten = ergebnis.daten
+        assert daten["gesamtkosten"]["euro"] == 6200000 and daten["foerderung"]["euro"] == 4650000
+        assert daten["foerderung_stand"] == "beantragt" and daten["im_haushalt"] == "teilweise"
+        assert [z["jahr"] for z in daten["zahlungen"]] == [2028, 2029, 2030, 2031]
+        assert len(daten["laufend"]) == 4 and daten["nutzungsdauer"]["jahre"] == 40
+        # Der zweite Hinweis nennt eine Zahl, die nirgends steht: Er entfällt
+        assert [h["text"] for h in daten["hinweise"]] == ["Die Bauzeit beträgt voraussichtlich 42 Monate."]
+
+    def test_erfundene_fundstelle_verwirft_alles(self) -> None:
+        antwort = _antwort(gesamtkosten={"euro": 9800000, "beleg": "Baukosten in Höhe von ca. 9.800.000 €"})
+        ergebnis = finanzcheck.pruefen(antwort, DOKUMENT)
+        assert ergebnis.status == finanzcheck.STATUS_VERWORFEN and "gesamtkosten" in ergebnis.grund
+
+    def test_zahl_passt_nicht_zur_fundstelle(self) -> None:
+        antwort = _antwort(foerderung={"euro": 5000000, "beleg": "Einzahlungen in Höhe von ca. 4.650.000 €"})
+        assert finanzcheck.pruefen(antwort, DOKUMENT).status == finanzcheck.STATUS_VERWORFEN
+
+    def test_zeile_ohne_fundstelle_entfaellt_einzeln(self) -> None:
+        zahlungen = [*ANTWORT["zahlungen"], {"jahr": 2032, "euro": 300000, "richtung": "ausgabe", "beleg": "2032 300"}]
+        ergebnis = finanzcheck.pruefen(_antwort(zahlungen=zahlungen), DOKUMENT)
+        assert ergebnis.status == finanzcheck.STATUS_OK
+        assert [z["jahr"] for z in ergebnis.daten["zahlungen"]] == [2028, 2029, 2030, 2031]
+
+    def test_einordnung_ohne_fundstelle_wird_unklar(self) -> None:
+        ergebnis = finanzcheck.pruefen(
+            _antwort(foerderung_stand="zugesagt", foerderung_stand_beleg="bewilligt"), DOKUMENT
+        )
+        assert ergebnis.daten["foerderung_stand"] == "unklar"
+
+    def test_keine_kosten_mit_fundstelle(self) -> None:
+        text = "Finanzielle Auswirkungen: Es entstehen keine Kosten für den Haushalt."
+        antwort = _antwort(finanzen="keine_kosten", keine_kosten_beleg="Es entstehen keine Kosten für den Haushalt.")
+        ergebnis = finanzcheck.pruefen(antwort, text)
+        assert ergebnis.status == finanzcheck.STATUS_OK and ergebnis.daten["finanzen"] == "keine_kosten"
+
+    def test_keine_angaben(self) -> None:
+        assert finanzcheck.pruefen({"finanzen": "keine_angaben"}, DOKUMENT).status == finanzcheck.STATUS_KEINE
+        assert finanzcheck.pruefen("kein JSON", DOKUMENT).status == finanzcheck.STATUS_VERWORFEN
+
+
+class TestAnzeige:
+    def _anzeige(self, antwort: dict[str, Any] = ANTWORT, name: str = "Stadt Münster") -> finanzcheck.Anzeige:
+        ergebnis = finanzcheck.pruefen(antwort, DOKUMENT)
+        paper = SimpleNamespace(
+            pk=1,
+            body=SimpleNamespace(name=name),
+            finanzcheck={"status": ergebnis.status, "daten": ergebnis.daten},
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None
+        return anzeige
+
+    def test_kennzahlen_und_saetze(self) -> None:
+        anzeige = self._anzeige()
+        assert [(k.titel, k.wert, k.zusatz) for k in anzeige.kennzahlen] == [
+            ("Kosten insgesamt", "6,2 Mio. €", ""),
+            ("Davon Fördergeld", "4,65 Mio. €", "beantragt, noch nicht zugesagt"),
+            ("Zahlt die Stadt selbst", "1,55 Mio. €", ""),
+            ("Jedes Jahr", "124.000 €", "ab 2032"),
+        ]
+        text = " ".join(anzeige.saetze)
+        assert "Das Vorhaben kostet laut Vorlage insgesamt 6,2 Millionen Euro." in text
+        assert "Das Fördergeld ist beantragt, aber noch nicht zugesagt." in text
+        assert "Die Stadt zahlt selbst 1,55 Millionen Euro." in text
+        assert "Gezahlt wird in den Jahren 2028 bis 2031." in text
+        assert "Ab 2032 kostet das die Stadt jedes Jahr 124.000 Euro." in text
+        assert "(hier 40 Jahre)" in text and "Der Anteil des Fördergelds wird dagegengerechnet." in text
+        assert "Das Geld ist erst teilweise im Haushalt der Stadt eingeplant." in text
+        assert "kein zusätzliches Geld" in text
+        # Keine Fachsprache des Haushaltsrechts in den Sätzen
+        for wort in ("Abschreibung", "Sonderposten", "Ergebnisplan", "Finanzplan", "veranschlagt", "Aufwand"):
+            assert wort not in text
+        assert len(anzeige.absaetze) == 3
+
+    def test_rechnung_aufgeschluesselt(self) -> None:
+        anzeige = self._anzeige()
+        assert anzeige.laufend_summe == "124.000 €"
+        assert [z.entlastung for z in anzeige.laufend] == [True, False, False, False]
+        assert [(j.jahr, j.ausgaben) for j in anzeige.jahre][0] == (2028, "2 Mio. €")
+
+    def test_eigenanteil_errechnet_und_summe_errechnet(self) -> None:
+        anzeige = self._anzeige(_antwort(eigenanteil=None, laufend_gesamt=None))
+        eigen = next(k for k in anzeige.kennzahlen if k.titel == "Zahlt die Stadt selbst")
+        assert (eigen.wert, eigen.zusatz) == ("1,55 Mio. €", "errechnet")
+        assert next(k for k in anzeige.kennzahlen if k.titel == "Jedes Jahr").wert == "124.000 €"
+        assert "(Kosten minus Fördergeld)" in " ".join(anzeige.saetze)
+
+    def test_kreis_und_gemeinde(self) -> None:
+        text = " ".join(self._anzeige(name="Landkreis Rotenburg (Wümme)").saetze)
+        assert "Der Kreis zahlt selbst" in text and "kostet das den Kreis" in text and "Haushalt des Kreises" in text
+
+    def test_seo_satz(self) -> None:
+        assert (
+            self._anzeige().seo
+            == "Kosten laut Vorlage: 6,2 Mio. €, davon Stadt 1,55 Mio. €, jährlich 124.000 € ab 2032."
+        )
+
+    def test_nicht_bestanden_wird_nicht_gezeigt(self) -> None:
+        paper = SimpleNamespace(pk=1, body=None, finanzcheck={"status": finanzcheck.STATUS_VERWORFEN, "daten": {}})
+        assert finanzcheck.anzeige(paper) is None
+
+    @pytest.mark.parametrize(
+        ("euro", "kurz", "satz"),
+        [
+            (6200000, "6,2 Mio. €", "6,2 Millionen Euro"),
+            (1000000, "1 Mio. €", "1 Million Euro"),
+            (1234567, "1,23 Mio. €", "rund 1,23 Millionen Euro"),
+            (124000, "124.000 €", "124.000 Euro"),
+        ],
+    )
+    def test_betraege(self, euro: int, kurz: str, satz: str) -> None:
+        assert finanzcheck.euro_kurz(euro) == kurz and finanzcheck.euro_satz(euro) == satz
+
+
+class TestVorgangsseite:
+    def test_block_und_description(self, client: Client) -> None:
+        kommune = _kommune()
+        vorgang = _vorgang(kommune, text=DOKUMENT, reference="V/0452/2026", paper_type="Vorlagen")
+        ergebnis = finanzcheck.pruefen(ANTWORT, DOKUMENT)
+        OParlPaper.objects.filter(pk=vorgang.pk).update(
+            finanzcheck={"status": ergebnis.status, "fassung": finanzcheck.FASSUNG, "daten": ergebnis.daten}
+        )
+        html = client.get(reverse("insight_core:insight:paper_detail", args=[vorgang.pk])).content.decode()
+        assert 'id="finanzcheck"' in html and "Was kostet das?" in html and "KI-Finanzcheck" in html
+        assert "1,55 Mio. €" in html and "Rechnung und Fundstellen" in html
+        beschreibung = html.split('<meta name="description" content="', 1)[1].split('"', 1)[0]
+        assert "Kosten laut Vorlage: 6,2 Mio. €" in beschreibung
+
+    def test_ohne_finanzcheck_kein_block(self, client: Client) -> None:
+        vorgang = _vorgang(_kommune())
+        html = client.get(reverse("insight_core:insight:paper_detail", args=[vorgang.pk])).content.decode()
+        assert 'id="finanzcheck"' not in html
+
+
+class TestNachziehen:
+    def test_erstellt_und_speichert(self) -> None:
+        kommune = _kommune()
+        TagesbatchKommune.objects.create(body=kommune, ab=date(2000, 1, 1), verortung_pruefen=False)
+        vorgang = _vorgang(kommune, text=DOKUMENT)
+        anbieter = _Anbieter(ANTWORT)
+        assert finanzcheck.nachziehen(provider=anbieter) == 1
+        assert anbieter.aufrufe[0]["schema"] is finanzcheck.SCHEMA and anbieter.aufrufe[0]["effort"] == "medium"
+        vorgang.refresh_from_db()
+        gespeichert = cast(dict[str, Any], vorgang.finanzcheck)
+        assert gespeichert["status"] == "ok" and gespeichert["fassung"] == finanzcheck.FASSUNG
+        assert "claude-opus-5-5" in gespeichert["hinweis"]
+        # Ein zweiter Lauf fragt nicht erneut
+        assert finanzcheck.nachziehen(provider=anbieter) == 0 and len(anbieter.aufrufe) == 1
+
+    def test_ohne_geldbetraege_keine_ki(self) -> None:
+        kommune = _kommune()
+        TagesbatchKommune.objects.create(body=kommune, ab=date(2000, 1, 1), verortung_pruefen=False)
+        vorgang = _vorgang(kommune, text="Der Rat nimmt den Bericht zur Kenntnis.")
+        anbieter = _Anbieter(ANTWORT)
+        assert finanzcheck.nachziehen(provider=anbieter) == 0 and anbieter.aufrufe == []
+        vorgang.refresh_from_db()
+        assert cast(dict[str, Any], vorgang.finanzcheck)["status"] == finanzcheck.STATUS_KEINE
+
+    def test_nur_kommunen_im_tagesbatch(self) -> None:
+        _vorgang(_kommune(), text=DOKUMENT)
+        anbieter = _Anbieter(ANTWORT)
+        assert finanzcheck.nachziehen(provider=anbieter) == 0 and anbieter.aufrufe == []
+
+    def test_neuer_text_verwirft(self) -> None:
+        kommune = _kommune()
+        vorgang = _vorgang(kommune, text=DOKUMENT)
+        OParlPaper.objects.filter(pk=vorgang.pk).update(finanzcheck={"status": "ok", "daten": {}})
+        datei = vorgang.files.get()
+        assert summary_store.discard_for_files([datei.pk]) == 1
+        vorgang.refresh_from_db()
+        assert vorgang.finanzcheck is None
+
+    def test_vorfilter(self) -> None:
+        assert finanzcheck.kommt_in_frage(DOKUMENT)
+        assert not finanzcheck.kommt_in_frage("Der Rat nimmt den Bericht zur Kenntnis.")
+        assert not finanzcheck.kommt_in_frage("Münster hat 320.000 Einwohnerinnen und Einwohner.")

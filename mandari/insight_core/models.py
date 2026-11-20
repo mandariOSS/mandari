@@ -195,7 +195,12 @@ class SourceDeletionModel(CanonicalIdModel):
             # auf dessen Transaktion und verwirft danach auch die eben gespeicherte. Mit der Bedingung träfe es keine
             # Zeile, wartete nicht, und eine Zusammenfassung aus der zurückgenommenen Anlage bliebe stehen.
             OParlPaper.objects.filter(pk=paper_id).update(
-                summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
+                summary=None,
+                summary_hinweis="",
+                summary_einfach=None,
+                summary_stand="",
+                summary_prompt_fassung=0,
+                finanzcheck=None,
             )
             if isinstance(self, OParlPaper):
                 self.summary = None
@@ -203,6 +208,7 @@ class SourceDeletionModel(CanonicalIdModel):
                 self.summary_einfach = None
                 self.summary_stand = ""
                 self.summary_prompt_fassung = 0
+                self.finanzcheck = None
 
     @property
     def depublished(self) -> bool:
@@ -1064,6 +1070,15 @@ class OParlPaper(SourceDeletionModel):
         db_default=0,
         verbose_name="Prompt-Fassung der Zusammenfassung",
         help_text="Fassung des Prompts, mit der die gespeicherte Zusammenfassung entstand (0: vor der Zählung).",
+    )
+    # Finanzcheck (Issue #1513, ``insight_ai.services.finanzcheck``): geprüfte Kosten, Fördergeld und jährliche
+    # Belastung mit Fundstellen; verfällt wie die Zusammenfassung mit neuem Text oder zurückgenommenen Anlagen.
+    # Ohne Wert in der Datenbank (NULL): Ingestor und ein älteres Image legen weiter Vorgänge an
+    finanzcheck = models.JSONField(
+        blank=True,
+        null=True,
+        verbose_name="Finanzcheck",
+        help_text="Geprüfte Finanzangaben des Vorgangs (Status, Fassung, Daten mit Fundstellen).",
     )
     locations = models.JSONField(blank=True, null=True)
 
