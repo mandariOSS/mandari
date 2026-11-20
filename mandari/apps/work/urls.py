@@ -89,10 +89,12 @@ urlpatterns = [
         name="meetings_calendar_events",
     ),
     # Bisherige Adresse (Lesezeichen): vorübergehende Weiterleitung, damit ein Rückfall auf ein älteres Image sie
-    # wieder selbst bedienen kann
+    # wieder selbst bedienen kann; nur lesend (GET/HEAD), sonst zählte sie als schreibender Endpunkt
     path(
         "<slug:org_slug>/meetings/calendar/",
-        RedirectView.as_view(pattern_name="work:meetings_calendar", query_string=True),
+        RedirectView.as_view(
+            pattern_name="work:meetings_calendar", query_string=True, http_method_names=["get", "head"]
+        ),
         name="meetings_calendar_bisher",
     ),
     # Meetings (OParl meeting preparation)

@@ -134,6 +134,12 @@
 .sitzungs-kalender .fc .fc-list-event-time {
   font-size: 0.875rem;
 }
+/* Lange Wörter („Sportstättenentwicklungsplan“) brechen um, statt die Liste am Handy breiter als den Bildschirm zu
+   machen (Issue #1548: der Kalender ist seitdem Ziel der Navigation und wird bei 390 px gemessen) */
+.sitzungs-kalender .fc .fc-list-event-title {
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
 
 /* Arten von Terminen (Issue #1489): Sitzungen der Gremien in der Kennfarbe (wie bisher), Fraktionssitzungen
    petrolgrün, eigene Termine himbeerrot, Fristen der Dokumente bernsteinfarben, Aufgaben schiefergrau; weiße Schrift hält überall
