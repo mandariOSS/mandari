@@ -895,7 +895,7 @@ class TestBefundeCodeRabbit1545:
         )
         anzeige = finanzcheck.anzeige(paper)
         assert anzeige is not None and anzeige.karten is not None
-        assert "Wann das Fördergeld kommt, steht nicht in der Vorlage" in anzeige.karten.offen
+        assert "Wann das Fördergeld kommt, ließ sich aus der Vorlage nicht ermitteln" in anzeige.karten.offen
 
     def test_nachmeldung_nur_mit_jahr_des_zielhaushalts(self) -> None:
         beleg = "für die Jahre 2028 und 2031 werden zum Haushaltsplanentwurf 2028 angemeldet"
@@ -1023,3 +1023,23 @@ class TestBefundeCodeRabbit1545Runde2:
         assert not finanzcheck.mit_aenderungen_beschlossen(
             "Die Vorlage wird mit Änderungen zur Beschlussfassung empfohlen"
         )
+
+
+class TestBefundeCodeRabbit1545Runde3:
+    """Dritte Runde CodeRabbit zu PR #1545 (Folge-PR)."""
+
+    def test_zeilennummer_im_ausschnitt_ist_kein_betrag(self) -> None:
+        material = finanzcheck._Material("Beträge in T€\nAuszahlungen Zeile 02\n2028 2029\n500 1.200\n")
+        assert finanzcheck._tabelle(material, "Auszahlungen Zeile 02 2028 2029 500 1.200") == [
+            (2028, 500000),
+            (2029, 1200000),
+        ]
+
+    def test_benachbarte_zeilen_mit_anderer_richtung(self) -> None:
+        text = "Baukosten 600.000 €\nAuszahlungen 2028: 600.000 €\nEinzahlungen 2028: 100.000 €\n"
+        material = finanzcheck._Material(text)
+        assert finanzcheck._richtung_belegt(material, "Auszahlungen 2028: 600.000 €", "ausgabe")
+        assert not finanzcheck._richtung_belegt(material, "Einzahlungen 2028: 100.000 €", "ausgabe")
+        # Ohne Bezeichnung in der Fundstelle zählt die eigene Zeile, nicht die Zeile davor
+        assert not finanzcheck._richtung_belegt(material, "2028: 100.000 €", "ausgabe")
+        assert finanzcheck._richtung_belegt(material, "2028: 100.000 €", "einnahme")

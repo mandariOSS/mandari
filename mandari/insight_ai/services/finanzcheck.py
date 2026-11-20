@@ -88,6 +88,11 @@ _TAUSEND: Final = re.compile(
 _JAHRESZAHL: Final = re.compile(
     r"(?<![\d.,])(\d{4})(?!\d|[.,]\d|[ \t  ]*(?:€|EUR\b|Euro\b|T€|TEUR\b|Mio\b|Tsd\b))", re.IGNORECASE
 )
+#: Bezeichnung einer Nummer direkt vor einer Zahl („Zeile 02“, „Nr. 13“, „Produktgruppe 1201“)
+_NUMMER_DAVOR: Final = re.compile(
+    r"(?:Zeile|Nr\.?|Pos\.?|Position|Produktgruppe|Produkt|Konto|Sachkonto|Maßnahme|Anlage|Seite)[ \t ]*$",
+    re.IGNORECASE,
+)
 #: Prozentangabe direkt hinter einer Zahl („10 %“, „25,81 v. H.“)
 _PROZENT_DANACH: Final = re.compile(r"[ \t  ]*(?:%|v\.\s?H\.|Prozent\b)", re.IGNORECASE)
 #: Öffnender Tag einer Anlage im Nutzerprompt (``prompts.anlage_block``)
@@ -660,7 +665,12 @@ def _tabelle(material: _Material, beleg: str) -> list[tuple[int, int]] | None:
                 if art is None:
                     return None
                 kandidaten.append((int(wert * 1000) if art == "tausend" else int(wert), True))
-            elif art == "tausend" and re.fullmatch(r"\d{1,3}", zahl):
+            elif (
+                art == "tausend"
+                and re.fullmatch(r"[1-9]\d{0,2}", zahl)
+                and not _NUMMER_DAVOR.search(ausschnitt, 0, treffer.start())
+            ):
+                # Ganze Zahl unter T€-Kopf; Zeilen-, Produkt- und Positionsnummern („Zeile 02“, „Nr. 13“) nicht
                 kandidaten.append((int(wert * 1000), False))
         betraege = [wert for wert, sicher in kandidaten if sicher]
         if len(betraege) != len(jahre):
@@ -680,12 +690,30 @@ _RICHTUNG: Final[dict[str, re.Pattern[str]]] = {
 }
 
 
+#: Bezeichnung der jeweils anderen Richtung; steht sie an der Stelle, gehört die Zahl nicht zu dieser Richtung
+_GEGENRICHTUNG: Final[dict[str, re.Pattern[str]]] = {
+    "ausgabe": re.compile(r"einzahl|einnahme", re.IGNORECASE),
+    "einnahme": re.compile(r"auszahl|ausgabe", re.IGNORECASE),
+}
+
+
 def _richtung_belegt(material: _Material, beleg: str, richtung: str) -> bool:
-    """Nennt die Fundstelle (oder die Zeile davor) die Richtung („Auszahlungen“, „Einzahlungen“)?"""
-    muster = _RICHTUNG[richtung]
-    return bool(
-        muster.search(beleg) or any(muster.search(material.umfeld(*stelle)) for stelle in material.treffer(beleg))
-    )
+    """
+    Nennt die Fundstelle die Richtung („Auszahlungen“, „Einzahlungen“)? Zuerst zählt die Fundstelle selbst, dann ihre
+    eigene Zeile, zuletzt die Zeile davor. Steht auf derselben Ebene die andere Richtung, gilt sie nicht: „Einzahlungen
+    2028: 100.000 €“ direkt unter „Auszahlungen …“ ist keine Auszahlung.
+    """
+    eigene, andere = _RICHTUNG[richtung], _GEGENRICHTUNG[richtung]
+    stellen = material.treffer(beleg)
+    ebenen: list[list[str]] = [[beleg]]
+    ebenen.append([material.umfeld(*stelle).split("\n")[-1] for stelle in stellen])
+    ebenen.append([material.umfeld(*stelle) for stelle in stellen])
+    for texte in ebenen:
+        if any(andere.search(text) for text in texte):
+            return False
+        if texte and all(eigene.search(text) for text in texte):
+            return True
+    return False
 
 
 def _reihe(material: _Material, zeilen: Any, block: str, richtung: str) -> tuple[list[dict[str, Any]], bool]:
@@ -1334,7 +1362,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
             satz += f". Fehlendes Geld soll aus „{quelle}“ kommen" if quelle else ", notfalls aus einem anderen Budget"
         offen.append(satz)
     if daten.get("einzahlungen_fehlen"):
-        offen.append("Wann das Fördergeld kommt, steht nicht in der Vorlage")
+        offen.append("Wann das Fördergeld kommt, ließ sich aus der Vorlage nicht ermitteln")
     if daten.get("preissteigerung") == "nicht_enthalten":
         offen.append("Preissteigerungen bis zum Bau sind nicht eingerechnet")
     kostenstand = (daten.get("kostenstand") or {}).get("datum")
