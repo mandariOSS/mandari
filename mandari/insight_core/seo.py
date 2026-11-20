@@ -298,6 +298,25 @@ def _absolut(path: str) -> str:
     return urljoin(get_site_url(), path)
 
 
+def organisation_ld() -> dict[str, str]:
+    """
+    Betreiber des Bürgerportals als ``Organization`` mit derselben ``@id`` wie auf der Website (``/#organisation``).
+
+    Suchmaschinen und KI-Suchen verbinden so jede Seite mit einem Anbieter, statt ihn zu raten: Herausgeber der Seite
+    ist mandari, Urheber der Ratsinformationen die Kommune (``author``).
+    """
+    basis = _absolut("/")
+    return {"@type": "Organization", "@id": f"{basis}#organisation", "name": "mandari", "url": basis}
+
+
+def _stadtseite_ld(body: Any) -> dict[str, str] | None:
+    """Stadtseite der Kommune als ``CollectionPage`` für ``isPartOf`` der Detailseiten; ``None`` ohne Stadtseite."""
+    seite = seite_der_kommune(body) if body is not None else ""
+    if not seite:
+        return None
+    return {"@type": "CollectionPage", "@id": seite, "url": seite, "name": f"Ratsinformationen {_kommune(body)}"}
+
+
 def vorschaubild(bild: str | None = None) -> str:
     """
     Absolute Adresse des Vorschaubilds für ``og:image`` und ``twitter:image`` (Issue #1259): das Bild der Seite,
@@ -497,7 +516,8 @@ def get_paper_seo(
             "spatialCoverage": ort,
             "about": ort,
             "author": _verwaltung(kommune) or {"@type": "Organization", "name": "Kommune"},
-            "publisher": {"@type": "Organization", "name": "mandari", "url": get_site_url()},
+            "publisher": organisation_ld(),
+            "isPartOf": _stadtseite_ld(body),
             "isBasedOn": original or None,
         }
     )
@@ -873,6 +893,8 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
             "creativeWorkStatus": status_label,
             "spatialCoverage": _gebiet(kommune),
             "author": _verwaltung(kommune),
+            "publisher": organisation_ld(),
+            "isPartOf": _stadtseite_ld(body),
         }
     )
 
@@ -975,9 +997,48 @@ def get_list_seo(request: HttpRequest, liste: str, title: str, description: str,
     return seo
 
 
+def _insight_ld() -> dict[str, Any]:
+    """Das Bürgerportal als ``WebSite`` mit mandari als Herausgeber (Startseite und ``isPartOf`` der Stadtseiten)."""
+    adresse = _absolut(reverse("insight_core:insight:portal_home"))
+    return {
+        "@type": "WebSite",
+        "@id": f"{adresse}#website",
+        "name": "mandari Insight",
+        "url": adresse,
+        "inLanguage": "de",
+        "publisher": organisation_ld(),
+    }
+
+
+def _kommune_ld(body: Any) -> dict[str, Any] | None:
+    """
+    Die Kommune einer Stadtseite als ``GovernmentOrganization``: Name, eigene Website (``url``), Gemeindeschlüssel.
+
+    Die Website der Kommune trennt sie eindeutig vom Herausgeber der Seite: Die Ratsinformationen stammen von ihr,
+    das Bürgerportal betreibt mandari.
+    """
+    kommune = _kommune(body)
+    verwaltung: dict[str, Any] | None = _verwaltung(kommune, _webseite(body))
+    if verwaltung is None:
+        return None
+    ags = str(getattr(body, "ags", "") or "").strip()
+    if ags:
+        verwaltung["identifier"] = {"@type": "PropertyValue", "propertyID": "AGS", "value": ags}
+    verwaltung["areaServed"] = _gebiet(kommune)
+    return verwaltung
+
+
 def get_portal_home_seo(request: HttpRequest, body: Any = None) -> SEOContext:
-    """SEO für die Portal-Startseite: Übersicht einer Kommune (``/insight/k/<slug>/``) bzw. Kommunenauswahl."""
+    """
+    SEO für die Portal-Startseite: Übersicht einer Kommune (``/insight/k/<slug>/``) bzw. Kommunenauswahl.
+
+    Die Stadtseite ist der Einstieg für Suchen wie „Ratsinformationen <Kommune>“. Ihr JSON-LD (``CollectionPage``)
+    nennt, worum es geht (die Kommune mit ihrer Website), wer die Seite herausgibt (mandari) und wozu sie gehört
+    (mandari Insight); die Kommunenauswahl beschreibt das Bürgerportal selbst (``WebSite``).
+    """
     og_title = ""
+    canonical = build_canonical_url(request)
+    breadcrumbs: list[tuple[str, str]] = []
     if body:
         name = _kommune(body)
         og_title = f"Ratsinformationen {name} – Sitzungen, Vorlagen, Beschlüsse"
@@ -987,18 +1048,43 @@ def get_portal_home_seo(request: HttpRequest, body: Any = None) -> SEOContext:
             f"Ratsinformationen {name}: Sitzungen mit Tagesordnung, Vorlagen, Anträge und Beschlüsse aus Rat und "
             "Ausschüssen – verständlich aufbereitet und durchsuchbar."
         )
+        json_ld = _ohne_leere(
+            {
+                "@context": "https://schema.org",
+                "@type": "CollectionPage",
+                "@id": canonical,
+                "url": canonical,
+                "name": og_title,
+                "description": description,
+                "inLanguage": "de",
+                "about": _kommune_ld(body),
+                "spatialCoverage": _gebiet(name),
+                "isPartOf": _insight_ld(),
+                "publisher": organisation_ld(),
+            }
+        )
+        seite = seite_der_kommune(body)
+        if seite:
+            breadcrumbs = [("mandari Insight", _insight_ld()["url"]), (name, seite)]
     else:
         title = "Kommune wählen – mandari Insight"
         description = (
             "Lokalpolitik, die alle verstehen: Wählen Sie Ihre Kommune und sehen Sie "
             "Sitzungen, Vorgänge, Gremien und die Menschen hinter den Entscheidungen."
         )
+        json_ld = {
+            "@context": "https://schema.org",
+            **_insight_ld(),
+            "description": "Kostenloses Bürgerportal von mandari mit den öffentlichen Ratsinformationen der Kommunen.",
+        }
 
     return SEOContext(
         title=title,
         og_title=og_title,
         description=description[:160],
-        canonical_url=build_canonical_url(request),
+        canonical_url=canonical,
         og_type="website",
+        json_ld=json_ld,
         keywords=["Ratsinformationen", _kommune(body), "Sitzungen", "Vorlagen", "Beschlüsse"] if body else [],
+        breadcrumbs=breadcrumbs,
     )

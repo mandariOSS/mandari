@@ -1,0 +1,21 @@
+{# Über die Ratsinformationen der Kommune: woher sie kommen, wer die Seite betreibt, was mandari außerdem anbietet (Stadtseite, nicht auf eigenen Portalen) #}
+{% with name=active_body.get_display_name %}
+<c-insight.band aria-labelledby="ueber-die-ratsinformationen">
+    <div class="max-w-3xl">
+        <h2 id="ueber-die-ratsinformationen" class="abschnitt-titel">Über die Ratsinformationen {{ name }}</h2>
+        <p class="mt-3 text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">
+            Hier stehen die öffentlichen Sitzungen, Vorlagen, Anträge und Beschlüsse aus Rat und Ausschüssen von {{ name }}.
+            {% if active_body.aus_mandari_session %}
+            {{ name }} veröffentlicht sie selbst mit mandari Session.
+            {% else %}
+            Sie kommen aus dem Ratsinformationssystem von {{ name }}, verbindlich ist die Veröffentlichung dort.
+            mandari Insight ist ein unabhängiges, kostenloses Bürgerportal von mandari und kein Angebot von {{ name }}.
+            {% endif %}
+            {% if offene_daten_url %}Alle Daten gibt es auch als <a href="{{ offene_daten_url }}" class="font-medium text-gray-900 dark:text-white underline underline-offset-4 decoration-gray-400 hover:decoration-primary-600">offene Daten nach OParl</a>.{% endif %}
+        </p>
+        <p class="mt-3 text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">
+            Mit denselben Daten können Fraktionen ihre Sitzungen in <a href="https://mandari.de/fraktionen/" class="font-medium text-gray-900 dark:text-white underline underline-offset-4 decoration-gray-400 hover:decoration-primary-600">mandari Work</a> vorbereiten{% if not active_body.aus_mandari_session %}, und für den Sitzungsdienst der Verwaltung gibt es <a href="https://mandari.de/kommunen/" class="font-medium text-gray-900 dark:text-white underline underline-offset-4 decoration-gray-400 hover:decoration-primary-600">mandari Session</a>{% endif %}.
+        </p>
+    </div>
+</c-insight.band>
+{% endwith %}
