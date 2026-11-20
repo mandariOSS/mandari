@@ -794,8 +794,9 @@ def beratungen_verknuepfen(
     async def run_link() -> int:
         async with SyncOrchestrator() as orchestrator:
             source_id = None
-            if source_url:
-                source = await orchestrator.storage.get_source_by_url(source_url)
+            if source_url is not None:
+                # Eine leere Angabe ist ein Fehler, nicht „alle Quellen“
+                source = await orchestrator.storage.get_source_by_url(source_url) if source_url.strip() else None
                 if source is None:
                     console.print(f"[red]Quelle nicht gefunden: {source_url}[/red]")
                     return 1

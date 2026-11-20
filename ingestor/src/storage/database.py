@@ -276,6 +276,13 @@ def agenda_item_consultation_reference(raw: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _agenda_item_consultation_column() -> Any:
+    """Beratung, die ein Tagesordnungspunkt nennt, in SQL: ``consultation`` als Adresse oder Objekt mit ``id``."""
+    return func.coalesce(
+        OParlAgendaItem.raw_json["consultation"]["id"].astext, OParlAgendaItem.raw_json["consultation"].astext
+    )
+
+
 @dataclass(frozen=True)
 class PendingConsultationLink:
     """Beratung ohne Tagesordnungspunkt, die ein Punkt derselben Quelle nennt (Nachziehen, Issue #1523)."""
@@ -297,7 +304,8 @@ _PENDING_CONSULTATION_LINKS = text(
     " coalesce(s.name, '')"
     " FROM oparl_consultations c"
     " JOIN oparl_bodies cb ON cb.id = c.body_id"
-    " JOIN oparl_agenda_items ai ON ai.raw_json->>'consultation' = c.external_id"
+    " JOIN oparl_agenda_items ai"
+    " ON coalesce(ai.raw_json->'consultation'->>'id', ai.raw_json->>'consultation') = c.external_id"
     " JOIN oparl_meetings m ON m.id = ai.meeting_id"
     " JOIN oparl_bodies mb ON mb.id = m.body_id AND mb.source_id = cb.source_id"
     " LEFT JOIN oparl_sources s ON s.id = cb.source_id"
@@ -2885,7 +2893,7 @@ class DatabaseStorage:
             .where(
                 OParlMeeting.external_id == meeting_external_id,
                 _bodies_of_source_of(OParlMeeting.body_id, body_id),
-                OParlAgendaItem.raw_json["consultation"].astext == consultation_external_id,
+                _agenda_item_consultation_column() == consultation_external_id,
                 OParlAgendaItem.deleted.isnot(True),
             )
             .order_by(OParlAgendaItem.external_id)
@@ -2916,6 +2924,19 @@ class DatabaseStorage:
         Änderung.
         """
         meeting_ref = select(OParlMeeting.external_id).where(OParlMeeting.id == meeting_id).scalar_subquery()
+        # Der Punkt muss noch stehen (nicht gelöscht, auch nicht zurückgenommen) und die Beratung nennen: Das
+        # Nachziehen liest seine Vorschläge vor den Schreibtransaktionen
+        naming_item = (
+            select(OParlAgendaItem.id)
+            .where(
+                OParlAgendaItem.id == agenda_item_id,
+                OParlAgendaItem.external_id == agenda_item_external_id,
+                OParlAgendaItem.meeting_id == meeting_id,
+                OParlAgendaItem.deleted.isnot(True),
+                _agenda_item_consultation_column() == consultation_external_id,
+            )
+            .exists()
+        )
         found = await session.execute(
             update(OParlConsultation)
             .where(
@@ -2923,6 +2944,7 @@ class DatabaseStorage:
                 OParlConsultation.agenda_item_external_id.is_(None),
                 OParlConsultation.deleted.isnot(True),
                 _owned_by_source_of(OParlConsultation, body_id),
+                naming_item,
             )
             .values(
                 agenda_item_external_id=agenda_item_external_id,

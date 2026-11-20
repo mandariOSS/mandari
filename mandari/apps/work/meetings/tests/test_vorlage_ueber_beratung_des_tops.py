@@ -57,6 +57,7 @@ def welt() -> SimpleNamespace:
         )
 
     return SimpleNamespace(
+        kommune_a=kommune_a,
         kommune_b=kommune_b,
         sitzung=sitzung,
         vorlage=vorlage,
@@ -105,3 +106,22 @@ def test_vorladen_mit_rueckfall_ohne_abfrage_je_top(welt: SimpleNamespace, djang
     with django_assert_max_num_queries(len(erster.captured_queries)):
         ergebnis = selectors.prefetch_papers_for_agenda_items(weitere)
     assert all(ergebnis[p.id] == [welt.vorlage] for p in weitere)
+
+
+def test_quellenbindung_je_top_bei_gemischten_quellen(welt: SimpleNamespace) -> None:
+    """Ein TOP aus Quelle A, der dieselbe Beratung aus B nennt wie ein TOP aus B, bekommt ihre Vorlage nicht."""
+    sitzung_a = OParlMeeting.objects.create(
+        external_id=_kennung(A, "meeting"), body=welt.kommune_a, name="Rat A", start=timezone.now()
+    )
+    punkt_a = OParlAgendaItem.objects.create(
+        external_id=_kennung(A, "agendaitem"),
+        meeting=sitzung_a,
+        number="1",
+        order=1,
+        raw_json={"consultation": welt.beratung.external_id},
+    )
+    punkt_b = welt.punkt(1, welt.beratung.external_id)
+
+    vorgeladen = selectors.prefetch_papers_for_agenda_items([punkt_a, punkt_b])
+    assert vorgeladen == {punkt_a.id: [], punkt_b.id: [welt.vorlage]}
+    assert selectors.get_primary_paper_for_item(punkt_a) is None

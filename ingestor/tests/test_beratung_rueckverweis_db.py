@@ -128,7 +128,9 @@ class Quelle:
         self.body_id = await self.storage.upsert_body(body, source_id)
         return self
 
-    async def sitzung_mit_punkt(self, beratung: str | None = CONSULTATION, punkt: str = ITEM) -> uuid.UUID:
+    async def sitzung_mit_punkt(
+        self, beratung: str | dict[str, Any] | None = CONSULTATION, punkt: str = ITEM
+    ) -> uuid.UUID:
         top: dict[str, Any] = {
             "id": punkt,
             "type": "https://schema.oparl.org/1.1/AgendaItem",
@@ -278,3 +280,41 @@ async def test_bestand_nachziehen_mit_probelauf_und_idempotent(storage: Database
 
     assert await storage.link_pending_consultations(apply=True) == {}
     assert await storage.pending_consultation_links() == []
+
+
+async def test_eingebetteter_verweis_im_punkt(quelle: Quelle) -> None:
+    """Der Punkt nennt seine Beratung als Objekt mit ``id``; die Beratung kommt danach mit ihrer Sitzung."""
+    await quelle.sitzung_mit_punkt(beratung={"id": CONSULTATION, "type": "https://schema.oparl.org/1.1/Consultation"})
+    await quelle.vorlage_mit_beratung()
+    assert (await quelle.beratung()).agenda_item_external_id == ITEM
+
+
+async def test_veralteter_vorschlag_verknuepft_keinen_geloeschten_punkt(
+    storage: DatabaseStorage, quelle: Quelle
+) -> None:
+    """Das Nachziehen liest Vorschläge vor dem Schreiben; ein inzwischen gelöschter Punkt wird nicht verknüpft."""
+    await quelle.sitzung_mit_punkt(beratung=None)
+    await quelle.vorlage_mit_beratung(meeting=None)
+    async with storage.get_session() as session:
+        punkt = (await session.execute(select(OParlAgendaItem).where(OParlAgendaItem.external_id == ITEM))).scalar_one()
+        punkt.raw_json = {**punkt.raw_json, "consultation": CONSULTATION}
+        await session.commit()
+    [vorschlag] = await storage.pending_consultation_links()
+    async with storage.get_session() as session:
+        await session.execute(
+            text("UPDATE oparl_agenda_items SET deleted = true WHERE external_id = :punkt"), {"punkt": ITEM}
+        )
+        await session.commit()
+
+    async with storage.get_session() as session:
+        geschrieben = await storage._link_consultation_to_agenda_item(
+            session,
+            vorschlag.consultation_external_id,
+            agenda_item_external_id=vorschlag.agenda_item_external_id,
+            agenda_item_id=vorschlag.agenda_item_id,
+            meeting_id=vorschlag.meeting_id,
+            body_id=vorschlag.body_id,
+        )
+        await session.commit()
+    assert geschrieben is None
+    assert (await quelle.beratung()).agenda_item_external_id is None

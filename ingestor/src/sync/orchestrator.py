@@ -2115,8 +2115,6 @@ class SyncOrchestrator:
         server_modified_since = modified_since if not full else changes_since
         if slow_since is not None:
             server_modified_since = slow_since  # langsame Liste: ab ihrem eigenen Fensteranfang
-        # Stopp nach Seiten ohne Änderung nur, wenn die Quelle die Liste nicht nachweislich filtert (Issue #1523)
-        stale_stop = server_modified_since is None or not client.filter_proven(list_url)
 
         pages: AsyncIterator[list[dict[str, Any]]]
         if windows is not None and slices is not None:
@@ -2300,6 +2298,8 @@ class SyncOrchestrator:
                 # nachweislich filtert: Jede ihrer Seiten ist schon eine Änderung seit dem Fensteranfang, und hinter
                 # Seiten mit Bekanntem (Fenster, das ein nicht gespeichertes Objekt festhält) stehen die neuen Einträge
                 unsliced = windows is None or (slices is not None and list_url in slices.unsliced)
+                # Nachweis des Filters erst hier prüfen: ``fetch_list`` kann den Vermerk „filtert nicht“ im Lauf löschen
+                stale_stop = server_modified_since is None or not client.filter_proven(list_url)
                 if consecutive_stale_pages >= stale_pages_to_stop and unsliced and stale_stop:
                     console.print(
                         f"[yellow]  Stopping {entity_type}: "

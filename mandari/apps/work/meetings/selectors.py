@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Count, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Prefetch, Q, QuerySet
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -225,8 +225,17 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
     for item in agenda_items:
         if item.external_id and (ref := _consultation_reference(item)) is not None:
             tops_of_named.setdefault(ref, []).append(item.external_id)
+    # Quelle je TOP: Der Rückfall gilt nur für Beratungen aus der Quelle des TOP, der sie nennt (eine Abfrage)
+    source_of_top: dict[str, Any] = {}
+    if named is not None:
+        source_of_top = dict(
+            OParlAgendaItem.objects.filter(external_id__in=external_ids).values_list(
+                "external_id", "meeting__body__source_id"
+            )
+        )
     consultations = (
         OParlConsultation.objects.filter(condition)
+        .annotate(source_of_body=F("body__source_id"))
         .select_related("paper")
         # Dateien ohne Volltext und Rohdaten: Die Vorbereitung zeigt nur Namen, Art und Größe
         .prefetch_related(
@@ -251,7 +260,12 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
         if consultation.agenda_item_external_id:
             ext_ids = [consultation.agenda_item_external_id]
         else:
-            ext_ids = tops_of_named.get(consultation.external_id, [])
+            source = getattr(consultation, "source_of_body", None)
+            ext_ids = [
+                top
+                for top in tops_of_named.get(consultation.external_id, [])
+                if consultation.body_id is None or source == source_of_top.get(top)
+            ]
         for ext_id in ext_ids:
             bucket = papers_by_ext_id.setdefault(ext_id, [])
             if consultation.paper not in bucket:
