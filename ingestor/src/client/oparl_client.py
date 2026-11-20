@@ -90,6 +90,11 @@ class FetchResult:
     error_data: Any = None
     #: Der letzte Versuch endete in einer Zeitüberschreitung oder mit HTTP 504 (langsame Listen, Issue #1033)
     timed_out: bool = False
+    #: Alle Versuche scheiterten an Zeitüberschreitung, Serverfehler (5xx) oder Verbindungsfehler: eine Störung der
+    #: Quelle, kein Befund über die Seite selbst (Issue #1523)
+    retries_exhausted: bool = False
+    #: Der Schutzschalter des Hosts war offen, die Anfrage ging nicht an die Quelle (Issue #1523)
+    circuit_open: bool = False
     #: HTTP 403, und die Vergleichsanfrage mit neutralem Client bekam ebenfalls eine Absage: keine Sperre unseres
     #: User-Agents, die Quelle verweigert den Zugriff allen (``HostHealth.forbidden_for_all``, Issue #1086)
     forbidden_for_all: bool = False
@@ -184,11 +189,23 @@ class ListFetchError(Exception):
     die Fehlerklasse, damit der Orchestrator sie im Sync-Log nennt.
     """
 
-    def __init__(self, list_url: str, page_url: str, result: FetchResult) -> None:
+    def __init__(
+        self,
+        list_url: str,
+        page_url: str,
+        result: FetchResult,
+        last_page_url: str | None = None,
+        last_page_ids: tuple[str, ...] = (),
+    ) -> None:
         self.list_url = list_url
         self.page_url = page_url
         self.result = result
         self.error_kind = result.error_kind
+        #: Zuletzt ganz gelesene Folgeseite dieser Liste in diesem Abruf (``None``: keine); dort setzt ein
+        #: abgebrochener Vollabgleich fort (``src/sync/fortsetzung.py``), ebenso eine Zeitscheibe (Issue #1523)
+        self.last_page_url = last_page_url
+        #: Kennungen dieser Seite; der Fortsetzung zeigen sie, ob sich die Liste bis dahin verschoben hat
+        self.last_page_ids = last_page_ids
         page = "" if page_url == list_url else f" (Seite {page_url})"
         super().__init__(f"Liste {list_url}{page} nicht abrufbar: {result.error}")
 
@@ -196,6 +213,16 @@ class ListFetchError(Exception):
     def timed_out(self) -> bool:
         """Abbruch nach Zeitüberschreitung oder HTTP 504 (Issue #1033)."""
         return self.result.timed_out
+
+    @property
+    def interrupted(self) -> bool:
+        """
+        Abbruch durch eine Störung der Quelle, nicht durch die Liste selbst (Issue #1523): Zeitüberschreitung,
+        Serverfehler oder Verbindungsfehler nach allen Versuchen, oder der Schutzschalter des Hosts war offen. Ein
+        Vollabgleich setzt dann wie am Fensterende an der zuletzt gelesenen Seite fort, statt die Liste beim nächsten
+        Mal wieder ganz zu lesen. Kein Abbruch: HTTP 4xx, Teilantwort, Liste im Kreis.
+        """
+        return self.result.retries_exhausted or self.result.circuit_open
 
 
 class ListMissingError(Exception):
@@ -243,12 +270,9 @@ class FetchWindowClosedError(ListFetchError):
             list_url,
             page_url,
             FetchResult(url=page_url, data=None, status_code=0, error=WINDOW_CLOSED_ERROR),
+            last_page_url,
+            last_page_ids,
         )
-        #: Zuletzt ganz gelesene Seite dieser Liste in diesem Abruf (``None``: keine); dort setzt ein abgebrochener
-        #: Vollabgleich fort (``src/sync/fortsetzung.py``)
-        self.last_page_url = last_page_url
-        #: Kennungen dieser Seite; der Fortsetzung zeigen sie, ob sich die Liste bis dahin verschoben hat
-        self.last_page_ids = last_page_ids
 
 
 @dataclass
@@ -808,16 +832,32 @@ class OParlClient:
         last_error: str | None = None
         timed_out = False
         circuit_breaker = self._get_circuit_breaker(url)
+        # Höchstens einmal je Abruf auf „halb offen“ warten (Issue #1523)
+        waited_for_breaker = False
 
         # Check if circuit is open
         try:
             # Try to execute through circuit breaker
-            for attempt in range(self.max_retries):
+            attempt = 0
+            while attempt < self.max_retries:
+                attempt += 1
                 try:
                     return await circuit_breaker.call(self._do_fetch, url, use_cache, skip_wait, **page_mode)
 
                 except CircuitOpenError as e:
-                    # Circuit is open - fail fast
+                    # Offener Schutzschalter: Eine einzelne hängende Seite riss sonst alle parallel laufenden Listen
+                    # des Hosts mit, die sofort mit „Circuit breaker open“ abbrachen (Issue #1523). Einmal bis
+                    # „halb offen“ warten; kommt die Anfrage dann wieder nicht durch, wie bisher sofort aufgeben
+                    pause = None if waited_for_breaker else self._half_open_wait(e.remaining_seconds)
+                    if pause is not None:
+                        waited_for_breaker = True
+                        attempt -= 1  # Warten ist kein Fehlversuch
+                        console.print(
+                            f"[dim]{urlparse(url).netloc}: Schutzschalter offen, warte {pause:.0f} s auf den "
+                            f"nächsten Versuch[/dim]"
+                        )
+                        await asyncio.sleep(pause)
+                        continue
                     self.stats.errors += 1
                     metrics.record_http_error(self.source_name, "circuit_open")
                     return FetchResult(
@@ -825,6 +865,7 @@ class OParlClient:
                         data=None,
                         status_code=0,
                         error=f"Circuit breaker open: {e}",
+                        circuit_open=True,
                     )
 
                 except httpx.HTTPStatusError as e:
@@ -864,14 +905,17 @@ class OParlClient:
                     metrics.record_http_error(self.source_name, error_type)
 
                 # Exponential backoff
-                if attempt < self.max_retries - 1:
-                    wait = self.retry_backoff**attempt
+                if attempt < self.max_retries:
+                    wait = self.retry_backoff ** (attempt - 1)
                     await asyncio.sleep(wait)
 
         except Exception as e:
             last_error = str(e)
             timed_out = False
+            unexpected = True
             metrics.record_http_error(self.source_name, "unknown")
+        else:
+            unexpected = False
 
         self.stats.errors += 1
         health = self.host_health.get(urlparse(url).netloc)
@@ -883,7 +927,22 @@ class OParlClient:
             error=f"Max retries exceeded: {last_error}",
             error_kind=ERROR_KIND_SERVER_ERROR_SERIES if series else None,
             timed_out=timed_out,
+            retries_exhausted=not unexpected,
         )
+
+    def _half_open_wait(self, remaining: float) -> float | None:
+        """
+        Wie lange ein Abruf bei offenem Schutzschalter auf „halb offen“ wartet (Issue #1523), oder ``None``: sofort
+        aufgeben. Nur, wenn der Schalter bald wieder halb öffnet (``circuit_breaker_half_open_wait``, 0 schaltet das
+        Warten ab) und das Zeitfenster des Laufs (``fetch_deadline``) danach noch offen ist.
+        """
+        limit = settings.circuit_breaker_half_open_wait
+        if limit <= 0 or remaining > limit:
+            return None
+        pause = max(0.0, remaining) + 0.5
+        if self.fetch_deadline is not None and datetime.now(UTC) + timedelta(seconds=pause) >= self.fetch_deadline:
+            return None
+        return pause
 
     async def _do_fetch(
         self,
@@ -1193,7 +1252,8 @@ class OParlClient:
                 # Liste ab welcher Seite fehlt, und nennt sie im Sync-Log.
                 console.print(f"[red]Error fetching {current_url}: {result.error}[/red]")
                 self._health(current_url).note_failed_list(url)
-                raise ListFetchError(url, current_url, result)
+                # Mit der zuletzt ganz gelesenen Seite: Ein Vollabgleich setzt nach einer Störung dort fort (#1523)
+                raise ListFetchError(url, current_url, result, last_page_url, last_page_ids)
 
             # Eine Folgeseite ohne Liste (leer, Fehlerobjekt, anderes JSON) ist eine Teilantwort (Issue #556):
             # Die Liste bricht mittendrin ab. Auf der ersten Seite heißt ein Fehlerobjekt dagegen „diese Liste

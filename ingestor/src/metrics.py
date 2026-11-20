@@ -431,7 +431,8 @@ class MetricsCollector:
         if not self.enabled:
             return
         self.simple.sync_runs += 1
-        if status != "success":
+        # „partial“ (Vollabgleich mit Lücke, Issue #1523) ist kein gescheiterter Lauf; sichtbar im Label ``status``
+        if status not in ("success", "partial"):
             self.simple.sync_errors += 1
         if self._prometheus_enabled:
             self.sync_duration.labels(source=source, sync_type=sync_type).observe(duration)

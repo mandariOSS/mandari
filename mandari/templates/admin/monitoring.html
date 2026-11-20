@@ -146,7 +146,7 @@
                         <td class="mon-nowrap">{{ log.started_at|date:"d.m.Y H:i" }}</td>
                         <td>{{ log.get_sync_type_display }}{% if log.source %} · {{ log.source.name }}{% endif %}</td>
                         <td class="mon-nowrap">
-                            <span class="mon-badge {% if log.status == 'success' %}mon-badge-ok{% elif log.status == 'running' %}mon-badge-gray{% else %}mon-badge-critical{% endif %}">{{ log.get_status_display }}</span>
+                            <span class="mon-badge {% if log.status == 'success' %}mon-badge-ok{% elif log.status == 'partial' %}mon-badge-warning{% elif log.status == 'running' %}mon-badge-gray{% else %}mon-badge-critical{% endif %}">{{ log.get_status_display }}</span>
                         </td>
                         <td class="mon-nowrap">{% if log.duration_seconds %}{{ log.duration_seconds|floatformat:0 }} s{% else %}–{% endif %}</td>
                         <td>{{ log.entities_synced }}</td>

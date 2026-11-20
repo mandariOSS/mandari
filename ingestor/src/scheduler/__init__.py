@@ -74,6 +74,7 @@ from src.sync.orchestrator import (
     SyncResult,
     outside_window_note,
     source_backoff_until,
+    sync_log_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -776,7 +777,7 @@ class SyncScheduler:
 
         requests = result.http_stats.http_requests if result.http_stats is not None else 0
         duration = max(0.0, (finished - started).total_seconds())
-        status = "success" if result.success else "failed"
+        status = sync_log_status(result)
         sync_type = "full" if result.full else "incremental"
         await self._write_log(source, result, started, finished, triggered_by, new_state, requests, window)
         metrics.record_source_run(source.name, sync_type, status, duration, requests, finished.timestamp())
@@ -898,7 +899,7 @@ class SyncScheduler:
             await self.orchestrator.storage.write_sync_log(
                 source_id=source.id,
                 sync_type="full" if result.full else "incremental",
-                status="success" if result.success else "failed",
+                status=sync_log_status(result),
                 started_at=started,
                 finished_at=finished,
                 duration_seconds=max(0.0, (finished - started).total_seconds()),

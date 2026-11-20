@@ -421,6 +421,9 @@ SYNC_CONFIG_FULL_SYNC_RESUME_KEY: Final = "full_sync_resume"
 #: Schlüssel in ``OParlSource.sync_config``: optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind (Adresse ->
 #: ``failures``, ``until``, ``since``, ``reason``; Issue #1033)
 SYNC_CONFIG_SLOW_LISTS_KEY: Final = "slow_lists"
+#: Schlüssel in ``OParlSource.sync_config``: Fortschritt innerhalb einer Zeitscheibe des Vollabgleichs je Liste (Adresse
+#: -> ``since``, ``until``, ``page``, ``ids``, ``at``; ``src/sync/slices.py``, Issue #1523)
+SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY: Final = "full_sync_slice_page"
 #: Schlüssel in ``OParlSource.sync_config``: Beratungen, deren Nachladen zuletzt versucht wurde (Kennung -> Zeitpunkt;
 #: Issue #1523, ``src/sync/beratungen_nachladen.py``)
 SYNC_CONFIG_CONSULTATION_FETCHES_KEY: Final = "beratungen_nachladen_versuche"
@@ -522,6 +525,12 @@ def slow_lists_of(sync_config: Any) -> dict[str, dict[str, Any]]:
     return {
         url: dict(entry) for url, entry in stored.items() if isinstance(url, str) and url and isinstance(entry, dict)
     }
+
+
+def full_sync_slice_pages_of(sync_config: Any) -> dict[str, Any]:
+    """Fortschritt innerhalb einer Zeitscheibe (``sync_config["full_sync_slice_page"]``, Issue #1523), roh."""
+    stored = sync_config.get(SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY) if isinstance(sync_config, dict) else None
+    return dict(stored) if isinstance(stored, dict) else {}
 
 
 def slice_filter_ignored_of(sync_config: Any) -> dict[str, Any] | None:
@@ -1131,6 +1140,17 @@ class DatabaseStorage:
 
         def change(sync_config: dict[str, Any]) -> bool:
             return _put_entry(sync_config, SYNC_CONFIG_SLOW_LISTS_KEY, list_url, entry)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def set_full_sync_slice_page(self, source_url: str, list_url: str, entry: dict[str, Any] | None) -> None:
+        """
+        Fortschritt innerhalb einer Zeitscheibe des Vollabgleichs festhalten oder löschen (``None``; Issue #1523).
+        Unter Zeilensperre.
+        """
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY, list_url, entry)
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 

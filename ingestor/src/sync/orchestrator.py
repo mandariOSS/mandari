@@ -11,6 +11,7 @@ Coordinates the complete OParl synchronization process with:
 """
 
 import asyncio
+import logging
 from collections import Counter
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
@@ -76,6 +77,7 @@ from src.storage.database import (
     ForeignObjectError,
     full_sync_progress_of,
     full_sync_resume_of,
+    full_sync_slice_pages_of,
     missing_list_reasons_of,
     missing_lists_of,
     slice_filter_ignored_of,
@@ -97,7 +99,9 @@ from src.sync.html_ergaenzung import HtmlErgaenzung, HtmlErgaenzungConfig
 from src.sync.processor import OParlProcessor, session_location_id
 from src.sync.slices import (
     FILTER_IGNORED_RECHECK,
+    SLOW_LIST_STUCK_AFTER,
     BodySlices,
+    SlicePage,
     SliceRun,
     SliceWindow,
     SlowList,
@@ -520,6 +524,7 @@ def source_backoff_until(source, now: datetime | None = None) -> datetime | None
 
 
 console = MaskingConsole()
+logger = logging.getLogger(__name__)
 
 
 def end_with_current_task(task: asyncio.Task[Any]) -> None:
@@ -577,6 +582,27 @@ class SyncResult:
     # Außerhalb des Abruffensters der Quelle (``sync_window``, Issue #1186): kein Lauf, nichts abgerufen, die Quelle
     # blieb unverändert; die Meldung steht unter ``errors``
     outside_window: bool = False
+    # Vollabgleich, der nicht alle Listen ganz gelesen hat (Zeitüberschreitung, Schutzschalter, Fensterende,
+    # ausgesetzte Liste, gestörter Host): im Sync-Protokoll ``partial`` statt ``success`` (Issue #1523)
+    full_incomplete: bool = False
+
+
+#: Zustände im Sync-Protokoll (``insight_sync_synclog.status``, ``SyncLog.Status`` in Django)
+SYNC_STATUS_SUCCESS = "success"
+SYNC_STATUS_PARTIAL = "partial"
+SYNC_STATUS_FAILED = "failed"
+
+
+def sync_log_status(result: SyncResult) -> str:
+    """
+    Zustand eines Laufs im Sync-Protokoll (Issue #1523): ``failed`` ohne Erfolg, ``partial`` für einen Vollabgleich,
+    der nicht alle Listen ganz gelesen hat, sonst ``success``. Früher stand ein Vollabgleich, den ein offener
+    Schutzschalter oder eine Zeitüberschreitung abgebrochen hatte, als ``success`` im Protokoll und verdeckte die
+    Lücke im Bestand. Ein inkrementeller Lauf bleibt ``success``; seine Lücken nennt er unter ``errors``.
+    """
+    if not result.success:
+        return SYNC_STATUS_FAILED
+    return SYNC_STATUS_PARTIAL if result.full_incomplete else SYNC_STATUS_SUCCESS
 
 
 def merge_slice_details(target: dict[str, Any], body_result: dict[str, Any]) -> None:
@@ -1127,8 +1153,13 @@ class SyncOrchestrator:
 
                 # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556), der
                 # Vollabgleich nur ohne ausgesetzte Liste (Issue #1033)
-                complete = not body_filter and sync_complete(body_results, missed_bodies, client)
-                full_complete = complete and full_sync_finished(body_results)
+                bodies_complete = sync_complete(body_results, missed_bodies, client)
+                full_finished = full_sync_finished(body_results)
+                complete = not body_filter and bodies_complete
+                full_complete = complete and full_finished
+                # Vollabgleich mit Lücke: im Sync-Protokoll ``partial`` (Issue #1523); der Filter auf Kommunen zählt
+                # dabei nicht als Lücke
+                result.full_incomplete = full and not (bodies_complete and full_finished)
                 await self.storage.update_source_sync_time(
                     source_id,
                     full_sync=full,
@@ -1371,7 +1402,13 @@ class SyncOrchestrator:
                     await self.storage.set_slice_filter_ignored(url, None)
                 except Exception as e:  # noqa: BLE001 - dann gilt der Befund im nächsten Lauf als alt
                     console.print(f"[yellow]Befund zu Zeitscheiben nicht gelöscht: {e}[/yellow]")
-        run = SliceRun.build(url, config, full_sync_progress_of(sync_config), slow_lists_of(sync_config))
+        run = SliceRun.build(
+            url,
+            config,
+            full_sync_progress_of(sync_config),
+            slow_lists_of(sync_config),
+            full_sync_slice_pages_of(sync_config),
+        )
         if config is not None:
             console.print(
                 f"[dim]{url}: Vollabgleich in Zeitscheiben zu {config.days} Tagen ab {config.since:%Y-%m-%d}[/dim]"
@@ -2545,6 +2582,10 @@ class SyncOrchestrator:
         Beim inkrementellen Nachholen einer langsamen Liste gibt es keinen Befund an der Quelle: Ignoriert sie den
         Filter, lehnt sie ihn ab (HTTP 400, 401, 403, 404) oder findet sie die Liste mit Filter nicht, liest der Lauf
         die Liste ab der offenen Scheibe wie bisher ohne Zeitscheiben (``_slice_fallback``).
+
+        Im Vollabgleich setzt eine Scheibe, die ein früherer Lauf mittendrin abbrach (Fensterende, Zeitüberschreitung,
+        Schutzschalter), an der zuletzt ganz gelesenen Seite fort (``SlicePage``, Issue #1523); bricht sie wieder ab,
+        rückt dieser Stand vor.
         """
         run = slices.run
         readable = False
@@ -2556,13 +2597,16 @@ class SyncOrchestrator:
             if full and run.filter_ignored is not None:
                 raise SliceFilterIgnoredError(list_url, run.filter_ignored)
             fallback: str | None = None
+            # Fortschritt innerhalb der Scheibe (Issue #1523): ab der zuletzt ganz gelesenen Seite weiter
+            start_page = await self._slice_start_page(client, slices, list_url, entity_type, window) if full else None
             try:
                 async for page in client.fetch_list(
                     list_url,
                     modified_since=window.since,
                     modified_until=window.until,
                     strict_filter=True,
-                    report_missing=list_check is not None and index == 0 and not resumed,
+                    report_missing=list_check is not None and index == 0 and not resumed and start_page is None,
+                    next_page=start_page,
                 ):
                     if list_check is not None and not readable:
                         readable = True
@@ -2590,6 +2634,8 @@ class SyncOrchestrator:
                     _note_missing_list(list_check, list_url, missing, optional=optional)
                     return
             except ListFetchError as error:
+                if full:
+                    await self._remember_slice_page(slices, list_url, window, error)
                 if not full and _filter_rejected(error):
                     fallback = f"Filter abgelehnt (HTTP {error.result.status_code})"
                 elif not (optional and error.timed_out):
@@ -2613,6 +2659,8 @@ class SyncOrchestrator:
                 return
             exists = exists or list_url not in client.filtered_empty_lists
             slices.read[list_url] += 1
+            if full:
+                await self._clear_slice_page(slices, list_url)
             await self._slice_done(slices, list_url, window, full)
         if list_check is not None and not readable:
             list_check.readable += 1  # lesbar, nur leer
@@ -2624,20 +2672,92 @@ class SyncOrchestrator:
             # bleibt er und gilt ab jetzt wieder einen Tag (Issue #1034)
             await self._remember_missing_list(list_check.lists, list_url, missing=not exists)
 
+    async def _slice_start_page(
+        self, client: OParlClient, slices: BodySlices, list_url: str, entity_type: str, window: SliceWindow
+    ) -> str | None:
+        """
+        Seite, ab der der Vollabgleich die Scheibe weiterliest (Issue #1523), oder ``None``: ganz. Nur, wenn ein
+        früherer Lauf genau diese Scheibe abgebrochen hat und sie sich seitdem nicht um mehr als eine Seite verschoben
+        hat (gleiche Prüfung wie bei der Fortsetzung ohne Zeitscheiben, ``_resume_shifted``).
+        """
+        entry = slices.run.pages.get(list_url)
+        if entry is None or not entry.matches(window):
+            return None
+        if await self._resume_shifted(client, ResumeEntry(at=entry.at, page=entry.page, ids=entry.ids)):
+            console.print(
+                f"[yellow]  {entity_type}: Scheibe {window.label()} hat sich seit dem Abbruch verschoben "
+                f"({entry.page}), Scheibe ganz[/yellow]"
+            )
+            await self._clear_slice_page(slices, list_url)
+            return None
+        console.print(f"[dim]  {entity_type}: Scheibe {window.label()} ab {entry.page} (Fortsetzung)[/dim]")
+        return entry.page
+
+    async def _remember_slice_page(
+        self, slices: BodySlices, list_url: str, window: SliceWindow, error: ListFetchError
+    ) -> None:
+        """
+        Scheibe im Vollabgleich abgebrochen (Issue #1523): Am Fensterende und nach einer Störung (Zeitüberschreitung,
+        Serverfehler, Schutzschalter) die zuletzt ganz gelesene Seite merken; ohne gelesene Folgeseite bleibt ein
+        früherer Stand. Bei anderen Fehlern (Liste im Kreis, Teilantwort, Seite fehlt) fällt der Stand weg, und die
+        Scheibe kommt beim nächsten Mal ganz.
+        """
+        if not isinstance(error, FetchWindowClosedError) and not error.interrupted:
+            await self._clear_slice_page(slices, list_url)
+            return
+        if error.last_page_url is None:
+            return
+        run = slices.run
+        entry = SlicePage(
+            since=window.since,
+            until=window.until,
+            page=error.last_page_url,
+            at=datetime.now(UTC),
+            ids=tuple(error.last_page_ids),
+        )
+        run.pages[list_url] = entry
+        console.print(
+            f"[yellow]  Scheibe {window.label()} der Liste {list_url} abgebrochen, der nächste Vollabgleich setzt ab "
+            f"{entry.page} fort[/yellow]"
+        )
+        try:
+            await self.storage.set_full_sync_slice_page(run.source_url, list_url, entry.to_entry())
+        except Exception as e:  # noqa: BLE001 - dann liest der nächste Vollabgleich die Scheibe ganz
+            console.print(f"[yellow]  Fortschritt in der Scheibe der Liste {list_url} nicht gespeichert: {e}[/yellow]")
+
+    async def _clear_slice_page(self, slices: BodySlices, list_url: str) -> None:
+        """Fortschritt innerhalb einer Scheibe löschen (Scheibe ganz gelesen oder verschoben, Issue #1523)."""
+        run = slices.run
+        if run.pages.pop(list_url, None) is None:
+            return
+        try:
+            await self.storage.set_full_sync_slice_page(run.source_url, list_url, None)
+        except Exception as e:  # noqa: BLE001 - ein alter Stand gilt nur für genau seine Scheibe
+            console.print(f"[yellow]  Fortschritt in der Scheibe der Liste {list_url} nicht gelöscht: {e}[/yellow]")
+
     @staticmethod
     async def _resume_guard(
         pages: AsyncIterator[list[dict[str, Any]]], resume: ResumeRun, list_url: str
     ) -> AsyncIterator[list[dict[str, Any]]]:
-        """Endet das Zeitfenster mitten in der Liste, die zuletzt gelesene Seite für die Fortsetzung merken."""
+        """
+        Endet das Zeitfenster mitten in der Liste, die zuletzt gelesene Seite für die Fortsetzung merken. Ebenso bei
+        einer Störung der Quelle (Issue #1523): Zeitüberschreitung, Serverfehler oder Verbindungsfehler nach allen
+        Versuchen, offener Schutzschalter (``ListFetchError.interrupted``). Sonst begann der nächste Vollabgleich die
+        Liste wieder bei Seite 1 und scheiterte jede Nacht an derselben Stelle (Stadt Bochum: Vorlagen ab Seite 52
+        von 2.600 nie gelesen).
+        """
         try:
             async for page in pages:
                 yield page
         except FetchWindowClosedError as error:
             resume.note_cut(list_url, error.last_page_url, error.last_page_ids)
             raise
-        except ListFetchError:
-            # Anderer Fehler (etwa eine Fortsetzungsseite, die es nicht mehr gibt): Der nächste Lauf liest ganz
-            resume.note_failed(list_url)
+        except ListFetchError as error:
+            if error.interrupted:
+                resume.note_cut(list_url, error.last_page_url, error.last_page_ids)
+            else:
+                # Anderer Fehler (etwa eine Fortsetzungsseite, die es nicht mehr gibt): Der nächste Lauf liest ganz
+                resume.note_failed(list_url)
             raise
 
     @staticmethod
@@ -2669,7 +2789,8 @@ class SyncOrchestrator:
         cut = sorted(url for url, entry in changes.items() if entry is not None and "page" in entry)
         if cut:
             console.print(
-                f"[yellow]Vollabgleich am Fensterende abgebrochen, der nächste setzt fort: {', '.join(cut)}[/yellow]"
+                f"[yellow]Vollabgleich abgebrochen (Fensterende oder Störung), der nächste setzt fort: "
+                f"{', '.join(cut)}[/yellow]"
             )
         elif complete:
             console.print("[green]Vollabgleich über mehrere Läufe vollständig, Fortsetzung beendet[/green]")
@@ -2749,13 +2870,22 @@ class SyncOrchestrator:
         Liefert ``False``, wenn sich die Aussetzung nicht speichern ließ: Ohne gespeicherten Fensteranfang gingen die
         Änderungen der Liste verloren, sobald das Fenster der Kommune vorrückt. Der Aufrufer wertet die Liste dann
         wie bisher als Lücke.
+
+        Nach ``SLOW_LIST_STUCK_AFTER`` Zeitüberschreitungen in Folge ohne Fortschritt gilt die Liste als festgefahren
+        (Issue #1523): Warnung im Log, ``stuck_since`` im Eintrag, nächster Versuch erst nach einer Woche statt jeden
+        Tag an derselben Tagesscheibe.
         """
         run = slices.run
         now = datetime.now(UTC)
         previous = run.slow.get(list_url)
         failures = 1 if progressed or previous is None else previous.failures + 1
         reason = "HTTP 504" if "HTTP 504" in str(error.result.error or "") else "Zeitüberschreitung"
-        entry = SlowList(failures=failures, until=now + slow_backoff(failures), since=since, reason=reason)
+        stuck_since: datetime | None = None
+        if failures >= SLOW_LIST_STUCK_AFTER:
+            stuck_since = previous.stuck_since if previous is not None and previous.stuck_since is not None else now
+        entry = SlowList(
+            failures=failures, until=now + slow_backoff(failures), since=since, reason=reason, stuck_since=stuck_since
+        )
         try:
             await self.storage.set_slow_list(run.source_url, list_url, entry.to_entry())
         except Exception as e:  # noqa: BLE001 - dann bleibt die Liste eine Lücke, der nächste Lauf fragt sie wieder an
@@ -2763,6 +2893,13 @@ class SyncOrchestrator:
             return False
         run.slow[list_url] = entry
         slices.suspended[list_url] = entry.until
+        if entry.stuck:
+            note = entry.stuck_note(list_url)
+            if previous is None or not previous.stuck:
+                logger.warning("Langsame Liste festgefahren: %s", note)
+            slices.notes.append(note)
+            console.print(f"[red]  {entity_type}: {note}[/red]")
+            return True
         note = (
             f"Liste {list_url} nach {reason} ausgesetzt bis {entry.until:%d.%m.%Y %H:%M} UTC "
             f"({failures}. Mal in Folge); Änderungen ab {since:%d.%m.%Y %H:%M} UTC holt der Ingestor danach nach"
@@ -2835,7 +2972,13 @@ class SyncOrchestrator:
 
         Eine im Vollabgleich ausgesetzte Liste (auch ohne Zeitscheiben) steht unter ``full_pending``: keine Lücke des
         Laufs, aber der Vollabgleich bleibt fällig (``full_sync_finished``).
+
+        Eine festgefahrene langsame Liste (Issue #1523) steht in jedem Sync-Protokoll, solange sie ausgesetzt bleibt.
         """
+        for list_url in sorted(slices.suspended):
+            slow = slices.run.slow.get(list_url)
+            if slow is not None and slow.stuck and (note := slow.stuck_note(list_url)) not in slices.notes:
+                slices.notes.append(note)
         stats["errors"].extend(slices.notes)
         if slices.suspended:
             stats["suspended_lists"] = {
@@ -3290,7 +3433,9 @@ class SyncOrchestrator:
                 **result.slice_details,
             }
 
-        status = "success" if not all_errors or total_entities > 0 else "failed"
+        status = SYNC_STATUS_SUCCESS if not all_errors or total_entities > 0 else SYNC_STATUS_FAILED
+        if status == SYNC_STATUS_SUCCESS and any(result.success and result.full_incomplete for result in results):
+            status = SYNC_STATUS_PARTIAL  # Vollabgleich mit Lücke (Issue #1523)
         duration = (end_time - start_time).total_seconds()
 
         try:
