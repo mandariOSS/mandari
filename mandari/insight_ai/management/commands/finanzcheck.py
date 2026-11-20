@@ -32,6 +32,8 @@ class Command(BaseCommand):
         from insight_ai.services import finanzcheck
 
         if options["nachziehen"]:
+            if options["trocken"]:
+                raise CommandError("--trocken gilt nur mit --vorgang; --nachziehen speichert immer")
             anzahl = finanzcheck.nachziehen(hoechstens=options["hoechstens"] or finanzcheck.JE_LAUF)
             self.stdout.write(f"{anzahl} KI-Aufrufe")
             return

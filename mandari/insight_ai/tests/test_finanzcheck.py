@@ -420,3 +420,93 @@ class TestBudgetreserve:
         anbieter.endpunkt = SimpleNamespace(monatsbudget_usd=100)  # type: ignore[attr-defined]
         anbieter.budget_rest = lambda: 20  # type: ignore[attr-defined]
         assert finanzcheck.nachziehen(provider=anbieter) == 0 and anbieter.aufrufe == []
+
+
+class TestBefundeCodeRabbit:
+    """Befunde von CodeRabbit zu PR #1515."""
+
+    def test_dezimalkomma_zaehlt(self) -> None:
+        text = "Die Baukosten betragen 6,2 Mio. Euro."
+        antwort = _antwort(
+            gesamtkosten={"euro": 62000000, "beleg": "Die Baukosten betragen 62 Mio. Euro."},
+            foerderung=None,
+            eigenanteil=None,
+            laufend_gesamt=None,
+            laufend=[],
+            zahlungen=[],
+        )
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
+        antwort["gesamtkosten"] = {"euro": 6200000, "beleg": "Die Baukosten betragen 6,2 Mio. Euro."}
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_OK
+
+    def test_eigenanteil_null(self) -> None:
+        text = "Die Maßnahme kostet 500.000 € und wird voll gefördert, der Eigenanteil beträgt 0 €."
+        antwort = _antwort(
+            gesamtkosten={"euro": 500000, "beleg": "Die Maßnahme kostet 500.000 €"},
+            foerderung=None,
+            eigenanteil={"euro": 0, "beleg": "der Eigenanteil beträgt 0 €"},
+            laufend_gesamt=None,
+            laufend=[],
+            zahlungen=[],
+            deckung="unklar",
+            im_haushalt="unklar",
+        )
+        ergebnis = finanzcheck.pruefen(antwort, text)
+        assert ergebnis.status == finanzcheck.STATUS_OK and ergebnis.daten["eigenanteil"]["euro"] == 0
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and "Die Stadt zahlt selbst nichts dazu." in anzeige.saetze
+
+    def test_unvollstaendige_aufteilung_ohne_summe(self) -> None:
+        laufend = [*ANTWORT["laufend"][:3], {"posten": "zinsen", "euro": 99999, "beleg": "erfunden 99.999"}]
+        ergebnis = finanzcheck.pruefen(_antwort(laufend=laufend, laufend_gesamt=None), DOKUMENT)
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None
+        assert not any(k.titel == "Jedes Jahr" for k in anzeige.kennzahlen) and anzeige.laufend == []
+
+    def test_zwischendurch_zurueckgesetzter_text(self) -> None:
+        kommune = _kommune()
+        vorgang = _vorgang(kommune, text=DOKUMENT)
+
+        class _Zuruecksetzer(_Anbieter):
+            def chat_completion(self, *args: Any, **kwargs: Any) -> Any:
+                vorgang.files.update(text_content=None, text_extracted_at=None, text_extraction_status="pending")
+                return super().chat_completion(*args, **kwargs)
+
+        finanzcheck.erstellen(vorgang, provider=_Zuruecksetzer(ANTWORT))
+        vorgang.refresh_from_db()
+        assert vorgang.finanzcheck is None
+
+    def test_trocken_mit_nachziehen_abgelehnt(self) -> None:
+        from django.core.management import CommandError, call_command
+
+        with pytest.raises(CommandError):
+            call_command("finanzcheck", "--nachziehen", "--trocken")
+
+    def test_wartende_belegen_das_kontingent_nicht(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from insight_core.models import OParlFile
+
+        kommune = _kommune()
+        TagesbatchKommune.objects.create(body=kommune, ab=date(2000, 1, 1), verortung_pruefen=False)
+        bereit = _vorgang(kommune, tage=5, text=DOKUMENT)
+        wartend = _vorgang(kommune, tage=1, text=DOKUMENT)
+        OParlFile.objects.create(
+            external_id=f"{wartend.external_id}/anlage-2",
+            body=kommune,
+            paper=wartend,
+            name="Anlage 2",
+            download_url=f"{wartend.external_id}/anlage-2.pdf",
+            mime_type="application/pdf",
+            text_extraction_status="pending",
+        )
+        monkeypatch.setattr(finanzcheck, "KANDIDATEN_JE_LAUF", 1)
+        anbieter = _Anbieter(ANTWORT)
+        assert finanzcheck.nachziehen(provider=anbieter) == 1
+        bereit.refresh_from_db()
+        wartend.refresh_from_db()
+        assert bereit.finanzcheck is not None and wartend.finanzcheck is None

@@ -10,7 +10,7 @@ denselben Stellen wie die Zusammenfassung.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import date, datetime
 from typing import Any
 
@@ -20,11 +20,11 @@ from django.db.models import Exists, OuterRef, Q
 from ..models import OParlFile, OParlPaper
 
 
-def ohne_finanzcheck(kommunen: Mapping[Any, date], *, limit: int) -> list[OParlPaper]:
+def ohne_finanzcheck(kommunen: Mapping[Any, date], *, limit: int, ohne: Iterable[Any] = ()) -> list[OParlPaper]:
     """
     Vorgänge ausgewählter Kommunen ohne Finanzcheck, mit Text, neueste zuerst: dieselbe Auswahl wie
     ``summary_store.fuer_tagesbatch`` (Stichtag je Kommune, gelistet, Veröffentlichung nicht pausiert), aber
-    unabhängig davon, ob schon eine Zusammenfassung da ist.
+    unabhängig davon, ob schon eine Zusammenfassung da ist. ``ohne``: Kennungen, die übersprungen werden.
     """
     from insight_core import publication
 
@@ -44,17 +44,22 @@ def ohne_finanzcheck(kommunen: Mapping[Any, date], *, limit: int) -> list[OParlP
         .filter(finanzcheck__isnull=True, deleted=False, body__deleted=False, body__is_listed=True)
         .filter(Exists(mit_text))
         .exclude(body_id__in=gesperrt)
+        .exclude(pk__in=list(ohne))
         .select_related("body", "body__source")
         .defer("raw_json", "summary_einfach")
         .order_by("-date", "-pk")[: max(0, limit)]
     )
 
 
-def speichern(vorgang_id: Any, wert: dict[str, Any], *, dateien: list[str], seit: datetime) -> bool:
+def speichern(
+    vorgang_id: Any, wert: dict[str, Any], *, dateien: list[str], seit: datetime, mit_text: Iterable[str] = ()
+) -> bool:
     """
     Speichert den Finanzcheck, wenn der Vorgang noch gilt, keine der verwendeten Anlagen gelöscht oder in der Quelle
-    verschwunden ist und seit ``seit`` kein neuer Text kam; Rückgabe: gespeichert? Der Vorgang ist dabei gesperrt wie
-    bei ``summary_store.speichern``: Eine gleichzeitige Rücknahme wartet und verwirft ihn danach.
+    verschwunden ist, seit ``seit`` kein neuer Text kam und der Text der Anlagen aus ``mit_text`` (die in die Anfrage
+    eingingen) noch erkannt vorliegt, also nicht ersetzt oder zurückgesetzt wurde; Rückgabe: gespeichert? Der Vorgang
+    ist dabei gesperrt wie bei ``summary_store.speichern``: Eine gleichzeitige Rücknahme wartet und verwirft ihn
+    danach.
     """
     with transaction.atomic():
         vorgang = OParlPaper.objects.select_for_update(no_key=True).filter(pk=vorgang_id).only("pk", "deleted").first()
@@ -70,6 +75,18 @@ def speichern(vorgang_id: Any, wert: dict[str, Any], *, dateien: list[str], seit
         if OParlFile.objects.filter(
             paper_id=vorgang_id, text_extraction_status="completed", text_extracted_at__gt=seit
         ).exists():
+            return False
+        mit_text = list(mit_text)
+        if (
+            mit_text
+            and OParlFile.objects.filter(pk__in=mit_text)
+            .filter(
+                Q(text_extraction_status__in=("pending", "processing"))
+                | Q(text_content__isnull=True)
+                | Q(text_content="")
+            )
+            .exists()
+        ):
             return False
         OParlPaper.objects.filter(pk=vorgang_id).update(finanzcheck=wert)
     return True

@@ -52,8 +52,10 @@ MAX_AUSGABE: Final = 8000
 EFFORT: Final = "medium"
 #: Höchstens so viele KI-Aufrufe je Lauf des Zeitplans (Warteschlange ``ai``, Zeitgrenze 900 s)
 JE_LAUF: Final = 6
-#: Höchstens so viele Vorgänge sieht ein Lauf an (Vorfilter ohne KI)
+#: So viele Vorgänge lädt ein Lauf auf einmal (Vorfilter ohne KI)
 KANDIDATEN_JE_LAUF: Final = 200
+#: Höchstens so viele Vorgänge sieht ein Lauf insgesamt an (auch wartende)
+MAX_DURCHSICHT: Final = 1000
 #: Anteil des Monatsbudgets, der den Zusammenfassungen vorbehalten bleibt (der Finanzcheck hört vorher auf)
 BUDGET_RESERVE: Final = Decimal("0.3")
 #: Höchstens so viele Hinweise der KI
@@ -291,9 +293,30 @@ def nutzerprompt(paper: OParlPaper, dokumente: str) -> str:
 _KERNZEICHEN: Final = re.compile(r"[0-9a-zäöüß]")
 
 
+def _kern_stellen(text: str) -> tuple[str, list[int]]:
+    """
+    Kern eines Texts und die Stelle jedes Kernzeichens im Text: Buchstaben und Ziffern klein, dazu „.“ und „,“
+    zwischen zwei Ziffern („6,2“ bleibt „6,2“ und wird nicht „62“). Zeilenumbrüche, Silbentrennung und Leerzeichen
+    der Texterkennung zählen nicht.
+    """
+    zeichen: list[str] = []
+    stellen: list[int] = []
+    letzte = len(text) - 1
+    for stelle, roh in enumerate(text):
+        klein = roh.lower()
+        if len(klein) == 1 and _KERNZEICHEN.match(klein):
+            zeichen.append(klein)
+        elif roh in ".," and 0 < stelle < letzte and text[stelle - 1].isdigit() and text[stelle + 1].isdigit():
+            zeichen.append(roh)
+        else:
+            continue
+        stellen.append(stelle)
+    return "".join(zeichen), stellen
+
+
 def _kern(text: str) -> str:
-    """Nur Buchstaben und Ziffern, klein: Zeilenumbrüche, Silbentrennung und Leerzeichen der Texterkennung zählen nicht."""
-    return "".join(klein for klein in ((text or "").lower()) if _KERNZEICHEN.match(klein))
+    """Kern eines Texts (``_kern_stellen``)."""
+    return _kern_stellen(text or "")[0]
 
 
 @dataclass
@@ -306,10 +329,7 @@ class _Material:
     stellen: list[int] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        # Zeichenweise klein, damit jede Stelle im Kern auf ihre Stelle im Text zeigt
-        klein = [zeichen.lower() for zeichen in self.text]
-        self.stellen = [i for i, zeichen in enumerate(klein) if len(zeichen) == 1 and _KERNZEICHEN.match(zeichen)]
-        self.kern = "".join(klein[i] for i in self.stellen)
+        self.kern, self.stellen = _kern_stellen(self.text)
 
     def _zahl_geht_weiter(self, stelle: int, schritt: int) -> bool:
         """Gehört das Zeichen an ``stelle`` im Text noch zur Zahl daneben (Ziffer oder „.“/„,“ vor einer Ziffer)?"""
@@ -328,7 +348,7 @@ class _Material:
         im Text nicht weitergehen: „200.000 € und“ ist keine Fundstelle in „1.200.000 € und“.
         """
         kern = _kern(beleg)
-        if len(kern) < MIN_BELEG:
+        if len(re.sub(r"[.,]", "", kern)) < MIN_BELEG:
             return False
         start = self.kern.find(kern)
         while start >= 0:
@@ -401,12 +421,19 @@ def _zahl(wert: Any) -> int:
         return 0
 
 
-def _betrag(material: _Material, roh: Any) -> dict[str, Any] | None | bool:
-    """Geprüfter Betrag ``{"euro", "beleg"}``; ``None`` ohne Angabe; ``False``, wenn die Fundstelle nicht trägt."""
+def _betrag(material: _Material, roh: Any, *, null_erlaubt: bool = False) -> dict[str, Any] | None | bool:
+    """
+    Geprüfter Betrag ``{"euro", "beleg"}``; ``None`` ohne Angabe; ``False``, wenn die Fundstelle nicht trägt. Mit
+    ``null_erlaubt`` (Eigenanteil) zählt auch ein ausdrücklich belegter Betrag von 0 Euro („Eigenanteil: 0 €“).
+    """
     if not isinstance(roh, dict):
         return None
     euro = _zahl(roh.get("euro"))
     beleg = str(roh.get("beleg") or "").strip()
+    if euro == 0 and null_erlaubt:
+        if material.steht_drin(beleg) and _WAEHRUNG.search(beleg) and Decimal(0) in _werte(beleg):
+            return {"euro": 0, "beleg": beleg}
+        return False
     if not _betrag_belegt(material, beleg, euro):
         return False
     return {"euro": euro, "beleg": beleg}
@@ -445,7 +472,7 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
     if daten["art"] not in ("bau_oder_anschaffung", "laufende_kosten", "einmalige_kosten"):
         daten["art"] = "bau_oder_anschaffung"
     for name in ("gesamtkosten", "foerderung", "eigenanteil", "laufend_gesamt"):
-        geprueft = _betrag(material, antwort.get(name))
+        geprueft = _betrag(material, antwort.get(name), null_erlaubt=name == "eigenanteil")
         if geprueft is False:
             return Pruefergebnis(STATUS_VERWORFEN, grund=f"Fundstelle trägt {name} nicht")
         daten[name] = geprueft
@@ -498,9 +525,14 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         posten = zeile.get("posten")
         beleg = str(zeile.get("beleg") or "").strip()
         posten_schluessel: tuple[Any, ...] = ("posten", posten, euro)
-        if posten in POSTEN_TEXT and posten_schluessel not in gesehen and _betrag_belegt(material, beleg, euro):
+        if posten_schluessel in gesehen:
+            continue
+        if posten in POSTEN_TEXT and _betrag_belegt(material, beleg, euro):
             gesehen.add(posten_schluessel)
             laufend.append({"posten": posten, "euro": euro, "beleg": beleg})
+        else:
+            # Ein Posten fiel durch: Die Summe der übrigen wäre zu klein, die Aufteilung zählt nicht als vollständig
+            daten["laufend_unvollstaendig"] = True
     daten["laufend"] = laufend
 
     ab = antwort.get("laufend_ab")
@@ -678,11 +710,12 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
     foerderung = (daten.get("foerderung") or {}).get("euro")
     eigen = (daten.get("eigenanteil") or {}).get("euro")
     eigen_errechnet = False
-    if not eigen and gesamt and foerderung and foerderung < gesamt:
+    if eigen is None and gesamt and foerderung and foerderung < gesamt:
         eigen, eigen_errechnet = gesamt - foerderung, True
 
-    # Laufende Kosten: genannte Summe vor errechneter; passt die Rechnung nicht zur genannten Summe, keine Aufteilung
-    zeilen = list(daten.get("laufend") or [])
+    # Laufende Kosten: genannte Summe vor errechneter; passt die Rechnung nicht zur genannten Summe, keine Aufteilung.
+    # Fiel ein Posten bei der Prüfung durch, gibt es weder Aufteilung noch errechnete Summe (sie wäre zu klein)
+    zeilen = [] if daten.get("laufend_unvollstaendig") else list(daten.get("laufend") or [])
     kosten = sum(z["euro"] for z in zeilen if z["posten"] in POSTEN_KOSTEN)
     entlastung = sum(z["euro"] for z in zeilen if z["posten"] in POSTEN_ENTLASTUNG)
     netto_errechnet = kosten - entlastung if zeilen else None
@@ -701,7 +734,7 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
     if foerderung:
         zusatz = FOERDERUNG_KURZ.get(daten.get("foerderung_stand", ""), "")
         kennzahlen.append(Kennzahl("Davon Fördergeld", euro_kurz(foerderung), zusatz))
-    if eigen:
+    if eigen is not None:
         kennzahlen.append(
             Kennzahl(f"Zahlt {wer['nom']} selbst", euro_kurz(eigen), "errechnet" if eigen_errechnet else "")
         )
@@ -722,7 +755,9 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
         )
         satz += FOERDERUNG_SATZ.get(daten.get("foerderung_stand", ""), FOERDERUNG_SATZ["unklar"])
         saetze.append(satz)
-    if eigen:
+    if eigen == 0:
+        saetze.append(f"{gross} zahlt selbst nichts dazu.")
+    elif eigen is not None:
         if eigen_errechnet:
             saetze.append(f"{gross} zahlt damit selbst {euro_satz(eigen)} (Kosten minus Fördergeld).")
         else:
@@ -819,7 +854,7 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
     seo_teile = []
     if gesamt:
         seo_teile.append(euro_kurz(gesamt))
-    if eigen:
+    if eigen is not None:
         seo_teile.append(f"{'davon ' if gesamt else 'Anteil '}{wer['nom'].split()[-1]} {euro_kurz(eigen)}")
     if jaehrlich:
         seo_teile.append(f"jährlich {euro_kurz(jaehrlich)}{f' ab {ab}' if ab else ''}")
@@ -876,13 +911,21 @@ def erstellen(paper: OParlPaper, *, provider: Any = None, speichern: bool = True
     beginn = timezone.now()
     dienst = SummaryService(provider=provider or object())
     datei_ids = [str(i) for i in dienst._current_files(paper).values_list("pk", flat=True)]
+    # Anlagen, deren Text in die Anfrage eingeht: Ist er beim Speichern zurückgesetzt, gilt das Ergebnis nicht
+    mit_text = [
+        str(i)
+        for i in dienst._current_files(paper)
+        .filter(text_content__isnull=False)
+        .exclude(text_content="")
+        .values_list("pk", flat=True)
+    ]
     dokumente = dienst._collect_text_content(paper)
     if not dokumente:
         return None
     if not kommt_in_frage(dokumente):
         ergebnis = Pruefergebnis(STATUS_KEINE, grund="keine Geldbeträge")
         if speichern:
-            _ablegen(paper.pk, ergebnis, hinweis="", dateien=datei_ids, seit=beginn)
+            _ablegen(paper.pk, ergebnis, hinweis="", dateien=datei_ids, mit_text=mit_text, seit=beginn)
         return ergebnis
     provider = provider or _provider()
     if provider is None or not provider.is_available():
@@ -905,6 +948,7 @@ def erstellen(paper: OParlPaper, *, provider: Any = None, speichern: bool = True
             ergebnis,
             hinweis=getattr(provider, "zusammenfassung_hinweis", ""),
             dateien=datei_ids,
+            mit_text=mit_text,
             seit=beginn,
             modell=antwort.model,
         )
@@ -912,7 +956,14 @@ def erstellen(paper: OParlPaper, *, provider: Any = None, speichern: bool = True
 
 
 def _ablegen(
-    vorgang_id: Any, ergebnis: Pruefergebnis, *, hinweis: str, dateien: list[str], seit: datetime, modell: str = ""
+    vorgang_id: Any,
+    ergebnis: Pruefergebnis,
+    *,
+    hinweis: str,
+    dateien: list[str],
+    seit: datetime,
+    mit_text: list[str] | None = None,
+    modell: str = "",
 ) -> bool:
     """Speichert den Finanzcheck, wenn Vorgang und Anlagen noch gelten und kein neuer Text kam; Rückgabe: gespeichert?"""
     from insight_core.services import finanzcheck_store
@@ -927,17 +978,22 @@ def _ablegen(
         "dateien": dateien,
         "daten": ergebnis.daten if ergebnis.status == STATUS_OK else {},
     }
-    return finanzcheck_store.speichern(vorgang_id, wert, dateien=dateien, seit=seit)
+    return finanzcheck_store.speichern(vorgang_id, wert, dateien=dateien, mit_text=mit_text or [], seit=seit)
 
 
-def kandidaten(*, kommunen: dict[Any, Any] | None = None, limit: int = KANDIDATEN_JE_LAUF) -> list[OParlPaper]:
-    """Vorgänge der Kommunen im Tagesbatch ohne Finanzcheck, mit Text, neueste zuerst (``finanzcheck_store``)."""
+def kandidaten(
+    *, kommunen: dict[Any, Any] | None = None, limit: int | None = None, ohne: list[Any] | None = None
+) -> list[OParlPaper]:
+    """
+    Vorgänge der Kommunen im Tagesbatch ohne Finanzcheck, mit Text, neueste zuerst (``finanzcheck_store``); ``ohne``:
+    schon angesehene Vorgänge (etwa wartende) überspringen.
+    """
     from insight_core.services import finanzcheck_store
 
     from .zusammenfassung_batch import kommunen as tagesbatch_kommunen
 
     auswahl = kommunen if kommunen is not None else tagesbatch_kommunen()[0]
-    return finanzcheck_store.ohne_finanzcheck(auswahl, limit=limit)
+    return finanzcheck_store.ohne_finanzcheck(auswahl, limit=limit or KANDIDATEN_JE_LAUF, ohne=ohne or [])
 
 
 def _budget_reicht(provider: Any) -> bool:
@@ -971,20 +1027,28 @@ def nachziehen(*, hoechstens: int = JE_LAUF, provider: Any = None, kommunen: dic
         logger.info("Finanzcheck: Reserve des Monatsbudgets für die Zusammenfassungen erreicht")
         return 0
     aufrufe = 0
-    for paper in kandidaten(kommunen=kommunen):
-        if aufrufe >= hoechstens:
+    angesehen: list[Any] = []
+    # Wartende Vorgänge (Texterkennung, Abruf) bleiben ohne Finanzcheck; sie werden übersprungen, damit ältere,
+    # bereite Vorgänge trotzdem drankommen
+    while aufrufe < hoechstens and len(angesehen) < MAX_DURCHSICHT:
+        stapel = kandidaten(kommunen=kommunen, ohne=angesehen)
+        if not stapel:
             break
-        if summary_store.tagesbatch_wartet(paper, verortung=False):
-            continue
-        try:
-            ergebnis = erstellen(paper, provider=provider)
-        except BudgetErschoepftError:
-            logger.info("Finanzcheck: Monatsbudget ausgeschöpft")
-            break
-        except KiAnbieterError as fehler:
-            logger.warning("Finanzcheck von Vorgang %s gescheitert: %s", paper.pk, fehler)
-            aufrufe += 1
-            continue
-        if ergebnis is not None and ergebnis.grund != "keine Geldbeträge":
-            aufrufe += 1
+        for paper in stapel:
+            if aufrufe >= hoechstens:
+                break
+            angesehen.append(paper.pk)
+            if summary_store.tagesbatch_wartet(paper, verortung=False):
+                continue
+            try:
+                ergebnis = erstellen(paper, provider=provider)
+            except BudgetErschoepftError:
+                logger.info("Finanzcheck: Monatsbudget ausgeschöpft")
+                return aufrufe
+            except KiAnbieterError as fehler:
+                logger.warning("Finanzcheck von Vorgang %s gescheitert: %s", paper.pk, fehler)
+                aufrufe += 1
+                continue
+            if ergebnis is not None and ergebnis.grund != "keine Geldbeträge":
+                aufrufe += 1
     return aufrufe
