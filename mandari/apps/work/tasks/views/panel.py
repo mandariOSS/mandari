@@ -89,7 +89,8 @@ class TaskAttachmentDownloadView(WorkViewMixin, View):
         if not task.can_access(self.membership):
             raise PermissionDenied("Kein Zugriff auf diese Aufgabe.")
         attachment = get_object_or_404(TaskAttachment, id=kwargs["attachment_id"], task=task)
-        return attachment_response(attachment.file, attachment.filename)
+        # Mit ``?vorschau`` öffnen PDF und Bilder im Browser, alles andere bleibt ein Download
+        return attachment_response(attachment.file, attachment.filename, allow_pdf_inline="vorschau" in request.GET)
 
 
 class TaskPanelActionView(WorkViewMixin, View):

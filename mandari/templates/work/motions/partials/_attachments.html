@@ -29,7 +29,7 @@ Kontext: organization, motion, documents, can_edit_attachments, attachment_accep
                 {% if download_blocked %}
                 <span class="truncate flex-1 text-sm text-gray-700 dark:text-gray-200" title="Herunterladen ist für diese Freigabe nicht erlaubt">{{ attachment.filename }}</span>
                 {% else %}
-                <a href="{% url 'work:document_file_download' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"
+                <a href="{% url 'work:document_file_download' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}?vorschau" target="_blank" rel="noopener"
                    class="truncate flex-1 text-sm text-gray-700 dark:text-gray-200 hover:text-primary-600 dark:hover:text-primary-400">{{ attachment.filename }}</a>
                 {% endif %}
                 <span class="text-[11px] text-gray-400 flex-shrink-0">{{ attachment.file_size|filesizeformat }}</span>
