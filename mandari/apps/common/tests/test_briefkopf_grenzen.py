@@ -14,22 +14,25 @@ import base64
 import io
 import threading
 import zlib
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
 from pypdf import PageObject, PdfReader, PdfWriter
-from pypdf.generic import ArrayObject, DecodedStreamObject, NameObject
+from pypdf.generic import ArrayObject, DecodedStreamObject, FloatObject, NameObject, RectangleObject
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 from apps.common import pdf
 
 
-def _seite(text: str) -> bytes:
+def _seite(*texte: str) -> bytes:
+    """PDF mit einer Seite je Text."""
     puffer = io.BytesIO()
     blatt = canvas.Canvas(puffer, pagesize=A4)
-    blatt.drawString(72, 720, text)
+    for text in texte:
+        blatt.drawString(72, 720, text)
+        blatt.showPage()
     blatt.save()
     return puffer.getvalue()
 
@@ -64,6 +67,38 @@ def test_gewoehnlicher_briefkopf_liegt_unter_dem_inhalt() -> None:
     assert ergebnis != INHALT
     text = _text(ergebnis)
     assert "Fraktion im Rat der Stadt" in text and "Antrag der Fraktion" in text
+
+
+def test_jede_seite_hat_briefkopf_und_nur_ihren_eigenen_inhalt() -> None:
+    """Mehrseitiger Export (#1464): pypdf 6 schrieb den Inhalt der ersten Seite auf alle, pypdf 7 brach ab."""
+    inhalt = _seite("Seite Eins", "Seite Zwei", "Seite Drei")
+
+    ergebnis = pdf.overlay_pdf_letterhead(inhalt, io.BytesIO(_seite("Fraktion im Rat der Stadt")))
+
+    seiten = [" ".join(seite.extract_text().split()) for seite in PdfReader(io.BytesIO(ergebnis)).pages]
+    assert seiten == [
+        "Fraktion im Rat der Stadt Seite Eins",
+        "Fraktion im Rat der Stadt Seite Zwei",
+        "Fraktion im Rat der Stadt Seite Drei",
+    ]
+
+
+def test_seitenformat_kommt_vom_briefkopf() -> None:
+    """Format, Ausschnitt und Seiteneinheit des Briefkopfs bleiben, auch wenn seine Seite nicht bei null beginnt."""
+    writer = PdfWriter()
+    writer.append(PdfReader(io.BytesIO(_seite("Fraktion im Rat der Stadt"))))
+    writer.pages[0].mediabox = RectangleObject([10, 20, 605, 862])
+    writer.pages[0].cropbox = RectangleObject([20, 30, 595, 852])
+    writer.pages[0][NameObject("/UserUnit")] = FloatObject(2.5)
+    puffer = io.BytesIO()
+    writer.write(puffer)
+
+    ergebnis = PdfReader(io.BytesIO(pdf.overlay_pdf_letterhead(INHALT, puffer))).pages[0]
+
+    assert [float(wert) for wert in ergebnis.mediabox] == [10, 20, 605, 862]
+    assert [float(wert) for wert in ergebnis.cropbox] == [20, 30, 595, 852]
+    assert float(cast(FloatObject, ergebnis["/UserUnit"])) == 2.5
+    assert "Fraktion im Rat der Stadt" in ergebnis.extract_text()
 
 
 def test_zu_grosser_seiteninhalt_wird_nicht_zusammengefuehrt() -> None:
