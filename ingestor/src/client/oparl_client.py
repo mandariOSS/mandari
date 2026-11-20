@@ -1004,6 +1004,16 @@ class OParlClient:
         host = urlparse(self._with_list_params(url, self.list_params)).netloc
         return not self.filter_notes.unfiltered(url, host, carry=self.carry_modified_since)
 
+    def filter_proven(self, url: str) -> bool:
+        """
+        Filtert die Quelle diese Liste nachweislich mit ``modified_since``? Nur, wenn die letzte Prüfung nach einem
+        Vollabgleich für ihren Server „filtert“ ergab (``sync_config["modified_since_check"]``) und kein Vermerk
+        „filtert nicht“ für Liste oder Server besteht. Dann bricht der Änderungsabgleich die Liste nicht nach Seiten
+        ohne Änderung ab: Jede Seite ist schon gefiltert (Issue #1523).
+        """
+        host = urlparse(self._with_list_params(url, self.list_params)).netloc
+        return self.filter_notes.proven(url, host, carry=self.carry_modified_since)
+
     def deadline_passed(self) -> bool:
         """Ist das Zeitfenster des Laufs abgelaufen (``fetch_deadline``)? Dann geht keine Seite mehr an die Quelle."""
         return self.fetch_deadline is not None and datetime.now(UTC) >= self.fetch_deadline

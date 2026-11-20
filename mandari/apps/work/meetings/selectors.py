@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Count, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Prefetch, Q, QuerySet
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -168,6 +168,9 @@ def get_primary_paper_for_item(agenda_item: OParlAgendaItem | None) -> OParlPape
         .select_related("paper")
         .first()
     )
+    if consultation is None:
+        # Rückfall: die Beratung, die der TOP selbst nennt (Issue #1523)
+        consultation = ris.consultation_named_by_agenda_item(agenda_item)
     return consultation.paper if consultation else None
 
 
@@ -185,9 +188,20 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
     if not external_ids:
         return {}
 
+    # Über den Rückverweis der Beratung auf den TOP, als Rückfall über die Beratung, die der TOP nennt (eine Abfrage)
+    condition = Q(agenda_item_external_id__in=external_ids) & Q(ris.consultation_agenda_item_in_source())
+    tops_of_named: dict[str, list[str]] = {}
+    for item in agenda_items:
+        if item.external_id and (ref := ris.agenda_item_consultation_reference(item)) is not None:
+            tops_of_named.setdefault(ref, []).append(item.external_id)
+    # Quelle je TOP: Der Rückfall gilt nur für Beratungen aus der Quelle des TOP, der sie nennt (eine Abfrage)
+    source_of_top: dict[str, Any] = {}
+    if tops_of_named:
+        condition |= ris.consultations_named_by_agenda_items(tops_of_named, external_ids)
+        source_of_top = ris.agenda_item_sources(external_ids)
     consultations = (
-        OParlConsultation.objects.filter(agenda_item_external_id__in=external_ids)
-        .filter(ris.consultation_agenda_item_in_source())
+        OParlConsultation.objects.filter(condition)
+        .annotate(source_of_body=F("body__source_id"))
         .select_related("paper")
         # Dateien ohne Volltext und Rohdaten: Die Vorbereitung zeigt nur Namen, Art und Größe
         .prefetch_related(
@@ -207,8 +221,18 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
 
     papers_by_ext_id: dict[str, list[OParlPaper]] = {}
     for consultation in consultations:
-        if consultation.paper and consultation.agenda_item_external_id:
-            ext_id = consultation.agenda_item_external_id
+        if not consultation.paper:
+            continue
+        if consultation.agenda_item_external_id:
+            ext_ids = [consultation.agenda_item_external_id]
+        else:
+            source = getattr(consultation, "source_of_body", None)
+            ext_ids = [
+                top
+                for top in tops_of_named.get(consultation.external_id, [])
+                if consultation.body_id is None or source == source_of_top.get(top)
+            ]
+        for ext_id in ext_ids:
             bucket = papers_by_ext_id.setdefault(ext_id, [])
             if consultation.paper not in bucket:
                 attach(

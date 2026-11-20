@@ -119,6 +119,50 @@ def consultation_agenda_item_in_source() -> Exists:
     )
 
 
+def agenda_item_consultation_reference(agenda_item: OParlAgendaItem) -> str | None:
+    """Beratung, die der Tagesordnungspunkt selbst nennt (``AgendaItem.consultation``: Adresse oder Objekt mit ``id``)."""
+    raw = agenda_item.raw_json if isinstance(agenda_item.raw_json, dict) else {}
+    value = raw.get("consultation")
+    if isinstance(value, dict):
+        value = value.get("id")
+    return value if isinstance(value, str) and value else None
+
+
+def agenda_item_sources(external_ids: Iterable[str]) -> dict[str, Any]:
+    """Quelle je Tagesordnungspunkt (Kennung → ``source_id`` der Kommune seiner Sitzung). Eine Abfrage."""
+    return dict(
+        OParlAgendaItem.objects.filter(external_id__in=list(external_ids)).values_list(
+            "external_id", "meeting__body__source_id"
+        )
+    )
+
+
+def consultations_named_by_agenda_items(refs: Iterable[str], external_ids: Iterable[str]) -> Q:
+    """
+    Rückfall (Issue #1523): Beratungen aus ``refs``, die Tagesordnungspunkte selbst nennen, die aber keinen
+    Tagesordnungspunkt tragen (SD.NET RIM setzt ``agendaItem`` erst nach dem Abgleich der Beratung, ohne ``modified``
+    zu ändern). Nur nicht gelöschte Beratungen mit Vorlage aus der Quelle eines der Punkte ``external_ids``,
+    Beratungen ohne Kommune (Altbestand) wie bei ``consultation_agenda_item_in_source``. Die Bindung an die Quelle des
+    einzelnen Punkts prüft der Aufrufer (``agenda_item_sources``).
+    """
+    sources = OParlAgendaItem.objects.filter(external_id__in=list(external_ids)).values("meeting__body__source_id")
+    return Q(external_id__in=list(refs), agenda_item_external_id__isnull=True, paper__isnull=False, deleted=False) & (
+        Q(body__isnull=True) | Q(body__source_id__in=sources)
+    )
+
+
+def consultation_named_by_agenda_item(agenda_item: OParlAgendaItem) -> OParlConsultation | None:
+    """Beratung mit Vorlage, die der Punkt nennt und die selbst keinen Punkt trägt (Rückfall, Issue #1523)."""
+    ref = agenda_item_consultation_reference(agenda_item)
+    if ref is None or not agenda_item.external_id:
+        return None
+    return (
+        OParlConsultation.objects.filter(consultations_named_by_agenda_items([ref], [agenda_item.external_id]))
+        .select_related("paper")
+        .first()
+    )
+
+
 def with_reference_checks(consultations: QuerySet[OParlConsultation]) -> QuerySet[OParlConsultation]:
     """
     Beratungen mit ``meeting_in_source`` und ``agenda_item_in_source`` (bool): Sitzung bzw. Tagesordnungspunkt

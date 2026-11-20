@@ -2395,13 +2395,20 @@ class SyncOrchestrator:
                         parts.append(f"{deleted_on_page} deleted")
                     console.print(f"[green]  Page {pages_checked}: {', '.join(parts)}[/green]")
                     consecutive_stale_pages = 0
-                else:
+                elif unchanged_on_page > 0:
+                    # Nur Seiten mit Bekanntem zählen. Eine Seite allein aus Löschsignalen unbekannter Kennungen sagt
+                    # nichts über die Liste: Die Stadt Münster stellt gelöschte Beratungen als Platzhalter
+                    # ``…/consultations/0`` seitenweise vor die echten Änderungen (Issue #1523)
                     consecutive_stale_pages += 1
 
                 # Safety stop: 5 consecutive pages without changes (nicht in Zeitscheiben: jede hat ihren Zeitraum;
-                # nach einem Rückfall auf das Lesen ohne Scheiben wieder)
+                # nach einem Rückfall auf das Lesen ohne Scheiben wieder). Nicht bei einer Liste, die die Quelle
+                # nachweislich filtert: Jede ihrer Seiten ist schon eine Änderung seit dem Fensteranfang, und hinter
+                # Seiten mit Bekanntem (Fenster, das ein nicht gespeichertes Objekt festhält) stehen die neuen Einträge
                 unsliced = windows is None or (slices is not None and list_url in slices.unsliced)
-                if consecutive_stale_pages >= stale_pages_to_stop and unsliced:
+                # Nachweis des Filters erst hier prüfen: ``fetch_list`` kann den Vermerk „filtert nicht“ im Lauf löschen
+                stale_stop = server_modified_since is None or not client.filter_proven(list_url)
+                if consecutive_stale_pages >= stale_pages_to_stop and unsliced and stale_stop:
                     console.print(
                         f"[yellow]  Stopping {entity_type}: "
                         f"{consecutive_stale_pages} consecutive pages without changes[/yellow]"

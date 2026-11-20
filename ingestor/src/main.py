@@ -775,5 +775,47 @@ def top_kennungen_zurueck(
         raise typer.Exit(code)
 
 
+@app.command("beratungen-verknuepfen")
+def beratungen_verknuepfen(
+    source_url: str | None = typer.Option(
+        None, "--source", "-s", help="Nur diese Quelle (URL wie in list-sources); ohne Angabe alle Quellen"
+    ),
+    ausfuehren: bool = typer.Option(False, "--ausfuehren", help="Schreiben; ohne den Schalter nur zählen"),
+) -> None:
+    """
+    Rückverweise Tagesordnungspunkt → Beratung im Bestand nachziehen (Issue #1523).
+
+    Beratungen ohne Tagesordnungspunkt, die ein Punkt derselben Quelle nennt (``AgendaItem.consultation``), bekommen
+    diesen Punkt (und seine Sitzung, wenn sie keine nennen), mit Ereignis wie im Abgleich. Seit #1523 macht das der
+    Abgleich selbst; der Befehl holt den Bestand nach. Idempotent: Ein zweiter Lauf findet nichts mehr. Ohne
+    ``--ausfuehren`` nur Zählung je Quelle (Probelauf).
+    """
+
+    async def run_link() -> int:
+        async with SyncOrchestrator() as orchestrator:
+            source_id = None
+            if source_url is not None:
+                # Eine leere Angabe ist ein Fehler, nicht „alle Quellen“
+                source = await orchestrator.storage.get_source_by_url(source_url) if source_url.strip() else None
+                if source is None:
+                    console.print(f"[red]Quelle nicht gefunden: {source_url}[/red]")
+                    return 1
+                source_id = source.id
+            counts = await orchestrator.storage.link_pending_consultations(source_id, apply=ausfuehren)
+        table = Table(title="Beratungen mit nachgetragenem Tagesordnungspunkt")
+        table.add_column("Quelle")
+        table.add_column("Beratungen", justify="right")
+        for name, count in sorted(counts.items(), key=lambda entry: (-entry[1], entry[0])):
+            table.add_row(name, str(count))
+        console.print(table)
+        verb = "geschrieben" if ausfuehren else "zu schreiben (Probelauf, --ausfuehren schreibt)"
+        console.print(f"Zusammen: {sum(counts.values())} Beratungen in {len(counts)} Quellen {verb}")
+        return 0
+
+    code = asyncio.run(run_link())
+    if code:
+        raise typer.Exit(code)
+
+
 if __name__ == "__main__":
     app()
