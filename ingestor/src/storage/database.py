@@ -1837,12 +1837,14 @@ class DatabaseStorage:
         # Gremien vorab auflösen (eigene Lesesitzung), damit die Zuordnung in die Transaktion des
         # Upserts passt. Batched lookup (cache-first, DB fallback).
         org_ids: list[UUID] = []
+        #: Gremien, die die Quelle nennt, die aber nicht im Bestand stehen (Issue #1441); gezählt erst nach dem
+        #: Schreiben, damit eine als fremd abgewiesene Sitzung nicht mitzählt (Issue #1453)
+        org_unresolved = 0
         org_urls = _normalized_urls((meeting.raw_json or {}).get("organization"))
         if org_urls:
             org_map = await self.get_organization_ids_by_external_ids(org_urls, body_id)
             org_ids = [org_map[url] for url in org_urls if url in org_map]
-            # Gremien, die die Quelle nennt, die aber nicht im Bestand stehen (Issue #1441)
-            _note_unresolved(UNRESOLVED_MEETING_ORGANIZATION, len(set(org_urls) - set(org_map)))
+            org_unresolved = len(set(org_urls) - set(org_map))
 
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
@@ -1908,6 +1910,7 @@ class DatabaseStorage:
                 )
                 await self._emit(session, body_id, drafts, meeting.oparl_modified)
             await session.commit()
+            _note_unresolved(UNRESOLVED_MEETING_ORGANIZATION, org_unresolved)
 
             self._meeting_uuid_cache[(body_id, meeting.external_id)] = meeting_id
             self._meeting_body_cache[meeting_id] = body_id
