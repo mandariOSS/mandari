@@ -204,15 +204,24 @@ def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end
     sitzungen = (
         sichtbar_fuer(membership, FactionMeeting.objects.filter(im_fenster, organization=organization))
         .select_related("schedule")
-        .order_by("start")[: MAX_JE_ART * 2]
+        .order_by("start", "pk")
     )
-    eintraege: list[dict[str, Any]] = []
-    for sitzung in sitzungen:
-        ende = _ende_im_kalender(sitzung)
-        if not (ende > start if ende is not None else sitzung.start >= start):
-            continue
-        if len(eintraege) >= MAX_JE_ART:
+    # Seitenweise laden, bis MAX_JE_ART gültige Einträge da sind: Verworfen werden nur Sitzungen aus dem Vorlauf, deren
+    # gezeigte Zeit vor dem Fenster endet; eine Begrenzung vor dieser Prüfung könnte spätere gültige verdrängen. Kein
+    # .iterator(): Hinter PgBouncer (ohne serverseitige Cursor) lüde er alles auf einmal.
+    gueltige: list[tuple[Any, datetime | None]] = []
+    versatz = 0
+    while len(gueltige) < MAX_JE_ART:
+        seite = list(sitzungen[versatz : versatz + MAX_JE_ART])
+        if not seite:
             break
+        versatz += len(seite)
+        for sitzung in seite:
+            ende = _ende_im_kalender(sitzung)
+            if ende > start if ende is not None else sitzung.start >= start:
+                gueltige.append((sitzung, ende))
+    eintraege: list[dict[str, Any]] = []
+    for sitzung, ende in gueltige[:MAX_JE_ART]:
         eintraege.append(
             _eintrag(
                 "fraktion",
