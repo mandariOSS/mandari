@@ -817,7 +817,7 @@ def _ohne_sitzung_ergaenzen(verlauf: list[dict[str, Any]], paper: OParlPaper, je
     if not gesucht or paper.body_id is None:
         return
     gremien = {
-        external_id: (pk, " ".join(name.split()))
+        external_id: (pk, " ".join((name or "").split()))
         for external_id, pk, name in OParlOrganization.objects.filter(
             body_id=paper.body_id, external_id__in=gesucht, deleted=False
         )
@@ -861,9 +861,10 @@ def _ohne_sitzung_ergaenzen(verlauf: list[dict[str, Any]], paper: OParlPaper, je
     def schaetzen(eintrag: dict[str, Any], ab: datetime, *, einschliesslich: bool) -> bool:
         ids = gremien_je_eintrag.get(id(eintrag), set())
         for gremium, sitzung in kandidaten:
-            if gremium in ids and (sitzung.start >= ab if einschliesslich else sitzung.start > ab):
+            beginn = sitzung.start
+            if beginn is not None and gremium in ids and (beginn >= ab if einschliesslich else beginn > ab):
                 eintrag["expected_meeting"] = sitzung
-                eintrag["expected_date"] = sitzung.start
+                eintrag["expected_date"] = beginn
                 return True
         return False
 
