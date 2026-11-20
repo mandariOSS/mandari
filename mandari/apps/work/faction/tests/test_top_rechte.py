@@ -550,3 +550,36 @@ def test_noe_entscheidung_erreicht_uebrige_genehmigende_und_ihre_vertretung_ohne
     texte = _texte_aller_benachrichtigungen()
     for geheim in ("GEHEIMTITEL", "GEHEIMSACHE", "GEHEIMGRUND"):
         assert geheim not in texte
+
+
+@pytest.mark.django_db
+def test_vertretende_genehmigende_bekommen_jede_nachricht_nur_einmal(
+    rollen: dict[str, Any], sitzung: FactionMeeting, client_for: Any
+) -> None:
+    """Die Geschäftsführung vertritt die abwesende Stellvertretung: kein zweites Exemplar als Vertretung."""
+    geschaeftsfuehrung = rollen["managing_director"]
+    _abwesend_mit_vertretung(rollen["faction_vice_chair"], geschaeftsfuehrung)
+
+    vorschlag = _vorschlag(sitzung, rollen["expert_citizen"])
+    _aktion(client_for, rollen["faction_chair"], sitzung, action="accept_proposal", item_id=str(vorschlag.id))
+
+    an_sie = Notification.objects.filter(
+        recipient=geschaeftsfuehrung, notification_type=NotificationType.FACTION_MEETING_UPDATED
+    )
+    assert sorted(an_sie.values_list("title", flat=True)) == ["Neuer TOP-Vorschlag", "TOP-Vorschlag aufgenommen"]
+
+
+@pytest.mark.django_db
+def test_vorschlagende_person_bekommt_die_entscheidung_nicht_als_vertretung(
+    rollen: dict[str, Any], sitzung: FactionMeeting, client_for: Any
+) -> None:
+    sachkundig = rollen["expert_citizen"]
+    _abwesend_mit_vertretung(rollen["faction_vice_chair"], sachkundig)
+
+    vorschlag = _vorschlag(sitzung, sachkundig)
+    _aktion(client_for, rollen["faction_chair"], sitzung, action="accept_proposal", item_id=str(vorschlag.id))
+
+    assert not _entscheidungen_an(sachkundig).exists()
+    assert set(Notification.objects.filter(recipient=sachkundig).values_list("notification_type", flat=True)) == {
+        NotificationType.FACTION_PROPOSAL_DECIDED
+    }

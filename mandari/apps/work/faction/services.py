@@ -1171,6 +1171,8 @@ class AgendaProposalService:
             link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
             actor=proposed_by,
             metadata={"meeting_id": str(meeting.id), "item_id": str(item.id)},
+            # Wer selbst genehmigt, bekommt den Hinweis nicht zusätzlich als Vertretung (Issue #1512)
+            vertretung_nicht={m.id for m in managers},
         )
 
     @classmethod
@@ -1277,6 +1279,8 @@ class AgendaProposalService:
                 "item_id": str(item.id),
                 "decision": "accepted" if accepted else "rejected",
             },
+            # Nicht als Vertretung an Genehmigende, die sie schon selbst bekommen, und nicht an die vorschlagende Person
+            vertretung_nicht={m.id for m in empfaenger} | {reviewed_by.id, item.proposed_by_id},
         )
 
     @classmethod

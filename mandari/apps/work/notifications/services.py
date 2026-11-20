@@ -27,7 +27,7 @@ Usage:
 
 import logging
 import uuid
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from datetime import datetime, timedelta
 from typing import Any, cast
 
@@ -80,6 +80,7 @@ class NotificationHub:
         _forwarded: bool = False,  # Recursion guard for deputy forwarding
         event_key: str | None = None,
         direct_since: datetime | None = None,
+        vertretung_nicht: Collection[Any] = (),
     ) -> Notification | None:
         """
         Send a notification to a single user.
@@ -98,6 +99,8 @@ class NotificationHub:
                 höchstens eine Benachrichtigung je Ereignis und Empfänger, Mailauftrag mit demselben Schlüssel
             direct_since: Umschalten (Issue #529): keine Benachrichtigung, wenn der bisherige Weg in der
                 Anfrage dieselbe seit diesem Zeitpunkt schon angelegt hat
+            vertretung_nicht: Kennungen von Mitgliedschaften, die diese Nachricht nicht als Vertretung bekommen
+                (Issue #1512): Sie erhalten sie schon selbst oder sollen sie gar nicht erhalten
 
         Returns:
             The created Notification instance, or None if filtered out
@@ -122,6 +125,7 @@ class NotificationHub:
                     event_key=f"{event_key}:vertretung" if event_key else None,
                     direct_since=direct_since,
                     send_email=send_email if event_key else True,
+                    vertretung_nicht=vertretung_nicht,
                 )
             return None
 
@@ -196,6 +200,7 @@ class NotificationHub:
                 # Mail – Aufrufer ohne Mail (Einladung, Erinnerung, Gast-Freigabe) versenden ihre Mail selbst
                 # an den Empfänger, nicht an die Vertretung.
                 send_email=send_email if event_key else True,
+                vertretung_nicht=vertretung_nicht,
             )
 
         return notification
@@ -311,6 +316,7 @@ class NotificationHub:
         event_key=None,
         direct_since=None,
         send_email=True,
+        vertretung_nicht: Collection[Any] = (),
     ):
         """
         Forward notification to deputy if recipient is currently absent.
@@ -339,7 +345,12 @@ class NotificationHub:
                 .first()
             )
 
-            if active_absence and active_absence.deputy and cls._deputy_may_see(active_absence.deputy, metadata):
+            if (
+                active_absence
+                and active_absence.deputy
+                and active_absence.deputy_id not in vertretung_nicht
+                and cls._deputy_may_see(active_absence.deputy, metadata)
+            ):
                 cls.send(
                     recipient=active_absence.deputy,
                     notification_type=notification_type,
@@ -420,6 +431,7 @@ class NotificationHub:
         send_email: bool = True,
         event_key: str | None = None,
         direct_since: datetime | None = None,
+        vertretung_nicht: Collection[Any] = (),
     ) -> list:
         """
         Send notifications to multiple users.
@@ -433,6 +445,8 @@ class NotificationHub:
             actor: Optional Membership who triggered this
             metadata: Optional additional data
             send_email: Whether to send emails
+            vertretung_nicht: Wer die Nachricht nicht als Vertretung bekommt (siehe ``send``); Empfänger der Liste
+                erhalten sie dann nur einmal, wenn sie zugleich eine andere Person der Liste vertreten
 
         Returns:
             List of created Notification instances
@@ -451,6 +465,7 @@ class NotificationHub:
                 send_email=send_email,
                 event_key=event_key,
                 direct_since=direct_since,
+                vertretung_nicht=vertretung_nicht,
             )
             if notification:
                 notifications.append(notification)
