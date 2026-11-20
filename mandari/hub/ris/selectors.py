@@ -672,8 +672,9 @@ def files_of_meeting(meeting: OParlMeeting, *, ohne: Iterable[object] = ()) -> l
 def files_of_agenda_items(agenda_items: Iterable[OParlAgendaItem]) -> dict[uuid.UUID, list[OParlFile]]:
     """
     Dateien direkt an den Tagesordnungspunkten (OParl ``auxiliaryFile``/``resolutionFile`` am Punkt, Issue #1528),
-    je Punkt nach Name, in einer Abfrage für alle Punkte einer Sitzung. Ohne gelöschte und zurückgenommene Dateien,
-    ohne Volltext und Rohdaten. Punkte ohne Dateien fehlen. Sitzungsseiten von Insight und Work.
+    je Punkt nach Name, in einer Abfrage für alle Punkte einer Sitzung. Ohne gelöschte und zurückgenommene Dateien und
+    ohne Dateien zurückgenommener Punkte und Sitzungen, ohne Volltext und Rohdaten. Punkte ohne Dateien fehlen.
+    Sitzungsseiten von Insight und Work.
     """
     punkte = [item.pk for item in agenda_items]
     if not punkte:
@@ -681,6 +682,8 @@ def files_of_agenda_items(agenda_items: Iterable[OParlAgendaItem]) -> dict[uuid.
     dateien = (
         OParlFile.objects.filter(agenda_item_id__in=punkte, deleted=False)
         .exclude(withdrawn_q())
+        .exclude(withdrawn_q("agenda_item"))
+        .exclude(withdrawn_q("meeting"))
         .defer("text_content", "raw_json")
         .order_by("name", "file_name", "pk")
     )

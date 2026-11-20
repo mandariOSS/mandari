@@ -2699,10 +2699,16 @@ class DatabaseStorage:
         Beratung und Vorlage; bisher übernahm der Ingestor sie nicht. Wie Sitzungsdokumente haben sie keinen Vorgang.
 
         Der Punkt muss im Bestand derselben Quelle stehen; eine Datei einer anderen Quelle bleibt aus (gezählt), die
-        übrigen laufen weiter. Liefert die Zahl der geschriebenen Dateien.
+        übrigen laufen weiter, auch nach einem anderen Fehler beim Schreiben einer Datei (im Log genannt): Der Punkt
+        ist dann schon geschrieben, und eine fehlende Datei holt die nächste Änderung des Punkts oder der Vollabgleich
+        nach. Nennt der Punkt eine Datei nur als Verweis, bekommt eine schon gespeicherte Datei den Bezug
+        (``_link_agenda_item_files``); die Reihenfolge von Datei- und Punkteliste spielt so keine Rolle. Liefert die
+        Zahl der geschriebenen Dateien.
         """
         files = [nested for nested in item.nested_entities if isinstance(nested, ProcessedFile)]
-        if not files or not item.external_id:
+        embedded = {file.external_id for file in files}
+        referenced = [ref for ref in item.references.get("files", []) if ref and ref not in embedded]
+        if (not files and not referenced) or not item.external_id:
             return 0
         ref = await self.get_agenda_item_ref(item.external_id, body_id)
         if ref is None:
@@ -2714,8 +2720,57 @@ class DatabaseStorage:
                 await self.upsert_file(file, body_id, meeting_id=meeting_id, agenda_item_id=item_id)
             except ForeignObjectError:
                 continue
+            except Exception as e:  # noqa: BLE001 - die übrigen Dateien des Punkts trotzdem schreiben
+                console.print(
+                    f"[yellow]  Datei {file.external_id} am Punkt {item.external_id} nicht gespeichert: {e}[/yellow]"
+                )
+                continue
             stored += 1
+        if referenced:
+            await self._link_agenda_item_files(referenced, item_id, meeting_id, body_id)
         return stored
+
+    async def _link_agenda_item_files(
+        self, external_ids: list[str], item_id: UUID, meeting_id: UUID, body_id: UUID
+    ) -> None:
+        """
+        Gespeicherten Dateien, die ein Punkt nur als Verweis nennt, den Bezug zum Punkt (und, wenn leer, zur Sitzung)
+        geben; ein vorhandener Bezug zu einem Punkt bleibt. Nur Dateien derselben Quelle; mit ``ris.file.changed``
+        (``added``, neue Zugehörigkeit), in einer Transaktion.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                update(OParlFile)
+                .where(
+                    OParlFile.external_id.in_(external_ids),
+                    OParlFile.agenda_item_id.is_(None),
+                    _owned_by_source_of(OParlFile, body_id),
+                )
+                .values(
+                    agenda_item_id=item_id,
+                    meeting_id=func.coalesce(OParlFile.meeting_id, meeting_id),
+                    updated_at=func.now(),
+                )
+                .returning(OParlFile.id, OParlFile.raw_json, OParlFile.paper_id, OParlFile.deleted)
+            )
+            linked = result.fetchall()
+            if linked and await self._events_for(session, body_id):
+                drafts: list[ris_events.Draft] = []
+                for file_id, raw, paper_id, deleted in linked:
+                    if deleted:
+                        continue
+                    prior = ris_events.Prior(raw_json=raw or {}, paper_id=paper_id, meeting_id=meeting_id)
+                    drafts += ris_events.file_events(
+                        file_id,
+                        raw or {},
+                        prior,
+                        paper_id=paper_id,
+                        meeting_id=meeting_id,
+                        ids=self.id_bases,
+                        agenda_item_id=item_id,
+                    )
+                await self._emit(session, body_id, drafts, None)
+            await session.commit()
 
     # ========== Location Operations ==========
 

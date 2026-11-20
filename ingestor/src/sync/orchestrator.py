@@ -3026,7 +3026,7 @@ class SyncOrchestrator:
 
     async def _store_agenda_item_files(self, item: ProcessedAgendaItem, body_id: UUID, body_name: str | None) -> None:
         """Dateien direkt am Tagesordnungspunkt speichern (``upsert_agenda_item_files``) und zählen."""
-        if not any(isinstance(nested, ProcessedFile) for nested in item.nested_entities):
+        if not item.references.get("files"):
             return
         stored = await self.storage.upsert_agenda_item_files(item, body_id)
         for _ in range(stored):

@@ -265,6 +265,56 @@ async def test_punkt_aus_der_liste_und_einzelne_datei_mit_rueckverweis(speicher:
 
 
 @pytest.mark.integration
+async def test_datei_vor_dem_punkt_bekommt_den_bezug_ueber_den_verweis(speicher: DatabaseStorage) -> None:
+    """
+    Dateiliste und Punkteliste laufen parallel: Kommt die Datei zuerst (ihr Punkt fehlt noch), steht sie ohne Bezug.
+    Nennt der Punkt sie danach nur als Verweis, bekommt sie den Bezug; ein Bezug zu einem anderen Punkt bleibt.
+    """
+    orchestrator, kommune = await _abgleich(speicher)
+    leer = orchestrator.processor.process_meeting({**_sitzung(), "auxiliaryFile": []}, KOMMUNE)
+    await orchestrator._store_entity(leer, kommune, "meeting")
+    frueh = orchestrator.processor.process(_datei(7, agendaItem=[PUNKT]), KOMMUNE)
+    assert frueh is not None
+    await orchestrator._store_entity(frueh, kommune, "file")
+    assert (await _dateien(speicher))["7"] == (None, None, None)
+
+    punkt = orchestrator.processor.process(
+        _punkt(auxiliaryFile=[f"{BASE}/files/7", f"{BASE}/files/fehlt"], resolutionFile=None), KOMMUNE
+    )
+    assert punkt is not None
+    await orchestrator._store_entity(punkt, kommune, "agendaitem")
+
+    punkt_id, sitzung_id = await _punkt_und_sitzung(speicher)
+    assert await _dateien(speicher) == {"7": (punkt_id, sitzung_id, None)}
+    if speicher.events_enabled:
+        async with speicher.get_session() as session:
+            zeilen = await session.execute(
+                text("SELECT payload FROM events_event WHERE type = 'ris.file.changed' ORDER BY id")
+            )
+            letzte = [zeile[0] for zeile in zeilen][-1]
+        assert letzte["change"] == "added" and letzte["agenda_item"] == str(punkt_id)
+
+
+@pytest.mark.integration
+async def test_fehler_bei_einer_datei_haelt_die_uebrigen_nicht_auf(
+    speicher: DatabaseStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    orchestrator, kommune = await _abgleich(speicher)
+    schreiben = speicher.upsert_file
+
+    async def scheitern(file: Any, *args: Any, **kwargs: Any) -> Any:
+        if file.external_id.endswith("/files/1"):
+            raise RuntimeError("deadlock detected")
+        return await schreiben(file, *args, **kwargs)
+
+    monkeypatch.setattr(speicher, "upsert_file", scheitern)
+    sitzung = orchestrator.processor.process_meeting(_sitzung(_punkt()), KOMMUNE)
+
+    assert await orchestrator._store_entity(sitzung, kommune, "meeting") is True
+    assert set(await _dateien(speicher)) == {"2", "3", "9"}
+
+
+@pytest.mark.integration
 async def test_punkt_einer_anderen_quelle_bekommt_keine_dateien(speicher: DatabaseStorage) -> None:
     """Steht der Punkt nicht im Bestand derselben Quelle, schreibt der Abgleich seine Dateien nicht."""
     orchestrator, kommune = await _abgleich(speicher)

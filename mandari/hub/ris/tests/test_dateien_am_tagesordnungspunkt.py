@@ -117,6 +117,23 @@ def test_zurueckgenommener_punkt_sperrt_seine_dateien(body: OParlBody, sitzung: 
     assert file_reconcile.parent_withdrawn(offen) is False
     assert file_reconcile.parent_withdrawn(zurueck) is True
     assert file_reconcile.parent_withdrawn(ohne_punkt) is False
+    # Die Seiten zeigen sie nicht, auch nicht in der Vorbereitung
+    assert zurueck.agenda_item is not None
+    assert ris.files_of_agenda_items([zurueck.agenda_item]) == {}
+    vorbereitet = PreparedItem(
+        item=zurueck.agenda_item,
+        position=None,
+        private_note=None,
+        own_speech=None,
+        shared_speeches=[],
+        notes=[],
+        documents=[],
+        papers=[],
+        primary_paper=None,
+        has_files=True,
+        files=[zurueck],
+    )
+    assert _ris_files_of(vorbereitet) == []
 
 
 def test_work_sitzungsdetail_und_vorbereitung(body: OParlBody, sitzung: OParlMeeting) -> None:
@@ -147,3 +164,7 @@ def test_work_sitzungsdetail_und_vorbereitung(body: OParlBody, sitzung: OParlMee
     )
     assert [f.name for f in _ris_files_of(vorbereitet)] == ["Antrag", "Beides", "Anlage"]
     assert anlage in _ris_files_of(vorbereitet)
+    # In der Quelle gelöschte Dateien nennt die Vorbereitung nicht (keine Originaladresse)
+    anlage.deleted = True
+    anlage.save(update_fields=["deleted"])
+    assert [f.name for f in _ris_files_of(vorbereitet)] == ["Antrag", "Beides"]

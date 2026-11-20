@@ -361,11 +361,17 @@ def _serialize_ris_file(f: OParlFile, annotation_counts: dict[Any, int]) -> dict
 
 
 def _ris_files_of(entry: PreparedItem) -> list[OParlFile]:
-    """RIS-Dateien eines TOPs: direkt am Punkt, dann die der Vorlagen; jede Datei einmal."""
+    """
+    RIS-Dateien eines TOPs: direkt am Punkt, dann die der Vorlagen; jede Datei einmal. Ein zurückgenommener TOP zeigt
+    keine (auch nicht über die Vorlage), gelöschte und zurückgenommene Dateien fehlen: Die Seite gäbe sonst ihre
+    Originaladresse aus.
+    """
+    if entry.item.withdrawn_by_publisher:
+        return []
     seen: set[Any] = set()
     files: list[OParlFile] = []
     for f in [*entry.files, *(f for p in entry.papers for f in p.files.all())]:
-        if f.id not in seen:
+        if f.id not in seen and not f.deleted:
             seen.add(f.id)
             files.append(f)
     return files
