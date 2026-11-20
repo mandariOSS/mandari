@@ -570,3 +570,28 @@ def test_gleiche_fundstelle_in_anlagen_mit_verschiedener_einheit_ist_mehrdeutig(
     for euro in (1200, 1200000):
         antwort = _antwort(gesamtkosten={"euro": euro, "beleg": "Baukosten 1.200"}, **leer)
         assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
+
+
+def test_karten_fuer_die_seitenleiste() -> None:
+    ergebnis = finanzcheck.pruefen(ANTWORT, DOKUMENT)
+    paper = SimpleNamespace(
+        pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+    )
+    anzeige = finanzcheck.anzeige(paper)
+    assert anzeige is not None and anzeige.karten is not None
+    karten = anzeige.karten
+    assert (karten.gesamt, karten.foerderung, karten.eigen, karten.jaehrlich) == (
+        "6,2 Mio. €",
+        "4,65 Mio. €",
+        "1,55 Mio. €",
+        "124.000 €",
+    )
+    assert karten.anteil_foerderung == 75.0 and karten.rest_x == 75.6 and karten.rest_breite == 24.4
+    assert [(b.jahr, b.hoehe, b.oben) for b in karten.balken] == [
+        (2028, 100.0, 0.0),
+        (2029, 100.0, 0.0),
+        (2030, 75.0, 25.0),
+        (2031, 35.0, 65.0),
+    ]
+    assert karten.jaehrlich_wofuer == "Unterhalt, Wertverlust und Zinsen" and karten.nutzungsdauer == 40
+    assert karten.hinweis == "Das Geld ist erst teilweise im Haushalt eingeplant."

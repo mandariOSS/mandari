@@ -670,6 +670,52 @@ class Jahr:
 
 
 @dataclass(frozen=True)
+class Balken:
+    """Eine Säule im Diagramm „Wann gezahlt wird“: Jahr, Betrag, Höhe in Prozent der größten Säule."""
+
+    jahr: int
+    wert: str
+    hoehe: float
+
+    @property
+    def oben(self) -> float:
+        """Oberkante der Säule im SVG (``viewBox`` 0–100, unten 100)."""
+        return round(100 - self.hoehe, 1)
+
+
+@dataclass(frozen=True)
+class Karten:
+    """Die Karten des Finanzchecks in der Seitenleiste (Münster-Money-Stil: große Zahl, kleine Grafik)."""
+
+    gesamt: str
+    foerderung: str
+    foerderung_stand: str
+    eigen: str
+    eigen_errechnet: bool
+    #: Anteil des Fördergelds an den Kosten in Prozent (nur, wenn Fördergeld und Anteil der Kommune die Kosten ergeben)
+    anteil_foerderung: float | None
+    jaehrlich: str
+    jaehrlich_ab: int | None
+    jaehrlich_errechnet: bool
+    #: Wofür die jährlichen Kosten anfallen („Unterhalt, Wertverlust und Zinsen“)
+    jaehrlich_wofuer: str
+    nutzungsdauer: int | None
+    balken: list[Balken]
+    #: Kurzer Hinweis, etwa „Das Geld ist erst teilweise im Haushalt eingeplant.“
+    hinweis: str
+    wer: str
+
+    @property
+    def rest_x(self) -> float:
+        """Beginn des Abschnitts „Anteil der Kommune“ im Balken (2 px Abstand ≈ 0,6 Einheiten)."""
+        return round((self.anteil_foerderung or 0) + 0.6, 1)
+
+    @property
+    def rest_breite(self) -> float:
+        return round(max(0.0, 100 - self.rest_x), 1)
+
+
+@dataclass(frozen=True)
 class Anzeige:
     """Was die Vorgangsseite zeigt (``partials/paper_finanzcheck.html``) und die Description nennt."""
 
@@ -687,6 +733,8 @@ class Anzeige:
     belege: list[tuple[str, str]]
     #: Ein Satz für die Description der Suchmaschinen
     seo: str
+    #: Karten für die Seitenleiste; ``None`` bei „keine Kosten“
+    karten: Karten | None = None
 
 
 def anzeige(paper: Any) -> Anzeige | None:
@@ -803,6 +851,50 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
         saetze.append("Das Geld ist noch nicht im Haushalt eingeplant.")
     grenze_laufend = grenze_haushalt = len(saetze)
 
+    # Karten für die Seitenleiste
+    anteil = None
+    if gesamt and foerderung and eigen is not None and abs(foerderung + eigen - gesamt) <= max(1, gesamt // 100):
+        anteil = round(100 * foerderung / gesamt, 1)
+    posten_karte = {z["posten"] for z in zeilen}
+    wofuer_karte = [
+        text
+        for name, text in (("unterhalt", "Unterhalt"), ("wertverlust", "Wertverlust"), ("zinsen", "Zinsen"))
+        if name in posten_karte or (name == "wertverlust" and dauer)
+    ]
+    ausgaben_je_jahr: dict[int, int] = {}
+    for zahlung in daten.get("zahlungen") or []:
+        if zahlung["richtung"] == "ausgabe":
+            ausgaben_je_jahr[zahlung["jahr"]] = ausgaben_je_jahr.get(zahlung["jahr"], 0) + zahlung["euro"]
+    hoechste = max(ausgaben_je_jahr.values(), default=0)
+    balken = (
+        [
+            Balken(jahr, euro_kurz(wert), round(100 * wert / hoechste, 1))
+            for jahr, wert in sorted(ausgaben_je_jahr.items())
+        ]
+        if len(ausgaben_je_jahr) > 1 and hoechste
+        else []
+    )
+    hinweis_karte = {
+        "teilweise": "Das Geld ist erst teilweise im Haushalt eingeplant.",
+        "nein": "Das Geld ist noch nicht im Haushalt eingeplant.",
+    }.get(daten.get("im_haushalt", ""), "")
+    karten = Karten(
+        gesamt=euro_kurz(gesamt) if gesamt else "",
+        foerderung=euro_kurz(foerderung) if foerderung else "",
+        foerderung_stand=stand,
+        eigen=euro_kurz(eigen) if eigen is not None else "",
+        eigen_errechnet=eigen_errechnet,
+        anteil_foerderung=anteil,
+        jaehrlich=euro_kurz(jaehrlich) if jaehrlich else "",
+        jaehrlich_ab=ab,
+        jaehrlich_errechnet=jaehrlich_errechnet,
+        jaehrlich_wofuer=_aufzaehlung(wofuer_karte) if wofuer_karte else "",
+        nutzungsdauer=dauer,
+        balken=balken,
+        hinweis=hinweis_karte,
+        wer=wer["nom"].split()[-1],
+    )
+
     # Erst was kostet, dann was entlastet, damit die Rechnung von oben nach unten aufgeht
     zeilen.sort(key=lambda z: z["posten"] in POSTEN_ENTLASTUNG)
     laufend_zeilen = [
@@ -865,6 +957,7 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
         hinweise=[h["text"] for h in daten.get("hinweise") or []],
         belege=belege,
         seo=seo,
+        karten=karten,
     )
 
 
