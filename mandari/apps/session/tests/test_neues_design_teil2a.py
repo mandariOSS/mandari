@@ -221,12 +221,12 @@ def _welt_2a(tenant: SessionTenant) -> dict[str, Any]:
             revoked_at=timezone.now() if aufgehoben else None,
         )
 
-    # Kalender: zweite Körperschaft (Filter), nichtöffentliche und abgesagte Sitzung im Monat der Sitzung
+    # Kalender: zweite Körperschaft (Filter), nichtöffentliche und abgesagte Sitzung am Tag der Sitzung. Zur selben
+    # Zeit statt zwei Stunden später: Liegt die Sitzung spät am letzten Tag des Monats, fiele die spätere sonst in den
+    # nächsten Monat und fehlte im Kalender (so am 20.11.2026 ab 22 Uhr, Sitzung am 30.11. um 22 Uhr)
     SessionBody.objects.create(tenant=tenant, name="Gemeinde Nord", short_name="GN", body_type="mitgliedsgemeinde")
     for name, felder in (("Grundstücke", {"is_public": False}), ("Ausfall", {"cancelled": True})):
-        SessionMeeting.objects.create(
-            tenant=tenant, organization=rat, name=name, start=sitzung.start + timedelta(hours=2), **felder
-        )
+        SessionMeeting.objects.create(tenant=tenant, organization=rat, name=name, start=sitzung.start, **felder)
 
     def adresse(name: str, **kw: Any) -> str:
         return reverse(f"session:{name}", kwargs={"tenant_slug": slug, **kw})
