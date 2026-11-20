@@ -2915,11 +2915,40 @@ class DatabaseStorage:
                     ids=self.id_bases,
                     agenda_item_id=agenda_item_id,
                 )
-                if agenda_item_id is not None and not agenda_item_public:
+                if any(draft.payload.get("agenda_item") for draft in drafts) and not (
+                    agenda_item_public
+                    and await self._agenda_item_public(session, body_id, agenda_item_id, file.raw_json or {})
+                ):
                     drafts = [replace(draft, visibility=ris_events.NICHTOEFFENTLICH) for draft in drafts]
                 await self._emit(session, body_id, drafts, file.oparl_modified)
             await session.commit()
             return file_id
+
+    async def _agenda_item_public(
+        self, session: AsyncSession, body_id: UUID, item_id: UUID | None, raw: Mapping[str, Any]
+    ) -> bool:
+        """
+        Ist der Tagesordnungspunkt, den ein Datei-Ereignis nennt, öffentlich? Gelesen in der Transaktion, die das
+        Ereignis veröffentlicht, und bis zum Commit geteilt gesperrt (``FOR SHARE``): Stellt der Abgleich der Punkte
+        ihn gleichzeitig nichtöffentlich, wartet einer auf den anderen, und das Ereignis trägt die Sichtbarkeit zum
+        Zeitpunkt der Veröffentlichung. Der Punkt kommt aus ``item_id`` oder, bei eingebetteten Dateien, aus dem
+        Rückverweis ``agendaItem`` derselben Quelle. Ist er nicht zu finden, gilt er als nichtöffentlich: Das
+        Ereignis nennt seine Kennung.
+        """
+        query = select(OParlAgendaItem.public)
+        if item_id is not None:
+            query = query.where(OParlAgendaItem.id == item_id)
+        else:
+            ref = raw.get("agendaItem")
+            if isinstance(ref, list | tuple):
+                ref = ref[0] if ref else None
+            if isinstance(ref, Mapping):
+                ref = ref.get("id")
+            if not isinstance(ref, str) or not ref:
+                return False
+            query = query.where(OParlAgendaItem.external_id == ref, _owned_by_source_of(OParlAgendaItem, body_id))
+        row = (await session.execute(query.with_for_update(read=True))).first()
+        return row is not None and row[0] is not False
 
     async def get_agenda_item_ref(self, external_id: str, body_id: UUID) -> tuple[UUID, UUID, bool] | None:
         """
@@ -3020,7 +3049,7 @@ class DatabaseStorage:
                         ids=self.id_bases,
                         agenda_item_id=item_id,
                     )
-                if not public:
+                if drafts and not (public and await self._agenda_item_public(session, body_id, item_id, {})):
                     drafts = [replace(draft, visibility=ris_events.NICHTOEFFENTLICH) for draft in drafts]
                 await self._emit(session, body_id, drafts, None)
             await session.commit()
