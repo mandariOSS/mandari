@@ -37,8 +37,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Final
 
-from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 
 if TYPE_CHECKING:
@@ -56,6 +54,8 @@ EFFORT: Final = "medium"
 JE_LAUF: Final = 6
 #: Höchstens so viele Vorgänge sieht ein Lauf an (Vorfilter ohne KI)
 KANDIDATEN_JE_LAUF: Final = 200
+#: Anteil des Monatsbudgets, der den Zusammenfassungen vorbehalten bleibt (der Finanzcheck hört vorher auf)
+BUDGET_RESERVE: Final = Decimal("0.3")
 #: Höchstens so viele Hinweise der KI
 MAX_HINWEISE: Final = 3
 #: Längster Hinweis (Zeichen)
@@ -70,6 +70,22 @@ STATUS_VERWORFEN: Final = "verworfen"
 #: Geldbetrag im Text: „6.200.000 €“, „1,55 Mio. Euro“, „62 T€“, „116.250 EUR“
 _GELDBETRAG: Final = re.compile(
     r"\d[\d.,]*\s*(?:€|EUR\b|Euro\b|T€|TEUR\b|T\s?Euro\b|Mio\.?|Millionen\b|Mrd\.?|Milliarden\b)", re.IGNORECASE
+)
+#: Beträge in Tausend Euro im Dokument (Tabellenkopf „in T€“, „TEUR“, „Tsd. €“)
+_TAUSEND: Final = re.compile(
+    r"T€|\bTEUR\b|\bT\s?EUR\b|Tsd\.?\s*(?:€|EUR\b|Euro\b)|\bTausend\s+Euro\b|\bin\s+Tausend\b", re.IGNORECASE
+)
+#: Währung oder Größenwort in einer Fundstelle: dann ist die Einheit der Zahl eindeutig
+_WAEHRUNG: Final = re.compile(
+    r"€|\bEUR\b|\bEuro\b|\bTEUR\b|\bMio\b|\bMillion|\bMrd\b|\bMilliard|\bTsd\b|\bTausend\b", re.IGNORECASE
+)
+#: Alleinstehende vierstellige Zahl (Jahr), nicht Teil eines Betrags wie „2.028“ oder „12028“
+_JAHRESZAHL: Final = re.compile(r"(?<![\d.,])(\d{4})(?![\d.,]\d)")
+#: „Keine Kosten“: nur ausdrücklich („Es entstehen keine Kosten“, „Finanzielle Auswirkungen: keine“)
+_KEINE_KOSTEN: Final = re.compile(
+    r"\bkeine\b[^.]{0,60}?\b(?:Kosten|finanziellen\s+Auswirkungen|Auswirkungen\s+auf\s+den\s+Haushalt|Mehrkosten"
+    r"|Aufwendungen|Haushaltsmittel|Ausgaben)\b|\b(?:Auswirkungen|Kosten)\s*:\s*keine\b|\bkostenneutral\b",
+    re.IGNORECASE,
 )
 #: Ohne eines dieser Wörter geht es um keine Ausgabe der Kommune (etwa nur Einwohnerzahlen mit „Euro“ im Namen)
 _FINANZWORT: Final = re.compile(
@@ -228,7 +244,7 @@ FELDER:
 
 FUNDSTELLEN (beleg):
 - Kopiere die Stelle Zeichen für Zeichen aus dem Dokumenttext: 5 bis 25 Wörter, die die Zahl (bei Jahren auch das Jahr) enthalten. Nicht umformulieren, nicht kürzen, nichts einfügen. Bei Tabellen genügt die Zeile mit Jahr und Betrag.
-- euro: der Betrag in ganzen Euro, genau wie im Text (aus „6,2 Mio. €“ wird 6200000, aus „62 T€“ 62000). Rechne nichts aus und runde nicht.
+- euro: der Betrag in ganzen Euro, genau wie im Text (aus „6,2 Mio. €“ wird 6200000, aus „62 T€“ 62000). Steht die Einheit nur über der Tabelle (etwa „in T€“ oder „TEUR“), rechne in Euro um (aus „1.200“ wird 1200000). Sonst rechne nichts aus und runde nicht.
 - Fehlt eine Angabe, setze null bzw. eine leere Liste oder einen leeren Text. Rate nie.
 
 Ein Programm prüft jede Fundstelle gegen den Dokumenttext; Zahlen ohne passende Fundstelle werden verworfen.
@@ -271,9 +287,13 @@ def nutzerprompt(paper: OParlPaper, dokumente: str) -> str:
 # =============================================================================
 
 
+#: Zeichen, die beim Vergleich von Fundstelle und Text zählen (klein geschrieben)
+_KERNZEICHEN: Final = re.compile(r"[0-9a-zäöüß]")
+
+
 def _kern(text: str) -> str:
     """Nur Buchstaben und Ziffern, klein: Zeilenumbrüche, Silbentrennung und Leerzeichen der Texterkennung zählen nicht."""
-    return re.sub(r"[^0-9a-zäöüß]", "", (text or "").casefold())
+    return "".join(klein for klein in ((text or "").lower()) if _KERNZEICHEN.match(klein))
 
 
 @dataclass
@@ -282,28 +302,95 @@ class _Material:
 
     text: str
     kern: str = ""
+    #: Stelle jedes Zeichens von ``kern`` im ``text``
+    stellen: list[int] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        self.kern = _kern(self.text)
+        # Zeichenweise klein, damit jede Stelle im Kern auf ihre Stelle im Text zeigt
+        klein = [zeichen.lower() for zeichen in self.text]
+        self.stellen = [i for i, zeichen in enumerate(klein) if len(zeichen) == 1 and _KERNZEICHEN.match(zeichen)]
+        self.kern = "".join(klein[i] for i in self.stellen)
+
+    def _zahl_geht_weiter(self, stelle: int, schritt: int) -> bool:
+        """Gehört das Zeichen an ``stelle`` im Text noch zur Zahl daneben (Ziffer oder „.“/„,“ vor einer Ziffer)?"""
+        text = self.text
+        if not 0 <= stelle < len(text):
+            return False
+        if text[stelle].isdigit():
+            return True
+        weiter = stelle + schritt
+        return text[stelle] in ".," and 0 <= weiter < len(text) and text[weiter].isdigit()
 
     def steht_drin(self, beleg: str) -> bool:
+        """
+        Steht die Fundstelle im Text? Verglichen werden nur Buchstaben und Ziffern (Zeilenumbrüche, Trennstriche und
+        Leerzeichen der Texterkennung zählen nicht). Beginnt oder endet die Fundstelle mit einer Ziffer, darf die Zahl
+        im Text nicht weitergehen: „200.000 € und“ ist keine Fundstelle in „1.200.000 € und“.
+        """
         kern = _kern(beleg)
-        return len(kern) >= MIN_BELEG and kern in self.kern
+        if len(kern) < MIN_BELEG:
+            return False
+        start = self.kern.find(kern)
+        while start >= 0:
+            anfang, ende = self.stellen[start], self.stellen[start + len(kern) - 1]
+            davor_frei = not kern[0].isdigit() or not self._zahl_geht_weiter(anfang - 1, -1)
+            danach_frei = not kern[-1].isdigit() or not self._zahl_geht_weiter(ende + 1, 1)
+            if davor_frei and danach_frei:
+                return True
+            start = self.kern.find(kern, start + 1)
+        return False
+
+    @property
+    def in_tausend(self) -> bool:
+        """Nennt der Text Beträge in Tausend Euro (Tabellen „in T€“, „TEUR“)?"""
+        return bool(_TAUSEND.search(self.text))
 
 
-def _werte(beleg: str) -> Any:
-    """Zahlen einer Fundstelle als Werte (mit Größenwort wie „Mio.“), wie die Prüfung der Zusammenfassungen."""
-    from .zusammenfassung_pruefung import Quelle
+def _werte(beleg: str) -> set[Decimal]:
+    """
+    Ganze Zahlen einer Fundstelle als Werte; mit Größenwort nur umgerechnet („62 T€“ → 62.000, nicht 62).
 
-    return Quelle(text=beleg or "")
+    Anders als bei der Prüfung der Zusammenfassungen zählen Teile einer Zahl nicht („6.200.000“ belegt nicht 200,
+    „01.07.2028“ nicht 7): Ein Betrag muss als Ganzes in der Fundstelle stehen.
+    """
+    from .zusammenfassung_pruefung import _ZAHL, _ZAHL_LEERZEICHEN, _faktor, _wert
+
+    werte: set[Decimal] = set()
+    for muster in (_ZAHL, _ZAHL_LEERZEICHEN):
+        for treffer in muster.finditer(beleg or ""):
+            wert = _wert(re.sub(r"[\s\u00a0\u202f]", ".", treffer.group(0)))
+            if wert is not None:
+                werte.add(wert * _faktor(beleg, treffer.end()))
+    return werte
 
 
 def _belegt(material: _Material, beleg: str, *zahlen: int) -> bool:
-    """Steht die Fundstelle im Text, und enthält sie alle ``zahlen``?"""
+    """Steht die Fundstelle im Text, und enthält sie alle ``zahlen`` als ganze Zahl (Jahre, Nutzungsdauer)?"""
     if not material.steht_drin(beleg):
         return False
     werte = _werte(beleg)
-    return all(werte.hat_wert(Decimal(int(zahl))) for zahl in zahlen)
+    return all(Decimal(int(zahl)) in werte for zahl in zahlen)
+
+
+def _betrag_belegt(material: _Material, beleg: str, euro: int) -> bool:
+    """
+    Steht der Betrag in Euro in der Fundstelle? Ohne Währung und Größenwort in der Fundstelle gilt: Nennt der Text
+    Beträge in Tausend Euro, zählt die Zahl als Tausender („1.200“ → 1.200.000); Beträge unter 1.000 brauchen eine
+    Währung. So wird „1.200“ aus einer Tabelle „in T€“ nie zu 1.200 Euro.
+    """
+    if euro <= 0 or not material.steht_drin(beleg):
+        return False
+    werte = _werte(beleg)
+    if _WAEHRUNG.search(beleg):
+        return Decimal(euro) in werte
+    if material.in_tausend:
+        return Decimal(euro) in {wert * 1000 for wert in werte}
+    return euro >= 1000 and Decimal(euro) in werte
+
+
+def _jahre_in(beleg: str) -> list[int]:
+    """Jahreszahlen einer Fundstelle (alleinstehend, 1990 bis 2100)."""
+    return [int(jahr) for jahr in _JAHRESZAHL.findall(beleg or "") if 1990 <= int(jahr) <= 2100]
 
 
 def _zahl(wert: Any) -> int:
@@ -320,7 +407,7 @@ def _betrag(material: _Material, roh: Any) -> dict[str, Any] | None | bool:
         return None
     euro = _zahl(roh.get("euro"))
     beleg = str(roh.get("beleg") or "").strip()
-    if euro <= 0 or not _belegt(material, beleg, euro):
+    if not _betrag_belegt(material, beleg, euro):
         return False
     return {"euro": euro, "beleg": beleg}
 
@@ -350,7 +437,7 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         return Pruefergebnis(STATUS_KEINE)
     if finanzen == "keine_kosten":
         beleg = str(antwort.get("keine_kosten_beleg") or "").strip()
-        if material.steht_drin(beleg) and re.search(r"\b(?:kein\w*|nicht|ohne)\b", beleg, re.IGNORECASE):
+        if material.steht_drin(beleg) and _KEINE_KOSTEN.search(beleg):
             return Pruefergebnis(STATUS_OK, daten={"finanzen": "keine_kosten", "keine_kosten_beleg": beleg})
         return Pruefergebnis(STATUS_KEINE, grund="keine_kosten ohne Fundstelle")
 
@@ -382,30 +469,37 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         von if von and len(von) <= 80 and not re.search(r"\d", von) and material.steht_drin(von) else ""
     )
 
-    zahlungen = []
+    # Zahlungen je Jahr: Die Fundstelle nennt genau ein Jahr, sonst ist die Zuordnung von Jahr und Betrag offen.
+    # Dieselbe Zeile aus Vorlage und Anlage zählt einmal.
+    zahlungen: list[dict[str, Any]] = []
+    gesehen: set[tuple[Any, ...]] = set()
     for zeile in antwort.get("zahlungen") or []:
         if not isinstance(zeile, dict):
             continue
         jahr, euro = _zahl(zeile.get("jahr")), _zahl(zeile.get("euro"))
         richtung = zeile.get("richtung")
         beleg = str(zeile.get("beleg") or "").strip()
+        schluessel: tuple[Any, ...] = ("zahlung", jahr, richtung, euro)
         if (
             richtung in ("ausgabe", "einnahme")
-            and 1990 <= jahr <= 2100
-            and euro > 0
-            and _belegt(material, beleg, jahr, euro)
+            and schluessel not in gesehen
+            and _jahre_in(beleg) == [jahr]
+            and _betrag_belegt(material, beleg, euro)
         ):
+            gesehen.add(schluessel)
             zahlungen.append({"jahr": jahr, "euro": euro, "richtung": richtung, "beleg": beleg})
     daten["zahlungen"] = zahlungen
 
-    laufend = []
+    laufend: list[dict[str, Any]] = []
     for zeile in antwort.get("laufend") or []:
         if not isinstance(zeile, dict):
             continue
         euro = _zahl(zeile.get("euro"))
         posten = zeile.get("posten")
         beleg = str(zeile.get("beleg") or "").strip()
-        if posten in POSTEN_TEXT and euro > 0 and _belegt(material, beleg, euro):
+        posten_schluessel: tuple[Any, ...] = ("posten", posten, euro)
+        if posten in POSTEN_TEXT and posten_schluessel not in gesehen and _betrag_belegt(material, beleg, euro):
+            gesehen.add(posten_schluessel)
             laufend.append({"posten": posten, "euro": euro, "beleg": beleg})
     daten["laufend"] = laufend
 
@@ -478,7 +572,7 @@ def euro_satz(euro: int) -> str:
 def traeger(paper: Any) -> dict[str, str]:
     """Wer zahlt, in den vier Fällen: Stadt, Gemeinde oder Kreis (aus dem Namen der Kommune)."""
     name = str(getattr(getattr(paper, "body", None), "name", "") or "")
-    if re.search(r"kreis", name, re.IGNORECASE):
+    if re.search(r"kreis(?!stadt|freie)", name, re.IGNORECASE):
         return {"nom": "der Kreis", "akk": "den Kreis", "dat": "dem Kreis", "gen": "des Kreises", "sein": "seinen"}
     if re.search(r"gemeinde", name, re.IGNORECASE):
         return {
@@ -538,6 +632,8 @@ class Anzeige:
     laufend: list[Zeile]
     laufend_summe: str
     jahre: list[Jahr]
+    #: Spalte „Einnahmen“ nur, wenn ein Jahr Einnahmen hat
+    mit_einnahmen: bool
     hinweise: list[str]
     belege: list[tuple[str, str]]
     #: Ein Satz für die Description der Suchmaschinen
@@ -572,6 +668,7 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
             laufend=[],
             laufend_summe="",
             jahre=[],
+            mit_einnahmen=False,
             hinweise=[],
             belege=[("Keine Kosten", beleg)] if beleg else [],
             seo="Kosten laut Vorlage: keine.",
@@ -592,8 +689,9 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
     jaehrlich = (daten.get("laufend_gesamt") or {}).get("euro")
     if jaehrlich and netto_errechnet is not None and abs(netto_errechnet - jaehrlich) > 1:
         zeilen = []
+    jaehrlich_errechnet = False
     if not jaehrlich and netto_errechnet is not None and netto_errechnet > 0:
-        jaehrlich = netto_errechnet
+        jaehrlich, jaehrlich_errechnet = netto_errechnet, True
     ab = (daten.get("laufend_ab") or {}).get("jahr")
     dauer = (daten.get("nutzungsdauer") or {}).get("jahre")
 
@@ -608,14 +706,20 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
             Kennzahl(f"Zahlt {wer['nom']} selbst", euro_kurz(eigen), "errechnet" if eigen_errechnet else "")
         )
     if jaehrlich:
-        kennzahlen.append(Kennzahl("Jedes Jahr", euro_kurz(jaehrlich), f"ab {ab}" if ab else ""))
+        zusatz = ", ".join(
+            teil for teil in (f"ab {ab}" if ab else "", "errechnet" if jaehrlich_errechnet else "") if teil
+        )
+        kennzahlen.append(Kennzahl("Jedes Jahr", euro_kurz(jaehrlich), zusatz))
 
     saetze: list[str] = []
     if gesamt:
         saetze.append(f"Das Vorhaben kostet laut Vorlage insgesamt {euro_satz(gesamt)}.")
     if foerderung:
         von = daten.get("foerderung_von") or ""
-        satz = f"Davon sollen {euro_satz(foerderung)} als Fördergeld{f' ({von})' if von else ''} kommen. "
+        satz = (
+            f"{'Davon sollen' if gesamt else 'Als Fördergeld sollen'} {euro_satz(foerderung)}"
+            f"{' als Fördergeld' if gesamt else ''}{f' ({von})' if von else ''} kommen. "
+        )
         satz += FOERDERUNG_SATZ.get(daten.get("foerderung_stand", ""), FOERDERUNG_SATZ["unklar"])
         saetze.append(satz)
     if eigen:
@@ -642,8 +746,13 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
 
     grenze_laufend = len(saetze)
     if jaehrlich:
-        beginn = f"Ab {ab}" if ab else ("Danach" if gesamt else "Laufend")
-        saetze.append(f"{beginn} kostet das {wer['akk']} jedes Jahr {euro_satz(jaehrlich)}.")
+        bau = daten.get("art") == "bau_oder_anschaffung" and gesamt
+        if ab:
+            saetze.append(f"Ab {ab} kostet das {wer['akk']} jedes Jahr {euro_satz(jaehrlich)}.")
+        elif bau:
+            saetze.append(f"Danach kostet das {wer['akk']} jedes Jahr {euro_satz(jaehrlich)}.")
+        else:
+            saetze.append(f"Jedes Jahr kostet das {wer['akk']} {euro_satz(jaehrlich)}.")
         posten = {z["posten"] for z in zeilen}
         if daten.get("art") == "bau_oder_anschaffung" and ("wertverlust" in posten or dauer):
             teile = ["ein Teil der Baukosten"]
@@ -670,6 +779,8 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
     elif im_haushalt == "nein":
         saetze.append(f"Das Geld ist noch nicht im Haushalt {wer['gen']} eingeplant.")
 
+    # Erst was kostet, dann was entlastet, damit die Rechnung von oben nach unten aufgeht
+    zeilen.sort(key=lambda z: z["posten"] in POSTEN_ENTLASTUNG)
     laufend_zeilen = [
         Zeile(POSTEN_TEXT[z["posten"]], euro_kurz(z["euro"]), z["posten"] in POSTEN_ENTLASTUNG) for z in zeilen
     ]
@@ -709,7 +820,7 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
     if gesamt:
         seo_teile.append(euro_kurz(gesamt))
     if eigen:
-        seo_teile.append(f"davon {wer['nom'].split()[-1]} {euro_kurz(eigen)}")
+        seo_teile.append(f"{'davon ' if gesamt else 'Anteil '}{wer['nom'].split()[-1]} {euro_kurz(eigen)}")
     if jaehrlich:
         seo_teile.append(f"jährlich {euro_kurz(jaehrlich)}{f' ab {ab}' if ab else ''}")
     seo = f"Kosten laut Vorlage: {', '.join(seo_teile)}." if seo_teile else ""
@@ -726,6 +837,7 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
         laufend=laufend_zeilen,
         laufend_summe=euro_kurz(jaehrlich) if laufend_zeilen and jaehrlich else "",
         jahre=jahr_zeilen,
+        mit_einnahmen=any(werte["einnahme"] for werte in jahre.values()),
         hinweise=[h["text"] for h in daten.get("hinweise") or []],
         belege=belege,
         seo=seo,
@@ -803,73 +915,42 @@ def _ablegen(
     vorgang_id: Any, ergebnis: Pruefergebnis, *, hinweis: str, dateien: list[str], seit: datetime, modell: str = ""
 ) -> bool:
     """Speichert den Finanzcheck, wenn Vorgang und Anlagen noch gelten und kein neuer Text kam; Rückgabe: gespeichert?"""
-    from insight_core.models import OParlFile, OParlPaper
+    from insight_core.services import finanzcheck_store
 
-    with transaction.atomic():
-        vorgang = OParlPaper.objects.select_for_update(no_key=True).filter(pk=vorgang_id).only("pk", "deleted").first()
-        if vorgang is None or vorgang.deleted:
-            return False
-        if (
-            dateien
-            and OParlFile.objects.filter(pk__in=dateien)
-            .filter(Q(deleted=True) | Q(source_missing_since__isnull=False))
-            .exists()
-        ):
-            return False
-        if OParlFile.objects.filter(
-            paper_id=vorgang_id, text_extraction_status="completed", text_extracted_at__gt=seit
-        ).exists():
-            return False
-        OParlPaper.objects.filter(pk=vorgang_id).update(
-            finanzcheck={
-                "status": ergebnis.status,
-                "fassung": FASSUNG,
-                "erstellt": timezone.now().isoformat(),
-                "hinweis": (hinweis or "")[:300],
-                "modell": modell or "",
-                "grund": ergebnis.grund,
-                "dateien": dateien,
-                "daten": ergebnis.daten if ergebnis.status == STATUS_OK else {},
-            }
-        )
-    return True
+    wert = {
+        "status": ergebnis.status,
+        "fassung": FASSUNG,
+        "erstellt": timezone.now().isoformat(),
+        "hinweis": (hinweis or "")[:300],
+        "modell": modell or "",
+        "grund": ergebnis.grund,
+        "dateien": dateien,
+        "daten": ergebnis.daten if ergebnis.status == STATUS_OK else {},
+    }
+    return finanzcheck_store.speichern(vorgang_id, wert, dateien=dateien, seit=seit)
 
 
 def kandidaten(*, kommunen: dict[Any, Any] | None = None, limit: int = KANDIDATEN_JE_LAUF) -> list[OParlPaper]:
-    """
-    Vorgänge der Kommunen im Tagesbatch ohne Finanzcheck, mit Text, neueste zuerst: dieselbe Auswahl wie
-    ``summary_store.fuer_tagesbatch`` (Stichtag je Kommune, gelistet, Veröffentlichung nicht pausiert), aber
-    unabhängig davon, ob schon eine Zusammenfassung da ist.
-    """
-    import uuid
-
-    from django.db.models import Exists, OuterRef
-
-    from insight_core import publication
-    from insight_core.models import OParlFile, OParlPaper
+    """Vorgänge der Kommunen im Tagesbatch ohne Finanzcheck, mit Text, neueste zuerst (``finanzcheck_store``)."""
+    from insight_core.services import finanzcheck_store
 
     from .zusammenfassung_batch import kommunen as tagesbatch_kommunen
 
     auswahl = kommunen if kommunen is not None else tagesbatch_kommunen()[0]
-    if not auswahl:
-        return []
-    gesperrt = [uuid.UUID(k) for k, stand in publication.states().items() if stand.paused or stand.withdrawn]
-    filter_kommunen = Q()
-    for kommune, ab in auswahl.items():
-        filter_kommunen |= Q(body_id=kommune, date__gte=ab)
-    mit_text = (
-        OParlFile.objects.filter(paper_id=OuterRef("pk"), deleted=False, source_missing_since__isnull=True)
-        .filter(text_content__isnull=False)
-        .exclude(text_content="")
-    )
-    return list(
-        OParlPaper.objects.filter(filter_kommunen)
-        .filter(finanzcheck__isnull=True, deleted=False, body__deleted=False, body__is_listed=True)
-        .filter(Exists(mit_text))
-        .exclude(body_id__in=gesperrt)
-        .select_related("body", "body__source")
-        .order_by("-date", "-pk")[: max(0, limit)]
-    )
+    return finanzcheck_store.ohne_finanzcheck(auswahl, limit=limit)
+
+
+def _budget_reicht(provider: Any) -> bool:
+    """
+    Bleibt nach dem Finanzcheck genug vom Monatsbudget für die Zusammenfassungen? Er nutzt Einzelaufrufe zum vollen
+    Preis und hört auf, wenn weniger als ``BUDGET_RESERVE`` des Monatsbudgets übrig ist.
+    """
+    rest = getattr(provider, "budget_rest", None)
+    endpunkt = getattr(provider, "endpunkt", None)
+    if not callable(rest) or endpunkt is None:
+        return True
+    budget = Decimal(str(getattr(endpunkt, "monatsbudget_usd", 0) or 0))
+    return Decimal(str(rest())) > budget * BUDGET_RESERVE
 
 
 def nachziehen(*, hoechstens: int = JE_LAUF, provider: Any = None, kommunen: dict[Any, Any] | None = None) -> int:
@@ -885,6 +966,9 @@ def nachziehen(*, hoechstens: int = JE_LAUF, provider: Any = None, kommunen: dic
 
     provider = provider or _provider()
     if provider is None or not provider.is_available():
+        return 0
+    if not _budget_reicht(provider):
+        logger.info("Finanzcheck: Reserve des Monatsbudgets für die Zusammenfassungen erreicht")
         return 0
     aufrufe = 0
     for paper in kandidaten(kommunen=kommunen):

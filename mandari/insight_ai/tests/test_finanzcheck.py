@@ -210,7 +210,8 @@ class TestAnzeige:
     def test_rechnung_aufgeschluesselt(self) -> None:
         anzeige = self._anzeige()
         assert anzeige.laufend_summe == "124.000 €"
-        assert [z.entlastung for z in anzeige.laufend] == [True, False, False, False]
+        assert [z.entlastung for z in anzeige.laufend] == [False, False, False, True]
+        assert not anzeige.mit_einnahmen
         assert [(j.jahr, j.ausgaben) for j in anzeige.jahre][0] == (2028, "2 Mio. €")
 
     def test_eigenanteil_errechnet_und_summe_errechnet(self) -> None:
@@ -309,3 +310,113 @@ class TestNachziehen:
         assert finanzcheck.kommt_in_frage(DOKUMENT)
         assert not finanzcheck.kommt_in_frage("Der Rat nimmt den Bericht zur Kenntnis.")
         assert not finanzcheck.kommt_in_frage("Münster hat 320.000 Einwohnerinnen und Einwohner.")
+
+
+class TestBefundePruefung:
+    """Befunde der Prüfung von PR #1515: Zahlgrenzen, Einheit T€, Paare aus Jahr und Betrag, „keine Kosten“."""
+
+    def test_fundstelle_mitten_in_einer_zahl(self) -> None:
+        text = "Die Kosten betragen 1.200.000 € und werden vollständig von der Stadt getragen."
+        antwort = _antwort(
+            gesamtkosten={"euro": 200000, "beleg": "200.000 € und werden vollständig"},
+            foerderung=None,
+            eigenanteil=None,
+            laufend_gesamt=None,
+            laufend=[],
+            zahlungen=[],
+        )
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
+
+    def test_tabelle_in_tausend_euro(self) -> None:
+        text = "Kosten der Maßnahme (in T€)\nBaukosten 1.200\nFolgekosten 62 T€ pro Jahr"
+        richtig = {"euro": 1200000, "beleg": "Baukosten 1.200"}
+        falsch = {"euro": 1200, "beleg": "Baukosten 1.200"}
+        leer: dict[str, Any] = {"foerderung": None, "eigenanteil": None, "laufend": [], "zahlungen": []}
+        assert finanzcheck.pruefen(_antwort(gesamtkosten=richtig, laufend_gesamt=None, **leer), text).status == "ok"
+        assert finanzcheck.pruefen(_antwort(gesamtkosten=falsch, laufend_gesamt=None, **leer), text).status == (
+            finanzcheck.STATUS_VERWORFEN
+        )
+        klein = {"euro": 62, "beleg": "Folgekosten 62 T€ pro Jahr"}
+        assert finanzcheck.pruefen(_antwort(gesamtkosten=richtig, laufend_gesamt=klein, **leer), text).status == (
+            finanzcheck.STATUS_VERWORFEN
+        )
+
+    def test_zahlung_mit_zwei_jahren_und_doppelte_zeilen(self) -> None:
+        text = DOKUMENT + "Auszahlungen 2026 (500.000 €) und 2027 (1.500.000 €)\n"
+        zahlungen = [
+            {"jahr": 2026, "euro": 1500000, "richtung": "ausgabe", "beleg": "2026 (500.000 €) und 2027 (1.500.000 €)"},
+            {"jahr": 2028, "euro": 2000000, "richtung": "ausgabe", "beleg": "2028 2.000.000"},
+            {"jahr": 2028, "euro": 2000000, "richtung": "ausgabe", "beleg": "2028 2.000.000"},
+        ]
+        laufend = [*ANTWORT["laufend"], ANTWORT["laufend"][1]]
+        daten = finanzcheck.pruefen(_antwort(zahlungen=zahlungen, laufend=laufend), text).daten
+        assert [(z["jahr"], z["euro"]) for z in daten["zahlungen"]] == [(2028, 2000000)]
+        assert len(daten["laufend"]) == 4
+
+    def test_kosten_stehen_noch_nicht_fest(self) -> None:
+        text = "Die Kosten stehen noch nicht fest."
+        antwort = _antwort(finanzen="keine_kosten", keine_kosten_beleg="Die Kosten stehen noch nicht fest.")
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_KEINE
+        text = "Finanzielle Auswirkungen: keine"
+        antwort = _antwort(finanzen="keine_kosten", keine_kosten_beleg="Finanzielle Auswirkungen: keine")
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_OK
+
+
+class TestBefundeAnzeige:
+    @pytest.mark.parametrize(
+        ("name", "wer"),
+        [
+            ("Kreisstadt Homberg (Efze)", "die Stadt"),
+            ("Stadt Köln, kreisfreie Stadt", "die Stadt"),
+            ("Kreis Steinfurt", "der Kreis"),
+            ("Samtgemeinde Sittensen", "die Gemeinde"),
+        ],
+    )
+    def test_traeger(self, name: str, wer: str) -> None:
+        assert finanzcheck.traeger(SimpleNamespace(body=SimpleNamespace(name=name)))["nom"] == wer
+
+    def test_laufende_kosten_ohne_bau(self) -> None:
+        text = "Der Zuschuss an den Verein beträgt jährlich 50.000 € und wird aus dem Kulturbudget gezahlt."
+        antwort = _antwort(
+            art="laufende_kosten",
+            gesamtkosten=None,
+            foerderung=None,
+            eigenanteil=None,
+            laufend_gesamt={"euro": 50000, "beleg": "Zuschuss an den Verein beträgt jährlich 50.000 €"},
+            laufend=[],
+            zahlungen=[],
+            laufend_ab=None,
+            nutzungsdauer=None,
+            im_haushalt="unklar",
+            deckung="unklar",
+            hinweise=[],
+        )
+        ergebnis = finanzcheck.pruefen(antwort, text)
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None
+        assert anzeige.saetze == ["Jedes Jahr kostet das die Stadt 50.000 Euro."]
+        assert anzeige.seo == "Kosten laut Vorlage: jährlich 50.000 €."
+
+    def test_errechnete_jahressumme_gekennzeichnet(self) -> None:
+        ergebnis = finanzcheck.pruefen(_antwort(laufend_gesamt=None, laufend_ab=None), DOKUMENT)
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None
+        jedes_jahr = next(k for k in anzeige.kennzahlen if k.titel == "Jedes Jahr")
+        assert (jedes_jahr.wert, jedes_jahr.zusatz) == ("124.000 €", "errechnet")
+
+
+class TestBudgetreserve:
+    def test_finanzcheck_laesst_den_zusammenfassungen_ihren_teil(self) -> None:
+        kommune = _kommune()
+        TagesbatchKommune.objects.create(body=kommune, ab=date(2000, 1, 1), verortung_pruefen=False)
+        _vorgang(kommune, text=DOKUMENT)
+        anbieter = _Anbieter(ANTWORT)
+        anbieter.endpunkt = SimpleNamespace(monatsbudget_usd=100)  # type: ignore[attr-defined]
+        anbieter.budget_rest = lambda: 20  # type: ignore[attr-defined]
+        assert finanzcheck.nachziehen(provider=anbieter) == 0 and anbieter.aufrufe == []

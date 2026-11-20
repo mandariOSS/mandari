@@ -62,22 +62,9 @@ class Command(BaseCommand):
 
     @staticmethod
     def _vorgang(schluessel: str, kommune: str | None) -> Any:
-        import uuid
-
-        from insight_core.models import OParlPaper
-        from insight_core.services import summary_store
+        from insight_core.services import finanzcheck_store
 
         try:
-            return OParlPaper.objects.select_related("body").get(pk=uuid.UUID(schluessel))
-        except (ValueError, OParlPaper.DoesNotExist):
-            pass
-        auswahl = OParlPaper.objects.select_related("body").filter(reference=schluessel, deleted=False)
-        if kommune:
-            try:
-                auswahl = auswahl.filter(body=summary_store.kommune_finden(kommune))
-            except LookupError as fehler:
-                raise CommandError(str(fehler)) from fehler
-        treffer = list(auswahl[:2])
-        if len(treffer) != 1:
-            raise CommandError(f"„{schluessel}“ passt auf {len(treffer)} Vorgänge; --kommune angeben")
-        return treffer[0]
+            return finanzcheck_store.vorgang_finden(schluessel, kommune)
+        except LookupError as fehler:
+            raise CommandError(str(fehler)) from fehler
