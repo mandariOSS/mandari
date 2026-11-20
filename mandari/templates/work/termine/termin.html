@@ -1,0 +1,163 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Eigener Termin im Kalender (Issue #1489): eine Seite zum Anlegen, Ansehen und Ändern, zweispaltig wie die Seiten der
+internen Sitzungen (fs-seite, fs-r-zwei): links, was der Termin ist (Zeit, Ort, Videolink, Beschreibung), rechts in
+der Nebenspalte, wer dabei ist (eigene Antwort, Eingeladene mit ihrer Antwort, wer den Termin sieht). Wer ändern darf,
+bekommt beides als ein Formular; die Antwort und das Löschen haben eigene Formulare außerhalb davon, ihre Knöpfe
+verweisen mit form="…" darauf. Alle anderen lesen dieselben Angaben. Aufbau in static/css/termine.css (Präfix tm-).
+Kontext: TerminNeuView bzw. TerminView (apps/work/termine/views.py): form (TerminForm mit werte und gewaehlt),
+darf_aendern, einladung (wer ändern darf: Mitglieder mit Häkchen und Antwort), dazu bei einem bestehenden Termin
+termin, zeit, beschreibung, teilnahmen, meine_teilnahme und sitzung (die verknüpfte interne Sitzung, nur wenn die
+Person sie sehen darf).
+{% endcomment %}
+
+{% block page_title %}{% if termin %}{{ termin.title }}{% else %}Neuer Termin{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if termin %}{{ termin.title }}{% else %}Neuer Termin{% endif %}" dicht data-testid="termin-kopf"
+    text="{% if termin %}{{ zeit }}{% if termin.location %} · {{ termin.location }}{% endif %}{% else %}Ortstermin, Pressegespräch, Klausur: alles, was keine Sitzung mit Tagesordnung ist.{% endif %}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings_calendar' org_slug=organization.slug %}">Kalender</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if termin and meine_teilnahme %}
+<form id="termin-antwort-form" method="post" action="{% url 'work:termin_antwort' org_slug=organization.slug termin_id=termin.id %}" data-testid="termin-antwort">{% csrf_token %}</form>
+{% endif %}
+{% if termin and darf_aendern %}
+<form id="termin-loeschen-form" method="post" action="{% url 'work:termin_loeschen' org_slug=organization.slug termin_id=termin.id %}" data-testid="termin-loeschen">{% csrf_token %}</form>
+{% endif %}
+
+{% if darf_aendern %}
+<form method="post" class="fs-seite wf" data-testid="termin-formular">
+    {% csrf_token %}
+    <div class="fs-r-zwei">
+        <section class="fs-spalte tm-felder" aria-label="Termin">
+            {% if form.errors %}
+            <div role="alert" class="tu-fehler">
+                {% for field in form %}{% for error in field.errors %}<p>{{ field.label }}: {{ error }}</p>{% endfor %}{% endfor %}
+                {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+            </div>
+            {% endif %}
+
+            <c-form.field :field="form.title" id="termin-titel" label="Titel" maxlength="200" placeholder="Etwa „Ortstermin Brücke Mühlenweg“" dicht required />
+
+            <div class="tm-zeit">
+                <c-form.field name="tag" id="termin-tag" type="date" label="Tag" value="{{ form.werte.tag }}" dicht required />
+                <c-form.field name="beginn" id="termin-beginn" type="time" label="Beginn" value="{{ form.werte.beginn }}" dicht />
+                <c-form.field name="ende" id="termin-ende" type="time" label="Ende" value="{{ form.werte.ende }}" dicht />
+                <c-form.field name="bis_tag" id="termin-bis" type="date" label="Letzter Tag" value="{{ form.werte.bis_tag }}" help="Nur ganztägig über mehrere Tage." dicht />
+            </div>
+            <c-form.checkbox name="all_day" id="termin-ganztaegig" label="Ganztägig" checked="{% if form.gewaehlt.all_day %}1{% endif %}" dicht />
+
+            <div class="tm-zwei">
+                <c-form.field :field="form.location" id="termin-ort" label="Ort" maxlength="500" dicht />
+                <c-form.field :field="form.video_url" id="termin-video" type="url" label="Link zur Videokonferenz" placeholder="https://…" maxlength="500" dicht />
+            </div>
+            <c-form.textarea :field="form.description" id="termin-beschreibung" label="Beschreibung" rows="6" maxlength="5000" dicht />
+
+            {% if form.faction_meeting.field.queryset %}
+            <c-form.select name="faction_meeting" id="termin-sitzung" label="Gehört zu einer internen Sitzung" dicht>
+                <option value="">Keine</option>
+                {% for sitzung in form.faction_meeting.field.queryset %}
+                <option value="{{ sitzung.id }}" {% if form.gewaehlt.faction_meeting == sitzung.id|stringformat:'s' %}selected{% endif %}>{{ sitzung.title }} ({{ sitzung.start|date:"d.m.Y" }})</option>
+                {% endfor %}
+            </c-form.select>
+            {% endif %}
+
+            <div class="tu-speichern">
+                <button type="submit" class="wf-knopf wf-haupt">{% if termin %}Speichern{% else %}Termin anlegen{% endif %}</button>
+                <a class="wf-textlink" href="{% url 'work:meetings_calendar' org_slug=organization.slug %}">Abbrechen</a>
+            </div>
+        </section>
+
+        <c-work.neben label="Einladung und Sichtbarkeit">
+            {% if termin and meine_teilnahme %}{% include "work/termine/_termin_antwort.html" %}{% endif %}
+
+            <section aria-labelledby="termin-eingeladene-h" data-testid="termin-eingeladene">
+                <h2 id="termin-eingeladene-h">Eingeladene</h2>
+                <p class="fs-meta">Sie bekommen eine Benachrichtigung, sehen den Termin immer und sagen zu oder ab.</p>
+                <ul class="tm-einladung">
+                    {% for eintrag in einladung %}
+                    <li>
+                        <c-form.checkbox name="eingeladene" id="termin-eingeladen-{{ eintrag.mitglied.id }}" value="{{ eintrag.mitglied.id }}" label="{{ eintrag.mitglied.user.get_display_name }}" checked="{% if eintrag.gewaehlt %}1{% endif %}" dicht />
+                        {% if eintrag.teilnahme %}<span class="tm-status {{ eintrag.teilnahme.status }}">{{ eintrag.teilnahme.get_status_display }}</span>{% endif %}
+                    </li>
+                    {% empty %}
+                    <li class="fs-meta">Es gibt noch keine weiteren Mitglieder.</li>
+                    {% endfor %}
+                </ul>
+            </section>
+
+            <section aria-labelledby="termin-sicht-h" data-testid="termin-sichtbarkeit">
+                <h2 id="termin-sicht-h">Wer sieht den Termin?</h2>
+                <div class="tu-wen">
+                    <c-form.radio name="visibility" value="organization" label="Alle Mitglieder" checked="{% if form.gewaehlt.visibility == 'organization' %}1{% endif %}" />
+                    {% if form.arten %}
+                    <c-form.radio name="visibility" value="meeting_type" label="Teilnehmende einer Sitzungsart" hinweis="Etwa ein Arbeitskreis; die Art wählen Sie darunter." checked="{% if form.gewaehlt.visibility == 'meeting_type' %}1{% endif %}" />
+                    <c-form.select name="meeting_type" id="termin-art" label="Sitzungsart" dicht class="ml-6">
+                        <option value="">Bitte wählen</option>
+                        {% for art in form.arten %}
+                        <option value="{{ art.id }}" {% if form.gewaehlt.meeting_type == art.id|stringformat:'s' %}selected{% endif %}>{{ art.name }}</option>
+                        {% endfor %}
+                    </c-form.select>
+                    {% endif %}
+                    <c-form.radio name="visibility" value="private" label="Nur ich und die Eingeladenen" checked="{% if form.gewaehlt.visibility == 'private' %}1{% endif %}" />
+                </div>
+            </section>
+
+            {% if termin %}
+            <section aria-labelledby="termin-weiteres-h">
+                <h2 id="termin-weiteres-h">Weiteres</h2>
+                <ul class="fs-weiteres">
+                    <li>
+                        <details>
+                            <summary class="tu-gefahr"><i data-lucide="trash-2" aria-hidden="true"></i>Termin löschen</summary>
+                            <p class="fs-meta">Der Termin verschwindet für alle aus dem Kalender, die Einladungen entfallen. Das lässt sich nicht rückgängig machen.</p>
+                            <button type="submit" form="termin-loeschen-form" class="wf-knopf wf-klein tu-loeschen">Endgültig löschen</button>
+                        </details>
+                    </li>
+                </ul>
+            </section>
+            {% endif %}
+        </c-work.neben>
+    </div>
+</form>
+{% elif termin %}
+<div class="fs-seite wf">
+    <div class="fs-r-zwei">
+        <section class="fs-spalte tm-felder" aria-label="Termin">
+            <dl class="tm-angaben" data-testid="termin-angaben">
+                <dt>Wann</dt><dd>{{ zeit }}</dd>
+                {% if termin.location %}<dt>Ort</dt><dd>{{ termin.location }}</dd>{% endif %}
+                {% if termin.video_url %}<dt>Videokonferenz</dt><dd><a class="wf-knopf wf-klein" href="{{ termin.video_url }}" target="_blank" rel="noopener noreferrer"><i data-lucide="video" aria-hidden="true"></i>Beitreten<span class="sr-only"> (öffnet in neuem Fenster)</span></a> <span class="tm-link">{{ termin.video_url }}</span></dd>{% endif %}
+                {% if sitzung %}<dt>Sitzung</dt><dd><a class="wf-textlink" href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=sitzung.id %}">{{ sitzung.title }}</a></dd>{% endif %}
+                <dt>Sichtbar für</dt><dd>{{ termin.get_visibility_display }}{% if termin.meeting_type %}: {{ termin.meeting_type.name }}{% endif %}</dd>
+                {% if termin.created_by %}<dt>Angelegt von</dt><dd>{{ termin.created_by.user.get_display_name }}</dd>{% endif %}
+            </dl>
+            {% if beschreibung %}
+            <section aria-labelledby="termin-beschreibung-h">
+                <h2 id="termin-beschreibung-h" class="tm-h2">Beschreibung</h2>
+                <p class="tm-text">{{ beschreibung }}</p>
+            </section>
+            {% endif %}
+        </section>
+
+        <c-work.neben label="Wer dabei ist">
+            {% if meine_teilnahme %}{% include "work/termine/_termin_antwort.html" %}{% endif %}
+            {% if teilnahmen %}
+            <section aria-labelledby="termin-teilnahmen-h" data-testid="termin-teilnahmen">
+                <h2 id="termin-teilnahmen-h">Eingeladen</h2>
+                <ul class="tm-teilnahmen">
+                    {% for teilnahme in teilnahmen %}
+                    <li><span>{{ teilnahme.membership.user.get_display_name }}</span><span class="tm-status {{ teilnahme.status }}">{{ teilnahme.get_status_display }}</span></li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+        </c-work.neben>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

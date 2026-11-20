@@ -115,6 +115,12 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
   nicht erreichbar, endet die Prüfung nach dieser einen Anfrage. Abstand je Server wie im Abgleich
   (`INGESTOR_REQUEST_INTERVAL`); hat eine registrierte Quelle auf dem Server einen größeren Abstand, gilt dieser.
   Zwischen zwei Kommunen liegen zusätzlich 2 Sekunden Pause (`ingestor/src/main.py`, `probe_ris`).
+- **Datenabgleich** (Issue #1525, `ingestor/src/sync/datenabgleich.py`): höchstens einmal täglich je Quelle nach
+  einem erfolgreichen Abgleich, von Hand mit `python -m src.main datenabgleich`. Je Kommune die erste Seite von
+  Vorlagen, Sitzungen, Beratungen, TOPs und Dateien (höchstens fünf Anfragen, ohne Wiederholung), um
+  `pagination.totalElements` mit dem Bestand zu vergleichen. Kennung, Takt je Server, robots.txt und Abruffenster
+  wie im Abgleich; Listen aus `skip_lists` und vermerkte fehlende Listen fragt er nicht an, Quellen in der Schonung
+  und Scraper-Quellen gar nicht. Abschalten im Daemon: `INGESTOR_DATENABGLEICH=false`.
 
 Der lokale Spiegel `manage.py sync_session_insight` (`mandari/insight_sync/session_mirror.py`) ruft dagegen ohne
 robots.txt und ohne Takt je Server ab, mit der Kennung `mandari-session-mirror/1.0`. Er gleicht deshalb nur
@@ -411,7 +417,10 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   läuft auch eine Liste, deren Folgeseiten unter immer neuer Adresse dieselben Einträge liefern (Sammelserver von
   OWL-IT, Issue [#1088](https://github.com/mandariOSS/mandari/issues/1088)): Bringen zwei Seiten in Folge keine
   Kennung, die nicht schon auf ihrer vorigen Seite stand, und nennt die Quelle noch eine Folgeseite, bricht die Liste
-  ab; Seiten ohne Kennungen zählen nicht, verglichen wird nur mit der vorigen Seite.
+  ab; Seiten ohne Kennungen zählen nicht, verglichen wird nur mit der vorigen Seite. Steht dieselbe Kennung mehrmals
+  auf einer Seite, ist sie ein Platzhalter und zählt über den Inhalt des Eintrags: Die Stadt Münster liefert gelöschte
+  Beratungen seitenweise als `…/consultations/0` (13.11.2026); jede dieser Seiten bringt andere Einträge und ist keine
+  Wiederholung (`page_keys`).
 - Neu entdeckte Kommunen sind nicht gelistet (`upsert_body`, siehe
   [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)).
 - **Auslöser:** „Jetzt synchronisieren“ auf der Startseite des Admins (alle aktiven Quellen) und die Aktionen
@@ -463,6 +472,10 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   (`details.takt`: Art, Abstand, Läufe ohne Änderung, nächster Lauf, mit Abruffenster auch `window` und, wenn es den
   nächsten Lauf verschoben hat, `reason` = `abruffenster`), dazu gegebenenfalls ausgesetzte Listen
   (`details.suspended_lists`) und den Stand der Zeitscheiben (`details.full_sync_slices`; `SyncScheduler._write_log`).
+  Status: `success`, `failed` oder `partial` („Unvollständig“) für einen Vollabgleich, der nicht alle Listen ganz
+  gelesen hat (Zeitüberschreitung, Schutzschalter, Fensterende, ausgesetzte Liste, gestörter Server; `sync_log_status`,
+  Issue [#1523](https://github.com/mandariOSS/mandari/issues/1523)). Admin, Betriebsmonitor und Dashboard zeigen ihn
+  gelb; die Prüfung „Sync-Läufe (24 h)“ zählt ihn als Lauf mit Erfolg und nennt die Quellen.
   Ein Lauf über die Kommandozeile schreibt eines für den ganzen Aufruf, ohne `source_id`, mit `triggered_by` `cli`,
   dem angeforderten `sync_type` und höchstens 20 Fehlern (`write_results_to_synclog`); `sync --source` schreibt seit
   Issue [#554](https://github.com/mandariOSS/mandari/issues/554) kein zweites Protokoll der Quelle mit `triggered_by`
@@ -555,6 +568,12 @@ Inkrementelle Läufe fragen jede Liste mit `modified_since` ab (`ingestor/src/sy
   höchstens bis zu ihrem ältesten `modified` vor, ohne lesbares `modified` gar nicht (`BodyItemCheck.window_start`).
   Der nächste Lauf fragt diese Objekte also wieder ab. Ausgenommen sind Objekte, die die Quelle trotz Filter liefert
   (`modified` mehr als einen Tag vor dem Fenster); sie halten das Fenster nicht.
+- **Zurückgestellte Objekte:** Ein Objekt, das das Fenster seit mindestens vier vollständigen Läufen und zwölf
+  Stunden hält, ist zurückgestellt (`settle_unstored_holds`): Es hält das Fenster nicht mehr, das Log nennt es
+  („Zurückgestellt …“), das Sync-Log zählt es je Typ unter `unstored_deferred`. Verloren geht es nicht: Der nächste
+  Vollabgleich und jede Änderung an der Quelle liefern es wieder, und gespeichert wird es, sobald sich seine Verweise
+  auflösen lassen. Anlass waren Mitgliedschaften mit Personen, die die Quelle nicht veröffentlicht; sie hielten das
+  Fenster einer Kommune eine Woche lang fest. Den Stand hält `sync_config["unstored_holds"]`.
 - **Format:** Parameter `modified_since` mit Zeitzone, auf die Sekunde, etwa `2026-10-15T06:00:00+00:00` (in der
   Adresse prozentkodiert; `ingestor/src/client/oparl_client.py`, `_append_modified_since`). Beispiel: Begann der
   letzte vollständige Abgleich am 15.10.2026 um 08:00:00 UTC, fragt der nächste Lauf eine Liste mit Uhrzeiten nach
@@ -639,7 +658,10 @@ mit Eintrag in `sync_config["slow_lists"]` (`ingestor/src/sync/slices.py`; `inge
   Andere Fehler (etwa HTTP 500 oder ein Verbindungsfehler) bleiben wie bisher eine Lücke.
 - **Wachsender Abstand:** 1 Stunde nach der ersten Zeitüberschreitung, nach jeder weiteren in Folge doppelt so lange:
   1, 2, 4, 8, 16, dann höchstens 24 Stunden (`slow_backoff`, `SLOW_LIST_BASE`, `SLOW_LIST_MAX`). Hat ein Versuch
-  mindestens eine Scheibe ganz gelesen, beginnt die Reihe wieder bei 1 Stunde. Während der Aussetzung fragt kein Lauf
+  mindestens eine Scheibe ganz gelesen, beginnt die Reihe wieder bei 1 Stunde. Nach zehn Zeitüberschreitungen in Folge
+  ohne Fortschritt gilt die Liste als festgefahren (`SLOW_LIST_STUCK_AFTER`): einmalige Warnung im Log, `stuck_since`
+  im Eintrag, nächster Versuch erst nach einer Woche (`SLOW_LIST_STUCK_RETRY`) und ein Hinweis in jedem Sync-Protokoll,
+  solange sie ausgesetzt ist (Issue [#1523](https://github.com/mandariOSS/mandari/issues/1523)). Während der Aussetzung fragt kein Lauf
   die Liste an, auch kein Vollabgleich.
 - **Kein Datenverlust:** Die Liste behält ihren eigenen Fensteranfang: Änderungen ab dort hat noch kein Lauf ganz
   gelesen. Nach der Aussetzung holt der inkrementelle Lauf sie in Scheiben zu einem Tag nach (`SLOW_LIST_SLICE`,
@@ -714,15 +736,39 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Je Quelle seltener:** `full_sync_every_days` (ganze Zahl von 1 bis 365) verlangt so viele Tage Abstand zum
   letzten vollständig erfolgreichen Vollabgleich (`last_successful_full_sync`), mit einer Stunde Spielraum. Ist er
   nicht fällig, gleicht die Quelle nur Änderungen ab. Ein Vollabgleich mit Lücke zählt nicht; er wird im nächsten
-  Fenster wiederholt (`ingestor/src/client/source_options.py`, `full_sync_plan`).
+  Fenster wiederholt (`ingestor/src/client/source_options.py`, `full_sync_plan`), nach einem Abbruch am Fensterende
+  als Fortsetzung (siehe unten).
 - **Je Quelle in eigenem Zeitfenster:** `full_sync_window`, etwa `{"start": "00:00", "end": "06:00"}` (Ortszeit,
   Standard `Europe/Berlin`, abweichend mit `"tz"`, über Mitternacht erlaubt, Beginn und Ende verschieden). Der
   Vollabgleich der Quelle beginnt dann in ihrem Fenster, unabhängig von `--full-sync-hour`. Außerhalb des Fensters
-  läuft ein Vollabgleich als inkrementeller Abgleich, ob aus dem Admin oder per `sync --full`. Das Fenster muss lang
-  genug für einen ganzen Vollabgleich der Quelle sein.
+  läuft ein Vollabgleich als inkrementeller Abgleich, ob aus dem Admin oder per `sync --full`. Reicht das Fenster
+  nicht für einen ganzen Vollabgleich, setzt der nächste fort (siehe unten); er braucht dann mehrere Fenster.
 - **Nach dem Ende des eigenen Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das
   vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
-  vollständig, das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
+  vollständig, und das Änderungsfenster rückt nicht vor.
+- **Fortsetzung über mehrere Fenster** (`ingestor/src/sync/fortsetzung.py`): Der nächste Vollabgleich beginnt nicht
+  wieder bei Seite 1. Eine am Fensterende offene Liste holt er zuerst mit `modified_since` ab dem Beginn ihres ersten
+  Laufs (abzüglich Sicherheitsabstand) nach, denn die schon gelesenen Seiten können sich seitdem geändert haben, und
+  liest sie dann ab ihrer zuletzt ganz gelesenen Folgeseite (eine Seite Überlappung) bis zum Ende. Endete das Fenster
+  schon nach der ersten Seite, gibt es keine Fortsetzungsseite, und die Liste beginnt wieder bei Seite 1. Trägt die
+  Fortsetzungsseite keine der gemerkten Kennungen mehr (gemerkt werden nur Kennungen, die genau einmal auf ihr
+  stehen, keine Platzhalter), hat sich die Liste um mehr als eine Seite verschoben, und er liest sie ganz; ebenso,
+  wenn sich keine Kennung merken ließ. Listen, die
+  der Durchgang schon ganz gelesen hat, holt er nur mit `modified_since` ab demselben Zeitpunkt, damit sie aktuell
+  bleiben, ohne das Fenster zu verbrauchen. Diese Nachführung übernimmt jedes gelieferte Objekt und bricht nicht nach
+  Seiten ohne Änderung ab. Scheitert sie (die Stadt Köln lehnte gefilterte Folgeseiten zeitweise mit HTTP 401 ab),
+  liest er die Liste ganz; das kann einen großen Teil des Fensters kosten. Eine Liste, die es bei der Quelle nicht gibt (404,
+  Fehlerobjekt), gilt nicht als gelesen. Eine Störung der Quelle zählt wie das Fensterende: Zeitüberschreitung,
+  Serverfehler oder Verbindungsfehler nach allen Versuchen oder ein offener Schutzschalter (Issue
+  [#1523](https://github.com/mandariOSS/mandari/issues/1523); bei der Stadt Bochum hing jede Nacht eine einzelne Seite,
+  der Schutzschalter riss die übrigen Listen mit, und der Vollabgleich begann sie wieder bei Seite 1). Scheitert eine
+  Liste aus anderem Grund (Folgeseite fehlt, Teilantwort, Liste im Kreis), fällt ihr Eintrag weg. Den Stand hält `sync_config["full_sync_resume"]`. Ist ein Lauf vollständig, endet der Durchgang:
+  `last_successful_full_sync` rückt vor, der Stand wird gelöscht. Einträge gelten 14 Tage, danach liest der
+  Vollabgleich die Liste wieder ganz. Anlass: Die Stadt Köln erlaubt Abrufe nur von 23 bis 1 Uhr; der Vollabgleich las
+  jede Nacht dieselben gut tausend Seiten der Tagesordnungspunkte und Dateien und erreichte die Beratungen nie. Ohne
+  Abbruch am Fensterende schreibt der Vollabgleich keinen Stand; ein Stand, der älter ist als der letzte
+  vollständige Vollabgleich, gilt nicht. Vollabgleiche in Zeitscheiben (`full_sync_slices`) nutzen diese Fortsetzung
+  nicht, sie setzen über `full_sync_progress` fort.
   Scraper-Quellen kennen diese Frist des Vollabgleichs nicht: Ein begonnener Vollabgleich läuft bei ihnen zu Ende,
   auch nach dem Ende ihres eigenen Fensters; nur das [Abruffenster](#abruffenster) beendet einen Crawl.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
@@ -758,6 +804,12 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   der nächste Vollabgleich dort weiter, nicht wieder bei `since`. Listen, die schon fertig waren, fragen dann nur ihre
   letzte Scheibe noch einmal an. Ein Fortschritt vor `since` oder in der Zukunft gilt nicht; dann beginnt die Liste von
   vorn.
+- **Fortsetzung innerhalb einer Scheibe:** Bricht eine Scheibe mittendrin ab (Fensterende, Zeitüberschreitung,
+  Serverfehler, Schutzschalter), merkt sich der Lauf die zuletzt ganz gelesene Folgeseite der Scheibe und ihre
+  Kennungen (`sync_config["full_sync_slice_page"]`). Der nächste Vollabgleich liest dieselbe Scheibe ab dieser Seite
+  weiter, mit einer Seite Überlappung; trägt die Seite keine der gemerkten Kennungen mehr (verschoben) oder ist der
+  Stand älter als 14 Tage, kommt die Scheibe ganz (Issue [#1523](https://github.com/mandariOSS/mandari/issues/1523);
+  bei der Stadt Hamm passte die Scheibe mit dem Massenstempel der Quelle in kein Fenster).
 - **Fertig:** Hat jede Liste der Kommune in einem Lauf ihre letzte Scheibe gelesen und fehlt nichts, ist der
   Durchgang fertig. Der Fortschritt dieser Listen wird gelöscht, der nächste Vollabgleich beginnt wieder bei `since`.
   Erst dann zählt der Vollabgleich als vollständig (`last_successful_full_sync`, `full_sync_every_days`). Ist eine
@@ -893,7 +945,7 @@ Stündlich um :15 gleicht die Anwendung die Ablage mit den Quellen ab
 | HTTP 403 | keine Wiederholung; eine Vergleichsanfrage je Server und Lauf einer Quelle | wie oben |
 | andere 4xx, auch 429 | keine Wiederholung dieser Anfrage | wie oben |
 | 5 Serverfehler in Folge an einen Server | Quelle gilt als gestört (5xx-Serie) | `config.py` `oparl_server_error_series_threshold` |
-| 5 Fehlversuche an einen Server im Lauf einer Quelle (Netzfehler, Zeitüberschreitung, 4xx außer 404, 5xx) | Schutzschalter: 60 s keine Anfragen an diesen Server | `config.py` `circuit_breaker_failure_threshold`, `circuit_breaker_recovery_timeout` |
+| 5 Fehlversuche an einen Server im Lauf einer Quelle (Netzfehler, Zeitüberschreitung, 4xx außer 404, 5xx) | Schutzschalter: 60 s keine Anfragen an diesen Server; ein Abruf in dieser Zeit wartet einmal, bis der Schalter halb öffnet, und bricht erst ab, wenn er dann wieder offen ist (Issue #1523) | `config.py` `circuit_breaker_failure_threshold`, `circuit_breaker_recovery_timeout`, `circuit_breaker_half_open_wait` |
 | 3 fehlgeschlagene Läufe einer Quelle in Folge | Pause 10 Minuten, je weiterem Fehlversuch doppelt so lang, höchstens 360 Minuten (10, 20, 40 … 360) | `ingestor/src/sync/orchestrator.py` `BACKOFF_*`, `source_backoff_until` |
 | User-Agent gesperrt | Pause 60 Minuten; ist die Pause aus der Reihe darüber länger, gilt sie (ab dem 6. Fehlversuch in Folge 80, 160, 320, 360 Minuten) | `BACKOFF_MIN_MINUTES_BY_KIND` |
 | 5xx-Serie oder robots.txt nicht erreichbar | Pause 30 Minuten; ab dem 5. Fehlversuch in Folge die längere Pause aus der Reihe (40, 80 … 360 Minuten) | wie oben |
@@ -947,6 +999,8 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 | `download_headers` | zusätzliche Header für Datei-Downloads (z. B. `Referer`, `Cookie`, `User-Agent`) | `{"Referer": "https://rat.example.de/bi/"}` |
 | `robots_override` | Ausnahme von der robots.txt, nur mit Freigabe und Vermerk | `{"scope": "files", "note": "Freigabe per E-Mail vom …"}` |
 | `source_type`, `scraper` | Quelle ohne OParl-Schnittstelle, mit `scraper.rate_limit_seconds` (Standard 2, mindestens 1) | siehe [`SCRAPER_SOURCES.md`](SCRAPER_SOURCES.md) |
+| `sessionnet_kalender` | Adresse des öffentlichen SessionNet-Frontends: Für Sitzungen, deren Gremium die OParl-Schnittstelle nicht herausgibt (HTTP 401), liest der Abgleich den Namen aus dem Monatskalender `si0040` (eine Seite je Monat, höchstens sechs Monate je Lauf für alle Kommunen der Quelle zusammen, Takt und robots.txt wie beim OParl-Abruf; Sitzungen ohne Eintrag oder mit unlesbarer Seite erst nach einem Tag erneut; `ingestor/src/sync/gremien_kalender.py`). Mit `sessionnet_kalender_endung` `"asp"` für ältere Installationen | `"https://www.stadt-muenster.de/sessionnet/sessionnetbi/"` |
+| `beratungen_nachladen` | Abrufe je Lauf einer Kommune, mit denen der Abgleich Beratungen einzeln nachlädt, die Tagesordnungspunkte der Sitzungen von vor 14 bis in 60 Tagen nennen und die es nicht gibt, samt unbekannter Vorlage (Standard 60, `0` schaltet aus; Takt und robots.txt wie beim OParl-Abruf, nicht ladbare Beratungen erst nach einem Tag erneut; `ingestor/src/sync/beratungen_nachladen.py`, Issue #1523) | `0` |
 | `document_since`, `document_backfill` | Stichtag und Altbestand der Ablage (nur mit `TEXT_EXTRACTION_RUNNER=worker`) | siehe [`FILE_CACHE.md`](FILE_CACHE.md) |
 
 Bedeutung der Schlüssel im Code: `ingestor/src/client/source_options.py`, `shared/mandari_oparl/pacing.py`,
@@ -969,10 +1023,13 @@ Befund zurückzusetzen:
 |---|---|
 | `sync_state` | Takt der Quelle: nächster fälliger Lauf (`next_due`), Läufe ohne Änderung in Folge (`idle_runs`), Abstand und Art des Grundtakts (`interval_minutes`, `base_minutes`, `period`), letzter Lauf und seine Änderungen (`last_run`, `last_changes`), Beginn des letzten Vollabgleichs (`full_attempted`), Grund für einen späteren nächsten Lauf (`reason`, `abruffenster`); Zeitpunkte in UTC. Löschen macht die Quelle sofort fällig und erlaubt einen Vollabgleich im laufenden Fenster |
 | `body_sync_started` | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (UTC), Anfang des Änderungsfensters; nach nicht gespeicherten Objekten höchstens deren ältestes `modified`. Löschen setzt das Änderungsfenster auf sieben Tage zurück |
+| `unstored_holds` | Nicht gespeicherte Objekte, die das Änderungsfenster halten oder zurückgestellt sind, je Kommune (Kennung der Kommune → Kennung des Objekts → `type`, erster Lauf ohne Speichern `since`, letzter `seen`, Läufe `runs`, zurückgestellt seit `deferred`; Zeitpunkte UTC). Zurückgestellte bleiben 30 Tage nach dem letzten Lauf vermerkt, der sie nicht speichern konnte. Löschen setzt die Zählung zurück: Objekte, die ein Lauf erneut liefert, halten das Fenster wieder, bis sie erneut zurückgestellt sind. `body_sync_started` bleibt dabei stehen; Objekte, die schon vor dem Fenster liegen, prüft erst der nächste Vollabgleich wieder |
 | `timed_lists` | Listen, deren `modified` nachweislich eine Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC); nur sie bekommen das kurze Fenster. Löschen lässt die Listen ab Tagesbeginn laufen, bis ein Lauf die Uhrzeit wieder nachweist |
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, und Listen, die sie nicht freigibt (HTTP 403 für alle), mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
 | `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |
 | `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
+| `full_sync_slice_page` | Fortsetzung innerhalb einer abgebrochenen Zeitscheibe: je Liste Grenzen der Scheibe (`since`, `until`), zuletzt ganz gelesene Seite (`page`) mit ihren Kennungen (`ids`) und Zeitpunkt des Abbruchs (`at`, UTC). Gilt 14 Tage und nur für genau diese Scheibe. Löschen lässt die Scheibe wieder ganz lesen |
+| `full_sync_resume` | Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs ohne Zeitscheiben: je Liste die zuletzt ganz gelesene Seite (`page`) mit ihren Kennungen (`ids`) oder „im Durchgang ganz gelesen“ (`done`), jeweils mit dem Beginn des ersten Laufs der Liste im Durchgang (`at`, UTC). Einträge gelten 14 Tage. Löschen lässt den nächsten Vollabgleich alle Listen wieder ganz lesen |
 | `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
 | `unfiltered_lists` | Listen, die `modified_since` ablehnen oder nur gefiltert nicht finden, mit Grund und letzter Prüfung (Adresse → `reason`, `checked_at` UTC). Sie laufen ohne Filter, die übrigen Listen der Quelle mit; nach einem Tag fragt der nächste Lauf wieder mit Filter. Löschen lässt den nächsten Lauf die Listen gleich wieder mit Filter anfragen |
 | `unfiltered_hosts` | Server, auf denen die Quelle den Filter nachweislich ganz ignoriert (Host → `reason`, `checked_at` UTC); gilt nur für diese Quelle und nicht mit `carry_modified_since`. Löschen lässt den nächsten Lauf wieder mit Filter anfragen; ignoriert der Server ihn weiter, steht er danach wieder hier |
@@ -999,8 +1056,10 @@ Ingestor (`ingestor/src/config.py`; Groß- und Kleinschreibung egal):
 | `OPARL_UA_PROBE_ENABLED` | `true` | Vergleichsanfrage nach HTTP 403 (Abgleich und `probe-ris`) |
 | `OPARL_SERVER_ERROR_SERIES_THRESHOLD` | `5` | Serverfehler in Folge bis zur 5xx-Serie |
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD`, `CIRCUIT_BREAKER_RECOVERY_TIMEOUT` | `5`, `60` | Schutzschalter je Server |
+| `CIRCUIT_BREAKER_HALF_OPEN_WAIT` | `90` | so viele Sekunden wartet ein Abruf bei offenem Schutzschalter höchstens einmal auf „halb offen“; `0` = sofort abbrechen |
 | `INGESTOR_SYNC_POOL_SIZE` | `4` | Quellen gleichzeitig im Daemon, je Quelle ein Lauf; Vollabgleiche auf höchstens allen Plätzen bis auf einen |
 | `INGESTOR_SYNC_RUN_DEADLINE_MINUTES`, `INGESTOR_SYNC_FULL_DEADLINE_MINUTES` | `180`, `1440` | Gesamtfrist je Lauf im Daemon (Änderungsabgleich, Vollabgleich) in Minuten; danach endet der Lauf, zählt als Fehlversuch der Quelle und gibt seinen Platz frei. `0` schaltet ab |
+| `INGESTOR_DATENABGLEICH` | `true` | Täglicher Datenabgleich je Quelle im Daemon (`totalElements` der Hauptlisten gegen den Bestand, Issue #1525); `false` schaltet ihn ab, der Befehl `datenabgleich` bleibt |
 | `SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY` | `2`, `2` | Kommunen je Quelle und Listen je Kommune gleichzeitig |
 | `SYNC_SOURCE_CONCURRENCY` | `2` | Quellen gleichzeitig bei `sync --all` (nicht im Daemon) |
 | `TEXT_EXTRACTION_ENABLED` | `true` | Texterkennung im Abgleich |

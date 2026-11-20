@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Count, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Prefetch, Q, QuerySet
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -168,6 +168,9 @@ def get_primary_paper_for_item(agenda_item: OParlAgendaItem | None) -> OParlPape
         .select_related("paper")
         .first()
     )
+    if consultation is None:
+        # Rückfall: die Beratung, die der TOP selbst nennt (Issue #1523)
+        consultation = ris.consultation_named_by_agenda_item(agenda_item)
     return consultation.paper if consultation else None
 
 
@@ -185,9 +188,20 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
     if not external_ids:
         return {}
 
+    # Über den Rückverweis der Beratung auf den TOP, als Rückfall über die Beratung, die der TOP nennt (eine Abfrage)
+    condition = Q(agenda_item_external_id__in=external_ids) & Q(ris.consultation_agenda_item_in_source())
+    tops_of_named: dict[str, list[str]] = {}
+    for item in agenda_items:
+        if item.external_id and (ref := ris.agenda_item_consultation_reference(item)) is not None:
+            tops_of_named.setdefault(ref, []).append(item.external_id)
+    # Quelle je TOP: Der Rückfall gilt nur für Beratungen aus der Quelle des TOP, der sie nennt (eine Abfrage)
+    source_of_top: dict[str, Any] = {}
+    if tops_of_named:
+        condition |= ris.consultations_named_by_agenda_items(tops_of_named, external_ids)
+        source_of_top = ris.agenda_item_sources(external_ids)
     consultations = (
-        OParlConsultation.objects.filter(agenda_item_external_id__in=external_ids)
-        .filter(ris.consultation_agenda_item_in_source())
+        OParlConsultation.objects.filter(condition)
+        .annotate(source_of_body=F("body__source_id"))
         .select_related("paper")
         # Dateien ohne Volltext und Rohdaten: Die Vorbereitung zeigt nur Namen, Art und Größe
         .prefetch_related(
@@ -207,8 +221,18 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
 
     papers_by_ext_id: dict[str, list[OParlPaper]] = {}
     for consultation in consultations:
-        if consultation.paper and consultation.agenda_item_external_id:
-            ext_id = consultation.agenda_item_external_id
+        if not consultation.paper:
+            continue
+        if consultation.agenda_item_external_id:
+            ext_ids = [consultation.agenda_item_external_id]
+        else:
+            source = getattr(consultation, "source_of_body", None)
+            ext_ids = [
+                top
+                for top in tops_of_named.get(consultation.external_id, [])
+                if consultation.body_id is None or source == source_of_top.get(top)
+            ]
+        for ext_id in ext_ids:
             bucket = papers_by_ext_id.setdefault(ext_id, [])
             if consultation.paper not in bucket:
                 attach(
@@ -587,6 +611,8 @@ class PreparedItem:
     papers: list[OParlPaper]
     primary_paper: OParlPaper | None
     has_files: bool
+    #: Dateien direkt am TOP (OParl ``auxiliaryFile``/``resolutionFile``, Issue #1528), vor denen der Vorlagen
+    files: list[OParlFile] = field(default_factory=list)
 
     def as_template_dict(self) -> dict[str, Any]:
         """Darstellung für das Template (bisherige Dict-Struktur ``prepared_items``)."""
@@ -601,6 +627,7 @@ class PreparedItem:
             "papers": self.papers,
             "primary_paper": self.primary_paper,
             "has_files": self.has_files,
+            "files": self.files,
         }
 
 
@@ -615,6 +642,8 @@ class PreparationData:
     consultations_by_paper: dict[Any, list[dict[str, Any]]] = field(default_factory=dict)
     #: TOPs, deren Arbeitsdaten nach einer Neuveröffentlichung nicht sicher zu ihnen gehören (Issue #547)
     ris_hinweise: dict[Any, Hinweis] = field(default_factory=dict)
+    #: Zurückgenommene TOPs, an denen Dateien der Vorlagen hängen: Diese Dateien nennt die Seite nicht (Issue #1528)
+    withdrawn_file_items: set[Any] = field(default_factory=set)
 
     @property
     def stats(self) -> dict[str, int]:
@@ -659,9 +688,14 @@ def _documents_by_item(
     return docs_by_item
 
 
-def _file_annotation_counts(organization: Organization, papers_by_item: dict[Any, list[OParlPaper]]) -> dict[Any, int]:
-    """Anmerkungs-Zähler für RIS-Dateien (org-weit, wie Fraktionskommentare)."""
+def _file_annotation_counts(
+    organization: Organization,
+    papers_by_item: dict[Any, list[OParlPaper]],
+    files_by_item: dict[Any, list[OParlFile]] | None = None,
+) -> dict[Any, int]:
+    """Anmerkungs-Zähler für RIS-Dateien der Vorlagen und direkt an den TOPs (org-weit, wie Fraktionskommentare)."""
     all_file_ids = {f.id for papers in papers_by_item.values() for p in papers for f in p.files.all()}
+    all_file_ids |= {f.id for files in (files_by_item or {}).values() for f in files}
     if not all_file_ids:
         return {}
     return {
@@ -673,11 +707,14 @@ def _file_annotation_counts(organization: Organization, papers_by_item: dict[Any
 
 
 def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) -> dict[Any, list[dict[str, Any]]]:
-    """Löst je Vorlage die konkrete Beratungsfolge auf: welches Gremium berät wann (mit Sitzungs-Link)."""
+    """
+    Löst je Vorlage die konkrete Beratungsfolge auf: welches Gremium berät wann (mit Sitzungs-Link). Gelöschte und
+    zurückgenommene Beratungen zählen nicht, wie in ``ris.consultation_history``.
+    """
     if not paper_ids:
         return {}
 
-    consults = list(ris.with_reference_checks(OParlConsultation.objects.filter(paper_id__in=paper_ids)))
+    consults = list(ris.with_reference_checks(OParlConsultation.objects.filter(paper_id__in=paper_ids, deleted=False)))
     meeting_ext_ids = {c.meeting_external_id for c in consults if c.meeting_external_id}
     meetings_by_ext = {
         m.external_id: m
@@ -695,7 +732,7 @@ def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) ->
                 "role": c.role or "",
                 "authoritative": c.authoritative,
                 "meetingId": str(m.id) if m else None,
-                "meetingName": (m.name or "") if m else "",
+                "meetingName": m.eigener_name() if m else "",
                 "meetingStart": timezone.localtime(m.start).strftime("%d.%m.%Y") if m and m.start else "",
                 "organization": org_names,
                 "isCurrent": bool(m and m.id == current_meeting.id),
@@ -715,6 +752,8 @@ def load_preparation_data(organization: Organization, membership: Membership, me
     """Alle Sektionen aller TOPs einer Sitzung in wenigen Queries laden."""
     agenda_items = sorted_agenda_items(meeting)
     papers_by_item = prefetch_papers_for_agenda_items(agenda_items)
+    # Dateien direkt an den TOPs (Issue #1528), eine Abfrage
+    files_by_item = ris.files_of_agenda_items(agenda_items)
 
     positions_by_item = {
         pos.agenda_item_id: pos
@@ -757,6 +796,7 @@ def load_preparation_data(organization: Organization, membership: Membership, me
     prepared_items: list[PreparedItem] = []
     for item in agenda_items:
         papers = papers_by_item.get(item.id, [])
+        top_files = files_by_item.get(item.id, [])
         prepared_items.append(
             PreparedItem(
                 item=item,
@@ -768,16 +808,27 @@ def load_preparation_data(organization: Organization, membership: Membership, me
                 documents=docs_by_item.get(item.id, []),
                 papers=papers,
                 primary_paper=papers[0] if papers else None,
-                has_files=any(p.files.exists() for p in papers) if papers else False,
+                has_files=bool(top_files) or (any(p.files.exists() for p in papers) if papers else False),
+                files=top_files,
             )
         )
 
     paper_ids = {i.primary_paper.id for i in prepared_items if i.primary_paper}
+    # Dateien der Vorlagen, die an einem zurückgenommenen TOP hängen (eine Abfrage, nur wenn es solche Bezüge gibt)
+    file_items = {
+        f.agenda_item_id
+        for papers in papers_by_item.values()
+        for p in papers
+        for f in p.files.all()
+        if f.agenda_item_id
+    }
+    withdrawn_file_items: set[Any] = set(ris.withdrawn_agenda_item_ids(file_items))
     return PreparationData(
         agenda_items=agenda_items,
         prepared_items=prepared_items,
         cross_positions=cross_positions(organization, agenda_items),
-        file_annotation_counts=_file_annotation_counts(organization, papers_by_item),
+        file_annotation_counts=_file_annotation_counts(organization, papers_by_item, files_by_item),
         consultations_by_paper=resolve_consultations(paper_ids, meeting),
         ris_hinweise=hinweise_fuer_tops(organization, (item.id for item in agenda_items)),
+        withdrawn_file_items=withdrawn_file_items,
     )

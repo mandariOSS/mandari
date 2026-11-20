@@ -119,6 +119,50 @@ def consultation_agenda_item_in_source() -> Exists:
     )
 
 
+def agenda_item_consultation_reference(agenda_item: OParlAgendaItem) -> str | None:
+    """Beratung, die der Tagesordnungspunkt selbst nennt (``AgendaItem.consultation``: Adresse oder Objekt mit ``id``)."""
+    raw = agenda_item.raw_json if isinstance(agenda_item.raw_json, dict) else {}
+    value = raw.get("consultation")
+    if isinstance(value, dict):
+        value = value.get("id")
+    return value if isinstance(value, str) and value else None
+
+
+def agenda_item_sources(external_ids: Iterable[str]) -> dict[str, Any]:
+    """Quelle je Tagesordnungspunkt (Kennung → ``source_id`` der Kommune seiner Sitzung). Eine Abfrage."""
+    return dict(
+        OParlAgendaItem.objects.filter(external_id__in=list(external_ids)).values_list(
+            "external_id", "meeting__body__source_id"
+        )
+    )
+
+
+def consultations_named_by_agenda_items(refs: Iterable[str], external_ids: Iterable[str]) -> Q:
+    """
+    Rückfall (Issue #1523): Beratungen aus ``refs``, die Tagesordnungspunkte selbst nennen, die aber keinen
+    Tagesordnungspunkt tragen (SD.NET RIM setzt ``agendaItem`` erst nach dem Abgleich der Beratung, ohne ``modified``
+    zu ändern). Nur nicht gelöschte Beratungen mit Vorlage aus der Quelle eines der Punkte ``external_ids``,
+    Beratungen ohne Kommune (Altbestand) wie bei ``consultation_agenda_item_in_source``. Die Bindung an die Quelle des
+    einzelnen Punkts prüft der Aufrufer (``agenda_item_sources``).
+    """
+    sources = OParlAgendaItem.objects.filter(external_id__in=list(external_ids)).values("meeting__body__source_id")
+    return Q(external_id__in=list(refs), agenda_item_external_id__isnull=True, paper__isnull=False, deleted=False) & (
+        Q(body__isnull=True) | Q(body__source_id__in=sources)
+    )
+
+
+def consultation_named_by_agenda_item(agenda_item: OParlAgendaItem) -> OParlConsultation | None:
+    """Beratung mit Vorlage, die der Punkt nennt und die selbst keinen Punkt trägt (Rückfall, Issue #1523)."""
+    ref = agenda_item_consultation_reference(agenda_item)
+    if ref is None or not agenda_item.external_id:
+        return None
+    return (
+        OParlConsultation.objects.filter(consultations_named_by_agenda_items([ref], [agenda_item.external_id]))
+        .select_related("paper")
+        .first()
+    )
+
+
 def with_reference_checks(consultations: QuerySet[OParlConsultation]) -> QuerySet[OParlConsultation]:
     """
     Beratungen mit ``meeting_in_source`` und ``agenda_item_in_source`` (bool): Sitzung bzw. Tagesordnungspunkt
@@ -269,6 +313,14 @@ def agenda_item_exists(agenda_item_id: object) -> bool:
     """Gibt es diesen Tagesordnungspunkt im RIS-Bestand?"""
     pk = _uuid(agenda_item_id)
     return pk is not None and OParlAgendaItem.objects.filter(pk=pk).exists()
+
+
+def withdrawn_agenda_item_ids(agenda_item_ids: Iterable[object]) -> set[uuid.UUID]:
+    """Welche dieser Tagesordnungspunkte sind zurückgenommen (``withdrawn_q``)? Eine Abfrage, leer ohne Kennungen."""
+    ids = [pk for pk in (_uuid(value) for value in agenda_item_ids) if pk is not None]
+    if not ids:
+        return set()
+    return set(OParlAgendaItem.objects.filter(pk__in=ids).filter(withdrawn_q()).values_list("pk", flat=True))
 
 
 @dataclass(frozen=True)
@@ -656,16 +708,41 @@ def files_of_meeting(meeting: OParlMeeting, *, ohne: Iterable[object] = ()) -> l
     """
     Dateien einer Sitzung (Einladung, Anlagen, Niederschrift) nach Name, ohne gelöschte und von mandari Session
     zurückgenommene; ``ohne`` lässt Dateien weg, die die Seite schon an anderer Stelle zeigt (etwa die Niederschrift).
-    Ohne Volltext geladen; den Anfang für Dokumentzeilen liefert ``with_text_start``.
+    Dateien an einem Tagesordnungspunkt stehen dort (``files_of_agenda_items``), nicht hier. Ohne Volltext geladen;
+    den Anfang für Dokumentzeilen liefert ``with_text_start``.
     """
     ausgelassen = [pk for pk in (_uuid(value) for value in ohne) if pk is not None]
     return list(
-        OParlFile.objects.filter(meeting=meeting, deleted=False)
+        OParlFile.objects.filter(meeting=meeting, deleted=False, agenda_item__isnull=True)
         .exclude(withdrawn_q())
         .exclude(pk__in=ausgelassen)
         .defer("text_content", "raw_json")
         .order_by("name", "file_name")
     )
+
+
+def files_of_agenda_items(agenda_items: Iterable[OParlAgendaItem]) -> dict[uuid.UUID, list[OParlFile]]:
+    """
+    Dateien direkt an den Tagesordnungspunkten (OParl ``auxiliaryFile``/``resolutionFile`` am Punkt, Issue #1528),
+    je Punkt nach Name, in einer Abfrage für alle Punkte einer Sitzung. Ohne gelöschte und zurückgenommene Dateien und
+    ohne Dateien zurückgenommener Punkte und Sitzungen, ohne Volltext und Rohdaten. Punkte ohne Dateien fehlen.
+    Sitzungsseiten von Insight und Work.
+    """
+    punkte = [item.pk for item in agenda_items]
+    if not punkte:
+        return {}
+    dateien = (
+        OParlFile.objects.filter(agenda_item_id__in=punkte, deleted=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("agenda_item"))
+        .exclude(withdrawn_q("meeting"))
+        .defer("text_content", "raw_json")
+        .order_by("name", "file_name", "pk")
+    )
+    ergebnis: dict[uuid.UUID, list[OParlFile]] = {}
+    for datei in dateien:
+        ergebnis.setdefault(datei.agenda_item_id, []).append(datei)  # type: ignore[arg-type]
+    return ergebnis
 
 
 def organization_count(meeting: OParlMeeting) -> int | None:
@@ -690,11 +767,13 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
     ``date``, ``organization_name``, ``organization_count``, ``agenda_number``, ``result``, ``public``, ``role`` und
     ``authoritative``. Beratungen ohne bekannte Sitzung stehen an der Stelle von „jetzt“ (zwischen vergangenen und
     kommenden). Zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte fehlen – wie in der Session-OParl-API,
-    die solche Verweise auslässt. Höchstens vier Abfragen.
+    die solche Verweise auslässt. In der Quelle gelöschte Beratungen fehlen ebenfalls: Eine Beratung, die es nicht mehr
+    gibt, ist kein Schritt der Beratungsfolge (more! rubin legt sie bei jeder Änderung der Vorlage neu an, der
+    Ingestor markiert die alten). Höchstens vier Abfragen.
 
     Grundlage der Vorgangsseiten von Insight und Work (Issue #853, vorher je eine eigene Abfrage).
     """
-    consultations = list(with_reference_checks(OParlConsultation.objects.filter(paper=paper).exclude(withdrawn_q())))
+    consultations = list(with_reference_checks(OParlConsultation.objects.filter(paper=paper, deleted=False)))
     if not consultations:
         return []
     meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]

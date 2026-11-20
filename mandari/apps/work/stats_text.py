@@ -11,7 +11,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from django.utils.html import format_html
+from django.utils.safestring import SafeString, mark_safe
+
 from apps.common.formatting import count_label, format_count, join_parts
+
+#: Teile des Satzes über der Dokumentliste und die Status, die sie zählen (Schlüssel wie in ``stats``)
+DOKUMENT_STATUS: dict[str, tuple[str, ...]] = {
+    "draft": ("draft",),
+    "submitted": ("submitted",),
+    "in_consultation": ("at_admin", "on_agenda"),
+    "completed": ("completed", "adopted"),
+}
 
 
 def documents_sentence(stats: Mapping[str, int]) -> str:
@@ -28,6 +39,46 @@ def documents_sentence(stats: Mapping[str, int]) -> str:
     if stats.get("overdue"):
         sentence += f" Überfällig: {format_count(stats['overdue'])}."
     return sentence
+
+
+def documents_sentence_links(stats: Mapping[str, int], url: str) -> SafeString:
+    """
+    Derselbe Satz wie :func:`documents_sentence`, jede Zahl als Link auf die gefilterte Liste (Issue #1492):
+    „54 Dokumente“ zeigt alle, „11 Entwürfe“ nur die Entwürfe. ``url`` ist die Adresse der Liste ohne Parameter.
+    """
+
+    def link(text: str, schluessel: str = "") -> SafeString:
+        query = "&".join(f"status={status}" for status in DOKUMENT_STATUS.get(schluessel, ()))
+        return format_html(
+            '<a href="{}" class="underline decoration-gray-400 underline-offset-4 hover:text-gray-900 '
+            'dark:hover:text-white">{}</a>',
+            f"{url}?{query}" if query else url,
+            text,
+        )
+
+    teile = [
+        link(count_label(stats.get("draft", 0), "Entwurf", "Entwürfe"), "draft") if stats.get("draft") else "",
+        link(count_label(stats.get("submitted", 0), "eingereicht"), "submitted") if stats.get("submitted") else "",
+        link(count_label(stats.get("in_consultation", 0), "in Beratung"), "in_consultation")
+        if stats.get("in_consultation")
+        else "",
+        link(count_label(stats.get("completed", 0), "erledigt"), "completed") if stats.get("completed") else "",
+    ]
+    vorhanden = [teil for teil in teile if teil]
+    satz = link(count_label(stats.get("total", 0), "Dokument", "Dokumente"))
+    if vorhanden:
+        # Wie join_parts: Komma zwischen den Teilen, „und“ vor dem letzten
+        aufzaehlung = (
+            vorhanden[0]
+            if len(vorhanden) == 1
+            else format_html("{} und {}", mark_safe(", ".join(vorhanden[:-1])), vorhanden[-1])  # noqa: S308
+        )
+        satz = format_html("{}: {}.", satz, aufzaehlung)
+    else:
+        satz = format_html("{}.", satz)
+    if stats.get("overdue"):
+        satz = format_html("{} Überfällig: {}.", satz, format_count(stats["overdue"]))
+    return satz
 
 
 def faction_meetings_sentence(stats: Mapping[str, int]) -> str:

@@ -7,6 +7,7 @@ roll_call_entries, get_papers), angekuendigt (Etikett, wenn zur kommenden Sitzun
 abbruch (insight_core/services/sitzungsabbruch.buendeln, Issue #1269): Ist die Sitzung abgebrochen oder insgesamt
 vertagt, steht ein Hinweis über der Liste, und die gebündelten Punkte (``gebuendelt``) zeigen ihr Etikett nicht einzeln.
 Titel ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (``titel_oeffentlich``, Issue #1269).
+Dateien direkt am Punkt (``top_dateien``, Issue #1528) stehen unter den Vorgängen.
 {% endcomment %}
 <section aria-labelledby="tagesordnung-titel">
     <h2 id="tagesordnung-titel" class="abschnitt-titel">Tagesordnung{% if agenda_items %} <span class="font-normal text-gray-600 dark:text-gray-400">({{ agenda_items|length }})</span>{% endif %}</h2>
@@ -55,6 +56,7 @@ Titel ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (``t
                 </ul>
                 {% endif %}
                 {% endwith %}
+                {% include "partials/top_dateien.html" with dateien=item.top_dateien %}
             </div>
         </li>
         {% endfor %}

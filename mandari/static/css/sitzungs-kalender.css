@@ -135,6 +135,54 @@
   font-size: 0.875rem;
 }
 
+/* Arten von Terminen (Issue #1489): Sitzungen der Gremien in der Kennfarbe (wie bisher), Fraktionssitzungen
+   petrolgrün, eigene Termine himbeerrot, Fristen der Dokumente bernsteinfarben, Aufgaben schiefergrau; weiße Schrift hält überall
+   mindestens 4,5:1. Dieselben Klassen färben den Punkt an den Kästchen über dem Kalender. */
+.sitzungs-kalender .termin-sitzung {
+  --termin-farbe: rgb(var(--primary-600));
+}
+.sitzungs-kalender .termin-fraktion {
+  --termin-farbe: #0f766e;
+}
+.sitzungs-kalender .termin-termin {
+  --termin-farbe: #be185d;
+}
+.sitzungs-kalender .termin-umfrage {
+  --termin-farbe: #be185d;
+}
+.sitzungs-kalender .termin-dokument {
+  --termin-farbe: #b45309;
+}
+.sitzungs-kalender .termin-aufgabe {
+  --termin-farbe: #475569;
+}
+.sitzungs-kalender .fc-event.termin-fraktion,
+.sitzungs-kalender .fc-event.termin-termin,
+.sitzungs-kalender .fc-event.termin-dokument,
+.sitzungs-kalender .fc-event.termin-aufgabe {
+  --fc-event-bg-color: var(--termin-farbe);
+  --fc-event-border-color: var(--termin-farbe);
+}
+/* Vorschläge offener Terminumfragen: noch nicht entschieden, deshalb nur gestrichelt umrandet */
+.sitzungs-kalender .fc-event.termin-umfrage {
+  --fc-event-bg-color: transparent;
+  --fc-event-border-color: var(--termin-farbe);
+  --fc-event-text-color: var(--wf-tinte);
+  border-style: dashed;
+}
+.sitzungs-kalender .kalender-punkt.termin-umfrage {
+  background: transparent;
+  border: 1px dashed var(--termin-farbe);
+}
+.sitzungs-kalender .kalender-punkt {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-right: 0.375rem;
+  border-radius: 9999px;
+  background: var(--termin-farbe);
+}
+
 @media (max-width: 639px) {
   .sitzungs-kalender .fc .fc-toolbar-title {
     font-size: 1rem;

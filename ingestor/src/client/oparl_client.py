@@ -12,6 +12,9 @@ Features:
 """
 
 import asyncio
+import contextlib
+import hashlib
+import json
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Mapping
@@ -87,9 +90,16 @@ class FetchResult:
     error_data: Any = None
     #: Der letzte Versuch endete in einer Zeitüberschreitung oder mit HTTP 504 (langsame Listen, Issue #1033)
     timed_out: bool = False
+    #: Alle Versuche scheiterten an Zeitüberschreitung, Serverfehler (5xx) oder Verbindungsfehler: eine Störung der
+    #: Quelle, kein Befund über die Seite selbst (Issue #1523)
+    retries_exhausted: bool = False
+    #: Der Schutzschalter des Hosts war offen, die Anfrage ging nicht an die Quelle (Issue #1523)
+    circuit_open: bool = False
     #: HTTP 403, und die Vergleichsanfrage mit neutralem Client bekam ebenfalls eine Absage: keine Sperre unseres
     #: User-Agents, die Quelle verweigert den Zugriff allen (``HostHealth.forbidden_for_all``, Issue #1086)
     forbidden_for_all: bool = False
+    #: Inhalt einer HTML-Seite (``OParlClient.fetch_page``, Issue #1431); bei JSON-Abrufen leer
+    text: str | None = None
 
 
 #: Grund im Vermerk einer Liste, die die Quelle nicht freigibt (HTTP 403 für alle Clients, Issue #1086)
@@ -125,6 +135,51 @@ def _is_list_page(data: Any) -> bool:
 REPEATED_PAGES_ERROR = "Folgeseiten liefern immer dieselben Einträge (Liste im Kreis)"
 
 
+#: Zeitstempel, die beim Vergleich von Einträgen mit Platzhalter-Kennung nicht zählen (``page_keys``)
+_STAMP_FIELDS = frozenset({"created", "modified"})
+
+
+def page_keys(items: list[Any]) -> frozenset[str]:
+    """
+    Schlüssel der Einträge einer Seite für die Kreis-Erkennung (Issue #1088): die Kennung (``id``).
+
+    Trägt eine Kennung auf einer Seite verschiedene Einträge, benennt sie kein Objekt, sondern ist ein Platzhalter: Die
+    Stadt Münster liefert gelöschte Beratungen als ``…/consultations/0`` (Vorlage ``vo/0``, Sitzung ``0``), oft
+    seitenweise. Solche Einträge zählen über ihren Inhalt; sonst sähe jede dieser Seiten wie eine Wiederholung der
+    vorigen aus, und die Liste bräche ab, obwohl jede Seite neue Einträge bringt. Gleiche Kopien eines Eintrags
+    zählen weiter als seine Kennung: Liefert die Quelle abwechselnd ``[A]`` und ``[A, A]``, ist das eine
+    Wiederholung. Wiederholt die Quelle Platzhalter wörtlich, gleicht auch der Inhalt, und die Erkennung greift wie
+    bisher. ``created`` und ``modified`` zählen dabei nicht: Manche Quellen stempeln sie mit dem Zeitpunkt des Abrufs
+    (more! rubin, Issue #122), eine Wiederholung sähe sonst jedes Mal neu aus. Einträge ohne Kennung zählen nicht.
+    """
+    contents: dict[str, set[str]] = {}
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            content = {name: value for name, value in item.items() if name not in _STAMP_FIELDS}
+            canonical = json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+            contents.setdefault(item["id"], set()).add(hashlib.sha256(canonical.encode("utf-8")).hexdigest())
+    keys: set[str] = set()
+    for item_id, digests in contents.items():
+        if len(digests) == 1:
+            keys.add(item_id)
+        else:
+            keys.update(f"inhalt:{digest}" for digest in digests)
+    return frozenset(keys)
+
+
+def unique_page_ids(items: list[Any]) -> tuple[str, ...]:
+    """
+    Kennungen, die genau einmal auf der Seite stehen, in ihrer Reihenfolge. Ein Platzhalter wie ``…/consultations/0``
+    steht auf vielen Seiten und sagt nichts darüber, wo eine Seite in der Liste liegt (Fortsetzung eines Vollabgleichs,
+    ``src/sync/fortsetzung.py``).
+    """
+    ids = [item["id"] for item in items if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]]
+    counts: dict[str, int] = {}
+    for item_id in ids:
+        counts[item_id] = counts.get(item_id, 0) + 1
+    return tuple(item_id for item_id in ids if counts[item_id] == 1)
+
+
 class ListFetchError(Exception):
     """
     Eine Objektliste (oder eine ihrer Seiten) war nicht abrufbar.
@@ -134,11 +189,23 @@ class ListFetchError(Exception):
     die Fehlerklasse, damit der Orchestrator sie im Sync-Log nennt.
     """
 
-    def __init__(self, list_url: str, page_url: str, result: FetchResult) -> None:
+    def __init__(
+        self,
+        list_url: str,
+        page_url: str,
+        result: FetchResult,
+        last_page_url: str | None = None,
+        last_page_ids: tuple[str, ...] = (),
+    ) -> None:
         self.list_url = list_url
         self.page_url = page_url
         self.result = result
         self.error_kind = result.error_kind
+        #: Zuletzt ganz gelesene Folgeseite dieser Liste in diesem Abruf (``None``: keine); dort setzt ein
+        #: abgebrochener Vollabgleich fort (``src/sync/fortsetzung.py``), ebenso eine Zeitscheibe (Issue #1523)
+        self.last_page_url = last_page_url
+        #: Kennungen dieser Seite; der Fortsetzung zeigen sie, ob sich die Liste bis dahin verschoben hat
+        self.last_page_ids = last_page_ids
         page = "" if page_url == list_url else f" (Seite {page_url})"
         super().__init__(f"Liste {list_url}{page} nicht abrufbar: {result.error}")
 
@@ -146,6 +213,16 @@ class ListFetchError(Exception):
     def timed_out(self) -> bool:
         """Abbruch nach Zeitüberschreitung oder HTTP 504 (Issue #1033)."""
         return self.result.timed_out
+
+    @property
+    def interrupted(self) -> bool:
+        """
+        Abbruch durch eine Störung der Quelle, nicht durch die Liste selbst (Issue #1523): Zeitüberschreitung,
+        Serverfehler oder Verbindungsfehler nach allen Versuchen, oder der Schutzschalter des Hosts war offen. Ein
+        Vollabgleich setzt dann wie am Fensterende an der zuletzt gelesenen Seite fort, statt die Liste beim nächsten
+        Mal wieder ganz zu lesen. Kein Abbruch: HTTP 4xx, Teilantwort, Liste im Kreis.
+        """
+        return self.result.retries_exhausted or self.result.circuit_open
 
 
 class ListMissingError(Exception):
@@ -182,11 +259,19 @@ class FetchWindowClosedError(ListFetchError):
     #1186) oder des Fensters ihres Vollabgleichs (``full_sync_window``). Keine weitere Seite.
     """
 
-    def __init__(self, list_url: str, page_url: str) -> None:
+    def __init__(
+        self,
+        list_url: str,
+        page_url: str,
+        last_page_url: str | None = None,
+        last_page_ids: tuple[str, ...] = (),
+    ) -> None:
         super().__init__(
             list_url,
             page_url,
             FetchResult(url=page_url, data=None, status_code=0, error=WINDOW_CLOSED_ERROR),
+            last_page_url,
+            last_page_ids,
         )
 
 
@@ -414,6 +499,11 @@ class OParlClient:
         # Listen (Adresse wie an fetch_list übergeben), die an ``max_pages`` endeten, obwohl die Quelle eine weitere
         # Seite nannte; Wert ist die nicht mehr angefragte Folgeseite (Issue #869). Ohne Eintrag war die Liste ganz.
         self.page_limit_lists: dict[str, str] = {}
+
+        # Hosts, die jede Anfrage per http:// auf dieselbe Adresse per https:// umleiten (Issue #1431): ALLRIS 4 nennt
+        # Kennungen und Folgeseiten mit http://, der Server leitet jede auf https:// um. Nach der ersten solchen
+        # Weiterleitung fragt der Client den Host gleich per https:// an, statt jede Anfrage doppelt zu stellen.
+        self.https_hosts: set[str] = set()
 
         # Caching
         self.etag_cache: dict[str, str] = {}
@@ -688,29 +778,86 @@ class OParlClient:
         async with self._semaphore:
             return await self._fetch_with_retry(url, use_cache, skip_wait)
 
+    async def fetch_page(self, url: str) -> FetchResult:
+        """
+        HTML-Seite der Quelle abrufen (Detailseiten für die Ergänzung, Issue #1431): gleicher Takt je Host, gleiche
+        Kennung, robots.txt (Art ``api``) und Ausnahme der Quelle wie beim OParl-Abruf. Der Inhalt steht in
+        ``FetchResult.text``, ``data`` bleibt leer.
+        """
+        if not self._client or not self._semaphore:
+            raise RuntimeError("Client not initialized. Use 'async with' context manager.")
+
+        async with self._semaphore:
+            return await self._fetch_with_retry(url, False, False, as_text=True)
+
+    def https_upgrade(self, url: str) -> str:
+        """Adresse per https://, wenn der Host jede http://-Anfrage dorthin umleitet (``https_hosts``)."""
+        if url.startswith("http://"):
+            parts = urlparse(url)
+            if parts.netloc.lower() in self.https_hosts:
+                return parts._replace(scheme="https").geturl()
+        return url
+
+    def _note_https_redirect(self, requested: str, final: str) -> None:
+        """Merkt den Host, wenn eine Kette nur das Schema von http:// auf https:// geändert hat (``https_hosts``)."""
+        before, after = urlparse(requested), urlparse(final)
+        if (
+            before.scheme == "http"
+            and after.scheme == "https"
+            and before.netloc.lower() == after.netloc.lower()
+            and before.path == after.path
+            and before.query == after.query
+        ):
+            host = before.netloc.lower()
+            if host not in self.https_hosts:
+                self.https_hosts.add(host)
+                console.print(
+                    f"[dim]{host}: leitet http:// auf https:// um, Anfragen ab jetzt gleich per https://[/dim]"
+                )
+
     async def _fetch_with_retry(
         self,
         url: str,
         use_cache: bool,
         skip_wait: bool,
+        as_text: bool = False,
     ) -> FetchResult:
         """Fetch with exponential backoff retry and circuit breaker."""
+        url = self.https_upgrade(url)
+        # Nur bei Seitenabrufen weitergeben: Tests ersetzen ``_do_fetch`` durch Funktionen mit drei Parametern
+        page_mode: dict[str, bool] = {"as_text": True} if as_text else {}
         blocked = await self._robots_blocked(url)
         if blocked is not None:
             return blocked
         last_error: str | None = None
         timed_out = False
         circuit_breaker = self._get_circuit_breaker(url)
+        # Höchstens einmal je Abruf auf „halb offen“ warten (Issue #1523)
+        waited_for_breaker = False
 
         # Check if circuit is open
         try:
             # Try to execute through circuit breaker
-            for attempt in range(self.max_retries):
+            attempt = 0
+            while attempt < self.max_retries:
+                attempt += 1
                 try:
-                    return await circuit_breaker.call(self._do_fetch, url, use_cache, skip_wait)
+                    return await circuit_breaker.call(self._do_fetch, url, use_cache, skip_wait, **page_mode)
 
                 except CircuitOpenError as e:
-                    # Circuit is open - fail fast
+                    # Offener Schutzschalter: Eine einzelne hängende Seite riss sonst alle parallel laufenden Listen
+                    # des Hosts mit, die sofort mit „Circuit breaker open“ abbrachen (Issue #1523). Einmal bis
+                    # „halb offen“ warten; kommt die Anfrage dann wieder nicht durch, wie bisher sofort aufgeben
+                    pause = None if waited_for_breaker else self._half_open_wait(e.remaining_seconds)
+                    if pause is not None:
+                        waited_for_breaker = True
+                        attempt -= 1  # Warten ist kein Fehlversuch
+                        console.print(
+                            f"[dim]{urlparse(url).netloc}: Schutzschalter offen, warte {pause:.0f} s auf den "
+                            f"nächsten Versuch[/dim]"
+                        )
+                        await asyncio.sleep(pause)
+                        continue
                     self.stats.errors += 1
                     metrics.record_http_error(self.source_name, "circuit_open")
                     return FetchResult(
@@ -718,6 +865,7 @@ class OParlClient:
                         data=None,
                         status_code=0,
                         error=f"Circuit breaker open: {e}",
+                        circuit_open=True,
                     )
 
                 except httpx.HTTPStatusError as e:
@@ -757,14 +905,17 @@ class OParlClient:
                     metrics.record_http_error(self.source_name, error_type)
 
                 # Exponential backoff
-                if attempt < self.max_retries - 1:
-                    wait = self.retry_backoff**attempt
+                if attempt < self.max_retries:
+                    wait = self.retry_backoff ** (attempt - 1)
                     await asyncio.sleep(wait)
 
         except Exception as e:
             last_error = str(e)
             timed_out = False
+            unexpected = True
             metrics.record_http_error(self.source_name, "unknown")
+        else:
+            unexpected = False
 
         self.stats.errors += 1
         health = self.host_health.get(urlparse(url).netloc)
@@ -776,18 +927,34 @@ class OParlClient:
             error=f"Max retries exceeded: {last_error}",
             error_kind=ERROR_KIND_SERVER_ERROR_SERIES if series else None,
             timed_out=timed_out,
+            retries_exhausted=not unexpected,
         )
+
+    def _half_open_wait(self, remaining: float) -> float | None:
+        """
+        Wie lange ein Abruf bei offenem Schutzschalter auf „halb offen“ wartet (Issue #1523), oder ``None``: sofort
+        aufgeben. Nur, wenn der Schalter bald wieder halb öffnet (``circuit_breaker_half_open_wait``, 0 schaltet das
+        Warten ab) und das Zeitfenster des Laufs (``fetch_deadline``) danach noch offen ist.
+        """
+        limit = settings.circuit_breaker_half_open_wait
+        if limit <= 0 or remaining > limit:
+            return None
+        pause = max(0.0, remaining) + 0.5
+        if self.fetch_deadline is not None and datetime.now(UTC) + timedelta(seconds=pause) >= self.fetch_deadline:
+            return None
+        return pause
 
     async def _do_fetch(
         self,
         url: str,
         use_cache: bool,
         skip_wait: bool,
+        as_text: bool = False,
     ) -> FetchResult:
-        """Perform the actual HTTP fetch with metrics."""
+        """Perform the actual HTTP fetch with metrics (``as_text``: HTML-Seite statt JSON, ``fetch_page``)."""
         assert self._client is not None
 
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = {"Accept": "text/html,application/xhtml+xml"} if as_text else {}
 
         # Add caching headers
         if use_cache:
@@ -820,6 +987,8 @@ class OParlClient:
             except redirects.RedirectRefusedError as refused:
                 return self._robots_refusal(url, refused.url, refused.decision)
             fetch_time = time.time() - start
+        with contextlib.suppress(RuntimeError):  # Antwort ohne Anfrage (Testattrappen)
+            self._note_https_redirect(url, str(response.request.url))
 
         self.stats.http_requests += 1
         self.stats.http_time += fetch_time
@@ -868,6 +1037,15 @@ class OParlClient:
         if "Last-Modified" in response.headers:
             self.modified_cache[url] = response.headers["Last-Modified"]
 
+        if as_text:
+            return FetchResult(
+                url=url,
+                data=None,
+                status_code=response.status_code,
+                fetch_time=fetch_time,
+                text=response.text,
+            )
+
         return FetchResult(
             url=url,
             data=response.json(),
@@ -884,6 +1062,16 @@ class OParlClient:
         """
         host = urlparse(self._with_list_params(url, self.list_params)).netloc
         return not self.filter_notes.unfiltered(url, host, carry=self.carry_modified_since)
+
+    def filter_proven(self, url: str) -> bool:
+        """
+        Filtert die Quelle diese Liste nachweislich mit ``modified_since``? Nur, wenn die letzte Prüfung nach einem
+        Vollabgleich für ihren Server „filtert“ ergab (``sync_config["modified_since_check"]``) und kein Vermerk
+        „filtert nicht“ für Liste oder Server besteht. Dann bricht der Änderungsabgleich die Liste nicht nach Seiten
+        ohne Änderung ab: Jede Seite ist schon gefiltert (Issue #1523).
+        """
+        host = urlparse(self._with_list_params(url, self.list_params)).netloc
+        return self.filter_notes.proven(url, host, carry=self.carry_modified_since)
 
     def deadline_passed(self) -> bool:
         """Ist das Zeitfenster des Laufs abgelaufen (``fetch_deadline``)? Dann geht keine Seite mehr an die Quelle."""
@@ -953,6 +1141,9 @@ class OParlClient:
         # Kennungen der zuletzt gelesenen Seite mit Kennungen und Seiten in Folge ohne neue Kennung (Issue #1088)
         previous_ids: frozenset[str] = frozenset()
         stale_pages = 0
+        # Zuletzt ganz gelesene Seite (Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs)
+        last_page_url: str | None = None
+        last_page_ids: tuple[str, ...] = ()
         tried_modified_since = False
         # Erste Seite nach „gibt es nicht“ auf die gefilterte Anfrage noch einmal ohne Filter angefragt
         retried_unfiltered = False
@@ -991,7 +1182,7 @@ class OParlClient:
         while current_url:
             if self.deadline_passed():
                 console.print(f"[yellow]{url}: {WINDOW_CLOSED_ERROR}, Liste bleibt offen[/yellow]")
-                raise FetchWindowClosedError(url, current_url)
+                raise FetchWindowClosedError(url, current_url, last_page_url, last_page_ids)
             result = await self.fetch(current_url, use_cache=False)
 
             # Rückfall: Manche Listen lehnen modified_since ab (Stadt Münster: HTTP 401 bei organization und
@@ -1071,7 +1262,8 @@ class OParlClient:
                 # Liste ab welcher Seite fehlt, und nennt sie im Sync-Log.
                 console.print(f"[red]Error fetching {current_url}: {result.error}[/red]")
                 self._health(current_url).note_failed_list(url)
-                raise ListFetchError(url, current_url, result)
+                # Mit der zuletzt ganz gelesenen Seite: Ein Vollabgleich setzt nach einer Störung dort fort (#1523)
+                raise ListFetchError(url, current_url, result, last_page_url, last_page_ids)
 
             # Eine Folgeseite ohne Liste (leer, Fehlerobjekt, anderes JSON) ist eine Teilantwort (Issue #556):
             # Die Liste bricht mittendrin ab. Auf der ersten Seite heißt ein Fehlerobjekt dagegen „diese Liste
@@ -1139,9 +1331,7 @@ class OParlClient:
 
             # Bringt die Seite keine Kennung, die nicht schon auf der vorigen stand, zählt sie als Wiederholung;
             # Seiten ohne Kennungen zählen nicht (Issue #1088). Nur die vorige Seite, kein Speicher über die Liste.
-            page_ids = frozenset(
-                item["id"] for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)
-            )
+            page_ids = page_keys(items)
             if page_ids:
                 stale_pages = stale_pages + 1 if page_ids <= previous_ids else 0
                 previous_ids = page_ids
@@ -1149,6 +1339,11 @@ class OParlClient:
             if items:
                 self.stats.objects_processed += len(items)
                 yield items
+            # Fortsetzungsseite ist nur eine Folgeseite: Die erste Seite (mit ``list_params`` und Filtern) fragt ein
+            # neuer Lauf ohnehin an, als Fortsetzung liefe sie im Kreis (``read_pages``)
+            if next_page is not None or pages_fetched > 1:
+                last_page_url = page_url
+                last_page_ids = unique_page_ids(items)
 
             # Get next page URL (server preserves filter params in links.next)
             if isinstance(result.data, dict):

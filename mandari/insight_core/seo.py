@@ -298,6 +298,25 @@ def _absolut(path: str) -> str:
     return urljoin(get_site_url(), path)
 
 
+def organisation_ld() -> dict[str, str]:
+    """
+    Betreiber des Bürgerportals als ``Organization`` mit derselben ``@id`` wie auf der Website (``/#organisation``).
+
+    Suchmaschinen und KI-Suchen verbinden so jede Seite mit einem Anbieter, statt ihn zu raten: Herausgeber der Seite
+    ist mandari, Urheber der Ratsinformationen die Kommune (``author``).
+    """
+    basis = _absolut("/")
+    return {"@type": "Organization", "@id": f"{basis}#organisation", "name": "mandari", "url": basis}
+
+
+def _stadtseite_ld(body: Any) -> dict[str, str] | None:
+    """Stadtseite der Kommune als ``CollectionPage`` für ``isPartOf`` der Detailseiten; ``None`` ohne Stadtseite."""
+    seite = seite_der_kommune(body) if body is not None else ""
+    if not seite:
+        return None
+    return {"@type": "CollectionPage", "@id": seite, "url": seite, "name": f"Ratsinformationen {_kommune(body)}"}
+
+
 def vorschaubild(bild: str | None = None) -> str:
     """
     Absolute Adresse des Vorschaubilds für ``og:image`` und ``twitter:image`` (Issue #1259): das Bild der Seite,
@@ -455,6 +474,7 @@ def get_paper_seo(
     *,
     mit_zusammenfassung: bool = True,
     original: str = "",
+    finanzen: str = "",
 ) -> SEOContext:
     """
     SEO-Kontext einer Vorgangsseite.
@@ -464,7 +484,9 @@ def get_paper_seo(
     gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``). Ohne
     ``mit_zusammenfassung`` (sie ist älter als der Beratungsstand, Issue #1257) fehlt sie, damit die Description dem
     Stand nicht widerspricht. ``original`` ist die Seite des Vorgangs im Ratsinformationssystem (``hub.ris.original``,
-    Issue #1259); sie steht als ``isBasedOn`` im JSON-LD.
+    Issue #1259); sie steht als ``isBasedOn`` im JSON-LD. ``finanzen`` ist der Kosten-Satz des Finanzchecks (Issue
+    #1513, „Kosten laut Vorlage: …“); er steht in der Description direkt nach der Kennung, vor Stand und
+    Zusammenfassung. Die Zusammenfassung steht außerdem vollständig als ``abstract`` im JSON-LD.
     """
     body = paper.body
     kommune = _kommune(body)
@@ -478,8 +500,9 @@ def get_paper_seo(
         from .services.ortsschutz import hausnummern_auslassen
 
         text = hausnummern_auslassen(text)
-    zusammenfassung = _ki_zusammenfassung(text, beschreibung(kopf_satz, stand_satz))
-    description = beschreibung(kopf_satz, stand_satz, zusammenfassung)
+    zusammenfassung = _ki_zusammenfassung(text, beschreibung(kopf_satz, finanzen, stand_satz))
+    description = beschreibung(kopf_satz, finanzen, stand_satz, zusammenfassung)
+    abstract = f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {' '.join(text.split())}" if text else None
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)
 
@@ -491,13 +514,15 @@ def get_paper_seo(
             "identifier": paper.reference,
             "genre": paper.paper_type,
             "description": description,
+            "abstract": abstract,
             "url": canonical,
             "inLanguage": "de",
             "dateCreated": paper.date.isoformat() if paper.date else None,
             "spatialCoverage": ort,
             "about": ort,
             "author": _verwaltung(kommune) or {"@type": "Organization", "name": "Kommune"},
-            "publisher": {"@type": "Organization", "name": "mandari", "url": get_site_url()},
+            "publisher": organisation_ld(),
+            "isPartOf": _stadtseite_ld(body),
             "isBasedOn": original or None,
         }
     )
@@ -553,18 +578,27 @@ def _gremien_der_sitzung(meeting: Any) -> list[dict[str, str]]:
     return gremien
 
 
-def ist_oeffentlich(tagesordnung: Iterable[Any]) -> bool:
-    """Hat die Sitzung laut Quelle einen öffentlichen Teil?
+def _ausdruecklich_nichtoeffentlich(punkt: Any) -> bool:
+    """Gibt die Quelle den Tagesordnungspunkt ausdrücklich als nichtöffentlich an?
 
-    Ja, wenn mindestens ein angezeigter Tagesordnungspunkt ausdrücklich öffentlich ist (OParl
-    ``AgendaItem.public: true`` in den Rohdaten). Fehlt die Angabe, steht die Spalte ``public`` nur auf ihrem
-    Standardwert – dann gilt die Sitzung hier nicht als öffentlich. An der Sitzung selbst kennt OParl keine
-    Angabe zur Öffentlichkeit.
+    Die Spalte ``public`` steht ohne Angabe der Quelle auf ihrem Standardwert ``True``; ``False`` ist deshalb immer
+    eine Angabe der Quelle, ebenso OParl ``AgendaItem.public: false`` in den Rohdaten.
     """
-    return any(
-        getattr(punkt, "public", False) and isinstance(punkt.raw_json, dict) and punkt.raw_json.get("public") is True
-        for punkt in tagesordnung
-    )
+    rohdaten = getattr(punkt, "raw_json", None)
+    return getattr(punkt, "public", True) is False or (isinstance(rohdaten, dict) and rohdaten.get("public") is False)
+
+
+def ist_nichtoeffentlich(tagesordnung: Iterable[Any]) -> bool:
+    """Ist die Sitzung laut Quelle ganz nichtöffentlich?
+
+    Sitzungen der Räte, Kreistage und ihrer Ausschüsse sind nach den Kommunalverfassungen grundsätzlich öffentlich
+    (etwa § 48 Abs. 2 GO NRW, § 64 NKomVG); ausgeschlossen wird die Öffentlichkeit nur für einzelne Punkte. An der
+    Sitzung selbst kennt OParl keine Angabe dazu. Nichtöffentlich ist eine Sitzung hier deshalb nur, wenn die Seite
+    Tagesordnungspunkte zeigt und die Quelle jeden davon ausdrücklich als nichtöffentlich angibt. Ohne Tagesordnung
+    (noch nicht veröffentlicht) oder ohne Angabe gilt der Grundsatz (Search Console „Feld offers fehlt“, 18.11.2026).
+    """
+    punkte = list(tagesordnung)
+    return bool(punkte) and all(_ausdruecklich_nichtoeffentlich(punkt) for punkt in punkte)
 
 
 def _gueltig_ab(meeting: Any) -> str | None:
@@ -600,9 +634,11 @@ def get_meeting_seo(
 
     Die Veranstaltung (``Event``) erscheint nur mit Beginn und einem verlässlichen Ort samt Postanschrift
     (``services.sitzungsort``, Issue #939) – Google wertet sie sonst als ungültig. Ohne beides trägt die Seite nur
-    die Brotkrumen. Veranstalter ist die Verwaltung der Kommune (mit der Seite der Kommune, ohne erreichbare Seite
-    mit ihrer Webseite), Mitwirkende sind die Gremien (mit ihren Seiten). Eintritt frei (``offers`` mit Preis 0, ``isAccessibleForFree``) nur bei einer
-    Sitzung mit ausdrücklich öffentlichem Teil, die nicht abgesagt ist.
+    die Brotkrumen, ebenso bei einer laut Quelle ganz nichtöffentlichen Sitzung (``ist_nichtoeffentlich``): Zu ihr
+    kann niemand kommen. Veranstalter ist die Verwaltung der Kommune (mit der Seite der Kommune, ohne erreichbare
+    Seite mit ihrer Webseite), Mitwirkende sind die Gremien (mit ihren Seiten). Der Eintritt ist frei (``offers`` mit
+    Preis 0, ``isAccessibleForFree``), auch bei einer abgesagten Sitzung: Google erwartet dort dieselben Angaben mit
+    ``EventCancelled``.
     """
     from .services.sitzungsort import ist_platzhalter, sitzungsort
 
@@ -631,10 +667,9 @@ def get_meeting_seo(
     description = beschreibung(*teile) or haupt
     canonical = build_canonical_url(request)
 
-    ort = sitzungsort(meeting, body) if meeting.start else None
+    ort = sitzungsort(meeting, body) if meeting.start and not ist_nichtoeffentlich(tagesordnung) else None
     json_ld = None
     if ort is not None:
-        eintritt_frei = not meeting.cancelled and ist_oeffentlich(tagesordnung)
         json_ld = _ohne_leere(
             {
                 "@context": "https://schema.org",
@@ -656,7 +691,7 @@ def get_meeting_seo(
                 or {"@type": "Organization", "name": "Kommune"},
                 "performer": _gremien_der_sitzung(meeting),
                 "sameAs": original or None,
-                "isAccessibleForFree": True if eintritt_frei else None,
+                "isAccessibleForFree": True,
                 "offers": {
                     "@type": "Offer",
                     "price": "0",
@@ -664,9 +699,7 @@ def get_meeting_seo(
                     "availability": "https://schema.org/InStock",
                     "url": canonical,
                     "validFrom": _gueltig_ab(meeting),
-                }
-                if eintritt_frei
-                else None,
+                },
             }
         )
 
@@ -865,6 +898,8 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
             "creativeWorkStatus": status_label,
             "spatialCoverage": _gebiet(kommune),
             "author": _verwaltung(kommune),
+            "publisher": organisation_ld(),
+            "isPartOf": _stadtseite_ld(body),
         }
     )
 
@@ -950,7 +985,8 @@ def get_list_seo(request: HttpRequest, liste: str, title: str, description: str,
 
     Kanonisch ist die Adresse je Kommune (``/insight/k/<slug>/vorgaenge/``) – auch für die Liste im gemeinsamen
     Portal mit gewählter Kommune (``/insight/vorgaenge/``), die Suchmaschinen ohne Sitzung nur als Weiterleitung
-    sehen. Filter verweisen auf dieselbe Adresse und tragen ``noindex, follow`` (``services.indexierung.listenseite``).
+    sehen. Filter tragen ``noindex, follow`` (``services.indexierung.listenseite``) und dann keinen Canonical: Die
+    Vorlage lässt ihn neben ``noindex`` weg, beides zusammen widerspricht sich.
     Weitere Seiten und vergangene Sitzungen unter der Adresse je Kommune sind eigene Seiten mit eigener kanonischer
     Adresse (Issue #1145): Google rät davon ab, Folgeseiten auf die erste zu kanonisieren, und folgt deren Links dann
     nicht mehr. Ohne eigene Adresse (Kommune ohne Slug) bleibt alles wie bei ``get_page_seo``.
@@ -966,9 +1002,48 @@ def get_list_seo(request: HttpRequest, liste: str, title: str, description: str,
     return seo
 
 
+def _insight_ld() -> dict[str, Any]:
+    """Das Bürgerportal als ``WebSite`` mit mandari als Herausgeber (Startseite und ``isPartOf`` der Stadtseiten)."""
+    adresse = _absolut(reverse("insight_core:insight:portal_home"))
+    return {
+        "@type": "WebSite",
+        "@id": f"{adresse}#website",
+        "name": "mandari Insight",
+        "url": adresse,
+        "inLanguage": "de",
+        "publisher": organisation_ld(),
+    }
+
+
+def _kommune_ld(body: Any) -> dict[str, Any] | None:
+    """
+    Die Kommune einer Stadtseite als ``GovernmentOrganization``: Name, eigene Website (``url``), Gemeindeschlüssel.
+
+    Die Website der Kommune trennt sie eindeutig vom Herausgeber der Seite: Die Ratsinformationen stammen von ihr,
+    das Bürgerportal betreibt mandari.
+    """
+    kommune = _kommune(body)
+    verwaltung: dict[str, Any] | None = _verwaltung(kommune, _webseite(body))
+    if verwaltung is None:
+        return None
+    ags = str(getattr(body, "ags", "") or "").strip()
+    if ags:
+        verwaltung["identifier"] = {"@type": "PropertyValue", "propertyID": "AGS", "value": ags}
+    verwaltung["areaServed"] = _gebiet(kommune)
+    return verwaltung
+
+
 def get_portal_home_seo(request: HttpRequest, body: Any = None) -> SEOContext:
-    """SEO für die Portal-Startseite: Übersicht einer Kommune (``/insight/k/<slug>/``) bzw. Kommunenauswahl."""
+    """
+    SEO für die Portal-Startseite: Übersicht einer Kommune (``/insight/k/<slug>/``) bzw. Kommunenauswahl.
+
+    Die Stadtseite ist der Einstieg für Suchen wie „Ratsinformationen <Kommune>“. Ihr JSON-LD (``CollectionPage``)
+    nennt, worum es geht (die Kommune mit ihrer Website), wer die Seite herausgibt (mandari) und wozu sie gehört
+    (mandari Insight); die Kommunenauswahl beschreibt das Bürgerportal selbst (``WebSite``).
+    """
     og_title = ""
+    canonical = build_canonical_url(request)
+    breadcrumbs: list[tuple[str, str]] = []
     if body:
         name = _kommune(body)
         og_title = f"Ratsinformationen {name} – Sitzungen, Vorlagen, Beschlüsse"
@@ -978,18 +1053,43 @@ def get_portal_home_seo(request: HttpRequest, body: Any = None) -> SEOContext:
             f"Ratsinformationen {name}: Sitzungen mit Tagesordnung, Vorlagen, Anträge und Beschlüsse aus Rat und "
             "Ausschüssen – verständlich aufbereitet und durchsuchbar."
         )
+        json_ld = _ohne_leere(
+            {
+                "@context": "https://schema.org",
+                "@type": "CollectionPage",
+                "@id": canonical,
+                "url": canonical,
+                "name": og_title,
+                "description": description,
+                "inLanguage": "de",
+                "about": _kommune_ld(body),
+                "spatialCoverage": _gebiet(name),
+                "isPartOf": _insight_ld(),
+                "publisher": organisation_ld(),
+            }
+        )
+        seite = seite_der_kommune(body)
+        if seite:
+            breadcrumbs = [("mandari Insight", _insight_ld()["url"]), (name, seite)]
     else:
         title = "Kommune wählen – mandari Insight"
         description = (
             "Lokalpolitik, die alle verstehen: Wählen Sie Ihre Kommune und sehen Sie "
             "Sitzungen, Vorgänge, Gremien und die Menschen hinter den Entscheidungen."
         )
+        json_ld = {
+            "@context": "https://schema.org",
+            **_insight_ld(),
+            "description": "Kostenloses Bürgerportal von mandari mit den öffentlichen Ratsinformationen der Kommunen.",
+        }
 
     return SEOContext(
         title=title,
         og_title=og_title,
         description=description[:160],
-        canonical_url=build_canonical_url(request),
+        canonical_url=canonical,
         og_type="website",
+        json_ld=json_ld,
         keywords=["Ratsinformationen", _kommune(body), "Sitzungen", "Vorlagen", "Beschlüsse"] if body else [],
+        breadcrumbs=breadcrumbs,
     )

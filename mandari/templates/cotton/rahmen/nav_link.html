@@ -11,12 +11,15 @@ Leiste von Work ist sie nur für Bildschirmleser da (static/css/input.css). Ohne
 Insight gleich (Tests in insight_core/tests/test_navigation_bereiche.py lesen die Beschriftungen daraus).
 ``zahl`` (optional, Sitzungsdienst #944): offene Arbeit rechts neben der Beschriftung, etwa zu prüfende Vorlagen; ohne
 Angabe bleibt das Markup unverändert. ``rel`` (optional, Issue #939): etwa ``nofollow`` für Links, die eine Sitzung anlegen.
+``zaehler`` (optional, Work #1492): Schlüssel einer Zahl, die erst der Abruf der Glocke liefert (``data-zaehler``,
+frontend/alpine/work-rahmen.ts); bis dahin und bei null bleibt die Marke verborgen.
 {% endcomment %}
-<c-vars href="" icon="" area="" aktuell="" aktiv="" current="" dicht="" zahl="" rel="" />
+<c-vars href="" icon="" area="" aktuell="" aktiv="" current="" dicht="" zahl="" zaehler="" rel="" />
 <a href="{{ href }}"{% if rel %} rel="{{ rel }}"{% endif %}
     class="rahmen-eintrag flex items-center gap-3 {% if dicht %}h-9 px-2.5 rounded-md text-sm{% else %}h-10 px-3 rounded-lg text-[0.95rem]{% endif %} {% if aktiv or area and area == aktuell %}bg-band-hell font-semibold text-gray-900 dark:text-white shadow-[0_1px_2px_rgba(17,24,39,0.06)]{% else %}font-medium text-gray-700 dark:text-gray-300 hover:bg-band-hell/70 hover:text-gray-900 dark:hover:text-white{% endif %}"
     {% if aktiv or area and area == aktuell %}aria-current="{{ current|default:'page' }}"{% endif %} {{ attrs }}>
     <i data-lucide="{{ icon }}" class="{% if dicht %}w-4 h-4{% else %}w-[18px] h-[18px]{% endif %} shrink-0 {% if aktiv or area and area == aktuell %}text-primary-600 dark:text-primary-400{% else %}text-gray-500 dark:text-gray-400{% endif %}" aria-hidden="true"></i>
     <span class="flex-1 min-w-0 truncate{% if dicht %} rahmen-label{% endif %}">{{ slot }}</span>
     {% if zahl %}<span class="rahmen-label shrink-0 min-w-5 px-1.5 rounded-full {% if aktiv %}bg-band-grau{% else %}bg-band-hell{% endif %} text-center text-xs font-semibold tabular-nums text-gray-700 dark:text-gray-200"><span class="sr-only">, </span>{{ zahl }}<span class="sr-only"> offen</span></span>{% endif %}
+    {% if zaehler %}<span data-zaehler="{{ zaehler }}" hidden class="rahmen-label shrink-0 min-w-5 px-1.5 rounded-full {% if aktiv %}bg-band-grau{% else %}bg-band-hell{% endif %} text-center text-xs font-semibold tabular-nums text-gray-700 dark:text-gray-200"></span>{% endif %}
 </a>

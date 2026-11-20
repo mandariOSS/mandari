@@ -1,4 +1,4 @@
-{# DSGVO-Datenexport: 12. Beteiligung an Dokumenten, 13. Fraktion, 14. Weitere Vorbereitungsdaten, 15. Weitere Angaben, 16. Bearbeitungsvermerke #}
+{# DSGVO-Datenexport: 12. Beteiligung an Dokumenten, 13. Fraktion, 14. Weitere Vorbereitungsdaten, 15. Weitere Angaben, 16. Bearbeitungsvermerke, 17. Termine #}
 {# Kontext: data #}
 <!-- 12. Document involvement -->
 <div class="page-break"></div>
@@ -127,4 +127,44 @@
 </table>
 {% else %}
 <p class="empty">Keine Bearbeitungsvermerke vorhanden.</p>
+{% endif %}
+
+
+<!-- 17. Calendar events -->
+<h2>17. Termine im Kalender</h2>
+<h3>Von Ihnen angelegt</h3>
+{% if data.termine.created %}
+<table>
+    <tr><th>Titel</th><th class="col-date">Beginn</th><th class="col-date">Ende</th><th class="col-22">Ort</th><th class="col-18">Sichtbar f&uuml;r</th><th class="col-narrow">Eingeladen</th></tr>
+    {% for t in data.termine.created %}
+    <tr><td>{{ t.title }}</td><td>{{ t.start }}{% if t.all_day %} (ganzt&auml;gig){% endif %}</td><td>{{ t.end|default:"&mdash;" }}</td><td>{{ t.location|default:"&mdash;" }}</td><td>{{ t.visibility }}</td><td>{{ t.invited_count }}</td></tr>
+    {% endfor %}
+</table>
+{% for t in data.termine.created %}{% if t.description or t.video_url %}
+<div class="content-block"><strong>{{ t.title }} ({{ t.start }}):</strong> {{ t.description }}{% if t.video_url %} Videokonferenz: {{ t.video_url }}{% endif %}</div>
+{% endif %}{% endfor %}
+{% else %}
+<p class="empty">Keine Termine angelegt.</p>
+{% endif %}
+<h3>Einladungen an Sie</h3>
+{% if data.termine.invitations %}
+<table>
+    <tr><th>Termin</th><th class="col-date">Beginn</th><th class="col-18">Ihre Antwort</th><th class="col-date">Geantwortet</th></tr>
+    {% for e in data.termine.invitations %}
+    <tr><td>{{ e.title }}</td><td>{{ e.start }}</td><td>{{ e.status }}</td><td>{{ e.answered_at|default:"&mdash;" }}</td></tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Einladungen vorhanden.</p>
+{% endif %}
+<h3>Terminumfragen</h3>
+{% if data.termine.polls_created or data.termine.polls_asked %}
+{% for u in data.termine.polls_created %}
+<div class="content-block"><strong>Von Ihnen angelegt: {{ u.title }} ({{ u.created_at }}):</strong> Vorschl&auml;ge {{ u.proposals|join:"; " }}{% if u.location %}; Ort: {{ u.location }}{% endif %}{% if u.description %}; {{ u.description }}{% endif %}{% if u.closed_at %}; abgeschlossen am {{ u.closed_at }}{% endif %}</div>
+{% endfor %}
+{% for u in data.termine.polls_asked %}
+<div class="content-block"><strong>{{ u.title }} (gefragt am {{ u.asked_at }}):</strong> {% for a in u.answers %}{{ a.proposal }}: {{ a.answer }}{% if not forloop.last %}; {% endif %}{% empty %}noch keine Antwort{% endfor %}</div>
+{% endfor %}
+{% else %}
+<p class="empty">Keine Terminumfragen vorhanden.</p>
 {% endif %}

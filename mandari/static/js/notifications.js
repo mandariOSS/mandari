@@ -153,20 +153,35 @@
         updateTitle(count);
         lastCount = count;
 
-        const gemerkt = standLesen();
-        const ergebnis = auswerten(data.notifications, gemerkt);
-        if (ergebnis.stand !== gemerkt) {
-            standMerken(ergebnis.stand);
-        }
-        if (ergebnis.zeigen.length) {
-            window.dispatchEvent(new CustomEvent('show-toast', {
-                detail: hinweis(ergebnis.zeigen, `/work/${orgSlug}/notifications/`),
-            }));
+        // Ein verdeckter Reiter zeigt nichts und schreibt den Stand nicht fort: Sonst gälte ein Hinweis als gezeigt, den
+        // niemand gesehen hat, und der sichtbare Reiter bliebe stumm. Wird die Seite sichtbar, fragt sie neu ab.
+        if (document.visibilityState !== 'hidden') {
+            const gemerkt = standLesen();
+            const ergebnis = auswerten(data.notifications, gemerkt);
+            if (ergebnis.stand !== gemerkt) {
+                standMerken(ergebnis.stand);
+            }
+            if (ergebnis.zeigen.length) {
+                einblenden(hinweis(ergebnis.zeigen, `/work/${orgSlug}/notifications/`));
+            }
         }
 
         window.dispatchEvent(new CustomEvent('notification:update', {
             detail: { count, notifications: data.notifications },
         }));
+    }
+
+    /**
+     * Hinweis an die Anzeige unten rechts geben, sobald sie zuhört. Sie meldet das selbst
+     * (frontend/js/alpine/toast.ts); ein Hinweis, der vorher fertig ist, ginge sonst verloren und gälte als gezeigt.
+     */
+    function einblenden(detail) {
+        const senden = () => window.dispatchEvent(new CustomEvent('show-toast', { detail: detail }));
+        if (document.documentElement.dataset.meldungen === 'bereit') {
+            senden();
+        } else {
+            window.addEventListener('meldungen-bereit', senden, { once: true });
+        }
     }
 
     /** Zahl der ungelesenen Benachrichtigungen vor dem Seitentitel, etwa „(3) Aufgaben“ */

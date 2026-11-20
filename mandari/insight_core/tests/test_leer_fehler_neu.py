@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+import uuid
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 import mandari.urls as urls
+from apps.common.tests.versionstage import pruefe_tag_je_version
 from apps.session.models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionTenant
 from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlSource
 from insight_core.services import neuigkeiten
@@ -115,6 +117,28 @@ class TestFehlerseiten:
         assert '<meta name="robots" content="noindex, nofollow">' in html
         assert "/impressum/" in html and "/datenschutz/" in html
 
+    @pytest.mark.parametrize("bereich", ["vorgaenge", "termine", "personen", "gremien"])
+    def test_410_fuer_entfernte_detailseiten(self, bereich: str) -> None:
+        """Search Console „Nicht gefunden (404)“, 18.11.2026: Einträge, die es nicht mehr gibt, melden 410."""
+        antwort = Client().get(f"/insight/{bereich}/{uuid.uuid4()}/")
+        assert antwort.status_code == 410
+        html = antwort.content.decode()
+        assert 'data-portal="insight"' in html
+        assert "Diesen Eintrag gibt es nicht mehr" in html and "Fehler 410" in html
+        assert re.search(r'<form action="/insight/suche/" method="get" role="search"', html)
+        assert '<meta name="robots" content="noindex, nofollow">' in html
+        assert not re.search(r"\b(du|dir|dein)\b", _ohne_tags(html))
+
+    def test_410_nur_fuer_detailseiten(self) -> None:
+        """Unbekannte Adressen, ungültige Kennungen und Beschlüsse bleiben 404."""
+        for pfad in (
+            "/insight/vorgaenge/keine-kennung/",
+            f"/insight/vorgaenge/{uuid.uuid4()}/zusammenfassung/x/",
+            f"/insight/beschluesse/{uuid.uuid4()}/",
+            "/insight/gibt-es-nicht/",
+        ):
+            assert Client().get(pfad).status_code == 404, pfad
+
     def test_404_eines_portal_hosts(self) -> None:
         anfrage = RequestFactory().get("/irgendwo/")
         anfrage.insight_portal_host_slug = "beispielstadt"  # type: ignore[attr-defined]
@@ -172,10 +196,25 @@ class TestNeuigkeiten:
             assert not eintrag.version or re.fullmatch(r"\d+\.\d+\.\d+", eintrag.version), eintrag.version
         assert [e.datum for e in eintraege] == sorted((e.datum for e in eintraege), reverse=True)
 
+    def test_je_version_ein_tag_und_derselbe_wie_im_changelog(self) -> None:
+        """Im Portal steht eine Neuerung ab dem Release: Tag aus der CHANGELOG.md, nicht der Übernahme nach dev."""
+        pruefe_tag_je_version(neuigkeiten.lies())
+
     def test_fehlende_pflichtfelder(self, tmp_path: Path) -> None:
         datei = tmp_path / "neu.toml"
         datei.write_text('[[eintrag]]\ndatum = 2026-11-01\ntitel = "Ohne Text."\n', encoding="utf-8")
         with pytest.raises(ValueError, match="Eintrag 1"):
+            neuigkeiten.lies(datei)
+
+    def test_zeitstempel_statt_datum_ist_ein_fehler_der_datei(self, tmp_path: Path) -> None:
+        """Ein TOML-Zeitstempel ist in Python auch ein date; sortiert mit reinen Datumswerten gäbe er TypeError."""
+        datei = tmp_path / "neu.toml"
+        datei.write_text(
+            '[[eintrag]]\ndatum = 2026-11-01\ntitel = "Eins."\ntext = "Text."\n'
+            '[[eintrag]]\ndatum = 2026-11-17T00:00:00\ntitel = "Zwei."\ntext = "Text."\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="Eintrag 2"):
             neuigkeiten.lies(datei)
 
     def test_seite_mit_eintraegen_gruppiert(self, besucher: Client) -> None:
@@ -223,7 +262,7 @@ class TestNeuigkeiten:
 def test_kein_violett_auf_den_fehlerseiten_des_buergerportals() -> None:
     """Die Knöpfe nutzen primary (im Bürgerportal Grün); fest verdrahtet ist höchstens der Punkt der Wortmarke."""
     pfad = Path(django_settings.BASE_DIR) / "templates" / "errors"
-    for name in ("insight_base.html", "insight_404.html", "insight_500.html", "insight_suche.html"):
+    for name in ("insight_base.html", "insight_404.html", "insight_410.html", "insight_500.html", "insight_suche.html"):
         inhalt = (pfad / name).read_text(encoding="utf-8")
         treffer = re.findall(r"\b(?:bg|border|ring)-(?:indigo|violet|purple)-\d+", inhalt)
         assert not treffer, f"{name}: {treffer}"

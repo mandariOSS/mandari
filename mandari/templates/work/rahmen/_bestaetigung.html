@@ -1,7 +1,8 @@
 {# Bestätigungsdialog beider Rahmen (Komponente: frontend/js/alpine/confirm-dialog.ts) #}
 <div x-data="confirmDialog" @keydown.escape.window="dismiss()">
 
-    <div x-show="open" x-cloak
+    {# data-ueberlagerung: Solange die Fläche sichtbar ist, ruhen die Tastaturkürzel des Rahmens (Issue #1492) #}
+    <div x-show="open" x-cloak data-ueberlagerung
          x-transition:enter="transition ease-out duration-200"
          x-transition:enter-start="opacity-0"
          x-transition:enter-end="opacity-100"

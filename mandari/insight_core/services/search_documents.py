@@ -118,7 +118,7 @@ def meeting_to_doc(meeting) -> dict[str, Any]:
     with contextlib.suppress(Exception):
         org_names = [org.name for org in meeting.organizations.all() if org.name]
 
-    name = meeting.name or ""
+    name = meeting.eigener_name()
     if not name:
         with contextlib.suppress(Exception):
             name = meeting.get_display_name()

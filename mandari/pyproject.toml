@@ -1,6 +1,6 @@
 [project]
 name = "mandari"
-version = "0.13.0"
+version = "0.13.1"
 description = "Mandari Insight - Kommunalpolitische Transparenz"
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
@@ -77,7 +77,7 @@ dependencies = [
 
     # Texterkennung: mandari_dokumente (shared/) ruft pdftoppm und tesseract als Unterprozesse (Systempakete)
     # Note: PyPDF2 is deprecated, using pypdf instead
-    "pypdf>=6.21.4",  # Security: fixes resource exhaustion, data amplification, infinite loop (#1123)
+    "pypdf>=7.1.0",  # Security (#1123); ab 7 Briefkopf nur über Seiten im Writer zusammenführen (#1464)
     # Seitenanalyse von PDFs (Karten und Pläne, #599): PDFium, Apache-2.0/BSD-3-Clause – bewusst nicht PyMuPDF
     # (AGPL), siehe docs/adr/20260930-pdf-seitenanalyse-bibliothek.md
     "pypdfium2>=5.13.0",

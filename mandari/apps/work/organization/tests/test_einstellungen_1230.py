@@ -95,7 +95,7 @@ def test_unterpunkte_der_fuenf_bereiche(org: Any, admin: Any, client_for: Any) -
     erwartet = {
         "organization": ["Profil", "E-Mail-Versand", "Themen und Labels"],
         "members": ["Mitglieder", "Rollen", "Registrierung", "Anmeldesicherheit"],
-        "organization_faction_settings": ["Fraktionssitzungen", "Veröffentlichung"],
+        "organization_faction_settings": ["Interne Sitzungen", "Veröffentlichung"],
         "organization_documents": ["Übersicht", "Dokumenttypen", "Vorlagen", "Briefköpfe"],
         "council_parties": ["Ratsfraktionen", "Verwaltungskontakte", "Einreichung"],
     }

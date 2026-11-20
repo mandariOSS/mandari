@@ -3,8 +3,8 @@
 Sitzungsvorbereitung im neuen Design (#856) hinter dem Schalter je Organisation.
 
 - Schalter aus: die bisherige Seite unverändert (Vorlage, Alpine-Komponente, kein Link zur neuen Ansicht).
-- Schalter an: neue Seite mit derselben Konfiguration (alle Funktionen der bisherigen Seite bleiben erreichbar),
-  „Bisherige Ansicht“ über ``?ansicht=bisher`` mit Link zurück.
+- Schalter an: neue Seite mit derselben Konfiguration (alle Funktionen der bisherigen Seite bleiben erreichbar);
+  der Weg zurück zur bisherigen Ansicht (``?ansicht=bisher``) ist nach 14 Tagen entfallen.
 - Ansehen ändert keine gespeicherten Positionen, Notizen oder Redebeiträge (verschlüsselt, Bestand vorher = nachher).
 - Org-Grenze: fremde Sitzungen bleiben unerreichbar.
 """
@@ -90,13 +90,10 @@ def _config(response: Any) -> dict[str, Any]:
     return dict(json.loads(match.group(1)))
 
 
-def test_auswahl_folgt_schalter_und_bisheriger_ansicht() -> None:
-    an = SimpleNamespace(work_new_design=True)
-    assert neue_ansicht(None, {}) is False
-    assert neue_ansicht(SimpleNamespace(work_new_design=False), {}) is False
-    assert neue_ansicht(an, {}) is True
-    assert neue_ansicht(an, {"ansicht": "bisher"}) is False
-    assert neue_ansicht(an, {"ansicht": "anders"}) is True
+def test_auswahl_folgt_dem_schalter() -> None:
+    assert neue_ansicht(None) is False
+    assert neue_ansicht(SimpleNamespace(work_new_design=False)) is False
+    assert neue_ansicht(SimpleNamespace(work_new_design=True)) is True
 
 
 def test_positionen_vier_gleichrangig_und_alle_uebrigen_unter_andere() -> None:
@@ -164,23 +161,22 @@ def test_schalter_an_zeigt_die_neue_vorbereitung(
         "Mit Organisation teilen",
         "Position der Fraktion",
         "Im Beratungsverlauf",
-        "Bisherige Ansicht",
     ):
         assert merkmal in html, merkmal
     # Seiten-Templates ohne Inline-Skript und -Stil
     assert "<style" not in html.split("</head>", 1)[1]
 
 
-def test_bisherige_ansicht_bei_eingeschaltetem_schalter(
+def test_kein_weg_zur_bisherigen_ansicht_mehr(
     org: Any, sitzung: OParlMeeting, make_member: Any, client_for: Any, schalter_an: None
 ) -> None:
+    """Der Link „Bisherige Ansicht“ war für 14 Tage nach der Umstellung vorgesehen (#856); der Parameter wirkt nicht mehr."""
     member = make_member(org, ["meetings.prepare"], email="zurueck@example.org")
     response = _seite(client_for(member.user), org, sitzung, "?ansicht=bisher")
     html = response.content.decode()
 
-    assert BISHER in _vorlagen(response)
-    assert 'x-data="preparationApp"' in html
-    assert "Zur neuen Ansicht" in html
+    assert NEU in _vorlagen(response) and BISHER not in _vorlagen(response)
+    assert "ansicht=bisher" not in html and "Bisherige Ansicht" not in html
 
 
 def test_knopfnamen_enthalten_den_sichtbaren_text(

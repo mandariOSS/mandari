@@ -67,8 +67,15 @@ globalThis.innerHeight = 800
 globalThis.location = { origin: HERKUNFT }
 globalThis.matchMedia = () => ({ matches: zeigerKannSchweben })
 globalThis.addEventListener = () => {}
+/** Ereignisse, die die Anzeige am Fenster auslöst */
+const fensterEreignisse = []
+globalThis.dispatchEvent = (ereignis) => {
+  fensterEreignisse.push(ereignis.type)
+  return true
+}
 globalThis.document = {
   body: { addEventListener() {} },
+  documentElement: { dataset: {} },
   querySelectorAll: () => [],
   getElementById: (id) => (id === 'django-messages' ? serverMeldungen : null),
 }
@@ -90,6 +97,8 @@ const { toastManager, gleicheMeldung, sichererLink, schonGezeigt, MAX_SICHTBAR }
 function anzeige() {
   const k = toastManager()
   k.benutzt = { zeiger: false, fokus: false }
+  // Alpine ruft das nach dem Aufbau der Komponente auf; hier sofort
+  k.$nextTick = (fn) => fn()
   k.$root = {
     style: {},
     dataset: seitenMarke === undefined ? {} : { marke: seitenMarke },
@@ -257,6 +266,8 @@ test('sichererLink: nur Adressen dieser Anwendung, als Pfad', () => {
   assert.equal(sichererLink(`${HERKUNFT}//boese.example/x`, HERKUNFT), '')
   assert.equal(sichererLink('/.//boese.example/x', HERKUNFT), '')
   assert.equal(sichererLink('/a/..//boese.example/x', HERKUNFT), '')
+  // Auch zur eigenen Herkunft: Als href hieße das Ziel sonst „/x“ statt „//mandari.example/x“
+  assert.equal(sichererLink(`${HERKUNFT}//mandari.example/x`, HERKUNFT), '')
   assert.equal(sichererLink(`${HERKUNFT}/\\boese.example/x`, HERKUNFT), '')
   assert.equal(sichererLink('javascript:alert(1)', HERKUNFT), '')
   assert.equal(sichererLink('', HERKUNFT), '')
@@ -281,6 +292,22 @@ test('Gleicher Hinweis mit anderem Ziel ist eine eigene Meldung: Kein Ziel geht 
     ['/work/fraktion/tasks/7/', '/work/fraktion/tasks/8/'],
   )
   uhr.vor(6000)
+})
+
+test('Die Anzeige meldet, sobald sie zuhört', () => {
+  delete document.documentElement.dataset.meldungen
+  fensterEreignisse.length = 0
+  const k = anzeige()
+  let spaeter
+  k.$nextTick = (fn) => {
+    spaeter = fn
+  }
+  seiteMit([], undefined)
+  k.init()
+  assert.equal(document.documentElement.dataset.meldungen, undefined, 'während des Aufbaus hört noch niemand zu')
+  spaeter()
+  assert.equal(document.documentElement.dataset.meldungen, 'bereit')
+  assert.deepEqual(fensterEreignisse, ['meldungen-bereit'])
 })
 
 // ---------- Meldungen des Servers ----------
@@ -365,12 +392,16 @@ test('schonGezeigt behält nur die letzten Seitenstände und verträgt fremde In
 const NOTIFICATIONS = readFileSync(join(projectRoot, 'static', 'js', 'notifications.js'), 'utf8')
 
 /** Eine Seite in Work mit eigenem Skriptlauf; `browser` (Speicher) überdauert Seitenwechsel */
-function seite(browser, antworten) {
+function seite(browser, antworten, { sichtbar = true, bereit = true } = {}) {
   const gezeigt = []
   const abrufe = []
+  const lauscher = {}
   const fenster = {
     location: { pathname: '/work/fraktion/tasks/' },
     localStorage: browser,
+    addEventListener(name, fn) {
+      lauscher[name] = fn
+    },
     dispatchEvent(ereignis) {
       // Als eigene Objekte dieses Kontexts, damit der Vergleich nicht an fremden Prototypen scheitert
       if (ereignis.type === 'show-toast') gezeigt.push(JSON.parse(JSON.stringify(ereignis.detail)))
@@ -381,7 +412,8 @@ function seite(browser, antworten) {
     document: {
       readyState: 'complete',
       title: 'Aufgaben | Fraktion',
-      visibilityState: 'visible',
+      visibilityState: sichtbar ? 'visible' : 'hidden',
+      documentElement: { dataset: bereit ? { meldungen: 'bereit' } : {} },
       querySelector: () => ({ dataset: { orgSlug: 'fraktion', konto: '17' } }),
       addEventListener() {},
     },
@@ -413,7 +445,7 @@ function seite(browser, antworten) {
     },
   }
   vm.runInNewContext(NOTIFICATIONS, kontext)
-  return { gezeigt, abrufe, fenster, dokument: kontext.document, modul: fenster.MandariNotifications }
+  return { gezeigt, abrufe, fenster, lauscher, dokument: kontext.document, modul: fenster.MandariNotifications }
 }
 
 const warten = () => new Promise((fertig) => setImmediate(fertig))
@@ -585,6 +617,46 @@ await asyncTest('Ein Abruf zur Zeit: Ein zweiter wartet nicht daneben', async ()
   await s.modul.poll()
   assert.equal(s.abrufe.length, 2)
   assert.equal(s.gezeigt.length, 1)
+})
+
+await asyncTest('Verdeckter Reiter: zeigt nichts und verbraucht den Hinweis nicht', async () => {
+  const browser = speicher()
+  browser.setItem(SCHLUESSEL, T1)
+  const verdeckt = seite(browser, [{ notifications: [meldung(2, T2)], count: 2 }], { sichtbar: false })
+  await warten()
+  assert.deepEqual(verdeckt.gezeigt, [])
+  assert.equal(browser.getItem(SCHLUESSEL), T1, 'der Stand bleibt, bis jemand den Hinweis sehen kann')
+  assert.equal(verdeckt.dokument.title, '(2) Aufgaben | Fraktion', 'die Zahl im Titel folgt trotzdem')
+  // Der sichtbare Reiter bekommt den Hinweis
+  const sichtbar = seite(browser, [{ notifications: [meldung(2, T2)], count: 2 }])
+  await warten()
+  assert.equal(sichtbar.gezeigt.length, 1)
+  assert.equal(browser.getItem(SCHLUESSEL), T2)
+  // Wird der verdeckte Reiter sichtbar, fragt er neu ab und zeigt nichts doppelt
+  verdeckt.dokument.visibilityState = 'visible'
+  await verdeckt.modul.poll()
+  assert.deepEqual(verdeckt.gezeigt, [])
+  assert.equal(verdeckt.abrufe[1], `/work/fraktion/notifications/latest/?since=${encodeURIComponent(T2)}`)
+})
+
+await asyncTest('Erster Besuch in einem verdeckten Reiter merkt noch nichts', async () => {
+  const browser = speicher()
+  const s = seite(browser, [{ notifications: [meldung(1, T1)], count: 1 }], { sichtbar: false })
+  await warten()
+  assert.equal(browser.getItem(SCHLUESSEL), null)
+  assert.deepEqual(s.gezeigt, [])
+})
+
+await asyncTest('Anzeige hört noch nicht zu: Der Hinweis wartet und geht nicht verloren', async () => {
+  const browser = speicher()
+  browser.setItem(SCHLUESSEL, T1)
+  const s = seite(browser, [{ notifications: [meldung(2, T2)], count: 2 }], { bereit: false })
+  await warten()
+  assert.deepEqual(s.gezeigt, [])
+  assert.equal(typeof s.lauscher['meldungen-bereit'], 'function')
+  s.lauscher['meldungen-bereit']()
+  assert.equal(s.gezeigt.length, 1)
+  assert.equal(s.gezeigt[0].titel, 'Titel 2')
 })
 
 await asyncTest('Ein Abruf ohne Antwort endet nach der Frist und hält die nächsten nicht auf', async () => {

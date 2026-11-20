@@ -95,7 +95,7 @@ def test_mit_schalter_traegt_die_seite_den_neuen_rahmen(neu: Organization, admin
     assert NEU in html
     assert ALT not in html
     # sieben Bereiche in der Seitenleiste (Fraktionssitzungen eigener Eintrag, Entscheidung vom 06.10.2026)
-    for label in ("Start", "Sitzungen", "Fraktionssitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"):
+    for label in ("Start", "Sitzungen", "Interne Sitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"):
         assert f">{label}</span>" in html
     assert 'aria-label="Brotkrumen"' in html
     # Suche in der Kopfzeile führt in die Recherche, Strg+K als Tastenkürzel angekündigt
@@ -183,7 +183,7 @@ def test_bisherige_adressen_bleiben_und_zeigen_bereich_und_reiter(
     ("name", "bereich"),
     [
         ("dashboard", "Start"),
-        ("faction", "Fraktionssitzungen"),
+        ("faction", "Interne Sitzungen"),
         ("documents", "Dokumente"),
         ("tasks", "Aufgaben"),
         ("team", "Team"),

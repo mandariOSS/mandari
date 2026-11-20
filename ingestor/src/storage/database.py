@@ -8,9 +8,9 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 import logging
 import os
 from collections import Counter
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 from pathlib import Path
@@ -137,6 +137,9 @@ _unresolved_references: ContextVar[Counter[str] | None] = ContextVar("ingestor_u
 #: Arten nicht auflösbarer Verweise im Sync-Log (``unresolved``)
 UNRESOLVED_MEETING_ORGANIZATION: Final = "meeting.organization"
 UNRESOLVED_MEMBERSHIP_PERSON: Final = "membership.person"
+#: Gremienname aus dem öffentlichen Kalender im Rohdatensatz einer Sitzung (``src/sync/gremien_kalender.SCHLUESSEL``);
+#: ``upsert_meeting`` behält ihn, wenn der Abgleich die Sitzung neu schreibt
+KALENDER_ANGABE: Final = "mandari:gremiumWeb"
 UNRESOLVED_MEMBERSHIP_ORGANIZATION: Final = "membership.organization"
 
 
@@ -262,6 +265,55 @@ def _tombstone_update(model: type, stmt: Any) -> dict[str, Any]:
 #: Issue #863). Der Abruf schreibt sie bei jedem Speichern wieder an den Punkt, der Rückweg findet die Zeile daran.
 PREVIOUS_ID_FIELD: Final = "mandari:previousId"
 
+
+def agenda_item_consultation_reference(raw: Any) -> str | None:
+    """Beratung, die ein Tagesordnungspunkt nennt (``AgendaItem.consultation``: Adresse oder Objekt mit ``id``)."""
+    if not isinstance(raw, Mapping):
+        return None
+    value = raw.get("consultation")
+    if isinstance(value, Mapping):
+        value = value.get("id")
+    return value if isinstance(value, str) and value else None
+
+
+def _agenda_item_consultation_column() -> Any:
+    """Beratung, die ein Tagesordnungspunkt nennt, in SQL: ``consultation`` als Adresse oder Objekt mit ``id``."""
+    return func.coalesce(
+        OParlAgendaItem.raw_json["consultation"]["id"].astext, OParlAgendaItem.raw_json["consultation"].astext
+    )
+
+
+@dataclass(frozen=True)
+class PendingConsultationLink:
+    """Beratung ohne Tagesordnungspunkt, die ein Punkt derselben Quelle nennt (Nachziehen, Issue #1523)."""
+
+    consultation_external_id: str
+    agenda_item_external_id: str
+    agenda_item_id: UUID
+    meeting_id: UUID
+    #: Kommune der Sitzung des Punkts (dieselbe Quelle wie die Beratung)
+    body_id: UUID
+    source_id: UUID
+    source_name: str
+
+
+#: Beratungen ohne Tagesordnungspunkt, die ein nicht gelöschter Punkt derselben Quelle nennt. Nennen mehrere Punkte
+#: dieselbe Beratung, gilt der der jüngsten Sitzung. ``:source`` leer: alle Quellen.
+_PENDING_CONSULTATION_LINKS = text(
+    "SELECT DISTINCT ON (c.id) c.external_id, ai.external_id, ai.id, m.id, m.body_id, cb.source_id,"
+    " coalesce(s.name, '')"
+    " FROM oparl_consultations c"
+    " JOIN oparl_bodies cb ON cb.id = c.body_id"
+    " JOIN oparl_agenda_items ai"
+    " ON coalesce(ai.raw_json->'consultation'->>'id', ai.raw_json->>'consultation') = c.external_id"
+    " JOIN oparl_meetings m ON m.id = ai.meeting_id"
+    " JOIN oparl_bodies mb ON mb.id = m.body_id AND mb.source_id = cb.source_id"
+    " LEFT JOIN oparl_sources s ON s.id = cb.source_id"
+    " WHERE c.agenda_item_external_id IS NULL AND c.deleted IS NOT TRUE AND ai.deleted IS NOT TRUE"
+    " AND (CAST(:source AS uuid) IS NULL OR cb.source_id = CAST(:source AS uuid))"
+    " ORDER BY c.id, m.start DESC NULLS LAST, ai.external_id"
+)
+
 #: Verweis einer Beratung auf einen umgeschriebenen Tagesordnungspunkt nachziehen (Spalte und ``raw_json``). Über
 #: ``raw_json`` nur unter den Beratungen der Sitzung suchen: Beide Spalten haben einen Index, ``raw_json`` nicht. Nur
 #: Beratungen derselben Quelle (``:source``) und solche ohne Kommune (Altbestand).
@@ -321,6 +373,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "summary_einfach",
         "summary_stand",
         "summary_prompt_fassung",
+        # OParlPaper: Finanzcheck (Django-managed, Issue #1513)
+        "finanzcheck",
         "locations",
         "georef_status",
         # OParlBody: Sichtbarkeit im Portal (Django-managed); der Ingestor setzt sie nur beim Anlegen (Issue #555)
@@ -396,6 +450,10 @@ class _Origin:
 #: Schlüssel in ``OParlSource.sync_config``: Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune
 #: (Kennung der Kommune -> Zeitpunkt in UTC, ISO 8601), Anfang des Änderungsfensters (Issue #1025)
 SYNC_CONFIG_BODY_SYNC_STARTED_KEY: Final = "body_sync_started"
+#: Schlüssel in ``OParlSource.sync_config``: nicht gespeicherte Objekte, die das Änderungsfenster halten oder
+#: zurückgestellt sind, je Kommune (Kennung der Kommune -> Kennung des Objekts -> ``type``, ``since``, ``seen``,
+#: ``runs``, ``deferred``; Zeitpunkte in UTC, ``src/sync/orchestrator.py``, ``settle_unstored_holds``)
+SYNC_CONFIG_UNSTORED_HOLDS_KEY: Final = "unstored_holds"
 #: Schlüssel in ``OParlSource.sync_config``: Listen, deren ``modified`` nachweislich die Uhrzeit trägt (Adresse ->
 #: Zeitpunkt des Nachweises). Nur sie bekommen das kurze Änderungsfenster, alle übrigen eines ab Tagesbeginn
 #: (Issue #1025).
@@ -410,9 +468,30 @@ SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY: Final = "full_sync_progress"
 #: Schlüssel in ``OParlSource.sync_config``: Befund „Server ignoriert den Filter einer Zeitscheibe“ (``checked_at``,
 #: ``list``, ``detail``); solange er gilt, läuft der Vollabgleich der Quelle nicht in Zeitscheiben (Issue #1033)
 SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY: Final = "full_sync_filter_ignored"
+#: Schlüssel in ``OParlSource.sync_config``: Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs je Liste
+#: (Adresse -> ``page`` und ``at`` bzw. ``done`` und ``at``; ``src/sync/fortsetzung.py``)
+SYNC_CONFIG_FULL_SYNC_RESUME_KEY: Final = "full_sync_resume"
 #: Schlüssel in ``OParlSource.sync_config``: optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind (Adresse ->
 #: ``failures``, ``until``, ``since``, ``reason``; Issue #1033)
 SYNC_CONFIG_SLOW_LISTS_KEY: Final = "slow_lists"
+#: Schlüssel in ``OParlSource.sync_config``: Fortschritt innerhalb einer Zeitscheibe des Vollabgleichs je Liste (Adresse
+#: -> ``since``, ``until``, ``page``, ``ids``, ``at``; ``src/sync/slices.py``, Issue #1523)
+SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY: Final = "full_sync_slice_page"
+#: Schlüssel in ``OParlSource.sync_config``: Beratungen, deren Nachladen zuletzt versucht wurde (Kennung -> Zeitpunkt;
+#: Issue #1523, ``src/sync/beratungen_nachladen.py``)
+SYNC_CONFIG_CONSULTATION_FETCHES_KEY: Final = "beratungen_nachladen_versuche"
+
+#: Beratungen, die Punkte der Sitzungen einer Kommune in einem Zeitraum nennen und die es nicht gibt (Nachladen,
+#: Issue #1523); je Beratung die früheste Sitzung
+_UNKNOWN_CONSULTATIONS_OF_MEETINGS = text(
+    "SELECT ai.raw_json->>'consultation', min(m.start)"
+    " FROM oparl_agenda_items ai JOIN oparl_meetings m ON m.id = ai.meeting_id"
+    " WHERE m.body_id = :body AND m.start >= :von AND m.start <= :bis"
+    " AND ai.deleted IS NOT TRUE AND m.deleted IS NOT TRUE"
+    " AND jsonb_typeof(ai.raw_json->'consultation') = 'string'"
+    " AND NOT EXISTS (SELECT 1 FROM oparl_consultations c WHERE c.external_id = ai.raw_json->>'consultation')"
+    " GROUP BY 1"
+)
 
 
 def _utc_stamp(value: Any) -> datetime | None:
@@ -468,6 +547,12 @@ def timed_lists_of(sync_config: Any) -> set[str]:
     return {url for url in stored if isinstance(url, str) and url}
 
 
+def full_sync_resume_of(sync_config: Any) -> dict[str, Any]:
+    """Einträge der Fortsetzung eines abgebrochenen Vollabgleichs (``sync_config["full_sync_resume"]``), roh."""
+    stored = sync_config.get(SYNC_CONFIG_FULL_SYNC_RESUME_KEY) if isinstance(sync_config, dict) else None
+    return dict(stored) if isinstance(stored, dict) else {}
+
+
 def full_sync_progress_of(sync_config: Any) -> dict[str, datetime]:
     """Fortschritt des Vollabgleichs in Zeitscheiben (``sync_config["full_sync_progress"]``); Ungültiges zählt nicht."""
     if not isinstance(sync_config, dict):
@@ -495,6 +580,12 @@ def slow_lists_of(sync_config: Any) -> dict[str, dict[str, Any]]:
     }
 
 
+def full_sync_slice_pages_of(sync_config: Any) -> dict[str, Any]:
+    """Fortschritt innerhalb einer Zeitscheibe (``sync_config["full_sync_slice_page"]``, Issue #1523), roh."""
+    stored = sync_config.get(SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY) if isinstance(sync_config, dict) else None
+    return dict(stored) if isinstance(stored, dict) else {}
+
+
 def slice_filter_ignored_of(sync_config: Any) -> dict[str, Any] | None:
     """Befund „Server ignoriert den Filter einer Zeitscheibe“ (``sync_config["full_sync_filter_ignored"]``)."""
     if not isinstance(sync_config, dict):
@@ -509,6 +600,20 @@ def body_sync_started_of(sync_config: Any, body_external_id: str) -> datetime | 
         return None
     stored = sync_config.get(SYNC_CONFIG_BODY_SYNC_STARTED_KEY)
     return _utc_stamp(stored.get(body_external_id) if isinstance(stored, dict) else None)
+
+
+def unstored_holds_of(sync_config: Any, body_external_id: str) -> dict[str, dict[str, Any]]:
+    """Vermerk der nicht gespeicherten Objekte einer Kommune (``sync_config["unstored_holds"]``); nur Einträge als
+    Objekt."""
+    if not isinstance(sync_config, dict):
+        return {}
+    stored = sync_config.get(SYNC_CONFIG_UNSTORED_HOLDS_KEY)
+    entries = stored.get(body_external_id) if isinstance(stored, dict) else None
+    if not isinstance(entries, dict):
+        return {}
+    return {
+        key: dict(entry) for key, entry in entries.items() if isinstance(key, str) and key and isinstance(entry, dict)
+    }
 
 
 def _put_entry(sync_config: dict[str, Any], key: str, entry: str, value: Any) -> bool:
@@ -663,6 +768,14 @@ class DatabaseStorage:
         self._meeting_body_cache: dict[UUID, UUID | None] = {}
         # Gibt es die Zwischentabelle oparl_papers_locations? (None: in diesem Zyklus noch nicht geprüft)
         self._paper_locations_table: bool | None = None
+
+    @property
+    def _consultation_list_cache(self) -> dict[UUID, bool]:
+        """Kommune -> führt eine eigene Beratungsliste (``_lists_consultations``); auch ohne ``__init__`` (Tests)."""
+        cache: dict[UUID, bool] | None = self.__dict__.get("_consultation_lists")
+        if cache is None:
+            cache = self.__dict__["_consultation_lists"] = {}
+        return cache
 
     async def initialize(self) -> None:
         """
@@ -1048,6 +1161,23 @@ class DatabaseStorage:
 
         await self._change_sync_config(OParlSource.id == source_id, change)
 
+    async def get_unstored_holds(self, source_id: UUID, body_external_id: str) -> dict[str, dict[str, Any]]:
+        """Vermerk der nicht gespeicherten Objekte der Kommune (``unstored_holds_of``)."""
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource.sync_config).where(OParlSource.id == source_id))
+            return unstored_holds_of(result.scalar_one_or_none(), body_external_id)
+
+    async def set_unstored_holds(
+        self, source_id: UUID, body_external_id: str, entries: Mapping[str, dict[str, Any]]
+    ) -> None:
+        """Vermerk der nicht gespeicherten Objekte der Kommune ersetzen (leer: löschen). Unter Zeilensperre."""
+        value = dict(sorted(entries.items())) or None
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_UNSTORED_HOLDS_KEY, body_external_id, value)
+
+        await self._change_sync_config(OParlSource.id == source_id, change)
+
     async def set_list_missing(
         self,
         source_url: str,
@@ -1083,11 +1213,36 @@ class DatabaseStorage:
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 
+    async def set_full_sync_resume(self, source_url: str, changes: Mapping[str, dict[str, Any] | None]) -> None:
+        """
+        Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs festhalten (``sync_config["full_sync_resume"]``,
+        ``src/sync/fortsetzung.py``): Eintrag je Liste setzen oder löschen (``None``). Unter Zeilensperre.
+        """
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            changed = False
+            for list_url, entry in changes.items():
+                changed = _put_entry(sync_config, SYNC_CONFIG_FULL_SYNC_RESUME_KEY, list_url, entry) or changed
+            return changed
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
     async def set_slow_list(self, source_url: str, list_url: str, entry: dict[str, Any] | None) -> None:
         """Ausgesetzte langsame Liste festhalten oder austragen (``None``; Issue #1033). Unter Zeilensperre."""
 
         def change(sync_config: dict[str, Any]) -> bool:
             return _put_entry(sync_config, SYNC_CONFIG_SLOW_LISTS_KEY, list_url, entry)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def set_full_sync_slice_page(self, source_url: str, list_url: str, entry: dict[str, Any] | None) -> None:
+        """
+        Fortschritt innerhalb einer Zeitscheibe des Vollabgleichs festhalten oder löschen (``None``; Issue #1523).
+        Unter Zeilensperre.
+        """
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY, list_url, entry)
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 
@@ -1156,6 +1311,92 @@ class DatabaseStorage:
             for external_id, stored_hash in result.all():
                 hashes[external_id] = stored_hash
             return hashes
+
+    async def get_html_ergaenzung(
+        self,
+        entity_type: str,
+        external_ids: list[str],
+        fields: tuple[str, ...],
+        marker_key: str,
+    ) -> dict[str, dict[str, Any]]:
+        """
+        Gespeicherte Ergänzung aus Detailseiten (Issue #1431): je Kennung der Vermerk ``marker_key`` und die
+        ergänzbaren Felder ``fields`` aus dem ``raw_json``. Objekte ohne Vermerk fehlen im Ergebnis.
+        """
+        model = _ENTITY_MODEL_MAP.get(entity_type)
+        if not model or not external_ids:
+            return {}
+        columns = [model.raw_json[marker_key], *(model.raw_json[name] for name in fields)]
+        async with self.get_session() as session:
+            stmt = select(model.external_id, *columns).where(
+                model.external_id.in_(external_ids), model.raw_json.has_key(marker_key)
+            )
+            result = await session.execute(stmt)
+            stored: dict[str, dict[str, Any]] = {}
+            for row in result.all():
+                values = dict(zip((marker_key, *fields), row[1:], strict=True))
+                stored[row[0]] = {key: value for key, value in values.items() if value is not None}
+            return stored
+
+    async def get_meetings_ohne_gremium(
+        self, body_ids: Sequence[UUID], von: datetime, bis: datetime, erneut_ab: datetime, schluessel: str
+    ) -> list[tuple[UUID, str, datetime, datetime, datetime | None]]:
+        """
+        Sitzungen der Kommunen im Zeitraum, die ein Gremium nennen, dem keines im Bestand zugeordnet ist (die Quelle
+        gibt es nicht heraus, Issue #1441), und die unter ``schluessel`` weder einen Namen noch eine Prüfung nach
+        ``erneut_ab`` haben (``src/sync/gremien_kalender.py``). Mit Änderungszeit als Stand für das Schreiben und dem
+        Zeitpunkt der letzten Prüfung (sonst ``None``).
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                text(
+                    "SELECT m.id, m.external_id, m.start, m.updated_at, "
+                    "CAST(m.raw_json -> CAST(:schluessel AS text) ->> 'geprueft' AS timestamptz) "
+                    "FROM oparl_meetings m "
+                    "WHERE m.body_id = ANY(CAST(:bodies AS uuid[])) AND m.deleted = false "
+                    "AND m.start BETWEEN :von AND :bis "
+                    "AND jsonb_typeof(m.raw_json->'organization') = 'array' "
+                    "AND jsonb_array_length(m.raw_json->'organization') > 0 "
+                    "AND NOT COALESCE("
+                    "COALESCE(m.raw_json -> CAST(:schluessel AS text) ->> 'name', '') <> '' "
+                    "OR CAST(m.raw_json -> CAST(:schluessel AS text) ->> 'geprueft' AS timestamptz) > :erneut_ab, "
+                    "false) "
+                    "AND NOT EXISTS (SELECT 1 FROM oparl_meetings_organizations mo WHERE mo.oparlmeeting_id = m.id) "
+                    "ORDER BY m.start"
+                ),
+                {"bodies": list(body_ids), "von": von, "bis": bis, "erneut_ab": erneut_ab, "schluessel": schluessel},
+            )
+            return [(row[0], row[1], row[2], row[3], row[4]) for row in result.all()]
+
+    async def set_meeting_raw_extension(
+        self, meeting_id: UUID, schluessel: str, wert: Mapping[str, Any], *, stand: datetime | None
+    ) -> bool:
+        """
+        Eine Erweiterung in den Rohdatensatz einer Sitzung schreiben, ohne die übrigen Angaben zu ändern; nur, wenn die
+        Sitzung noch den gelesenen Stand (``updated_at``) hat und weiterhin kein Gremium zugeordnet ist. Der Stand
+        rückt dabei vor, damit ein zweiter Schreibversuch mit demselben Stand (paralleler Lauf) nichts überschreibt.
+        """
+        import json
+
+        async with self.get_session() as session:
+            result = await session.execute(
+                text(
+                    "UPDATE oparl_meetings SET raw_json = COALESCE(raw_json, '{}'::jsonb) "
+                    "|| jsonb_build_object(CAST(:schluessel AS text), CAST(:wert AS jsonb)), "
+                    "updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') "
+                    "WHERE id = :id AND updated_at IS NOT DISTINCT FROM CAST(:stand AS timestamptz) "
+                    "AND NOT EXISTS (SELECT 1 FROM oparl_meetings_organizations mo "
+                    "WHERE mo.oparlmeeting_id = oparl_meetings.id)"
+                ),
+                {
+                    "id": meeting_id,
+                    "schluessel": schluessel,
+                    "wert": json.dumps(dict(wert), ensure_ascii=False),
+                    "stand": stand,
+                },
+            )
+            await session.commit()
+            return bool(getattr(result, "rowcount", 0))
 
     async def get_active_external_ids_for_body(
         self,
@@ -1316,7 +1557,7 @@ class DatabaseStorage:
         if model is OParlAgendaItem:
             columns += [OParlAgendaItem.meeting_id, OParlAgendaItem.public]
         elif model is OParlFile:
-            columns += [OParlFile.meeting_id, OParlFile.paper_id]
+            columns += [OParlFile.meeting_id, OParlFile.paper_id, OParlFile.agenda_item_id]
         stmt = select(*columns).where(model.external_id == external_id).with_for_update(key_share=True)
         row = (await session.execute(stmt)).first()
         if row is None:
@@ -1331,7 +1572,7 @@ class DatabaseStorage:
         if model is OParlAgendaItem:
             return ris_events.Prior(**stand, meeting_id=row[3], public=row[4] is not False)
         if model is OParlFile:
-            return ris_events.Prior(**stand, meeting_id=row[3], paper_id=row[4])
+            return ris_events.Prior(**stand, meeting_id=row[3], paper_id=row[4], agenda_item_id=row[5])
         return ris_events.Prior(**stand)
 
     async def _emit(
@@ -1497,6 +1738,7 @@ class DatabaseStorage:
 
             # Cache the UUID
             self._body_uuid_cache[body.external_id] = body_id
+            self._consultation_list_cache[body_id] = bool(body.consultation_list_url)
 
             # Process nested legislative terms; eine Wahlperiode einer anderen Quelle bleibt aus (gezählt)
             for nested in body.nested_entities:
@@ -1687,7 +1929,8 @@ class DatabaseStorage:
     @staticmethod
     async def _forget_summary(session: AsyncSession, paper_id: UUID | None) -> None:
         """
-        KI-Zusammenfassung eines Vorgangs verwerfen, dessen Anlage die Quelle gelöscht hat (ohne eigenen Commit).
+        KI-Zusammenfassung und Finanzcheck eines Vorgangs verwerfen, dessen Anlage die Quelle gelöscht hat (ohne
+        eigenen Commit).
 
         Die Zusammenfassung fasst alle Anlagen zusammen. Eine gelöschte Anlage ist gesperrt: Ihr Inhalt darf nicht
         über die öffentliche Zusammenfassung weiterleben, bis der Löschlauf der Anwendung sie nach Wochen verwirft.
@@ -1702,7 +1945,14 @@ class DatabaseStorage:
         await session.execute(
             update(OParlPaper)
             .where(OParlPaper.id == paper_id)
-            .values(summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0)
+            .values(
+                summary=None,
+                summary_hinweis="",
+                summary_einfach=None,
+                summary_stand="",
+                summary_prompt_fassung=0,
+                finanzcheck=None,
+            )
         )
 
     # ========== Meeting Operations ==========
@@ -1725,12 +1975,14 @@ class DatabaseStorage:
         # Gremien vorab auflösen (eigene Lesesitzung), damit die Zuordnung in die Transaktion des
         # Upserts passt. Batched lookup (cache-first, DB fallback).
         org_ids: list[UUID] = []
+        #: Gremien, die die Quelle nennt, die aber nicht im Bestand stehen (Issue #1441); gezählt erst nach dem
+        #: Schreiben, damit eine als fremd abgewiesene Sitzung nicht mitzählt (Issue #1453)
+        org_unresolved = 0
         org_urls = _normalized_urls((meeting.raw_json or {}).get("organization"))
         if org_urls:
             org_map = await self.get_organization_ids_by_external_ids(org_urls, body_id)
             org_ids = [org_map[url] for url in org_urls if url in org_map]
-            # Gremien, die die Quelle nennt, die aber nicht im Bestand stehen (Issue #1441)
-            _note_unresolved(UNRESOLVED_MEETING_ORGANIZATION, len(set(org_urls) - set(org_map)))
+            org_unresolved = len(set(org_urls) - set(org_map))
 
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
@@ -1764,7 +2016,12 @@ class DatabaseStorage:
                 "location_address": stmt.excluded.location_address,
                 **{name: getattr(stmt.excluded, name) for name in MEETING_COLUMNS},
                 "oparl_created": stmt.excluded.oparl_created,
-                "raw_json": stmt.excluded.raw_json,
+                # Der Name aus dem öffentlichen Kalender (Issue #1505) übersteht den Abgleich, auch den vollen
+                "raw_json": stmt.excluded.raw_json.op("||")(
+                    func.jsonb_strip_nulls(
+                        func.jsonb_build_object(KALENDER_ANGABE, OParlMeeting.raw_json[KALENDER_ANGABE])
+                    )
+                ),
                 # Markierung aufheben, außer bei einer Rücknahme aus Datenschutzgründen
                 **_tombstone_update(OParlMeeting, stmt),
                 "updated_at": func.now(),
@@ -1791,6 +2048,7 @@ class DatabaseStorage:
                 )
                 await self._emit(session, body_id, drafts, meeting.oparl_modified)
             await session.commit()
+            _note_unresolved(UNRESOLVED_MEETING_ORGANIZATION, org_unresolved)
 
             self._meeting_uuid_cache[(body_id, meeting.external_id)] = meeting_id
             self._meeting_body_cache[meeting_id] = body_id
@@ -1946,10 +2204,14 @@ class DatabaseStorage:
             locations_changed = await self._link_paper_locations(
                 session, paper_id, paper.location_external_ids, body_id
             )
+            # Beratungen, die die Vorlage nicht mehr nennt, mit der neuen Liste der Vorlage festschreiben
+            unlisted = await self._mark_unlisted_consultations(session, paper_id, paper, body_id)
             if emit:
                 drafts = ris_events.paper_events(
                     paper_id, paper.raw_json or {}, prior, locations_changed=locations_changed
                 )
+                for consultation_id in unlisted:
+                    drafts += ris_events.depublished_events("consultation", consultation_id)
                 await self._emit(session, body_id, drafts, paper.oparl_modified)
             await session.commit()
 
@@ -1967,6 +2229,79 @@ class DatabaseStorage:
                     continue
 
             return paper_id
+
+    async def _lists_consultations(self, session: AsyncSession, body_id: UUID) -> bool:
+        """
+        Führt die Kommune eine eigene Beratungsliste (``consultation`` bzw. ``consultations`` am Body, OParl 1.1)?
+        Zwischengespeichert; ``upsert_body`` setzt den Wert bei jedem Abgleich der Kommune neu.
+        """
+        known = self._consultation_list_cache.get(body_id)
+        if known is None:
+            found = await session.execute(select(OParlBody.raw_json).where(OParlBody.id == body_id))
+            raw = found.scalar_one_or_none()
+            known = isinstance(raw, dict) and bool(raw.get("consultation") or raw.get("consultations"))
+            self._consultation_list_cache[body_id] = known
+        return known
+
+    async def _mark_unlisted_consultations(
+        self, session: AsyncSession, paper_id: UUID, paper: ProcessedPaper, body_id: UUID
+    ) -> list[UUID]:
+        """
+        Beratungen der Vorlage, die ihre eingebettete Liste nicht mehr nennt, als in der Quelle gelöscht markieren
+        (ohne eigenen Commit, in der Transaktion der Vorlage). Liefert die neu markierten Zeilen.
+
+        Nur für Kommunen ohne eigene Beratungsliste (OParl 1.0, etwa more! rubin): Dort kommen Beratungen nur
+        eingebettet in ihre Vorlage, und deren Liste ist vollständig. more! rubin legt bei jeder Änderung einer
+        Vorlage alle ihre Beratungen unter neuen Kennungen an; die alten liefert die Quelle nicht mehr (Einzelabruf:
+        leere Liste). Ohne Markierung blieben sie als Dubletten stehen, die Beratungsfolge zeigte Phantome.
+        Kommunen mit eigener Liste melden gelöschte Beratungen dort (``deleted: true``).
+
+        Die Vorlage muss ``consultation`` als Liste eingebetteter Objekte nennen, jedes mit Kennung; sonst bleibt
+        alles, wie es ist (Scraper-Quellen, Vorlagen ohne die Angabe, unlesbare Einträge, bloße Verweise). Ein
+        bloßer Verweis brächte keine Beratung mit, deren Upsert eine frühere Markierung aufhöbe. Eine leere Liste
+        markiert alle.
+        Markiert wird wie bei ``mark_entity_deleted``: nur unmarkierte Zeilen der eigenen Quelle, Grund
+        ``quelle_geloescht``; eine Rücknahme aus Datenschutzgründen bleibt unberührt. Nennt die Quelle eine solche
+        Beratung später wieder, hebt ``upsert_consultation`` die Markierung auf (``_tombstone_update``).
+        """
+        listed = (paper.raw_json or {}).get("consultation")
+        if not isinstance(listed, list):
+            return []
+        external_ids: list[str] = []
+        for entry in listed:
+            external_id = entry.get("id") if isinstance(entry, dict) else None
+            if not isinstance(external_id, str) or not external_id:
+                return []
+            external_ids.append(external_id)
+        if await self._lists_consultations(session, body_id):
+            return []
+        now = datetime.now(UTC)
+        conditions = [
+            OParlConsultation.paper_id == paper_id,
+            OParlConsultation.deleted == False,  # noqa: E712
+            _owned_by_source_of(OParlConsultation, body_id),
+        ]
+        if external_ids:
+            conditions.append(OParlConsultation.external_id.not_in(external_ids))
+        result = await session.execute(
+            update(OParlConsultation)
+            .where(*conditions)
+            .values(
+                deleted=True,
+                deleted_at=now,
+                deletion_reason=ris_events.REASON_DELETED_AT_SOURCE,
+                oparl_modified=now,
+                updated_at=func.now(),
+            )
+            .returning(OParlConsultation.id)
+        )
+        marked = [row[0] for row in result.fetchall()]
+        if marked:
+            console.print(
+                f"[dim]  Vorlage {paper.external_id}: {len(marked)} Beratung(en) nicht mehr genannt, "
+                "als gelöscht markiert[/dim]"
+            )
+        return marked
 
     async def _link_paper_locations(
         self,
@@ -2055,6 +2390,51 @@ class DatabaseStorage:
             else:
                 await self._note_foreign_reference(session, OParlPaper, "paper", external_id)
             return uuid
+
+    async def unknown_consultations_of_meetings(
+        self, body_id: UUID, since: datetime, until: datetime
+    ) -> list[tuple[str, datetime | None]]:
+        """
+        Beratungen, die Tagesordnungspunkte der Sitzungen dieser Kommune zwischen ``since`` und ``until`` nennen und
+        die es im Bestand nicht gibt (Nachladen, Issue #1523): Kennung und Beginn der frühesten Sitzung, die sie
+        nennt. Nur nicht gelöschte Punkte und Sitzungen, nur Verweise als Adresse. Eine Abfrage.
+        """
+        async with self.get_session() as session:
+            rows = await session.execute(
+                _UNKNOWN_CONSULTATIONS_OF_MEETINGS, {"body": body_id, "von": since, "bis": until}
+            )
+            return [(row[0], row[1]) for row in rows]
+
+    async def source_sync_config(self, source_id: UUID) -> dict[str, Any]:
+        """``sync_config`` der Quelle (leer, wenn es sie nicht gibt)."""
+        async with self.get_session() as session:
+            return await self._source_config(session, source_id)
+
+    async def note_consultation_fetches(
+        self, source_id: UUID, attempts: Mapping[str, str], keep_after: datetime
+    ) -> None:
+        """
+        Versuche des Nachladens festhalten (``sync_config[key]``: Beratung → Zeitpunkt, Issue #1523), unter
+        Zeilensperre; Einträge vor ``keep_after`` fallen dabei weg.
+        """
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            stored = sync_config.get(SYNC_CONFIG_CONSULTATION_FETCHES_KEY)
+            before = dict(stored) if isinstance(stored, dict) else {}
+            kept: dict[str, str] = {}
+            for ref, stamp in {**before, **attempts}.items():
+                when = _utc_stamp(stamp)
+                if isinstance(ref, str) and when is not None and when >= keep_after:
+                    kept[ref] = stamp
+            if kept == before:
+                return False
+            if kept:
+                sync_config[SYNC_CONFIG_CONSULTATION_FETCHES_KEY] = kept
+            else:
+                sync_config.pop(SYNC_CONFIG_CONSULTATION_FETCHES_KEY, None)
+            return True
+
+        await self._change_sync_config(OParlSource.id == source_id, change)
 
     # ========== Person Operations ==========
 
@@ -2450,6 +2830,17 @@ class DatabaseStorage:
                     item_id, item.raw_json or {}, prior, meeting_id=meeting_id, public=item.public is not False
                 )
                 await self._emit(session, body_id, drafts, item.oparl_modified)
+            # Rückverweis: Nennt der Punkt eine Beratung ohne Tagesordnungspunkt, bekommt sie diesen (Issue #1523)
+            consultation_ref = agenda_item_consultation_reference(item.raw_json)
+            if consultation_ref is not None:
+                await self._link_consultation_to_agenda_item(
+                    session,
+                    consultation_ref,
+                    agenda_item_external_id=item.external_id,
+                    agenda_item_id=item_id,
+                    meeting_id=meeting_id,
+                    body_id=body_id,
+                )
             await session.commit()
             return item_id
 
@@ -2461,12 +2852,17 @@ class DatabaseStorage:
         body_id: UUID,
         paper_id: UUID | None = None,
         meeting_id: UUID | None = None,
+        agenda_item_id: UUID | None = None,
+        agenda_item_public: bool = True,
     ) -> UUID:
         """
         Insert or update a file.
 
         Eine vorhandene Datei schreibt nur ihre eigene Quelle (``_owned_by_source_of``), sonst ``ForeignObjectError``.
-        ``paper_id`` und ``meeting_id`` kommen aus Verweisen, die nur in der eigenen Quelle auflösen.
+        ``paper_id``, ``meeting_id`` und ``agenda_item_id`` kommen aus Verweisen, die nur in der eigenen Quelle
+        auflösen; ohne Angabe bleibt ein vorhandener Bezug stehen. Hängt die Datei an einem nichtöffentlichen Punkt
+        (``agenda_item_public``), geht ihr Ereignis nur an Empfänger der Sichtbarkeit ``nichtoeffentlich``: Es nennt
+        die Kennung des Punkts.
         """
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
@@ -2478,6 +2874,7 @@ class DatabaseStorage:
                 body_id=body_id,
                 paper_id=paper_id,
                 meeting_id=meeting_id,
+                agenda_item_id=agenda_item_id,
                 name=file.name,
                 file_name=file.file_name,
                 mime_type=file.mime_type,
@@ -2517,6 +2914,8 @@ class DatabaseStorage:
             # Only update meeting_id if provided
             if meeting_id is not None:
                 update_set["meeting_id"] = meeting_id
+            if agenda_item_id is not None:
+                update_set["agenda_item_id"] = agenda_item_id
 
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
@@ -2528,11 +2927,152 @@ class DatabaseStorage:
             file_id = (await self._upserted(session, stmt, "file", file.external_id))[0]
             if emit:
                 drafts = ris_events.file_events(
-                    file_id, file.raw_json or {}, prior, paper_id=paper_id, meeting_id=meeting_id, ids=self.id_bases
+                    file_id,
+                    file.raw_json or {},
+                    prior,
+                    paper_id=paper_id,
+                    meeting_id=meeting_id,
+                    ids=self.id_bases,
+                    agenda_item_id=agenda_item_id,
                 )
+                if any(draft.payload.get("agenda_item") for draft in drafts) and not (
+                    agenda_item_public
+                    and await self._agenda_item_public(session, body_id, agenda_item_id, file.raw_json or {})
+                ):
+                    drafts = [replace(draft, visibility=ris_events.NICHTOEFFENTLICH) for draft in drafts]
                 await self._emit(session, body_id, drafts, file.oparl_modified)
             await session.commit()
             return file_id
+
+    async def _agenda_item_public(
+        self, session: AsyncSession, body_id: UUID, item_id: UUID | None, raw: Mapping[str, Any]
+    ) -> bool:
+        """
+        Ist der Tagesordnungspunkt, den ein Datei-Ereignis nennt, öffentlich? Gelesen in der Transaktion, die das
+        Ereignis veröffentlicht, und bis zum Commit geteilt gesperrt (``FOR SHARE``): Stellt der Abgleich der Punkte
+        ihn gleichzeitig nichtöffentlich, wartet einer auf den anderen, und das Ereignis trägt die Sichtbarkeit zum
+        Zeitpunkt der Veröffentlichung. Der Punkt kommt aus ``item_id`` oder, bei eingebetteten Dateien, aus dem
+        Rückverweis ``agendaItem`` derselben Quelle. Ist er nicht zu finden, gilt er als nichtöffentlich: Das
+        Ereignis nennt seine Kennung.
+        """
+        query = select(OParlAgendaItem.public)
+        if item_id is not None:
+            query = query.where(OParlAgendaItem.id == item_id)
+        else:
+            ref = raw.get("agendaItem")
+            if isinstance(ref, list | tuple):
+                ref = ref[0] if ref else None
+            if isinstance(ref, Mapping):
+                ref = ref.get("id")
+            if not isinstance(ref, str) or not ref:
+                return False
+            query = query.where(OParlAgendaItem.external_id == ref, _owned_by_source_of(OParlAgendaItem, body_id))
+        row = (await session.execute(query.with_for_update(read=True))).first()
+        return row is not None and row[0] is not False
+
+    async def get_agenda_item_ref(self, external_id: str, body_id: UUID) -> tuple[UUID, UUID, bool] | None:
+        """
+        Zeile, Sitzung und ``public`` eines Tagesordnungspunkts derselben Quelle wie die Kommune ``body_id``;
+        ``None``, wenn es ihn dort nicht gibt (ein Punkt einer anderen Quelle zählt als abgewiesener Verweis).
+        """
+        async with self.get_session() as session:
+            found = await session.execute(
+                select(OParlAgendaItem.id, OParlAgendaItem.meeting_id, OParlAgendaItem.public).where(
+                    OParlAgendaItem.external_id == external_id, _owned_by_source_of(OParlAgendaItem, body_id)
+                )
+            )
+            row = found.first()
+            if row is None:
+                await self._note_foreign_reference(session, OParlAgendaItem, "agendaitem", external_id)
+                return None
+            return row[0], row[1], row[2] is not False
+
+    async def upsert_agenda_item_files(self, item: ProcessedAgendaItem, body_id: UUID) -> int:
+        """
+        Dateien direkt am Tagesordnungspunkt (``auxiliaryFile``, ``resolutionFile``) mit Bezug zum Punkt und zu seiner
+        Sitzung schreiben, nachdem der Punkt gespeichert ist. Anträge hängen so etwa als Datei am Punkt, ohne
+        Beratung und Vorlage; bisher übernahm der Ingestor sie nicht. Wie Sitzungsdokumente haben sie keinen Vorgang.
+
+        Der Punkt muss im Bestand derselben Quelle stehen; eine Datei einer anderen Quelle bleibt aus (gezählt), die
+        übrigen laufen weiter, auch nach einem anderen Fehler beim Schreiben einer Datei (im Log genannt): Der Punkt
+        ist dann schon geschrieben, und eine fehlende Datei holt die nächste Änderung des Punkts oder der Vollabgleich
+        nach. Nennt der Punkt eine Datei nur als Verweis, bekommt eine schon gespeicherte Datei den Bezug
+        (``_link_agenda_item_files``); die Reihenfolge von Datei- und Punkteliste spielt so keine Rolle. Liefert die
+        Zahl der geschriebenen Dateien.
+        """
+        files = [nested for nested in item.nested_entities if isinstance(nested, ProcessedFile)]
+        embedded = {file.external_id for file in files}
+        referenced = [ref for ref in item.references.get("files", []) if ref and ref not in embedded]
+        if (not files and not referenced) or not item.external_id:
+            return 0
+        ref = await self.get_agenda_item_ref(item.external_id, body_id)
+        if ref is None:
+            return 0
+        item_id, meeting_id, public = ref
+        stored = 0
+        for file in files:
+            try:
+                await self.upsert_file(
+                    file, body_id, meeting_id=meeting_id, agenda_item_id=item_id, agenda_item_public=public
+                )
+            except ForeignObjectError:
+                continue
+            except Exception as e:  # noqa: BLE001 - die übrigen Dateien des Punkts trotzdem schreiben
+                console.print(
+                    f"[yellow]  Datei {file.external_id} am Punkt {item.external_id} nicht gespeichert: {e}[/yellow]"
+                )
+                continue
+            stored += 1
+        if referenced:
+            await self._link_agenda_item_files(referenced, item_id, meeting_id, body_id, public=public)
+        return stored
+
+    async def _link_agenda_item_files(
+        self, external_ids: list[str], item_id: UUID, meeting_id: UUID, body_id: UUID, *, public: bool = True
+    ) -> None:
+        """
+        Gespeicherten Dateien, die ein Punkt nur als Verweis nennt, den Bezug zum Punkt (und, wenn leer, zur Sitzung)
+        geben; ein vorhandener Bezug zu einem Punkt bleibt. Nur Dateien derselben Quelle; mit ``ris.file.changed``
+        (``added``, neue Zugehörigkeit, Sitzung aus der Zeile), in einer Transaktion. Ein nichtöffentlicher Punkt
+        meldet nur an Empfänger der Sichtbarkeit ``nichtoeffentlich``.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                update(OParlFile)
+                .where(
+                    OParlFile.external_id.in_(external_ids),
+                    OParlFile.agenda_item_id.is_(None),
+                    _owned_by_source_of(OParlFile, body_id),
+                )
+                .values(
+                    agenda_item_id=item_id,
+                    meeting_id=func.coalesce(OParlFile.meeting_id, meeting_id),
+                    updated_at=func.now(),
+                )
+                .returning(
+                    OParlFile.id, OParlFile.raw_json, OParlFile.paper_id, OParlFile.meeting_id, OParlFile.deleted
+                )
+            )
+            linked = result.fetchall()
+            if linked and await self._events_for(session, body_id):
+                drafts: list[ris_events.Draft] = []
+                for file_id, raw, paper_id, file_meeting_id, deleted in linked:
+                    if deleted:
+                        continue
+                    prior = ris_events.Prior(raw_json=raw or {}, paper_id=paper_id, meeting_id=file_meeting_id)
+                    drafts += ris_events.file_events(
+                        file_id,
+                        raw or {},
+                        prior,
+                        paper_id=paper_id,
+                        meeting_id=file_meeting_id,
+                        ids=self.id_bases,
+                        agenda_item_id=item_id,
+                    )
+                if drafts and not (public and await self._agenda_item_public(session, body_id, item_id, {})):
+                    drafts = [replace(draft, visibility=ris_events.NICHTOEFFENTLICH) for draft in drafts]
+                await self._emit(session, body_id, drafts, None)
+            await session.commit()
 
     # ========== Location Operations ==========
 
@@ -2649,7 +3189,8 @@ class DatabaseStorage:
             # Für das Ereignis die Zeile des Punkts im Bestand, nicht die Kennung aus seiner Adresse (umgeschriebene
             # Punkte, Issue #863); im selben Befehl, ohne eigene Abfrage, nur ein Punkt der eigenen Quelle
             agenda_ref = consultation.agenda_item_external_id if emit else None
-            returning: list[Any] = [OParlConsultation.id]
+            # Zweite Spalte: Tagesordnungspunkt der Zeile nach dem Upsert (auch einer früher gesetzte)
+            returning: list[Any] = [OParlConsultation.id, OParlConsultation.agenda_item_external_id]
             if agenda_ref:
                 returning.append(
                     select(OParlAgendaItem.id)
@@ -2665,11 +3206,31 @@ class DatabaseStorage:
             row = await self._upserted(session, stmt, "consultation", consultation.external_id)
             consultation_id = row[0]
             await self._note_foreign_consultation_references(session, consultation, body_id)
+            # Rückverweis: Nennt die Beratung keinen Tagesordnungspunkt, aber ein Punkt ihrer Sitzung sie, gilt er
+            # (SD.NET RIM setzt ``agendaItem`` nachträglich, ohne ``modified`` zu ändern; Issue #1523)
+            linked: tuple[UUID, str] | None = None
+            if row[1] is None and consultation.meeting_external_id:
+                linked = await self._agenda_item_naming(
+                    session, consultation.external_id, consultation.meeting_external_id, body_id
+                )
+                if linked is not None:
+                    await session.execute(
+                        update(OParlConsultation)
+                        .where(
+                            OParlConsultation.id == consultation_id,
+                            OParlConsultation.agenda_item_external_id.is_(None),
+                        )
+                        .values(agenda_item_external_id=linked[1])
+                    )
             if emit:
-                agenda_item_id = row[1] if agenda_ref else None
+                raw_for_event: Mapping[str, Any] = consultation.raw_json or {}
+                agenda_item_id = row[2] if agenda_ref else None
+                if linked is not None:
+                    raw_for_event = {**raw_for_event, "agendaItem": linked[1]}
+                    agenda_item_id = linked[0]
                 drafts = ris_events.consultation_events(
                     consultation_id,
-                    consultation.raw_json or {},
+                    raw_for_event,
                     prior,
                     paper_id=paper_id,
                     paper_external_id=consultation.paper_external_id,
@@ -2679,6 +3240,147 @@ class DatabaseStorage:
                 await self._emit(session, body_id, drafts, consultation.oparl_modified)
             await session.commit()
             return consultation_id
+
+    @staticmethod
+    async def _agenda_item_naming(
+        session: AsyncSession, consultation_external_id: str, meeting_external_id: str, body_id: UUID
+    ) -> tuple[UUID, str] | None:
+        """
+        Tagesordnungspunkt der Sitzung ``meeting_external_id`` (dieselbe Quelle wie ``body_id``), der die Beratung
+        nennt (``AgendaItem.consultation``): Zeile und Kennung, sonst ``None``. Gesucht wird nur unter den Punkten
+        dieser einen Sitzung (Index auf Sitzung und Punkt, ``raw_json`` hat keinen).
+        """
+        found = await session.execute(
+            select(OParlAgendaItem.id, OParlAgendaItem.external_id)
+            .join(OParlMeeting, OParlMeeting.id == OParlAgendaItem.meeting_id)
+            .where(
+                OParlMeeting.external_id == meeting_external_id,
+                _bodies_of_source_of(OParlMeeting.body_id, body_id),
+                _agenda_item_consultation_column() == consultation_external_id,
+                OParlAgendaItem.deleted.isnot(True),
+            )
+            .order_by(OParlAgendaItem.external_id)
+            .limit(1)
+        )
+        row = found.first()
+        return (row[0], row[1]) if row is not None else None
+
+    async def _link_consultation_to_agenda_item(
+        self,
+        session: AsyncSession,
+        consultation_external_id: str,
+        *,
+        agenda_item_external_id: str,
+        agenda_item_id: UUID,
+        meeting_id: UUID,
+        body_id: UUID | None,
+    ) -> UUID | None:
+        """
+        Rückverweis vom Tagesordnungspunkt auf seine Beratung nachtragen (Issue #1523), in der Transaktion des Aufrufers
+        und ohne eigenen Commit.
+
+        Nur eine nicht gelöschte Beratung derselben Quelle wie ``body_id``, die noch keinen Tagesordnungspunkt hat;
+        ein vorhandener Bezug bleibt (auch einer, den die Quelle selbst nennt). Die Sitzung kommt dazu, wenn die
+        Beratung keine nennt. ``raw_json`` bleibt, wie die Quelle es liefert: Ein späterer Abgleich der Beratung
+        meldet so keine Scheinänderung. Das Ereignis (``ris.consultation.changed`` mit ``agenda_item``) entsteht wie
+        beim Upsert aus dem Stand vorher und dem Stand mit dem Punkt. Rückgabe: Zeile der Beratung, ``None`` ohne
+        Änderung.
+        """
+        meeting_ref = select(OParlMeeting.external_id).where(OParlMeeting.id == meeting_id).scalar_subquery()
+        # Der Punkt muss noch stehen (nicht gelöscht, auch nicht zurückgenommen) und die Beratung nennen: Das
+        # Nachziehen liest seine Vorschläge vor den Schreibtransaktionen
+        naming_item = (
+            select(OParlAgendaItem.id)
+            .where(
+                OParlAgendaItem.id == agenda_item_id,
+                OParlAgendaItem.external_id == agenda_item_external_id,
+                OParlAgendaItem.meeting_id == meeting_id,
+                OParlAgendaItem.deleted.isnot(True),
+                _agenda_item_consultation_column() == consultation_external_id,
+            )
+            .exists()
+        )
+        found = await session.execute(
+            update(OParlConsultation)
+            .where(
+                OParlConsultation.external_id == consultation_external_id,
+                OParlConsultation.agenda_item_external_id.is_(None),
+                OParlConsultation.deleted.isnot(True),
+                _owned_by_source_of(OParlConsultation, body_id),
+                naming_item,
+            )
+            .values(
+                agenda_item_external_id=agenda_item_external_id,
+                meeting_external_id=func.coalesce(OParlConsultation.meeting_external_id, meeting_ref),
+                updated_at=func.now(),
+            )
+            .returning(
+                OParlConsultation.id,
+                OParlConsultation.body_id,
+                OParlConsultation.raw_json,
+                OParlConsultation.paper_id,
+                OParlConsultation.paper_external_id,
+                OParlConsultation.meeting_external_id,
+                OParlConsultation.deletion_reason,
+            )
+        )
+        row = found.first()
+        if row is None:
+            return None
+        consultation_id, consultation_body_id, raw, paper_id, paper_external_id, meeting_external_id, reason = row
+        if await self._events_for(session, consultation_body_id):
+            stored: Mapping[str, Any] = raw if isinstance(raw, Mapping) else {}
+            prior = ris_events.Prior(raw_json=stored, deleted=False, deletion_reason=reason)
+            linked_raw = {**stored, "agendaItem": agenda_item_external_id}
+            if not linked_raw.get("meeting") and meeting_external_id:
+                linked_raw["meeting"] = meeting_external_id
+            drafts = ris_events.consultation_events(
+                consultation_id,
+                linked_raw,
+                prior,
+                paper_id=paper_id,
+                paper_external_id=paper_external_id,
+                ids=self.id_bases,
+                agenda_item_id=agenda_item_id,
+            )
+            await self._emit(session, consultation_body_id, drafts)
+        return consultation_id
+
+    async def pending_consultation_links(self, source_id: UUID | None = None) -> list[PendingConsultationLink]:
+        """
+        Beratungen ohne Tagesordnungspunkt, die ein Punkt derselben Quelle nennt (Bestand vor Issue #1523), für
+        ``link_pending_consultations``. Eine Abfrage; ``source_id`` beschränkt auf eine Quelle.
+        """
+        async with self.get_session() as session:
+            rows = await session.execute(_PENDING_CONSULTATION_LINKS, {"source": source_id})
+            return [PendingConsultationLink(*row) for row in rows]
+
+    async def link_pending_consultations(self, source_id: UUID | None = None, *, apply: bool = False) -> dict[str, int]:
+        """
+        Rückverweise TOP → Beratung im Bestand nachziehen (Issue #1523). Ohne ``apply`` nur zählen. Je Beratung eine
+        Transaktion mit Ereignis wie im Abgleich (``_link_consultation_to_agenda_item``); idempotent, weil nur
+        Beratungen ohne Tagesordnungspunkt geschrieben werden. Rückgabe: Anzahl je Quelle (Name, sonst Kennung),
+        mit ``apply`` die tatsächlich geschriebenen.
+        """
+        counts: Counter[str] = Counter()
+        for link in await self.pending_consultation_links(source_id):
+            label = link.source_name or str(link.source_id)
+            if not apply:
+                counts[label] += 1
+                continue
+            async with self.get_session() as session:
+                written = await self._link_consultation_to_agenda_item(
+                    session,
+                    link.consultation_external_id,
+                    agenda_item_external_id=link.agenda_item_external_id,
+                    agenda_item_id=link.agenda_item_id,
+                    meeting_id=link.meeting_id,
+                    body_id=link.body_id,
+                )
+                await session.commit()
+            if written is not None:
+                counts[label] += 1
+        return dict(counts)
 
     @staticmethod
     async def _note_foreign_consultation_references(

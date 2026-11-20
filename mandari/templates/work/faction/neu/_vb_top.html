@@ -102,6 +102,7 @@ der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Wo
             {% endif %}
             {% if item.standard_item_id %}<dt>Herkunft</dt><dd>Standard-Tagesordnung der Fraktion</dd>{% endif %}
             {% if item.proposed_by_id %}<dt>Vorgeschlagen</dt><dd>von {{ item.proposed_by.user.get_display_name }}{% if item.proposed_at %} am {{ item.proposed_at|date:"d.m.Y" }}{% endif %}</dd>{% endif %}
+            {% if z.aufgenommen_von %}<dt>Aufgenommen</dt><dd>von {{ z.aufgenommen_von }}{% if item.reviewed_at %} am {{ item.reviewed_at|date:"d.m.Y, H:i" }} Uhr{% endif %}</dd>{% endif %}
         </dl>
         {% if can_edit %}
         <div class="fs-detail-aktionen">

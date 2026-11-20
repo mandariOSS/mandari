@@ -1,0 +1,122 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Neue Terminumfrage (Issue #1489), zweispaltig wie die Seiten der internen Sitzungen (fs-seite, fs-r-zwei): links
+Titel, die Vorschläge und worum es geht, rechts in der Nebenspalte, wen die Umfrage fragt, bis wann und der Knopf.
+Die Vorschläge sind Zeilen aus Tag, Beginn und Ende; daneben ein Monatsblatt, in dem ein Klick auf einen Tag einen
+Vorschlag mit der Uhrzeit des vorigen anlegt (frontend/alpine/termin-umfrage.ts). Ohne JavaScript bleiben die Zeilen
+nutzbar, Monatsblatt und Entfernen sind dann ausgeblendet. Aufbau in static/css/termine.css (Präfix tu-).
+Kontext: UmfrageNeuView (apps/work/termine/umfrage_views.py): form (UmfrageForm mit zeilen, gewaehlt und arten).
+{% endcomment %}
+
+{% block page_title %}Neue Terminumfrage{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Neue Terminumfrage" dicht data-testid="umfrage-kopf"
+    text="Sie schlagen Zeitpunkte vor, die Gefragten antworten mit Ja, wenn nötig oder Nein und sehen dabei, was an dem Tag schon ansteht. Am Ende legen Sie einen Vorschlag fest.">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings_calendar' org_slug=organization.slug %}">Kalender</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<form method="post" class="fs-seite wf" data-testid="umfrage-formular">
+    {% csrf_token %}
+    <div class="fs-r-zwei">
+        <section class="fs-spalte tu-neu" aria-label="Umfrage">
+            {% if form.errors %}
+            <div role="alert" class="tu-fehler">
+                {% for field in form %}{% for error in field.errors %}<p>{{ field.label }}: {{ error }}</p>{% endfor %}{% endfor %}
+                {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+            </div>
+            {% endif %}
+
+            <c-form.field :field="form.title" id="umfrage-titel" label="Titel" maxlength="200" placeholder="Worum geht es? Etwa „Klausur im Frühjahr“" dicht required />
+
+            <fieldset x-data="terminVorschlaege" class="tu-planen" data-testid="umfrage-vorschlaege">
+                <legend class="tu-legende">Vorschläge</legend>
+                <p class="fs-meta">Je Zeile ein Zeitpunkt: Tag, Beginn und auf Wunsch das Ende. Leere Zeilen zählen nicht.<span x-cloak> Oder Tage im Monatsblatt anklicken; die Uhrzeit kommt vom letzten Vorschlag.</span></p>
+                <div class="tu-planen-raster">
+                    <div>
+                        <table class="tu-zeilen">
+                            <thead>
+                                <tr><th scope="col">Tag</th><th scope="col">Beginn</th><th scope="col">Ende</th><th scope="col"><span class="sr-only">Entfernen</span></th></tr>
+                            </thead>
+                            <tbody x-ref="liste">
+                                {% for zeile in form.zeilen %}
+                                <tr>
+                                    <td><input type="date" name="vorschlag_tag" value="{{ zeile.tag }}" aria-label="Tag, Vorschlag {{ forloop.counter }}" class="wf-eingabe"></td>
+                                    <td><input type="time" name="vorschlag_beginn" value="{{ zeile.beginn }}" aria-label="Beginn, Vorschlag {{ forloop.counter }}" class="wf-eingabe"></td>
+                                    <td><input type="time" name="vorschlag_ende" value="{{ zeile.ende }}" aria-label="Ende, Vorschlag {{ forloop.counter }}" class="wf-eingabe"></td>
+                                    <td><button type="button" class="wf-knopf wf-leise wf-ik wf-klein" @click="entfernen($event)" aria-label="Vorschlag {{ forloop.counter }} entfernen" x-cloak><i data-lucide="x" aria-hidden="true"></i></button></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <template x-ref="vorlage">
+                            <tr>
+                                <td><input type="date" name="vorschlag_tag" aria-label="Tag, weiterer Vorschlag" class="wf-eingabe"></td>
+                                <td><input type="time" name="vorschlag_beginn" aria-label="Beginn, weiterer Vorschlag" class="wf-eingabe"></td>
+                                <td><input type="time" name="vorschlag_ende" aria-label="Ende, weiterer Vorschlag" class="wf-eingabe"></td>
+                                <td><button type="button" class="wf-knopf wf-leise wf-ik wf-klein" @click="entfernen($event)" aria-label="Vorschlag entfernen"><i data-lucide="x" aria-hidden="true"></i></button></td>
+                            </tr>
+                        </template>
+                        <button type="button" class="wf-textlink tu-weitere" @click="weitere" data-testid="umfrage-weitere"><i data-lucide="plus" aria-hidden="true"></i>Weiterer Vorschlag</button>
+                    </div>
+                    <div class="tu-monatsblatt" x-cloak data-testid="umfrage-monatsblatt">
+                        <div class="tu-monatskopf">
+                            <button type="button" class="wf-knopf wf-leise wf-ik wf-klein" @click="blaettern(-1)" aria-label="Voriger Monat"><i data-lucide="chevron-left" aria-hidden="true"></i></button>
+                            <span x-text="monatName" aria-live="polite"></span>
+                            <button type="button" class="wf-knopf wf-leise wf-ik wf-klein" @click="blaettern(1)" aria-label="Nächster Monat"><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+                        </div>
+                        <div class="tu-wochentage" aria-hidden="true"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>
+                        <div class="tu-tage">
+                            <template x-for="tag in tage" :key="tag.schluessel">
+                                <button type="button" class="tu-tagknopf" :class="{ gewaehlt: tag.gewaehlt, heute: tag.heute }"
+                                        :disabled="!tag.datum || tag.vergangen" :aria-pressed="tag.gewaehlt ? 'true' : 'false'"
+                                        :aria-label="tag.beschriftung" :hidden="!tag.datum" @click="waehlen(tag.datum)" x-text="tag.nr"></button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+
+            <div class="tu-zwei">
+                <c-form.field :field="form.location" id="umfrage-ort" label="Ort" maxlength="500" dicht />
+                <c-form.field name="antwort_bis" id="umfrage-bis" type="date" label="Antwort bis" value="{{ form.antwort_bis.value|default_if_none:'' }}" help="Steht in der Benachrichtigung; am Tag davor erinnert Work alle ohne Antwort." dicht />
+            </div>
+            <c-form.textarea :field="form.description" id="umfrage-beschreibung" label="Beschreibung" rows="4" maxlength="5000" dicht />
+        </section>
+
+        <c-work.neben label="Wen fragen Sie?">
+            <section aria-labelledby="umfrage-wen-h" data-testid="umfrage-wen">
+                <h2 id="umfrage-wen-h">Wen fragen Sie?</h2>
+                <p class="fs-meta">Die Gefragten bekommen eine Benachrichtigung. Sie selbst stimmen immer mit ab.</p>
+                <div class="tu-wen">
+                    <c-form.radio name="wen" value="alle" label="Alle Mitglieder" checked="{% if form.gewaehlt.wen == 'alle' %}1{% endif %}" />
+                    {% if form.arten %}
+                    <c-form.radio name="wen" value="art" label="Teilnehmende einer Sitzungsart" hinweis="Etwa ein Arbeitskreis; die Art wählen Sie darunter." checked="{% if form.gewaehlt.wen == 'art' %}1{% endif %}" />
+                    <c-form.select name="meeting_type" id="umfrage-art" label="Sitzungsart" dicht class="ml-6">
+                        <option value="">Bitte wählen</option>
+                        {% for art in form.arten %}
+                        <option value="{{ art.id }}" {% if form.gewaehlt.meeting_type == art.id|stringformat:'s' %}selected{% endif %}>{{ art.name }}</option>
+                        {% endfor %}
+                    </c-form.select>
+                    {% endif %}
+                    <c-form.radio name="wen" value="auswahl" label="Ausgewählte Mitglieder" checked="{% if form.gewaehlt.wen == 'auswahl' %}1{% endif %}" />
+                    <ul class="tu-mitglieder">
+                        {% for mitglied in form.gefragte.field.queryset %}
+                        <li><c-form.checkbox name="gefragte" id="umfrage-gefragt-{{ mitglied.id }}" value="{{ mitglied.id }}" label="{{ mitglied.user.get_display_name }}" checked="{% if mitglied.id|stringformat:'s' in form.gewaehlt.gefragte %}1{% endif %}" dicht /></li>
+                        {% empty %}
+                        <li class="fs-meta">Es gibt noch keine weiteren Mitglieder.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </section>
+            <section class="tu-absenden">
+                <button type="submit" class="wf-knopf wf-haupt">Umfrage starten</button>
+                <a class="wf-textlink" href="{% url 'work:meetings_calendar' org_slug=organization.slug %}">Abbrechen</a>
+            </section>
+        </c-work.neben>
+    </div>
+</form>
+{% endblock %}

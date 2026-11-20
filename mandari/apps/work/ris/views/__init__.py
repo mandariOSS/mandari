@@ -11,6 +11,10 @@ unverändert funktionieren.
 from ._mixins import (
     RISBodiesMixin,
 )
+from .anfragen import (
+    RISAnfrageDokumentView,
+    RISAnfrageView,
+)
 from .decisions import (
     RISDecisionDetailView,
     RISDecisionsView,
@@ -49,6 +53,8 @@ from .search import (
 )
 
 __all__ = [
+    "RISAnfrageDokumentView",
+    "RISAnfrageView",
     "RISBodiesMixin",
     "RISDecisionDetailView",
     "RISDecisionsView",

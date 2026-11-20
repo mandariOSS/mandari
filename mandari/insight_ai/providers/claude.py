@@ -140,14 +140,19 @@ class ClaudeZusammenfassung(AbstractAIProvider):
         return kosten.budget_rest(self.endpunkt)
 
     def parameter(
-        self, messages: list[ChatMessage], max_tokens: int, schema: dict[str, Any] | None = None
+        self,
+        messages: list[ChatMessage],
+        max_tokens: int,
+        schema: dict[str, Any] | None = None,
+        effort: str | None = None,
     ) -> dict[str, Any]:
         """
         Anfrage an die Messages API: Systemnachrichten als ``system``, sonst die Nachrichten in Reihenfolge. Mit
-        ``schema`` antwortet Claude als JSON nach diesem Schema (Structured Outputs, auch im Batch).
+        ``schema`` antwortet Claude als JSON nach diesem Schema (Structured Outputs, auch im Batch). ``effort``:
+        Denktiefe, Standard ``EFFORT`` (der Finanzcheck liest Tabellen aus und nimmt ``medium``, Issue #1513).
         """
         system = "\n\n".join(msg.content for msg in messages if msg.role == "system" and msg.content)
-        ausgabe: dict[str, Any] = {"effort": EFFORT}
+        ausgabe: dict[str, Any] = {"effort": effort or EFFORT}
         if schema is not None:
             ausgabe["format"] = {"type": "json_schema", "schema": schema}
         params: dict[str, Any] = {
@@ -172,6 +177,7 @@ class ClaudeZusammenfassung(AbstractAIProvider):
         max_tokens: int = 1500,
         temperature: float = 0.3,
         schema: dict[str, Any] | None = None,
+        effort: str | None = None,
     ) -> ChatResponse:
         """
         Einzelaufruf (Klick auf „Zusammenfassen“). ``temperature`` wird nicht gesendet (vom Modell nicht angenommen);
@@ -179,7 +185,7 @@ class ClaudeZusammenfassung(AbstractAIProvider):
         """
         if self.budget_rest() <= 0:
             raise BudgetErschoepftError("Monatsbudget der Zusammenfassungen ausgeschöpft")
-        params = self.parameter(messages, max_tokens, schema)
+        params = self.parameter(messages, max_tokens, schema, effort)
         try:
             antwort = self.client.messages.create(**params)
         except Exception as fehler:

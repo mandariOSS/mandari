@@ -67,3 +67,23 @@ def test_gremium_im_bestand_gilt_als_veroeffentlicht(body: OParlBody) -> None:
     # Im Bestand, aber ohne Namen: kein gesperrtes Gremium
     namenlos = OParlOrganization.objects.create(external_id=f"{RIS}/organization/2", body=body, name="")
     assert sitzung(body, 7, "Sitzung", [namenlos.external_id]).get_display_name() == "Sitzung"
+
+
+def test_name_aus_dem_kalender_der_kommune(body: OParlBody) -> None:
+    """Der Abruf liest den Namen eines gesperrten Gremiums aus dem öffentlichen Sitzungskalender (Münster)."""
+    gesperrt = sitzung(body, 8, "Sitzung", [f"{RIS}/organization/152"])
+    gesperrt.raw_json["mandari:gremiumWeb"] = {
+        "name": "Interfraktionelle Arbeitsgruppe Internationales",
+        "seite": f"{RIS}/si0040.php?__cjahr=2026&__cmonat=12",
+        "abgerufen": "2026-11-19T17:00:00+00:00",
+    }
+    gesperrt.save(update_fields=["raw_json"])
+    assert gesperrt.get_display_name() == "Interfraktionelle Arbeitsgruppe Internationales"
+    # Unlesbare Angabe: wieder der Platzhalter
+    gesperrt.raw_json["mandari:gremiumWeb"] = "kaputt"
+    assert gesperrt.get_display_name() == GREMIUM_NICHT_VEROEFFENTLICHT
+    # Ein Gremium im Bestand geht weiter vor
+    rat = OParlOrganization.objects.create(external_id=f"{RIS}/organization/3", body=body, name="Rat")
+    zugeordnet = sitzung(body, 9, "Sitzung", [rat.external_id])
+    zugeordnet.raw_json["mandari:gremiumWeb"] = {"name": "Falscher Name"}
+    assert zugeordnet.get_display_name() == "Rat"

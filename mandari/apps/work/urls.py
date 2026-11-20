@@ -17,6 +17,8 @@ from apps.work.organization import views as organization_views
 from apps.work.ris import views as ris_views
 from apps.work.support import views as support_views
 from apps.work.tasks import views as tasks_views
+from apps.work.termine import umfrage_views
+from apps.work.termine import views as termine_views
 
 app_name = "work"
 
@@ -29,8 +31,11 @@ def _work_root_redirect(request):
     from django.shortcuts import redirect
 
     if request.user.is_authenticated:
+        from apps.tenants import demo
+
         membership = (
             request.user.memberships.filter(is_active=True, organization__is_active=True)
+            .exclude(demo.abgelaufen_q(prefix="organization__"))
             .select_related("organization")
             .first()
         )
@@ -46,6 +51,9 @@ def _work_root_redirect(request):
         )
         if expiring:
             return redirect("work:membership_expiry", org_slug=expiring.organization.slug)
+        # Nur noch eine abgelaufene Demo-Organisation (Issue #1406): Hinweis, die Seite meldet ab
+        if demo.abgelaufene_demo_fuer(request.user) is not None:
+            return redirect("accounts:demo_abgelaufen")
         return redirect("/insight/")
     return redirect("/accounts/login/?next=/work/")
 
@@ -83,6 +91,41 @@ urlpatterns = [
         "<slug:org_slug>/meetings/calendar/events/",
         meetings_views.MeetingCalendarEventsView.as_view(),
         name="meetings_calendar_events",
+    ),
+    # Eigene Termine der Organisation im Kalender (Issue #1489)
+    path("<slug:org_slug>/termine/neu/", termine_views.TerminNeuView.as_view(), name="termin_neu"),
+    path("<slug:org_slug>/termine/<uuid:termin_id>/", termine_views.TerminView.as_view(), name="termin"),
+    path(
+        "<slug:org_slug>/termine/<uuid:termin_id>/loeschen/",
+        termine_views.TerminLoeschenView.as_view(),
+        name="termin_loeschen",
+    ),
+    path(
+        "<slug:org_slug>/termine/<uuid:termin_id>/antwort/",
+        termine_views.TerminAntwortView.as_view(),
+        name="termin_antwort",
+    ),
+    # Terminumfrage: einen Termin gemeinsam finden (Issue #1489)
+    path("<slug:org_slug>/termine/umfragen/neu/", umfrage_views.UmfrageNeuView.as_view(), name="terminumfrage_neu"),
+    path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/",
+        umfrage_views.UmfrageView.as_view(),
+        name="terminumfrage",
+    ),
+    path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/vorschlag/",
+        umfrage_views.UmfrageVorschlagView.as_view(),
+        name="terminumfrage_vorschlag",
+    ),
+    path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/festlegen/",
+        umfrage_views.UmfrageFestlegenView.as_view(),
+        name="terminumfrage_festlegen",
+    ),
+    path(
+        "<slug:org_slug>/termine/umfragen/<uuid:umfrage_id>/loeschen/",
+        umfrage_views.UmfrageLoeschenView.as_view(),
+        name="terminumfrage_loeschen",
     ),
     # Ladungen der Verwaltung mit Rückmeldung (Issue #225)
     path(
@@ -658,6 +701,12 @@ urlpatterns = [
     path("<slug:org_slug>/ris/", ris_views.RISOverviewView.as_view(), name="ris_overview"),
     path("<slug:org_slug>/ris/search/", ris_views.RISSearchView.as_view(), name="ris_search"),
     path("<slug:org_slug>/ris/search/frage/", ris_views.RISFrageView.as_view(), name="ris_frage"),
+    path("<slug:org_slug>/ris/anfrage/", ris_views.RISAnfrageView.as_view(), name="ris_anfrage"),
+    path(
+        "<slug:org_slug>/ris/anfrage/dokument/",
+        ris_views.RISAnfrageDokumentView.as_view(),
+        name="ris_anfrage_dokument",
+    ),
     path("<slug:org_slug>/ris/papers/", ris_views.RISPapersView.as_view(), name="ris_papers"),
     path(
         "<slug:org_slug>/ris/papers/<uuid:paper_id>/",

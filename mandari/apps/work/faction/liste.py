@@ -137,7 +137,7 @@ def zeilen(meetings: Any, organization: Any, *, intern: bool) -> list[dict[str, 
 
 def naechste_satz(organization: Any, stats_satz: str, membership: Any) -> str:
     """
-    Satz im Kopfband: „Die nächste Fraktionssitzung ist am Mo 12.10. um 18:00. Work hat am Fr 09.10. eingeladen.“
+    Satz im Kopfband: „Die nächste interne Sitzung ist am Mo 12.10. um 18:00. Work hat am Fr 09.10. eingeladen.“
     Offene Protokolle hängen an. Ohne kommende Sitzung bleibt der Zahlensatz. Nur Sitzungen, die das Mitglied sieht.
     """
     from .models import FactionMeeting
@@ -152,7 +152,7 @@ def naechste_satz(organization: Any, stats_satz: str, membership: Any) -> str:
     )
     if naechste is None:
         return stats_satz
-    satz = f"Die nächste Fraktionssitzung ist am {_zeitpunkt(naechste.start)}."
+    satz = f"Die nächste interne Sitzung ist am {_zeitpunkt(naechste.start)}."
     einladung = get_invitation_settings(naechste)
     if naechste.invitation_sent:
         if naechste.invitation_sent_at:

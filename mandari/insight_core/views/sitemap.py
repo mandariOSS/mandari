@@ -11,6 +11,7 @@ from datetime import UTC
 from django.db.models import Q
 from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
 from django.urls import reverse
+from django.utils import timezone
 
 # GET und HEAD: Suchmaschinen und Prüfwerkzeuge fragen robots.txt und Sitemaps auch per HEAD an (Issue #914)
 from django.views.decorators.http import require_safe
@@ -219,10 +220,11 @@ def body_sitemap(request, body_slug):
         # Stadtseite der Kommune (/insight/k/<slug>/): Einstieg für „Ratsinformationen <Kommune>“
         # lastmod: jüngste glaubhafte Änderung ihrer Vorgänge und Sitzungen, nicht der letzte Abgleich (Issue #939)
         stadtseite = reverse("insight_core:insight:portal_entry", kwargs={"slug": body.slug})
-        urlset.add(stadtseite, sitemaps.aenderung_der_kommune(body.pk), "daily", "0.9")
+        # Höchste Priorität: Sie soll vor einzelnen Vorgängen für „Ratsinformationssystem <Kommune>“ erscheinen
+        urlset.add(stadtseite, sitemaps.aenderung_der_kommune(body.pk), "daily", "1.0")
         # Listen je Kommune (Issue #939), erste Seite: Über ihre Seitenlinks erreichen Suchmaschinen die Detailseiten
         for liste in KOMMUNEN_LISTEN.values():
-            urlset.add(reverse(f"insight_core:insight:{liste}", kwargs={"slug": body.slug}), None, "daily", "0.7")
+            urlset.add(reverse(f"insight_core:insight:{liste}", kwargs={"slug": body.slug}), None, "daily", "0.8")
     for org_id, lastmod in sitemaps.gremien(body.pk):
         urlset.add(f"/insight/gremien/{org_id}/", lastmod, "monthly", "0.5")
     # Nur Personen mit laufender Mitgliedschaft; die übrigen Personenseiten tragen noindex
@@ -252,9 +254,12 @@ def body_sitemap_seite(request, body_slug, art, seite):
 
     urlset = _Urlset()
     leer = True
-    for eintrag_id, lastmod in sitemaps.eintraege(sitemap_art, body.pk, nummer):
+    jetzt = timezone.now()
+    for eintrag_id, lastmod, datum in sitemaps.eintraege(sitemap_art, body.pk, nummer):
         leer = False
-        urlset.add(f"{sitemap_art.pfad}{eintrag_id}/", lastmod, sitemap_art.changefreq, sitemap_art.priority)
+        # Aktuelle Einträge vor älteren (Datum bzw. Termin, sitemaps.AKTUELL)
+        changefreq, priority = sitemap_art.angaben(datum, jetzt)
+        urlset.add(f"{sitemap_art.pfad}{eintrag_id}/", lastmod, changefreq, priority)
     if leer:
         # Hinter der letzten Datei gibt es keine weitere; der Index nennt nur Dateien mit Einträgen
         raise Http404("Keine Sitemap unter dieser Adresse")

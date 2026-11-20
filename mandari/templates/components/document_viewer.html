@@ -1,7 +1,7 @@
 {# Document Viewer Modal - öffnet Dokumente (PDFs) im iframe #}
 {# Links tragen href="" wie nach dem Start von Alpine (docViewerUrl leer): kein Link ohne Adresse im Markup #}
 {# Lade- und Fehlertexte stehen nur in data-text und kommen erst im Zustand per x-text ins Element: als Seitentext liest sie jede Seite als Fehlerseite (Soft-404, #914) #}
-<div x-show="docViewerUrl" x-cloak
+<div x-show="docViewerUrl" x-cloak data-ueberlagerung
      x-transition:enter="transition ease-out duration-200"
      x-transition:enter-start="opacity-0"
      x-transition:enter-end="opacity-100"

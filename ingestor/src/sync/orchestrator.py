@@ -11,8 +11,9 @@ Coordinates the complete OParl synchronization process with:
 """
 
 import asyncio
+import logging
 from collections import Counter
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -50,11 +51,13 @@ from src.client.oparl_client import (
     MODIFIED_SINCE_INCONCLUSIVE,
     MODIFIED_SINCE_SUPPORTED,
     MODIFIED_SINCE_UNSUPPORTED,
+    FetchResult,
     FetchWindowClosedError,
     ListFetchError,
     ListMissingError,
     OParlClient,
     SyncStats,
+    unique_page_ids,
 )
 from src.client.oparl_compat import (
     detect_oparl_version,
@@ -69,9 +72,12 @@ from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD
 from src.storage.database import (
+    SYNC_CONFIG_CONSULTATION_FETCHES_KEY,
     DatabaseStorage,
     ForeignObjectError,
     full_sync_progress_of,
+    full_sync_resume_of,
+    full_sync_slice_pages_of,
     missing_list_reasons_of,
     missing_lists_of,
     slice_filter_ignored_of,
@@ -82,10 +88,20 @@ from src.storage.database import (
 )
 from src.storage.events import start_correlation
 from src.storage.ris_events import content_fingerprint
+from src.sync import beratungen_nachladen
+from src.sync.fortsetzung import CHANGES, FULL, RESUME, ResumeEntry, ResumeRun
+from src.sync.gremien_kalender import SCHLUESSEL as GREMIUM_WEB
+from src.sync.gremien_kalender import KalenderLauf, OhneGremium
+from src.sync.gremien_kalender import ergaenzen as ergaenze_gremien
+from src.sync.html_ergaenzung import FIELDS as ERGAENZUNG_FIELDS
+from src.sync.html_ergaenzung import MARKER_KEY as ERGAENZUNG_MARKER
+from src.sync.html_ergaenzung import HtmlErgaenzung, HtmlErgaenzungConfig
 from src.sync.processor import OParlProcessor, session_location_id
 from src.sync.slices import (
     FILTER_IGNORED_RECHECK,
+    SLOW_LIST_STUCK_AFTER,
     BodySlices,
+    SlicePage,
     SliceRun,
     SliceWindow,
     SlowList,
@@ -368,6 +384,17 @@ UNSTORED_IDS_LOGGED = 5
 #: Ein nicht gespeichertes Objekt, dessen ``modified`` so weit vor dem Fenster der Liste liegt, liefert die Quelle
 #: ohne Filter. Der Abstand fängt falsch angegebene Zeitzonen ab (höchstens 14 Stunden).
 UNSTORED_BEFORE_WINDOW = timedelta(days=1)
+#: Ein nicht gespeichertes Objekt hält das Änderungsfenster höchstens so viele Läufe ...
+UNSTORED_HOLD_RUNS = 4
+#: ... und mindestens so lange; danach ist es zurückgestellt (``settle_unstored_holds``)
+UNSTORED_HOLD_MIN = timedelta(hours=12)
+#: Zurückgestellte Objekte bleiben so lange nach dem letzten Lauf vermerkt, der sie nicht speichern konnte
+UNSTORED_DEFERRED_KEEP = timedelta(days=30)
+#: Höchstens so viele haltende Objekte je Kommune und Lauf verfolgt der Ingestor einzeln; weitere halten das Fenster
+#: wie bisher, ohne Zurückstellung
+UNSTORED_TRACKED_MAX = 200
+#: Höchstens so viele Einträge je Kommune in ``sync_config["unstored_holds"]`` (die zuletzt gesehenen bleiben)
+UNSTORED_HOLDS_MAX = 500
 
 
 @dataclass
@@ -387,6 +414,12 @@ class BodyItemCheck:
     Bezirksregierung Köln). Sie kommen in jedem Lauf wieder; dauerhaft nicht speicherbare unter ihnen (Mitgliedschaft
     mit Person einer anderen Quelle) hielten das Fenster sonst für immer bei sieben Tagen.
 
+    Die übrigen haltenden Objekte stehen mit Kennung in ``holding``. Hält eines das Fenster seit mindestens
+    ``UNSTORED_HOLD_RUNS`` Läufen und ``UNSTORED_HOLD_MIN``, stellt der Lauf es zurück (``settle_unstored_holds``):
+    Es hält das Fenster nicht mehr, Log und Sync-Log nennen es. Mönchengladbach (ITK Rheinland) nennt in elf
+    Mitgliedschaften Personen, die die Quelle nicht veröffentlicht (Einzelabruf HTTP 404); sie hielten das Fenster
+    der Kommune seit dem 13.11.2026 fest.
+
     Dazu je Liste, wie genau ``modified`` der Änderungen der letzten sieben Tage ist (``TimedLists``).
     """
 
@@ -403,6 +436,13 @@ class BodyItemCheck:
     oldest_unstored: datetime | None = None
     #: Ein nicht gespeichertes Objekt hatte kein lesbares ``modified``
     unstored_without_stamp: bool = False
+    #: Haltende Objekte mit Kennung: Kennung -> (Typ, ``modified`` in UTC oder ``None``), höchstens
+    #: ``UNSTORED_TRACKED_MAX``; nur sie kann ein Lauf zurückstellen
+    holding: dict[str, tuple[str, datetime | None]] = field(default_factory=dict)
+    #: Ältestes ``modified`` der haltenden Objekte ohne Kennung oder über der Grenze (UTC)
+    oldest_untracked: datetime | None = None
+    #: Ein haltendes Objekt ohne Kennung oder über der Grenze hatte kein lesbares ``modified``
+    untracked_without_stamp: bool = False
     #: ``modified`` je Liste (Adresse): [nur Datum, mit Uhrzeit]
     stamps: dict[str, list[int]] = field(default_factory=dict)
 
@@ -422,20 +462,31 @@ class BodyItemCheck:
         """
         self.unstored[entity_type] += 1
         record = item if isinstance(item, dict) else {}
+        raw_id = record.get("id")
+        external_id = raw_id if isinstance(raw_id, str) and raw_id else None
         ids = self.unstored_ids.setdefault(entity_type, [])
         if len(ids) < UNSTORED_IDS_LOGGED:
-            external_id = record.get("id")
-            ids.append(external_id if isinstance(external_id, str) and external_id else "ohne Kennung")
+            ids.append(external_id or "ohne Kennung")
         stamp = _stamp(record.get("modified"))
+        if stamp is not None:
+            stamp = _as_utc(stamp)
+            if window is not None and stamp < _as_utc(window) - UNSTORED_BEFORE_WINDOW:
+                self.unstored_before_window += 1
+                return
+        # Das Objekt hält das Fenster
         if stamp is None:
             self.unstored_without_stamp = True
-            return
-        stamp = _as_utc(stamp)
-        if window is not None and stamp < _as_utc(window) - UNSTORED_BEFORE_WINDOW:
-            self.unstored_before_window += 1
-            return
-        if self.oldest_unstored is None or stamp < self.oldest_unstored:
+        elif self.oldest_unstored is None or stamp < self.oldest_unstored:
             self.oldest_unstored = stamp
+        if external_id is not None and (external_id in self.holding or len(self.holding) < UNSTORED_TRACKED_MAX):
+            earlier = self.holding.get(external_id)
+            if earlier is not None and (earlier[1] is None or (stamp is not None and earlier[1] <= stamp)):
+                return  # Dieselbe Kennung zweimal: Es gilt der Stand, der das Fenster weiter zurück hält
+            self.holding[external_id] = (entity_type, stamp)
+        elif stamp is None:
+            self.untracked_without_stamp = True
+        elif self.oldest_untracked is None or stamp < self.oldest_untracked:
+            self.oldest_untracked = stamp
 
     def day_stamped_lists(self) -> list[str]:
         """Listen mit mindestens einer gelesenen Änderung, deren ``modified`` nur das Datum trägt."""
@@ -445,16 +496,79 @@ class BodyItemCheck:
         """Listen, deren gelesene Änderungen alle eine Uhrzeit tragen."""
         return sorted(url for url, (day, timed) in self.stamps.items() if timed and not day)
 
-    def window_start(self, started: datetime) -> datetime | None:
+    def window_start(self, started: datetime, deferred: Iterable[str] = ()) -> datetime | None:
         """
         Neuer Anfang des Änderungsfensters nach einem Lauf, dessen Listen ganz gelesen wurden: Beginn des Laufs,
-        bei nicht gespeicherten Objekten höchstens ihr ältestes ``modified``; ``None`` = stehen lassen.
+        bei nicht gespeicherten Objekten höchstens ihr ältestes ``modified``; ``None`` = stehen lassen. Objekte in
+        ``deferred`` (Kennungen, zurückgestellt) halten das Fenster nicht.
         """
-        if self.unstored_without_stamp:
+        skipped = set(deferred)
+        if self.untracked_without_stamp:
             return None
-        if self.oldest_unstored is None:
-            return started
-        return min(started, self.oldest_unstored)
+        stamps = [self.oldest_untracked] if self.oldest_untracked is not None else []
+        for external_id, (_entity_type, stamp) in self.holding.items():
+            if external_id in skipped:
+                continue
+            if stamp is None:
+                return None
+            stamps.append(stamp)
+        return min([started, *stamps])
+
+
+def _iso(stamp: datetime) -> str:
+    return _as_utc(stamp).isoformat(timespec="seconds")
+
+
+def _entry_stamp(entry: Mapping[str, Any], key: str) -> datetime | None:
+    stamp = _stamp(entry.get(key))
+    return _as_utc(stamp) if stamp is not None else None
+
+
+def settle_unstored_holds(
+    known: Mapping[str, Mapping[str, Any]], holding: Mapping[str, tuple[str, datetime | None]], now: datetime
+) -> tuple[dict[str, dict[str, Any]], set[str], set[str]]:
+    """
+    Vermerk der nicht gespeicherten Objekte einer Kommune nach einem vollständigen Lauf fortschreiben
+    (``sync_config["unstored_holds"]``, Kennung -> ``type``, ``since``, ``seen``, ``runs``, ``deferred``).
+
+    - Ein haltendes Objekt zählt einen Lauf mehr (``runs``), ``since`` bleibt der erste Lauf, der es nicht speichern
+      konnte. Ab ``UNSTORED_HOLD_RUNS`` Läufen und ``UNSTORED_HOLD_MIN`` seit ``since`` ist es zurückgestellt
+      (``deferred``) und hält das Fenster nicht mehr, auch nicht in späteren Läufen (etwa im nächsten Vollabgleich).
+    - Ein zurückgestelltes Objekt, das kein Lauf mehr sieht, bleibt ``UNSTORED_DEFERRED_KEEP`` nach dem letzten Mal
+      vermerkt; übrige nicht mehr gesehene fallen weg (gespeichert oder nicht mehr geliefert).
+
+    Nichts geht verloren: Die Quelle liefert ein zurückgestelltes Objekt im nächsten Vollabgleich wieder, ebenso
+    nach jeder Änderung, und dann wird es gespeichert, sobald sich seine Verweise auflösen lassen.
+
+    Rückgabe: neuer Vermerk, zurückgestellte Kennungen unter den haltenden, davon in diesem Lauf neu zurückgestellte.
+    """
+    entries: dict[str, dict[str, Any]] = {}
+    deferred: set[str] = set()
+    newly: set[str] = set()
+    for external_id, (entity_type, _modified) in holding.items():
+        prior = known.get(external_id) or {}
+        since = _entry_stamp(prior, "since") or now
+        runs = prior.get("runs")
+        runs = (runs if isinstance(runs, int) and not isinstance(runs, bool) and runs > 0 else 0) + 1
+        entry: dict[str, Any] = {"type": entity_type, "since": _iso(since), "seen": _iso(now), "runs": runs}
+        deferred_at = _entry_stamp(prior, "deferred")
+        if deferred_at is None and runs >= UNSTORED_HOLD_RUNS and now - since >= UNSTORED_HOLD_MIN:
+            deferred_at = now
+            newly.add(external_id)
+        if deferred_at is not None:
+            entry["deferred"] = _iso(deferred_at)
+            deferred.add(external_id)
+        entries[external_id] = entry
+    for external_id, prior in known.items():
+        if external_id in entries or _entry_stamp(prior, "deferred") is None:
+            continue
+        seen = _entry_stamp(prior, "seen")
+        if seen is not None and now - seen <= UNSTORED_DEFERRED_KEEP:
+            entries[external_id] = dict(prior)
+    if len(entries) > UNSTORED_HOLDS_MAX:
+        latest = sorted(entries, key=lambda key: str(entries[key].get("seen") or ""), reverse=True)
+        entries = {key: entries[key] for key in latest[:UNSTORED_HOLDS_MAX]}
+    return entries, deferred, newly
 
 
 # Anzeigetexte der Fehlerklassen (Schonungsmeldung in sync_all, Status in list-sources)
@@ -508,6 +622,7 @@ def source_backoff_until(source, now: datetime | None = None) -> datetime | None
 
 
 console = MaskingConsole()
+logger = logging.getLogger(__name__)
 
 
 def end_with_current_task(task: asyncio.Task[Any]) -> None:
@@ -548,6 +663,9 @@ class SyncResult:
     host_findings: list[dict[str, Any]] = field(default_factory=list)
     # Gelesen, aber nicht gespeichert, je Typ über alle Kommunen (Issue #1025), im Sync-Log unter ``unstored``
     unstored: Counter[str] = field(default_factory=Counter)
+    # Davon zurückgestellt, sie halten das Änderungsfenster nicht mehr (``settle_unstored_holds``), im Sync-Log unter
+    # ``unstored_deferred``
+    unstored_deferred: Counter[str] = field(default_factory=Counter)
     # Abgewiesene Kennungen anderer Quellen je Art über alle Kommunen (Upsert, Löschung, Verweis), im Sync-Log unter
     # ``foreign`` (``start_foreign_rejections``)
     foreign: Counter[str] = field(default_factory=Counter)
@@ -565,6 +683,27 @@ class SyncResult:
     # Außerhalb des Abruffensters der Quelle (``sync_window``, Issue #1186): kein Lauf, nichts abgerufen, die Quelle
     # blieb unverändert; die Meldung steht unter ``errors``
     outside_window: bool = False
+    # Vollabgleich, der nicht alle Listen ganz gelesen hat (Zeitüberschreitung, Schutzschalter, Fensterende,
+    # ausgesetzte Liste, gestörter Host): im Sync-Protokoll ``partial`` statt ``success`` (Issue #1523)
+    full_incomplete: bool = False
+
+
+#: Zustände im Sync-Protokoll (``insight_sync_synclog.status``, ``SyncLog.Status`` in Django)
+SYNC_STATUS_SUCCESS = "success"
+SYNC_STATUS_PARTIAL = "partial"
+SYNC_STATUS_FAILED = "failed"
+
+
+def sync_log_status(result: SyncResult) -> str:
+    """
+    Zustand eines Laufs im Sync-Protokoll (Issue #1523): ``failed`` ohne Erfolg, ``partial`` für einen Vollabgleich,
+    der nicht alle Listen ganz gelesen hat, sonst ``success``. Früher stand ein Vollabgleich, den ein offener
+    Schutzschalter oder eine Zeitüberschreitung abgebrochen hatte, als ``success`` im Protokoll und verdeckte die
+    Lücke im Bestand. Ein inkrementeller Lauf bleibt ``success``; seine Lücken nennt er unter ``errors``.
+    """
+    if not result.success:
+        return SYNC_STATUS_FAILED
+    return SYNC_STATUS_PARTIAL if result.full_incomplete else SYNC_STATUS_SUCCESS
 
 
 def merge_slice_details(target: dict[str, Any], body_result: dict[str, Any]) -> None:
@@ -972,6 +1111,17 @@ class SyncOrchestrator:
         if slice_note is not None:
             fetch_deadline = None  # nur Änderungsabgleich: das Fenster des Vollabgleichs gilt nicht
             result.errors.append(slice_note)
+        # Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs (ohne Zeitscheiben, src/sync/fortsetzung.py)
+        resume_run = (
+            ResumeRun.build(
+                url,
+                full_sync_resume_of(getattr(source_row, "sync_config", None)),
+                margin=options.modified_since_margin(),
+                not_before=getattr(source_row, "last_successful_full_sync", None),
+            )
+            if full and slice_run.config is None
+            else None
+        )
         # Das Abruffenster der Quelle begrenzt jeden Lauf, auch den Änderungsabgleich (Issue #1186)
         fetch_deadline = options.fetch_deadline(start_time, fetch_deadline)
         if options.sync_window is not None and fetch_deadline is not None:
@@ -1049,6 +1199,11 @@ class SyncOrchestrator:
                     url, missing_lists_of(source_config), missing_list_reasons_of(source_config)
                 )
                 timed_lists = TimedLists(url, timed_lists_of(source_config))
+                # Ergänzung aus Detailseiten (Issue #1431), ein Kontingent für alle Kommunen der Quelle
+                ergaenzung = self._html_ergaenzung(url, source_config, client)
+                # Namen nicht veröffentlichter Gremien aus dem öffentlichen Kalender (SessionNet, Münster): einmal
+                # nach allen Kommunen der Quelle, ein Kontingent und eine Reihenfolge über alle ihre Monate
+                kalender = KalenderLauf.fuer(source_config)
 
                 async def sync_body_wrapper(body_data):
                     async with body_semaphore:
@@ -1062,6 +1217,9 @@ class SyncOrchestrator:
                                 missing_lists=missing_lists,
                                 timed_lists=timed_lists,
                                 slices=slice_run,
+                                ergaenzung=ergaenzung,
+                                resume=resume_run,
+                                kalender=kalender,
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
@@ -1071,6 +1229,10 @@ class SyncOrchestrator:
                     *[sync_body_wrapper(bd) for bd in bodies_data],
                     return_exceptions=False,
                 )
+                if ergaenzung is not None:
+                    console.print(f"[dim]{ergaenzung.summary()}[/dim]")
+                if kalender is not None and kalender.kommunen:
+                    await self._gremien_aus_kalender(kalender, client)
 
                 # Aggregate results
                 for body_result in body_results:
@@ -1086,19 +1248,28 @@ class SyncOrchestrator:
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
                     result.unstored.update(body_result.get("unstored") or {})
+                    result.unstored_deferred.update(body_result.get("unstored_deferred") or {})
                     result.foreign.update(body_result.get("foreign") or {})
                     result.unresolved.update(body_result.get("unresolved") or {})
                     merge_slice_details(result.slice_details, body_result)
 
                 # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556), der
                 # Vollabgleich nur ohne ausgesetzte Liste (Issue #1033)
-                complete = not body_filter and sync_complete(body_results, missed_bodies, client)
+                bodies_complete = sync_complete(body_results, missed_bodies, client)
+                full_finished = full_sync_finished(body_results)
+                complete = not body_filter and bodies_complete
+                full_complete = complete and full_finished
+                # Vollabgleich mit Lücke: im Sync-Protokoll ``partial`` (Issue #1523); der Filter auf Kommunen zählt
+                # dabei nicht als Lücke
+                result.full_incomplete = full and not (bodies_complete and full_finished)
                 await self.storage.update_source_sync_time(
                     source_id,
                     full_sync=full,
                     complete=complete,
-                    full_complete=complete and full_sync_finished(body_results),
+                    full_complete=full_complete,
                 )
+                if resume_run is not None:
+                    await self._settle_resume(resume_run, full_complete)
                 result.http_stats = client.stats
                 result.success = True
                 await self._apply_host_findings(result, client)
@@ -1333,7 +1504,13 @@ class SyncOrchestrator:
                     await self.storage.set_slice_filter_ignored(url, None)
                 except Exception as e:  # noqa: BLE001 - dann gilt der Befund im nächsten Lauf als alt
                     console.print(f"[yellow]Befund zu Zeitscheiben nicht gelöscht: {e}[/yellow]")
-        run = SliceRun.build(url, config, full_sync_progress_of(sync_config), slow_lists_of(sync_config))
+        run = SliceRun.build(
+            url,
+            config,
+            full_sync_progress_of(sync_config),
+            slow_lists_of(sync_config),
+            full_sync_slice_pages_of(sync_config),
+        )
         if config is not None:
             console.print(
                 f"[dim]{url}: Vollabgleich in Zeitscheiben zu {config.days} Tagen ab {config.since:%Y-%m-%d}[/dim]"
@@ -1357,9 +1534,16 @@ class SyncOrchestrator:
         missing_lists: MissingLists | None = None,
         timed_lists: TimedLists | None = None,
         slices: SliceRun | None = None,
+        ergaenzung: HtmlErgaenzung | None = None,
+        resume: ResumeRun | None = None,
+        kalender: KalenderLauf | None = None,
     ) -> dict[str, Any]:
         """
         Sync a single body and all its entities.
+
+        Mit ``resume``: Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs (``src/sync/fortsetzung.py``).
+        Listen, die der Durchgang schon ganz gelesen hat, liest der Vollabgleich nur mit ihren Änderungen seit dem
+        ersten Lauf des Durchgangs, abgebrochene nach diesen Änderungen ab ihrer Fortsetzungsseite.
 
         Mit ``slices`` (Issue #1033): Ein Vollabgleich mit ``full_sync_slices`` liest die Listen in Zeitscheiben, und
         optionale Listen werden nach Zeitüberschreitungen ausgesetzt (``src/sync/slices.py``).
@@ -1438,7 +1622,6 @@ class SyncOrchestrator:
             console.print("[dim]Full sync: Listen in Zeitscheiben (full_sync_slices)[/dim]")
         else:
             console.print("[dim]Full sync: fetching ALL pages[/dim]")
-
         # Fehlende Listen dieser Kommune (Issue #1025), vermerkt am Ende des Laufs
         list_check = BodyListCheck(missing_lists) if missing_lists is not None else None
         # Nicht gespeicherte Objekte bestimmen den nächsten Fensteranfang, Stempel der Änderungen der letzten sieben
@@ -1452,11 +1635,16 @@ class SyncOrchestrator:
         # index does not keep documents for source-deleted objects.
         es_deletions: dict[str, list[str]] = {}
 
+        # Optionale Listen, die die Quelle nicht angefragt haben will (``skip_lists``, Issue #1431)
+        skip_lists = options.skip_lists if options is not None else frozenset()
+        if skip_lists:
+            console.print(f"[dim]  Listen nicht angefragt (skip_lists): {', '.join(sorted(skip_lists))}[/dim]")
+
         # Helper to build common kwargs for _sync_entity_type
         def sync_kwargs(list_url: str | None, entity_type: str) -> dict:
             return {
                 "client": client,
-                "list_url": list_url,
+                "list_url": None if entity_type in skip_lists else list_url,
                 "entity_type": entity_type,
                 "body_id": body_id,
                 "body_external_id": body_external_id,
@@ -1468,6 +1656,8 @@ class SyncOrchestrator:
                 "item_check": item_check,
                 "timed_lists": timed_lists,
                 "slices": body_slices,
+                "ergaenzung": ergaenzung,
+                "resume": resume,
             }
 
         # Phase 2 (parallel): Start text extraction as background task
@@ -1626,6 +1816,12 @@ class SyncOrchestrator:
                 stats["consultations"] = consultation_result
                 progress.update(task9, completed=consultation_result, total=consultation_result)
 
+        # Beratungen, die Punkte anstehender Sitzungen nennen und die es nicht gibt, einzeln nachladen (Issue #1523)
+        await self._beratungen_nachladen(client, source_id, body_id, body_external_id, body_name, stats)
+
+        if kalender is not None and "meeting" not in stats.get("incomplete", []):
+            # Gremiennamen aus dem Kalender liest der Abgleich der Quelle nach allen Kommunen
+            kalender.kommunen.append(body_id)
         if list_check is not None:
             await self._settle_missing_lists(list_check, stats)
         if body_slices is not None:
@@ -1889,9 +2085,23 @@ class SyncOrchestrator:
         item_check: BodyItemCheck | None = None,
         timed_lists: TimedLists | None = None,
         slices: BodySlices | None = None,
+        ergaenzung: HtmlErgaenzung | None = None,
+        resume: ResumeRun | None = None,
+        changes_since: datetime | None = None,
     ) -> int:
         """
         Sync all entities of a specific type.
+
+        ``changes_since`` im Vollabgleich: Nachführung einer Liste im Durchgang der Fortsetzung. Die Quelle filtert mit
+        ``modified_since``, verarbeitet wird wie im Vollabgleich: jedes gelieferte Objekt, ohne Abbruch nach Seiten ohne
+        Änderung (eine Korrektur mit gleichem ``modified`` ginge sonst verloren).
+
+        Mit ``resume`` im Vollabgleich ohne Zeitscheiben (``src/sync/fortsetzung.py``): Hat der Durchgang die Liste
+        schon ganz gelesen, kommen nur ihre Änderungen seit dem ersten Lauf des Durchgangs (``ResumeRun.since``) wie im
+        inkrementellen Lauf; brach ein früherer Lauf sie am Fensterende ab, zuerst diese Änderungen, dann die Liste ab
+        der zuletzt gelesenen Seite. Scheitert der Änderungsabgleich oder hat sich die Liste verschoben, kommt sie ganz.
+        Endet das Fenster mitten in der Liste, merkt sich der Lauf die Seite; liest er sie ganz, gilt sie im Durchgang
+        als gelesen, nicht aber eine Liste, die es bei der Quelle nicht gibt.
 
         Optionale Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), und Listen, die sie nicht
         freigibt (Issue #1086), fragt der inkrementelle Lauf einmal am Tag an, der Vollabgleich jedes Mal (in
@@ -1929,6 +2139,63 @@ class SyncOrchestrator:
         optional = entity_type in OPTIONAL_LIST_TYPES
         run = slices.run if slices is not None else None
         sliced_full = full and run is not None and run.config is not None and run.config.covers(entity_type)
+        # Fortsetzung eines abgebrochenen Vollabgleichs: ganz, ab der Fortsetzungsseite oder nur die Änderungen
+        resume_page: str | None = None
+        carried = 0
+        track_resume = full and resume is not None and not sliced_full
+        if track_resume and resume is not None:
+            how, entry = resume.plan(list_url)
+            since = resume.since(list_url)
+            if how in (CHANGES, RESUME) and since is not None:
+                was = (
+                    "im Durchgang schon ganz gelesen, nur Änderungen"
+                    if how == CHANGES
+                    else "Änderungen der gelesenen Seiten"
+                )
+                console.print(f"[dim]  {entity_type}: {was} seit {since.isoformat()}[/dim]")
+                try:
+                    carried = await self._sync_entity_type(
+                        client,
+                        list_url,
+                        entity_type,
+                        body_id,
+                        body_external_id,
+                        body_name=body_name,
+                        full=True,
+                        changes_since=since,
+                        es_deletions=es_deletions,
+                        list_check=list_check,
+                        item_check=item_check,
+                        timed_lists=timed_lists,
+                        slices=slices,
+                        ergaenzung=ergaenzung,
+                    )
+                except FetchWindowClosedError:
+                    raise
+                except ListFetchError as error:
+                    # Die Stadt Köln lehnte gefilterte Folgeseiten zeitweise mit HTTP 401 ab, ganze Listen nicht: Der
+                    # Durchgang bliebe sonst an dieser Liste hängen. Sie kommt in diesem Lauf ganz.
+                    console.print(
+                        f"[yellow]  {entity_type}: Änderungsabgleich der Liste gescheitert ({error.result.error}), "
+                        f"Liste ganz[/yellow]"
+                    )
+                    how, carried = FULL, 0
+                    resume.discard(list_url)
+                else:
+                    if how == CHANGES:
+                        return carried
+            # Verschiebung direkt vor dem Weiterlesen prüfen, nach der Nachführung: Was die Quelle bis dahin ändert,
+            # soll die Prüfung noch sehen
+            if how == RESUME and entry is not None and await self._resume_shifted(client, entry):
+                console.print(
+                    f"[yellow]  {entity_type}: Liste hat sich seit dem Abbruch um mehr als eine Seite verschoben "
+                    f"({entry.page}), Liste ganz[/yellow]"
+                )
+                how = FULL
+                resume.discard(list_url)
+            if how == RESUME and entry is not None and entry.page is not None:
+                resume_page = entry.page
+                console.print(f"[dim]  {entity_type}: Fortsetzung des Vollabgleichs ab {resume_page}[/dim]")
         # Vermerkt sind optionale Listen, die es nicht gibt, und Listen, die die Quelle nicht freigibt (HTTP 403 für
         # alle Clients); nur so stehen auch Pflichtlisten hier (Issue #1086)
         if not full and list_check is not None and list_url in list_check.lists.known:
@@ -1960,6 +2227,8 @@ class SyncOrchestrator:
         timed = timed_lists is not None and list_url in timed_lists.known
         if modified_since is not None and timed_lists is not None and not timed:
             modified_since = day_start_window(modified_since)
+        if changes_since is not None and timed_lists is not None and not timed:
+            changes_since = day_start_window(changes_since)
 
         # Zeitscheiben (Issue #1033): Vollabgleich ab dem Fortschritt der Liste, langsame Liste ab ihrem Fensteranfang;
         # in Tagesscheiben nur, wenn die Quelle die Liste filtert, sonst wie bisher ohne Scheiben ab dort
@@ -1988,7 +2257,7 @@ class SyncOrchestrator:
         stale_pages_to_stop = 5
 
         # For incremental: send modified_since to server as pre-filter
-        server_modified_since = modified_since if not full else None
+        server_modified_since = modified_since if not full else changes_since
         if slow_since is not None:
             server_modified_since = slow_since  # langsame Liste: ab ihrem eigenen Fensteranfang
 
@@ -1998,7 +2267,9 @@ class SyncOrchestrator:
                 client, list_url, entity_type, windows, list_check, slices, full=full, optional=optional
             )
         else:
-            pages = self._list_pages(client, list_url, server_modified_since, list_check, optional=optional)
+            pages = self._list_pages(
+                client, list_url, server_modified_since, list_check, optional=optional, next_page=resume_page
+            )
             if slices is not None and optional:
                 # Bricht die Liste nach einer Zeitüberschreitung ab, wird sie ausgesetzt (Issue #1033). Ihr
                 # Fensteranfang: im Vollabgleich der bisherige oder sieben Tage, sonst das Fenster dieses Laufs
@@ -2007,6 +2278,8 @@ class SyncOrchestrator:
                 else:
                     keep_since = slow.since if slow is not None else fallback_modified_since().replace(tzinfo=UTC)
                 pages = self._slow_guard(pages, slices, list_url, entity_type, keep_since)
+        if track_resume and resume is not None:
+            pages = self._resume_guard(pages, resume, list_url)
 
         async for page in pages:
             pages_checked += 1
@@ -2045,6 +2318,7 @@ class SyncOrchestrator:
                         # Lauf unveränderte Objekte ohne Zeitstempel erkennt (#122)
                         if timestamps_unreliable(item):
                             item[CONTENT_HASH_FIELD] = content_fingerprint(item)
+                        await self._ergaenze(ergaenzung, entity_type, item)
                         processed = self.processor.process(item, body_external_id)
                         if processed:
                             stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -2097,6 +2371,7 @@ class SyncOrchestrator:
                                 skipped_count += 1
                                 continue
                             item[CONTENT_HASH_FIELD] = item_hash
+                            await self._ergaenze(ergaenzung, entity_type, item)
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -2114,6 +2389,7 @@ class SyncOrchestrator:
 
                         if db_modified is None:
                             # New item: save
+                            await self._ergaenze(ergaenzung, entity_type, item)
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -2124,6 +2400,7 @@ class SyncOrchestrator:
                                     item_check.note_unstored(entity_type, item, server_modified_since)
                         elif item_modified and db_modified and item_modified > db_modified:
                             # Modified item: update (upsert handles ON CONFLICT)
+                            await self._ergaenze(ergaenzung, entity_type, item)
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -2155,13 +2432,20 @@ class SyncOrchestrator:
                         parts.append(f"{deleted_on_page} deleted")
                     console.print(f"[green]  Page {pages_checked}: {', '.join(parts)}[/green]")
                     consecutive_stale_pages = 0
-                else:
+                elif unchanged_on_page > 0:
+                    # Nur Seiten mit Bekanntem zählen. Eine Seite allein aus Löschsignalen unbekannter Kennungen sagt
+                    # nichts über die Liste: Die Stadt Münster stellt gelöschte Beratungen als Platzhalter
+                    # ``…/consultations/0`` seitenweise vor die echten Änderungen (Issue #1523)
                     consecutive_stale_pages += 1
 
                 # Safety stop: 5 consecutive pages without changes (nicht in Zeitscheiben: jede hat ihren Zeitraum;
-                # nach einem Rückfall auf das Lesen ohne Scheiben wieder)
+                # nach einem Rückfall auf das Lesen ohne Scheiben wieder). Nicht bei einer Liste, die die Quelle
+                # nachweislich filtert: Jede ihrer Seiten ist schon eine Änderung seit dem Fensteranfang, und hinter
+                # Seiten mit Bekanntem (Fenster, das ein nicht gespeichertes Objekt festhält) stehen die neuen Einträge
                 unsliced = windows is None or (slices is not None and list_url in slices.unsliced)
-                if consecutive_stale_pages >= stale_pages_to_stop and unsliced:
+                # Nachweis des Filters erst hier prüfen: ``fetch_list`` kann den Vermerk „filtert nicht“ im Lauf löschen
+                stale_stop = server_modified_since is None or not client.filter_proven(list_url)
+                if consecutive_stale_pages >= stale_pages_to_stop and unsliced and stale_stop:
                     console.print(
                         f"[yellow]  Stopping {entity_type}: "
                         f"{consecutive_stale_pages} consecutive pages without changes[/yellow]"
@@ -2171,7 +2455,15 @@ class SyncOrchestrator:
                         await self._clear_slow_list(slices, list_url)
                     break
 
-        total = count + updated_count
+        # Ganz gelesen: im Durchgang erledigt. Nicht eine ausgesetzte langsame Liste und keine, die bei der Quelle fehlt
+        # (404 oder Fehlerobjekt auf der ersten Seite): Ist die Schnittstelle nur gestört, bliebe sie sonst bis zum
+        # Ende des Durchgangs ungelesen
+        suspended = slices is not None and list_url in slices.suspended
+        absent = list_check is not None and (list_url in list_check.missing or list_url in list_check.required_errors)
+        if track_resume and resume is not None and not suspended and not absent:
+            resume.note_finished(list_url)
+
+        total = count + updated_count + carried
         if not full and (count > 0 or updated_count > 0 or deleted_count > 0 or skipped_count > 0):
             console.print(
                 f"[dim]  {entity_type} summary: {count} new, {updated_count} updated, "
@@ -2179,6 +2471,139 @@ class SyncOrchestrator:
             )
 
         return total
+
+    def _html_ergaenzung(self, url: str, sync_config: Any, client: OParlClient) -> HtmlErgaenzung | None:
+        """Ergänzung aus Detailseiten für diesen Lauf, wenn die Quelle sie eingeschaltet hat (Issue #1431)."""
+        config = HtmlErgaenzungConfig.parse(sync_config)
+        if config is None:
+            return None
+        storage = self.storage
+
+        async def load_stored(entity_type: str, external_ids: list[str]) -> dict[str, dict[str, Any]]:
+            return await storage.get_html_ergaenzung(
+                entity_type, external_ids, ERGAENZUNG_FIELDS[entity_type], ERGAENZUNG_MARKER
+            )
+
+        console.print(f"[dim]{url}: Ergänzung aus Detailseiten ({config.art}), bis {config.pages_per_run} Seiten[/dim]")
+        return HtmlErgaenzung(
+            config,
+            hosts=[urlparse(url).netloc],
+            fetch_page=client.fetch_page,
+            load_stored=load_stored,
+            deadline_passed=client.deadline_passed,
+        )
+
+    async def _beratungen_nachladen(
+        self,
+        client: OParlClient,
+        source_id: UUID,
+        body_id: UUID,
+        body_external_id: str,
+        body_name: str | None,
+        stats: dict[str, Any],
+    ) -> None:
+        """
+        Unbekannte Beratungen der Sitzungen um heute einzeln laden (``src/sync/beratungen_nachladen.py``, Issue
+        #1523). Gespeichert wird wie im Abgleich; gezählt in ``stats`` (``nachgeladen``), damit der Suchindex sie
+        aufnimmt. Fehler halten den Abgleich nicht auf.
+        """
+        try:
+            sync_config = await self.storage.source_sync_config(source_id)
+            budget = beratungen_nachladen.kontingent(sync_config)
+            if budget <= 0 or client.deadline_passed():
+                return
+            jetzt = datetime.now(UTC)
+            kandidaten = await self.storage.unknown_consultations_of_meetings(
+                body_id, jetzt - beratungen_nachladen.ZURUECK, jetzt + beratungen_nachladen.VORAUS
+            )
+            if not kandidaten:
+                return
+            versuche = sync_config.get(SYNC_CONFIG_CONSULTATION_FETCHES_KEY)
+            reihenfolge = beratungen_nachladen.faellig(
+                kandidaten,
+                versuche if isinstance(versuche, dict) else {},
+                urlparse(body_external_id).netloc,
+                jetzt,
+            )
+            if not reihenfolge:
+                return
+
+            async def abrufen(url: str) -> FetchResult:
+                return await client.fetch(url, use_cache=False)
+
+            async def vorlage_bekannt(url: str) -> bool:
+                return await self.storage.get_paper_uuid(url, body_id) is not None
+
+            async def speichern(entity_type: str, daten: dict[str, Any]) -> bool:
+                processed = self.processor.process(daten, body_external_id)
+                if not processed:
+                    return False
+                return await self._store_entity(processed, body_id, entity_type, body_name)
+
+            ergebnis, gescheitert = await beratungen_nachladen.nachladen(
+                reihenfolge,
+                kontingent=budget,
+                jetzt=jetzt,
+                abrufen=abrufen,
+                vorlage_bekannt=vorlage_bekannt,
+                speichern=speichern,
+                weiter=lambda: not client.deadline_passed(),
+            )
+        except Exception as e:  # noqa: BLE001 - das Nachladen ergänzt nur, der Abgleich bleibt gültig
+            console.print(f"[yellow]  Nachladen von Beratungen gescheitert: {e}[/yellow]")
+            return
+        # Zuerst zählen: Was gespeichert ist, gehört in den Suchindex, auch wenn das Merken der Versuche scheitert
+        stats["consultations"] = stats.get("consultations", 0) + ergebnis.beratungen
+        stats["papers"] = stats.get("papers", 0) + ergebnis.vorlagen
+        stats["nachgeladen"] = ergebnis.als_dict()
+        if gescheitert:
+            try:
+                await self.storage.note_consultation_fetches(
+                    source_id, gescheitert, keep_after=jetzt - 2 * beratungen_nachladen.ERNEUT_NACH
+                )
+            except Exception as e:  # noqa: BLE001 - ohne Vermerk kommt die Beratung im nächsten Lauf wieder
+                console.print(f"[yellow]  Versuche des Nachladens nicht gespeichert: {e}[/yellow]")
+        console.print(
+            f"[dim]  Beratungen nachgeladen: {ergebnis.beratungen} (Vorlagen {ergebnis.vorlagen}, gescheitert "
+            f"{ergebnis.fehlgeschlagen}, zurückgestellt {ergebnis.zurueckgestellt}, {ergebnis.abrufe} Abrufe)"
+            + (f", beendet: {ergebnis.abbruch}" if ergebnis.abbruch else "")
+            + "[/dim]"
+        )
+
+    async def _gremien_aus_kalender(self, kalender: KalenderLauf, client: OParlClient) -> None:
+        """
+        Namen nicht veröffentlichter Gremien aus dem Kalender ergänzen, einmal je Quelle für alle Kommunen mit
+        vollständig abgeglichenen Sitzungen (``src/sync/gremien_kalender.py``).
+        """
+        storage = self.storage
+        kommunen = list(kalender.kommunen)
+
+        async def lade(von: datetime, bis: datetime, erneut_ab: datetime) -> list[OhneGremium]:
+            zeilen = await storage.get_meetings_ohne_gremium(kommunen, von, bis, erneut_ab, GREMIUM_WEB)
+            return [OhneGremium(id=z[0], external_id=z[1], start=z[2], stand=z[3], geprueft=z[4]) for z in zeilen]
+
+        async def speichere(sitzung: OhneGremium, wert: dict[str, str]) -> bool:
+            return await storage.set_meeting_raw_extension(sitzung.id, GREMIUM_WEB, wert, stand=sitzung.stand)
+
+        try:
+            ergebnis = await ergaenze_gremien(
+                kalender.config, lade, client.fetch_page, speichere, frist_vorbei=client.deadline_passed
+            )
+        except Exception as exc:  # noqa: BLE001 - der Abgleich der Quelle ist davon unabhängig
+            console.print(f"[yellow]  Gremien aus dem Kalender übersprungen: {exc}[/yellow]")
+            return
+        if ergebnis.benannt or ergebnis.fehlgeschlagen or ergebnis.ohne_eintrag or ergebnis.verschoben:
+            console.print(f"[dim]  Gremien aus dem Kalender: {ergebnis.as_dict()}[/dim]")
+
+    @staticmethod
+    async def _ergaenze(ergaenzung: HtmlErgaenzung | None, entity_type: str, item: dict[str, Any]) -> None:
+        """Objekt aus der Detailseite ergänzen; ein Fehler dabei hält das Objekt nicht auf (Issue #1431)."""
+        if ergaenzung is None:
+            return
+        try:
+            await ergaenzung.ergaenze(entity_type, item)
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[yellow]  Ergänzung für {item.get('id', '?')} übersprungen: {exc}[/yellow]")
 
     async def _list_pages(
         self,
@@ -2188,9 +2613,13 @@ class SyncOrchestrator:
         list_check: BodyListCheck | None,
         *,
         optional: bool = True,
+        next_page: str | None = None,
     ) -> AsyncIterator[list[dict[str, Any]]]:
         """
         Seiten einer Liste; gibt es eine optionale Liste bei der Quelle nicht, keine Seite (Issue #1025).
+
+        ``next_page``: Fortsetzung eines am Fensterende abgebrochenen Vollabgleichs ab dieser Seite
+        (``src/sync/fortsetzung.py``). Die Liste gab es dann schon; die Prüfung auf fehlende Listen entfällt.
 
         HTTP 404 oder ein Fehlerobjekt auf der ersten Seite (ohne Filter) zählt bei Listen, die OParl 1.1 als
         optional führt (``OPTIONAL_LIST_TYPES``), als „nicht vorhanden“, nicht als Lücke: Die Liste landet in
@@ -2206,6 +2635,12 @@ class SyncOrchestrator:
         Gibt die Quelle eine Liste nicht frei (HTTP 403 für alle Clients, ``ListMissingError.forbidden``), gilt sie
         wie eine fehlende optionale Liste als „nicht vorhanden“, auch eine Pflichtliste (Issue #1086).
         """
+        if next_page is not None:
+            async for page in client.fetch_list(list_url, next_page=next_page):
+                yield page
+            if list_check is not None:
+                list_check.readable += 1
+            return
         if list_check is None:
             async for page in client.fetch_list(list_url, modified_since=modified_since):
                 yield page
@@ -2260,6 +2695,10 @@ class SyncOrchestrator:
         Beim inkrementellen Nachholen einer langsamen Liste gibt es keinen Befund an der Quelle: Ignoriert sie den
         Filter, lehnt sie ihn ab (HTTP 400, 401, 403, 404) oder findet sie die Liste mit Filter nicht, liest der Lauf
         die Liste ab der offenen Scheibe wie bisher ohne Zeitscheiben (``_slice_fallback``).
+
+        Im Vollabgleich setzt eine Scheibe, die ein früherer Lauf mittendrin abbrach (Fensterende, Zeitüberschreitung,
+        Schutzschalter), an der zuletzt ganz gelesenen Seite fort (``SlicePage``, Issue #1523); bricht sie wieder ab,
+        rückt dieser Stand vor.
         """
         run = slices.run
         readable = False
@@ -2272,11 +2711,14 @@ class SyncOrchestrator:
                 raise SliceFilterIgnoredError(list_url, run.filter_ignored)
             fallback: str | None = None
             try:
-                async for page in client.fetch_list(
+                # Im Vollabgleich ab der zuletzt ganz gelesenen Seite einer abgebrochenen Scheibe (Issue #1523)
+                async for page in self._window_pages(
+                    client,
+                    slices,
                     list_url,
-                    modified_since=window.since,
-                    modified_until=window.until,
-                    strict_filter=True,
+                    entity_type,
+                    window,
+                    full=full,
                     report_missing=list_check is not None and index == 0 and not resumed,
                 ):
                     if list_check is not None and not readable:
@@ -2305,6 +2747,14 @@ class SyncOrchestrator:
                     _note_missing_list(list_check, list_url, missing, optional=optional)
                     return
             except ListFetchError as error:
+                # Rückt der Seitenstand in der Scheibe vor, kommt die Liste voran, auch ohne ganz gelesene Scheibe
+                seite_vorher = run.pages.get(list_url) if full else None
+                if full:
+                    await self._remember_slice_page(slices, list_url, window, error)
+                seite_jetzt = run.pages.get(list_url) if full else None
+                seite_vorgerueckt = seite_jetzt is not None and (
+                    seite_vorher is None or seite_jetzt.page != seite_vorher.page
+                )
                 if not full and _filter_rejected(error):
                     fallback = f"Filter abgelehnt (HTTP {error.result.status_code})"
                 elif not (optional and error.timed_out):
@@ -2316,7 +2766,7 @@ class SyncOrchestrator:
                     else:
                         keep_since = window.since or (slow.since if slow is not None else datetime.now(UTC))
                     if not await self._suspend_slow_list(
-                        slices, list_url, entity_type, error, keep_since, progressed=index > 0
+                        slices, list_url, entity_type, error, keep_since, progressed=index > 0 or seite_vorgerueckt
                     ):
                         raise
                     return
@@ -2328,6 +2778,8 @@ class SyncOrchestrator:
                 return
             exists = exists or list_url not in client.filtered_empty_lists
             slices.read[list_url] += 1
+            if full:
+                await self._clear_slice_page(slices, list_url)
             await self._slice_done(slices, list_url, window, full)
         if list_check is not None and not readable:
             list_check.readable += 1  # lesbar, nur leer
@@ -2338,6 +2790,171 @@ class SyncOrchestrator:
             # Wie in ``_list_pages``: Gibt es die Liste, endet der Vermerk; meldete SD.NET RIM nur „keine Treffer“,
             # bleibt er und gilt ab jetzt wieder einen Tag (Issue #1034)
             await self._remember_missing_list(list_check.lists, list_url, missing=not exists)
+
+    async def _window_pages(
+        self,
+        client: OParlClient,
+        slices: BodySlices,
+        list_url: str,
+        entity_type: str,
+        window: SliceWindow,
+        *,
+        full: bool,
+        report_missing: bool,
+    ) -> AsyncIterator[list[dict[str, Any]]]:
+        """
+        Seiten einer Scheibe. Im Vollabgleich setzt eine Scheibe, die ein früherer Lauf abgebrochen hat, an der zuletzt
+        ganz gelesenen Seite fort (Issue #1523). Geprüft wird die tatsächlich gelesene Fortsetzungsseite, bevor sie
+        verarbeitet wird: Trägt sie keine der gemerkten Kennungen mehr (oder kommt nichts), hat sich die Scheibe um
+        mehr als eine Seite verschoben, der Stand fällt weg, und die Scheibe kommt ganz.
+        """
+        entry = slices.run.pages.get(list_url) if full else None
+        if entry is not None and entry.matches(window) and entry.ids:
+            console.print(f"[dim]  {entity_type}: Scheibe {window.label()} ab {entry.page} (Fortsetzung)[/dim]")
+            first = True
+            shifted = False
+            stream = client.fetch_list(
+                list_url,
+                modified_since=window.since,
+                modified_until=window.until,
+                strict_filter=True,
+                next_page=entry.page,
+            )
+            try:
+                async for page in stream:
+                    if first:
+                        first = False
+                        if not set(unique_page_ids(page)) & set(entry.ids):
+                            shifted = True
+                            break
+                    yield page
+            finally:
+                close = getattr(stream, "aclose", None)
+                if close is not None:
+                    await close()
+            if not first and not shifted:
+                return
+            console.print(
+                f"[yellow]  {entity_type}: Scheibe {window.label()} hat sich seit dem Abbruch verschoben "
+                f"({entry.page}), Scheibe ganz[/yellow]"
+            )
+            await self._clear_slice_page(slices, list_url)
+        async for page in client.fetch_list(
+            list_url,
+            modified_since=window.since,
+            modified_until=window.until,
+            strict_filter=True,
+            report_missing=report_missing,
+        ):
+            yield page
+
+    async def _remember_slice_page(
+        self, slices: BodySlices, list_url: str, window: SliceWindow, error: ListFetchError
+    ) -> None:
+        """
+        Scheibe im Vollabgleich abgebrochen (Issue #1523): Am Fensterende und nach einer Störung (Zeitüberschreitung,
+        Serverfehler, Schutzschalter) die zuletzt ganz gelesene Seite merken; ohne gelesene Folgeseite bleibt ein
+        früherer Stand. Bei anderen Fehlern (Liste im Kreis, Teilantwort, Seite fehlt) fällt der Stand weg, und die
+        Scheibe kommt beim nächsten Mal ganz.
+        """
+        if not isinstance(error, FetchWindowClosedError) and not error.interrupted:
+            await self._clear_slice_page(slices, list_url)
+            return
+        if error.last_page_url is None or window.until is None:
+            # Ohne gelesene Folgeseite bleibt ein früherer Stand; die letzte Scheibe (ohne Obergrenze) kommt immer
+            # ganz, in sie kommen laufend neue Objekte, auch vor die gemerkte Seite (``SlicePage.matches``)
+            return
+        run = slices.run
+        entry = SlicePage(
+            since=window.since,
+            until=window.until,
+            page=error.last_page_url,
+            at=datetime.now(UTC),
+            ids=tuple(error.last_page_ids),
+        )
+        run.pages[list_url] = entry
+        console.print(
+            f"[yellow]  Scheibe {window.label()} der Liste {list_url} abgebrochen, der nächste Vollabgleich setzt ab "
+            f"{entry.page} fort[/yellow]"
+        )
+        try:
+            await self.storage.set_full_sync_slice_page(run.source_url, list_url, entry.to_entry())
+        except Exception as e:  # noqa: BLE001 - dann liest der nächste Vollabgleich die Scheibe ganz
+            console.print(f"[yellow]  Fortschritt in der Scheibe der Liste {list_url} nicht gespeichert: {e}[/yellow]")
+
+    async def _clear_slice_page(self, slices: BodySlices, list_url: str) -> None:
+        """Fortschritt innerhalb einer Scheibe löschen (Scheibe ganz gelesen oder verschoben, Issue #1523)."""
+        run = slices.run
+        if run.pages.pop(list_url, None) is None:
+            return
+        try:
+            await self.storage.set_full_sync_slice_page(run.source_url, list_url, None)
+        except Exception as e:  # noqa: BLE001 - ein alter Stand gilt nur für genau seine Scheibe
+            console.print(f"[yellow]  Fortschritt in der Scheibe der Liste {list_url} nicht gelöscht: {e}[/yellow]")
+
+    @staticmethod
+    async def _resume_guard(
+        pages: AsyncIterator[list[dict[str, Any]]], resume: ResumeRun, list_url: str
+    ) -> AsyncIterator[list[dict[str, Any]]]:
+        """
+        Endet das Zeitfenster mitten in der Liste, die zuletzt gelesene Seite für die Fortsetzung merken. Ebenso bei
+        einer Störung der Quelle (Issue #1523): Zeitüberschreitung, Serverfehler oder Verbindungsfehler nach allen
+        Versuchen, offener Schutzschalter (``ListFetchError.interrupted``). Sonst begann der nächste Vollabgleich die
+        Liste wieder bei Seite 1 und scheiterte jede Nacht an derselben Stelle (Stadt Bochum: Vorlagen ab Seite 52
+        von 2.600 nie gelesen).
+        """
+        try:
+            async for page in pages:
+                yield page
+        except FetchWindowClosedError as error:
+            resume.note_cut(list_url, error.last_page_url, error.last_page_ids)
+            raise
+        except ListFetchError as error:
+            if error.interrupted:
+                resume.note_cut(list_url, error.last_page_url, error.last_page_ids)
+            else:
+                # Anderer Fehler (etwa eine Fortsetzungsseite, die es nicht mehr gibt): Der nächste Lauf liest ganz
+                resume.note_failed(list_url)
+            raise
+
+    @staticmethod
+    async def _resume_shifted(client: OParlClient, entry: ResumeEntry) -> bool:
+        """
+        Hat sich die Liste seit dem Abbruch um mehr als eine Seite verschoben? Dann trägt die Fortsetzungsseite keine
+        der gemerkten Kennungen mehr, und Einträge, die noch nicht gelesen waren, könnten jetzt vor ihr stehen.
+        Gemerkt und verglichen werden nur Kennungen, die genau einmal auf der Seite stehen (``unique_page_ids``). Ohne
+        gemerkte Kennungen lässt sich die Lage nicht prüfen: ja, die Liste kommt ganz. Nach dem Fensterende oder bei
+        einem Fehler: nein (das Weiterlesen bricht dann ab bzw. zeigt den Fehler).
+        """
+        if entry.page is None or client.deadline_passed():
+            return False
+        if not entry.ids:
+            return True
+        result = await client.fetch(entry.page, use_cache=False)
+        if result.error or result.data is None:
+            return False
+        return not (set(unique_page_ids(OParlClient._extract_items(result.data))) & set(entry.ids))
+
+    async def _settle_resume(self, resume: ResumeRun, complete: bool) -> None:
+        """
+        Stand der Fortsetzung nach dem Lauf speichern (``sync_config["full_sync_resume"]``): vollständig alles
+        löschen, sonst gelesene und abgebrochene Listen festhalten. Ein Fehler kostet nur die Fortsetzung.
+        """
+        changes = resume.changes(complete)
+        if not changes:
+            return
+        cut = sorted(url for url, entry in changes.items() if entry is not None and "page" in entry)
+        if cut:
+            console.print(
+                f"[yellow]Vollabgleich abgebrochen (Fensterende oder Störung), der nächste setzt fort: "
+                f"{', '.join(cut)}[/yellow]"
+            )
+        elif complete:
+            console.print("[green]Vollabgleich über mehrere Läufe vollständig, Fortsetzung beendet[/green]")
+        try:
+            await self.storage.set_full_sync_resume(resume.source_url, changes)
+        except Exception as e:  # noqa: BLE001 - dann beginnt der nächste Vollabgleich die Listen von vorn
+            console.print(f"[yellow]Fortsetzung des Vollabgleichs nicht gespeichert: {e}[/yellow]")
 
     async def _slow_guard(
         self,
@@ -2404,19 +3021,29 @@ class SyncOrchestrator:
         """
         Optionale Liste nach einer Zeitüberschreitung aussetzen: 1, 2, 4, 8, 16, dann 24 Stunden (``slow_backoff``).
         Ihr Fensteranfang ``since`` bleibt, der nächste Lauf nach der Aussetzung holt die Änderungen ab dort nach.
-        Hat dieser Versuch mindestens eine Scheibe ganz gelesen (``progressed``), beginnt die Reihe wieder bei einer
-        Stunde: Die Liste kommt voran. Keine Lücke des Laufs, aber eine Meldung im Sync-Protokoll.
+        Hat dieser Versuch mindestens eine Scheibe ganz gelesen oder ist sein Seitenstand in der Scheibe vorgerückt
+        (``progressed``), beginnt die Reihe wieder bei einer Stunde: Die Liste kommt voran. Keine Lücke des Laufs,
+        aber eine Meldung im Sync-Protokoll.
 
         Liefert ``False``, wenn sich die Aussetzung nicht speichern ließ: Ohne gespeicherten Fensteranfang gingen die
         Änderungen der Liste verloren, sobald das Fenster der Kommune vorrückt. Der Aufrufer wertet die Liste dann
         wie bisher als Lücke.
+
+        Nach ``SLOW_LIST_STUCK_AFTER`` Zeitüberschreitungen in Folge ohne Fortschritt gilt die Liste als festgefahren
+        (Issue #1523): Warnung im Log, ``stuck_since`` im Eintrag, nächster Versuch erst nach einer Woche statt jeden
+        Tag an derselben Tagesscheibe.
         """
         run = slices.run
         now = datetime.now(UTC)
         previous = run.slow.get(list_url)
         failures = 1 if progressed or previous is None else previous.failures + 1
         reason = "HTTP 504" if "HTTP 504" in str(error.result.error or "") else "Zeitüberschreitung"
-        entry = SlowList(failures=failures, until=now + slow_backoff(failures), since=since, reason=reason)
+        stuck_since: datetime | None = None
+        if failures >= SLOW_LIST_STUCK_AFTER:
+            stuck_since = previous.stuck_since if previous is not None and previous.stuck_since is not None else now
+        entry = SlowList(
+            failures=failures, until=now + slow_backoff(failures), since=since, reason=reason, stuck_since=stuck_since
+        )
         try:
             await self.storage.set_slow_list(run.source_url, list_url, entry.to_entry())
         except Exception as e:  # noqa: BLE001 - dann bleibt die Liste eine Lücke, der nächste Lauf fragt sie wieder an
@@ -2424,6 +3051,13 @@ class SyncOrchestrator:
             return False
         run.slow[list_url] = entry
         slices.suspended[list_url] = entry.until
+        if entry.stuck:
+            note = entry.stuck_note(list_url)
+            if previous is None or not previous.stuck:
+                logger.warning("Langsame Liste festgefahren: %s", note)
+            slices.notes.append(note)
+            console.print(f"[red]  {entity_type}: {note}[/red]")
+            return True
         note = (
             f"Liste {list_url} nach {reason} ausgesetzt bis {entry.until:%d.%m.%Y %H:%M} UTC "
             f"({failures}. Mal in Folge); Änderungen ab {since:%d.%m.%Y %H:%M} UTC holt der Ingestor danach nach"
@@ -2496,7 +3130,13 @@ class SyncOrchestrator:
 
         Eine im Vollabgleich ausgesetzte Liste (auch ohne Zeitscheiben) steht unter ``full_pending``: keine Lücke des
         Laufs, aber der Vollabgleich bleibt fällig (``full_sync_finished``).
+
+        Eine festgefahrene langsame Liste (Issue #1523) steht in jedem Sync-Protokoll, solange sie ausgesetzt bleibt.
         """
+        for list_url in sorted(slices.suspended):
+            slow = slices.run.slow.get(list_url)
+            if slow is not None and slow.stuck and (note := slow.stuck_note(list_url)) not in slices.notes:
+                slices.notes.append(note)
         stats["errors"].extend(slices.notes)
         if slices.suspended:
             stats["suspended_lists"] = {
@@ -2600,11 +3240,12 @@ class SyncOrchestrator:
         - Lücke in einer Liste: stehen lassen.
         - Nicht gespeicherte Objekte: höchstens bis zu ihrem ältesten ``modified``, ohne lesbares ``modified`` gar
           nicht; der nächste Lauf fragt sie so wieder ab. Ausgenommen sind Objekte, die die Quelle trotz Filter
-          liefert (``BodyItemCheck``).
+          liefert (``BodyItemCheck``), und zurückgestellte (``settle_unstored_holds``).
         - Sonst: Beginn dieses Laufs.
 
         Nicht gespeicherte Objekte nennt das Log je Typ mit Anzahl und bis zu fünf Kennungen; je Quelle stehen sie
-        im Sync-Log unter ``unstored``. So fallen dauerhaft nicht speicherbare Objekte auf, die das Fenster halten.
+        im Sync-Log unter ``unstored``, zurückgestellte zusätzlich unter ``unstored_deferred``. So fallen dauerhaft
+        nicht speicherbare Objekte auf.
         """
         if item_check.unstored:
             stats["unstored"] = dict(sorted(item_check.unstored.items()))
@@ -2620,13 +3261,50 @@ class SyncOrchestrator:
                 console.print(f"[yellow]    {name}: {', '.join(ids)}{more}[/yellow]")
         if stats["incomplete"]:
             return
-        start = item_check.window_start(body_started)
+        deferred = await self._settle_unstored_holds(source_id, body_external_id, item_check, stats)
+        start = item_check.window_start(body_started, deferred)
         if start is None:
             return
         try:
             await self.storage.set_body_sync_started(source_id, body_external_id, start)
         except Exception as e:  # noqa: BLE001 - dann gilt beim nächsten Mal der bisherige Zeitpunkt
             console.print(f"[yellow]  Anfang des Änderungsfensters nicht gespeichert: {e}[/yellow]")
+
+    async def _settle_unstored_holds(
+        self, source_id: UUID, body_external_id: str, item_check: BodyItemCheck, stats: dict[str, Any]
+    ) -> set[str]:
+        """
+        Nicht gespeicherte Objekte, die das Fenster seit mehreren Läufen halten, zurückstellen und melden
+        (``settle_unstored_holds``, Vermerk in ``sync_config["unstored_holds"]``). Liefert die Kennungen, die das
+        Fenster in diesem Lauf nicht mehr halten. Fehler gefährden den Abgleich nie: Ohne Vermerk halten alle nicht
+        gespeicherten Objekte das Fenster wie bisher.
+        """
+        try:
+            known = await self.storage.get_unstored_holds(source_id, body_external_id)
+        except Exception as e:  # noqa: BLE001 - ohne Vermerk hält jedes Objekt das Fenster wie bisher
+            console.print(f"[yellow]  Vermerk nicht gespeicherter Objekte nicht lesbar: {e}[/yellow]")
+            return set()
+        if not known and not item_check.holding:
+            return set()
+        entries, deferred, newly = settle_unstored_holds(known, item_check.holding, datetime.now(UTC))
+        if entries != known:
+            try:
+                await self.storage.set_unstored_holds(source_id, body_external_id, entries)
+            except Exception as e:  # noqa: BLE001 - ohne Vermerk zählt der nächste Lauf weiter ab dem alten Stand
+                console.print(f"[yellow]  Vermerk nicht gespeicherter Objekte nicht gespeichert: {e}[/yellow]")
+                return set()
+        if deferred:
+            by_type = Counter(item_check.holding[external_id][0] for external_id in deferred)
+            stats["unstored_deferred"] = dict(sorted(by_type.items()))
+            summary = ", ".join(f"{name}: {count}" for name, count in sorted(by_type.items()))
+            console.print(
+                f"[yellow]  Zurückgestellt ({summary}): seit mindestens {UNSTORED_HOLD_RUNS} Läufen nicht "
+                "speicherbar, sie halten das Fenster nicht mehr; der nächste Vollabgleich versucht sie wieder[/yellow]"
+            )
+            for external_id in sorted(newly)[:UNSTORED_IDS_LOGGED]:
+                entry = entries[external_id]
+                console.print(f"[yellow]    neu zurückgestellt: {external_id} (seit {entry['since']})[/yellow]")
+        return deferred
 
     async def _settle_timed_lists(
         self, timed_lists: TimedLists, item_check: BodyItemCheck, stats: dict[str, Any]
@@ -2674,12 +3352,14 @@ class SyncOrchestrator:
         if isinstance(entity, ProcessedMeeting):
             await self.storage.upsert_meeting(entity, body_id)
             await self._retract_session_location(entity.external_id, body_id=body_id)
-            # Eingebettete TOPs und Dateien speichert upsert_meeting selbst; hier nur zählen
+            # Eingebettete TOPs und Dateien speichert upsert_meeting selbst; hier nur zählen. Dateien an den TOPs
+            # danach, mit Bezug zum Punkt
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedFile):
                     metrics.record_entity_synced("file", body_name or "unknown")
                 elif isinstance(nested, ProcessedAgendaItem):
                     metrics.record_entity_synced("agendaitem", body_name or "unknown")
+                    await self._store_agenda_item_files(nested, body_id, body_name)
         elif isinstance(entity, ProcessedPaper):
             await self.storage.upsert_paper(entity, body_id)
             # Eingebettete Dateien und Beratungen speichert upsert_paper selbst; hier nur zählen
@@ -2722,6 +3402,7 @@ class SyncOrchestrator:
                 return False
             await self.storage.upsert_agenda_item(entity, meeting_id)
             metrics.record_entity_synced("agendaitem", body_name or "unknown")
+            await self._store_agenda_item_files(entity, body_id, body_name)
         elif isinstance(entity, ProcessedFile):
             # Files can belong to papers or meetings
             # Try to resolve paper_id from back-references (OParl spec: standalone files have these)
@@ -2732,7 +3413,22 @@ class SyncOrchestrator:
                 paper_id = await self.storage.get_paper_uuid(entity.paper_external_ids[0], body_id)
             if entity.meeting_external_ids:
                 meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0], body_id)
-            await self.storage.upsert_file(entity, body_id, paper_id=paper_id, meeting_id=meeting_id)
+            # Datei am Tagesordnungspunkt (OParl 1.1 ``agendaItem``): mit Punkt und, ohne eigene Angabe, seiner Sitzung
+            agenda_item_id = None
+            agenda_item_public = True
+            if entity.agenda_item_external_ids:
+                ref = await self.storage.get_agenda_item_ref(entity.agenda_item_external_ids[0], body_id)
+                if ref is not None:
+                    agenda_item_id, ref_meeting_id, agenda_item_public = ref
+                    meeting_id = meeting_id or ref_meeting_id
+            await self.storage.upsert_file(
+                entity,
+                body_id,
+                paper_id=paper_id,
+                meeting_id=meeting_id,
+                agenda_item_id=agenda_item_id,
+                agenda_item_public=agenda_item_public,
+            )
             metrics.record_entity_synced("file", body_name or "unknown")
         elif isinstance(entity, ProcessedConsultation):
             # Consultations can belong to papers - try to look it up
@@ -2751,6 +3447,14 @@ class SyncOrchestrator:
             metrics.record_entity_synced("paper", body_name or "unknown")
 
         return True
+
+    async def _store_agenda_item_files(self, item: ProcessedAgendaItem, body_id: UUID, body_name: str | None) -> None:
+        """Dateien direkt am Tagesordnungspunkt speichern (``upsert_agenda_item_files``) und zählen."""
+        if not item.references.get("files"):
+            return
+        stored = await self.storage.upsert_agenda_item_files(item, body_id)
+        for _ in range(stored):
+            metrics.record_entity_synced("file", body_name or "unknown")
 
     # ========== Sync All Sources ==========
 
@@ -2946,12 +3650,20 @@ class SyncOrchestrator:
                 "files": result.files_synced,
                 **self._finding_details(result),
                 **({"unstored": dict(sorted(result.unstored.items()))} if result.unstored else {}),
+                **(
+                    {"unstored_deferred": dict(sorted(result.unstored_deferred.items()))}
+                    if result.unstored_deferred
+                    else {}
+                ),
                 **({"foreign": dict(sorted(result.foreign.items()))} if result.foreign else {}),
                 **({"unresolved": dict(sorted(result.unresolved.items()))} if result.unresolved else {}),
                 **result.slice_details,
             }
 
-        status = "success" if not all_errors or total_entities > 0 else "failed"
+        status = SYNC_STATUS_SUCCESS if not all_errors or total_entities > 0 else SYNC_STATUS_FAILED
+        # Vollabgleich mit Lücke (Issue #1523), auch ohne geschriebene Objekte, solange kein Lauf gescheitert ist
+        if all(result.success for result in results) and any(result.full_incomplete for result in results):
+            status = SYNC_STATUS_PARTIAL
         duration = (end_time - start_time).total_seconds()
 
         try:

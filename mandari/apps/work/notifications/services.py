@@ -27,7 +27,7 @@ Usage:
 
 import logging
 import uuid
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from datetime import datetime, timedelta
 from typing import Any, cast
 
@@ -80,6 +80,7 @@ class NotificationHub:
         _forwarded: bool = False,  # Recursion guard for deputy forwarding
         event_key: str | None = None,
         direct_since: datetime | None = None,
+        vertretung_nicht: Collection[Any] = (),
     ) -> Notification | None:
         """
         Send a notification to a single user.
@@ -98,6 +99,8 @@ class NotificationHub:
                 höchstens eine Benachrichtigung je Ereignis und Empfänger, Mailauftrag mit demselben Schlüssel
             direct_since: Umschalten (Issue #529): keine Benachrichtigung, wenn der bisherige Weg in der
                 Anfrage dieselbe seit diesem Zeitpunkt schon angelegt hat
+            vertretung_nicht: Kennungen von Mitgliedschaften, die diese Nachricht nicht als Vertretung bekommen
+                (Issue #1512): Sie erhalten sie schon selbst oder sollen sie gar nicht erhalten
 
         Returns:
             The created Notification instance, or None if filtered out
@@ -122,6 +125,7 @@ class NotificationHub:
                     event_key=f"{event_key}:vertretung" if event_key else None,
                     direct_since=direct_since,
                     send_email=send_email if event_key else True,
+                    vertretung_nicht=vertretung_nicht,
                 )
             return None
 
@@ -196,6 +200,7 @@ class NotificationHub:
                 # Mail – Aufrufer ohne Mail (Einladung, Erinnerung, Gast-Freigabe) versenden ihre Mail selbst
                 # an den Empfänger, nicht an die Vertretung.
                 send_email=send_email if event_key else True,
+                vertretung_nicht=vertretung_nicht,
             )
 
         return notification
@@ -311,6 +316,7 @@ class NotificationHub:
         event_key=None,
         direct_since=None,
         send_email=True,
+        vertretung_nicht: Collection[Any] = (),
     ):
         """
         Forward notification to deputy if recipient is currently absent.
@@ -339,7 +345,12 @@ class NotificationHub:
                 .first()
             )
 
-            if active_absence and active_absence.deputy and cls._deputy_may_see(active_absence.deputy, metadata):
+            if (
+                active_absence
+                and active_absence.deputy
+                and active_absence.deputy_id not in vertretung_nicht
+                and cls._deputy_may_see(active_absence.deputy, metadata)
+            ):
                 cls.send(
                     recipient=active_absence.deputy,
                     notification_type=notification_type,
@@ -364,6 +375,7 @@ class NotificationHub:
 
         Unterlagen aus „Nichtöffentliche Vorgänge“ erhält nur, wer sie öffnen darf (``_hidden_from``); dasselbe
         gilt für Aufgaben zu einer solchen Unterlage oder aus einem nichtöffentlichen TOP einer Fraktionssitzung.
+        Einladungen zu eigenen Terminen erhält nur, wer den Termin sehen darf (``termine.sichtbare``).
         Lässt sich der Bezug nicht mehr auflösen, wird nicht weitergeleitet. Alles andere geht wie bisher an die
         Vertretung, auch gewöhnliche private Aufgaben: Die Sperre reicht nicht weiter als beim Empfänger selbst.
         """
@@ -391,6 +403,17 @@ class NotificationHub:
                 if item is not None and not can_view_item_with_parents(item, deputy):
                     return False
                 return task.related_motion is None or not cls._hidden_from(task.related_motion, deputy)
+            if metadata.get("termin_id"):
+                # Eigene Termine (Issue #1489): nur, wenn die Vertretung den Termin selbst sehen darf
+                from apps.work.termine import termine
+
+                return bool(termine.sichtbare(deputy).filter(pk=metadata["termin_id"]).exists())
+            if metadata.get("umfrage_id"):
+                # Terminumfrage: nur an eine Vertretung, die selbst gefragt ist oder die Umfrage angelegt hat. Wer
+                # sie nur sehen darf, weil er alle Termine verwaltet, stimmt nicht mit ab.
+                from apps.work.termine import umfrage
+
+                return umfrage.beteiligt(deputy, metadata["umfrage_id"])
         except (ValueError, TypeError, ValidationError):
             return False
         return True
@@ -408,6 +431,7 @@ class NotificationHub:
         send_email: bool = True,
         event_key: str | None = None,
         direct_since: datetime | None = None,
+        vertretung_nicht: Collection[Any] = (),
     ) -> list:
         """
         Send notifications to multiple users.
@@ -421,6 +445,8 @@ class NotificationHub:
             actor: Optional Membership who triggered this
             metadata: Optional additional data
             send_email: Whether to send emails
+            vertretung_nicht: Wer die Nachricht nicht als Vertretung bekommt (siehe ``send``); Empfänger der Liste
+                erhalten sie dann nur einmal, wenn sie zugleich eine andere Person der Liste vertreten
 
         Returns:
             List of created Notification instances
@@ -439,6 +465,7 @@ class NotificationHub:
                 send_email=send_email,
                 event_key=event_key,
                 direct_since=direct_since,
+                vertretung_nicht=vertretung_nicht,
             )
             if notification:
                 notifications.append(notification)

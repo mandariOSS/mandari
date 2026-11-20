@@ -719,6 +719,75 @@ def probe_ris(
         console.print(text)
 
 
+@app.command("datenabgleich")
+def datenabgleich_befehl(
+    source_url: str | None = typer.Option(None, "--source", "-s", help="Nur diese Quelle (URL wie in list-sources)"),
+    kommune: str = typer.Option("", "--kommune", "-k", help="Nur Kommunen, deren Name oder Kennung den Text enthält"),
+    nur_anzeigen: bool = typer.Option(False, "--nur-anzeigen", help="Ergebnis nicht an der Quelle ablegen"),
+) -> None:
+    """
+    Datenabgleich mit den Schnittstellen der Kommunen (Issue #1525): totalElements der Hauptlisten gegen den Bestand.
+
+    Je Kommune die erste Seite von Vorlagen, Sitzungen, Beratungen, TOPs und Dateien, ein Versuch je Liste, mit Takt,
+    robots.txt, User-Agent und Abruffenster der Quelle; Quellen außerhalb ihres Fensters oder in Schonung werden
+    übersprungen. Ohne ``--source`` alle aktiven Quellen nacheinander. Das Ergebnis (``sync_config["datenabgleich_
+    quelle"]``) bewertet die Anwendung im Betriebsmonitor; ``manage.py datenabgleich`` zeigt beides zusammen.
+    """
+    from rich.markup import escape
+
+    from src.sync import datenabgleich
+
+    async def run_abgleich() -> int:
+        async with SyncOrchestrator() as orchestrator:
+            if source_url:
+                source = await orchestrator.storage.get_source_by_url(source_url)
+                if source is None:
+                    await print_unknown_source(orchestrator.storage, source_url)
+                    return 1
+                sources = [source]
+            else:
+                sources = await orchestrator.storage.get_all_sources()
+            table = Table(title="Datenabgleich mit der Quelle (totalElements / Bestand)")
+            table.add_column("Quelle / Kommune", style="green", overflow="fold")
+            for typ in datenabgleich.LISTEN:
+                table.add_column(typ, justify="right")
+            abrufe = 0
+            for source in sources:
+                ergebnis = await datenabgleich.gleiche_ab(
+                    orchestrator.storage, source, kommune=kommune, speichern=not nur_anzeigen
+                )
+                abrufe += ergebnis.abrufe
+                if ergebnis.hinweis:
+                    hinweis = escape(f"{ergebnis.quelle}: {ergebnis.hinweis}")
+                    table.add_row(hinweis, *["" for _ in datenabgleich.LISTEN])
+                for eintrag in ergebnis.kommunen.values():
+                    zellen = (_zelle(eintrag["listen"].get(typ)) for typ in datenabgleich.LISTEN)
+                    table.add_row(escape(str(eintrag["name"])), *zellen)
+            console.print(table)
+            ablage = "nicht abgelegt" if nur_anzeigen else "abgelegt, Bewertung: manage.py datenabgleich"
+            console.print(f"[dim]{abrufe} Abrufe; {ablage}[/dim]")
+        return 0
+
+    code = asyncio.run(run_abgleich())
+    if code:
+        raise typer.Exit(code)
+
+
+def _zelle(werte: dict[str, Any] | None) -> str:
+    """Zelle der Tabelle ``datenabgleich``: ``Quelle / Bestand``, Fehlbestand rot, Fehler gekürzt."""
+    from rich.markup import escape
+
+    if not werte:
+        return "-"
+    if werte.get("fehler"):
+        return f"[yellow]{escape(str(werte['fehler'])[:30])}[/yellow]"
+    quelle, bestand = werte.get("quelle"), werte.get("bestand")
+    if not isinstance(quelle, int):
+        return f"? / {bestand}"
+    farbe = "red" if isinstance(bestand, int) and bestand < quelle else "white"
+    return f"[{farbe}]{quelle} / {bestand}[/{farbe}]"
+
+
 @app.command("top-kennungen-zurueck")
 def top_kennungen_zurueck(
     source_url: str = typer.Option(..., "--source", "-s", help="URL der SessionNet-Quelle (wie in list-sources)"),
@@ -771,6 +840,48 @@ def top_kennungen_zurueck(
         return 0
 
     code = asyncio.run(run_revert())
+    if code:
+        raise typer.Exit(code)
+
+
+@app.command("beratungen-verknuepfen")
+def beratungen_verknuepfen(
+    source_url: str | None = typer.Option(
+        None, "--source", "-s", help="Nur diese Quelle (URL wie in list-sources); ohne Angabe alle Quellen"
+    ),
+    ausfuehren: bool = typer.Option(False, "--ausfuehren", help="Schreiben; ohne den Schalter nur zählen"),
+) -> None:
+    """
+    Rückverweise Tagesordnungspunkt → Beratung im Bestand nachziehen (Issue #1523).
+
+    Beratungen ohne Tagesordnungspunkt, die ein Punkt derselben Quelle nennt (``AgendaItem.consultation``), bekommen
+    diesen Punkt (und seine Sitzung, wenn sie keine nennen), mit Ereignis wie im Abgleich. Seit #1523 macht das der
+    Abgleich selbst; der Befehl holt den Bestand nach. Idempotent: Ein zweiter Lauf findet nichts mehr. Ohne
+    ``--ausfuehren`` nur Zählung je Quelle (Probelauf).
+    """
+
+    async def run_link() -> int:
+        async with SyncOrchestrator() as orchestrator:
+            source_id = None
+            if source_url is not None:
+                # Eine leere Angabe ist ein Fehler, nicht „alle Quellen“
+                source = await orchestrator.storage.get_source_by_url(source_url) if source_url.strip() else None
+                if source is None:
+                    console.print(f"[red]Quelle nicht gefunden: {source_url}[/red]")
+                    return 1
+                source_id = source.id
+            counts = await orchestrator.storage.link_pending_consultations(source_id, apply=ausfuehren)
+        table = Table(title="Beratungen mit nachgetragenem Tagesordnungspunkt")
+        table.add_column("Quelle")
+        table.add_column("Beratungen", justify="right")
+        for name, count in sorted(counts.items(), key=lambda entry: (-entry[1], entry[0])):
+            table.add_row(name, str(count))
+        console.print(table)
+        verb = "geschrieben" if ausfuehren else "zu schreiben (Probelauf, --ausfuehren schreibt)"
+        console.print(f"Zusammen: {sum(counts.values())} Beratungen in {len(counts)} Quellen {verb}")
+        return 0
+
+    code = asyncio.run(run_link())
     if code:
         raise typer.Exit(code)
 

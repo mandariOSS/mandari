@@ -371,6 +371,11 @@ IM_EXPORT: dict[str, str] = {
     "FileAnnotation.author": "meetings.file_annotations",
     "AgendaSupplementaryDocument.added_by": "meetings.added_documents",
     "MemberAbsence.membership": "absences",
+    "Termin.created_by": "termine.created",
+    "TerminTeilnahme.membership": "termine.invitations",
+    "Terminumfrage.created_by": "termine.polls_created",
+    "UmfrageTeilnahme.membership": "termine.polls_asked",
+    "VorschlagAntwort.membership": "termine.polls_asked",
     "MemberChangeRequest.requester": "change_requests",
     "Notification.recipient": "notifications",
     "NotificationPreference.membership": "notifications.preferences",
@@ -432,6 +437,7 @@ class DsgvoExportService:
             "faction": self._collect_faction(membership, organization),
             "meetings": self._collect_meeting_data(membership, organization),
             "absences": self._collect_absences(membership, organization),
+            "termine": self._collect_termine(membership, organization),
             "change_requests": self._collect_change_requests(membership, organization),
             "notifications": self._collect_notifications(membership),
             "support": self._collect_support(membership, organization),
@@ -1148,6 +1154,92 @@ class DsgvoExportService:
             }
             for a in absences
         ]
+
+    # -------------------------------------------------------------------------
+    # Eigene Termine im Kalender (Issue #1489)
+    # -------------------------------------------------------------------------
+
+    def _collect_termine(self, membership, organization) -> dict:
+        """Selbst angelegte Termine und Terminumfragen mit Inhalt, Einladungen und Antworten der Person."""
+        from django.db.models import Count
+
+        from apps.work.termine.models import Termin, TerminTeilnahme, Terminumfrage, UmfrageTeilnahme, VorschlagAntwort
+
+        angelegt = (
+            Termin.objects.filter(created_by=membership, organization=organization)
+            .annotate(eingeladen=Count("teilnahmen"))
+            .order_by("-start")
+        )
+        einladungen = (
+            TerminTeilnahme.objects.filter(membership=membership, termin__organization=organization)
+            .select_related("termin")
+            .order_by("-termin__start")
+        )
+
+        def wann(value) -> str | None:
+            return _dt(timezone.localtime(value)) if value else None
+
+        return {
+            "created": [
+                {
+                    "title": termin.title,
+                    "start": wann(termin.start),
+                    "end": wann(termin.end),
+                    "all_day": termin.all_day,
+                    "location": termin.location,
+                    "video_url": termin.video_url,
+                    "description": _safe_decrypt(termin, "description"),
+                    "visibility": termin.get_visibility_display(),
+                    "invited_count": termin.eingeladen,
+                    "created_at": wann(termin.created_at),
+                }
+                for termin in angelegt
+            ],
+            "invitations": [
+                {
+                    "title": einladung.termin.title,
+                    "start": wann(einladung.termin.start),
+                    "status": einladung.get_status_display(),
+                    "answered_at": wann(einladung.geantwortet_am),
+                    "invited_at": wann(einladung.created_at),
+                }
+                for einladung in einladungen
+            ],
+            # Terminumfragen: selbst angelegte mit Inhalt, sonst die Umfragen, in denen die Person gefragt ist,
+            # mit ihren eigenen Antworten (die Antworten anderer gehören nicht in ihre Auskunft)
+            "polls_created": [
+                {
+                    "title": umfrage.title,
+                    "location": umfrage.location,
+                    "description": _safe_decrypt(umfrage, "description"),
+                    "proposals": [wann(vorschlag.start) for vorschlag in umfrage.vorschlaege.all()],
+                    "created_at": wann(umfrage.created_at),
+                    "closed_at": wann(umfrage.abgeschlossen_am),
+                }
+                for umfrage in Terminumfrage.objects.filter(created_by=membership, organization=organization)
+                .prefetch_related("vorschlaege")
+                .order_by("-created_at")
+            ],
+            "polls_asked": [
+                {
+                    "title": teilnahme.umfrage.title,
+                    "asked_at": wann(teilnahme.created_at),
+                    "answers": [
+                        {"proposal": wann(antwort.vorschlag.start), "answer": antwort.get_wahl_display()}
+                        for antwort in VorschlagAntwort.objects.filter(
+                            membership=membership, vorschlag__umfrage=teilnahme.umfrage
+                        )
+                        .select_related("vorschlag")
+                        .order_by("vorschlag__start")
+                    ],
+                }
+                for teilnahme in UmfrageTeilnahme.objects.filter(
+                    membership=membership, umfrage__organization=organization
+                )
+                .select_related("umfrage")
+                .order_by("-created_at")
+            ],
+        }
 
     # -------------------------------------------------------------------------
     # Change Requests

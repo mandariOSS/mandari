@@ -144,4 +144,10 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+    ignore:
+      # Neue Python-Versionen (3.14 → 3.15) werden von Hand gehoben: zusammen mit requires-python in
+      # mandari/pyproject.toml, python-version in den Workflows, den Wheels in uv.lock und dem Pfad
+      # site-packages im Ingestor-Image. Ein PR, der nur FROM anhebt, scheitert am Image-Bau (#1473).
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     labels: [dependencies, app:ingestor]

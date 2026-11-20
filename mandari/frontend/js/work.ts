@@ -80,12 +80,13 @@ import { registerNoeStore } from '../alpine/noe-sichtschutz'
 registerNoeStore(Alpine)
 
 // ---- Neuer Rahmen (#852): Leiste, Raum-Dialog, Blatt „Mehr“, Glocke, Personenmenü -----------------
-import { workGlocke, workGruppe, workPerson, workRahmen } from '../alpine/work-rahmen'
+import { workGlocke, workGruppe, workNeu, workPerson, workRahmen } from '../alpine/work-rahmen'
 
 Alpine.data('workRahmen', workRahmen)
 Alpine.data('workGruppe', workGruppe)
 Alpine.data('workGlocke', workGlocke)
 Alpine.data('workPerson', workPerson)
+Alpine.data('workNeu', workNeu)
 
 // ---- Anzeige automatisch speichernder htmx-Formulare (Aufgaben-Panel, #854) ----------------------
 import { autosaveAnzeige } from '../alpine/autosave-anzeige'
@@ -106,3 +107,8 @@ Alpine.data('risKarte', risKarte)
 import { sitzungsKalender } from '../alpine/sitzungs-kalender'
 
 Alpine.data('sitzungsKalender', sitzungsKalender)
+
+// ---- Terminumfrage (#1489): weitere Zeile für einen Vorschlag ---------------------------------------------------
+import { terminVorschlaege } from '../alpine/termin-umfrage'
+
+Alpine.data('terminVorschlaege', terminVorschlaege)

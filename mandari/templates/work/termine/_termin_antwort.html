@@ -1,0 +1,14 @@
+{% comment %}
+Eigene Antwort auf die Einladung zu einem Termin (work/termine/termin.html, Nebenspalte): drei Knöpfe, die gewählte
+Antwort ist gedrückt. Die Knöpfe senden das Formular termin-antwort-form, das außerhalb des Formulars zum Ändern steht.
+Kontext: meine_teilnahme.
+{% endcomment %}
+<section aria-labelledby="termin-antwort-h" class="tm-antwort">
+    <h2 id="termin-antwort-h">Sie sind eingeladen</h2>
+    <p class="fs-meta">Ihre Antwort: {{ meine_teilnahme.get_status_display }}.</p>
+    <div class="tm-antwort-knoepfe" role="group" aria-label="Ihre Antwort">
+        <button type="submit" form="termin-antwort-form" name="antwort" value="zugesagt" class="wf-knopf zugesagt" aria-pressed="{% if meine_teilnahme.status == 'zugesagt' %}true{% else %}false{% endif %}"><i data-lucide="check" aria-hidden="true"></i>Zusagen</button>
+        <button type="submit" form="termin-antwort-form" name="antwort" value="vielleicht" class="wf-knopf vielleicht" aria-pressed="{% if meine_teilnahme.status == 'vielleicht' %}true{% else %}false{% endif %}">Vielleicht</button>
+        <button type="submit" form="termin-antwort-form" name="antwort" value="abgesagt" class="wf-knopf abgesagt" aria-pressed="{% if meine_teilnahme.status == 'abgesagt' %}true{% else %}false{% endif %}"><i data-lucide="x" aria-hidden="true"></i>Absagen</button>
+    </div>
+</section>

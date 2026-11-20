@@ -110,17 +110,20 @@ def is_blocked(file_obj: Any) -> bool:
 
 def parent_withdrawn(file_obj: Any) -> bool:
     """
-    Ist der Vorgang oder die Sitzung der Datei zurückgenommen (``withdrawn_q``)?
+    Ist der Vorgang, die Sitzung oder der Tagesordnungspunkt der Datei zurückgenommen (``withdrawn_q``)?
 
     Eine Rücknahme markiert nur das Objekt selbst. Seine Anlagen tragen dann keine eigene Markierung, gehören
     aber zu einem Eintrag, den es öffentlich nicht mehr gibt: Für sie gibt es weder Bytes noch erkannten Text.
     Je Elternobjekt eine Abfrage; gedacht für die Auslieferung einer einzelnen Datei, nicht für Listen.
     """
-    from ..models import OParlMeeting, OParlPaper, withdrawn_q
+    from ..models import OParlAgendaItem, OParlMeeting, OParlPaper, withdrawn_q
 
     if file_obj.paper_id and OParlPaper.objects.filter(withdrawn_q(), pk=file_obj.paper_id).exists():
         return True
-    return bool(file_obj.meeting_id and OParlMeeting.objects.filter(withdrawn_q(), pk=file_obj.meeting_id).exists())
+    if file_obj.meeting_id and OParlMeeting.objects.filter(withdrawn_q(), pk=file_obj.meeting_id).exists():
+        return True
+    agenda_item_id = getattr(file_obj, "agenda_item_id", None)
+    return bool(agenda_item_id and OParlAgendaItem.objects.filter(withdrawn_q(), pk=agenda_item_id).exists())
 
 
 # =============================================================================
@@ -136,7 +139,12 @@ def _forget_summary(file_obj: Any) -> None:
         # UPDATE trifft die Zeile des Vorgangs immer und wartet damit auf jemanden, der gerade eine Zusammenfassung
         # speichert (``summary_store.sperren``); danach verwirft es auch die eben gespeicherte.
         OParlPaper.objects.filter(pk=file_obj.paper_id).update(
-            summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
+            summary=None,
+            summary_hinweis="",
+            summary_einfach=None,
+            summary_stand="",
+            summary_prompt_fassung=0,
+            finanzcheck=None,
         )
 
 

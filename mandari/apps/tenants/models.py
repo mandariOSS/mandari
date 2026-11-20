@@ -491,6 +491,23 @@ class Organization(models.Model):
         verbose_name="Bereitstellungs-Status geändert am",
     )
 
+    # Demo-Organisation mit Laufzeit (Issue #1406): Die Laufzeit beginnt mit der ersten angenommenen
+    # Einladung; danach sperrt der Zeitplan ``demo_ablauf`` die Organisation, die Daten bleiben erhalten.
+    demo_laufzeit_tage = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Demo-Laufzeit (Tage)",
+        help_text="Demo-Organisation: Zugang endet so viele Tage nach der ersten angenommenen Einladung "
+        "(leer = keine Demo)",
+    )
+    demo_endet_am = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Demo endet am",
+        help_text="Wird bei der ersten angenommenen Einladung gesetzt. Danach ist die Organisation gesperrt, "
+        "die Anmeldung zeigt „Demozeit abgelaufen“. Verlängern: Datum verschieben und Organisation aktivieren.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

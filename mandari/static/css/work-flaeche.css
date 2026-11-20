@@ -250,4 +250,27 @@
   }
   .wf-treffer button:hover { background: var(--wf-grau-hell); }
   .wf-treffer small { font-size: 12px; color: var(--wf-text3); }
+
+  /* ---------- Entwurf mit Fundstellen (Issue #1488) ----------
+     Der Entwurf steht als Blatt in Dokumentbreite: 15 px, Zeilenhöhe 1,6. Fundstellen sind kleine Marken am Satz
+     (sup a), Platzhalter für den Menschen sind hinterlegt (mark). Ein Absatz, den der Mensch prüfen muss, trägt einen
+     Strich am Rand, der Grund steht darunter. */
+  .wf-blatt {
+    max-width: 46rem; padding: 24px 28px; border: 1px solid var(--wf-linie-stark); border-radius: 6px;
+    background: var(--wf-flaeche); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere;
+  }
+  .wf-blatt-text > * + * { margin-top: 12px; }
+  .wf-blatt sup { margin-left: 2px; font-size: 11px; line-height: 0; }
+  .wf-blatt sup a {
+    display: inline-block; min-width: 16px; padding: 0 3px; border-radius: 4px; background: var(--wf-work-flaeche);
+    color: var(--wf-work-text); font-weight: 600; line-height: 16px; text-align: center; text-decoration: none;
+  }
+  .wf-blatt sup a:hover { text-decoration: underline; }
+  .wf-blatt mark { padding: 0 2px; border-radius: 3px; background: var(--wf-warn-flaeche); color: var(--wf-warn); }
+  .wf-pruefen { margin-left: -14px; padding-left: 12px; border-left: 2px solid var(--wf-enth); }
+  .wf-pruefen-grund { margin-top: 2px; font-size: 13px; line-height: 1.4; color: var(--wf-warn); }
+  @media (max-width: 639px) {
+    .wf-blatt { padding: 16px; }
+    .wf-pruefen { margin-left: -10px; padding-left: 8px; }
+  }
 }

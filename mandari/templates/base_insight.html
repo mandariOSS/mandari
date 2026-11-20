@@ -20,7 +20,8 @@
     <title>{% filter seitentitel %}{% block title %}mandari{% endblock %}{% block title_suffix %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}{% endblock %}{% endfilter %}</title>
 
     <!-- Canonical URL -->
-    {% if seo.canonical_url %}
+    {# Nicht neben noindex: Beides zusammen widerspricht sich, und Google kann das noindex auf die kanonische Seite übertragen (Search Console „Alternative Seite mit richtigem kanonischen Tag“, 18.11.2026) #}
+    {% if seo.canonical_url and "noindex" not in seo.robots|default:"" %}
     <link rel="canonical" href="{{ seo.canonical_url }}">
     {% endif %}
     {# Feed der Seite für Feed-Reader und Browser (Issue #1274, views/feeds.py: abo) #}

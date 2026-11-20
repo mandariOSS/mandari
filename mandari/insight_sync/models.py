@@ -16,6 +16,9 @@ class SyncLog(models.Model):
     class Status(models.TextChoices):
         RUNNING = "running", "Läuft"
         SUCCESS = "success", "Erfolgreich"
+        # Vollabgleich, der nicht alle Listen ganz gelesen hat (Zeitüberschreitung, Schutzschalter, Fensterende);
+        # schreibt der Ingestor seit Issue #1523, vorher stand ein solcher Lauf als „Erfolgreich“ im Protokoll
+        PARTIAL = "partial", "Unvollständig"
         FAILED = "failed", "Fehlgeschlagen"
 
     source = models.ForeignKey(

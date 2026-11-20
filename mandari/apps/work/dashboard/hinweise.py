@@ -19,6 +19,7 @@ from typing import Any
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.einstellungen import einstellung_setzen
 from apps.accounts.two_factor_policy import two_factor_recommended
 from apps.tenants.models import Membership
 from apps.work.notifications import ankuendigung
@@ -111,10 +112,5 @@ def zwei_faktor_zurueckgestellt(user: Any, *, jetzt: datetime | None = None) -> 
 
 def zwei_faktor_spaeter(user: Any) -> None:
     """„Später“: Empfehlung zum zweiten Faktor für ``ZWEI_FAKTOR_SPAETER_TAGE`` Tage zurückstellen."""
-    user.refresh_from_db(fields=["settings"])
-    einstellungen = dict(user.settings or {})
-    einstellungen[ZWEI_FAKTOR_SPAETER_SCHLUESSEL] = (
-        timezone.now() + timedelta(days=ZWEI_FAKTOR_SPAETER_TAGE)
-    ).isoformat()
-    user.settings = einstellungen
-    user.save(update_fields=["settings"])
+    bis = (timezone.now() + timedelta(days=ZWEI_FAKTOR_SPAETER_TAGE)).isoformat()
+    einstellung_setzen(user, ZWEI_FAKTOR_SPAETER_SCHLUESSEL, bis)

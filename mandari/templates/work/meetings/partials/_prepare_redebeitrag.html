@@ -1,0 +1,144 @@
+{% comment %}Sitzungsvorbereitung, bisherige Ansicht: Abschnitt C: Redebeitrag. Teil von _prepare_main.html (#856); Kontext und Alpine-Zustand wie dort.{% endcomment %}
+                    <!-- ===== Abschnitt C: Redebeitrag ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-violet-400 dark:border-l-violet-600 rounded-xl overflow-hidden" aria-labelledby="section-speech">
+                        <div class="px-5 py-4 flex items-center gap-2" :class="speechOpen && 'border-b border-gray-100 dark:border-gray-700'">
+                            <h3 id="section-speech" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+                                <i data-lucide="mic" class="w-4 h-4 text-violet-500"></i>
+                                Redebeitrag
+                            </h3>
+                            <span x-show="selectedItem.speechShared" class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                                <i data-lucide="users" class="w-3 h-3"></i> Geteilt
+                            </span>
+                            <div class="flex-1"></div>
+                            <a id="teleprompter-link" :href="teleprompterUrl()" target="_blank" rel="noopener"
+                               x-show="speechOpen && (selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument)"
+                               class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors">
+                                <i data-lucide="presentation" class="w-3.5 h-3.5"></i>
+                                Teleprompter
+                            </a>
+                            <button type="button" @click="speechOpen ? speechOpen = false : openSpeech()"
+                                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                <span x-show="!speechOpen" x-text="(selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument) ? 'Öffnen' : 'Verfassen'"></span>
+                                <span x-show="speechOpen">Einklappen</span>
+                                <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform" :class="speechOpen && 'rotate-180'"></i>
+                            </button>
+                        </div>
+
+                        <div x-show="speechOpen" x-collapse>
+                            <div class="px-5 py-4 space-y-3">
+                                <!-- Verknüpftes Dokument -->
+                                <template x-if="selectedItem.speechLinkedDocument">
+                                    <div class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-primary-50/70 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-800 text-sm">
+                                        <i data-lucide="link" class="w-4 h-4 text-primary-500 shrink-0"></i>
+                                        <span class="text-gray-700 dark:text-gray-200 min-w-0 flex-1">
+                                            Als Redebeitrag verknüpft:
+                                            <template x-if="selectedItem.speechLinkedDocument.title">
+                                                <a :href="`/work/${orgSlug}/motions/${selectedItem.speechLinkedDocument.id}/`" target="_blank" rel="noopener"
+                                                   class="font-medium text-primary-700 dark:text-primary-300 hover:underline"
+                                                   x-text="selectedItem.speechLinkedDocument.title"></a>
+                                            </template>
+                                            <template x-if="!selectedItem.speechLinkedDocument.title">
+                                                <span class="italic text-gray-500">Dokument ohne Zugriff</span>
+                                            </template>
+                                            — der Inhalt wird schreibgeschützt übernommen.
+                                        </span>
+                                        <button type="button" @click="unlinkDocument()"
+                                                class="shrink-0 text-xs font-medium text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                                            Verknüpfung lösen
+                                        </button>
+                                    </div>
+                                </template>
+
+                                <!-- Titel -->
+                                <input type="text" x-model="selectedItem.speechTitle"
+                                       @input="queueItemSave('speech-title', selectedItem, item => saveSpeechFields(item, { title: item.speechTitle }))"
+                                       class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100"
+                                       placeholder="Titel des Redebeitrags (optional)">
+
+                                <!-- Editor mit Mini-Toolbar -->
+                                <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+                                     :class="speechReadonly && 'opacity-90'">
+                                    <div class="flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700"
+                                         x-show="!speechReadonly">
+                                        <button type="button" title="Fett (Strg+B)" @click="speechEditor && speechEditor.chain().focus().toggleBold().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.bold && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="bold" class="w-4 h-4"></i>
+                                        </button>
+                                        <button type="button" title="Kursiv (Strg+I)" @click="speechEditor && speechEditor.chain().focus().toggleItalic().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.italic && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="italic" class="w-4 h-4"></i>
+                                        </button>
+                                        <button type="button" title="Unterstrichen (Strg+U)" @click="speechEditor && speechEditor.chain().focus().toggleUnderline().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.underline && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="underline" class="w-4 h-4"></i>
+                                        </button>
+                                        <span class="w-px h-4 mx-1 bg-gray-200 dark:bg-gray-700"></span>
+                                        <button type="button" title="Aufzählung" @click="speechEditor && speechEditor.chain().focus().toggleBulletList().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.list === 'bullet' && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="list" class="w-4 h-4"></i>
+                                        </button>
+                                        <button type="button" title="Nummerierte Liste" @click="speechEditor && speechEditor.chain().focus().toggleOrderedList().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.list === 'ordered' && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="list-ordered" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                    <div x-show="speechReadonly" class="px-3 py-1.5 bg-gray-50 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700 text-xs text-gray-500 flex items-center gap-1.5">
+                                        <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                                        Schreibgeschützt — Inhalt kommt aus dem verknüpften Dokument.
+                                    </div>
+                                    <div class="speech-editor min-h-[40vh] px-4 py-3 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 cursor-text"
+                                         @click="!speechReadonly && speechEditor && speechEditor.commands.focus()"
+                                         x-ref="speechEditorEl"></div>
+                                </div>
+
+                                <!-- Dauer, Teilen, Aktionen -->
+                                <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+                                    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                                        <i data-lucide="timer" class="w-4 h-4 text-gray-400"></i>
+                                        <input type="text" x-model="speechDurationText" @change="saveSpeechDuration()"
+                                               inputmode="numeric" pattern="[0-9]{1,2}:[0-9]{2}"
+                                               class="w-20 px-2 py-1 text-sm text-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 outline-none dark:text-gray-100"
+                                               placeholder="mm:ss">
+                                        Dauer
+                                    </label>
+                                    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+                                        <input type="checkbox" x-model="selectedItem.speechShared" @change="saveSpeechFields(selectedItem, { is_shared: selectedItem.speechShared })"
+                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                        Mit Organisation teilen
+                                    </label>
+                                    <div class="flex-1"></div>
+                                    <button type="button" @click="docModalOpen = true; docQuery = ''; docResults = []; searchDocs()"
+                                            x-show="!selectedItem.speechLinkedDocument"
+                                            class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                        <i data-lucide="link" class="w-3.5 h-3.5"></i>
+                                        Dokument als Redebeitrag verknüpfen
+                                    </button>
+                                    <button type="button" @click="deleteSpeech()"
+                                            x-show="selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument"
+                                            class="text-xs font-medium text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                                        Redebeitrag löschen
+                                    </button>
+                                </div>
+
+                                <!-- Geteilte Redebeiträge anderer -->
+                                <template x-if="selectedItem.sharedSpeeches && selectedItem.sharedSpeeches.length > 0">
+                                    <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Geteilte Redebeiträge aus der Organisation</p>
+                                        <div class="space-y-2">
+                                            <template x-for="(s, si) in selectedItem.sharedSpeeches" :key="si">
+                                                <div class="px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700">
+                                                    <p class="text-xs font-medium text-gray-700 dark:text-gray-200 mb-1" x-text="s.author"></p>
+                                                    <p class="text-sm text-gray-600 dark:text-gray-300 line-clamp-3" x-text="stripHtml(s.content)"></p>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </section>

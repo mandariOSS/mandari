@@ -1,6 +1,8 @@
+{% load humanize %}
 {% comment %}
 Tabellenansicht der Dokumente (Issue #951, documentManager.viewMode === 'list'): Linien zwischen den Zeilen statt
-Kasten, Status als Punkt mit Text. Spalten wachsen mit der Breite: am Handy stehen Status und Datum unter dem Titel,
+Kasten, Status als Punkt mit Text. Vor dem Titel das Symbol des Dokumenttyps (Issue #1492), an der Federführung das
+Kürzel der Person, „Geändert“ nennt heute und gestern beim Wort. Spalten wachsen mit der Breite: am Handy stehen Status und Datum unter dem Titel,
 ab md Status, ab lg die Änderung, ab 2xl Federführung und Frist, ab 1.800 px Themen und Checkliste; schmaler stehen
 diese Angaben unter dem Titel. Spalten ohne einen Wert auf der Seite entfallen (spalten aus MotionListView). Die ganze
 Zeile öffnet den Editor (data-href); Auswahl und Menü behalten ihr eigenes Verhalten.
@@ -29,8 +31,8 @@ Kontext: motion_rows, spalten, current_folder, folder_entries.
                     <c-form.checkbox name="auswahl" id="auswahl-t-{{ motion.id }}" value="{{ motion.id }}" modell="selectedIds" class="mt-0.5"><span class="sr-only">„{{ motion.title|truncatechars:60 }}“ zum Verschieben auswählen</span></c-form.checkbox>
                 </td>
                 <td class="px-3 py-2 align-top min-w-[16rem]">
-                    <div class="{% if row.is_amendment %}pl-5 relative{% endif %}">
-                        {% if row.is_amendment %}<i data-lucide="corner-down-right" class="absolute left-0 top-0.5 w-3.5 h-3.5 text-gray-500" aria-hidden="true"></i>{% endif %}
+                    <div class="pl-6 relative">
+                        <i data-lucide="{% if row.is_amendment %}corner-down-right{% else %}{{ motion.get_type_icon }}{% endif %}" class="absolute left-0 top-0.5 w-4 h-4 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
                         <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"
                            class="font-medium text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 break-words">{{ motion.title }}</a>
                         <i data-lucide="{{ motion.get_visibility_icon }}" class="inline-block ml-1 w-3.5 h-3.5 align-[-2px] text-gray-500 dark:text-gray-400" aria-hidden="true"></i><span class="sr-only">, Sichtbarkeit: {{ motion.get_visibility_display }}</span>
@@ -41,7 +43,7 @@ Kontext: motion_rows, spalten, current_folder, folder_entries.
                         <p class="lg:hidden mt-1 flex flex-wrap items-baseline gap-x-2 text-[0.8125rem]">
                             <span class="md:hidden">{% include "work/motions/neu/_status.html" %}</span>
                             {% if motion.administration_reference %}<span class="md:hidden text-gray-700 dark:text-gray-300" data-testid="liste-drucksachennummer">{{ motion.administration_reference }}</span>{% endif %}
-                            <span class="text-gray-600 dark:text-gray-400">Geändert {{ motion.updated_at|date:"d.m.Y" }}</span>
+                            <span class="text-gray-600 dark:text-gray-400">Geändert {{ motion.updated_at|naturalday:"d.m.Y" }}</span>
                         </p>
                         {% if motion.is_overdue %}<p class="2xl:hidden mt-0.5 text-[0.8125rem] font-medium text-red-700 dark:text-red-400">Frist {{ motion.due_date|date:"d.m.Y" }} überschritten</p>{% endif %}
                         {% if motion.topics.all or progress.total %}
@@ -59,7 +61,7 @@ Kontext: motion_rows, spalten, current_folder, folder_entries.
                     {% endif %}
                 </td>
                 {% if spalten.federfuehrung %}
-                <td class="px-3 py-2 align-top max-2xl:hidden text-gray-800 dark:text-gray-200">{% if motion.responsible %}{{ motion.responsible.user.get_display_name }}{% else %}<span class="text-gray-500">–</span>{% endif %}</td>
+                <td class="px-3 py-2 align-top max-2xl:hidden text-gray-800 dark:text-gray-200">{% if motion.responsible %}<span class="inline-flex items-center gap-2"><span class="w-5 h-5 shrink-0 inline-flex items-center justify-center rounded-full bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200 text-[10px] font-semibold" aria-hidden="true">{{ motion.responsible.user.get_initials }}</span>{{ motion.responsible.user.get_display_name }}</span>{% else %}<span class="text-gray-500">–</span>{% endif %}</td>
                 {% endif %}
                 {% if spalten.frist %}
                 <td class="px-3 py-2 align-top max-2xl:hidden whitespace-nowrap">
@@ -81,7 +83,7 @@ Kontext: motion_rows, spalten, current_folder, folder_entries.
                 </td>
                 {% endif %}
                 <td class="px-3 py-2 align-top max-lg:hidden whitespace-nowrap text-gray-700 dark:text-gray-300">
-                    <time datetime="{{ motion.updated_at|date:'c' }}" title="vor {{ motion.updated_at|timesince }}">{{ motion.updated_at|date:"d.m.Y" }}</time>
+                    <time datetime="{{ motion.updated_at|date:'c' }}" title="{{ motion.updated_at|date:"d.m.Y H:i" }} Uhr, vor {{ motion.updated_at|timesince }}">{{ motion.updated_at|naturalday:"d.m.Y" }}</time>
                 </td>
                 <td class="px-2 py-1 align-top">{% include "work/motions/neu/_ordner_menue.html" %}</td>
             </tr>

@@ -26,6 +26,12 @@ Abruf; was dann noch fehlt, erscheint nach dem nächsten Lauf des Zeitplans.
 statt des echten Werts einen Ersatzwert ein (Bonn: 1999-12-31 bei fast allen Vorgängen), und solche Angaben schwächen
 bei Suchmaschinen das Vertrauen in alle ``lastmod`` der Domain. Ohne glaubhaften Zeitpunkt fehlt ``lastmod``.
 
+``priority`` und ``changefreq`` gewichten die Stadtseite einer Kommune vor ihren Listen und diese vor den einzelnen
+Vorgängen und Sitzungen; ältere Einträge (Datum bzw. Termin vor mehr als ``AKTUELL``) stehen am Ende. Google wertet
+beide Angaben nicht aus, andere Suchmaschinen schwach; den Ausschlag geben die Links auf die Stadtseite (Brotkrumen
+jeder Detailseite). Die Angaben widersprechen dem aber wenigstens nicht mehr: Vorher trug jede Sitzung von 2021 eine
+höhere Priorität als die Listen.
+
 Das gilt auch für die Stadtseite und die Grund-Sitemap im Index: Sie tragen die jüngste glaubhafte Änderung der
 Vorgänge und Sitzungen der Kommune (``aenderung_der_kommune``, ``juengste_aenderung``), nicht den letzten Abgleich.
 Der Abgleich läuft mehrmals am Tag, auch wenn sich nichts geändert hat; ein ``lastmod``, das jedes Mal mitläuft,
@@ -37,7 +43,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from django.db import connection
@@ -58,6 +64,8 @@ INDEX_RECHENZEIT_SEKUNDEN = 5.0
 #: So lange rechnet ein Lauf des Zeitplans höchstens (Zeitgrenze der Warteschlange ``default``: 5 Minuten); was
 #: offen bleibt, kommt im nächsten Lauf zuerst
 ZEITPLAN_RECHENZEIT_SEKUNDEN = 240.0
+#: Aktuell ist ein Vorgang bzw. eine Sitzung, deren Datum bzw. Termin höchstens so weit zurückliegt; Künftiges auch
+AKTUELL = timedelta(days=365)
 #: Gremien, Personen und Ratsfragen der Grund-Sitemap: je höchstens so viele
 GRUND_HOECHSTENS = 5_000
 #: Reihenfolge der Aufteilung: Eingang, dann Kennung (eindeutig, stabil)
@@ -78,24 +86,40 @@ RIS_ZEITPUNKTE = ("oparl_modified", "oparl_created")
 FRAGE_ZEITPUNKTE = ("updated_at",)
 
 
+def ist_aktuell(datum: date | datetime | None, jetzt: datetime) -> bool:
+    """Liegt das Datum (Vorgang) bzw. der Termin (Sitzung) höchstens ``AKTUELL`` zurück oder in der Zukunft?"""
+    if datum is None:
+        return False
+    grenze = jetzt - AKTUELL
+    if isinstance(datum, datetime):
+        return (datum.replace(tzinfo=UTC) if timezone.is_naive(datum) else datum) >= grenze
+    return datum >= grenze.date()
+
+
 @dataclass(frozen=True)
 class Art:
-    """Eine aufgeteilte Art: Vorgänge oder Sitzungen."""
+    """Eine aufgeteilte Art: Vorgänge oder Sitzungen, mit ``changefreq`` und ``priority`` aktueller und älterer Einträge."""
 
     kennung: str
     pfad: str
-    changefreq: str
-    priority: str
+    #: Feld mit dem Datum des Vorgangs bzw. dem Termin der Sitzung (``ist_aktuell``)
+    datumsfeld: str
+    aktuell: tuple[str, str]
+    aelter: tuple[str, str] = ("yearly", "0.3")
 
     def modell(self) -> type[Model]:
         from ..models import OParlMeeting, OParlPaper
 
         return OParlPaper if self.kennung == "vorgaenge" else OParlMeeting
 
+    def angaben(self, datum: date | datetime | None, jetzt: datetime) -> tuple[str, str]:
+        """``changefreq`` und ``priority`` eines Eintrags nach seinem Datum bzw. Termin."""
+        return self.aktuell if ist_aktuell(datum, jetzt) else self.aelter
+
 
 ARTEN: dict[str, Art] = {
-    "vorgaenge": Art("vorgaenge", "/insight/vorgaenge/", "monthly", "0.6"),
-    "sitzungen": Art("sitzungen", "/insight/termine/", "weekly", "0.7"),
+    "vorgaenge": Art("vorgaenge", "/insight/vorgaenge/", "date", ("monthly", "0.6")),
+    "sitzungen": Art("sitzungen", "/insight/termine/", "start", ("weekly", "0.6")),
 }
 
 
@@ -297,13 +321,13 @@ def _dateien_berechnen(art: Art, body_id: Any) -> list[Datei]:
     ]
 
 
-def eintraege(art: Art, body_id: Any, seite: int) -> Iterator[tuple[Any, datetime | None]]:
-    """Kennung und Änderungszeitpunkt der Einträge einer Datei (``seite`` ab 1), gestreamt."""
+def eintraege(art: Art, body_id: Any, seite: int) -> Iterator[tuple[Any, datetime | None, date | datetime | None]]:
+    """Kennung, Änderungszeitpunkt und Datum bzw. Termin der Einträge einer Datei (``seite`` ab 1), gestreamt."""
     start = (seite - 1) * EINTRAEGE_JE_DATEI
     werte = (
         _bestand(art, body_id)
         .order_by(*REIHENFOLGE)
-        .values_list("id", aenderungszeitpunkt())[start : start + EINTRAEGE_JE_DATEI]
+        .values_list("id", aenderungszeitpunkt(), art.datumsfeld)[start : start + EINTRAEGE_JE_DATEI]
     )
     return werte.iterator(chunk_size=2_000)
 

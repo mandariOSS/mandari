@@ -11,7 +11,7 @@ from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Q
 from django.db.models.functions import Lower, Now
 from django.utils import timezone
@@ -165,10 +165,13 @@ class SourceDeletionModel(CanonicalIdModel):
         self.deleted_at = when or timezone.now()
         self.deletion_reason = reason
         self.oparl_modified = self.deleted_at
-        self.save(update_fields=["deleted", "deleted_at", "deletion_reason", "oparl_modified", "updated_at"])
-        if self.withdrawn_by_publisher:
-            self._forget_summaries()
-            self._forget_alerts()
+        # Löschmarke und Rücknahme der Zusammenfassungen gemeinsam: Ein gleichzeitig gespeicherter Finanzcheck sieht
+        # entweder beides oder nichts davon
+        with transaction.atomic():
+            self.save(update_fields=["deleted", "deleted_at", "deletion_reason", "oparl_modified", "updated_at"])
+            if self.withdrawn_by_publisher:
+                self._forget_summaries()
+                self._forget_alerts()
 
     def _forget_alerts(self) -> None:
         """
@@ -195,7 +198,12 @@ class SourceDeletionModel(CanonicalIdModel):
             # auf dessen Transaktion und verwirft danach auch die eben gespeicherte. Mit der Bedingung träfe es keine
             # Zeile, wartete nicht, und eine Zusammenfassung aus der zurückgenommenen Anlage bliebe stehen.
             OParlPaper.objects.filter(pk=paper_id).update(
-                summary=None, summary_hinweis="", summary_einfach=None, summary_stand="", summary_prompt_fassung=0
+                summary=None,
+                summary_hinweis="",
+                summary_einfach=None,
+                summary_stand="",
+                summary_prompt_fassung=0,
+                finanzcheck=None,
             )
             if isinstance(self, OParlPaper):
                 self.summary = None
@@ -203,6 +211,7 @@ class SourceDeletionModel(CanonicalIdModel):
                 self.summary_einfach = None
                 self.summary_stand = ""
                 self.summary_prompt_fassung = 0
+                self.finanzcheck = None
 
     @property
     def depublished(self) -> bool:
@@ -676,6 +685,16 @@ class OParlBody(SourceDeletionModel):
         return self.display_name or self.short_name or self.name
 
     @property
+    def aus_mandari_session(self) -> bool:
+        """Veröffentlicht die Kommune selbst mit mandari Session (Kennung aus der OParl-API eines Session-Mandanten)?
+
+        Dann ist das Bürgerportal ihr eigenes Angebot; sonst zeigt mandari die Daten aus ihrem Ratsinformationssystem,
+        und die Seiten sagen das so, damit niemand (auch keine KI-Suche) die Kommune für eine Kundin hält.
+        """
+        external_id = self.external_id or ""
+        return all(marker in external_id for marker in SESSION_OPARL_MARKERS)
+
+    @property
     def is_regional_level(self) -> bool:
         """Gebiet oberhalb der Gemeinde, etwa ein Regierungsbezirk oder Kreis (Issue #54).
 
@@ -953,13 +972,38 @@ class OParlMeeting(SourceDeletionModel):
                 return ", ".join(names)
 
         # 3. Fallback
-        if self.name and self.name.lower() != "sitzung":
-            return self.name
+        if eigener := self.eigener_name():
+            return eigener
         # Die Quelle nennt ein Gremium, das im Bestand fehlt: Sie gibt es nicht öffentlich aus (Issue #1441). Das ist
-        # etwas anderes als eine Sitzung ohne Gremium, und „Sitzung“ allein sähe wie ein Gremienname aus.
+        # etwas anderes als eine Sitzung ohne Gremium, und „Sitzung“ allein sähe wie ein Gremienname aus. Steht der
+        # Name im öffentlichen Kalender der Kommune, hat ihn der Abruf dort gelesen (``gremium_aus_kalender``).
         if org_urls and not im_bestand:
-            return GREMIUM_NICHT_VEROEFFENTLICHT
+            return self.gremium_aus_kalender() or GREMIUM_NICHT_VEROEFFENTLICHT
         return "Sitzung"
+
+    def gremium_aus_kalender(self) -> str:
+        """
+        Name eines Gremiums, das die OParl-Schnittstelle nicht herausgibt, aus dem öffentlichen Sitzungskalender der
+        Kommune (Abruf ``ingestor/src/sync/gremien_kalender.py``, Erweiterung ``mandari:gremiumWeb``); sonst leer.
+        """
+        web = (self.raw_json or {}).get("mandari:gremiumWeb")
+        name = web.get("name") if isinstance(web, dict) else None
+        return name.strip() if isinstance(name, str) else ""
+
+    def eigener_name(self) -> str:
+        """
+        Name der Sitzung, wenn er mehr sagt als „Sitzung“; sonst leer. Manche RIS nennen jede Sitzung so (Münster),
+        dann trägt nur das Gremium (``get_display_name``) die Information (Issue #1508).
+        """
+        name = (self.name or "").strip()
+        return "" if name.lower() in {"", "sitzung"} else name
+
+    def bezeichnung(self) -> str:
+        """
+        Wie eine Sitzung in Listen, Kalendern und Bezügen heißt: ihr eigener Name, wenn er mehr sagt als „Sitzung“
+        (etwa „Sondersitzung zum Haushalt“), sonst ihr Gremium (``get_display_name``, Issue #1508).
+        """
+        return self.eigener_name() or self.get_display_name()
 
     def get_organization_names(self):
         """Gibt die Namen der beteiligten Gremien zurück."""
@@ -1029,6 +1073,15 @@ class OParlPaper(SourceDeletionModel):
         db_default=0,
         verbose_name="Prompt-Fassung der Zusammenfassung",
         help_text="Fassung des Prompts, mit der die gespeicherte Zusammenfassung entstand (0: vor der Zählung).",
+    )
+    # Finanzcheck (Issue #1513, ``insight_ai.services.finanzcheck``): geprüfte Kosten, Fördergeld und jährliche
+    # Belastung mit Fundstellen; verfällt wie die Zusammenfassung mit neuem Text oder zurückgenommenen Anlagen.
+    # Ohne Wert in der Datenbank (NULL): Ingestor und ein älteres Image legen weiter Vorgänge an
+    finanzcheck = models.JSONField(
+        blank=True,
+        null=True,
+        verbose_name="Finanzcheck",
+        help_text="Geprüfte Finanzangaben des Vorgangs (Status, Fassung, Daten mit Fundstellen).",
     )
     locations = models.JSONField(blank=True, null=True)
 
@@ -1260,6 +1313,17 @@ class OParlFile(SourceDeletionModel):
     body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
     paper = models.ForeignKey(OParlPaper, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
     meeting = models.ForeignKey(OParlMeeting, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
+    # Datei direkt am Tagesordnungspunkt (OParl ``auxiliaryFile``/``resolutionFile`` am AgendaItem, Rückverweis
+    # ``File.agendaItem``; Issue #1528), etwa ein Antrag ohne Vorlage. ``meeting`` nennt dann die Sitzung des Punkts.
+    # Nullable ohne Standardwert: Der Ingestor schreibt die Spalte (``ingestor/src/storage/models.py``).
+    agenda_item = models.ForeignKey(
+        OParlAgendaItem,
+        on_delete=models.SET_NULL,
+        related_name="files",
+        blank=True,
+        null=True,
+        verbose_name="Tagesordnungspunkt",
+    )
 
     name = models.CharField(max_length=500, blank=True, null=True)
     file_name = models.CharField(max_length=255, blank=True, null=True)

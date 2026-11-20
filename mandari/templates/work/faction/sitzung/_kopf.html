@@ -1,7 +1,7 @@
 {# Kopf der laufenden Sitzung: Titel mit Stand, Ablaufleiste, Anwesenheit, Beenden, weitere Aktionen (Issue #874) #}
 {# Kontext: meeting, org_slug, stufen, anw, quorum, rechte, oob_kopf (bei Aktualisierung per HTMX) #}
 <header class="fs-kopf" id="fs-kopf"{% if oob_kopf %} hx-swap-oob="true"{% endif %}>
-    <a class="wf-knopf wf-leise wf-ik" href="{% url 'work:faction' org_slug=org_slug %}" aria-label="Zurück zu den Fraktionssitzungen">
+    <a class="wf-knopf wf-leise wf-ik" href="{% url 'work:faction' org_slug=org_slug %}" aria-label="Zurück zu den internen Sitzungen">
         <i data-lucide="chevron-left" aria-hidden="true"></i>
     </a>
     <div class="fs-titel">

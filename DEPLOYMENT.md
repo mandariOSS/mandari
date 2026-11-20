@@ -963,11 +963,13 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 | `insight_sync.schedules.haengende_syncs_bereinigen` | alle 5 min | Sync-Protokolle, die länger als 15 min laufen, als fehlgeschlagen markieren |
 | `insight_core.schedules.verortung_automatisch` | alle `GEOREF_AUTO_INTERVAL_MINUTES` (15) min | begrenzter Verortungslauf (`GEOREF_AUTO_ENABLED`, `GEOREF_AUTO_LIMIT`) |
 | `insight_core.schedules.sitemap_aufteilen` | alle 30 min | Aufteilung der Sitemaps je gelistete Kommune vorberechnen, fehlende zuerst, sonst älter als drei Stunden, höchstens 240 s je Lauf; der Sitemap-Index liest nur diese Werte (Issue #1259) |
+| `insight_core.schedules.oeffentliche_zahlen_fortschreiben` | alle 10 min | Zahlen je Kommune für `/api/stats/` und `/api/stats/bodies/` zählen und ablegen; die Abrufe lesen nur diesen Stand. Ohne Stand (er verfällt 30 min nach dem letzten Ablegen) zählt der nächste Abruf selbst, den nicht der Cache der Antwort bedient. Lässt sich der Stand nicht ablegen, scheitert der Lauf (Issue #1478) |
 | `apps.work.schedules.fraktionserinnerungen_senden` | alle `FACTION_REMINDER_INTERVAL_MINUTES` (15) min | Erinnerungen an Fraktionssitzungen |
 | `apps.work.schedules.fraktionseinladungen_senden` | alle `FACTION_INVITATION_INTERVAL_MINUTES` (15) min | automatische Einladungen (auch zum festen Zeitpunkt einer Reihe), Freigabe-Hinweise, Erinnerungen zum Eintragen von TOPs |
 | `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |
 | `apps.work.schedules.ris_verknuepfungen_abgleichen` | alle `WORK_RIS_RELINK_INTERVAL_MINUTES` (15) min | Work-Daten nach Neuveröffentlichung im RIS umhängen (`WORK_RIS_RELINK`, Standard aus) |
 | `apps.work.schedules.fraktionsprotokolle_versenden` | alle `FACTION_PROTOCOL_INTERVAL_MINUTES` (15) min | automatischer Protokollversand, wenn die Organisation ihn eingeschaltet hat |
+| `apps.work.schedules.terminumfragen_erinnern` | alle `WORK_POLL_REMINDER_INTERVAL_MINUTES` (60) min | Terminumfragen: Endet die Antwortfrist morgen oder heute, bekommen die Gefragten ohne Antwort eine Erinnerung, einmal je Umfrage (Issue #1489) |
 | `apps.work.schedules.mitgliedschaften_auslaufen` | alle `WORK_MEMBER_EXPIRY_INTERVAL_MINUTES` (60) min | Mitgliedschaften „Nur Lesen, Löschung nach 30 Tagen“: Erinnerungen 7 und 3 Tage vorher, Löschung am Löschtag (Issue #1237) |
 | `apps.events.schedules.idempotenzschluessel_aufraeumen` | täglich 03:40 | Idempotenzschlüssel nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` |
 | `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS` (14), tote und fehlgeschlagene nach `EVENTS_TASKS_DEAD_RETENTION_DAYS` (90) Tagen |
@@ -1465,6 +1467,8 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
    Den übrigen Bestand zieht ein Befehl nach, ein Batch je Lauf, nie neben einem offenen Batch und im Monatsbudget.
    Ohne `--ausfuehren` zählt und schätzt er nur:
 
+   **Finanzcheck (#1513):** Für dieselben Kommunen erstellt der Zeitplan `finanzcheck_nachziehen` stündlich in der Warteschlange `ai` (Worker `worker-heavy`, `--queues ocr,ai`) höchstens sechs Finanzchecks mit demselben Modell und Monatsbudget; er hört auf, wenn weniger als 30 % des Budgets übrig sind. Texte ohne Geldbeträge gehen nicht an die KI. Einzelne Vorgänge: `docker exec mandari python manage.py finanzcheck --vorgang <Vorlagen-Nr.> --kommune <Kommune>` (`--trocken` zeigt das Ergebnis, ohne zu speichern; `--neu` ersetzt einen vorhandenen).
+
    ```bash
    docker exec mandari python manage.py zusammenfassungen_nachziehen --limit 100
    docker exec mandari python manage.py zusammenfassungen_nachziehen --limit 100 --hoechstens-usd 2 --ausfuehren
@@ -1829,6 +1833,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
 | `befehl:sitzungen_aufraeumen` | täglich 04:25 | abgelaufene Sitzungen in Blöcken löschen (Issue #1091) |
+| `befehl:demo_ablauf` | stündlich :05 | Demo-Organisationen nach ihrer Laufzeit sperren, Daten bleiben (Issue #1406) |
 | `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, liegen gebliebene Abrufe freigeben, fällige Wiederholungen und neueste fehlende Dateien zuerst, je Quelle höchstens `DOCUMENT_FETCH_MAX_QUEUED` (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
 | `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |
@@ -1836,6 +1841,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
 | `befehl:check_service_levels` | täglich 06:30 | Service-Level |
+| `befehl:datenabgleich` | täglich 06:05 | Datenabgleich mit den Schnittstellen der Kommunen: interne Konsistenz je Kommune, Ampel im Betriebsmonitor (Issue #1525, `docs/MONITORING.md`) |
 | `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
 | `befehl:verify_audit_chain` | täglich 04:20 | Hash-Ketten prüfen (Issue #221; ein Befund lässt den Lauf scheitern) |
 | `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, Issue #366) |
@@ -1847,7 +1853,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 Dazu die Zeitpläne aus dem Abschnitt „Worker“ (Fraktionssitzungen, Verortung, Aufräumen).
 `python manage.py events_scheduler --list` zeigt alle mit dem zuletzt geplanten Termin; von Hand
 läuft ein Befehl weiter mit `docker compose exec worker python manage.py <befehl> --trotz-zeitplan`.
-Aufrufe, die nur lesen oder berichten, laufen immer: `--dry-run`, `check_source_health --report`,
+Aufrufe, die nur lesen oder berichten, laufen immer: `--dry-run`, `check_source_health --report`, `datenabgleich --report`,
 `check_service_levels --report`, `cache_files --stats`, `loeschabgleich --robots`, `dokumentablage`
 ohne Schritt (Kennzahlen) und `availability_report` ohne `--out`.
 
@@ -1891,7 +1897,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|einreichung_aufraeumen|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|demo_ablauf|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|datenabgleich|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|einreichung_aufraeumen|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 

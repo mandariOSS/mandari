@@ -182,6 +182,8 @@ class Prior:
     meeting_id: UUID | None = None
     #: Vorlage einer Datei vor dem Upsert
     paper_id: UUID | None = None
+    #: Tagesordnungspunkt einer Datei vor dem Upsert
+    agenda_item_id: UUID | None = None
     #: Kennzeichen ``public`` eines Tagesordnungspunkts vor dem Upsert
     public: bool = True
     #: Grund der Löschmarkierung vor dem Upsert (leer ohne Markierung und bei Markierungen ohne Grund)
@@ -572,22 +574,25 @@ def file_events(
     paper_id: UUID | None = None,
     meeting_id: UUID | None = None,
     ids: IdBases | None = None,
+    agenda_item_id: UUID | None = None,
 ) -> list[Draft]:
     """
     ``ris.file.changed``: ``added``, ``replaced`` (neue Fassung) oder ``renamed``.
 
-    ``added`` gilt auch, wenn eine bekannte Datei erstmals an einer Vorlage oder Sitzung hängt (zuerst
-    einzeln geliefert, später eingebettet); die Nutzlast nennt die neue Zugehörigkeit. Ein Wechsel
-    von einer Vorlage zu einer anderen zählt nicht: Hängt eine Datei an mehreren Vorlagen, trägt die
-    Zeile die zuletzt abgeglichene, und jeder Vollabgleich meldete sonst den Wechsel.
+    ``added`` gilt auch, wenn eine bekannte Datei erstmals an einer Vorlage, Sitzung oder einem
+    Tagesordnungspunkt hängt (zuerst einzeln geliefert, später eingebettet); die Nutzlast nennt die neue
+    Zugehörigkeit. Ein Wechsel von einer Vorlage zu einer anderen zählt nicht: Hängt eine Datei an mehreren
+    Vorlagen, trägt die Zeile die zuletzt abgeglichene, und jeder Vollabgleich meldete sonst den Wechsel.
     """
     payload: dict[str, Any] = {"file": str(file_id)}
     if prior is None or prior.deleted:
         payload["change"] = "added"
     else:
         keys = differing_keys(prior.raw_json, raw, FILE_BACKREFS)
-        newly_attached = (paper_id is not None and prior.paper_id is None) or (
-            meeting_id is not None and prior.meeting_id is None
+        newly_attached = (
+            (paper_id is not None and prior.paper_id is None)
+            or (meeting_id is not None and prior.meeting_id is None)
+            or (agenda_item_id is not None and prior.agenda_item_id is None)
         )
         if FILE_CONTENT_FIELDS.intersection(keys):
             payload["change"] = "replaced"
@@ -600,7 +605,7 @@ def file_events(
             return []
     paper = str(paper_id) if paper_id is not None else _first_reference(raw.get("paper"), ids)
     meeting = str(meeting_id) if meeting_id is not None else _first_reference(raw.get("meeting"), ids)
-    agenda_item = _first_reference(raw.get("agendaItem"), ids)
+    agenda_item = str(agenda_item_id) if agenda_item_id is not None else _first_reference(raw.get("agendaItem"), ids)
     for name, ref in (("paper", paper), ("meeting", meeting), ("agenda_item", agenda_item)):
         if ref is not None:
             payload[name] = ref

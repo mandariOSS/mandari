@@ -28,8 +28,8 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
     permission_required = "meetings.prepare"
 
     def neue_ansicht(self) -> bool:
-        """Neue Seite (#856) nur mit Schalter der Organisation und ohne ``?ansicht=bisher``."""
-        return vorbereitung.neue_ansicht(self.organization, self.request.GET)
+        """Neue Seite (#856) mit dem Schalter der Organisation."""
+        return vorbereitung.neue_ansicht(self.organization)
 
     def get_template_names(self) -> list[str]:
         if self.neue_ansicht():

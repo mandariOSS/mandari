@@ -636,6 +636,8 @@ class TestSeiten:
         assert 'data-testid="vorgang-abonnieren"' in html
         assert "Neues zu diesem Vorgang abonnieren" in html
         assert "/insight/abonnieren/?feed=%2Finsight%2Fvorgaenge%2F" in html
+        # Je Vorgang eine eigene Anleitungsadresse (noindex): Suchmaschinen sollen ihr nicht folgen
+        assert re.search(r'<a href="/insight/abonnieren/\?feed=[^"]+"[^>]*\brel="nofollow"', html)
 
     def test_liste_und_suche_mit_der_auswahl(self, bestand: dict[str, Any]) -> None:
         client = Client()
@@ -697,6 +699,7 @@ class TestAnleitung:
         assert antwort.status_code == 200
         assert antwort["X-Robots-Tag"] == "noindex"
         assert '<meta name="robots" content="noindex, follow">' in html
+        assert 'rel="canonical"' not in html, "kein Canonical neben noindex (Search Console, 18.11.2026)"
         assert f'value="{settings.SITE_URL.rstrip("/")}{pfad}"' in html
         assert "Neues zu „Radweg an der Hauptstraße“" in html
         assert f'href="/insight/vorgaenge/{bestand["antrag"].pk}/"' in html

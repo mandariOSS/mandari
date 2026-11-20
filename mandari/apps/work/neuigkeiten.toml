@@ -11,18 +11,117 @@
 #            Anführungszeichen. Alle Einträge einer Version tragen denselben Tag: Die Seite zeigt eine Überschrift je
 #            Version. Ohne Version der Tag der Übernahme nach dev.
 #   version  Version, mit der die Neuerung erschien; leer, solange sie noch nicht in einem Release steht
+#   bereich  wo man die Neuerung in Work findet, wie in der Navigation: start, sitzungen, fraktionssitzungen,
+#            dokumente, aufgaben, team, recherche, einstellungen, hilfe oder person; ueberall für Neuerungen im
+#            ganzen Rahmen (Meldungen, Seitenleiste). Die Seite fasst die Einträge einer Version je Bereich zusammen.
 #   titel    ein Satz zum Nutzen, mit Punkt am Ende, höchstens 80 Zeichen
 #   text     ein Absatz, der erklärt, wo man die Neuerung findet und was sie bringt, höchstens 500 Zeichen
 #
 # Der Punkt in der Seitenleiste erscheint wieder, sobald der jüngste Tag einen Eintrag mehr hat oder ein jüngerer Tag
-# dazukommt. Die Reihenfolge in der Datei ist die auf der Seite: das Wichtigste einer Version zuerst.
+# dazukommt. Das Wichtigste einer Version steht zuerst: Die Bereiche folgen auf der Seite der Reihenfolge ihres
+# ersten Eintrags, die Einträge darin der Reihenfolge in der Datei.
 #
 # Ton: Sie-Form, sachlich und einladend, keine Fachwörter aus der Technik, nichts versprechen, was nicht in jeder
-# Organisation gilt. apps/work/tests/test_neuigkeiten.py prüft Pflichtfelder, Längen, Anrede und den Tag der Version.
+# Organisation gilt. apps/work/tests/test_neuigkeiten.py prüft Pflichtfelder, Bereich, Längen, Anrede und den Tag der
+# Version.
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "sitzungen"
+titel = "Tagesordnungspunkte zeigen ihre Vorlagen und Unterlagen vollständiger."
+text = """In einigen Kommunen fehlten an Tagesordnungspunkten Vorlagen und Dokumente. Work holt sie jetzt zuverlässiger \
+aus dem Ratsinformationssystem. Neu sind Dokumente, die direkt an einem Punkt hängen, etwa Anträge ohne eigene \
+Vorlage: Sie stehen in der Sitzung und in der Sitzungsvorbereitung am Punkt."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "sitzungen"
+titel = "Eigene Termine im Kalender, mit Einladungen und Antworten."
+text = """Im Kalender legen Sie eigene Termine an, etwa einen Ortstermin oder ein Pressegespräch: über „Termin \
+anlegen“, über „Neu“ in der Seitenleiste oder mit einem Klick auf einen Tag. Sie laden Mitglieder ein, die zu- oder \
+absagen, hinterlegen Ort, Videolink und Beschreibung und legen fest, wer den Termin sieht. Voraussetzung ist das \
+Recht „Termine im Kalender anlegen“, das eine Rolle in den Einstellungen bekommt."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "start"
+titel = "Offene Einladungen und Terminumfragen auf der Startseite."
+text = """Unter „Für Sie“ auf der Startseite sehen Sie Einladungen zu Terminen, auf die Sie noch nicht geantwortet haben, \
+und Terminumfragen, in denen Ihre Antwort fehlt. Endet die Frist einer Umfrage morgen, erinnert Work Sie einmal daran."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "sitzungen"
+titel = "Termine gemeinsam finden: die Terminumfrage."
+text = """Über „Termin abstimmen“ am Kalender schlagen Sie mehrere Zeitpunkte vor und fragen alle Mitglieder, einen \
+Arbeitskreis oder einzelne Personen. Die Gefragten antworten je Vorschlag mit Ja, wenn nötig oder Nein und sehen \
+dabei, was an dem Tag schon in ihrem Kalender steht. Am Ende legen Sie einen Vorschlag fest: Daraus wird ein Termin \
+oder eine interne Sitzung, die Zusagen stehen schon daran. Voraussetzung ist das Recht „Termine im Kalender anlegen“."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "sitzungen"
+titel = "Ihre Termine auch im Kalender auf dem Handy."
+text = """Am Kalender führt „Im eigenen Kalender abonnieren“ in Ihr Profil. Dort erzeugen Sie eine persönliche \
+Adresse und tragen sie in Google Kalender, auf dem iPhone, in Outlook oder Thunderbird ein; die Schritte stehen \
+dabei. Ihr Kalender zeigt dann die internen Sitzungen, die Sitzungen Ihrer Gremien und jetzt auch die Termine, mit \
+Titel, Zeit und Ort."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "sitzungen"
+titel = "Der Kalender zeigt auch Fraktionssitzungen, Fristen und Aufgaben."
+text = """Im Kalender unter „Sitzungen“ stehen neben den Sitzungen der Gremien jetzt auch die Fraktionssitzungen, die \
+Fristen Ihrer Dokumente und die Aufgaben mit Fälligkeit, je Art in einer eigenen Farbe. Über dem Kalender blenden \
+Sie jede Art aus und wieder ein; Ihr Browser merkt sich die Auswahl."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "ueberall"
+titel = "„Neu“ in der Seitenleiste, Zahlen an Aufgaben und Dokumenten."
+text = """Über den Knopf „Neu“ oben in der Seitenleiste legen Sie von jeder Seite aus ein Dokument oder eine Aufgabe \
+an oder beginnen die Antwort auf eine Anfrage. An „Aufgaben“ steht, wie viele offene Aufgaben Ihnen zugewiesen \
+sind, an „Dokumente“, wie viele auf Ihre Freigabe warten."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "ueberall"
+titel = "Tastaturkürzel: Übersicht mit dem Fragezeichen."
+text = """Mit „?“ öffnen Sie die Übersicht der Tastaturkürzel: „/“ führt in die Suche, „N“ öffnet „Neu“, die Ziffern \
+wechseln in die Bereiche der Seitenleiste. Die Kürzel gelten nicht, während Sie schreiben, und lassen sich in der \
+Übersicht abschalten. Sie finden sie auch im Menü an Ihrem Namen."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "recherche"
+titel = "Anfragen beantworten Sie mit einem Entwurf samt Fundstellen."
+text = """Unter „Recherche“ gibt es die Seite „Anfrage beantworten“. Sie fügen eine Bürger- oder Presseanfrage ein \
+und erhalten aus den öffentlichen Ratsdaten einen Antwortentwurf mit den Fundstellen als Fußnoten. Offene Punkte \
+stehen getrennt daneben, auffällige Zahlen und Daten sind markiert. Mit „Als Dokument übernehmen“ wird daraus ein \
+Dokument mit Freigabe, Briefkopf und Export. Sie prüfen und versenden selbst. Voraussetzung: Die KI-Funktionen \
+Ihrer Organisation sind eingeschaltet."""
+
+[[eintrag]]
+datum = 2026-11-20
+version = "0.13.1"
+bereich = "dokumente"
+titel = "Hochgeladene PDF-Anhänge öffnen im Browser."
+text = """PDF-Dateien, die Sie an Dokumente, Aufgaben oder Tagesordnungspunkte interner Sitzungen hängen, öffnen jetzt \
+in einem neuen Tab, wie die Dokumente aus dem Ratsinformationssystem. Andere Dateiarten laden Sie wie bisher herunter."""
 
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "aufgaben"
 titel = "Aufgaben lassen sich mehreren Personen zuordnen."
 text = """Neben der zugewiesenen Person wählen Sie beim Anlegen und im Panel der Aufgabe „Weitere Zuständige“. Alle \
 Zuständigen sehen die Aufgabe, finden sie unter „Meine Aufgaben“, bearbeiten sie und haken sie ab. Wer sie abhakt, \
@@ -31,12 +130,14 @@ erledigt sie für alle. Kommentare und die Erinnerung an die Fälligkeit gehen a
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "aufgaben"
 titel = "Im Panel einer Aufgabe speichert jede Änderung sofort."
 text = """Priorität, Zuweisung und Sichtbarkeit einer Aufgabe speichern jetzt sofort, wenn Sie sie im Panel ändern. Bisher galt das nur für den Status; die anderen Änderungen gingen erst mit der nächsten Eingabe oder dem Speichern-Knopf mit."""
 
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "fraktionssitzungen"
 titel = "TOPs in der laufenden Fraktionssitzung verschieben."
 text = """Über „Verschieben“ am TOP rückt er nach oben, nach unten oder in den anderen Teil der Tagesordnung, etwa \
 wenn sich in der Sitzung zeigt, dass ein Punkt in den nichtöffentlichen Teil gehört. Notizen, Beschluss, Aufgaben \
@@ -46,6 +147,7 @@ die Tagesordnung verwalten; in den nichtöffentlichen Teil nur Vereidigte."""
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "fraktionssitzungen"
 titel = "Die Anwesenheit ist schneller aufgenommen."
 text = """Die Liste bleibt beim Eintragen an ihrer Stelle stehen und nennt die Personen in der Reihenfolge, in der \
 man sie liest: Vorname zuerst. Wer die Sitzung verwaltet, findet unter „Nicht eingeladen“ auch die aktiven \
@@ -55,6 +157,7 @@ entschuldigt oder nicht anwesend ist."""
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "fraktionssitzungen"
 titel = "TOPs werden per Ziehen zu Unterpunkten."
 text = """In der Planung einer Fraktionssitzung ziehen Sie einen TOP am Griff nach rechts: Er wird Unterpunkt des \
 TOPs darüber, aus TOP 4 wird 3.1. Nach links gezogen wird er wieder ein eigener TOP. Mit der Tastatur rücken am \
@@ -63,6 +166,7 @@ Griff die Pfeiltasten rechts und links ein und aus, dasselbe steht im Menü je T
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "fraktionssitzungen"
 titel = "Kleine Änderungen der Tagesordnung brauchen keine neue Einladung."
 text = """Ändern Sie die Tagesordnung nach dem Versand der Einladung, bietet die Infoleiste neben „Aktualisierung \
 senden …“ jetzt auch „Ohne Aktualisierung übernehmen“ an. Danach steht dort wieder „Eingeladen“, bis zur nächsten \
@@ -71,6 +175,7 @@ senden …“ jetzt auch „Ohne Aktualisierung übernehmen“ an. Danach steht 
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "fraktionssitzungen"
 titel = "TOP-Vorschläge stehen auch in der laufenden Sitzung."
 text = """Offene Vorschläge finden Sie jetzt unter der Tagesordnung der laufenden Fraktionssitzung und neben dem \
 Protokoll, solange es nicht genehmigt ist. Aufnehmen und Ablehnen mit Begründung gehen wie vor der Sitzung. Ihre \
@@ -79,6 +184,7 @@ Notizen werden vorher gesichert, der aktuelle TOP bleibt offen."""
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "fraktionssitzungen"
 titel = "Mehr Platz für das Protokoll in der Sitzung."
 text = """Die Arbeitsfläche der laufenden Fraktionssitzung teilt sich nur noch, wenn ein TOP Unterlagen hat. Ohne \
 Vorlagen, Dokumente oder Anlagen hat das Protokoll die ganze Breite. Den Trenner zwischen Unterlagen und Protokoll \
@@ -88,6 +194,7 @@ auch ausblenden."""
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "ueberall"
 titel = "Meldungen erscheinen einmal und lassen sich gut schließen."
 text = """Der Hinweis auf eine neue Benachrichtigung kam bisher bei jedem Seitenaufruf wieder. Jetzt erscheint jede \
 Benachrichtigung in einem Browser höchstens einmal, unten rechts wie alle Meldungen. Der Knopf zum Schließen ist \
@@ -96,6 +203,7 @@ größer, und eine Meldung bleibt stehen, solange der Mauszeiger auf ihr liegt."
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "einstellungen"
 titel = "Mitgliedschaften können mit 30 Tagen Frist auslaufen."
 text = """In der Mitgliederverwaltung gibt es den Zustand „Nur Lesen, Löschung nach 30 Tagen“. Die Person kann sich \
 bis zur Löschung anmelden, sieht in der Organisation aber nur noch das Löschdatum und den Export ihrer eigenen \
@@ -105,6 +213,7 @@ Zustand zurücknehmen."""
 [[eintrag]]
 datum = 2026-11-17
 version = "0.13.0"
+bereich = "hilfe"
 titel = "Was neu ist, steht jetzt direkt in Work."
 text = """Unten in der Seitenleiste nennt Work die Version, mit der Sie arbeiten. Ein Klick darauf öffnet diese \
 Seite mit den Neuerungen jeder Version, das Neueste zuerst. Ein Punkt neben der Version zeigt, dass etwas \
@@ -113,6 +222,7 @@ dazugekommen ist, das Sie noch nicht gelesen haben. Am Handy finden Sie die Seit
 [[eintrag]]
 datum = 2026-11-03
 version = "0.12.0"
+bereich = "fraktionssitzungen"
 titel = "TOPs in der laufenden Sitzung ergänzen."
 text = """Über „TOP hinzufügen …“ unter der Tagesordnung ergänzen Sie in der laufenden Fraktionssitzung einen TOP, \
 etwa wenn unter TOP 1 eine geänderte Tagesordnung beschlossen wird: öffentlich, nichtöffentlich oder als \
@@ -121,6 +231,7 @@ Unterpunkt. Der neue TOP öffnet sich sofort, Ihre Notizen zum offenen TOP werde
 [[eintrag]]
 datum = 2026-11-03
 version = "0.12.0"
+bereich = "dokumente"
 titel = "Anträge per E-Mail bei der Verwaltung einreichen."
 text = """Besteht keine Verbindung zu mandari Session, reichen Sie einen Antrag per E-Mail an die \
 Verwaltungskontakte Ihrer Organisation ein, mit PDF und Anhängen. Das Dokument hält fest, wer wann an wen \
@@ -129,6 +240,7 @@ eingereicht hat, und die Verwaltung bestätigt den Eingang über einen Link."""
 [[eintrag]]
 datum = 2026-11-03
 version = "0.12.0"
+bereich = "dokumente"
 titel = "Anhänge an Dokumenten selbst verwalten."
 text = """Anhänge an einem Dokument laden Sie selbst hoch, benennen sie um und entfernen sie wieder. Reichen Sie \
 den Antrag an mandari Session ein, gehen die Anhänge als nichtöffentliche Anlagen mit."""
@@ -136,6 +248,7 @@ den Antrag an mandari Session ein, gehen die Anhänge als nichtöffentliche Anla
 [[eintrag]]
 datum = 2026-11-03
 version = "0.12.0"
+bereich = "dokumente"
 titel = "Änderungsanträge kennen ihren Bezug."
 text = """In der Seitenleiste „Details“ eines Dokuments suchen und setzen Sie den Bezugsantrag, ein Dokument oder \
 eine Vorlage aus dem Ratsinformationssystem, und die Bezugssitzung. Das Dokument zeigt dann „Änderungsantrag zu …“, \
@@ -144,6 +257,7 @@ der Bezugsantrag verweist zurück."""
 [[eintrag]]
 datum = 2026-11-03
 version = "0.12.0"
+bereich = "dokumente"
 titel = "Der Import übernimmt Absätze, Listen und Tabellen."
 text = """Beim Import aus PDF und Word bleiben Absätze, nummerierte Listen und Tabellen erhalten; bisher stand eine \
 ganze Seite in einem Absatz. Kann eine Datei nicht übernommen werden, nennt Work den Grund."""
@@ -151,6 +265,7 @@ ganze Seite in einem Absatz. Kann eine Datei nicht übernommen werden, nennt Wor
 [[eintrag]]
 datum = 2026-11-03
 version = "0.12.0"
+bereich = "hilfe"
 titel = "Die Hilfe führt in die Anwenderdokumentation."
 text = """Die Hilfe im Support-Bereich verweist auf docs.mandari.de mit Seiten zu Einstieg, Sitzungsvorbereitung, \
 Dokumenten, Konto und Sicherheit sowie häufigen Fragen. Sitzungen, Dokumente und Sicherheitseinstellungen verlinken \

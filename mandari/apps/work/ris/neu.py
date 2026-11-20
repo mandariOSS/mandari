@@ -144,6 +144,8 @@ def sitzung(organization: Any, membership: Any, meeting: Any) -> dict[str, Any]:
     erlaubt = basis(organization, membership)
     punkte = ris.visible_agenda_items(meeting)
     vorlagen = ris.papers_of_agenda_items(punkte)
+    # Dateien direkt an den Punkten (Issue #1528); unter den Sitzungsdateien stehen sie nicht
+    top_dateien = ris.files_of_agenda_items(punkte)
     positionen: dict[uuid.UUID, fraktion.Position] = {}
     notizen: dict[uuid.UUID, int] = {}
     if erlaubt["darf_vorbereiten"]:
@@ -158,6 +160,7 @@ def sitzung(organization: Any, membership: Any, meeting: Any) -> dict[str, Any]:
             {
                 "item": punkt,
                 "papers": vorlagen.get(punkt.pk, []),
+                "dateien": top_dateien.get(punkt.pk, []),
                 "position": positionen.get(punkt.pk),
                 "notizen": notizen.get(punkt.pk, 0),
             }

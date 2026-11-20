@@ -641,6 +641,102 @@ def test_kalender_ohne_inline_skript_und_feste_farbe(welt: Welt, client_for: Any
     assert _inline_skripte(vorlage) == 0
 
 
+def test_kalender_zeigt_alle_arten_nach_recht_und_auswahl(welt: Welt, client_for: Any, make_member: Any) -> None:
+    """Issue #1489: Sitzungen, Fraktionssitzungen, Fristen und Aufgaben in einem Kalender, je nach Recht und Auswahl."""
+    from apps.work.tasks.models import Task
+
+    org, vorsitz = welt.org, welt.rollen["vorsitz"]
+    in_drei_tagen = timezone.localdate() + timedelta(days=3)
+    dokument = Motion.objects.create(
+        organization=org, author=vorsitz, title="Antrag Radweg", visibility="organization", due_date=in_drei_tagen
+    )
+    Motion.objects.create(
+        organization=org,
+        author=vorsitz,
+        title="Erledigtes Dokument",
+        visibility="organization",
+        status="completed",
+        due_date=in_drei_tagen,
+    )
+    aufgabe = Task.objects.create(
+        organization=org, title="Stellungnahme", visibility="organization", created_by=vorsitz, due_date=in_drei_tagen
+    )
+    Task.objects.create(
+        organization=org,
+        title="Fertige Aufgabe",
+        visibility="organization",
+        created_by=vorsitz,
+        status="done",
+        due_date=in_drei_tagen,
+    )
+    adresse = reverse("work:meetings_calendar_events", kwargs={"org_slug": org.slug})
+    jetzt = timezone.now()
+    fenster = {"start": (jetzt - timedelta(days=45)).isoformat(), "end": (jetzt + timedelta(days=45)).isoformat()}
+    client = client_for(vorsitz.user)
+
+    alle = client.get(adresse, fenster).json()
+    je_id = {eintrag["id"]: eintrag for eintrag in alle}
+    assert {eintrag["extendedProps"]["art"] for eintrag in alle} == {"sitzung", "fraktion", "dokument", "aufgabe"}
+    frist = je_id[f"dokument-{dokument.pk}"]
+    assert frist["title"] == "Frist: Antrag Radweg" and frist["allDay"] is True
+    assert frist["start"] == in_drei_tagen.isoformat() and frist["classNames"] == ["termin-dokument"]
+    assert je_id[f"aufgabe-{aufgabe.pk}"]["url"].endswith(f"?open={aufgabe.pk}")
+    assert f"fraktion-{welt.fraktionssitzung.pk}" in je_id
+    # Abgeschlossenes hat keine Frist mehr
+    assert not any("Erledigtes" in eintrag["title"] or "Fertige" in eintrag["title"] for eintrag in alle)
+
+    # Auswahl über die Kästchen: nur die gewählten Arten, ohne Auswahl nichts
+    nur = client.get(adresse, {**fenster, "arten": "fraktion,aufgabe"}).json()
+    assert {eintrag["extendedProps"]["art"] for eintrag in nur} == {"fraktion", "aufgabe"}
+    assert client.get(adresse, {**fenster, "arten": ""}).json() == []
+
+    # Jede Art nur mit dem Recht ihres Bereichs, auch wenn die Adresse mehr verlangt
+    nur_sitzungen = make_member(org, ["meetings.view"])
+    verlangt = client_for(nur_sitzungen.user).get(adresse, {**fenster, "arten": "sitzung,fraktion,dokument,aufgabe"})
+    assert {eintrag["extendedProps"]["art"] for eintrag in verlangt.json()} == {"sitzung"}
+
+    # Ohne lesbares Zeitfenster kommt nichts
+    assert client.get(adresse, {"start": "2026-11-01T00:00:00", "end": fenster["end"]}).json() == []
+    assert client.get(adresse, {"start": "x", "end": "y"}).json() == []
+
+    # Eine Sitzung über Mitternacht erscheint auch im Fenster des Folgetags
+    nachts = FactionMeeting.objects.create(
+        organization=org,
+        meeting_type=welt.fraktionssitzung.meeting_type,
+        title="Klausur bis in die Nacht",
+        start=jetzt + timedelta(days=60, hours=-2),
+        end=jetzt + timedelta(days=60, hours=2),
+        created_by=vorsitz,
+    )
+    # Was das Fenster nur berührt, gehört nicht hinein: Ende genau zu seinem Beginn, Beginn genau an seinem Ende
+    for titel, von, bis in (
+        ("Endet am Rand", timedelta(days=59, hours=20), timedelta(days=60)),
+        ("Beginnt am Rand", timedelta(days=61), timedelta(days=61, hours=2)),
+    ):
+        FactionMeeting.objects.create(
+            organization=org,
+            meeting_type=welt.fraktionssitzung.meeting_type,
+            title=titel,
+            start=jetzt + von,
+            end=jetzt + bis,
+            created_by=vorsitz,
+        )
+    folgetag = {
+        "start": (jetzt + timedelta(days=60)).isoformat(),
+        "end": (jetzt + timedelta(days=61)).isoformat(),
+        "arten": "fraktion",
+    }
+    assert [eintrag["id"] for eintrag in client.get(adresse, folgetag).json()] == [f"fraktion-{nachts.pk}"]
+
+    # Die Seite bietet je Art ein Kästchen an, auch bei nur einer Art (eine gemerkte Abwahl bleibt korrigierbar)
+    html = _neu(welt, client_for, "vorsitz", "work:meetings_calendar")
+    assert 'data-arten="sitzung,fraktion,termin,umfrage,dokument,aufgabe"' in html
+    assert html.count('x-model="arten"') == 6
+    eine_art = client_for(nur_sitzungen.user).get(reverse("work:meetings_calendar", kwargs={"org_slug": org.slug}))
+    # Mit meetings.view allein: Sitzungen der Gremien und eigene Termine
+    assert eine_art.content.decode().count('x-model="arten"') == 3
+
+
 def test_sitzungsdetail_eine_hauptaktion_und_vorlagen_je_punkt(welt: Welt, client_for: Any) -> None:
     html = _neu(welt, client_for, "vorsitz", "work:meeting_detail", meeting_id=welt.sitzung.pk)
     slug = welt.org.slug
@@ -657,7 +753,7 @@ def test_fraktionssitzungen_hauptaktion_textlinks_und_weiteres(welt: Welt, clien
     slug = welt.org.slug
 
     # Satz zur nächsten Sitzung statt der Zahlen (Muster, Issue #1071)
-    assert "Die nächste Fraktionssitzung ist am " in html
+    assert "Die nächste interne Sitzung ist am " in html
     assert "$dispatch(&#x27;open-create-modal&#x27;)" in html or "$dispatch('open-create-modal')" in html
     assert 'x-show="showCreateModal"' in html and 'aria-labelledby="neue-sitzung-titel"' in html
     assert reverse("work:faction_audit", kwargs={"org_slug": slug}) in html

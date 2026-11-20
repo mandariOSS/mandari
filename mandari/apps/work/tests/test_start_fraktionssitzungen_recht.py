@@ -23,7 +23,7 @@ pytestmark = pytest.mark.django_db
 
 TITEL = "Klausur zur Haushaltsstrategie"
 ORT = "Sitzungssaal Nordflügel"
-SATZ = "Die nächste Fraktionssitzung ist am"
+SATZ = "Die nächste interne Sitzung ist am"
 
 
 @pytest.fixture

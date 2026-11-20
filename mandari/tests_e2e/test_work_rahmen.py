@@ -138,8 +138,8 @@ class TestNeuerRahmen:
         goto(f"/work/{neu.organization.slug}/faction/")
         leiste = page.get_by_role("navigation", name="Hauptbereiche")
         expect(leiste).to_be_visible()
-        # Fraktionssitzungen als eigener Eintrag „Fraktion“ in der Leiste unten (Entscheidung vom 06.10.2026)
-        expect(leiste.locator('[aria-current="page"]')).to_contain_text("Fraktion")
+        # Interne Sitzungen als eigener Eintrag „Intern“ in der Leiste unten (Entscheidung vom 06.10.2026)
+        expect(leiste.locator('[aria-current="page"]')).to_contain_text("Intern")
         assert page.evaluate("() => document.documentElement.scrollWidth") <= 390
         screenshot("work-rahmen-handy")
 

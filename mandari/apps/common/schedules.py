@@ -37,6 +37,8 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     befehl_als_zeitplan("cleanup_orphaned_accounts", crontab="45 3 * * *", zeitgrenze=1800, ziel=ziel)
     # Abgelaufene Sitzungen löschen (Issue #1091): Django räumt django_session nicht selbst auf
     befehl_als_zeitplan("sitzungen_aufraeumen", crontab="25 4 * * *", zeitgrenze=1800, ziel=ziel)
+    # Demo-Organisationen nach ihrer Laufzeit sperren, Daten bleiben (Issue #1406)
+    befehl_als_zeitplan("demo_ablauf", crontab="5 * * * *", zeitgrenze=600, ziel=ziel)
 
     # Dokument-Cache (docs/FILE_CACHE.md): stündlich die neuesten fehlenden Dateien nachladen. Die
     # Zeitgrenze liegt unter dem Abstand, damit ein abgebrochener Lauf den nächsten nicht sperrt.
@@ -61,6 +63,9 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     # Betrieb (Issue #231): Quellen stündlich, Service-Level täglich
     befehl_als_zeitplan("check_source_health", crontab="15 * * * *", zeitgrenze=600, ziel=ziel)
     befehl_als_zeitplan("check_service_levels", crontab="30 6 * * *", zeitgrenze=600, ziel=ziel)
+    # Datenabgleich mit den Schnittstellen der Kommunen (Issue #1525): täglich vor dem Prüflauf um 06:15, der die
+    # Quellen danach bewertet und alarmiert
+    befehl_als_zeitplan("datenabgleich", crontab="5 6 * * *", zeitgrenze=1800, ziel=ziel)
     # Verfügbarkeitsbericht des Vormonats nach REPORTS_ROOT; nur mit Statusseite, sonst endete jeder
     # Lauf mit Fehler
     if getattr(settings, "GATUS_URL", ""):

@@ -8,7 +8,7 @@ Vorlage. Der Kontextprozessor ``rahmen_kontext`` gibt den Wert als ``work_neues_
 ``work/base_work.html`` erweitert damit entweder den neuen (``work/base_work_neu.html``) oder den bisherigen Rahmen
 (``work/base_work_alt.html``). Der bisherige Rahmen bleibt unverändert, bis Sven den neuen freigibt.
 
-Navigation des neuen Rahmens: kompakte Seitenleiste mit Start, Sitzungen, Fraktionssitzungen, Dokumente, Aufgaben,
+Navigation des neuen Rahmens: kompakte Seitenleiste mit Start, Sitzungen, Interne Sitzungen, Dokumente, Aufgaben,
 Team und Recherche, darunter Einstellungen, Hilfe und die Person (Entscheidung im Issue vom 06.10.2026: kompakt, aber
 „Fraktionssitzungen“ als eigener Eintrag, im Kern die bisherige Gliederung). Welcher Bereich aktiv ist, folgt aus dem
 Namen der aufgerufenen Adresse; die rund 70 Seiten brauchen dafür keine eigene Angabe. Sitzungen und Recherche haben
@@ -99,7 +99,7 @@ class Ziel:
 BEREICHE: tuple[Ziel, ...] = (
     Ziel("start", "Start", "work:dashboard", "house"),
     Ziel("sitzungen", "Sitzungen", "work:meetings", "calendar-days"),
-    Ziel("fraktionssitzungen", "Fraktionssitzungen", "work:faction", "users", kurz="Fraktion"),
+    Ziel("fraktionssitzungen", "Interne Sitzungen", "work:faction", "users", kurz="Intern"),
     Ziel("dokumente", "Dokumente", "work:documents", "file-text"),
     Ziel("aufgaben", "Aufgaben", "work:tasks", "square-check"),
     Ziel("team", "Team", "work:team", "contact"),
@@ -116,7 +116,39 @@ HILFE = Ziel("hilfe", "Hilfe und Support", "work:support", "circle-help")
 PERSON = Ziel("person", "Profil", "work:profile", "user")
 BENACHRICHTIGUNGEN = Ziel("benachrichtigungen", "Benachrichtigungen", "work:notifications", "bell")
 
-#: Seiten des Ratsinformationssystems in der Reihenfolge der bisherigen Seitenleiste (Suche zuletzt)
+#: Menü „Neu“ oben in der Seitenleiste (Issue #1492): Eintrag und das Recht, das er verlangt. Es führt nur auf
+#: Seiten, die es schon gibt; ein Eintrag ohne Recht erscheint nicht, ohne jeden Eintrag fehlt der Knopf.
+NEU: tuple[tuple[Ziel, str], ...] = (
+    (Ziel("dokument", "Dokument", "work:document_create", "file-plus"), "motions.create"),
+    (Ziel("aufgabe", "Aufgabe", "work:task_create", "square-plus"), "tasks.create"),
+    (Ziel("termin", "Termin", "work:termin_neu", "calendar-plus"), "calendar.create"),
+    (Ziel("terminumfrage", "Terminumfrage", "work:terminumfrage_neu", "calendar-search"), "calendar.create"),
+    (Ziel("anfrage", "Antwort auf eine Anfrage", "work:ris_anfrage", "message-square-reply"), "ris.view"),
+)
+
+
+def kuerzel(bereiche: int, *, neu: bool, suche: bool) -> list[dict[str, Any]]:
+    """
+    Zeilen der Übersicht „Tastaturkürzel“ (Issue #1492), passend zu dem, was die Person im Rahmen hat: Beschreibung,
+    Tasten und das Wort zwischen zwei Tasten. Die Tasten selbst wertet ``frontend/alpine/work-rahmen.ts`` aus.
+    """
+    zeilen: list[dict[str, Any]] = [{"text": "Diese Übersicht", "tasten": ["?"], "zwischen": ""}]
+    if suche:
+        zeilen.append({"text": "Suche öffnen", "tasten": ["/", "Strg K"], "zwischen": "oder"})
+    if neu:
+        zeilen.append({"text": "Neu anlegen", "tasten": ["N"], "zwischen": ""})
+    if bereiche > 1:
+        zeilen.append(
+            {"text": "Bereich der Seitenleiste öffnen", "tasten": ["1", str(min(bereiche, 9))], "zwischen": "bis"}
+        )
+    return zeilen
+
+
+#: Bereiche mit einer Zahl an der Navigation: offene Arbeit der Person (``dashboard.selectors.zaehler``)
+ZAEHLER: frozenset[str] = frozenset({"aufgaben", "dokumente"})
+
+#: Seiten des Ratsinformationssystems in der Reihenfolge der bisherigen Seitenleiste, danach die Suche und
+#: „Anfrage beantworten“ (Issue #1488)
 _RIS_SEITEN: tuple[Ziel, ...] = (
     Ziel("vorgaenge", "Vorgänge", "work:ris_papers"),
     Ziel("beschluesse", "Beschlüsse", "work:ris_decisions"),
@@ -125,6 +157,7 @@ _RIS_SEITEN: tuple[Ziel, ...] = (
     Ziel("dokumente", "Dokumente", "work:ris_files"),
     Ziel("karte", "Karte", "work:ris_map"),
     Ziel("suche", "Suche", "work:ris_search"),
+    Ziel("anfrage", "Anfrage beantworten", "work:ris_anfrage"),
 )
 
 #: Reiter über den vorhandenen Listen; der erste ist die Startseite des Bereichs. Fraktionssitzungen sind seit der
@@ -148,6 +181,10 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "dashboard_explicit": ("start", None, None),
     "meetings": ("sitzungen", "fuer_mich", None),
     "meetings_calendar": ("sitzungen", None, "Kalender"),
+    "termin_neu": ("sitzungen", None, "Neuer Termin"),
+    "termin": ("sitzungen", None, "Termin"),
+    "terminumfrage_neu": ("sitzungen", None, "Neue Terminumfrage"),
+    "terminumfrage": ("sitzungen", None, "Terminumfrage"),
     "session_invitations": ("sitzungen", None, "Ladungen der Verwaltung"),
     "ris_meetings": ("sitzungen", "alle_gremien", None),
     "ris_meeting_detail": ("sitzungen", "alle_gremien", None),
@@ -155,6 +192,7 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "guest_documents": ("dokumente", None, None),
     "ris_overview": ("recherche", "uebersicht", None),
     "ris_search": ("recherche", "suche", None),
+    "ris_anfrage": ("recherche", "anfrage", None),
     "ris_papers": ("recherche", "vorgaenge", None),
     "ris_paper_detail": ("recherche", "vorgaenge", None),
     "ris_decisions": ("recherche", "beschluesse", None),
@@ -315,6 +353,8 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
     for eintrag in bereiche:
         unterpunkte = [] if ist_gast else _unterpunkte(eintrag["key"], slug, url_name)
         eintrag["unterpunkte"] = unterpunkte
+        # Die Zahl selbst kommt mit dem Abruf der Glocke; beim Seitenaufruf kostet sie keine Abfrage
+        eintrag["zaehler"] = eintrag["key"] if not ist_gast and eintrag["key"] in ZAEHLER else ""
         # Offen auf den Seiten des Bereichs und auf jeder Seite, die einer der Unterpunkte zeigt
         eintrag["offen"] = bool(unterpunkte) and (eintrag["aktiv"] or any(u["aktiv"] for u in unterpunkte))
 
@@ -341,9 +381,18 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
     reiter_aktuell = next((z for z in reiter_ziele if _ist_seite(z, url_name)), None)
     reiter = [_eintrag(z, slug, z is reiter_aktuell, url_name) for z in reiter_ziele] if reiter_aktuell else []
 
+    neu: list[dict[str, Any]] = []
+    if not ist_gast and membership is not None:
+        neu = [_eintrag(ziel, slug, False) for ziel, recht in NEU if membership.has_permission(recht)]
+
+    neu = [eintrag for eintrag in neu if eintrag["url"]]
+    suche_url = "" if ist_gast else _url(Ziel("suche", "Suche", "work:ris_search"), slug)
+
     return {
         "bereich": bereich,
         "bereiche": bereiche,
+        "neu": neu,
+        "kuerzel": kuerzel(len(bereiche), neu=bool(neu), suche=bool(suche_url)),
         "unten": unten,
         "leiste_unten": leiste_unten,
         "mehr": mehr,
@@ -353,7 +402,7 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
         "brotkrumen": brotkrumen(organization, hauptbereiche, bereich, reiter_key, seite, url_name),
         "ist_gast": ist_gast,
         "start_url": bereiche[0]["url"],
-        "suche_url": "" if ist_gast else _url(Ziel("suche", "Suche", "work:ris_search"), slug),
+        "suche_url": suche_url,
         "raum_kuerzel": raum_kuerzel(organization.name),
         "raum_farbe": raum_farbe(organization),
         "raum_art": raum_art(organization),

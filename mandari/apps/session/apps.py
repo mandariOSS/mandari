@@ -38,6 +38,12 @@ class SessionConfig(AppConfig):
         m2m_changed.connect(rollen_geaendert, sender=SessionUser.roles.through, dispatch_uid="session_rollen_spiegel")
         post_migrate.connect(post_migrate_abgleichen, sender=self, dispatch_uid="session_rollen_post_migrate")
 
+        # Demo-Organisationen (Issue #1406): Ein Konto mit Session-Zugang bleibt trotz abgelaufener Work-Demo
+        # anmeldbar
+        from apps.tenants import demo
+
+        demo.weiteren_zugang_melden(_hat_session_zugang)
+
         # Befehle beim Dispatcher der Installation registrieren (submission.submit, Issue #540)
         from . import commands  # noqa: F401 – der Import registriert die Handler
 
@@ -51,3 +57,10 @@ class SessionConfig(AppConfig):
         from .api import nichtoeffentlich
 
         nichtoeffentlich.register()
+
+
+def _hat_session_zugang(user) -> bool:
+    """True, wenn das Konto in einem aktiven Mandanten aktiv ist (Demo-Organisationen, Issue #1406)."""
+    from .models import SessionUser
+
+    return SessionUser.objects.filter(user=user, is_active=True, tenant__is_active=True).exists()

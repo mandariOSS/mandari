@@ -90,9 +90,16 @@ def sitzung(agenda_items: Sequence[Any]) -> dict[str, Any]:
     """
     Sitzungsdetail: je Tagesordnungspunkt alle Vorlagen (eine Abfrage). Die bisherige Seite wollte die erste Vorlage
     samt Dateien zeigen, las sie aber aus einem Feld, das es am Tagesordnungspunkt nicht gibt; die Vorlagen führen
-    jetzt in die Recherche, ihre Dateien stehen dort.
+    jetzt in die Recherche, ihre Dateien stehen dort. Dateien direkt am Punkt (etwa Anträge ohne Vorlage, Issue #1528)
+    stehen am Punkt (eine Abfrage).
     """
     from hub.ris import selectors as ris
 
     vorlagen = ris.papers_of_agenda_items(agenda_items)
-    return {"tagesordnung": [{"item": item, "papers": vorlagen.get(item.pk, [])} for item in agenda_items]}
+    dateien = ris.files_of_agenda_items(agenda_items)
+    return {
+        "tagesordnung": [
+            {"item": item, "papers": vorlagen.get(item.pk, []), "dateien": dateien.get(item.pk, [])}
+            for item in agenda_items
+        ]
+    }

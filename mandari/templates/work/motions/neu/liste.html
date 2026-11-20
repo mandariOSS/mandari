@@ -12,7 +12,7 @@ der bisherigen Liste hatte keinen Auslöser und fehlt hier; geteilt wird im Edit
 {% block gestaltung %}neu{% endblock %}
 
 {% block work_header %}
-<c-rahmen.kopfband titel="Dokumente" text="{{ stats_sentence }}" dicht data-testid="dokumente-kopf">
+<c-rahmen.kopfband titel="Dokumente" :text="stats_satz" dicht data-testid="dokumente-kopf">
     <c-slot name="aktionen">
         <c-ui.help-link topic="dokumente" />
         <c-ui.textlink href="{% url 'work:document_import' org_slug=organization.slug %}" class="text-sm">PDF importieren</c-ui.textlink>

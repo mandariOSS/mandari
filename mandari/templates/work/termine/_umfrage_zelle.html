@@ -1,0 +1,5 @@
+{% comment %}
+Eine Antwort im Raster der Terminumfrage (work/termine/umfrage.html): Häkchen für Ja, Häkchen in Klammern für
+„Wenn nötig“, Kreuz für Nein, Strich ohne Antwort; der Text steht für Screenreader dabei. Kontext: wahl.
+{% endcomment %}
+{% if wahl == "ja" %}<i data-lucide="check" aria-hidden="true"></i><span class="sr-only">Ja</span>{% elif wahl == "notfalls" %}<span aria-hidden="true">(<i data-lucide="check"></i>)</span><span class="sr-only">Wenn nötig</span>{% elif wahl == "nein" %}<i data-lucide="x" aria-hidden="true"></i><span class="sr-only">Nein</span>{% else %}<span aria-hidden="true">–</span><span class="sr-only">Keine Antwort</span>{% endif %}

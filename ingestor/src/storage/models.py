@@ -234,6 +234,9 @@ class OParlPaper(Base):
     summary_einfach: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_stand: Mapped[str] = mapped_column(String(64), server_default="")
     summary_prompt_fassung: Mapped[int] = mapped_column(SmallInteger, server_default="0")
+    # Finanzcheck (Django verwaltet, Issue #1513): der Ingestor setzt ihn nur zurück, wie die Zusammenfassung
+    # ``none_as_null``: ``None`` schreibt SQL-NULL, nicht JSON-``null`` (die Anwendung sucht ``finanzcheck IS NULL``)
+    finanzcheck: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     locations: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Georeferenzierung (Django verwaltet, Ingestor setzt Default)
@@ -416,6 +419,11 @@ class OParlFile(Base):
     body_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_bodies.id"), nullable=True)
     paper_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_papers.id"), nullable=True)
     meeting_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_meetings.id"), nullable=True)
+    # Tagesordnungspunkt, an dem die Datei hängt (``auxiliaryFile``/``resolutionFile`` am AgendaItem, Rückverweis
+    # ``File.agendaItem``); Django-Migration insight_core 0074. Die Sitzung steht dann zusätzlich in ``meeting_id``.
+    agenda_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("oparl_agenda_items.id"), nullable=True, index=True
+    )
 
     name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

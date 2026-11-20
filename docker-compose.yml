@@ -704,6 +704,8 @@ services:
       # Gesamtfrist je Lauf in Minuten (0: keine): Danach endet der Lauf und zählt als Fehlversuch der Quelle
       INGESTOR_SYNC_RUN_DEADLINE_MINUTES: ${INGESTOR_SYNC_RUN_DEADLINE_MINUTES:-180}
       INGESTOR_SYNC_FULL_DEADLINE_MINUTES: ${INGESTOR_SYNC_FULL_DEADLINE_MINUTES:-1440}
+      # Täglicher Datenabgleich je Quelle: totalElements der Hauptlisten gegen den Bestand (#1525)
+      INGESTOR_DATENABGLEICH: ${INGESTOR_DATENABGLEICH:-true}
       # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
       INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
       # Dateien für den Text gleich in der Ablage der Anwendung ablegen (ein Abruf je Datei, #788)
@@ -761,6 +763,7 @@ services:
       CIRCUIT_BREAKER_FAILURE_THRESHOLD:
       CIRCUIT_BREAKER_RECOVERY_TIMEOUT:
       CIRCUIT_BREAKER_SUCCESS_THRESHOLD:
+      CIRCUIT_BREAKER_HALF_OPEN_WAIT:
       TEXT_EXTRACTION_ENABLED:
       TEXT_EXTRACTION_MAX_SIZE_MB:
       TEXT_EXTRACTION_CONCURRENCY:

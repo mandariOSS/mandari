@@ -35,7 +35,7 @@ Fehlerobjekt statt einer leeren Liste (:func:`sdnet_empty_list`, Issue #1034).
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -219,7 +219,23 @@ def _is_midnight_stamp(value: Any) -> bool:
     return parsed.hour == 0 and parsed.minute == 0 and parsed.second == 0 and parsed.microsecond == 0
 
 
-def timestamps_unreliable(item: dict[str, Any]) -> bool:
+#: Abstand zur Uhrzeit des Abrufs, in dem gleiche ``created``/``modified`` als Stempel des Abrufs gelten (ALLRIS 4)
+FETCH_STAMP_WINDOW = timedelta(minutes=30)
+
+
+def _is_fetch_stamp(value: Any, now: datetime | None = None) -> bool:
+    if not isinstance(value, str) or "T" not in value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        return False
+    return abs((now or datetime.now(UTC)) - parsed) <= FETCH_STAMP_WINDOW
+
+
+def timestamps_unreliable(item: dict[str, Any], now: datetime | None = None) -> bool:
     """
     Erkennt Objekte, deren ``modified`` keine Änderungsinformation trägt.
 
@@ -228,9 +244,15 @@ def timestamps_unreliable(item: dict[str, Any]) -> bool:
     liegen exakt auf Mitternacht — der Server stempelt jedes Objekt mit dem
     Abrufdatum. Für solche Objekte vergleicht der Sync den Inhalt statt
     der Zeitstempel.
+
+    Drittes Muster aus ALLRIS 4 (Herzogenrath, Issue #1431): Mitgliedschaften und ältere Tagesordnungspunkte
+    tragen als ``created`` und ``modified`` die Uhrzeit des Abrufs, und die Liste der Mitgliedschaften ignoriert
+    ``modified_since``. Gleiche Stempel im Abstand von höchstens ``FETCH_STAMP_WINDOW`` zur Uhrzeit des Abrufs
+    gelten deshalb ebenfalls als unzuverlässig. Ein wirklich gerade angelegtes Objekt trifft das auch; für es
+    entscheidet dann der Inhalt, was am Ergebnis nichts ändert.
     """
     modified = item.get("modified")
     if not modified:
         return True
     created = item.get("created")
-    return created == modified and _is_midnight_stamp(modified)
+    return created == modified and (_is_midnight_stamp(modified) or _is_fetch_stamp(modified, now))

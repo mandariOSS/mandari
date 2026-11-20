@@ -112,9 +112,9 @@ export function sichererLink(link: unknown, herkunft: string): string {
     const ziel = new URL(link, herkunft)
     if (ziel.origin !== herkunft) return ''
     const pfad = `${ziel.pathname}${ziel.search}${ziel.hash}`
-    // Der Pfad selbst muss wieder hierher führen: „https://hier//fremd.example/x“ hat den Pfad „//fremd.example/x“,
-    // und der wäre als href eine fremde Adresse
-    return new URL(pfad, herkunft).origin === herkunft ? pfad : ''
+    // Ein Pfad mit zwei Schrägstrichen am Anfang wäre als href eine Adresse ohne Protokoll: „https://hier//fremd.example/x“
+    // führte zu einer fremden Seite, „https://hier//hier/x“ zu einem anderen Pfad. Solche Ziele gibt es hier nicht.
+    return pfad.startsWith('//') ? '' : pfad
   } catch {
     return ''
   }
@@ -169,6 +169,12 @@ export const toastManager = defineComponent(() => {
       }
       document.body.addEventListener('htmx:afterSettle', nachfuehren)
       window.addEventListener('resize', nachfuehren)
+      // Erst nach diesem Durchlauf hört der Container auf „show-toast“. Hinweise auf neue Benachrichtigungen, die
+      // schon vorher fertig waren, warten auf diese Meldung (static/js/notifications.js).
+      this.$nextTick(() => {
+        document.documentElement.dataset.meldungen = 'bereit'
+        window.dispatchEvent(new Event('meldungen-bereit'))
+      })
     },
 
     ueberLeistenLegen() {

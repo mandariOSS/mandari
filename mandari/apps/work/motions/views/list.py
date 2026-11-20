@@ -5,11 +5,12 @@ Motion/Antrag views for the Work module.
 
 import logging
 import uuid
+from datetime import date
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q, QuerySet
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -21,7 +22,7 @@ logger = logging.getLogger("apps.work.motions")
 
 from apps.common.mixins import WorkViewMixin
 from apps.work.rahmen import NeueVorlageMixin
-from apps.work.stats_text import documents_sentence
+from apps.work.stats_text import documents_sentence, documents_sentence_links
 
 from .. import freigaben
 from ..administration_feedback import with_administration_reference
@@ -44,6 +45,27 @@ def _spalten_mit_wert(motions: list[Motion]) -> dict[str, bool]:
         "frist": any(m.due_date for m in motions),
         "themen": any(m.topics.all() for m in motions),
         "checkliste": any(m.checklist_progress["total"] for m in motions),
+    }
+
+
+def _stand_nach_status(visible: QuerySet[Motion], today: date) -> dict[str, int]:
+    """
+    Zahlen für den Satz über der Liste in einer Abfrage statt in sechs: je Status die Dokumente und davon die mit
+    überschrittener Frist. ``order_by()`` leert die Meta-Sortierung, sonst zerfiele die Gruppierung.
+    """
+    zeilen = list(
+        visible.order_by()
+        .values("status")
+        .annotate(n=Count("id", distinct=True), frist=Count("id", distinct=True, filter=Q(due_date__lt=today)))
+    )
+    je_status = {zeile["status"]: zeile["n"] for zeile in zeilen}
+    return {
+        "total": sum(je_status.values()),
+        "draft": je_status.get("draft", 0),
+        "submitted": je_status.get("submitted", 0),
+        "completed": je_status.get("completed", 0) + je_status.get("adopted", 0),
+        "in_consultation": je_status.get("at_admin", 0) + je_status.get("on_agenda", 0),
+        "overdue": sum(zeile["frist"] for zeile in zeilen if zeile["status"] not in Motion.CLOSED_STATUSES),
     }
 
 
@@ -164,18 +186,13 @@ class MotionListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             context["spalten"] = _spalten_mit_wert([row["motion"] for row in motion_rows])
 
         # Statistik über dieselbe sichtbare Menge wie Liste und Ordner-Zähler
-        today = timezone.localdate()
-        all_motions = visible
-        context["stats"] = {
-            "total": all_motions.count(),
-            "draft": all_motions.filter(status="draft").count(),
-            "submitted": all_motions.filter(status="submitted").count(),
-            "completed": all_motions.filter(status__in=["completed", "adopted"]).count(),
-            "in_consultation": all_motions.filter(status__in=["at_admin", "on_agenda"]).count(),
-            "overdue": all_motions.filter(due_date__lt=today).exclude(status__in=Motion.CLOSED_STATUSES).count(),
-        }
-        # Zahlen im Satz statt als Zählerkacheln (Issue #851)
+        context["stats"] = _stand_nach_status(visible, timezone.localdate())
+        # Zahlen im Satz statt als Zählerkacheln (Issue #851); im neuen Rahmen führt jede Zahl in die gefilterte
+        # Liste (Issue #1492)
         context["stats_sentence"] = documents_sentence(context["stats"])
+        context["stats_satz"] = documents_sentence_links(
+            context["stats"], reverse("work:documents", kwargs={"org_slug": self.organization.slug})
+        )
 
         # Filter out 'deleted' from visible status choices
         context["status_choices"] = [(value, label) for value, label in Motion.STATUS_CHOICES if value != "deleted"]
@@ -197,8 +214,6 @@ class MotionListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         # === Ordner-Spalte ===
         # Zähler sichtbarkeitsabhängig: nur Dokumente, die der aktuelle
         # Nutzer sehen darf (Ordner machen nichts sichtbar!)
-        from django.db.models import Count
-
         # order_by() leert die Meta-Sortierung (-updated_at), sonst wandert
         # updated_at ins GROUP BY und die Zähler zerfallen in Einzelgruppen
         direct_counts = {

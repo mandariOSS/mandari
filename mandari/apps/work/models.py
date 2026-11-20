@@ -59,6 +59,16 @@ from apps.work.tasks.models import (
     TaskComment,
 )
 
+# Eigene Termine im Kalender (Issue #1489)
+from apps.work.termine.models import (
+    Termin,
+    TerminTeilnahme,
+    Terminumfrage,
+    Terminvorschlag,
+    UmfrageTeilnahme,
+    VorschlagAntwort,
+)
+
 __all__ = [
     # Meetings
     "MeetingPreparation",
@@ -83,6 +93,13 @@ __all__ = [
     # Tasks
     "Task",
     "TaskComment",
+    # Termine
+    "Termin",
+    "TerminTeilnahme",
+    "Terminumfrage",
+    "Terminvorschlag",
+    "UmfrageTeilnahme",
+    "VorschlagAntwort",
     # Support
     "SupportTicket",
     "SupportTicketMessage",

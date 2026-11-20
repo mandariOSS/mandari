@@ -510,7 +510,13 @@ def _adopt_or_create(ref: str, spec: WorkSpec) -> tuple[PutResult, UserInvitatio
         # Schon unter einer anderen Referenz bereitgestellt
         raise ProvisioningError(409, "ref_conflict")
     existing.provisioning_ref = ref
-    changed = _update(existing, spec, also_changed=("provisioning_ref",))
+    also_changed: tuple[str, ...] = ("provisioning_ref",)
+    if existing.demo_laufzeit_tage is not None or existing.demo_endet_am is not None:
+        # Abschluss nach einer Demo (Issue #1406): Ab jetzt gilt allein der Status der Bereitstellung
+        existing.demo_laufzeit_tage = None
+        existing.demo_endet_am = None
+        also_changed += ("demo_laufzeit_tage", "demo_endet_am")
+    changed = _update(existing, spec, also_changed=also_changed)
     return PutResult(existing, changed=changed, adopted=True), None
 
 

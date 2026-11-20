@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-from src.client.oparl_client import REPEATED_PAGES_ERROR, ListFetchError, OParlClient
+from src.client.oparl_client import REPEATED_PAGES_ERROR, ListFetchError, OParlClient, page_keys
 from src.sync.orchestrator import MAX_BODY_PAGES, missed_bodies_note, sync_complete
 from tests.test_quellenanlage import (  # noqa: F401 - _ohne_pause: autouse-Fixture
     BASE,
@@ -212,3 +212,96 @@ async def test_abgleich_mit_kommunenliste_von_owl_it_ist_unvollstaendig(monkeypa
     assert sorted(abgeglichen) == sorted(_ids(OWL_IT))
     assert speicher.vollstaendig == [False]
     assert result.errors == [missed_bodies_note([_seite_url(5)])]
+
+
+# Platzhalter-Kennungen: Die Stadt Münster liefert gelöschte Beratungen als ``…/consultations/0`` (Vorlage ``vo/0``,
+# Sitzung ``0``), am 13.11.2026 seitenweise. Je Seite steht dieselbe Kennung 25-mal, die Einträge unterscheiden sich
+# im Inhalt (Tagesordnungspunkt, Zeitstempel).
+PLATZHALTER = f"{BASE}/consultations/0"
+
+
+def geloeschte_beratung(nummer: int) -> dict[str, Any]:
+    return {
+        "id": PLATZHALTER,
+        "type": "https://schema.oparl.org/1.1/Consultation",
+        "paper": f"{BASE}/papers/vo/0",
+        "agendaItem": f"{BASE}/agendaitems/{nummer}",
+        "meeting": f"{BASE}/meetings/0",
+        "created": "2026-11-13T18:18:11+01:00",
+        "modified": "2026-11-13T18:18:11+01:00",
+        "deleted": True,
+    }
+
+
+def platzhalterseite(n: int) -> list[dict[str, Any]]:
+    """Seiten 2 bis 5 nur Platzhalter, je mit anderen Tagesordnungspunkten; davor und danach echte Beratungen."""
+    if 2 <= n <= 5:
+        return [geloeschte_beratung(n * 100 + i) for i in range(25)]
+    return vorlagen(n * 10, n * 10 + 1)
+
+
+@pytest.mark.parametrize("weg", WEGE)
+async def test_seiten_voller_platzhalter_mit_verschiedenem_inhalt_laufen_vollstaendig(weg: str) -> None:
+    quelle = Seiten(platzhalterseite, letzte=7)
+    client = _client(quelle)
+    try:
+        pages = [page async for page in _lesen(client, weg)]
+    finally:
+        await client._client.aclose()
+
+    erste = 2 if weg == "folgeseite" else 1
+    assert [_seitennummer(a) for a in quelle.anfragen] == list(range(erste, 8))
+    assert len(pages) == 8 - erste
+    assert client.host_health[HOST].failed_lists == []
+
+
+@pytest.mark.parametrize("weg", WEGE)
+async def test_seiten_mit_immer_denselben_platzhaltern_brechen_ab(weg: str) -> None:
+    """Wiederholt die Quelle wirklich dieselben Platzhalter, gleicht auch der Inhalt: Abbruch wie bisher."""
+    quelle = Seiten(lambda n: [geloeschte_beratung(i) for i in range(25)])
+    client = _client(quelle)
+    try:
+        with pytest.raises(ListFetchError) as excinfo:
+            [page async for page in _lesen(client, weg)]
+    finally:
+        await client._client.aclose()
+
+    assert len(quelle.anfragen) == 3
+    assert excinfo.value.result.error == REPEATED_PAGES_ERROR
+
+
+def test_seitenschluessel_kennung_oder_inhalt() -> None:
+    eintraege = [*vorlagen(1, 2), geloeschte_beratung(7), geloeschte_beratung(8), {"name": "ohne Kennung"}]
+    schluessel = page_keys(eintraege)
+
+    # Eindeutige Kennungen zählen als Kennung, doppelte über den Inhalt, Einträge ohne Kennung gar nicht
+    assert {f"{BASE}/paper/1", f"{BASE}/paper/2"} < schluessel
+    assert PLATZHALTER not in schluessel
+    assert len(schluessel) == 4
+    # Gleicher Inhalt gibt denselben Schlüssel, unabhängig von der Reihenfolge der Felder
+    umgestellt = dict(reversed(list(geloeschte_beratung(7).items())))
+    assert page_keys([geloeschte_beratung(7), umgestellt]) == page_keys(
+        [geloeschte_beratung(7), geloeschte_beratung(7)]
+    )
+
+
+@pytest.mark.parametrize("weg", WEGE)
+async def test_abwechselnd_einfache_und_doppelte_kopien_brechen_ab(weg: str) -> None:
+    """Prüfbefund (CodeRabbit): ``[A]`` und ``[A, A]`` mit gleichem Inhalt im Wechsel sind eine Wiederholung."""
+    quelle = Seiten(lambda n: vorlagen(1) if n % 2 else vorlagen(1, 1))
+    client = _client(quelle)
+    try:
+        with pytest.raises(ListFetchError) as excinfo:
+            [page async for page in _lesen(client, weg)]
+    finally:
+        await client._client.aclose()
+
+    assert len(quelle.anfragen) == 3
+    assert excinfo.value.result.error == REPEATED_PAGES_ERROR
+
+
+def test_seitenschluessel_gleiche_kopien_zaehlen_als_kennung() -> None:
+    assert page_keys(vorlagen(1, 1)) == page_keys(vorlagen(1)) == frozenset({f"{BASE}/paper/1"})
+    # Zeitstempel zählen nicht: gleiche Platzhalter mit anderem modified sind dieselbe Kopie
+    a, b = geloeschte_beratung(7), {**geloeschte_beratung(7), "modified": "2026-11-14T00:00:00+01:00"}
+    assert page_keys([a, b]) == frozenset({PLATZHALTER})

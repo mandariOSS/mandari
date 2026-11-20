@@ -70,14 +70,42 @@ def vorbereitungsstand(organization: Any, meeting_ids: list[uuid.UUID]) -> dict[
     }
 
 
-def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict[str, Any]]:
+def zaehler(organization: Any, membership: Any) -> dict[str, int]:
     """
-    Was auf das Mitglied wartet, wichtigstes zuerst: Freigaben, um die es gebeten ist, ihm zugewiesene offene
-    Aufgaben und eigene Dokumente in Arbeit. Nur Dokumente, die es sehen darf (``Motion.visible_to``).
+    Zahlen an der Navigation (Issue #1492): Aufgaben, die dem Mitglied zugewiesen und offen sind, und Dokumente,
+    die auf seine Freigabe warten. Dieselbe Auswahl wie die ersten beiden Gruppen von ``fuer_sie``, nur gezählt.
     """
     from apps.work.motions.models import Motion, MotionApproval
     from apps.work.tasks.models import Task
-    from apps.work.tasks.selectors import ohne_gesperrte_tops
+    from apps.work.tasks.selectors import ohne_gesperrte_tops, zustaendig_q
+
+    sichtbar = Motion.visible_to(membership)  # type: ignore[no-untyped-call]  # Modell noch ohne Annotationen
+    return {
+        # Zugewiesen oder eine der weiteren Zuständigen (gleichberechtigt, Issue #1462)
+        "aufgaben": ohne_gesperrte_tops(
+            Task.objects.filter(organization=organization, status__in=("todo", "in_progress")).filter(
+                zustaendig_q(membership)
+            ),
+            membership,
+        ).count(),
+        # Dokumente, nicht Freigabezeilen: Zwei Freigaben derselben Person an einem Dokument zählen einmal
+        "dokumente": MotionApproval.objects.filter(approver=membership, approved__isnull=True, motion__in=sichtbar)
+        .exclude(motion__status__in=("archived", "deleted"))
+        .values("motion_id")
+        .distinct()
+        .count(),
+    }
+
+
+def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict[str, Any]]:
+    """
+    Was auf das Mitglied wartet, wichtigstes zuerst: Freigaben, um die es gebeten ist, Einladungen zu Terminen und
+    Terminumfragen ohne Antwort (Issue #1489), ihm zugewiesene offene Aufgaben und eigene Dokumente in Arbeit. Nur
+    Dokumente, die es sehen darf (``Motion.visible_to``); Termine und Umfragen nur mit ``meetings.view``.
+    """
+    from apps.work.motions.models import Motion, MotionApproval
+    from apps.work.tasks.models import Task
+    from apps.work.tasks.selectors import ohne_gesperrte_tops, zustaendig_q
 
     slug = organization.slug
     eintraege: list[dict[str, Any]] = []
@@ -99,9 +127,14 @@ def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict
             }
         )
 
+    if membership.has_permission("meetings.view"):
+        eintraege.extend(_offene_antworten(organization, membership, limit=limit))
+
     # Aufgaben aus nichtöffentlichen TOPs nur für Vereidigte, wie auf dem Aufgabenboard
     aufgaben = ohne_gesperrte_tops(
-        Task.objects.filter(organization=organization, assigned_to=membership, status__in=("todo", "in_progress")),
+        Task.objects.filter(organization=organization, status__in=("todo", "in_progress")).filter(
+            zustaendig_q(membership)
+        ),
         membership,
     ).order_by("due_date", "-created_at")[:limit]
     for aufgabe in sorted(aufgaben, key=lambda a: (a.priority not in PRIORITAET, a.due_date or date.max)):
@@ -134,6 +167,34 @@ def fuer_sie(organization: Any, membership: Any, *, limit: int = 6) -> list[dict
             }
         )
     return eintraege[:limit]
+
+
+def _offene_antworten(organization: Any, membership: Any, *, limit: int) -> list[dict[str, Any]]:
+    """Einladungen zu Terminen und Terminumfragen, auf die eine Antwort fehlt (zwei Abfragen)."""
+    from apps.work.termine import termine, umfrage
+
+    slug = organization.slug
+    eintraege: list[dict[str, Any]] = []
+    for teilnahme in termine.offene_einladungen(membership, limit=limit):
+        eintraege.append(
+            {
+                "art": "Einladung zu einem Termin",
+                "titel": teilnahme.termin.title,
+                "zeile": f"{termine.zeitangabe(teilnahme.termin)}. Bitte sagen Sie zu oder ab.",
+                "url": reverse("work:termin", kwargs={"org_slug": slug, "termin_id": teilnahme.termin_id}),
+            }
+        )
+    for offen in umfrage.ohne_antwort(membership, limit=limit):
+        frist = f", Antwort bis {kurzdatum(offen.antwort_bis)}" if offen.antwort_bis else ""
+        eintraege.append(
+            {
+                "art": f"Terminumfrage{frist}",
+                "titel": offen.title,
+                "zeile": "Ihre Antwort fehlt noch.",
+                "url": reverse("work:terminumfrage", kwargs={"org_slug": slug, "umfrage_id": offen.pk}),
+            }
+        )
+    return eintraege
 
 
 def neu_in_gremien(organization: Any, committee_ids: list[uuid.UUID] | None, *, limit: int = 5) -> list[dict[str, Any]]:
@@ -211,7 +272,7 @@ def satz_und_hauptaktion(
         }
     fraktion = next((s for s in sitzungen if s["type"] == "faction"), None)
     if fraktion is not None:
-        teile.append(f"Die nächste Fraktionssitzung ist am {kurzdatum(fraktion['start'])}")
+        teile.append(f"Die nächste interne Sitzung ist am {kurzdatum(fraktion['start'])}")
     if not teile:
         teile.append("In den nächsten Wochen stehen keine Sitzungen an.")
     return " ".join(teile), aktion

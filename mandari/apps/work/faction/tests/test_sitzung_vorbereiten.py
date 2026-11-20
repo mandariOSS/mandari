@@ -616,6 +616,20 @@ def test_vorschlag_nach_dem_versand_wird_gespeichert_und_aufgenommen(welt: dict[
     assert f'data-top-titel="{titel}"' in _html(_seite(welt, client_for, "rat"))
 
 
+def test_aufnahme_steht_am_top_nur_fuer_genehmigende(welt: dict[str, Any], client_for: Any) -> None:
+    """Issue #1512: Wer einen Vorschlag aufgenommen hat, sehen nur Personen mit ``agenda.approve``."""
+    assert _aufnehmen(welt, client_for).status_code == 302
+    vorschlag = welt["meeting"].agenda_items.get(title=OFFENER_VORSCHLAG)
+
+    vorsitz = _html(_seite(welt, client_for, "vorsitz", ansicht="tagesordnung", top=str(vorschlag.pk)))
+    assert "Vorschlag von Klara Kopie, aufgenommen von Vera Beispiel" in vorsitz
+    assert "<dt>Aufgenommen</dt><dd>von Vera Beispiel am " in vorsitz
+
+    rat = _html(_seite(welt, client_for, "rat", ansicht="tagesordnung", top=str(vorschlag.pk)))
+    assert OFFENER_VORSCHLAG in rat
+    assert "aufgenommen von" not in rat and "<dt>Aufgenommen</dt>" not in rat
+
+
 def test_vor_dem_versand_eingegangener_vorschlag_zaehlt_nach_der_aufnahme_als_aenderung(
     welt: dict[str, Any], client_for: Any
 ) -> None:

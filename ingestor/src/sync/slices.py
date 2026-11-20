@@ -27,6 +27,23 @@ ausgesetzte optionale Liste ist deshalb keine Lücke des Laufs: Fensteranfang de
 rücken weiter vor. Ein Vollabgleich mit ausgesetzter Liste bleibt aber fällig (``last_successful_full_sync`` rückt
 nicht vor, der Durchgang in Zeitscheiben ist nicht fertig). Lässt sich die Aussetzung nicht speichern, bleibt die
 Liste eine Lücke. Liest ein Lauf die Liste ganz, wird der Eintrag gelöscht.
+
+**Festgefahrene langsame Listen** (Issue #1523): Scheitert eine Liste ``SLOW_LIST_STUCK_AFTER``-mal in Folge, ohne
+eine Scheibe weiterzukommen (Stadt Hamm: jede gefilterte Anfrage an die Beratungen endet seit Wochen mit HTTP 504),
+versucht der Ingestor sie nicht mehr täglich an derselben Tagesscheibe, sondern nur noch alle
+``SLOW_LIST_STUCK_RETRY``, und meldet sie: Warnung im Log, ``stuck_since`` im Eintrag und ein Hinweis in jedem
+Sync-Protokoll, solange sie festhängt. Kommt sie eine Scheibe weiter, beginnt die Reihe von vorn.
+
+**Fortschritt innerhalb einer Scheibe** (Issue #1523, ``sync_config["full_sync_slice_page"]``, ``SlicePage``): Bricht
+eine Scheibe des Vollabgleichs ab (Fensterende, Zeitüberschreitung, Schutzschalter), merkt sich der Lauf die zuletzt
+ganz gelesene Folgeseite der Scheibe und ihre Kennungen. Der nächste Vollabgleich liest dieselbe Scheibe ab dieser
+Seite weiter (eine Seite Überlappung), statt wieder bei Seite 1 zu beginnen: Bei der Stadt Hamm passte die Scheibe mit
+dem Massenstempel der Quelle (über 13.000 Vorlagen mit fast demselben ``modified``) in kein Fenster, und der
+Vollabgleich kam wochenlang nicht über sie hinaus. Teilen hilft da nicht, alle Objekte tragen denselben Zeitpunkt.
+Trägt die Seite keine der gemerkten Kennungen mehr, hat sich die Scheibe verschoben, und sie kommt ganz. Objekte der
+schon gelesenen Seiten, die sich seitdem ändern, verlassen die Scheibe und kommen mit der letzten Scheibe (ohne
+Obergrenze). Der Eintrag gilt nur für genau diese Scheibe und höchstens ``SLICE_PAGE_MAX_AGE``, nie für die letzte
+Scheibe: In sie kommen laufend neue Objekte, auch vor die gemerkte Seite.
 """
 
 from __future__ import annotations
@@ -52,6 +69,14 @@ SLOW_LIST_MAX = timedelta(hours=24)
 SLOW_LIST_SLICE = timedelta(days=1)
 #: So lange gilt der Befund „Server ignoriert den Filter“; danach versucht der Vollabgleich die Zeitscheiben erneut
 FILTER_IGNORED_RECHECK = timedelta(days=30)
+#: Nach so vielen Zeitüberschreitungen in Folge ohne Fortschritt gilt eine langsame Liste als festgefahren (#1523)
+SLOW_LIST_STUCK_AFTER = 10
+#: Aussetzung einer festgefahrenen langsamen Liste: so lange bis zum nächsten Versuch
+SLOW_LIST_STUCK_RETRY = timedelta(days=7)
+#: So lange gilt der Fortschritt innerhalb einer Scheibe; danach liest der Vollabgleich die Scheibe wieder ganz
+SLICE_PAGE_MAX_AGE = timedelta(days=14)
+#: Höchstens so viele Kennungen der Fortsetzungsseite einer Scheibe werden gespeichert
+SLICE_PAGE_MAX_IDS = 100
 #: Ortszeit der Quellen für den Tagesbeginn langsamer Listen ohne nachgewiesene Uhrzeit
 _SOURCE_TZ = ZoneInfo("Europe/Berlin")
 
@@ -149,7 +174,12 @@ def day_floor(stamp: datetime) -> datetime:
 
 
 def slow_backoff(failures: int) -> timedelta:
-    """Aussetzung nach ``failures`` Zeitüberschreitungen in Folge: 1, 2, 4, 8, 16, dann 24 Stunden."""
+    """
+    Aussetzung nach ``failures`` Zeitüberschreitungen in Folge: 1, 2, 4, 8, 16, dann 24 Stunden; festgefahren (ab
+    ``SLOW_LIST_STUCK_AFTER``) eine Woche (``SLOW_LIST_STUCK_RETRY``).
+    """
+    if failures >= SLOW_LIST_STUCK_AFTER:
+        return SLOW_LIST_STUCK_RETRY
     steps = max(0, min(failures - 1, 10))
     return min(SLOW_LIST_BASE * (1 << steps), SLOW_LIST_MAX)
 
@@ -165,6 +195,8 @@ class SlowList:
     #: Fensteranfang der Liste: Änderungen ab hier hat noch kein Lauf ganz gelesen (UTC)
     since: datetime
     reason: str = ""
+    #: Festgefahren seit (UTC): ``SLOW_LIST_STUCK_AFTER`` Zeitüberschreitungen in Folge ohne Fortschritt (#1523)
+    stuck_since: datetime | None = None
 
     @classmethod
     def from_entry(cls, entry: Mapping[str, Any]) -> SlowList | None:
@@ -175,18 +207,94 @@ class SlowList:
         if until is None or since is None:
             return None
         reason = entry.get("reason")
-        return cls(failures=failures, until=until, since=since, reason=reason if isinstance(reason, str) else "")
+        return cls(
+            failures=failures,
+            until=until,
+            since=since,
+            reason=reason if isinstance(reason, str) else "",
+            stuck_since=_utc(entry.get("stuck_since")),
+        )
 
     def to_entry(self) -> dict[str, Any]:
-        return {
+        entry: dict[str, Any] = {
             "failures": self.failures,
             "until": _iso(self.until),
             "since": _iso(self.since),
             "reason": self.reason,
         }
+        if self.stuck_since is not None:
+            entry["stuck_since"] = _iso(self.stuck_since)
+        return entry
 
     def suspended(self, now: datetime | None = None) -> bool:
         return (now or datetime.now(UTC)) < self.until
+
+    @property
+    def stuck(self) -> bool:
+        """Festgefahren: so oft in Folge ohne Fortschritt gescheitert, dass der Ingestor die Liste meldet (#1523)."""
+        return self.failures >= SLOW_LIST_STUCK_AFTER
+
+    def stuck_note(self, list_url: str) -> str:
+        """Hinweis für Log und Sync-Protokoll, solange die Liste festhängt."""
+        since = self.stuck_since or self.until
+        return (
+            f"Liste {list_url} festgefahren: {self.failures} Zeitüberschreitungen in Folge an derselben Stelle "
+            f"(Änderungen ab {self.since:%d.%m.%Y %H:%M} UTC fehlen, festgefahren seit {since:%d.%m.%Y}); nächster "
+            f"Versuch {self.until:%d.%m.%Y %H:%M} UTC. Liste bei der Quelle prüfen oder aussetzen (skip_lists)"
+        )
+
+
+def _page_ids(values: Any) -> tuple[str, ...]:
+    if not isinstance(values, list | tuple):
+        return ()
+    return tuple(value for value in values if isinstance(value, str) and value)[:SLICE_PAGE_MAX_IDS]
+
+
+@dataclass(frozen=True)
+class SlicePage:
+    """
+    Fortschritt innerhalb einer Zeitscheibe (``sync_config["full_sync_slice_page"]``, Issue #1523): zuletzt ganz
+    gelesene Folgeseite ``page`` der Scheibe ``since`` bis ``until`` mit ihren Kennungen ``ids``; ``at``: Zeitpunkt des
+    Abbruchs.
+    """
+
+    since: datetime | None
+    until: datetime | None
+    page: str
+    at: datetime
+    ids: tuple[str, ...] = ()
+
+    @classmethod
+    def from_entry(cls, raw: Any) -> SlicePage | None:
+        if not isinstance(raw, Mapping):
+            return None
+        page, at = raw.get("page"), _utc(raw.get("at"))
+        if not isinstance(page, str) or not page.startswith(("http://", "https://")) or at is None:
+            return None
+        since, until = _utc(raw.get("since")), _utc(raw.get("until"))
+        if since is None and until is None:
+            return None
+        return cls(since=since, until=until, page=page, at=at, ids=_page_ids(raw.get("ids")))
+
+    def to_entry(self) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "since": _iso(self.since),
+            "until": _iso(self.until),
+            "page": self.page,
+            "at": _iso(self.at),
+        }
+        if self.ids:
+            entry["ids"] = list(self.ids)
+        return entry
+
+    def matches(self, window: SliceWindow, now: datetime | None = None) -> bool:
+        """
+        Gilt der Fortschritt für diese Scheibe (gleiche Grenzen) und ist er nicht zu alt? Nie für die letzte Scheibe
+        ohne Obergrenze: In sie kommen laufend neue Objekte, auch vor die gemerkte Seite; sie kommt immer ganz.
+        """
+        if window.until is None or (now or datetime.now(UTC)) - self.at > SLICE_PAGE_MAX_AGE:
+            return False
+        return self.since == window.since and self.until == window.until
 
 
 @dataclass
@@ -202,6 +310,8 @@ class SliceRun:
     slow: dict[str, SlowList] = field(default_factory=dict)
     #: Meldung, sobald die Quelle den Filter einer Scheibe ignoriert: Jede Liste bricht vor der nächsten Scheibe ab
     filter_ignored: str | None = None
+    #: Fortschritt innerhalb einer Scheibe je Liste (``sync_config["full_sync_slice_page"]``, Issue #1523)
+    pages: dict[str, SlicePage] = field(default_factory=dict)
 
     @classmethod
     def build(
@@ -210,9 +320,15 @@ class SliceRun:
         config: FullSyncSlices | None,
         progress: Mapping[str, datetime],
         slow_entries: Mapping[str, Mapping[str, Any]],
+        page_entries: Mapping[str, Any] | None = None,
     ) -> SliceRun:
         slow = {url: entry for url, raw in slow_entries.items() if (entry := SlowList.from_entry(raw)) is not None}
-        return cls(source_url=source_url, config=config, progress=dict(progress), slow=slow)
+        pages = {
+            url: page
+            for url, raw in (page_entries or {}).items()
+            if isinstance(url, str) and url and (page := SlicePage.from_entry(raw)) is not None
+        }
+        return cls(source_url=source_url, config=config, progress=dict(progress), slow=slow, pages=pages)
 
 
 @dataclass

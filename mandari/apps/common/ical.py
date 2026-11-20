@@ -66,6 +66,13 @@ def _format_dt(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _format_tag(value: datetime) -> str:
+    """Kalendertag in der Zeitzone der Anwendung (YYYYMMDD), für ganztägige Termine."""
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value)
+    return timezone.localtime(value).strftime("%Y%m%d")
+
+
 def _vevent_lines(
     *,
     uid: str,
@@ -79,16 +86,22 @@ def _vevent_lines(
     sequence: int = 0,
     status: str = "CONFIRMED",
     url: str = "",
+    all_day: bool = False,
 ) -> list[str]:
-    """Zeilen eines einzelnen VEVENT (gemeinsam für Einzel-ICS und Feeds); ``url`` ist die Seite des Termins."""
+    """
+    Zeilen eines einzelnen VEVENT (gemeinsam für Einzel-ICS und Feeds); ``url`` ist die Seite des Termins.
+
+    ``all_day``: ganztägiger Termin, Beginn und Ende als Kalendertage; das Ende ist wie in RFC 5545 der Tag nach
+    dem letzten Tag.
+    """
     lines = [
         "BEGIN:VEVENT",
         f"UID:{_escape(uid)}",
         f"DTSTAMP:{_format_dt(timezone.now())}",
-        f"DTSTART:{_format_dt(start)}",
+        f"DTSTART;VALUE=DATE:{_format_tag(start)}" if all_day else f"DTSTART:{_format_dt(start)}",
     ]
     if end is not None:
-        lines.append(f"DTEND:{_format_dt(end)}")
+        lines.append(f"DTEND;VALUE=DATE:{_format_tag(end)}" if all_day else f"DTEND:{_format_dt(end)}")
     lines.append(f"SUMMARY:{_escape(summary)}")
     if location:
         lines.append(f"LOCATION:{_escape(location)}")
@@ -174,7 +187,7 @@ def build_ics_feed(events: list[dict], *, name: str = "mandari Sitzungen") -> by
 
     Args:
         events: Liste von dicts mit den Argumenten von :func:`_vevent_lines`
-            (uid, summary, start, optional end/description/location/status/sequence/url)
+            (uid, summary, start, optional end/description/location/status/sequence/url/all_day)
         name: Kalendername (X-WR-CALNAME)
 
     Returns:

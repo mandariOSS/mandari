@@ -1,13 +1,15 @@
 {% comment %}
-Persönlicher Kalender-Feed (iCal, Issue #70) im neuen Erscheinungsbild (Issue #951): gespeichert ist nur der Hash des
-Tokens, die Adresse erscheint deshalb nur direkt nach dem Erzeugen (calendar_feed_url). Formular und Rückfrage wie
-bisher (work/profile/partials/_calendar_feed_card.html).
+Persönlicher Kalender zum Abonnieren (iCal, Issue #70) im neuen Erscheinungsbild (Issue #951): gespeichert ist nur
+der Hash des Tokens, die Adresse erscheint deshalb nur direkt nach dem Erzeugen (calendar_feed_url). Formular und
+Rückfrage wie bisher (work/profile/partials/_calendar_feed_card.html). Seit Issue #1489 enthält der Abruf auch die
+eigenen Termine; die Wege in die gängigen Kalenderprogramme stehen ausklappbar darunter. Der Kalender in Work
+verweist hierher (#profil-kalender).
 {% endcomment %}
-<c-rahmen.abschnitt titel="Kalender-Feed (iCal)" titel_id="profil-kalender" class="text-gray-800 dark:text-gray-200">
-    <c-rahmen.satz eng>Ihre Fraktionssitzungen (alle Organisationen) und die Termine Ihrer zugeordneten Gremien im eigenen Kalender. Der Feed enthält nur Titel, Zeit und Ort.</c-rahmen.satz>
+<c-rahmen.abschnitt titel="Kalender abonnieren" titel_id="profil-kalender" class="text-gray-800 dark:text-gray-200">
+    <c-rahmen.satz eng>Ihre internen Sitzungen und Termine aus allen Organisationen und die Sitzungen Ihrer zugeordneten Gremien im eigenen Kalender, etwa bei Google, Apple oder Outlook. Übertragen werden nur Titel, Zeit und Ort.</c-rahmen.satz>
     {% if calendar_feed_url %}
     <div class="mt-3">
-        <label for="profil-feed-url" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Ihre persönliche Feed-Adresse</label>
+        <label for="profil-feed-url" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Ihre persönliche Adresse</label>
         <input id="profil-feed-url" type="text" readonly value="{{ calendar_feed_url }}" data-action="select"
                class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-grau font-mono text-[0.8125rem] text-gray-800 dark:text-gray-200">
         <p class="mt-1 text-[0.8125rem] font-medium text-gray-900 dark:text-white">Kopieren Sie die Adresse jetzt in Ihren Kalender. Sie erscheint aus Sicherheitsgründen nur dieses eine Mal.</p>
@@ -17,10 +19,20 @@ bisher (work/profile/partials/_calendar_feed_card.html).
     {% else %}
     <p class="mt-3 text-sm">Noch nicht eingerichtet.</p>
     {% endif %}
-    <p class="mt-2 text-[0.8125rem] text-gray-600 dark:text-gray-400">Die Adresse enthält ein zufälliges Token ohne Personenbezug. Behandeln Sie sie wie ein Passwort.</p>
-    <form method="post" class="mt-3"{% if calendar_feed %} data-confirm="Neue Feed-URL erzeugen? Die bisherige URL wird sofort ungültig."{% endif %}>
+    <c-form.hinweis neben class="mt-2">Die Adresse enthält ein zufälliges Token ohne Personenbezug. Behandeln Sie sie wie ein Passwort.</c-form.hinweis>
+    <form method="post" class="mt-3"{% if calendar_feed %} data-confirm="Neue Adresse erzeugen? Die bisherige Adresse wird sofort ungültig."{% endif %}>
         {% csrf_token %}
         <input type="hidden" name="action" value="regenerate_calendar_feed">
-        <c-ui.button type="submit" variant="secondary" size="sm" icon="{% if calendar_feed %}refresh-cw{% else %}link{% endif %}">{% if calendar_feed %}Feed-Adresse neu erzeugen{% else %}Feed-Adresse erzeugen{% endif %}</c-ui.button>
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="{% if calendar_feed %}refresh-cw{% else %}link{% endif %}">{% if calendar_feed %}Adresse neu erzeugen{% else %}Adresse erzeugen{% endif %}</c-ui.button>
     </form>
+    <details class="mt-4 text-sm" data-testid="kalender-abo-wege">
+        <summary class="cursor-pointer font-medium text-gray-900 dark:text-white">So kommt der Kalender in Ihr Programm</summary>
+        <c-ui.angaben class="mt-3">
+            <dt>Google Kalender</dt><dd>Am Computer in Google Kalender links bei „Weitere Kalender“ auf das Plus, dann „Per URL“ und die Adresse einfügen. Der Kalender erscheint danach auch auf dem Handy.</dd>
+            <dt>iPhone, iPad</dt><dd>In der App „Kalender“ unten auf „Kalender“, dann „Hinzufügen“ und „Kalenderabonnement hinzufügen“.</dd>
+            <dt>Outlook</dt><dd>Im Kalender „Kalender hinzufügen“, dann „Aus dem Internet abonnieren“.</dd>
+            <dt>Thunderbird</dt><dd>„Neuer Kalender“, dann „Im Netzwerk“ und die Adresse einfügen.</dd>
+        </c-ui.angaben>
+        <c-form.hinweis neben class="mt-3">Die Programme rufen den Kalender in eigenen Abständen ab, Google oft nur alle paar Stunden. Änderungen erscheinen dort entsprechend später. Ändern lassen sich Sitzungen und Termine nur in mandari.</c-form.hinweis>
+    </details>
 </c-rahmen.abschnitt>

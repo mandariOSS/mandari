@@ -227,9 +227,8 @@ def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
         bytes: zusammengeführtes PDF (bei Fehlern: Inhalts-PDF unverändert)
     """
     try:
-        from copy import copy
-
         from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import FloatObject, NameObject
 
         # Aus der Ablage lesen, bevor die Sperre gilt: Ein langsamer Abruf (Objektspeicher) hielte sonst die Exporte
         # aller anderen im selben Prozess auf. Unter der Sperre steht nur noch das Zusammenführen im Speicher.
@@ -247,9 +246,21 @@ def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
 
             output = PdfWriter()
             for content_page in content_pdf.pages:
-                new_page = copy(letterhead_page)
+                # Je Inhaltsseite ein eigenes leeres Blatt im Writer, darauf erst der Briefkopf, dann der Inhalt.
+                # Eine Kopie der Briefkopf-Seite außerhalb des Writers lässt pypdf 7 nicht mehr zusammenführen, und
+                # pypdf 6 schrieb dabei den Inhalt der ersten Seite auf alle Seiten. Ein Blatt aus
+                # add_page(letterhead_page) teilt seinen Seiteninhalt mit den übrigen: Dann stünde jeder Inhalt auf
+                # jeder Seite (#1464).
+                mediabox = letterhead_page.mediabox
+                new_page = output.add_blank_page(width=mediabox.width, height=mediabox.height)
+                new_page.mediabox = mediabox
+                new_page.cropbox = letterhead_page.cropbox
+                if letterhead_page.rotation:
+                    new_page.rotation = letterhead_page.rotation
+                if "/UserUnit" in letterhead_page:
+                    new_page[NameObject("/UserUnit")] = FloatObject(float(letterhead_page["/UserUnit"]))
+                new_page.merge_page(letterhead_page)
                 new_page.merge_page(content_page)
-                output.add_page(new_page)
 
             result = io.BytesIO()
             output.write(result)
