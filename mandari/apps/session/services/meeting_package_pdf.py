@@ -376,13 +376,16 @@ class PackagePdfBuilder:
         return self._render("session/pdf/package_toc.html", {"rows": rows})
 
     def _add_outline(self, cover_pages: int, front: int) -> None:
-        self.writer.add_outline_item("Deckblatt", 0)
-        self.writer.add_outline_item("Inhaltsverzeichnis", cover_pages)
+        # pypdf 7: Titel und Seite nur noch als Schlüsselwörter
+        self.writer.add_outline_item(title="Deckblatt", page_number=0)
+        self.writer.add_outline_item(title="Inhaltsverzeichnis", page_number=cover_pages)
         outline: dict[int, Any] = {}
         for entry in self.entries:
             parent = outline.get(id(entry.parent)) if entry.parent is not None else None
             title = f"{entry.title} ({entry.note})" if entry.note else entry.title
-            outline[id(entry)] = self.writer.add_outline_item(title, front + entry.target, parent=parent)
+            outline[id(entry)] = self.writer.add_outline_item(
+                title=title, page_number=front + entry.target, parent=parent
+            )
 
     def _link_toc(self, first: int, count: int, front: int) -> None:
         """Links ``mappe:<n>`` des Inhaltsverzeichnisses in Sprünge auf die Zielseite umschreiben."""
