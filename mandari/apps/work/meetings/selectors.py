@@ -158,33 +158,6 @@ def committee_name_for_meeting(meeting: OParlMeeting, org_cache: dict[str, str |
     return None
 
 
-def _consultation_reference(agenda_item: OParlAgendaItem) -> str | None:
-    """Beratung, die der TOP selbst nennt (``AgendaItem.consultation``: Adresse oder Objekt mit ``id``)."""
-    raw = agenda_item.raw_json if isinstance(agenda_item.raw_json, dict) else {}
-    value = raw.get("consultation")
-    if isinstance(value, dict):
-        value = value.get("id")
-    return value if isinstance(value, str) and value else None
-
-
-def _named_by_agenda_items(agenda_items: list[OParlAgendaItem]) -> Q | None:
-    """
-    Rückfall (Issue #1523): Beratungen, die ein TOP nennt, die selbst aber keinen TOP tragen (SD.NET RIM setzt
-    ``agendaItem`` erst nach dem Abgleich der Beratung, ohne ``modified`` zu ändern). Nur nicht gelöschte Beratungen
-    mit Vorlage aus der Quelle der Punkte, Beratungen ohne Kommune (Altbestand) wie bei
-    ``ris.consultation_agenda_item_in_source``. ``None``, wenn kein TOP eine Beratung nennt.
-    """
-    refs = {ref for item in agenda_items if item.external_id and (ref := _consultation_reference(item))}
-    if not refs:
-        return None
-    sources = OParlAgendaItem.objects.filter(
-        external_id__in=[item.external_id for item in agenda_items if item.external_id]
-    ).values("meeting__body__source_id")
-    return Q(external_id__in=refs, agenda_item_external_id__isnull=True, paper__isnull=False, deleted=False) & (
-        Q(body__isnull=True) | Q(body__source_id__in=sources)
-    )
-
-
 def get_primary_paper_for_item(agenda_item: OParlAgendaItem | None) -> OParlPaper | None:
     """Erste Vorlage eines TOPs (über OParlConsultation) oder None."""
     if agenda_item is None or not agenda_item.external_id:
@@ -196,9 +169,8 @@ def get_primary_paper_for_item(agenda_item: OParlAgendaItem | None) -> OParlPape
         .first()
     )
     if consultation is None:
-        named = _named_by_agenda_items([agenda_item])
-        if named is not None:
-            consultation = OParlConsultation.objects.filter(named).select_related("paper").first()
+        # Rückfall: die Beratung, die der TOP selbst nennt (Issue #1523)
+        consultation = ris.consultation_named_by_agenda_item(agenda_item)
     return consultation.paper if consultation else None
 
 
@@ -218,21 +190,15 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
 
     # Über den Rückverweis der Beratung auf den TOP, als Rückfall über die Beratung, die der TOP nennt (eine Abfrage)
     condition = Q(agenda_item_external_id__in=external_ids) & Q(ris.consultation_agenda_item_in_source())
-    named = _named_by_agenda_items(agenda_items)
-    if named is not None:
-        condition |= named
     tops_of_named: dict[str, list[str]] = {}
     for item in agenda_items:
-        if item.external_id and (ref := _consultation_reference(item)) is not None:
+        if item.external_id and (ref := ris.agenda_item_consultation_reference(item)) is not None:
             tops_of_named.setdefault(ref, []).append(item.external_id)
     # Quelle je TOP: Der Rückfall gilt nur für Beratungen aus der Quelle des TOP, der sie nennt (eine Abfrage)
     source_of_top: dict[str, Any] = {}
-    if named is not None:
-        source_of_top = dict(
-            OParlAgendaItem.objects.filter(external_id__in=external_ids).values_list(
-                "external_id", "meeting__body__source_id"
-            )
-        )
+    if tops_of_named:
+        condition |= ris.consultations_named_by_agenda_items(tops_of_named, external_ids)
+        source_of_top = ris.agenda_item_sources(external_ids)
     consultations = (
         OParlConsultation.objects.filter(condition)
         .annotate(source_of_body=F("body__source_id"))
