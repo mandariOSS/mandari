@@ -315,6 +315,14 @@ def agenda_item_exists(agenda_item_id: object) -> bool:
     return pk is not None and OParlAgendaItem.objects.filter(pk=pk).exists()
 
 
+def withdrawn_agenda_item_ids(agenda_item_ids: Iterable[object]) -> set[uuid.UUID]:
+    """Welche dieser Tagesordnungspunkte sind zurückgenommen (``withdrawn_q``)? Eine Abfrage, leer ohne Kennungen."""
+    ids = [pk for pk in (_uuid(value) for value in agenda_item_ids) if pk is not None]
+    if not ids:
+        return set()
+    return set(OParlAgendaItem.objects.filter(pk__in=ids).filter(withdrawn_q()).values_list("pk", flat=True))
+
+
 @dataclass(frozen=True)
 class Decision:
     """

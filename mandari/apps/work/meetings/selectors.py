@@ -31,7 +31,6 @@ from insight_core.models import (
     OParlMeeting,
     OParlOrganization,
     OParlPaper,
-    withdrawn_q,
 )
 
 from .models import (
@@ -823,11 +822,7 @@ def load_preparation_data(organization: Organization, membership: Membership, me
         for f in p.files.all()
         if f.agenda_item_id
     }
-    withdrawn_file_items: set[Any] = (
-        set(OParlAgendaItem.objects.filter(pk__in=file_items).filter(withdrawn_q()).values_list("pk", flat=True))
-        if file_items
-        else set()
-    )
+    withdrawn_file_items: set[Any] = set(ris.withdrawn_agenda_item_ids(file_items))
     return PreparationData(
         agenda_items=agenda_items,
         prepared_items=prepared_items,
