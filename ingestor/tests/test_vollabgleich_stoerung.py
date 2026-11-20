@@ -338,10 +338,10 @@ async def test_scheibe_setzt_nach_dem_fensterende_an_der_letzten_seite_fort() ->
     # Der Fortschritt über Scheiben bleibt am Beginn der Scheibe
     assert full_sync_progress_of(speicher.config)[HAMM_PAPER] == datetime(2020, 1, 1, tzinfo=UTC)
 
-    # Nacht 2: Prüfung der Seite 3, dann ab Seite 3 weiter statt wieder ab Seite 1
+    # Nacht 2: ab Seite 3 weiter statt wieder ab Seite 1; geprüft wird die gelesene Seite selbst
     stats = await _hamm_nacht(quelle, speicher)
     assert stats["incomplete"] == []
-    assert _seiten_2020(quelle) == [3, 3, 4, 5]
+    assert _seiten_2020(quelle) == [3, 4, 5]
     assert {f"https://oparl.hamm.example/oparl/paper/m{i}" for i in range(9)} <= set(speicher.modified)
     assert SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY not in speicher.config
 

@@ -2597,16 +2597,16 @@ class SyncOrchestrator:
             if full and run.filter_ignored is not None:
                 raise SliceFilterIgnoredError(list_url, run.filter_ignored)
             fallback: str | None = None
-            # Fortschritt innerhalb der Scheibe (Issue #1523): ab der zuletzt ganz gelesenen Seite weiter
-            start_page = await self._slice_start_page(client, slices, list_url, entity_type, window) if full else None
             try:
-                async for page in client.fetch_list(
+                # Im Vollabgleich ab der zuletzt ganz gelesenen Seite einer abgebrochenen Scheibe (Issue #1523)
+                async for page in self._window_pages(
+                    client,
+                    slices,
                     list_url,
-                    modified_since=window.since,
-                    modified_until=window.until,
-                    strict_filter=True,
-                    report_missing=list_check is not None and index == 0 and not resumed and start_page is None,
-                    next_page=start_page,
+                    entity_type,
+                    window,
+                    full=full,
+                    report_missing=list_check is not None and index == 0 and not resumed,
                 ):
                     if list_check is not None and not readable:
                         readable = True
@@ -2672,26 +2672,62 @@ class SyncOrchestrator:
             # bleibt er und gilt ab jetzt wieder einen Tag (Issue #1034)
             await self._remember_missing_list(list_check.lists, list_url, missing=not exists)
 
-    async def _slice_start_page(
-        self, client: OParlClient, slices: BodySlices, list_url: str, entity_type: str, window: SliceWindow
-    ) -> str | None:
+    async def _window_pages(
+        self,
+        client: OParlClient,
+        slices: BodySlices,
+        list_url: str,
+        entity_type: str,
+        window: SliceWindow,
+        *,
+        full: bool,
+        report_missing: bool,
+    ) -> AsyncIterator[list[dict[str, Any]]]:
         """
-        Seite, ab der der Vollabgleich die Scheibe weiterliest (Issue #1523), oder ``None``: ganz. Nur, wenn ein
-        früherer Lauf genau diese Scheibe abgebrochen hat und sie sich seitdem nicht um mehr als eine Seite verschoben
-        hat (gleiche Prüfung wie bei der Fortsetzung ohne Zeitscheiben, ``_resume_shifted``).
+        Seiten einer Scheibe. Im Vollabgleich setzt eine Scheibe, die ein früherer Lauf abgebrochen hat, an der zuletzt
+        ganz gelesenen Seite fort (Issue #1523). Geprüft wird die tatsächlich gelesene Fortsetzungsseite, bevor sie
+        verarbeitet wird: Trägt sie keine der gemerkten Kennungen mehr (oder kommt nichts), hat sich die Scheibe um
+        mehr als eine Seite verschoben, der Stand fällt weg, und die Scheibe kommt ganz.
         """
-        entry = slices.run.pages.get(list_url)
-        if entry is None or not entry.matches(window):
-            return None
-        if await self._resume_shifted(client, ResumeEntry(at=entry.at, page=entry.page, ids=entry.ids)):
+        entry = slices.run.pages.get(list_url) if full else None
+        if entry is not None and entry.matches(window) and entry.ids:
+            console.print(f"[dim]  {entity_type}: Scheibe {window.label()} ab {entry.page} (Fortsetzung)[/dim]")
+            first = True
+            shifted = False
+            stream = client.fetch_list(
+                list_url,
+                modified_since=window.since,
+                modified_until=window.until,
+                strict_filter=True,
+                next_page=entry.page,
+            )
+            try:
+                async for page in stream:
+                    if first:
+                        first = False
+                        if not set(unique_page_ids(page)) & set(entry.ids):
+                            shifted = True
+                            break
+                    yield page
+            finally:
+                close = getattr(stream, "aclose", None)
+                if close is not None:
+                    await close()
+            if not first and not shifted:
+                return
             console.print(
                 f"[yellow]  {entity_type}: Scheibe {window.label()} hat sich seit dem Abbruch verschoben "
                 f"({entry.page}), Scheibe ganz[/yellow]"
             )
             await self._clear_slice_page(slices, list_url)
-            return None
-        console.print(f"[dim]  {entity_type}: Scheibe {window.label()} ab {entry.page} (Fortsetzung)[/dim]")
-        return entry.page
+        async for page in client.fetch_list(
+            list_url,
+            modified_since=window.since,
+            modified_until=window.until,
+            strict_filter=True,
+            report_missing=report_missing,
+        ):
+            yield page
 
     async def _remember_slice_page(
         self, slices: BodySlices, list_url: str, window: SliceWindow, error: ListFetchError
@@ -3437,9 +3473,7 @@ class SyncOrchestrator:
 
         status = SYNC_STATUS_SUCCESS if not all_errors or total_entities > 0 else SYNC_STATUS_FAILED
         # Vollabgleich mit Lücke (Issue #1523), auch ohne geschriebene Objekte, solange kein Lauf gescheitert ist
-        if any(result.success and result.full_incomplete for result in results) and (
-            status == SYNC_STATUS_SUCCESS or all(result.success for result in results)
-        ):
+        if all(result.success for result in results) and any(result.full_incomplete for result in results):
             status = SYNC_STATUS_PARTIAL
         duration = (end_time - start_time).total_seconds()
 
