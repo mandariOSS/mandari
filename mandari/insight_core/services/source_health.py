@@ -324,6 +324,9 @@ def _ingestor_checks() -> list[dict]:
     Die Läufe bewertet der Monitor für den Ingestor als Ganzes: Kritisch erst, wenn in 24 Stunden keine Quelle
     erfolgreich abgeglichen wurde. Quellen, deren Läufe alle scheiterten, nennt er; bewertet werden sie je Quelle
     (Quellentabelle, Alarm), damit eine dauerhaft gestörte Quelle den Systemstatus nicht auf Warnung hält.
+
+    Ein unvollständiger Vollabgleich (``partial``, Issue #1523) hat abgeglichen, aber nicht alle Listen ganz gelesen: Er
+    zählt als Lauf mit Erfolg, nicht als Fehler; der Monitor nennt die Quellen, damit die Lücke sichtbar bleibt.
     """
     from django.db.models import Count, Max, Q
 
@@ -352,10 +355,11 @@ def _ingestor_checks() -> list[dict]:
     if total == 0:
         checks.append(_check("Sync-Läufe (24 h)", "warning", "Keine Läufe in den letzten 24 Stunden"))
         return checks
+    partial = _partial_note(runs)
     if failed == 0:
-        checks.append(_check("Sync-Läufe (24 h)", "ok", f"{total} Läufe, keine Fehler"))
+        checks.append(_check("Sync-Läufe (24 h)", "ok", f"{total} Läufe, keine Fehler{partial}"))
         return checks
-    if not runs.filter(status=SyncLog.Status.SUCCESS).exists():
+    if not runs.filter(status__in=(SyncLog.Status.SUCCESS, SyncLog.Status.PARTIAL)).exists():
         detail = (
             f"Alle {total} Läufe fehlgeschlagen"
             if failed == total
@@ -368,7 +372,7 @@ def _ingestor_checks() -> list[dict]:
         runs.order_by()
         .values("source_id")
         .annotate(
-            ok=Count("id", filter=Q(status=SyncLog.Status.SUCCESS)),
+            ok=Count("id", filter=Q(status__in=(SyncLog.Status.SUCCESS, SyncLog.Status.PARTIAL))),
             failed=Count("id", filter=Q(status=SyncLog.Status.FAILED)),
             name=Max("source__name"),
         )
@@ -378,8 +382,20 @@ def _ingestor_checks() -> list[dict]:
     detail = f"{failed} von {total} Läufen fehlgeschlagen"
     if without_success:
         detail += f"; ohne Erfolg: {', '.join(without_success)} (Bewertung je Quelle)"
-    checks.append(_check("Sync-Läufe (24 h)", "ok", detail))
+    checks.append(_check("Sync-Läufe (24 h)", "ok", detail + partial))
     return checks
+
+
+def _partial_note(runs) -> str:
+    """Zusatz für unvollständige Vollabgleiche (``partial``, Issue #1523): Anzahl und Quellen, sonst leer."""
+    from insight_sync.models import SyncLog
+
+    partial = runs.filter(status=SyncLog.Status.PARTIAL)
+    count = partial.count()
+    if not count:
+        return ""
+    names = sorted({name or "ohne Quelle" for name in partial.values_list("source__name", flat=True)})
+    return f"; {count} Vollabgleich(e) unvollständig: {', '.join(names)}"
 
 
 def collect_system_health(*, dokument_cache_neu: bool = False) -> list[dict]:

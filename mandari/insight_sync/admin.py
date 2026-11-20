@@ -54,6 +54,7 @@ class SyncLogAdmin(ReadOnlyAdminMixin, ModelAdmin):
         colors = {
             SyncLog.Status.RUNNING: ("#2563eb", "sync"),
             SyncLog.Status.SUCCESS: ("#16a34a", "check_circle"),
+            SyncLog.Status.PARTIAL: ("#d97706", "warning"),
             SyncLog.Status.FAILED: ("#dc2626", "error"),
         }
         color, icon = colors.get(obj.status, ("#64748b", "help"))

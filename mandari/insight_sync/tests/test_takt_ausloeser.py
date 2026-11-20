@@ -285,3 +285,32 @@ def test_monitor_laeufe_je_quelle_eine_gestoerte_quelle_haelt_nicht_auf_warnung(
 
     SyncLog.objects.all().delete()
     assert _pruefung("Sync-Läufe (24 h)")["status"] == "warning"
+
+
+def test_monitor_unvollstaendiger_vollabgleich_zaehlt_als_lauf_mit_erfolg_und_wird_genannt(
+    redis: _Redis, quelle: OParlSource
+) -> None:
+    """Issue #1523: ``partial`` ist kein Fehler, verdeckt die Lücke aber auch nicht mehr hinter „Erfolgreich“."""
+    bochum = OParlSource.objects.create(name="Bochum", url="https://bochum.example.org/oparl/system")
+    _protokoll(quelle, "success", 10)
+    _protokoll(bochum, "partial", 30)
+
+    pruefung = _pruefung("Sync-Läufe (24 h)")
+    assert pruefung["status"] == "ok"
+    assert pruefung["detail"] == "2 Läufe, keine Fehler; 1 Vollabgleich(e) unvollständig: Bochum"
+
+    # Nur unvollständige Läufe neben fehlgeschlagenen: Bochum hat abgeglichen, nicht „keiner erfolgreich“
+    SyncLog.objects.filter(source=quelle).update(status="failed")
+    pruefung = _pruefung("Sync-Läufe (24 h)")
+    assert pruefung["status"] == "ok"
+    assert pruefung["detail"] == (
+        "1 von 2 Läufen fehlgeschlagen; ohne Erfolg: Beispiel-RIS (Bewertung je Quelle); "
+        "1 Vollabgleich(e) unvollständig: Bochum"
+    )
+
+
+def test_unvollstaendig_im_protokoll_und_in_der_auswahl(quelle: OParlSource) -> None:
+    eintrag = _protokoll(quelle, "partial", 5)
+    eintrag.refresh_from_db()
+    assert eintrag.get_status_display() == "Unvollständig"
+    assert SyncLog.Status.PARTIAL.value == "partial"

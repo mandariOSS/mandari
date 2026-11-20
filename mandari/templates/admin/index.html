@@ -315,6 +315,8 @@
                             <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
                             {% elif log.status == "success" %}
                             <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                            {% elif log.status == "partial" %}
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500" title="{{ log.get_status_display }}"></span>
                             {% else %}
                             <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
                             {% endif %}

@@ -175,6 +175,9 @@ class Settings(BaseSettings):
     circuit_breaker_failure_threshold: int = 5  # Failures before opening
     circuit_breaker_recovery_timeout: float = 60.0  # Seconds to wait
     circuit_breaker_success_threshold: int = 2  # Successes to close
+    # Abrufe warten bei offenem Schutzschalter einmal bis „halb offen“, wenn das höchstens so viele Sekunden dauert;
+    # sonst brächen parallel laufende Listen desselben Hosts sofort ab (Issue #1523). 0 schaltet das Warten ab
+    circuit_breaker_half_open_wait: float = 90.0
 
     # Text Extraction
     text_extraction_enabled: bool = True

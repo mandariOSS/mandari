@@ -24,10 +24,13 @@ Jetzt setzt der nächste Vollabgleich fort (``sync_config["full_sync_resume"]``,
 Vollabgleich nichts. Er endet, sobald ein Lauf vollständig ist: Dann ist jede Liste innerhalb des Durchgangs ganz
 gelesen und seither mit ihren Änderungen nachgeführt, ``last_successful_full_sync`` rückt vor, und die Einträge werden
 gelöscht. Einträge, die älter als ``RESUME_MAX_AGE`` sind, gelten nicht mehr: Die Liste wird dann wieder ganz gelesen,
-damit ein Durchgang nicht über Wochen aus alten Teilen zusammengesetzt wird. Scheitert eine Liste aus anderem Grund als
-dem Fensterende, fällt ihr Eintrag weg, und der nächste Vollabgleich liest sie ganz. Eine Liste, die es bei der Quelle
-nicht gibt, gilt nicht als gelesen. Abgleiche in Zeitscheiben (``full_sync_slices``) haben ihren eigenen Fortschritt
-und nutzen die Fortsetzung nicht.
+damit ein Durchgang nicht über Wochen aus alten Teilen zusammengesetzt wird. Eine Störung der Quelle
+(Zeitüberschreitung, Serverfehler oder Verbindungsfehler nach allen Versuchen, offener Schutzschalter) zählt wie das
+Fensterende (Issue #1523): Bei der Stadt Bochum hing jede Nacht eine einzelne Seite, der Schutzschalter riss die
+übrigen Listen mit, und der Vollabgleich begann sie am nächsten Tag wieder bei Seite 1. Scheitert eine Liste aus
+anderem Grund (Seite fehlt, Teilantwort, Liste im Kreis), fällt ihr Eintrag weg, und der nächste Vollabgleich liest sie
+ganz. Eine Liste, die es bei der Quelle nicht gibt, gilt nicht als gelesen. Abgleiche in Zeitscheiben
+(``full_sync_slices``) haben ihren eigenen Fortschritt und nutzen die Fortsetzung nicht.
 """
 
 from __future__ import annotations
@@ -184,7 +187,8 @@ class ResumeRun:
 
     def note_cut(self, list_url: str, last_page: str | None, ids: Iterable[Any] = ()) -> None:
         """
-        Liste am Fensterende abgebrochen. ``last_page``: zuletzt ganz gelesene Folgeseite dieses Laufs mit ihren
+        Liste am Fensterende oder nach einer Störung der Quelle abgebrochen (Issue #1523). ``last_page``: zuletzt ganz
+        gelesene Folgeseite dieses Laufs mit ihren
         Kennungen ``ids``. Ohne sie (keine Folgeseite gelesen) bleibt eine frühere Fortsetzungsseite stehen; die erste
         Seite selbst ist keine Fortsetzung.
         """
@@ -198,7 +202,7 @@ class ResumeRun:
         self.cut[list_url] = (last_page, _ids(ids))
 
     def note_failed(self, list_url: str) -> None:
-        """Liste aus anderem Grund als dem Fensterende gescheitert: Der nächste Vollabgleich liest sie ganz."""
+        """Liste aus anderem Grund als Fensterende oder Störung gescheitert: Der nächste Vollabgleich liest sie ganz."""
         if list_url not in self.finished and list_url not in self.cut:
             self.failed.add(list_url)
 
