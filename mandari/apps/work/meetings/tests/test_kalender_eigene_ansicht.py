@@ -158,6 +158,14 @@ def test_eigene_und_weitere_gremien_getrennt(
     OParlMembership.objects.create(
         external_id=f"{RIS}/membership/2", person=person, organization=hiltrup, end_date=date(2020, 1, 1)
     )
+    # Erst künftig beginnende und von der Quelle gelöschte Mitgliedschaften zählen nicht
+    OParlMembership.objects.create(
+        external_id=f"{RIS}/membership/3",
+        person=person,
+        organization=hiltrup,
+        start_date=timezone.localdate() + timedelta(days=30),
+    )
+    OParlMembership.objects.create(external_id=f"{RIS}/membership/4", person=person, organization=hiltrup, deleted=True)
     andere.oparl_person = person
     andere.save(update_fields=["oparl_person"])
     mitglied.followed_organizations.add(sport)
@@ -186,6 +194,23 @@ def test_eigene_und_weitere_gremien_getrennt(
     html = client.get(reverse("work:meetings_calendar", kwargs={"org_slug": org.slug})).content.decode()
     assert "Sitzungen eigener Gremien" in html and "Sitzungen weiterer Gremien" in html
     assert 'data-arten="sitzung,gremium,fraktion,' in html
+
+
+def test_kontingent_je_art_nach_der_einordnung(
+    org: Any, body: OParlBody, mitglied: Any, client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Viele Sitzungen weiterer Gremien vorher verdrängen die eigene nicht (Kontingent je gewählter Art)."""
+    monkeypatch.setattr(kalender, "MAX_JE_ART", 2)
+    rat, beirat = _gremium(body, 1, "Rat"), _gremium(body, 2, "Beirat")
+    mitglied.followed_organizations.add(rat)
+    bald = timezone.now() + timedelta(days=1)
+    for nr in range(1, 5):
+        _sitzung(body, nr, "Sitzung", beirat, bald + timedelta(hours=nr))
+    _sitzung(body, 9, "Sitzung", rat, bald + timedelta(hours=9))
+
+    client = client_for(mitglied.user)
+    assert [e["title"] for e in _eintraege(client, org, "sitzung")] == ["Rat"]
+    assert [e["extendedProps"]["art"] for e in _eintraege(client, org)] == ["gremium", "gremium", "sitzung"]
 
 
 # ---- Sitzungsreihe zur festen Zeit ------------------------------------------------------------------------------
@@ -229,6 +254,26 @@ def test_sitzung_einer_reihe_steht_zur_festen_zeit(org: Any, mitglied: Any, clie
     assert eintrag["end"] == (beginn + timedelta(minutes=150)).isoformat()
     # Ein geplantes Ende einer einzelnen Sitzung der Reihe bleibt, ebenso das Ende einer Sitzung ohne Reihe
     assert je_id[f"fraktion-{geplant.pk}"]["end"] == (beginn + timedelta(days=7, hours=1)).isoformat()
+
+    # Gewählt wird nach der gezeigten Zeit: Eine Reihen-Sitzung ohne Ende ab 23:30 reicht in den Folgetag, die spät
+    # beendete Sitzung nicht (sie steht nur an ihrem Tag)
+    nachts = FactionMeeting.objects.create(
+        organization=org,
+        title="Nachtsitzung",
+        schedule=reihe,
+        start=beginn + timedelta(days=10),
+        created_by=mitglied,
+    )
+    adresse = reverse("work:meetings_calendar_events", kwargs={"org_slug": org.slug})
+    client = client_for(mitglied.user)
+
+    def fenster(von: datetime) -> list[str]:
+        parameter = {"start": von.isoformat(), "end": (von + timedelta(days=1)).isoformat(), "arten": "fraktion"}
+        return [e["id"] for e in client.get(adresse, parameter).json()]
+
+    assert fenster(nachts.start + timedelta(minutes=60)) == [f"fraktion-{nachts.pk}"]
+    assert fenster(nachts.start + timedelta(minutes=150)) == []
+    assert f"fraktion-{spaet_beendet.pk}" not in fenster(beginn + timedelta(hours=3))
     assert je_id[f"fraktion-{einzeln.pk}"]["end"] == (beginn + timedelta(days=3, hours=9)).isoformat()
 
 

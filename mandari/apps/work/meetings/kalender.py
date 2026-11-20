@@ -54,6 +54,8 @@ ARTEN: Final[tuple[Art, ...]] = (
 ALLE_GREMIEN: Final = Art("sitzung", "Sitzungen der Gremien", "meetings.view")
 #: Höchstzahl je Art und Abruf: Ein Monatsraster zeigt ohnehin nur wenige Einträge je Tag
 MAX_JE_ART: Final = 300
+#: Höchstzahl geprüfter Sitzungen der Gremien je Abruf (eigene und weitere zusammen; schützt vor riesigen Fenstern)
+MAX_GREMIENSITZUNGEN: Final = 1500
 #: Dauer einer Sitzung aus einer Reihe, wenn die Reihe keine nennt (Vorgabe des Modells)
 REIHE_DAUER_VORGABE: Final = 120
 
@@ -152,16 +154,22 @@ def _sitzungen(
     if bodies is None:
         return []
     eigene_adressen = ris.organization_external_ids(eigene)
+    gewaehlte = wahl & {"sitzung", "gremium"}
+    je_art: dict[str, int] = dict.fromkeys(gewaehlte, 0)
     eintraege = []
-    for meeting in selectors.meetings_between(bodies, start, end)[:MAX_JE_ART]:
+    # Erst einordnen, dann begrenzen: Ausgeblendete Sitzungen verbrauchen das Kontingent der gewählten Art nicht
+    for meeting in selectors.meetings_between(bodies, start, end).order_by("start")[:MAX_GREMIENSITZUNGEN]:
         art = "sitzung" if not eigene or _ist_eigene(meeting, eigene, eigene_adressen) else "gremium"
-        if art not in wahl:
+        if art not in gewaehlte or je_art[art] >= MAX_JE_ART:
             continue
+        je_art[art] += 1
         eintrag = serialize_calendar_event(meeting, organization.slug)
         eintrag["classNames"] = [f"termin-{art}"]
         eintrag["extendedProps"]["art"] = art
         eintrag["extendedProps"]["fullTitle"] = eintrag["title"]
         eintraege.append(eintrag)
+        if all(zahl >= MAX_JE_ART for zahl in je_art.values()):
+            break
     return eintraege
 
 
@@ -185,16 +193,25 @@ def _fraktionssitzungen(organization: Any, membership: Any, start: datetime, end
 
     # Auch Sitzungen, die vor dem Fenster begonnen haben und hineinreichen (über Mitternacht, mehrtägig); ohne Ende
     # zählt der Beginn. Das Fenster ist halboffen: Was es nur berührt (endet genau zu seinem Beginn, beginnt genau
-    # an seinem Ende), gehört nicht hinein.
-    im_fenster = Q(start__lt=end) & (Q(end__gt=start) | Q(end__isnull=True, start__gte=start))
+    # an seinem Ende), gehört nicht hinein. Ausgewählt wird nach der Zeit, die der Kalender zeigt (_ende_im_kalender):
+    # Dafür kommen Sitzungen einer Reihe ab einem Tag vor dem Fenster in Frage, entschieden wird unten.
+    im_fenster = Q(start__lt=end) & (
+        Q(end__gt=start)
+        | Q(end__isnull=True, start__gte=start)
+        | Q(schedule__isnull=False, start__gte=start - timedelta(days=1))
+    )
     sitzungen = (
         sichtbar_fuer(membership, FactionMeeting.objects.filter(im_fenster, organization=organization))
         .select_related("schedule")
-        .order_by("start")[:MAX_JE_ART]
+        .order_by("start")[: MAX_JE_ART * 2]
     )
-    eintraege = []
+    eintraege: list[dict[str, Any]] = []
     for sitzung in sitzungen:
         ende = _ende_im_kalender(sitzung)
+        if not (ende > start if ende is not None else sitzung.start >= start):
+            continue
+        if len(eintraege) >= MAX_JE_ART:
+            break
         eintraege.append(
             _eintrag(
                 "fraktion",
