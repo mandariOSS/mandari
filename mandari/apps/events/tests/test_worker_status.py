@@ -73,6 +73,7 @@ def test_alles_in_ordnung(client: Client, mit_bedarf: Any) -> None:
         "fehlerquote",
         "gescheitert",
         "texterkennung",
+        "datenabgleich",
         "dokumentabruf",
         "dokumenttext",
     }
@@ -396,6 +397,7 @@ def test_unbekannte_pruefung_400_ohne_echo(client: Client) -> None:
         "fehlerquote",
         "gescheitert",
         "texterkennung",
+        "datenabgleich",
         "dokumentabruf",
         "dokumenttext",
     ]
@@ -417,6 +419,7 @@ def test_texte_der_pruefungen_nur_fuer_die_eigene_ueberwachung(client: Client, m
             "fehlerquote": {"ok": True},
             "gescheitert": {"ok": False},
             "texterkennung": {"ok": True},
+            "datenabgleich": {"ok": True},
             "dokumentabruf": {"ok": True},
             "dokumenttext": {"ok": True},
         },

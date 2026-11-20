@@ -1841,6 +1841,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
 | `befehl:check_service_levels` | täglich 06:30 | Service-Level |
+| `befehl:datenabgleich` | täglich 06:05 | Datenabgleich mit den Schnittstellen der Kommunen: interne Konsistenz je Kommune, Ampel im Betriebsmonitor (Issue #1525, `docs/MONITORING.md`) |
 | `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
 | `befehl:verify_audit_chain` | täglich 04:20 | Hash-Ketten prüfen (Issue #221; ein Befund lässt den Lauf scheitern) |
 | `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, Issue #366) |
@@ -1852,7 +1853,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 Dazu die Zeitpläne aus dem Abschnitt „Worker“ (Fraktionssitzungen, Verortung, Aufräumen).
 `python manage.py events_scheduler --list` zeigt alle mit dem zuletzt geplanten Termin; von Hand
 läuft ein Befehl weiter mit `docker compose exec worker python manage.py <befehl> --trotz-zeitplan`.
-Aufrufe, die nur lesen oder berichten, laufen immer: `--dry-run`, `check_source_health --report`,
+Aufrufe, die nur lesen oder berichten, laufen immer: `--dry-run`, `check_source_health --report`, `datenabgleich --report`,
 `check_service_levels --report`, `cache_files --stats`, `loeschabgleich --robots`, `dokumentablage`
 ohne Schritt (Kennzahlen) und `availability_report` ohne `--out`.
 
@@ -1896,7 +1897,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|demo_ablauf|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|einreichung_aufraeumen|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|demo_ablauf|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|datenabgleich|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|einreichung_aufraeumen|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 

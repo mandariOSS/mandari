@@ -25,7 +25,7 @@ Monate nur noch HTTP 403 lieferte, ohne dass es jemand bemerkte.
 |--------|-----------|
 | OK | letzter erfolgreicher Sync jünger als `INSIGHT_SOURCE_STALE_WARNING_HOURS` (Standard 48 h) |
 | Warnung | älter als Warnschwelle **oder** letzter Versuch fehlgeschlagen |
-| Kritisch | älter als `INSIGHT_SOURCE_STALE_CRITICAL_DAYS` (Standard 7 Tage) **oder** ≥ 3 Fehlversuche in Folge **oder** seit > 7 Tagen angelegt und nie synchronisiert **oder** Fehlerklasse „User-Agent gesperrt“ / „5xx-Serie“ |
+| Kritisch | älter als `INSIGHT_SOURCE_STALE_CRITICAL_DAYS` (Standard 7 Tage) **oder** ≥ 3 Fehlversuche in Folge **oder** seit > 7 Tagen angelegt und nie synchronisiert **oder** Fehlerklasse „User-Agent gesperrt“ / „5xx-Serie“ **oder** eine Kommune im [Datenabgleich](#datenabgleich-mit-den-kommunen) kritisch (auffällig: Warnung) |
 | Inaktiv | `is_active = false` — erscheint nur im Admin-Filter der Quellenliste, nicht im Betriebsmonitor |
 
 Der **Ingestor** schreibt bei jedem fehlgeschlagenen Versuch `last_error`, `last_error_at` und
@@ -166,6 +166,71 @@ Lauf (`sync_config.scraper_state.last_run`, vom Ingestor nach jedem Lauf abgeleg
 Die Befunde erscheinen mit Empfehlung im Betriebsmonitor und in der Alarmmail von
 `check_source_health`; die Ingestor-Metriken `mandari_ingestor_scraper_parse_quota` und
 `mandari_ingestor_scraper_parse_failures_total` liefern den Verlauf für Grafana.
+
+## Datenabgleich mit den Kommunen
+
+Ein Abgleich kann „erfolgreich“ laufen und trotzdem Lücken hinterlassen: Im November 2026 fehlten in mehreren Kommunen
+die Verknüpfungen zwischen Tagesordnungspunkten und Vorlagen, obwohl Datenstand und Sync-Läufe grün waren (wechselnde
+Kennungen von Beratungen, `modified` ohne Änderung bei Freigabe oder Verknüpfung, Platzhalter in Listen, hängendes
+Änderungsfenster). Der Datenabgleich (Issue #1525) prüft deshalb den **Inhalt** je Kommune und bewertet ihn mit einer
+Ampel; „kritisch“ macht die Quelle im Betriebsmonitor kritisch und löst die Alarm-Mail aus (siehe
+[Alarmierung](#alarmierung)), „auffällig“ ist eine Warnung.
+
+**Interne Konsistenz** (`befehl:datenabgleich`, täglich 06:05, vor dem Prüflauf um 06:15; nur Datenbank,
+`insight_core/services/datenabgleich.py`). Messfenster: Sitzungen 14 Tage zurück bis 60 Tage voraus.
+
+| Befund | auffällig | kritisch |
+|---|---|---|
+| TOPs mit Beratungsverweis (`raw_json.consultation`), deren Beratung fehlt **oder** für die Work keine Vorlage findet (Work sucht über `OParlConsultation.agenda_item_external_id` mit Vorlage) | ab 3 und 3 % | ab 10 und 10 % |
+| Beratungen der TOPs im Fenster ohne Vorlage | ab 5 und 3 % | – |
+| Vorlagen dieser Beratungen ohne Dateien, obwohl die Rohdaten `mainFile`/`auxiliaryFile` nennen | ab 3 und 3 % | ab 10 und 10 % |
+| Datenstand der Kommune: späterer Zeitpunkt aus Beginn des Änderungsfensters (`sync_config.body_sync_started`, rückt nur nach einem lückenlosen Abgleich vor) und letztem lückenlosen Vollabgleich der Quelle | älter als 3 Tage | älter als 7 Tage: Weiter fragt der Änderungsabgleich nicht zurück, ältere Änderungen holt nur ein Vollabgleich |
+
+Als Hinweis ohne Einfluss auf die Ampel: Werte unter der Schwelle und lückenhaft vermerkte Listen (ausgesetzte langsame
+Listen, offene Fortsetzung eines Vollabgleichs, offene Zeitscheiben, nicht freigegebene Listen).
+
+**Abgleich mit der Quelle** (Ingestor, `ingestor/src/sync/datenabgleich.py`): Nach einem erfolgreichen Lauf holt der
+Daemon höchstens einmal täglich je Quelle die erste Seite der Listen Vorlagen, Sitzungen, Beratungen, TOPs und Dateien
+jeder Kommune und vergleicht `pagination.totalElements` mit dem Bestand (nicht gelöschte Objekte). Höchstens fünf
+Anfragen je Kommune, ein Versuch je Liste, mit Takt, robots.txt, Kennung und Abruffenster der Quelle
+(`docs/ABRUFREGELN.md`, „Werkzeuge“). Fehlen uns mindestens 20 Objekte und 10 % einer Liste, ist die Kommune
+auffällig, ab 100 und 20 % kritisch. Kleine Abweichungen, mehr Objekte als die Quelle (nicht nachgezogene Löschungen)
+und nicht abrufbare Listen erscheinen als Hinweis. Server ohne `totalElements` (die Angabe ist optional) bekommen nur
+den Bestand. more! rubin (OParl 1.0) führt Vorlagenlisten mit doppelten Einträgen (rund 5 %); deshalb erst ab 10 %.
+
+Befunde stehen an der Quelle in `sync_config.datenabgleich` (Anwendung) und `sync_config.datenabgleich_quelle`
+(Ingestor), je Kennung der Kommune. Ältere als 48 Stunden bzw. 3 Tage zählen nicht mehr; dann steht der Hinweis
+„veraltet“ (Zeitplan bzw. Daemon prüfen).
+
+```bash
+# Tabelle aller Kommunen mit Ampel, Gründen, Hinweisen und Beispielen (Kennungen betroffener TOPs)
+docker compose exec worker python manage.py datenabgleich --report
+docker compose exec worker python manage.py datenabgleich --kommune Münster --trotz-zeitplan  # ablegen
+# Abgleich mit der Quelle sofort (Ingestor; respektiert Abruffenster und Schonung)
+docker compose exec ingestor python -m src.main datenabgleich --source <Basis-URL> [--kommune <Text>]
+```
+
+Statusseite: Die Prüfung `datenabgleich` unter `/health/worker/` scheitert, solange eine Kommune kritisch ist (Text:
+nur Anzahlen). Als eigener Endpunkt, damit ein anhaltender Befund andere Prüfungen nicht verdeckt:
+
+```yaml
+  - name: datenabgleich
+    group: betrieb
+    url: https://mandari.example.org/health/worker/?pruefung=datenabgleich
+    interval: 30m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: email
+        failure-threshold: 1
+        send-on-resolved: true
+```
+
+Typische Ursachen und erste Schritte: Beratung fehlt bei more! rubin (`*.gremien.info`) → Kennungen der Beratungen
+wechseln, erst der nächste Vollabgleich holt die Vorlagen; Work findet keine Vorlage bei SD.NET RIM → Beratung ohne
+Rückverweis auf den TOP (`modified` unverändert); Datenstand alt → im Sync-Protokoll `unstored` (Objekte, die das
+Fenster halten) und Abbrüche durch Zeitüberschreitung oder Schutzschalter ansehen; Fehlbestand an der Quelle →
+Vollabgleich vollständig? (`last_successful_full_sync`, Zeitscheiben, Fortsetzung).
 
 ## Liveness und Readiness
 
