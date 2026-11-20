@@ -702,6 +702,11 @@ class TestBefundeCodeRabbit3:
         from django.core.management import call_command
 
         aufrufe: list[int] = []
-        monkeypatch.setattr(finanzcheck, "nachziehen", lambda *, hoechstens: aufrufe.append(hoechstens) or 0)
+
+        def nachziehen(*, hoechstens: int) -> int:
+            aufrufe.append(hoechstens)
+            return 0
+
+        monkeypatch.setattr(finanzcheck, "nachziehen", nachziehen)
         call_command("finanzcheck", "--nachziehen", "--hoechstens", "0")
         assert aufrufe == [0]
