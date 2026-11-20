@@ -34,7 +34,10 @@ class Command(BaseCommand):
         if options["nachziehen"]:
             if options["trocken"]:
                 raise CommandError("--trocken gilt nur mit --vorgang; --nachziehen speichert immer")
-            anzahl = finanzcheck.nachziehen(hoechstens=options["hoechstens"] or finanzcheck.JE_LAUF)
+            hoechstens = options["hoechstens"]
+            anzahl = finanzcheck.nachziehen(
+                hoechstens=finanzcheck.JE_LAUF if hoechstens is None else max(hoechstens, 0)
+            )
             self.stdout.write(f"{anzahl} KI-Aufrufe")
             return
         if not options["vorgang"]:
@@ -58,8 +61,6 @@ class Command(BaseCommand):
             self.stdout.write(f"  {kennzahl.titel}: {kennzahl.wert} {kennzahl.zusatz}".rstrip())
         for satz in anzeige.saetze:
             self.stdout.write(f"- {satz}")
-        for hinweis in anzeige.hinweise:
-            self.stdout.write(f"! {hinweis}")
         self.stdout.write(f"SEO: {anzeige.seo}")
 
     @staticmethod

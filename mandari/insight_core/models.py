@@ -11,7 +11,7 @@ from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Q
 from django.db.models.functions import Lower, Now
 from django.utils import timezone
@@ -165,10 +165,13 @@ class SourceDeletionModel(CanonicalIdModel):
         self.deleted_at = when or timezone.now()
         self.deletion_reason = reason
         self.oparl_modified = self.deleted_at
-        self.save(update_fields=["deleted", "deleted_at", "deletion_reason", "oparl_modified", "updated_at"])
-        if self.withdrawn_by_publisher:
-            self._forget_summaries()
-            self._forget_alerts()
+        # Löschmarke und Rücknahme der Zusammenfassungen gemeinsam: Ein gleichzeitig gespeicherter Finanzcheck sieht
+        # entweder beides oder nichts davon
+        with transaction.atomic():
+            self.save(update_fields=["deleted", "deleted_at", "deletion_reason", "oparl_modified", "updated_at"])
+            if self.withdrawn_by_publisher:
+                self._forget_summaries()
+                self._forget_alerts()
 
     def _forget_alerts(self) -> None:
         """

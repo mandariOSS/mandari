@@ -58,10 +58,10 @@ KANDIDATEN_JE_LAUF: Final = 200
 MAX_DURCHSICHT: Final = 1000
 #: Anteil des Monatsbudgets, der den Zusammenfassungen vorbehalten bleibt (der Finanzcheck hört vorher auf)
 BUDGET_RESERVE: Final = Decimal("0.3")
-#: Höchstens so viele Hinweise der KI
-MAX_HINWEISE: Final = 3
-#: Längster Hinweis (Zeichen)
-MAX_HINWEIS_ZEICHEN: Final = 240
+#: So lange gilt die Sperre eines Vorgangs während des KI-Aufrufs (Zeitplan und Befehl fragen nicht doppelt)
+SPERRE_SEKUNDEN: Final = 1800
+#: Grund eines Ergebnisses ohne KI-Aufruf (keine Geldbeträge im Text)
+OHNE_KI: Final = "keine Geldbeträge"
 #: Kürzeste Fundstelle (Zeichen ohne Leer- und Satzzeichen); kürzere belegen nichts
 MIN_BELEG: Final = 6
 
@@ -77,18 +77,77 @@ _GELDBETRAG: Final = re.compile(
 _TAUSEND: Final = re.compile(
     r"T€|\bTEUR\b|\bT\s?EUR\b|Tsd\.?\s*(?:€|EUR\b|Euro\b)|\bTausend\s+Euro\b|\bin\s+Tausend\b", re.IGNORECASE
 )
-#: Währung oder Größenwort in einer Fundstelle: dann ist die Einheit der Zahl eindeutig
-_WAEHRUNG: Final = re.compile(
-    r"€|\bEUR\b|\bEuro\b|\bTEUR\b|\bMio\b|\bMillion|\bMrd\b|\bMilliard|\bTsd\b|\bTausend\b", re.IGNORECASE
-)
 #: Alleinstehende vierstellige Zahl (Jahr), nicht Teil eines Betrags wie „2.028“ oder „12028“
 _JAHRESZAHL: Final = re.compile(r"(?<![\d.,])(\d{4})(?!\d|[.,]\d)")
-#: „Keine Kosten“: nur ausdrücklich („Es entstehen keine Kosten“, „Finanzielle Auswirkungen: keine“)
+#: „Keine Kosten“: nur feste Wendungen („Es entstehen keine Kosten“, „keine finanziellen Auswirkungen“, „Finanzielle
+#: Auswirkungen: keine“, „kostenneutral“), Wörter dazwischen ohne Satzzeichen. „Keine zusätzlichen Mittel; die Kosten
+#: betragen …“ zählt nicht; die Fundstelle darf zudem keine Zahl enthalten.
 _KEINE_KOSTEN: Final = re.compile(
-    r"\bkeine\b[^.]{0,60}?\b(?:Kosten|finanziellen\s+Auswirkungen|Auswirkungen\s+auf\s+den\s+Haushalt|Mehrkosten"
-    r"|Aufwendungen|Haushaltsmittel|Ausgaben)\b|\b(?:Auswirkungen|Kosten)\s*:\s*keine\b|\bkostenneutral\b",
+    r"\bentstehen\s+(?:\w+\s+){0,3}?keine\s+(?:\w+\s+)?Kosten\b"
+    r"|\bkeine\s+(?:finanziellen|haushaltsrechtlichen|haushaltsmäßigen)\s+Auswirkungen\b"
+    r"|\b(?:finanzielle\s+Auswirkungen|Kosten)\s*:?\s*keine\b(?![ \t]+\w)"
+    r"|\bkostenneutral\b",
     re.IGNORECASE,
 )
+#: Einheit direkt hinter einer Zahl im Dokument („6.200.000 €“, „62 T€“, „6,2 Mio.“)
+_EINHEIT_DANACH: Final = re.compile(
+    r"[ \t  ]*(?:T€|TEUR\b|T\s?Euro\b|Tsd\.?\s*(?:€|EUR\b|Euro\b)|Mio\b\.?|Millionen\b|Million\b|Mrd\b\.?"
+    r"|Milliarden?\b|€|EUR\b|Euro\b)",
+    re.IGNORECASE,
+)
+#: Eine Zahl mit Einheit direkt dahinter: Dann gilt diese Einheit, nicht die der Tabelle
+_MIT_EINHEIT: Final = re.compile(
+    r"\d[ \t  ]*(?:T€|TEUR\b|T\s?Euro\b|Tsd\b|Tausend\b|Mio\b|Million|Mrd\b|Milliard|€|EUR\b|Euro\b)",
+    re.IGNORECASE,
+)
+#: Tabellenkopf in Euro („in Euro“, „in €“, „(EUR)“)
+_EURO_KOPF: Final = re.compile(r"\bin\s+(?:€|EUR\b|Euro\b)|[(\[]\s*(?:€|EUR|Euro)\s*[)\]]", re.IGNORECASE)
+#: Ein Kernbetrag braucht ein passendes Wort in seiner Fundstelle oder ihrer Umgebung im Dokument (Zeile und Zeile
+#: davor): So landet das Fördergeld nicht als Gesamtkosten in der Anzeige
+_FELDWORT: Final[dict[str, re.Pattern[str]]] = {
+    "gesamtkosten": re.compile(
+        r"kost|preis|gesamt|summe|invest|auszahlung|aufwand|ausgabe|volumen|bedarf", re.IGNORECASE
+    ),
+    "foerderung": re.compile(
+        r"förder|zuwendung|zuschu|einzahlung|drittmittel|landesmittel|bundesmittel|finanzierungsanteil|erstattung",
+        re.IGNORECASE,
+    ),
+    "eigenanteil": re.compile(r"eigen|saldo|anteil|städtisch|kommunal|selbst|verbleib|netto|differenz", re.IGNORECASE),
+    "laufend_gesamt": re.compile(
+        r"folge|jährlich|pro\s+jahr|je\s+jahr|p\.\s?a\.|laufend|belastung|gesamt|summe", re.IGNORECASE
+    ),
+}
+#: Einordnungen gelten nur, wenn ihre Fundstelle sie trägt; sonst bleiben sie „unklar“
+_EINORDNUNG: Final[dict[tuple[str, str], re.Pattern[str]]] = {
+    ("foerderung_stand", "zugesagt"): re.compile(r"bewillig|zugesagt|zusage|bescheid", re.IGNORECASE),
+    ("foerderung_stand", "beantragt"): re.compile(r"beantragt|antrag", re.IGNORECASE),
+    ("foerderung_stand", "geplant"): re.compile(
+        r"beantrag|antrag|vorgesehen|geplant|angestrebt|einwerb", re.IGNORECASE
+    ),
+    ("im_haushalt", "ja"): re.compile(
+        r"veranschlag|eingeplant|eingestellt|bereitgestellt|zur\s+verfügung|haushalt", re.IGNORECASE
+    ),
+    ("im_haushalt", "teilweise"): re.compile(
+        r"teilweise|anteilig|zum\s+teil|nicht\s+(?:in\s+voller\s+höhe|vollständig|ausreichend)", re.IGNORECASE
+    ),
+    ("im_haushalt", "nein"): re.compile(
+        r"nicht\s+(?:\S+\s+){0,3}?(?:veranschlagt|eingeplant|enthalten|vorgesehen)|keine\s+(?:\S+\s+)?(?:mittel|"
+        r"ermächtigung)|außerplanmäßig|überplanmäßig",
+        re.IGNORECASE,
+    ),
+    ("deckung", "umschichtung"): re.compile(
+        r"umschicht|verschieb|übertrag|einspar|zu\s+lasten|innerhalb\s+des|aus\s+(?:der|dem|den)\s+\S*(?:maßnahme|"
+        r"budget|produkt|mitteln)",
+        re.IGNORECASE,
+    ),
+    ("deckung", "zusaetzlich"): re.compile(
+        r"zusätzlich|mehr(?:bedarf|aufwand|auszahlung)|überplanmäßig|außerplanmäßig|nachtrag", re.IGNORECASE
+    ),
+    ("deckung", "kredit"): re.compile(r"kredit|darlehen", re.IGNORECASE),
+}
+#: Diese Einordnungen gelten nicht bei verneinter Fundstelle („Der Bescheid liegt noch nicht vor“)
+_OHNE_VERNEINUNG: Final = {("foerderung_stand", "zugesagt"), ("im_haushalt", "ja")}
+_VERNEINT: Final = re.compile(r"\bnicht\b|\bnoch\s+kein|\bkeine?n?\b|ausstehend|steht\s+(?:noch\s+)?aus", re.IGNORECASE)
 #: Ohne eines dieser Wörter geht es um keine Ausgabe der Kommune (etwa nur Einwohnerzahlen mit „Euro“ im Namen)
 _FINANZWORT: Final = re.compile(
     r"Kosten|Haushalt|Finanz|Aufwend|Auszahlung|Einzahlung|Zuschuss|Zuwendung|Förder|Investition|Mittel|Budget",
@@ -191,15 +250,6 @@ SCHEMA: Final[dict[str, Any]] = {
         "im_haushalt_beleg": {"type": "string"},
         "deckung": {"type": "string", "enum": ["umschichtung", "zusaetzlich", "kredit", "unklar"]},
         "deckung_beleg": {"type": "string"},
-        "hinweise": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {"text": {"type": "string"}, "beleg": {"type": "string"}},
-                "required": ["text", "beleg"],
-                "additionalProperties": False,
-            },
-        },
     },
     "required": [
         "finanzen",
@@ -220,7 +270,6 @@ SCHEMA: Final[dict[str, Any]] = {
         "im_haushalt_beleg",
         "deckung",
         "deckung_beleg",
-        "hinweise",
     ],
     "additionalProperties": False,
 }
@@ -242,7 +291,6 @@ FELDER:
 - keine_kosten_beleg: bei „keine_kosten“ der Satz, der das sagt; sonst leer.
 - im_haushalt: Sind die Mittel im Haushalt eingeplant (veranschlagt)? „ja“, „teilweise“, „nein“ oder „unklar“, mit im_haushalt_beleg.
 - deckung: Woher kommt der Anteil der Kommune? „umschichtung“ (aus einem anderen Budget oder einer anderen Maßnahme), „zusaetzlich“ (zusätzliche Mittel), „kredit“ oder „unklar“, mit deckung_beleg.
-- hinweise: höchstens drei Tatsachen aus den Dokumenten, die man kennen muss, um die Kosten richtig einzuordnen und die oben fehlen (etwa: Kosten sind nur geschätzt, Preissteigerungen sind nicht enthalten, Folgekosten fehlen, eine Förderung ist an Bedingungen geknüpft). Ein kurzer Satz in Alltagssprache je Hinweis, ohne Wertung, mit beleg. Keine Hinweise, die nur Felder oben wiederholen.
 
 FUNDSTELLEN (beleg):
 - Kopiere die Stelle Zeichen für Zeichen aus dem Dokumenttext: 5 bis 25 Wörter, die die Zahl (bei Jahren auch das Jahr) enthalten. Nicht umformulieren, nicht kürzen, nichts einfügen. Bei Tabellen genügt die Zeile mit Jahr und Betrag.
@@ -263,13 +311,37 @@ def kommt_in_frage(text: str) -> bool:
     return bool(text and _GELDBETRAG.search(text) and _FINANZWORT.search(text))
 
 
+def keine_kosten_satz(text: str) -> str:
+    """Satz, der ausdrücklich sagt, dass keine Kosten entstehen, ohne Zahl darin; sonst leer."""
+    text = text or ""
+    for treffer in _KEINE_KOSTEN.finditer(text):
+        anfang = max(text.rfind(zeichen, 0, treffer.start()) for zeichen in ".!?\n>") + 1
+        enden = [ende for ende in (text.find(zeichen, treffer.end()) for zeichen in ".!?\n<") if ende >= 0]
+        satz = " ".join(text[anfang : min(enden, default=len(text))].split())
+        if satz and len(satz) <= 300 and not re.search(r"\d", satz):
+            return satz
+    return ""
+
+
+def _ohne_ki(text: str) -> Pruefergebnis:
+    """
+    Ergebnis ohne KI-Aufruf für Texte ohne Geldbeträge: „keine Kosten“, wenn ein Satz das ausdrücklich sagt (er ist
+    die Fundstelle), sonst „keine Angaben“.
+    """
+    satz = "" if _GELDBETRAG.search(text or "") else keine_kosten_satz(text)
+    if satz:
+        return Pruefergebnis(STATUS_OK, daten={"finanzen": "keine_kosten", "keine_kosten_beleg": satz}, grund=OHNE_KI)
+    return Pruefergebnis(STATUS_KEINE, grund=OHNE_KI)
+
+
 def nutzerprompt(paper: OParlPaper, dokumente: str) -> str:
     """Metadaten und Dokumente des Vorgangs (Dokumente als ``anlage_block`` hintereinander)."""
     from .prompts import ohne_rahmen_tags
 
     zeilen = []
-    if paper.body_id and paper.body:
-        zeilen.append(f"Kommune: {paper.body.name or paper.body.short_name or ''}")
+    kommune = getattr(paper, "body", None) if getattr(paper, "body_id", None) else None
+    if kommune is not None:
+        zeilen.append(f"Kommune: {kommune.name or kommune.short_name or ''}")
     if paper.paper_type:
         zeilen.append(f"Art: {paper.paper_type}")
     if paper.reference:
@@ -341,41 +413,88 @@ class _Material:
         weiter = stelle + schritt
         return text[stelle] in ".," and 0 <= weiter < len(text) and text[weiter].isdigit()
 
-    def fundstellen(self, beleg: str) -> list[int]:
+    def treffer(self, beleg: str) -> list[tuple[int, int]]:
         """
-        Alle Stellen der Fundstelle im Text (leer, wenn sie nicht darin steht). Verglichen werden nur Buchstaben und
-        Ziffern (Zeilenumbrüche, Trennstriche und Leerzeichen der Texterkennung zählen nicht). Beginnt oder endet die
-        Fundstelle mit einer Ziffer, darf die Zahl im Text nicht weitergehen: „200.000 € und“ ist keine Fundstelle in
-        „1.200.000 € und“.
+        Alle Stellen der Fundstelle im Text als (Anfang, letztes Zeichen), leer, wenn sie nicht darin steht.
+        Verglichen werden nur Buchstaben und Ziffern (Zeilenumbrüche, Trennstriche und Leerzeichen der Texterkennung
+        zählen nicht). Beginnt oder endet die Fundstelle mit einer Ziffer, darf die Zahl im Text nicht weitergehen:
+        „200.000 € und“ ist keine Fundstelle in „1.200.000 € und“.
         """
         kern = _kern(beleg)
         if len(re.sub(r"[.,]", "", kern)) < MIN_BELEG:
             return []
-        stellen: list[int] = []
+        gefunden: list[tuple[int, int]] = []
         start = self.kern.find(kern)
         while start >= 0:
             anfang, ende = self.stellen[start], self.stellen[start + len(kern) - 1]
             davor_frei = not kern[0].isdigit() or not self._zahl_geht_weiter(anfang - 1, -1)
             danach_frei = not kern[-1].isdigit() or not self._zahl_geht_weiter(ende + 1, 1)
             if davor_frei and danach_frei:
-                stellen.append(anfang)
+                gefunden.append((anfang, ende))
             start = self.kern.find(kern, start + 1)
-        return stellen
+        return gefunden
+
+    def fundstellen(self, beleg: str) -> list[int]:
+        """Anfänge aller Stellen der Fundstelle im Text (``treffer``)."""
+        return [anfang for anfang, _ende in self.treffer(beleg)]
 
     def steht_drin(self, beleg: str) -> bool:
-        """Steht die Fundstelle im Text (``fundstellen``)?"""
-        return bool(self.fundstellen(beleg))
+        """Steht die Fundstelle im Text (``treffer``)?"""
+        return bool(self.treffer(beleg))
 
-    def in_tausend_bei(self, stelle: int) -> bool:
-        """
-        Nennt das Dokument an dieser Stelle Beträge in Tausend Euro (Tabellen „in T€“, „TEUR“)? Geprüft wird nur die
-        Anlage, in der die Stelle steht (``<anlage …>`` bis ``</anlage>``): Eine T€-Tabelle in einer anderen Anlage
-        ändert die Einheit hier nicht.
-        """
+    def _abschnitt(self, stelle: int) -> tuple[int, int]:
+        """Anlage, in der die Stelle steht (``<anlage …>`` bis ``</anlage>``), als (Anfang, Ende)."""
         anfang = self.text.rfind("<anlage", 0, stelle + 1)
         ende = self.text.find("</anlage>", stelle)
-        abschnitt = self.text[max(anfang, 0) : ende if ende >= 0 else len(self.text)]
-        return bool(_TAUSEND.search(abschnitt))
+        return max(anfang, 0), ende if ende >= 0 else len(self.text)
+
+    def einheit_bei(self, stelle: int) -> str | None:
+        """
+        Einheit der Beträge ohne eigene Einheit an dieser Stelle: der nächste Tabellenkopf davor in derselben Anlage
+        („in T€“, „TEUR“ → ``"tausend"``; „in Euro“ → ``"euro"``). Ein „T€“ direkt hinter einer Zahl („500 T€“) ist
+        kein Tabellenkopf. Steht davor keiner, aber weiter unten in der Anlage „T€“, ist die Einheit offen (``None``);
+        sonst gilt Euro.
+        """
+        anfang, ende = self._abschnitt(stelle)
+        davor = self.text[anfang : stelle + 1]
+
+        def koepfe(muster: re.Pattern[str], text: str) -> list[int]:
+            return [t.end() for t in muster.finditer(text) if not re.search(r"\d[ \t  ]*$", text[: t.start()])]
+
+        tausend, euro = max(koepfe(_TAUSEND, davor), default=-1), max(koepfe(_EURO_KOPF, davor), default=-1)
+        if tausend > euro:
+            return "tausend"
+        if euro >= 0:
+            return "euro"
+        if koepfe(_TAUSEND, self.text[stelle + 1 : ende]):
+            return None
+        return "euro"
+
+    def betraege_bei(self, anfang: int, ende: int) -> tuple[set[Decimal], bool]:
+        """
+        Beträge in Euro an einer Stelle des Texts und ob ihre Einheit dort steht. Gelesen wird das Dokument (die Stelle
+        und die Einheit direkt dahinter), nicht die Fundstelle der KI: „1.200 €“ als Fundstelle für „1.200“ in einer
+        Tabelle „in T€“ zählt als 1,2 Millionen Euro. Ohne Einheit an der Stelle gilt ``einheit_bei``; dann zählen
+        Beträge ab 1.000 Euro (kleinere brauchen eine Einheit an der Stelle).
+        """
+        einheit = _EINHEIT_DANACH.match(self.text, ende + 1)
+        ausschnitt = self.text[anfang : einheit.end() if einheit else ende + 1]
+        werte = _werte(ausschnitt)
+        if _MIT_EINHEIT.search(ausschnitt):
+            return werte, True
+        art = self.einheit_bei(ende)
+        if art == "tausend":
+            return {wert * 1000 for wert in werte}, False
+        if art == "euro":
+            return {wert for wert in werte if wert >= 1000}, False
+        return set(), False
+
+    def umfeld(self, anfang: int, ende: int) -> str:
+        """Die Zeile einer Stelle samt der Zeile davor (Tabellen nennen die Bezeichnung oft eine Zeile höher)."""
+        zeile = self.text.rfind("\n", 0, anfang)
+        davor = self.text.rfind("\n", 0, zeile) if zeile > 0 else -1
+        schluss = self.text.find("\n", ende)
+        return self.text[davor + 1 : schluss if schluss >= 0 else len(self.text)]
 
 
 def _werte(beleg: str) -> set[Decimal]:
@@ -404,25 +523,20 @@ def _belegt(material: _Material, beleg: str, *zahlen: int) -> bool:
     return all(Decimal(int(zahl)) in werte for zahl in zahlen)
 
 
-def _betrag_belegt(material: _Material, beleg: str, euro: int) -> bool:
+def _betrag_belegt(material: _Material, beleg: str, euro: int, feld: str = "") -> bool:
     """
-    Steht der Betrag in Euro in der Fundstelle? Ohne Währung und Größenwort in der Fundstelle gilt: Nennt der Text
-    Beträge in Tausend Euro, zählt die Zahl als Tausender („1.200“ → 1.200.000); Beträge unter 1.000 brauchen eine
-    Währung. So wird „1.200“ aus einer Tabelle „in T€“ nie zu 1.200 Euro. Steht dieselbe Fundstelle ohne Währung in
-    Anlagen mit verschiedener Einheit (Euro und T€), ist der Betrag mehrdeutig und gilt nicht als belegt.
+    Steht der Betrag in Euro an jeder Stelle der Fundstelle im Dokument (``_Material.betraege_bei``)? So wird
+    „1.200“ aus einer Tabelle „in T€“ nie zu 1.200 Euro, und steht dieselbe Fundstelle in Anlagen mit verschiedener
+    Einheit, gilt der Betrag nicht. Mit ``feld`` (Kernbetrag) braucht die Fundstelle oder ihr Umfeld zudem ein
+    passendes Wort (``_FELDWORT``).
     """
-    stellen = material.fundstellen(beleg) if euro > 0 else []
-    if not stellen:
+    stellen = material.treffer(beleg) if euro > 0 else []
+    if not stellen or not all(Decimal(euro) in material.betraege_bei(*stelle)[0] for stelle in stellen):
         return False
-    werte = _werte(beleg)
-    if _WAEHRUNG.search(beleg):
-        return Decimal(euro) in werte
-    einheiten = {material.in_tausend_bei(stelle) for stelle in stellen}
-    if len(einheiten) > 1:
-        return False
-    if einheiten.pop():
-        return Decimal(euro) in {wert * 1000 for wert in werte}
-    return euro >= 1000 and Decimal(euro) in werte
+    muster = _FELDWORT.get(feld)
+    return muster is None or bool(
+        muster.search(beleg) or any(muster.search(material.umfeld(*stelle)) for stelle in stellen)
+    )
 
 
 def _jahre_in(beleg: str) -> list[int]:
@@ -438,20 +552,25 @@ def _zahl(wert: Any) -> int:
         return 0
 
 
-def _betrag(material: _Material, roh: Any, *, null_erlaubt: bool = False) -> dict[str, Any] | None | bool:
+def _betrag(material: _Material, roh: Any, feld: str) -> dict[str, Any] | None | bool:
     """
-    Geprüfter Betrag ``{"euro", "beleg"}``; ``None`` ohne Angabe; ``False``, wenn die Fundstelle nicht trägt. Mit
-    ``null_erlaubt`` (Eigenanteil) zählt auch ein ausdrücklich belegter Betrag von 0 Euro („Eigenanteil: 0 €“).
+    Geprüfter Kernbetrag ``{"euro", "beleg"}``; ``None`` ohne Angabe; ``False``, wenn die Fundstelle nicht trägt.
+    Beim Eigenanteil zählt auch ein ausdrücklich belegter Betrag von 0 Euro mit Einheit im Dokument („Eigenanteil:
+    0 €“).
     """
     if not isinstance(roh, dict):
         return None
     euro = _zahl(roh.get("euro"))
     beleg = str(roh.get("beleg") or "").strip()
-    if euro == 0 and null_erlaubt:
-        if material.steht_drin(beleg) and _WAEHRUNG.search(beleg) and Decimal(0) in _werte(beleg):
+    if euro == 0 and feld == "eigenanteil":
+        stellen = material.treffer(beleg)
+        if stellen and all(
+            Decimal(0) in werte and mit_einheit
+            for werte, mit_einheit in (material.betraege_bei(*stelle) for stelle in stellen)
+        ):
             return {"euro": 0, "beleg": beleg}
         return False
-    if not _betrag_belegt(material, beleg, euro):
+    if not _betrag_belegt(material, beleg, euro, feld):
         return False
     return {"euro": euro, "beleg": beleg}
 
@@ -481,7 +600,7 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         return Pruefergebnis(STATUS_KEINE)
     if finanzen == "keine_kosten":
         beleg = str(antwort.get("keine_kosten_beleg") or "").strip()
-        if material.steht_drin(beleg) and _KEINE_KOSTEN.search(beleg):
+        if material.steht_drin(beleg) and _KEINE_KOSTEN.search(beleg) and not re.search(r"\d", beleg):
             return Pruefergebnis(STATUS_OK, daten={"finanzen": "keine_kosten", "keine_kosten_beleg": beleg})
         return Pruefergebnis(STATUS_KEINE, grund="keine_kosten ohne Fundstelle")
 
@@ -489,23 +608,25 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
     if daten["art"] not in ("bau_oder_anschaffung", "laufende_kosten", "einmalige_kosten"):
         daten["art"] = "bau_oder_anschaffung"
     for name in ("gesamtkosten", "foerderung", "eigenanteil", "laufend_gesamt"):
-        geprueft = _betrag(material, antwort.get(name), null_erlaubt=name == "eigenanteil")
+        geprueft = _betrag(material, antwort.get(name), name)
         if geprueft is False:
             return Pruefergebnis(STATUS_VERWORFEN, grund=f"Fundstelle trägt {name} nicht")
         daten[name] = geprueft
 
-    # Einordnungen nur mit Fundstelle, sonst „unklar“
-    for name, beleg_name, standard in (
-        ("foerderung_stand", "foerderung_stand_beleg", "unklar"),
-        ("im_haushalt", "im_haushalt_beleg", "unklar"),
-        ("deckung", "deckung_beleg", "unklar"),
-    ):
-        wert = str(antwort.get(name) or standard)
-        beleg = str(antwort.get(beleg_name) or "").strip()
-        if wert != standard and material.steht_drin(beleg):
-            daten[name], daten[beleg_name] = wert, beleg
+    # Einordnungen nur mit Fundstelle, deren Wortlaut sie trägt (``_EINORDNUNG``), sonst „unklar“
+    for name in ("foerderung_stand", "im_haushalt", "deckung"):
+        wert = str(antwort.get(name) or "unklar")
+        beleg = str(antwort.get(f"{name}_beleg") or "").strip()
+        muster = _EINORDNUNG.get((name, wert))
+        if (
+            muster is not None
+            and muster.search(beleg)
+            and not ((name, wert) in _OHNE_VERNEINUNG and _VERNEINT.search(beleg))
+            and material.steht_drin(beleg)
+        ):
+            daten[name], daten[f"{name}_beleg"] = wert, beleg
         else:
-            daten[name], daten[beleg_name] = standard, ""
+            daten[name], daten[f"{name}_beleg"] = "unklar", ""
     if not daten["foerderung"]:
         daten["foerderung_stand"], daten["foerderung_stand_beleg"] = "unklar", ""
     von = " ".join(str(antwort.get("foerderung_von") or "").split())
@@ -567,30 +688,9 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         if 1 <= jahre <= 100 and _belegt(material, beleg, jahre):
             daten["nutzungsdauer"] = {"jahre": jahre, "beleg": beleg}
 
-    daten["hinweise"] = _hinweise(antwort.get("hinweise"), material)
-
     if not any(daten[name] for name in ("gesamtkosten", "eigenanteil", "laufend_gesamt")) and not laufend:
         return Pruefergebnis(STATUS_KEINE, grund="kein belegter Betrag")
     return Pruefergebnis(STATUS_OK, daten=daten)
-
-
-def _hinweise(roh: Any, material: _Material) -> list[dict[str, str]]:
-    """Hinweise mit Fundstelle; Zahlen und Daten im Hinweis müssen im Dokumenttext stehen (wie bei Zusammenfassungen)."""
-    from .zusammenfassung_pruefung import Quelle, fremde_zahl, fremdes_datum
-
-    quelle = Quelle(text=material.text)
-    hinweise: list[dict[str, str]] = []
-    for eintrag in roh or []:
-        if not isinstance(eintrag, dict) or len(hinweise) >= MAX_HINWEISE:
-            continue
-        text = " ".join(str(eintrag.get("text") or "").split())
-        beleg = str(eintrag.get("beleg") or "").strip()
-        if not text or len(text) > MAX_HINWEIS_ZEICHEN or not material.steht_drin(beleg):
-            continue
-        if fremde_zahl(text, quelle) or fremdes_datum(text, quelle):
-            continue
-        hinweise.append({"text": text, "beleg": beleg})
-    return hinweise
 
 
 # =============================================================================
@@ -670,6 +770,54 @@ class Jahr:
 
 
 @dataclass(frozen=True)
+class Balken:
+    """Eine Säule im Diagramm „Wann gezahlt wird“: Jahr, Betrag, Höhe in Prozent der größten Säule."""
+
+    jahr: int
+    wert: str
+    hoehe: float
+
+    @property
+    def oben(self) -> float:
+        """Oberkante der Säule im SVG (``viewBox`` 0–100, unten 100)."""
+        return round(100 - self.hoehe, 1)
+
+
+@dataclass(frozen=True)
+class Karten:
+    """Die Karten des Finanzchecks in der Seitenleiste (Münster-Money-Stil: große Zahl, kleine Grafik)."""
+
+    gesamt: str
+    foerderung: str
+    foerderung_stand: str
+    eigen: str
+    eigen_errechnet: bool
+    #: Anteil des Fördergelds an den Kosten in Prozent (nur, wenn Fördergeld und Anteil der Kommune die Kosten ergeben)
+    anteil_foerderung: float | None
+    jaehrlich: str
+    jaehrlich_ab: int | None
+    jaehrlich_errechnet: bool
+    #: Wofür die jährlichen Kosten anfallen („Unterhalt, Wertverlust und Zinsen“)
+    jaehrlich_wofuer: str
+    nutzungsdauer: int | None
+    balken: list[Balken]
+    #: Kurzer Hinweis, etwa „Das Geld ist erst teilweise im Haushalt eingeplant.“
+    hinweis: str
+    wer: str
+    #: Zahlungsjahr als Text, wenn es keine Säulen gibt (nur ein Jahr): „Gezahlt 2028“
+    zeitraum: str = ""
+
+    @property
+    def rest_x(self) -> float:
+        """Beginn des Abschnitts „Anteil der Kommune“ im Balken (2 px Abstand ≈ 0,6 Einheiten)."""
+        return round((self.anteil_foerderung or 0) + 0.6, 1)
+
+    @property
+    def rest_breite(self) -> float:
+        return round(max(0.0, 100 - self.rest_x), 1)
+
+
+@dataclass(frozen=True)
 class Anzeige:
     """Was die Vorgangsseite zeigt (``partials/paper_finanzcheck.html``) und die Description nennt."""
 
@@ -683,10 +831,11 @@ class Anzeige:
     jahre: list[Jahr]
     #: Spalte „Einnahmen“ nur, wenn ein Jahr Einnahmen hat
     mit_einnahmen: bool
-    hinweise: list[str]
     belege: list[tuple[str, str]]
     #: Ein Satz für die Description der Suchmaschinen
     seo: str
+    #: Karten für die Seitenleiste; ``None`` bei „keine Kosten“
+    karten: Karten | None = None
 
 
 def anzeige(paper: Any) -> Anzeige | None:
@@ -718,7 +867,6 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
             laufend_summe="",
             jahre=[],
             mit_einnahmen=False,
-            hinweise=[],
             belege=[("Keine Kosten", beleg)] if beleg else [],
             seo="Kosten laut Vorlage: keine.",
         )
@@ -803,6 +951,57 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
         saetze.append("Das Geld ist noch nicht im Haushalt eingeplant.")
     grenze_laufend = grenze_haushalt = len(saetze)
 
+    # Karten für die Seitenleiste
+    anteil = None
+    if (
+        gesamt
+        and foerderung
+        and foerderung <= gesamt
+        and eigen is not None
+        and abs(foerderung + eigen - gesamt) <= max(1, gesamt // 100)
+    ):
+        anteil = round(100 * foerderung / gesamt, 1)
+    posten_karte = {z["posten"] for z in zeilen}
+    wofuer_karte = [
+        text
+        for name, text in (("unterhalt", "Unterhalt"), ("wertverlust", "Wertverlust"), ("zinsen", "Zinsen"))
+        if name in posten_karte or (name == "wertverlust" and dauer)
+    ]
+    ausgaben_je_jahr: dict[int, int] = {}
+    for zahlung in daten.get("zahlungen") or []:
+        if zahlung["richtung"] == "ausgabe":
+            ausgaben_je_jahr[zahlung["jahr"]] = ausgaben_je_jahr.get(zahlung["jahr"], 0) + zahlung["euro"]
+    hoechste = max(ausgaben_je_jahr.values(), default=0)
+    balken = (
+        [
+            Balken(jahr, euro_kurz(wert), round(100 * wert / hoechste, 1))
+            for jahr, wert in sorted(ausgaben_je_jahr.items())
+        ]
+        if len(ausgaben_je_jahr) > 1 and hoechste
+        else []
+    )
+    hinweis_karte = {
+        "teilweise": "Das Geld ist erst teilweise im Haushalt eingeplant.",
+        "nein": "Das Geld ist noch nicht im Haushalt eingeplant.",
+    }.get(daten.get("im_haushalt", ""), "")
+    karten = Karten(
+        gesamt=euro_kurz(gesamt) if gesamt else "",
+        foerderung=euro_kurz(foerderung) if foerderung else "",
+        foerderung_stand=stand,
+        eigen=euro_kurz(eigen) if eigen is not None else "",
+        eigen_errechnet=eigen_errechnet,
+        anteil_foerderung=anteil,
+        jaehrlich=euro_kurz(jaehrlich) if jaehrlich else "",
+        jaehrlich_ab=ab,
+        jaehrlich_errechnet=jaehrlich_errechnet,
+        jaehrlich_wofuer=_aufzaehlung(wofuer_karte) if wofuer_karte else "",
+        nutzungsdauer=dauer,
+        balken=balken,
+        hinweis=hinweis_karte,
+        wer=wer["nom"].split()[-1],
+        zeitraum=f"Gezahlt {ausgabe_jahre[0]}" if len(ausgabe_jahre) == 1 else "",
+    )
+
     # Erst was kostet, dann was entlastet, damit die Rechnung von oben nach unten aufgeht
     zeilen.sort(key=lambda z: z["posten"] in POSTEN_ENTLASTUNG)
     laufend_zeilen = [
@@ -862,9 +1061,9 @@ def _anzeige(paper: Any, daten: dict[str, Any]) -> Anzeige:
         laufend_summe=euro_kurz(jaehrlich) if laufend_zeilen and jaehrlich else "",
         jahre=jahr_zeilen,
         mit_einnahmen=any(werte["einnahme"] for werte in jahre.values()),
-        hinweise=[h["text"] for h in daten.get("hinweise") or []],
         belege=belege,
         seo=seo,
+        karten=karten,
     )
 
 
@@ -892,8 +1091,11 @@ def _provider() -> Any:
 def erstellen(paper: OParlPaper, *, provider: Any = None, speichern: bool = True) -> Pruefergebnis | None:
     """
     Finanzcheck eines Vorgangs erstellen und (mit ``speichern``) ablegen; ``None``, wenn es keinen Text gibt oder
-    die Claude API nicht eingerichtet ist. Ohne Geldbeträge im Text (``kommt_in_frage``) gibt es keinen KI-Aufruf.
+    die Claude API nicht eingerichtet ist oder der Vorgang gerade anderswo geprüft wird. Ohne Geldbeträge im Text
+    (``kommt_in_frage``) gibt es keinen KI-Aufruf (``_ohne_ki``).
     """
+    from django.core.cache import cache
+
     from ..providers.base import ChatMessage
     from .summarizer import SummaryService
 
@@ -912,35 +1114,43 @@ def erstellen(paper: OParlPaper, *, provider: Any = None, speichern: bool = True
     if not dokumente:
         return None
     if not kommt_in_frage(dokumente):
-        ergebnis = Pruefergebnis(STATUS_KEINE, grund="keine Geldbeträge")
+        ergebnis = _ohne_ki(dokumente)
         if speichern:
             _ablegen(paper.pk, ergebnis, hinweis="", dateien=datei_ids, mit_text=mit_text, seit=beginn)
         return ergebnis
     provider = provider or _provider()
     if provider is None or not provider.is_available():
         return None
-    nachrichten = [
-        ChatMessage(role="system", content=SYSTEM_PROMPT),
-        ChatMessage(role="user", content=nutzerprompt(paper, dokumente)),
-    ]
-    antwort = provider.chat_completion(nachrichten, max_tokens=MAX_AUSGABE, schema=SCHEMA, effort=EFFORT)
+    # Ein Vorgang zur Zeit: Zeitplan und Befehl fragen die KI nicht doppelt
+    sperre = f"insight:finanzcheck:sperre:{paper.pk}"
+    if not cache.add(sperre, 1, SPERRE_SEKUNDEN):
+        logger.info("Finanzcheck von Vorgang %s läuft schon", paper.pk)
+        return None
     try:
-        roh = json.loads(antwort.content)
-    except ValueError:
-        roh = None
-    ergebnis = pruefen(roh, dokumente)
-    if ergebnis.status == STATUS_VERWORFEN:
-        logger.info("Finanzcheck von Vorgang %s verworfen: %s", paper.pk, ergebnis.grund)
-    if speichern:
-        _ablegen(
-            paper.pk,
-            ergebnis,
-            hinweis=getattr(provider, "zusammenfassung_hinweis", ""),
-            dateien=datei_ids,
-            mit_text=mit_text,
-            seit=beginn,
-            modell=antwort.model,
-        )
+        nachrichten = [
+            ChatMessage(role="system", content=SYSTEM_PROMPT),
+            ChatMessage(role="user", content=nutzerprompt(paper, dokumente)),
+        ]
+        antwort = provider.chat_completion(nachrichten, max_tokens=MAX_AUSGABE, schema=SCHEMA, effort=EFFORT)
+        try:
+            roh = json.loads(antwort.content)
+        except ValueError:
+            roh = None
+        ergebnis = pruefen(roh, dokumente)
+        if ergebnis.status == STATUS_VERWORFEN:
+            logger.info("Finanzcheck von Vorgang %s verworfen: %s", paper.pk, ergebnis.grund)
+        if speichern:
+            _ablegen(
+                paper.pk,
+                ergebnis,
+                hinweis=getattr(provider, "zusammenfassung_hinweis", ""),
+                dateien=datei_ids,
+                mit_text=mit_text,
+                seit=beginn,
+                modell=antwort.model,
+            )
+    finally:
+        cache.delete(sperre)
     return ergebnis
 
 
@@ -1042,6 +1252,6 @@ def nachziehen(*, hoechstens: int = JE_LAUF, provider: Any = None, kommunen: dic
                 logger.warning("Finanzcheck von Vorgang %s gescheitert: %s", paper.pk, fehler)
                 aufrufe += 1
                 continue
-            if ergebnis is not None and ergebnis.grund != "keine Geldbeträge":
+            if ergebnis is not None and ergebnis.grund != OHNE_KI:
                 aufrufe += 1
     return aufrufe

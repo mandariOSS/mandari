@@ -65,13 +65,22 @@ def speichern(
         vorgang = OParlPaper.objects.select_for_update(no_key=True).filter(pk=vorgang_id).only("pk", "deleted").first()
         if vorgang is None or vorgang.deleted:
             return False
-        if (
-            dateien
-            and OParlFile.objects.filter(pk__in=dateien)
-            .filter(Q(deleted=True) | Q(source_missing_since__isnull=False))
-            .exists()
-        ):
-            return False
+        # Die Anlagen bleiben gesperrt, bis gespeichert ist: Neuer Text oder eine Rücknahme einer Anlage wartet und
+        # verwirft den Finanzcheck danach. Ist eine Anlage schon gesperrt (sie wird gerade geändert oder
+        # zurückgenommen, wobei die Rücknahme danach den Vorgang sperrt), wartet das Speichern nicht, sondern verwirft
+        # das Ergebnis: Sonst sperrten beide Seiten in umgekehrter Reihenfolge (Deadlock). Der nächste Lauf prüft
+        # neu. Gelöschte, verschwundene oder einem anderen Vorgang zugeordnete Anlagen verwerfen ihn ebenso.
+        if dateien:
+            gesperrt = list(
+                OParlFile.objects.select_for_update(no_key=True, skip_locked=True)
+                .filter(pk__in=dateien)
+                .values_list("paper_id", "deleted", "source_missing_since")
+            )
+            if len(gesperrt) != len(set(dateien)) or any(
+                str(vorgang_von) != str(vorgang.pk) or geloescht or verschwunden
+                for vorgang_von, geloescht, verschwunden in gesperrt
+            ):
+                return False
         if OParlFile.objects.filter(
             paper_id=vorgang_id, text_extraction_status="completed", text_extracted_at__gt=seit
         ).exists():
