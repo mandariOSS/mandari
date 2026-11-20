@@ -48,6 +48,7 @@ bleibt work/ris/meeting_detail.html.
                     {% for paper in e.papers %}
                     <p class="mt-1 text-sm"><c-ui.textlink href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}" class="break-words">{{ paper.name|default:"Vorgang" }}</c-ui.textlink>{% if paper.reference %}<span class="text-gray-600 dark:text-gray-400"> · {{ paper.reference }}</span>{% endif %}</p>
                     {% endfor %}
+                    {% include "partials/top_dateien.html" with dateien=e.dateien %}
                     {% if e.position or e.notizen %}
                     <p class="mt-1.5 text-sm text-gray-800 dark:text-gray-200">Für die Fraktion: {% if e.position %}{% include "work/ris/neu/_position.html" with position=e.position %}{% endif %}{% if e.position and e.notizen %} · {% endif %}{% if e.notizen %}{{ e.notizen }} Notiz{{ e.notizen|pluralize:"en" }}{% endif %}</p>
                     {% endif %}

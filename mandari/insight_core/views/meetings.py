@@ -314,8 +314,11 @@ class MeetingDetailView(DetailView):
         # ebenso wenig von Session zurückgenommene Vorlagen und Beratungen; zwei Abfragen statt einer je Punkt
         agenda_items = ris_selectors.visible_agenda_items(meeting)
         papers_by_item = ris_selectors.papers_of_agenda_items(agenda_items)
+        # Dateien direkt an den Punkten, etwa Anträge ohne Vorlage (Issue #1528); eine Abfrage
+        files_by_item = ris_selectors.files_of_agenda_items(agenda_items)
         for item in agenda_items:
             item._prefetched_papers = papers_by_item.get(item.pk, [])
+            item.top_dateien = files_by_item.get(item.pk, [])
         # Abstimmungsergebnisse aus dem Quell-RIS (Issue #41): Summen + namentliche Stimmen, aus dem kanonischen
         # Modell über die Lese-Fassade (Issue #525)
         for item in agenda_items:

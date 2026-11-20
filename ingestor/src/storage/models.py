@@ -419,6 +419,11 @@ class OParlFile(Base):
     body_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_bodies.id"), nullable=True)
     paper_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_papers.id"), nullable=True)
     meeting_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_meetings.id"), nullable=True)
+    # Tagesordnungspunkt, an dem die Datei hängt (``auxiliaryFile``/``resolutionFile`` am AgendaItem, Rückverweis
+    # ``File.agendaItem``); Django-Migration insight_core 0074. Die Sitzung steht dann zusätzlich in ``meeting_id``.
+    agenda_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("oparl_agenda_items.id"), nullable=True, index=True
+    )
 
     name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
