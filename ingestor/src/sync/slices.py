@@ -42,7 +42,8 @@ dem Massenstempel der Quelle (über 13.000 Vorlagen mit fast demselben ``modifie
 Vollabgleich kam wochenlang nicht über sie hinaus. Teilen hilft da nicht, alle Objekte tragen denselben Zeitpunkt.
 Trägt die Seite keine der gemerkten Kennungen mehr, hat sich die Scheibe verschoben, und sie kommt ganz. Objekte der
 schon gelesenen Seiten, die sich seitdem ändern, verlassen die Scheibe und kommen mit der letzten Scheibe (ohne
-Obergrenze). Der Eintrag gilt nur für genau diese Scheibe und höchstens ``SLICE_PAGE_MAX_AGE``.
+Obergrenze). Der Eintrag gilt nur für genau diese Scheibe und höchstens ``SLICE_PAGE_MAX_AGE``, nie für die letzte
+Scheibe: In sie kommen laufend neue Objekte, auch vor die gemerkte Seite.
 """
 
 from __future__ import annotations
@@ -287,8 +288,11 @@ class SlicePage:
         return entry
 
     def matches(self, window: SliceWindow, now: datetime | None = None) -> bool:
-        """Gilt der Fortschritt für diese Scheibe (gleiche Grenzen) und ist er nicht zu alt?"""
-        if (now or datetime.now(UTC)) - self.at > SLICE_PAGE_MAX_AGE:
+        """
+        Gilt der Fortschritt für diese Scheibe (gleiche Grenzen) und ist er nicht zu alt? Nie für die letzte Scheibe
+        ohne Obergrenze: In sie kommen laufend neue Objekte, auch vor die gemerkte Seite; sie kommt immer ganz.
+        """
+        if window.until is None or (now or datetime.now(UTC)) - self.at > SLICE_PAGE_MAX_AGE:
             return False
         return self.since == window.since and self.until == window.until
 

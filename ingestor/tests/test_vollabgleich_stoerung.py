@@ -465,6 +465,42 @@ async def test_festgefahrene_langsame_liste_wird_gemeldet(caplog: pytest.LogCapt
 # ---------------------------------------------------------------------------
 
 
+class _ProtokollSpeicher:
+    def __init__(self) -> None:
+        self.status: list[str] = []
+
+    async def write_sync_log(self, **kwargs: Any) -> None:
+        self.status.append(kwargs["status"])
+
+
+async def test_sammelprotokoll_der_kommandozeile() -> None:
+    """Ein Vollabgleich mit Lücke ist auch ohne geschriebene Objekte ``partial``; ein gescheiterter Lauf bleibt."""
+    speicher = _ProtokollSpeicher()
+    orchestrator = _orchestrator(speicher)  # type: ignore[arg-type]
+    luecke = SyncResult(source_url=SOURCE, source_name="Hamm", success=True, full=True, full_incomplete=True)
+    luecke.errors.append("Liste … ausgesetzt")
+    await orchestrator.write_results_to_synclog([luecke], datetime.now(UTC), "full", "cli")
+    gescheitert = SyncResult(source_url=SOURCE, source_name="Bochum", success=False, errors=["nicht erreichbar"])
+    await orchestrator.write_results_to_synclog([luecke, gescheitert], datetime.now(UTC), "full", "cli")
+    await orchestrator.write_results_to_synclog(
+        [SyncResult(source_url=SOURCE, source_name="Hamm", success=True, full=True)], datetime.now(UTC), "full", "cli"
+    )
+    assert speicher.status == [SYNC_STATUS_PARTIAL, SYNC_STATUS_FAILED, SYNC_STATUS_SUCCESS]
+
+
+async def test_letzte_scheibe_ohne_obergrenze_kommt_immer_ganz() -> None:
+    """Prüfbefund: In die offene letzte Scheibe kommen neue Objekte auch vor die gemerkte Seite."""
+    speicher = _SeitenSpeicher()
+    offen = SliceWindow(datetime(2026, 11, 1, tzinfo=UTC), None)
+    run = SliceRun.build(SOURCE, None, {}, {})
+    slices = BodySlices(run)
+    abbruch = FetchWindowClosedError(HAMM_PAPER, f"{HAMM_PAPER}?page=4", f"{HAMM_PAPER}?page=3", ("a", "b"))
+    await _orchestrator(speicher)._remember_slice_page(slices, HAMM_PAPER, offen, abbruch)
+    assert run.pages == {} and SYNC_CONFIG_FULL_SYNC_SLICE_PAGE_KEY not in speicher.config
+    stand = SlicePage(offen.since, None, f"{HAMM_PAPER}?page=3", datetime.now(UTC))
+    assert not stand.matches(offen)
+
+
 def test_zustand_im_sync_protokoll() -> None:
     ergebnis = SyncResult(source_url=SOURCE, source_name="Bochum", success=True, full=True)
     assert sync_log_status(ergebnis) == SYNC_STATUS_SUCCESS

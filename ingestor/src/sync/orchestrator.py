@@ -2705,7 +2705,9 @@ class SyncOrchestrator:
         if not isinstance(error, FetchWindowClosedError) and not error.interrupted:
             await self._clear_slice_page(slices, list_url)
             return
-        if error.last_page_url is None:
+        if error.last_page_url is None or window.until is None:
+            # Ohne gelesene Folgeseite bleibt ein früherer Stand; die letzte Scheibe (ohne Obergrenze) kommt immer
+            # ganz, in sie kommen laufend neue Objekte, auch vor die gemerkte Seite (``SlicePage.matches``)
             return
         run = slices.run
         entry = SlicePage(
@@ -3434,8 +3436,11 @@ class SyncOrchestrator:
             }
 
         status = SYNC_STATUS_SUCCESS if not all_errors or total_entities > 0 else SYNC_STATUS_FAILED
-        if status == SYNC_STATUS_SUCCESS and any(result.success and result.full_incomplete for result in results):
-            status = SYNC_STATUS_PARTIAL  # Vollabgleich mit Lücke (Issue #1523)
+        # Vollabgleich mit Lücke (Issue #1523), auch ohne geschriebene Objekte, solange kein Lauf gescheitert ist
+        if any(result.success and result.full_incomplete for result in results) and (
+            status == SYNC_STATUS_SUCCESS or all(result.success for result in results)
+        ):
+            status = SYNC_STATUS_PARTIAL
         duration = (end_time - start_time).total_seconds()
 
         try:
