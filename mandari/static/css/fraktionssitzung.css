@@ -8,7 +8,7 @@
    Am Ende: Bausteine der übrigen Fraktionssitzungs-Seiten nach dem Muster (Liste, Planung, Einladung, Protokoll,
    Einstellungen; Issue #1071). */
 
-@layer components {
+@layer utilities {
   .fs-sitzung {
     --fs-dok-basis: 16px;
     --fs-dok: calc(var(--fs-dok-basis) + var(--fs-dok-plus, 0px));
@@ -1906,7 +1906,7 @@
    work/rahmen/_noe_knopf.html. .noe-huelle: Hülle, die erst im Browser zu .fs-noe-inhalt wird (Ratssitzung vorbereiten).
    Nur Sichtschutz, die Rechte prüft der Server.
    ===================================================================================================== */
-@layer components {
+@layer utilities {
   .fs-noe-inhalt,
   .noe-huelle {
     display: contents;

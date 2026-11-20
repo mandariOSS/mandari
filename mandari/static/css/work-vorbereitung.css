@@ -8,7 +8,7 @@
    ist ein- oder ausgeklappt, und der neue Rahmen (#852) bringt eine eigene. Ab 90rem Tagesordnung mit Titeln links,
    ab 60rem als schmale Leiste aus Nummern und Stand (ausklappbar), darunter ein TOP je Bildschirm mit Blättern für
    Tagesordnung, Unterlagen und Position. */
-@layer components {
+@layer utilities {
   /* Die Seite füllt die Höhe unter der Kopfzeile des Rahmens; nur die Bereiche darin scrollen */
   .work-main:has(.vb) { height: 100dvh; min-height: 0; }
   .work-page-content:has(> .vb) { padding: 0; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }

@@ -3,7 +3,7 @@
    fraktionssitzung.css), Farben aus den Tokens der Arbeitsflächen (.wf in work-flaeche.css, Dunkelmodus dort).
    Präfix tu- für die Terminumfrage: Raster Person mal Vorschlag, Spaltenköpfe als Kalenderblatt, die eigene Zeile zum
    Ankreuzen. Maße nach „Gestalten ohne KI-Slop“ (Arbeitsplattform): Bedienschrift 13–14 px, Zellen 40 px, Radius 6 px. */
-@layer components {
+@layer utilities {
   /* ---------- Ergebnis über dem Raster ---------- */
   .tu-ergebnis {
     display: flex; align-items: flex-start; gap: 10px; margin: 0 0 20px; padding: 12px 14px; border-radius: 6px;
