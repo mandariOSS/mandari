@@ -84,7 +84,10 @@ class TestErstbesuchUeberSuchmaschine:
         assert ">Musterhausen</a>" in krumen and "Alle Kommunen" not in krumen
         assert ">Vorgänge</a>" in krumen
         fuss = _fuss(html)
-        assert "Die Daten stammen aus dem Ratsinformationssystem von Musterhausen." in fuss
+        assert (
+            "Die Daten stammen aus dem Ratsinformationssystem von Musterhausen, verbindlich ist die Veröffentlichung dort."
+            in fuss
+        )
         assert "Letzter Abgleich: 03.10.2026, 17:40 Uhr." in fuss
         assert 'data-kommune-name="Musterhausen"' in html
         assert f'data-kommune-url="{reverse("insight_core:insight:set_body", args=[b.id])}"' in html
