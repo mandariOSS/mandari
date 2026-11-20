@@ -106,11 +106,6 @@ async def _schema(anlegen: bool) -> None:
                     "oparlpaper_id uuid NOT NULL REFERENCES oparl_papers (id)",
                     "oparllocation_id uuid NOT NULL REFERENCES oparl_locations (id)",
                 ),
-                (
-                    "oparl_legislative_terms_shared_bodies",
-                    "oparllegislativeterm_id uuid NOT NULL REFERENCES oparl_legislative_terms (id)",
-                    "oparlbody_id uuid NOT NULL REFERENCES oparl_bodies (id)",
-                ),
             ):
                 await conn.execute(
                     text(
@@ -144,12 +139,7 @@ async def speicher(schema: None, request: pytest.FixtureRequest) -> AsyncIterato
     storage._session_factory = async_sessionmaker(storage._engine, class_=AsyncSession, expire_on_commit=False)
     async with storage._engine.begin() as conn:
         tabellen = ", ".join(f'"{tabelle.name}"' for tabelle in Base.metadata.sorted_tables)
-        await conn.execute(
-            text(
-                f"TRUNCATE {tabellen}, oparl_meetings_organizations, oparl_papers_locations,"
-                " oparl_legislative_terms_shared_bodies CASCADE"
-            )
-        )
+        await conn.execute(text(f"TRUNCATE {tabellen}, oparl_meetings_organizations, oparl_papers_locations CASCADE"))
     yield storage
     await storage.close()
 

@@ -111,7 +111,7 @@ from src.sync.slices import (
     slow_backoff,
     slow_windows,
 )
-from src.sync.wahlperioden import WahlperiodenListen, lies_liste
+from src.sync.wahlperioden import WahlperiodenListen
 
 if TYPE_CHECKING:
     from src.scrapers.runner import ScraperSyncRunner
@@ -2099,7 +2099,8 @@ class SyncOrchestrator:
         if not wahlperioden.faellig(list_url, full=full):
             return
         try:
-            gelesen = await lies_liste(client, list_url)
+            # Einmal je Quellenlauf, auch wenn mehrere Kommunen der Quelle dieselbe Liste nennen
+            gelesen = await wahlperioden.lesen(client, list_url)
         except Exception as e:  # noqa: BLE001 - optionale Liste: keine Lücke, nächster Versuch im nächsten Lauf
             console.print(f"[yellow]  Wahlperiodenliste nicht gelesen ({type(e).__name__}: {e})[/yellow]")
             return
@@ -2129,10 +2130,12 @@ class SyncOrchestrator:
             ergebnis = f"{ergebnis}, Übernahme abgebrochen ({type(e).__name__})"
             console.print(f"[yellow]  Wahlperiodenliste nicht ganz übernommen ({type(e).__name__}: {e})[/yellow]")
         stats["legislative_terms"] = geschrieben
-        try:
-            await self.storage.note_legislative_term_list(wahlperioden.source_url, list_url, ergebnis)
-        except Exception as e:  # noqa: BLE001 - ohne Vermerk prüft der nächste Lauf die Liste erneut
-            console.print(f"[yellow]  Prüfung der Wahlperiodenliste nicht vermerkt ({type(e).__name__})[/yellow]")
+        if list_url not in wahlperioden.vermerkt:
+            wahlperioden.vermerkt.add(list_url)
+            try:
+                await self.storage.note_legislative_term_list(wahlperioden.source_url, list_url, ergebnis)
+            except Exception as e:  # noqa: BLE001 - ohne Vermerk prüft der nächste Lauf die Liste erneut
+                console.print(f"[yellow]  Prüfung der Wahlperiodenliste nicht vermerkt ({type(e).__name__})[/yellow]")
         console.print(f"[dim]  Wahlperiodenliste: {ergebnis}, {geschrieben} übernommen[/dim]")
 
     async def _sync_entity_type(

@@ -13,13 +13,16 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Column,
     Date,
     DateTime,
     ForeignKey,
     Integer,
     SmallInteger,
     String,
+    Table,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -656,6 +659,18 @@ class OParlLegislativeTerm(Base):
 
     # Relationships
     body: Mapped["OParlBody | None"] = relationship(back_populates="legislative_terms")
+
+
+#: Geteilte Wahlperioden (Issue #1453): weitere Kommunen derselben Quelle je Wahlperiode. Die Tabelle legt Django an
+#: (``OParlLegislativeTerm.shared_bodies``); der Ingestor schreibt sie per SQL (``upsert_legislative_term``).
+oparl_legislative_terms_shared_bodies = Table(
+    "oparl_legislative_terms_shared_bodies",
+    Base.metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("oparllegislativeterm_id", UUID(as_uuid=True), ForeignKey("oparl_legislative_terms.id"), nullable=False),
+    Column("oparlbody_id", UUID(as_uuid=True), ForeignKey("oparl_bodies.id"), nullable=False),
+    UniqueConstraint("oparllegislativeterm_id", "oparlbody_id"),
+)
 
 
 class JournalEvent(Base):

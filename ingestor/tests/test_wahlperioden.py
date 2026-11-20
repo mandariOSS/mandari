@@ -9,6 +9,7 @@ Löschmarken werden übernommen. Antworten aus ``httpx.MockTransport``, keine Ab
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -279,3 +280,20 @@ async def test_vermerk_auch_wenn_die_uebernahme_scheitert() -> None:
     assert speicher.geschrieben == [_wahlperiode(20)["id"]]
     assert speicher.vermerke == [(QUELLE, LISTE, "2 gelesen, Übernahme abgebrochen (RuntimeError)")]
     assert stats["incomplete"] == [] and stats["legislative_terms"] == 1
+
+
+async def test_liste_einmal_je_quellenlauf_auch_fuer_mehrere_kommunen() -> None:
+    """Zwei Kommunen der Quelle nennen dieselbe Liste: eine Anfrage, beide übernehmen die Einträge, ein Vermerk."""
+    speicher = Speicher()
+    listen = WahlperiodenListen(QUELLE)
+    erste, zweite = uuid4(), uuid4()
+    async with _client({LISTE: [_wahlperiode(20)]}) as (client, angefragt):
+        orchestrator = _orchestrator(speicher)
+        await asyncio.gather(
+            orchestrator._sync_legislative_term_list(client, listen, LISTE, erste, False, {}),
+            orchestrator._sync_legislative_term_list(client, listen, LISTE, zweite, False, {}),
+        )
+
+    assert angefragt == [LISTE]
+    assert speicher.geschrieben == [_wahlperiode(20)["id"]] * 2
+    assert speicher.vermerke == [(QUELLE, LISTE, "1 gelesen")]

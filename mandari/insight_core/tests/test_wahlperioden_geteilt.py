@@ -50,3 +50,31 @@ def test_geloeschte_mitnutzende_kommune_verliert_nur_die_verknuepfung() -> None:
 
     geteilt.refresh_from_db()
     assert geteilt.body_id == kreis.pk and not geteilt.shared_bodies.exists()
+
+
+def test_spaet_uebergebene_wahlperiode_geht_nicht_verloren(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Gleichzeitige Löschung: Bekommt die Kommune eine geteilte Wahlperiode erst nach der ersten Übergabe (eine andere
+    Löschung übergibt sie ihr), löscht der Schritt sie nicht, und die Übergabe vor dem Löschen der Kommune gibt sie
+    weiter.
+    """
+    from insight_core.services import body_deletion
+
+    source = OParlSource.objects.create(name="Kreis", url=f"{RIS}/system")
+    gemeinde, dorf = _kommune(source, 2), _kommune(source, 3)
+    spaet = OParlLegislativeTerm.objects.create(external_id=f"{RIS}/legislativeterm/1", body=gemeinde, name="spät")
+    spaet.shared_bodies.add(dorf)
+    echt = body_deletion._geteilte_wahlperioden_uebergeben
+    aufrufe: list[int] = []
+
+    def erst_beim_zweiten_mal(body: OParlBody) -> int:
+        aufrufe.append(1)
+        return 0 if len(aufrufe) == 1 else echt(body)
+
+    monkeypatch.setattr(body_deletion, "_geteilte_wahlperioden_uebergeben", erst_beim_zweiten_mal)
+
+    delete_body_data(str(gemeinde.pk))
+
+    spaet.refresh_from_db()
+    assert len(aufrufe) == 2
+    assert spaet.body_id == dorf.pk and not spaet.shared_bodies.exists()

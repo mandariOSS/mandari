@@ -1948,9 +1948,16 @@ class DatabaseStorage:
                     body_id = found.scalar_one_or_none()
                 else:
                     body_id = row[1]
-                if await self._events_for(session, body_id):
-                    drafts = ris_events.depublished_events(entity_type, row[0], public=public, meeting_id=meeting_id)
-                    await self._emit(session, body_id, drafts, modified)
+                drafts = ris_events.depublished_events(entity_type, row[0], public=public, meeting_id=meeting_id)
+                # Eine geteilte Wahlperiode verschwindet für jede Kommune, die sie nutzt (Issue #1453)
+                kommunen = (
+                    await self._nutzer_der_wahlperiode(session, row[0], body_id)
+                    if entity_type == "legislativeterm" and body_id is not None
+                    else [body_id]
+                )
+                for kommune in kommunen:
+                    if await self._events_for(session, kommune):
+                        await self._emit(session, kommune, drafts, modified)
             await session.commit()
             return entity_id
 
@@ -3539,11 +3546,16 @@ class DatabaseStorage:
         term: ProcessedLegislativeTerm,
         body_id: UUID,
     ) -> UUID:
-        """Insert or update a legislative term; Zeile und Ereignis (``ris.legislativeterm.changed``) zusammen."""
+        """
+        Insert or update a legislative term; Zeile und Ereignis (``ris.legislativeterm.changed``) zusammen.
+
+        Geteilte Wahlperioden (Issue #1453): Gehört die Zeile einer anderen Kommune derselben Quelle, wird diese Kommune
+        verknüpft (``oparl_legislative_terms_shared_bodies``). Das Ereignis geht an jede Kommune, die die Wahlperiode
+        nutzt; eine neu verknüpfte bekommt sie als neu (``added``). So bleibt der Änderungsfeed jeder Kommune bei ihren
+        Wahlperioden vollständig, gleich welcher Abgleich die Änderung zuerst sieht.
+        """
         async with self.get_session() as session:
-            emit = await self._events_for(session, body_id)
-            prior = await self._prior(session, OParlLegislativeTerm, term.external_id) if emit else None
-            emit = emit and not _withheld(prior)
+            prior = await self._prior(session, OParlLegislativeTerm, term.external_id) if self.events_enabled else None
             stmt = pg_insert(OParlLegislativeTerm).values(
                 id=term.id,
                 external_id=term.external_id,
@@ -3575,21 +3587,43 @@ class DatabaseStorage:
             ).returning(OParlLegislativeTerm.id, OParlLegislativeTerm.body_id)
 
             term_id, owner = await self._upserted(session, stmt, "legislativeterm", term.external_id)
+            neu_verknuepft = False
             if owner is not None and owner != body_id:
                 # Dieselbe Kennung bei einer weiteren Kommune der Quelle (Issue #1453): Die Zeile bleibt bei der
                 # ersten, diese Kommune wird verknüpft
-                await session.execute(
+                verknuepft = await session.execute(
                     text(
                         "INSERT INTO oparl_legislative_terms_shared_bodies (oparllegislativeterm_id, oparlbody_id) "
-                        "VALUES (:term, :body) ON CONFLICT DO NOTHING"
+                        "VALUES (:term, :body) ON CONFLICT DO NOTHING RETURNING 1"
                     ),
                     {"term": term_id, "body": body_id},
                 )
-            if emit:
+                neu_verknuepft = verknuepft.first() is not None
+            if self.events_enabled and not _withheld(prior):
                 drafts = ris_events.legislative_term_events(term_id, term.raw_json or {}, prior)
-                await self._emit(session, body_id, drafts, term.oparl_modified)
+                for kommune in await self._nutzer_der_wahlperiode(session, term_id, owner or body_id):
+                    if not await self._events_for(session, kommune):
+                        continue
+                    if kommune == body_id and neu_verknuepft:
+                        # Für die neu verknüpfte Kommune ist die Wahlperiode neu
+                        neu = ris_events.legislative_term_events(term_id, term.raw_json or {}, None)
+                        await self._emit(session, kommune, neu, term.oparl_modified)
+                    else:
+                        await self._emit(session, kommune, drafts, term.oparl_modified)
             await session.commit()
             return term_id
+
+    @staticmethod
+    async def _nutzer_der_wahlperiode(session: AsyncSession, term_id: UUID, owner: UUID) -> list[UUID]:
+        """Kommunen, die eine Wahlperiode nutzen: die Eigentümerin, dann die verknüpften (Issue #1453)."""
+        found = await session.execute(
+            text(
+                "SELECT oparlbody_id FROM oparl_legislative_terms_shared_bodies WHERE oparllegislativeterm_id = :term"
+                " ORDER BY id"
+            ),
+            {"term": term_id},
+        )
+        return [owner, *(row[0] for row in found if row[0] != owner)]
 
     # ========== Statistics ==========
 

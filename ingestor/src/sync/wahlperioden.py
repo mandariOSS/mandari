@@ -18,6 +18,7 @@ klein und ändert sich selten, und sie darf den Abgleich der Quelle nicht störe
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -33,20 +34,40 @@ MAX_SEITEN = 10
 
 @dataclass
 class WahlperiodenListen:
-    """Letzte Prüfung je Wahlperiodenliste einer Quelle (Adresse -> Zeitpunkt), gelesen beim Start ihres Abgleichs."""
+    """
+    Letzte Prüfung je Wahlperiodenliste einer Quelle (Adresse -> Zeitpunkt), gelesen beim Start ihres Abgleichs, und
+    die Ergebnisse dieses Laufs: Nennen mehrere Kommunen der Quelle dieselbe Liste, kommt sie einmal; jede Kommune
+    übernimmt die Einträge trotzdem selbst (Verknüpfung geteilter Wahlperioden).
+    """
 
     source_url: str
     geprueft: dict[str, datetime | None] = field(default_factory=dict)
+    #: Ergebnis je Liste in diesem Lauf
+    ergebnisse: dict[str, Gelesen] = field(default_factory=dict)
+    #: Listen, deren Prüfung in diesem Lauf schon vermerkt ist
+    vermerkt: set[str] = field(default_factory=set)
+    _sperren: dict[str, asyncio.Lock] = field(default_factory=dict)
 
     def faellig(self, list_url: str, *, full: bool, now: datetime | None = None) -> bool:
-        """Im Vollabgleich immer, sonst wenn die letzte Prüfung einen Tag zurückliegt oder unbekannt ist."""
-        if full:
+        """
+        Im Vollabgleich immer, sonst wenn die letzte Prüfung einen Tag zurückliegt oder unbekannt ist; ebenso, wenn
+        eine andere Kommune die Liste in diesem Lauf schon gelesen hat (dann ohne neue Anfrage, ``lesen``).
+        """
+        if full or list_url in self.ergebnisse:
             return True
         zuletzt = self.geprueft.get(list_url)
         if zuletzt is None:
             return True
         alter = (now or datetime.now(UTC)) - zuletzt
         return not timedelta(0) <= alter < PRUEFABSTAND
+
+    async def lesen(self, client: OParlClient, list_url: str) -> Gelesen:
+        """Die Liste in diesem Lauf höchstens einmal lesen; parallel laufende Kommunen warten auf dasselbe Ergebnis."""
+        sperre = self._sperren.setdefault(list_url, asyncio.Lock())
+        async with sperre:
+            if list_url not in self.ergebnisse:
+                self.ergebnisse[list_url] = await lies_liste(client, list_url)
+            return self.ergebnisse[list_url]
 
 
 @dataclass
