@@ -20,11 +20,14 @@ from django.db.models import Exists, OuterRef, Q
 from ..models import OParlFile, OParlPaper
 
 
-def ohne_finanzcheck(kommunen: Mapping[Any, date], *, limit: int, ohne: Iterable[Any] = ()) -> list[OParlPaper]:
+def ohne_finanzcheck(
+    kommunen: Mapping[Any, date], *, limit: int, ohne: Iterable[Any] = (), fassung: int | None = None
+) -> list[OParlPaper]:
     """
     Vorgänge ausgewählter Kommunen ohne Finanzcheck, mit Text, neueste zuerst: dieselbe Auswahl wie
     ``summary_store.fuer_tagesbatch`` (Stichtag je Kommune, gelistet, Veröffentlichung nicht pausiert), aber
-    unabhängig davon, ob schon eine Zusammenfassung da ist. ``ohne``: Kennungen, die übersprungen werden.
+    unabhängig davon, ob schon eine Zusammenfassung da ist. ``ohne``: Kennungen, die übersprungen werden. Mit
+    ``fassung`` zählen auch Finanzchecks einer älteren Fassung als fehlend: Sie entstehen neu.
     """
     from insight_core import publication
 
@@ -41,7 +44,12 @@ def ohne_finanzcheck(kommunen: Mapping[Any, date], *, limit: int, ohne: Iterable
     )
     return list(
         OParlPaper.objects.filter(filter_kommunen)
-        .filter(finanzcheck__isnull=True, deleted=False, body__deleted=False, body__is_listed=True)
+        .filter(
+            Q(finanzcheck__isnull=True) | Q(finanzcheck__fassung__lt=fassung)
+            if fassung
+            else Q(finanzcheck__isnull=True)
+        )
+        .filter(deleted=False, body__deleted=False, body__is_listed=True)
         .filter(Exists(mit_text))
         .exclude(body_id__in=gesperrt)
         .exclude(pk__in=list(ohne))

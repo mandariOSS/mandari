@@ -57,8 +57,6 @@ class Command(BaseCommand):
         anzeige = finanzcheck.anzeige(paper)
         if anzeige is None:
             return
-        for kennzahl in anzeige.kennzahlen:
-            self.stdout.write(f"  {kennzahl.titel}: {kennzahl.wert} {kennzahl.zusatz}".rstrip())
         for satz in anzeige.saetze:
             self.stdout.write(f"- {satz}")
         self.stdout.write(f"SEO: {anzeige.seo}")

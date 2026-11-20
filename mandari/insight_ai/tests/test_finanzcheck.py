@@ -36,16 +36,34 @@ Der Planung und der baulichen Ausführung wird zugestimmt.
 II. Finanzielle Auswirkungen:
 Es wird zur Kenntnis genommen, dass der Stadt Münster Baukosten in Höhe von ca. 6.200.000 €
 entstehen. Dem gegenüber stehen Einzahlungen in Höhe von ca. 4.650.000 €.
-Teilfinanzplan        Nr.     Bezeichnung                   Haush.-  Betrag
-Auszahlungen               chen und -anlagen
-Einzahlungen          4243 Velorouten Stadtregion
-                                                            2028     2.000.000
-                                                            2029     2.000.000
-                                                            2030     1.500.000
-                                                            2031      700.000
-Saldo                                                               1.550.000
+Teilfinanzplan
+ Nr. Bezeichnung Haush.- jahr Betrag € Bemerkungen
+Produktgruppe 1201 Bereitstellung von Verkehrsflä-
+chen und -anlagen
+Investitionsmaßnah-
+me
+4243 Velorouten Stadtregion
+Auszahlungen    2028
+2029
+2030
+2031
+2.000.000
+2.000.000
+1.500.000
+700.000
+Einzahlungen   2028
+2029
+2030
+2031
+1.000.000
+1.000.000
+1.000.000
+1.650.000
+Saldo 1.550.000
 Die zur Finanzierung erforderlichen Ermächtigungen sind im Haushaltsplan 2026/2027 bei den o.g.
-Investitionsmaßnahmen und den u. g. Produktgruppen nur teilweise veranschlagt. Dabei werden die nicht durch
+Investitionsmaßnahmen und den u. g. Produktgruppen nur teilweise veranschlagt. Die bisher nicht
+veranschlagten investiven Einzahlungen und Auszahlungen für die Jahre 2028 und 2031 werden zum
+Haushaltsplanentwurf 2028 angemeldet. Dabei werden die nicht durch
 Einzahlungen gedeckten Mehrbedarfe innerhalb des investiven Budgets des Dezernates für Planung, Bau und Wirtschaft
 aus der Investitionsmaßnahme 0007 ,,Verkehrsflächen, Neubau und Erneuerung" bereitgestellt.
 Zeile             02 Zuwendungen und allgemeine 2032 ff. 116.250 Folgeertrag
@@ -55,6 +73,7 @@ Zeile             02 Zuwendungen und allgemeine 2032 ff. 116.250 Folgeertrag
 Der Baubeginn ist derzeit für das Jahr 2028 vorgesehen. Die Bauzeit wird voraussichtlich 42 Monate betragen.
 Für die Maßnahme werden Fördermittel nach den Förderrichtlinien Nahmobilität bzw. kommunaler Straßenbau beantragt.
 Folgelastenberechnung
+V/0479/2025 Aufgestellt am: 29.07.2025
 Nutzungsdauer:                                                40 Jahre
 H Folgelasten (D-E-F+G) pro Jahr                                    Zeitpunkt        Euro
            insgesamt                                                                   124.000
@@ -71,12 +90,20 @@ ANTWORT: dict[str, Any] = {
     "kommunaler Straßenbau beantragt.",
     "foerderung_von": "",
     "eigenanteil": {"euro": 1550000, "beleg": "Saldo 1.550.000"},
-    "zahlungen": [
-        {"jahr": 2028, "euro": 2000000, "richtung": "ausgabe", "beleg": "2028 2.000.000"},
-        {"jahr": 2029, "euro": 2000000, "richtung": "ausgabe", "beleg": "2029 2.000.000"},
-        {"jahr": 2030, "euro": 1500000, "richtung": "ausgabe", "beleg": "2030 1.500.000"},
-        {"jahr": 2031, "euro": 700000, "richtung": "ausgabe", "beleg": "2031 700.000"},
+    "auszahlungen": [
+        {"jahr": 2028, "euro": 2000000, "beleg": ""},
+        {"jahr": 2029, "euro": 2000000, "beleg": ""},
+        {"jahr": 2030, "euro": 1500000, "beleg": ""},
+        {"jahr": 2031, "euro": 700000, "beleg": ""},
     ],
+    "auszahlungen_beleg": "Auszahlungen 2028 2029 2030 2031 2.000.000 2.000.000 1.500.000 700.000",
+    "einzahlungen": [
+        {"jahr": 2028, "euro": 1000000, "beleg": ""},
+        {"jahr": 2029, "euro": 1000000, "beleg": ""},
+        {"jahr": 2030, "euro": 1000000, "beleg": ""},
+        {"jahr": 2031, "euro": 1650000, "beleg": ""},
+    ],
+    "einzahlungen_beleg": "Einzahlungen 2028 2029 2030 2031 1.000.000 1.000.000 1.000.000 1.650.000",
     "laufend": [
         {"posten": "foerderanteil", "euro": 116250, "beleg": "02 Zuwendungen und allgemeine 2032 ff. 116.250"},
         {"posten": "unterhalt", "euro": 62000, "beleg": "Aufwendungen für Sach- und 2032 ff. 62.000"},
@@ -91,6 +118,14 @@ ANTWORT: dict[str, Any] = {
     "im_haushalt_beleg": "Produktgruppen nur teilweise veranschlagt",
     "deckung": "umschichtung",
     "deckung_beleg": 'aus der Investitionsmaßnahme 0007 ,,Verkehrsflächen, Neubau und Erneuerung" bereitgestellt',
+    "deckung_aus": "Verkehrsflächen, Neubau und Erneuerung",
+    "nachmeldung": {
+        "jahr": 2028,
+        "beleg": "für die Jahre 2028 und 2031 werden zum Haushaltsplanentwurf 2028 angemeldet",
+    },
+    "kostenstand": {"datum": "29.07.2025", "beleg": "V/0479/2025 Aufgestellt am: 29.07.2025"},
+    "preissteigerung": "unklar",
+    "preissteigerung_beleg": "",
 }
 
 
@@ -129,8 +164,16 @@ class TestPruefung:
         daten = ergebnis.daten
         assert daten["gesamtkosten"]["euro"] == 6200000 and daten["foerderung"]["euro"] == 4650000
         assert daten["foerderung_stand"] == "beantragt" and daten["im_haushalt"] == "teilweise"
-        assert [z["jahr"] for z in daten["zahlungen"]] == [2028, 2029, 2030, 2031]
+        # Teilfinanzplan mit Jahren und Beträgen getrennt untereinander: beide Richtungen ganz, Summen gehen auf
+        assert [(z["jahr"], z["richtung"]) for z in daten["zahlungen"]] == [
+            *((jahr, "ausgabe") for jahr in (2028, 2029, 2030, 2031)),
+            *((jahr, "einnahme") for jahr in (2028, 2029, 2030, 2031)),
+        ]
+        assert daten["zahlungen_vollstaendig"] and not daten["zahlungen_unstimmig"]
         assert len(daten["laufend"]) == 4 and daten["nutzungsdauer"]["jahre"] == 40
+        assert daten["kostenstand"]["datum"] == "29.07.2025" and daten["nachmeldung"]["jahr"] == 2028
+        assert daten["deckung_aus"] == "Verkehrsflächen, Neubau und Erneuerung"
+        assert daten["preissteigerung"] == "unklar"
         # Hinweise der KI entfallen: Sie wären ungeprüfter Text
         assert "hinweise" not in daten
 
@@ -143,11 +186,18 @@ class TestPruefung:
         antwort = _antwort(foerderung={"euro": 5000000, "beleg": "Einzahlungen in Höhe von ca. 4.650.000 €"})
         assert finanzcheck.pruefen(antwort, DOKUMENT).status == finanzcheck.STATUS_VERWORFEN
 
-    def test_zeile_ohne_fundstelle_entfaellt_einzeln(self) -> None:
-        zahlungen = [*ANTWORT["zahlungen"], {"jahr": 2032, "euro": 300000, "richtung": "ausgabe", "beleg": "2032 300"}]
-        ergebnis = finanzcheck.pruefen(_antwort(zahlungen=zahlungen), DOKUMENT)
+    def test_reihe_die_nicht_zur_tabelle_passt_fehlt_ganz(self) -> None:
+        auszahlungen = [*ANTWORT["auszahlungen"], {"jahr": 2032, "euro": 300000, "beleg": "2032 300"}]
+        ergebnis = finanzcheck.pruefen(_antwort(auszahlungen=auszahlungen), DOKUMENT)
         assert ergebnis.status == finanzcheck.STATUS_OK
-        assert [z["jahr"] for z in ergebnis.daten["zahlungen"]] == [2028, 2029, 2030, 2031]
+        assert ergebnis.daten["zahlungen"] == [] and ergebnis.daten["zahlungen_unstimmig"]
+
+    def test_summen_muessen_aufgehen(self) -> None:
+        # Die Tabelle stimmt, aber die Gesamtkosten nicht: keine Jahre, Hinweis statt Diagramm
+        text = DOKUMENT.replace("ca. 6.200.000 €", "ca. 7.200.000 €")
+        antwort = _antwort(gesamtkosten={"euro": 7200000, "beleg": "Baukosten in Höhe von ca. 7.200.000 €"})
+        daten = finanzcheck.pruefen(antwort, text).daten
+        assert daten["zahlungen"] == [] and daten["zahlungen_unstimmig"]
 
     def test_einordnung_ohne_fundstelle_wird_unklar(self) -> None:
         ergebnis = finanzcheck.pruefen(
@@ -167,58 +217,88 @@ class TestPruefung:
 
 
 class TestAnzeige:
-    def _anzeige(self, antwort: dict[str, Any] = ANTWORT, name: str = "Stadt Münster") -> finanzcheck.Anzeige:
+    def _anzeige(
+        self, antwort: dict[str, Any] = ANTWORT, name: str = "Stadt Münster", mit_aenderungen: bool = False
+    ) -> finanzcheck.Anzeige:
         ergebnis = finanzcheck.pruefen(antwort, DOKUMENT)
         paper = SimpleNamespace(
             pk=1,
+            date=date(2026, 9, 2),
             body=SimpleNamespace(name=name),
             finanzcheck={"status": ergebnis.status, "daten": ergebnis.daten},
         )
-        anzeige = finanzcheck.anzeige(paper)
+        anzeige = finanzcheck.anzeige(paper, mit_aenderungen=mit_aenderungen)
         assert anzeige is not None
         return anzeige
 
-    def test_kennzahlen_und_saetze(self) -> None:
-        anzeige = self._anzeige()
-        assert [(k.titel, k.wert, k.zusatz) for k in anzeige.kennzahlen] == [
-            ("Kosten", "6,2 Mio. €", ""),
-            ("Fördergeld", "4,65 Mio. €", "beantragt, noch nicht zugesagt"),
-            ("Zahlt die Stadt", "1,55 Mio. €", ""),
-            ("Jedes Jahr", "124.000 €", "ab 2032"),
+    def test_bau_und_wer_zahlt(self) -> None:
+        bau = self._anzeige().karten.bau  # type: ignore[union-attr]
+        assert bau is not None and (bau.titel, bau.wert) == ("Bau, 2028–2031", "6,2 Mio. €")
+        assert [(s.wert, s.text, s.art) for s in bau.segmente] == [
+            ("4,65 Mio. €", "Fördergeld (beantragt, noch nicht zugesagt)", "foerderung_offen"),
+            ("1,55 Mio. €", "zahlt Münster", "stadt"),
         ]
-        # Kurz und ohne Haushaltsfachwörter (Sven 20.11.2026: „ein kleines Feature“, kein Bericht)
-        assert anzeige.saetze == [
-            "Das kostet insgesamt 6,2 Millionen Euro. 4,65 Millionen Euro davon sollen als Fördergeld kommen "
-            "(beantragt, noch nicht zugesagt).",
-            "Die Stadt zahlt selbst 1,55 Millionen Euro, verteilt auf 2028 bis 2031.",
-            "Ab 2032 kostet es die Stadt jedes Jahr 124.000 Euro für Unterhalt, Wertverlust und Zinsen.",
-            "Das Geld ist erst teilweise im Haushalt eingeplant.",
+        # Fördergeld kommt teils erst 2031: Münster streckt bis zu 2,5 Mio. € vor (aus dem Teilfinanzplan gerechnet)
+        assert "bis zu 2,5 Mio. € vor" in bau.hinweis
+
+    def test_haushalt_ohne_doppelzaehlung(self) -> None:
+        """Der Anteil am Bau steckt in der jährlichen Belastung (Abschreibung) und steht nie zusätzlich daneben."""
+        anzeige = self._anzeige()
+        haushalt = anzeige.karten.haushalt  # type: ignore[union-attr]
+        assert haushalt is not None
+        assert (haushalt.titel, haushalt.wert, haushalt.einheit) == (
+            "Belastung für den Haushalt, ab 2032",
+            "124.000 €",
+            "pro Jahr",
+        )
+        assert haushalt.text == "Im Schnitt, 40 Jahre lang. Zusammen rund 5 Mio. €."
+        assert [(s.wert, s.text) for s in haushalt.segmente] == [
+            ("38.750 €", "Anteil am Bau, auf 40 Jahre verteilt"),
+            ("85.250 €", "Unterhalt und Zinsen"),
         ]
         text = " ".join(anzeige.saetze)
+        assert "der Anteil am Bau ist darin enthalten" in text and "Danach jedes Jahr" not in text
         for wort in ("Abschreibung", "Sonderposten", "Ergebnisplan", "Finanzplan", "veranschlagt", "Aufwand"):
             assert wort not in text
 
-    def test_rechnung_aufgeschluesselt(self) -> None:
-        anzeige = self._anzeige()
-        assert anzeige.laufend_summe == "124.000 €"
-        assert [z.entlastung for z in anzeige.laufend] == [False, False, False, True]
-        assert not anzeige.mit_einnahmen
-        assert [(j.jahr, j.ausgaben) for j in anzeige.jahre][0] == (2028, "2 Mio. €")
+    def test_wann_das_geld_fliesst(self) -> None:
+        karten = self._anzeige().karten
+        assert karten is not None and karten.mit_einnahmen
+        assert [(s.jahr, s.aus, s.ein) for s in karten.saeulen] == [
+            (2028, "2 Mio. €", "1 Mio. €"),
+            (2029, "2 Mio. €", "1 Mio. €"),
+            (2030, "1,5 Mio. €", "1 Mio. €"),
+            (2031, "700.000 €", "1,65 Mio. €"),
+        ]
+
+    def test_was_offen_ist(self) -> None:
+        karten = self._anzeige(mit_aenderungen=True).karten
+        assert karten is not None and karten.stimmt and karten.stand == "Stand: Vorlage vom 02.09.2026"
+        assert karten.offen == [
+            "Das Fördergeld ist beantragt, aber noch nicht zugesagt. Kommt weniger, zahlt Münster mehr",
+            "Das Geld ist erst teilweise im Haushalt eingeplant, der Rest soll in den Haushalt 2028 kommen. "
+            "Fehlendes Geld soll aus „Verkehrsflächen, Neubau und Erneuerung“ kommen",
+            "Zinsen für das vorgestreckte Geld während des Baus nennt die Vorlage nicht",
+            "Kostenstand: 29.07.2025",
+            "Ein Gremium hat mit Änderungen beschlossen, die Zahlen können abweichen",
+        ]
 
     def test_eigenanteil_errechnet_und_summe_errechnet(self) -> None:
-        anzeige = self._anzeige(_antwort(eigenanteil=None, laufend_gesamt=None))
-        eigen = next(k for k in anzeige.kennzahlen if k.titel == "Zahlt die Stadt")
-        assert (eigen.wert, eigen.zusatz) == ("1,55 Mio. €", "errechnet")
-        assert next(k for k in anzeige.kennzahlen if k.titel == "Jedes Jahr").wert == "124.000 €"
+        karten = self._anzeige(_antwort(eigenanteil=None, laufend_gesamt=None)).karten
+        assert karten is not None and karten.bau is not None and karten.haushalt is not None
+        assert karten.bau.segmente[1].text == "zahlt Münster, Kosten minus Fördergeld"
+        assert karten.haushalt.wert == "124.000 €" and "Aus den Einzelposten zusammengerechnet." in karten.haushalt.text
 
     def test_kreis_und_gemeinde(self) -> None:
-        text = " ".join(self._anzeige(name="Landkreis Rotenburg (Wümme)").saetze)
-        assert "Der Kreis zahlt selbst" in text and "kostet es den Kreis" in text
+        assert "Landkreis Rotenburg (Wümme) zahlt selbst" in " ".join(
+            self._anzeige(name="Landkreis Rotenburg (Wümme)").saetze
+        )
+        assert "Kreuzau zahlt selbst" in " ".join(self._anzeige(name="Gemeinde Kreuzau").saetze)
 
     def test_seo_satz(self) -> None:
-        assert (
-            self._anzeige().seo
-            == "Kosten laut Vorlage: 6,2 Mio. €, davon Stadt 1,55 Mio. €, jährlich 124.000 € ab 2032."
+        assert self._anzeige().seo == (
+            "Kosten laut Vorlage: 6,2 Mio. € (Bau 2028–2031), davon Münster 1,55 Mio. €, "
+            "ab 2032 im Schnitt 124.000 € pro Jahr im Haushalt."
         )
 
     def test_nicht_bestanden_wird_nicht_gezeigt(self) -> None:
@@ -247,8 +327,9 @@ class TestVorgangsseite:
             finanzcheck={"status": ergebnis.status, "fassung": finanzcheck.FASSUNG, "daten": ergebnis.daten}
         )
         html = client.get(reverse("insight_core:insight:paper_detail", args=[vorgang.pk])).content.decode()
-        assert 'id="finanzcheck"' in html and "Was kostet das?" in html and "KI-Finanzcheck" in html
-        assert "1,55 Mio. €" in html and "Rechnung und Fundstellen" not in html
+        assert 'id="finanzcheck"' in html and "Was kostet das?" in html and "KI-Kostencheck" in html
+        assert "1,55 Mio. €" in html and "Wann das Geld fließt" in html and "Belastung für den Haushalt" in html
+        assert 'fill="url(#fc-schraffur)"' in html and "Summen nachgerechnet" in html
         beschreibung = html.split('<meta name="description" content="', 1)[1].split('"', 1)[0]
         assert "Kosten laut Vorlage: 6,2 Mio. €" in beschreibung
 
@@ -313,7 +394,8 @@ class TestBefundePruefung:
             eigenanteil=None,
             laufend_gesamt=None,
             laufend=[],
-            zahlungen=[],
+            auszahlungen=[],
+            einzahlungen=[],
         )
         assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
 
@@ -331,17 +413,36 @@ class TestBefundePruefung:
             finanzcheck.STATUS_VERWORFEN
         )
 
-    def test_zahlung_mit_zwei_jahren_und_doppelte_zeilen(self) -> None:
-        text = DOKUMENT + "Auszahlungen 2026 (500.000 €) und 2027 (1.500.000 €)\n"
-        zahlungen = [
-            {"jahr": 2026, "euro": 1500000, "richtung": "ausgabe", "beleg": "2026 (500.000 €) und 2027 (1.500.000 €)"},
-            {"jahr": 2028, "euro": 2000000, "richtung": "ausgabe", "beleg": "2028 2.000.000"},
-            {"jahr": 2028, "euro": 2000000, "richtung": "ausgabe", "beleg": "2028 2.000.000"},
+    def test_zahlungen_zeilenweise_und_doppelte_posten(self) -> None:
+        text = "Baukosten 2.000.000 €\nAuszahlung 2026: 500.000 €\nAuszahlung 2027: 1.500.000 €\n"
+        leer: dict[str, Any] = {"foerderung": None, "eigenanteil": None, "einzahlungen": [], "laufend_gesamt": None}
+        zeilen = [
+            {"jahr": 2026, "euro": 500000, "beleg": "Auszahlung 2026: 500.000 €"},
+            {"jahr": 2027, "euro": 1500000, "beleg": "Auszahlung 2027: 1.500.000 €"},
         ]
+        antwort = _antwort(
+            gesamtkosten={"euro": 2000000, "beleg": "Baukosten 2.000.000 €"},
+            auszahlungen=zeilen,
+            auszahlungen_beleg="",
+            laufend=[],
+            **leer,
+        )
+        daten = finanzcheck.pruefen(antwort, text).daten
+        assert [(z["jahr"], z["euro"]) for z in daten["zahlungen"]] == [(2026, 500000), (2027, 1500000)]
+        # Eine Zeile mit zwei Jahren ordnet nichts eindeutig zu: die ganze Reihe fehlt
+        zeilen[1] = {"jahr": 2027, "euro": 1500000, "beleg": "2026: 500.000 € Auszahlung 2027: 1.500.000 €"}
+        daten = finanzcheck.pruefen(antwort, text).daten
+        assert daten["zahlungen"] == [] and daten["zahlungen_unstimmig"]
+
         laufend = [*ANTWORT["laufend"], ANTWORT["laufend"][1]]
-        daten = finanzcheck.pruefen(_antwort(zahlungen=zahlungen, laufend=laufend), text).daten
-        assert [(z["jahr"], z["euro"]) for z in daten["zahlungen"]] == [(2028, 2000000)]
-        assert len(daten["laufend"]) == 4
+        assert len(finanzcheck.pruefen(_antwort(laufend=laufend), DOKUMENT).daten["laufend"]) == 4
+
+        text = "Die Kosten stehen noch nicht fest."
+        antwort = _antwort(finanzen="keine_kosten", keine_kosten_beleg="Die Kosten stehen noch nicht fest.")
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_KEINE
+        text = "Finanzielle Auswirkungen: keine"
+        antwort = _antwort(finanzen="keine_kosten", keine_kosten_beleg="Finanzielle Auswirkungen: keine")
+        assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_OK
 
     def test_kosten_stehen_noch_nicht_fest(self) -> None:
         text = "Die Kosten stehen noch nicht fest."
@@ -374,7 +475,8 @@ class TestBefundeAnzeige:
             eigenanteil=None,
             laufend_gesamt={"euro": 50000, "beleg": "Zuschuss an den Verein beträgt jährlich 50.000 €"},
             laufend=[],
-            zahlungen=[],
+            auszahlungen=[],
+            einzahlungen=[],
             laufend_ab=None,
             nutzungsdauer=None,
             im_haushalt="unklar",
@@ -387,8 +489,10 @@ class TestBefundeAnzeige:
         )
         anzeige = finanzcheck.anzeige(paper)
         assert anzeige is not None
-        assert anzeige.saetze == ["Jedes Jahr kostet das die Stadt 50.000 Euro."]
-        assert anzeige.seo == "Kosten laut Vorlage: jährlich 50.000 €."
+        assert anzeige.saetze == ["Das belastet den Haushalt jedes Jahr mit 50.000 Euro."]
+        assert anzeige.seo == "Kosten laut Vorlage: 50.000 € pro Jahr im Haushalt."
+        haushalt = anzeige.karten.haushalt  # type: ignore[union-attr]
+        assert haushalt is not None and haushalt.titel == "Belastung für den Haushalt, jedes Jahr"
 
     def test_errechnete_jahressumme_gekennzeichnet(self) -> None:
         ergebnis = finanzcheck.pruefen(_antwort(laufend_gesamt=None, laufend_ab=None), DOKUMENT)
@@ -396,9 +500,10 @@ class TestBefundeAnzeige:
             pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
         )
         anzeige = finanzcheck.anzeige(paper)
-        assert anzeige is not None
-        jedes_jahr = next(k for k in anzeige.kennzahlen if k.titel == "Jedes Jahr")
-        assert (jedes_jahr.wert, jedes_jahr.zusatz) == ("124.000 €", "errechnet")
+        assert anzeige is not None and anzeige.karten is not None and anzeige.karten.haushalt is not None
+        assert anzeige.karten.haushalt.wert == "124.000 €"
+        assert anzeige.karten.haushalt.titel == "Belastung für den Haushalt, jedes Jahr"
+        assert "Aus den Einzelposten zusammengerechnet." in anzeige.karten.haushalt.text
 
 
 class TestBudgetreserve:
@@ -423,7 +528,8 @@ class TestBefundeCodeRabbit:
             eigenanteil=None,
             laufend_gesamt=None,
             laufend=[],
-            zahlungen=[],
+            auszahlungen=[],
+            einzahlungen=[],
         )
         assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
         antwort["gesamtkosten"] = {"euro": 6200000, "beleg": "Die Baukosten betragen 6,2 Mio. Euro."}
@@ -437,7 +543,8 @@ class TestBefundeCodeRabbit:
             eigenanteil={"euro": 0, "beleg": "der Eigenanteil beträgt 0 €"},
             laufend_gesamt=None,
             laufend=[],
-            zahlungen=[],
+            auszahlungen=[],
+            einzahlungen=[],
             deckung="unklar",
             im_haushalt="unklar",
         )
@@ -447,7 +554,7 @@ class TestBefundeCodeRabbit:
             pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
         )
         anzeige = finanzcheck.anzeige(paper)
-        assert anzeige is not None and "Die Stadt zahlt selbst nichts dazu." in anzeige.saetze
+        assert anzeige is not None and "Münster zahlt selbst nichts dazu." in anzeige.saetze
 
     def test_unvollstaendige_aufteilung_ohne_summe(self) -> None:
         laufend = [*ANTWORT["laufend"][:3], {"posten": "zinsen", "euro": 99999, "beleg": "erfunden 99.999"}]
@@ -457,7 +564,7 @@ class TestBefundeCodeRabbit:
         )
         anzeige = finanzcheck.anzeige(paper)
         assert anzeige is not None
-        assert not any(k.titel == "Jedes Jahr" for k in anzeige.kennzahlen) and anzeige.laufend == []
+        assert anzeige.karten is not None and anzeige.karten.haushalt is None
 
     def test_zwischendurch_zurueckgesetzter_text(self) -> None:
         kommune = _kommune()
@@ -557,7 +664,8 @@ def test_gleiche_fundstelle_in_anlagen_mit_verschiedener_einheit_ist_mehrdeutig(
         "foerderung": None,
         "eigenanteil": None,
         "laufend": [],
-        "zahlungen": [],
+        "auszahlungen": [],
+        "einzahlungen": [],
         "laufend_gesamt": None,
     }
     for euro in (1200, 1200000):
@@ -565,29 +673,50 @@ def test_gleiche_fundstelle_in_anlagen_mit_verschiedener_einheit_ist_mehrdeutig(
         assert finanzcheck.pruefen(antwort, text).status == finanzcheck.STATUS_VERWORFEN
 
 
-def test_karten_fuer_die_seitenleiste() -> None:
-    ergebnis = finanzcheck.pruefen(ANTWORT, DOKUMENT)
-    paper = SimpleNamespace(
-        pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
-    )
-    anzeige = finanzcheck.anzeige(paper)
-    assert anzeige is not None and anzeige.karten is not None
-    karten = anzeige.karten
-    assert (karten.gesamt, karten.foerderung, karten.eigen, karten.jaehrlich) == (
-        "6,2 Mio. €",
-        "4,65 Mio. €",
-        "1,55 Mio. €",
-        "124.000 €",
-    )
-    assert karten.anteil_foerderung == 75.0 and karten.rest_x == 75.6 and karten.rest_breite == 24.4
-    assert [(b.jahr, b.hoehe, b.oben) for b in karten.balken] == [
-        (2028, 100.0, 0.0),
-        (2029, 100.0, 0.0),
-        (2030, 75.0, 25.0),
-        (2031, 35.0, 65.0),
+def test_tabelle_spaltenweise_und_zeilenweise() -> None:
+    material = finanzcheck._Material("Auszahlungen 2028\n2029\n2.000.000\n1.500.000\nRest")
+    assert finanzcheck._tabelle(material, "Auszahlungen 2028 2029 2.000.000 1.500.000") == [
+        (2028, 2000000),
+        (2029, 1500000),
     ]
-    assert karten.jaehrlich_wofuer == "Unterhalt, Wertverlust und Zinsen" and karten.nutzungsdauer == 40
-    assert karten.hinweis == "Das Geld ist erst teilweise im Haushalt eingeplant."
+    material = finanzcheck._Material("Jahr Betrag in T€\n2028 1.200\n2029 800 €\nZeile 02 25,81")
+    # „1.200“ im T€-Kopf ist 1,2 Mio. €; „800 €“ hat eine eigene Einheit; Prozente und Zeilennummern zählen nicht
+    assert finanzcheck._tabelle(material, "2028 1.200 2029 800 €") == [(2028, 1200000), (2029, 800)]
+    assert finanzcheck._tabelle(material, "2028 1.200 2029") is None
+
+
+def test_dokumente_lesen_ganz_und_gerecht_gekuerzt() -> None:
+    from insight_core.models import OParlFile
+
+    kommune = _kommune()
+    vorgang = _vorgang(kommune, text="Beschlussvorlage " + "x" * 50)
+    OParlFile.objects.create(
+        external_id=f"{vorgang.external_id}/anlage-3",
+        body=kommune,
+        paper=vorgang,
+        name="Anlage 3 Folgelastenberechnung",
+        download_url=f"{vorgang.external_id}/anlage-3.pdf",
+        mime_type="application/pdf",
+        text_extraction_status="completed",
+        text_content="Folgelasten " + "y" * 500,
+    )
+    ganz = finanzcheck.dokumente_lesen(vorgang.files.all())
+    assert "Anlage 3 Folgelastenberechnung" in ganz and "y" * 500 in ganz and "gekürzt" not in ganz
+    # Knappes Budget: die kleine Anlage ganz, die große mit dem Rest und Vermerk
+    knapp = finanzcheck.dokumente_lesen(vorgang.files.all(), budget=200)
+    assert "x" * 50 in knapp and "y" * 500 not in knapp and "[… gekürzt]" in knapp
+
+
+def test_aeltere_fassung_wird_neu_erstellt() -> None:
+    kommune = _kommune()
+    TagesbatchKommune.objects.create(body=kommune, ab=date(2000, 1, 1), verortung_pruefen=False)
+    vorgang = _vorgang(kommune, text=DOKUMENT)
+    OParlPaper.objects.filter(pk=vorgang.pk).update(finanzcheck={"status": "ok", "fassung": 1, "daten": {}})
+    assert [p.pk for p in finanzcheck.kandidaten()] == [vorgang.pk]
+    OParlPaper.objects.filter(pk=vorgang.pk).update(
+        finanzcheck={"status": "ok", "fassung": finanzcheck.FASSUNG, "daten": {}}
+    )
+    assert finanzcheck.kandidaten() == []
 
 
 class TestBefundeCodeRabbit3:
@@ -597,7 +726,8 @@ class TestBefundeCodeRabbit3:
         "foerderung": None,
         "eigenanteil": None,
         "laufend": [],
-        "zahlungen": [],
+        "auszahlungen": [],
+        "einzahlungen": [],
         "laufend_gesamt": None,
     }
 
@@ -662,15 +792,16 @@ class TestBefundeCodeRabbit3:
             "foerderung": {"euro": 1005000, "beleg": ""},
             "eigenanteil": {"euro": 0, "beleg": ""},
             "zahlungen": [{"jahr": 2028, "euro": 1000000, "richtung": "ausgabe", "beleg": ""}],
+            "zahlungen_vollstaendig": True,
         }
         paper = SimpleNamespace(
             pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": daten}
         )
         anzeige = finanzcheck.anzeige(paper)
-        assert anzeige is not None and anzeige.karten is not None
-        assert anzeige.karten.anteil_foerderung is None
-        # Ein Zahlungsjahr: keine Säulen, das Jahr steht als Text in der Karte
-        assert anzeige.karten.balken == [] and anzeige.karten.zeitraum == "Gezahlt 2028"
+        assert anzeige is not None and anzeige.karten is not None and anzeige.karten.bau is not None
+        assert anzeige.karten.bau.segmente == []
+        # Ein Zahlungsjahr: keine Säulen, das Jahr steht im Titel
+        assert anzeige.karten.saeulen == [] and anzeige.karten.bau.titel == "Kosten, 2028"
 
     def test_vorgang_gesperrt_kein_zweiter_aufruf(self) -> None:
         from django.core.cache import cache
