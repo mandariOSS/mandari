@@ -26,6 +26,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from apps.accounts.einstellungen import einstellung_setzen
 from insight_core.services import neuigkeiten as portal
 
 logger = logging.getLogger(__name__)
@@ -137,9 +138,5 @@ def als_gesehen_merken(user: Any) -> None:
     aktuell = stand()
     if not aktuell or _gesehen(user) == aktuell:
         return
-    # Frisch lesen: Andere Angaben in den Einstellungen (zurückgestellte Hinweise) dürfen nicht verloren gehen
-    user.refresh_from_db(fields=["settings"])
-    einstellungen = dict(user.settings or {})
-    einstellungen[GESEHEN_SCHLUESSEL] = aktuell
-    user.settings = einstellungen
-    user.save(update_fields=["settings"])
+    # Unter Sperre: Andere Angaben in den Einstellungen (zurückgestellte Hinweise) dürfen nicht verloren gehen
+    einstellung_setzen(user, GESEHEN_SCHLUESSEL, aktuell)

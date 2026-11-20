@@ -17,7 +17,7 @@ import logging
 import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from functools import cache
 from importlib import metadata
 from itertools import groupby
@@ -66,8 +66,12 @@ def lies(pfad: Path | None = None) -> list[Neuigkeit]:
             raise ValueError(f"Eintrag {nummer}: eine Tabelle mit datum, titel und text erwartet")
         datum, titel, text = roh.get("datum"), roh.get("titel"), roh.get("text")
         version, bereich = roh.get("version", ""), roh.get("bereich", "")
-        if not isinstance(datum, date) or not isinstance(version, str) or not isinstance(bereich, str):
-            raise ValueError(f"Eintrag {nummer}: datum (JJJJ-MM-TT), version und bereich (Text) prüfen")
+        # Ein Zeitstempel (datum = 2026-11-17T00:00:00) ist in Python auch ein date, ließe sich aber nicht mit den
+        # reinen Datumswerten sortieren (TypeError beim Aufrufer)
+        if isinstance(datum, datetime) or not isinstance(datum, date):
+            raise ValueError(f"Eintrag {nummer}: datum als Tag (JJJJ-MM-TT) ohne Uhrzeit angeben")
+        if not isinstance(version, str) or not isinstance(bereich, str):
+            raise ValueError(f"Eintrag {nummer}: version und bereich als Text angeben")
         if not isinstance(titel, str) or not titel.strip() or not isinstance(text, str) or not text.strip():
             raise ValueError(f"Eintrag {nummer}: titel und text sind Pflicht")
         eintraege.append(

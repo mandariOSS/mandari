@@ -28,6 +28,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.adoption import can_adopt_by_email
+from apps.accounts.einstellungen import einstellungen_aendern
 from apps.accounts.models import EmailVerificationToken, User
 from apps.common.uploads import IMAGES, validate_upload
 from apps.tenants import demo
@@ -1814,17 +1815,19 @@ def regenerate_calendar_feed(user: User) -> str:
 def save_profile_visibility(
     user: User, *, bio: str, show_email: bool, show_phone: bool, preferred_contact: str, contact_signal: str
 ) -> None:
-    """Sichtbarkeits- und Kontaktangaben in ``User.settings["profile"]`` speichern."""
-    settings = user.settings or {}
-    profile = settings.get("profile", {})
-    profile["bio"] = bio[:500]
-    profile["show_email"] = show_email
-    profile["show_phone"] = show_phone
-    profile["preferred_contact"] = preferred_contact
-    profile["contact_signal"] = contact_signal[:100]
-    settings["profile"] = profile
-    user.settings = settings
-    user.save(update_fields=["settings"])
+    """Sichtbarkeits- und Kontaktangaben in ``User.settings["profile"]`` speichern (unter Sperre, Issue #1472)."""
+
+    def profil_setzen(einstellungen: dict[str, Any]) -> None:
+        profile = einstellungen.get("profile")
+        profile = dict(profile) if isinstance(profile, dict) else {}
+        profile["bio"] = bio[:500]
+        profile["show_email"] = show_email
+        profile["show_phone"] = show_phone
+        profile["preferred_contact"] = preferred_contact
+        profile["contact_signal"] = contact_signal[:100]
+        einstellungen["profile"] = profile
+
+    einstellungen_aendern(user, profil_setzen)
 
 
 def save_followed_committees(organization: Organization, membership: Membership, committee_ids: list[str]) -> None:
