@@ -23,6 +23,9 @@ mit dem Fenster (``SyncOrchestrator.sync_body_url``). Status und Metrik (``manda
 das Fenster, ``sync_state["reason"]`` und das Sync-Protokoll (``details.takt``) den Grund für den späteren Lauf.
 
 Jeder Lauf schreibt sein eigenes Sync-Protokoll (``insight_sync_synclog`` mit ``source_id``) und Metriken je Quelle.
+Nach einem erfolgreichen Lauf gleicht der Daemon die Quelle höchstens einmal täglich mit ihrer Schnittstelle ab
+(``totalElements`` der Hauptlisten gegen den Bestand, ``src/sync/datenabgleich.py``, Issue #1525; abschaltbar mit
+``INGESTOR_DATENABGLEICH=false``).
 
 Kein Lauf hält seinen Platz auf Dauer, und kein Lauf bleibt ohne Folge:
 
@@ -68,6 +71,7 @@ from src.scheduler.takt import (
     default_full_sync_window,
     full_sync_due,
 )
+from src.sync import datenabgleich
 from src.sync.orchestrator import (
     ERROR_KIND_LABELS,
     SyncOrchestrator,
@@ -233,6 +237,8 @@ class SyncScheduler:
         self._unsaved: dict[str, SyncState] = {}
         self._redis: Any = None
         self._redis_warned = False
+        #: Letzter Versuch des täglichen Datenabgleichs je Quelle (``_datenabgleich``)
+        self._datenabgleich_versuche: dict[str, datetime] = {}
 
     # ========== Lebenszyklus ==========
 
@@ -804,6 +810,22 @@ class SyncScheduler:
             if next_local is not None
             else f"[green]{name}: {art} fertig in {duration:.1f}s[/green]"
         )
+        if result.success and settings.datenabgleich_enabled:
+            await self._datenabgleich(source)
+
+    async def _datenabgleich(self, source: Any) -> None:
+        """
+        Datenabgleich mit der Schnittstelle der Kommune (Issue #1525, ``src/sync/datenabgleich.py``) nach einem
+        erfolgreichen Lauf, höchstens einmal täglich je Quelle. Der Versuch zählt auch, wenn er scheitert oder die Frist
+        erreicht: Eine Quelle, deren Listen nicht antworten, hält ihren Platz so nicht nach jedem Lauf erneut fest.
+        """
+        key = str(source.id)
+        now = self._clock()
+        versucht = self._datenabgleich_versuche.get(key)
+        if (versucht is not None and now - versucht < datenabgleich.ABSTAND) or not datenabgleich.faellig(source, now):
+            return
+        self._datenabgleich_versuche[key] = now
+        await datenabgleich.im_daemon(self.orchestrator.storage, source, now)
 
     async def _meeting_days(self, source: Any, schedule: SyncSchedule, at: datetime) -> frozenset[Any]:
         """Tage mit kurzem Takt aus den Sitzungen der Quelle im Bestand (ab heute, Ortszeit)."""

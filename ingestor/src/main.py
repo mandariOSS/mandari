@@ -719,6 +719,75 @@ def probe_ris(
         console.print(text)
 
 
+@app.command("datenabgleich")
+def datenabgleich_befehl(
+    source_url: str | None = typer.Option(None, "--source", "-s", help="Nur diese Quelle (URL wie in list-sources)"),
+    kommune: str = typer.Option("", "--kommune", "-k", help="Nur Kommunen, deren Name oder Kennung den Text enthält"),
+    nur_anzeigen: bool = typer.Option(False, "--nur-anzeigen", help="Ergebnis nicht an der Quelle ablegen"),
+) -> None:
+    """
+    Datenabgleich mit den Schnittstellen der Kommunen (Issue #1525): totalElements der Hauptlisten gegen den Bestand.
+
+    Je Kommune die erste Seite von Vorlagen, Sitzungen, Beratungen, TOPs und Dateien, ein Versuch je Liste, mit Takt,
+    robots.txt, User-Agent und Abruffenster der Quelle; Quellen außerhalb ihres Fensters oder in Schonung werden
+    übersprungen. Ohne ``--source`` alle aktiven Quellen nacheinander. Das Ergebnis (``sync_config["datenabgleich_
+    quelle"]``) bewertet die Anwendung im Betriebsmonitor; ``manage.py datenabgleich`` zeigt beides zusammen.
+    """
+    from rich.markup import escape
+
+    from src.sync import datenabgleich
+
+    async def run_abgleich() -> int:
+        async with SyncOrchestrator() as orchestrator:
+            if source_url:
+                source = await orchestrator.storage.get_source_by_url(source_url)
+                if source is None:
+                    await print_unknown_source(orchestrator.storage, source_url)
+                    return 1
+                sources = [source]
+            else:
+                sources = await orchestrator.storage.get_all_sources()
+            table = Table(title="Datenabgleich mit der Quelle (totalElements / Bestand)")
+            table.add_column("Quelle / Kommune", style="green", overflow="fold")
+            for typ in datenabgleich.LISTEN:
+                table.add_column(typ, justify="right")
+            abrufe = 0
+            for source in sources:
+                ergebnis = await datenabgleich.gleiche_ab(
+                    orchestrator.storage, source, kommune=kommune, speichern=not nur_anzeigen
+                )
+                abrufe += ergebnis.abrufe
+                if ergebnis.hinweis:
+                    hinweis = escape(f"{ergebnis.quelle}: {ergebnis.hinweis}")
+                    table.add_row(hinweis, *["" for _ in datenabgleich.LISTEN])
+                for eintrag in ergebnis.kommunen.values():
+                    zellen = (_zelle(eintrag["listen"].get(typ)) for typ in datenabgleich.LISTEN)
+                    table.add_row(escape(str(eintrag["name"])), *zellen)
+            console.print(table)
+            ablage = "nicht abgelegt" if nur_anzeigen else "abgelegt, Bewertung: manage.py datenabgleich"
+            console.print(f"[dim]{abrufe} Abrufe; {ablage}[/dim]")
+        return 0
+
+    code = asyncio.run(run_abgleich())
+    if code:
+        raise typer.Exit(code)
+
+
+def _zelle(werte: dict[str, Any] | None) -> str:
+    """Zelle der Tabelle ``datenabgleich``: ``Quelle / Bestand``, Fehlbestand rot, Fehler gekürzt."""
+    from rich.markup import escape
+
+    if not werte:
+        return "-"
+    if werte.get("fehler"):
+        return f"[yellow]{escape(str(werte['fehler'])[:30])}[/yellow]"
+    quelle, bestand = werte.get("quelle"), werte.get("bestand")
+    if not isinstance(quelle, int):
+        return f"? / {bestand}"
+    farbe = "red" if isinstance(bestand, int) and bestand < quelle else "white"
+    return f"[{farbe}]{quelle} / {bestand}[/{farbe}]"
+
+
 @app.command("top-kennungen-zurueck")
 def top_kennungen_zurueck(
     source_url: str = typer.Option(..., "--source", "-s", help="URL der SessionNet-Quelle (wie in list-sources)"),

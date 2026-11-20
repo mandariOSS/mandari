@@ -115,6 +115,12 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
   nicht erreichbar, endet die Prüfung nach dieser einen Anfrage. Abstand je Server wie im Abgleich
   (`INGESTOR_REQUEST_INTERVAL`); hat eine registrierte Quelle auf dem Server einen größeren Abstand, gilt dieser.
   Zwischen zwei Kommunen liegen zusätzlich 2 Sekunden Pause (`ingestor/src/main.py`, `probe_ris`).
+- **Datenabgleich** (Issue #1525, `ingestor/src/sync/datenabgleich.py`): höchstens einmal täglich je Quelle nach
+  einem erfolgreichen Abgleich, von Hand mit `python -m src.main datenabgleich`. Je Kommune die erste Seite von
+  Vorlagen, Sitzungen, Beratungen, TOPs und Dateien (höchstens fünf Anfragen, ohne Wiederholung), um
+  `pagination.totalElements` mit dem Bestand zu vergleichen. Kennung, Takt je Server, robots.txt und Abruffenster
+  wie im Abgleich; Listen aus `skip_lists` und vermerkte fehlende Listen fragt er nicht an, Quellen in der Schonung
+  und Scraper-Quellen gar nicht. Abschalten im Daemon: `INGESTOR_DATENABGLEICH=false`.
 
 Der lokale Spiegel `manage.py sync_session_insight` (`mandari/insight_sync/session_mirror.py`) ruft dagegen ohne
 robots.txt und ohne Takt je Server ab, mit der Kennung `mandari-session-mirror/1.0`. Er gleicht deshalb nur
@@ -1035,6 +1041,7 @@ Ingestor (`ingestor/src/config.py`; Groß- und Kleinschreibung egal):
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD`, `CIRCUIT_BREAKER_RECOVERY_TIMEOUT` | `5`, `60` | Schutzschalter je Server |
 | `INGESTOR_SYNC_POOL_SIZE` | `4` | Quellen gleichzeitig im Daemon, je Quelle ein Lauf; Vollabgleiche auf höchstens allen Plätzen bis auf einen |
 | `INGESTOR_SYNC_RUN_DEADLINE_MINUTES`, `INGESTOR_SYNC_FULL_DEADLINE_MINUTES` | `180`, `1440` | Gesamtfrist je Lauf im Daemon (Änderungsabgleich, Vollabgleich) in Minuten; danach endet der Lauf, zählt als Fehlversuch der Quelle und gibt seinen Platz frei. `0` schaltet ab |
+| `INGESTOR_DATENABGLEICH` | `true` | Täglicher Datenabgleich je Quelle im Daemon (`totalElements` der Hauptlisten gegen den Bestand, Issue #1525); `false` schaltet ihn ab, der Befehl `datenabgleich` bleibt |
 | `SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY` | `2`, `2` | Kommunen je Quelle und Listen je Kommune gleichzeitig |
 | `SYNC_SOURCE_CONCURRENCY` | `2` | Quellen gleichzeitig bei `sync --all` (nicht im Daemon) |
 | `TEXT_EXTRACTION_ENABLED` | `true` | Texterkennung im Abgleich |

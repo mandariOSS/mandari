@@ -244,6 +244,21 @@ def evaluate_source(source, now=None) -> dict:
                 "robots.txt, Sperren und das Kalenderfenster prüfen."
             )
 
+    # Datenabgleich mit der Schnittstelle der Kommune (Issue #1525): Lücken im Bestand trotz erfolgreicher Abgleiche
+    from .datenabgleich import EMPFEHLUNG as DATENABGLEICH_EMPFEHLUNG
+    from .datenabgleich import bewerte_quelle
+
+    abgleich = bewerte_quelle(source, now)
+    info["datenabgleich"] = abgleich
+    if source.is_active and abgleich["reasons"]:
+        info["reasons"].extend(abgleich["reasons"])
+        if abgleich["status"] == "critical":
+            info["status"] = "critical"
+        elif info["status"] in ("ok", "never"):
+            info["status"] = "warning"
+        if not info["recommendation"]:
+            info["recommendation"] = DATENABGLEICH_EMPFEHLUNG
+
     info.update(STATUS_META[info["status"]])
     return info
 

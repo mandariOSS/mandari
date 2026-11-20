@@ -63,6 +63,9 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     # Betrieb (Issue #231): Quellen stündlich, Service-Level täglich
     befehl_als_zeitplan("check_source_health", crontab="15 * * * *", zeitgrenze=600, ziel=ziel)
     befehl_als_zeitplan("check_service_levels", crontab="30 6 * * *", zeitgrenze=600, ziel=ziel)
+    # Datenabgleich mit den Schnittstellen der Kommunen (Issue #1525): täglich vor dem Prüflauf um 06:15, der die
+    # Quellen danach bewertet und alarmiert
+    befehl_als_zeitplan("datenabgleich", crontab="5 6 * * *", zeitgrenze=1800, ziel=ziel)
     # Verfügbarkeitsbericht des Vormonats nach REPORTS_ROOT; nur mit Statusseite, sonst endete jeder
     # Lauf mit Fehler
     if getattr(settings, "GATUS_URL", ""):

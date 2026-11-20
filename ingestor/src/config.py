@@ -145,6 +145,13 @@ class Settings(BaseSettings):
         ge=0,
         validation_alias=AliasChoices("INGESTOR_SYNC_FULL_DEADLINE_MINUTES", "sync_full_deadline_minutes"),
     )
+    # Datenabgleich mit der Schnittstelle der Kommune (Issue #1525, ``src/sync/datenabgleich.py``): nach einem
+    # erfolgreichen Lauf höchstens einmal täglich je Quelle ``totalElements`` der Hauptlisten gegen den Bestand.
+    # ``false`` schaltet ihn im Daemon ab (der Befehl ``datenabgleich`` bleibt)
+    datenabgleich_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("INGESTOR_DATENABGLEICH", "datenabgleich_enabled"),
+    )
     # Max entity-type syncs running concurrently within one body
     # (organizations/persons, meetings/papers, locations/agenda items/
     # files/consultations). Env-overridable (SYNC_ENTITY_CONCURRENCY).
