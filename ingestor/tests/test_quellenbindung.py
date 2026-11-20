@@ -735,6 +735,17 @@ async def test_sitzung_und_mitgliedschaft_zaehlen_nicht_aufloesbare_verweise(bes
     assert gezaehlt == {"meeting.organization": 2, "membership.person": 1}
 
 
+async def test_abgewiesene_sitzung_zaehlt_ihre_gremien_nicht(bestand: Bestand) -> None:
+    """Eine Sitzung mit der Kennung einer anderen Quelle wird nicht geschrieben; ihre Gremien zählen nicht (#1453)."""
+    gezaehlt = database.start_unresolved_references()
+    sitzung = _fremd("meeting")
+    sitzung["organization"] = [f"{A}/organization/401"]
+
+    assert await abgewiesen(bestand.schreiben("meeting", sitzung, bestand.kommune[KOMMUNE_A], KOMMUNE_A))
+
+    assert gezaehlt == {}
+
+
 @pytest.mark.usefixtures("fixture_fetcher")
 async def test_scraper_ueberspringt_objekte_anderer_quellen_einzeln() -> None:
     """Weist der Speicher ein Objekt ab, läuft der Crawl mit den übrigen weiter; das Sync-Log zählt es."""
@@ -755,3 +766,22 @@ async def test_scraper_ueberspringt_objekte_anderer_quellen_einzeln() -> None:
     assert result.foreign == {"paper": 1}
     gespeichert = {external_id for _, external_id, _ in orchestrator.stored}
     assert fremd not in gespeichert and len(gespeichert) > 1
+
+
+@pytest.mark.usefixtures("fixture_fetcher")
+async def test_scraper_zaehlt_nicht_aufloesbare_verweise() -> None:
+    """Was der Speicher im Crawl als nicht auflösbar zählt, steht wie im OParl-Abgleich unter ``unresolved`` (#1453)."""
+    orchestrator = FakeOrchestrator()
+    speichern = orchestrator._store_entity
+
+    async def zaehlen(processed: Any, body_id: Any, entity_type: str, source_name: str) -> bool:
+        if entity_type == "meeting":
+            database._note_unresolved(database.UNRESOLVED_MEETING_ORGANIZATION)
+        return await speichern(processed, body_id, entity_type, source_name)
+
+    orchestrator._store_entity = zaehlen  # type: ignore[method-assign]
+    result = await ScraperSyncRunner(orchestrator, FakeSource()).run(full=True)  # type: ignore[arg-type]
+
+    sitzungen = sum(1 for art, _, _ in orchestrator.stored if art == "meeting")
+    assert result.success, result.errors
+    assert sitzungen > 0 and result.unresolved == {"meeting.organization": sitzungen}

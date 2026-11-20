@@ -45,7 +45,12 @@ from src.scrapers.politeness import (
     RobotsDisallowedError,
     RobotsUnreachableError,
 )
-from src.storage.database import PREVIOUS_ID_FIELD, ForeignObjectError, start_foreign_rejections
+from src.storage.database import (
+    PREVIOUS_ID_FIELD,
+    ForeignObjectError,
+    start_foreign_rejections,
+    start_unresolved_references,
+)
 from src.storage.events import start_correlation
 
 if TYPE_CHECKING:
@@ -154,6 +159,8 @@ class ScraperSyncRunner:
             start_correlation()
             # Kennungen anderer Quellen, die der Speicher in diesem Crawl abweist (Sync-Log ``foreign``)
             foreign = start_foreign_rejections()
+            # Verweise, die sich im Bestand nicht auflösen lassen (Sync-Log ``unresolved``, wie im OParl-Abgleich)
+            unresolved = start_unresolved_references()
 
             # Body-Kennung -> UUID; mehrere Einträge bei mehreren Körperschaften je Instanz
             body_ids: dict[str, UUID] = {}
@@ -323,6 +330,7 @@ class ScraperSyncRunner:
             if field_name:
                 setattr(result, field_name, getattr(result, field_name) + count)
         result.foreign.update(foreign)
+        result.unresolved.update(unresolved)
         result.success = crawl_completed
         result.duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
 
