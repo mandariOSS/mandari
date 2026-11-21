@@ -29,6 +29,8 @@ NAME_MUSTER = re.compile(r"^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$")
 def an(settings: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
     settings.INSIGHT_MCP_ENABLED = True
     settings.SITE_URL = INSTANZ
+    # Unabhängig von der Umgebung: ohne Token kein Origin-Trial-Meta (test_origin_trial_token setzt ihn)
+    settings.WEBMCP_ORIGIN_TRIAL_TOKEN = ""
     cache.clear()
     monkeypatch.setattr("insight_core.services.search_service.get_search_service", lambda: FakeSuche())
     return settings
