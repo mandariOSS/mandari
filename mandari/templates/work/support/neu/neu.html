@@ -15,7 +15,7 @@ work/support/create.html.
 <c-rahmen.kopfband titel="Neues Ticket" dicht data-testid="ticket-neu-kopf"
     text="Beschreiben Sie Ihr Anliegen möglichst genau: was Sie getan haben, was passiert ist und was Sie erwartet haben. Bildschirmfotos helfen.">
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% hilfe_url 'faq' %}" extern class="text-sm">Häufige Fragen</c-ui.textlink>
+        <c-ui.button href="{% hilfe_url 'faq' %}" variant="secondary" size="sm" icon="circle-help" target="_blank" rel="noopener noreferrer">Häufige Fragen<span class="sr-only"> (öffnet in neuem Fenster)</span></c-ui.button>
     </c-slot>
 </c-rahmen.kopfband>
 {% endblock %}

@@ -15,8 +15,8 @@ Kontext wie AllowanceListView. Die bisherige Seite bleibt session/allowances/ind
 {% block session_header %}
 <c-rahmen.kopfband titel="Sitzungsgelder" dicht>
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% url 'session:allowances_monthly' tenant_slug=tenant_slug %}" class="text-sm">Monatliche Pauschalen</c-ui.textlink>
-        <c-ui.textlink href="{% url 'session:allowance_year' tenant_slug=tenant_slug %}" class="ml-3 text-sm">Jahresübersicht</c-ui.textlink>
+        <c-ui.button href="{% url 'session:allowances_monthly' tenant_slug=tenant_slug %}" variant="secondary" size="sm" icon="calendar-days">Monatliche Pauschalen</c-ui.button>
+        <c-ui.button href="{% url 'session:allowance_year' tenant_slug=tenant_slug %}" variant="secondary" size="sm" icon="calendar-range">Jahresübersicht</c-ui.button>
     </c-slot>
     <p class="max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="sitzungsgelder-satz">
         {{ period_start|date:"d.m.Y" }} bis {{ period_end|date:"d.m.Y" }}: {{ allowances|length }} Position{{ allowances|length|pluralize:"en" }} über {{ total_amount }} €{% if allowances %}, davon {{ pending_count }} ausstehend, {{ approved_count }} genehmigt und {{ paid_count }} ausgezahlt{% endif %}.

@@ -15,7 +15,7 @@ work/support/list.html.
 <c-rahmen.kopfband titel="Hilfe und Support" dicht data-testid="hilfe-kopf"
     text="Anleitungen und Antworten auf häufige Fragen stehen in der Dokumentation. Für Fehler, Wünsche und alles andere schreiben Sie uns ein Ticket.">
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% hilfe_url 'start' %}" extern class="text-sm">Dokumentation</c-ui.textlink>
+        <c-ui.button href="{% hilfe_url 'start' %}" variant="secondary" size="sm" icon="book-open" target="_blank" rel="noopener noreferrer">Dokumentation<span class="sr-only"> (öffnet in neuem Fenster)</span></c-ui.button>
         <c-ui.button href="{% url 'work:support_create' org_slug=organization.slug %}" icon="plus">Neues Ticket</c-ui.button>
     </c-slot>
 </c-rahmen.kopfband>
