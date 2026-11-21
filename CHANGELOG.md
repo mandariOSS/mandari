@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+## [0.13.4] – 2026-11-21
+
 ### Geändert
 - Datensparsame Anzeige von Personen (#1560). Öffentlich ist nur noch, wer derzeit ein Amt hat: mindestens eine laufende Mitgliedschaft in einem bestehenden Gremium (Rat, Ausschuss, Bezirksvertretung, Fraktion, Aufsichtsrat; auch sachkundige Bürgerinnen und Bürger). Alle anderen bleiben im Bestand, erscheinen aber nicht mehr: Personenliste und Personenseite (404 bzw. 410), Gremienseiten, Suche und Suchindex, Sitemap, Merkliste, Zahlen des Portals, KI-Assistent und MCP, Recherche in Work und die OParl-Ausgabe (dort wie Gelöschtes: gekürztes Objekt mit `deleted: true`, nicht in Listen und Snapshots). Im Zweifel verborgen: ohne Mitgliedschaften aus der Quelle, in beendeten oder gelöschten Gremien, mit bloßem Zugang zum RIS. Die Regel steht an einer Stelle (`insight_core/services/personen_sichtbarkeit.py`). Session bleibt unberührt.
 - Keine Fotos von Personen mehr (#1560): Die Anzeige nimmt überall die Initialen, der Zeitplan `fetch_person_photos` entfällt, der Befehl ruft nichts mehr ab, und `/media/persons/photos/` wird nicht mehr ausgeliefert. Gespeicherte Fotos bleiben vorerst im Bestand.
@@ -576,7 +578,8 @@ Release in Produktion. Selbst-Hoster lesen vor dem Update den Abschnitt „Brech
 Erste öffentliche Beta: Bürgerportal (Insight) mit OParl-Ingestor, mandari work für
 Fraktionen, mandari session für Verwaltungen.
 
-[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.13.3...dev
+[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.13.4...dev
+[0.13.4]: https://github.com/mandariOSS/mandari/compare/v0.13.3...v0.13.4
 [0.13.3]: https://github.com/mandariOSS/mandari/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/mandariOSS/mandari/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/mandariOSS/mandari/compare/v0.13.0...v0.13.1

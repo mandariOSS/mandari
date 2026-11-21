@@ -19,7 +19,7 @@
 
 [[eintrag]]
 datum = 2026-11-21
-version = ""
+version = "0.13.4"
 titel = "Weniger persönliche Daten im Portal."
 text = """Das Bürgerportal zeigt nur noch Personen, die derzeit ein Amt haben, etwa im Rat, in einem Ausschuss oder \
 in einem Aufsichtsrat. Fotos, E-Mail-Adressen und Telefonnummern zeigen wir nicht mehr. Vorlagen, die Angaben zu \
