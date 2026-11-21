@@ -269,6 +269,11 @@ def file_proxy(request, file_id):
         request
     ):
         file_cache_limit.mark_used(file_obj)
+    # Dokumente mit kritischem Personenbezug: nicht in Suchmaschinen (Issue #1560)
+    from ..services import personenbezug
+
+    if personenbezug.datei_ohne_index(file_obj):
+        response["X-Robots-Tag"] = "noindex"
     return file_access.record_response(file_obj, response, request)
 
 

@@ -39,6 +39,7 @@ from insight_core.models import (
     OParlPerson,
     withdrawn_q,
 )
+from insight_core.services.personen_sichtbarkeit import nur_oeffentliche, oeffentlich
 
 Bodies = QuerySet[OParlBody]
 
@@ -90,7 +91,7 @@ def overview_stats(bodies: Bodies) -> dict[str, int]:
         "meetings_upcoming": meetings.filter(start__gt=now, cancelled=False).count(),
         "organizations_total": organizations.count(),
         "organizations_active": organizations.filter(_active_filter(today)).count(),
-        "persons_total": OParlPerson.objects.filter(body__in=bodies).exclude(withdrawn_q()).count(),
+        "persons_total": persons_in_bodies(bodies).count(),
     }
 
 
@@ -241,10 +242,16 @@ def organization_tab_counts(bodies: Bodies) -> dict[str, int]:
 
 
 def organization_members(organization: OParlOrganization) -> dict[str, QuerySet[OParlMembership]]:
-    """Aktive und ehemalige Mitglieder eines Gremiums, ohne zurückgenommene Mitgliedschaften und Personen."""
+    """
+    Aktive und ehemalige Mitglieder eines Gremiums, ohne zurückgenommene Mitgliedschaften und Personen. Genannt
+    wird nur, wer derzeit ein Amt hat (Issue #1560): Ausgeschiedene ohne anderes Amt erscheinen nicht mehr.
+    """
     today = timezone.now().date()
     memberships = (
-        organization.memberships.exclude(withdrawn_q()).exclude(withdrawn_q("person")).select_related("person")
+        organization.memberships.exclude(withdrawn_q())
+        .exclude(withdrawn_q("person"))
+        .filter(oeffentlich("person_id"))
+        .select_related("person")
     )
     return {
         "active": memberships.filter(_active_filter(today)).order_by("person__family_name", "person__name"),
@@ -270,8 +277,11 @@ def organization_meetings(
 
 
 def persons_in_bodies(bodies: Bodies) -> QuerySet[OParlPerson]:
-    """Personen der Kommunen (Basis für Listen und Detail-Lookups), ohne die von Session zurückgenommenen."""
-    return OParlPerson.objects.filter(body__in=bodies).exclude(withdrawn_q())
+    """
+    Personen der Kommunen (Basis für Listen und Detail-Lookups): nur mit laufendem Amt (Issue #1560), ohne die von
+    Session zurückgenommenen.
+    """
+    return nur_oeffentliche(OParlPerson.objects.filter(body__in=bodies)).exclude(withdrawn_q())
 
 
 def person_in_bodies(bodies: Bodies, person_id: Any) -> OParlPerson | None:
@@ -298,10 +308,7 @@ def persons_queryset(bodies: Bodies, *, search: str = "") -> QuerySet[OParlPerso
         persons = persons.annotate(council_role=council_role)
     if search:
         persons = persons.filter(
-            Q(name__icontains=search)
-            | Q(family_name__icontains=search)
-            | Q(given_name__icontains=search)
-            | Q(email__icontains=search)
+            Q(name__icontains=search) | Q(family_name__icontains=search) | Q(given_name__icontains=search)
         )
     # Gezählt wird, was die Detailseite auch zeigt (``person_memberships``)
     sichtbar = ~withdrawn_q("memberships") & ~withdrawn_q("memberships__organization")
@@ -561,7 +568,7 @@ def orm_search(
         else OParlOrganization.objects.none()
     )
     persons = (
-        OParlPerson.objects.filter(body_id__in=ids)
+        nur_oeffentliche(OParlPerson.objects.filter(body_id__in=ids))
         .exclude(withdrawn_q())
         .filter(Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query))
         .order_by("family_name")[:limit]

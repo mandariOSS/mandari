@@ -16,6 +16,8 @@ from typing import Any
 
 from django.db.models.functions import Substr
 
+from insight_core.services import personenbezug
+
 #: Textvorschau eines Vorgangs: höchstens so viele Zeichen je Datei und insgesamt
 PREVIEW_CHARS_PER_FILE = 5000
 PREVIEW_CHARS_TOTAL = 25000
@@ -72,6 +74,11 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
     file_contents_preview = "\n\n".join(file_texts)
     if len(file_contents_preview) > max_total:
         file_contents_preview = file_contents_preview[:max_total]
+    # Vorlagen mit kritischem Personenbezug stehen ohne Text und Namen ihrer Dokumente im Index (Issue #1560);
+    # über Titel und Vorlagennummer bleiben sie auffindbar
+    if personenbezug.ohne_volltext(paper, file_texts):
+        file_contents_preview = ""
+        file_names = []
 
     # Gremien über Beratungen (Consultations) auflösen — ermöglicht den
     # Ausschuss-Filter in der Suche. Die Consultation-raw_json enthält die
@@ -187,6 +194,11 @@ def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, A
         if len(file.text_content) > 500:
             text_preview += "..."
     text_content = _CONTROL_CHARS.sub("", (file.text_content or "")[:INDEX_TEXT_MAX_CHARS])
+    # Kein Volltext im Index bei kritischem Personenbezug (Issue #1560): nach Art und Titel des Vorgangs oder nach
+    # Angaben zu Privatpersonen im Text. Die Datei bleibt über ihren Namen und ihren Vorgang auffindbar
+    if personenbezug.ohne_volltext(file.paper if file.paper_id else None, [text_content]):
+        text_content = ""
+        text_preview = ""
 
     doc = {
         "id": str(file.id),

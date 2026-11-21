@@ -24,6 +24,7 @@ from .models import (
     OParlPerson,
     SubscriptionAlert,
 )
+from .services import personen_sichtbarkeit
 from .services.search_documents import file_to_doc as _file_to_doc
 from .services.search_documents import meeting_to_doc as _meeting_to_doc
 from .services.search_documents import organization_to_doc as _organization_to_doc
@@ -162,6 +163,10 @@ def index_person(sender, instance, **kwargs):
             OParlPerson.objects.filter(pk=instance.pk).update(photo=None, photo_status="missing")
             instance.photo = None
             instance.photo_status = "missing"
+        return
+    # Nur Personen mit laufendem Amt stehen im Suchindex (Issue #1560)
+    if not personen_sichtbarkeit.ist_oeffentlich(instance):
+        _delete_document("persons", str(instance.id))
         return
     doc = _person_to_doc(instance)
     _index_document("persons", str(instance.id), doc)

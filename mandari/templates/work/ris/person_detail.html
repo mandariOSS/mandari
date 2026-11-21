@@ -61,7 +61,7 @@
         <button type="button" @click="tab = 'info'"
                 :class="tab === 'info' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
                 class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
-            Informationen & Kontakt
+            Informationen
         </button>
     </div>
 
@@ -72,10 +72,10 @@
         {% include "components/ris/membership_list.html" with items=past_memberships title="Ehemalige Mitgliedschaften" link_type="organization" collapsible="1" show_end_date="1" org_slug=organization.slug %}
     </div>
 
-    {# Tab: Informationen & Kontakt #}
+    {# Tab: Informationen #}
     <div x-show="tab === 'info'" x-cloak>
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Informationen & Kontakt</h3>
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Informationen</h3>
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                 {% if person.family_name %}
                 <div>
@@ -93,18 +93,6 @@
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Titel</dt>
                     <dd class="text-gray-900 dark:text-white">{{ person.title }}</dd>
-                </div>
-                {% endif %}
-                {% if person.email %}
-                <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">E-Mail</dt>
-                    <dd><a href="mailto:{{ person.email }}" class="text-primary-600 dark:text-primary-400 hover:underline">{{ person.email }}</a></dd>
-                </div>
-                {% endif %}
-                {% if person.phone %}
-                <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Telefon</dt>
-                    <dd><a href="tel:{{ person.phone }}" class="text-primary-600 dark:text-primary-400 hover:underline">{{ person.phone }}</a></dd>
                 </div>
                 {% endif %}
                 <div>

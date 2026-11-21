@@ -158,6 +158,11 @@ def _bestand(art: Art, body_id: Any) -> QuerySet[Any]:
 
     bestand = art.modell()._default_manager.filter(body_id=body_id, deleted=False)
     auswahl = vorgaenge_mit_inhalt if art.kennung == "vorgaenge" else sitzungen_mit_inhalt
+    if art.kennung == "vorgaenge":
+        # Vorlagen mit kritischem Personenbezug tragen ``noindex`` und stehen nicht in der Sitemap (Issue #1560)
+        from .personenbezug import nach_art_q
+
+        bestand = bestand.exclude(nach_art_q())
     return auswahl(bestand, timezone.now())
 
 
@@ -344,13 +349,12 @@ def gremien(body_id: Any) -> Iterator[tuple[Any, datetime | None]]:
 
 
 def personen(body_id: Any) -> Iterator[tuple[Any, datetime | None]]:
-    """Nur Personen mit laufender Mitgliedschaft (Issue #914): Die übrigen Personenseiten tragen ``noindex``."""
+    """Nur Personen mit laufendem Amt (Issues #914, #1560): Für die übrigen gibt es keine Seite."""
     from ..models import OParlPerson
-    from .indexierung import mit_laufender_mitgliedschaft
+    from .personen_sichtbarkeit import nur_oeffentliche
 
-    bestand = OParlPerson.objects.filter(body_id=body_id, deleted=False)
     return (
-        mit_laufender_mitgliedschaft(bestand, timezone.localdate())
+        nur_oeffentliche(OParlPerson.objects.filter(body_id=body_id))
         .order_by("family_name", "given_name", "id")
         .values_list("id", aenderungszeitpunkt())[:GRUND_HOECHSTENS]
         .iterator(chunk_size=2_000)

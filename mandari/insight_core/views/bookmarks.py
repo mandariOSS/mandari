@@ -21,6 +21,7 @@ from ..models import (
     OParlPerson,
     withdrawn_q,
 )
+from ..services import personen_sichtbarkeit
 
 #: Höchstzahl der Einträge je Art, die die anonyme Merkliste in einer Anfrage auflöst
 MAX_ENTITY_IDS = 200
@@ -84,7 +85,7 @@ class MerklisteView(TemplateView):
                 _visible(OParlOrganization).filter(id__in=bookmark_ids.get("organization", [])).order_by("name")
             )
             context["bookmarked_persons"] = (
-                _visible(OParlPerson)
+                personen_sichtbarkeit.nur_oeffentliche(_visible(OParlPerson))
                 .filter(id__in=bookmark_ids.get("person", []))
                 .select_related("body")
                 .order_by("family_name", "given_name")
@@ -183,7 +184,10 @@ def bookmark_entities(request):
         ),
         "person": (
             "partials/merkliste_persons.html",
-            _visible(OParlPerson).filter(id__in=ids).select_related("body").order_by("family_name", "given_name"),
+            personen_sichtbarkeit.nur_oeffentliche(_visible(OParlPerson))
+            .filter(id__in=ids)
+            .select_related("body")
+            .order_by("family_name", "given_name"),
         ),
     }
 

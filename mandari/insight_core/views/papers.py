@@ -280,6 +280,12 @@ class PaperDetailView(DetailView):
             original=context["source_url"],
             finanzen=context["finanzcheck"].seo if context["finanzcheck"] else "",
         ).to_dict()
+        # Vorlagen mit kritischem Personenbezug: nicht in Suchmaschinen (Issue #1560)
+        from ..services import personenbezug
+        from ..services.indexierung import NOINDEX_FOLLOW
+
+        if personenbezug.grund(paper):
+            context["seo"]["robots"] = NOINDEX_FOLLOW
 
         return context
 

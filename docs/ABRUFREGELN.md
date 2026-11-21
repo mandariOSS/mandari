@@ -90,8 +90,7 @@ Django-Anwendung.
 | Anwendung: Löschabgleich | geänderte Dokumente, Stichproben per `HEAD`, gesperrte Dokumente | stündlich um :15 |
 | Anwendung: Personenfotos | Fotos von Ratsmitgliedern, nur für Kommunen mit hinterlegtem Fotomuster | montags um 03:00 |
 
-Zeitpläne der Anwendung: `mandari/apps/common/schedules.py` (`cache_files --limit 400`, `loeschabgleich`,
-`fetch_person_photos`), Zeiten in `TIME_ZONE` (`Europe/Berlin`). Mit `TEXT_EXTRACTION_RUNNER=worker` lädt statt des
+Zeitpläne der Anwendung: `mandari/apps/common/schedules.py` (`cache_files --limit 400`, `loeschabgleich`), Zeiten in `TIME_ZONE` (`Europe/Berlin`). Mit `TEXT_EXTRACTION_RUNNER=worker` lädt statt des
 Ingestors die Anwendung die Dateien für die Texterkennung, über denselben Weg wie der Dokument-Cache
 (`mandari/hub/ris/abruf.py`).
 
@@ -941,7 +940,8 @@ Stündlich um :15 gleicht die Anwendung die Ablage mit den Quellen ab
 
 ### Personenfotos
 
-- **Zeitplan:** montags um 03:00, nur für Kommunen mit hinterlegtem Fotomuster
+- **Zeitplan:** keiner mehr. Fotos von Personen zeigt mandari seit Issue #1560 nicht mehr und ruft sie nicht mehr
+  nach Plan ab; der Befehl bleibt für den Handbetrieb
   (`mandari/insight_core/management/commands/fetch_person_photos.py`).
 - **Menge:** höchstens 500 Personen je Kommune und Lauf (`--limit`); geladen werden Fotos, die noch nie geprüft
   wurden oder deren letzte Prüfung mehr als 30 Tage zurückliegt (`--max-age-days`). Zwischen zwei Fotos liegen

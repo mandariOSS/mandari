@@ -39,7 +39,6 @@ FRUEHERE_CRONTAB: dict[str, tuple[str, list[str]]] = {
     "send_session_reminders": ("0 7 * * *", []),
     "send_question_reminders": ("30 7 * * *", []),
     "send_task_due_reminders": ("15 7 * * *", []),
-    "fetch_person_photos": ("0 3 * * 1", []),
     "sync_plan_boundaries": ("50 4 * * *", []),
     "cleanup_orphaned_accounts": ("45 3 * * *", []),
     "sitzungen_aufraeumen": ("25 4 * * *", []),

@@ -35,7 +35,6 @@ from apps.work.files import PROTECTED_PREFIXES as WORK_PROTECTED_PREFIXES
 #: Medien, die ohne Anmeldung ausgeliefert werden (Logos, Hero-Bilder, Demo).
 PUBLIC_MEDIA_PREFIXES = (
     "bodies/",
-    "persons/photos/",
     "organizations/logos/",
     "parties/logos/",
     "session/tenants/logos/",

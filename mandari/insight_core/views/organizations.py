@@ -17,7 +17,7 @@ from ..models import (
     withdrawn_q,
 )
 from ..ranking import sort_organizations_by_ranking
-from ..services import personen_liste, sitzverteilung
+from ..services import personen_liste, personen_sichtbarkeit, sitzverteilung
 from ..services.testkonten import ausgeblendet_q
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
@@ -165,6 +165,8 @@ class OrganizationDetailView(DetailView):
             org.memberships.filter(deleted=False)
             .exclude(withdrawn_q("person"))
             .exclude(ausgeblendet_q())
+            # Genannt wird nur, wer derzeit ein Amt hat (Issue #1560): Ausgeschiedene ohne anderes Amt nicht
+            .filter(personen_sichtbarkeit.oeffentlich("person_id"))
             .select_related("person", "person__body")
         )
         active_qs = all_memberships.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by(

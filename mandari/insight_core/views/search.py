@@ -22,7 +22,7 @@ from ..models import (
     OParlPaper,
     OParlPerson,
 )
-from ..services import fraktionskuerzel
+from ..services import fraktionskuerzel, personen_sichtbarkeit
 from ..services.search_filters import MAX_QUERY_LENGTH
 from ._helpers import get_active_body, is_all_bodies_mode, page_number
 
@@ -231,7 +231,8 @@ def search_results(request):
             )
 
         # Personen
-        persons = OParlPerson.objects.filter(deleted=False, **body_filter).filter(
+        # Nur Personen mit laufendem Amt (Issue #1560)
+        persons = personen_sichtbarkeit.nur_oeffentliche(OParlPerson.objects.filter(**body_filter)).filter(
             Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query)
         )[:10]
         for person in persons:

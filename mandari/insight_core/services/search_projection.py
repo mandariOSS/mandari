@@ -51,6 +51,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
 )
+from insight_core.services import personen_sichtbarkeit
 from insight_core.services.search_documents import (
     INDEX_TEXT_MAX_CHARS,
     PREVIEW_CHARS_PER_FILE,
@@ -97,7 +98,8 @@ def indexable(index: str) -> QuerySet[Any]:
     if index == "meetings":
         return OParlMeeting.objects.filter(deleted=False)
     if index == "persons":
-        return OParlPerson.objects.filter(deleted=False)
+        # Nur Personen mit laufendem Amt (Issue #1560); die übrigen filtert auch die Abfrage (``search_service``)
+        return personen_sichtbarkeit.nur_oeffentliche(OParlPerson.objects.all())
     if index == "organizations":
         return OParlOrganization.objects.filter(deleted=False)
     if index == "files":

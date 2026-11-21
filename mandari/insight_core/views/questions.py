@@ -22,7 +22,7 @@ from apps.common.params import uuid_param
 
 from .. import throttle
 from ..models import OParlOrganization, OParlPerson, PublicQuestion
-from ..services import personen_liste, question_service
+from ..services import personen_liste, personen_sichtbarkeit, question_service
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
 SORT_OPTIONS = [
@@ -152,7 +152,9 @@ class QuestionPortalView(ActiveBodyRequiredMixin, ListView):
         if person_id and body:
             # Nur Personen dieser Kommune, die weder gelöscht noch zurückgenommen sind: Die Kennung allein darf
             # keinen Namen liefern
-            context["filter_person_obj"] = OParlPerson.objects.filter(pk=person_id, body=body, deleted=False).first()
+            context["filter_person_obj"] = personen_sichtbarkeit.nur_oeffentliche(
+                OParlPerson.objects.filter(pk=person_id, body=body)
+            ).first()
 
         from ..seo import get_page_seo
 
@@ -268,7 +270,9 @@ class AskQuestionView(QuestionsEnabledRequiredMixin, FormView):
         self.person = get_object_or_404(OParlPerson, pk=kwargs["pk"], deleted=False)
         if self.active_body and self.person.body_id != self.active_body.id:
             raise Http404
-        if not question_service.is_mandate_holder(self.person):
+        if not question_service.is_mandate_holder(self.person) or not personen_sichtbarkeit.ist_oeffentlich(
+            self.person
+        ):
             raise Http404
         return super().dispatch(request, *args, **kwargs)
 

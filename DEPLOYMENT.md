@@ -1829,7 +1829,6 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:send_session_reminders` | täglich 07:00 | Fristen-Erinnerungen des Sitzungsdienstes |
 | `befehl:send_task_due_reminders` | täglich 07:15 | fällige Aufgaben |
 | `befehl:send_question_reminders` | täglich 07:30 | Ratsfragen (ohne Wirkung, solange pausiert) |
-| `befehl:fetch_person_photos` | montags 03:00 | Personenfotos |
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
 | `befehl:sitzungen_aufraeumen` | täglich 04:25 | abgelaufene Sitzungen in Blöcken löschen (Issue #1091) |
