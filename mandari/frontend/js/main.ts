@@ -36,6 +36,7 @@ import { initPaperMap } from './paper-map'
 import { initSearchPlaceMap } from './search-place-map'
 import { registerBookmarksStore } from './stores/bookmarks'
 import { installTagesordnungSortieren } from './tagesordnung-sortieren'
+import { installWebmcpFormulare } from './webmcp'
 
 // ---- HTMX --------------------------------------------------------------------
 setupHtmx()
@@ -44,6 +45,8 @@ setupHtmx()
 installActions()
 // Formularhelfer (URL-Kürzel, abhängige Auswahl, Textbausteine, Fehlerbericht) statt Inline-Skripten
 installFormBehaviors()
+// WebMCP (#1309): Ruft ein KI-Agent ein Formular-Werkzeug auf, schickt es gewöhnlich ab statt über HTMX/Alpine
+installWebmcpFormulare()
 
 // ---- Sicherung ungespeicherter Eingaben im Browser (#854) ---------------------------
 // Nach dem Abmelden (Seite „Abgemeldet“) alle Sicherungen löschen, sonst die abgelaufenen (älter als 24 Stunden);
