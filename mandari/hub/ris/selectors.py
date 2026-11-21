@@ -1056,6 +1056,27 @@ def memberships_of_person(person: OParlPerson, *, bodies: Bodies | None = None) 
     return found
 
 
+def current_organization_ids_of_persons(person_ids: Any, *, on: date | None = None) -> set[uuid.UUID]:
+    """
+    Gremien, in denen eine der Personen am Tag ``on`` (Standard: heute) Mitglied ist: Mitgliedschaften, die bis dahin
+    begonnen und nicht geendet haben und die die Quelle nicht gelöscht hat. ``person_ids`` darf eine Liste oder eine
+    Unterabfrage (``values("oparl_person")``) sein.
+    """
+    on = on or timezone.localdate()
+    return set(
+        OParlMembership.objects.filter(person__in=person_ids, deleted=False)
+        .filter(Q(start_date__isnull=True) | Q(start_date__lte=on))
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=on))
+        .values_list("organization_id", flat=True)
+        .distinct()
+    )
+
+
+def organization_external_ids(organization_ids: Iterable[object]) -> set[str]:
+    """OParl-Kennungen (URLs) der Gremien, etwa zum Abgleich mit den Rohdaten einer Sitzung."""
+    return set(OParlOrganization.objects.filter(pk__in=list(organization_ids)).values_list("external_id", flat=True))
+
+
 # =============================================================================
 # Orte
 # =============================================================================

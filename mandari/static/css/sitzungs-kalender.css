@@ -134,6 +134,12 @@
 .sitzungs-kalender .fc .fc-list-event-time {
   font-size: 0.875rem;
 }
+/* Lange Wörter („Sportstättenentwicklungsplan“) brechen um, statt die Liste am Handy breiter als den Bildschirm zu
+   machen (Issue #1548: der Kalender ist seitdem Ziel der Navigation und wird bei 390 px gemessen) */
+.sitzungs-kalender .fc .fc-list-event-title {
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
 
 /* Arten von Terminen (Issue #1489): Sitzungen der Gremien in der Kennfarbe (wie bisher), Fraktionssitzungen
    petrolgrün, eigene Termine himbeerrot, Fristen der Dokumente bernsteinfarben, Aufgaben schiefergrau; weiße Schrift hält überall
@@ -173,6 +179,33 @@
 .sitzungs-kalender .kalender-punkt.termin-umfrage {
   background: transparent;
   border: 1px dashed var(--termin-farbe);
+}
+/* Sitzungen weiterer Gremien (Issue #1548): dieselbe Kennfarbe, aber nur als zarte Fläche mit Rand; die Sitzungen der
+   eigenen Gremien stehen damit kräftig davor. Dunkle Schrift auf der hellen Fläche hält 4,5:1. */
+.sitzungs-kalender .termin-gremium {
+  --termin-farbe: rgb(var(--primary-600));
+  --termin-flaeche: rgb(var(--primary-600) / 0.1);
+  --termin-flaeche-zeigen: rgb(var(--primary-600) / 0.2);
+}
+.dark .sitzungs-kalender .termin-gremium {
+  --termin-farbe: rgb(var(--primary-400));
+  --termin-flaeche: rgb(var(--primary-400) / 0.14);
+  --termin-flaeche-zeigen: rgb(var(--primary-400) / 0.26);
+}
+.sitzungs-kalender .fc-event.termin-gremium {
+  --fc-event-bg-color: var(--termin-flaeche);
+  --fc-event-border-color: var(--termin-farbe);
+  --fc-event-text-color: var(--wf-tinte);
+}
+.sitzungs-kalender .fc .fc-daygrid-dot-event.termin-gremium {
+  box-shadow: inset 0 0 0 1px var(--termin-farbe);
+}
+.sitzungs-kalender .fc .fc-daygrid-dot-event.termin-gremium:hover {
+  background: var(--termin-flaeche-zeigen);
+}
+.sitzungs-kalender .kalender-punkt.termin-gremium {
+  background: var(--termin-flaeche);
+  border: 1px solid var(--termin-farbe);
 }
 .sitzungs-kalender .kalender-punkt {
   display: inline-block;

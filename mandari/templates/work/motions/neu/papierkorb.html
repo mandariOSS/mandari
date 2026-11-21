@@ -13,7 +13,7 @@ und Rechte wie bisher (work/motions/trash.html, data-post mit data-confirm-*). K
 <c-rahmen.kopfband titel="Papierkorb" dicht
     text="{{ trash_count }} gelöschte{% if trash_count == 1 %}s Dokument{% else %} Dokumente{% endif %}. Wiederhergestellte Dokumente kehren als Entwurf zurück.">
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% url 'work:documents' org_slug=organization.slug %}" class="text-sm">Zurück zu den Dokumenten</c-ui.textlink>
+        <c-ui.button href="{% url 'work:documents' org_slug=organization.slug %}" variant="secondary" size="sm" icon="arrow-left">Zurück zu den Dokumenten</c-ui.button>
         {% if trash_count > 0 %}
         <c-ui.button variant="danger" size="sm" icon="trash-2"
                      data-post="{% url 'work:document_empty_trash' org_slug=organization.slug %}"

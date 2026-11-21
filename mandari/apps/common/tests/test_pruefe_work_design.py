@@ -76,6 +76,7 @@ class TestSeiten:
             f"/work/{ORG}/faction/{KENNUNG}/niederschrift/lang.pdf",
             f"/work/{ORG}/faction/nachweise/export/",
             f"/work/{ORG}/meetings/calendar/events/",
+            f"/work/{ORG}/kalender/eintraege/",
             f"/work/{ORG}/ris/map/data/",
             f"/work/{ORG}/tasks/api/",
             f"/work/{ORG}/faction/{KENNUNG}/item/{KENNUNG}/panel/",

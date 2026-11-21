@@ -2,7 +2,7 @@
  * Sitzungskalender in Work (templates/work/meetings/neu/kalender.html, Issue #951), vorher Inline-Skript mit Inline-CSS
  * in templates/work/meetings/calendar.html.
  *
- * Markup: `<div x-data="sitzungsKalender" data-ereignisse="…/meetings/calendar/events/" data-arten="sitzung,fraktion">`
+ * Markup: `<div x-data="sitzungsKalender" data-ereignisse="…/kalender/eintraege/" data-arten="sitzung,fraktion">`
  * mit der Fläche `[data-kalender]`. Seit Issue #1489 liefert die Adresse neben den Sitzungen der Gremien auch
  * Fraktionssitzungen, Fristen und Aufgaben; `arten` (Kästchen über dem Kalender) wählt, was erscheint, und der
  * Browser merkt sich die Wahl. FullCalendar kommt wie bisher lokal aus static/vendor/fullcalendar (globales `FullCalendar`,

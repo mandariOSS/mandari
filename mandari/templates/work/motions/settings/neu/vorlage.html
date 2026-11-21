@@ -14,7 +14,7 @@ MotionTemplateEditView.
     text="{% if is_new %}Eine Vorlage mit Inhalt, Strukturhinweisen und Signatur anlegen.{% else %}Vorlage bearbeiten.{% endif %}">
     <c-slot name="oben"><c-insight.zurueck href="{% url 'work:document_template_list' org_slug=organization.slug %}">Vorlagen</c-insight.zurueck></c-slot>
     {% if not is_new %}
-    <c-slot name="aktionen"><c-ui.textlink href="{% url 'work:document_template_preview' org_slug=organization.slug template_id=template.id %}" extern class="text-sm">Vorschau</c-ui.textlink></c-slot>
+    <c-slot name="aktionen"><c-ui.button href="{% url 'work:document_template_preview' org_slug=organization.slug template_id=template.id %}" variant="secondary" size="sm" icon="eye" target="_blank" rel="noopener noreferrer">Vorschau<span class="sr-only"> (öffnet in neuem Fenster)</span></c-ui.button></c-slot>
     {% endif %}
 </c-rahmen.kopfband>
 {% include "work/organization/neu/_reiter.html" with seite="vorlagen" aktuell="true" %}

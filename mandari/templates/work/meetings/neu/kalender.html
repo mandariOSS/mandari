@@ -8,6 +8,9 @@ Kalender lässt sich jede Art aus- und einblenden (kalender_arten, die Auswahl m
 anlegen darf, bekommt den Knopf „Termin anlegen“; ein Klick auf einen Tag öffnet das Formular für diesen Tag
 (data-neu), daneben führt „Termin abstimmen“ zur Terminumfrage; offene Umfragen stehen über dem Kalender
 (terminumfragen), ihre Vorschläge gestrichelt darin. „Im eigenen Kalender abonnieren“ führt zum persönlichen Abruf im Profil (iCal, #profil-kalender).
+Seit Issue #1548 ein eigener Bereich der Seitenleiste (Adresse /kalender/, kein Rückweg zu „Meine Sitzungen“); die
+zweiten Wege stehen als Umriss-Knöpfe mit Symbol im Kopf (Textlinks in einer Reihe waren kaum zu erkennen), die offenen
+Terminumfragen ebenso. Sitzungen eigener und weiterer Gremien sind getrennte Arten (kalender.eigene_gremien).
 FullCalendar wie bisher lokal; Einstellungen und Klick auf einen Termin in frontend/alpine/sitzungs-kalender.ts,
 Farben als Tokens in static/css/sitzungs-kalender.css (kein Inline-Skript, kein Inline-CSS). Termine aus derselben
 Adresse (work:meetings_calendar_events). Die bisherige Seite bleibt work/meetings/calendar.html.
@@ -18,12 +21,10 @@ Adresse (work:meetings_calendar_events). Die bisherige Seite bleibt work/meeting
 
 {% block work_header %}
 <c-rahmen.kopfband titel="Kalender" dicht text="Sitzungen der Gremien, interne Sitzungen, Termine, Fristen und Aufgaben nach Monat, Woche oder als Liste. Ein Klick auf einen Eintrag öffnet ihn.">
-    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings' org_slug=organization.slug %}">Meine Sitzungen</c-insight.zurueck></c-slot>
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% url 'work:meetings' org_slug=organization.slug %}" class="text-sm">Als Liste anzeigen</c-ui.textlink>
-        <c-ui.textlink href="{% url 'work:profile' org_slug=organization.slug %}#profil-kalender" class="text-sm">Im eigenen Kalender abonnieren</c-ui.textlink>
+        <c-ui.button href="{% url 'work:profile' org_slug=organization.slug %}#profil-kalender" variant="secondary" size="sm" icon="calendar-sync">Im eigenen Kalender abonnieren</c-ui.button>
         {% if darf_termin_anlegen %}
-        <c-ui.textlink href="{% url 'work:terminumfrage_neu' org_slug=organization.slug %}" class="text-sm">Termin abstimmen</c-ui.textlink>
+        <c-ui.button href="{% url 'work:terminumfrage_neu' org_slug=organization.slug %}" variant="secondary" size="sm" icon="calendar-search">Termin abstimmen</c-ui.button>
         <c-ui.button href="{% url 'work:termin_neu' org_slug=organization.slug %}" icon="plus" size="sm">Termin anlegen</c-ui.button>
         {% endif %}
     </c-slot>
@@ -32,9 +33,14 @@ Adresse (work:meetings_calendar_events). Die bisherige Seite bleibt work/meeting
 
 {% block work_content %}
 {% if terminumfragen %}
-<p class="mb-4 text-sm text-gray-800 dark:text-gray-200" data-testid="kalender-umfragen">Offene Terminumfragen:
-    {% for eintrag in terminumfragen %}<c-ui.textlink href="{{ eintrag.url }}">{{ eintrag.titel }}</c-ui.textlink>{% if eintrag.fehlt %} (Ihre Antwort fehlt{% if eintrag.antwort_bis %}, bis {{ eintrag.antwort_bis|date:"d.m." }}{% endif %}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
-</p>
+<section class="mb-5" aria-labelledby="kalender-umfragen-titel" data-testid="kalender-umfragen">
+    <h2 id="kalender-umfragen-titel" class="text-sm font-semibold text-gray-900 dark:text-white">Offene Terminumfragen</h2>
+    <ul class="mt-2 flex flex-wrap gap-2">
+        {% for eintrag in terminumfragen %}
+        <li><c-ui.button href="{{ eintrag.url }}" variant="secondary" size="sm" icon="calendar-search">{{ eintrag.titel }}{% if eintrag.fehlt %}<span class="font-normal text-amber-800 dark:text-amber-300">Ihre Antwort fehlt{% if eintrag.antwort_bis %}, bis {{ eintrag.antwort_bis|date:"d.m." }}{% endif %}</span>{% endif %}</c-ui.button></li>
+        {% endfor %}
+    </ul>
+</section>
 {% endif %}
 <div x-data="sitzungsKalender" data-ereignisse="{% url 'work:meetings_calendar_events' org_slug=organization.slug %}" data-arten="{% for art in kalender_arten %}{{ art.key }}{% if not forloop.last %},{% endif %}{% endfor %}"{% if darf_termin_anlegen %} data-neu="{% url 'work:termin_neu' org_slug=organization.slug %}"{% endif %} class="wf sitzungs-kalender" data-testid="sitzungskalender">
     {% if kalender_arten %}
