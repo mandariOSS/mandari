@@ -210,6 +210,8 @@ x-app-environment: &app-environment
   INSIGHT_MCP_PER_IP_DAY: ${INSIGHT_MCP_PER_IP_DAY:-500}
   INSIGHT_MCP_PER_MINUTE: ${INSIGHT_MCP_PER_MINUTE:-300}
   INSIGHT_MCP_ALLOWED_ORIGINS: ${INSIGHT_MCP_ALLOWED_ORIGINS:-}
+  # Token des WebMCP-Origin-Trials von Chrome (docs/KI.md#webmcp-an-den-formularen); leer = keine Anmeldung
+  WEBMCP_ORIGIN_TRIAL_TOKEN: ${WEBMCP_ORIGIN_TRIAL_TOKEN:-}
   # „Worker lebt“ an die Statusseite (docs/MONITORING.md, „Worker“); leer = keine Meldung
   WORKER_PUSH_URL: ${WORKER_PUSH_URL:-}
   WORKER_PUSH_TOKEN: ${WORKER_PUSH_TOKEN:-}

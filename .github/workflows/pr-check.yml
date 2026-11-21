@@ -682,6 +682,11 @@ jobs:
         if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
         run: cd mandari && npm run test:meldungen
 
+      # WebMCP: Agenten-Aufrufe der Formular-Werkzeuge schicken gewöhnlich ab (#1309)
+      - name: Frontend-Unit-Tests (WebMCP an den Formularen)
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run test:webmcp
+
       # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
       # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
       - name: JS-Vorlagen sind gültiges JavaScript

@@ -20,7 +20,7 @@ Das Suchformular (c-suche.feld) teilt die Seite mit der Recherche in Work.
     titel="{% if query and active_body %}„{{ query }}“ in {{ active_body.get_display_name }}{% elif query %}„{{ query }}“{% else %}Suche{% endif %}"
     text="{% if count_sentence %}{{ count_sentence }}{% elif not query %}Vorgänge, Sitzungen, Dokumente, Personen und Gremien{% if active_body %} von {{ active_body.get_display_name }}{% endif %}. Für Straßen genügt der Name.{% endif %}">
     {% url 'insight_core:insight:search' as suche_ziel %}
-    <c-suche.feld adresse="{{ suche_ziel }}" :wert="query" platzhalter="Straße, Thema oder Aktenzeichen" />
+    <c-suche.feld adresse="{{ suche_ziel }}" :wert="query" platzhalter="Straße, Thema oder Aktenzeichen" werkzeug="ratsinfo_suchen" />
 </c-insight.kopfband>
 <div id="suchergebnis">
     {% if query|length > 1 %}{% include "partials/search_page.html" %}{% endif %}

@@ -220,6 +220,43 @@ Eintrag in einem MCP-Client (Form je nach Client):
 {"mcpServers": {"mandari-insight": {"type": "http", "url": "https://<instanz>/insight/mcp"}}}
 ```
 
+In Claude (Web und Desktop) als eigener Connector: in den Einstellungen unter „Connectors“ einen eigenen Connector
+hinzufügen, Name frei wählbar, Adresse `https://<instanz>/insight/mcp`, ohne Anmeldung. Danach lassen sich Fragen
+wie „Was steht in der nächsten Ratssitzung in Münster an?“ mit Daten aus mandari beantworten; die Antworten
+verlinken die Seiten des Bürgerportals.
+
+Ist der Server eingeschaltet, nennen ihn das OParl-System (`/oparl/v1/system`, Feld `mandari:mcp`) und die
+Übersicht `/oparl/` (Feld `mcp`), damit Assistenten ihn von der Schnittstelle aus finden (Issue #1309).
+
+### Auffinden: Server Card und Katalog
+
+Damit Clients und Suchdienste den Server ohne Vorwissen finden (Issue #1309):
+
+- **Server Card** unter `https://<instanz>/insight/mcp/server-card` (MCP SEP-2127, Medientyp
+  `application/mcp-server-card+json`, Schema `https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json`):
+  Name in umgekehrter DNS-Schreibweise aus `SITE_URL` (`de.mandari/insight`), Fassung, Beschreibung und der
+  Endpunkt mit den Protokollfassungen. Derselbe Name steht in `serverInfo` von `initialize`. Werkzeuge stehen
+  bewusst nicht in der Karte, die liefert `tools/list`. Ausgeschaltet 404.
+- **Katalog** unter `/.well-known/ard.json` (Agentic Resource Discovery) und `/.well-known/ai-catalog.json`
+  (AI Catalog, Vorgänger von ARD; diesen Pfad prüft Lighthouse unter „Agentisches Browsing“). Beide liefern
+  dasselbe Dokument mit `specVersion` 0.9, `host` und den Einträgen MCP-Server (Verweis auf die Server Card,
+  nur eingeschaltet, mit Beispielfragen und Werkzeugnamen) und Schnittstelle (`/api/openapi.json`). Jede
+  Insight-Seite verweist darauf mit `<link rel="ard">` und `<link rel="ai-catalog">`.
+
+Liegt die Website vor der Anwendung (wie bei mandari.de), muss der Reverse-Proxy die beiden Pfade unter
+`/.well-known/` an die Anwendung geben.
+
+### WebMCP an den Formularen
+
+Die lesenden Formulare des Bürgerportals tragen deklaratives WebMCP (`toolname`, `tooldescription`,
+`toolautosubmit`, an den Feldern `toolparamdescription`; `insight_core/templatetags/webmcp.py`): KI-Agenten im
+Browser können sie als Werkzeug aufrufen. `ratsinfo_suchen` ist die Suche (Kopfzeile, Übersicht oder Suchseite,
+je Seite einmal), `kommune_finden` der Kommunenwechsel auf der Auswahlseite (im Dialog ohne Werkzeug).
+Konto-, Kontakt- und Abo-Formulare bekommen kein Werkzeug. Browser ohne WebMCP übergehen die Attribute.
+
+Chrome meldet die Werkzeuge während des Origin-Trials nur mit einem Token für die Domain an:
+`WEBMCP_ORIGIN_TRIAL_TOKEN` setzt ihn als `<meta http-equiv="origin-trial">` in jede Insight-Seite.
+
 ### Einstellungen des MCP-Servers
 
 | Variable | Standard | Wirkung |

@@ -47,6 +47,8 @@ def navigation_context(request: HttpRequest) -> dict[str, Any]:
         "kommunenverzeichnis_quellen": SimpleLazyObject(_kommunenverzeichnis_quellen),
         # Versionsnummer im Fuß, verlinkt auf „Was ist neu?“ (Issue #1261); einmal je Prozess gelesen
         "mandari_version": mandari_version(),
+        # Token des WebMCP-Origin-Trials (Issue #1309); leer meldet Chrome die Formular-Werkzeuge nicht an
+        "webmcp_origin_trial": getattr(settings, "WEBMCP_ORIGIN_TRIAL_TOKEN", ""),
     }
 
 
