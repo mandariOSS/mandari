@@ -678,7 +678,10 @@ def _tabelle(material: _Material, beleg: str) -> list[tuple[int, int]] | None:
             elif (
                 art == "tausend"
                 and re.fullmatch(r"[1-9]\d{0,2}", zahl)
-                and not _NUMMER_DAVOR.search(ausschnitt, 0, treffer.start())
+                # Im Dokument nachsehen: Die Bezeichnung kann vor dem Anfang der Fundstelle stehen
+                and not _NUMMER_DAVOR.search(
+                    material.text, max(0, anfang + treffer.start() - 40), anfang + treffer.start()
+                )
             ):
                 # Ganze Zahl unter T€-Kopf; Zeilen-, Produkt- und Positionsnummern („Zeile 02“, „Nr. 13“) nicht
                 kandidaten.append((int(wert * 1000), False))
@@ -912,6 +915,11 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         beleg = str(zeile.get("beleg") or "").strip()
         posten_schluessel: tuple[Any, ...] = ("posten", posten, euro)
         if posten_schluessel in gesehen:
+            # Derselbe Posten noch einmal, etwa aus einer zweiten Anlage: Betrag einmal, Anlagen beider Belege
+            if _betrag_belegt(material, beleg, euro):
+                for vorhanden in laufend:
+                    if (vorhanden["posten"], vorhanden["euro"]) == (posten, euro):
+                        vorhanden["dokumente"] = sorted({*vorhanden["dokumente"], *material.dokumente(beleg)})
             continue
         if posten in POSTEN_TEXT and _betrag_belegt(material, beleg, euro):
             gesehen.add(posten_schluessel)
@@ -1316,11 +1324,18 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
     # genannte Jahressumme („Folgelasten pro Jahr insgesamt“) steht im selben Dokument wie die Nutzungsdauer
     # (Folgelastenberechnung). Ohne genannte Summe müssen alle Posten aus diesem Dokument stammen. Gezählt wird jedes
     # Vorkommen einer Fundstelle: Steht sie in mehreren Anlagen, genügt eine gemeinsame.
-    gemeinsam = set((daten.get("nutzungsdauer") or {}).get("dokumente") or [])
+    quellen_dauer = set((daten.get("nutzungsdauer") or {}).get("dokumente") or [])
+    gemeinsam = set(quellen_dauer)
     genannt = daten.get("laufend_gesamt") or {}
     for eintrag in [genannt] if genannt else zeilen:
         gemeinsam &= set(eintrag.get("dokumente") or [])
     dauer_belegt = bool(dauer) and bool(gemeinsam) and bool(genannt or zeilen)
+    # „Auf … Jahre verteilt“ am Anteil am Bau nur, wenn auch Abschreibung und Sonderposten aus dieser Berechnung stammen
+    am_bau = set(quellen_dauer)
+    for zeile in zeilen:
+        if zeile.get("posten") in ("wertverlust", "foerderanteil"):
+            am_bau &= set(zeile.get("dokumente") or [])
+    dauer_am_bau = bool(dauer) and bool(am_bau)
     bauanteil = summe("wertverlust") - summe("foerderanteil")
     betrieb = summe("unterhalt", "personal", "miete", "sonstiges") - summe("einnahmen", "einsparung")
     zinsen = summe("zinsen")
@@ -1336,7 +1351,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
                 "Unterhalt und Zinsen" if betrieb and zinsen else ("Unterhalt" if betrieb else "Zinsen für Kredite")
             )
             teile = [
-                (bauanteil, f"Anteil am Bau, auf {dauer} Jahre verteilt" if dauer_belegt else "Anteil am Bau", "bau"),
+                (bauanteil, f"Anteil am Bau, auf {dauer} Jahre verteilt" if dauer_am_bau else "Anteil am Bau", "bau"),
                 (betrieb + zinsen, laufend_text, "laufend"),
             ]
         text = " ".join(
@@ -1485,6 +1500,7 @@ def dokumente_lesen(dateien: Any, budget: int = TEXT_BUDGET) -> str:
     als bei der Zusammenfassung geht jede Anlage ganz ein, solange zusammen ``budget`` Zeichen reichen: Die Zahlen
     stehen oft in Anlagen wie dem Teilfinanzplan oder der Folgelastenberechnung. Reicht es nicht, bekommen kleine
     Anlagen ihren ganzen Text und große den gleichen Rest (mit Vermerk). Gelesen wird in der Datenbank nur so viel.
+    Jede Anlage trägt einen eigenen Namen (gleichnamige mit „(2)“, „(3)“): Der Name ordnet Fundstellen ihrer Anlage zu.
     """
     from django.db.models.functions import Length, Substr
 
@@ -1501,6 +1517,7 @@ def dokumente_lesen(dateien: Any, budget: int = TEXT_BUDGET) -> str:
         zuteilung[pk] = min(laenge, anteil)
         rest -= zuteilung[pk]
     bloecke = []
+    vergeben: set[str] = set()
     for datei in mit_text.only("id", "name", "file_name").order_by("name", "pk"):
         menge = zuteilung.get(datei.pk, 0)
         if menge <= 0:
@@ -1522,7 +1539,13 @@ def dokumente_lesen(dateien: Any, budget: int = TEXT_BUDGET) -> str:
         text = text.strip()
         if text:
             vermerk = "\n[… gekürzt]" if gekuerzt else ""
-            bloecke.append(anlage_block(datei.name or datei.file_name or "Dokument", f"{text}{vermerk}"))
+            name = grund = datei.name or datei.file_name or "Dokument"
+            nummer = 1
+            while name in vergeben:
+                nummer += 1
+                name = f"{grund} ({nummer})"
+            vergeben.add(name)
+            bloecke.append(anlage_block(name, f"{text}{vermerk}"))
     return "\n\n".join(bloecke)
 
 
