@@ -261,7 +261,35 @@ def test_suchindex_ohne_volltext_bei_personenbezug(body: OParlBody) -> None:
         assert dokument["name"] == vorgang.name, "über den Titel bleibt der Vorgang auffindbar"
         datei = file_to_doc(vorgang.files.get())
         assert datei["text_content"] == "" and datei["text_preview"] == ""
-        assert datei["file_name"]
+        assert datei["file_name"] == "" and datei["name"] == "Dokument", "auch Dateinamen nennen Personen"
+        assert datei["paper_reference"] == vorgang.reference
+
+
+def test_eine_anlage_mit_angaben_gilt_fuer_alle_dokumente_des_vorgangs(body: OParlBody) -> None:
+    vorgang = _vorgang(body, "Beschlussvorlage", "Ehrenamtspreis", "Die Jury schlägt Frau Beispiel vor.")
+    OParlFile.objects.create(
+        external_id=f"{RIS}/file/anlage-{vorgang.pk}",
+        body=body,
+        paper=vorgang,
+        name="Anlage",
+        file_name="anlage.pdf",
+        download_url=f"{RIS}/file/anlage.pdf",
+        text_extraction_status="completed",
+        text_content="x" * 6000 + " Frau Beispiel, geb. am 01.02.1960, wohnhaft in Beispielstadt",
+    )
+    # Die Angabe steht hinter dem Anfang, den das Dokument des Vorgangs als Vorschau liest
+    assert paper_to_doc(vorgang)["file_contents_preview"] == ""
+    for datei in vorgang.files.all():
+        assert file_to_doc(datei)["text_content"] == "", datei.name
+
+
+def test_neuer_text_wird_sofort_geprueft(body: OParlBody) -> None:
+    vorgang = _vorgang(body, "Beschlussvorlage", "Ehrenamtspreis", "Die Jury tagt.")
+    assert personenbezug.grund(vorgang) == ""
+    datei = vorgang.files.get()
+    datei.text_content = "Frau Beispiel, geb. am 01.02.1960"
+    datei.save()
+    assert personenbezug.grund(vorgang) == personenbezug.TEXT
 
 
 def test_vorgangsseite_noindex_und_sitemap(body: OParlBody) -> None:

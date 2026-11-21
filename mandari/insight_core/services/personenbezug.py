@@ -63,17 +63,16 @@ _EINZELFALL: Final = re.compile(
     re.IGNORECASE,
 )
 
-#: Angaben zu Privatpersonen im Text eines Dokuments. Für PostgreSQL und Python gleich: nur Zeichenklassen,
-#: Wiederholungen und Alternativen
+#: Angaben zu Privatpersonen im Text eines Dokuments. PostgreSQL (``~*``), SQLite (Tests) und Python lesen das Muster
+#: gleich: nur Zeichenklassen, ``\s``, Wiederholungen und Alternativen, keine Wortgrenzen und Rückbezüge
 TEXT_MUSTER: Final = (
-    r"geb(\.|oren)[[:space:]]+am[[:space:]]+[0-9]|geburtsdatum|geburtsname|wohnhaft|"
-    r"iban[[:space:]]*:?[[:space:]]*[a-z]{2}[0-9]{2}|"
+    r"geb(\.|oren)\s+am\s+[0-9]|geburtsdatum|geburtsname|wohnhaft|"
+    r"iban\s*:?\s*[a-z]{2}[0-9]{2}|"
     r"steuer-?id|steueridentifikationsnummer|sozialversicherungsnummer|personalausweisnummer|"
     r"unterschriftenliste|"
     r"@(gmx|web|gmail|googlemail|t-online|yahoo|hotmail|outlook|freenet|arcor|aol|icloud|posteo|mailbox)\.[a-z]"
 )
-#: Dasselbe Muster für Python (``[[:space:]]`` ist die POSIX-Schreibweise von PostgreSQL)
-_TEXT: Final = re.compile(TEXT_MUSTER.replace("[[:space:]]", r"\s"), re.IGNORECASE)
+_TEXT: Final = re.compile(TEXT_MUSTER, re.IGNORECASE)
 
 #: So lange gilt das Ergebnis der Prüfung der Dokumente eines Vorgangs
 _MERKEN_SEKUNDEN: Final = 6 * 3600
@@ -112,24 +111,33 @@ def nach_art_q() -> Q:
     return bedingung
 
 
+def mit_angaben_q(prefix: str = "") -> Q:
+    """Bedingung „der erkannte Text nennt Angaben zu Privatpersonen“ für Querysets von Dateien (``TEXT_MUSTER``)."""
+    feld = f"{prefix}__" if prefix else ""
+    return Q(**{f"{feld}text_content__iregex": TEXT_MUSTER})
+
+
 def im_text(text: str | None) -> bool:
     """Nennt der Text Angaben zu Privatpersonen (``TEXT_MUSTER``)?"""
     return bool(text) and _TEXT.search(text or "") is not None
 
 
 def _dokumente_mit_angaben(paper: OParlPaper) -> bool:
-    """Enthält ein Dokument des Vorgangs Angaben zu Privatpersonen? Eine Abfrage in der Datenbank, gemerkt."""
-    schluessel = f"personenbezug:{paper.pk}:{getattr(paper, 'updated_at', '')}"
+    """
+    Enthält ein Dokument des Vorgangs Angaben zu Privatpersonen? Geprüft wird der ganze erkannte Text in der
+    Datenbank. Das Ergebnis gilt, solange sich Zahl und Stand der Dokumente nicht ändern (eine kleine Abfrage je
+    Aufruf): Ein neu erkannter Text wird sofort geprüft.
+    """
+    from django.db.models import Count, Max
+
+    dateien = paper.files.filter(deleted=False, text_content__isnull=False)
+    stand = dateien.aggregate(anzahl=Count("pk"), zuletzt=Max("updated_at"))
+    if not stand["anzahl"]:
+        return False
+    schluessel = f"personenbezug:{paper.pk}:{stand['anzahl']}:{stand['zuletzt']:%Y%m%d%H%M%S%f}"
     gemerkt = cache.get(schluessel)
     if gemerkt is None:
-        from django.db import connection
-
-        dateien = paper.files.filter(deleted=False, text_content__isnull=False)
-        if connection.vendor == "postgresql":
-            gemerkt = dateien.filter(text_content__iregex=TEXT_MUSTER).exists()
-        else:
-            # Andere Datenbanken (Tests mit SQLite) kennen die POSIX-Klassen nicht
-            gemerkt = any(im_text(text) for text in dateien.values_list("text_content", flat=True).iterator())
+        gemerkt = dateien.filter(mit_angaben_q()).exists()
         cache.set(schluessel, gemerkt, _MERKEN_SEKUNDEN)
     return bool(gemerkt)
 
@@ -161,22 +169,26 @@ def datei_ohne_index(datei: Any) -> bool:
     schluessel = f"personenbezug:datei:{datei.pk}:{getattr(datei, 'updated_at', '')}"
     gemerkt = cache.get(schluessel)
     if gemerkt is None:
-        from django.db import connection
-
-        eigene = OParlFile.objects.filter(pk=datei.pk, text_content__isnull=False)
-        if connection.vendor == "postgresql":
-            gemerkt = eigene.filter(text_content__iregex=TEXT_MUSTER).exists()
-        else:
-            gemerkt = any(im_text(text) for text in eigene.values_list("text_content", flat=True))
+        gemerkt = OParlFile.objects.filter(mit_angaben_q(), pk=datei.pk).exists()
         cache.set(schluessel, gemerkt, _MERKEN_SEKUNDEN)
     return bool(gemerkt)
 
 
-def ohne_volltext(paper: Any, texte: Any = ()) -> bool:
+def ohne_volltext(paper: Any, texte: Any = (), dokumente_mit_angaben: bool | None = None) -> bool:
     """
-    Gehört der Volltext dieses Vorgangs nicht in den Suchindex? Nach Art und Titel, sonst nach den übergebenen
-    Texten seiner Dokumente (im Index der Anfang jedes Dokuments).
+    Gehört der Volltext nicht in den Suchindex? Für das Dokument eines Vorgangs und für jede seiner Dateien gleich:
+    nach Art und Titel des Vorgangs, nach den übergebenen Texten und nach allen Dokumenten des Vorgangs. Nennt eine
+    Anlage ein Geburtsdatum, steht auch der Text der übrigen nicht im Index. ``paper`` darf fehlen (Datei einer
+    Sitzung): Dann entscheidet nur ihr eigener Text.
+
+    ``dokumente_mit_angaben``: Ergebnis der Prüfung aller Dokumente, wenn der Aufrufer es schon kennt (der Aufbau des
+    Index ermittelt es je Abschnitt in derselben Abfrage, ``search_projection``); sonst eine eigene Abfrage
+    (``_dokumente_mit_angaben``).
     """
     if paper is not None and grund_nach_art(getattr(paper, "paper_type", None), getattr(paper, "name", None)):
         return True
-    return any(im_text(text) for text in texte)
+    if any(im_text(text) for text in texte):
+        return True
+    if dokumente_mit_angaben is not None:
+        return dokumente_mit_angaben
+    return paper is not None and getattr(paper, "pk", None) is not None and _dokumente_mit_angaben(paper)

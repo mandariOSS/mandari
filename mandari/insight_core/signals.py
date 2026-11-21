@@ -19,6 +19,7 @@ from .models import (
     REASON_PRIVACY,
     OParlFile,
     OParlMeeting,
+    OParlMembership,
     OParlOrganization,
     OParlPaper,
     OParlPerson,
@@ -177,6 +178,20 @@ def delete_person(sender, instance, **kwargs):
     """Löscht eine Person aus dem Index und ihr Foto aus der Ablage."""
     _delete_document("persons", str(instance.id))
     _remove_photo(instance)
+
+
+@receiver(post_save, sender=OParlMembership)
+@receiver(post_delete, sender=OParlMembership)
+def index_person_of_membership(sender, instance, **kwargs):
+    """
+    Mit einer Mitgliedschaft kann eine Person öffentlich werden oder es nicht mehr sein (Issue #1560): Ihr Dokument
+    im Suchindex wird neu entschieden. Fehlt die Person (gelöscht mit der Mitgliedschaft), ist nichts zu tun.
+    """
+    if not is_auto_indexing_enabled():
+        return
+    person = OParlPerson.objects.filter(pk=instance.person_id).first()
+    if person is not None:
+        index_person(OParlPerson, person)
 
 
 @receiver(post_save, sender=OParlOrganization)
