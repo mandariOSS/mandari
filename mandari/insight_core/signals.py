@@ -19,11 +19,13 @@ from .models import (
     REASON_PRIVACY,
     OParlFile,
     OParlMeeting,
+    OParlMembership,
     OParlOrganization,
     OParlPaper,
     OParlPerson,
     SubscriptionAlert,
 )
+from .services import personen_sichtbarkeit
 from .services.search_documents import file_to_doc as _file_to_doc
 from .services.search_documents import meeting_to_doc as _meeting_to_doc
 from .services.search_documents import organization_to_doc as _organization_to_doc
@@ -163,6 +165,10 @@ def index_person(sender, instance, **kwargs):
             instance.photo = None
             instance.photo_status = "missing"
         return
+    # Nur Personen mit laufendem Amt stehen im Suchindex (Issue #1560)
+    if not personen_sichtbarkeit.ist_oeffentlich(instance):
+        _delete_document("persons", str(instance.id))
+        return
     doc = _person_to_doc(instance)
     _index_document("persons", str(instance.id), doc)
 
@@ -172,6 +178,20 @@ def delete_person(sender, instance, **kwargs):
     """Löscht eine Person aus dem Index und ihr Foto aus der Ablage."""
     _delete_document("persons", str(instance.id))
     _remove_photo(instance)
+
+
+@receiver(post_save, sender=OParlMembership)
+@receiver(post_delete, sender=OParlMembership)
+def index_person_of_membership(sender, instance, **kwargs):
+    """
+    Mit einer Mitgliedschaft kann eine Person öffentlich werden oder es nicht mehr sein (Issue #1560): Ihr Dokument
+    im Suchindex wird neu entschieden. Fehlt die Person (gelöscht mit der Mitgliedschaft), ist nichts zu tun.
+    """
+    if not is_auto_indexing_enabled():
+        return
+    person = OParlPerson.objects.filter(pk=instance.person_id).first()
+    if person is not None:
+        index_person(OParlPerson, person)
 
 
 @receiver(post_save, sender=OParlOrganization)

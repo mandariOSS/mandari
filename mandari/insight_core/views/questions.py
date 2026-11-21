@@ -22,7 +22,7 @@ from apps.common.params import uuid_param
 
 from .. import throttle
 from ..models import OParlOrganization, OParlPerson, PublicQuestion
-from ..services import personen_liste, question_service
+from ..services import personen_liste, personen_sichtbarkeit, question_service
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
 SORT_OPTIONS = [
@@ -60,7 +60,10 @@ class QuestionPortalView(ActiveBodyRequiredMixin, ListView):
         body = get_active_body(self.request)
         if not body:
             return PublicQuestion.objects.none()
-        qs = PublicQuestion.objects.filter(body=body, status="published").select_related("recipient")
+        # Nur Fragen an Personen mit laufendem Amt (Issue #1560): Die Frage nennt ihren Namen
+        qs = personen_sichtbarkeit.an_oeffentliche(
+            PublicQuestion.objects.filter(body=body, status="published")
+        ).select_related("recipient")
         get = self.request.GET
 
         status = get.get("status", "")
@@ -152,7 +155,9 @@ class QuestionPortalView(ActiveBodyRequiredMixin, ListView):
         if person_id and body:
             # Nur Personen dieser Kommune, die weder gelöscht noch zurückgenommen sind: Die Kennung allein darf
             # keinen Namen liefern
-            context["filter_person_obj"] = OParlPerson.objects.filter(pk=person_id, body=body, deleted=False).first()
+            context["filter_person_obj"] = personen_sichtbarkeit.nur_oeffentliche(
+                OParlPerson.objects.filter(pk=person_id, body=body)
+            ).first()
 
         from ..seo import get_page_seo
 
@@ -177,7 +182,9 @@ class QuestionDetailView(DetailView):
     context_object_name = "question"
 
     def get_queryset(self):
-        return PublicQuestion.objects.filter(status="published").select_related("recipient", "body")
+        return personen_sichtbarkeit.an_oeffentliche(PublicQuestion.objects.filter(status="published")).select_related(
+            "recipient", "body"
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -217,7 +224,7 @@ class AskQuestionStartView(QuestionsEnabledRequiredMixin, ActiveBodyRequiredMixi
         body = get_active_body(self.request)
         q = self.request.GET.get("q", "").strip()
 
-        persons = question_service.mandate_holders_queryset(body).annotate(
+        persons = personen_sichtbarkeit.nur_oeffentliche(question_service.mandate_holders_queryset(body)).annotate(
             question_count=Count("public_questions", filter=Q(public_questions__status="published"), distinct=True),
             answered_count=Count(
                 "public_questions",
@@ -268,7 +275,9 @@ class AskQuestionView(QuestionsEnabledRequiredMixin, FormView):
         self.person = get_object_or_404(OParlPerson, pk=kwargs["pk"], deleted=False)
         if self.active_body and self.person.body_id != self.active_body.id:
             raise Http404
-        if not question_service.is_mandate_holder(self.person):
+        if not question_service.is_mandate_holder(self.person) or not personen_sichtbarkeit.ist_oeffentlich(
+            self.person
+        ):
             raise Http404
         return super().dispatch(request, *args, **kwargs)
 

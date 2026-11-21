@@ -187,8 +187,8 @@ org2 = OParlOrganization.objects.create(
 p1 = OParlPerson.objects.create(
     external_id=f"{RIS}/person/1",
     body=body_a,
-    name="Dr. Erika Mustermann",
-    family_name="Mustermann",
+    name="Dr. Erika Musterfrau",
+    family_name="Musterfrau",
     given_name="Erika",
     title="Dr.",
     email="erika@example.org",
@@ -512,9 +512,12 @@ check("Organization: body-Referenz umgeschrieben", org_json["body"] == f"{BASE}/
 check("Organization: membership-Referenzen", f"{BASE}/v1/membership/{m1.id}" in org_json.get("membership", []))
 
 resp, people = get_json(f"/oparl/v1/body/{body_a.id}/people")
-check("People: 3 Einträge", resp.status_code == 200 and people["pagination"]["totalElements"] == 3)
+# Nur Personen mit laufendem Amt (Issue #1560): Tina Test hat keine Mitgliedschaft
+check("People: 2 Einträge (mit Amt)", resp.status_code == 200 and people["pagination"]["totalElements"] == 2)
 p1_json = next(p for p in people["data"] if p["id"] == f"{BASE}/v1/person/{p1.id}")
-check("Person: email als Liste", p1_json.get("email") == ["erika@example.org"])
+check(
+    "Person: keine Kontaktdaten (#1560)", "email" not in p1_json and "phone" not in p1_json and "gender" not in p1_json
+)
 check("Person: title als Liste", p1_json.get("title") == ["Dr."])
 check(
     "Person: Memberships eingebettet + Referenzen umgeschrieben",

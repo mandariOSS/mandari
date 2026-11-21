@@ -16,6 +16,8 @@ from typing import Any
 
 from django.db.models.functions import Substr
 
+from insight_core.services import personenbezug
+
 #: Textvorschau eines Vorgangs: höchstens so viele Zeichen je Datei und insgesamt
 PREVIEW_CHARS_PER_FILE = 5000
 PREVIEW_CHARS_TOTAL = 25000
@@ -34,13 +36,15 @@ INDEX_TEXT_MAX_CHARS = 5_000_000
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
-def paper_to_doc(paper, files=None) -> dict[str, Any]:
+def paper_to_doc(paper, files=None, dokumente_mit_angaben: bool | None = None) -> dict[str, Any]:
     """Convert an OParlPaper to a Elasticsearch document.
 
     Args:
         paper: OParlPaper instance.
         files: Optional queryset/list of related OParlFile objects with text_content.
                If None, auto-fetches from DB via paper.files (vom Text nur der Anfang, den die Vorschau nutzt).
+        dokumente_mit_angaben: Nennt ein Dokument des Vorgangs Angaben zu Privatpersonen (Issue #1560)? Der Aufbau
+               des Index ermittelt das je Abschnitt mit; ``None``: eine eigene Abfrage (``personenbezug``).
     """
     # Build file contents preview for semantic search / paper-boosting
     if files is None:
@@ -72,6 +76,11 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
     file_contents_preview = "\n\n".join(file_texts)
     if len(file_contents_preview) > max_total:
         file_contents_preview = file_contents_preview[:max_total]
+    # Vorlagen mit kritischem Personenbezug stehen ohne Text und Namen ihrer Dokumente im Index (Issue #1560);
+    # über Titel und Vorlagennummer bleiben sie auffindbar
+    if personenbezug.ohne_volltext(paper, file_texts, dokumente_mit_angaben):
+        file_contents_preview = ""
+        file_names = []
 
     # Gremien über Beratungen (Consultations) auflösen — ermöglicht den
     # Ausschuss-Filter in der Suche. Die Consultation-raw_json enthält die
@@ -187,13 +196,23 @@ def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, A
         if len(file.text_content) > 500:
             text_preview += "..."
     text_content = _CONTROL_CHARS.sub("", (file.text_content or "")[:INDEX_TEXT_MAX_CHARS])
+    # Kein Volltext und kein Dateiname im Index bei kritischem Personenbezug (Issue #1560): nach Art und Titel des
+    # Vorgangs oder nach Angaben zu Privatpersonen in einem seiner Dokumente. Auch Dateinamen nennen Personen
+    # („Einwendung Beispiel.pdf“). Die Datei bleibt über Titel und Nummer ihres Vorgangs auffindbar
+    name, file_name = file.name or "", file.file_name or ""
+    # ``_vorgang_mit_angaben``: vom Aufbau des Index mitgeladen (``search_projection``), sonst eine eigene Abfrage
+    vorgang_mit_angaben = getattr(file, "_vorgang_mit_angaben", None)
+    if personenbezug.ohne_volltext(file.paper if file.paper_id else None, [text_content], vorgang_mit_angaben):
+        text_content = ""
+        text_preview = ""
+        name, file_name = "Dokument", ""
 
     doc = {
         "id": str(file.id),
         "type": "file",
         "body_id": str(file.body_id) if file.body_id else None,
-        "name": file.name or "",
-        "file_name": file.file_name or "",
+        "name": name,
+        "file_name": file_name,
         "mime_type": file.mime_type or "",
         "access_url": file.access_url or "",
         "text_content": text_content,

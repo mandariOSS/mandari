@@ -27,6 +27,7 @@ from insight_core.models import (
     OParlPerson,
     OParlSource,
 )
+from insight_core.tests.amt import im_amt
 
 
 @pytest.fixture
@@ -89,9 +90,11 @@ def test_overview_stats_and_lists_are_isolated(bodies: Any, body: OParlBody) -> 
     make_meeting(body, "1", name="Kommend", start=now + timedelta(days=3))
     make_meeting(body, "2", name="Abgesagt", start=now + timedelta(days=4), cancelled=True)
     make_meeting(body, "3", name="Vergangen", start=now - timedelta(days=4))
-    make_org(body, "1", name="Rat")
+    rat = make_org(body, "1", name="Rat")
     make_org(body, "2", name="Alter Ausschuss", end_date=(now - timedelta(days=10)).date())
-    OParlPerson.objects.create(external_id="https://ris.example.org/person/1", body=body, name="Erika")
+    erika = OParlPerson.objects.create(external_id="https://ris.example.org/person/1", body=body, name="Erika")
+    # Gezählt werden Personen mit laufendem Amt (Issue #1560)
+    OParlMembership.objects.create(external_id="https://ris.example.org/membership/1", person=erika, organization=rat)
 
     stats = selectors.overview_stats(bodies)
 
@@ -181,8 +184,11 @@ def test_organization_members_and_meetings(body: OParlBody) -> None:
     active_person = OParlPerson.objects.create(
         external_id="https://ris.example.org/person/a", body=body, name="Aktiv", family_name="Aktiv"
     )
-    past_person = OParlPerson.objects.create(
-        external_id="https://ris.example.org/person/b", body=body, name="Ehemalig", family_name="Ehemalig"
+    # Hier ausgeschieden, aber mit einem anderen laufenden Amt: nur dann nennt die Recherche Ehemalige (#1560)
+    past_person = im_amt(
+        OParlPerson.objects.create(
+            external_id="https://ris.example.org/person/b", body=body, name="Ehemalig", family_name="Ehemalig"
+        )
     )
     OParlMembership.objects.create(
         external_id="https://ris.example.org/membership/a", person=active_person, organization=org
@@ -206,8 +212,10 @@ def test_organization_members_and_meetings(body: OParlBody) -> None:
     assert list(meetings["upcoming"]) == [upcoming]
     assert list(meetings["past"]) == [past]
 
+    # Das andere laufende Amt aus ``im_amt`` und die beendete Mitgliedschaft im Rat
     person_memberships = selectors.person_memberships(past_person)
-    assert list(person_memberships["active"]) == [] and person_memberships["past"].count() == 1
+    assert [m.organization.name for m in person_memberships["active"]] == ["Gremium für Tests"]
+    assert person_memberships["past"].count() == 1
 
 
 @pytest.mark.django_db
@@ -216,8 +224,10 @@ def test_persons_queryset_search_and_council_role(bodies: Any, body: OParlBody) 
     erika = OParlPerson.objects.create(
         external_id="https://ris.example.org/person/e", body=body, name="Erika Muster", family_name="Muster"
     )
-    OParlPerson.objects.create(
-        external_id="https://ris.example.org/person/m", body=body, name="Max Beispiel", family_name="Beispiel"
+    im_amt(
+        OParlPerson.objects.create(
+            external_id="https://ris.example.org/person/m", body=body, name="Max Beispiel", family_name="Beispiel"
+        )
     )
     OParlMembership.objects.create(
         external_id="https://ris.example.org/membership/e", person=erika, organization=rat, role="Vorsitz"
@@ -416,7 +426,7 @@ def test_search_falls_back_to_orm_when_elasticsearch_fails(
     make_paper(body, "1", name="Radweg Nord", date=now.date())
     meeting = make_meeting(body, "1", name="Radweg-Sitzung", start=now)
     meeting.organizations.add(rat)
-    OParlPerson.objects.create(external_id="https://ris.example.org/person/r", body=body, name="Rad Fahrer")
+    im_amt(OParlPerson.objects.create(external_id="https://ris.example.org/person/r", body=body, name="Rad Fahrer"))
 
     result = services.search(services.SearchQuery(query="Radweg"), [str(body.id)])
 

@@ -34,6 +34,7 @@ from insight_core.models import (
 )
 from insight_core.services.personen_liste import angaben_fuer, funktion_aus
 from insight_core.templatetags.insight_listen import hat_wert, ist_leer
+from insight_core.tests.amt import im_amt
 
 pytestmark = pytest.mark.django_db
 
@@ -71,7 +72,7 @@ def rat(body: OParlBody) -> dict[str, Any]:
     fraktion = _org(body, "f1", "Fraktion Mitte", short_name="Mitte", organization_type="Fraktion")
     ausschuss = _org(body, "a1", "Hauptausschuss", classification="Ausschuss", organization_type="Gremium")
     jugend = _org(body, "a2", "Jugendhilfeausschuss", classification="Ausschuss", organization_type="Gremium")
-    ob = _person(body, "ob", "Olga Beispiel", email="olga@example.org")
+    ob = _person(body, "ob", "Olga Beispiel", email="olga@example.org", title="Dr.")
     vorsitz = _person(body, "fv", "Fritz Vorsitz")
     mitglied = _person(body, "m", "Mara Mitglied")
     buerger = _person(body, "sb", "Sven Sachkundig")
@@ -188,15 +189,16 @@ class TestFunktion:
 class TestPersonenliste:
     def test_funktion_und_fraktion_statt_strichen(self, rat: dict[str, Any]) -> None:
         html = _client(rat["body"]).get("/insight/personen/").content.decode()
-        assert _kopfzeile(html) == ["Name", "Fraktion", "Funktion", "Gremien", "Kontakt", "Merken"]
+        assert _kopfzeile(html) == ["Name", "Fraktion", "Funktion", "Gremien", "Merken"]
         for text in ("Oberbürgermeisterin", "Vorsitzender", "Ratsmitglied", "Sachkundiger Bürger", "Mitte"):
             assert text in html
         assert "—" not in _tabelle(html)
 
     def test_spalten_ohne_werte_entfallen(self, body: OParlBody) -> None:
-        _person(body, "a", "Anna Ohnealles")
+        # Nur mit laufendem Amt in der Liste (Issue #1560): ein Gremium, keine Funktion und keine Fraktion
+        im_amt(_person(body, "a", "Anna Ohnealles"))
         html = _client(body).get("/insight/personen/").content.decode()
-        assert _kopfzeile(html) == ["Name", "Merken"]
+        assert _kopfzeile(html) == ["Name", "Gremien", "Merken"]
 
     def test_htmx_suche_liefert_dieselben_spalten(self, rat: dict[str, Any]) -> None:
         html = _client(rat["body"]).get("/insight/personen/?q=Mara", headers={"HX-Request": "true"}).content.decode()
@@ -204,7 +206,7 @@ class TestPersonenliste:
 
     def test_seitenwahl_behaelt_suche_und_hat_namen(self, body: OParlBody) -> None:
         for nummer in range(55):
-            _person(body, f"p{nummer}", f"Paula Muster{nummer:02d}")
+            im_amt(_person(body, f"p{nummer}", f"Paula Muster{nummer:02d}"))
         html = _client(body).get("/insight/personen/?q=Paula Muster").content.decode()
         seiten = _ausschnitt(r'<nav aria-label="Seiten".*?</nav>', html)
         assert 'href="?q=Paula+Muster&amp;page=2"' in seiten
@@ -312,9 +314,10 @@ class TestDetailseiten:
 
     def test_person_mit_funktion_und_randspalte(self, rat: dict[str, Any]) -> None:
         html = _client(rat["body"]).get(f"/insight/personen/{rat['ob'].pk}/").content.decode()
-        assert 'aria-label="Kontakt und Termine"' in html
+        assert 'aria-label="Termine und Angaben"' in html
         assert "Oberbürgermeisterin" in html
-        assert "olga@example.org" in html
+        # Kontaktdaten zeigt das Portal nicht mehr (Issue #1560)
+        assert "olga@example.org" not in html
 
 
 class TestBreite:

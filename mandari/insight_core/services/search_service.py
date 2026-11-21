@@ -128,6 +128,11 @@ def marked_in_bestand(index_name: str, ids: Iterable[str]) -> set[str]:
         .values_list("pk", "_marked")
     )
     allowed = {pk for pk, is_marked in rows if not is_marked}
+    if index_name == INDEX_PERSONS:
+        # Nur Personen mit laufendem Amt (Issue #1560), auch wenn der Index noch andere führt
+        from .personen_sichtbarkeit import oeffentliche_ids
+
+        allowed &= oeffentliche_ids(allowed)
     return {doc_id for doc_id, pk in kennungen.items() if pk not in allowed}
 
 

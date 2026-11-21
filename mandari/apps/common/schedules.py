@@ -30,7 +30,6 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     befehl_als_zeitplan("send_session_reminders", crontab="0 7 * * *", zeitgrenze=1800, ziel=ziel)
     befehl_als_zeitplan("send_task_due_reminders", crontab="15 7 * * *", zeitgrenze=1800, ziel=ziel)
     befehl_als_zeitplan("send_question_reminders", crontab="30 7 * * *", zeitgrenze=1800, ziel=ziel)
-    befehl_als_zeitplan("fetch_person_photos", crontab="0 3 * * 1", zeitgrenze=3000, ziel=ziel)
     # Amtliche Umringe von Bebauungsplänen abrufen und Vorlagen zuordnen (Issue #598)
     befehl_als_zeitplan("sync_plan_boundaries", crontab="50 4 * * *", zeitgrenze=3000, ziel=ziel)
     # Verwaiste Konten nach Frist löschen (Issue #238)

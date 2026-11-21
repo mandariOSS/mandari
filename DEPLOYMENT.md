@@ -754,7 +754,7 @@ Cron-Eintrag steht. Drei Schutzmechanismen:
    selbst (Absturzschutz) und wird nach dem Lauf sofort freigegeben. Ein zweiter Aufruf
    meldet `läuft bereits auf <host:pid> – übersprungen` und endet mit Exit-Code 0.
    Geschützt: `send_session_reminders`, `send_question_reminders`,
-   `send_task_due_reminders`, `fetch_person_photos`, `cleanup_orphaned_accounts`,
+   `send_task_due_reminders`, `cleanup_orphaned_accounts`,
    `check_source_health`, `check_service_levels`, `availability_report`,
    `build_meeting_packages`, `session_privacy_purge`, `cache_files`, `generate_alerts`,
    `send_digest` und die übrigen Befehle der Zeitpläne.
@@ -1829,7 +1829,6 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:send_session_reminders` | täglich 07:00 | Fristen-Erinnerungen des Sitzungsdienstes |
 | `befehl:send_task_due_reminders` | täglich 07:15 | fällige Aufgaben |
 | `befehl:send_question_reminders` | täglich 07:30 | Ratsfragen (ohne Wirkung, solange pausiert) |
-| `befehl:fetch_person_photos` | montags 03:00 | Personenfotos |
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
 | `befehl:sitzungen_aufraeumen` | täglich 04:25 | abgelaufene Sitzungen in Blöcken löschen (Issue #1091) |
@@ -1897,7 +1896,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|demo_ablauf|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|datenabgleich|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|einreichung_aufraeumen|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|demo_ablauf|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|datenabgleich|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|einreichung_aufraeumen|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 

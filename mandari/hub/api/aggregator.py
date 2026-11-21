@@ -73,6 +73,7 @@ from insight_core.models import (
     withdrawn_q,
 )
 from insight_core.services import file_reconcile
+from insight_core.services.personen_sichtbarkeit import nur_oeffentliche
 
 # Zeitfilter -> Vergleich auf den zusammengeführten Zeitstempeln (``_annotated``), damit die Filter genau
 # zu den ausgegebenen Werten von ``created``/``modified`` passen
@@ -95,6 +96,21 @@ class Spec:
     context: Callable[[list[Any]], RefContext] = RefContext.empty
     #: Welche Objekte in der externen Liste einer Kommune stehen; ohne Angabe die mit ihrer ``body_id``
     of_body: Callable[[uuid.UUID], Q] | None = None
+    #: Schränkt auf das ein, was mandari öffentlich zeigt (Personen: nur mit laufendem Amt, Issue #1560). Was
+    #: herausfällt, gibt die Schnittstelle wie Gelöschtes aus: gekürzt, nur unter der Adresse und in der
+    #: inkrementellen Liste
+    public: Callable[[QuerySet[Any]], QuerySet[Any]] | None = None
+
+    def only_public(self, queryset: QuerySet[Any]) -> QuerySet[Any]:
+        return self.public(queryset) if self.public else queryset
+
+    def hidden(self, objects: Collection[Any]) -> set[Any]:
+        """Kennungen der Objekte, die mandari nicht öffentlich zeigt (eine Abfrage je Seite)."""
+        if self.public is None or not objects:
+            return set()
+        ids = {obj.pk for obj in objects}
+        shown = self.public(self.model._default_manager.filter(pk__in=ids)).values_list("pk", flat=True)
+        return ids - set(shown)
 
     def queryset(self, *conditions: Q, **filters: Any) -> QuerySet[Any]:
         queryset: QuerySet[Any] = self.model._default_manager.filter(*conditions, **filters)
@@ -128,7 +144,7 @@ def _files_of(pk: uuid.UUID) -> Q:
 
 _BODY = Spec("body", OParlBody, BestandMapping.body, bestand.prepare_bodies)
 _ORGANIZATION = Spec("organization", OParlOrganization, BestandMapping.organization, bestand.prepare_organizations)
-_PERSON = Spec("person", OParlPerson, BestandMapping.person, bestand.prepare_persons)
+_PERSON = Spec("person", OParlPerson, BestandMapping.person, bestand.prepare_persons, public=nur_oeffentliche)
 _MEMBERSHIP = Spec("membership", OParlMembership, BestandMapping.membership, of_body=_memberships_of)
 _MEETING = Spec("meeting", OParlMeeting, BestandMapping.meeting, bestand.prepare_meetings, RefContext.for_meetings)
 _AGENDA_ITEM = Spec(
@@ -241,12 +257,15 @@ def _list_response(request: HttpRequest, base_url: str, queryset: QuerySet[Any],
     filters = TimeFilters.from_request(request)
     queryset = filters.apply(queryset, FILTER_LOOKUPS)
     if not filters.incremental:
-        queryset = queryset.filter(deleted=False)
+        queryset = spec.only_public(queryset.filter(deleted=False))
     output = mapping()
 
     def render(objects: list[Any]) -> list[Objekt]:
-        ctx = spec.context([obj for obj in objects if not obj.deleted])
-        return [output.tombstone(spec.kind, obj) if obj.deleted else spec.render(output, obj, ctx) for obj in objects]
+        gone = spec.hidden(objects) | {obj.pk for obj in objects if obj.deleted}
+        ctx = spec.context([obj for obj in objects if obj.pk not in gone])
+        return [
+            output.tombstone(spec.kind, obj) if obj.pk in gone else spec.render(output, obj, ctx) for obj in objects
+        ]
 
     return list_response(request, base_url, queryset, filters, render, cache_seconds=_cache_seconds())
 
@@ -369,7 +388,7 @@ def _current(kind: str, ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
     if spec is None or not ids:
         return set()
     found: set[uuid.UUID] = set(
-        spec.model._default_manager.filter(pk__in=ids, deleted=False).values_list("pk", flat=True)
+        spec.only_public(spec.model._default_manager.filter(pk__in=ids, deleted=False)).values_list("pk", flat=True)
     )
     if kind == "location" and len(found) < len(ids):
         rest = [object_id for object_id in ids if object_id not in found]
@@ -558,7 +577,9 @@ def _body(output: BestandMapping, pk: uuid.UUID) -> Callable[[], Objekt]:
 
 def _snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed) -> snapshot.Snapshot:
     """Snapshot in der älteren Form: der Body und die Objekte der externen Listen mit ihren Einbettungen."""
-    sections = [_section(output, spec, spec.queryset(body_id=pk, deleted=False)) for spec in _SNAPSHOT_LISTS]
+    sections = [
+        _section(output, spec, spec.only_public(spec.queryset(body_id=pk, deleted=False))) for spec in _SNAPSHOT_LISTS
+    ]
     return snapshot.Snapshot(feed, _body(output, pk), sections)
 
 
@@ -582,7 +603,7 @@ def _kommparl_snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed
     """
 
     def section(spec: Spec, condition: Q) -> snapshot.Section:
-        queryset = spec.model._default_manager.filter(condition, deleted=False)
+        queryset = spec.only_public(spec.model._default_manager.filter(condition, deleted=False))
         return _section(output, spec, spec.prepare(queryset) if spec.prepare else queryset)
 
     own = Q(body_id=pk)
@@ -670,9 +691,9 @@ def object_view(request: HttpRequest, kind: str, pk: uuid.UUID) -> HttpResponse:
         if kind == "location":
             return _meeting_location_response(output, pk)
         return error_response(404, f"{output.uris.obj(kind, pk)} nicht gefunden.")
-    if obj.deleted:
+    if obj.deleted or spec.hidden([obj]):
         # OParl 1.1 §2.8: Gelöschtes bleibt unter seiner Adresse abrufbar – als gekürztes Objekt mit
-        # "deleted": true und HTTP 200
+        # "deleted": true und HTTP 200. Ebenso, was mandari nicht öffentlich zeigt (Person ohne laufendes Amt)
         return json_response(output.tombstone(kind, obj))
     if publication.states():
         paused = _paused_response(publication.body_id_of(spec.model, pk))
