@@ -88,6 +88,11 @@ _TAUSEND: Final = re.compile(
 _JAHRESZAHL: Final = re.compile(
     r"(?<![\d.,])(\d{4})(?!\d|[.,]\d|[ \t  ]*(?:€|EUR\b|Euro\b|T€|TEUR\b|Mio\b|Tsd\b))", re.IGNORECASE
 )
+#: Bezeichnung einer Nummer direkt vor einer Zahl („Zeile 02“, „Nr. 13“, „Produktgruppe 1201“)
+_NUMMER_DAVOR: Final = re.compile(
+    r"(?:Zeile|Nr\.?|Pos\.?|Position|Produktgruppe|Produkt|Konto|Sachkonto|Maßnahme|Anlage|Seite)[ \t ]*$",
+    re.IGNORECASE,
+)
 #: Prozentangabe direkt hinter einer Zahl („10 %“, „25,81 v. H.“)
 _PROZENT_DANACH: Final = re.compile(r"[ \t  ]*(?:%|v\.\s?H\.|Prozent\b)", re.IGNORECASE)
 #: Öffnender Tag einer Anlage im Nutzerprompt (``prompts.anlage_block``)
@@ -559,6 +564,16 @@ class _Material:
         stellen = self.treffer(beleg)
         return self.dokument_bei(stellen[0][0]) if stellen else ""
 
+    def dokumente(self, beleg: str) -> list[str]:
+        """Anlagen aller Stellen einer Fundstelle, sortiert und ohne Doppelte; leer, wenn sie nicht im Text steht."""
+        return sorted({self.dokument_bei(anfang) for anfang, _ende in self.treffer(beleg)})
+
+    def zeilen(self, anfang: int, ende: int) -> str:
+        """Die ganzen Zeilen einer Stelle, vom Anfang ihrer ersten bis zum Ende ihrer letzten Zeile."""
+        zeile = self.text.rfind("\n", 0, anfang)
+        schluss = self.text.find("\n", ende)
+        return self.text[zeile + 1 : schluss if schluss >= 0 else len(self.text)]
+
     def umfeld(self, anfang: int, ende: int) -> str:
         """Die Zeile einer Stelle samt der Zeile davor (Tabellen nennen die Bezeichnung oft eine Zeile höher)."""
         zeile = self.text.rfind("\n", 0, anfang)
@@ -660,7 +675,12 @@ def _tabelle(material: _Material, beleg: str) -> list[tuple[int, int]] | None:
                 if art is None:
                     return None
                 kandidaten.append((int(wert * 1000) if art == "tausend" else int(wert), True))
-            elif art == "tausend" and re.fullmatch(r"\d{1,3}", zahl):
+            elif (
+                art == "tausend"
+                and re.fullmatch(r"[1-9]\d{0,2}", zahl)
+                and not _NUMMER_DAVOR.search(ausschnitt, 0, treffer.start())
+            ):
+                # Ganze Zahl unter T€-Kopf; Zeilen-, Produkt- und Positionsnummern („Zeile 02“, „Nr. 13“) nicht
                 kandidaten.append((int(wert * 1000), False))
         betraege = [wert for wert, sicher in kandidaten if sicher]
         if len(betraege) != len(jahre):
@@ -680,12 +700,31 @@ _RICHTUNG: Final[dict[str, re.Pattern[str]]] = {
 }
 
 
+#: Bezeichnung der jeweils anderen Richtung; steht sie an der Stelle, gehört die Zahl nicht zu dieser Richtung
+_GEGENRICHTUNG: Final[dict[str, re.Pattern[str]]] = {
+    "ausgabe": re.compile(r"einzahl|einnahme", re.IGNORECASE),
+    "einnahme": re.compile(r"auszahl|ausgabe", re.IGNORECASE),
+}
+
+
 def _richtung_belegt(material: _Material, beleg: str, richtung: str) -> bool:
-    """Nennt die Fundstelle (oder die Zeile davor) die Richtung („Auszahlungen“, „Einzahlungen“)?"""
-    muster = _RICHTUNG[richtung]
-    return bool(
-        muster.search(beleg) or any(muster.search(material.umfeld(*stelle)) for stelle in material.treffer(beleg))
-    )
+    """
+    Nennt die Fundstelle die Richtung („Auszahlungen“, „Einzahlungen“)? Zuerst zählt die Fundstelle selbst, dann ihre
+    eigenen Zeilen (bei einer Fundstelle über mehrere Zeilen alle), zuletzt die Zeile davor. Steht auf derselben Ebene
+    die andere Richtung, gilt sie nicht: „Einzahlungen 2028: 100.000 €“ direkt unter „Auszahlungen …“ ist keine
+    Auszahlung.
+    """
+    eigene, andere = _RICHTUNG[richtung], _GEGENRICHTUNG[richtung]
+    stellen = material.treffer(beleg)
+    ebenen: list[list[str]] = [[beleg]]
+    ebenen.append([material.zeilen(*stelle) for stelle in stellen])
+    ebenen.append([material.umfeld(*stelle) for stelle in stellen])
+    for texte in ebenen:
+        if any(andere.search(text) for text in texte):
+            return False
+        if texte and all(eigene.search(text) for text in texte):
+            return True
+    return False
 
 
 def _reihe(material: _Material, zeilen: Any, block: str, richtung: str) -> tuple[list[dict[str, Any]], bool]:
@@ -761,11 +800,11 @@ def _betrag(material: _Material, roh: Any, feld: str) -> dict[str, Any] | None |
             Decimal(0) in werte and mit_einheit
             for werte, mit_einheit in (material.betraege_bei(*stelle) for stelle in stellen)
         ):
-            return {"euro": 0, "beleg": beleg, "dokument": material.dokument(beleg)}
+            return {"euro": 0, "beleg": beleg, "dokumente": material.dokumente(beleg)}
         return False
     if not _betrag_belegt(material, beleg, euro, feld):
         return False
-    return {"euro": euro, "beleg": beleg, "dokument": material.dokument(beleg)}
+    return {"euro": euro, "beleg": beleg, "dokumente": material.dokumente(beleg)}
 
 
 @dataclass(frozen=True)
@@ -876,7 +915,7 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
             continue
         if posten in POSTEN_TEXT and _betrag_belegt(material, beleg, euro):
             gesehen.add(posten_schluessel)
-            laufend.append({"posten": posten, "euro": euro, "beleg": beleg, "dokument": material.dokument(beleg)})
+            laufend.append({"posten": posten, "euro": euro, "beleg": beleg, "dokumente": material.dokumente(beleg)})
         else:
             # Ein Posten fiel durch: Die Summe der übrigen wäre zu klein, die Aufteilung zählt nicht als vollständig
             daten["laufend_unvollstaendig"] = True
@@ -895,7 +934,7 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         jahre = _zahl(dauer.get("jahre"))
         beleg = str(dauer.get("beleg") or "").strip()
         if 1 <= jahre <= 100 and _belegt(material, beleg, jahre):
-            daten["nutzungsdauer"] = {"jahre": jahre, "beleg": beleg}
+            daten["nutzungsdauer"] = {"jahre": jahre, "beleg": beleg, "dokumente": material.dokumente(beleg)}
 
     # Woher das Geld bei Umschichtung kommt, wörtlich aus dem Text
     aus = " ".join(str(antwort.get("deckung_aus") or "").split())
@@ -1118,8 +1157,9 @@ def mit_aenderungen_beschlossen(ergebnis_text: Any) -> bool:
     treffer = MIT_AENDERUNGEN.search(text)
     if not treffer or ergebnis.einordnen(text) != ergebnis.BESCHLOSSEN:
         return False
-    if re.search(r"empf(?:ohlen|iehlt|ehlung)", text, re.IGNORECASE):
-        # „mit Änderungen zur Beschlussfassung empfohlen“ ist eine Empfehlung, kein Beschluss
+    if re.search(r"\bempf(?:ohlen|iehlt)\b", text, re.IGNORECASE):
+        # „mit Änderungen zur Beschlussfassung empfohlen“ ist eine Empfehlung, kein Beschluss; das Substantiv
+        # („entsprechend der Empfehlung beschlossen“) schließt einen Beschluss nicht aus
         return False
     davor = text[max(0, treffer.start() - 25) : treffer.start()]
     return not re.search(r"\b(?:nicht|ohne|kein\w*)\b", davor, re.IGNORECASE)
@@ -1272,6 +1312,15 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         jaehrlich, jaehrlich_errechnet = netto, True
     ab = (daten.get("laufend_ab") or {}).get("jahr")
     dauer = (daten.get("nutzungsdauer") or {}).get("jahre")
+    # Die Summe über die Nutzungsdauer gilt nur, wenn die Vorlage die Jahressumme für diese Jahre selbst nennt: Die
+    # genannte Jahressumme („Folgelasten pro Jahr insgesamt“) steht im selben Dokument wie die Nutzungsdauer
+    # (Folgelastenberechnung). Ohne genannte Summe müssen alle Posten aus diesem Dokument stammen. Gezählt wird jedes
+    # Vorkommen einer Fundstelle: Steht sie in mehreren Anlagen, genügt eine gemeinsame.
+    gemeinsam = set((daten.get("nutzungsdauer") or {}).get("dokumente") or [])
+    genannt = daten.get("laufend_gesamt") or {}
+    for eintrag in [genannt] if genannt else zeilen:
+        gemeinsam &= set(eintrag.get("dokumente") or [])
+    dauer_belegt = bool(dauer) and bool(gemeinsam) and bool(genannt or zeilen)
     bauanteil = summe("wertverlust") - summe("foerderanteil")
     betrieb = summe("unterhalt", "personal", "miete", "sonstiges") - summe("einnahmen", "einsparung")
     zinsen = summe("zinsen")
@@ -1287,14 +1336,14 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
                 "Unterhalt und Zinsen" if betrieb and zinsen else ("Unterhalt" if betrieb else "Zinsen für Kredite")
             )
             teile = [
-                (bauanteil, f"Anteil am Bau, auf {dauer} Jahre verteilt" if dauer else "Anteil am Bau", "bau"),
+                (bauanteil, f"Anteil am Bau, auf {dauer} Jahre verteilt" if dauer_belegt else "Anteil am Bau", "bau"),
                 (betrieb + zinsen, laufend_text, "laufend"),
             ]
         text = " ".join(
             teil
             for teil in (
                 f"Im Schnitt, {dauer} Jahre lang. Zusammen {euro_rund(jaehrlich * dauer)}."
-                if mit_bauanteil and dauer
+                if mit_bauanteil and dauer_belegt
                 else "",
                 "Aus den Einzelposten zusammengerechnet." if jaehrlich_errechnet else "",
             )
@@ -1334,7 +1383,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
             satz += f". Fehlendes Geld soll aus „{quelle}“ kommen" if quelle else ", notfalls aus einem anderen Budget"
         offen.append(satz)
     if daten.get("einzahlungen_fehlen"):
-        offen.append("Wann das Fördergeld kommt, steht nicht in der Vorlage")
+        offen.append("Wann das Fördergeld kommt, ließ sich aus der Vorlage nicht ermitteln")
     if daten.get("preissteigerung") == "nicht_enthalten":
         offen.append("Preissteigerungen bis zum Bau sind nicht eingerechnet")
     kostenstand = (daten.get("kostenstand") or {}).get("datum")
@@ -1390,7 +1439,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
     if kasten_bau and kasten_bau.hinweis:
         saetze.append(kasten_bau.hinweis)
     if jaehrlich:
-        if mit_bauanteil and dauer:
+        if mit_bauanteil and dauer_belegt:
             saetze.append(
                 f"{f'Ab {ab}' if ab else 'Danach'} belastet das den Haushalt im Schnitt mit {euro_satz(jaehrlich)} "
                 f"pro Jahr, {dauer} Jahre lang; der Anteil am Bau ist darin enthalten."
@@ -1408,7 +1457,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
         seo_teile.append(f"{'davon ' if gesamt else 'Anteil '}{ort} {euro_kurz(eigen)}")
     if jaehrlich:
         seo_teile.append(
-            f"{f'ab {ab} ' if ab else ''}{'im Schnitt ' if mit_bauanteil and dauer else ''}"
+            f"{f'ab {ab} ' if ab else ''}{'im Schnitt ' if mit_bauanteil and dauer_belegt else ''}"
             f"{euro_kurz(jaehrlich)} pro Jahr im Haushalt"
         )
     seo = f"Kosten laut Vorlage: {', '.join(seo_teile)}." if seo_teile else ""
