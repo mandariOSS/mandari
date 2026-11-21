@@ -20,6 +20,32 @@ button:not(:disabled),
 dialog {
   margin: auto;
 }
+/* Datums- und Zeitfelder in Chrome und Safari wie in Tailwind 3: Preflight von Tailwind 4 nimmt den Feldern ihren
+   Innenabstand (2 px niedriger) und ändert Anzeige und Mindesthöhe; „revert“ gibt die Werte des Browsers zurück */
+::-webkit-date-and-time-value {
+  min-height: revert;
+  text-align: revert;
+}
+::-webkit-datetime-edit {
+  display: revert;
+}
+::-webkit-datetime-edit-fields-wrapper {
+  padding: revert;
+}
+::-webkit-datetime-edit,
+::-webkit-datetime-edit-year-field,
+::-webkit-datetime-edit-month-field,
+::-webkit-datetime-edit-day-field,
+::-webkit-datetime-edit-hour-field,
+::-webkit-datetime-edit-minute-field,
+::-webkit-datetime-edit-second-field,
+::-webkit-datetime-edit-millisecond-field,
+::-webkit-datetime-edit-meridiem-field {
+  padding-block: revert;
+}
+::-webkit-calendar-picker-indicator {
+  line-height: revert;
+}
 
 /* Kennfarbe (Issue #783): Tailwind liest primary-* aus diesen Kanälen (tailwind.config.js).
    Standard Indigo für Work, Session und Konto; das Bürgerportal (data-portal="insight") ist Grün wie auf
