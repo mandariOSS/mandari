@@ -1129,6 +1129,36 @@ class TestBefundeCodeRabbit1552:
         assert anzeige.karten.haushalt.segmente[0].text == "Anteil am Bau"
         assert "Zusammen" in anzeige.karten.haushalt.text
 
+    def test_doppelter_posten_behaelt_beide_anlagen(self) -> None:
+        """Derselbe Posten zuerst aus Anlage A, dann aus der Folgelastenberechnung: beide Anlagen zählen."""
+        from insight_ai.services.prompts import anlage_block
+
+        text = "\n\n".join(
+            [
+                anlage_block("Anlage A Kostenübersicht", "Unterhaltung Sach- und Dienstleistungen 62.000 € pro Jahr"),
+                anlage_block("Beschlussvorlage", DOKUMENT),
+            ]
+        )
+        aus_a = {"posten": "unterhalt", "euro": 62000, "beleg": "Unterhaltung Sach- und Dienstleistungen 62.000 €"}
+        antwort = _antwort(laufend_gesamt=None, laufend=[aus_a, *ANTWORT["laufend"]])
+        daten = finanzcheck.pruefen(antwort, text).daten
+        unterhalt = [zeile for zeile in daten["laufend"] if zeile["posten"] == "unterhalt"]
+        assert len(unterhalt) == 1
+        assert unterhalt[0]["dokumente"] == ["Anlage A Kostenübersicht", "Beschlussvorlage"]
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and anzeige.karten is not None and anzeige.karten.haushalt is not None
+        assert "Zusammen" in anzeige.karten.haushalt.text
+
+    def test_zeilennummer_vor_der_fundstelle(self) -> None:
+        material = finanzcheck._Material("Beträge in T€\nZeile 13 Auszahlungen 2028\n")
+        assert finanzcheck._tabelle(material, "13 Auszahlungen 2028") is None
+        # Ohne Bezeichnung davor bleibt die ganze Zahl unter T€ ein Betrag
+        material = finanzcheck._Material("Beträge in T€\nAuszahlungen 2028\n13\n")
+        assert finanzcheck._tabelle(material, "Auszahlungen 2028 13") == [(2028, 13000)]
+
 
 def test_gleichnamige_anlagen_bekommen_eigene_namen() -> None:
     from insight_core.models import OParlFile

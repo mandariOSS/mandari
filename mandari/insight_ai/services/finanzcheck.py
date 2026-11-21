@@ -678,7 +678,10 @@ def _tabelle(material: _Material, beleg: str) -> list[tuple[int, int]] | None:
             elif (
                 art == "tausend"
                 and re.fullmatch(r"[1-9]\d{0,2}", zahl)
-                and not _NUMMER_DAVOR.search(ausschnitt, 0, treffer.start())
+                # Im Dokument nachsehen: Die Bezeichnung kann vor dem Anfang der Fundstelle stehen
+                and not _NUMMER_DAVOR.search(
+                    material.text, max(0, anfang + treffer.start() - 40), anfang + treffer.start()
+                )
             ):
                 # Ganze Zahl unter T€-Kopf; Zeilen-, Produkt- und Positionsnummern („Zeile 02“, „Nr. 13“) nicht
                 kandidaten.append((int(wert * 1000), False))
@@ -912,6 +915,11 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         beleg = str(zeile.get("beleg") or "").strip()
         posten_schluessel: tuple[Any, ...] = ("posten", posten, euro)
         if posten_schluessel in gesehen:
+            # Derselbe Posten noch einmal, etwa aus einer zweiten Anlage: Betrag einmal, Anlagen beider Belege
+            if _betrag_belegt(material, beleg, euro):
+                for vorhanden in laufend:
+                    if (vorhanden["posten"], vorhanden["euro"]) == (posten, euro):
+                        vorhanden["dokumente"] = sorted({*vorhanden["dokumente"], *material.dokumente(beleg)})
             continue
         if posten in POSTEN_TEXT and _betrag_belegt(material, beleg, euro):
             gesehen.add(posten_schluessel)
