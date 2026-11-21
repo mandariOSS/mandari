@@ -22,7 +22,9 @@ from apps.session.api.v1.api import api as session_api_v1
 from apps.session.views.invitation_responses import InvitationResponseView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
+from insight_ai.katalog import AI_CATALOG_TYPE, katalog_view
 from insight_ai.mcp import endpoint as mcp_endpoint
+from insight_ai.mcp import server_card_view as mcp_server_card
 from insight_core.admin_monitoring import monitoring_view
 from mandari import pwa
 from mandari.media import serve_media
@@ -135,6 +137,10 @@ urlpatterns = [
     # Unter /insight/, damit der Reverse-Proxy ihn ohne eigene Regel an die Anwendung gibt.
     path("insight/mcp", mcp_endpoint, name="insight_mcp"),
     path("insight/mcp/", mcp_endpoint),
+    # Server Card des MCP-Servers (SEP-2127) und der Katalog für KI-Agenten (ARD, AI Catalog; Issue #1309)
+    path("insight/mcp/server-card", mcp_server_card, name="insight_mcp_server_card"),
+    path(".well-known/ard.json", katalog_view, name="ki_katalog_ard"),
+    path(".well-known/ai-catalog.json", katalog_view, {"medientyp": AI_CATALOG_TYPE}, name="ki_katalog"),
     # Insight Core (RIS Portal, public protocols, body sitemaps)
     path("", include("insight_core.urls")),
 ]
