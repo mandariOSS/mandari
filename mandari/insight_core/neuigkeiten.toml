@@ -18,8 +18,8 @@
 # Tag der Version.
 
 [[eintrag]]
-datum = 2026-11-20
-version = ""
+datum = 2026-11-21
+version = "0.13.2"
 titel = "Der Kostencheck zeigt Bau, Zahlungsjahre und die Belastung für den Haushalt."
 text = """„Was kostet das?“ auf der Seite einer Vorlage liest jetzt deutlich mehr aus den Anlagen, auch Finanzpläne \
 und Folgekostenberechnungen; bei sehr langen Anlagen können Teile fehlen. Er zeigt getrennt, was der Bau kostet und wer ihn zahlt, wann das Geld fließt und wie stark \

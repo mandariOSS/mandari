@@ -27,7 +27,7 @@
 
 [[eintrag]]
 datum = 2026-11-21
-version = ""
+version = "0.13.2"
 bereich = "kalender"
 titel = "Der Kalender hat einen eigenen Platz in der Seitenleiste."
 text = """Der Kalender steht jetzt direkt unter „Start“ in der Seitenleiste. Sitzungen der Gremien, in denen Ihre \

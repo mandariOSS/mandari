@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+## [0.13.2] – 2026-11-21
+
 ### Geändert
 - Insight: Der Kostencheck („Was kostet das?“) liest deutlich mehr aus den Anlagen und erkennt Teilfinanzpläne, deren Jahre und Beträge getrennt untereinander stehen (#1513). Er zeigt getrennt, was der Bau kostet und wer zahlt (Fördergeld schraffiert, solange nicht zugesagt), wann das Geld fließt (Säulen je Jahr, Vorfinanzierung), wie stark das Vorhaben den Haushalt jedes Jahr belastet (Anteil am Bau und Unterhalt getrennt, nie zusätzlich zum Eigenanteil, Summe über die Nutzungsdauer nur aus der Folgelastenberechnung) und was offen ist (Förderzusage, Haushalt, Kostenstand, Beschluss mit Änderungen). Ein Programm rechnet nach, dass Zahlungen, Gesamtkosten, Fördergeld und Eigenanteil zusammenpassen; sonst fehlen die Jahre mit Hinweis. Kostenchecks der älteren Fassung entstehen neu.
 - Work: Der Kalender ist ein eigener Bereich der Seitenleiste (#1548), direkt unter „Start“, unter der Adresse `/work/<organisation>/kalender/`; die bisherige Adresse `/meetings/calendar/` leitet weiter, der Abruf der Einträge liegt unter `/kalender/eintraege/`. Termine und Terminumfragen gehören in den Brotkrumen zum Kalender. Im Kopf stehen „Im eigenen Kalender abonnieren“ und „Termin abstimmen“ als Knöpfe mit Symbol, die offenen Terminumfragen darunter ebenso; der Link „Als Liste anzeigen“ entfällt (die Liste bietet der Kalender selbst, die Sitzungsliste steht in der Seitenleiste).
@@ -561,7 +563,8 @@ Release in Produktion. Selbst-Hoster lesen vor dem Update den Abschnitt „Brech
 Erste öffentliche Beta: Bürgerportal (Insight) mit OParl-Ingestor, mandari work für
 Fraktionen, mandari session für Verwaltungen.
 
-[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.13.1...dev
+[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.13.2...dev
+[0.13.2]: https://github.com/mandariOSS/mandari/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/mandariOSS/mandari/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/mandariOSS/mandari/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/mandariOSS/mandari/compare/v0.11.0...v0.12.0
