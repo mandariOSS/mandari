@@ -39,7 +39,7 @@ from collections.abc import Iterable, Iterator
 from itertools import batched
 from typing import Any, Final, NamedTuple
 
-from django.db.models import BooleanField, Case, Exists, OuterRef, Prefetch, Q, QuerySet, Value, When
+from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.db.models.functions import Substr
 
 from insight_core.models import (
@@ -110,19 +110,16 @@ def indexable(index: str) -> QuerySet[Any]:
 def _vorgeladen(index: str, abfrage: QuerySet[Any]) -> QuerySet[Any]:
     if index == "papers":
         # Dieselbe Auswahl wie paper_to_doc ohne Vorladen; vom Text nur, was die Vorschau nutzt
-        # ``mit_angaben``: Angaben zu Privatpersonen im ganzen Text (Issue #1560), in derselben Abfrage ermittelt
         dateien = (
             _indexierbare_dateien()
             .only("id", "paper_id", "file_name")
-            .annotate(
-                text_anfang=Substr("text_content", 1, PREVIEW_CHARS_PER_FILE),
-                mit_angaben=Case(
-                    When(personenbezug.mit_angaben_q(), then=Value(True)),
-                    default=Value(False),
-                    output_field=BooleanField(),
-                ),
-            )
+            .annotate(text_anfang=Substr("text_content", 1, PREVIEW_CHARS_PER_FILE))
         )
+        # ``_dokumente_mit_angaben``: Angaben zu Privatpersonen in irgendeinem nicht gelöschten Dokument des Vorgangs
+        # (Issue #1560), auch in einem, dessen Texterkennung noch läuft und das deshalb in der Vorschau fehlt. Als
+        # Unterabfrage in der Abfrage der Vorgänge, ohne Abfrage je Vorgang
+        mit_angaben = OParlFile.objects.filter(personenbezug.mit_angaben_q(), paper_id=OuterRef("pk"), deleted=False)
+        abfrage = abfrage.annotate(_dokumente_mit_angaben=Exists(mit_angaben))
         return abfrage.prefetch_related("consultations", Prefetch("files", queryset=dateien, to_attr=_VORSCHAU))
     if index == "meetings":
         return abfrage.prefetch_related("organizations")
@@ -161,7 +158,7 @@ def build(index: str, obj: Any) -> dict[str, Any]:
         return paper_to_doc(
             obj,
             files=[_DateiVorschau(datei.file_name, datei.text_anfang) for datei in vorgeladen],
-            dokumente_mit_angaben=any(datei.mit_angaben for datei in vorgeladen),
+            dokumente_mit_angaben=getattr(obj, "_dokumente_mit_angaben", None),
         )
     if index == "meetings":
         return meeting_to_doc(obj)

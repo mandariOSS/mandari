@@ -189,9 +189,15 @@ def index_person_of_membership(sender, instance, **kwargs):
     """
     if not is_auto_indexing_enabled():
         return
-    person = OParlPerson.objects.filter(pk=instance.person_id).first()
-    if person is not None:
-        index_person(OParlPerson, person)
+    person_id = instance.person_id
+
+    def neu_entscheiden() -> None:
+        # Erst nach dem Commit und mit dem gespeicherten Stand: Rollt die Transaktion zurück, bleibt der Index
+        person = OParlPerson.objects.filter(pk=person_id).first()
+        if person is not None:
+            index_person(OParlPerson, person)
+
+    transaction.on_commit(neu_entscheiden, robust=True)
 
 
 @receiver(post_save, sender=OParlOrganization)

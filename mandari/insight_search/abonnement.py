@@ -343,6 +343,10 @@ def affected(events: Iterable[Event], bodies: frozenset[str] | None = None) -> t
             vorgang = _uuid(_nutzlast(ereignis).get("paper"))
             if vorgang is not None:
                 merken(Target("papers", vorgang), seq)
+                if art == "File":
+                    # Mit dem Text einer Datei kann der ganze Vorgang Personenbezug bekommen (Issue #1560): Auch
+                    # die übrigen Dateien des Vorgangs neu bauen, sonst bliebe ihr Volltext im Index
+                    vormerken(besitzer, "Paper", vorgang, seq)
             vormerken(abhaengige, art, objekt, seq)
         if art in _FILE_OWNERS:
             vormerken(besitzer, art, objekt, seq)
