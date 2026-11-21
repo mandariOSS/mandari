@@ -7,13 +7,17 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 ## [Unreleased]
 
 ### Hinzugefügt
-- Schnittstelle: Das OParl-System (`/oparl/v1/system`, Feld `mandari:mcp`) und die Übersicht `/oparl/` (Feld `mcp`) nennen den MCP-Server des Bürgerportals, wenn er eingeschaltet ist (#1309). KI-Assistenten finden ihn so von der Schnittstelle aus; `docs/KI.md` beschreibt, wie er in Claude als Connector eingetragen wird.
-- Insight, KI-Assistenten: Der MCP-Server ist ohne Vorwissen auffindbar (#1309). Seine Server Card nach MCP SEP-2127 steht unter `/insight/mcp/server-card` (`application/mcp-server-card+json`, Name in umgekehrter DNS-Schreibweise aus `SITE_URL`, etwa `de.mandari/insight`, derselbe Name jetzt auch in `serverInfo`). Der Katalog für KI-Agenten unter `/.well-known/ard.json` (Agentic Resource Discovery) und `/.well-known/ai-catalog.json` (AI Catalog, den Lighthouse unter „Agentisches Browsing“ prüft) nennt den MCP-Server und die Schnittstelle (`/api/openapi.json`); jede Insight-Seite verweist mit `rel="ard"` und `rel="ai-catalog"` darauf. Liegt eine Website vor der Anwendung, muss der Reverse-Proxy die beiden Pfade an die Anwendung geben.
-- Insight: Deklaratives WebMCP an den lesenden Formularen (#1309). Die Suche (`ratsinfo_suchen`, je Seite einmal) und der Kommunenwechsel auf der Auswahlseite (`kommune_finden`) sind Werkzeuge für KI-Agenten im Browser. Chrome meldet sie während des Origin-Trials nur mit Token an: `WEBMCP_ORIGIN_TRIAL_TOKEN` setzt ihn als `<meta http-equiv="origin-trial">`. Konto-, Kontakt- und Abo-Formulare bleiben ohne Werkzeug.
 - Ingestor und OParl: Wahlperioden aus der Liste `legislativeTermList` (#1453). 44 Kommunen nennen die Liste, betten aber keine Wahlperiode ein. Der Abgleich liest sie jetzt höchstens einmal am Tag je Kommune, im Vollabgleich jedes Mal, als OParl-Liste oder JSON-Array, übernimmt Löschmarken und vermerkt das Ergebnis (`sync_config["legislative_term_lists"]`). Der Abruf ist leise: Fehler wie HTTP 401 oder 503 erzeugen keinen Befund am Host, zählen nicht für den Schutzschalter und machen den Abgleich nicht lückenhaft. Nennen mehrere Kommunen einer Quelle dieselbe Wahlperiode, bleibt sie eine Zeile bei der ersten und wird mit den übrigen verknüpft (neue Tabelle `oparl_legislative_terms_shared_bodies`, Migration `insight_core.0075`); `Body.legislativeTerm`, die Liste `legislativeterms`, Mitgliederseite und Beschlussliste nennen eigene und geteilte.
 
 ### Geändert
 - Anwendung: Tailwind CSS 4 statt 3 für Work, Session und Insight (#1461). Gebaut wird mit `@tailwindcss/cli`; die Einstellungen aus `tailwind.config.js` stehen jetzt in `static/css/input.css` (`@theme`, `@source`, Etikettenfarben als `@source inline`), die Datei entfällt. Wo Tailwind 4 anders rechnet, gilt weiter das bisherige Verhalten: keine CSS-Ebenen in `styles.css` (Reihenfolge und Spezifität wie bisher), `space-y-*` und `divide-*` in der bisherigen Form, Breakpoints in px, feste Zeilenhöhen der Schriftgrößen, Datumsfelder, Rahmenfarbe, Platzhalter, Ring, Zeiger auf Knöpfen, `dark:` und `hover:`, Abstand von `<dialog>`. Ein Bildvergleich aller E2E-Screenshots gegen Tailwind 3 bestätigt das; einzige Ausnahme sind Titel der Suchtreffer in Work, deren angegebene Zeilenhöhe `leading-snug` jetzt auch ab 640 px gilt. In den Vorlagen und Formularen sind umbenannte Klassen nachgezogen (etwa `shadow-sm` → `shadow-xs`, `rounded` → `rounded-sm`, `outline-none` → `outline-hidden`). `styles.css` schrumpft von 479 auf 333 KB, weil die Etikettenfarben nicht mehr in allen Deckkraftstufen entstehen. Am Aussehen soll sich nichts ändern.
+
+## [0.13.3] – 2026-11-21
+
+### Hinzugefügt
+- Schnittstelle: Das OParl-System (`/oparl/v1/system`, Feld `mandari:mcp`) und die Übersicht `/oparl/` (Feld `mcp`) nennen den MCP-Server des Bürgerportals, wenn er eingeschaltet ist (#1309). KI-Assistenten finden ihn so von der Schnittstelle aus; `docs/KI.md` beschreibt, wie er in Claude als Connector eingetragen wird.
+- Insight, KI-Assistenten: Der MCP-Server ist ohne Vorwissen auffindbar (#1309). Seine Server Card nach MCP SEP-2127 steht unter `/insight/mcp/server-card` (`application/mcp-server-card+json`, Name in umgekehrter DNS-Schreibweise aus `SITE_URL`, etwa `de.mandari/insight`, derselbe Name jetzt auch in `serverInfo`). Der Katalog für KI-Agenten unter `/.well-known/ard.json` (Agentic Resource Discovery) und `/.well-known/ai-catalog.json` (AI Catalog, den Lighthouse unter „Agentisches Browsing“ prüft) nennt den MCP-Server und die Schnittstelle (`/api/openapi.json`); jede Insight-Seite verweist mit `rel="ard"` und `rel="ai-catalog"` darauf. Liegt eine Website vor der Anwendung, muss der Reverse-Proxy die beiden Pfade an die Anwendung geben.
+- Insight: Deklaratives WebMCP an den lesenden Formularen (#1309). Die Suche (`ratsinfo_suchen`, je Seite einmal) und der Kommunenwechsel auf der Auswahlseite (`kommune_finden`) sind Werkzeuge für KI-Agenten im Browser. Chrome meldet sie während des Origin-Trials nur mit Token an: `WEBMCP_ORIGIN_TRIAL_TOKEN` setzt ihn als `<meta http-equiv="origin-trial">`. Konto-, Kontakt- und Abo-Formulare bleiben ohne Werkzeug.
 
 ## [0.13.2] – 2026-11-21
 
@@ -572,7 +576,8 @@ Release in Produktion. Selbst-Hoster lesen vor dem Update den Abschnitt „Brech
 Erste öffentliche Beta: Bürgerportal (Insight) mit OParl-Ingestor, mandari work für
 Fraktionen, mandari session für Verwaltungen.
 
-[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.13.2...dev
+[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.13.3...dev
+[0.13.3]: https://github.com/mandariOSS/mandari/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/mandariOSS/mandari/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/mandariOSS/mandari/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/mandariOSS/mandari/compare/v0.12.0...v0.13.0
