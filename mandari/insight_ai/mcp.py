@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -37,6 +38,7 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.http.request import validate_host
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
@@ -51,6 +53,13 @@ PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 #: Fassung, wenn der Client keine nennt (Vorgabe der Spezifikation für Streamable HTTP)
 DEFAULT_PROTOCOL_VERSION = "2025-03-26"
 SERVER_INFO = {"name": "mandari-insight", "title": "mandari Insight", "version": "1.0"}
+#: MCP Server Card (SEP-2127): Medientyp und Schema. Der Katalog unter ``/.well-known/`` (``insight_ai.katalog``)
+#: verweist auf die Karte, die Karte auf den Endpunkt.
+SERVER_CARD_TYPE = "application/mcp-server-card+json"
+SERVER_CARD_SCHEMA = "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json"
+#: Beschreibung in der Server Card, höchstens 100 Zeichen
+SERVER_CARD_BESCHREIBUNG = "Öffentliche Ratsinformationen deutscher Kommunen: Sitzungen, Vorlagen, Beschlüsse, Personen"
+QUELLCODE = "https://github.com/mandariOSS/mandari"
 MAX_BODY_BYTES = 64 * 1024
 MAX_BATCH = 10
 MAX_BODIES = 50
@@ -81,6 +90,47 @@ _ANNOTATIONS = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint"
 
 def enabled() -> bool:
     return bool(getattr(settings, "INSIGHT_MCP_ENABLED", False))
+
+
+def instanz_url() -> str:
+    return str(getattr(settings, "SITE_URL", "") or "").rstrip("/")
+
+
+def server_name() -> str:
+    """
+    Name des Servers in umgekehrter DNS-Schreibweise aus der Adresse der Instanz (``de.mandari/insight`` für
+    ``https://mandari.de``), wie ihn die Server Card verlangt; derselbe Name steht in ``serverInfo``.
+    """
+    host = re.sub(r"[^a-zA-Z0-9.-]", "-", urlsplit(instanz_url()).hostname or "localhost")
+    return ".".join(reversed(host.split("."))) + "/insight"
+
+
+def server_info() -> dict[str, str]:
+    return {**SERVER_INFO, "name": server_name()}
+
+
+def server_card() -> dict[str, Any]:
+    """
+    MCP Server Card (SEP-2127, Schema ``SERVER_CARD_SCHEMA``): wer der Server ist und wie man sich verbindet, ohne
+    Werkzeuge (die liefert ``tools/list``). Name, Titel und Fassung wie in ``serverInfo``.
+    """
+    site = instanz_url()
+    return {
+        "$schema": SERVER_CARD_SCHEMA,
+        "name": server_name(),
+        "version": SERVER_INFO["version"],
+        "title": SERVER_INFO["title"],
+        "description": SERVER_CARD_BESCHREIBUNG,
+        "websiteUrl": f"{site}{reverse('insight_core:insight:portal_home')}",
+        "repository": {"url": QUELLCODE, "source": "github"},
+        "remotes": [
+            {
+                "type": "streamable-http",
+                "url": f"{site}{reverse('insight_mcp')}",
+                "supportedProtocolVersions": list(PROTOCOL_VERSIONS),
+            }
+        ],
+    }
 
 
 def _limit(name: str) -> int:
@@ -168,7 +218,7 @@ def _initialize(params: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "protocolVersion": version,
         "capabilities": {"tools": {"listChanged": False}},
-        "serverInfo": SERVER_INFO,
+        "serverInfo": server_info(),
         "instructions": INSTRUCTIONS,
     }
 
@@ -318,3 +368,22 @@ def endpoint(request: HttpRequest) -> HttpResponse:
     if not answers:
         return HttpResponse(status=202)
     return _json_response(answers if batch else answers[0])
+
+
+def server_card_view(request: HttpRequest) -> HttpResponse:
+    """
+    ``/insight/mcp/server-card``: die Server Card (SEP-2127, dort als Ort vorgesehen: Endpunkt plus ``/server-card``).
+    Öffentlich und zwischenspeicherbar, für Browser-Clients mit CORS; ausgeschaltet 404 wie der Endpunkt.
+    """
+    if not enabled():
+        return HttpResponse("Nicht gefunden.", status=404, content_type="text/plain; charset=utf-8")
+    if request.method not in ("GET", "HEAD"):
+        response = HttpResponse(status=405)
+        response["Allow"] = "GET, HEAD"
+        return response
+    response = HttpResponse(
+        json.dumps(server_card(), ensure_ascii=False).encode("utf-8"), content_type=SERVER_CARD_TYPE
+    )
+    response["Access-Control-Allow-Origin"] = "*"
+    response["Cache-Control"] = "public, max-age=3600"
+    return response

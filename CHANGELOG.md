@@ -8,6 +8,8 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ### Hinzugefügt
 - Schnittstelle: Das OParl-System (`/oparl/v1/system`, Feld `mandari:mcp`) und die Übersicht `/oparl/` (Feld `mcp`) nennen den MCP-Server des Bürgerportals, wenn er eingeschaltet ist (#1309). KI-Assistenten finden ihn so von der Schnittstelle aus; `docs/KI.md` beschreibt, wie er in Claude als Connector eingetragen wird.
+- Insight, KI-Assistenten: Der MCP-Server ist ohne Vorwissen auffindbar (#1309). Seine Server Card nach MCP SEP-2127 steht unter `/insight/mcp/server-card` (`application/mcp-server-card+json`, Name in umgekehrter DNS-Schreibweise aus `SITE_URL`, etwa `de.mandari/insight`, derselbe Name jetzt auch in `serverInfo`). Der Katalog für KI-Agenten unter `/.well-known/ard.json` (Agentic Resource Discovery) und `/.well-known/ai-catalog.json` (AI Catalog, den Lighthouse unter „Agentisches Browsing“ prüft) nennt den MCP-Server und die Schnittstelle (`/api/openapi.json`); jede Insight-Seite verweist mit `rel="ard"` und `rel="ai-catalog"` darauf. Liegt eine Website vor der Anwendung, muss der Reverse-Proxy die beiden Pfade an die Anwendung geben.
+- Insight: Deklaratives WebMCP an den lesenden Formularen (#1309). Die Suche (`ratsinfo_suchen`, je Seite einmal) und der Kommunenwechsel auf der Auswahlseite (`kommune_finden`) sind Werkzeuge für KI-Agenten im Browser. Chrome meldet sie während des Origin-Trials nur mit Token an: `WEBMCP_ORIGIN_TRIAL_TOKEN` setzt ihn als `<meta http-equiv="origin-trial">`. Konto-, Kontakt- und Abo-Formulare bleiben ohne Werkzeug.
 
 ## [0.13.2] – 2026-11-21
 
