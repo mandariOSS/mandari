@@ -15,7 +15,8 @@
     "test:navigation": "node frontend/js/test/navigation.test.mjs",
     "test:speichern": "node frontend/js/test/speichern.test.mjs && node frontend/js/test/eingaben-sicherung.test.mjs && node frontend/js/test/autosave.test.mjs && node frontend/js/test/notizen-sichern.test.mjs && node frontend/js/test/notizen-zusammenfuehren.test.mjs && node frontend/js/test/sitzungsende-neu-verbinden.test.mjs",
     "test:icons": "node frontend/js/test/icons.test.mjs",
-    "test:meldungen": "node frontend/js/test/meldungen.test.mjs"
+    "test:meldungen": "node frontend/js/test/meldungen.test.mjs",
+    "test:webmcp": "node frontend/js/test/webmcp.test.mjs"
   },
   "dependencies": {
     "@alpinejs/collapse": "^3.17.5",
