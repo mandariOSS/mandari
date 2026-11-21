@@ -564,6 +564,16 @@ class _Material:
         stellen = self.treffer(beleg)
         return self.dokument_bei(stellen[0][0]) if stellen else ""
 
+    def dokumente(self, beleg: str) -> list[str]:
+        """Anlagen aller Stellen einer Fundstelle, sortiert und ohne Doppelte; leer, wenn sie nicht im Text steht."""
+        return sorted({self.dokument_bei(anfang) for anfang, _ende in self.treffer(beleg)})
+
+    def zeilen(self, anfang: int, ende: int) -> str:
+        """Die ganzen Zeilen einer Stelle, vom Anfang ihrer ersten bis zum Ende ihrer letzten Zeile."""
+        zeile = self.text.rfind("\n", 0, anfang)
+        schluss = self.text.find("\n", ende)
+        return self.text[zeile + 1 : schluss if schluss >= 0 else len(self.text)]
+
     def umfeld(self, anfang: int, ende: int) -> str:
         """Die Zeile einer Stelle samt der Zeile davor (Tabellen nennen die Bezeichnung oft eine Zeile höher)."""
         zeile = self.text.rfind("\n", 0, anfang)
@@ -700,13 +710,14 @@ _GEGENRICHTUNG: Final[dict[str, re.Pattern[str]]] = {
 def _richtung_belegt(material: _Material, beleg: str, richtung: str) -> bool:
     """
     Nennt die Fundstelle die Richtung („Auszahlungen“, „Einzahlungen“)? Zuerst zählt die Fundstelle selbst, dann ihre
-    eigene Zeile, zuletzt die Zeile davor. Steht auf derselben Ebene die andere Richtung, gilt sie nicht: „Einzahlungen
-    2028: 100.000 €“ direkt unter „Auszahlungen …“ ist keine Auszahlung.
+    eigenen Zeilen (bei einer Fundstelle über mehrere Zeilen alle), zuletzt die Zeile davor. Steht auf derselben Ebene
+    die andere Richtung, gilt sie nicht: „Einzahlungen 2028: 100.000 €“ direkt unter „Auszahlungen …“ ist keine
+    Auszahlung.
     """
     eigene, andere = _RICHTUNG[richtung], _GEGENRICHTUNG[richtung]
     stellen = material.treffer(beleg)
     ebenen: list[list[str]] = [[beleg]]
-    ebenen.append([material.umfeld(*stelle).split("\n")[-1] for stelle in stellen])
+    ebenen.append([material.zeilen(*stelle) for stelle in stellen])
     ebenen.append([material.umfeld(*stelle) for stelle in stellen])
     for texte in ebenen:
         if any(andere.search(text) for text in texte):
@@ -789,11 +800,11 @@ def _betrag(material: _Material, roh: Any, feld: str) -> dict[str, Any] | None |
             Decimal(0) in werte and mit_einheit
             for werte, mit_einheit in (material.betraege_bei(*stelle) for stelle in stellen)
         ):
-            return {"euro": 0, "beleg": beleg, "dokument": material.dokument(beleg)}
+            return {"euro": 0, "beleg": beleg, "dokumente": material.dokumente(beleg)}
         return False
     if not _betrag_belegt(material, beleg, euro, feld):
         return False
-    return {"euro": euro, "beleg": beleg, "dokument": material.dokument(beleg)}
+    return {"euro": euro, "beleg": beleg, "dokumente": material.dokumente(beleg)}
 
 
 @dataclass(frozen=True)
@@ -904,7 +915,7 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
             continue
         if posten in POSTEN_TEXT and _betrag_belegt(material, beleg, euro):
             gesehen.add(posten_schluessel)
-            laufend.append({"posten": posten, "euro": euro, "beleg": beleg, "dokument": material.dokument(beleg)})
+            laufend.append({"posten": posten, "euro": euro, "beleg": beleg, "dokumente": material.dokumente(beleg)})
         else:
             # Ein Posten fiel durch: Die Summe der übrigen wäre zu klein, die Aufteilung zählt nicht als vollständig
             daten["laufend_unvollstaendig"] = True
@@ -923,7 +934,7 @@ def pruefen(antwort: Any, dokumenttext: str) -> Pruefergebnis:
         jahre = _zahl(dauer.get("jahre"))
         beleg = str(dauer.get("beleg") or "").strip()
         if 1 <= jahre <= 100 and _belegt(material, beleg, jahre):
-            daten["nutzungsdauer"] = {"jahre": jahre, "beleg": beleg, "dokument": material.dokument(beleg)}
+            daten["nutzungsdauer"] = {"jahre": jahre, "beleg": beleg, "dokumente": material.dokumente(beleg)}
 
     # Woher das Geld bei Umschichtung kommt, wörtlich aus dem Text
     aus = " ".join(str(antwort.get("deckung_aus") or "").split())
@@ -1303,14 +1314,13 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
     dauer = (daten.get("nutzungsdauer") or {}).get("jahre")
     # Die Summe über die Nutzungsdauer gilt nur, wenn die Vorlage die Jahressumme für diese Jahre selbst nennt: Die
     # genannte Jahressumme („Folgelasten pro Jahr insgesamt“) steht im selben Dokument wie die Nutzungsdauer
-    # (Folgelastenberechnung). Ohne genannte Summe müssen alle Posten aus diesem Dokument stammen.
-    quelle_dauer = (daten.get("nutzungsdauer") or {}).get("dokument")
+    # (Folgelastenberechnung). Ohne genannte Summe müssen alle Posten aus diesem Dokument stammen. Gezählt wird jedes
+    # Vorkommen einer Fundstelle: Steht sie in mehreren Anlagen, genügt eine gemeinsame.
+    gemeinsam = set((daten.get("nutzungsdauer") or {}).get("dokumente") or [])
     genannt = daten.get("laufend_gesamt") or {}
-    if genannt:
-        dauer_belegt = bool(dauer) and quelle_dauer is not None and genannt.get("dokument") == quelle_dauer
-    else:
-        quellen_posten = {z.get("dokument") for z in zeilen}
-        dauer_belegt = bool(dauer) and quelle_dauer is not None and quellen_posten == {quelle_dauer}
+    for eintrag in [genannt] if genannt else zeilen:
+        gemeinsam &= set(eintrag.get("dokumente") or [])
+    dauer_belegt = bool(dauer) and bool(gemeinsam) and bool(genannt or zeilen)
     bauanteil = summe("wertverlust") - summe("foerderanteil")
     betrieb = summe("unterhalt", "personal", "miete", "sonstiges") - summe("einnahmen", "einsparung")
     zinsen = summe("zinsen")
@@ -1326,7 +1336,7 @@ def _anzeige(paper: Any, daten: dict[str, Any], *, mit_aenderungen: bool = False
                 "Unterhalt und Zinsen" if betrieb and zinsen else ("Unterhalt" if betrieb else "Zinsen für Kredite")
             )
             teile = [
-                (bauanteil, f"Anteil am Bau, auf {dauer} Jahre verteilt" if dauer else "Anteil am Bau", "bau"),
+                (bauanteil, f"Anteil am Bau, auf {dauer} Jahre verteilt" if dauer_belegt else "Anteil am Bau", "bau"),
                 (betrieb + zinsen, laufend_text, "laufend"),
             ]
         text = " ".join(

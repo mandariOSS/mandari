@@ -1069,3 +1069,46 @@ def test_summe_ueber_jahre_nur_aus_derselben_folgekostenberechnung() -> None:
     assert anzeige.karten.haushalt.wert == "124.000 €" and "Zusammen" not in anzeige.karten.haushalt.text
     # Aus derselben Folgelastenberechnung (hier ohne Anlagen: dasselbe Dokument) gilt die Summe
     assert "Zusammen rund 5 Mio. €" in TestAnzeige()._anzeige().karten.haushalt.text  # type: ignore[union-attr]
+
+
+def _haushalt(text: str) -> finanzcheck.Kasten:
+    ergebnis = finanzcheck.pruefen(ANTWORT, text)
+    paper = SimpleNamespace(
+        pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+    )
+    anzeige = finanzcheck.anzeige(paper)
+    assert anzeige is not None and anzeige.karten is not None and anzeige.karten.haushalt is not None
+    return anzeige.karten.haushalt
+
+
+class TestBefundeCodeRabbit1552:
+    """CodeRabbit zu PR #1552."""
+
+    def test_richtung_ueber_mehrere_zeilen_der_fundstelle(self) -> None:
+        material = finanzcheck._Material("Einzahlungen 2028: 100.000 €\nAuszahlungen 2028\n600.000 €\n")
+        assert finanzcheck._richtung_belegt(material, "2028 600.000 €", "ausgabe")
+        assert not finanzcheck._richtung_belegt(material, "2028 600.000 €", "einnahme")
+
+    def test_jahressumme_in_mehreren_anlagen(self) -> None:
+        """Steht die Jahressumme auch in einer anderen Anlage, zählt die gemeinsame mit der Nutzungsdauer."""
+        from insight_ai.services.prompts import anlage_block
+
+        text = "\n\n".join(
+            [
+                anlage_block("Anlage 1 Kostenübersicht", "Folgelasten insgesamt 124.000 € pro Jahr"),
+                anlage_block("Beschlussvorlage", DOKUMENT),
+            ]
+        )
+        assert "Zusammen rund 5 Mio. €" in _haushalt(text).text
+
+    def test_balken_ohne_belegte_dauer_ohne_jahre(self) -> None:
+        from insight_ai.services.prompts import anlage_block
+
+        getrennt = "\n\n".join(
+            [
+                anlage_block("Beschlussvorlage", DOKUMENT.replace("Nutzungsdauer:", "Restlaufzeit:")),
+                anlage_block("Anlage 4 Bauwerksbuch", "Nutzungsdauer: 40 Jahre"),
+            ]
+        )
+        assert [s.text for s in _haushalt(getrennt).segmente][0] == "Anteil am Bau"
+        assert [s.text for s in _haushalt(DOKUMENT).segmente][0] == "Anteil am Bau, auf 40 Jahre verteilt"
