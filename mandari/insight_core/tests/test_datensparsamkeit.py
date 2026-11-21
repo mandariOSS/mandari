@@ -29,6 +29,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
     OParlSource,
+    PublicQuestion,
 )
 from insight_core.services import personen_sichtbarkeit, personenbezug, sitemaps
 from insight_core.services.search_documents import file_to_doc, paper_to_doc
@@ -168,6 +169,31 @@ def test_gremienseite_nennt_nur_personen_mit_amt(body: OParlBody, rat: dict[str,
 
 def test_sitemap_nur_personen_mit_amt(body: OParlBody, rat: dict[str, OParlPerson]) -> None:
     assert [kennung for kennung, _ in sitemaps.personen(body.pk)] == [rat["im_amt"].pk]
+
+
+def test_ratsfragen_nur_an_personen_mit_amt(body: OParlBody, rat: dict[str, OParlPerson], settings: Any) -> None:
+    settings.INSIGHT_QUESTIONS_ENABLED = True
+
+    def frage(person: OParlPerson, betreff: str) -> PublicQuestion:
+        return PublicQuestion.objects.create(
+            body=body,
+            recipient=person,
+            questioner_name="Bert",
+            questioner_email="bert@example.org",
+            subject=betreff,
+            question_text="Wann geht es weiter?",
+            status="published",
+            published_at=timezone.now() - timedelta(days=5),
+        )
+
+    offen = frage(rat["im_amt"], "Frage an die Ratsfrau")
+    alt = frage(rat["ausgeschieden"], "Frage an den Ausgeschiedenen")
+    client = _client(body)
+    portal = client.get("/insight/fragen/").content.decode()
+    assert "Frage an die Ratsfrau" in portal
+    assert "Frage an den Ausgeschiedenen" not in portal and "Anton Ausgeschieden" not in portal
+    assert client.get(f"/insight/fragen/{offen.pk}/").status_code == 200
+    assert client.get(f"/insight/fragen/{alt.pk}/").status_code in (404, 410)
 
 
 # --- Schnittstelle -----------------------------------------------------------------------------------------------

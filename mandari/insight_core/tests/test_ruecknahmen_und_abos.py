@@ -190,7 +190,7 @@ def test_etikett_des_personenfilters_nur_fuer_sichtbare_personen_der_kommune(bod
 
 
 def test_wartende_antwort_beeinflusst_weder_suche_noch_reihenfolge(body: OParlBody, client: Client) -> None:
-    anna = _person(body, "Anna Rat")
+    anna = im_amt(_person(body, "Anna Rat"))
     jetzt = timezone.now()
     veroeffentlicht = _frage(
         body,

@@ -363,9 +363,10 @@ def personen(body_id: Any) -> Iterator[tuple[Any, datetime | None]]:
 
 def ratsfragen(body_id: Any) -> Iterator[tuple[Any, datetime | None]]:
     from ..models import PublicQuestion
+    from .personen_sichtbarkeit import an_oeffentliche
 
     return (
-        PublicQuestion.objects.filter(body_id=body_id, status="published")
+        an_oeffentliche(PublicQuestion.objects.filter(body_id=body_id, status="published"))
         .order_by("-published_at")
         .values_list("id", aenderungszeitpunkt(FRAGE_ZEITPUNKTE))[:GRUND_HOECHSTENS]
         .iterator(chunk_size=2_000)

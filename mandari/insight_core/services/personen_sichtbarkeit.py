@@ -71,6 +71,14 @@ def mitgliedschaften_oeffentlicher(
     return mitgliedschaften.filter(oeffentlich("person_id", on), person__deleted=False).exclude(testkonto_q("person"))
 
 
+def an_oeffentliche(fragen: QuerySet[Any], on: date | None = None) -> QuerySet[Any]:
+    """
+    Die Ratsfragen, deren Empfängerin oder Empfänger mandari öffentlich zeigt: Eine veröffentlichte Frage nennt
+    den Namen, sie erscheint deshalb nur, solange die Person ein Amt hat.
+    """
+    return fragen.filter(oeffentlich("recipient_id", on), recipient__deleted=False).exclude(testkonto_q("recipient"))
+
+
 def oeffentliche_ids(person_ids: Iterable[Any], on: date | None = None) -> set[Any]:
     """Die Kennungen aus ``person_ids``, deren Person mandari öffentlich zeigt (eine Abfrage)."""
     ids = [pk for pk in person_ids if pk]
