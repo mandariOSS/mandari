@@ -70,7 +70,8 @@ class TestToken:
         assert "#" not in theme
 
     def test_indigo_standard_und_gruen_im_buergerportal(self) -> None:
-        css = (BASIS / "static" / "css" / "input.css").read_text(encoding="utf-8")
+        # Grundregeln von Tailwind (Kennfarbe, Bänder) seit Tailwind 4 in eigener Datei, Import in input.css
+        css = (BASIS / "static" / "css" / "tailwind-grundregeln.css").read_text(encoding="utf-8")
         indigo = _variablen(css, ":root")
         gruen = _variablen(css, '[data-portal="insight"]')
         assert tuple(indigo) == STUFEN and tuple(gruen) == STUFEN
@@ -121,7 +122,7 @@ class TestSeite:
         html = client.get(reverse("insight_core:insight:paper_list")).content.decode()
         assert 'data-portal="insight"' in html
         assert '<meta name="theme-color" content="#17703f">' in html
-        assert "--primary-600:" not in html, "ohne Akzentfarbe gilt die Skala aus input.css"
+        assert "--primary-600:" not in html, "ohne Akzentfarbe gilt die Skala aus tailwind-grundregeln.css"
 
     def test_koerperschaftsportal_setzt_eigene_skala(self, client: Client) -> None:
         body = self._kommune(slug="nord", accent_color="#0f766e")
