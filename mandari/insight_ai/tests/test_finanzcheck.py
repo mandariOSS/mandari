@@ -895,7 +895,7 @@ class TestBefundeCodeRabbit1545:
         )
         anzeige = finanzcheck.anzeige(paper)
         assert anzeige is not None and anzeige.karten is not None
-        assert "Wann das Fördergeld kommt, steht nicht in der Vorlage" in anzeige.karten.offen
+        assert "Wann das Fördergeld kommt, ließ sich aus der Vorlage nicht ermitteln" in anzeige.karten.offen
 
     def test_nachmeldung_nur_mit_jahr_des_zielhaushalts(self) -> None:
         beleg = "für die Jahre 2028 und 2031 werden zum Haushaltsplanentwurf 2028 angemeldet"
@@ -965,6 +965,11 @@ class TestBefundeCodeRabbit1545:
             ("nicht mit Änderungen beschlossen", False),
             ("ohne Änderungen beschlossen", False),
             ("abgelehnt", False),
+            ("Mit Änderungen entsprechend der Empfehlung des Ausschusses beschlossen.", True),
+            (
+                "Der Rat hat die Vorlage mit Änderungen beschlossen. Die Empfehlung des Ausschusses wurde berücksichtigt.",
+                True,
+            ),
         ],
     )
     def test_mit_aenderungen_nur_bei_beschluss(self, ergebnis: str, erwartet: bool) -> None:
@@ -1023,3 +1028,87 @@ class TestBefundeCodeRabbit1545Runde2:
         assert not finanzcheck.mit_aenderungen_beschlossen(
             "Die Vorlage wird mit Änderungen zur Beschlussfassung empfohlen"
         )
+
+
+class TestBefundeCodeRabbit1545Runde3:
+    """Dritte Runde CodeRabbit zu PR #1545 (Folge-PR)."""
+
+    def test_zeilennummer_im_ausschnitt_ist_kein_betrag(self) -> None:
+        material = finanzcheck._Material("Beträge in T€\nAuszahlungen Zeile 02\n2028 2029\n500 1.200\n")
+        assert finanzcheck._tabelle(material, "Auszahlungen Zeile 02 2028 2029 500 1.200") == [
+            (2028, 500000),
+            (2029, 1200000),
+        ]
+
+    def test_benachbarte_zeilen_mit_anderer_richtung(self) -> None:
+        text = "Baukosten 600.000 €\nAuszahlungen 2028: 600.000 €\nEinzahlungen 2028: 100.000 €\n"
+        material = finanzcheck._Material(text)
+        assert finanzcheck._richtung_belegt(material, "Auszahlungen 2028: 600.000 €", "ausgabe")
+        assert not finanzcheck._richtung_belegt(material, "Einzahlungen 2028: 100.000 €", "ausgabe")
+        # Ohne Bezeichnung in der Fundstelle zählt die eigene Zeile, nicht die Zeile davor
+        assert not finanzcheck._richtung_belegt(material, "2028: 100.000 €", "ausgabe")
+        assert finanzcheck._richtung_belegt(material, "2028: 100.000 €", "einnahme")
+
+
+def test_summe_ueber_jahre_nur_aus_derselben_folgekostenberechnung() -> None:
+    """Nutzungsdauer und Folgekosten aus verschiedenen Dokumenten: keine Summe über alle Jahre."""
+    from insight_ai.services.prompts import anlage_block
+
+    text = "\n\n".join(
+        [
+            anlage_block("Beschlussvorlage", DOKUMENT.replace("Nutzungsdauer:", "Restlaufzeit:")),
+            anlage_block("Anlage 4 Bauwerksbuch", "Nutzungsdauer: 40 Jahre"),
+        ]
+    )
+    ergebnis = finanzcheck.pruefen(ANTWORT, text)
+    paper = SimpleNamespace(
+        pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+    )
+    anzeige = finanzcheck.anzeige(paper)
+    assert anzeige is not None and anzeige.karten is not None and anzeige.karten.haushalt is not None
+    assert anzeige.karten.haushalt.wert == "124.000 €" and "Zusammen" not in anzeige.karten.haushalt.text
+    # Aus derselben Folgelastenberechnung (hier ohne Anlagen: dasselbe Dokument) gilt die Summe
+    assert "Zusammen rund 5 Mio. €" in TestAnzeige()._anzeige().karten.haushalt.text  # type: ignore[union-attr]
+
+
+def _haushalt(text: str) -> finanzcheck.Kasten:
+    ergebnis = finanzcheck.pruefen(ANTWORT, text)
+    paper = SimpleNamespace(
+        pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": ergebnis.daten}
+    )
+    anzeige = finanzcheck.anzeige(paper)
+    assert anzeige is not None and anzeige.karten is not None and anzeige.karten.haushalt is not None
+    return anzeige.karten.haushalt
+
+
+class TestBefundeCodeRabbit1552:
+    """CodeRabbit zu PR #1552."""
+
+    def test_richtung_ueber_mehrere_zeilen_der_fundstelle(self) -> None:
+        material = finanzcheck._Material("Einzahlungen 2028: 100.000 €\nAuszahlungen 2028\n600.000 €\n")
+        assert finanzcheck._richtung_belegt(material, "2028 600.000 €", "ausgabe")
+        assert not finanzcheck._richtung_belegt(material, "2028 600.000 €", "einnahme")
+
+    def test_jahressumme_in_mehreren_anlagen(self) -> None:
+        """Steht die Jahressumme auch in einer anderen Anlage, zählt die gemeinsame mit der Nutzungsdauer."""
+        from insight_ai.services.prompts import anlage_block
+
+        text = "\n\n".join(
+            [
+                anlage_block("Anlage 1 Kostenübersicht", "Folgelasten insgesamt 124.000 € pro Jahr"),
+                anlage_block("Beschlussvorlage", DOKUMENT),
+            ]
+        )
+        assert "Zusammen rund 5 Mio. €" in _haushalt(text).text
+
+    def test_balken_ohne_belegte_dauer_ohne_jahre(self) -> None:
+        from insight_ai.services.prompts import anlage_block
+
+        getrennt = "\n\n".join(
+            [
+                anlage_block("Beschlussvorlage", DOKUMENT.replace("Nutzungsdauer:", "Restlaufzeit:")),
+                anlage_block("Anlage 4 Bauwerksbuch", "Nutzungsdauer: 40 Jahre"),
+            ]
+        )
+        assert [s.text for s in _haushalt(getrennt).segmente][0] == "Anteil am Bau"
+        assert [s.text for s in _haushalt(DOKUMENT).segmente][0] == "Anteil am Bau, auf 40 Jahre verteilt"
