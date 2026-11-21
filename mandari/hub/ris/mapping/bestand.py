@@ -757,6 +757,10 @@ class BestandMapping:
         )
 
     def person(self, person: OParlPerson, ctx: RefContext | None = None) -> Objekt:
+        """
+        Person mit Name, Titel und Mitgliedschaften. Anrede, Geschlecht, E-Mail-Adresse, Telefonnummer und Lebenslauf
+        gibt mandari nicht weiter (Datensparsamkeit, Issue #1560), auch wenn die Quelle sie nennt.
+        """
         raw = person.raw_json or {}
         return clean(
             {
@@ -766,15 +770,9 @@ class BestandMapping:
                 "name": person.name or person.display_name,
                 "familyName": person.family_name,
                 "givenName": person.given_name,
-                "formOfAddress": raw.get("formOfAddress"),
                 "affix": raw.get("affix"),
                 "title": as_list(raw.get("title") or person.title),
-                "gender": person.gender,
-                "email": as_list(raw.get("email") or person.email),
-                "phone": as_list(raw.get("phone") or person.phone),
                 "status": as_list(raw.get("status")),
-                "life": raw.get("life"),
-                "lifeSource": raw.get("lifeSource"),
                 # OParl 1.1 bettet Memberships in Person ein
                 "membership": [self.membership(m) for m in person.memberships.all()],
                 "web": self.uris.web(f"personen/{person.id}/"),

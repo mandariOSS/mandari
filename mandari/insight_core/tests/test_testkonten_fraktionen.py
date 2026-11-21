@@ -211,20 +211,23 @@ def test_personenliste_ohne_testkonten_und_ohne_systemrolle_als_funktion(
     html = _client(body).get("/insight/personen/").content.decode()
 
     assert "ratsinfotest" not in html and "Test Beuel" not in html
-    assert "Vera Verwaltung" in html, "echte Personen bleiben in der Liste"
+    assert "Anna Eins" in html, "echte Personen mit Sitz bleiben in der Liste"
+    # Nur ein Zugang zum RIS ist kein Amt: Die Verwaltungskraft erscheint nicht mehr (Issue #1560)
+    assert "Vera Verwaltung" not in html
     assert "Informationssystem" not in html
     assert angaben_fuer([bezirk["verwaltung"]])[bezirk["verwaltung"].pk].funktion == ""
 
 
 def test_personenseite_ohne_systemrolle_und_testkonto_ohne_index(body: OParlBody, bezirk: dict[str, Any]) -> None:
+    # Ohne Sitz gibt es keine Seite mehr (Issue #1560, bisher noindex); die Daten bleiben im Bestand
     client = _client(body)
-    verwaltung = client.get(f"/insight/personen/{bezirk['verwaltung'].pk}/").content.decode()
-    assert "Informationssystem" not in verwaltung
-    assert '<meta name="robots" content="noindex, follow"' in verwaltung, "ohne Sitz kein Index"
-
-    testkonto = client.get(f"/insight/personen/{bezirk['testkonto'].pk}/")
-    assert testkonto.status_code == 200, "ausblenden statt löschen: die Seite bleibt erreichbar"
-    assert '<meta name="robots" content="noindex, follow"' in testkonto.content.decode()
+    for konto in ("verwaltung", "testkonto"):
+        antwort = client.get(f"/insight/personen/{bezirk[konto].pk}/")
+        assert antwort.status_code in (404, 410), konto
+        assert "Informationssystem" not in antwort.content.decode()
+    assert OParlPerson.objects.filter(pk=bezirk["testkonto"].pk, deleted=False).exists()
+    sitz = client.get(f"/insight/personen/{bezirk['sitze'][0].pk}/")
+    assert sitz.status_code == 200
 
 
 def test_sitemap_ohne_test_und_systemkonten(body: OParlBody, bezirk: dict[str, Any]) -> None:

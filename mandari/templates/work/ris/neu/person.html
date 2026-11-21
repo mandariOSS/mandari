@@ -3,7 +3,7 @@
 Person im neuen Erscheinungsbild (Issues #852, #853, #916): Kopf mit Funktion und Fraktion wie in Insight (Fraktion aus
 OParl oder bestätigte Zuordnung aus Insight mit Quellenhinweis, c-insight.fraktion), Mitgliedschaften (ehemalige
 aufklappbar) statt Reitern, daneben „Für die Fraktion“ (Konto in der Organisation, wenn verknüpft, mit members.view) und
-Informationen und Kontakt. Kontext: apps/work/ris/neu.person; die bisherige Seite bleibt work/ris/person_detail.html.
+Informationen. Kontext: apps/work/ris/neu.person; die bisherige Seite bleibt work/ris/person_detail.html.
 {% endcomment %}
 
 {% block page_title %}{% if person %}{{ person.name|default:person.display_name }}{% else %}Person{% endif %}{% endblock %}
@@ -59,19 +59,17 @@ Informationen und Kontakt. Kontext: apps/work/ris/neu.person; die bisherige Seit
         {% endif %}
     </c-rahmen.abschnitt>
 
-    <aside class="min-w-0 space-y-8" aria-label="Für die Fraktion und Kontakt">
+    <aside class="min-w-0 space-y-8" aria-label="Für die Fraktion und Informationen">
         <c-rahmen.band ton="grau" dicht titel="Für die Fraktion" titel_id="fraktion-titel" data-testid="fuer-die-fraktion">
             <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">{% if konto %}Mitglied Ihrer Organisation: Das Konto „{{ konto }}“ ist mit dieser Person verknüpft.{% elif darf_mitglieder %}Kein Mitglied Ihrer Organisation ist mit dieser Person verknüpft.{% else %}Ob diese Person zu Ihrer Organisation gehört, sehen Sie mit dem Recht, die Mitgliederliste anzuzeigen.{% endif %}</p>
         </c-rahmen.band>
 
-        <c-rahmen.abschnitt titel="Informationen und Kontakt" titel_id="kontakt-titel">
+        <c-rahmen.abschnitt titel="Informationen" titel_id="kontakt-titel">
             <c-ui.angaben class="mt-2">
                 {% if person.family_name %}<dt>Nachname</dt><dd>{{ person.family_name }}</dd>{% endif %}
                 {% if person.given_name %}<dt>Vorname</dt><dd>{{ person.given_name }}</dd>{% endif %}
                 {% if person.title %}<dt>Titel</dt><dd>{{ person.title }}</dd>{% endif %}
                 {% if angaben.fraktion_name %}<dt>Fraktion</dt><dd><c-insight.fraktion :angaben="angaben" /></dd>{% endif %}
-                {% if person.email %}<dt>E-Mail</dt><dd><c-ui.textlink href="mailto:{{ person.email }}" class="break-all">{{ person.email }}</c-ui.textlink></dd>{% endif %}
-                {% if person.phone %}<dt>Telefon</dt><dd><c-ui.textlink href="tel:{{ person.phone }}">{{ person.phone }}</c-ui.textlink></dd>{% endif %}
                 <dt>Aktive Gremien</dt><dd class="tabular-nums">{{ active_memberships|length }}</dd>
                 {% if past_memberships %}<dt>Ehemalige</dt><dd class="tabular-nums">{{ past_memberships|length }}</dd>{% endif %}
             </c-ui.angaben>

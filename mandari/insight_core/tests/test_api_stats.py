@@ -20,7 +20,15 @@ from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 
-from insight_core.models import OParlBody, OParlMeeting, OParlOrganization, OParlPaper, OParlPerson, OParlSource
+from insight_core.models import (
+    OParlBody,
+    OParlMeeting,
+    OParlMembership,
+    OParlOrganization,
+    OParlPaper,
+    OParlPerson,
+    OParlSource,
+)
 from insight_core.services import portal_stats
 
 pytestmark = pytest.mark.django_db
@@ -48,10 +56,22 @@ def _bestand(body: OParlBody, *, vorgaenge: int, sitzungen: int, gremien: int, p
         OParlPaper.objects.create(body=body, external_id=f"{kennung}-paper-{nummer}", name=f"Vorlage {nummer}")
     for nummer in range(sitzungen):
         OParlMeeting.objects.create(body=body, external_id=f"{kennung}-meeting-{nummer}", name=f"Sitzung {nummer}")
-    for nummer in range(gremien):
+    orgs = [
         OParlOrganization.objects.create(body=body, external_id=f"{kennung}-org-{nummer}", name=f"Gremium {nummer}")
+        for nummer in range(gremien)
+    ]
     for nummer in range(personen):
-        OParlPerson.objects.create(body=body, external_id=f"{kennung}-person-{nummer}", name=f"Person {nummer}")
+        person = OParlPerson.objects.create(
+            body=body,
+            external_id=f"{kennung}-person-{nummer}",
+            name=f"Petra Person{nummer}",
+            given_name="Petra",
+            family_name=f"Person{nummer}",
+        )
+        # Gezählt werden Personen mit laufendem Amt (Issue #1560)
+        OParlMembership.objects.create(
+            external_id=f"{kennung}-membership-{nummer}", person=person, organization=orgs[0], role="Mitglied"
+        )
 
 
 @pytest.fixture

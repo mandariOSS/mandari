@@ -6,6 +6,12 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+### Geändert
+- Datensparsame Anzeige von Personen (#1560). Öffentlich ist nur noch, wer derzeit ein Amt hat: mindestens eine laufende Mitgliedschaft in einem bestehenden Gremium (Rat, Ausschuss, Bezirksvertretung, Fraktion, Aufsichtsrat; auch sachkundige Bürgerinnen und Bürger). Alle anderen bleiben im Bestand, erscheinen aber nicht mehr: Personenliste und Personenseite (404 bzw. 410), Gremienseiten, Suche und Suchindex, Sitemap, Merkliste, Zahlen des Portals, KI-Assistent und MCP, Recherche in Work und die OParl-Ausgabe (dort wie Gelöschtes: gekürztes Objekt mit `deleted: true`, nicht in Listen und Snapshots). Im Zweifel verborgen: ohne Mitgliedschaften aus der Quelle, in beendeten oder gelöschten Gremien, mit bloßem Zugang zum RIS. Die Regel steht an einer Stelle (`insight_core/services/personen_sichtbarkeit.py`). Session bleibt unberührt.
+- Keine Fotos von Personen mehr (#1560): Die Anzeige nimmt überall die Initialen, der Zeitplan `fetch_person_photos` entfällt, der Befehl ruft nichts mehr ab, und `/media/persons/photos/` wird nicht mehr ausgeliefert. Gespeicherte Fotos bleiben vorerst im Bestand.
+- E-Mail-Adresse, Telefonnummer und Geschlecht von Personen erscheinen nicht mehr (#1560): weder im Bürgerportal noch in der Recherche von Work; die Personensuche durchsucht keine E-Mail-Adressen mehr. Die OParl-Ausgabe lässt `email`, `phone`, `gender`, `formOfAddress`, `life` und `lifeSource` weg.
+- Vorlagen mit kritischem Personenbezug stehen nicht mehr im Suchindex (#1560). Erkannt werden sie nach Art und Titel (Eingaben aus der Einwohnerschaft, Bauanträge, Einwendungen und Abwägungen, Personalangelegenheiten, Vorschlagslisten für Schöffinnen und Schöffen, Stundungen, Widersprüche, Grundstücksgeschäfte) und an Angaben zu Privatpersonen im Text ihrer Dokumente (Geburtsdatum, „wohnhaft“, IBAN, private E-Mail-Adresse). Ihre Seite trägt `noindex`, die Sitemap nennt sie nicht (nach Art und Titel), ihre Dokumente liefert mandari mit `X-Robots-Tag: noindex` aus, und der Volltext ihrer Dokumente fehlt in der Suche; über Titel und Vorlagennummer bleiben sie auffindbar (`insight_core/services/personenbezug.py`). Für den Bestand nach dem Update die Indizes `persons`, `papers` und `files` neu aufbauen.
+
 ## [0.13.3] – 2026-11-21
 
 ### Hinzugefügt

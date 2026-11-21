@@ -39,7 +39,7 @@ from collections.abc import Iterable, Iterator
 from itertools import batched
 from typing import Any, Final, NamedTuple
 
-from django.db.models import Prefetch, Q, QuerySet
+from django.db.models import BooleanField, Case, Exists, OuterRef, Prefetch, Q, QuerySet, Value, When
 from django.db.models.functions import Substr
 
 from insight_core.models import (
@@ -51,6 +51,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
 )
+from insight_core.services import personen_sichtbarkeit, personenbezug
 from insight_core.services.search_documents import (
     INDEX_TEXT_MAX_CHARS,
     PREVIEW_CHARS_PER_FILE,
@@ -97,7 +98,8 @@ def indexable(index: str) -> QuerySet[Any]:
     if index == "meetings":
         return OParlMeeting.objects.filter(deleted=False)
     if index == "persons":
-        return OParlPerson.objects.filter(deleted=False)
+        # Nur Personen mit laufendem Amt (Issue #1560); die übrigen filtert auch die Abfrage (``search_service``)
+        return personen_sichtbarkeit.nur_oeffentliche(OParlPerson.objects.all())
     if index == "organizations":
         return OParlOrganization.objects.filter(deleted=False)
     if index == "files":
@@ -108,20 +110,36 @@ def indexable(index: str) -> QuerySet[Any]:
 def _vorgeladen(index: str, abfrage: QuerySet[Any]) -> QuerySet[Any]:
     if index == "papers":
         # Dieselbe Auswahl wie paper_to_doc ohne Vorladen; vom Text nur, was die Vorschau nutzt
+        # ``mit_angaben``: Angaben zu Privatpersonen im ganzen Text (Issue #1560), in derselben Abfrage ermittelt
         dateien = (
             _indexierbare_dateien()
             .only("id", "paper_id", "file_name")
-            .annotate(text_anfang=Substr("text_content", 1, PREVIEW_CHARS_PER_FILE))
+            .annotate(
+                text_anfang=Substr("text_content", 1, PREVIEW_CHARS_PER_FILE),
+                mit_angaben=Case(
+                    When(personenbezug.mit_angaben_q(), then=Value(True)),
+                    default=Value(False),
+                    output_field=BooleanField(),
+                ),
+            )
         )
         return abfrage.prefetch_related("consultations", Prefetch("files", queryset=dateien, to_attr=_VORSCHAU))
     if index == "meetings":
         return abfrage.prefetch_related("organizations")
     if index == "files":
         # Vom Text nur, was in den Index kommt: Ein Abschnitt hält so nie mehrere große Volltexte im Speicher
+        # ``_vorgang_mit_angaben``: Nennt ein Dokument desselben Vorgangs Angaben zu Privatpersonen (Issue #1560)?
+        # Als Unterabfrage, damit der Aufbau keine Abfrage je Datei braucht
+        geschwister = OParlFile.objects.filter(
+            personenbezug.mit_angaben_q(), paper_id=OuterRef("paper_id"), deleted=False
+        )
         gekuerzt: QuerySet[Any] = (
             abfrage.select_related("paper")
             .defer("text_content")
-            .annotate(**{_SUCHTEXT: Substr("text_content", 1, INDEX_TEXT_MAX_CHARS)})
+            .annotate(
+                **{_SUCHTEXT: Substr("text_content", 1, INDEX_TEXT_MAX_CHARS)},
+                _vorgang_mit_angaben=Exists(geschwister),
+            )
         )
         return gekuerzt
     return abfrage
@@ -140,7 +158,11 @@ def build(index: str, obj: Any) -> dict[str, Any]:
         vorgeladen = getattr(obj, _VORSCHAU, None)
         if vorgeladen is None:
             return paper_to_doc(obj)
-        return paper_to_doc(obj, files=[_DateiVorschau(datei.file_name, datei.text_anfang) for datei in vorgeladen])
+        return paper_to_doc(
+            obj,
+            files=[_DateiVorschau(datei.file_name, datei.text_anfang) for datei in vorgeladen],
+            dokumente_mit_angaben=any(datei.mit_angaben for datei in vorgeladen),
+        )
     if index == "meetings":
         return meeting_to_doc(obj)
     if index == "persons":

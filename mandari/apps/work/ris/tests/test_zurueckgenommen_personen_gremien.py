@@ -90,7 +90,8 @@ def _namen(objekte: Any) -> set[str]:
     return {objekt.name for objekt in objekte}
 
 
-PERSONEN = {"Kim sichtbar", "Kim quelle"}
+#: Eine in der Quelle gelöschte Person zeigt die Recherche nicht mehr (Issue #1560); das Gremium bleibt
+PERSONEN = {"Kim sichtbar"}
 GREMIEN = {"Ausschuss sichtbar", "Ausschuss quelle"}
 
 
@@ -99,14 +100,16 @@ def test_listen_kennzahlen_und_suche_ohne_zurueckgenommene(org: Any, daten: dict
 
     assert _namen(selectors.persons_queryset(bodies)) == PERSONEN
     assert _namen(selectors.persons_queryset(bodies, search="zurueck@rat.example")) == set()
-    assert _namen(selectors.persons_queryset(bodies, search="quelle@rat.example")) == {"Kim quelle"}
+    # Die Personensuche durchsucht keine E-Mail-Adressen mehr (Issue #1560)
+    assert _namen(selectors.persons_queryset(bodies, search="sichtbar@rat.example")) == set()
+    assert _namen(selectors.persons_queryset(bodies, search="Kim")) == PERSONEN
     alle = selectors.filter_organizations(selectors.organizations_with_meeting_info(bodies), active_only=False)
     assert _namen(alle) == GREMIEN
     assert _namen(selectors.organizations_for_filter(bodies)) == GREMIEN
     assert set(selectors.search_committees(bodies)) == GREMIEN
     assert selectors.organization_tab_counts(bodies)["all_count"] == 2
     stats = selectors.overview_stats(bodies)
-    assert stats["persons_total"] == 2 and stats["organizations_total"] == 2
+    assert stats["persons_total"] == 1 and stats["organizations_total"] == 2
     funde = selectors.orm_search([str(org.body_id)], query="Kim")
     assert _namen(funde["persons"]) == PERSONEN
     funde = selectors.orm_search([str(org.body_id)], query="Ausschuss")
@@ -156,9 +159,8 @@ def test_personenliste_ratsrolle_und_zaehler_ohne_zurueckgenommene_mitgliedschaf
     assert personen["Kim sichtbar"].membership_count == sum(
         gruppe.count() for gruppe in selectors.person_memberships(daten["person_sichtbar"]).values()
     )
-    # Eine veröffentlichte Ratsmitgliedschaft nennt ihre Rolle weiter und zählt mit
-    assert personen["Kim quelle"].council_role == "Vorsitz"
-    assert personen["Kim quelle"].membership_count == 2
+    # Die in der Quelle gelöschte Person steht nicht mehr in der Liste (Issue #1560)
+    assert "Kim quelle" not in personen
 
 
 def test_gremienliste_nennt_keine_zurueckgenommene_sitzung(org: Any, kommune: OParlBody, daten: dict[str, Any]) -> None:
@@ -244,7 +246,8 @@ def test_detailseite_zurueckgenommen_410_ohne_inhalt(
     # Die Seite nennt weder die zurückgenommene Person noch das zurückgenommene Gremium als Mitgliedschaft
     inhalt = sichtbar.content.decode()
     assert "Kim zurueck" not in inhalt and "Ausschuss zurueck" not in inhalt
-    assert aufruf(daten[f"{art}_quelle"].pk).status_code == 200
+    # In der Quelle gelöscht: das Gremium bleibt sichtbar, die Person nicht mehr (Issue #1560)
+    assert aufruf(daten[f"{art}_quelle"].pk).status_code == (404 if art == "person" else 200)
     assert aufruf(uuid.uuid4()).status_code == 404
 
 

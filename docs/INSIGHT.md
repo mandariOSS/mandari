@@ -246,6 +246,10 @@ RIS-spezifischen Rollenbezeichnungen.
 
 ## 4. Personenfotos
 
+**Abgeschaltet (Issue #1560, Datensparsamkeit):** mandari zeigt keine Fotos von Personen mehr (überall Initialen),
+der Zeitplan entfällt, und `/media/persons/photos/` wird nicht mehr ausgeliefert. Gespeicherte Fotos bleiben im
+Bestand. Der Rest dieses Abschnitts beschreibt den Abruf, wie er für den Handbetrieb weiter vorhanden ist.
+
 Fotos werden aus dem Ratsinformationssystem geladen und **lokal zwischengespeichert**
 (`OParlPerson.photo`, max. 400 px JPEG). Vorteile: keine kaputten Hotlinks bei RIS-Umzügen oder
 Bot-Schutz, keine 404-Requests im Browser, klarer Initialen-Fallback bei „kein Foto“.
@@ -256,9 +260,6 @@ Regex mit einer Capture-Group auf die `external_id`. Für bekannte RIS greifen P
 `https://www.stadt-muenster.de/sessionnet/sessionnetbi/im/pe{id}.jpg` + `/people/(\d+)$`).
 
 Manuell im Admin hochgeladene Fotos (`photo_status = manual`) werden nie überschrieben.
-
-**Zeitplan im Worker** `befehl:fetch_person_photos` (montags 03:00; prüft nur ungeprüfte oder
->30 Tage alte Einträge).
 
 Einmalig alles neu laden: `python manage.py fetch_person_photos --body <kurzname> --force`
 
