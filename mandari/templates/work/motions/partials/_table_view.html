@@ -27,28 +27,28 @@ Kontext: motion_rows, motions (Seite), paginator, folder_entries, current_folder
                     <!-- Auswahl -->
                     <td class="pl-4 pr-1 py-3" @click.stop>
                         <input type="checkbox" value="{{ motion.id }}" x-model="selectedIds"
-                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                               class="rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500"
                                aria-label="„{{ motion.title|truncatechars:60 }}“ zum Verschieben auswählen" title="Für Verschieben auswählen">
                     </td>
                     <!-- Titel (+ Einrückung für Änderungsanträge) -->
                     <td class="px-4 py-3 max-w-xs">
                         <div class="flex items-center gap-2 {% if row.is_amendment %}pl-6{% endif %}">
                             {% if row.is_amendment %}
-                            <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>
+                            <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-gray-400 shrink-0"></i>
                             {% endif %}
                             <span class="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600">{{ motion.title }}</span>
-                            <span class="inline-flex items-center px-1 py-0.5 rounded text-[10px] flex-shrink-0 {{ motion.get_visibility_badge_class }}">
+                            <span class="inline-flex items-center px-1 py-0.5 rounded-sm text-[10px] shrink-0 {{ motion.get_visibility_badge_class }}">
                                 <i data-lucide="{{ motion.get_visibility_icon }}" class="w-2.5 h-2.5"></i>
                             </span>
                             {% if motion.folder and not current_folder %}
-                            <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] flex-shrink-0 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400" title="Ordner: {{ motion.folder.name }}">
+                            <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-sm text-[10px] shrink-0 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400" title="Ordner: {{ motion.folder.name }}">
                                 <i data-lucide="folder" class="w-2.5 h-2.5"></i>
                                 {{ motion.folder.name|truncatechars:18 }}
                             </span>
                             {% endif %}
                             {% with approvals=motion.approval_summary %}
                             {% if approvals.total %}
-                            <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] flex-shrink-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300"
+                            <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-sm text-[10px] shrink-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300"
                                   title="Freigaben: {{ approvals.approved }} von {{ approvals.total }} erteilt">
                                 <i data-lucide="file-check" class="w-2.5 h-2.5"></i>
                                 {{ approvals.approved }}/{{ approvals.total }}
@@ -68,7 +68,7 @@ Kontext: motion_rows, motions (Seite), paginator, folder_entries, current_folder
                     <td class="px-4 py-3 whitespace-nowrap">
                         {% if motion.responsible %}
                         <span class="flex items-center gap-1.5">
-                            <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
+                            <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center shrink-0">
                                 <span class="text-[10px] font-bold text-primary-700 dark:text-primary-300">{{ motion.responsible.user.get_initials }}</span>
                             </span>
                             <span class="text-gray-700 dark:text-gray-300">{{ motion.responsible.user.get_display_name }}</span>
@@ -93,7 +93,7 @@ Kontext: motion_rows, motions (Seite), paginator, folder_entries, current_folder
                         {% if motion.due_date %}
                         <span class="text-gray-700 dark:text-gray-300">{{ motion.due_date|date:"d.m.Y" }}</span>
                         {% if motion.is_overdue %}
-                        <span class="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                        <span class="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded-sm text-[10px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
                             <i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i>
                             überfällig
                         </span>

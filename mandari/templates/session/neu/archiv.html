@@ -25,7 +25,7 @@ Komma und Punkt). Kontext: ArchiveView; die bisherige Seite bleibt session/archi
     {% for row in rows %}
     <li class="grid md:grid-cols-[16rem_minmax(0,1fr)] gap-x-6 gap-y-1 py-3 pl-1">
         <div class="min-w-0">
-            <h2 id="periode-{{ forloop.counter }}" class="text-sm font-semibold text-gray-900 dark:text-white break-words">{{ row.term.name }}</h2>
+            <h2 id="periode-{{ forloop.counter }}" class="text-sm font-semibold text-gray-900 dark:text-white wrap-break-word">{{ row.term.name }}</h2>
             <p class="mt-0.5 flex flex-wrap items-center gap-x-3 text-[0.8125rem] text-gray-600 dark:text-gray-400">
                 {% if row.term.start_date or row.term.end_date %}<span class="tabular-nums">{% if row.term.start_date and row.term.end_date %}{{ row.term.start_date|date:"d.m.Y" }} bis {{ row.term.end_date|date:"d.m.Y" }}{% elif row.term.start_date %}ab {{ row.term.start_date|date:"d.m.Y" }}, Ende offen{% else %}bis {{ row.term.end_date|date:"d.m.Y" }}{% endif %}</span>{% endif %}
                 {% if row.is_current %}<span class="text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert="approved" text="Aktuell" %}</span>{% endif %}

@@ -35,11 +35,11 @@ Kontext: MemberListView.
                 {% for member in members %}
                 <li class="flex flex-wrap items-center gap-x-6 gap-y-1 py-2.5">
                     {% include "work/organization/neu/_person.html" with person=member.user %}
-                    <div class="min-w-[14rem] flex-1 sm:w-80 sm:flex-none">
-                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ member.user.get_full_name|default:member.user.email }}</a>
+                    <div class="min-w-56 flex-1 sm:w-80 sm:flex-none">
+                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ member.user.get_full_name|default:member.user.email }}</a>
                         <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{{ member.user.email }}{% if organization.owner == member.user %} · Eigentümer{% endif %}{% if member.is_sworn_in %} · vereidigt{% endif %}</p>
                     </div>
-                    <p class="min-w-[12rem] flex-1 text-[0.8125rem] text-gray-800 dark:text-gray-200">
+                    <p class="min-w-48 flex-1 text-[0.8125rem] text-gray-800 dark:text-gray-200">
                         {% for role in member.roles.all %}<span class="inline-flex items-center gap-1.5 mr-3">{% include "work/organization/neu/_farbpunkt.html" with farbe=role.color %}{{ role.name }}</span>{% empty %}<span class="text-gray-600 dark:text-gray-400">Keine Rollen zugewiesen</span>{% endfor %}
                     </p>
                     <div class="flex items-center gap-4 text-[0.8125rem] text-gray-600 dark:text-gray-400">
@@ -61,11 +61,11 @@ Kontext: MemberListView.
                 {% for guest in guests %}
                 <li class="flex flex-wrap items-center gap-x-6 gap-y-1 py-2.5">
                     {% include "work/organization/neu/_person.html" with person=guest.user %}
-                    <div class="min-w-[14rem] flex-1 sm:w-80 sm:flex-none">
-                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=guest.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ guest.user.get_full_name|default:guest.user.email }}</a>
+                    <div class="min-w-56 flex-1 sm:w-80 sm:flex-none">
+                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=guest.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ guest.user.get_full_name|default:guest.user.email }}</a>
                         <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{{ guest.user.email }} · Gast</p>
                     </div>
-                    <p class="min-w-[12rem] flex-1 text-[0.8125rem] text-gray-800 dark:text-gray-200">
+                    <p class="min-w-48 flex-1 text-[0.8125rem] text-gray-800 dark:text-gray-200">
                         {% if guest.shared_document_count or guest.shared_folder_count %}{{ guest.shared_document_count }} Dokument{{ guest.shared_document_count|pluralize:"e" }} und {{ guest.shared_folder_count }} Ordner freigegeben{% else %}Noch keine Freigaben{% endif %}
                     </p>
                     <span class="whitespace-nowrap text-[0.8125rem] text-gray-600 dark:text-gray-400">Eingeladen {{ guest.joined_at|date:"d.m.Y" }}</span>
@@ -84,8 +84,8 @@ Kontext: MemberListView.
                 {% for member in inactive_members %}
                 <li class="flex flex-wrap items-center gap-x-6 gap-y-1 py-2.5">
                     {% include "work/organization/neu/_person.html" with person=member.user %}
-                    <div class="min-w-[14rem] flex-1 sm:w-80 sm:flex-none">
-                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ member.user.get_full_name|default:member.user.email }}</a>
+                    <div class="min-w-56 flex-1 sm:w-80 sm:flex-none">
+                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ member.user.get_full_name|default:member.user.email }}</a>
                         <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{{ member.user.email }}</p>
                     </div>
                     <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% include "work/organization/neu/_status.html" %}{% if member.deletion_pending %}Löschung am {{ member.deletion_scheduled_at|date:"d.m.Y" }}{% else %}Deaktiviert{% endif %}</span>

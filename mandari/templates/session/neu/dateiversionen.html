@@ -66,7 +66,7 @@ wie FileVersionListView. Die bisherige Seite bleibt session/files/versions.html.
                 <div class="min-w-0">
                     {% if not version.blob.purged_at %}
                     <a href="{% url 'session:file_version_download' tenant_slug=tenant_slug file_id=session_file.id number=version.number %}"
-                       class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words"
+                       class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word"
                        title="Version {{ version.number }} herunterladen">{{ version.name }}</a>
                     {% else %}
                     <p class="text-sm liste-name">{{ version.name }}</p>
@@ -77,7 +77,7 @@ wie FileVersionListView. Die bisherige Seite bleibt session/files/versions.html.
                         <span class="tabular-nums whitespace-nowrap">{{ version.created_at|date:"d.m.Y, H:i" }} Uhr</span>
                         {% if version.created_by %}<span class="break-all">{{ version.created_by.user.email }}</span>{% endif %}
                     </p>
-                    {% if version.note %}<p class="text-[0.8125rem] text-gray-700 dark:text-gray-300 break-words">{{ version.note }}</p>{% endif %}
+                    {% if version.note %}<p class="text-[0.8125rem] text-gray-700 dark:text-gray-300 wrap-break-word">{{ version.note }}</p>{% endif %}
                     {% if version.blob.purged_at %}
                     <p class="mt-1 text-[0.8125rem] text-red-700 dark:text-red-400">Inhalt am {{ version.blob.purged_at|date:"d.m.Y" }} aus Datenschutzgründen gelöscht.</p>
                     {% elif version.blob_id in purgeable %}

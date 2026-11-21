@@ -42,7 +42,7 @@ Eine Ebene: Abschnitte mit Überschrift, keine Kästen. Kontext wie PaperDetailV
 
     {% if paper.source_application %}
     <c-rahmen.abschnitt titel="Erstellt aus Antrag" titel_id="herkunft-titel">
-        <p class="mt-1 text-sm break-words">
+        <p class="mt-1 text-sm wrap-break-word">
             {% if "view_applications" in permission_checker.permissions %}
             <c-ui.textlink href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=paper.source_application.id %}">{{ paper.source_application.reference }}</c-ui.textlink> {{ paper.source_application.title|truncatechars:60 }}
             {% else %}

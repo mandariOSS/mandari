@@ -11,7 +11,7 @@ Alpine-Scope: kanbanBoard (panelOpen, closePanel)
      x-transition:leave-end="opacity-0"
      @keydown.escape.window="closePanel()"
      @click.self="closePanel()"
-     class="fixed inset-0 z-[55] bg-black/40">
+     class="fixed inset-0 z-55 bg-black/40">
     <!-- Slide-Over Panel -->
     <div x-show="panelOpen"
          x-transition:enter="transition ease-out duration-300"

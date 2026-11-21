@@ -15,15 +15,15 @@
         <form method="post" class="flex flex-wrap items-center gap-3">
             {% csrf_token %}
             <input type="text" name="name" required maxlength="100" placeholder="z.B. Verkehr, Klima, Bildung..."
-                   class="flex-1 min-w-[200px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                   class="flex-1 min-w-[200px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
             <select name="color"
-                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 {% for value, label in color_choices %}
                 <option value="{{ value }}" {% if value == "blue" %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Anlegen
             </button>
@@ -38,17 +38,17 @@
                 <form method="post" action="{% url 'work:document_topic_update' org_slug=organization.slug topic_id=topic.id %}"
                       class="flex flex-wrap items-center gap-3">
                     {% csrf_token %}
-                    <span class="w-3 h-3 rounded-full bg-{{ topic.color }}-500 flex-shrink-0"></span>
+                    <span class="w-3 h-3 rounded-full bg-{{ topic.color }}-500 shrink-0"></span>
                     <input type="text" name="name" value="{{ topic.name }}" required maxlength="100"
-                           class="flex-1 min-w-[160px] px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="flex-1 min-w-[160px] px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     <select name="color"
-                            class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
+                            class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden">
                         {% for value, label in color_choices %}
                         <option value="{{ value }}" {% if topic.color == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                     <input type="number" name="sort_order" value="{{ topic.sort_order }}" title="Sortierung"
-                           class="w-16 px-2 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
+                           class="w-16 px-2 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden">
                     <button type="submit" class="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Speichern">
                         <i data-lucide="save" class="w-4 h-4"></i>
                     </button>

@@ -28,7 +28,7 @@ Kontext: corrections, can_correct, can_view_np, meeting.
                 <span class="text-gray-700 dark:text-gray-300">{% if c.status == "applied" %}{% include "session/neu/_status.html" with wert="approved" text=c.get_status_display %}{% else %}{% include "session/neu/_status.html" with wert=c.status text=c.get_status_display %}{% endif %}</span>
                 {% if not c.is_public %}<span class="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>nichtöffentlich</span>{% endif %}
             </p>
-            <p class="text-sm text-gray-800 dark:text-gray-200 break-words">Grund: {{ row.reason }}</p>
+            <p class="text-sm text-gray-800 dark:text-gray-200 wrap-break-word">Grund: {{ row.reason }}</p>
             {% if row.changes %}<p class="liste-angaben">{{ row.changes|join:"; " }}</p>{% endif %}
             <p class="liste-angaben">
                 Beantragt von {{ c.requested_by.user.email|default:"unbekannt" }}{% if c.decided_by and c.decided_by != c.requested_by %}, {{ c.get_status_display|lower }} durch {{ c.decided_by.user.email }}{% endif %}{% if c.decision_note %} ({{ c.decision_note }}){% endif %}
@@ -48,7 +48,7 @@ Kontext: corrections, can_correct, can_view_np, meeting.
                         {% csrf_token %}
                         <label for="ablehnen-vermerk-{{ c.id }}" class="sr-only">Vermerk zur Ablehnung</label>
                         <input id="ablehnen-vermerk-{{ c.id }}" type="text" name="note" placeholder="Vermerk (optional)"
-                               class="h-9 flex-1 sm:flex-none sm:w-64 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                               class="h-9 flex-1 sm:flex-none sm:w-64 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                         <c-ui.button type="submit" variant="secondary" size="sm" icon="x">Ablehnen</c-ui.button>
                     </form>
                 </div>

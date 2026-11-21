@@ -52,7 +52,7 @@
             <div class="col-span-2 flex items-end">
                 <div class="flex items-center gap-2 pb-1.5">
                     <input type="checkbox" name="is_public" id="id_is_public" checked
-                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                     <label for="id_is_public" class="text-xs font-medium text-gray-600 dark:text-gray-400">Öffentl.</label>
                 </div>
             </div>
@@ -61,13 +61,13 @@
         <!-- Geheimhaltungspflicht (Issue #754): nur im nichtöffentlichen Teil -->
         <div class="flex items-center gap-2">
             <input type="checkbox" name="requires_secrecy" id="id_requires_secrecy"
-                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                   class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
             <label for="id_requires_secrecy" class="text-xs font-medium text-gray-600 dark:text-gray-400">Geheimhaltungspflichtig (nur nichtöffentlich)</label>
         </div>
         <!-- Art des TOP (Issue #757): Einwohnerfragestunde nur im öffentlichen Teil -->
         <div class="flex items-center gap-2">
             <select name="kind" id="id_kind" aria-label="Art des Tagesordnungspunkts"
-                    class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                 {% for value, label in form.kind.field.choices %}
                 <option value="{{ value }}" {% if form.kind.value|default:"" == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}

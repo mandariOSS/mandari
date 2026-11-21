@@ -8,7 +8,7 @@ Antworten der KI tragen ``data-ai-generated`` (EU AI Act Art. 50, Issue #938, do
         <!-- User Message -->
         <template x-if="msg.role === 'user'">
             <div class="flex justify-end">
-                <div class="bg-primary-600 text-white rounded-2xl rounded-br-md px-5 py-3 max-w-[75%] shadow-sm">
+                <div class="bg-primary-600 text-white rounded-2xl rounded-br-md px-5 py-3 max-w-[75%] shadow-xs">
                     <p class="text-[15px] leading-relaxed whitespace-pre-wrap" x-text="msg.content"></p>
                 </div>
             </div>
@@ -16,7 +16,7 @@ Antworten der KI tragen ``data-ai-generated`` (EU AI Act Art. 50, Issue #938, do
         <!-- Assistant Message -->
         <template x-if="msg.role === 'assistant'">
             <div class="flex justify-start gap-3">
-                <div class="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-900/30 border border-primary-100 dark:border-primary-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div class="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-900/30 border border-primary-100 dark:border-primary-800/40 flex items-center justify-center shrink-0 mt-0.5">
                     <svg class="w-[18px] h-[18px] text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
                 </div>
                 <div class="max-w-[85%] min-w-0">
@@ -52,7 +52,7 @@ Antworten der KI tragen ``data-ai-generated`` (EU AI Act Art. 50, Issue #938, do
         <!-- Error Message -->
         <template x-if="msg.role === 'error'">
             <div class="flex justify-start gap-3">
-                <div class="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div class="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/40 flex items-center justify-center shrink-0 mt-0.5">
                     <svg class="w-[18px] h-[18px] text-red-500 dark:text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
                 </div>
                 <div class="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800/40 rounded-2xl rounded-tl-md px-5 py-3 max-w-[80%]">

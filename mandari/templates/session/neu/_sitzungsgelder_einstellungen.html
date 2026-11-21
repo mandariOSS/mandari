@@ -10,7 +10,7 @@ wie session/allowances/_settings.html. Eingebunden aus session/neu/sitzungsgelde
         <c-rahmen.liste class="mt-2">
             {% for rate in rates %}
             <li class="flex items-center gap-3 py-1.5 text-sm">
-                <span class="min-w-0 flex-1 text-gray-900 dark:text-white break-words">{{ rate.organization.name }} <span class="text-gray-600 dark:text-gray-400">· {{ rate.get_role_display }}</span></span>
+                <span class="min-w-0 flex-1 text-gray-900 dark:text-white wrap-break-word">{{ rate.organization.name }} <span class="text-gray-600 dark:text-gray-400">· {{ rate.get_role_display }}</span></span>
                 <span class="shrink-0 font-medium tabular-nums text-gray-900 dark:text-white">{{ rate.amount }} €</span>
                 <form method="post" action="{% url 'session:allowance_rate_delete' tenant_slug=tenant_slug rate_id=rate.id %}" class="shrink-0 text-gray-600 dark:text-gray-400">
                     {% csrf_token %}

@@ -7,7 +7,7 @@ Kontext: security_notifications (neueste zuerst; is_read gilt für den Stand vor
     <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
         {% for hinweis in security_notifications %}
         <li class="px-6 py-4 flex items-start gap-3">
-            <div class="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+            <div class="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0">
                 <i data-lucide="{% if hinweis.notification_type == 'password_changed' %}key-round{% elif hinweis.notification_type == 'session_revoked' %}log-out{% elif 'device' in hinweis.notification_type %}usb{% else %}shield{% endif %}"
                    class="w-4 h-4 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
             </div>

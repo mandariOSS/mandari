@@ -10,6 +10,6 @@ session/papers/versions/_compare_head.html im neuen Rahmen. Kontext: version, la
         {% if version.is_resolved %}<span class="text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert="approved" text="Beschlossene Fassung" %}</span>{% endif %}
         {% if not version.is_public %}<span class="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
     </p>
-    <p class="text-sm text-gray-700 dark:text-gray-300 break-words">{{ version.get_trigger_display }}{% if version.note %}: {{ version.note }}{% endif %}</p>
+    <p class="text-sm text-gray-700 dark:text-gray-300 wrap-break-word">{{ version.get_trigger_display }}{% if version.note %}: {{ version.note }}{% endif %}</p>
     <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400"><span class="tabular-nums">{{ version.created_at|date:"d.m.Y, H:i" }} Uhr</span> · {{ version.status_display }}</p>
 </div>

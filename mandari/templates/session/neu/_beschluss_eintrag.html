@@ -10,7 +10,7 @@ session/resolutions/register.html. Kontext: item, can_manage, implementation_cho
         <p class="text-sm tabular-nums">{% if item.resolution_number %}<span class="font-semibold text-gray-900 dark:text-white">{{ item.resolution_number }}</span>{% else %}<span class="text-gray-600 dark:text-gray-400">ohne Nummer</span>{% endif %}</p>
         <div class="min-w-0">
             <p class="liste-name">TOP {{ item.number }}: {{ item.name }}</p>
-            <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">
+            <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">
                 <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=item.meeting_id %}" class="text-gray-800 dark:text-gray-200 hover:underline underline-offset-4">{{ item.meeting.name }}</a>, {{ item.meeting.organization.name }}, <span class="tabular-nums">{{ item.meeting.start|date:"d.m.Y" }}</span>
             </p>
             <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
@@ -22,18 +22,18 @@ session/resolutions/register.html. Kontext: item, can_manage, implementation_cho
             {# Beschlusskontrolle (Issue #37) #}
             <p class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300" data-testid="umsetzung">
                 <span>Umsetzung: {% if item.implementation_overdue %}{% spaceless %}{% include "session/neu/_status.html" with wert="ueberfaellig" text=item.get_implementation_status_display %}{% endspaceless %}<span class="font-medium text-red-700 dark:text-red-400">, überfällig</span>{% else %}{% include "session/neu/_status.html" with wert=item.implementation_status text=item.get_implementation_status_display %}{% endif %}</span>
-                {% if item.implementation_recipient %}<span class="break-words">Zuständig: <span class="font-medium text-gray-800 dark:text-gray-200">{{ item.implementation_recipient }}</span></span>{% endif %}
+                {% if item.implementation_recipient %}<span class="wrap-break-word">Zuständig: <span class="font-medium text-gray-800 dark:text-gray-200">{{ item.implementation_recipient }}</span></span>{% endif %}
                 {% if item.implementation_deadline %}<span class="tabular-nums {% if item.implementation_overdue %}font-medium text-red-700 dark:text-red-400{% endif %}">Frist: {{ item.implementation_deadline|date:"d.m.Y" }}</span>{% endif %}
             </p>
-            {% if item.implementation_note %}<p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 break-words">{{ item.implementation_note }}</p>{% endif %}
+            {% if item.implementation_note %}<p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 wrap-break-word">{{ item.implementation_note }}</p>{% endif %}
             {% if item.implementation_updated_at %}
-            <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">Zuletzt aktualisiert {{ item.implementation_updated_at|date:"d.m.Y H:i" }}{% if item.implementation_updated_by %} von {{ item.implementation_updated_by.user.email }}{% endif %}</p>
+            <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">Zuletzt aktualisiert {{ item.implementation_updated_at|date:"d.m.Y H:i" }}{% if item.implementation_updated_by %} von {{ item.implementation_updated_by.user.email }}{% endif %}</p>
             {% endif %}
             {% endif %}
             {% if item.forwardings.all %}
             <ul class="mt-1 space-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="uebergaben">
                 {% for fw in item.forwardings.all %}
-                <li class="flex items-start gap-1 break-words"><i data-lucide="corner-down-right" class="mt-0.5 w-3.5 h-3.5 shrink-0" aria-hidden="true"></i><span>Übergeben an <span class="font-medium text-gray-800 dark:text-gray-200">{{ fw.recipient }}</span> ({{ fw.get_method_display }}, {{ fw.sent_at|date:"d.m.Y H:i" }}{% if fw.sent_by %}, {{ fw.sent_by.user.email }}{% endif %})</span></li>
+                <li class="flex items-start gap-1 wrap-break-word"><i data-lucide="corner-down-right" class="mt-0.5 w-3.5 h-3.5 shrink-0" aria-hidden="true"></i><span>Übergeben an <span class="font-medium text-gray-800 dark:text-gray-200">{{ fw.recipient }}</span> ({{ fw.get_method_display }}, {{ fw.sent_at|date:"d.m.Y H:i" }}{% if fw.sent_by %}, {{ fw.sent_by.user.email }}{% endif %})</span></li>
                 {% endfor %}
             </ul>
             {% endif %}
@@ -48,7 +48,7 @@ session/resolutions/register.html. Kontext: item, can_manage, implementation_cho
         </div>
     </div>
     {% if can_manage %}
-    <div id="beschluss-{{ item.id }}" x-show="bearbeiten" x-cloak class="mt-3 mb-1 grid gap-x-8 gap-y-6 md:pl-[10rem] lg:grid-cols-2">
+    <div id="beschluss-{{ item.id }}" x-show="bearbeiten" x-cloak class="mt-3 mb-1 grid gap-x-8 gap-y-6 md:pl-40 lg:grid-cols-2">
         {% if item.vote_result == 'approved' %}
         <form method="post" action="{% url 'session:resolution_tracking_update' tenant_slug=tenant_slug item_id=item.id %}" class="space-y-2 min-w-0" data-testid="umsetzung-formular">
             {% csrf_token %}

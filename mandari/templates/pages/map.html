@@ -41,7 +41,7 @@ Kacheln über den Kachel-Proxy. Leaflet lädt die Seite im Block extra_scripts.
                         <button type="button"
                             @click="setTimeRange(opt.value)"
                             :class="timeRange === opt.value
-                                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-xs'
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
                             class="px-2.5 py-1 text-xs font-medium rounded-md transition-all"
                             x-text="opt.label"
@@ -51,7 +51,7 @@ Kacheln über den Kachel-Proxy. Leaflet lädt die Seite im Block extra_scripts.
 
                 <!-- Marker-Legende -->
                 <span class="hidden sm:flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
-                    <span class="w-2.5 h-2.5 rounded-full bg-primary-500 border-2 border-white dark:border-gray-800 shadow-sm"></span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-primary-500 border-2 border-white dark:border-gray-800 shadow-xs"></span>
                     Vorgang
                 </span>
             </div>

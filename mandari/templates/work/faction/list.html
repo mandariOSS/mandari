@@ -39,29 +39,29 @@
         <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden="true"></i>
         <input type="search" name="q" value="{{ search_query|default:'' }}" aria-label="Sitzung suchen"
                placeholder="Sitzung suchen …"
-               class="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+               class="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
     </div>
 
     <nav class="flex items-center bg-gray-100 dark:bg-gray-900 rounded-lg p-1" aria-label="Zeitraum">
         <a href="?time=upcoming{% if search_query %}&q={{ search_query }}{% endif %}"
            {% if selected_time == 'upcoming' %}aria-current="page"{% endif %}
-           class="px-3 py-1.5 text-sm font-medium rounded-md {% if selected_time == 'upcoming' %}bg-white dark:bg-gray-800 shadow-sm text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white{% endif %}">
+           class="px-3 py-1.5 text-sm font-medium rounded-md {% if selected_time == 'upcoming' %}bg-white dark:bg-gray-800 shadow-xs text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white{% endif %}">
             Anstehend
         </a>
         <a href="?time=past{% if search_query %}&q={{ search_query }}{% endif %}"
            {% if selected_time == 'past' %}aria-current="page"{% endif %}
-           class="px-3 py-1.5 text-sm font-medium rounded-md {% if selected_time == 'past' %}bg-white dark:bg-gray-800 shadow-sm text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white{% endif %}">
+           class="px-3 py-1.5 text-sm font-medium rounded-md {% if selected_time == 'past' %}bg-white dark:bg-gray-800 shadow-xs text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white{% endif %}">
             Vergangen
         </a>
         <a href="?time=all{% if search_query %}&q={{ search_query }}{% endif %}"
            {% if selected_time == 'all' %}aria-current="page"{% endif %}
-           class="px-3 py-1.5 text-sm font-medium rounded-md {% if selected_time == 'all' %}bg-white dark:bg-gray-800 shadow-sm text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white{% endif %}">
+           class="px-3 py-1.5 text-sm font-medium rounded-md {% if selected_time == 'all' %}bg-white dark:bg-gray-800 shadow-xs text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white{% endif %}">
             Alle
         </a>
     </nav>
 
     <select name="status" data-autosubmit aria-label="Status"
-            class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
         <option value="">Alle Status</option>
         {% for value, label in status_choices %}
         <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>

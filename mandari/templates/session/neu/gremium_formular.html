@@ -43,7 +43,7 @@ OrganizationCreateView/OrganizationUpdateView.
                 <div>
                     <c-form.beschriftung feld="{{ form.parent.id_for_label }}">Übergeordnet</c-form.beschriftung>
                     <select name="parent" id="id_parent"{% if form.parent.errors %} aria-invalid="true" aria-describedby="id_parent-error"{% endif %}
-                            class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.parent.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                            class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.parent.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
                         <option value="">Keins</option>
                         {% for org in form.parent.field.queryset %}
                         <option value="{{ org.id }}" {% if form.parent.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>

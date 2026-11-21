@@ -23,7 +23,7 @@ passwordStrength) als schmaler Balken mit Text. Kontext: password_requirements.
                                  'bg-green-600 w-full': passwordStrength.score === 4
                              }"></div>
                     </div>
-                    <span class="min-w-[5.5rem] text-right text-[0.8125rem] font-medium text-gray-800 dark:text-gray-200" x-text="passwordStrength.strength_label || ''"></span>
+                    <span class="min-w-22 text-right text-[0.8125rem] font-medium text-gray-800 dark:text-gray-200" x-text="passwordStrength.strength_label || ''"></span>
                 </div>
                 <ul class="mt-1.5 space-y-0.5" x-show="passwordStrength.issues && passwordStrength.issues.length > 0">
                     <template x-for="issue in passwordStrength.issues" :key="issue">

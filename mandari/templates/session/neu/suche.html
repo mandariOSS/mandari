@@ -20,7 +20,7 @@ Kontext: SessionSearchView (query, results, total, result_limit, filters, organi
                 <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
                 <input type="search" id="suche-begriff" name="q" value="{{ query }}" minlength="2" required autofocus enterkeyhint="search"
                        placeholder="Vorlagen, Beschlüsse, Sitzungen, Anlagen durchsuchen …"
-                       class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                       class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
             </span>
             <c-ui.button type="submit" size="sm" icon="search">Suchen</c-ui.button>
         </div>
@@ -35,7 +35,7 @@ Kontext: SessionSearchView (query, results, total, result_limit, filters, organi
             <div class="flex items-center gap-2">
                 <label for="suche-jahr" class="shrink-0 text-sm text-gray-700 dark:text-gray-300">Jahr</label>
                 <input type="number" id="suche-jahr" name="year" value="{{ filters.year|default:'' }}" min="2000" max="2100" placeholder="Alle"
-                       class="h-9 w-24 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                       class="h-9 w-24 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
             </div>
             {% if terms %}
             <c-form.select name="term" id="suche-periode" label="Wahlperiode" zeile>

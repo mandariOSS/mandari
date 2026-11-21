@@ -59,7 +59,7 @@ Seite bleibt. Kontext wie MeetingPlanView (GET und Vorschau per POST).
                 <div class="min-w-0">
                     <p class="text-sm font-medium text-gray-900 dark:text-white tabular-nums">{{ entry.start|date:"l, d.m.Y" }}, {{ entry.start|date:"H:i" }} Uhr</p>
                     {% for conflict in entry.conflicts %}
-                    <p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 break-words">
+                    <p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 wrap-break-word">
                         {% if conflict.conflict_hidden %}
                         {{ conflict.conflict_reason }}: Termin belegt
                         {% else %}

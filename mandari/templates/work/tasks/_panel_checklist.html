@@ -25,13 +25,13 @@
                 hx-vals='{"action": "toggle_checklist_item", "item_id": "{{ item.id }}"}'
                 hx-target="#panel-checklist"
                 hx-swap="innerHTML"
-                class="flex-shrink-0 transition-transform hover:scale-110">
+                class="shrink-0 transition-transform hover:scale-110">
             <i data-lucide="{% if item.is_completed %}check-square{% else %}square{% endif %}"
                class="w-4 h-4 {% if item.is_completed %}text-green-500{% else %}text-gray-400 hover:text-primary-500{% endif %} transition-colors"></i>
         </button>
         {% else %}
         <i data-lucide="{% if item.is_completed %}check-square{% else %}square{% endif %}"
-           class="w-4 h-4 flex-shrink-0 {% if item.is_completed %}text-green-500{% else %}text-gray-400{% endif %}"></i>
+           class="w-4 h-4 shrink-0 {% if item.is_completed %}text-green-500{% else %}text-gray-400{% endif %}"></i>
         {% endif %}
         <span class="text-sm flex-1 {% if item.is_completed %}line-through text-gray-400 dark:text-gray-500{% else %}text-gray-700 dark:text-gray-300{% endif %} transition-colors">{{ item.title }}</span>
         {% if can_edit %}
@@ -40,7 +40,7 @@
                 hx-vals='{"action": "delete_checklist_item", "item_id": "{{ item.id }}"}'
                 hx-target="#panel-checklist"
                 hx-swap="innerHTML"
-                class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-all flex-shrink-0">
+                class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-all shrink-0">
             <i data-lucide="x" class="w-3.5 h-3.5"></i>
         </button>
         {% endif %}
@@ -56,7 +56,7 @@
       data-after-request="reset"
       class="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50">
     <input type="hidden" name="action" value="add_checklist_item">
-    <i data-lucide="plus" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+    <i data-lucide="plus" class="w-4 h-4 text-gray-400 shrink-0"></i>
     {{ checklist_form.title }}
     <button type="submit" class="sr-only">Hinzufügen</button>
 </form>

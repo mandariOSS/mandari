@@ -16,6 +16,6 @@ Minuten neu, oder suchen Sie unten weiter.
 {% block weiter_vorspann %}<div class="mt-3">{% include "errors/insight_suche.html" %}</div>{% endblock %}
 
 {% block fussnote %}
-Fehler-ID <code class="px-1.5 py-0.5 rounded bg-band-grau font-mono text-xs text-gray-700 dark:text-gray-300">{{ request_id|default:"unbekannt" }}</code>.
+Fehler-ID <code class="px-1.5 py-0.5 rounded-sm bg-band-grau font-mono text-xs text-gray-700 dark:text-gray-300">{{ request_id|default:"unbekannt" }}</code>.
 Tritt der Fehler wieder auf, {# djlint:off D018 #}<a href="/feedback/?error_id={{ request_id|urlencode }}&amp;url={{ request.build_absolute_uri|urlencode }}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">melden Sie ihn bitte mit dieser ID</a>{# djlint:on D018 #}.
 {% endblock %}

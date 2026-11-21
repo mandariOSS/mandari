@@ -37,8 +37,8 @@ die Glocke work/notifications/partials/dropdown_list.html.
     <li data-benachrichtigung {% if not notification.is_read %}data-ungelesen{% endif %} class="grid grid-cols-[0.75rem_minmax(0,1fr)] sm:grid-cols-[0.75rem_minmax(0,1fr)_auto] gap-x-2 gap-y-2 py-3">
         <span class="pt-1.5" aria-hidden="true">{% if not notification.is_read %}<span data-ungelesen-punkt class="block w-2 h-2 rounded-full bg-primary-600"></span>{% endif %}</span>
         <div class="min-w-0">
-            <h2 class="text-sm font-semibold text-gray-900 dark:text-white break-words">{{ notification.title }}{% if not notification.is_read %}<span data-ungelesen-punkt class="sr-only"> (ungelesen)</span>{% endif %}</h2>
-            {% if notification.message %}<p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300 break-words">{{ notification.message }}</p>{% endif %}
+            <h2 class="text-sm font-semibold text-gray-900 dark:text-white wrap-break-word">{{ notification.title }}{% if not notification.is_read %}<span data-ungelesen-punkt class="sr-only"> (ungelesen)</span>{% endif %}</h2>
+            {% if notification.message %}<p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300 wrap-break-word">{{ notification.message }}</p>{% endif %}
             <p class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">
                 {{ notification.created_at|naturaltime }}{% if notification.actor %} · Von {{ notification.actor.user.display_name|default:notification.actor.user.email }}{% endif %} · {{ notification.get_notification_type_display }}
             </p>

@@ -43,7 +43,7 @@ Linien ohne farbige Symbolkreise. Kontext: ProfileActivityView; die bisherige Se
             {% for item in timeline %}
             <li class="flex items-baseline justify-between gap-x-4 py-2.5">
                 <div class="min-w-0">
-                    <p class="text-sm text-gray-900 dark:text-white break-words">{{ item.title }}</p>
+                    <p class="text-sm text-gray-900 dark:text-white wrap-break-word">{{ item.title }}</p>
                     <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ item.detail }}</p>
                 </div>
                 <time class="shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ item.date|date:"d.m.Y" }}</time>

@@ -14,7 +14,7 @@ ohne Sichtrecht erscheint als „Nichtöffentlich“ ohne Titel, Nummer und Grem
             {% if row.hidden %}
             <p class="text-sm italic text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="inline w-3.5 h-3.5 -mt-0.5" aria-hidden="true"></i> {{ row.title }}</p>
             {% elif row.url %}
-            <a href="{{ row.url }}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ row.title }}</a>
+            <a href="{{ row.url }}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ row.title }}</a>
             {% else %}
             <p class="text-sm liste-name">{{ row.title }}</p>
             {% endif %}

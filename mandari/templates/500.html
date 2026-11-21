@@ -38,7 +38,7 @@ Problem auf unserer Seite. Unser Team wurde automatisch benachrichtigt.
 {% endblock %}
 
 {% block help_text %}
-Fehler-ID: <code class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-mono text-xs">{{ request_id|default:"unbekannt" }}</code>
+Fehler-ID: <code class="px-1.5 py-0.5 rounded-sm bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-mono text-xs">{{ request_id|default:"unbekannt" }}</code>
 &middot;
 {# djlint:off D018 #}<a href="/feedback/?error_id={{ request_id|urlencode }}&url={{ request.build_absolute_uri|urlencode }}"
    class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Problem melden</a>{# djlint:on D018 #}

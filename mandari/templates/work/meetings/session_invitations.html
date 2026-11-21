@@ -79,7 +79,7 @@ Sitzungsdienst zugeordnet sind. Bestätigung und Rückmeldung nur per Klick (POS
                     <p id="reason-help-{{ invitation.latest.id }}" class="text-xs text-gray-500 dark:text-gray-400">Nur für den Sitzungsdienst sichtbar und verschlüsselt gespeichert – nicht für Ihre Fraktion und nicht öffentlich.</p>
                     {% if not invitation.substitute_for %}
                     <label for="substitute-{{ invitation.latest.id }}" class="flex items-center gap-2 min-h-[24px] text-gray-600 dark:text-gray-400">
-                        <input type="checkbox" id="substitute-{{ invitation.latest.id }}" name="substitute" value="1" class="rounded border-gray-300 text-primary-600">
+                        <input type="checkbox" id="substitute-{{ invitation.latest.id }}" name="substitute" value="1" class="rounded-sm border-gray-300 text-primary-600">
                         Meine Stellvertretung um Vertretung bitten
                     </label>
                     {% endif %}

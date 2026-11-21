@@ -8,7 +8,7 @@ _state_law.html. Kontext: profile, law, law_versions, tenant_slug.
 {% url 'session:settings_meeting_formats' tenant_slug=tenant_slug as formats_url %}
 {% if profile %}
 <c-rahmen.abschnitt titel="Rechtslage {{ profile.name }}" titel_id="rechtslage-titel" zusatz="{{ profile.law }}, Stand {{ profile.as_of|date:'d.m.Y' }}" data-testid="rechtslage">
-    <dl class="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] [&_dt]:text-gray-600 dark:[&_dt]:text-gray-400 [&_dd]:text-gray-900 dark:[&_dd]:text-gray-100 [&_dd]:break-words [&_dd]:mb-1 sm:[&_dd]:mb-0">
+    <dl class="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] [&_dt]:text-gray-600 dark:[&_dt]:text-gray-400 [&_dd]:text-gray-900 dark:[&_dd]:text-gray-100 [&_dd]:wrap-break-word [&_dd]:mb-1 sm:[&_dd]:mb-0">
         <dt>Hybrid: Rat/Vertretung</dt><dd>{{ profile.get_hybrid_council_display }}</dd>
         <dt>Hybrid: Ausschüsse</dt><dd>{{ profile.get_hybrid_committees_display }}</dd>
         <dt>Digital: Rat/Vertretung</dt><dd>{{ profile.get_digital_council_display }}</dd>
@@ -48,7 +48,7 @@ _state_law.html. Kontext: profile, law, law_versions, tenant_slug.
         {% for entry in entries %}
         <div>
             <dt class="font-medium text-gray-900 dark:text-white">{{ entry.label }}{% if entry.value_label %}: {{ entry.value_label }}{% endif %}</dt>
-            <dd class="text-gray-700 dark:text-gray-300 break-words">
+            <dd class="text-gray-700 dark:text-gray-300 wrap-break-word">
                 {% if entry.text %}{{ entry.text }} {% endif %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">({% if entry.unclear %}ungeklärt{% if entry.norm %}; {% endif %}{% endif %}{{ entry.norm }}{% if entry.source_url %}; <a href="{{ entry.source_url }}" class="underline-offset-4 hover:underline" target="_blank" rel="noopener noreferrer">{{ entry.source_title|default:"Quelle" }}</a>{% endif %}{% if entry.as_of %}; Stand {{ entry.as_of|date:'d.m.Y' }}{% endif %})</span>
             </dd>
         </div>

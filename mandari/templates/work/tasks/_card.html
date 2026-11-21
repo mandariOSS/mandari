@@ -77,11 +77,11 @@
 
         <!-- Priority badge (for urgent/high) -->
         {% if task.priority == 'urgent' %}
-        <span class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-[10px] font-medium">
+        <span class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-sm text-[10px] font-medium">
             Dringend
         </span>
         {% elif task.priority == 'high' %}
-        <span class="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded text-[10px] font-medium">
+        <span class="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-sm text-[10px] font-medium">
             Hoch
         </span>
         {% endif %}

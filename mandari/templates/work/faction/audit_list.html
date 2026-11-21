@@ -21,14 +21,14 @@
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <form method="get" class="flex flex-wrap items-center gap-3">
             <select name="model" data-autosubmit
-                    class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-none">
+                    class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-hidden">
                 <option value="">Alle Objekt-Typen</option>
                 {% for name in model_names %}
                 <option value="{{ name }}" {% if selected_model == name %}selected{% endif %}>{{ name }}</option>
                 {% endfor %}
             </select>
             <select name="action" data-autosubmit
-                    class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-none">
+                    class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-hidden">
                 <option value="">Alle Aktionen</option>
                 {% for value, label in actions %}
                 <option value="{{ value }}" {% if selected_action == value %}selected{% endif %}>{{ label }}</option>
@@ -90,7 +90,7 @@
                     {% endif %}
                     {% if row.noe %}</div>{% endif %}
                 </div>
-                <div class="text-right flex-shrink-0">
+                <div class="text-right shrink-0">
                     <p class="text-xs font-medium text-gray-700 dark:text-gray-300">
                         {{ row.entry.actor_label|default:"System" }}
                     </p>

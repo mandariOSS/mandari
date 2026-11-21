@@ -37,7 +37,7 @@
             </span>
         </div>
 
-        <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[32rem] overflow-y-auto">
+        <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-128 overflow-y-auto">
             {% for cat_code, cat in permission_categories.items %}
             <div class="px-6 py-4">
                 <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{{ cat.name }}</h4>
@@ -49,7 +49,7 @@
                     </div>
                     {% for perm in cat.permissions %}
                     {% with sources=role_permission_sources|dict_get:perm.code %}
-                    <div class="grid grid-cols-12 gap-x-2 gap-y-1 items-center py-1 rounded {% if perm.code in denied_permission_codes %}bg-red-50 dark:bg-red-900/10{% elif perm.code in effective_permission_codes %}bg-green-50/50 dark:bg-green-900/5{% endif %}">
+                    <div class="grid grid-cols-12 gap-x-2 gap-y-1 items-center py-1 rounded-sm {% if perm.code in denied_permission_codes %}bg-red-50 dark:bg-red-900/10{% elif perm.code in effective_permission_codes %}bg-green-50/50 dark:bg-green-900/5{% endif %}">
                         <div class="col-span-12 sm:col-span-6 flex items-center gap-2 min-w-0">
                             {% if perm.code in denied_permission_codes %}
                             <i data-lucide="minus-circle" class="w-4 h-4 text-red-500 shrink-0"></i>
@@ -73,13 +73,13 @@
                             <input type="checkbox" name="individual_permissions" value="{{ perm.code }}"
                                    {% if perm.code in individual_permission_codes %}checked{% endif %}
                                    {% if not can_edit %}disabled{% endif %}
-                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500">
+                                   class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500">
                         </div>
                         <div class="col-span-6 sm:col-span-3 text-center">
                             <input type="checkbox" name="denied_permissions" value="{{ perm.code }}"
                                    {% if perm.code in denied_permission_codes %}checked{% endif %}
                                    {% if not can_edit %}disabled{% endif %}
-                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500">
+                                   class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500">
                         </div>
                     </div>
                     {% endwith %}

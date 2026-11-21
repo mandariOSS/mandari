@@ -65,7 +65,7 @@
                 <div class="px-6 py-4 {% if file.access_url or file.download_url %}cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50{% endif %} transition-colors"
                      {% if file.access_url or file.download_url %}@click="openDoc('{% url 'insight_core:insight:file_proxy' file.id %}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if paper.reference %}{{ paper.reference|escapejs }}{% endif %}{% if file.mime_type %} · {{ file.mime_type|escapejs }}{% endif %}{% if file.size_human %} · {{ file.size_human|escapejs }}{% endif %}')"{% endif %}>
                     <div class="flex items-center gap-4">
-                        <div class="flex-shrink-0 p-2 {% if file.is_main %}bg-blue-50/70 dark:bg-blue-900/20{% else %}bg-red-50/70 dark:bg-red-900/20{% endif %} rounded-lg">
+                        <div class="shrink-0 p-2 {% if file.is_main %}bg-blue-50/70 dark:bg-blue-900/20{% else %}bg-red-50/70 dark:bg-red-900/20{% endif %} rounded-lg">
                             <i data-lucide="{% if file.is_main %}file-badge{% else %}file-text{% endif %}" class="w-5 h-5 {% if file.is_main %}text-blue-500 dark:text-blue-400{% else %}text-red-500 dark:text-red-400{% endif %}"></i>
                         </div>
                         <div class="flex-1 min-w-0">
@@ -80,7 +80,7 @@
                         {% if file.access_url or file.download_url %}
                         <a href="{{ file.download_url|default:file.access_url }}"
                            target="_blank" @click.stop
-                           class="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                           class="shrink-0 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                            title="In neuem Tab öffnen">
                             <i data-lucide="external-link" class="w-5 h-5"></i>
                         </a>
@@ -102,12 +102,12 @@
                 {% for item in consultations %}
                 <div class="px-6 py-4">
                     <div class="flex items-start gap-3">
-                        <div class="flex-shrink-0 mt-1.5 w-2 h-2 rounded-full {% if item.authoritative %}bg-green-500{% else %}bg-primary-500{% endif %}"></div>
+                        <div class="shrink-0 mt-1.5 w-2 h-2 rounded-full {% if item.authoritative %}bg-green-500{% else %}bg-primary-500{% endif %}"></div>
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2 flex-wrap">
                                 <p class="font-medium text-gray-900 dark:text-white">{{ item.role|default:"Beratung" }}</p>
                                 {% if item.authoritative %}
-                                <span class="inline-flex items-center px-2 py-0.5 bg-green-50/70 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded text-xs">
+                                <span class="inline-flex items-center px-2 py-0.5 bg-green-50/70 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-sm text-xs">
                                     Federführend
                                 </span>
                                 {% endif %}

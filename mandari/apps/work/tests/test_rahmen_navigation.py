@@ -332,11 +332,11 @@ def test_leiste_unten_start_sitzungen_fraktion_recherche_mehr(neu: Organization,
 @pytest.mark.django_db
 def test_druck_zeigt_nur_den_inhalt(neu: Organization, admin: Any, client_for: Any) -> None:
     html = _html(client_for(admin.user).get(_url("meetings", neu)))
-    assert "print:!hidden" in _oeffnendes_tag(html, 'id="work-navigation"')
+    assert "print:hidden!" in _oeffnendes_tag(html, 'id="work-navigation"')
     assert "print:hidden" in _oeffnendes_tag(html, 'class="sticky top-0')
     assert "print:hidden" in _oeffnendes_tag(html, 'aria-label="Sitzungen"')
-    assert "print:!hidden" in _oeffnendes_tag(html, 'aria-label="Hauptbereiche"')
-    assert "print:!p-0" in _oeffnendes_tag(html, 'class="work-main')
+    assert "print:hidden!" in _oeffnendes_tag(html, 'aria-label="Hauptbereiche"')
+    assert "print:p-0!" in _oeffnendes_tag(html, 'class="work-main')
     # Der Seitentitel bleibt (im Kopfband c-rahmen.kopfband, seit Issue #951 auch auf „Meine Sitzungen“)
     assert re.search(r"<h1[^>]*>\s*Meine Sitzungen\s*</h1>", html)
 

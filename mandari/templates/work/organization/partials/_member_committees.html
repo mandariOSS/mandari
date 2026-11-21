@@ -91,7 +91,7 @@
                     {% endif %}">
                     <input type="checkbox" name="committees" value="{{ committee.id }}"
                            {% if committee.id in member_committees %}checked{% endif %}
-                           class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                           class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                     <div class="min-w-0 flex-1">
                         <span class="block font-medium text-sm text-gray-900 dark:text-white truncate">
                             {{ committee.name }}
@@ -101,7 +101,7 @@
                         {% endif %}
                     </div>
                     {% if committee.id in suggested_committee_ids %}
-                    <i data-lucide="sparkles" class="w-3 h-3 text-primary-500 flex-shrink-0"></i>
+                    <i data-lucide="sparkles" class="w-3 h-3 text-primary-500 shrink-0"></i>
                     {% endif %}
                 </label>
                 {% endfor %}
@@ -124,7 +124,7 @@
                     <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer">
                         <input type="checkbox" name="committees" value="{{ committee.id }}"
                                {% if committee.id in member_committees %}checked{% endif %}
-                               class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                               class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                         <div class="min-w-0">
                             <span class="block text-sm text-gray-600 dark:text-gray-400 truncate">{{ committee.name }}</span>
                             {% if committee.end_date %}
@@ -173,7 +173,7 @@
         </span>
     </c-slot>
     <div class="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-        <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"></i>
+        <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"></i>
         <div>
             <p class="font-medium text-amber-800 dark:text-amber-200">Keine Kommune verknüpft</p>
             <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">

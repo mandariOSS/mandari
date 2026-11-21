@@ -87,7 +87,7 @@
         </h2>
         <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
             <input type="checkbox" name="read_logging" value="1" {% if privacy.read_logging %}checked{% endif %}
-                   class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                   class="mt-0.5 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
             <span>
                 Lesezugriffe auf nichtöffentliche Sitzungen, Tagesordnungspunkte, Vorlagen und Niederschriften protokollieren.
                 <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -126,7 +126,7 @@
             Wendet die konfigurierten Fristen an: Kontakt- und Bankdaten ausgeschiedener
             Mandatsträger werden entfernt (der Name bleibt in historischen Beschlüssen erhalten),
             NÖ-Inhalte, alte Audit-Einträge und abgelaufene Archivpakete werden gelöscht. Jeder Lauf wird im Audit-Log
-            dokumentiert.{% if permission_checker.sieht_betriebshinweise %} Alternativ per Kommandozeile: <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">manage.py session_privacy_purge</code>{% endif %}
+            dokumentiert.{% if permission_checker.sieht_betriebshinweise %} Alternativ per Kommandozeile: <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded-sm">manage.py session_privacy_purge</code>{% endif %}
         </p>
         <div class="flex flex-wrap gap-3">
             <form method="post" action="{% url 'session:privacy_purge' tenant_slug=tenant_slug %}">

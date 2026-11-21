@@ -99,7 +99,7 @@
                 <span class="font-normal text-gray-500">(optional)</span>
             </label>
             <select name="document_type" id="document_type"
-                    class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 <option value="">Kein Typ</option>
                 {% for type in document_types %}
                 <option value="{{ type.id }}">{{ type.name }}</option>
@@ -157,7 +157,7 @@
         <!-- Info -->
         <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
             <div class="flex gap-3">
-                <i data-lucide="info" class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"></i>
+                <i data-lucide="info" class="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5"></i>
                 <div class="text-sm text-blue-800 dark:text-blue-200">
                     <p class="font-medium">So funktioniert der Import:</p>
                     <ul class="mt-1 list-disc list-inside text-blue-700 dark:text-blue-300">
@@ -180,7 +180,7 @@
             <button type="submit"
                     :disabled="selectedFiles.length === 0 || submitting"
                     :aria-busy="submitting"
-                    class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                    class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs">
                 <i data-lucide="upload" class="w-4 h-4" x-show="!submitting"></i>
                 <i data-lucide="loader-2" class="w-4 h-4 animate-spin" x-show="submitting" x-cloak></i>
                 <span x-text="submitLabel()">Importieren</span>

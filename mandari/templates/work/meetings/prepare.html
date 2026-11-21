@@ -124,7 +124,7 @@
                 Legende
             </button>
             <button type="button" @click="openSummary()"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                 <i data-lucide="list-checks" class="w-4 h-4"></i>
                 Zusammenfassung
             </button>
@@ -142,12 +142,12 @@
         <div class="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
             <div class="flex items-center gap-2 mb-2">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Allgemeine Notizen zur Sitzung</span>
-                <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">Für die gesamte Organisation</span>
+                <span class="px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">Für die gesamte Organisation</span>
             </div>
             <textarea x-model="orgNotes" rows="3"
                       @input="autoGrow($event.target); queue('org-notes', () => saveOrgNotes())"
                       x-effect="orgNotesOpen && $nextTick(() => autoGrow($el))"
-                      class="prep-autogrow w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100"
+                      class="prep-autogrow w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden dark:text-gray-100"
                       placeholder="Organisatorisches, Absprachen, Hinweise zur ganzen Sitzung..."></textarea>
         </div>
     </div>
@@ -172,7 +172,7 @@
     </div>
 
     <!-- ================= 3-Spalten-Layout ================= -->
-    <div class="xl:grid xl:grid-cols-[280px_minmax(0,1fr)_360px] xl:gap-4 xl:items-start xl:h-[calc(100vh-16rem)] xl:min-h-[34rem]">
+    <div class="xl:grid xl:grid-cols-[280px_minmax(0,1fr)_360px] xl:gap-4 xl:items-start xl:h-[calc(100vh-16rem)] xl:min-h-136">
 
         {% include "work/meetings/partials/_prepare_navigator.html" %}
 

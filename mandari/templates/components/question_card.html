@@ -32,7 +32,7 @@
             {{ q.recipient.display_name }}
         </a>
         {% if q.recipient_faction %}
-        <span class="px-1.5 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">{{ q.recipient_faction.short_name|default:q.recipient_faction.name }}</span>
+        <span class="px-1.5 py-0.5 rounded-sm bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">{{ q.recipient_faction.short_name|default:q.recipient_faction.name }}</span>
         {% endif %}
         {% endif %}
     </div>

@@ -18,7 +18,7 @@ ProtocolDetailView; die bisherige Seite bleibt session/protocols/detail.html.
 <c-rahmen.kopfband titel="Niederschrift" dicht>
     <c-slot name="oben">
         <c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}">Sitzung</c-insight.zurueck>
-        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.name }}, {{ meeting.organization.name }}, <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span></p>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 wrap-break-word">{{ meeting.name }}, {{ meeting.organization.name }}, <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span></p>
     </c-slot>
     {% if protocol %}
     {% if can_edit and protocol.status == 'draft' or can_edit and protocol.status == 'review' or can_approve and protocol.status == 'approved' or can_approve and protocol.status == 'published' %}
@@ -68,13 +68,13 @@ ProtocolDetailView; die bisherige Seite bleibt session/protocols/detail.html.
     <div class="min-w-0 space-y-10">
         <c-rahmen.abschnitt titel="Allgemeiner Teil" titel_id="allgemein-titel" data-testid="niederschrift-allgemein">
             {% if protocol.content %}
-            <div class="mt-2 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ protocol.content }}</div>
+            <div class="mt-2 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line wrap-break-word">{{ protocol.content }}</div>
             {% else %}
             <c-rahmen.satz>Der öffentliche Teil enthält noch keinen Text.</c-rahmen.satz>
             {% endif %}
             {% if can_view_np and content_np %}
             <h3 class="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlicher Teil</h3>
-            <div class="mt-1 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ content_np }}</div>
+            <div class="mt-1 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line wrap-break-word">{{ content_np }}</div>
             {% endif %}
         </c-rahmen.abschnitt>
 

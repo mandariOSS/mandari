@@ -14,7 +14,7 @@
                 {% if meeting.cancelled %} &middot; <span class="text-red-500">Abgesagt</span>{% endif %}
             </p>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="flex items-center gap-2 shrink-0">
             {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="sm" %}
             <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
         </div>

@@ -3,203 +3,201 @@
    fraktionssitzung.css), Farben aus den Tokens der Arbeitsflächen (.wf in work-flaeche.css, Dunkelmodus dort).
    Präfix tu- für die Terminumfrage: Raster Person mal Vorschlag, Spaltenköpfe als Kalenderblatt, die eigene Zeile zum
    Ankreuzen. Maße nach „Gestalten ohne KI-Slop“ (Arbeitsplattform): Bedienschrift 13–14 px, Zellen 40 px, Radius 6 px. */
-@layer components {
-  /* ---------- Ergebnis über dem Raster ---------- */
-  .tu-ergebnis {
-    display: flex; align-items: flex-start; gap: 10px; margin: 0 0 20px; padding: 12px 14px; border-radius: 6px;
-    background: color-mix(in srgb, var(--wf-zust) 9%, var(--wf-flaeche)); color: var(--wf-tinte); font-size: 14px;
-  }
-  .tu-ergebnis svg { width: 18px; height: 18px; flex: none; color: var(--wf-zust); margin-top: 1px; }
+/* ---------- Ergebnis über dem Raster ---------- */
+.tu-ergebnis {
+  display: flex; align-items: flex-start; gap: 10px; margin: 0 0 20px; padding: 12px 14px; border-radius: 6px;
+  background: color-mix(in srgb, var(--wf-zust) 9%, var(--wf-flaeche)); color: var(--wf-tinte); font-size: 14px;
+}
+.tu-ergebnis svg { width: 18px; height: 18px; flex: none; color: var(--wf-zust); margin-top: 1px; }
 
-  /* ---------- Raster ---------- */
-  /* position: relative hält Unsichtbares für Screenreader (sr-only, die Auswahlknöpfe) im Scrollbereich; sonst
-     verbreitert es am Handy die ganze Seite */
-  .tu-raster {
-    position: relative; overflow-x: auto; border: 1px solid var(--wf-linie); border-radius: 6px;
-    background: var(--wf-flaeche); overscroll-behavior-x: contain;
-  }
-  /* Symbole im Fließtext der Zellen (Tailwind setzt svg sonst auf block) */
-  .tu-tabelle svg { display: inline-block; }
-  .tu-tabelle { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 14px; }
-  .tu-tabelle th, .tu-tabelle td { border-bottom: 1px solid var(--wf-linie); }
-  .tu-tabelle tbody tr:last-child > *, .tu-tabelle tfoot tr > * { border-bottom: 0; }
-  .tu-tabelle tfoot tr > * { border-top: 1px solid var(--wf-linie-stark); }
+/* ---------- Raster ---------- */
+/* position: relative hält Unsichtbares für Screenreader (sr-only, die Auswahlknöpfe) im Scrollbereich; sonst
+   verbreitert es am Handy die ganze Seite */
+.tu-raster {
+  position: relative; overflow-x: auto; border: 1px solid var(--wf-linie); border-radius: 6px;
+  background: var(--wf-flaeche); overscroll-behavior-x: contain;
+}
+/* Symbole im Fließtext der Zellen (Tailwind setzt svg sonst auf block) */
+.tu-tabelle svg { display: inline-block; }
+.tu-tabelle { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 14px; }
+.tu-tabelle th, .tu-tabelle td { border-bottom: 1px solid var(--wf-linie); }
+.tu-tabelle tbody tr:last-child > *, .tu-tabelle tfoot tr > * { border-bottom: 0; }
+.tu-tabelle tfoot tr > * { border-top: 1px solid var(--wf-linie-stark); }
 
-  /* Namen links, beim seitlichen Scrollen stehen sie still */
-  .tu-person {
-    position: sticky; left: 0; z-index: 1; background: var(--wf-flaeche); text-align: left; font-weight: 500;
-    padding: 8px 16px; min-width: 12rem; max-width: 16rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    border-right: 1px solid var(--wf-linie);
-  }
-  .tu-person svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; color: var(--wf-text3); }
-  .tu-kuerzel {
-    display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 10px; border-radius: 50%;
-    background: var(--wf-grau); color: var(--wf-text2); font-size: 11px; font-weight: 600; vertical-align: middle;
-  }
+/* Namen links, beim seitlichen Scrollen stehen sie still */
+.tu-person {
+  position: sticky; left: 0; z-index: 1; background: var(--wf-flaeche); text-align: left; font-weight: 500;
+  padding: 8px 16px; min-width: 12rem; max-width: 16rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-right: 1px solid var(--wf-linie);
+}
+.tu-person svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; color: var(--wf-text3); }
+.tu-kuerzel {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 10px; border-radius: 50%;
+  background: var(--wf-grau); color: var(--wf-text2); font-size: 11px; font-weight: 600; vertical-align: middle;
+}
 
-  /* Ecke oben links: was die Zeichen bedeuten */
-  .tu-ecke { vertical-align: bottom; font-weight: 400; }
-  .tu-zeichen { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 12.5px; color: var(--wf-text2); }
-  .tu-zeichen svg { width: 13px; height: 13px; vertical-align: -2px; }
-  .tu-zeichen .ja svg { color: var(--wf-zust); margin-right: 6px; }
-  .tu-zeichen .notfalls { color: var(--wf-enth); }
-  .tu-zeichen .nein svg { color: var(--wf-text3); margin-right: 6px; }
+/* Ecke oben links: was die Zeichen bedeuten */
+.tu-ecke { vertical-align: bottom; font-weight: 400; }
+.tu-zeichen { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 12.5px; color: var(--wf-text2); }
+.tu-zeichen svg { width: 13px; height: 13px; vertical-align: -2px; }
+.tu-zeichen .ja svg { color: var(--wf-zust); margin-right: 6px; }
+.tu-zeichen .notfalls { color: var(--wf-enth); }
+.tu-zeichen .nein svg { color: var(--wf-text3); margin-right: 6px; }
 
-  /* Spaltenkopf als Kalenderblatt */
-  .tu-spalte {
-    min-width: 7.5rem; padding: 14px 10px 12px; text-align: center; vertical-align: bottom; font-weight: 400;
-    border-left: 1px solid var(--wf-linie);
-  }
-  .tu-blatt { display: block; }
-  .tu-monat { display: block; font-size: 12px; color: var(--wf-text3); }
-  .tu-tag { display: block; font-size: 24px; font-weight: 600; line-height: 1.15; color: var(--wf-tinte); font-variant-numeric: tabular-nums; }
-  .tu-wochentag { display: block; font-size: 13px; color: var(--wf-text2); }
-  .tu-uhrzeit { display: block; margin-top: 6px; font-size: 12.5px; color: var(--wf-text2); font-variant-numeric: tabular-nums; }
-  .tu-marke { display: block; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--wf-work-text); }
-  .tu-spalte.festgelegt .tu-marke { color: var(--wf-zust); }
+/* Spaltenkopf als Kalenderblatt */
+.tu-spalte {
+  min-width: 7.5rem; padding: 14px 10px 12px; text-align: center; vertical-align: bottom; font-weight: 400;
+  border-left: 1px solid var(--wf-linie);
+}
+.tu-blatt { display: block; }
+.tu-monat { display: block; font-size: 12px; color: var(--wf-text3); }
+.tu-tag { display: block; font-size: 24px; font-weight: 600; line-height: 1.15; color: var(--wf-tinte); font-variant-numeric: tabular-nums; }
+.tu-wochentag { display: block; font-size: 13px; color: var(--wf-text2); }
+.tu-uhrzeit { display: block; margin-top: 6px; font-size: 12.5px; color: var(--wf-text2); font-variant-numeric: tabular-nums; }
+.tu-marke { display: block; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--wf-work-text); }
+.tu-spalte.festgelegt .tu-marke { color: var(--wf-zust); }
 
-  /* Zellen */
-  .tu-zelle, .tu-tabelle tfoot td, .tu-kalender td {
-    text-align: center; padding: 6px 8px; height: 40px; border-left: 1px solid var(--wf-linie);
-  }
-  .tu-zelle svg { width: 16px; height: 16px; vertical-align: -3px; }
-  .tu-zelle.ja { color: var(--wf-zust); background: color-mix(in srgb, var(--wf-zust) 11%, var(--wf-flaeche)); }
-  .tu-zelle.notfalls { color: var(--wf-enth); background: color-mix(in srgb, var(--wf-enth) 11%, var(--wf-flaeche)); }
-  .tu-zelle.nein { color: var(--wf-text3); }
-  .tu-zelle.leer { color: var(--wf-offen); }
+/* Zellen */
+.tu-zelle, .tu-tabelle tfoot td, .tu-kalender td {
+  text-align: center; padding: 6px 8px; height: 40px; border-left: 1px solid var(--wf-linie);
+}
+.tu-zelle svg { width: 16px; height: 16px; vertical-align: -3px; }
+.tu-zelle.ja { color: var(--wf-zust); background: color-mix(in srgb, var(--wf-zust) 11%, var(--wf-flaeche)); }
+.tu-zelle.notfalls { color: var(--wf-enth); background: color-mix(in srgb, var(--wf-enth) 11%, var(--wf-flaeche)); }
+.tu-zelle.nein { color: var(--wf-text3); }
+.tu-zelle.leer { color: var(--wf-offen); }
 
-  /* Spalte mit den meisten Zusagen und die festgelegte: ganze Spalte leicht getönt */
-  .tu-spalte.beste, .tu-tabelle td.beste:not(.ja):not(.notfalls) { background: var(--wf-work-flaeche); }
-  .tu-spalte.festgelegt, .tu-tabelle td.festgelegt:not(.ja):not(.notfalls) {
-    background: color-mix(in srgb, var(--wf-zust) 7%, var(--wf-flaeche));
-  }
-  .tu-spalte.beste { box-shadow: inset 0 3px 0 var(--wf-work); }
-  .tu-spalte.festgelegt { box-shadow: inset 0 3px 0 var(--wf-zust); }
+/* Spalte mit den meisten Zusagen und die festgelegte: ganze Spalte leicht getönt */
+.tu-spalte.beste, .tu-tabelle td.beste:not(.ja):not(.notfalls) { background: var(--wf-work-flaeche); }
+.tu-spalte.festgelegt, .tu-tabelle td.festgelegt:not(.ja):not(.notfalls) {
+  background: color-mix(in srgb, var(--wf-zust) 7%, var(--wf-flaeche));
+}
+.tu-spalte.beste { box-shadow: inset 0 3px 0 var(--wf-work); }
+.tu-spalte.festgelegt { box-shadow: inset 0 3px 0 var(--wf-zust); }
 
-  /* Eigene Zeile: drei Schaltflächen je Vorschlag */
-  .tu-ich > .tu-person, .tu-ich > td.offen { background: var(--wf-grau-hell); }
-  .tu-wahl { display: inline-flex; margin: 0; padding: 0; border: 1px solid var(--wf-linie-stark); border-radius: 6px; overflow: hidden; background: var(--wf-flaeche); }
-  .tu-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-  .tu-wahl label {
-    display: grid; place-items: center; width: 30px; height: 28px; cursor: pointer; color: var(--wf-text3); font-size: 12px;
-  }
-  .tu-wahl label + input + label { border-left: 1px solid var(--wf-linie); }
-  .tu-wahl label svg { width: 15px; height: 15px; }
-  .tu-wahl label.notfalls svg { width: 12px; height: 12px; vertical-align: -1px; }
-  .tu-wahl label:hover { background: var(--wf-grau-hell); color: var(--wf-tinte); }
-  .tu-radio:checked + label.ja { background: var(--wf-zust); color: #fff; }
-  .tu-radio:checked + label.notfalls { background: var(--wf-enth); color: #fff; }
-  .tu-radio:checked + label.nein { background: var(--wf-text2); color: #fff; }
-  .tu-radio:focus-visible + label { outline: 2px solid var(--wf-work); outline-offset: -2px; }
+/* Eigene Zeile: drei Schaltflächen je Vorschlag */
+.tu-ich > .tu-person, .tu-ich > td.offen { background: var(--wf-grau-hell); }
+.tu-wahl { display: inline-flex; margin: 0; padding: 0; border: 1px solid var(--wf-linie-stark); border-radius: 6px; overflow: hidden; background: var(--wf-flaeche); }
+.tu-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.tu-wahl label {
+  display: grid; place-items: center; width: 30px; height: 28px; cursor: pointer; color: var(--wf-text3); font-size: 12px;
+}
+.tu-wahl label + input + label { border-left: 1px solid var(--wf-linie); }
+.tu-wahl label svg { width: 15px; height: 15px; }
+.tu-wahl label.notfalls svg { width: 12px; height: 12px; vertical-align: -1px; }
+.tu-wahl label:hover { background: var(--wf-grau-hell); color: var(--wf-tinte); }
+.tu-radio:checked + label.ja { background: var(--wf-zust); color: #fff; }
+.tu-radio:checked + label.notfalls { background: var(--wf-enth); color: #fff; }
+.tu-radio:checked + label.nein { background: var(--wf-text2); color: #fff; }
+.tu-radio:focus-visible + label { outline: 2px solid var(--wf-work); outline-offset: -2px; }
 
-  /* Was an dem Tag schon ansteht */
-  .tu-kalender td { vertical-align: top; text-align: left; font-size: 12.5px; color: var(--wf-text2); max-width: 11rem; }
-  .tu-kalender ul { list-style: none; margin: 0; padding: 0; }
-  .tu-kalender li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
-  .tu-kalender > .tu-person { font-weight: 400; color: var(--wf-text2); }
-  .tu-frei { color: var(--wf-offen); }
+/* Was an dem Tag schon ansteht */
+.tu-kalender td { vertical-align: top; text-align: left; font-size: 12.5px; color: var(--wf-text2); max-width: 11rem; }
+.tu-kalender ul { list-style: none; margin: 0; padding: 0; }
+.tu-kalender li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
+.tu-kalender > .tu-person { font-weight: 400; color: var(--wf-text2); }
+.tu-frei { color: var(--wf-offen); }
 
-  /* Summe */
-  .tu-tabelle tfoot .tu-person { font-weight: 400; color: var(--wf-text2); }
-  .tu-ja-zahl { display: block; font-size: 18px; font-weight: 600; color: var(--wf-zust); font-variant-numeric: tabular-nums; }
-  .tu-notfalls-zahl { display: block; font-size: 12px; color: var(--wf-enth); }
+/* Summe */
+.tu-tabelle tfoot .tu-person { font-weight: 400; color: var(--wf-text2); }
+.tu-ja-zahl { display: block; font-size: 18px; font-weight: 600; color: var(--wf-zust); font-variant-numeric: tabular-nums; }
+.tu-notfalls-zahl { display: block; font-size: 12px; color: var(--wf-enth); }
 
-  .tu-speichern { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 16px; }
+.tu-speichern { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 16px; }
 
-  /* ---------- Nebenspalte ---------- */
-  .tu-angaben { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 4px 12px; margin: 0; }
-  .tu-angaben dt { color: var(--wf-text2); }
-  .tu-angaben dd { margin: 0; overflow-wrap: anywhere; }
-  .tu-formular { display: grid; gap: 12px; }
-  .tu-formular p { margin: 0; }
-  .tu-als { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
-  .tu-legende { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
-  .tu-feld { display: grid; gap: 4px; font-size: 13px; color: var(--wf-text2); }
-  .tu-gefahr, .fs-weiteres > li > details > summary.tu-gefahr { color: var(--wf-abl); }
-  .tu-loeschen { border-color: var(--wf-abl); color: var(--wf-abl); }
+/* ---------- Nebenspalte ---------- */
+.tu-angaben { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+.tu-angaben dt { color: var(--wf-text2); }
+.tu-angaben dd { margin: 0; overflow-wrap: anywhere; }
+.tu-formular { display: grid; gap: 12px; }
+.tu-formular p { margin: 0; }
+.tu-als { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.tu-legende { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.tu-feld { display: grid; gap: 4px; font-size: 13px; color: var(--wf-text2); }
+.tu-gefahr, .fs-weiteres > li > details > summary.tu-gefahr { color: var(--wf-abl); }
+.tu-loeschen { border-color: var(--wf-abl); color: var(--wf-abl); }
 
-  /* ---------- Neue Umfrage ---------- */
-  .tu-neu { display: grid; gap: 20px; align-content: start; }
-  .tu-fehler { padding: 12px 14px; border-radius: 6px; background: color-mix(in srgb, var(--wf-abl) 8%, var(--wf-flaeche)); color: var(--wf-abl); font-size: 14px; }
-  .tu-planen { margin: 0; padding: 0; border: 0; min-width: 0; }
-  .tu-planen > .fs-meta { margin: 2px 0 10px; }
-  .tu-planen-raster { display: grid; gap: 16px 32px; align-items: start; }
-  .tu-zeilen { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 13px; }
-  .tu-zeilen th { text-align: left; font-weight: 500; color: var(--wf-text2); padding: 0 8px 4px 0; }
-  .tu-zeilen th:first-child { width: 42%; }
-  .tu-zeilen th:last-child { width: 40px; }
-  .tu-zeilen td { padding: 0 8px 8px 0; }
-  .tu-zeilen td:last-child { padding-right: 0; }
-  .tu-zeilen input.wf-eingabe { width: 100%; }
-  .tu-weitere { gap: 6px; font-size: 14px; }
-  .tu-weitere svg { width: 15px; height: 15px; }
+/* ---------- Neue Umfrage ---------- */
+.tu-neu { display: grid; gap: 20px; align-content: start; }
+.tu-fehler { padding: 12px 14px; border-radius: 6px; background: color-mix(in srgb, var(--wf-abl) 8%, var(--wf-flaeche)); color: var(--wf-abl); font-size: 14px; }
+.tu-planen { margin: 0; padding: 0; border: 0; min-width: 0; }
+.tu-planen > .fs-meta { margin: 2px 0 10px; }
+.tu-planen-raster { display: grid; gap: 16px 32px; align-items: start; }
+.tu-zeilen { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 13px; }
+.tu-zeilen th { text-align: left; font-weight: 500; color: var(--wf-text2); padding: 0 8px 4px 0; }
+.tu-zeilen th:first-child { width: 42%; }
+.tu-zeilen th:last-child { width: 40px; }
+.tu-zeilen td { padding: 0 8px 8px 0; }
+.tu-zeilen td:last-child { padding-right: 0; }
+.tu-zeilen input.wf-eingabe { width: 100%; }
+.tu-weitere { gap: 6px; font-size: 14px; }
+.tu-weitere svg { width: 15px; height: 15px; }
 
-  /* Monatsblatt: Tage anklicken */
-  .tu-monatsblatt { border: 1px solid var(--wf-linie); border-radius: 6px; padding: 10px 12px 12px; background: var(--wf-flaeche); max-width: 22rem; }
-  .tu-monatskopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-weight: 600; font-size: 14px; }
-  .tu-wochentage, .tu-tage { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
-  .tu-wochentage span { text-align: center; font-size: 12px; color: var(--wf-text3); padding: 2px 0; }
-  .tu-tagknopf {
-    height: 34px; border: 0; border-radius: 6px; background: none; color: var(--wf-tinte); font-size: 13.5px;
-    font-variant-numeric: tabular-nums; cursor: pointer;
-  }
-  .tu-tagknopf:hover:not(:disabled) { background: var(--wf-grau); }
-  .tu-tagknopf.heute { box-shadow: inset 0 0 0 1px var(--wf-linie-stark); font-weight: 600; }
-  .tu-tagknopf.gewaehlt { background: var(--wf-work); color: #fff; font-weight: 600; }
-  .tu-tagknopf.gewaehlt:hover { background: var(--wf-work); }
-  .tu-tagknopf:disabled { color: var(--wf-offen); cursor: default; }
-  .tu-tagknopf[hidden] { display: block; visibility: hidden; }
+/* Monatsblatt: Tage anklicken */
+.tu-monatsblatt { border: 1px solid var(--wf-linie); border-radius: 6px; padding: 10px 12px 12px; background: var(--wf-flaeche); max-width: 22rem; }
+.tu-monatskopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-weight: 600; font-size: 14px; }
+.tu-wochentage, .tu-tage { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.tu-wochentage span { text-align: center; font-size: 12px; color: var(--wf-text3); padding: 2px 0; }
+.tu-tagknopf {
+  height: 34px; border: 0; border-radius: 6px; background: none; color: var(--wf-tinte); font-size: 13.5px;
+  font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.tu-tagknopf:hover:not(:disabled) { background: var(--wf-grau); }
+.tu-tagknopf.heute { box-shadow: inset 0 0 0 1px var(--wf-linie-stark); font-weight: 600; }
+.tu-tagknopf.gewaehlt { background: var(--wf-work); color: #fff; font-weight: 600; }
+.tu-tagknopf.gewaehlt:hover { background: var(--wf-work); }
+.tu-tagknopf:disabled { color: var(--wf-offen); cursor: default; }
+.tu-tagknopf[hidden] { display: block; visibility: hidden; }
 
-  .tu-zwei { display: grid; gap: 16px 24px; }
+.tu-zwei { display: grid; gap: 16px 24px; }
 
-  /* Nebenspalte der neuen Umfrage */
-  .tu-wen { display: grid; gap: 8px; margin-top: 8px; }
-  .tu-mitglieder { display: grid; gap: 6px; margin: 2px 0 0 24px !important; max-height: 18rem; overflow-y: auto; }
-  .tu-absenden { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 28px; }
+/* Nebenspalte der neuen Umfrage */
+.tu-wen { display: grid; gap: 8px; margin-top: 8px; }
+.tu-mitglieder { display: grid; gap: 6px; margin: 2px 0 0 24px !important; max-height: 18rem; overflow-y: auto; }
+.tu-absenden { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 28px; }
 
-  /* ---------- Termin (Präfix tm-) ---------- */
-  .tm-felder { display: grid; gap: 20px; align-content: start; }
-  .tm-zeit, .tm-zwei { display: grid; gap: 16px 20px; }
-  .tm-angaben { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 12px 16px; margin: 0; font-size: 15px; }
-  .tm-angaben dt { color: var(--wf-text2); font-size: 14px; padding-top: 1px; }
-  .tm-angaben dd { margin: 0; overflow-wrap: anywhere; }
-  .tm-angaben .wf-knopf svg { width: 15px; height: 15px; }
-  .tm-link { display: block; margin-top: 4px; font-size: 13px; color: var(--wf-text3); }
-  .tm-h2 { font-size: 16px; font-weight: 600; margin: 8px 0 6px; }
-  .tm-text { margin: 0; max-width: 46rem; font-size: 15px; line-height: 1.6; white-space: pre-line; }
-  .tm-einladung, .tm-teilnahmen { display: grid; gap: 6px; margin-top: 8px !important; }
-  .tm-einladung { max-height: 22rem; overflow-y: auto; }
-  .tm-einladung li, .tm-teilnahmen li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  .tm-status { flex: none; font-size: 13px; color: var(--wf-text2); }
-  .tm-status.zugesagt { color: var(--wf-zust); }
-  .tm-status.abgesagt { color: var(--wf-abl); }
-  .tm-status.vielleicht { color: var(--wf-enth); }
-  .tm-antwort { margin-bottom: 8px; }
-  .tm-antwort-knoepfe { display: flex; flex-wrap: wrap; gap: 8px; }
-  .tm-antwort-knoepfe .wf-knopf svg { width: 15px; height: 15px; }
-  .tm-antwort-knoepfe .zugesagt[aria-pressed="true"] { background: var(--wf-zust); border-color: var(--wf-zust); color: #fff; }
-  .tm-antwort-knoepfe .vielleicht[aria-pressed="true"] { background: var(--wf-enth); border-color: var(--wf-enth); color: #fff; }
-  .tm-antwort-knoepfe .abgesagt[aria-pressed="true"] { background: var(--wf-text2); border-color: var(--wf-text2); color: #fff; }
+/* ---------- Termin (Präfix tm-) ---------- */
+.tm-felder { display: grid; gap: 20px; align-content: start; }
+.tm-zeit, .tm-zwei { display: grid; gap: 16px 20px; }
+.tm-angaben { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 12px 16px; margin: 0; font-size: 15px; }
+.tm-angaben dt { color: var(--wf-text2); font-size: 14px; padding-top: 1px; }
+.tm-angaben dd { margin: 0; overflow-wrap: anywhere; }
+.tm-angaben .wf-knopf svg { width: 15px; height: 15px; }
+.tm-link { display: block; margin-top: 4px; font-size: 13px; color: var(--wf-text3); }
+.tm-h2 { font-size: 16px; font-weight: 600; margin: 8px 0 6px; }
+.tm-text { margin: 0; max-width: 46rem; font-size: 15px; line-height: 1.6; white-space: pre-line; }
+.tm-einladung, .tm-teilnahmen { display: grid; gap: 6px; margin-top: 8px !important; }
+.tm-einladung { max-height: 22rem; overflow-y: auto; }
+.tm-einladung li, .tm-teilnahmen li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.tm-status { flex: none; font-size: 13px; color: var(--wf-text2); }
+.tm-status.zugesagt { color: var(--wf-zust); }
+.tm-status.abgesagt { color: var(--wf-abl); }
+.tm-status.vielleicht { color: var(--wf-enth); }
+.tm-antwort { margin-bottom: 8px; }
+.tm-antwort-knoepfe { display: flex; flex-wrap: wrap; gap: 8px; }
+.tm-antwort-knoepfe .wf-knopf svg { width: 15px; height: 15px; }
+.tm-antwort-knoepfe .zugesagt[aria-pressed="true"] { background: var(--wf-zust); border-color: var(--wf-zust); color: #fff; }
+.tm-antwort-knoepfe .vielleicht[aria-pressed="true"] { background: var(--wf-enth); border-color: var(--wf-enth); color: #fff; }
+.tm-antwort-knoepfe .abgesagt[aria-pressed="true"] { background: var(--wf-text2); border-color: var(--wf-text2); color: #fff; }
 
-  @media (min-width: 640px) {
-    .tm-zeit { grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr)) minmax(0, 1.2fr); }
-    .tm-zwei { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  @media (max-width: 639.98px) {
-    .tm-angaben { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
-    .tm-angaben dd + dt { margin-top: 10px; }
-  }
+@media (min-width: 640px) {
+  .tm-zeit { grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr)) minmax(0, 1.2fr); }
+  .tm-zwei { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 639.98px) {
+  .tm-angaben { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .tm-angaben dd + dt { margin-top: 10px; }
+}
 
-  @media (min-width: 1100px) {
-    .tu-planen-raster { grid-template-columns: minmax(0, 1fr) 19rem; }
-  }
-  @media (min-width: 640px) {
-    .tu-zwei { grid-template-columns: minmax(0, 1fr) 14rem; }
-  }
+@media (min-width: 1100px) {
+  .tu-planen-raster { grid-template-columns: minmax(0, 1fr) 19rem; }
+}
+@media (min-width: 640px) {
+  .tu-zwei { grid-template-columns: minmax(0, 1fr) 14rem; }
+}
 
-  @media (max-width: 639.98px) {
-    .tu-person { min-width: 8.5rem; max-width: 10rem; padding: 8px 10px; }
-    .tu-kuerzel { display: none; }
-    .tu-spalte { min-width: 5.5rem; }
-  }
+@media (max-width: 639.98px) {
+  .tu-person { min-width: 8.5rem; max-width: 10rem; padding: 8px 10px; }
+  .tu-kuerzel { display: none; }
+  .tu-spalte { min-width: 5.5rem; }
 }

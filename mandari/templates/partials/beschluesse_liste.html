@@ -25,7 +25,7 @@ für Screenreader) steht je Eintrag Etikett, Titel, Absender; am Handy rücken d
 {% for sitzung in sitzungen %}
 <section aria-labelledby="sitzung-{{ sitzung.id }}" class="mt-8 sm:mt-10">
     <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-3">
-        <h2 id="sitzung-{{ sitzung.id }}" class="text-[1.1875rem] font-semibold text-gray-900 dark:text-white break-words">{{ sitzung.gremium }}</h2>
+        <h2 id="sitzung-{{ sitzung.id }}" class="text-[1.1875rem] font-semibold text-gray-900 dark:text-white wrap-break-word">{{ sitzung.gremium }}</h2>
         <p class="flex flex-wrap items-baseline gap-x-4 text-[0.9375rem] text-gray-600 dark:text-gray-400">
             <time datetime="{{ sitzung.beginn|date:'c' }}">{{ sitzung.beginn|date:"l, j. F Y" }}</time>
             <a href="{% url 'insight_core:insight:meeting_detail' sitzung.id %}" class="font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">Zur Sitzung</a>
@@ -36,14 +36,14 @@ für Screenreader) steht je Eintrag Etikett, Titel, Absender; am Handy rücken d
         <li class="group relative grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 py-4 lg:grid-cols-[11rem_minmax(0,1fr)_auto]">
             <span class="self-start lg:pt-0.5"><c-insight.ergebnis :ergebnis="eintrag.ergebnis" /></span>
             <div class="order-last col-span-2 min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1">
-                <a href="{{ eintrag.ziel }}" class="font-semibold text-gray-900 dark:text-white break-words underline-offset-4 group-hover:text-primary-700 group-hover:underline dark:group-hover:text-primary-300 after:absolute after:inset-0">{{ eintrag.titel }}</a>
+                <a href="{{ eintrag.ziel }}" class="font-semibold text-gray-900 dark:text-white wrap-break-word underline-offset-4 group-hover:text-primary-700 group-hover:underline dark:group-hover:text-primary-300 after:absolute after:inset-0">{{ eintrag.titel }}</a>
                 {% if eintrag.worum %}<p class="mt-1 text-gray-700 dark:text-gray-300">{{ eintrag.worum }}</p>{% endif %}
                 {% for satz in eintrag.dazu %}<p class="mt-1 text-[0.9375rem] text-gray-600 dark:text-gray-400">{{ satz }}</p>{% endfor %}
                 {% if eintrag.teile %}
                 <details class="relative z-10 mt-1 text-[0.9375rem]">
                     <summary class="inline-flex min-h-11 cursor-pointer items-center font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">Welche Punkte?</summary>
                     <ul class="mt-1 list-disc space-y-1 pl-5 text-gray-700 dark:text-gray-300">
-                        {% for teil in eintrag.teile %}<li class="break-words"><a href="{{ teil.ziel }}" class="underline-offset-4 hover:underline">{{ teil.titel }}</a>{% if teil.von %} <span class="text-gray-600 dark:text-gray-400">({{ teil.von|join:", " }}{% if teil.von_weitere %} und weitere{% endif %})</span>{% endif %}</li>{% endfor %}
+                        {% for teil in eintrag.teile %}<li class="wrap-break-word"><a href="{{ teil.ziel }}" class="underline-offset-4 hover:underline">{{ teil.titel }}</a>{% if teil.von %} <span class="text-gray-600 dark:text-gray-400">({{ teil.von|join:", " }}{% if teil.von_weitere %} und weitere{% endif %})</span>{% endif %}</li>{% endfor %}
                     </ul>
                 </details>
                 {% endif %}

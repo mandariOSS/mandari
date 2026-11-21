@@ -7,7 +7,7 @@ Kontext: item, vote_choices, can_view_np, is_sub (optional).
 {% endcomment %}
 <li class="py-4 space-y-3 {% if is_sub %}pl-8 sm:pl-10{% endif %}" data-testid="niederschrift-top-formular">
     <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p class="min-w-0 break-words text-gray-900 dark:text-white">
+        <p class="min-w-0 wrap-break-word text-gray-900 dark:text-white">
             <span class="tabular-nums font-semibold text-gray-700 dark:text-gray-300 mr-1">{{ item.number }}</span>
             <span class="font-medium {% if item.is_withdrawn %}line-through text-gray-500 dark:text-gray-400{% endif %}">{{ item.name }}</span>
             {% if item.is_withdrawn %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">(abgesetzt)</span>{% endif %}
@@ -37,17 +37,17 @@ Kontext: item, vote_choices, can_view_np, is_sub (optional).
         <div class="min-w-0">
             <c-form.beschriftung feld="ja-{{ item.pk }}">Ja</c-form.beschriftung>
             <input type="number" min="0" id="ja-{{ item.pk }}" name="votes_yes_{{ item.pk }}" value="{{ item.votes_yes }}"
-                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
         </div>
         <div class="min-w-0">
             <c-form.beschriftung feld="nein-{{ item.pk }}">Nein</c-form.beschriftung>
             <input type="number" min="0" id="nein-{{ item.pk }}" name="votes_no_{{ item.pk }}" value="{{ item.votes_no }}"
-                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
         </div>
         <div class="min-w-0">
             <c-form.beschriftung feld="enthaltungen-{{ item.pk }}">Enthaltungen</c-form.beschriftung>
             <input type="number" min="0" id="enthaltungen-{{ item.pk }}" name="votes_abstain_{{ item.pk }}" value="{{ item.votes_abstain }}"
-                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
         </div>
         {% endif %}
     </div>

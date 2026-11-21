@@ -16,7 +16,7 @@ Der Slot ist die Detailzeile.
 {% endcomment %}
 <c-vars date="" title="" href="" state="past" />
 <li class="group relative grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-4 pb-8 last:pb-0"{% if state == "latest" %} aria-current="step"{% endif %}>
-    <span class="absolute left-[0.5625rem] top-6 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700 group-last:hidden" aria-hidden="true"></span>
+    <span class="absolute left-2.25 top-6 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700 group-last:hidden" aria-hidden="true"></span>
     <span class="mt-1 w-5 h-5 rounded-full {% if state == 'latest' %}bg-primary-700 dark:bg-primary-300{% elif state == 'upcoming' %}bg-white dark:bg-gray-900 ring-2 ring-inset ring-primary-700 dark:ring-primary-300{% elif state == 'expected' %}bg-white dark:bg-gray-900 border-2 border-dashed border-primary-700 dark:border-primary-300{% elif state == 'open' %}bg-white dark:bg-gray-900 border-2 border-dashed border-gray-400 dark:border-gray-500{% else %}bg-white dark:bg-gray-900 ring-2 ring-inset ring-gray-300 dark:ring-gray-600{% endif %}" aria-hidden="true"></span>
     <div class="min-w-0">
         <p class="text-sm tabular-nums text-gray-600 dark:text-gray-400">
@@ -26,7 +26,7 @@ Der Slot ist die Detailzeile.
             {% elif state == "expected" %}<span class="ml-2 font-medium text-primary-700 dark:text-primary-300">voraussichtlich</span>
             {% elif state == "cancelled" %}<span class="ml-2 font-medium text-gray-700 dark:text-gray-300">abgesagt</span>{% endif %}
         </p>
-        <p class="mt-0.5 text-[1.0625rem] font-semibold leading-snug text-gray-900 dark:text-white break-words">
+        <p class="mt-0.5 text-[1.0625rem] font-semibold leading-snug text-gray-900 dark:text-white wrap-break-word">
             {% if href %}<a href="{{ href }}" class="hover:underline underline-offset-4">{{ title }}</a>{% else %}{{ title }}{% endif %}
         </p>
         <div class="mt-1 text-[0.95rem] text-gray-700 dark:text-gray-300">{{ slot }}</div>

@@ -27,7 +27,7 @@
         <div class="px-6 py-4">
             <textarea name="bio" rows="3" maxlength="500"
                       placeholder="z.B. Zuständig für Verkehr & Mobilität, Mitglied im Planungsausschuss..."
-                      class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow dark:text-white">{{ bio }}</textarea>
+                      class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden transition-shadow dark:text-white">{{ bio }}</textarea>
             <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Max. 500 Zeichen</p>
         </div>
     </div>
@@ -53,7 +53,7 @@
                 <div class="relative">
                     <input type="checkbox" name="show_email" class="sr-only peer" {% if show_email %}checked{% endif %}>
                     <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer-checked:bg-primary-600 transition-colors"></div>
-                    <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                    <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-xs transition-transform peer-checked:translate-x-5"></div>
                 </div>
             </label>
 
@@ -66,7 +66,7 @@
                 <div class="relative">
                     <input type="checkbox" name="show_phone" class="sr-only peer" {% if show_phone %}checked{% endif %}>
                     <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer-checked:bg-primary-600 transition-colors"></div>
-                    <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                    <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-xs transition-transform peer-checked:translate-x-5"></div>
                 </div>
             </label>
         </div>
@@ -88,17 +88,17 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bevorzugter Kontaktweg</label>
                 <div class="flex flex-wrap gap-3">
-                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-[:checked]:border-primary-500 dark:has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-checked:border-primary-500 dark:has-checked:border-primary-500 has-checked:bg-primary-50 dark:has-checked:bg-primary-900/20">
                         <input type="radio" name="preferred_contact" value="email" class="peer sr-only" {% if preferred_contact == 'email' %}checked{% endif %}>
                         <i data-lucide="mail" class="w-4 h-4 text-gray-400 peer-checked:text-primary-600 dark:peer-checked:text-primary-400"></i>
                         <span class="text-sm text-gray-600 dark:text-gray-400 peer-checked:text-primary-700 dark:peer-checked:text-primary-300 peer-checked:font-medium">E-Mail</span>
                     </label>
-                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-[:checked]:border-primary-500 dark:has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-checked:border-primary-500 dark:has-checked:border-primary-500 has-checked:bg-primary-50 dark:has-checked:bg-primary-900/20">
                         <input type="radio" name="preferred_contact" value="phone" class="peer sr-only" {% if preferred_contact == 'phone' %}checked{% endif %}>
                         <i data-lucide="phone" class="w-4 h-4 text-gray-400 peer-checked:text-primary-600 dark:peer-checked:text-primary-400"></i>
                         <span class="text-sm text-gray-600 dark:text-gray-400 peer-checked:text-primary-700 dark:peer-checked:text-primary-300 peer-checked:font-medium">Telefon</span>
                     </label>
-                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-[:checked]:border-primary-500 dark:has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-checked:border-primary-500 dark:has-checked:border-primary-500 has-checked:bg-primary-50 dark:has-checked:bg-primary-900/20">
                         <input type="radio" name="preferred_contact" value="signal" class="peer sr-only" {% if preferred_contact == 'signal' %}checked{% endif %}>
                         <i data-lucide="message-square" class="w-4 h-4 text-gray-400 peer-checked:text-primary-600 dark:peer-checked:text-primary-400"></i>
                         <span class="text-sm text-gray-600 dark:text-gray-400 peer-checked:text-primary-700 dark:peer-checked:text-primary-300 peer-checked:font-medium">Signal</span>
@@ -112,7 +112,7 @@
                 <input type="text" name="contact_signal" value="{{ contact_signal }}"
                        placeholder="z.B. @benutzername.01"
                        maxlength="100"
-                       class="w-full max-w-sm px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow dark:text-white">
+                       class="w-full max-w-sm px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden transition-shadow dark:text-white">
                 <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Optional — wird nur angezeigt wenn Signal als Kontaktweg gewählt</p>
             </div>
         </div>
@@ -128,7 +128,7 @@
             </h4>
         </div>
         <div class="px-6 py-4 flex items-center gap-4">
-            <div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+            <div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
                 <i data-lucide="user-check" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
             </div>
             <div>
@@ -142,7 +142,7 @@
     <!-- Save Button -->
     <div class="flex justify-end">
         <button type="submit"
-                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs transition-colors">
             <i data-lucide="save" class="w-4 h-4"></i>
             Speichern
         </button>

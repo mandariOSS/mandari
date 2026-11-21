@@ -51,7 +51,7 @@
         <div class="px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
             <div class="flex items-start gap-4">
                 <!-- Icon -->
-                <div class="flex-shrink-0 p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                <div class="shrink-0 p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
                     <i data-lucide="trash" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
                 </div>
 
@@ -69,7 +69,7 @@
                 </div>
 
                 <!-- Actions -->
-                <div class="flex items-center gap-2 flex-shrink-0">
+                <div class="flex items-center gap-2 shrink-0">
                     <button type="button" data-post="{% url 'work:document_restore' org_slug=organization.slug motion_id=motion.id %}"
                             data-confirm-title="Dokument wiederherstellen" data-confirm-message="Das Dokument wird als Entwurf wiederhergestellt."
                             data-confirm-text="Wiederherstellen" data-confirm-variant="info"

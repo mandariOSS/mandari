@@ -29,7 +29,7 @@ Aufgabe aus einem nichtöffentlichen TOP (task.noe_top): Titel weichgezeichnet, 
             </div>
         </div>
         <button type="button" @click="closePanel()"
-                class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors flex-shrink-0">
+                class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors shrink-0">
             <i data-lucide="x" class="w-4 h-4"></i>
         </button>
     </div>
@@ -52,7 +52,7 @@ Aufgabe aus einem nichtöffentlichen TOP (task.noe_top): Titel weichgezeichnet, 
     {# ── Details ── #}
     <div class="mx-6 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-900/30 divide-y divide-gray-100 dark:divide-gray-700/50">
         <div class="flex items-center h-10 gap-3 px-4">
-            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="flex items-center gap-1.5 w-28 shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
                 <i data-lucide="user" class="w-3.5 h-3.5 text-primary-500"></i>
                 Zugewiesen an
             </span>
@@ -62,15 +62,15 @@ Aufgabe aus einem nichtöffentlichen TOP (task.noe_top): Titel weichgezeichnet, 
         </div>
         {% with weitere=task.weitere_namen %}{% if weitere %}
         <div class="flex items-start min-h-[40px] gap-3 px-4 py-2" data-testid="aufgabe-weitere-zustaendige">
-            <span class="flex items-start gap-1.5 w-28 flex-shrink-0 pt-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-                <i data-lucide="users" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary-500"></i>
+            <span class="flex items-start gap-1.5 w-28 shrink-0 pt-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <i data-lucide="users" class="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary-500"></i>
                 Weitere Zuständige
             </span>
             <span class="text-xs text-gray-900 dark:text-white">{{ weitere|join:", " }}</span>
         </div>
         {% endif %}{% endwith %}
         <div class="flex items-center h-10 gap-3 px-4">
-            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="flex items-center gap-1.5 w-28 shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
                 <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-500"></i>
                 Fällig am
             </span>
@@ -79,7 +79,7 @@ Aufgabe aus einem nichtöffentlichen TOP (task.noe_top): Titel weichgezeichnet, 
             </span>
         </div>
         <div class="flex items-center h-10 gap-3 px-4">
-            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="flex items-center gap-1.5 w-28 shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
                 <i data-lucide="eye" class="w-3.5 h-3.5 text-blue-500"></i>
                 Sichtbarkeit
             </span>
@@ -114,7 +114,7 @@ Aufgabe aus einem nichtöffentlichen TOP (task.noe_top): Titel weichgezeichnet, 
         <div class="space-y-1">
             {% for item in checklist_items %}
             <div class="flex items-center gap-2 py-0.5">
-                <i data-lucide="{% if item.is_completed %}check-square{% else %}square{% endif %}" class="w-4 h-4 flex-shrink-0 {% if item.is_completed %}text-green-500{% else %}text-gray-400{% endif %}"></i>
+                <i data-lucide="{% if item.is_completed %}check-square{% else %}square{% endif %}" class="w-4 h-4 shrink-0 {% if item.is_completed %}text-green-500{% else %}text-gray-400{% endif %}"></i>
                 <span class="text-sm {% if item.is_completed %}line-through text-gray-400 dark:text-gray-500{% else %}text-gray-700 dark:text-gray-300{% endif %}">{{ item.title }}</span>
             </div>
             {% endfor %}
@@ -136,9 +136,9 @@ Aufgabe aus einem nichtöffentlichen TOP (task.noe_top): Titel weichgezeichnet, 
             {% for att in attachments %}
             <a href="{% url 'work:task_attachment_download' org_slug=organization.slug task_id=task.id attachment_id=att.id %}?vorschau" target="_blank" rel="noopener"
                class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group">
-                <i data-lucide="{{ att.icon_name }}" class="w-4 h-4 text-gray-400 flex-shrink-0 group-hover:text-primary-500 transition-colors"></i>
+                <i data-lucide="{{ att.icon_name }}" class="w-4 h-4 text-gray-400 shrink-0 group-hover:text-primary-500 transition-colors"></i>
                 <span class="text-sm text-gray-700 dark:text-gray-300 truncate flex-1">{{ att.filename }}</span>
-                <span class="text-[11px] text-gray-400 flex-shrink-0">{{ att.size_human }}</span>
+                <span class="text-[11px] text-gray-400 shrink-0">{{ att.size_human }}</span>
             </a>
             {% endfor %}
         </div>

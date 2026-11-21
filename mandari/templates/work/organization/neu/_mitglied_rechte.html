@@ -38,12 +38,12 @@ effective_permission_codes, can_edit.
                         <td class="py-1.5 text-center">
                             <label class="sr-only" for="ind-{{ perm.code }}">{{ perm.name }}: individuell gewähren</label>
                             <input type="checkbox" id="ind-{{ perm.code }}" name="individual_permissions" value="{{ perm.code }}" {% if perm.code in individual_permission_codes %}checked{% endif %} {% if not can_edit %}disabled{% endif %}
-                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                                   class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                         </td>
                         <td class="py-1.5 text-center">
                             <label class="sr-only" for="ver-{{ perm.code }}">{{ perm.name }}: verweigern</label>
                             <input type="checkbox" id="ver-{{ perm.code }}" name="denied_permissions" value="{{ perm.code }}" {% if perm.code in denied_permission_codes %}checked{% endif %} {% if not can_edit %}disabled{% endif %}
-                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500">
+                                   class="w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500">
                         </td>
                     </tr>
                     {% endwith %}

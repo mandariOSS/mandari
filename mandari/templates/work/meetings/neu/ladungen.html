@@ -30,7 +30,7 @@ Zuordnung ein Satz statt Karte. Die bisherige Seite bleibt work/meetings/session
 <ul class="max-w-4xl divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="ladungen">
     {% for invitation in invitations %}
     <li class="py-5" aria-labelledby="ladung-{{ invitation.latest.id }}">
-        <h2 id="ladung-{{ invitation.latest.id }}" class="text-base font-semibold text-gray-900 dark:text-white break-words">{{ invitation.meeting.name }}</h2>
+        <h2 id="ladung-{{ invitation.latest.id }}" class="text-base font-semibold text-gray-900 dark:text-white wrap-break-word">{{ invitation.meeting.name }}</h2>
         <p class="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
             <span>{{ invitation.meeting.organization.name }}</span>
             <span>{{ invitation.meeting.start|date:"l, d.m.Y, H:i" }} Uhr</span>

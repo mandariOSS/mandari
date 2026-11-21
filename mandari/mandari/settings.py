@@ -104,6 +104,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    # Genau dieser Name: pytest-django liefert statische Dateien im Live-Server nur, wenn er wörtlich hier steht
     "django.contrib.staticfiles",
     "django.contrib.humanize",
     # Third-party apps

@@ -12,12 +12,12 @@ Kontext: device, persons, tenant_slug.
                 <span class="liste-name">{{ device.label }}</span>
                 <span class="text-sm text-gray-700 dark:text-gray-300">{% if device.status == "in_stock" %}{% include "session/neu/_status.html" with wert="approved" text=device.get_status_display %}{% elif device.status == "issued" %}{% include "session/neu/_status.html" with wert="scheduled" text=device.get_status_display %}{% elif device.status == "defect" %}{% include "session/neu/_status.html" with wert="rejected" text=device.get_status_display %}{% else %}{% include "session/neu/_status.html" with wert="" text=device.get_status_display %}{% endif %}</span>
             </p>
-            {% if device.issued_to %}<p class="text-sm text-gray-800 dark:text-gray-200 break-words">bei <span class="font-medium">{{ device.issued_to.display_name }}</span> seit <span class="tabular-nums">{{ device.issued_at|date:"d.m.Y" }}</span></p>{% endif %}
+            {% if device.issued_to %}<p class="text-sm text-gray-800 dark:text-gray-200 wrap-break-word">bei <span class="font-medium">{{ device.issued_to.display_name }}</span> seit <span class="tabular-nums">{{ device.issued_at|date:"d.m.Y" }}</span></p>{% endif %}
             {% if device.inventory_number or device.serial_number or device.accessories %}
             <p class="flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
                 {% if device.inventory_number %}<span class="tabular-nums">Inv. {{ device.inventory_number }}</span>{% endif %}
                 {% if device.serial_number %}<span class="tabular-nums break-all">SN {{ device.serial_number }}</span>{% endif %}
-                {% if device.accessories %}<span class="break-words">{{ device.accessories }}</span>{% endif %}
+                {% if device.accessories %}<span class="wrap-break-word">{{ device.accessories }}</span>{% endif %}
             </p>
             {% endif %}
         </div>
@@ -67,7 +67,7 @@ Kontext: device, persons, tenant_slug.
             {% if logs %}
             <ul class="mt-1 space-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
                 {% for log in logs %}
-                <li class="break-words"><span class="tabular-nums text-gray-600 dark:text-gray-400">{{ log.created_at|date:"d.m.Y H:i" }}</span> {{ log.get_action_display }}{% if log.person %} ({{ log.person.display_name }}){% endif %}{% if log.note %}: {{ log.note }}{% endif %}{% if log.created_by %} <span class="text-gray-600 dark:text-gray-400">· {{ log.created_by.user.email }}</span>{% endif %}</li>
+                <li class="wrap-break-word"><span class="tabular-nums text-gray-600 dark:text-gray-400">{{ log.created_at|date:"d.m.Y H:i" }}</span> {{ log.get_action_display }}{% if log.person %} ({{ log.person.display_name }}){% endif %}{% if log.note %}: {{ log.note }}{% endif %}{% if log.created_by %} <span class="text-gray-600 dark:text-gray-400">· {{ log.created_by.user.email }}</span>{% endif %}</li>
                 {% endfor %}
             </ul>
             {% else %}

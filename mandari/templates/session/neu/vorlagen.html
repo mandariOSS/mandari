@@ -25,21 +25,21 @@ session/papers/list.html.
     <span class="relative block basis-full sm:basis-64 sm:flex-1 min-w-0 max-w-md">
         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden="true"></i>
         <input id="filter-suche" type="search" name="q" value="{{ request.GET.q }}" placeholder="Titel, Nummer oder Text"
-               class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+               class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
     </span>
     <label for="filter-typ" class="sr-only">Vorlagenart</label>
-    <select id="filter-typ" name="type" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="filter-typ" name="type" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Arten</option>
         {% for value, label in paper_types %}<option value="{{ value }}" {% if request.GET.type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
     <label for="filter-status" class="sr-only">Status</label>
-    <select id="filter-status" name="status" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="filter-status" name="status" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Status</option>
         {% for value, label in paper_statuses %}<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
     {% if legislative_terms %}
     <label for="filter-periode" class="sr-only">Wahlperiode</label>
-    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Wahlperioden</option>
         {% for term in legislative_terms %}<option value="{{ term.id }}" {% if selected_term == term.id|stringformat:"s" %}selected{% endif %}>{{ term.name }}</option>{% endfor %}
     </select>
@@ -56,11 +56,11 @@ session/papers/list.html.
     {% for paper in papers %}
     <li class="relative grid md:grid-cols-[minmax(0,1fr)_11rem] gap-x-4 gap-y-1 py-3 pl-1 border-b border-gray-200 dark:border-gray-800 hover:bg-band-grau/60">
         <div class="min-w-0">
-            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums break-words">
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums wrap-break-word">
                 {{ paper.display_reference }} · {{ paper.get_paper_type_display }}{% if paper.main_organization %} · {{ paper.main_organization.name }}{% endif %}{% if body_choice.active and paper.body %} · {{ paper.body.label }}{% endif %}{% if paper.date %} · {{ paper.date|date:"d.m.Y" }}{% endif %}
             </p>
             <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
-               class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ paper.name }}</a>
+               class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word after:absolute after:inset-0">{{ paper.name }}</a>
             {% if not paper.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}
         </div>
         <p class="md:pt-5 text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=paper.status text=paper.get_status_display %}</p>

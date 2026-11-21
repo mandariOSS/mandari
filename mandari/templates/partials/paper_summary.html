@@ -40,7 +40,7 @@ und Bauanträgen (Issue #1269); die Prüfsumme für die Bewertung bleibt die des
 </div>
 {% endif %}
 <div x-data="{ offen: false, einfach: false }" class="mt-3">
-    <div class="space-y-3 {% if dicht %}text-base leading-7{% else %}max-w-[46rem] text-[1.0625rem] leading-relaxed{% endif %} text-gray-800 dark:text-gray-200" data-ai-generated="true" x-show="!einfach">
+    <div class="space-y-3 {% if dicht %}text-base leading-7{% else %}max-w-184 text-[1.0625rem] leading-relaxed{% endif %} text-gray-800 dark:text-gray-200" data-ai-generated="true" x-show="!einfach">
         <p>{{ absaetze.0 }}</p>
         {% if absaetze|length > 1 %}
         <div class="space-y-3" id="ki-zusammenfassung-rest-{{ paper.id }}" x-show="offen" x-cloak>
@@ -49,7 +49,7 @@ und Bauanträgen (Issue #1269); die Prüfsumme für die Bewertung bleibt die des
         {% endif %}
     </div>
     {% if paper.summary_einfach %}
-    <div class="space-y-3 {% if dicht %}text-base leading-7{% else %}max-w-[46rem] text-[1.0625rem] leading-relaxed{% endif %} text-gray-800 dark:text-gray-200" data-ai-generated="true" lang="de" x-show="einfach" x-cloak>
+    <div class="space-y-3 {% if dicht %}text-base leading-7{% else %}max-w-184 text-[1.0625rem] leading-relaxed{% endif %} text-gray-800 dark:text-gray-200" data-ai-generated="true" lang="de" x-show="einfach" x-cloak>
         {% for absatz in paper.summary_einfach|ki_absaetze:schutz %}<p>{{ absatz }}</p>{% endfor %}
     </div>
     {% endif %}

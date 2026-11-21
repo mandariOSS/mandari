@@ -63,7 +63,7 @@
                         <input type="text" name="keyword"
                                x-model="keyword"
                                placeholder="z.B. Radweg, Spielplatz, Klimaschutz..."
-                               class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">
+                               class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden transition-all">
                     </div>
                 </div>
             </div>
@@ -79,13 +79,13 @@
             </div>
             <div class="p-5">
                 <div class="flex gap-3">
-                    <label class="flex-1 flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-transparent has-[:checked]:border-primary-300 dark:has-[:checked]:border-primary-700 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                    <label class="flex-1 flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-transparent has-checked:border-primary-300 dark:has-checked:border-primary-700 has-checked:bg-primary-50 dark:has-checked:bg-primary-900/20">
                         <input type="radio" name="digest_frequency" value="weekly"
                                {% if subscriber.digest_frequency == 'weekly' %}checked{% endif %}
                                class="text-primary-600 focus:ring-primary-500">
                         <span class="text-sm text-gray-900 dark:text-white">W&ouml;chentlich</span>
                     </label>
-                    <label class="flex-1 flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-transparent has-[:checked]:border-primary-300 dark:has-[:checked]:border-primary-700 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                    <label class="flex-1 flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-transparent has-checked:border-primary-300 dark:has-checked:border-primary-700 has-checked:bg-primary-50 dark:has-checked:bg-primary-900/20">
                         <input type="radio" name="digest_frequency" value="biweekly"
                                {% if subscriber.digest_frequency == 'biweekly' %}checked{% endif %}
                                class="text-primary-600 focus:ring-primary-500">
@@ -102,7 +102,7 @@
                 Abo k&uuml;ndigen
             </a>
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-all shadow-sm hover:shadow-md">
+                    class="inline-flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-all shadow-xs hover:shadow-md">
                 <i data-lucide="save" class="w-4 h-4"></i>
                 Speichern
             </button>

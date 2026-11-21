@@ -21,7 +21,7 @@ dicht (Zeilen 28 px, Schrift 14 px wie in einer Arbeitsplattform; Work).
                hx-target="#suchergebnis" hx-swap="innerHTML show:#suche-anfang:top" hx-push-url="true"
                {% if o.checked %}aria-current="true"{% endif %}
                class="group flex items-center gap-2.5 {% if dicht %}min-h-7 text-sm{% else %}min-h-9 text-[0.95rem]{% endif %} text-gray-800 dark:text-gray-200">
-                <span class="shrink-0 grid place-items-center w-4 h-4 border {% if mehrfach %}rounded{% else %}rounded-full{% endif %} {% if o.checked %}border-primary-700 dark:border-primary-300{% if mehrfach %} bg-primary-700 dark:bg-primary-300{% endif %}{% else %}border-gray-400 dark:border-gray-500{% endif %}" aria-hidden="true">
+                <span class="shrink-0 grid place-items-center w-4 h-4 border {% if mehrfach %}rounded-sm{% else %}rounded-full{% endif %} {% if o.checked %}border-primary-700 dark:border-primary-300{% if mehrfach %} bg-primary-700 dark:bg-primary-300{% endif %}{% else %}border-gray-400 dark:border-gray-500{% endif %}" aria-hidden="true">
                     {% if o.checked %}{% if mehrfach %}<i data-lucide="check" class="w-3 h-3 text-white dark:text-gray-900"></i>{% else %}<span class="w-2 h-2 rounded-full bg-primary-700 dark:bg-primary-300"></span>{% endif %}{% endif %}
                 </span>
                 <span class="flex-1 min-w-0 group-hover:underline underline-offset-4 {% if o.checked %}font-medium text-gray-900 dark:text-white{% endif %}">{{ o.label|default:o.value }}{% if o.checked %}<span class="sr-only"> (gewählt)</span>{% endif %}</span>

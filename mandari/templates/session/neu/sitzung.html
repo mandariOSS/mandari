@@ -20,7 +20,7 @@ Rechte und Kontext wie MeetingDetailView. Die bisherige Seite bleibt session/mee
     </c-slot>
     <c-slot name="aktionen">
         {% if "edit_meetings" in permission_checker.permissions %}
-        <c-ui.button href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="send" class="{% if meeting.invitation_overdue %}!text-red-700 dark:!text-red-400{% endif %}">Ladung</c-ui.button>
+        <c-ui.button href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="send" class="{% if meeting.invitation_overdue %}text-red-700! dark:text-red-400!{% endif %}">Ladung</c-ui.button>
         <c-ui.button href="{% url 'session:meeting_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="pencil">Bearbeiten</c-ui.button>
         {% endif %}
         <c-ui.button href="{% url 'session:meeting_cockpit' tenant_slug=tenant_slug meeting_id=meeting.id %}" size="sm" icon="monitor-play" data-testid="cockpit-link">{% if "conduct_meetings" in permission_checker.permissions %}Cockpit{% else %}Live-Ansicht{% endif %}</c-ui.button>

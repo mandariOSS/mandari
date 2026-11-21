@@ -4,10 +4,10 @@ die Leitstellen. Ersetzt „Mandant wechseln“ und die Leitstellen-Einträge de
 Zwischenspeicher der Anmeldung (apps/session/permissions.py, user_tenants, user_leitstellen). Modaler Dialog:
 Fokusfalle, Escape schließt, der Fokus kehrt auf den auslösenden Knopf zurück. Am Handy ein Blatt von unten.
 {% endcomment %}
-<div x-show="raumOffen" x-cloak class="fixed inset-0 z-[70]" @keydown.escape.window="raumOffen && raumSchliessen()">
+<div x-show="raumOffen" x-cloak class="fixed inset-0 z-70" @keydown.escape.window="raumOffen && raumSchliessen()">
     <div x-show="raumOffen" x-transition.opacity class="absolute inset-0 bg-gray-950/40 dark:bg-black/60" @click="raumSchliessen()" aria-hidden="true"></div>
     <div id="raum-dialog" role="dialog" aria-modal="true" aria-labelledby="raum-dialog-titel" x-trap.noscroll="raumOffen" x-show="raumOffen"
-         class="absolute inset-x-0 bottom-0 sm:bottom-auto sm:left-1/2 sm:top-[12vh] sm:-translate-x-1/2 sm:w-[28rem] max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-xl bg-band-hell shadow-2xl ring-1 ring-gray-900/10 dark:ring-white/10 pb-[max(1rem,env(safe-area-inset-bottom))]">
+         class="absolute inset-x-0 bottom-0 sm:bottom-auto sm:left-1/2 sm:top-[12vh] sm:-translate-x-1/2 sm:w-md max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-xl bg-band-hell shadow-2xl ring-1 ring-gray-900/10 dark:ring-white/10 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div class="flex items-center justify-between gap-3 px-4 pt-3">
             <h2 id="raum-dialog-titel" class="text-base font-semibold text-gray-900 dark:text-white">Mandant wechseln</h2>
             <button type="button" @click="raumSchliessen()" aria-label="Schließen"

@@ -7,7 +7,7 @@ Alpine-Scope: documentManager (selectedIds, bulkTargetFolder, moveDocuments). Ko
     <span class="text-sm font-semibold text-primary-700 dark:text-primary-300" x-text="selectedIds.length + ' ausgewählt'"></span>
     <span class="text-sm text-gray-500">→ Verschieben nach…</span>
     <select x-model="bulkTargetFolder"
-            class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
+            class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-hidden">
         <option value="">Alle Dokumente (Wurzel)</option>
         {% for entry in folder_entries %}
         {% if not entry.folder.sworn_in_only %}

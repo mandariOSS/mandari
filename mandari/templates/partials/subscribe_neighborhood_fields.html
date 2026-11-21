@@ -6,7 +6,7 @@
                                    @input.debounce.500ms="fetchSuggestions()"
                                    @keydown.escape="suggestions = []"
                                    placeholder="z.B. Wolbecker Stra&szlig;e..."
-                                   class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">
+                                   class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden transition-all">
                             <input type="hidden" name="neighborhood_lat" :value="neighborhoodLat">
                             <input type="hidden" name="neighborhood_lon" :value="neighborhoodLon">
 

@@ -74,7 +74,7 @@ als Text statt farbiger Pillen. Kontext: ProfileView; die bisherige Seite bleibt
         <c-rahmen.abschnitt titel="Mitgliedschaft" titel_id="profil-mitgliedschaft">
             <c-ui.angaben class="mt-3">
                 <dt>Organisation</dt>
-                <dd class="flex items-center gap-2">{% if organization.effective_logo %}<img src="{{ organization.effective_logo.url }}" alt="" class="w-5 h-5 rounded object-contain">{% endif %}{{ organization.name }}</dd>
+                <dd class="flex items-center gap-2">{% if organization.effective_logo %}<img src="{{ organization.effective_logo.url }}" alt="" class="w-5 h-5 rounded-sm object-contain">{% endif %}{{ organization.name }}</dd>
                 <dt>Rollen</dt>
                 <dd>{% for role in membership.roles.all %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}Keine Rollen zugewiesen{% endfor %}</dd>
                 <dt>Mitglied seit</dt>

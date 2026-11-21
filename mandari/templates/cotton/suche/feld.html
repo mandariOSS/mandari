@@ -20,7 +20,7 @@ fokus (Eingabefeld beim Laden fokussieren).
                placeholder="{{ platzhalter }}" {% if fokus %}autofocus{% endif %}
                hx-get="{{ adresse }}" hx-trigger="input changed delay:400ms, search"
                hx-target="#suchergebnis" hx-push-url="true" hx-include="#suche-form, [form='suche-form']" hx-indicator="#suche-laden"
-               class="w-full {% if dicht %}min-h-10 pl-9 pr-9 rounded-md{% else %}min-h-12 pl-11 pr-10 rounded-xl{% endif %} border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 {% if dicht %}text-base{% else %}text-[1.0625rem]{% endif %} text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/30 outline-none">
+               class="w-full {% if dicht %}min-h-10 pl-9 pr-9 rounded-md{% else %}min-h-12 pl-11 pr-10 rounded-xl{% endif %} border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 {% if dicht %}text-base{% else %}text-[1.0625rem]{% endif %} text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/30 outline-hidden">
         <span id="suche-laden" class="htmx-indicator absolute {% if dicht %}right-3{% else %}right-3.5{% endif %} top-1/2 -translate-y-1/2" aria-hidden="true">
             <i data-lucide="loader-circle" class="{% if dicht %}w-4 h-4{% else %}w-5 h-5{% endif %} animate-spin text-primary-700 dark:text-primary-300"></i>
         </span>

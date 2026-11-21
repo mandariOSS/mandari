@@ -8,7 +8,7 @@ aufheben, löschen) sind Knöpfe mit 32 px und stehen ab sm rechts, am Handy unt
     {% if agenda_can_edit and not is_sub %}draggable="true" data-agenda-item="{{ item.id }}"{% endif %} data-testid="top">
     <span class="pt-px tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ item.number }}</span>
     <div class="min-w-0">
-        <p class="font-medium break-words {% if item.is_withdrawn %}line-through text-gray-500 dark:text-gray-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ item.name }}</p>
+        <p class="font-medium wrap-break-word {% if item.is_withdrawn %}line-through text-gray-500 dark:text-gray-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ item.name }}</p>
         {% if not item.is_public or item.is_withdrawn or item.kind == "residents_questions" or item.is_supplementary or item.vote_result != "pending" %}
         <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
             {% if not item.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
@@ -23,7 +23,7 @@ aufheben, löschen) sind Knöpfe mit 32 px und stehen ab sm rechts, am Handy unt
         <p class="mt-0.5 text-sm"><c-ui.textlink href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=item.paper.id %}">Vorlage {{ item.paper.reference }}</c-ui.textlink></p>
         {% endif %}
         {% if item.consultation_chain %}
-        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words" title="Beratungsfolge der Vorlage (Issue #34)">
+        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word" title="Beratungsfolge der Vorlage (Issue #34)">
             Beratungsfolge:
             {% for station in item.consultation_chain %}<span class="{% if station.agenda_item_id == item.id %}font-semibold text-gray-800 dark:text-gray-200{% endif %}">{% if station.noe_hidden %}nichtöffentliche Beratung{% else %}{{ station.organization.short_name|default:station.organization.name }} ({{ station.get_role_display }}{% if station.result != "pending" %}: {{ station.get_result_display }}{% endif %}){% endif %}</span>{% if not forloop.last %} › {% endif %}{% endfor %}
         </p>

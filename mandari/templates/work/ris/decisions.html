@@ -51,7 +51,7 @@
         <div class="relative flex-1 min-w-[220px]">
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
             <input type="search" name="q" value="{{ search_query }}" placeholder="Betreff, Beschlusstext, Nummer, Amt…"
-                   class="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+                   class="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden text-gray-900 dark:text-white">
         </div>
         <select name="organization" class="px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white">
             <option value="">Alle Gremien</option>
@@ -72,9 +72,9 @@
             {% endfor %}
         </select>
         <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <input type="checkbox" name="overdue" value="1" {% if filter_overdue %}checked{% endif %} class="rounded border-gray-300"> nur überfällig
+            <input type="checkbox" name="overdue" value="1" {% if filter_overdue %}checked{% endif %} class="rounded-sm border-gray-300"> nur überfällig
         </label>
-        <button type="submit" class="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 shadow-sm transition-colors text-sm">
+        <button type="submit" class="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 shadow-xs transition-colors text-sm">
             <i data-lucide="filter" class="w-4 h-4"></i>
         </button>
         {% if has_filter %}

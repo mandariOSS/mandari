@@ -4,4 +4,4 @@ Position (mit meetings.prepare) und bis zu zwei Dokumente der Organisation zur V
 mit position und dokumente aus apps.work.ris.neu.vorgaenge).
 {% endcomment %}
 {% if eintrag.position %}<span class="block">{% include "work/ris/neu/_position.html" with position=eintrag.position %}</span>{% endif %}
-{% for d in eintrag.dokumente|slice:":2" %}<span class="block mt-0.5"><c-ui.textlink href="{{ d.url }}" class="break-words">{{ d.titel|truncatechars:40 }}</c-ui.textlink></span>{% endfor %}
+{% for d in eintrag.dokumente|slice:":2" %}<span class="block mt-0.5"><c-ui.textlink href="{{ d.url }}" class="wrap-break-word">{{ d.titel|truncatechars:40 }}</c-ui.textlink></span>{% endfor %}

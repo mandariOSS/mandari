@@ -6,7 +6,7 @@
                                 <i data-lucide="mic" class="w-4 h-4 text-violet-500"></i>
                                 Redebeitrag
                             </h3>
-                            <span x-show="selectedItem.speechShared" class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                            <span x-show="selectedItem.speechShared" class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
                                 <i data-lucide="users" class="w-3 h-3"></i> Geteilt
                             </span>
                             <div class="flex-1"></div>
@@ -52,7 +52,7 @@
                                 <!-- Titel -->
                                 <input type="text" x-model="selectedItem.speechTitle"
                                        @input="queueItemSave('speech-title', selectedItem, item => saveSpeechFields(item, { title: item.speechTitle }))"
-                                       class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100"
+                                       class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden dark:text-gray-100"
                                        placeholder="Titel des Redebeitrags (optional)">
 
                                 <!-- Editor mit Mini-Toolbar -->
@@ -61,28 +61,28 @@
                                     <div class="flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700"
                                          x-show="!speechReadonly">
                                         <button type="button" title="Fett (Strg+B)" @click="speechEditor && speechEditor.chain().focus().toggleBold().run()"
-                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                class="p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
                                                 :class="speechFormats.bold && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
                                             <i data-lucide="bold" class="w-4 h-4"></i>
                                         </button>
                                         <button type="button" title="Kursiv (Strg+I)" @click="speechEditor && speechEditor.chain().focus().toggleItalic().run()"
-                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                class="p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
                                                 :class="speechFormats.italic && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
                                             <i data-lucide="italic" class="w-4 h-4"></i>
                                         </button>
                                         <button type="button" title="Unterstrichen (Strg+U)" @click="speechEditor && speechEditor.chain().focus().toggleUnderline().run()"
-                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                class="p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
                                                 :class="speechFormats.underline && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
                                             <i data-lucide="underline" class="w-4 h-4"></i>
                                         </button>
                                         <span class="w-px h-4 mx-1 bg-gray-200 dark:bg-gray-700"></span>
                                         <button type="button" title="Aufzählung" @click="speechEditor && speechEditor.chain().focus().toggleBulletList().run()"
-                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                class="p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
                                                 :class="speechFormats.list === 'bullet' && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
                                             <i data-lucide="list" class="w-4 h-4"></i>
                                         </button>
                                         <button type="button" title="Nummerierte Liste" @click="speechEditor && speechEditor.chain().focus().toggleOrderedList().run()"
-                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                class="p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
                                                 :class="speechFormats.list === 'ordered' && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
                                             <i data-lucide="list-ordered" class="w-4 h-4"></i>
                                         </button>
@@ -102,13 +102,13 @@
                                         <i data-lucide="timer" class="w-4 h-4 text-gray-400"></i>
                                         <input type="text" x-model="speechDurationText" @change="saveSpeechDuration()"
                                                inputmode="numeric" pattern="[0-9]{1,2}:[0-9]{2}"
-                                               class="w-20 px-2 py-1 text-sm text-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 outline-none dark:text-gray-100"
+                                               class="w-20 px-2 py-1 text-sm text-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 outline-hidden dark:text-gray-100"
                                                placeholder="mm:ss">
                                         Dauer
                                     </label>
                                     <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
                                         <input type="checkbox" x-model="selectedItem.speechShared" @change="saveSpeechFields(selectedItem, { is_shared: selectedItem.speechShared })"
-                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded-sm focus:ring-primary-500">
                                         Mit Organisation teilen
                                     </label>
                                     <div class="flex-1"></div>

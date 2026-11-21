@@ -163,7 +163,7 @@ class TestCheckbox:
         feld = _tag(html, "input")
         assert _attribute(feld) == {"type", "name", "id", "checked", "class"}
         assert _klasse(feld) == (
-            "w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700"
+            "w-4 h-4 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700"
         )
         assert _klasse(_tag(html, "label")) == "inline-flex items-center gap-2 cursor-pointer min-h-[24px]"
         assert _klasse(_tag(html, "span")) == "text-sm text-gray-600 dark:text-gray-400"

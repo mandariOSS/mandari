@@ -22,7 +22,7 @@ Seite bleiben; Kontext wie AllowanceYearView. Die bisherige Seite bleibt session
     <div>
         <c-form.beschriftung feld="jahresuebersicht-jahr">Jahr</c-form.beschriftung>
         <input type="number" name="year" id="jahresuebersicht-jahr" value="{{ year }}" min="{{ year_min }}" max="{{ year_max }}"
-               class="w-28 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+               class="w-28 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
     </div>
     <c-ui.button type="submit" variant="secondary" size="sm">Anzeigen</c-ui.button>
 </form>
@@ -47,7 +47,7 @@ Seite bleiben; Kontext wie AllowanceYearView. Die bisherige Seite bleibt session
             <tbody class="divide-y divide-gray-200 dark:divide-gray-800 tabular-nums text-gray-800 dark:text-gray-200">
                 {% for row in rows %}
                 <tr>
-                    <th scope="row" class="sticky left-0 bg-band-hell pr-4 text-left font-medium text-gray-900 dark:text-white break-words">
+                    <th scope="row" class="sticky left-0 bg-band-hell pr-4 text-left font-medium text-gray-900 dark:text-white wrap-break-word">
                         {% if can_view_persons %}
                         <a href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=row.person.id %}" class="hover:underline underline-offset-4">{{ row.person.display_name }}</a>
                         {% else %}

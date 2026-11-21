@@ -45,7 +45,7 @@ bisherige Seite bleibt. Kontext: PaperReviewListView (papers mit freigabe, pagin
             {% if paper.freigabe.on_behalf_of %}
             <p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300 break-all"><i data-lucide="user-check" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></i>Freigabe in Vertretung für {{ paper.freigabe.on_behalf_of.user.email }}</p>
             {% elif not paper.freigabe.allowed %}
-            <p class="mt-0.5 text-[0.8125rem] text-amber-800 dark:text-amber-300 break-words">{{ paper.freigabe.reason }}</p>
+            <p class="mt-0.5 text-[0.8125rem] text-amber-800 dark:text-amber-300 wrap-break-word">{{ paper.freigabe.reason }}</p>
             {% endif %}
         </div>
         <div class="flex min-w-0 flex-wrap items-center gap-2">
@@ -62,7 +62,7 @@ bisherige Seite bleibt. Kontext: PaperReviewListView (papers mit freigabe, pagin
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <label for="anmerkung-{{ paper.id }}" class="sr-only">Anmerkung zur Zurückweisung von {{ paper.display_reference }}</label>
                 <input id="anmerkung-{{ paper.id }}" type="text" name="comment" placeholder="Anmerkung zur Zurückweisung"
-                       class="h-9 w-0 min-w-0 flex-1 sm:w-60 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                       class="h-9 w-0 min-w-0 flex-1 sm:w-60 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                 <c-ui.button type="submit" variant="secondary" size="sm" icon="undo-2">Zurückweisen</c-ui.button>
             </form>
         </div>

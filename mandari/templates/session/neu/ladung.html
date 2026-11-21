@@ -17,7 +17,7 @@ wie session/meetings/invitation.html (bleibt die bisherige Seite); Kontext wie M
 <c-rahmen.kopfband titel="Ladung" dicht>
     <c-slot name="oben">
         <c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}">{{ meeting.name }}</c-insight.zurueck>
-        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.name }} · <span class="tabular-nums">{{ meeting.start|date:"d.m.Y, H:i" }} Uhr</span></p>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 wrap-break-word">{{ meeting.name }} · <span class="tabular-nums">{{ meeting.start|date:"d.m.Y, H:i" }} Uhr</span></p>
     </c-slot>
     {% if dispatches %}
     <c-slot name="aktionen"><c-ui.button href="{% url 'session:meeting_invitation_status' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="list-checks">Rückmeldungen</c-ui.button></c-slot>
@@ -70,13 +70,13 @@ wie session/meetings/invitation.html (bleibt die bisherige Seite); Kontext wie M
                     <details {% if forloop.first %}open{% endif %}>
                         <summary class="cursor-pointer">
                             <span class="text-sm font-medium text-gray-900 dark:text-white">{{ dispatch.get_dispatch_type_display }}, <span class="tabular-nums">{{ dispatch.sent_at|date:"d.m.Y H:i" }}</span> Uhr</span>
-                            <span class="block pl-4 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ empfaenger|length }} Empfänger · von {{ dispatch.sent_by.user.email|default:"–" }}</span>
+                            <span class="block pl-4 text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">{{ empfaenger|length }} Empfänger · von {{ dispatch.sent_by.user.email|default:"–" }}</span>
                         </summary>
                         <ul class="mt-2 space-y-1 pl-4 text-[0.8125rem]">
                             {% for recipient in empfaenger %}
                             <li class="flex flex-wrap items-baseline gap-x-2">
                                 <span class="text-gray-700 dark:text-gray-300">{% if recipient.status == "failed" %}{% include "session/neu/_status.html" with wert="ueberfaellig" text="Fehlgeschlagen" %}{% elif recipient.status == "letter_pending" %}{% include "session/neu/_status.html" with wert="pending" text="Brief vorzubereiten" %}{% else %}{% include "session/neu/_status.html" with wert="invitation_sent" text=recipient.get_status_display %}{% endif %}</span>
-                                <span class="min-w-0 text-gray-900 dark:text-white break-words">{{ recipient.name }}{% if recipient.email %} &lt;{{ recipient.email }}&gt;{% endif %}</span>
+                                <span class="min-w-0 text-gray-900 dark:text-white wrap-break-word">{{ recipient.name }}{% if recipient.email %} &lt;{{ recipient.email }}&gt;{% endif %}</span>
                                 <span class="text-gray-600 dark:text-gray-400">{{ recipient.membership_role }}, {{ recipient.get_channel_display }}, {% if recipient.includes_non_public %}inkl. NÖ-Teil{% else %}nur Ö-Teil{% endif %}{% if recipient.acknowledged_at %}, Empfang bestätigt{% endif %}</span>
                             </li>
                             {% endfor %}

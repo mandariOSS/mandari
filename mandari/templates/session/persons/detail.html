@@ -165,7 +165,7 @@
                 {% for attendance in recent_attendances %}
                 <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=attendance.meeting.id %}"
                    class="px-6 py-3 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex flex-col items-center justify-center text-blue-600 dark:text-blue-400 flex-shrink-0">
+                    <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex flex-col items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                         <span class="text-[10px] font-medium uppercase leading-none">{{ attendance.meeting.start|date:"M" }}</span>
                         <span class="text-sm font-bold leading-none">{{ attendance.meeting.start|date:"d" }}</span>
                     </div>
@@ -175,14 +175,14 @@
                             {{ attendance.meeting.organization.name }} &middot; {{ attendance.meeting.start|date:"d.m.Y" }}
                         </p>
                     </div>
-                    <span class="px-2 py-1 text-xs font-medium rounded-full flex-shrink-0
+                    <span class="px-2 py-1 text-xs font-medium rounded-full shrink-0
                         {% if attendance.status == 'present' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
                         {% elif attendance.status == 'absent' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
                         {% elif attendance.status == 'excused' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
                         {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
                         {{ attendance.get_status_display }}
                     </span>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 shrink-0"></i>
                 </a>
                 {% endfor %}
             </div>

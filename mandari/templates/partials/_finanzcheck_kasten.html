@@ -21,10 +21,10 @@ Schraffur „fc-schraffur“ definiert partials/paper_finanzcheck.html einmal je
         {% for s in kasten.segmente %}
         <div class="flex min-w-0 gap-2">
             <dt class="sr-only">{{ s.text }}</dt>
-            {% if s.art == "foerderung_offen" %}<svg class="mt-1 h-2.5 w-2.5 shrink-0 rounded-sm" viewBox="0 0 10 10" aria-hidden="true"><rect width="10" height="10" fill="url(#fc-schraffur)"></rect></svg>
-            {% elif s.art == "foerderung" %}<span class="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm bg-primary-200 dark:bg-primary-800" aria-hidden="true"></span>
-            {% elif s.art == "laufend" %}<span class="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm bg-primary-300 dark:bg-primary-700" aria-hidden="true"></span>
-            {% else %}<span class="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm bg-primary-600 dark:bg-primary-400" aria-hidden="true"></span>
+            {% if s.art == "foerderung_offen" %}<svg class="mt-1 h-2.5 w-2.5 shrink-0 rounded-xs" viewBox="0 0 10 10" aria-hidden="true"><rect width="10" height="10" fill="url(#fc-schraffur)"></rect></svg>
+            {% elif s.art == "foerderung" %}<span class="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-xs bg-primary-200 dark:bg-primary-800" aria-hidden="true"></span>
+            {% elif s.art == "laufend" %}<span class="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-xs bg-primary-300 dark:bg-primary-700" aria-hidden="true"></span>
+            {% else %}<span class="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-xs bg-primary-600 dark:bg-primary-400" aria-hidden="true"></span>
             {% endif %}
             <dd class="min-w-0">
                 <span class="block text-[0.9375rem] font-semibold tabular-nums text-gray-900 dark:text-white">{{ s.wert }}</span>

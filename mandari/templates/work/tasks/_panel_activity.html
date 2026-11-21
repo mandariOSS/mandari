@@ -4,8 +4,8 @@
     {% for activity in activities %}
     {% if activity.activity_type == 'comment' %}
     {# ── Kommentar: volle Breite, hervorgehoben ── #}
-    <div class="flex gap-3 p-3 rounded-xl bg-white dark:bg-gray-800 ring-1 ring-gray-100 dark:ring-gray-700/50 shadow-sm">
-        <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+    <div class="flex gap-3 p-3 rounded-xl bg-white dark:bg-gray-800 ring-1 ring-gray-100 dark:ring-gray-700/50 shadow-xs">
+        <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
             <span class="text-xs font-bold text-primary-600 dark:text-primary-400">
                 {{ activity.actor|member_name|slice:":1" }}
             </span>
@@ -21,7 +21,7 @@
     {% else %}
     {# ── System-Aktivität: kompakt ── #}
     <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg hover:bg-gray-50/50 dark:hover:bg-gray-700/20 transition-colors">
-        <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0
+        <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0
             {% if activity.activity_type == 'completed' %}bg-green-100 dark:bg-green-900/30
             {% elif activity.activity_type == 'reopened' %}bg-amber-100 dark:bg-amber-900/30
             {% elif activity.activity_type == 'attachment_added' or activity.activity_type == 'attachment_removed' %}bg-blue-100 dark:bg-blue-900/30
@@ -59,7 +59,7 @@
             {% endif %}
         </div>
         <p class="text-xs text-gray-500 dark:text-gray-400 flex-1 min-w-0 truncate">{{ activity.description }}</p>
-        <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 whitespace-nowrap">{{ activity.created_at|timesince }}</span>
+        <span class="text-[10px] text-gray-400 dark:text-gray-500 shrink-0 whitespace-nowrap">{{ activity.created_at|timesince }}</span>
     </div>
     {% endif %}
     {% empty %}

@@ -227,7 +227,7 @@ def test_neue_vorlagen_ohne_kaesten_inline_stil_und_handler() -> None:
         assert ' style="' not in text, datei.name
         assert " onclick=" not in text and " onsubmit=" not in text, datei.name
         assert "rounded-xl border" not in text, datei.name
-        assert "shadow-sm" not in text, datei.name
+        assert "shadow-xs" not in text, datei.name
         assert text.count("\n") < 300, datei.name
         # Seiten im Rahmen von Work zählen für das Prüfskript (Einladung annehmen liegt außerhalb des Rahmens)
         if '{% extends "work/base_work.html" %}' in text:

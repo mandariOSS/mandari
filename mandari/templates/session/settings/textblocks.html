@@ -88,7 +88,7 @@
             </div>
             <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 pb-2">
                 <input type="checkbox" name="is_public" value="1" checked
-                       class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                       class="rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                 Öffentlich
             </label>
             <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
@@ -114,7 +114,7 @@
                 <div class="min-w-0">
                     <p class="text-sm font-medium text-gray-900 dark:text-white">
                         {{ block.title }}
-                        <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">{{ block.get_category_display }}</span>
+                        <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">{{ block.get_category_display }}</span>
                     </p>
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 whitespace-pre-line">{{ block.content|truncatechars:160 }}</p>
                 </div>

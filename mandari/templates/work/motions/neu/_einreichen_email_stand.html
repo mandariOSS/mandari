@@ -18,7 +18,7 @@ und Eingangsbestätigung (als Text statt Farbchip). Kontext: email_submission (m
                 <span class="font-medium text-gray-900 dark:text-white">{{ recipient.label }}</span>
                 <span class="text-gray-600 dark:text-gray-400">{{ recipient.email }}</span>
                 <span class="sm:ml-auto inline-flex items-baseline gap-1.5 text-gray-800 dark:text-gray-200">
-                    <span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if not recipient.delivered %}bg-red-600{% elif recipient.confirmed_at %}bg-primary-600 dark:bg-primary-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
+                    <span class="shrink-0 w-2 h-2 rounded-full -translate-y-px {% if not recipient.delivered %}bg-red-600{% elif recipient.confirmed_at %}bg-primary-600 dark:bg-primary-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
                     {% if not recipient.delivered %}nicht zugestellt{% elif recipient.confirmed_at %}Eingang bestätigt am {{ recipient.confirmed_at|date:"d.m.Y, H:i" }} Uhr{% else %}Eingang noch nicht bestätigt{% endif %}
                 </span>
             </li>

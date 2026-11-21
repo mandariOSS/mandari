@@ -6,14 +6,14 @@ Formulare und Felder wie session/papers/detail.html. Kontext: paper, cosignature
 <c-rahmen.abschnitt titel="Mitzeichnung und finanzielle Auswirkungen" titel_id="mitzeichnung-titel" data-testid="mitzeichnung">
     <dl class="mt-2 grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
         <dt class="text-gray-600 dark:text-gray-400">Finanzielle Auswirkungen</dt>
-        <dd class="break-words">
+        <dd class="wrap-break-word">
             {% if paper.has_financial_impact %}<span class="font-medium text-gray-900 dark:text-white">Ja</span>{% if paper.financial_impact_note %}: {{ paper.financial_impact_note }}{% endif %}
             {% elif paper.has_financial_impact is False %}Nein
             {% else %}<span class="font-medium text-red-700 dark:text-red-400">Noch nicht erfasst (Pflichtangabe vor der Freigabe)</span>{% endif %}
         </dd>
         {% if paper.lead_department %}
         <dt class="text-gray-600 dark:text-gray-400">Federführendes Amt</dt>
-        <dd class="break-words text-gray-900 dark:text-gray-100">{{ paper.lead_department.name }}</dd>
+        <dd class="wrap-break-word text-gray-900 dark:text-gray-100">{{ paper.lead_department.name }}</dd>
         {% endif %}
     </dl>
 
@@ -22,11 +22,11 @@ Formulare und Felder wie session/papers/detail.html. Kontext: paper, cosignature
         {% for cosign in cosignatures %}
         <li class="grid sm:grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 py-3 border-b border-gray-200 dark:border-gray-800">
             <div class="min-w-0">
-                <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ forloop.counter }}. {{ cosign.department.name }}</p>
-                <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">
+                <p class="text-sm font-medium text-gray-900 dark:text-white wrap-break-word">{{ forloop.counter }}. {{ cosign.department.name }}</p>
+                <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">
                     {% if cosign.status == "signed" %}{% include "session/neu/_status.html" with wert="approved" text=cosign.get_status_display %}{% elif cosign.status == "rejected" %}{% include "session/neu/_status.html" with wert="rejected" text=cosign.get_status_display %}{% else %}{% include "session/neu/_status.html" with wert="review" text=cosign.get_status_display %}{% endif %}{% if cosign.decided_at %} · {{ cosign.decided_at|date:"d.m.Y H:i" }}{% if cosign.decided_by %} · {{ cosign.decided_by.user.email }}{% endif %}{% endif %}
                 </p>
-                {% if cosign.comment %}<p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 break-words">„{{ cosign.comment }}“</p>{% endif %}
+                {% if cosign.comment %}<p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 wrap-break-word">„{{ cosign.comment }}“</p>{% endif %}
             </div>
             {% if cosign.actionable %}
             <div x-data="{ rejectOpen: false }" class="flex flex-col sm:items-end gap-2">
@@ -44,7 +44,7 @@ Formulare und Felder wie session/papers/detail.html. Kontext: paper, cosignature
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
                     <label for="mitzeichnung-grund-{{ cosign.id }}" class="sr-only">Grund der Zurückweisung</label>
                     <input id="mitzeichnung-grund-{{ cosign.id }}" type="text" name="comment" required placeholder="Grund der Zurückweisung"
-                           class="h-9 w-full sm:w-56 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                           class="h-9 w-full sm:w-56 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                     <c-ui.button type="submit" variant="danger" size="sm">Zurückweisen</c-ui.button>
                 </form>
             </div>

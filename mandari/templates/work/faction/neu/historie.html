@@ -45,7 +45,7 @@ c-liste.seiten (behält alle Filter). Die bisherige Seite bleibt work/faction/au
             </p>
             {# Nichtöffentlich und sichtbar (Vereidigte): weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #1201) #}
             {% if row.noe %}<span class="sr-only fs-noe-ersatz">Nichtöffentlicher Eintrag, ausgeblendet</span><div class="fs-noe" aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar">{% endif %}
-            <p class="mt-0.5 text-sm break-words {% if row.locked %}italic text-gray-600 dark:text-gray-400{% else %}text-gray-900 dark:text-white{% endif %}">
+            <p class="mt-0.5 text-sm wrap-break-word {% if row.locked %}italic text-gray-600 dark:text-gray-400{% else %}text-gray-900 dark:text-white{% endif %}">
                 {% if row.locked %}<i data-lucide="lock" class="inline w-3.5 h-3.5 -mt-0.5 mr-1" aria-hidden="true"></i>{% endif %}{{ row.object_repr }}
             </p>
             {% if row.changes %}

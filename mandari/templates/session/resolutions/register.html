@@ -73,7 +73,7 @@
     </div>
     <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 pb-1.5">
         <input type="checkbox" name="overdue" value="1" {% if filter_overdue %}checked{% endif %}
-               class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+               class="rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
         Nur überfällige
     </label>
     <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
@@ -93,9 +93,9 @@
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-1 flex-wrap">
                     {% if item.resolution_number %}
-                    <span class="px-2 py-0.5 text-xs font-bold rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400">{{ item.resolution_number }}</span>
+                    <span class="px-2 py-0.5 text-xs font-bold rounded-sm bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400">{{ item.resolution_number }}</span>
                     {% else %}
-                    <span class="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">ohne Nummer</span>
+                    <span class="px-2 py-0.5 text-xs rounded-sm bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">ohne Nummer</span>
                     {% endif %}
                     <span class="px-2 py-0.5 text-xs font-medium rounded
                         {% if item.vote_result == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
@@ -104,7 +104,7 @@
                         {{ item.get_vote_result_display }}
                     </span>
                     {% if not item.is_public %}
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-sm bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
                         <i data-lucide="lock" class="w-3 h-3"></i> NÖ
                     </span>
                     {% endif %}
@@ -201,7 +201,7 @@
                             </div>
                             <label class="inline-flex items-center gap-1.5 text-[11px] text-gray-600 dark:text-gray-300 pb-1">
                                 <input type="hidden" name="public" value="0">
-                                <input type="checkbox" name="public" value="1" {% if item.implementation_public %}checked{% endif %} class="rounded border-gray-300"> öffentlich zeigen
+                                <input type="checkbox" name="public" value="1" {% if item.implementation_public %}checked{% endif %} class="rounded-sm border-gray-300"> öffentlich zeigen
                             </label>
                         </div>
                         {% endif %}

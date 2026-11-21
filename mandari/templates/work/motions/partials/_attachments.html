@@ -25,22 +25,22 @@ Kontext: organization, motion, documents, can_edit_attachments, attachment_accep
         {% for attachment in documents %}
         <li class="group rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
             <div class="flex items-center gap-2 px-2 py-1.5">
-                <i data-lucide="{{ attachment.icon_name }}" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                <i data-lucide="{{ attachment.icon_name }}" class="w-4 h-4 text-gray-400 shrink-0"></i>
                 {% if download_blocked %}
                 <span class="truncate flex-1 text-sm text-gray-700 dark:text-gray-200" title="Herunterladen ist für diese Freigabe nicht erlaubt">{{ attachment.filename }}</span>
                 {% else %}
                 <a href="{% url 'work:document_file_download' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}?vorschau" target="_blank" rel="noopener"
                    class="truncate flex-1 text-sm text-gray-700 dark:text-gray-200 hover:text-primary-600 dark:hover:text-primary-400">{{ attachment.filename }}</a>
                 {% endif %}
-                <span class="text-[11px] text-gray-400 flex-shrink-0">{{ attachment.file_size|filesizeformat }}</span>
+                <span class="text-[11px] text-gray-400 shrink-0">{{ attachment.file_size|filesizeformat }}</span>
                 {% if can_edit_attachments %}
                 <form hx-post="{% url 'work:document_file_delete' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"
                       hx-target="#motion-attachments" hx-swap="outerHTML"
                       hx-confirm="Anhang „{{ attachment.filename }}“ entfernen?"
-                      class="flex-shrink-0">
+                      class="shrink-0">
                     {% csrf_token %}
                     <button type="submit" title="Anhang entfernen" aria-label="Anhang {{ attachment.filename }} entfernen"
-                            class="p-1 text-gray-400 hover:text-red-600 rounded">
+                            class="p-1 text-gray-400 hover:text-red-600 rounded-sm">
                         <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                     </button>
                 </form>
@@ -55,7 +55,7 @@ Kontext: organization, motion, documents, can_edit_attachments, attachment_accep
                     {% csrf_token %}
                     <label class="sr-only" for="attachment-name-{{ attachment.id }}">Neuer Name</label>
                     <input id="attachment-name-{{ attachment.id }}" type="text" name="filename" value="{{ attachment.filename }}" maxlength="255" required
-                           class="flex-1 min-w-0 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="flex-1 min-w-0 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Speichern</button>
                 </form>
             </details>

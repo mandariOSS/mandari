@@ -56,7 +56,7 @@
                     <button type="submit"
                             :disabled="hasActiveExport"
                             :class="hasActiveExport ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-700'"
-                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg shadow-sm transition-colors">
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg shadow-xs transition-colors">
                         <i data-lucide="download" class="w-4 h-4"></i>
                         Export starten
                     </button>
@@ -76,12 +76,12 @@
                                 <div class="flex items-center gap-3">
                                     <!-- Status Icon -->
                                     <template x-if="exp.status === 'completed'">
-                                        <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                                        <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
                                             <i data-lucide="check-circle" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
                                         </div>
                                     </template>
                                     <template x-if="exp.status === 'pending' || exp.status === 'processing'">
-                                        <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                                        <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
                                             <svg class="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
@@ -89,7 +89,7 @@
                                         </div>
                                     </template>
                                     <template x-if="exp.status === 'failed'">
-                                        <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                                        <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
                                             <i data-lucide="alert-circle" class="w-4 h-4 text-red-600 dark:text-red-400"></i>
                                         </div>
                                     </template>
@@ -155,7 +155,7 @@
             {% for session in recent_sessions %}
             <div class="px-6 py-4 flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
                         <i data-lucide="monitor" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
                     </div>
                     <div>

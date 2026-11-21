@@ -19,7 +19,7 @@
 <div class="max-w-2xl mx-auto">
     {% if from_protocol_entry %}
     <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex items-start gap-3">
-        <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex-shrink-0">
+        <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg shrink-0">
             <i data-lucide="file-text" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
         </div>
         <div>
@@ -34,7 +34,7 @@
 
     {% if related_motion %}
     <div class="mb-6 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4 flex items-start gap-3">
-        <div class="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex-shrink-0">
+        <div class="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg shrink-0">
             <i data-lucide="file-text" class="w-5 h-5 text-indigo-600 dark:text-indigo-400"></i>
         </div>
         <div>
@@ -63,7 +63,7 @@
                     </label>
                     <input type="text" name="title" required
                            value="{{ form.title.value|default:'' }}"
-                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                            placeholder="Was ist zu tun?">
                     {% if form.title.errors %}
                     <p class="mt-1 text-sm text-red-600">{{ form.title.errors.0 }}</p>
@@ -73,7 +73,7 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
                     <textarea name="description" rows="4"
-                              class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                              class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                               placeholder="Optionale Details zur Aufgabe...">{{ form.description.value|default:'' }}</textarea>
                 </div>
 
@@ -82,12 +82,12 @@
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Fällig am</label>
                         <input type="date" name="due_date"
                                value="{{ form.due_date.value|date:'Y-m-d'|default:'' }}"
-                               class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                               class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Priorität</label>
                         <select name="priority"
-                                class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                                class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                             <option value="low" {% if form.priority.value == 'low' %}selected{% endif %}>Niedrig</option>
                             <option value="medium" {% if form.priority.value == 'medium' or not form.priority.value %}selected{% endif %}>Mittel</option>
                             <option value="high" {% if form.priority.value == 'high' %}selected{% endif %}>Hoch</option>
@@ -100,7 +100,7 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
                         <select name="status"
-                                class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                                class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                             <option value="todo" {% if form.status.value == 'todo' or not form.status.value %}selected{% endif %}>Zu erledigen</option>
                             <option value="in_progress" {% if form.status.value == 'in_progress' %}selected{% endif %}>In Bearbeitung</option>
                             <option value="done" {% if form.status.value == 'done' %}selected{% endif %}>Erledigt</option>
@@ -109,7 +109,7 @@
                     <div x-data="assignmentHandler" data-current-member="{{ membership.id }}">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zugewiesen an</label>
                         <select name="assigned_to" x-model="selectedAssignee" @change="checkAssignment"
-                                class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                                class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                             <option value="">Mir selbst</option>
                             {% for member in form.assigned_to.field.queryset %}
                             <option value="{{ member.id }}" data-name="{{ member.user.get_display_name }}" {% if form.assigned_to.value == member.id|stringformat:'s' %}selected{% endif %}>
@@ -141,7 +141,7 @@
                                         Abbrechen
                                     </button>
                                     <button type="button" @click="confirmAssignment"
-                                            class="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm">
+                                            class="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-xs">
                                         Zuweisen
                                     </button>
                                 </div>
@@ -236,7 +236,7 @@
             <div class="flex gap-2">
                 <input type="text" x-model="newTag" @keydown.enter.prevent="if(newTag.trim()) { tags.push(newTag.trim()); newTag=''; }"
                        placeholder="Neuer Tag..."
-                       class="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                       class="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 <button type="button" @click="if(newTag.trim()) { tags.push(newTag.trim()); newTag=''; }"
                         class="px-3 py-2 text-sm font-medium text-primary-600 border border-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20">
                     Hinzufügen
@@ -253,7 +253,7 @@
                 Abbrechen
             </a>
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                 <i data-lucide="check" class="w-4 h-4"></i>
                 Aufgabe erstellen
             </button>

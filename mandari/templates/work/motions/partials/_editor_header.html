@@ -1,5 +1,5 @@
 {% load member_tags %}
-    <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex-shrink-0">
+    <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 shrink-0">
         {# Titel nimmt die freie Breite statt höchstens 28rem; die Aktionen rechts schrumpfen nicht (Issue #851) #}
         <div class="flex items-center justify-between gap-4">
             <div class="flex items-center gap-4 flex-1 min-w-0">
@@ -13,14 +13,14 @@
                            class="text-lg font-semibold bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white w-full"
                            placeholder="Titel eingeben …">
                     {% else %}
-                    <h1 class="text-lg font-semibold text-gray-900 dark:text-white break-words">{{ motion.title }}</h1>
+                    <h1 class="text-lg font-semibold text-gray-900 dark:text-white wrap-break-word">{{ motion.title }}</h1>
                     {% endif %}
                     <div class="flex flex-wrap items-center gap-2 text-sm text-gray-500">
                         {% if can_edit and not is_guest %}
                         <!-- Dokumenttyp-Dropdown -->
                         <div x-data="{ open: false }" class="relative">
                             <button @click="open = !open" type="button"
-                                    class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
+                                    class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-sm text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
                                 <i data-lucide="file-type" class="w-3 h-3"></i>
                                 <span x-text="documentTypeName">{{ motion.get_type_display }}</span>
                                 <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
@@ -43,7 +43,7 @@
                         <!-- Briefpapier-Dropdown -->
                         <div x-data="{ open: false }" class="relative">
                             <button @click="open = !open" type="button"
-                                    class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
+                                    class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-sm text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
                                 <i data-lucide="file-badge" class="w-3 h-3"></i>
                                 <span x-text="letterheadName">{{ motion.letterhead.name|default:'Kein Briefpapier' }}</span>
                                 <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
@@ -67,7 +67,7 @@
                             </div>
                         </div>
                         {% else %}
-                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">
+                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-sm text-xs">
                             {{ motion.get_type_display }}
                         </span>
                         {% endif %}
@@ -244,7 +244,7 @@
                 <!-- Save Button -->
                 <button type="button" @click="save()"
                         :disabled="saving"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 shadow-sm">
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 shadow-xs">
                     <i data-lucide="save" class="w-4 h-4" x-show="!saving"></i>
                     <svg x-show="saving" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

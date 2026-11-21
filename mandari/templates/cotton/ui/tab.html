@@ -12,7 +12,7 @@ Einzelner Reiter, nur innerhalb von <c-ui.tabs> im Slot "list".  <c-ui.tab name=
     @keydown.left.prevent="$el.previousElementSibling && $el.previousElementSibling.focus()"
     @keydown.home.prevent="$el.parentElement.firstElementChild.focus()"
     @keydown.end.prevent="$el.parentElement.lastElementChild.focus()"
-    class="inline-flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-medium whitespace-nowrap border-b-2 min-h-[40px] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 rounded-t-lg transition-colors {{ class }}"
+    class="inline-flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-medium whitespace-nowrap border-b-2 min-h-[40px] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-500 rounded-t-lg transition-colors {{ class }}"
     :class="tab === '{{ name }}' ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'"
     {{ attrs }}>
     {% if icon %}<i data-lucide="{{ icon }}" class="w-4 h-4" aria-hidden="true"></i>{% endif %}

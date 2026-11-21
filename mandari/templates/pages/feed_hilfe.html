@@ -14,7 +14,7 @@ noindex; Kontext: feed (url, pfad, titel, seite) oder nichts.
     <div class="max-w-2xl">
         {% if feed %}
         <section aria-labelledby="feed-titel">
-            <h2 id="feed-titel" class="abschnitt-titel break-words">{{ feed.titel }}</h2>
+            <h2 id="feed-titel" class="abschnitt-titel wrap-break-word">{{ feed.titel }}</h2>
             <label for="feed-adresse" class="mt-4 block text-[0.95rem] font-medium text-gray-900 dark:text-white">Feed-Adresse</label>
             <div class="mt-1 flex flex-col gap-2 sm:flex-row">
                 <input id="feed-adresse" type="text" readonly value="{{ feed.url }}" data-action="select" spellcheck="false" autocomplete="off"

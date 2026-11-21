@@ -6,11 +6,11 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
      {% if agenda_can_edit and not is_sub %}draggable="true" data-agenda-item="{{ item.id }}"{% endif %}>
     <div class="flex items-start gap-4">
         {% if agenda_can_edit and not is_sub %}
-        <span class="agenda-drag-handle flex-shrink-0 cursor-grab text-gray-300 dark:text-gray-600 pt-2" title="Ziehen zum Umsortieren">
+        <span class="agenda-drag-handle shrink-0 cursor-grab text-gray-300 dark:text-gray-600 pt-2" title="Ziehen zum Umsortieren">
             <i data-lucide="grip-vertical" class="w-5 h-5"></i>
         </span>
         {% endif %}
-        <span class="flex-shrink-0 {% if is_sub %}w-12 h-8 text-xs{% else %}w-10 h-10 text-sm{% endif %} rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center font-bold text-gray-600 dark:text-gray-400">
+        <span class="shrink-0 {% if is_sub %}w-12 h-8 text-xs{% else %}w-10 h-10 text-sm{% endif %} rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center font-bold text-gray-600 dark:text-gray-400">
             {{ item.number }}
         </span>
         <div class="flex-1 min-w-0">
@@ -19,20 +19,20 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
                     {{ item.name }}
                 </p>
                 {% if not item.is_public %}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400" title="Nichtöffentlich">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-sm bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400" title="Nichtöffentlich">
                     <i data-lucide="lock" class="w-3 h-3"></i>
                 </span>
                 {% endif %}
                 {% if item.is_withdrawn %}
-                <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">
+                <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-sm bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">
                     Abgesetzt
                 </span>
                 {% endif %}
                 {% if item.kind == "residents_questions" %}
-                <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300">Einwohnerfragestunde</span>
+                <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-sm bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300">Einwohnerfragestunde</span>
                 {% endif %}
                 {% if item.is_supplementary %}
-                <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+                <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
                       title="Nach Versand der Einladung hinzugefügt">
                     Nachtrag
                 </span>
@@ -52,7 +52,7 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
             {% if item.consultation_chain %}
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1 flex-wrap"
                title="Beratungsfolge der Vorlage (Issue #34)">
-                <i data-lucide="route" class="w-3.5 h-3.5 flex-shrink-0"></i>
+                <i data-lucide="route" class="w-3.5 h-3.5 shrink-0"></i>
                 {% for station in item.consultation_chain %}
                 <span class="{% if station.agenda_item_id == item.id %}font-semibold text-gray-700 dark:text-gray-200{% endif %}">
                     {% if station.noe_hidden %}nichtöffentliche Beratung{% else %}
@@ -61,13 +61,13 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
                     <span class="{% if station.result == 'approved' %}text-green-600 dark:text-green-400{% elif station.result == 'rejected' %}text-red-600 dark:text-red-400{% else %}text-yellow-700 dark:text-yellow-400{% endif %}">{{ station.get_result_display }}</span>{% endif %})
                     {% endif %}
                 </span>
-                {% if not forloop.last %}<i data-lucide="arrow-right" class="w-3 h-3 flex-shrink-0"></i>{% endif %}
+                {% if not forloop.last %}<i data-lucide="arrow-right" class="w-3 h-3 shrink-0"></i>{% endif %}
                 {% endfor %}
             </p>
             {% endif %}
         </div>
         {% if item.vote_result != 'pending' %}
-        <span class="flex-shrink-0 px-2 py-1 text-xs font-medium rounded-full
+        <span class="shrink-0 px-2 py-1 text-xs font-medium rounded-full
             {% if item.vote_result == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
             {% elif item.vote_result == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
             {% elif item.vote_result == 'deferred' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
@@ -76,30 +76,30 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
         </span>
         {% endif %}
         {% if agenda_can_edit %}
-        <div class="flex items-center gap-1 flex-shrink-0">
+        <div class="flex items-center gap-1 shrink-0">
             <form method="post" action="{% url 'session:agenda_item_move' tenant_slug=tenant_slug item_id=item.id %}" class="inline">
                 {% csrf_token %}
                 <input type="hidden" name="direction" value="up">
-                <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Nach oben">
+                <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-sm" title="Nach oben">
                     <i data-lucide="chevron-up" class="w-4 h-4"></i>
                 </button>
             </form>
             <form method="post" action="{% url 'session:agenda_item_move' tenant_slug=tenant_slug item_id=item.id %}" class="inline">
                 {% csrf_token %}
                 <input type="hidden" name="direction" value="down">
-                <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Nach unten">
+                <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-sm" title="Nach unten">
                     <i data-lucide="chevron-down" class="w-4 h-4"></i>
                 </button>
             </form>
             <a href="{% url 'session:agenda_item_edit' tenant_slug=tenant_slug item_id=item.id %}"
-               class="p-1 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded" title="Bearbeiten">
+               class="p-1 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded-sm" title="Bearbeiten">
                 <i data-lucide="pencil" class="w-4 h-4"></i>
             </a>
             {% if item.is_withdrawn %}
             <form method="post" action="{% url 'session:agenda_item_withdraw' tenant_slug=tenant_slug item_id=item.id %}" class="inline">
                 {% csrf_token %}
                 <input type="hidden" name="restore" value="1">
-                <button type="submit" class="p-1 text-gray-400 hover:text-green-600 rounded" title="Absetzung aufheben">
+                <button type="submit" class="p-1 text-gray-400 hover:text-green-600 rounded-sm" title="Absetzung aufheben">
                     <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                 </button>
             </form>
@@ -107,7 +107,7 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
             <form method="post" action="{% url 'session:agenda_item_withdraw' tenant_slug=tenant_slug item_id=item.id %}" class="inline" data-prompt="Grund der Absetzung (optional):" data-prompt-field="reason">
                 {% csrf_token %}
                 <input type="hidden" name="reason" value="">
-                <button type="submit" class="p-1 text-gray-400 hover:text-amber-600 rounded" title="Absetzen (dokumentiert)">
+                <button type="submit" class="p-1 text-gray-400 hover:text-amber-600 rounded-sm" title="Absetzen (dokumentiert)">
                     <i data-lucide="circle-off" class="w-4 h-4"></i>
                 </button>
             </form>
@@ -115,7 +115,7 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
             <form method="post" action="{% url 'session:agenda_item_delete' tenant_slug=tenant_slug item_id=item.id %}" class="inline"
                   data-confirm="TOP wirklich löschen? Für reguläre Änderungen bitte absetzen statt löschen.">
                 {% csrf_token %}
-                <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded" title="Löschen">
+                <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded-sm" title="Löschen">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                 </button>
             </form>
@@ -123,7 +123,7 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
         {% elif agenda_can_retract and item.is_public and not item.parent_id %}
         <!-- Genehmigte Niederschrift: nur noch Rücknahme auf nichtöffentlich (Unterpunkte folgen ihrem TOP) -->
         <a href="{% url 'session:agenda_item_edit' tenant_slug=tenant_slug item_id=item.id %}"
-           class="p-1 flex-shrink-0 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded" title="Auf nichtöffentlich setzen">
+           class="p-1 shrink-0 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded-sm" title="Auf nichtöffentlich setzen">
             <i data-lucide="eye-off" class="w-4 h-4"></i>
         </a>
         {% endif %}

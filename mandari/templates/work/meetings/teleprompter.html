@@ -50,7 +50,7 @@
 </head>
 <body x-data="teleprompter()" class="min-h-screen">
     <!-- Controls -->
-    <div class="fixed top-0 left-0 right-0 p-4 bg-gradient-to-b from-black to-transparent z-50"
+    <div class="fixed top-0 left-0 right-0 p-4 bg-linear-to-b from-black to-transparent z-50"
          :class="showControls ? 'opacity-100' : 'opacity-0'"
          @mouseenter="showControls = true" @mouseleave="showControls = false">
         <div class="flex items-center justify-between max-w-4xl mx-auto">
@@ -67,7 +67,7 @@
                 <button type="button" @click="decreaseFontSize()" class="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
                 </button>
-                <span class="text-white/60 text-sm min-w-[4rem] text-center" x-text="fontSize + '%'"></span>
+                <span class="text-white/60 text-sm min-w-16 text-center" x-text="fontSize + '%'"></span>
                 <button type="button" @click="increaseFontSize()" class="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                 </button>

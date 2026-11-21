@@ -224,7 +224,7 @@
             {% for paper in recent_papers %}
             <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
                class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                <div class="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+                <div class="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
                     <i data-lucide="file-text" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
                 </div>
                 <div class="flex-1 min-w-0">
@@ -264,7 +264,7 @@
             {% for app in pending_applications %}
             <a href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=app.id %}"
                class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                <div class="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/50 flex items-center justify-center flex-shrink-0">
+                <div class="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/50 flex items-center justify-center shrink-0">
                     {% if app.is_urgent %}
                     <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
                     {% else %}
@@ -278,7 +278,7 @@
                         {% if app.submitting_organization %} ({{ app.submitting_organization.name }}){% endif %}
                     </p>
                 </div>
-                <div class="text-right flex-shrink-0">
+                <div class="text-right shrink-0">
                     <span class="px-2 py-1 text-xs font-medium rounded-full {% if app.status == 'submitted' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400{% elif app.status == 'received' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400{% else %}bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400{% endif %}">
                         {{ app.get_status_display }}
                     </span>

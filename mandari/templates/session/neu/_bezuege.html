@@ -7,7 +7,7 @@ can_create_papers.
 {% if parent_paper or child_papers or can_create_papers %}
 <c-rahmen.abschnitt titel="Bezüge" titel_id="bezuege-titel" data-testid="bezuege">
     {% if parent_paper %}
-    <p class="mt-1 text-sm text-gray-700 dark:text-gray-300 break-words">
+    <p class="mt-1 text-sm text-gray-700 dark:text-gray-300 wrap-break-word">
         {{ paper.get_relation_type_display|default:"Bezug" }} zu
         <c-ui.textlink href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=parent_paper.id %}" class="tabular-nums">{{ parent_paper.display_reference }}</c-ui.textlink>
         {{ parent_paper.name|truncatechars:60 }}
@@ -19,7 +19,7 @@ can_create_papers.
         <li class="py-2 text-sm">
             <c-ui.textlink href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=child.id %}" class="tabular-nums">{{ child.display_reference }}</c-ui.textlink>
             <span class="text-gray-600 dark:text-gray-400">{{ child.get_relation_type_display }}</span>
-            <span class="block text-gray-800 dark:text-gray-200 break-words">{{ child.name|truncatechars:60 }}</span>
+            <span class="block text-gray-800 dark:text-gray-200 wrap-break-word">{{ child.name|truncatechars:60 }}</span>
         </li>
         {% endfor %}
     </c-rahmen.liste>

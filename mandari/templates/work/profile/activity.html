@@ -143,7 +143,7 @@
         <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
             {% for item in timeline %}
             <div class="px-6 py-4 flex items-center gap-4">
-                <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
+                <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
                     {% if item.color == 'green' %}bg-green-100 dark:bg-green-900/30{% elif item.color == 'blue' %}bg-blue-100 dark:bg-blue-900/30{% elif item.color == 'indigo' %}bg-indigo-100 dark:bg-indigo-900/30{% elif item.color == 'purple' %}bg-primary-100 dark:bg-primary-900/30{% elif item.color == 'amber' %}bg-amber-100 dark:bg-amber-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
                     <i data-lucide="{{ item.icon }}" class="w-4 h-4
                         {% if item.color == 'green' %}text-green-600 dark:text-green-400{% elif item.color == 'blue' %}text-blue-600 dark:text-blue-400{% elif item.color == 'indigo' %}text-indigo-600 dark:text-indigo-400{% elif item.color == 'purple' %}text-primary-600 dark:text-primary-400{% elif item.color == 'amber' %}text-amber-600 dark:text-amber-400{% else %}text-gray-500{% endif %}"></i>

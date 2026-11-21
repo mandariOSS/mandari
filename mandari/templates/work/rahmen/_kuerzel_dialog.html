@@ -4,10 +4,10 @@ kommen aus apps.work.rahmen.kuerzel (work_rahmen.kuerzel: text, tasten, zwischen
 lassen sich hier abschalten (WCAG 2.1.4); die Wahl gilt für diesen Browser. „?“ und Strg+K bleiben auch dann.
 Modaler Dialog wie „Raum wechseln“: Fokusfalle, Escape schließt, der Fokus kehrt zurück.
 {% endcomment %}
-<div x-show="kuerzelOffen" x-cloak class="fixed inset-0 z-[70]" @keydown.escape.window="kuerzelOffen && kuerzelSchliessen()">
+<div x-show="kuerzelOffen" x-cloak class="fixed inset-0 z-70" @keydown.escape.window="kuerzelOffen && kuerzelSchliessen()">
     <div x-show="kuerzelOffen" x-transition.opacity class="absolute inset-0 bg-gray-950/40 dark:bg-black/60" @click="kuerzelSchliessen()" aria-hidden="true"></div>
     <div id="kuerzel-dialog" role="dialog" aria-modal="true" aria-labelledby="kuerzel-dialog-titel" x-trap.noscroll="kuerzelOffen" x-show="kuerzelOffen"
-         class="absolute inset-x-0 bottom-0 sm:bottom-auto sm:left-1/2 sm:top-[12vh] sm:-translate-x-1/2 sm:w-[28rem] max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-xl bg-band-hell shadow-2xl ring-1 ring-gray-900/10 dark:ring-white/10 pb-[max(1rem,env(safe-area-inset-bottom))]">
+         class="absolute inset-x-0 bottom-0 sm:bottom-auto sm:left-1/2 sm:top-[12vh] sm:-translate-x-1/2 sm:w-md max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-xl bg-band-hell shadow-2xl ring-1 ring-gray-900/10 dark:ring-white/10 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div class="flex items-center justify-between gap-3 px-4 pt-3 text-gray-900 dark:text-white">
             <h2 id="kuerzel-dialog-titel" class="text-base font-semibold">Tastaturkürzel</h2>
             <button type="button" @click="kuerzelSchliessen()" aria-label="Schließen"
@@ -19,7 +19,7 @@ Modaler Dialog wie „Raum wechseln“: Fokusfalle, Escape schließt, der Fokus 
             {% for k in work_rahmen.kuerzel %}
             <div class="flex items-center justify-between gap-4 py-1.5">
                 <dt class="text-gray-800 dark:text-gray-200">{{ k.text }}</dt>
-                <dd class="shrink-0 text-gray-600 dark:text-gray-400">{% for taste in k.tasten %}{% if not forloop.first %} {{ k.zwischen }} {% endif %}<kbd class="inline-flex items-center h-6 px-1.5 rounded border border-gray-300 dark:border-gray-600 bg-band-grau font-sans text-xs font-medium text-gray-800 dark:text-gray-200">{{ taste }}</kbd>{% endfor %}</dd>
+                <dd class="shrink-0 text-gray-600 dark:text-gray-400">{% for taste in k.tasten %}{% if not forloop.first %} {{ k.zwischen }} {% endif %}<kbd class="inline-flex items-center h-6 px-1.5 rounded-sm border border-gray-300 dark:border-gray-600 bg-band-grau font-sans text-xs font-medium text-gray-800 dark:text-gray-200">{{ taste }}</kbd>{% endfor %}</dd>
             </div>
             {% endfor %}
         </dl>

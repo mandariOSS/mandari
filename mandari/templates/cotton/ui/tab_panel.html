@@ -5,6 +5,6 @@ Inhalt eines Reiters, nur innerhalb von <c-ui.tabs>.  <c-ui.tab-panel name="rech
 <c-vars name="" class="" />
 <div role="tabpanel" id="panel-{{ name }}" aria-labelledby="tab-{{ name }}" tabindex="0"
     x-show="tab === '{{ name }}'" x-cloak
-    class="pt-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 rounded-lg {{ class }}" {{ attrs }}>
+    class="pt-6 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-500 rounded-lg {{ class }}" {{ attrs }}>
     {{ slot }}
 </div>

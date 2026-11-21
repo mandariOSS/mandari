@@ -43,7 +43,7 @@ Kontext: task, form, organization, membership, shared_members, activities
                     {{ form.title }}
                 </div>
                 {% endif %}
-                <div class="flex items-center gap-1 flex-shrink-0 pt-1">
+                <div class="flex items-center gap-1 shrink-0 pt-1">
                     {# Autosave-Indikator #}
                     <span x-cloak x-show="saving"
                           x-transition:enter="transition ease-out duration-150"
@@ -99,7 +99,7 @@ Kontext: task, form, organization, membership, shared_members, activities
             {# ── Details-Sektion ── #}
             <div class="mx-6 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-900/30 divide-y divide-gray-100 dark:divide-gray-700/50">
                 <div class="flex items-center h-10 gap-3 px-4">
-                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                    <span class="flex items-center gap-1.5 w-28 shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
                         <i data-lucide="user" class="w-3.5 h-3.5 text-primary-500"></i>
                         Zugewiesen an
                     </span>
@@ -107,8 +107,8 @@ Kontext: task, form, organization, membership, shared_members, activities
                 </div>
                 {# Weitere Zuständige (Issue #1462). Die Marke daneben sagt dem Server, dass die Auswahl gilt, auch eine leere; der Stand nennt die Auswahl, die das Panel zuletzt kannte (forms.WEITERE_STAND) #}
                 <div class="flex items-start min-h-[40px] gap-3 px-4 py-2" data-testid="aufgabe-weitere-zustaendige">
-                    <span class="flex items-start gap-1.5 w-28 flex-shrink-0 pt-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-                        <i data-lucide="users" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary-500"></i>
+                    <span class="flex items-start gap-1.5 w-28 shrink-0 pt-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="users" class="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary-500"></i>
                         Weitere Zuständige
                     </span>
                     <div class="flex-1 min-w-0">
@@ -122,14 +122,14 @@ Kontext: task, form, organization, membership, shared_members, activities
                     </div>
                 </div>
                 <div class="flex items-center h-10 gap-3 px-4">
-                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                    <span class="flex items-center gap-1.5 w-28 shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
                         <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-500"></i>
                         Fällig am
                     </span>
                     <div class="flex-1 min-w-0">{{ form.due_date }}</div>
                 </div>
                 <div class="flex items-center min-h-[40px] gap-3 px-4">
-                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                    <span class="flex items-center gap-1.5 w-28 shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
                         <i data-lucide="eye" class="w-3.5 h-3.5 text-blue-500"></i>
                         Sichtbarkeit
                     </span>
@@ -215,7 +215,7 @@ Kontext: task, form, organization, membership, shared_members, activities
                 hx-vals='{"action": "toggle_complete"}'
                 hx-target="#task-panel-container"
                 hx-swap="innerHTML"
-                class="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-sm
+                class="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs
                 {% if task.is_completed %}text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 ring-1 ring-amber-200 dark:ring-amber-800/50
                 {% else %}text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 ring-1 ring-green-200 dark:ring-green-800/50{% endif %}">
             <i data-lucide="{% if task.is_completed %}rotate-ccw{% else %}check{% endif %}" class="w-3.5 h-3.5"></i>

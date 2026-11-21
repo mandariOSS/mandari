@@ -4,7 +4,7 @@ Kontext: task, shared_members. Optional: show_empty (Hinweis, wenn noch niemand 
 {% endcomment %}
 {% if task.visibility == 'shared' and shared_members %}
 <div class="flex items-start gap-3 px-4 py-2.5">
-    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400 pt-0.5">
+    <span class="flex items-center gap-1.5 w-28 shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400 pt-0.5">
         <i data-lucide="users" class="w-3.5 h-3.5 text-primary-500"></i>
         Geteilt mit
     </span>
@@ -21,7 +21,7 @@ Kontext: task, shared_members. Optional: show_empty (Hinweis, wenn noch niemand 
 </div>
 {% elif task.visibility == 'shared' and show_empty %}
 <div class="flex items-center gap-3 px-4 py-2.5">
-    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+    <span class="flex items-center gap-1.5 w-28 shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
         <i data-lucide="users" class="w-3.5 h-3.5 text-primary-500"></i>
         Geteilt mit
     </span>

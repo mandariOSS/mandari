@@ -32,7 +32,7 @@
                 {% for committee in available_committees %}
                 <label class="flex items-start gap-2.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                     <input type="checkbox" name="committees" value="{{ committee.id }}"
-                           class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                           class="mt-0.5 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
                            {% if committee.id in followed_ids %}checked{% endif %}>
                     <span class="min-w-0">
                         <span class="block text-sm font-medium text-gray-900 dark:text-white truncate">{{ committee.name|default:committee.short_name }}</span>
@@ -81,7 +81,7 @@
     {% if available_committees %}
     <div class="flex justify-end">
         <button type="submit"
-                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs transition-colors">
             <i data-lucide="save" class="w-4 h-4"></i>
             Speichern
         </button>
@@ -112,9 +112,9 @@
                 {% for topic in org_topics %}
                 <label class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                     <input type="checkbox" name="expertise_topics" value="{{ topic.id }}"
-                           class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                           class="rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
                            {% if topic.id in expertise_ids %}checked{% endif %}>
-                    <span class="w-2.5 h-2.5 rounded-full bg-{{ topic.color }}-500 flex-shrink-0"></span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-{{ topic.color }}-500 shrink-0"></span>
                     <span class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ topic.name }}</span>
                 </label>
                 {% endfor %}
@@ -130,7 +130,7 @@
     {% if org_topics %}
     <div class="flex justify-end">
         <button type="submit"
-                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs transition-colors">
             <i data-lucide="save" class="w-4 h-4"></i>
             Fachgebiete speichern
         </button>

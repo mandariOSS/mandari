@@ -11,14 +11,14 @@
 <form method="post" action="{% url 'work:roles_restore_defaults' org_slug=organization.slug %}" class="inline">
     {% csrf_token %}
     <button type="submit"
-            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm"
+            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-xs"
             title="Legt fehlende Standard-Rollen an. Bestehende Rollen bleiben unverändert.">
         <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
         Standard-Rollen wiederherstellen
     </button>
 </form>
 <a href="{% url 'work:role_create' org_slug=organization.slug %}"
-   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
     <i data-lucide="plus" class="w-4 h-4"></i>
     Neue Rolle
 </a>
@@ -45,7 +45,7 @@
         <div class="flex items-center justify-between">
             <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=role.id %}"
                class="flex items-center gap-3 flex-1 min-w-0">
-                <div class="w-4 h-4 rounded-full flex-shrink-0" style="background: {{ role.color|default:'#6b7280' }};"></div>
+                <div class="w-4 h-4 rounded-full shrink-0" style="background: {{ role.color|default:'#6b7280' }};"></div>
                 <div>
                     <h3 class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
                         {{ role.name }}

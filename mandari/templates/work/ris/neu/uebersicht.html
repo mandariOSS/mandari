@@ -18,7 +18,7 @@ die Reiter des Rahmens. Die bisherige Seite bleibt work/ris/overview.html.
     <form action="{% url 'work:ris_search' org_slug=organization.slug %}" method="get" role="search" class="flex w-full sm:w-auto items-center gap-2">
         <label for="uebersicht-suche" class="sr-only">Ratsinformationen durchsuchen</label>
         <input id="uebersicht-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …"
-               class="h-9 flex-1 sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+               class="h-9 flex-1 sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
     </form>
     </c-slot>
@@ -73,7 +73,7 @@ die Reiter des Rahmens. Die bisherige Seite bleibt work/ris/overview.html.
                 {% if eingereichte_dokumente %}
                 <ul class="mt-1 space-y-2 text-sm">
                     {% for d in eingereichte_dokumente %}
-                    <li><c-ui.textlink href="{{ d.url }}" class="break-words">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · </span><a href="{{ d.vorlage_url }}" class="text-gray-600 dark:text-gray-400 hover:underline underline-offset-4">{{ d.vorlage }}</a></li>
+                    <li><c-ui.textlink href="{{ d.url }}" class="wrap-break-word">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · </span><a href="{{ d.vorlage_url }}" class="text-gray-600 dark:text-gray-400 hover:underline underline-offset-4">{{ d.vorlage }}</a></li>
                     {% endfor %}
                 </ul>
                 {% else %}

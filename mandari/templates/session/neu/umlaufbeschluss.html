@@ -34,8 +34,8 @@ bisherige Seite bleibt session/voting/circular_detail.html.
 <div class="grid gap-x-12 gap-y-10 {% if can_manage and circular.status == 'open' %}lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]{% endif %}">
     <div class="min-w-0 space-y-10">
         <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="vorschlag-titel">
-            <p class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ circular.resolution_text }}</p>
-            {% if circular.result_note %}<p class="mt-3 max-w-[48rem] text-sm text-gray-700 dark:text-gray-300 break-words"><span class="font-medium">Ergebnisvermerk:</span> {{ circular.result_note }}</p>{% endif %}
+            <p class="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ circular.resolution_text }}</p>
+            {% if circular.result_note %}<p class="mt-3 max-w-3xl text-sm text-gray-700 dark:text-gray-300 wrap-break-word"><span class="font-medium">Ergebnisvermerk:</span> {{ circular.result_note }}</p>{% endif %}
         </c-rahmen.abschnitt>
 
         <c-rahmen.abschnitt titel="Stimmberechtigte Besetzung" titel_id="besetzung-titel" zusatz="{{ tally.total_members }}" data-testid="umlauf-besetzung">
@@ -56,12 +56,12 @@ bisherige Seite bleibt session/voting/circular_detail.html.
                         <input type="hidden" name="person" value="{{ membership.person_id }}">
                         <label for="stimme-{{ membership.person_id }}" class="sr-only">Stimme von {{ membership.person.display_name }}</label>
                         <select id="stimme-{{ membership.person_id }}" name="vote"
-                                class="h-9 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                                class="h-9 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                             {% for value, label in vote_choices %}<option value="{{ value }}"{% if membership.vote.vote == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
                         </select>
                         <label for="eingang-{{ membership.person_id }}" class="sr-only">Eingegangen am</label>
                         <input type="date" id="eingang-{{ membership.person_id }}" name="received_at" value="{{ today|date:'Y-m-d' }}"
-                               class="h-9 w-40 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                               class="h-9 w-40 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                         <c-ui.button type="submit" variant="secondary" size="sm">Erfassen</c-ui.button>
                     </form>
                     {% endif %}

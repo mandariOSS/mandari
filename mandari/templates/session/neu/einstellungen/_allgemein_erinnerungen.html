@@ -29,7 +29,7 @@ Ein Formular wie bisher (session/settings/_erinnerungen.html, settings_reminders
                 <div>
                     <c-form.beschriftung feld="erinnerung-tage">Tage vor der Sitzung</c-form.beschriftung>
                     <input type="text" name="rsvp_days" id="erinnerung-tage" value="{{ cfg.rsvp_days|join:', ' }}" inputmode="numeric" placeholder="z. B. 7, 2" aria-describedby="erinnerung-tage-hilfe"
-                           class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                           class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
                     <c-form.hinweis id="erinnerung-tage-hilfe">Bis zu drei Zeitpunkte, durch Komma getrennt</c-form.hinweis>
                 </div>
             </div>

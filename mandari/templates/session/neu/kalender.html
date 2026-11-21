@@ -25,7 +25,7 @@ Seite bleibt session/calendar/month.html.
 <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2" data-testid="monatsnavigation">
     <div class="flex items-center gap-1">
         <c-ui.symbolknopf icon="chevron-left" href="{% querystring year=prev_year month=prev_month %}" titel="Voriger Monat" label="Voriger Monat" />
-        <h2 class="min-w-[9.5rem] text-center text-base font-semibold text-gray-900 dark:text-white">{{ month_name }} {{ year }}</h2>
+        <h2 class="min-w-38 text-center text-base font-semibold text-gray-900 dark:text-white">{{ month_name }} {{ year }}</h2>
         <c-ui.symbolknopf icon="chevron-right" href="{% querystring year=next_year month=next_month %}" titel="Nächster Monat" label="Nächster Monat" />
         <c-ui.textlink href="{% url 'session:meeting_calendar' tenant_slug=tenant_slug %}{% if body_choice.selected %}?body={{ body_choice.selected.slug }}{% endif %}" class="ml-2 text-sm">Heute</c-ui.textlink>
     </div>

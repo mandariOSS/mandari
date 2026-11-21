@@ -10,13 +10,13 @@
 {% block header_actions %}
 {% if can_invite_guests %}
 <a href="{% url 'work:guest_invite' org_slug=organization.slug %}"
-   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-xs">
     <i data-lucide="user-round-plus" class="w-4 h-4"></i>
     Gast einladen
 </a>
 {% endif %}
 <a href="{% url 'work:member_invite' org_slug=organization.slug %}"
-   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
     <i data-lucide="user-plus" class="w-4 h-4"></i>
     Einladen
 </a>
@@ -88,7 +88,7 @@
         {% for membership in pending_registrations %}
         <div class="px-6 py-4 flex items-center justify-between gap-3">
             <div class="min-w-0">
-                <p class="font-medium text-gray-900 dark:text-white break-words">
+                <p class="font-medium text-gray-900 dark:text-white wrap-break-word">
                     {{ membership.user.get_full_name|default:membership.user.email }}
                 </p>
                 <p class="text-sm text-gray-500 break-all">
@@ -100,7 +100,7 @@
                 <form method="post" action="{% url 'work:member_approve' org_slug=organization.slug membership_id=membership.id %}">
                     {% csrf_token %}
                     <button type="submit"
-                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 shadow-sm">
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 shadow-xs">
                         <i data-lucide="check" class="w-4 h-4"></i>
                         Freischalten
                     </button>
@@ -148,7 +148,7 @@
                 </div>
 
                 <div class="min-w-0">
-                    <p class="font-medium text-gray-900 dark:text-white flex flex-wrap items-center gap-2 break-words">
+                    <p class="font-medium text-gray-900 dark:text-white flex flex-wrap items-center gap-2 wrap-break-word">
                         {{ member.user.get_full_name|default:member.user.email }}
                         {% if organization.owner == member.user %}
                         <span class="px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">
@@ -191,7 +191,7 @@
         </div>
         <p class="text-gray-500 dark:text-gray-400 mb-4">Noch keine Mitglieder vorhanden.</p>
         <a href="{% url 'work:member_invite' org_slug=organization.slug %}"
-           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
             <i data-lucide="user-plus" class="w-4 h-4"></i>
             Erstes Mitglied einladen
         </a>
@@ -222,7 +222,7 @@
                     {{ guest.user.first_name|slice:":1"|upper|default:guest.user.email|slice:":1"|upper }}
                 </div>
                 <div class="min-w-0">
-                    <p class="font-medium text-gray-900 dark:text-white flex flex-wrap items-center gap-2 break-words">
+                    <p class="font-medium text-gray-900 dark:text-white flex flex-wrap items-center gap-2 wrap-break-word">
                         {{ guest.user.get_full_name|default:guest.user.email }}
                         <span class="px-2 py-0.5 text-xs bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-full">
                             Gast

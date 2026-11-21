@@ -38,25 +38,25 @@ bleibt session/applications/detail.html.
     <div class="min-w-0 space-y-10">
         {% if application.is_urgent and application.urgency_reason %}
         <c-rahmen.abschnitt titel="Dringlichkeitsbegründung" titel_id="dringlichkeit-titel">
-            <p class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.urgency_reason }}</p>
+            <p class="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ application.urgency_reason }}</p>
         </c-rahmen.abschnitt>
         {% endif %}
 
         {% if application.justification %}
         <c-rahmen.abschnitt titel="Begründung" titel_id="begruendung-titel">
-            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.justification }}</div>
+            <div class="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ application.justification }}</div>
         </c-rahmen.abschnitt>
         {% endif %}
 
         {% if application.resolution_proposal %}
         <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="beschlussvorschlag-titel">
-            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.resolution_proposal }}</div>
+            <div class="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ application.resolution_proposal }}</div>
         </c-rahmen.abschnitt>
         {% endif %}
 
         {% if application.financial_impact %}
         <c-rahmen.abschnitt titel="Finanzielle Auswirkungen" titel_id="finanzen-titel">
-            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.financial_impact }}</div>
+            <div class="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ application.financial_impact }}</div>
         </c-rahmen.abschnitt>
         {% endif %}
 
@@ -66,7 +66,7 @@ bleibt session/applications/detail.html.
             <c-rahmen.liste class="mt-2">
                 {% for file in application_files %}
                 <li class="flex items-baseline justify-between gap-4 py-2 text-sm">
-                    <c-ui.textlink href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}" class="min-w-0 break-words">{{ file.name }}</c-ui.textlink>
+                    <c-ui.textlink href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}" class="min-w-0 wrap-break-word">{{ file.name }}</c-ui.textlink>
                     <span class="shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ file.size_human }}</span>
                 </li>
                 {% endfor %}
@@ -80,7 +80,7 @@ bleibt session/applications/detail.html.
                 {% for paper in created_papers %}
                 <li class="relative grid grid-cols-[minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_9rem] items-baseline gap-x-4 gap-y-0.5 py-2.5 hover:bg-band-grau/60">
                     <div class="min-w-0">
-                        <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ paper.name }}</a>
+                        <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word after:absolute after:inset-0">{{ paper.name }}</a>
                         <p class="text-[0.8125rem] tabular-nums text-gray-600 dark:text-gray-400">{{ paper.reference }}</p>
                     </div>
                     <span class="text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=paper.status text=paper.get_status_display %}</span>
@@ -113,13 +113,13 @@ bleibt session/applications/detail.html.
 
         {% if application.co_signers %}
         <c-rahmen.abschnitt titel="Mitzeichner" titel_id="mitzeichner-titel">
-            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.co_signers }}</p>
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ application.co_signers }}</p>
         </c-rahmen.abschnitt>
         {% endif %}
 
         {% if application.processing_notes %}
         <c-rahmen.abschnitt titel="Bearbeitungsnotizen" titel_id="notizen-titel">
-            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.processing_notes }}</p>
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap wrap-break-word">{{ application.processing_notes }}</p>
         </c-rahmen.abschnitt>
         {% endif %}
     </aside>

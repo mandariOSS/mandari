@@ -20,9 +20,14 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
 from posixpath import basename
+from typing import Any
 
 from whitenoise.storage import CompressedManifestStaticFilesStorage
+
+#: Quellen von Tailwind unter ``static/``, die der Manifest-Storage nicht verarbeitet (``post_process``)
+TAILWIND_QUELLEN = frozenset({"css/input.css"})
 
 #: Ausgabe von ``npm run build`` (vite.config.ts: ``base``/``outDir``, Standardmuster ``[name]-[hash]``):
 #: acht Zeichen Base64url als Inhalts-Hash, z. B. ``csrf-PtHGiBr-.js`` oder ``pdf.worker.min-Dswkl-cV.mjs``.
@@ -41,6 +46,16 @@ class ManifestStaticFilesStorage(CompressedManifestStaticFilesStorage):  # type:
         if is_vite_asset(name):
             return name
         return str(super().stored_name(name))
+
+    def post_process(self, paths: dict[str, Any], dry_run: bool = False, **options: Any) -> Iterator[Any]:
+        """
+        Ohne die Eingangsdatei von Tailwind (Issue #1461): ``css/input.css`` ist nur die Quelle von ``styles.css`` und
+        wird nie über ``{% static %}`` geladen. Seit Tailwind 4 stehen darin Importe aus dem npm-Paket
+        (``@import "tailwindcss/preflight.css"``); der Manifest-Storage hielte sie für Verweise unter ``css/`` und
+        bräche ``collectstatic`` ab.
+        """
+        paths = {name: wert for name, wert in paths.items() if name.replace("\\", "/") not in TAILWIND_QUELLEN}
+        yield from super().post_process(paths, dry_run=dry_run, **options)
 
 
 def _static_prefix() -> str:

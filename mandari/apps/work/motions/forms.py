@@ -24,7 +24,7 @@ class MotionCommentForm(forms.ModelForm):
             "content": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500",
                     "rows": 3,
                     "placeholder": "Kommentar hinzufügen...",
                 }
@@ -51,7 +51,7 @@ class MotionStatusForm(forms.Form):
         widget=forms.Select(
             attrs={
                 "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
+                "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500"
             }
         ),
     )
@@ -78,32 +78,32 @@ class MotionTemplateForm(forms.ModelForm):
             "name": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500",
                 }
             ),
             "description": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500",
                     "rows": 2,
                 }
             ),
             "motion_type": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500",
                 }
             ),
             "letterhead": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500",
                 }
             ),
             "content_template": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500 "
+                    "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500 "
                     "font-mono text-sm",
                     "rows": 10,
                     "placeholder": "Vorausgefüllter Inhalt für neue Dokumente (HTML/Markdown)",
@@ -112,7 +112,7 @@ class MotionTemplateForm(forms.ModelForm):
             "structure_hints": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500",
                     "rows": 4,
                     "placeholder": "Hinweise für die KI-Unterstützung (Abschnitte, Formatierung...)",
                 }
@@ -120,7 +120,7 @@ class MotionTemplateForm(forms.ModelForm):
             "signature_block": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500",
                     "rows": 4,
                 }
             ),
@@ -160,7 +160,7 @@ class AIAssistantForm(forms.Form):
         widget=forms.TextInput(
             attrs={
                 "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                "bg-white dark:bg-gray-800 shadow-xs focus:ring-primary-500",
                 "placeholder": "Anweisung für die KI, z.B. 'kürzer formulieren'",
             }
         ),

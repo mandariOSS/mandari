@@ -131,7 +131,8 @@ def test_viewport_fit_cover_fuer_die_safe_area(besucher: Client) -> None:
 def test_safe_area_seitlich_und_oben(besucher: Client) -> None:
     html = _seite(besucher, "paper_list")
     seitlich = "pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
-    rahmen = re.search(r'<div class="([^"]*lg:pl-\[17rem\][^"]*)">', html)
+    # lg:pl-68 = 17rem, die Breite der Leiste (Tailwind 4, vorher lg:pl-[17rem])
+    rahmen = re.search(r'<div class="([^"]*lg:pl-68[^"]*)">', html)
     assert rahmen and seitlich in rahmen.group(1), "Kopfzeile, Inhalt und Fuß im Querformat neben der Aussparung"
     assert seitlich in _leiste(html)
     assert seitlich in _blatt(html)

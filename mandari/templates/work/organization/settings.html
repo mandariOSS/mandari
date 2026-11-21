@@ -24,7 +24,7 @@
 
             <div class="flex flex-col md:flex-row gap-6">
                 <!-- Logo Upload (left) -->
-                <div class="flex-shrink-0">
+                <div class="shrink-0">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Logo</label>
                     <div class="relative w-32 h-32 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-900 cursor-pointer hover:border-primary-400 transition-colors"
                          @click="if(!removeLogo) $refs.logoInput.click()">
@@ -66,12 +66,12 @@
                             Name <span class="text-red-500">*</span>
                         </label>
                         <input type="text" name="name" value="{{ organization.name }}" required
-                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
                         <textarea name="description" rows="3"
-                                  class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">{{ organization.description }}</textarea>
+                                  class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">{{ organization.description }}</textarea>
                     </div>
                 </div>
             </div>
@@ -81,7 +81,7 @@
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Primaerfarbe</label>
                 <div class="flex items-center gap-3">
                     <div class="relative">
-                        <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-sm hover:border-primary-400 transition-colors"
+                        <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-xs hover:border-primary-400 transition-colors"
                              :style="swatchStyle"
                              @click="$refs.nativePicker.click()"></div>
                         <input type="color" x-ref="nativePicker" :value="color"
@@ -92,7 +92,7 @@
                         <span class="pl-3 pr-1 text-gray-400 text-sm font-mono select-none">#</span>
                         <input type="text" x-model="hex" @input="onHexInput()" maxlength="6"
                                placeholder="6366f1"
-                               class="w-full py-2 pr-3 bg-transparent outline-none text-sm font-mono text-gray-900 dark:text-white">
+                               class="w-full py-2 pr-3 bg-transparent outline-hidden text-sm font-mono text-gray-900 dark:text-white">
                     </div>
                     <span class="text-sm text-gray-500">Steuert den Akzent in der Sidebar</span>
                 </div>
@@ -102,7 +102,7 @@
             <!-- Save Button -->
             <div class="flex justify-end pt-2">
                 <button type="submit"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                     <i data-lucide="save" class="w-4 h-4"></i>
                     Speichern
                 </button>
@@ -111,7 +111,7 @@
         {% else %}
         <!-- Read-only view -->
         <div class="flex flex-col md:flex-row gap-6">
-            <div class="flex-shrink-0">
+            <div class="shrink-0">
                 {% if organization.logo %}
                 <img src="{{ organization.logo.url }}" alt="Logo" class="w-32 h-32 rounded-xl object-cover border border-gray-200 dark:border-gray-700">
                 {% else %}
@@ -135,7 +135,7 @@
         </div>
         <div class="mt-4 flex items-center gap-2">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Primaerfarbe</label>
-            <div class="w-6 h-6 rounded border border-gray-300 dark:border-gray-600" style="background-color: {{ organization.primary_color }}"></div>
+            <div class="w-6 h-6 rounded-sm border border-gray-300 dark:border-gray-600" style="background-color: {{ organization.primary_color }}"></div>
             <span class="text-sm text-gray-500">{{ organization.primary_color }}</span>
         </div>
         <p class="mt-4 text-sm text-gray-500">
@@ -158,30 +158,30 @@
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-Mail</label>
                     <input type="email" name="contact_email" value="{{ organization.contact_email }}"
                            placeholder="info@fraktion.de"
-                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefon</label>
                     <input type="tel" name="contact_phone" value="{{ organization.contact_phone }}"
                            placeholder="+49 123 456789"
-                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
                     <input type="url" name="website" value="{{ organization.website }}"
                            placeholder="https://fraktion.de"
-                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Adresse</label>
                     <textarea name="address" rows="2"
-                              class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">{{ organization.address }}</textarea>
+                              class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">{{ organization.address }}</textarea>
                 </div>
             </div>
 
             <div class="flex justify-end pt-2">
                 <button type="submit"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                     <i data-lucide="save" class="w-4 h-4"></i>
                     Speichern
                 </button>
@@ -228,7 +228,7 @@
             </div>
             <div class="flex justify-end pt-2">
                 <button type="submit"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                     <i data-lucide="save" class="w-4 h-4"></i>
                     Speichern
                 </button>
@@ -251,7 +251,7 @@
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div class="flex items-center gap-3 px-4 py-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl">
-                <i data-lucide="landmark" class="w-5 h-5 text-primary-500 flex-shrink-0"></i>
+                <i data-lucide="landmark" class="w-5 h-5 text-primary-500 shrink-0"></i>
                 <div class="min-w-0">
                     <p class="text-[11px] font-semibold text-primary-600 dark:text-primary-400">Stadt/Kommune</p>
                     <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -260,7 +260,7 @@
                 </div>
             </div>
             <div class="flex items-center gap-3 px-4 py-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl">
-                <i data-lucide="flag" class="w-5 h-5 text-primary-500 flex-shrink-0"></i>
+                <i data-lucide="flag" class="w-5 h-5 text-primary-500 shrink-0"></i>
                 <div class="min-w-0">
                     <p class="text-[11px] font-semibold text-primary-600 dark:text-primary-400">Partei</p>
                     <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -275,7 +275,7 @@
         <ul class="divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
             {% for linked_body in linked_bodies %}
             <li class="flex items-center gap-3 px-4 py-3">
-                <i data-lucide="landmark" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                <i data-lucide="landmark" class="w-4 h-4 text-gray-400 shrink-0"></i>
                 <span class="text-sm font-medium text-gray-900 dark:text-white">{{ linked_body.get_display_name }}</span>
             </li>
             {% endfor %}
@@ -307,7 +307,7 @@
                     <input type="checkbox" name="parties" value="{{ party.id }}"
                            {% if party.id|stringformat:"s" in org_party_ids %}checked{% endif %}
                            {% if party.id == organization.party_group_id %}onclick="return false;" title="Primäre Parteigruppe (im Admin verwaltet)"{% endif %}
-                           class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                           class="rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                     <span class="text-sm text-gray-900 dark:text-white">
                         {{ party.name }}{% if party.abbreviation %} <span class="text-gray-400">({{ party.abbreviation }})</span>{% endif %}
                     </span>
@@ -320,13 +320,13 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Partei per Name hinzufügen</label>
                 <input type="text" name="new_party" placeholder="Name der Partei"
-                       class="w-full max-w-md px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                       class="w-full max-w-md px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
                 <p class="mt-1 text-xs text-gray-500">Nur bestehende Parteien. Fehlt eine Partei, legt der mandari-Support sie an.</p>
             </div>
 
             <div class="flex justify-end pt-2">
                 <button type="submit"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                     <i data-lucide="save" class="w-4 h-4"></i>
                     Speichern
                 </button>

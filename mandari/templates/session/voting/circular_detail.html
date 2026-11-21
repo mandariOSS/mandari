@@ -17,7 +17,7 @@
     <div>
         <div class="flex items-center gap-2 flex-wrap mb-2">
             {% if circular.reference %}
-            <span class="px-2 py-0.5 text-xs font-bold rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400">{{ circular.reference }}</span>
+            <span class="px-2 py-0.5 text-xs font-bold rounded-sm bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400">{{ circular.reference }}</span>
             {% endif %}
             <span class="px-2 py-0.5 text-xs font-medium rounded
                 {% if circular.status == 'adopted' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
@@ -27,7 +27,7 @@
                 {{ circular.get_status_display }}
             </span>
             {% if circular.is_overdue %}
-            <span class="px-2 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">Frist verstrichen</span>
+            <span class="px-2 py-0.5 text-xs font-medium rounded-sm bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">Frist verstrichen</span>
             {% endif %}
         </div>
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ circular.title }}</h1>

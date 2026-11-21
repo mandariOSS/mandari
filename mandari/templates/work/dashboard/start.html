@@ -50,7 +50,7 @@ Oben im Inhalt das Hinweisband wie im bisherigen Start (Issue #857): work/partia
                     <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ s.start|date:"H:i" }}</span>
                 </p>
                 <div class="min-w-0">
-                    <a href="{% url s.url_name org_slug=organization.slug meeting_id=s.id %}" class="font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ s.title }}</a>
+                    <a href="{% url s.url_name org_slug=organization.slug meeting_id=s.id %}" class="font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ s.title }}</a>
                     <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
                         {% if s.type == "faction" %}Fraktion{% if s.location %} · {% endif %}{% endif %}{{ s.location }}{% if s.stand.tops %}{% if s.location %} · {% endif %}{{ s.stand.tops }} TOP{{ s.stand.tops|pluralize:"s" }}{% endif %}
                     </p>
@@ -83,7 +83,7 @@ Oben im Inhalt das Hinweisband wie im bisherigen Start (Issue #857): work/partia
             {% for e in fuer_sie %}
             <li class="py-4 border-t border-gray-200 dark:border-gray-800 first:border-t-0">
                 <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ e.art }}</p>
-                <a href="{{ e.url }}" class="mt-0.5 block font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ e.titel }}</a>
+                <a href="{{ e.url }}" class="mt-0.5 block font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ e.titel }}</a>
                 <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ e.zeile }}</p>
             </li>
             {% endfor %}
@@ -103,7 +103,7 @@ Oben im Inhalt das Hinweisband wie im bisherigen Start (Issue #857): work/partia
             {% for v in neu_in_gremien %}
             <li class="py-4 border-t border-gray-200 dark:border-gray-800 first:border-t-0 xl:border-t-0 min-[1600px]:border-t min-[1600px]:first:border-t-0">
                 <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ v.art }}</p>
-                <a href="{{ v.url }}" class="mt-0.5 block font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ v.titel }}</a>
+                <a href="{{ v.url }}" class="mt-0.5 block font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word">{{ v.titel }}</a>
                 <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ v.zeile }}</p>
             </li>
             {% endfor %}

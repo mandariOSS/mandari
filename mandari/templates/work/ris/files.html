@@ -28,7 +28,7 @@
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
             <input type="text" name="q" value="{{ search_query|default:'' }}"
                    placeholder="Dokument suchen..."
-                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
         </div>
     </form>
 </div>
@@ -41,7 +41,7 @@
         <div class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors {% if file.access_url or file.download_url %}cursor-pointer{% endif %}"
              {% if file.access_url or file.download_url %}@click="openDoc('{% url 'insight_core:insight:file_proxy' file.id %}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if file.context_info.organization_name %}{{ file.context_info.organization_name|escapejs }}{% endif %}{% if file.paper.reference %}{% if file.context_info.organization_name %} · {% endif %}{{ file.paper.reference|escapejs }}{% endif %}{% if file.context_info.meeting_date %} · Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}{% endif %}{% if file.size %} · {{ file.size|filesizeformat }}{% endif %}')"{% endif %}>
             <!-- File type icon -->
-            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0
                 {% if file.mime_type == 'application/pdf' %}bg-red-100 dark:bg-red-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
                 {% if file.mime_type == 'application/pdf' %}
                 <i data-lucide="file-text" class="w-5 h-5 text-red-500 dark:text-red-400"></i>
@@ -102,7 +102,7 @@
                 {% endif %}
             </div>
 
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="flex items-center gap-2 shrink-0">
                 {% if file.text_extraction_status == 'completed' %}
                 <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 max-sm:hidden" title="Text extrahiert">OCR</span>
                 {% endif %}

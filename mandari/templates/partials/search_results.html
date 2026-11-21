@@ -15,7 +15,7 @@
     <a href="{{ result.url }}"
        class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
     {% endif %}
-        <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0
                     {% if result.type == 'paper' %}bg-amber-100 dark:bg-amber-900/50{% endif %}
                     {% if result.type == 'person' %}bg-green-100 dark:bg-green-900/50{% endif %}
                     {% if result.type == 'organization' %}bg-blue-100 dark:bg-blue-900/50{% endif %}
@@ -43,7 +43,7 @@
             </p>
             {% endif %}
         </div>
-        <span class="px-2 py-0.5 rounded-full text-[10px] font-medium flex-shrink-0
+        <span class="px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0
                      {% if result.type == 'paper' %}bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400{% endif %}
                      {% if result.type == 'person' %}bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400{% endif %}
                      {% if result.type == 'organization' %}bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{% endif %}

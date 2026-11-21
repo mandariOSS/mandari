@@ -13,7 +13,7 @@
     <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="flex items-center gap-4">
             {% if organization.effective_logo %}
-            <img src="{{ organization.effective_logo.url }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain rounded">
+            <img src="{{ organization.effective_logo.url }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain rounded-sm">
             {% else %}
             <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
                 <i data-lucide="palette" class="w-6 h-6 text-gray-500 dark:text-gray-400"></i>

@@ -22,7 +22,7 @@ Anmeldung (accounts/base_auth.html). Wer einlädt, die Nachricht, die Rollen und
         <dd class="text-gray-900 dark:text-gray-100">{% for role in invitation.roles.all %}<span class="inline-flex items-center gap-1.5 mr-3">{% include "work/organization/neu/_farbpunkt.html" with farbe=role.color %}{{ role.name }}</span>{% endfor %}</dd>
         {% endif %}
         <dt class="text-gray-600 dark:text-gray-400">Angemeldet als</dt>
-        <dd class="text-gray-900 dark:text-gray-100 break-words">{{ request.user.get_full_name|default:request.user.email }}<span class="block text-gray-600 dark:text-gray-400">{{ request.user.email }}</span></dd>
+        <dd class="text-gray-900 dark:text-gray-100 wrap-break-word">{{ request.user.get_full_name|default:request.user.email }}<span class="block text-gray-600 dark:text-gray-400">{{ request.user.email }}</span></dd>
     </dl>
 
     <form method="post">

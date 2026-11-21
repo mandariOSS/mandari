@@ -23,9 +23,9 @@ den Versionen trennt eine Linie. Einträge ohne Version (noch in keinem Release)
                 <h3 class="flex items-center gap-2 text-[0.8125rem] font-semibold text-gray-600 dark:text-gray-400"><c-ui.icon name="{{ bereich.icon }}" />{{ bereich.label }}</h3>
                 <ul class="mt-3 grid gap-x-12 gap-y-6{% if bereich.mehrere %} min-[1600px]:grid-cols-[repeat(2,minmax(0,36rem))]{% endif %}">
                     {% for eintrag in bereich.eintraege %}
-                    <li class="max-w-[36rem]">
+                    <li class="max-w-xl">
                         <h4 class="text-[0.9375rem] font-semibold text-gray-900 dark:text-white">{{ eintrag.titel }}</h4>
-                        <p class="mt-1 text-[0.9375rem] leading-relaxed text-gray-700 dark:text-gray-300 break-words">{{ eintrag.text }}</p>
+                        <p class="mt-1 text-[0.9375rem] leading-relaxed text-gray-700 dark:text-gray-300 wrap-break-word">{{ eintrag.text }}</p>
                     </li>
                     {% endfor %}
                 </ul>
@@ -38,4 +38,4 @@ den Versionen trennt eine Linie. Einträge ohne Version (noch in keinem Release)
 {% else %}
 <p class="max-w-2xl text-sm text-gray-700 dark:text-gray-300">Gerade gibt es hier nichts zu lesen.</p>
 {% endif %}
-<p class="mt-10 max-w-3xl text-[0.8125rem] text-gray-600 dark:text-gray-400{% if versionen %} xl:ml-[14rem]{% endif %}">Jede technische Änderung steht im <c-ui.textlink href="https://github.com/mandariOSS/mandari/blob/main/CHANGELOG.md" extern>Änderungsprotokoll des Quellcodes</c-ui.textlink>.</p>
+<p class="mt-10 max-w-3xl text-[0.8125rem] text-gray-600 dark:text-gray-400{% if versionen %} xl:ml-56{% endif %}">Jede technische Änderung steht im <c-ui.textlink href="https://github.com/mandariOSS/mandari/blob/main/CHANGELOG.md" extern>Änderungsprotokoll des Quellcodes</c-ui.textlink>.</p>

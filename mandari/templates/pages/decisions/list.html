@@ -36,7 +36,7 @@ Adresse fort (FilterInAdresseMixin); „Zurück“ lädt die Seite der Adresse.
                 <i data-lucide="sliders-horizontal" class="w-5 h-5" aria-hidden="true"></i>Weitere Filter<span id="filter-zahl">{% if filter_zahl %} ({{ filter_zahl }}){% endif %}</span>
             </button>
         </div>
-        <div id="beschluss-filter-felder" class="max-lg:hidden" :class="{ 'max-lg:!block': mehr }" data-ohne-js="zeigen">
+        <div id="beschluss-filter-felder" class="max-lg:hidden" :class="{ 'max-lg:block!': mehr }" data-ohne-js="zeigen">
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.2fr)] lg:max-w-5xl">
                 <c-form.select name="gremium" id="f-gremium" label="Gremium">
                     <option value="">Alle Gremien</option>

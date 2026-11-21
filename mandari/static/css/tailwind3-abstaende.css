@@ -1,0 +1,52 @@
+/* Abstände und Trennlinien zwischen Kindern wie in Tailwind 3 (Issue #1461).
+
+   Tailwind 4 setzt space-y-* und divide-* unten an jedes Kind außer dem letzten, mit Spezifität 0. Tailwind 3 setzte
+   sie oben an jedes sichtbare Kind außer dem ersten ([hidden] zählt nicht), mit Spezifität (0,3,0). Die Vorlagen sind
+   darauf abgestimmt: ein verstecktes Feld ({% csrf_token %}) am Ende eines Formulars mit space-y-8 gäbe dem letzten
+   Abschnitt in Tailwind 4 einen leeren Rand von 32 px, Kinder mit mt-* bekämen einen anderen Abstand.
+
+   Deshalb erzeugt Tailwind diese Klassen nicht (@source not inline in input.css), und sie stehen hier in der Form von
+   Tailwind 3, mit den Werten aus dem Theme. Eine neue Klasse dieser Art gehört in beide Listen;
+   apps/common/tests/test_tailwind_abstaende.py prüft, dass styles.css keine Regel nach Tailwind 4 enthält. Für neue
+   Vorlagen ist flex/grid mit gap-* die bessere Wahl. */
+
+.space-y-px > :not([hidden]) ~ :not([hidden]) { margin-top: 1px; margin-bottom: 0; }
+.space-y-0\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 0.5); margin-bottom: 0; }
+.space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 1); margin-bottom: 0; }
+.space-y-1\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 1.5); margin-bottom: 0; }
+.space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 2); margin-bottom: 0; }
+.space-y-2\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 2.5); margin-bottom: 0; }
+.space-y-3 > :not([hidden]) ~ :not([hidden]),
+.ke-dialog-inhalt > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 3); margin-bottom: 0; }
+.space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 4); margin-bottom: 0; }
+.space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 5); margin-bottom: 0; }
+.space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 6); margin-bottom: 0; }
+.space-y-8 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 8); margin-bottom: 0; }
+.space-y-10 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 10); margin-bottom: 0; }
+.space-y-12 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 12); margin-bottom: 0; }
+.-space-x-2 > :not([hidden]) ~ :not([hidden]) { margin-left: calc(var(--spacing) * -2); margin-right: 0; }
+
+.divide-y > :not([hidden]) ~ :not([hidden]) { border-top-width: 1px; border-bottom-width: 0; }
+.divide-amber-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-amber-100); }
+.divide-amber-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-amber-200); }
+.divide-blue-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-blue-200); }
+.divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-gray-100); }
+.divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-gray-200); }
+.dark\:divide-amber-800:is(.dark *) > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-amber-800); }
+.dark\:divide-amber-800\/50:is(.dark *) > :not([hidden]) ~ :not([hidden]) {
+  border-color: color-mix(in oklab, var(--color-amber-800) 50%, transparent);
+}
+.dark\:divide-blue-800:is(.dark *) > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-blue-800); }
+.dark\:divide-gray-700:is(.dark *) > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-gray-700); }
+.dark\:divide-gray-700\/50:is(.dark *) > :not([hidden]) ~ :not([hidden]) {
+  border-color: color-mix(in oklab, var(--color-gray-700) 50%, transparent);
+}
+.dark\:divide-gray-800:is(.dark *) > :not([hidden]) ~ :not([hidden]) { border-color: var(--color-gray-800); }
+
+@media (min-width: 1280px) {
+  .xl\:divide-y-0 > :not([hidden]) ~ :not([hidden]) { border-top-width: 0; border-bottom-width: 0; }
+}
+@media (min-width: 1536px) {
+  .\32xl\:space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 4); margin-bottom: 0; }
+  .\32xl\:space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: calc(var(--spacing) * 6); margin-bottom: 0; }
+}

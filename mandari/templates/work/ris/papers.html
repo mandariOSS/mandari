@@ -25,10 +25,10 @@
             <i data-lucide="search" class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
             <input type="text" name="q" value="{{ search_query|default:'' }}"
                    placeholder="Vorgang suchen..."
-                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
         </div>
         <select name="type"
-                class="px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+                class="px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden text-gray-900 dark:text-white">
             <option value="">Alle Typen</option>
             {% for type in paper_types %}
             {% if type %}
@@ -37,14 +37,14 @@
             {% endfor %}
         </select>
         <select name="year"
-                class="px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+                class="px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden text-gray-900 dark:text-white">
             <option value="">Alle Jahre</option>
             {% for year in years %}
             <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
             {% endfor %}
         </select>
         <button type="submit" name="direkt" value="1" aria-label="Suchen"
-                class="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 shadow-sm transition-colors text-sm">
+                class="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 shadow-xs transition-colors text-sm">
             <i data-lucide="filter" class="w-4 h-4"></i>
         </button>
         {% if search_query or selected_type or selected_year %}
@@ -76,7 +76,7 @@
                 data-href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}">
                 <td class="px-6 py-3">
                     <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}"
-                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
+                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors wrap-break-word">
                         {{ paper.name|default:"Vorgang" }}
                     </a>
                     <div class="sm:hidden text-sm text-gray-500 dark:text-gray-400 mt-0.5">

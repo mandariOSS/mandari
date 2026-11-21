@@ -62,7 +62,7 @@ Kontext: MyCosignaturesView (cosignatures mit actionable und on_behalf_of, my_de
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <label for="mitzeichnungen-grund-{{ cosign.id }}" class="sr-only">Grund der Zurückweisung</label>
                 <input id="mitzeichnungen-grund-{{ cosign.id }}" type="text" name="comment" required placeholder="Grund der Zurückweisung"
-                       class="h-9 w-full sm:w-60 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                       class="h-9 w-full sm:w-60 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                 <c-ui.button type="submit" variant="secondary" size="sm" icon="undo-2">Zurückweisen</c-ui.button>
             </form>
         </div>

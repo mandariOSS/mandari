@@ -43,14 +43,14 @@ Kontext wie AuditLogListView. Die bisherige Seite bleibt session/audit/list.html
             <li class="grid grid-cols-1 sm:grid-cols-[9.5rem_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 text-sm">
                 <div class="tabular-nums"><p class="text-gray-700 dark:text-gray-300">{{ entry.created_at|date:"d.m.Y H:i:s" }}</p>{% if entry.seq %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Nr. {{ entry.seq }}</p>{% endif %}</div>
                 <div class="min-w-0">
-                    <p class="text-gray-900 dark:text-white break-words"><span class="font-medium">{{ entry.get_action_display }}</span> · {{ entry.object_repr|truncatechars:60 }} <span class="text-gray-600 dark:text-gray-400">({{ entry.model_name }})</span></p>
-                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">
+                    <p class="text-gray-900 dark:text-white wrap-break-word"><span class="font-medium">{{ entry.get_action_display }}</span> · {{ entry.object_repr|truncatechars:60 }} <span class="text-gray-600 dark:text-gray-400">({{ entry.model_name }})</span></p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">
                         {% if entry.user %}{{ entry.user.user.email }}{% elif entry.user_ref %}gelöschtes Konto{% else %}System oder API{% endif %}{% if entry.on_behalf_of %}<span class="text-amber-800 dark:text-amber-300">, in Vertretung für {{ entry.on_behalf_of.user.email }}</span>{% endif %}
                     </p>
                     {% if entry.change_rows %}
                     <details class="mt-1">
                         <summary class="cursor-pointer text-[0.8125rem] font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ entry.change_rows|length }} Angabe{{ entry.change_rows|length|pluralize:"n" }}</summary>
-                        <dl class="mt-1.5 space-y-1 text-[0.8125rem] text-gray-800 dark:text-gray-200 break-words">
+                        <dl class="mt-1.5 space-y-1 text-[0.8125rem] text-gray-800 dark:text-gray-200 wrap-break-word">
                             {% for row in entry.change_rows %}
                             <div><dt class="inline font-semibold">{{ row.field }}:</dt> <dd class="inline">{% if row.is_diff %}<span class="line-through text-gray-500">{{ row.alt|default:"–" }}</span> → {{ row.neu|default:"–" }}{% else %}{{ row.value|default:"–" }}{% endif %}</dd></div>
                             {% endfor %}

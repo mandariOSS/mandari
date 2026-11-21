@@ -33,7 +33,7 @@ auf), ``ref`` setzt x-ref am Feld, der Slot steht unter der Fläche (Dateiliste,
                 {% if hinweis %}<p id="{{ fid }}-hinweis" class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ hinweis }}</p>{% endif %}
             </div>
         </div>
-        {% if not ziehen %}<p x-show="namen.length" x-cloak aria-live="polite" class="mt-2 text-sm text-gray-800 dark:text-gray-200 break-words">Gewählt: <span x-text="namen.join(', ')"></span></p>{% endif %}
+        {% if not ziehen %}<p x-show="namen.length" x-cloak aria-live="polite" class="mt-2 text-sm text-gray-800 dark:text-gray-200 wrap-break-word">Gewählt: <span x-text="namen.join(', ')"></span></p>{% endif %}
     </div>
     {% if fehler %}<p id="{{ fid }}-fehler" class="mt-1 text-sm text-red-700 dark:text-red-400">{{ fehler }}</p>{% endif %}
     {{ slot }}

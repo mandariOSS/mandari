@@ -55,7 +55,7 @@
         <!-- Original Description -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-start gap-4">
-                <div class="flex-shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+                <div class="shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
                     <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
                         {% if ticket.created_by %}{{ ticket.created_by.user.first_name|first|upper }}{{ ticket.created_by.user.last_name|first|upper }}{% else %}{{ ticket.created_by|member_initials }}{% endif %}
                     </span>
@@ -132,7 +132,7 @@
                 <textarea name="content"
                           rows="4"
                           required
-                          class="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                          class="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden"
                           placeholder="Ihre Nachricht..."></textarea>
 
                 <div class="mt-4 flex items-center justify-between">
@@ -152,7 +152,7 @@
                         </template>
                     </div>
                     <button type="submit"
-                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-xs">
                         <i data-lucide="send" class="w-4 h-4"></i>
                         Senden
                     </button>

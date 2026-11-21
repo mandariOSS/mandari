@@ -15,7 +15,7 @@ Block work_extra_head. Kontext: map_config, karte_zeitraeume, karte_zeitraum (ap
             {% for wert, name in karte_zeitraeume %}
             <button type="button" data-zeitraum-wert="{{ wert }}" @click="zeitraumWaehlen($el.dataset.zeitraumWert)"
                     :aria-pressed="(zeitraum === $el.dataset.zeitraumWert).toString()" aria-pressed="{% if wert == karte_zeitraum %}true{% else %}false{% endif %}"
-                    class="h-8 px-3 rounded font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white aria-pressed:bg-band-hell aria-pressed:text-gray-900 dark:aria-pressed:text-white aria-pressed:shadow-sm">{{ name }}</button>
+                    class="h-8 px-3 rounded-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white aria-pressed:bg-band-hell aria-pressed:text-gray-900 dark:aria-pressed:text-white aria-pressed:shadow-xs">{{ name }}</button>
             {% endfor %}
         </div>
         <p role="status" aria-live="polite" class="text-sm text-gray-600 dark:text-gray-400" x-text="status">Die Karte wird geladen …</p>

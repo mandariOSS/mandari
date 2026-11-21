@@ -26,7 +26,7 @@
     {% csrf_token %}
     <div>
         <label for="id_code" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bestätigungscode</label>
-        <input id="id_code" type="text" name="code" required maxlength="11" placeholder="000000" autocomplete="one-time-code" autocapitalize="off" spellcheck="false"{% if not has_security_key %} autofocus{% endif %} aria-describedby="code-hint"{% if error %} aria-invalid="true"{% endif %} class="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+        <input id="id_code" type="text" name="code" required maxlength="11" placeholder="000000" autocomplete="one-time-code" autocapitalize="off" spellcheck="false"{% if not has_security_key %} autofocus{% endif %} aria-describedby="code-hint"{% if error %} aria-invalid="true"{% endif %} class="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-hidden">
         <p id="code-hint" class="mt-2 text-sm text-gray-500 dark:text-gray-400">Sechsstelliger Code aus der App oder einer deiner Backup-Codes.</p>
     </div>
     {% if error %}

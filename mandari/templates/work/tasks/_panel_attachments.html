@@ -13,7 +13,7 @@
 <div class="space-y-1.5 mb-3">
     {% for att in attachments %}
     <div class="group flex items-center gap-2.5 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
-        <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+        <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center shrink-0">
             <i data-lucide="{{ att.icon_name }}" class="w-4 h-4 text-blue-500 dark:text-blue-400"></i>
         </div>
         <a href="{% url 'work:task_attachment_download' org_slug=organization.slug task_id=task.id attachment_id=att.id %}?vorschau" target="_blank" rel="noopener" class="flex-1 min-w-0 group/link">
@@ -27,7 +27,7 @@
                 hx-target="#panel-attachments"
                 hx-swap="innerHTML"
                 hx-confirm="Anhang wirklich entfernen?"
-                class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all flex-shrink-0">
+                class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all shrink-0">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
         </button>
         {% endif %}

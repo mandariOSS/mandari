@@ -7,7 +7,7 @@ Erwartet: item, vote_choices, can_view_np.{% endcomment %}
             {{ item.name }}
             {% if item.is_withdrawn %}<span class="text-xs text-gray-400">(abgesetzt)</span>{% endif %}
             {% if item.voting_method != 'summary' %}
-            <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-400">{{ item.get_voting_method_display }}</span>
+            <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-400">{{ item.get_voting_method_display }}</span>
             {% endif %}
         </p>
         <!-- Einzelabstimmung erfassen (Issue #41) -->

@@ -36,7 +36,7 @@ session/reports/index.html.
             <c-rahmen.liste class="mt-2">
                 {% for row in meeting_stats %}
                 <li class="py-2.5">
-                    <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ row.organization.name }}</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white wrap-break-word">{{ row.organization.name }}</p>
                     <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ row.meetings }} Sitzung{{ row.meetings|pluralize:"en" }}, {{ row.tops }} TOP{{ row.tops|pluralize:"s" }}, {{ row.resolutions }} Beschl{{ row.resolutions|pluralize:"uss,üsse" }}{% if row.avg_duration %}, im Schnitt {{ row.avg_duration }} min{% endif %}</p>
                 </li>
                 {% endfor %}
@@ -74,7 +74,7 @@ session/reports/index.html.
                     <tbody class="divide-y divide-gray-200 dark:divide-gray-800 tabular-nums text-gray-800 dark:text-gray-200">
                         {% for row in attendance %}
                         <tr>
-                            <th scope="row" class="pr-4 text-left font-medium text-gray-900 dark:text-white break-words">{{ row.name }}</th>
+                            <th scope="row" class="pr-4 text-left font-medium text-gray-900 dark:text-white wrap-break-word">{{ row.name }}</th>
                             <td>{{ row.invited }}</td>
                             <td>{{ row.present }}</td>
                             <td>{{ row.excused }}</td>
@@ -108,7 +108,7 @@ session/reports/index.html.
                     <tbody class="divide-y divide-gray-200 dark:divide-gray-800 tabular-nums text-gray-800 dark:text-gray-200">
                         {% for row in allowances %}
                         <tr>
-                            <th scope="row" class="pr-4 text-left font-medium text-gray-900 dark:text-white break-words">{{ row.name }}</th>
+                            <th scope="row" class="pr-4 text-left font-medium text-gray-900 dark:text-white wrap-break-word">{{ row.name }}</th>
                             <td>{{ row.count }}</td>
                             <td>{{ row.monthly }} €</td>
                             <td>{{ row.amount }} €</td>

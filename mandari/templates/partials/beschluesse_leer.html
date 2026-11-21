@@ -21,8 +21,8 @@ Bauanträgen (``titel_oeffentlich``, Issue #1269).
             <a href="{% if item.vorgang %}{% url 'insight_core:insight:paper_detail' item.vorgang.pk %}{% else %}{% url 'insight_core:insight:meeting_detail' item.meeting.pk %}{% endif %}" class="group grid grid-cols-[6.5rem_minmax(0,1fr)] gap-4 py-4">
                 <time datetime="{{ item.meeting.start|date:'c' }}" class="text-[0.95rem] font-semibold text-gray-900 dark:text-gray-100">{{ item.meeting.start|date:"d.m.Y" }}</time>
                 <span class="min-w-0">
-                    <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% if item.vorgang.name %}{{ item.vorgang.titel_oeffentlich|truncatechars:140 }}{% else %}{{ item.titel_oeffentlich|default:"Tagesordnungspunkt"|truncatechars:140 }}{% endif %}</span>
-                    <span class="block mt-0.5 text-[0.9rem] text-gray-600 dark:text-gray-400 break-words">{{ item.result|truncatechars:80 }}{% if item.gremium %}, {{ item.gremium }}{% endif %}</span>
+                    <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 wrap-break-word">{% if item.vorgang.name %}{{ item.vorgang.titel_oeffentlich|truncatechars:140 }}{% else %}{{ item.titel_oeffentlich|default:"Tagesordnungspunkt"|truncatechars:140 }}{% endif %}</span>
+                    <span class="block mt-0.5 text-[0.9rem] text-gray-600 dark:text-gray-400 wrap-break-word">{{ item.result|truncatechars:80 }}{% if item.gremium %}, {{ item.gremium }}{% endif %}</span>
                 </span>
             </a>
         </li>

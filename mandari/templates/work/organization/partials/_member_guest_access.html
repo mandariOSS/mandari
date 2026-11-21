@@ -44,7 +44,7 @@
         {% for share in guest_folder_shares %}
         <div class="px-6 py-3 flex items-center justify-between gap-4">
             <div class="min-w-0 flex items-start gap-3">
-                <i data-lucide="folder" class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5"></i>
+                <i data-lucide="folder" class="w-5 h-5 text-amber-500 shrink-0 mt-0.5"></i>
                 <div class="min-w-0">
                     <a href="{% url 'work:documents' org_slug=organization.slug %}?ordner={{ share.folder.id }}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ share.folder.name }}</a>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -55,7 +55,7 @@
                 </div>
             </div>
             {% if can_manage_guest_shares %}
-            <div class="flex items-center gap-1 flex-shrink-0">
+            <div class="flex items-center gap-1 shrink-0">
             <form method="post" action="{% url 'work:document_folder_share_download' org_slug=organization.slug share_id=share.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="allow_download" value="{{ share.allow_download|yesno:'0,1' }}">
@@ -79,7 +79,7 @@
         {% for share in guest_document_shares %}
         <div class="px-6 py-3 flex items-center justify-between gap-4">
             <div class="min-w-0 flex items-start gap-3">
-                <i data-lucide="file-text" class="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5"></i>
+                <i data-lucide="file-text" class="w-5 h-5 text-primary-500 shrink-0 mt-0.5"></i>
                 <div class="min-w-0">
                     <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=share.motion.id %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ share.motion.title }}</a>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -89,7 +89,7 @@
                 </div>
             </div>
             {% if can_manage_guest_shares %}
-            <div class="flex items-center gap-1 flex-shrink-0">
+            <div class="flex items-center gap-1 shrink-0">
             <form method="post" action="{% url 'work:document_share_download' org_slug=organization.slug share_id=share.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="allow_download" value="{{ share.allow_download|yesno:'0,1' }}">

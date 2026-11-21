@@ -40,7 +40,7 @@ PaperCreateView/PaperUpdateView.
                 <div>
                     <c-form.beschriftung feld="{{ form.paper_type.id_for_label }}" pflicht>Typ</c-form.beschriftung>
                     <select name="paper_type" id="id_paper_type" required{% if form.paper_type.errors %} aria-invalid="true" aria-describedby="id_paper_type-error"{% endif %}
-                            class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.paper_type.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                            class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.paper_type.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
                         <option value="">Bitte wählen</option>
                         {% for value, label in form.paper_type.field.choices %}{% if value %}
                         <option value="{{ value }}" {% if form.paper_type.value == value %}selected{% endif %}>{{ label }}</option>

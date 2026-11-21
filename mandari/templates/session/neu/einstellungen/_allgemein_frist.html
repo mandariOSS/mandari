@@ -7,7 +7,7 @@ bisher (session/settings/_erinnerungen.html): ``name`` an/aus, ``tage_name`` mit
     <c-form.checkbox name="{{ name }}" id="{{ id }}" label="{{ label }}" checked="{% if an %}1{% endif %}" dicht />
     <span class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
         <input type="number" name="{{ tage_name }}" id="{{ id }}-tage" value="{{ tage }}" min="0" max="60"
-               class="w-16 h-9 px-2 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+               class="w-16 h-9 px-2 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white tabular-nums focus:outline-hidden focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
         <label for="{{ id }}-tage"><span class="sr-only">{{ label }}: </span>Tage vorher</label>
     </span>
 </li>

@@ -10,7 +10,7 @@ absendet (wie bisher), sonst nur der Stand, wenn vereidigt. Kontext: member, can
         <input type="hidden" name="action" value="update_sworn_in">
         <label class="inline-flex items-start gap-2 cursor-pointer">
             <input type="checkbox" name="is_sworn_in" value="1" {% if member.is_sworn_in %}checked{% endif %} @change="$el.form.submit()"
-                   class="mt-0.5 w-4 h-4 shrink-0 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                   class="mt-0.5 w-4 h-4 shrink-0 rounded-sm border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
             <span class="text-sm text-gray-800 dark:text-gray-200">Vereidigt</span>
         </label>
         <c-form.hinweis einzug>{% if member.is_sworn_in %}Sieht nicht-öffentliche TOPs und Protokolle der internen Sitzungen.{% else %}Sieht nur öffentliche TOPs, keine nicht-öffentlichen Inhalte.{% endif %} Speichert beim Umschalten.</c-form.hinweis>

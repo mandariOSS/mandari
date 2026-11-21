@@ -21,14 +21,14 @@ Kontext: OrganizationListView; die bisherige Seite bleibt session/organizations/
 {% block page_content %}
 <form method="get" role="search" aria-label="Gremien filtern" class="flex flex-wrap items-center gap-2" data-testid="gremien-filter">
     <label for="filter-typ" class="sr-only">Typ</label>
-    <select id="filter-typ" name="type" class="h-9 min-w-0 flex-1 basis-40 sm:flex-none sm:max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="filter-typ" name="type" class="h-9 min-w-0 flex-1 basis-40 sm:flex-none sm:max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Typen</option>
         {% for value, label in organization_types %}<option value="{{ value }}" {% if request.GET.type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
     {% if legislative_terms %}
     {# Wahlperiode (Issue #39): Gremien mit Besetzungen in der Periode #}
     <label for="filter-periode" class="sr-only">Wahlperiode</label>
-    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         <option value="">Alle Perioden</option>
         {% for term in legislative_terms %}<option value="{{ term.id }}" {% if selected_term == term.id|stringformat:"s" %}selected{% endif %}>{{ term.name }}</option>{% endfor %}
     </select>
@@ -47,8 +47,8 @@ Kontext: OrganizationListView; die bisherige Seite bleibt session/organizations/
     <li class="relative grid sm:grid-cols-[minmax(0,1fr)_10rem] gap-x-4 gap-y-0.5 py-2.5 pl-1 hover:bg-band-grau/60">
         <div class="min-w-0">
             <a href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=org.id %}"
-               class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ org.name }}</a>
-            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ org.get_organization_type_display }}{% if body_choice.active and org.body %} · {{ org.body.label }}{% endif %}</p>
+               class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 wrap-break-word after:absolute after:inset-0">{{ org.name }}</a>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 wrap-break-word">{{ org.get_organization_type_display }}{% if body_choice.active and org.body %} · {{ org.body.label }}{% endif %}</p>
         </div>
         <div class="text-sm text-gray-700 dark:text-gray-300 sm:pt-0.5">
             <p><span class="tabular-nums">{{ org.member_count }}</span> Mitglied{{ org.member_count|pluralize:"er" }}</p>

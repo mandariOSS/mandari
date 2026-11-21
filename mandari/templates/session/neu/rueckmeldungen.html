@@ -18,7 +18,7 @@ MeetingInvitationStatusView.
 <c-rahmen.kopfband titel="Ladung und Rückmeldungen" dicht>
     <c-slot name="oben">
         <c-insight.zurueck href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}">Ladung</c-insight.zurueck>
-        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.organization.name }} · <span class="tabular-nums">{{ meeting.start|date:"l, d.m.Y, H:i" }} Uhr</span></p>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 wrap-break-word">{{ meeting.organization.name }} · <span class="tabular-nums">{{ meeting.start|date:"l, d.m.Y, H:i" }} Uhr</span></p>
     </c-slot>
     <c-slot name="aktionen">
         <c-ui.button href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="send">Versand</c-ui.button>
@@ -83,7 +83,7 @@ MeetingInvitationStatusView.
                     <p class="liste-angaben">{{ status.role|default:"–" }}{% if status.substitution_for %} · Vertretung für {{ status.substitution_for.display_name }}{% endif %}</p>
                     <ul class="mt-1 space-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
                         {% for row in status.rows %}
-                        <li class="break-words">{{ row.dispatch.get_dispatch_type_display }}, {{ row.get_channel_display }}: {% if row.status == "failed" %}<span class="font-medium text-red-700 dark:text-red-400">fehlgeschlagen</span>{% elif row.status == "letter_pending" %}<span class="text-amber-800 dark:text-amber-300">Brief vorzubereiten</span>{% else %}<span class="tabular-nums">{{ row.delivered_at|date:"d.m.Y, H:i" }}</span>{% endif %}{% if row.reminder_count %} <span class="text-gray-600 dark:text-gray-400">({{ row.reminder_count }}× erinnert)</span>{% endif %}</li>
+                        <li class="wrap-break-word">{{ row.dispatch.get_dispatch_type_display }}, {{ row.get_channel_display }}: {% if row.status == "failed" %}<span class="font-medium text-red-700 dark:text-red-400">fehlgeschlagen</span>{% elif row.status == "letter_pending" %}<span class="text-amber-800 dark:text-amber-300">Brief vorzubereiten</span>{% else %}<span class="tabular-nums">{{ row.delivered_at|date:"d.m.Y, H:i" }}</span>{% endif %}{% if row.reminder_count %} <span class="text-gray-600 dark:text-gray-400">({{ row.reminder_count }}× erinnert)</span>{% endif %}</li>
                         {% endfor %}
                     </ul>
                 </div>
@@ -91,7 +91,7 @@ MeetingInvitationStatusView.
                     <p>
                         <span class="sr-only">Rückmeldung: </span>{% if status.attendance.status == "confirmed" %}{% include "session/neu/_status.html" with wert="accepted" text=status.response_label %}{% elif status.attendance.status == "declined" %}{% include "session/neu/_status.html" with wert="rejected" text=status.response_label %}{% else %}{% include "session/neu/_status.html" with wert="" text=status.response_label %}{% endif %}{% if status.attendance.responded_at %} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums">{{ status.attendance.responded_at|date:"d.m.Y, H:i" }} ({{ status.attendance.get_response_source_display }})</span>{% endif %}
                     </p>
-                    {% if status.reason %}<p class="text-[0.8125rem] text-gray-800 dark:text-gray-200 break-words"><span class="font-medium">Grund:</span> {{ status.reason }}</p>{% endif %}
+                    {% if status.reason %}<p class="text-[0.8125rem] text-gray-800 dark:text-gray-200 wrap-break-word"><span class="font-medium">Grund:</span> {{ status.reason }}</p>{% endif %}
                     <p>
                         <span class="text-gray-600 dark:text-gray-400">Empfang</span>
                         {% if status.acknowledgement == "confirmed" %}{% include "session/neu/_status.html" with wert="approved" text="bestätigt" %}{% elif status.acknowledgement == "partial" %}{% include "session/neu/_status.html" with wert="pending" text="teilweise" %}{% elif status.acknowledgement == "open" %}{% include "session/neu/_status.html" with wert="pending" text="offen" %}{% else %}–{% endif %}
