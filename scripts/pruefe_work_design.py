@@ -96,7 +96,8 @@ RUHE_MS = 4000
 AUSGESCHLOSSEN = re.compile(
     r"/(?:delete|permanent-delete|restore|remove|resolve|decide|approve|reject|cancel|resend|resend-access|reset"
     r"|restore-defaults|empty|mark-read|submit-ris|upload|rename|move-to-folder|action|meta|checklist|comment"
-    r"|download|export|panel|einlesen|import-file|status|share|update|preview|file|count|latest|events|request)/?$"
+    r"|download|export|panel|einlesen|import-file|status|share|update|preview|file|count|latest|events|eintraege"
+    r"|request)/?$"
     r"|/(?:partials|annotations|position|notes|private-note|speech|supplementary|messages|teleprompter)/"
     r"|^/(?:ris/map/data|documents/ai|tasks/api|meetings/speech-documents|meetings/ladungen/[^/]+)/"
     r"|/bezug/suche/"
@@ -110,6 +111,8 @@ AUSGESCHLOSSEN = re.compile(
 ERLAUBT_ENTFERNT = (
     "",
     "dashboard/",
+    # Kalender (Issue #1548, vorher meetings/calendar/)
+    "kalender/",
     # Sitzungen
     "meetings/",
     "meetings/calendar/",

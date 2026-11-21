@@ -17,7 +17,7 @@ die Glocke work/notifications/partials/dropdown_list.html.
 <c-rahmen.kopfband titel="Benachrichtigungen" dicht data-testid="benachrichtigungen-kopf"
     text="{% if total_count %}{{ unread_count }} ungelesen von {{ total_count }}.{% else %}Hier erscheint, was Sie in Work betrifft: Aufgaben, Freigaben, Sitzungen und Antworten.{% endif %}">
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% url 'work:profile_notifications' org_slug=organization.slug %}" class="text-sm">Einstellungen</c-ui.textlink>
+        <c-ui.button href="{% url 'work:profile_notifications' org_slug=organization.slug %}" variant="secondary" size="sm" icon="settings">Einstellungen</c-ui.button>
         {% if unread_count > 0 %}
         <c-ui.button size="sm" icon="check-check" hx-post="{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}" hx-swap="none" data-after-request="reload">Alle als gelesen markieren</c-ui.button>
         {% endif %}

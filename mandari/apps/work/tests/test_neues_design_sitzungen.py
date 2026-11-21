@@ -676,7 +676,15 @@ def test_kalender_zeigt_alle_arten_nach_recht_und_auswahl(welt: Welt, client_for
 
     alle = client.get(adresse, fenster).json()
     je_id = {eintrag["id"]: eintrag for eintrag in alle}
-    assert {eintrag["extendedProps"]["art"] for eintrag in alle} == {"sitzung", "fraktion", "dokument", "aufgabe"}
+    # Der Vorsitz folgt dem Hauptausschuss: dessen Sitzungen sind eigene, die übrigen weitere Gremien (Issue #1548)
+    assert {eintrag["extendedProps"]["art"] for eintrag in alle} == {
+        "sitzung",
+        "gremium",
+        "fraktion",
+        "dokument",
+        "aufgabe",
+    }
+    assert {e["title"] for e in alle if e["extendedProps"]["art"] == "sitzung"} == {"Sitzung Hauptausschuss"}
     frist = je_id[f"dokument-{dokument.pk}"]
     assert frist["title"] == "Frist: Antrag Radweg" and frist["allDay"] is True
     assert frist["start"] == in_drei_tagen.isoformat() and frist["classNames"] == ["termin-dokument"]
@@ -690,7 +698,8 @@ def test_kalender_zeigt_alle_arten_nach_recht_und_auswahl(welt: Welt, client_for
     assert {eintrag["extendedProps"]["art"] for eintrag in nur} == {"fraktion", "aufgabe"}
     assert client.get(adresse, {**fenster, "arten": ""}).json() == []
 
-    # Jede Art nur mit dem Recht ihres Bereichs, auch wenn die Adresse mehr verlangt
+    # Jede Art nur mit dem Recht ihres Bereichs, auch wenn die Adresse mehr verlangt; ohne eigene Gremien gehören alle
+    # Sitzungen der Gremien zu einer Art
     nur_sitzungen = make_member(org, ["meetings.view"])
     verlangt = client_for(nur_sitzungen.user).get(adresse, {**fenster, "arten": "sitzung,fraktion,dokument,aufgabe"})
     assert {eintrag["extendedProps"]["art"] for eintrag in verlangt.json()} == {"sitzung"}
@@ -730,8 +739,8 @@ def test_kalender_zeigt_alle_arten_nach_recht_und_auswahl(welt: Welt, client_for
 
     # Die Seite bietet je Art ein Kästchen an, auch bei nur einer Art (eine gemerkte Abwahl bleibt korrigierbar)
     html = _neu(welt, client_for, "vorsitz", "work:meetings_calendar")
-    assert 'data-arten="sitzung,fraktion,termin,umfrage,dokument,aufgabe"' in html
-    assert html.count('x-model="arten"') == 6
+    assert 'data-arten="sitzung,gremium,fraktion,termin,umfrage,dokument,aufgabe"' in html
+    assert html.count('x-model="arten"') == 7
     eine_art = client_for(nur_sitzungen.user).get(reverse("work:meetings_calendar", kwargs={"org_slug": org.slug}))
     # Mit meetings.view allein: Sitzungen der Gremien und eigene Termine
     assert eine_art.content.decode().count('x-model="arten"') == 3

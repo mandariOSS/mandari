@@ -74,7 +74,7 @@ Seite bleibt work/ris/paper_detail.html.
         {% if zeitstrahl %}
         <c-insight.timeline class="mt-4" data-testid="vorgang-verlauf">
             {% for item in zeitstrahl %}
-            <c-insight.timeline-entry date="{{ item.date|date:'d.m.Y' }}" title="{{ item.organization_name|default:'Sitzung' }}"
+            <c-insight.timeline-entry date="{{ item.date|default:item.expected_date|date:'d.m.Y' }}" title="{{ item.organization_name|default:'Sitzung' }}"
                 href="{% if item.meeting %}{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=item.meeting.id %}{% endif %}" state="{{ item.state }}">
                 {% if item.detail %}{{ item.detail }}.{% endif %}
                 {% if item.result %}Ergebnis: <span class="font-semibold text-gray-900 dark:text-white">{{ item.result }}</span>{% endif %}

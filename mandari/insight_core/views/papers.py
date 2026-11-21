@@ -263,7 +263,11 @@ class PaperDetailView(DetailView):
         # Finanzcheck (Issue #1513): Kosten, Fördergeld und jährliche Belastung, nur geprüft und bestanden
         from insight_ai.services import finanzcheck
 
-        context["finanzcheck"] = finanzcheck.anzeige(paper)
+        # Hat ein Gremium mit Änderungen beschlossen, können die Zahlen der Vorlage abweichen (Hinweis im Finanzcheck)
+        mit_aenderungen = any(
+            finanzcheck.mit_aenderungen_beschlossen(beratung.get("result")) for beratung in consultations
+        )
+        context["finanzcheck"] = finanzcheck.anzeige(paper, mit_aenderungen=mit_aenderungen)
 
         # SEO-Kontext
         from ..seo import get_paper_seo

@@ -8,9 +8,10 @@ Vorlage. Der Kontextprozessor ``rahmen_kontext`` gibt den Wert als ``work_neues_
 ``work/base_work.html`` erweitert damit entweder den neuen (``work/base_work_neu.html``) oder den bisherigen Rahmen
 (``work/base_work_alt.html``). Der bisherige Rahmen bleibt unverändert, bis Sven den neuen freigibt.
 
-Navigation des neuen Rahmens: kompakte Seitenleiste mit Start, Sitzungen, Interne Sitzungen, Dokumente, Aufgaben,
-Team und Recherche, darunter Einstellungen, Hilfe und die Person (Entscheidung im Issue vom 06.10.2026: kompakt, aber
-„Fraktionssitzungen“ als eigener Eintrag, im Kern die bisherige Gliederung). Welcher Bereich aktiv ist, folgt aus dem
+Navigation des neuen Rahmens: kompakte Seitenleiste mit Start, Kalender, Sitzungen, Interne Sitzungen, Dokumente,
+Aufgaben, Team und Recherche, darunter Einstellungen, Hilfe und die Person (Entscheidung im Issue vom 06.10.2026: kompakt, aber
+„Fraktionssitzungen“ als eigener Eintrag, im Kern die bisherige Gliederung; der Kalender ist seit Issue #1548 ein eigener
+Bereich, keine Unterseite der Sitzungen, mit seinen Terminen und Terminumfragen). Welcher Bereich aktiv ist, folgt aus dem
 Namen der aufgerufenen Adresse; die rund 70 Seiten brauchen dafür keine eigene Angabe. Sitzungen und Recherche haben
 Reiter über die vorhandenen Listen, die Recherche zusätzlich Unterpunkte in der Seitenleiste (aufklappbar, auf ihren
 Seiten offen). Die Sitzungen der Gremien stehen nur unter „Sitzungen › Alle Gremien“. Jede bisherige Seite bleibt unter
@@ -98,6 +99,7 @@ class Ziel:
 
 BEREICHE: tuple[Ziel, ...] = (
     Ziel("start", "Start", "work:dashboard", "house"),
+    Ziel("kalender", "Kalender", "work:meetings_calendar", "calendar-range"),
     Ziel("sitzungen", "Sitzungen", "work:meetings", "calendar-days"),
     Ziel("fraktionssitzungen", "Interne Sitzungen", "work:faction", "users", kurz="Intern"),
     Ziel("dokumente", "Dokumente", "work:documents", "file-text"),
@@ -180,11 +182,11 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "dashboard": ("start", None, None),
     "dashboard_explicit": ("start", None, None),
     "meetings": ("sitzungen", "fuer_mich", None),
-    "meetings_calendar": ("sitzungen", None, "Kalender"),
-    "termin_neu": ("sitzungen", None, "Neuer Termin"),
-    "termin": ("sitzungen", None, "Termin"),
-    "terminumfrage_neu": ("sitzungen", None, "Neue Terminumfrage"),
-    "terminumfrage": ("sitzungen", None, "Terminumfrage"),
+    "meetings_calendar": ("kalender", None, None),
+    "termin_neu": ("kalender", None, "Neuer Termin"),
+    "termin": ("kalender", None, "Termin"),
+    "terminumfrage_neu": ("kalender", None, "Neue Terminumfrage"),
+    "terminumfrage": ("kalender", None, "Terminumfrage"),
     "session_invitations": ("sitzungen", None, "Ladungen der Verwaltung"),
     "ris_meetings": ("sitzungen", "alle_gremien", None),
     "ris_meeting_detail": ("sitzungen", "alle_gremien", None),
@@ -211,6 +213,7 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
 #: Übrige Seiten nach dem Anfang ihres Adressnamens (Reihenfolge zählt: längere Anfänge zuerst)
 PRAEFIXE: tuple[tuple[str, str, str | None], ...] = (
     ("meeting", "sitzungen", "fuer_mich"),
+    ("termin", "kalender", None),
     ("faction", "fraktionssitzungen", None),
     ("session_invitation", "sitzungen", None),
     # Dokument-Einstellungen liegen unter /organization/documents/ und gehören zu den Einstellungen (Issue #951)

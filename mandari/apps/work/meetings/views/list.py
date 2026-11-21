@@ -88,8 +88,10 @@ class MeetingCalendarView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "meetings"
-        # Arten von Terminen, die die Person sehen darf (Issue #1489); die Auswahl merkt sich der Browser
-        context["kalender_arten"] = kalender.arten_fuer(self.membership)
+        # Arten von Terminen, die die Person sehen darf (Issue #1489); die Auswahl merkt sich der Browser. Sitzungen
+        # eigener und weiterer Gremien getrennt, wenn die Organisation eigene kennt (Issue #1548)
+        eigene = kalender.eigene_gremien(self.organization, self.membership)
+        context["kalender_arten"] = kalender.arten_fuer(self.membership, mit_eigenen_gremien=bool(eigene))
         context["darf_termin_anlegen"] = eigene_termine.darf_anlegen(self.membership)
         # Offene Terminumfragen stehen über dem Kalender, mit dem Hinweis, wo die eigene Antwort fehlt
         context["terminumfragen"] = terminumfrage.offene(self.membership)

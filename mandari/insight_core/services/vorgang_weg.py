@@ -311,7 +311,7 @@ def _beratung(eintrag: Mapping[str, Any], zustand: str, now: datetime) -> Statio
     return Station(
         art=BERATUNG,
         titel=eintrag.get("organization_name") or "Sitzung",
-        datum=eintrag.get("date"),
+        datum=eintrag.get("date") or eintrag.get("expected_date"),
         zustand=zustand,
         href=href,
         detail=_beratung_detail(eintrag, now),
@@ -397,7 +397,8 @@ def stationen(
     """
     Stationen des Vorgangs in zeitlicher Reihenfolge: Vorlage, übergeordnete Vorlagen, Folgevorlagen bzw. Antworten,
     Beratungen und – bei einer Anfrage ohne Antwort – die Lücke „Antwort der Verwaltung“ an der Stelle von heute.
-    Beratungen ohne Termin stehen ebenfalls bei heute, Vorlagen ohne Datum zuletzt. „zuletzt“ trägt die Beratung, auf
+    Geplante Beratungen stehen an ihrem voraussichtlichen Termin oder ohne ihn zuletzt (``consultation_history``),
+    andere Beratungen ohne Termin ebenfalls bei heute, Vorlagen ohne Datum zuletzt. „zuletzt“ trägt die Beratung, auf
     der der Stand-Satz beruht, sobald es mehr als eine Station gibt.
     """
     now = now or timezone.now()
@@ -463,9 +464,11 @@ def stationen(
     heute = _tag(now)
 
     def schluessel(paar: tuple[Station, Any]) -> tuple[date, int]:
-        station = paar[0]
+        station, original = paar
         if station.datum:
             return _tag(station.datum), _RANG[station.art]
+        if original is not None and original.get("planned"):
+            return date.max, _RANG[station.art]
         return (heute if station.art in (BERATUNG, LUECKE) else date.max), _RANG[station.art]
 
     liste.sort(key=schluessel)

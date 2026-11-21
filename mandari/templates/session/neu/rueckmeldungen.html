@@ -21,7 +21,7 @@ MeetingInvitationStatusView.
         <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.organization.name }} · <span class="tabular-nums">{{ meeting.start|date:"l, d.m.Y, H:i" }} Uhr</span></p>
     </c-slot>
     <c-slot name="aktionen">
-        <c-ui.textlink href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-sm">Versand</c-ui.textlink>
+        <c-ui.button href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="send">Versand</c-ui.button>
         <c-ui.button href="{% url 'session:meeting_invitation_proof' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="file-check">Ladungsnachweis (PDF)</c-ui.button>
         {% if is_open and reminders_enabled and reminder_count %}
         <form method="post" action="{% url 'session:meeting_invitation_remind' tenant_slug=tenant_slug meeting_id=meeting.id %}">

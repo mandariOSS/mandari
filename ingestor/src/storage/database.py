@@ -769,14 +769,6 @@ class DatabaseStorage:
         # Gibt es die Zwischentabelle oparl_papers_locations? (None: in diesem Zyklus noch nicht geprüft)
         self._paper_locations_table: bool | None = None
 
-    @property
-    def _consultation_list_cache(self) -> dict[UUID, bool]:
-        """Kommune -> führt eine eigene Beratungsliste (``_lists_consultations``); auch ohne ``__init__`` (Tests)."""
-        cache: dict[UUID, bool] | None = self.__dict__.get("_consultation_lists")
-        if cache is None:
-            cache = self.__dict__["_consultation_lists"] = {}
-        return cache
-
     async def initialize(self) -> None:
         """
         Verify database schema exists.
@@ -1738,7 +1730,6 @@ class DatabaseStorage:
 
             # Cache the UUID
             self._body_uuid_cache[body.external_id] = body_id
-            self._consultation_list_cache[body_id] = bool(body.consultation_list_url)
 
             # Process nested legislative terms; eine Wahlperiode einer anderen Quelle bleibt aus (gezählt)
             for nested in body.nested_entities:
@@ -2230,19 +2221,6 @@ class DatabaseStorage:
 
             return paper_id
 
-    async def _lists_consultations(self, session: AsyncSession, body_id: UUID) -> bool:
-        """
-        Führt die Kommune eine eigene Beratungsliste (``consultation`` bzw. ``consultations`` am Body, OParl 1.1)?
-        Zwischengespeichert; ``upsert_body`` setzt den Wert bei jedem Abgleich der Kommune neu.
-        """
-        known = self._consultation_list_cache.get(body_id)
-        if known is None:
-            found = await session.execute(select(OParlBody.raw_json).where(OParlBody.id == body_id))
-            raw = found.scalar_one_or_none()
-            known = isinstance(raw, dict) and bool(raw.get("consultation") or raw.get("consultations"))
-            self._consultation_list_cache[body_id] = known
-        return known
-
     async def _mark_unlisted_consultations(
         self, session: AsyncSession, paper_id: UUID, paper: ProcessedPaper, body_id: UUID
     ) -> list[UUID]:
@@ -2250,16 +2228,18 @@ class DatabaseStorage:
         Beratungen der Vorlage, die ihre eingebettete Liste nicht mehr nennt, als in der Quelle gelöscht markieren
         (ohne eigenen Commit, in der Transaktion der Vorlage). Liefert die neu markierten Zeilen.
 
-        Nur für Kommunen ohne eigene Beratungsliste (OParl 1.0, etwa more! rubin): Dort kommen Beratungen nur
-        eingebettet in ihre Vorlage, und deren Liste ist vollständig. more! rubin legt bei jeder Änderung einer
-        Vorlage alle ihre Beratungen unter neuen Kennungen an; die alten liefert die Quelle nicht mehr (Einzelabruf:
-        leere Liste). Ohne Markierung blieben sie als Dubletten stehen, die Beratungsfolge zeigte Phantome.
-        Kommunen mit eigener Liste melden gelöschte Beratungen dort (``deleted: true``).
+        Die eingebettete Liste einer Vorlage ist vollständig (OParl: ``Paper.consultation``). more! rubin (OParl 1.0,
+        ohne Beratungsliste am Body) legt bei jeder Änderung einer Vorlage alle ihre Beratungen unter neuen Kennungen
+        an; die alten liefert die Quelle nicht mehr (Einzelabruf: leere Liste). Auch Kommunen mit eigener
+        Beratungsliste melden eine gestrichene Beratung nicht immer dort als gelöscht (``deleted: true``): Die Stadt
+        Münster lässt eine aus der Beratungsfolge gestrichene Beratung einfach weg (Einzelabruf: HTTP 401 wie für
+        jede unbekannte Kennung). Ohne Markierung blieben solche Beratungen stehen, die Beratungsfolge zeigte Phantome.
 
         Die Vorlage muss ``consultation`` als Liste eingebetteter Objekte nennen, jedes mit Kennung; sonst bleibt
         alles, wie es ist (Scraper-Quellen, Vorlagen ohne die Angabe, unlesbare Einträge, bloße Verweise). Ein
         bloßer Verweis brächte keine Beratung mit, deren Upsert eine frühere Markierung aufhöbe. Eine leere Liste
-        markiert alle.
+        markiert alle. Nennt die Vorlage ihren Stand (``modified``), bleibt eine Beratung, die die Quelle danach
+        geändert hat: Die Liste der Vorlage kann sie dann noch nicht kennen.
         Markiert wird wie bei ``mark_entity_deleted``: nur unmarkierte Zeilen der eigenen Quelle, Grund
         ``quelle_geloescht``; eine Rücknahme aus Datenschutzgründen bleibt unberührt. Nennt die Quelle eine solche
         Beratung später wieder, hebt ``upsert_consultation`` die Markierung auf (``_tombstone_update``).
@@ -2273,8 +2253,6 @@ class DatabaseStorage:
             if not isinstance(external_id, str) or not external_id:
                 return []
             external_ids.append(external_id)
-        if await self._lists_consultations(session, body_id):
-            return []
         now = datetime.now(UTC)
         conditions = [
             OParlConsultation.paper_id == paper_id,
@@ -2283,6 +2261,13 @@ class DatabaseStorage:
         ]
         if external_ids:
             conditions.append(OParlConsultation.external_id.not_in(external_ids))
+        if paper.oparl_modified is not None:
+            conditions.append(
+                or_(
+                    OParlConsultation.oparl_modified.is_(None),
+                    OParlConsultation.oparl_modified <= paper.oparl_modified,
+                )
+            )
         result = await session.execute(
             update(OParlConsultation)
             .where(*conditions)
