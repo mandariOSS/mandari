@@ -1112,3 +1112,44 @@ class TestBefundeCodeRabbit1552:
         )
         assert [s.text for s in _haushalt(getrennt).segmente][0] == "Anteil am Bau"
         assert [s.text for s in _haushalt(DOKUMENT).segmente][0] == "Anteil am Bau, auf 40 Jahre verteilt"
+
+    def test_bauanteil_aus_anderer_anlage_ohne_jahre(self) -> None:
+        """Jahressumme und Nutzungsdauer in Anlage B, Abschreibung in Anlage A: Summe ja, „auf 40 Jahre“ nein."""
+        daten = finanzcheck.pruefen(ANTWORT, DOKUMENT).daten
+        for zeile in daten["laufend"]:
+            bau = zeile["posten"] in ("wertverlust", "foerderanteil")
+            zeile["dokumente"] = ["Anlage A"] if bau else ["Anlage B"]
+        daten["laufend_gesamt"]["dokumente"] = ["Anlage B"]
+        daten["nutzungsdauer"]["dokumente"] = ["Anlage B"]
+        paper = SimpleNamespace(
+            pk=1, body=SimpleNamespace(name="Stadt Münster"), finanzcheck={"status": "ok", "daten": daten}
+        )
+        anzeige = finanzcheck.anzeige(paper)
+        assert anzeige is not None and anzeige.karten is not None and anzeige.karten.haushalt is not None
+        assert anzeige.karten.haushalt.segmente[0].text == "Anteil am Bau"
+        assert "Zusammen" in anzeige.karten.haushalt.text
+
+
+def test_gleichnamige_anlagen_bekommen_eigene_namen() -> None:
+    from insight_core.models import OParlFile
+
+    kommune = _kommune()
+    vorgang = _vorgang(kommune, text="Beschlussvorlage")
+    for nummer in (1, 2):
+        OParlFile.objects.create(
+            external_id=f"{vorgang.external_id}/anlage-{nummer}",
+            body=kommune,
+            paper=vorgang,
+            name="Anlage Folgekosten",
+            download_url=f"{vorgang.external_id}/anlage-{nummer}.pdf",
+            mime_type="application/pdf",
+            text_extraction_status="completed",
+            text_content=f"Folgelasten {nummer}",
+        )
+    text = finanzcheck.dokumente_lesen(vorgang.files.all())
+    material = finanzcheck._Material(text)
+    assert material.dokumente("Folgelasten 1") != material.dokumente("Folgelasten 2")
+    assert sorted(material.dokumente("Folgelasten 1") + material.dokumente("Folgelasten 2")) == [
+        "Anlage Folgekosten",
+        "Anlage Folgekosten (2)",
+    ]
