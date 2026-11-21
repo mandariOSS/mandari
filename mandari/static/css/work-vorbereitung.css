@@ -8,350 +8,348 @@
    ist ein- oder ausgeklappt, und der neue Rahmen (#852) bringt eine eigene. Ab 90rem Tagesordnung mit Titeln links,
    ab 60rem als schmale Leiste aus Nummern und Stand (ausklappbar), darunter ein TOP je Bildschirm mit Blättern für
    Tagesordnung, Unterlagen und Position. */
-@layer utilities {
-  /* Die Seite füllt die Höhe unter der Kopfzeile des Rahmens; nur die Bereiche darin scrollen */
-  .work-main:has(.vb) { height: 100dvh; min-height: 0; }
-  .work-page-content:has(> .vb) { padding: 0; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  /* Demo-Hinweis (fest unten links) nicht über die Leiste legen */
-  body:has(.vb-leiste) #demo-hinweis { bottom: 60px; }
+/* Die Seite füllt die Höhe unter der Kopfzeile des Rahmens; nur die Bereiche darin scrollen */
+.work-main:has(.vb) { height: 100dvh; min-height: 0; }
+.work-page-content:has(> .vb) { padding: 0; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* Demo-Hinweis (fest unten links) nicht über die Leiste legen */
+body:has(.vb-leiste) #demo-hinweis { bottom: 60px; }
 
-  .vb {
-    container: vb / inline-size;
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    background: var(--wf-flaeche);
-    font-size: 14px;
-    line-height: 1.45;
+.vb {
+  container: vb / inline-size;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--wf-flaeche);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.vb-rand { padding: 24px 32px; }
+.vb-seitentitel { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+.vb-leer-text { color: var(--wf-text2); margin: 0 0 12px; }
+.vb-leer-text.klein { font-size: 13px; padding: 8px 0; }
+.vb .leise { color: var(--wf-text2); font-weight: 400; }
+.vb .leise svg { width: 12px; height: 12px; display: inline; vertical-align: -1px; }
+
+/* ---------- Kleine Bausteine der Vorbereitung ---------- */
+.vb-klein-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wf-text2); }
+.vb-feldname { display: block; font-size: 13px; font-weight: 500; margin: 0 0 6px; }
+.vb-zahl-klein { font-size: 12px; font-weight: 500; color: var(--wf-text3); font-variant-numeric: tabular-nums; }
+.vb-punkt-hinweis { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--wf-work); margin-left: 5px; vertical-align: 2px; }
+.vb-platz { flex: 1 1 auto; min-width: 0; }
+.vb-ikon { display: inline-flex; }
+.vb-ikon svg { width: 14px; height: 14px; }
+.vb-warn { color: var(--wf-enth); font-weight: 500; }
+.vb-noe { color: var(--wf-abl); font-weight: 500; }
+.vb .wer { display: flex; align-items: baseline; gap: 6px; margin: 0; font-size: 12.5px; }
+.vb .wer b { font-weight: 600; }
+.vb .wer span { color: var(--wf-text3); }
+.vb .text { margin: 2px 0 0; font-size: 14px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+.vb-loeschen {
+  margin-left: auto; min-width: 24px; min-height: 24px; display: inline-grid; place-items: center; padding: 0;
+  border: 0; border-radius: 4px; background: none; color: var(--wf-text3); cursor: pointer;
+}
+.vb-loeschen:hover { color: var(--wf-abl); background: var(--wf-grau-hell); }
+.vb-loeschen svg { width: 14px; height: 14px; }
+
+/* ---------- Kopf ---------- */
+.vb-kopf { flex: none; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; border-bottom: 1px solid var(--wf-linie); min-width: 0; }
+.vb-kopf-titel { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.vb-kopf-titel h1 { margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vb-kopf-meta { font-size: 13px; color: var(--wf-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vb-gespeichert { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; font-size: 12px; color: var(--wf-text3); white-space: nowrap; }
+.vb-gespeichert.fehler { color: var(--wf-abl); }
+.vb-hinweis { flex: none; margin: 0; padding: 6px 16px; font-size: 13px; color: var(--wf-warn); background: var(--wf-warn-flaeche); border-bottom: 1px solid var(--wf-linie); }
+
+/* ---------- Fläche ---------- */
+.vb-flaeche { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; }
+.vb-fokus { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+/* Tagesordnung (Zeilen: .wf-tl-zeile) */
+.vb-liste { display: none; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--wf-flaeche); border-right: 1px solid var(--wf-linie); padding-bottom: 8px; }
+.vb-liste-kopf { position: sticky; top: 0; z-index: 2; background: var(--wf-flaeche); padding: 8px 12px 6px; }
+.vb-liste-kopf input { width: 100%; height: 30px; font-size: 13px; }
+.vb-tl-text { min-width: 0; }
+.vb-tl-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: 11.5px; color: var(--wf-text3); }
+.vb-tl-meta > span { display: inline-flex; align-items: center; gap: 2px; }
+.vb-tl-meta svg { width: 12px; height: 12px; }
+.vb-liste-fuss { margin: 0; padding: 12px 14px 4px; font-size: 12px; color: var(--wf-text3); }
+.vb-liste-auf { display: none; }
+
+/* Kopf des TOPs mit Beratungsverlauf (c-work.beratungsverlauf) */
+.vb-mobil-nav, .vb-mobil-unterlagen { display: none; }
+.vb-topkopf { flex: none; display: flex; align-items: flex-start; gap: 16px; padding: 10px 20px 10px 24px; min-width: 0; }
+.vb-topkopf-text { flex: 1 1 auto; min-width: 0; }
+.vb-top-zeile2 { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 2px 0 0; font-size: 13.5px; color: var(--wf-text2); }
+.vb-top-hinweis { margin: 4px 0 0; font-size: 13px; color: var(--wf-warn); }
+.vb-folge { display: flex; align-items: baseline; gap: 2px 10px; margin-top: 6px; font-size: 13.5px; }
+.vb-folge ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 18px; }
+.vb-folge li[aria-current="true"] { font-weight: 600; }
+.vb-folge a { color: var(--wf-tinte); }
+.vb-mehr { flex: none; margin-top: 4px; font-size: 13px; }
+
+.vb-arbeit { flex: 1 1 auto; min-height: 0; display: block; }
+
+/* Unterlagen (Reiter: .wf-reiterleiste, .wf-reiter) */
+.vb-unterlagen { display: none; flex-direction: column; min-height: 0; min-width: 0; background: var(--wf-flaeche); }
+.vb-blatt-kopf { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--wf-linie); }
+.vb-blatt-kopf h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.vb-blatt-kopf.sichtbar, .blatt-offen > .vb-blatt-kopf, .blatt-offen > .vb-liste-kopf > .vb-blatt-kopf { display: flex; }
+.vb-liste-kopf > .vb-blatt-kopf { padding: 0 0 6px; border: 0; }
+/* Die Vorbereitung rechnet den Überlauf selbst (sichtbareUnterlagen): Reiter dürfen schrumpfen */
+.vb-unterlagen .wf-reiter [role="tab"] { flex: 0 1 auto; min-width: 0; }
+.vb-unterlagen .wf-reiter .txt { max-width: 14rem; }
+.vb-weitere {
+  display: inline-flex; align-items: center; gap: 4px; height: 100%; max-width: 15rem; padding: 0 4px; border: 0;
+  border-bottom: 2px solid transparent; background: none; color: var(--wf-text2); font-size: 13.5px; white-space: nowrap; cursor: pointer;
+}
+.vb-weitere:hover { color: var(--wf-tinte); }
+.vb-weitere.aktiv { color: var(--wf-tinte); font-weight: 600; border-bottom-color: var(--wf-tinte); }
+.vb-weitere .txt { overflow: hidden; text-overflow: ellipsis; }
+.vb-weitere svg { width: 14px; height: 14px; flex: none; }
+.vb-werkzeuge { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
+.vb-werkzeuge-pdf { display: contents; }
+.vb-unterlage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.vb-unterlage-meta { flex: none; display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0; padding: 6px 20px; font-size: 12.5px; color: var(--wf-text2); border-bottom: 1px solid var(--wf-linie); }
+.vb-unterlage-koerper { flex: 1 1 auto; min-height: 0; display: flex; position: relative; }
+.vb-blatt { flex: 1 1 auto; min-width: 0; overflow: auto; background: var(--wf-papier); outline-offset: -2px; }
+.vb-blatt.leer { display: none; }
+.vb-seiten { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px 24px 40px; min-width: min-content; --scale-round-x: 1px; --scale-round-y: 1px; }
+.vb-seite { position: relative; flex: none; background: #fff; box-shadow: 0 1px 3px rgba(17, 24, 39, .14); }
+.vb-seite canvas { display: block; width: 100%; height: 100%; }
+.vb-laden { position: absolute; top: 0; left: 0; margin: 16px 24px; font-size: 13px; color: var(--wf-text2); }
+.vb-unterlage-leer {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  padding: 24px; text-align: center; color: var(--wf-text2); background: var(--wf-flaeche);
+}
+.vb-unterlage-leer p { margin: 0; max-width: 32rem; }
+.vb-unterlage-leer .name { color: var(--wf-tinte); font-weight: 600; overflow-wrap: anywhere; }
+
+/* Textebene von pdf.js (nach web/pdf_viewer.css, nur was die Blattansicht braucht): Text markieren und suchen */
+.vb-seite .textLayer {
+  position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-align: initial; letter-spacing: normal; word-spacing: normal;
+  -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; z-index: 0;
+  --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.vb-seite .textLayer span, .vb-seite .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.vb-seite .textLayer > :not(.markedContent), .vb-seite .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.vb-seite .textLayer .markedContent { display: contents; }
+.vb-seite .textLayer ::selection { background: rgb(79 70 229 / .28); }
+.vb-seite .textLayer br::selection { background: transparent; }
+.vb-seite .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+
+/* Anmerkungen zur Seite */
+.vb-anmerkungen { flex: none; width: 17rem; display: flex; flex-direction: column; min-height: 0; background: var(--wf-flaeche); border-left: 1px solid var(--wf-linie); }
+.vb-anm-kopf { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border-bottom: 1px solid var(--wf-linie); }
+.vb-anm-kopf h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.vb-anm-kopf .leise { margin-right: auto; font-size: 12px; }
+.vb-anm-liste { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 12px; }
+.vb-anm-liste ul { list-style: none; margin: 2px 0 10px; padding: 0; }
+.vb-anm-liste li { padding: 6px 0; border-bottom: 1px solid var(--wf-linie); }
+.vb-anm-liste .text { font-size: 13px; }
+.vb-anm-neu { flex: none; display: grid; gap: 6px; padding: 8px 12px 12px; border-top: 1px solid var(--wf-linie); }
+.vb-anm-neu textarea { font-size: 13.5px; resize: none; }
+.vb-anm-seite { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wf-text2); }
+.vb-anm-seite input { width: 4.5rem; height: 28px; }
+
+/* Arbeit der Fraktion: Reiter wie die Unterlagen (.wf-reiter), hier mit Kennfarbe und Rollen in schmalen Spalten */
+.vb-feld { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--wf-flaeche); }
+.vb-reiter { flex: none; display: flex; gap: 18px; min-height: 40px; padding: 0 16px 0 20px; border-bottom: 1px solid var(--wf-linie); overflow-x: auto; scrollbar-width: none; }
+.vb-reiter [role="tab"] { font-size: 14px; }
+.vb-reiter [role="tab"][aria-selected="true"] { color: var(--wf-tinte); font-weight: 600; border-bottom-color: var(--wf-work); }
+.vb-reiter .vb-zahl-klein { margin-left: 2px; }
+.vb-reiter .kurz { display: none; }
+.vb-feld-koerper { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.vb-feld-inhalt { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 14px 20px 16px; }
+.vb-feld-inhalt > .vb-feldname ~ .vb-feldname { margin-top: 16px; }
+.vb-feld-inhalt textarea.wf-eingabe { font-size: 15px; }
+.vb-wachsend { flex: 1 1 auto; min-height: 12rem; resize: none; }
+.vb-feld-inhalt > select.wf-auswahl { align-self: flex-start; min-width: 14rem; }
+
+.vb-diskussion { overflow: hidden; padding-bottom: 12px; }
+.vb-live { flex: none; margin: 0 0 4px; min-height: 16px; font-size: 12px; color: var(--wf-text3); }
+.vb-live-punkt { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--wf-zust); margin-right: 5px; vertical-align: 1px; }
+.vb-beitraege { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.vb-beitraege li { padding: 10px 0; border-top: 1px solid var(--wf-linie); }
+.vb-beitraege li:first-child { border-top: 0; }
+.vb-beitraege li.position { padding-left: 10px; box-shadow: inset 2px 0 0 var(--wf-work); }
+.vb-beitraege .zusatz { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 4px 0 0; font-size: 12px; color: var(--wf-text3); }
+.vb-marke { color: var(--wf-work-text); font-weight: 600; }
+.vb-schreiben { flex: none; padding-top: 10px; border-top: 1px solid var(--wf-linie); }
+.vb-feld-inhalt .vb-schreiben textarea.wf-eingabe { font-size: 14px; resize: none; }
+.vb-schreiben-fuss { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+
+/* Redebeitrag (Werkzeugleiste: .wf-wz-knopf, .wf-wz-trenn) */
+.vb-rede { gap: 10px; }
+.vb-rede-verknuepft { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--wf-work-flaeche); font-size: 13px; }
+.vb-rede-verknuepft svg { width: 14px; height: 14px; margin-top: 3px; flex: none; }
+.vb-rede-editor { flex: 1 1 auto; min-height: 14rem; display: flex; flex-direction: column; border: 1px solid var(--wf-linie-stark); border-radius: 6px; overflow: hidden; }
+.vb-rede-editor.nur-lesen { background: var(--wf-grau-hell); }
+.vb-rede-wz { flex: none; display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--wf-linie); }
+.vb-rede-hinweis { flex: none; display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px; font-size: 12.5px; color: var(--wf-text2); border-bottom: 1px solid var(--wf-linie); }
+.vb-rede-hinweis svg { width: 14px; height: 14px; }
+.vb-rede-text { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 14px; cursor: text; }
+.vb-rede-text .ProseMirror { min-height: 100%; outline: none; font-size: 15px; line-height: 1.6; }
+.vb-rede-text .ProseMirror p { margin: 0 0 .6em; }
+.vb-rede-text .ProseMirror ul { list-style: disc; padding-left: 1.4em; margin: 0 0 .6em; }
+.vb-rede-text .ProseMirror ol { list-style: decimal; padding-left: 1.4em; margin: 0 0 .6em; }
+.vb-rede-text .ProseMirror h1, .vb-rede-text .ProseMirror h2 { font-size: 1.15em; font-weight: 600; margin: .8em 0 .4em; }
+.vb-rede-text .ProseMirror h3 { font-size: 1.05em; font-weight: 600; margin: .8em 0 .4em; }
+.vb-rede-text .ProseMirror blockquote { border-left: 3px solid var(--wf-linie-stark); padding-left: .75rem; color: var(--wf-text2); margin: 0 0 .6em; }
+.vb-rede-text .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--wf-text3); float: left; height: 0; pointer-events: none; }
+.vb-rede-fuss { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 13px; }
+.vb-dauer { width: 4.5rem; text-align: center; }
+.vb-rede-geteilt h3 { margin: 4px 0; font-size: 13px; font-weight: 600; }
+.vb-rede-geteilt ul { list-style: none; margin: 0; padding: 0; }
+.vb-rede-geteilt li { padding: 6px 0; border-top: 1px solid var(--wf-linie); font-size: 13px; }
+.vb-rede-geteilt p { margin: 2px 0 0; color: var(--wf-text2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Aufgaben aus dem TOP (.wf-aufgaben, .wf-aufgabe-neu) */
+.vb-fehler { margin: 0; font-size: 13px; color: var(--wf-abl); }
+
+/* ---------- Leiste unten (.wf-leiste mit .wf-nachbarn) ---------- */
+.vb-leiste { flex-wrap: wrap; }
+.vb-leiste-position { display: flex; align-items: center; gap: 8px 10px; min-width: 0; }
+.vb-positionen { display: flex; gap: 4px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.vb-pos {
+  position: relative; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px; border-radius: 6px;
+  border: 1px solid var(--wf-linie-stark); background: var(--wf-flaeche); font-size: 13.5px; white-space: nowrap; cursor: pointer;
+}
+.vb-pos:hover { background: var(--wf-grau-hell); }
+.vb-pos input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.vb-pos:has(input:checked) { border-color: var(--wf-work); background: var(--wf-work-flaeche); font-weight: 600; }
+.vb-pos:has(input:focus-visible) { outline: 2px solid var(--wf-work); outline-offset: 2px; }
+.vb-andere { width: 9.5rem; }
+.vb-pos-mobil { display: none; }
+.vb-stand { margin-left: auto; font-size: 13px; color: var(--wf-text2); white-space: nowrap; }
+.vb-stand .kurz { display: none; }
+/* TOP-Wechsel bis 90rem mit Rahmen und nur der Nummer, breiter mit Titel und ohne Rahmen */
+.vb .wf-nachbar { height: 36px; border-color: var(--wf-linie-stark); }
+.vb .wf-nachbar small, .vb .wf-nachbar .t { display: none; }
+
+/* Blätter, Schleier, Dialoge (Inhalt: .wf-dialog) */
+.vb-schleier { position: fixed; inset: 0; z-index: 60; background: rgba(17, 24, 39, .32); }
+.vb-pos-blatt { display: none; }
+.wf-dialog .vb-feldname { margin-top: 14px; }
+.vb-dialog-text { min-height: 14rem; margin-top: 8px; font-size: 15px; }
+.vb-legende { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.vb-legende li { display: flex; align-items: center; gap: 10px; }
+.vb-legende svg { width: 16px; height: 16px; color: var(--wf-text2); }
+.vb-datei { font-size: 13.5px; }
+.vb-link-zeile { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
+
+.vb-nur-schmal { display: none; }
+.wf-menue > .vb-nur-schmal { display: none; }
+
+/* ---------- Ab 60rem: Unterlagen | Arbeit, Tagesordnung als schmale Leiste (ausklappbar) ---------- */
+@container vb (min-width: 60rem) {
+  .vb-flaeche { grid-template-columns: 3.5rem minmax(0, 1fr); }
+  .vb-liste { display: flex; }
+  .vb-arbeit { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(20rem, 1fr); border-top: 1px solid var(--wf-linie); }
+  /* TOP ohne Unterlagen: keine leere Spalte, die Arbeit nimmt die Breite (Anlage hinzufügen steht im Kopf) */
+  .vb-arbeit.ohne-unterlagen { grid-template-columns: minmax(0, 1fr); }
+  .vb-arbeit.ohne-unterlagen .vb-unterlagen { display: none; }
+  .vb-arbeit.ohne-unterlagen .vb-feld-inhalt { max-width: 72rem; }
+  .vb-arbeit.ohne-unterlagen .vb-reiter, .vb-arbeit.ohne-unterlagen .vb-feld-inhalt { padding-left: 24px; }
+  .vb-unterlagen { display: flex; border-right: 1px solid var(--wf-linie); }
+  .vb-liste.blatt-offen {
+    position: absolute; top: 0; bottom: 0; left: 0; width: min(22rem, 85%); z-index: 61;
+    box-shadow: 8px 0 24px rgba(17, 24, 39, .14);
   }
-  .vb-rand { padding: 24px 32px; }
-  .vb-seitentitel { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
-  .vb-leer-text { color: var(--wf-text2); margin: 0 0 12px; }
-  .vb-leer-text.klein { font-size: 13px; padding: 8px 0; }
-  .vb .leise { color: var(--wf-text2); font-weight: 400; }
-  .vb .leise svg { width: 12px; height: 12px; display: inline; vertical-align: -1px; }
+  .vb-pos-blatt { display: none !important; }
+}
+/* Schmale Leiste: Nummer und Stand je TOP, Titel im Tooltip und für Screenreader; die Leiste unten wird knapper */
+@container vb (min-width: 60rem) and (max-width: 89.99rem) {
+  .vb-liste:not(.blatt-offen) .vb-liste-kopf { display: flex; justify-content: center; padding: 6px 0 2px; }
+  .vb-liste:not(.blatt-offen) .vb-liste-kopf input,
+  .vb-liste:not(.blatt-offen) .wf-tl-gruppe,
+  .vb-liste:not(.blatt-offen) .vb-liste-fuss,
+  .vb-liste:not(.blatt-offen) .vb-tl-meta { display: none; }
+  .vb-liste:not(.blatt-offen) .vb-liste-auf { display: inline-flex; }
+  .vb-liste:not(.blatt-offen) .wf-tl-zeile { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; font-size: 12.5px; }
+  .vb-liste:not(.blatt-offen) .wf-tl-zeile .nr { text-align: center; }
+  .vb-liste:not(.blatt-offen) .vb-tl-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .vb-liste:not(.blatt-offen) .wf-tl-zeile > .wf-punkt { margin-top: 0; }
+  .vb-leiste .beschriftung { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .vb-andere { width: 7.5rem; }
+  .vb-stand .lang, .vb-reiter .lang { display: none; }
+  .vb-stand .kurz, .vb-reiter .kurz { display: inline; }
+  /* Fünf Reiter (mit Aufgaben) passen in die schmale Spalte: engerer Abstand, Bedienschrift 13 px */
+  .vb-reiter { gap: 12px; padding: 0 12px; }
+  .vb-reiter [role="tab"] { font-size: 13px; }
+  .vb .wf-aufgabe-neu { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+/* ---------- Ab 90rem: Tagesordnung mit Titeln links, TOP-Wechsel mit Titel ---------- */
+@container vb (min-width: 90rem) {
+  .vb-flaeche { grid-template-columns: clamp(15rem, 12cqw, 19rem) minmax(0, 1fr); }
+  .vb-arbeit { grid-template-columns: minmax(0, 1.2fr) minmax(22rem, 1fr); }
+  .vb-liste, .vb-liste.blatt-offen { position: static; width: auto; box-shadow: none; }
+  .vb-liste .vb-blatt-kopf { display: none !important; }
+  .vb-schleier { display: none !important; }
+  .vb .wf-nachbar { height: 40px; border-color: transparent; max-width: clamp(10rem, 13cqw, 20rem); }
+  .vb .wf-nachbar small { display: block; }
+  .vb .wf-nachbar .t { display: inline; }
+  .vb-topkopf, .vb .wf-reiterleiste { padding-left: 28px; }
+}
+/* Sehr breit: großzügigere Ränder, Arbeit etwas breiter (Notizen höher und breiter, Svens Rückmeldung) */
+@container vb (min-width: 120rem) {
+  .vb-arbeit { grid-template-columns: minmax(0, 1.15fr) minmax(26rem, 1fr); }
+  .vb-feld-inhalt { padding: 16px 28px 20px; }
+  .vb-reiter { padding-left: 28px; }
+}
 
-  /* ---------- Kleine Bausteine der Vorbereitung ---------- */
-  .vb-klein-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wf-text2); }
-  .vb-feldname { display: block; font-size: 13px; font-weight: 500; margin: 0 0 6px; }
-  .vb-zahl-klein { font-size: 12px; font-weight: 500; color: var(--wf-text3); font-variant-numeric: tabular-nums; }
-  .vb-punkt-hinweis { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--wf-work); margin-left: 5px; vertical-align: 2px; }
-  .vb-platz { flex: 1 1 auto; min-width: 0; }
-  .vb-ikon { display: inline-flex; }
-  .vb-ikon svg { width: 14px; height: 14px; }
-  .vb-warn { color: var(--wf-enth); font-weight: 500; }
-  .vb-noe { color: var(--wf-abl); font-weight: 500; }
-  .vb .wer { display: flex; align-items: baseline; gap: 6px; margin: 0; font-size: 12.5px; }
-  .vb .wer b { font-weight: 600; }
-  .vb .wer span { color: var(--wf-text3); }
-  .vb .text { margin: 2px 0 0; font-size: 14px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
-  .vb-loeschen {
-    margin-left: auto; min-width: 24px; min-height: 24px; display: inline-grid; place-items: center; padding: 0;
-    border: 0; border-radius: 4px; background: none; color: var(--wf-text3); cursor: pointer;
+/* ---------- Unter 60rem (Handy, schmale Fenster): ein TOP je Bildschirm, Blätter von unten ---------- */
+@container vb (max-width: 59.99rem) {
+  .vb-nur-breit, .vb-liste-fuss { display: none; }
+  .vb-gespeichert:not(.fehler) .vb-speichertext { display: none; }
+  .wf-menue > .vb-nur-schmal { display: flex; }
+  .vb-kopf-meta { display: none; }
+  .vb-fokus { overflow-y: auto; }
+  .vb-mobil-nav {
+    display: flex; align-items: center; gap: 4px; padding: 4px 8px; position: sticky; top: 0; z-index: 3;
+    background: var(--wf-flaeche); border-bottom: 1px solid var(--wf-linie);
   }
-  .vb-loeschen:hover { color: var(--wf-abl); background: var(--wf-grau-hell); }
-  .vb-loeschen svg { width: 14px; height: 14px; }
-
-  /* ---------- Kopf ---------- */
-  .vb-kopf { flex: none; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; border-bottom: 1px solid var(--wf-linie); min-width: 0; }
-  .vb-kopf-titel { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-  .vb-kopf-titel h1 { margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .vb-kopf-meta { font-size: 13px; color: var(--wf-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .vb-gespeichert { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; font-size: 12px; color: var(--wf-text3); white-space: nowrap; }
-  .vb-gespeichert.fehler { color: var(--wf-abl); }
-  .vb-hinweis { flex: none; margin: 0; padding: 6px 16px; font-size: 13px; color: var(--wf-warn); background: var(--wf-warn-flaeche); border-bottom: 1px solid var(--wf-linie); }
-
-  /* ---------- Fläche ---------- */
-  .vb-flaeche { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; }
-  .vb-fokus { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-
-  /* Tagesordnung (Zeilen: .wf-tl-zeile) */
-  .vb-liste { display: none; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--wf-flaeche); border-right: 1px solid var(--wf-linie); padding-bottom: 8px; }
-  .vb-liste-kopf { position: sticky; top: 0; z-index: 2; background: var(--wf-flaeche); padding: 8px 12px 6px; }
-  .vb-liste-kopf input { width: 100%; height: 30px; font-size: 13px; }
-  .vb-tl-text { min-width: 0; }
-  .vb-tl-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: 11.5px; color: var(--wf-text3); }
-  .vb-tl-meta > span { display: inline-flex; align-items: center; gap: 2px; }
-  .vb-tl-meta svg { width: 12px; height: 12px; }
-  .vb-liste-fuss { margin: 0; padding: 12px 14px 4px; font-size: 12px; color: var(--wf-text3); }
-  .vb-liste-auf { display: none; }
-
-  /* Kopf des TOPs mit Beratungsverlauf (c-work.beratungsverlauf) */
-  .vb-mobil-nav, .vb-mobil-unterlagen { display: none; }
-  .vb-topkopf { flex: none; display: flex; align-items: flex-start; gap: 16px; padding: 10px 20px 10px 24px; min-width: 0; }
-  .vb-topkopf-text { flex: 1 1 auto; min-width: 0; }
-  .vb-top-zeile2 { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 2px 0 0; font-size: 13.5px; color: var(--wf-text2); }
-  .vb-top-hinweis { margin: 4px 0 0; font-size: 13px; color: var(--wf-warn); }
-  .vb-folge { display: flex; align-items: baseline; gap: 2px 10px; margin-top: 6px; font-size: 13.5px; }
-  .vb-folge ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 18px; }
-  .vb-folge li[aria-current="true"] { font-weight: 600; }
-  .vb-folge a { color: var(--wf-tinte); }
-  .vb-mehr { flex: none; margin-top: 4px; font-size: 13px; }
-
-  .vb-arbeit { flex: 1 1 auto; min-height: 0; display: block; }
-
-  /* Unterlagen (Reiter: .wf-reiterleiste, .wf-reiter) */
-  .vb-unterlagen { display: none; flex-direction: column; min-height: 0; min-width: 0; background: var(--wf-flaeche); }
-  .vb-blatt-kopf { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--wf-linie); }
-  .vb-blatt-kopf h2 { margin: 0; font-size: 15px; font-weight: 600; }
-  .vb-blatt-kopf.sichtbar, .blatt-offen > .vb-blatt-kopf, .blatt-offen > .vb-liste-kopf > .vb-blatt-kopf { display: flex; }
-  .vb-liste-kopf > .vb-blatt-kopf { padding: 0 0 6px; border: 0; }
-  /* Die Vorbereitung rechnet den Überlauf selbst (sichtbareUnterlagen): Reiter dürfen schrumpfen */
-  .vb-unterlagen .wf-reiter [role="tab"] { flex: 0 1 auto; min-width: 0; }
-  .vb-unterlagen .wf-reiter .txt { max-width: 14rem; }
-  .vb-weitere {
-    display: inline-flex; align-items: center; gap: 4px; height: 100%; max-width: 15rem; padding: 0 4px; border: 0;
-    border-bottom: 2px solid transparent; background: none; color: var(--wf-text2); font-size: 13.5px; white-space: nowrap; cursor: pointer;
+  .vb-mobil-stand { font-size: 13px; color: var(--wf-text2); padding-right: 8px; }
+  .vb-topkopf { padding: 12px 16px 8px; }
+  .vb .wf-verlauf { display: block; margin-top: 8px; }
+  .vb .wf-verlauf-h { margin-bottom: 2px; }
+  .vb .wf-verlauf li { white-space: normal; }
+  .vb-folge { display: block; }
+  .vb-mobil-unterlagen { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 12px; scrollbar-width: none; }
+  .vb-mobil-unterlagen .wf-knopf { height: 40px; flex: none; max-width: 78vw; }
+  .vb-mobil-unterlagen .wf-knopf span { overflow: hidden; text-overflow: ellipsis; }
+  .vb-feld { border-top: 1px solid var(--wf-linie); }
+  /* Fünf Reiter passen ab 390 px nebeneinander (Bedienschrift 13 px); darunter scrollt die Leiste zum gewählten */
+  .vb-reiter { padding: 0 12px; gap: 10px; }
+  .vb-reiter [role="tab"] { font-size: 13px; padding: 0; }
+  .vb-feld-inhalt { overflow: visible; padding: 14px 16px 20px; }
+  .vb-diskussion { overflow: visible; }
+  .vb-wachsend { min-height: 11rem; }
+  .vb-rede-editor { min-height: 16rem; }
+  .vb-liste.blatt-offen, .vb-unterlagen.blatt-offen, .vb-pos-blatt {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 61; border-radius: 12px 12px 0 0; border: 0;
+    background: var(--wf-flaeche); box-shadow: 0 -8px 24px rgba(17, 24, 39, .14);
   }
-  .vb-weitere:hover { color: var(--wf-tinte); }
-  .vb-weitere.aktiv { color: var(--wf-tinte); font-weight: 600; border-bottom-color: var(--wf-tinte); }
-  .vb-weitere .txt { overflow: hidden; text-overflow: ellipsis; }
-  .vb-weitere svg { width: 14px; height: 14px; flex: none; }
-  .vb-werkzeuge { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
-  .vb-werkzeuge-pdf { display: contents; }
-  .vb-unterlage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  .vb-unterlage-meta { flex: none; display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0; padding: 6px 20px; font-size: 12.5px; color: var(--wf-text2); border-bottom: 1px solid var(--wf-linie); }
-  .vb-unterlage-koerper { flex: 1 1 auto; min-height: 0; display: flex; position: relative; }
-  .vb-blatt { flex: 1 1 auto; min-width: 0; overflow: auto; background: var(--wf-papier); outline-offset: -2px; }
-  .vb-blatt.leer { display: none; }
-  .vb-seiten { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px 24px 40px; min-width: min-content; --scale-round-x: 1px; --scale-round-y: 1px; }
-  .vb-seite { position: relative; flex: none; background: #fff; box-shadow: 0 1px 3px rgba(17, 24, 39, .14); }
-  .vb-seite canvas { display: block; width: 100%; height: 100%; }
-  .vb-laden { position: absolute; top: 0; left: 0; margin: 16px 24px; font-size: 13px; color: var(--wf-text2); }
-  .vb-unterlage-leer {
-    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
-    padding: 24px; text-align: center; color: var(--wf-text2); background: var(--wf-flaeche);
-  }
-  .vb-unterlage-leer p { margin: 0; max-width: 32rem; }
-  .vb-unterlage-leer .name { color: var(--wf-tinte); font-weight: 600; overflow-wrap: anywhere; }
-
-  /* Textebene von pdf.js (nach web/pdf_viewer.css, nur was die Blattansicht braucht): Text markieren und suchen */
-  .vb-seite .textLayer {
-    position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-align: initial; letter-spacing: normal; word-spacing: normal;
-    -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; z-index: 0;
-    --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size));
-  }
-  .vb-seite .textLayer span, .vb-seite .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
-  .vb-seite .textLayer > :not(.markedContent), .vb-seite .textLayer .markedContent span:not(.markedContent) {
-    z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height));
-    --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
-  }
-  .vb-seite .textLayer .markedContent { display: contents; }
-  .vb-seite .textLayer ::selection { background: rgb(79 70 229 / .28); }
-  .vb-seite .textLayer br::selection { background: transparent; }
-  .vb-seite .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
-
-  /* Anmerkungen zur Seite */
-  .vb-anmerkungen { flex: none; width: 17rem; display: flex; flex-direction: column; min-height: 0; background: var(--wf-flaeche); border-left: 1px solid var(--wf-linie); }
-  .vb-anm-kopf { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border-bottom: 1px solid var(--wf-linie); }
-  .vb-anm-kopf h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
-  .vb-anm-kopf .leise { margin-right: auto; font-size: 12px; }
-  .vb-anm-liste { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 12px; }
-  .vb-anm-liste ul { list-style: none; margin: 2px 0 10px; padding: 0; }
-  .vb-anm-liste li { padding: 6px 0; border-bottom: 1px solid var(--wf-linie); }
-  .vb-anm-liste .text { font-size: 13px; }
-  .vb-anm-neu { flex: none; display: grid; gap: 6px; padding: 8px 12px 12px; border-top: 1px solid var(--wf-linie); }
-  .vb-anm-neu textarea { font-size: 13.5px; resize: none; }
-  .vb-anm-seite { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wf-text2); }
-  .vb-anm-seite input { width: 4.5rem; height: 28px; }
-
-  /* Arbeit der Fraktion: Reiter wie die Unterlagen (.wf-reiter), hier mit Kennfarbe und Rollen in schmalen Spalten */
-  .vb-feld { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--wf-flaeche); }
-  .vb-reiter { flex: none; display: flex; gap: 18px; min-height: 40px; padding: 0 16px 0 20px; border-bottom: 1px solid var(--wf-linie); overflow-x: auto; scrollbar-width: none; }
-  .vb-reiter [role="tab"] { font-size: 14px; }
-  .vb-reiter [role="tab"][aria-selected="true"] { color: var(--wf-tinte); font-weight: 600; border-bottom-color: var(--wf-work); }
-  .vb-reiter .vb-zahl-klein { margin-left: 2px; }
-  .vb-reiter .kurz { display: none; }
-  .vb-feld-koerper { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  .vb-feld-inhalt { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 14px 20px 16px; }
-  .vb-feld-inhalt > .vb-feldname ~ .vb-feldname { margin-top: 16px; }
-  .vb-feld-inhalt textarea.wf-eingabe { font-size: 15px; }
-  .vb-wachsend { flex: 1 1 auto; min-height: 12rem; resize: none; }
-  .vb-feld-inhalt > select.wf-auswahl { align-self: flex-start; min-width: 14rem; }
-
-  .vb-diskussion { overflow: hidden; padding-bottom: 12px; }
-  .vb-live { flex: none; margin: 0 0 4px; min-height: 16px; font-size: 12px; color: var(--wf-text3); }
-  .vb-live-punkt { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--wf-zust); margin-right: 5px; vertical-align: 1px; }
-  .vb-beitraege { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  .vb-beitraege li { padding: 10px 0; border-top: 1px solid var(--wf-linie); }
-  .vb-beitraege li:first-child { border-top: 0; }
-  .vb-beitraege li.position { padding-left: 10px; box-shadow: inset 2px 0 0 var(--wf-work); }
-  .vb-beitraege .zusatz { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 4px 0 0; font-size: 12px; color: var(--wf-text3); }
-  .vb-marke { color: var(--wf-work-text); font-weight: 600; }
-  .vb-schreiben { flex: none; padding-top: 10px; border-top: 1px solid var(--wf-linie); }
-  .vb-feld-inhalt .vb-schreiben textarea.wf-eingabe { font-size: 14px; resize: none; }
-  .vb-schreiben-fuss { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
-
-  /* Redebeitrag (Werkzeugleiste: .wf-wz-knopf, .wf-wz-trenn) */
-  .vb-rede { gap: 10px; }
-  .vb-rede-verknuepft { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--wf-work-flaeche); font-size: 13px; }
-  .vb-rede-verknuepft svg { width: 14px; height: 14px; margin-top: 3px; flex: none; }
-  .vb-rede-editor { flex: 1 1 auto; min-height: 14rem; display: flex; flex-direction: column; border: 1px solid var(--wf-linie-stark); border-radius: 6px; overflow: hidden; }
-  .vb-rede-editor.nur-lesen { background: var(--wf-grau-hell); }
-  .vb-rede-wz { flex: none; display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--wf-linie); }
-  .vb-rede-hinweis { flex: none; display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px; font-size: 12.5px; color: var(--wf-text2); border-bottom: 1px solid var(--wf-linie); }
-  .vb-rede-hinweis svg { width: 14px; height: 14px; }
-  .vb-rede-text { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 14px; cursor: text; }
-  .vb-rede-text .ProseMirror { min-height: 100%; outline: none; font-size: 15px; line-height: 1.6; }
-  .vb-rede-text .ProseMirror p { margin: 0 0 .6em; }
-  .vb-rede-text .ProseMirror ul { list-style: disc; padding-left: 1.4em; margin: 0 0 .6em; }
-  .vb-rede-text .ProseMirror ol { list-style: decimal; padding-left: 1.4em; margin: 0 0 .6em; }
-  .vb-rede-text .ProseMirror h1, .vb-rede-text .ProseMirror h2 { font-size: 1.15em; font-weight: 600; margin: .8em 0 .4em; }
-  .vb-rede-text .ProseMirror h3 { font-size: 1.05em; font-weight: 600; margin: .8em 0 .4em; }
-  .vb-rede-text .ProseMirror blockquote { border-left: 3px solid var(--wf-linie-stark); padding-left: .75rem; color: var(--wf-text2); margin: 0 0 .6em; }
-  .vb-rede-text .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--wf-text3); float: left; height: 0; pointer-events: none; }
-  .vb-rede-fuss { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 13px; }
-  .vb-dauer { width: 4.5rem; text-align: center; }
-  .vb-rede-geteilt h3 { margin: 4px 0; font-size: 13px; font-weight: 600; }
-  .vb-rede-geteilt ul { list-style: none; margin: 0; padding: 0; }
-  .vb-rede-geteilt li { padding: 6px 0; border-top: 1px solid var(--wf-linie); font-size: 13px; }
-  .vb-rede-geteilt p { margin: 2px 0 0; color: var(--wf-text2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-
-  /* Aufgaben aus dem TOP (.wf-aufgaben, .wf-aufgabe-neu) */
-  .vb-fehler { margin: 0; font-size: 13px; color: var(--wf-abl); }
-
-  /* ---------- Leiste unten (.wf-leiste mit .wf-nachbarn) ---------- */
-  .vb-leiste { flex-wrap: wrap; }
-  .vb-leiste-position { display: flex; align-items: center; gap: 8px 10px; min-width: 0; }
-  .vb-positionen { display: flex; gap: 4px; border: 0; margin: 0; padding: 0; min-width: 0; }
-  .vb-pos {
-    position: relative; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px; border-radius: 6px;
-    border: 1px solid var(--wf-linie-stark); background: var(--wf-flaeche); font-size: 13.5px; white-space: nowrap; cursor: pointer;
-  }
-  .vb-pos:hover { background: var(--wf-grau-hell); }
-  .vb-pos input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
-  .vb-pos:has(input:checked) { border-color: var(--wf-work); background: var(--wf-work-flaeche); font-weight: 600; }
-  .vb-pos:has(input:focus-visible) { outline: 2px solid var(--wf-work); outline-offset: 2px; }
-  .vb-andere { width: 9.5rem; }
-  .vb-pos-mobil { display: none; }
-  .vb-stand { margin-left: auto; font-size: 13px; color: var(--wf-text2); white-space: nowrap; }
-  .vb-stand .kurz { display: none; }
-  /* TOP-Wechsel bis 90rem mit Rahmen und nur der Nummer, breiter mit Titel und ohne Rahmen */
-  .vb .wf-nachbar { height: 36px; border-color: var(--wf-linie-stark); }
-  .vb .wf-nachbar small, .vb .wf-nachbar .t { display: none; }
-
-  /* Blätter, Schleier, Dialoge (Inhalt: .wf-dialog) */
-  .vb-schleier { position: fixed; inset: 0; z-index: 60; background: rgba(17, 24, 39, .32); }
-  .vb-pos-blatt { display: none; }
-  .wf-dialog .vb-feldname { margin-top: 14px; }
-  .vb-dialog-text { min-height: 14rem; margin-top: 8px; font-size: 15px; }
-  .vb-legende { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
-  .vb-legende li { display: flex; align-items: center; gap: 10px; }
-  .vb-legende svg { width: 16px; height: 16px; color: var(--wf-text2); }
-  .vb-datei { font-size: 13.5px; }
-  .vb-link-zeile { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
-
-  .vb-nur-schmal { display: none; }
-  .wf-menue > .vb-nur-schmal { display: none; }
-
-  /* ---------- Ab 60rem: Unterlagen | Arbeit, Tagesordnung als schmale Leiste (ausklappbar) ---------- */
-  @container vb (min-width: 60rem) {
-    .vb-flaeche { grid-template-columns: 3.5rem minmax(0, 1fr); }
-    .vb-liste { display: flex; }
-    .vb-arbeit { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(20rem, 1fr); border-top: 1px solid var(--wf-linie); }
-    /* TOP ohne Unterlagen: keine leere Spalte, die Arbeit nimmt die Breite (Anlage hinzufügen steht im Kopf) */
-    .vb-arbeit.ohne-unterlagen { grid-template-columns: minmax(0, 1fr); }
-    .vb-arbeit.ohne-unterlagen .vb-unterlagen { display: none; }
-    .vb-arbeit.ohne-unterlagen .vb-feld-inhalt { max-width: 72rem; }
-    .vb-arbeit.ohne-unterlagen .vb-reiter, .vb-arbeit.ohne-unterlagen .vb-feld-inhalt { padding-left: 24px; }
-    .vb-unterlagen { display: flex; border-right: 1px solid var(--wf-linie); }
-    .vb-liste.blatt-offen {
-      position: absolute; top: 0; bottom: 0; left: 0; width: min(22rem, 85%); z-index: 61;
-      box-shadow: 8px 0 24px rgba(17, 24, 39, .14);
-    }
-    .vb-pos-blatt { display: none !important; }
-  }
-  /* Schmale Leiste: Nummer und Stand je TOP, Titel im Tooltip und für Screenreader; die Leiste unten wird knapper */
-  @container vb (min-width: 60rem) and (max-width: 89.99rem) {
-    .vb-liste:not(.blatt-offen) .vb-liste-kopf { display: flex; justify-content: center; padding: 6px 0 2px; }
-    .vb-liste:not(.blatt-offen) .vb-liste-kopf input,
-    .vb-liste:not(.blatt-offen) .wf-tl-gruppe,
-    .vb-liste:not(.blatt-offen) .vb-liste-fuss,
-    .vb-liste:not(.blatt-offen) .vb-tl-meta { display: none; }
-    .vb-liste:not(.blatt-offen) .vb-liste-auf { display: inline-flex; }
-    .vb-liste:not(.blatt-offen) .wf-tl-zeile { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; font-size: 12.5px; }
-    .vb-liste:not(.blatt-offen) .wf-tl-zeile .nr { text-align: center; }
-    .vb-liste:not(.blatt-offen) .vb-tl-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    .vb-liste:not(.blatt-offen) .wf-tl-zeile > .wf-punkt { margin-top: 0; }
-    .vb-leiste .beschriftung { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    .vb-andere { width: 7.5rem; }
-    .vb-stand .lang, .vb-reiter .lang { display: none; }
-    .vb-stand .kurz, .vb-reiter .kurz { display: inline; }
-    /* Fünf Reiter (mit Aufgaben) passen in die schmale Spalte: engerer Abstand, Bedienschrift 13 px */
-    .vb-reiter { gap: 12px; padding: 0 12px; }
-    .vb-reiter [role="tab"] { font-size: 13px; }
-    .vb .wf-aufgabe-neu { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  }
-  /* ---------- Ab 90rem: Tagesordnung mit Titeln links, TOP-Wechsel mit Titel ---------- */
-  @container vb (min-width: 90rem) {
-    .vb-flaeche { grid-template-columns: clamp(15rem, 12cqw, 19rem) minmax(0, 1fr); }
-    .vb-arbeit { grid-template-columns: minmax(0, 1.2fr) minmax(22rem, 1fr); }
-    .vb-liste, .vb-liste.blatt-offen { position: static; width: auto; box-shadow: none; }
-    .vb-liste .vb-blatt-kopf { display: none !important; }
-    .vb-schleier { display: none !important; }
-    .vb .wf-nachbar { height: 40px; border-color: transparent; max-width: clamp(10rem, 13cqw, 20rem); }
-    .vb .wf-nachbar small { display: block; }
-    .vb .wf-nachbar .t { display: inline; }
-    .vb-topkopf, .vb .wf-reiterleiste { padding-left: 28px; }
-  }
-  /* Sehr breit: großzügigere Ränder, Arbeit etwas breiter (Notizen höher und breiter, Svens Rückmeldung) */
-  @container vb (min-width: 120rem) {
-    .vb-arbeit { grid-template-columns: minmax(0, 1.15fr) minmax(26rem, 1fr); }
-    .vb-feld-inhalt { padding: 16px 28px 20px; }
-    .vb-reiter { padding-left: 28px; }
-  }
-
-  /* ---------- Unter 60rem (Handy, schmale Fenster): ein TOP je Bildschirm, Blätter von unten ---------- */
-  @container vb (max-width: 59.99rem) {
-    .vb-nur-breit, .vb-liste-fuss { display: none; }
-    .vb-gespeichert:not(.fehler) .vb-speichertext { display: none; }
-    .wf-menue > .vb-nur-schmal { display: flex; }
-    .vb-kopf-meta { display: none; }
-    .vb-fokus { overflow-y: auto; }
-    .vb-mobil-nav {
-      display: flex; align-items: center; gap: 4px; padding: 4px 8px; position: sticky; top: 0; z-index: 3;
-      background: var(--wf-flaeche); border-bottom: 1px solid var(--wf-linie);
-    }
-    .vb-mobil-stand { font-size: 13px; color: var(--wf-text2); padding-right: 8px; }
-    .vb-topkopf { padding: 12px 16px 8px; }
-    .vb .wf-verlauf { display: block; margin-top: 8px; }
-    .vb .wf-verlauf-h { margin-bottom: 2px; }
-    .vb .wf-verlauf li { white-space: normal; }
-    .vb-folge { display: block; }
-    .vb-mobil-unterlagen { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 12px; scrollbar-width: none; }
-    .vb-mobil-unterlagen .wf-knopf { height: 40px; flex: none; max-width: 78vw; }
-    .vb-mobil-unterlagen .wf-knopf span { overflow: hidden; text-overflow: ellipsis; }
-    .vb-feld { border-top: 1px solid var(--wf-linie); }
-    /* Fünf Reiter passen ab 390 px nebeneinander (Bedienschrift 13 px); darunter scrollt die Leiste zum gewählten */
-    .vb-reiter { padding: 0 12px; gap: 10px; }
-    .vb-reiter [role="tab"] { font-size: 13px; padding: 0; }
-    .vb-feld-inhalt { overflow: visible; padding: 14px 16px 20px; }
-    .vb-diskussion { overflow: visible; }
-    .vb-wachsend { min-height: 11rem; }
-    .vb-rede-editor { min-height: 16rem; }
-    .vb-liste.blatt-offen, .vb-unterlagen.blatt-offen, .vb-pos-blatt {
-      position: fixed; left: 0; right: 0; bottom: 0; z-index: 61; border-radius: 12px 12px 0 0; border: 0;
-      background: var(--wf-flaeche); box-shadow: 0 -8px 24px rgba(17, 24, 39, .14);
-    }
-    .vb-liste.blatt-offen { display: flex; max-height: 82dvh; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
-    .vb-unterlagen.blatt-offen { display: flex; height: 88dvh; }
-    .vb-unterlagen.blatt-offen .wf-reiterleiste { padding-left: 12px; }
-    .vb-anmerkungen { position: absolute; top: 0; right: 0; bottom: 0; width: min(17rem, 90%); box-shadow: -8px 0 24px rgba(17, 24, 39, .12); }
-    .vb-pos-blatt { display: block; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
-    .vb-pos-blatt-inhalt { display: grid; gap: 14px; padding: 12px 16px 8px; }
-    .vb-positionen.senkrecht { flex-direction: column; gap: 6px; }
-    .vb-positionen.senkrecht .vb-pos, .vb-positionen.senkrecht select { height: 44px; width: 100%; font-size: 15px; }
-    .vb-leiste { flex-wrap: nowrap; gap: 8px; padding-left: 12px; }
-    .vb-leiste-position, .vb-stand { display: none; }
-    .vb-pos-mobil { display: inline-flex; flex: 1 1 auto; justify-content: flex-start; height: 40px; min-width: 0; overflow: hidden; }
-    .vb-pos-mobil b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
-    .vb .wf-nachbar { height: 40px; width: 44px; justify-content: center; padding: 0; }
-    .vb .wf-nachbar > span { display: none; }
-    .vb-link-zeile { grid-template-columns: minmax(0, 1fr); }
-    .vb-reiter .lang { display: none; }
-    .vb-reiter .kurz { display: inline; }
-    .vb .wf-aufgabe-neu { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-    .vb .wf-aufgabe-neu input, .vb .wf-aufgabe-neu select, .vb .wf-aufgabe-neu .wf-knopf { height: 40px; }
-  }
+  .vb-liste.blatt-offen { display: flex; max-height: 82dvh; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .vb-unterlagen.blatt-offen { display: flex; height: 88dvh; }
+  .vb-unterlagen.blatt-offen .wf-reiterleiste { padding-left: 12px; }
+  .vb-anmerkungen { position: absolute; top: 0; right: 0; bottom: 0; width: min(17rem, 90%); box-shadow: -8px 0 24px rgba(17, 24, 39, .12); }
+  .vb-pos-blatt { display: block; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .vb-pos-blatt-inhalt { display: grid; gap: 14px; padding: 12px 16px 8px; }
+  .vb-positionen.senkrecht { flex-direction: column; gap: 6px; }
+  .vb-positionen.senkrecht .vb-pos, .vb-positionen.senkrecht select { height: 44px; width: 100%; font-size: 15px; }
+  .vb-leiste { flex-wrap: nowrap; gap: 8px; padding-left: 12px; }
+  .vb-leiste-position, .vb-stand { display: none; }
+  .vb-pos-mobil { display: inline-flex; flex: 1 1 auto; justify-content: flex-start; height: 40px; min-width: 0; overflow: hidden; }
+  .vb-pos-mobil b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .vb .wf-nachbar { height: 40px; width: 44px; justify-content: center; padding: 0; }
+  .vb .wf-nachbar > span { display: none; }
+  .vb-link-zeile { grid-template-columns: minmax(0, 1fr); }
+  .vb-reiter .lang { display: none; }
+  .vb-reiter .kurz { display: inline; }
+  .vb .wf-aufgabe-neu { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .vb .wf-aufgabe-neu input, .vb .wf-aufgabe-neu select, .vb .wf-aufgabe-neu .wf-knopf { height: 40px; }
 }

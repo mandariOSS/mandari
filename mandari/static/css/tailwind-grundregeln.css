@@ -1,0 +1,64 @@
+/* Grundregeln (bis Tailwind 3 „@layer base“, Issue #1461): direkt nach Preflight, vor allen Bausteinen.
+   Abweichungen der Standardwerte von Tailwind 4, Kennfarbe und Bänder. Import in input.css. */
+
+/* Standardwerte von Tailwind 3, die Tailwind 4 geändert hat */
+*,
+::after,
+::before,
+::backdrop,
+::file-selector-button {
+  border-color: var(--color-gray-200, currentcolor);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-gray-400);
+}
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+dialog {
+  margin: auto;
+}
+
+/* Kennfarbe (Issue #783): Tailwind liest primary-* aus diesen Kanälen (tailwind.config.js).
+   Standard Indigo für Work, Session und Konto; das Bürgerportal (data-portal="insight") ist Grün wie auf
+   mandari.de. Körperschaftsportale setzen ihre eigene Skala im Layout (insight_core/farbskala.py).
+   Grün geprüft: 600 trägt weißen Text (6,1 : 1), 500 auf Weiß 4,5 : 1, 400 auf gray-900 10 : 1. */
+:root {
+  --primary-50: 238 242 255;
+  --primary-100: 224 231 255;
+  --primary-200: 199 210 254;
+  --primary-300: 165 180 252;
+  --primary-400: 129 140 248;
+  --primary-500: 99 102 241;
+  --primary-600: 79 70 229;
+  --primary-700: 67 56 202;
+  --primary-800: 55 48 163;
+  --primary-900: 49 46 129;
+  --primary-950: 30 27 75;
+}
+[data-portal="insight"] {
+  --primary-50: 240 249 243;
+  --primary-100: 226 242 231;
+  --primary-200: 195 229 207;
+  --primary-300: 160 216 181;
+  --primary-400: 134 214 164;
+  --primary-500: 34 135 77;
+  --primary-600: 23 112 63;
+  --primary-700: 18 92 51;
+  --primary-800: 14 74 41;
+  --primary-900: 11 59 33;
+  --primary-950: 5 36 20;
+}
+/* Bänder (Issue #783, Stufe 2): Weiß für Inhalt, kühles Grau für Leiste, Kopf- und Nebenbänder, Tinte für den Fuß */
+:root {
+  --band-hell: 255 255 255;
+  --band-grau: 238 240 244;
+  --band-tinte: 17 24 39;
+}
+.dark {
+  --band-hell: 17 24 39;
+  --band-grau: 24 33 49;
+  --band-tinte: 10 14 24;
+}

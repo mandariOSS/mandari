@@ -1,10 +1,15 @@
-/* Tailwind 4 (Issue #1461), Kaskade wie in Tailwind 3. Dort standen unsere Bausteine (bisher „@layer components“)
-   vor den Utilities, und es entschied die Spezifität: [data-leiste="schmal"] .rahmen-leiste schlug w-60, .karte
-   verlor gegen p-4. In Tailwind 4 sind Ebenen echte CSS-Ebenen; in „components“ verlöre jede Regel gegen jede
-   Utility. Deshalb stehen die Bausteine in derselben Ebene „utilities“, vor den Utilities von Tailwind (ganz unten,
-   @tailwind utilities). Regeln außerhalb von Ebenen gelten wie bisher nach den Utilities.
-   Die Reihenfolge der Ebenen steht vor den Importen: Die Seiten-Stylesheets öffnen ihre Ebene zuerst. */
-@layer theme, base, components, utilities;
+/* Tailwind 4 (Issue #1461) mit der Kaskade von Tailwind 3: ohne CSS-Ebenen, in der Reihenfolge Preflight,
+   Grundregeln, Bausteine (bisher „@layer components“), Utilities, Regeln nach den Utilities. Es entscheidet die
+   Spezifität, dann die Reihenfolge: [data-leiste="schmal"] .rahmen-leiste schlägt w-60, .karte verliert gegen p-4.
+   Mit den Ebenen von Tailwind 4 verlöre jede Regel einer Ebene gegen jede Regel ohne Ebene, auch gegen
+   work-editor.css, Inline-Stile der Vorlagen und Fremd-CSS (Leaflet, FullCalendar); unsere Bausteine verlören
+   zudem gegen jede Utility. Deshalb hier kein „@layer“, auch nicht in den importierten Dateien. */
+
+/* Theme und Preflight von Tailwind ohne Ebene (statt „@import "tailwindcss"“); die Utilities stehen weiter unten */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/preflight.css";
+/* Grundregeln: Standardwerte wie in Tailwind 3, Kennfarbe, Bänder */
+@import "./tailwind-grundregeln.css";
 
 /* Gemeinsame Bausteine der Arbeitsflächen (vor den Seiten, die sie ergänzen) */
 @import "./work-flaeche.css";
@@ -18,9 +23,6 @@
 /* space-y-* und divide-* wie in Tailwind 3 (Erklärung in der Datei) */
 @import "./tailwind3-abstaende.css";
 
-/* Tailwind ohne „@import "tailwindcss"“: Theme und Preflight hier, die Utilities am Ende der Datei */
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/preflight.css" layer(base);
 /* Klassen nur aus diesen Quellen, wie bisher (content in tailwind.config.js); source(none) steht unten */
 @source "../../templates";
 @source "../js";
@@ -76,117 +78,877 @@
   --breakpoint-lg: 1024px;
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
-}
-
-/* Standardwerte von Tailwind 3, die Tailwind 4 geändert hat */
-@layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
-  }
-  input::placeholder,
-  textarea::placeholder {
-    color: var(--color-gray-400);
-  }
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
-    cursor: pointer;
-  }
-  dialog {
-    margin: auto;
-  }
-}
-
-/* Kennfarbe (Issue #783): Tailwind liest primary-* aus diesen Kanälen (tailwind.config.js).
-   Standard Indigo für Work, Session und Konto; das Bürgerportal (data-portal="insight") ist Grün wie auf
-   mandari.de. Körperschaftsportale setzen ihre eigene Skala im Layout (insight_core/farbskala.py).
-   Grün geprüft: 600 trägt weißen Text (6,1 : 1), 500 auf Weiß 4,5 : 1, 400 auf gray-900 10 : 1. */
-@layer base {
-  :root {
-    --primary-50: 238 242 255;
-    --primary-100: 224 231 255;
-    --primary-200: 199 210 254;
-    --primary-300: 165 180 252;
-    --primary-400: 129 140 248;
-    --primary-500: 99 102 241;
-    --primary-600: 79 70 229;
-    --primary-700: 67 56 202;
-    --primary-800: 55 48 163;
-    --primary-900: 49 46 129;
-    --primary-950: 30 27 75;
-  }
-  [data-portal="insight"] {
-    --primary-50: 240 249 243;
-    --primary-100: 226 242 231;
-    --primary-200: 195 229 207;
-    --primary-300: 160 216 181;
-    --primary-400: 134 214 164;
-    --primary-500: 34 135 77;
-    --primary-600: 23 112 63;
-    --primary-700: 18 92 51;
-    --primary-800: 14 74 41;
-    --primary-900: 11 59 33;
-    --primary-950: 5 36 20;
-  }
-  /* Bänder (Issue #783, Stufe 2): Weiß für Inhalt, kühles Grau für Leiste, Kopf- und Nebenbänder, Tinte für den Fuß */
-  :root {
-    --band-hell: 255 255 255;
-    --band-grau: 238 240 244;
-    --band-tinte: 17 24 39;
-  }
-  .dark {
-    --band-hell: 17 24 39;
-    --band-grau: 24 33 49;
-    --band-tinte: 10 14 24;
-  }
+  /* Zeilenhöhen der Schriftgrößen absolut wie in Tailwind 3. Tailwind 4 setzt ein Verhältnis (text-sm: 1.25/0.875);
+     das erben Kinder mit eigener Größe (text-[0.8125rem] in einem text-sm-Block) und bekommen kleinere Zeilen */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
 }
 
 /* Custom styles */
-@layer utilities {
-  /* Smooth scrolling */
-  html {
-    scroll-behavior: smooth;
-  }
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
 
-  /* Custom scrollbar for webkit browsers */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
 
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 
-  ::-webkit-scrollbar-thumb {
-    background: #d1d5db;
-    border-radius: 4px;
-  }
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
 
-  .dark ::-webkit-scrollbar-thumb {
-    background: #4b5563;
-  }
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
-  }
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
 
-  .dark ::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
-  }
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
 }
 
 /* Safe-Area (viewport-fit=cover in Insight und Work): Abstand zum Bildschirmrand mindestens so groß wie Aussparung
    und Home-Indikator. Grundabstand aus --rand (Standard 1rem), z. B. sm:[--rand:1.5rem]. */
-@layer utilities {
-  .rand-sicher {
-    padding: max(var(--rand, 1rem), env(safe-area-inset-top)) max(var(--rand, 1rem), env(safe-area-inset-right))
-      max(var(--rand, 1rem), env(safe-area-inset-bottom)) max(var(--rand, 1rem), env(safe-area-inset-left));
+.rand-sicher {
+  padding: max(var(--rand, 1rem), env(safe-area-inset-top)) max(var(--rand, 1rem), env(safe-area-inset-right))
+    max(var(--rand, 1rem), env(safe-area-inset-bottom)) max(var(--rand, 1rem), env(safe-area-inset-left));
+}
+
+
+/* ---- Neuer Rahmen von Work (Issue #852, templates/work/base_work_neu.html) ------------------------------------
+   Nur unter html[data-rahmen="neu"]; der bisherige Rahmen (work/base_work_alt.html) bringt seine Regeln selbst mit.
+   Kopfzeile, Kopfband, Reiter und Inhalt enden bei derselben Breite wie Insight (116rem samt Rand, #841): Der Rand
+   wächst auf breiten Bildschirmen, damit Inhalt und Kopf mittig stehen und links bündig bleiben – auch auf Seiten,
+   die ihren Kopf selbst setzen. */
+[data-rahmen="neu"] {
+  --rahmen-rand: 1rem;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (min-width: 640px) {
+  [data-rahmen="neu"] {
+    --rahmen-rand: 2rem;
   }
 }
+[data-rahmen="neu"] .rahmen-zeile,
+[data-rahmen="neu"] .work-page-header,
+[data-rahmen="neu"] .work-page-content {
+  padding-inline: max(var(--rahmen-rand), calc((100% - 116rem) / 2 + var(--rahmen-rand)));
+}
+[data-rahmen="neu"] .work-page-header {
+  @apply bg-band-grau py-5;
+}
+[data-rahmen="neu"] .work-page-title {
+  @apply m-0 text-2xl font-bold tracking-tight text-gray-900 dark:text-white break-words;
+}
+[data-rahmen="neu"] .work-page-subtitle {
+  @apply mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-400;
+}
+[data-rahmen="neu"] .work-page-content {
+  @apply flex-1 py-6;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Raumzeichen: Kürzel der Organisation in ihrer Farbe (--raum-farbe aus dem Layout, serverseitig geprüft);
+   die Bedienung bleibt Indigo (Konzept W10). Gemischt mit Tinte bzw. Weiß, damit der Kontrast nicht an der
+   Farbe der Organisation hängt. */
+[data-rahmen="neu"] .raumzeichen {
+  background: color-mix(in srgb, var(--raum-farbe, #4f46e5) 14%, white);
+  color: color-mix(in srgb, var(--raum-farbe, #4f46e5) 50%, #111827);
+}
+[data-rahmen="neu"].dark .raumzeichen {
+  background: color-mix(in srgb, var(--raum-farbe, #4f46e5) 30%, #111827);
+  color: color-mix(in srgb, var(--raum-farbe, #4f46e5) 30%, white);
+}
+
+/* Schmale Leiste (Seitenleiste einklappen, wie im bisherigen Rahmen): nur Symbole, Beschriftungen bleiben für
+   Bildschirmleser. Zustand aus localStorage „sidebarCollapsed“ (frontend/alpine/work-rahmen.ts). */
+@media (min-width: 1024px) {
+  [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste {
+    width: 4rem;
+  }
+  [data-rahmen="neu"][data-leiste="schmal"] .work-main {
+    padding-left: 4rem;
+  }
+  [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-label {
+    @apply sr-only;
+  }
+  [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-eintrag {
+    @apply justify-center px-0;
+  }
+  /* Unterpunkte (Recherche) haben kein Symbol: in der schmalen Leiste führen Bereich und Reiter dorthin. Auch die
+     Zeile mit der Version (Issue #1463) ist nur Text und entfällt */
+  [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-unterpunkte,
+  [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-aufklapper,
+  [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-version {
+    display: none !important;
+  }
+}
+
+/* ---- Textrollen der Arbeitsflächen im neuen Rahmen (Issue #944) ---------------------------------------------------
+   Wiederkehrende Klassenketten der Vorlagen unter templates/session/neu/ an einer Stelle statt in jeder Vorlage
+   (Frontend-Ratchet): Name eines Eintrags in c-rahmen.liste und die Angaben darunter (13 px), Angaben unter dem Titel
+   im Kopfband und eine Zeile aus Feldern und Knopf, unten bündig. Größe und Abstand ergänzt die Vorlage (etwa
+   „text-sm liste-name“, „mt-0.5 liste-angaben“). Beschriftung und Hinweis von Hand gebauter Felder kommen aus den
+   Bausteinen c-form.beschriftung und c-form.hinweis. */
+.liste-name {
+  @apply font-medium text-gray-900 dark:text-white break-words;
+}
+.liste-angaben {
+  @apply text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words;
+}
+.kopf-angaben {
+  @apply flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300;
+}
+.feldzeile {
+  @apply flex flex-wrap items-end gap-2;
+}
+
+/* ---- Abschnittstitel im Bürgerportal (Issue #1261) ------------------------------------------------------------------
+   Überschrift eines Abschnitts unter dem Seitenkopf (Startseite, Kommunenwahl, Vorgang, Tagesordnung, Beschlüsse),
+   an einer Stelle statt als Klassenkette in jeder Vorlage (Frontend-Ratchet). Abstände ergänzt die Vorlage. */
+.abschnitt-titel {
+  @apply text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white;
+}
+
+/* ---- Umschalter im Bürgerportal (Issue #1270) -------------------------------------------------------------------------
+   Eine Wahl im Umschalter der Gremiengruppe (Beschlüsse: Alle, Rat und Ausschüsse, Bezirksvertretungen): ein Label um
+   ein unsichtbares Optionsfeld, gewählt hell hinterlegt, Fokus als Rahmen. Am Handy teilen sich die Wahlen die Breite,
+   jede mindestens 44 px hoch. */
+.umschalter-wahl {
+  @apply flex-1 sm:flex-none inline-flex min-h-11 cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-3 text-[0.9375rem] text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white;
+  @apply has-[:checked]:bg-primary-100 has-[:checked]:font-semibold has-[:checked]:text-primary-900 dark:has-[:checked]:bg-primary-900/50 dark:has-[:checked]:text-primary-100;
+  @apply has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-primary-600;
+}
+
+/* ---- Antragseditor, neue Ansicht (Teil von #856, templates/work/motions/editor_neu.html) ----------------------
+   Svens Wahl E1+E2 (05.10.2026): eine Kopfzeile (Titel, Stand, Menü, Ablaufleiste), eine Werkzeugleiste, darunter
+   Gliederung | Text | Kommentare am Rand. Der Text nutzt die Breite (Lesespalte 46rem, ab 1.800 px 40em bei 17 px),
+   der Rand wächst mit, damit auf breiten Bildschirmen keine großen Leerflächen bleiben (#841). Alles unter .ke-editor;
+   die Grundstile des Editors (Marken, Tabellen, Popups) kommen weiter aus _editor_styles.html. */
+.ke-editor {
+  --ke-dok: 16px;
+  --ke-linie: #e4e7ec;
+  --ke-linie-stark: #cdd2da;
+  --ke-gruen: #15803d;
+  --ke-vorschlag: #e3f4e8;
+  @apply bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.dark .ke-editor {
+  --ke-linie: #273244;
+  --ke-linie-stark: #3b4659;
+  --ke-gruen: #4ade80;
+  --ke-vorschlag: rgba(74, 222, 128, 0.18);
+}
+
+/* Kopf: Titelblock links, Ablaufleiste in der Mitte, Personen und „Weitere“ rechts */
+.ke-kopf {
+  @apply relative z-30 flex-none bg-white dark:bg-gray-900;
+  border-bottom: 1px solid var(--ke-linie);
+  container: ke-kopf / inline-size;
+  /* Ersetzt die Kopfzeile des Rahmens (editor_neu.html): Aussparung oben am Handy wie dort */
+  padding-top: env(safe-area-inset-top, 0px);
+}
+/* Der Kopf ist ein eigener Stapelkontext: Offene Menüs lägen sonst unter den Popups im Text (.comment-popup, z-index 45, #1018) */
+.ke-editor.ke-menue-offen .ke-kopf {
+  z-index: 46;
+}
+.ke-kopfzeile {
+  @apply flex items-center gap-3 px-3 pt-1.5 min-w-0 lg:px-4;
+}
+.ke-symbol {
+  @apply w-8 h-8 flex-none items-center justify-center rounded-md text-primary-600 hover:bg-gray-100 dark:text-primary-400 dark:hover:bg-gray-800;
+}
+.ke-titelblock {
+  @apply min-w-0 flex-1;
+}
+.ke-titelzeile {
+  @apply flex items-center gap-2.5 min-w-0;
+}
+.ke-titel {
+  @apply h-7 min-w-0 rounded border border-transparent bg-transparent px-1 -ml-1 text-[15px] text-gray-900 dark:text-gray-100;
+  flex: 0 1 auto;
+  text-overflow: ellipsis;
+  max-width: 40rem;
+}
+@supports (field-sizing: content) {
+  .ke-titel {
+    field-sizing: content;
+    min-width: 8rem;
+  }
+}
+input.ke-titel:hover {
+  border-color: var(--ke-linie-stark);
+}
+input.ke-titel:focus {
+  @apply outline-none ring-2 ring-primary-600 border-transparent;
+}
+.ke-titel-text {
+  @apply truncate font-normal leading-7;
+}
+.ke-stand {
+  @apply inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[12.5px] font-medium whitespace-nowrap bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800;
+  border: 1px solid var(--ke-linie-stark);
+}
+.ke-punkt {
+  @apply inline-block w-2 h-2 rounded-full bg-primary-600;
+}
+.ke-punkt[data-stand="draft"],
+.ke-punkt[data-stand="review"] {
+  @apply bg-transparent;
+  box-shadow: inset 0 0 0 1.5px #6b7280;
+}
+.ke-punkt[data-stand="internal_review"],
+.ke-punkt[data-stand="external_review"] {
+  @apply bg-amber-600;
+}
+.ke-punkt[data-stand="approved"],
+.ke-punkt[data-stand="adopted"],
+.ke-punkt[data-stand="completed"] {
+  background: var(--ke-gruen);
+}
+.ke-punkt[data-stand="rejected"],
+.ke-punkt[data-stand="withdrawn"] {
+  @apply bg-red-600;
+}
+.ke-punkt[data-stand="archived"] {
+  @apply bg-gray-400;
+}
+.ke-gespeichert {
+  @apply items-center gap-1 h-6 px-1 rounded text-xs text-gray-500 whitespace-nowrap hover:text-gray-900 dark:text-gray-400 dark:hover:text-white;
+}
+.ke-gespeichert span {
+  @apply inline-flex items-center gap-1;
+}
+.ke-menueleiste {
+  @apply items-center h-[26px] -ml-1.5;
+}
+.ke-leistenpunkt {
+  @apply h-6 px-1.5 rounded text-[13px] text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800;
+}
+.ke-leistenpunkt[aria-expanded="true"] {
+  @apply bg-gray-100 dark:bg-gray-800;
+}
+
+/* Ablaufleiste: jede Stufe ein Knopf; erledigt grün mit Haken, aktuell Indigo */
+.ke-stufen {
+  @apply flex-none items-center gap-1 list-none p-0 m-0;
+}
+.ke-stufe {
+  @apply flex items-center gap-1 min-w-0;
+}
+.ke-stufe-linie {
+  @apply block w-7 flex-none;
+  height: 1.5px;
+  background: var(--ke-linie-stark);
+}
+.ke-stufe[data-zustand="erledigt"] + .ke-stufe .ke-stufe-linie,
+.ke-stufe[data-zustand="erledigt"] .ke-stufe-linie {
+  background: var(--ke-gruen);
+}
+.ke-stufe-knopf {
+  @apply flex items-center gap-2 min-h-[36px] px-1 py-0.5 rounded-md text-left hover:bg-gray-50 dark:hover:bg-gray-800;
+}
+.ke-kreis {
+  @apply grid place-items-center w-[22px] h-[22px] flex-none rounded-full text-xs font-semibold bg-white text-gray-600 dark:bg-gray-900 dark:text-gray-300;
+  border: 1.5px solid #c3c8d1;
+}
+.ke-stufe-name {
+  @apply block text-[13.5px] font-semibold whitespace-nowrap text-gray-600 dark:text-gray-400;
+}
+.ke-stufe-unter {
+  @apply block text-xs font-normal whitespace-nowrap text-gray-500 dark:text-gray-400;
+}
+[data-zustand="aktuell"] > .ke-stufe-knopf .ke-kreis,
+[data-zustand="aktuell"] > .ke-kreis {
+  @apply bg-primary-600 border-primary-600 text-white;
+}
+[data-zustand="aktuell"] .ke-stufe-name {
+  @apply text-gray-900 dark:text-white;
+}
+[data-zustand="erledigt"] .ke-kreis {
+  border-color: var(--ke-gruen);
+  color: var(--ke-gruen);
+}
+[data-zustand="erledigt"] .ke-stufe-name {
+  @apply font-medium text-gray-900 dark:text-gray-100;
+}
+/* Je nach Breite der Kopfzeile (nicht des Fensters, die Leiste des Rahmens ist verschieden breit): erst die
+   Untertitel der übrigen Stufen weg, dann deren Namen (bleiben für Bildschirmleser), zuletzt alle Untertitel.
+   Vorrang hat der Titel. */
+@container ke-kopf (max-width: 1499px) {
+  .ke-stufe:not([data-jetzt]) .ke-stufe-unter {
+    display: none;
+  }
+  .ke-stufe-linie {
+    width: 1rem;
+  }
+}
+@container ke-kopf (max-width: 1199px) {
+  .ke-stufe:not([data-jetzt]) .ke-stufe-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .ke-gespeichert span {
+    font-size: 0;
+    gap: 0;
+  }
+}
+@container ke-kopf (max-width: 999px) {
+  .ke-stufe-unter {
+    display: none;
+  }
+  .ke-stufe-linie {
+    width: 0.5rem;
+  }
+}
+.ke-personen {
+  @apply items-center gap-1 flex-none;
+}
+.ke-av {
+  @apply inline-grid place-items-center w-6 h-6 flex-none rounded-full text-[10.5px] font-semibold bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200;
+}
+.ke-av-ich {
+  @apply bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200;
+}
+.ke-offline {
+  @apply ml-1 text-xs text-red-600 dark:text-red-400;
+}
+
+/* Ablauf am Handy: Fortschritt, Stufe, Stand */
+.ke-ablauf-mobil {
+  @apply px-3 pb-1.5;
+}
+.ke-ablauf-mobil-knopf {
+  @apply flex items-center gap-3 w-full min-h-[44px] text-left;
+}
+.ke-ablauf-mobil-knopf small {
+  @apply text-xs text-gray-600 dark:text-gray-400;
+}
+.ke-fortschritt {
+  @apply flex gap-1 flex-none;
+}
+.ke-fortschritt span {
+  @apply block w-4 h-1 rounded-full bg-gray-300 dark:bg-gray-700;
+}
+.ke-fortschritt span[data-zustand="erledigt"] {
+  background: var(--ke-gruen);
+}
+.ke-fortschritt span[data-zustand="aktuell"] {
+  @apply bg-primary-600;
+}
+
+/* Menüs */
+.ke-menue {
+  @apply absolute left-0 top-full z-50 mt-1 py-1 min-w-[15rem] overflow-y-auto rounded-md bg-white shadow-lg text-[13.5px] dark:bg-gray-800;
+  border: 1px solid var(--ke-linie);
+  /* Rollt lieber selbst, als unten abgeschnitten zu werden: Abzug für den Kopf mit Werkzeugleiste und die Leiste am Handy (#1018) */
+  max-height: 70vh;
+  max-height: min(70dvh, calc(100dvh - 14rem));
+}
+.ke-menue-breit {
+  @apply min-w-[19rem];
+}
+.ke-menue-rechts {
+  @apply left-auto right-0;
+}
+.ke-mp {
+  @apply flex w-full items-center gap-2.5 min-h-[32px] px-3 py-1 text-left text-gray-800 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:bg-gray-700;
+}
+.ke-mp > i,
+.ke-mp > svg {
+  @apply w-4 h-4 flex-none text-gray-500 dark:text-gray-400;
+}
+.ke-mp[disabled] {
+  @apply cursor-default text-gray-400 hover:bg-transparent dark:text-gray-500;
+}
+.ke-mp[aria-checked="true"] {
+  @apply font-medium text-primary-700 dark:text-primary-300;
+}
+.ke-mp[aria-checked="true"] > i,
+.ke-mp[aria-checked="true"] > svg {
+  @apply text-primary-600 dark:text-primary-400;
+}
+.ke-mp small {
+  @apply block text-xs font-normal text-gray-500 dark:text-gray-400;
+}
+/* Mindestens 4,5:1 auch auf der hervorgehobenen Zeile (hover/focus: gray-100 bzw. dunkel gray-700) */
+.ke-mp kbd,
+.ke-hinweis {
+  @apply ml-auto pl-4 font-sans text-xs font-normal text-gray-600 dark:text-gray-300;
+}
+.ke-mp-jetzt {
+  @apply font-medium text-primary-700 dark:text-primary-300;
+}
+.ke-mp-gefahr {
+  @apply text-red-700 dark:text-red-400;
+}
+.ke-trenn {
+  @apply my-1;
+  border-top: 1px solid var(--ke-linie);
+}
+.ke-menue-gruppe {
+  @apply px-3 pt-2 pb-1 text-xs font-medium text-gray-500 dark:text-gray-400;
+}
+.ke-menue-hinweis {
+  @apply flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400;
+}
+.ke-ablaufliste {
+  @apply m-0 px-3 pb-2 list-none;
+}
+.ke-ablaufliste li {
+  @apply flex items-start gap-2.5 py-1;
+}
+.ke-ablaufliste b {
+  @apply block font-semibold;
+}
+.ke-ablaufliste small {
+  @apply block text-xs text-gray-600 dark:text-gray-400;
+}
+.ke-farben {
+  @apply grid grid-cols-6 gap-1.5 px-3 pb-2;
+}
+.ke-farbe {
+  @apply w-6 h-6 rounded-full border-2 border-transparent;
+  background: #374151;
+}
+.ke-farbe[aria-pressed="true"] {
+  @apply ring-2 ring-offset-1 ring-primary-600 dark:ring-offset-gray-800;
+}
+
+/* Werkzeugleiste: eine Leiste, 40 px */
+.ke-werkzeug {
+  @apply flex items-center gap-0.5 h-10 px-3 overflow-x-auto lg:px-4;
+  border-top: 1px solid var(--ke-linie);
+  scrollbar-width: none;
+}
+.ke-wz-gruppe {
+  @apply flex flex-none items-center gap-0.5 mr-3;
+}
+.ke-wz {
+  @apply grid place-items-center w-8 h-8 flex-none rounded text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:cursor-default disabled:text-gray-400 disabled:hover:bg-transparent;
+}
+.ke-wz > i,
+.ke-wz > svg {
+  @apply w-[18px] h-[18px];
+}
+.ke-wz[aria-pressed="true"] {
+  @apply bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200;
+}
+.ke-wz-klein {
+  @apply w-7 h-7;
+}
+.ke-wz-klein > i,
+.ke-wz-klein > svg {
+  @apply w-4 h-4;
+}
+.ke-absatz {
+  @apply h-7 py-0 pl-2 pr-7 rounded border-transparent bg-transparent text-[13px] hover:border-gray-300 dark:hover:border-gray-600;
+}
+.ke-modus {
+  @apply inline-flex flex-none items-center gap-1.5 h-7 px-2.5 rounded-md text-[13px] bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800;
+  border: 1px solid var(--ke-linie-stark);
+}
+/* Vorschlagen: in der Farbe der Vorschläge im Text, damit der Modus beim Schreiben auffällt */
+.ke-modus[data-modus="vorschlagen"] {
+  @apply bg-green-50 text-green-800 hover:bg-green-100 dark:bg-green-950/60 dark:text-green-200;
+  border-color: var(--ke-gruen);
+}
+
+/* Infozeile des Ablaufs (so hoch wie eine Werkzeugleiste) */
+.ke-infoleiste {
+  @apply flex flex-wrap items-center gap-x-3 gap-y-1.5 min-h-[40px] px-4 py-1.5 bg-primary-50 text-sm dark:bg-primary-950/60 lg:px-6;
+}
+.ke-info-text b {
+  @apply font-semibold;
+}
+.ke-info-aktionen {
+  @apply ml-auto flex flex-wrap items-center gap-2;
+}
+.ke-knopf {
+  @apply inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] font-medium bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700;
+  border: 1px solid var(--ke-linie-stark);
+}
+.ke-knopf-haupt {
+  @apply border-primary-600 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-500 dark:bg-primary-600 dark:hover:bg-primary-500;
+}
+
+/* Fläche: Scrollbereich mit Raster Gliederung | Text | Rand; rechts bei Bedarf ein Bereich (Details, Verlauf …) */
+.ke-flaeche {
+  @apply relative flex flex-1 min-h-0;
+}
+.ke-scroll {
+  @apply relative flex-1 min-w-0 overflow-y-auto;
+}
+.ke-raster {
+  @apply grid items-start justify-center px-6 pt-8 pb-32;
+  grid-template-columns: minmax(0, 46rem) minmax(18rem, 20rem);
+  grid-template-areas: "blatt rand";
+  column-gap: 2.5rem;
+}
+.ke-gliederung {
+  grid-area: gliederung;
+  @apply hidden sticky top-6 self-start text-[13.5px];
+}
+.ke-gliederung-titel {
+  @apply mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400;
+}
+.ke-gliederung a {
+  @apply block py-1 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white;
+}
+.ke-gliederung li[data-ebene="3"] a {
+  @apply pl-3 text-[13px];
+}
+.ke-blatt {
+  grid-area: blatt;
+  @apply min-w-0;
+}
+.ke-rand-spalte {
+  grid-area: rand;
+  @apply relative self-stretch;
+}
+@media (min-width: 1600px) {
+  .ke-editor:not(.ke-ohne-gliederung) .ke-raster {
+    grid-template-columns: 12rem minmax(0, 46rem) minmax(18rem, 20rem);
+    grid-template-areas: "gliederung blatt rand";
+  }
+  .ke-editor:not(.ke-ohne-gliederung) .ke-gliederung {
+    display: block;
+  }
+}
+/* Breitbild: Schrift 17 px (18 px ab 2.200 px), Gliederung, Abstände und Rand wachsen mit (höchstens 25 % frei) */
+@media (min-width: 1800px) {
+  .ke-editor {
+    --ke-dok: 17px;
+  }
+  .ke-editor .ke-raster,
+  .ke-editor:not(.ke-ohne-gliederung) .ke-raster {
+    grid-template-columns: clamp(13rem, 11vw, 18rem) min(calc(40 * var(--ke-dok)), 100%) clamp(22rem, 28vw, 48rem);
+    grid-template-areas: "gliederung blatt rand";
+    column-gap: clamp(48px, 4vw, 112px);
+  }
+  .ke-editor.ke-ohne-gliederung .ke-raster {
+    grid-template-columns: min(calc(40 * var(--ke-dok)), 100%) clamp(22rem, 28vw, 48rem);
+    grid-template-areas: "blatt rand";
+  }
+}
+@media (min-width: 2200px) {
+  .ke-editor {
+    --ke-dok: 18px;
+  }
+}
+/* Mit offenem Bereich rechts (Details, Verlauf …): kein Rand im Raster */
+.ke-editor.ke-mit-panel .ke-raster {
+  grid-template-columns: minmax(0, 46rem);
+  grid-template-areas: "blatt";
+}
+@media (min-width: 1600px) {
+  .ke-editor.ke-mit-panel:not(.ke-ohne-gliederung) .ke-raster {
+    grid-template-columns: 12rem minmax(0, 46rem);
+    grid-template-areas: "gliederung blatt";
+  }
+}
+
+/* Zeile über dem Text */
+.ke-blattkopf {
+  @apply relative flex flex-wrap items-center gap-x-4 gap-y-1 mb-6 text-[13px] text-gray-600 dark:text-gray-400;
+}
+.ke-blattkopf-knopf {
+  @apply inline-flex items-center gap-1 h-7 -ml-1 px-1 rounded hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white;
+}
+.ke-bezug {
+  @apply inline-flex items-center gap-1 min-w-0;
+}
+
+/* Text: Schreibansicht ohne Blatt, die Seitenansicht zeigt Blatt und Briefpapier wie bisher */
+.ke-editor #editor-container {
+  @apply block overflow-visible bg-transparent;
+}
+.ke-editor:not(.ke-seiten) .editor-page {
+  @apply bg-transparent shadow-none max-w-none min-h-0 rounded-none;
+}
+.ke-editor:not(.ke-seiten) #editor-container .tiptap {
+  padding: 0 !important;
+  font-family: inherit !important;
+  font-size: var(--ke-dok) !important;
+  max-width: none;
+  min-height: 60vh;
+  line-height: 1.6;
+}
+.ke-editor:not(.ke-seiten) #editor-container .tiptap h1 {
+  @apply text-[22px] leading-tight font-bold mt-0 mb-5;
+}
+.ke-editor:not(.ke-seiten) #editor-container .tiptap h2 {
+  @apply text-[17px] font-semibold mt-6 mb-1.5;
+}
+.ke-editor:not(.ke-seiten) #editor-container .tiptap h3 {
+  @apply text-base font-semibold mt-5 mb-1;
+}
+.ke-editor:not(.ke-seiten) .letterhead-canvas,
+.ke-editor:not(.ke-seiten) .letterhead-html-preview,
+.ke-editor:not(.ke-seiten) #editor-container .tiptap .page-gap {
+  display: none;
+}
+/* Seitenansicht: das Blatt mit feinem Rand auf derselben Fläche, keine graue Fläche drumherum */
+.ke-editor.ke-seiten #editor-container .editor-page {
+  @apply bg-white dark:bg-gray-900;
+  box-shadow: 0 0 0 1px var(--ke-linie-stark);
+}
+.ke-editor .content-readonly {
+  @apply overflow-visible p-0 max-w-none;
+  font-size: var(--ke-dok);
+  line-height: 1.6;
+}
+.ke-editor .content-readonly p {
+  margin: 0 0 0.75em;
+}
+.ke-editor .content-readonly h1 {
+  @apply text-[22px] leading-tight font-bold mt-0 mb-5;
+}
+.ke-editor .content-readonly h2 {
+  @apply text-[17px] font-semibold mt-6 mb-1.5;
+}
+.ke-editor .content-readonly h3 {
+  @apply text-base font-semibold mt-5 mb-1;
+}
+/* Listen im gesperrten Text wie beim Schreiben (die Grundstile setzen list-style zurück) */
+.ke-editor .content-readonly ol {
+  list-style: decimal;
+}
+.ke-editor .content-readonly ul {
+  list-style: disc;
+}
+.ke-editor .content-readonly ul[data-type="taskList"] {
+  list-style: none;
+}
+.ke-editor .content-readonly li > p {
+  margin-bottom: 0.25em;
+}
+/* Kommentarstellen ruhig gelb ohne Unterstrich. Die Grundstile (_editor_styles.html) setzen sie über
+   #editor-container mit !important; deshalb hier mit derselben ID und einer Klasse mehr. */
+.ke-editor [data-ke-text] span[data-comment-id],
+.ke-editor #editor-container .tiptap span[data-comment-id] {
+  background-color: #fbefc5 !important;
+  border-bottom: 0 !important;
+}
+.ke-editor [data-ke-text] span[data-comment-id].comment-mark--active,
+.ke-editor #editor-container .tiptap span[data-comment-id].comment-mark--active {
+  background-color: #f6d978 !important;
+  box-shadow: none;
+}
+.dark .ke-editor [data-ke-text] span[data-comment-id],
+.dark .ke-editor #editor-container .tiptap span[data-comment-id] {
+  background-color: rgba(251, 191, 36, 0.25) !important;
+}
+
+/* Kommentare am Rand */
+.ke-rand {
+  @apply relative min-h-full;
+}
+.ke-karte {
+  @apply absolute inset-x-0 cursor-pointer rounded-md bg-white px-3 py-2.5 text-[13.5px] leading-snug dark:bg-gray-800;
+  border: 1px solid var(--ke-linie);
+  transition: top 0.15s ease;
+}
+.ke-karte:hover {
+  border-color: var(--ke-linie-stark);
+}
+.ke-karte-aktiv {
+  @apply cursor-default border-primary-600 shadow-md dark:border-primary-500;
+}
+.ke-karte-kopf {
+  @apply flex items-center gap-2;
+}
+.ke-karte-kopf b {
+  @apply block truncate text-[13px] font-semibold;
+}
+.ke-karte-kopf small {
+  @apply block text-xs text-gray-500 dark:text-gray-400;
+}
+.ke-karte p {
+  @apply mt-1.5 whitespace-pre-line break-words;
+}
+.ke-karte p.ke-karte-art {
+  @apply text-xs text-gray-500 dark:text-gray-400;
+}
+.ke-karte p.ke-karte-vorschlag {
+  @apply mt-0.5;
+}
+
+/* Änderung vorschlagen: kleines Formular neben der markierten Stelle */
+.ke-vorschlag {
+  @apply rounded-lg bg-white p-3 text-[13.5px] shadow-lg dark:bg-gray-800;
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid var(--ke-linie);
+}
+.ke-vorschlag h2 {
+  @apply mb-1 text-sm font-semibold;
+}
+.ke-vorschlag textarea {
+  @apply mt-1.5 w-full rounded-md px-2 py-1.5 text-[13.5px] dark:bg-gray-900;
+  border: 1px solid var(--ke-linie-stark);
+}
+.ke-antwort {
+  @apply mt-2 pt-2;
+  border-top: 1px solid var(--ke-linie);
+}
+.ke-karte-antwort textarea {
+  @apply mt-2 w-full rounded-md px-2 py-1.5 text-[13.5px] dark:bg-gray-900;
+  border: 1px solid var(--ke-linie-stark);
+}
+.ke-rand-leer {
+  @apply text-[13px] text-gray-500 dark:text-gray-400;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ke-karte {
+    transition: none;
+  }
+}
+
+/* Bereich rechts (bisherige Seitenleisten auf Abruf) */
+.ke-panel {
+  @apply flex flex-col w-[24rem] flex-none min-h-0 overflow-hidden bg-white dark:bg-gray-900;
+  border-left: 1px solid var(--ke-linie);
+}
+@media (min-width: 1800px) {
+  .ke-panel {
+    width: clamp(24rem, 24vw, 34rem);
+  }
+}
+.ke-panel-kopf {
+  @apply flex flex-none items-center gap-2 h-11 pl-4 pr-2;
+  border-bottom: 1px solid var(--ke-linie);
+}
+.ke-panel-kopf h2 {
+  @apply text-sm font-semibold focus:outline-none;
+}
+.ke-panel-inhalt {
+  @apply flex flex-1 flex-col min-h-0 overflow-y-auto;
+}
+
+/* Dialoge des Ablaufs */
+.ke-dialog {
+  @apply w-[min(32rem,calc(100vw-2rem))] p-0 rounded-lg bg-white text-gray-900 shadow-xl dark:bg-gray-800 dark:text-gray-100;
+  border: 1px solid var(--ke-linie);
+}
+.ke-dialog::backdrop {
+  background: rgb(17 24 39 / 0.45);
+}
+.ke-dialog-kopf {
+  @apply flex items-center justify-between gap-3 py-3 pl-4 pr-2;
+  border-bottom: 1px solid var(--ke-linie);
+}
+.ke-dialog-kopf h2 {
+  @apply text-base font-semibold;
+}
+/* Abstand der Kinder wie space-y-3 in Tailwind 3: tailwind3-abstaende.css */
+.ke-dialog-inhalt {
+  @apply px-4 py-4 text-sm;
+}
+.ke-dialog-fuss {
+  @apply flex items-center justify-end gap-2 px-4 py-3;
+  border-top: 1px solid var(--ke-linie);
+}
+.ke-angaben {
+  @apply grid gap-x-4 gap-y-3;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+}
+.ke-angaben dt {
+  @apply pt-1 text-gray-600 dark:text-gray-400;
+}
+.ke-auswahl {
+  @apply mt-1.5 max-h-48 overflow-y-auto rounded-md p-1;
+  border: 1px solid var(--ke-linie);
+}
+.ke-auswahl label {
+  @apply flex items-center gap-2 min-h-[32px] px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700;
+}
+.ke-auswahl input {
+  @apply rounded text-primary-600;
+}
+.ke-feld {
+  @apply w-full h-8 rounded-md py-0 text-sm dark:bg-gray-900;
+  border: 1px solid var(--ke-linie-stark);
+}
+.ke-meta {
+  @apply text-xs text-gray-600 dark:text-gray-400;
+}
+.ke-fehler {
+  @apply text-sm text-red-700 dark:text-red-400;
+}
+.ke-wege {
+  @apply m-0 list-none p-0;
+}
+.ke-weg {
+  @apply flex w-full items-start gap-3 rounded-md px-2 py-2.5 text-left hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-700;
+}
+.ke-weg > i,
+.ke-weg > svg {
+  @apply mt-0.5 w-4 h-4 flex-none text-primary-600 dark:text-primary-400;
+}
+.ke-weg b {
+  @apply block font-medium;
+}
+.ke-weg small {
+  @apply block text-xs text-gray-600 dark:text-gray-400;
+}
+
+/* Handy: Text über die ganze Breite, Kommentare als Blatt über die Leiste unten */
+.ke-mobil-leiste {
+  @apply flex-none p-2 bg-white dark:bg-gray-900;
+  border-top: 1px solid var(--ke-linie);
+}
+@media (max-width: 1023px) {
+  .ke-raster,
+  .ke-editor.ke-mit-panel .ke-raster {
+    @apply px-4 pt-4 pb-16;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "blatt";
+  }
+  .ke-rand-spalte,
+  .ke-gliederung {
+    display: none !important;
+  }
+  .ke-panel {
+    @apply fixed inset-0 z-50 w-auto border-l-0;
+  }
+  .ke-kopfzeile {
+    @apply pb-1;
+  }
+  /* Typ und Briefpapier: an der Zeile statt am Knopf ausrichten, sonst schneidet .ke-scroll das Menü rechts ab (#1018) */
+  .ke-blattkopf .ke-menue {
+    right: 0;
+    min-width: 0;
+    max-width: 24rem;
+  }
+}
+
+/* Utilities von Tailwind: nach den Bausteinen, vor den Regeln unten (Reihenfolge wie in Tailwind 3) */
+@tailwind utilities source(none);
+
+/* ---- Regeln nach den Utilities ------------------------------------------------------------------------------
+   Standen schon in Tailwind 3 außerhalb von @layer hinter den Utilities und gewinnen bei gleicher Spezifität. */
 
 /* Aufgaben-Kanban (templates/work/tasks/list.html): auf Mobil horizontales Scroll-Snapping
    der Spalten, ab md greift das Tailwind-Grid des Markups. */
@@ -391,120 +1153,6 @@
   margin: 0.25rem 0 0;
   color: #4b5563;
 }
-
-/* ---- Neuer Rahmen von Work (Issue #852, templates/work/base_work_neu.html) ------------------------------------
-   Nur unter html[data-rahmen="neu"]; der bisherige Rahmen (work/base_work_alt.html) bringt seine Regeln selbst mit.
-   Kopfzeile, Kopfband, Reiter und Inhalt enden bei derselben Breite wie Insight (116rem samt Rand, #841): Der Rand
-   wächst auf breiten Bildschirmen, damit Inhalt und Kopf mittig stehen und links bündig bleiben – auch auf Seiten,
-   die ihren Kopf selbst setzen. */
-@layer utilities {
-  [data-rahmen="neu"] {
-    --rahmen-rand: 1rem;
-    -webkit-tap-highlight-color: transparent;
-  }
-  @media (min-width: 640px) {
-    [data-rahmen="neu"] {
-      --rahmen-rand: 2rem;
-    }
-  }
-  [data-rahmen="neu"] .rahmen-zeile,
-  [data-rahmen="neu"] .work-page-header,
-  [data-rahmen="neu"] .work-page-content {
-    padding-inline: max(var(--rahmen-rand), calc((100% - 116rem) / 2 + var(--rahmen-rand)));
-  }
-  [data-rahmen="neu"] .work-page-header {
-    @apply bg-band-grau py-5;
-  }
-  [data-rahmen="neu"] .work-page-title {
-    @apply m-0 text-2xl font-bold tracking-tight text-gray-900 dark:text-white break-words;
-  }
-  [data-rahmen="neu"] .work-page-subtitle {
-    @apply mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-400;
-  }
-  [data-rahmen="neu"] .work-page-content {
-    @apply flex-1 py-6;
-    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* Raumzeichen: Kürzel der Organisation in ihrer Farbe (--raum-farbe aus dem Layout, serverseitig geprüft);
-     die Bedienung bleibt Indigo (Konzept W10). Gemischt mit Tinte bzw. Weiß, damit der Kontrast nicht an der
-     Farbe der Organisation hängt. */
-  [data-rahmen="neu"] .raumzeichen {
-    background: color-mix(in srgb, var(--raum-farbe, #4f46e5) 14%, white);
-    color: color-mix(in srgb, var(--raum-farbe, #4f46e5) 50%, #111827);
-  }
-  [data-rahmen="neu"].dark .raumzeichen {
-    background: color-mix(in srgb, var(--raum-farbe, #4f46e5) 30%, #111827);
-    color: color-mix(in srgb, var(--raum-farbe, #4f46e5) 30%, white);
-  }
-
-  /* Schmale Leiste (Seitenleiste einklappen, wie im bisherigen Rahmen): nur Symbole, Beschriftungen bleiben für
-     Bildschirmleser. Zustand aus localStorage „sidebarCollapsed“ (frontend/alpine/work-rahmen.ts). */
-  @media (min-width: 1024px) {
-    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste {
-      width: 4rem;
-    }
-    [data-rahmen="neu"][data-leiste="schmal"] .work-main {
-      padding-left: 4rem;
-    }
-    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-label {
-      @apply sr-only;
-    }
-    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-eintrag {
-      @apply justify-center px-0;
-    }
-    /* Unterpunkte (Recherche) haben kein Symbol: in der schmalen Leiste führen Bereich und Reiter dorthin. Auch die
-       Zeile mit der Version (Issue #1463) ist nur Text und entfällt */
-    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-unterpunkte,
-    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-aufklapper,
-    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-version {
-      display: none !important;
-    }
-  }
-}
-
-/* ---- Textrollen der Arbeitsflächen im neuen Rahmen (Issue #944) ---------------------------------------------------
-   Wiederkehrende Klassenketten der Vorlagen unter templates/session/neu/ an einer Stelle statt in jeder Vorlage
-   (Frontend-Ratchet): Name eines Eintrags in c-rahmen.liste und die Angaben darunter (13 px), Angaben unter dem Titel
-   im Kopfband und eine Zeile aus Feldern und Knopf, unten bündig. Größe und Abstand ergänzt die Vorlage (etwa
-   „text-sm liste-name“, „mt-0.5 liste-angaben“). Beschriftung und Hinweis von Hand gebauter Felder kommen aus den
-   Bausteinen c-form.beschriftung und c-form.hinweis. */
-@layer utilities {
-  .liste-name {
-    @apply font-medium text-gray-900 dark:text-white break-words;
-  }
-  .liste-angaben {
-    @apply text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words;
-  }
-  .kopf-angaben {
-    @apply flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300;
-  }
-  .feldzeile {
-    @apply flex flex-wrap items-end gap-2;
-  }
-}
-
-/* ---- Abschnittstitel im Bürgerportal (Issue #1261) ------------------------------------------------------------------
-   Überschrift eines Abschnitts unter dem Seitenkopf (Startseite, Kommunenwahl, Vorgang, Tagesordnung, Beschlüsse),
-   an einer Stelle statt als Klassenkette in jeder Vorlage (Frontend-Ratchet). Abstände ergänzt die Vorlage. */
-@layer utilities {
-  .abschnitt-titel {
-    @apply text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white;
-  }
-}
-
-/* ---- Umschalter im Bürgerportal (Issue #1270) -------------------------------------------------------------------------
-   Eine Wahl im Umschalter der Gremiengruppe (Beschlüsse: Alle, Rat und Ausschüsse, Bezirksvertretungen): ein Label um
-   ein unsichtbares Optionsfeld, gewählt hell hinterlegt, Fokus als Rahmen. Am Handy teilen sich die Wahlen die Breite,
-   jede mindestens 44 px hoch. */
-@layer utilities {
-  .umschalter-wahl {
-    @apply flex-1 sm:flex-none inline-flex min-h-11 cursor-pointer items-center justify-center whitespace-nowrap rounded-md px-3 text-[0.9375rem] text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white;
-    @apply has-[:checked]:bg-primary-100 has-[:checked]:font-semibold has-[:checked]:text-primary-900 dark:has-[:checked]:bg-primary-900/50 dark:has-[:checked]:text-primary-100;
-    @apply has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-primary-600;
-  }
-}
-
 /* Personenmenü (templates/work/rahmen/_person.html) steht fest über der Person; bei schmaler Leiste rechts neben ihr */
 @media (min-width: 1024px) {
   [data-rahmen="neu"][data-leiste="schmal"] .person-menue {
@@ -512,718 +1160,6 @@
     bottom: 0.75rem;
   }
 }
-
-
-/* ---- Antragseditor, neue Ansicht (Teil von #856, templates/work/motions/editor_neu.html) ----------------------
-   Svens Wahl E1+E2 (05.10.2026): eine Kopfzeile (Titel, Stand, Menü, Ablaufleiste), eine Werkzeugleiste, darunter
-   Gliederung | Text | Kommentare am Rand. Der Text nutzt die Breite (Lesespalte 46rem, ab 1.800 px 40em bei 17 px),
-   der Rand wächst mit, damit auf breiten Bildschirmen keine großen Leerflächen bleiben (#841). Alles unter .ke-editor;
-   die Grundstile des Editors (Marken, Tabellen, Popups) kommen weiter aus _editor_styles.html. */
-@layer utilities {
-  .ke-editor {
-    --ke-dok: 16px;
-    --ke-linie: #e4e7ec;
-    --ke-linie-stark: #cdd2da;
-    --ke-gruen: #15803d;
-    --ke-vorschlag: #e3f4e8;
-    @apply bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
-    font-size: 14px;
-    line-height: 1.45;
-  }
-  .dark .ke-editor {
-    --ke-linie: #273244;
-    --ke-linie-stark: #3b4659;
-    --ke-gruen: #4ade80;
-    --ke-vorschlag: rgba(74, 222, 128, 0.18);
-  }
-
-  /* Kopf: Titelblock links, Ablaufleiste in der Mitte, Personen und „Weitere“ rechts */
-  .ke-kopf {
-    @apply relative z-30 flex-none bg-white dark:bg-gray-900;
-    border-bottom: 1px solid var(--ke-linie);
-    container: ke-kopf / inline-size;
-    /* Ersetzt die Kopfzeile des Rahmens (editor_neu.html): Aussparung oben am Handy wie dort */
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-  /* Der Kopf ist ein eigener Stapelkontext: Offene Menüs lägen sonst unter den Popups im Text (.comment-popup, z-index 45, #1018) */
-  .ke-editor.ke-menue-offen .ke-kopf {
-    z-index: 46;
-  }
-  .ke-kopfzeile {
-    @apply flex items-center gap-3 px-3 pt-1.5 min-w-0 lg:px-4;
-  }
-  .ke-symbol {
-    @apply w-8 h-8 flex-none items-center justify-center rounded-md text-primary-600 hover:bg-gray-100 dark:text-primary-400 dark:hover:bg-gray-800;
-  }
-  .ke-titelblock {
-    @apply min-w-0 flex-1;
-  }
-  .ke-titelzeile {
-    @apply flex items-center gap-2.5 min-w-0;
-  }
-  .ke-titel {
-    @apply h-7 min-w-0 rounded border border-transparent bg-transparent px-1 -ml-1 text-[15px] text-gray-900 dark:text-gray-100;
-    flex: 0 1 auto;
-    text-overflow: ellipsis;
-    max-width: 40rem;
-  }
-  @supports (field-sizing: content) {
-    .ke-titel {
-      field-sizing: content;
-      min-width: 8rem;
-    }
-  }
-  input.ke-titel:hover {
-    border-color: var(--ke-linie-stark);
-  }
-  input.ke-titel:focus {
-    @apply outline-none ring-2 ring-primary-600 border-transparent;
-  }
-  .ke-titel-text {
-    @apply truncate font-normal leading-7;
-  }
-  .ke-stand {
-    @apply inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[12.5px] font-medium whitespace-nowrap bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800;
-    border: 1px solid var(--ke-linie-stark);
-  }
-  .ke-punkt {
-    @apply inline-block w-2 h-2 rounded-full bg-primary-600;
-  }
-  .ke-punkt[data-stand="draft"],
-  .ke-punkt[data-stand="review"] {
-    @apply bg-transparent;
-    box-shadow: inset 0 0 0 1.5px #6b7280;
-  }
-  .ke-punkt[data-stand="internal_review"],
-  .ke-punkt[data-stand="external_review"] {
-    @apply bg-amber-600;
-  }
-  .ke-punkt[data-stand="approved"],
-  .ke-punkt[data-stand="adopted"],
-  .ke-punkt[data-stand="completed"] {
-    background: var(--ke-gruen);
-  }
-  .ke-punkt[data-stand="rejected"],
-  .ke-punkt[data-stand="withdrawn"] {
-    @apply bg-red-600;
-  }
-  .ke-punkt[data-stand="archived"] {
-    @apply bg-gray-400;
-  }
-  .ke-gespeichert {
-    @apply items-center gap-1 h-6 px-1 rounded text-xs text-gray-500 whitespace-nowrap hover:text-gray-900 dark:text-gray-400 dark:hover:text-white;
-  }
-  .ke-gespeichert span {
-    @apply inline-flex items-center gap-1;
-  }
-  .ke-menueleiste {
-    @apply items-center h-[26px] -ml-1.5;
-  }
-  .ke-leistenpunkt {
-    @apply h-6 px-1.5 rounded text-[13px] text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800;
-  }
-  .ke-leistenpunkt[aria-expanded="true"] {
-    @apply bg-gray-100 dark:bg-gray-800;
-  }
-
-  /* Ablaufleiste: jede Stufe ein Knopf; erledigt grün mit Haken, aktuell Indigo */
-  .ke-stufen {
-    @apply flex-none items-center gap-1 list-none p-0 m-0;
-  }
-  .ke-stufe {
-    @apply flex items-center gap-1 min-w-0;
-  }
-  .ke-stufe-linie {
-    @apply block w-7 flex-none;
-    height: 1.5px;
-    background: var(--ke-linie-stark);
-  }
-  .ke-stufe[data-zustand="erledigt"] + .ke-stufe .ke-stufe-linie,
-  .ke-stufe[data-zustand="erledigt"] .ke-stufe-linie {
-    background: var(--ke-gruen);
-  }
-  .ke-stufe-knopf {
-    @apply flex items-center gap-2 min-h-[36px] px-1 py-0.5 rounded-md text-left hover:bg-gray-50 dark:hover:bg-gray-800;
-  }
-  .ke-kreis {
-    @apply grid place-items-center w-[22px] h-[22px] flex-none rounded-full text-xs font-semibold bg-white text-gray-600 dark:bg-gray-900 dark:text-gray-300;
-    border: 1.5px solid #c3c8d1;
-  }
-  .ke-stufe-name {
-    @apply block text-[13.5px] font-semibold whitespace-nowrap text-gray-600 dark:text-gray-400;
-  }
-  .ke-stufe-unter {
-    @apply block text-xs font-normal whitespace-nowrap text-gray-500 dark:text-gray-400;
-  }
-  [data-zustand="aktuell"] > .ke-stufe-knopf .ke-kreis,
-  [data-zustand="aktuell"] > .ke-kreis {
-    @apply bg-primary-600 border-primary-600 text-white;
-  }
-  [data-zustand="aktuell"] .ke-stufe-name {
-    @apply text-gray-900 dark:text-white;
-  }
-  [data-zustand="erledigt"] .ke-kreis {
-    border-color: var(--ke-gruen);
-    color: var(--ke-gruen);
-  }
-  [data-zustand="erledigt"] .ke-stufe-name {
-    @apply font-medium text-gray-900 dark:text-gray-100;
-  }
-  /* Je nach Breite der Kopfzeile (nicht des Fensters, die Leiste des Rahmens ist verschieden breit): erst die
-     Untertitel der übrigen Stufen weg, dann deren Namen (bleiben für Bildschirmleser), zuletzt alle Untertitel.
-     Vorrang hat der Titel. */
-  @container ke-kopf (max-width: 1499px) {
-    .ke-stufe:not([data-jetzt]) .ke-stufe-unter {
-      display: none;
-    }
-    .ke-stufe-linie {
-      width: 1rem;
-    }
-  }
-  @container ke-kopf (max-width: 1199px) {
-    .ke-stufe:not([data-jetzt]) .ke-stufe-name {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip: rect(0 0 0 0);
-      white-space: nowrap;
-    }
-    .ke-gespeichert span {
-      font-size: 0;
-      gap: 0;
-    }
-  }
-  @container ke-kopf (max-width: 999px) {
-    .ke-stufe-unter {
-      display: none;
-    }
-    .ke-stufe-linie {
-      width: 0.5rem;
-    }
-  }
-  .ke-personen {
-    @apply items-center gap-1 flex-none;
-  }
-  .ke-av {
-    @apply inline-grid place-items-center w-6 h-6 flex-none rounded-full text-[10.5px] font-semibold bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200;
-  }
-  .ke-av-ich {
-    @apply bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200;
-  }
-  .ke-offline {
-    @apply ml-1 text-xs text-red-600 dark:text-red-400;
-  }
-
-  /* Ablauf am Handy: Fortschritt, Stufe, Stand */
-  .ke-ablauf-mobil {
-    @apply px-3 pb-1.5;
-  }
-  .ke-ablauf-mobil-knopf {
-    @apply flex items-center gap-3 w-full min-h-[44px] text-left;
-  }
-  .ke-ablauf-mobil-knopf small {
-    @apply text-xs text-gray-600 dark:text-gray-400;
-  }
-  .ke-fortschritt {
-    @apply flex gap-1 flex-none;
-  }
-  .ke-fortschritt span {
-    @apply block w-4 h-1 rounded-full bg-gray-300 dark:bg-gray-700;
-  }
-  .ke-fortschritt span[data-zustand="erledigt"] {
-    background: var(--ke-gruen);
-  }
-  .ke-fortschritt span[data-zustand="aktuell"] {
-    @apply bg-primary-600;
-  }
-
-  /* Menüs */
-  .ke-menue {
-    @apply absolute left-0 top-full z-50 mt-1 py-1 min-w-[15rem] overflow-y-auto rounded-md bg-white shadow-lg text-[13.5px] dark:bg-gray-800;
-    border: 1px solid var(--ke-linie);
-    /* Rollt lieber selbst, als unten abgeschnitten zu werden: Abzug für den Kopf mit Werkzeugleiste und die Leiste am Handy (#1018) */
-    max-height: 70vh;
-    max-height: min(70dvh, calc(100dvh - 14rem));
-  }
-  .ke-menue-breit {
-    @apply min-w-[19rem];
-  }
-  .ke-menue-rechts {
-    @apply left-auto right-0;
-  }
-  .ke-mp {
-    @apply flex w-full items-center gap-2.5 min-h-[32px] px-3 py-1 text-left text-gray-800 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:bg-gray-700;
-  }
-  .ke-mp > i,
-  .ke-mp > svg {
-    @apply w-4 h-4 flex-none text-gray-500 dark:text-gray-400;
-  }
-  .ke-mp[disabled] {
-    @apply cursor-default text-gray-400 hover:bg-transparent dark:text-gray-500;
-  }
-  .ke-mp[aria-checked="true"] {
-    @apply font-medium text-primary-700 dark:text-primary-300;
-  }
-  .ke-mp[aria-checked="true"] > i,
-  .ke-mp[aria-checked="true"] > svg {
-    @apply text-primary-600 dark:text-primary-400;
-  }
-  .ke-mp small {
-    @apply block text-xs font-normal text-gray-500 dark:text-gray-400;
-  }
-  /* Mindestens 4,5:1 auch auf der hervorgehobenen Zeile (hover/focus: gray-100 bzw. dunkel gray-700) */
-  .ke-mp kbd,
-  .ke-hinweis {
-    @apply ml-auto pl-4 font-sans text-xs font-normal text-gray-600 dark:text-gray-300;
-  }
-  .ke-mp-jetzt {
-    @apply font-medium text-primary-700 dark:text-primary-300;
-  }
-  .ke-mp-gefahr {
-    @apply text-red-700 dark:text-red-400;
-  }
-  .ke-trenn {
-    @apply my-1;
-    border-top: 1px solid var(--ke-linie);
-  }
-  .ke-menue-gruppe {
-    @apply px-3 pt-2 pb-1 text-xs font-medium text-gray-500 dark:text-gray-400;
-  }
-  .ke-menue-hinweis {
-    @apply flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400;
-  }
-  .ke-ablaufliste {
-    @apply m-0 px-3 pb-2 list-none;
-  }
-  .ke-ablaufliste li {
-    @apply flex items-start gap-2.5 py-1;
-  }
-  .ke-ablaufliste b {
-    @apply block font-semibold;
-  }
-  .ke-ablaufliste small {
-    @apply block text-xs text-gray-600 dark:text-gray-400;
-  }
-  .ke-farben {
-    @apply grid grid-cols-6 gap-1.5 px-3 pb-2;
-  }
-  .ke-farbe {
-    @apply w-6 h-6 rounded-full border-2 border-transparent;
-    background: #374151;
-  }
-  .ke-farbe[aria-pressed="true"] {
-    @apply ring-2 ring-offset-1 ring-primary-600 dark:ring-offset-gray-800;
-  }
-
-  /* Werkzeugleiste: eine Leiste, 40 px */
-  .ke-werkzeug {
-    @apply flex items-center gap-0.5 h-10 px-3 overflow-x-auto lg:px-4;
-    border-top: 1px solid var(--ke-linie);
-    scrollbar-width: none;
-  }
-  .ke-wz-gruppe {
-    @apply flex flex-none items-center gap-0.5 mr-3;
-  }
-  .ke-wz {
-    @apply grid place-items-center w-8 h-8 flex-none rounded text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:cursor-default disabled:text-gray-400 disabled:hover:bg-transparent;
-  }
-  .ke-wz > i,
-  .ke-wz > svg {
-    @apply w-[18px] h-[18px];
-  }
-  .ke-wz[aria-pressed="true"] {
-    @apply bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200;
-  }
-  .ke-wz-klein {
-    @apply w-7 h-7;
-  }
-  .ke-wz-klein > i,
-  .ke-wz-klein > svg {
-    @apply w-4 h-4;
-  }
-  .ke-absatz {
-    @apply h-7 py-0 pl-2 pr-7 rounded border-transparent bg-transparent text-[13px] hover:border-gray-300 dark:hover:border-gray-600;
-  }
-  .ke-modus {
-    @apply inline-flex flex-none items-center gap-1.5 h-7 px-2.5 rounded-md text-[13px] bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800;
-    border: 1px solid var(--ke-linie-stark);
-  }
-  /* Vorschlagen: in der Farbe der Vorschläge im Text, damit der Modus beim Schreiben auffällt */
-  .ke-modus[data-modus="vorschlagen"] {
-    @apply bg-green-50 text-green-800 hover:bg-green-100 dark:bg-green-950/60 dark:text-green-200;
-    border-color: var(--ke-gruen);
-  }
-
-  /* Infozeile des Ablaufs (so hoch wie eine Werkzeugleiste) */
-  .ke-infoleiste {
-    @apply flex flex-wrap items-center gap-x-3 gap-y-1.5 min-h-[40px] px-4 py-1.5 bg-primary-50 text-sm dark:bg-primary-950/60 lg:px-6;
-  }
-  .ke-info-text b {
-    @apply font-semibold;
-  }
-  .ke-info-aktionen {
-    @apply ml-auto flex flex-wrap items-center gap-2;
-  }
-  .ke-knopf {
-    @apply inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] font-medium bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700;
-    border: 1px solid var(--ke-linie-stark);
-  }
-  .ke-knopf-haupt {
-    @apply border-primary-600 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-500 dark:bg-primary-600 dark:hover:bg-primary-500;
-  }
-
-  /* Fläche: Scrollbereich mit Raster Gliederung | Text | Rand; rechts bei Bedarf ein Bereich (Details, Verlauf …) */
-  .ke-flaeche {
-    @apply relative flex flex-1 min-h-0;
-  }
-  .ke-scroll {
-    @apply relative flex-1 min-w-0 overflow-y-auto;
-  }
-  .ke-raster {
-    @apply grid items-start justify-center px-6 pt-8 pb-32;
-    grid-template-columns: minmax(0, 46rem) minmax(18rem, 20rem);
-    grid-template-areas: "blatt rand";
-    column-gap: 2.5rem;
-  }
-  .ke-gliederung {
-    grid-area: gliederung;
-    @apply hidden sticky top-6 self-start text-[13.5px];
-  }
-  .ke-gliederung-titel {
-    @apply mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400;
-  }
-  .ke-gliederung a {
-    @apply block py-1 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white;
-  }
-  .ke-gliederung li[data-ebene="3"] a {
-    @apply pl-3 text-[13px];
-  }
-  .ke-blatt {
-    grid-area: blatt;
-    @apply min-w-0;
-  }
-  .ke-rand-spalte {
-    grid-area: rand;
-    @apply relative self-stretch;
-  }
-  @media (min-width: 1600px) {
-    .ke-editor:not(.ke-ohne-gliederung) .ke-raster {
-      grid-template-columns: 12rem minmax(0, 46rem) minmax(18rem, 20rem);
-      grid-template-areas: "gliederung blatt rand";
-    }
-    .ke-editor:not(.ke-ohne-gliederung) .ke-gliederung {
-      display: block;
-    }
-  }
-  /* Breitbild: Schrift 17 px (18 px ab 2.200 px), Gliederung, Abstände und Rand wachsen mit (höchstens 25 % frei) */
-  @media (min-width: 1800px) {
-    .ke-editor {
-      --ke-dok: 17px;
-    }
-    .ke-editor .ke-raster,
-    .ke-editor:not(.ke-ohne-gliederung) .ke-raster {
-      grid-template-columns: clamp(13rem, 11vw, 18rem) min(calc(40 * var(--ke-dok)), 100%) clamp(22rem, 28vw, 48rem);
-      grid-template-areas: "gliederung blatt rand";
-      column-gap: clamp(48px, 4vw, 112px);
-    }
-    .ke-editor.ke-ohne-gliederung .ke-raster {
-      grid-template-columns: min(calc(40 * var(--ke-dok)), 100%) clamp(22rem, 28vw, 48rem);
-      grid-template-areas: "blatt rand";
-    }
-  }
-  @media (min-width: 2200px) {
-    .ke-editor {
-      --ke-dok: 18px;
-    }
-  }
-  /* Mit offenem Bereich rechts (Details, Verlauf …): kein Rand im Raster */
-  .ke-editor.ke-mit-panel .ke-raster {
-    grid-template-columns: minmax(0, 46rem);
-    grid-template-areas: "blatt";
-  }
-  @media (min-width: 1600px) {
-    .ke-editor.ke-mit-panel:not(.ke-ohne-gliederung) .ke-raster {
-      grid-template-columns: 12rem minmax(0, 46rem);
-      grid-template-areas: "gliederung blatt";
-    }
-  }
-
-  /* Zeile über dem Text */
-  .ke-blattkopf {
-    @apply relative flex flex-wrap items-center gap-x-4 gap-y-1 mb-6 text-[13px] text-gray-600 dark:text-gray-400;
-  }
-  .ke-blattkopf-knopf {
-    @apply inline-flex items-center gap-1 h-7 -ml-1 px-1 rounded hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white;
-  }
-  .ke-bezug {
-    @apply inline-flex items-center gap-1 min-w-0;
-  }
-
-  /* Text: Schreibansicht ohne Blatt, die Seitenansicht zeigt Blatt und Briefpapier wie bisher */
-  .ke-editor #editor-container {
-    @apply block overflow-visible bg-transparent;
-  }
-  .ke-editor:not(.ke-seiten) .editor-page {
-    @apply bg-transparent shadow-none max-w-none min-h-0 rounded-none;
-  }
-  .ke-editor:not(.ke-seiten) #editor-container .tiptap {
-    padding: 0 !important;
-    font-family: inherit !important;
-    font-size: var(--ke-dok) !important;
-    max-width: none;
-    min-height: 60vh;
-    line-height: 1.6;
-  }
-  .ke-editor:not(.ke-seiten) #editor-container .tiptap h1 {
-    @apply text-[22px] leading-tight font-bold mt-0 mb-5;
-  }
-  .ke-editor:not(.ke-seiten) #editor-container .tiptap h2 {
-    @apply text-[17px] font-semibold mt-6 mb-1.5;
-  }
-  .ke-editor:not(.ke-seiten) #editor-container .tiptap h3 {
-    @apply text-base font-semibold mt-5 mb-1;
-  }
-  .ke-editor:not(.ke-seiten) .letterhead-canvas,
-  .ke-editor:not(.ke-seiten) .letterhead-html-preview,
-  .ke-editor:not(.ke-seiten) #editor-container .tiptap .page-gap {
-    display: none;
-  }
-  /* Seitenansicht: das Blatt mit feinem Rand auf derselben Fläche, keine graue Fläche drumherum */
-  .ke-editor.ke-seiten #editor-container .editor-page {
-    @apply bg-white dark:bg-gray-900;
-    box-shadow: 0 0 0 1px var(--ke-linie-stark);
-  }
-  .ke-editor .content-readonly {
-    @apply overflow-visible p-0 max-w-none;
-    font-size: var(--ke-dok);
-    line-height: 1.6;
-  }
-  .ke-editor .content-readonly p {
-    margin: 0 0 0.75em;
-  }
-  .ke-editor .content-readonly h1 {
-    @apply text-[22px] leading-tight font-bold mt-0 mb-5;
-  }
-  .ke-editor .content-readonly h2 {
-    @apply text-[17px] font-semibold mt-6 mb-1.5;
-  }
-  .ke-editor .content-readonly h3 {
-    @apply text-base font-semibold mt-5 mb-1;
-  }
-  /* Listen im gesperrten Text wie beim Schreiben (die Grundstile setzen list-style zurück) */
-  .ke-editor .content-readonly ol {
-    list-style: decimal;
-  }
-  .ke-editor .content-readonly ul {
-    list-style: disc;
-  }
-  .ke-editor .content-readonly ul[data-type="taskList"] {
-    list-style: none;
-  }
-  .ke-editor .content-readonly li > p {
-    margin-bottom: 0.25em;
-  }
-  /* Kommentarstellen ruhig gelb ohne Unterstrich. Die Grundstile (_editor_styles.html) setzen sie über
-     #editor-container mit !important; deshalb hier mit derselben ID und einer Klasse mehr. */
-  .ke-editor [data-ke-text] span[data-comment-id],
-  .ke-editor #editor-container .tiptap span[data-comment-id] {
-    background-color: #fbefc5 !important;
-    border-bottom: 0 !important;
-  }
-  .ke-editor [data-ke-text] span[data-comment-id].comment-mark--active,
-  .ke-editor #editor-container .tiptap span[data-comment-id].comment-mark--active {
-    background-color: #f6d978 !important;
-    box-shadow: none;
-  }
-  .dark .ke-editor [data-ke-text] span[data-comment-id],
-  .dark .ke-editor #editor-container .tiptap span[data-comment-id] {
-    background-color: rgba(251, 191, 36, 0.25) !important;
-  }
-
-  /* Kommentare am Rand */
-  .ke-rand {
-    @apply relative min-h-full;
-  }
-  .ke-karte {
-    @apply absolute inset-x-0 cursor-pointer rounded-md bg-white px-3 py-2.5 text-[13.5px] leading-snug dark:bg-gray-800;
-    border: 1px solid var(--ke-linie);
-    transition: top 0.15s ease;
-  }
-  .ke-karte:hover {
-    border-color: var(--ke-linie-stark);
-  }
-  .ke-karte-aktiv {
-    @apply cursor-default border-primary-600 shadow-md dark:border-primary-500;
-  }
-  .ke-karte-kopf {
-    @apply flex items-center gap-2;
-  }
-  .ke-karte-kopf b {
-    @apply block truncate text-[13px] font-semibold;
-  }
-  .ke-karte-kopf small {
-    @apply block text-xs text-gray-500 dark:text-gray-400;
-  }
-  .ke-karte p {
-    @apply mt-1.5 whitespace-pre-line break-words;
-  }
-  .ke-karte p.ke-karte-art {
-    @apply text-xs text-gray-500 dark:text-gray-400;
-  }
-  .ke-karte p.ke-karte-vorschlag {
-    @apply mt-0.5;
-  }
-
-  /* Änderung vorschlagen: kleines Formular neben der markierten Stelle */
-  .ke-vorschlag {
-    @apply rounded-lg bg-white p-3 text-[13.5px] shadow-lg dark:bg-gray-800;
-    width: min(22rem, calc(100vw - 2rem));
-    border: 1px solid var(--ke-linie);
-  }
-  .ke-vorschlag h2 {
-    @apply mb-1 text-sm font-semibold;
-  }
-  .ke-vorschlag textarea {
-    @apply mt-1.5 w-full rounded-md px-2 py-1.5 text-[13.5px] dark:bg-gray-900;
-    border: 1px solid var(--ke-linie-stark);
-  }
-  .ke-antwort {
-    @apply mt-2 pt-2;
-    border-top: 1px solid var(--ke-linie);
-  }
-  .ke-karte-antwort textarea {
-    @apply mt-2 w-full rounded-md px-2 py-1.5 text-[13.5px] dark:bg-gray-900;
-    border: 1px solid var(--ke-linie-stark);
-  }
-  .ke-rand-leer {
-    @apply text-[13px] text-gray-500 dark:text-gray-400;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ke-karte {
-      transition: none;
-    }
-  }
-
-  /* Bereich rechts (bisherige Seitenleisten auf Abruf) */
-  .ke-panel {
-    @apply flex flex-col w-[24rem] flex-none min-h-0 overflow-hidden bg-white dark:bg-gray-900;
-    border-left: 1px solid var(--ke-linie);
-  }
-  @media (min-width: 1800px) {
-    .ke-panel {
-      width: clamp(24rem, 24vw, 34rem);
-    }
-  }
-  .ke-panel-kopf {
-    @apply flex flex-none items-center gap-2 h-11 pl-4 pr-2;
-    border-bottom: 1px solid var(--ke-linie);
-  }
-  .ke-panel-kopf h2 {
-    @apply text-sm font-semibold focus:outline-none;
-  }
-  .ke-panel-inhalt {
-    @apply flex flex-1 flex-col min-h-0 overflow-y-auto;
-  }
-
-  /* Dialoge des Ablaufs */
-  .ke-dialog {
-    @apply w-[min(32rem,calc(100vw-2rem))] p-0 rounded-lg bg-white text-gray-900 shadow-xl dark:bg-gray-800 dark:text-gray-100;
-    border: 1px solid var(--ke-linie);
-  }
-  .ke-dialog::backdrop {
-    background: rgb(17 24 39 / 0.45);
-  }
-  .ke-dialog-kopf {
-    @apply flex items-center justify-between gap-3 py-3 pl-4 pr-2;
-    border-bottom: 1px solid var(--ke-linie);
-  }
-  .ke-dialog-kopf h2 {
-    @apply text-base font-semibold;
-  }
-  /* Abstand der Kinder wie space-y-3 in Tailwind 3: tailwind3-abstaende.css */
-  .ke-dialog-inhalt {
-    @apply px-4 py-4 text-sm;
-  }
-  .ke-dialog-fuss {
-    @apply flex items-center justify-end gap-2 px-4 py-3;
-    border-top: 1px solid var(--ke-linie);
-  }
-  .ke-angaben {
-    @apply grid gap-x-4 gap-y-3;
-    grid-template-columns: 8.5rem minmax(0, 1fr);
-  }
-  .ke-angaben dt {
-    @apply pt-1 text-gray-600 dark:text-gray-400;
-  }
-  .ke-auswahl {
-    @apply mt-1.5 max-h-48 overflow-y-auto rounded-md p-1;
-    border: 1px solid var(--ke-linie);
-  }
-  .ke-auswahl label {
-    @apply flex items-center gap-2 min-h-[32px] px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700;
-  }
-  .ke-auswahl input {
-    @apply rounded text-primary-600;
-  }
-  .ke-feld {
-    @apply w-full h-8 rounded-md py-0 text-sm dark:bg-gray-900;
-    border: 1px solid var(--ke-linie-stark);
-  }
-  .ke-meta {
-    @apply text-xs text-gray-600 dark:text-gray-400;
-  }
-  .ke-fehler {
-    @apply text-sm text-red-700 dark:text-red-400;
-  }
-  .ke-wege {
-    @apply m-0 list-none p-0;
-  }
-  .ke-weg {
-    @apply flex w-full items-start gap-3 rounded-md px-2 py-2.5 text-left hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-700;
-  }
-  .ke-weg > i,
-  .ke-weg > svg {
-    @apply mt-0.5 w-4 h-4 flex-none text-primary-600 dark:text-primary-400;
-  }
-  .ke-weg b {
-    @apply block font-medium;
-  }
-  .ke-weg small {
-    @apply block text-xs text-gray-600 dark:text-gray-400;
-  }
-
-  /* Handy: Text über die ganze Breite, Kommentare als Blatt über die Leiste unten */
-  .ke-mobil-leiste {
-    @apply flex-none p-2 bg-white dark:bg-gray-900;
-    border-top: 1px solid var(--ke-linie);
-  }
-  @media (max-width: 1023px) {
-    .ke-raster,
-    .ke-editor.ke-mit-panel .ke-raster {
-      @apply px-4 pt-4 pb-16;
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-areas: "blatt";
-    }
-    .ke-rand-spalte,
-    .ke-gliederung {
-      display: none !important;
-    }
-    .ke-panel {
-      @apply fixed inset-0 z-50 w-auto border-l-0;
-    }
-    .ke-kopfzeile {
-      @apply pb-1;
-    }
-    /* Typ und Briefpapier: an der Zeile statt am Knopf ausrichten, sonst schneidet .ke-scroll das Menü rechts ab (#1018) */
-    .ke-blattkopf .ke-menue {
-      right: 0;
-      min-width: 0;
-      max-width: 24rem;
-    }
-  }
-}
-
 /* Neuer Rahmen (Spur Rahmen, #852): Im Editor schrumpft die Leiste auf Symbole (Arbeitsmodus wie im Prototyp) */
 @media (min-width: 1024px) {
   [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste {
@@ -1251,9 +1187,4 @@
   [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-version {
     display: none !important;
   }
-}
-
-/* Utilities von Tailwind als letzte Regeln der Ebene „utilities“, nach unseren Bausteinen (Kopf der Datei) */
-@layer utilities {
-  @tailwind utilities source(none);
 }
