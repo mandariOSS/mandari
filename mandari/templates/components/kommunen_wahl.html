@@ -10,16 +10,16 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
 „noch nicht verfügbar“ steht nur in data-text und kommt per x-text in die Zeile: Der Dialog steckt in jeder Insight-Seite,
 als Text (auch in <template>) läse ein Crawler die Seite als Fehlerseite (Soft-404, Issue #914).
 {% endcomment %}
-{% load humanize %}
+{% load humanize webmcp %}
 <div x-data="kommunenWahl" @keydown="tasten($event)" {% if im_dialog %}data-im-dialog{% endif %}{% if stufe_start.eintraege %} data-stufe-start{% endif %}
     data-vorschlaege-url="{% url 'insight_core:insight:kommunen_vorschlaege' %}"
     data-naehe-url="{% url 'insight_core:insight:kommunen_naehe' %}"
     data-stoebern-url="{% url 'insight_core:insight:kommunen_stoebern' %}">
-    <form action="{% url 'insight_core:insight:kommunen' %}" method="get" role="search" @submit.prevent="suchen()"{% if not im_dialog %} class="max-w-2xl"{% endif %}>
+    <form action="{% url 'insight_core:insight:kommunen' %}" method="get" role="search" @submit.prevent="suchen()"{% if not im_dialog %} {% webmcp_werkzeug "kommune_finden" %} class="max-w-2xl"{% endif %}>
         <label for="{{ id }}-eingabe" class="sr-only">Kommune oder Postleitzahl</label>
         <span class="relative block">
             <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
-            <input id="{{ id }}-eingabe" x-ref="eingabe" x-model="eingabe" name="q" type="search" autocomplete="off"
+            <input id="{{ id }}-eingabe" x-ref="eingabe" x-model="eingabe" name="q" type="search" autocomplete="off"{% if not im_dialog %} {% webmcp_feld "kommune_finden" "q" %}{% endif %}
                 placeholder="Kommune oder Postleitzahl" aria-describedby="{{ id }}-meldung" aria-controls="{{ id }}-ergebnisse"
                 class="h-12 w-full pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
         </span>

@@ -957,6 +957,10 @@ INSIGHT_MCP_PER_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_MINUTE", "300"))
 INSIGHT_MCP_ALLOWED_ORIGINS = [
     host.strip() for host in os.environ.get("INSIGHT_MCP_ALLOWED_ORIGINS", "").split(",") if host.strip()
 ]
+# WebMCP (Issue #1309): Die lesenden Formulare des Bürgerportals (Suche, Kommune finden) tragen die deklarativen
+# Attribute für KI-Agenten im Browser. Chrome meldet sie während des Origin-Trials nur mit einem Token für die
+# Domain an; gesetzt steht er als <meta http-equiv="origin-trial"> in jeder Insight-Seite. Leer: keine Meldung.
+WEBMCP_ORIGIN_TRIAL_TOKEN = os.environ.get("WEBMCP_ORIGIN_TRIAL_TOKEN", "").strip()
 
 # Seite „Offene Daten“ außerhalb des Bürgerportals (Issue #1309): Steht die Übersicht der Schnittstelle mit den
 # Adressen je Kommune auf einer anderen Seite desselben Auftritts (auf mandari.de die Website unter /offene-daten/),

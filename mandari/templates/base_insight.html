@@ -1,4 +1,4 @@
-{% load static insight_titel %}
+{% load static insight_titel webmcp %}
 <!DOCTYPE html>
 <html lang="de" class="scroll-smooth" data-portal="insight"
       data-authenticated="{{ request.user.is_authenticated|yesno:"true,false" }}"
@@ -53,6 +53,11 @@
     {% endif %}
     {# Dieselbe Kommune als offene Daten: ihr Body in der OParl-Schnittstelle (Issue #1282) #}
     {% if page_body_oparl %}<link rel="alternate" type="application/json" title="OParl-Body: {{ page_body.get_display_name }}" href="{{ page_body_oparl }}">{% endif %}
+    {# Katalog für KI-Agenten: MCP-Server und Schnittstelle (ARD und Vorgänger AI Catalog, Issue #1309) #}
+    <link rel="ard" type="application/json" href="{% url 'ki_katalog_ard' %}">
+    <link rel="ai-catalog" type="application/ai-catalog+json" href="{% url 'ki_katalog' %}">
+    {# WebMCP-Formulare während des Origin-Trials von Chrome (Issue #1309); ohne Token keine Anmeldung #}
+    {% if webmcp_origin_trial %}<meta http-equiv="origin-trial" content="{{ webmcp_origin_trial }}">{% endif %}
 
     <!-- Favicon (Brand "m." — Quelle: marketing-website/scripts/generate_logo.py) -->
     <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
@@ -240,11 +245,11 @@
                     </ol>
                 </nav>
                 {% if insight_area != "uebersicht" and insight_area != "suche" %}
-                <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="hidden lg:block w-88 max-w-[40%]">
+                <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" {% webmcp_werkzeug "ratsinfo_suchen" %} class="hidden lg:block w-88 max-w-[40%]">
                     <label for="kopf-suche" class="sr-only">Ratsinformationen durchsuchen</label>
                     <span class="relative block">
                         <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
-                        <input id="kopf-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …" autocomplete="off"
+                        <input id="kopf-suche" type="search" name="q" {% webmcp_feld "ratsinfo_suchen" "q" %} placeholder="Vorgänge, Sitzungen, Personen …" autocomplete="off"
                             class="w-full h-11 pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-[0.95rem] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                     </span>
                 </form>

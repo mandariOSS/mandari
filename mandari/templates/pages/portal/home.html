@@ -1,5 +1,5 @@
 {% extends "base_insight.html" %}
-{% load l10n insight_listen %}
+{% load l10n insight_listen webmcp %}
 
 {% block title %}{% if active_body %}{{ seo.title }}{% else %}mandari Insight{% endif %}{% endblock %}
 {# Stadtseite ohne Zusatz (Issue #939); ohne Kommune heißt der Titel schon „mandari Insight“ #}
@@ -21,11 +21,11 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
             <p class="mt-4 max-w-2xl text-[1.0625rem] sm:text-[1.125rem] leading-relaxed text-gray-800 dark:text-gray-200">
                 {% if active_body.description %}{{ active_body.description }}{% else %}Alle öffentlichen Ratsinformationen Ihrer Kommune: Sitzungen, Vorgänge, Gremien und die Menschen, die entscheiden.{% endif %}
             </p>
-            <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="mt-7 flex flex-col sm:flex-row gap-3 max-w-2xl">
+            <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" {% webmcp_werkzeug "ratsinfo_suchen" %} class="mt-7 flex flex-col sm:flex-row gap-3 max-w-2xl">
                 <label for="uebersicht-suche" class="sr-only">Ratsinformationen durchsuchen</label>
                 <span class="relative block w-full sm:w-auto sm:flex-1 min-w-0">
                     <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 pointer-events-none" aria-hidden="true"></i>
-                    <input id="uebersicht-suche" type="search" name="q" placeholder="Thema oder Straße" autocomplete="off"
+                    <input id="uebersicht-suche" type="search" name="q" {% webmcp_feld "ratsinfo_suchen" "q" %} placeholder="Thema oder Straße" autocomplete="off"
                         class="h-14 w-full pl-12 pr-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-700 text-[1.0625rem] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-hidden">
                 </span>
                 <button type="submit" class="h-14 px-6 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-[1.0625rem] font-semibold">Suchen</button>
