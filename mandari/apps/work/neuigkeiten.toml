@@ -26,6 +26,16 @@
 # Version.
 
 [[eintrag]]
+datum = 2026-11-21
+version = ""
+bereich = "kalender"
+titel = "Der Kalender hat einen eigenen Platz in der Seitenleiste."
+text = """Der Kalender steht jetzt direkt unter „Start“ in der Seitenleiste. Sitzungen der Gremien, in denen Ihre \
+Organisation vertreten ist, stehen kräftig darin, Sitzungen weiterer Gremien heller; beide lassen sich getrennt \
+ausblenden. Sitzungen heißen nach ihrem Gremium. Sitzungen einer Reihe stehen immer zu ihrer festen Zeit, auch wenn \
+sie später beendet wurden. „Termin abstimmen“ ist ein eigener Knopf."""
+
+[[eintrag]]
 datum = 2026-11-20
 version = "0.13.1"
 bereich = "sitzungen"
