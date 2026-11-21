@@ -470,7 +470,7 @@ raw_person = OParlPerson.objects.create(
 )
 check("OParl-Bildfeld hat Vorrang", raw_person.photo_url == "https://cdn.example.org/bild.jpg")
 page = html(client.get(f"/insight/personen/{anna.id}/"))
-check("Avatar hotlinkt RIS-URL vor dem Cache", 'src="https://ris.example.org/im/pe101.jpg"' in page)
+check("Avatar hotlinkt die RIS-URL nicht mehr (#1560)", "ris.example.org/im/pe101.jpg" not in page)
 
 
 def make_png():
@@ -544,12 +544,12 @@ from PIL import Image  # noqa: E402
 
 with Image.open(anna.photo.path) as img:
     check("Max. 400 px, JPEG", max(img.size) <= 400 and img.format == "JPEG", f"{img.size} {img.format}")
-check("photo_src liefert lokale URL", anna.photo_src.startswith("/media/persons/photos/"))
+# Fotos zeigt mandari nicht mehr (Datensparsamkeit, Issue #1560): gespeichert, aber weder angezeigt noch ausgeliefert
+check("photo_src bleibt leer", anna.photo_src is None)
 page = html(client.get(f"/insight/personen/{anna.id}/"))
-check("Avatar nutzt lokales Foto", "/media/persons/photos/" in page and "ris.example.org/im/pe101" not in page)
-resp = client.get(anna.photo_src)
-check("Foto öffentlich abrufbar", resp.status_code == 200, f"got {resp.status_code}")
-resp.close()  # FileResponse schließen (Windows-Dateilock)
+check("Avatar ohne Foto", "/media/persons/photos/" not in page and "ris.example.org/im/pe101" not in page)
+resp = client.get(f"/media/{anna.photo.name}")
+check("Gespeichertes Foto wird nicht ausgeliefert", resp.status_code in (403, 404), f"got {resp.status_code}")
 
 status = person_photos.fetch_person_photo(erik, client=FakeClient())
 erik.refresh_from_db()

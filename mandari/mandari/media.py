@@ -57,6 +57,9 @@ PROTECTED_MEDIA_PREFIXES = (
     # Dokument-Cache der OParl-Dateien (Standardablage ohne OPARL_FILES_ROOT): nur über den
     # Datei-Proxy, der auch zurückgezogene Dokumente berücksichtigt
     "oparl_files/",
+    # Fotos von Personen: mandari zeigt sie nicht mehr (Datensparsamkeit, Issue #1560); gespeicherte Dateien
+    # bleiben im Bestand, gehen aber nie über eine URL hinaus
+    "persons/photos/",
     # Anhänge von Aufgaben, Fraktionssitzungen, Vorbereitung, Support, Briefköpfe und
     # Datenexporte (apps/work/files.py)
     *WORK_PROTECTED_PREFIXES,

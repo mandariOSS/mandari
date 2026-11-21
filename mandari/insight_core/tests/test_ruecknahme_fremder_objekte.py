@@ -164,7 +164,8 @@ def test_in_der_quelle_geloeschtes_bleibt_mit_hinweis_sichtbar(welt: dict[str, A
     welt["person"].mark_deleted(reason=REASON_DELETED_AT_SOURCE)
     OParlPaper.objects.filter(pk=welt["vorgang"].pk).update(deleted=True, deleted_at=timezone.now())
 
-    assert Client().get(_seite("person_detail", welt["person"])).status_code == 200
+    # Eine in der Quelle gelöschte Person zeigt das Portal nicht mehr (Issue #1560); der Vorgang bleibt mit Hinweis
+    assert Client().get(_seite("person_detail", welt["person"])).status_code == 410
     assert Client().get(_seite("paper_detail", welt["vorgang"])).status_code == 200
     assert not OParlPerson.objects.filter(withdrawn_q()).exists()
     assert not OParlPaper.objects.filter(withdrawn_q()).exists()
@@ -570,7 +571,8 @@ def test_aktion_nimmt_vorgang_mit_anlagen_dauerhaft_zurueck_und_meldet_es(
 
 @pytest.mark.parametrize(
     ("grund", "vorher"),
-    [(None, 200), (REASON_DELETED_AT_SOURCE, 200), (REASON_WITHDRAWN, 410), (REASON_NOT_PUBLIC, 410)],
+    # Eine als gelöscht markierte Person zeigt das Portal nie (Issue #1560), gleich aus welchem Grund
+    [(None, 410), (REASON_DELETED_AT_SOURCE, 410), (REASON_WITHDRAWN, 410), (REASON_NOT_PUBLIC, 410)],
     ids=["ohne_grund", "quelle_geloescht", "zurueckgenommen", "nichtoeffentlich"],
 )
 def test_aktion_nimmt_schon_markiertes_dauerhaft_zurueck_und_meldet_es(

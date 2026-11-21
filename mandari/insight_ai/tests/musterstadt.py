@@ -173,10 +173,10 @@ def baue_musterstadt() -> Musterstadt:
     person = OParlPerson.objects.create(
         external_id=kennung("persons"),
         body=body,
-        name="Erika Mustermann",
+        name="Erika Musterfrau",
         given_name="Erika",
-        family_name="Mustermann",
-        email="erika.mustermann@musterstadt.example",
+        family_name="Musterfrau",
+        email="erika.musterfrau@musterstadt.example",
         phone="01234 56789",
     )
     OParlMembership.objects.create(external_id=kennung("memberships"), person=person, organization=rat, role="Vorsitz")

@@ -29,7 +29,8 @@ from apps.common.tests.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
 
-FOTO = "persons/photos/0f46a4c9-e428-5cad-8f24-cc27645e69ac.jpg"
+# Ein öffentliches Bild; Fotos von Personen liefert mandari nicht mehr aus (Issue #1560)
+FOTO = "organizations/logos/0f46a4c9-e428-5cad-8f24-cc27645e69ac.jpg"
 INHALT = b"\xff\xd8\xff\xe0-foto"
 
 
@@ -123,7 +124,7 @@ def test_geschuetzte_ablage_unter_oeffentlichem_praefix_bleibt_geschuetzt(
 
 
 def test_fehlendes_foto_ergibt_404(media: Path, client: Client) -> None:
-    assert client.get("/media/persons/photos/gibt-es-nicht.jpg").status_code == 404
+    assert client.get("/media/organizations/logos/gibt-es-nicht.jpg").status_code == 404
 
 
 def test_wartungsmodus_sperrt_auch_oeffentliche_medien(media: Path, client: Client, settings: Any) -> None:

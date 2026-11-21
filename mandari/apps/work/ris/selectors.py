@@ -39,7 +39,7 @@ from insight_core.models import (
     OParlPerson,
     withdrawn_q,
 )
-from insight_core.services.personen_sichtbarkeit import nur_oeffentliche, oeffentlich
+from insight_core.services.personen_sichtbarkeit import mitgliedschaften_oeffentlicher, nur_oeffentliche
 
 Bodies = QuerySet[OParlBody]
 
@@ -247,12 +247,9 @@ def organization_members(organization: OParlOrganization) -> dict[str, QuerySet[
     wird nur, wer derzeit ein Amt hat (Issue #1560): Ausgeschiedene ohne anderes Amt erscheinen nicht mehr.
     """
     today = timezone.now().date()
-    memberships = (
-        organization.memberships.exclude(withdrawn_q())
-        .exclude(withdrawn_q("person"))
-        .filter(oeffentlich("person_id"))
-        .select_related("person")
-    )
+    memberships = mitgliedschaften_oeffentlicher(
+        organization.memberships.exclude(withdrawn_q()).exclude(withdrawn_q("person"))
+    ).select_related("person")
     return {
         "active": memberships.filter(_active_filter(today)).order_by("person__family_name", "person__name"),
         "past": memberships.filter(end_date__lt=today).order_by("-end_date"),

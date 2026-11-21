@@ -43,6 +43,7 @@ from insight_core.services import gazetteer, georef_runner
 from insight_core.services.gazetteer import StreetGazetteer
 from insight_core.services.georeferencing import collect_paper_text
 from insight_core.services.search_service import ElasticsearchService
+from insight_core.tests.amt import im_amt
 from insight_core.tests.conftest import CENTER_LAT, CENTER_LON
 from insight_core.views.subscriptions import ABO_ANTWORT
 
@@ -169,7 +170,7 @@ def test_fragenfilter_nach_fraktion_nur_ueber_bestehende_mitgliedschaften(body: 
 
 
 def test_etikett_des_personenfilters_nur_fuer_sichtbare_personen_der_kommune(body: OParlBody, client: Client) -> None:
-    sichtbar = _person(body, "Anna Sichtbar")
+    sichtbar = im_amt(_person(body, "Anna Sichtbar"))
     zurueckgenommen = _person(body, "Bert Geheimname", deleted=True)
     fremde_quelle = OParlSource.objects.create(name="Fremd", url="https://ris.fremd.example/oparl/system")
     fremde_kommune = OParlBody.objects.create(

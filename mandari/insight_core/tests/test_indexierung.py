@@ -817,14 +817,16 @@ class TestPersonenseite:
         _mitgliedschaft(person, rat, role="Ratsmitglied")
         assert _robots(self._seite(client, person)) == "index, follow"
 
-    def test_ausgeschieden_noindex(self, client: Client, rat: OParlOrganization) -> None:
+    def _status(self, client: Client, person: OParlPerson) -> int:
+        return int(client.get(reverse("insight_core:insight:person_detail", args=[person.pk])).status_code)
+
+    def test_ausgeschieden_keine_seite(self, client: Client, rat: OParlOrganization) -> None:
+        # Ohne laufendes Amt gibt es die Seite nicht mehr (Issue #1560), bisher trug sie noindex
         person = _person(rat.body, 1)
         _mitgliedschaft(person, rat, end_date=timezone.localdate() - timedelta(days=1))
-        html = self._seite(client, person)
-        assert _robots(html) == "noindex, follow"
-        assert _canonical(html) is None, "kein Canonical neben noindex"
+        assert self._status(client, person) in (404, 410)
 
-    def test_ausgeschieden_noindex_auch_nach_mitternacht_ortszeit(
+    def test_ausgeschieden_auch_nach_mitternacht_ortszeit(
         self, client: Client, rat: OParlOrganization, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # 23:30 UTC = 01:30 Uhr in Berlin: Das UTC-Datum ist noch der Vortag. Die Mitgliedschaft endete
@@ -834,18 +836,16 @@ class TestPersonenseite:
         assert timezone.localdate() == date(2026, 10, 10)
         person = _person(rat.body, 1)
         _mitgliedschaft(person, rat, end_date=date(2026, 10, 9))
-        assert _robots(self._seite(client, person)) == "noindex, follow"
+        assert self._status(client, person) in (404, 410)
 
-    def test_ohne_mitgliedschaft_noindex(self, client: Client, rat: OParlOrganization) -> None:
-        assert _robots(self._seite(client, _person(rat.body, 1))) == "noindex, follow"
+    def test_ohne_mitgliedschaft_keine_seite(self, client: Client, rat: OParlOrganization) -> None:
+        assert self._status(client, _person(rat.body, 1)) in (404, 410)
 
-    @pytest.mark.parametrize("mit_mitgliedschaft", [True, False])
     def test_keine_zusaetzliche_abfrage(
-        self, client: Client, rat: OParlOrganization, monkeypatch: pytest.MonkeyPatch, mit_mitgliedschaft: bool
+        self, client: Client, rat: OParlOrganization, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         person = _person(rat.body, 1)
-        if mit_mitgliedschaft:
-            _mitgliedschaft(person, rat)
+        _mitgliedschaft(person, rat)
         self._seite(client, person)
         with CaptureQueriesContext(connection) as mit_robots:
             self._seite(client, person)

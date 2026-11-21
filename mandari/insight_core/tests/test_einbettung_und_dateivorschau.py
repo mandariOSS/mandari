@@ -30,6 +30,7 @@ from insight_core.models import (
     OParlSource,
 )
 from insight_core.services import file_cache
+from insight_core.tests.amt import im_amt
 
 pytestmark = pytest.mark.django_db
 
@@ -77,8 +78,10 @@ class TestJsonLd:
     @pytest.mark.parametrize("art", ["person", "organization"])
     def test_personen_und_gremien(self, body: OParlBody, art: str) -> None:
         if art == "person":
-            person = OParlPerson.objects.create(
-                external_id="https://ris.fremd.example/oparl/person/1", body=body, name=AUSBRUCH, family_name="X"
+            person = im_amt(
+                OParlPerson.objects.create(
+                    external_id="https://ris.fremd.example/oparl/person/1", body=body, name=AUSBRUCH, family_name="X"
+                )
             )
             url = f"/insight/personen/{person.id}/"
         else:

@@ -23,7 +23,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from django.core.cache import cache
-from django.db.models import Count
+from django.db.models import Count, QuerySet
 from django.utils import timezone
 
 from ..models import (
@@ -84,10 +84,10 @@ def _cached[T](name: str, compute: Callable[[], T]) -> T:
 def _counts_by_body(
     model: type[OParlPaper] | type[OParlOrganization] | type[OParlMeeting] | type[OParlPerson],
 ) -> dict[str, int]:
-    bestand = model.objects.filter(deleted=False)
+    bestand: QuerySet[Any] = model.objects.filter(deleted=False)
     if model is OParlPerson:
         # Gezählt wird, was das Portal zeigt: Personen mit laufendem Amt (Issue #1560)
-        bestand = nur_oeffentliche(bestand)
+        bestand = nur_oeffentliche(OParlPerson.objects.all())
     rows = bestand.values("body").annotate(n=Count("id"))
     return {str(row["body"]): int(row["n"]) for row in rows}
 

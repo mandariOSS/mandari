@@ -64,6 +64,13 @@ def nur_oeffentliche(queryset: QuerySet[OParlPerson], on: date | None = None) ->
     return queryset.filter(oeffentlich("pk", on), deleted=False).exclude(testkonto_q())
 
 
+def mitgliedschaften_oeffentlicher(
+    mitgliedschaften: QuerySet[OParlMembership], on: date | None = None
+) -> QuerySet[OParlMembership]:
+    """Die Mitgliedschaften, deren Person mandari öffentlich zeigt (für Mitgliederlisten von Gremien)."""
+    return mitgliedschaften.filter(oeffentlich("person_id", on), person__deleted=False).exclude(testkonto_q("person"))
+
+
 def oeffentliche_ids(person_ids: Iterable[Any], on: date | None = None) -> set[Any]:
     """Die Kennungen aus ``person_ids``, deren Person mandari öffentlich zeigt (eine Abfrage)."""
     ids = [pk for pk in person_ids if pk]

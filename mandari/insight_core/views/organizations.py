@@ -161,14 +161,10 @@ class OrganizationDetailView(DetailView):
 
         # Nur bestehende Mitgliedschaften von nicht zurückgenommenen Personen, ohne Test- und Systemkonten des RIS
         # (Issue #1258: sie zählen auch nicht als Mitglieder)
-        all_memberships = (
-            org.memberships.filter(deleted=False)
-            .exclude(withdrawn_q("person"))
-            .exclude(ausgeblendet_q())
-            # Genannt wird nur, wer derzeit ein Amt hat (Issue #1560): Ausgeschiedene ohne anderes Amt nicht
-            .filter(personen_sichtbarkeit.oeffentlich("person_id"))
-            .select_related("person", "person__body")
-        )
+        # Genannt wird nur, wer derzeit ein Amt hat (Issue #1560): Ausgeschiedene ohne anderes Amt nicht
+        all_memberships = personen_sichtbarkeit.mitgliedschaften_oeffentlicher(
+            org.memberships.filter(deleted=False).exclude(withdrawn_q("person")).exclude(ausgeblendet_q())
+        ).select_related("person", "person__body")
         active_qs = all_memberships.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by(
             "person__family_name"
         )

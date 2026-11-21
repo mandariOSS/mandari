@@ -36,6 +36,7 @@ from insight_core.services import fraktionen
 from insight_core.services.body_deletion import delete_body_data
 from insight_core.services.external_references import split_by_references
 from insight_core.services.personen_liste import angaben_fuer
+from insight_core.tests.amt import im_amt
 
 pytestmark = pytest.mark.django_db
 
@@ -59,8 +60,11 @@ def ereignisse(settings: Any) -> None:
 
 def _person(body: OParlBody, key: str = "1", name: str = "Erika Muster") -> OParlPerson:
     vorname, nachname = name.split(" ", 1)
-    return OParlPerson.objects.create(
-        external_id=f"{RIS}/person/{key}", body=body, name=name, given_name=vorname, family_name=nachname
+    # Mit laufendem Amt, sonst zeigt das Portal die Person nicht (Issue #1560)
+    return im_amt(
+        OParlPerson.objects.create(
+            external_id=f"{RIS}/person/{key}", body=body, name=name, given_name=vorname, family_name=nachname
+        )
     )
 
 

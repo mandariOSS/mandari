@@ -540,10 +540,8 @@ class TestPerson:
     def test_ehemaliges_mitglied_ohne_funktion(self, muenster: OParlBody) -> None:
         person = _person(muenster, "Hans Früher", (_gremium(muenster, "Rat"), "Mitglied"), ehemals=True)
 
-        seite = _seite(Client(), f"/insight/personen/{person.id}/")
-
-        assert _titel(seite) == "Hans Früher, Münster"
-        assert "Ratsmitglied" not in seite[: seite.index("</head>")]
+        # Ohne laufendes Amt gibt es keine Seite mehr (Issue #1560)
+        assert Client().get(f"/insight/personen/{person.id}/").status_code in (404, 410)
 
     def test_lange_rolle_gekuerzt(self, muenster: OParlBody) -> None:
         rolle = "Stellv. stimmberechtigtes Mitglied (sachk. Bürger/in)"
