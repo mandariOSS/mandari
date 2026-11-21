@@ -515,7 +515,9 @@ resp, people = get_json(f"/oparl/v1/body/{body_a.id}/people")
 # Nur Personen mit laufendem Amt (Issue #1560): Tina Test hat keine Mitgliedschaft
 check("People: 2 Einträge (mit Amt)", resp.status_code == 200 and people["pagination"]["totalElements"] == 2)
 p1_json = next(p for p in people["data"] if p["id"] == f"{BASE}/v1/person/{p1.id}")
-check("Person: keine Kontaktdaten (#1560)", "email" not in p1_json and "phone" not in p1_json and "gender" not in p1_json)
+check(
+    "Person: keine Kontaktdaten (#1560)", "email" not in p1_json and "phone" not in p1_json and "gender" not in p1_json
+)
 check("Person: title als Liste", p1_json.get("title") == ["Dr."])
 check(
     "Person: Memberships eingebettet + Referenzen umgeschrieben",
