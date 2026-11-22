@@ -20,7 +20,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 import mandari.urls as urls
-from apps.common.tests.versionstage import pruefe_tag_je_version
+from apps.common.tests.versionstage import pruefe_jede_version_hat_einen_eintrag, pruefe_tag_je_version
 from apps.session.models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionTenant
 from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlSource
 from insight_core.services import neuigkeiten
@@ -199,6 +199,10 @@ class TestNeuigkeiten:
     def test_je_version_ein_tag_und_derselbe_wie_im_changelog(self) -> None:
         """Im Portal steht eine Neuerung ab dem Release: Tag aus der CHANGELOG.md, nicht der Übernahme nach dev."""
         pruefe_tag_je_version(neuigkeiten.lies())
+
+    def test_jede_version_hat_einen_eintrag(self) -> None:
+        """Auch eine Version ohne sichtbare Änderung am Portal steht auf der Seite, mit einem kurzen Eintrag."""
+        pruefe_jede_version_hat_einen_eintrag(neuigkeiten.lies(), "dem Bürgerportal")
 
     def test_fehlende_pflichtfelder(self, tmp_path: Path) -> None:
         datei = tmp_path / "neu.toml"
