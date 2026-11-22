@@ -21,9 +21,39 @@
 # dazukommt. Das Wichtigste einer Version steht zuerst: Die Bereiche folgen auf der Seite der Reihenfolge ihres
 # ersten Eintrags, die Einträge darin der Reihenfolge in der Datei.
 #
+# Jede Version bekommt mindestens einen Eintrag (Sven, 22.11.2026): Ändert sie an Work nichts, steht hier ein kurzer
+# Eintrag im Bereich ueberall, der das sagt und nennt, worum es in der Version ging. Sonst fehlte die Version auf der
+# Seite, und niemand wüsste, ob etwas vergessen wurde. Erscheinen mehrere Versionen am selben Tag, steht die höhere
+# weiter oben in der Datei.
+#
 # Ton: Sie-Form, sachlich und einladend, keine Fachwörter aus der Technik, nichts versprechen, was nicht in jeder
-# Organisation gilt. apps/work/tests/test_neuigkeiten.py prüft Pflichtfelder, Bereich, Längen, Anrede und den Tag der
-# Version.
+# Organisation gilt. apps/work/tests/test_neuigkeiten.py prüft Pflichtfelder, Bereich, Längen, Anrede, den Tag der
+# Version und dass keine Version fehlt.
+
+[[eintrag]]
+datum = 2026-11-22
+version = ""
+bereich = "ueberall"
+titel = "„Was ist neu?“ nennt jetzt jede Version."
+text = """Auf dieser Seite steht ab sofort jede Version von mandari, auch wenn sie an Work nichts geändert hat. \
+Dann sagt ein kurzer Eintrag, worum es in der Version ging. So sehen Sie immer, dass nichts fehlt."""
+
+[[eintrag]]
+datum = 2026-11-21
+version = "0.13.4"
+bereich = "recherche"
+titel = "Die Recherche zeigt Personen datensparsam."
+text = """Unter Recherche stehen nur noch Personen, die derzeit ein Amt haben, etwa im Rat, in einem Ausschuss oder \
+in einem Aufsichtsrat. E-Mail-Adressen, Telefonnummern und Fotos zeigen wir dort nicht mehr. Die Mitglieder Ihrer \
+eigenen Organisation unter Team sind davon nicht betroffen."""
+
+[[eintrag]]
+datum = 2026-11-21
+version = "0.13.3"
+bereich = "ueberall"
+titel = "Keine Änderungen an Work."
+text = """Diese Version betrifft das Bürgerportal und die offene Schnittstelle: KI-Assistenten finden die \
+öffentlichen Ratsinformationen jetzt leichter. In Work bleibt alles, wie es war."""
 
 [[eintrag]]
 datum = 2026-11-21

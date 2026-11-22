@@ -19,7 +19,7 @@ import pytest
 from django.urls import reverse
 
 from apps.common.tests import factories
-from apps.common.tests.versionstage import pruefe_tag_je_version
+from apps.common.tests.versionstage import pruefe_jede_version_hat_einen_eintrag, pruefe_tag_je_version
 from apps.work import neuigkeiten
 from insight_core.services import neuigkeiten as portal
 
@@ -76,6 +76,11 @@ def test_datei_vollstaendig_und_in_sie_form() -> None:
 def test_je_version_ein_tag_und_derselbe_wie_im_changelog() -> None:
     """Die Seite zeigt eine Überschrift je Version; ihr Tag ist der aus der Überschrift der CHANGELOG.md."""
     pruefe_tag_je_version(portal.lies(neuigkeiten.DATEI))
+
+
+def test_jede_version_hat_einen_eintrag() -> None:
+    """Auch eine Version ohne Änderung an Work steht auf der Seite, mit einem kurzen Eintrag, der das sagt."""
+    pruefe_jede_version_hat_einen_eintrag(portal.lies(neuigkeiten.DATEI), "Work")
 
 
 def test_gruppen_eine_je_version() -> None:

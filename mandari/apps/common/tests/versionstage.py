@@ -48,3 +48,36 @@ def pruefe_tag_je_version(eintraege: Iterable[EintragMitVersion]) -> None:
         assert menge == {date.fromisoformat(kopf[version])}, (
             f"Version {version}: {sorted(menge)[0]} statt {kopf[version]} (Überschrift in der CHANGELOG.md)"
         )
+
+
+def _zahlen(version: str) -> tuple[int, ...]:
+    return tuple(int(teil) for teil in version.split("."))
+
+
+def pruefe_jede_version_hat_einen_eintrag(eintraege: Iterable[EintragMitVersion], seite: str) -> None:
+    """
+    Jede Version der CHANGELOG.md hat auf der Seite mindestens einen Eintrag, ab der ältesten Version, die die Datei
+    kennt (Sven, 22.11.2026: „Es sollte IMMER einen kleinen Eintrag geben“). Ändert eine Version an ``seite`` nichts,
+    sagt ein kurzer Eintrag genau das. Erscheinen mehrere Versionen am selben Tag, steht die höhere zuerst: Die Seite
+    zeigt die Einträge eines Tags in der Reihenfolge der Datei.
+    """
+    liste = list(eintraege)
+    mit_version = [eintrag.version for eintrag in liste if eintrag.version]
+    assert mit_version, "mindestens ein Eintrag mit Version"
+    # Reihenfolge auf der Seite: neueste zuerst, am selben Tag die höhere Version zuerst
+    folge = list(dict.fromkeys(mit_version))
+    tag = {eintrag.version: eintrag.datum for eintrag in liste if eintrag.version}
+    for vorher, nachher in zip(folge, folge[1:], strict=False):
+        if tag[vorher] == tag[nachher]:
+            assert _zahlen(vorher) > _zahlen(nachher), f"{nachher} steht am selben Tag über {vorher}: höhere zuerst"
+
+    changelog = Path(settings.BASE_DIR).parent / "CHANGELOG.md"
+    if not changelog.exists():
+        pytest.skip("CHANGELOG.md liegt nicht neben dem Projekt (Image)")
+    versionen = re.findall(r"^## \[(\d+\.\d+\.\d+)\] – \d{4}-\d{2}-\d{2}", changelog.read_text(encoding="utf-8"), re.M)
+    aelteste = min(mit_version, key=_zahlen)
+    fehlend = [v for v in versionen if _zahlen(v) >= _zahlen(aelteste) and v not in mit_version]
+    assert not fehlend, (
+        f"Ohne Eintrag unter „Was ist neu?“ ({seite}): {', '.join(fehlend)}. Jede Version bekommt mindestens einen "
+        f"kurzen Eintrag, auch wenn sie an {seite} nichts ändert."
+    )

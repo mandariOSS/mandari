@@ -13,17 +13,36 @@
 #   titel    ein Satz zum Nutzen, mit Punkt am Ende, höchstens 80 Zeichen
 #   text     ein Absatz, der erklärt, wo man die Neuerung findet und was sie bringt, höchstens 500 Zeichen
 #
+# Jede Version bekommt mindestens einen Eintrag (Sven, 22.11.2026): Ändert sie am Bürgerportal nichts Sichtbares,
+# steht hier ein kurzer Eintrag, der das sagt und nennt, worum es in der Version ging. Erscheinen mehrere Versionen am
+# selben Tag, steht die höhere weiter oben in der Datei.
+#
 # Ton: Sie-Form, einladend und sachlich, keine Fachwörter aus der Technik, nichts versprechen, was nicht überall gilt
-# („in ersten Kommunen“). insight_core/tests/test_leer_fehler_neu.py prüft Pflichtfelder, Längen, die Anrede und den
-# Tag der Version.
+# („in ersten Kommunen“). insight_core/tests/test_leer_fehler_neu.py prüft Pflichtfelder, Längen, die Anrede, den Tag
+# der Version und dass keine Version fehlt.
+
+[[eintrag]]
+datum = 2026-11-22
+version = ""
+titel = "„Was ist neu?“ nennt jetzt jede Version."
+text = """Auf dieser Seite steht ab sofort jede Version von mandari, auch wenn sie am Bürgerportal nichts Sichtbares \
+geändert hat. Dann sagt ein kurzer Eintrag, worum es in der Version ging."""
 
 [[eintrag]]
 datum = 2026-11-21
-version = ""
+version = "0.13.4"
 titel = "Weniger persönliche Daten im Portal."
 text = """Das Bürgerportal zeigt nur noch Personen, die derzeit ein Amt haben, etwa im Rat, in einem Ausschuss oder \
 in einem Aufsichtsrat. Fotos, E-Mail-Adressen und Telefonnummern zeigen wir nicht mehr. Vorlagen, die Angaben zu \
 Privatpersonen enthalten können, etwa Eingaben aus der Einwohnerschaft, erscheinen nicht mehr in Suchmaschinen."""
+
+[[eintrag]]
+datum = 2026-11-21
+version = "0.13.3"
+titel = "KI-Assistenten finden die Ratsinformationen leichter."
+text = """Wer einen KI-Assistenten wie Claude nach Beschlüssen oder Sitzungen seiner Kommune fragt, kann ihn jetzt \
+einfacher mit den öffentlichen Ratsinformationen verbinden. Der Assistent findet den Zugang von selbst und nennt \
+die Seiten des Bürgerportals als Quelle. Am Portal selbst ändert sich nichts."""
 
 [[eintrag]]
 datum = 2026-11-21
