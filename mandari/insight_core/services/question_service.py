@@ -277,11 +277,12 @@ def get_topic_counts(body) -> list[dict]:
 
 
 def get_top_recipients(body, limit: int = 5):
-    """Mandatsträger:innen mit den meisten veröffentlichten Fragen."""
+    """Mandatsträger:innen mit den meisten veröffentlichten Fragen, nur mit laufendem Amt (Issue #1560)."""
     from ..models import OParlPerson
+    from .personen_sichtbarkeit import nur_oeffentliche
 
     return (
-        OParlPerson.objects.filter(body=body, deleted=False)
+        nur_oeffentliche(OParlPerson.objects.filter(body=body))
         .annotate(
             question_count=Count("public_questions", filter=Q(public_questions__status="published")),
             answered_count=Count(

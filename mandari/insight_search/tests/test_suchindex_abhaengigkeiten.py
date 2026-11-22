@@ -34,6 +34,7 @@ from insight_core.models import (
 from insight_core.services import search_projection
 from insight_core.services.search_documents import file_contexts, file_to_doc
 from insight_core.services.search_projection import iter_documents
+from insight_core.tests.amt import im_amt
 from insight_search import abonnement
 from insight_search.abonnement import Target
 from insight_search.tests.fake_es import FakeElasticsearch
@@ -231,8 +232,14 @@ def test_person_landet_mit_aenderungsereignis_im_schattenindex(
 ) -> None:
     spec = _abonnement(settings)
     body = kommune("Beispielstadt")
-    person = OParlPerson.objects.create(
-        external_id=f"https://ris.example/person/{uuid.uuid4()}", body=body, name="Erika Muster", family_name="Muster"
+    # Mit laufendem Amt: Nur dann steht eine Person im Index (Issue #1560)
+    person = im_amt(
+        OParlPerson.objects.create(
+            external_id=f"https://ris.example/person/{uuid.uuid4()}",
+            body=body,
+            name="Erika Muster",
+            family_name="Muster",
+        )
     )
     ereignis = _ereignis("ris.person.changed", person, body, payload={"person": str(person.pk), "change": "added"})
 

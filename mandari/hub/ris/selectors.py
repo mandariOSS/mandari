@@ -1483,8 +1483,10 @@ def public_organizations_named(bodies: Bodies, name: str) -> list[OParlOrganizat
 
 
 def search_public_persons(bodies: Bodies, name: str) -> QuerySet[OParlPerson]:
-    """Nicht gelöschte Personen der Kommunen, deren Name jedes Wort aus ``name`` enthält."""
-    found = persons(bodies).filter(deleted=False)
+    """Personen der Kommunen mit laufendem Amt (Issue #1560), deren Name jedes Wort aus ``name`` enthält."""
+    from insight_core.services.personen_sichtbarkeit import nur_oeffentliche
+
+    found = nur_oeffentliche(persons(bodies))
     for word in name.split()[:4]:
         found = found.filter(Q(name__icontains=word) | Q(given_name__icontains=word) | Q(family_name__icontains=word))
     return found.order_by("family_name", "name")

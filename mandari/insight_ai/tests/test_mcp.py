@@ -152,7 +152,7 @@ def test_kommunengrenze(an: Any, stadt: Musterstadt) -> None:
 def test_nur_lesend(an: Any, stadt: Musterstadt) -> None:
     vorher = list(OParlMeeting.objects.order_by("pk").values())
     werkzeug("vorgaenge_suchen", kommune="musterstadt", text="V/2026/0123")
-    werkzeug("personen", kommune="musterstadt", name="Mustermann")
+    werkzeug("personen", kommune="musterstadt", name="Musterfrau")
     assert list(OParlMeeting.objects.order_by("pk").values()) == vorher
 
 

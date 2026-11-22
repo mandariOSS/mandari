@@ -866,15 +866,10 @@ class OParlPerson(SourceDeletionModel):
     @property
     def photo_src(self):
         """
-        Anzeige-URL für Templates: lokal gecachtes Foto zuerst, sonst die
-        RIS-URL (Hotlink). Ist im RIS nachweislich kein Foto vorhanden,
-        wird gar nichts geliefert (Initialen-Fallback statt kaputtem Bild).
+        Immer leer: Fotos von Personen zeigt mandari nicht (Datensparsamkeit, Issue #1560). Die Anzeige nimmt die
+        Initialen; gespeicherte Fotos bleiben im Bestand, werden aber weder abgerufen noch ausgeliefert.
         """
-        if self.photo:
-            return self.photo.url
-        if self.photo_status == "missing":
-            return None
-        return self.photo_url
+        return None
 
     @property
     def initials(self):

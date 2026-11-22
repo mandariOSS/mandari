@@ -100,6 +100,8 @@ TYPES: Final = (
     "ris.agendaitem.*",
     "ris.organization.*",
     "ris.person.*",
+    # Mitgliedschaften entscheiden, ob eine Person im Index steht: nur mit laufendem Amt (Issue #1560)
+    "ris.membership.*",
     "ris.object.depublished",
 )
 #: Ereignisse je Batch: Ein Batch kann ebenso viele Dateitexte bauen
@@ -332,6 +334,11 @@ def affected(events: Iterable[Event], bodies: frozenset[str] | None = None) -> t
         index = INDEX_BY_AGGREGATE.get(art)
         if index is not None:
             merken(Target(index, objekt), seq)
+        if art == "Membership":
+            # Die Person der Mitgliedschaft neu bauen: Mit dem Amt kommt sie in den Index oder fällt heraus
+            person = _uuid(_nutzlast(ereignis).get("person"))
+            if person is not None:
+                merken(Target("persons", person), seq)
         if art in _PAPER_DEPENDENTS:
             vorgang = _uuid(_nutzlast(ereignis).get("paper"))
             if vorgang is not None:

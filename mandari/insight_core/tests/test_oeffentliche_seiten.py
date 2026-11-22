@@ -115,14 +115,15 @@ class TestPersonenUndGremien:
         assert client.get(f"/insight/personen/{welt['schulz'].id}/").status_code == 410
         assert client.get(f"/insight/gremien/{welt['rat'].id}/").status_code == 410
 
-    def test_fremdquelle_bleibt_transparent(self, body: OParlBody) -> None:
+    def test_in_der_quelle_geloeschte_person_ist_nicht_oeffentlich(self, body: OParlBody) -> None:
+        # Bisher blieb sie mit Hinweis sichtbar; ohne laufendes Amt und gelöscht zeigt das Portal sie nicht (#1560)
         fremd = OParlPerson.objects.create(
             external_id="https://ris.fremd.example/oparl/person/1", body=body, name="Fremde Person", family_name="F"
         )
         fremd.mark_deleted()
         response = Client().get(f"/insight/personen/{fremd.id}/")
-        assert response.status_code == 200
-        assert "zurückgezogen" in response.content.decode()
+        assert response.status_code == 410
+        assert "Fremde Person" not in response.content.decode()
 
 
 # =============================================================================

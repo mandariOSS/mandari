@@ -67,6 +67,7 @@ from insight_core.models import (
     OParlPerson,
     OParlSource,
 )
+from insight_core.tests.amt import im_amt
 
 pytestmark = pytest.mark.django_db
 
@@ -148,7 +149,8 @@ def kommune() -> Any:
 def bestand(kommune: OParlBody) -> dict[str, Any]:
     """Je Einbettung des Bestands ein Paar; der Ort steht in zwei Sitzungen (als Adresse und eingebettet)."""
     rat = OParlOrganization.objects.create(external_id=f"{RIS}/org/1", body=kommune, name="Rat")
-    person = OParlPerson.objects.create(external_id=f"{RIS}/person/1", body=kommune, name="Petra Muster")
+    # Mit einem zweiten laufenden Amt: Die Person bleibt öffentlich, auch wenn „mitglied“ zurückgenommen wird (#1560)
+    person = im_amt(OParlPerson.objects.create(external_id=f"{RIS}/person/1", body=kommune, name="Petra Muster"))
     ort = OParlLocation.objects.create(external_id=f"{RIS}/location/1", body=kommune, description="Bürgerhaus")
     sitzung = OParlMeeting.objects.create(
         external_id=f"{RIS}/meeting/1", body=kommune, name="Rat", raw_json={"location": ort.external_id}

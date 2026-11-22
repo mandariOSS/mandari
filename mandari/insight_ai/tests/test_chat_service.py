@@ -158,7 +158,7 @@ def test_tagesordnung_morgen_in_einer_runde(monkeypatch: pytest.MonkeyPatch, sta
 
 
 def test_werkzeugergebnisse_gehen_in_den_verlauf(monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt) -> None:
-    fake = anbieter(monkeypatch, werkzeuge(("gremien", {}), ("personen", {"name": "Mustermann"})), "Fertig.")
+    fake = anbieter(monkeypatch, werkzeuge(("gremien", {}), ("personen", {"name": "Musterfrau"})), "Fertig.")
     frage(stadt, "Wer sitzt im Rat?")
 
     zweite_runde = fake.aufrufe[1]["messages"]
@@ -166,7 +166,7 @@ def test_werkzeugergebnisse_gehen_in_den_verlauf(monkeypatch: pytest.MonkeyPatch
     assert assistent["role"] == "assistant" and len(assistent["tool_calls"]) == 2
     assert [e["tool_call_id"] for e in ergebnisse] == [c["id"] for c in assistent["tool_calls"]]
     assert "Ausschuss für Umwelt und Verkehr" in ergebnisse[0]["content"]
-    assert "Erika Mustermann" in ergebnisse[1]["content"]
+    assert "Erika Musterfrau" in ergebnisse[1]["content"]
 
 
 def test_runden_sind_begrenzt(monkeypatch: pytest.MonkeyPatch, settings: Any, stadt: Musterstadt) -> None:

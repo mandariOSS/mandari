@@ -6,6 +6,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 from django.db.models import Q
+from django.http import Http404
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
@@ -15,8 +16,8 @@ from ..models import (
     PublicQuestion,
     withdrawn_q,
 )
-from ..services import fraktionen, personen_liste
-from ..services.testkonten import ist_testkonto, systemrolle_q, testkonto_q
+from ..services import fraktionen, personen_liste, personen_sichtbarkeit
+from ..services.testkonten import systemrolle_q
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, FilterInAdresseMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -74,8 +75,9 @@ class PersonListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSei
         if not body:
             return OParlPerson.objects.none()
 
-        # Ohne Test- und Platzhalterkonten des RIS (Issue #1258); die Daten bleiben im Bestand
-        qs = OParlPerson.objects.filter(body=body, deleted=False).exclude(testkonto_q()).select_related("body")
+        # Nur Personen mit laufendem Amt (Issue #1560), ohne Test- und Platzhalterkonten des RIS (Issue #1258);
+        # die übrigen bleiben im Bestand
+        qs = personen_sichtbarkeit.nur_oeffentliche(OParlPerson.objects.filter(body=body)).select_related("body")
 
         # Suche (Name + Funktion/Gremium über Mitgliedschaften)
         q = self.request.GET.get("q", "").strip()
@@ -84,7 +86,6 @@ class PersonListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSei
                 Q(name__icontains=q)
                 | Q(family_name__icontains=q)
                 | Q(given_name__icontains=q)
-                | Q(email__icontains=q)
                 | Q(
                     personen_liste.bestehende_mitgliedschaft(
                         "pk", Q(role__icontains=q) | Q(organization__name__icontains=q)
@@ -107,6 +108,9 @@ class PersonDetailView(DetailView):
         self.object = self.get_object()
         if self.object.withdrawn_by_publisher:
             return withdrawn_response(request, self.object)
+        # Ohne laufendes Amt gibt es die Seite nicht (Issue #1560); die Person bleibt im Bestand
+        if not personen_sichtbarkeit.ist_oeffentlich(self.object):
+            raise Http404("Person nicht öffentlich")
         return self.render_to_response(self.get_context_data(object=self.object))
 
     def get_context_data(self, **kwargs):
@@ -155,9 +159,7 @@ class PersonDetailView(DetailView):
             .distinct()
             .order_by("start")[:3]
         )
-        context["hat_randspalte"] = bool(
-            person.email or person.phone or person.title or person.gender or context["naechste_sitzungen"]
-        )
+        context["hat_randspalte"] = bool(person.title or context["naechste_sitzungen"])
 
         # Öffentliche Fragen (bei allen Mandatsträger:innen: Rat/Hauptorgan oder Fraktion). Pausiert
         # (Issue #734): Reiter nur mit bisherigen Fragen, ohne Antwortquote und ohne „Frage stellen“.
@@ -187,8 +189,7 @@ class PersonDetailView(DetailView):
         from ..seo import get_person_seo
         from ..services.indexierung import robots_fuer_person
 
-        # Ohne laufende Mitgliedschaft noindex (Issue #914); die Mitgliedschaften sind oben schon geladen. Test- und
-        # Platzhalterkonten bleiben erreichbar, aber nie im Index (Issue #1258)
+        # Ohne laufende Mitgliedschaft noindex (Issue #914); die Mitgliedschaften sind oben schon geladen
         context["seo"] = robots_fuer_person(
             get_person_seo(
                 person,
@@ -197,7 +198,7 @@ class PersonDetailView(DetailView):
                 fraktion=context["faction"],
                 mitgliedschaften=context["active_memberships"],
             ).to_dict(),
-            [] if ist_testkonto(person) else context["active_memberships"],
+            context["active_memberships"],
         )
 
         return context

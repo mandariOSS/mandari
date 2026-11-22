@@ -11,7 +11,7 @@ Parameter wie c-liste.sitzungen.
 {% endcomment %}
 <c-vars personen="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" />
 {% load insight_listen %}
-{% with sp_fraktion=personen|hat_wert:"angaben.fraktion_name" sp_funktion=personen|hat_wert:"angaben.funktion" sp_gremien=personen|hat_wert:"angaben.gremien" sp_kontakt=personen|hat_wert:"email" %}
+{% with sp_fraktion=personen|hat_wert:"angaben.fraktion_name" sp_funktion=personen|hat_wert:"angaben.funktion" sp_gremien=personen|hat_wert:"angaben.gremien" %}
 <div class="-mx-3">
     <div class="relative overflow-x-auto">
     <table class="w-full">
@@ -21,7 +21,6 @@ Parameter wie c-liste.sitzungen.
                 {% if sp_fraktion %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-md:hidden">Fraktion</th>{% endif %}
                 {% if sp_funktion %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Funktion</th>{% endif %}
                 {% if sp_gremien %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-2xl:hidden">Gremien</th>{% endif %}
-                {% if sp_kontakt %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-xl:hidden">Kontakt</th>{% endif %}
                 {% if zusatz %}<th class="text-left px-3 py-2 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-md:hidden">{{ zusatz_titel }}</th>{% endif %}
                 <th class="w-10 px-2 {% if dicht %}py-2{% else %}py-3{% endif %}"><span class="sr-only">{% if ohne_merken %}Öffnen{% else %}Merken{% endif %}</span></th>
             </tr>
@@ -56,13 +55,6 @@ Parameter wie c-liste.sitzungen.
                 {% endif %}
                 {% if sp_gremien %}
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-2xl:hidden">{{ person.angaben.gremien_kurz }}</td>
-                {% endif %}
-                {% if sp_kontakt %}
-                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} max-xl:hidden">
-                    {% if person.email %}
-                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-700 dark:text-primary-300 hover:underline break-all">{{ person.email }}</a>
-                    {% endif %}
-                </td>
                 {% endif %}
                 {% if zusatz %}<td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-200 max-md:hidden">{% include zusatz with eintrag=person %}</td>{% endif %}
                 <td class="px-2 {% if dicht %}py-2{% else %}py-3{% endif %}">

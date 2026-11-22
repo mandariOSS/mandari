@@ -379,9 +379,9 @@ def test_gremien_nur_bestehende(ctx: ToolContext, stadt: Musterstadt) -> None:
 
 
 def test_personen_ohne_kontaktdaten(ctx: ToolContext, stadt: Musterstadt) -> None:
-    ergebnis = rufe(ctx, "personen", name="Mustermann")
+    ergebnis = rufe(ctx, "personen", name="Musterfrau")
     person = ergebnis["personen"][0]
-    assert person["name"] == "Erika Mustermann"
+    assert person["name"] == "Erika Musterfrau"
     assert person["link"] == f"/insight/personen/{stadt.person.pk}/"
     # Nur laufende Mitgliedschaften
     assert person["mitgliedschaften"] == [f"Rat (Vorsitz) | /insight/gremien/{stadt.rat.pk}/"]

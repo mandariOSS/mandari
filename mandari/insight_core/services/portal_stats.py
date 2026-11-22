@@ -23,7 +23,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from django.core.cache import cache
-from django.db.models import Count
+from django.db.models import Count, QuerySet
 from django.utils import timezone
 
 from ..models import (
@@ -34,6 +34,7 @@ from ..models import (
     OParlPerson,
     PublicQuestion,
 )
+from .personen_sichtbarkeit import nur_oeffentliche
 
 if TYPE_CHECKING:
     from ..models import OParlBody
@@ -83,7 +84,11 @@ def _cached[T](name: str, compute: Callable[[], T]) -> T:
 def _counts_by_body(
     model: type[OParlPaper] | type[OParlOrganization] | type[OParlMeeting] | type[OParlPerson],
 ) -> dict[str, int]:
-    rows = model.objects.filter(deleted=False).values("body").annotate(n=Count("id"))
+    bestand: QuerySet[Any] = model.objects.filter(deleted=False)
+    if model is OParlPerson:
+        # Gezählt wird, was das Portal zeigt: Personen mit laufendem Amt (Issue #1560)
+        bestand = nur_oeffentliche(OParlPerson.objects.all())
+    rows = bestand.values("body").annotate(n=Count("id"))
     return {str(row["body"]): int(row["n"]) for row in rows}
 
 
@@ -108,7 +113,7 @@ def overview_stats() -> dict[str, int]:
         # sonst weicht die Summe von der angezeigten Kommunenliste ab.
         return {
             "organizations": OParlOrganization.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-            "persons": OParlPerson.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+            "persons": nur_oeffentliche(OParlPerson.objects.exclude(body__is_listed=False)).count(),
             "meetings": OParlMeeting.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
             "papers": OParlPaper.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
             "files": OParlFile.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
@@ -123,7 +128,7 @@ def body_stats(body: OParlBody) -> dict[str, int]:
     def compute() -> dict[str, int]:
         return {
             "organizations": OParlOrganization.objects.filter(body=body, deleted=False).count(),
-            "persons": OParlPerson.objects.filter(body=body, deleted=False).count(),
+            "persons": nur_oeffentliche(OParlPerson.objects.filter(body=body)).count(),
             "meetings": OParlMeeting.objects.filter(body=body, deleted=False).count(),
             "papers": OParlPaper.objects.filter(body=body, deleted=False).count(),
             "files": OParlFile.objects.filter(paper__body=body, deleted=False).count(),
