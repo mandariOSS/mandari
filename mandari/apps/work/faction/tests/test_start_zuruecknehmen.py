@@ -140,6 +140,21 @@ def test_ende_ohne_historie(welt: dict[str, Any]) -> None:
     assert zuruecknehmen.geplantes_ende(meeting) == meeting.start + timedelta(minutes=90)
 
 
+def test_ueber_statusauswahl_abgeschlossen_ende_bleibt(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
+    geplant = meeting.end
+    client = client_for(welt["vorsitz"].user)
+    _aktion(welt, client, "start")
+    url = reverse("work:faction_action", kwargs={"org_slug": welt["org"].slug, "meeting_id": meeting.pk})
+    client.post(url, {"action": "update_status", "status": "completed"})
+    meeting.refresh_from_db()
+    assert meeting.status == "completed" and meeting.end == geplant
+
+    assert zuruecknehmen.zuruecknehmen(meeting)
+    meeting.refresh_from_db()
+    assert (meeting.status, meeting.end) == ("invited", geplant)
+
+
 def test_ohne_recht_kein_zuruecknehmen(welt: dict[str, Any], client_for: Any) -> None:
     meeting = welt["meeting"]
     _aktion(welt, client_for(welt["vorsitz"].user), "start")

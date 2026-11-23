@@ -52,7 +52,8 @@ def darf_zuruecknehmen(membership: Membership, meeting: FactionMeeting) -> bool:
 def geplantes_ende(meeting: FactionMeeting) -> datetime | None:
     """
     Ende vor „Sitzung beenden“. Das Beenden schreibt die Uhrzeit in ``end``; den Wert davor nennt die
-    Änderungshistorie (letzter Wechsel auf „beendet“). Ohne Eintrag: Beginn plus Dauer der Sitzungsreihe.
+    Änderungshistorie (letzter Wechsel auf „beendet“). Hat dieser Wechsel das Ende nicht berührt (abgeschlossen über
+    die Statusauswahl), bleibt das Ende, wie es ist. Ohne Eintrag: Beginn plus Dauer der Sitzungsreihe.
     """
     from .models import FactionAuditLog
 
@@ -61,7 +62,7 @@ def geplantes_ende(meeting: FactionMeeting) -> datetime | None:
             organization_id=meeting.organization_id,
             model_name="FactionMeeting",
             object_id=meeting.pk,
-            changes__has_key="end",
+            changes__has_key="status",
         )
         .order_by("-created_at")
         .values_list("changes", flat=True)[:20]
@@ -69,6 +70,8 @@ def geplantes_ende(meeting: FactionMeeting) -> datetime | None:
     for changes in eintraege:
         if (changes.get("status") or {}).get("neu") != "completed":
             continue
+        if "end" not in changes:
+            return meeting.end
         alt = (changes.get("end") or {}).get("alt")
         if not alt:
             return None
