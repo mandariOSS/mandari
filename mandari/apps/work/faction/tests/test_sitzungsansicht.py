@@ -217,7 +217,10 @@ def test_notizen_werden_bereinigt_gespeichert_und_konflikte_erkannt(
         {
             "action": "notizen",
             "item_id": item.pk,
-            "html": "<p><strong>Hilfsfrist</strong> im Norden<script>alert(1)</script></p><ul><li>Rückfrage</li></ul>",
+            "html": (
+                "<p><strong>Hilfsfrist</strong> im Norden <s>Taxigutachten</s><script>alert(1)</script></p>"
+                "<ul><li>Rückfrage</li></ul>"
+            ),
             "stand": sitzung.fingerabdruck(""),
         },
     )
@@ -226,6 +229,8 @@ def test_notizen_werden_bereinigt_gespeichert_und_konflikte_erkannt(
     item.refresh_from_db()
     gespeichert = sitzung.notizen(item)
     assert "<strong>Hilfsfrist</strong>" in gespeichert and "<li>Rückfrage</li>" in gespeichert
+    # Durchgestrichen aus der Werkzeugleiste bleibt erhalten
+    assert "<s>Taxigutachten</s>" in gespeichert
     assert "script" not in gespeichert
     assert item.notes_updated_at is not None
     assert stand == sitzung.fingerabdruck(gespeichert)
