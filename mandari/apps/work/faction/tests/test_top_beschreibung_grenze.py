@@ -127,6 +127,10 @@ def test_sofort_speichern_lehnt_zu_lang_ab(org: Any, vorsitz: Any, top: FactionA
     assert antwort.status_code == 200
     assert _beschreibung(top) == GENAU
 
+    # Gezählt wird der Formularwert wie im Browser: Ein Steuerzeichen am Rand entfernt trim() nicht, es zählt mit
+    antwort = client.post(url, data=json.dumps({"description": chr(0x1F) + GENAU}), content_type="application/json")
+    assert antwort.status_code == 400
+
 
 def test_panel_lehnt_zu_lang_ab_und_laesst_altbestand_stehen(
     org: Any, vorsitz: Any, top: FactionAgendaItem, client_for: Any

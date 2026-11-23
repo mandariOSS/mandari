@@ -976,7 +976,7 @@ def top_hinzufuegen(
         raise TopNeuError(NOE_AUS)
     if teil not in ("public", "internal"):
         raise TopNeuError("Unbekannter Teil der Tagesordnung.")
-    return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung)
+    return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung.strip())
 
 
 #: Nummer aus der Überschrift eines TOPs vor dem Titel („TOP 3.2 “, „TOP NÖ 4 “), wie sie beim Kopieren mitkommt

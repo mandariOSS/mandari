@@ -629,7 +629,8 @@ class FactionSessionActionView(_SitzungsView):
                 titel=titel,
                 teil=_wert(request, "visibility") or "public",
                 eltern_id=_wert(request, "parent_id"),
-                beschreibung=_wert(request, "description"),
+                # ungekürzt: top_hinzufuegen zählt wie der Hinweis im Browser und speichert ohne Rand
+                beschreibung=str(request.POST.get("description") or ""),
             )
         except sitzung.TopNeuError as abgelehnt:
             return HttpResponse(abgelehnt.meldung, status=abgelehnt.status)

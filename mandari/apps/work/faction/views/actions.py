@@ -635,7 +635,9 @@ class FactionActionView(WorkViewMixin, View):
         if not can_view_item(item, self.membership):
             return HttpResponse(status=403)
         description = request.POST.get("description", "").strip()
-        zu_lang = agenda.beschreibung_zu_lang(description, bisher=item.get_description_decrypted() or "")
+        zu_lang = agenda.beschreibung_zu_lang(
+            request.POST.get("description", ""), bisher=item.get_description_decrypted() or ""
+        )
         if zu_lang:
             return self._rejected(request, meeting, zu_lang, 400)
         item.title = title
@@ -1389,7 +1391,7 @@ class FactionActionView(WorkViewMixin, View):
         if not title:
             messages.error(request, "Bitte einen Titel angeben.")
             return self._redirect_detail(meeting)
-        zu_lang = agenda.beschreibung_zu_lang(description, vorschlag=True)
+        zu_lang = agenda.beschreibung_zu_lang(request.POST.get("description", ""), vorschlag=True)
         if zu_lang:
             messages.error(request, zu_lang)
             return self._redirect_detail(meeting)

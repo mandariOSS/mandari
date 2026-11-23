@@ -721,7 +721,9 @@ class FactionItemFieldsView(WorkViewMixin, View):
             felder.append("title")
         if "description" in daten:
             beschreibung = str(daten.get("description") or "").strip()
-            zu_lang = agenda.beschreibung_zu_lang(beschreibung, bisher=item.get_description_decrypted() or "")
+            zu_lang = agenda.beschreibung_zu_lang(
+                str(daten.get("description") or ""), bisher=item.get_description_decrypted() or ""
+            )
             if zu_lang:
                 return JsonResponse({"error": zu_lang}, status=400)
             if beschreibung:
