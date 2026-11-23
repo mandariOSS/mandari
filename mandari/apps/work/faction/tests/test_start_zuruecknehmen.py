@@ -169,13 +169,53 @@ def _beendet_und_zurueckgenommen(welt: dict[str, Any], client_for: Any) -> Facti
     return vorher
 
 
-def test_gleichzeitige_genehmigung_nach_zuruecknehmen(welt: dict[str, Any], client_for: Any) -> None:
+@pytest.mark.parametrize("danach", ["zurueckgenommen", "neu_gestartet"])
+def test_gleichzeitige_genehmigung_nach_zuruecknehmen(welt: dict[str, Any], client_for: Any, danach: str) -> None:
     vorher = _beendet_und_zurueckgenommen(welt, client_for)
+    if danach == "neu_gestartet":
+        # Läuft wieder: Direkt genehmigt wird erst nach dem Ende
+        _aktion(welt, client_for(welt["vorsitz"].user), "start")
 
     dienst = cast(Any, ProtocolApprovalService)
     assert dienst.approve_protocol(vorher, approved_in_meeting=None, approved_by=welt["vorsitz"]) is False
     meeting = FactionMeeting.objects.get(pk=vorher.pk)
-    assert (meeting.status, meeting.protocol_approved, meeting.protocol_status) == ("invited", False, "draft")
+    assert (meeting.protocol_approved, meeting.protocol_status) == (False, "draft")
+
+
+def test_genehmigung_in_zurueckgenommener_sitzung(welt: dict[str, Any], client_for: Any) -> None:
+    """Genehmigungs-TOP: Die genehmigende Sitzung steht inzwischen vor dem Beginn, dann genehmigt sie nichts."""
+    _beendet_und_zurueckgenommen(welt, client_for)
+    vorige = FactionMeeting.objects.create(
+        organization=welt["org"],
+        title="Vorige Sitzung",
+        start=timezone.now() - timedelta(days=7),
+        status="completed",
+        created_by=welt["vorsitz"],
+    )
+
+    dienst = cast(Any, ProtocolApprovalService)
+    assert dienst.approve_protocol(vorige, approved_in_meeting=welt["meeting"], approved_by=welt["vorsitz"]) is False
+    assert not FactionMeeting.objects.get(pk=vorige.pk).protocol_approved
+
+
+def test_nach_genehmigung_eines_anderen_protokolls_nicht_mehr(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
+    client = client_for(welt["vorsitz"].user)
+    _aktion(welt, client, "start")
+    vorige = FactionMeeting.objects.create(
+        organization=welt["org"],
+        title="Vorige Sitzung",
+        start=timezone.now() - timedelta(days=7),
+        status="completed",
+        created_by=welt["vorsitz"],
+    )
+    dienst = cast(Any, ProtocolApprovalService)
+    assert dienst.approve_protocol(vorige, approved_in_meeting=meeting, approved_by=welt["vorsitz"]) is True
+
+    assert 'value="undo_start"' not in _seite(welt, client)
+    _aktion(welt, client, "undo_start")
+    meeting.refresh_from_db()
+    assert meeting.status == "ongoing"
 
 
 @pytest.mark.parametrize("danach", ["zurueckgenommen", "neu_beendet"])

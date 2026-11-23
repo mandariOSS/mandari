@@ -1437,20 +1437,26 @@ class ProtocolApprovalService:
             return False
 
         from .agenda import lock_meeting
+        from .kette import BEGONNEN
         from .models import FactionMeeting
 
         with transaction.atomic():
-            # Unter der Sperre der Sitzung und mit dem Stand der Datenbank: Das geladene Objekt kann älter sein als
-            # eine Genehmigung auf dem anderen Weg (direkt oder über den Genehmigungs-TOP). Die erste Genehmigung
-            # gilt, Person und Zeitpunkt werden nicht ersetzt.
+            # Ein gleichzeitiges „Start zurücknehmen“ (Issue #1566) stellt Sitzungen vor den Beginn. Deshalb unter
+            # Sperre mit dem Stand der Datenbank: Die genehmigende Sitzung (Genehmigungs-TOP) hat begonnen; sie zuerst
+            # sperren, damit das Zurücknehmen dort wartet und danach die Genehmigung sieht.
+            if approved_in_meeting is not None:
+                lock_meeting(approved_in_meeting)
+                if not FactionMeeting.objects.filter(pk=approved_in_meeting.pk, status__in=BEGONNEN).exists():
+                    return False
+            # Das geladene Objekt kann älter sein als eine Genehmigung auf dem anderen Weg (direkt oder über den
+            # Genehmigungs-TOP). Die erste Genehmigung gilt, Person und Zeitpunkt werden nicht ersetzt.
             lock_meeting(meeting)
             if FactionMeeting.objects.filter(pk=meeting.pk, protocol_approved=True).exists():
                 return False
-            # Ebenso der Status: Ein gleichzeitiges „Start zurücknehmen“ (Issue #1566) stellt die Sitzung vor den
-            # Beginn, dann gibt es kein Protokoll zu genehmigen
-            from .kette import BEGONNEN
-
-            if not FactionMeeting.objects.filter(pk=meeting.pk, status__in=BEGONNEN).exists():
+            # Genehmigt wird das Protokoll einer Sitzung, die stattfand; direkt über die Sitzungsansicht erst nach
+            # ihrem Ende, über den Genehmigungs-TOP auch während sie läuft (wie apply_approval_item_decision)
+            erlaubt = ("completed",) if approved_in_meeting is None else BEGONNEN
+            if not FactionMeeting.objects.filter(pk=meeting.pk, status__in=erlaubt).exists():
                 return False
             meeting.protocol_status = "approved"
             meeting.protocol_approved = True

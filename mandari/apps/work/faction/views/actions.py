@@ -284,8 +284,9 @@ class FactionActionView(WorkViewMixin, View):
         if not zuruecknehmen.zuruecknehmen(meeting):
             messages.error(
                 request,
-                "Der Start lässt sich nicht mehr zurücknehmen: Die Sitzung hat nicht begonnen, oder die Anwesenheit "
-                "ist bestätigt oder das Protokoll genehmigt oder verschickt.",
+                "Der Start lässt sich nicht mehr zurücknehmen: Die Sitzung hat nicht begonnen, die Anwesenheit ist "
+                "bestätigt, das Protokoll genehmigt oder verschickt, oder in ihr wurde ein anderes Protokoll "
+                "genehmigt.",
             )
             return self._refresh_or_redirect(request, meeting)
         return self._refresh_or_redirect(

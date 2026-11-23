@@ -3,8 +3,8 @@
 Start einer Fraktionssitzung zurücknehmen (Issue #1566): versehentlich gestartet oder gleich wieder beendet.
 
 Wer eine Sitzung starten darf (``faction.start``), kann den Start zurücknehmen, solange die Sitzung läuft oder beendet
-ist und weder die Anwesenheit bestätigt noch das Protokoll genehmigt oder verschickt ist. Danach steht die Sitzung
-wieder vor dem Beginn:
+ist und weder die Anwesenheit bestätigt noch das Protokoll genehmigt oder verschickt ist, auch kein anderes Protokoll
+in ihr genehmigt wurde. Danach steht die Sitzung wieder vor dem Beginn:
 
 - Status „eingeladen“, ohne versandte Einladung „geplant“ (gestartet wird nur aus diesen beiden).
 - Kein tatsächlicher Beginn mehr (``started_at``).
@@ -35,12 +35,19 @@ BEGONNEN = ("ongoing", "completed")
 
 
 def zuruecknehmbar(meeting: FactionMeeting) -> bool:
-    """Läuft oder beendet, ohne bestätigte Anwesenheit, genehmigtes oder verschicktes Protokoll."""
+    """
+    Läuft oder beendet, ohne bestätigte Anwesenheit, genehmigtes oder verschicktes Protokoll und ohne Genehmigung
+    eines anderen Protokolls in dieser Sitzung (Genehmigungs-TOP): Die Genehmigung ist endgültig (Issue #63) und
+    nennt die Sitzung, in der sie fiel.
+    """
+    from .models import FactionMeeting
+
     return (
         meeting.status in BEGONNEN
         and not meeting.protocol_approved
         and meeting.attendance_confirmed_at is None
         and meeting.protocol_sent_at is None
+        and not FactionMeeting.objects.filter(protocol_approved_in=meeting.pk).exists()
     )
 
 
