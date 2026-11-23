@@ -30,6 +30,7 @@ from apps.work.rahmen import neues_design
 from . import sitzung
 from .liste import _tag
 from .visibility import can_view_internal, is_item_internal
+from .zuruecknehmen import darf_zuruecknehmen
 
 if TYPE_CHECKING:
     from apps.tenants.models import Membership
@@ -82,6 +83,8 @@ class Rechte:
     verwalten: bool = False
     pdf_oeffentlich: bool = False
     pdf_intern: bool = False
+    #: Versehentlichen Start zurücknehmen (Issue #1566), solange nichts bestätigt, genehmigt oder verschickt ist
+    zuruecknehmen: bool = False
 
     @property
     def schritte(self) -> bool:
@@ -107,6 +110,7 @@ def rechte(membership: Membership, meeting: FactionMeeting) -> Rechte:
         verwalten=sitzung.darf_verwalten(membership, meeting),
         pdf_oeffentlich=abgeschlossen and membership.has_permission("protocols.view_public"),
         pdf_intern=abgeschlossen and darf_intern and membership.has_permission("protocols.view_full"),
+        zuruecknehmen=darf_zuruecknehmen(membership, meeting),
     )
 
 

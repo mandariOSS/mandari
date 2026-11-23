@@ -6,6 +6,7 @@ from datetime import datetime
 from urllib.parse import parse_qs, urlsplit
 
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponse
 from django.http.response import HttpResponseRedirectBase
 from django.shortcuts import get_object_or_404, redirect
@@ -18,7 +19,7 @@ from apps.common import local_time
 from apps.common.mixins import WorkViewMixin
 from apps.work.rahmen import fragment_neu
 
-from .. import agenda, deletion
+from .. import agenda, deletion, zuruecknehmen
 from .. import services as faction_services
 from ..models import (
     AGENDA_PARTS,
@@ -69,6 +70,7 @@ class FactionActionView(WorkViewMixin, View):
             # Status
             "start": self._start,
             "end": self._end,
+            "undo_start": self._undo_start,
             "cancel": self._cancel,
             "delete": self._delete,
             "delete_preview": self._delete_preview,
@@ -260,11 +262,36 @@ class FactionActionView(WorkViewMixin, View):
         if not self.membership.has_permission("faction.start"):
             messages.error(request, "Keine Berechtigung zum Beenden.")
             return self._redirect_detail(meeting)
-        if meeting.status == "ongoing":
-            meeting.status = "completed"
-            meeting.end = timezone.now()
-            self._save_fields(meeting, "status", "end")
+        with transaction.atomic():
+            # Unter der Sperre der Sitzung und mit dem Stand der Datenbank: Nach einem gleichzeitigen „Start
+            # zurücknehmen“ (Issue #1566) steht sie vor dem Beginn, dann gibt es nichts zu beenden
+            agenda.lock_meeting(meeting)
+            stand = FactionMeeting.objects.values_list("status", flat=True).get(pk=meeting.pk)
+            if stand == "ongoing":
+                meeting.status = "completed"
+                meeting.end = timezone.now()
+                self._save_fields(meeting, "status", "end")
+        if stand not in ("ongoing", "completed"):
+            messages.error(request, "Die Sitzung läuft nicht.")
+            return self._refresh_or_redirect(request, meeting)
         return self._refresh_or_redirect(request, meeting, "Sitzung beendet.")
+
+    def _undo_start(self, request, meeting):
+        """Versehentlichen Start zurücknehmen: Die Sitzung steht wieder vor dem Beginn (:mod:`..zuruecknehmen`)."""
+        if not self.membership.has_permission("faction.start"):
+            messages.error(request, "Keine Berechtigung, den Start zurückzunehmen.")
+            return self._redirect_detail(meeting)
+        if not zuruecknehmen.zuruecknehmen(meeting):
+            messages.error(
+                request,
+                "Der Start lässt sich nicht mehr zurücknehmen: Die Sitzung hat nicht begonnen, die Anwesenheit ist "
+                "bestätigt, das Protokoll genehmigt oder verschickt, oder in ihr wurde ein anderes Protokoll "
+                "genehmigt.",
+            )
+            return self._refresh_or_redirect(request, meeting)
+        return self._refresh_or_redirect(
+            request, meeting, "Start zurückgenommen. Die Sitzung steht wieder vor dem Beginn."
+        )
 
     def _cancel(self, request, meeting):
         if not self._can_manage_meeting(meeting):
@@ -1151,7 +1178,13 @@ class FactionActionView(WorkViewMixin, View):
             # Direkte Genehmigung über die Sitzungsansicht — setzt neben dem
             # Flag auch protocol_status="approved" (die öffentlichen Views
             # filtern auf den Status, nicht das Flag)
-            ProtocolApprovalService.approve_protocol(meeting, approved_in_meeting=None, approved_by=self.membership)
+            genehmigt = ProtocolApprovalService.approve_protocol(
+                meeting, approved_in_meeting=None, approved_by=self.membership
+            )
+            # Abgelehnt, ohne dass jemand anderes genehmigt hat: Die Sitzung steht inzwischen vor dem Beginn
+            if not genehmigt and not FactionMeeting.objects.filter(pk=meeting.pk, protocol_approved=True).exists():
+                messages.error(request, "Das Protokoll lässt sich nicht genehmigen: Die Sitzung ist nicht beendet.")
+                return self._refresh_or_redirect(request, meeting)
 
         return self._refresh_or_redirect(request, meeting, "Protokoll genehmigt.")
 
@@ -1273,26 +1306,33 @@ class FactionActionView(WorkViewMixin, View):
                 return HttpResponse(status=403)
             return self._redirect_detail(meeting)
 
-        if meeting.status != "completed":
+        with transaction.atomic():
+            # Unter der Sperre der Sitzung und mit dem Stand der Datenbank: Ein gleichzeitiges „Start zurücknehmen“
+            # (Issue #1566) darf keine Sitzung vor dem Beginn mit bestätigten Teilnahmen hinterlassen
+            stand = (
+                FactionMeeting.objects.select_for_update()
+                .values("status", "attendance_confirmed_at")
+                .get(pk=meeting.pk)
+            )
+            offen = stand["status"] == "completed" and stand["attendance_confirmed_at"] is None
+            if offen:
+                now = timezone.now()
+                for attendance in meeting.attendances.all():
+                    attendance.confirmed_final_at = now
+                    attendance.confirmed_final_by = self.membership
+                    attendance.save(update_fields=["confirmed_final_at", "confirmed_final_by", "updated_at"])
+                meeting.attendance_confirmed_at = now
+                meeting.attendance_confirmed_by = self.membership
+                meeting.save(update_fields=["attendance_confirmed_at", "attendance_confirmed_by", "updated_at"])
+
+        if stand["status"] != "completed":
             messages.error(request, "Teilnahmen können erst nach Sitzungsende bestätigt werden.")
             if self.is_htmx:
                 return HttpResponse(status=400)
             return self._redirect_detail(meeting)
-
-        if meeting.attendance_confirmed_at is not None:
+        if not offen:
             messages.warning(request, "Teilnahmen sind bereits bestätigt.")
             return self._refresh_or_redirect(request, meeting)
-
-        now = timezone.now()
-        for attendance in meeting.attendances.all():
-            attendance.confirmed_final_at = now
-            attendance.confirmed_final_by = self.membership
-            attendance.save(update_fields=["confirmed_final_at", "confirmed_final_by", "updated_at"])
-
-        meeting.attendance_confirmed_at = now
-        meeting.attendance_confirmed_by = self.membership
-        meeting.save(update_fields=["attendance_confirmed_at", "attendance_confirmed_by", "updated_at"])
-
         return self._refresh_or_redirect(request, meeting, "Teilnahmen final bestätigt.")
 
     def _add_attendee(self, request, meeting):

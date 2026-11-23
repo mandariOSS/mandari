@@ -25,6 +25,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
 
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -183,13 +184,21 @@ def _due_window(meeting_type: Any, settings: dict[str, Any], now: datetime) -> A
     return FactionMeeting.objects.none()
 
 
+def _faellig(settings: dict[str, Any], now: datetime) -> Q:
+    """Fällig zum Zeitpunkt ``now`` nach dem Stand der Datenbank: Bezugszeitpunkt plus Verzögerung (protocol_due_at)."""
+    grenze = now - timedelta(hours=settings["protocol_dispatch_delay_hours"])
+    if settings["protocol_dispatch"] == "after_completion":
+        return Q(end__lte=grenze) | Q(end__isnull=True, start__lte=grenze)
+    if settings["protocol_dispatch"] == "after_approval":
+        return Q(protocol_approved=True, protocol_approved_at__lte=grenze)
+    return Q(pk__in=[])
+
+
 def _candidates(now: datetime) -> Iterator[tuple[Any, dict[str, Any]]]:
     """
     Kandidaten je Sitzungsart mit eingeschaltetem Versand, mit deren Einstellungen (Issue #1240): Eingeschaltet in
     der Organisation (die Art kann ihn wieder ausschalten) oder in der Art selbst.
     """
-    from django.db.models import Q
-
     from .models import FactionMeetingType
 
     on = ["after_completion", "after_approval"]
@@ -233,9 +242,12 @@ def run_faction_protocol_pass(now: datetime | None = None) -> dict[str, Any]:
             since = settings["protocol_dispatch_since"]
             if due_at is None or due_at > now or since is None or due_at < since:
                 continue
-            claimed = FactionMeeting.objects.filter(pk=meeting.pk, protocol_sent_at__isnull=True).update(
-                protocol_sent_at=now
-            )
+            # Nur eine weiterhin beendete und fällige Sitzung, nach dem Stand der Datenbank: Ein „Start zurücknehmen“
+            # (Issue #1566) seit dem Laden der Kandidaten stellt sie vor den Beginn, ein erneutes Beenden verschiebt
+            # die Fälligkeit; dann wird nichts verschickt
+            claimed = FactionMeeting.objects.filter(
+                _faellig(settings, now), pk=meeting.pk, status="completed", protocol_sent_at__isnull=True
+            ).update(protocol_sent_at=now)
             if not claimed:
                 continue
             try:

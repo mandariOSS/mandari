@@ -34,6 +34,20 @@
 datum = 2026-11-23
 version = ""
 bereich = "fraktionssitzungen"
+titel = "Versehentlich gestartete Sitzungen lassen sich zurücksetzen."
+text = """Wurde eine Fraktionssitzung zu früh gestartet oder gleich wieder beendet, finden Sie im Menü „Weitere Aktionen“ oben rechts den Punkt „Start zurücknehmen“. Die Sitzung steht dann wieder vor dem Beginn, mit der geplanten Uhrzeit, und kann später neu gestartet werden. Notizen und Einträge bleiben erhalten. Das geht, solange die Anwesenheit nicht bestätigt und das Protokoll weder genehmigt noch verschickt ist."""
+
+[[eintrag]]
+datum = 2026-11-23
+version = ""
+bereich = "fraktionssitzungen"
+titel = "Im Protokoll lässt sich Text durchstreichen."
+text = """In der Werkzeugleiste über den Notizen zu einem TOP gibt es neben Fett, Kursiv und Unterstrichen jetzt Durchgestrichen, etwa für gestrichene Punkte. Die Tastenkombination ist Strg+Umschalt+S. Durchgestrichener Text erscheint so auch im Protokoll als PDF."""
+
+[[eintrag]]
+datum = 2026-11-23
+version = ""
+bereich = "fraktionssitzungen"
 titel = "TOP-Beschreibungen bleiben kurz, lange Texte hängen am TOP."
 text = """Die Beschreibung eines Tagesordnungspunkts ordnet ihn kurz ein und hat höchstens 1.000 Zeichen. \
 Antragstexte und lange Begründungen hängen Sie als Anhang an den TOP: Unter dem Feld führt „Anhang hinzufügen“ \

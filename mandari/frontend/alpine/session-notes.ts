@@ -58,6 +58,7 @@ export interface NotizenFormat {
   bold: boolean
   italic: boolean
   underline: boolean
+  strike: boolean
   heading: boolean
   bulletList: boolean
   orderedList: boolean
@@ -146,6 +147,7 @@ export const sitzungsNotizen = defineComponent(() => {
       bold: false,
       italic: false,
       underline: false,
+      strike: false,
       heading: false,
       bulletList: false,
       orderedList: false,
@@ -737,6 +739,7 @@ export const sitzungsNotizen = defineComponent(() => {
       if (art === 'bold') kette.toggleBold().run()
       else if (art === 'italic') kette.toggleItalic().run()
       else if (art === 'underline') kette.toggleUnderline().run()
+      else if (art === 'strike') kette.toggleStrike().run()
       else if (art === 'heading') kette.toggleHeading({ level: 3 }).run()
       else if (art === 'bulletList') kette.toggleBulletList().run()
       else if (art === 'orderedList') kette.toggleOrderedList().run()

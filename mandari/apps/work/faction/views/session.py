@@ -29,7 +29,7 @@ from apps.work.rahmen import neues_design
 from apps.work.sanitize import safe_editor_html
 from hub.ris import selectors as ris
 
-from .. import sitzung
+from .. import sitzung, zuruecknehmen
 from ..models import FactionAgendaItem, FactionDecision, FactionMeeting
 from ..quorum import quorum_der_sitzung
 from ..regeln import (
@@ -123,6 +123,8 @@ def _rechte(membership: Any, meeting: FactionMeeting) -> dict[str, bool]:
         "rollen": sitzung.darf_rollen_setzen(membership, meeting),
         "anhaengen": sitzung.darf_unterlagen_anhaengen(membership, meeting),
         "beenden": membership.has_permission("faction.start"),
+        # Versehentlichen Start zurücknehmen (Issue #1566)
+        "zuruecknehmen": zuruecknehmen.darf_zuruecknehmen(membership, meeting),
         "intern": can_view_internal(membership),
         "top_neu": sitzung.darf_top_hinzufuegen(membership, meeting),
         # TOP in der laufenden Sitzung verschieben, auch in den anderen Teil (Issue #1436)

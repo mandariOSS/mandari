@@ -266,7 +266,10 @@ export interface NotesEditorOptions {
   onFormat?: (format: NotizenFormat) => void
 }
 
-/** Erweiterungen der Notizen: Absätze, Zwischenüberschriften, Fett, Kursiv, Unterstrichen, Listen, Links, Erwähnen. */
+/**
+ * Erweiterungen der Notizen: Absätze, Zwischenüberschriften, Fett, Kursiv, Unterstrichen, Durchgestrichen (aus dem
+ * StarterKit), Listen, Links, Erwähnen.
+ */
 function notizenErweiterungen(options: NotesEditorOptions, live: boolean) {
   return [
     StarterKit.configure({
@@ -292,6 +295,7 @@ function notizenFormat(editor: Editor): NotizenFormat {
     bold: state.bold,
     italic: state.italic,
     underline: state.underline,
+    strike: state.strike,
     heading: state.header !== false,
     bulletList: state.list === 'bullet',
     orderedList: state.list === 'ordered',
