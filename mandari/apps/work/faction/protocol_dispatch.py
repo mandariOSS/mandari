@@ -233,9 +233,11 @@ def run_faction_protocol_pass(now: datetime | None = None) -> dict[str, Any]:
             since = settings["protocol_dispatch_since"]
             if due_at is None or due_at > now or since is None or due_at < since:
                 continue
-            claimed = FactionMeeting.objects.filter(pk=meeting.pk, protocol_sent_at__isnull=True).update(
-                protocol_sent_at=now
-            )
+            # Nur eine weiterhin beendete Sitzung: Ein „Start zurücknehmen“ (Issue #1566) seit dem Laden der
+            # Kandidaten stellt sie vor den Beginn, dann wird nichts verschickt
+            claimed = FactionMeeting.objects.filter(
+                pk=meeting.pk, status="completed", protocol_sent_at__isnull=True
+            ).update(protocol_sent_at=now)
             if not claimed:
                 continue
             try:

@@ -6,6 +6,7 @@ from datetime import datetime
 from urllib.parse import parse_qs, urlsplit
 
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponse
 from django.http.response import HttpResponseRedirectBase
 from django.shortcuts import get_object_or_404, redirect
@@ -1282,26 +1283,33 @@ class FactionActionView(WorkViewMixin, View):
                 return HttpResponse(status=403)
             return self._redirect_detail(meeting)
 
-        if meeting.status != "completed":
+        with transaction.atomic():
+            # Unter der Sperre der Sitzung und mit dem Stand der Datenbank: Ein gleichzeitiges „Start zurücknehmen“
+            # (Issue #1566) darf keine Sitzung vor dem Beginn mit bestätigten Teilnahmen hinterlassen
+            stand = (
+                FactionMeeting.objects.select_for_update()
+                .values("status", "attendance_confirmed_at")
+                .get(pk=meeting.pk)
+            )
+            offen = stand["status"] == "completed" and stand["attendance_confirmed_at"] is None
+            if offen:
+                now = timezone.now()
+                for attendance in meeting.attendances.all():
+                    attendance.confirmed_final_at = now
+                    attendance.confirmed_final_by = self.membership
+                    attendance.save(update_fields=["confirmed_final_at", "confirmed_final_by", "updated_at"])
+                meeting.attendance_confirmed_at = now
+                meeting.attendance_confirmed_by = self.membership
+                meeting.save(update_fields=["attendance_confirmed_at", "attendance_confirmed_by", "updated_at"])
+
+        if stand["status"] != "completed":
             messages.error(request, "Teilnahmen können erst nach Sitzungsende bestätigt werden.")
             if self.is_htmx:
                 return HttpResponse(status=400)
             return self._redirect_detail(meeting)
-
-        if meeting.attendance_confirmed_at is not None:
+        if not offen:
             messages.warning(request, "Teilnahmen sind bereits bestätigt.")
             return self._refresh_or_redirect(request, meeting)
-
-        now = timezone.now()
-        for attendance in meeting.attendances.all():
-            attendance.confirmed_final_at = now
-            attendance.confirmed_final_by = self.membership
-            attendance.save(update_fields=["confirmed_final_at", "confirmed_final_by", "updated_at"])
-
-        meeting.attendance_confirmed_at = now
-        meeting.attendance_confirmed_by = self.membership
-        meeting.save(update_fields=["attendance_confirmed_at", "attendance_confirmed_by", "updated_at"])
-
         return self._refresh_or_redirect(request, meeting, "Teilnahmen final bestätigt.")
 
     def _add_attendee(self, request, meeting):

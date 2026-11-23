@@ -10,19 +10,21 @@ Geprüft wird:
 - Ende ohne Änderungshistorie: aus der Dauer der Reihe, sonst ohne Ende.
 - Rechte und Grenzen: nur mit ``faction.start``, nicht nach bestätigter Anwesenheit oder genehmigtem Protokoll;
   der Menüpunkt erscheint nur, wenn das Zurücknehmen geht.
+- Gleichzeitig: Genehmigung und Protokollversand, die die Sitzung noch als beendet geladen haben, greifen nach dem
+  Zurücknehmen nicht mehr.
 """
 
 from __future__ import annotations
 
 from datetime import time, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.tenants.models import Organization
-from apps.work.faction import zuruecknehmen
+from apps.work.faction import protocol_dispatch, zuruecknehmen
 from apps.work.faction.models import (
     FactionAttendance,
     FactionAuditLog,
@@ -31,6 +33,7 @@ from apps.work.faction.models import (
     FactionMeetingType,
     FactionProtocolEntry,
 )
+from apps.work.faction.services import ProtocolApprovalService
 
 pytestmark = pytest.mark.django_db
 
@@ -153,6 +156,50 @@ def test_ueber_statusauswahl_abgeschlossen_ende_bleibt(welt: dict[str, Any], cli
     assert zuruecknehmen.zuruecknehmen(meeting)
     meeting.refresh_from_db()
     assert (meeting.status, meeting.end) == ("invited", geplant)
+
+
+def _beendet_und_zurueckgenommen(welt: dict[str, Any], client_for: Any) -> FactionMeeting:
+    """Gestartet und beendet; geliefert wird der Stand davor, wie ihn ein gleichzeitiger Vorgang geladen hat."""
+    client = client_for(welt["vorsitz"].user)
+    _aktion(welt, client, "start")
+    _aktion(welt, client, "end")
+    vorher = FactionMeeting.objects.get(pk=welt["meeting"].pk)
+    assert vorher.status == "completed"
+    assert zuruecknehmen.zuruecknehmen(welt["meeting"])
+    return vorher
+
+
+def test_gleichzeitige_genehmigung_nach_zuruecknehmen(welt: dict[str, Any], client_for: Any) -> None:
+    vorher = _beendet_und_zurueckgenommen(welt, client_for)
+
+    dienst = cast(Any, ProtocolApprovalService)
+    assert dienst.approve_protocol(vorher, approved_in_meeting=None, approved_by=welt["vorsitz"]) is False
+    meeting = FactionMeeting.objects.get(pk=vorher.pk)
+    assert (meeting.status, meeting.protocol_approved, meeting.protocol_status) == ("invited", False, "draft")
+
+
+def test_gleichzeitiger_protokollversand_nach_zuruecknehmen(
+    welt: dict[str, Any], client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vorher = _beendet_und_zurueckgenommen(welt, client_for)
+    einstellungen = {
+        "protocol_dispatch": "after_completion",
+        "protocol_dispatch_delay_hours": 0,
+        "protocol_dispatch_since": timezone.now() - timedelta(days=1),
+    }
+    versendet: list[Any] = []
+
+    def senden(meeting: Any) -> int:
+        versendet.append(meeting)
+        return 1
+
+    monkeypatch.setattr(protocol_dispatch, "_candidates", lambda now: iter([(vorher, einstellungen)]))
+    monkeypatch.setattr(protocol_dispatch, "send_protocol", senden)
+
+    statistik = protocol_dispatch.run_faction_protocol_pass(now=timezone.now() + timedelta(hours=3))
+
+    assert versendet == [] and statistik["meetings"] == 0
+    assert FactionMeeting.objects.get(pk=vorher.pk).protocol_sent_at is None
 
 
 def test_ohne_recht_kein_zuruecknehmen(welt: dict[str, Any], client_for: Any) -> None:

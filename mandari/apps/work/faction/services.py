@@ -1446,6 +1446,12 @@ class ProtocolApprovalService:
             lock_meeting(meeting)
             if FactionMeeting.objects.filter(pk=meeting.pk, protocol_approved=True).exists():
                 return False
+            # Ebenso der Status: Ein gleichzeitiges „Start zurücknehmen“ (Issue #1566) stellt die Sitzung vor den
+            # Beginn, dann gibt es kein Protokoll zu genehmigen
+            from .kette import BEGONNEN
+
+            if not FactionMeeting.objects.filter(pk=meeting.pk, status__in=BEGONNEN).exists():
+                return False
             meeting.protocol_status = "approved"
             meeting.protocol_approved = True
             meeting.protocol_approved_at = timezone.now()
