@@ -50,9 +50,27 @@ def _zahl(wert: int) -> str:
     return f"{wert:,}".replace(",", ".")
 
 
+#: Leerraum am Rand wie ``String.prototype.trim`` im Browser (WhiteSpace und LineTerminator nach ECMAScript): anders
+#: als ``str.strip()`` mit U+FEFF, ohne U+001C bis U+001F und U+0085
+_JS_RAND = (
+    *range(0x09, 0x0E),
+    0x20,
+    0xA0,
+    0x1680,
+    *range(0x2000, 0x200B),
+    0x2028,
+    0x2029,
+    0x202F,
+    0x205F,
+    0x3000,
+    0xFEFF,
+)
+_RAND_WIE_JS = "".join(map(chr, _JS_RAND))
+
+
 def _beschreibung_normal(text: str) -> str:
     """Ohne Leerraum am Rand, Zeilenumbrüche als ``\\n`` (Formulare senden ``\\r\\n``, gespeichert ist oft ``\\n``)."""
-    return (text or "").replace("\r\n", "\n").strip()
+    return (text or "").replace("\r\n", "\n").strip(_RAND_WIE_JS)
 
 
 def beschreibung_laenge(text: str) -> int:

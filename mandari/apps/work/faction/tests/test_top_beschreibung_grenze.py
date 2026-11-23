@@ -96,6 +96,10 @@ def test_regel_zaehlt_wie_der_hinweis_im_browser() -> None:
     assert agenda.beschreibung_zu_lang(zeilen) == ""
     assert agenda.beschreibung_zu_lang("𝔄" * agenda.BESCHREIBUNG_MAX) == ""
     assert agenda.beschreibung_zu_lang("𝔄" * (agenda.BESCHREIBUNG_MAX + 1)) != ""
+    # Rand wie String.prototype.trim: U+FEFF fällt weg, U+001F bleibt (Python-strip() hielte es für Leerraum)
+    assert agenda.beschreibung_laenge(chr(0xFEFF) + GENAU + chr(0x3000)) == agenda.BESCHREIBUNG_MAX
+    assert agenda.beschreibung_zu_lang(chr(0xFEFF) + GENAU) == ""
+    assert agenda.beschreibung_laenge(chr(0x1F) + GENAU) == agenda.BESCHREIBUNG_MAX + 1
 
 
 def test_regel_nennt_beim_vorschlag_die_sitzungsleitung() -> None:
