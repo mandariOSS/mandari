@@ -47,6 +47,31 @@ dialog {
   line-height: revert;
 }
 
+/* Bedienelemente des Browsers im Farbschema der Seite (Issue #1568): aufgeklappte Auswahllisten, Kalender,
+   Bildlaufleisten. Ohne color-scheme öffnet der Browser die Liste eines <select> im dunklen Modus hell, die Einträge
+   erben aber die helle Schrift des Felds (weiß auf weiß). Die Einträge haben zudem eigene Farben: Die Liste bleibt
+   lesbar, auch wenn ein Feld abweichend vom Modus gefärbt ist (etwa helle Schrift auf dunklem Band). Hier html
+   statt :root: Der erste :root-Block trägt die Kennfarbe (insight_core/tests/test_kennfarbe.py). */
+html {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+select option,
+select optgroup {
+  background-color: var(--color-white);
+  color: var(--color-gray-900);
+}
+.dark select option,
+.dark select optgroup {
+  background-color: var(--color-gray-800);
+  color: var(--color-gray-100);
+}
+select option:disabled {
+  color: var(--color-gray-400);
+}
+
 /* Kennfarbe (Issue #783): Tailwind liest primary-* aus diesen Kanälen (tailwind.config.js).
    Standard Indigo für Work, Session und Konto; das Bürgerportal (data-portal="insight") ist Grün wie auf
    mandari.de. Körperschaftsportale setzen ihre eigene Skala im Layout (insight_core/farbskala.py).
