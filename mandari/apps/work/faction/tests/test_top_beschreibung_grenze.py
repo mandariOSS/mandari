@@ -87,6 +87,8 @@ def test_regel_grenze_genau_und_unveraenderter_altbestand() -> None:
     alt = f"{ZU_LANG}\nZweiter Absatz"
     assert agenda.beschreibung_zu_lang(alt.replace("\n", "\r\n"), bisher=alt) == ""
     assert agenda.beschreibung_zu_lang(f"{ZU_LANG}\r\nAnderer Absatz", bisher=alt) != ""
+    # Ein unsichtbares Zeichen vorn ändert den gespeicherten Text: kein „unverändert“
+    assert agenda.beschreibung_zu_lang(chr(0xFEFF) + ZU_LANG, bisher=ZU_LANG) != ""
 
 
 def test_regel_zaehlt_wie_der_hinweis_im_browser() -> None:
@@ -123,13 +125,14 @@ def test_sofort_speichern_lehnt_zu_lang_ab(org: Any, vorsitz: Any, top: FactionA
     assert "Anhang" in antwort.json()["error"]
     assert _beschreibung(top) == "Kurze Einordnung"
 
-    antwort = client.post(url, data=json.dumps({"description": GENAU}), content_type="application/json")
-    assert antwort.status_code == 200
-    assert _beschreibung(top) == GENAU
-
     # Gezählt wird der Formularwert wie im Browser: Ein Steuerzeichen am Rand entfernt trim() nicht, es zählt mit
     antwort = client.post(url, data=json.dumps({"description": chr(0x1F) + GENAU}), content_type="application/json")
     assert antwort.status_code == 400
+    assert _beschreibung(top) == "Kurze Einordnung"
+
+    antwort = client.post(url, data=json.dumps({"description": GENAU}), content_type="application/json")
+    assert antwort.status_code == 200
+    assert _beschreibung(top) == GENAU
 
 
 def test_panel_lehnt_zu_lang_ab_und_laesst_altbestand_stehen(

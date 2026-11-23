@@ -73,6 +73,11 @@ def _beschreibung_normal(text: str) -> str:
     return (text or "").replace("\r\n", "\n").strip(_RAND_WIE_JS)
 
 
+def _wie_gespeichert(text: str) -> str:
+    """Beschreibung, wie die Eingabewege sie speichern (``str.strip()``), Zeilenumbrüche angeglichen."""
+    return (text or "").replace("\r\n", "\n").strip()
+
+
 def beschreibung_laenge(text: str) -> int:
     """
     Länge einer Beschreibung wie im Hinweis unter dem Feld (``_beschreibung_grenze.html``): Zeichen (Codepunkte) ohne
@@ -90,7 +95,8 @@ def beschreibung_zu_lang(neu: str, *, bisher: str = "", vorschlag: bool = False)
     (``frontend/js/autosave.ts``: höchstens 200 Zeichen Klartext).
     """
     laenge = beschreibung_laenge(neu)
-    if laenge <= BESCHREIBUNG_MAX or _beschreibung_normal(neu) == _beschreibung_normal(bisher):
+    # Unverändert heißt: so, wie es gespeichert würde (die Wege speichern mit str.strip(), das U+FEFF behält)
+    if laenge <= BESCHREIBUNG_MAX or _wie_gespeichert(neu) == _wie_gespeichert(bisher):
         return ""
     if vorschlag:
         return (
