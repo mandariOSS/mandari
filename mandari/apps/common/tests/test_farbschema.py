@@ -19,7 +19,7 @@ STYLES = Path(settings.BASE_DIR) / "static" / "css" / "styles.css"
 def test_farbschema_und_auswahllisten() -> None:
     css = STYLES.read_text(encoding="utf-8")
 
-    assert ":root{color-scheme:light}" in css
+    assert "html{color-scheme:light}" in css
     assert ".dark{color-scheme:dark}" in css
     assert "select option,select optgroup{background-color:var(--color-white);color:var(--color-gray-900)}" in css
     assert ".dark select option,.dark select optgroup{background-color:var(--color-gray-800)" in css

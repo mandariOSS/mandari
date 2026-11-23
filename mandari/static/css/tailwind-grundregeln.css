@@ -50,8 +50,9 @@ dialog {
 /* Bedienelemente des Browsers im Farbschema der Seite (Issue #1568): aufgeklappte Auswahllisten, Kalender,
    Bildlaufleisten. Ohne color-scheme öffnet der Browser die Liste eines <select> im dunklen Modus hell, die Einträge
    erben aber die helle Schrift des Felds (weiß auf weiß). Die Einträge haben zudem eigene Farben: Die Liste bleibt
-   lesbar, auch wenn ein Feld abweichend vom Modus gefärbt ist (etwa helle Schrift auf dunklem Band). */
-:root {
+   lesbar, auch wenn ein Feld abweichend vom Modus gefärbt ist (etwa helle Schrift auf dunklem Band). Hier html
+   statt :root: Der erste :root-Block trägt die Kennfarbe (insight_core/tests/test_kennfarbe.py). */
+html {
   color-scheme: light;
 }
 .dark {
