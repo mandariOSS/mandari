@@ -50,12 +50,17 @@ def _zahl(wert: int) -> str:
     return f"{wert:,}".replace(",", ".")
 
 
+def _beschreibung_normal(text: str) -> str:
+    """Ohne Leerraum am Rand, Zeilenumbrüche als ``\\n`` (Formulare senden ``\\r\\n``, gespeichert ist oft ``\\n``)."""
+    return (text or "").replace("\r\n", "\n").strip()
+
+
 def beschreibung_laenge(text: str) -> int:
     """
     Länge einer Beschreibung wie im Hinweis unter dem Feld (``_beschreibung_grenze.html``): Zeichen (Codepunkte) ohne
-    Leerraum am Rand, ein Zeilenumbruch zählt als ein Zeichen (Formulare senden ``\\r\\n``).
+    Leerraum am Rand, ein Zeilenumbruch zählt als ein Zeichen.
     """
-    return len((text or "").replace("\r\n", "\n").strip())
+    return len(_beschreibung_normal(text))
 
 
 def beschreibung_zu_lang(neu: str, *, bisher: str = "", vorschlag: bool = False) -> str:
@@ -67,7 +72,7 @@ def beschreibung_zu_lang(neu: str, *, bisher: str = "", vorschlag: bool = False)
     (``frontend/js/autosave.ts``: höchstens 200 Zeichen Klartext).
     """
     laenge = beschreibung_laenge(neu)
-    if laenge <= BESCHREIBUNG_MAX or (neu or "").strip() == (bisher or "").strip():
+    if laenge <= BESCHREIBUNG_MAX or _beschreibung_normal(neu) == _beschreibung_normal(bisher):
         return ""
     if vorschlag:
         return (

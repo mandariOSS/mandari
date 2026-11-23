@@ -83,6 +83,10 @@ def test_regel_grenze_genau_und_unveraenderter_altbestand() -> None:
     # Eine schon gespeicherte längere Beschreibung bleibt, solange sie unverändert ist
     assert agenda.beschreibung_zu_lang(ZU_LANG, bisher=f"{ZU_LANG}\n") == ""
     assert agenda.beschreibung_zu_lang(ZU_LANG + "!", bisher=ZU_LANG) != ""
+    # Gespeichert mit \n, aus dem Formular mit \r\n: derselbe Text, kein Fehler; geändert bleibt abgelehnt
+    alt = f"{ZU_LANG}\nZweiter Absatz"
+    assert agenda.beschreibung_zu_lang(alt.replace("\n", "\r\n"), bisher=alt) == ""
+    assert agenda.beschreibung_zu_lang(f"{ZU_LANG}\r\nAnderer Absatz", bisher=alt) != ""
 
 
 def test_regel_zaehlt_wie_der_hinweis_im_browser() -> None:
