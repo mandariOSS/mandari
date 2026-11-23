@@ -1,0 +1,26 @@
+{% comment %}
+Hinweis unter dem Feld der TOP-Beschreibung (Template-Tag beschreibung_grenze, apps/work/templatetags/work_tops.py):
+Die Beschreibung ordnet den TOP kurz ein, höchstens agenda.BESCHREIBUNG_MAX Zeichen. Antragstexte und lange
+Begründungen gehören als Anhang an den TOP; der Hinweis führt direkt dorthin (panel: „Unterlagen und Weiteres“ öffnen,
+anker: im Panel zum Abschnitt „Anhänge“ springen). Wer nur vorschlägt (vorschlag), kann keine Anhänge hochladen: Der
+Hinweis nennt dann die Sitzungsleitung. Die Zahl der Zeichen erscheint erst kurz vor der Grenze, darüber als Warnung;
+gezählt wird wie auf dem Server (agenda.beschreibung_laenge: Codepunkte, ohne Leerraum am Rand, Zeilenumbruch ein
+Zeichen). Zu lange Texte lehnt der Server mit derselben Regel ab. Kein maxlength am Feld: Der Browser würde einen
+eingefügten Antrag still abschneiden. Setzt Alpine den Wert des Felds per x-model, nennt modell den Ausdruck; der
+Zähler folgt dann auch Zuweisungen ohne Eingabe (Dialog „TOP bearbeiten“).
+Kontext: feld (id des Textfelds, das aria-describedby="<feld>-grenze" trägt), ziel, item_id, anker, modell, max,
+max_text.
+{% endcomment %}
+<p class="fs-meta fs-grenze" id="{{ feld }}-grenze" data-testid="fs-beschreibung-grenze"
+   x-data="{ n: 0, zaehle(t) { return [...String(t || '').replace(/\r\n/g, '\n').trim()].length } }"
+   x-init="const f = document.getElementById('{{ feld }}'); if (f) { n = zaehle(f.value); f.addEventListener('input', () => { n = zaehle(f.value) }) }"{% if modell %}
+   x-effect="n = zaehle({{ modell }})"{% endif %}>
+    <span class="fs-grenze-zahl" :class="{ 'zu-lang': n > {{ max }} }" x-show="n > {{ max }} * 0.8" x-cloak
+          x-text="(n > {{ max }} ? 'Zu lang: ' : '') + n.toLocaleString('de-DE') + ' von {{ max_text }} Zeichen.'"></span>
+    Höchstens {{ max_text }} Zeichen.
+    {% if ziel == "vorschlag" %}Bitte kurz begründen: Den vollständigen Antragstext kann die Sitzungsleitung nach der Aufnahme als Anhang anhängen.
+    {% elif ziel == "neu" %}Antragstexte und lange Begründungen hängen Sie nach dem Anlegen als Anhang an.
+    {% else %}Antragstexte und lange Begründungen gehören als Anhang an den TOP{% if ziel == "panel" %}:
+    <button type="button" class="wf-textlink" @click="$dispatch('open-item-panel', { id: '{{ item_id }}' })">Anhang hinzufügen</button>{% elif ziel == "anker" %}:
+    <button type="button" class="wf-textlink" @click="document.getElementById('{{ anker }}')?.scrollIntoView({ block: 'start' })">zu den Anhängen</button>{% endif %}.{% endif %}
+</p>

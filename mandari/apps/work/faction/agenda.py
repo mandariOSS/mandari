@@ -39,6 +39,74 @@ PROPOSAL_OPEN_STATUSES = ("draft", "planned", "invited")
 #: Titel des Genehmigungs-TOPs ohne eigene Vorlage (wie ``FactionMeeting.create_approval_agenda_item``)
 APPROVAL_TITLE_WITH_PREVIOUS = "Tagesordnung festlegen und letztes Protokoll genehmigen"
 APPROVAL_TITLE_NO_PREVIOUS = "Tagesordnung festlegen"
+#: Höchstlänge der Beschreibung eines TOPs in Zeichen: eine kurze Einordnung, kein Antragstext. Lange Texte gehören als
+#: Anhang an den TOP (Datei, verknüpfter Antrag, RIS-Vorlage, Link). Gemessen am Bestand vom 23.11.2026 (längste
+#: Beschreibung 715 Zeichen); eingefügte Anträge mit fast 3.000 Zeichen machten Tagesordnung und Sitzungsansicht
+#: unlesbar. Längere, schon gespeicherte Beschreibungen bleiben, solange niemand sie ändert.
+BESCHREIBUNG_MAX = 1000
+
+
+def _zahl(wert: int) -> str:
+    return f"{wert:,}".replace(",", ".")
+
+
+#: Leerraum am Rand wie ``String.prototype.trim`` im Browser (WhiteSpace und LineTerminator nach ECMAScript): anders
+#: als ``str.strip()`` mit U+FEFF, ohne U+001C bis U+001F und U+0085
+_JS_RAND = (
+    *range(0x09, 0x0E),
+    0x20,
+    0xA0,
+    0x1680,
+    *range(0x2000, 0x200B),
+    0x2028,
+    0x2029,
+    0x202F,
+    0x205F,
+    0x3000,
+    0xFEFF,
+)
+_RAND_WIE_JS = "".join(map(chr, _JS_RAND))
+
+
+def _beschreibung_normal(text: str) -> str:
+    """Ohne Leerraum am Rand, Zeilenumbrüche als ``\\n`` (Formulare senden ``\\r\\n``, gespeichert ist oft ``\\n``)."""
+    return (text or "").replace("\r\n", "\n").strip(_RAND_WIE_JS)
+
+
+def _wie_gespeichert(text: str) -> str:
+    """Beschreibung, wie die Eingabewege sie speichern (``str.strip()``), Zeilenumbrüche angeglichen."""
+    return (text or "").replace("\r\n", "\n").strip()
+
+
+def beschreibung_laenge(text: str) -> int:
+    """
+    Länge einer Beschreibung wie im Hinweis unter dem Feld (``_beschreibung_grenze.html``): Zeichen (Codepunkte) ohne
+    Leerraum am Rand, ein Zeilenumbruch zählt als ein Zeichen.
+    """
+    return len(_beschreibung_normal(text))
+
+
+def beschreibung_zu_lang(neu: str, *, bisher: str = "", vorschlag: bool = False) -> str:
+    """
+    Meldung, wenn die neue Beschreibung eines TOPs länger als ``BESCHREIBUNG_MAX`` ist, sonst ``""``. Unverändert
+    gespeicherte längere Beschreibungen gelten nicht als Fehler, damit etwa das Speichern des Titels nicht scheitert.
+    ``vorschlag``: Begründung eines Vorschlags; wer nur vorschlägt, kann keine Anhänge hochladen, die Meldung nennt
+    deshalb die Sitzungsleitung. Die Meldung ist kurz genug für den Hinweis des automatischen Speicherns
+    (``frontend/js/autosave.ts``: höchstens 200 Zeichen Klartext).
+    """
+    laenge = beschreibung_laenge(neu)
+    # Unverändert heißt: so, wie es gespeichert würde (die Wege speichern mit str.strip(), das U+FEFF behält)
+    if laenge <= BESCHREIBUNG_MAX or _wie_gespeichert(neu) == _wie_gespeichert(bisher):
+        return ""
+    if vorschlag:
+        return (
+            f"Die Begründung ist auf {_zahl(BESCHREIBUNG_MAX)} Zeichen begrenzt (jetzt {_zahl(laenge)}). Den "
+            "vollständigen Antragstext kann die Sitzungsleitung nach der Aufnahme als Anhang anhängen."
+        )
+    return (
+        f"Die Beschreibung ist auf {_zahl(BESCHREIBUNG_MAX)} Zeichen begrenzt (jetzt {_zahl(laenge)}). "
+        "Antragstexte und lange Begründungen bitte als Anhang an den TOP hängen."
+    )
 
 
 def open_for_members(meeting: FactionMeeting) -> bool:

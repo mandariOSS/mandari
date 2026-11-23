@@ -909,9 +909,9 @@ def top_laden(meeting: FactionMeeting, item_id: Any) -> FactionAgendaItem | None
     )
 
 
-#: Längen wie in der Vorbereitung (Titel wie ``FactionAgendaItem.title``, Beschreibung wie die Begründung eines Vorschlags)
+#: Länge des Titels wie in der Vorbereitung (``FactionAgendaItem.title``); die Beschreibung begrenzt
+#: ``agenda.BESCHREIBUNG_MAX`` überall gleich
 TOP_TITEL_MAX = 500
-TOP_BESCHREIBUNG_MAX = 5000
 
 
 #: Richtungen, in die die Sitzungsansicht einen TOP verschiebt (:func:`top_verschieben`)
@@ -953,8 +953,9 @@ def top_hinzufuegen(
         raise TopNeuError("Bitte geben Sie einen Titel an.")
     if len(titel) > TOP_TITEL_MAX:
         raise TopNeuError("Der Titel ist zu lang.")
-    if len(beschreibung) > TOP_BESCHREIBUNG_MAX:
-        raise TopNeuError("Die Beschreibung ist zu lang.")
+    zu_lang = agenda.beschreibung_zu_lang(beschreibung)
+    if zu_lang:
+        raise TopNeuError(zu_lang)
     if teil not in ("public", "internal"):
         raise TopNeuError("Ungültige Eingabe.")
     eltern = None
@@ -975,7 +976,7 @@ def top_hinzufuegen(
         raise TopNeuError(NOE_AUS)
     if teil not in ("public", "internal"):
         raise TopNeuError("Unbekannter Teil der Tagesordnung.")
-    return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung)
+    return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung.strip())
 
 
 #: Nummer aus der Überschrift eines TOPs vor dem Titel („TOP 3.2 “, „TOP NÖ 4 “), wie sie beim Kopieren mitkommt

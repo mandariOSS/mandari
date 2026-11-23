@@ -608,6 +608,9 @@ class FactionActionView(WorkViewMixin, View):
                 return HttpResponse("Titel ist erforderlich.", status=400)
             messages.error(request, "Titel ist erforderlich.")
             return self._redirect_detail(meeting)
+        zu_lang = agenda.beschreibung_zu_lang(request.POST.get("description", ""))
+        if zu_lang:
+            return self._rejected(request, meeting, zu_lang, 400)
 
         parent = None
         if parent_id:
@@ -658,9 +661,14 @@ class FactionActionView(WorkViewMixin, View):
         # NÖ strikt (Issue #64): Nicht-Vereidigte können NÖ-TOPs nicht bearbeiten
         if not can_view_item(item, self.membership):
             return HttpResponse(status=403)
+        description = request.POST.get("description", "").strip()
+        zu_lang = agenda.beschreibung_zu_lang(
+            request.POST.get("description", ""), bisher=item.get_description_decrypted() or ""
+        )
+        if zu_lang:
+            return self._rejected(request, meeting, zu_lang, 400)
         item.title = title
 
-        description = request.POST.get("description", "").strip()
         if description:
             item.set_description_encrypted(description)
         else:
@@ -1422,6 +1430,10 @@ class FactionActionView(WorkViewMixin, View):
 
         if not title:
             messages.error(request, "Bitte einen Titel angeben.")
+            return self._redirect_detail(meeting)
+        zu_lang = agenda.beschreibung_zu_lang(request.POST.get("description", ""), vorschlag=True)
+        if zu_lang:
+            messages.error(request, zu_lang)
             return self._redirect_detail(meeting)
 
         from ..services import AgendaProposalService

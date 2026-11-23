@@ -315,6 +315,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         # bleibt die Beschreibung, sonst löschte jedes Speichern des Titels sie (#854)
         if "description" in request.POST:
             description = request.POST["description"]
+            zu_lang = agenda.beschreibung_zu_lang(description, bisher=item.get_description_decrypted() or "")
+            if zu_lang:
+                return HttpResponse(zu_lang, status=400, content_type="text/plain; charset=utf-8")
             if description.strip():
                 item.set_description_encrypted(description.strip())
             else:
@@ -718,6 +721,11 @@ class FactionItemFieldsView(WorkViewMixin, View):
             felder.append("title")
         if "description" in daten:
             beschreibung = str(daten.get("description") or "").strip()
+            zu_lang = agenda.beschreibung_zu_lang(
+                str(daten.get("description") or ""), bisher=item.get_description_decrypted() or ""
+            )
+            if zu_lang:
+                return JsonResponse({"error": zu_lang}, status=400)
             if beschreibung:
                 item.set_description_encrypted(beschreibung)
             else:

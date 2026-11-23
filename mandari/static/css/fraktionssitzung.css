@@ -696,6 +696,14 @@ body:has(.fs-unten) > div[role="status"].bg-amber-500 {
   color: var(--wf-warn);
   font-size: 13.5px;
 }
+/* Grenze der TOP-Beschreibung (agenda.BESCHREIBUNG_MAX): Hinweis unter dem Feld, die Zahl erst kurz vor der Grenze */
+.fs-grenze {
+  margin: 4px 0 0;
+}
+.fs-grenze-zahl.zu-lang {
+  color: var(--wf-warn);
+  font-weight: 600;
+}
 .fs-eintraege {
   margin-top: 20px;
   padding-top: 12px;

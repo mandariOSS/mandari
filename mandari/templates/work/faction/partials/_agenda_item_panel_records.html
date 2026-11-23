@@ -1,5 +1,6 @@
 {# TOP-Panel: Beschreibung (Autosave), Beschluss mit Inline-Formular, Protokolleinträge #}
 {# Kontext: item, meeting, org_slug, membership, can_edit, can_protocol, can_record_decision, decision_hint, decision, protocol_entries; Zustand showDecisionForm/showEntryForm aus x-data="agendaItemPanel" #}
+{% load work_tops %}
 
 {# 1. Beschreibung #}
 <c-ui.panel-section title="Beschreibung">
@@ -10,8 +11,9 @@
           hx-vals='{"action": "update"}'
           data-autosave="panel">
         {% csrf_token %}
-        <textarea name="description" rows="3" placeholder="Beschreibung hinzufügen..."
+        <textarea id="panel-beschreibung-{{ item.id }}" name="description" rows="3" placeholder="Beschreibung hinzufügen..." aria-describedby="panel-beschreibung-{{ item.id }}-grenze"
                   class="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden resize-y">{{ item.get_description_decrypted|default:"" }}</textarea>
+        {% beschreibung_grenze "panel-beschreibung-{id}" ziel="anker" item_id=item.id anker="panel-anhaenge-{id}" %}
     </form>
     {% else %}
     {% with desc=item.get_description_decrypted %}

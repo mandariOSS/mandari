@@ -11,6 +11,7 @@ Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
 Nichtöffentlich (z.intern): Titel und Bezug weichgezeichnet, die aufgeklappten Angaben (Felder, Unterlagen, Verlauf) hinter
 der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Work, Issue #1201).
 {% endcomment %}
+{% load work_tops %}
 {% with item=z.item %}
 <li class="fs-top{% if z.unter %} unter{% endif %}{% if z.offen %} offen{% endif %}" id="top-{{ item.pk }}" data-testid="fs-top" data-id="{{ item.pk }}" data-titel="{{ item.title }}"{% if z.unter %} data-eltern="{{ item.parent_id }}"{% endif %}{% if z.intern %} data-intern{% endif %}{% if can_edit and z.verschiebbar %} data-verschiebbar{% endif %}>
     <div class="fs-top-zeile">
@@ -76,8 +77,9 @@ der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Wo
             <input id="ti-{{ item.pk }}" class="wf-eingabe" type="text" name="title" value="{{ item.title }}" required maxlength="500"
                    data-top="{{ item.pk }}" data-top-feld="title" @change="feldSpeichern($el)">
             <label class="fs-feldname" for="b-{{ item.pk }}">Beschreibung</label>
-            <textarea id="b-{{ item.pk }}" class="wf-eingabe" name="description" rows="2"
+            <textarea id="b-{{ item.pk }}" class="wf-eingabe" name="description" rows="2" aria-describedby="b-{{ item.pk }}-grenze"
                       data-top="{{ item.pk }}" data-top-feld="description" @change="feldSpeichern($el)">{{ z.beschreibung }}</textarea>
+            {% beschreibung_grenze "b-{id}" ziel="panel" item_id=item.pk %}
             {% include "work/faction/neu/_vb_speicherstand.html" %}
             <noscript><div class="fs-detail-aktionen"><button type="submit" class="wf-knopf">Speichern</button></div></noscript>
         </form>
