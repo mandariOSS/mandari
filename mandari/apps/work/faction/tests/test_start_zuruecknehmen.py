@@ -178,13 +178,22 @@ def test_gleichzeitige_genehmigung_nach_zuruecknehmen(welt: dict[str, Any], clie
     assert (meeting.status, meeting.protocol_approved, meeting.protocol_status) == ("invited", False, "draft")
 
 
+@pytest.mark.parametrize("danach", ["zurueckgenommen", "neu_beendet"])
 def test_gleichzeitiger_protokollversand_nach_zuruecknehmen(
-    welt: dict[str, Any], client_for: Any, monkeypatch: pytest.MonkeyPatch
+    welt: dict[str, Any], client_for: Any, monkeypatch: pytest.MonkeyPatch, danach: str
 ) -> None:
     vorher = _beendet_und_zurueckgenommen(welt, client_for)
+    # Geladen vor fünf Stunden beendet, zwei Stunden Verzögerung: nach dem damaligen Stand fällig
+    vorher.end = timezone.now() - timedelta(hours=5)
+    if danach == "neu_beendet":
+        # Inzwischen neu gestartet und gerade beendet: nach dem Stand der Datenbank erst in zwei Stunden fällig
+        client = client_for(welt["vorsitz"].user)
+        _aktion(welt, client, "start")
+        _aktion(welt, client, "end")
+        assert FactionMeeting.objects.get(pk=vorher.pk).status == "completed"
     einstellungen = {
         "protocol_dispatch": "after_completion",
-        "protocol_dispatch_delay_hours": 0,
+        "protocol_dispatch_delay_hours": 2,
         "protocol_dispatch_since": timezone.now() - timedelta(days=1),
     }
     versendet: list[Any] = []
@@ -196,10 +205,17 @@ def test_gleichzeitiger_protokollversand_nach_zuruecknehmen(
     monkeypatch.setattr(protocol_dispatch, "_candidates", lambda now: iter([(vorher, einstellungen)]))
     monkeypatch.setattr(protocol_dispatch, "send_protocol", senden)
 
-    statistik = protocol_dispatch.run_faction_protocol_pass(now=timezone.now() + timedelta(hours=3))
+    statistik = protocol_dispatch.run_faction_protocol_pass(now=timezone.now() + timedelta(hours=1))
 
     assert versendet == [] and statistik["meetings"] == 0
     assert FactionMeeting.objects.get(pk=vorher.pk).protocol_sent_at is None
+
+
+def test_beenden_nach_zuruecknehmen(welt: dict[str, Any], client_for: Any) -> None:
+    _beendet_und_zurueckgenommen(welt, client_for)
+    _aktion(welt, client_for(welt["vorsitz"].user), "end")
+    meeting = FactionMeeting.objects.get(pk=welt["meeting"].pk)
+    assert (meeting.status, meeting.started_at) == ("invited", None)
 
 
 def test_ohne_recht_kein_zuruecknehmen(welt: dict[str, Any], client_for: Any) -> None:

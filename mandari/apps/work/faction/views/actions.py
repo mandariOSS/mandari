@@ -262,10 +262,18 @@ class FactionActionView(WorkViewMixin, View):
         if not self.membership.has_permission("faction.start"):
             messages.error(request, "Keine Berechtigung zum Beenden.")
             return self._redirect_detail(meeting)
-        if meeting.status == "ongoing":
-            meeting.status = "completed"
-            meeting.end = timezone.now()
-            self._save_fields(meeting, "status", "end")
+        with transaction.atomic():
+            # Unter der Sperre der Sitzung und mit dem Stand der Datenbank: Nach einem gleichzeitigen „Start
+            # zurücknehmen“ (Issue #1566) steht sie vor dem Beginn, dann gibt es nichts zu beenden
+            agenda.lock_meeting(meeting)
+            stand = FactionMeeting.objects.values_list("status", flat=True).get(pk=meeting.pk)
+            if stand == "ongoing":
+                meeting.status = "completed"
+                meeting.end = timezone.now()
+                self._save_fields(meeting, "status", "end")
+        if stand not in ("ongoing", "completed"):
+            messages.error(request, "Die Sitzung läuft nicht.")
+            return self._refresh_or_redirect(request, meeting)
         return self._refresh_or_redirect(request, meeting, "Sitzung beendet.")
 
     def _undo_start(self, request, meeting):
@@ -1161,7 +1169,13 @@ class FactionActionView(WorkViewMixin, View):
             # Direkte Genehmigung über die Sitzungsansicht — setzt neben dem
             # Flag auch protocol_status="approved" (die öffentlichen Views
             # filtern auf den Status, nicht das Flag)
-            ProtocolApprovalService.approve_protocol(meeting, approved_in_meeting=None, approved_by=self.membership)
+            genehmigt = ProtocolApprovalService.approve_protocol(
+                meeting, approved_in_meeting=None, approved_by=self.membership
+            )
+            # Abgelehnt, ohne dass jemand anderes genehmigt hat: Die Sitzung steht inzwischen vor dem Beginn
+            if not genehmigt and not FactionMeeting.objects.filter(pk=meeting.pk, protocol_approved=True).exists():
+                messages.error(request, "Das Protokoll lässt sich nicht genehmigen: Die Sitzung ist nicht beendet.")
+                return self._refresh_or_redirect(request, meeting)
 
         return self._refresh_or_redirect(request, meeting, "Protokoll genehmigt.")
 
