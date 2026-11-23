@@ -1,0 +1,19 @@
+{% comment %}
+Hinweis unter dem Feld der TOP-Beschreibung (Template-Tag beschreibung_grenze, apps/work/templatetags/work_tops.py):
+Die Beschreibung ordnet den TOP kurz ein, höchstens agenda.BESCHREIBUNG_MAX Zeichen. Antragstexte und lange
+Begründungen gehören als Anhang an den TOP; der Hinweis führt direkt dorthin (panel: „Unterlagen und Weiteres“ öffnen,
+anker: im Panel zum Abschnitt „Anhänge“ springen). Die Zahl der Zeichen erscheint erst kurz vor der Grenze, darüber
+als Warnung; zu lange Texte lehnt der Server mit derselben Regel ab. Kein maxlength am Feld: Der Browser würde einen
+eingefügten Antrag still abschneiden.
+Kontext: feld (id des Textfelds, das aria-describedby="<feld>-grenze" trägt), ziel, item_id, anker, max, max_text.
+{% endcomment %}
+<p class="fs-meta fs-grenze" id="{{ feld }}-grenze" data-testid="fs-beschreibung-grenze"
+   x-data="{ n: 0 }" x-init="const f = document.getElementById('{{ feld }}'); if (f) { n = f.value.length; f.addEventListener('input', () => { n = f.value.length }) }">
+    <span class="fs-grenze-zahl" :class="{ 'zu-lang': n > {{ max }} }" x-show="n > {{ max }} * 0.8" x-cloak
+          x-text="(n > {{ max }} ? 'Zu lang: ' : '') + n.toLocaleString('de-DE') + ' von {{ max_text }} Zeichen.'"></span>
+    Höchstens {{ max_text }} Zeichen.
+    {% if ziel == "neu" %}Antragstexte und lange Begründungen hängen Sie nach dem Anlegen als Anhang an.
+    {% else %}Antragstexte und lange Begründungen gehören als Anhang an den TOP{% if ziel == "panel" %}:
+    <button type="button" class="wf-textlink" @click="$dispatch('open-item-panel', { id: '{{ item_id }}' })">Anhang hinzufügen</button>{% elif ziel == "anker" %}:
+    <button type="button" class="wf-textlink" @click="document.getElementById('{{ anker }}')?.scrollIntoView({ block: 'start' })">zu den Anhängen</button>{% endif %}.{% endif %}
+</p>

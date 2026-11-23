@@ -11,6 +11,7 @@ Gibt es den Titel schon (Issue #1436), antwortet der Server mit 409: Der Dialog 
 „Trotzdem hinzufügen“ sendet erneut mit doppelt=1 (Komponente topNeu).
 Kontext: ordnung (sitzung.Tagesordnung), item, rechte, sitzung_urls.
 {% endcomment %}
+{% load work_tops %}
 <c-ui.modal id="fs-top-neu" title="TOP hinzufügen" size="sm">
     <form class="wf-dialog" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-fokus" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]"
           data-sichern-vorher data-testid="fs-top-neu-form"
@@ -34,7 +35,8 @@ Kontext: ordnung (sitzung.Tagesordnung), item, rechte, sitzung_urls.
         {% endif %}
         {% include "work/faction/sitzung/_top_neu_eltern.html" %}
         <label class="fs-feldname" for="fs-top-neu-beschreibung">Beschreibung <span class="fs-meta">freiwillig</span></label>
-        <textarea id="fs-top-neu-beschreibung" class="wf-eingabe" name="description" rows="2" maxlength="5000"></textarea>
+        <textarea id="fs-top-neu-beschreibung" class="wf-eingabe" name="description" rows="2" aria-describedby="fs-top-neu-beschreibung-grenze"></textarea>
+        {% beschreibung_grenze "fs-top-neu-beschreibung" ziel="neu" %}
         <div class="wf-dialog-fuss">
             <button type="button" class="wf-knopf" data-close-modal @click="doppelt = ''">Abbrechen</button>
             <button type="submit" class="wf-knopf wf-haupt" x-text="doppelt ? 'Trotzdem hinzufügen' : 'Hinzufügen'">Hinzufügen</button>

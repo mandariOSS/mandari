@@ -31,6 +31,16 @@
 # Version und dass keine Version fehlt.
 
 [[eintrag]]
+datum = 2026-11-23
+version = ""
+bereich = "fraktionssitzungen"
+titel = "TOP-Beschreibungen bleiben kurz, lange Texte hängen am TOP."
+text = """Die Beschreibung eines Tagesordnungspunkts ordnet ihn kurz ein und hat höchstens 1.000 Zeichen. \
+Antragstexte und lange Begründungen hängen Sie als Anhang an den TOP: Unter dem Feld führt „Anhang hinzufügen“ \
+direkt dorthin. So bleiben Tagesordnung und Sitzungsansicht übersichtlich. Vorhandene längere Beschreibungen \
+bleiben erhalten."""
+
+[[eintrag]]
 datum = 2026-11-22
 version = ""
 bereich = "ueberall"

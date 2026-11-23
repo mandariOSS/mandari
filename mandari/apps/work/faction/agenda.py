@@ -39,6 +39,31 @@ PROPOSAL_OPEN_STATUSES = ("draft", "planned", "invited")
 #: Titel des Genehmigungs-TOPs ohne eigene Vorlage (wie ``FactionMeeting.create_approval_agenda_item``)
 APPROVAL_TITLE_WITH_PREVIOUS = "Tagesordnung festlegen und letztes Protokoll genehmigen"
 APPROVAL_TITLE_NO_PREVIOUS = "Tagesordnung festlegen"
+#: Höchstlänge der Beschreibung eines TOPs in Zeichen: eine kurze Einordnung, kein Antragstext. Lange Texte gehören als
+#: Anhang an den TOP (Datei, verknüpfter Antrag, RIS-Vorlage, Link). Gemessen am Bestand vom 23.11.2026 (längste
+#: Beschreibung 715 Zeichen); eingefügte Anträge mit fast 3.000 Zeichen machten Tagesordnung und Sitzungsansicht
+#: unlesbar. Längere, schon gespeicherte Beschreibungen bleiben, solange niemand sie ändert.
+BESCHREIBUNG_MAX = 1000
+
+
+def _zahl(wert: int) -> str:
+    return f"{wert:,}".replace(",", ".")
+
+
+def beschreibung_zu_lang(neu: str, *, bisher: str = "") -> str:
+    """
+    Meldung, wenn die neue Beschreibung eines TOPs länger als ``BESCHREIBUNG_MAX`` ist, sonst ``""``. Unverändert
+    gespeicherte längere Beschreibungen gelten nicht als Fehler, damit etwa das Speichern des Titels nicht scheitert.
+    Die Meldung ist kurz genug für den Hinweis des automatischen Speicherns (``frontend/js/autosave.ts``: höchstens
+    200 Zeichen Klartext).
+    """
+    text = (neu or "").strip()
+    if len(text) <= BESCHREIBUNG_MAX or text == (bisher or "").strip():
+        return ""
+    return (
+        f"Die Beschreibung ist auf {_zahl(BESCHREIBUNG_MAX)} Zeichen begrenzt (jetzt {_zahl(len(text))}). "
+        "Antragstexte und lange Begründungen bitte als Anhang an den TOP hängen."
+    )
 
 
 def open_for_members(meeting: FactionMeeting) -> bool:

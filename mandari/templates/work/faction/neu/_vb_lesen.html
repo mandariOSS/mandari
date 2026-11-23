@@ -6,6 +6,7 @@ nichtöffentliche Teil nur als Zahl mit Erklärung.
 Kontext: meeting, org_slug, eingeladen, info, my_attendance, can_add_items, can_propose_agenda, my_proposals,
 to_oeffentlich, to_intern, to_gesperrt, to_eltern, to_eltern_intern, can_view_internal, darf_einladen, empfaenger.
 {% endcomment %}
+{% load work_tops %}
 <div class="fs-antwort" role="group" aria-labelledby="antwort-h" data-testid="fs-antwort">
     <h2 id="antwort-h">{% if not eingeladen %}{{ einladung_folgt|default:"Einladung folgt" }}{% elif meeting.rsvp_enabled and my_attendance %}Können Sie teilnehmen?{% else %}Sie sind eingeladen{% endif %}</h2>
     <p class="fs-termin"><b>{{ meeting.start|date:"l, j. F Y" }}, {{ meeting.start|time:"H:i" }}{% if meeting.end %} bis {{ meeting.end|time:"H:i" }}{% endif %} Uhr</b>{% if meeting.location or meeting.video_link %}<br>{% endif %}{{ meeting.location }}{% if meeting.is_virtual and meeting.video_link %}{% if meeting.location %}, {% endif %}<a class="wf-textlink" href="{{ meeting.video_link }}" target="_blank" rel="noopener noreferrer">per Video teilnehmen</a>{% endif %}</p>
@@ -84,7 +85,8 @@ to_oeffentlich, to_intern, to_gesperrt, to_eltern, to_eltern_intern, can_view_in
     </div>
     {% if not can_add_items %}
     <label class="fs-feldname" for="tf-begruendung">Begründung <span class="fs-meta">freiwillig</span></label>
-    <textarea id="tf-begruendung" class="wf-eingabe" name="description" rows="2" maxlength="5000"></textarea>
+    <textarea id="tf-begruendung" class="wf-eingabe" name="description" rows="2" aria-describedby="tf-begruendung-grenze"></textarea>
+    {% beschreibung_grenze "tf-begruendung" %}
     {% endif %}
     {% if my_proposals %}
     <ul class="fs-meine-vs" data-testid="fs-meine-vorschlaege">
