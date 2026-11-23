@@ -50,18 +50,32 @@ def _zahl(wert: int) -> str:
     return f"{wert:,}".replace(",", ".")
 
 
-def beschreibung_zu_lang(neu: str, *, bisher: str = "") -> str:
+def beschreibung_laenge(text: str) -> int:
+    """
+    Länge einer Beschreibung wie im Hinweis unter dem Feld (``_beschreibung_grenze.html``): Zeichen (Codepunkte) ohne
+    Leerraum am Rand, ein Zeilenumbruch zählt als ein Zeichen (Formulare senden ``\\r\\n``).
+    """
+    return len((text or "").replace("\r\n", "\n").strip())
+
+
+def beschreibung_zu_lang(neu: str, *, bisher: str = "", vorschlag: bool = False) -> str:
     """
     Meldung, wenn die neue Beschreibung eines TOPs länger als ``BESCHREIBUNG_MAX`` ist, sonst ``""``. Unverändert
     gespeicherte längere Beschreibungen gelten nicht als Fehler, damit etwa das Speichern des Titels nicht scheitert.
-    Die Meldung ist kurz genug für den Hinweis des automatischen Speicherns (``frontend/js/autosave.ts``: höchstens
-    200 Zeichen Klartext).
+    ``vorschlag``: Begründung eines Vorschlags; wer nur vorschlägt, kann keine Anhänge hochladen, die Meldung nennt
+    deshalb die Sitzungsleitung. Die Meldung ist kurz genug für den Hinweis des automatischen Speicherns
+    (``frontend/js/autosave.ts``: höchstens 200 Zeichen Klartext).
     """
-    text = (neu or "").strip()
-    if len(text) <= BESCHREIBUNG_MAX or text == (bisher or "").strip():
+    laenge = beschreibung_laenge(neu)
+    if laenge <= BESCHREIBUNG_MAX or (neu or "").strip() == (bisher or "").strip():
         return ""
+    if vorschlag:
+        return (
+            f"Die Begründung ist auf {_zahl(BESCHREIBUNG_MAX)} Zeichen begrenzt (jetzt {_zahl(laenge)}). Den "
+            "vollständigen Antragstext kann die Sitzungsleitung nach der Aufnahme als Anhang anhängen."
+        )
     return (
-        f"Die Beschreibung ist auf {_zahl(BESCHREIBUNG_MAX)} Zeichen begrenzt (jetzt {_zahl(len(text))}). "
+        f"Die Beschreibung ist auf {_zahl(BESCHREIBUNG_MAX)} Zeichen begrenzt (jetzt {_zahl(laenge)}). "
         "Antragstexte und lange Begründungen bitte als Anhang an den TOP hängen."
     )
 

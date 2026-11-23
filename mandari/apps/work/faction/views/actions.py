@@ -1389,7 +1389,7 @@ class FactionActionView(WorkViewMixin, View):
         if not title:
             messages.error(request, "Bitte einen Titel angeben.")
             return self._redirect_detail(meeting)
-        zu_lang = agenda.beschreibung_zu_lang(description)
+        zu_lang = agenda.beschreibung_zu_lang(description, vorschlag=True)
         if zu_lang:
             messages.error(request, zu_lang)
             return self._redirect_detail(meeting)

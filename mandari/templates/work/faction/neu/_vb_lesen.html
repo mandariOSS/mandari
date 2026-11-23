@@ -86,7 +86,7 @@ to_oeffentlich, to_intern, to_gesperrt, to_eltern, to_eltern_intern, can_view_in
     {% if not can_add_items %}
     <label class="fs-feldname" for="tf-begruendung">Begründung <span class="fs-meta">freiwillig</span></label>
     <textarea id="tf-begruendung" class="wf-eingabe" name="description" rows="2" aria-describedby="tf-begruendung-grenze"></textarea>
-    {% beschreibung_grenze "tf-begruendung" %}
+    {% beschreibung_grenze "tf-begruendung" ziel="vorschlag" %}
     {% endif %}
     {% if my_proposals %}
     <ul class="fs-meine-vs" data-testid="fs-meine-vorschlaege">

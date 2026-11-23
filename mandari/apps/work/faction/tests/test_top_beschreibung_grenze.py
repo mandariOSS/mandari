@@ -16,6 +16,7 @@ from datetime import timedelta
 from typing import Any, cast
 
 import pytest
+from django.template import Context, Template
 from django.urls import reverse
 from django.utils import timezone
 
@@ -82,6 +83,22 @@ def test_regel_grenze_genau_und_unveraenderter_altbestand() -> None:
     # Eine schon gespeicherte längere Beschreibung bleibt, solange sie unverändert ist
     assert agenda.beschreibung_zu_lang(ZU_LANG, bisher=f"{ZU_LANG}\n") == ""
     assert agenda.beschreibung_zu_lang(ZU_LANG + "!", bisher=ZU_LANG) != ""
+
+
+def test_regel_zaehlt_wie_der_hinweis_im_browser() -> None:
+    """Zeilenumbrüche aus Formularen (``\\r\\n``) zählen einfach, Zeichen außerhalb der BMP auch (wie ``[...text]``)."""
+    zeilen = "\r\n".join(["a" * 9] * 100)  # 900 Zeichen und 99 Umbrüche: 999, als Formularwert 1.098
+    assert agenda.beschreibung_laenge(zeilen) == 999
+    assert agenda.beschreibung_zu_lang(zeilen) == ""
+    assert agenda.beschreibung_zu_lang("𝔄" * agenda.BESCHREIBUNG_MAX) == ""
+    assert agenda.beschreibung_zu_lang("𝔄" * (agenda.BESCHREIBUNG_MAX + 1)) != ""
+
+
+def test_regel_nennt_beim_vorschlag_die_sitzungsleitung() -> None:
+    """Wer nur vorschlägt, kann keine Anhänge hochladen: Die Meldung schickt niemanden dorthin."""
+    meldung = agenda.beschreibung_zu_lang(ZU_LANG, vorschlag=True)
+    assert meldung.startswith("Die Begründung ist auf 1.000 Zeichen begrenzt")
+    assert "Sitzungsleitung" in meldung and len(meldung) <= 200
 
 
 # ---- Wege der Eingabe ---------------------------------------------------------------------------------------
@@ -214,3 +231,22 @@ def test_panel_springt_zu_den_anhaengen(org: Any, vorsitz: Any, top: FactionAgen
     assert f'id="panel-anhaenge-{top.id}"' in html
     assert f"getElementById('panel-anhaenge-{top.id}')" in html
     assert "zu den Anhängen</button>" in html
+
+
+def _hinweis(argumente: str) -> str:
+    return Template("{% load work_tops %}{% beschreibung_grenze " + argumente + " %}").render(Context())
+
+
+def test_hinweis_beim_vorschlag_ohne_weg_zum_hochladen() -> None:
+    html = _hinweis('"tf-begruendung" ziel="vorschlag"')
+    assert 'id="tf-begruendung-grenze"' in html
+    assert "Sitzungsleitung" in html
+    assert "Anhang hinzufügen" not in html and "zu den Anhängen" not in html
+
+
+def test_hinweis_folgt_dem_modell_des_dialogs() -> None:
+    """Der Dialog „TOP bearbeiten“ füllt das Feld per x-model: Der Zähler folgt dem Modell, nicht nur der Eingabe."""
+    assert 'x-effect="n = zaehle(itemDescription)"' in _hinweis(
+        '"top-dialog-beschreibung" ziel="neu" modell="itemDescription"'
+    )
+    assert "x-effect" not in _hinweis('"fs-top-neu-beschreibung" ziel="neu"')
