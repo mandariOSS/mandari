@@ -18,7 +18,7 @@ from apps.common import local_time
 from apps.common.mixins import WorkViewMixin
 from apps.work.rahmen import fragment_neu
 
-from .. import agenda, deletion
+from .. import agenda, deletion, zuruecknehmen
 from .. import services as faction_services
 from ..models import (
     AGENDA_PARTS,
@@ -69,6 +69,7 @@ class FactionActionView(WorkViewMixin, View):
             # Status
             "start": self._start,
             "end": self._end,
+            "undo_start": self._undo_start,
             "cancel": self._cancel,
             "delete": self._delete,
             "delete_preview": self._delete_preview,
@@ -265,6 +266,22 @@ class FactionActionView(WorkViewMixin, View):
             meeting.end = timezone.now()
             self._save_fields(meeting, "status", "end")
         return self._refresh_or_redirect(request, meeting, "Sitzung beendet.")
+
+    def _undo_start(self, request, meeting):
+        """Versehentlichen Start zurücknehmen: Die Sitzung steht wieder vor dem Beginn (:mod:`..zuruecknehmen`)."""
+        if not self.membership.has_permission("faction.start"):
+            messages.error(request, "Keine Berechtigung, den Start zurückzunehmen.")
+            return self._redirect_detail(meeting)
+        if not zuruecknehmen.zuruecknehmen(meeting):
+            messages.error(
+                request,
+                "Der Start lässt sich nicht mehr zurücknehmen: Die Sitzung hat nicht begonnen, oder die Anwesenheit "
+                "ist bestätigt oder das Protokoll genehmigt oder verschickt.",
+            )
+            return self._refresh_or_redirect(request, meeting)
+        return self._refresh_or_redirect(
+            request, meeting, "Start zurückgenommen. Die Sitzung steht wieder vor dem Beginn."
+        )
 
     def _cancel(self, request, meeting):
         if not self._can_manage_meeting(meeting):
