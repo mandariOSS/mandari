@@ -19,6 +19,10 @@ erscheint als TOP-Aufruf (öffentlich) und als Pause. Der Dienst verarbeitet Pau
 kennt. Eine Pause dauert, bis ein öffentlicher TOP aufgerufen wird und die Sitzung nicht unterbrochen ist: Das Ende
 eines geschützten TOP allein beendet sie nicht. Pausen überlappen nie: Es gibt höchstens eine offene, gleich ob die
 Sitzung unterbrochen ist oder ein geschützter Teil läuft (sonst beendete das Ende der einen die andere).
+
+**Stand:** Ob ein geschützter Teil läuft, steht an der jüngsten Zeile (``geschuetzt``). Beginnt er, während die Pause
+schon offen ist (etwa ein nichtöffentlicher TOP während einer Unterbrechung), entsteht keine Meldung; dann wird die
+jüngste Zeile nachgeführt. Sonst beendete die Fortsetzung nach einer späteren Unterbrechung die Pause.
 """
 
 from __future__ import annotations
@@ -73,8 +77,10 @@ class _Stand:
         self.meeting = meeting
         self.at = at
         zeilen = Meldung.objects.filter(meeting=meeting)
-        letzte = zeilen.order_by("-occurred_at").values_list("geschuetzt", flat=True).first()
-        self.geschuetzt = bool(letzte)
+        letzte = zeilen.order_by("-occurred_at").values_list("pk", "geschuetzt").first()
+        self._letzte = letzte[0] if letzte is not None else None
+        self._geschuetzt_gespeichert = bool(letzte is not None and letzte[1])
+        self.geschuetzt = self._geschuetzt_gespeichert
         pause = (
             zeilen.filter(kind__in=(Meldung.PAUSE_BEGONNEN, Meldung.PAUSE_BEENDET))
             .order_by("-occurred_at")
@@ -110,6 +116,9 @@ class _Stand:
 
     def speichern(self) -> None:
         if not self.neu:
+            if self._letzte is not None and self.geschuetzt != self._geschuetzt_gespeichert:
+                # Stand ohne neue Meldung (die Pause ist schon offen): an der jüngsten Zeile nachführen
+                Meldung.objects.filter(pk=self._letzte).update(geschuetzt=self.geschuetzt)
             return
         for zeile in self.neu:
             zeile.save(force_insert=True)
@@ -175,4 +184,6 @@ def einreihen(meeting_id: Any) -> None:
     from .auftraege import zustellen
 
     with transaction.atomic():
-        journal_backend().enqueue(zustellen, [str(meeting_id)], {})
+        # Zeitpunkt nach der Uhr der Anwendung (wie ``created_at`` der Meldungen): Welche Meldungen der Auftrag mit
+        # seinem letzten Versuch aufgibt, ergibt sich daraus (``auftraege._ausgeschoepft``)
+        journal_backend().enqueue(zustellen, [str(meeting_id)], {"eingereiht": timezone.now().isoformat()})

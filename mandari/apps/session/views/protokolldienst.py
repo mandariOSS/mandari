@@ -39,6 +39,7 @@ FEHLERTEXTE: dict[str, str] = {
     "verbindung": "Der Protokolldienst war nicht erreichbar.",
     "top_unbekannt": "Ein Abstimmungsergebnis ließ sich keinem TOP beim Protokolldienst zuordnen.",
     "ausgeschaltet": "Die Anbindung war ausgeschaltet.",
+    "nur_https": "Der API-Schlüssel geht nur über https; http ist in dieser Installation nicht freigegeben.",
 }
 
 

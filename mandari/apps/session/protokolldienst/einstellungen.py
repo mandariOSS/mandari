@@ -4,9 +4,10 @@ Anbindung je Mandant: Adresse und API-Schlüssel des Protokolldienstes, Rückgab
 
 **Adresse:** nur ``https`` und ein öffentlicher Name (kein ``localhost``, keine Adresse aus dem eigenen Netz, kein
 Dienstname im Container-Netz). Wer den Dienst im eigenen Netz betreibt, nennt dessen Host in
-``PROTOKOLLDIENST_ERLAUBTE_HOSTS``; ist die Liste gesetzt, sind nur diese Hosts zulässig, dann auch mit ``http``.
-Die Prüfung beim Speichern ersetzt nicht die beim Abruf (``client``): Dort wird der Name aufgelöst und nur mit einer
-geprüften Adresse verbunden.
+``PROTOKOLLDIENST_ERLAUBTE_HOSTS``; ist die Liste gesetzt, sind nur diese Hosts zulässig. ``http`` (der API-Schlüssel
+ginge im Klartext über das Netz) nur für diese Hosts und nur mit der ausdrücklichen Freigabe
+``PROTOKOLLDIENST_HTTP_ERLAUBT``. Die Prüfung beim Speichern ersetzt nicht die beim Abruf (``client``): Dort wird der
+Name aufgelöst und nur mit einer geprüften Adresse verbunden.
 
 **Schlüssel:** Den API-Schlüssel des Dienstes verschlüsselt der Mandantenschlüssel (``api_key_encrypted``). Den
 Rückgabeschlüssel, mit dem der Dienst Entwürfe übergibt, erzeugt Session; gespeichert ist nur sein SHA-256, angezeigt
@@ -55,6 +56,11 @@ def freigegebener_host(adresse: str) -> bool:
     return host_von(adresse) in erlaubte_hosts()
 
 
+def http_erlaubt(adresse: str) -> bool:
+    """Darf der Client ohne TLS verbinden? Nur zu freigegebenen Hosts und nur mit ``PROTOKOLLDIENST_HTTP_ERLAUBT``."""
+    return bool(getattr(settings, "PROTOKOLLDIENST_HTTP_ERLAUBT", False)) and freigegebener_host(adresse)
+
+
 def adresse_pruefen(roh: str) -> str:
     """Adresse des Protokolldienstes ohne abschließenden Schrägstrich; wirft ``ValidationError`` mit fester Meldung."""
     adresse = (roh or "").strip().rstrip("/")
@@ -68,12 +74,12 @@ def adresse_pruefen(roh: str) -> str:
     if teile.username or teile.password:
         raise ValidationError(UNGUELTIG)
     freigegeben = erlaubte_hosts()
-    if freigegeben:
-        if host not in freigegeben:
-            raise ValidationError(NICHT_FREIGEGEBEN)
-        return adresse
-    if teile.scheme != "https":
+    if freigegeben and host not in freigegeben:
+        raise ValidationError(NICHT_FREIGEGEBEN)
+    if teile.scheme != "https" and not http_erlaubt(adresse):
         raise ValidationError(NUR_HTTPS)
+    if freigegeben:
+        return adresse
     try:
         ip = ipaddress.ip_address(host.strip("[]"))
     except ValueError:
@@ -106,7 +112,8 @@ def speichern(
     Anbindung anlegen oder ändern. ``api_key=None`` (leeres Feld) lässt den gespeicherten Schlüssel stehen.
 
     Eingeschaltet werden kann nur mit Adresse und Schlüssel. Liefert die Anbindung und die Änderungen für das
-    Prüfprotokoll (ohne Schlüssel).
+    Prüfprotokoll (ohne Schlüssel). Gespeichert werden nur diese Felder: Der Rückgabeschlüssel kommt nie aus einem
+    älteren Stand zurück (``rueckgabe_schluessel_erzeugen`` kann gleichzeitig laufen).
     """
     konfiguration = fuer_mandant(tenant) or SessionProtokolldienst(tenant=tenant)
     adresse = adresse_pruefen(base_url) if (base_url or "").strip() else ""
@@ -122,7 +129,10 @@ def speichern(
     if enabled != konfiguration.enabled:
         aenderungen["eingeschaltet"] = enabled
         konfiguration.enabled = enabled
-    konfiguration.save()
+    if konfiguration._state.adding:
+        konfiguration.save()
+    else:
+        konfiguration.save(update_fields=["base_url", "api_key_encrypted", "enabled", "updated_at"])
     return konfiguration, aenderungen
 
 

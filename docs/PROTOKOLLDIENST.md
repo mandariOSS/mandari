@@ -30,9 +30,11 @@ Der API-Schlüssel des Dienstes liegt mit dem Mandantenschlüssel verschlüsselt
 Einreichungs-Zugängen). Jede Änderung steht im Prüfprotokoll des Mandanten, nie ein Schlüssel.
 
 **Adresse:** nur `https` und ein öffentlicher Host. Für einen Dienst im eigenen Netz trägt der Betrieb dessen Host in
-`PROTOKOLLDIENST_ERLAUBTE_HOSTS` ein (kommagetrennt); ist die Liste gesetzt, sind nur diese Hosts zulässig, dann auch
-mit `http`. Beim Abruf verbindet der Client nur mit geprüften öffentlichen Adressen (`safe_fetch`, streng) und folgt
-keinen Weiterleitungen; freigegebene Hosts sind davon ausgenommen.
+`PROTOKOLLDIENST_ERLAUBTE_HOSTS` ein (kommagetrennt); ist die Liste gesetzt, sind nur diese Hosts zulässig. Auch dann
+gilt `https`: `http` erlaubt erst `PROTOKOLLDIENST_HTTP_ERLAUBT=true`, und nur für diese Hosts, denn der API-Schlüssel
+ginge sonst im Klartext über das Netz; ohne die Freigabe sendet der Client ihn nicht (Fehler `nur_https`). Beim Abruf
+verbindet der Client nur mit geprüften öffentlichen Adressen (`safe_fetch`, streng) und folgt keinen Weiterleitungen;
+freigegebene Hosts sind davon ausgenommen. Antworten liest er höchstens 2 MiB weit.
 
 **Worker:** Zugestellt wird im Auftrag `apps.session.protokolldienst.auftraege.zustellen` in der Warteschlange
 `adapter`, die der Dienst `worker` bedient. Ohne Worker bleiben Meldungen wartend; das Cockpit läuft trotzdem.

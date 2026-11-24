@@ -2,15 +2,18 @@
 """
 Auftrag ``zustellen``: wartende Meldungen einer Sitzung an den Protokolldienst senden (Warteschlange ``adapter``).
 
-Der Auftrag bekommt nur die Kennung der Sitzung. Er sucht die Sitzung beim Dienst, setzt die Kennungen der TOPs
-ein und sendet alle wartenden Meldungen in einem Aufruf, jede mit ``external_id`` ``mandari-session:<Kennung der
-Meldung>``. Angenommene und schon bekannte Meldungen gelten als zugestellt, abgewiesene als fehlgeschlagen (Code
-``abgelehnt``); ein Abstimmungsergebnis zu einem TOP, den der Dienst nicht kennt, ebenso (``top_unbekannt``).
+Der Auftrag bekommt die Kennung der Sitzung und den Zeitpunkt des Einreihens. Er sucht die Sitzung beim Dienst, setzt
+die Kennungen der TOPs ein und sendet alle wartenden Meldungen in einem Aufruf, jede mit ``external_id``
+``mandari-session:<Kennung der Meldung>``. Angenommene und schon bekannte Meldungen gelten als zugestellt, abgewiesene
+als fehlgeschlagen (Code ``abgelehnt``); ein Abstimmungsergebnis zu einem TOP, den der Dienst nicht kennt, ebenso
+(``top_unbekannt``).
 
 **Wiederholung:** Ist der Dienst nicht erreichbar, überlastet oder kennt er die Sitzung noch nicht, wirft der
 Auftrag; der Runner wiederholt ihn mit wachsender Wartezeit (``TASKS`` in ``settings.py``: zwölf Versuche, zusammen
-etwa sechs Stunden). Nach dem letzten Versuch und bei dauerhaften Fehlern (Anmeldung abgelehnt) stehen die Zeilen auf
-„fehlgeschlagen“. Ist die Anbindung inzwischen ausgeschaltet, gehen wartende Meldungen nicht mehr hinaus.
+etwa sechs Stunden). Bei dauerhaften Fehlern (Anmeldung abgelehnt) stehen die Zeilen gleich auf „fehlgeschlagen“.
+Nach dem letzten Versuch gilt das nur für die Meldungen, die es beim Einreihen des Auftrags schon gab: Jede spätere
+Meldung hat ihren eigenen, jüngeren Auftrag mit eigenen Versuchen und bleibt wartend. Ist die Anbindung inzwischen
+ausgeschaltet, gehen wartende Meldungen nicht mehr hinaus.
 
 Zugestellte Meldungen einer Sitzung bleiben ``AUFBEWAHRUNG`` lang (Stand der Pause für spätere Meldungen), danach
 löscht der Auftrag sie.
@@ -25,6 +28,7 @@ from typing import Any, Final
 from django.db.models import F
 from django.tasks import TaskContext, task
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from apps.session.models import SessionMeeting, SessionProtokolldienst, SessionProtokolldienstMeldung
 
@@ -88,8 +92,20 @@ def _letzter_versuch(context: TaskContext[Any, Any]) -> bool:
     return int(context.attempt) >= optionen.max_attempts_for(zustellen.module_path)
 
 
+def _ausgeschoepft(zeilen: list[Meldung], eingereiht: str) -> list[Meldung]:
+    """
+    Meldungen, deren Versuche mit diesem letzten Versuch ausgeschöpft sind: die, die es beim Einreihen des Auftrags
+    schon gab. Eine spätere Meldung hat ihren eigenen Auftrag (``meldungen.einreihen`` nach ihrem Commit), der sie
+    weiter versucht. ``eingereiht`` stammt wie ``created_at`` von der Uhr der Anwendung, nicht der Datenbank.
+    """
+    grenze = parse_datetime(eingereiht) if eingereiht else None
+    if grenze is None:
+        return zeilen
+    return [zeile for zeile in zeilen if zeile.created_at <= grenze]
+
+
 @task(queue_name="adapter", takes_context=True)
-def zustellen(context: TaskContext[Any, Any], meeting_id: str) -> str:
+def zustellen(context: TaskContext[Any, Any], meeting_id: str, eingereiht: str = "") -> str:
     """Wartende Meldungen der Sitzung zustellen; liefert einen kurzen Code für das Ergebnis."""
     meeting = SessionMeeting.objects.select_related("tenant").filter(pk=meeting_id).first()
     if meeting is None:
@@ -119,13 +135,19 @@ def zustellen(context: TaskContext[Any, Any], meeting_id: str) -> str:
     except client.ProtokolldienstError as fehler:
         _stand_vermerken(konfiguration, fehler=fehler.code)
         Meldung.objects.filter(pk__in=[z.pk for z in wartend]).update(error_code=fehler.code)
-        if fehler.dauerhaft or _letzter_versuch(context):
-            _abschliessen(wartend, Meldung.FEHLGESCHLAGEN, fehler.code)
+        if fehler.dauerhaft:
+            endgueltig = wartend
+        elif _letzter_versuch(context):
+            endgueltig = _ausgeschoepft(wartend, eingereiht)
+        else:
+            endgueltig = []
+        if endgueltig:
+            _abschliessen(endgueltig, Meldung.FEHLGESCHLAGEN, fehler.code)
             logger.warning("Protokolldienst: Meldungen der Sitzung %s nicht zugestellt (%s)", meeting.pk, fehler.code)
-            if fehler.dauerhaft:
-                from apps.events.tasks_backend import PermanentTaskError
+        if fehler.dauerhaft:
+            from apps.events.tasks_backend import PermanentTaskError
 
-                raise PermanentTaskError(fehler.code) from None
+            raise PermanentTaskError(fehler.code) from None
         raise
 
     nach_index = {int(eintrag.get("index", -1)): eintrag for eintrag in ergebnisse}

@@ -1170,11 +1170,13 @@ LIVE_OCR_MEMORY_LIMIT_MB = int(os.environ.get("LIVE_OCR_MEMORY_LIMIT_MB", "256")
 LIVE_OCR_TIMEOUT_SECONDS = int(os.environ.get("LIVE_OCR_TIMEOUT_SECONDS", "20"))
 LIVE_PROTOKOLL_TAGE = int(os.environ.get("LIVE_PROTOKOLL_TAGE", "90"))
 # Protokolldienst (docs/PROTOKOLLDIENST.md): Hosts, die Mandanten als Adresse des Protokolldienstes eintragen dürfen.
-# Leer: jeder öffentliche Host über https. Gesetzt: nur diese Hosts, auch im eigenen Netz und mit http (Betrieb im
-# Intranet), kommagetrennt
+# Leer: jeder öffentliche Host über https. Gesetzt: nur diese Hosts, auch im eigenen Netz (Betrieb im Intranet),
+# kommagetrennt; weiterhin nur über https
 PROTOKOLLDIENST_ERLAUBTE_HOSTS = [
     h.strip().lower() for h in os.environ.get("PROTOKOLLDIENST_ERLAUBTE_HOSTS", "").split(",") if h.strip()
 ]
+# http zu diesen Hosts nur mit dieser ausdrücklichen Freigabe: Der API-Schlüssel ginge im Klartext über das Netz
+PROTOKOLLDIENST_HTTP_ERLAUBT = os.environ.get("PROTOKOLLDIENST_HTTP_ERLAUBT", "false").lower() in ("1", "true", "yes")
 _TASK_BACKENDS = {
     "immediate": "django.tasks.backends.immediate.ImmediateBackend",
     "journal": "apps.events.tasks_backend.JournalBackend",

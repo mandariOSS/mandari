@@ -11,18 +11,22 @@ Der Schlüssel braucht beim Dienst die Rechte ``meetings:read`` und ``events:wri
 
 **Ziele:** Hosts aus ``PROTOKOLLDIENST_ERLAUBTE_HOSTS`` gibt der Betrieb frei; sonst verbindet der Client nur mit
 öffentlichen Adressen, geprüft beim Verbindungsaufbau (``insight_core.services.safe_fetch``, streng). Keine
-Weiterleitungen.
+Weiterleitungen. Den API-Schlüssel sendet er nur über ``https``; ``http`` nur zu freigegebenen Hosts mit
+``PROTOKOLLDIENST_HTTP_ERLAUBT`` (sonst ``nur_https``, dauerhaft). Antworten liest er höchstens ``MAX_ANTWORT``
+Bytes weit und bricht beim Lesen ab, sobald eine größer ist.
 
-**Fehler** werden zu ``ProtokolldienstError`` mit festem Code, nie mit Antwortinhalten: ``anmeldung`` (401, 403) und
-``abgelehnt`` (400, 413, 422) sind dauerhaft, ``sitzung_unbekannt`` (die Sitzung ist beim Dienst noch nicht
-übernommen), ``ueberlastet`` (429), ``dienstfehler`` (5xx), ``zeitgrenze`` und ``verbindung`` werden wiederholt.
+**Fehler** werden zu ``ProtokolldienstError`` mit festem Code, nie mit Antwortinhalten: ``anmeldung`` (401, 403),
+``abgelehnt`` (400, 413, 422, zu große Antwort) und ``nur_https`` sind dauerhaft, ``sitzung_unbekannt`` (die Sitzung
+ist beim Dienst noch nicht übernommen), ``ueberlastet`` (429), ``dienstfehler`` (5xx), ``zeitgrenze`` und
+``verbindung`` werden wiederholt.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from typing import Any, Final
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -50,6 +54,10 @@ class ProtokolldienstError(Exception):
 
 def neuer_client(konfiguration: SessionProtokolldienst) -> httpx.Client:
     """Client für die Adresse der Anbindung; Aufrufer schließt ihn (``with``). Tests ersetzen diese Funktion."""
+    adresse = konfiguration.base_url
+    if urlsplit(adresse).scheme != "https" and not einstellungen.http_erlaubt(adresse):
+        # Der API-Schlüssel geht nie im Klartext über das Netz
+        raise ProtokolldienstError("nur_https", dauerhaft=True)
     kopf = {
         "Authorization": f"Bearer {einstellungen.api_schluessel(konfiguration)}",
         "User-Agent": USER_AGENT,
@@ -80,20 +88,30 @@ def _fehler_aus_status(status: int) -> ProtokolldienstError:
 
 def _aufruf(http: httpx.Client, methode: str, adresse: str, **kwargs: Any) -> Any:
     try:
-        antwort = http.request(methode, adresse, **kwargs)
+        with http.stream(methode, adresse, **kwargs) as antwort:
+            if antwort.status_code >= 300:
+                raise _fehler_aus_status(antwort.status_code)
+            inhalt = _lesen(antwort)
     except httpx.TimeoutException:
         raise ProtokolldienstError("zeitgrenze") from None
     except httpx.HTTPError:
         # Auch ein gesperrtes Ziel (BlockedDestinationError): ohne Inhalt, später erneut versucht
         raise ProtokolldienstError("verbindung") from None
-    if antwort.status_code >= 300:
-        raise _fehler_aus_status(antwort.status_code)
-    if len(antwort.content) > MAX_ANTWORT:
-        raise ProtokolldienstError("abgelehnt", dauerhaft=True)
     try:
-        return antwort.json()
+        return json.loads(inhalt)
     except ValueError:
         raise ProtokolldienstError("dienstfehler") from None
+
+
+def _lesen(antwort: httpx.Response) -> bytes:
+    """Inhalt der Antwort, höchstens ``MAX_ANTWORT`` Bytes (dekodiert); darüber Abbruch beim Lesen."""
+    teile, gelesen = [], 0
+    for teil in antwort.iter_bytes():
+        gelesen += len(teil)
+        if gelesen > MAX_ANTWORT:
+            raise ProtokolldienstError("abgelehnt", dauerhaft=True)
+        teile.append(teil)
+    return b"".join(teile)
 
 
 def sitzung_finden(

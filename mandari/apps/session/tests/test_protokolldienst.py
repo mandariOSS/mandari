@@ -23,6 +23,7 @@ import httpx
 import pytest
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from apps.events.models import Task as TaskRow
 from apps.events.models import TaskStatus
@@ -124,9 +125,35 @@ def test_adresse_ohne_schraegstrich_am_ende() -> None:
 
 def test_freigegebene_hosts_auch_im_eigenen_netz(settings: Any) -> None:
     settings.PROTOKOLLDIENST_ERLAUBTE_HOSTS = ["protokolldienst"]
-    assert einstellungen.adresse_pruefen("http://protokolldienst:8000") == "http://protokolldienst:8000"
+    assert einstellungen.adresse_pruefen("https://protokolldienst:8443") == "https://protokolldienst:8443"
     with pytest.raises(ValidationError):
         einstellungen.adresse_pruefen("https://protokoll.example.org")
+
+
+def test_http_nur_mit_ausdruecklicher_freigabe(settings: Any) -> None:
+    """Die Hostfreigabe allein erlaubt kein http: Der API-Schlüssel ginge im Klartext über das Netz."""
+    settings.PROTOKOLLDIENST_ERLAUBTE_HOSTS = ["protokolldienst"]
+    with pytest.raises(ValidationError):
+        einstellungen.adresse_pruefen("http://protokolldienst:8000")
+    settings.PROTOKOLLDIENST_HTTP_ERLAUBT = True
+    assert einstellungen.adresse_pruefen("http://protokolldienst:8000") == "http://protokolldienst:8000"
+    # Nie für Hosts ohne Freigabe
+    settings.PROTOKOLLDIENST_ERLAUBTE_HOSTS = []
+    with pytest.raises(ValidationError):
+        einstellungen.adresse_pruefen("http://protokoll.example.org")
+
+
+def test_client_sendet_den_schluessel_nur_ueber_https(w: Welt, settings: Any) -> None:
+    settings.PROTOKOLLDIENST_ERLAUBTE_HOSTS = ["protokolldienst"]
+    SessionProtokolldienst.objects.filter(tenant=w.tenant).update(base_url="http://protokolldienst:8000")
+    konfiguration = einstellungen.aktiv(w.tenant)
+    assert konfiguration is not None
+    with pytest.raises(client.ProtokolldienstError) as fehler:
+        client.neuer_client(konfiguration)
+    assert (fehler.value.code, fehler.value.dauerhaft) == ("nur_https", True)
+    settings.PROTOKOLLDIENST_HTTP_ERLAUBT = True
+    with client.neuer_client(konfiguration) as http:
+        assert http.headers["Authorization"] == f"Bearer {SCHLUESSEL}"
 
 
 def test_schluessel_verschluesselt_und_einschalten_nur_vollstaendig() -> None:
@@ -158,6 +185,21 @@ def test_rueckgabeschluessel_nur_als_hash() -> None:
     neu = einstellungen.rueckgabe_schluessel_erzeugen(konfiguration)
     assert not einstellungen.rueckgabe_schluessel_passt(konfiguration, roh)
     assert einstellungen.rueckgabe_schluessel_passt(konfiguration, neu)
+
+
+def test_speichern_schreibt_den_rueckgabeschluessel_nie_aus_altem_stand() -> None:
+    """Speichern mit einem Stand von vor dem neuen Rückgabeschlüssel macht den widerrufenen nicht wieder gültig."""
+    w = _welt("gleichzeitig")
+    alt = einstellungen.fuer_mandant(w.tenant)
+    assert alt is not None
+    widerrufen = einstellungen.rueckgabe_schluessel_erzeugen(alt)
+    neu = einstellungen.rueckgabe_schluessel_erzeugen(cast(Any, einstellungen.fuer_mandant(w.tenant)))
+    with mock.patch.object(einstellungen, "fuer_mandant", return_value=alt):
+        einstellungen.speichern(w.tenant, enabled=False, base_url=DIENST, api_key=None)
+    konfiguration = SessionProtokolldienst.objects.get(tenant=w.tenant)
+    assert not konfiguration.enabled
+    assert einstellungen.rueckgabe_schluessel_passt(konfiguration, neu)
+    assert not einstellungen.rueckgabe_schluessel_passt(konfiguration, widerrufen)
 
 
 def test_kennungen_der_oparl_schnittstelle(w: Welt) -> None:
@@ -252,6 +294,29 @@ def test_pausen_ueberlappen_nie(w: Welt) -> None:
     ]
 
 
+def test_nichtoeffentlicher_top_waehrend_der_unterbrechung_bleibt_geschuetzt(w: Welt) -> None:
+    """
+    Unterbrechung, dann ein nichtöffentlicher TOP (keine neue Meldung, die Pause ist offen): Eine weitere
+    Unterbrechung samt Fortsetzung beendet die Pause nicht, auch nicht nach dem Ende des TOP.
+    """
+    _tun(w, "top_aufrufen", item=w.tops["1"].pk)
+    _tun(w, "sitzung_unterbrechen")
+    _tun(w, "top_aufrufen", item=w.tops["N1"].pk)
+    _tun(w, "sitzung_unterbrechen")
+    _tun(w, "unterbrechung_beenden")
+    _tun(w, "top_beenden", item=w.tops["N1"].pk)
+    _tun(w, "sitzung_unterbrechen")
+    _tun(w, "unterbrechung_beenden")
+    assert [kind for kind, _ in _meldungen(w)] == [Meldung.TOP_AUFGERUFEN, Meldung.PAUSE_BEGONNEN]
+    _tun(w, "top_aufrufen", item=w.tops["2"].pk)
+    assert [kind for kind, _ in _meldungen(w)] == [
+        Meldung.TOP_AUFGERUFEN,
+        Meldung.PAUSE_BEGONNEN,
+        Meldung.PAUSE_BEENDET,
+        Meldung.TOP_AUFGERUFEN,
+    ]
+
+
 def test_aufruf_beendet_die_unterbrechung(w: Welt) -> None:
     _tun(w, "top_aufrufen", item=w.tops["1"].pk)
     _tun(w, "sitzung_unterbrechen")
@@ -308,7 +373,7 @@ def test_zustellung_nach_dem_commit_im_journal(w: Welt, django_capture_on_commit
             _tun(w, "top_aufrufen", item=w.tops["1"].pk)
         aufruf.assert_not_called()
     auftrag = TaskRow.objects.get(task_path=AUFGABE)
-    assert auftrag.args == {"args": [str(w.meeting.pk)], "kwargs": {}}
+    assert auftrag.args["args"] == [str(w.meeting.pk)] and set(auftrag.args["kwargs"]) == {"eingereiht"}
     assert auftrag.queue == "adapter" and auftrag.max_attempts == 12
 
 
@@ -452,6 +517,28 @@ def test_nach_dem_letzten_versuch_fehlgeschlagen(
     assert (zeile.status, zeile.error_code) == (Meldung.FEHLGESCHLAGEN, "dienstfehler")
 
 
+def test_letzter_versuch_schliesst_nur_die_eigenen_meldungen_ab(
+    w: Welt, dienst: Dienst, django_capture_on_commit_callbacks: Any, settings: Any
+) -> None:
+    """Eine Meldung, die nach dem Einreihen des Auftrags entstand, hat ihren eigenen Auftrag und bleibt wartend."""
+    optionen = dict(settings.TASKS["default"]["OPTIONS"])
+    optionen["tasks"] = {**optionen.get("tasks", {}), AUFGABE: {"max_attempts": 1}}
+    settings.TASKS = {"default": {**settings.TASKS["default"], "OPTIONS": optionen}}
+    dienst.status = 503
+    with django_capture_on_commit_callbacks(execute=True):
+        _tun(w, "top_aufrufen", item=w.tops["1"].pk)
+    eingereiht = parse_datetime(TaskRow.objects.get(task_path=AUFGABE).args["kwargs"]["eingereiht"])
+    assert eingereiht is not None
+    # Ohne Ausführen der Commit-Rückrufe: Der eigene Auftrag der neuen Meldung käme erst danach
+    _tun(w, "top_aufrufen", item=w.tops["2"].pk)
+    Meldung.objects.filter(agenda_item=w.tops["2"]).update(created_at=eingereiht + timedelta(seconds=1))
+    run_pending(["adapter"])
+    alt = Meldung.objects.get(agenda_item=w.tops["1"])
+    neu = Meldung.objects.get(agenda_item=w.tops["2"])
+    assert (alt.status, alt.error_code) == (Meldung.FEHLGESCHLAGEN, "dienstfehler")
+    assert (neu.status, neu.error_code, neu.attempts) == (Meldung.WARTEND, "dienstfehler", 1)
+
+
 def test_ausgeschaltet_vor_der_zustellung(w: Welt, dienst: Dienst, django_capture_on_commit_callbacks: Any) -> None:
     with django_capture_on_commit_callbacks(execute=True):
         _tun(w, "top_aufrufen", item=w.tops["1"].pk)
@@ -473,6 +560,23 @@ def test_client_verbindet_nur_mit_geprueften_zielen(w: Welt, settings: Any) -> N
     settings.PROTOKOLLDIENST_ERLAUBTE_HOSTS = ["protokoll.example.org"]
     with client.neuer_client(konfiguration) as http:
         assert not isinstance(http._transport, StrictPinnedTransport)
+
+
+def test_grosse_antwort_wird_beim_lesen_abgebrochen() -> None:
+    """Die Grenze gilt beim Lesen: Nach gut ``MAX_ANTWORT`` Bytes bricht der Client ab und liest nicht weiter."""
+    stueck, gelesen = 64 * 1024, []
+
+    class Strom(httpx.SyncByteStream):
+        def __iter__(self) -> Iterator[bytes]:
+            for _ in range(4 * client.MAX_ANTWORT // stueck):
+                gelesen.append(stueck)
+                yield b"x" * stueck
+
+    http = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=Strom())))
+    with pytest.raises(client.ProtokolldienstError) as fehler:
+        client._aufruf(http, "GET", f"{DIENST}/api/v1/meetings")
+    assert (fehler.value.code, fehler.value.dauerhaft) == ("abgelehnt", True)
+    assert sum(gelesen) <= client.MAX_ANTWORT + stueck
 
 
 @pytest.mark.parametrize(
