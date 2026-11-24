@@ -70,8 +70,12 @@ def loeschfrist() -> timedelta | None:
     Frist vom Ende einer Demo bis zu ihrer Löschung (``DEMO_LOESCHFRIST_TAGE``, Issue #1575); ``None`` = gesperrte
     Demos bleiben unbegrenzt erhalten (Verhalten bis 0.13).
     """
-    tage = getattr(settings, "DEMO_LOESCHFRIST_TAGE", None)
-    return timedelta(days=int(tage)) if tage else None
+    try:
+        tage = int(getattr(settings, "DEMO_LOESCHFRIST_TAGE", None) or 0)
+    except (TypeError, ValueError):
+        tage = 0
+    # Null oder negativ: keine Frist (eine negative Frist machte jede abgelaufene Demo sofort löschfällig)
+    return timedelta(days=tage) if tage > 0 else None
 
 
 def beim_loeschen_melden(aufraeumen: Callable[[Organization], None]) -> None:

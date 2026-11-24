@@ -331,6 +331,17 @@ def test_ohne_loeschfrist_bleibt_alles_wie_bisher(settings: Any) -> None:
     assert "Eure Daten bleiben erhalten." in demo.hinweis(org)
 
 
+@pytest.mark.parametrize("wert", [0, -30, "abc"])
+def test_ungueltige_loeschfrist_loescht_nichts(settings: Any, wert: Any) -> None:
+    settings.DEMO_LOESCHFRIST_TAGE = wert
+    org = _demo("demo-ungueltig", vor=TAG)
+
+    _lauf()
+
+    assert demo.loeschfrist() is None
+    assert Organization.objects.filter(pk=org.pk).exists()
+
+
 def test_probelauf_nennt_auch_demos_die_erst_gesperrt_und_dann_geloescht_wuerden() -> None:
     org = _demo("demo-noch-aktiv", vor=FRIST + TAG, aktiv=True)
 
