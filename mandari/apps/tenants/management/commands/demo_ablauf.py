@@ -3,9 +3,10 @@
 Abgelaufene Demo-Organisationen sperren und nach der Frist löschen (Issue #1406, #1575).
 
 Stündlich als Zeitplan im Worker (``apps/common/schedules.py``). Sperrt zuerst (``is_active`` aus, alle Daten
-bleiben) und löscht dann gesperrte Demos, deren Ende ``demo.LOESCHFRIST_TAGE`` zurückliegt, endgültig
-(höchstens ``demo.LOESCHUNGEN_JE_LAUF`` je Lauf). ``--dry-run`` nennt die fälligen Organisationen, ohne etwas zu
-ändern. Scheitert eine Löschung, endet der Befehl mit einem Fehler, nachdem er die übrigen versucht hat.
+bleiben), erinnert die Administratoren 7 Tage und 24 Stunden vor der Löschung per Mail und löscht dann gesperrte
+Demos, deren Ende ``demo.LOESCHFRIST_TAGE`` zurückliegt, endgültig (höchstens ``demo.LOESCHUNGEN_JE_LAUF`` je Lauf).
+``--dry-run`` nennt die fälligen Organisationen, ohne etwas zu ändern. Scheitert eine Löschung, endet der Befehl mit
+einem Fehler, nachdem er die übrigen versucht hat.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from apps.tenants.models import Organization
 class Command(EinmaligMixin, BaseCommand):
     sperre = "demo_ablauf"
     sperre_ttl = 600
-    help = "Abgelaufene Demo-Organisationen sperren und nach der Frist löschen."
+    help = "Abgelaufene Demo-Organisationen sperren, vor der Löschung erinnern und nach der Frist löschen."
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument("--dry-run", action="store_true", help="Nur anzeigen, nichts ändern")
@@ -36,6 +37,11 @@ class Command(EinmaligMixin, BaseCommand):
             for org in faellig:
                 self.stdout.write(f"würde sperren: {org.slug} (Ende {org.demo_endet_am:%d.%m.%Y %H:%M})")
             self.stdout.write(f"{faellig.count()} Demo(s) fällig (Probelauf)")
+            gesperrte = Organization.objects.filter(demo.abgelaufen_q(jetzt), Q(is_active=False)).order_by("slug")
+            for org in gesperrte:
+                stufe = demo.faellige_stufe(org, jetzt)
+                if stufe is not None:
+                    self.stdout.write(f"würde erinnern: {org.slug} ({stufe} Stunden vor der Löschung)")
             loeschen = Organization.objects.filter(demo.loeschfaellig_q(jetzt)).order_by("demo_endet_am", "slug")
             for org in loeschen:
                 self.stdout.write(f"würde löschen: {org.slug} (Ende {org.demo_endet_am:%d.%m.%Y %H:%M})")
@@ -45,6 +51,11 @@ class Command(EinmaligMixin, BaseCommand):
         for org in gesperrt:
             self.stdout.write(f"gesperrt: {org.slug} (Ende {org.demo_endet_am:%d.%m.%Y %H:%M})")
         self.stdout.write(f"{len(gesperrt)} Demo(s) gesperrt")
+        for erinnerung in demo.erinnerungen_senden(jetzt):
+            self.stdout.write(
+                f"erinnert: {erinnerung.slug} ({erinnerung.stunden} Stunden vor der Löschung, "
+                f"{erinnerung.empfaenger} Empfänger)"
+            )
         lauf = demo.faellige_loeschen(jetzt)
         for geloescht in lauf.geloescht:
             self.stdout.write(

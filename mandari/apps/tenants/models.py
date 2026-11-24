@@ -507,6 +507,13 @@ class Organization(models.Model):
         help_text="Wird bei der ersten angenommenen Einladung gesetzt. Danach ist die Organisation gesperrt, "
         "die Anmeldung zeigt „Demozeit abgelaufen“. Verlängern: Datum verschieben und Organisation aktivieren.",
     )
+    # Erinnerung an die Löschung einer gesperrten Demo (Issue #1575): kleinste schon verschickte Stufe in Stunden vor
+    # der Löschung (168 = 7 Tage, 24), jede höchstens einmal. Das Sperren setzt sie zurück.
+    demo_erinnert_stunden = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Erinnerung an die Löschung verschickt (Stunden vorher)",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

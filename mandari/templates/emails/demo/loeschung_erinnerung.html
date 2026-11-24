@@ -1,0 +1,23 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}{% if letzte %}Letzte Erinnerung: {% endif %}Eure Demo „{{ organization.name }}“ wird am {{ loeschung }} gelöscht{% endblock %}
+{% block preheader %}Ohne Verlängerung löschen wir {{ organization.name }} am {{ loeschung }} mit allen Daten.{% endblock %}
+{% block content %}
+<h1 class="h1">{% if letzte %}Letzte Erinnerung: eure{% else %}Eure{% endif %} Demo wird gelöscht</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo,</p>
+<p>die Demozeit von <strong>{{ organization.name }}</strong> ist am {{ ende }} abgelaufen. Seitdem ist die Organisation gesperrt, eure Daten sind aber noch vollständig da.</p>
+<p>Am <strong>{{ loeschung }} gegen {{ loeschung_uhrzeit }} Uhr</strong> löschen wir die Organisation endgültig, mit allen Inhalten, Dateien und Zugängen. Danach lässt sich nichts mehr wiederherstellen.</p>
+<p>Wenn ihr mit mandari work weitermachen möchtet, bucht die kostenpflichtige Verlängerung. Alle Daten bleiben dann erhalten, und ihr arbeitet dort weiter, wo ihr aufgehört habt.</p>
+{% if verlaengern_url %}
+<div class="btn-wrap">
+    <a class="btn" href="{{ verlaengern_url }}">Verlängerung buchen</a>
+</div>
+{% endif %}
+{% if kontakt %}
+<p>Fragen und Buchung per E-Mail: <a href="mailto:{{ kontakt }}">{{ kontakt }}</a></p>
+{% endif %}
+<p class="muted small">Du erhältst diese E-Mail, weil du in {{ organization.name }} Administrator bist.</p>
+{% endblock %}
+{% block footer %}
+<p><strong>mandari work</strong> · Diese E-Mail wurde automatisch versendet.</p>
+{% endblock %}

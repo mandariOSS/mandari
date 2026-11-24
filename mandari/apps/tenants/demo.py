@@ -45,6 +45,12 @@ LOESCHFRIST_TAGE = 30
 #: Demo-Angaben einmal versehentlich an vielen Organisationen stehen.
 LOESCHUNGEN_JE_LAUF = 5
 
+#: Erinnerungen an die Administratoren vor der Löschung, in Stunden vorher (kleinste zuerst): 24 Stunden und 7 Tage
+ERINNERUNG_STUNDEN = (24, 7 * 24)
+
+#: Mailart der Erinnerung (Metrik, Postausgang)
+MAILART_ERINNERUNG = "plattform.demo_erinnerung"
+
 #: Zugänge außerhalb von Work (z. B. Session), mit denen ein Konto trotz abgelaufener Demo angemeldet bleiben darf.
 #: Die Plattform kennt keine Fachmodule; diese melden ihre Prüfung in ``AppConfig.ready`` an.
 _weitere_zugaenge: list[Callable[[Any], bool]] = []
@@ -225,7 +231,10 @@ def abgelaufene_sperren(jetzt: datetime | None = None) -> list[Organization]:
             Organization.objects.select_for_update().filter(abgelaufen_q(jetzt), is_active=True).order_by("slug")
         )
         if faellig:
-            Organization.objects.filter(pk__in=[org.pk for org in faellig]).update(is_active=False, updated_at=jetzt)
+            # Jede neue Sperre beginnt ohne verschickte Erinnerung (nach einer Verlängerung wieder beide Stufen)
+            Organization.objects.filter(pk__in=[org.pk for org in faellig]).update(
+                is_active=False, updated_at=jetzt, demo_erinnert_stunden=None
+            )
     for org in faellig:
         org.is_active = False
         logger.info("Demo %s abgelaufen (Ende %s), Organisation gesperrt", org.slug, org.demo_endet_am)
@@ -241,6 +250,138 @@ def loeschfaellig_q(jetzt: datetime | None = None) -> Q:
     """Gesperrte Demos, deren Ende mindestens ``LOESCHFRIST_TAGE`` zurückliegt."""
     jetzt = jetzt or timezone.now()
     return abgelaufen_q(jetzt - timedelta(days=LOESCHFRIST_TAGE)) & Q(is_active=False)
+
+
+@dataclass(frozen=True)
+class Erinnerung:
+    """Eine verschickte Erinnerung an die Löschung (Ausgabe des Zeitplans, ohne Adressen)."""
+
+    slug: str
+    stunden: int
+    empfaenger: int
+
+
+def faellige_stufe(organization: Organization, jetzt: datetime | None = None) -> int | None:
+    """
+    Fällige Erinnerungsstufe (Stunden vor der Löschung) einer gesperrten Demo, sonst ``None``. Jede Stufe geht
+    höchstens einmal raus; ein verspäteter Lauf schickt nur die jüngste fällige (wie beim Auslauf, Issue #1237).
+    """
+    loeschung = loeschung_am(organization)
+    if loeschung is None or organization.is_active:
+        return None
+    rest = loeschung - (jetzt or timezone.now())
+    if rest <= timedelta(0):
+        return None  # fällig zum Löschen
+    for stunden in ERINNERUNG_STUNDEN:
+        if rest <= timedelta(hours=stunden):
+            gesendet = organization.demo_erinnert_stunden
+            return None if gesendet is not None and gesendet <= stunden else stunden
+    return None
+
+
+def _empfaenger(organization: Organization) -> list[str]:
+    """Adressen der aktiven Administratoren (Rolle mit Administratorrecht) und der Eigentümerin, ohne Gäste."""
+    adressen = set(
+        Membership.objects.filter(
+            organization=organization, is_active=True, is_guest=False, roles__is_admin=True
+        ).values_list("user__email", flat=True)
+    )
+    if organization.owner is not None:
+        adressen.add(organization.owner.email)
+    return sorted(adresse for adresse in adressen if adresse)
+
+
+def _erinnerung_senden(organization: Organization, stunden: int, empfaenger: list[str]) -> int:
+    """
+    Erinnerung einzeln an jede Adresse (keine fremden Adressen im Kopf) und eine Kopie an ``DEMO_KONTAKT_EMAIL``;
+    liefert die Zahl der versandten Mails ohne die Kopie.
+    """
+    from apps.common import mail
+
+    loeschung = loeschung_am(organization)
+    ende = organization.demo_endet_am
+    if loeschung is None or ende is None:
+        return 0
+    letzte = stunden == min(ERINNERUNG_STUNDEN)
+    kontext = {
+        "organization": organization,
+        "ende": _datum(ende),
+        "loeschung": _datum(loeschung),
+        "loeschung_uhrzeit": timezone.localtime(loeschung).strftime("%H:%M"),
+        "letzte": letzte,
+        "verlaengern_url": verlaengern_url(),
+        "kontakt": kontakt(),
+    }
+    betreff = f"Eure Demo „{organization.name}“ wird am {kontext['loeschung']} gelöscht"
+    if letzte:
+        betreff = f"Letzte Erinnerung: {betreff}"
+    schluessel = f"demo-erinnerung:{organization.pk}:{stunden}:{loeschung.isoformat()}"
+    gesendet = 0
+    for adresse in empfaenger:
+        if mail.send_template(
+            kind=MAILART_ERINNERUNG,
+            subject=betreff,
+            template_name="emails/demo/loeschung_erinnerung",
+            context=kontext,
+            to=[adresse],
+            fail_silently=True,
+            idempotency_key=f"{schluessel}:{adresse}",
+        ):
+            gesendet += 1
+    kopie = str(getattr(settings, "DEMO_KONTAKT_EMAIL", "") or "")
+    if kopie:
+        mail.send_template(
+            kind=MAILART_ERINNERUNG,
+            subject=f"Kopie ({gesendet} Empfänger): {betreff}",
+            template_name="emails/demo/loeschung_erinnerung",
+            context=kontext,
+            to=[kopie],
+            fail_silently=True,
+            idempotency_key=f"{schluessel}:kopie",
+        )
+    return gesendet
+
+
+def erinnerungen_senden(jetzt: datetime | None = None) -> list[Erinnerung]:
+    """
+    Administratoren gesperrter Demos an die Löschung erinnern: 7 Tage und 24 Stunden vorher (``ERINNERUNG_STUNDEN``).
+
+    Die Stufe wird vor dem Versand bedingt gesetzt: Ein gleichzeitiger Lauf, eine Verlängerung oder eine Übernahme
+    durch die Bereitstellung gewinnt, und keine Erinnerung geht doppelt raus.
+    """
+    jetzt = jetzt or timezone.now()
+    fenster = jetzt - timedelta(days=LOESCHFRIST_TAGE) + timedelta(hours=max(ERINNERUNG_STUNDEN))
+    kandidaten = (
+        Organization.objects.filter(abgelaufen_q(fenster), is_active=False)
+        .exclude(loeschfaellig_q(jetzt))
+        .select_related("owner")
+        .order_by("demo_endet_am", "slug")
+    )
+    verschickt: list[Erinnerung] = []
+    for org in kandidaten:
+        stufe = faellige_stufe(org, jetzt)
+        if stufe is None:
+            continue
+        gesetzt = (
+            Organization.objects.filter(
+                pk=org.pk,
+                is_active=False,
+                demo_endet_am=org.demo_endet_am,
+                demo_laufzeit_tage__isnull=False,
+                provisioning_ref__isnull=True,
+            )
+            .filter(Q(demo_erinnert_stunden__isnull=True) | Q(demo_erinnert_stunden__gt=stufe))
+            .update(demo_erinnert_stunden=stufe)
+        )
+        if not gesetzt:
+            continue
+        empfaenger = _empfaenger(org)
+        if not empfaenger:
+            logger.warning("Demo %s: niemand mit Administratorrecht für die Erinnerung an die Löschung", org.slug)
+        anzahl = _erinnerung_senden(org, stufe, empfaenger)
+        logger.info("Demo %s: Erinnerung %d Stunden vor der Löschung an %d Empfänger", org.slug, stufe, anzahl)
+        verschickt.append(Erinnerung(slug=org.slug, stunden=stufe, empfaenger=anzahl))
+    return verschickt
 
 
 @dataclass(frozen=True)

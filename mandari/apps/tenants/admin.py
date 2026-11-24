@@ -159,6 +159,7 @@ class OrganizationAdmin(ModelAdmin):
         "provisioning_status",
         "provisioning_status_changed_at",
         "demo_loeschung_am",
+        "demo_erinnert_stunden",
     ]
     autocomplete_fields = ["owner"]
 
@@ -206,6 +207,7 @@ class OrganizationAdmin(ModelAdmin):
                     "demo_laufzeit_tage",
                     "demo_endet_am",
                     "demo_loeschung_am",
+                    "demo_erinnert_stunden",
                 ),
                 "description": (
                     "Gäste zählen nicht gegen das Mitglieder-Limit, reguläre Mitglieder "
@@ -215,7 +217,8 @@ class OrganizationAdmin(ModelAdmin):
                     "Demo: Die Laufzeit beginnt mit der ersten angenommenen Einladung; danach sperrt der "
                     "Zeitplan die Organisation (Daten bleiben). Verlängern: „Demo endet am“ verschieben und "
                     "„Aktiv“ wieder setzen (Issue #1406). Eine gesperrte Demo löscht der Zeitplan 30 Tage nach "
-                    "ihrem Ende endgültig, samt Dateien und Konten ohne weitere Bindung (Issue #1575)."
+                    "ihrem Ende endgültig, samt Dateien und Konten ohne weitere Bindung; die Administratoren werden 7 Tage und 24 Stunden "
+                    "vorher per Mail erinnert (Issue #1575)."
                 ),
                 "classes": ("collapse",),
             },
