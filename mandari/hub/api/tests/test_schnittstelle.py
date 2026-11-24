@@ -89,6 +89,7 @@ class TestEinstieg:
             "oparl-mandant-nichtoeffentlich",
             "einreichung",
             "session-v1",
+            "protokolldienst",
         ]
         assert bereiche["oparl-mandant-nichtoeffentlich"]["entry"] == (
             f"{SITE}/session/{{tenant_slug}}/api/oparl/nichtoeffentlich/"
@@ -156,6 +157,7 @@ class TestBeschreibung:
             "OParl je Mandant, nichtöffentlich",
             "Profil Einreichung",
             "Session-API v1",
+            "Protokolldienst",
         ]
         for method, path, operation in operations(beschreibung):
             assert len(operation["tags"]) == 1 and operation["tags"][0] in tags, (method, path)
@@ -273,6 +275,10 @@ class TestBefehlsparitaet:
         ]
         assert befehle["invitation.acknowledge"] == [
             "POST /session/{tenant_slug}/api/oparl/meeting/{id}/kommparl/invitation-receipt/"
+        ]
+        # Rückweg eines angebundenen Protokolldienstes
+        assert befehle["session.minutes_draft.propose"] == [
+            "POST /api/mandari/v1/protokolldienst/{tenant_slug}/niederschrift/vorschlaege/"
         ]
 
 

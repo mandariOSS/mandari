@@ -52,6 +52,7 @@ die diese Person nennen, im Journal geleert.
 | `ris.source.published` | Ereignis | 1 | `hub.ris` | oeffentlich | Kommune im Bürgerportal veröffentlicht |
 | `ris.voting.recorded` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Abstimmung erfasst |
 | `session.allowance.approved` | Ereignis | 1 | `apps.session` | personenbezogen | Sitzungsgeld genehmigt |
+| `session.minutes_draft.propose` | Befehl | 1 | `apps.session` | nichtoeffentlich | Entwurf der Niederschrift vorschlagen |
 | `session.payment.exported` | Ereignis | 1 | `apps.session` | personenbezogen | Zahlungsdatei erzeugt |
 | `submission.received` | Ereignis | 1 | `apps.session` | nichtoeffentlich | Einreichung eingegangen |
 | `submission.status_changed` | Ereignis | 1 | `apps.session` | nichtoeffentlich | Bearbeitungsstand einer Einreichung geändert |
@@ -1595,6 +1596,73 @@ Beispiel 2:
 ```json
 {
   "recipient": "e5f6a7b8-c9d0-4e1f-a2b3-c4d5e6f7a8b9"
+}
+```
+
+### session.minutes_draft.propose v1
+
+**Entwurf der Niederschrift vorschlagen.** Ein angebundener Protokolldienst übergibt nach der Freigabe je TOP Entwurf des Protokolltexts, Beschlusstext und Abstimmungsergebnis als Vorschlag; die Protokollführung übernimmt ihn in Session oder verwirft ihn. Eine neuere Fassung ersetzt offene Vorschläge desselben TOP. Handler: apps.session.
+
+- Art: Befehl
+- Eigentümer: `apps.session`
+- Sichtbarkeit: nichtoeffentlich
+- Schema: [`session.minutes_draft.propose/v1.json`](../mandari/hub/contracts/schemas/session.minutes_draft.propose/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `meeting` | ja | Zeichenkette (uuid) | Kennung der Sitzung in Session. |
+| `source_document` | ja | Zeichenkette (uuid) | Kennung des Dokuments beim Protokolldienst. |
+| `revision` | ja | Ganzzahl (1 bis 100000) | Fassung des Dokuments beim Protokolldienst. |
+| `released_at` | nein | Zeichenkette (date-time) | Zeitpunkt der Freigabe beim Protokolldienst. |
+| `items` | ja | Liste aus Objekt (1 bis 300 Einträge) | Vorschläge je TOP. |
+| `items[].agenda_item` | ja | Zeichenkette (uuid) | Kennung des TOP in Session. |
+| `items[].draft_text` | nein, Inhalt | Zeichenkette (höchstens 100000 Zeichen) | Entwurf des Protokolltexts (Beratungsverlauf). |
+| `items[].resolution_text` | nein, Inhalt | Zeichenkette (höchstens 20000 Zeichen) | Entwurf des Beschlusstexts. |
+| `items[].vote` | nein | Objekt | Abstimmungsergebnis: nur Summen und Ergebnis, nie Einzelstimmen. |
+| `items[].vote.yes` | nein | Ganzzahl (0 bis 9999) | Ja-Stimmen. |
+| `items[].vote.no` | nein | Ganzzahl (0 bis 9999) | Nein-Stimmen. |
+| `items[].vote.abstain` | nein | Ganzzahl (0 bis 9999) | Enthaltungen. |
+| `items[].vote.unanimous` | nein | Wahrheitswert | Einstimmig. |
+| `items[].vote.outcome` | nein | Code: `adopted`, `adopted_amended`, `rejected`, `noted`, `postponed`, `referred`, `withdrawn` | Ergebnis beim Protokolldienst. |
+
+Beispiel 1:
+
+```json
+{
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+  "source_document": "0b8f4c1e-2d3a-4e5f-9a6b-7c8d9e0f1a2b",
+  "revision": 2,
+  "released_at": "2026-11-24T10:15:00+01:00",
+  "items": [
+    {
+      "agenda_item": "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+      "draft_text": "Die Verwaltung erläutert die Vorlage. Herr A. beantragt eine Ergänzung.",
+      "resolution_text": "Der Rat beschließt die Vorlage mit der Ergänzung.",
+      "vote": {
+        "yes": 21,
+        "no": 3,
+        "abstain": 1,
+        "unanimous": false,
+        "outcome": "adopted_amended"
+      }
+    }
+  ]
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+  "source_document": "0b8f4c1e-2d3a-4e5f-9a6b-7c8d9e0f1a2b",
+  "revision": 1,
+  "items": [
+    {
+      "agenda_item": "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+      "draft_text": "Kenntnisnahme ohne Aussprache."
+    }
+  ]
 }
 ```
 

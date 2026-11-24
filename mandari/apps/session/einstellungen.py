@@ -11,7 +11,7 @@ sechs); ein Reiter mit mehreren Seiten zeigt sie als Unterpunkte:
 - **Sitzungen**: Sitzungsformate und Landesprofil (mit Ortsrecht je Körperschaft), Körperschaften, Wahlperioden,
   Textbausteine und Standard-TOPs
 - **Vorlagen**: Nummernkreise, Mitzeichnung und Ämter
-- **Datenschutz und Zugänge**: Datenschutz, Einreichungs-Zugänge für Fraktionen
+- **Datenschutz und Zugänge**: Datenschutz, Einreichungs-Zugänge für Fraktionen, Anbindung an einen Protokolldienst
 
 Alle Adressen bleiben. Sichtbar ist ein Eintrag nur mit dem Recht, das seine Seite verlangt (``permission_required``
 der View); jede Seite prüft ihr Recht weiter selbst. Körperschaften zeigt der Reiter wie die bisherige Kachel erst ab
@@ -86,6 +86,7 @@ REITER: tuple[Reiter, ...] = (
         (
             Seite("datenschutz", "Datenschutz", "privacy_settings", SETTINGS),
             Seite("zugaenge", "Einreichungs-Zugänge", "settings_api_tokens", SETTINGS),
+            Seite("protokolldienst", "Protokolldienst", "settings_protokolldienst", SETTINGS),
         ),
     ),
 )

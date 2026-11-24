@@ -14,6 +14,9 @@ Sitzungsleitung und Protokollführung (Recht ``conduct_meetings``) steuern die S
   kommt zurück, abwesend.
 - **Störungsprotokoll** Zugeschalteter (Issue #139): Beginn „ab jetzt“ mit Ursache und internem Vermerk –
   etwa „telefonisch gemeldet“, wenn die Person über einen zweiten Weg Bescheid gibt –, Ende „jetzt“.
+- **Sitzung unterbrechen und fortsetzen**: ``interrupted_at`` an der Sitzung, solange sie unterbrochen ist. Ein
+  aufgerufener TOP beendet die Unterbrechung, das Schließen der Sitzung ebenso; während der Unterbrechung wird nicht
+  abgestimmt.
 - **Abstimmung öffnen und schließen** zum aufgerufenen TOP. Das Ergebnis steht wie bisher in
   ``vote_result`` und den Summen; Einzelstimmen (offen, namentlich) erfasst die Abstimmungserfassung
   (``voting_service``), deren Summen das Schließen übernimmt. Summen prüft ``voting_service.check_counts``
@@ -31,6 +34,10 @@ Sperre auf der Sitzung, damit zwei Steuernde nicht gleichzeitig zwei TOPs aufruf
 über die Modell-Signale (Sitzung, TOP, Anwesenheit, Störung) und den direkten Eintrag „Abstimmungsergebnis
 festgestellt“. Nach dem Commit erhalten offene Ansichten über Channels nur einen Hinweis; jede holt ihren
 Stand mit den eigenen Rechten ab (``state_version`` erspart dabei unveränderte Antworten).
+
+Ist der Mandant an einen Protokolldienst angebunden, meldet das Cockpit TOP-Aufruf, Unterbrechung und festgestelltes
+Ergebnis in derselben Transaktion an dessen Postausgang (``apps.session.protokolldienst.meldungen``); zugestellt wird
+im Hintergrund, eine Aktion wartet nie auf den Dienst.
 """
 
 from __future__ import annotations
@@ -56,6 +63,7 @@ from apps.session.models import (
     SessionUser,
     SessionVote,
 )
+from apps.session.protokolldienst import meldungen as protokolldienst
 from apps.session.services import attendance_service, participation_service, protocol_lock, voting_service
 from apps.session.visibility import NON_PUBLIC_MEETINGS
 
@@ -133,6 +141,10 @@ class CockpitState:
     @property
     def completed(self) -> bool:
         return self.meeting.meeting_state == COMPLETED
+
+    @property
+    def interrupted(self) -> bool:
+        return self.running and self.meeting.interrupted_at is not None
 
     @property
     def done_count(self) -> int:
@@ -488,8 +500,35 @@ def close_meeting(
     ended = timezone.now()
     meeting.actual_end = ended
     meeting.meeting_state = COMPLETED
-    meeting.save(update_fields=["actual_end", "meeting_state", "updated_at"])
+    # Eine Unterbrechung endet mit der Sitzung; beim Protokolldienst bleibt die Pause bis zum nächsten Aufruf
+    meeting.interrupted_at = None
+    meeting.save(update_fields=["actual_end", "meeting_state", "interrupted_at", "updated_at"])
     return Outcome(f"Sitzung um {timezone.localtime(ended):%H:%M} Uhr geschlossen.")
+
+
+def interrupt_meeting(
+    meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: Collection[str], **_: Any
+) -> Outcome:
+    """Sitzung unterbrechen: Der laufende TOP bleibt aufgerufen, abgestimmt wird erst nach der Unterbrechung."""
+    if meeting.meeting_state != RUNNING:
+        raise CockpitError("Die Sitzung ist nicht eröffnet.")
+    if meeting.interrupted_at is not None:
+        raise CockpitError("Die Sitzung ist bereits unterbrochen.")
+    _ensure_no_open_vote(meeting, permissions)
+    meeting.interrupted_at = timezone.now()
+    meeting.save(update_fields=["interrupted_at", "updated_at"])
+    protokolldienst.unterbrechung(meeting, at=meeting.interrupted_at)
+    return Outcome(f"Sitzung um {timezone.localtime(meeting.interrupted_at):%H:%M} Uhr unterbrochen.", level="info")
+
+
+def resume_meeting(meeting: SessionMeeting, data: Mapping[str, Any], **_: Any) -> Outcome:
+    """Unterbrechung beenden."""
+    if meeting.interrupted_at is None:
+        raise CockpitError("Die Sitzung ist nicht unterbrochen.")
+    meeting.interrupted_at = None
+    meeting.save(update_fields=["interrupted_at", "updated_at"])
+    protokolldienst.unterbrechung(meeting)
+    return Outcome(f"Sitzung um {timezone.localtime():%H:%M} Uhr fortgesetzt.")
 
 
 def call_item(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: Collection[str], **_: Any) -> Outcome:
@@ -516,6 +555,10 @@ def _call(meeting: SessionMeeting, item: SessionAgendaItem, permissions: Collect
     opened = meeting.meeting_state != RUNNING
     if opened:
         _start(meeting)
+    if meeting.interrupted_at is not None:
+        # Der Aufruf setzt die Sitzung fort; die Meldung an den Protokolldienst folgt mit dem Aufruf
+        meeting.interrupted_at = None
+        meeting.save(update_fields=["interrupted_at", "updated_at"])
     moment = _now()
     _end_running(meeting, moment, keep=item.pk)
     fields = ["end_time", "updated_at"]
@@ -524,6 +567,7 @@ def _call(meeting: SessionMeeting, item: SessionAgendaItem, permissions: Collect
         fields.append("start_time")
     item.end_time = None
     item.save(update_fields=fields)
+    protokolldienst.top_aufgerufen(meeting, item)
     prefix = "Sitzung eröffnet. " if opened else ""
     return Outcome(f"{prefix}TOP {item.number} aufgerufen ({moment:%H:%M} Uhr).")
 
@@ -668,6 +712,8 @@ def open_vote(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: 
     item = _item(meeting, data.get("item"), permissions)
     if not _is_running(item):
         raise CockpitError("Abgestimmt wird über den aufgerufenen Tagesordnungspunkt.")
+    if meeting.interrupted_at is not None:
+        raise CockpitError("Die Sitzung ist unterbrochen. Bitte zuerst die Unterbrechung beenden.")
     _ensure_no_open_vote(meeting, permissions)
     if item.vote_result != "pending":
         raise CockpitError(
@@ -727,6 +773,7 @@ def defer_item(
         user=session_user,
         changes={"ergebnis": item.get_vote_result_display(), "quelle": "Sitzungscockpit"},
     )
+    protokolldienst.abstimmung(meeting, item)
     return Outcome(f"TOP {item.number} vertagt.")
 
 
@@ -806,6 +853,8 @@ def close_vote(
         # Prüfprotokoll: welche Stimmen beim Schließen nicht gezählt und entfernt wurden (Issue #1059)
         changes["nicht_gezaehlt"] = uncounted
     audit.log_event("vote_result", item, tenant=tenant or meeting.tenant, user=session_user, changes=changes)
+    # Nur Summen und Ergebnis, nie Einzelstimmen
+    protokolldienst.abstimmung(meeting, item)
     message = (
         f"TOP {item.number}: {item.get_vote_result_display()} "
         f"(Ja {item.votes_yes} / Nein {item.votes_no} / Enthaltung {item.votes_abstain})."
@@ -824,6 +873,8 @@ Handler = Callable[..., Outcome]
 ACTIONS: dict[str, Handler] = {
     "sitzung_eroeffnen": open_meeting,
     "sitzung_schliessen": close_meeting,
+    "sitzung_unterbrechen": interrupt_meeting,
+    "unterbrechung_beenden": resume_meeting,
     "top_aufrufen": call_item,
     "naechster_top": next_item,
     "top_beenden": end_item,
@@ -838,7 +889,9 @@ ACTIONS: dict[str, Handler] = {
 
 #: Aktionen ohne Änderung im kanonischen Modell (Anwesenheit, Störungen): nichts für die Drehscheibe, also auch
 #: kein Lesen der Tagesordnung vorher und nachher (häufigste Aktion im Cockpit)
-UNTRACKED_ACTIONS: frozenset[str] = frozenset({"anwesenheit", "stoerung_beginn", "stoerung_ende"})
+UNTRACKED_ACTIONS: frozenset[str] = frozenset(
+    {"anwesenheit", "stoerung_beginn", "stoerung_ende", "sitzung_unterbrechen", "unterbrechung_beenden"}
+)
 
 
 def perform(

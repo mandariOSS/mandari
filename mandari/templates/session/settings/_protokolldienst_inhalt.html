@@ -1,0 +1,60 @@
+{% comment %}
+Anbindung an einen Protokolldienst (docs/PROTOKOLLDIENST.md), gemeinsam für den neuen und den bisherigen Rahmen. Links die
+Anbindung (einschalten, Adresse, API-Schlüssel des Dienstes) und der Stand der Zustellung, rechts der Rückgabeschlüssel
+für Entwürfe (genau einmal sichtbar). Formulare an settings_protokolldienst mit aktion=speichern|schluessel|pruefen;
+Kontext ProtokolldienstEinstellungenView.
+{% endcomment %}
+<div class="min-w-0 flex-1 grid gap-x-12 gap-y-10 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+    <div class="min-w-0 max-w-3xl space-y-10">
+        <c-rahmen.abschnitt titel="Anbindung" titel_id="anbindung-titel">
+            <c-rahmen.satz eng>Ist die Anbindung eingeschaltet, meldet das Sitzungscockpit Aufruf der TOPs, Unterbrechungen und Abstimmungsergebnisse an den Protokolldienst. Gemeldet werden nur öffentliche Angaben: der nichtöffentliche Teil und die Einwohnerfragestunde erscheinen dort als Pause, Einzelstimmen nie.</c-rahmen.satz>
+            <form method="post" action="{% url 'session:settings_protokolldienst' tenant_slug=tenant_slug %}" class="mt-3 space-y-3" data-testid="protokolldienst-anbindung">
+                {% csrf_token %}
+                <input type="hidden" name="aktion" value="speichern">
+                <c-form.checkbox name="enabled" id="protokolldienst-ein" label="Anbindung eingeschaltet" checked="{% if konfiguration.enabled %}1{% endif %}" dicht />
+                <c-form.field name="base_url" id="protokolldienst-adresse" type="url" label="Adresse des Protokolldienstes" value="{{ konfiguration.base_url|default:'' }}" placeholder="https://protokoll.example.org" maxlength="300" dicht
+                              help="{% if freigegebene_hosts %}Freigegeben: {{ freigegebene_hosts|join:', ' }}{% else %}Nur https und ein öffentlicher Host.{% endif %}" />
+                <c-form.password name="api_key" id="protokolldienst-schluessel" label="API-Schlüssel des Protokolldienstes" autocomplete="off" dicht
+                                 help="{% if konfiguration.api_key_encrypted %}Hinterlegt. Leer lassen, um ihn zu behalten.{% else %}Beim Protokolldienst mit den Rechten meetings:read und events:write anlegen.{% endif %}" />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="save">Speichern</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+
+        {% if konfiguration.base_url %}
+        <c-rahmen.abschnitt titel="Stand" titel_id="stand-titel" data-testid="protokolldienst-stand">
+            <dl class="mt-2 grid max-w-xl grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                <dt class="text-gray-600 dark:text-gray-400">Zuletzt zugestellt</dt>
+                <dd class="text-gray-900 dark:text-white tabular-nums">{% if konfiguration.last_delivery_at %}{{ konfiguration.last_delivery_at|date:"d.m.Y H:i" }} Uhr{% else %}noch nie{% endif %}</dd>
+                <dt class="text-gray-600 dark:text-gray-400">Wartende Meldungen</dt>
+                <dd class="text-gray-900 dark:text-white tabular-nums">{{ wartend }}</dd>
+                {% if letzter_fehler %}
+                <dt class="text-gray-600 dark:text-gray-400">Letzter Fehler</dt>
+                <dd class="text-gray-900 dark:text-white">{{ letzter_fehler }} <span class="tabular-nums text-gray-600 dark:text-gray-400">({{ konfiguration.last_error_at|date:"d.m.Y H:i" }} Uhr)</span></dd>
+                {% endif %}
+            </dl>
+            <form method="post" action="{% url 'session:settings_protokolldienst' tenant_slug=tenant_slug %}" class="mt-3">
+                {% csrf_token %}
+                <input type="hidden" name="aktion" value="pruefen">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="plug">Verbindung prüfen</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </div>
+
+    <c-rahmen.abschnitt titel="Rückgabe der Entwürfe" titel_id="rueckgabe-titel" class="min-w-0 max-w-xl" data-testid="protokolldienst-rueckgabe">
+        <c-rahmen.satz eng>Mit diesem Schlüssel übergibt der Protokolldienst freigegebene Entwürfe je TOP. Sie erscheinen in der Niederschrift als Vorschlag, den die Protokollführung übernimmt oder verwirft. Der Schlüssel gilt nur für die Sitzungen dieser Verwaltung.</c-rahmen.satz>
+        {% if neuer_schluessel %}
+        <p class="mt-3 text-sm font-medium text-gray-900 dark:text-white">Neuer Schlüssel, nur jetzt sichtbar</p>
+        <code class="mt-1 block rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 py-2 font-mono text-sm text-gray-900 dark:text-white break-all select-all" data-testid="rueckgabe-schluessel">{{ neuer_schluessel }}</code>
+        <c-form.hinweis>Beim Protokolldienst unter „Niederschrift an mandari übergeben“ eintragen, zusammen mit der Adresse dieser Installation.</c-form.hinweis>
+        {% elif konfiguration.rueckgabe_token_prefix %}
+        <c-rahmen.satz>Schlüssel <span class="font-mono">{{ konfiguration.rueckgabe_token_prefix }}…</span>, erzeugt am <span class="tabular-nums">{{ konfiguration.rueckgabe_token_created_at|date:"d.m.Y" }}</span></c-rahmen.satz>
+        {% endif %}
+        <form method="post" action="{% url 'session:settings_protokolldienst' tenant_slug=tenant_slug %}" class="mt-3"
+              {% if konfiguration.rueckgabe_token_prefix %}data-confirm="Neuen Schlüssel erzeugen? Der bisherige gilt dann nicht mehr."{% endif %}>
+            {% csrf_token %}
+            <input type="hidden" name="aktion" value="schluessel">
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="key-round">{% if konfiguration.rueckgabe_token_prefix %}Neuen Schlüssel erzeugen{% else %}Schlüssel erzeugen{% endif %}</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+</div>

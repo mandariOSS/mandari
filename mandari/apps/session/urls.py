@@ -18,6 +18,7 @@ from .views import bodies as body_views
 from .views import cockpit as cockpit_views
 from .views import invitation_responses as invitation_response_views
 from .views import leitstelle as leitstelle_views
+from .views import protokolldienst as protokolldienst_views
 
 app_name = "session"
 
@@ -129,6 +130,12 @@ urlpatterns = [
         "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/berichtigung/<uuid:correction_id>/<str:decision>/",
         views.ProtocolCorrectionDecisionView.as_view(),
         name="meeting_protocol_correction_decision",
+    ),
+    # Vorschläge eines angebundenen Protokolldienstes übernehmen oder verwerfen
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/vorschlaege/<uuid:vorschlag_id>/<str:entscheidung>/",
+        protokolldienst_views.NiederschriftVorschlagView.as_view(),
+        name="meeting_protocol_vorschlag",
     ),
     path(
         "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/<str:action>/",
@@ -652,6 +659,12 @@ urlpatterns = [
         "<slug:tenant_slug>/settings/api-tokens/<uuid:token_id>/revoke/",
         views.APITokenRevokeView.as_view(),
         name="settings_api_tokens_revoke",
+    ),
+    # Anbindung an einen Protokolldienst (docs/PROTOKOLLDIENST.md)
+    path(
+        "<slug:tenant_slug>/settings/protokolldienst/",
+        protokolldienst_views.ProtokolldienstEinstellungenView.as_view(),
+        name="settings_protokolldienst",
     ),
     # Endgeräte für die digitale Ratsarbeit
     path(

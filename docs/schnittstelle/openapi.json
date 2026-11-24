@@ -29,6 +29,10 @@
     {
       "name": "Session-API v1",
       "description": "Session-RIS je Mandant mit Anmeldung: Sitzungen, Vorlagen, Anträge und Einreichung (API-Token oder Sitzung); Nichtöffentliches nur mit Recht."
+    },
+    {
+      "name": "Protokolldienst",
+      "description": "Rückweg eines angebundenen Protokolldienstes je Session-Mandant: freigegebene Entwürfe der Niederschrift je TOP als Vorschlag für die Protokollführung. Anmeldung mit dem Rückgabeschlüssel des Mandanten."
     }
   ],
   "paths": {
@@ -136,6 +140,110 @@
         "tags": [
           "Einstieg"
         ]
+      }
+    },
+    "/api/mandari/v1/protokolldienst/{tenant_slug}/": {
+      "get": {
+        "operationId": "apps_session_protokolldienst_api_einstieg",
+        "summary": "Verbindung prüfen",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_slug",
+            "schema": {
+              "title": "Tenant Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EinstiegOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Protokolldienst"
+        ],
+        "security": [
+          {
+            "Schluessel": []
+          }
+        ]
+      }
+    },
+    "/api/mandari/v1/protokolldienst/{tenant_slug}/niederschrift/vorschlaege/": {
+      "post": {
+        "operationId": "apps_session_protokolldienst_api_vorschlaege",
+        "summary": "Entwürfe der Niederschrift vorschlagen",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_slug",
+            "schema": {
+              "title": "Tenant Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Empfohlen: Wiederholungen mit demselben Schlüssel und Inhalt liefern dieselbe Quittung. Ohne Angabe gilt protokolldienst.<Dokument>.<Fassung>.",
+              "title": "Idempotency-Key"
+            },
+            "required": false,
+            "description": "Empfohlen: Wiederholungen mit demselben Schlüssel und Inhalt liefern dieselbe Quittung. Ohne Angabe gilt protokolldienst.<Dokument>.<Fassung>."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuittungOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Vorschläge je TOP für die Niederschrift einer Sitzung des Mandanten. Die Niederschrift ändert sich erst, wenn die\nProtokollführung einen Vorschlag übernimmt; eine neuere Fassung ersetzt offene Vorschläge desselben TOP.",
+        "tags": [
+          "Protokolldienst"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VorschlaegeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "Schluessel": []
+          }
+        ],
+        "x-mandari-command": "session.minutes_draft.propose"
       }
     },
     "/api/openapi.json": {
@@ -14021,6 +14129,81 @@
   },
   "components": {
     "schemas": {
+      "AbstimmungIn": {
+        "properties": {
+          "yes": {
+            "anyOf": [
+              {
+                "maximum": 9999,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ja-Stimmen",
+            "title": "Yes"
+          },
+          "no": {
+            "anyOf": [
+              {
+                "maximum": 9999,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Nein-Stimmen",
+            "title": "No"
+          },
+          "abstain": {
+            "anyOf": [
+              {
+                "maximum": 9999,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Enthaltungen",
+            "title": "Abstain"
+          },
+          "unanimous": {
+            "default": false,
+            "description": "Einstimmig",
+            "title": "Unanimous",
+            "type": "boolean"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "adopted",
+                  "adopted_amended",
+                  "rejected",
+                  "noted",
+                  "postponed",
+                  "referred",
+                  "withdrawn"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ergebnis",
+            "title": "Outcome"
+          }
+        },
+        "title": "AbstimmungIn",
+        "type": "object"
+      },
       "ApplicationCreated": {
         "description": "Quittung der Einreichung (Befehl ``submission.submit``); eine Wiederholung mit demselben Schlüssel erhält sie unverändert.",
         "properties": {
@@ -14459,6 +14642,30 @@
             }
           }
         }
+      },
+      "EinstiegOut": {
+        "properties": {
+          "tenant": {
+            "title": "Tenant",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "vorschlaege": {
+            "description": "Adresse für die Vorschläge",
+            "title": "Vorschlaege",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "name",
+          "vorschlaege"
+        ],
+        "title": "EinstiegOut",
+        "type": "object"
       },
       "FeedbackDecision": {
         "properties": {
@@ -18400,6 +18607,53 @@
           }
         }
       },
+      "QuittungOut": {
+        "properties": {
+          "meeting": {
+            "description": "OParl-Kennung der Sitzung",
+            "title": "Meeting",
+            "type": "string"
+          },
+          "reference": {
+            "description": "Eingangsnummer der Übergabe",
+            "title": "Reference",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "content_hash": {
+            "description": "SHA-256 über den Befehlsinhalt (RFC 8785)",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "accepted": {
+            "description": "Angenommene Vorschläge",
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "unassigned": {
+            "description": "Indizes der TOPs, die keinem TOP der Sitzung zuzuordnen waren",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unassigned",
+            "type": "array"
+          }
+        },
+        "required": [
+          "meeting",
+          "reference",
+          "received_at",
+          "content_hash",
+          "accepted",
+          "unassigned"
+        ],
+        "title": "QuittungOut",
+        "type": "object"
+      },
       "TenantRoot": {
         "properties": {
           "name": {
@@ -18465,10 +18719,125 @@
         ],
         "title": "TenantRoot",
         "type": "object"
+      },
+      "TopIn": {
+        "properties": {
+          "agenda_item": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "OParl-Kennung des TOP (…/agendaitem/<uuid>/) oder seine Kennung in Session",
+            "title": "Agenda Item"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "TOP-Nummer, wenn der TOP keine Kennung hat",
+            "title": "Number"
+          },
+          "draft_text": {
+            "default": "",
+            "description": "Entwurf des Protokolltexts",
+            "maxLength": 100000,
+            "title": "Draft Text",
+            "type": "string"
+          },
+          "resolution_text": {
+            "default": "",
+            "description": "Entwurf des Beschlusstexts",
+            "maxLength": 20000,
+            "title": "Resolution Text",
+            "type": "string"
+          },
+          "vote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AbstimmungIn"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Abstimmungsergebnis, nur Summen und Ergebnis"
+          }
+        },
+        "title": "TopIn",
+        "type": "object"
+      },
+      "VorschlaegeIn": {
+        "properties": {
+          "meeting": {
+            "description": "OParl-Kennung der Sitzung (…/meeting/<uuid>/)",
+            "maxLength": 500,
+            "title": "Meeting",
+            "type": "string"
+          },
+          "source_document": {
+            "description": "Kennung des Dokuments beim Protokolldienst",
+            "format": "uuid",
+            "title": "Source Document",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Fassung des Dokuments",
+            "maximum": 100000,
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Freigabe beim Protokolldienst",
+            "title": "Released At"
+          },
+          "items": {
+            "description": "Vorschläge je TOP",
+            "items": {
+              "$ref": "#/components/schemas/TopIn"
+            },
+            "maxItems": 300,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "meeting",
+          "source_document",
+          "revision",
+          "items"
+        ],
+        "title": "VorschlaegeIn",
+        "type": "object"
       }
     },
     "securitySchemes": {
       "BearerOrSession": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "Schluessel": {
         "type": "http",
         "scheme": "bearer"
       },

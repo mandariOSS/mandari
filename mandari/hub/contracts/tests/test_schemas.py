@@ -73,6 +73,7 @@ STARTUMFANG: dict[str, tuple[str, str, frozenset[str]]] = {
     "submission.withdraw": (COMMAND, "apps.session", frozenset({NOE})),
     "attendance.respond": (COMMAND, "apps.session", frozenset({PB})),
     "invitation.acknowledge": (COMMAND, "apps.session", frozenset({PB})),
+    "session.minutes_draft.propose": (COMMAND, "apps.session", frozenset({NOE})),
 }
 
 #: Die einzigen Inhaltsfelder (x-content). Ein neues Inhaltsfeld ist eine bewusste Entscheidung.
@@ -89,6 +90,10 @@ INHALTSFELDER: dict[str, list[str]] = {
         "#/properties/attachments",
     ],
     "attendance.respond": ["#/properties/reason"],
+    "session.minutes_draft.propose": [
+        "#/properties/items/items/properties/draft_text",
+        "#/properties/items/items/properties/resolution_text",
+    ],
 }
 
 #: Genauer Zuschnitt der Inhaltsfelder: jedes Feld, das am Ende einen Wert trägt, mit ``maxLength``.
@@ -110,6 +115,10 @@ INHALTSBLAETTER: dict[str, dict[str, int | None]] = {
         "#/properties/attachments/items/properties/sha256": None,
     },
     "attendance.respond": {"#/properties/reason": 2000},
+    "session.minutes_draft.propose": {
+        "#/properties/items/items/properties/draft_text": 100000,
+        "#/properties/items/items/properties/resolution_text": 20000,
+    },
 }
 
 #: Die einzigen Muster in den ausgelieferten Schemas. „Verankert und ohne Leerraum“ schließt Sätze
@@ -138,7 +147,7 @@ def _vertrag(register: Registry, name: str) -> Contract:
 
 def test_register_enthaelt_genau_den_startumfang(register: Registry) -> None:
     assert len(register.names(EVENT)) == 40
-    assert len(register.names(COMMAND)) == 4
+    assert len(register.names(COMMAND)) == 5
     assert set(register.names()) == set(STARTUMFANG)
     assert all(register.versions(name) == (1,) for name in STARTUMFANG)
 

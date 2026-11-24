@@ -159,6 +159,14 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
         paths=("protocol__meeting__tenant",),
     ),
     *_tenant("session.SessionAttendance", "response_reason_encrypted", paths=("meeting__tenant",)),
+    # Anbindung an einen Protokolldienst: dessen API-Schlüssel und Vorschläge für die Niederschrift
+    *_tenant("session.SessionProtokolldienst", "api_key_encrypted", paths=_SESSION),
+    *_tenant(
+        "session.SessionNiederschriftVorschlag",
+        "draft_text_encrypted",
+        "resolution_text_encrypted",
+        paths=("meeting__tenant",),
+    ),
 )
 
 #: Binärfelder ohne verschlüsselten Inhalt – jeweils mit Begründung

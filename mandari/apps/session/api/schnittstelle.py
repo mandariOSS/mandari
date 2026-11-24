@@ -339,6 +339,44 @@ SESSION_V1: Final = Area(
 )
 
 
+#: Endpunkte des Bereichs Protokolldienst, die einen Befehl annehmen: ``operationId`` -> Name des Befehls
+PROTOKOLLDIENST_COMMANDS: Final[dict[str, str]] = {
+    "apps_session_protokolldienst_api_vorschlaege": "session.minutes_draft.propose",
+}
+
+
+def protokolldienst_description() -> Description:
+    """Beschreibung des Bereichs Protokolldienst, wie django-ninja sie erzeugt, mit dem Befehl des Endpunkts."""
+    from apps.session.protokolldienst.api import api
+
+    document: dict[str, Any] = copy.deepcopy(dict(api.get_openapi_schema()))
+    found: set[str] = set()
+    for item in document.get("paths", {}).values():
+        for operation in item.values():
+            command = (
+                PROTOKOLLDIENST_COMMANDS.get(operation.get("operationId", "")) if isinstance(operation, dict) else None
+            )
+            if command:
+                operation[COMMAND_EXTENSION] = command
+                found.add(operation["operationId"])
+    if missing := sorted(set(PROTOKOLLDIENST_COMMANDS) - found):
+        raise ImproperlyConfigured(f"Bereich Protokolldienst hat keine Endpunkte {missing}")
+    return document
+
+
+PROTOKOLLDIENST: Final = Area(
+    key="protokolldienst",
+    title="Protokolldienst",
+    description=(
+        "Rückweg eines angebundenen Protokolldienstes je Session-Mandant: freigegebene Entwürfe der Niederschrift je "
+        "TOP als Vorschlag für die Protokollführung. Anmeldung mit dem Rückgabeschlüssel des Mandanten."
+    ),
+    entry="/api/mandari/v1/protokolldienst/{tenant_slug}/",
+    openapi=protokolldienst_description,
+    order=40,
+)
+
+
 def register() -> None:
     """Bereiche von Session anmelden (aus ``SessionConfig.ready``)."""
     from .einreichung_beschreibung import EINREICHUNG
@@ -347,3 +385,4 @@ def register() -> None:
     register_area(TENANT_NONPUBLIC)
     register_area(EINREICHUNG)
     register_area(SESSION_V1)
+    register_area(PROTOKOLLDIENST)

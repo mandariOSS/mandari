@@ -80,6 +80,8 @@ ProtocolDetailView; die bisherige Seite bleibt session/protocols/detail.html.
 
         {% include "session/neu/_niederschrift_berichtigungen.html" %}
 
+        {% include "session/protokolldienst/_vorschlaege.html" %}
+
         {% with a=agenda_public|length b=agenda_non_public|length %}{% with anzahl=a|add:b %}
         <c-rahmen.abschnitt titel="Tagesordnungspunkte" titel_id="tops-titel" zusatz="{% if anzahl %}{{ anzahl }} Punkt{{ anzahl|pluralize:'e' }}{% endif %}" data-testid="niederschrift-tops">
             {% if agenda_public or agenda_non_public %}

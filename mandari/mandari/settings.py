@@ -1169,6 +1169,12 @@ LIVE_TESSDATA_DIR = os.environ.get("LIVE_TESSDATA_DIR", "")
 LIVE_OCR_MEMORY_LIMIT_MB = int(os.environ.get("LIVE_OCR_MEMORY_LIMIT_MB", "256"))
 LIVE_OCR_TIMEOUT_SECONDS = int(os.environ.get("LIVE_OCR_TIMEOUT_SECONDS", "20"))
 LIVE_PROTOKOLL_TAGE = int(os.environ.get("LIVE_PROTOKOLL_TAGE", "90"))
+# Protokolldienst (docs/PROTOKOLLDIENST.md): Hosts, die Mandanten als Adresse des Protokolldienstes eintragen dürfen.
+# Leer: jeder öffentliche Host über https. Gesetzt: nur diese Hosts, auch im eigenen Netz und mit http (Betrieb im
+# Intranet), kommagetrennt
+PROTOKOLLDIENST_ERLAUBTE_HOSTS = [
+    h.strip().lower() for h in os.environ.get("PROTOKOLLDIENST_ERLAUBTE_HOSTS", "").split(",") if h.strip()
+]
 _TASK_BACKENDS = {
     "immediate": "django.tasks.backends.immediate.ImmediateBackend",
     "journal": "apps.events.tasks_backend.JournalBackend",
@@ -1213,6 +1219,9 @@ TASKS = {
                 # nicht wiederholen, der Zeitplan reiht jede Minute neu ein
                 "hub.live.auftraege.live_bilder_lesen": {"timeout": 120, "max_attempts": 1},
                 "hub.live.schedules.live_status_abfragen": {"timeout": 120, "max_attempts": 1},
+                # Meldungen an einen Protokolldienst (docs/PROTOKOLLDIENST.md): Aufrufe mit 10 s Zeitgrenze; zwölf
+                # Versuche (zusammen etwa sechs Stunden), falls der Dienst die Sitzung erst später übernimmt
+                "apps.session.protokolldienst.auftraege.zustellen": {"timeout": 120, "max_attempts": 12},
             },
         },
     }

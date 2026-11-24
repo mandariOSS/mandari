@@ -94,6 +94,7 @@ KACHELN = (
     "settings_meeting_formats",
     "privacy_settings",
     "settings_api_tokens",
+    "settings_protokolldienst",
 )
 #: Stände der Veröffentlichung für die Übersicht: Name → Felder des Mandanten
 STAENDE: dict[str, dict[str, Any]] = {

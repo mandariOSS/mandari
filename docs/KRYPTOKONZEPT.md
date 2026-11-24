@@ -27,10 +27,11 @@ Verschlüsselung folgt dieser Unterscheidung, statt pauschal alles zu verschlüs
 | Öffentliche Ratsinformationen (OParl-Bestand) | **keine** | Sind per Gesetz öffentlich; Verschlüsselung brächte keinen Schutz, aber Kosten bei Suche und Auslieferung |
 | Protokolle und Audit-Log | **keine Inhaltsverschlüsselung** | Enthalten bewusst keine personenbezogenen Inhalte; Schutz über Zugriffsrechte |
 
-Insgesamt sind **43 Felder** verschlüsselt:
+Insgesamt sind **48 Felder** verschlüsselt:
 
-- **36 mit dem Mandantenschlüssel**: Work (18, u. a. Sitzungsvorbereitung, Fraktionsarbeit,
-  Anträge mit dem Zustand des gemeinsamen Editors), Verwaltungs-RIS (15), SMTP-Passwort und
+- **41 mit dem Mandantenschlüssel**: Work (20, u. a. Sitzungsvorbereitung, Fraktionsarbeit, Termine,
+  Anträge mit dem Zustand des gemeinsamen Editors), Verwaltungs-RIS (18, davon 3 für die Anbindung an einen
+  Protokolldienst: dessen API-Schlüssel und Entwürfe der Niederschrift), SMTP-Passwort und
   KI-Schlüssel der Organisation (2) und die Mail-Warteschlange (1)
 - **5 mit dem Hauptschlüssel**: plattformweite Zugangsdaten, nämlich SMTP-Passwort und früherer
   KI-Schlüssel der Systemeinstellungen (seit Issue #950 geleert und ungenutzt), die beiden

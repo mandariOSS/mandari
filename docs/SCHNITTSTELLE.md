@@ -20,6 +20,7 @@ stehen in der gemeinsamen Beschreibung:
 | Adresse | Beschreibung |
 |---|---|
 | `/api/v1/session/` | [Session-API v1](#session-api-v1), auch in der gemeinsamen Beschreibung |
+| `/api/mandari/v1/protokolldienst/` | Rückweg eines angebundenen Protokolldienstes (Befehl `session.minutes_draft.propose`, Rückgabeschlüssel je Mandant), auch in der gemeinsamen Beschreibung ([PROTOKOLLDIENST.md](PROTOKOLLDIENST.md)) |
 | `/api/public/v1/` | öffentliche Fraktions-API (Token je Organisation), eigene Beschreibung; öffentliche Doku: docs.mandari.de/work/fraktions-api/ |
 | `/api/provisioning/`, `/api/provisioning/v2/` | [Provisioning-API](#provisioning-api), nur für den Betreiber |
 | `/api/insight/ki-bewertungen/` | Bewertungen der KI-Zusammenfassungen für das System des Betreibers ([Provisioning-API](#weitere-abrufe-mit-dem-schlüssel-der-version-2)) |
@@ -541,7 +542,8 @@ register_area(Area(key="session-v1", title="Session-API v1", description="…",
 
 `openapi` liefert die Beschreibung des Bereichs (`paths`, `components`) und wird erst beim Abruf gebaut.
 Heute angemeldet: der OParl-Aggregator (`hub/api/openapi/aggregator.py`), OParl je Mandant, OParl je Mandant
-nichtöffentlich, das Profil Einreichung und die Session-API v1 (alle in `apps/session/api/schnittstelle.py`), dazu
+nichtöffentlich, das Profil Einreichung, die Session-API v1 und der Bereich Protokolldienst (alle in
+`apps/session/api/schnittstelle.py`), dazu
 der Einstieg selbst. Die OParl-Pfade stammen aus den Routen der Ausgaben, die Schemas der OParl-Typen aus der
 kommParl-Spezifikation (`hub/api/kommparl/`), denselben Schemas wie die Typprüfung des OParl-Validators.
 

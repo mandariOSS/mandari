@@ -19,6 +19,7 @@ from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
 from apps.session.api import nichtoeffentlich as session_noe
 from apps.session.api.v1.api import api as session_api_v1
+from apps.session.protokolldienst.api import api as protokolldienst_api
 from apps.session.views.invitation_responses import InvitationResponseView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
@@ -85,6 +86,8 @@ urlpatterns = [
     # Public API (stats, contact form - consumed by Wagtail marketing site)
     # Session-API v1 (django-ninja, OpenAPI unter /api/v1/session/openapi.json, Issue #163)
     path("api/v1/session/", session_api_v1.urls),
+    # Bereich Protokolldienst (Rückweg der Entwürfe der Niederschrift, docs/PROTOKOLLDIENST.md)
+    path("api/mandari/v1/protokolldienst/", protokolldienst_api.urls),
     path("api/", include("insight_core.api_urls")),
     # Provisioning-API fürs Billing-Portal (nur aktiv wenn PROVISIONING_API_KEY gesetzt)
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),

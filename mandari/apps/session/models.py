@@ -2204,6 +2204,9 @@ class SessionMeeting(EncryptionMixin, models.Model):
     end = models.DateTimeField(blank=True, null=True, verbose_name="Ende")
     actual_start = models.DateTimeField(blank=True, null=True, verbose_name="Tatsächlicher Beginn")
     actual_end = models.DateTimeField(blank=True, null=True, verbose_name="Tatsächliches Ende")
+    # Sitzungsunterbrechung im Cockpit: gesetzt, solange die laufende Sitzung unterbrochen ist; Beginn und Ende stehen
+    # im Prüfprotokoll (Signale) und gehen an einen angebundenen Protokolldienst (apps/session/protokolldienst)
+    interrupted_at = models.DateTimeField(blank=True, null=True, verbose_name="Unterbrochen seit")
 
     # Location
     location = models.CharField(max_length=500, blank=True, verbose_name="Ort")
@@ -6290,3 +6293,172 @@ class SessionAPIToken(models.Model):
         self.last_used_ip = ip_address
         self.usage_count += 1
         self.save(update_fields=["last_used_at", "last_used_ip", "usage_count"])
+
+
+# =============================================================================
+# PROTOKOLLDIENST (Aufnahme, Transkript und Entwurf der Niederschrift außerhalb von mandari)
+# =============================================================================
+
+
+class SessionProtokolldienst(EncryptionMixin, models.Model):
+    """
+    Anbindung eines Mandanten an einen Protokolldienst (``apps/session/protokolldienst``, ``docs/PROTOKOLLDIENST.md``).
+
+    Hinweg: Das Cockpit meldet TOP-Aufruf, Unterbrechung und Abstimmungsergebnis an die Ereignis-Schnittstelle des
+    Dienstes (Adresse, API-Schlüssel des Dienstes mit dem Mandantenschlüssel verschlüsselt). Rückweg: Der Dienst
+    übergibt Entwürfe je TOP mit dem Rückgabeschlüssel; gespeichert ist nur sein SHA-256.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(
+        SessionTenant, on_delete=models.CASCADE, related_name="protokolldienst", verbose_name="Mandant"
+    )
+    enabled = models.BooleanField(default=False, verbose_name="Eingeschaltet")
+    base_url = models.URLField(max_length=300, blank=True, verbose_name="Adresse des Protokolldienstes")
+    api_key_encrypted = EncryptedTextField(blank=True, null=True, verbose_name="API-Schlüssel des Protokolldienstes")
+    # Rückweg: Schlüssel, mit dem der Protokolldienst Entwürfe übergibt (nur als Hash, Anzeige genau einmal)
+    rueckgabe_token_hash = models.CharField(max_length=64, blank=True, editable=False, verbose_name="Rückgabeschlüssel")
+    rueckgabe_token_prefix = models.CharField(max_length=8, blank=True, editable=False, verbose_name="Anfang")
+    rueckgabe_token_created_at = models.DateTimeField(blank=True, null=True, verbose_name="Rückgabeschlüssel erzeugt")
+    # Stand der Zustellung (ohne Inhalte): letzter Erfolg, letzter Fehler als Code
+    last_delivery_at = models.DateTimeField(blank=True, null=True, verbose_name="Zuletzt zugestellt")
+    last_error = models.CharField(max_length=40, blank=True, verbose_name="Letzter Fehler")
+    last_error_at = models.DateTimeField(blank=True, null=True, verbose_name="Letzter Fehler am")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_protokolldienst"
+        verbose_name = "Protokolldienst"
+        verbose_name_plural = "Protokolldienste"
+
+    def __str__(self) -> str:
+        return f"Protokolldienst {self.tenant}"
+
+    def get_encryption_organization(self) -> SessionTenant:
+        return self.tenant
+
+    @property
+    def configured(self) -> bool:
+        """Eingeschaltet und mit Adresse und Schlüssel: nur dann gehen Meldungen hinaus."""
+        return bool(self.enabled and self.base_url and self.api_key_encrypted)
+
+
+class SessionProtokolldienstMeldung(models.Model):
+    """
+    Meldung an den Protokolldienst, bis sie zugestellt ist (Postausgang, ``protokolldienst.meldungen``).
+
+    Entsteht in der Transaktion der Aktion im Cockpit; zugestellt wird im Hintergrund (Auftrag
+    ``protokolldienst.auftraege.zustellen``). Die Nutzdaten tragen nur öffentliche Angaben: TOP-Nummer, Summen der
+    Abstimmung, Ergebnis, Grund einer Pause. Nie Einzelstimmen, Namen oder Texte.
+    """
+
+    TOP_AUFGERUFEN = "agenda_item_changed"
+    PAUSE_BEGONNEN = "pause_started"
+    PAUSE_BEENDET = "pause_ended"
+    ABSTIMMUNG = "vote_result"
+    KIND_CHOICES = [
+        (TOP_AUFGERUFEN, "TOP aufgerufen"),
+        (PAUSE_BEGONNEN, "Pause begonnen"),
+        (PAUSE_BEENDET, "Pause beendet"),
+        (ABSTIMMUNG, "Abstimmungsergebnis"),
+    ]
+    WARTEND = "wartend"
+    ZUGESTELLT = "zugestellt"
+    FEHLGESCHLAGEN = "fehlgeschlagen"
+    STATUS_CHOICES = [(WARTEND, "Wartend"), (ZUGESTELLT, "Zugestellt"), (FEHLGESCHLAGEN, "Fehlgeschlagen")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    meeting = models.ForeignKey(
+        SessionMeeting, on_delete=models.CASCADE, related_name="protokolldienst_meldungen", verbose_name="Sitzung"
+    )
+    agenda_item = models.ForeignKey(
+        SessionAgendaItem, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="TOP"
+    )
+    kind = models.CharField(max_length=30, choices=KIND_CHOICES, verbose_name="Art")
+    occurred_at = models.DateTimeField(verbose_name="Zeitpunkt")
+    payload = models.JSONField(default=dict, blank=True, verbose_name="Nutzdaten")
+    # Stand nach dieser Meldung, nur intern (wird nicht gesendet): Läuft ein geschützter Teil (nichtöffentlicher TOP,
+    # Einwohnerfragestunde)? Damit bleibt die Pause bestehen, bis ein anderer TOP aufgerufen wird, auch über eine
+    # Unterbrechung hinweg
+    geschuetzt = models.BooleanField(default=False, verbose_name="Geschützter Teil")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=WARTEND, verbose_name="Stand")
+    attempts = models.PositiveSmallIntegerField(default=0, verbose_name="Versuche")
+    error_code = models.CharField(max_length=40, blank=True, verbose_name="Fehler")
+    created_at = models.DateTimeField(auto_now_add=True)
+    delivered_at = models.DateTimeField(blank=True, null=True, verbose_name="Zugestellt am")
+
+    class Meta:
+        db_table = "session_protokolldienst_meldungen"
+        verbose_name = "Meldung an den Protokolldienst"
+        verbose_name_plural = "Meldungen an den Protokolldienst"
+        ordering = ["occurred_at", "created_at"]
+        indexes = [models.Index(fields=["meeting", "status"], name="session_pd_meldung_offen_idx")]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} ({self.get_status_display()})"
+
+
+class SessionNiederschriftVorschlag(EncryptionMixin, models.Model):
+    """
+    Vorschlag des Protokolldienstes für einen TOP der Niederschrift (Befehl ``session.minutes_draft.propose``).
+
+    Der Vorschlag ändert die Niederschrift nicht. Erst wenn die Protokollführung ihn übernimmt, schreibt Session
+    Protokolltext, Beschlusstext und, solange noch keins festgestellt ist, das Abstimmungsergebnis in den TOP
+    (``protokolldienst.vorschlaege``). Texte verschlüsselt mit dem Mandantenschlüssel, auch bei öffentlichen TOPs:
+    Es sind Entwürfe.
+    """
+
+    OFFEN = "offen"
+    UEBERNOMMEN = "uebernommen"
+    VERWORFEN = "verworfen"
+    ERSETZT = "ersetzt"
+    STATUS_CHOICES = [
+        (OFFEN, "Offen"),
+        (UEBERNOMMEN, "Übernommen"),
+        (VERWORFEN, "Verworfen"),
+        (ERSETZT, "Durch eine neuere Fassung ersetzt"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    meeting = models.ForeignKey(
+        SessionMeeting, on_delete=models.CASCADE, related_name="niederschrift_vorschlaege", verbose_name="Sitzung"
+    )
+    agenda_item = models.ForeignKey(
+        SessionAgendaItem, on_delete=models.CASCADE, related_name="niederschrift_vorschlaege", verbose_name="TOP"
+    )
+    # Herkunft beim Protokolldienst: Kennung des Dokuments und Fassung
+    source_document = models.UUIDField(verbose_name="Dokument beim Protokolldienst")
+    revision = models.PositiveIntegerField(default=1, verbose_name="Fassung")
+    released_at = models.DateTimeField(blank=True, null=True, verbose_name="Beim Protokolldienst freigegeben")
+    draft_text_encrypted = EncryptedTextField(blank=True, null=True, verbose_name="Entwurf des Protokolltexts")
+    resolution_text_encrypted = EncryptedTextField(blank=True, null=True, verbose_name="Entwurf des Beschlusstexts")
+    vote_result = models.CharField(max_length=50, blank=True, verbose_name="Vorgeschlagenes Ergebnis")
+    votes_yes = models.PositiveIntegerField(blank=True, null=True, verbose_name="Ja")
+    votes_no = models.PositiveIntegerField(blank=True, null=True, verbose_name="Nein")
+    votes_abstain = models.PositiveIntegerField(blank=True, null=True, verbose_name="Enthaltung")
+    unanimous = models.BooleanField(default=False, verbose_name="Einstimmig")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=OFFEN, verbose_name="Stand")
+    received_at = models.DateTimeField(auto_now_add=True, verbose_name="Eingegangen")
+    decided_at = models.DateTimeField(blank=True, null=True, verbose_name="Entschieden am")
+    decided_by = models.ForeignKey(
+        SessionUser, on_delete=models.SET_NULL, null=True, blank=True, related_name="+", verbose_name="Entschieden von"
+    )
+
+    class Meta:
+        db_table = "session_niederschrift_vorschlaege"
+        verbose_name = "Vorschlag für die Niederschrift"
+        verbose_name_plural = "Vorschläge für die Niederschrift"
+        ordering = ["agenda_item__order", "agenda_item__number", "-received_at"]
+        indexes = [models.Index(fields=["meeting", "status"], name="session_nds_vorschlag_idx")]
+
+    def __str__(self) -> str:
+        return f"Vorschlag zu TOP {self.agenda_item.number} (Fassung {self.revision})"
+
+    def get_encryption_organization(self) -> SessionTenant:
+        return self.meeting.tenant
+
+    @property
+    def has_vote(self) -> bool:
+        """Enthält der Vorschlag ein Ergebnis oder Stimmenzahlen?"""
+        return bool(self.vote_result) or self.votes_yes is not None
