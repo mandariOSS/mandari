@@ -6,10 +6,22 @@
     <div class="text-center">
         <p class="text-gray-600 dark:text-gray-400 mb-6">{{ hinweis }}</p>
         <div class="space-y-3">
-            <a href="/"
-               class="block w-full py-3 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-center transition-colors">
-                Zur Startseite
-            </a>
+            {% if verlaengern_url %}
+                <a href="{{ verlaengern_url }}"
+                   rel="noopener"
+                   class="block w-full py-3 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-center transition-colors">
+                    Verlängerung buchen
+                </a>
+                <a href="/"
+                   class="block w-full py-3 px-4 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 font-medium text-center transition-colors">
+                    Zur Startseite
+                </a>
+            {% else %}
+                <a href="/"
+                   class="block w-full py-3 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-center transition-colors">
+                    Zur Startseite
+                </a>
+            {% endif %}
         </div>
     </div>
 {% endblock %}

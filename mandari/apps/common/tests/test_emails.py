@@ -691,6 +691,19 @@ def provisioning_admin_invitation(org: Any, make_member: Any) -> dict[str, Any]:
     }
 
 
+def demo_loeschung_erinnerung(org: Any, make_member: Any) -> dict[str, Any]:
+    """Erinnerung an die Löschung einer gesperrten Demo (Issue #1575), mit Buchungslink und Kontaktadresse."""
+    return {
+        "organization": org,
+        "ende": "08.12.2026",
+        "loeschung": "07.01.2027",
+        "loeschung_uhrzeit": "17:23",
+        "letzte": False,
+        "verlaengern_url": f"{SITE_URL}/kunden/buchen/",
+        "kontakt": "hello@example.org",
+    }
+
+
 @dataclass(frozen=True)
 class MailCase:
     name: str
@@ -720,6 +733,7 @@ CASES = [
     MailCase(
         "provisioning_admin_invitation", "emails/provisioning/admin_invitation.html", provisioning_admin_invitation
     ),
+    MailCase("demo_loeschung_erinnerung", "emails/demo/loeschung_erinnerung.html", demo_loeschung_erinnerung),
     MailCase("questions_notification", "emails/questions/notification.html", questions_notification),
     MailCase("questions_published", "emails/questions/published.html", questions_published),
     MailCase(

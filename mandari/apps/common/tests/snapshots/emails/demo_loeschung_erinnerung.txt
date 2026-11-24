@@ -1,0 +1,21 @@
+# Eure Demo wird gelöscht
+
+Fraktion Test
+
+Hallo,
+
+die Demozeit von Fraktion Test ist am 08.12.2026 abgelaufen. Seitdem ist die Organisation gesperrt, eure Daten sind aber noch vollständig da.
+
+Am 07.01.2027 gegen 17:23 Uhr löschen wir die Organisation endgültig, mit allen Inhalten, Dateien und Zugängen. Danach lässt sich nichts mehr wiederherstellen.
+
+Wenn ihr mit mandari work weitermachen möchtet, bucht die kostenpflichtige Verlängerung. Alle Daten bleiben dann erhalten, und ihr arbeitet dort weiter, wo ihr aufgehört habt.
+
+[Verlängerung buchen](https://mandari.example/kunden/buchen/)
+
+Fragen und Buchung per E-Mail: [hello@example.org](mailto:hello@example.org)
+
+Du erhältst diese E-Mail, weil du in Fraktion Test Administrator bist.
+
+mandari work · Diese E-Mail wurde automatisch versendet.
+
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

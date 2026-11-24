@@ -194,7 +194,9 @@ def test_anmeldung_gesperrt_mit_hinweis(demo_org: Organization, mitglied: Member
     assert antwort.status_code == 200
     inhalt = antwort.content.decode()
     assert "Die Demozeit für „Fraktion Demo“ ist am" in inhalt
+    # Ohne DEMO_LOESCHFRIST_TAGE bleiben die Daten; seit #1575 mit dem Weg zur kostenpflichtigen Verlängerung
     assert "Eure Daten bleiben erhalten." in inhalt
+    assert "kostenpflichtige Verlängerung" in inhalt
     assert "_auth_user_id" not in antwort.wsgi_request.session
 
 
