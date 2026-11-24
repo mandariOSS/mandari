@@ -105,8 +105,8 @@ def _meldungen(w: Welt) -> list[tuple[str, dict[str, Any]]]:
         "https://localhost",
         "https://127.0.0.1",
         "https://10.0.0.5",
-        "https://voice",
-        "https://voice.localhost",
+        "https://protokolldienst",
+        "https://protokolldienst.localhost",
         "ftp://protokoll.example.org",
         "https://nutzer:pw@protokoll.example.org",
         "https://protokoll.example.org/?a=1",
@@ -123,8 +123,8 @@ def test_adresse_ohne_schraegstrich_am_ende() -> None:
 
 
 def test_freigegebene_hosts_auch_im_eigenen_netz(settings: Any) -> None:
-    settings.PROTOKOLLDIENST_ERLAUBTE_HOSTS = ["voice"]
-    assert einstellungen.adresse_pruefen("http://voice:8000") == "http://voice:8000"
+    settings.PROTOKOLLDIENST_ERLAUBTE_HOSTS = ["protokolldienst"]
+    assert einstellungen.adresse_pruefen("http://protokolldienst:8000") == "http://protokolldienst:8000"
     with pytest.raises(ValidationError):
         einstellungen.adresse_pruefen("https://protokoll.example.org")
 
