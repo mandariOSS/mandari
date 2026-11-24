@@ -52,6 +52,10 @@ case "$1" in
     fi
     if [ "$2" = pull ] && [ -n "${FAKE_PULL_SCHEITERT:-}" ]; then exit 1; fi
     ;;
+  rm)
+    # FAKE_RM_FEHLT: Den Container gibt es nicht (wie Docker: Fehler)
+    if [ -n "${FAKE_RM_FEHLT:-}" ]; then echo "Error response from daemon: No such container" >&2; exit 1; fi
+    ;;
 esac
 exit 0
 """
@@ -183,6 +187,25 @@ def test_worker_wechselt_auch_ohne_eintrag_in_worker_services(tmp_path: Path) ->
     assert rc == 0, "\n".join(aufrufe)
     assert not any("stop" in z and "worker" in z.split() for z in aufrufe)
     assert _index(aufrufe, "manage.py safemigrate") < _index(aufrufe, "compose up -d --no-deps worker")
+
+
+def test_alter_orchestrator_wird_vor_der_post_deploy_migration_entfernt(tmp_path: Path) -> None:
+    """``common.0016`` löscht die Tabellen der früheren Protokollierung; ihr Orchestrator darf dann nicht mehr laufen."""
+    rc, aufrufe = _lauf(tmp_path)
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert _index(aufrufe, "rm -f mandari-minutes-orchestrator") < _index(
+        aufrufe, "exec mandari python manage.py migrate --noinput"
+    )
+
+
+def test_fehlender_orchestrator_ist_kein_fehler(tmp_path: Path) -> None:
+    rc, aufrufe = _lauf(tmp_path, env_zusatz={"FAKE_RM_FEHLT": "1", "COMPOSE_PROJECT_NAME": "rat"})
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert _index(aufrufe, "rm -f rat-minutes-orchestrator") < _index(
+        aufrufe, "exec rat python manage.py migrate --noinput"
+    )
 
 
 def test_rueckfall_setzt_auch_den_ingestor_zurueck(tmp_path: Path) -> None:

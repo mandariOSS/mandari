@@ -339,13 +339,15 @@ docker compose up -d worker worker-heavy worker-live
 docker compose up -d ingestor
 ```
 
-**Rückbau der Protokollierung (`common.0016`):** Der Dienst `minutes-orchestrator` entfällt. Vor dem Update
-stoppen und entfernen (`docker compose stop minutes-orchestrator`, `docker compose rm -f minutes-orchestrator`;
-ohne den Dienst in der Compose-Datei `docker rm -f mandari-minutes-orchestrator`, Name nach
-`COMPOSE_PROJECT_NAME`) und ihn aus einer eigenen Compose-Datei und aus `WORKER_SERVICES` streichen. Liefe er weiter,
-bräche er nach dem Update ab, weil `common.0016` nach dem Umschalten seine Tabellen löscht (`Safe.after_deploy`).
-`update.sh` spielt sie mit den übrigen Migrationen ein; wer nur `deploy/scripts/deploy.sh` nutzt (es ruft
-`safemigrate`), führt danach einmal `docker exec mandari python manage.py migrate` aus.
+**Rückbau der Protokollierung (`common.0016`):** Der Dienst `minutes-orchestrator` entfällt. `update.sh` entfernt
+den Container vor den Post-Deploy-Migrationen (`docker rm -f <COMPOSE_PROJECT_NAME>-minutes-orchestrator`; fehlt er,
+ist das kein Fehler). Von Hand vor dem Update stoppen und entfernen (`docker compose stop minutes-orchestrator`,
+`docker compose rm -f minutes-orchestrator`; ohne den Dienst in der Compose-Datei `docker rm -f
+mandari-minutes-orchestrator`, Name nach `COMPOSE_PROJECT_NAME`) und ihn aus einer eigenen Compose-Datei und aus
+`WORKER_SERVICES` streichen. Liefe er weiter, bräche er nach dem Update ab, weil `common.0016` nach dem Umschalten
+seine Tabellen löscht (`Safe.after_deploy`). `update.sh` spielt sie mit den übrigen Migrationen ein; wer nur
+`deploy/scripts/deploy.sh` nutzt (es ruft `safemigrate`), führt danach einmal `docker exec mandari python manage.py
+migrate` aus.
 
 ### Sicherung
 

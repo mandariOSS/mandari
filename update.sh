@@ -881,6 +881,10 @@ fi
 echo ""
 log "Phase 4: Post-Deploy Migrationen"
 
+# Protokollierung zurückgebaut (common.0016 löscht ihre Tabellen): Der frühere Orchestrator ist nicht mehr in der
+# Compose-Datei und liefe sonst weiter. Fehlt er, ist nichts zu tun.
+docker rm -f "${COMPOSE_PROJECT_NAME}-minutes-orchestrator" >> "$UPDATE_LOG" 2>&1 || true
+
 run_step "Post-Deploy Migrationen" docker exec "$APP_CONTAINER" python manage.py migrate --noinput || \
     warn "  Post-Deploy Migrationen fehlgeschlagen — prüfe: docker logs $APP_CONTAINER"
 
