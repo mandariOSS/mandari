@@ -402,6 +402,15 @@ def test_verwerfen_aendert_die_niederschrift_nicht(w: Welt) -> None:
         vorschlaege.uebernehmen(w.meeting, vorschlag.pk, permissions=RECHTE, session_user=None)
 
 
+def test_verwerfen_legt_keine_niederschrift_an(w: Welt) -> None:
+    vorschlag = _vorschlag(w, w.top)
+    assert not SessionProtocol.objects.filter(meeting=w.meeting).exists()
+    vorschlaege.verwerfen(w.meeting, vorschlag.pk, permissions=RECHTE, session_user=None)
+    assert not SessionProtocol.objects.filter(meeting=w.meeting).exists()
+    vorschlag.refresh_from_db()
+    assert vorschlag.status == Vorschlag.VERWORFEN
+
+
 def test_nach_der_genehmigung_nicht_mehr(w: Welt) -> None:
     vorschlag = _vorschlag(w, w.top)
     SessionProtocol.objects.create(meeting=w.meeting, status="approved")

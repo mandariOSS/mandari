@@ -253,11 +253,22 @@ def _laden(meeting: SessionMeeting, vorschlag_id: Any, permissions: Collection[s
     return vorschlag
 
 
-def _protokoll_sperren(meeting: SessionMeeting, session_user: SessionUser | None) -> None:
+def _protokoll_sperren(meeting: SessionMeeting, session_user: SessionUser | None, *, anlegen: bool = True) -> None:
+    """Erst die Sitzung, dann die Niederschrift sperren und ihren Status prüfen.
+
+    ``anlegen=False`` (Verwerfen): eine fehlende Niederschrift nicht anlegen; dann entfällt nur die Statusprüfung.
+    """
+    from apps.session.models import SessionProtocol
     from apps.session.services import cockpit_service, protocol_service
 
     cockpit_service.lock_meeting(meeting.pk)
-    protocol, _ = protocol_service.get_or_create_protocol(meeting, created_by=session_user)
+    if anlegen:
+        protocol, _ = protocol_service.get_or_create_protocol(meeting, created_by=session_user)
+    else:
+        vorhanden = SessionProtocol.objects.filter(meeting_id=meeting.pk).first()
+        if vorhanden is None:
+            return
+        protocol = vorhanden
     protocol_service.lock_protocol(protocol)
     protocol.refresh_from_db(fields=["status"])
     if protocol.status not in EDITABLE:
@@ -386,8 +397,9 @@ def verwerfen(
 ) -> None:
     """Vorschlag verwerfen; die Niederschrift bleibt unverändert. Wirft ``VorschlagError``."""
     with transaction.atomic():
-        # Wie beim Übernehmen: nur im Entwurf oder in der Prüfung, unter denselben Sperren
-        _protokoll_sperren(meeting, session_user)
+        # Wie beim Übernehmen: nur im Entwurf oder in der Prüfung, unter denselben Sperren; legt aber keine
+        # Niederschrift an
+        _protokoll_sperren(meeting, session_user, anlegen=False)
         vorschlag = _laden(meeting, vorschlag_id, permissions)
         _entscheiden(vorschlag, Vorschlag.VERWORFEN, session_user)
         audit.log_event(
