@@ -47,7 +47,7 @@ Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in De
 | **Datenbank** | PostgreSQL 16 |
 | **Cache, Sessions, WebSocket** | Redis 7 (Cache, `cached_db`-Sessions, Channel Layer, Drossel je Host) |
 | **Volltextsuche** | Elasticsearch 8 |
-| **Hintergrundarbeit** | `manage.py events_worker` in den Diensten `worker`, `worker-heavy` (Warteschlangen `ocr`, `ai`) und `worker-live` (`live`); `minutes-orchestrator` für die GPU-Rechenknoten der Protokollierung; Ingestor als eigener Dienst |
+| **Hintergrundarbeit** | `manage.py events_worker` in den Diensten `worker`, `worker-heavy` (Warteschlangen `ocr`, `ai`) und `worker-live` (`live`); Ingestor als eigener Dienst |
 | **Admin** | django-unfold |
 | **Static Files** | WhiteNoise |
 | **Verschlüsselung** | AES-256-GCM (tenant-spezifisch) |
@@ -63,7 +63,6 @@ mandari/
 │   │   ├── accounts/           # Benutzer-Authentifizierung
 │   │   ├── common/             # Shared Utilities
 │   │   ├── events/             # Ereignistechnik: Journal, Aufträge, Zeitpläne, Worker (events_worker)
-│   │   ├── minutes/            # Aufzeichnung, Transkription, KI-Protokoll (GPU-Rechenknoten)
 │   │   ├── provisioning/       # Provisioning-API (Work-Organisationen anlegen und abgleichen)
 │   │   ├── session/            # Verwaltungs-RIS
 │   │   ├── tenants/            # Multi-Tenant & RBAC

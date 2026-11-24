@@ -8,7 +8,7 @@
 #   3. Worker für Ereignisse und Aufträge mit neuem Image, dann Container einzeln tauschen
 #      (Reihenfolge Migration → Worker → Web; Caddy puffert Requests)
 #   4. Health-Check + automatisches Rollback bei Fehler
-#   5. Nach den Post-Deploy-Migrationen Worker und Protokoll-Orchestrator mit neuem Image starten
+#   5. Nach den Post-Deploy-Migrationen die übrigen Worker mit neuem Image starten
 #
 # Usage:
 #   ./update.sh                # Update auf latest
@@ -31,17 +31,17 @@ DB_CONTAINER="${COMPOSE_PROJECT_NAME}-postgres"
 WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 
 # Dienste, die während der Migrationen stehen (wie WORKER_SERVICES in deploy/scripts/deploy.sh).
-# Der Ingestor und der Protokoll-Orchestrator – und ein getrennter OCR-Worker, falls in einer
-# eigenen Compose-Datei betrieben – schreiben in Tabellen, die Migrationen ändern; liefen sie
-# weiter, bräche ein Durchlauf ab. Überschreibbar per Umgebung oder .env, z. B.
-# WORKER_SERVICES="ingestor minutes-orchestrator ocr-worker". Dienste, die Compose nicht kennt,
+# Der Ingestor – und ein getrennter OCR-Worker, falls in einer eigenen Compose-Datei betrieben –
+# schreiben in Tabellen, die Migrationen ändern; liefen sie weiter, bräche ein Durchlauf ab.
+# Überschreibbar per Umgebung oder .env, z. B.
+# WORKER_SERVICES="ingestor ocr-worker". Dienste, die Compose nicht kennt,
 # werden übersprungen (bei der Vorgabe ohne Hinweis).
-WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator worker worker-heavy worker-live"
+WORKER_SERVICES_DEFAULT="ingestor worker worker-heavy worker-live"
 
 # Dienste mit dem Anwendungs-Image, die nach den Migrationen immer auf das neue Image wechseln
 # (Issue #479) – auch wenn ein eigenes WORKER_SERVICES sie nicht nennt; dann laufen sie während
 # der Migrationen weiter. Nicht definierte Dienste werden übersprungen.
-APP_IMAGE_SERVICES="minutes-orchestrator worker worker-heavy worker-live"
+APP_IMAGE_SERVICES="worker worker-heavy worker-live"
 
 # Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker, Issue #509): stehen wie
 # die übrigen Worker während der Migrationen, starten aber VOR dem Umschalten der Anwendung
@@ -453,10 +453,9 @@ verify_installation() {
     local all_ok=true
 
     local containers="mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor"
-    # Worker und Protokoll-Orchestrator nur prüfen, wenn die Installation sie definiert (ältere Compose-Dateien
-    # ohne sie)
+    # Worker nur prüfen, wenn die Installation sie definiert (ältere Compose-Dateien ohne sie)
     local svc
-    for svc in $(defined_services "worker worker-heavy worker-live minutes-orchestrator"); do
+    for svc in $(defined_services "worker worker-heavy worker-live"); do
         containers="$containers mandari-$svc"
     done
 
@@ -478,7 +477,6 @@ verify_installation() {
             mandari-worker)      label="Worker" ;;
             mandari-worker-heavy) label="Worker OCR/KI" ;;
             mandari-worker-live) label="Worker Live" ;;
-            mandari-minutes-orchestrator) label="Orchestrator" ;;
         esac
 
         printf "  %-14s " "$label"

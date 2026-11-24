@@ -538,7 +538,7 @@ Hand. Die Ziele stammen aus den genannten Entscheidungen; „–“ heißt, dass
 Datenbestand hat genau einen Eigentümer, nur er schreibt.
 
 - Eigentümer sind die Einheiten der import-linter-Verträge in `mandari/pyproject.toml`: jedes Fachmodul
-  des Vertrags `module-unabhaengig` für sich (`apps.session`, `apps.work`, `apps.minutes`), die Drehscheibe
+  des Vertrags `module-unabhaengig` für sich (`apps.session`, `apps.work`), die Drehscheibe
   als eine Einheit (`hub`, `insight_*`) und die Plattform als eine Einheit (`apps.events`, `apps.common`,
   `apps.accounts`, `apps.tenants`, `apps.provisioning`). Ein Modell gehört der Einheit, aus deren
   `models`-Modul es importiert wird.

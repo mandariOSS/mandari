@@ -41,7 +41,6 @@ def test_basisdatei_bleibt_profilfrei() -> None:
         "caddy",
         "website",
         "ingestor",
-        "minutes-orchestrator",
     } <= set(basis)
 
 
@@ -482,7 +481,7 @@ def test_rollen_mit_pgbouncer_nur_die_anwendung() -> None:
     assert _direkt(web["mandari"]["environment"]["DB_DIRECT_URL"])
     assert _direkt(web["website"]["environment"]["WEBSITE_DATABASE_URL"])
     worker = modul._lade(modul.ROLLEN["worker"])["services"]
-    for name in ("worker", "worker-heavy", "worker-live", "ingestor", "minutes-orchestrator"):
+    for name in ("worker", "worker-heavy", "worker-live", "ingestor"):
         assert _direkt(worker[name]["environment"]["DATABASE_URL"]), name
     assert "DATA_PG_PORT" not in modul.ROLLEN["worker"].read_text(encoding="utf-8").split("services:", 1)[1]
     for rolle in ("web", "worker"):

@@ -138,8 +138,6 @@ INSTALLED_APPS = [
     "apps.work",
     # Mandari Session RIS (OSS - AGPL-3.0-or-later)
     "apps.session",
-    # Protokollierung (Aufzeichnung, Transkription, KI-Entwurf) — Session + Work
-    "apps.minutes",
 ]
 
 # Custom User Model
@@ -274,7 +272,6 @@ SERVICE_LEVEL_DISK_MIN_FREE_GB = float(os.environ.get("SERVICE_LEVEL_DISK_MIN_FR
 SERVICE_LEVEL_TLS_MIN_DAYS = int(os.environ.get("SERVICE_LEVEL_TLS_MIN_DAYS", "14"))
 SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT = float(os.environ.get("SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT", "1"))
 SERVICE_LEVEL_ERROR_RATE_MIN_REQUESTS = int(os.environ.get("SERVICE_LEVEL_ERROR_RATE_MIN_REQUESTS", "100"))
-SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES = int(os.environ.get("SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES", "120"))
 # Zusätzliche Hosts, deren TLS-Zertifikat geprüft wird (kommagetrennt); SITE_URL wird immer geprüft
 MONITOR_TLS_HOSTS = [h.strip() for h in os.environ.get("MONITOR_TLS_HOSTS", "").split(",") if h.strip()]
 # Statusseite (Gatus) für den Verfügbarkeitsbericht (availability_report)
@@ -1751,16 +1748,6 @@ UNFOLD = {
                         "title": _("Einstellungen"),
                         "icon": "settings",
                         "link": reverse_lazy("admin:common_sitesettings_changelist"),
-                    },
-                    {
-                        "title": _("GPU-Rechenknoten"),
-                        "icon": "memory",
-                        "link": reverse_lazy("admin:minutes_computesettings_changelist"),
-                    },
-                    {
-                        "title": _("GPU-Knoten (Übersicht)"),
-                        "icon": "dns",
-                        "link": reverse_lazy("admin:minutes_gpunode_changelist"),
                     },
                 ],
             },

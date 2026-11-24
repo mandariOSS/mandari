@@ -46,7 +46,7 @@ x-logging: &default-logging
 # DATABASE_URL hier bleibt die Direktverbindung für Worker, worker-heavy und worker-live.
 #
 # Alle übrigen Variablen der .env (EMAIL_*, PORTAL_HOSTS, TWO_FACTOR_* usw.) lesen Anwendung und Worker über
-# env_file (Issue #962); Ingestor und Orchestrator bewusst nicht. Ein Wert hier unter environment hat
+# env_file (Issue #962); der Ingestor bewusst nicht. Ein Wert hier unter environment hat
 # Vorrang vor env_file:
 # Was die .env einstellen soll, wird hier nur über dieselbe Variable eingesetzt (${…:-Vorgabe}), nie fest
 # überschrieben (apps/common/tests/test_umgebung_compose.py).
@@ -325,7 +325,7 @@ services:
   # ===========================================================================
   # PgBouncer (optional, Profil pgbouncer; DEPLOYMENT.md, „PgBouncer für die Webanwendung“)
   # Verbindungs-Pooler im Transaktionsmodus, nur für die Webanwendung (mandari). Worker,
-  # Ingestor, Orchestrator, Website und Migrationen verbinden sich weiter direkt mit postgres.
+  # Ingestor, Website und Migrationen verbinden sich weiter direkt mit postgres.
   # Nur im internen Netz, kein Port nach außen. Einschalten in der .env (alle drei Zeilen):
   #   COMPOSE_PROFILES=pgbouncer
   #   MANDARI_DB_HOST=pgbouncer
@@ -437,8 +437,8 @@ services:
     env_file: .env
     environment:
       <<: *app-environment
-      # Nur die Webanwendung geht über PgBouncer (Profil pgbouncer, Issue #1060); Worker, Ingestor und
-      # Orchestrator haben eigene Verbindungsdaten direkt zu postgres. Ohne die Variablen wie bisher.
+      # Nur die Webanwendung geht über PgBouncer (Profil pgbouncer, Issue #1060); Worker und Ingestor haben
+      # eigene Verbindungsdaten direkt zu postgres. Ohne die Variablen wie bisher.
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MANDARI_DB_HOST:-postgres}:5432/${POSTGRES_DB:-mandari}
       DB_PGBOUNCER: ${MANDARI_DB_PGBOUNCER:-false}
       DB_POOL_MAX: ${MANDARI_DB_POOL_MAX:-10}
@@ -603,46 +603,6 @@ services:
     # Der Runner startet oberhalb von 400 MB neu; Tesseract-Unterprozesse (je höchstens LIVE_OCR_MEMORY_LIMIT_MB)
     # brauchen den Rest
     mem_limit: 512m
-
-  # ===========================================================================
-  # Protokollierung: Orchestrator der GPU-Rechenknoten (centron)
-  # Erstellt und löscht GPU-vServer nach Bedarf. Tut nichts, solange im Admin
-  # unter System → GPU-Rechenknoten „Rechenknoten aktiv" ausgeschaltet ist.
-  # ===========================================================================
-  minutes-orchestrator:
-    image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
-    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-minutes-orchestrator
-    restart: unless-stopped
-    command: ["python", "manage.py", "minutes_orchestrator"]
-    # Bewusst ohne env_file: nur was der Orchestrator braucht. Den Hauptschlüssel braucht er für die
-    # verschlüsselten Zugangsdaten der Rechenknoten (apps/minutes/models_compute.py), Mail- und
-    # Objektspeicher-Zugänge nicht (Issue #962)
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      SECRET_KEY: ${SECRET_KEY:?Django secret key required}
-      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
-      ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
-      DEBUG: "false"
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-${DOMAIN:-localhost}}
-      SITE_URL: https://${DOMAIN:-localhost}
-      TZ: ${TZ:-Europe/Berlin}
-      # Ohne Wert: aus der .env, wenn dort gesetzt, sonst gar nicht (Vorgabe der Anwendung)
-      LOG_FORMAT:
-      LOG_LEVEL:
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      mandari:
-        condition: service_healthy
-    networks:
-      - mandari
-    mem_limit: 256m
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
 
   # ===========================================================================
   # Marketing Website (Wagtail CMS)

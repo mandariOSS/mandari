@@ -356,13 +356,13 @@ Verbindungsbudget je Klasse (Rechnung wie in `DEPLOYMENT.md`, „Datenbankverbin
 | Dienst | klein | mittel | groß |
 |---|---:|---:|---:|
 | Anwendung (Prozesse × `DB_POOL_MAX`; mit PgBouncer `DEFAULT_POOL_SIZE`) | 10 | 20 | 80 |
-| übrige Dienste der mitgelieferten `docker-compose.yml` (Ingestor 30, `worker` 22, `worker-heavy` 7, `worker-live` 7, Protokoll-Orchestrator 2, Verwaltungsbefehle der Zeitpläne 8, Website 10, Sicherung 2, Reserve Superuser 3) | 91 | 91 | 91 |
-| **Summe** | **101** | **111** | **171** |
+| übrige Dienste der mitgelieferten `docker-compose.yml` (Ingestor 30, `worker` 22, `worker-heavy` 7, `worker-live` 7, Verwaltungsbefehle der Zeitpläne 8, Website 10, Sicherung 2, Reserve Superuser 3) | 89 | 89 | 89 |
+| **Summe** | **99** | **109** | **169** |
 | `max_connections` | 150 | 200 | 300 |
 
 Ein eigener OCR-Worker aus dem Ingestor-Image kommt mit 30 Verbindungen hinzu. Die Vorgabe
-`POSTGRES_MAX_CONNECTIONS=100` der Compose-Datei reicht für „klein“ nur ohne die Plätze der
-Texterkennung in `text` (98 statt 101). Wer einen Dienst hinzufügt, trägt ihn ein und prüft die
+`POSTGRES_MAX_CONNECTIONS=100` der Compose-Datei reicht für „klein“ nur knapp (99 mit den Plätzen der
+Texterkennung in `text`). Wer einen Dienst hinzufügt, trägt ihn ein und prüft die
 Summe; dieselbe Regel wie in `DEPLOYMENT.md`.
 
 Offen: ein Lauf „Großstadt“ auf Hardware nach dieser

@@ -132,7 +132,6 @@ HASHED_TOKEN_FIELDS: frozenset[str] = frozenset(
         "tenants.UserInvitation.token",
         "work.CalendarFeedToken.token",
         "work.AdministrationConnection.token_hash",
-        "minutes.GpuNode.token_hash",
         # OpenID-Connect-Anbieter (Issue #1206): SHA-256-Prüfsumme der Bibliothek, gesucht wird nur über sie
         "accounts.OAuthAccessToken.token_checksum",
         "accounts.OAuthRefreshToken.token_checksum",

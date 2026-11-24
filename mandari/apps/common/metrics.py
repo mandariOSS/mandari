@@ -9,16 +9,15 @@ Anwendungsmetriken im Prometheus-Textformat (Issue #231, Teil 2).
 - ``metrics_view`` liefert ``/metrics/``. Erreichbar nur aus ``METRICS_ALLOWED_NETWORKS``
   oder mit ``Authorization: Bearer <METRICS_TOKEN>``; sonst 404, damit der Endpunkt von
   außen nicht einmal bestätigt wird.
-- Sammler für Datenbankverbindungen (psycopg-Pool bzw. ``pg_stat_activity``), die
-  Cache-Trefferquote (Redis ``INFO stats``) und die Warteschlange der Transkription werden
-  beim Abruf ausgewertet, nicht laufend.
+- Sammler für Datenbankverbindungen (psycopg-Pool bzw. ``pg_stat_activity``) und die
+  Cache-Trefferquote (Redis ``INFO stats``) werden beim Abruf ausgewertet, nicht laufend.
 - Zähler für Mailversand (``apps.common.email``) und PDF-Erzeugung (``apps.common.pdf``).
 
 Alle Werte beginnen beim Start bei null. Mit mehreren Anwendungsprozessen (``APP_PROCESSES``, Issue #718)
 schreibt jeder Prozess seine Zähler und Histogramme in ``PROMETHEUS_MULTIPROC_DIR``; ``/metrics/`` liefert
 dann die Summe über alle Prozesse, gleich welcher Prozess den Abruf beantwortet. Die Sammler, die erst beim
 Abruf messen, bleiben Werte dieses einen Prozesses: der Pool (``mandari_db_pool_*``) ist der Pool des
-antwortenden Prozesses, Cache und Warteschlange gelten ohnehin für die ganze Installation. Die
+antwortenden Prozesses, der Cache gilt ohnehin für die ganze Installation. Die
 Prozesskennzahlen von prometheus_client (``process_*``, ``python_*``) entfallen dann.
 """
 
@@ -150,8 +149,8 @@ class MisstErstBeimAbruf(Collector):
 
     Ohne ``describe()`` ruft prometheus_client beim Registrieren einmal ``collect()`` auf,
     um die Metriknamen zu erfahren (``auto_describe``). Das geschah beim Import dieses
-    Moduls, also beim Start von Daphne im Hauptthread — und der QueueCollector holte sich
-    dafür eine Datenbankverbindung, die nie zurückkam: ein dauerhaft belegter Platz im Pool
+    Moduls, also beim Start von Daphne im Hauptthread — und ein Sammler mit Datenbankabfrage holte
+    sich dafür eine Verbindung, die nie zurückkam: ein dauerhaft belegter Platz im Pool
     (Issue #344). Die leere Beschreibung verzichtet nur auf die Prüfung auf doppelte
     Metriknamen für diese Sammler.
     """
@@ -233,30 +232,6 @@ class CacheCollector(MisstErstBeimAbruf):
         )
 
 
-def transcription_queue() -> dict[str, int]:
-    from apps.minutes.models import JobStatus, TranscriptionJob
-
-    return {
-        status: TranscriptionJob.objects.filter(status=status).count()
-        for status in (JobStatus.QUEUED, JobStatus.RUNNING)
-    }
-
-
-class QueueCollector(MisstErstBeimAbruf):
-    def collect(self) -> Iterator[Metric]:
-        try:
-            zaehler = transcription_queue()
-        except Exception:  # noqa: BLE001 – z. B. Tabelle fehlt noch (Migration ausstehend)
-            logger.debug("Warteschlange nicht abfragbar", exc_info=True)
-            return
-        familie = GaugeMetricFamily(
-            "mandari_transcription_jobs", "Verarbeitungsaufträge der Transkription je Status", labels=["status"]
-        )
-        for status, anzahl in zaehler.items():
-            familie.add_metric([status], anzahl)
-        yield familie
-
-
 def _register(collector: Collector) -> None:
     # ValueError: bereits registriert (Modul erneut importiert, z. B. in Tests)
     with contextlib.suppress(ValueError):
@@ -265,7 +240,6 @@ def _register(collector: Collector) -> None:
 
 _register(DatabaseCollector())
 _register(CacheCollector())
-_register(QueueCollector())
 
 
 # ---------------------------------------------------------------------------

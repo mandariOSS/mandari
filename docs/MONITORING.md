@@ -323,7 +323,6 @@ Die Prozesskennzahlen von prometheus_client (`process_*`, `python_*`) entfallen 
 | `mandari_emails_total` | `result` (`sent`, `failed`) | Versandversuche über den Mail-Dienst (`apps.common.mail`) |
 | `mandari_mail_total` | `kind`, `route`, `result` | Mails des Mail-Dienstes je Mailart (z. B. `work.fraktion.einladung`) und Weg (`plattform`, `organisation`, `ersatzweg` = eigenes SMTP gescheitert, Versand über die Plattform; `postausgang` beim Einreihen). `result`: `sent`, `failed` (je Versuch), `queued` (als Auftrag eingereiht), `expired` (Inhalt im Postausgang nicht lesbar). Den Rückstand des Postausgangs zeigen `mandari_tasks_queued{queue="mail"}` und `mandari_tasks_oldest_queued_seconds{queue="mail"}`, endgültig gescheiterte Mails `mandari_tasks_dead{queue="mail"}` |
 | `mandari_pdf_documents_total`, `mandari_pdf_generation_seconds` | `result` | PDF-Erzeugung an der zentralen Stelle `apps.common.pdf.html_to_pdf` |
-| `mandari_transcription_jobs` | `status` | wartende und laufende Transkriptionsaufträge |
 | `mandari_events_sequencer_blocked_seconds` | – | Ereignistechnik: wie lange eine offene Transaktion den Sequenzierer schon aufhält, auch aus einer anderen Datenbank desselben PostgreSQL-Clusters; 0 = nichts aufgehalten. Alarm ab 300 s (`apps/events/metrics.py`, beim Abruf aus der Datenbank gemessen) |
 | `mandari_events_sequencer_lag_seconds` | – | Rückstand des Sequenzierers: Alter (ab Erfassung) des ältesten Ereignisses, das eine Folgenummer bekommen könnte, aber noch keine hat; 0 = kein Rückstand. Wächst, wenn kein Sequenzierer läuft oder er hängt – das zeigt `…_blocked_seconds` nicht. Direkt nach dem Commit einer langen Transaktion kurz hoch, Alarme deshalb mit Mindestdauer. Läuft kein Worker mit der Rolle `sequencer` (`manage.py events_worker`), wächst der Wert, sobald Ereignisse geschrieben werden |
 | `mandari_events_oldest_transaction_seconds` | – | Alter der ältesten offenen Transaktion mit Transaktionskennung im Cluster, soweit die Datenbankrolle sie sehen darf |
@@ -688,7 +687,6 @@ Metriken der Anwendung über `METRICS_URL` (Compose: `http://mandari:8000/metric
 | Speicherplatz Medienverzeichnis und Wurzeldateisystem | frei ≥ 10 % **und** ≥ 2 GB (`SERVICE_LEVEL_DISK_MIN_FREE_PERCENT`, `…_GB`) | `shutil.disk_usage` |
 | TLS-Zertifikate der eigenen Domains | Restlaufzeit ≥ 14 Tage (`SERVICE_LEVEL_TLS_MIN_DAYS`); auch „nicht prüfbar“ ist ein Alarm | TLS-Handschlag mit dem Host aus `SITE_URL` und `MONITOR_TLS_HOSTS` |
 | Fehlerquote 5xx | ≤ 1 % bei mindestens 100 Anfragen (`SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT`, `…_MIN_REQUESTS`) | `/metrics/` der laufenden Instanz (`METRICS_URL`, Vorgabe `http://127.0.0.1:8000/metrics/`) |
-| Warteschlange Transkription | ältester wartender Auftrag ≤ 120 min (`SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES`) | `minutes.TranscriptionJob` |
 | Tote Ereignisse | keine; ein Alarm je Abonnement mit Fehlerklassen. Die Zustellung löst dieselbe Prüfung sofort aus, wenn ein Ereignis tot wird (gemeinsame 24-h-Sperre) | `events_parked` (`manage.py events_dispatch --list`, danach `--retry-parked` bzw. `--discard-parked`) |
 
 Zur Fehlerquote ehrlich: Die Zähler leben im Web-Prozess und beginnen bei jedem Neustart bei
@@ -698,9 +696,8 @@ gemerkten Stand (Neustart), gilt der Stand seit dem Start. Der Abruf versucht es
 Zeitlimit, 5 s Pause), damit eine kurze Lastspitze im Web-Prozess keinen Fehlalarm auslöst. Scheitern
 alle Versuche, ist das selbst ein Alarm.
 
-Geprüft wird hier nur die Warteschlange der Transkription. Den Rückstand der Aufträge und
-Zeitpläne im Journal (`mandari_tasks_*`) meldet `/health/worker/` (Prüfung `rueckstau`), tote
-Ereignisse stehen in der Tabelle oben.
+Den Rückstand der Aufträge und Zeitpläne im Journal (`mandari_tasks_*`) prüft diese Liste nicht; ihn meldet
+`/health/worker/` (Prüfung `rueckstau`). Tote Ereignisse stehen in der Tabelle oben.
 
 Jeder Alarm geht **höchstens einmal je 24 h** hinaus (Sperre im Cache je Prüfobjekt);
 alle fälligen Alarme eines Laufs stehen in einer Sammelmail. Entwarnungen werden nicht

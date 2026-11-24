@@ -338,10 +338,10 @@ def test_unbeaufsichtigte_installation_bis_zum_ende(tmp_path: Path) -> None:
     assert ADMIN["ADMIN_PASSWORD"] not in protokoll
     assert protokoll.count("passwort-in-umgebung=ja") == 2, protokoll
 
-    # Die Prüfung am Ende nennt jeden Dienst außer dem optionalen PgBouncer, auch den Orchestrator
+    # Die Prüfung am Ende nennt jeden Dienst außer dem optionalen PgBouncer, auch die Worker
     geprueft = {z.split()[-1] for z in lauf.aufrufe if z.startswith("inspect --format={{.State.Status}}")}
     assert geprueft == _compose_container() - {"mandari-pgbouncer"}, geprueft
-    assert "Orchestrator" in lauf.ausgabe
+    assert "Worker Live" in lauf.ausgabe
     # Hinweise für den ersten Login
     assert "Zwei-Faktor" in lauf.ausgabe and "Mailversand" in lauf.ausgabe
 

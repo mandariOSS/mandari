@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-``update.sh``: Der Ingestor steht während aller Migrationen (wie ``deploy/scripts/deploy.sh``), der
-Protokoll-Orchestrator wechselt danach auf das neue Image (Issue #479).
+``update.sh``: Der Ingestor steht während aller Migrationen (wie ``deploy/scripts/deploy.sh``), die Worker
+wechseln danach auf das neue Image (Issue #479).
 
 Das Skript läuft gegen ein nachgebautes ``docker`` (protokolliert nur die Aufrufe), damit die CI
 die Reihenfolge ohne Docker prüft: erst Worker anhalten, dann migrieren, Worker erst nach den
@@ -41,11 +41,11 @@ case "$1" in
     ;;
   compose)
     if [ "$2" = config ] && [ "$3" = --services ]; then
-      printf '%s\\n' ${FAKE_SERVICES:-postgres redis elasticsearch mandari minutes-orchestrator website ingestor caddy}
+      printf '%s\\n' ${FAKE_SERVICES:-postgres redis elasticsearch mandari website ingestor caddy}
       if [ -n "${FAKE_WEITERE_DIENSTE:-}" ]; then seq -f 'dienst-%g' 1 "$FAKE_WEITERE_DIENSTE"; fi
     fi
     if [ "$2" = config ] && [ "$3" = --images ]; then
-      # Wie Compose: Infrastruktur-Images, Anwendungs-Images mit IMAGE_TAG (mandari zweimal: Orchestrator)
+      # Wie Compose: Infrastruktur-Images, Anwendungs-Images mit IMAGE_TAG (mandari zweimal: Worker)
       printf '%s\\n' postgres:16-alpine "ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}" \\
         "ghcr.io/mandarioss/website:${IMAGE_TAG:-latest}" "ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}" \\
         "ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}"
@@ -140,14 +140,14 @@ def test_ingestor_steht_waehrend_aller_migrationen(tmp_path: Path) -> None:
 
 
 def test_worker_aus_env_nur_wenn_definiert(tmp_path: Path) -> None:
-    rc, aufrufe = _lauf(tmp_path, env_zusatz={"WORKER_SERVICES": "ingestor ocr-worker minutes-orchestrator"})
+    rc, aufrufe = _lauf(tmp_path, env_zusatz={"WORKER_SERVICES": "ingestor ocr-worker"})
 
     assert rc == 0, "\n".join(aufrufe)
     # ocr-worker ist in dieser Installation nicht definiert und wird übersprungen
-    assert _index(aufrufe, "compose stop ingestor minutes-orchestrator") < _index(aufrufe, "manage.py safemigrate")
+    assert _index(aufrufe, "compose stop ingestor") < _index(aufrufe, "manage.py safemigrate")
     assert not any("ocr-worker" in z for z in aufrufe)
     assert _index(aufrufe, "exec mandari python manage.py migrate --noinput") < _index(
-        aufrufe, "compose up -d --no-deps ingestor minutes-orchestrator"
+        aufrufe, "compose up -d --no-deps ingestor"
     )
 
 
@@ -160,17 +160,6 @@ def test_abbruch_startet_worker_wieder(tmp_path: Path) -> None:
     assert not any("exec mandari python manage.py migrate --noinput" in z for z in aufrufe)
 
 
-def test_orchestrator_steht_waehrend_der_migrationen_und_wechselt_danach(tmp_path: Path) -> None:
-    rc, aufrufe = _lauf(tmp_path)
-
-    assert rc == 0, "\n".join(aufrufe)
-    assert _index(aufrufe, "compose stop ingestor minutes-orchestrator") < _index(aufrufe, "manage.py safemigrate")
-    assert _index(aufrufe, "exec mandari python manage.py migrate --noinput") < _index(
-        aufrufe, "compose up -d --no-deps ingestor minutes-orchestrator"
-    )
-    assert sum("minutes-orchestrator" in z and "compose up" in z for z in aufrufe) == 1, "genau ein Start"
-
-
 def test_worker_werden_auch_bei_langer_dienstliste_erkannt(tmp_path: Path) -> None:
     """
     Die Dienstliste ist größer als der Pipe-Puffer, die Worker stehen vorn: Endete die Suche beim ersten
@@ -181,38 +170,26 @@ def test_worker_werden_auch_bei_langer_dienstliste_erkannt(tmp_path: Path) -> No
     rc, aufrufe = _lauf(tmp_path, env_zusatz={"FAKE_WEITERE_DIENSTE": "20000"})
 
     assert rc == 0, "\n".join(aufrufe[:40])
-    assert _index(aufrufe, "compose stop ingestor minutes-orchestrator") < _index(aufrufe, "manage.py safemigrate")
-    assert _index(aufrufe, "exec mandari python manage.py migrate --noinput") < _index(
-        aufrufe, "compose up -d --no-deps ingestor minutes-orchestrator"
-    )
-
-
-def test_orchestrator_wechselt_auch_ohne_eintrag_in_worker_services(tmp_path: Path) -> None:
-    """Eigenes WORKER_SERVICES ohne Orchestrator: Er läuft weiter und wechselt nach den Migrationen."""
-    rc, aufrufe = _lauf(tmp_path, env_zusatz={"WORKER_SERVICES": "ingestor"})
-
-    assert rc == 0, "\n".join(aufrufe)
-    assert not any("stop" in z and "minutes-orchestrator" in z for z in aufrufe)
-    assert _index(aufrufe, "exec mandari python manage.py migrate --noinput") < _index(
-        aufrufe, "compose up -d --no-deps minutes-orchestrator"
-    )
-
-
-def test_ohne_orchestrator_dienst_kein_aufruf(tmp_path: Path) -> None:
-    rc, aufrufe = _lauf(
-        tmp_path, env_zusatz={"FAKE_SERVICES": "postgres redis elasticsearch mandari website ingestor caddy"}
-    )
-
-    assert rc == 0, "\n".join(aufrufe)
-    assert not any("minutes-orchestrator" in z for z in aufrufe)
     assert _index(aufrufe, "compose stop ingestor") < _index(aufrufe, "manage.py safemigrate")
+    assert _index(aufrufe, "exec mandari python manage.py migrate --noinput") < _index(
+        aufrufe, "compose up -d --no-deps ingestor"
+    )
 
 
-def test_rueckfall_setzt_auch_den_orchestrator_zurueck(tmp_path: Path) -> None:
+def test_worker_wechselt_auch_ohne_eintrag_in_worker_services(tmp_path: Path) -> None:
+    """Eigenes WORKER_SERVICES ohne Worker: Er läuft weiter und wechselt nach den Migrationen."""
+    rc, aufrufe = _lauf(tmp_path, env_zusatz={"WORKER_SERVICES": "ingestor", "FAKE_SERVICES": MIT_WORKER})
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert not any("stop" in z and "worker" in z.split() for z in aufrufe)
+    assert _index(aufrufe, "manage.py safemigrate") < _index(aufrufe, "compose up -d --no-deps worker")
+
+
+def test_rueckfall_setzt_auch_den_ingestor_zurueck(tmp_path: Path) -> None:
     rc, aufrufe = _lauf(tmp_path, args=("--rollback",))
 
     assert rc == 0, "\n".join(aufrufe)
-    assert any("compose up -d --no-deps ingestor minutes-orchestrator" in z for z in aufrufe), "\n".join(aufrufe)
+    assert any("compose up -d --no-deps ingestor" in z for z in aufrufe), "\n".join(aufrufe)
 
 
 def test_images_der_zielversion_werden_vor_dem_herunterladen_geprueft(tmp_path: Path) -> None:
@@ -255,7 +232,7 @@ def test_scheitert_das_herunterladen_kommt_die_alte_env_zurueck(tmp_path: Path) 
     assert not any(teil in z for z in lauf.aufrufe for teil in ("compose stop", "safemigrate"))
 
 
-MIT_WORKER = "postgres redis elasticsearch mandari minutes-orchestrator website ingestor caddy worker"
+MIT_WORKER = "postgres redis elasticsearch mandari website ingestor caddy worker"
 
 
 def test_worker_steht_waehrend_der_migrationen_und_startet_vor_der_anwendung(tmp_path: Path) -> None:
@@ -263,7 +240,7 @@ def test_worker_steht_waehrend_der_migrationen_und_startet_vor_der_anwendung(tmp
     rc, aufrufe = _lauf(tmp_path, env_zusatz={"FAKE_SERVICES": MIT_WORKER})
 
     assert rc == 0, "\n".join(aufrufe)
-    angehalten = _index(aufrufe, "compose stop ingestor minutes-orchestrator worker")
+    angehalten = _index(aufrufe, "compose stop ingestor worker")
     migration = _index(aufrufe, "manage.py safemigrate")
     worker = _index(aufrufe, "compose up -d --no-deps worker")
     anwendung = _index(aufrufe, "compose up -d --no-deps mandari")
@@ -279,7 +256,7 @@ def test_worker_fuer_texterkennung_wie_der_worker(tmp_path: Path) -> None:
     rc, aufrufe = _lauf(tmp_path, env_zusatz={"FAKE_SERVICES": MIT_HEAVY})
 
     assert rc == 0, "\n".join(aufrufe)
-    angehalten = _index(aufrufe, "compose stop ingestor minutes-orchestrator worker worker-heavy")
+    angehalten = _index(aufrufe, "compose stop ingestor worker worker-heavy")
     migration = _index(aufrufe, "manage.py safemigrate")
     ocr = _index(aufrufe, "compose up -d --no-deps worker-heavy")
     anwendung = _index(aufrufe, "compose up -d --no-deps mandari")
@@ -303,14 +280,14 @@ def test_abbruch_setzt_den_vorgestarteten_worker_mit_zurueck(tmp_path: Path) -> 
     vorstart = _index(aufrufe, "compose up -d --no-deps worker")
     neustarts = [i for i, z in enumerate(aufrufe) if "compose up -d --no-deps" in z and z.endswith(" worker")]
     assert neustarts[-1] > vorstart, "\n".join(aufrufe)
-    assert "ingestor minutes-orchestrator worker" in aufrufe[neustarts[-1]]
+    assert "ingestor worker" in aufrufe[neustarts[-1]]
 
 
 def test_rueckfall_setzt_auch_den_worker_zurueck(tmp_path: Path) -> None:
     rc, aufrufe = _lauf(tmp_path, args=("--rollback",), env_zusatz={"FAKE_SERVICES": MIT_WORKER})
 
     assert rc == 0, "\n".join(aufrufe)
-    assert any("compose up -d --no-deps ingestor minutes-orchestrator worker" in z for z in aufrufe)
+    assert any("compose up -d --no-deps ingestor worker" in z for z in aufrufe)
 
 
 # --- Hinweis auf Zeilen der .env, die nach dem Update gelten (Issue #962) -----------------------------------------

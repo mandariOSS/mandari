@@ -1,5 +1,5 @@
-# Rolle „worker“: Ingestor (Quellen-Synchronisation), Protokoll-Orchestrator (Issue #55) und
-# Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker, Issue #509).
+# Rolle „worker“: Ingestor (Quellen-Synchronisation, Issue #55) und Worker für Ereignisse,
+# Aufträge und Zeitpläne (manage.py events_worker, Issue #509).
 #
 # In der .env:
 #   COMPOSE_FILE=docker-compose.yml:deploy/roles/worker.yml
@@ -13,7 +13,7 @@
 #
 # Läuft diese Rolle versehentlich auf zwei Servern, verhindert der Ingestor doppelte
 # Sync-Läufe über eine PostgreSQL-Advisory-Sperre (nur eine Instanz synchronisiert, die
-# andere wartet); der Orchestrator hält eine Redis-Sperre je Durchlauf. Der Worker darf auf
+# andere wartet). Der Worker darf auf
 # mehreren Servern laufen: Leader-Rollen halten eine Lease in events_lease, Aufträge holt
 # jeder nur einmal. Aufträge, die Medien schreiben, brauchen dieselben gemeinsamen Ablagen
 # wie mehrere web-Server (mandari_media, mandari_files, siehe DEPLOYMENT.md#-mehrere-server-rollen-data--web--worker).
@@ -34,12 +34,6 @@ services:
   # PgBouncer läuft auf dem Datenserver
   pgbouncer:
     profiles: !override ["aus"]
-
-  minutes-orchestrator:
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
-    depends_on: !reset []
 
   ingestor:
     environment:

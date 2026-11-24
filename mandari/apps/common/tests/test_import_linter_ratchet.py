@@ -79,7 +79,7 @@ def test_alle_vorhandenen_fachmodule_sind_voneinander_unabhaengig(ratchet: Modul
     vertraege = {v["id"]: v for v in linter["contracts"]}
     _, oberste = ratchet._parse_layers(vertraege["schichten"]["layers"])[0]
     vorhanden = {modul for modul, optional in oberste.items() if not optional}
-    assert "apps.minutes" in vorhanden
+    assert {"apps.session", "apps.work"} <= vorhanden
     assert vorhanden <= set(vertraege["module-unabhaengig"]["modules"])
 
 
@@ -220,7 +220,7 @@ def test_gelockerter_oder_umgebauter_vertrag_wird_erkannt(ratchet: ModuleType, a
 @pytest.mark.parametrize(
     ("anpassen", "erwartet"),
     [
-        (lambda k, v: v["module-unabhaengig"]["modules"].append("apps.minutes"), "modules: „apps.minutes“ ergänzt"),
+        (lambda k, v: v["module-unabhaengig"]["modules"].append("apps.beispiel"), "modules: „apps.beispiel“ ergänzt"),
         (lambda k, v: v["plattform-fachfrei"]["forbidden_modules"].append("insight_ai"), "„insight_ai“ ergänzt"),
         (lambda k, v: k["root_packages"].append("insight_ai"), "root_packages: „insight_ai“ ergänzt"),
         (lambda k, v: v["plattform-fachfrei"].update(allow_indirect_imports=False), None),
@@ -229,11 +229,11 @@ def test_gelockerter_oder_umgebauter_vertrag_wird_erkannt(ratchet: ModuleType, a
         (lambda k, v: v["module-unabhaengig"]["modules"].reverse(), None),
         (
             _schichten(
-                "apps.session : apps.work : (apps.portal) : apps.minutes",
+                "apps.session : apps.work : (apps.portal) : apps.beispiel",
                 "hub : insight_core",
                 "apps.common : apps.tenants",
             ),
-            "layers: „apps.minutes“ neu zugeordnet",
+            "layers: „apps.beispiel“ neu zugeordnet",
         ),
         (
             _schichten(

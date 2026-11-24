@@ -657,12 +657,12 @@ setup_cron_backup() {
 # Start Services (correct order to avoid race conditions)
 # =============================================================================
 #
-# Die Anwendung migriert beim Start nicht (docker-entrypoint.sh); Worker, Ingestor und
-# Protokoll-Orchestrator brauchen aber das migrierte Schema. Deshalb:
+# Die Anwendung migriert beim Start nicht (docker-entrypoint.sh); Worker und Ingestor
+# brauchen aber das migrierte Schema. Deshalb:
 #   1. Start infrastructure (postgres, redis, elasticsearch)
 #   2. Start mandari (Django) and run migrations
 #   3. Start the worker (events, tasks, schedules) – it needs the migrated schema
-#   4. THEN start ingestor, minutes-orchestrator and caddy
+#   4. THEN start ingestor and caddy
 # =============================================================================
 start_services() {
     mkdir -p "$SCRIPT_DIR/logs"
@@ -970,8 +970,7 @@ verify_installation() {
         "${COMPOSE_PROJECT_NAME}-ingestor:Ingestor" \
         "${WORKER_CONTAINER}:Worker" \
         "${WORKER_HEAVY_CONTAINER}:Worker OCR/KI" \
-        "${WORKER_LIVE_CONTAINER}:Worker Live" \
-        "${COMPOSE_PROJECT_NAME}-minutes-orchestrator:Orchestrator"; do
+        "${WORKER_LIVE_CONTAINER}:Worker Live"; do
         container="${entry%%:*}"
         label="${entry#*:}"
         local status

@@ -9,7 +9,7 @@ Key Hierarchy:
     ENCRYPTION_MASTER_KEY (env var)
         ├── Organization / SessionTenant encryption_key (per tenant)
         │       └── Encrypted fields (notes, protocols, etc.)
-        ├── platform secrets (SiteSettings, AISettings, ComputeSettings)
+        ├── platform secrets (SiteSettings, AISettings)
         └── derived 2FA key (Fernet: TOTP secrets, backup codes)
 
 Schlüsselwechsel: Während eines Wechsels gelten alter und neuer Schlüssel nebeneinander.

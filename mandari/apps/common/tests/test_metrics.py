@@ -227,14 +227,13 @@ def test_cache_statistik_erscheint_als_metrik(client: Client, monkeypatch: pytes
     [
         (metrics.DatabaseCollector, "db_pool_stats", {"pool_available": 0}),
         (metrics.CacheCollector, "cache_stats", None),
-        (metrics.QueueCollector, "transcription_queue", {}),
     ],
 )
 def test_registrieren_fragt_nichts_ab(
     monkeypatch: pytest.MonkeyPatch, sammler: type, messfunktion: str, leerwert: object
 ) -> None:
     """Ohne describe() ruft prometheus_client beim Registrieren collect() auf. Beim Start von
-    Daphne holte sich der QueueCollector dafür eine Datenbankverbindung, die nie zurückkam."""
+    Daphne holte sich ein Sammler mit Datenbankabfrage dafür eine Verbindung, die nie zurückkam."""
     from prometheus_client import CollectorRegistry, generate_latest
 
     aufrufe: list[str] = []
@@ -269,11 +268,12 @@ def test_mehrere_prozesse_werden_summiert(client: Client, tmp_path: Path, monkey
             check=True,
         )
     monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", str(tmp_path))
+    monkeypatch.setattr(metrics, "cache_stats", lambda: {"hits": 3, "misses": 1})
 
     text = client.get("/metrics/").content.decode()
 
     assert 'mandari_http_requests_total{status_class="2xx",view="test_mehrprozess"} 5.0' in text
     assert text.count("# TYPE mandari_http_requests_total counter") == 1
     # Sammler, die erst beim Abruf messen, bleiben dabei; Kennzahlen nur dieses Prozesses entfallen
-    assert "# TYPE mandari_transcription_jobs gauge" in text
+    assert "# TYPE mandari_cache_hit_ratio gauge" in text
     assert not [zeile for zeile in text.splitlines() if zeile.startswith(("process_", "python_"))]
