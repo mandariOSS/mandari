@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any, cast
+from unittest import mock
 
 import pytest
 from django.test import Client
@@ -26,7 +27,9 @@ from apps.session.models import (
     SessionOrganization,
     SessionProtocol,
     SessionProtokolldienst,
+    SessionRole,
     SessionTenant,
+    SessionUser,
 )
 from apps.session.protokolldienst import einstellungen, vorschlaege
 from apps.session.tests._niederschrift import client, nutzer
@@ -146,6 +149,141 @@ def test_ohne_gueltigen_schluessel_401(w: Welt, schluessel: str) -> None:
     assert not Vorschlag.objects.exists()
 
 
+def test_ohne_schluessel_401_vor_der_pruefung_des_inhalts(w: Welt) -> None:
+    """Ohne gültigen Schlüssel 401, auch wenn der Inhalt ungültig ist; mit Schlüssel bleibt es bei 422."""
+    for schluessel in ("", "falsch"):
+        antwort = w.senden({}, schluessel=schluessel)
+        assert antwort.status_code == 401, antwort.content
+        assert "WWW-Authenticate" in antwort
+    unbekannt = Client().post(
+        "/api/mandari/v1/protokolldienst/gibt-es-nicht/niederschrift/vorschlaege/",
+        {},
+        content_type="application/json",
+        headers={"Authorization": f"Bearer {w.schluessel}"},
+    )
+    assert unbekannt.status_code == 401
+    assert w.senden({}).status_code == 422
+
+
+def test_nicht_passende_kennung_nicht_ueber_die_nummer(w: Welt) -> None:
+    """Kennung eines entfernten TOP mit der Nummer eines heutigen: offen, nie dem heutigen TOP zugeordnet."""
+    entfernt = einstellungen.top_kennung(w.top).replace(str(w.top.pk), str(uuid.uuid4()))
+    body = w.body(
+        items=[
+            {"agenda_item": entfernt, "number": "5", "draft_text": "gehört zum entfernten TOP"},
+            {"number": "N1", "draft_text": NOE_ENTWURF},
+        ]
+    )
+    antwort = w.senden(body)
+    assert antwort.status_code == 201, antwort.content
+    assert antwort.json()["unassigned"] == [0] and antwort.json()["accepted"] == 1
+    assert not Vorschlag.objects.filter(agenda_item=w.top).exists()
+
+
+def test_wiederholung_nach_umnummerierung_liefert_die_quittung(w: Welt) -> None:
+    """Die Wiederholung erhält die Quittung der ersten Übergabe, auch wenn ein TOP inzwischen anders heißt."""
+    kopf = {"Idempotency-Key": "uebergabe-1"}
+    erste = w.senden(None, **kopf)
+    assert erste.status_code == 201, erste.content
+    SessionAgendaItem.objects.filter(pk=w.top_noe.pk).update(number="N2")
+    zweite = w.senden(None, **kopf)
+    assert zweite.status_code == 201, zweite.content
+    assert zweite.json() == erste.json()
+    assert Vorschlag.objects.count() == 2
+    # Anderer Inhalt unter demselben Schlüssel: weiterhin abgelehnt
+    anders = w.body()
+    anders["items"][0]["draft_text"] = "anders"
+    antwort = w.senden(anders, **kopf)
+    assert antwort.status_code == 422 and antwort.json()["type"].endswith("idempotenzschluessel-wiederverwendet")
+
+
+def test_doppelte_zuordnung_zum_selben_top_422(w: Welt) -> None:
+    """Derselbe TOP einmal über die Kennung, einmal über die Nummer: abgelehnt, nichts gespeichert."""
+    body = w.body(
+        items=[
+            {"number": "99", "draft_text": "gibt es nicht"},
+            {"agenda_item": einstellungen.top_kennung(w.top), "draft_text": "erster Text"},
+            {"number": "5", "draft_text": "zweiter Text"},
+        ]
+    )
+    antwort = w.senden(body)
+    assert antwort.status_code == 422, antwort.content
+    assert [fehler["pointer"] for fehler in antwort.json()["errors"]] == ["/items/2/agenda_item"]
+    assert not Vorschlag.objects.exists()
+
+
+def test_aeltere_fassung_ersetzt_keine_neuere(w: Welt) -> None:
+    assert w.senden(w.body(revision=2), **{"Idempotency-Key": "fassung-2"}).status_code == 201
+    antwort = w.senden(w.body(revision=1), **{"Idempotency-Key": "fassung-1"})
+    assert antwort.status_code == 201, antwort.content
+    assert antwort.json()["accepted"] == 0
+    offen = Vorschlag.objects.get(agenda_item=w.top, status=Vorschlag.OFFEN)
+    assert offen.revision == 2 and offen.draft_text_encrypted is not None
+    # Eine neuere Fassung ersetzt weiterhin
+    assert w.senden(w.body(revision=3), **{"Idempotency-Key": "fassung-3"}).status_code == 201
+    assert Vorschlag.objects.get(agenda_item=w.top, status=Vorschlag.OFFEN).revision == 3
+
+
+def test_teilsummen_der_abstimmung_422(w: Welt) -> None:
+    body = w.body()
+    body["items"][0]["vote"] = {"yes": 3, "outcome": "adopted"}
+    antwort = w.senden(body)
+    assert antwort.status_code == 422, antwort.content
+    assert not Vorschlag.objects.exists()
+
+
+def test_befehl_lehnt_teilsummen_ab(w: Welt) -> None:
+    from hub.commands import Command, CommandError, dispatch
+
+    befehl = Command(
+        name=vorschlaege.PROPOSE,
+        body={
+            "meeting": str(w.meeting.pk),
+            "source_document": DOKUMENT,
+            "revision": 1,
+            "items": [{"agenda_item": str(w.top.pk), "vote": {"yes": 3, "no": 1}}],
+        },
+        idempotency_key="teilsummen",
+        tenant_ref=f"session:{w.tenant.pk}",
+        actor_ref=vorschlaege.ACTOR,
+    )
+    with pytest.raises(CommandError) as fehler:
+        dispatch(befehl)
+    assert fehler.value.problem.status == 422
+    assert not Vorschlag.objects.exists()
+
+
+def test_fehlende_stimmenzahlen_nicht_als_null(w: Welt) -> None:
+    Vorschlag.objects.create(
+        meeting=w.meeting, agenda_item=w.top, source_document=DOKUMENT, vote_result="approved", votes_yes=3
+    )
+    (anzeige,) = vorschlaege.offene(w.meeting, can_view_np=True)
+    assert "Nein 0" not in anzeige.abstimmung and "Enthaltungen 0" not in anzeige.abstimmung
+
+
+def test_vorschlag_nimmt_die_sitzungssperre_vor_der_pruefung(w: Welt) -> None:
+    """Wie die Genehmigung: erst die Sitzung sperren, dann prüfen, ob die Niederschrift genehmigt ist."""
+    from apps.session.services import cockpit_service, protocol_lock
+
+    ablauf: list[str] = []
+    sperren, gesperrt = cockpit_service.lock_meeting, protocol_lock.is_locked
+
+    def sperre(meeting_id: Any) -> None:
+        ablauf.append("sperre")
+        sperren(meeting_id)
+
+    def pruefung(meeting_id: Any) -> bool:
+        ablauf.append("pruefung")
+        return gesperrt(meeting_id)
+
+    with (
+        mock.patch.object(cockpit_service, "lock_meeting", side_effect=sperre),
+        mock.patch.object(protocol_lock, "is_locked", side_effect=pruefung),
+    ):
+        assert w.senden().status_code == 201
+    assert "sperre" in ablauf and ablauf.index("sperre") < ablauf.index("pruefung")
+
+
 def test_ausgeschaltete_anbindung_401(w: Welt) -> None:
     SessionProtokolldienst.objects.filter(tenant=w.tenant).update(enabled=False)
     assert w.senden().status_code == 401
@@ -218,6 +356,24 @@ def test_festgestelltes_ergebnis_bleibt(w: Welt) -> None:
     assert (w.top.vote_result, w.top.votes_yes, w.top.protocol_note) == ("rejected", 1, ENTWURF)
 
 
+@pytest.mark.parametrize("laufend", ["einzeln", "geoeffnet"])
+def test_ergebnis_bleibt_bei_laufender_abstimmung(w: Welt, laufend: str) -> None:
+    """Einzelabstimmung oder geöffnete Abstimmung: Das Ergebnis stellt die Abstimmung fest, nicht der Vorschlag."""
+    if laufend == "einzeln":
+        SessionAgendaItem.objects.filter(pk=w.top.pk).update(voting_method="roll_call")
+    else:
+        SessionAgendaItem.objects.filter(pk=w.top.pk).update(vote_opened_at=timezone.now())
+    body = w.body()
+    body["items"][0]["vote"] = {"outcome": "noted"}
+    w.senden(body)
+    vorschlag = Vorschlag.objects.get(agenda_item=w.top, status=Vorschlag.OFFEN)
+    hinweise = vorschlaege.uebernehmen(w.meeting, vorschlag.pk, permissions=RECHTE, session_user=None)
+    w.top.refresh_from_db()
+    assert w.top.vote_result == "pending"
+    assert w.top.protocol_note == ENTWURF, "Texte werden trotzdem übernommen"
+    assert any("Abstimmung" in hinweis for hinweis in hinweise)
+
+
 def test_nichtoeffentlicher_top_in_die_noe_felder(w: Welt) -> None:
     vorschlag = _vorschlag(w, w.top_noe)
     vorschlaege.uebernehmen(w.meeting, vorschlag.pk, permissions=RECHTE, session_user=None)
@@ -251,6 +407,11 @@ def test_nach_der_genehmigung_nicht_mehr(w: Welt) -> None:
     SessionProtocol.objects.create(meeting=w.meeting, status="approved")
     with pytest.raises(vorschlaege.VorschlagError):
         vorschlaege.uebernehmen(w.meeting, vorschlag.pk, permissions=RECHTE, session_user=None)
+    # Auch Verwerfen nicht: Der Vorschlag bleibt, wie er ist
+    with pytest.raises(vorschlaege.VorschlagError):
+        vorschlaege.verwerfen(w.meeting, vorschlag.pk, permissions=RECHTE, session_user=None)
+    vorschlag.refresh_from_db()
+    assert vorschlag.status == Vorschlag.OFFEN and vorschlag.draft_text_encrypted is not None
 
 
 # =============================================================================
@@ -317,6 +478,22 @@ def test_einstellungsseite(neu: bool) -> None:
     assert roh not in nochmal and "geheim" not in nochmal
     eintraege = SessionAuditLog.objects.filter(tenant=w.tenant, model_name__icontains="protokolldienst")
     assert eintraege.exists() and roh not in str(list(eintraege.values_list("changes", flat=True)))
+
+
+def test_einmal_sichtbarer_schluessel_nur_beim_eigenen_mandanten() -> None:
+    """Wer zwei Mandanten verwaltet, sieht den Schlüssel von A nicht auf der Seite von B; er geht dort nicht verloren."""
+    a, b = Welt("schl-a", angebunden=False), Welt("schl-b", angebunden=False)
+    verwaltung = nutzer(a.tenant, "verwaltung", "manage_settings")
+    rolle = SessionRole.objects.create(tenant=b.tenant, name="r-verwaltung-b", can_manage_settings=True)
+    SessionUser.objects.create(user=verwaltung.user, tenant=b.tenant).roles.add(rolle)
+    c = client(verwaltung)
+    c.post(f"/session/{a.tenant.slug}/settings/protokolldienst/", {"aktion": "schluessel"})
+    seite_b = c.get(f"/session/{b.tenant.slug}/settings/protokolldienst/")
+    assert seite_b.status_code == 200
+    assert 'data-testid="rueckgabe-schluessel"' not in seite_b.content.decode()
+    seite_a = c.get(f"/session/{a.tenant.slug}/settings/protokolldienst/").content.decode()
+    roh = seite_a.split('data-testid="rueckgabe-schluessel">', 1)[1].split("<", 1)[0]
+    assert einstellungen.rueckgabe_schluessel_passt(SessionProtokolldienst.objects.get(tenant=a.tenant), roh)
 
 
 def test_einstellungen_nur_mit_recht() -> None:

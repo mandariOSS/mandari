@@ -10,17 +10,26 @@ Sitzungen dieses Mandanten und nur, solange die Anbindung eingeschaltet ist.
 - ``GET  /{tenant_slug}/``: Prüfung der Verbindung (Mandant, Adresse der Vorschläge).
 - ``POST /{tenant_slug}/niederschrift/vorschlaege/``: Vorschläge je TOP. Sitzung und TOPs werden über ihre
   OParl-Kennung genannt (``…/meeting/<uuid>/``, ``…/agendaitem/<uuid>/``), unter der der Dienst sie übernommen hat;
-  TOPs ohne Kennung über die TOP-Nummer. Nicht zuzuordnende TOPs nennt die Antwort (``unassigned``), die übrigen
-  gelten. ``Idempotency-Key`` ist empfohlen; ohne ihn gilt ``protokolldienst.<Dokument>.<Fassung>``, eine Fassung
-  lässt sich also nur einmal übergeben.
+  TOPs ohne Kennung über die TOP-Nummer. Eine genannte Kennung gilt allein: Passt sie zu keinem TOP, ordnet die
+  Nummer nicht ersatzweise zu (der TOP kann entfernt oder umnummeriert sein). Nicht zuzuordnende TOPs nennt die
+  Antwort (``unassigned``), die übrigen gelten. ``Idempotency-Key`` ist empfohlen; ohne ihn gilt
+  ``protokolldienst.<Dokument>.<Fassung>``, eine Fassung lässt sich also nur einmal übergeben.
+
+**Anmeldung zuerst:** Der Rückgabeschlüssel wird vor dem Inhalt der Anfrage geprüft; ohne gültigen Schlüssel kommt
+401, nie 422.
+
+**Wiederholung:** Die Quittung gilt für die Übergabe, wie der Dienst sie geschickt hat. Eine Wiederholung mit
+demselben Schlüssel und Inhalt erhält sie, bevor die TOPs erneut zugeordnet werden; ein inzwischen umnummerierter TOP
+ändert daran nichts. Anderer Inhalt unter demselben Schlüssel: 422.
 
 Fehler nach RFC 9457 wie in allen Bereichen (``apps.common.api``).
 """
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
-from typing import Annotated, Any, Final, Literal
+from typing import Annotated, Any, Final, Literal, cast
 from uuid import UUID
 
 from django.core.cache import cache
@@ -28,15 +37,19 @@ from django.http import HttpRequest
 from django.urls import reverse
 from ninja import Field, Header, NinjaAPI, Router, Schema
 from ninja.security.base import AuthBase
+from pydantic import model_validator
 
 from apps.common.api.idempotency import IDEMPOTENCY_HEADER, parse_idempotency_key
 from apps.common.api.ninja import install_problem_handlers
 from apps.common.api.problems import ProblemError
+from apps.events.idempotency import IdempotencyConflictError, run_once
+from apps.events.models import IdempotencyKey
 from apps.session.models import SessionMeeting, SessionProtokolldienst, SessionTenant
-from hub.commands import Command, CommandError, dispatch
+from hub.commands import Command, CommandError, content_hash, dispatch
+from hub.commands.dispatcher import KEY_REUSED
 
 from . import einstellungen
-from .vorschlaege import ACTOR, PROPOSE
+from .vorschlaege import ACTOR, PARTIAL_COUNTS, PROPOSE
 
 REALM: Final = "mandari Protokolldienst"
 UNAUTHENTICATED: Final = "Rückgabeschlüssel des Mandanten erforderlich (Authorization: Bearer <schlüssel>)."
@@ -53,13 +66,18 @@ Ergebnis = Literal["adopted", "adopted_amended", "rejected", "noted", "postponed
 
 
 class Schluessel(AuthBase):
-    """Dokumentiert das Bearer-Schema; geprüft wird je Mandant im Endpunkt (``_anbindung``)."""
+    """
+    Bearer-Schema mit dem Rückgabeschlüssel des Mandanten aus dem Pfad (``_anbindung``). Läuft vor der Prüfung des
+    Inhalts: Ohne gültigen Schlüssel kommt 401, nie 422. Ergebnis (``request.auth``): Mandant und Anbindung.
+    """
 
     openapi_type = "http"
     openapi_scheme = "bearer"
 
     def __call__(self, request: HttpRequest) -> Any:
-        return request
+        treffer = getattr(request, "resolver_match", None)
+        tenant_slug = str(treffer.kwargs.get("tenant_slug", "")) if treffer is not None else ""
+        return _anbindung(request, tenant_slug)
 
 
 class AbstimmungIn(Schema):
@@ -68,6 +86,13 @@ class AbstimmungIn(Schema):
     abstain: int | None = Field(None, ge=0, le=9999, description="Enthaltungen")
     unanimous: bool = Field(False, description="Einstimmig")
     outcome: Ergebnis | None = Field(None, description="Ergebnis")
+
+    @model_validator(mode="after")
+    def _summen_vollstaendig(self) -> AbstimmungIn:
+        # Übernommen werden nur vollständige Summen; eine Teilsumme sähe in der Anzeige wie „Nein 0“ aus
+        if len({wert is None for wert in (self.yes, self.no, self.abstain)}) > 1:
+            raise ValueError(PARTIAL_COUNTS)
+        return self
 
 
 class TopIn(Schema):
@@ -120,7 +145,7 @@ def _bearer(request: HttpRequest) -> str:
 
 def _anbindung(request: HttpRequest, tenant_slug: str) -> tuple[SessionTenant, SessionProtokolldienst]:
     """Mandant und Anbindung zum Schlüssel; unbekannt, ausgeschaltet oder falscher Schlüssel: 401, nie mehr."""
-    tenant = SessionTenant.objects.filter(slug=tenant_slug, is_active=True).first()
+    tenant = SessionTenant.objects.filter(slug=tenant_slug, is_active=True).first() if tenant_slug else None
     konfiguration = einstellungen.aktiv(tenant) if tenant is not None else None
     if (
         tenant is None
@@ -149,9 +174,14 @@ def _anbindung(request: HttpRequest, tenant_slug: str) -> tuple[SessionTenant, S
     return tenant, konfiguration
 
 
+def _angemeldet(request: HttpRequest) -> tuple[SessionTenant, SessionProtokolldienst]:
+    """Mandant und Anbindung, die ``Schluessel`` vor dem Endpunkt geprüft hat."""
+    return cast(tuple[SessionTenant, SessionProtokolldienst], cast(Any, request).auth)
+
+
 @router.get("/{tenant_slug}/", response=EinstiegOut, url_name="einstieg", summary="Verbindung prüfen")
 def einstieg(request: HttpRequest, tenant_slug: str) -> dict[str, Any]:
-    tenant, _ = _anbindung(request, tenant_slug)
+    tenant, _ = _angemeldet(request)
     adresse = reverse("protokolldienst_api:vorschlaege", kwargs={"tenant_slug": tenant.slug})
     return {"tenant": tenant.slug, "name": tenant.name, "vorschlaege": request.build_absolute_uri(adresse)}
 
@@ -165,7 +195,11 @@ def _sitzung(tenant: SessionTenant, kennung: str) -> SessionMeeting:
 
 
 def _zuordnen(meeting: SessionMeeting, tops: list[TopIn]) -> tuple[list[tuple[UUID, TopIn]], list[int]]:
-    """TOPs über die Kennung, sonst die Nummer; liefert (Kennung in Session, Eintrag) und nicht zugeordnete Indizes."""
+    """
+    TOPs über die Kennung, ohne Kennung über die Nummer; liefert (Kennung in Session, Eintrag) und nicht zugeordnete
+    Indizes. Eine genannte Kennung, die zu keinem TOP passt, bleibt offen: Die Nummer könnte inzwischen einem anderen
+    TOP gehören.
+    """
     vorhanden = list(meeting.agenda_items.values_list("pk", "number"))
     nach_pk = {pk: pk for pk, _ in vorhanden}
     nach_nummer: dict[str, UUID] = {}
@@ -173,10 +207,12 @@ def _zuordnen(meeting: SessionMeeting, tops: list[TopIn]) -> tuple[list[tuple[UU
         nach_nummer.setdefault(str(nummer).strip(), pk)
     zugeordnet, offen = [], []
     for index, top in enumerate(tops):
-        kennung = einstellungen.kennung_aufloesen(top.agenda_item or "", "agendaitem") if top.agenda_item else None
-        ziel = nach_pk.get(kennung) if kennung else None
-        if ziel is None and top.number:
-            ziel = nach_nummer.get(top.number.strip())
+        ziel: UUID | None = None
+        if (top.agenda_item or "").strip():
+            kennung = einstellungen.kennung_aufloesen(top.agenda_item or "", "agendaitem")
+            ziel = nach_pk.get(kennung) if kennung else None
+        elif (top.number or "").strip():
+            ziel = nach_nummer.get((top.number or "").strip())
         if ziel is None:
             offen.append(index)
         else:
@@ -184,12 +220,38 @@ def _zuordnen(meeting: SessionMeeting, tops: list[TopIn]) -> tuple[list[tuple[UU
     return zugeordnet, offen
 
 
-def _command_problem(error: CommandError) -> ProblemError:
+_ZEIGER_TOP: Final = re.compile(r"^/items/(\d+)(?=/|$)")
+
+
+def _command_problem(error: CommandError, indizes: list[int]) -> ProblemError:
+    """Problem des Befehls; Stellen in ``items`` zeigen auf die Übergabe (``indizes``: Index im Befehl → Übergabe)."""
     problem = error.problem
     extensions: dict[str, Any] = {}
     if problem.errors:
-        extensions["errors"] = [dict(eintrag) for eintrag in problem.errors]
+        extensions["errors"] = [_zeiger_der_uebergabe(dict(eintrag), indizes) for eintrag in problem.errors]
     return ProblemError(problem.status, problem.detail, kind=problem.kind, **extensions)
+
+
+def _zeiger_der_uebergabe(eintrag: dict[str, Any], indizes: list[int]) -> dict[str, Any]:
+    treffer = _ZEIGER_TOP.match(str(eintrag.get("pointer", "")))
+    if treffer is not None and int(treffer.group(1)) < len(indizes):
+        eintrag["pointer"] = f"/items/{indizes[int(treffer.group(1))]}{eintrag['pointer'][treffer.end() :]}"
+    return eintrag
+
+
+def _eingangsbereich(tenant: SessionTenant) -> str:
+    """Bereich der Quittungen je Übergabe im Idempotenzspeicher, getrennt von dem des Befehls (``hub.commands``)."""
+    return f"session:{tenant.pk} {ACTOR} eingang"
+
+
+def _gespeicherte_quittung(bereich: str, schluessel: str, eingang: str) -> dict[str, Any] | None:
+    """Quittung einer früheren Übergabe unter demselben Schlüssel; anderer Inhalt: 422."""
+    vorher = IdempotencyKey.objects.filter(scope=bereich, key=schluessel).only("request_hash", "response").first()
+    if vorher is None:
+        return None
+    if vorher.request_hash != eingang:
+        raise ProblemError(422, KEY_REUSED, kind="idempotenzschluessel-wiederverwendet")
+    return dict(vorher.response)
 
 
 @router.post(
@@ -215,9 +277,18 @@ def vorschlaege(
 ) -> tuple[int, dict[str, Any]]:
     """
     Vorschläge je TOP für die Niederschrift einer Sitzung des Mandanten. Die Niederschrift ändert sich erst, wenn die
-    Protokollführung einen Vorschlag übernimmt; eine neuere Fassung ersetzt offene Vorschläge desselben TOP.
+    Protokollführung einen Vorschlag übernimmt; eine neuere Fassung ersetzt offene Vorschläge desselben TOP, eine
+    ältere ersetzt nichts und zählt nicht als angenommen.
     """
-    tenant, _ = _anbindung(request, tenant_slug)
+    tenant, _ = _angemeldet(request)
+    schluessel = (
+        parse_idempotency_key(idempotency_key) or f"protokolldienst.{payload.source_document}.{payload.revision}"
+    )
+    # Wiederholung vor der Zuordnung erkennen: Die TOPs der Sitzung können sich seitdem geändert haben
+    bereich, eingang = _eingangsbereich(tenant), content_hash(payload.model_dump(mode="json"))
+    gespeichert = _gespeicherte_quittung(bereich, schluessel, eingang)
+    if gespeichert is not None:
+        return 201, gespeichert
     meeting = _sitzung(tenant, payload.meeting)
     zugeordnet, offen = _zuordnen(meeting, payload.items)
     if not zugeordnet:
@@ -240,9 +311,6 @@ def vorschlaege(
     }
     if payload.released_at is not None:
         body["released_at"] = payload.released_at.isoformat()
-    schluessel = (
-        parse_idempotency_key(idempotency_key) or f"protokolldienst.{payload.source_document}.{payload.revision}"
-    )
     try:
         quittung = dispatch(
             Command(
@@ -254,15 +322,23 @@ def vorschlaege(
             )
         )
     except CommandError as exc:
-        raise _command_problem(exc) from None
-    return 201, {
+        nicht_zugeordnet = set(offen)
+        indizes = [index for index in range(len(payload.items)) if index not in nicht_zugeordnet]
+        raise _command_problem(exc, indizes) from None
+    antwort: dict[str, Any] = {
         "meeting": einstellungen.sitzung_kennung(meeting),
         "reference": quittung.reference,
-        "received_at": quittung.received_at,
+        "received_at": quittung.received_at.isoformat(),
         "content_hash": quittung.content_hash,
         "accepted": int(quittung.data.get("vorschlaege", len(eintraege))),
         "unassigned": offen,
     }
+    # Die Quittung gilt für diese Übergabe: Eine Wiederholung erhält sie, ohne erneut zuzuordnen
+    try:
+        gespeichert, _ = run_once(bereich, schluessel, eingang, lambda: antwort, label=PROPOSE)
+    except IdempotencyConflictError:
+        raise ProblemError(422, KEY_REUSED, kind="idempotenzschluessel-wiederverwendet") from None
+    return 201, gespeichert
 
 
 api.add_router("", router)

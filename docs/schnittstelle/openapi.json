@@ -224,7 +224,7 @@
             }
           }
         },
-        "description": "Vorschläge je TOP für die Niederschrift einer Sitzung des Mandanten. Die Niederschrift ändert sich erst, wenn die\nProtokollführung einen Vorschlag übernimmt; eine neuere Fassung ersetzt offene Vorschläge desselben TOP.",
+        "description": "Vorschläge je TOP für die Niederschrift einer Sitzung des Mandanten. Die Niederschrift ändert sich erst, wenn die\nProtokollführung einen Vorschlag übernimmt; eine neuere Fassung ersetzt offene Vorschläge desselben TOP, eine\nältere ersetzt nichts und zählt nicht als angenommen.",
         "tags": [
           "Protokolldienst"
         ],

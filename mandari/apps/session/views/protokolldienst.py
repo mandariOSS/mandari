@@ -28,6 +28,12 @@ from ..rahmen import neues_design
 
 SESSION_KEY_NEW_KEY = "session_protokolldienst_schluessel_einmal"
 
+
+def _sitzungsschluessel(tenant: SessionTenant) -> str:
+    """Ablage des einmal sichtbaren Schlüssels je Mandant: Die Seite eines anderen Mandanten sieht ihn nie."""
+    return f"{SESSION_KEY_NEW_KEY}:{tenant.pk}"
+
+
 #: Fehlercodes der Zustellung → Text für die Seite
 FEHLERTEXTE: dict[str, str] = {
     "anmeldung": "Der Protokolldienst hat den API-Schlüssel abgelehnt.",
@@ -67,7 +73,7 @@ class ProtokolldienstEinstellungenView(_MandantMixin, TemplateView):
         context.update(
             {
                 "konfiguration": konfiguration,
-                "neuer_schluessel": self.request.session.pop(SESSION_KEY_NEW_KEY, None),
+                "neuer_schluessel": self.request.session.pop(_sitzungsschluessel(self.tenant), None),
                 "wartend": wartend,
                 "letzter_fehler": FEHLERTEXTE.get(konfiguration.last_error, "") if konfiguration else "",
                 "freigegebene_hosts": sorted(einstellungen.erlaubte_hosts()),
@@ -117,7 +123,7 @@ class ProtokolldienstEinstellungenView(_MandantMixin, TemplateView):
             konfiguration = SessionProtokolldienst.objects.create(tenant=self.tenant)
         roh = einstellungen.rueckgabe_schluessel_erzeugen(konfiguration)
         self._log(request, konfiguration, {"rueckgabeschluessel": "neu erzeugt", "anfang": roh[:8]})
-        request.session[SESSION_KEY_NEW_KEY] = roh
+        request.session[_sitzungsschluessel(self.tenant)] = roh
         messages.success(
             request, "Neuer Rückgabeschlüssel erzeugt. Er wird nur jetzt angezeigt; der bisherige gilt nicht mehr."
         )

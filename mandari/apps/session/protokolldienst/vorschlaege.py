@@ -4,17 +4,20 @@ Vorschläge des Protokolldienstes für die Niederschrift: annehmen (Befehl), üb
 
 **Befehl** ``session.minutes_draft.propose`` (Vertrag ``hub/contracts/schemas/session.minutes_draft.propose``): Der
 Dienst übergibt nach der Freigabe je TOP Entwurf des Protokolltexts, Beschlusstext und Abstimmungsergebnis. Geprüft
-wird: Mandant aktiv und angebunden, Sitzung des Mandanten, Niederschrift nicht genehmigt (sonst 409), jeder TOP zur
-Sitzung (sonst 422). Gespeichert wird je TOP ein Vorschlag (Texte verschlüsselt); offene ältere Vorschläge desselben
-TOP gelten als ersetzt. Die Niederschrift selbst ändert sich nicht.
+wird: Mandant aktiv und angebunden, Sitzung des Mandanten, Niederschrift nicht genehmigt (sonst 409, unter der Sperre
+der Sitzung wie bei der Genehmigung), jeder TOP zur Sitzung und höchstens einmal, Stimmenzahlen nur vollständig (sonst
+422). Gespeichert wird je TOP ein Vorschlag (Texte verschlüsselt); offene Vorschläge desselben TOP gelten als ersetzt.
+Liegt vom selben Dokument schon eine neuere Fassung vor, ersetzt eine ältere nichts und wird nicht angelegt (Zustellung
+außer der Reihe). Die Niederschrift selbst ändert sich nicht.
 
 **Übernehmen** (Recht ``edit_protocols``, für nichtöffentliche TOPs dazu das NÖ-Recht): Session schreibt in den TOP
 
 - den Entwurf als Protokolltext, beim nichtöffentlichen TOP in den nichtöffentlichen Protokolltext,
 - den Beschlusstext, beim nichtöffentlichen TOP in den nichtöffentlichen Beschlusstext,
-- das Abstimmungsergebnis nur, solange noch keins festgestellt ist und nicht einzeln abgestimmt wurde (dann ergeben
-  sich die Summen aus den Einzelstimmen); dieselben Prüfungen wie beim Bearbeiten der Niederschrift (Zahl der
-  Stimmberechtigten, Ergebnisregel des Landesprofils, Sperre bei Zugeschalteten).
+- das Abstimmungsergebnis nur, solange noch keins festgestellt ist, keine Abstimmung geöffnet ist und nicht einzeln
+  abgestimmt wird (dann stellt die Abstimmungserfassung Ergebnis und Summen fest); dieselben Prüfungen wie beim
+  Bearbeiten der Niederschrift (Zahl der Stimmberechtigten, Ergebnisregel des Landesprofils, Sperre bei
+  Zugeschalteten).
 
 Leere Felder des Vorschlags lassen den TOP unverändert. Übernehmen und Verwerfen stehen im Prüfprotokoll (ohne
 Inhalte); danach, und wenn eine neuere Fassung ihn ersetzt, löscht Session die Texte des Vorschlags. Wie beim
@@ -23,7 +26,7 @@ Bearbeiten nur bei einer Niederschrift im Entwurf oder in der Prüfung, unter de
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, cast
 
@@ -38,7 +41,7 @@ from apps.session.models import (
     SessionTenant,
     SessionUser,
 )
-from hub.commands import Command, CommandError, HandlerResult, command_handler
+from hub.commands import Command, CommandError, HandlerResult, Problem, command_handler
 
 from . import einstellungen
 
@@ -65,6 +68,10 @@ NOT_CONNECTED: Final = "Die Anbindung an den Protokolldienst ist ausgeschaltet."
 MEETING_UNKNOWN: Final = "Die Sitzung ist nicht bekannt."
 LOCKED: Final = "Die Niederschrift dieser Sitzung ist genehmigt; Vorschläge sind nicht mehr möglich."
 ITEM_UNKNOWN: Final = "Der Tagesordnungspunkt gehört nicht zu dieser Sitzung."
+ITEM_TWICE: Final = "Der Tagesordnungspunkt steht mehrfach in der Übergabe."
+PARTIAL_COUNTS: Final = "Stimmenzahlen nur vollständig: Ja, Nein und Enthaltungen zusammen oder keine."
+#: Stimmenzahlen eines Vorschlags (Vertrag) → Felder
+SUMMEN: Final = (("yes", "votes_yes"), ("no", "votes_no"), ("abstain", "votes_abstain"))
 
 
 def _tenant(ref: str) -> SessionTenant:
@@ -78,7 +85,7 @@ def _tenant(ref: str) -> SessionTenant:
 @command_handler(PROPOSE)
 def vorschlagen(command: Command) -> HandlerResult:
     """Vorschläge je TOP speichern (siehe Moduldokumentation)."""
-    from apps.session.services import protocol_lock
+    from apps.session.services import cockpit_service, protocol_lock
 
     body = command.body
     tenant = _tenant(command.tenant_ref)
@@ -87,21 +94,24 @@ def vorschlagen(command: Command) -> HandlerResult:
     meeting = SessionMeeting.objects.filter(pk=body["meeting"], tenant=tenant).first()
     if meeting is None:
         raise CommandError.of(404, "nicht-gefunden", MEETING_UNKNOWN)
+    # Dieselbe Sperre wie die Genehmigung (protocol_service.lock_protocol), bis zum Ende der Transaktion: Eine
+    # Genehmigung zwischen Prüfung und Speichern ist damit ausgeschlossen
+    cockpit_service.lock_meeting(meeting.pk)
     if protocol_lock.is_locked(meeting.pk):
         raise CommandError.of(409, "niederschrift-genehmigt", LOCKED)
     eintraege = list(body["items"])
     tops = {str(item.pk): item for item in meeting.agenda_items.filter(pk__in=[e["agenda_item"] for e in eintraege])}
-    fehlt = [index for index, eintrag in enumerate(eintraege) if str(eintrag["agenda_item"]) not in tops]
-    if fehlt:
-        raise CommandError.of(
-            422,
-            "validierung",
-            ITEM_UNKNOWN,
-            errors=tuple({"pointer": f"/items/{index}/agenda_item", "detail": ITEM_UNKNOWN} for index in fehlt),
-        )
+    _eintraege_pruefen(eintraege, tops)
+    revision = int(body["revision"])
     angelegt = []
     for eintrag in eintraege:
         item = tops[str(eintrag["agenda_item"])]
+        neuere = Vorschlag.objects.filter(
+            meeting=meeting, agenda_item=item, source_document=body["source_document"], revision__gt=revision
+        )
+        if neuere.exists():
+            # Außer der Reihe zugestellt: Die neuere Fassung bleibt, diese ersetzt nichts
+            continue
         Vorschlag.objects.filter(meeting=meeting, agenda_item=item, status=Vorschlag.OFFEN).update(
             status=Vorschlag.ERSETZT, decided_at=timezone.now(), **TEXTE_LEER
         )
@@ -109,7 +119,7 @@ def vorschlagen(command: Command) -> HandlerResult:
             meeting=meeting,
             agenda_item=item,
             source_document=body["source_document"],
-            revision=int(body["revision"]),
+            revision=revision,
             released_at=body.get("released_at"),
         )
         _texte_setzen(vorschlag, str(eintrag.get("draft_text") or ""), str(eintrag.get("resolution_text") or ""))
@@ -123,6 +133,24 @@ def vorschlagen(command: Command) -> HandlerResult:
     )
 
 
+def _eintraege_pruefen(eintraege: list[dict[str, Any]], tops: Mapping[str, SessionAgendaItem]) -> None:
+    """Vor dem ersten Schreiben: jeder TOP zur Sitzung und nur einmal, Stimmenzahlen vollständig; sonst 422."""
+    fehler: list[dict[str, str]] = []
+    gesehen: set[str] = set()
+    for index, eintrag in enumerate(eintraege):
+        kennung = str(eintrag["agenda_item"])
+        if kennung not in tops:
+            fehler.append({"pointer": f"/items/{index}/agenda_item", "detail": ITEM_UNKNOWN})
+        elif kennung in gesehen:
+            fehler.append({"pointer": f"/items/{index}/agenda_item", "detail": ITEM_TWICE})
+        gesehen.add(kennung)
+        stimmen = eintrag.get("vote") or {}
+        if len({stimmen.get(name) is None for name, _ in SUMMEN}) > 1:
+            fehler.append({"pointer": f"/items/{index}/vote", "detail": PARTIAL_COUNTS})
+    if fehler:
+        raise CommandError(Problem(status=422, kind="validierung", detail=fehler[0]["detail"], errors=tuple(fehler)))
+
+
 def _texte_setzen(vorschlag: Vorschlag, entwurf: str, beschluss: str) -> None:
     zugriff = cast(Any, vorschlag)
     zugriff.set_draft_text_encrypted(entwurf.strip())
@@ -133,7 +161,7 @@ def _abstimmung_setzen(vorschlag: Vorschlag, vote: dict[str, Any]) -> None:
     if not vote:
         return
     vorschlag.vote_result = ERGEBNISSE.get(str(vote.get("outcome") or ""), "")
-    for name, feld in (("yes", "votes_yes"), ("no", "votes_no"), ("abstain", "votes_abstain")):
+    for name, feld in SUMMEN:
         if vote.get(name) is not None:
             setattr(vorschlag, feld, int(vote[name]))
     vorschlag.unanimous = bool(vote.get("unanimous"))
@@ -163,10 +191,9 @@ def _abstimmung_text(vorschlag: Vorschlag) -> str:
         teile.append(str(ergebnisse.get(vorschlag.vote_result, vorschlag.vote_result)))
     if vorschlag.unanimous:
         teile.append("einstimmig")
-    elif vorschlag.votes_yes is not None:
-        teile.append(
-            f"Ja {vorschlag.votes_yes}, Nein {vorschlag.votes_no or 0}, Enthaltungen {vorschlag.votes_abstain or 0}"
-        )
+    elif None not in (vorschlag.votes_yes, vorschlag.votes_no, vorschlag.votes_abstain):
+        # Nur vollständige Summen; eine fehlende Zahl erschiene sonst als 0
+        teile.append(f"Ja {vorschlag.votes_yes}, Nein {vorschlag.votes_no}, Enthaltungen {vorschlag.votes_abstain}")
     return ": ".join(teile)
 
 
@@ -304,6 +331,13 @@ def _ergebnis_uebernehmen(vorschlag: Vorschlag, item: SessionAgendaItem, hinweis
     if item.vote_result != "pending":
         hinweise.append(f"TOP {item.number}: Das Ergebnis war schon festgestellt und bleibt.")
         return []
+    if item.vote_open or item.voting_method in voting_service.INDIVIDUAL_METHODS:
+        # Ergebnis und Summen stellt die Abstimmung fest, nicht der Vorschlag
+        hinweise.append(
+            f"TOP {item.number}: Die Abstimmung ist geöffnet oder wird einzeln erfasst; Ergebnis und Stimmenzahlen "
+            "stellt die Abstimmung fest."
+        )
+        return []
     sperre = participation_service.remote_vote_rule(item.meeting, item)
     if sperre is not None and sperre.barred and vorschlag.vote_result != "deferred":
         hinweise.append(f"TOP {item.number}: {sperre.message}")
@@ -315,7 +349,7 @@ def _ergebnis_uebernehmen(vorschlag: Vorschlag, item: SessionAgendaItem, hinweis
         item.vote_result = vorschlag.vote_result
         felder.append("vote_result")
     summen = (vorschlag.votes_yes, vorschlag.votes_no, vorschlag.votes_abstain)
-    if item.voting_method not in voting_service.INDIVIDUAL_METHODS and all(wert is not None for wert in summen):
+    if all(wert is not None for wert in summen):
         ja, nein, enthaltung = (int(wert or 0) for wert in summen)
         pruefung = voting_service.check_counts(item, ja, nein, enthaltung)
         if pruefung.message:
@@ -352,6 +386,8 @@ def verwerfen(
 ) -> None:
     """Vorschlag verwerfen; die Niederschrift bleibt unverändert. Wirft ``VorschlagError``."""
     with transaction.atomic():
+        # Wie beim Übernehmen: nur im Entwurf oder in der Prüfung, unter denselben Sperren
+        _protokoll_sperren(meeting, session_user)
         vorschlag = _laden(meeting, vorschlag_id, permissions)
         _entscheiden(vorschlag, Vorschlag.VERWORFEN, session_user)
         audit.log_event(
