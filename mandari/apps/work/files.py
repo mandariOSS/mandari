@@ -166,3 +166,26 @@ def remove_files_on_commit(files: Iterable[Any]) -> None:
                 logger.warning("Datei eines gelöschten Eintrags konnte nicht entfernt werden: %s", name)
 
     transaction.on_commit(remove)
+
+
+def remove_organization_exports_on_commit(organization: Any) -> None:
+    """
+    Verzeichnis der Datenexporte einer Organisation (``exports/<organisation>/``) nach erfolgreicher Transaktion
+    entfernen, wenn die Organisation gelöscht wird (Demo nach der Frist, Issue #1575). Die Exporte liegen außerhalb
+    der Dateifelder; ihre Einträge verschwinden mit den Mitgliedschaften.
+    """
+    import shutil
+    from pathlib import Path
+
+    from django.conf import settings
+
+    directory = Path(settings.MEDIA_ROOT) / DATA_EXPORTS / str(organization.pk)
+
+    def remove() -> None:
+        try:
+            if directory.exists():
+                shutil.rmtree(directory)
+        except OSError:
+            logger.warning("Datenexporte einer gelöschten Organisation konnten nicht entfernt werden")
+
+    transaction.on_commit(remove)

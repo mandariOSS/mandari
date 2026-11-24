@@ -694,7 +694,9 @@ class DemoAbgelaufenView(View):
         from apps.tenants import demo
 
         if not request.user.is_authenticated:
-            return render(request, self.template_name, {"hinweis": demo.HINWEIS})
+            return render(
+                request, self.template_name, {"hinweis": demo.HINWEIS, "verlaengern_url": demo.verlaengern_url()}
+            )
         organization = demo.abgelaufene_demo_fuer(request.user)
         if organization is None:
             return redirect("work:root")
@@ -704,7 +706,11 @@ class DemoAbgelaufenView(View):
 
             UserSession.objects.filter(session_key=session_key).delete()
         auth_logout(request)
-        return render(request, self.template_name, {"hinweis": demo.hinweis(organization)})
+        return render(
+            request,
+            self.template_name,
+            {"hinweis": demo.hinweis(organization), "verlaengern_url": demo.verlaengern_url()},
+        )
 
 
 # =============================================================================

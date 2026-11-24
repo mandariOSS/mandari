@@ -6,21 +6,29 @@ Eine Organisation mit ``demo_laufzeit_tage`` ist eine Demo. Ihre Laufzeit beginn
 angenommen wird (:func:`laufzeit_starten`); daraus entsteht ``demo_endet_am``. Danach sperrt der stündliche
 Zeitplan ``demo_ablauf`` die Organisation (:func:`abgelaufene_sperren`, nur ``is_active``; alle Daten bleiben).
 Konten, die nur noch über eine abgelaufene Demo Zugang hätten, können sich nicht mehr anmelden und sehen den
-Hinweis „Demozeit abgelaufen“ (:func:`abgelaufene_demo_fuer`).
+Hinweis „Demozeit abgelaufen“ (:func:`abgelaufene_demo_fuer`) mit dem Weg zur kostenpflichtigen Verlängerung.
+
+Wird die Demo nicht verlängert, löscht derselbe Zeitplan sie ``LOESCHFRIST_TAGE`` nach ihrem Ende endgültig
+(:func:`faellige_loeschen`, Issue #1575): die Organisation mit allem, was an ihr hängt, die Dateien dieser Einträge,
+was Fachmodule zusätzlich ablegen (:func:`beim_loeschen_melden`), und Konten, die danach nirgends mehr gebunden sind.
 
 Organisationen der Bereitstellung (``provisioning_ref``) sind nie Demos: Übernimmt die Provisioning-API eine Demo
-bei einem Abschluss, entfallen die Demo-Angaben, und ihr Status gilt allein.
+bei einem Abschluss, entfallen die Demo-Angaben, und ihr Status gilt allein. Gelöscht wird nur, was gesperrt ist
+(``is_active`` aus): Eine im Admin wieder aktivierte Demo bleibt, bis sie erneut abläuft.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from django.db import transaction
+from django.conf import settings
+from django.db import DEFAULT_DB_ALIAS, models, transaction
 from django.db.models import Q
+from django.db.models.deletion import Collector
 from django.utils import timezone
 
 from .models import Membership, Organization, UserInvitation
@@ -30,15 +38,32 @@ logger = logging.getLogger(__name__)
 #: Hinweis bei der Anmeldung und auf der Hinweisseite
 HINWEIS = "Die Demozeit ist abgelaufen."
 
+#: So viele Tage nach dem Ende der Demo wird eine gesperrte Demo gelöscht (Issue #1575)
+LOESCHFRIST_TAGE = 30
+
+#: Höchstens so viele Löschungen je Lauf (stündlich); der Rest folgt im nächsten Lauf. Begrenzt den Schaden, falls
+#: Demo-Angaben einmal versehentlich an vielen Organisationen stehen.
+LOESCHUNGEN_JE_LAUF = 5
+
 #: Zugänge außerhalb von Work (z. B. Session), mit denen ein Konto trotz abgelaufener Demo angemeldet bleiben darf.
 #: Die Plattform kennt keine Fachmodule; diese melden ihre Prüfung in ``AppConfig.ready`` an.
 _weitere_zugaenge: list[Callable[[Any], bool]] = []
+
+#: Aufräumen der Fachmodule beim Löschen einer Demo (z. B. Verzeichnisse außerhalb der Dateifelder). Aufgerufen in
+#: der Transaktion vor dem Löschen; Dateien erst nach erfolgreicher Transaktion entfernen (``transaction.on_commit``).
+_beim_loeschen: list[Callable[[Organization], None]] = []
 
 
 def weiteren_zugang_melden(pruefung: Callable[[Any], bool]) -> None:
     """Prüfung „Konto hat hier Zugang“ eines Fachmoduls anmelden (einmal je Prozess, doppelte zählen einmal)."""
     if pruefung not in _weitere_zugaenge:
         _weitere_zugaenge.append(pruefung)
+
+
+def beim_loeschen_melden(aufraeumen: Callable[[Organization], None]) -> None:
+    """Aufräumen eines Fachmoduls für gelöschte Demos anmelden (einmal je Prozess, doppelte zählen einmal)."""
+    if aufraeumen not in _beim_loeschen:
+        _beim_loeschen.append(aufraeumen)
 
 
 def abgelaufen_q(jetzt: datetime | None = None, *, prefix: str = "") -> Q:
@@ -128,11 +153,17 @@ def abgelaufene_demo_fuer(user: Any, jetzt: datetime | None = None) -> Organizat
 
 
 def kontakt() -> str:
-    """Adresse für Rückfragen: der Absender der Plattform (leer, wenn keiner eingerichtet ist)."""
+    """
+    Adresse für die Verlängerung: ``DEMO_KONTAKT_EMAIL``, sonst der Absender der Plattform (leer, wenn keiner
+    eingerichtet ist).
+    """
     from email.utils import parseaddr
 
     from apps.common.email import get_from_email
 
+    eingestellt = getattr(settings, "DEMO_KONTAKT_EMAIL", "")
+    if eingestellt:
+        return str(eingestellt)
     try:
         return parseaddr(get_from_email())[1]
     except Exception:  # Hinweis ohne Adresse statt Fehler bei der Anmeldung
@@ -140,16 +171,47 @@ def kontakt() -> str:
         return ""
 
 
+def verlaengern_url() -> str:
+    """Link zur Buchung der Verlängerung (``DEMO_VERLAENGERN_URL``, leer = keiner)."""
+    return str(getattr(settings, "DEMO_VERLAENGERN_URL", "") or "")
+
+
+def loeschung_am(organization: Organization) -> datetime | None:
+    """Ab wann eine abgelaufene Demo gelöscht wird; ``None`` ohne Laufzeit, ohne Ende oder bei einer Bereitstellung."""
+    ende = organization.demo_endet_am
+    if organization.provisioning_ref is not None or organization.demo_laufzeit_tage is None or ende is None:
+        return None
+    return ende + timedelta(days=LOESCHFRIST_TAGE)
+
+
+def _datum(zeitpunkt: datetime) -> str:
+    return timezone.localtime(zeitpunkt).strftime("%d.%m.%Y")
+
+
 def hinweis(organization: Organization) -> str:
-    """Text für Anmeldung und Hinweisseite: Name, Enddatum, Daten bleiben, Kontakt."""
+    """Text für Anmeldung und Hinweisseite: Name, Enddatum, wie lange die Daten bleiben, Weg zur Verlängerung."""
     text = HINWEIS
     if organization.demo_endet_am is not None:
-        ende = timezone.localtime(organization.demo_endet_am).strftime("%d.%m.%Y")
-        text = f"Die Demozeit für „{organization.name}“ ist am {ende} abgelaufen."
-    text += " Eure Daten bleiben erhalten."
-    adresse = kontakt()
-    if adresse:
-        text += f" Wenn ihr weitermachen möchtet, schreibt uns an {adresse}."
+        text = f"Die Demozeit für „{organization.name}“ ist am {_datum(organization.demo_endet_am)} abgelaufen."
+    loeschung = loeschung_am(organization)
+    if loeschung is not None:
+        text += (
+            f" Eure Daten bleiben bis zum {_datum(loeschung)} erhalten, danach löschen wir die Organisation mit allen "
+            "Daten."
+        )
+    else:
+        text += " Eure Daten bleiben erhalten."
+    adresse, url = kontakt(), verlaengern_url()
+    if url and adresse:
+        text += (
+            f" Zum Weitermachen bucht ihr die kostenpflichtige Verlängerung unter {url} oder schreibt uns an {adresse}."
+        )
+    elif url:
+        text += f" Zum Weitermachen bucht ihr die kostenpflichtige Verlängerung unter {url}."
+    elif adresse:
+        text += f" Zum Weitermachen schreibt uns für die kostenpflichtige Verlängerung an {adresse}."
+    else:
+        text += " Zum Weitermachen braucht es die kostenpflichtige Verlängerung."
     return text
 
 
@@ -168,3 +230,166 @@ def abgelaufene_sperren(jetzt: datetime | None = None) -> list[Organization]:
         org.is_active = False
         logger.info("Demo %s abgelaufen (Ende %s), Organisation gesperrt", org.slug, org.demo_endet_am)
     return faellig
+
+
+# ---------------------------------------------------------------------------
+# Löschung nach der Frist (Issue #1575)
+# ---------------------------------------------------------------------------
+
+
+def loeschfaellig_q(jetzt: datetime | None = None) -> Q:
+    """Gesperrte Demos, deren Ende mindestens ``LOESCHFRIST_TAGE`` zurückliegt."""
+    jetzt = jetzt or timezone.now()
+    return abgelaufen_q(jetzt - timedelta(days=LOESCHFRIST_TAGE)) & Q(is_active=False)
+
+
+@dataclass(frozen=True)
+class GeloeschteDemo:
+    """Was beim Löschen einer Demo entfallen ist (Ausgabe des Zeitplans und Log, ohne Personendaten)."""
+
+    slug: str
+    demo_endet_am: datetime | None
+    eintraege: int
+    dateien: int
+    konten_geloescht: int
+    konten_behalten: int
+
+
+@dataclass
+class Loeschlauf:
+    """Ergebnis von :func:`faellige_loeschen`: gelöschte Demos und Slugs der Demos, deren Löschung scheiterte."""
+
+    geloescht: list[GeloeschteDemo] = field(default_factory=list)
+    fehlgeschlagen: list[str] = field(default_factory=list)
+
+
+def _dateifelder(model: type[models.Model]) -> list[models.FileField]:
+    return [feld for feld in model._meta.concrete_fields if isinstance(feld, models.FileField)]
+
+
+def _dateien(collector: Collector) -> list[tuple[Any, str]]:
+    """Gespeicherte Dateien (Speicher, Name) aller Einträge, die der Collector löschen wird."""
+    dateien: list[tuple[Any, str]] = []
+    for model, objekte in collector.data.items():
+        for feld in _dateifelder(model):
+            for objekt in objekte:
+                name = getattr(objekt, feld.attname).name
+                if name:
+                    dateien.append((feld.storage, name))
+    # Einträge ohne Signale und eigene Abhängigkeiten löscht Django direkt per Abfrage, ohne sie zu laden
+    for abfrage in collector.fast_deletes:
+        for feld in _dateifelder(abfrage.model):
+            for name in abfrage.values_list(feld.attname, flat=True):
+                if name:
+                    dateien.append((feld.storage, name))
+    return dateien
+
+
+def _nach_commit_entfernen(dateien: list[tuple[Any, str]]) -> None:
+    """Dateien erst nach erfolgreicher Transaktion löschen; fehlt eine schon, ist das kein Fehler."""
+    if not dateien:
+        return
+
+    def entfernen() -> None:
+        for speicher, name in dateien:
+            try:
+                if speicher.exists(name):
+                    speicher.delete(name)
+            except OSError:
+                logger.warning("Datei einer gelöschten Demo konnte nicht entfernt werden: %s", name)
+
+    transaction.on_commit(entfernen)
+
+
+def _konten_aufraeumen(user_ids: list[Any]) -> tuple[int, int]:
+    """
+    Konten der früheren Mitglieder löschen, an denen nichts mehr hängt (Regeln wie nach dem Auslauf einer
+    Mitgliedschaft, Issue #1237); liefert (gelöscht, behalten).
+    """
+    from apps.accounts.models import User
+    from apps.accounts.orphaned_accounts import loesche_konto_nach_austritt
+
+    geloescht = behalten = 0
+    for user in User.objects.filter(pk__in=user_ids).order_by("pk"):
+        try:
+            bindungen = loesche_konto_nach_austritt(user)
+        except Exception:  # noqa: BLE001 – die Organisation ist gelöscht; verwaiste Konten fängt der Zeitplan
+            logger.exception("Konto nach Löschung einer Demo nicht gelöscht")
+            bindungen = ["fehler"]
+        if bindungen:
+            behalten += 1
+        else:
+            geloescht += 1
+    return geloescht, behalten
+
+
+def demo_loeschen(organization_id: Any, jetzt: datetime | None = None) -> GeloeschteDemo | None:
+    """
+    Eine fällige Demo endgültig löschen; ``None``, wenn sie (inzwischen) nicht mehr fällig ist: verlängert und wieder
+    aktiv, von der Bereitstellung übernommen, Laufzeit im Admin geleert oder schon gelöscht.
+
+    Gelöscht wird die Organisation mit allem, was per Kaskade an ihr hängt, nach erfolgreicher Transaktion auch die
+    Dateien dieser Einträge (Anhänge, Briefköpfe, Logo) und was Fachmodule angemeldet haben
+    (:func:`beim_loeschen_melden`). Danach verschwinden Konten früherer Mitglieder, die nirgends mehr gebunden sind.
+    """
+    jetzt = jetzt or timezone.now()
+    with transaction.atomic():
+        # Unter Zeilensperre neu prüfen: Eine gleichzeitige Verlängerung oder Übernahme wartet und gewinnt danach
+        organization = (
+            Organization.objects.select_for_update().filter(loeschfaellig_q(jetzt), pk=organization_id).first()
+        )
+        if organization is None:
+            return None
+        slug, ende = organization.slug, organization.demo_endet_am
+        user_ids = list(Membership.objects.filter(organization=organization).values_list("user_id", flat=True))
+        for aufraeumen in list(_beim_loeschen):
+            aufraeumen(organization)
+        collector = Collector(using=DEFAULT_DB_ALIAS, origin=organization)
+        collector.collect([organization])
+        dateien = _dateien(collector)
+        eintraege, _ = collector.delete()
+        _nach_commit_entfernen(dateien)
+    konten_geloescht, konten_behalten = _konten_aufraeumen(user_ids)
+    ergebnis = GeloeschteDemo(
+        slug=slug,
+        demo_endet_am=ende,
+        eintraege=eintraege,
+        dateien=len(dateien),
+        konten_geloescht=konten_geloescht,
+        konten_behalten=konten_behalten,
+    )
+    logger.warning(
+        "Demo %s gelöscht (Ende %s, Frist %d Tage): %d Einträge, %d Dateien, Konten gelöscht %d, behalten %d",
+        slug,
+        ende.isoformat() if ende else "-",
+        LOESCHFRIST_TAGE,
+        eintraege,
+        len(dateien),
+        konten_geloescht,
+        konten_behalten,
+    )
+    return ergebnis
+
+
+def faellige_loeschen(jetzt: datetime | None = None, *, hoechstens: int = LOESCHUNGEN_JE_LAUF) -> Loeschlauf:
+    """
+    Fällige Demos löschen, älteste zuerst und höchstens ``hoechstens`` je Lauf. Eine gescheiterte Löschung hält die
+    übrigen nicht auf; ihr Slug steht in ``fehlgeschlagen``.
+    """
+    jetzt = jetzt or timezone.now()
+    lauf = Loeschlauf()
+    faellig = list(
+        Organization.objects.filter(loeschfaellig_q(jetzt))
+        .order_by("demo_endet_am", "slug")
+        .values_list("pk", "slug")[:hoechstens]
+    )
+    for pk, slug in faellig:
+        try:
+            ergebnis = demo_loeschen(pk, jetzt)
+        except Exception:  # noqa: BLE001 – im Log und als Fehler des Befehls; die nächste Demo versuchen
+            logger.exception("Demo %s konnte nicht gelöscht werden", slug)
+            lauf.fehlgeschlagen.append(slug)
+            continue
+        if ergebnis is not None:
+            lauf.geloescht.append(ergebnis)
+    return lauf

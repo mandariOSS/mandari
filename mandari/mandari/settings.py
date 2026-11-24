@@ -157,6 +157,11 @@ DEMO_UMFANG = os.environ.get("DEMO_UMFANG", "voll").strip() or "voll"
 # Zeiten des automatischen Neuaufbaus der Demo in UTC, kommagetrennt (z. B. "03:30,15:30"); der Hinweis nennt sie
 # in Ortszeit. Leer: kein fester Zeitplan bekannt.
 DEMO_NEUAUFBAU_UTC = os.environ.get("DEMO_NEUAUFBAU_UTC", "").strip()
+# Demo-Organisationen mit Laufzeit in einer echten Installation (Issue #1406/#1575, apps/tenants/demo.py): Adresse
+# und Link zur kostenpflichtigen Verlängerung im Hinweis „Demozeit abgelaufen“. Leer: Adresse = Absender der
+# Plattform, kein Link.
+DEMO_KONTAKT_EMAIL = os.environ.get("DEMO_KONTAKT_EMAIL", "").strip()
+DEMO_VERLAENGERN_URL = os.environ.get("DEMO_VERLAENGERN_URL", "").strip()
 
 # SEITENHINWEIS (apps/common/seitenhinweis.py): kurzer Betriebshinweis oben in Insight und Work, etwa bei Störungen
 # außerhalb von mandari (leer = aus). Ein- und Ausschalten nur über die Umgebung, ohne Deploy.
