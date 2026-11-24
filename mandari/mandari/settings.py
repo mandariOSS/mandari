@@ -157,9 +157,11 @@ DEMO_UMFANG = os.environ.get("DEMO_UMFANG", "voll").strip() or "voll"
 # Zeiten des automatischen Neuaufbaus der Demo in UTC, kommagetrennt (z. B. "03:30,15:30"); der Hinweis nennt sie
 # in Ortszeit. Leer: kein fester Zeitplan bekannt.
 DEMO_NEUAUFBAU_UTC = os.environ.get("DEMO_NEUAUFBAU_UTC", "").strip()
-# Demo-Organisationen mit Laufzeit in einer echten Installation (Issue #1406/#1575, apps/tenants/demo.py): Adresse
-# und Link zur kostenpflichtigen Verlängerung im Hinweis „Demozeit abgelaufen“. Leer: Adresse = Absender der
-# Plattform, kein Link.
+# Demo-Organisationen mit Laufzeit in einer echten Installation (Issue #1406/#1575, apps/tenants/demo.py):
+# Löschfrist nach dem Ende der Demo in Tagen (leer oder 0 = gesperrte Demos bleiben unbegrenzt, wie bis 0.13),
+# Adresse und Link zur kostenpflichtigen Verlängerung im Hinweis „Demozeit abgelaufen“ und in den Erinnerungen.
+# Leer: Adresse = Absender der Plattform, kein Link.
+DEMO_LOESCHFRIST_TAGE = int(os.environ.get("DEMO_LOESCHFRIST_TAGE", "").strip() or 0) or None
 DEMO_KONTAKT_EMAIL = os.environ.get("DEMO_KONTAKT_EMAIL", "").strip()
 DEMO_VERLAENGERN_URL = os.environ.get("DEMO_VERLAENGERN_URL", "").strip()
 

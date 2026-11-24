@@ -31,7 +31,7 @@ fabrik: Any = factories
 
 STUNDE = timedelta(hours=1)
 TAG = timedelta(days=1)
-FRIST = timedelta(days=demo.LOESCHFRIST_TAGE)
+FRIST = timedelta(days=30)
 KONTAKT = "hallo@example.org"
 BUCHEN = "https://kunden.example.org/buchen/"
 
@@ -40,6 +40,7 @@ BUCHEN = "https://kunden.example.org/buchen/"
 def _cache_und_post(settings: Any) -> Iterator[None]:
     settings.DEMO_KONTAKT_EMAIL = KONTAKT
     settings.DEMO_VERLAENGERN_URL = BUCHEN
+    settings.DEMO_LOESCHFRIST_TAGE = 30
     cache.clear()
     mail.outbox.clear()
     yield
@@ -173,3 +174,62 @@ def test_ohne_eigene_kontaktadresse_keine_kopie(settings: Any, make_member: Any)
     _lauf()
 
     assert [nachricht.to for nachricht in mail.outbox] == [["admin@demo.example"]]
+
+
+def test_gescheiterter_versand_gibt_die_stufe_wieder_frei(make_member: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SMTP nicht erreichbar: Niemand hat die Erinnerung, der nächste Lauf versucht es erneut (Prüfung von PR #1576)."""
+    from django.core.management.base import CommandError
+
+    from apps.common import mail as plattform_mail
+
+    org = _demo("demo-smtp", loeschung_in=3 * TAG)
+    make_member(org, ["dashboard.view"], email="admin@demo.example", is_admin=True)
+    monkeypatch.setattr(plattform_mail, "send_template", lambda **kwargs: False)
+
+    with pytest.raises(CommandError, match="nicht versendet"):
+        _lauf()
+
+    org.refresh_from_db()
+    assert org.demo_erinnert_stunden is None
+
+    monkeypatch.undo()
+    _lauf()
+
+    assert len(_an("admin@demo.example")) == 1
+    org.refresh_from_db()
+    assert org.demo_erinnert_stunden == 168
+
+
+def test_teilweise_gescheiterter_versand_laesst_den_lauf_scheitern(
+    make_member: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from django.core.management.base import CommandError
+
+    from apps.common import mail as plattform_mail
+
+    org = _demo("demo-teil", loeschung_in=3 * TAG)
+    make_member(org, ["dashboard.view"], email="a@demo.example", is_admin=True)
+    make_member(org, ["dashboard.view"], email="b@demo.example", is_admin=True)
+    echt = plattform_mail.send_template
+
+    def senden(**kwargs: Any) -> bool:
+        return False if kwargs["to"] == ["b@demo.example"] else bool(echt(**kwargs))
+
+    monkeypatch.setattr(plattform_mail, "send_template", senden)
+
+    with pytest.raises(CommandError, match="1 Empfänger nicht erreicht"):
+        _lauf()
+
+    assert len(_an("a@demo.example")) == 1
+    org.refresh_from_db()
+    assert org.demo_erinnert_stunden == 168
+
+
+def test_ohne_loeschfrist_keine_erinnerung(settings: Any, make_member: Any) -> None:
+    settings.DEMO_LOESCHFRIST_TAGE = None
+    org = _demo("demo-ohne-frist", loeschung_in=3 * TAG)
+    make_member(org, ["dashboard.view"], email="admin@demo.example", is_admin=True)
+
+    _lauf()
+
+    assert mail.outbox == []

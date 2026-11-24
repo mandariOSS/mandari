@@ -8,9 +8,11 @@ Zeitplan ``demo_ablauf`` die Organisation (:func:`abgelaufene_sperren`, nur ``is
 Konten, die nur noch über eine abgelaufene Demo Zugang hätten, können sich nicht mehr anmelden und sehen den
 Hinweis „Demozeit abgelaufen“ (:func:`abgelaufene_demo_fuer`) mit dem Weg zur kostenpflichtigen Verlängerung.
 
-Wird die Demo nicht verlängert, löscht derselbe Zeitplan sie ``LOESCHFRIST_TAGE`` nach ihrem Ende endgültig
-(:func:`faellige_loeschen`, Issue #1575): die Organisation mit allem, was an ihr hängt, die Dateien dieser Einträge,
-was Fachmodule zusätzlich ablegen (:func:`beim_loeschen_melden`), und Konten, die danach nirgends mehr gebunden sind.
+Ist eine Löschfrist eingestellt (``DEMO_LOESCHFRIST_TAGE``, Issue #1575; ohne Einstellung bleiben gesperrte Demos wie
+bisher unbegrenzt), erinnert derselbe Zeitplan die Administratoren 7 Tage und 24 Stunden vorher und löscht eine nicht
+verlängerte Demo nach der Frist endgültig (:func:`faellige_loeschen`): die Organisation mit allem, was an ihr hängt,
+die Dateien dieser Einträge, was Fachmodule zusätzlich ablegen (:func:`beim_loeschen_melden`), und Konten, die danach
+nirgends mehr gebunden sind.
 
 Organisationen der Bereitstellung (``provisioning_ref``) sind nie Demos: Übernimmt die Provisioning-API eine Demo
 bei einem Abschluss, entfallen die Demo-Angaben, und ihr Status gilt allein. Gelöscht wird nur, was gesperrt ist
@@ -38,9 +40,6 @@ logger = logging.getLogger(__name__)
 #: Hinweis bei der Anmeldung und auf der Hinweisseite
 HINWEIS = "Die Demozeit ist abgelaufen."
 
-#: So viele Tage nach dem Ende der Demo wird eine gesperrte Demo gelöscht (Issue #1575)
-LOESCHFRIST_TAGE = 30
-
 #: Höchstens so viele Löschungen je Lauf (stündlich); der Rest folgt im nächsten Lauf. Begrenzt den Schaden, falls
 #: Demo-Angaben einmal versehentlich an vielen Organisationen stehen.
 LOESCHUNGEN_JE_LAUF = 5
@@ -64,6 +63,15 @@ def weiteren_zugang_melden(pruefung: Callable[[Any], bool]) -> None:
     """Prüfung „Konto hat hier Zugang“ eines Fachmoduls anmelden (einmal je Prozess, doppelte zählen einmal)."""
     if pruefung not in _weitere_zugaenge:
         _weitere_zugaenge.append(pruefung)
+
+
+def loeschfrist() -> timedelta | None:
+    """
+    Frist vom Ende einer Demo bis zu ihrer Löschung (``DEMO_LOESCHFRIST_TAGE``, Issue #1575); ``None`` = gesperrte
+    Demos bleiben unbegrenzt erhalten (Verhalten bis 0.13).
+    """
+    tage = getattr(settings, "DEMO_LOESCHFRIST_TAGE", None)
+    return timedelta(days=int(tage)) if tage else None
 
 
 def beim_loeschen_melden(aufraeumen: Callable[[Organization], None]) -> None:
@@ -183,11 +191,15 @@ def verlaengern_url() -> str:
 
 
 def loeschung_am(organization: Organization) -> datetime | None:
-    """Ab wann eine abgelaufene Demo gelöscht wird; ``None`` ohne Laufzeit, ohne Ende oder bei einer Bereitstellung."""
+    """
+    Ab wann eine abgelaufene Demo gelöscht wird; ``None`` ohne Löschfrist, ohne Laufzeit, ohne Ende oder bei einer
+    Bereitstellung.
+    """
+    frist = loeschfrist()
     ende = organization.demo_endet_am
-    if organization.provisioning_ref is not None or organization.demo_laufzeit_tage is None or ende is None:
+    if frist is None or organization.provisioning_ref is not None or organization.demo_laufzeit_tage is None:
         return None
-    return ende + timedelta(days=LOESCHFRIST_TAGE)
+    return None if ende is None else ende + frist
 
 
 def _datum(zeitpunkt: datetime) -> str:
@@ -247,9 +259,11 @@ def abgelaufene_sperren(jetzt: datetime | None = None) -> list[Organization]:
 
 
 def loeschfaellig_q(jetzt: datetime | None = None) -> Q:
-    """Gesperrte Demos, deren Ende mindestens ``LOESCHFRIST_TAGE`` zurückliegt."""
-    jetzt = jetzt or timezone.now()
-    return abgelaufen_q(jetzt - timedelta(days=LOESCHFRIST_TAGE)) & Q(is_active=False)
+    """Gesperrte Demos, deren Ende mindestens die Löschfrist zurückliegt (ohne Löschfrist: keine)."""
+    frist = loeschfrist()
+    if frist is None:
+        return Q(pk__in=[])
+    return abgelaufen_q((jetzt or timezone.now()) - frist) & Q(is_active=False)
 
 
 @dataclass(frozen=True)
@@ -259,6 +273,8 @@ class Erinnerung:
     slug: str
     stunden: int
     empfaenger: int
+    fehlgeschlagen: int = 0
+    wiederholen: bool = False
 
 
 def faellige_stufe(organization: Organization, jetzt: datetime | None = None) -> int | None:
@@ -294,7 +310,7 @@ def _empfaenger(organization: Organization) -> list[str]:
 def _erinnerung_senden(organization: Organization, stunden: int, empfaenger: list[str]) -> int:
     """
     Erinnerung einzeln an jede Adresse (keine fremden Adressen im Kopf) und eine Kopie an ``DEMO_KONTAKT_EMAIL``;
-    liefert die Zahl der versandten Mails ohne die Kopie.
+    liefert die Zahl der versandten bzw. dauerhaft eingereihten Mails ohne die Kopie.
     """
     from apps.common import mail
 
@@ -347,10 +363,15 @@ def erinnerungen_senden(jetzt: datetime | None = None) -> list[Erinnerung]:
     Administratoren gesperrter Demos an die Löschung erinnern: 7 Tage und 24 Stunden vorher (``ERINNERUNG_STUNDEN``).
 
     Die Stufe wird vor dem Versand bedingt gesetzt: Ein gleichzeitiger Lauf, eine Verlängerung oder eine Übernahme
-    durch die Bereitstellung gewinnt, und keine Erinnerung geht doppelt raus.
+    durch die Bereitstellung gewinnt, und keine Erinnerung geht doppelt raus. Scheitert der Versand an alle
+    Empfänger (etwa SMTP nicht erreichbar), gilt die Stufe wieder als offen und der nächste Lauf versucht es erneut;
+    ein Teilfehler steht in ``fehlgeschlagen`` und lässt den Befehl mit Fehler enden.
     """
+    frist = loeschfrist()
+    if frist is None:
+        return []
     jetzt = jetzt or timezone.now()
-    fenster = jetzt - timedelta(days=LOESCHFRIST_TAGE) + timedelta(hours=max(ERINNERUNG_STUNDEN))
+    fenster = jetzt - frist + timedelta(hours=max(ERINNERUNG_STUNDEN))
     kandidaten = (
         Organization.objects.filter(abgelaufen_q(fenster), is_active=False)
         .exclude(loeschfaellig_q(jetzt))
@@ -379,8 +400,35 @@ def erinnerungen_senden(jetzt: datetime | None = None) -> list[Erinnerung]:
         if not empfaenger:
             logger.warning("Demo %s: niemand mit Administratorrecht für die Erinnerung an die Löschung", org.slug)
         anzahl = _erinnerung_senden(org, stufe, empfaenger)
-        logger.info("Demo %s: Erinnerung %d Stunden vor der Löschung an %d Empfänger", org.slug, stufe, anzahl)
-        verschickt.append(Erinnerung(slug=org.slug, stunden=stufe, empfaenger=anzahl))
+        fehlgeschlagen = len(empfaenger) - anzahl
+        wiederholen = bool(empfaenger) and anzahl == 0
+        if wiederholen:
+            # Niemand hat die Erinnerung bekommen: Stufe wieder freigeben (nur, wenn kein anderer Lauf sie änderte)
+            Organization.objects.filter(pk=org.pk, demo_erinnert_stunden=stufe).update(
+                demo_erinnert_stunden=org.demo_erinnert_stunden
+            )
+            logger.error(
+                "Demo %s: Erinnerung %d Stunden vor der Löschung nicht versendet, nächster Lauf", org.slug, stufe
+            )
+        elif fehlgeschlagen:
+            logger.error(
+                "Demo %s: Erinnerung %d Stunden vor der Löschung an %d von %d Empfängern nicht versendet",
+                org.slug,
+                stufe,
+                fehlgeschlagen,
+                len(empfaenger),
+            )
+        else:
+            logger.info("Demo %s: Erinnerung %d Stunden vor der Löschung an %d Empfänger", org.slug, stufe, anzahl)
+        verschickt.append(
+            Erinnerung(
+                slug=org.slug,
+                stunden=stufe,
+                empfaenger=anzahl,
+                fehlgeschlagen=fehlgeschlagen,
+                wiederholen=wiederholen,
+            )
+        )
     return verschickt
 
 
@@ -394,6 +442,7 @@ class GeloeschteDemo:
     dateien: int
     konten_geloescht: int
     konten_behalten: int
+    dateien_nicht_entfernt: int = 0
 
 
 @dataclass
@@ -426,8 +475,12 @@ def _dateien(collector: Collector) -> list[tuple[Any, str]]:
     return dateien
 
 
-def _nach_commit_entfernen(dateien: list[tuple[Any, str]]) -> None:
-    """Dateien erst nach erfolgreicher Transaktion löschen; fehlt eine schon, ist das kein Fehler."""
+def _nach_commit_entfernen(dateien: list[tuple[Any, str]], nicht_entfernt: list[str]) -> None:
+    """
+    Dateien erst nach erfolgreicher Transaktion löschen; fehlt eine schon, ist das kein Fehler. Was sich nicht
+    entfernen lässt, landet in ``nicht_entfernt`` und im Fehlerlog: Die Einträge sind dann schon gelöscht, der Befehl
+    meldet die Reste als Fehler, damit sie jemand von Hand entfernt.
+    """
     if not dateien:
         return
 
@@ -437,7 +490,8 @@ def _nach_commit_entfernen(dateien: list[tuple[Any, str]]) -> None:
                 if speicher.exists(name):
                     speicher.delete(name)
             except OSError:
-                logger.warning("Datei einer gelöschten Demo konnte nicht entfernt werden: %s", name)
+                nicht_entfernt.append(name)
+                logger.error("Datei einer gelöschten Demo konnte nicht entfernt werden: %s", name)
 
     transaction.on_commit(entfernen)
 
@@ -474,6 +528,7 @@ def demo_loeschen(organization_id: Any, jetzt: datetime | None = None) -> Geloes
     (:func:`beim_loeschen_melden`). Danach verschwinden Konten früherer Mitglieder, die nirgends mehr gebunden sind.
     """
     jetzt = jetzt or timezone.now()
+    nicht_entfernt: list[str] = []
     with transaction.atomic():
         # Unter Zeilensperre neu prüfen: Eine gleichzeitige Verlängerung oder Übernahme wartet und gewinnt danach
         organization = (
@@ -489,7 +544,7 @@ def demo_loeschen(organization_id: Any, jetzt: datetime | None = None) -> Geloes
         collector.collect([organization])
         dateien = _dateien(collector)
         eintraege, _ = collector.delete()
-        _nach_commit_entfernen(dateien)
+        _nach_commit_entfernen(dateien, nicht_entfernt)
     konten_geloescht, konten_behalten = _konten_aufraeumen(user_ids)
     ergebnis = GeloeschteDemo(
         slug=slug,
@@ -498,12 +553,14 @@ def demo_loeschen(organization_id: Any, jetzt: datetime | None = None) -> Geloes
         dateien=len(dateien),
         konten_geloescht=konten_geloescht,
         konten_behalten=konten_behalten,
+        dateien_nicht_entfernt=len(nicht_entfernt),
     )
+    frist = loeschfrist()
     logger.warning(
-        "Demo %s gelöscht (Ende %s, Frist %d Tage): %d Einträge, %d Dateien, Konten gelöscht %d, behalten %d",
+        "Demo %s gelöscht (Ende %s, Frist %s Tage): %d Einträge, %d Dateien, Konten gelöscht %d, behalten %d",
         slug,
         ende.isoformat() if ende else "-",
-        LOESCHFRIST_TAGE,
+        frist.days if frist else "-",
         eintraege,
         len(dateien),
         konten_geloescht,
@@ -533,4 +590,6 @@ def faellige_loeschen(jetzt: datetime | None = None, *, hoechstens: int = LOESCH
             continue
         if ergebnis is not None:
             lauf.geloescht.append(ergebnis)
+            if ergebnis.dateien_nicht_entfernt:
+                lauf.fehlgeschlagen.append(f"{slug} ({ergebnis.dateien_nicht_entfernt} Dateien nicht entfernt)")
     return lauf

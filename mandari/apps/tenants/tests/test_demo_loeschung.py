@@ -2,7 +2,7 @@
 """
 Demo-Organisationen nach der Frist löschen (Issue #1575).
 
-Eine gesperrte Demo löscht der Zeitplan ``demo_ablauf`` ``LOESCHFRIST_TAGE`` nach ihrem Ende endgültig: Organisation,
+Eine gesperrte Demo löscht der Zeitplan ``demo_ablauf`` ``DEMO_LOESCHFRIST_TAGE`` nach ihrem Ende endgültig: Organisation,
 Inhalte, Dateien, Datenexporte und Konten ohne weitere Bindung. Verlängerte (wieder aktive), gebuchte (Bereitstellung)
 und gewöhnliche Organisationen bleiben. Der Hinweis „Demozeit abgelaufen“ nennt Löschdatum und Verlängerung.
 """
@@ -38,7 +38,7 @@ pytestmark = pytest.mark.django_db
 fabrik: Any = factories
 
 TAG = timedelta(days=1)
-FRIST = timedelta(days=demo.LOESCHFRIST_TAGE)
+FRIST = timedelta(days=30)
 
 
 @pytest.fixture(autouse=True)
@@ -51,6 +51,7 @@ def _cache_leeren() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _medien(settings: Any, tmp_path: Path) -> Path:
     settings.MEDIA_ROOT = str(tmp_path)
+    settings.DEMO_LOESCHFRIST_TAGE = 30
     return tmp_path
 
 
@@ -310,3 +311,67 @@ def test_hinweisseite_zeigt_knopf_zur_buchung(settings: Any, make_member: Any) -
     assert antwort.status_code == 200
     assert 'href="https://kunden.example.org/buchen/"' in inhalt
     assert "Verlängerung buchen" in inhalt
+
+
+# ---------------------------------------------------------------------------
+# Ohne Löschfrist, Probelauf, nicht entfernte Dateien (Prüfung von PR #1576)
+# ---------------------------------------------------------------------------
+
+
+def test_ohne_loeschfrist_bleibt_alles_wie_bisher(settings: Any) -> None:
+    """Ohne DEMO_LOESCHFRIST_TAGE löscht der Lauf nichts, und der Hinweis sagt wie bisher, dass die Daten bleiben."""
+    settings.DEMO_LOESCHFRIST_TAGE = None
+    org = _demo("demo-ohne-frist", vor=FRIST + 100 * TAG)
+
+    ausgabe = _lauf()
+
+    assert "0 Demo(s) gelöscht" in ausgabe
+    assert Organization.objects.filter(pk=org.pk).exists()
+    assert demo.loeschung_am(org) is None
+    assert "Eure Daten bleiben erhalten." in demo.hinweis(org)
+
+
+def test_probelauf_nennt_auch_demos_die_erst_gesperrt_und_dann_geloescht_wuerden() -> None:
+    org = _demo("demo-noch-aktiv", vor=FRIST + TAG, aktiv=True)
+
+    ausgabe = _lauf("--dry-run")
+
+    assert "würde sperren: demo-noch-aktiv" in ausgabe
+    assert "würde löschen: demo-noch-aktiv" in ausgabe
+    org.refresh_from_db()
+    assert org.is_active is True
+
+
+def test_nicht_entfernte_dateien_werden_gemeldet(django_capture_on_commit_callbacks: Any) -> None:
+    class Speicher:
+        def exists(self, name: str) -> bool:
+            return True
+
+        def delete(self, name: str) -> None:
+            raise PermissionError(name)
+
+    nicht_entfernt: list[str] = []
+    with django_capture_on_commit_callbacks(execute=True):
+        demo._nach_commit_entfernen([(Speicher(), "tasks/attachments/2026/11/a.txt")], nicht_entfernt)
+
+    assert nicht_entfernt == ["tasks/attachments/2026/11/a.txt"]
+
+
+def test_nicht_entfernte_dateien_lassen_den_lauf_scheitern(monkeypatch: pytest.MonkeyPatch) -> None:
+    _demo("demo-reste", vor=FRIST + TAG)
+
+    def loeschen(organization_id: Any, jetzt: Any = None) -> Any:
+        return demo.GeloeschteDemo(
+            slug="demo-reste",
+            demo_endet_am=None,
+            eintraege=3,
+            dateien=2,
+            konten_geloescht=0,
+            konten_behalten=0,
+            dateien_nicht_entfernt=1,
+        )
+
+    monkeypatch.setattr(demo, "demo_loeschen", loeschen)
+
+    with pytest.raises(CommandError, match="demo-reste .1 Dateien nicht entfernt."):
+        _lauf()

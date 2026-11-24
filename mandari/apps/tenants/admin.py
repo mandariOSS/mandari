@@ -216,8 +216,8 @@ class OrganizationAdmin(ModelAdmin):
                     "„Bereitstellungs-Referenz“ löst die Verknüpfung. "
                     "Demo: Die Laufzeit beginnt mit der ersten angenommenen Einladung; danach sperrt der "
                     "Zeitplan die Organisation (Daten bleiben). Verlängern: „Demo endet am“ verschieben und "
-                    "„Aktiv“ wieder setzen (Issue #1406). Eine gesperrte Demo löscht der Zeitplan 30 Tage nach "
-                    "ihrem Ende endgültig, samt Dateien und Konten ohne weitere Bindung; die Administratoren werden 7 Tage und 24 Stunden "
+                    "„Aktiv“ wieder setzen (Issue #1406). Mit DEMO_LOESCHFRIST_TAGE löscht der Zeitplan eine gesperrte "
+                    "Demo so viele Tage nach ihrem Ende endgültig, samt Dateien und Konten ohne weitere Bindung; die Administratoren werden 7 Tage und 24 Stunden "
                     "vorher per Mail erinnert (Issue #1575)."
                 ),
                 "classes": ("collapse",),

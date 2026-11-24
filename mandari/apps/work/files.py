@@ -186,6 +186,6 @@ def remove_organization_exports_on_commit(organization: Any) -> None:
             if directory.exists():
                 shutil.rmtree(directory)
         except OSError:
-            logger.warning("Datenexporte einer gelöschten Organisation konnten nicht entfernt werden")
+            logger.error("Datenexporte einer gelöschten Organisation konnten nicht entfernt werden: %s", directory)
 
     transaction.on_commit(remove)
