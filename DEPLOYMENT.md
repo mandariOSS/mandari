@@ -1038,7 +1038,7 @@ Voraussetzung ist `TASKS_BACKEND=journal` mit laufendem Worker für die Wartesch
 `work.zugang.<vorlage>` (Einladung, Gastzugang, Registrierung), `work.fraktion.einladung`,
 `work.fraktion.erinnerung`, `work.fraktion.freigabe`, `work.benachrichtigung`, `session.zugang`,
 `session.vorlage`, `session.rueckmeldung`, `session.erinnerung`, `session.frist`,
-`plattform.einladung`, `plattform.fehlermeldung`, `insight.*`, `betrieb.alarm`, `betrieb.quellen`.
+`plattform.einladung`, `plattform.demo_erinnerung`, `plattform.fehlermeldung`, `insight.*`, `betrieb.alarm`, `betrieb.quellen`.
 Immer sofort, weil die Oberfläche bzw. der Vorgang das Ergebnis braucht: Testmails
 (`betrieb.testmail`, `work.testmail`), die Einreichung per E-Mail (`work.antrag.einreichung`) und die
 Ladung (`session.ladung`, Zustellung je Empfänger). Ebenfalls sofort gehen Mails über das eigene SMTP
@@ -1832,7 +1832,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
 | `befehl:sitzungen_aufraeumen` | täglich 04:25 | abgelaufene Sitzungen in Blöcken löschen (Issue #1091) |
-| `befehl:demo_ablauf` | stündlich :05 | Demo-Organisationen nach ihrer Laufzeit sperren, Daten bleiben (Issue #1406) |
+| `befehl:demo_ablauf` | stündlich :05 | Demo-Organisationen nach ihrer Laufzeit sperren (Daten bleiben, Issue #1406), mit `DEMO_LOESCHFRIST_TAGE` (leer = nie löschen) die Administratoren 7 Tage und 24 Stunden vor der Löschung erinnern und nicht verlängerte Demos nach der Frist endgültig löschen (höchstens 5 je Lauf, Issue #1575). Hinweis „Demozeit abgelaufen“: Adresse `DEMO_KONTAKT_EMAIL` (leer: Absender der Plattform), Buchungslink `DEMO_VERLAENGERN_URL` (leer: kein Knopf) |
 | `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, liegen gebliebene Abrufe freigeben, fällige Wiederholungen und neueste fehlende Dateien zuerst, je Quelle höchstens `DOCUMENT_FETCH_MAX_QUEUED` (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
 | `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |

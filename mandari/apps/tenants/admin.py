@@ -158,6 +158,8 @@ class OrganizationAdmin(ModelAdmin):
         "member_list_link",
         "provisioning_status",
         "provisioning_status_changed_at",
+        "demo_loeschung_am",
+        "demo_erinnert_stunden",
     ]
     autocomplete_fields = ["owner"]
 
@@ -204,6 +206,8 @@ class OrganizationAdmin(ModelAdmin):
                     "provisioning_status_changed_at",
                     "demo_laufzeit_tage",
                     "demo_endet_am",
+                    "demo_loeschung_am",
+                    "demo_erinnert_stunden",
                 ),
                 "description": (
                     "Gäste zählen nicht gegen das Mitglieder-Limit, reguläre Mitglieder "
@@ -212,7 +216,9 @@ class OrganizationAdmin(ModelAdmin):
                     "„Bereitstellungs-Referenz“ löst die Verknüpfung. "
                     "Demo: Die Laufzeit beginnt mit der ersten angenommenen Einladung; danach sperrt der "
                     "Zeitplan die Organisation (Daten bleiben). Verlängern: „Demo endet am“ verschieben und "
-                    "„Aktiv“ wieder setzen (Issue #1406)."
+                    "„Aktiv“ wieder setzen (Issue #1406). Mit DEMO_LOESCHFRIST_TAGE löscht der Zeitplan eine gesperrte "
+                    "Demo so viele Tage nach ihrem Ende endgültig, samt Dateien und Konten ohne weitere Bindung; die Administratoren werden 7 Tage und 24 Stunden "
+                    "vorher per Mail erinnert (Issue #1575)."
                 ),
                 "classes": ("collapse",),
             },
@@ -289,6 +295,20 @@ class OrganizationAdmin(ModelAdmin):
         return "Speichern Sie zuerst die Organisation"
 
     member_list_link.short_description = "Mitglieder"
+
+    def demo_loeschung_am(self, obj):
+        """Ab wann der Zeitplan eine gesperrte Demo löscht (Issue #1575)."""
+        from django.utils import timezone
+
+        from apps.tenants import demo
+
+        zeitpunkt = demo.loeschung_am(obj) if obj.pk else None
+        if zeitpunkt is None:
+            return "–"
+        text = timezone.localtime(zeitpunkt).strftime("%d.%m.%Y %H:%M")
+        return text if not obj.is_active else f"{text} (nur, wenn die Demo dann gesperrt ist)"
+
+    demo_loeschung_am.short_description = "Demo wird gelöscht ab"
 
 
 @admin.register(Permission)

@@ -60,3 +60,9 @@ class WorkConfig(AppConfig):
         from apps.work import sichtschutz
 
         sichtschutz.register()
+
+        # Demo nach der Frist gelöscht: Datenexporte außerhalb der Dateifelder mit entfernen (Issue #1575)
+        from apps.tenants import demo
+        from apps.work.files import remove_organization_exports_on_commit
+
+        demo.beim_loeschen_melden(remove_organization_exports_on_commit)
