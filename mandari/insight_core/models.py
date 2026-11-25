@@ -1661,6 +1661,14 @@ class OParlConsultation(SourceDeletionModel):
     paper_external_id = models.TextField(blank=True, null=True)
     meeting_external_id = models.TextField(blank=True, null=True)
     agenda_item_external_id = models.TextField(blank=True, null=True)
+    #: Sitzung und Tagesordnungspunkt hat der Ingestor über den Titel der Vorlage abgeleitet; die Quelle nennt sie (noch)
+    #: nicht, ALLRIS etwa erst nach der Sitzung (Issue #1578). Liefert die Quelle sie, gelten ihre Angaben.
+    agenda_item_inferred = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Tagesordnungspunkt abgeleitet",
+        help_text="Über den Titel der Vorlage zugeordnet, bis die Quelle Sitzung und Tagesordnungspunkt nennt.",
+    )
     role = models.CharField(max_length=255, blank=True, null=True)
     authoritative = models.BooleanField(default=False)
 

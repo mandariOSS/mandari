@@ -89,7 +89,7 @@ from src.storage.database import (
 )
 from src.storage.events import start_correlation
 from src.storage.ris_events import content_fingerprint
-from src.sync import beratungen_nachladen
+from src.sync import beratungen_nachladen, beratungen_per_titel
 from src.sync.fortsetzung import CHANGES, FULL, RESUME, ResumeEntry, ResumeRun
 from src.sync.gremien_kalender import SCHLUESSEL as GREMIUM_WEB
 from src.sync.gremien_kalender import KalenderLauf, OhneGremium
@@ -1827,6 +1827,8 @@ class SyncOrchestrator:
 
         # Beratungen, die Punkte anstehender Sitzungen nennen und die es nicht gibt, einzeln nachladen (Issue #1523)
         await self._beratungen_nachladen(client, source_id, body_id, body_external_id, body_name, stats)
+        # Punkte anstehender Sitzungen ohne Beratung über den Titel der Vorlage zuordnen (ALLRIS, Issue #1578)
+        await self._beratungen_per_titel(source_id, body_id, stats)
         terms_url = processed_body.legislative_term_list_url
         if wahlperioden is not None and terms_url and "legislativeterm" not in skip_lists:
             await self._sync_legislative_term_list(client, wahlperioden, terms_url, body_id, full, stats)
@@ -2636,6 +2638,50 @@ class SyncOrchestrator:
             f"{ergebnis.fehlgeschlagen}, zurückgestellt {ergebnis.zurueckgestellt}, {ergebnis.abrufe} Abrufe)"
             + (f", beendet: {ergebnis.abbruch}" if ergebnis.abbruch else "")
             + "[/dim]"
+        )
+
+    async def _beratungen_per_titel(self, source_id: UUID, body_id: UUID, stats: dict[str, Any]) -> None:
+        """
+        Beratungen ohne Sitzung und Punkt über den Titel ihrer Vorlage den Punkten der Sitzungen um heute zuordnen und
+        überholte abgeleitete Zuordnungen zurücknehmen (``src/sync/beratungen_per_titel.py``, Issue #1578). Nur
+        Bestand, keine Abrufe; gezählt in ``stats`` (``per_titel``). Fehler halten den Abgleich nicht auf.
+        """
+        try:
+            if not beratungen_per_titel.eingeschaltet(await self.storage.source_sync_config(source_id)):
+                return
+            geprueft = await self.storage.release_inferred_consultation_links(body_id)
+            jetzt = datetime.now(UTC)
+            kandidaten = await self.storage.consultation_title_candidates(
+                body_id,
+                jetzt - beratungen_per_titel.ZURUECK,
+                jetzt + beratungen_per_titel.VORAUS,
+                min_length=beratungen_per_titel.MINDESTLAENGE,
+            )
+            paare = beratungen_per_titel.eindeutige_paare(
+                beratungen_per_titel.Kandidat(punkt, punkt_id, sitzung_id, beratung)
+                for punkt, punkt_id, sitzung_id, beratung in kandidaten
+            )
+            zugeordnet = 0
+            for paar in paare:
+                if await self.storage.link_consultation_by_title(
+                    paar.consultation_external_id,
+                    agenda_item_external_id=paar.agenda_item_external_id,
+                    agenda_item_id=paar.agenda_item_id,
+                    meeting_id=paar.meeting_id,
+                    body_id=body_id,
+                ):
+                    zugeordnet += 1
+        except Exception as e:  # noqa: BLE001 - die Zuordnung ergänzt nur, der Abgleich bleibt gültig
+            console.print(f"[yellow]  Zuordnung von Beratungen über den Titel gescheitert: {e}[/yellow]")
+            return
+        geaendert = zugeordnet + geprueft["zurueckgenommen"]
+        if not geaendert and not geprueft["bestaetigt"]:
+            return
+        stats["consultations"] = stats.get("consultations", 0) + geaendert
+        stats["per_titel"] = {"zugeordnet": zugeordnet, **geprueft}
+        console.print(
+            f"[dim]  Beratungen über den Titel zugeordnet: {zugeordnet} (zurückgenommen "
+            f"{geprueft['zurueckgenommen']}, von der Quelle bestätigt {geprueft['bestaetigt']})[/dim]"
         )
 
     async def _gremien_aus_kalender(self, kalender: KalenderLauf, client: OParlClient) -> None:

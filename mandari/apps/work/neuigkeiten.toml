@@ -31,6 +31,13 @@
 # Version und dass keine Version fehlt.
 
 [[eintrag]]
+datum = 2026-11-25
+version = ""
+bereich = "sitzungen"
+titel = "Vorlagen stehen schon vor der Sitzung an den Tagesordnungspunkten."
+text = """Manche Ratsinformationssysteme verknüpfen Tagesordnungspunkte und Vorlagen erst nach der Sitzung. Damit Sie sich trotzdem vorbereiten können, ordnet Work die Vorlage in diesem Fall über ihren Titel und das Gremium zu, wenn das eindeutig ist. Sobald das Ratsinformationssystem die Zuordnung selbst liefert, gilt diese. Punkte ohne eindeutige Vorlage bleiben ohne Verknüpfung; die Vorlage finden Sie dann über die Suche."""
+
+[[eintrag]]
 datum = 2026-11-23
 version = ""
 bereich = "fraktionssitzungen"
