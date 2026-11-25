@@ -510,30 +510,34 @@ _UNKNOWN_CONSULTATIONS_OF_MEETINGS = text(
 )
 
 #: Titel in SQL vergleichbar machen (Groß- und Kleinschreibung, Leerraum egal), wie ``beratungen_per_titel``
-_TITEL_SQL = "lower(regexp_replace(btrim({spalte}), '\\s+', ' ', 'g'))"
+#: (Leerraum am Rand erst nach dem Zusammenfassen entfernen: ``btrim`` kennt nur Leerzeichen, keine Umbrüche.)
+_TITEL_SQL = "lower(btrim(regexp_replace({spalte}, '\\s+', ' ', 'g')))"
 
 #: Kandidaten für die Zuordnung über den Titel (Issue #1578): Punkte der Sitzungen dieser Kommune zwischen ``:von`` und
-#: ``:bis``, die keine Beratung nennen und noch keine haben, mit den Beratungen derselben Kommune ohne Sitzung und ohne
-#: Punkt, deren Vorlage den Titel des Punkts trägt und deren Gremium (``organization`` als Adresse oder Objekt) in der
-#: Sitzung tagt. Eindeutig macht die Zuordnung erst ``beratungen_per_titel.eindeutige_paare``.
+#: ``:bis``, die keine Beratung nennen und noch keine derselben Quelle haben, mit den Beratungen derselben Kommune ohne
+#: Sitzung und ohne Punkt, deren Vorlage den Titel des Punkts trägt (normalisiert mindestens ``:mindestens`` Zeichen)
+#: und deren Gremium (``organization`` als Adresse oder Objekt) in der Sitzung tagt. Eindeutig macht die Zuordnung erst
+#: ``beratungen_per_titel.eindeutige_paare``.
 _CONSULTATION_TITLE_CANDIDATES = text(
     "WITH punkte AS ("
     " SELECT ai.id, ai.external_id, ai.meeting_id, " + _TITEL_SQL.format(spalte="ai.name") + " AS titel"
     " FROM oparl_agenda_items ai JOIN oparl_meetings m ON m.id = ai.meeting_id"
     " WHERE m.body_id = :body AND m.start >= :von AND m.start <= :bis"
     " AND ai.deleted IS NOT TRUE AND m.deleted IS NOT TRUE AND m.cancelled IS NOT TRUE"
-    " AND char_length(btrim(ai.name)) >= :mindestens"
     " AND jsonb_typeof(ai.raw_json->'consultation') IS DISTINCT FROM 'string'"
     " AND jsonb_typeof(ai.raw_json->'consultation') IS DISTINCT FROM 'object'"
     " AND NOT EXISTS (SELECT 1 FROM oparl_consultations b"
-    " WHERE b.agenda_item_external_id = ai.external_id AND b.deleted IS NOT TRUE))"
+    " WHERE b.agenda_item_external_id = ai.external_id AND b.deleted IS NOT TRUE"
+    " AND b.body_id IN (SELECT ob.id FROM oparl_bodies ob JOIN oparl_bodies wb ON wb.source_id = ob.source_id"
+    " WHERE wb.id = :body)))"
     " SELECT DISTINCT pu.external_id, pu.id, pu.meeting_id, c.external_id"
     " FROM punkte pu"
     " JOIN oparl_papers p ON p.body_id = :body AND p.deleted IS NOT TRUE"
     " AND " + _TITEL_SQL.format(spalte="p.name") + " = pu.titel"
     " JOIN oparl_consultations c ON c.paper_id = p.id AND c.body_id = :body AND c.deleted IS NOT TRUE"
     " AND coalesce(c.meeting_external_id, '') = '' AND coalesce(c.agenda_item_external_id, '') = ''"
-    " WHERE EXISTS (SELECT 1 FROM oparl_meetings_organizations mo"
+    " WHERE char_length(pu.titel) >= :mindestens"
+    " AND EXISTS (SELECT 1 FROM oparl_meetings_organizations mo"
     " JOIN oparl_organizations o ON o.id = mo.oparlorganization_id"
     " CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.raw_json->'organization') = 'array'"
     " THEN c.raw_json->'organization' ELSE '[]'::jsonb END) g"
@@ -3232,12 +3236,17 @@ class DatabaseStorage:
             # Tagesordnungspunkt oft nicht (ALLRIS); ohne COALESCE löschte jeder Vorlagen-Abgleich die
             # Verknüpfung, die die Beratungsliste derselben Quelle liefert.
             # Eine über den Titel abgeleitete Zuordnung (Issue #1578) weicht der Quelle: Nennt sie einen Punkt, gilt
-            # er; nennt sie eine andere Sitzung, fällt der abgeleitete Punkt weg. Markiert bleibt nur, was die Quelle
-            # weiterhin nicht nennt.
+            # er (die abgeleitete Sitzung bleibt nur, wenn es derselbe Punkt ist); nennt sie eine andere Sitzung, fällt
+            # der abgeleitete Punkt weg. Markiert bleibt nur, was die Quelle weiterhin nicht nennt.
             quelle_andere_sitzung = and_(
                 OParlConsultation.agenda_item_inferred.is_(True),
                 stmt.excluded.meeting_external_id.isnot(None),
                 stmt.excluded.meeting_external_id.is_distinct_from(OParlConsultation.meeting_external_id),
+            )
+            quelle_anderer_punkt = and_(
+                OParlConsultation.agenda_item_inferred.is_(True),
+                stmt.excluded.agenda_item_external_id.isnot(None),
+                stmt.excluded.agenda_item_external_id.is_distinct_from(OParlConsultation.agenda_item_external_id),
             )
             update_set = {
                 "paper_id": func.coalesce(stmt.excluded.paper_id, OParlConsultation.paper_id),
@@ -3245,7 +3254,8 @@ class DatabaseStorage:
                     stmt.excluded.paper_external_id, OParlConsultation.paper_external_id
                 ),
                 "meeting_external_id": func.coalesce(
-                    stmt.excluded.meeting_external_id, OParlConsultation.meeting_external_id
+                    stmt.excluded.meeting_external_id,
+                    case((quelle_anderer_punkt, None), else_=OParlConsultation.meeting_external_id),
                 ),
                 "agenda_item_external_id": func.coalesce(
                     stmt.excluded.agenda_item_external_id,
@@ -3475,9 +3485,14 @@ class DatabaseStorage:
             )
             .exists()
         )
+        # Nur Beratungen derselben Quelle belegen einen Punkt: Verweise fremder Quellen wertet die Anwendung nicht aus
         schon_belegt = (
             select(andere.id)
-            .where(andere.agenda_item_external_id == agenda_item_external_id, andere.deleted.isnot(True))
+            .where(
+                andere.agenda_item_external_id == agenda_item_external_id,
+                andere.deleted.isnot(True),
+                _bodies_of_source_of(andere.body_id, body_id),
+            )
             .exists()
         )
         async with self.get_session() as session:
@@ -3514,8 +3529,11 @@ class DatabaseStorage:
 
         - ``bestaetigt``: Der Punkt nennt jetzt selbst diese Beratung; nur die Markierung fällt weg.
         - ``zurueckgenommen``: Der Punkt ist gelöscht oder verschwunden, nennt eine andere Beratung, oder eine Beratung
-          mit Zuordnung der Quelle zeigt auf ihn. Sitzung und Punkt werden wieder leer (beides hatte die Zuordnung
-          gesetzt), mit Ereignis wie beim Upsert.
+          derselben Quelle mit Zuordnung der Quelle zeigt auf ihn. Der Punkt wird wieder leer, die Sitzung auch, außer
+          die Quelle nennt sie (``raw_json``); Ereignis wie beim Upsert. Die Bedingung gilt beim Schreiben erneut.
+
+        Nur nicht gelöschte Beratungen: Eine gelöschte zeigt keine Seite, und eine aus Datenschutzgründen
+        zurückgenommene darf in keinem Ereignis erscheinen.
         """
         punkt = aliased(OParlAgendaItem)
         andere = aliased(OParlConsultation)
@@ -3545,8 +3563,19 @@ class DatabaseStorage:
                 andere.id != OParlConsultation.id,
                 andere.agenda_item_inferred.isnot(True),
                 andere.deleted.isnot(True),
+                # Verweise fremder Quellen wertet die Anwendung nicht aus, sie belegen keinen Punkt
+                _bodies_of_source_of(andere.body_id, body_id),
             )
             .exists()
+        )
+        ueberholt = or_(~punkt_steht, quelle_belegt)
+        # Eine Sitzung, die die Quelle selbst nennt, bleibt; die abgeleitete fällt weg
+        sitzung_der_quelle = case(
+            (
+                func.jsonb_typeof(OParlConsultation.raw_json["meeting"]) == "string",
+                OParlConsultation.meeting_external_id,
+            ),
+            else_=None,
         )
         ergebnis = {"bestaetigt": 0, "zurueckgenommen": 0}
         async with self.get_session() as session:
@@ -3555,6 +3584,7 @@ class DatabaseStorage:
                 .where(
                     OParlConsultation.body_id == body_id,
                     OParlConsultation.agenda_item_inferred.is_(True),
+                    OParlConsultation.deleted.isnot(True),
                     punkt_nennt_sie,
                 )
                 .values(agenda_item_inferred=False, updated_at=func.now())
@@ -3566,7 +3596,8 @@ class DatabaseStorage:
                     select(OParlConsultation.id, OParlConsultation.agenda_item_external_id).where(
                         OParlConsultation.body_id == body_id,
                         OParlConsultation.agenda_item_inferred.is_(True),
-                        or_(~punkt_steht, quelle_belegt),
+                        OParlConsultation.deleted.isnot(True),
+                        ueberholt,
                     )
                 )
             ).all()
@@ -3580,10 +3611,12 @@ class DatabaseStorage:
                         OParlConsultation.id == consultation_id,
                         OParlConsultation.agenda_item_inferred.is_(True),
                         OParlConsultation.agenda_item_external_id == agenda_item_external_id,
+                        OParlConsultation.deleted.isnot(True),
+                        ueberholt,
                     )
                     .values(
                         agenda_item_external_id=None,
-                        meeting_external_id=None,
+                        meeting_external_id=sitzung_der_quelle,
                         agenda_item_inferred=False,
                         updated_at=func.now(),
                     )
@@ -3602,11 +3635,11 @@ class DatabaseStorage:
     ) -> None:
         """
         Ereignis zu einer zurückgenommenen abgeleiteten Zuordnung: Vorher galten Sitzung und Punkt, jetzt der Stand der
-        Quelle (``raw_json``, ohne beides). ``row`` ist die Zeile nach dem Zurücknehmen; die Sitzung vorher steht als
-        Kennung im ``raw_json`` nicht, sie kommt aus dem Punkt.
+        Quelle (``raw_json``, ohne Punkt). ``row`` ist die Zeile nach dem Zurücknehmen; nennt die Quelle keine Sitzung,
+        kommt die Sitzung vorher aus dem Punkt. Für eine aus Datenschutzgründen zurückgenommene Beratung kein Ereignis.
         """
         consultation_id, consultation_body_id, raw, paper_id, paper_external_id, _meeting, reason = row
-        if not await self._events_for(session, consultation_body_id):
+        if reason == ris_events.REASON_PRIVACY or not await self._events_for(session, consultation_body_id):
             return
         stored: Mapping[str, Any] = raw if isinstance(raw, Mapping) else {}
         meeting_vorher = (

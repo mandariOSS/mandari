@@ -139,13 +139,20 @@ class Kommune:
         return self
 
     async def sitzung(
-        self, *, sitzung: str = MEETING, punkt: str = ITEM, in_tagen: int = 2, **eigenschaften: Any
+        self,
+        *,
+        sitzung: str = MEETING,
+        punkt: str = ITEM,
+        in_tagen: int = 2,
+        # Groß- und Kleinschreibung, doppelter Leerraum und ein Umbruch am Ende zählen nicht
+        titel: str = TITEL.replace(" im ", "  IM ") + "\n",
+        **eigenschaften: Any,
     ) -> None:
         punkte = [
             {"id": FORMAL, "type": "https://schema.oparl.org/1.1/AgendaItem", "number": "1", "order": 1,
              "name": "Feststellung der Ordnungsgemäßheit der Ladung"},
             {"id": punkt, "type": "https://schema.oparl.org/1.1/AgendaItem", "number": "4.1", "order": 5,
-             "name": TITEL.replace(" im ", "  IM ") + " ", **eigenschaften},
+             "name": titel, **eigenschaften},
         ]  # fmt: skip
         daten = {
             "id": sitzung,
@@ -157,11 +164,11 @@ class Kommune:
         }
         await self.storage.upsert_meeting(self.processor.process_meeting(daten, BASE), self.body_id)
 
-    async def vorlage(self, *, paper: str = PAPER, **beratung: Any) -> None:
+    async def vorlage(self, *, paper: str = PAPER, titel: str = TITEL, **beratung: Any) -> None:
         daten = {
             "id": paper,
             "type": "https://schema.oparl.org/1.1/Paper",
-            "name": TITEL,
+            "name": titel,
             "reference": "VO/2026/5373",
             "consultation": [
                 {"id": CONSULTATION if paper == PAPER else f"{paper}/c", "organization": [GREMIUM],
@@ -309,3 +316,69 @@ async def test_bestaetigt_wenn_der_punkt_sie_nennt(kommune: Kommune) -> None:
 
     assert stats["per_titel"] == {"zugeordnet": 0, "bestaetigt": 1, "zurueckgenommen": 0}
     assert _bezug(await kommune.beratung()) == (MEETING, ITEM, False)
+
+
+async def test_mindestlaenge_gilt_fuer_den_normalisierten_titel(kommune: Kommune) -> None:
+    # Roh 14 Zeichen, zusammengefasst nur „bau kita“ (8): zu allgemein für eine Zuordnung
+    await kommune.sitzung(titel="Bau       Kita")
+    await kommune.vorlage(titel="Bau Kita")
+    assert "per_titel" not in await kommune.lauf()
+    assert _bezug(await kommune.beratung()) == (None, None, False)
+
+
+async def test_quelle_nennt_anderen_punkt_ohne_sitzung(kommune: Kommune) -> None:
+    await kommune.lauf()
+    anderer = f"{BASE}/agendaItems/2099999"
+    # Die abgeleitete Sitzung gehört nicht zum Punkt der Quelle und fällt weg
+    await kommune.vorlage(agendaItem=anderer)
+    assert _bezug(await kommune.beratung()) == (None, anderer, False)
+
+
+async def test_sitzung_der_quelle_bleibt_bei_der_ruecknahme(storage: DatabaseStorage, kommune: Kommune) -> None:
+    await kommune.lauf()
+    # Die Quelle nennt die Sitzung, aber noch keinen Punkt: Die Zuordnung zum Punkt bleibt abgeleitet
+    await kommune.vorlage(meeting=MEETING)
+    assert _bezug(await kommune.beratung()) == (MEETING, ITEM, True)
+    async with storage.get_session() as session:
+        await session.execute(text("UPDATE oparl_agenda_items SET deleted = true WHERE external_id = :p"), {"p": ITEM})
+        await session.commit()
+
+    assert (await kommune.lauf())["per_titel"]["zurueckgenommen"] == 1
+    assert _bezug(await kommune.beratung()) == (MEETING, None, False)
+
+
+async def test_fremde_quelle_belegt_keinen_punkt(storage: DatabaseStorage, kommune: Kommune) -> None:
+    await kommune.lauf()
+    fremd = "https://ris.fremd.example/oparl/bodies/1"
+    source_id = await storage.upsert_source(f"{fremd}/system", "Fremdstadt")
+    body = kommune.processor.process_body({"id": fremd, "type": "https://schema.oparl.org/1.1/Body"}, fremd)
+    body_id = await storage.upsert_body(body, source_id)
+    daten = {
+        "id": f"{fremd}/papers/1",
+        "type": "https://schema.oparl.org/1.1/Paper",
+        "name": TITEL,
+        "consultation": [{"id": f"{fremd}/consultations/1", "meeting": MEETING, "agendaItem": ITEM}],
+    }
+    await storage.upsert_paper(kommune.processor.process_paper(daten, fremd), body_id)
+    # Die fremde Beratung steht mit dem Verweis auf unseren Punkt im Bestand (als Text, nicht ausgewertet)
+    assert _bezug(await kommune.beratung(f"{fremd}/consultations/1"))[1] == ITEM
+
+    assert "per_titel" not in await kommune.lauf()
+    assert _bezug(await kommune.beratung()) == (MEETING, ITEM, True)
+
+
+async def test_kein_ereignis_fuer_datenschutz_ruecknahme(storage: DatabaseStorage, kommune: Kommune) -> None:
+    await kommune.lauf()
+    async with storage.get_session() as session:
+        await session.execute(
+            text(
+                "UPDATE oparl_consultations SET deleted = true, deletion_reason = 'datenschutz' WHERE external_id = :c"
+            ),
+            {"c": CONSULTATION},
+        )
+        await session.execute(text("UPDATE oparl_agenda_items SET deleted = true WHERE external_id = :p"), {"p": ITEM})
+        await session.commit()
+    anzahl = len(await kommune.ereignisse())
+
+    assert "per_titel" not in await kommune.lauf()
+    assert len(await kommune.ereignisse()) == anzahl
