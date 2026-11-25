@@ -555,6 +555,9 @@ class OParlConsultation(Base):
     paper_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     meeting_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     agenda_item_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Sitzung und Tagesordnungspunkt hat der Abgleich über den Titel der Vorlage abgeleitet, die Quelle nennt sie
+    #: (noch) nicht (Issue #1578, ``src/sync/beratungen_per_titel.py``)
+    agenda_item_inferred: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
     authoritative: Mapped[bool] = mapped_column(Boolean, default=False)
 
