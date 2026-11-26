@@ -19,8 +19,9 @@ Vollständig in [docs/WEITERENTWICKLUNG.md](docs/WEITERENTWICKLUNG.md) und
    Befunde gehen neuer Arbeit vor. Neue Wünsche kommen in den nächsten Zug, nicht still in den laufenden.
 5. **Branch von `dev`, PR gegen `dev`, Merge-Queue.** `Closes #…` nur, wenn der PR das Issue ganz erledigt,
    sonst `Teil von #…`. CHANGELOG-Zeile unter `[Unreleased]` im selben PR.
-6. **Ältere Versionen:** Korrekturen nie direkt auf `release/v*` oder `main`. Erst in `dev` mergen, dann bei
-   Sicherheitskorrekturen ab „mittel“ und kritischen Fehlern zurückportieren:
+6. **Ältere Versionen:** Unterstützt wird nur die jüngste MINOR, keine Pflegeversionen, kein LTS. Bis
+   31.01.2027 erhalten noch 0.11 und 0.12 Korrekturen. Korrekturen nie direkt auf `release/v*` oder `main`.
+   Erst in `dev` mergen, dann bei Sicherheitskorrekturen ab „mittel“ und kritischen Fehlern zurückportieren:
    `python scripts/rueckportieren.py <PR> --grund <grund>` (Abschnitt 9 in WEITERENTWICKLUNG.md). Keine
    Migrationen und keine neuen Funktionen in Pflegelinien.
 7. **Sicherheitslücken nie öffentlich:** kein öffentliches Issue, neutrale PR-Titel und -Texte.

@@ -40,7 +40,7 @@ SECURITY_MD = REPO / "SECURITY.md"
 GRUENDE = ("sicherheit-kritisch", "sicherheit-hoch", "sicherheit-mittel", "kritischer-fehler")
 LABEL = "rueckportierung"
 
-# | 0.12 (Pflegeversion 4. Quartal 2026) | Sicherheitskorrekturen … | 17.05.2027 |
+# | 0.12 (Übergang) | Sicherheitskorrekturen … | 31.01.2027 |
 ZEILE = re.compile(r"^\|\s*(?P<linie>\d+\.\d+)\b[^|]*\|[^|]*\|\s*(?P<bis>\d{2}\.\d{2}\.\d{4})\s*\|\s*$")
 
 

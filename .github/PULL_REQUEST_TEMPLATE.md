@@ -1,5 +1,5 @@
 <!-- Pull Requests bitte gegen `dev` öffnen. Ablauf, Konventionen und Prüfungen stehen in CONTRIBUTING.md und docs/WEITERENTWICKLUNG.md.
-     PRs gegen Pflegelinien (release/v*): nur Rückportierungen (scripts/rueckportieren.py) und die Vorbereitung einer
+     PRs gegen die Pflegelinien release/v0.11 und release/v0.12 (bis 31.01.2027): nur Rückportierungen (scripts/rueckportieren.py) und die Vorbereitung einer
      Patch-Version (Version, CHANGELOG), siehe docs/WEITERENTWICKLUNG.md, Abschnitt 9. -->
 
 ## Beschreibung

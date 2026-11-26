@@ -16,7 +16,7 @@ Mit der Teilnahme gilt der [Verhaltenskodex](CODE_OF_CONDUCT.md).
 | Erster Beitrag | Issues mit der Markierung [`good first issue`](https://github.com/mandariOSS/mandari/labels/good%20first%20issue) |
 
 Wie wir planen, priorisieren und ausliefern (Release alle zwei Wochen, Meilensteine, Prioritäten, Rückportierung in
-Pflegeversionen), steht verbindlich in [docs/WEITERENTWICKLUNG.md](docs/WEITERENTWICKLUNG.md).
+die Übergangslinien 0.11 und 0.12 bis 31.01.2027), steht verbindlich in [docs/WEITERENTWICKLUNG.md](docs/WEITERENTWICKLUNG.md).
 
 Jede Arbeit beginnt mit einem Issue (Ausnahmen: Sicherheitslücken, siehe [SECURITY.md](SECURITY.md),
 sowie Abhängigkeits-Updates und Rückportierungen). Größere Vorhaben vorher in den Diskussionen
@@ -281,8 +281,9 @@ allem davor geprüft ist. Nach dem Merge holt sich die Staging-Umgebung den neue
 nur Administratoren im Notfall.
 
 Entwicklung findet auf `dev` statt; `main` ist der Produktionsstand. Alle zwei Wochen erscheint aus
-`main` eine Version. Korrekturen für ältere Versionen entstehen nie direkt auf deren Zweig, sondern
-zuerst in `dev` und werden dann zurückportiert ([Weiterentwicklung, Abschnitt 9](docs/WEITERENTWICKLUNG.md#9-rückportierung-in-pflegelinien)).
+`main` eine Version. Unterstützt wird nur die jüngste; ältere Versionen erhalten keine Korrekturen, die
+Übergangslinien 0.11 und 0.12 noch bis 31.01.2027. Deren Korrekturen entstehen nie direkt auf ihrem Zweig,
+sondern zuerst in `dev` und werden dann zurückportiert ([Weiterentwicklung, Abschnitt 9](docs/WEITERENTWICKLUNG.md#9-rückportierung-in-pflegelinien)).
 
 ## Lizenz und Urheberrecht
 

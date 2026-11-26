@@ -32,16 +32,16 @@ Jeder Meilenstein ist ein Zug: Er trägt die Version und als Fälligkeit den Rel
 | 0.14 | 26.11.2026 | 01.12.2026 | |
 | 0.15 | 10.12.2026 | 15.12.2026 | |
 | – | – | 29.12.2026 | entfällt (Feiertage) |
-| 0.16 | 07.01.2027 | 12.01.2027 | **Pflegeversion** 1. Quartal 2027 |
+| 0.16 | 07.01.2027 | 12.01.2027 | |
 | 0.17 | 21.01.2027 | 26.01.2027 | |
 | 0.18 | 04.02.2027 | 09.02.2027 | |
 | 0.19 | 18.02.2027 | 23.02.2027 | |
 | 0.20 | 04.03.2027 | 09.03.2027 | |
 | 0.21 | 18.03.2027 | 23.03.2027 | |
-| 0.22 | 01.04.2027 | 06.04.2027 | **Pflegeversion** 2. Quartal 2027 |
+| 0.22 | 01.04.2027 | 06.04.2027 | |
 
-Danach weiter alle 14 Tage; maßgeblich sind die Meilensteine. Pflegeversion ist immer der
-erste Zug eines Quartals.
+Danach weiter alle 14 Tage; maßgeblich sind die Meilensteine. Pflegeversionen gibt es nicht:
+Unterstützt wird nur die jüngste MINOR ([Release-Politik](RELEASE_POLITIK.md), Abschnitt 3).
 
 ### Ablauf einer Release-Woche
 
@@ -49,7 +49,7 @@ erste Zug eines Quartals.
 |---|---|
 | **Donnerstag (Stichtag)** | 1. Meilenstein bereinigen: Was nicht fertig ist, in den nächsten Zug verschieben. 2. Vorbereitungs-PR gegen `dev` „chore(release): 0.13.0 vorbereiten“: Version in `mandari/pyproject.toml` und `mandari/package.json`, `uv lock` im Ordner `mandari`, im CHANGELOG `[Unreleased]` zu `[0.13.0] – 2026-11-17` und einen leeren Abschnitt `[Unreleased]` darüber, in den beiden Dateien für „Was ist neu?“ (`mandari/insight_core/neuigkeiten.toml`, `mandari/apps/work/neuigkeiten.toml`) bei den Einträgen ohne Version die Version und denselben Tag. Jede Version braucht in beiden Dateien mindestens einen Eintrag: Hat sie an Work oder am Bürgerportal nichts geändert, kommt ein kurzer Eintrag dazu, der das sagt (die Tests verlangen es). 3. Release-PR `dev` → `main` „Release v0.13.0“, CI grün, Merge. 4. Deploy in Produktion nach den Betriebsregeln. |
 | **Freitag bis Montag** | Produktion beobachten (Statusseite, Fehlerprotokolle, Rückmeldungen). Ein Fehler, der das Release verhindert (Datenverlust, Sicherheitslücke, Ausfall, gescheiterte Migration), wird über `dev` behoben und mit einem weiteren Release-PR ausgeliefert. Getaggt wird dann der korrigierte Stand, wenn er bis Dienstag mindestens einen Werktag in Produktion läuft; sonst entfällt der Zug. Der korrigierte Stand enthält auch, was seit dem Stichtag in `dev` kam; der weitere Release-PR verschiebt deshalb auch deren Einträge aus `[Unreleased]` in den Abschnitt der Version und trägt bei ihren Einträgen in den beiden Dateien für „Was ist neu?“ die Version und deren Tag ein. Das ist gewollt: Freigegeben ist, was mindestens einen Werktag in Produktion lief. Isolierte Korrekturen auf dem Stichtagsstand gibt es nicht. |
-| **Dienstag (Release)** | Tag und GitHub-Release auf den getesteten Commit (Befehle unten). Der Release-Workflow baut die Images und legt `release/v0.13.0` an; `latest` setzt er nur, wenn der getaggte Commit noch der Kopf von `main` ist (lief `main` weiter, steht `latest` schon auf dem neueren Stand). Meilenstein schließen. Eintrag auf mandari.de/releases/. Bei einer **Pflegeversion** zusätzlich: Pflegelinie `release/v0.16` anlegen und die Tabelle „Unterstützte Versionen“ in `SECURITY.md` per PR ergänzen. Danach den übernächsten Zug planen (Abschnitt 3). |
+| **Dienstag (Release)** | Tag und GitHub-Release auf den getesteten Commit (Befehle unten). Der Release-Workflow baut die Images und legt `release/v0.13.0` an; `latest` setzt er nur, wenn der getaggte Commit noch der Kopf von `main` ist (lief `main` weiter, steht `latest` schon auf dem neueren Stand). Meilenstein schließen. Eintrag auf mandari.de/releases/. Danach den übernächsten Zug planen (Abschnitt 3). |
 
 ```bash
 git fetch origin --tags
@@ -138,6 +138,11 @@ Innerhalb einer Stufe: Begonnenes vor Neuem; bei gleichem Nutzen das Kleinere zu
 - In Produktion; ein Schalter ist an oder bewusst als Option dokumentiert.
 
 ## 9. Rückportierung in Pflegelinien
+
+**Gilt nur noch bis 31.01.2027.** Pflegeversionen gibt es nicht mehr, neue Pflegelinien entstehen
+nicht. Zurückportiert wird nur noch in die Übergangslinien 0.11 und 0.12, deren Pflege am
+31.01.2027 endet (Release-Politik, Abschnitt 3). Danach überspringt das Skript die beiden Zeilen
+in `SECURITY.md`, und dieser Abschnitt entfällt.
 
 **Was** zurückportiert wird, regelt die [Release-Politik](RELEASE_POLITIK.md), Abschnitt 5:
 Sicherheitskorrekturen ab „mittel“ und kritische Fehler, keine Migrationen. Ob ein Fix dazugehört,

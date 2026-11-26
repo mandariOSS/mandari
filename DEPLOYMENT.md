@@ -111,15 +111,15 @@ voraus. Wer bei den Einzeldateien bleibt, aktualisiert wie unter „Datenbank-Mi
 ./update.sh --rollback     # auf die vorherige Version zurück
 ```
 
-**Welche Spur?** Alle zwei Wochen erscheint eine Version, ohne Handarbeit einspielbar
+**Welche Version?** Alle zwei Wochen erscheint eine Version, ohne Handarbeit einspielbar
 (`./update.sh --tag <Version>`; `latest` folgt dem Stand von `main` und kann neuer sein als das jüngste
-Release). Wer
-seltener aktualisieren will, bleibt auf einer **Pflegeversion** (die erste Version jedes Quartals, sechs
-Monate Sicherheitskorrekturen) und spielt nur deren Patch-Versionen ein, und zwar mit fester Version:
-`./update.sh --tag <Version>`. Das bewegliche Linien-Tag (etwa `v0.13`) zeigt, welche Patch-Version die jüngste ist; zum
+Release). Unterstützt wird nur die jüngste Version; Pflegeversionen und LTS gibt es nicht. Die
+Übergangslinien 0.11 und 0.12 erhalten noch bis 31.01.2027 Sicherheitskorrekturen ab „mittel“ und
+Korrekturen kritischer Fehler; wer eine davon betreibt, aktualisiert bis dahin auf die jüngste Version.
+Patch-Versionen spielt man mit fester Version ein: `./update.sh --tag <Version>`. Das bewegliche Linien-Tag (etwa `v0.13`) zeigt, welche Patch-Version die jüngste ist; zum
 Einspielen taugt es nicht, weil der automatische Rückfall ein bewegliches Tag (wie auch `latest`) nicht auf das
 vorherige Image zurückführen kann.
-Welche Pflegeversionen unterstützt werden, steht in [SECURITY.md](SECURITY.md#unterstützte-versionen),
+Welche Versionen unterstützt werden, steht in [SECURITY.md](SECURITY.md#unterstützte-versionen),
 die Regeln in der [Release-Politik](docs/RELEASE_POLITIK.md).
 
 ### Mit Skript: Gesundheitsprüfung und automatischer Rückfall

@@ -14,8 +14,8 @@ auch die passende öffentliche Seite (oder legt im Docs-Repository ein Issue an)
 
 | Notiz | Inhalt | Öffentliche Seite |
 |-------|--------|-------------------|
-| `WEITERENTWICKLUNG.md` | verbindlich: Release-Zug alle zwei Wochen, Planung, Prioritäten, gleichzeitige Arbeit, Rückportierung in Pflegelinien | – |
-| `RELEASE_POLITIK.md` | Zusagen nach außen: Versionierung, Takt, Pflegeversionen, Sicherheitsfristen, Abkündigung | [Release- und Support-Politik](https://docs.mandari.de/entwicklung/release-politik/) |
+| `WEITERENTWICKLUNG.md` | verbindlich: Release-Zug alle zwei Wochen, Planung, Prioritäten, gleichzeitige Arbeit, Rückportierung in 0.11 und 0.12 bis 31.01.2027 | – |
+| `RELEASE_POLITIK.md` | Zusagen nach außen: Versionierung, Takt, Supportzeitraum (nur die jüngste MINOR), Sicherheitsfristen, Abkündigung | [Release- und Support-Politik](https://docs.mandari.de/entwicklung/release-politik/) |
 | `ENGINEERING_STANDARDS.md` | Regeln für Code: Schichten, Typisierung, Tests, Sicherheit mit Uploads und CSP, Frontend mit Barrierefreiheit, API, Betrieb | – |
 
 ## Schnittstellen

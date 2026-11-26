@@ -171,8 +171,8 @@ jobs:
             fi
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${VERSION}"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${VERSION}"
-            # Bewegliches Tag der Linie (v0.16 für v0.16.3): wer auf einer Pflegeversion bleibt, bekommt so
-            # deren jüngste Patch-Version (IMAGE_TAG=v0.16).
+            # Bewegliches Tag der Linie (v0.16 für v0.16.3): zeigt auf deren jüngste Patch-Version
+            # (IMAGE_TAG=v0.16).
             LINIE="${VERSION%.*}"
             if printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
               JUENGSTE_DER_LINIE=$(echo "$VEROEFFENTLICHT" | grep -E "^${LINIE//./\\.}\.[0-9]+$" | tail -n 1 || true)

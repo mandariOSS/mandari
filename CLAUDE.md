@@ -24,7 +24,8 @@ git push -u origin fix/mein-thema
 gh pr create --base dev
 ```
 
-**Korrektur für eine ältere Version** (Sicherheit ab „mittel“ oder kritischer Fehler): erst wie oben nach
+**Korrektur für 0.11 oder 0.12** (nur bis 31.01.2027, Sicherheit ab „mittel“ oder kritischer Fehler; weitere
+Pflegeversionen gibt es nicht): erst wie oben nach
 `dev`, nach dem Merge zurückportieren, nie direkt auf `release/v*`:
 
 ```bash
