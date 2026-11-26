@@ -12,7 +12,7 @@ from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_http_methods
 from mandari_oparl.abgleich import looks_like_html
 
 from ..models import (
@@ -181,6 +181,7 @@ import threading
 
 import httpx
 from django.conf import settings
+from django.middleware.csrf import get_token
 from django.utils.html import escape
 from django.views.decorators.clickjacking import xframe_options_exempt
 
@@ -223,7 +224,11 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 h1{{font-size:1.125rem;font-weight:600;margin-bottom:.5rem;color:#111827}}
 p{{font-size:.875rem;line-height:1.625;color:#6b7280}}
 a{{color:#17703f;text-decoration:underline}}
-@media(prefers-color-scheme:dark){{body{{background:#111827;color:#d1d5db}}h1{{color:#f9fafb}}p{{color:#9ca3af}}.icon{{color:#6b7280}}a{{color:#a0d8b5}}}}
+form{{margin:1.25rem 0 1rem}}
+button{{font:inherit;font-size:.875rem;font-weight:600;color:#fff;background:#17703f;border:0;border-radius:.375rem;padding:.625rem 1.25rem;min-height:2.75rem;cursor:pointer}}
+button:hover{{background:#125a32}}
+button:focus-visible{{outline:2px solid #17703f;outline-offset:2px}}
+@media(prefers-color-scheme:dark){{body{{background:#111827;color:#d1d5db}}h1{{color:#f9fafb}}p{{color:#9ca3af}}.icon{{color:#6b7280}}a{{color:#a0d8b5}}button{{background:#a0d8b5;color:#111827}}button:hover{{background:#c2e6cf}}}}
 </style></head>
 <body><div class="card">
 <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -236,7 +241,7 @@ a{{color:#17703f;text-decoration:underline}}
     return response
 
 
-@require_GET
+@require_http_methods(["GET", "HEAD", "POST"])
 @xframe_options_exempt
 def file_proxy(request, file_id):
     """
@@ -248,6 +253,10 @@ def file_proxy(request, file_id):
     2. Live-Abruf über ``hub.ris.abruf`` mit kurzen Timeouts; erfolgreiche Antworten werden
        direkt abgelegt (Write-Through), Fehlschläge setzen dieselben Zustände wie der Abruf.
     3. Freundliche Fehlerseite, wenn die Quelle nicht erreichbar ist
+
+    Quellen mit Abruf auf Anforderung (``file_downloads = "bei_bedarf"``): Den Live-Abruf löst nur eine Person aus,
+    angemeldet oder über den Knopf „Dokument laden“ (POST mit CSRF-Schutz); Suchmaschinen und andere Crawler sehen
+    nur diese Seite. Das geholte Dokument wird abgelegt, auch für ungelistete Kommunen.
 
     Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786),
     Folgeanfragen eines Abrufs in Teilen (Range) nicht. Ausgelieferte Dokumente vermerken ihre letzte
@@ -345,10 +354,16 @@ def _deliver_file(request, file_obj):
         response["Retry-After"] = "15"
         return response
 
+    # Abruf auf Anforderung (sync_config["file_downloads"] = "bei_bedarf"): nur, wenn eine Person das Dokument
+    # anfordert; sonst die Seite mit dem Knopf „Dokument laden“ (Crawler holen so nichts bei der Quelle)
+    on_demand = file_cache.downloads_on_demand(file_obj.body)
+    if on_demand and not _requested_by_person(request):
+        return _on_demand_prompt(request, url)
+
     # Dateiabruf der Quelle abgeschaltet (sync_config["file_downloads"] = false), etwa weil die Kommune Dokumente
     # nur nach einer Zugangsprüfung für Menschen herausgibt oder nach einem Opt-out: nicht selbst abrufen, sondern
     # auf das Original verweisen. Der Hinweis nennt bewusst keinen Grund, er stünde sonst öffentlich falsch da.
-    if file_cache.downloads_disabled(file_obj.body):
+    if not on_demand and file_cache.downloads_disabled(file_obj.body):
         return _file_proxy_error(
             "Dokument beim Ratsinformationssystem öffnen",
             "Dieses Dokument rufen wir nicht selbst ab. Du findest es im Ratsinformationssystem der Kommune. "
@@ -401,9 +416,32 @@ def _deliver_file(request, file_obj):
         blocked = _robots_or_pacing_blocked(file_obj, url, deadline=deadline)
         if blocked is not None:
             return blocked
-        return _fetch_live(file_obj, url, filename, force_download, deadline=deadline)
+        return _fetch_live(file_obj, url, filename, force_download, deadline=deadline, keep=on_demand)
     finally:
         _LIVE_FETCH_SLOTS.release()
+
+
+def _requested_by_person(request) -> bool:
+    """
+    Fordert eine Person das Dokument an? Angemeldet (Work, Portal) oder über den Knopf „Dokument laden“: Ein POST
+    erreicht die Vorschau nur mit gültigem CSRF-Token (``CsrfViewMiddleware``), also aus der Seite heraus.
+    """
+    return request.method == "POST" or bool(getattr(getattr(request, "user", None), "is_authenticated", False))
+
+
+def _on_demand_prompt(request, url):
+    """Seite „Dokument laden“ für Quellen mit Abruf auf Anforderung (Knopf sendet dieselbe Adresse per POST)."""
+    action = escape(request.get_full_path())
+    token = escape(get_token(request))
+    form = (
+        f'<form method="post" action="{action}"><input type="hidden" name="csrfmiddlewaretoken" value="{token}">'
+        '<button type="submit">Dokument laden</button></form>'
+    )
+    return _file_proxy_error(
+        "Dokument laden",
+        "Dieses Dokument holen wir erst beim Ratsinformationssystem ab, wenn es jemand öffnet. "
+        "Danach liegt es für alle weiteren Aufrufe bei uns bereit." + form + _original_link(url),
+    )
 
 
 def _pace_max_wait():
@@ -485,10 +523,11 @@ def _robots_refused_response(url):
     )
 
 
-def _fetch_live(file_obj, url, filename, force_download, *, deadline=None):
+def _fetch_live(file_obj, url, filename, force_download, *, deadline=None, keep=False):
     """
     Datei beim Quell-RIS abrufen (``hub.ris.abruf``: Größe, Dauer und Ziel begrenzt) und ausliefern
     (Write-Through). Fehlschläge setzen dieselben Zustände wie der Abruf im Dokument-Cache (Issue #919).
+    ``keep``: immer ablegen (Abruf auf Anforderung), sonst nur nach ``abruf.stores_file``.
     Weiterleitungen warten höchstens bis ``deadline``, der Frist der Prüfung vorher (sonst 503 mit ``Retry-After``).
     """
     from django.http import FileResponse
@@ -593,7 +632,9 @@ def _fetch_live(file_obj, url, filename, force_download, *, deadline=None):
     # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (Regel der Ablage samt Stichtag). In den
     # Objektspeicher lädt sie der Zeitplan; der Besucher wartet nicht auf den Upload.
     try:
-        if abruf.stores_file(file_obj) and file_cache.has_room_for(download.size):
+        # Abruf auf Anforderung (keep): immer ablegen, auch für ungelistete Kommunen, damit die Quelle jedes Dokument
+        # nur einmal ausliefert
+        if (keep or abruf.stores_file(file_obj)) and file_cache.has_room_for(download.size):
             abruf.ablegen(file_obj, spool, content_type=content_type, upload=False)
     except Exception:  # Cache-Fehler dürfen die Auslieferung nie verhindern
         logger.warning("Dokument %s konnte nicht zwischengespeichert werden", file_obj.id, exc_info=True)

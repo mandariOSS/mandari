@@ -34,6 +34,8 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     ``false``: Dateien dieser Quelle nicht automatisch abrufen (Textextraktion im Ingestor, Dateicache und
     Vorschau in Django). Für Quellen, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern;
     die Dateien bleiben in der Warteschlange und werden nachgeholt, sobald der Schalter fällt.
+    ``"bei_bedarf"``: wie ``false`` für den Ingestor (nichts vorab laden); die Vorschau in Django holt ein
+    Dokument, sobald eine Person es öffnet, und legt es ab (Abruf auf Anforderung).
 ``sync_window``
     Abruffenster für alle Abgleiche der Quelle (Issue #1186), z. B. ``{"start": "23:00", "end": "01:00"}``
     (Ortszeit, Standard ``Europe/Berlin``, abweichend über ``"tz"``; über Mitternacht erlaubt; Format wie
@@ -102,6 +104,8 @@ from src.config import settings
 LIST_PARAMS_KEY = "list_params"
 CARRY_MODIFIED_SINCE_KEY = "carry_modified_since"
 FILE_DOWNLOADS_KEY = "file_downloads"
+#: Wert für ``file_downloads``: nur auf Anforderung einer Person (Vorschau in Django), nichts vorab
+FILE_DOWNLOADS_ON_DEMAND = "bei_bedarf"
 SYNC_WINDOW_KEY = "sync_window"
 FULL_SYNC_WINDOW_KEY = "full_sync_window"
 FULL_SYNC_EVERY_DAYS_KEY = "full_sync_every_days"
@@ -133,6 +137,11 @@ def _skip_lists(value: Any) -> frozenset[str]:
     if not isinstance(value, list):
         return frozenset()
     return frozenset(name for name in value if isinstance(name, str) and name in SKIPPABLE_LIST_TYPES)
+
+
+def _file_downloads(value: Any) -> bool:
+    """Dateien im Hintergrund abrufen? Nur ``false`` und ``"bei_bedarf"`` schalten ab (fehlend oder sonst: an)."""
+    return value is not False and value != FILE_DOWNLOADS_ON_DEMAND
 
 
 def _list_params(value: Any) -> dict[str, str]:
@@ -363,8 +372,8 @@ class SourceFetchOptions:
             request_interval=_request_interval(sync_config.get(REQUEST_INTERVAL_KEY)),
             list_params=_list_params(sync_config.get(LIST_PARAMS_KEY)),
             carry_modified_since=sync_config.get(CARRY_MODIFIED_SINCE_KEY) is True,
-            # Nur ein ausdrückliches false schaltet ab
-            file_downloads=sync_config.get(FILE_DOWNLOADS_KEY) is not False,
+            # Nur ein ausdrückliches false schaltet ab, "bei_bedarf" lädt nichts vorab (Abruf auf Anforderung in Django)
+            file_downloads=_file_downloads(sync_config.get(FILE_DOWNLOADS_KEY)),
             robots_override=robots_override(sync_config),
             sync_window=sync_window,
             full_sync_window=full_sync_window,

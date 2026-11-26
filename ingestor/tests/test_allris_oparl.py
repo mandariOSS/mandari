@@ -152,6 +152,8 @@ class TestSourceFetchOptions:
             }
         )
         assert options == SourceFetchOptions()
+        # Abruf auf Anforderung: Dokumente holt nur die Vorschau in Django, der Ingestor lädt nichts vorab
+        assert SourceFetchOptions.from_sync_config({"file_downloads": "bei_bedarf"}).file_downloads is False
         assert SourceFetchOptions.from_sync_config({"request_interval": True}).request_interval is None
         assert SourceFetchOptions.from_sync_config({"request_interval": -1}).request_interval is None
         # Werte unter einer Sekunde, auch 0, hebt die Untergrenze an (tests/test_takt_untergrenze.py)

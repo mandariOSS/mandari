@@ -872,6 +872,15 @@ Für alle gilt: robots.txt wie oben, Takt je Server wie oben, Weiterleitungen wi
 das Original, ohne einen Grund zu nennen: Der Schalter steht bei einer Zugangsprüfung für Menschen ebenso wie nach
 einem Opt-out (`mandari/insight_core/views/files.py`, `_deliver_file`).
 
+**Abruf auf Anforderung** (`file_downloads = "bei_bedarf"`, #1582): Vorab laden wir nichts, Ingestor, Dokument-Cache,
+Löschabgleich und Personenfotos behandeln die Quelle wie bei `false`. Öffnet eine Person ein Dokument, holt die
+Vorschau es einmal bei der Quelle, liefert es aus und legt es ab, auch bei ungelisteten Kommunen. Weitere Aufrufe
+kommen aus der Kopie. Den Abruf löst nur eine Person aus: angemeldet oder über den Knopf „Dokument laden“ (POST mit
+CSRF-Token), Crawler sehen nur die Seite mit dem Knopf. Die robots.txt gilt für diese Dateiabrufe nicht, weil sie
+automatische Abrufe regelt (RFC 9309) und jeder dieser Abrufe auf eine Person zurückgeht. Takt je Server, Schonung der
+Quelle und die Grenze je IP-Adresse gelten weiter; eine Zugangsprüfung (HTML statt Datei) umgehen wir auch hier nicht.
+Für Absprachen mit einer Kommune (etwa Abrufe nur nachts) bleibt `false` richtig.
+
 ### Texterkennung im Ingestor
 
 - Der Ingestor lädt jede neu erfasste Datei, deren Text fehlt, einmal (Zustand `pending`). Geänderte Fassungen
@@ -1011,7 +1020,7 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 | `modified_since_margin_minutes` | Sicherheitsabstand des Änderungsfensters in Minuten, ganze Zahl von 0 bis 10080 | `60` |
 | `list_params` | Parameter für die erste Seite jeder Liste (nicht `modified_since`, Werte bis 100 Zeichen) | `{"size": 100}` |
 | `carry_modified_since` | Quelle filtert, verliert den Filter aber in `links.next`; hebt einen Vermerk „filtert nicht“ für den Server auf, nicht den für einzelne Listen | `true` |
-| `file_downloads` | `false`: keine Dateien dieser Quelle abrufen; nur ein ausdrückliches `false` schaltet ab | `false` |
+| `file_downloads` | `false`: keine Dateien dieser Quelle abrufen; nur ein ausdrückliches `false` schaltet ab. `"bei_bedarf"`: nichts vorab, die Vorschau holt und speichert ein Dokument, wenn eine Person es öffnet | `false`, `"bei_bedarf"` |
 | `download_headers` | zusätzliche Header für Datei-Downloads (z. B. `Referer`, `Cookie`, `User-Agent`) | `{"Referer": "https://rat.example.de/bi/"}` |
 | `robots_override` | Ausnahme von der robots.txt, nur mit Freigabe und Vermerk | `{"scope": "files", "note": "Freigabe per E-Mail vom …"}` |
 | `source_type`, `scraper` | Quelle ohne OParl-Schnittstelle, mit `scraper.rate_limit_seconds` (Standard 2, mindestens 1) | siehe [`SCRAPER_SOURCES.md`](SCRAPER_SOURCES.md) |

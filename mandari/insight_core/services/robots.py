@@ -19,6 +19,9 @@ Ist die robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler), gilt die letzte
 es keine, lautet die Entscheidung „nicht erreichbar“ (:attr:`~mandari_oparl.robots.Decision.unreachable`):
 Aufrufer stellen den Abruf zurück, statt die Datei als gesperrt zu überspringen. Neuer Versuch nach 15 Minuten.
 
+Nicht für Dateien von Quellen mit Abruf auf Anforderung (``sync_config["file_downloads"] = "bei_bedarf"``): Diese
+Abrufe löst immer eine Person aus, die das Dokument öffnet (``_on_demand_decision``).
+
 Ausnahmen je Quelle: ``OParlSource.sync_config["robots_override"]`` mit Pflicht-Vermerk
 (:func:`mandari_oparl.robots.robots_override`); setzen mit ``manage.py robots_override``, Überblick mit
 ``manage.py robots_report``.
@@ -42,6 +45,7 @@ from mandari_oparl.robots import (
     MAX_BYTES,
     RETRY_UNREACHABLE_SECONDS,
     SKIP_ERROR_PREFIX,
+    STATE_OVERRIDE,
     STATE_UNREACHABLE,
     Decision,
     RobotsTxt,
@@ -227,10 +231,27 @@ def check(
     ``max_wait``: Muss die robots.txt erst geladen werden, wartet die Drossel je Host höchstens so lange (für
     Web-Anfragen); sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
     """
+    on_demand = _on_demand_decision(kind, sync_config)
+    if on_demand is not None:
+        return on_demand
     override = robots_override(sync_config)
     if override is not None and override.covers(kind):
         return override.decision()
     return decide(url, agent=agent, sync_config=sync_config, max_wait=max_wait)
+
+
+def _on_demand_decision(kind: str, sync_config: Any) -> Decision | None:
+    """
+    Dateien einer Quelle mit Abruf auf Anforderung (``file_downloads = "bei_bedarf"``): Jeden Abruf löst eine Person
+    aus, die das Dokument öffnet; im Hintergrund ruft mandari diese Dateien nie ab (``file_cache.downloads_disabled``).
+    Die robots.txt regelt automatische Abrufe (RFC 9309), deshalb gilt sie hier nicht. Takt je Host und Schonung der
+    Quelle gelten weiter.
+    """
+    from . import file_cache
+
+    if kind != KIND_FILES or not file_cache.downloads_on_demand_in(sync_config):
+        return None
+    return Decision(allowed=True, state=STATE_OVERRIDE, rule="Abruf auf Anforderung einer Person (bei_bedarf)")
 
 
 def peek(url: str, *, agent: str | None = None) -> RobotsTxt | None:
@@ -254,6 +275,9 @@ def cached_check(
     url: str, kind: str = KIND_FILES, *, sync_config: Any = None, agent: str | None = None
 ) -> Decision | None:
     """Wie :func:`check`, aber nur mit der robots.txt aus dem Cache (``None``: keine bekannt). Fragt nie an."""
+    on_demand = _on_demand_decision(kind, sync_config)
+    if on_demand is not None:
+        return on_demand
     override = robots_override(sync_config)
     if override is not None and override.covers(kind):
         return override.decision()
