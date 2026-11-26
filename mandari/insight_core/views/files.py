@@ -241,7 +241,7 @@ button:focus-visible{{outline:2px solid #17703f;outline-offset:2px}}
     return response
 
 
-@require_http_methods(["GET", "HEAD", "POST"])
+@require_http_methods(["GET", "POST"])
 @xframe_options_exempt
 def file_proxy(request, file_id):
     """
@@ -373,11 +373,17 @@ def _deliver_file(request, file_obj):
     # Quellen-Schonung (Issue #89): eine mehrfach unerreichbare Quelle wird nicht bei jedem
     # Vorschau-Aufruf erneut angefragt — das hält Ratenlimits/Sperren nur am Leben.
     if file_cache.source_paused(file_obj.body):
+        # Bei Abruf auf Anforderung holt nichts von selbst nach: dann um einen späteren Versuch bitten
+        nachholen = (
+            "Bitte versuche es später noch einmal."
+            if on_demand
+            else "Wir holen das Dokument automatisch nach, sobald sie wieder erreichbar ist."
+        )
         response = _file_proxy_error(
             "Ratsinformationssystem derzeit nicht erreichbar",
             "Das Ratsinformationssystem dieser Kommune antwortet seit mehreren Abrufen nicht. "
-            "Wir schonen die Quelle und holen das Dokument automatisch nach, sobald sie wieder "
-            "erreichbar ist. Es lag noch nicht in unserem Zwischenspeicher. " + _original_link(url),
+            f"Wir schonen die Quelle. {nachholen} Es lag noch nicht in unserem Zwischenspeicher. "
+            + _original_link(url),
         )
         response.status_code = 503
         response["Retry-After"] = "3600"

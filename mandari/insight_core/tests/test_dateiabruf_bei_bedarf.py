@@ -159,3 +159,45 @@ def test_ohne_bei_bedarf_bleibt_es_beim_original(quelle: dict[str, Any]) -> None
     html = client.get(_adresse(datei)).content.decode()
     assert "Dieses Dokument rufen wir nicht selbst ab" in html
     assert _dateiabrufe(quelle) == []
+
+
+def test_head_holt_nichts(quelle: dict[str, Any]) -> None:
+    # Linkprüfer schicken HEAD: kein Live-Abruf bei der Quelle (wie bisher 405)
+    datei = _datei({"file_downloads": True})
+    assert Client().head(_adresse(datei)).status_code == 405
+    assert _dateiabrufe(quelle) == []
+
+
+def test_geschonte_quelle_verspricht_kein_nachholen(quelle: dict[str, Any]) -> None:
+    datei = _datei()
+    source = cast(Any, datei.body).source
+    source.consecutive_failures = 99
+    source.save(update_fields=["consecutive_failures"])
+    client = Client()
+    client.force_login(cast(Any, UserFactory)())
+    html = client.get(_adresse(datei)).content.decode()
+    assert "Bitte versuche es später noch einmal." in html
+    assert "automatisch nach" not in html
+    assert _dateiabrufe(quelle) == []
+
+
+def test_zusammenfassung_wartet_nur_auf_geoeffnete_anlagen(settings: Any, monkeypatch: Any) -> None:
+    from insight_ai.services import summarizer
+    from insight_core.models import OParlPaper
+
+    datei = _datei()
+    paper = OParlPaper.objects.create(external_id="https://ris.bedarf.example/bi/paper/1", body=datei.body, name="V")
+    datei.paper = paper
+    datei.text_extraction_status = "pending"
+    datei.save(update_fields=["paper", "text_extraction_status"])
+    dienst = summarizer.SummaryService.__new__(summarizer.SummaryService)
+    monkeypatch.setattr(summarizer, "priority_extraction_enabled", lambda: False)
+    # Ohne Worker erkennt niemand den Text dieser Anlagen: kein Dauerhinweis „Texterkennung steht aus“
+    settings.TEXT_EXTRACTION_RUNNER = "ingestor"
+    assert dienst._text_pending(paper) is False
+    # Mit Worker zählen nur geöffnete (abgelegte) Anlagen
+    settings.TEXT_EXTRACTION_RUNNER = "worker"
+    assert dienst._text_pending(paper) is False
+    datei.local_status = "ok"
+    datei.save(update_fields=["local_status"])
+    assert dienst._text_pending(paper) is True

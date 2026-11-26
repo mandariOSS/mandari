@@ -75,6 +75,8 @@ EXTRACTION_PRIORITY: Final = 80
 TEXT_PENDING_STATUSES: Final = ("pending", "processing")
 #: Schalter der Quelle für den Dateiabruf (gleich ``file_cache.FILE_DOWNLOADS_KEY``): ``false`` = nie abrufen
 FILE_DOWNLOADS_KEY: Final = "file_downloads"
+#: Wert für Abruf auf Anforderung (gleich ``file_cache.FILE_DOWNLOADS_ON_DEMAND``): nur geöffnete Anlagen liegen ab
+FILE_DOWNLOADS_ON_DEMAND: Final = "bei_bedarf"
 #: Von der Obergrenze des Dokument-Caches verdrängt (#961, gleich ``file_cache_limit.EVICTED``): niemand holt die
 #: Anlage von selbst, ihr Text kommt erst nach einem ausdrücklichen Abruf (Vorschau, ``cache_files --verdraengte``)
 EVICTED: Final = "evicted"
@@ -514,13 +516,23 @@ class SummaryService:
         """
         if self._downloads_disabled(paper):
             return False
-        offen = [
-            file
-            for file in self._current_files(paper)
+        # Abruf auf Anforderung (#1582): Nur von Personen geöffnete Anlagen liegen ab, und erkannt werden sie nur vom
+        # Worker (der Ingestor lädt bei diesen Quellen nichts). Ohne Worker kommt kein Text von selbst.
+        auf_anforderung = self._downloads_on_demand(paper)
+        if auf_anforderung and not _worker_recognizes_text():
+            return False
+        anlagen = (
+            self._current_files(paper)
             .filter(text_extraction_status__in=TEXT_PENDING_STATUSES)
             .exclude(local_status=EVICTED)
-            .only("id", "download_url", "access_url", "text_extraction_status", "local_status")
-            .order_by("created_at", "id")
+        )
+        if auf_anforderung:
+            anlagen = anlagen.filter(local_status="ok")
+        offen = [
+            file
+            for file in anlagen.only(
+                "id", "download_url", "access_url", "text_extraction_status", "local_status"
+            ).order_by("created_at", "id")
             if file.download_url or file.access_url
         ]
         if not offen:
@@ -539,6 +551,13 @@ class SummaryService:
         source = getattr(paper.body, "source", None) if paper.body_id else None
         config = getattr(source, "sync_config", None)
         return isinstance(config, dict) and config.get(FILE_DOWNLOADS_KEY) is False
+
+    @staticmethod
+    def _downloads_on_demand(paper: "OParlPaper") -> bool:
+        """Holt die Quelle Anlagen nur auf Anforderung einer Person (``file_downloads = "bei_bedarf"``, #1582)?"""
+        source = getattr(paper.body, "source", None) if paper.body_id else None
+        config = getattr(source, "sync_config", None)
+        return isinstance(config, dict) and config.get(FILE_DOWNLOADS_KEY) == FILE_DOWNLOADS_ON_DEMAND
 
     @staticmethod
     def _text_changed_since(paper: "OParlPaper", started_at: datetime) -> bool:
@@ -580,6 +599,11 @@ class SummaryService:
         return self.provider.is_available()
 
 
+def _worker_recognizes_text() -> bool:
+    """Erkennt der Worker der Anwendung den Text (``TEXT_EXTRACTION_RUNNER=worker``) statt des Ingestors?"""
+    return str(getattr(settings, "TEXT_EXTRACTION_RUNNER", "ingestor")).strip().lower() == "worker"
+
+
 def priority_extraction_enabled() -> bool:
     """
     Darf die Zusammenfassung die Texterkennung mit Vorrang einplanen?
@@ -588,7 +612,7 @@ def priority_extraction_enabled() -> bool:
     Backend erkennte den Text in der Webanfrage) und der Worker den Text erkennt (``TEXT_EXTRACTION_RUNNER=worker``;
     mit ``ingestor`` macht das der OCR-Worker des Ingestors).
     """
-    if str(getattr(settings, "TEXT_EXTRACTION_RUNNER", "ingestor")).strip().lower() != "worker":
+    if not _worker_recognizes_text():
         return False
     from django.tasks import task_backends
 
