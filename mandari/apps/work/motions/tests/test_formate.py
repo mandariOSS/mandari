@@ -215,3 +215,16 @@ def test_word_behaelt_frueheren_office_namen(org: Any, mitglied: Any) -> None:
     )
     doc = Document(io.BytesIO(exportieren(_dokument(org, mitglied, briefpapier), "docx")))
     assert doc.styles["Normal"].font.name == "Georgia"
+
+
+@pytest.mark.django_db
+def test_dateiname_mit_umlaut(client: Any, org: Any, mitglied: Any) -> None:
+    # Umlaute als filename* (RFC 6266): Ein roher Umlaut im Header lässt Chromium den Namen verwerfen
+    motion = _dokument(org, mitglied)
+    motion.title = "Prüfen"
+    motion.save()
+    client.force_login(mitglied.user)
+    url = reverse("work:document_export", kwargs={"org_slug": org.slug, "motion_id": motion.id})
+    for schluessel in ("odt", "pdf"):
+        antwort = client.get(url, {"format": schluessel})
+        assert antwort["Content-Disposition"] == f"attachment; filename*=utf-8''Pr%C3%BCfen.{schluessel}"

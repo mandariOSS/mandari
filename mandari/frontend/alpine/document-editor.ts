@@ -1993,7 +1993,7 @@ export const documentEditor = defineComponent(() => {
       window.location.href = ziel
     },
 
-    /** „Herunterladen als Word“ und andere Dateien: erst sichern, dann laden, ohne die Seite zu verlassen (#1018) */
+    /** „Herunterladen“ (PDF, Word, ODT, Markdown, Text): erst sichern, dann laden, ohne die Seite zu verlassen (#1018) */
     async herunterladen(url: string): Promise<void> {
       this.menueSchliessen()
       const gesichert = await this._vorNeuladenSichern(

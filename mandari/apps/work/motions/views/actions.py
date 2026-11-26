@@ -14,7 +14,7 @@ from django.db import transaction
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
-from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.http import content_disposition_header, url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView, View
 
 logger = logging.getLogger("apps.work.motions")
@@ -681,8 +681,9 @@ class MotionExportView(WorkViewMixin, View):
 
                 response = HttpResponse(pdf_content, content_type="application/pdf")
                 # „Vorschau (PDF)“ im Editor öffnet die Datei im Browser statt sie herunterzuladen (#1018)
-                art = "inline" if request.GET.get("vorschau") == "1" else "attachment"
-                response["Content-Disposition"] = f'{art}; filename="{filename}"'
+                inline = request.GET.get("vorschau") == "1"
+                # Umlaute im Titel als filename* (RFC 6266), sonst verwirft Chromium den Namen
+                response["Content-Disposition"] = content_disposition_header(not inline, filename) or "attachment"
                 freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_PDF)
                 return response
 
@@ -706,8 +707,9 @@ class MotionExportView(WorkViewMixin, View):
             return JsonResponse({"error": f"{exportformat.name}-Export fehlgeschlagen."}, status=500)
         safe_title = "".join(c for c in motion.title if c.isalnum() or c in " -_").strip()
         response = HttpResponse(inhalt, content_type=exportformat.content_type)
+        # Umlaute im Titel als filename* (RFC 6266), sonst verwirft Chromium den Namen („Prüfen.odt“ → „download“)
         response["Content-Disposition"] = (
-            f'attachment; filename="{safe_title[:50] or "Dokument"}.{exportformat.endung}"'
+            content_disposition_header(True, f"{safe_title[:50] or 'Dokument'}.{exportformat.endung}") or "attachment"
         )
         freigaben.log_guest_download(
             motion,
