@@ -51,7 +51,9 @@ def _kommune(nummer: int, name: str) -> OParlBody:
 
 
 def _kommune_waehlen(page: Any, goto: Any, body: OParlBody) -> None:
-    goto(f"/insight/kommune/{body.id}/")
+    # Wahl aus dem Portal heraus (mit Ziel): Ohne Ziel und Herkunft führte sie wie ein Link von außen auf die
+    # Stadtseite, also in das Portal der Kommune ohne Kommunenwechsel (Issue #939)
+    goto(f"/insight/kommune/{body.id}/?weiter=/insight/")
 
 
 class TestInsight:
