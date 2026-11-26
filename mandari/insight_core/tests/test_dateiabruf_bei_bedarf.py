@@ -186,7 +186,9 @@ def test_zusammenfassung_wartet_nur_auf_geoeffnete_anlagen(settings: Any, monkey
     from insight_core.models import OParlPaper
 
     datei = _datei()
-    paper = OParlPaper.objects.create(external_id="https://ris.bedarf.example/bi/paper/1", body=datei.body, name="V")
+    paper = OParlPaper.objects.create(
+        external_id="https://ris.bedarf.example/bi/paper/1", body=cast(Any, datei.body), name="V"
+    )
     datei.paper = paper
     datei.text_extraction_status = "pending"
     datei.save(update_fields=["paper", "text_extraction_status"])
