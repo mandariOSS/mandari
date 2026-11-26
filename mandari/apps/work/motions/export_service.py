@@ -7,7 +7,6 @@ including support for letterheads (PDF backgrounds) and proper formatting.
 TipTap editor HTML is cleaned before export (comment marks stripped etc.).
 """
 
-import io
 import logging
 import re
 from dataclasses import dataclass, field
@@ -334,57 +333,12 @@ class MotionExportService:
 
     def export_to_docx(self, motion: "Motion") -> bytes:
         """
-        Generate a DOCX from the motion content.
-
-        Converts TipTap HTML to structured DOCX using python-docx.
-        Letterhead data (margins, header with logo/address, footer with
-        page numbers) is applied from the motion's letterhead.
-
-        Args:
-            motion: The motion to export
-
-        Returns:
-            bytes: The DOCX file content
+        Word-Datei des Dokuments (Issue #1584, ``apps/work/motions/formate``): Zeichenformate, Schriften des Satzes unter
+        ihrem Office-Namen, Listen, Tabellen, Bilder, Links und Seitenumbrüche; Kopf- und Fußzeile aus dem Briefpapier.
         """
-        from docx import Document
-        from docx.shared import Mm, Pt
+        from .formate import exportieren
 
-        doc = Document()
-        letterhead = motion.letterhead
-
-        # Set default font
-        style = doc.styles["Normal"]
-        font = style.font
-        font.name = schriften.office_name(letterhead.font_family) if letterhead else "Arial"
-        font.size = Pt(letterhead.font_size if letterhead else 11)
-
-        # Page margins from letterhead mm fields (or defaults)
-        margins = self._pdf_margins(letterhead)
-        section = doc.sections[0]
-        section.top_margin = Mm(margins["top"])
-        section.right_margin = Mm(margins["right"])
-        section.bottom_margin = Mm(margins["bottom"])
-        section.left_margin = Mm(margins["left"])
-
-        if letterhead:
-            self._docx_apply_header(doc, section, letterhead)
-            self._docx_apply_footer(section, letterhead)
-
-        # Parse and convert HTML content directly (no title/metadata header)
-        content = clean_editor_html(motion.content or "")
-        self._html_to_docx(doc, content)
-
-        # Signature block from template (placeholders replaced)
-        signature_text = get_signature_text(motion)
-        if signature_text:
-            doc.add_paragraph()
-            for line in signature_text.splitlines():
-                doc.add_paragraph(line)
-
-        # Save to bytes
-        buffer = io.BytesIO()
-        doc.save(buffer)
-        return buffer.getvalue()
+        return exportieren(motion, "docx")
 
     def _docx_apply_header(self, doc, section, letterhead) -> None:
         """
@@ -517,147 +471,6 @@ class MotionExportService:
             return RGBColor.from_string(value.upper())
         except ValueError:
             return None
-
-    def _html_to_docx(self, doc, html: str):
-        """
-        Convert cleaned HTML to DOCX paragraphs in document order.
-
-        Processes elements sequentially to maintain the original document
-        structure rather than grouping by type.
-        """
-        from html.parser import HTMLParser
-
-        from docx.shared import Pt
-
-        if not html:
-            return
-
-        class DocxHTMLConverter(HTMLParser):
-            """Sequential HTML-to-DOCX converter."""
-
-            def __init__(self, doc):
-                super().__init__()
-                self.doc = doc
-                self._text_buf: list[str] = []
-                self._tag_stack: list[str] = []
-                self._list_type_stack: list[str] = []  # 'ul' or 'ol'
-                self._in_heading = 0  # heading level (1-3) or 0
-                self._in_blockquote = False
-                self._bold = False
-                self._italic = False
-                self._underline = False
-                self._strike = False
-                self._indent_px = 0
-
-            def _flush_text(self):
-                """Return accumulated text and reset buffer."""
-                text = "".join(self._text_buf).strip()
-                self._text_buf.clear()
-                return text
-
-            def handle_starttag(self, tag, attrs):
-                attrs_dict = dict(attrs)
-                tag_lower = tag.lower()
-                self._tag_stack.append(tag_lower)
-
-                if tag_lower in ("h1", "h2", "h3"):
-                    self._flush_text()
-                    self._in_heading = int(tag_lower[1])
-                elif tag_lower == "blockquote":
-                    self._flush_text()
-                    self._in_blockquote = True
-                elif tag_lower == "ul":
-                    self._list_type_stack.append("ul")
-                elif tag_lower == "ol":
-                    self._list_type_stack.append("ol")
-                elif tag_lower == "li":
-                    self._flush_text()
-                elif tag_lower == "p":
-                    self._flush_text()
-                    # Check for indent via margin-left style
-                    style = attrs_dict.get("style", "")
-                    self._indent_px = 0
-                    if "margin-left" in style:
-                        match = re.search(r"margin-left:\s*(\d+)", style)
-                        if match:
-                            self._indent_px = int(match.group(1))
-                elif tag_lower == "br":
-                    self._text_buf.append("\n")
-                elif tag_lower == "div" and "page-break" in attrs_dict.get("class", ""):
-                    # Manueller Seitenumbruch aus dem Editor
-                    self._flush_text()
-                    self.doc.add_page_break()
-                elif tag_lower == "hr":
-                    self._flush_text()
-                    # Add a thin horizontal line as paragraph
-                    para = self.doc.add_paragraph()
-                    para.paragraph_format.space_before = Pt(8)
-                    para.paragraph_format.space_after = Pt(8)
-                    run = para.add_run("_" * 60)
-                    run.font.color.rgb = None  # default color
-                    run.font.size = Pt(6)
-                elif tag_lower == "strong" or tag_lower == "b":
-                    self._bold = True
-                elif tag_lower == "em" or tag_lower == "i":
-                    self._italic = True
-                elif tag_lower == "u":
-                    self._underline = True
-                elif tag_lower in ("s", "del", "strike"):
-                    self._strike = True
-
-            def handle_endtag(self, tag):
-                tag_lower = tag.lower()
-
-                if tag_lower in ("h1", "h2", "h3"):
-                    text = self._flush_text()
-                    if text:
-                        self.doc.add_heading(text, level=self._in_heading)
-                    self._in_heading = 0
-                elif tag_lower == "blockquote":
-                    text = self._flush_text()
-                    if text:
-                        para = self.doc.add_paragraph(text)
-                        para.paragraph_format.left_indent = Pt(36)
-                        for run in para.runs:
-                            run.font.italic = True
-                    self._in_blockquote = False
-                elif tag_lower in ("ul", "ol"):
-                    if self._list_type_stack:
-                        self._list_type_stack.pop()
-                elif tag_lower == "li":
-                    text = self._flush_text()
-                    if text:
-                        list_type = self._list_type_stack[-1] if self._list_type_stack else "ul"
-                        style = "List Number" if list_type == "ol" else "List Bullet"
-                        para = self.doc.add_paragraph(text, style=style)
-                        # Indent nested lists
-                        depth = len(self._list_type_stack)
-                        if depth > 1:
-                            para.paragraph_format.left_indent = Pt(18 * (depth - 1))
-                elif tag_lower == "p":
-                    text = self._flush_text()
-                    if text:
-                        para = self.doc.add_paragraph(text)
-                        if self._indent_px > 0:
-                            para.paragraph_format.left_indent = Pt(self._indent_px * 0.75)
-                    self._indent_px = 0
-                elif tag_lower == "strong" or tag_lower == "b":
-                    self._bold = False
-                elif tag_lower == "em" or tag_lower == "i":
-                    self._italic = False
-                elif tag_lower == "u":
-                    self._underline = False
-                elif tag_lower in ("s", "del", "strike"):
-                    self._strike = False
-
-                if self._tag_stack and self._tag_stack[-1] == tag_lower:
-                    self._tag_stack.pop()
-
-            def handle_data(self, data):
-                self._text_buf.append(data)
-
-        converter = DocxHTMLConverter(doc)
-        converter.feed(html)
 
 
 # Singleton instance

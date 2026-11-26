@@ -72,6 +72,20 @@ Suche und Dunkelmodus selbst mit (partials/neu/_kopf.html).{% endcomment %}
         {% include "work/motions/partials/neu/_rand.html#panel" %}
     </div>
 
+    {# Vorschläge der Reihe nach prüfen (#1584): schwebt über dem Text, solange ein Vorschlag aktiv ist oder geprüft wird #}
+    <div class="ke-pruefleiste" x-show="pruefLeisteSichtbar" x-cloak role="toolbar" aria-label="Änderungsvorschläge prüfen" data-testid="pruefleiste">
+        <span class="ke-pruef-stand" x-text="'Vorschlag ' + (vorschlagPosition + 1) + ' von ' + offeneVorschlaege.length"></span>
+        <button type="button" class="ke-wz ke-wz-klein" aria-label="Vorheriger Vorschlag" title="Vorheriger Vorschlag (Alt+↑)" @click="vorschlagGehe(-1)"><i data-lucide="chevron-up" aria-hidden="true"></i></button>
+        <button type="button" class="ke-wz ke-wz-klein" aria-label="Nächster Vorschlag" title="Nächster Vorschlag (Alt+↓)" @click="vorschlagGehe(1)"><i data-lucide="chevron-down" aria-hidden="true"></i></button>
+        {% if can_edit %}
+        <button type="button" class="ke-knopf ke-knopf-haupt" :disabled="randSendet || vorschlagPosition < 0" @click="vorschlagAktuellEntscheiden(true)"><i data-lucide="check" class="w-4 h-4" aria-hidden="true"></i>Annehmen</button>
+        <button type="button" class="ke-knopf" :disabled="randSendet || vorschlagPosition < 0" @click="vorschlagAktuellEntscheiden(false)"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i>Ablehnen</button>
+        {% endif %}
+        <button type="button" class="ke-wz ke-wz-klein" aria-label="Prüfen beenden" title="Prüfen beenden" @click="pruefenBeenden()"><i data-lucide="x" aria-hidden="true"></i></button>
+    </div>
+    {# Ansagen für Bildschirmleser (Vorschläge, Ergebnisse) #}
+    <p class="sr-only" role="status" aria-live="polite" x-text="ansage"></p>
+
     {# Handy: Kommentare als Blatt #}
     <div class="ke-mobil-leiste lg:hidden" x-show="!panel" data-meldungen-darueber>
         <button type="button" class="ke-knopf w-full justify-center" @click="panelOeffnen('kommentare')">

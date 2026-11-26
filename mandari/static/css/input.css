@@ -609,6 +609,18 @@ input.ke-titel:focus {
 .ke-zoom-menue {
   @apply min-w-[9rem] tabular-nums;
 }
+/* Vorschläge prüfen: schwebende Leiste unten in der Mitte der Fläche */
+.ke-pruefleiste {
+  @apply fixed bottom-24 left-1/2 z-40 flex items-center gap-1.5 h-11 px-2 rounded-md bg-white text-[13px] shadow-lg lg:bottom-6 dark:bg-gray-800;
+  transform: translateX(-50%);
+  border: 1px solid var(--ke-linie-stark);
+}
+.ke-pruef-stand {
+  @apply px-1.5 text-gray-700 tabular-nums whitespace-nowrap dark:text-gray-300;
+}
+.ke-pruefleiste .ke-knopf {
+  @apply h-8;
+}
 /* Kurzinfo zu einem Knopf: Name und Tastenkürzel */
 .ke-tipp {
   @apply fixed z-[80] inline-flex items-center gap-2 px-2 py-1 rounded text-xs text-white bg-gray-900 pointer-events-none dark:bg-gray-700;

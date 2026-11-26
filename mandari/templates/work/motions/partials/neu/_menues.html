@@ -38,8 +38,16 @@ download_blocked (Gäste ohne Herunterladen, #582), organization; Alpine-Kompone
 <p class="ke-menue-hinweis"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich: nur vereidigte Mitglieder, keine Freigaben</p>
 {% endif %}
 {% if not download_blocked %}
-<a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf&amp;vorschau=1" target="_blank" rel="noopener" @click.prevent="vorschauOeffnen($el.href)"><i data-lucide="eye" aria-hidden="true"></i>Vorschau (PDF)</a>
-<a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=docx" download><i data-lucide="download" aria-hidden="true"></i>Herunterladen als Word</a>
+{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id as export_url %}
+<a role="menuitem" class="ke-mp" href="{{ export_url }}?format=pdf&amp;vorschau=1" target="_blank" rel="noopener" @click.prevent="vorschauOeffnen($el.href)"><i data-lucide="eye" aria-hidden="true"></i>Vorschau (PDF)</a>
+{# Drucken über die Druckansicht: dieselben Seiten wie im Editor und im PDF (#1584) #}
+<a role="menuitem" class="ke-mp" href="{{ export_url }}?format=druck&amp;drucken=1" target="_blank" rel="noopener" @click.prevent="vorschauOeffnen($el.href)"><i data-lucide="printer" aria-hidden="true"></i>Drucken …<kbd>Strg+P</kbd></a>
+<p class="ke-menue-gruppe">Herunterladen</p>
+<a role="menuitem" class="ke-mp" href="{{ export_url }}?format=pdf" download><i data-lucide="file-text" aria-hidden="true"></i>PDF</a>
+<a role="menuitem" class="ke-mp" href="{{ export_url }}?format=docx" download><i data-lucide="file-type" aria-hidden="true"></i>Word (.docx)</a>
+<a role="menuitem" class="ke-mp" href="{{ export_url }}?format=odt" download><i data-lucide="file-type" aria-hidden="true"></i>OpenDocument (.odt)</a>
+<a role="menuitem" class="ke-mp" href="{{ export_url }}?format=md" download><i data-lucide="file-code" aria-hidden="true"></i>Markdown (.md)</a>
+<a role="menuitem" class="ke-mp" href="{{ export_url }}?format=txt" download><i data-lucide="file" aria-hidden="true"></i>Text (.txt)</a>
 <div role="separator" class="ke-trenn"></div>
 {% endif %}
 <button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('details')"><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Details und Zuständigkeit</button>
@@ -58,6 +66,7 @@ download_blocked (Gäste ohne Herunterladen, #582), organization; Alpine-Kompone
 <button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="befehl('undo')"><i data-lucide="undo-2" aria-hidden="true"></i>Rückgängig<kbd>Strg+Z</kbd></button>
 <button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="befehl('redo')"><i data-lucide="redo-2" aria-hidden="true"></i>Wiederholen<kbd>Strg+Y</kbd></button>
 <button type="button" role="menuitem" class="ke-mp" @click="menueSchliessen(); openSearch()"><i data-lucide="search" aria-hidden="true"></i>Suchen und ersetzen<kbd>Strg+F</kbd></button>
+<button type="button" role="menuitem" class="ke-mp" @click="pruefenStarten()"><i data-lucide="list-checks" aria-hidden="true"></i>Vorschläge der Reihe nach prüfen<kbd>Alt+↓</kbd></button>
 {% else %}
 <p class="ke-menue-hinweis">Sie können dieses Dokument nur lesen.</p>
 {% endif %}

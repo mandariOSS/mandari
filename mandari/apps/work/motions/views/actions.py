@@ -631,7 +631,7 @@ class MotionCommentResolveView(WorkViewMixin, View):
 
 class MotionExportView(WorkViewMixin, View):
     """
-    Export motion as PDF or DOCX.
+    Export eines Dokuments: PDF, Druckansicht, Word, OpenDocument, Markdown oder Text (#1584).
 
     Gäste ab der Stufe „Lesen“, solange ihre Freigabe das Herunterladen erlaubt; jeder Export eines Gastes
     steht in der Änderungshistorie (Issue #582).
@@ -653,7 +653,7 @@ class MotionExportView(WorkViewMixin, View):
             return JsonResponse({"error": "Herunterladen ist für diese Freigabe nicht erlaubt."}, status=403)
 
         export_format = request.GET.get("format", "pdf")
-        if export_format in ("pdf", "docx", "druck") and motion.is_sworn_in_only():
+        if export_format in ("pdf", "docx", "odt", "md", "txt", "druck") and motion.is_sworn_in_only():
             from .. import non_public
 
             non_public.log_access(motion, self.membership, request, non_public.ACCESS_EXPORTED)
@@ -693,27 +693,29 @@ class MotionExportView(WorkViewMixin, View):
                 logger.exception(f"[MotionExport] PDF export failed: {e}")
                 return JsonResponse({"error": "PDF-Export fehlgeschlagen."}, status=500)
 
-        elif export_format == "docx":
-            try:
-                docx_content = motion_export_service.export_to_docx(motion)
+        from ..formate import FORMATE, exportieren
 
-                safe_title = "".join(c for c in motion.title if c.isalnum() or c in " -_").strip()
-                filename = f"{safe_title[:50]}.docx"
-
-                response = HttpResponse(
-                    docx_content,
-                    content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                )
-                response["Content-Disposition"] = f'attachment; filename="{filename}"'
-                freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_DOCX)
-                return response
-
-            except Exception as e:
-                logger.exception(f"[MotionExport] DOCX export failed: {e}")
-                return JsonResponse({"error": "DOCX-Export fehlgeschlagen."}, status=500)
-
-        else:
+        exportformat = FORMATE.get(export_format)
+        if exportformat is None:
             return JsonResponse({"error": f"Unbekanntes Export-Format: {export_format}"}, status=400)
+        # Word, OpenDocument, Markdown und Text aus dem Dokumentmodell (#1584)
+        try:
+            inhalt = exportieren(motion, exportformat.schluessel)
+        except Exception as e:
+            logger.exception(f"[MotionExport] {exportformat.name}-Export fehlgeschlagen: {e}")
+            return JsonResponse({"error": f"{exportformat.name}-Export fehlgeschlagen."}, status=500)
+        safe_title = "".join(c for c in motion.title if c.isalnum() or c in " -_").strip()
+        response = HttpResponse(inhalt, content_type=exportformat.content_type)
+        response["Content-Disposition"] = (
+            f'attachment; filename="{safe_title[:50] or "Dokument"}.{exportformat.endung}"'
+        )
+        freigaben.log_guest_download(
+            motion,
+            self.membership,
+            request,
+            freigaben.DOWNLOAD_DOCX if exportformat.schluessel == "docx" else freigaben.DOWNLOAD_EXPORT,
+        )
+        return response
 
 
 class MotionImportView(NeueVorlageMixin, WorkViewMixin, TemplateView):

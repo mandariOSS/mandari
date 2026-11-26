@@ -21,7 +21,7 @@ from typing import Any, cast
 import pytest
 from django.urls import reverse
 
-from apps.work.motions import email_submission, export_service
+from apps.work.motions import email_submission
 from apps.work.motions.export_service import (
     MAX_PDF_TABLE_CELLS,
     PDF_TABLES_TOO_LARGE,
@@ -268,14 +268,16 @@ def test_export_gibt_kein_vektorbild_an_die_umwandlung(org: Any, autorin: Any, m
 
 @pytest.mark.django_db
 def test_docx_export_bereinigt_altbestand(org: Any, autorin: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from apps.work.motions.formate import modell
+
     gesehen: list[str] = []
-    echt = export_service.MotionExportService._html_to_docx
+    echt = modell.lesen
 
-    def mitschreiben(self: Any, doc: Any, html: str) -> None:
+    def mitschreiben(html: str, grundgroesse: float = 11.0) -> list[Any]:
         gesehen.append(html)
-        echt(self, doc, html)
+        return echt(html, grundgroesse)
 
-    monkeypatch.setattr(export_service.MotionExportService, "_html_to_docx", mitschreiben)
+    monkeypatch.setattr(modell, "lesen", mitschreiben)
     motion = _dokument(org, autorin, f'<p onclick="x()">Text</p><script>weg()</script>{_bild(VEKTOR)}')
 
     assert motion_export_service.export_to_docx(motion).startswith(b"PK")
