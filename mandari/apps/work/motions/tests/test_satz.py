@@ -417,7 +417,7 @@ def test_unlesbare_druckdatei_faellt_zurueck(
 def test_statische_datei_nicht_lesbar(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     datei = tmp_path / "x.css"
     datei.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(druck.finders, "find", lambda _pfad: str(datei))
+    monkeypatch.setattr("django.contrib.staticfiles.finders.find", lambda _pfad: str(datei))
 
     def verweigert(_self: Any) -> bytes:
         raise PermissionError("verweigert")
