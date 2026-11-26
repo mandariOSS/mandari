@@ -82,8 +82,10 @@ und selbst betreibbar, es lesen also auch Dritte mit. Die Reihenfolge lautet des
 1. Privates Advisory als Entwurf anlegen (nicht als öffentliches Issue)
 2. Bewerten und CVSS-Vektor bestimmen
 3. Beheben, Regressionstest schreiben
-4. Ausliefern: erst `dev`, dann `main`, dann Produktion, Selbstbetreiber und bis 31.01.2027 die
-   Pflegelinien 0.11 und 0.12 ([Rückportierung](docs/WEITERENTWICKLUNG.md#9-rückportierung-in-pflegelinien))
+4. Ausliefern: erst `dev`, dann `main`, dann Produktion und Selbstbetreiber. Befunde ab „mittel“
+   gehen bis 31.01.2027 zusätzlich in die Pflegelinien 0.11 und 0.12
+   ([Rückportierung](docs/WEITERENTWICKLUNG.md#9-rückportierung-in-pflegelinien)); niedrige Befunde
+   werden nicht zurückportiert
 5. Advisory um die behobenen Versionen ergänzen
 6. CVE anfordern (wo vorgesehen) und Advisory veröffentlichen
 
@@ -165,7 +167,7 @@ betreibende Person ableiten kann, ob sie betroffen ist.
 ## Fristen
 
 Die Fristen je Schweregrad (kritisch 72 Stunden, hoch 7 Tage, mittel 30 Tage, niedrig spätestens
-mit der nächsten MINOR-Version), auch für die Pflegelinien 0.11 und 0.12, legt die
+mit der nächsten MINOR-Version; für die Pflegelinien 0.11 und 0.12 nur ab „mittel“) legt die
 [Release- und Support-Politik, Abschnitt 4](docs/RELEASE_POLITIK.md#4-sicherheitskorrekturen-fristen)
 fest. Sie gelten ab der Bestätigung der Meldung. Bei extern gemeldeten Lücken bestätigen wir den
 Eingang innerhalb von drei Werktagen und melden spätestens nach zwei Wochen einen Zwischenstand.

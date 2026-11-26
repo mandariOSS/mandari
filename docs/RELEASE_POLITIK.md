@@ -73,8 +73,10 @@ nie in eine PATCH-Version.
 - Die Termine stehen als Fälligkeit an den [Meilensteinen](https://github.com/mandariOSS/mandari/milestones).
 
 Warum zwei Wochen: Korrekturen und Funktionen erreichen alle Installationen schnell, jedes
-Release bleibt klein und überschaubar. Jede MINOR lässt sich ohne Handarbeit einspielen;
-gepflegt wird deshalb nur die jüngste (Abschnitt 3).
+Release bleibt klein und überschaubar. Jede MINOR lässt sich ohne Handarbeit einspielen,
+außer bei einer vor 1.0 angekündigten brechenden Änderung (mit Migrationsanleitung, Abschnitt 1)
+und bei einer MAJOR-Version (mit Migrationsleitfaden); gepflegt wird deshalb nur die jüngste
+(Abschnitt 3).
 
 ## 3. Pflege und Supportzeitraum
 
@@ -84,7 +86,7 @@ LTS**, auch nicht ab 1.0. Dafür entwickeln wir zu schnell.
 | Version | Erhält | Dauer |
 |---|---|---|
 | **Jüngste MINOR** | Sicherheitskorrekturen und Korrekturen kritischer Fehler (Abschnitt 5) als PATCH oder mit der nächsten MINOR, wenn diese innerhalb der Frist erscheint | bis zur nächsten MINOR, also rund zwei Wochen |
-| **ältere MINOR** | nichts mehr nach Erscheinen der Nachfolgerin; Aktualisierung auf die jüngste Version ohne Handarbeit | – |
+| **ältere MINOR** | nichts mehr nach Erscheinen der Nachfolgerin; Aktualisierung auf die jüngste Version ohne Handarbeit, außer bei angekündigten brechenden Änderungen und MAJOR-Versionen | – |
 | **0.11 und 0.12** (Übergang) | Sicherheitskorrekturen ab „mittel“ und Korrekturen kritischer Fehler als PATCH | bis **31.01.2027** |
 
 Welche Versionen heute unterstützt werden und bis wann, steht in
@@ -187,7 +189,7 @@ Meldungen an uns: `security@mandari.de`, Ablauf in `SECURITY.md`.
 |---|---|
 | MINOR-Release | alle zwei Wochen, dienstags; Stichtag Donnerstag davor |
 | Unterstützt | nur die jüngste MINOR: Sicherheitskorrekturen und kritische Fehler als PATCH oder mit der nächsten MINOR |
-| ältere MINOR | keine Korrekturen mehr; Aktualisierung ohne Handarbeit |
+| ältere MINOR | keine Korrekturen mehr; Aktualisierung ohne Handarbeit (Ausnahmen: angekündigte brechende Änderungen, MAJOR) |
 | Pflegeversionen, LTS | keine, auch nicht ab 1.0 |
 | Übergang | 0.11 und 0.12 bis 31.01.2027, Sicherheitskorrekturen ab „mittel“ und kritische Fehler |
 | Managed-Hosting-Aktualisierung | binnen 14 Tagen, Sicherheit nach Fristen |
