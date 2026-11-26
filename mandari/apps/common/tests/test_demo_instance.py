@@ -150,7 +150,15 @@ def test_demo_kommune_url_ist_die_kanonische_kennung() -> None:
 
     from apps.common.demo_daten import demo_ext
 
-    assert demo.demo_kommune_url() == f"/insight/kommune/{canonical_id(demo_ext('body', 'musterstadt'))}/"
+    kommune_url = demo.demo_kommune_url()
+    assert kommune_url == f"/insight/kommune/{canonical_id(demo_ext('body', 'musterstadt'))}/?weiter=/insight/"
+
+
+@pytest.mark.django_db
+def test_demo_kommune_url_fuehrt_von_der_anmeldeseite_ins_portal(client: Client) -> None:
+    # Der Link steht auf der Anmeldeseite: Ohne Ziel führte die Wahl über den Referer zurück dorthin
+    antwort = client.get(demo.demo_kommune_url(), HTTP_REFERER="http://testserver/accounts/login/")
+    assert antwort.status_code == 302 and antwort["Location"] == "/insight/"
 
 
 @pytest.mark.parametrize(
