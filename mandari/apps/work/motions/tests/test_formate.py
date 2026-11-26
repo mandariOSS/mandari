@@ -371,3 +371,19 @@ def test_word_setzt_zellbreiten_wie_das_raster() -> None:
     )
     links, rechts = doc.tables[0].rows[0].cells
     assert abs(rechts.width / links.width - 3) < 0.01
+
+
+def test_startwert_null_alternativtext_und_unterlisten_verschiedener_art() -> None:
+    html = '<ol start="0"><li><p>Null</p></li><li><p>Eins</p></li></ol>'
+    content = _odt(html)
+    assert 'text:start-value="0"' in content
+    assert "0. Null\n1. Eins" in markdown_schreiben(_lesen(html))
+    assert 'w:startOverride w:val="0"' in _docx(html)[0].part.numbering_part.element.xml
+    # Alternativtext des Bilds in Word
+    _doc, xml = _docx(BILD)
+    assert 'descr="Karte"' in xml
+    # Aufzählung und Nummerierung direkt nacheinander im selben Punkt: zwei Unterlisten
+    content = _odt("<ol><li><p>A</p><ul><li><p>a</p></li></ul><ol><li><p>b</p></li></ol></li></ol>")
+    unter = content.split(">A<", 1)[1]
+    assert unter.index('text:style-name="LPunkte"') < unter.index(">a<") < unter.index('text:style-name="LZahlen"')
+    assert unter.index('text:style-name="LZahlen"') < unter.index(">b<")

@@ -238,13 +238,23 @@ class _Schreiber:
         ersten Nummer (``start`` im Editor).
         """
         teile: list[str] = []
-        offen: list[bool] = []  # je offener Liste: Listenpunkt offen?
+        # Je offener Liste: Listenpunkt offen? und Kennung der Liste im Editor
+        offen: list[bool] = []
+        kennungen: list[int] = []
+
+        def schliessen() -> None:
+            teile.append("</text:list-item></text:list>" if offen.pop() else "</text:list>")
+            kennungen.pop()
+
         for a in punkte:
             assert a.liste is not None
             art, ebene = a.liste
             inhalt = self.absatz(a, in_zelle=in_zelle)
             while len(offen) > ebene + 1:
-                teile.append("</text:list-item></text:list>" if offen.pop() else "</text:list>")
+                schliessen()
+            # Eine andere Liste auf derselben Ebene (etwa Aufzählung, dann Nummerierung im selben Punkt): neue Liste
+            if len(offen) == ebene + 1 and kennungen[-1] != a.liste_nr:
+                schliessen()
             if a.fortsetzung and len(offen) == ebene + 1 and offen[-1]:
                 # Weiterer Absatz desselben Punkts (auch nach seiner Unterliste)
                 teile.append(inhalt)
@@ -255,15 +265,17 @@ class _Schreiber:
                     offen[-1] = True
                 teile.append(f'<text:list text:style-name="{"LZahlen" if art == "zahlen" else "LPunkte"}">')
                 offen.append(False)
+                kennungen.append(a.liste_nr)
             if offen[-1]:
                 teile.append("</text:list-item>")
             start = ""
-            if art == "zahlen" and a.listenbeginn and a.nummer and a.nummer != 1:
+            # Auch 0 ist ein gültiger Startwert
+            if art == "zahlen" and a.listenbeginn and a.nummer is not None and a.nummer != 1:
                 start = f' text:start-value="{a.nummer}"'
             teile.append(f"<text:list-item{start}>{inhalt}")
             offen[-1] = True
         while offen:
-            teile.append("</text:list-item></text:list>" if offen.pop() else "</text:list>")
+            schliessen()
         return "".join(teile)
 
     def bild(self, b: Bild, *, in_zelle: bool = False, hoechstbreite: float | None = None) -> str:

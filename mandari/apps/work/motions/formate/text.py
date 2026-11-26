@@ -91,7 +91,7 @@ def _md_absatz(a: Absatz) -> str:
         if a.fortsetzung:
             return f"{einzug}  {inhalt}"
         if art == "zahlen":
-            return f"{einzug}{a.nummer or 1}. {inhalt}"
+            return f"{einzug}{1 if a.nummer is None else a.nummer}. {inhalt}"
         if art == "aufgaben":
             return f"{einzug}- [{'x' if a.erledigt else ' '}] {inhalt}"
         return f"{einzug}- {inhalt}"
@@ -170,7 +170,9 @@ def _txt_absatz(a: Absatz) -> str:
         einzug = "  " * ebene
         if a.fortsetzung:
             return einzug + "  " + inhalt.replace("\n", "\n" + einzug + "  ")
-        zeichen = {"zahlen": f"{a.nummer or 1}.", "aufgaben": "[x]" if a.erledigt else "[ ]"}.get(art, "•")
+        zeichen = {"zahlen": f"{1 if a.nummer is None else a.nummer}.", "aufgaben": "[x]" if a.erledigt else "[ ]"}.get(
+            art, "•"
+        )
         return f"{einzug}{zeichen} " + inhalt.replace("\n", "\n" + einzug + " " * (len(zeichen) + 1))
     if a.art == "zitat":
         return "\n".join(f"> {zeile}" for zeile in inhalt.split("\n"))

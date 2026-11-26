@@ -107,7 +107,7 @@ class _Schreiber:
             nummerierung = self.doc.part.numbering_part.element
             vorlage = nummerierung.num_having_numId(self.doc.styles[stil].element.pPr.numPr.numId.val)
             num = nummerierung.add_num(vorlage.abstractNumId.val)
-            num.add_lvlOverride(ilvl=0).add_startOverride(max(1, start))
+            num.add_lvlOverride(ilvl=0).add_startOverride(max(0, start))
             self.nummern[schluessel] = num.numId
         return self.nummern[schluessel]
 
@@ -172,7 +172,9 @@ class _Schreiber:
         absatz = (ziel or self.doc).add_paragraph(style=stil)
         if stil and quelle.liste and quelle.liste[0] == "zahlen" and stil.startswith("List Number"):
             num_pr = absatz._p.get_or_add_pPr().get_or_add_numPr()
-            num_pr.get_or_add_numId().val = self._nummerierung(stil, quelle.liste_nr, quelle.nummer or 1)
+            num_pr.get_or_add_numId().val = self._nummerierung(
+                stil, quelle.liste_nr, quelle.nummer if quelle.nummer is not None else 1
+            )
             num_pr.get_or_add_ilvl().val = 0
         if quelle.liste and quelle.liste[0] == "aufgaben" and not quelle.fortsetzung:
             self._lauf(absatz, "☑ " if quelle.erledigt else "☐ ", Format())
@@ -201,7 +203,10 @@ class _Schreiber:
         grenze = max(hoechstbreite or self.inhaltsbreite, 9525)
         breite = Emu(min(int(bild.breite * 9525), grenze))  # 1 px = 9525 EMU (96 dpi)
         absatz = (ziel or self.doc).add_paragraph()
-        absatz.add_run().add_picture(io.BytesIO(bild.daten), width=breite)
+        form = absatz.add_run().add_picture(io.BytesIO(bild.daten), width=breite)
+        if bild.alt:
+            # Alternativtext für Bildschirmleser (in Word: „Alternativtext“)
+            form._inline.docPr.set("descr", bild.alt)
         return absatz
 
     def trennlinie(self) -> None:
