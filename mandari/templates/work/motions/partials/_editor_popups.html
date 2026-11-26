@@ -19,6 +19,24 @@
                     <i data-lucide="pencil-line" class="w-4 h-4 text-primary-600"></i>
                     Änderung vorschlagen
                 </button>
+                {% if can_edit and ai_available and not is_guest and not is_sworn_in_only %}
+                {# KI an der Markierung (#1584, neuer Editor): Ergebnis als Änderungsvorschlag am Rand #}
+                <div class="relative" x-show="ansicht === 'neu' && modus !== 'ansehen'">
+                    <button type="button" @click.stop="kiMenueOffen = !kiMenueOffen" class="comment-popup-btn"
+                            aria-haspopup="menu" :aria-expanded="kiMenueOffen.toString()" aria-expanded="false" :disabled="kiArbeitet">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-primary-600" aria-hidden="true"></i>
+                        <span x-text="kiArbeitet ? 'KI arbeitet …' : 'KI'">KI</span>
+                    </button>
+                    <div x-show="kiMenueOffen" x-cloak class="ke-menue" role="menu" aria-label="KI an der Markierung" @click.stop>
+                        <p class="ke-menue-hinweis">Das Ergebnis erscheint als Vorschlag am Rand.</p>
+                        <button type="button" role="menuitem" class="ke-mp" @click="kiAnStelle('')">Verbessern</button>
+                        <button type="button" role="menuitem" class="ke-mp" @click="kiAnStelle('Kürze den Text deutlich, ohne Inhalt zu verlieren.')">Kürzen</button>
+                        <button type="button" role="menuitem" class="ke-mp" @click="kiAnStelle('Formuliere den Text sachlich und förmlich wie in einem Antrag an den Rat.')">Förmlicher</button>
+                        <button type="button" role="menuitem" class="ke-mp" @click="kiAnStelle('Korrigiere nur Rechtschreibung, Grammatik und Zeichensetzung. Ändere sonst nichts.')">Rechtschreibung korrigieren</button>
+                        <button type="button" role="menuitem" class="ke-mp" @click="kiAnStelle('Formuliere den Text einfacher und verständlicher, ohne den Inhalt zu ändern.')">Einfacher formulieren</button>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </template>
 

@@ -365,3 +365,22 @@ def test_briefpapier_speichert_schrift_des_satzes(client: Any, org: Any, make_me
     assert OrganizationLetterhead.objects.get(organization=org, name="Neu").font_family == "Carlito"
     client.post(url, {"name": "Fremd", "kind": "generated", "font_family": "Comic Sans MS", "font_size": "11"})
     assert OrganizationLetterhead.objects.get(organization=org, name="Fremd").font_family == "Arimo"
+
+
+# --- KI als Änderungsvorschlag ------------------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_ki_vorschlag_wird_gekennzeichnet(client: Any, org: Any, make_member: Any) -> None:
+    mitglied = make_member(org, ["motions.view", "motions.edit", "motions.comment"], email="ki@example.org")
+    motion = _dokument(org, mitglied, "<p>Alter Text</p>")
+    client.force_login(mitglied.user)
+    url = reverse("work:document_comment", kwargs={"org_slug": org.slug, "motion_id": motion.id})
+    kopf = {"HTTP_X_REQUESTED_WITH": "XMLHttpRequest"}
+    daten = {"selected_text": "Alter Text", "vorschlag": "Neuer Text", "content": "", "ki": "1"}
+    antwort = client.post(url, daten, **kopf).json()
+    assert antwort["success"] and antwort["comment"]["ki"] is True
+    # Ein gewöhnlicher Kommentar ist nie ein KI-Vorschlag, auch wenn das Kennzeichen mitkommt
+    antwort = client.post(url, {"selected_text": "Alter Text", "content": "Gut so", "ki": "1"}, **kopf).json()
+    assert antwort["comment"]["ki"] is False
+    assert list(motion.comments.order_by("created_at").values_list("ki_erzeugt", flat=True)) == [True, False]

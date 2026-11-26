@@ -132,6 +132,8 @@ class MotionCommentView(WorkViewMixin, View):
             comment.motion = motion
             comment.author = self.membership
             comment.vorschlag = vorschlag
+            # Vom KI-Assistenten formulierter Vorschlag (#1584): nur als Vorschlag, nie als gewöhnlicher Kommentar
+            comment.ki_erzeugt = vorschlag is not None and request.POST.get("ki") == "1"
             # Use client-provided mark_id for inline comments, or generate one
             if comment.selected_text:
                 client_mark_id = request.POST.get("mark_id")
@@ -158,6 +160,7 @@ class MotionCommentView(WorkViewMixin, View):
                             "mark_id": str(comment.mark_id) if comment.mark_id else None,
                             "selected_text": comment.selected_text or None,
                             "vorschlag": comment.vorschlag,
+                            "ki": comment.ki_erzeugt,
                         },
                     }
                 )

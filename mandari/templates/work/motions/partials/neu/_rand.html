@@ -12,7 +12,7 @@ Kontext wie im Editor; Alpine-Komponente documentEditor.
     <template x-for="c in randKarten" :key="c.id">
         <article class="ke-karte" :data-rand-karte="c.mark_id" :class="{ 'ke-karte-aktiv': activeCommentId === c.mark_id }"
                  :data-vorschlag="istVorschlag(c) ? '' : null"
-                 tabindex="0" :aria-label="(istVorschlag(c) ? 'Änderungsvorschlag von ' : 'Kommentar von ') + c.author_name" @click="randKarteAktivieren(c.mark_id)"
+                 tabindex="0" :aria-label="(istVorschlag(c) ? (c.ki ? 'Änderungsvorschlag der KI, angelegt von ' : 'Änderungsvorschlag von ') : 'Kommentar von ') + c.author_name" @click="randKarteAktivieren(c.mark_id)"
                  @keydown.enter.self="randKarteAktivieren(c.mark_id)">
             <div class="ke-karte-kopf">
                 <span class="ke-av" x-text="c.author_initials" aria-hidden="true"></span>
@@ -26,7 +26,7 @@ Kontext wie im Editor; Alpine-Komponente documentEditor.
                             @click.stop="randErledigen(c)"><i data-lucide="check" aria-hidden="true"></i></button>
                 </span>
             </div>
-            <p class="ke-karte-art" x-show="istVorschlag(c)">Änderungsvorschlag</p>
+            <p class="ke-karte-art" x-show="istVorschlag(c)" x-text="c.ki ? 'Änderungsvorschlag der KI' : 'Änderungsvorschlag'">Änderungsvorschlag</p>
             <p class="ke-karte-vorschlag" x-show="istVorschlag(c)" x-text="istVorschlag(c) ? vorschlagZeile(c) : ''"></p>
             <p x-show="istVorschlag(c) ? !!c.notiz : true" x-text="istVorschlag(c) ? c.notiz : c.content"></p>
             <template x-for="a in c.replies" :key="a.id">

@@ -34,6 +34,13 @@
 datum = 2026-11-26
 version = ""
 bereich = "dokumente"
+titel = "Die KI macht Vorschläge am Rand, statt Ihren Text zu ändern."
+text = """Markieren Sie eine Stelle und wählen Sie im Auswahlfeld „KI“, etwa „Kürzen“ oder „Rechtschreibung korrigieren“. Das Ergebnis erscheint als „Änderungsvorschlag der KI“ am Rand; Sie oder Ihre Fraktion nehmen ihn an oder lehnen ihn ab. Auch Antworten im KI-Assistenten legen Sie mit „Als Vorschlag“ an den Rand. Direkt einsetzen geht weiter über „Direkt übernehmen“."""
+
+[[eintrag]]
+datum = 2026-11-26
+version = ""
+bereich = "dokumente"
 titel = "Dokumente stehen im Editor auf echten Seiten, genau wie im PDF."
 text = """Die Seitenansicht im Editor zeigt Ihr Dokument jetzt Seite für Seite mit Briefpapier, Kopf, Fußzeile und Seitenzahlen. Ist der PDF-Dienst eingerichtet, entsteht das PDF aus genau diesen Seiten, ohne Verschiebungen. Über das Menü „Ansicht“ wechseln Sie jederzeit zum Fließtext; den Zoom stellen Sie in der Werkzeugleiste ein."""
 
