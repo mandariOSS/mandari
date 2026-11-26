@@ -221,14 +221,26 @@ class MotionExportService:
 
     def export_to_pdf(self, motion: "Motion") -> bytes:
         """
-        Generate a PDF from the motion content.
+        PDF des Dokuments.
 
-        Args:
-            motion: The motion to export
-
-        Returns:
-            bytes: The PDF file content
+        Mit eingerichtetem Chromium-Dienst (``GOTENBERG_URL``) setzt dieselbe Satz-Kette wie die Seitenansicht des
+        Editors die Seiten (Issue #1584); sonst, und wenn das scheitert, der bisherige Weg über xhtml2pdf.
         """
+        from apps.common import pdf_chromium
+
+        if pdf_chromium.verfuegbar():
+            from .druck import DruckNichtMoeglichError, druck_dateien
+
+            try:
+                pdf_content = pdf_chromium.html_zu_pdf(druck_dateien(motion))
+            except (pdf_chromium.ChromiumNichtVerfuegbarError, DruckNichtMoeglichError) as fehler:
+                logger.warning("PDF über die Satz-Kette nicht möglich, bisheriger Weg: %s", type(fehler).__name__)
+            else:
+                letterhead = motion.letterhead
+                if letterhead and not letterhead.is_generated and letterhead.pdf_file:
+                    pdf_content = self._apply_letterhead(pdf_content, letterhead)
+                return pdf_content
+
         # Generate HTML content
         html_content = self._render_html(motion)
 

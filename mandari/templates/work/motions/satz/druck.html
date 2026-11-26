@@ -1,0 +1,41 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+Druckansicht eines Dokuments (Satz-Kette, Issue #1584): frontend/satz/druck.ts setzt den Text mit derselben Kette wie
+die Seitenansicht des Editors. Als Paket (paket=True) mit flachen Dateinamen für headless Chromium
+(apps/work/motions/druck.py), sonst mit Adressen der Ablage zum Ansehen im Browser.
+Kontext: title, konfig (SatzKonfig), inhalt (bereinigtes HTML), paket. Das Skript ist ein klassisches Bündel
+(static/dist/satz-druck.js): Aus Dateien lädt Chromium keine ES-Module.
+{% endcomment %}
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    {% if paket %}
+    <link rel="stylesheet" href="schriften.css">
+    <link rel="stylesheet" href="dokument-satz.css">
+    {% else %}
+    <link rel="stylesheet" href="{% static 'vendor/schriften/schriften.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dokument-satz.css' %}">
+    {% endif %}
+    <style{% if csp_nonce %} nonce="{{ csp_nonce }}"{% endif %}>
+        @page { size: 210mm 297mm; margin: 0; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        #editor-container { margin: 0; }
+        @media screen {
+            html { background: #e5e7eb; }
+            body { padding: 24px 0; }
+            #editor-container { margin: 0 auto; }
+            .satz-bogen { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
+        }
+        @media print {
+            .satz-bogen { box-shadow: none; }
+        }
+    </style>
+</head>
+<body>
+    <div id="editor-container"></div>
+    {{ konfig|json_script:"satz-konfig" }}
+    <template id="satz-inhalt">{{ inhalt|safe }}</template>
+    <script src="{% if paket %}satz-druck.js{% else %}{% static 'dist/satz-druck.js' %}{% endif %}"></script>
+</body>
+</html>

@@ -23,6 +23,9 @@ import { readJsonScript } from '../js/json-script'
 import { bereinigeKiHtml } from '../js/ki-ausgabe'
 import { installMotionTracking } from '../js/motion-tracking'
 import { navigateTo } from '../js/navigation'
+import type { SatzSteuerung } from '../satz/steuerung'
+import type { SatzKonfig } from '../satz/vertrag'
+import { mmZuPx } from '../satz/vertrag'
 
 // ---- Konfiguration aus dem View -------------------------------------------------
 
@@ -54,6 +57,17 @@ export interface LetterheadOption {
   margin_left: number
   font_family: string
   font_size: number
+  /** Satz-Konfiguration für die Seitenansicht (apps/work/motions/satz.py) */
+  satz?: SatzKonfig
+}
+
+/** Eintrag der Schriftauswahl (apps/common/schriften.py, fuer_editor) */
+export interface SchriftEintrag {
+  schluessel: string
+  name: string
+  stapel: string
+  art: string
+  hinweis: string
 }
 
 export interface InlineCommentReply {
@@ -103,6 +117,10 @@ export interface DocumentEditorConfig {
   collabUserColor: string
   letterhead: ActiveLetterheadConfig | null
   letterheads: LetterheadOption[]
+  /** Satz ohne Briefpapier (Seitenansicht, Issue #1584) */
+  satzOhne?: SatzKonfig
+  /** Schriftauswahl und Größen für die Werkzeugleiste */
+  schriften?: { liste: SchriftEintrag[]; groessen: number[] }
   inlineComments: InlineComment[]
   /** „neu“: Antragseditor mit Kommentaren am Rand und Ablauf in der Kopfzeile (Teil von #856); sonst „bisher“ */
   ansicht?: 'neu' | 'bisher'
@@ -170,7 +188,21 @@ const ABSTIMMUNG_ID = 'editor-abstimmung-vorauswahl'
 const ABSTIMMUNG_OHNE_ZUGANG_ID = 'editor-abstimmung-ohne-zugang'
 /** Einstellungen des neuen Editors je Browser */
 const SPEICHER_GLIEDERUNG = 'mandari.editor.gliederung'
-const SPEICHER_SEITENANSICHT = 'mandari.editor.seitenansicht'
+// Seit den echten Seiten (#1584) ist die Seitenansicht der Standard; der neue Schlüssel setzt frühere Abwahlen zurück
+const SPEICHER_SEITENANSICHT = 'mandari.editor.seiten'
+/** Zoom der Seitenansicht in Prozent; 0 = Seitenbreite (passt sich der Spalte an) */
+const SPEICHER_ZOOM = 'mandari.editor.zoom'
+const ZOOM_STUFEN = [50, 75, 90, 100, 110, 125, 150, 200]
+/** Abstand zwischen zwei Seiten in der Seitenansicht (px) */
+const SEITEN_LUECKE = 24
+/** Namen der Absatzformate (wie editor_neu.ABSATZFORMATE) für die Werkzeugleiste */
+const ABSATZ_NAMEN: Record<string, string> = {
+  p: 'Text',
+  h1: 'Überschrift 1',
+  h2: 'Überschrift 2',
+  h3: 'Überschrift 3',
+  quote: 'Zitat',
+}
 /** Ab dieser Breite stehen Kommentare am Rand neben dem Text (Tailwind lg) */
 const RAND_AB = '(min-width: 1024px)'
 /** Status, in denen der neue Editor im Modus „Vorschlagen“ öffnet (Abstimmung in der Fraktion) */
@@ -229,6 +261,24 @@ function gespeicherteEinstellung(key: string, standard: boolean): boolean {
 function einstellungMerken(key: string, wert: boolean): void {
   try {
     window.localStorage.setItem(key, wert ? 'an' : 'aus')
+  } catch {
+    // Privater Modus o. Ä.: Einstellung gilt nur für diese Seite
+  }
+}
+
+function gespeicherteZahl(key: string, standard: number): number {
+  try {
+    const roh = window.localStorage.getItem(key)
+    const wert = Number(roh)
+    return roh !== null && Number.isFinite(wert) ? wert : standard
+  } catch {
+    return standard
+  }
+}
+
+function zahlMerken(key: string, wert: number): void {
+  try {
+    window.localStorage.setItem(key, String(wert))
   } catch {
     // Privater Modus o. Ä.: Einstellung gilt nur für diese Seite
   }
@@ -293,6 +343,10 @@ export const documentEditor = defineComponent(() => {
   // Alpine verpackt Komponentenfelder in Proxies; das bricht die
   // Identitätsprüfungen von ProseMirror ("Applying a mismatched transaction").
   let editor: Editor | null = null
+  /** Satz-Kette der Seitenansicht (nur neuer Editor) */
+  let satz: SatzSteuerung | null = null
+  let zoomBeobachter: ResizeObserver | null = null
+  let tippTimer = 0
   let autoSaveInterval: number | null = null
   // Markierte Stellen der KI-Vorschläge (Teil von #856): außerhalb des reaktiven Zustands, weil sie
   // Editor-Positionen und Ereignis-Abos halten
@@ -462,7 +516,21 @@ export const documentEditor = defineComponent(() => {
       textColor: false,
       highlight: false,
       table: false,
+      fontFamily: '',
+      fontSize: '',
     } as FormatState,
+    schriftListe: (config.schriften?.liste ?? []) as SchriftEintrag[],
+    schriftGroessen: (config.schriften?.groessen ?? []) as number[],
+    zoom: gespeicherteZahl(SPEICHER_ZOOM, 0),
+    zoomProzent: 100,
+    zoomStufen: ZOOM_STUFEN,
+    zuHoch: 0,
+    /** Gruppen der Werkzeugleiste, die im Menü „Mehr“ stehen (werkzeugBeobachten) */
+    wzVerborgen: [] as string[],
+    /** Lage des geöffneten Menüs der Werkzeugleiste (fest über der Seite) */
+    menuePos: { top: 0, left: 0 as number | null, right: null as number | null },
+    /** Kurzinfo eines Knopfs der Werkzeugleiste */
+    tipp: { text: '', kuerzel: '', stil: '' },
     motionId: config.motionId,
     motionType: config.motionType,
     documentTypeId: config.documentTypeId,
@@ -490,7 +558,7 @@ export const documentEditor = defineComponent(() => {
     abstimmungAuswahlOffen: false,
     gliederung: [] as GliederungsEintrag[],
     gliederungAn: gespeicherteEinstellung(SPEICHER_GLIEDERUNG, true),
-    seitenansicht: gespeicherteEinstellung(SPEICHER_SEITENANSICHT, false),
+    seitenansicht: gespeicherteEinstellung(SPEICHER_SEITENANSICHT, true),
     randAntwort: '',
     randSendet: false,
     abstimmungAuswahl: [] as string[],
@@ -620,8 +688,8 @@ export const documentEditor = defineComponent(() => {
         })
       }
 
-      // Briefkopf-Hintergrund rendern, falls vorhanden
-      const letterhead = config.letterhead
+      // Briefkopf-Hintergrund rendern, falls vorhanden (der neue Editor zeigt ihn über die Satz-Kette, #1584)
+      const letterhead = config.ansicht === 'neu' ? null : config.letterhead
       if (letterhead) {
         if (letterhead.kind === 'generated') {
           // Generierter Briefkopf: HTML-Vorschau über dem Inhalt (statt pdfjs-Overlay)
@@ -725,6 +793,7 @@ export const documentEditor = defineComponent(() => {
         content: initialContent,
         editable: true,
         placeholder: PLACEHOLDER,
+        satz: config.ansicht === 'neu',
         onUpdate: () => {
           this.updatedAt = Date.now()
           this._markChanged()
@@ -751,6 +820,7 @@ export const documentEditor = defineComponent(() => {
       this._nachAenderung()
       this._modusAnwenden()
       this._autoSaveStarten()
+      this._satzStarten()
     },
 
     _initCollabEditor(editorEl: HTMLElement, initialContent: string, wsUrl: string): void {
@@ -771,6 +841,7 @@ export const documentEditor = defineComponent(() => {
           content: initialContent,
           editable: false,
           placeholder: PLACEHOLDER,
+          satz: config.ansicht === 'neu',
           wsUrl: wsUrl,
           user: {
             name: this.collabUserName,
@@ -859,6 +930,7 @@ export const documentEditor = defineComponent(() => {
         this.collabFlush = result.collab.flush
         this._modusAnwenden()
         this._autoSaveStarten()
+        this._satzStarten()
       } catch (e) {
         console.error('Kollaborations-Editor konnte nicht gestartet werden, Solo-Fallback:', e)
         this.collabEnabled = false
@@ -1941,6 +2013,11 @@ export const documentEditor = defineComponent(() => {
       this.letterheadId = id
       this.letterheadName = name
       this._metaGeaendert()
+      if (this.ansicht === 'neu') {
+        // Neuer Editor: Seiten, Ränder, Schrift und Briefpapier kommen aus der Satz-Kette
+        this._satzAnwenden()
+        return
+      }
 
       // Briefkopf-Hintergrund neu rendern
       const container = document.getElementById('editor-container')
@@ -2324,6 +2401,159 @@ export const documentEditor = defineComponent(() => {
       this.menue = this.menue === key ? '' : key
     },
 
+    /**
+     * Menü der Werkzeugleiste an seinem Knopf öffnen (fest über der Seite, nichts schneidet es ab). Per Tastatur
+     * geöffnet, liegt der Fokus danach auf dem gewählten bzw. ersten Eintrag.
+     */
+    menueAmKnopf(key: string, event: MouseEvent): void {
+      const knopf = event.currentTarget as HTMLElement | null
+      if (this.menue === key || !knopf) {
+        this.menue = ''
+        return
+      }
+      const r = knopf.getBoundingClientRect()
+      const rechts = r.left + r.width / 2 > window.innerWidth / 2
+      this.menuePos = rechts
+        ? { top: r.bottom + 4, left: null, right: Math.max(8, window.innerWidth - r.right) }
+        : { top: r.bottom + 4, left: Math.max(8, r.left), right: null }
+      this.menue = key
+      if (event.detail === 0) {
+        void this.$nextTick(() => {
+          const menu = document.querySelector<HTMLElement>(`[data-menue="${key}"]`)
+          const ziel =
+            menu?.querySelector<HTMLElement>('[aria-checked="true"]') ??
+            menu?.querySelector<HTMLElement>('[role^="menuitem"], button')
+          ziel?.focus()
+        })
+      }
+    },
+
+    get menueStil(): string {
+      const pos = this.menuePos
+      const seite = pos.left !== null ? `left: ${pos.left}px` : `right: ${pos.right ?? 8}px`
+      return `top: ${pos.top}px; ${seite}; max-height: calc(100dvh - ${Math.round(pos.top) + 16}px)`
+    },
+
+    // ---- Werkzeugleiste: Überlauf, Tastatur, Kurzinfos (Issue #1584) ----
+
+    /** Breite beobachten und Gruppen, die nicht passen, nach Vorrang ins Menü „Mehr“ legen */
+    werkzeugBeobachten(leiste: HTMLElement): void {
+      const gruppen = leiste.querySelector<HTMLElement>('[data-wz-gruppen]')
+      const rechts = leiste.querySelector<HTMLElement>('[data-wz-rechts]')
+      if (!gruppen) return
+      const breiten = new Map<string, { breite: number; vorrang: number }>()
+      const messen = (): void => {
+        for (const g of Array.from(gruppen.children) as HTMLElement[]) {
+          const name = g.dataset.gruppe ?? ''
+          if (g.offsetWidth > 0) {
+            const abstand = Number.parseFloat(getComputedStyle(g).marginRight) || 0
+            breiten.set(name, { breite: g.offsetWidth + abstand, vorrang: Number(g.dataset.vorrang ?? 9) })
+          }
+        }
+        const stil = getComputedStyle(leiste)
+        const innen = leiste.clientWidth - Number.parseFloat(stil.paddingLeft) - Number.parseFloat(stil.paddingRight)
+        const platz = innen - (rechts?.offsetWidth ?? 0) - 16
+        let summe = [...breiten.values()].reduce((a, b) => a + b.breite, 0)
+        const verborgen: string[] = []
+        if (summe > platz) {
+          // Platz für „Mehr“ lassen, dann die Gruppen mit dem niedrigsten Vorrang zuerst auslagern
+          const mehr = 44
+          const reihenfolge = [...breiten.entries()].sort((a, b) => b[1].vorrang - a[1].vorrang)
+          for (const [name, wert] of reihenfolge) {
+            if (summe <= platz - mehr) break
+            verborgen.push(name)
+            summe -= wert.breite
+          }
+        }
+        if (verborgen.join() !== this.wzVerborgen.join()) this.wzVerborgen = verborgen
+        this._werkzeugTabstopp(leiste)
+      }
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(() => window.requestAnimationFrame(messen)).observe(leiste)
+      }
+      messen()
+      // Alt+F10 springt in die Leiste (wie in gängigen Textverarbeitungen)
+      document.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.altKey && e.key === 'F10') {
+          e.preventDefault()
+          leiste.querySelector<HTMLElement>('[tabindex="0"]')?.focus()
+        }
+      })
+    },
+
+    _werkzeugKnoepfe(leiste: HTMLElement): HTMLElement[] {
+      return Array.from(leiste.querySelectorAll<HTMLElement>('button')).filter(
+        (b) => !b.hasAttribute('disabled') && b.getClientRects().length > 0,
+      )
+    },
+
+    /** Ein Tab-Halt je Leiste: der zuletzt fokussierte (sonst der erste) Knopf */
+    _werkzeugTabstopp(leiste: HTMLElement, aktiv?: HTMLElement): void {
+      const knoepfe = this._werkzeugKnoepfe(leiste)
+      const ziel = aktiv ?? knoepfe.find((b) => b.tabIndex === 0) ?? knoepfe[0]
+      for (const b of Array.from(leiste.querySelectorAll<HTMLElement>('button'))) b.tabIndex = b === ziel ? 0 : -1
+    },
+
+    werkzeugFokus(event: FocusEvent): void {
+      const leiste = event.currentTarget as HTMLElement
+      const knopf = (event.target as HTMLElement).closest('button')
+      if (knopf && leiste.contains(knopf)) this._werkzeugTabstopp(leiste, knopf)
+      if (knopf?.matches(':focus-visible')) this._tippFuer(knopf, 0)
+    },
+
+    /** Pfeiltasten wandern zwischen den Knöpfen, Pos1/Ende springen, Escape kehrt in den Text zurück */
+    werkzeugTaste(event: KeyboardEvent): void {
+      const leiste = event.currentTarget as HTMLElement
+      const knopf = (event.target as HTMLElement).closest('button')
+      if (!knopf) return
+      if (event.key === 'Escape' && !this.menue) {
+        event.preventDefault()
+        editor?.commands.focus()
+        return
+      }
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      const knoepfe = this._werkzeugKnoepfe(leiste)
+      const index = knoepfe.indexOf(knopf)
+      if (index < 0) return
+      let ziel = index
+      if (event.key === 'ArrowRight') ziel = (index + 1) % knoepfe.length
+      else if (event.key === 'ArrowLeft') ziel = (index - 1 + knoepfe.length) % knoepfe.length
+      else if (event.key === 'Home') ziel = 0
+      else ziel = knoepfe.length - 1
+      event.preventDefault()
+      knoepfe[ziel].focus()
+    },
+
+    tippZeigen(event: MouseEvent): void {
+      const knopf = (event.target as HTMLElement).closest<HTMLElement>('[data-tipp]')
+      if (!knopf) return
+      this._tippFuer(knopf, 350)
+    },
+
+    tippVerbergen(): void {
+      window.clearTimeout(tippTimer)
+      this.tipp = { text: '', kuerzel: '', stil: '' }
+    },
+
+    _tippFuer(knopf: HTMLElement, verzoegerung: number): void {
+      window.clearTimeout(tippTimer)
+      const text = knopf.dataset.tipp
+      if (!text || this.menue) return
+      tippTimer = window.setTimeout(() => {
+        const r = knopf.getBoundingClientRect()
+        const mitte = Math.min(window.innerWidth - 80, Math.max(80, r.left + r.width / 2))
+        this.tipp = {
+          text,
+          kuerzel: knopf.dataset.kuerzel ?? '',
+          stil: `top: ${Math.round(r.bottom + 6)}px; left: ${Math.round(mitte)}px`,
+        }
+      }, verzoegerung)
+    },
+
+    get absatzformatName(): string {
+      return ABSATZ_NAMEN[this.absatzformatWert] ?? 'Text'
+    },
+
     menueSchliessen(): void {
       this.menue = ''
     },
@@ -2666,7 +2896,129 @@ export const documentEditor = defineComponent(() => {
       this.seitenansicht = !this.seitenansicht
       einstellungMerken(SPEICHER_SEITENANSICHT, this.seitenansicht)
       this.menueSchliessen()
+      this._satzAnwenden()
       void this.$nextTick(() => this.randNeuAnordnen())
+    },
+
+    // ---- Seitenansicht mit echten Seiten (Satz-Kette, Issue #1584) ----
+
+    /** Satz-Steuerung für den (neu erzeugten) Editor anlegen; nur im neuen Editor */
+    _satzStarten(): void {
+      satz?.beenden()
+      satz = null
+      const rahmen = document.getElementById('editor-container')
+      if (this.ansicht !== 'neu' || !editor || !rahmen || !window.MandariEditor?.satzSteuerung) return
+      satz = window.MandariEditor.satzSteuerung(editor, rahmen, {
+        luecke: SEITEN_LUECKE,
+        onSeiten: (seiten, zuHoch) => {
+          this.pageCount = seiten
+          this.zuHoch = zuHoch
+          this._seiteMelden()
+          void this.$nextTick(() => this.randNeuAnordnen())
+        },
+      })
+      if (!zoomBeobachter && typeof ResizeObserver !== 'undefined') {
+        const blatt = rahmen.closest('.ke-blatt')
+        zoomBeobachter = new ResizeObserver(() => {
+          if (this.zoom === 0) this._zoomAnwenden()
+        })
+        if (blatt) zoomBeobachter.observe(blatt)
+        rahmen.closest('.ke-scroll')?.addEventListener('scroll', () => this._seiteMelden(), { passive: true })
+      }
+      this._satzAnwenden()
+    },
+
+    /** Satz-Konfiguration des gewählten Briefpapiers (bzw. ohne Briefpapier) */
+    _satzKonfig(): SatzKonfig | null {
+      const gewaehlt = this.letterheadsData.find((lh) => lh.id === this.letterheadId)
+      return gewaehlt?.satz ?? config.satzOhne ?? null
+    },
+
+    _satzAnwenden(): void {
+      if (!satz) return
+      void satz.setzen(this.seitenansicht ? this._satzKonfig() : null).then(() => {
+        this._zoomAnwenden()
+        void this.$nextTick(() => this.randNeuAnordnen())
+      })
+    },
+
+    /** Zoom der Seitenansicht: feste Stufe oder Seitenbreite (höchstens 100 %) */
+    _zoomAnwenden(): void {
+      const konfig = this._satzKonfig()
+      if (!satz || !this.seitenansicht || !konfig) return
+      let skala = this.zoom / 100
+      if (this.zoom === 0) {
+        const blatt = document.getElementById('editor-container')?.closest('.ke-blatt') as HTMLElement | null
+        const verfuegbar = blatt?.clientWidth ?? 0
+        skala = verfuegbar > 0 ? Math.min(1, verfuegbar / mmZuPx(konfig.seite.breite_mm)) : 1
+      }
+      satz.setzeSkala(skala)
+      this.zoomProzent = Math.round(skala * 100)
+    },
+
+    zoomSetzen(prozent: number): void {
+      this.zoom = prozent
+      zahlMerken(SPEICHER_ZOOM, prozent)
+      this._zoomAnwenden()
+      void this.$nextTick(() => this.randNeuAnordnen())
+    },
+
+    zoomSchritt(richtung: 1 | -1): void {
+      const aktuell = this.zoomProzent
+      const naechste =
+        richtung > 0 ? ZOOM_STUFEN.find((z) => z > aktuell) : [...ZOOM_STUFEN].reverse().find((z) => z < aktuell)
+      if (naechste) this.zoomSetzen(naechste)
+    },
+
+    _seiteMelden(): void {
+      if (!satz?.aktiv) return
+      const scroll = document.getElementById('editor-container')?.closest('.ke-scroll') as HTMLElement | null
+      if (!scroll) return
+      const box = scroll.getBoundingClientRect()
+      this.currentPage = satz.seiteBei(box.top + box.height / 3)
+    },
+
+    zurSeite(nr: number): void {
+      satz?.zurSeite(nr)
+    },
+
+    // ---- Schriftart und -größe (Issue #1584) ----
+
+    /** Name der Schrift, die an der Auswahl gilt (eigene Angabe oder Schrift des Dokuments) */
+    get schriftName(): string {
+      return this.formats.fontFamily || this._satzKonfig()?.schriften[0]?.name || 'Arimo'
+    },
+
+    /** Größe an der Auswahl in pt (eigene Angabe oder Größe des Dokuments), mit Komma */
+    get schriftGroesse(): string {
+      const eigene = this.formats.fontSize?.endsWith('pt') ? Number.parseFloat(this.formats.fontSize) : Number.NaN
+      const wert = Number.isFinite(eigene) ? eigene : (this._satzKonfig()?.schrift.groesse_pt ?? 11)
+      return String(wert).replace('.', ',')
+    },
+
+    schriftSetzen(name: string): void {
+      if (!editor || this.modus === 'ansehen') return
+      const basis = this._satzKonfig()?.schriften[0]?.name
+      const kette = editor.chain().focus()
+      if (!name || name === basis) kette.unsetFontFamily().run()
+      else kette.setFontFamily(`"${name}"`).run()
+      this.menueSchliessen()
+    },
+
+    groesseSetzen(pt: number | null): void {
+      if (!editor || this.modus === 'ansehen') return
+      const basis = this._satzKonfig()?.schrift.groesse_pt
+      const kette = editor.chain().focus()
+      if (pt === null || pt === basis) kette.unsetFontSize().run()
+      else kette.setFontSize(`${pt}pt`).run()
+      this.menueSchliessen()
+    },
+
+    groesseSchritt(richtung: 1 | -1): void {
+      const aktuell = Number.parseFloat(this.schriftGroesse.replace(',', '.'))
+      const liste = this.schriftGroessen
+      const naechste = richtung > 0 ? liste.find((g) => g > aktuell) : [...liste].reverse().find((g) => g < aktuell)
+      if (naechste !== undefined) this.groesseSetzen(naechste)
     },
 
     zuUeberschrift(index: number): void {

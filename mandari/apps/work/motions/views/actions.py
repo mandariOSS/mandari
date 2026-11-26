@@ -650,10 +650,23 @@ class MotionExportView(WorkViewMixin, View):
             return JsonResponse({"error": "Herunterladen ist für diese Freigabe nicht erlaubt."}, status=403)
 
         export_format = request.GET.get("format", "pdf")
-        if export_format in ("pdf", "docx") and motion.is_sworn_in_only():
+        if export_format in ("pdf", "docx", "druck") and motion.is_sworn_in_only():
             from .. import non_public
 
             non_public.log_access(motion, self.membership, request, non_public.ACCESS_EXPORTED)
+
+        if export_format == "druck":
+            # Druckansicht der Satz-Kette (#1584): dieselben Seiten wie im Editor und im PDF, zum Drucken im Browser
+            from django.template.response import TemplateResponse
+
+            from ..druck import druck_kontext
+
+            try:
+                kontext = druck_kontext(motion, paket=False)
+            except ExportTooLargeError:
+                return JsonResponse({"error": PDF_TABLES_TOO_LARGE}, status=400)
+            freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_PDF)
+            return TemplateResponse(request, "work/motions/satz/druck.html", kontext)
 
         if export_format == "pdf":
             try:

@@ -1,0 +1,311 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Erzeugt von scripts/schriften_bauen.py aus mandari/apps/common/schriften.py – nicht von Hand ändern.
+   Schriften für Dokumente (Editor, Seitenansicht, PDF); Lizenzen der Schriftdateien: REUSE.toml. */
+@font-face {
+    font-family: "Arimo";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("arimo/arimo-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Arimo";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("arimo/arimo-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Arimo";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("arimo/arimo-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Arimo";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("arimo/arimo-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Carlito";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("carlito/carlito-400.ttf") format("truetype");
+}
+@font-face {
+    font-family: "Carlito";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("carlito/carlito-700.ttf") format("truetype");
+}
+@font-face {
+    font-family: "Carlito";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("carlito/carlito-400-kursiv.ttf") format("truetype");
+}
+@font-face {
+    font-family: "Carlito";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("carlito/carlito-700-kursiv.ttf") format("truetype");
+}
+@font-face {
+    font-family: "Open Sans";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("open-sans/open-sans-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Open Sans";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("open-sans/open-sans-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Open Sans";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("open-sans/open-sans-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Open Sans";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("open-sans/open-sans-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("roboto/roboto-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("roboto/roboto-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Roboto";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("roboto/roboto-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Roboto";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("roboto/roboto-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("inter/inter-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("inter/inter-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("inter/inter-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("inter/inter-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Atkinson Hyperlegible";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("atkinson-hyperlegible/atkinson-hyperlegible-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Atkinson Hyperlegible";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("atkinson-hyperlegible/atkinson-hyperlegible-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Atkinson Hyperlegible";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("atkinson-hyperlegible/atkinson-hyperlegible-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Atkinson Hyperlegible";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("atkinson-hyperlegible/atkinson-hyperlegible-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Tinos";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("tinos/tinos-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Tinos";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("tinos/tinos-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Tinos";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("tinos/tinos-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Tinos";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("tinos/tinos-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Caladea";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("caladea/caladea-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Caladea";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("caladea/caladea-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Caladea";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("caladea/caladea-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Caladea";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("caladea/caladea-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Noto Serif";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("noto-serif/noto-serif-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Noto Serif";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("noto-serif/noto-serif-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Noto Serif";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("noto-serif/noto-serif-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Noto Serif";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("noto-serif/noto-serif-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Literata";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("literata/literata-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Literata";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("literata/literata-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Literata";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("literata/literata-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Literata";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("literata/literata-700-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Cousine";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("cousine/cousine-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Cousine";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("cousine/cousine-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Cousine";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("cousine/cousine-400-kursiv.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Cousine";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("cousine/cousine-700-kursiv.woff2") format("woff2");
+}

@@ -4,7 +4,8 @@ Prüft die Compose-Rollenprofile unter deploy/roles/ gegen docker-compose.yml (I
 
 Regeln:
 - Die Basisdatei bleibt profilfrei: Ein-Server-Installation startet unverändert alles. Einzige
-  Ausnahme sind die optionalen Dienste in ``OPTIONAL`` mit genau ihrem Profil (PgBouncer, #1060).
+  Ausnahme sind die optionalen Dienste in ``OPTIONAL`` mit genau ihrem Profil (PgBouncer, #1060; Gotenberg für
+  PDFs der Satz-Kette, #1584).
 - Jede Rollen-Datei kennt nur Dienste der Basisdatei (plus eigene Zusätze wie pgbouncer),
   und jeder Basisdienst ist je Rolle entweder aktiv oder über das Profil „aus“ abgeschaltet.
 - Jeder Basisdienst ist in genau einer der Rollen data/web/worker aktiv.
@@ -27,7 +28,7 @@ BASIS = ROOT / "docker-compose.yml"
 ROLLEN = {name: ROOT / "deploy" / "roles" / f"{name}.yml" for name in ("data", "web", "worker")}
 DATENDIENSTE = {"postgres", "redis", "elasticsearch", "pgbouncer"}
 #: Optionale Dienste der Basisdatei und das Profil, mit dem sie starten (sonst nie)
-OPTIONAL = {"pgbouncer": ["pgbouncer"]}
+OPTIONAL = {"pgbouncer": ["pgbouncer"], "gotenberg": ["pdf"]}
 AUS = "aus"
 
 

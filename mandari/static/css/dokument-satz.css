@@ -1,0 +1,344 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/*
+ * Satz der Dokumente (Issue #1584): eine Typografie für die Seitenansicht des Editors und für das PDF.
+ *
+ * Gilt für den Text, sobald die Satz-Kette ihn setzt (frontend/satz/steuerung.ts: Klasse .dokument-satz am Textelement,
+ * .satz-aktiv am Rahmen #editor-container). Die Druckansicht (templates/work/motions/satz/druck.html) hat dieselbe
+ * Struktur; deshalb stimmen Zeilen- und Seitenumbrüche überein.
+ *
+ * Regeln für den Satz:
+ * - Maße in pt und em, Schrift und Größe aus dem Briefpapier (CSS-Variablen am Rahmen).
+ * - Abstände nur nach unten (margin-bottom) oder als Innenabstand. Ein Abstand nach oben fiele mit dem darüber zusammen
+ *   und stimmte nicht mehr, sobald die Kette eine Lücke dazwischensetzt.
+ * - Markierungen des Editors (Kommentare, Suche, Vorschläge) färben nur, sie verschieben nichts.
+ * Die Selektoren beginnen mit #editor-container, damit sie die allgemeinen Editor-Stile (work-editor.css) schlagen.
+ */
+
+#editor-container.satz-aktiv {
+  position: relative;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  overflow: visible;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0;
+}
+
+#editor-container .tiptap.dokument-satz {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  background: transparent;
+  color: #111827;
+  font-family: var(--satz-schrift, "Arimo", Arial, sans-serif);
+  font-size: var(--satz-groesse, 11pt);
+  line-height: var(--satz-zeilenabstand, 1.5);
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+  hyphens: manual;
+  overflow-wrap: break-word;
+  orphans: 1;
+  widows: 1;
+}
+.dark #editor-container .tiptap.dokument-satz {
+  color: #111827;
+}
+
+/* Grundwerte für beide Umgebungen: Der Editor lädt die Grundstile der Oberfläche (Tailwind), der Druck nicht. Was
+   davon das Layout ändert, steht deshalb hier ausdrücklich. */
+#editor-container .tiptap.dokument-satz,
+#editor-container .tiptap.dokument-satz *,
+#editor-container .tiptap.dokument-satz *::before,
+#editor-container .tiptap.dokument-satz *::after {
+  box-sizing: border-box;
+}
+#editor-container .tiptap.dokument-satz :is(p, h1, h2, h3, h4, ul, ol, li, blockquote, table, pre, figure, hr, img) {
+  margin-top: 0;
+}
+#editor-container .tiptap.dokument-satz :is(strong, b) {
+  font-weight: 700;
+}
+#editor-container .tiptap.dokument-satz :is(em, i) {
+  font-style: italic;
+}
+#editor-container .tiptap.dokument-satz :is(sub, sup) {
+  position: relative;
+  font-size: 0.75em;
+  line-height: 0;
+  vertical-align: baseline;
+}
+#editor-container .tiptap.dokument-satz sub {
+  bottom: -0.25em;
+}
+#editor-container .tiptap.dokument-satz sup {
+  top: -0.5em;
+}
+#editor-container .tiptap.dokument-satz code {
+  padding: 0;
+  background: none;
+  font-family: "Cousine", "Courier New", monospace;
+  font-size: 0.95em;
+}
+#editor-container .tiptap.dokument-satz pre {
+  margin: 0 0 0.7em;
+  white-space: pre-wrap;
+  font-family: "Cousine", "Courier New", monospace;
+  font-size: 0.9em;
+}
+#editor-container .tiptap.dokument-satz ul {
+  list-style: disc;
+}
+#editor-container .tiptap.dokument-satz ol {
+  list-style: decimal;
+}
+#editor-container .tiptap.dokument-satz ul ul {
+  list-style-type: circle;
+}
+#editor-container .tiptap.dokument-satz ul ul ul {
+  list-style-type: square;
+}
+#editor-container .tiptap.dokument-satz ol ol {
+  list-style-type: lower-alpha;
+}
+#editor-container .tiptap.dokument-satz ol ol ol {
+  list-style-type: lower-roman;
+}
+#editor-container .tiptap.dokument-satz p {
+  margin: 0 0 0.7em;
+}
+#editor-container .tiptap.dokument-satz h1 {
+  font-size: 1.55em;
+  line-height: 1.25;
+  font-weight: 700;
+  margin: 0 0 0.55em;
+  padding-top: 0.3em;
+}
+#editor-container .tiptap.dokument-satz h2 {
+  font-size: 1.27em;
+  line-height: 1.3;
+  font-weight: 700;
+  margin: 0 0 0.4em;
+  padding-top: 0.45em;
+}
+#editor-container .tiptap.dokument-satz h3 {
+  font-size: 1.09em;
+  line-height: 1.35;
+  font-weight: 700;
+  margin: 0 0 0.3em;
+  padding-top: 0.35em;
+}
+#editor-container .tiptap.dokument-satz > :first-child {
+  padding-top: 0;
+}
+#editor-container .tiptap.dokument-satz :is(ul, ol) {
+  margin: 0 0 0.7em;
+  padding-left: 1.5em;
+}
+#editor-container .tiptap.dokument-satz :is(ul, ol) :is(ul, ol) {
+  margin: 0;
+}
+#editor-container .tiptap.dokument-satz li {
+  margin: 0;
+}
+#editor-container .tiptap.dokument-satz li p {
+  margin: 0 0 0.2em;
+}
+#editor-container .tiptap.dokument-satz blockquote {
+  margin: 0 0 0.7em;
+  padding: 0 0 0 0.9em;
+  border-left: 2.25pt solid #9ca3af;
+  color: #374151;
+}
+#editor-container .tiptap.dokument-satz blockquote p:last-child {
+  margin-bottom: 0;
+}
+#editor-container .tiptap.dokument-satz hr {
+  height: 1.4em;
+  margin: 0 0 0.3em;
+  border: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent calc(50% - 0.375pt),
+    #9ca3af calc(50% - 0.375pt),
+    #9ca3af calc(50% + 0.375pt),
+    transparent calc(50% + 0.375pt)
+  );
+}
+#editor-container .tiptap.dokument-satz a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+#editor-container .tiptap.dokument-satz mark {
+  padding: 0;
+  border-radius: 0;
+  background-color: #fef08a;
+}
+#editor-container .tiptap.dokument-satz img,
+#editor-container .tiptap.dokument-satz img.editor-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 0.7em;
+  border-radius: 0;
+}
+
+/* Tabellen: Die Hülle des Editors scrollt nicht, eine Zeile wandert als Ganzes */
+#editor-container .tiptap.dokument-satz .tableWrapper {
+  margin: 0 0 0.8em;
+  padding: 0;
+  overflow: visible;
+}
+#editor-container .tiptap.dokument-satz table,
+#editor-container .tiptap.dokument-satz table.editor-table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  overflow: visible;
+}
+#editor-container .tiptap.dokument-satz :is(td, th) {
+  min-width: 0;
+  padding: 3pt 5pt;
+  border: 0.75pt solid #9ca3af;
+  vertical-align: top;
+}
+#editor-container .tiptap.dokument-satz th {
+  background: #f3f4f6;
+  font-weight: 700;
+  text-align: left;
+}
+#editor-container .tiptap.dokument-satz :is(td, th) p {
+  margin: 0;
+}
+
+/* Aufgabenlisten */
+#editor-container .tiptap.dokument-satz ul[data-type="taskList"] {
+  margin: 0 0 0.7em;
+  padding-left: 0;
+  list-style: none;
+}
+#editor-container .tiptap.dokument-satz ul[data-type="taskList"] li {
+  display: flex;
+  gap: 0.5em;
+  margin: 0;
+}
+#editor-container .tiptap.dokument-satz ul[data-type="taskList"] li label {
+  flex: none;
+  margin-top: 0.2em;
+}
+#editor-container .tiptap.dokument-satz ul[data-type="taskList"] li label input[type="checkbox"] {
+  width: 0.9em;
+  height: 0.9em;
+  margin: 0;
+}
+#editor-container .tiptap.dokument-satz ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Manueller Seitenumbruch: im Satz ohne eigene Höhe; die Seite selbst zeigt den Umbruch */
+#editor-container .tiptap.dokument-satz div.page-break {
+  position: relative;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#editor-container .tiptap.dokument-satz div.page-break::before,
+#editor-container .tiptap.dokument-satz div.page-break::after {
+  display: none;
+}
+#editor-container .tiptap.dokument-satz div.page-break.ProseMirror-selectednode {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
+/* Lücken der Satz-Kette (frontend/satz/erweiterung.ts) */
+#editor-container .tiptap.dokument-satz .satz-luecke {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#editor-container .tiptap.dokument-satz .satz-luecke-zeile {
+  float: left;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#editor-container .tiptap.dokument-satz tr.satz-luecke-tabelle td {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Bögen hinter dem Text (frontend/satz/boegen.ts) */
+.satz-boegen {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 0;
+  width: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+.satz-bogen {
+  position: absolute;
+  left: 0;
+  overflow: hidden;
+  background: #fff;
+  color: #111827;
+  font-family: var(--satz-schrift, "Arimo", Arial, sans-serif);
+}
+.satz-briefpapier {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.satz-kopf {
+  position: absolute;
+  top: 12mm;
+  font-size: 8.5pt;
+  line-height: 1.4;
+}
+.satz-kopf-zeile {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6mm;
+}
+.satz-kopf-logo img {
+  display: block;
+  height: 15mm;
+  width: auto;
+  max-width: 70mm;
+  object-fit: contain;
+}
+.satz-kopf-adresse {
+  text-align: right;
+}
+.satz-kopf-akzent {
+  margin-top: 4mm;
+  border-top: 1.5pt solid #4b5563;
+}
+.satz-kopf-absender {
+  margin: 3mm 0 0;
+  font-size: 7pt;
+  color: #4b5563;
+  text-decoration: underline;
+}
+.satz-fuss {
+  position: absolute;
+  font-size: 7.5pt;
+  line-height: 1.4;
+  color: #4b5563;
+  text-align: center;
+}
