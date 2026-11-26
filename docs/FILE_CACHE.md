@@ -147,8 +147,9 @@ Vorschau „wird geladen“ (HTTP 503, `Retry-After: 15`), der Löschabgleich ü
   (`text_extraction_status`) nie.
 - **Nie abgerufen** werden gelöschte (alle Gründe), gesperrte (#787) und nach #787 geleerte Dateien – weder vom
   Zeitplan noch beim Beanspruchen. Der Löschabgleich ruft gesperrte Dateien dagegen ausdrücklich ab.
-- **Abruf erlaubt** heißt: Quelle aktiv, `sync_config["file_downloads"]` nicht `false`, keine Schonung, robots.txt
-  erlaubt. Bei abgeschaltetem Dateiabruf entsteht kein Zustand je Datei.
+- **Abruf erlaubt** heißt: Quelle aktiv, `sync_config["file_downloads"]` weder `false` noch `"bei_bedarf"`, keine
+  Schonung, robots.txt erlaubt. Bei abgeschaltetem Dateiabruf entsteht kein Zustand je Datei. Bei `"bei_bedarf"`
+  holt nur die Vorschau ein Dokument, wenn eine Person es öffnet, und legt es ab (#1582, `docs/ABRUFREGELN.md`).
 - **Fehler** ohne Termin (`error` aus der Zeit vor Issue #919) versucht nur `cache_files --retry-errors` erneut;
   die Admin-Aktion „Lokal zwischenspeichern“ versucht wie bisher jede Datei ohne Kopie.
 - **Verdrängt** (`evicted`, [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße), nur ohne Objektspeicher) ist

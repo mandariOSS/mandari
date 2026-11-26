@@ -118,15 +118,19 @@ def download_headers(body) -> dict[str, str]:
 #: Schalter je Quelle (``OParlSource.sync_config``): ``false`` = Dateien nicht automatisch abrufen.
 #: Gleicher Schlüssel wie im Ingestor (``ingestor/src/client/source_options.py``).
 FILE_DOWNLOADS_KEY = "file_downloads"
+#: Wert für ``file_downloads``: nichts vorab abrufen. Ein Dokument holt erst die Vorschau, wenn eine Person es öffnet,
+#: und legt es dann für weitere Aufrufe ab (Abruf auf Anforderung). Gleicher Wert wie im Ingestor.
+FILE_DOWNLOADS_ON_DEMAND = "bei_bedarf"
 
 
 def downloads_disabled(body) -> bool:
     """
-    Der Dateiabruf dieser Quelle ist abgeschaltet (``sync_config["file_downloads"] = false``), z. B. weil die
-    Quelle Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefert (ALTCHA), ihre robots.txt die
-    Dateien sperrt (Hamm: ``/*.pdf$``) oder mit der Kommune so vereinbart (Köln). Cache, Vorschau und
-    Textextraktion fragen sie dann gar nicht erst an; die Vorschau verweist auf das Original. Die Dateien
-    werden nachgeholt, sobald der Schalter fällt.
+    Kein Dateiabruf im Hintergrund für diese Quelle (``sync_config["file_downloads"]`` ist ``false`` oder
+    ``"bei_bedarf"``), z. B. weil die Quelle Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefert
+    (ALTCHA), ihre robots.txt die Dateien sperrt (Hamm: ``/*.pdf$``) oder mit der Kommune so vereinbart (Köln).
+    Cache, Textextraktion, Löschabgleich und Personenfotos fragen sie dann gar nicht erst an. Bei ``false`` verweist
+    die Vorschau auf das Original, bei ``"bei_bedarf"`` holt sie ein Dokument, sobald eine Person es öffnet
+    (:func:`downloads_on_demand`). Die Dateien werden nachgeholt, sobald der Schalter fällt.
     """
     source = getattr(body, "source", None) if body is not None else None
     if source is None:
@@ -135,8 +139,29 @@ def downloads_disabled(body) -> bool:
 
 
 def downloads_disabled_in(sync_config) -> bool:
-    """Schaltet ``sync_config`` den Dateiabruf ab (``file_downloads`` ist ``false``)?"""
-    return isinstance(sync_config, dict) and sync_config.get(FILE_DOWNLOADS_KEY) is False
+    """Kein Dateiabruf im Hintergrund (``file_downloads`` ist ``false`` oder ``"bei_bedarf"``)?"""
+    if not isinstance(sync_config, dict):
+        return False
+    value = sync_config.get(FILE_DOWNLOADS_KEY)
+    return value is False or value == FILE_DOWNLOADS_ON_DEMAND
+
+
+def downloads_on_demand(body) -> bool:
+    """
+    Abruf auf Anforderung (``sync_config["file_downloads"] = "bei_bedarf"``): Nichts wird vorab geladen. Öffnet eine
+    Person ein Dokument, holt die Vorschau es bei der Quelle, liefert es aus und legt es ab; weitere Aufrufe kommen
+    aus der Kopie. Jeder Abruf geht auf eine Person zurück, deshalb gilt die robots.txt für diese Dateien nicht
+    (``robots.check``), Takt und Schonung der Quelle schon.
+    """
+    source = getattr(body, "source", None) if body is not None else None
+    return (
+        source is not None and bool(getattr(source, "is_active", True)) and downloads_on_demand_in(source.sync_config)
+    )
+
+
+def downloads_on_demand_in(sync_config) -> bool:
+    """Steht ``file_downloads`` in ``sync_config`` auf ``"bei_bedarf"``?"""
+    return isinstance(sync_config, dict) and sync_config.get(FILE_DOWNLOADS_KEY) == FILE_DOWNLOADS_ON_DEMAND
 
 
 def sources_without_downloads() -> list:
