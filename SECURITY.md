@@ -2,23 +2,25 @@
 
 ## Unterstützte Versionen
 
-mandari erscheint alle zwei Wochen. Sicherheitskorrekturen erhalten die jüngste Version und die
-**Pflegeversionen**: die erste Version jedes Quartals, sechs Monate lang. Wer selbst betreibt,
-geht entweder mit dem Takt (`./update.sh --tag v<Version>` beziehungsweise `helm upgrade`, ohne
-Handarbeit) oder bleibt auf einer Pflegeversion und spielt deren Patch-Versionen ein. Den
-automatischen Rückfall von `update.sh` gibt es nur mit einer festen Version; ein bewegliches Tag
-wie `latest` zeigt nach dem Update schon auf das neue Image.
+mandari erscheint alle zwei Wochen. Unterstützt wird nur die **jüngste Version**: Sie erhält
+Sicherheitskorrekturen und Korrekturen kritischer Fehler als Patch-Version oder mit der nächsten
+Version, wenn diese innerhalb der Frist erscheint. Pflegeversionen und LTS gibt es nicht. Wer
+selbst betreibt, geht mit dem Takt (`./update.sh --tag v<Version>` beziehungsweise `helm upgrade`,
+ohne Handarbeit). Den automatischen Rückfall von `update.sh` gibt es nur mit einer festen Version;
+ein bewegliches Tag wie `latest` zeigt nach dem Update schon auf das neue Image.
 
 | Version | Unterstützt | bis |
 |---------|-------------|-----|
-| jüngstes Release (Image-Tag `v<Version>`; `latest` folgt dem Stand von `main`) | alle Korrekturen | Erscheinen der nächsten Version |
-| 0.12 (Pflegeversion 4. Quartal 2026) | Sicherheitskorrekturen ab „mittel“, kritische Fehler | 17.05.2027 |
-| 0.11 (Übergang, bisherige Regel) | Sicherheitskorrekturen ab „mittel“, kritische Fehler | 03.05.2027 |
+| jüngstes Release (Image-Tag `v<Version>`; `latest` folgt dem Stand von `main`) | Sicherheitskorrekturen, kritische Fehler | Erscheinen der nächsten Version |
+| 0.12 (Übergang) | Sicherheitskorrekturen ab „mittel“, kritische Fehler | 31.01.2027 |
+| 0.11 (Übergang) | Sicherheitskorrekturen ab „mittel“, kritische Fehler | 31.01.2027 |
 | übrige und ältere Releases | nein | – |
 | Entwicklungs- und Produktionsstände (Image-Tags `dev-<commit>`, `main-<commit>`) | keine Zusage | – |
 
-Die nächste Pflegeversion erscheint am 12.01.2027 (0.16, unterstützt bis 12.07.2027). Diese Tabelle
-ist die maßgebliche Liste der Pflegelinien; das Werkzeug zur Rückportierung liest sie
+**Änderung vom 26.11.2026:** Pflegeversionen (bisher die erste Version jedes Quartals, sechs Monate)
+und LTS entfallen. 0.11 und 0.12 waren bis 03.05.2027 bzw. 17.05.2027 zugesagt; sie erhalten
+Korrekturen nur noch bis 31.01.2027. 0.16 wird keine Pflegeversion. Diese Tabelle ist die
+maßgebliche Liste der Pflegelinien; das Werkzeug zur Rückportierung liest sie
 (`scripts/rueckportieren.py`). Release-Takt, Supportzeiträume und Fristen nach Schweregrad stehen
 in der [Release- und Support-Politik](docs/RELEASE_POLITIK.md).
 
@@ -80,8 +82,10 @@ und selbst betreibbar, es lesen also auch Dritte mit. Die Reihenfolge lautet des
 1. Privates Advisory als Entwurf anlegen (nicht als öffentliches Issue)
 2. Bewerten und CVSS-Vektor bestimmen
 3. Beheben, Regressionstest schreiben
-4. Ausliefern: erst `dev`, dann `main`, dann Produktion, Selbstbetreiber und die Pflegeversionen
-   ([Rückportierung](docs/WEITERENTWICKLUNG.md#9-rückportierung-in-pflegelinien))
+4. Ausliefern: erst `dev`, dann `main`, dann Produktion und Selbstbetreiber. Befunde ab „mittel“
+   gehen bis 31.01.2027 zusätzlich in die Pflegelinien 0.11 und 0.12
+   ([Rückportierung](docs/WEITERENTWICKLUNG.md#9-rückportierung-in-pflegelinien)); niedrige Befunde
+   werden nicht zurückportiert
 5. Advisory um die behobenen Versionen ergänzen
 6. CVE anfordern (wo vorgesehen) und Advisory veröffentlichen
 
@@ -93,7 +97,7 @@ Das Repository ist öffentlich. Daraus folgt eine klare Trennung:
 
 | Ort | Inhalt |
 |---|---|
-| **Privates Advisory** (GitHub Security Advisory, Entwurf) | Angriffsweg, betroffene Stellen, Ausnutzbarkeit, CVSS, Rückportierung in die Pflegeversionen |
+| **Privates Advisory** (GitHub Security Advisory, Entwurf) | Angriffsweg, betroffene Stellen, Ausnutzbarkeit, CVSS, Rückportierung in die Pflegelinien |
 | **Pull Request und Commit** | Die Korrektur, neutral formuliert, ohne Anleitung und ohne Schweregrad |
 | **Öffentliches Issue** | keines für die Lücke selbst |
 
@@ -149,7 +153,7 @@ Die Prüfung dauert bis zu drei Arbeitstage.
   Zugangsdaten, Infrastruktur), und bei Härtungen ohne konkrete Ausnutzbarkeit.
 
 Im Advisory gehören immer ausgefüllt: betroffene Versionen, **behobene Versionen** (auch die
-Patch-Versionen der Pflegeversionen), CVSS-Vektor, CWE und eine Beschreibung, aus der eine
+Patch-Versionen der Pflegelinien), CVSS-Vektor, CWE und eine Beschreibung, aus der eine
 betreibende Person ableiten kann, ob sie betroffen ist.
 
 ### Nach der Veröffentlichung
@@ -163,7 +167,7 @@ betreibende Person ableiten kann, ob sie betroffen ist.
 ## Fristen
 
 Die Fristen je Schweregrad (kritisch 72 Stunden, hoch 7 Tage, mittel 30 Tage, niedrig spätestens
-mit der nächsten Pflegeversion), auch für die Pflegeversionen, legt die
+mit der nächsten MINOR-Version; für die Pflegelinien 0.11 und 0.12 nur ab „mittel“) legt die
 [Release- und Support-Politik, Abschnitt 4](docs/RELEASE_POLITIK.md#4-sicherheitskorrekturen-fristen)
 fest. Sie gelten ab der Bestätigung der Meldung. Bei extern gemeldeten Lücken bestätigen wir den
 Eingang innerhalb von drei Werktagen und melden spätestens nach zwei Wochen einen Zwischenstand.
