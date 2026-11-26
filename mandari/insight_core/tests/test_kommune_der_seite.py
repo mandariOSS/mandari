@@ -179,12 +179,11 @@ class TestWahlMitZiel:
 class TestLinkVonAussen:
     """Fremde Seiten verlinken die Wahl einer Kommune, etwa die App-Liste eines Open-Data-Portals (Issue #939)."""
 
-    @pytest.mark.parametrize("herkunft", [None, "https://opendata.example.org/anwendungen"])
-    def test_dauerhaft_auf_die_stadtseite(self, client: Client, kommunen: dict[str, Any], herkunft: str | None) -> None:
+    @pytest.mark.parametrize("herkunft", ["", "https://opendata.example.org/anwendungen"])
+    def test_dauerhaft_auf_die_stadtseite(self, client: Client, kommunen: dict[str, Any], herkunft: str) -> None:
         b = kommunen["b"]
         OParlBody.objects.filter(pk=b.pk).update(slug="musterhausen")
-        kopf = {"HTTP_REFERER": herkunft} if herkunft else {}
-        antwort = client.get(reverse("insight_core:insight:set_body", args=[b.id]), **kopf)
+        antwort = client.get(reverse("insight_core:insight:set_body", args=[b.id]), HTTP_REFERER=herkunft)
         assert antwort.status_code == 301
         assert antwort["Location"] == reverse("insight_core:insight:portal_entry", kwargs={"slug": "musterhausen"})
         assert "no-store" in antwort["Cache-Control"], "aus dem Portal führt dieselbe Adresse zurück zur Seite"
