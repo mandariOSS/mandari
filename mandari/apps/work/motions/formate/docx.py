@@ -85,11 +85,31 @@ def _schattierung(element: Any, farbe: str) -> None:
     eigenschaften.append(shd)
 
 
+#: Innenabstand einer Tabellenzelle links und rechts in Word (je 0,08 Zoll)
+ZELLRAND = 2 * 73152
+
+
 class _Schreiber:
     def __init__(self, doc: DocumentObject, groesse: float, inhaltsbreite: int) -> None:
         self.doc = doc
         self.groesse = groesse
         self.inhaltsbreite = inhaltsbreite
+        #: Nummerierung je nummerierter Liste (Stil, Liste) → numId
+        self.nummern: dict[tuple[str, int], int] = {}
+
+    def _nummerierung(self, stil: str, liste_nr: int, start: int) -> int:
+        """
+        Eigene Nummerierung je Liste mit ihrem Startwert: Über den Stil allein zählt Word alle Listen des Dokuments
+        durch und beginnt nie bei einem anderen Wert als 1.
+        """
+        schluessel = (stil, liste_nr)
+        if schluessel not in self.nummern:
+            nummerierung = self.doc.part.numbering_part.element
+            vorlage = nummerierung.num_having_numId(self.doc.styles[stil].element.pPr.numPr.numId.val)
+            num = nummerierung.add_num(vorlage.abstractNumId.val)
+            num.add_lvlOverride(ilvl=0).add_startOverride(max(1, start))
+            self.nummern[schluessel] = num.numId
+        return self.nummern[schluessel]
 
     # --- Läufe ----------------------------------------------------------------------------------------------------
 
@@ -150,6 +170,10 @@ class _Schreiber:
                 basis = "List Number" if art == "zahlen" else "List Bullet"
                 stil = basis if ebene == 0 else f"{basis} {min(ebene + 1, 3)}"
         absatz = (ziel or self.doc).add_paragraph(style=stil)
+        if stil and quelle.liste and quelle.liste[0] == "zahlen" and stil.startswith("List Number"):
+            num_pr = absatz._p.get_or_add_pPr().get_or_add_numPr()
+            num_pr.get_or_add_numId().val = self._nummerierung(stil, quelle.liste_nr, quelle.nummer or 1)
+            num_pr.get_or_add_ilvl().val = 0
         if quelle.liste and quelle.liste[0] == "aufgaben" and not quelle.fortsetzung:
             self._lauf(absatz, "☑ " if quelle.erledigt else "☐ ", Format())
         self._laeufe(absatz, quelle)
@@ -173,19 +197,19 @@ class _Schreiber:
             pf.space_after = Pt(0.2 * self.groesse)
         return absatz
 
-    def bild(self, bild: Bild, ziel: Any = None) -> None:
-        breite = Emu(int(bild.breite * 9525))  # 1 px = 9525 EMU (96 dpi)
-        if breite > self.inhaltsbreite:
-            breite = Emu(self.inhaltsbreite)
+    def bild(self, bild: Bild, ziel: Any = None, hoechstbreite: int | None = None) -> Any:
+        grenze = max(hoechstbreite or self.inhaltsbreite, 9525)
+        breite = Emu(min(int(bild.breite * 9525), grenze))  # 1 px = 9525 EMU (96 dpi)
         absatz = (ziel or self.doc).add_paragraph()
         absatz.add_run().add_picture(io.BytesIO(bild.daten), width=breite)
+        return absatz
 
     def trennlinie(self) -> None:
         absatz = self.doc.add_paragraph()
         _rahmen(absatz, "bottom", GRAU, 6, 1)
 
     def tabelle(self, tabelle: Tabelle) -> None:
-        spalten = tabelle.spaltenzahl
+        spalten, plaetze = tabelle.raster()
         if not spalten:
             return
         tab = self.doc.add_table(rows=len(tabelle.zeilen), cols=spalten)
@@ -196,37 +220,40 @@ class _Schreiber:
             tabelle.breiten[:spalten] if len(tabelle.breiten) >= spalten and all(tabelle.breiten[:spalten]) else []
         )
         summe = sum(breiten) or spalten
+        spaltenbreiten = [
+            Emu(int(self.inhaltsbreite * ((breiten[i] / summe) if breiten else 1 / spalten))) for i in range(spalten)
+        ]
         for i, spalte in enumerate(tab.columns):
-            anteil = (breiten[i] / summe) if breiten else 1 / spalten
-            spalte.width = Emu(int(self.inhaltsbreite * anteil))
-        belegt: set[tuple[int, int]] = set()
-        for z, zeile in enumerate(tabelle.zeilen):
-            s = 0
-            for zelle in zeile:
-                while (z, s) in belegt:
-                    s += 1
-                if s >= spalten:
-                    break
-                ziel = tab.cell(z, s)
-                ende_z = min(len(tabelle.zeilen) - 1, z + zelle.zeilen - 1)
-                ende_s = min(spalten - 1, s + zelle.spalten - 1)
-                if (ende_z, ende_s) != (z, s):
-                    ziel = ziel.merge(tab.cell(ende_z, ende_s))
-                for zz in range(z, ende_z + 1):
-                    for ss in range(s, ende_s + 1):
-                        belegt.add((zz, ss))
+            spalte.width = spaltenbreiten[i]
+        # Alle Felder einmal holen: Table.cell() zählt bei jedem Aufruf alle Zellen neu auf (quadratische Laufzeit,
+        # bei 10.000 Feldern Minuten). Vor dem ersten Verbinden ist das Raster regelmäßig: Feld (z, s) = z·spalten + s.
+        felder = list(tab._cells)
+        # Auch die Breite jeder Zelle (w:tcW): add_table legt sie gleich breit an, Word läse sonst Widersprüche
+        for k, feld in enumerate(felder):
+            feld.width = spaltenbreiten[k % spalten]
+        for reihe in plaetze:
+            for platz in reihe:
+                # Zellen überlappen nicht (Tabelle.raster): Beide Ecken sind noch keiner früheren Verbindung zugeschlagen
+                ziel = felder[platz.zeile * spalten + platz.spalte]
+                ende_z = platz.zeile + platz.zeilen - 1
+                ende_s = platz.spalte + platz.spalten - 1
+                if (ende_z, ende_s) != (platz.zeile, platz.spalte):
+                    ziel = ziel.merge(felder[ende_z * spalten + ende_s])
                 # Leere Absätze der (verbundenen) Zellen entfernen, dann den Inhalt setzen
                 for leer in list(ziel.paragraphs):
                     leer._p.getparent().remove(leer._p)
-                for absatz in zelle.absaetze or [Absatz()]:
-                    neu = self.absatz(absatz, ziel)
+                zellbreite = sum(spaltenbreiten[platz.spalte : ende_s + 1]) - ZELLRAND
+                for block in platz.zelle.bloecke or [Absatz()]:
+                    if isinstance(block, Bild):
+                        neu = self.bild(block, ziel, zellbreite)
+                    else:
+                        neu = self.absatz(block, ziel)
+                        if platz.zelle.kopf:
+                            for run in neu.runs:
+                                run.bold = True
                     neu.paragraph_format.space_after = Pt(0)
-                    if zelle.kopf:
-                        for run in neu.runs:
-                            run.bold = True
-                if zelle.kopf:
+                if platz.zelle.kopf:
                     _schattierung(ziel._tc, "#f3f4f6")
-                s = ende_s + 1
         self.doc.add_paragraph().paragraph_format.space_after = Pt(0)
 
     def bloecke(self, bloecke: list[Block]) -> None:

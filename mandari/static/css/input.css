@@ -610,8 +610,11 @@ input.ke-titel:focus {
   @apply min-w-[9rem] tabular-nums;
 }
 /* Vorschläge prüfen: schwebende Leiste unten in der Mitte der Fläche */
+/* Auf schmalen Bildschirmen bricht die Leiste um, statt über den Rand zu ragen */
 .ke-pruefleiste {
-  @apply fixed bottom-24 left-1/2 z-40 flex items-center gap-1.5 h-11 px-2 rounded-md bg-white text-[13px] shadow-lg lg:bottom-6 dark:bg-gray-800;
+  @apply fixed bottom-24 left-1/2 z-40 flex flex-wrap items-center justify-center gap-1.5 min-h-11 py-1 px-2 rounded-md bg-white text-[13px] shadow-lg lg:bottom-6 dark:bg-gray-800;
+  width: max-content;
+  max-width: calc(100vw - 1rem);
   transform: translateX(-50%);
   border: 1px solid var(--ke-linie-stark);
 }

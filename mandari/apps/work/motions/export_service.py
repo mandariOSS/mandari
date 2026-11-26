@@ -118,18 +118,19 @@ _SPAN_ATTR_RE = re.compile(r'\b(colspan|rowspan)="(\d{1,5})"')
 #: und laufen je Marke einmal: Ein vorangestelltes ``\s+`` über den ganzen Inhalt brauchte bei langem Leerraum
 #: quadratische Zeit.
 _START_TAG_RE = re.compile(r"<[a-zA-Z][^<>]*>")
-_EDITOR_ATTR_RE = re.compile(r'\sdata-[a-z-]+="[^"]*"|\sclass="(?:comment-mark[^"]*|is-editor-empty)"')
+_EDITOR_ATTR_RE = re.compile(r'\s(data-[a-z-]+)="[^"]*"|\sclass="(?:comment-mark[^"]*|is-editor-empty)"')
 _COMMENT_MARK_RE = re.compile(r"<(?:mark|span)\b[^<>]*\bdata-comment-id[^<>]*>(.*?)</(?:mark|span)>", flags=re.DOTALL)
 
 
-def clean_editor_html(html: str) -> str:
+def clean_editor_html(html: str, *, behalten: frozenset[str] = frozenset()) -> str:
     """
     Editor-HTML für den Export vorbereiten.
 
     Der gespeicherte Inhalt geht zuerst durch die Positivliste des Editors (``apps/work/sanitize.py``), auch
     Altbestand von vor einer Regel: Danach ist das HTML wohlgeformt, ``<`` und ``>`` stehen nur noch in Marken, und
     es gelten die heutigen Grenzen für Bilder und Tabellen. Anschließend entfallen Kommentar-Markierungen,
-    ``data-``-Attribute und Klassen, die nur der Editor braucht.
+    ``data-``-Attribute und Klassen, die nur der Editor braucht. ``behalten`` nennt ``data-``-Attribute, die ein
+    Export noch liest (Aufgabenlisten im Dokumentmodell).
     """
     if not html:
         return ""
@@ -141,7 +142,10 @@ def clean_editor_html(html: str) -> str:
     html = _COMMENT_MARK_RE.sub(r"\1", html)
 
     # Übrige data-Attribute und Editor-Klassen aus den Startmarken entfernen
-    return _START_TAG_RE.sub(lambda marke: _EDITOR_ATTR_RE.sub("", marke.group(0)), html)
+    def ohne_editor_attribute(marke: re.Match[str]) -> str:
+        return _EDITOR_ATTR_RE.sub(lambda a: a.group(0) if a.group(1) in behalten else "", marke.group(0))
+
+    return _START_TAG_RE.sub(ohne_editor_attribute, html)
 
 
 @dataclass

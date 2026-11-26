@@ -228,3 +228,146 @@ def test_dateiname_mit_umlaut(client: Any, org: Any, mitglied: Any) -> None:
     for schluessel in ("odt", "pdf"):
         antwort = client.get(url, {"format": schluessel})
         assert antwort["Content-Disposition"] == f"attachment; filename*=utf-8''Pr%C3%BCfen.{schluessel}"
+
+
+# --- Befunde der Prüfung von #1587 -----------------------------------------------------------------------------------
+
+RAENDER: dict[str, float] = {"top": 30, "right": 25, "bottom": 25, "left": 25}
+
+
+def _lesen(html: str) -> list[modell.Block]:
+    return modell.lesen(sanitize_editor_html(html), 11)
+
+
+def _docx(html: str) -> tuple[Any, str]:
+    from docx import Document
+
+    daten = docx_schreiben(_lesen(html), schrift=schriften.aufloesen(None), groesse=11, raender=RAENDER)
+    return Document(io.BytesIO(daten)), zipfile.ZipFile(io.BytesIO(daten)).read("word/document.xml").decode("utf-8")
+
+
+def _odt(html: str) -> str:
+    daten = odt_schreiben(_lesen(html), schrift=schriften.aufloesen(None), groesse=11, raender=RAENDER)
+    content = zipfile.ZipFile(io.BytesIO(daten)).read("content.xml")
+    ElementTree.fromstring(content)
+    return content.decode("utf-8")
+
+
+ZEILENSPANNE = (
+    '<table><tbody><tr><td rowspan="2"><p>A</p></td><td><p>B</p></td></tr><tr><td><p>C</p></td></tr></tbody></table>'
+)
+
+
+def test_raster_beachtet_zeilenspannen() -> None:
+    (tabelle,) = _lesen(
+        '<table><tbody><tr><td rowspan="2"><p>A</p></td></tr><tr><td><p>B</p></td></tr></tbody></table>'
+    )
+    assert isinstance(tabelle, modell.Tabelle)
+    spalten, plaetze = tabelle.raster()
+    assert spalten == 2 and plaetze[1][0].spalte == 1
+    doc, _xml = _docx('<table><tbody><tr><td rowspan="2"><p>A</p></td></tr><tr><td><p>B</p></td></tr></tbody></table>')
+    assert doc.tables[0].cell(1, 1).text == "B"
+    assert ">B<" in _odt(
+        '<table><tbody><tr><td rowspan="2"><p>A</p></td></tr><tr><td><p>B</p></td></tr></tbody></table>'
+    )
+
+
+def test_ueberdeckte_felder_bleiben_in_markdown_und_text_leer() -> None:
+    md = markdown_schreiben(_lesen(ZEILENSPANNE))
+    assert "| A | B |\n| --- | --- |\n|  | C |" in md
+    assert "A\tB\n\tC" in text_schreiben(_lesen(ZEILENSPANNE))
+
+
+def test_bild_in_tabellenzelle_in_jedem_format() -> None:
+    html = f"<table><tbody><tr><td><p>Lage</p>{BILD}</td><td><p>B</p></td></tr></tbody></table>"
+    (tabelle,) = _lesen(html)
+    assert isinstance(tabelle, modell.Tabelle)
+    assert [type(b).__name__ for b in tabelle.zeilen[0][0].bloecke] == ["Absatz", "Bild"]
+    doc, _xml = _docx(html)
+    assert len(doc.inline_shapes) == 1 and doc.tables[0].cell(0, 1).text == "B"
+    assert "draw:image" in _odt(html)
+    assert "| Lage *[Bild: Karte]* | B |" in markdown_schreiben(_lesen(html))
+    assert "Lage [Bild: Karte]\tB" in text_schreiben(_lesen(html))
+
+
+def test_webp_wird_als_png_eingebettet() -> None:
+    from PIL import Image
+
+    puffer = io.BytesIO()
+    Image.new("RGB", (4, 2), "red").save(puffer, format="WEBP")
+    webp = base64.b64encode(puffer.getvalue()).decode("ascii")
+    (bild,) = _lesen(f'<img src="data:image/webp;base64,{webp}" alt="Plan">')
+    assert isinstance(bild, modell.Bild)
+    assert (bild.art, bild.breite, bild.hoehe, bild.alt) == ("png", 4, 2, "Plan") and bild.daten.startswith(b"\x89PNG")
+
+
+def test_listen_mit_startwert_und_eigener_nummerierung() -> None:
+    html = '<ol start="5"><li><p>Fünf</p></li><li><p>Sechs</p></li></ol><p>Text</p><ol><li><p>Eins</p></li></ol>'
+    doc, _xml = _docx(html)
+    nummern = {p.text: p._p.pPr.numPr.numId.val for p in doc.paragraphs if p._p.pPr is not None and p._p.pPr.numPr}
+    # Jede Liste zählt für sich: die zweite beginnt wieder bei 1, die erste bei 5
+    assert nummern["Fünf"] == nummern["Sechs"] != nummern["Eins"]
+    numbering = doc.part.numbering_part.element.xml
+    assert 'w:startOverride w:val="5"' in numbering and 'w:startOverride w:val="1"' in numbering
+    content = _odt(html)
+    assert 'text:start-value="5"' in content and content.count('text:style-name="LZahlen"') == 2
+
+
+def test_odt_trennt_listen_verschiedener_art() -> None:
+    content = _odt("<ol><li><p>Erstens</p></li></ol><ul><li><p>Punkt</p></li></ul>")
+    zahlen = content.index('<text:list text:style-name="LZahlen">')
+    punkte = content.index('<text:list text:style-name="LPunkte">')
+    assert zahlen < content.index(">Erstens<") < punkte < content.index(">Punkt<")
+    # Unterliste anderer Art und ein weiterer Absatz nach ihr bleiben im selben Punkt
+    content = _odt("<ol><li><p>A</p><ul><li><p>a</p></li></ul><p>A2</p></li><li><p>B</p></li></ol>")
+    assert content.count("<text:list-item>") == 3 and content.index("A2") < content.index(">B<")
+
+
+def test_odt_codeblock_umbruch_und_seitenumbruch_vor_tabelle() -> None:
+    content = _odt(
+        "<pre><code>zeile 1\nzeile 2</code></pre>"
+        '<div data-page-break="true" class="page-break"></div>'
+        "<table><tbody><tr><td><p>X</p></td></tr></tbody></table>"
+    )
+    assert "zeile 1<text:line-break/>zeile 2" in content
+    tabelle = content.split('<style:style style:name="Tabelle1" style:family="table">', 1)[1].split("</style:style>")[0]
+    assert 'fo:break-before="page"' in tabelle
+
+
+def test_markdown_schuetzt_linkziele_und_listenmarken() -> None:
+    md = markdown_schreiben(
+        _lesen('<p><a href="https://example.org/a)b">Plan</a></p><p>1. Januar</p><p>- kein Punkt</p><p>---</p>')
+    )
+    assert "[Plan](<https://example.org/a)b>)" in md
+    assert r"1\. Januar" in md and r"\- kein Punkt" in md and r"\---" in md
+
+
+@pytest.mark.django_db
+def test_aufgabenliste_ueber_den_export(org: Any, mitglied: Any) -> None:
+    md = exportieren(_dokument(org, mitglied), "md").decode("utf-8")
+    assert "- [x] Erledigt" in md
+
+
+@pytest.mark.django_db
+def test_zu_grosse_tabelle_wird_abgelehnt(client: Any, org: Any, mitglied: Any) -> None:
+    motion = _dokument(org, mitglied)
+    zeilen = "".join("<tr><td><p>x</p></td></tr>" for _ in range(499))
+    cast(Any, motion).set_content_encrypted(
+        "<table><tbody><tr>" + "<td><p>y</p></td>" * 500 + f"</tr>{zeilen}</tbody></table>"
+    )
+    motion.save()
+    client.force_login(mitglied.user)
+    url = reverse("work:document_export", kwargs={"org_slug": org.slug, "motion_id": motion.id})
+    for schluessel in ("docx", "odt", "md", "txt"):
+        antwort = client.get(url, {"format": schluessel})
+        assert antwort.status_code == 400
+        assert "zu groß" in antwort.json()["error"]
+
+
+def test_word_setzt_zellbreiten_wie_das_raster() -> None:
+    doc, _xml = _docx(
+        '<table><colgroup><col style="width: 100px"><col style="width: 300px"></colgroup>'
+        "<tbody><tr><td><p>A</p></td><td><p>B</p></td></tr></tbody></table>"
+    )
+    links, rechts = doc.tables[0].rows[0].cells
+    assert abs(rechts.width / links.width - 3) < 0.01

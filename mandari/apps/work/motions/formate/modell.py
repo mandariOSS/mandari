@@ -8,8 +8,8 @@ Modell und schreiben es dann in ihr Format; so tragen sie dieselben Zeichenforma
 - ``Lauf``: Text mit Zeichenformat (fett, kursiv, unterstrichen, durchgestrichen, hoch/tief, Code, Farbe,
   Hervorhebung, Schrift des Satzes, Größe in pt, Link) oder ein Zeilenumbruch
 - ``Absatz``: Text, Überschrift 1–3, Zitat oder Code, mit Ausrichtung, Einzug und gegebenenfalls Listenpunkt
-- ``Tabelle`` (Zellen mit Absätzen, Kopfzellen, verbundene Zellen), ``Bild`` (eingebettete Rasterbilder),
-  ``Trennlinie`` und ``Seitenumbruch``
+- ``Tabelle`` (Zellen mit Absätzen und Bildern, Kopfzellen, verbundene Zellen; ``raster()`` liefert die Lage
+  jeder Zelle), ``Bild`` (eingebettete Rasterbilder, WebP als PNG), ``Trennlinie`` und ``Seitenumbruch``
 
 Gelesen wird nur bereinigtes HTML (``clean_editor_html``); Bilder fremder Server sind vorher eingebettet.
 """
@@ -17,6 +17,7 @@ Gelesen wird nur bereinigtes HTML (``clean_editor_html``); Bilder fremder Server
 from __future__ import annotations
 
 import base64
+import io
 import re
 import struct
 from dataclasses import dataclass, field, replace
@@ -77,6 +78,11 @@ class Absatz:
     erledigt: bool | None = None
     #: Weiterer Absatz desselben Listenpunkts (ohne eigenes Aufzählungszeichen)
     fortsetzung: bool = False
+    #: Kennung der eigenen Liste (``<ul>``/``<ol>``) und der äußersten Liste: Punkte verschiedener Listen bleiben getrennt
+    liste_nr: int = 0
+    oberste_nr: int = 0
+    #: Erster Punkt seiner Liste (dort beginnt die Nummerierung mit ``nummer``)
+    listenbeginn: bool = False
 
     @property
     def text(self) -> str:
@@ -104,10 +110,26 @@ class Seitenumbruch:
 
 @dataclass
 class Zelle:
-    absaetze: list[Absatz] = field(default_factory=list)
+    #: Inhalt: Absätze und Bilder (eine Trennlinie in einer Zelle entfällt)
+    bloecke: list[Absatz | Bild] = field(default_factory=list)
     kopf: bool = False
     spalten: int = 1
     zeilen: int = 1
+
+    @property
+    def absaetze(self) -> list[Absatz]:
+        return [b for b in self.bloecke if isinstance(b, Absatz)]
+
+
+@dataclass(frozen=True)
+class Platz:
+    """Lage einer Zelle im Raster: erste Zeile und Spalte, Spannweite auf das Raster gekürzt."""
+
+    zelle: Zelle
+    zeile: int
+    spalte: int
+    zeilen: int
+    spalten: int
 
 
 @dataclass
@@ -116,12 +138,64 @@ class Tabelle:
     #: Breiten der Spalten in px aus dem Editor (leer = gleich breit)
     breiten: list[int] = field(default_factory=list)
 
+    def raster(self) -> tuple[int, list[list[Platz]]]:
+        """
+        Spaltenzahl und je Zeile die Plätze ihrer Zellen, wie ein Browser die Tabelle legt: Eine Zelle rückt hinter
+        Felder, die Zellen früherer Zeilen mit ``rowspan`` belegen. Die Größe ist vor dem Export begrenzt
+        (``export_service.table_cell_count``).
+        """
+        belegt: set[tuple[int, int]] = set()
+        breite = 0
+        plaetze: list[list[Platz]] = []
+        anzahl = len(self.zeilen)
+        for z, zeile in enumerate(self.zeilen):
+            reihe: list[Platz] = []
+            s = 0
+            for zelle in zeile:
+                while (z, s) in belegt:
+                    s += 1
+                zeilen = max(1, min(zelle.zeilen, anzahl - z))
+                # Höchstens bis zum nächsten Feld, das eine Zelle einer früheren Zeile belegt (keine Überlappung)
+                spalten = 1
+                while spalten < zelle.spalten and (z, s + spalten) not in belegt:
+                    spalten += 1
+                for zz in range(z, z + zeilen):
+                    for ss in range(s, s + spalten):
+                        belegt.add((zz, ss))
+                reihe.append(Platz(zelle, z, s, zeilen, spalten))
+                s += spalten
+                breite = max(breite, s)
+            plaetze.append(reihe)
+        return breite, plaetze
+
     @property
     def spaltenzahl(self) -> int:
-        return max((sum(z.spalten for z in zeile) for zeile in self.zeilen), default=0)
+        return self.raster()[0]
 
 
 Block = Absatz | Bild | Trennlinie | Seitenumbruch | Tabelle
+
+
+#: Größtes WebP, das für die Exporte in PNG umgewandelt wird (Pixel)
+MAX_WEBP_PIXEL = 40_000_000
+
+
+def webp_als_png(daten: bytes) -> bytes | None:
+    """
+    WebP als PNG: Word (python-docx) und manche Programme für ODT kennen kein WebP. ``None``, wenn das Bild nicht
+    lesbar oder zu groß ist.
+    """
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(daten)) as bild:
+            if bild.format != "WEBP" or bild.width * bild.height > MAX_WEBP_PIXEL:
+                return None
+            puffer = io.BytesIO()
+            bild.save(puffer, format="PNG")
+            return puffer.getvalue()
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return None
 
 
 def bildgroesse(daten: bytes) -> tuple[int, int]:
@@ -191,7 +265,9 @@ class _Leser(HTMLParser):
         self.bloecke: list[Block] = []
         self.formate: list[tuple[str, Format]] = []
         self.absatz: Absatz | None = None
-        self.listen: list[list[Any]] = []  # [art, zähler]
+        self.listen: list[list[Any]] = []  # [art, zähler, kennung, erster Punkt gesetzt?]
+        self.listen_zaehler = 0
+        self.oberste_liste = 0
         self.zitat = 0
         self.code = 0
         self.tabellen: list[Tabelle] = []
@@ -209,7 +285,7 @@ class _Leser(HTMLParser):
 
     def _ziel(self) -> list[Any]:
         """Wohin ein fertiger Absatz gehört: in die offene Zelle oder in die Blöcke."""
-        return self.zelle.absaetze if self.zelle is not None else self.bloecke
+        return self.zelle.bloecke if self.zelle is not None else self.bloecke
 
     def _absatz_beginnen(self, art: AbsatzArt, attrs: dict[str, str | None]) -> None:
         self._absatz_beenden()
@@ -221,16 +297,19 @@ class _Leser(HTMLParser):
         absatz = Absatz(art=art, ausrichtung=stil.get("text-align") or None)
         absatz.einzug = _laenge_pt(stil.get("margin-left"), self.grundgroesse)
         if self.listen and self.li_offen:
-            art_liste, _ = self.listen[-1][0], self.listen[-1][1]
+            art_liste = self.listen[-1][0]
+            absatz.liste = (art_liste, len(self.listen) - 1)
+            absatz.liste_nr = self.listen[-1][2]
+            absatz.oberste_nr = self.oberste_liste
             if not self.li_offen[-1]:
-                absatz.liste = (art_liste, len(self.listen) - 1)
                 if art_liste == "zahlen":
                     absatz.nummer = self.listen[-1][1]
                 if art_liste == "aufgaben":
                     absatz.erledigt = bool(self.erledigt)
+                absatz.listenbeginn = not self.listen[-1][3]
+                self.listen[-1][3] = True
                 self.li_offen[-1] = True
             else:
-                absatz.liste = (art_liste, len(self.listen) - 1)
                 absatz.fortsetzung = True
         self.absatz = absatz
 
@@ -320,7 +399,10 @@ class _Leser(HTMLParser):
             )
             start_text = attrs.get("start") or ""
             start = int(start_text) if start_text.isdigit() else 1
-            self.listen.append([art_liste, start - 1])
+            self.listen_zaehler += 1
+            if not self.listen:
+                self.oberste_liste = self.listen_zaehler
+            self.listen.append([art_liste, start - 1, self.listen_zaehler, False])
         elif tag == "li":
             self._absatz_beenden()
             if self.listen:
@@ -334,7 +416,8 @@ class _Leser(HTMLParser):
             self.absatz.laeufe.append(Lauf(text="", format=self.format, umbruch=True))
         elif tag == "hr":
             self._absatz_beenden()
-            self._ziel().append(Trennlinie())
+            if self.zelle is None:
+                self.bloecke.append(Trennlinie())
         elif tag == "div" and "page-break" in (attrs.get("class") or ""):
             self._absatz_beenden()
             self.bloecke.append(Seitenumbruch())
@@ -454,6 +537,11 @@ class _Leser(HTMLParser):
         except ValueError:
             return
         art = "jpeg" if treffer.group(1) == "jpg" else treffer.group(1)
+        if art == "webp":
+            png = webp_als_png(daten)
+            if png is None:
+                return
+            daten, art = png, "png"
         breite, hoehe = bildgroesse(daten)
         if not breite or not hoehe:
             return
@@ -462,7 +550,11 @@ class _Leser(HTMLParser):
         if angabe.isdigit() and int(angabe) > 0:
             hoehe = round(hoehe * int(angabe) / breite)
             breite = int(angabe)
-        self._ziel().append(Bild(daten=daten, art=art, breite=breite, hoehe=hoehe, alt=attrs.get("alt") or ""))
+        bild = Bild(daten=daten, art=art, breite=breite, hoehe=hoehe, alt=attrs.get("alt") or "")
+        if self.zelle is not None:
+            self.zelle.bloecke.append(bild)
+        else:
+            self.bloecke.append(bild)
 
     def ergebnis(self) -> list[Block]:
         self._absatz_beenden()

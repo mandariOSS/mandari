@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import io
 import zipfile
-from dataclasses import dataclass, field
-from typing import Any
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
+from typing import Any, cast
 from xml.sax.saxutils import escape, quoteattr
 
 from django.utils import timezone
@@ -57,7 +58,7 @@ def _pt(wert: float) -> str:
 
 
 def _text(text: str) -> str:
-    """Text mit Leerzeichenfolgen und Tabulatoren als ODF-Elemente."""
+    """Text mit Leerzeichenfolgen, Tabulatoren und Zeilenumbrüchen (Codeblöcke) als ODF-Elemente."""
     teile: list[str] = []
     leer = 0
     for zeichen in text:
@@ -69,6 +70,9 @@ def _text(text: str) -> str:
             leer = 0
         if zeichen == "\t":
             teile.append("<text:tab/>")
+        elif zeichen == "\n":
+            # ODF fasst Leerraum zusammen: Ein Zeilenumbruch im Text wäre sonst ein Leerzeichen
+            teile.append("<text:line-break/>")
         else:
             teile.append(escape(zeichen))
     if leer:
@@ -202,9 +206,13 @@ class _Schreiber:
             teile.append(inhalt)
         return "".join(teile)
 
+    def _umbruch_nehmen(self) -> bool:
+        """Steht ein Seitenumbruch aus, trägt ihn der nächste Block (Absatz, Bild, Trennlinie oder Tabelle)."""
+        umbruch, self.umbruch_offen = self.umbruch_offen, False
+        return umbruch
+
     def absatz(self, a: Absatz, *, in_zelle: bool = False) -> str:
-        umbruch = self.umbruch_offen and not in_zelle
-        self.umbruch_offen = False if not in_zelle else self.umbruch_offen
+        umbruch = False if in_zelle else self._umbruch_nehmen()
         vorsatz = ""
         if a.liste and a.liste[0] == "aufgaben" and not a.fortsetzung:
             vorsatz = "☑ " if a.erledigt else "☐ "
@@ -216,124 +224,175 @@ class _Schreiber:
             )
             return f'<text:h text:style-name="{stil}" text:outline-level="{a.art[1]}">{inhalt}</text:h>'
         einzug = a.einzug
-        if a.liste and (a.fortsetzung or a.liste[0] == "aufgaben"):
+        if a.liste and a.liste[0] == "aufgaben":
+            # Aufgaben stehen als eingerückte Absätze da (Kästchen im Text); andere Punkte rückt ihre Liste ein
             einzug += 18 * (a.liste[1] + 1)
         eltern = "Code" if a.art == "code" else "Standard"
         stil = self.stile.absatz_stil(eltern, a.ausrichtung, einzug, umbruch, a.art == "zitat", False, nach)
-        absatz = f'<text:p text:style-name="{stil}">{inhalt}</text:p>'
-        if a.liste and a.liste[0] != "aufgaben" and not a.fortsetzung:
-            ebene = a.liste[1]
-            liste = "LZahlen" if a.liste[0] == "zahlen" else "LPunkte"
-            # Ein Listenpunkt je Absatz, geschachtelt bis zur Ebene; aufeinanderfolgende Punkte fasst _zusammen
-            innen = absatz
-            for _ in range(ebene):
-                innen = f"<text:list><text:list-item>{innen}</text:list-item></text:list>"
-            return f'<text:list text:style-name="{liste}"><text:list-item>{innen}</text:list-item></text:list>'
-        return absatz
+        return f'<text:p text:style-name="{stil}">{inhalt}</text:p>'
 
-    def bild(self, b: Bild) -> str:
+    def liste(self, punkte: list[Absatz], *, in_zelle: bool = False) -> str:
+        """
+        Punkte einer Liste samt Unterlisten als verschachtelte ``text:list``: Jede Liste trägt den Stil ihrer Art
+        (Punkte oder Zahlen), weitere Absätze bleiben im Listenpunkt, und eine nummerierte Liste beginnt mit ihrer
+        ersten Nummer (``start`` im Editor).
+        """
+        teile: list[str] = []
+        offen: list[bool] = []  # je offener Liste: Listenpunkt offen?
+        for a in punkte:
+            assert a.liste is not None
+            art, ebene = a.liste
+            inhalt = self.absatz(a, in_zelle=in_zelle)
+            while len(offen) > ebene + 1:
+                teile.append("</text:list-item></text:list>" if offen.pop() else "</text:list>")
+            if a.fortsetzung and len(offen) == ebene + 1 and offen[-1]:
+                # Weiterer Absatz desselben Punkts (auch nach seiner Unterliste)
+                teile.append(inhalt)
+                continue
+            while len(offen) < ebene + 1:
+                if offen and not offen[-1]:
+                    teile.append("<text:list-item>")
+                    offen[-1] = True
+                teile.append(f'<text:list text:style-name="{"LZahlen" if art == "zahlen" else "LPunkte"}">')
+                offen.append(False)
+            if offen[-1]:
+                teile.append("</text:list-item>")
+            start = ""
+            if art == "zahlen" and a.listenbeginn and a.nummer and a.nummer != 1:
+                start = f' text:start-value="{a.nummer}"'
+            teile.append(f"<text:list-item{start}>{inhalt}")
+            offen[-1] = True
+        while offen:
+            teile.append("</text:list-item></text:list>" if offen.pop() else "</text:list>")
+        return "".join(teile)
+
+    def bild(self, b: Bild, *, in_zelle: bool = False, hoechstbreite: float | None = None) -> str:
+        umbruch = False if in_zelle else self._umbruch_nehmen()
         nummer = len(self.bilder) + 1
         datei = f"Pictures/bild{nummer}.{'jpg' if b.art == 'jpeg' else b.art}"
         self.bilder.append((datei, b.daten))
-        breite = min(b.breite * 0.75, self.inhaltsbreite)
+        breite = min(b.breite * 0.75, max(hoechstbreite or self.inhaltsbreite, 1))
         hoehe = b.hoehe * breite / max(b.breite * 0.75, 1)
         titel = f"<svg:title>{escape(b.alt)}</svg:title>" if b.alt else ""
+        stil = self.stile.absatz_stil("Standard", None, 0, umbruch, False, False, 0.0 if in_zelle else None)
         return (
-            f'<text:p text:style-name="Standard"><draw:frame draw:name="Bild{nummer}" text:anchor-type="as-char" '
+            f'<text:p text:style-name="{stil}"><draw:frame draw:name="Bild{nummer}" text:anchor-type="as-char" '
             f'svg:width="{_pt(breite)}" svg:height="{_pt(hoehe)}"><draw:image xlink:href="{datei}" xlink:type="simple" '
             f'xlink:show="embed" xlink:actuate="onLoad"/>{titel}</draw:frame></text:p>'
         )
 
     def tabelle(self, t: Tabelle) -> str:
-        spalten = t.spaltenzahl
+        spalten, plaetze = t.raster()
         if not spalten:
             return ""
+        umbruch = self._umbruch_nehmen()
         self.tabellen += 1
         name = f"Tabelle{self.tabellen}"
         breiten = t.breiten[:spalten] if len(t.breiten) >= spalten and all(t.breiten[:spalten]) else [1] * spalten
         summe = sum(breiten)
+        spaltenbreiten = [self.inhaltsbreite * breite / summe for breite in breiten]
         teile = [f'<table:table table:name="{name}" table:style-name="{name}">']
         self.stile.xml.append(
             f'<style:style style:name="{name}" style:family="table"><style:table-properties '
-            f'style:width="{_pt(self.inhaltsbreite)}" table:align="left"/></style:style>'
+            f'style:width="{_pt(self.inhaltsbreite)}" table:align="left"'
+            f"{' fo:break-before=' + chr(34) + 'page' + chr(34) if umbruch else ''}/></style:style>"
         )
-        for i, breite in enumerate(breiten):
+        for i, breite_pt in enumerate(spaltenbreiten):
             spaltenstil = f"{name}.S{i + 1}"
             self.stile.xml.append(
                 f'<style:style style:name="{spaltenstil}" style:family="table-column"><style:table-column-properties '
-                f'style:column-width="{_pt(self.inhaltsbreite * breite / summe)}"/></style:style>'
+                f'style:column-width="{_pt(breite_pt)}"/></style:style>'
             )
             teile.append(f'<table:table-column table:style-name="{spaltenstil}"/>')
-        belegt: set[tuple[int, int]] = set()
-        for z, zeile in enumerate(t.zeilen):
+        anfaenge = {(platz.zeile, platz.spalte): platz for reihe in plaetze for platz in reihe}
+        belegt = {
+            (platz.zeile + dz, platz.spalte + ds)
+            for platz in anfaenge.values()
+            for dz in range(platz.zeilen)
+            for ds in range(platz.spalten)
+        }
+        for z in range(len(t.zeilen)):
             teile.append("<table:table-row>")
-            s = 0
-            for zelle in zeile:
-                while (z, s) in belegt and s < spalten:
-                    teile.append("<table:covered-table-cell/>")
-                    s += 1
-                if s >= spalten:
-                    break
-                ende_s = min(spalten, s + zelle.spalten)
-                ende_z = min(len(t.zeilen), z + zelle.zeilen)
-                for zz in range(z, ende_z):
-                    for ss in range(s, ende_s):
-                        belegt.add((zz, ss))
-                attribute = ' table:style-name="ZelleKopf"' if zelle.kopf else ' table:style-name="Zelle"'
-                if ende_s - s > 1:
-                    attribute += f' table:number-columns-spanned="{ende_s - s}"'
-                if ende_z - z > 1:
-                    attribute += f' table:number-rows-spanned="{ende_z - z}"'
-                absaetze = zelle.absaetze or [Absatz()]
-                inhalt = "".join(self.absatz(self._fett(a) if zelle.kopf else a, in_zelle=True) for a in absaetze)
-                teile.append(f'<table:table-cell office:value-type="string"{attribute}>{inhalt}</table:table-cell>')
-                teile.extend("<table:covered-table-cell/>" for _ in range(ende_s - s - 1))
-                s = ende_s
-            while s < spalten:
-                teile.append(
-                    "<table:covered-table-cell/>"
-                    if (z, s) in belegt
-                    else '<table:table-cell table:style-name="Zelle"><text:p/></table:table-cell>'
+            for s in range(spalten):
+                platz = anfaenge.get((z, s))
+                if platz is None:
+                    teile.append(
+                        "<table:covered-table-cell/>"
+                        if (z, s) in belegt
+                        else '<table:table-cell table:style-name="Zelle"><text:p/></table:table-cell>'
+                    )
+                    continue
+                attribute = ' table:style-name="ZelleKopf"' if platz.zelle.kopf else ' table:style-name="Zelle"'
+                if platz.spalten > 1:
+                    attribute += f' table:number-columns-spanned="{platz.spalten}"'
+                if platz.zeilen > 1:
+                    attribute += f' table:number-rows-spanned="{platz.zeilen}"'
+                # Innenabstand der Zelle: 3 pt je Seite
+                zellbreite = sum(spaltenbreiten[s : s + platz.spalten]) - 6
+                inhalt = self.folge(
+                    platz.zelle.bloecke or [Absatz()], in_zelle=True, kopf=platz.zelle.kopf, breite=zellbreite
                 )
-                s += 1
+                teile.append(f'<table:table-cell office:value-type="string"{attribute}>{inhalt}</table:table-cell>')
             teile.append("</table:table-row>")
         teile.append("</table:table>")
         return "".join(teile)
 
     @staticmethod
     def _fett(a: Absatz) -> Absatz:
-        from dataclasses import replace
-
         return replace(a, laeufe=[replace(lauf, format=replace(lauf.format, fett=True)) for lauf in a.laeufe])
 
-    def bloecke(self, bloecke: list[Block]) -> str:
-        teile = []
-        for block in bloecke:
+    def folge(
+        self,
+        bloecke: Sequence[Block],
+        *,
+        in_zelle: bool = False,
+        kopf: bool = False,
+        breite: float | None = None,
+    ) -> str:
+        """Blöcke nacheinander; aufeinanderfolgende Punkte derselben Liste werden eine verschachtelte Liste."""
+        teile: list[str] = []
+        i = 0
+        while i < len(bloecke):
+            block = bloecke[i]
+            erster = _listenpunkt(block)
+            if erster is not None:
+                j = i + 1
+                while (
+                    j < len(bloecke) and (punkt := _listenpunkt(bloecke[j])) and punkt.oberste_nr == erster.oberste_nr
+                ):
+                    j += 1
+                punkte = [cast(Absatz, b) for b in bloecke[i:j]]
+                teile.append(self.liste([self._fett(a) if kopf else a for a in punkte], in_zelle=in_zelle))
+                i = j
+                continue
             if isinstance(block, Absatz):
-                teile.append(self.absatz(block))
+                teile.append(self.absatz(self._fett(block) if kopf else block, in_zelle=in_zelle))
             elif isinstance(block, Bild):
-                teile.append(self.bild(block))
+                teile.append(self.bild(block, in_zelle=in_zelle, hoechstbreite=breite))
             elif isinstance(block, Trennlinie):
-                stil = self.stile.absatz_stil("Standard", None, 0, False, False, True, None)
+                umbruch = False if in_zelle else self._umbruch_nehmen()
+                stil = self.stile.absatz_stil("Standard", None, 0, umbruch, False, True, None)
                 teile.append(f'<text:p text:style-name="{stil}"/>')
             elif isinstance(block, Seitenumbruch):
                 self.umbruch_offen = True
             elif isinstance(block, Tabelle):
                 teile.append(self.tabelle(block))
+            i += 1
+        return "".join(teile)
+
+    def bloecke(self, bloecke: list[Block]) -> str:
+        teile = [self.folge(bloecke)]
         if self.umbruch_offen:
-            stil = self.stile.absatz_stil("Standard", None, 0, True, False, False, None)
+            stil = self.stile.absatz_stil("Standard", None, 0, self._umbruch_nehmen(), False, False, None)
             teile.append(f'<text:p text:style-name="{stil}"/>')
-        return _zusammen("".join(teile))
+        return "".join(teile)
 
 
-def _zusammen(xml: str) -> str:
-    """
-    Aufeinanderfolgende Listenpunkte derselben Art zu einer Liste verbinden: Die Nummerierung läuft in einer Liste
-    weiter und beginnt in der nächsten (nach einem Absatz) neu.
-    """
-    for liste in ("LZahlen", "LPunkte"):
-        xml = xml.replace(f'</text:list><text:list text:style-name="{liste}">', "")
-    return xml
+def _listenpunkt(block: object) -> Absatz | None:
+    """Ein Absatz als Punkt einer Liste mit Punkten oder Zahlen (Aufgaben stehen als eingerückte Absätze da)."""
+    if isinstance(block, Absatz) and block.liste is not None and block.liste[0] != "aufgaben":
+        return block
+    return None
 
 
 def _listenstile() -> str:

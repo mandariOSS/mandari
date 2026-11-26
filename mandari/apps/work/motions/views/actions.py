@@ -694,7 +694,7 @@ class MotionExportView(WorkViewMixin, View):
                 logger.exception(f"[MotionExport] PDF export failed: {e}")
                 return JsonResponse({"error": "PDF-Export fehlgeschlagen."}, status=500)
 
-        from ..formate import FORMATE, exportieren
+        from ..formate import FORMATE, TABELLEN_ZU_GROSS, exportieren
 
         exportformat = FORMATE.get(export_format)
         if exportformat is None:
@@ -702,6 +702,9 @@ class MotionExportView(WorkViewMixin, View):
         # Word, OpenDocument, Markdown und Text aus dem Dokumentmodell (#1584)
         try:
             inhalt = exportieren(motion, exportformat.schluessel)
+        except ExportTooLargeError:
+            # Feste Meldung, nie der Text der Ausnahme
+            return JsonResponse({"error": TABELLEN_ZU_GROSS}, status=400)
         except Exception as e:
             logger.exception(f"[MotionExport] {exportformat.name}-Export fehlgeschlagen: {e}")
             return JsonResponse({"error": f"{exportformat.name}-Export fehlgeschlagen."}, status=500)

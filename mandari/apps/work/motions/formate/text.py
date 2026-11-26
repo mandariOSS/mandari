@@ -11,14 +11,42 @@ Markdown und reiner Text aus dem Dokumentmodell (Issue #1584).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
-from .modell import Absatz, Bild, Block, Lauf, Seitenumbruch, Tabelle, Trennlinie
+from .modell import Absatz, Bild, Block, Lauf, Seitenumbruch, Tabelle, Trennlinie, Zelle
 
 _MD_ZEICHEN = re.compile(r"([\\`*_\[\]#|<>])")
+#: Am Zeilenanfang würde Markdown aus „1. Januar“ oder „- Punkt“ eine Liste machen, aus „---“ eine Linie
+_MD_LISTENMARKE = re.compile(r"^(\s*)(\d{1,9})([.)])(?=\s|$)|^(\s*)([-+])(?=\s|$)|^(\s*)([-=])(?=[-=\s]*$)", re.M)
+#: Senkrechter Strich ohne vorangestellten Rückstrich (in Codestellen einer Tabellenzelle)
+_MD_STRICH = re.compile(r"(?<!\\)\|")
 
 
 def _md_text(text: str) -> str:
     return _MD_ZEICHEN.sub(r"\\\1", text)
+
+
+def _md_marken(text: str) -> str:
+    """Listenmarken und Linien am Zeilenanfang schützen, damit gewöhnlicher Text Text bleibt."""
+
+    def schuetzen(t: re.Match[str]) -> str:
+        if t.group(2):
+            return f"{t.group(1)}{t.group(2)}\\{t.group(3)}"
+        if t.group(5):
+            return f"{t.group(4)}\\{t.group(5)}"
+        return f"{t.group(6)}\\{t.group(7)}"
+
+    return _MD_LISTENMARKE.sub(schuetzen, text)
+
+
+def _md_ziel(url: str) -> str:
+    """Linkziel; mit Klammern oder Leerzeichen in spitzen Klammern, sonst schlösse „)“ das Ziel vorzeitig."""
+    url = url.replace("<", "%3C").replace(">", "%3E")
+    return f"<{url}>" if any(zeichen in url for zeichen in " ()") else url
+
+
+def _md_bild(bild: Bild) -> str:
+    return f"*[Bild{': ' + _md_text(bild.alt) if bild.alt else ''}]*"
 
 
 def _md_laeufe(laeufe: list[Lauf]) -> str:
@@ -45,7 +73,7 @@ def _md_laeufe(laeufe: list[Lauf]) -> str:
         if f.fett:
             inhalt = f"**{inhalt}**"
         if f.link and f.link.startswith(("http://", "https://", "mailto:", "tel:")):
-            inhalt = f"[{inhalt}]({f.link})"
+            inhalt = f"[{inhalt}]({_md_ziel(f.link)})"
         teile.append(vorne + inhalt + hinten)
     return "".join(teile)
 
@@ -56,6 +84,7 @@ def _md_absatz(a: Absatz) -> str:
         return f"{'#' * int(a.art[1])} {inhalt}"
     if a.art == "code":
         return f"```\n{a.text}\n```"
+    inhalt = _md_marken(inhalt)
     if a.liste:
         art, ebene = a.liste
         einzug = "  " * ebene if art == "punkte" else "   " * ebene
@@ -71,19 +100,32 @@ def _md_absatz(a: Absatz) -> str:
     return inhalt
 
 
+def _md_zelle(zelle: Zelle) -> str:
+    teile = [
+        _md_bild(block) if isinstance(block, Bild) else _md_laeufe(block.laeufe).replace("  \n", " ")
+        for block in zelle.bloecke
+    ]
+    # Striche aus Text sind schon geschützt, die in Codestellen noch nicht
+    return _MD_STRICH.sub(r"\\|", " ".join(teile).replace("\n", " "))
+
+
+def _felder(t: Tabelle, zelle_text: Callable[[Zelle], str]) -> list[list[str]]:
+    """Je Zeile die Felder des Rasters: Text am Platz der Zelle, überspannte Felder bleiben leer."""
+    spalten, plaetze = t.raster()
+    zeilen = []
+    for reihe in plaetze:
+        felder = [""] * spalten
+        for platz in reihe:
+            felder[platz.spalte] = zelle_text(platz.zelle)
+        zeilen.append(felder)
+    return zeilen
+
+
 def _md_tabelle(t: Tabelle) -> str:
     spalten = t.spaltenzahl
     if not spalten:
         return ""
-    zeilen = []
-    for zeile in t.zeilen:
-        zellen: list[str] = []
-        for zelle in zeile:
-            text = " ".join(_md_laeufe(a.laeufe).replace("  \n", " ") for a in zelle.absaetze).replace("\n", " ")
-            zellen.append(text.replace("|", "\\|"))
-            zellen.extend("" for _ in range(zelle.spalten - 1))
-        zellen.extend("" for _ in range(spalten - len(zellen)))
-        zeilen.append("| " + " | ".join(zellen[:spalten]) + " |")
+    zeilen = ["| " + " | ".join(felder) + " |" for felder in _felder(t, _md_zelle)]
     trenner = "| " + " | ".join("---" for _ in range(spalten)) + " |"
     return "\n".join([zeilen[0], trenner, *zeilen[1:]])
 
@@ -106,7 +148,7 @@ def markdown_schreiben(bloecke: list[Block], *, titel: str = "", signatur: str =
         if isinstance(block, Tabelle):
             teile.append(_md_tabelle(block))
         elif isinstance(block, Bild):
-            teile.append(f"*[Bild{': ' + _md_text(block.alt) if block.alt else ''}]*")
+            teile.append(_md_bild(block))
         elif isinstance(block, Trennlinie):
             teile.append("---")
         elif isinstance(block, Seitenumbruch):
@@ -135,6 +177,13 @@ def _txt_absatz(a: Absatz) -> str:
     return inhalt
 
 
+def _txt_zelle(zelle: Zelle) -> str:
+    return " ".join(
+        (f"[Bild{': ' + block.alt if block.alt else ''}]" if isinstance(block, Bild) else block.text.replace("\n", " "))
+        for block in zelle.bloecke
+    )
+
+
 def text_schreiben(bloecke: list[Block], *, signatur: str = "") -> str:
     teile: list[str] = []
     vorher_liste = False
@@ -149,8 +198,7 @@ def text_schreiben(bloecke: list[Block], *, signatur: str = "") -> str:
         if teile:
             teile.append("")
         if isinstance(block, Tabelle):
-            for zeile in block.zeilen:
-                teile.append("\t".join(" ".join(a.text.replace("\n", " ") for a in z.absaetze) for z in zeile))
+            teile.extend("\t".join(felder) for felder in _felder(block, _txt_zelle))
         elif isinstance(block, Bild):
             teile.append(f"[Bild{': ' + block.alt if block.alt else ''}]")
         elif isinstance(block, Trennlinie):

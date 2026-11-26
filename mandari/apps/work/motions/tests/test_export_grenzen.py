@@ -184,7 +184,7 @@ def test_pdf_export_lehnt_zu_grosse_tabellen_ab(
     assert antwort.json() == {"error": PDF_TABLES_TOO_LARGE}
     with pytest.raises(ExportTooLargeError):
         motion_export_service.export_to_pdf(motion)
-    # Die Word-Datei entsteht ohne Tabellenraster und bleibt möglich
+    # Word hat eine eigene, höhere Grenze (formate.MAX_TABELLENFELDER) und bleibt hier möglich
     assert client.get(url, {"format": "docx"}).status_code == 200
     # Einreichung per E-Mail: feste Meldung statt eines Fehlers ohne Erklärung
     with pytest.raises(SubmissionError) as fehler:

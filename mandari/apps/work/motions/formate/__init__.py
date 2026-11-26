@@ -29,6 +29,18 @@ class Exportformat:
     name: str
 
 
+#: Größte Zahl an Tabellenfeldern (Zählweise ``export_service.table_cell_count``: Zellen plus Raster) für Word, ODT,
+#: Markdown und Text. Word legt je Feld XML an und läuft im Webprozess: gemessen rund 2,5 s für eine Tabelle mit
+#: 110 × 100 Feldern (22.000 nach dieser Zählung), ODT ein Bruchteil davon. Höher als beim PDF (``MAX_PDF_TABLE_CELLS``),
+#: weil diese Wege schneller sind.
+MAX_TABELLENFELDER = 40_000
+#: Feste Meldung, wenn die Tabellen eines Dokuments das Raster der Exporte sprengen
+TABELLEN_ZU_GROSS = (
+    "Die Tabellen dieses Dokuments sind für den Export zu groß. Bitte die Tabellen kürzen oder aufteilen."
+)
+#: ``data-``-Attribute, die das Dokumentmodell liest: Aufgabenlisten und ihr Stand
+_MODELL_ATTRIBUTE = frozenset({"data-type", "data-checked"})
+
 FORMATE: dict[str, Exportformat] = {
     f.schluessel: f
     for f in (
@@ -41,14 +53,22 @@ FORMATE: dict[str, Exportformat] = {
 
 
 def _vorbereiten(motion: Motion) -> tuple[list[modell.Block], schriften.Schrift, float, str]:
-    from apps.work.motions.export_service import clean_editor_html, get_signature_text
+    from apps.work.motions.export_service import (
+        ExportTooLargeError,
+        clean_editor_html,
+        get_signature_text,
+        table_cell_count,
+    )
     from apps.work.pdf_bilder import inline_remote_images
 
     letterhead = motion.letterhead
     schrift = schriften.aufloesen(letterhead.font_family if letterhead else None)
     groesse = float(letterhead.font_size if letterhead and letterhead.font_size else 11)
     groesse = max(schriften.GROESSE_MIN, min(groesse, schriften.GROESSE_MAX))
-    inhalt = clean_editor_html(motion.content or "")
+    inhalt = clean_editor_html(motion.content or "", behalten=_MODELL_ATTRIBUTE)
+    # Word und ODT legen jedes Feld des Rasters an, Markdown und Text füllen es auf: Größe vorher begrenzen
+    if table_cell_count(inhalt) > MAX_TABELLENFELDER:
+        raise ExportTooLargeError(TABELLEN_ZU_GROSS)
     if "<img" in inhalt:
         # Bilder fremder Server abgesichert laden und einbetten (wie beim PDF)
         inhalt = inline_remote_images(inhalt)
@@ -56,7 +76,10 @@ def _vorbereiten(motion: Motion) -> tuple[list[modell.Block], schriften.Schrift,
 
 
 def exportieren(motion: Motion, format_schluessel: str) -> bytes:
-    """Datei im gewünschten Format; ``KeyError`` bei unbekanntem Format."""
+    """
+    Datei im gewünschten Format; ``KeyError`` bei unbekanntem Format, ``ExportTooLargeError`` (Meldung
+    ``TABELLEN_ZU_GROSS``) bei zu großen Tabellen.
+    """
     from apps.work.motions.export_service import generated_letterhead_context, motion_export_service
 
     exportformat = FORMATE[format_schluessel]
