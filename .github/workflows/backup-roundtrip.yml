@@ -63,8 +63,6 @@ jobs:
               profiles: ["ci-aus"]
             ingestor:
               profiles: ["ci-aus"]
-            minutes-orchestrator:
-              profiles: ["ci-aus"]
           YAML
 
           secret_key=$(openssl rand -hex 40)

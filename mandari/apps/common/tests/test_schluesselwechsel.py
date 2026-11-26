@@ -16,7 +16,6 @@ import re
 import secrets
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any, cast
 from unittest import mock
 
@@ -31,16 +30,14 @@ from django.utils import timezone
 from apps.accounts.models import TwoFactorDevice, User
 from apps.accounts.services import TwoFactorService
 from apps.common import key_rotation
-from apps.common.crypto_registry import ENCRYPTED_FIELDS
+from apps.common.crypto_registry import ENCRYPTED_FIELDS, EncryptedField, KeyKind
 from apps.common.encryption import TenantEncryption, aes_open, decode_master_key
 from apps.common.key_rotation import FieldReport, KeyRotation, RotationError, ScanResult, Status
 from apps.common.models import AISettings, SiteSettings, _decrypt_platform_secret, _encrypt_platform_secret
 from apps.common.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
-from apps.minutes.models import Recording, RecordingSegment, TranscriptSegment
-from apps.minutes.models_compute import ComputeSettings
-from apps.session.models import SessionMeeting, SessionOrganization, SessionPerson, SessionTenant
+from apps.session.models import SessionMeeting, SessionOrganization, SessionPerson, SessionProtocol, SessionTenant
 from apps.tenants.models import Organization
-from apps.work.faction.models import FactionMeeting
+from apps.work.faction.models import FactionMeeting, FactionProtocolEntry
 from apps.work.motions.models import Motion
 from apps.work.support.models import SupportTicket, SupportTicketMessage
 
@@ -76,20 +73,11 @@ class Bestand:
     mandant: SessionTenant
     person: SessionPerson
     sitzung: SessionMeeting
-    transkript_session: TranscriptSegment
-    transkript_fraktion: TranscriptSegment
+    niederschrift: SessionProtocol
+    protokolleintrag: FactionProtocolEntry
     nutzer: User
     altnutzer: User
     dokument: Motion
-
-
-def _transkript(text: str, **sitzung: Any) -> TranscriptSegment:
-    aufnahme = Recording.objects.create(retention_until=timezone.now() + timedelta(days=30), **sitzung)
-    abschnitt = RecordingSegment.objects.create(recording=aufnahme, started_at=timezone.now())
-    transkript = TranscriptSegment(segment=abschnitt, start_ms=0, end_ms=1000)
-    cast(Any, transkript).set_text_encrypted(text)
-    transkript.save()
-    return transkript
 
 
 def _anlegen() -> Bestand:
@@ -118,7 +106,14 @@ def _anlegen() -> Bestand:
     cast(Any, sitzung).set_internal_notes_encrypted("notiz-geheim")
     cast(Any, sitzung).set_remote_access_encrypted("zugang-geheim")
     sitzung.save()
+    # Mandanteninhalte über zwei Fremdschlüssel: Sitzung → Mandant bzw. Sitzung → Organisation
+    niederschrift = SessionProtocol(meeting=sitzung)
+    cast(Any, niederschrift).set_content_encrypted("niederschrift-geheim")
+    niederschrift.save()
     fraktionssitzung = FactionMeeting.objects.create(organization=org, title="Sitzung", start=timezone.now())
+    protokolleintrag = FactionProtocolEntry(meeting=fraktionssitzung)
+    cast(Any, protokolleintrag).set_content_encrypted("protokolleintrag-geheim")
+    cast(Any, protokolleintrag).save()
 
     ki = AISettings.objects.get_or_create(pk=1)[0]
     ki.set_api_key("ki-geheim-global")
@@ -128,11 +123,6 @@ def _anlegen() -> Bestand:
     # Früherer Nebius-Schlüssel (ungenutzt seit Issue #950): Solange die Spalte besteht, gehört sie zum Wechsel
     system.nebius_api_key_encrypted = _encrypt_platform_secret("nebius-geheim-system")
     cast(Any, system).save()
-    rechenknoten = ComputeSettings.load(use_cache=False)
-    rechenknoten.set_client_secret("client-geheim")
-    rechenknoten.set_s3_secret_key("s3-geheim")
-    rechenknoten.save()
-
     nutzer = cast(User, cast(Any, UserFactory)(email="zwei-faktor@example.org"))
     TwoFactorService().setup_2fa(nutzer)
     altnutzer = cast(User, cast(Any, UserFactory)(email="altbestand@example.org"))
@@ -145,8 +135,8 @@ def _anlegen() -> Bestand:
         mandant=mandant,
         person=person,
         sitzung=sitzung,
-        transkript_session=_transkript("transkript-session-geheim", session_meeting=sitzung),
-        transkript_fraktion=_transkript("transkript-fraktion-geheim", faction_meeting=fraktionssitzung),
+        niederschrift=niederschrift,
+        protokolleintrag=protokolleintrag,
         nutzer=nutzer,
         altnutzer=altnutzer,
         dokument=dokument,
@@ -156,7 +146,6 @@ def _anlegen() -> Bestand:
 def _lesen(b: Bestand) -> dict[str, str]:
     """Alle Werte über die Zugriffswege der Anwendung, frisch aus der Datenbank."""
     org = Organization.objects.get(pk=b.org.pk)
-    rechenknoten = ComputeSettings.load(use_cache=False)
     service = TwoFactorService()
     geraet = TwoFactorDevice.objects.get(user=b.nutzer)
 
@@ -174,15 +163,13 @@ def _lesen(b: Bestand) -> dict[str, str]:
         "iban": entschluesselt(SessionPerson, b.person.pk, "get_bank_iban_decrypted"),
         "notiz": entschluesselt(SessionMeeting, b.sitzung.pk, "get_internal_notes_decrypted"),
         "zugang": entschluesselt(SessionMeeting, b.sitzung.pk, "get_remote_access_decrypted"),
-        "transkript_session": entschluesselt(TranscriptSegment, b.transkript_session.pk, "get_text_decrypted"),
-        "transkript_fraktion": entschluesselt(TranscriptSegment, b.transkript_fraktion.pk, "get_text_decrypted"),
+        "niederschrift": entschluesselt(SessionProtocol, b.niederschrift.pk, "get_content_decrypted"),
+        "protokolleintrag": entschluesselt(FactionProtocolEntry, b.protokolleintrag.pk, "get_content_decrypted"),
         "ki_global": AISettings.objects.get(pk=1).get_api_key(),
         "smtp_system": system.get_email_host_password(),
         "nebius_system": _decrypt_platform_secret(system.nebius_api_key_encrypted, "Nebius"),
         "antrag": entschluesselt(Motion, b.dokument.pk, "get_content_decrypted"),
         "yjs": zustand.hex() if zustand == YJS_ZUSTAND else "abweichend",
-        "client": rechenknoten.get_client_secret(),
-        "s3": rechenknoten.get_s3_secret_key(),
         "totp": service._decrypt(geraet.secret_encrypted),
         "backup": service._decrypt(geraet.backup_codes_encrypted),
         "totp_alt": service._decrypt(TwoFactorDevice.objects.get(user=b.altnutzer).secret_encrypted),
@@ -260,8 +247,8 @@ def test_wechsel_erfasst_jede_schluesselart(bestand: tuple[Bestand, dict[str, st
         (org.encryption_key, alt_master),
         (org.smtp_password_encrypted, alt_org),
         (SupportTicketMessage.objects.get(pk=b.nachricht.pk).content_encrypted, alt_org),
-        (TranscriptSegment.objects.get(pk=b.transkript_session.pk).text_encrypted, alt_session),
-        (TranscriptSegment.objects.get(pk=b.transkript_fraktion.pk).text_encrypted, alt_org),
+        (SessionProtocol.objects.get(pk=b.niederschrift.pk).content_encrypted, alt_session),
+        (FactionProtocolEntry.objects.get(pk=b.protokolleintrag.pk).content_encrypted, alt_org),
     ):
         with pytest.raises(InvalidTag):
             aes_open(schluessel, bytes(cast(Any, wert)))
@@ -374,10 +361,11 @@ def test_unlesbare_werte_brechen_vor_jeder_aenderung_ab(bestand: tuple[Bestand, 
 
 
 def test_werte_ohne_schluesselart_brechen_ab() -> None:
-    reserviert = next(entry for entry in ENCRYPTED_FIELDS if entry.field == "embedding_encrypted")
+    # Ein Feld, das angelegt ist, aber noch keinen Schreibpfad und damit keine Schlüsselart hat
+    reserviert = EncryptedField("beispiel.Modell", "vorgesehen_encrypted", KeyKind.RESERVED)
     bericht = FieldReport(reserviert)
     bericht.add(Status.UNASSIGNED, "123")
-    with _nur(ALT), pytest.raises(RotationError, match="minutes.VoiceProfile.embedding_encrypted"):
+    with _nur(ALT), pytest.raises(RotationError, match="beispiel.Modell.vorgesehen_encrypted"):
         KeyRotation().check_preconditions(ScanResult([bericht], {}, {}))
 
 

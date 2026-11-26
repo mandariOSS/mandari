@@ -49,6 +49,7 @@ class SessionConfig(AppConfig):
 
         # Bereiche der gemeinsamen Schnittstelle anmelden: OParl je Mandant, Session-API v1 (Issue #1205)
         from .api import schnittstelle
+        from .protokolldienst import vorschlaege  # noqa: F401 – Befehl session.minutes_draft.propose
 
         schnittstelle.register()
 

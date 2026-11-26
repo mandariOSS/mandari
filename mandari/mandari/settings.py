@@ -138,8 +138,6 @@ INSTALLED_APPS = [
     "apps.work",
     # Mandari Session RIS (OSS - AGPL-3.0-or-later)
     "apps.session",
-    # Protokollierung (Aufzeichnung, Transkription, KI-Entwurf) — Session + Work
-    "apps.minutes",
 ]
 
 # Custom User Model
@@ -285,7 +283,6 @@ SERVICE_LEVEL_DISK_MIN_FREE_GB = float(os.environ.get("SERVICE_LEVEL_DISK_MIN_FR
 SERVICE_LEVEL_TLS_MIN_DAYS = int(os.environ.get("SERVICE_LEVEL_TLS_MIN_DAYS", "14"))
 SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT = float(os.environ.get("SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT", "1"))
 SERVICE_LEVEL_ERROR_RATE_MIN_REQUESTS = int(os.environ.get("SERVICE_LEVEL_ERROR_RATE_MIN_REQUESTS", "100"))
-SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES = int(os.environ.get("SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES", "120"))
 # Zusätzliche Hosts, deren TLS-Zertifikat geprüft wird (kommagetrennt); SITE_URL wird immer geprüft
 MONITOR_TLS_HOSTS = [h.strip() for h in os.environ.get("MONITOR_TLS_HOSTS", "").split(",") if h.strip()]
 # Statusseite (Gatus) für den Verfügbarkeitsbericht (availability_report)
@@ -1183,6 +1180,14 @@ LIVE_TESSDATA_DIR = os.environ.get("LIVE_TESSDATA_DIR", "")
 LIVE_OCR_MEMORY_LIMIT_MB = int(os.environ.get("LIVE_OCR_MEMORY_LIMIT_MB", "256"))
 LIVE_OCR_TIMEOUT_SECONDS = int(os.environ.get("LIVE_OCR_TIMEOUT_SECONDS", "20"))
 LIVE_PROTOKOLL_TAGE = int(os.environ.get("LIVE_PROTOKOLL_TAGE", "90"))
+# Protokolldienst (docs/PROTOKOLLDIENST.md): Hosts, die Mandanten als Adresse des Protokolldienstes eintragen dürfen.
+# Leer: jeder öffentliche Host über https. Gesetzt: nur diese Hosts, auch im eigenen Netz (Betrieb im Intranet),
+# kommagetrennt; weiterhin nur über https
+PROTOKOLLDIENST_ERLAUBTE_HOSTS = [
+    h.strip().lower() for h in os.environ.get("PROTOKOLLDIENST_ERLAUBTE_HOSTS", "").split(",") if h.strip()
+]
+# http zu diesen Hosts nur mit dieser ausdrücklichen Freigabe: Der API-Schlüssel ginge im Klartext über das Netz
+PROTOKOLLDIENST_HTTP_ERLAUBT = os.environ.get("PROTOKOLLDIENST_HTTP_ERLAUBT", "false").lower() in ("1", "true", "yes")
 _TASK_BACKENDS = {
     "immediate": "django.tasks.backends.immediate.ImmediateBackend",
     "journal": "apps.events.tasks_backend.JournalBackend",
@@ -1227,6 +1232,9 @@ TASKS = {
                 # nicht wiederholen, der Zeitplan reiht jede Minute neu ein
                 "hub.live.auftraege.live_bilder_lesen": {"timeout": 120, "max_attempts": 1},
                 "hub.live.schedules.live_status_abfragen": {"timeout": 120, "max_attempts": 1},
+                # Meldungen an einen Protokolldienst (docs/PROTOKOLLDIENST.md): Aufrufe mit 10 s Zeitgrenze; zwölf
+                # Versuche (zusammen etwa sechs Stunden), falls der Dienst die Sitzung erst später übernimmt
+                "apps.session.protokolldienst.auftraege.zustellen": {"timeout": 120, "max_attempts": 12},
             },
         },
     }
@@ -1762,16 +1770,6 @@ UNFOLD = {
                         "title": _("Einstellungen"),
                         "icon": "settings",
                         "link": reverse_lazy("admin:common_sitesettings_changelist"),
-                    },
-                    {
-                        "title": _("GPU-Rechenknoten"),
-                        "icon": "memory",
-                        "link": reverse_lazy("admin:minutes_computesettings_changelist"),
-                    },
-                    {
-                        "title": _("GPU-Knoten (Übersicht)"),
-                        "icon": "dns",
-                        "link": reverse_lazy("admin:minutes_gpunode_changelist"),
                     },
                 ],
             },

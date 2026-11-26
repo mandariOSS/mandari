@@ -162,13 +162,6 @@ def test_fehlerquote_einzelne_zeitueberschreitung_ist_kein_alarm(
     assert len(aufrufe) == 2
 
 
-@pytest.mark.django_db
-def test_warteschlange_leer_ist_ok() -> None:
-    [befund] = sl.pruefe_warteschlange(max_age_minutes=60)
-
-    assert befund.ok
-
-
 # ---------------------------------------------------------------------------
 # Wiederholsperre und Versand
 # ---------------------------------------------------------------------------

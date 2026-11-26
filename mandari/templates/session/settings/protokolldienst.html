@@ -1,0 +1,27 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Protokolldienst im bisherigen Rahmen; Inhalt gemeinsam mit dem neuen Rahmen
+(session/settings/_protokolldienst_inhalt.html). Kontext ProtokolldienstEinstellungenView.
+{% endcomment %}
+
+{% block page_title %}Protokolldienst{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Dashboard</a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Einstellungen</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Protokolldienst</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Protokolldienst</h1>
+        <c-rahmen.satz eng>Aufnahme, Transkript und Entwurf der Niederschrift entstehen in einem angebundenen Dienst; Session meldet den Ablauf der Sitzung und nimmt Entwürfe als Vorschlag zurück.</c-rahmen.satz>
+    </div>
+    {% include "session/settings/_protokolldienst_inhalt.html" %}
+</div>
+{% endblock %}

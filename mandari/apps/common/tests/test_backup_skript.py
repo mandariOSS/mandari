@@ -83,7 +83,7 @@ def test_pruefung_nach_wiederherstellung_nennt_nur_container_aus_compose(tmp_pat
     geprueft = log.read_text(encoding="utf-8").split()
     # Je Container zwei Abfragen (Zustand, Gesundheit); jeder Eintrag ist ein Container aus docker-compose.yml
     assert set(geprueft) <= _compose_container("muster"), geprueft
-    # Jeder Dienst außer dem optionalen PgBouncer, auch der Protokoll-Orchestrator (Issue #962)
+    # Jeder Dienst außer dem optionalen PgBouncer, auch die Worker (Issue #962)
     assert set(geprueft) == _compose_container("muster") - {"muster-pgbouncer"}, geprueft
     assert "missing" not in ausgabe, ausgabe
     zeilen = [z for z in ausgabe.splitlines() if z.strip()]

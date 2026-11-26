@@ -40,8 +40,6 @@ services:
     profiles: ["aus"]
   mandari:
     profiles: ["aus"]
-  minutes-orchestrator:
-    profiles: ["aus"]
   website:
     profiles: ["aus"]
   ingestor:

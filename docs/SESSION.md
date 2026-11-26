@@ -208,14 +208,17 @@ Aufruf: Sitzungsseite → „Cockpit“ (mit Steuerungsrecht) bzw. „Live-Ansic
 
 | Bereich | Verhalten |
 |---------|-----------|
-| Sitzung | Eröffnen (tatsächlicher Beginn, Status „Laufend“), schließen (Ende, Status „Abgeschlossen“), fortsetzen. Beim Schließen enden der laufende TOP und andauernde Störungen mit der aktuellen Uhrzeit. |
+| Sitzung | Eröffnen (tatsächlicher Beginn, Status „Laufend“), schließen (Ende, Status „Abgeschlossen“), fortsetzen. Beim Schließen enden der laufende TOP und andauernde Störungen mit der aktuellen Uhrzeit. Unterbrechen und Unterbrechung beenden (`SessionMeeting.interrupted_at`, Beginn und Ende im Prüfprotokoll): Der aufgerufene TOP bleibt, abgestimmt wird erst danach; ein TOP-Aufruf und das Schließen beenden die Unterbrechung. |
 | TOP | Aufrufen füllt `start_time`, ein neuer Aufruf beendet den laufenden TOP (`end_time`). „Weiter mit TOP …“ springt zum nächsten offenen, nicht abgesetzten TOP. Der erste Aufruf eröffnet die Sitzung. Wiederaufruf behält den Beginn. |
 | Anwesenheit | Anwesend, kommt (verspätet, mit Uhrzeit), geht (vorzeitig, mit Uhrzeit), zurück, abwesend. „Zurück“ vermerkt die Unterbrechung als Zeitraum (`SessionAttendance.interruptions`), auch mehrfach; die Niederschrift nennt sie im Teilnahmevermerk („abwesend 18:30–18:50 Uhr“, bei Zugeschalteten „getrennt …“). Beschlussfähigkeit live, für den aufgerufenen TOP nach den Regeln des Landesprofils. |
 | Störungsprotokoll | Störung Zugeschalteter „ab jetzt“ mit Ursache und internem Vermerk (z. B. „telefonisch gemeldet“ als zweiter Meldeweg), Ende „jetzt“. Während der Störung zählt die Person nicht zur Beschlussfähigkeit. |
 | Abstimmung | Öffnen zum aufgerufenen TOP (Art, Wahl), schließen mit Ergebnis. Summen: bei „Nur Summen“ und „Geheim“ aus dem Formular (Prüfung gegen die stimmberechtigten Anwesenden; ohne eine einzige Stimme kein Ergebnis), bei „Offen“ und „Namentlich“ aus den Einzelstimmen der Abstimmungserfassung. Abbrechen ohne Ergebnis möglich. |
 
-Während eine Abstimmung offen ist, lassen sich weder TOP wechseln noch die Sitzung schließen.
+Während eine Abstimmung offen ist, lassen sich weder TOP wechseln noch die Sitzung schließen oder unterbrechen.
 Abgesagte Sitzungen und Sitzungen mit genehmigter Niederschrift zeigt das Cockpit nur an.
+
+Ist der Mandant an einen Protokolldienst angebunden, meldet das Cockpit TOP-Aufruf, Unterbrechung und festgestelltes
+Ergebnis an dessen Postausgang; zugestellt wird im Hintergrund ([PROTOKOLLDIENST.md](PROTOKOLLDIENST.md)).
 
 ### Rechte im Cockpit
 

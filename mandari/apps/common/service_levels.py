@@ -12,9 +12,7 @@ Geprüft wird:
   leben im Web-Prozess und beginnen bei jedem Neustart bei null; deshalb merkt sich der Lauf
   den letzten Zählerstand im Cache und bewertet die Differenz seit dem letzten Lauf – bei
   täglichem Cron also die letzten ~24 h. Nach einem Neustart zählt der Stand seit dem Start.
-- **Warteschlange der Transkription** (``minutes.TranscriptionJob``): gemeldet wird, wenn der
-  älteste wartende Auftrag länger als ``SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES`` unbearbeitet ist. Die
-  Aufträge und Zeitpläne im Journal (``apps.events``, Metriken ``mandari_tasks_*``) prüft diese Liste
+- Aufträge und Zeitpläne im Journal (``apps.events``, Metriken ``mandari_tasks_*``) prüft diese Liste
   nicht; ihren Rückstand meldet ``/health/worker/`` (``docs/MONITORING.md``).
 - **Tote Ereignisse** der Ereignistechnik (``apps.events``): Ereignisse, deren Zustellung an ein
   Abonnement nach allen Versuchen aufgegeben wurde. Die Zustellung ruft diese Prüfung auch sofort
@@ -34,7 +32,6 @@ import ssl
 import time
 import urllib.request
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -268,35 +265,6 @@ def pruefe_fehlerquote(
 
 
 # ---------------------------------------------------------------------------
-# Warteschlange
-# ---------------------------------------------------------------------------
-
-
-def pruefe_warteschlange(*, max_age_minutes: int | None = None) -> list[Befund]:
-    max_age_minutes = settings.SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES if max_age_minutes is None else max_age_minutes
-    try:
-        from apps.minutes.models import JobStatus, TranscriptionJob
-
-        wartend = TranscriptionJob.objects.filter(status=JobStatus.QUEUED)
-        anzahl = wartend.count()
-        aeltester = wartend.order_by("queued_at").values_list("queued_at", flat=True).first()
-    except Exception as exc:  # noqa: BLE001 – ohne Tabelle (Migration ausstehend) gibt es keine Warteschlange
-        logger.debug("Warteschlange nicht abfragbar: %s", exc)
-        return []
-    if aeltester is None:
-        return [Befund("queue:transcription", True, "Warteschlange Transkription", "keine wartenden Aufträge")]
-    alter = timezone.now() - aeltester
-    return [
-        Befund(
-            "queue:transcription",
-            alter <= timedelta(minutes=max_age_minutes),
-            "Warteschlange Transkription",
-            f"{anzahl} wartend, ältester Auftrag seit {alter.total_seconds() / 60:.0f} min; Schwelle {max_age_minutes} min",
-        )
-    ]
-
-
-# ---------------------------------------------------------------------------
 # Tote Ereignisse (Ereignistechnik)
 # ---------------------------------------------------------------------------
 
@@ -350,7 +318,6 @@ def alle_pruefungen() -> list[Befund]:
         *pruefe_speicherplatz(),
         *pruefe_tls(),
         *pruefe_fehlerquote(),
-        *pruefe_warteschlange(),
         *pruefe_tote_ereignisse(),
     ]
 

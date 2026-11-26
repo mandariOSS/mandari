@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:command:session.minutes_draft.propose:v1",
+  "title": "Entwurf der Niederschrift vorschlagen",
+  "description": "Ein angebundener Protokolldienst übergibt nach der Freigabe je TOP Entwurf des Protokolltexts, Beschlusstext und Abstimmungsergebnis als Vorschlag; die Protokollführung übernimmt ihn in Session oder verwirft ihn. Eine neuere Fassung ersetzt offene Vorschläge desselben TOP. Handler: apps.session.",
+  "x-kind": "command",
+  "x-owner": "apps.session",
+  "x-visibility": "nichtoeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meeting",
+    "source_document",
+    "revision",
+    "items"
+  ],
+  "properties": {
+    "meeting": {
+      "description": "Kennung der Sitzung in Session.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_document": {
+      "description": "Kennung des Dokuments beim Protokolldienst.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "description": "Fassung des Dokuments beim Protokolldienst.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000
+    },
+    "released_at": {
+      "description": "Zeitpunkt der Freigabe beim Protokolldienst.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "items": {
+      "description": "Vorschläge je TOP.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 300,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agenda_item"
+        ],
+        "properties": {
+          "agenda_item": {
+            "description": "Kennung des TOP in Session.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "draft_text": {
+            "description": "Entwurf des Protokolltexts (Beratungsverlauf).",
+            "type": "string",
+            "maxLength": 100000,
+            "x-content": true
+          },
+          "resolution_text": {
+            "description": "Entwurf des Beschlusstexts.",
+            "type": "string",
+            "maxLength": 20000,
+            "x-content": true
+          },
+          "vote": {
+            "description": "Abstimmungsergebnis: nur Summen und Ergebnis, nie Einzelstimmen.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "yes": {
+                "description": "Ja-Stimmen.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9999
+              },
+              "no": {
+                "description": "Nein-Stimmen.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9999
+              },
+              "abstain": {
+                "description": "Enthaltungen.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9999
+              },
+              "unanimous": {
+                "description": "Einstimmig.",
+                "type": "boolean"
+              },
+              "outcome": {
+                "description": "Ergebnis beim Protokolldienst.",
+                "type": "string",
+                "enum": [
+                  "adopted",
+                  "adopted_amended",
+                  "rejected",
+                  "noted",
+                  "postponed",
+                  "referred",
+                  "withdrawn"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "source_document": "0b8f4c1e-2d3a-4e5f-9a6b-7c8d9e0f1a2b",
+      "revision": 2,
+      "released_at": "2026-11-24T10:15:00+01:00",
+      "items": [
+        {
+          "agenda_item": "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+          "draft_text": "Die Verwaltung erläutert die Vorlage. Herr A. beantragt eine Ergänzung.",
+          "resolution_text": "Der Rat beschließt die Vorlage mit der Ergänzung.",
+          "vote": {
+            "yes": 21,
+            "no": 3,
+            "abstain": 1,
+            "unanimous": false,
+            "outcome": "adopted_amended"
+          }
+        }
+      ]
+    },
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "source_document": "0b8f4c1e-2d3a-4e5f-9a6b-7c8d9e0f1a2b",
+      "revision": 1,
+      "items": [
+        {
+          "agenda_item": "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+          "draft_text": "Kenntnisnahme ohne Aussprache."
+        }
+      ]
+    }
+  ]
+}

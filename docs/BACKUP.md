@@ -398,7 +398,7 @@ Uhrzeit, die es nicht gibt, wird abgelehnt. Enthalten ist alles, was bis zu dies
    heutigen Stand sichern:
 
    ```bash
-   docker compose stop mandari worker worker-heavy worker-live minutes-orchestrator ingestor
+   docker compose stop mandari worker worker-heavy worker-live ingestor
    docker exec mandari-backup mandari-backup run
    ```
 

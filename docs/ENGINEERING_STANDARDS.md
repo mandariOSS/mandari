@@ -7,9 +7,9 @@ werden als ADR unter [`docs/adr/`](adr/) festgehalten. Wie wir planen und auslie
 
 ## 1. Schichten (Backend)
 
-- **Abhängigkeiten zeigen nur nach unten:** Fachmodule (`apps.session`, `apps.work`, `apps.minutes`)
+- **Abhängigkeiten zeigen nur nach unten:** Fachmodule (`apps.session`, `apps.work`)
   → Drehscheibe (`hub`, `insight_*`) → Plattform (`apps.events`, `apps.common`,
-  `apps.accounts`, `apps.tenants`, `apps.provisioning`); Session, Work und Minutes kennen sich nicht
+  `apps.accounts`, `apps.tenants`, `apps.provisioning`); Session und Work kennen sich nicht
   ([ADR Schichtenmodell](adr/20260929-schichtenmodell.md)). `lint-imports` prüft das in der CI,
   Importe in Funktionen zählen mit, Tests sind ausgenommen. Die Ausnahmelisten in
   `mandari/pyproject.toml` dürfen nur kürzer werden, die Verträge selbst nur strenger

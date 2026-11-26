@@ -27,6 +27,7 @@ from django.views.generic import TemplateView
 from .. import audit, hub_events
 from ..models import SessionAgendaItem, SessionMeeting, SessionProtocolCorrection, SessionTextBlock, SessionVote
 from ..permissions import SessionViewMixin
+from ..protokolldienst import vorschlaege as protokolldienst_vorschlaege
 from ..rahmen import neues_design
 from ..services import (
     agenda_service,
@@ -116,6 +117,10 @@ class ProtocolDetailView(SessionViewMixin, TemplateView):
                 "direct_mode": self.session_tenant.protocol_direct_publication,
                 "corrections": corrections,
                 "can_correct": bool(protocol and protocol.is_locked and can_approve),
+                # Vorschläge eines angebundenen Protokolldienstes (docs/PROTOKOLLDIENST.md)
+                "vorschlaege": protokolldienst_vorschlaege.offene(meeting, can_view_np=can_view_np),
+                "vorschlaege_editierbar": self.has_permission("edit_protocols")
+                and (protocol is None or protocol.status in protokolldienst_vorschlaege.EDITABLE),
             }
         )
         # Genehmigungsvermerk: TOP „Genehmigung der Niederschrift“ bzw. Folgesitzung des Gremiums

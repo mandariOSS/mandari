@@ -12,7 +12,7 @@
   "vertraege": {
     "schichten": {
       "layers": [
-        "apps.session : apps.work : (apps.portal) : apps.minutes",
+        "apps.session : apps.work : (apps.portal)",
         "hub : insight_core : insight_ai : insight_search : insight_sync",
         "apps.events : apps.common : apps.accounts : apps.tenants : apps.provisioning"
       ]
@@ -20,8 +20,7 @@
     "module-unabhaengig": {
       "modules": [
         "apps.session",
-        "apps.work",
-        "apps.minutes"
+        "apps.work"
       ]
     },
     "plattform-fachfrei": {
@@ -35,7 +34,6 @@
       "forbidden_modules": [
         "apps.session",
         "apps.work",
-        "apps.minutes",
         "hub",
         "insight_core",
         "insight_ai",
@@ -71,8 +69,6 @@
       "apps.common.management.commands.setup_demo_praesentation -> insight_core.models",
       "apps.common.management.commands.setup_demo_praesentation -> insight_sync.session_mirror",
       "apps.common.management.commands.verify_audit_chain -> apps.session.models",
-      "apps.common.metrics -> apps.minutes.models",
-      "apps.common.service_levels -> apps.minutes.models",
       "apps.common.service_levels -> insight_core.services.source_health",
       "apps.tenants.models -> insight_core.models",
       "insight_core.portal -> apps.session.models",
@@ -87,8 +83,6 @@
       "apps.accounts.security_audit -> apps.session.audit",
       "apps.accounts.security_audit -> apps.session.models",
       "apps.accounts.two_factor_policy -> apps.session.models",
-      "apps.common.metrics -> apps.minutes.models",
-      "apps.common.service_levels -> apps.minutes.models",
       "apps.session.management.commands.generate_load_data -> apps.work.models",
       "apps.session.services.application_service -> apps.work.motions.models",
       "apps.session.services.portal_link_service -> apps.work.motions.models",
@@ -140,8 +134,6 @@
       "apps.common.management.commands.setup_demo_praesentation -> insight_core.models",
       "apps.common.management.commands.setup_demo_praesentation -> insight_sync.session_mirror",
       "apps.common.management.commands.verify_audit_chain -> apps.session.models",
-      "apps.common.metrics -> apps.minutes.models",
-      "apps.common.service_levels -> apps.minutes.models",
       "apps.common.service_levels -> insight_core.services.source_health",
       "apps.tenants.models -> insight_core.models"
     ]

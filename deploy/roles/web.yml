@@ -22,8 +22,6 @@ services:
     profiles: ["aus"]
   elasticsearch:
     profiles: ["aus"]
-  minutes-orchestrator:
-    profiles: ["aus"]
   ingestor:
     profiles: ["aus"]
   worker:

@@ -27,8 +27,6 @@ services:
     logging: *journald
   mandari:
     logging: *journald
-  minutes-orchestrator:
-    logging: *journald
   website:
     logging: *journald
   ingestor:

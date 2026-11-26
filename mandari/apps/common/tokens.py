@@ -132,7 +132,8 @@ HASHED_TOKEN_FIELDS: frozenset[str] = frozenset(
         "tenants.UserInvitation.token",
         "work.CalendarFeedToken.token",
         "work.AdministrationConnection.token_hash",
-        "minutes.GpuNode.token_hash",
+        # Rückgabeschlüssel, mit dem ein Protokolldienst Entwürfe der Niederschrift übergibt
+        "session.SessionProtokolldienst.rueckgabe_token_hash",
         # OpenID-Connect-Anbieter (Issue #1206): SHA-256-Prüfsumme der Bibliothek, gesucht wird nur über sie
         "accounts.OAuthAccessToken.token_checksum",
         "accounts.OAuthRefreshToken.token_checksum",
@@ -164,6 +165,10 @@ PLAINTEXT_TOKEN_FIELDS: dict[str, str] = {
     "session.SessionAPIToken.token_prefix": (
         "Nur die ersten 8 von 64 Zeichen, damit Verwaltung und Fraktion ein Token wiedererkennen; "
         "224 Bit bleiben geheim."
+    ),
+    "session.SessionProtokolldienst.rueckgabe_token_prefix": (
+        "Nur die ersten 8 Zeichen des Rückgabeschlüssels, damit die Verwaltung ihn beim Protokolldienst "
+        "wiedererkennt; der Rest bleibt geheim."
     ),
     "work.AdministrationConnection.token_prefix": (
         "Nur die ersten 8 von 64 Zeichen, damit Verwaltung und Fraktion ein Token wiedererkennen; "

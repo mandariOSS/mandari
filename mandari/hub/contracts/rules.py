@@ -59,7 +59,6 @@ KNOWN_OWNERS: Final[tuple[str, ...]] = (
     "apps.session",
     "apps.work",
     "apps.portal",
-    "apps.minutes",
     *PLATFORM_PACKAGES,
     "hub",
     "insight_core",

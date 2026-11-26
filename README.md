@@ -70,7 +70,7 @@ bereit, lesend und ohne Anmeldung:
 Voraussetzung: Linux-Server (Ubuntu 22.04 oder neuer, Debian 12, Rocky 9) mit mindestens 8 GB
 Arbeitsspeicher (16 GB für mittlere Kommunen, Größenklassen in [docs/LASTTESTS.md](docs/LASTTESTS.md)), eine
 Domain, die auf den Server zeigt. Die Speichergrenzen aller Dienste in `docker-compose.yml` ergeben zusammen
-rund 10,5 GB; ausgeschöpft werden sie selten gleichzeitig. Docker installiert der Installer bei Bedarf mit.
+rund 10,2 GB; ausgeschöpft werden sie selten gleichzeitig. Docker installiert der Installer bei Bedarf mit.
 
 ```bash
 git clone https://github.com/mandariOSS/mandari.git
@@ -177,7 +177,6 @@ Anwendungs-Images:
 | `worker` | `ghcr.io/mandarioss/mandari` | Aufträge, Zeitpläne (früher Cron) und Datendrehscheibe (`manage.py events_worker`) |
 | `worker-heavy` | `ghcr.io/mandarioss/mandari` | Texterkennung und KI (Warteschlangen `ocr`, `ai`) |
 | `worker-live` | `ghcr.io/mandarioss/mandari` | Live-Übertragungen von Gremiensitzungen (Warteschlange `live`) |
-| `minutes-orchestrator` | `ghcr.io/mandarioss/mandari` | GPU-Rechenknoten der Protokollierung, ruht ohne Einschalten im Admin |
 | `ingestor` | `ghcr.io/mandarioss/ingestor` | Abgleich mit den Ratsinformationssystemen (OParl) |
 | `website` | `ghcr.io/mandarioss/website` | Marketing-Website (Wagtail) |
 

@@ -76,6 +76,8 @@
                         tone="bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400">Fristen, Löschlauf, Auskunft, Hinweisseite</c-ui.link-tile>
         <c-ui.link-tile href="{% url 'session:settings_api_tokens' tenant_slug=tenant_slug %}" icon="key-round" title="Einreichungs-Zugänge"
                         tone="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">Tokens für Fraktionen, die Anträge digital einreichen</c-ui.link-tile>
+        <c-ui.link-tile href="{% url 'session:settings_protokolldienst' tenant_slug=tenant_slug %}" icon="mic" title="Protokolldienst"
+                        tone="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">Aufnahme und Entwurf der Niederschrift aus einem angebundenen Dienst</c-ui.link-tile>
         {% endif %}
 
         <!-- Kontakt -->

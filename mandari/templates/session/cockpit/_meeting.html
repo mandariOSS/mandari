@@ -2,7 +2,9 @@
 <c-ui.card title="Sitzung" data-testid="cockpit-sitzung">
     <div class="space-y-4 text-sm">
         <div class="flex items-center justify-between gap-2">
-            {% if state.running %}
+            {% if state.interrupted %}
+            <c-ui.badge color="amber" icon="pause" class="whitespace-nowrap" data-testid="sitzungsstatus">Unterbrochen seit {{ meeting.interrupted_at|time:"H:i" }} Uhr</c-ui.badge>
+            {% elif state.running %}
             <c-ui.badge color="green" icon="radio" class="whitespace-nowrap" data-testid="sitzungsstatus">Sitzung läuft</c-ui.badge>
             {% elif state.completed %}
             <c-ui.badge color="gray" icon="flag" class="whitespace-nowrap" data-testid="sitzungsstatus">Sitzung geschlossen</c-ui.badge>
@@ -44,6 +46,11 @@
         <c-ui.alert variant="warning" icon="calendar-x">Die Sitzung ist abgesagt.</c-ui.alert>
         {% elif state.can_control %}
         <div class="flex flex-wrap gap-2">
+            {% if state.interrupted %}
+            {% include "session/cockpit/_action.html" with aktion="unterbrechung_beenden" label="Unterbrechung beenden" icon="play" variant="primary" %}
+            {% elif state.running %}
+            {% include "session/cockpit/_action.html" with aktion="sitzung_unterbrechen" label="Sitzung unterbrechen" icon="pause" %}
+            {% endif %}
             {% if state.running %}
             {% include "session/cockpit/_action.html" with aktion="sitzung_schliessen" label="Sitzung schließen" icon="flag" variant="danger" confirm="Sitzung jetzt schließen? Der laufende TOP und andauernde Störungen enden mit der aktuellen Uhrzeit." %}
             {% elif state.completed %}

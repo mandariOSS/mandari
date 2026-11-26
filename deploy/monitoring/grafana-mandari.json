@@ -118,8 +118,7 @@
       "targets": [
         { "refId": "A", "expr": "sum(increase(mandari_emails_total{job=\"$job\",result=\"sent\"}[1h]))", "legendFormat": "Mails gesendet" },
         { "refId": "B", "expr": "sum(increase(mandari_emails_total{job=\"$job\",result=\"failed\"}[1h]))", "legendFormat": "Mails fehlgeschlagen" },
-        { "refId": "C", "expr": "sum(increase(mandari_pdf_documents_total{job=\"$job\"}[1h]))", "legendFormat": "PDFs" },
-        { "refId": "D", "expr": "sum(mandari_transcription_jobs{job=\"$job\",status=\"queued\"})", "legendFormat": "Transkription wartend" }
+        { "refId": "C", "expr": "sum(increase(mandari_pdf_documents_total{job=\"$job\"}[1h]))", "legendFormat": "PDFs" }
       ]
     },
     {

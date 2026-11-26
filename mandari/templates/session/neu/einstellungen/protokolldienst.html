@@ -1,0 +1,20 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Datenschutz und Zugänge › Protokolldienst im neuen Rahmen; Inhalt gemeinsam mit dem bisherigen Rahmen
+(session/settings/_protokolldienst_inhalt.html). Kontext ProtokolldienstEinstellungenView.
+{% endcomment %}
+
+{% block page_title %}Protokolldienst{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Protokolldienst" text="Aufnahme, Transkript und Entwurf der Niederschrift entstehen in einem angebundenen Dienst; Session meldet den Ablauf der Sitzung und nimmt Entwürfe als Vorschlag zurück." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    {% include "session/settings/_protokolldienst_inhalt.html" %}
+</div>
+{% endblock %}

@@ -83,10 +83,6 @@ _LARGE = 50
 
 _ORG = ("organization",)
 _SESSION = ("tenant",)
-_RECORDING = (
-    "segment__recording__session_meeting__tenant",
-    "segment__recording__faction_meeting__organization",
-)
 
 ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     # --- Mandantenschlüssel (mit dem Hauptschlüssel eingepackt) -------------------------------
@@ -100,8 +96,6 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     EncryptedField("common.SiteSettings", "nebius_api_key_encrypted", KeyKind.MASTER),
     EncryptedField("common.AISettings", "api_key_encrypted", KeyKind.MASTER),
     EncryptedField("common.AISettings", "summary_api_key_encrypted", KeyKind.MASTER),
-    EncryptedField("minutes.ComputeSettings", "client_secret_encrypted", KeyKind.MASTER),
-    EncryptedField("minutes.ComputeSettings", "s3_secret_key_encrypted", KeyKind.MASTER),
     # Postausgang des Mail-Dienstes (Issue #528): Mails der Plattform bis zum Versand
     EncryptedField("common.MailOutbox", "payload_platform_encrypted", KeyKind.MASTER, batch_size=_LARGE),
     # --- Zweiter Faktor ------------------------------------------------------------------------
@@ -165,11 +159,14 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
         paths=("protocol__meeting__tenant",),
     ),
     *_tenant("session.SessionAttendance", "response_reason_encrypted", paths=("meeting__tenant",)),
-    # --- Protokollassistenz (Aufzeichnung gehört zu einer Session- oder Fraktionssitzung) -------
-    *_tenant("minutes.TranscriptSegment", "text_encrypted", paths=_RECORDING),
-    *_tenant("minutes.ProtocolDraft", "text_encrypted", paths=_RECORDING),
-    # --- Vorgesehen, noch ohne Schreibpfad -----------------------------------------------------
-    EncryptedField("minutes.VoiceProfile", "embedding_encrypted", KeyKind.RESERVED),
+    # Anbindung an einen Protokolldienst: dessen API-Schlüssel und Vorschläge für die Niederschrift
+    *_tenant("session.SessionProtokolldienst", "api_key_encrypted", paths=_SESSION),
+    *_tenant(
+        "session.SessionNiederschriftVorschlag",
+        "draft_text_encrypted",
+        "resolution_text_encrypted",
+        paths=("meeting__tenant",),
+    ),
 )
 
 #: Binärfelder ohne verschlüsselten Inhalt – jeweils mit Begründung

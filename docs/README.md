@@ -46,6 +46,7 @@ auch die passende öffentliche Seite (oder legt im Docs-Repository ein Issue an)
 | `SESSION_MANDANTEN.md` | Mandanten anlegen und deaktivieren, Körperschaften, Bürgerportal je Körperschaft, Mandantengruppen mit Leitstelle, gemeinsame Sitzungen | – |
 | `SESSION_STAMMDATEN_IMPORT.md` | Umstieg aus SessionNet und Übernahme der Stammdaten | – |
 | `SESSION_SITZUNGSFORMAT_LANDESRECHT.md` | Sitzungsformate und Landesrecht je Bundesland | – |
+| `PROTOKOLLDIENST.md` | Anbindung an einen Protokolldienst: Meldungen aus dem Cockpit, Entwürfe als Vorschlag für die Niederschrift | – |
 | `WORK.md` | Registrierung und Zugangs-Mails, Anträge digital einreichen, neues Design ausrollen | [Anträge einreichen](https://docs.mandari.de/work/antraege-einreichen/), [Fraktions-API](https://docs.mandari.de/work/fraktions-api/) |
 
 ## Abruf, Ablage und Betrieb

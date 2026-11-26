@@ -67,8 +67,8 @@ ist optional: Ohne Adresse holt Caddy die Zertifikate ohne Kontaktadresse. Platz
 
 Wer nur `docker-compose.yml`, `Caddyfile`, `scripts/init-website-db.sh` und eine `.env` herunterlädt (Kopf von
 `docker-compose.yml`, „Download Only“), richtet die Datenbank selbst ein. Die Anwendung migriert beim Start
-bewusst nicht (`mandari/docker-entrypoint.sh`, Abschnitt „Datenbank-Migration“): Worker, Ingestor und
-Orchestrator liefen sonst gegen ein leeres Schema. `scripts/init-website-db.sh` legt beim ersten Start von
+bewusst nicht (`mandari/docker-entrypoint.sh`, Abschnitt „Datenbank-Migration“): Worker und Ingestor
+liefen sonst gegen ein leeres Schema. `scripts/init-website-db.sh` legt beim ersten Start von
 PostgreSQL die Datenbank der Website an; fehlt die Datei, legt Docker an ihrer Stelle ein Verzeichnis an, und
 PostgreSQL bricht die Einrichtung ab.
 
@@ -166,18 +166,15 @@ Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, k
 Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
 Das interaktive `update.sh` für Selbst-Hoster nutzt dieselbe Anwendungsprüfung und rollt
 bei Fehlschlag ebenfalls zurück. Wie `deploy.sh` hält es die Worker (`WORKER_SERVICES`,
-Standard `ingestor minutes-orchestrator worker worker-heavy worker-live`) während aller Migrationen an und startet sie erst danach
+Standard `ingestor worker worker-heavy worker-live`) während aller Migrationen an und startet sie erst danach
 mit dem neuen Image – auch bei Abbruch oder Rückfall werden sie wieder gestartet. Die Worker für
 Ereignisse und Aufträge (`worker`, `worker-heavy`, `worker-live`) starten schon nach den Migrationen vor dem
 Umschalten der Anwendung (**Reihenfolge Migration → Worker → Web**), damit Aufträge der neuen
-Webprozesse sofort abgearbeitet werden. Der
-Protokoll-Orchestrator (`minutes-orchestrator`) nutzt das Anwendungs-Image und wechselt nach den
-Migrationen immer mit, auch wenn ein eigenes `WORKER_SERVICES` ihn nicht nennt; `--rollback`
-setzt ihn ebenfalls zurück. Dienste, die die Compose-Datei nicht kennt, überspringt das Skript.
+Webprozesse sofort abgearbeitet werden. Sie wechseln nach den Migrationen immer auf das neue Image, auch
+wenn ein eigenes `WORKER_SERVICES` sie nicht nennt; `--rollback` setzt sie ebenfalls zurück. Dienste, die
+die Compose-Datei nicht kennt, überspringt das Skript.
 
-Für `deploy.sh` gehört der Orchestrator ebenfalls in `WORKER_SERVICES`
-(z. B. `WORKER_SERVICES="worker worker-heavy worker-live ingestor minutes-orchestrator"`); sonst läuft er nach
-dem Deploy mit dem alten Image weiter. Ohne Angabe nimmt `deploy.sh` die Dienste `worker`, `worker-heavy`
+Ohne Angabe nimmt `deploy.sh` die Dienste `worker`, `worker-heavy`
 und `worker-live` (soweit die Compose-Datei sie kennt) und den Ingestor. Es startet alle `WORKER_SERVICES` nach der Migration **vor** der Anwendung
 (Migration → Worker → Web) und prüft sie danach wie bisher.
 
@@ -250,7 +247,7 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
 
 - [ ] Linux-Server mit mindestens 8 GB Arbeitsspeicher, 16 GB für mittlere Kommunen (siehe
   [README](README.md#installation) und [docs/LASTTESTS.md](docs/LASTTESTS.md)); die Speichergrenzen aller Dienste
-  in `docker-compose.yml` ergeben zusammen rund 10,5 GB
+  in `docker-compose.yml` ergeben zusammen rund 10,2 GB
 - [ ] Domain, deren DNS auf den Server zeigt
 
 ### Nach der Installation
@@ -322,20 +319,35 @@ Zurück auf ein Image vor `common.0007`, etwa `v0.11.0` (Issue #604): **vorher**
 auf die Systemeinstellungen. Der automatische Rückfall von `update.sh` macht das nicht von selbst. Images ab `common.0007`
 brauchen die Spalten nicht.
 
+Zurück auf ein Image vor dem Rückbau der Protokollierung (Migration `common.0016`): Sie hat die Tabellen des früheren
+Moduls `minutes` gelöscht und seine Einträge in `django_migrations` gestrichen. **Nach** dem Rückfall mit dem
+älteren Image `docker exec mandari python manage.py migrate minutes` ausführen; das legt die Tabellen leer wieder an.
+Ohne sie startet der Dienst `minutes-orchestrator` dieser Images nicht, und die Seiten des Moduls im Admin scheitern.
+
 ### Datenbank-Migration
 
 Migrationen laufen beim Update, nicht im Entrypoint: verträgliche vor dem Umschalten
-(`safemigrate`), `update.sh` spielt die übrigen danach ein. Ingestor, Protokoll-Orchestrator und die
-drei Worker stehen dabei, damit kein Durchlauf und kein Auftrag gegen ein Schema läuft, das sich gerade
-ändert; die Worker starten danach vor dem Ingestor. Von Hand ebenso (Containername folgt
+(`safemigrate`), `update.sh` spielt die übrigen danach ein. Ingestor und die drei Worker stehen dabei, damit
+kein Durchlauf und kein Auftrag gegen ein Schema läuft, das sich gerade ändert; die Worker starten danach vor dem
+Ingestor. Von Hand ebenso (Containername folgt
 `COMPOSE_PROJECT_NAME`, Vorgabe `mandari`):
 
 ```bash
-docker compose stop ingestor minutes-orchestrator worker worker-heavy worker-live
+docker compose stop ingestor worker worker-heavy worker-live
 docker exec mandari python manage.py migrate
 docker compose up -d worker worker-heavy worker-live
-docker compose up -d ingestor minutes-orchestrator
+docker compose up -d ingestor
 ```
+
+**Rückbau der Protokollierung (`common.0016`):** Der Dienst `minutes-orchestrator` entfällt. `update.sh` entfernt
+den Container vor den Post-Deploy-Migrationen (`docker rm -f <COMPOSE_PROJECT_NAME>-minutes-orchestrator`; fehlt er,
+ist das kein Fehler). Von Hand vor dem Update stoppen und entfernen (`docker compose stop minutes-orchestrator`,
+`docker compose rm -f minutes-orchestrator`; ohne den Dienst in der Compose-Datei `docker rm -f
+mandari-minutes-orchestrator`, Name nach `COMPOSE_PROJECT_NAME`) und ihn aus einer eigenen Compose-Datei und aus
+`WORKER_SERVICES` streichen. Liefe er weiter, bräche er nach dem Update ab, weil `common.0016` nach dem Umschalten
+seine Tabellen löscht (`Safe.after_deploy`). `update.sh` spielt sie mit den übrigen Migrationen ein; wer nur
+`deploy/scripts/deploy.sh` nutzt (es ruft `safemigrate`), führt danach einmal `docker exec mandari python manage.py
+migrate` aus.
 
 ### Sicherung
 
@@ -673,7 +685,7 @@ Server verteilen. Dafür gibt es drei Rollenprofile als Compose-Overrides unter 
 |----------|------------------------------------------------|---------------------------|
 | `data`   | PostgreSQL, Redis, Elasticsearch, optional PgBouncer | `deploy/roles/data.yml`   |
 | `web`    | Caddy, Anwendung (`mandari`), Website          | `deploy/roles/web.yml`    |
-| `worker` | Ingestor (Quellen-Sync), Protokoll-Orchestrator, Worker für Ereignisse, Aufträge und Zeitpläne (`worker`, `worker-heavy`, `worker-live`) | `deploy/roles/worker.yml` |
+| `worker` | Ingestor (Quellen-Sync), Worker für Ereignisse, Aufträge und Zeitpläne (`worker`, `worker-heavy`, `worker-live`) | `deploy/roles/worker.yml` |
 
 Die Basisdatei bleibt unverändert und profilfrei; die Rollen-Dateien schalten die jeweils
 fremden Dienste über ein nie aktiviertes Profil `aus` ab und biegen die Verbindungs-URLs
@@ -760,14 +772,12 @@ Cron-Eintrag steht. Drei Schutzmechanismen:
    `send_digest` und die übrigen Befehle der Zeitpläne.
    `--ohne-sperre` erzwingt den Lauf (Notfall). Die Sperre ist das Sicherheitsnetz, die
    Lease des Schedulers das Konzept; Host-Cron für diese Befehle gibt es nicht mehr.
-2. **Protokoll-Orchestrator** (`minutes_orchestrator`) hält dieselbe Sperre je Durchlauf;
-   ein zweiter Orchestrator überspringt Takte statt doppelt Rechenknoten anzulegen.
-3. **Ingestor-Daemon** nutzt eine PostgreSQL-Advisory-Sperre (`pg_try_advisory_lock`),
+2. **Ingestor-Daemon** nutzt eine PostgreSQL-Advisory-Sperre (`pg_try_advisory_lock`),
    die an seine Datenbankverbindung gebunden ist: Nur eine Instanz synchronisiert, eine
    zweite wartet (`Andere Ingestor-Instanz aktiv … – warte`) und übernimmt automatisch,
    sobald die erste endet. Kein veralteter Schlüssel, kein Aufräumen nach Abstürzen.
 
-Voraussetzung für 1 und 2 ist der gemeinsame Redis-Cache (`REDIS_URL`); mit dem lokalen
+Voraussetzung für 1 ist der gemeinsame Redis-Cache (`REDIS_URL`); mit dem lokalen
 Speicher-Cache (Entwicklung) schützt die Sperre nur innerhalb eines Prozesses.
 
 #### Nachweis: zwei worker-Profile erzeugen keine doppelten Läufe
@@ -860,7 +870,7 @@ Metriken sind je web-Server auszulesen (`docs/MONITORING.md`).
 
 `COMPOSE_PROFILES=pgbouncer` auf dem Datenserver startet PgBouncer im Transaktionsmodus (Port 6432 an
 `DATA_BIND`). Über ihn geht nur die Anwendung auf den web-Servern: dort `DATA_PG_PORT=6432` **und**
-`MANDARI_DB_PGBOUNCER=true`. Website, Ingestor, Orchestrator und Worker verbinden sich direkt mit PostgreSQL
+`MANDARI_DB_PGBOUNCER=true`. Website, Ingestor und Worker verbinden sich direkt mit PostgreSQL
 (Port 5432); für die Ereignistechnik setzt `worker.yml` dazu `EVENTS_DB_DIRECT_URL`
 (`postgresql://mandari:…@<DATA_HOST>:5432/mandari`). Transaktionsmodus, Verbindungsrechnung, Einschalten und
 Rückweg: „PgBouncer für die Webanwendung“ unten.
@@ -2008,7 +2018,6 @@ Obergrenze der Datenbank.
 | Worker (Dienst `worker`, alle Rollen ohne `ocr`/`ai`) | 22 | Pool 21 ohne Abonnements (mit drei Plätzen in `text`, Issue #1107), dazu die Direktverbindung des Weckrufs; Rechnung unten |
 | Worker für Texterkennung und KI (Dienst `worker-heavy`) | 7 | nur Rolle `tasks` mit `ocr` und `ai`; Rechnung unten |
 | Worker für Live-Übertragungen (Dienst `worker-live`) | 7 | nur Rolle `tasks` mit `live=2`; Rechnung unten |
-| Protokoll-Orchestrator (`minutes-orchestrator`) | 2 | ein Faden; der Pool hält `DB_POOL_MIN` offen |
 | Verwaltungsbefehle der Zeitpläne (eigene Prozesse im Dienst `worker`) | 8 | höchstens 4 gleichzeitig (Parallelität von `default`), je Prozess 1–2 Verbindungen; früher als Host-Cron im Anwendungscontainer |
 | OCR-Worker (optional) | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
@@ -2017,9 +2026,9 @@ Obergrenze der Datenbank.
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
 
 Die mitgelieferte `docker-compose.yml` hat keinen OCR-Worker; dort ergeben die Zeilen
-zusammen 101, davon 3 nur mit `TEXT_EXTRACTION_RUNNER=worker` (Plätze in `text`), sonst 98. Ihre Vorgabe
-`POSTGRES_MAX_CONNECTIONS=100` reicht also nur ohne die Dokumentkette knapp. Wer `TEXT_EXTRACTION_RUNNER=worker`,
-mehrere Anwendungsprozesse oder größere Pools einschaltet, erhöht `POSTGRES_MAX_CONNECTIONS` (etwa auf 150) und
+zusammen 99, davon 3 nur mit `TEXT_EXTRACTION_RUNNER=worker` (Plätze in `text`), sonst 96. Ihre Vorgabe
+`POSTGRES_MAX_CONNECTIONS=100` reicht also nur knapp. Wer mehrere Anwendungsprozesse oder größere Pools
+einschaltet, erhöht `POSTGRES_MAX_CONNECTIONS` (etwa auf 150) und
 zieht `POSTGRES_MEM_LIMIT` mit (Abschnitt „PostgreSQL: Grundeinstellungen“, „Die Falle bei `work_mem`“).
 
 Wer einen Dienst hinzufügt, trägt ihn hier ein **und** prüft die Summe. Mit PgBouncer vor der Anwendung ändert sich nur deren Zeile, siehe
@@ -2150,7 +2159,7 @@ Ein einzelner Prozess bei normaler Last braucht es nicht. Ohne Profil und Schalt
 | `events_after_restore` | direkt über `DB_DIRECT_URL` | `backup.sh` startet es bei der Wiederherstellung, wenn nur `postgres` läuft |
 | `worker`, `worker-heavy`, `worker-live` | direkt | Weckruf per `LISTEN`, lange Aufträge mit `.iterator()` |
 | `ingestor` | direkt | sitzungsgebundene Advisory-Sperre |
-| `minutes-orchestrator`, `website` | direkt | nicht auf den Transaktionsmodus eingestellt |
+| `website` | direkt | nicht auf den Transaktionsmodus eingestellt |
 
 Die Worker erben die Umgebung der Anwendung über den Anker `x-app-environment`; die Verbindung zu
 PgBouncer setzt nur der Dienst `mandari` selbst, die Worker behalten `DATABASE_URL` zu `postgres`.
@@ -2213,7 +2222,7 @@ Anwendungs-Pods deckt es nicht ab.
 **Server-Compose außerhalb des Repos:** Wer eine eigene Compose-Datei pflegt, übernimmt dieselben
 Punkte von Hand: den Dienst `pgbouncer` (nur im internen Netz), im Dienst `mandari` `DATABASE_URL`
 auf PgBouncer, `DB_PGBOUNCER=true`, `DB_DIRECT_URL` direkt zu PostgreSQL und gegebenenfalls
-`DB_POOL_MAX`; Worker, Ingestor, Orchestrator und Website behalten ihre Direktverbindung, auch wenn
+`DB_POOL_MAX`; Worker, Ingestor und Website behalten ihre Direktverbindung, auch wenn
 sie Umgebung von der Anwendung erben (YAML-Anker, `extends`).
 
 ### Verbindungsrechnung

@@ -335,7 +335,11 @@ def test_reiter_und_unterpunkte_je_rolle() -> None:
         assert [u["label"] for u in navi["unterpunkte"]] == ["Nummernkreise", "Mitzeichnung und Ämter"], name
     for name in ("datenschutz", "zugaenge"):
         navi = _navi(client.get(welt["seiten"][name]))
-        assert [u["label"] for u in navi["unterpunkte"]] == ["Datenschutz", "Einreichungs-Zugänge"], name
+        assert [u["label"] for u in navi["unterpunkte"]] == [
+            "Datenschutz",
+            "Einreichungs-Zugänge",
+            "Protokolldienst",
+        ], name
 
     # Die übrigen Standardrollen öffnen die Seiten nicht (Recht „Einstellungen verwalten“)
     for rolle in rollen():

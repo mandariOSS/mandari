@@ -27,15 +27,16 @@ Verschlüsselung folgt dieser Unterscheidung, statt pauschal alles zu verschlüs
 | Öffentliche Ratsinformationen (OParl-Bestand) | **keine** | Sind per Gesetz öffentlich; Verschlüsselung brächte keinen Schutz, aber Kosten bei Suche und Auslieferung |
 | Protokolle und Audit-Log | **keine Inhaltsverschlüsselung** | Enthalten bewusst keine personenbezogenen Inhalte; Schutz über Zugriffsrechte |
 
-Insgesamt sind **47 Felder** verschlüsselt:
+Insgesamt sind **48 Felder** verschlüsselt:
 
-- **38 mit dem Mandantenschlüssel**: Work (18, u. a. Sitzungsvorbereitung, Fraktionsarbeit,
-  Anträge mit dem Zustand des gemeinsamen Editors), Verwaltungs-RIS (15), SMTP-Passwort und
-  KI-Schlüssel der Organisation (2), Protokollassistenz (2) und die Mail-Warteschlange (1)
-- **7 mit dem Hauptschlüssel**: plattformweite Zugangsdaten, nämlich SMTP-Passwort und früherer
+- **41 mit dem Mandantenschlüssel**: Work (20, u. a. Sitzungsvorbereitung, Fraktionsarbeit, Termine,
+  Anträge mit dem Zustand des gemeinsamen Editors), Verwaltungs-RIS (18, davon 3 für die Anbindung an einen
+  Protokolldienst: dessen API-Schlüssel und Entwürfe der Niederschrift), SMTP-Passwort und
+  KI-Schlüssel der Organisation (2) und die Mail-Warteschlange (1)
+- **5 mit dem Hauptschlüssel**: plattformweite Zugangsdaten, nämlich SMTP-Passwort und früherer
   KI-Schlüssel der Systemeinstellungen (seit Issue #950 geleert und ungenutzt), die beiden
-  Schlüssel der KI-Einstellungen (Anbieter und Zusammenfassungen), GPU-Rechenknoten (2) und
-  Mails der Plattform in der Warteschlange (1)
+  Schlüssel der KI-Einstellungen (Anbieter und Zusammenfassungen) und Mails der Plattform in der
+  Warteschlange (1)
 - **2 für den zweiten Faktor**: TOTP-Geheimnis und Backup-Codes
 
 Dazu kommen die Mandantenschlüssel selbst, eingepackt mit dem Hauptschlüssel. Maßgeblich
@@ -135,8 +136,7 @@ ENCRYPTION_MASTER_KEY          (32 Byte, aus der Umgebung, nie in der Datenbank)
         │                     (in der Datenbank, mit vorangestellter Nonce)
         │                           └──► Feldinhalte, Zugangsdaten der Organisation
         │
-        ├── verschlüsselt ──► plattformweite Zugangsdaten (Systemeinstellungen, KI-Anbieter,
-        │                     GPU-Rechenknoten)
+        ├── verschlüsselt ──► plattformweite Zugangsdaten (Systemeinstellungen, KI-Anbieter)
         │
         └── abgeleitet ────► 2FA-Schlüssel ──► TOTP-Geheimnisse, Backup-Codes
 ```
@@ -146,8 +146,7 @@ abgeleitet (SHA-256 mit festem Kontext) und mit Fernet genutzt (AES-128-CBC mit
 HMAC-SHA256, ebenfalls authentifiziert). Er wechselt deshalb mit dem Hauptschlüssel.
 
 Der Hauptschlüssel liegt ausschließlich in der Umgebung der Container, die ihn brauchen
-(Anwendung, die Worker `worker`, `worker-heavy` und `worker-live`, die Steuerung der
-Rechenknoten und der Migrationsjob; Quelle ist die `.env` beziehungsweise das
+(Anwendung, die Worker `worker`, `worker-heavy` und `worker-live` und der Migrationsjob; Quelle ist die `.env` beziehungsweise das
 Kubernetes-Secret) und wird **nie** persistiert. Die
 Mandantenschlüssel liegen verschlüsselt in der Datenbank. Daraus folgt: Eine
 Kopie der Datenbank allein — etwa ein entwendetes Backup — gibt keine
@@ -223,7 +222,7 @@ gehört eine frische Datenbanksicherung dazu.
 2. Neuen Schlüssel erzeugen und getrennt vom Server sicher hinterlegen:
    `python -c "import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"`
 3. In der Umgebung aller Dienste, die `ENCRYPTION_MASTER_KEY` erhalten (Anwendung, Worker,
-   Steuerung der Rechenknoten, Migrationsjob), den neuen Schlüssel eintragen und den
+   Migrationsjob), den neuen Schlüssel eintragen und den
    bisherigen in `ENCRYPTION_MASTER_KEY_PREVIOUS`. Dienste neu starten. Ab jetzt wird mit
    dem neuen Schlüssel geschrieben, alles Bisherige bleibt lesbar.
    - Docker Compose: beide Variablen in der `.env`. Wer eine eigene Compose-Datei
@@ -271,7 +270,7 @@ Außerdem:
 
 - **Geheimnisse selbst erneuern.** Ein Schlüsselwechsel verschlüsselt dieselben Werte neu,
   er ändert sie nicht. Ist auch die Datenbank oder eine Sicherung in falsche Hände geraten,
-  gelten SMTP-Passwörter, KI-Schlüssel und die Zugangsdaten der Rechenknoten als bekannt
+  gelten SMTP-Passwörter und KI-Schlüssel als bekannt
   und werden beim jeweiligen Anbieter erneuert. Konten richten ihren zweiten Faktor neu
   ein (`python manage.py reset_two_factor <E-Mail> --reason "…"`).
 - **`SECRET_KEY` wechseln**, wenn er am selben Ort lag wie der Hauptschlüssel, etwa in

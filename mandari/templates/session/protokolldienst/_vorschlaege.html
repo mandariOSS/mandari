@@ -1,0 +1,43 @@
+{% comment %}
+Offene Vorschläge eines angebundenen Protokolldienstes in der Niederschrift (docs/PROTOKOLLDIENST.md), im neuen und im
+bisherigen Rahmen. Je TOP Entwurf, Beschlusstext und Ergebnis mit „Übernehmen“ und „Verwerfen“ (nur mit dem Recht,
+die Niederschrift zu bearbeiten, solange sie im Entwurf oder in der Prüfung ist). Die Texte entstehen mit KI beim
+Protokolldienst und werden erst mit der Übernahme Teil der Niederschrift (docs/KI.md). Kontext ProtocolDetailView:
+vorschlaege (protokolldienst.vorschlaege.Anzeige), vorschlaege_editierbar, meeting, tenant_slug.
+{% endcomment %}
+{% if vorschlaege %}
+<c-rahmen.abschnitt titel="Vorschläge des Protokolldienstes" titel_id="vorschlaege-titel" zusatz="{{ vorschlaege|length }}" data-testid="niederschrift-vorschlaege">
+    <c-rahmen.satz eng>Entwürfe aus dem angebundenen Protokolldienst, mit KI erstellt und dort freigegeben. Sie werden erst Teil der Niederschrift, wenn Sie sie übernehmen; vorhandene Texte des TOP ersetzt die Übernahme.</c-rahmen.satz>
+    <c-rahmen.liste class="mt-2">
+        {% for v in vorschlaege %}
+        <li class="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 py-3" data-testid="vorschlag">
+            <span class="pt-px tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ v.item.number }}</span>
+            <div class="min-w-0">
+                <p class="liste-name">{{ v.item.name }}{% if v.nichtoeffentlich %} <span class="inline-flex items-center gap-1 font-normal text-[0.8125rem] text-gray-600 dark:text-gray-400"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>nichtöffentlich</span>{% endif %}</p>
+                <p class="mt-0.5 liste-angaben">Fassung {{ v.vorschlag.revision }}{% if v.vorschlag.released_at %}, freigegeben am <span class="tabular-nums">{{ v.vorschlag.released_at|date:"d.m.Y H:i" }}</span> Uhr{% endif %}</p>
+                {% if v.abstimmung %}<p class="mt-1 text-[0.8125rem] text-gray-700 dark:text-gray-300 tabular-nums">{{ v.abstimmung }}</p>{% endif %}
+                {% if v.beschluss %}
+                <p class="mt-2 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 wrap-break-word" data-ai-generated="true"><span class="font-semibold">Beschluss:</span> {{ v.beschluss }}</p>
+                {% endif %}
+                {% if v.entwurf %}
+                <p class="mt-2 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line wrap-break-word" data-ai-generated="true">{{ v.entwurf }}</p>
+                {% endif %}
+                {% for hinweis in v.hinweise %}<c-form.hinweis>{{ hinweis }}</c-form.hinweis>{% endfor %}
+                {% if vorschlaege_editierbar %}
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <form method="post" action="{% url 'session:meeting_protocol_vorschlag' tenant_slug=tenant_slug meeting_id=meeting.id vorschlag_id=v.vorschlag.id entscheidung='uebernehmen' %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="secondary" size="sm" icon="check">Übernehmen<span class="sr-only"> für TOP {{ v.item.number }}</span></c-ui.button>
+                    </form>
+                    <form method="post" action="{% url 'session:meeting_protocol_vorschlag' tenant_slug=tenant_slug meeting_id=meeting.id vorschlag_id=v.vorschlag.id entscheidung='verwerfen' %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="secondary" size="sm" icon="x">Verwerfen<span class="sr-only"> für TOP {{ v.item.number }}</span></c-ui.button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+</c-rahmen.abschnitt>
+{% endif %}

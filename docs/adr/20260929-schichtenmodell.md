@@ -30,7 +30,7 @@ Schichten geschnitten:
 | Schicht | Inhalt | Pakete (Ziel) |
 |---|---|---|
 | 1 Zugänge | Menschen über Oberflächen, Maschinen über die offene Schnittstelle, Partnersysteme über Adapter | keine eigene Software |
-| 2 Fachmodule | Session, Work, Bürgerportal, künftig Data; besitzen ihre Fachdaten | `apps/session`, `apps/work`, `apps/portal`, `apps/minutes` |
+| 2 Fachmodule | Session, Work, Bürgerportal, künftig Data; besitzen ihre Fachdaten | `apps/session`, `apps/work`, `apps/portal` (Vermerk 24.11.2026: `apps/minutes` ist zurückgebaut, die Protokollierung ist ein eigener Dienst mit Anbindung an Session) |
 | 3 Datendrehscheibe | gemeinsames RIS-Modell und RIS-Bestand, Verträge, Sichten, Adapter, offene Schnittstelle | `hub/`, `insight_core` (nur RIS-Bestand), `ingestor/` |
 | 4 Plattform | Identität, Mandanten, Rechte, Audit, Verschlüsselung, Mail, Dateien, Ereignistechnik, Aufträge, Dokument- und KI-Dienste, Betrieb | `apps/events`, `apps/common`, `apps/accounts`, `apps/tenants` |
 
@@ -52,7 +52,7 @@ im Fachmodul.
 
 **Durchsetzung** mit `import-linter` in `mandari/pyproject.toml`, drei Verträge:
 
-- `layers`: `apps.session | apps.work | apps.portal | apps.minutes` über `hub | insight_core` über
+- `layers`: `apps.session | apps.work | apps.portal` über `hub | insight_core` über
   `apps.events | apps.common | apps.accounts | apps.tenants`
 - `independence`: `apps.session`, `apps.work`, `apps.portal`
 - `forbidden`: Die Plattform importiert weder Fachmodule noch die Drehscheibe.
