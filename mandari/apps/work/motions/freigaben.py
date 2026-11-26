@@ -52,6 +52,8 @@ MOTION_ACCESS_FIELDS = frozenset({"visibility", "folder", "author", "responsible
 #: Art des Downloads in der Änderungshistorie
 DOWNLOAD_PDF = "PDF-Export"
 DOWNLOAD_DOCX = "DOCX-Export"
+#: Weitere Formate (OpenDocument, Markdown, Text; #1584)
+DOWNLOAD_EXPORT = "Export (ODT, Markdown, Text)"
 DOWNLOAD_ATTACHMENT = "Anhang"
 
 #: Objekt-Beschreibung eines Gast-Downloads in der Änderungshistorie: ohne Titel (Issue #582)

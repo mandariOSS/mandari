@@ -34,6 +34,13 @@
 datum = 2026-11-26
 version = ""
 bereich = "dokumente"
+titel = "Dokumente laden Sie jetzt auch als OpenDocument, Markdown und Text herunter."
+text = """Im Editor finden Sie unter „Datei“ alle Formate zum Herunterladen: PDF, Word, OpenDocument (.odt), Markdown und Text. Word und OpenDocument übernehmen Schriften, Fett und Kursiv, Listen, Tabellen, Bilder und Links. „Drucken“ (Strg+P) druckt genau die Seiten, die Sie im Editor sehen."""
+
+[[eintrag]]
+datum = 2026-11-26
+version = ""
+bereich = "dokumente"
 titel = "Die KI macht Vorschläge am Rand, statt Ihren Text zu ändern."
 text = """Markieren Sie eine Stelle und wählen Sie im Auswahlfeld „KI“, etwa „Kürzen“ oder „Rechtschreibung korrigieren“. Das Ergebnis erscheint als „Änderungsvorschlag der KI“ am Rand; Sie oder Ihre Fraktion nehmen ihn an oder lehnen ihn ab. Auch Antworten im KI-Assistenten legen Sie mit „Als Vorschlag“ an den Rand. Direkt einsetzen geht weiter über „Direkt übernehmen“."""
 

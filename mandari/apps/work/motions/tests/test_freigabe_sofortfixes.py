@@ -237,13 +237,13 @@ def test_neuer_editor_ohne_herunterladen_ohne_export_im_menue(
         antwort = client.get(editor_url)
         assert [t.name for t in antwort.templates][0] == "work/motions/editor_neu.html"
         seite = antwort.content.decode()
-        assert export_url in seite and "Herunterladen als Word" in seite and anhang_url in seite
+        assert export_url in seite and "Word (.docx)" in seite and anhang_url in seite
 
         freigabe.allow_download = False
         cast(Any, freigabe).save()
 
         seite = client.get(editor_url).content.decode()
-        assert export_url not in seite and "Herunterladen als Word" not in seite and anhang_url not in seite
+        assert export_url not in seite and "Word (.docx)" not in seite and anhang_url not in seite
         assert "anlage.pdf" in seite
 
 

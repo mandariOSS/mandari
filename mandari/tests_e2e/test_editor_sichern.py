@@ -8,7 +8,7 @@ Mit Live-Zusammenarbeit (ASGI-Testserver mit In-Memory-Channel-Layer, wie tests_
   und der Editor gilt erst danach als gespeichert – eine Bestätigung der Verbindung (yjs_saved) allein reicht nicht.
 - „Freigeben“ sichert vorher den gemeinsamen Stand. Das auslösende Fenster bekommt keine Aufforderung zum Neuladen,
   das andere schon; die letzten Eingaben stehen in der gesperrten Fassung.
-- „Herunterladen als Word“ sichert vorher und lädt die Datei, ohne die Seite zu verlassen.
+- „Herunterladen → Word (.docx)“ sichert vorher und lädt die Datei, ohne die Seite zu verlassen.
 - „Vorschau (PDF)“, Links auf andere Seiten und der Teilen-Dialog sichern vorher und gehen ohne Rückfrage.
 
 Ohne Verbindung (WSGI-Live-Server, Solo-Modus): Federführung und Zustimmen aus der Seitenleiste bzw. Infozeile sichern
@@ -481,7 +481,7 @@ class TestMitVerbindung:
         tippen(page, " Für die Word-Datei.")
 
         with page.expect_download(timeout=20000) as download:
-            datei_menue(page, "Herunterladen als Word").click()
+            datei_menue(page, "Word (.docx)").click()
 
         assert "Für die Word-Datei." in docx_text(Path(download.value.path()))
         assert "Für die Word-Datei." in decrypted_content(dokument)

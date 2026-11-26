@@ -40,6 +40,8 @@ async function setzen(): Promise<void> {
   const zweiter = await satz.jetzt()
   window.satzSeiten = (zweiter ?? ergebnis).seiten
   window.satzFertig = true
+  // „Drucken …“ im Editor: Druckdialog des Browsers mit genau diesen Seiten
+  if (new URLSearchParams(window.location.search).get('drucken') === '1') window.print()
 }
 
 setzen().catch((err: unknown) => {

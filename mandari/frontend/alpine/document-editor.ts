@@ -14,7 +14,13 @@ import { type AiTarget, applyAiSuggestion, captureAiTarget, textOfRange } from '
 import type { CollabUser } from '../editor/collaboration'
 import type { FormatState } from '../editor/index'
 import { type GliederungsEintrag, gliederungAus, randAnordnen, zuUeberschriftSpringen } from '../editor/rand'
-import { entscheidungAusfuehren, inEinemAbsatz, vorschlagPasst, vorschlagUebernehmen } from '../editor/vorschlag'
+import {
+  entscheidungAusfuehren,
+  inEinemAbsatz,
+  markenBereich,
+  vorschlagPasst,
+  vorschlagUebernehmen,
+} from '../editor/vorschlag'
 import { defineComponent } from '../js/alpine/component'
 import { confirmAction } from '../js/alpine/confirm-dialog'
 import { showToast } from '../js/alpine/toast'
@@ -527,6 +533,9 @@ export const documentEditor = defineComponent(() => {
     zoomProzent: 100,
     zoomStufen: ZOOM_STUFEN,
     zuHoch: 0,
+    /** Vorschläge der Reihe nach prüfen (Leiste „Vorschlag x von y“) und Ansage für Bildschirmleser (#1584) */
+    pruefen: false,
+    ansage: '',
     /** KI an der Markierung: Menü offen, Anfrage läuft (#1584) */
     kiMenueOffen: false,
     kiArbeitet: false,
@@ -621,6 +630,22 @@ export const documentEditor = defineComponent(() => {
           } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f') {
             e.preventDefault()
             this.openSearch()
+          } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'p' && this.ansicht === 'neu') {
+            // Strg+P druckt die Seiten wie im PDF (Druckansicht der Satz-Kette, #1584), nicht die Oberfläche
+            const druck = document.querySelector<HTMLAnchorElement>('a[href*="format=druck"]')
+            if (druck) {
+              e.preventDefault()
+              void this.vorschauOeffnen(druck.href)
+            }
+          } else if (
+            e.altKey &&
+            !e.ctrlKey &&
+            (e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
+            this.pruefLeisteSichtbar
+          ) {
+            // Alt+↓/↑: nächster bzw. vorheriger Vorschlag (#1584)
+            e.preventDefault()
+            this.vorschlagGehe(e.key === 'ArrowDown' ? 1 : -1)
           } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
             // Strg+K = Link einfügen (nur wenn der Editor den Fokus hat)
             if (editor?.isFocused) {
@@ -1968,7 +1993,7 @@ export const documentEditor = defineComponent(() => {
       window.location.href = ziel
     },
 
-    /** „Herunterladen als Word“ und andere Dateien: erst sichern, dann laden, ohne die Seite zu verlassen (#1018) */
+    /** „Herunterladen“ (PDF, Word, ODT, Markdown, Text): erst sichern, dann laden, ohne die Seite zu verlassen (#1018) */
     async herunterladen(url: string): Promise<void> {
       this.menueSchliessen()
       const gesichert = await this._vorNeuladenSichern(
@@ -2938,14 +2963,18 @@ export const documentEditor = defineComponent(() => {
      * Vorschlag annehmen oder ablehnen. Annehmen prüft zuerst, ob die Stelle noch den markierten Text trägt,
      * speichert dann die Entscheidung und ersetzt die Stelle. Hat sich die Stelle geändert, wird nichts ersetzt.
      */
-    async vorschlagEntscheiden(comment: InlineComment, annehmen: boolean): Promise<void> {
-      if (this.randSendet) return
+    /**
+     * Vorschlag annehmen oder ablehnen. Ergebnis: die wirksame Entscheidung des Servers (true = angenommen), auch wenn
+     * eine andere Sitzung schon anders entschieden hatte; null, wenn nichts gespeichert wurde.
+     */
+    async vorschlagEntscheiden(comment: InlineComment, annehmen: boolean): Promise<boolean | null> {
+      if (this.randSendet) return null
       if (annehmen && (!editor || !vorschlagPasst(editor, comment.mark_id, comment.selected_text))) {
         showToast(
           'Die Stelle wurde inzwischen geändert. Der Vorschlag lässt sich nicht mehr übernehmen; lehnen Sie ihn ab oder ändern Sie den Text von Hand.',
           'warning',
         )
-        return
+        return null
       }
       this.randSendet = true
       try {
@@ -2957,7 +2986,7 @@ export const documentEditor = defineComponent(() => {
         const antwort: JsonResponse = await response.json().catch(() => ({}))
         if (!antwort.success) {
           showToast('Die Entscheidung ließ sich nicht speichern.', 'error')
-          return
+          return null
         }
         comment.is_resolved = true
         if (!entscheidungAusfuehren(antwort, annehmen)) {
@@ -2970,7 +2999,7 @@ export const documentEditor = defineComponent(() => {
           )
           if (this.activeCommentId === comment.mark_id) this.activeCommentId = null
           await this.reloadCommentsSidebar()
-          return
+          return gespeichert
         }
         comment.vorschlag_angenommen = annehmen
         if (editor) {
@@ -2989,11 +3018,103 @@ export const documentEditor = defineComponent(() => {
         }
         if (this.activeCommentId === comment.mark_id) this.activeCommentId = null
         await this.reloadCommentsSidebar()
+        return annehmen
       } catch {
         showToast('Die Entscheidung ließ sich nicht speichern.', 'error')
+        return comment.is_resolved ? annehmen : null
       } finally {
         this.randSendet = false
         this.randNeuAnordnen()
+      }
+    },
+
+    // ---- Vorschläge der Reihe nach prüfen (Issue #1584) ----
+
+    /** Offene Änderungsvorschläge in der Reihenfolge ihrer Stellen im Text */
+    get offeneVorschlaege(): InlineComment[] {
+      const offen = this.randKarten.filter((c) => this.istVorschlag(c))
+      if (!editor) return offen
+      const doc = editor.state.doc
+      const lage = new Map(
+        offen.map((c) => [c.mark_id, markenBereich(doc, c.mark_id)?.from ?? Number.MAX_SAFE_INTEGER]),
+      )
+      return [...offen].sort((a, b) => (lage.get(a.mark_id) ?? 0) - (lage.get(b.mark_id) ?? 0))
+    },
+
+    /** Position des aktiven Vorschlags in der Liste (0-basiert), -1 ohne */
+    get vorschlagPosition(): number {
+      return this.offeneVorschlaege.findIndex((c) => c.mark_id === this.activeCommentId)
+    },
+
+    /** Leiste „Vorschlag x von y“: beim Prüfen oder wenn ein Vorschlag aktiv ist */
+    get pruefLeisteSichtbar(): boolean {
+      return (
+        this.ansicht === 'neu' && this.offeneVorschlaege.length > 0 && (this.pruefen || this.vorschlagPosition >= 0)
+      )
+    },
+
+    _zuVorschlag(comment: InlineComment): void {
+      this.randKarteAktivieren(comment.mark_id)
+      const marke = document.querySelector<HTMLElement>(`[data-comment-id="${CSS.escape(comment.mark_id)}"]`)
+      marke?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      const liste = this.offeneVorschlaege
+      this.ansage = `Vorschlag ${liste.indexOf(comment) + 1} von ${liste.length}: ${this.vorschlagZeile(comment)}`
+    },
+
+    /** Prüfen starten: zum ersten offenen Vorschlag */
+    pruefenStarten(): void {
+      this.menueSchliessen()
+      const erster = this.offeneVorschlaege[0]
+      if (!erster) {
+        showToast('Es gibt keine offenen Änderungsvorschläge.', 'info')
+        return
+      }
+      this.pruefen = true
+      this._zuVorschlag(erster)
+    },
+
+    pruefenBeenden(): void {
+      this.pruefen = false
+      this.activeCommentId = null
+    },
+
+    vorschlagGehe(richtung: 1 | -1): void {
+      const liste = this.offeneVorschlaege
+      if (!liste.length) return
+      const jetzt = this.vorschlagPosition
+      const ziel = jetzt < 0 ? (richtung > 0 ? 0 : liste.length - 1) : (jetzt + richtung + liste.length) % liste.length
+      this.pruefen = true
+      this._zuVorschlag(liste[ziel])
+    },
+
+    /** Den aktiven Vorschlag annehmen oder ablehnen und zum nächsten offenen weitergehen */
+    async vorschlagAktuellEntscheiden(annehmen: boolean): Promise<void> {
+      const liste = this.offeneVorschlaege
+      const index = this.vorschlagPosition
+      const aktuell = liste[index]
+      if (!aktuell) return
+      if (annehmen ? !this.darfAnnehmen() : !this.darfAblehnen(aktuell)) {
+        showToast(
+          annehmen
+            ? 'Annehmen darf, wer das Dokument bearbeiten darf.'
+            : 'Ablehnen darf, wer das Dokument bearbeiten darf oder den Vorschlag gemacht hat.',
+          'info',
+        )
+        return
+      }
+      const naechster = liste[index + 1] ?? liste[index - 1] ?? null
+      // Angesagt wird, was der Server gespeichert hat (eine andere Sitzung kann schon anders entschieden haben)
+      const wirksam = await this.vorschlagEntscheiden(aktuell, annehmen)
+      if (wirksam === null || !aktuell.is_resolved) return
+      const ergebnis = wirksam ? 'Angenommen' : 'Abgelehnt'
+      const rest = this.offeneVorschlaege.length
+      if (naechster && !naechster.is_resolved) {
+        this._zuVorschlag(naechster)
+        this.ansage = `${ergebnis}. ${this.ansage}`
+      } else {
+        this.pruefen = rest > 0
+        this.ansage = `${ergebnis}. ${rest ? `${rest} Vorschläge offen.` : 'Alle Vorschläge sind entschieden.'}`
+        if (!rest) showToast('Alle Vorschläge sind entschieden.', 'success')
       }
     },
 
