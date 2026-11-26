@@ -57,7 +57,9 @@ export class SatzSteuerung {
   private readonly beiGroesse = () => this.planen()
   /** Ein Bild ohne feste Höhe ändert beim Laden den Satz */
   private readonly beiBild = (event: Event) => {
-    if ((event.target as Element | null)?.tagName === 'IMG') this.planen()
+    const ziel = event.target as Element | null
+    // Nur Bilder im Text: Briefpapier und Logo in den Bögen entstehen bei jedem Lauf neu (sonst eine Schleife)
+    if (ziel?.tagName === 'IMG' && this.eingehaengt() && this.text.contains(ziel)) this.planen()
   }
 
   constructor(

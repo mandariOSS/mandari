@@ -95,6 +95,8 @@ export interface InlineComment {
   vorschlag_angenommen?: boolean | null
   /** Eigene Notiz zum Vorschlag (leer, wenn der Kommentartext nur den Vorschlag beschreibt) */
   notiz?: string
+  /** Den Vorschlag hat der KI-Assistent formuliert (#1584) */
+  ki?: boolean
 }
 
 export interface DocumentEditorConfig {
@@ -525,6 +527,9 @@ export const documentEditor = defineComponent(() => {
     zoomProzent: 100,
     zoomStufen: ZOOM_STUFEN,
     zuHoch: 0,
+    /** KI an der Markierung: Menü offen, Anfrage läuft (#1584) */
+    kiMenueOffen: false,
+    kiArbeitet: false,
     /** Gruppen der Werkzeugleiste, die im Menü „Mehr“ stehen (werkzeugBeobachten) */
     wzVerborgen: [] as string[],
     /** Lage des geöffneten Menüs der Werkzeugleiste (fest über der Seite) */
@@ -2720,15 +2725,18 @@ export const documentEditor = defineComponent(() => {
       this.vorschlagNotiz = ''
     },
 
-    /** Vorschlag als Kommentar an der Stelle speichern; der Text selbst bleibt bis zur Entscheidung unverändert */
-    async vorschlagSenden(): Promise<void> {
-      if (this.vorschlagSendet || !editor || !config.urls.comment) return
+    /**
+     * Vorschlag als Kommentar an der Stelle speichern; der Text selbst bleibt bis zur Entscheidung unverändert.
+     * ``ki``: Den Vorschlag hat der KI-Assistent formuliert (#1584). true, wenn er gespeichert ist.
+     */
+    async vorschlagSenden(ki = false): Promise<boolean> {
+      if (this.vorschlagSendet || !editor || !config.urls.comment) return false
       const alt = this.inlineSelectedText
       // Ein Vorschlag gilt innerhalb eines Absatzes: Zeilenumbrüche werden zu Leerzeichen
       const neu = this.vorschlagText.replace(/\s*\n\s*/g, ' ')
       if (neu === alt) {
         showToast('Der Vorschlag ändert nichts an der markierten Stelle.', 'info')
-        return
+        return false
       }
       this.vorschlagSendet = true
       // Marke SYNCHRON setzen, bevor sich Positionen ändern (wie bei Kommentaren)
@@ -2752,7 +2760,9 @@ export const documentEditor = defineComponent(() => {
         selection_start: String(this._selectionFrom),
         selection_end: String(this._selectionTo),
         mark_id: markId,
+        ...(ki ? { ki: '1' } : {}),
       })
+      let gespeichert = false
       const zuruecknehmen = (): void => {
         if (markGesetzt && editor) editor.commands.unsetCommentMark(markId)
       }
@@ -2773,8 +2783,10 @@ export const documentEditor = defineComponent(() => {
             replies: [],
             vorschlag: neu,
             vorschlag_angenommen: null,
+            ki,
             notiz,
           })
+          gespeichert = true
           this.vorschlagAbbrechen()
           this.activeCommentId = markId
           await this.reloadCommentsSidebar()
@@ -2790,6 +2802,122 @@ export const documentEditor = defineComponent(() => {
         showToast('Der Vorschlag ließ sich nicht speichern. Bitte versuchen Sie es erneut.', 'error')
       }
       this.vorschlagSendet = false
+      return gespeichert
+    },
+
+    // ---- KI als Änderungsvorschlag (Issue #1584) ----
+    // Ergebnisse des KI-Assistenten überschreiben den Text nicht mehr: Sie stehen als Änderungsvorschlag am Rand,
+    // gekennzeichnet als „Änderungsvorschlag der KI“, und Menschen nehmen sie an oder lehnen sie ab. Direkt einsetzen
+    // bleibt über die Vorschau möglich („Direkt übernehmen“).
+
+    /** Antwort der KI als Text eines Absatzes (Vorschläge gelten innerhalb eines Absatzes) */
+    _kiAlsText(inhalt: string): string {
+      const html = bereinigeKiHtml(inhalt.replace(/\n/g, '<br>'))
+      const dokument = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
+      for (const umbruch of Array.from(dokument.querySelectorAll('br, p, li, div'))) umbruch.append(' ')
+      return (dokument.body.textContent ?? '').replace(/\s+/g, ' ').trim()
+    },
+
+    /** Vorschlag der KI für die gemerkte Stelle anlegen; false, wenn es nicht ging (mit Hinweis) */
+    async _kiAlsVorschlag(target: AiTarget, inhalt: string): Promise<boolean> {
+      if (!editor || target.editor !== editor || editor.isDestroyed) return false
+      const from = target.from.position
+      const to = target.to.position
+      if (from >= to || textOfRange(editor.state.doc, from, to) !== target.text) {
+        showToast(
+          'Die markierte Stelle wurde inzwischen geändert. Markieren Sie sie neu und fragen Sie erneut.',
+          'warning',
+        )
+        return false
+      }
+      if (!inEinemAbsatz(editor.state.doc, from, to)) {
+        showToast(
+          'Ein Vorschlag gilt innerhalb eines Absatzes. Wählen Sie „Direkt übernehmen“ oder markieren Sie weniger Text.',
+          'info',
+        )
+        return false
+      }
+      const neu = this._kiAlsText(inhalt)
+      if (!neu || neu === target.text) {
+        showToast('Die KI schlägt für diese Stelle keine Änderung vor.', 'info')
+        return false
+      }
+      this._selectionFrom = from
+      this._selectionTo = to
+      this.inlineSelectedText = target.text
+      this.vorschlagText = neu
+      this.vorschlagNotiz = ''
+      return this.vorschlagSenden(true)
+    },
+
+    /** „Als Vorschlag“ an einer Antwort im KI-Bereich */
+    async kiNachrichtAlsVorschlag(index: number): Promise<void> {
+      const nachricht = this.chatMessages[index]
+      const target = nachricht?.targetId == null ? undefined : aiTargets.get(nachricht.targetId)
+      if (!nachricht?.actionContent || !target) {
+        showToast(
+          'Dieser Vorschlag lässt sich nicht mehr anlegen. Markieren Sie die Stelle und fragen Sie erneut.',
+          'warning',
+        )
+        return
+      }
+      if (await this._kiAlsVorschlag(target, nachricht.actionContent)) {
+        nachricht.hasAction = false
+        aiTargets.delete(nachricht.targetId as number)
+        target.release()
+        this.chatMessages.push({
+          role: 'ai',
+          content: 'Der Vorschlag steht jetzt am Rand und wartet auf Ihre Entscheidung.',
+        })
+      }
+    },
+
+    /**
+     * KI an der Markierung (Menü am Auswahlfeld): Die KI bearbeitet nur die markierte Stelle, das Ergebnis erscheint
+     * als Änderungsvorschlag am Rand.
+     */
+    async kiAnStelle(anweisung: string): Promise<void> {
+      if (!editor || this.kiArbeitet || !config.urls.ai) return
+      const target = captureAiTarget(editor)
+      this.kiMenueOffen = false
+      this.hideCommentPopup()
+      if (!target) {
+        showToast('Markieren Sie zuerst die Stelle, die die KI bearbeiten soll.', 'info')
+        return
+      }
+      this.kiArbeitet = true
+      try {
+        const response = await fetch(config.urls.ai, {
+          method: 'POST',
+          headers: formHeaders(),
+          body: new URLSearchParams({
+            action: 'improve',
+            text: target.text,
+            instruction: anweisung,
+            motion_type: this.motionType,
+            selected_text: target.text,
+            history: '[]',
+          }),
+        })
+        const daten: JsonResponse = await response.json().catch(() => ({}))
+        if (daten.quota) {
+          this.aiQuotaLimit = daten.quota.limit === undefined ? this.aiQuotaLimit : daten.quota.limit
+          this.aiQuotaUsed = daten.quota.used === undefined ? this.aiQuotaUsed : daten.quota.used
+        }
+        if (!daten.success || !daten.content) {
+          showToast(
+            typeof daten.error === 'string' ? daten.error : 'Die KI konnte die Stelle gerade nicht bearbeiten.',
+            'error',
+          )
+        } else {
+          await this._kiAlsVorschlag(target, String(daten.content))
+        }
+      } catch {
+        showToast('Die Verbindung zur KI ist fehlgeschlagen. Bitte versuchen Sie es erneut.', 'error')
+      } finally {
+        target.release()
+        this.kiArbeitet = false
+      }
     },
 
     istVorschlag(comment: InlineComment): boolean {
@@ -3026,7 +3154,8 @@ export const documentEditor = defineComponent(() => {
       if (!editor || this.modus === 'ansehen') return
       const basis = this._satzKonfig()?.schrift.groesse_pt
       const kette = editor.chain().focus()
-      if (pt === null || pt === basis) kette.unsetFontSize().run()
+      // Ohne Seitenansicht erbt der Text die Grundgröße nicht (Fließtext in Bildschirmgröße): dann ausdrücklich setzen
+      if (pt === null || (pt === basis && this.seitenansicht)) kette.unsetFontSize().run()
       else kette.setFontSize(`${pt}pt`).run()
       this.menueSchliessen()
     },

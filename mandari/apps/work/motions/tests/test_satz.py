@@ -365,3 +365,63 @@ def test_briefpapier_speichert_schrift_des_satzes(client: Any, org: Any, make_me
     assert OrganizationLetterhead.objects.get(organization=org, name="Neu").font_family == "Carlito"
     client.post(url, {"name": "Fremd", "kind": "generated", "font_family": "Comic Sans MS", "font_size": "11"})
     assert OrganizationLetterhead.objects.get(organization=org, name="Fremd").font_family == "Arimo"
+
+
+# --- KI als Änderungsvorschlag ------------------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_ki_vorschlag_wird_gekennzeichnet(client: Any, org: Any, make_member: Any) -> None:
+    mitglied = make_member(org, ["motions.view", "motions.edit", "motions.comment"], email="ki@example.org")
+    motion = _dokument(org, mitglied, "<p>Alter Text</p>")
+    client.force_login(mitglied.user)
+    url = reverse("work:document_comment", kwargs={"org_slug": org.slug, "motion_id": motion.id})
+    kopf = {"HTTP_X_REQUESTED_WITH": "XMLHttpRequest"}
+    daten = {"selected_text": "Alter Text", "vorschlag": "Neuer Text", "content": "", "ki": "1"}
+    antwort = client.post(url, daten, **kopf).json()
+    assert antwort["success"] and antwort["comment"]["ki"] is True
+    # Ein gewöhnlicher Kommentar ist nie ein KI-Vorschlag, auch wenn das Kennzeichen mitkommt
+    antwort = client.post(url, {"selected_text": "Alter Text", "content": "Gut so", "ki": "1"}, **kopf).json()
+    assert antwort["comment"]["ki"] is False
+    assert list(motion.comments.order_by("created_at").values_list("ki_erzeugt", flat=True)) == [True, False]
+
+
+def test_schriftnamen_fuer_den_bisherigen_weg() -> None:
+    # Word: Schriften des Satzes werden zum Office-Namen, frühere Office-Namen bleiben (Georgia hat keinen Ersatz
+    # mit gleichen Zeichenbreiten)
+    assert schriften.office_name("Tinos") == "Times New Roman"
+    assert schriften.office_name("carlito") == "Calibri"
+    assert schriften.office_name("Georgia") == "Georgia"
+    assert schriften.office_name("Arial") == "Arial"
+    assert schriften.office_name("Open Sans") == "Open Sans"
+    # xhtml2pdf: eine Familie, die es ohne Datei kennt, nach der Art der Schrift
+    assert schriften.fuer_xhtml2pdf("Georgia") == "Times New Roman"
+    assert schriften.fuer_xhtml2pdf("Tinos") == "Times New Roman"
+    assert schriften.fuer_xhtml2pdf("Calibri") == "Helvetica"
+    assert schriften.fuer_xhtml2pdf("Cousine") == "Courier"
+
+
+@pytest.mark.django_db
+def test_unlesbare_druckdatei_faellt_zurueck(
+    org: Any, autorin: Any, chromium: type[_Client], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def kaputt() -> bytes:
+        raise druck.DruckNichtMoeglichError("nicht lesbar")
+
+    monkeypatch.setattr(druck, "druck_skript", kaputt)
+    with override_settings(GOTENBERG_URL="http://gotenberg:3000"):
+        pdf = motion_export_service.export_to_pdf(_dokument(org, autorin, "<p>Text</p>"))
+    assert pdf.startswith(b"%PDF") and chromium.anfragen == []
+
+
+def test_statische_datei_nicht_lesbar(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    datei = tmp_path / "x.css"
+    datei.write_text("x", encoding="utf-8")
+    monkeypatch.setattr("django.contrib.staticfiles.finders.find", lambda _pfad: str(datei))
+
+    def verweigert(_self: Any) -> bytes:
+        raise PermissionError("verweigert")
+
+    monkeypatch.setattr(Path, "read_bytes", verweigert)
+    with pytest.raises(druck.DruckNichtMoeglichError):
+        druck._statisch("css/x.css")

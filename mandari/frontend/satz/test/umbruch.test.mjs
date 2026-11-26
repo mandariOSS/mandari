@@ -185,6 +185,13 @@ test('Überschrift vor einem dreizeiligen Absatz, der nicht mehr ganz passt, wan
   assert.equal(r.luecken[0].pos, k.anker)
 })
 
+test('Folge zweier Überschriften wandert gemeinsam mit dem Absatz', () => {
+  const h1 = kopf(800)
+  const h2 = kopf(830)
+  const r = umbrechen([absatz(100, 35), h1, h2, absatz(860, 3)], g)
+  assert.equal(r.luecken[0].pos, h1.anker)
+})
+
 let fehler = 0
 for (const [stand, name, err] of ergebnisse) {
   console.log(`${stand}  ${name}`)

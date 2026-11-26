@@ -72,7 +72,10 @@ export function umbrechen(bloecke: MessBlock[], g: Seitengeometrie): Umbruch {
 
     if (block.unten + versatz <= grenze) {
       // Passt. Überschrift: Bleibt vom nächsten Block nichts auf dieser Seite, mit ihm weiterwandern.
-      const naechster = bloecke[i + 1]
+      // Folgen mehrere Überschriften, zählt der erste Block danach (die ganze Folge bleibt beisammen)
+      let j = i + 1
+      while (bloecke[j]?.mitNaechstem) j += 1
+      const naechster = bloecke[j]
       if (block.mitNaechstem && naechster && naechster.art !== 'umbruch' && !amSeitenanfang) {
         const zeilen = naechster.zeilen
         // Teilbar ist ein Absatz erst ab 2 + 2 Zeilen: darunter muss er ganz auf die Seite passen

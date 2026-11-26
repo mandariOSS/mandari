@@ -2077,6 +2077,8 @@ class MotionComment(models.Model):
     vorschlag = models.TextField(null=True, blank=True, default=None, verbose_name="Vorgeschlagener Text")
     # Entscheidung über den Vorschlag: ``None`` = offen, ``True`` = angenommen, ``False`` = abgelehnt
     vorschlag_angenommen = models.BooleanField(null=True, blank=True, default=None, verbose_name="Vorschlag angenommen")
+    # Den Vorschlag hat der KI-Assistent formuliert (Issue #1584); angelegt hat ihn ``author``, entscheiden tun Menschen
+    ki_erzeugt = models.BooleanField(default=False, verbose_name="Von der KI vorgeschlagen")
 
     # Content
     content = models.TextField(verbose_name="Kommentar")

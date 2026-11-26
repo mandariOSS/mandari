@@ -304,6 +304,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                         # Änderungsvorschlag (#856): Ersatz für die Stelle, None = gewöhnlicher Kommentar
                         "vorschlag": comment.vorschlag,
                         "vorschlag_angenommen": comment.vorschlag_angenommen,
+                        # Vom KI-Assistenten formuliert (#1584): am Rand als KI-Vorschlag gekennzeichnet
+                        "ki": comment.ki_erzeugt,
                         "notiz": vorschlaege.notiz(comment),
                         "author_name": member_name(comment.author),
                         "author_initials": member_initials(comment.author),
