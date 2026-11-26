@@ -34,6 +34,12 @@ export interface SatzSteuerungOptionen {
 
 const SAMMELN_MS = 120
 
+/** Bilder im Text laden lassen, bevor gemessen wird (sonst fehlt ihre Höhe); Fehler zählen als geladen */
+function bilderLaden(text: HTMLElement): Promise<unknown> {
+  const offen = Array.from(text.querySelectorAll('img')).filter((img) => !img.complete)
+  return Promise.all(offen.map((img) => img.decode().catch(() => undefined)))
+}
+
 export class SatzSteuerung {
   private konfig: SatzKonfig | null = null
   private geometrie: Seitengeometrie | null = null
@@ -49,6 +55,10 @@ export class SatzSteuerung {
   }
   private readonly beiSchrift = () => this.planen()
   private readonly beiGroesse = () => this.planen()
+  /** Ein Bild ohne feste Höhe ändert beim Laden den Satz */
+  private readonly beiBild = (event: Event) => {
+    if ((event.target as Element | null)?.tagName === 'IMG') this.planen()
+  }
 
   constructor(
     private readonly editor: Editor,
@@ -99,6 +109,8 @@ export class SatzSteuerung {
       this.editor.on('transaction', this.beiAenderung)
       document.fonts?.addEventListener('loadingdone', this.beiSchrift)
       window.addEventListener('resize', this.beiGroesse)
+      // load steigt nicht auf: im Erfassen hören
+      this.rahmen.addEventListener('load', this.beiBild, true)
       this.boegen = new Boegen(this.rahmen, !!this.optionen.druck, this.optionen.pdfjs)
       this.rahmen.classList.add('satz-aktiv')
       this.text.classList.add('dokument-satz')
@@ -116,6 +128,7 @@ export class SatzSteuerung {
     this.editor.off('transaction', this.beiAenderung)
     document.fonts?.removeEventListener('loadingdone', this.beiSchrift)
     window.removeEventListener('resize', this.beiGroesse)
+    this.rahmen.removeEventListener('load', this.beiBild, true)
     window.clearTimeout(this.plan)
     this.lueckenSetzen(DecorationSet.empty)
     this.boegen?.entfernen()
@@ -193,6 +206,7 @@ export class SatzSteuerung {
     await Promise.all([
       schriftenLaden([...konfig.schriften.map((s) => s.name), ...familienImText(this.text)]),
       this.boegen?.vorbereiten(konfig, vorlaeufig),
+      bilderLaden(this.text),
     ])
     if (this.konfig !== konfig || this.editor.isDestroyed || !this.boegen) return null
 
@@ -202,6 +216,8 @@ export class SatzSteuerung {
     const text = this.text
     this.rahmen.style.width = `${g.breite}px`
     text.style.padding = `${g.erste.oben}px ${g.rechts}px 0 ${g.links}px`
+    // Gemessen wird im tatsächlichen Zoom (transform): erst anwenden, dann messen und durch die Skala teilen
+    this.zoomAnwenden()
 
     // 1. Lücken entfernen; die bisherige Höhe hält die Ansicht (Scroll-Stelle) fest
     this.rahmen.style.minHeight = `${stapelHoehe(g, this.seiten)}px`

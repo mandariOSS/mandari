@@ -92,6 +92,8 @@ export interface SatzKonfig {
     fuss_zeilen: string[]
     seitenzahlen: boolean
   }
+  /** Titel des Dokuments: steht beim generierten Briefkopf im Kopf der ersten Seite */
+  titel?: string
   /** Schriftdateien (Schlüssel → CSS-Familie), die der Text braucht */
   schriften: { schluessel: string; name: string }[]
 }

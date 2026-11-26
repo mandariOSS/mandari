@@ -19,7 +19,7 @@ from django.conf import settings
 from django.test import override_settings
 from django.urls import reverse
 
-from apps.common import schriften
+from apps.common import pdf_chromium, schriften
 from apps.work.motions import druck
 from apps.work.motions.export_service import motion_export_service
 from apps.work.motions.models import Motion, OrganizationLetterhead
@@ -78,6 +78,9 @@ def test_schriften_ohne_reservierten_namen_oder_unveraendert() -> None:
         ('font-family: "Open Sans"', 'font-family: "Open Sans"'),
         ("font-family: 'Noto Serif'", "font-family: 'Noto Serif'"),
         ("font-family: Comic Sans MS", None),
+        # Aliase werden zum Familiennamen des Satzes (sonst nähme der Browser eine lokale Calibri, das PDF nicht)
+        ("font-family: Calibri", 'font-family: "Carlito"'),
+        ("font-family: Arial", 'font-family: "Arimo"'),
         ('font-family: "Arimo", sans-serif', None),
         ("font-family: Arimo; color: red", "font-family: Arimo; color: red"),
         ("font-size: 12pt", "font-size: 12pt"),
@@ -237,6 +240,23 @@ class _Antwort:
         self.content = inhalt
 
 
+class _Strom:
+    """Antwort als Strom (httpx.Client.stream)."""
+
+    def __init__(self, antwort: _Antwort) -> None:
+        self.status_code = antwort.status_code
+        self._inhalt = antwort.content
+
+    def __enter__(self) -> _Strom:
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        return None
+
+    def iter_bytes(self) -> Any:
+        yield from (self._inhalt[i : i + 4] for i in range(0, len(self._inhalt), 4))
+
+
 class _Client:
     """Ersatz für httpx.Client: merkt sich die Anfrage, antwortet fest."""
 
@@ -252,9 +272,9 @@ class _Client:
     def __exit__(self, *_args: Any) -> None:
         return None
 
-    def post(self, url: str, data: dict[str, str], files: list[Any]) -> _Antwort:
+    def stream(self, methode: str, url: str, data: dict[str, str], files: list[Any]) -> _Strom:
         _Client.anfragen.append({"url": url, "data": data, "files": [f[1][0] for f in files]})
-        return _Client.antwort
+        return _Strom(_Client.antwort)
 
 
 @pytest.fixture
@@ -284,6 +304,25 @@ def test_pdf_ueber_chromium(org: Any, autorin: Any, chromium: type[_Client]) -> 
     assert anfrage["data"]["waitForExpression"] == "window.satzFertig === true"
     assert anfrage["data"]["failOnConsoleExceptions"] == "true"
     assert "index.html" in anfrage["files"]
+
+
+@pytest.mark.django_db
+def test_zu_grosse_antwort_faellt_zurueck(org: Any, autorin: Any, chromium: type[_Client], monkeypatch: Any) -> None:
+    monkeypatch.setattr(pdf_chromium, "MAX_PDF_BYTES", 8)
+    with override_settings(GOTENBERG_URL="http://gotenberg:3000"):
+        pdf = motion_export_service.export_to_pdf(_dokument(org, autorin, "<p>Text</p>"))
+    assert pdf != b"%PDF-1.7 chromium"
+
+
+@pytest.mark.django_db
+def test_titel_steht_beim_generierten_briefkopf_in_der_konfiguration(org: Any, autorin: Any) -> None:
+    kontext = druck.druck_kontext(_dokument(org, autorin, "<p>x</p>", _generiert(org)), paket=False)
+    assert kontext["konfig"]["titel"] == "Antrag"
+
+
+def test_cousine_fuer_code_im_druckpaket() -> None:
+    namen = [s.schluessel for s in druck.verwendete_schriften("<p><code>x</code></p>", "arimo")]
+    assert namen == ["arimo", "cousine"]
 
 
 @pytest.mark.django_db

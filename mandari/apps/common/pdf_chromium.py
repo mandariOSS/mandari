@@ -73,18 +73,29 @@ def html_zu_pdf(dateien: dict[str, bytes], *, warten_auf: str = "window.satzFert
     teile = [("files", (name, inhalt, _art(name))) for name, inhalt in dateien.items()]
     url = f"{settings.GOTENBERG_URL}/forms/chromium/convert/html"
     try:
-        with httpx.Client(timeout=settings.GOTENBERG_TIMEOUT) as client:
-            antwort = client.post(url, data=felder, files=teile)
+        with (
+            httpx.Client(timeout=settings.GOTENBERG_TIMEOUT) as client,
+            client.stream("POST", url, data=felder, files=teile) as antwort,
+        ):
+            status = antwort.status_code
+            # Höchstens MAX_PDF_BYTES lesen: Eine größere Antwort wird abgebrochen, nicht erst ganz gepuffert
+            teile_pdf: list[bytes] = []
+            gelesen = 0
+            for stueck in antwort.iter_bytes():
+                gelesen += len(stueck)
+                if gelesen > MAX_PDF_BYTES:
+                    break
+                teile_pdf.append(stueck)
     except httpx.HTTPError as fehler:
         PDF_DOCUMENTS.labels(result="failed").inc()
         logger.warning("PDF über Chromium nicht möglich: %s", type(fehler).__name__)
         raise ChromiumNichtVerfuegbarError(type(fehler).__name__) from fehler
-    pdf = antwort.content
-    if antwort.status_code != 200 or not pdf.startswith(b"%PDF") or len(pdf) > MAX_PDF_BYTES:
+    pdf = b"".join(teile_pdf)
+    if status != 200 or not pdf.startswith(b"%PDF") or gelesen > MAX_PDF_BYTES:
         PDF_DOCUMENTS.labels(result="failed").inc()
         # Nur der Status: Der Text der Antwort kann Inhalt des Dokuments wiedergeben
-        logger.warning("PDF über Chromium abgelehnt: HTTP %s", antwort.status_code)
-        raise ChromiumNichtVerfuegbarError(f"HTTP {antwort.status_code}")
+        logger.warning("PDF über Chromium abgelehnt: HTTP %s", status)
+        raise ChromiumNichtVerfuegbarError(f"HTTP {status}")
     PDF_DURATION.observe(time.perf_counter() - start)
     PDF_DOCUMENTS.labels(result="ok").inc()
     return pdf

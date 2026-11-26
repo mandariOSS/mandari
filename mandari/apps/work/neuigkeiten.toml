@@ -35,7 +35,7 @@ datum = 2026-11-26
 version = ""
 bereich = "dokumente"
 titel = "Dokumente stehen im Editor auf echten Seiten, genau wie im PDF."
-text = """Die Seitenansicht im Editor zeigt Ihr Dokument jetzt Seite für Seite mit Briefpapier, Kopf, Fußzeile und Seitenzahlen. Zeilen und Seiten brechen an denselben Stellen um wie im PDF, ohne Verschiebungen. Über das Menü „Ansicht“ wechseln Sie jederzeit zum Fließtext; den Zoom stellen Sie in der Werkzeugleiste ein."""
+text = """Die Seitenansicht im Editor zeigt Ihr Dokument jetzt Seite für Seite mit Briefpapier, Kopf, Fußzeile und Seitenzahlen. Ist der PDF-Dienst eingerichtet, entsteht das PDF aus genau diesen Seiten, ohne Verschiebungen. Über das Menü „Ansicht“ wechseln Sie jederzeit zum Fließtext; den Zoom stellen Sie in der Werkzeugleiste ein."""
 
 [[eintrag]]
 datum = 2026-11-26

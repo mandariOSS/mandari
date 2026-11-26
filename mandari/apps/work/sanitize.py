@@ -178,6 +178,14 @@ def _schriftart_ok(wert: str) -> bool:
     return "," not in wert and schriften.finden(wert) is not None
 
 
+def _schrift_kanonisch(wert: str) -> str:
+    """Ein Alias (Calibri, Arial …) wird zum Familiennamen des Satzes; schon richtige Angaben bleiben unverändert."""
+    schrift = schriften.finden(wert)
+    if schrift is None or wert.strip().strip("\"'") == schrift.name:
+        return wert
+    return f'"{schrift.name}"'
+
+
 #: Stilangaben, die eine Prüffunktion statt eines Musters brauchen (Schriftsatz, Grenzen der Größe)
 STYLE_CHECKS = {
     "font-family": _schriftart_ok,
@@ -263,7 +271,7 @@ def _clean_style(value: str) -> str | None:
         rule = STYLE_RULES.get(prop)
         check = STYLE_CHECKS.get(prop)
         if (rule is not None and rule.match(raw)) or (check is not None and check(raw)):
-            kept.append(f"{prop}: {raw}")
+            kept.append(f"{prop}: {_schrift_kanonisch(raw) if prop == 'font-family' else raw}")
     return "; ".join(kept) or None
 
 

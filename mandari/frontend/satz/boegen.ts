@@ -49,6 +49,9 @@ export class Boegen {
     }
     this.bildLaden = this.pdfZeichnen(url, g).catch((err) => {
       console.warn('Briefpapier konnte nicht gezeichnet werden:', err)
+      // Beim nächsten Durchlauf erneut versuchen (etwa nach einem kurzen Netzaussetzer)
+      this.bildQuelle = ''
+      this.bildLaden = null
     })
     return this.bildLaden
   }
@@ -105,6 +108,12 @@ export class Boegen {
     if (konfig.briefpapier.akzent) kopf.style.setProperty('--satz-akzent', konfig.briefpapier.akzent)
     // Vom Server aus Feldern der Organisation gerendert (Template mit Escaping), keine Eingabe aus dem Text
     kopf.innerHTML = konfig.briefpapier.kopf_html
+    if (konfig.titel) {
+      const titel = document.createElement('p')
+      titel.className = 'satz-kopf-titel'
+      titel.textContent = konfig.titel
+      kopf.appendChild(titel)
+    }
     return kopf
   }
 

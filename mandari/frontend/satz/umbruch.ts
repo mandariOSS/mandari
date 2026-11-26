@@ -29,7 +29,8 @@ export function umbrechen(bloecke: MessBlock[], g: Seitengeometrie): Umbruch {
   let versatz = 0
   let seite = 0
   let zuHoch = 0
-  let umbruchOffen = false
+  /** Manuelle Seitenumbrüche vor dem nächsten Block (zwei hintereinander ergeben eine leere Seite) */
+  let umbrueche = 0
 
   const lueckeVor = (block: MessBlock, px: number): void => {
     if (px <= 0) return
@@ -49,7 +50,7 @@ export function umbrechen(bloecke: MessBlock[], g: Seitengeometrie): Umbruch {
   for (let i = 0; i < bloecke.length; i++) {
     const block = bloecke[i]
     if (block.art === 'umbruch') {
-      umbruchOffen = true
+      umbrueche += 1
       continue
     }
     // Beginnt der Block erst unterhalb des Satzspiegels (großer Abstand davor), auf die passende Seite weiterzählen
@@ -58,9 +59,12 @@ export function umbrechen(bloecke: MessBlock[], g: Seitengeometrie): Umbruch {
     if (block.oben + versatz < satzOben(g, seite) - TOLERANZ) {
       lueckeVor(block, satzOben(g, seite) - (block.oben + versatz))
     }
-    if (umbruchOffen) {
-      umbruchOffen = false
-      if (block.oben + versatz > satzOben(g, seite) + TOLERANZ) ganzWeiter(block)
+    // Jeder Umbruch beginnt eine neue Seite; steht der Block schon oben auf einer Seite, die der natürliche Fluss
+    // gerade begonnen hat, zählt der erste Umbruch als erledigt
+    if (umbrueche > 0) {
+      const schonOben = block.oben + versatz <= satzOben(g, seite) + TOLERANZ && seite > 0
+      for (let n = schonOben ? 1 : 0; n < umbrueche; n++) ganzWeiter(block)
+      umbrueche = 0
     }
 
     const amSeitenanfang = block.oben + versatz <= satzOben(g, seite) + TOLERANZ
@@ -71,8 +75,9 @@ export function umbrechen(bloecke: MessBlock[], g: Seitengeometrie): Umbruch {
       const naechster = bloecke[i + 1]
       if (block.mitNaechstem && naechster && naechster.art !== 'umbruch' && !amSeitenanfang) {
         const zeilen = naechster.zeilen
+        // Teilbar ist ein Absatz erst ab 2 + 2 Zeilen: darunter muss er ganz auf die Seite passen
         const anfang =
-          !naechster.zusammen && zeilen.length > MIN_ZEILEN ? zeilen[MIN_ZEILEN - 1].unten : naechster.unten
+          !naechster.zusammen && zeilen.length >= 2 * MIN_ZEILEN ? zeilen[MIN_ZEILEN - 1].unten : naechster.unten
         if (anfang + versatz > grenze) ganzWeiter(block)
       }
       continue
@@ -130,6 +135,6 @@ export function umbrechen(bloecke: MessBlock[], g: Seitengeometrie): Umbruch {
   if (letzter) {
     while (letzter.unten + versatz > satzUnten(g, seite) + TOLERANZ && seite < 10_000) seite += 1
   }
-  if (umbruchOffen) seite += 1
+  seite += umbrueche
   return { seiten: seite + 1, luecken, zuHoch }
 }

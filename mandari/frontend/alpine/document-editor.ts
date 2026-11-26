@@ -765,6 +765,12 @@ export const documentEditor = defineComponent(() => {
           void this.$nextTick(() => this.randNeuAnordnen())
         })
         this.$watch('activeCommentId', () => this.randNeuAnordnen())
+        // Titel im Kopf der ersten Seite (generierter Briefkopf) beim Tippen nachführen
+        let titelPlan = 0
+        this.$watch('title', () => {
+          window.clearTimeout(titelPlan)
+          titelPlan = window.setTimeout(() => this._satzAnwenden(), 400)
+        })
       }
 
       // Bidirektionale Kommentar-Hervorhebung: CSS-Klasse auf der Editor-Markierung
@@ -2570,7 +2576,10 @@ export const documentEditor = defineComponent(() => {
       const target = event.target as HTMLElement | null
       if (!target) return
       if (event.key === 'Escape' && this.menue) {
-        const knopf = document.querySelector<HTMLElement>(`[data-menue-knopf="${this.menue}"]`)
+        // Sichtbarer Auslöser (eine Gruppe der Werkzeugleiste steht womöglich nur im Menü „Mehr“), sonst „Mehr“
+        const sichtbar = (sel: string) =>
+          Array.from(document.querySelectorAll<HTMLElement>(sel)).find((el) => el.getClientRects().length > 0)
+        const knopf = sichtbar(`[data-menue-knopf="${this.menue}"]`) ?? sichtbar('[data-menue-knopf="mehr"]')
         this.menueSchliessen()
         knopf?.focus()
         event.preventDefault()
@@ -2943,7 +2952,8 @@ export const documentEditor = defineComponent(() => {
 
     _satzAnwenden(): void {
       if (!satz) return
-      void satz.setzen(this.seitenansicht ? this._satzKonfig() : null).then(() => {
+      const konfig = this.seitenansicht ? this._satzKonfig() : null
+      void satz.setzen(konfig ? { ...konfig, titel: this.title } : null).then(() => {
         this._zoomAnwenden()
         void this.$nextTick(() => this.randNeuAnordnen())
       })

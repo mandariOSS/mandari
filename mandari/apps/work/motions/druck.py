@@ -63,6 +63,11 @@ def verwendete_schriften(inhalt: str, basis: str) -> list[schriften.Schrift]:
     gefunden: dict[str, schriften.Schrift] = {}
     erste = schriften.schrift(basis) or schriften.aufloesen(None)
     gefunden[erste.schluessel] = erste
+    # Code setzt der Satz in Cousine (dokument-satz.css)
+    if "<code" in inhalt or "<pre" in inhalt:
+        cousine = schriften.schrift("cousine")
+        if cousine is not None:
+            gefunden.setdefault(cousine.schluessel, cousine)
     for treffer in _SCHRIFT_IM_TEXT_RE.finditer(inhalt):
         name = treffer.group(1).replace("&quot;", '"').replace("&#x27;", "'")
         schrift = schriften.finden(name)
@@ -104,6 +109,8 @@ def druck_skript() -> bytes:
 def druck_kontext(motion: Motion, *, paket: bool) -> dict[str, Any]:
     """Kontext der Druckansicht; ``paket`` = flache Dateinamen für Chromium statt Adressen der Ablage."""
     konfig = satz_konfig(motion.letterhead)
+    # Beim generierten Briefkopf steht der Titel im Kopf der ersten Seite (wie im Editor und im bisherigen PDF)
+    konfig["titel"] = motion.title
     inhalt = druck_inhalt(motion)
     if paket:
         # Chromium liest keine fremden Server: Bilder aus dem Text vorher abgesichert laden und einbetten

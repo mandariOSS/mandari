@@ -871,7 +871,10 @@ GOTENBERG_URL=http://gotenberg:3000
 
 Der Dienst bekommt alle Dateien mit und lädt nichts von außen (`--chromium-allow-list` nur für die hochgeladenen
 Dateien). Ohne `GOTENBERG_URL` oder bei einem Fehler entsteht das PDF wie bisher (xhtml2pdf). Bei mehreren Servern
-läuft Gotenberg auf den web-Servern; Worker erreichen ihn über `GOTENBERG_URL`.
+läuft Gotenberg auf den web-Servern. Worker auf einem anderen Server erreichen ihn nur über eine Freigabe im privaten
+Netz (etwa `ports: ["10.0.0.11:3000:3000"]` für gotenberg in einer eigenen Compose-Datei des web-Servers, nie an
+eine öffentliche Adresse) und `GOTENBERG_URL=http://10.0.0.11:3000` in ihrer `.env`; sonst nehmen sie den bisherigen
+Weg.
 
 ### PgBouncer bei mehreren Servern
 

@@ -170,6 +170,21 @@ test('Block, der im Rand der Folgeseite beginnen würde, rückt an den Satzspieg
   assert.equal(r.luecken[0].px, 1120 - 950)
 })
 
+test('Zwei Umbrüche hintereinander ergeben eine leere Seite', () => {
+  const b = absatz(330, 2)
+  const r = umbrechen([absatz(100, 10), umbruch(310), umbruch(310), b], g)
+  assert.equal(r.seiten, 3)
+  // Der Absatz steht oben auf Seite 3: 2 * 1020 + 100
+  assert.equal(r.luecken.reduce((s, l) => s + l.px, 0), 2140 - 330)
+})
+
+test('Überschrift vor einem dreizeiligen Absatz, der nicht mehr ganz passt, wandert mit', () => {
+  // Überschrift 830–860, Absatz 860–920 (drei Zeilen): nicht teilbar, passt nicht → beide auf Seite 2
+  const k = kopf(830)
+  const r = umbrechen([absatz(100, 36), k, absatz(860, 3)], g)
+  assert.equal(r.luecken[0].pos, k.anker)
+})
+
 let fehler = 0
 for (const [stand, name, err] of ergebnisse) {
   console.log(`${stand}  ${name}`)

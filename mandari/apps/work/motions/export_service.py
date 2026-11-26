@@ -17,6 +17,8 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.html import escape
 
+from apps.common import schriften
+
 if TYPE_CHECKING:
     from .models import Motion, OrganizationLetterhead
 
@@ -296,7 +298,8 @@ class MotionExportService:
             "content": content,
             "margins": margins,
             "frame": frame,
-            "font_family": letterhead.font_family if letterhead else "Helvetica",
+            # Office-Name der Schrift des Satzes (Tinos → Times New Roman): Den kennt xhtml2pdf
+            "font_family": schriften.aufloesen(letterhead.font_family).fuer_office if letterhead else "Helvetica",
             "font_size": letterhead.font_size if letterhead else 11,
             "signature_html": escape(signature_text).replace("\n", "<br>") if signature_text else "",
             "generated": bool(letterhead and letterhead.is_generated),
@@ -352,7 +355,7 @@ class MotionExportService:
         # Set default font
         style = doc.styles["Normal"]
         font = style.font
-        font.name = letterhead.font_family if letterhead else "Arial"
+        font.name = schriften.aufloesen(letterhead.font_family).fuer_office if letterhead else "Arial"
         font.size = Pt(letterhead.font_size if letterhead else 11)
 
         # Page margins from letterhead mm fields (or defaults)
