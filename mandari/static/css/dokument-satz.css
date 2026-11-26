@@ -203,18 +203,23 @@
   table-layout: fixed;
   overflow: visible;
 }
-#editor-container .tiptap.dokument-satz :is(td, th) {
+/* Mit table.editor-table: Die allgemeinen Tabellenregeln des Editors (work-editor.css) sind sonst spezifischer */
+#editor-container .tiptap.dokument-satz table.editor-table :is(td, th),
+#editor-container .tiptap.dokument-satz table :is(td, th) {
+  position: relative;
   min-width: 0;
   padding: 3pt 5pt;
   border: 0.75pt solid #9ca3af;
   vertical-align: top;
 }
-#editor-container .tiptap.dokument-satz th {
+#editor-container .tiptap.dokument-satz table.editor-table th,
+#editor-container .tiptap.dokument-satz table th {
   background: #f3f4f6;
   font-weight: 700;
   text-align: left;
 }
-#editor-container .tiptap.dokument-satz :is(td, th) p {
+#editor-container .tiptap.dokument-satz table.editor-table :is(td, th) p,
+#editor-container .tiptap.dokument-satz table :is(td, th) p {
   margin: 0;
 }
 
@@ -327,7 +332,7 @@
 }
 .satz-kopf-akzent {
   margin-top: 4mm;
-  border-top: 1.5pt solid #4b5563;
+  border-top: 1.5pt solid var(--satz-akzent, #4b5563);
 }
 .satz-kopf-absender {
   margin: 3mm 0 0;

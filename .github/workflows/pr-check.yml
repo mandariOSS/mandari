@@ -684,6 +684,11 @@ jobs:
         if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
         run: cd mandari && npm run test:webmcp
 
+      # Seitenumbruch der Satz-Kette: Zeilen, Überschriften, Tabellenzeilen, Umbrüche (#1584)
+      - name: Frontend-Unit-Tests (Satz-Kette)
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run test:satz
+
       # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
       # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
       - name: JS-Vorlagen sind gültiges JavaScript

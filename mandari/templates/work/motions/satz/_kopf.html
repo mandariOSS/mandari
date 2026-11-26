@@ -1,10 +1,11 @@
 {% comment %}
 Kopf des generierten Briefkopfs auf Seite 1 der Satz-Kette (Issue #1584): Editor-Seitenansicht und PDF zeigen ihn
 gleich, deshalb Maße in mm und pt. Kontext aus export_service.generated_letterhead_context, dazu logo_src (data:).
+Die Farbe der Akzentlinie setzt die Kette als CSS-Variable (briefpapier.akzent in satz.py, boegen.ts).
 {% endcomment %}
 <div class="satz-kopf-zeile">
     <div class="satz-kopf-logo">{% if logo_src %}<img src="{{ logo_src }}" alt="">{% endif %}</div>
     <div class="satz-kopf-adresse">{% for line in address_lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</div>
 </div>
-{% if accent_enabled %}<div class="satz-kopf-akzent" style="border-top-color: {{ primary_color|default:'#4b5563' }};"></div>{% endif %}
+{% if accent_enabled %}<div class="satz-kopf-akzent"></div>{% endif %}
 {% if sender_line %}<p class="satz-kopf-absender">{{ sender_line }}</p>{% endif %}

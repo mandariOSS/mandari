@@ -66,13 +66,7 @@ Felder und Ziel wie bisher (work/motions/settings/letterhead_form.html). Kontext
                         </div>
                         <div class="mt-4 grid gap-4 grid-cols-2">
                             <c-form.select name="font_family" id="font_family" label="Schriftart" dicht>
-                                {% with current_font=letterhead.font_family|default:"Arial" %}
-                                <option value="Arial" {% if current_font == "Arial" %}selected{% endif %}>Arial</option>
-                                <option value="Helvetica" {% if current_font == "Helvetica" %}selected{% endif %}>Helvetica</option>
-                                <option value="Times New Roman" {% if current_font == "Times New Roman" %}selected{% endif %}>Times New Roman</option>
-                                <option value="Georgia" {% if current_font == "Georgia" %}selected{% endif %}>Georgia</option>
-                                <option value="Calibri" {% if current_font == "Calibri" %}selected{% endif %}>Calibri</option>
-                                {% endwith %}
+                                {% include "work/motions/settings/_schrift_optionen.html" %}
                             </c-form.select>
                             {% include "work/organization/neu/_zahl.html" with name="font_size" id="font_size" label="Schriftgröße (pt)" value=letterhead.font_size min=8 max=24 %}
                         </div>
@@ -85,13 +79,7 @@ Felder und Ziel wie bisher (work/motions/settings/letterhead_form.html). Kontext
                         </div>
                         <div class="mt-4 grid gap-4 grid-cols-2">
                             <c-form.select name="font_family" id="font_family" label="Schriftart" dicht>
-                                {% with current_font=letterhead.font_family|default:"Arial" %}
-                                <option value="Arial" {% if current_font == "Arial" %}selected{% endif %}>Arial</option>
-                                <option value="Helvetica" {% if current_font == "Helvetica" %}selected{% endif %}>Helvetica</option>
-                                <option value="Times New Roman" {% if current_font == "Times New Roman" %}selected{% endif %}>Times New Roman</option>
-                                <option value="Georgia" {% if current_font == "Georgia" %}selected{% endif %}>Georgia</option>
-                                <option value="Calibri" {% if current_font == "Calibri" %}selected{% endif %}>Calibri</option>
-                                {% endwith %}
+                                {% include "work/motions/settings/_schrift_optionen.html" %}
                             </c-form.select>
                             {% include "work/organization/neu/_zahl.html" with name="font_size" id="font_size" label="Schriftgröße (pt)" value=11 min=8 max=24 %}
                         </div>

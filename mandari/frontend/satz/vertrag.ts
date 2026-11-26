@@ -87,6 +87,8 @@ export interface SatzKonfig {
     pdf_url: string
     /** Kopf der ersten Seite (generierter Briefkopf), vom Server gerendert */
     kopf_html: string
+    /** Farbe der Akzentlinie im Kopf (Hexfarbe) */
+    akzent: string
     fuss_zeilen: string[]
     seitenzahlen: boolean
   }

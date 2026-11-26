@@ -575,7 +575,11 @@ input.ke-titel:focus {
   margin-top: 0;
 }
 .ke-wz-mehr {
-  @apply flex flex-wrap items-center gap-y-1 p-2 min-w-0 max-w-[22rem];
+  @apply flex flex-wrap items-center gap-y-1 p-2 min-w-0;
+  max-width: min(22rem, calc(100vw - 16px));
+}
+.ke-wz-mehr .ke-wz-gruppe {
+  @apply flex-wrap;
 }
 .ke-schrift-menue {
   @apply min-w-[17rem];
@@ -789,6 +793,10 @@ input.ke-titel:focus {
 .ke-editor.ke-seiten .satz-huelle {
   position: relative;
   margin: 0 auto;
+}
+/* Seiten auf derselben Fläche: feiner Rand statt Schatten */
+.ke-editor .satz-bogen {
+  box-shadow: 0 0 0 1px var(--ke-linie-stark);
 }
 /* Seitenansicht: das Blatt mit feinem Rand auf derselben Fläche, keine graue Fläche drumherum */
 .ke-editor.ke-seiten #editor-container .editor-page {

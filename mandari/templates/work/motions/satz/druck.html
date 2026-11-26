@@ -13,24 +13,12 @@ Kontext: title, konfig (SatzKonfig), inhalt (bereinigtes HTML), paket. Das Skrip
     {% if paket %}
     <link rel="stylesheet" href="schriften.css">
     <link rel="stylesheet" href="dokument-satz.css">
+    <link rel="stylesheet" href="dokument-druck.css">
     {% else %}
     <link rel="stylesheet" href="{% static 'vendor/schriften/schriften.css' %}">
     <link rel="stylesheet" href="{% static 'css/dokument-satz.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dokument-druck.css' %}">
     {% endif %}
-    <style{% if csp_nonce %} nonce="{{ csp_nonce }}"{% endif %}>
-        @page { size: 210mm 297mm; margin: 0; }
-        html, body { margin: 0; padding: 0; background: #fff; }
-        #editor-container { margin: 0; }
-        @media screen {
-            html { background: #e5e7eb; }
-            body { padding: 24px 0; }
-            #editor-container { margin: 0 auto; }
-            .satz-bogen { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
-        }
-        @media print {
-            .satz-bogen { box-shadow: none; }
-        }
-    </style>
 </head>
 <body>
     <div id="editor-container"></div>

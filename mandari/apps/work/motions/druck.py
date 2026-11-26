@@ -7,14 +7,14 @@ Für das PDF geht sie samt allen Dateien an headless Chromium (``apps/common/pdf
 unter ``documents/<id>/druck/`` im Browser zu sehen (Kontrolle, Druck aus dem Browser).
 
 Das Paket für Chromium enthält nur flache Dateinamen: ``index.html``, das gebündelte Skript ``satz-druck.js``,
-``dokument-satz.css`` und je verwendeter Schrift ihre vier Schnitte samt einer passenden ``schriften.css``.
+``dokument-satz.css``, ``dokument-druck.css`` und je verwendeter Schrift ihre vier Schnitte samt einer passenden ``schriften.css``.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from django.conf import settings
 from django.contrib.staticfiles import finders
@@ -89,7 +89,8 @@ def _statisch(pfad: str) -> bytes:
     gefunden = finders.find(pfad)
     if not gefunden:
         raise DruckNichtMoeglichError(f"Statische Datei fehlt: {pfad}")
-    return Path(gefunden if isinstance(gefunden, str) else gefunden[0]).read_bytes()
+    datei = gefunden if isinstance(gefunden, str) else cast("list[str]", gefunden)[0]
+    return Path(datei).read_bytes()
 
 
 def druck_skript() -> bytes:
@@ -121,6 +122,7 @@ def druck_dateien(motion: Motion) -> dict[str, bytes]:
     dateien: dict[str, bytes] = {
         "index.html": render_to_string("work/motions/satz/druck.html", kontext).encode("utf-8"),
         "dokument-satz.css": _statisch("css/dokument-satz.css"),
+        "dokument-druck.css": _statisch("css/dokument-druck.css"),
         "schriften.css": schriften_css(liste).encode("utf-8"),
         SKRIPT: druck_skript(),
     }

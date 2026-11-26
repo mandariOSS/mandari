@@ -102,6 +102,7 @@ export class Boegen {
     kopf.className = 'satz-kopf'
     kopf.style.left = `${g.links}px`
     kopf.style.right = `${g.rechts}px`
+    if (konfig.briefpapier.akzent) kopf.style.setProperty('--satz-akzent', konfig.briefpapier.akzent)
     // Vom Server aus Feldern der Organisation gerendert (Template mit Escaping), keine Eingabe aus dem Text
     kopf.innerHTML = konfig.briefpapier.kopf_html
     return kopf

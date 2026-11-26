@@ -856,6 +856,23 @@ im Django-Cache und damit in Redis. Prozesslokal bleiben nur unveränderliche, a
 abgeleitete Werte (`lru_cache` für Netzlisten) und die Prometheus-Zähler je Prozess – die
 Metriken sind je web-Server auszulesen (`docs/MONITORING.md`).
 
+### PDF der Dokumente über Chromium (optional)
+
+Mit dem Compose-Profil `pdf` startet Gotenberg (headless Chromium). Die PDFs der Work-Dokumente entstehen dann aus
+derselben Satz-Kette wie die Seitenansicht des Editors; Zeilen und Seiten brechen gleich um (Issue #1584). In der
+`.env`:
+
+```bash
+COMPOSE_PROFILES=pdf
+GOTENBERG_URL=http://gotenberg:3000
+# GOTENBERG_TIMEOUT=60      # Sekunden je PDF
+# GOTENBERG_MEM_LIMIT=1g
+```
+
+Der Dienst bekommt alle Dateien mit und lädt nichts von außen (`--chromium-allow-list` nur für die hochgeladenen
+Dateien). Ohne `GOTENBERG_URL` oder bei einem Fehler entsteht das PDF wie bisher (xhtml2pdf). Bei mehreren Servern
+läuft Gotenberg auf den web-Servern; Worker erreichen ihn über `GOTENBERG_URL`.
+
 ### PgBouncer bei mehreren Servern
 
 `COMPOSE_PROFILES=pgbouncer` auf dem Datenserver startet PgBouncer im Transaktionsmodus (Port 6432 an

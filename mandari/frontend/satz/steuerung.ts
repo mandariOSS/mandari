@@ -42,6 +42,7 @@ export class SatzSteuerung {
   private laeuft: Promise<Umbruch | null> | null = null
   private nochmal = false
   private skala = 1
+  private eingeschaltet = false
   seiten = 1
   private readonly beiAenderung = ({ transaction }: { transaction: { docChanged: boolean } }) => {
     if (transaction.docChanged) this.planen()
@@ -64,15 +65,37 @@ export class SatzSteuerung {
     return this.editor.view.dom as HTMLElement
   }
 
+  /** Ist die Ansicht des Editors eingehängt? (TipTap 3 hängt sie erst nach dem Erzeugen ein) */
+  private eingehaengt(): boolean {
+    try {
+      return !this.editor.isDestroyed && !!this.editor.view.dom
+    } catch {
+      return false
+    }
+  }
+
+  private bereit(): Promise<void> {
+    if (this.eingehaengt()) return Promise.resolve()
+    return new Promise((fertig) => {
+      const beiCreate = () => {
+        this.editor.off('create', beiCreate)
+        fertig()
+      }
+      this.editor.on('create', beiCreate)
+    })
+  }
+
   /** Satz einschalten bzw. umstellen (Briefpapier, Schrift); `null` schaltet ihn ab */
-  setzen(konfig: SatzKonfig | null): Promise<Umbruch | null> {
-    const war = this.konfig !== null
+  async setzen(konfig: SatzKonfig | null): Promise<Umbruch | null> {
     this.konfig = konfig
     if (!konfig) {
-      if (war) this.abschalten()
-      return Promise.resolve(null)
+      if (this.eingeschaltet) this.abschalten()
+      return null
     }
-    if (!war) {
+    await this.bereit()
+    if (this.konfig !== konfig || this.editor.isDestroyed) return null
+    if (!this.eingeschaltet) {
+      this.eingeschaltet = true
       this.editor.on('transaction', this.beiAenderung)
       document.fonts?.addEventListener('loadingdone', this.beiSchrift)
       window.addEventListener('resize', this.beiGroesse)
@@ -89,6 +112,7 @@ export class SatzSteuerung {
   }
 
   private abschalten(): void {
+    this.eingeschaltet = false
     this.editor.off('transaction', this.beiAenderung)
     document.fonts?.removeEventListener('loadingdone', this.beiSchrift)
     window.removeEventListener('resize', this.beiGroesse)
@@ -160,7 +184,7 @@ export class SatzSteuerung {
 
   private async durchlauf(): Promise<Umbruch | null> {
     const konfig = this.konfig
-    if (!konfig || this.editor.isDestroyed) return null
+    if (!konfig || !this.eingehaengt()) return null
     if (this.editor.view.composing) {
       this.planen(400)
       return null
@@ -195,8 +219,8 @@ export class SatzSteuerung {
   }
 
   private lueckenSetzen(luecken: DecorationSet): void {
+    if (!this.eingehaengt()) return
     const view = this.editor.view
-    if (this.editor.isDestroyed) return
     const tr = view.state.tr.setMeta(SATZ_KEY, { luecken }).setMeta('addToHistory', false)
     view.dispatch(tr)
   }
@@ -216,6 +240,8 @@ export class SatzSteuerung {
   }
 
   beenden(): void {
-    if (this.konfig) this.setzen(null)
+    this.konfig = null
+    if (this.eingeschaltet && this.eingehaengt()) this.abschalten()
+    else this.boegen?.entfernen()
   }
 }

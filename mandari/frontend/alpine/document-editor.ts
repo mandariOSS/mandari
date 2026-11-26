@@ -530,7 +530,7 @@ export const documentEditor = defineComponent(() => {
     /** Lage des geöffneten Menüs der Werkzeugleiste (fest über der Seite) */
     menuePos: { top: 0, left: 0 as number | null, right: null as number | null },
     /** Kurzinfo eines Knopfs der Werkzeugleiste */
-    tipp: { text: '', kuerzel: '', stil: '' },
+    tipp: { text: '', kuerzel: '', stil: {} as Record<string, string> },
     motionId: config.motionId,
     motionType: config.motionType,
     documentTypeId: config.documentTypeId,
@@ -558,7 +558,8 @@ export const documentEditor = defineComponent(() => {
     abstimmungAuswahlOffen: false,
     gliederung: [] as GliederungsEintrag[],
     gliederungAn: gespeicherteEinstellung(SPEICHER_GLIEDERUNG, true),
-    seitenansicht: gespeicherteEinstellung(SPEICHER_SEITENANSICHT, true),
+    // Am Handy schreibt es sich im Fließtext besser; ab Tablet-Breite sind echte Seiten der Standard
+    seitenansicht: gespeicherteEinstellung(SPEICHER_SEITENANSICHT, window.matchMedia('(min-width: 768px)').matches),
     randAntwort: '',
     randSendet: false,
     abstimmungAuswahl: [] as string[],
@@ -2428,10 +2429,16 @@ export const documentEditor = defineComponent(() => {
       }
     },
 
-    get menueStil(): string {
+    /** Lage des Menüs als Objekt: Alpine führt es mit dem display von x-show zusammen (ein Text ersetzte es) */
+    get menueStil(): Record<string, string> {
       const pos = this.menuePos
-      const seite = pos.left !== null ? `left: ${pos.left}px` : `right: ${pos.right ?? 8}px`
-      return `top: ${pos.top}px; ${seite}; max-height: calc(100dvh - ${Math.round(pos.top) + 16}px)`
+      const stil: Record<string, string> = {
+        top: `${pos.top}px`,
+        maxHeight: `calc(100dvh - ${Math.round(pos.top) + 16}px)`,
+      }
+      if (pos.left !== null) stil.left = `${pos.left}px`
+      else stil.right = `${pos.right ?? 8}px`
+      return stil
     },
 
     // ---- Werkzeugleiste: Überlauf, Tastatur, Kurzinfos (Issue #1584) ----
@@ -2532,7 +2539,7 @@ export const documentEditor = defineComponent(() => {
 
     tippVerbergen(): void {
       window.clearTimeout(tippTimer)
-      this.tipp = { text: '', kuerzel: '', stil: '' }
+      this.tipp = { text: '', kuerzel: '', stil: {} }
     },
 
     _tippFuer(knopf: HTMLElement, verzoegerung: number): void {
@@ -2545,7 +2552,7 @@ export const documentEditor = defineComponent(() => {
         this.tipp = {
           text,
           kuerzel: knopf.dataset.kuerzel ?? '',
-          stil: `top: ${Math.round(r.bottom + 6)}px; left: ${Math.round(mitte)}px`,
+          stil: { top: `${Math.round(r.bottom + 6)}px`, left: `${Math.round(mitte)}px` },
         }
       }, verzoegerung)
     },

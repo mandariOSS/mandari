@@ -42,9 +42,6 @@ def _kopf_html(letterhead: OrganizationLetterhead) -> str:
     from .export_service import generated_letterhead_context
 
     kontext = generated_letterhead_context(letterhead)
-    # Die Farbe steht in einem style-Attribut: nur eine Hex-Farbe zulassen
-    if not _FARBE_RE.fullmatch(str(kontext.get("primary_color") or "")):
-        kontext["primary_color"] = "#4b5563"
     kontext["logo_src"] = (
         file_data_uri(letterhead.organization.effective_logo) if letterhead.header_logo_enabled else ""
     )
@@ -76,11 +73,15 @@ def satz_konfig(letterhead: OrganizationLetterhead | None, *, pdf_url: str = "")
         "art": "",
         "pdf_url": "",
         "kopf_html": "",
+        "akzent": "",
         "fuss_zeilen": [],
         "seitenzahlen": False,
     }
-    if generiert:
+    if letterhead is not None and generiert:
+        # Farbe der Akzentlinie als CSS-Variable (boegen.ts): nur eine Hex-Farbe
+        farbe = str(letterhead.organization.effective_primary_color or "")
         briefpapier.update(
+            akzent=farbe if _FARBE_RE.fullmatch(farbe) else "#4b5563",
             art="generiert",
             kopf_html=_kopf_html(letterhead),
             fuss_zeilen=[zeile.strip() for zeile in letterhead.footer_text.splitlines() if zeile.strip()],
