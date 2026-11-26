@@ -138,7 +138,8 @@ def _urheber(datei: Path) -> str:
 
 def _css(modul) -> str:
     zeilen = [
-        "/* SPDX-License-Identifier: AGPL-3.0-or-later */",
+        # Zusammengesetzt, damit die REUSE-Prüfung die Zeile nicht als Lizenzangabe dieses Skripts liest
+        "/* SPDX-" "License-Identifier: AGPL-3.0-or-later */",
         "/* Erzeugt von scripts/schriften_bauen.py aus mandari/apps/common/schriften.py – nicht von Hand ändern.",
         "   Schriften für Dokumente (Editor, Seitenansicht, PDF); Lizenzen der Schriftdateien: REUSE.toml. */",
     ]

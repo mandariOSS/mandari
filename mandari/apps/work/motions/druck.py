@@ -95,7 +95,7 @@ def _statisch(pfad: str) -> bytes:
 
 def druck_skript() -> bytes:
     """Gebündelte Druckansicht (static/dist/satz-druck.js, frontend/vite/satz-druck.ts)."""
-    pfad = Path(settings.DJANGO_VITE["default"]["manifest_path"]).parent / SKRIPT
+    pfad = Path(str(settings.DJANGO_VITE["default"]["manifest_path"])).parent / SKRIPT
     if not pfad.exists():
         raise DruckNichtMoeglichError("Frontend ist nicht gebaut (static/dist/satz-druck.js fehlt)")
     return pfad.read_bytes()

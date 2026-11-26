@@ -30,7 +30,7 @@ def test_basisdatei_bleibt_profilfrei() -> None:
     """Außer den optionalen Diensten (PgBouncer, #1060) startet die Basisdatei alles ohne Profil."""
     modul = _lade_skript()
     basis = modul._lade(modul.BASIS)["services"]
-    assert modul.OPTIONAL == {"pgbouncer": ["pgbouncer"]}
+    assert modul.OPTIONAL == {"pgbouncer": ["pgbouncer"], "gotenberg": ["pdf"]}
     assert basis and all("profiles" not in d for n, d in basis.items() if n not in modul.OPTIONAL)
     assert basis["pgbouncer"]["profiles"] == ["pgbouncer"]
     assert {
@@ -583,3 +583,17 @@ def test_doku_der_dokumentkette_passt_zu_befehl_pruefungen_und_warteschlange_ocr
     steht = alle["MandariTexterkennungSteht"]["expr"]
     assert 'mandari_tasks_oldest_queued_seconds{queue=~"ocr|text"}' in steht
     assert 'mandari_tasks_running{queue=~"ocr|text"}' in steht
+
+
+def test_gotenberg_optional_und_ohne_zugriff_nach_aussen() -> None:
+    """Issue #1584: PDF der Satz-Kette über Gotenberg, nur mit Profil pdf, kein Port, nur hochgeladene Dateien."""
+    modul = _lade_skript()
+    dienst = modul._lade(modul.BASIS)["services"]["gotenberg"]
+    assert dienst["profiles"] == ["pdf"]
+    assert "ports" not in dienst
+    assert dienst["networks"] == ["mandari"]
+    assert "no-new-privileges:true" in dienst["security_opt"]
+    assert "--chromium-allow-list=^file:///tmp/.*" in dienst["command"]
+    assert dienst["image"].startswith("gotenberg/gotenberg:") and dienst["image"].endswith("-chromium")
+    for rolle in ("data", "worker"):
+        assert modul._lade(modul.ROLLEN[rolle])["services"]["gotenberg"]["profiles"] == ["aus"]

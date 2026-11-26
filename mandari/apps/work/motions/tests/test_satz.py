@@ -19,7 +19,7 @@ from django.conf import settings
 from django.test import override_settings
 from django.urls import reverse
 
-from apps.common import pdf_chromium, schriften
+from apps.common import schriften
 from apps.work.motions import druck
 from apps.work.motions.export_service import motion_export_service
 from apps.work.motions.models import Motion, OrganizationLetterhead
