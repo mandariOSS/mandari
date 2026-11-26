@@ -373,6 +373,36 @@ services:
       retries: 5
 
   # ===========================================================================
+  # Gotenberg (optional, Profil pdf): PDF der Dokumente über headless Chromium (Issue #1584).
+  # Dieselbe Satz-Kette wie die Seitenansicht des Editors setzt die Seiten, Editor und PDF brechen
+  # gleich um. Einschalten mit COMPOSE_PROFILES=pdf und GOTENBERG_URL=http://gotenberg:3000 in der .env;
+  # ohne bleibt der bisherige Weg (xhtml2pdf). Der Dienst bekommt alle Dateien mitgeschickt und lädt
+  # nichts von außen (--chromium-allow-list nur für die hochgeladenen Dateien).
+  # ===========================================================================
+  gotenberg:
+    image: gotenberg/gotenberg:9.10.2-chromium
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-gotenberg
+    restart: unless-stopped
+    profiles: ["pdf"]
+    command:
+      - gotenberg
+      - --api-timeout=90s
+      - --chromium-allow-list=^file:///tmp/.*
+      - --log-level=warn
+    networks:
+      - mandari
+    mem_limit: ${GOTENBERG_MEM_LIMIT:-1g}
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ===========================================================================
   # Redis Cache (password-protected)
   # ===========================================================================
   redis:

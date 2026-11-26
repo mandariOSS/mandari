@@ -27,6 +27,9 @@ services:
       - "${DATA_BIND:?DATA_BIND (private Adresse) fehlt}:9200:9200"
 
   # Image, Transaktionsmodus, Pool je Datenbank und Healthcheck aus der Basisdatei (Profil pgbouncer)
+  # Gotenberg (PDF der Satz-Kette, #1584) läuft auf den web-Servern
+  gotenberg:
+    profiles: !override ["aus"]
   pgbouncer:
     environment:
       # Wie bisher alle Datenbanken über den Pooler

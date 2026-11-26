@@ -13,7 +13,8 @@ eigene, bewusst enge Positivliste auf Basis von ``html.parser``:
   eingebettetes Rasterbild (``data:image/png|jpeg|gif|webp;base64``), dessen Daten mit der Signatur eines
   dieser Formate beginnen
 - Tabellenzellen überspannen höchstens ``MAX_TABLE_SPAN`` Spalten und ``MAX_TABLE_ROW_SPAN`` Zeilen
-- ``style`` nur mit Ausrichtung, Einzug, Farben und Breiten; Klassen nur die des Editors
+- ``style`` nur mit Ausrichtung, Einzug, Farben, Breiten, einer Schrift des Schriftsatzes (``apps/common/schriften.py``)
+  und einer Schriftgröße in Punkt; Klassen nur die des Editors
 - Inhalt von ``script``, ``style``, ``iframe`` & Co. entfällt ganz, andere unbekannte
   Elemente fallen weg, ihr Text bleibt
 - Text und Attributwerte werden neu maskiert; die Ausgabe ist wohlgeformt und idempotent
@@ -28,6 +29,8 @@ from html import escape
 from html.parser import HTMLParser
 
 from django.utils.safestring import SafeString, mark_safe
+
+from apps.common import schriften
 
 ALLOWED_TAGS = frozenset(
     {
@@ -162,6 +165,32 @@ STYLE_RULES: dict[str, re.Pattern[str]] = {
     "width": re.compile(rf"^{_LENGTH}$"),
     "min-width": re.compile(rf"^{_LENGTH}$"),
 }
+_PUNKT_RE = re.compile(r"^(\d{1,2}(?:\.\d{1,2})?)pt$")
+
+
+def _schriftgroesse_ok(wert: str) -> bool:
+    treffer = _PUNKT_RE.match(wert)
+    return treffer is not None and schriften.groesse_zulaessig(float(treffer.group(1)))
+
+
+def _schriftart_ok(wert: str) -> bool:
+    # Genau eine Schrift des Satzes (mit oder ohne Anführungszeichen), kein Stapel: Andere Schriften gibt es im PDF nicht
+    return "," not in wert and schriften.finden(wert) is not None
+
+
+def _schrift_kanonisch(wert: str) -> str:
+    """Ein Alias (Calibri, Arial …) wird zum Familiennamen des Satzes; schon richtige Angaben bleiben unverändert."""
+    schrift = schriften.finden(wert)
+    if schrift is None or wert.strip().strip("\"'") == schrift.name:
+        return wert
+    return f'"{schrift.name}"'
+
+
+#: Stilangaben, die eine Prüffunktion statt eines Musters brauchen (Schriftsatz, Grenzen der Größe)
+STYLE_CHECKS = {
+    "font-family": _schriftart_ok,
+    "font-size": _schriftgroesse_ok,
+}
 
 _NUMBER_LIST_RE = re.compile(r"^\d{1,5}(?:,\d{1,5})*$")
 # \Z statt $: „$“ ließe einen abschließenden Zeilenumbruch zu, den int() schluckt, die Zählung der Tabellenfelder im
@@ -237,9 +266,12 @@ def _clean_style(value: str) -> str | None:
         prop, _, raw = declaration.partition(":")
         prop = prop.strip().lower()
         raw = raw.strip()
+        if len(raw) > MAX_STYLE_VALUE:
+            continue
         rule = STYLE_RULES.get(prop)
-        if rule is not None and len(raw) <= MAX_STYLE_VALUE and rule.match(raw):
-            kept.append(f"{prop}: {raw}")
+        check = STYLE_CHECKS.get(prop)
+        if (rule is not None and rule.match(raw)) or (check is not None and check(raw)):
+            kept.append(f"{prop}: {_schrift_kanonisch(raw) if prop == 'font-family' else raw}")
     return "; ".join(kept) or None
 
 

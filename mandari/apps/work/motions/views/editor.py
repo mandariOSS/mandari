@@ -40,6 +40,7 @@ from ..models import (
     OrganizationLetterhead,
     content_fingerprint,
 )
+from ..satz import editor_schriften, satz_konfig
 from ..services import (
     FremdeAuswahlError,
     MotionAIService,
@@ -420,9 +421,18 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         # Serialize letterheads as JSON for dynamic JS-side rendering
         letterheads_json = []
+        neu_editor = self._neuer_editor()
         for lh in letterheads:
             if not lh.is_generated and not lh.pdf_file:
                 continue
+            lh_pdf_url = (
+                reverse(
+                    "work:document_letterhead_file",
+                    kwargs={"org_slug": self.organization.slug, "letterhead_id": lh.id},
+                )
+                if not lh.is_generated
+                else ""
+            )
             letterheads_json.append(
                 {
                     "id": str(lh.id),
@@ -450,6 +460,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                     "margin_left": lh.content_margin_left,
                     "font_family": lh.font_family,
                     "font_size": lh.font_size,
+                    # Seitenansicht mit echten Seiten (Satz-Kette, #1584)
+                    "satz": satz_konfig(lh, pdf_url=lh_pdf_url) if neu_editor else None,
                 }
             )
         context["letterheads_json"] = letterheads_json
@@ -552,6 +564,9 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             "collabUserColor": collab_color or "#3b82f6",
             "letterhead": letterhead_config,
             "letterheads": letterheads_json,
+            # Satz ohne Briefpapier und Schriftauswahl (neuer Editor, #1584)
+            "satzOhne": satz_konfig(None) if neu else None,
+            "schriften": editor_schriften() if neu else None,
             "inlineComments": inline_comments_data,
             # Ansicht des Editors: „neu“ (Kommentare am Rand, Ablauf in der Kopfzeile) oder „bisher“
             "ansicht": "neu" if neu else "bisher",

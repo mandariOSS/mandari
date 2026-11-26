@@ -17,6 +17,8 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.html import escape
 
+from apps.common import schriften
+
 if TYPE_CHECKING:
     from .models import Motion, OrganizationLetterhead
 
@@ -221,14 +223,26 @@ class MotionExportService:
 
     def export_to_pdf(self, motion: "Motion") -> bytes:
         """
-        Generate a PDF from the motion content.
+        PDF des Dokuments.
 
-        Args:
-            motion: The motion to export
-
-        Returns:
-            bytes: The PDF file content
+        Mit eingerichtetem Chromium-Dienst (``GOTENBERG_URL``) setzt dieselbe Satz-Kette wie die Seitenansicht des
+        Editors die Seiten (Issue #1584); sonst, und wenn das scheitert, der bisherige Weg über xhtml2pdf.
         """
+        from apps.common import pdf_chromium
+
+        if pdf_chromium.verfuegbar():
+            from .druck import DruckNichtMoeglichError, druck_dateien
+
+            try:
+                pdf_content = pdf_chromium.html_zu_pdf(druck_dateien(motion))
+            except (pdf_chromium.ChromiumNichtVerfuegbarError, DruckNichtMoeglichError) as fehler:
+                logger.warning("PDF über die Satz-Kette nicht möglich, bisheriger Weg: %s", type(fehler).__name__)
+            else:
+                letterhead = motion.letterhead
+                if letterhead and not letterhead.is_generated and letterhead.pdf_file:
+                    pdf_content = self._apply_letterhead(pdf_content, letterhead)
+                return pdf_content
+
         # Generate HTML content
         html_content = self._render_html(motion)
 
@@ -284,7 +298,8 @@ class MotionExportService:
             "content": content,
             "margins": margins,
             "frame": frame,
-            "font_family": letterhead.font_family if letterhead else "Helvetica",
+            # Office-Name der Schrift des Satzes (Tinos → Times New Roman): Den kennt xhtml2pdf
+            "font_family": schriften.aufloesen(letterhead.font_family).fuer_office if letterhead else "Helvetica",
             "font_size": letterhead.font_size if letterhead else 11,
             "signature_html": escape(signature_text).replace("\n", "<br>") if signature_text else "",
             "generated": bool(letterhead and letterhead.is_generated),
@@ -340,7 +355,7 @@ class MotionExportService:
         # Set default font
         style = doc.styles["Normal"]
         font = style.font
-        font.name = letterhead.font_family if letterhead else "Arial"
+        font.name = schriften.aufloesen(letterhead.font_family).fuer_office if letterhead else "Arial"
         font.size = Pt(letterhead.font_size if letterhead else 11)
 
         # Page margins from letterhead mm fields (or defaults)

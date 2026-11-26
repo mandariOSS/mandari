@@ -691,6 +691,11 @@ DJANGO_VITE = {
     }
 }
 
+# PDF der Dokumente über headless Chromium (Gotenberg, Issue #1584): Editor-Seiten und PDF setzt dieselbe Satz-Kette
+# (frontend/satz/). Leer = bisheriger Weg (xhtml2pdf). Der Dienst läuft im eigenen Container ohne Zugriff nach außen.
+GOTENBERG_URL = os.environ.get("GOTENBERG_URL", "").rstrip("/")
+GOTENBERG_TIMEOUT = float(os.environ.get("GOTENBERG_TIMEOUT", "60"))
+
 # WhiteNoise for static files (only in production)
 # Django 6.0: Using STORAGES instead of deprecated STATICFILES_STORAGE
 if not DEBUG:

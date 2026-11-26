@@ -15,6 +15,7 @@ logger = logging.getLogger("apps.work.motions")
 
 import contextlib
 
+from apps.common import schriften
 from apps.common.mixins import WorkViewMixin
 from apps.common.params import int_param, uuid_param
 from apps.common.uploads import MB, PDF, validate_upload
@@ -537,6 +538,15 @@ def _generated_letterhead_defaults(organization) -> dict:
     }
 
 
+def _schrift_kontext(letterhead: OrganizationLetterhead | None) -> dict:
+    """Schriftauswahl des Briefpapier-Formulars (Schriften des Satzes, Issue #1584)."""
+    arten = (("serifenlos", "Ohne Serifen"), ("serif", "Mit Serifen"), ("dicktengleich", "Gleiche Zeichenbreite"))
+    return {
+        "schrift_gruppen": [(name, [s for s in schriften.SCHRIFTEN if s.art == art]) for art, name in arten],
+        "schrift_gewaehlt": schriften.aufloesen(letterhead.font_family if letterhead else None).name,
+    }
+
+
 def _letterhead_form_state(letterhead, organization) -> dict:
     """Startwerte des Briefkopf-Formulars für die Alpine-Komponente (json_script, #172)."""
     if letterhead is None:
@@ -570,6 +580,7 @@ class LetterheadCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         context["settings_tab"] = "letterheads"
         context["is_new"] = True
         context["letterhead_form"] = _letterhead_form_state(None, self.organization)
+        context.update(_schrift_kontext(None))
         return context
 
     def post(self, request, *args, **kwargs):
@@ -614,7 +625,7 @@ class LetterheadCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             footer_text=request.POST.get("footer_text", "").strip(),
             accent_color_enabled=request.POST.get("accent_color_enabled") == "on",
             **_letterhead_numbers(request.POST),
-            font_family=request.POST.get("font_family", "Arial").strip(),
+            font_family=schriften.aufloesen(request.POST.get("font_family", "")).name,
             is_default=is_default,
         )
 
@@ -639,6 +650,7 @@ class LetterheadEditView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             OrganizationLetterhead, id=kwargs.get("letterhead_id"), organization=self.organization
         )
         context["letterhead_form"] = _letterhead_form_state(context["letterhead"], self.organization)
+        context.update(_schrift_kontext(context["letterhead"]))
         return context
 
     def post(self, request, *args, **kwargs):
@@ -676,7 +688,7 @@ class LetterheadEditView(NeueVorlageMixin, WorkViewMixin, TemplateView):
 
         for feld, wert in _letterhead_numbers(request.POST).items():
             setattr(letterhead, feld, wert)
-        letterhead.font_family = request.POST.get("font_family", "Arial").strip()
+        letterhead.font_family = schriften.aufloesen(request.POST.get("font_family", "")).name
 
         is_default = request.POST.get("is_default") == "on"
         if is_default and not letterhead.is_default:

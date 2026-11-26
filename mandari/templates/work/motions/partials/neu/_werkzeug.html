@@ -1,61 +1,122 @@
 {% comment %}
-Werkzeugleiste des neuen Antragseditors (eine Leiste, 40 px) mit Modus rechts; darunter bei Bedarf Tabellenleiste,
-Suchen und Ersetzen und die Infozeile des Ablaufs (nur in Abstimmung, nach der Freigabe und nach der Einreichung).
+Werkzeugleiste des neuen Antragseditors (eine Leiste, 40 px) mit Seite, Zoom, KI und Modus rechts; darunter bei Bedarf
+Tabellenleiste, Suchen und Ersetzen und die Infozeile des Ablaufs (nur in Abstimmung, nach der Freigabe und nach der
+Einreichung).
 Kontext: motion, ablauf, can_edit, is_guest, my_pending_approval, can_submit_ris, ris_application, ris_feedback,
-organization, absatzformate.
-Die Leiste scrollt am Handy seitlich (overflow-x) und schneidet damit alles ab, was über sie hinausragt. Das Modus-Menü
-richtet sich deshalb am Rahmen außerhalb der Leiste aus (relative), nicht an seinem Knopf.
+organization, absatzformate, zeichenformate, ausrichtungen.
+
+Bedienung (Issue #1584, nach dem Vorbild gängiger Textverarbeitungen):
+- Jede Gruppe hat einen Vorrang (data-vorrang, 1 = am wichtigsten). Passt die Leiste nicht in die Breite, wandern die
+  Gruppen mit dem niedrigsten Vorrang in das Menü „Mehr“ (werkzeugMessen im documentEditor); nichts scrollt seitlich,
+  jede Funktion bleibt bei jeder Breite erreichbar. Die Gruppen stehen deshalb als Partials zweimal im Template.
+- Die Leiste ist ein Tab-Halt; Pfeiltasten wandern zwischen den Knöpfen, Pos1/Ende springen (werkzeugTaste).
+- Menüs der Leiste (Absatzformat, Schrift, Größe, Zoom) stehen fest über der Seite (menueAmKnopf), damit sie nichts
+  abschneidet.
 {% endcomment %}
+
+{% partialdef gruppe_verlauf %}
+<button type="button" class="ke-wz" aria-label="Rückgängig" data-tipp="Rückgängig" data-kuerzel="Strg+Z" @mousedown.prevent @click="befehl('undo')" :disabled="modus === 'ansehen'"><i data-lucide="undo-2" aria-hidden="true"></i></button>
+<button type="button" class="ke-wz" aria-label="Wiederholen" data-tipp="Wiederholen" data-kuerzel="Strg+Y" @mousedown.prevent @click="befehl('redo')" :disabled="modus === 'ansehen'"><i data-lucide="redo-2" aria-hidden="true"></i></button>
+{% endpartialdef %}
+
+{% partialdef gruppe_absatz %}
+<button type="button" class="ke-wz-wahl w-[7.5rem]" data-menue-knopf="absatz" aria-haspopup="menu" :aria-expanded="(menue === 'absatz').toString()" aria-expanded="false"
+        @mousedown.prevent @click="menueAmKnopf('absatz', $event)" :disabled="modus === 'ansehen'"
+        aria-label="Absatzformat: Text" :aria-label="'Absatzformat: ' + absatzformatName" data-tipp="Absatzformat">
+    <span class="truncate" x-text="absatzformatName">Text</span><i data-lucide="chevron-down" aria-hidden="true"></i>
+</button>
+{% endpartialdef %}
+
+{% partialdef gruppe_schrift %}
+<button type="button" class="ke-wz-wahl w-[8.5rem]" data-menue-knopf="schrift" aria-haspopup="menu" :aria-expanded="(menue === 'schrift').toString()" aria-expanded="false"
+        @mousedown.prevent @click="menueAmKnopf('schrift', $event)" :disabled="modus === 'ansehen'"
+        :aria-label="'Schriftart: ' + schriftName" aria-label="Schriftart" data-tipp="Schriftart">
+    <span class="truncate" x-text="schriftName" :style="'font-family: ' + JSON.stringify(schriftName)"></span><i data-lucide="chevron-down" aria-hidden="true"></i>
+</button>
+<span class="ke-wz-groesse" role="group" aria-label="Schriftgröße">
+    <button type="button" class="ke-wz ke-wz-klein" aria-label="Schrift kleiner" data-tipp="Kleiner" @mousedown.prevent @click="groesseSchritt(-1)" :disabled="modus === 'ansehen'"><i data-lucide="minus" aria-hidden="true"></i></button>
+    <button type="button" class="ke-wz-wahl ke-wz-zahl" data-menue-knopf="groesse" aria-haspopup="menu" :aria-expanded="(menue === 'groesse').toString()" aria-expanded="false"
+            @mousedown.prevent @click="menueAmKnopf('groesse', $event)" :disabled="modus === 'ansehen'"
+            :aria-label="'Schriftgröße: ' + schriftGroesse + ' Punkt'" aria-label="Schriftgröße" data-tipp="Schriftgröße (pt)"><span x-text="schriftGroesse">11</span></button>
+    <button type="button" class="ke-wz ke-wz-klein" aria-label="Schrift größer" data-tipp="Größer" @mousedown.prevent @click="groesseSchritt(1)" :disabled="modus === 'ansehen'"><i data-lucide="plus" aria-hidden="true"></i></button>
+</span>
+{% endpartialdef %}
+
+{% partialdef gruppe_zeichen %}
+{% for cmd, label, icon, kurz in zeichenformate|slice:":3" %}
+<button type="button" class="ke-wz" aria-label="{{ label }}" data-tipp="{{ label }}" data-kuerzel="{{ kurz }}" :aria-pressed="(!!formats.{{ cmd }}).toString()" aria-pressed="false"
+        @mousedown.prevent @click="befehl('{{ cmd }}')" :disabled="modus === 'ansehen'"><i data-lucide="{{ icon }}" aria-hidden="true"></i></button>
+{% endfor %}
+{% endpartialdef %}
+
+{% partialdef gruppe_listen %}
+<button type="button" class="ke-wz" aria-label="Aufzählung" data-tipp="Aufzählung" data-kuerzel="Strg+Umschalt+8" :aria-pressed="(formats.list === 'bullet').toString()" aria-pressed="false"
+        @mousedown.prevent @click="befehl('bulletList')" :disabled="modus === 'ansehen'"><i data-lucide="list" aria-hidden="true"></i></button>
+<button type="button" class="ke-wz" aria-label="Nummerierung" data-tipp="Nummerierung" data-kuerzel="Strg+Umschalt+7" :aria-pressed="(formats.list === 'ordered').toString()" aria-pressed="false"
+        @mousedown.prevent @click="befehl('orderedList')" :disabled="modus === 'ansehen'"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
+{% endpartialdef %}
+
+{% partialdef gruppe_ausrichtung %}
+{% for wert, label, icon in ausrichtungen %}
+<button type="button" class="ke-wz" aria-label="{{ label }}" data-tipp="{{ label }}" :aria-pressed="(formats.textAlign === '{{ wert }}').toString()" aria-pressed="false"
+        @mousedown.prevent @click="befehl('align', 0, '{{ wert }}')" :disabled="modus === 'ansehen'"><i data-lucide="{{ icon }}" aria-hidden="true"></i></button>
+{% endfor %}
+{% endpartialdef %}
+
+{% partialdef gruppe_kommentar %}
+<button type="button" class="ke-wz" aria-label="Kommentar zur markierten Stelle" data-tipp="Kommentar" data-kuerzel="Strg+Alt+M"
+        @mousedown.prevent @click="kommentarStarten()"><i data-lucide="message-square-plus" aria-hidden="true"></i></button>
+<button type="button" class="ke-wz" x-show="modus === 'vorschlagen'" x-cloak aria-label="Änderung zur markierten Stelle vorschlagen" data-tipp="Änderung vorschlagen"
+        @mousedown.prevent @click="vorschlagStarten()"><i data-lucide="pencil-line" aria-hidden="true"></i></button>
+{% endpartialdef %}
+
+{% partialdef gruppe_einfuegen %}
+<button type="button" class="ke-wz" aria-label="Link einfügen" data-tipp="Link" data-kuerzel="Strg+K" :aria-pressed="(!!formats.link).toString()" aria-pressed="false"
+        @mousedown.prevent @click="openLinkDialog()" :disabled="modus === 'ansehen'"><i data-lucide="link" aria-hidden="true"></i></button>
+<button type="button" class="ke-wz" aria-label="Bild einfügen" data-tipp="Bild" @mousedown.prevent @click="showImageModal = true" :disabled="modus === 'ansehen'"><i data-lucide="image" aria-hidden="true"></i></button>
+<button type="button" class="ke-wz" aria-label="Tabelle einfügen" data-tipp="Tabelle" @mousedown.prevent @click="$dispatch('editor-table-cmd', 'insertTable')" :disabled="modus === 'ansehen'"><i data-lucide="table" aria-hidden="true"></i></button>
+<button type="button" class="ke-wz" aria-label="Seitenumbruch einfügen" data-tipp="Seitenumbruch" data-kuerzel="Strg+Enter" @mousedown.prevent @click="befehl('pageBreak')" :disabled="modus === 'ansehen'"><i data-lucide="file-output" aria-hidden="true"></i></button>
+<button type="button" class="ke-wz" aria-label="Anlage hinzufügen" data-tipp="Anlage" @click="panelOeffnen('details')"><i data-lucide="paperclip" aria-hidden="true"></i></button>
+{% endpartialdef %}
+
+{% partialdef gruppen %}
+<span class="ke-wz-gruppe" data-gruppe="verlauf" data-vorrang="4" x-show="!wzVerborgen.includes('verlauf')">{% partial gruppe_verlauf %}</span>
+<span class="ke-wz-gruppe" data-gruppe="absatz" data-vorrang="3" x-show="!wzVerborgen.includes('absatz')">{% partial gruppe_absatz %}</span>
+<span class="ke-wz-gruppe" data-gruppe="schrift" data-vorrang="5" x-show="!wzVerborgen.includes('schrift')">{% partial gruppe_schrift %}</span>
+<span class="ke-wz-gruppe" data-gruppe="zeichen" data-vorrang="1" x-show="!wzVerborgen.includes('zeichen')">{% partial gruppe_zeichen %}</span>
+<span class="ke-wz-gruppe" data-gruppe="listen" data-vorrang="2" x-show="!wzVerborgen.includes('listen')">{% partial gruppe_listen %}</span>
+<span class="ke-wz-gruppe" data-gruppe="ausrichtung" data-vorrang="6" x-show="!wzVerborgen.includes('ausrichtung')">{% partial gruppe_ausrichtung %}</span>
+<span class="ke-wz-gruppe" data-gruppe="kommentar" data-vorrang="1" x-show="!wzVerborgen.includes('kommentar')">{% partial gruppe_kommentar %}</span>
+<span class="ke-wz-gruppe" data-gruppe="einfuegen" data-vorrang="7" x-show="!wzVerborgen.includes('einfuegen')">{% partial gruppe_einfuegen %}</span>
+{% endpartialdef %}
+
 {% if can_edit %}
 <div class="relative">
-<div id="editor-toolbar" class="ke-werkzeug" role="toolbar" aria-label="Format" x-show="!historyMode">
-    <span class="ke-wz-gruppe hidden sm:flex">
-        <button type="button" class="ke-wz" aria-label="Rückgängig" title="Rückgängig (Strg+Z)" @mousedown.prevent @click="befehl('undo')" :disabled="modus === 'ansehen'"><i data-lucide="undo-2" aria-hidden="true"></i></button>
-        <button type="button" class="ke-wz" aria-label="Wiederholen" title="Wiederholen (Strg+Y)" @mousedown.prevent @click="befehl('redo')" :disabled="modus === 'ansehen'"><i data-lucide="redo-2" aria-hidden="true"></i></button>
-    </span>
-    <span class="ke-wz-gruppe hidden sm:flex">
-        <label for="ke-absatz" class="sr-only">Absatzformat</label>
-        <select id="ke-absatz" class="ke-absatz" :value="absatzformatWert" @change="absatzformat($event.target.value)" :disabled="modus === 'ansehen'">
-            {% for wert, label in absatzformate %}<option value="{{ wert }}">{{ label }}</option>{% endfor %}
-        </select>
-    </span>
-    <span class="ke-wz-gruppe">
-        {% for cmd, label, icon, kurz in zeichenformate|slice:":3" %}
-        <button type="button" class="ke-wz" aria-label="{{ label }}" title="{{ label }} ({{ kurz }})" :aria-pressed="(!!formats.{{ cmd }}).toString()" aria-pressed="false"
-                @mousedown.prevent @click="befehl('{{ cmd }}')" :disabled="modus === 'ansehen'"><i data-lucide="{{ icon }}" aria-hidden="true"></i></button>
-        {% endfor %}
-    </span>
-    <span class="ke-wz-gruppe">
-        <button type="button" class="ke-wz" aria-label="Aufzählung" title="Aufzählung (Strg+Umschalt+8)" :aria-pressed="(formats.list === 'bullet').toString()" aria-pressed="false"
-                @mousedown.prevent @click="befehl('bulletList')" :disabled="modus === 'ansehen'"><i data-lucide="list" aria-hidden="true"></i></button>
-        <button type="button" class="ke-wz" aria-label="Nummerierung" title="Nummerierung (Strg+Umschalt+7)" :aria-pressed="(formats.list === 'ordered').toString()" aria-pressed="false"
-                @mousedown.prevent @click="befehl('orderedList')" :disabled="modus === 'ansehen'"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
-    </span>
-    {# Ausrichtung direkt in der Leiste (wie im Menü „Format“), ab sm sichtbar #}
-    <span class="ke-wz-gruppe hidden sm:flex">
-        {% for wert, label, icon in ausrichtungen %}
-        <button type="button" class="ke-wz" aria-label="{{ label }}" title="{{ label }}" :aria-pressed="(formats.textAlign === '{{ wert }}').toString()" aria-pressed="false"
-                @mousedown.prevent @click="befehl('align', 0, '{{ wert }}')" :disabled="modus === 'ansehen'"><i data-lucide="{{ icon }}" aria-hidden="true"></i></button>
-        {% endfor %}
-    </span>
-    <span class="ke-wz-gruppe">
-        <button type="button" class="ke-wz hidden sm:grid" aria-label="Link einfügen" title="Link einfügen (Strg+K)" :aria-pressed="(!!formats.link).toString()" aria-pressed="false"
-                @mousedown.prevent @click="openLinkDialog()" :disabled="modus === 'ansehen'"><i data-lucide="link" aria-hidden="true"></i></button>
-        <button type="button" class="ke-wz" aria-label="Kommentar zur markierten Stelle" title="Kommentar (Strg+Alt+M)"
-                @mousedown.prevent @click="kommentarStarten()"><i data-lucide="message-square-plus" aria-hidden="true"></i></button>
-        <button type="button" class="ke-wz" x-show="modus === 'vorschlagen'" x-cloak aria-label="Änderung zur markierten Stelle vorschlagen" title="Änderung vorschlagen"
-                @mousedown.prevent @click="vorschlagStarten()"><i data-lucide="pencil-line" aria-hidden="true"></i></button>
-        <button type="button" class="ke-wz hidden sm:grid" aria-label="Anlage hinzufügen" title="Anlage hinzufügen" @click="panelOeffnen('details')"><i data-lucide="paperclip" aria-hidden="true"></i></button>
+<div id="editor-toolbar" class="ke-werkzeug" role="toolbar" aria-label="Format" aria-orientation="horizontal" x-show="!historyMode"
+     x-init="$nextTick(() => werkzeugBeobachten($el))" @keydown="werkzeugTaste($event)" @focusin="werkzeugFokus($event)"
+     @mouseover="tippZeigen($event)" @mouseout="tippVerbergen()" @focusout="tippVerbergen()">
+    <span class="ke-wz-gruppen" data-wz-gruppen>{% partial gruppen %}</span>
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.length" x-cloak>
+        <button type="button" class="ke-wz" data-menue-knopf="mehr" aria-haspopup="menu" :aria-expanded="(menue === 'mehr').toString()" aria-expanded="false"
+                aria-label="Weitere Werkzeuge" data-tipp="Weitere Werkzeuge" @click="menueAmKnopf('mehr', $event)"><i data-lucide="ellipsis" aria-hidden="true"></i></button>
     </span>
     <span class="flex-1" aria-hidden="true"></span>
-    {% if not is_guest and not is_sworn_in_only %}
-    {# KI-Assistent mit einem Klick (sonst nur über „Ansicht“ bzw. das Menü rechts) #}
-    <button type="button" class="ke-modus mr-2" @click="panelOeffnen('ki')" aria-label="KI-Assistent öffnen" title="KI-Assistent">
-        <i data-lucide="sparkles" class="w-4 h-4" aria-hidden="true"></i><span class="hidden sm:inline">KI-Assistent</span>
-    </button>
-    {% endif %}
-    <div>
-        <button type="button" class="ke-modus" data-menue-knopf="modus" @click="menueUmschalten('modus')" aria-haspopup="menu"
+    <span class="ke-wz-rechts" data-wz-rechts>
+        <button type="button" class="ke-seite-anzeige hidden xl:inline-flex" x-show="seitenansicht && pageCount > 1" x-cloak
+                data-menue-knopf="seiten" aria-haspopup="menu" :aria-expanded="(menue === 'seiten').toString()" aria-expanded="false"
+                @click="menueAmKnopf('seiten', $event)" :aria-label="'Seite ' + currentPage + ' von ' + pageCount + ', zu einer Seite springen'">
+            <span x-text="'Seite ' + currentPage + ' von ' + pageCount"></span>
+        </button>
+        <button type="button" class="ke-wz-wahl ke-wz-zahl hidden md:inline-flex" x-show="seitenansicht" x-cloak data-menue-knopf="zoom" aria-haspopup="menu"
+                :aria-expanded="(menue === 'zoom').toString()" aria-expanded="false" @click="menueAmKnopf('zoom', $event)"
+                :aria-label="'Zoom ' + zoomProzent + ' Prozent'" data-tipp="Zoom"><span x-text="zoomProzent + ' %'">100 %</span><i data-lucide="chevron-down" aria-hidden="true"></i></button>
+        {% if not is_guest and not is_sworn_in_only %}
+        {# KI-Assistent mit einem Klick (sonst nur über „Ansicht“ bzw. das Menü rechts) #}
+        <button type="button" class="ke-modus" @click="panelOeffnen('ki')" aria-label="KI-Assistent öffnen" data-tipp="KI-Assistent">
+            <i data-lucide="sparkles" class="w-4 h-4" aria-hidden="true"></i><span class="hidden sm:inline">KI-Assistent</span>
+        </button>
+        {% endif %}
+        <button type="button" class="ke-modus" data-menue-knopf="modus" @click="menueAmKnopf('modus', $event)" aria-haspopup="menu"
                 :aria-expanded="(menue === 'modus').toString()" aria-expanded="false" :data-modus="modus"
                 :aria-label="'Modus: ' + ({ bearbeiten: 'Bearbeiten', vorschlagen: 'Vorschlagen', ansehen: 'Ansehen' })[modus]">
             <i x-show="modus === 'bearbeiten'" data-lucide="pencil" class="w-4 h-4" aria-hidden="true"></i>
@@ -64,12 +125,76 @@ richtet sich deshalb am Rahmen außerhalb der Leiste aus (relative), nicht an se
             <span class="hidden sm:inline" x-text="({ bearbeiten: 'Bearbeiten', vorschlagen: 'Vorschlagen', ansehen: 'Ansehen' })[modus]">Bearbeiten</span>
             <i data-lucide="chevron-down" class="w-3.5 h-3.5" aria-hidden="true"></i>
         </button>
-        <div x-show="menue === 'modus'" x-cloak class="ke-menue ke-menue-rechts right-3 lg:right-4" role="menu" aria-label="Modus">
-            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'bearbeiten').toString()" @click="modusSetzen('bearbeiten')"><i data-lucide="pencil" aria-hidden="true"></i><span>Bearbeiten<small>Text direkt ändern</small></span></button>
-            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'vorschlagen').toString()" @click="modusSetzen('vorschlagen')"><i data-lucide="pencil-line" aria-hidden="true"></i><span>Vorschlagen<small>Änderungen am Rand vorschlagen, annehmen oder ablehnen</small></span></button>
-            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'ansehen').toString()" @click="modusSetzen('ansehen')"><i data-lucide="eye" aria-hidden="true"></i><span>Ansehen<small>Lesen, ohne zu ändern</small></span></button>
+    </span>
+</div>
+
+{# Menüs der Werkzeugleiste: fest über der Seite an ihrem Knopf (menuePos) #}
+<div x-show="menue === 'mehr'" x-cloak data-menue="mehr" class="ke-menue ke-menue-fest ke-wz-mehr" :style="menueStil" role="toolbar" aria-label="Weitere Werkzeuge" @keydown="werkzeugTaste($event)">
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.includes('verlauf')">{% partial gruppe_verlauf %}</span>
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.includes('absatz')">{% partial gruppe_absatz %}</span>
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.includes('schrift')">{% partial gruppe_schrift %}</span>
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.includes('zeichen')">{% partial gruppe_zeichen %}</span>
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.includes('listen')">{% partial gruppe_listen %}</span>
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.includes('ausrichtung')">{% partial gruppe_ausrichtung %}</span>
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.includes('kommentar')">{% partial gruppe_kommentar %}</span>
+    <span class="ke-wz-gruppe" x-show="wzVerborgen.includes('einfuegen')">{% partial gruppe_einfuegen %}</span>
+</div>
+
+<div x-show="menue === 'absatz'" x-cloak data-menue="absatz" class="ke-menue ke-menue-fest ke-absatz-menue" :style="menueStil" role="menu" aria-label="Absatzformat">
+    {% for wert, label in absatzformate %}
+    <button type="button" role="menuitemradio" class="ke-mp" data-absatz="{{ wert }}" :aria-checked="(absatzformatWert === '{{ wert }}').toString()"
+            @mousedown.prevent @click="absatzformat('{{ wert }}'); menueSchliessen()">
+        <span class="ke-absatz-probe">{{ label }}</span>
+        {% if wert == 'p' %}<kbd>Strg+Alt+0</kbd>{% elif wert == 'h1' %}<kbd>Strg+Alt+1</kbd>{% elif wert == 'h2' %}<kbd>Strg+Alt+2</kbd>{% elif wert == 'h3' %}<kbd>Strg+Alt+3</kbd>{% endif %}
+    </button>
+    {% endfor %}
+</div>
+
+<div x-show="menue === 'schrift'" x-cloak data-menue="schrift" class="ke-menue ke-menue-fest ke-schrift-menue" :style="menueStil" role="menu" aria-label="Schriftart">
+    <template x-for="(art, artIndex) in ['serifenlos', 'serif', 'dicktengleich']" :key="art">
+        <div role="none">
+            <p class="ke-menue-gruppe" role="presentation" x-text="({ serifenlos: 'Ohne Serifen', serif: 'Mit Serifen', dicktengleich: 'Gleiche Zeichenbreite' })[art]"></p>
+            <template x-for="schrift in schriftListe.filter((s) => s.art === art)" :key="schrift.schluessel">
+                <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(schriftName === schrift.name).toString()"
+                        @mousedown.prevent @click="schriftSetzen(schrift.name)">
+                    <span class="ke-schrift-probe" :style="'font-family: ' + schrift.stapel" x-text="schrift.name"></span>
+                    <small x-text="schrift.hinweis"></small>
+                </button>
+            </template>
         </div>
-    </div>
+    </template>
+</div>
+
+<div x-show="menue === 'groesse'" x-cloak data-menue="groesse" class="ke-menue ke-menue-fest ke-groessen-menue" :style="menueStil" role="menu" aria-label="Schriftgröße">
+    <template x-for="pt in schriftGroessen" :key="pt">
+        <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(schriftGroesse === String(pt).replace('.', ',')).toString()"
+                @mousedown.prevent @click="groesseSetzen(pt)" x-text="String(pt).replace('.', ',')"></button>
+    </template>
+</div>
+
+<div x-show="menue === 'zoom'" x-cloak data-menue="zoom" class="ke-menue ke-menue-fest ke-zoom-menue" :style="menueStil" role="menu" aria-label="Zoom">
+    <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(zoom === 0).toString()" @click="zoomSetzen(0); menueSchliessen()">Seitenbreite</button>
+    <div role="separator" class="ke-trenn"></div>
+    <template x-for="stufe in zoomStufen" :key="stufe">
+        <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(zoom === stufe).toString()" @click="zoomSetzen(stufe); menueSchliessen()" x-text="stufe + ' %'"></button>
+    </template>
+</div>
+
+<div x-show="menue === 'seiten'" x-cloak data-menue="seiten" class="ke-menue ke-menue-fest" :style="menueStil" role="menu" aria-label="Zu Seite springen">
+    <template x-for="nr in pageCount" :key="nr">
+        <button type="button" role="menuitem" class="ke-mp" @click="zurSeite(nr); menueSchliessen()" x-text="'Seite ' + nr"></button>
+    </template>
+</div>
+
+<div x-show="menue === 'modus'" x-cloak data-menue="modus" class="ke-menue ke-menue-fest" :style="menueStil" role="menu" aria-label="Modus">
+    <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'bearbeiten').toString()" @click="modusSetzen('bearbeiten')"><i data-lucide="pencil" aria-hidden="true"></i><span>Bearbeiten<small>Text direkt ändern</small></span></button>
+    <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'vorschlagen').toString()" @click="modusSetzen('vorschlagen')"><i data-lucide="pencil-line" aria-hidden="true"></i><span>Vorschlagen<small>Änderungen am Rand vorschlagen, annehmen oder ablehnen</small></span></button>
+    <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'ansehen').toString()" @click="modusSetzen('ansehen')"><i data-lucide="eye" aria-hidden="true"></i><span>Ansehen<small>Lesen, ohne zu ändern</small></span></button>
+</div>
+
+{# Kurzinfo zu Knöpfen der Leiste: Name und Tastenkürzel, bei Maus und Tastatur (tippZeigen) #}
+<div class="ke-tipp" x-show="tipp.text" x-cloak :style="tipp.stil" role="tooltip" id="ke-werkzeug-tipp">
+    <span x-text="tipp.text"></span><kbd x-show="tipp.kuerzel" x-text="tipp.kuerzel"></kbd>
 </div>
 </div>
 <div x-show="!historyMode">

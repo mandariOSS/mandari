@@ -1,0 +1,38 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/*
+ * Druckansicht der Satz-Kette (Issue #1584, templates/work/motions/satz/druck.html): eine Seite je Bogen ohne Rand.
+ * Im Browser stehen die Bögen mittig auf grauer Fläche, im Druck (und im PDF) ohne Schatten.
+ */
+@page {
+  size: 210mm 297mm;
+  margin: 0;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #fff;
+}
+#editor-container {
+  margin: 0;
+}
+@media screen {
+  html {
+    background: #e5e7eb;
+  }
+  body {
+    padding: 24px 0;
+    background: transparent;
+  }
+  #editor-container {
+    margin: 0 auto;
+  }
+  .satz-bogen {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  }
+}
+@media print {
+  .satz-bogen {
+    box-shadow: none;
+  }
+}

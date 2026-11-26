@@ -32,6 +32,9 @@ services:
   website:
     profiles: ["aus"]
   # PgBouncer läuft auf dem Datenserver
+  # Gotenberg (PDF der Satz-Kette, #1584) läuft auf den web-Servern; Worker erreichen ihn über GOTENBERG_URL
+  gotenberg:
+    profiles: !override ["aus"]
   pgbouncer:
     profiles: !override ["aus"]
 

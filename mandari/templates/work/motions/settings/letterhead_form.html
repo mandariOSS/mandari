@@ -171,13 +171,7 @@
                         <label for="font_family" class="block text-xs text-gray-500 mb-1">Schriftart</label>
                         <select id="font_family" name="font_family"
                                 class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-hidden">
-                            {% with current_font=letterhead.font_family|default:"Arial" %}
-                            <option value="Arial" {% if current_font == "Arial" %}selected{% endif %}>Arial</option>
-                            <option value="Helvetica" {% if current_font == "Helvetica" %}selected{% endif %}>Helvetica</option>
-                            <option value="Times New Roman" {% if current_font == "Times New Roman" %}selected{% endif %}>Times New Roman</option>
-                            <option value="Georgia" {% if current_font == "Georgia" %}selected{% endif %}>Georgia</option>
-                            <option value="Calibri" {% if current_font == "Calibri" %}selected{% endif %}>Calibri</option>
-                            {% endwith %}
+                            {% include "work/motions/settings/_schrift_optionen.html" %}
                         </select>
                     </div>
                     <div>

@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load static %}
 {% comment %}
 Neuer Antragseditor (Teil von #856, Svens Wahl E1+E2 vom 05.10.2026): eine Kopfzeile mit Titel, Stand, Speicheranzeige,
 Menü Datei … Ablauf und Ablaufleiste; eine Werkzeugleiste; Gliederung links, Text über die Breite, Kommentare am Rand
@@ -13,6 +14,9 @@ Dieselbe Alpine-Komponente documentEditor, dieselben Daten und Endpunkte wie bis
 {% block work_extra_head %}
 {% load django_vite %}{% vite_asset 'frontend/editor/index.ts' %}
 {% include "work/motions/partials/_editor_styles.html" %}
+{# Schriften und Satz der Seitenansicht: dieselben Dateien wie im PDF (Issue #1584) #}
+<link rel="stylesheet" href="{% static 'vendor/schriften/schriften.css' %}">
+<link rel="stylesheet" href="{% static 'css/dokument-satz.css' %}">
 {% endblock %}
 
 {% comment %}Eine Kopfzeile (Prototyp E1+E2): Der Kopf des Editors ersetzt die Kopfzeile des Rahmens und bringt Glocke,
@@ -47,7 +51,10 @@ Suche und Dunkelmodus selbst mit (partials/neu/_kopf.html).{% endcomment %}
                 <div class="ke-blatt">
                     {% include "work/motions/partials/neu/_blattkopf.html" %}
                     {% if can_edit %}
-                    <div id="editor-container" class="editor-page" data-ke-text x-show="!historyMode"></div>
+                    {# Hülle der Seitenansicht: trägt die gezoomte Größe des Seitenstapels (frontend/satz/steuerung.ts) #}
+                    <div class="satz-huelle" x-show="!historyMode">
+                        <div id="editor-container" class="editor-page" data-ke-text></div>
+                    </div>
                     {% include "work/motions/partials/_editor_history_view.html" %}
                     {% else %}
                     <div class="content-readonly" data-ke-text>

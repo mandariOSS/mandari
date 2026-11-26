@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import { lucideIcons } from './frontend/vite/lucide-icons'
+import { satzDruck } from './frontend/vite/satz-druck'
 
 /**
  * Vite-Build für mandari (django-vite liest das Manifest).
@@ -12,6 +13,10 @@ import { lucideIcons } from './frontend/vite/lucide-icons'
  *   frontend/editor/index.ts  – nur Editor-Seiten (TipTap, Yjs) inkl. der Alpine-Komponenten
  *                               frontend/alpine/document-editor.ts und prepare-meeting.ts
  *
+ * Dazu baut satzDruck (frontend/vite/satz-druck.ts) nach dem Vite-Build die Druckansicht der Satz-Kette als ein
+ * klassisches Skript (static/dist/satz-druck.js): headless Chromium lädt die Seite aus Dateien, dort gehen keine
+ * ES-Module (Issue #1584).
+ *
  * Lucide-Icons: nur die im Projekt genannten im Haupt-Bundle, der Rest bei Bedarf (frontend/vite/lucide-icons.ts).
  *
  * Entwicklung: `npm run dev` (Dev-Server mit HMR, DJANGO_VITE_DEV_MODE=1)
@@ -19,7 +24,7 @@ import { lucideIcons } from './frontend/vite/lucide-icons'
  */
 export default defineConfig({
   base: '/static/dist/',
-  plugins: [lucideIcons(__dirname)],
+  plugins: [lucideIcons(__dirname), satzDruck(__dirname)],
   build: {
     manifest: 'manifest.json',
     outDir: resolve(__dirname, 'static/dist'),

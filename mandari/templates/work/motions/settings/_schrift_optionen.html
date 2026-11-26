@@ -1,0 +1,12 @@
+{% comment %}
+Schriftarten des Briefpapiers: die Schriften des Satzes (apps/common/schriften.py, Issue #1584), nach Art gruppiert.
+Office-Namen früherer Briefpapiere (Arial, Calibri …) sind ihrer kompatiblen Schrift zugeordnet (schrift_gewaehlt).
+Kontext: schrift_gruppen (Liste aus Gruppenname und Schriften), schrift_gewaehlt (Familienname).
+{% endcomment %}
+{% for gruppe, liste in schrift_gruppen %}
+<optgroup label="{{ gruppe }}">
+    {% for schrift in liste %}
+    <option value="{{ schrift.name }}" {% if schrift.name == schrift_gewaehlt %}selected{% endif %}>{{ schrift.name }} – {{ schrift.hinweis }}</option>
+    {% endfor %}
+</optgroup>
+{% endfor %}

@@ -10,15 +10,9 @@
 
 import { Editor } from '@tiptap/core'
 import { isChangeOrigin } from '@tiptap/extension-collaboration'
-import Highlight from '@tiptap/extension-highlight'
-import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
-import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
-import TextAlign from '@tiptap/extension-text-align'
-import { Color, TextStyle } from '@tiptap/extension-text-style'
 import Underline from '@tiptap/extension-underline'
-import { CharacterCount, Placeholder } from '@tiptap/extensions'
+import { Placeholder } from '@tiptap/extensions'
 import StarterKit from '@tiptap/starter-kit'
 import Alpine from 'alpinejs'
 import { documentEditor } from '../alpine/document-editor'
@@ -36,19 +30,19 @@ import {
 import { preparationApp } from '../alpine/prepare-meeting'
 import { type NotizenFormat, sitzungsNotizen } from '../alpine/session-notes'
 import { vorbereitung } from '../alpine/vorbereitung'
+import { SatzSteuerung } from '../satz/steuerung'
+import { dokumentErweiterungen, dokumentStarterKit } from './basis'
 import type { CollabOptions, CollabResult, CollabStatus, CollabUser, ReloadReason } from './collaboration'
 import { initCollaboration } from './collaboration'
 import { renderDiff } from './diff'
 import { CommentMark } from './extensions/comment-mark'
 import { type ErwaehnbarePerson, Erwaehnung } from './extensions/erwaehnung'
 import { FindReplace } from './extensions/find-replace'
-import { Indent } from './extensions/indent'
 import { PageBreakNode } from './extensions/page-break-node'
-import { PageBreaks } from './extensions/page-breaks'
-import { SlashCommands } from './extensions/slash-commands'
 import { YjsUndo } from './extensions/yjs-undo'
 import { renderLetterhead } from './letterhead'
 import { cleanPastedHtml } from './paste-cleanup'
+import { ladePdfJs } from './pdfjs-laden'
 
 export interface EditorOptions {
   element: HTMLElement
@@ -57,6 +51,11 @@ export interface EditorOptions {
   onUpdate?: (html: string) => void
   onSelectionUpdate?: (state: FormatState) => void
   onPageCount?: (count: number, currentPage: number) => void
+  /**
+   * Echte Seiten über die Satz-Kette (frontend/satz/, Issue #1584) statt der geschätzten Seitenlücken: Die Lücken setzt
+   * eine SatzSteuerung, sobald die Seitenansicht an ist.
+   */
+  satz?: boolean
   /** Suchen & Ersetzen: wird bei Änderung der Trefferliste aufgerufen */
   onSearchUpdate?: (current: number, total: number) => void
   placeholder?: string
@@ -111,6 +110,10 @@ export interface FormatState {
   textColor: string | false
   highlight: boolean
   table: boolean
+  /** Schriftart der Auswahl (erste Angabe von font-family) oder leer = Schrift des Dokuments */
+  fontFamily: string
+  /** Schriftgröße der Auswahl (z. B. „12pt“) oder leer = Größe des Dokuments */
+  fontSize: string
 }
 
 function getFormatState(editor: Editor): FormatState {
@@ -145,69 +148,17 @@ function getFormatState(editor: Editor): FormatState {
     textColor: editor.getAttributes('textStyle').color || false,
     highlight: editor.isActive('highlight'),
     table: editor.isActive('table'),
+    fontFamily: ((editor.getAttributes('textStyle').fontFamily as string | undefined) ?? '')
+      .split(',')[0]
+      .trim()
+      .replace(/^["']|["']$/g, ''),
+    fontSize: (editor.getAttributes('textStyle').fontSize as string | undefined) ?? '',
   }
 }
 
-/** Base extensions shared between solo and collaborative editors */
+/** Base extensions shared between solo and collaborative editors (frontend/editor/basis.ts, auch für den Druck) */
 function getBaseExtensions(options: EditorOptions) {
-  return [
-    Underline,
-    Placeholder.configure({
-      placeholder: options.placeholder || 'Beginnen Sie hier mit dem Schreiben...',
-    }),
-    CharacterCount,
-    Link.configure({
-      openOnClick: false,
-      HTMLAttributes: {
-        class: 'text-primary-600 underline hover:text-primary-700',
-      },
-    }),
-    TextAlign.configure({
-      types: ['heading', 'paragraph'],
-    }),
-    Highlight.configure({
-      multicolor: true,
-    }),
-    // Tables
-    Table.configure({
-      resizable: true,
-      HTMLAttributes: {
-        class: 'editor-table',
-      },
-    }),
-    TableRow,
-    TableHeader,
-    TableCell,
-    // Task Lists / Checklists
-    TaskList,
-    TaskItem.configure({
-      nested: true,
-    }),
-    // Text Color
-    TextStyle,
-    Color,
-    // Images
-    Image.configure({
-      inline: false,
-      allowBase64: true,
-      HTMLAttributes: {
-        class: 'editor-image',
-      },
-    }),
-    CommentMark,
-    Indent,
-    PageBreaks.configure({
-      onPageCount: options.onPageCount,
-    }),
-    // Manueller Seitenumbruch (Strg+Enter, Toolbar, /-Menü)
-    PageBreakNode,
-    // Suchen & Ersetzen (lokale Decorations, kollaborationssicher)
-    FindReplace.configure({
-      onSearchUpdate: options.onSearchUpdate,
-    }),
-    // Slash Commands
-    SlashCommands,
-  ]
+  return dokumentErweiterungen(options)
 }
 
 /**
@@ -228,17 +179,7 @@ export function createEditor(options: EditorOptions): Editor {
     editable: options.editable,
     content: options.content,
     editorProps: getEditorProps(),
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        // Link und Underline konfigurieren wir selbst (siehe getBaseExtensions);
-        // TrailingNode würde das Dokumentende verändern (Briefkopf/Seitenzählung).
-        link: false,
-        underline: false,
-        trailingNode: false,
-      }),
-      ...getBaseExtensions(options),
-    ],
+    extensions: [dokumentStarterKit(), ...getBaseExtensions(options)],
     onUpdate({ editor }) {
       if (options.onUpdate) {
         options.onUpdate(editor.getHTML())
@@ -450,14 +391,8 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
     editorProps: getEditorProps(),
     // Content is loaded via Yjs (from server state or seeded in onInitialState)
     extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        link: false,
-        underline: false,
-        trailingNode: false,
-        // Disable built-in history in collab mode — Yjs handles undo/redo
-        undoRedo: false,
-      }),
+      // Ohne eingebautes Rückgängig: In der Kollaboration übernimmt Yjs (YjsUndo)
+      dokumentStarterKit(true),
       ...getBaseExtensions(options),
       ...collab.extensions,
       YjsUndo,
@@ -492,6 +427,15 @@ export {
   renderLetterhead,
 }
 
+/** Satz-Kette der Seitenansicht (frontend/satz/) mit pdf.js für ein Briefpapier als PDF */
+function satzSteuerung(
+  editor: Editor,
+  rahmen: HTMLElement,
+  optionen: ConstructorParameters<typeof SatzSteuerung>[2],
+): SatzSteuerung {
+  return new SatzSteuerung(editor, rahmen, { ...optionen, pdfjs: ladePdfJs })
+}
+
 // Globales Objekt für die Alpine-Komponenten in den Templates (ES-Modul via Vite)
 const MandariEditor = {
   createEditor,
@@ -507,6 +451,7 @@ const MandariEditor = {
   renderDiff,
   renderLetterhead,
   initCollaboration,
+  satzSteuerung,
 }
 declare global {
   interface Window {

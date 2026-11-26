@@ -537,11 +537,85 @@ input.ke-titel:focus {
   @apply ring-2 ring-offset-1 ring-primary-600 dark:ring-offset-gray-800;
 }
 
-/* Werkzeugleiste: eine Leiste, 40 px */
+/* Werkzeugleiste: eine Leiste, 40 px. Was nicht passt, steht im Menü „Mehr“ (werkzeugBeobachten), nichts scrollt. */
 .ke-werkzeug {
-  @apply flex items-center gap-0.5 h-10 px-3 overflow-x-auto lg:px-4;
+  @apply flex items-center gap-0.5 h-10 px-3 min-w-0 overflow-hidden lg:px-4;
   border-top: 1px solid var(--ke-linie);
-  scrollbar-width: none;
+}
+.ke-wz-gruppen {
+  @apply flex items-center min-w-0;
+}
+.ke-wz-rechts {
+  @apply flex flex-none items-center gap-2;
+}
+/* Auswahlknopf mit Wert (Absatzformat, Schrift, Größe, Zoom) */
+.ke-wz-wahl {
+  @apply inline-flex flex-none items-center gap-1 h-7 px-2 rounded text-[13px] text-gray-800 hover:bg-gray-100 disabled:cursor-default disabled:text-gray-400 disabled:hover:bg-transparent dark:text-gray-200 dark:hover:bg-gray-800;
+}
+.ke-wz-wahl > i,
+.ke-wz-wahl > svg {
+  @apply ml-auto w-3.5 h-3.5 flex-none text-gray-500;
+}
+.ke-wz-wahl[aria-expanded="true"] {
+  @apply bg-gray-100 dark:bg-gray-800;
+}
+.ke-wz-zahl {
+  @apply justify-center min-w-[2.75rem] tabular-nums;
+}
+.ke-wz-groesse {
+  @apply inline-flex items-center ml-1;
+}
+.ke-seite-anzeige {
+  @apply inline-flex items-center h-7 px-2 rounded text-[13px] text-gray-600 tabular-nums hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800;
+}
+/* Menüs der Werkzeugleiste stehen fest über der Seite (menueAmKnopf setzt top/left bzw. right) */
+.ke-menue.ke-menue-fest {
+  position: fixed;
+  z-index: 70;
+  margin-top: 0;
+}
+.ke-wz-mehr {
+  @apply flex flex-wrap items-center gap-y-1 p-2 min-w-0;
+  max-width: min(22rem, calc(100vw - 16px));
+}
+.ke-wz-mehr .ke-wz-gruppe {
+  @apply flex-wrap;
+}
+.ke-schrift-menue {
+  @apply min-w-[17rem];
+}
+.ke-schrift-probe {
+  @apply text-[15px] leading-tight;
+}
+.ke-absatz-menue {
+  @apply min-w-[15rem];
+}
+.ke-absatz-menue [data-absatz="h1"] .ke-absatz-probe {
+  @apply text-[19px] font-bold;
+}
+.ke-absatz-menue [data-absatz="h2"] .ke-absatz-probe {
+  @apply text-[16.5px] font-bold;
+}
+.ke-absatz-menue [data-absatz="h3"] .ke-absatz-probe {
+  @apply text-[15px] font-semibold;
+}
+.ke-absatz-menue [data-absatz="quote"] .ke-absatz-probe {
+  @apply pl-2 italic text-gray-600 dark:text-gray-400;
+  border-left: 2px solid var(--ke-linie-stark);
+}
+.ke-groessen-menue {
+  @apply min-w-[5.5rem] tabular-nums;
+}
+.ke-zoom-menue {
+  @apply min-w-[9rem] tabular-nums;
+}
+/* Kurzinfo zu einem Knopf: Name und Tastenkürzel */
+.ke-tipp {
+  @apply fixed z-[80] inline-flex items-center gap-2 px-2 py-1 rounded text-xs text-white bg-gray-900 pointer-events-none dark:bg-gray-700;
+  transform: translateX(-50%);
+}
+.ke-tipp kbd {
+  @apply font-sans text-gray-300;
 }
 .ke-wz-gruppe {
   @apply flex flex-none items-center gap-0.5 mr-3;
@@ -603,7 +677,7 @@ input.ke-titel:focus {
 }
 .ke-raster {
   @apply grid items-start justify-center px-6 pt-8 pb-32;
-  grid-template-columns: minmax(0, 46rem) minmax(18rem, 20rem);
+  grid-template-columns: minmax(0, var(--ke-blatt, 46rem)) minmax(18rem, 20rem);
   grid-template-areas: "blatt rand";
   column-gap: 2.5rem;
 }
@@ -630,7 +704,7 @@ input.ke-titel:focus {
 }
 @media (min-width: 1600px) {
   .ke-editor:not(.ke-ohne-gliederung) .ke-raster {
-    grid-template-columns: 12rem minmax(0, 46rem) minmax(18rem, 20rem);
+    grid-template-columns: 12rem minmax(0, var(--ke-blatt, 46rem)) minmax(18rem, 20rem);
     grid-template-areas: "gliederung blatt rand";
   }
   .ke-editor:not(.ke-ohne-gliederung) .ke-gliederung {
@@ -644,12 +718,12 @@ input.ke-titel:focus {
   }
   .ke-editor .ke-raster,
   .ke-editor:not(.ke-ohne-gliederung) .ke-raster {
-    grid-template-columns: clamp(13rem, 11vw, 18rem) min(calc(40 * var(--ke-dok)), 100%) clamp(22rem, 28vw, 48rem);
+    grid-template-columns: clamp(13rem, 11vw, 18rem) var(--ke-blatt-breit, min(calc(40 * var(--ke-dok)), 100%)) clamp(22rem, 28vw, 48rem);
     grid-template-areas: "gliederung blatt rand";
     column-gap: clamp(48px, 4vw, 112px);
   }
   .ke-editor.ke-ohne-gliederung .ke-raster {
-    grid-template-columns: min(calc(40 * var(--ke-dok)), 100%) clamp(22rem, 28vw, 48rem);
+    grid-template-columns: var(--ke-blatt-breit, min(calc(40 * var(--ke-dok)), 100%)) clamp(22rem, 28vw, 48rem);
     grid-template-areas: "blatt rand";
   }
 }
@@ -660,12 +734,12 @@ input.ke-titel:focus {
 }
 /* Mit offenem Bereich rechts (Details, Verlauf …): kein Rand im Raster */
 .ke-editor.ke-mit-panel .ke-raster {
-  grid-template-columns: minmax(0, 46rem);
+  grid-template-columns: minmax(0, var(--ke-blatt, 46rem));
   grid-template-areas: "blatt";
 }
 @media (min-width: 1600px) {
   .ke-editor.ke-mit-panel:not(.ke-ohne-gliederung) .ke-raster {
-    grid-template-columns: 12rem minmax(0, 46rem);
+    grid-template-columns: 12rem minmax(0, var(--ke-blatt, 46rem));
     grid-template-areas: "gliederung blatt";
   }
 }
@@ -709,6 +783,20 @@ input.ke-titel:focus {
 .ke-editor:not(.ke-seiten) .letterhead-html-preview,
 .ke-editor:not(.ke-seiten) #editor-container .tiptap .page-gap {
   display: none;
+}
+/* Seitenansicht mit echten Seiten (Satz-Kette, #1584): Spalte so breit wie eine A4-Seite, der Stapel steht mittig;
+   kleinere Fenster zoomen auf Seitenbreite (documentEditor._zoomAnwenden) */
+.ke-editor.ke-seiten {
+  --ke-blatt: 210mm;
+  --ke-blatt-breit: 210mm;
+}
+.ke-editor.ke-seiten .satz-huelle {
+  position: relative;
+  margin: 0 auto;
+}
+/* Seiten auf derselben Fläche: feiner Rand statt Schatten */
+.ke-editor .satz-bogen {
+  box-shadow: 0 0 0 1px var(--ke-linie-stark);
 }
 /* Seitenansicht: das Blatt mit feinem Rand auf derselben Fläche, keine graue Fläche drumherum */
 .ke-editor.ke-seiten #editor-container .editor-page {

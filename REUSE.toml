@@ -80,6 +80,73 @@ precedence = "override"
 SPDX-FileCopyrightText = "2016 The Inter Project Authors (https://github.com/rsms/inter)"
 SPDX-License-Identifier = "OFL-1.1"
 
+# Schriften für Dokumente (Issue #1584, gebaut mit scripts/schriften_bauen.py aus github.com/google/fonts)
+[[annotations]]
+path = "mandari/static/vendor/schriften/arimo/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The Arimo Project Authors (https://github.com/googlefonts/arimo)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/carlito/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2013 The Carlito Project Authors (https://github.com/googlefonts/carlito)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/open-sans/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/roboto/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2011 The Roboto Project Authors (https://github.com/googlefonts/roboto-classic)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/inter/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2020 The Inter Project Authors (https://github.com/rsms/inter)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/atkinson-hyperlegible/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2020 Braille Institute of America, Inc."
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/tinos/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The Tinos Project Authors (https://github.com/googlefonts/tinos)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/caladea/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2012 The Caladea Project Authors (https://github.com/huertatipografica/Caladea)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/noto-serif/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/literata/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2017 The Literata Project Authors (https://github.com/googlefonts/literata)"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "mandari/static/vendor/schriften/cousine/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The Cousine Project Authors (https://github.com/googlefonts/cousine)"
+SPDX-License-Identifier = "OFL-1.1"
+
 [[annotations]]
 path = "mandari/static/vendor/leaflet/**"
 precedence = "override"
