@@ -352,10 +352,17 @@ def paused_sources() -> set[Any]:
     """
     Quellen, die gerade nicht angefragt werden (Schonung, Dateiabruf abgeschaltet, nicht aktiv: kein „Abruf
     erlaubt“ im Sinn von ``hub.ris.abruf``) oder synthetisch sind.
+
+    Nicht dazu gehören Quellen mit Abruf auf Anforderung (``file_downloads = "bei_bedarf"``, #1582): Ihre Kopien holt
+    die Vorschau beim nächsten Öffnen wieder, die Obergrenze darf sie verdrängen.
     """
     from ..models import OParlSource
 
-    sources = set(file_cache.sources_without_downloads())
+    sources = {
+        pk
+        for pk, config in OParlSource.objects.values_list("pk", "sync_config")
+        if file_cache.downloads_disabled_in(config) and not file_cache.downloads_on_demand_in(config)
+    }
     sources.update(OParlSource.objects.filter(is_active=False).values_list("pk", flat=True))
     sources.update(
         OParlSource.objects.filter(consecutive_failures__gte=file_cache.backoff_failures()).values_list("pk", flat=True)

@@ -203,3 +203,16 @@ def test_zusammenfassung_wartet_nur_auf_geoeffnete_anlagen(settings: Any, monkey
     datei.local_status = "ok"
     datei.save(update_fields=["local_status"])
     assert dienst._text_pending(paper) is True
+
+
+def test_obergrenze_darf_kopien_verdraengen() -> None:
+    from insight_core.services import file_cache_limit
+
+    bei_bedarf = cast(Any, _datei().body).source_id
+    aus = OParlSource.objects.create(
+        name="Aus", url="https://ris.aus.example/oparl/system", sync_config={"file_downloads": False}
+    )
+    geschuetzt = file_cache_limit.paused_sources()
+    # Abruf auf Anforderung: das nächste Öffnen holt eine verdrängte Kopie wieder
+    assert bei_bedarf not in geschuetzt
+    assert aus.pk in geschuetzt
