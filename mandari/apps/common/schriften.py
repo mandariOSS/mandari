@@ -274,6 +274,30 @@ def aufloesen(name: str | None) -> Schrift:
     return finden(name) or _NACH_SCHLUESSEL[STANDARD]
 
 
+def office_name(wert: str | None) -> str:
+    """
+    Schriftname für Word und den bisherigen PDF-Weg: Eine Schrift des Satzes (Familienname oder Schlüssel) wird zu
+    ihrem Office-Namen (Tinos → Times New Roman); ein früher gespeicherter Office-Name (Georgia, Calibri) bleibt, wie er
+    ist. Ohne Angabe die Standardschrift.
+    """
+    schrift = finden(wert)
+    if schrift is None:
+        return (wert or "").strip() or aufloesen(None).fuer_office
+    eingabe = (wert or "").split(",", 1)[0].strip().strip("\"'").casefold()
+    if eingabe in (schrift.name.casefold(), schrift.schluessel):
+        return schrift.fuer_office
+    return (wert or "").split(",", 1)[0].strip().strip("\"'")
+
+
+#: Familien, die xhtml2pdf ohne eingebettete Datei kennt, je Art der Schrift (bisheriger PDF-Weg)
+_XHTML2PDF = {"serifenlos": "Helvetica", "serif": "Times New Roman", "dicktengleich": "Courier"}
+
+
+def fuer_xhtml2pdf(wert: str | None) -> str:
+    """Familie für den bisherigen PDF-Weg: nach der Art der Schrift (Georgia, Tinos → Times New Roman)."""
+    return _XHTML2PDF[aufloesen(wert).art]
+
+
 def groesse_zulaessig(punkt: float) -> bool:
     return GROESSE_MIN <= punkt <= GROESSE_MAX
 

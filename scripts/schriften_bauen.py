@@ -84,13 +84,18 @@ def _schriften_modul():
 
 
 def _laden(verzeichnis: str, datei: str, quellen: Path) -> Path:
-    ziel = quellen / verzeichnis.replace("/", "_") / datei
+    # Je Stand ein eigener Ordner: Ein Zwischenspeicher eines älteren Stands baut sonst andere Schriften
+    ziel = quellen / GOOGLE_FONTS_STAND / verzeichnis.replace("/", "_") / datei
     if ziel.exists():
         return ziel
     ziel.parent.mkdir(parents=True, exist_ok=True)
     url = QUELLE_URL.format(stand=GOOGLE_FONTS_STAND, verzeichnis=verzeichnis, datei=urllib.request.quote(datei))
     with urllib.request.urlopen(url, timeout=60) as antwort:  # noqa: S310 – feste https-Adresse
-        ziel.write_bytes(antwort.read())
+        daten = antwort.read()
+    # Erst vollständig schreiben, dann bereitstellen: Ein abgebrochener Lauf hinterlässt keine halbe Datei
+    vorlaeufig = ziel.with_name(ziel.name + ".teil")
+    vorlaeufig.write_bytes(daten)
+    vorlaeufig.replace(ziel)
     return ziel
 
 
@@ -139,7 +144,7 @@ def _urheber(datei: Path) -> str:
 def _css(modul) -> str:
     zeilen = [
         # Zusammengesetzt, damit die REUSE-Prüfung die Zeile nicht als Lizenzangabe dieses Skripts liest
-        "/* SPDX-" "License-Identifier: AGPL-3.0-or-later */",
+        "/* SPDX-License-Identifier: AGPL-3.0-or-later */",
         "/* Erzeugt von scripts/schriften_bauen.py aus mandari/apps/common/schriften.py – nicht von Hand ändern.",
         "   Schriften für Dokumente (Editor, Seitenansicht, PDF); Lizenzen der Schriftdateien: REUSE.toml. */",
     ]
@@ -167,7 +172,11 @@ def main() -> int:
     args = parser.parse_args()
 
     modul = _schriften_modul()
-    nur = set(args.nur.split(",")) if args.nur else None
+    nur = {s.strip() for s in args.nur.split(",") if s.strip()} if args.nur else None
+    if nur is not None:
+        unbekannt = sorted(nur - {s.schluessel for s in modul.SCHRIFTEN})
+        if unbekannt or not nur:
+            parser.error(f"unbekannte Schlüssel in --nur: {', '.join(unbekannt) or '(leer)'}")
     quellen = args.quellen or Path(tempfile.mkdtemp(prefix="mandari-schriften-"))
     urheber: dict[str, set[str]] = {}
     for schrift in modul.SCHRIFTEN:

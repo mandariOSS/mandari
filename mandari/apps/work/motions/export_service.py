@@ -298,8 +298,8 @@ class MotionExportService:
             "content": content,
             "margins": margins,
             "frame": frame,
-            # Office-Name der Schrift des Satzes (Tinos → Times New Roman): Den kennt xhtml2pdf
-            "font_family": schriften.aufloesen(letterhead.font_family).fuer_office if letterhead else "Helvetica",
+            # Eine Familie, die xhtml2pdf kennt, nach der Art der Schrift (Georgia, Tinos → Times New Roman)
+            "font_family": schriften.fuer_xhtml2pdf(letterhead.font_family) if letterhead else "Helvetica",
             "font_size": letterhead.font_size if letterhead else 11,
             "signature_html": escape(signature_text).replace("\n", "<br>") if signature_text else "",
             "generated": bool(letterhead and letterhead.is_generated),
@@ -355,7 +355,7 @@ class MotionExportService:
         # Set default font
         style = doc.styles["Normal"]
         font = style.font
-        font.name = schriften.aufloesen(letterhead.font_family).fuer_office if letterhead else "Arial"
+        font.name = schriften.office_name(letterhead.font_family) if letterhead else "Arial"
         font.size = Pt(letterhead.font_size if letterhead else 11)
 
         # Page margins from letterhead mm fields (or defaults)

@@ -3154,7 +3154,8 @@ export const documentEditor = defineComponent(() => {
       if (!editor || this.modus === 'ansehen') return
       const basis = this._satzKonfig()?.schrift.groesse_pt
       const kette = editor.chain().focus()
-      if (pt === null || pt === basis) kette.unsetFontSize().run()
+      // Ohne Seitenansicht erbt der Text die Grundgröße nicht (Fließtext in Bildschirmgröße): dann ausdrücklich setzen
+      if (pt === null || (pt === basis && this.seitenansicht)) kette.unsetFontSize().run()
       else kette.setFontSize(`${pt}pt`).run()
       this.menueSchliessen()
     },

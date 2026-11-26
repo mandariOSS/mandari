@@ -95,7 +95,10 @@ def _statisch(pfad: str) -> bytes:
     if not gefunden:
         raise DruckNichtMoeglichError(f"Statische Datei fehlt: {pfad}")
     datei = gefunden if isinstance(gefunden, str) else cast("list[str]", gefunden)[0]
-    return Path(datei).read_bytes()
+    try:
+        return Path(datei).read_bytes()
+    except OSError as fehler:
+        raise DruckNichtMoeglichError(f"Statische Datei nicht lesbar: {pfad}") from fehler
 
 
 def druck_skript() -> bytes:
@@ -103,7 +106,10 @@ def druck_skript() -> bytes:
     pfad = Path(str(settings.DJANGO_VITE["default"]["manifest_path"])).parent / SKRIPT
     if not pfad.exists():
         raise DruckNichtMoeglichError("Frontend ist nicht gebaut (static/dist/satz-druck.js fehlt)")
-    return pfad.read_bytes()
+    try:
+        return pfad.read_bytes()
+    except OSError as fehler:
+        raise DruckNichtMoeglichError("static/dist/satz-druck.js nicht lesbar") from fehler
 
 
 def druck_kontext(motion: Motion, *, paket: bool) -> dict[str, Any]:
