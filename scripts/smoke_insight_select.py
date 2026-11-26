@@ -285,7 +285,12 @@ check(
 print("=== 4. set_body / clear_body ===")
 
 resp = client.get(f"/insight/kommune/{body_a.id}/")
-check("set_body: Redirect", resp.status_code == 302, f"status={resp.status_code}")
+# Ohne Herkunft (Link von außen, Issue #939): dauerhaft auf die Stadtseite
+check(
+    "set_body: Redirect auf die Stadtseite",
+    resp.status_code == 301 and resp["Location"] == f"/insight/k/{body_a.slug}/",
+    f"status={resp.status_code} location={resp.get('Location')}",
+)
 check("set_body: Session persistiert", client.session.get("active_body_id") == str(body_a.id))
 resp = client.get("/insight/")
 page = html(resp)

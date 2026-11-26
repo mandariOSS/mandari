@@ -9,9 +9,10 @@ import json
 from datetime import timedelta
 
 from django.db.models import OuterRef, Q, Subquery
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import redirect
 from django.utils import timezone
+from django.utils.cache import add_never_cache_headers
 from django.views.generic import TemplateView
 
 from ..models import (
@@ -194,6 +195,7 @@ def set_body(request, body_id):
     if aktuell is not None and not aktuell.can_leave:
         # Eigener Host einer Körperschaft (Issue #317): Die Kommune ist fest
         return redirect("insight_core:insight:portal_home")
+    body = None
     try:
         body = OParlBody.objects.get(id=body_id)
         if aktuell is not None and aktuell.body.pk != body.pk:
@@ -208,6 +210,7 @@ def set_body(request, body_id):
 
     # SECURITY: Use Django's built-in URL validation to prevent Open Redirect
     default_redirect = "/insight/"
+    stadtseite = ""
     referer = request.META.get("HTTP_REFERER", "")
     # Brotkrumen einer Seite aus einer anderen Kommune (Issue #783): erst diese Kommune wählen, dann auf ihre
     # Übersicht bzw. Liste. Nur relative Pfade des Bürgerportals.
@@ -230,12 +233,24 @@ def set_body(request, body_id):
     ):
         redirect_url = referer
     else:
-        redirect_url = default_redirect
+        # Link von außen, etwa aus der App-Liste eines Open-Data-Portals (Issue #939): auf die Stadtseite der
+        # Kommune statt auf „Kommune wählen“. Suchmaschinen kommen ohne Sitzung an und ordnen den Link nur so der
+        # Kommune zu; ohne Stadtseite (kein Slug, nicht gelistet) bleibt es bei der Portal-Startseite. HTMX kommt nur
+        # aus dem Portal selbst und bleibt dabei.
+        stadtseite = "" if request.htmx else indexierung.stadtseite_url(body)
+        redirect_url = stadtseite or default_redirect
 
     # For HTMX requests, use HX-Redirect header for reliable navigation
     if request.htmx:
         response = HttpResponse(status=200)
         response["HX-Redirect"] = redirect_url
+        return response
+
+    if stadtseite:
+        # Dauerhaft, damit Suchmaschinen den Link der Stadtseite zurechnen. Nicht zwischenspeichern: Aus dem Portal
+        # heraus führt dieselbe Adresse mit Herkunft zurück auf die Seite, von der aus gewählt wurde.
+        response = HttpResponsePermanentRedirect(stadtseite)
+        add_never_cache_headers(response)
         return response
 
     return redirect(redirect_url)

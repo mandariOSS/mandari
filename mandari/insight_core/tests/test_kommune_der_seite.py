@@ -176,6 +176,41 @@ class TestWahlMitZiel:
         assert antwort.status_code == 302 and antwort["Location"] == "/insight/"
 
 
+class TestLinkVonAussen:
+    """Fremde Seiten verlinken die Wahl einer Kommune, etwa die App-Liste eines Open-Data-Portals (Issue #939)."""
+
+    @pytest.mark.parametrize("herkunft", ["", "https://opendata.example.org/anwendungen"])
+    def test_dauerhaft_auf_die_stadtseite(self, client: Client, kommunen: dict[str, Any], herkunft: str) -> None:
+        b = kommunen["b"]
+        OParlBody.objects.filter(pk=b.pk).update(slug="musterhausen")
+        antwort = client.get(reverse("insight_core:insight:set_body", args=[b.id]), HTTP_REFERER=herkunft)
+        assert antwort.status_code == 301
+        assert antwort["Location"] == reverse("insight_core:insight:portal_entry", kwargs={"slug": "musterhausen"})
+        assert "no-store" in antwort["Cache-Control"], "aus dem Portal führt dieselbe Adresse zurück zur Seite"
+        assert client.session["active_body_id"] == str(b.id)
+
+    def test_aus_dem_portal_zurueck_zur_seite(self, client: Client, kommunen: dict[str, Any]) -> None:
+        b = kommunen["b"]
+        OParlBody.objects.filter(pk=b.pk).update(slug="musterhausen")
+        herkunft = "http://testserver/insight/vorgaenge/"
+        antwort = client.get(reverse("insight_core:insight:set_body", args=[b.id]), HTTP_REFERER=herkunft)
+        assert antwort.status_code == 302 and antwort["Location"] == herkunft
+
+    def test_htmx_ohne_herkunft_bleibt_bei_der_portal_startseite(
+        self, client: Client, kommunen: dict[str, Any]
+    ) -> None:
+        b = kommunen["b"]
+        OParlBody.objects.filter(pk=b.pk).update(slug="musterhausen")
+        antwort = client.get(reverse("insight_core:insight:set_body", args=[b.id]), HTTP_HX_REQUEST="true")
+        assert antwort.status_code == 200 and antwort["HX-Redirect"] == "/insight/"
+
+    def test_ohne_stadtseite_zur_portal_startseite(self, client: Client, kommunen: dict[str, Any]) -> None:
+        b = kommunen["b"]
+        OParlBody.objects.filter(pk=b.pk).update(slug="musterhausen", is_listed=False)
+        antwort = client.get(reverse("insight_core:insight:set_body", args=[b.id]))
+        assert antwort.status_code == 302 and antwort["Location"] == "/insight/"
+
+
 def test_fuss_ohne_kommune_nennt_keine_schnittstelle(client: Client, kommunen: dict[str, Any]) -> None:
     client.get(reverse("insight_core:insight:clear_body"))
     fuss = _fuss(_html(client, reverse("insight_core:insight:search")))

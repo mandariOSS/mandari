@@ -173,10 +173,14 @@ def demo_zugaenge() -> list[DemoZugangsgruppe]:
 
 
 def demo_kommune_url() -> str:
-    """Bürgerportal der Demo-Kommune Musterstadt (ungelistet, Kennung aus der festen Demo-Kennung)."""
+    """
+    Bürgerportal der Demo-Kommune Musterstadt (ungelistet, Kennung aus der festen Demo-Kennung).
+
+    Mit Ziel ``/insight/``: Ohne führte die Wahl zurück auf die Herkunft, also die Anmeldeseite.
+    """
     from mandari_oparl.ids import canonical_id
 
-    return f"/insight/kommune/{canonical_id(f'{DEMO_OPARL_PREFIX}/body/musterstadt')}/"
+    return f"/insight/kommune/{canonical_id(f'{DEMO_OPARL_PREFIX}/body/musterstadt')}/?weiter=/insight/"
 
 
 def demo_passwort() -> str | None:
