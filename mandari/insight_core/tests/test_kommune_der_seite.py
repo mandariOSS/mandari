@@ -196,6 +196,14 @@ class TestLinkVonAussen:
         antwort = client.get(reverse("insight_core:insight:set_body", args=[b.id]), HTTP_REFERER=herkunft)
         assert antwort.status_code == 302 and antwort["Location"] == herkunft
 
+    def test_htmx_ohne_herkunft_bleibt_bei_der_portal_startseite(
+        self, client: Client, kommunen: dict[str, Any]
+    ) -> None:
+        b = kommunen["b"]
+        OParlBody.objects.filter(pk=b.pk).update(slug="musterhausen")
+        antwort = client.get(reverse("insight_core:insight:set_body", args=[b.id]), HTTP_HX_REQUEST="true")
+        assert antwort.status_code == 200 and antwort["HX-Redirect"] == "/insight/"
+
     def test_ohne_stadtseite_zur_portal_startseite(self, client: Client, kommunen: dict[str, Any]) -> None:
         b = kommunen["b"]
         OParlBody.objects.filter(pk=b.pk).update(slug="musterhausen", is_listed=False)

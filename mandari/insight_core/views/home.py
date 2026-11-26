@@ -235,8 +235,9 @@ def set_body(request, body_id):
     else:
         # Link von außen, etwa aus der App-Liste eines Open-Data-Portals (Issue #939): auf die Stadtseite der
         # Kommune statt auf „Kommune wählen“. Suchmaschinen kommen ohne Sitzung an und ordnen den Link nur so der
-        # Kommune zu; ohne Stadtseite (kein Slug, nicht gelistet) bleibt es bei der Portal-Startseite.
-        stadtseite = indexierung.stadtseite_url(body)
+        # Kommune zu; ohne Stadtseite (kein Slug, nicht gelistet) bleibt es bei der Portal-Startseite. HTMX kommt nur
+        # aus dem Portal selbst und bleibt dabei.
+        stadtseite = "" if request.htmx else indexierung.stadtseite_url(body)
         redirect_url = stadtseite or default_redirect
 
     # For HTMX requests, use HX-Redirect header for reliable navigation
