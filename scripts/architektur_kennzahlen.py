@@ -16,6 +16,7 @@ Wo es schon eine Zählung oder eine Liste gibt, übernimmt das Skript sie, statt
   ``mandari/insight_search/tests/test_suchindex_umschalten.py`` (Schreibwege, die das Umschalten abschaltet),
 - K7 aus ``scripts/check_import_linter_ratchet.py`` (Ausnahmen der Schichtverträge); dieselben Verträge
   bestimmen für K1, welchem Modul ein Modell gehört.
+- K9 aus ``scripts/check_view_writes_ratchet.py`` (ORM-Schreibzugriffe in Views, Befehlsschicht #1588).
 
 Selbst gezählt wird statisch am Syntaxbaum, ohne Django zu laden: K1 (Funktionen, die Daten eines fremden
 Moduls schreiben), K2 (Schreibwege des Suchindex), K3a (Funktionen mit Mailversand) und K4 (Thread-Starts).
@@ -494,6 +495,7 @@ def erheben(wurzel: Path | None = None) -> list[Kennzahl]:
     projekt = wurzel / "mandari"
     schichten = _lade("check_import_linter_ratchet")
     ris = _lade("check_ris_access_ratchet")
+    views = _lade("check_view_writes_ratchet")
     uebersprungen = frozenset(ris.SKIPPED_DIRS)
 
     linter = schichten.load_config(projekt / "pyproject.toml")
@@ -517,6 +519,7 @@ def erheben(wurzel: Path | None = None) -> list[Kennzahl]:
     sofort = sofort_stellen(wurzel)
     threads = thread_starts(anwendung, worker_pfade(wurzel))
     zugriffe: dict[str, int] = ris.measure(projekt)
+    schreibzugriffe: dict[str, int] = views.measure(projekt)
     cascade = cascade_ausnahmen(wurzel)
     cascade_bestand = [eintrag for eintrag in cascade if eintrag.split(".")[0] == RIS_APP]
     cascade_fremd = [eintrag for eintrag in cascade if eintrag.split(".")[0] != RIS_APP]
@@ -607,6 +610,14 @@ def erheben(wurzel: Path | None = None) -> list[Kennzahl]:
             None,
             "≤ 5 s",
             "Produktionsmetrik `mandari_events_lag_seconds` (`docs/MONITORING.md`), nicht aus dem Quellstand",
+        ),
+        Kennzahl(
+            "K9",
+            "ORM-Schreibzugriffe in Views (Aufrufe in View-Modulen)",
+            sum(schreibzugriffe.values()),
+            "0",
+            "`scripts/check_view_writes_ratchet.py`",
+            {"dateien": len(schreibzugriffe)},
         ),
     ]
 

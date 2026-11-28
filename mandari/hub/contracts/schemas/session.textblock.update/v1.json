@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:command:session.textblock.update:v1",
+  "title": "Textbaustein ändern",
+  "description": "Die Verwaltung ändert einen Textbaustein. Nur die genannten Felder ändern sich. Recht im Mandanten: Einstellungen verwalten. Handler: apps.session.",
+  "x-kind": "command",
+  "x-owner": "apps.session",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "textblock"
+  ],
+  "properties": {
+    "textblock": {
+      "title": "Textbaustein",
+      "description": "Kennung des Textbausteins (aus der Quittung beim Anlegen).",
+      "type": "string",
+      "format": "uuid"
+    },
+    "title": {
+      "title": "Titel",
+      "description": "Titel, unter dem der Baustein in der Auswahl erscheint.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "x-content": true
+    },
+    "content": {
+      "title": "Text",
+      "description": "Text des Bausteins. Platzhalter wie {gremium}, {datum}, {sitzung} und {vorlage} ersetzt der Editor beim Einfügen.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000,
+      "x-content": true
+    },
+    "category": {
+      "title": "Kategorie",
+      "description": "Beschlusstext, Protokolltext oder allgemein.",
+      "type": "string",
+      "enum": [
+        "resolution",
+        "protocol",
+        "general"
+      ]
+    },
+    "order": {
+      "title": "Reihenfolge",
+      "description": "Position in der Auswahl, aufsteigend.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9999
+    },
+    "is_active": {
+      "title": "Aktiv",
+      "description": "Nur aktive Bausteine erscheinen in der Auswahl.",
+      "type": "boolean"
+    }
+  },
+  "examples": [
+    {
+      "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f",
+      "title": "Einstimmig beschlossen",
+      "content": "Der {gremium} beschließt einstimmig:"
+    },
+    {
+      "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f",
+      "is_active": false
+    }
+  ]
+}

@@ -35,6 +35,10 @@ Der Handler muss im Paket liegen, das der Vertrag als ``x-owner`` nennt. Fachlic
 er mit ``CommandError`` (z. B. 409); jede andere Ausnahme wird zu einem 500 mit festem Text. ``hub.commands``
 enthält keine Fachregeln, nur Dispatcher, Quittung, Fehlerformat und Clients.
 
+**Freigabe für die Schnittstelle** (``exposure``, ``docs/adr/20261128-api-first-ohne-ausnahme.md``): Ein Handler mit
+``Exposure`` ist ohne weiteren Code eine Operation der gemeinsamen Schnittstelle (``hub.api.befehle``). Die Module
+registrieren ihre Befehle dafür über einen eigenen Helfer, der Rechte und Mandant prüft (``apps.session.befehle``).
+
 **Protokoll ohne Inhalte:** Das Log nennt Name, Version, Mandant, Korrelation und Ergebnis. Scheitert
 ein Befehl unerwartet, kommen der Typ der Ausnahme (samt Ursachen und SQLSTATE) und die Aufrufstellen
 dazu, nie ihre Meldung: Meldungen zitieren Werte, etwa ein Handler mit dem Titel im Text oder die
@@ -58,6 +62,7 @@ from apps.events.publishing import event_context
 from hub.contracts import COMMAND, ContractViolationError, Registry, UnknownContractError, get_registry
 
 from .canonical import content_hash, keyed_content_hash
+from .exposure import Exposure, check_scopes
 from .problems import CommandError, Problem, validation_problem
 from .types import Command, HandlerResult, Receipt
 
@@ -127,6 +132,7 @@ class Dispatcher:
     def __init__(self, registry: Registry | Callable[[], Registry] = get_registry) -> None:
         self._registry = registry
         self._handlers: dict[tuple[str, int], Handler] = {}
+        self._exposures: dict[tuple[str, int], Exposure] = {}
 
     @property
     def registry(self) -> Registry:
@@ -134,8 +140,12 @@ class Dispatcher:
 
     # --- Registrierung ------------------------------------------------------------------------
 
-    def register(self, name: str, version: int, handler: Handler) -> None:
-        """Handler eintragen; ``ImproperlyConfigured``, wenn Vertrag oder Eigentümer nicht passen."""
+    def register(self, name: str, version: int, handler: Handler, *, exposure: Exposure | None = None) -> None:
+        """
+        Handler eintragen; ``ImproperlyConfigured``, wenn Vertrag oder Eigentümer nicht passen.
+
+        ``exposure`` gibt den Befehl für die gemeinsame Schnittstelle frei (siehe Moduldokumentation).
+        """
         try:
             contract = self.registry.get(name, version)
         except UnknownContractError:
@@ -150,13 +160,16 @@ class Dispatcher:
         existing = self._handlers.get((name, version))
         if existing is not None and existing is not handler:
             raise ImproperlyConfigured(f"Für {name} v{version} ist schon ein Handler registriert")
+        if exposure is not None:
+            check_scopes(name, exposure)
+            self._exposures[(name, version)] = exposure
         self._handlers[(name, version)] = handler
 
-    def handler(self, name: str, version: int = 1) -> Callable[[H], H]:
+    def handler(self, name: str, version: int = 1, *, exposure: Exposure | None = None) -> Callable[[H], H]:
         """Dekorator für ``register``."""
 
         def decorate(function: H) -> H:
-            self.register(name, version, function)
+            self.register(name, version, function, exposure=exposure)
             return function
 
         return decorate
@@ -168,6 +181,15 @@ class Dispatcher:
     def handlers(self) -> Mapping[tuple[str, int], Handler]:
         """Registrierte Handler je (Befehl, Version), als Kopie."""
         return dict(self._handlers)
+
+    def exposure(self, name: str, version: int) -> Exposure | None:
+        """Freigabe des Befehls für die gemeinsame Schnittstelle, sonst ``None``."""
+        return self._exposures.get((name, version))
+
+    @property
+    def exposures(self) -> Mapping[tuple[str, int], Exposure]:
+        """Freigegebene Befehle je (Befehl, Version), sortiert, als Kopie."""
+        return dict(sorted(self._exposures.items()))
 
     # --- Ausführen -----------------------------------------------------------------------------
 
@@ -283,9 +305,9 @@ def get_dispatcher() -> Dispatcher:
     return _DEFAULT
 
 
-def command_handler(name: str, version: int = 1) -> Callable[[H], H]:
+def command_handler(name: str, version: int = 1, *, exposure: Exposure | None = None) -> Callable[[H], H]:
     """Registriert einen Handler beim Dispatcher der Installation (siehe Moduldokumentation)."""
-    return get_dispatcher().handler(name, version)
+    return get_dispatcher().handler(name, version, exposure=exposure)
 
 
 def dispatch(command: Command) -> Receipt:

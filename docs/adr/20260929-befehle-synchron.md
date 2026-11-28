@@ -214,6 +214,21 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
   ([Nachtrag #1228 zum ADR „Eine Schnittstelle“](20261105-eine-schnittstelle-api-first.md)). Dort ist
   `Idempotency-Key` Pflicht.
 
+## Nachtrag: Befehlsschicht (#1588)
+
+- **Umfang:** Seit der Entscheidung [API-first ohne Ausnahme](20261128-api-first-ohne-ausnahme.md) ist jede
+  Datenänderung ein Befehl, auch innerhalb eines Moduls aus seiner eigenen Oberfläche. Die Technik bleibt die dieser
+  Entscheidung.
+- **Freigabe:** Ein Handler mit `Exposure` (`hub.commands.exposure`) ist zugleich eine Operation der gemeinsamen
+  Schnittstelle (`hub.api.befehle`): `POST /api/mandari/v1/<bereich>/<mandant>/befehle/<befehl>/v<version>`. Den
+  Mandanten nennt dort die Adresse (Mandantenbereich, vom Eigentümer angemeldet), die Anmeldung gilt einer Person
+  (`Principal.tenant_ref` ist dann `None`). Der allgemeine Weg zwischen Installationen (`command_urlpatterns`) bleibt
+  unverändert.
+- **Weg:** Der Dispatcher hält den Weg eines Befehls fest (`hub.commands.channel`: Oberfläche, Schnittstelle mit
+  Client-ID, intern). Fachliche Prüfungen hängen nie davon ab; das Prüfprotokoll nennt ihn.
+- **Feldfehler des Handlers:** `CommandError.invalid(meldung, {"feld": "regel"})` ergibt 422 (`validierung`) mit
+  `errors` als JSON-Pointer, wie die Vertragsprüfung.
+
 ## Bezug
 
 - [A5 Verträge](20260929-ereignisvertraege.md), [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md)

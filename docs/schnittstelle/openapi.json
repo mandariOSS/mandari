@@ -29,6 +29,10 @@
     {
       "name": "Session-API v1",
       "description": "Session-RIS je Mandant mit Anmeldung: Sitzungen, Vorlagen, Anträge und Einreichung (API-Token oder Sitzung); Nichtöffentliches nur mit Recht."
+    },
+    {
+      "name": "Befehle",
+      "description": "Jede Änderung als Befehl beim Eigentümer: dieselben Befehle, die die eigene Oberfläche nutzt, mit Idempotency-Key, Quittung und Fehlern nach RFC 9457. Anmeldung mit Access-Token im Namen einer Person."
     }
   ],
   "paths": {
@@ -135,6 +139,624 @@
         },
         "tags": [
           "Einstieg"
+        ]
+      }
+    },
+    "/api/mandari/v1/session/{mandant}/befehle/session.textblock.create/v1": {
+      "post": {
+        "operationId": "befehl_session_textblock_create_v1",
+        "summary": "Textbaustein anlegen",
+        "description": "Die Verwaltung legt einen Textbaustein für Beschlussvorschläge und Niederschriften an. Recht im Mandanten: Einstellungen verwalten. Die Quittung nennt die Kennung des Bausteins. Handler: apps.session.\n\nRechte und Mandant prüft der Eigentümer (apps.session) wie in der Oberfläche. Anmeldung: Access-Token im Namen einer Person mit einem der Scopes sitzung:schreiben; die eigene Oberfläche nutzt die Browser-Sitzung mit CSRF-Token (Header X-CSRFToken).",
+        "x-mandari-command": "session.textblock.create",
+        "security": [
+          {
+            "mandariBefehle": [
+              "sitzung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mandant",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Session-Mandanten, wie in /session/<kurzname>/",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Pflicht. Dieselbe Anfrage mit demselben Schlüssel wirkt nur einmal und erhält dieselbe Quittung; derselbe Schlüssel mit anderem Inhalt ergibt 422. 1 bis 255 sichtbare ASCII-Zeichen, auch in Anführungszeichen.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 257
+            }
+          },
+          {
+            "name": "X-Correlation-ID",
+            "in": "header",
+            "required": false,
+            "description": "Kennung des Vorgangs (UUID); sie steht im Protokoll und in den Ereignissen des Befehls.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/befehl.session.textblock.create.v1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Quittung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quittung"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key fehlt oder Inhalt kein JSON-Objekt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person oder ohne passenden Scope, CSRF-Token fehlt, Recht im Mandanten fehlt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Befehl, Mandant oder Objekt unbekannt bzw. für den Aufrufer nicht sichtbar",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Nur POST",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "description": "POST",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Fachlicher Konflikt beim Eigentümer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Inhalt zu groß",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Kein application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Inhalt passt nicht zum Vertrag (errors mit JSON-Pointer) oder Schlüssel schon verwendet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Interner Fehler; mit demselben Idempotency-Key wiederholen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Befehle"
+        ]
+      }
+    },
+    "/api/mandari/v1/session/{mandant}/befehle/session.textblock.delete/v1": {
+      "post": {
+        "operationId": "befehl_session_textblock_delete_v1",
+        "summary": "Textbaustein löschen",
+        "description": "Die Verwaltung löscht einen Textbaustein. Recht im Mandanten: Einstellungen verwalten. Handler: apps.session.\n\nRechte und Mandant prüft der Eigentümer (apps.session) wie in der Oberfläche. Anmeldung: Access-Token im Namen einer Person mit einem der Scopes sitzung:schreiben; die eigene Oberfläche nutzt die Browser-Sitzung mit CSRF-Token (Header X-CSRFToken).",
+        "x-mandari-command": "session.textblock.delete",
+        "security": [
+          {
+            "mandariBefehle": [
+              "sitzung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mandant",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Session-Mandanten, wie in /session/<kurzname>/",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Pflicht. Dieselbe Anfrage mit demselben Schlüssel wirkt nur einmal und erhält dieselbe Quittung; derselbe Schlüssel mit anderem Inhalt ergibt 422. 1 bis 255 sichtbare ASCII-Zeichen, auch in Anführungszeichen.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 257
+            }
+          },
+          {
+            "name": "X-Correlation-ID",
+            "in": "header",
+            "required": false,
+            "description": "Kennung des Vorgangs (UUID); sie steht im Protokoll und in den Ereignissen des Befehls.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/befehl.session.textblock.delete.v1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Quittung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quittung"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key fehlt oder Inhalt kein JSON-Objekt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person oder ohne passenden Scope, CSRF-Token fehlt, Recht im Mandanten fehlt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Befehl, Mandant oder Objekt unbekannt bzw. für den Aufrufer nicht sichtbar",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Nur POST",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "description": "POST",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Fachlicher Konflikt beim Eigentümer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Inhalt zu groß",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Kein application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Inhalt passt nicht zum Vertrag (errors mit JSON-Pointer) oder Schlüssel schon verwendet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Interner Fehler; mit demselben Idempotency-Key wiederholen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Befehle"
+        ]
+      }
+    },
+    "/api/mandari/v1/session/{mandant}/befehle/session.textblock.update/v1": {
+      "post": {
+        "operationId": "befehl_session_textblock_update_v1",
+        "summary": "Textbaustein ändern",
+        "description": "Die Verwaltung ändert einen Textbaustein. Nur die genannten Felder ändern sich. Recht im Mandanten: Einstellungen verwalten. Handler: apps.session.\n\nRechte und Mandant prüft der Eigentümer (apps.session) wie in der Oberfläche. Anmeldung: Access-Token im Namen einer Person mit einem der Scopes sitzung:schreiben; die eigene Oberfläche nutzt die Browser-Sitzung mit CSRF-Token (Header X-CSRFToken).",
+        "x-mandari-command": "session.textblock.update",
+        "security": [
+          {
+            "mandariBefehle": [
+              "sitzung:schreiben"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mandant",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Session-Mandanten, wie in /session/<kurzname>/",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Pflicht. Dieselbe Anfrage mit demselben Schlüssel wirkt nur einmal und erhält dieselbe Quittung; derselbe Schlüssel mit anderem Inhalt ergibt 422. 1 bis 255 sichtbare ASCII-Zeichen, auch in Anführungszeichen.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 257
+            }
+          },
+          {
+            "name": "X-Correlation-ID",
+            "in": "header",
+            "required": false,
+            "description": "Kennung des Vorgangs (UUID); sie steht im Protokoll und in den Ereignissen des Befehls.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/befehl.session.textblock.update.v1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Quittung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quittung"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key fehlt oder Inhalt kein JSON-Objekt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldung fehlt oder Token ungültig",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer nach RFC 6750",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token ohne Person oder ohne passenden Scope, CSRF-Token fehlt, Recht im Mandanten fehlt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Befehl, Mandant oder Objekt unbekannt bzw. für den Aufrufer nicht sichtbar",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Nur POST",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "description": "POST",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Fachlicher Konflikt beim Eigentümer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Inhalt zu groß",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Kein application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Inhalt passt nicht zum Vertrag (errors mit JSON-Pointer) oder Schlüssel schon verwendet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Wartezeit in Sekunden",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Interner Fehler; mit demselben Idempotency-Key wiederholen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Befehle"
         ]
       }
     },
@@ -18400,6 +19022,55 @@
           }
         }
       },
+      "Quittung": {
+        "title": "Quittung",
+        "description": "Quittung eines Befehls. Eine Wiederholung mit demselben Idempotency-Key erhält dieselbe Quittung. Sie nennt nur Kennungen, Codes und Zeitpunkte, nie Inhalte.",
+        "type": "object",
+        "required": [
+          "command",
+          "version",
+          "reference",
+          "received_at",
+          "content_hash",
+          "aggregate_id",
+          "data"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Name des Befehls"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reference": {
+            "type": "string",
+            "description": "Eingangsnummer bzw. Kennung beim Eigentümer"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Eingangszeit"
+          },
+          "content_hash": {
+            "type": "string",
+            "description": "SHA-256 über das kanonische JSON des Inhalts (RFC 8785), hexadezimal; bei personenbezogenen Befehlen ein HMAC mit einem Schlüssel der Installation"
+          },
+          "aggregate_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Kennung des Objekts"
+          },
+          "data": {
+            "type": "object",
+            "description": "Weitere Kennungen und Codes des Eigentümers"
+          }
+        }
+      },
       "TenantRoot": {
         "properties": {
           "name": {
@@ -18465,6 +19136,166 @@
         ],
         "title": "TenantRoot",
         "type": "object"
+      },
+      "befehl.session.textblock.create.v1": {
+        "title": "Textbaustein anlegen",
+        "description": "Die Verwaltung legt einen Textbaustein für Beschlussvorschläge und Niederschriften an. Recht im Mandanten: Einstellungen verwalten. Die Quittung nennt die Kennung des Bausteins. Handler: apps.session.",
+        "x-kind": "command",
+        "x-owner": "apps.session",
+        "x-visibility": "intern",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "content"
+        ],
+        "properties": {
+          "title": {
+            "title": "Titel",
+            "description": "Titel, unter dem der Baustein in der Auswahl erscheint.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "x-content": true
+          },
+          "content": {
+            "title": "Text",
+            "description": "Text des Bausteins. Platzhalter wie {gremium}, {datum}, {sitzung} und {vorlage} ersetzt der Editor beim Einfügen.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "x-content": true
+          },
+          "category": {
+            "title": "Kategorie",
+            "description": "Beschlusstext, Protokolltext oder allgemein; ohne Angabe allgemein.",
+            "type": "string",
+            "enum": [
+              "resolution",
+              "protocol",
+              "general"
+            ]
+          },
+          "order": {
+            "title": "Reihenfolge",
+            "description": "Position in der Auswahl, aufsteigend; ohne Angabe 0.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9999
+          },
+          "is_active": {
+            "title": "Aktiv",
+            "description": "Nur aktive Bausteine erscheinen in der Auswahl; ohne Angabe aktiv.",
+            "type": "boolean"
+          }
+        },
+        "examples": [
+          {
+            "title": "Einstimmig beschlossen",
+            "content": "Der {gremium} beschließt einstimmig:",
+            "category": "resolution",
+            "order": 10,
+            "is_active": true
+          },
+          {
+            "title": "Hinweis Datenschutz",
+            "content": "Die Niederschrift wird ohne personenbezogene Angaben veröffentlicht."
+          }
+        ]
+      },
+      "befehl.session.textblock.delete.v1": {
+        "title": "Textbaustein löschen",
+        "description": "Die Verwaltung löscht einen Textbaustein. Recht im Mandanten: Einstellungen verwalten. Handler: apps.session.",
+        "x-kind": "command",
+        "x-owner": "apps.session",
+        "x-visibility": "intern",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "textblock"
+        ],
+        "properties": {
+          "textblock": {
+            "title": "Textbaustein",
+            "description": "Kennung des Textbausteins.",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "examples": [
+          {
+            "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f"
+          }
+        ]
+      },
+      "befehl.session.textblock.update.v1": {
+        "title": "Textbaustein ändern",
+        "description": "Die Verwaltung ändert einen Textbaustein. Nur die genannten Felder ändern sich. Recht im Mandanten: Einstellungen verwalten. Handler: apps.session.",
+        "x-kind": "command",
+        "x-owner": "apps.session",
+        "x-visibility": "intern",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "textblock"
+        ],
+        "properties": {
+          "textblock": {
+            "title": "Textbaustein",
+            "description": "Kennung des Textbausteins (aus der Quittung beim Anlegen).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "title": "Titel",
+            "description": "Titel, unter dem der Baustein in der Auswahl erscheint.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "x-content": true
+          },
+          "content": {
+            "title": "Text",
+            "description": "Text des Bausteins. Platzhalter wie {gremium}, {datum}, {sitzung} und {vorlage} ersetzt der Editor beim Einfügen.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "x-content": true
+          },
+          "category": {
+            "title": "Kategorie",
+            "description": "Beschlusstext, Protokolltext oder allgemein.",
+            "type": "string",
+            "enum": [
+              "resolution",
+              "protocol",
+              "general"
+            ]
+          },
+          "order": {
+            "title": "Reihenfolge",
+            "description": "Position in der Auswahl, aufsteigend.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9999
+          },
+          "is_active": {
+            "title": "Aktiv",
+            "description": "Nur aktive Bausteine erscheinen in der Auswahl.",
+            "type": "boolean"
+          }
+        },
+        "examples": [
+          {
+            "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f",
+            "title": "Einstimmig beschlossen",
+            "content": "Der {gremium} beschließt einstimmig:"
+          },
+          {
+            "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f",
+            "is_active": false
+          }
+        ]
       }
     },
     "securitySchemes": {
@@ -18488,6 +19319,20 @@
             "tokenUrl": "/oauth/token/",
             "scopes": {
               "sitzung:lesen": "Alle Sitzungsdaten des gebundenen Mandanten lesen, auch Nichtöffentliches (nur für gebundene Dienste)"
+            }
+          }
+        }
+      },
+      "mandariBefehle": {
+        "type": "oauth2",
+        "description": "OpenID-Connect-Anbieter der Installation (Discovery unter /.well-known/openid-configuration). Nur Access-Tokens im Namen einer Person; PKCE mit S256 ist Pflicht. Ein Token darf nie mehr als die Person selbst.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "/oauth/authorize/",
+            "tokenUrl": "/oauth/token/",
+            "refreshUrl": "/oauth/token/",
+            "scopes": {
+              "sitzung:schreiben": "In Session in deinem Namen ändern, was du dort selbst ändern darfst (Befehle der Schnittstelle)"
             }
           }
         }

@@ -25,6 +25,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.common.api.idempotency import FORM_FIELD
 from apps.common.tests.factories import UserFactory
 from apps.session import rahmen
 from apps.session.models import (
@@ -305,6 +306,10 @@ def _hx_werte(roh: str) -> tuple[str, ...]:
     return tuple(sorted(f"{k}={v}" for k, v in werte.items())) if isinstance(werte, dict) else (roh,)
 
 
+#: Felder, die jede Darstellung neu füllt (CSRF, Idempotenzschlüssel eines Befehls, #1588); sie zählen nicht zum Vergleich
+SCHUTZFELDER = frozenset({"csrfmiddlewaretoken", FORM_FIELD})
+
+
 class _Aktionen(HTMLParser):
     """
     Was eine Seite anbietet, als Menge von Aktionen: Links (GET), Formulare mit Methode, Ziel und Feldern (feste Werte
@@ -335,7 +340,7 @@ class _Aktionen(HTMLParser):
         elif self._formular and tag in ("input", "select", "textarea", "button") and a.get("name"):
             name = a["name"]
             typ = a.get("type", "submit" if tag == "button" else "text").lower()
-            if name != "csrfmiddlewaretoken":
+            if name not in SCHUTZFELDER:
                 fest = tag in ("input", "button") and typ in _FESTE_WERTE
                 self._felder.add(f"{name}={a.get('value', '')}" if fest else name)
         self._im_skript = tag == "script"

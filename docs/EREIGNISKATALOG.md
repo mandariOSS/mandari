@@ -53,6 +53,9 @@ die diese Person nennen, im Journal geleert.
 | `ris.voting.recorded` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Abstimmung erfasst |
 | `session.allowance.approved` | Ereignis | 1 | `apps.session` | personenbezogen | Sitzungsgeld genehmigt |
 | `session.payment.exported` | Ereignis | 1 | `apps.session` | personenbezogen | Zahlungsdatei erzeugt |
+| `session.textblock.create` | Befehl | 1 | `apps.session` | intern | Textbaustein anlegen |
+| `session.textblock.delete` | Befehl | 1 | `apps.session` | intern | Textbaustein löschen |
+| `session.textblock.update` | Befehl | 1 | `apps.session` | intern | Textbaustein ändern |
 | `submission.received` | Ereignis | 1 | `apps.session` | nichtoeffentlich | Einreichung eingegangen |
 | `submission.status_changed` | Ereignis | 1 | `apps.session` | nichtoeffentlich | Bearbeitungsstand einer Einreichung geändert |
 | `submission.submit` | Befehl | 1 | `apps.session` | nichtoeffentlich | Antrag einreichen |
@@ -1595,6 +1598,102 @@ Beispiel 2:
 ```json
 {
   "recipient": "e5f6a7b8-c9d0-4e1f-a2b3-c4d5e6f7a8b9"
+}
+```
+
+### session.textblock.create v1
+
+**Textbaustein anlegen.** Die Verwaltung legt einen Textbaustein für Beschlussvorschläge und Niederschriften an. Recht im Mandanten: Einstellungen verwalten. Die Quittung nennt die Kennung des Bausteins. Handler: apps.session.
+
+- Art: Befehl
+- Eigentümer: `apps.session`
+- Sichtbarkeit: intern
+- Schema: [`session.textblock.create/v1.json`](../mandari/hub/contracts/schemas/session.textblock.create/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `title` | ja, Inhalt | Zeichenkette (höchstens 200 Zeichen) | Titel, unter dem der Baustein in der Auswahl erscheint. |
+| `content` | ja, Inhalt | Zeichenkette (höchstens 20000 Zeichen) | Text des Bausteins. Platzhalter wie {gremium}, {datum}, {sitzung} und {vorlage} ersetzt der Editor beim Einfügen. |
+| `category` | nein | Code: `resolution`, `protocol`, `general` | Beschlusstext, Protokolltext oder allgemein; ohne Angabe allgemein. |
+| `order` | nein | Ganzzahl (0 bis 9999) | Position in der Auswahl, aufsteigend; ohne Angabe 0. |
+| `is_active` | nein | Wahrheitswert | Nur aktive Bausteine erscheinen in der Auswahl; ohne Angabe aktiv. |
+
+Beispiel 1:
+
+```json
+{
+  "title": "Einstimmig beschlossen",
+  "content": "Der {gremium} beschließt einstimmig:",
+  "category": "resolution",
+  "order": 10,
+  "is_active": true
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "title": "Hinweis Datenschutz",
+  "content": "Die Niederschrift wird ohne personenbezogene Angaben veröffentlicht."
+}
+```
+
+### session.textblock.delete v1
+
+**Textbaustein löschen.** Die Verwaltung löscht einen Textbaustein. Recht im Mandanten: Einstellungen verwalten. Handler: apps.session.
+
+- Art: Befehl
+- Eigentümer: `apps.session`
+- Sichtbarkeit: intern
+- Schema: [`session.textblock.delete/v1.json`](../mandari/hub/contracts/schemas/session.textblock.delete/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `textblock` | ja | Zeichenkette (uuid) | Kennung des Textbausteins. |
+
+Beispiel 1:
+
+```json
+{
+  "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f"
+}
+```
+
+### session.textblock.update v1
+
+**Textbaustein ändern.** Die Verwaltung ändert einen Textbaustein. Nur die genannten Felder ändern sich. Recht im Mandanten: Einstellungen verwalten. Handler: apps.session.
+
+- Art: Befehl
+- Eigentümer: `apps.session`
+- Sichtbarkeit: intern
+- Schema: [`session.textblock.update/v1.json`](../mandari/hub/contracts/schemas/session.textblock.update/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `textblock` | ja | Zeichenkette (uuid) | Kennung des Textbausteins (aus der Quittung beim Anlegen). |
+| `title` | nein, Inhalt | Zeichenkette (höchstens 200 Zeichen) | Titel, unter dem der Baustein in der Auswahl erscheint. |
+| `content` | nein, Inhalt | Zeichenkette (höchstens 20000 Zeichen) | Text des Bausteins. Platzhalter wie {gremium}, {datum}, {sitzung} und {vorlage} ersetzt der Editor beim Einfügen. |
+| `category` | nein | Code: `resolution`, `protocol`, `general` | Beschlusstext, Protokolltext oder allgemein. |
+| `order` | nein | Ganzzahl (0 bis 9999) | Position in der Auswahl, aufsteigend. |
+| `is_active` | nein | Wahrheitswert | Nur aktive Bausteine erscheinen in der Auswahl. |
+
+Beispiel 1:
+
+```json
+{
+  "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f",
+  "title": "Einstimmig beschlossen",
+  "content": "Der {gremium} beschließt einstimmig:"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f",
+  "is_active": false
 }
 ```
 

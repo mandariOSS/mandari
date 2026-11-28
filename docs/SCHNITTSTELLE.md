@@ -20,6 +20,7 @@ stehen in der gemeinsamen Beschreibung:
 | Adresse | Beschreibung |
 |---|---|
 | `/api/v1/session/` | [Session-API v1](#session-api-v1), auch in der gemeinsamen Beschreibung |
+| `/api/mandari/v1/<bereich>/<mandant>/befehle/` | [Befehle](#befehle-1588): jede Änderung als Befehl, auch in der gemeinsamen Beschreibung |
 | `/api/public/v1/` | öffentliche Fraktions-API (Token je Organisation), eigene Beschreibung; öffentliche Doku: docs.mandari.de/work/fraktions-api/ |
 | `/api/provisioning/`, `/api/provisioning/v2/` | [Provisioning-API](#provisioning-api), nur für den Betreiber |
 | `/api/insight/ki-bewertungen/` | Bewertungen der KI-Zusammenfassungen für das System des Betreibers ([Provisioning-API](#weitere-abrufe-mit-dem-schlüssel-der-version-2)) |
@@ -78,6 +79,40 @@ Beide OParl-Ausgaben stehen mit den Schemas der kommParl-Spezifikation in der Be
   (12 Monate, [RELEASE_POLITIK.md](RELEASE_POLITIK.md#6-schnittstellen-und-abkündigung)). Die Beschreibung
   kennzeichnet Endpunkte und Eigenschaften mit `deprecated` und `x-sunset`, die Antworten tragen `Deprecation`,
   `Sunset` und den Nachfolger im Header `Link`. Die Beschreibung bleibt ohne brechende Änderung (oasdiff).
+
+## Befehle (#1588)
+
+Jede Datenänderung ist ein Befehl beim Eigentümer ([API-first ohne Ausnahme](adr/20261128-api-first-ohne-ausnahme.md));
+die eigene Oberfläche ruft dieselben Befehle. Jeder freigegebene Befehl ist ohne weiteren Code eine Operation:
+
+```http
+POST /api/mandari/v1/<bereich>/<mandant>/befehle/<befehl>/v<version>
+Authorization: Bearer <Access-Token im Namen einer Person>
+Idempotency-Key: "<schlüssel>"
+Content-Type: application/json
+
+{ …Inhalt nach dem Vertrag in mandari/hub/contracts/schemas/<befehl>/v<version>.json… }
+```
+
+| Bereich | Mandant in der Adresse | Scope | Befehle |
+|---|---|---|---|
+| `session` | Kurzname des Session-Mandanten (wie in `/session/<kurzname>/`) | `sitzung:schreiben` | `session.*` (erstes Beispiel: `session.textblock.create`, `.update`, `.delete`) |
+
+- **Code:** `hub/api/befehle.py` (Operation, Anmeldung), `hub/api/openapi/befehle.py` (Beschreibung, Bereich
+  „Befehle“). Die Freigabe setzt der Eigentümer beim Registrieren (`hub.commands.Exposure`), den Mandantenbereich meldet
+  er beim Start an (`hub.commands.TenantArea`). Für Session übernimmt beides `@befehl` aus `apps.session.befehle`.
+- **Anmeldung:** Access-Token des OpenID-Connect-Anbieters im Namen einer Person mit dem Scope des Bereichs. Ein
+  ungültiges Token ergibt 401 und fällt nie auf die Browser-Sitzung zurück; Dienst-Tokens 403, fehlender Scope 403 mit
+  `error="insufficient_scope"`. Ohne `Authorization` gilt die Browser-Sitzung der eigenen Oberfläche, dann mit
+  CSRF-Token (`X-CSRFToken`). Höchstens 120 Befehle je Person und Minute (429 mit `Retry-After`).
+- **Rechte** prüft der Handler mit dem Rechtemodell des Moduls, wie in der Oberfläche. In Session braucht eine Anwendung
+  dazu das Recht „API-Zugang“ der Person im Mandanten; mit der Browser-Sitzung nicht.
+- **Antworten:** `201` mit der Quittung (`command`, `version`, `reference`, `received_at`, `content_hash`,
+  `aggregate_id`, `data`), dieselbe bei Wiederholung mit demselben Schlüssel. Fehler nach RFC 9457: 400
+  (Schlüssel fehlt, kein JSON-Objekt), 401, 403, 404 (Befehl, Mandant oder Objekt unbekannt), 405, 409 (fachlicher
+  Konflikt), 413, 415, 422 (Vertrag verletzt, `errors` mit JSON-Pointer; Schlüssel für anderen Inhalt), 429, 500.
+- **Prüfprotokoll:** Der Eintrag des Mandanten nennt Person und Weg, bei der Schnittstelle die Anwendung (Client-ID).
+- **Einen Befehl anlegen:** [DATENDREHSCHEIBE.md, Abschnitt 6](DATENDREHSCHEIBE.md#6-einen-befehl-anlegen).
 
 ## Profil Einreichung (#1228)
 
@@ -579,7 +614,8 @@ cd mandari && python manage.py schnittstelle_beschreibung --pruefen
   Stufe `ERR`) und prüft sie gegen OpenAPI 3.1. Eine brechende Änderung braucht eine neue Hauptversion im Pfad
   und eine Abkündigung nach [RELEASE_POLITIK.md](RELEASE_POLITIK.md#6-schnittstellen-und-abkündigung).
 - **Befehlsparität:** Jeder Befehl im Register (`hub/contracts/schemas`) braucht einen Endpunkt, der ihn in
-  `x-mandari-command` nennt. Ausnahmen stehen in `mandari/hub/api/openapi/befehle_ohne_endpunkt.json`; die Liste
-  darf nur kürzer werden (`scripts/check_schnittstelle.py --basis <stand>`). Die Session-API v1 setzt die
+  `x-mandari-command` nennt; freigegebene Befehle bekommen ihn im Bereich „Befehle“ von selbst. Ausnahmen stehen in
+  `mandari/hub/api/openapi/befehle_ohne_endpunkt.json`; die Liste ist leer und darf nicht wachsen
+  (`scripts/check_schnittstelle.py --basis <stand>`). Die Session-API v1 setzt die
   Erweiterung erst für die gemeinsame Beschreibung (`SESSION_V1_COMMANDS` in `apps/session/api/schnittstelle.py`),
   ihre eigene unter `/api/v1/session/openapi.json` bleibt unverändert.

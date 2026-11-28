@@ -3,8 +3,8 @@
 Ausgelieferte Schemas des Startumfangs (Issue #518): 27 Ereignistypen und vier Befehle mit
 Eigentümer, Sichtbarkeit und Beispielen; keine Freitextfelder bei nichtöffentlichen und
 personenbezogenen Daten. Seither ergänzt: Änderungen an Gremien und Personen (Issue #821), an
-Mitgliedschaften, Orten, Wahlperioden und Kommunen (Issue #553) sowie die Fraktionszuordnung ohne OParl-Fraktion
-(Issue #916).
+Mitgliedschaften, Orten, Wahlperioden und Kommunen (Issue #553), die Fraktionszuordnung ohne OParl-Fraktion
+(Issue #916) und die Befehle für Textbausteine als erstes Beispiel der Befehlsschicht (Issue #1588).
 """
 
 from __future__ import annotations
@@ -73,6 +73,10 @@ STARTUMFANG: dict[str, tuple[str, str, frozenset[str]]] = {
     "submission.withdraw": (COMMAND, "apps.session", frozenset({NOE})),
     "attendance.respond": (COMMAND, "apps.session", frozenset({PB})),
     "invitation.acknowledge": (COMMAND, "apps.session", frozenset({PB})),
+    # Befehlsschicht (Issue #1588): Textbausteine als erstes Beispiel
+    "session.textblock.create": (COMMAND, "apps.session", frozenset({INTERN})),
+    "session.textblock.update": (COMMAND, "apps.session", frozenset({INTERN})),
+    "session.textblock.delete": (COMMAND, "apps.session", frozenset({INTERN})),
 }
 
 #: Die einzigen Inhaltsfelder (x-content). Ein neues Inhaltsfeld ist eine bewusste Entscheidung.
@@ -89,6 +93,8 @@ INHALTSFELDER: dict[str, list[str]] = {
         "#/properties/attachments",
     ],
     "attendance.respond": ["#/properties/reason"],
+    "session.textblock.create": ["#/properties/title", "#/properties/content"],
+    "session.textblock.update": ["#/properties/title", "#/properties/content"],
 }
 
 #: Genauer Zuschnitt der Inhaltsfelder: jedes Feld, das am Ende einen Wert trägt, mit ``maxLength``.
@@ -110,6 +116,8 @@ INHALTSBLAETTER: dict[str, dict[str, int | None]] = {
         "#/properties/attachments/items/properties/sha256": None,
     },
     "attendance.respond": {"#/properties/reason": 2000},
+    "session.textblock.create": {"#/properties/title": 200, "#/properties/content": 20000},
+    "session.textblock.update": {"#/properties/title": 200, "#/properties/content": 20000},
 }
 
 #: Die einzigen Muster in den ausgelieferten Schemas. „Verankert und ohne Leerraum“ schließt Sätze
@@ -138,7 +146,7 @@ def _vertrag(register: Registry, name: str) -> Contract:
 
 def test_register_enthaelt_genau_den_startumfang(register: Registry) -> None:
     assert len(register.names(EVENT)) == 40
-    assert len(register.names(COMMAND)) == 4
+    assert len(register.names(COMMAND)) == 7
     assert set(register.names()) == set(STARTUMFANG)
     assert all(register.versions(name) == (1,) for name in STARTUMFANG)
 

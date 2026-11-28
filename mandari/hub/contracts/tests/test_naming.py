@@ -41,7 +41,15 @@ EREIGNISSE = [
     "core.membership.changed",
     "core.user.registered",
 ]
-BEFEHLE = ["submission.submit", "submission.withdraw", "attendance.respond", "invitation.acknowledge"]
+BEFEHLE = [
+    "submission.submit",
+    "submission.withdraw",
+    "attendance.respond",
+    "invitation.acknowledge",
+    "session.textblock.create",
+    "session.textblock.update",
+    "session.textblock.delete",
+]
 
 
 @pytest.mark.parametrize("name", EREIGNISSE)

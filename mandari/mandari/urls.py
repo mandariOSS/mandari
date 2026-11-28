@@ -149,6 +149,8 @@ urlpatterns = [
     *nur_mit(module.WORK, work_schnittstelle),
     *nur_mit(module.SESSION, session_schnittstelle),
     # Public API (stats, contact form - consumed by Wagtail marketing site)
+    # Befehle der gemeinsamen Schnittstelle (Issue #1588): POST /api/mandari/v1/<bereich>/<mandant>/befehle/<befehl>/v<n>
+    path("api/mandari/v1/", include("hub.api.befehle", namespace="befehle")),
     path("api/", include("insight_core.api_urls")),
     # Provisioning-API fürs Billing-Portal (nur aktiv wenn PROVISIONING_API_KEY gesetzt)
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),

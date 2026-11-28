@@ -38,7 +38,7 @@ from apps.session.models import (
 )
 from apps.session.services import meeting_format_service, paper_version_service
 from apps.session.tests.gleichstand import gezeigt, reiter_ausnahmen, rollen, vergleichen
-from apps.session.tests.test_neues_design import _brotkrumen, _client, _mandant, _vorlagen
+from apps.session.tests.test_neues_design import SCHUTZFELDER, _brotkrumen, _client, _mandant, _vorlagen
 from apps.session.tests.test_neues_design_teil2a import _welt_2a
 
 pytestmark = pytest.mark.django_db
@@ -365,7 +365,7 @@ def _werte(antwort: Any) -> list[tuple[str, str]]:
     leser.feed(antwort.content.decode())
     leser.close()
     formular = max(leser.formulare, key=len)
-    return sorted((name, wert) for name, wert in formular if name != "csrfmiddlewaretoken")
+    return sorted((name, wert) for name, wert in formular if name not in SCHUTZFELDER)
 
 
 def _daten(werte: list[tuple[str, str]]) -> dict[str, list[str]]:

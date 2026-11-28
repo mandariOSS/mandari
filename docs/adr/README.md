@@ -29,6 +29,7 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20261007-dokumentkette.md](20261007-dokumentkette.md) | Dokumentkette: Abruf, Ablage und Texterkennung als Aufträge über Ereignisse | angenommen |
 | [20261105-eine-schnittstelle-api-first.md](20261105-eine-schnittstelle-api-first.md) | Eine Schnittstelle: API-first auf OParl, kommParl und OpenAPI | angenommen |
 | [20261128-installationsprofile.md](20261128-installationsprofile.md) | Installationsprofile: Module schaltbar, Kriterien für eigene Dienste | vorgeschlagen |
+| [20261128-api-first-ohne-ausnahme.md](20261128-api-first-ohne-ausnahme.md) | API-first ohne Ausnahme: Jede Datenänderung ist ein Befehl, die Oberfläche ein Client | angenommen |
 
 Die Einträge „Datendrehscheibe A1–A11“ gehören zusammen (Epic #476); die Reihenfolge der Nummern entspricht den Abhängigkeiten.
 

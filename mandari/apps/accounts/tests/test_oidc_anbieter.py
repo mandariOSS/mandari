@@ -129,6 +129,7 @@ class TestDiscovery:
             "mandari:bereitstellung",
             "ratsdaten:nichtoeffentlich",
             "sitzung:lesen",
+            "sitzung:schreiben",
         }
         assert {"sub", "name", "email", "email_verified"} <= set(data["claims_supported"])
         # private_key_jwt (RFC 7523) für Anwendungen mit öffentlichen Schlüsseln (#565)

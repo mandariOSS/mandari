@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Verwaltung von Textbausteinen und Standard-Tagesordnungspunkten (Issue #85).
+
+Textbausteine ändern sich nur über Befehle (``apps/session/befehle/textbausteine.py``, Issue #1588): Die View liest
+das Formular und ruft den Befehl auf, den auch die Schnittstelle anbietet. Rechte, Prüfung und Prüfprotokoll liegen
+beim Befehl.
 """
 
 from django.contrib import messages
@@ -10,6 +14,8 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from .. import audit
+from ..befehle import ausfuehren
+from ..befehle.textbausteine import AENDERN, ANLEGEN, LOESCHEN
 from ..models import SessionOrganization, SessionStandardAgendaItem, SessionTextBlock
 from ..permissions import SessionViewMixin
 from ..rahmen import neues_design
@@ -136,60 +142,43 @@ class StandardItemManageView(_ManageBase):
 
 
 class TextblockManageView(_ManageBase):
-    """Textbaustein anlegen, ändern oder löschen."""
+    """Textbaustein anlegen, ändern oder löschen: Formular lesen, Befehl aufrufen, Ergebnis melden."""
 
     def post(self, request, tenant_slug):
-        instance = self._get_instance(SessionTextBlock, request.POST.get("block_id"))
+        block_id = request.POST.get("block_id") or None
 
         if request.POST.get("action") == "delete":
-            if instance is None:
-                messages.error(request, "Textbaustein nicht gefunden.")
-            else:
-                audit.log_event(
-                    "delete",
-                    instance,
-                    tenant=self.session_tenant,
-                    user=self.session_user,
-                    request=request,
-                )
-                instance.delete()
+            ergebnis = ausfuehren(request, LOESCHEN, {"textblock": block_id})
+            if ergebnis.ok:
                 messages.success(request, "Textbaustein gelöscht.")
+            else:
+                messages.error(request, ergebnis.meldung)
             return self._redirect()
 
-        title = request.POST.get("title", "").strip()[:200]
-        content = request.POST.get("content", "").strip()
-        if not title or not content:
-            messages.error(request, "Bitte Titel und Text angeben.")
-            return self._redirect()
-
-        category = request.POST.get("category", "general")
-        if category not in {value for value, _ in SessionTextBlock.CATEGORY_CHOICES}:
-            category = "general"
-
-        values = {
+        title = request.POST.get("title", "").strip()
+        inhalt = {
             "title": title,
-            "content": content,
-            "category": category,
-            "order": self._parse_order(request.POST.get("order")),
+            "content": request.POST.get("content", "").strip(),
+            "category": request.POST.get("category", "general"),
+            "order": _zahl(request.POST.get("order")),
             "is_active": request.POST.get("is_active", "1") == "1",
         }
-        if instance is None:
-            instance = SessionTextBlock.objects.create(tenant=self.session_tenant, **values)
-            action = "create"
-            messages.success(request, f"Textbaustein „{title}“ angelegt.")
+        if block_id:
+            ergebnis = ausfuehren(request, AENDERN, {"textblock": block_id, **inhalt})
+            erfolg = f"Textbaustein „{title}“ gespeichert."
         else:
-            for key, value in values.items():
-                setattr(instance, key, value)
-            instance.save()
-            action = "update"
-            messages.success(request, f"Textbaustein „{title}“ gespeichert.")
-
-        audit.log_event(
-            action,
-            instance,
-            tenant=self.session_tenant,
-            user=self.session_user,
-            request=request,
-            changes={"titel": title, "kategorie": category},
-        )
+            ergebnis = ausfuehren(request, ANLEGEN, inhalt)
+            erfolg = f"Textbaustein „{title}“ angelegt."
+        if ergebnis.ok:
+            messages.success(request, erfolg)
+        else:
+            messages.error(request, ergebnis.meldung)
         return self._redirect()
+
+
+def _zahl(raw):
+    """Zahl aus dem Formular; anderes geht unverändert an den Befehl, dessen Vertrag es ablehnt."""
+    try:
+        return int(raw) if raw not in (None, "") else 0
+    except (TypeError, ValueError):
+        return raw

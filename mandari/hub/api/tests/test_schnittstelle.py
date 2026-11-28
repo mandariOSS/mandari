@@ -35,6 +35,7 @@ from hub.api.entry import KOMMPARL_VERSION, description
 from hub.api.openapi import Area, commands_with_endpoint, operations, register_area
 from hub.api.openapi import registry as area_registry
 from hub.api.openapi.build import COMMAND_EXTENSION, build_description, render
+from hub.commands import get_dispatcher
 from hub.contracts import COMMAND, get_registry
 from hub.contracts.management.commands.schnittstelle_beschreibung import DESCRIPTION_PATH, description_file
 from insight_core.models import OParlBody, OParlMeeting, OParlOrganization, OParlPaper, OParlSource
@@ -89,7 +90,9 @@ class TestEinstieg:
             "oparl-mandant-nichtoeffentlich",
             "einreichung",
             "session-v1",
+            "befehle",
         ]
+        assert bereiche["befehle"]["entry"] == f"{SITE}/api/mandari/v1/{{bereich}}/{{mandant}}/befehle/"
         assert bereiche["oparl-mandant-nichtoeffentlich"]["entry"] == (
             f"{SITE}/session/{{tenant_slug}}/api/oparl/nichtoeffentlich/"
         )
@@ -156,6 +159,7 @@ class TestBeschreibung:
             "OParl je Mandant, nichtöffentlich",
             "Profil Einreichung",
             "Session-API v1",
+            "Befehle",
         ]
         for method, path, operation in operations(beschreibung):
             assert len(operation["tags"]) == 1 and operation["tags"][0] in tags, (method, path)
@@ -175,6 +179,7 @@ class TestBeschreibung:
             "/session/{tenant_slug}/api/oparl/paper/{id}/",
             "/session/{tenant_slug}/api/oparl/file/{id}/download/",
             "/api/v1/session/{tenant_slug}/applications/submit/",
+            "/api/mandari/v1/session/{mandant}/befehle/session.textblock.create/v1",
         ):
             assert path in paths, path
 
@@ -257,6 +262,12 @@ class TestBefehlsparitaet:
         assert not fehlend, f"Befehle ohne Endpunkt (Endpunkt mit {COMMAND_EXTENSION} anbieten): {sorted(fehlend)}"
         veraltet = set(ausnahmen) - (befehle - mit_endpunkt)
         assert not veraltet, f"Aus der Ausnahmeliste streichen: {sorted(veraltet)}"
+
+    def test_jeder_registrierte_handler_hat_eine_operation(self, beschreibung: dict[str, Any]) -> None:
+        """Befehlsschicht (#1588): Was die Installation ausführt, ist auch über die Schnittstelle erreichbar."""
+        handler = {name for name, _version in get_dispatcher().handlers}
+        fehlend = handler - set(commands_with_endpoint(beschreibung))
+        assert not fehlend, f"Handler ohne Operation (mit Exposure registrieren): {sorted(fehlend)}"
 
     def test_einreichung_ist_abgedeckt(self, beschreibung: dict[str, Any]) -> None:
         befehle = commands_with_endpoint(beschreibung)

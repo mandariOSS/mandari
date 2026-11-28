@@ -10,6 +10,8 @@ Aufrufer dieselbe Anfrage mit demselben Schlüssel, erhält er dieselbe Antwort,
 - ``valid_idempotency_key``: 1 bis 255 sichtbare ASCII-Zeichen ohne Anführungszeichen und Rückstrich.
 - ``KEY_MISSING``: feste Meldung für einen fehlenden oder ungültigen Schlüssel (400,
   ``idempotenzschluessel-fehlt``).
+- ``FORM_FIELD``: Formularfeld der eigenen Oberfläche mit dem Schlüssel (``{% idempotenzschluessel %}`` aus
+  ``apps/common/templatetags/befehle.py``, gelesen von ``hub.commands.oberflaeche.ausfuehren``).
 
 Speichern und Wiederholen erledigt ``apps.events.idempotency``.
 """
@@ -19,6 +21,9 @@ from __future__ import annotations
 from typing import Final
 
 IDEMPOTENCY_HEADER: Final = "Idempotency-Key"
+
+#: Formularfeld der eigenen Oberfläche mit dem Schlüssel eines Befehls
+FORM_FIELD: Final = "idempotency_key"
 
 #: Höchstlänge eines Schlüssels (Spalte im Idempotenzspeicher)
 MAX_KEY_LENGTH: Final = 255

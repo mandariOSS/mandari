@@ -12,21 +12,28 @@ Stelle und Regel, nie Werte (``hub.contracts.validation``).
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
-from typing import Any
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Final
 
 # Das Problem selbst ist ein Baustein der Plattform, gemeinsam für alle Schnittstellen.
 from apps.common.api.problems import PROBLEM_TYPE_BASE, RETRYABLE_STATUS, TITLES, Problem
 
 __all__ = [
+    "CONTRACT_VIOLATED",
     "PROBLEM_TYPE_BASE",
     "RETRYABLE_STATUS",
     "TITLES",
+    "VALIDATION_KIND",
     "CommandError",
     "Problem",
     "json_pointer",
     "validation_problem",
 ]
+
+#: Art eines Problems mit ungültigem Inhalt (422)
+VALIDATION_KIND: Final = "validierung"
+#: Meldung, wenn der Inhalt nicht zum Vertrag passt (die Verstöße stehen unter ``errors``)
+CONTRACT_VIOLATED: Final = "Der Befehl entspricht nicht seinem Vertrag."
 
 _PATH_PART = re.compile(r"\.([^.\[]+)|\[(\d+)\]")
 
@@ -42,13 +49,27 @@ class CommandError(Exception):
     def of(cls, status: int, kind: str, detail: str, **extensions: Any) -> CommandError:
         return cls(Problem(status=status, kind=kind, detail=detail, extensions=extensions))
 
+    @classmethod
+    def invalid(cls, detail: str, fields: Mapping[str, str]) -> CommandError:
+        """
+        422 (``validierung``) mit einem Fehler je Feld, etwa für Prüfungen, die der Vertrag nicht ausdrücken kann.
+
+        ``fields`` nennt Feld (``title``) oder JSON-Pointer (``/submitter/name``) und eine feste Meldung ohne Werte;
+        die Oberfläche zeigt sie am Feld des Formulars (``hub.commands.oberflaeche.Ergebnis``).
+        """
+        errors = tuple(
+            {"pointer": field if field.startswith("/") else f"/{_escape(field)}", "detail": text}
+            for field, text in fields.items()
+        )
+        return cls(Problem(status=422, kind=VALIDATION_KIND, detail=detail, errors=errors))
+
 
 def validation_problem(problems: Sequence[str]) -> Problem:
     """422 aus den Verstößen der Vertragsprüfung (``$.pfad: regel``); ``errors`` mit JSON-Pointer."""
     return Problem(
         status=422,
-        kind="validierung",
-        detail="Der Befehl entspricht nicht seinem Vertrag.",
+        kind=VALIDATION_KIND,
+        detail=CONTRACT_VIOLATED,
         errors=tuple(_error(problem) for problem in problems),
     )
 

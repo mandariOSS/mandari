@@ -535,6 +535,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: python scripts/check_ris_access_ratchet.py
 
+      # Befehlsschicht (docs/adr/20261128-api-first-ohne-ausnahme.md, Issue #1588): Views schreiben nicht über das
+      # ORM, sondern rufen Befehle beim Eigentümer auf. Der Bestand je Datei darf nur sinken (Kennzahl K9).
+      - name: Views schreiben nur über Befehle (ORM-Schreibzugriffe dürfen nur sinken)
+        if: ${{ !cancelled() }}
+        run: python scripts/check_view_writes_ratchet.py
+
       - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
         if: ${{ !cancelled() }}
         run: python scripts/check_frontend_ratchet.py
