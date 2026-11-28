@@ -6,7 +6,7 @@ Die Verwaltung registriert Anwendungen, die sich über mandari anmelden und im N
 zugreifen, etwa eine eigene Rats-App. Regeln, Protokoll und Formular kommen aus der Plattform
 (``apps.accounts.oidc.registration``); Session nennt nur den Bereich (``session-mandant:<Kennung>``) und prüft das
 Recht „Einstellungen verwalten“ wie bei den Einreichungs-Zugängen. Ohne eingeschalteten Anbieter gibt es die Seite
-nicht (404). Eine Anwendung der Kommune gilt nur bei ihr und erhält nur die Scopes, die Session für Kommunen anmeldet
+nicht (404, nach der Prüfung des Rechts). Eine Anwendung der Kommune gilt nur bei ihr und erhält nur die Scopes, die Session für Kommunen anmeldet
 (``apps.session.api.nichtoeffentlich.BINDUNG``); Nichtöffentliches gehört nicht dazu.
 """
 
@@ -14,11 +14,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.http import Http404, HttpRequest, HttpResponse
-from django.http.response import HttpResponseBase
+from django.http import HttpRequest, HttpResponse
 from django.views.generic import TemplateView
 
-from apps.accounts.oidc import bindings, provider_enabled
+from apps.accounts.oidc import bindings
 from apps.accounts.oidc.registration_views import OwnedApplicationsMixin
 from apps.session.permissions import SessionViewMixin
 
@@ -28,13 +27,6 @@ class OidcApplicationsView(SessionViewMixin, OwnedApplicationsMixin, TemplateVie
 
     template_name = "session/settings/anwendungen.html"
     permission_required = "manage_settings"
-
-    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
-        if not provider_enabled():
-            raise Http404
-        parent: Any = super()  # Mixins der Fachschicht ohne Typen
-        response: HttpResponseBase = parent.dispatch(request, *args, **kwargs)
-        return response
 
     def oidc_owner(self) -> str:
         tenant: Any = self.session_tenant

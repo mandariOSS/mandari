@@ -22,9 +22,6 @@ c-rahmen.satz, c-form.* statt eigener Klassen.
     {% endif %}
 
     <c-rahmen.abschnitt titel="Registrierte Anwendungen" titel_id="anwendungen-titel" zusatz="{{ oidc_anwendungen|length }}">
-        {% if not oidc_eingeschaltet %}
-        <c-rahmen.satz eng>Die Anmeldung über mandari ist in dieser Installation noch nicht eingeschaltet. Anwendungen wirken erst danach.</c-rahmen.satz>
-        {% endif %}
         {% if oidc_anwendungen %}
         <c-rahmen.liste class="mt-2" aria-label="Registrierte Anwendungen">
             {% for eintrag in oidc_anwendungen %}{% with app=eintrag.application %}

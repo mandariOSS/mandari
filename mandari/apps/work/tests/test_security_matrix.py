@@ -963,6 +963,18 @@ CASES: list[Case] = [
             "registration_default_role": "{role}",
         },
     ),
+    # Eigene Anwendungen der Organisation (#1591): ohne eingeschalteten OIDC-Anbieter 404 erst nach der Rechteprüfung
+    Case(
+        "organization_applications",
+        "anlegen",
+        data={
+            "aktion": "anlegen",
+            "name": "Matrix-App",
+            "art": "vertraulich",
+            "redirect_uris": "https://app.example.org/rueckweg",
+            "scopes": ["openid"],
+        },
+    ),
     Case("member_approve", path={"membership_id": "pending"}),
     Case("member_reject", path={"membership_id": "pending"}, data={"reason": "Keine Zugehörigkeit"}),
     _rat("update_coalition", coalition_name="Koalition"),

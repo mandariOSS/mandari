@@ -18,7 +18,7 @@ from typing import Any
 from django import forms
 from django.conf import settings
 from django.contrib import messages
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect
 
 from apps.common.hilfe import docs_url
@@ -101,12 +101,19 @@ def _display(application: OAuthApplication) -> OwnedApplication:
     )
 
 
+def _nur_eingeschaltet() -> None:
+    """Die Seite gibt es nur bei eingeschaltetem Anbieter."""
+    if not provider_enabled():
+        raise Http404
+
+
 class OwnedApplicationsMixin:
     """
     Anwendungen eines Bereichs anzeigen, anlegen, sperren, entsperren, mit neuem Secret versehen und löschen.
 
     Die View liefert :meth:`oidc_owner` (fachfreie Kennung ihres Bereichs) und prüft vorher das Recht; ``get_context_data``
-    nimmt :meth:`oidc_context` auf, ``post`` ruft :meth:`oidc_post`.
+    nimmt :meth:`oidc_context` auf, ``post`` ruft :meth:`oidc_post`. Ohne eingeschalteten Anbieter antworten beide mit
+    404, aber erst nach der Prüfung des Rechts: Wer die Seite nicht öffnen darf, bekommt wie überall 403.
     """
 
     request: HttpRequest
@@ -117,10 +124,10 @@ class OwnedApplicationsMixin:
     def oidc_context(
         self, form: RegistrationForm | None = None, neu: registration.Registration | None = None
     ) -> dict[str, Any]:
+        _nur_eingeschaltet()
         owner = self.oidc_owner()
         site = str(getattr(settings, "SITE_URL", "") or "").rstrip("/")
         return {
-            "oidc_eingeschaltet": provider_enabled(),
             "oidc_bereich": bindings.describe(owner) or "",
             "oidc_anwendungen": [_display(application) for application in registration.owned(owner)],
             "oidc_form": form if form is not None else RegistrationForm(owner=owner),
@@ -131,6 +138,7 @@ class OwnedApplicationsMixin:
 
     def oidc_post(self, request: HttpRequest) -> HttpResponse | dict[str, Any]:
         """Aktion ausführen; Ergebnis: Weiterleitung oder Kontext für die Seite (Formular mit Fehlern, neues Secret)."""
+        _nur_eingeschaltet()
         owner = self.oidc_owner()
         action = request.POST.get("aktion", "")
         user = request.user
