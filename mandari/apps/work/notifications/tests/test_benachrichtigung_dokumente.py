@@ -472,3 +472,73 @@ def test_umschalten_ohne_doppelte_benachrichtigung(
     assert _zustellen(spec) == 1
     assert len(_benachrichtigungen(autorin, NotificationType.MOTION_APPROVAL_REQUESTED)) == 1
     assert len(mail.outbox) == 1
+
+
+# -- Zugang am Stand des Versands -----------------------------------------------------------------
+
+
+def _abwesend_mit_vertretung(org: Any, abwesend: Any, vertretung: Any) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.work.organization.models import MemberAbsence
+
+    heute = timezone.now().date()
+    MemberAbsence.objects.create(
+        organization=org,
+        membership=abwesend,
+        start_date=heute - timedelta(days=1),
+        end_date=heute + timedelta(days=1),
+        deputy=vertretung,
+        notify_deputy=True,
+    )
+
+
+def test_vertretung_nur_mit_zugang_zum_dokument(org: Any, make_member: Any, autorin: Any, kollege: Any) -> None:
+    """Weiterleitung an die Vertretung nur, wenn sie das Dokument selbst öffnen darf (nicht nur bei Unterlagen
+    aus „Nichtöffentliche Vorgänge“)."""
+    from apps.work.notifications.services import NotificationHub
+
+    vertretung = make_member(org, MITGLIED, email="vertretung@example.org")
+    _abwesend_mit_vertretung(org, kollege, vertretung)
+    geteilt = Motion.objects.create(
+        organization=org, author=autorin, title="Haushaltsrede", visibility="shared", responsible=kollege
+    )
+
+    NotificationHub.notify_motion_assigned(geteilt, kollege, autorin)
+    assert _benachrichtigungen(kollege, NotificationType.MOTION_ASSIGNED)
+    assert not _benachrichtigungen(vertretung, NotificationType.MOTION_ASSIGNED)
+
+    MotionShare.objects.create(
+        motion=geteilt, scope="user", user=vertretung.user, level="view", created_by=autorin.user
+    )
+    NotificationHub.notify_motion_assigned(geteilt, kollege, autorin)
+    [weitergeleitet] = _benachrichtigungen(vertretung, NotificationType.MOTION_ASSIGNED)
+    assert weitergeleitet.title.startswith("[Vertretung]")
+
+
+def test_wartende_mail_nach_entzug_der_freigabe_wird_verworfen(
+    settings: Any, org: Any, autorin: Any, kollege: Any
+) -> None:
+    """Die Mail liegt schon im Postausgang, dann wird die Freigabe entzogen: Der Versand prüft den Zugang erneut."""
+    from apps.common.mail.outbox import VERWORFEN_VOR_VERSAND
+    from apps.common.models import MailOutbox
+    from apps.events.task_runner import run_pending
+    from apps.work.notifications.services import NotificationHub
+
+    settings.TASKS = {"default": {**settings.TASKS["default"], "BACKEND": "apps.events.tasks_backend.JournalBackend"}}
+    settings.MAIL_QUEUE = ["work.benachrichtigung"]
+    geteilt = Motion.objects.create(organization=org, author=autorin, title="Haushaltsrede", visibility="shared")
+    freigabe = MotionShare.objects.create(
+        motion=geteilt, scope="user", user=kollege.user, level="view", created_by=autorin.user
+    )
+    assert NotificationHub.notify_document_shared(geteilt, kollege, "view", autorin) is not None
+    assert run_pending(limit=1) == 1, "Auftrag zur Benachrichtigung legt die Mail in den Postausgang"
+    assert MailOutbox.objects.get().status == MailOutbox.Status.WARTEND
+
+    freigabe.delete()
+    assert run_pending() == 1
+    assert not mail.outbox
+    zeile = MailOutbox.objects.get()
+    assert (zeile.status, zeile.error_code) == (MailOutbox.Status.FEHLGESCHLAGEN, VERWORFEN_VOR_VERSAND)

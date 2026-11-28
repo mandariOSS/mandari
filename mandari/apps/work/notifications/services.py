@@ -256,18 +256,40 @@ class NotificationHub:
             return False
         return task is not None and task.noe_gesperrt(recipient)
 
+    @staticmethod
+    def _dokument_verschlossen(recipient, metadata: dict | None) -> bool:
+        """
+        Betrifft die Benachrichtigung (``motion_id``) ein Dokument, das der Empfänger heute nicht öffnen darf? Titel und
+        Auszüge stehen im Text. Ohne Dokument (unbekannte oder gelöschte Kennung) gibt es nichts zu verbergen.
+        """
+        motion_id = (metadata or {}).get("motion_id")
+        if not motion_id:
+            return False
+        from django.core.exceptions import ValidationError
+
+        from apps.work.motions.models import Motion
+
+        try:
+            motion = Motion.objects.filter(pk=motion_id, organization_id=recipient.organization_id).first()
+        except (ValueError, TypeError, ValidationError):
+            return False
+        return motion is not None and not motion.can_access(recipient)
+
     @classmethod
     def bezug_verborgen(cls, recipient, notification_type: str, metadata: Any) -> bool:
         """
-        Die Prüfungen aus ``send`` zum Bezug einer Nachricht (Fraktionssitzung, Aufgabe), am heutigen Stand.
+        Die Prüfungen aus ``send`` zum Bezug einer Nachricht (Fraktionssitzung, Aufgabe), am heutigen Stand, dazu der
+        Zugang zum Dokument (``motion_id``).
 
-        Der Versand der E-Mail läuft nach dem Anlegen in einem eigenen Auftrag. Dazwischen kann die Vereidigung
-        entzogen, der TOP nichtöffentlich gestellt oder die Sitzungsart geändert sein; eine versandte Mail lässt sich
-        nicht zurückholen.
+        Der Versand der E-Mail läuft nach dem Anlegen in einem eigenen Auftrag und wartet unter Umständen im
+        Postausgang. Dazwischen kann die Vereidigung entzogen, der TOP nichtöffentlich gestellt, die Sitzungsart
+        geändert oder die Freigabe des Dokuments entzogen sein; eine versandte Mail lässt sich nicht zurückholen.
         """
         metadata = metadata if isinstance(metadata, dict) else None
-        return cls._sitzung_verborgen(recipient, notification_type, metadata) or cls._aufgabe_verschlossen(
-            recipient, metadata
+        return (
+            cls._sitzung_verborgen(recipient, notification_type, metadata)
+            or cls._aufgabe_verschlossen(recipient, metadata)
+            or cls._dokument_verschlossen(recipient, metadata)
         )
 
     @classmethod
@@ -373,8 +395,9 @@ class NotificationHub:
         Darf die Vertretung den Bezug der Benachrichtigung sehen? Titel und Auszüge stehen im Text und gehen ihr
         auch per E-Mail zu.
 
-        Unterlagen aus „Nichtöffentliche Vorgänge“ erhält nur, wer sie öffnen darf (``_hidden_from``); dasselbe
-        gilt für Aufgaben zu einer solchen Unterlage oder aus einem nichtöffentlichen TOP einer Fraktionssitzung.
+        Nachrichten zu einem Dokument erhält nur, wer es öffnen darf (``can_access``, Issue #529; bisher nur für
+        Unterlagen aus „Nichtöffentliche Vorgänge“). Aufgaben zu einer solchen Unterlage oder aus einem
+        nichtöffentlichen TOP einer Fraktionssitzung erhält nur, wer den Bezug öffnen darf.
         Einladungen zu eigenen Terminen erhält nur, wer den Termin sehen darf (``termine.sichtbare``).
         Lässt sich der Bezug nicht mehr auflösen, wird nicht weitergeleitet. Alles andere geht wie bisher an die
         Vertretung, auch gewöhnliche private Aufgaben: Die Sperre reicht nicht weiter als beim Empfänger selbst.
@@ -389,8 +412,9 @@ class NotificationHub:
         org_id = deputy.organization_id
         try:
             if metadata.get("motion_id"):
+                # Wie bei Kommentaren und Freigaben: nur an eine Vertretung, die das Dokument selbst öffnen darf
                 motion = Motion.objects.filter(pk=metadata["motion_id"], organization_id=org_id).first()
-                return motion is not None and not cls._hidden_from(motion, deputy)
+                return motion is not None and motion.can_access(deputy)
             if metadata.get("task_id"):
                 task = (
                     Task.objects.filter(pk=metadata["task_id"], organization_id=org_id)
