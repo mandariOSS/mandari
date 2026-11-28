@@ -97,10 +97,10 @@ class MotionType(models.Model):
         return self.name
 
 
-class OrganisationsBriefkoepfe(models.Manager):
+class OrganisationsBriefkoepfe(models.Manager["OrganizationLetterhead"]):
     """Briefköpfe der Organisation ohne das dokumenteigene Briefpapier treu übernommener PDFs (Issue #1600)."""
 
-    def get_queryset(self):
+    def get_queryset(self) -> "models.QuerySet[OrganizationLetterhead]":
         return super().get_queryset().filter(dokument__isnull=True)
 
 
@@ -207,7 +207,7 @@ class OrganizationLetterhead(models.Model):
 
     #: Briefköpfe der Organisation (Auswahl, Einstellungen); dokumenteigene nur über ``alle`` oder ``motion.letterhead``
     objects = OrganisationsBriefkoepfe()
-    alle = models.Manager()
+    alle: "models.Manager[OrganizationLetterhead]" = models.Manager()
 
     class Meta:
         verbose_name = "Briefkopf"

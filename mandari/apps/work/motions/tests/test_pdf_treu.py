@@ -197,6 +197,7 @@ def test_import_legt_dokumenteigenes_briefpapier_an(org: Any, make_member: Any) 
     ergebnis = MotionImportService.import_pdf(datei, org, mitglied)
     assert ergebnis.success
 
+    assert ergebnis.motion is not None
     motion = Motion.objects.get(pk=ergebnis.motion.pk)
     briefpapier = motion.letterhead
     assert briefpapier is not None and briefpapier.dokument_id == motion.id
@@ -221,6 +222,7 @@ def test_briefpapier_datei_nur_mit_zugang_zum_dokument(org: Any, make_member: An
     andere = make_member(org, ["motions.view"])
     datei = SimpleUploadedFile("antrag.pdf", _antrag(1), content_type="application/pdf")
     ergebnis = MotionImportService.import_pdf(datei, org, autor)
+    assert ergebnis.motion is not None
     motion = Motion.objects.get(pk=ergebnis.motion.pk)
     assert motion.visibility == "private"
     adresse = reverse(
