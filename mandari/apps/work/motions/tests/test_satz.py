@@ -43,6 +43,9 @@ def test_office_namen_werden_auf_kompatible_schriften_abgebildet() -> None:
     assert schriften.schrift("tinos") is not None
     assert schriften.schrift("tinos").fuer_office == "Times New Roman"  # type: ignore[union-attr]
     assert schriften.schrift("noto-serif").fuer_office == "Noto Serif"  # type: ignore[union-attr]
+    # Hausschrift u. a. von Volt: Office-Name ist der eigene Name (Word nimmt eine installierte Ubuntu)
+    assert schriften.aufloesen('"Ubuntu", sans-serif').schluessel == "ubuntu"
+    assert schriften.schrift("ubuntu").fuer_office == "Ubuntu"  # type: ignore[union-attr]
 
 
 def test_jede_schriftdatei_liegt_vor_und_steht_in_css_und_reuse() -> None:
@@ -59,10 +62,11 @@ def test_jede_schriftdatei_liegt_vor_und_steht_in_css_und_reuse() -> None:
 
 
 def test_schriften_ohne_reservierten_namen_oder_unveraendert() -> None:
-    # Untermengen tragen den Namen weiter: nur bei Schriften ohne „Reserved Font Name“ (Carlito: Originaldateien)
+    # Untermengen tragen den Namen weiter: nur bei Schriften ohne „Reserved Font Name“. Carlito (reservierter Name)
+    # und Ubuntu (Ubuntu Font Licence: veränderte Fassungen ohne den Namen) nur als Originaldateien
     for schrift in schriften.SCHRIFTEN:
-        assert schrift.lizenz == "OFL-1.1"
-        if schrift.schluessel == "carlito":
+        assert schrift.lizenz in {"OFL-1.1", "Ubuntu-font-1.0"}
+        if schrift.schluessel in {"carlito", "ubuntu"} or schrift.lizenz != "OFL-1.1":
             assert schrift.unveraendert
         for schnitt in schrift.schnitte:
             assert schrift.datei(schnitt).endswith(".ttf" if schrift.unveraendert else ".woff2")
