@@ -56,6 +56,7 @@ from apps.session.models import (
 from apps.session.services import file_version_service
 from apps.session.tests.test_neues_design import (
     _HX,
+    SCHUTZFELDER,
     Aktion,
     _aktionen,
     _client,
@@ -338,7 +339,7 @@ class _Absicherungen(HTMLParser):
             self._felder = set()
             self._schutz = self._rueckfrage(a) | (self._htmx(a) if hx else set())
         elif self._formular and tag in ("input", "select", "textarea", "button"):
-            if a.get("name") and a["name"] != "csrfmiddlewaretoken":
+            if a.get("name") and a["name"] not in SCHUTZFELDER:
                 typ = a.get("type", "submit" if tag == "button" else "text").lower()
                 fest = tag in ("input", "button") and typ in ("hidden", "submit", "button")
                 self._felder.add(f"{a['name']}={a.get('value', '')}" if fest else a["name"])
