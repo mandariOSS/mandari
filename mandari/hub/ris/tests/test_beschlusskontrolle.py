@@ -156,6 +156,23 @@ def test_filter_nach_text_gremium_und_jahr(welt: Welt) -> None:
     assert set(_namen(ris.filter_decisions(items, year="2024"))) == {"Spielplatz", "Bericht", "Abgelehnt im Bezirk"}
 
 
+@pytest.mark.parametrize("jahr", ["0", "10000", "²", "abc", "-1"])
+def test_ungueltiges_jahr_wirkt_wie_keines(welt: Welt, jahr: str) -> None:
+    items = ris.decided_agenda_items([welt.body])
+
+    assert _namen(ris.filter_decisions(items, year=jahr)) == _namen(items)
+
+
+def test_ohne_veroeffentlichten_stand_nie_ueberfaellig(welt: Welt) -> None:
+    """Eine Frist ohne Stand (etwa von einem älteren Schreiber) macht einen Beschluss nicht überfällig."""
+    heute = timezone.localdate()
+    OParlAgendaItem.objects.filter(pk=welt.ohne_stand.pk).update(implementation_deadline=heute - timedelta(days=3))
+    items = ris.decided_agenda_items([welt.body])
+
+    assert _namen(ris.filter_implementation(items, overdue_only=True, today=heute)) == ["Radweg Hafenstraße"]
+    assert ris.implementation_stats(items, heute)["overdue"] == 1
+
+
 def test_filter_nach_umsetzungsstand(welt: Welt) -> None:
     items = ris.decided_agenda_items([welt.body])
     heute = timezone.localdate()

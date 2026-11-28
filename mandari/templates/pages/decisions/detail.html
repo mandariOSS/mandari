@@ -79,6 +79,9 @@ Session oder aus dem RIS-Bestand (Issue #538, dort ohne Zuständigkeit).
         <aside>
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 sticky top-4">
                 <h2 class="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2"><i data-lucide="bell" class="w-5 h-5 text-primary-500"></i> Auf dem Laufenden bleiben</h2>
+                {% if ohne_abo %}
+                <p class="text-sm text-gray-600 dark:text-gray-400" data-testid="ohne-abos">Zu diesem Beschluss gibt es keine Benachrichtigung per E-Mail. Den aktuellen Stand finden Sie auf dieser Seite.</p>
+                {% else %}
                 <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                     Wir schreiben Ihnen, wenn die Verwaltung einen neuen Umsetzungsstand zu diesem Beschluss meldet.
                     {% if subscriber_count %}<span class="block mt-1 text-xs text-gray-500">{{ subscriber_count }} Person{{ subscriber_count|pluralize:"en" }} verfolg{{ subscriber_count|pluralize:"t,en" }} diesen Beschluss.</span>{% endif %}
@@ -96,6 +99,7 @@ Session oder aus dem RIS-Bestand (Issue #538, dort ohne Zuständigkeit).
                     </label>
                     <button type="submit" class="w-full px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700">Beschluss abonnieren</button>
                 </form>
+                {% endif %}
                 {% endif %}
             </div>
         </aside>

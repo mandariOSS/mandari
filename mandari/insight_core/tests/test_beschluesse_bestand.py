@@ -187,8 +187,11 @@ def test_fremde_quelle_ohne_abo(welt: dict[str, Any], settings: Any) -> None:
     antwort = Client().get(f"/insight/beschluesse/{welt['fremder_punkt'].pk}/")
 
     assert antwort.status_code == 200
-    assert "Fremder Beschluss" in antwort.content.decode()
+    html = antwort.content.decode()
+    assert "Fremder Beschluss" in html
     assert antwort.context["can_subscribe"] is False
+    # Kein Abo, weil keine Verwaltung in mandari Session dahintersteht; das ist kein Archiv
+    assert 'data-testid="ohne-abos"' in html and 'data-testid="archiv-keine-abos"' not in html
     abo = Client().post(
         f"/insight/beschluesse/{welt['fremder_punkt'].pk}/", {"email": "fremd@example.org", "privacy": "on"}
     )
@@ -205,6 +208,20 @@ def test_stand_der_kommune_gilt_auch_fuer_beschluesse_aus_dem_bestand(welt: dict
     publication.set_source_state(welt["source"], publication.ARCHIVED)
     archiv = Client().get(f"/insight/beschluesse/{welt['punkt'].pk}/")
     assert archiv.status_code == 200 and archiv.context["can_subscribe"] is False
+
+
+def test_session_kennung_folgt_dem_stand_der_kommune(welt: dict[str, Any]) -> None:
+    """Auch über die Kennung des Session-Beschlusses gilt der Stand der Kommune, wenn der Mandant noch veröffentlicht."""
+    publication.set_source_state(welt["source"], publication.PAUSED)
+
+    assert Client().get(f"/insight/beschluesse/{welt['beschluss'].pk}/").status_code == 503
+
+    publication.set_source_state(welt["source"], publication.ARCHIVED)
+    archiv = Client().get(f"/insight/beschluesse/{welt['beschluss'].pk}/")
+    assert archiv.status_code == 200 and archiv.context["can_subscribe"] is False
+    abo = Client().post(f"/insight/beschluesse/{welt['beschluss'].pk}/", {"email": "a@example.org", "privacy": "on"})
+    assert abo.status_code == 302
+    assert not DecisionSubscription.objects.filter(email="a@example.org").exists()
 
 
 def test_ohne_schalter_kennt_die_detailseite_nur_session_kennungen(welt: dict[str, Any], settings: Any) -> None:

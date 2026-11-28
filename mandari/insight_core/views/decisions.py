@@ -393,6 +393,12 @@ class DecisionDetailView(TemplateView):
         self.visibility = decision_tracking.visibility(item)
         if self.visibility == decision_tracking.HIDDEN:
             raise Http404("Beschluss nicht öffentlich")
+        if self.visibility == decision_tracking.VISIBLE:
+            # Hat die Kommune selbst einen Stand (Pause, Archiv, Rücknahme an der Quelle), gilt er auch hier, wie auf
+            # den übrigen Seiten; die Stände heißen in ``publication`` und hier gleich
+            state = publication.body_state(item.meeting.tenant.oparl_body_id)
+            if state is not None:
+                self.visibility = state.mode
         return item
 
     def get(self, request, *args, **kwargs):
@@ -468,6 +474,7 @@ class DecisionDetailView(TemplateView):
         item._ortsschutz = _ortsschutz(item, vorlagen)
         gremium = _gremien(item)
         session_item = decision_tracking.session_beschluss(item)
+        abo = _abo_sichtbarkeit(item, session_item)
         context.update(
             {
                 "active_body": body,
@@ -491,7 +498,9 @@ class DecisionDetailView(TemplateView):
                     else 0
                 ),
                 # Abos gelten dem Session-Beschluss; im Archiv kommen keine Meldungen mehr
-                "can_subscribe": _abo_sichtbarkeit(item, session_item) == decision_tracking.VISIBLE,
+                "can_subscribe": abo == decision_tracking.VISIBLE,
+                # Ohne Session-Beschluss (fremde Quelle) gibt es keine Abos; das ist kein Archiv
+                "ohne_abo": abo not in (decision_tracking.VISIBLE, decision_tracking.ARCHIVED),
             }
         )
         from ..seo import get_decision_seo

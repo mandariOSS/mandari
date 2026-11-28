@@ -438,15 +438,17 @@ def filter_decisions(
 ) -> QuerySet[OParlAgendaItem]:
     """
     Beschlüsse nach Gremium (Kennung; eine ungültige ergibt eine leere Liste statt eines Fehlers), Jahr der Sitzung
-    und Text (Name, Beschlusstext, Beschlussnummer, veröffentlichte Statusmeldung).
+    (außerhalb von 1 bis 9999 ohne Wirkung, wie ein fehlendes) und Text (Name, Beschlusstext, Beschlussnummer,
+    veröffentlichte Statusmeldung).
     """
     if organization_id:
         pk = _uuid(organization_id)
         if pk is None:
             return items.none()
         items = items.filter(meeting__organizations=pk)
-    if str(year or "").isdigit():
-        items = items.filter(meeting__start__year=int(str(year)))
+    jahr = _year(year)
+    if jahr is not None:
+        items = items.filter(meeting__start__year=jahr)
     if query:
         items = items.filter(
             Q(name__icontains=query)
@@ -457,9 +459,22 @@ def filter_decisions(
     return items
 
 
+def _year(value: object) -> int | None:
+    """Jahr aus der Adresse; ``None`` ohne gültige Zahl von 1 bis 9999 (sonst scheitert die Datumsgrenze)."""
+    try:
+        jahr = int(str(value or "").strip())
+    except ValueError:
+        return None
+    return jahr if 1 <= jahr <= 9999 else None
+
+
+#: Umsetzungsstände, die noch nicht erledigt sind (ohne Stand zählt ein Beschluss nie als überfällig)
+_NOT_DONE: Final = tuple(status for status in IMPLEMENTATION_LABELS if status != "done")
+
+
 def implementation_overdue_q(today: date) -> Q:
-    """Angenommen, Frist überschritten und nicht erledigt."""
-    return Q(vote_result="approved", implementation_deadline__lt=today) & ~Q(implementation_status="done")
+    """Angenommen, Frist überschritten und mit einem Stand, der nicht erledigt ist (wie ``implementation_overdue``)."""
+    return Q(vote_result="approved", implementation_deadline__lt=today, implementation_status__in=_NOT_DONE)
 
 
 def filter_implementation(
