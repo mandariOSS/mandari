@@ -111,7 +111,8 @@ class OwnedApplicationsMixin:
     """
     Anwendungen eines Bereichs anzeigen, anlegen, sperren, entsperren, mit neuem Secret versehen und löschen.
 
-    Die View liefert :meth:`oidc_owner` (fachfreie Kennung ihres Bereichs) und prüft vorher das Recht; ``get_context_data``
+    Die View liefert :meth:`oidc_owner` (fachfreie Kennung ihres Bereichs) und :meth:`oidc_page_url` und prüft vorher
+    das Recht; ``get_context_data``
     nimmt :meth:`oidc_context` auf, ``post`` ruft :meth:`oidc_post`. Ohne eingeschalteten Anbieter antworten beide mit
     404, aber erst nach der Prüfung des Rechts: Wer die Seite nicht öffnen darf, bekommt wie überall 403.
     """
@@ -119,6 +120,10 @@ class OwnedApplicationsMixin:
     request: HttpRequest
 
     def oidc_owner(self) -> str:
+        raise NotImplementedError
+
+    def oidc_page_url(self) -> str:
+        """Adresse der Seite (aus ``reverse``), Ziel nach Sperren, Entsperren und Löschen."""
         raise NotImplementedError
 
     def oidc_context(
@@ -184,4 +189,4 @@ class OwnedApplicationsMixin:
                 messages.success(request, f"„{name}“ ist gelöscht; alle ihre Zugänge sind widerrufen.")
         else:
             messages.error(request, "Unbekannte Aktion.")
-        return redirect(request.path)
+        return redirect(self.oidc_page_url())

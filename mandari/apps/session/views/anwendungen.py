@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
+from django.urls import reverse
 from django.views.generic import TemplateView
 
 from apps.accounts.oidc import bindings
@@ -31,6 +32,10 @@ class OidcApplicationsView(SessionViewMixin, OwnedApplicationsMixin, TemplateVie
     def oidc_owner(self) -> str:
         tenant: Any = self.session_tenant
         return bindings.compose(bindings.TENANT, str(tenant.pk))
+
+    def oidc_page_url(self) -> str:
+        tenant: Any = self.session_tenant
+        return reverse("session:settings_applications", kwargs={"tenant_slug": tenant.slug})
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         overrides = {key: kwargs.pop(key) for key in ("form", "neu") if key in kwargs}

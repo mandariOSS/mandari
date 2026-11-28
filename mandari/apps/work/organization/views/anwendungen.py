@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
+from django.urls import reverse
 from django.views.generic import TemplateView
 
 from apps.accounts.oidc.registration_views import OwnedApplicationsMixin
@@ -31,6 +32,10 @@ class OrganizationApplicationsView(WorkViewMixin, OwnedApplicationsMixin, Templa
     def oidc_owner(self) -> str:
         organization: Any = self.organization
         return anwendungen.owner(organization.pk)
+
+    def oidc_page_url(self) -> str:
+        organization: Any = self.organization
+        return reverse("work:organization_applications", kwargs={"org_slug": organization.slug})
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         overrides = {key: kwargs.pop(key) for key in ("form", "neu") if key in kwargs}
