@@ -508,7 +508,8 @@ leitet weiter.
   Texterkennung `File.text`, gibt es keinen Eintrag (das Ereignis ist `intern`). Ereignisse zu Dateien an
   nichtöffentlichen Tagesordnungspunkten gehen nur an nichtöffentliche Empfänger, der Aggregator gibt diese Dateien
   aber aus. Angaben, die mandari selbst ergänzt (etwa `mandari:summary` und die Antragsteller einer Vorlage),
-  ändern sich ohne Ereignis.
+  ändern sich ohne Ereignis. In der Session-Schnittstelle ändert sich `modified` auch bei Änderungen, die nicht
+  öffentlich sind.
 
 ### Snapshot: Einstieg mit Cursor-Übergabe
 

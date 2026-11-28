@@ -60,12 +60,10 @@ OPARL_ERROR: Final = "https://schema.oparl.org/1.1/Error"
 #: erfüllte Kennungen). Heute keines. Erfüllt sind (#1229): Einträge für einbettende Objekte, auch die frühere Vorlage
 #: einer Datei; im Aggregator nur Ereignisse, die seinen Bestand ändern (``aggregator.BESTAND_PRODUCERS``), also erst,
 #: wenn die Änderung abrufbar ist; ``modified`` des Bestands nur mit einem Ereignis (Ingestor); nichtöffentliche
-#: Tagesordnungspunkte des Bestands mit ``deleted: true``. Offen bleiben diese Muss-Anforderungen des Abschnitts
+#: Tagesordnungspunkte des Bestands mit ``deleted: true``; Session meldet auch Körperschaft, Wahlperioden, Gremien,
+#: Personen und Mitgliedschaften (#860, mit ``SESSION_EVENTS``). Offen bleiben diese Muss-Anforderungen des Abschnitts
 #: „Vollständigkeit und Reihenfolge“:
 #:
-#: - Session meldet Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht selbst (#860). Der
-#:   Feed der Session-Schnittstelle nennt sie nur über den Abgleich des Ingestors, also nur für Mandanten, die im
-#:   Bürgerportal veröffentlichen.
 #: - Session stempelt ``modified`` auch bei Änderungen, die nicht öffentlich sind und kein Ereignis ergeben.
 #: - Die Texterkennung ergänzt ``File.text`` mit einem internen Ereignis; der Feed nennt die Datei nicht.
 #: - Dateien an nichtöffentlichen Tagesordnungspunkten gibt der Aggregator aus, ihre Ereignisse sind nichtöffentlich.

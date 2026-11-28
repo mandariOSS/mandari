@@ -352,7 +352,8 @@ als im Aggregator gibt der Tagesordnungspunkt hier seine Anlagen aus: Ändert si
 Tagesordnungspunkts, folgen Einträge für den Punkt und seine Sitzung. Rücknahmen nennen das Objekt, in das das
 zurückgenommene eingebettet war (`docs/DATENDREHSCHEIBE.md`, „Session als Erzeuger“). Hängt eine Anlage woanders,
 bekommt auch das Objekt einen Eintrag, an dem sie vorher hing. Körperschaft, Gremien, Personen, Mitgliedschaften und
-Wahlperioden meldet Session noch nicht als Ereignis; ihre Änderungen fehlen im Feed.
+Wahlperioden meldet Session seit #860 ebenfalls (mit `SESSION_EVENTS`). Der Feed des Aggregators liest die Meldungen
+von Session nicht, nur die des Abgleichs, der sie in seinen Bestand übernimmt (`OPARL_API.md`, „Einschränkungen“).
 
 - **Kommune im Journal:** die kanonische Kennung des Body, `uuid5` über `…/api/oparl/body/`.
   Ereignisse nennen Objekte ebenfalls mit ihrer kanonischen Kennung (`uuid5` über die Adresse des
