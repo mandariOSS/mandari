@@ -19,7 +19,9 @@ OSM-Adresspunkt (Address-Modell) verfeinert, sofern importiert (Issue #54) – n
 Einwohnerschaft und Bauanträgen (``ortsschutz``, Issue #1269): Dort bleibt es beim Punkt der Straße, und Eingaben aus
 der Einwohnerschaft werden nur aus dem Titel verortet. Gelesen wird der Hauptteil des Hauptdokuments (OParl
 ``mainFile`` bis zur Überschrift „Anlagen“); Orte, die nur in Anlagen stehen, werden nicht verortet, ebenso wenig
-Sammellisten, Wirtschaftspläne und Jahresabschlüsse (``titel_ohne_ort``).
+Sammellisten, Wirtschaftspläne und Jahresabschlüsse (``titel_ohne_ort``). Anschriften mit Postleitzahl (Briefkopf,
+Absender, Empfänger) zählen nicht (``ohne_anschriften``), ebenso wenig Namen, die nur als Teil eines Einrichtungs- oder
+Stadtteilnamens vorkommen („Schulzentrum Kinderhaus“, ``_nur_als_einrichtung``).
 Jeder Lauf spiegelt das JSON zusätzlich in die Tabelle PaperLocation
 (services/paper_locations.py) – Grundlage für Umkreissuche und Admin-Korrektur.
 """
@@ -76,6 +78,12 @@ TITEL_OHNE_ORT = re.compile(
 #: Straßennamen, die zugleich Gattungsnamen sind („auf dem Markt“, „Schulstraße“ als Verkehrsberuhigung vor Schulen):
 #: im Volltext nur mit Hausnummer ein Ort (normalisiert wie das Straßenverzeichnis)
 GATTUNGSNAMEN = frozenset({"markt", "marktplatz", "schulstrasse", "forstweg", "rheinufer", "kirchplatz", "dorfplatz"})
+#: Wort vor einem Namen, das ihn als Einrichtung oder Stadtteil ausweist („Schulzentrum Kinderhaus“, „Stadtteil
+#: Kinderhaus“, „in Kinderhaus“), normalisiert wie das Straßenverzeichnis
+_EINRICHTUNG_DAVOR_RE = re.compile(
+    r"(?:schule|zentrum|gymnasium|kolleg|kita|kindergarten|tagesstätte|bad|halle|bibliothek|bücherei|kirche|"
+    r"gemeinde|friedhof|bahnhof|wache|stadtteil|ortsteil|bezirk|ortschaft|siedlung)$|^(?:in|aus|nach)$"
+)
 #: Überschrift des Anlagenteils in einem Hauptdokument („Anlagen:“ auf eigener Zeile)
 _ANLAGEN_RE = re.compile(r"^[ \t]*Anlage(?:n|/n)?[ \t]*:?[ \t]*$", re.MULTILINE)
 
@@ -918,13 +926,101 @@ def hauptteil(text: str) -> str:
     return text[: treffer.start()] if treffer else (text or "")
 
 
+#: Postleitzahl und Ort einer Anschrift („48153 Münster“, „D-48153 Münster“)
+_PLZ_ORT_RE = re.compile(r"(?<![\w-])(?:D-[ \t]?)?\d{5}[ \t]+[A-ZÄÖÜ][\w.-]*")
+#: Hausnummer am Ende des Stücks vor Postleitzahl und Ort, dazwischen Leerraum, Komma oder ein Trennzeichen
+#: („Hammer Straße 10 · 48153 Münster“)
+_NR_AM_ENDE_RE = re.compile(r"(?<!\d)\d{1,4}[ \t]?[a-zA-Z]?[ \t]*[,·•|/–-]?[ \t]*$")
+#: Trenner vor dem Straßennamen einer Anschrift in derselben Zeile (Briefköpfe stehen oft zweispaltig in einer Zeile)
+_ANSCHRIFT_TRENNER_RE = re.compile(r"[,;\t|·•]| {2,}")
+#: Zeile eines Kontaktblocks (Telefon, Fax, E-Mail, Internet, Postfach): Eine Anschrift darin ist die eines Absenders,
+#: auch ohne Postleitzahl („Hammer Straße 10 · Tel. 0251 41842-0“)
+_KONTAKTZEILE_RE = re.compile(
+    r"^[^\n]*(?:\b(?:Tel|Telefon|Telefax|Fax|Fon|Mobil|Postfach)\b|E-?Mail|@|\bwww\.)[^\n]*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+#: Mindestens ein Wort vor der Hausnummer (der Straßenname); fehlt es, ist die Zahl eine laufende Nummer in einer
+#: Tabelle („2 25117 Mergelberg Nord“: Zeile 2, Spielplatz 25117), keine Anschrift
+_WORT_RE = re.compile(r"[^\W\d_]{3}")
+#: So weit reicht eine Anschrift höchstens vor die Hausnummer zurück (Zeichen)
+_ANSCHRIFT_MAX = 80
+
+
+def _zeilenanfang(text: str, ende: int) -> tuple[int, bool]:
+    """Anfang der Zeile vor ``ende``, höchstens zwei ``_ANSCHRIFT_MAX`` zurück; dazu, ob es der echte Zeilenanfang ist."""
+    fenster = max(0, ende - 2 * _ANSCHRIFT_MAX)
+    umbruch = text.rfind("\n", fenster, ende)
+    return (umbruch + 1, True) if umbruch >= 0 else (fenster, fenster == 0)
+
+
+def _anschrift_davor(text: str, zeile_anfang: int, ende: int) -> int | None:
+    """
+    Anfang einer Anschrift (Straße und Hausnummer), die in ``text[zeile_anfang:ende]`` direkt vor ``ende`` endet: nach
+    dem letzten Trenner der Zeile, höchstens ``_ANSCHRIFT_MAX`` vor der Hausnummer. ``None`` ohne Hausnummer oder ohne
+    Wort davor.
+    """
+    nummer = _NR_AM_ENDE_RE.search(text, max(zeile_anfang, ende - _ANSCHRIFT_MAX), ende)
+    if nummer is None:
+        return None
+    anfang = max(zeile_anfang, nummer.start() - _ANSCHRIFT_MAX)
+    letzter = None
+    for treffer in _ANSCHRIFT_TRENNER_RE.finditer(text, anfang, nummer.start()):
+        letzter = treffer
+    if letzter:
+        anfang = letzter.end()
+    return anfang if _WORT_RE.search(text, anfang, nummer.start()) else None
+
+
+def ohne_anschriften(text: str) -> str:
+    """
+    Text ohne Anschriften von Absendern und Empfängern: Briefkopf, Kontaktblock, Empfängerfeld.
+
+    „Hammer Straße 10, 48153 Münster“ oder „Münsterstraße 7⏎48167 Münster“ ist eine Postanschrift (Geschäftsstelle
+    einer Fraktion, Wohnung der Unterzeichnenden, Bezirksverwaltung), nicht der Ort, um den es im Vorgang geht. Die
+    Straße davor fällt samt Hausnummer, Postleitzahl und Ort weg; nennt der Text dieselbe Straße an anderer Stelle ohne
+    Postleitzahl, wird sie dort weiter gefunden. Zeilen mit Telefon, Fax, E-Mail, Internetadresse oder Postfach fallen
+    ganz weg, auch ohne Postleitzahl. Der Titel läuft nicht hier durch.
+    """
+    if not text:
+        return ""
+    text = _KONTAKTZEILE_RE.sub("", text.replace("\r", ""))
+    if not any(zeichen.isdigit() for zeichen in text):
+        return text
+    weg: list[tuple[int, int]] = []
+    for plz in _PLZ_ORT_RE.finditer(text):
+        zeile_anfang, umbruch_davor = _zeilenanfang(text, plz.start())
+        if text[zeile_anfang : plz.start()].strip():
+            # „Straße 10, 48153 Münster“ in einer Zeile
+            anfang = _anschrift_davor(text, zeile_anfang, plz.start())
+        elif umbruch_davor and zeile_anfang > 0:
+            # „Straße 10“ in der Zeile über „48153 Münster“
+            vorzeile_ende = zeile_anfang - 1
+            anfang = _anschrift_davor(text, _zeilenanfang(text, vorzeile_ende)[0], vorzeile_ende)
+        else:
+            anfang = None
+        if anfang is not None:
+            weg.append((anfang, plz.end()))
+    if not weg:
+        return text
+    teile: list[str] = []
+    bisher = 0
+    for anfang, ende in weg:
+        if anfang < bisher:
+            anfang = bisher
+        teile.append(text[bisher:anfang])
+        bisher = max(bisher, ende)
+    teile.append(text[bisher:])
+    return "\n".join(teile)
+
+
 def collect_paper_text(paper) -> str:
     """
     Text für die Verortung: Titel und Hauptteil des Hauptdokuments.
 
     Nennt die Quelle ein Hauptdokument (OParl ``mainFile``), zählt nur dessen Text bis zur Überschrift „Anlagen“;
     Anlagen nennen oft Adressen anderer Stellen oder Listen (Issue #1269). Ohne Angabe zum Hauptdokument bleibt es bei
-    allen Dokumenten mit erkanntem Text. Häufige Textbausteine (Bankverbindung, Telefon …) fallen weg.
+    allen Dokumenten mit erkanntem Text. Anschriften mit Postleitzahl (Briefkopf, Absender, Empfänger) fallen weg
+    (``ohne_anschriften``), der Titel bleibt vollständig.
     """
     texts = []
     # Nur Anlagen, die weder zurückgenommen noch in der Quelle gesperrt sind: Ihr Text bleibt im Bestand, darf
@@ -941,7 +1037,7 @@ def collect_paper_text(paper) -> str:
 
     for f in files:
         if f.text_content:
-            texts.append(hauptteil(f.text_content) if haupt else f.text_content)
+            texts.append(ohne_anschriften(hauptteil(f.text_content) if haupt else f.text_content))
 
     combined = "\n\n".join(texts)
 
@@ -1011,6 +1107,28 @@ def _is_person_false_positive(hit: dict, person_names: set[str]) -> bool:
     return hit["normalized"] in person_names
 
 
+def _nur_als_einrichtung(normalized: str, normalisierter_text: str) -> bool:
+    """
+    Steht ein Straßenname aus einem Wort ohne Straßen-Grundwort („Kinderhaus“) im Text nur als Teil eines Einrichtungs-
+    oder Stadtteilnamens („Schulzentrum Kinderhaus“, „Grundschule Kinderhaus-West“, „in Kinderhaus“)? Dann ist die
+    Einrichtung oder der Stadtteil gemeint, nicht die Straße gleichen Namens. Eine Himmelsrichtung dahinter allein
+    reicht nicht: „Spielplatz Mergelberg-Nord“ liegt meist an der Straße Mergelberg.
+    """
+    from insight_core.services.gazetteer import has_street_suffix
+
+    if " " in normalized or has_street_suffix(normalized):
+        return False
+    muster = re.compile(r"(?<![a-zäöü0-9])" + re.escape(normalized) + r"(?![a-zäöü])")
+    gefunden = False
+    for treffer in muster.finditer(normalisierter_text):
+        gefunden = True
+        davor = normalisierter_text[max(0, treffer.start() - 40) : treffer.start()].split()
+        wort = re.sub(r"[^a-zäöü]", "", davor[-1]) if davor else ""
+        if not _EINRICHTUNG_DAVOR_RE.search(wort):
+            return False
+    return gefunden
+
+
 def extract_with_gazetteer(
     text: str, gazetteer, person_names: set[str], *, adresspunkte: bool = True, titel: str = ""
 ) -> list[dict]:
@@ -1019,11 +1137,14 @@ def extract_with_gazetteer(
     beides validiert gegen den Gazetteer. Geometrie kommt lokal aus OSM.
 
     ``adresspunkte=False`` (Privatanschriften, #1269) verfeinert nie auf den Adresspunkt. ``titel`` bestimmt die
-    Fundstelle je Ort (im Titel oder im Dokument). Gattungsnamen („Markt“) zählen nur mit Hausnummer.
+    Fundstelle je Ort (im Titel oder im Dokument). Gattungsnamen („Markt“) zählen nur mit Hausnummer, ebenso Namen, die
+    nur als Teil eines Einrichtungs- oder Stadtteilnamens vorkommen („Schulzentrum Kinderhaus“).
 
     Returns:
         Liste von locations-Einträgen (lat, lon, name, source, confidence, fundstelle).
     """
+    from insight_core.services.gazetteer import normalize_street_name
+
     street_hits: dict[str, dict] = {}
 
     # a) Regex-Kandidaten gegen das Straßenverzeichnis validieren
@@ -1038,8 +1159,9 @@ def extract_with_gazetteer(
     for hit in gazetteer.find_in_text(text):
         _collect_street_hit(street_hits, hit)
 
-    # c) Personen-False-Positives und Gattungsnamen ohne Hausnummer ausschließen, Hausnummern auf Adresspunkte
-    #    verfeinern (nicht bei Privatanschriften)
+    # c) Personen-False-Positives, Gattungsnamen und Einrichtungs- oder Stadtteilnamen ohne Hausnummer ausschließen,
+    #    Hausnummern auf Adresspunkte verfeinern (nicht bei Privatanschriften)
+    normalisierter_text = normalize_street_name(text)
     return [
         _street_hit_to_location(
             gazetteer.refine(hit) if adresspunkte else hit,
@@ -1048,7 +1170,10 @@ def extract_with_gazetteer(
         )
         for hit in street_hits.values()
         if not _is_person_false_positive(hit, person_names)
-        and not (hit["normalized"] in GATTUNGSNAMEN and not hit.get("house_number"))
+        and not (
+            not hit.get("house_number")
+            and (hit["normalized"] in GATTUNGSNAMEN or _nur_als_einrichtung(hit["normalized"], normalisierter_text))
+        )
     ]
 
 

@@ -22,6 +22,14 @@
 # der Version und dass keine Version fehlt.
 
 [[eintrag]]
+datum = 2026-11-28
+version = ""
+titel = "Genauere Orte auf der Karte."
+text = """Anschriften aus Briefköpfen, etwa von Fraktionsbüros, Verwaltungsstellen oder Unterzeichnenden, gelten nicht \
+mehr als Ort eines Vorgangs. Auch ein Stadtteil, der nur im Namen einer Schule oder Einrichtung vorkommt, erscheint \
+nicht mehr als Straße gleichen Namens auf der Karte."""
+
+[[eintrag]]
 datum = 2026-11-22
 version = ""
 titel = "„Was ist neu?“ nennt jetzt jede Version."
