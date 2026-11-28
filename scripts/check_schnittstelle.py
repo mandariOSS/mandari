@@ -9,7 +9,9 @@ Prüfungen der eingecheckten Schnittstellenbeschreibung, ohne Django (Issue #120
    oder steht in der Ausnahmeliste ``mandari/hub/api/openapi/befehle_ohne_endpunkt.json``. Ein Eintrag der
    Liste, der einen Endpunkt hat oder kein Befehl mehr ist, muss heraus.
 2. **Ratchet (mit ``--basis``):** Die Ausnahmeliste darf gegenüber dem Stand der Basis (etwa ``origin/dev``)
-   nur kürzer werden. Gibt es die Liste dort noch nicht, entfällt der Vergleich.
+   nur kürzer werden. Gibt es die Liste dort noch nicht, entfällt der Vergleich. Dasselbe gilt für die Liste der
+   Operationen mit Anmeldung ohne OAuth-Scopes (``mandari/hub/api/openapi/operationen_ohne_scope.json``, Issue #1591);
+   ob sie zur Beschreibung passt, prüft ``hub/api/tests/test_schnittstelle_scopes.py``.
 
 Dass die eingecheckte Beschreibung zum Code passt, prüft ``hub/api/tests/test_schnittstelle.py``
 (``manage.py schnittstelle_beschreibung --pruefen``); brechende Änderungen gegenüber der Basis erkennt die CI
@@ -28,6 +30,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 DESCRIPTION = ROOT / "docs" / "schnittstelle" / "openapi.json"
 EXCEPTIONS = ROOT / "mandari" / "hub" / "api" / "openapi" / "befehle_ohne_endpunkt.json"
+SCOPE_EXCEPTIONS = ROOT / "mandari" / "hub" / "api" / "openapi" / "operationen_ohne_scope.json"
 SCHEMAS = ROOT / "mandari" / "hub" / "contracts" / "schemas"
 COMMAND_EXTENSION = "x-mandari-command"
 METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
@@ -53,11 +56,11 @@ def commands_with_endpoint(document: dict[str, Any]) -> set[str]:
     return found
 
 
-def exceptions(text: str) -> list[str]:
+def exceptions(text: str, path: Path = EXCEPTIONS, key: str = "befehle") -> list[str]:
     data = json.loads(text)
-    entries = data.get("befehle")
+    entries = data.get(key)
     if not isinstance(entries, list) or not all(isinstance(entry, str) for entry in entries):
-        raise SystemExit(f"{EXCEPTIONS.relative_to(ROOT)}: 'befehle' muss eine Liste von Namen sein")
+        raise SystemExit(f"{path.relative_to(ROOT)}: '{key}' muss eine Liste von Namen sein")
     return entries
 
 
@@ -90,9 +93,18 @@ def ratchet_problems(listed: list[str], base: list[str] | None) -> list[str]:
     ]
 
 
-def base_exceptions(ref: str) -> list[str] | None:
+def scope_ratchet_problems(listed: list[str], base: list[str] | None) -> list[str]:
+    if base is None:
+        return []
+    return [
+        f"operationen_ohne_scope.json: {name} ist neu. Die Liste darf nur kürzer werden; die Operation braucht Scopes."
+        for name in sorted(set(listed) - set(base))
+    ]
+
+
+def base_exceptions(ref: str, path: Path = EXCEPTIONS, key: str = "befehle") -> list[str] | None:
     """Ausnahmeliste im Stand ``ref``; ``None``, wenn es sie dort nicht gibt."""
-    relative = EXCEPTIONS.relative_to(ROOT).as_posix()
+    relative = path.relative_to(ROOT).as_posix()
     result = subprocess.run(  # noqa: S603 – fester Befehl, ref aus der CI
         ["git", "show", f"{ref}:{relative}"],  # noqa: S607
         cwd=ROOT,
@@ -104,7 +116,7 @@ def base_exceptions(ref: str) -> list[str] | None:
     if result.returncode != 0:
         print(f"Hinweis: {relative} gibt es in {ref} nicht, der Vergleich entfällt.")
         return None
-    return exceptions(result.stdout)
+    return exceptions(result.stdout, path, key)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -115,13 +127,16 @@ def main(argv: list[str] | None = None) -> int:
     document = json.loads(DESCRIPTION.read_text(encoding="utf-8"))
     listed = exceptions(EXCEPTIONS.read_text(encoding="utf-8"))
     problems = parity_problems(registered_commands(), commands_with_endpoint(document), listed)
+    scope_listed = exceptions(SCOPE_EXCEPTIONS.read_text(encoding="utf-8"), SCOPE_EXCEPTIONS, "operationen")
     if args.basis:
         problems += ratchet_problems(listed, base_exceptions(args.basis))
+        problems += scope_ratchet_problems(scope_listed, base_exceptions(args.basis, SCOPE_EXCEPTIONS, "operationen"))
     for problem in problems:
         print(f"FEHLER: {problem}")
     if problems:
         return 1
     print(f"Befehlsparität: {len(commands_with_endpoint(document))} mit Endpunkt, {len(listed)} Ausnahmen.")
+    print(f"Operationen mit Anmeldung ohne OAuth-Scopes: {len(scope_listed)} (Liste darf nur kürzer werden).")
     return 0
 
 

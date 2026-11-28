@@ -400,4 +400,5 @@ __all__ = [
     "UserRolesUpdateView",
 ]
 
+from .anwendungen import OidcApplicationsView  # noqa: E402,F401
 from .api_tokens import APITokenCreateView, APITokenListView, APITokenRevokeView  # noqa: E402,F401

@@ -117,4 +117,5 @@ __all__ = [
     "TeamMemberProfileView",
 ]
 
+from .anwendungen import OrganizationApplicationsView  # noqa: E402,F401
 from .ris_settings import OrganizationRisSettingsView  # noqa: E402,F401

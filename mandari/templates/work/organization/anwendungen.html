@@ -1,0 +1,36 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Mitglieder und Rechte › Anwendungen (Issue #1591): eigene Anwendungen der Organisation über die
+Anmeldung von mandari. Eine Vorlage für beide Rahmen: Im neuen Rahmen Kopfband, Reiter und Unterpunkte, im bisherigen
+Überschrift und Reiter der Organisationseinstellungen. Inhalt aus accounts/oidc/_anwendungen_verwalten.html; Kontext
+OrganizationApplicationsView.
+{% endcomment %}
+
+{% block page_title %}Anwendungen{% endblock %}
+{% block gestaltung %}{% if work_neues_design %}neu{% else %}bisher{% endif %}{% endblock %}
+{% block header_title %}Organisationseinstellungen{% endblock %}
+{% block header_subtitle %}<p class="work-page-subtitle">Eigene Anwendungen über die Anmeldung von mandari</p>{% endblock %}
+
+{% block work_header %}
+{% if work_neues_design %}
+<c-rahmen.kopfband titel="Anwendungen" dicht
+    text="Eigene Oberflächen und Dienste von {{ organization.name }}, die sich über mandari anmelden und im Namen von Mitgliedern zugreifen." />
+{% include "work/organization/neu/_reiter.html" with seite="anwendungen" %}
+{% else %}{{ block.super }}{% endif %}
+{% endblock %}
+
+{% block work_content %}
+{% if work_neues_design %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="anwendungen" %}
+    <div class="min-w-0 flex-1 max-w-4xl">
+        {% include "accounts/oidc/_anwendungen_verwalten.html" %}
+    </div>
+</div>
+{% else %}
+{% include "work/organization/_tabs.html" %}
+<div class="max-w-3xl">
+    {% include "accounts/oidc/_anwendungen_verwalten.html" %}
+</div>
+{% endif %}
+{% endblock %}

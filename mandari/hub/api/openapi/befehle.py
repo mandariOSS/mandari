@@ -83,7 +83,10 @@ def _problem(description: str, **headers: str) -> dict[str, Any]:
 _RESPONSES: Final[dict[str, Any]] = {
     "400": _problem("Idempotency-Key fehlt oder Inhalt kein JSON-Objekt"),
     "401": _problem("Anmeldung fehlt oder Token ungültig", **{"WWW-Authenticate": "Bearer nach RFC 6750"}),
-    "403": _problem("Token ohne Person oder ohne passenden Scope, CSRF-Token fehlt, Recht im Mandanten fehlt"),
+    "403": _problem(
+        "Token ohne Person oder ohne passenden Scope, Anwendung eines anderen Mandanten, CSRF-Token fehlt, Recht im "
+        "Mandanten fehlt"
+    ),
     "404": _problem("Befehl, Mandant oder Objekt unbekannt bzw. für den Aufrufer nicht sichtbar"),
     "405": _problem("Nur POST", Allow="POST"),
     "409": _problem("Fachlicher Konflikt beim Eigentümer"),

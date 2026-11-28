@@ -24,6 +24,11 @@ Was mandari ergänzt:
   Client-Secret mit ``private_key_jwt`` (RFC 7523) ausweisen; ihre öffentlichen Schlüssel stehen in ``jwks``. Gebundene
   Dienste weisen sich nur so aus. Angenommene Client-Assertions sperren ihre Kennung ``jti`` bis zum Ablauf
   (:class:`OAuthClientAssertion`).
+- Eigene Oberflächen und Dienste (#1591): Eine Kommune (Session) oder Fraktion (Work) registriert Anwendungen selbst;
+  ``owner`` nennt den Bereich als fachfreie Kennung wie ``binding``. Solche Anwendungen handeln nur im Namen von
+  Personen (Code-Ablauf), immer mit Zustimmungsseite, und erhalten nur die Scopes, die die Fachschicht für ihre Art
+  angemeldet hat (``bindings.Kind.scopes``). Jede Anwendung hat Grenzen: Anfragen je Minute über alle ihre Tokens
+  (``rate_limit_per_minute``) und Einträge je Seite in Listen (``max_page_size``).
 
 Die Modelle werden in ``apps/accounts/models.py`` eingebunden und gehören damit zur App ``accounts``.
 """
@@ -36,6 +41,7 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, identify_hasher
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from oauth2_provider.generators import generate_client_secret
 from oauth2_provider.models import (
@@ -56,6 +62,11 @@ ALLOWED_GRANT_TYPES = (AbstractApplication.GRANT_AUTHORIZATION_CODE, AbstractApp
 LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
 #: Mindestlänge eines neu eingetragenen Client-Secrets (erzeugt werden 128 Zeichen)
 MIN_SECRET_LENGTH = 32
+#: Grenzen je Anwendung (#1591): Anfragen je Minute über alle Tokens, Einträge je Seite in Listen der Schnittstelle
+DEFAULT_RATE_LIMIT = 600
+MAX_RATE_LIMIT = 100_000
+DEFAULT_PAGE_SIZE = 100
+MAX_PAGE_SIZE = 1000
 
 
 def client_secret_problem(secret: str) -> str:
@@ -137,6 +148,32 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
         ),
     )
 
+    owner = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Registriert von",
+        help_text=(
+            "Bereich, der die Anwendung selbst registriert hat, etwa eine Kommune („session-mandant:<Kennung>“) oder "
+            "eine Fraktion („work-organisation:<Kennung>“). Leer: vom Betreiber angelegt."
+        ),
+    )
+    rate_limit_per_minute = models.PositiveIntegerField(
+        default=DEFAULT_RATE_LIMIT,
+        db_default=DEFAULT_RATE_LIMIT,
+        validators=[MaxValueValidator(MAX_RATE_LIMIT)],
+        verbose_name="Anfragen je Minute",
+        help_text="Höchstens so viele Anfragen je Minute an die Schnittstelle, über alle Tokens der Anwendung. 0: ohne Grenze.",
+    )
+    max_page_size = models.PositiveSmallIntegerField(
+        default=DEFAULT_PAGE_SIZE,
+        db_default=DEFAULT_PAGE_SIZE,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_PAGE_SIZE)],
+        verbose_name="Einträge je Seite",
+        help_text="Höchstens so viele Einträge je Seite in Listen der Schnittstelle.",
+    )
+
     objects = ApplicationManager()
 
     #: Feld der Bibliothek (``ClientSecretField``, ohne Typangaben); die Angabe nennt mypy nur den Typ
@@ -156,9 +193,20 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
 
     @property
     def scope_list(self) -> list[str]:
-        """Erlaubte Scopes, die es im Katalog gibt und die zum Ablauf und zur Bindung der Anwendung passen."""
+        """
+        Erlaubte Scopes, die es im Katalog gibt und die zum Ablauf und zur Bindung der Anwendung passen.
+
+        Bei einer Anwendung eines Bereichs (#1591) nur die, die die Fachschicht für dessen Art angemeldet hat: Nimmt
+        sie einen Scope zurück, verliert ihn auch die Anwendung; ist die Art nicht angemeldet, gilt keiner.
+        """
         names = self.allowed_scopes if isinstance(self.allowed_scopes, list) else []
-        return catalog.allowed_for([str(name) for name in names], person=self.acts_for_person, bound=bool(self.binding))
+        allowed = catalog.allowed_for(
+            [str(name) for name in names], person=self.acts_for_person, bound=bool(self.binding)
+        )
+        if self.owner:
+            registrable = set(bindings.registrable_scopes(str(self.owner)))
+            allowed = [name for name in allowed if name in registrable]
+        return allowed
 
     @property
     def uses_private_key_jwt(self) -> bool:
@@ -200,16 +248,23 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
                 errors.setdefault("allowed_scopes", []).append(
                     f"Nur für Dienste mit Bindung an einen Bereich: {', '.join(unbound)}."
                 )
+            # Scopes, die der Bereich einer Anwendung nicht vergeben darf, meldet _clean_owner
+            registrable = set(bindings.registrable_scopes(str(self.owner))) if self.owner else set()
+            foreign = {str(name) for name in names if str(name) not in registrable} if self.owner else set()
             unfit = sorted(
                 str(name)
                 for name in names
-                if catalog.get(str(name)) and str(name) not in self.scope_list and str(name) not in unbound
+                if catalog.get(str(name))
+                and str(name) not in self.scope_list
+                and str(name) not in unbound
+                and str(name) not in foreign
             )
             if unfit:
                 errors.setdefault("allowed_scopes", []).append(
                     f"Passen nicht zum Ablauf der Anwendung: {', '.join(unfit)}."
                 )
         self._clean_binding_and_keys(errors)
+        self._clean_owner(errors, names or [])
 
         if self.authorization_grant_type == AbstractApplication.GRANT_CLIENT_CREDENTIALS:
             if self.client_type != AbstractApplication.CLIENT_CONFIDENTIAL:
@@ -253,6 +308,34 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
         if not self.uses_private_key_jwt:
             errors.setdefault("jwks", []).append(
                 "Gebundene Dienste weisen sich mit private_key_jwt aus; bitte öffentliche Schlüssel (JWKS) eintragen."
+            )
+
+    def _clean_owner(self, errors: dict[str, list[str]], names: list[Any]) -> None:
+        """Anwendungen einer Kommune oder Fraktion (#1591): nur Code-Ablauf mit Zustimmung, nur Scopes ihrer Art."""
+        if not self.owner:
+            return
+        problem = bindings.problem(str(self.owner))
+        if problem:
+            errors.setdefault("owner", []).append(problem)
+            return
+        registrable = bindings.registrable_scopes(str(self.owner))
+        if not registrable:
+            errors.setdefault("owner", []).append("Bereiche dieser Art registrieren keine Anwendungen.")
+            return
+        if self.authorization_grant_type != AbstractApplication.GRANT_AUTHORIZATION_CODE:
+            errors.setdefault("authorization_grant_type", []).append(
+                "Anwendungen einer Kommune oder Fraktion handeln nur im Namen von Personen (Code-Ablauf)."
+            )
+        if self.skip_authorization:
+            errors.setdefault("skip_authorization", []).append(
+                "Anwendungen einer Kommune oder Fraktion fragen die Person immer um Zustimmung."
+            )
+        if self.binding or self.jwks not in (None, {}, ""):
+            errors.setdefault("owner", []).append("Bindung und öffentliche Schlüssel gibt es nur beim Betreiber.")
+        foreign = sorted(str(name) for name in names if str(name) not in registrable)
+        if foreign:
+            errors.setdefault("allowed_scopes", []).append(
+                f"Für Anwendungen dieses Bereichs nicht vorgesehen: {', '.join(foreign)}."
             )
 
     def save(self, *args: Any, **kwargs: Any) -> None:

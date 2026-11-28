@@ -130,6 +130,10 @@ class TestDiscovery:
             "ratsdaten:nichtoeffentlich",
             "sitzung:lesen",
             "sitzung:schreiben",
+            # Session und Work im Namen einer Person (#1591)
+            "session:lesen",
+            "work:lesen",
+            "work:schreiben",
         }
         assert {"sub", "name", "email", "email_verified"} <= set(data["claims_supported"])
         # private_key_jwt (RFC 7523) für Anwendungen mit öffentlichen Schlüsseln (#565)

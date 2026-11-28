@@ -1,6 +1,6 @@
 # Anmeldung für Anwendungen: mandari als OpenID-Connect-Anbieter
 
-Stand: 2026-11-06 (Issues #1206, #1215, #1228 und #565, Teil von Epic #1203). Grundlage ist das ADR
+Stand: 2026-11-28 (Issues #1206, #1215, #1228, #565 und #1591, Teil von Epic #1203). Grundlage ist das ADR
 [Eine Schnittstelle: API-first](../adr/20261105-eine-schnittstelle-api-first.md).
 
 Anwendungen melden Personen über mandari an und erhalten ein begrenztes, widerrufbares Token. Die Anmeldung
@@ -45,7 +45,12 @@ Header `Authorization: Bearer …` angenommen, nie in der Adresse.
 
 ### Anwendung eintragen lassen
 
-Anwendungen trägt die Plattform-Administration im Admin unter „OIDC-Anwendungen“ oder mit
+Eine Kommune registriert eigene Anwendungen in Session unter Einstellungen › Datenschutz und Zugänge › Anwendungen,
+eine Fraktion in Work unter Einstellungen › Mitglieder und Rechte › Anwendungen (Issue #1591). Solche Anwendungen
+handeln nur im Namen von Personen, fragen jede Person um Zustimmung und gelten nur für den Bereich, der sie registriert
+hat. Die Anleitung dafür steht in [Eigene Anwendungen](eigene-anwendungen.md).
+
+Partner und Dienste trägt die Plattform-Administration im Admin unter „OIDC-Anwendungen“ oder mit
 `manage.py oidc_anwendung` ein ([Betrieb](#6-anwendungen-anlegen)). Dafür braucht sie:
 
 - **Name**, wie er auf der Zustimmungsseite und unter „Verbundene Anwendungen“ erscheinen soll
@@ -68,14 +73,19 @@ vertrauenswürdig markiert werden und kommen ohne Zustimmungsseite aus. Fremde A
 | `email` | E-Mail-Adresse (`email`, `email_verified`) | ja | nein |
 | `ratsdaten:lesen` | Ratsdaten lesen, siehe unten | ja | ja |
 | `einreichung:schreiben` | Profil Einreichung: einreichen, zurücknehmen, zur Ladung zurückmelden (nur im Namen einer Person wirksam) | ja | ja |
+| `session:lesen` | Session lesen, soweit die Person es selbst darf, etwa Anträge in der Session-API v1; nie Nichtöffentliches | ja | nein |
+| `work:lesen` | Work lesen, soweit die Person es in ihren Organisationen selbst darf (Bereich von Work folgt) | ja | nein |
+| `work:schreiben` | Befehle von Work im Namen der Person (Bereich von Work folgt) | ja | nein |
 | `mandari:bereitstellung` | Bereitstellung von Organisationen und Mandanten (folgt) | nein | ja |
 | `ratsdaten:nichtoeffentlich` | Nichtöffentliches lesen, soweit die Person es selbst sehen darf (nichtöffentliche Ausgabe); Anmeldung mit zweitem Faktor Pflicht, höchstens 7 Tage danach | ja | nein |
 | `sitzung:lesen` | Alle Sitzungsdaten des gebundenen Mandanten einschließlich Nichtöffentlichem (nichtöffentliche Ausgabe); nur für Dienste mit Bindung an einen Mandanten | nein | ja |
 | `sitzung:schreiben` | [Befehle](../SCHNITTSTELLE.md#befehle-1588) von Session im Namen einer Person, soweit sie selbst darf und im Mandanten „API-Zugang“ hat; Anmeldung mit zweitem Faktor Pflicht, höchstens 7 Tage danach | ja | nein |
 
-Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliches gibt es nur mit
-`ratsdaten:nichtoeffentlich` und `sitzung:lesen` und nur über die
-[nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe); beide Scopes muss die Plattform-Administration einer Anwendung ausdrücklich erlauben. Nimmt die Plattform-Administration einer
+Welche Operation welchen Scope verlangt, steht in der Beschreibung der Schnittstelle an der Operation (`security` in
+`/api/openapi.json`); jeder dort genannte Scope genügt. Eine Operation, die einen Befehl annimmt, verlangt immer einen
+Scope zum Schreiben. Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliches gibt es nur
+mit `ratsdaten:nichtoeffentlich` und `sitzung:lesen` und nur über die [nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe); beide
+Scopes muss die Plattform-Administration einer Anwendung ausdrücklich erlauben. Nimmt die Plattform-Administration einer
 Anwendung einen Scope weg, gilt er auch für ihre bestehenden Tokens sofort nicht mehr, ebenso bei `userinfo` und
 in neuen Tokens aus bestehenden Refresh-Tokens. Für gesperrte Konten gibt es keine neuen Tokens.
 
@@ -287,23 +297,27 @@ seine Anfrage das Sitzungs-Cookie einer Person mitbringt.
 
 ### Ratsdaten lesen: Session-API v1
 
-Die [Session-API v1](../SCHNITTSTELLE.md#session-api-v1) nimmt Access-Tokens mit dem Scope `ratsdaten:lesen` an:
+Die [Session-API v1](../SCHNITTSTELLE.md#session-api-v1) nimmt Access-Tokens an: Sitzungen und Vorlagen mit
+`ratsdaten:lesen` oder `session:lesen`, Anträge nur mit `session:lesen`:
 
 ```bash
 curl -H 'Authorization: Bearer mandari_at_…' https://mandari.example.org/api/v1/session/<mandant>/meetings/
 ```
 
 - **Im Namen einer Person** liest das Token höchstens, was die Person mit eigener Anmeldung über die Schnittstelle
-  lesen dürfte: nur mit dem Recht „API-Zugang“ in diesem Mandanten, sonst wie ein anonymer Aufruf. Nichtöffentliche
-  Sitzungen und Vorlagen, Texte, interne Notizen und Anträge gibt es hier nicht, auch wenn die Person sie sehen darf;
-  Nichtöffentliches liefert die [nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe).
+  lesen dürfte: nur mit dem Recht „API-Zugang“ in diesem Mandanten, sonst wie ein anonymer Aufruf. Anträge liest es nur
+  mit `session:lesen` und dem Recht „Anträge anzeigen“. Nichtöffentliche Sitzungen und Vorlagen, Texte und interne
+  Notizen gibt es hier nicht, auch wenn die Person sie sehen darf; Nichtöffentliches liefert die
+  [nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe).
+- **Anwendungen einer Kommune** gelten nur bei dieser Kommune; bei einer anderen antwortet die Schnittstelle mit 403.
 - **Ein Dienst** (Client Credentials) liest nur, was anonym lesbar ist.
 - Einreichen geht in der Session-API v1 weiter nur mit dem API-Token des Mandanten. Mit Access-Tokens reichen
   Anwendungen über das Profil Einreichung ein (nächster Abschnitt).
 
 Fehler kommen als `application/problem+json` (RFC 9457) mit `WWW-Authenticate` nach RFC 6750: 401 mit
 `error="invalid_token"` für unbekannte, abgelaufene oder widerrufene Tokens, 403 mit
-`error="insufficient_scope"` ohne `ratsdaten:lesen`. Die bisherigen API-Tokens der Session-API (64 Zeichen)
+`error="insufficient_scope"` und den Scopes der Operation in `scope`, 429 mit `Retry-After`, wenn die Anwendung ihre
+Anfragen je Minute verbraucht hat. Die bisherigen API-Tokens der Session-API (64 Zeichen)
 funktionieren unverändert.
 
 ### Einreichen: Profil Einreichung
@@ -326,6 +340,18 @@ curl -X POST -H 'Authorization: Bearer mandari_at_…' -H 'Idempotency-Key: 5b0f
   nicht die anderer Mitglieder derselben Organisation. Anlagen hochladen kann nur, wer bei der Verwaltung einreichen
   darf.
 - Jede Handlung steht im Prüfprotokoll des Mandanten mit Person und Client-ID der Anwendung.
+- Eine Anwendung, die eine andere Kommune registriert hat, bekommt 403.
+
+### Grenzen je Anwendung
+
+Jede Anwendung hat zwei Grenzen (Issue #1591), die die Plattform-Administration im Admin oder beim Anlegen mit
+`manage.py oidc_anwendung` setzt:
+
+- **Anfragen je Minute** über alle Tokens der Anwendung zusammen (Standard 600, 0 ohne Grenze). Darüber antwortet jede
+  Ressource mit 429 und `Retry-After` bis zur nächsten Minute.
+- **Einträge je Seite** in Listen (Standard 100): Fragt die Anwendung mehr an, bekommt sie höchstens so viele.
+
+Daneben gelten die Grenzen je Adresse am Token-Endpunkt und je Person im Profil Einreichung.
 
 ### Fehler am Token-Endpunkt
 
@@ -509,6 +535,10 @@ python manage.py oidc_anwendung anlegen --name "Partnerportal" --typ vertraulich
 python manage.py oidc_anwendung anlegen --name "Datendienst" --typ vertraulich --grant client-credentials \
     --scope ratsdaten:lesen
 ```
+
+**Grenzen** je Anwendung (Issue #1591): `--anfragen-je-minute` (Standard 600, 0 ohne Grenze) und `--seitengroesse`
+(Standard 100). Später ändert sie der Admin unter „OIDC-Anwendungen“ › „Grenzen und Herkunft“. Anwendungen, die eine
+Kommune oder Fraktion selbst registriert, nennt die Liste mit „Registriert:“; ihre Grenzen setzt nur der Betrieb.
 
 Die Ausgabe nennt Client-ID und bei vertraulichen Anwendungen das Client-Secret. **Das Secret erscheint nur dieses
 eine Mal**; gespeichert ist nur sein Hash. Es geht auf einem sicheren Weg an die Anwendung. Geht es verloren, bekommt

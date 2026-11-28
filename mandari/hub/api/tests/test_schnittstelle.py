@@ -186,7 +186,8 @@ class TestBeschreibung:
     def test_session_api_v1_unveraendert_enthalten(self, beschreibung: dict[str, Any]) -> None:
         """
         Pfade und Schemas der Session-API v1 sind dieselben wie in ihrer eigenen Beschreibung; dazu kommen nur das
-        Schlagwort und der Befehl (``x-mandari-command``), die eigene Beschreibung bleibt ohne.
+        Schlagwort, der Befehl (``x-mandari-command``) und die Scopes der Access-Tokens (#1591) hinter den bisherigen
+        Anforderungen, die eigene Beschreibung bleibt ohne.
         """
         eigene = session_api_v1.get_openapi_schema()
         for path, item in eigene["paths"].items():
@@ -194,7 +195,13 @@ class TestBeschreibung:
             for method, operation in item.items():
                 assert COMMAND_EXTENSION not in operation
                 ohne_befehl = {key: value for key, value in gesamt[method].items() if key != COMMAND_EXTENSION}
-                assert {**operation, "tags": None} == {**ohne_befehl, "tags": None}
+                bisher = operation.get("security", [])
+                assert ohne_befehl.get("security", [])[: len(bisher)] == bisher
+                assert {**operation, "tags": None, "security": None} == {
+                    **ohne_befehl,
+                    "tags": None,
+                    "security": None,
+                }
         for name, schema in eigene["components"]["schemas"].items():
             assert beschreibung["components"]["schemas"][name] == schema
         submit = beschreibung["paths"]["/api/v1/session/{tenant_slug}/applications/submit/"]["post"]

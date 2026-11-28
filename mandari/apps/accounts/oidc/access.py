@@ -10,6 +10,11 @@ keine Fachbegriffe.
 Geschützte Scopes (``catalog.PROTECTED``, #565) wirken nur, solange die Person einen zweiten Faktor hat; das prüft
 :func:`authenticate` bei jedem Abruf.
 
+Grenzen je Anwendung (#1591): :func:`authenticate` zählt jede Anfrage über alle Tokens der Anwendung und lehnt über
+``rate_limit_per_minute`` hinaus mit :class:`RateLimited` ab (Ressourcen antworten mit 429). ``OAuthAccess.page_size``
+begrenzt Listen auf ``max_page_size`` Einträge je Seite. ``OAuthAccess.owner`` nennt den Bereich, der die Anwendung
+registriert hat (Kommune oder Fraktion); bei Ressourcen derselben Art gilt sie nur dort (``bindings.allows``).
+
 Tokens tragen ein Präfix (``mandari_at_`` bzw. ``mandari_rt_``). So erkennen Secret-Scanner sie, und die
 Session-API unterscheidet sie ohne Datenbankzugriff von ihren eigenen API-Tokens (64 Zeichen ohne Präfix).
 """
@@ -22,7 +27,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Any
 
-from . import catalog, provider_enabled
+from . import bindings, catalog, provider_enabled, throttle
 
 ACCESS_TOKEN_PREFIX = "mandari_at_"
 REFRESH_TOKEN_PREFIX = "mandari_rt_"
@@ -51,6 +56,19 @@ class InvalidAccessToken(Exception):  # noqa: N818 – Begriff aus RFC 6750 (inv
     """Das Token ist unbekannt, abgelaufen, widerrufen, oder seine Anwendung bzw. Person ist gesperrt."""
 
 
+class RateLimited(InvalidAccessToken):
+    """
+    Die Anwendung hat ihre Anfragen dieser Minute verbraucht (``rate_limit_per_minute``, #1591).
+
+    Unterklasse von :class:`InvalidAccessToken`: Eine Ressource, die die Grenze nicht eigens meldet, lehnt die Anfrage
+    trotzdem ab. Ressourcen der Schnittstelle antworten mit 429 und ``Retry-After`` (:attr:`retry_after` Sekunden).
+    """
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__(f"Ratenlimit der Anwendung, erneut in {retry_after} s")
+        self.retry_after = retry_after
+
+
 @dataclass(frozen=True)
 class OAuthAccess:
     """Ein gültiges Access-Token: Anwendung, handelnde Person (oder keine) und wirksame Scopes."""
@@ -63,6 +81,10 @@ class OAuthAccess:
     scopes: frozenset[str]
     #: Bindung der Anwendung an genau einen Bereich (``OAuthApplication.binding``), sonst ``""``
     binding: str = ""
+    #: Bereich, der die Anwendung registriert hat (``OAuthApplication.owner``, #1591), sonst ``""``
+    owner: str = ""
+    #: Höchstens so viele Einträge je Seite in Listen (``OAuthApplication.max_page_size``)
+    max_page_size: int = 100
 
     @property
     def acts_for_person(self) -> bool:
@@ -70,6 +92,18 @@ class OAuthAccess:
 
     def has_scope(self, scope: str) -> bool:
         return scope in self.scopes
+
+    def has_any_scope(self, scopes: tuple[str, ...] | frozenset[str]) -> bool:
+        """Hat das Token wenigstens einen dieser Scopes (Operation mit mehreren gleichwertigen Scopes)?"""
+        return bool(self.scopes & frozenset(scopes))
+
+    def page_size(self, requested: int) -> int:
+        """Einträge je Seite: höchstens ``max_page_size`` der Anwendung, mindestens einer."""
+        return max(1, min(int(requested), int(self.max_page_size)))
+
+    def allows(self, kind: str, key: str) -> bool:
+        """Gilt die Anwendung für den Bereich ``kind:key`` (Anwendung einer Kommune nur bei ihr, ``bindings.allows``)?"""
+        return bindings.allows(self.owner, kind, key)
 
 
 def has_second_factor(user: Any) -> bool:
@@ -95,7 +129,9 @@ def authenticate(raw: str, *, resource_uri: str = "") -> OAuthAccess:
     Anwendung einen Scope weg, verlieren auch ihre bestehenden Tokens ihn. Ist das Token an Ressourcen gebunden
     (RFC 8707), muss ``resource_uri`` dazu passen.
 
-    Raises: :class:`InvalidAccessToken`
+    Jeder Aufruf zählt als Anfrage der Anwendung (``rate_limit_per_minute`` über alle ihre Tokens).
+
+    Raises: :class:`InvalidAccessToken`, bei überschrittener Grenze der Anwendung :class:`RateLimited`
     """
     if not looks_like_access_token(raw) or len(raw) > MAX_TOKEN_LENGTH:
         raise InvalidAccessToken
@@ -117,6 +153,8 @@ def authenticate(raw: str, *, resource_uri: str = "") -> OAuthAccess:
     if scopes & catalog.PROTECTED and not has_second_factor(user):
         # Zweiter Faktor entfernt: geschützte Scopes gelten ab sofort nicht mehr (#565)
         scopes -= catalog.PROTECTED
+    if throttle.application_exceeded(int(application.pk), int(application.rate_limit_per_minute or 0)):
+        raise RateLimited(throttle.seconds_until_next_window())
     return OAuthAccess(
         token_id=int(token.pk),
         client_id=str(application.client_id),
@@ -124,4 +162,6 @@ def authenticate(raw: str, *, resource_uri: str = "") -> OAuthAccess:
         user=user,
         scopes=scopes,
         binding=str(application.binding or ""),
+        owner=str(application.owner or ""),
+        max_page_size=int(application.max_page_size or 1),
     )

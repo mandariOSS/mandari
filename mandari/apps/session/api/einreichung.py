@@ -58,7 +58,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from apps.accounts.oidc import access as oidc_access
-from apps.accounts.oidc import catalog, provider_enabled
+from apps.accounts.oidc import bindings, catalog, provider_enabled
 from apps.common.api.conditional import conditional, etag_for
 from apps.common.api.idempotency import IDEMPOTENCY_HEADER, KEY_MISSING, KEY_MISSING_KIND, parse_idempotency_key
 from apps.common.api.idempotency import valid_idempotency_key as _valid_key
@@ -166,6 +166,8 @@ TOKEN_FOREIGN: Final = "Das Profil nimmt nur Zugriffstokens des OpenID-Connect-A
 PERSON_REQUIRED: Final = "Das Profil Einreichung nimmt nur Tokens im Namen einer Person an, keine Dienst-Tokens."
 SCOPE_MISSING: Final = f"Dem Zugriffstoken fehlt der Scope „{SCOPE}“."
 RATE_LIMITED: Final = "Zu viele Anfragen. Bitte in einer Minute erneut versuchen."
+APPLICATION_RATE_LIMITED: Final = "Die Anwendung hat ihre Anfragen dieser Minute verbraucht."
+FOREIGN_TENANT: Final = "Die Anwendung ist für eine andere Kommune registriert."
 INVALID: Final = "Die Anfrage entspricht nicht dem Profil Einreichung."
 JSON_REQUIRED: Final = "Der Inhalt muss ein JSON-Objekt sein (application/json)."
 DIGEST_MISMATCH: Final = "Der Header Content-Digest passt nicht zum Inhalt der Anfrage."
@@ -279,6 +281,11 @@ def _authenticate(request: HttpRequest) -> oidc_access.OAuthAccess:
         raise ProfileError(401, "nicht-authentifiziert", TOKEN_FOREIGN, headers=_challenge("invalid_token"))
     try:
         access = oidc_access.authenticate(raw, resource_uri=request.build_absolute_uri(request.path))
+    except oidc_access.RateLimited as limited:
+        # Grenze der Anwendung über alle ihre Tokens (#1591)
+        raise ProfileError(
+            429, "ratenlimit", APPLICATION_RATE_LIMITED, headers={"Retry-After": str(limited.retry_after)}
+        ) from None
     except oidc_access.InvalidAccessToken:
         raise ProfileError(401, "nicht-authentifiziert", TOKEN_INVALID, headers=_challenge("invalid_token")) from None
     if not access.acts_for_person:
@@ -312,6 +319,9 @@ def _caller(request: HttpRequest, tenant_slug: str) -> Caller:
     if not offered():
         raise ProfileError(404, "nicht-gefunden", NOT_OFFERED)
     access = _authenticate(request)
+    if not access.allows(bindings.TENANT, str(tenant.pk)):
+        # Anwendung einer anderen Kommune (#1591): gilt nur bei der Kommune, die sie registriert hat
+        raise ProfileError(403, "keine-berechtigung", FOREIGN_TENANT)
     _throttle(access)
     # Dieselbe Abbildung wie die OParl-Ausgabe des Mandanten (Adressen aus SITE_URL)
     mapping_for: Callable[[SessionTenant], SessionMapping] = oparl._mapping
@@ -853,7 +863,9 @@ def _page_number(request: HttpRequest) -> int:
 
 
 def _list(request: HttpRequest, caller: Caller) -> HttpResponseBase:
-    paginator: Paginator[SessionApplication] = Paginator(_visible(caller).order_by("-submitted_at", "pk"), PAGE_SIZE)
+    paginator: Paginator[SessionApplication] = Paginator(
+        _visible(caller).order_by("-submitted_at", "pk"), caller.access.page_size(PAGE_SIZE)
+    )
     try:
         page = paginator.page(_page_number(request))
     except EmptyPage:

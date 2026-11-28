@@ -33,6 +33,7 @@ bleibt work/profile/security.html.
             <c-rahmen.abschnitt titel="Verbundene Anwendungen" titel_id="sicherheit-anwendungen" data-testid="sicherheit-anwendungen">
                 <c-slot name="link"><c-ui.textlink href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}">Anzeigen und widerrufen</c-ui.textlink></c-slot>
                 <c-rahmen.satz eng>Anwendungen, die Sie mit Ihrem mandari-Konto angemeldet haben und die in Ihrem Namen zugreifen dürfen.</c-rahmen.satz>
+                {% include "accounts/oidc/_verbundene_liste.html" %}
             </c-rahmen.abschnitt>
             {% endif %}
             <c-rahmen.abschnitt titel="Sicherheitshinweise" titel_id="sicherheit-hinweise">

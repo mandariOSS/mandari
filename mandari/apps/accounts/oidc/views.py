@@ -20,7 +20,9 @@ Die Ansichten von django-oauth-toolkit, ergänzt um:
 - ``introspect`` (RFC 7662): nur für die Anwendung selbst, mit Client-Authentifizierung und nur über eigene Tokens,
   Ratenbegrenzung je Adresse
 - Discovery: nennt nur, was mandari tatsächlich anbietet, auch ``private_key_jwt`` (RFC 7523, #565)
-- „Verbundene Anwendungen“: Kontoseite mit Widerruf
+- „Verbundene Anwendungen“: Kontoseite mit Widerruf; Profilseiten widerrufen über dieselbe Seite und kehren mit
+  ``zurueck`` direkt zu sich zurück (#1591)
+- Zustimmungsseite: nennt den Bereich, der eine Anwendung registriert hat (Kommune oder Fraktion, #1591)
 """
 
 from __future__ import annotations
@@ -196,6 +198,9 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = cast(dict[str, Any], super().get_context_data(**kwargs))
         context["redirect_host"] = urlsplit(str(context.get("redirect_uri") or "")).netloc
+        # Registriert von einer Kommune oder Fraktion (#1591): Die Person sieht, wer hinter der Anwendung steht
+        application = context.get("application")
+        context["registered_by"] = selectors.registered_by(str(getattr(application, "owner", "") or ""))
         return context
 
 
@@ -361,6 +366,9 @@ class ConnectedApplicationsView(LoginRequiredMixin, View):
             messages.error(request, "Für diese Anwendung gab es keinen Zugang zu widerrufen.")
         target = reverse("accounts:connected_applications")
         next_url = safe_next_url(request, request.POST.get("next"))
+        if next_url and request.POST.get("zurueck"):
+            # Widerruf direkt auf einer Profilseite (#1591): zurück dorthin
+            return redirect(next_url)
         return redirect(f"{target}?{urlencode({'next': next_url})}" if next_url else target)
 
 

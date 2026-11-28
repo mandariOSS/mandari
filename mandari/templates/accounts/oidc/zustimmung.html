@@ -2,8 +2,8 @@
 {% comment %}
 Zustimmungsseite des OpenID-Connect-Anbieters (Issue #1206, apps/accounts/oidc/views.py AuthorizeView).
 Nur für fremde Anwendungen; vertrauenswürdige (skip_authorization) kommen ohne sie aus.
-Kontext der Bibliothek: application, scopes_descriptions, form (versteckte Felder), redirect_host; bei einem
-Fehler ohne Rücksprung nur error.
+Kontext der Bibliothek: application, scopes_descriptions, form (versteckte Felder), redirect_host, registered_by
+(Kommune oder Fraktion, die die Anwendung registriert hat, Issue #1591); bei einem Fehler ohne Rücksprung nur error.
 {% endcomment %}
 
 {% block title %}{% if error %}Anmeldung nicht möglich{% else %}Zugriff erlauben{% endif %}{% endblock %}
@@ -25,6 +25,9 @@ Fehler ohne Rücksprung nur error.
     <p class="text-sm text-gray-700 dark:text-gray-300">
         Angemeldet als <strong class="font-medium text-gray-900 dark:text-white">{{ request.user.email }}</strong>.
     </p>
+    {% if registered_by %}
+    <p class="text-sm text-gray-700 dark:text-gray-300" data-testid="registriert-von">Registriert von <strong class="font-medium text-gray-900 dark:text-white">{{ registered_by }}</strong>. Die Anwendung gilt nur dort.</p>
+    {% endif %}
 
     {% if scopes_descriptions %}
     <div>

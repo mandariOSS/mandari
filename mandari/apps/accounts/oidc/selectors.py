@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Lesende Abfragen des OpenID-Connect-Anbieters (Issue #1206): verbundene Anwendungen einer Person."""
+"""
+Lesende Abfragen des OpenID-Connect-Anbieters (Issue #1206): verbundene Anwendungen einer Person, mit dem Bereich, der
+eine Anwendung registriert hat (Kommune oder Fraktion, Issue #1591).
+"""
 
 from __future__ import annotations
 
@@ -9,7 +12,7 @@ from typing import Any
 
 from django.utils import timezone
 
-from . import access, catalog
+from . import access, bindings, catalog
 from .models import OAuthAccessToken, OAuthApplication, OAuthRefreshToken
 
 
@@ -22,6 +25,8 @@ class ConnectedApplication:
     scopes: list[str]
     connected_since: datetime
     last_issued: datetime
+    #: Bereich, der die Anwendung registriert hat (etwa „Organisation Fraktion X“); leer: der Betreiber
+    registered_by: str = ""
 
 
 def connected_applications(user: Any) -> list[ConnectedApplication]:
@@ -47,19 +52,28 @@ def connected_applications(user: Any) -> list[ConnectedApplication]:
         row["scopes"].update(str(scope).split())
         row["first"] = min(row["first"], created)
         row["last"] = max(row["last"], created)
-    names = dict(OAuthApplication.objects.filter(pk__in=rows).values_list("pk", "name"))
+    applications = {
+        pk: (name, owner)
+        for pk, name, owner in OAuthApplication.objects.filter(pk__in=rows).values_list("pk", "name", "owner")
+    }
     result = [
         ConnectedApplication(
             application_id=application_id,
-            name=str(names.get(application_id) or "Anwendung ohne Namen"),
+            name=str(applications[application_id][0] or "Anwendung ohne Namen"),
             scopes=[scope.description for scope in catalog.CATALOG if scope.name in row["scopes"]],
             connected_since=row["first"],
             last_issued=row["last"],
+            registered_by=registered_by(str(applications[application_id][1] or "")),
         )
         for application_id, row in rows.items()
-        if application_id in names
+        if application_id in applications
     ]
     return sorted(result, key=lambda item: item.name.lower())
+
+
+def registered_by(owner: str) -> str:
+    """Anzeigename des Bereichs, der eine Anwendung registriert hat; leer beim Betreiber oder unbekanntem Bereich."""
+    return (bindings.describe(owner) or "") if owner else ""
 
 
 def own_access_token(application: Any, raw: str) -> OAuthAccessToken | None:

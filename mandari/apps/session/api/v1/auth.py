@@ -14,11 +14,14 @@ Zwei Wege, beide ergeben ein ``Principal``:
   (``access_api``); weitere Rechte über ``SessionUser``-Rollen. Ohne „API-Zugang“ gilt die Person in
   der Schnittstelle als anonym.
 - **Access-Token des OpenID-Connect-Anbieters** (``Authorization: Bearer mandari_at_…``, Issue #1206), nur bei
-  eingeschaltetem Anbieter und nur mit dem Scope ``ratsdaten:lesen``. Im Namen einer Person liest das Token
-  höchstens, was die Person mit eigener Anmeldung über die Schnittstelle lesen dürfte (also nur mit „API-Zugang“),
-  aber nie Nichtöffentliches, auch keine Anträge, und es reicht nichts ein (bis #565 bzw. zum Profil Einreichung).
-  Ein Token eines Dienstes (Client Credentials) liest nur, was anonym lesbar ist. Bestehende API-Tokens
-  (64 Zeichen ohne Präfix, mandantengebunden) erkennt die Schnittstelle wie bisher.
+  eingeschaltetem Anbieter. Jede Operation nennt ihre Scopes (:data:`SCOPES`, Issue #1591; die gemeinsame
+  Beschreibung zeigt sie an der Operation): Sitzungen und Vorlagen mit ``ratsdaten:lesen`` oder ``session:lesen``,
+  Anträge nur mit ``session:lesen``. Im Namen einer Person liest das Token höchstens, was die Person mit eigener
+  Anmeldung über die Schnittstelle lesen dürfte (also nur mit „API-Zugang“) und was ihr Scope erlaubt
+  (:data:`OIDC_PERSON_RIGHTS`), aber nie Nichtöffentliches, und es reicht nichts ein (das Profil Einreichung nimmt
+  Einreichungen an). Ein Token eines Dienstes (Client Credentials) liest nur, was anonym lesbar ist. Eine Anwendung,
+  die eine andere Kommune registriert hat, gilt hier nicht (403); über ihre Grenze je Minute hinaus gibt es 429.
+  Bestehende API-Tokens (64 Zeichen ohne Präfix, mandantengebunden) erkennt die Schnittstelle wie bisher.
 
 Ohne beides ist der Aufrufer anonym und sieht nur öffentliche Daten – und auch die erst nach der
 Freischaltung der OParl-Schnittstelle. Vorher lesen Sitzungen bzw. Vorlagen nur Token mit dem
@@ -36,6 +39,7 @@ from django.http import HttpRequest
 from ninja.security.base import AuthBase
 
 from apps.accounts.oidc import access as oidc_access
+from apps.accounts.oidc import bindings, catalog
 from apps.session.models import SessionAPIToken, SessionTenant, SessionUser
 from apps.session.permissions import SessionPermissionChecker
 
@@ -59,11 +63,34 @@ READ_RIGHTS: dict[str, tuple[str, str]] = {
 #: Recht der Rolle, die Schnittstelle mit der eigenen Anmeldung zu nutzen („API-Zugang“)
 API_ACCESS = "access_api"
 
-#: Scope, ohne den ein Access-Token des OpenID-Connect-Anbieters die Schnittstelle nicht nutzt (Issue #1206)
-OIDC_SCOPE = "ratsdaten:lesen"
-#: Rechte, die ein Access-Token im Namen einer Person höchstens nutzt: Lesen öffentlicher Bereiche (``READ_RIGHTS``).
-#: Nichtöffentliches (``view_non_public_*``), Anträge und Einreichung gibt es über diese Tokens nicht (bis #565).
-OIDC_PERSON_RIGHTS = frozenset(user_right for user_right, _token_flag in READ_RIGHTS.values())
+#: Scopes je Operation (Name der Funktion in ``endpoints``, zugleich Ende der ``operationId``), Issue #1591: Ein
+#: Access-Token des OpenID-Connect-Anbieters braucht einen davon. Leer: nur API-Token oder Sitzung, Access-Tokens
+#: lehnt der Endpunkt selbst ab. Die gemeinsame Beschreibung nennt dieselben Scopes an der Operation
+#: (``apps/session/api/schnittstelle.py``).
+SCOPES: dict[str, tuple[str, ...]] = {
+    "tenant_root": (catalog.RATSDATEN_LESEN, catalog.SESSION_LESEN),
+    "meetings": (catalog.RATSDATEN_LESEN, catalog.SESSION_LESEN),
+    "papers": (catalog.RATSDATEN_LESEN, catalog.SESSION_LESEN),
+    "applications": (catalog.SESSION_LESEN,),
+    "submit_application": (),
+    "application_feedback": (),
+}
+_READ_RIGHTS: frozenset[str] = frozenset(user_right for user_right, _token_flag in READ_RIGHTS.values())
+#: Rechte, die ein Access-Token im Namen einer Person je Scope höchstens nutzt. Nichtöffentliches
+#: (``view_non_public_*``) und Einreichen gibt es über diese Tokens nie (Nichtöffentliches: #565).
+OIDC_PERSON_RIGHTS: dict[str, frozenset[str]] = {
+    catalog.RATSDATEN_LESEN: _READ_RIGHTS,
+    catalog.SESSION_LESEN: _READ_RIGHTS | {"view_applications"},
+}
+
+
+def oidc_rights(access: oidc_access.OAuthAccess) -> frozenset[str]:
+    """Rechte, die das Token höchstens nutzt: die seiner Scopes."""
+    rights: set[str] = set()
+    for scope, granted in OIDC_PERSON_RIGHTS.items():
+        if access.has_scope(scope):
+            rights |= granted
+    return frozenset(rights)
 
 
 def client_ip(request: HttpRequest) -> str:
@@ -100,8 +127,8 @@ class Principal:
         if self.token is not None:
             flag = TOKEN_PERMISSIONS.get(permission)
             return bool(flag and getattr(self.token, flag, False))
-        if self.oidc is not None and permission not in OIDC_PERSON_RIGHTS:
-            # Nie mehr als Lesen öffentlicher Bereiche, auch wenn die Person selbst mehr darf
+        if self.oidc is not None and permission not in oidc_rights(self.oidc):
+            # Nie mehr, als der Scope erlaubt, auch wenn die Person selbst mehr darf
             return False
         if self.session_user is not None:
             checker = cast(Any, SessionPermissionChecker)(self.session_user)  # permissions.py ist noch untypisiert
@@ -182,18 +209,28 @@ def _bearer(request: HttpRequest) -> str:
     return header[7:].strip() if header.startswith("Bearer ") else ""
 
 
-def _oidc_from_request(request: HttpRequest) -> oidc_access.OAuthAccess | None:
+def _oidc_from_request(
+    request: HttpRequest, tenant: SessionTenant, scopes: tuple[str, ...]
+) -> oidc_access.OAuthAccess | None:
     """
     Access-Token des OIDC-Anbieters aus dem Header (Issue #1206), sonst ``None``.
 
     Nur Tokens mit dem Präfix und nur bei eingeschaltetem Anbieter; alles andere prüft :func:`_token_from_request`
-    unverändert. Ungültig → 401, ohne Scope ``ratsdaten:lesen`` → 403, beide mit ``WWW-Authenticate`` (RFC 6750).
+    unverändert. Ungültig → 401, ohne einen der Scopes der Operation → 403, beide mit ``WWW-Authenticate``
+    (RFC 6750). Grenze der Anwendung überschritten → 429, Anwendung einer anderen Kommune → 403 (#1591).
     """
     raw = _bearer(request)
     if not oidc_access.looks_like_access_token(raw):
         return None
     try:
         access = oidc_access.authenticate(raw, resource_uri=request.build_absolute_uri(request.path))
+    except oidc_access.RateLimited as limited:
+        raise Problem(
+            429,
+            "Die Anwendung hat ihre Anfragen dieser Minute verbraucht.",
+            kind="ratenlimit",
+            headers={"Retry-After": str(limited.retry_after)},
+        ) from None
     except oidc_access.InvalidAccessToken:
         raise Problem(
             401,
@@ -201,18 +238,22 @@ def _oidc_from_request(request: HttpRequest) -> oidc_access.OAuthAccess | None:
             kind="nicht-authentifiziert",
             headers={"WWW-Authenticate": 'Bearer realm="mandari", error="invalid_token"'},
         ) from None
-    if not access.has_scope(OIDC_SCOPE):
+    if scopes and not access.has_any_scope(scopes):
+        needed = " ".join(scopes)
         raise Problem(
             403,
-            f"Dem Zugriffstoken fehlt der Scope „{OIDC_SCOPE}“.",
+            f"Dem Zugriffstoken fehlt einer dieser Scopes: {', '.join(scopes)}.",
             kind="keine-berechtigung",
-            headers={"WWW-Authenticate": f'Bearer realm="mandari", error="insufficient_scope", scope="{OIDC_SCOPE}"'},
+            headers={"WWW-Authenticate": f'Bearer realm="mandari", error="insufficient_scope", scope="{needed}"'},
         )
+    if not access.allows(bindings.TENANT, str(tenant.pk)):
+        raise Problem(403, "Die Anwendung ist für eine andere Kommune registriert.", kind="keine-berechtigung")
     return access
 
 
-def resolve_principal(request: HttpRequest, tenant: SessionTenant) -> Principal:
-    oidc = _oidc_from_request(request)
+def resolve_principal(request: HttpRequest, tenant: SessionTenant, operation: str) -> Principal:
+    """Aufrufer der Operation (Name in :data:`SCOPES`); ein Access-Token braucht einen ihrer Scopes."""
+    oidc = _oidc_from_request(request, tenant, SCOPES[operation])
     if oidc is not None:
         # Dienst: liest wie anonym. Person: wie mit eigener Anmeldung, aber nur Öffentliches (Principal.has_permission)
         session_user = _session_user_with_api_access(oidc.user, tenant) if oidc.acts_for_person else None

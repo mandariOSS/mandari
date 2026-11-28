@@ -1,0 +1,29 @@
+{% load oidc_tags %}
+{% comment %}
+Verbundene Anwendungen direkt auf einer Profilseite (Issue #1591), mit „Widerrufen“ je Anwendung. Der Widerruf geht an
+die Kontoseite „Verbundene Anwendungen“ (accounts:connected_applications) und führt mit next zurück auf diese Seite.
+Nur bei eingeschaltetem Anbieter einbinden (oidc_provider_enabled).
+{% endcomment %}
+{% verbundene_anwendungen as verbundene %}
+{% if verbundene %}
+<c-rahmen.liste class="mt-3" aria-label="Verbundene Anwendungen" data-testid="verbundene-liste">
+    {% for anwendung in verbundene %}
+    <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 py-2.5">
+        <div class="min-w-0 flex-1 basis-56 text-sm">
+            <p class="font-medium wrap-break-word">{{ anwendung.name }}</p>
+            {% if anwendung.registered_by %}<c-form.hinweis neben>Registriert von {{ anwendung.registered_by }}</c-form.hinweis>{% endif %}
+            <c-form.hinweis neben>Verbunden seit {{ anwendung.connected_since|date:"d.m.Y" }} · zuletzt {{ anwendung.last_issued|date:"d.m.Y H:i" }} Uhr</c-form.hinweis>
+        </div>
+        <form method="post" action="{% url 'accounts:connected_applications' %}" data-confirm="Zugang von „{{ anwendung.name }}“ widerrufen? Die Anwendung muss Sie danach erneut fragen.">
+            {% csrf_token %}
+            <input type="hidden" name="application_id" value="{{ anwendung.application_id }}">
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <input type="hidden" name="zurueck" value="1">
+            <c-ui.button type="submit" variant="secondary" size="sm">Widerrufen<span class="sr-only">: {{ anwendung.name }}</span></c-ui.button>
+        </form>
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% else %}
+<c-rahmen.satz>Gerade hat keine Anwendung Zugang zu Ihrem Konto.</c-rahmen.satz>
+{% endif %}

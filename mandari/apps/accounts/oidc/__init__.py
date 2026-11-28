@@ -9,7 +9,8 @@ Signaturschlüssel (:mod:`.signing_keys`), Endpunkte (:mod:`.views`, :mod:`.urls
 Profil Nichtöffentliches (#565) die Anmeldung mit ``private_key_jwt`` (:mod:`.client_assertion`) und die fachfreie
 Bindung einer Anwendung an genau einen Bereich (:mod:`.bindings`). Für den
 Betrieb die Prüfung vor dem Einschalten (:mod:`.readiness`, ``manage.py oidc_pruefen``) und
-``manage.py oidc_anwendung``.
+``manage.py oidc_anwendung``. Für eigene Oberflächen und Dienste (#1591) die Registrierung durch eine Kommune oder
+Fraktion (:mod:`.registration`, Oberfläche :mod:`.registration_views`) und Grenzen je Anwendung (:mod:`.access`).
 
 Der Schalter ``OIDC_PROVIDER_ENABLED`` ist standardmäßig aus; dann antworten alle Endpunkte mit 404
 und kein Access-Token wird angenommen. Für Anwendungsentwickler: ``docs/schnittstelle/anmeldung.md``, für den

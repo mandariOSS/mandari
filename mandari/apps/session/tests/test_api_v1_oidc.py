@@ -2,9 +2,10 @@
 """
 Session-API v1 mit Access-Tokens des OpenID-Connect-Anbieters (Issue #1206, ``apps/session/api/v1/auth.py``).
 
-Regeln: Scope ``ratsdaten:lesen`` ist Pflicht. Im Namen einer Person liest ein Token höchstens, was die Person mit
-eigener Anmeldung über die Schnittstelle lesen dürfte (Recht „API-Zugang“), aber nie Nichtöffentliches, keine
-Anträge und reicht nichts ein (bis #565). Ein Dienst-Token (Client Credentials) liest nur, was anonym lesbar ist.
+Regeln: Sitzungen und Vorlagen mit Scope ``ratsdaten:lesen`` oder ``session:lesen``, Anträge nur mit ``session:lesen``
+(Issue #1591, ``test_oidc_anwendungen_kommune.py``). Im Namen einer Person liest ein Token höchstens, was die Person
+mit eigener Anmeldung über die Schnittstelle lesen dürfte (Recht „API-Zugang“), aber nie Nichtöffentliches und reicht
+nichts ein (#565). Ein Dienst-Token (Client Credentials) liest nur, was anonym lesbar ist.
 Bestehende API-Tokens (64 Zeichen, mandantengebunden) verhalten sich unverändert.
 """
 
@@ -148,7 +149,8 @@ class TestDienst:
         meetings = get(f"{tenant.slug}/meetings/", raw).json()
         assert names(meetings) == {"OEFFENTLICH"}
         assert meetings["meta"]["authenticated"] is False
-        assert get(f"{tenant.slug}/applications/", raw).status_code == 401
+        # Anträge verlangen session:lesen, das Dienste nicht bekommen (#1591)
+        assert get(f"{tenant.slug}/applications/", raw).status_code == 403
 
     def test_vor_freischaltung_nichts(self, unveroeffentlicht: SessionTenant, dienst: OAuthApplication) -> None:
         assert get(f"{unveroeffentlicht.slug}/meetings/", h.access_token(dienst)).status_code == 404

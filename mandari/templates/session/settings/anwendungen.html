@@ -1,0 +1,43 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Datenschutz und Zugänge › Anwendungen (Issue #1591): eigene Anwendungen der Kommune über die Anmeldung
+von mandari. Eine Vorlage für beide Rahmen: Im neuen Rahmen Kopfband, Reiter und Unterpunkte, im bisherigen Brotkrumen
+und Überschrift. Inhalt aus accounts/oidc/_anwendungen_verwalten.html; Kontext OidcApplicationsView.
+{% endcomment %}
+
+{% block page_title %}Anwendungen{% endblock %}
+{% block gestaltung %}{% if session_neues_design %}neu{% else %}bisher{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Dashboard</a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Einstellungen</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Anwendungen</span>
+</nav>
+{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Anwendungen der Kommune" text="Eigene Oberflächen und Dienste, die sich über mandari anmelden und im Namen von Personen auf {{ session_tenant.name }} zugreifen, etwa eine Rats-App." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+{% if session_neues_design %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 max-w-4xl">
+        {% include "accounts/oidc/_anwendungen_verwalten.html" %}
+    </div>
+</div>
+{% else %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Anwendungen der Kommune</h1>
+        <c-rahmen.satz eng>Eigene Oberflächen und Dienste, die sich über mandari anmelden und im Namen von Personen auf {{ session_tenant.name }} zugreifen, etwa eine Rats-App.</c-rahmen.satz>
+    </div>
+    {% include "accounts/oidc/_anwendungen_verwalten.html" %}
+</div>
+{% endif %}
+{% endblock %}

@@ -21,6 +21,9 @@
             Token, den die Fraktion einmalig in ihren Organisationseinstellungen hinterlegt. Eingehende Anträge erscheinen
             unter „Anträge“ mit Eingangsnummer, die Fraktion sieht Status und Beratungstermine automatisch.
         </p>
+        {% if oidc_provider_enabled %}
+        <c-rahmen.satz>Eigene Anwendungen der Kommune, die sich über mandari anmelden: <c-ui.textlink href="{% url 'session:settings_applications' tenant_slug=tenant_slug %}">Anwendungen</c-ui.textlink></c-rahmen.satz>
+        {% endif %}
     </div>
 
     {% if new_token %}

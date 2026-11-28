@@ -3,7 +3,8 @@
 Reiter der Einstellungen im neuen Erscheinungsbild (Issue #951, neu geordnet in Issue #1230).
 
 Fünf Bereiche, freigegeben von Sven am 05.11.2026: Organisation (Profil, E-Mail-Versand, Themen und Labels),
-Mitglieder und Rechte (Mitglieder, Rollen, Registrierung, Anmeldesicherheit), Sitzungen (Fraktionssitzungen,
+Mitglieder und Rechte (Mitglieder, Rollen, Registrierung, Anmeldesicherheit, Anwendungen nur mit eingeschalteter
+Anmeldung über mandari, Issue #1591), Sitzungen (Fraktionssitzungen,
 Veröffentlichung), Dokumente (Übersicht, Dokumenttypen, Vorlagen, Briefköpfe) sowie Rat und Verwaltung
 (Ratsfraktionen, Verwaltungskontakte, Einreichung). Ein Reiter mit mehreren Seiten zeigt sie als Unterpunkte.
 
@@ -75,6 +76,8 @@ REITER: tuple[Reiter, ...] = (
                 recht="organization.view",
                 abfrage=f"bereich={BEREICH_SICHERHEIT}",
             ),
+            # Eigene Anwendungen über die Anmeldung von mandari (Issue #1591), nur bei eingeschaltetem Anbieter
+            Seite("anwendungen", "Anwendungen", "work:organization_applications", recht="organization.edit"),
         ),
     ),
     Reiter(
@@ -116,6 +119,11 @@ _SEITEN: dict[str, tuple[Reiter, Seite]] = {s.key: (r, s) for r in REITER for s 
 
 
 def _sichtbar(seite: Seite, membership: Any) -> bool:
+    if seite.key == "anwendungen":
+        from apps.accounts.oidc import provider_enabled
+
+        if not provider_enabled():
+            return False
     if not seite.recht:
         return True
     rechte = (seite.recht,) if isinstance(seite.recht, str) else seite.recht

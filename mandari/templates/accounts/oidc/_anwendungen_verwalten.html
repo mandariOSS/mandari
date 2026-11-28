@@ -1,0 +1,105 @@
+{% comment %}
+Eigene Anwendungen eines Bereichs verwalten (Issue #1591): Kommune in Session, Fraktion in Work. Eingebunden von
+session/settings/anwendungen.html und work/organization/anwendungen.html; Kontext aus
+apps.accounts.oidc.registration_views.OwnedApplicationsMixin (oidc_anwendungen, oidc_form, oidc_neu, oidc_bereich,
+oidc_discovery, oidc_doku). Ein neues Client-Secret steht nur in dieser einen Antwort (oidc_neu) und wird nirgends
+gespeichert. Sperren, Neues Secret und Löschen mit Rückfrage über data-confirm. Bausteine c-rahmen.abschnitt,
+c-rahmen.satz, c-form.* statt eigener Klassen.
+{% endcomment %}
+<div class="space-y-10" data-testid="eigene-anwendungen">
+    {% if oidc_neu %}
+    <c-rahmen.band ton="grau" dicht titel="Zugangsdaten für „{{ oidc_neu.application.name }}“, nur jetzt sichtbar" titel_id="neu-titel" data-testid="neue-zugangsdaten">
+        <c-rahmen.satz eng>Bitte sicher an die Entwicklerinnen und Entwickler der Anwendung übergeben. Das Client-Secret ist danach nur noch gehasht gespeichert und lässt sich hier nicht mehr anzeigen.</c-rahmen.satz>
+        <c-ui.angaben class="mt-3">
+            <dt>Client-ID</dt>
+            <dd><code class="font-mono break-all select-all">{{ oidc_neu.application.client_id }}</code></dd>
+            <dt>Client-Secret</dt>
+            <dd>{% if oidc_neu.secret %}<code id="neues-secret" class="font-mono break-all select-all">{{ oidc_neu.secret }}</code>{% else %}keins (öffentliche Anwendung, Anmeldung nur mit PKCE){% endif %}</dd>
+            <dt>Discovery</dt>
+            <dd><code class="font-mono break-all">{{ oidc_discovery }}</code></dd>
+        </c-ui.angaben>
+    </c-rahmen.band>
+    {% endif %}
+
+    <c-rahmen.abschnitt titel="Registrierte Anwendungen" titel_id="anwendungen-titel" zusatz="{{ oidc_anwendungen|length }}">
+        {% if not oidc_eingeschaltet %}
+        <c-rahmen.satz eng>Die Anmeldung über mandari ist in dieser Installation noch nicht eingeschaltet. Anwendungen wirken erst danach.</c-rahmen.satz>
+        {% endif %}
+        {% if oidc_anwendungen %}
+        <c-rahmen.liste class="mt-2" aria-label="Registrierte Anwendungen">
+            {% for eintrag in oidc_anwendungen %}{% with app=eintrag.application %}
+            <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 py-3" data-testid="anwendung">
+                <div class="min-w-0 flex-1 basis-72">
+                    <p class="flex flex-wrap items-baseline gap-x-3 text-sm">
+                        <span class="font-medium wrap-break-word {% if app.is_active %}text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400{% endif %}">{{ app.name }}</span>
+                        <span class="text-[0.8125rem]">{% if app.is_active %}Aktiv{% else %}Gesperrt{% endif %}</span>
+                    </p>
+                    <c-ui.angaben class="mt-2">
+                        <dt>Client-ID</dt>
+                        <dd><code class="font-mono break-all">{{ app.client_id }}</code> · {% if eintrag.confidential %}vertraulich{% else %}öffentlich{% endif %}</dd>
+                        <dt>Scopes</dt>
+                        <dd>{% for scope in eintrag.scopes %}<code class="font-mono">{{ scope }}</code>{% if not forloop.last %}, {% endif %}{% empty %}keine{% endfor %}</dd>
+                        <dt>Redirect-URIs</dt>
+                        <dd class="break-all">{{ eintrag.redirect_uris|join:", " }}</dd>
+                        <dt>Grenzen</dt>
+                        <dd>{% if app.rate_limit_per_minute %}<span class="tabular-nums">{{ app.rate_limit_per_minute }}</span> Anfragen je Minute{% else %}ohne Grenze je Minute{% endif %}, <span class="tabular-nums">{{ app.max_page_size }}</span> Einträge je Seite</dd>
+                        <dt>Angelegt</dt>
+                        <dd class="tabular-nums">{{ app.created|date:"d.m.Y" }}</dd>
+                    </c-ui.angaben>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% if eintrag.confidential %}
+                    <form method="post" data-confirm="Neues Client-Secret für „{{ app.name }}“ erzeugen? Das bisherige gilt sofort nicht mehr.">
+                        {% csrf_token %}
+                        <input type="hidden" name="aktion" value="secret">
+                        <input type="hidden" name="anwendung" value="{{ app.pk }}">
+                        <c-ui.button type="submit" variant="secondary" size="sm">Neues Secret<span class="sr-only">: {{ app.name }}</span></c-ui.button>
+                    </form>
+                    {% endif %}
+                    <form method="post"{% if app.is_active %} data-confirm="„{{ app.name }}“ sperren? Alle Zugänge der Anwendung werden widerrufen."{% endif %}>
+                        {% csrf_token %}
+                        <input type="hidden" name="aktion" value="{% if app.is_active %}sperren{% else %}entsperren{% endif %}">
+                        <input type="hidden" name="anwendung" value="{{ app.pk }}">
+                        <c-ui.button type="submit" variant="secondary" size="sm">{% if app.is_active %}Sperren{% else %}Entsperren{% endif %}<span class="sr-only">: {{ app.name }}</span></c-ui.button>
+                    </form>
+                    <form method="post" data-confirm="„{{ app.name }}“ endgültig löschen? Alle Zugänge der Anwendung werden widerrufen.">
+                        {% csrf_token %}
+                        <input type="hidden" name="aktion" value="loeschen">
+                        <input type="hidden" name="anwendung" value="{{ app.pk }}">
+                        <c-ui.button type="submit" variant="danger" size="sm">Löschen<span class="sr-only">: {{ app.name }}</span></c-ui.button>
+                    </form>
+                </div>
+            </li>
+            {% endwith %}{% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Noch keine Anwendung registriert.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Anwendung registrieren" titel_id="registrieren-titel" class="max-w-2xl">
+        <c-rahmen.satz eng>Die Anwendung meldet Personen über mandari an und handelt in ihrem Namen. Jede Person stimmt selbst zu und kann den Zugang unter „Verbundene Anwendungen“ widerrufen. Die Anwendung darf nie mehr als die Person{% if oidc_bereich %} und gilt nur für {{ oidc_bereich }}{% endif %}. Nichtöffentliche Inhalte gibt es über eigene Anwendungen nicht.</c-rahmen.satz>
+        <form method="post" class="mt-4 space-y-5" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="aktion" value="anlegen">
+            <c-form.errors :form="oidc_form" />
+            <c-form.field :field="oidc_form.name" label="Name" maxlength="255" help="{{ oidc_form.name.help_text }}" dicht required />
+            <fieldset class="space-y-1.5">
+                <c-form.beschriftung als="legend">Art</c-form.beschriftung>
+                {% for wahl in oidc_form.art %}
+                <label for="{{ wahl.id_for_label }}" class="flex items-start gap-2 text-sm cursor-pointer min-h-[24px]">{{ wahl.tag }}<span>{{ wahl.choice_label }}</span></label>
+                {% endfor %}
+            </fieldset>
+            <c-form.textarea :field="oidc_form.redirect_uris" label="Redirect-URIs" rows="3" placeholder="https://app.example.org/rueckweg" help="{{ oidc_form.redirect_uris.help_text }}" dicht required />
+            <fieldset class="space-y-1.5">
+                <c-form.beschriftung als="legend">Scopes</c-form.beschriftung>
+                {% for wahl in oidc_form.scopes %}
+                <label for="{{ wahl.id_for_label }}" class="flex items-start gap-2 text-sm cursor-pointer min-h-[24px]">{{ wahl.tag }}<span><code class="font-mono">{{ wahl.data.value }}</code> {{ wahl.choice_label }}</span></label>
+                {% endfor %}
+                {% if oidc_form.scopes.errors %}<c-form.hinweis role="alert">{{ oidc_form.scopes.errors|join:" " }}</c-form.hinweis>{% endif %}
+            </fieldset>
+            <c-ui.button type="submit" size="sm">Anwendung registrieren</c-ui.button>
+        </form>
+        <c-rahmen.satz>Anleitung für Entwicklerinnen und Entwickler: <c-ui.textlink href="{{ oidc_doku }}" extern>Eigene Anwendungen auf docs.mandari.de</c-ui.textlink></c-rahmen.satz>
+    </c-rahmen.abschnitt>
+</div>

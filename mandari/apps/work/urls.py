@@ -775,6 +775,12 @@ urlpatterns = [
         organization_views.OrganizationApiSettingsView.as_view(),
         name="organization_api_settings",
     ),
+    # Eigene Anwendungen der Organisation über die Anmeldung von mandari (Issue #1591)
+    path(
+        "<slug:org_slug>/organization/anwendungen/",
+        organization_views.OrganizationApplicationsView.as_view(),
+        name="organization_applications",
+    ),
     path(
         "<slug:org_slug>/organization/verwaltung/",
         organization_views.OrganizationRisSettingsView.as_view(),
