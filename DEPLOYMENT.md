@@ -1191,7 +1191,7 @@ Work und die Aufträge des Bestands lesen sie nicht; der Projektor meldet im Sch
 
 | Einstellung | Bedeutung |
 |---|---|
-| `RIS_SESSION_PROJECTOR` | `aus` (Standard) oder `schatten`; `aktiv` erst mit #537 |
+| `RIS_SESSION_PROJECTOR` | `aus` (Standard) oder `schatten`; `aktiv` erst mit dem Umschalten (#537) |
 | `RIS_SESSION_PROJECTOR_TENANTS` | Session-Mandanten des Schattenbetriebs (Kennungen, kommagetrennt; leer = alle) |
 
 - Jedes Ereignis ist nur Auslöser: Das Objekt entsteht aus dem aktuellen Stand in Session mit derselben
@@ -1202,8 +1202,9 @@ Work und die Aufträge des Bestands lesen sie nicht; der Projektor meldet im Sch
 - Voraussetzung sind Session-Ereignisse für den Mandanten (`SESSION_EVENTS=schatten` oder das Feld
   „Ereignisse an die Datendrehscheibe“ am Mandanten) und der Worker (Rolle `dispatch`, Warteschlange
   `default`). Ohne Session-Ereignisse bleibt die Schatten-Quelle auf dem Stand des Vollbaus.
-- Für Körperschaft, Wahlperioden, Gremien, Personen und Mitgliedschaften meldet Session noch keine Ereignisse
-  (#860): Ihre Änderungen nach dem Vollbau erscheinen im Vergleich als Abweichung.
+- Session meldet alle Typen, die der Projektor schreibt, auch Körperschaft, Wahlperioden, Gremien, Personen und
+  Mitgliedschaften (#860). Ausnahme sind Änderungen im Django-Admin außer den Stammdaten des Mandanten und
+  Änderungen per Shell: Sie erscheinen im Vergleich als Abweichung, bis ein neuer Vollbau sie übernimmt.
 
 ```bash
 python manage.py ris_projektor_schatten status                      # Schalter, Cursor, Rückstand, Zeilen
@@ -1233,11 +1234,13 @@ werden nur Zahlen, Feldnamen und Kennungen des Bestands. Dazu `mandari_events_la
 `mandari_ris_projector_events_total{result}` / `mandari_ris_projector_rows_total{type,result}`.
 
 **Abweichungen lesen:** Zeitstempel der Quelle und Rohdaten zählen nicht; leerer Text gilt wie ein fehlender
-Wert. Erwartet und erklärbar sind:
+Wert. Ein Datum und ein Zeitpunkt um Mitternacht desselben Tages gelten als gleich: In bestehenden
+Installationen sind die Datumsspalten des Bestands Zeitpunkte (`start_date` einer Mitgliedschaft, `date` einer
+Vorlage). Erwartet und erklärbar sind:
 
 - zeitlicher Versatz: Der Ingestor gleicht periodisch ab, der Projektor sofort. Zwischen Änderung in Session
   und nächstem Abgleich ist der Bestand der ältere Teil; der nächste Vergleich nach dem Abgleich zeigt das.
-- Körperschaft, Wahlperioden, Gremien, Personen, Mitgliedschaften (#860), solange Session sie nicht meldet.
+- Änderungen im Django-Admin oder per Shell (außer den Stammdaten des Mandanten), die Session nicht meldet.
 - Felder, die der Ingestor anders schreibt als der Spiegel (`hub.ris.uebernahme`): Befund für #537, denn mit
   dem Umschalten schreibt der Projektor sie wie der Spiegel.
 

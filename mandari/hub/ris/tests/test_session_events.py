@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Ereignisse aus Session-Zuständen (``hub.ris.session_events``, Issues #533–#535): Sichtbarkeit je Feld und Übergang.
+Ereignisse aus Session-Zuständen (``hub.ris.session_events``, Issues #533–#535, #860): Sichtbarkeit je Feld und Übergang.
 
 Die Zustände stehen hier ohne Datenbank; die Fachfunktionen prüft ``apps/session/tests/test_drehscheibe_sitzungen.py``.
 """
@@ -19,12 +19,14 @@ from hub.ris.session_events import (
     DATE_ONLY,
     FULL,
     HIDDEN,
+    RECORD_KINDS,
     AgendaItemState,
     ConsultationState,
     FileState,
     MeetingState,
     PaperState,
     ProtocolState,
+    RecordState,
     SessionEvents,
 )
 
@@ -53,7 +55,7 @@ def sitzung(publicity: str = FULL, **felder: Any) -> MeetingState:
         "cancelled": False,
         "organization": (ANDERE,),
         "location": ("Rathaus", "", "", "", ""),
-        "meetingFormat": None,
+        "mandari_meetingFormat": None,
     }
     werte.update(felder)
     return MeetingState(id=SITZUNG, publicity=publicity, fields=werte, organizations=(ANDERE,))
@@ -400,3 +402,77 @@ def test_umsetzungsstand_nur_nach_der_regel_der_beschlusskontrolle(events: Sessi
     drafts = events.agenda_drafts({TOP: beschluss(frei=True)}, {TOP: beschluss(published=False)})
     assert "ris.resolution.implementation_changed" not in {d.type for d in drafts}
     assert all(d.visibility == "nichtoeffentlich" or d.type == "ris.object.depublished" for d in drafts)
+
+
+# -- Stammdaten (Issue #860) ---------------------------------------------------------------------------
+
+GREMIUM = uuid.UUID("00000000-0000-4000-8000-000000000009")
+PERSON = uuid.UUID("00000000-0000-4000-8000-00000000000a")
+MITGLIEDSCHAFT = uuid.UUID("00000000-0000-4000-8000-00000000000b")
+PERIODE = uuid.UUID("00000000-0000-4000-8000-00000000000c")
+
+
+def stammdatum(kind: str, pk: Any, *, published: bool = True, **felder: Any) -> RecordState:
+    werte: dict[str, Any] = dict.fromkeys(RECORD_KINDS[kind].fields)
+    if kind == "membership":
+        werte.update(person=PERSON, organization=GREMIUM, role="member", votingRight=True)
+    werte.update(felder)
+    return RecordState(kind=kind, id=pk, published=published, fields=werte)
+
+
+def _gueltig(drafts: list[Any]) -> None:
+    for draft in drafts:
+        get_registry().validate_payload(draft.type, 1, draft.payload)
+
+
+def test_stammdaten_neu_geaendert_unveraendert(events: SessionEvents) -> None:
+    neu = events.record_drafts(None, stammdatum("organization", GREMIUM, name="Rat"))
+    assert kurz(neu) == [("ris.organization.changed", "Organization", "oeffentlich")]
+    assert neu[0].payload == {"organization": str(events.ref("organization", GREMIUM)), "change": "added"}
+
+    vorher = stammdatum("person", PERSON, name="Petra Muster", familyName="Muster")
+    nachher = stammdatum("person", PERSON, name="Petra Beispiel", familyName="Beispiel")
+    geaendert = events.record_drafts(vorher, nachher)
+    assert kurz(geaendert) == [("ris.person.changed", "Person", "oeffentlich")]
+    assert geaendert[0].payload["changed"] == ["name", "familyName"]
+    assert events.record_drafts(vorher, vorher) == []
+    _gueltig(neu + geaendert)
+
+
+def test_mitgliedschaft_nennt_person_und_gremium(events: SessionEvents) -> None:
+    drafts = events.record_drafts(
+        stammdatum("membership", MITGLIEDSCHAFT), stammdatum("membership", MITGLIEDSCHAFT, endDate=datetime(2031, 1, 1))
+    )
+    assert drafts[0].payload == {
+        "membership": str(events.ref("membership", MITGLIEDSCHAFT)),
+        "change": "changed",
+        "changed": ["endDate"],
+        "person": str(events.ref("person", PERSON)),
+        "organization": str(events.ref("organization", GREMIUM)),
+    }
+    _gueltig(drafts)
+
+
+def test_geloeschte_wahlperiode_und_mitgliedschaft_werden_zurueckgenommen(events: SessionEvents) -> None:
+    drafts = events.records_drafts({PERIODE: stammdatum("legislativeterm", PERIODE, name="2025–2030")}, {})
+    assert kurz(drafts) == [("ris.object.depublished", "LegislativeTerm", "oeffentlich")]
+    assert drafts[0].payload["reason"] == "quelle_geloescht"
+    weg = events.record_drafts(stammdatum("membership", MITGLIEDSCHAFT), None)
+    # Die Rücknahme nennt die Person, in die die Mitgliedschaft eingebettet war (Änderungsfeed, #1229)
+    assert weg[0].payload["person"] == str(events.ref("person", PERSON))
+    # Vor der Freischaltung kannte sie niemand
+    assert events.record_drafts(stammdatum("membership", MITGLIEDSCHAFT, published=False), None) == []
+    _gueltig(drafts + weg)
+
+
+def test_stammdaten_vor_der_freischaltung_nur_nichtoeffentlich(events: SessionEvents) -> None:
+    neu = events.record_drafts(None, stammdatum("legislativeterm", PERIODE, published=False, name="2025–2030"))
+    assert kurz(neu) == [("ris.legislativeterm.changed", "LegislativeTerm", "nichtoeffentlich")]
+    # Die Freischaltung selbst meldet nichts; ein Feld, das sich zugleich ändert, nur nichtöffentlich
+    vorher = stammdatum("body", "mandant", published=False, name="Bezirk Nord")
+    assert events.record_drafts(vorher, stammdatum("body", "mandant", name="Bezirk Nord")) == []
+    umbenannt = events.record_drafts(vorher, stammdatum("body", "mandant", name="Bezirk Nordost"))
+    assert kurz(umbenannt) == [("ris.body.changed", "Body", "nichtoeffentlich")]
+    # Die Körperschaft trägt die Kennung des Body der Schnittstelle
+    assert umbenannt[0].payload == {"body": str(events.body_id), "change": "changed", "changed": ["name"]}
+    _gueltig(neu + umbenannt)

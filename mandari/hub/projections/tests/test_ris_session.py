@@ -242,3 +242,53 @@ def test_schalter_und_auswahl(settings: Any) -> None:
     assert ris_session.mandanten() == frozenset({kennung})
     settings.RIS_SESSION_PROJECTOR = "aktiv"  # erst mit #537; bis dahin wie aus
     assert ris_session.modus() == "aus"
+
+
+def test_abonnement_kennt_alle_typen_von_session() -> None:
+    """Jede Objektart, die Session meldet (#533–#535, #860), löst den Projektor aus und wird aufgelöst."""
+    from apps.events.registry import type_matches
+    from hub.ris.session_events import RECORD_KINDS
+
+    for art in RECORD_KINDS.values():
+        assert any(type_matches(muster, art.event_type) for muster in ris_session.TYPES), art.event_type
+        assert ris_session._ARTEN[art.aggregate_type] in ris_session.REIHENFOLGE
+    assert not any(type_matches(muster, "ris.person.faction_assigned") for muster in ris_session.TYPES)
+
+
+# -- Vergleich: Datum und Mitternacht (Befund in #536 vom 28.11.2026) --------------------------------------
+
+
+def test_datum_und_mitternacht_sind_derselbe_tag(settings: Any) -> None:
+    settings.TIME_ZONE = "Europe/Berlin"
+    berlin = timezone(timedelta(hours=2))
+    assert ris_vergleich.tag(datetime(2024, 7, 1, tzinfo=UTC)) == date(2024, 7, 1)
+    assert ris_vergleich.tag(datetime(2024, 7, 1, tzinfo=berlin)) == date(2024, 7, 1)
+    assert ris_vergleich.tag(datetime(2024, 7, 1)) == date(2024, 7, 1)
+    # Eine andere Uhrzeit ist ein anderer Wert
+    mittag = datetime(2024, 7, 1, 12, tzinfo=UTC)
+    assert ris_vergleich.tag(mittag) == mittag
+    assert ris_vergleich.tag(date(2024, 7, 1)) == date(2024, 7, 1) and ris_vergleich.tag(None) is None
+
+
+def test_vergleich_wertet_datum_und_mitternacht_als_gleich() -> None:
+    from insight_core.models import OParlMeeting, OParlMembership
+
+    assert {"start_date", "end_date"} <= ris_vergleich.datumsspalten(OParlMembership)
+    assert "start" not in ris_vergleich.datumsspalten(OParlMeeting)
+
+    def stand(beginn: Any, *, bestand: bool) -> ris_vergleich.Stand:
+        wert = ris_vergleich.spaltenwert(beginn, datum=True) if bestand else ris_session.wert(beginn)
+        return ris_vergleich.Stand("1", True, None, {"start_date": wert, "end_date": None}, {})
+
+    gleich = ris_vergleich.vergleiche_typ(
+        "membership",
+        {"m": stand(datetime(2024, 7, 1, tzinfo=UTC), bestand=True)},
+        {"m": stand(date(2024, 7, 1), bestand=False)},
+    )
+    assert (gleich.gleich, gleich.abweichungen) == (1, 0)
+    anders = ris_vergleich.vergleiche_typ(
+        "membership",
+        {"m": stand(datetime(2024, 7, 1, 9, tzinfo=UTC), bestand=True)},
+        {"m": stand(date(2024, 7, 1), bestand=False)},
+    )
+    assert anders.felder == {"start_date": 1}

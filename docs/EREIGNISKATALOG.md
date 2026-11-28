@@ -24,7 +24,7 @@ die diese Person nennen, im Journal geleert.
 | `core.user.registered` | Ereignis | 1 | `apps.accounts` | personenbezogen | Konto angelegt oder bestätigt |
 | `invitation.acknowledge` | Befehl | 1 | `apps.session` | personenbezogen | Empfang einer Ladung bestätigen |
 | `ris.agendaitem.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Tagesordnung geändert |
-| `ris.body.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Kommune geändert |
+| `ris.body.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Kommune geändert |
 | `ris.broadcast.agenda_item_started` | Ereignis | 1 | `hub.live` | oeffentlich | Tagesordnungspunkt in der Übertragung begonnen |
 | `ris.broadcast.ended` | Ereignis | 1 | `hub.live` | oeffentlich | Live-Übertragung beendet |
 | `ris.broadcast.speaker_changed` | Ereignis | 1 | `hub.live` | intern | Wortmeldung in der Übertragung |
@@ -32,18 +32,18 @@ die diese Person nennen, im Journal geleert.
 | `ris.consultation.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Beratungsfolge geändert |
 | `ris.file.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Anlage geändert |
 | `ris.file.text_extracted` | Ereignis | 1 | `hub.ris` | intern | Text einer Anlage erkannt |
-| `ris.legislativeterm.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Wahlperiode geändert |
+| `ris.legislativeterm.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Wahlperiode geändert |
 | `ris.location.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Ort geändert |
 | `ris.meeting.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Sitzung geändert |
 | `ris.meeting.invited` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Ladung versendet |
 | `ris.meeting.scheduled` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Sitzung angesetzt |
-| `ris.membership.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Mitgliedschaft geändert |
+| `ris.membership.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Mitgliedschaft geändert |
 | `ris.object.depublished` | Ereignis | 1 | `hub.ris` | oeffentlich | Objekt zurückgenommen |
-| `ris.organization.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Gremium geändert |
+| `ris.organization.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Gremium geändert |
 | `ris.paper.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Vorlage geändert |
 | `ris.paper.created` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Vorlage angelegt |
 | `ris.paper.released` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Vorlage freigegeben |
-| `ris.person.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Person geändert |
+| `ris.person.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Person geändert |
 | `ris.person.faction_assigned` | Ereignis | 1 | `hub.ris` | oeffentlich | Fraktion einer Person zugeordnet |
 | `ris.protocol.approved` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Niederschrift genehmigt |
 | `ris.protocol.published` | Ereignis | 1 | `hub.ris` | oeffentlich | Niederschrift veröffentlicht |
@@ -263,11 +263,11 @@ Beispiel 3:
 
 ### ris.body.changed v1
 
-**Kommune geändert.** Eine Kommune (OParl-Body) wurde in ihrer Quelle neu erkannt (added) oder geändert (changed), etwa Name, Webseite oder Wahlperioden. Aggregat: Body. Ob die Kommune im Bürgerportal veröffentlicht ist, meldet ris.source.published; die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+**Kommune geändert.** Eine Kommune (OParl-Body) wurde in ihrer Quelle neu erkannt (added) oder geändert (changed), etwa Name, Webseite oder Wahlperioden. Aggregat: Body. Ob die Kommune im Bürgerportal veröffentlicht ist, meldet ris.source.published; die Rücknahme meldet ris.object.depublished. Aus mandari Session ist das Ereignis nichtoeffentlich, solange deren Schnittstelle nicht freigeschaltet ist. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
-- Sichtbarkeit: oeffentlich
+- Sichtbarkeit: nichtoeffentlich, oeffentlich
 - Schema: [`ris.body.changed/v1.json`](../mandari/hub/contracts/schemas/ris.body.changed/v1.json)
 
 | Feld | Pflicht | Typ | Beschreibung |
@@ -574,11 +574,11 @@ Beispiel 3:
 
 ### ris.legislativeterm.changed v1
 
-**Wahlperiode geändert.** Eine Wahlperiode einer Kommune wurde neu erkannt (added) oder geändert (changed), etwa Name oder Zeitraum. Aggregat: LegislativeTerm. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+**Wahlperiode geändert.** Eine Wahlperiode einer Kommune wurde neu erkannt (added) oder geändert (changed), etwa Name oder Zeitraum. Aggregat: LegislativeTerm. Die Rücknahme meldet ris.object.depublished. Aus mandari Session ist das Ereignis nichtoeffentlich, solange deren Schnittstelle nicht freigeschaltet ist. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
-- Sichtbarkeit: oeffentlich
+- Sichtbarkeit: nichtoeffentlich, oeffentlich
 - Schema: [`ris.legislativeterm.changed/v1.json`](../mandari/hub/contracts/schemas/ris.legislativeterm.changed/v1.json)
 
 | Feld | Pflicht | Typ | Beschreibung |
@@ -758,11 +758,11 @@ Beispiel 2:
 
 ### ris.membership.changed v1
 
-**Mitgliedschaft geändert.** Eine Mitgliedschaft einer Person in einem Gremium wurde neu erkannt (added) oder geändert (changed), etwa Rolle, Stimmrecht oder Zeitraum. Aggregat: Membership. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+**Mitgliedschaft geändert.** Eine Mitgliedschaft einer Person in einem Gremium wurde neu erkannt (added) oder geändert (changed), etwa Rolle, Stimmrecht oder Zeitraum. Aggregat: Membership. Die Rücknahme meldet ris.object.depublished. Aus mandari Session ist das Ereignis nichtoeffentlich, solange deren Schnittstelle nicht freigeschaltet ist. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
-- Sichtbarkeit: oeffentlich
+- Sichtbarkeit: nichtoeffentlich, oeffentlich
 - Schema: [`ris.membership.changed/v1.json`](../mandari/hub/contracts/schemas/ris.membership.changed/v1.json)
 
 | Feld | Pflicht | Typ | Beschreibung |
@@ -851,11 +851,11 @@ Beispiel 3:
 
 ### ris.organization.changed v1
 
-**Gremium geändert.** Ein Gremium wurde neu erkannt (added) oder geändert (changed), etwa Name, Art oder Zeitraum. Aggregat: Organization. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+**Gremium geändert.** Ein Gremium wurde neu erkannt (added) oder geändert (changed), etwa Name, Art oder Zeitraum. Aggregat: Organization. Die Rücknahme meldet ris.object.depublished. Aus mandari Session ist das Ereignis nichtoeffentlich, solange deren Schnittstelle nicht freigeschaltet ist. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
-- Sichtbarkeit: oeffentlich
+- Sichtbarkeit: nichtoeffentlich, oeffentlich
 - Schema: [`ris.organization.changed/v1.json`](../mandari/hub/contracts/schemas/ris.organization.changed/v1.json)
 
 | Feld | Pflicht | Typ | Beschreibung |
@@ -966,11 +966,11 @@ Beispiel 1:
 
 ### ris.person.changed v1
 
-**Person geändert.** Eine Person wurde neu erkannt (added) oder geändert (changed), etwa Name, Titel oder Mitgliedschaften. Aggregat: Person. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+**Person geändert.** Eine Person wurde neu erkannt (added) oder geändert (changed), etwa Name, Titel oder Mitgliedschaften. Aggregat: Person. Die Rücknahme meldet ris.object.depublished. Aus mandari Session ist das Ereignis nichtoeffentlich, solange deren Schnittstelle nicht freigeschaltet ist. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
-- Sichtbarkeit: oeffentlich
+- Sichtbarkeit: nichtoeffentlich, oeffentlich
 - Schema: [`ris.person.changed/v1.json`](../mandari/hub/contracts/schemas/ris.person.changed/v1.json)
 
 | Feld | Pflicht | Typ | Beschreibung |

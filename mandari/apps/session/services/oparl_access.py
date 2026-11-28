@@ -137,18 +137,20 @@ def set_license(tenant: Any, url: str, *, user: Any = None, request: Any = None)
 
     ``oparl_license_valid_since`` hält fest, seit wann die Angabe gilt (OParl ``licenseValidSince``).
     """
-    from apps.session import audit
+    from apps.session import audit, hub_events
 
     url = (url or "").strip()
     if url and url not in dict(LICENSES):
         raise OParlAccessError(UNKNOWN_LICENSE)
-    with transaction.atomic():
+    # Drehscheibe (Issue #860): ris.body.changed (license, licenseValidSince)
+    with transaction.atomic(), hub_events.track(tenant) as tracked:
         tenant.refresh_from_db(
             fields=["oparl_license", "oparl_license_valid_since"],
             from_queryset=type(tenant).objects.select_for_update(),
         )
         if tenant.oparl_license == url:
             return False
+        tracked.body()
         vorher = license_label(tenant.oparl_license)
         tenant.oparl_license = url
         tenant.oparl_license_valid_since = timezone.now() if url else None

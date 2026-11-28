@@ -28,8 +28,12 @@ from apps.session.models import (
     SessionAgendaItem,
     SessionConsultation,
     SessionFile,
+    SessionLegislativeTerm,
     SessionMeeting,
+    SessionOrganization,
+    SessionOrganizationMembership,
     SessionPaper,
+    SessionPerson,
     SessionTenant,
 )
 from hub.projections import ris_session
@@ -89,6 +93,14 @@ class SessionQuelle:
     def _alle(self, art: str) -> QuerySet[Any]:
         """Alle Objekte der Art im Mandanten, öffentlich oder nicht (zum Auflösen von Kennungen)."""
         tenant = self.tenant
+        if art == "legislativeterm":
+            return SessionLegislativeTerm.objects.filter(tenant=tenant)
+        if art == "organization":
+            return SessionOrganization.objects.filter(tenant=tenant)
+        if art == "person":
+            return SessionPerson.objects.filter(tenant=tenant)
+        if art == "membership":
+            return SessionOrganizationMembership.objects.filter(organization__tenant=tenant)
         if art == "meeting":
             return SessionMeeting.objects.filter(tenant=tenant)
         if art == "agendaitem":
@@ -104,6 +116,10 @@ class SessionQuelle:
     def index(self, arten: Collection[str]) -> dict[uuid.UUID, tuple[str, Any]]:
         ergebnis: dict[uuid.UUID, tuple[str, Any]] = {}
         for art in sorted(arten):
+            if art == "body":
+                # Die Körperschaft der Schnittstelle ist der Mandant (bis #758 eine je Mandant)
+                ergebnis[self.kennung(self.kommune())] = ("body", self.tenant.pk)
+                continue
             # Der Ort einer Sitzung trägt deren Schlüssel (``…/location/<Sitzung>/``)
             ziel = "meeting" if art == "location" else art
             for pk in self._alle(ziel).values_list("pk", flat=True).iterator(chunk_size=2000):
@@ -129,6 +145,9 @@ class SessionQuelle:
     def objekte(self, art: str, pks: Collection[Any]) -> dict[Any, Objekt]:
         if not self.offen or not pks:
             return {}
+        if art == "body":
+            # Mit ihren Wahlperioden, wie die Schnittstelle sie einbettet
+            return {self.tenant.pk: cast(Objekt, self.mapping.body())} if self.tenant.pk in pks else {}
         return {obj.pk: self._abbilden(art, obj) for obj in self._liste(art, pks)}
 
     def grund(self, art: str, pk: Any) -> str:

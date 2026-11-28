@@ -161,7 +161,7 @@ def run_privacy_purge(
         dict: persons_anonymized, audit_deleted, audit_archive, archives_deleted (Namen der gelöschten
               Archivpakete), np_meetings_cleared, skipped (Liste deaktivierter Datenarten), dry_run
     """
-    from apps.session import audit
+    from apps.session import audit, hub_events
     from apps.session.models import SessionMeeting, SessionPerson, SessionProtocol
 
     now = now or timezone.now()
@@ -198,7 +198,10 @@ def run_privacy_purge(
                 if has_data:
                     stats["persons_anonymized"] += 1
                 continue
-            cleared = _anonymize_person(person)
+            # Drehscheibe (Issue #860): Eine veröffentlichte E-Mail verschwindet (ris.person.changed, email)
+            with hub_events.track(tenant) as tracked:
+                tracked.person(person)
+                cleared = _anonymize_person(person)
             if cleared:
                 stats["persons_anonymized"] += 1
                 audit.log_event(

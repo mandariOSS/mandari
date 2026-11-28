@@ -24,6 +24,7 @@ from django.views import View
 from apps.common.formatting import parse_iso_date
 from apps.common.params import uuid_param
 
+from .. import hub_events
 from ..models import (
     SessionOrganization,
     SessionOrganizationMembership,
@@ -107,17 +108,20 @@ class MembershipCreateView(SessionViewMixin, View):
             messages.error(request, error)
             return _org_redirect(self, organization)
 
-        membership = SessionOrganizationMembership.objects.create(
-            organization=organization,
-            person=person,
-            role=role,
-            has_voting_rights=membership_service.voting_rights(role, request.POST.get("has_voting_rights") == "on"),
-            substitute_for=substitute_for,
-            start_date=start_date,
-            end_date=end_date,
-            # Wahlperiode aus dem Beginn ableiten (Issue #39) – außerhalb jeder Periode keine
-            legislative_term=membership_service.term_for(self.session_tenant, start_date),
-        )
+        # Drehscheibe (Issue #860): ris.membership.changed (added) mit Person und Gremium
+        with hub_events.track(self.session_tenant) as tracked:
+            membership = SessionOrganizationMembership.objects.create(
+                organization=organization,
+                person=person,
+                role=role,
+                has_voting_rights=membership_service.voting_rights(role, request.POST.get("has_voting_rights") == "on"),
+                substitute_for=substitute_for,
+                start_date=start_date,
+                end_date=end_date,
+                # Wahlperiode aus dem Beginn ableiten (Issue #39) – außerhalb jeder Periode keine
+                legislative_term=membership_service.term_for(self.session_tenant, start_date),
+            )
+            tracked.membership(membership, created=True)
         messages.success(
             request,
             f"{person.display_name} wurde als {membership.get_role_display()} aufgenommen.",
@@ -183,7 +187,10 @@ class MembershipUpdateView(SessionViewMixin, View):
             membership.legislative_term = membership_service.term_for(self.session_tenant, start_date)
         membership.start_date = start_date
         membership.end_date = end_date
-        membership.save()
+        # Drehscheibe (Issue #860): Vertretung, Wahlperiode und Abberufung kennt das kanonische Modell nicht
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.membership(membership)
+            membership.save()
         messages.success(request, f"Besetzung von {membership.person.display_name} wurde aktualisiert.")
         return _org_redirect(self, organization)
 
@@ -210,7 +217,9 @@ class MembershipEndView(SessionViewMixin, View):
         )
         if recalled:
             membership.end_reason = SessionOrganizationMembership.END_RECALLED
-        membership.save()
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.membership(membership)
+            membership.save()
         messages.success(
             request,
             f"Mitgliedschaft von {membership.person.display_name} wurde zum {membership.end_date:%d.%m.%Y} "
@@ -269,7 +278,9 @@ class MembershipSuccessionView(SessionViewMixin, View):
             messages.error(request, error)
             return _org_redirect(self, organization)
 
-        with transaction.atomic():
+        # Drehscheibe (Issue #860): Ende der bisherigen und die neue Mitgliedschaft
+        with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+            tracked.memberships(organization)
             # 1) Ausscheiden dokumentieren: letzter Tag ist der Vortag des Wechsels
             if not already_ended:
                 membership.end_date = last_day

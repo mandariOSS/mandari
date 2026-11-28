@@ -38,6 +38,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import transaction
 from django.utils import timezone
 
+from apps.events import event_context, system_ref
 from apps.session.models import SessionTenant
 from apps.session.services import stammdaten_import
 from insight_core.services import public_members
@@ -97,7 +98,9 @@ class Command(BaseCommand):
                 stammdaten_import.cross_check(plan, public_members.current_members(body, day), day)
             if write and not plan.errors:
                 try:
-                    stammdaten_import.apply_plan(plan)
+                    # Ereignisse an die Drehscheibe (Issue #860): ein Auslöser für den ganzen Lauf
+                    with event_context(actor_ref=system_ref("stammdatenimport")):
+                        stammdaten_import.apply_plan(plan)
                 except Exception:
                     logger.exception("Stammdaten-Import für Mandant %s fehlgeschlagen", tenant.slug)
                     raise CommandError("Import fehlgeschlagen, nichts geschrieben (Einzelheiten im Log).") from None

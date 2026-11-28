@@ -24,11 +24,12 @@ Schnittstelle. Die Drehscheibe importiert Session nicht; Session reicht diese Si
    (``RIS_SESSION_PROJECTOR_TENANTS``, leer = alle); Ereignisse des Ingestors betreffen fremde Quellen. Einen
    Mandanten, den der Spiegel nicht übernimmt (nicht im Bürgerportal veröffentlicht), lässt er wie der Spiegel
    unverändert (``Quelle.uebernommen``).
-2. Kennung des Ereignisses -> Objekt in Session (``Quelle.index``): Sitzung (auch ihr Ort und ihre Niederschrift),
-   Tagesordnungspunkt (auch seine Abstimmung, über ``agenda_item`` der Nutzlast), Vorlage, Beratung, Anlage.
-3. Jedes betroffene Objekt neu abbilden und wie der Spiegel zerlegen (``zerlegen``): Eine Sitzung bringt ihre
-   öffentlichen Tagesordnungspunkte und Anlagen mit, eine Vorlage ihre Anlagen und Beratungen, eine Person ihre
-   Mitgliedschaften. Liefert die Schnittstelle ein Objekt nicht (mehr) aus oder gibt es es nicht mehr, wird seine
+2. Kennung des Ereignisses -> Objekt in Session (``Quelle.index``): Körperschaft, Wahlperiode, Gremium, Person,
+   Mitgliedschaft (Issue #860), Sitzung (auch ihr Ort und ihre Niederschrift), Tagesordnungspunkt (auch seine
+   Abstimmung, über ``agenda_item`` der Nutzlast), Vorlage, Beratung, Anlage.
+3. Jedes betroffene Objekt neu abbilden und wie der Spiegel zerlegen (``zerlegen``): Die Körperschaft bringt ihre
+   Wahlperioden mit, eine Sitzung ihre öffentlichen Tagesordnungspunkte und Anlagen, eine Vorlage ihre Anlagen und
+   Beratungen, eine Person ihre Mitgliedschaften. Liefert die Schnittstelle ein Objekt nicht (mehr) aus oder gibt es es nicht mehr, wird seine
    Zeile als gelöscht markiert – mit dem Grund aus ``ris.object.depublished``, sonst dem der Quelle.
 4. Schreiben in derselben Transaktion wie der Cursor (``transactional=True``): Der Effekt tritt genau einmal ein, und
    eine Wiederholung schreibt denselben Stand noch einmal (Idempotenz).
@@ -42,8 +43,7 @@ Benachrichtigungen. Er zählt nur (``mandari_ris_projector_rows_total``).
 
 **Vollbau.** Ein neues Abonnement beginnt am Ende des Journals. Den Stand davor schreibt ``aufbauen`` einmal aus
 Session (alle Listen der Schnittstelle in der Reihenfolge des Spiegels: Körperschaft mit Wahlperioden, Gremien,
-Personen mit Mitgliedschaften, Sitzungen, Vorlagen). Für Körperschaft, Wahlperioden, Gremien, Personen und
-Mitgliedschaften meldet Session noch keine Ereignisse; ihre Änderungen nach dem Vollbau zeigt der Vergleich.
+Personen mit Mitgliedschaften, Sitzungen, Vorlagen). Danach halten die Ereignisse jeden dieser Typen aktuell.
 """
 
 from __future__ import annotations
@@ -71,6 +71,11 @@ logger = logging.getLogger(__name__)
 NAME: Final = "ris.session_projektor"
 #: Was Session meldet (``hub.ris.session_events``) und den Bestand ändern kann
 TYPES: Final = (
+    "ris.body.*",
+    "ris.legislativeterm.*",
+    "ris.organization.*",
+    "ris.person.changed",
+    "ris.membership.*",
     "ris.meeting.*",
     "ris.agendaitem.*",
     "ris.voting.*",
@@ -90,6 +95,11 @@ MODES: Final = (AUS, SCHATTEN)
 
 #: Objekttyp des Journals -> Art der Session-Objekte, über deren Kennungen es aufgelöst wird
 _ARTEN: Final[Mapping[str, str]] = {
+    "Body": "body",
+    "LegislativeTerm": "legislativeterm",
+    "Organization": "organization",
+    "Person": "person",
+    "Membership": "membership",
     "Meeting": "meeting",
     "Location": "location",
     "AgendaItem": "agendaitem",
@@ -98,9 +108,21 @@ _ARTEN: Final[Mapping[str, str]] = {
     "Consultation": "consultation",
     "File": "file",
 }
-#: Reihenfolge der Abbildung in einem Batch – wie der inkrementelle Spiegel: erst Sitzungen und Vorlagen mit ihren
-#: Einbettungen, dann die eigenen Listen der Tagesordnungspunkte, Beratungen und Anlagen
-REIHENFOLGE: Final = ("meeting", "paper", "agendaitem", "consultation", "file")
+#: Reihenfolge der Abbildung in einem Batch – wie der inkrementelle Spiegel: erst die Körperschaft mit ihren
+#: Wahlperioden, Gremien und Personen, dann Sitzungen und Vorlagen mit ihren Einbettungen, zuletzt die eigenen Listen
+#: der Wahlperioden, Mitgliedschaften, Tagesordnungspunkte, Beratungen und Anlagen
+REIHENFOLGE: Final = (
+    "body",
+    "organization",
+    "person",
+    "meeting",
+    "paper",
+    "legislativeterm",
+    "membership",
+    "agendaitem",
+    "consultation",
+    "file",
+)
 #: Dateien, die eine Sitzung außer ihren Anlagen einbettet (Einladung, Niederschrift)
 _SITZUNGSDATEIEN: Final = ("invitation", "resultsProtocol", "verbatimProtocol")
 

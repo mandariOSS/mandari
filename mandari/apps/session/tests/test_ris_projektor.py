@@ -369,6 +369,120 @@ def test_aenderungen_aus_session_halten_schatten_und_spiegel_gleich(
     assert vergleich.typen["meeting"].gleich == 2 and vergleich.typen["agendaitem"].gleich == 1
 
 
+#: Stammdaten (Issue #860): Session meldet sie, der Projektor hält sie wie der Vollbau
+STAMMDATEN = ("body", "legislativeterm", "organization", "person", "membership")
+
+
+def _sichtbar(typen: tuple[str, ...]) -> list[Any]:
+    """Sichtbare Zeilen der Schatten-Quelle (der Vollbau schreibt keine gelöschten)."""
+    zeilen = RisSchatten.objects.filter(typ__in=typen, deleted=False).order_by("bestand_id")
+    return list(zeilen.values("typ", "bestand_id", "external_id", "spalten", "verweise"))
+
+
+def test_stammdaten_ereignisweg_gleicht_vollbau_und_spiegel(
+    welt: Welt, django_capture_on_commit_callbacks: Any
+) -> None:
+    """
+    Körperschaft, Wahlperioden, Gremien, Personen und Mitgliedschaften (Issue #860): Nach Änderungen über die
+    Fachfunktionen schreibt der Ereignisweg dieselben Zeilen wie ein neuer Vollbau, und der Vergleich mit dem Spiegel
+    bleibt ohne Abweichung.
+    """
+    from apps.session.services import membership_service, oparl_access
+
+    spec = _start(welt)
+    tenant = welt.tenant
+    petra = SessionPerson.objects.get(tenant=tenant, family_name="Muster")
+    periode = SessionLegislativeTerm.objects.get(tenant=tenant)
+
+    def schritt(aenderung: Callable[[Any], None]) -> None:
+        with django_capture_on_commit_callbacks(execute=True), hub_events.track(tenant) as tracked:
+            aenderung(tracked)
+
+    def koerperschaft(tracked: Any) -> None:
+        tracked.body()
+        tenant.short_name = "Nord"
+        tenant.website = "https://nord.example"
+        tenant.save()
+
+    def gremien(tracked: Any) -> None:
+        tracked.organization(welt.rat)
+        welt.rat.name = "Bezirksvertretung"
+        welt.rat.save()
+        jugend = SessionOrganization.objects.create(
+            tenant=tenant, name="Jugendbeirat", organization_type="advisory", parent=welt.rat
+        )
+        tracked.organization(jugend, created=True)
+
+    def personen(tracked: Any) -> None:
+        tracked.person(petra)
+        petra.title = "Dr."
+        petra.family_name = "Beispiel"
+        petra.save()
+        karl = SessionPerson.objects.create(tenant=tenant, given_name="Karl", family_name="Neu")
+        tracked.person(karl, created=True)
+        jugend = SessionOrganization.objects.get(tenant=tenant, name="Jugendbeirat")
+        sitz = SessionOrganizationMembership.objects.create(
+            organization=jugend, person=karl, role="chair", start_date=date(2026, 1, 1)
+        )
+        tracked.membership(sitz, created=True)
+
+    def perioden(tracked: Any) -> None:
+        tracked.legislative_term(periode)
+        periode.name = "WP 2025–2030"
+        periode.save()
+
+    def periode_loeschen(tracked: Any) -> None:
+        leer = SessionLegislativeTerm.objects.get(tenant=tenant, name="Probe")
+        tracked.legislative_term(leer)
+        leer.delete()
+
+    seit = Event.objects.count()
+    with django_capture_on_commit_callbacks(execute=True):
+        oparl_access.set_license(tenant, oparl_access.LICENSES[0][0])
+    for aenderung in (koerperschaft, gremien, personen, perioden):
+        schritt(aenderung)
+    with django_capture_on_commit_callbacks(execute=True), hub_events.track(tenant) as tracked:
+        probe = SessionLegislativeTerm.objects.create(tenant=tenant, name="Probe", start_date=date(2040, 1, 1))
+        tracked.legislative_term(probe, created=True)
+    # Erst zustellen, dann löschen: Die Schatten-Quelle kennt die Wahlperiode, bevor sie zurückgenommen wird
+    _spiegeln(welt)
+    zugestellt = _zustellen(spec)
+    schritt(periode_loeschen)
+    # Periodenwechsel: beendet die laufenden Besetzungen und übernimmt sie in die neue Periode
+    with django_capture_on_commit_callbacks(execute=True):
+        membership_service.change_term(
+            tenant, name="2030–2035", number=None, start_date=date(2030, 11, 1), end_date=None, mode="carry"
+        )
+    gemeldet = set(Event.objects.order_by("id").values_list("type", flat=True)[seit:])
+    assert {
+        "ris.body.changed",
+        "ris.legislativeterm.changed",
+        "ris.organization.changed",
+        "ris.person.changed",
+        "ris.membership.changed",
+        "ris.object.depublished",
+    } <= gemeldet
+
+    _spiegeln(welt)
+    vorher = Event.objects.count()
+    assert zugestellt + _zustellen(spec) == vorher - seit
+    assert Event.objects.count() == vorher, "Der Projektor meldet im Schatten nichts"
+    assert not ParkedEvent.objects.exists()
+
+    vergleich = _vergleich(welt)
+    assert vergleich.abweichungen == 0, _befund(vergleich)
+    quelle = _quelle(welt)
+    weg = RisSchatten.objects.get(external_id=quelle.adresse("legislativeterm", probe.pk))
+    assert (weg.deleted, weg.deletion_reason, weg.spalten) == (True, "quelle_geloescht", {})
+    assert vergleich.typen["membership"].schatten == 4
+    assert vergleich.typen["legislativeterm"].schatten == 2
+
+    # Ein neuer Vollbau schreibt genau, was die Ereignisse geschrieben haben
+    ereignisweg = _sichtbar(STAMMDATEN)
+    ris_session.aufbauen(_quelle(welt))
+    assert _sichtbar(STAMMDATEN) == ereignisweg
+
+
 def test_vergleich_zeigt_eine_aenderung_ohne_ereignis(welt: Welt) -> None:
     """Der Vergleich ist nicht blind: Ändert sich der Bestand ohne Ereignis, weicht der Schatten ab."""
     _start(welt)
