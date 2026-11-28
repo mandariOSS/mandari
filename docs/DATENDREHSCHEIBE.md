@@ -14,7 +14,8 @@ PostgreSQL (`apps/events`, `hub`). Die Entscheidungen stehen in den ADRs:
 [Adapter-Rahmen](adr/20260929-adapter-rahmen.md),
 [Änderungsfeed](adr/20260929-aenderungsfeed-format.md),
 [Fremdschlüssel auf den RIS-Bestand](adr/20260929-fremdschluessel-ris-bestand.md),
-[Körperschaften im Mandanten](adr/20261002-koerperschaften-im-mandanten.md).
+[Körperschaften im Mandanten](adr/20261002-koerperschaften-im-mandanten.md),
+[API-first ohne Ausnahme](adr/20261128-api-first-ohne-ausnahme.md).
 Welche Ereignisse und Befehle es gibt, steht im erzeugten [Ereigniskatalog](EREIGNISKATALOG.md), die Regeln für
 Schemas in `mandari/hub/contracts/schemas/README.md`.
 
@@ -25,6 +26,7 @@ Schemas in `mandari/hub/contracts/schemas/README.md`.
 | 3 | Session als Erzeuger von Ereignissen |
 | 4 | Umstellung eines bestehenden Weges auf ein Abonnement |
 | 5 | Architektur-Kennzahlen |
+| 6 | Einen Befehl anlegen (Befehlsschicht, eine View umstellen) |
 
 ## 2. Zusagen der Ereignistechnik und Nachweise
 
@@ -506,7 +508,7 @@ Die Etappe 3 der Dokumentkette (Abonnement für den Abruf über Ereignisse) ist 
 
 ## 5. Architektur-Kennzahlen
 
-Stand: 10. November 2026 · Issue #569 · Entscheidung:
+Stand: 28. November 2026 · Issues #569, #1588 · Entscheidung:
 [Vier Schichten mit durchgesetzten Abhängigkeitsregeln](adr/20260929-schichtenmodell.md), Abschnitt „Prüfung“
 
 Ob die Entkopplung der Module vorankommt, soll messbar sein. Nach jeder Etappe der Datendrehscheibe
@@ -522,23 +524,24 @@ Fitnessfunktionen, aus denen ein Teil der Zahlen stammt (Spalte „Quelle“).
 
 ### 5.1 Letzte Erhebung
 
-Erhoben am 10. November 2026 am Stand `3a63808d` (`dev`) mit #1304, Anlass: erste Erhebung.
+Erhoben am 28. November 2026 am Stand `91a6d14a` (`dev`) mit #PRNUMMER, Anlass: Befehlsschicht, Kennzahl K9 neu.
 
 | Nr. | Kennzahl | Wert | Ziel | Quelle |
 |---|---|---:|---:|---|
-| K1 | Funktionen, die Daten eines fremden Moduls schreiben | 55 | 0 | `scripts/architektur_kennzahlen.py` |
+| K1 | Funktionen, die Daten eines fremden Moduls schreiben | 56 | 0 | `scripts/architektur_kennzahlen.py` |
 | K2a | Schreibwege des Suchindex (Dateien mit Schreibzugriff) | 4 | 1 | `scripts/architektur_kennzahlen.py` |
 | K2b | Schreibstellen des Suchindex (Aufrufe in diesen Dateien) | 7 | – | `scripts/architektur_kennzahlen.py` |
-| K3a | Funktionen, die Mails über den Mail-Dienst senden | 32 | – | `scripts/architektur_kennzahlen.py` |
+| K3a | Funktionen, die Mails über den Mail-Dienst senden | 34 | – | `scripts/architektur_kennzahlen.py` |
 | K3b | Mails, die immer im Aufruf rausgehen (Stellen mit `sofort=True`) | 6 | – | `SOFORT` in `mandari/apps/common/tests/test_mail_dienst.py` |
 | K4 | Hintergrund-Threads im Webprozess (Thread-Starts außerhalb des Workers) | 0 | 0 | `scripts/architektur_kennzahlen.py` mit `ERLAUBT` aus `mandari/apps/events/tests/test_zeitplaene_statt_faden.py` |
-| K5 | `OParl*.objects` außerhalb von `hub` und `insight_core` | 126 | 0 | `scripts/check_ris_access_ratchet.py` |
+| K5 | `OParl*.objects` außerhalb von `hub` und `insight_core` | 125 | 0 | `scripts/check_ris_access_ratchet.py` |
 | K6a | `CASCADE` von Fachmodulen auf den RIS-Bestand (alle Apps außer `insight_core`) | 0 | 0 | `AUSNAHMEN_CASCADE` in `mandari/hub/ris/tests/test_loeschsemantik.py` |
 | K6b | `CASCADE` auf den RIS-Bestand aus `insight_core` selbst (Bürgerportal, Geodaten) | 13 | 0 | `AUSNAHMEN_CASCADE` in `mandari/hub/ris/tests/test_loeschsemantik.py` |
 | K7 | import-linter-Ausnahmen (verschiedene Importe über alle Verträge) | 54 | 0 | `scripts/check_import_linter_ratchet.py` |
 | K8 | Ereignis-Rückstand p95 | – | ≤ 5 s | Produktionsmetrik `mandari_events_lag_seconds` (`docs/MONITORING.md`), nicht aus dem Quellstand |
+| K9 | ORM-Schreibzugriffe in Views (Aufrufe in View-Modulen) | 204 | 0 | `scripts/check_view_writes_ratchet.py` |
 
-Zur Einordnung der ersten Erhebung:
+Zur Einordnung (die ersten drei Punkte beschreiben die erste Erhebung am 10. November 2026, Stand `3a63808d`):
 
 - **K1:** 32 der 55 Funktionen stehen in den drei Befehlen, die Demo- und Lastdaten anlegen
   (`setup_demo_environment`, `setup_demo_praesentation`, `generate_load_data`). Die übrigen 23 verteilen
@@ -553,6 +556,12 @@ Zur Einordnung der ersten Erhebung:
   wenn die alten Wege im Folge-Release entfallen.
 - **K7:** je Vertrag 34 (`schichten`), 31 (`module-unabhaengig`) und 29 (`plattform-fachfrei`) Einträge;
   derselbe Import steht oft in mehreren Verträgen.
+- **Gestiegen bis 28. November:** K1 um eine Funktion, die Demodaten von Work anlegt
+  (`setup_demo_work_bestand`, `Command._mitglieder`); zwei weitere sind nur umbenannt. K3a um zwei Mails: der Hinweis
+  an ein schon bestehendes Konto bei der Registrierung und die Erinnerung der Demo-Organisationen.
+- **K9 (neu):** 204 Schreibzugriffe in 45 View-Modulen: 88 in Session, 89 in Work, 17 im Bürgerportal, der Rest in
+  Konten, Bereitstellung und Plattform. Am Stand der ersten Erhebung wären es 216 gewesen; 3 davon baut das Beispiel
+  der Befehlsschicht ab (Textbausteine). Ziel ist null: Jede Änderung ist ein Befehl beim Eigentümer (Abschnitt 6).
 
 ### 5.2 Verlauf
 
@@ -560,9 +569,10 @@ Eine Zeile je Erhebung, die neueste unten. „Stand“ nennt den Commit auf `dev
 aufsetzt, und den Pull Request, dessen Änderungen mitgezählt sind. K8 trägt ein, wer die Zeile schreibt
 (Abschnitt 5.4).
 
-| Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 |
-|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2026-11-10 | `3a63808d` + #1304 | erste Erhebung | 55 | 4 | 7 | 32 | 6 | 0 | 126 | 0 | 13 | 54 | – |
+| Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 | K9 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-10 | `3a63808d` + #1304 | erste Erhebung | 55 | 4 | 7 | 32 | 6 | 0 | 126 | 0 | 13 | 54 | – | – |
+| 2026-11-28 | `91a6d14a` + #PRNUMMER | Befehlsschicht, K9 neu | 56 | 4 | 7 | 34 | 6 | 0 | 125 | 0 | 13 | 54 | – | 204 |
 
 ### 5.3 Zählregeln
 
@@ -644,6 +654,21 @@ abgeleitete Geodaten in `insight_core`, über die eine Entscheidung aussteht.
 (`schichten`, `module-unabhaengig`, `plattform-fachfrei`, `abruf-ein-weg`) ohne die Freistellung der Tests, gelesen vom
 Ratchet der Schichtregeln (#567). `--json` nennt die Zahl je Vertrag.
 
+**K9: ORM-Schreibzugriffe in Views** (seit 28. November 2026, Issue #1588). Ziel null: Views lesen nur ihr Formular
+und rufen Befehle auf, geschrieben wird beim Eigentümer ([API-first ohne Ausnahme](adr/20261128-api-first-ohne-ausnahme.md),
+Abschnitt 6). Summe des Ratchets `scripts/check_view_writes_ratchet.py`; je Datei steht der Stand in
+`scripts/view_writes_baseline.json` und darf nur sinken.
+
+- View-Module sind `apps/<app>/views*.py`, `apps/<app>/<paket>/views*.py`, `insight_core/views*.py` und alles in Paketen
+  `views/` an diesen Stellen.
+- Gezählt wird jeder Aufruf von `create`, `get_or_create`, `update_or_create`, `save` und `delete` (auch asynchron)
+  ohne Positionsargumente, von `bulk_create` und `bulk_update` und von `update` an einer Kette mit Manager oder Queryset
+  (bzw. einer Variable daraus). Anders als bei K1 zählt jeder Schreibzugriff, gleich wessen Modell, auch `form.save()`
+  eines Model-Formulars.
+- Nicht erfasst: `form.save(commit=False)`, `request.session.save()`, Aufrufe an importierten Modulen (Dienste),
+  Mehrfachbeziehungen, rohes SQL und Schreibzugriffe in den Diensten, die eine View aufruft. Die verschwinden mit der
+  Umstellung der View auf einen Befehl, dessen Handler den Dienst nutzt.
+
 **K8: Ereignis-Rückstand p95.** Nicht aus dem Quellstand erhebbar. Der Wert kommt aus dem Monitoring der
 Produktion: `mandari_events_lag_seconds` je Abonnement ([MONITORING.md](MONITORING.md), Abschnitt
 „Metriken“), als 95. Perzentil über die sieben Tage vor der Erhebung, davon der höchste Wert über alle
@@ -691,3 +716,177 @@ Zeile ohne Nacharbeit nach dem Merge.
 Kommt eine Kennzahl hinzu oder ändert sich eine Zählregel, bekommt die Verlaufstabelle eine neue Spalte
 bzw. die Regel einen Vermerk mit Datum in Abschnitt 5.3; ältere Zeilen bleiben, wie sie erhoben wurden.
 `mandari/apps/common/tests/test_architektur_kennzahlen.py` hält Tabellen und Skript beieinander.
+
+## 6. Einen Befehl anlegen
+
+Stand: 28. November 2026 · Issue #1588 · Entscheidung:
+[API-first ohne Ausnahme](adr/20261128-api-first-ohne-ausnahme.md)
+
+Jede Datenänderung ist ein Befehl beim Eigentümer. Eine View liest nur ihr Formular und ruft den Befehl auf; prüfen,
+schreiben und protokollieren tut die Fachfunktion. Derselbe Befehl ist ohne weiteren Code eine Operation der
+Schnittstelle. Das Beispiel sind die Textbausteine von Session (anlegen, ändern, löschen). Diese Anleitung reicht, um
+eine Session-View in einer halben Stunde umzustellen.
+
+### 6.1 Was man schreibt, was man bekommt
+
+| Teil | Datei | Beispiel |
+|---|---|---|
+| Vertrag | `mandari/hub/contracts/schemas/session.<objekt>.<befehl>/v1.json` | `session.textblock.create/v1.json` |
+| Fachfunktion | `mandari/apps/session/befehle/<bereich>.py` | `apps/session/befehle/textbausteine.py` |
+| Registrierung | Import in `register()` von `mandari/apps/session/befehle/__init__.py` | `from . import textbausteine` |
+| View | die bisherige View, nur noch Formular lesen und `ausfuehren(…)` | `apps/session/views/textblocks.py` |
+| Formular | `{% load befehle %}` und `{% idempotenzschluessel %}` | `templates/session/settings/textblocks.html` |
+| Tests | `mandari/apps/session/tests/test_befehle_<bereich>.py` | `test_befehle_textbausteine.py` |
+
+Ohne weiteren Code kommen dazu: Prüfung von Idempotenzschlüssel und Vertrag (422 mit `errors` als JSON-Pointer),
+Mandant (404), Person und Recht im Mandanten (403), „API-Zugang“ für Anwendungen, eine Transaktion je Befehl, die
+Quittung, die Operation `POST /api/mandari/v1/session/<mandant>/befehle/<befehl>/v1` samt OpenAPI, Ratenbegrenzung,
+die Befehlsparität im Job „Schnittstelle“ und der Weg (Oberfläche oder Schnittstelle mit Anwendung) im Prüfprotokoll.
+
+Die Bausteine:
+
+| Baustein | Ort | Wofür |
+|---|---|---|
+| `@befehl(name, recht=…)` | `apps.session.befehle` | registriert die Fachfunktion, prüft Mandant, Person und Rechte, gibt sie frei |
+| `Kontext` | `apps.session.befehle` | `tenant`, `session_user`, `rechte`, `inhalt`, `hole()`, `texte()`, `protokoll()`, `quittung()` |
+| `ausfuehren(request, name, inhalt)` | `apps.session.befehle` | Aufruf aus einer Session-View, Mandant aus `request.session_tenant` |
+| `Ergebnis` | `hub.commands` | `ok`, `quittung`, `problem`, `meldung`, `feldfehler`, `in_formular(form)` |
+| `CommandError.of(…)`, `CommandError.invalid(…)` | `hub.commands` | fachliche Ablehnung (409, 404 …) bzw. Fehler an Feldern (422) |
+| `Exposure`, `TenantArea` | `hub.commands` | Freigabe und Mandantenbereich; der Helfer von Session setzt beide |
+
+### 6.2 Schritt für Schritt
+
+1. **Schreibstellen finden.** `python scripts/check_view_writes_ratchet.py --json` nennt die Zahl je View-Modul. In der
+   View jede Handlung suchen, die schreibt (`create`, `save`, `delete`, `update`, `form.save()`). Ein Befehl je
+   fachlicher Handlung (anlegen, ändern, löschen, freigeben, absagen …), nicht je Formular. Was gemeinsam gelingen
+   muss, ist ein Befehl: Jeder Befehl hat seine eigene Transaktion.
+2. **Namen wählen.** `session.<objekt>.<verb>`: Objekt einzahlig und englisch wie das Modell (`textblock`, `meeting`,
+   `agendaitem`, `paper`), Verb im Imperativ (`create`, `update`, `delete`, `approve`, `publish`, `cancel`,
+   `reorder`). Die Regeln prüft `hub/contracts/naming.py`.
+3. **Vertrag schreiben.** `session.textblock.create/v1.json` kopieren und anpassen:
+   - `$id` `urn:mandari:command:<name>:v1`, `title` (Handlung), `description` mit dem Recht im Mandanten,
+     `x-kind: command`, `x-owner: apps.session`.
+   - `x-visibility`: `intern` für Verwaltungsdaten; `nichtoeffentlich`, wenn das Objekt nichtöffentlich sein kann. Dann
+     sind freie Texte nur als Inhaltsfeld erlaubt (`"x-content": true` mit `maxLength`).
+   - `additionalProperties: false`; je Feld `title` (Name im Formular, erscheint in Meldungen) und `description`.
+     Kennungen als `"format": "uuid"`, Codes als `enum`, Zahlen mit `minimum` und `maximum`, Texte mit `maxLength`
+     wie im Modell und `"x-content": true`.
+   - Ändern: die Kennung ist Pflicht, alle übrigen Felder sind optional; es ändern sich nur die genannten.
+   - Mindestens ein gültiges Beispiel in `examples`.
+   - In `mandari/hub/contracts/tests/test_schemas.py` den Befehl in `STARTUMFANG` eintragen, seine Inhaltsfelder in
+     `INHALTSFELDER` und `INHALTSBLAETTER`, die Zahl der Befehle anpassen; in `test_naming.py` die Liste `BEFEHLE`.
+4. **Fachfunktion schreiben** in `apps/session/befehle/<bereich>.py`. Skizze einer Absage (Dienst und Felder sind
+   Beispiele; das echte Muster steht in `apps/session/befehle/textbausteine.py`):
+
+   ```python
+   from hub.commands import CommandError, HandlerResult
+
+   from ..models import SessionMeeting
+   from . import Kontext, befehl
+
+   ABSAGEN = "session.meeting.cancel"
+   UNBEKANNT = "Die Sitzung ist nicht bekannt."
+
+
+   @befehl(ABSAGEN, recht="edit_meetings")
+   def absagen(kontext: Kontext) -> HandlerResult:
+       sitzung = kontext.hole(SessionMeeting, kontext.inhalt["meeting"], meldung=UNBEKANNT, sperren=True)
+       if sitzung.meeting_state == "cancelled":
+           raise CommandError.of(409, "schon-abgesagt", "Die Sitzung ist schon abgesagt.")
+       dienst.absagen(sitzung, **kontext.texte("reason"))  # den bestehenden Dienst aufrufen
+       return kontext.quittung(sitzung, status="cancelled")
+   ```
+
+   - `kontext.hole(Modell, kennung, meldung=…)` holt nur Objekte des Mandanten, sonst 404. Modelle ohne Feld `tenant`
+     nennen den Weg zum Mandanten (`meeting__tenant=kontext.tenant`). Bei Änderungen `sperren=True`.
+   - `recht` ist Pflicht (Rechte aus `apps/session/permissions.py`, mehrere als Tupel, alle nötig). Objektbezogenes
+     prüft die Fachfunktion: Nichtöffentliches nur über die Sichtregeln mit `kontext.rechte`
+     (`apps/session/visibility.py`); was die Person nicht sehen darf, ist 404, nicht 403.
+   - `kontext.texte("title", …)` liefert Texte ohne Leerraum am Rand; nur Leerraum ergibt 422 am Feld.
+   - Fachliche Ablehnungen mit `CommandError.of(409, "<art>", "<Satz>")`, Fehler an Feldern mit
+     `CommandError.invalid("<Satz>", {"feld": "<Regel>"})`. Meldungen sind feste Sätze ohne Werte aus dem Inhalt.
+   - Bestehende Dienste (`apps/session/services/…`) aufrufen statt Logik zu kopieren. Was bisher die View um den Dienst
+     herum tat (Rechte, Mandant, Meldung), entfällt dort.
+   - **Prüfprotokoll:** `kontext.protokoll(aktion, objekt, **angaben)` für Modelle ohne Protokoll über Signale. Modelle
+     in `AUDITED_MODELS` (`apps/session/signals.py`, etwa Sitzung, Vorlage, Tagesordnungspunkt) protokollieren beim
+     `save()` selbst; `@befehl` sorgt dafür, dass auch diese Einträge die Person des Befehls nennen
+     (`audit.im_befehl`). Angaben ohne Inhalte von Vorlagen, Niederschriften und Anträgen.
+   - **Ereignisse:** Für Objekte des RIS-Bestands (Sitzung, Tagesordnungspunkt, Vorlage, Datei …) nutzen die Dienste
+     `hub_events.track(tenant)` (Abschnitt 3); im Handler aufgerufen landen die Ereignisse im selben Commit wie die
+     Änderung. Ein eigenes Ereignis eines Moduls mit `publish()` im Handler, mit Vertrag in `hub/contracts`. Nie aus der
+     View.
+   - **Quittung:** `kontext.quittung(objekt, **daten)` mit der Kennung des Objekts; `daten` nur Kennungen und Codes.
+5. **Registrieren.** In `register()` von `apps/session/befehle/__init__.py` das Modul importieren
+   (`from . import <bereich>  # noqa: F401`). Fehlt der Vertrag, passt der Eigentümer nicht oder ist ein Recht unbekannt,
+   bricht der Start ab (`ImproperlyConfigured`).
+6. **View umstellen.**
+
+   ```python
+   from ..befehle import ausfuehren
+   from ..befehle.textbausteine import ANLEGEN
+
+
+   class TextblockManageView(SessionViewMixin, View):
+       permission_required = "manage_settings"   # Zugang zur Seite; der Befehl prüft selbst noch einmal
+
+       def post(self, request, tenant_slug):
+           inhalt = {"title": request.POST.get("title", "").strip(), "content": request.POST.get("content", "").strip()}
+           ergebnis = ausfuehren(request, ANLEGEN, inhalt)
+           if ergebnis.ok:
+               messages.success(request, "Textbaustein angelegt.")
+           else:
+               messages.error(request, ergebnis.meldung)   # oder ergebnis.in_formular(form)
+           return redirect(...)
+   ```
+
+   - Die View liest nur das Formular in die Form des Vertrags (Leerraum am Rand weg, Zahlen als `int`, Haken als
+     `bool`). Prüfen tut der Vertrag bzw. die Fachfunktion; die View prüft nichts doppelt.
+   - Kein `transaction.atomic()` um `ausfuehren` (sonst `NestedTransactionError`).
+   - Nach dem Anlegen führt `ergebnis.quittung.aggregate_id` zum neuen Objekt.
+   - Mit einem Django-Formular: `ergebnis.in_formular(form)` setzt die Fehler an die Felder gleichen Namens.
+   - Lesen (Kontext der Seite, Listen) bleibt in der View bzw. in den Selektoren.
+7. **Formular schützen.** In das Template `{% load befehle %}` und im Formular nach `{% csrf_token %}`
+   `{% idempotenzschluessel %}`. Ein doppelt abgeschicktes Formular wirkt dann nur einmal. Nur für Formulare, nach denen
+   die Seite neu lädt; Formulare, die ohne Neuladen mehrfach senden (HTMX), lassen das Feld weg.
+8. **Erzeugte Dateien und Ratchet.**
+
+   ```bash
+   cd mandari && python manage.py schnittstelle_beschreibung && cd ..   # docs/schnittstelle/openapi.json
+   python scripts/check_event_contracts.py --write-catalog              # docs/EREIGNISKATALOG.md
+   python scripts/check_view_writes_ratchet.py --update                 # Baseline sinkt
+   python scripts/check_schnittstelle.py                                # Befehlsparität
+   ```
+
+9. **Tests** nach dem Muster von `apps/session/tests/test_befehle_textbausteine.py`: Oberfläche (Meldung, Objekt,
+   Prüfprotokoll), Schnittstelle mit Browser-Sitzung und mit Access-Token samt „API-Zugang“, fehlendes Recht (403),
+   Objekt eines anderen Mandanten (404), Fehler am Feld (422). Dass jeder freigegebene Befehl eine Operation hat und ohne
+   Anmeldung 401 antwortet, prüft `hub/api/tests/test_befehle.py` von selbst.
+10. **CHANGELOG** unter `[Unreleased]` ergänzen.
+
+### 6.3 Regeln
+
+- Views schreiben nicht über das ORM (Ratchet K9). Neue Funktionen entstehen nur als Befehl.
+- Ein Weg: Oberfläche und Schnittstelle rufen denselben Befehl, keine zweite Prüfung in der View.
+- Jede Fachfunktion hat ein Recht; Objekte nur über `kontext.hole` bzw. Abfragen mit dem Mandanten.
+- Quittung, Meldungen und Protokoll ohne Inhalte.
+- Befehle sind synchron; Folgen in anderen Modulen laufen über Ereignisse.
+- Ein Befehl gehört dem Modul, dessen Daten er ändert. Braucht Work etwas in Session, sendet es einen Befehl an Session.
+
+### 6.4 Häufige Fehler
+
+| Meldung | Ursache |
+|---|---|
+| `ImproperlyConfigured: Handler für … kein Vertrag im Register` | Vertrag fehlt oder Name bzw. Version weichen ab |
+| `ImproperlyConfigured: … liegt in …, Eigentümer ist …` | Fachfunktion nicht unter dem Paket aus `x-owner` |
+| `ImproperlyConfigured: Befehl …: Recht fehlt oder ist unbekannt` | `recht` nicht in `apps/session/permissions.py` |
+| `ImproperlyConfigured: … hat kein Feld tenant` | `kontext.hole` ohne Bezug zum Mandanten |
+| `NestedTransactionError` | `ausfuehren` in `transaction.atomic()` (View oder Test) |
+| Meldung nennt `title` statt „Titel“ | Feld im Vertrag ohne `title` |
+| 422 `idempotenzschluessel-wiederverwendet` | `{% idempotenzschluessel %}` in einem Formular, das ohne Neuladen mehrfach sendet |
+| `docs/schnittstelle/openapi.json ist veraltet` | Schritt 8 vergessen |
+
+### 6.5 Work
+
+Work bekommt denselben Helfer unter `apps/work/befehle` (Mandantenbereich `work` mit dem Kurznamen der Organisation,
+Mandant `org:<uuid>`, Rechte über die Mitgliedschaft mit `Membership.has_permission`, Prüfprotokoll mit der handelnden
+Mitgliedschaft, eigener Scope). Er entsteht als erster Schritt der Umstellung von Work, bevor dessen Views umziehen.

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:command:session.textblock.create:v1",
+  "title": "Textbaustein anlegen",
+  "description": "Die Verwaltung legt einen Textbaustein für Beschlussvorschläge und Niederschriften an. Recht im Mandanten: Einstellungen verwalten. Die Quittung nennt die Kennung des Bausteins. Handler: apps.session.",
+  "x-kind": "command",
+  "x-owner": "apps.session",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "content"
+  ],
+  "properties": {
+    "title": {
+      "title": "Titel",
+      "description": "Titel, unter dem der Baustein in der Auswahl erscheint.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "x-content": true
+    },
+    "content": {
+      "title": "Text",
+      "description": "Text des Bausteins. Platzhalter wie {gremium}, {datum}, {sitzung} und {vorlage} ersetzt der Editor beim Einfügen.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000,
+      "x-content": true
+    },
+    "category": {
+      "title": "Kategorie",
+      "description": "Beschlusstext, Protokolltext oder allgemein; ohne Angabe allgemein.",
+      "type": "string",
+      "enum": [
+        "resolution",
+        "protocol",
+        "general"
+      ]
+    },
+    "order": {
+      "title": "Reihenfolge",
+      "description": "Position in der Auswahl, aufsteigend; ohne Angabe 0.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9999
+    },
+    "is_active": {
+      "title": "Aktiv",
+      "description": "Nur aktive Bausteine erscheinen in der Auswahl; ohne Angabe aktiv.",
+      "type": "boolean"
+    }
+  },
+  "examples": [
+    {
+      "title": "Einstimmig beschlossen",
+      "content": "Der {gremium} beschließt einstimmig:",
+      "category": "resolution",
+      "order": 10,
+      "is_active": true
+    },
+    {
+      "title": "Hinweis Datenschutz",
+      "content": "Die Niederschrift wird ohne personenbezogene Angaben veröffentlicht."
+    }
+  ]
+}

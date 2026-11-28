@@ -425,6 +425,8 @@ BAUM = {
     "mandari/insight_core/signals.py": (
         "def indexieren(client):\n    client.index(index='papers', id='1', document={})\n"
     ),
+    # Eine View, die selbst schreibt (K9)
+    "mandari/apps/work/views.py": "def speichern(notiz):\n    notiz.save()\n",
     # Listen der Fitnessfunktionen
     MAIL_TEST: 'SOFORT = {\n    Path("apps/work/dienst.py"): 1,\n    Path("apps/common/admin.py"): 2,\n}\n',
     THREAD_TEST: 'ERLAUBT = ("apps/events/", "apps/common/metrics_server.py")\n',
@@ -461,6 +463,7 @@ ERWARTET = {
     "K6b": 2,
     "K7": 2,
     "K8": None,
+    "K9": 1,
 }
 
 
@@ -511,19 +514,23 @@ def test_tabelle_json_und_verlaufszeile(kennzahlen: ModuleType, tmp_path: Path) 
     )
     assert len(tabelle) == 2 + len(ERWARTET)
     # Aus Produktionsmetriken, nicht aus dem Quellstand: genannt mit Herkunft, ohne Wert
-    assert tabelle[-1].startswith("| K8 | Ereignis-Rückstand p95 | – | ≤ 5 s | Produktionsmetrik ")
-    assert "mandari_events_lag_seconds" in tabelle[-1]
+    assert tabelle[-2].startswith("| K8 | Ereignis-Rückstand p95 | – | ≤ 5 s | Produktionsmetrik ")
+    assert "mandari_events_lag_seconds" in tabelle[-2]
+    assert tabelle[-1] == (
+        "| K9 | ORM-Schreibzugriffe in Views (Aufrufe in View-Modulen) | 1 | 0 | "
+        "`scripts/check_view_writes_ratchet.py` |"
+    )
 
     daten = json.loads(kennzahlen.als_json(ergebnis))["kennzahlen"]
     assert {eintrag["nr"]: eintrag["wert"] for eintrag in daten} == ERWARTET
     assert set(daten[0]) == {"nr", "kennzahl", "wert", "ziel", "quelle", "einzelheiten"}
 
     assert kennzahlen.verlauf_kopf(ergebnis).splitlines() == [
-        "| Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 | K9 |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     assert kennzahlen.verlauf_zeile(ergebnis, "2026-11-10", "`0123abcd` + #1234", "Etappe 2") == (
-        "| 2026-11-10 | `0123abcd` + #1234 | Etappe 2 | 2 | 2 | 3 | 1 | 3 | 1 | 2 | 1 | 2 | 2 | – |\n"
+        "| 2026-11-10 | `0123abcd` + #1234 | Etappe 2 | 2 | 2 | 3 | 1 | 3 | 1 | 2 | 1 | 2 | 2 | – | 1 |\n"
     )
 
 
@@ -579,6 +586,8 @@ def test_vorhandene_zaehlungen_werden_uebernommen(kennzahlen: ModuleType, stand:
     ausnahmen, _ = schichten.exceptions(schichten.load_config(WURZEL / "mandari" / "pyproject.toml"))
 
     assert stand["K5"].wert == sum(ris.measure(WURZEL / "mandari").values())
+    views = sys.modules["check_view_writes_ratchet"]
+    assert stand["K9"].wert == sum(views.measure(WURZEL / "mandari").values())
     assert stand["K7"].einzelheiten["je_vertrag"] == {vertrag: len(liste) for vertrag, liste in ausnahmen.items()}
     assert stand["K7"].wert == len({eintrag for liste in ausnahmen.values() for eintrag in liste})
 

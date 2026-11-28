@@ -26,8 +26,9 @@ import hashlib
 import logging
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from apps.common import audit_core
@@ -74,6 +75,25 @@ _TENANT_SCOPE = "session_tenant"
 
 # Handlungen aus einer Vertretung (Issue #222)
 _vertretung = threading.local()
+
+#: Person eines laufenden Befehls (Befehlsschicht, Issue #1588)
+_befehl_person: ContextVar[Any] = ContextVar("session_audit_befehl_person", default=None)
+
+
+@contextmanager
+def im_befehl(session_user: Any) -> Iterator[None]:
+    """
+    Einträge in diesem Block nennen die Person des Befehls (``apps.session.befehle``), auch die aus Model-Signalen.
+
+    Über die Schnittstelle trägt die Anfrage keine Session-Person (die setzt nur die Middleware unter ``/session/``);
+    ohne diesen Block stünde in Einträgen aus Signalen niemand. Eine Person aus der Anfrage oder ein ausdrücklich
+    übergebener ``user`` gehen vor.
+    """
+    token = _befehl_person.set(session_user)
+    try:
+        yield
+    finally:
+        _befehl_person.reset(token)
 
 
 @contextmanager
@@ -240,6 +260,10 @@ def build_event(
         session_user = getattr(request, "session_user", None)
         if session_user is not None and session_user.tenant_id == tenant.pk:
             user = session_user
+    if user is None and actor_from_request:
+        handelnd = _befehl_person.get()
+        if handelnd is not None and handelnd.tenant_id == tenant.pk:
+            user = handelnd
     ip_address, user_agent = audit_core.get_client_meta(request)
 
     if on_behalf_of is None and actor_from_request:

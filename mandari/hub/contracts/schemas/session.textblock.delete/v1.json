@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:command:session.textblock.delete:v1",
+  "title": "Textbaustein löschen",
+  "description": "Die Verwaltung löscht einen Textbaustein. Recht im Mandanten: Einstellungen verwalten. Handler: apps.session.",
+  "x-kind": "command",
+  "x-owner": "apps.session",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "textblock"
+  ],
+  "properties": {
+    "textblock": {
+      "title": "Textbaustein",
+      "description": "Kennung des Textbausteins.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "textblock": "8d3f2a1b-6c4e-4f7a-9b2d-1e0c3a5b7d9f"
+    }
+  ]
+}

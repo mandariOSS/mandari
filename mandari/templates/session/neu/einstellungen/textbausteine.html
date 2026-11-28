@@ -1,4 +1,5 @@
 {% extends "session/base_session.html" %}
+{% load befehle %}
 {% comment %}
 Einstellungen › Sitzungen › Textbausteine und Standard-TOPs im neuen Rahmen (Issues #85, #944): zwei Abschnitte
 nebeneinander (schmal untereinander), je eine Liste mit Linien statt Karte, inaktive Einträge gedimmt, Kategorie als
@@ -72,6 +73,7 @@ steht als ruhiges Formular am Ende des Abschnitts. Formulare und Felder wie sess
                     </div>
                     <form method="post" action="{% url 'session:textblock_manage' tenant_slug=tenant_slug %}" data-confirm="Textbaustein wirklich löschen?" class="shrink-0 text-gray-600 dark:text-gray-400">
                         {% csrf_token %}
+                        {% idempotenzschluessel %}
                         <input type="hidden" name="block_id" value="{{ block.id }}">
                         <input type="hidden" name="action" value="delete">
                         <c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="Textbaustein {{ block.title }} löschen" ton="gefahr" />
@@ -85,6 +87,7 @@ steht als ruhiges Formular am Ende des Abschnitts. Formulare und Felder wie sess
             <h3 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Textbaustein hinzufügen</h3>
             <form method="post" action="{% url 'session:textblock_manage' tenant_slug=tenant_slug %}" class="mt-2 space-y-3" data-testid="textbaustein-anlegen">
                 {% csrf_token %}
+                {% idempotenzschluessel %}
                 <div class="feldzeile">
                     <c-form.field name="title" id="baustein-titel" label="Titel" placeholder="z. B. Einstimmig beschlossen" required dicht class="min-w-0 flex-1 basis-full sm:basis-56" />
                     <c-form.select name="category" id="baustein-kategorie" label="Kategorie" dicht class="min-w-0 w-48">

@@ -71,10 +71,11 @@ vertrauenswürdig markiert werden und kommen ohne Zustimmungsseite aus. Fremde A
 | `mandari:bereitstellung` | Bereitstellung von Organisationen und Mandanten (folgt) | nein | ja |
 | `ratsdaten:nichtoeffentlich` | Nichtöffentliches lesen, soweit die Person es selbst sehen darf (nichtöffentliche Ausgabe); Anmeldung mit zweitem Faktor Pflicht, höchstens 7 Tage danach | ja | nein |
 | `sitzung:lesen` | Alle Sitzungsdaten des gebundenen Mandanten einschließlich Nichtöffentlichem (nichtöffentliche Ausgabe); nur für Dienste mit Bindung an einen Mandanten | nein | ja |
+| `sitzung:schreiben` | [Befehle](../SCHNITTSTELLE.md#befehle-1588) von Session im Namen einer Person, soweit sie selbst darf und im Mandanten „API-Zugang“ hat; Anmeldung mit zweitem Faktor Pflicht, höchstens 7 Tage danach | ja | nein |
 
-Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliches gibt es nur mit den beiden
-letzten Scopes und nur über die [nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe); beide
-Scopes muss die Plattform-Administration einer Anwendung ausdrücklich erlauben. Nimmt die Plattform-Administration einer
+Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliches gibt es nur mit
+`ratsdaten:nichtoeffentlich` und `sitzung:lesen` und nur über die
+[nichtöffentliche Ausgabe](#nichtöffentliches-die-nichtöffentliche-ausgabe); beide Scopes muss die Plattform-Administration einer Anwendung ausdrücklich erlauben. Nimmt die Plattform-Administration einer
 Anwendung einen Scope weg, gilt er auch für ihre bestehenden Tokens sofort nicht mehr, ebenso bei `userinfo` und
 in neuen Tokens aus bestehenden Refresh-Tokens. Für gesperrte Konten gibt es keine neuen Tokens.
 

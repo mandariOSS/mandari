@@ -36,6 +36,8 @@ BEREITSTELLUNG = "mandari:bereitstellung"
 RATSDATEN_NICHTOEFFENTLICH = "ratsdaten:nichtoeffentlich"
 #: Alle Sitzungsdaten des gebundenen Mandanten einschließlich Nichtöffentlichem, nur für gebundene Dienste (#565)
 SITZUNG_LESEN = "sitzung:lesen"
+#: Befehle von Session im Namen einer Person, soweit sie selbst darf (Befehlsschicht, Issue #1588)
+SITZUNG_SCHREIBEN = "sitzung:schreiben"
 
 #: Höchstens so lange nach der Anmeldung gibt es Tokens mit einem geschützten Scope (``Scope.protected``)
 PROTECTED_MAX_LOGIN_AGE: Final = timedelta(days=7)
@@ -80,6 +82,13 @@ CATALOG: tuple[Scope, ...] = (
         False,
         True,
         bound=True,
+    ),
+    Scope(
+        SITZUNG_SCHREIBEN,
+        "In Session in deinem Namen ändern, was du dort selbst ändern darfst (Befehle der Schnittstelle)",
+        True,
+        False,
+        protected=True,
     ),
 )
 

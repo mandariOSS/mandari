@@ -308,3 +308,10 @@ eine Aussage des Abschnitts „Ein Login für alle Zugänge“:
   für neue Bereiche unter `/api/mandari/v<n>/`.
 - **Liste in `kommparl:conformsTo`:** Einstieg und Aggregator nennen dieselbe Grundliste; Session ergänzt die
   Profile Einreichung und Nichtöffentliches, sobald sie eingeschaltet sind.
+
+## Nachtrag vom 28.11.2026 (API-first ohne Ausnahme, #1588)
+
+Die Entscheidung bleibt und wird verschärft: Jede Datenänderung ist ein Befehl beim Eigentümer, auch aus der eigenen
+Oberfläche; Views schreiben nicht mehr über das ORM. Jeder freigegebene Befehl ist ohne weiteren Code eine Operation
+unter `/api/mandari/v1/<bereich>/<mandant>/befehle/<befehl>/v<version>`. Einzelheiten in
+[API-first ohne Ausnahme](20261128-api-first-ohne-ausnahme.md).

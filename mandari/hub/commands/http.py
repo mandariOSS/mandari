@@ -15,6 +15,10 @@ Die Adressen bindet die Installation ein, sobald ein Eigentümer Befehle über H
 Profil Einreichung):
 
     path("api/v1/befehle/", include(command_urlpatterns(authenticate=token_principal)))
+
+Die gemeinsame Schnittstelle (``hub.api.befehle``) nutzt dieselben Bausteine (``command_from_request``,
+``receipt_response``, ``problem_for``) für ihre Adressen je Mandantenbereich. Dort nennt die Adresse den Mandanten,
+und die Anmeldung gilt einer Person, nicht einem Mandanten (``Principal.tenant_ref`` ist ``None``).
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
@@ -36,25 +40,33 @@ from apps.common.api.problems import problem_response
 
 from .dispatcher import Dispatcher, get_dispatcher
 from .problems import CommandError, Problem
-from .types import ACTOR_REF_RE, TENANT_REF_RE, TOO_DEEP, Command, exceeds_depth
+from .types import ACTOR_REF_RE, TENANT_REF_RE, TOO_DEEP, Command, Receipt, exceeds_depth
 
 logger = logging.getLogger("hub.commands")
 
 TENANT_HEADER: Final = "Mandari-Tenant"
 CORRELATION_HEADER: Final = "X-Correlation-ID"
 ALL_COMMANDS: Final = "*"
+#: Feste Meldung bei einer anderen Methode als POST
+POST_ONLY: Final = "Befehle werden per POST gesendet."
 
 
 @dataclass(frozen=True)
 class Principal:
-    """Angemeldeter Aufrufer: Mandant, Auslöser und erlaubte Befehle (``*`` für alle)."""
+    """
+    Angemeldeter Aufrufer: Mandant, Auslöser und erlaubte Befehle (``*`` für alle).
 
-    tenant_ref: str
+    ``tenant_ref`` ``None``: Die Anmeldung gilt keinem bestimmten Mandanten (eine Person mit Access-Token oder
+    Browser-Sitzung). Den Mandanten nennt dann die Adresse, und der Handler des Eigentümers prüft, was die Person
+    dort darf. Der allgemeine Weg zwischen Installationen (``command_urlpatterns``) verlangt einen Mandanten.
+    """
+
+    tenant_ref: str | None
     actor_ref: str | None
     commands: Collection[str]
 
     def __post_init__(self) -> None:
-        if not TENANT_REF_RE.fullmatch(self.tenant_ref):
+        if self.tenant_ref is not None and not TENANT_REF_RE.fullmatch(self.tenant_ref):
             raise ValueError("tenant_ref muss session:<uuid>, org:<uuid> oder source:<uuid> sein")
         if self.actor_ref is not None and not ACTOR_REF_RE.fullmatch(self.actor_ref):
             raise ValueError("actor_ref muss user:<uuid> oder system:<auftrag> sein")
@@ -87,44 +99,71 @@ class CommandView:
             command = self._command(request, name, version)
             receipt = (self.dispatcher or get_dispatcher()).dispatch(command)
         except CommandError as exc:
-            return self._problem(request, exc.problem)
-        response = JsonResponse(receipt.to_dict(), status=201, json_dumps_params={"ensure_ascii": False})
-        response["Cache-Control"] = "no-store"
-        return response
+            return problem_for(request, exc.problem, realm=self.realm)
+        return receipt_response(receipt)
 
     def _command(self, request: HttpRequest, name: str, version: int) -> Command:
         if request.method != "POST":
-            raise CommandError.of(405, "methode-nicht-erlaubt", "Befehle werden per POST gesendet.", allow="POST")
+            raise CommandError.of(405, "methode-nicht-erlaubt", POST_ONLY, allow="POST")
         principal = self.authenticate(request)
         if principal is None:
             raise CommandError.of(
                 401, "nicht-authentifiziert", "Gültige Anmeldung erforderlich (Authorization: Bearer)."
             )
-        key = parse_idempotency_key(request.headers.get(IDEMPOTENCY_HEADER))
-        if key is None:
+        if parse_idempotency_key(request.headers.get(IDEMPOTENCY_HEADER)) is None:
             raise CommandError.of(400, KEY_MISSING_KIND, KEY_MISSING)
         tenant = request.headers.get(TENANT_HEADER)
-        if (tenant and tenant != principal.tenant_ref) or not principal.may(name):
+        if principal.tenant_ref is None or (tenant and tenant != principal.tenant_ref) or not principal.may(name):
             raise CommandError.of(403, "keine-berechtigung", "Diese Anmeldung darf den Befehl hier nicht senden.")
-        return Command(
-            name=name,
-            version=version,
-            body=_json_object(request),
-            idempotency_key=key,
-            tenant_ref=principal.tenant_ref,
-            actor_ref=principal.actor_ref,
-            correlation_id=_uuid_or_new(request.headers.get(CORRELATION_HEADER)),
+        return command_from_request(
+            request, name, version, tenant_ref=principal.tenant_ref, actor_ref=principal.actor_ref
         )
 
-    def _problem(self, request: HttpRequest, problem: Problem) -> HttpResponse:
-        headers = {"Cache-Control": "no-store"}
-        if problem.status == 401:
-            headers["WWW-Authenticate"] = f'Bearer realm="{self.realm}"'
-        allow = problem.extensions.get("allow")
-        if allow:
-            headers["Allow"] = str(allow)
-            problem = replace(problem, extensions={k: v for k, v in problem.extensions.items() if k != "allow"})
-        return problem_response(problem, instance=request.path, headers=headers)
+
+def command_from_request(
+    request: HttpRequest, name: str, version: int, *, tenant_ref: str, actor_ref: str | None
+) -> Command:
+    """
+    Befehl aus einer angemeldeten Anfrage: ``Idempotency-Key`` (sonst 400), Inhalt als JSON-Objekt (sonst 400, 413
+    oder 415), Korrelation aus ``X-Correlation-ID`` (sonst neu). Mandant und Auslöser kommen vom Aufrufer, immer aus
+    Anmeldung und Adresse, nie aus dem Inhalt.
+    """
+    key = parse_idempotency_key(request.headers.get(IDEMPOTENCY_HEADER))
+    if key is None:
+        raise CommandError.of(400, KEY_MISSING_KIND, KEY_MISSING)
+    return Command(
+        name=name,
+        version=version,
+        body=_json_object(request),
+        idempotency_key=key,
+        tenant_ref=tenant_ref,
+        actor_ref=actor_ref,
+        correlation_id=_uuid_or_new(request.headers.get(CORRELATION_HEADER)),
+    )
+
+
+def receipt_response(receipt: Receipt) -> HttpResponse:
+    """``201`` mit der Quittung als JSON, nie zwischengespeichert."""
+    response = JsonResponse(receipt.to_dict(), status=201, json_dumps_params={"ensure_ascii": False})
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def problem_for(
+    request: HttpRequest, problem: Problem, *, realm: str, headers: Mapping[str, str] | None = None
+) -> HttpResponse:
+    """
+    ``application/problem+json``, nie zwischengespeichert. Eine 401 trägt ``WWW-Authenticate`` (sofern ``headers`` den
+    Header nicht schon nennen), die Erweiterung ``allow`` wird zum Header ``Allow``.
+    """
+    merged = {"Cache-Control": "no-store", **(headers or {})}
+    if problem.status == 401:
+        merged.setdefault("WWW-Authenticate", f'Bearer realm="{realm}"')
+    allow = problem.extensions.get("allow")
+    if allow:
+        merged["Allow"] = str(allow)
+        problem = replace(problem, extensions={k: v for k, v in problem.extensions.items() if k != "allow"})
+    return problem_response(problem, instance=request.path, headers=merged)
 
 
 def _json_object(request: HttpRequest) -> dict[str, Any]:
