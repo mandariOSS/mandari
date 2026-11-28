@@ -313,6 +313,9 @@ class OParlSource(models.Model):
     )
     consecutive_failures = models.PositiveIntegerField(default=0, verbose_name="Fehlversuche in Folge")
     health_alert_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Alarm gesendet am")
+    # Datenlücken (Datenabgleich, Issue #1525) zählen getrennt vom Alarm: Ein Hinweis auf Lücken darf eine spätere
+    # Störung des Abrufs nicht für sieben Tage stummschalten
+    datenabgleich_alert_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Datenlücken gemeldet am")
 
     # Vom Ingestor bei der Autodiscovery erkannte OParl-Version ("1.0"/"1.1");
     # leer = noch nicht erkannt. Siehe docs/SCRAPER_SOURCES.md, Abschnitt OParl 1.0.

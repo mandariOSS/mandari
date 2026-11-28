@@ -6,6 +6,8 @@ Cronjob (stündlich):
     python manage.py check_source_health
 Nur Bericht ausgeben:
     python manage.py check_source_health --report
+Datenlücken-Übersicht unabhängig von der Uhrzeit (sonst nur im Lauf um INSIGHT_DATENABGLEICH_MAIL_HOUR, Standard 7 Uhr):
+    python manage.py check_source_health --uebersicht [--dry-run]
 """
 
 from django.core.management.base import BaseCommand
@@ -22,6 +24,11 @@ class Command(EinmaligMixin, BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--report", action="store_true", help="Statusbericht ausgeben, keine Alarme senden")
         parser.add_argument("--dry-run", action="store_true", help="Alarme nur anzeigen, nicht senden")
+        parser.add_argument(
+            "--uebersicht",
+            action="store_true",
+            help="Datenlücken (Datenabgleich) jetzt mitmelden, nicht erst im täglichen Übersichtslauf",
+        )
 
     def handle(self, *args, **options):
         from insight_core.admin_dashboard import dashboard_kennzahlen
@@ -49,11 +56,13 @@ class Command(EinmaligMixin, BaseCommand):
         if options["report"]:
             return
 
-        result = send_health_alerts(dry_run=options["dry_run"])
+        result = send_health_alerts(dry_run=options["dry_run"], uebersicht=True if options["uebersicht"] else None)
         verb = "fällig" if options["dry_run"] else "gesendet"
         self.stdout.write(
             self.style.SUCCESS(
-                f"Alarme {verb}: {len(result['alerts'])}, Entwarnungen {verb}: {len(result['recoveries'])}"
+                f"Sammelmail {verb}: {'ja' if result['mail'] else 'nein'} (Störungen {len(result['alerts'])}, "
+                f"Entwarnungen {len(result['recoveries'])}, Datenlücken {len(result['gaps'])}, "
+                f"Lücken geschlossen {len(result['gaps_closed'])})"
                 + (", Daemon-Alarm" if result["daemon_alert"] else "")
             )
         )

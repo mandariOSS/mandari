@@ -173,8 +173,8 @@ Ein Abgleich kann „erfolgreich“ laufen und trotzdem Lücken hinterlassen: Im
 die Verknüpfungen zwischen Tagesordnungspunkten und Vorlagen, obwohl Datenstand und Sync-Läufe grün waren (wechselnde
 Kennungen von Beratungen, `modified` ohne Änderung bei Freigabe oder Verknüpfung, Platzhalter in Listen, hängendes
 Änderungsfenster). Der Datenabgleich (Issue #1525) prüft deshalb den **Inhalt** je Kommune und bewertet ihn mit einer
-Ampel; „kritisch“ macht die Quelle im Betriebsmonitor kritisch und löst die Alarm-Mail aus (siehe
-[Alarmierung](#alarmierung)), „auffällig“ ist eine Warnung.
+Ampel; „kritisch“ macht die Quelle im Betriebsmonitor kritisch und erscheint in der täglichen Übersicht der
+Datenlücken (siehe [Alarmierung](#alarmierung)), „auffällig“ ist eine Warnung.
 
 **Interne Konsistenz** (`befehl:datenabgleich`, täglich 06:05, vor dem Prüflauf um 06:15; nur Datenbank,
 `insight_core/services/datenabgleich.py`). Messfenster: Sitzungen 14 Tage zurück bis 60 Tage voraus.
@@ -288,14 +288,25 @@ Ingestor als Ganzes. Eine einzelne dauerhaft gestörte Quelle bewertet die Quell
 Zeitplan im Worker `befehl:check_source_health`, stündlich um :15 (`DEPLOYMENT.md`, „Geplante
 Aufgaben“).
 
-- Kritische Quelle → E-Mail-Alarm, Wiederholung frühestens nach 7 Tagen (`health_alert_sent_at`)
-- Quelle wieder OK → Entwarnung, Zeitstempel wird gelöscht
+Je Lauf höchstens **eine Sammelmail** mit allen fälligen Meldungen (Betreff etwa „[mandari] 2 Quellen gestört;
+Datenlücken in 16 Quellen“). Bis November 2026 kam je Quelle eine eigene Mail; Quellen, die im selben Lauf kritisch
+wurden, kamen dann auch mit jeder Wiederholung alle in derselben Minute (28.11.2026: 17 Mails um 00:15).
+
+- **Störung des Abrufs** (Fehlerklasse, ≥ 3 Fehlversuche, veralteter oder nie gelungener Abgleich, Parse-Quote) →
+  sofort, Wiederholung frühestens nach 7 Tagen (`health_alert_sent_at`); Abruf wieder OK → Entwarnung, Zeitstempel
+  wird gelöscht
+- **Datenlücken** (eine Kommune im [Datenabgleich](#datenabgleich-mit-den-kommunen) kritisch, der Abruf selbst läuft)
+  → kein Ausfall, deshalb nur im täglichen Übersichtslauf um 07:15 (`INSIGHT_DATENABGLEICH_MAIL_HOUR`, Standard 7,
+  Ortszeit; nach `befehl:datenabgleich` um 06:05), Wiederholung je Quelle frühestens nach 7 Tagen
+  (`datenabgleich_alert_sent_at`, eigener Zeitstempel: ein Hinweis auf Lücken schaltet eine spätere Störung nicht
+  stumm); keine Kommune mehr kritisch → Entwarnung im nächsten Übersichtslauf
 - Ingestor-Daemon > 6 h ohne Lauf → Alarm, max. einmal je 24 h. Als Lauf zählt das Lebenszeichen des Daemons
   in Redis (`mandari:ingestor:heartbeat`, alle 30 Sekunden erneuert), sonst ein Sync-Protokoll; nachts und am
   Wochenende gleicht jede Quelle nur alle 1 bis 2 Stunden ab (Issue #1026)
 - Empfänger: `INSIGHT_ALERT_EMAILS` (kommagetrennt), sonst `INSIGHT_MODERATION_EMAILS`, sonst Superuser
 
-Bericht ohne Versand: `python manage.py check_source_health --report`
+Bericht ohne Versand: `python manage.py check_source_health --report`; fällige Meldungen ohne Versand:
+`--dry-run`; Datenlücken unabhängig von der Uhrzeit mitmelden: `--uebersicht`
 
 ## Metriken
 

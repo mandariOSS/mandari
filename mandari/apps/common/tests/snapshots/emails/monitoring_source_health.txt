@@ -1,22 +1,36 @@
-Alarm: OParl-Quelle kritisch
+Betriebsmonitor: Quelle gestört: Musterstadt; Datenlücken: Musterstadt; Entwarnung für 2 Quellen
 ==================================================
 
-Quelle: RIS Musterstadt
-URL: https://ris.musterstadt.example/oparl/v1/system
-Status: kritisch
-Grund: User-Agent gesperrt
-Kommunen: Musterstadt, Nachbarstadt
-Letzter erfolgreicher Sync: 14.09.2026 18:30
-Fehlversuche in Folge: 5
-- HTTP 503 seit 3 Tagen
-- Zertifikat der Quelle abgelaufen
+GESTÖRT: 1 Quelle
+Der Abruf ist gestört (Sperre, Fehlversuche oder veralteter Abgleich). Die Daten der betroffenen Kommunen werden nicht mehr aktualisiert.
 
-Empfehlung: Betreiber der Quelle kontaktieren und um Freischaltung unseres User-Agents bitten.
+* RIS Musterstadt (Musterstadt, Nachbarstadt)
+  URL: https://ris.musterstadt.example/oparl/v1/system
+  Letzter erfolgreicher Sync: 14.09.2026 18:30
+  Grund: User-Agent gesperrt
+  Fehlversuche in Folge: 5
+  - HTTP 503 seit 3 Tagen
+  - Zertifikat der Quelle abgelaufen
+  Empfehlung: Betreiber der Quelle kontaktieren und um Freischaltung unseres User-Agents bitten.
+  Details: https://mandari.example/admin/insight_core/oparlsource/00000000-0000-0000-0000-000000000301/change/
+
+DATENLÜCKEN: 1 Quelle
+Der Abruf läuft, aber im Bestand fehlt ein großer Teil dessen, was die Schnittstelle der Kommune meldet (Datenabgleich). Kein Ausfall: Diese Übersicht kommt höchstens einmal am Tag, dieselbe Quelle frühestens nach 7 Tagen wieder.
+
+* RIS Musterstadt
+  - Datenabgleich Musterstadt kritisch: TOPs: Quelle 12280, Bestand 148 (12132 fehlen, 99%)
+  Details: https://mandari.example/admin/insight_core/oparlsource/00000000-0000-0000-0000-000000000301/change/
+
+Empfehlung: Einzelheiten zeigt „python manage.py datenabgleich --kommune <Name>“.
+
+ENTWARNUNG
+* RIS Musterstadt: Abruf wieder in Ordnung
+* RIS Musterstadt: Datenlücken nicht mehr kritisch
 
 ---
 
 Betriebsmonitor: https://mandari.example/admin/monitoring/
-Details: https://mandari.example/admin/insight_core/oparlsource/00000000-0000-0000-0000-000000000301/change/
+
 
 --
 Mandari - Kommunalpolitische Transparenz
