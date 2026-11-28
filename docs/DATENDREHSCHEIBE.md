@@ -524,7 +524,7 @@ Fitnessfunktionen, aus denen ein Teil der Zahlen stammt (Spalte „Quelle“).
 
 ### 5.1 Letzte Erhebung
 
-Erhoben am 28. November 2026 am Stand `91a6d14a` (`dev`) mit #1607, Anlass: Befehlsschicht, Kennzahl K9 neu.
+Erhoben am 28. November 2026 am Stand `c33c6126` (`dev`) mit #1607, Anlass: Befehlsschicht, Kennzahl K9 neu.
 
 | Nr. | Kennzahl | Wert | Ziel | Quelle |
 |---|---|---:|---:|---|
@@ -534,7 +534,7 @@ Erhoben am 28. November 2026 am Stand `91a6d14a` (`dev`) mit #1607, Anlass: Befe
 | K3a | Funktionen, die Mails über den Mail-Dienst senden | 34 | – | `scripts/architektur_kennzahlen.py` |
 | K3b | Mails, die immer im Aufruf rausgehen (Stellen mit `sofort=True`) | 6 | – | `SOFORT` in `mandari/apps/common/tests/test_mail_dienst.py` |
 | K4 | Hintergrund-Threads im Webprozess (Thread-Starts außerhalb des Workers) | 0 | 0 | `scripts/architektur_kennzahlen.py` mit `ERLAUBT` aus `mandari/apps/events/tests/test_zeitplaene_statt_faden.py` |
-| K5 | `OParl*.objects` außerhalb von `hub` und `insight_core` | 125 | 0 | `scripts/check_ris_access_ratchet.py` |
+| K5 | `OParl*.objects` außerhalb von `hub` und `insight_core` | 124 | 0 | `scripts/check_ris_access_ratchet.py` |
 | K6a | `CASCADE` von Fachmodulen auf den RIS-Bestand (alle Apps außer `insight_core`) | 0 | 0 | `AUSNAHMEN_CASCADE` in `mandari/hub/ris/tests/test_loeschsemantik.py` |
 | K6b | `CASCADE` auf den RIS-Bestand aus `insight_core` selbst (Bürgerportal, Geodaten) | 13 | 0 | `AUSNAHMEN_CASCADE` in `mandari/hub/ris/tests/test_loeschsemantik.py` |
 | K7 | import-linter-Ausnahmen (verschiedene Importe über alle Verträge) | 54 | 0 | `scripts/check_import_linter_ratchet.py` |
@@ -572,7 +572,7 @@ aufsetzt, und den Pull Request, dessen Änderungen mitgezählt sind. K8 trägt e
 | Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 | K9 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 2026-11-10 | `3a63808d` + #1304 | erste Erhebung | 55 | 4 | 7 | 32 | 6 | 0 | 126 | 0 | 13 | 54 | – | – |
-| 2026-11-28 | `91a6d14a` + #1607 | Befehlsschicht, K9 neu | 56 | 4 | 7 | 34 | 6 | 0 | 125 | 0 | 13 | 54 | – | 204 |
+| 2026-11-28 | `c33c6126` + #1607 | Befehlsschicht, K9 neu | 56 | 4 | 7 | 34 | 6 | 0 | 124 | 0 | 13 | 54 | – | 204 |
 
 ### 5.3 Zählregeln
 

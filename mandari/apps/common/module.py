@@ -39,9 +39,10 @@ AUS: Final = frozenset({"aus", "false", "0", "no", "nein"})
 WEBSOCKET_ROUTEN: Final = "mandari.routing.websocket_urlpatterns"
 
 #: Letzte Teile eines Modulnamens, die einen Einstieg in ein Modul bilden: Adressen, Ansichten, WebSocket,
-#: Zeitpläne, Abonnements, Befehle und Schnittstellen. Ist ein Modul abgeschaltet, lädt sie niemand.
+#: Zeitpläne, Abonnements, Befehle (auch die der Befehlsschicht, #1588) und Schnittstellen. Ist ein Modul
+#: abgeschaltet, lädt sie niemand.
 EINSTIEGE: Final = frozenset(
-    {"urls", "views", "routing", "consumers", "schedules", "subscribers", "commands", "api", "public_api"}
+    {"urls", "views", "routing", "consumers", "schedules", "subscribers", "commands", "befehle", "api", "public_api"}
 )
 
 
