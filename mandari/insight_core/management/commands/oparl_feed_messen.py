@@ -109,7 +109,7 @@ class Command(BaseCommand):
                 .annotate(anzahl=Count("id"))
                 .order_by("-anzahl", "body_id")[: max(1, options["anzahl"])]
             )
-            kennungen = [zeile["body_id"] for zeile in haeufigste]
+            kennungen = [zeile["body_id"] for zeile in haeufigste if zeile["body_id"] is not None]
         namen = dict(OParlBody.objects.filter(pk__in=kennungen).values_list("pk", "name"))
 
         self.stdout.write(f"Änderungsfeed-Messung seit {seit:%d.%m.%Y %H:%M} (nur lesend)")
