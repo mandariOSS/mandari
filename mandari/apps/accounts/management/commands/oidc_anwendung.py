@@ -25,6 +25,10 @@ Dienst an genau einen Session-Mandanten (Kurzname); die Plattform speichert nur 
 (``apps.accounts.oidc.bindings``), Session wertet sie aus. Gebundene Dienste brauchen ``--jwks``. ``schluessel``
 ersetzt die Schlüssel einer Anwendung (Schlüsselwechsel).
 
+Grenzen je Anwendung (#1591): ``--anfragen-je-minute`` (über alle Tokens, Standard 600, 0 ohne Grenze) und
+``--seitengroesse`` (Einträge je Seite, Standard 100). ``liste`` nennt sie und den Bereich, der eine Anwendung selbst
+registriert hat (Kommune oder Fraktion).
+
 Sperren schaltet die Anwendung aus und widerruft alle ihre Tokens; Entsperren schaltet sie wieder ein, alte Tokens
 leben dabei nicht auf. Anlegen, Sperren und Entsperren stehen im Sicherheitsprotokoll (``oidc_anwendung``), nie mit
 Secret. Anleitung: ``docs/schnittstelle/anmeldung.md#teil-b-betrieb``.
@@ -45,7 +49,7 @@ from oauth2_provider.settings import oauth2_settings
 
 from apps.accounts.oidc import audit, bindings, catalog, provider_enabled, services
 from apps.accounts.oidc.admin import OAuthApplicationForm
-from apps.accounts.oidc.models import OAuthApplication
+from apps.accounts.oidc.models import DEFAULT_PAGE_SIZE, DEFAULT_RATE_LIMIT, OAuthApplication
 
 #: Typ auf der Kommandozeile → ``client_type``
 TYPES: dict[str, str] = {
@@ -86,6 +90,11 @@ def _jwks(path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise CommandError('--jwks: Erwartet wird ein JWK Set ({"keys": [ … ]}) oder ein einzelner Schlüssel.')
     return data
+
+
+def _or_default(value: Any, default: int) -> int:
+    """Angabe der Kommandozeile oder der Standard, wenn sie fehlt (0 ist eine Angabe)."""
+    return default if value is None else int(value)
 
 
 def _type(value: str) -> str:
@@ -142,6 +151,18 @@ class Command(BaseCommand):
             "--mandant",
             metavar="KURZNAME",
             help="Dienst an genau diesen Session-Mandanten binden (nur client-credentials, braucht --jwks).",
+        )
+        anlegen.add_argument(
+            "--anfragen-je-minute",
+            type=int,
+            metavar="ZAHL",
+            help=f"Grenze der Anwendung an der Schnittstelle über alle ihre Tokens (Standard {DEFAULT_RATE_LIMIT}, 0: ohne).",
+        )
+        anlegen.add_argument(
+            "--seitengroesse",
+            type=int,
+            metavar="ZAHL",
+            help=f"Höchstens so viele Einträge je Seite in Listen der Schnittstelle (Standard {DEFAULT_PAGE_SIZE}).",
         )
 
         aktionen.add_parser("liste", help="Alle Anwendungen mit Ablauf, Scopes und Redirect-URIs (ohne Secret).")
@@ -231,6 +252,9 @@ class Command(BaseCommand):
                 "is_active": True,
                 "binding": binding,
                 "jwks": json.dumps(jwks) if jwks is not None else "",
+                "owner": "",
+                "rate_limit_per_minute": _or_default(options.get("anfragen_je_minute"), DEFAULT_RATE_LIMIT),
+                "max_page_size": _or_default(options.get("seitengroesse"), DEFAULT_PAGE_SIZE),
             }
         )
         if not form.is_valid():
@@ -297,6 +321,11 @@ class Command(BaseCommand):
         if application.binding:
             ziel = bindings.describe(application.binding) or "Bereich nicht gefunden"
             self.stdout.write(f"  Bindung:       {application.binding} ({ziel})")
+        if application.owner:
+            herkunft = bindings.describe(application.owner) or "Bereich nicht gefunden"
+            self.stdout.write(f"  Registriert:   {application.owner} ({herkunft})")
+        grenze = application.rate_limit_per_minute or "ohne Grenze"
+        self.stdout.write(f"  Grenzen:       {grenze} Anfragen je Minute, {application.max_page_size} je Seite")
         if application.uses_private_key_jwt:
             kids = [str(key.get("kid") or "ohne kid") for key in (application.jwks or {}).get("keys", [])]
             self.stdout.write(f"  Anmeldung:     private_key_jwt, Schlüssel: {', '.join(kids)}")

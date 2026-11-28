@@ -16,6 +16,11 @@ Eine Fachschicht meldet ihre Art beim Start an (``AppConfig.ready``)::
 - ``describe(schlüssel)``: Anzeigename für Listen und Prüfungen, ``None``, wenn es den Bereich nicht (mehr) gibt
 
 Eine Bindung an einen Bereich, den es nicht mehr gibt, gewährt nichts: Die Fachschicht findet ihn nicht.
+
+Dieselbe Kennung nennt auch den Bereich, der eine Anwendung selbst registriert hat (``OAuthApplication.owner``,
+Issue #1591): eine Kommune in Session, eine Fraktion in Work. Welche Scopes solche Anwendungen erhalten dürfen, meldet
+die Fachschicht mit der Art an (``Kind.scopes``); ohne Scopes registriert die Art keine Anwendungen. Eine Anwendung
+eines Bereichs gilt bei Ressourcen derselben Art nur für ihren Bereich (:func:`allows`).
 """
 
 from __future__ import annotations
@@ -27,6 +32,8 @@ from typing import Final
 
 #: Art der Bindung an einen Session-Mandanten; Session meldet sie an (``apps.session.apps``)
 TENANT: Final = "session-mandant"
+#: Art einer Organisation in Work (Fraktion); Work meldet sie an (``apps.work.apps``, Issue #1591)
+ORGANIZATION: Final = "work-organisation"
 
 #: Aufbau einer Bindung: Art (Kleinbuchstaben, Ziffern, Bindestrich), Doppelpunkt, Schlüssel
 PATTERN: Final = re.compile(r"[a-z][a-z0-9-]{0,39}:[A-Za-z0-9._-]{1,80}")
@@ -40,6 +47,8 @@ class Kind:
     label: str
     resolve: Callable[[str], str | None]
     describe: Callable[[str], str | None]
+    #: Scopes, die Anwendungen erhalten dürfen, die ein Bereich dieser Art selbst registriert (#1591); leer: keine
+    scopes: tuple[str, ...] = ()
 
 
 _KINDS: dict[str, Kind] = {}
@@ -84,6 +93,25 @@ def describe(binding: str) -> str | None:
     _name, _separator, key = binding.partition(":")
     label = registered.describe(key)
     return f"{registered.label} {label}" if label else None
+
+
+def registrable_scopes(owner: str) -> tuple[str, ...]:
+    """Scopes, die ein Bereich für seine Anwendungen vergeben darf; leer, wenn die Art keine Anwendungen registriert."""
+    registered = kind_of(owner)
+    return registered.scopes if registered is not None else ()
+
+
+def allows(owner: str, kind: str, key: str) -> bool:
+    """
+    Darf eine Anwendung des Bereichs ``owner`` auf den Bereich ``kind:key`` zugreifen?
+
+    Ja ohne Eigentümer (Anwendungen des Betreibers) und bei Ressourcen einer anderen Art; bei derselben Art nur für den
+    eigenen Bereich. Eine Anwendung einer Kommune liest so nur bei dieser Kommune, eine einer Fraktion nur bei dieser.
+    """
+    if not owner:
+        return True
+    name, _separator, owner_key = owner.partition(":")
+    return name != kind or (bool(owner_key) and owner_key == key)
 
 
 def problem(binding: str) -> str:

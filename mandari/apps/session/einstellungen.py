@@ -11,7 +11,8 @@ sechs); ein Reiter mit mehreren Seiten zeigt sie als Unterpunkte:
 - **Sitzungen**: Sitzungsformate und Landesprofil (mit Ortsrecht je Körperschaft), Körperschaften, Wahlperioden,
   Textbausteine und Standard-TOPs
 - **Vorlagen**: Nummernkreise, Mitzeichnung und Ämter
-- **Datenschutz und Zugänge**: Datenschutz, Einreichungs-Zugänge für Fraktionen
+- **Datenschutz und Zugänge**: Datenschutz, Einreichungs-Zugänge für Fraktionen, Anwendungen (nur mit eingeschalteter
+  Anmeldung über mandari, Issue #1591)
 
 Alle Adressen bleiben. Sichtbar ist ein Eintrag nur mit dem Recht, das seine Seite verlangt (``permission_required``
 der View); jede Seite prüft ihr Recht weiter selbst. Körperschaften zeigt der Reiter wie die bisherige Kachel erst ab
@@ -86,6 +87,8 @@ REITER: tuple[Reiter, ...] = (
         (
             Seite("datenschutz", "Datenschutz", "privacy_settings", SETTINGS),
             Seite("zugaenge", "Einreichungs-Zugänge", "settings_api_tokens", SETTINGS),
+            # Eigene Anwendungen über die Anmeldung von mandari (Issue #1591), nur bei eingeschaltetem Anbieter
+            Seite("anwendungen", "Anwendungen", "settings_applications", SETTINGS),
         ),
     ),
 )
@@ -140,6 +143,10 @@ def navigation(tenant: Any, rechte: Collection[str], url_name: str) -> dict[str,
         nonlocal mehrere
         if not _erlaubt(seite, rechte):
             return False
+        if seite.key == "anwendungen":
+            from apps.accounts.oidc import provider_enabled
+
+            return provider_enabled()
         if seite.key == "koerperschaften" and seite is not seite_aktiv:
             if mehrere is None:
                 from .services import body_service

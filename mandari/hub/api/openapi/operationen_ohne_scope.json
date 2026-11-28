@@ -1,0 +1,7 @@
+{
+  "beschreibung": "Operationen der Schnittstelle mit Anmeldung, die keine OAuth-Scopes nennen, weil sie nur das API-Token eines Session-Mandanten annehmen (Session-API v1, Einreichen aus Work). Die Liste darf nur kürzer werden (scripts/check_schnittstelle.py); nennt eine Operation Scopes oder fällt sie weg, muss sie heraus (hub/api/tests/test_schnittstelle.py, Issue #1591).",
+  "operationen": [
+    "apps_session_api_v1_endpoints_application_feedback",
+    "apps_session_api_v1_endpoints_submit_application"
+  ]
+}

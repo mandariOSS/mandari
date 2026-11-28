@@ -226,6 +226,7 @@ jobs:
             schnittstelle:
               - 'docs/schnittstelle/**'
               - 'mandari/hub/api/openapi/befehle_ohne_endpunkt.json'
+              - 'mandari/hub/api/openapi/operationen_ohne_scope.json'
               - 'mandari/hub/contracts/schemas/**'
               - 'scripts/check_schnittstelle.py'
             # Beide OParl-Ausgaben samt allem, woraus sie ihre Objekte bauen (Modelle, Sichtbarkeit,

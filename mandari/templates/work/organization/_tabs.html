@@ -1,6 +1,6 @@
 {% comment %}
 Shared organization settings tab navigation. Expects `active_tab` in context.
-Values: "general", "faction", "api", "documents", "parties", "members", "roles"
+Values: "general", "faction", "api", "documents", "parties", "members", "roles", "anwendungen" (Issue #1591)
 {% endcomment %}
 {% load permission_tags %}
 <div class="mb-8 border-b border-gray-200 dark:border-gray-700">
@@ -52,6 +52,12 @@ Values: "general", "faction", "api", "documents", "parties", "members", "roles"
            class="{% if active_tab == 'registration' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             Registrierung
         </a>
+        {% if oidc_provider_enabled and membership|has_perm:"organization.edit" %}
+        <a href="{% url 'work:organization_applications' org_slug=organization.slug %}"
+           class="{% if active_tab == 'anwendungen' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            Anwendungen
+        </a>
+        {% endif %}
         {% endwith %}
     </nav>
 </div>

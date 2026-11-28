@@ -22,6 +22,9 @@ Profilseite in Work, Session oder Insight, Issue #1215; leer: Startseite).
         <li class="space-y-3 p-4">
             <div class="space-y-1">
                 <p class="text-sm font-medium text-gray-900 dark:text-white">{{ application.name }}</p>
+                {% if application.registered_by %}
+                <p class="text-xs text-gray-500 dark:text-gray-400">Registriert von {{ application.registered_by }}</p>
+                {% endif %}
                 {% if application.scopes %}
                 <p class="text-sm text-gray-700 dark:text-gray-300">{{ application.scopes|join:"; " }}</p>
                 {% endif %}

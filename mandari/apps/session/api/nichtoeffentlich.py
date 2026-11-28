@@ -135,13 +135,32 @@ def _bindung_beschreiben(key: str) -> str | None:
     return str(name) if name else None
 
 
+#: Scopes für Anwendungen, die eine Kommune selbst registriert (Issue #1591): Anmeldung, Ratsdaten, Session (lesen
+#: und Befehle, #1588) und Einreichung im Namen von Personen; Nichtöffentliches (#565) nie
+KOMMUNE_SCOPES: Final = (
+    catalog.OPENID,
+    catalog.PROFILE,
+    catalog.EMAIL,
+    catalog.RATSDATEN_LESEN,
+    catalog.EINREICHUNG_SCHREIBEN,
+    catalog.SESSION_LESEN,
+    catalog.SITZUNG_SCHREIBEN,
+)
+
 BINDUNG: Final = bindings.Kind(
-    name=bindings.TENANT, label="Session-Mandant", resolve=_bindung_aufloesen, describe=_bindung_beschreiben
+    name=bindings.TENANT,
+    label="Session-Mandant",
+    resolve=_bindung_aufloesen,
+    describe=_bindung_beschreiben,
+    scopes=KOMMUNE_SCOPES,
 )
 
 
 def register() -> None:
-    """Art der Bindung „Session-Mandant“ bei der Plattform anmelden (aus ``SessionConfig.ready``)."""
+    """
+    Art „Session-Mandant“ bei der Plattform anmelden (aus ``SessionConfig.ready``): für gebundene Dienste (#565) und
+    für Anwendungen, die eine Kommune selbst registriert (#1591).
+    """
     bindings.register(BINDUNG)
 
 
@@ -239,6 +258,17 @@ def zugang(request: HttpRequest, tenant: Any) -> Zugang:
         if scheme.lower() != "bearer":
             raise oidc_access.InvalidAccessToken
         access = oidc_access.authenticate(raw.strip(), resource_uri=system_url(tenant))
+    except oidc_access.RateLimited as limited:
+        # Grenze der Anwendung über alle ihre Tokens (#1591)
+        raise Abgelehnt(
+            problem(
+                request,
+                429,
+                "Die Anwendung hat ihre Anfragen dieser Minute verbraucht.",
+                kind="ratenlimit",
+                headers={"Retry-After": str(limited.retry_after)},
+            )
+        ) from None
     except oidc_access.InvalidAccessToken:
         raise Abgelehnt(
             problem(

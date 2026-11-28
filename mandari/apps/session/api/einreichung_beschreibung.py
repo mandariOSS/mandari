@@ -5,7 +5,7 @@ Beschreibung des Profils Einreichung je Session-Mandant in der gemeinsamen Schni
 Die Endpunkte (``apps/session/api/einreichung.py``) nehmen und liefern die Objekte des Profils; ihre Schemas stammen
 unverändert aus kommParl (Komponenten ``Kommparl…``, ``hub.api.kommparl.profile_component``). Jeder Endpunkt, der
 einen Befehl annimmt, nennt ihn in ``x-mandari-command``. Anmeldung: OAuth 2.0 mit dem Scope
-``einreichung:schreiben`` (Sicherheitsschema ``mandariOidc``).
+``einreichung:schreiben`` (Sicherheitsschema ``mandariOidc`` der gemeinsamen Beschreibung, ``hub.api.openapi.security``).
 """
 
 from __future__ import annotations
@@ -17,12 +17,13 @@ from django.urls import reverse
 from apps.accounts.oidc import catalog
 from hub.api import kommparl
 from hub.api.openapi import COMMAND_EXTENSION, Area, Description
+from hub.api.openapi import security as oidc_security
 
 #: Platzhalter für Mandant und Kennungen in Adressen (gültige Werte, die in keiner echten Adresse vorkommen)
 _TENANT: Final = "mandant-platzhalter-1228"
 _MARKER: Final = "00000000-0000-0000-0000-000000001228"
 
-SECURITY_SCHEME: Final = "mandariOidc"
+SECURITY_SCHEME: Final = oidc_security.SCHEME
 SCOPE: Final = catalog.EINREICHUNG_SCHREIBEN
 
 #: Schemas des Profils, auf die die Beschreibung verweist
@@ -99,9 +100,12 @@ _AUTH_ERRORS: Final[dict[str, Any]] = {
         "Anmeldung fehlt oder Token ungültig (auch API-Tokens der Session-API)",
         **{"WWW-Authenticate": "Bearer nach RFC 6750"},
     ),
-    "403": _problem("Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt"),
+    "403": _problem(
+        "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung "
+        "nicht erlaubt"
+    ),
     "404": _problem("Mandant, Objekt oder Ladung nicht gefunden, nicht sichtbar oder Profil nicht eingeschaltet"),
-    "429": _problem("Zu viele Anfragen", **{"Retry-After": "Wartezeit in Sekunden"}),
+    "429": _problem("Zu viele Anfragen der Person oder der Anwendung", **{"Retry-After": "Wartezeit in Sekunden"}),
 }
 _GET_HEADERS: Final[dict[str, Any]] = {
     "ETag": {"description": "Kennung des Inhalts für bedingte Abrufe", "schema": {"type": "string"}},
@@ -134,7 +138,7 @@ def _operation(
         "operationId": operation_id,
         "summary": summary,
         "description": description,
-        "security": [{SECURITY_SCHEME: [SCOPE]}],
+        "security": oidc_security.requirement(SCOPE),
         "parameters": [dict(parameter) for parameter in parameters],
         "responses": dict(sorted(all_responses.items())),
     }
@@ -357,24 +361,7 @@ def description() -> Description:
     schemas = {
         kommparl.profile_component_name(name): kommparl.profile_component("submission", name) for name in SCHEMAS
     }
-    security = {
-        SECURITY_SCHEME: {
-            "type": "oauth2",
-            "description": (
-                "OpenID-Connect-Anbieter der Installation (Discovery unter /.well-known/openid-configuration). Nur "
-                "Access-Tokens im Namen einer Person; PKCE mit S256 ist Pflicht."
-            ),
-            "flows": {
-                "authorizationCode": {
-                    "authorizationUrl": "/oauth/authorize/",
-                    "tokenUrl": "/oauth/token/",
-                    "refreshUrl": "/oauth/token/",
-                    "scopes": {SCOPE: catalog.DESCRIPTIONS[SCOPE]},
-                }
-            },
-        }
-    }
-    return {"paths": paths, "components": {"schemas": schemas, "securitySchemes": security}}
+    return {"paths": paths, "components": {"schemas": schemas, **oidc_security.components()}}
 
 
 EINREICHUNG: Final = Area(

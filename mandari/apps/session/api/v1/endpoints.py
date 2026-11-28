@@ -70,6 +70,12 @@ def require_reader(tenant: SessionTenant, principal: Principal, tenant_slug: str
         raise Problem(403, "Für diesen Bereich fehlt das Leserecht.", kind="keine-berechtigung")
 
 
+def _limit(principal: Principal, limit: int) -> int:
+    """Einträge je Seite: höchstens ``MAX_LIMIT``, mit Access-Token höchstens die Grenze der Anwendung (#1591)."""
+    limit = max(1, min(limit, MAX_LIMIT))
+    return principal.oidc.page_size(limit) if principal.oidc is not None else limit
+
+
 def _page(qs: QuerySet[Any], limit: int, offset: int) -> tuple[list[Any], int]:
     limit = max(1, min(limit, MAX_LIMIT))
     offset = max(0, offset)
@@ -114,7 +120,7 @@ def _log_non_public_reads(
 @router.get("/{tenant_slug}/", response=TenantRoot, summary="Einstiegspunkt je Mandant")
 def tenant_root(request: HttpRequest, tenant_slug: str) -> dict[str, Any]:
     tenant = get_tenant(tenant_slug)
-    require_reader(tenant, resolve_principal(request, tenant), tenant_slug)
+    require_reader(tenant, resolve_principal(request, tenant, "tenant_root"), tenant_slug)
     base = request.build_absolute_uri
     return {
         "name": f"mandari Session-API – {tenant.name}",
@@ -142,7 +148,8 @@ def meetings(
 ) -> dict[str, Any]:
     """Öffentliche Sitzungen für alle; nicht-öffentliche mit Recht ``view_non_public_meetings``."""
     tenant = get_tenant(tenant_slug)
-    principal = resolve_principal(request, tenant)
+    principal = resolve_principal(request, tenant, "meetings")
+    limit = _limit(principal, limit)
     require_reader(tenant, principal, tenant_slug, "meetings")
     non_public = principal.has_permission("view_non_public_meetings")
     qs = SessionMeeting.objects.filter(tenant=tenant)
@@ -194,7 +201,8 @@ def papers(
     Vorlagen in Prüfung erscheinen nur mit dem Leserecht.
     """
     tenant = get_tenant(tenant_slug)
-    principal = resolve_principal(request, tenant)
+    principal = resolve_principal(request, tenant, "papers")
+    limit = _limit(principal, limit)
     require_reader(tenant, principal, tenant_slug, "papers")
     non_public = principal.has_permission("view_non_public_papers")
     qs: QuerySet[SessionPaper] = (
@@ -237,7 +245,8 @@ def applications(
 ) -> dict[str, Any]:
     """Eingereichte Anträge – nur mit Recht ``view_applications`` (Sitzung) bzw. Token-Flag."""
     tenant = get_tenant(tenant_slug)
-    principal = resolve_principal(request, tenant)
+    principal = resolve_principal(request, tenant, "applications")
+    limit = _limit(principal, limit)
     principal.require("view_applications", "Anträge sind nur mit dem Recht „Anträge anzeigen“ abrufbar.")
     qs = (
         SessionApplication.objects.filter(tenant=tenant)
@@ -324,7 +333,7 @@ def submit_application(
     (``content_hash``, SHA-256 über das kanonische JSON des Befehlsinhalts nach RFC 8785).
     """
     tenant = get_tenant(tenant_slug)
-    principal = resolve_principal(request, tenant)
+    principal = resolve_principal(request, tenant, "submit_application")
     if principal.token is None:
         raise Problem(
             401,
@@ -378,7 +387,7 @@ def application_feedback(request: HttpRequest, tenant_slug: str, application_id:
     from apps.session.services import application_feedback as feedback_service
 
     tenant = get_tenant(tenant_slug)
-    principal = resolve_principal(request, tenant)
+    principal = resolve_principal(request, tenant, "application_feedback")
     if principal.token is None:
         raise Problem(
             401,

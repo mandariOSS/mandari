@@ -21,8 +21,10 @@ Reihenfolge der Prüfungen und Probleme (RFC 9457):
    - ohne ``Authorization``: die Browser-Sitzung der eigenen Oberfläche mit CSRF-Token (``X-CSRFToken``), sonst 403.
 
    Auslöser ist immer die Person (``user:<id>``); was sie im Mandanten darf, prüft der Handler.
-3. Höchstens ``REQUESTS_PER_MINUTE`` Befehle je Person und Minute, sonst 429 mit ``Retry-After``.
-4. Mandant aus dem Kurznamen der Adresse (``TenantArea``), aktiv, sonst 404 (``mandant-unbekannt``).
+3. Höchstens ``REQUESTS_PER_MINUTE`` Befehle je Person und Minute, sonst 429 mit ``Retry-After``; ebenso, wenn die
+   Anwendung ihre Anfragen je Minute verbraucht hat (``rate_limit_per_minute``, Issue #1591).
+4. Mandant aus dem Kurznamen der Adresse (``TenantArea``), aktiv, sonst 404 (``mandant-unbekannt``). Eine Anwendung,
+   die eine Kommune oder Fraktion selbst registriert hat, gilt nur für diesen Mandanten, sonst 403 (Issue #1591).
 5. ``Idempotency-Key`` und Inhalt (``hub.commands.http.command_from_request``), dann der Dispatcher mit seinen
    Prüfungen (Vertrag 422, Rechte 403, Objekt 404, fachliche Konflikte 409).
 
@@ -40,6 +42,7 @@ from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.accounts.oidc import access as oidc_access
+from apps.accounts.oidc import bindings
 from hub.commands import CommandError, Exposure, Problem, get_dispatcher, tenant_area
 from hub.commands.channel import OBERFLAECHE, SCHNITTSTELLE, Channel, channel
 from hub.commands.dispatcher import UNKNOWN_COMMAND
@@ -62,6 +65,11 @@ SCOPE_MISSING: Final = "Dem Zugriffstoken fehlt ein Scope, der diesen Befehl erl
 CSRF_FAILED: Final = "CSRF-Prüfung fehlgeschlagen: Anfragen mit der Sitzung der Oberfläche brauchen das CSRF-Token."
 RATE_LIMITED: Final = "Zu viele Anfragen. Bitte in einer Minute erneut versuchen."
 TENANT_UNKNOWN: Final = "Der Mandant ist nicht bekannt oder deaktiviert."
+APPLICATION_RATE_LIMITED: Final = "Die Anwendung hat ihre Anfragen dieser Minute verbraucht."
+FOREIGN_AREA: Final = "Die Anwendung ist für einen anderen Mandanten registriert."
+
+#: Art in ``tenant_ref`` -> Art des Bereichs, der eine Anwendung registriert hat (``apps.accounts.oidc.bindings``)
+_OWNER_KINDS: Final[dict[str, str]] = {"session": bindings.TENANT, "org": bindings.ORGANIZATION}
 
 
 class _RefusedError(CommandError):
@@ -87,9 +95,10 @@ def command_view(request: HttpRequest, area: str, tenant: str, name: str, versio
             raise CommandError.of(404, "befehl-unbekannt", UNKNOWN_COMMAND)
         if request.method != "POST":
             raise CommandError.of(405, "methode-nicht-erlaubt", POST_ONLY, allow="POST")
-        actor, way = _authenticate(request, exposure)
+        actor, way, owner = _authenticate(request, exposure)
         _throttle(actor)
         tenant_ref = _tenant_ref(area, tenant)
+        _check_owner(owner, tenant_ref)
         command = command_from_request(request, name, version, tenant_ref=tenant_ref, actor_ref=actor)
         with channel(way):
             receipt = get_dispatcher().dispatch(command)
@@ -100,8 +109,11 @@ def command_view(request: HttpRequest, area: str, tenant: str, name: str, versio
     return receipt_response(receipt)
 
 
-def _authenticate(request: HttpRequest, exposure: Exposure) -> tuple[str, Channel]:
-    """Auslöser ``user:<id>`` und Weg; Access-Token vor Browser-Sitzung (siehe Moduldokumentation)."""
+def _authenticate(request: HttpRequest, exposure: Exposure) -> tuple[str, Channel, str]:
+    """
+    Auslöser ``user:<id>``, Weg und Bereich der Anwendung (``OAuthAccess.owner``, leer bei der Oberfläche); Access-Token
+    vor Browser-Sitzung (siehe Moduldokumentation).
+    """
     header = str(request.META.get("HTTP_AUTHORIZATION", ""))
     if header:
         if not header.startswith("Bearer "):
@@ -111,6 +123,10 @@ def _authenticate(request: HttpRequest, exposure: Exposure) -> tuple[str, Channe
             raise _RefusedError(401, "nicht-authentifiziert", TOKEN_FOREIGN, _challenge(exposure, "invalid_token"))
         try:
             access = oidc_access.authenticate(raw, resource_uri=request.build_absolute_uri(request.path))
+        except oidc_access.RateLimited as limited:
+            raise _RefusedError(
+                429, "ratenlimit", APPLICATION_RATE_LIMITED, {"Retry-After": str(limited.retry_after)}
+            ) from None
         except oidc_access.InvalidAccessToken:
             raise _RefusedError(
                 401, "nicht-authentifiziert", TOKEN_INVALID, _challenge(exposure, "invalid_token")
@@ -119,13 +135,21 @@ def _authenticate(request: HttpRequest, exposure: Exposure) -> tuple[str, Channe
             raise _RefusedError(403, "keine-berechtigung", PERSON_REQUIRED)
         if not access.scopes & set(exposure.scopes):
             raise _RefusedError(403, "keine-berechtigung", SCOPE_MISSING, _challenge(exposure, "insufficient_scope"))
-        return f"user:{access.user.pk}", Channel(SCHNITTSTELLE, client_id=access.client_id)
+        return f"user:{access.user.pk}", Channel(SCHNITTSTELLE, client_id=access.client_id), access.owner
     user = getattr(request, "user", None)
     if user is None or not user.is_authenticated:
         raise _RefusedError(401, "nicht-authentifiziert", LOGIN_REQUIRED, _challenge(exposure))
     if not _csrf_ok(request):
         raise _RefusedError(403, "csrf", CSRF_FAILED)
-    return f"user:{user.pk}", Channel(OBERFLAECHE)
+    return f"user:{user.pk}", Channel(OBERFLAECHE), ""
+
+
+def _check_owner(owner: str, tenant_ref: str) -> None:
+    """Anwendung einer Kommune oder Fraktion nur für ihren eigenen Mandanten (``bindings.allows``, Issue #1591)."""
+    kind, _separator, key = tenant_ref.partition(":")
+    owner_kind = _OWNER_KINDS.get(kind)
+    if owner_kind is not None and not bindings.allows(owner, owner_kind, key):
+        raise _RefusedError(403, "keine-berechtigung", FOREIGN_AREA)
 
 
 def _csrf_ok(request: HttpRequest) -> bool:

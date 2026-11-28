@@ -16,8 +16,9 @@ Die Drehscheibe kennt Session nicht (A1); Session meldet seine Bereiche deshalb 
   Befehl annimmt, nennt ihn in ``x-mandari-command``.
 - **Session-API v1** (``/api/v1/session/``): die Beschreibung, die django-ninja aus den Endpunkten erzeugt –
   dieselbe wie unter ``/api/v1/session/openapi.json``. Erst hier kommt an jedem Endpunkt, der einen Befehl
-  annimmt, ``x-mandari-command`` dazu (``SESSION_V1_COMMANDS``); die eigene Beschreibung der API v1 bleibt so
-  unverändert.
+  annimmt, ``x-mandari-command`` dazu (``SESSION_V1_COMMANDS``) und an jedem Endpunkt, der Access-Tokens annimmt,
+  seine Scopes (``auth.SCOPES``, Issue #1591, Sicherheitsschema ``mandariOidc`` aus ``hub.api.openapi.security``);
+  die eigene Beschreibung der API v1 bleibt so unverändert.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from django.urls import reverse
 from apps.accounts.oidc import catalog
 from hub.api import kommparl
 from hub.api.openapi import COMMAND_EXTENSION, Area, Description, register_area
+from hub.api.openapi import security as oidc_security
 from hub.api.openapi.oparl import KINDS, METHODS_GET, component_schemas, oparl_paths
 
 #: Endpunkte der Session-API v1, die einen Befehl annehmen: ``operationId`` -> Name des Befehls
@@ -283,20 +285,39 @@ def tenant_nonpublic_description() -> Description:
     }
 
 
+#: Anfang der ``operationId`` der Session-API v1; dahinter steht der Name der Funktion (Schlüssel von ``auth.SCOPES``)
+SESSION_V1_OPERATION_PREFIX: Final = "apps_session_api_v1_endpoints_"
+
+
 def session_v1_description() -> Description:
-    """Beschreibung der Session-API v1, wie django-ninja sie erzeugt, mit den Befehlen der Endpunkte."""
+    """Beschreibung der Session-API v1, wie django-ninja sie erzeugt, mit Befehlen und Scopes der Endpunkte."""
     from apps.session.api.v1.api import api
+    from apps.session.api.v1.auth import SCOPES
 
     document: dict[str, Any] = copy.deepcopy(dict(api.get_openapi_schema()))
     found: set[str] = set()
+    scoped: set[str] = set()
     for item in document.get("paths", {}).values():
         for operation in item.values():
-            command = SESSION_V1_COMMANDS.get(operation.get("operationId", "")) if isinstance(operation, dict) else None
+            if not isinstance(operation, dict):
+                continue
+            operation_id = str(operation.get("operationId", ""))
+            command = SESSION_V1_COMMANDS.get(operation_id)
             if command:
                 operation[COMMAND_EXTENSION] = command
-                found.add(operation["operationId"])
+                found.add(operation_id)
+            name = operation_id.removeprefix(SESSION_V1_OPERATION_PREFIX)
+            if name in SCOPES:
+                scoped.add(name)
+                if SCOPES[name]:
+                    operation["security"] = [*operation.get("security", []), *oidc_security.requirement(*SCOPES[name])]
     if missing := sorted(set(SESSION_V1_COMMANDS) - found):
         raise ImproperlyConfigured(f"Session-API v1 hat keine Endpunkte {missing} (SESSION_V1_COMMANDS anpassen)")
+    if missing := sorted(set(SCOPES) - scoped):
+        raise ImproperlyConfigured(f"Session-API v1 hat keine Endpunkte {missing} (auth.SCOPES anpassen)")
+    document.setdefault("components", {}).setdefault("securitySchemes", {}).update(
+        oidc_security.components()["securitySchemes"]
+    )
     return document
 
 
@@ -331,7 +352,8 @@ SESSION_V1: Final = Area(
     title="Session-API v1",
     description=(
         "Session-RIS je Mandant mit Anmeldung: Sitzungen, Vorlagen, Anträge und Einreichung (API-Token oder "
-        "Sitzung); Nichtöffentliches nur mit Recht."
+        "Sitzung); Nichtöffentliches nur mit Recht. Access-Tokens lesen mit ratsdaten:lesen oder session:lesen, "
+        "nie Nichtöffentliches."
     ),
     entry="/api/v1/session/{tenant_slug}/",
     openapi=session_v1_description,

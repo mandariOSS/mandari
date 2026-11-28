@@ -7,6 +7,9 @@ Django-Cache, IPv6 je /64-Netz (ein Anschluss verfügt meist über ein ganzes /6
 Widerruf und Introspektion prüfen wie der Token-Endpunkt ein Client-Secret gegen seinen Passwort-Hash; ohne Grenze
 ließe sich darüber Rechenzeit binden. Eine Abweisung steht wie eine gedrosselte Anmeldung im Sicherheitsprotokoll,
 höchstens einmal je Adresse und Fenster (:func:`apps.accounts.security_audit.record_throttled`).
+
+Dazu die Grenze je Anwendung an der Schnittstelle (#1591, :func:`application_exceeded`): ein Zähler je Anwendung und
+fester Minute über alle ihre Tokens und Adressen, gezählt beim Prüfen jedes Access-Tokens.
 """
 
 from __future__ import annotations
@@ -58,6 +61,22 @@ def exceeded(request: HttpRequest, endpoint: str = STEP_TOKEN_ENDPOINT) -> bool:
     window = int(time.time() // WINDOW_SECONDS)
     marker = f"{endpoint}|{scope_of(client_ip(request))}|{window}"
     key = "oidc-token:rl:" + hashlib.sha256(marker.encode()).hexdigest()
+    if cache.add(key, 1, timeout=WINDOW_SECONDS * 2):
+        return False
+    try:
+        count = int(cache.incr(key))
+    except ValueError:  # Schlüssel zwischenzeitlich abgelaufen
+        cache.add(key, 1, timeout=WINDOW_SECONDS * 2)
+        return False
+    return count > limit
+
+
+def application_exceeded(application_id: int, limit: int) -> bool:
+    """Anfrage einer Anwendung zählen; ``True``, wenn sie mehr als ``limit`` in dieser Minute hat (0: ohne Grenze)."""
+    if limit <= 0:
+        return False
+    window = int(time.time() // WINDOW_SECONDS)
+    key = f"oidc-anwendung:rl:{application_id}:{window}"
     if cache.add(key, 1, timeout=WINDOW_SECONDS * 2):
         return False
     try:

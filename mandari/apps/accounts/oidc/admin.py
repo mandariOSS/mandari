@@ -9,7 +9,8 @@ Die Bibliothek registriert ihre Modelle selbst und nimmt dafür die Klassen aus 
   Code-Ablauf und Client Credentials, Scopes aus dem Katalog, Signatur RS256. Das Client-Secret wird beim Speichern
   gehasht und ist danach nicht mehr lesbar. Dienste können an genau einen Bereich gebunden sein und sich mit
   ``private_key_jwt`` ausweisen (öffentliche Schlüssel als JWKS, #565); gebundene Dienste nur so. Anlegen, Ändern und Löschen stehen im Sicherheitsprotokoll; wird eine
-  Anwendung ausgeschaltet, sind alle ihre Tokens widerrufen.
+  Anwendung ausgeschaltet, sind alle ihre Tokens widerrufen. Grenzen je Anwendung (Anfragen je Minute, Einträge je
+  Seite) und der Bereich, der eine Anwendung registriert hat (Kommune oder Fraktion, #1591), stehen hier ebenfalls.
 - Tokens, Codes und ID-Tokens sind nur lesbar; Tokens lassen sich widerrufen (mit Eintrag im Protokoll).
   Tokens stehen ohnehin nur als Prüfsumme in der Datenbank.
 """
@@ -36,7 +37,7 @@ from unfold.admin import ModelAdmin
 from apps.common.admin_mixins import ReadOnlyAdminMixin
 
 from . import audit, catalog, services
-from .models import ALLOWED_GRANT_TYPES, OAuthApplication
+from .models import ALLOWED_GRANT_TYPES, DEFAULT_PAGE_SIZE, DEFAULT_RATE_LIMIT, OAuthApplication
 
 
 class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek ohne Typen
@@ -46,8 +47,9 @@ class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek
         choices=[(scope.name, f"{scope.name} – {scope.description}") for scope in catalog.CATALOG],
         widget=forms.CheckboxSelectMultiple,
         help_text=(
-            "Im Namen einer Person: openid, profile, email, ratsdaten:lesen, einreichung:schreiben, "
-            "ratsdaten:nichtoeffentlich (zweiter Faktor Pflicht, höchstens 7 Tage nach der Anmeldung). "
+            "Im Namen einer Person: openid, profile, email, ratsdaten:lesen, einreichung:schreiben, session:lesen, "
+            "work:lesen, work:schreiben, ratsdaten:nichtoeffentlich und sitzung:schreiben (beide: zweiter Faktor "
+            "Pflicht, höchstens 7 Tage nach der Anmeldung). "
             "Für Dienste: ratsdaten:lesen, einreichung:schreiben, mandari:bereitstellung; "
             "sitzung:lesen nur mit Bindung an einen Mandanten."
         ),
@@ -77,6 +79,9 @@ class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek
             "is_active",
             "binding",
             "jwks",
+            "owner",
+            "rate_limit_per_minute",
+            "max_page_size",
         )
         labels = {
             "name": "Name",
@@ -88,6 +93,9 @@ class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek
             "skip_authorization": "Vertrauenswürdig (ohne Zustimmungsseite)",
             "algorithm": "Signatur des ID-Tokens",
             "binding": "Bindung",
+            "owner": "Registriert von",
+            "rate_limit_per_minute": "Anfragen je Minute",
+            "max_page_size": "Einträge je Seite",
         }
         help_texts = {
             "name": "Erscheint auf der Zustimmungsseite und unter „Verbundene Anwendungen“.",
@@ -114,23 +122,44 @@ class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek
                 (OAuthApplication.NO_ALGORITHM, "Keine (Dienst)"),
                 (OAuthApplication.RS256_ALGORITHM, "RS256"),
             ]
+        # Grenzen je Anwendung (#1591): leer gelassen gelten die Standardwerte
+        for name in ("rate_limit_per_minute", "max_page_size"):
+            if name in self.fields:
+                self.fields[name].required = False
         secret_field = self.fields.get("client_secret")
         if secret_field is not None and not (self.instance and self.instance.pk):
             secret_field.help_text = "Jetzt kopieren und sicher übergeben. Nach dem Speichern ist es nur noch gehasht."
         elif secret_field is not None:
             secret_field.help_text = "Gehasht, nicht mehr lesbar. Für ein neues Secret einen neuen Wert eintragen und vor dem Speichern kopieren."
 
+    def clean_rate_limit_per_minute(self) -> int:
+        value = self.cleaned_data.get("rate_limit_per_minute")
+        return DEFAULT_RATE_LIMIT if value is None else int(value)
+
+    def clean_max_page_size(self) -> int:
+        value = self.cleaned_data.get("max_page_size")
+        return DEFAULT_PAGE_SIZE if value is None else int(value)
+
 
 class OAuthApplicationAdmin(ApplicationAdmin, ModelAdmin):  # type: ignore[misc]  # Bibliothek ohne Typen
     form = OAuthApplicationForm
-    list_display = ("name", "client_id", "authorization_grant_type", "client_type", "skip_authorization", "is_active")
+    list_display = (
+        "name",
+        "client_id",
+        "authorization_grant_type",
+        "client_type",
+        "skip_authorization",
+        "owner",
+        "is_active",
+    )
     list_filter = ("authorization_grant_type", "client_type", "skip_authorization", "is_active")
-    search_fields = ("name", "client_id")
+    search_fields = ("name", "client_id", "owner")
     readonly_fields = ("created", "updated")
     fieldsets = (
         ("Anwendung", {"fields": ("name", "is_active", "skip_authorization")}),
         ("Zugangsdaten", {"fields": ("client_id", "client_secret", "client_type", "jwks")}),
         ("Ablauf", {"fields": ("authorization_grant_type", "redirect_uris", "allowed_scopes", "algorithm", "binding")}),
+        ("Grenzen und Herkunft", {"fields": ("rate_limit_per_minute", "max_page_size", "owner")}),
         ("Info", {"fields": ("created", "updated"), "classes": ("collapse",)}),
     )
 

@@ -10,6 +10,11 @@ Ob ein Scope zu einem Ablauf passt, legt ``person`` bzw. ``service`` fest:
 - ``person``: nutzbar im Code-Ablauf, also im Namen einer angemeldeten Person
 - ``service``: nutzbar mit Client Credentials, also für einen Dienst ohne Person
 
+Für Session und Work gibt es je einen Scope zum Lesen und einen zum Schreiben (Issue #1591; für Session schreibt
+``sitzung:schreiben`` aus der Befehlsschicht, #1588), nur im Namen einer Person: Ein Token darf nie mehr als die Person selbst, und Nichtöffentliches gehört nicht dazu (#565). Welche
+Operation der gemeinsamen Schnittstelle welchen Scope verlangt, steht an der Operation (``security`` in
+``docs/schnittstelle/openapi.json``); ``writes`` kennzeichnet Scopes, die Befehle (A6) erlauben.
+
 Zwei Merkmale schränken weiter ein (Issue #565, Profil Nichtöffentliches):
 
 - ``bound``: nur für Anwendungen, die an genau einen Bereich gebunden sind (``OAuthApplication.binding``, etwa einen
@@ -38,6 +43,12 @@ RATSDATEN_NICHTOEFFENTLICH = "ratsdaten:nichtoeffentlich"
 SITZUNG_LESEN = "sitzung:lesen"
 #: Befehle von Session im Namen einer Person, soweit sie selbst darf (Befehlsschicht, Issue #1588)
 SITZUNG_SCHREIBEN = "sitzung:schreiben"
+#: Session im Namen einer Person lesen, soweit die Person es selbst darf, nie Nichtöffentliches (#1591); Schreiben
+#: in Session ist ``sitzung:schreiben`` (Befehle, #1588)
+SESSION_LESEN = "session:lesen"
+#: Work im Namen einer Person: lesen bzw. handeln in ihren Organisationen, soweit sie es selbst darf (#1591)
+WORK_LESEN = "work:lesen"
+WORK_SCHREIBEN = "work:schreiben"
 
 #: Höchstens so lange nach der Anmeldung gibt es Tokens mit einem geschützten Scope (``Scope.protected``)
 PROTECTED_MAX_LOGIN_AGE: Final = timedelta(days=7)
@@ -55,6 +66,8 @@ class Scope:
     bound: bool = False
     #: zweiter Faktor Pflicht, höchstens ``PROTECTED_MAX_LOGIN_AGE`` nach der Anmeldung
     protected: bool = False
+    #: erlaubt Befehle (schreibende Aufrufe nach A6); Operationen mit Befehl verlangen einen solchen Scope
+    writes: bool = False
 
 
 CATALOG: tuple[Scope, ...] = (
@@ -67,8 +80,21 @@ CATALOG: tuple[Scope, ...] = (
         True,
         True,
     ),
-    Scope(EINREICHUNG_SCHREIBEN, "Anträge in deinem Namen einreichen", True, True),
-    Scope(BEREITSTELLUNG, "Organisationen und Mandanten bereitstellen (nur für Dienste)", False, True),
+    Scope(EINREICHUNG_SCHREIBEN, "Anträge in deinem Namen einreichen", True, True, writes=True),
+    Scope(
+        SESSION_LESEN,
+        "In Session lesen, was du dort selbst sehen darfst, etwa Anträge; Nichtöffentliches gehört nicht dazu",
+        True,
+        False,
+    ),
+    Scope(
+        WORK_LESEN,
+        "In Work lesen, was du in deinen Organisationen selbst sehen darfst; Nichtöffentliches gehört nicht dazu",
+        True,
+        False,
+    ),
+    Scope(WORK_SCHREIBEN, "In Work in deinem Namen handeln, soweit du es selbst darfst", True, False, writes=True),
+    Scope(BEREITSTELLUNG, "Organisationen und Mandanten bereitstellen (nur für Dienste)", False, True, writes=True),
     Scope(
         RATSDATEN_NICHTOEFFENTLICH,
         "Nichtöffentliche Sitzungen, Tagesordnungspunkte, Vorlagen und Anlagen lesen, soweit du sie selbst sehen darfst",
@@ -89,6 +115,7 @@ CATALOG: tuple[Scope, ...] = (
         True,
         False,
         protected=True,
+        writes=True,
     ),
 )
 
@@ -118,6 +145,8 @@ def allowed_for(names: list[str] | tuple[str, ...], *, person: bool, bound: bool
 
 #: Scopes mit erhöhtem Schutz (``Scope.protected``)
 PROTECTED: Final[frozenset[str]] = frozenset(scope.name for scope in CATALOG if scope.protected)
+#: Scopes, die Befehle erlauben (``Scope.writes``)
+WRITES: Final[frozenset[str]] = frozenset(scope.name for scope in CATALOG if scope.writes)
 
 
 def protected_in(names: object) -> bool:

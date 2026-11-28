@@ -251,10 +251,13 @@ nutzen das [Profil Einreichung](#profil-einreichung-1228) mit Anmeldung über de
   übrigen Rollenrechten (nur GET). Ohne „API-Zugang“ gilt eine angemeldete Person wie ein anonymer Aufruf;
   das gilt auch für die abgekündigten Pfade.
 - **Access-Token des OpenID-Connect-Anbieters** (`Authorization: Bearer mandari_at_…`, Issue #1206), nur bei
-  eingeschaltetem Anbieter und nur mit dem Scope `ratsdaten:lesen` (sonst 403 mit `WWW-Authenticate`). Im Namen einer
-  Person liest das Token höchstens, was die Person mit eigener Anmeldung über die Schnittstelle lesen dürfte (also
-  nur mit „API-Zugang“), aber nie Nichtöffentliches und keine Anträge, und es reicht nichts ein. Ein Token eines
-  Dienstes (Client Credentials) liest nur, was anonym lesbar ist. Code: `apps/session/api/v1/auth.py`.
+  eingeschaltetem Anbieter. Jede Operation nennt ihre Scopes in der Beschreibung (`security`, Issue #1591): Sitzungen
+  und Vorlagen mit `ratsdaten:lesen` oder `session:lesen`, Anträge nur mit `session:lesen` (sonst 403 mit
+  `WWW-Authenticate`). Im Namen einer Person liest das Token höchstens, was die Person mit eigener Anmeldung über die
+  Schnittstelle lesen dürfte (also nur mit „API-Zugang“) und was der Scope erlaubt, aber nie Nichtöffentliches, und
+  es reicht nichts ein. Ein Token eines Dienstes (Client Credentials) liest nur, was anonym lesbar ist. Eine Anwendung,
+  die eine andere Kommune registriert hat, bekommt 403; über die Grenze der Anwendung je Minute hinaus gibt es 429.
+  Code: `apps/session/api/v1/auth.py`. Anleitung für eigene Anwendungen: `docs/schnittstelle/eigene-anwendungen.md`.
 - Ohne einen dieser Wege: anonym, nur öffentliche Daten.
 
 **Protokoll:** Erhält eine angemeldete Person nichtöffentliche Sitzungen oder Vorlagen, steht je Abruf

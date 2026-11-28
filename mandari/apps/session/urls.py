@@ -653,6 +653,12 @@ urlpatterns = [
         views.APITokenRevokeView.as_view(),
         name="settings_api_tokens_revoke",
     ),
+    # Eigene Anwendungen der Kommune über die Anmeldung von mandari (Issue #1591)
+    path(
+        "<slug:tenant_slug>/settings/anwendungen/",
+        views.OidcApplicationsView.as_view(),
+        name="settings_applications",
+    ),
     # Endgeräte für die digitale Ratsarbeit
     path(
         "<slug:tenant_slug>/devices/",

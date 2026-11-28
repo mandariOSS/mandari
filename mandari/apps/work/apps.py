@@ -61,6 +61,15 @@ class WorkConfig(AppConfig):
 
         sichtschutz.register()
 
+        # Eigene Anwendungen einer Organisation über die Anmeldung von mandari: Art bei der Plattform anmelden (#1591).
+        # Abgeschaltet (MODUL_WORK=aus, #1594) gibt es keine; Anwendungen einer Organisation erhalten dann keinen Scope.
+        from apps.common import module
+
+        if module.aktiv(module.WORK):
+            from apps.work.organization import anwendungen
+
+            anwendungen.register()
+
         # Demo nach der Frist gelöscht: Datenexporte außerhalb der Dateifelder mit entfernen (Issue #1575)
         from apps.tenants import demo
         from apps.work.files import remove_organization_exports_on_commit

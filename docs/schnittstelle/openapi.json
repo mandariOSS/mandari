@@ -28,7 +28,7 @@
     },
     {
       "name": "Session-API v1",
-      "description": "Session-RIS je Mandant mit Anmeldung: Sitzungen, Vorlagen, Anträge und Einreichung (API-Token oder Sitzung); Nichtöffentliches nur mit Recht."
+      "description": "Session-RIS je Mandant mit Anmeldung: Sitzungen, Vorlagen, Anträge und Einreichung (API-Token oder Sitzung); Nichtöffentliches nur mit Recht. Access-Tokens lesen mit ratsdaten:lesen oder session:lesen, nie Nichtöffentliches."
     },
     {
       "name": "Befehle",
@@ -237,7 +237,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person oder ohne passenden Scope, CSRF-Token fehlt, Recht im Mandanten fehlt",
+            "description": "Token ohne Person oder ohne passenden Scope, Anwendung eines anderen Mandanten, CSRF-Token fehlt, Recht im Mandanten fehlt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -443,7 +443,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person oder ohne passenden Scope, CSRF-Token fehlt, Recht im Mandanten fehlt",
+            "description": "Token ohne Person oder ohne passenden Scope, Anwendung eines anderen Mandanten, CSRF-Token fehlt, Recht im Mandanten fehlt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -649,7 +649,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person oder ohne passenden Scope, CSRF-Token fehlt, Recht im Mandanten fehlt",
+            "description": "Token ohne Person oder ohne passenden Scope, Anwendung eines anderen Mandanten, CSRF-Token fehlt, Recht im Mandanten fehlt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -825,6 +825,16 @@
         "security": [
           {
             "BearerOrSession": []
+          },
+          {
+            "mandariOidc": [
+              "ratsdaten:lesen"
+            ]
+          },
+          {
+            "mandariOidc": [
+              "session:lesen"
+            ]
           }
         ]
       }
@@ -886,6 +896,11 @@
         "security": [
           {
             "BearerOrSession": []
+          },
+          {
+            "mandariOidc": [
+              "session:lesen"
+            ]
           }
         ]
       }
@@ -1062,6 +1077,16 @@
         "security": [
           {
             "BearerOrSession": []
+          },
+          {
+            "mandariOidc": [
+              "ratsdaten:lesen"
+            ]
+          },
+          {
+            "mandariOidc": [
+              "session:lesen"
+            ]
           }
         ]
       }
@@ -1123,6 +1148,16 @@
         "security": [
           {
             "BearerOrSession": []
+          },
+          {
+            "mandariOidc": [
+              "ratsdaten:lesen"
+            ]
+          },
+          {
+            "mandariOidc": [
+              "session:lesen"
+            ]
           }
         ]
       }
@@ -5528,7 +5563,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5548,7 +5583,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5661,7 +5696,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5681,7 +5716,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5793,7 +5828,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5833,7 +5868,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5951,7 +5986,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5971,7 +6006,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6078,7 +6113,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6128,7 +6163,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6226,7 +6261,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6276,7 +6311,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6392,7 +6427,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6412,7 +6447,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7695,7 +7730,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7715,7 +7750,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7820,7 +7855,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7870,7 +7905,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7988,7 +8023,7 @@
             }
           },
           "403": {
-            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben; Handlung nicht erlaubt",
+            "description": "Token ohne Person (Dienst) oder ohne Scope einreichung:schreiben, Anwendung einer anderen Kommune; Handlung nicht erlaubt",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8048,7 +8083,7 @@
             }
           },
           "429": {
-            "description": "Zu viele Anfragen",
+            "description": "Zu viele Anfragen der Person oder der Anwendung",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19339,14 +19374,29 @@
       },
       "mandariOidc": {
         "type": "oauth2",
-        "description": "OpenID-Connect-Anbieter der Installation (Discovery unter /.well-known/openid-configuration). Nur Access-Tokens im Namen einer Person; PKCE mit S256 ist Pflicht.",
+        "description": "OpenID-Connect-Anbieter der Installation (Discovery unter /.well-known/openid-configuration). Access-Token im Header Authorization: Bearer. Im Namen einer Person: Code-Ablauf mit PKCE (S256 Pflicht); das Token darf nie mehr als die Person selbst. Dienste: Client Credentials. Welche Scopes eine Operation verlangt, steht an ihr; jeder dort genannte Scope genügt. Über die Grenze der Anwendung je Minute hinaus antwortet die Schnittstelle mit 429.",
         "flows": {
           "authorizationCode": {
             "authorizationUrl": "/oauth/authorize/",
             "tokenUrl": "/oauth/token/",
             "refreshUrl": "/oauth/token/",
             "scopes": {
-              "einreichung:schreiben": "Anträge in deinem Namen einreichen"
+              "openid": "Anmeldung mit deinem mandari-Konto (eine Kennung, die dich wiedererkennt)",
+              "profile": "Deinen Namen",
+              "email": "Deine E-Mail-Adresse",
+              "ratsdaten:lesen": "Ratsdaten lesen, die du selbst lesen darfst; Nichtöffentliches gehört nicht dazu",
+              "einreichung:schreiben": "Anträge in deinem Namen einreichen",
+              "session:lesen": "In Session lesen, was du dort selbst sehen darfst, etwa Anträge; Nichtöffentliches gehört nicht dazu",
+              "work:lesen": "In Work lesen, was du in deinen Organisationen selbst sehen darfst; Nichtöffentliches gehört nicht dazu",
+              "work:schreiben": "In Work in deinem Namen handeln, soweit du es selbst darfst"
+            }
+          },
+          "clientCredentials": {
+            "tokenUrl": "/oauth/token/",
+            "scopes": {
+              "ratsdaten:lesen": "Ratsdaten lesen, die du selbst lesen darfst; Nichtöffentliches gehört nicht dazu",
+              "einreichung:schreiben": "Anträge in deinem Namen einreichen",
+              "mandari:bereitstellung": "Organisationen und Mandanten bereitstellen (nur für Dienste)"
             }
           }
         }
