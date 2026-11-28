@@ -588,6 +588,7 @@ def apply_template(body: Any, vorlage: GremienVorlage) -> list[str]:
     anlegen, die Geschäftsordnung vorbelegen, solange das Ortsrecht leer ist, und Standard-TOPs der Gremien
     ergänzen. Bestehendes bleibt unverändert (idempotent). Rückgabe: Schritte für Ausgabe und Meldung.
     """
+    from apps.session import hub_events
     from apps.session.models import SessionOrganization, SessionStandardAgendaItem
     from apps.session.services import body_service
 
@@ -612,7 +613,12 @@ def apply_template(body: Any, vorlage: GremienVorlage) -> list[str]:
         )
         angelegt = organization is None
         if organization is None:
-            organization = SessionOrganization.objects.create(tenant=tenant, body=body, name=gremium.name, **defaults)
+            # Drehscheibe (Issue #860): ris.organization.changed (added)
+            with hub_events.track(tenant) as tracked:
+                organization = SessionOrganization.objects.create(
+                    tenant=tenant, body=body, name=gremium.name, **defaults
+                )
+                tracked.organization(organization, created=True)
         gremien.append((gremium, organization))
         if angelegt:
             neu.append(gremium.name)

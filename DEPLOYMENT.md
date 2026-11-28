@@ -660,6 +660,43 @@ Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die
   `INGESTOR_MEM_LIMIT`); weitere, etwa `INGESTOR_REQUEST_INTERVAL`, ergänzen Sie in seinem Abschnitt
   `environment`, im Helm-Chart über `ingestor.extraEnv`.
 
+## Installationsprofile: Module abschalten
+
+Issue #1594, [ADR Installationsprofile](docs/adr/20261128-installationsprofile.md). Jede Installation enthält
+Session, Work und das Bürgerportal. Wer nur einen Teil braucht, schaltet die übrigen in der `.env` ab (Helm:
+`module.session`, `module.work`, `module.portal`):
+
+```bash
+# nur Session (Sitzungsdienst der Verwaltung)
+MODUL_WORK=aus
+MODUL_PORTAL=aus
+```
+
+Erlaubt sind `an` und `aus` (auch `true`/`false`), Standard ist `an`; ein anderer Wert verhindert den Start.
+Ein abgeschaltetes Modul hat
+
+- keine Adressen: `/session/`, `/ladung/` und `/api/v1/session/` bei Session; `/work/`, `/nachweis/`,
+  `/kalender/feed/` und `/api/public/v1/` bei Work; `/insight/`, `/public/`, die Sitemaps und den MCP-Server beim
+  Bürgerportal antworten mit 404, ebenso seine WebSocket-Routen;
+- keine Menüeinträge, auch nicht in der Seitenleiste des Admins, und keine Verweise aus anderen Modulen;
+- keine Zeitpläne und keine Abonnements im Worker, keine Bereiche im Einstieg der Schnittstelle (`/api/`) und
+  keine Befehle.
+
+Seine Tabellen und Migrationen bleiben: `migrate` legt sie weiter an, Fremdschlüssel anderer Module zeigen auf sie.
+Der Admin zeigt seine Modelle weiter, nur nicht in der Seitenleiste. Ohne Bürgerportal bleiben Dokumentvorschau und
+Kartenkacheln unter `/insight/` erreichbar, weil die Recherche in Work sie nutzt. Die installierbare App (PWA)
+startet ohne Work bei der Anmeldung, ohne Work und Session im Bürgerportal.
+
+Prüfen, ob ein Profil läuft und kein abgeschaltetes Modul erreichbar ist:
+
+```bash
+docker compose exec mandari python manage.py installationsprofil_pruefen
+```
+
+Der Befehl prüft Adressen, WebSocket-Routen, Zeitpläne, Abonnements, ruft Probeseiten auf und meldet geladene
+Einstiege abgeschalteter Module; Exit-Code 1 bei einem Befund. Die CI startet jedes Profil (Job
+„Installationsprofile“).
+
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 
 Issues #55, #1107.
@@ -1080,18 +1117,18 @@ erst den Postausgang leeren lassen (`mandari_tasks_queued{queue="mail"}` = 0), s
 Worker den Auftrag nicht. `python manage.py postausgang` zeigt Zeilen je Zustand und verwaiste Zeilen
 (wartend ohne Auftrag); `--einreihen` reiht sie neu ein, `--verwerfen` gibt sie auf und löscht den Inhalt.
 
-### Suchindex als Abonnement (Schattenbetrieb)
+### Suchindex als Abonnement (Schattenbetrieb und Umschalten)
 
-Heute schreiben Django-Signale, der Ingestor und `reindex_elasticsearch` den Suchindex. Künftig
-schreibt ihn nur das Abonnement `suchindex` aus den `ris.*`-Ereignissen der Datendrehscheibe
-(Issue #526, Umschalten in #527). Vor dem Umschalten läuft es im Schattenbetrieb: Es pflegt
-Schattenindizes `schatten-papers`, `schatten-meetings`, `schatten-persons`,
+Bis zum Umschalten schreiben Django-Signale, der Ingestor und `reindex_elasticsearch` den Suchindex
+(die alten Wege). Danach schreibt ihn nur das Abonnement `suchindex` aus den `ris.*`-Ereignissen der
+Datendrehscheibe (Issue #526, Umschalten in #527). Vor dem Umschalten läuft es im Schattenbetrieb: Es
+pflegt Schattenindizes `schatten-papers`, `schatten-meetings`, `schatten-persons`,
 `schatten-organizations` und `schatten-files` mit derselben Abbildung wie der Live-Index, der
 unverändert weiterläuft.
 
 | Einstellung | Bedeutung |
 |---|---|
-| `SEARCH_INDEX_SUBSCRIPTION` | `aus` (Standard), `schatten`, `aktiv` (erst mit #527) |
+| `SEARCH_INDEX_SUBSCRIPTION` | `aus` (Standard), `schatten`, `aktiv` (Tabelle unten); gilt für Anwendung, Worker und Ingestor |
 | `SEARCH_INDEX_SHADOW_BODIES` | Kommunen des Schattenbetriebs (Kennungen, kommagetrennt; leer = alle) |
 | `SEARCH_INDEX_SHADOW_MAX_DOCS` | ungefähre Obergrenze aller Schattendokumente (Standard 100000, 0 = keine) |
 
@@ -1171,14 +1208,63 @@ der Vollbau neuer ist, bleiben `indexed` und `deleted` der Kennzahl bei 0 (auße
 Text erst nach dem Vollbau erkannt wurde); es wachsen nur `stale`, `skipped_body` und `absent`
 (Löschen eines Objekts, das nicht im Index steht, etwa eine Datei ohne erkannten Text).
 
-**Umschalten (erst mit #527):** `SEARCH_INDEX_SUBSCRIPTION=aktiv` allein genügt nicht. Steht das
-Abonnement in der Datenbank auf `schatten`, schreibt es weiter nur den Schattenindex. Im Admin
-(„Ereignistechnik → Abonnements“) erst „Pausieren“, dann „Fortsetzen (aktiv)“.
+**Wer schreibt den Live-Index?** Ein Schalter für alle drei Wege (Issue #527):
 
-**Rückfall:** `SEARCH_INDEX_SUBSCRIPTION=aus`, `docker compose up -d worker mandari`, dann
-`python manage.py suchindex_schatten loeschen --ja --abonnement`. Der Live-Index ist nie betroffen.
-`loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt (Schalter oder
-Zustand `schatten`); `--abonnement` zusätzlich, solange es überhaupt zugestellt wird.
+| `SEARCH_INDEX_SUBSCRIPTION` | Signale (`insight_core/signals.py`) | Ingestor | `reindex_elasticsearch` | Abonnement `suchindex` |
+|---|---|---|---|---|
+| `aus` | schreiben (`ELASTICSEARCH_AUTO_INDEX`) | schreibt (`ELASTICSEARCH_INDEXING_ENABLED`) | schreibt selbst | nicht registriert |
+| `schatten` | schreiben | schreibt | schreibt selbst | nur Schattenindex |
+| `aktiv` | schreiben nichts, bauen keine Dokumente | schreibt nicht | baut über das Abonnement (Version = Folgenummer) | Live-Index |
+
+Mit `aktiv` ist die Kennzahl K2a im Betrieb 1 (`docs/DATENDREHSCHEIBE.md`, Abschnitt 5, Einzelheit
+`bei_aktiv`). Steht das Abonnement in der Datenbank dann noch auf `schatten`, pflegte den Live-Index
+niemand: Die Zustellung hält an (Protokoll „wartet auf den Zustand aktiv“, Rückstand
+`mandari_events_lag_seconds{subscription="suchindex"}` wächst, `suchindex_schatten status` warnt) und
+holt die Ereignisse in den Live-Index nach, sobald das Abonnement auf `aktiv` steht.
+`reindex_elasticsearch --clear` gibt es mit `aktiv` nicht; einen leeren Index legt
+`setup_elasticsearch --reset` an, danach `reindex_elasticsearch`.
+
+**Umschalten (Compose):** in einem Zeitfenster ohne Sitzungen und Vollabgleich, nach dem Vergleich
+ohne unerklärte Abweichung (Checkliste in Issue #527). Vorher in den Betriebskalender.
+
+1. Admin („Ereignistechnik → Abonnements“): `suchindex` **pausieren**. Der Cursor bleibt stehen; die
+   alten Wege schreiben weiter den Live-Index.
+2. In der `.env` `SEARCH_INDEX_SUBSCRIPTION=aktiv` setzen, dann
+   `docker compose up -d mandari worker worker-heavy worker-live ingestor`. Ab dem Neustart schweigen
+   Signale und Ingestor; das pausierte Abonnement sammelt die Ereignisse.
+3. Admin: `suchindex` **„Fortsetzen (aktiv)“**. Die Zustellung holt alles seit Schritt 1 in den
+   Live-Index nach (`suchindex_schatten status`: Rückstand geht gegen 0).
+4. Live-Index einmal aus dem Bestand bauen, außerhalb der Hauptlast und als eigener Prozess:
+   `docker compose run --rm --no-deps mandari python manage.py reindex_elasticsearch` (mit `aktiv` über das
+   Abonnement, Version = höchste Folgenummer vor dem Lesen; je Kommune mit `--body <Kennung>`). Das
+   gleicht Felder an, die die alten Wege anders schrieben, und schließt Lücken aus dem Neustart.
+5. Nach 1 h und 24 h prüfen: Rückstand unter 5 min, keine geparkten oder toten Ereignisse,
+   `mandari_search_subscription_documents_total{target="live"}` wächst, Stichproben in der Suche.
+
+**Rückfall (Probe und Ernstfall):** zurück auf die alten Wege, ohne den Live-Index zu verlieren.
+
+1. In der `.env` `SEARCH_INDEX_SUBSCRIPTION=schatten` setzen (das Abonnement schreibt wieder nur den
+   Schattenindex) oder `aus` (es ruht ganz). Erst `docker compose up -d mandari ingestor`, dann
+   `docker compose up -d worker worker-heavy worker-live`: So schreiben die alten Wege wieder, bevor das
+   Abonnement den Live-Index loslässt.
+2. Änderungen aus der Zeit des Neustarts holt ein `reindex_elasticsearch --body <Kennung>` (jetzt der alte
+   Weg) für die betroffenen Kommunen nach; der nächste Abgleich des Ingestors schreibt nur, was sich seit
+   seinem letzten Lauf geändert hat.
+3. Der Zustand in der Datenbank bleibt `aktiv`. Mit `schatten` als Schalter schreibt das Abonnement
+   trotzdem nur den Schattenindex; wieder umschalten heißt dann nur Schritt 2 und 4 des Umschaltens
+   (Schalter `aktiv`, Neustart, Neuaufbau).
+
+Die Schattenindizes und das Abonnement entfernt: `SEARCH_INDEX_SUBSCRIPTION=aus`, Worker neu starten,
+dann `python manage.py suchindex_schatten loeschen --ja --abonnement`. Der Live-Index ist dabei nie
+betroffen. `loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt oder
+dafür bereitsteht (Schalter `schatten` oder Zustand `schatten`); `--abonnement` zusätzlich, solange es
+überhaupt zugestellt wird.
+
+**Vor dem Umschalten bekannt (Issue #527):** Der Löschabgleich (`manage.py loeschabgleich`,
+`insight_core/services/file_reconcile.py`) sperrt, entsperrt und ersetzt Dokumente ohne Ereignis. Bisher
+nahmen die Signale eine gesperrte Datei sofort aus dem Index; mit `aktiv` bliebe sie darin, bis ein anderes
+Ereignis sie neu baut oder ein Neuaufbau läuft. Im Vergleich zeigt sich das als überzählige Datei im
+Schattenindex.
 
 ### RIS-Projektor für Session-Mandanten (Schattenbetrieb)
 
@@ -1191,7 +1277,7 @@ Work und die Aufträge des Bestands lesen sie nicht; der Projektor meldet im Sch
 
 | Einstellung | Bedeutung |
 |---|---|
-| `RIS_SESSION_PROJECTOR` | `aus` (Standard) oder `schatten`; `aktiv` erst mit #537 |
+| `RIS_SESSION_PROJECTOR` | `aus` (Standard) oder `schatten`; `aktiv` erst mit dem Umschalten (#537) |
 | `RIS_SESSION_PROJECTOR_TENANTS` | Session-Mandanten des Schattenbetriebs (Kennungen, kommagetrennt; leer = alle) |
 
 - Jedes Ereignis ist nur Auslöser: Das Objekt entsteht aus dem aktuellen Stand in Session mit derselben
@@ -1202,8 +1288,9 @@ Work und die Aufträge des Bestands lesen sie nicht; der Projektor meldet im Sch
 - Voraussetzung sind Session-Ereignisse für den Mandanten (`SESSION_EVENTS=schatten` oder das Feld
   „Ereignisse an die Datendrehscheibe“ am Mandanten) und der Worker (Rolle `dispatch`, Warteschlange
   `default`). Ohne Session-Ereignisse bleibt die Schatten-Quelle auf dem Stand des Vollbaus.
-- Für Körperschaft, Wahlperioden, Gremien, Personen und Mitgliedschaften meldet Session noch keine Ereignisse
-  (#860): Ihre Änderungen nach dem Vollbau erscheinen im Vergleich als Abweichung.
+- Session meldet alle Typen, die der Projektor schreibt, auch Körperschaft, Wahlperioden, Gremien, Personen und
+  Mitgliedschaften (#860). Ausnahme sind Änderungen im Django-Admin außer den Stammdaten des Mandanten und
+  Änderungen per Shell: Sie erscheinen im Vergleich als Abweichung, bis ein neuer Vollbau sie übernimmt.
 
 ```bash
 python manage.py ris_projektor_schatten status                      # Schalter, Cursor, Rückstand, Zeilen
@@ -1233,11 +1320,13 @@ werden nur Zahlen, Feldnamen und Kennungen des Bestands. Dazu `mandari_events_la
 `mandari_ris_projector_events_total{result}` / `mandari_ris_projector_rows_total{type,result}`.
 
 **Abweichungen lesen:** Zeitstempel der Quelle und Rohdaten zählen nicht; leerer Text gilt wie ein fehlender
-Wert. Erwartet und erklärbar sind:
+Wert. Ein Datum und ein Zeitpunkt um Mitternacht desselben Tages gelten als gleich: In bestehenden
+Installationen sind die Datumsspalten des Bestands Zeitpunkte (`start_date` einer Mitgliedschaft, `date` einer
+Vorlage). Erwartet und erklärbar sind:
 
 - zeitlicher Versatz: Der Ingestor gleicht periodisch ab, der Projektor sofort. Zwischen Änderung in Session
   und nächstem Abgleich ist der Bestand der ältere Teil; der nächste Vergleich nach dem Abgleich zeigt das.
-- Körperschaft, Wahlperioden, Gremien, Personen, Mitgliedschaften (#860), solange Session sie nicht meldet.
+- Änderungen im Django-Admin oder per Shell (außer den Stammdaten des Mandanten), die Session nicht meldet.
 - Felder, die der Ingestor anders schreibt als der Spiegel (`hub.ris.uebernahme`): Befund für #537, denn mit
   dem Umschalten schreibt der Projektor sie wie der Spiegel.
 

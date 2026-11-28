@@ -58,6 +58,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
     PaperLocation,
+    abgeleitete_geodaten_entfernen,
 )
 
 #: Unterordner der Demo-Dateien im Media-Verzeichnis (wie die Basisdemo; ``--reset`` räumt ``demo-*.pdf`` ab)
@@ -154,6 +155,9 @@ class Command(BaseCommand):
             )
             try:
                 with transaction.atomic():
+                    if modell is OParlPaper:
+                        # Verortungen der Demo zeigen mit PROTECT auf den Vorgang (Issue #524)
+                        abgeleitete_geodaten_entfernen(veraltet)
                     anzahl, _ = veraltet.delete()
             except ProtectedError:
                 # Work verweist noch darauf (Positionen); setup_demo_work_bestand räumt dort beim nächsten Lauf auf

@@ -1433,7 +1433,7 @@ class Command(BaseCommand):
         from apps.accounts.models import User
         from apps.session.models import SessionTenant
         from apps.tenants.models import Organization, PartyGroup
-        from insight_core.models import OParlSource
+        from insight_core.models import InsightSubscriber, OParlSource, PublicQuestion, abgeleitete_geodaten_entfernen
 
         deleted = []
 
@@ -1460,7 +1460,13 @@ class Command(BaseCommand):
         count, _ = User.objects.filter(email__in=demo_emails).delete()
         deleted.append(f"Demo-Nutzer (+abhängige Objekte): {count}")
 
-        count, _ = OParlSource.objects.filter(url=DEMO_SOURCE_URL).delete()
+        # Geodaten, Abos und Ratsfragen zeigen mit PROTECT auf die Kommune (Issue #524): In der Demo gehen sie mit
+        demo_quelle = OParlSource.objects.filter(url=DEMO_SOURCE_URL)
+        count = abgeleitete_geodaten_entfernen(demo_quelle)
+        count += InsightSubscriber.objects.filter(body__source__in=demo_quelle).delete()[0]
+        count += PublicQuestion.objects.filter(body__source__in=demo_quelle).delete()[0]
+        deleted.append(f"Geodaten, Abos und Ratsfragen der Demo-Kommune: {count}")
+        count, _ = demo_quelle.delete()
         deleted.append(f"OParl-Demo-Quelle inkl. Kommune (+abhängige Objekte): {count}")
 
         media_dir = Path(settings.MEDIA_ROOT) / DEMO_MEDIA_SUBDIR

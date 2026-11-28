@@ -24,9 +24,16 @@ Hinweise:
 - Objekte, auf die Daten anderer Module verweisen (direkt oder über die
   Kaskade, z. B. Sitzungsvorbereitungen, Notizen, Positionen aus Work),
   werden NICHT gelöscht. Dry-Run und Ergebnis listen sie mit der Anzahl der
-  verweisenden Datensätze je Typ (Issue #421).
+  verweisenden Datensätze je Typ (Issue #421). Das gilt auch für Abos und
+  Ratsfragen des Bürgerportals (etwa eine Frage an eine markierte Person,
+  Issue #524).
+- Abgeleitete Geodaten gelöschter Vorgänge (Verortungen, Planbezüge) werden
+  mit --yes vorher entfernt; sie zeigen mit PROTECT auf den Vorgang und lassen
+  sich neu berechnen. Der Dry-Run nennt ihre Zahl.
 - Elasticsearch wird über die bestehenden post_delete-Signale aufgeräumt
-  (ELASTICSEARCH_AUTO_INDEX). Lokale Dateikopien (OParlFile.local_path)
+  (ELASTICSEARCH_AUTO_INDEX). Mit SEARCH_INDEX_SUBSCRIPTION=aktiv schweigen
+  sie; das Abonnement suchindex hat die Dokumente dann schon mit der
+  Löschmarkierung (ris.object.depublished) entfernt. Lokale Dateikopien (OParlFile.local_path)
   werden vor dem Löschen der DB-Zeile vom Datenträger entfernt, das Foto
   einer Person nach dem Löschen ihrer Zeile.
 - Wortmeldungen der Live-Übertragung mit Verweis auf eine markierte Person
@@ -66,6 +73,8 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
     OParlSource,
+    abgeleitete_geodaten,
+    abgeleitete_geodaten_entfernen,
 )
 from insight_core.services.external_references import external_references, split_by_references
 
@@ -281,7 +290,7 @@ class Command(BaseCommand):
                     f" {timezone.localtime(speech.started_at):%H:%M} Uhr ({speech.pk})"
                 )
 
-        for name, qs, _deletable, protected in steps:
+        for name, qs, deletable, protected in steps:
             count = qs.count()
             if not count:
                 continue
@@ -291,6 +300,10 @@ class Command(BaseCommand):
                 self.stdout.write(f"    - {obj.pk} ({obj}) — markiert am {marked}")
             if count > LIST_LIMIT:
                 self.stdout.write(f"    ... und {count - LIST_LIMIT} weitere")
+            if name == "papers":
+                geodata = sum(rows.count() for rows in abgeleitete_geodaten(deletable))
+                if geodata:
+                    self.stdout.write(f"    abgeleitete Geodaten (Verortungen, Planbezüge), gehen mit: {geodata}")
             protected_count = protected.count()
             if protected_count:
                 protected_total += protected_count
@@ -346,6 +359,12 @@ class Command(BaseCommand):
 
         deleted_total = 0
         for name, _qs, deletable, _protected in steps:
+            if name == "papers":
+                # Vor den Vorgängen: Ihre Verortungen und Planbezüge zeigen mit PROTECT auf sie (Issue #524)
+                geodata = abgeleitete_geodaten_entfernen(deletable)
+                if geodata:
+                    self.stdout.write(f"  abgeleitete Geodaten der Vorgänge: {geodata} Zeilen gelöscht")
+                deleted_total += geodata
             deleted_rows = _chunked_delete(deletable)
             if deleted_rows:
                 self.stdout.write(f"  {name}: {deleted_rows} Zeilen gelöscht (inkl. Kaskaden)")

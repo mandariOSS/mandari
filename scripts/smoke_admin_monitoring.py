@@ -259,16 +259,18 @@ print()
 print("=== Phase 3: Alarmierung ===")
 mail.outbox.clear()
 cache.clear()
-result = source_health.send_health_alerts()
+result = source_health.send_health_alerts(uebersicht=False)
 check("Alarme für beide kritischen Quellen", sorted(result["alerts"]) == ["Blockstadt", "Vergessenstadt"], str(result))
-alert_mails = [m for m in mail.outbox if "kritisch" in m.subject]
+alert_mails = [m for m in mail.outbox if "gestört" in m.subject]
 check(
-    "Alarm-Mails an konfigurierten Empfänger",
-    len(alert_mails) == 2 and all(m.to == ["betrieb@example.org"] for m in alert_mails),
+    "Eine Sammelmail an konfigurierten Empfänger",
+    len(alert_mails) == 1
+    and alert_mails[0].to == ["betrieb@example.org"]
+    and "2 Quellen gestört" in alert_mails[0].subject,
 )
 check(
-    "Alarm nennt Grund + Monitor-Link",
-    any("HTTP 403" in m.body and "/admin/monitoring/" in m.body for m in alert_mails),
+    "Sammelmail nennt beide Quellen, Grund + Monitor-Link",
+    all(n in alert_mails[0].body for n in ("Blockstadt", "Vergessenstadt", "HTTP 403", "/admin/monitoring/")),
 )
 crit_src.refresh_from_db()
 check("health_alert_sent_at gesetzt", crit_src.health_alert_sent_at is not None)
@@ -287,7 +289,9 @@ result = source_health.send_health_alerts()
 crit_src.refresh_from_db()
 check(
     "Entwarnung nach Erholung",
-    result["recoveries"] == ["Blockstadt"] and len(mail.outbox) == 1 and "wieder erreichbar" in mail.outbox[0].subject,
+    result["recoveries"] == ["Blockstadt"]
+    and len(mail.outbox) == 1
+    and "Entwarnung: Blockstadt" in mail.outbox[0].subject,
 )
 check("Alarm-Zeitstempel gelöscht", crit_src.health_alert_sent_at is None)
 
@@ -310,7 +314,7 @@ check(
 )
 out = io.StringIO()
 call_command("check_source_health", dry_run=True, stdout=out)
-check("Command --dry-run zählt fällige Alarme", "Alarme fällig" in out.getvalue())
+check("Command --dry-run zählt fällige Alarme", "Sammelmail fällig" in out.getvalue())
 
 # =============================================================================
 print()

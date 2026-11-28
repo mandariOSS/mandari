@@ -292,6 +292,7 @@ def ohne_mail(kanal, signal):
 MAIL_TEST = "mandari/apps/common/tests/test_mail_dienst.py"
 THREAD_TEST = "mandari/apps/events/tests/test_zeitplaene_statt_faden.py"
 CASCADE_TEST = "mandari/hub/ris/tests/test_loeschsemantik.py"
+UMSCHALT_TEST = "mandari/insight_search/tests/test_suchindex_umschalten.py"
 
 
 def _baum(wurzel: Path, dateien: dict[str, str]) -> Path:
@@ -445,6 +446,7 @@ BAUM = {
         "    await client.post('/_bulk', content=b'')\n"
     ),
     "ingestor/src/tests/test_indexing.py": "async def test_x(client):\n    await client.post('/_bulk')\n",
+    UMSCHALT_TEST: 'ABGESCHALTET_BEI_AKTIV = {\n    "mandari/insight_core/signals.py": "test_signale",\n}\n',
 }
 
 ERWARTET = {
@@ -474,7 +476,9 @@ def test_erhebung_an_einem_kleinen_baum(kennzahlen: ModuleType, tmp_path: Path) 
         },
     }
     assert ergebnis["K2a"].einzelheiten == {
-        "dateien": {"mandari/insight_core/signals.py": 1, "ingestor/src/indexing/elasticsearch.py": 2}
+        "dateien": {"mandari/insight_core/signals.py": 1, "ingestor/src/indexing/elasticsearch.py": 2},
+        # Die Signale schaltet das Umschalten ab, der Ingestor steht hier nicht in der Liste
+        "bei_aktiv": {"ingestor/src/indexing/elasticsearch.py": 2},
     }
     assert ergebnis["K3a"].einzelheiten == {"funktionen": ["apps/work/dienst.py::einreichen"]}
     assert ergebnis["K3b"].einzelheiten == {"dateien": {"apps/common/admin.py": 2, "apps/work/dienst.py": 1}}
@@ -593,6 +597,16 @@ def test_listen_der_fitnessfunktionen_werden_uebernommen(kennzahlen: ModuleType,
     relationen = stand["K6a"].einzelheiten["relationen"] + stand["K6b"].einzelheiten["relationen"]
     assert sorted(relationen) == sorted(AUSNAHMEN_CASCADE)
     assert stand["K6a"].wert + stand["K6b"].wert == len(AUSNAHMEN_CASCADE)
+
+
+def test_nach_dem_umschalten_schreibt_nur_das_abonnement(kennzahlen: ModuleType, stand: dict[str, Any]) -> None:
+    """K2a mit ``SEARCH_INDEX_SUBSCRIPTION=aktiv`` ist 1 (Issue #527); jeder alte Weg ist abschaltbar und belegt."""
+    from insight_search.tests.test_suchindex_umschalten import ABGESCHALTET_BEI_AKTIV
+
+    assert kennzahlen.abgeschaltet_bei_aktiv(WURZEL) == sorted(ABGESCHALTET_BEI_AKTIV)
+    assert stand["K2a"].einzelheiten["bei_aktiv"] == {"mandari/insight_search/abonnement.py": 1}
+    # Die Liste nennt nur Wege, die es gibt: Ein entfernter Weg muss auch aus ihr verschwinden
+    assert set(ABGESCHALTET_BEI_AKTIV) <= set(stand["K2a"].einzelheiten["dateien"])
 
 
 def test_alle_statischen_kennzahlen_haben_einen_wert(stand: dict[str, Any]) -> None:

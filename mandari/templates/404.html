@@ -1,4 +1,5 @@
 {% extends "errors/base_error.html" %}
+{% load modul_tags %}
 
 {% block title %}Seite nicht gefunden (404){% endblock %}
 {% block error_code %}404{% endblock %}
@@ -8,7 +9,7 @@
 
 {% block error_message %}
 Die aufgerufene Seite existiert nicht (mehr) oder die Adresse wurde falsch
-eingegeben. Vielleicht hilft dir die Suche im Bürgerportal weiter.
+eingegeben.{% if "portal"|modul_aktiv %} Vielleicht hilft dir die Suche im Bürgerportal weiter.{% endif %}
 {% endblock %}
 
 {% block error_actions %}
@@ -16,8 +17,10 @@ eingegeben. Vielleicht hilft dir die Suche im Bürgerportal weiter.
    class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors">
     <i data-lucide="home" class="w-4 h-4"></i> Zur Startseite
 </a>
+{% if "portal"|modul_aktiv %}
 <a href="{% url 'insight_core:insight:portal_home' %}"
    class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium transition-colors">
     <i data-lucide="search" class="w-4 h-4"></i> Zum Bürgerportal
 </a>
+{% endif %}
 {% endblock %}

@@ -123,6 +123,13 @@ class Command(BaseCommand):
                 f"Abonnement {abonnement.NAME}: {abo.zustand}, Cursor {abo.cursor} von {abo.hoechste_folgenummer}, "
                 f"offen {abo.offen} Ereignisse, Rückstand {abo.rueckstand_sekunden:.0f} s, geparkt: {geparkt}"
             )
+            if schatten.waits_for_activation(abo):
+                self.stdout.write(
+                    self.style.WARNING(
+                        "Schalter aktiv, Abonnement noch im Schattenbetrieb: Die Zustellung hält an, den Live-Index "
+                        "pflegt niemand. Im Admin (Ereignistechnik → Abonnements) „Pausieren“, dann „Fortsetzen (aktiv)“."
+                    )
+                )
         if stand.fehler:
             self.stdout.write(self.style.WARNING(f"Elasticsearch nicht abfragbar ({stand.fehler})."))
             return

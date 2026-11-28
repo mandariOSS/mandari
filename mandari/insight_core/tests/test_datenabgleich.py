@@ -13,13 +13,15 @@ Datenabgleich mit den Schnittstellen der Kommunen (Issue #1525).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from typing import Any
 
 import pytest
 from django.core import mail
 from django.core.management import call_command
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from insight_core.models import (
@@ -31,7 +33,7 @@ from insight_core.models import (
     OParlPaper,
     OParlSource,
 )
-from insight_core.services import datenabgleich
+from insight_core.services import datenabgleich, source_health
 from insight_core.services.source_health import evaluate_source, send_health_alerts
 
 BASIS = "https://ris.beispiel.example/oparl/v1.1/body/1"
@@ -284,9 +286,163 @@ def test_kritische_kommune_macht_die_quelle_kritisch_mit_alarm(quelle: OParlSour
     assert item["status"] == "critical"
     assert any(r.startswith("Datenabgleich Beispielstadt kritisch: 37 von 50 TOPs") for r in item["reasons"])
     assert "manage.py datenabgleich" in item["recommendation"]
-    ergebnis = send_health_alerts()
-    assert ergebnis["alerts"] == ["Beispielstadt"]
+    ergebnis = send_health_alerts(uebersicht=True)
+    assert ergebnis["alerts"] == [], "Datenlücken sind keine Störung des Abrufs"
+    assert ergebnis["gaps"] == ["Beispielstadt"]
+    assert mail.outbox[0].subject == "[mandari] Datenlücken: Beispielstadt"
     assert "Datenabgleich Beispielstadt kritisch" in mail.outbox[0].body
+    quelle.refresh_from_db()
+    assert quelle.datenabgleich_alert_sent_at is not None
+    assert quelle.health_alert_sent_at is None
+
+
+def test_datenluecken_nur_im_taeglichen_uebersichtslauf(
+    quelle: OParlSource, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    _mit(quelle, datenabgleich={BASIS: _befund(top_luecke=37, beratung_fehlt=37, work_ohne_vorlage=20)})
+    monkeypatch.setattr(source_health, "ist_uebersichtslauf", lambda now: False)
+
+    assert send_health_alerts()["mail"] is False
+    assert mail.outbox == []
+
+    monkeypatch.setattr(source_health, "ist_uebersichtslauf", lambda now: True)
+    assert send_health_alerts()["gaps"] == ["Beispielstadt"]
+    assert len(mail.outbox) == 1
+    assert send_health_alerts()["mail"] is False, "dieselbe Quelle frühestens nach 7 Tagen wieder"
+
+
+def test_uebersichtslauf_nach_dem_datenabgleich(settings: Any) -> None:
+    settings.INSIGHT_DATENABGLEICH_MAIL_HOUR = 7
+    winter = datetime(2026, 11, 28, 6, 15, tzinfo=UTC)  # 07:15 MEZ
+    sommer = datetime(2026, 6, 28, 5, 15, tzinfo=UTC)  # 07:15 MESZ
+
+    assert source_health.ist_uebersichtslauf(winter)
+    assert source_health.ist_uebersichtslauf(sommer)
+    assert not source_health.ist_uebersichtslauf(winter + timedelta(hours=1))
+
+
+def test_datenluecken_schalten_eine_stoerung_nicht_stumm(quelle: OParlSource, settings: Any) -> None:
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    _mit(quelle, datenabgleich={BASIS: _befund(top_luecke=37, beratung_fehlt=37, work_ohne_vorlage=20)})
+    send_health_alerts(uebersicht=True)
+    quelle.refresh_from_db()
+    quelle.last_error_kind = OParlSource.ERROR_KIND_UA_BLOCKED
+    quelle.save(update_fields=["last_error_kind"])
+    mail.outbox.clear()
+
+    ergebnis = send_health_alerts(uebersicht=True)
+
+    assert ergebnis["alerts"] == ["Beispielstadt"]
+    assert ergebnis["gaps"] == []
+    assert mail.outbox[0].subject == "[mandari] Quelle gestört: Beispielstadt"
+
+
+def test_bei_einer_stoerung_stehen_die_luecken_nur_in_deren_eintrag(quelle: OParlSource, settings: Any) -> None:
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    _mit(quelle, datenabgleich={BASIS: _befund(top_luecke=37, beratung_fehlt=37, work_ohne_vorlage=20)})
+    quelle.last_error_kind = OParlSource.ERROR_KIND_UA_BLOCKED
+    quelle.save(update_fields=["last_error_kind"])
+
+    ergebnis = send_health_alerts(uebersicht=True)
+
+    assert (ergebnis["alerts"], ergebnis["gaps"]) == (["Beispielstadt"], [])
+    assert mail.outbox[0].subject == "[mandari] Quelle gestört: Beispielstadt"
+    assert "Datenabgleich Beispielstadt kritisch" in mail.outbox[0].body
+    quelle.refresh_from_db()
+    assert quelle.datenabgleich_alert_sent_at is None, "die Lücken kommen nach der Störung in die Übersicht"
+
+
+def test_ohne_versand_bleiben_die_zeitstempel_stehen(
+    quelle: OParlSource, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    quelle.last_error_kind = OParlSource.ERROR_KIND_UA_BLOCKED
+    quelle.save(update_fields=["last_error_kind"])
+    monkeypatch.setattr(source_health, "get_alert_emails", lambda: [])
+
+    ergebnis = send_health_alerts(uebersicht=False)
+
+    assert ergebnis["alerts"] == ["Beispielstadt"]
+    assert ergebnis["mail"] is False
+    quelle.refresh_from_db()
+    assert quelle.health_alert_sent_at is None, "der nächste Lauf versucht es erneut"
+
+
+def test_entwarnung_wenn_die_luecken_geschlossen_sind(quelle: OParlSource, settings: Any) -> None:
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    _mit(quelle, datenabgleich={BASIS: _befund(top_luecke=37, beratung_fehlt=37, work_ohne_vorlage=20)})
+    send_health_alerts(uebersicht=True)
+    quelle.refresh_from_db()  # sonst überschreibt das Speichern den eben gesetzten Zeitstempel
+    _mit(quelle, datenabgleich={BASIS: _befund()})
+    mail.outbox.clear()
+
+    assert send_health_alerts(uebersicht=False)["mail"] is False, "Entwarnung der Lücken nur im Übersichtslauf"
+    ergebnis = send_health_alerts(uebersicht=True)
+
+    assert ergebnis["gaps_closed"] == ["Beispielstadt"]
+    assert ergebnis["recoveries"] == []
+    assert "Beispielstadt: Datenlücken nicht mehr kritisch" in mail.outbox[0].body
+    quelle.refresh_from_db()
+    assert quelle.datenabgleich_alert_sent_at is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_migration_uebernimmt_bisherige_hinweise_auf_datenluecken() -> None:
+    vorher = ("insight_core", "0076_beratung_punkt_abgeleitet")
+    nachher = ("insight_core", "0077_datenluecken_gemeldet")
+    executor = MigrationExecutor(connection)
+    executor.migrate([vorher])
+    try:
+        alt = MigrationExecutor(connection).loader.project_state([vorher]).apps.get_model("insight_core", "OParlSource")
+        jetzt = timezone.now()
+        luecke = alt.objects.create(
+            name="Lücke", url="https://ris.example.org/luecke/system", last_sync=jetzt, health_alert_sent_at=jetzt
+        )
+        gesperrt = alt.objects.create(
+            name="Gesperrt",
+            url="https://ris.example.org/gesperrt/system",
+            last_sync=jetzt,
+            last_error_kind="ua_blocked",
+            health_alert_sent_at=jetzt,
+        )
+        veraltet = alt.objects.create(
+            name="Veraltet",
+            url="https://ris.example.org/veraltet/system",
+            last_sync=jetzt - timedelta(days=9),
+            health_alert_sent_at=jetzt,
+        )
+        parser = alt.objects.create(
+            name="Parser",
+            url="https://ris.example.org/parser/system",
+            last_sync=jetzt,
+            health_alert_sent_at=jetzt,
+            sync_config={
+                "source_type": "scraper:beispiel",
+                "scraper_state": {"last_run": {"parse_quota": 0.5, "detail_pages_attempted": 10}},
+            },
+        )
+
+        MigrationExecutor(connection).migrate([nachher])
+        neu = (
+            MigrationExecutor(connection).loader.project_state([nachher]).apps.get_model("insight_core", "OParlSource")
+        )
+        stand = {
+            q.pk: (q.health_alert_sent_at is not None, q.datenabgleich_alert_sent_at is not None)
+            for q in neu.objects.all()
+        }
+        assert stand[luecke.pk] == (False, True)
+        assert stand[gesperrt.pk] == stand[veraltet.pk] == stand[parser.pk] == (True, False), (
+            "Störungen behalten ihren Alarm"
+        )
+
+        MigrationExecutor(connection).migrate([vorher])
+        zurueck = (
+            MigrationExecutor(connection).loader.project_state([vorher]).apps.get_model("insight_core", "OParlSource")
+        )
+        assert zurueck.objects.get(pk=luecke.pk).health_alert_sent_at is not None
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
 
 
 def test_auffaellige_kommune_ist_eine_warnung(quelle: OParlSource) -> None:

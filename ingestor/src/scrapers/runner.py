@@ -34,7 +34,7 @@ from mandari_oparl.abgleich import brake_engaged
 from mandari_oparl.robots import robots_override
 
 from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED, ERROR_KIND_SERVER_ERROR_SERIES
-from src.config import settings
+from src.config import elasticsearch_writes_enabled, settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
@@ -306,7 +306,7 @@ class ScraperSyncRunner:
         # Elasticsearch-Indexierung (gleicher Pfad wie OParl-Sync), je Body;
         # Löschungen aus dem Index nur einmal
         total_synced = sum(stats.values())
-        if settings.elasticsearch_indexing_enabled and (total_synced > 0 or es_deletions or full):
+        if elasticsearch_writes_enabled(settings) and (total_synced > 0 or es_deletions or full):
             pending_deletions = es_deletions
             from src.sync.orchestrator import index_since
 

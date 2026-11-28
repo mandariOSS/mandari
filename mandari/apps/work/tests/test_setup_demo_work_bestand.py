@@ -39,7 +39,7 @@ from apps.work.motions.models import DocumentFolder, Motion, MotionComment, Moti
 from apps.work.notifications.models import Notification, NotificationPreference, NotificationType
 from apps.work.organization.models import MemberAbsence
 from apps.work.tasks.models import Task, TaskChecklistItem, TaskComment, TaskLabel
-from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlPaper
+from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlPaper, abgeleitete_geodaten_entfernen
 
 pytestmark = pytest.mark.django_db
 
@@ -268,7 +268,10 @@ class TestIdempotenzUndEntfernen:
         # Insight kann seinen Bestand jetzt löschen (PROTECT hält nichts mehr fest)
         OParlAgendaItem.objects.filter(external_id__startswith=demo_ext("agendaitem", BESTAND)).delete()
         OParlMeeting.objects.filter(external_id__startswith=demo_ext("meeting", BESTAND)).delete()
-        OParlPaper.objects.filter(external_id__startswith=demo_ext("paper", BESTAND)).delete()
+        vorgaenge = OParlPaper.objects.filter(external_id__startswith=demo_ext("paper", BESTAND))
+        # Die Verortungen der Demo zeigen mit PROTECT auf die Vorgänge und gehen ausdrücklich mit (Issue #524)
+        abgeleitete_geodaten_entfernen(vorgaenge)
+        vorgaenge.delete()
 
         # Ohne RIS-Bestand entsteht der Work-Bestand trotzdem, nur ohne Verknüpfung
         _lauf()

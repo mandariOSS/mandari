@@ -1153,7 +1153,7 @@ class Command(BaseCommand):
         from apps.session.services import numbering_service, protocol_lock
         from apps.tenants.models import Organization
         from apps.work.motions.models import AdministrationConnection, Motion
-        from insight_core.models import OParlSource
+        from insight_core.models import InsightSubscriber, OParlSource, PublicQuestion, abgeleitete_geodaten_entfernen
 
         entfernt: list[str] = []
         mandant_a = SessionTenant.objects.filter(slug=DEMO_SESSION_SLUG).first()
@@ -1203,7 +1203,13 @@ class Command(BaseCommand):
             mandant_a.implementation_publish = False
             cast(Any, mandant_a).save(update_fields=["insight_publish", "implementation_publish", "updated_at"])
 
-        anzahl, _ = OParlSource.objects.filter(url__contains=f"/session/{DEMO_SESSION_SLUG}/api/oparl/").delete()
+        # Geodaten, Abos und Ratsfragen zeigen mit PROTECT auf die Kommune (Issue #524): In der Demo gehen sie mit
+        spiegel = OParlSource.objects.filter(url__contains=f"/session/{DEMO_SESSION_SLUG}/api/oparl/")
+        anzahl = abgeleitete_geodaten_entfernen(spiegel)
+        anzahl += InsightSubscriber.objects.filter(body__source__in=spiegel).delete()[0]
+        anzahl += PublicQuestion.objects.filter(body__source__in=spiegel).delete()[0]
+        entfernt.append(f"Geodaten, Abos und Ratsfragen am Bürgerportal-Spiegel: {anzahl}")
+        anzahl, _ = spiegel.delete()
         entfernt.append(f"Bürgerportal-Spiegel inkl. Kommune (+abhängige Objekte): {anzahl}")
         anzahl, _ = SessionTenantGroup.objects.filter(slug=GRUPPE_SLUG).delete()
         entfernt.append(f"Mandantengruppe mit Leitstelle (+Zuordnungen): {anzahl}")

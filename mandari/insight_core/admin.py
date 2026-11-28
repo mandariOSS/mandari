@@ -48,6 +48,7 @@ from .models import (
     OParlPerson,
     OParlSource,
     SubscriptionAlert,
+    abgeleitete_geodaten,
 )
 from .portal import forget_slugs, tenant_slug_conflict
 
@@ -60,8 +61,8 @@ def _reference_protection(label: str, references: list[Any]) -> list[str]:
     if not references:
         return []
     return [
-        f"{label} wird nicht gelöscht: Arbeitsdaten bzw. Verknüpfungen anderer Module verweisen noch auf "
-        "die RIS-Daten. Bitte diese zuerst entfernen oder die Verknüpfung lösen:",
+        f"{label} wird nicht gelöscht: Arbeitsdaten bzw. Verknüpfungen anderer Module oder Abos und Ratsfragen "
+        "des Bürgerportals verweisen noch auf die RIS-Daten. Bitte diese zuerst entfernen oder die Verknüpfung lösen:",
         *(f"{label} – {reference}" for reference in references),
     ]
 
@@ -225,6 +226,7 @@ class OParlSourceAdmin(ModelAdmin):
         "last_error_kind",
         "consecutive_failures",
         "health_alert_sent_at",
+        "datenabgleich_alert_sent_at",
     ]
     actions_detail = ["sync_incremental_action", "sync_full_action"]
     actions = ["sync_all_incremental", "sync_all_full", "reset_health"]
@@ -242,6 +244,15 @@ class OParlSourceAdmin(ModelAdmin):
         for source in objs:
             references = external_references(OParlSource.objects.filter(pk=source.pk))
             protected += _reference_protection(f"Quelle „{source.name}“", references)
+            # Abgeleitete Geodaten zeigen mit PROTECT auf die Kommunen (Issue #524). Die Löschung einer Kommune
+            # entfernt sie mit, im Hintergrund und speicherschonend; Django würde hier jede Zeile einzeln auflisten.
+            geodaten = sum(rows.count() for rows in abgeleitete_geodaten(OParlSource.objects.filter(pk=source.pk)))
+            if geodaten:
+                protected.append(
+                    f"Quelle „{source.name}“ wird nicht gelöscht: An ihren Kommunen hängen {geodaten} abgeleitete "
+                    "Geodaten (Straßen, Adressen, Verortungen, Umringe). Bitte zuerst die Kommunen löschen; das "
+                    "entfernt die Geodaten mit."
+                )
         if protected:
             return [], {}, set(), protected
         return super().get_deleted_objects(objs, request)
@@ -268,6 +279,7 @@ class OParlSourceAdmin(ModelAdmin):
             last_error_kind=None,
             consecutive_failures=0,
             health_alert_sent_at=None,
+            datenabgleich_alert_sent_at=None,
         )
         messages.success(request, f"Gesundheitsstatus von {count} Quelle(n) zurückgesetzt.")
 

@@ -39,6 +39,7 @@ from django.utils.crypto import constant_time_compare
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common import module
 from apps.common.next_url import safe_next_url
 
 from . import known_device, security_audit, security_notifications, webauthn_service
@@ -269,12 +270,16 @@ class LoginView(View):
             ):
                 return next_url
 
-        # Default: redirect to work portal if user has memberships
-        if hasattr(request.user, "memberships"):
+        # Default: redirect to work portal if user has memberships (nur mit Work, Issue #1594)
+        if module.aktiv(module.WORK) and hasattr(request.user, "memberships"):
             active_memberships = request.user.memberships.filter(is_active=True)
             if active_memberships.exists():
                 first_org = active_memberships.first().organization
                 return f"/work/{first_org.slug}/"
+
+        # Ohne Session (Issue #1594) gibt es keinen Mandanten und keine Leitstelle
+        if not module.aktiv(module.SESSION):
+            return "/"
 
         # Verwaltungsnutzer ohne Fraktion: direkt in den (ersten) Session-Mandanten statt ins Bürgerportal
         session_membership = (
@@ -699,7 +704,7 @@ class DemoAbgelaufenView(View):
             )
         organization = demo.abgelaufene_demo_fuer(request.user)
         if organization is None:
-            return redirect("work:root")
+            return redirect(module.startseite())
         session_key = request.session.session_key
         if session_key:
             from .models import UserSession

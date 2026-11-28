@@ -71,13 +71,14 @@
                                 </td>
                                 <td class="{% if item.consecutive_failures >= 3 %}mon-count-critical{% elif item.consecutive_failures %}mon-count-warning{% else %}mon-count-zero{% endif %}">{{ item.consecutive_failures }}</td>
                             </tr>
-                            {% if item.reasons or item.source.health_alert_sent_at %}
+                            {% if item.reasons or item.source.health_alert_sent_at or item.source.datenabgleich_alert_sent_at %}
                             <tr class="mon-row-{{ item.status }} mon-reasons">
                                 <td colspan="5" class="mon-small mon-details">
                                     {% if item.error_kind_label %}<div class="mon-strong">Grund: {{ item.error_kind_label }}</div>{% endif %}
                                     {% for reason in item.reasons %}<div>{{ reason }}</div>{% endfor %}
                                     {% if item.recommendation %}<div class="mon-strong">Empfehlung: {{ item.recommendation }}</div>{% endif %}
                                     {% if item.source.health_alert_sent_at %}<div class="mon-muted">Alarm gesendet {{ item.source.health_alert_sent_at|date:"d.m.Y H:i" }}</div>{% endif %}
+                                    {% if item.source.datenabgleich_alert_sent_at %}<div class="mon-muted">Datenlücken gemeldet {{ item.source.datenabgleich_alert_sent_at|date:"d.m.Y H:i" }}</div>{% endif %}
                                 </td>
                             </tr>
                             {% endif %}
@@ -113,8 +114,9 @@
             {% component "unfold/components/card.html" %}
                 <h2 class="mon-h2" style="margin-bottom:.5rem">Alarmierung</h2>
                 <p class="mon-text">
-                    <code class="mon-code">check_source_health</code> läuft per Cron und schickt bei kritischen Quellen eine E-Mail
-                    (Wiederholung nach 7 Tagen) sowie eine Entwarnung, sobald die Quelle wieder synchronisiert.
+                    <code class="mon-code">check_source_health</code> läuft stündlich und schickt je Lauf höchstens eine Sammelmail:
+                    gestörte Quellen sofort, Datenlücken aus dem Datenabgleich nur einmal am Tag (je Quelle Wiederholung nach 7 Tagen),
+                    dazu Entwarnungen.
                     Empfänger: <code class="mon-code">INSIGHT_ALERT_EMAILS</code>, sonst Superuser.
                 </p>
             {% endcomponent %}

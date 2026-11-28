@@ -10,18 +10,14 @@ from django.contrib import admin
 from django.db import connection
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect
-from django.urls import include, path, re_path
+from django.urls import URLPattern, URLResolver, include, path, re_path
 
 from apps.accounts.views import admin_login_redirect
-from apps.common import csp, health, metrics
+from apps.common import csp, health, metrics, module
 from apps.common.db_connections import releases_db_connections
+from apps.common.module import nur_mit
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
-from apps.session.api import nichtoeffentlich as session_noe
-from apps.session.api.v1.api import api as session_api_v1
-from apps.session.views.invitation_responses import InvitationResponseView
-from apps.work.faction.views.certificates import CertificateVerifyView
-from apps.work.faction.views.feeds import PersonalCalendarFeedView
 from insight_ai.katalog import AI_CATALOG_TYPE, katalog_view
 from insight_ai.mcp import endpoint as mcp_endpoint
 from insight_ai.mcp import server_card_view as mcp_server_card
@@ -51,6 +47,78 @@ def health_check(request):
     )
 
 
+# =============================================================================
+# Adressen der Module (Issue #1594): nur eingeschaltete Module, ihre Ansichten erst dann importiert
+# =============================================================================
+
+
+def work_schnittstelle() -> list[URLPattern | URLResolver]:
+    """Öffentliche Fraktions-API v1 (Issue #71): read-only, Opt-in je Organisation, opakes Token."""
+    # Subdomain api.mandari.de wäre reines Caddy-Routing, gleiche Pfade
+    return [path("api/public/v1/", include("apps.work.faction.public_api", namespace="faction_public_api"))]
+
+
+def session_schnittstelle() -> list[URLPattern | URLResolver]:
+    """Session-API v1 (django-ninja, OpenAPI unter /api/v1/session/openapi.json, Issue #163)."""
+    from apps.session.api.v1.api import api as session_api_v1
+
+    return [path("api/v1/session/", session_api_v1.urls)]
+
+
+def session_nichtoeffentlich() -> list[URLPattern | URLResolver]:
+    """
+    Metadaten der nichtöffentlichen Ausgabe als geschützte Ressource (RFC 9728, Issue #565); ohne
+    OPARL_NONPUBLIC_ENABLED 404. Die Adresse bildet RFC 9728 aus der Adresse der Ausgabe.
+    """
+    from apps.session.api import nichtoeffentlich as session_noe
+
+    return [
+        path(
+            ".well-known/oauth-protected-resource/session/<slug:tenant_slug>/api/oparl/nichtoeffentlich/",
+            session_noe.metadata_view,
+            name="oparl_noe_metadata",
+        ),
+    ]
+
+
+def session_seiten() -> list[URLPattern | URLResolver]:
+    """Session RIS (Verwaltung) und die Rückmeldung zur Ladung."""
+    from apps.session.views.invitation_responses import InvitationResponseView
+
+    return [
+        path("session/", include("apps.session.urls", namespace="session")),
+        # Rückmeldung zur Ladung (Issue #225) — signiertes Token je Ladungsempfänger, ohne Login
+        path("ladung/<str:token>/", InvitationResponseView.as_view(), name="session_invitation_response"),
+    ]
+
+
+def work_seiten() -> list[URLPattern | URLResolver]:
+    """Work (Arbeitsbereich der Organisationen), Teilnahmenachweise und persönlicher Kalender."""
+    from apps.work.faction.views.certificates import CertificateVerifyView
+    from apps.work.faction.views.feeds import PersonalCalendarFeedView
+
+    return [
+        path("work/", include("apps.work.urls", namespace="work")),
+        # Öffentliche Verifikation von Teilnahmenachweisen (Issue #68) — opakes Token, ohne Login, ohne Personenbezug
+        path("nachweis/<slug:token>/", CertificateVerifyView.as_view(), name="certificate_verify"),
+        # Persönlicher iCal-Feed (Issue #70) — opakes Token, ohne Login (Kalender-Clients können sich nicht anmelden)
+        path("kalender/feed/<slug:token>.ics", PersonalCalendarFeedView.as_view(), name="personal_calendar_feed"),
+    ]
+
+
+def mcp_adressen() -> list[URLPattern | URLResolver]:
+    """
+    Öffentlicher, nur lesender MCP-Server des Bürgerportals für KI-Werkzeuge (Issue #899); Standard aus
+    (INSIGHT_MCP_ENABLED). Unter /insight/, damit der Reverse-Proxy ihn ohne eigene Regel an die Anwendung gibt.
+    """
+    return [
+        path("insight/mcp", mcp_endpoint, name="insight_mcp"),
+        path("insight/mcp/", mcp_endpoint),
+        # Server Card des MCP-Servers (SEP-2127, Issue #1309)
+        path("insight/mcp/server-card", mcp_server_card, name="insight_mcp_server_card"),
+    ]
+
+
 urlpatterns = [
     # Health check (for Docker/Kubernetes)
     path("health/", health_check, name="health_check"),
@@ -78,13 +146,9 @@ urlpatterns = [
     path("admin/login/", admin_login_redirect, name="admin_login_redirect"),
     # Admin
     path("admin/", admin.site.urls),
-    # Öffentliche Fraktions-API v1 (Issue #71): read-only, Opt-in je
-    # Organisation, opakes Token — pfadbasiert unter /api/public/v1/
-    # (Subdomain api.mandari.de wäre reines Caddy-Routing, gleiche Pfade)
-    path("api/public/v1/", include("apps.work.faction.public_api", namespace="faction_public_api")),
+    *nur_mit(module.WORK, work_schnittstelle),
+    *nur_mit(module.SESSION, session_schnittstelle),
     # Public API (stats, contact form - consumed by Wagtail marketing site)
-    # Session-API v1 (django-ninja, OpenAPI unter /api/v1/session/openapi.json, Issue #163)
-    path("api/v1/session/", session_api_v1.urls),
     path("api/", include("insight_core.api_urls")),
     # Provisioning-API fürs Billing-Portal (nur aktiv wenn PROVISIONING_API_KEY gesetzt)
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),
@@ -102,46 +166,14 @@ urlpatterns = [
     # OpenID-Connect-Anbieter (Issue #1206): /oauth/… und /.well-known/openid-configuration; ohne
     # OIDC_PROVIDER_ENABLED antworten alle mit 404
     path("", include("apps.accounts.oidc.urls")),
-    # Metadaten der nichtöffentlichen Ausgabe als geschützte Ressource (RFC 9728, Issue #565); ohne
-    # OPARL_NONPUBLIC_ENABLED 404. Die Adresse bildet RFC 9728 aus der Adresse der Ausgabe.
-    path(
-        ".well-known/oauth-protected-resource/session/<slug:tenant_slug>/api/oparl/nichtoeffentlich/",
-        session_noe.metadata_view,
-        name="oparl_noe_metadata",
-    ),
-    # Session RIS (administrative portal)
-    path("session/", include("apps.session.urls", namespace="session")),
-    # Work module (portal for organizations)
-    path("work/", include("apps.work.urls", namespace="work")),
-    # Öffentliche Verifikation von Teilnahmenachweisen (Issue #68) —
-    # opakes Token, ohne Login, ohne Personenbezug
-    path(
-        "nachweis/<slug:token>/",
-        CertificateVerifyView.as_view(),
-        name="certificate_verify",
-    ),
-    # Rückmeldung zur Ladung (Issue #225) — signiertes Token je Ladungsempfänger, ohne Login
-    path(
-        "ladung/<str:token>/",
-        InvitationResponseView.as_view(),
-        name="session_invitation_response",
-    ),
-    # Persönlicher iCal-Feed (Issue #70) — opakes Token, ohne Login
-    # (Kalender-Clients können sich nicht anmelden)
-    path(
-        "kalender/feed/<slug:token>.ics",
-        PersonalCalendarFeedView.as_view(),
-        name="personal_calendar_feed",
-    ),
-    # Öffentlicher, nur lesender MCP-Server für KI-Werkzeuge (Issue #899); Standard aus (INSIGHT_MCP_ENABLED).
-    # Unter /insight/, damit der Reverse-Proxy ihn ohne eigene Regel an die Anwendung gibt.
-    path("insight/mcp", mcp_endpoint, name="insight_mcp"),
-    path("insight/mcp/", mcp_endpoint),
-    # Server Card des MCP-Servers (SEP-2127) und der Katalog für KI-Agenten (ARD, AI Catalog; Issue #1309)
-    path("insight/mcp/server-card", mcp_server_card, name="insight_mcp_server_card"),
+    *nur_mit(module.SESSION, session_nichtoeffentlich),
+    *nur_mit(module.SESSION, session_seiten),
+    *nur_mit(module.WORK, work_seiten),
+    *nur_mit(module.PORTAL, mcp_adressen),
+    # Katalog für KI-Agenten (ARD, AI Catalog; Issue #1309)
     path(".well-known/ard.json", katalog_view, name="ki_katalog_ard"),
     path(".well-known/ai-catalog.json", katalog_view, {"medientyp": AI_CATALOG_TYPE}, name="ki_katalog"),
-    # Insight Core (RIS Portal, public protocols, body sitemaps)
+    # Insight Core (RIS Portal, public protocols, body sitemaps); ohne Bürgerportal nur die gemeinsamen Adressen
     path("", include("insight_core.urls")),
 ]
 
@@ -221,8 +253,10 @@ def im_buergerportal(request: HttpRequest) -> bool:
     """Gehört die Anfrage zum Bürgerportal? Pfad unter /insight/ oder eigener Host einer Körperschaft.
 
     Ohne Datenbank: Den Host ordnet die PortalHostMiddleware vorher zu (``insight_portal_host_slug``); fiel der
-    Fehler davor, zählt nur der Pfad.
+    Fehler davor, zählt nur der Pfad. Ohne Bürgerportal (Issue #1594) gibt es dessen Fehlerseiten nicht.
     """
+    if not module.aktiv(module.PORTAL):
+        return False
     return request.path_info.startswith("/insight/") or bool(getattr(request, "insight_portal_host_slug", None))
 
 

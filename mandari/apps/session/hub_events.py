@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Session meldet ihre fachlichen Änderungen an die Datendrehscheibe (Etappe E4, Issues #533–#535).
+Session meldet ihre fachlichen Änderungen an die Datendrehscheibe (Etappe E4, Issues #533–#535, #860).
 
 Fachfunktionen legen ``track()`` um ihre Änderung und nennen die betroffenen Objekte, bevor sie sie ändern::
 
@@ -56,9 +56,14 @@ from apps.session.models import (
     SessionAgendaItem,
     SessionConsultation,
     SessionFile,
+    SessionLegislativeTerm,
     SessionMeeting,
+    SessionOrganization,
+    SessionOrganizationMembership,
     SessionPaper,
+    SessionPerson,
     SessionProtocol,
+    SessionTenant,
 )
 from hub.ris.mapping.session import SessionUris
 from hub.ris.retraction import Draft
@@ -69,12 +74,18 @@ from hub.ris.session_events import (
     MeetingState,
     PaperState,
     ProtocolState,
+    RecordState,
     SessionEvents,
     agenda_item_state,
+    body_state,
     consultation_state,
     file_state,
+    legislative_term_state,
     meeting_state,
+    membership_state,
+    organization_state,
     paper_state,
+    person_state,
     protocol_state,
 )
 
@@ -130,8 +141,10 @@ class Reader:
     Veröffentlichungsregel seiner Schnittstelle.
     """
 
+    #: Stammdaten (``hub.ris.session_events.RECORD_KINDS`` ohne die Körperschaft), in der Reihenfolge der Meldung
+    RECORDS: Final = ("legislativeterm", "organization", "person", "membership")
     #: Sammlungen, die über einen Bereich beobachtet werden (alle Objekte, die ihn erfüllen, auch neue)
-    KINDS: Final = ("item", "consultation", "file")
+    KINDS: Final = (*RECORDS, "item", "consultation", "file")
 
     def __init__(self, tenant: Any) -> None:
         self.tenant_id = tenant.pk
@@ -179,6 +192,14 @@ class Reader:
         papers = SessionPaper.objects.filter(tenant_id=self.tenant_id, pk__in=ids)
         return {paper.pk: paper_state(paper, is_published=self.is_published) for paper in papers}
 
+    def body(self) -> RecordState | None:
+        """
+        Körperschaft der Schnittstelle (der Mandant, frisch aus der Datenbank): öffentlich, solange die Schnittstelle
+        nach dem gespeicherten Stand ausliefert.
+        """
+        tenant = SessionTenant.objects.filter(pk=self.tenant_id).first()
+        return None if tenant is None else body_state(tenant, published=interface_open(tenant))
+
     def load(self, kind: str, scope: Q) -> dict[uuid.UUID, Any]:
         """Zustände der Sammlung ``kind`` (``KINDS``) im Bereich ``scope``."""
         if kind == "item":
@@ -187,7 +208,23 @@ class Reader:
             return self._consultations(scope)
         if kind == "file":
             return self._files(scope)
+        if kind in self.RECORDS:
+            return self._records(kind, scope)
         raise ValueError("Unbekannte Sammlung.")
+
+    def _records(self, kind: str, scope: Q) -> dict[uuid.UUID, RecordState]:
+        """Stammdaten des Mandanten; die Schnittstelle liefert sie alle aus, sobald sie freigeschaltet ist."""
+        if kind == "legislativeterm":
+            terms = SessionLegislativeTerm.objects.filter(tenant_id=self.tenant_id).filter(scope)
+            return {term.pk: legislative_term_state(term, published=self.open) for term in terms}
+        if kind == "organization":
+            orgs = SessionOrganization.objects.filter(tenant_id=self.tenant_id).filter(scope)
+            return {org.pk: organization_state(org, published=self.open) for org in orgs}
+        if kind == "person":
+            persons = SessionPerson.objects.filter(tenant_id=self.tenant_id).filter(scope)
+            return {person.pk: person_state(person, published=self.open) for person in persons}
+        memberships = SessionOrganizationMembership.objects.filter(organization__tenant_id=self.tenant_id).filter(scope)
+        return {m.pk: membership_state(m, published=self.open) for m in memberships}
 
     def _items(self, scope: Q) -> dict[uuid.UUID, AgendaItemState]:
         items = (
@@ -248,6 +285,9 @@ class Tracker:
         self._scopes: dict[str, Q] = {}
         self._before: dict[str, dict[uuid.UUID, Any]] = {kind: {} for kind in Reader.KINDS}
         self._watched: set[tuple[str, Any]] = set()
+        #: Körperschaft: beobachtet und Zustand davor
+        self._body_watched = False
+        self._body: RecordState | None = None
         self._explicit: list[Draft] = []
         self._broken = False
 
@@ -277,10 +317,15 @@ class Tracker:
                 "Session-Ereignisse im Schattenbetrieb übersprungen (%s, %s) bei %s", step, type(exc).__name__, stelle
             )
 
-    def _scope(self, kind: str, scope: Q) -> None:
-        """Alle Objekte der Sammlung ``kind`` im Bereich ``scope`` beobachten (Zustand jetzt, vor der Änderung)."""
-        for key, state in self.reader.load(kind, scope).items():
-            self._before[kind].setdefault(key, state)
+    def _scope(self, kind: str, scope: Q, *, read: bool = True) -> None:
+        """
+        Alle Objekte der Sammlung ``kind`` im Bereich ``scope`` beobachten (Zustand jetzt, vor der Änderung).
+
+        ``read=False``: Die Objekte sind gerade erst angelegt; vorher gab es sie nicht.
+        """
+        if read:
+            for key, state in self.reader.load(kind, scope).items():
+                self._before[kind].setdefault(key, state)
         self._scopes[kind] = self._scopes[kind] | scope if kind in self._scopes else scope
 
     def _once(self, label: str, key: Any, step: str, work: Callable[[], None]) -> None:
@@ -351,6 +396,55 @@ class Tracker:
         key = file_obj.pk
         self._once("file", key, "Anlage", lambda: self._scope("file", Q(pk=key)))
 
+    # -- Stammdaten (Issue #860) -------------------------------------------------------------------
+
+    def _record(self, kind: str, obj: Any, created: bool, step: str) -> None:
+        key = obj.pk
+        self._once(kind, key, step, lambda: self._scope(kind, Q(pk=key), read=not created))
+
+    def body(self) -> None:
+        """Körperschaft der Schnittstelle beobachten (Stammdaten des Mandanten, Lizenz der offenen Daten)."""
+
+        def read() -> None:
+            self._body_watched = True
+            self._body = self.reader.body()
+
+        self._once("body", self.tenant_id, "Körperschaft", read)
+
+    def legislative_term(self, term: Any, *, created: bool = False) -> None:
+        """Wahlperiode beobachten – vor der Änderung; ``created``: gerade erst angelegt."""
+        self._record("legislativeterm", term, created, "Wahlperiode")
+
+    def organization(self, org: Any, *, created: bool = False) -> None:
+        """Gremium beobachten – vor der Änderung; ``created``: gerade erst angelegt."""
+        self._record("organization", org, created, "Gremium")
+
+    def person(self, person: Any, *, created: bool = False) -> None:
+        """Person beobachten – vor der Änderung; ``created``: gerade erst angelegt."""
+        self._record("person", person, created, "Person")
+
+    def membership(self, membership: Any, *, created: bool = False) -> None:
+        """Mitgliedschaft beobachten – vor der Änderung; ``created``: gerade erst angelegt."""
+        self._record("membership", membership, created, "Mitgliedschaft")
+
+    def memberships(self, organization: Any) -> None:
+        """Alle Mitgliedschaften eines Gremiums beobachten (auch neue), etwa beim Nachrücken."""
+        key = organization.pk
+        self._once("memberships", key, "Besetzung", lambda: self._scope("membership", Q(organization_id=key)))
+
+    def master_data(self) -> None:
+        """
+        Alle Stammdaten des Mandanten beobachten: Wahlperioden, Gremien, Personen und Mitgliedschaften, auch neue
+        (Import, Periodenwechsel).
+        """
+
+        def read() -> None:
+            # Nicht ``Q()``: Ein leerer Bereich fiele beim Verknüpfen mit ``|`` weg, und neue Objekte fehlten danach
+            for kind in Reader.RECORDS:
+                self._scope(kind, Q(pk__isnull=False))
+
+        self._once("master_data", self.tenant_id, "Stammdaten", read)
+
     def invited(self, meeting: Any, dispatch: Any) -> None:
         """Versandvorgang einer Ladung melden (nach den Zustandsänderungen)."""
 
@@ -373,6 +467,10 @@ class Tracker:
             nonlocal written
             events = self.events
             drafts: list[Draft] = []
+            if self._body_watched:
+                drafts.extend(events.record_drafts(self._body, self.reader.body()))
+            for kind in Reader.RECORDS:
+                drafts.extend(events.records_drafts(self._before[kind], self._after(kind)))
             after_meetings = self.reader.meetings(set(self._meetings))
             for key, before in self._meetings.items():
                 drafts.extend(events.meeting_drafts(before, after_meetings.get(key)))
@@ -417,6 +515,27 @@ class _Off:
         return None
 
     def invited(self, meeting: Any, dispatch: Any) -> None:
+        return None
+
+    def body(self) -> None:
+        return None
+
+    def legislative_term(self, term: Any, *, created: bool = False) -> None:
+        return None
+
+    def organization(self, org: Any, *, created: bool = False) -> None:
+        return None
+
+    def person(self, person: Any, *, created: bool = False) -> None:
+        return None
+
+    def membership(self, membership: Any, *, created: bool = False) -> None:
+        return None
+
+    def memberships(self, organization: Any) -> None:
+        return None
+
+    def master_data(self) -> None:
         return None
 
 

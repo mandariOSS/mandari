@@ -252,6 +252,13 @@ Parameter: root (Kontext des Charts), ocrMemoryLimitMb.
 # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
 - name: OCR_MEMORY_LIMIT_MB
   value: {{ .ocrMemoryLimitMb | toString | quote }}
+# Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+- name: MODUL_SESSION
+  value: {{ ternary "an" "aus" $root.Values.module.session | quote }}
+- name: MODUL_WORK
+  value: {{ ternary "an" "aus" $root.Values.module.work | quote }}
+- name: MODUL_PORTAL
+  value: {{ ternary "an" "aus" $root.Values.module.portal | quote }}
 {{- range $key, $value := $root.Values.app.extraEnv }}
 - name: {{ $key }}
   value: {{ $value | quote }}

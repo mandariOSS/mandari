@@ -264,8 +264,12 @@ def change_term(
 
     Vorher :func:`term_change_error` prüfen; die Funktion selbst prüft den Zeitraum nicht noch einmal.
     """
+    from apps.session import hub_events
+
     previous_day = start_date - timedelta(days=1)
-    with transaction.atomic():
+    # Drehscheibe (Issue #860): Wahlperioden und Besetzungen, die der Wechsel beendet, verschiebt oder anlegt
+    with transaction.atomic(), hub_events.track(tenant) as tracked:
+        tracked.master_data()
         old_term = _terms().current_for(tenant)
 
         # Alte Periode zum Vortag abschließen (offen oder über den Stichtag hinaus geplant)

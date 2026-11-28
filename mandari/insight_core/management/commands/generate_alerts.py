@@ -8,6 +8,10 @@ Generates SubscriptionAlert entries for active subscribers based on:
 
 Läuft täglich als Zeitplan befehl:generate_alerts im Worker, wenn die Abos eingeschaltet sind
 (apps/common/schedules.py, Issue #516).
+
+Für eine Kommune, die als gelöscht markiert, pausiert oder zurückgenommen ist, entstehen keine neuen Hinweise.
+Ihre Abos bleiben bestehen (PROTECT, Issue #524), bis sie bewusst beendet werden.
+
 Usage: python manage.py generate_alerts
 """
 
@@ -22,6 +26,13 @@ from apps.common.einmalig import EinmaligMixin
 from insight_core.services.ortsschutz import oeffentlicher_titel
 
 logger = logging.getLogger(__name__)
+
+
+def _ohne_neue_hinweise() -> set[str]:
+    """Kommunen, deren Veröffentlichung pausiert oder zurückgenommen ist (``publication``): keine neuen Hinweise."""
+    from insight_core import publication
+
+    return {body_id for body_id, state in publication.states().items() if state.paused or state.withdrawn}
 
 
 class Command(EinmaligMixin, BaseCommand):
@@ -60,7 +71,8 @@ class Command(EinmaligMixin, BaseCommand):
         subscribers = InsightSubscriber.objects.filter(
             confirmed=True,
             unsubscribed_at__isnull=True,
-        )
+            body__deleted=False,
+        ).exclude(body_id__in=_ohne_neue_hinweise())
 
         total_alerts = 0
         self.stdout.write(f"Prüfe {subscribers.count()} aktive Abonnenten (Zeitraum: {days} Tage)...")

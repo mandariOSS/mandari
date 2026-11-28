@@ -88,6 +88,15 @@ PORTAL_HOSTS: dict[str, str] = {
     if host.strip() and slug.strip()
 }
 
+# Module der Installation (Issue #1594, apps/common/module.py): MODUL_SESSION, MODUL_WORK und MODUL_PORTAL, je an oder
+# aus (Standard an). Ein abgeschaltetes Modul hat keine Adressen, Menüeinträge, Zeitpläne, Abonnements und Bereiche
+# der Schnittstelle; seine Apps und Tabellen bleiben installiert.
+from apps.common.module import aus_umgebung as _module_aus_umgebung  # noqa: E402
+from apps.common.module import module_fuer as _module_fuer  # noqa: E402
+from apps.common.module import startseite as _startseite  # noqa: E402
+
+MANDARI_MODULE = _module_aus_umgebung(os.environ)
+
 
 # Application definition
 
@@ -224,6 +233,8 @@ MIDDLEWARE = [
     # Veröffentlichung im Bürgerportal beendet (Issue #618): Hinweis, 503 oder 410 je Kommune
     "insight_core.publication.PublicationStateMiddleware",
 ]
+# Middleware abgeschalteter Module entfällt: Sie leitete in deren Adressen weiter (Issue #1594)
+MIDDLEWARE = [eintrag for eintrag in MIDDLEWARE if _module_fuer(eintrag) <= MANDARI_MODULE]
 
 # Wartungsmodus (apps/common/maintenance.py, Issue #588): Der Schalter in den Systemeinstellungen
 # wirkt nur, wenn die Durchsetzung an ist. Die Tests schalten sie ab (jede Anfrage läse sonst die
@@ -848,8 +859,9 @@ ELASTICSEARCH_AUTO_INDEX = os.environ.get("ELASTICSEARCH_AUTO_INDEX", "True").lo
 # Suchindex als Abonnement der Datendrehscheibe (insight_search.abonnement, Issue #526): "aus" (Standard)
 # registriert kein Abonnement. "schatten" pflegt aus den ris.*-Ereignissen einen Schattenindex
 # (schatten-papers usw., gleiche Abbildung) neben dem Live-Index; Vergleich mit
-# manage.py suchindex_schatten vergleichen. "aktiv" schreibt den Live-Index; erst mit dem Umschalten
-# (Issue #527) verwenden, das die bisherigen Wege abschaltet. Der Schattenbetrieb lässt sich auf
+# manage.py suchindex_schatten vergleichen. "aktiv" schreibt den Live-Index und schaltet die bisherigen Wege ab
+# (Issue #527): Signale und Ingestor schreiben nicht mehr, reindex_elasticsearch baut über das Abonnement. Rückfall:
+# "schatten" (DEPLOYMENT.md, „Suchindex als Abonnement“). Der Schattenbetrieb lässt sich auf
 # Kommunen (Kennungen, kommagetrennt; leer = alle) und eine ungefähre Obergrenze an Dokumenten
 # begrenzen (Speicher von Elasticsearch, 0 = keine Grenze).
 SEARCH_INDEX_SUBSCRIPTION = os.environ.get("SEARCH_INDEX_SUBSCRIPTION", "aus").strip().lower() or "aus"
@@ -1066,6 +1078,8 @@ INSIGHT_DIGEST_FROM_EMAIL = os.environ.get("INSIGHT_DIGEST_FROM_EMAIL", "")  # F
 INSIGHT_ALERT_EMAILS = [e.strip() for e in os.environ.get("INSIGHT_ALERT_EMAILS", "").split(",") if e.strip()]
 INSIGHT_SOURCE_STALE_WARNING_HOURS = int(os.environ.get("INSIGHT_SOURCE_STALE_WARNING_HOURS", "48"))
 INSIGHT_SOURCE_STALE_CRITICAL_DAYS = int(os.environ.get("INSIGHT_SOURCE_STALE_CRITICAL_DAYS", "7"))
+# Stunde (Ortszeit) des stündlichen Prüflaufs, der auch die Datenlücken aus dem Datenabgleich meldet (nach 06:05)
+INSIGHT_DATENABGLEICH_MAIL_HOUR = int(os.environ.get("INSIGHT_DATENABGLEICH_MAIL_HOUR", "7"))
 # Ratsfragen: Empfänger für Moderations-Hinweise (kommagetrennt); leer → aktive Superuser
 INSIGHT_MODERATION_EMAILS = [e.strip() for e in os.environ.get("INSIGHT_MODERATION_EMAILS", "").split(",") if e.strip()]
 
@@ -1318,7 +1332,8 @@ if DEMO_INSTANCE:
 # =============================================================================
 
 LOGIN_URL = "/accounts/login/"
-LOGIN_REDIRECT_URL = "/work/"  # Nach Login zum Work-Portal
+# Nach der Anmeldung zu Work, ohne Work zu Session, sonst ins Bürgerportal (Issue #1594)
+LOGIN_REDIRECT_URL = _startseite(MANDARI_MODULE)
 LOGOUT_REDIRECT_URL = "/accounts/logged-out/"  # Nach Logout zur Abmeldung-Seite
 
 # Session settings
@@ -1589,6 +1604,7 @@ UNFOLD = {
             },
             {
                 "title": _("Work Module"),
+                "modul": "work",
                 "separator": True,
                 "collapsible": True,
                 "items": [
@@ -1622,6 +1638,7 @@ UNFOLD = {
             },
             {
                 "title": _("Support"),
+                "modul": "work",
                 "separator": True,
                 "collapsible": True,
                 "items": [
@@ -1635,6 +1652,7 @@ UNFOLD = {
             },
             {
                 "title": _("Session RIS"),
+                "modul": "session",
                 "separator": True,
                 "collapsible": True,
                 "items": [
@@ -1678,6 +1696,7 @@ UNFOLD = {
             },
             {
                 "title": _("Session Verwaltung"),
+                "modul": "session",
                 "separator": False,
                 "collapsible": True,
                 "items": [
@@ -1796,3 +1815,12 @@ UNFOLD = {
         },
     ],
 }
+
+# Gruppen der Seitenleiste abgeschalteter Module entfallen (Issue #1594); "modul" ist kein Schlüssel von Unfold
+from typing import Any as _Any  # noqa: E402
+from typing import cast as _cast  # noqa: E402
+
+_seitenleiste = _cast(dict[str, _Any], UNFOLD["SIDEBAR"])
+_seitenleiste["navigation"] = [
+    gruppe for gruppe in _seitenleiste["navigation"] if gruppe.pop("modul", None) in (None, *MANDARI_MODULE)
+]

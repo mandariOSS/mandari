@@ -1573,8 +1573,12 @@ def apply_plan(plan: ImportPlan) -> None:
     """Geplante Änderungen schreiben – nur ohne Fehler, ganz oder gar nicht."""
     if plan.errors:
         raise ValueError("Ein Import mit Fehlern wird nicht ausgeführt.")
+    from apps.session import hub_events
+
     tenant = plan.tenant
-    with transaction.atomic():
+    # Drehscheibe (Issue #860): je angelegtem oder geändertem Stammdatum ein Ereignis, im selben „ganz oder gar nicht“
+    with transaction.atomic(), hub_events.track(tenant) as tracked:
+        tracked.master_data()
         # Nur eindeutige Namen: Mehrdeutige hat der Plan als Fehler gemeldet (KeyError statt beliebiger Zuordnung)
         terms, _ = _by_name(SessionLegislativeTerm.objects.filter(tenant=tenant))
         for key, item in plan.terms.items():

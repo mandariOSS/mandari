@@ -16,6 +16,8 @@ from django.utils import timezone
 # GET und HEAD: Suchmaschinen und Prüfwerkzeuge fragen robots.txt und Sitemaps auch per HEAD an (Issue #914)
 from django.views.decorators.http import require_safe
 
+from apps.common import module
+
 from .. import publication
 from ..models import OParlBody
 from ..navigation import KOMMUNEN_LISTEN
@@ -55,9 +57,10 @@ def robots_txt(request):
         "Disallow: /*?download=",
         "Disallow: /*&download=",
         "",
-        f"Sitemap: {_site_url()}/sitemap-insight-index.xml",
-        "",
     ]
+    # Ohne Bürgerportal (Issue #1594) gibt es keine Sitemap
+    if module.aktiv(module.PORTAL):
+        lines += [f"Sitemap: {_site_url()}/sitemap-insight-index.xml", ""]
     return HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
 
 

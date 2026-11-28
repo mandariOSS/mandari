@@ -313,6 +313,9 @@ class OParlSource(models.Model):
     )
     consecutive_failures = models.PositiveIntegerField(default=0, verbose_name="Fehlversuche in Folge")
     health_alert_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Alarm gesendet am")
+    # Datenlücken (Datenabgleich, Issue #1525) zählen getrennt vom Alarm: Ein Hinweis auf Lücken darf eine spätere
+    # Störung des Abrufs nicht für sieben Tage stummschalten
+    datenabgleich_alert_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Datenlücken gemeldet am")
 
     # Vom Ingestor bei der Autodiscovery erkannte OParl-Version ("1.0"/"1.1");
     # leer = noch nicht erkannt. Siehe docs/SCRAPER_SOURCES.md, Abschnitt OParl 1.0.
@@ -1779,7 +1782,7 @@ class LocationMapping(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     body = models.ForeignKey(
         OParlBody,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="location_mappings",
         verbose_name="Kommune",
     )
@@ -1866,7 +1869,7 @@ class Street(models.Model):
 
     body = models.ForeignKey(
         OParlBody,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="streets",
         verbose_name="Kommune",
     )
@@ -1916,7 +1919,7 @@ class Address(models.Model):
 
     body = models.ForeignKey(
         OParlBody,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="addresses",
         verbose_name="Kommune",
     )
@@ -2117,13 +2120,13 @@ class PaperLocation(models.Model):
 
     paper = models.ForeignKey(
         OParlPaper,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="paper_locations",
         verbose_name="Vorgang",
     )
     body = models.ForeignKey(
         OParlBody,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="paper_locations",
         verbose_name="Kommune",
     )
@@ -2208,7 +2211,7 @@ class PlanBoundarySource(models.Model):
 
     body = models.ForeignKey(
         OParlBody,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="plan_boundary_sources",
         verbose_name="Kommune",
     )
@@ -2312,7 +2315,7 @@ class PlanBoundary(models.Model):
     )
     body = models.ForeignKey(
         OParlBody,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="plan_boundaries",
         verbose_name="Kommune",
     )
@@ -2385,13 +2388,13 @@ class PaperPlanReference(models.Model):
 
     paper = models.ForeignKey(
         OParlPaper,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="plan_references",
         verbose_name="Vorgang",
     )
     body = models.ForeignKey(
         OParlBody,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="plan_references",
         verbose_name="Kommune",
     )
@@ -2427,6 +2430,86 @@ class PaperPlanReference(models.Model):
     def __str__(self) -> str:
         suffix = f", {self.change_number}. Änderung" if self.change_number else ""
         return f"Bebauungsplan Nr. {self.number_label}{suffix}"
+
+
+# =============================================================================
+# Abgeleitete Geodaten beim harten Löschen im RIS-Bestand (Issue #524)
+# =============================================================================
+
+#: Abgeleitete Geodaten an Kommune und Vorgang. Sie entstehen aus OpenStreetMap, Geodiensten und dem Text der Vorgänge
+#: und lassen sich neu berechnen. Wie jeder Verweis auf den RIS-Bestand zeigen sie mit ``PROTECT`` auf ihn (ADR
+#: ``docs/adr/20260929-fremdschluessel-ris-bestand.md``). Wer Quellen, Kommunen oder Vorgänge hart löscht, entfernt sie
+#: vorher mit ``abgeleitete_geodaten_entfernen``; die Verweisprüfung (``services.external_references``) zählt sie
+#: deshalb nicht als Verweis.
+ABGELEITETE_GEODATEN = frozenset(
+    {
+        "insight_core.Address",
+        "insight_core.LocationMapping",
+        "insight_core.PaperLocation",
+        "insight_core.PaperPlanReference",
+        "insight_core.PlanBoundary",
+        "insight_core.PlanBoundarySource",
+        "insight_core.Street",
+    }
+)
+#: So viele Zeilen je Abschnitt beim Entfernen: Umringe tragen ihre Geometrie
+ABSCHNITT_GEODATEN = 1000
+
+
+def abgeleitete_geodaten(queryset: models.QuerySet[Any]) -> list[models.QuerySet[Any]]:
+    """
+    Abgeleitete Geodaten an den Quellen, Kommunen oder Vorgängen des Querysets, je Modell ein Queryset.
+
+    Ein Vorgang trägt Verortungen und Planbezüge, eine Kommune dazu Straßen, Adressen, Orts-Zuordnungen,
+    Umring-Quellen und Umringe, eine Quelle alles ihrer Kommunen. Planbezüge stehen vor den Umringen, Umringe vor ihren
+    Quellen.
+    """
+    pfade: dict[type[models.Model], str] = {OParlSource: "body__source", OParlBody: "body", OParlPaper: "paper"}
+    pfad = pfade.get(queryset.model)
+    if pfad is None:
+        raise TypeError(f"Abgeleitete Geodaten hängen an Quellen, Kommunen oder Vorgängen, nicht an {queryset.model}")
+    auswahl = queryset.values("pk")
+    ergebnis = []
+    for modell in (
+        PaperPlanReference,
+        PaperLocation,
+        PlanBoundary,
+        PlanBoundarySource,
+        Street,
+        Address,
+        LocationMapping,
+    ):
+        am_vorgang = modell in (PaperPlanReference, PaperLocation)
+        if pfad == "paper":
+            if not am_vorgang:
+                continue
+            bedingung = Q(paper__in=auswahl)
+        else:
+            bedingung = Q(**{f"{pfad}__in": auswahl})
+            if am_vorgang:
+                # Auch Zeilen, deren Kommune vom Vorgang abweicht: Sonst hielte ihr Verweis den Vorgang auf
+                bedingung |= Q(**{f"paper__{pfad}__in": auswahl})
+        ergebnis.append(modell._base_manager.filter(bedingung))
+    return ergebnis
+
+
+def abgeleitete_geodaten_entfernen(queryset: models.QuerySet[Any]) -> int:
+    """
+    Abgeleitete Geodaten an den Quellen, Kommunen oder Vorgängen des Querysets löschen, vor deren hartem Löschen.
+
+    Läuft in Abschnitten, damit auch eine große Kommune den Speicher nicht füllt. Liefert die Zahl der gelöschten
+    Zeilen (ohne Zwischentabellen).
+    """
+    geloescht = 0
+    for auswahl in abgeleitete_geodaten(queryset):
+        modell = auswahl.model
+        while pks := list(auswahl.values_list("pk", flat=True)[:ABSCHNITT_GEODATEN]):
+            _, je_modell = modell._base_manager.filter(pk__in=pks).delete()
+            anzahl = je_modell.get(modell._meta.label, 0)
+            if not anzahl:
+                break
+            geloescht += anzahl
+    return geloescht
 
 
 # =============================================================================
@@ -2683,8 +2766,9 @@ class PublicQuestion(HashedTokenMixin, models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="public_questions")
-    recipient = models.ForeignKey(OParlPerson, on_delete=models.CASCADE, related_name="public_questions")
+    # PROTECT (Issue #524): Fragen von Bürgerinnen und Bürgern verschwinden nicht still mit Kommune oder Person
+    body = models.ForeignKey(OParlBody, on_delete=models.PROTECT, related_name="public_questions")
+    recipient = models.ForeignKey(OParlPerson, on_delete=models.PROTECT, related_name="public_questions")
     topic = models.CharField(max_length=30, choices=TOPIC_CHOICES, default="sonstiges", verbose_name="Themenbereich")
 
     # Fragesteller:in (kein Account nötig)
@@ -2877,7 +2961,9 @@ class InsightSubscriber(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(db_index=True)
-    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="subscribers")
+    # PROTECT (Issue #524): Ein Abo verschwindet nicht still mit der Kommune; neue Hinweise entstehen für eine markierte,
+    # pausierte oder zurückgenommene Kommune nicht mehr (generate_alerts)
+    body = models.ForeignKey(OParlBody, on_delete=models.PROTECT, related_name="subscribers")
     token = models.UUIDField(unique=True, default=uuid.uuid4)
 
     # Double Opt-In
@@ -3030,9 +3116,10 @@ class PageFeedback(models.Model):
         IDEE = "idee", "Idee"
         KOMMUNE = "kommune", "Kommune vorschlagen"
 
+    # SET_NULL (Issue #524): Die Rückmeldung bleibt bis zum Ende ihrer Aufbewahrung, auch ohne die Kommune
     body = models.ForeignKey(
         OParlBody,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="page_feedback",
         null=True,
         blank=True,

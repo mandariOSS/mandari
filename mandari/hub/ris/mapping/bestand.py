@@ -43,6 +43,7 @@ from django.db.models import F, Prefetch, Q, QuerySet
 from django.urls import reverse
 from mandari_oparl.qualitaet import plausibles_ende, sitzungsangaben
 
+from apps.common import module
 from hub.ris.canonical import (
     ORGANIZATION_TYPES,
     Objekt,
@@ -294,9 +295,10 @@ def prepare_persons(queryset: QuerySet[OParlPerson]) -> QuerySet[OParlPerson]:
 def mcp_url() -> str | None:
     """
     Adresse des MCP-Servers des Bürgerportals (``insight_ai.mcp``), über die KI-Assistenten dieselben Ratsdaten abrufen
-    (Issue #1309); ``None``, solange der Betrieb ihn nicht eingeschaltet hat (``INSIGHT_MCP_ENABLED``).
+    (Issue #1309); ``None``, solange der Betrieb ihn nicht eingeschaltet hat (``INSIGHT_MCP_ENABLED``) und ohne
+    Bürgerportal (Issue #1594).
     """
-    if not getattr(settings, "INSIGHT_MCP_ENABLED", False):
+    if not getattr(settings, "INSIGHT_MCP_ENABLED", False) or not module.aktiv(module.PORTAL):
         return None
     return f"{str(getattr(settings, 'SITE_URL', '')).rstrip('/')}{reverse('insight_mcp')}"
 

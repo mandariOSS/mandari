@@ -23,6 +23,7 @@ from django.views.generic import (
 
 from apps.common.params import uuid_param
 
+from .. import hub_events
 from ..models import (
     SessionLegislativeTerm,
     SessionMeeting,
@@ -365,8 +366,12 @@ class OrganizationCreateView(OrganizationFormMixin, SessionViewMixin, CreateView
 
     def form_valid(self, form):
         form.instance.tenant = self.session_tenant
+        # Drehscheibe (Issue #860): ris.organization.changed (added)
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.organization(form.instance, created=True)
+            response = super().form_valid(form)
         messages.success(self.request, f"Gremium „{form.instance.name}“ wurde angelegt.")
-        return super().form_valid(form)
+        return response
 
 
 class OrganizationUpdateView(OrganizationFormMixin, SessionViewMixin, UpdateView):
@@ -375,8 +380,12 @@ class OrganizationUpdateView(OrganizationFormMixin, SessionViewMixin, UpdateView
     pk_url_kwarg = "organization_id"
 
     def form_valid(self, form):
+        # Drehscheibe (Issue #860): ris.organization.changed mit den geänderten Feldern
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.organization(form.instance)
+            response = super().form_valid(form)
         messages.success(self.request, f"Gremium „{form.instance.name}“ wurde aktualisiert.")
-        return super().form_valid(form)
+        return response
 
 
 class OrganizationDeactivateView(SessionViewMixin, View):
@@ -388,7 +397,10 @@ class OrganizationDeactivateView(SessionViewMixin, View):
     def post(self, request, tenant_slug, organization_id):
         org = get_object_or_404(SessionOrganization, pk=organization_id, tenant=self.session_tenant)
         org.is_active = not org.is_active
-        org.save()
+        # Drehscheibe (Issue #860): Aktiv kennt das kanonische Modell nicht; gemeldet wird nur, was sich dort ändert
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.organization(org)
+            org.save()
         state = "reaktiviert" if org.is_active else "deaktiviert"
         messages.success(request, f"Gremium „{org.name}“ wurde {state}.")
         return redirect(

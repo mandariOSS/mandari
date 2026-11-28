@@ -14,7 +14,6 @@
     "apps/work/organization/selectors.py": 8,
     "apps/work/ris/selectors.py": 17,
     "insight_ai/services/summarizer.py": 3,
-    "insight_search/management/commands/reindex_elasticsearch.py": 1,
     "insight_sync/management/commands/sync_session_insight.py": 3,
     "insight_sync/session_mirror.py": 18
   }

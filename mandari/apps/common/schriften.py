@@ -3,7 +3,7 @@
 Schriften für Dokumente (Issue #1584): ein fester Satz freier Schriften, die mandari selbst ausliefert.
 
 Aufgenommen werden nur Schriften ohne reservierten Namen (OFL „Reserved Font Name“), weil mandari sie als Untermenge
-ausliefert; eine Ausnahme mit Originaldateien ist Carlito (``unveraendert``).
+ausliefert; Ausnahmen mit Originaldateien sind Carlito und Ubuntu (Ubuntu Font Licence) (``unveraendert``).
 
 Editor, Seitenansicht, PDF und die Office-Exporte nutzen dieselben Dateien (``static/vendor/schriften/``). Nur so
 brechen Zeilen und Seiten überall an derselben Stelle um. Die Dateien entstehen reproduzierbar mit
@@ -179,6 +179,19 @@ SCHRIFTEN: tuple[Schrift, ...] = (
             "AtkinsonHyperlegible-Italic.ttf",
             "AtkinsonHyperlegible-BoldItalic.ttf",
         ),
+    ),
+    Schrift(
+        "ubuntu",
+        "Ubuntu",
+        "serifenlos",
+        "rund, markant",
+        "ufl/ubuntu",
+        "Ubuntu-font-1.0",
+        "2011 Canonical Ltd.",
+        _vier("Ubuntu-Regular.ttf", "Ubuntu-Bold.ttf", "Ubuntu-Italic.ttf", "Ubuntu-BoldItalic.ttf"),
+        # Ubuntu Font Licence: Veränderte Fassungen dürfen den Namen nicht tragen, deshalb wie bei Carlito nur die
+        # Originaldateien ausliefern (keine Untermenge). Hausschrift u. a. von Volt.
+        unveraendert=True,
     ),
     Schrift(
         "tinos",
