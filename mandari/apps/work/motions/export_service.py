@@ -333,7 +333,9 @@ class MotionExportService:
         """
         from apps.common.pdf import overlay_pdf_letterhead
 
-        return overlay_pdf_letterhead(pdf_content, letterhead.pdf_file)
+        # Dokumenteigenes Briefpapier eines treu übernommenen PDFs: jede Originalseite unter ihre Seite (#1600)
+        seiten = (letterhead.satz or {}).get("hintergrund_seiten") if letterhead.dokument_id else None
+        return overlay_pdf_letterhead(pdf_content, letterhead.pdf_file, seiten if isinstance(seiten, list) else None)
 
     def export_to_docx(self, motion: "Motion") -> bytes:
         """

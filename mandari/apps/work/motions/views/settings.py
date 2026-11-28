@@ -7,6 +7,7 @@ import logging
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import TemplateView, View
 
@@ -805,8 +806,12 @@ class LetterheadFileView(WorkViewMixin, View):
 
     def get(self, request, *args, **kwargs):
         letterhead = get_object_or_404(
-            OrganizationLetterhead, id=kwargs["letterhead_id"], organization=self.organization
+            OrganizationLetterhead.alle, id=kwargs["letterhead_id"], organization=self.organization
         )
+        # Dokumenteigenes Briefpapier (#1600) zeigt Teile des Originals (Kopf, Kontaktdaten): nur mit Zugang zum
+        # Dokument, nicht für alle mit Dokumentrecht
+        if letterhead.dokument_id and not letterhead.dokument.can_access(self.membership):
+            raise Http404
         return attachment_response(letterhead.pdf_file, f"{letterhead.name}.pdf", allow_pdf_inline=True)
 
 

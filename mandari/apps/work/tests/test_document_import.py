@@ -238,7 +238,9 @@ def _antrag_pdf(zerfasert: bool = False) -> bytes:
 
 
 def _absaetze(html: str) -> list[str]:
-    return [re.sub(r"<[^>]+>", "", teil) for teil in re.findall(r"<p>(.*?)</p>", html, re.S)]
+    # Treue Übernahme (#1600): Absätze tragen Abstände als Stil, Trennstellen als weiches Trennzeichen
+    teile = re.findall(r"<p(?:\s[^>]*)?>(.*?)</p>", html, re.S)
+    return [re.sub(r"<[^>]+>", "", teil).replace("­", "").replace("&shy;", "").replace("\t", " ") for teil in teile]
 
 
 @pytest.mark.django_db

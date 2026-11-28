@@ -135,10 +135,27 @@ class MotionImportService:
         title: str | None = None,
         visibility: str = "private",
     ) -> ImportResult:
-        """PDF als neues Dokument: Text mit Absätzen; ohne Textebene per Texterkennung."""
+        """
+        PDF als neues Dokument. Zuerst die treue Übernahme (Issue #1600, ``pdf_treu``): Text mit Rändern, Schriften,
+        Abständen und Einzügen, Logos und Briefkopf als dokumenteigenes Briefpapier; Editor und Export sehen dann aus
+        wie das Original. Eignet sich das PDF dafür nicht (Scan, sehr lang), nur der Text mit Absätzen; ohne Textebene
+        per Texterkennung.
+        """
         try:
             file_content = pdf_file.read()
             pdf_file.seek(0)  # für das Speichern als Anhang
+
+            treu = cls._treu_importieren(
+                file_content,
+                pdf_file=pdf_file,
+                organization=organization,
+                author=author,
+                motion_type=motion_type,
+                title=title,
+                visibility=visibility,
+            )
+            if treu is not None:
+                return treu
 
             ocr_performed = False
             notice = None
@@ -214,6 +231,96 @@ class MotionImportService:
             logger.exception("PDF-Import fehlgeschlagen: %s", pdf_file.name)
             # Feste Meldung: Texte aus Bibliotheken bleiben im Protokoll
             return ImportResult(success=False, error=IMPORT_FAILED_MESSAGE)
+
+    @classmethod
+    def _treu_importieren(
+        cls,
+        file_content: bytes,
+        *,
+        pdf_file: UploadedFile,
+        organization: Organization,
+        author: Membership,
+        motion_type: MotionType | None,
+        title: str | None,
+        visibility: str,
+    ) -> ImportResult | None:
+        """Treue Übernahme (``pdf_treu``) samt dokumenteigenem Briefpapier; ``None``, wenn das PDF sich nicht eignet."""
+        from django.core.files.base import ContentFile
+
+        from . import pdf_treu
+        from .models import OrganizationLetterhead
+
+        if not getattr(settings, "PDF_TREU_IMPORT", True):
+            return None
+        try:
+            ergebnis = pdf_treu.uebernehmen(file_content)
+        except pdf_treu.NichtGeeignetError as grund:
+            logger.info("PDF-Import: treue Übernahme nicht möglich (%s), nur Text", grund)
+            return None
+        except Exception:
+            # Eine unerwartete Datei darf den Import nicht scheitern lassen: dann wie bisher nur der Text
+            logger.exception("PDF-Import: treue Übernahme fehlgeschlagen, nur Text")
+            return None
+
+        html = sanitize_editor_html(ergebnis.html)
+        search_text = import_text.html_to_text(html)
+        if not search_text.strip():
+            return None
+        titel = title or title_from_filename(pdf_file.name or "", (".pdf",))
+        with transaction.atomic():
+            motion, document = cls._create(
+                uploaded_file=pdf_file,
+                organization=organization,
+                author=author,
+                motion_type=motion_type,
+                title=titel,
+                visibility=visibility,
+                html=html,
+                search_text=search_text,
+                mime_type="application/pdf",
+                file_size=len(file_content),
+            )
+            raender = ergebnis.raender
+            briefpapier = OrganizationLetterhead(
+                organization=organization,
+                dokument=motion,
+                name=f"Originallayout: {titel}"[:200],
+                kind="pdf",
+                content_margin_top=max(0, round(raender["oben"])),
+                content_margin_bottom=max(0, round(raender["unten"])),
+                content_margin_left=max(0, round(raender["links"])),
+                content_margin_right=max(0, round(raender["rechts"])),
+                font_family=ergebnis.schrift,
+                font_size=max(1, round(ergebnis.groesse_pt)),
+                is_default=False,
+                is_active=True,
+                satz={
+                    "seite": {"breite_mm": ergebnis.seitenbreite_mm, "hoehe_mm": ergebnis.seitenhoehe_mm},
+                    "raender": raender,
+                    "schrift": ergebnis.schrift,
+                    "groesse_pt": ergebnis.groesse_pt,
+                    "hintergrund_seiten": ergebnis.hintergrund_seiten,
+                    "seitenzahl": ergebnis.seitenzahl,
+                    "unterschneidung": ergebnis.unterschneidung,
+                },
+            )
+            briefpapier.pdf_file.save("hintergrund.pdf", ContentFile(ergebnis.hintergrund_pdf), save=False)
+            briefpapier.save()
+            motion.letterhead = briefpapier
+            motion.save(update_fields=["letterhead"])
+        logger.info(
+            "PDF-Import: Dokument %s treu übernommen (%s Seiten, %s Zeichen)",
+            motion.id,
+            ergebnis.seiten,
+            len(search_text),
+        )
+        return ImportResult(
+            success=True,
+            motion=motion,
+            document=document,
+            extracted_text_length=len(search_text),
+            notice=" ".join(ergebnis.hinweise) or None,
+        )
 
     @classmethod
     def import_docx(

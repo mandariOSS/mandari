@@ -91,11 +91,35 @@ export interface SatzKonfig {
     akzent: string
     fuss_zeilen: string[]
     seitenzahlen: boolean
+    /** Seite des Briefpapier-PDFs je Seite (0-basiert, Seiten darüber hinaus nehmen die letzte; leer: immer die erste) */
+    seiten?: number[]
+    /** Seitenzahl an der Stelle des Originals (treu übernommenes PDF, #1600) */
+    seitenzahl?: Seitenzahl | null
   }
+  /** Treu übernommenes PDF (#1600): Satz wie Word (ohne Unterschneidung und Ligaturen) */
+  treu?: boolean
+  /** … außer das Original setzt mit Unterschneidung (LibreOffice) */
+  treu_unterschneidung?: boolean
   /** Titel des Dokuments: steht beim generierten Briefkopf im Kopf der ersten Seite */
   titel?: string
   /** Schriftdateien (Schlüssel → CSS-Familie), die der Text braucht */
   schriften: { schluessel: string; name: string }[]
+}
+
+export interface Seitenzahl {
+  /** Text mit `{n}` (Seite) und `{gesamt}` (Seitenzahl), z. B. „- {n} -“ */
+  text: string
+  /** Grundlinie ab Seitenoberkante und waagerechte Lage in mm */
+  grund_mm: number
+  x_mm: number
+  mitte_mm: number
+  rechts_mm: number
+  ausrichtung: 'links' | 'mitte' | 'rechts'
+  stapel: string
+  groesse_pt: number
+  fett: boolean
+  /** Erste Seite mit Seitenzahl (1-basiert) */
+  ab_seite: number
 }
 
 export const PX_JE_MM = 96 / 25.4

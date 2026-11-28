@@ -414,7 +414,9 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         context["document_types"] = MotionType.objects.filter(organization=self.organization, is_active=True)
 
         # Letterheads for dropdown
-        letterheads = OrganizationLetterhead.objects.filter(organization=self.organization, is_active=True)
+        letterheads = list(OrganizationLetterhead.objects.filter(organization=self.organization, is_active=True))
+        # Dokumenteigenes Briefpapier eines treu übernommenen PDFs (#1600): nur in der Auswahl dieses Dokuments
+        letterheads = [*OrganizationLetterhead.alle.filter(dokument=motion), *letterheads]
         context["letterheads"] = letterheads
 
         # Current letterhead for editor background preview
@@ -655,9 +657,17 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                                 self.organization, request.POST.get("document_type_id", "").strip()
                             )
                         if "letterhead_id" in request.POST:
-                            aenderungen["letterhead"] = letterhead_for(
-                                self.organization, request.POST.get("letterhead_id", "").strip()
+                            gewaehlt = request.POST.get("letterhead_id", "").strip()
+                            # Das dokumenteigene Briefpapier (#1600) steht in keiner Auswahl der Organisation
+                            eigenes = next(
+                                (
+                                    b
+                                    for b in OrganizationLetterhead.alle.filter(dokument=motion)
+                                    if str(b.id) == gewaehlt
+                                ),
+                                None,
                             )
+                            aenderungen["letterhead"] = eigenes or letterhead_for(self.organization, gewaehlt)
                     except FremdeAuswahlError:
                         return JsonResponse({"error": "Ungültiger Dokumenttyp oder Briefkopf."}, status=400)
 

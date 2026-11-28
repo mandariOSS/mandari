@@ -90,7 +90,7 @@ def satz_konfig(letterhead: OrganizationLetterhead | None, *, pdf_url: str = "")
     elif letterhead is not None:
         briefpapier.update(art="pdf", pdf_url=pdf_url)
 
-    return {
+    konfig: dict[str, Any] = {
         "seite": dict(SEITE_MM),
         "raender": {
             **raender,
@@ -105,6 +105,76 @@ def satz_konfig(letterhead: OrganizationLetterhead | None, *, pdf_url: str = "")
         },
         "briefpapier": briefpapier,
         "schriften": [{"schluessel": schrift.schluessel, "name": schrift.name}],
+    }
+    if letterhead is not None and not generiert and letterhead.satz:
+        _treu_uebernehmen(konfig, letterhead.satz)
+    return konfig
+
+
+def _mm(wert: Any, standard: float, *, hoechstens: float = 400.0) -> float:
+    try:
+        zahl = float(wert)
+    except (TypeError, ValueError):
+        return standard
+    return max(0.0, min(zahl, hoechstens))
+
+
+def _treu_uebernehmen(konfig: dict[str, Any], satz: dict[str, Any]) -> None:
+    """
+    Genaue Maße eines treu übernommenen PDFs (Issue #1600, ``pdf_treu.py``): Seitengröße und Ränder als Gleitkomma,
+    Grundschrift, Hintergrundseite je Seite und die Seitenzahl an der Stelle des Originals. ``treu`` schaltet im Satz
+    Unterschneidung und Ligaturen ab, wie Word sie standardmäßig setzt.
+    """
+    seite = satz.get("seite") or {}
+    konfig["seite"] = {
+        "breite_mm": _mm(seite.get("breite_mm"), SEITE_MM["breite_mm"], hoechstens=1200),
+        "hoehe_mm": _mm(seite.get("hoehe_mm"), SEITE_MM["hoehe_mm"], hoechstens=1200),
+    }
+    raender = satz.get("raender") or {}
+    alt = konfig["raender"]
+    konfig["raender"] = {schluessel: _mm(raender.get(schluessel), float(alt[schluessel])) for schluessel in alt}
+    schrift = schriften.schrift(str(satz.get("schrift") or "")) or schriften.aufloesen(None)
+    groesse = _mm(satz.get("groesse_pt"), STANDARD_GROESSE_PT, hoechstens=schriften.GROESSE_MAX)
+    konfig["schrift"].update(
+        schluessel=schrift.schluessel,
+        stapel=schrift.css_stapel,
+        groesse_pt=max(schriften.GROESSE_MIN, groesse),
+    )
+    konfig["schriften"] = [{"schluessel": schrift.schluessel, "name": schrift.name}]
+    seiten = satz.get("hintergrund_seiten")
+    konfig["briefpapier"]["seiten"] = (
+        [int(s) for s in seiten if isinstance(s, int) and 0 <= s < 10_000] if isinstance(seiten, list) else []
+    )
+    konfig["briefpapier"]["seitenzahl"] = seitenzahl = _seitenzahl(satz.get("seitenzahl"))
+    if seitenzahl is not None and seitenzahl["schluessel"] != schrift.schluessel:
+        zahl_schrift = schriften.schrift(seitenzahl["schluessel"])
+        if zahl_schrift is not None:
+            konfig["schriften"].append({"schluessel": zahl_schrift.schluessel, "name": zahl_schrift.name})
+    konfig["treu"] = True
+    konfig["treu_unterschneidung"] = bool(satz.get("unterschneidung"))
+
+
+def _seitenzahl(roh: Any) -> dict[str, Any] | None:
+    """Seitenzahl des Originals (Text mit ``{n}``/``{gesamt}``, Lage in mm, Schrift) oder ``None``."""
+    if not isinstance(roh, dict):
+        return None
+    text = str(roh.get("text") or "")[:80]
+    if "{n}" not in text:
+        return None
+    schrift = schriften.schrift(str(roh.get("schrift") or "")) or schriften.aufloesen(None)
+    ausrichtung = roh.get("ausrichtung") if roh.get("ausrichtung") in ("links", "mitte", "rechts") else "links"
+    return {
+        "text": text,
+        "grund_mm": _mm(roh.get("grund_mm"), 0.0),
+        "x_mm": _mm(roh.get("x_mm"), 0.0),
+        "mitte_mm": _mm(roh.get("mitte_mm"), 0.0),
+        "rechts_mm": _mm(roh.get("rechts_mm"), 0.0),
+        "ausrichtung": ausrichtung,
+        "stapel": schrift.css_stapel,
+        "schluessel": schrift.schluessel,
+        "groesse_pt": max(schriften.GROESSE_MIN, _mm(roh.get("groesse_pt"), 10.0, hoechstens=schriften.GROESSE_MAX)),
+        "fett": bool(roh.get("fett")),
+        "ab_seite": int(_mm(roh.get("ab_seite"), 1.0, hoechstens=10_000)),
     }
 
 

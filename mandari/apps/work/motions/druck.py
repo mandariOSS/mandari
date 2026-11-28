@@ -42,13 +42,18 @@ SKRIPT = "satz-druck.js"
 _SCHRIFT_IM_TEXT_RE = re.compile(r"font-family:\s*(&quot;[^&]{1,64}&quot;|&#x27;[^&]{1,64}&#x27;|[^;\"]{1,64})")
 
 
+#: data-Attribute, die die Druckansicht braucht (der Export entfernt sonst alle Editor-Attribute)
+DRUCK_ATTRIBUTE = frozenset({"data-page-break", "data-rahmen"})
+
+
 class DruckNichtMoeglichError(RuntimeError):
     """Das Druckpaket lässt sich nicht bauen (z. B. fehlt das gebaute Frontend)."""
 
 
 def druck_inhalt(motion: Motion) -> str:
     """Bereinigter Text des Dokuments samt Signaturblock der Vorlage, wie ihn die Druckansicht setzt."""
-    inhalt = clean_editor_html(motion.content or "")
+    # Seitenumbrüche und Tabellen ohne Rahmen (#1600) setzt die Satz-Kette aus den data-Attributen
+    inhalt = clean_editor_html(motion.content or "", behalten=DRUCK_ATTRIBUTE)
     if table_cell_count(inhalt) > MAX_PDF_TABLE_CELLS:
         raise ExportTooLargeError(PDF_TABLES_TOO_LARGE)
     signatur = get_signature_text(motion)
@@ -130,6 +135,11 @@ def druck_dateien(motion: Motion) -> dict[str, bytes]:
     """Alle Dateien für die PDF-Erzeugung über Chromium."""
     kontext = druck_kontext(motion, paket=True)
     liste = verwendete_schriften(kontext["inhalt"], kontext["konfig"]["schrift"]["schluessel"])
+    # Seitenzahl eines treu übernommenen PDFs (#1600) in ihrer eigenen Schrift
+    seitenzahl = kontext["konfig"]["briefpapier"].get("seitenzahl")
+    zahl_schrift = schriften.schrift(seitenzahl["schluessel"]) if seitenzahl else None
+    if zahl_schrift is not None and all(s.schluessel != zahl_schrift.schluessel for s in liste):
+        liste.append(zahl_schrift)
     # Chromium lädt die Schriften des Texts selbst nach: Die Konfiguration nennt alle, die das Paket mitbringt
     kontext["konfig"]["schriften"] = [{"schluessel": s.schluessel, "name": s.name} for s in liste]
     dateien: dict[str, bytes] = {

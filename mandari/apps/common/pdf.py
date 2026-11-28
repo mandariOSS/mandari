@@ -211,7 +211,7 @@ def _read_from_start(datei: Any) -> bytes:
     return bytes(datei.read())
 
 
-def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
+def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file, seiten: list[int] | None = None) -> bytes:
     """
     Erzeugtes PDF seitenweise auf die erste Seite eines Briefkopf-PDFs legen.
 
@@ -222,6 +222,9 @@ def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
     Args:
         pdf_content: das erzeugte Inhalts-PDF
         letterhead_pdf_file: dateiartiges Objekt des Briefkopf-PDFs
+        seiten: Seite des Briefkopfs je Inhaltsseite (0-basiert; Inhaltsseiten darüber hinaus nehmen den letzten
+            Eintrag). Ohne Angabe liegt die erste Seite unter allen. Dokumenteigenes Briefpapier treu übernommener
+            PDFs (Issue #1600) bringt so jede Originalseite unter ihre Seite.
 
     Returns:
         bytes: zusammengeführtes PDF (bei Fehlern: Inhalts-PDF unverändert)
@@ -237,15 +240,23 @@ def overlay_pdf_letterhead(pdf_content: bytes, letterhead_pdf_file) -> bytes:
         with _LETTERHEAD_LOCK:
             content_pdf = PdfReader(io.BytesIO(pdf_content))
             letterhead_pdf = PdfReader(io.BytesIO(letterhead_bytes))
-            letterhead_page = letterhead_pdf.pages[0]
+            letzte = len(letterhead_pdf.pages) - 1
 
-            length = _page_content_length(letterhead_page, LETTERHEAD_MAX_CONTENT_BYTES)
-            if length is None or length > LETTERHEAD_MAX_CONTENT_BYTES:
-                logger.warning("Briefkopf nicht anwendbar: Seiteninhalt zu groß oder nicht prüfbar")
-                return pdf_content
+            def blatt_fuer(nummer: int) -> int:
+                if not seiten:
+                    return 0
+                return max(0, min(int(seiten[min(nummer, len(seiten) - 1)]), letzte))
+
+            # Jede verwendete Seite einzeln prüfen: Zusammengeführt wird Seite für Seite
+            for blatt in sorted({blatt_fuer(nummer) for nummer in range(len(content_pdf.pages))}):
+                length = _page_content_length(letterhead_pdf.pages[blatt], LETTERHEAD_MAX_CONTENT_BYTES)
+                if length is None or length > LETTERHEAD_MAX_CONTENT_BYTES:
+                    logger.warning("Briefkopf nicht anwendbar: Seiteninhalt zu groß oder nicht prüfbar")
+                    return pdf_content
 
             output = PdfWriter()
-            for content_page in content_pdf.pages:
+            for nummer, content_page in enumerate(content_pdf.pages):
+                letterhead_page = letterhead_pdf.pages[blatt_fuer(nummer)]
                 # Je Inhaltsseite ein eigenes leeres Blatt im Writer, darauf erst der Briefkopf, dann der Inhalt.
                 # Eine Kopie der Briefkopf-Seite außerhalb des Writers lässt pypdf 7 nicht mehr zusammenführen, und
                 # pypdf 6 schrieb dabei den Inhalt der ersten Seite auf alle Seiten. Ein Blatt aus
