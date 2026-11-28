@@ -23,6 +23,8 @@ from typing import TextIO
 
 from django.db import transaction
 
+from hub.ris import selectors as ris_selectors
+
 from ..models import Municipality, MunicipalityTerm, OParlBody
 from .kommunenverzeichnis import LAENDER, get_kind_label_for_body, quellen_vergessen, varianten
 
@@ -195,7 +197,7 @@ def aus_koerperschaften() -> Ergebnis:
     """
     ergebnis = Ergebnis()
     kandidaten: list[tuple[OParlBody, str]] = []
-    for body in OParlBody.objects.listed():
+    for body in ris_selectors.listed_bodies():
         schluessel = body.rgs if body.rgs and len(body.rgs) == 12 else body.ags if len(body.ags or "") == 8 else ""
         if schluessel and schluessel[:2] in LAENDER:
             kandidaten.append((body, schluessel))

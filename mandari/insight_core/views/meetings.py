@@ -6,11 +6,11 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import contextlib
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db.models import Count, OuterRef, Q, Subquery
-from django.db.models.functions import Coalesce
+from django.db.models import Q
 from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -21,12 +21,7 @@ from apps.common.formatting import MONTH_ABBREVIATIONS
 from hub.ris import selectors as ris_selectors
 from hub.ris.original import seite_im_ris
 
-from ..models import (
-    OParlAgendaItem,
-    OParlBody,
-    OParlMeeting,
-    OParlOrganization,
-)
+from ..models import OParlBody, OParlMeeting
 from ..services import indexierung, ortsschutz, sitzungsabbruch
 from ..services.ergebnis import angekuendigt, ergebnis
 from ..services.feed_eintraege import ANGEKUENDIGT_SATZ
@@ -78,20 +73,13 @@ class MeetingListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSe
     def get_queryset(self):
         body = get_active_body(self.request)
         if not body:
-            return OParlMeeting.objects.none()
+            return ris_selectors.meetings([]).none()
 
         # Zahl der öffentlichen Tagesordnungspunkte (Spalte „Tagesordnung“ auf breiten Bildschirmen, Issue #841)
-        tops_sq = Subquery(
-            OParlAgendaItem.objects.filter(meeting=OuterRef("pk"), public=True, deleted=False)
-            .order_by()
-            .values("meeting")
-            .annotate(n=Count("pk"))
-            .values("n")[:1]
-        )
         qs = (
-            OParlMeeting.objects.filter(body=body, deleted=False)
+            ris_selectors.public_meetings([body])
             .prefetch_related("organizations")
-            .annotate(anzahl_tops=Coalesce(tops_sq, 0), hat_tagesordnung=tagesordnung_vorhanden())
+            .annotate(anzahl_tops=ris_selectors.public_agenda_item_count(), hat_tagesordnung=tagesordnung_vorhanden())
         )
 
         # Suche
@@ -118,9 +106,8 @@ def _select_body_from_query(request):
     body_id = request.GET.get("kommune")
     if not body_id:
         return
-    try:
-        body = OParlBody.objects.get(id=body_id, deleted=False)
-    except (OParlBody.DoesNotExist, ValueError, ValidationError):
+    body = ris_selectors.public_body(body_id)
+    if body is None:
         return
     request.session["active_body_id"] = str(body.id)
     request.session.modified = True
@@ -128,14 +115,7 @@ def _select_body_from_query(request):
 
 def _organizations_with_meetings(body):
     """Gremien der Kommune, die Sitzungen haben (für Abo-Auswahl und Jahresplan)."""
-    from django.db.models import Count
-
-    return (
-        OParlOrganization.objects.filter(body=body, deleted=False)
-        .annotate(meeting_count=Count("meetings", filter=Q(meetings__deleted=False)))
-        .filter(meeting_count__gt=0)
-        .order_by("name")
-    )
+    return ris_selectors.public_organizations_with_meetings([body])
 
 
 class MeetingCalendarView(ActiveBodyRequiredMixin, TemplateView):
@@ -187,10 +167,11 @@ class MeetingYearPlanView(ActiveBodyRequiredMixin, TemplateView):
         except (TypeError, ValueError):
             year = today.year
 
-        meetings = (
-            OParlMeeting.objects.filter(body=body, deleted=False, start__year=year)
-            .prefetch_related("organizations")
-            .order_by("start")
+        # Das Kalenderjahr in Ortszeit, wie ``start__year``
+        meetings = ris_selectors.public_meetings_between(
+            [body],
+            timezone.make_aware(datetime(year, 1, 1)),
+            timezone.make_aware(datetime(year + 1, 1, 1)) - timedelta(microseconds=1),
         )
         rows_by_org: dict = {}
         for meeting in meetings:
@@ -241,8 +222,6 @@ def calendar_feed(request):
     ganze Kommune oder ein Gremium (?gremium=<uuid>), 3 Monate zurück, 13 Monate voraus.
     Kein Login — die Daten sind ohnehin öffentlich.
     """
-    from datetime import timedelta
-
     from apps.common.ical import build_ics_feed
 
     _select_body_from_query(request)
@@ -253,22 +232,17 @@ def calendar_feed(request):
     organization = None
     org_id = request.GET.get("gremium")
     if org_id:
-        try:
-            organization = OParlOrganization.objects.get(id=org_id, body=body, deleted=False)
-        except (OParlOrganization.DoesNotExist, ValueError, ValidationError):
-            raise Http404("Gremium nicht gefunden") from None
+        organization = ris_selectors.public_organization([body], org_id)
+        if organization is None:
+            raise Http404("Gremium nicht gefunden")
 
     now = timezone.now()
-    qs = (
-        OParlMeeting.objects.filter(
-            body=body, deleted=False, start__gte=now - timedelta(days=90), start__lte=now + timedelta(days=400)
-        )
-        .annotate(hat_tagesordnung=tagesordnung_vorhanden())
-        .prefetch_related("organizations")
-        .order_by("start")
-    )
-    if organization is not None:
-        qs = qs.filter(organizations=organization)
+    qs = ris_selectors.public_meetings_between(
+        [body],
+        now - timedelta(days=90),
+        now + timedelta(days=400),
+        organizations=[organization] if organization is not None else None,
+    ).annotate(hat_tagesordnung=tagesordnung_vorhanden())
 
     # Dieselbe UID wie die Kalenderdatei je Sitzung (Issue #1274), „angekündigt“ ohne Tagesordnung
     site_url = getattr(settings, "SITE_URL", "https://mandari.de").rstrip("/")
@@ -295,8 +269,11 @@ class MeetingDetailView(DetailView):
     template_name = "pages/meetings/detail.html"
     context_object_name = "meeting"
 
-    def get_queryset(self):
-        return OParlMeeting.objects.prefetch_related("organizations")
+    def get_object(self, queryset=None):
+        meeting = ris_selectors.meeting_with_organizations(self.kwargs.get(self.pk_url_kwarg))
+        if meeting is None:
+            raise Http404("Sitzung nicht gefunden")
+        return meeting
 
     def get(self, request, *args, **kwargs):
         self.object = self.get_object()
@@ -395,7 +372,7 @@ def calendar_events(request):
     start_str = request.GET.get("start")
     end_str = request.GET.get("end")
 
-    qs = OParlMeeting.objects.filter(body=body, cancelled=False, deleted=False).prefetch_related("organizations")
+    qs = ris_selectors.public_meetings([body]).filter(cancelled=False).prefetch_related("organizations")
 
     # Optional: nur ein Gremium (Issue #82)
     org_id = request.GET.get("gremium")
@@ -404,8 +381,6 @@ def calendar_events(request):
             qs = qs.filter(organizations__id=org_id)
 
     if start_str:
-        from datetime import datetime
-
         try:
             start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
             qs = qs.filter(start__gte=start)
@@ -413,8 +388,6 @@ def calendar_events(request):
             pass
 
     if end_str:
-        from datetime import datetime
-
         try:
             end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
             qs = qs.filter(start__lte=end)

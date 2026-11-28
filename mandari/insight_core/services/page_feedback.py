@@ -20,7 +20,6 @@ Auftrag ``rueckmeldungen_aufraeumen`` (``insight_core/schedules.py``) die EintrÃ
 from __future__ import annotations
 
 import re
-import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Final
@@ -128,13 +127,9 @@ def rate_limited(request: HttpRequest) -> bool:
 
 
 def _body(body_id: Any) -> OParlBody | None:
-    from ..models import OParlBody
+    from hub.ris import selectors as ris_selectors
 
-    try:
-        pk = uuid.UUID(str(body_id))
-    except (TypeError, ValueError):
-        return None
-    return OParlBody.objects.filter(pk=pk).first()
+    return ris_selectors.body_by_id(body_id)
 
 
 def record(*, page_type: str, path: str, body_id: Any, helpful: bool) -> PageFeedback:

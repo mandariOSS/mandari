@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Ratchet für Direktzugriffe auf den RIS-Bestand (``scripts/check_ris_access_ratchet.py``, Issue #522):
-Zugriffe auf ``OParl*.objects`` außerhalb von ``hub`` und ``insight_core`` dürfen je Datei nur sinken.
+Ratchet für Direktzugriffe auf den RIS-Bestand (``scripts/check_ris_access_ratchet.py``, Issues #522, #1593):
+Zugriffe auf ``OParl*.objects`` außerhalb von ``hub`` und ``insight_core`` (K5) und im Code des Bürgerportals in
+``insight_core`` (K5b) dürfen je Datei nur sinken.
 """
 
 from __future__ import annotations
@@ -68,6 +69,37 @@ def test_umfang_der_zaehlung(ratchet: ModuleType, pfad: str, zaehlt: bool) -> No
     assert ratchet.is_counted(Path(pfad)) is zaehlt
 
 
+@pytest.mark.parametrize(
+    ("pfad", "portal"),
+    [
+        ("insight_core/views/meetings.py", True),
+        ("insight_core/templatetags/insight_listen.py", True),
+        ("insight_core/portal.py", True),
+        ("insight_core/services/portal_stats.py", True),
+        # Dateivorschau der Dokumentablage, RIS-Bestand und Geodaten gehören zur Drehscheibe
+        ("insight_core/views/files.py", False),
+        ("insight_core/models.py", False),
+        ("insight_core/services/file_store.py", False),
+        ("insight_core/services/georeferencing.py", False),
+        ("insight_core/portal_extra.py", False),
+        ("insight_core/views/tests/test_home.py", False),
+        ("insight_core/tests/test_portal.py", False),
+        ("apps/work/ris/selectors.py", False),
+    ],
+)
+def test_umfang_des_buergerportals(ratchet: ModuleType, pfad: str, portal: bool) -> None:
+    assert ratchet.is_portal(Path(pfad)) is portal
+    # Keine Datei zählt doppelt
+    assert not (ratchet.is_portal(Path(pfad)) and ratchet.is_counted(Path(pfad)))
+
+
+def test_jeder_eintrag_des_buergerportals_gibt_es(ratchet: ModuleType) -> None:
+    """Ein umbenannter oder umgezogener Eintrag fiele sonst still aus der Zählung."""
+    for eintrag in (*ratchet.PORTAL, *ratchet.PORTAL_OHNE):
+        pfad = ratchet.PROJECT / eintrag
+        assert pfad.is_dir() if eintrag.endswith("/") else pfad.is_file(), eintrag
+
+
 def test_neue_und_zusaetzliche_zugriffe_sind_verstoesse(ratchet: ModuleType) -> None:
     verstoesse, gesunken = ratchet.compare({"a.py": 3, "b.py": 1, "neu.py": 1}, {"a.py": 2, "b.py": 1})
     assert verstoesse == [
@@ -116,7 +148,47 @@ def test_main_meldet_verstoesse_und_abbau(
     assert ratchet.main([]) == 0
 
 
-def test_ausgelieferter_stand_haelt_die_baseline_ein(ratchet: ModuleType) -> None:
-    verstoesse, gesunken = ratchet.compare(ratchet.measure(), ratchet.load_baseline())
+def test_abschnitt_buergerportal_getrennt(
+    ratchet: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    projekt = tmp_path / "mandari"
+    (projekt / "insight_core" / "views").mkdir(parents=True)
+    (projekt / "insight_core" / "services").mkdir()
+    (projekt / "insight_core" / "views" / "home.py").write_text("OParlBody.objects.first()\n", encoding="utf-8")
+    # Bestand: zählt in keinem Abschnitt
+    (projekt / "insight_core" / "services" / "file_store.py").write_text("OParlFile.objects.all()\n", encoding="utf-8")
+    basis = tmp_path / "baseline.json"
+    monkeypatch.setattr(ratchet, "ROOT", tmp_path)
+    monkeypatch.setattr(ratchet, "PROJECT", projekt)
+    monkeypatch.setattr(ratchet, "BASELINE", basis)
+
+    assert ratchet.measure(section="files") == {}
+    assert ratchet.measure(section="buergerportal") == {"insight_core/views/home.py": 1}
+    ratchet.write_baseline({}, section="files")
+    assert ratchet.main([]) == 1
+    assert "insight_core/views/home.py: 1 neue Zugriffe" in capsys.readouterr().out
+
+    # Ein Abschnitt lässt den anderen unberührt
+    ratchet.write_baseline({"insight_core/views/home.py": 2}, section="buergerportal")
+    ratchet.write_baseline({}, section="files")
+    assert ratchet.load_baseline(section="buergerportal") == {"insight_core/views/home.py": 2}
+    assert ratchet.main(["--update"]) == 0
+    daten = json.loads(basis.read_text(encoding="utf-8"))
+    assert list(daten) == ["beschreibung", "files", "buergerportal"]
+    assert daten["buergerportal"] == {"insight_core/views/home.py": 1}
+    assert ratchet.main([]) == 0
+    assert "(K5b): 1 (Baseline 1)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("abschnitt", ["files", "buergerportal"])
+def test_ausgelieferter_stand_haelt_die_baseline_ein(ratchet: ModuleType, abschnitt: str) -> None:
+    verstoesse, gesunken = ratchet.compare(ratchet.measure(section=abschnitt), ratchet.load_baseline(section=abschnitt))
     assert verstoesse == [], "Neue Direktzugriffe: bitte hub/ris/selectors.py nutzen"
     assert gesunken == [], "Baseline mit scripts/check_ris_access_ratchet.py --update nachziehen"
+
+
+def test_seiten_und_rahmen_des_portals_lesen_nur_ueber_die_fassade(ratchet: ModuleType) -> None:
+    """Seiten, Einstieg je Körperschaft und Kontext des Bürgerportals sind frei von Direktzugriffen (Issue #1593)."""
+    stand = ratchet.measure(section="buergerportal")
+    rahmen = ("insight_core/views/", "insight_core/portal.py", "insight_core/context_processors.py")
+    assert [pfad for pfad in stand if pfad.startswith(rahmen)] == []

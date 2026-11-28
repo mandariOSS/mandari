@@ -36,7 +36,6 @@ from typing import TYPE_CHECKING, Any, cast
 from django.conf import settings
 from django.core import checks
 from django.core.cache import cache
-from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, HttpResponseRedirect
@@ -174,12 +173,12 @@ def resolve_body(slug: str) -> OParlBody | None:
     Die Zuordnung Slug → Kommune wird kurz zwischengespeichert; ob die Kommune gelistet ist, prüft
     jeder Aufruf neu (eine Abfrage).
     """
-    from insight_core.models import OParlBody
+    from hub.ris import selectors as ris_selectors
 
     schluessel = _slug_cache_key(slug)
     bekannt = cache.get(schluessel)
     if bekannt:
-        body = cast("OParlBody | None", OParlBody.objects.listed().filter(pk=bekannt).first())
+        body = ris_selectors.listed_body_by_id(bekannt)
         if body is not None:
             return body
     body = _find_body(slug)
@@ -205,9 +204,9 @@ def forget_slugs(*slugs: str | None) -> None:
 
 
 def _find_body(slug: str) -> OParlBody | None:
-    from insight_core.models import OParlBody
+    from hub.ris import selectors as ris_selectors
 
-    body = cast("OParlBody | None", OParlBody.objects.listed().filter(slug=slug).first())
+    body = ris_selectors.listed_body_by_slug(slug)
     if body is not None:
         return body
     from apps.session.models import SessionTenant
@@ -226,12 +225,12 @@ def _find_body(slug: str) -> OParlBody | None:
 def tenant_body(tenant: Any) -> OParlBody | None:
     """Gelistete Kommune hinter einem Session-Mandanten: eigene OParl-Quelle, sonst die verknüpfte Kommune."""
     from apps.session.services.insight_service import session_sources
-    from insight_core.models import OParlBody
+    from hub.ris import selectors as ris_selectors
 
-    body = OParlBody.objects.listed().filter(source__in=session_sources(tenant)).order_by("created_at").first()
+    body = ris_selectors.bodies_of_sources(session_sources(tenant)).listed().order_by("created_at").first()
     if body is None and tenant.oparl_body_id:
-        body = OParlBody.objects.listed().filter(pk=tenant.oparl_body_id).first()
-    return cast("OParlBody | None", body)
+        body = ris_selectors.listed_body_by_id(tenant.oparl_body_id)
+    return body
 
 
 def tenant_slug_conflict(slug: str, body_pk: Any) -> Any | None:
@@ -257,19 +256,19 @@ def withdrawn_state(slug: str) -> BodyState | None:
 
     Zurückgenommene Kommunen sind nicht mehr gelistet; ihr Einstieg antwortet mit 410 statt 404.
     """
-    from insight_core.models import OParlBody
+    from hub.ris import selectors as ris_selectors
 
     from .publication import body_state, states
 
     if not states():
         return None
-    body_ids = list(OParlBody.objects.filter(slug=slug).values_list("id", flat=True))
+    body_ids: list[Any] = list(ris_selectors.body_ids_by_slug([slug]).values())
     from apps.session.models import SessionTenant
     from apps.session.services.insight_service import session_sources
 
     tenant = SessionTenant.objects.filter(slug=slug).first()
     if tenant is not None:
-        body_ids += list(OParlBody.objects.filter(source__in=session_sources(tenant)).values_list("id", flat=True))
+        body_ids += list(ris_selectors.bodies_of_sources(session_sources(tenant)).values_list("id", flat=True))
     for body_id in body_ids:
         state = body_state(body_id)
         if state is not None and state.withdrawn:
@@ -300,7 +299,7 @@ def get_portal(request: HttpRequest) -> PortalContext | None:
 
 
 def _resolve(request: HttpRequest) -> PortalContext | None:
-    from insight_core.models import OParlBody
+    from hub.ris import selectors as ris_selectors
 
     slug = getattr(request, "insight_portal_host_slug", None)
     if slug:
@@ -310,10 +309,7 @@ def _resolve(request: HttpRequest) -> PortalContext | None:
     state = session.get(PORTAL_SESSION_KEY) if session is not None else None
     if not isinstance(state, dict) or not state.get("body"):
         return None
-    try:
-        body = OParlBody.objects.listed().filter(pk=state["body"]).first()
-    except (ValidationError, ValueError):
-        body = None
+    body = ris_selectors.listed_body_by_id(state["body"])
     if body is None:
         # Kommune nicht mehr gelistet (z. B. Mandant deaktiviert): zurück ins gemeinsame Portal
         leave(request)

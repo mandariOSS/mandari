@@ -14,11 +14,12 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists
 from django.urls import reverse
 from django.utils import timezone
 
-from ..models import OParlAgendaItem
+from hub.ris import selectors as ris_selectors
+
 from .feed_eintraege import ANGEKUENDIGT_SATZ
 
 #: Teil der UID nach dem „@“; bleibt für immer gleich (sonst entstehen doppelte Termine)
@@ -27,12 +28,12 @@ UID_DOMAIN: Final = "mandari.de"
 
 def tagesordnung_vorhanden() -> Exists:
     """Annotation für Sitzungslisten: Gibt es Tagesordnungspunkte (ohne gelöschte, damit auch ohne zurückgenommene)?"""
-    return Exists(OParlAgendaItem.objects.filter(meeting=OuterRef("pk"), deleted=False))
+    return ris_selectors.has_agenda()
 
 
 def hat_tagesordnung(meeting: Any) -> bool:
     """Gibt es zur Sitzung Tagesordnungspunkte (wie die Sitzungsseite: ohne gelöschte)?"""
-    return OParlAgendaItem.objects.filter(meeting=meeting, deleted=False).exists()
+    return ris_selectors.meeting_has_agenda(meeting)
 
 
 def uid(meeting: Any) -> str:

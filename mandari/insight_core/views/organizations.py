@@ -5,14 +5,14 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-from django.db.models import Count, Exists, OuterRef, Q, Subquery, Value
+from django.db.models import Q, Value
 from django.db.models.functions import Coalesce, NullIf
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
+from hub.ris import selectors as ris_selectors
+
 from ..models import (
-    OParlMeeting,
-    OParlMembership,
     OParlOrganization,
     withdrawn_q,
 )
@@ -39,65 +39,27 @@ class OrganizationListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, Begren
     def get_queryset(self):
         body = get_active_body(self.request)
         if not body:
-            return OParlOrganization.objects.none()
+            return ris_selectors.organizations([]).none()
 
         tab = self.request.GET.get("tab", "active")
         q = self.request.GET.get("q", "").strip()
         today = timezone.now().date()
         now = timezone.now()
 
-        # Annotate next/last meeting via M2M Subquery (fast, uses proper indexes)
-        next_meeting_sq = Subquery(
-            OParlMeeting.objects.filter(
-                organizations=OuterRef("pk"),
-                start__gte=now,
-                cancelled=False,
-                deleted=False,
-            )
-            .order_by("start")
-            .values("start")[:1]
-        )
-        last_meeting_sq = Subquery(
-            OParlMeeting.objects.filter(
-                organizations=OuterRef("pk"),
-                start__lt=now,
-                deleted=False,
-            )
-            .order_by("-start")
-            .values("start")[:1]
-        )
-        has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk"), deleted=False))
-        # Laufende Mitgliedschaften (Spalte „Mitglieder“ auf breiten Bildschirmen, Issue #841), ohne Test- und
-        # Systemkonten (Issue #1258)
-        members_sq = Subquery(
-            OParlMembership.objects.filter(organization=OuterRef("pk"), deleted=False)
-            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-            .exclude(ausgeblendet_q())
-            .order_by()
-            .values("organization")
-            .annotate(n=Count("pk"))
-            .values("n")[:1]
-        )
-
-        base_qs = OParlOrganization.objects.filter(body=body, deleted=False).annotate(
-            next_meeting=next_meeting_sq,
-            last_meeting=last_meeting_sq,
-            has_meetings=has_any_meeting,
-            mitglieder=Coalesce(members_sq, 0),
+        # Aktiv = nicht abgelaufen UND hat mindestens eine Sitzung; „Alle“ auch aufgelöste Gremien. Suche in Name und
+        # Kurzname. Nächste und letzte Sitzung als Unterabfrage über die Zuordnung Sitzung–Gremium (Indizes), laufende
+        # Mitgliedschaften (Spalte „Mitglieder“ auf breiten Bildschirmen, Issue #841) ohne Test- und Systemkonten
+        # (Issue #1258)
+        base_qs = ris_selectors.public_organizations([body], q, on=today, include_ended=tab != "active").annotate(
+            next_meeting=ris_selectors.next_meeting_start(now),
+            last_meeting=ris_selectors.last_meeting_start(now),
+            has_meetings=ris_selectors.has_public_meetings(),
+            mitglieder=ris_selectors.current_member_count(today, exclude=ausgeblendet_q()),
             # Art des Gremiums: Klassifikation (Ausschuss, Beirat …), sonst der OParl-Typ
             art=Coalesce(NullIf("classification", Value("")), NullIf("organization_type", Value(""))),
         )
-
-        # Suche
-        if q:
-            base_qs = base_qs.filter(Q(name__icontains=q) | Q(short_name__icontains=q))
-
         if tab == "active":
-            # Aktiv = nicht abgelaufen UND hat mindestens eine Sitzung
-            base_qs = base_qs.filter(
-                Q(end_date__isnull=True) | Q(end_date__gte=today),
-                has_meetings=True,
-            )
+            base_qs = base_qs.filter(has_meetings=True)
 
         return sort_organizations_by_ranking(base_qs)
 
@@ -108,17 +70,15 @@ class OrganizationListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, Begren
 
         if body:
             today = timezone.now().date()
-            has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk"), deleted=False))
 
             # Counts ohne Suchfilter
-            all_orgs = OParlOrganization.objects.filter(body=body, deleted=False).annotate(
-                has_meetings=has_any_meeting,
+            context["active_count"] = (
+                ris_selectors.public_organizations([body], on=today)
+                .annotate(has_meetings=ris_selectors.has_public_meetings())
+                .filter(has_meetings=True)
+                .count()
             )
-            context["active_count"] = all_orgs.filter(
-                Q(end_date__isnull=True) | Q(end_date__gte=today),
-                has_meetings=True,
-            ).count()
-            context["all_count"] = all_orgs.count()
+            context["all_count"] = ris_selectors.public_organizations([body], include_ended=True).count()
 
         context["tab"] = tab
         from ..seo import get_list_seo
@@ -203,18 +163,11 @@ class OrganizationDetailView(DetailView):
 
         # Sitzungen
         context["upcoming_meetings"] = list(
-            OParlMeeting.objects.filter(
-                organizations=org,
-                start__gte=now,
-                cancelled=False,
-                deleted=False,
-            ).order_by("start")[:10]
+            ris_selectors.public_meetings_of_organizations([org], starts_from=now, include_cancelled=False)[:10]
         )
-        context["past_meetings"] = OParlMeeting.objects.filter(
-            organizations=org,
-            start__lt=now,
-            deleted=False,
-        ).order_by("-start")[:10]
+        context["past_meetings"] = ris_selectors.public_meetings_of_organizations([org], starts_before=now).reverse()[
+            :10
+        ]
 
         # Randspalte (Issue #841): nur Angaben, die der Kopf nicht zeigt; ohne Inhalt keine Randspalte
         kurzname = org.short_name if org.short_name and org.short_name != org.name else ""

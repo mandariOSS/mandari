@@ -13,6 +13,7 @@ from django.http import HttpRequest
 from django.utils.functional import SimpleLazyObject
 
 from apps.common import module
+from hub.ris import selectors as ris_selectors
 
 from .models import OParlBody
 from .navigation import KOMMUNEN_LISTEN, breadcrumb_area, more_area_listed, nav_area
@@ -118,7 +119,7 @@ def _seiten_kommune(request: HttpRequest, gewaehlt: OParlBody | None, match: Any
         return None
     if gewaehlt is not None and str(gewaehlt.pk) == str(body_id):
         return gewaehlt
-    return OParlBody.objects.filter(pk=body_id).first()
+    return ris_selectors.body_by_id(body_id)
 
 
 def _bereich_ziel(url_name: str | None, portal: Any, page_body: OParlBody | None, fremd: bool) -> dict[str, Any]:
@@ -183,23 +184,20 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
         else:
             # Erst bei Bedarf geladen (alte Auswahl in base.html); der Kommunenwechsel des Bürgerportals fragt das
             # Verzeichnis selbst ab und braucht keine Liste aller Kommunen je Seitenaufruf (Issue #783)
-            bodies = SimpleLazyObject(lambda: list(OParlBody.objects.listed().order_by("name")))
+            bodies = SimpleLazyObject(lambda: list(ris_selectors.listed_bodies()))
 
             # "all" bedeutet: Alle Kommunen anzeigen (keine spezifische ausgewählt)
             if body_id == "all":
                 show_all_bodies = True
                 body = None
             elif body_id:
-                try:
-                    body = OParlBody.objects.get(id=body_id)
-                except OParlBody.DoesNotExist:
-                    body = None
+                body = ris_selectors.body_by_id(body_id)
 
             # Ohne Auswahl gelten alle Kommunen. Nicht in die Sitzung schreiben (Issue #1091): Der Standardwert
             # legte für jeden anonymen Aufruf eine Sitzungszeile an, auch für jeden Abruf einer Suchmaschine, die
             # das Cookie nicht zurückschickt (1,4 Mio. Zeilen); ein fehlender Wert bedeutet ohnehin „alle“
             # (is_all_bodies_mode)
-            if body_id is None and OParlBody.objects.listed().exists():
+            if body_id is None and ris_selectors.listed_bodies().exists():
                 show_all_bodies = True
 
     except Exception:

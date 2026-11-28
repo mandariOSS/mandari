@@ -19,9 +19,10 @@ from django.utils import timezone
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
 from apps.common.params import uuid_param
+from hub.ris import selectors as ris_selectors
 
 from .. import throttle
-from ..models import OParlOrganization, OParlPerson, PublicQuestion
+from ..models import OParlPerson, PublicQuestion
 from ..services import personen_liste, personen_sichtbarkeit, question_service
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
@@ -155,9 +156,7 @@ class QuestionPortalView(ActiveBodyRequiredMixin, ListView):
         if person_id and body:
             # Nur Personen dieser Kommune, die weder gelöscht noch zurückgenommen sind: Die Kennung allein darf
             # keinen Namen liefern
-            context["filter_person_obj"] = personen_sichtbarkeit.nur_oeffentliche(
-                OParlPerson.objects.filter(pk=person_id, body=body)
-            ).first()
+            context["filter_person_obj"] = ris_selectors.public_person([body], person_id)
 
         from ..seo import get_page_seo
 
@@ -244,7 +243,7 @@ class AskQuestionStartView(QuestionsEnabledRequiredMixin, ActiveBodyRequiredMixi
         for person in persons:
             person.faction = faction_map.get(person.id)
 
-        factions = OParlOrganization.objects.filter(id__in={org.id for org in faction_map.values()}).order_by("name")
+        factions = ris_selectors.organizations_by_ids({org.id for org in faction_map.values()})
 
         context.update({"persons": persons, "filter_q": q, "factions": factions})
 

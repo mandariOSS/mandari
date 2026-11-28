@@ -1,5 +1,5 @@
 {
-  "beschreibung": "Direktzugriffe auf OParl*.objects außerhalb von hub und insight_core je Datei; dürfen nur sinken (scripts/check_ris_access_ratchet.py, Issue #522).",
+  "beschreibung": "Direktzugriffe auf OParl*.objects je Datei: files außerhalb von hub und insight_core (K5), buergerportal im Code des Bürgerportals in insight_core (K5b); dürfen nur sinken (scripts/check_ris_access_ratchet.py, Issues #522, #1593).",
   "files": {
     "apps/common/management/commands/setup_demo_environment.py": 17,
     "apps/common/management/commands/setup_demo_praesentation.py": 4,
@@ -16,5 +16,19 @@
     "insight_ai/services/summarizer.py": 3,
     "insight_sync/management/commands/sync_session_insight.py": 3,
     "insight_sync/session_mirror.py": 18
+  },
+  "buergerportal": {
+    "insight_core/management/commands/build_logo_thumbnails.py": 1,
+    "insight_core/management/commands/generate_alerts.py": 2,
+    "insight_core/management/commands/send_digest.py": 1,
+    "insight_core/services/beschlussliste.py": 6,
+    "insight_core/services/feed_eintraege.py": 1,
+    "insight_core/services/indexierung.py": 4,
+    "insight_core/services/indexnow.py": 3,
+    "insight_core/services/kurzfassung.py": 1,
+    "insight_core/services/portal_stats.py": 11,
+    "insight_core/services/question_service.py": 5,
+    "insight_core/services/sitemaps.py": 3,
+    "insight_core/services/sitzungsort.py": 1
   }
 }

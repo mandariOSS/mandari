@@ -32,10 +32,9 @@ from datetime import timedelta
 from typing import Any, Final
 from urllib.parse import parse_qsl, urlsplit
 
-from django.db.models import Count, OuterRef, QuerySet, Subquery
-from django.db.models.functions import Coalesce
+from django.db.models import QuerySet
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import render
 from django.urls import Resolver404, resolve, reverse
 from django.utils import timezone
 from django.utils.http import urlencode
@@ -45,13 +44,11 @@ from hub.ris import selectors as ris_selectors
 from hub.ris.original import seite_im_ris
 
 from ..models import (
-    OParlAgendaItem,
     OParlBody,
     OParlMeeting,
     OParlOrganization,
     OParlPaper,
     VorgangUrheber,
-    withdrawn_q,
 )
 from ..portal import get_portal
 from ..services import feed_eintraege as ereignisse
@@ -107,7 +104,7 @@ def _kommune_des_feeds(request: HttpRequest) -> OParlBody | None:
         kennung = uuid.UUID(str(roh))
     except ValueError:
         return None
-    return OParlBody.objects.filter(pk=kennung, deleted=False).first()
+    return ris_selectors.public_body(kennung)
 
 
 def _liste_der_kommune(body: OParlBody, abfrage: str) -> str:
@@ -199,12 +196,7 @@ def _feed(
 
 def _kuerzlich_beratene(body_ids: list[Any], jetzt: Any) -> QuerySet[Any]:
     """Kennungen der Vorgänge mit einer Beratung in einer Sitzung der letzten ``BERATEN_SEIT``."""
-    from ..models import OParlConsultation
-
-    sitzungen = OParlMeeting.objects.filter(
-        body_id__in=body_ids, deleted=False, start__gte=jetzt - BERATEN_SEIT, start__lte=jetzt
-    ).values("external_id")
-    return OParlConsultation.objects.filter(meeting_external_id__in=sitzungen, paper__isnull=False).values("paper_id")
+    return ris_selectors.paper_ids_consulted_between(body_ids, jetzt - BERATEN_SEIT, jetzt)
 
 
 _VORGANG_FELDER: Final = ("id", "body_id", "name", "reference", "paper_type", "date", "oparl_created", "created_at")
@@ -274,8 +266,7 @@ def _suchtreffer(params: Any, body: OParlBody | None, body_ids: list[Any]) -> li
         kennungen = [str(g["key"]) for g in gruppen["groups"] if g.get("kind") == "paper"]
     except Exception:  # Suchdienst nicht erreichbar: Datenbanksuche wie auf der Suchseite
         kennungen = None
-    bereich = OParlPaper.objects.filter(deleted=False).only(*_VORGANG_FELDER)
-    bereich = bereich.filter(body=body) if body is not None else bereich.filter(body_id__in=body_ids)
+    bereich = ris_selectors.public_papers([body] if body is not None else body_ids).only(*_VORGANG_FELDER)
     if kennungen is None:
         papers = list(ris_selectors.search_papers_in(bereich, params.query)[:VORGAENGE_HOECHSTENS])
     else:
@@ -327,7 +318,9 @@ def paper_feed(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
     from ..services import file_reconcile
     from ..services.vorgang_urheber import urheber_je_vorgang
 
-    paper = get_object_or_404(OParlPaper.objects.select_related("body"), pk=pk)
+    paper = ris_selectors.paper_by_id(pk)
+    if paper is None:
+        raise Http404("Vorgang nicht gefunden")
     if paper.withdrawn_by_publisher:
         return withdrawn_response(request, paper)
 
@@ -369,26 +362,22 @@ def paper_feed(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
 
 def kommende_sitzungen(gremium: OParlOrganization, jetzt: Any) -> QuerySet[OParlMeeting]:
     """Kommende Sitzungen eines Gremiums mit Zahl und erstem Bekanntwerden der öffentlichen Punkte."""
-    punkte = OParlAgendaItem.objects.filter(meeting=OuterRef("pk"), deleted=False, public=True)
     return (
-        OParlMeeting.objects.filter(
-            organizations=gremium, deleted=False, start__gte=jetzt, start__lte=jetzt + SITZUNGEN_BIS
-        )
+        ris_selectors.public_meetings_of_organizations([gremium], starts_from=jetzt, starts_until=jetzt + SITZUNGEN_BIS)
         .annotate(
-            anzahl_tops=Coalesce(
-                Subquery(punkte.order_by().values("meeting").annotate(n=Count("pk")).values("n")[:1]), 0
-            ),
-            tops_seit=Subquery(punkte.order_by("created_at").values("created_at")[:1]),
+            anzahl_tops=ris_selectors.public_agenda_item_count(),
+            tops_seit=ris_selectors.first_public_agenda_item_created(),
         )
         .prefetch_related("organizations")
-        .order_by("start")
     )
 
 
 @require_safe
 def organization_feed(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
     """Feed eines Gremiums: kommende Sitzungen, Beschlüsse und – bei Fraktionen – ihre Anträge."""
-    gremium = get_object_or_404(OParlOrganization.objects.select_related("body"), pk=pk)
+    gremium = ris_selectors.organization_by_id(pk)
+    if gremium is None:
+        raise Http404("Gremium nicht gefunden")
     if gremium.withdrawn_by_publisher:
         return withdrawn_response(request, gremium)
 
@@ -399,10 +388,9 @@ def organization_feed(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
         sitzungen = list(kommende_sitzungen(gremium, jetzt)[:30])
         punkte = ereignisse.beschluss_punkte(body, jetzt, seit=BESCHLUESSE_SEIT, gremium=gremium)
         antraege = list(
-            OParlPaper.objects.filter(
-                body=body,
-                deleted=False,
-                pk__in=VorgangUrheber.objects.filter(body_id=body.pk, organisation_id=gremium.pk).values("paper_id"),
+            ris_selectors.public_papers([body])
+            .filter(
+                pk__in=VorgangUrheber.objects.filter(body_id=body.pk, organisation_id=gremium.pk).values("paper_id")
             )
             .only(*_VORGANG_FELDER)
             .order_by("-date", "-oparl_created")[:VORGAENGE_HOECHSTENS]
@@ -434,7 +422,7 @@ def _beschluss_auswahl(request: HttpRequest, body: OParlBody) -> tuple[OParlOrga
         kennung = uuid.UUID(roh)
     except ValueError:
         raise Http404("Gremium nicht gefunden") from None
-    gremium = OParlOrganization.objects.filter(pk=kennung, body=body, deleted=False).first()
+    gremium = ris_selectors.public_organization([body], kennung)
     if gremium is None:
         raise Http404("Gremium nicht gefunden")
     return gremium, urlencode({"gremium": str(gremium.pk)})
@@ -482,7 +470,9 @@ def meeting_ics(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
 
     from ..services.sitzung_kalender import hat_tagesordnung, ics_ereignis
 
-    meeting = get_object_or_404(OParlMeeting.objects.prefetch_related("organizations"), pk=pk)
+    meeting = ris_selectors.meeting_with_organizations(pk)
+    if meeting is None:
+        raise Http404("Sitzung nicht gefunden")
     if meeting.withdrawn_by_publisher:
         return withdrawn_response(request, meeting)
     if meeting.start is None:
@@ -540,23 +530,13 @@ def _titel_und_seite(name: str, kwargs: Mapping[str, Any], werte: Mapping[str, s
     (``publication.DETAIL_PAGES``). Titel stammen aus dem Bestand oder sind feste Sätze, nie Text der Anfrage.
     """
     if name == "paper_feed":
-        paper = (
-            OParlPaper.objects.exclude(withdrawn_q())
-            .filter(pk=kwargs["pk"])
-            .only("id", "body_id", "name", "reference", "paper_type")
-            .first()
-        )
+        paper = ris_selectors.not_withdrawn_paper(kwargs["pk"])
         if paper is None or not _veroeffentlicht(paper.body_id):
             return "", ""
         ueber = ereignisse.betreff(paper) or paper.reference or "diesem Vorgang"
         return f"Neues zu „{ueber}“", reverse(f"{_NAMESPACE}:paper_detail", kwargs={"pk": paper.pk})
     if name == "organization_feed":
-        gremium = (
-            OParlOrganization.objects.exclude(withdrawn_q())
-            .filter(pk=kwargs["pk"])
-            .only("id", "body_id", "name")
-            .first()
-        )
+        gremium = ris_selectors.not_withdrawn_organization(kwargs["pk"])
         if gremium is None or not _veroeffentlicht(gremium.body_id):
             return "", ""
         return f"Neues aus „{gremium.name or 'Gremium'}“", reverse(
