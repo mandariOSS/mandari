@@ -416,7 +416,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         # Letterheads for dropdown
         letterheads = list(OrganizationLetterhead.objects.filter(organization=self.organization, is_active=True))
         # Dokumenteigenes Briefpapier eines treu übernommenen PDFs (#1600): nur in der Auswahl dieses Dokuments
-        letterheads = [*motion.eigene_briefpapiere.all(), *letterheads]
+        letterheads = [*OrganizationLetterhead.alle.filter(dokument=motion), *letterheads]
         context["letterheads"] = letterheads
 
         # Current letterhead for editor background preview
@@ -659,7 +659,14 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                         if "letterhead_id" in request.POST:
                             gewaehlt = request.POST.get("letterhead_id", "").strip()
                             # Das dokumenteigene Briefpapier (#1600) steht in keiner Auswahl der Organisation
-                            eigenes = next((b for b in motion.eigene_briefpapiere.all() if str(b.id) == gewaehlt), None)
+                            eigenes = next(
+                                (
+                                    b
+                                    for b in OrganizationLetterhead.alle.filter(dokument=motion)
+                                    if str(b.id) == gewaehlt
+                                ),
+                                None,
+                            )
                             aenderungen["letterhead"] = eigenes or letterhead_for(self.organization, gewaehlt)
                     except FremdeAuswahlError:
                         return JsonResponse({"error": "Ungültiger Dokumenttyp oder Briefkopf."}, status=400)
