@@ -390,51 +390,6 @@ def _unsichtbar(raw: Any, obj: Any) -> bool:
 # --- Analyse -------------------------------------------------------------------------------------------------------
 
 
-def _breiten_korrigieren(zeilen: list[Zeile]) -> None:
-    """
-    Manche Programme setzen Text schmaler als die Schriftgröße angibt (Word mit Skalierung unter 100 %): Die Zeichen
-    folgen dichter aufeinander, als ihre Breite sagt. Je Schrift und Größe wird das Verhältnis gemessen; weicht es
-    ab, gilt die entsprechend kleinere (größere) Schriftgröße. Dann stimmen Wortbreiten und Zeilenfall wieder, der
-    Unterschied in der Höhe ist nicht sichtbar.
-    """
-    verhaeltnisse: dict[tuple[str, float, bool], list[float]] = {}
-    for zeile in zeilen:
-        i = 0
-        for lauf in zeile.laeufe:
-            schluessel = (lauf.schrift, round(lauf.groesse, 2), lauf.fett)
-            for k in range(i, i + len(lauf.text) - 1):
-                a, b = zeile.zeichen[k], zeile.zeichen[k + 1]
-                breite = a[2] - a[1]
-                if a[0].strip() and b[0].strip() and breite > lauf.groesse * 0.2:
-                    verhaeltnisse.setdefault(schluessel, []).append((b[1] - a[1]) / breite)
-            i += len(lauf.text)
-    faktoren = {
-        k: statistics.median(v)
-        for k, v in verhaeltnisse.items()
-        if len(v) >= 30 and 0.9 < statistics.median(v) < 0.995 or (len(v) >= 30 and 1.005 < statistics.median(v) < 1.1)
-    }
-    if not faktoren:
-        return
-    for zeile in zeilen:
-        i = 0
-        neue_zeichen = list(zeile.zeichen)
-        for lauf in zeile.laeufe:
-            faktor = faktoren.get((lauf.schrift, round(lauf.groesse, 2), lauf.fett))
-            if faktor:
-                lauf.groesse = round(lauf.groesse * faktor, 2)
-                for k in range(i, i + len(lauf.text)):
-                    z, x0, x1 = neue_zeichen[k]
-                    neue_zeichen[k] = (z, x0, x0 + (x1 - x0) * faktor)
-            i += len(lauf.text)
-        zeile.zeichen = neue_zeichen
-        if zeile.zeichen:
-            zeile.x1 = (
-                max(x1 for z, x0, x1 in zeile.zeichen if z.strip())
-                if any(z.strip() for z, _, _ in zeile.zeichen)
-                else zeile.x1
-            )
-
-
 #: Breite einiger Kleinbuchstaben (Anteil der Schriftgröße) in Arial normal und fett: Daran erkennt die Übernahme
 #: fetten Text in Schriften ohne sprechenden Namen (Druckertreiber benennen sie F1, F2 …)
 _BREITE_NORMAL = {"n": 0.556, "o": 0.556, "r": 0.333, "t": 0.278, "i": 0.222, "s": 0.5, "u": 0.556}
