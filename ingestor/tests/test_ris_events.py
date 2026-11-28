@@ -539,11 +539,52 @@ def test_bekannte_zuordnung_der_datei_ist_keine_aenderung() -> None:
     assert ris_events.file_events(cid(FILE), datei(), an_vorlage, meeting_id=cid(MEETING)) == []
     # Einzeln abgeglichen (ohne Zuordnung) bleibt die bisherige stehen.
     assert ris_events.file_events(cid(FILE), datei(), an_vorlage) == []
-    # Eine Datei an mehreren Vorlagen trägt die zuletzt abgeglichene; der Wechsel zählt nicht.
-    assert ris_events.file_events(cid(FILE), datei(), an_vorlage, paper_id=cid(f"{BASE}/paper/2")) == []
     # Eine neue Fassung bleibt eine neue Fassung, auch wenn die Zuordnung dazukommt.
     (ersetzt,) = ris_events.file_events(cid(FILE), datei(size=2000), Prior(datei()), paper_id=cid(PAPER))
     assert ersetzt.payload["change"] == "replaced"
+
+
+def test_datei_an_anderer_vorlage_nennt_die_fruehere() -> None:
+    """Issue #1229: Die frühere Vorlage gibt die Datei nicht mehr aus; der Änderungsfeed nennt auch sie."""
+    an_vorlage = Prior(datei(), paper_id=cid(PAPER), meeting_id=cid(MEETING), agenda_item_id=cid(ITEM))
+    andere = cid(f"{BASE}/paper/2")
+    (gewechselt,) = ris_events.file_events(cid(FILE), datei(), an_vorlage, paper_id=andere)
+    assert gewechselt.payload == {
+        "file": str(cid(FILE)),
+        "change": "added",
+        "paper": str(andere),
+        "previous_paper": str(cid(PAPER)),
+    }
+    # Sitzung und Tagesordnungspunkt ebenso, auch zusammen mit einer neuen Fassung
+    sitzung, punkt = cid(f"{BASE}/meeting/2"), cid(f"{BASE}/agendaitem/2")
+    (ersetzt,) = ris_events.file_events(
+        cid(FILE), datei(size=2000), an_vorlage, meeting_id=sitzung, agenda_item_id=punkt
+    )
+    assert ersetzt.payload["change"] == "replaced"
+    assert (ersetzt.payload["previous_meeting"], ersetzt.payload["previous_agenda_item"]) == (
+        str(cid(MEETING)),
+        str(cid(ITEM)),
+    )
+    assert "previous_paper" not in ersetzt.payload
+
+
+def test_fruehere_zugehoerigkeit_nur_bei_einem_wechsel() -> None:
+    einzeln = Prior(datei())
+    assert ris_events.moved_from(einzeln, paper_id=cid(PAPER)) == {}
+    an_vorlage = Prior(datei(), paper_id=cid(PAPER))
+    assert ris_events.moved_from(an_vorlage) == {}
+    assert ris_events.moved_from(an_vorlage, paper_id=cid(PAPER)) == {}
+    assert ris_events.moved_from(an_vorlage, paper_id=cid(f"{BASE}/paper/2")) == {"previous_paper": str(cid(PAPER))}
+
+
+def test_ohne_ereignis_bleibt_der_zeitstempel() -> None:
+    """Issue #1229: ``modified`` bleibt stehen, wenn der Upsert kein Ereignis ergibt (``database._stamp_update``)."""
+    vorher = Prior(datei())
+    assert ris_events.unchanged(vorher, ris_events.file_events(cid(FILE), datei(modified="2026-11-01"), vorher))
+    assert not ris_events.unchanged(vorher, ris_events.file_events(cid(FILE), datei(name="Neu"), vorher))
+    # Neu oder nach einer Löschmarkierung wieder geliefert: der Zeitstempel der Quelle
+    assert not ris_events.unchanged(None, [])
+    assert not ris_events.unchanged(Prior(datei(), deleted=True), [])
 
 
 # --- Löschmarkierung -----------------------------------------------------------------------------------------

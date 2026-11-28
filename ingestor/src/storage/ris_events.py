@@ -48,8 +48,9 @@ Regeln:
   Datei, Mitgliedschaft), das manche Quellen nur in der eigenen Liste nennen.
 - **Zuordnungen zählen mit.** Ändert ein Abgleich nur die Zuordnung im Bestand und nicht das Objekt
   der Quelle, ist das trotzdem eine Änderung: Eine Datei hängt erstmals an einer Vorlage oder
-  Sitzung (``added`` mit der neuen Zugehörigkeit), die Gremien einer Sitzung oder die Orte einer
-  Vorlage werden erstmals auflösbar (``changed`` mit ``organization`` bzw. ``location``).
+  Sitzung (``added`` mit der neuen Zugehörigkeit) oder woanders als bisher (dazu die frühere in
+  ``previous_paper`` usw.), die Gremien einer Sitzung oder die Orte einer Vorlage werden erstmals
+  auflösbar (``changed`` mit ``organization`` bzw. ``location``).
 - **Nur Kennungen.** Die Nutzlast nennt Kennungen, Codes und die Namen geänderter Felder, nie
   Inhalte. Feldnamen folgen OParl (``name``, ``paperType``); Erweiterungen mit Namensraum erscheinen
   mit Unterstrich (``mandari:meetingFormat`` als ``mandari_meetingFormat``), weil der Vertrag nur
@@ -581,10 +582,14 @@ def file_events(
 
     ``added`` gilt auch, wenn eine bekannte Datei erstmals an einer Vorlage, Sitzung oder einem
     Tagesordnungspunkt hängt (zuerst einzeln geliefert, später eingebettet); die Nutzlast nennt die neue
-    Zugehörigkeit. Ein Wechsel von einer Vorlage zu einer anderen zählt nicht: Hängt eine Datei an mehreren
-    Vorlagen, trägt die Zeile die zuletzt abgeglichene, und jeder Vollabgleich meldete sonst den Wechsel.
+    Zugehörigkeit. Hängt sie jetzt an einer anderen Vorlage, Sitzung oder einem anderen Tagesordnungspunkt als
+    bisher, nennen ``previous_paper``, ``previous_meeting`` bzw. ``previous_agenda_item`` die frühere (``moved_from``):
+    Sie gibt die Datei nicht mehr aus, und der Änderungsfeed nennt auch sie (Issue #1229). Eine Datei, die an
+    mehreren Vorlagen oder Sitzungen hängt, bleibt an der bisherigen, solange diese sie nennt
+    (``DatabaseStorage._keep_parents``); sonst meldete jeder Vollabgleich den Wechsel hin und zurück.
     """
     payload: dict[str, Any] = {"file": str(file_id)}
+    previous: dict[str, str] = {}
     if prior is None or prior.deleted:
         payload["change"] = "added"
     else:
@@ -594,11 +599,12 @@ def file_events(
             or (meeting_id is not None and prior.meeting_id is None)
             or (agenda_item_id is not None and prior.agenda_item_id is None)
         )
+        previous = moved_from(prior, paper_id=paper_id, meeting_id=meeting_id, agenda_item_id=agenda_item_id)
         if FILE_CONTENT_FIELDS.intersection(keys):
             payload["change"] = "replaced"
         elif FILE_NAME_FIELDS.intersection(keys):
             payload["change"] = "renamed"
-        elif newly_attached:
+        elif newly_attached or previous:
             payload["change"] = "added"
         else:
             # Übrige Angaben (z. B. Lizenz) kennt der Vertrag nicht als Änderung der Datei.
@@ -609,7 +615,31 @@ def file_events(
     for name, ref in (("paper", paper), ("meeting", meeting), ("agenda_item", agenda_item)):
         if ref is not None:
             payload[name] = ref
+    payload.update(previous)
     return [Draft("ris.file.changed", "File", file_id, payload)]
+
+
+def moved_from(
+    prior: Prior,
+    *,
+    paper_id: UUID | None = None,
+    meeting_id: UUID | None = None,
+    agenda_item_id: UUID | None = None,
+) -> dict[str, str]:
+    """
+    Frühere Zugehörigkeit einer Datei, die jetzt woanders hängt: ``previous_paper``, ``previous_meeting`` und
+    ``previous_agenda_item`` (Vertrag ``ris.file.changed``). Ohne neue Angabe bleibt die bisherige stehen und zählt
+    nicht; ebenso eine erstmalige Zugehörigkeit.
+    """
+    previous: dict[str, str] = {}
+    for name, new, old in (
+        ("previous_paper", paper_id, prior.paper_id),
+        ("previous_meeting", meeting_id, prior.meeting_id),
+        ("previous_agenda_item", agenda_item_id, prior.agenda_item_id),
+    ):
+        if new is not None and old is not None and new != old:
+            previous[name] = str(old)
+    return previous
 
 
 def _changed_events(
@@ -702,6 +732,16 @@ def legislative_term_events(term_id: UUID, raw: Mapping[str, Any], prior: Prior 
 def body_events(body_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
     """``ris.body.changed``: Kommune in ihrer Quelle neu erkannt (``added``) oder geändert (``changed``)."""
     return _changed_events("ris.body.changed", "Body", "body", body_id, raw, prior)
+
+
+def unchanged(prior: Prior | None, drafts: Iterable[Draft]) -> bool:
+    """
+    Ändert ein Upsert nichts, was ein Empfänger erfahren würde? Ja, wenn die Zeile schon bestand (ohne
+    Löschmarkierung) und der Upsert kein Ereignis ergibt (``drafts``, mit beliebiger Kennung des Objekts gebildet).
+    Dann bleiben ``modified`` und ``updated_at`` der Zeile stehen (``database._stamp_update``, Issue #1229): Die
+    Schnittstelle gibt sonst ein neues ``modified`` aus, ohne dass der Änderungsfeed einen Eintrag hat.
+    """
+    return prior is not None and not prior.deleted and not any(True for _ in drafts)
 
 
 def method_code(method: str | None) -> str:

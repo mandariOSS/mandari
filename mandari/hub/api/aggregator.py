@@ -154,6 +154,7 @@ _AGENDA_ITEM = Spec(
     BestandMapping.agenda_item,
     context=RefContext.for_agenda_items,
     of_body=_agenda_items_of,
+    public=bestand.public_agenda_items,
 )
 _PAPER = Spec("paper", OParlPaper, BestandMapping.paper, bestand.prepare_papers, RefContext.for_papers)
 _CONSULTATION = Spec(
@@ -444,6 +445,15 @@ def _related(pk: uuid.UUID) -> changes.Related:
     return related
 
 
+#: Ereignisse, die der Feed des Aggregators liest (``changes.Feed.producers``, Issue #1229): nur die der Quelle
+#: (``source:<uuid>``). Unter diesem Mandanten melden Ingestor und Anwendung, was sie im RIS-Bestand ändern, in
+#: derselben Transaktion; die Änderung ist also abrufbar, sobald das Ereignis im Feed steht. Was mandari Session selbst
+#: meldet (``session:<uuid>``), steht erst nach dem nächsten Abgleich im Bestand, und dessen Ereignis nennt es dann.
+#: Ein Erzeuger, der den Bestand künftig aus den Ereignissen von Session fortschreibt (RIS-Projektor, Issue #537),
+#: muss deshalb ebenfalls unter der Quelle melden.
+BESTAND_PRODUCERS: Final = ("source:",)
+
+
 def _feed(
     output: BestandMapping,
     pk: uuid.UUID,
@@ -474,6 +484,7 @@ def _feed(
         addresses=addresses,
         epoch=epoch,
         freshness=freshness,
+        producers=BESTAND_PRODUCERS,
         embeds=bestand.EMBEDDINGS,
         related=_related(pk),
         current=current,
@@ -640,6 +651,15 @@ def snapshot_for_measurement(pk: uuid.UUID) -> snapshot.Snapshot:
     output = mapping()
     found = OParlBody.objects.filter(pk=pk).values_list("source__sync_config", flat=True).first()
     return _kommparl_snapshot(output, pk, _feed(output, pk, publication.retracted_at(found), profile=True))
+
+
+def feed_for_measurement(pk: uuid.UUID) -> changes.Feed:
+    """
+    Feed einer Kommune nach dem Profil wie unter ``…/kommparl/changes``, ohne Schalter und Veröffentlichungsstand zu
+    prüfen. Nur für die Messung der Ereignismenge vor dem Einschalten (``manage.py oparl_feed_messen``).
+    """
+    found = OParlBody.objects.filter(pk=pk).values_list("source__sync_config", flat=True).first()
+    return _feed(mapping(), pk, publication.retracted_at(found), profile=True)
 
 
 @endpoint

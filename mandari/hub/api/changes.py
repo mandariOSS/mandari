@@ -99,6 +99,13 @@ Fassung der Niederschrift, ``PAYLOAD_COMPANIONS``).
 
 Die ältere Form bleibt, wie sie ist: je Ereignis höchstens ein Eintrag.
 
+**Herkunft je Ausgabe (Issue #1229):** Ein Eintrag erscheint erst, wenn die Änderung unter der Adresse des Objekts
+abrufbar ist (Profil Änderungsfeed, „Vollständigkeit und Reihenfolge“). Eine Ausgabe liest deshalb nur Ereignisse der
+Erzeuger, deren Änderungen sie selbst ausgibt (``Feed.producers``, Präfixe der Mandantenangabe ``tenant_ref``): Der
+Aggregator gibt den RIS-Bestand aus und liest nur, was ihn ändert (``source:``, Ingestor und die Schreiber der
+Anwendung im Bestand). Meldet mandari Session eine Änderung selbst (``session:``), steht sie im Bestand erst nach dem
+nächsten Abgleich; dessen Ereignis nennt sie dann. Die Session-Schnittstelle liest beide.
+
 **Schalter:** ``OPARL_CHANGES_ENABLED`` (Standard aus). Solange die Erzeuger der Ereignisse einer
 Installation nicht laufen, wäre der Feed leer und würde Abnehmern vortäuschen, es habe sich nichts
 geändert.
@@ -112,7 +119,7 @@ import logging
 import re
 import struct
 import uuid
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time
 from functools import lru_cache
@@ -124,7 +131,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESSIV
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
 
@@ -272,6 +279,8 @@ class Feed:
       vorbei (Rücknahme einer ganzen Kommune), wechselt die Ausgabe den Abschnitt; Cursor aus einem
       früheren gelten dann als abgelaufen (``410`` mit Verweis auf den Snapshot). Leer: der erste.
     - ``freshness``: Aktualität der Quelle einer geernteten Kommune; ``None`` (Session): nicht ausgegeben
+    - ``producers``: Präfixe der Mandantenangabe (``tenant_ref``) der Ereignisse, die diese Ausgabe liest; leer: alle.
+      Eine Ausgabe liest nur Erzeuger, deren Änderungen sie unter ihren Adressen ausgibt (Issue #1229).
 
     ``url`` und ``snapshot_url`` sind die Adressen der Form, die eine Antwort ausgibt: nach dem Profil von kommParl
     (``kommparl_changes_response``) oder in der älteren Form (``changes_response``).
@@ -292,6 +301,7 @@ class Feed:
     addresses: Addresses
     epoch: str = ""
     freshness: Freshness | None = None
+    producers: tuple[str, ...] = ()
     embeds: Mapping[str, frozenset[str]] = field(default_factory=dict)
     related: Related | None = None
     current: Addresses | None = None
@@ -409,15 +419,24 @@ def decode_cursor(body_id: uuid.UUID, token: str, epoch: str = "") -> Cursor:
 # =============================================================================
 
 
-def events(body_id: uuid.UUID) -> QuerySet[Event]:
-    """Öffentliche, nummerierte Ereignisse ``ris.*`` einer Kommune zu Objekten, die der Feed nennen kann."""
-    return Event.objects.filter(
+def events(body_id: uuid.UUID, producers: Sequence[str] = ()) -> QuerySet[Event]:
+    """
+    Öffentliche, nummerierte Ereignisse ``ris.*`` einer Kommune zu Objekten, die der Feed nennen kann. ``producers``:
+    nur Ereignisse, deren Mandantenangabe mit einem dieser Präfixe beginnt (``Feed.producers``); leer: alle.
+    """
+    found = Event.objects.filter(
         body_id=body_id,
         visibility=Visibility.OEFFENTLICH,
         seq__isnull=False,
         type__startswith=TYPE_PREFIX,
         aggregate_type__in=[*KINDS, *CARRIERS],
     )
+    if producers:
+        condition = Q()
+        for prefix in producers:
+            condition |= Q(tenant_ref__startswith=prefix)
+        found = found.filter(condition)
+    return found
 
 
 def _subject(event: Event) -> tuple[str, uuid.UUID] | None:
@@ -436,9 +455,9 @@ def _subject(event: Event) -> tuple[str, uuid.UUID] | None:
         return None
 
 
-def head(body_id: uuid.UUID) -> int:
-    """Folgenummer des neuesten Ereignisses im Feed der Kommune (0: noch keines)."""
-    newest = events(body_id).order_by("-seq").values_list("seq", flat=True).first()
+def head(body_id: uuid.UUID, producers: Sequence[str] = ()) -> int:
+    """Folgenummer des neuesten Ereignisses im Feed der Kommune (0: noch keines), nur von ``producers``."""
+    newest = events(body_id, producers).order_by("-seq").values_list("seq", flat=True).first()
     return newest or 0
 
 
@@ -747,7 +766,7 @@ def _read(
     size = limit
     first = True
     while count < limit and examined < budget:
-        query = events(feed.body_id).order_by("seq")
+        query = events(feed.body_id, feed.producers).order_by("seq")
         # Endet der Cursor innerhalb eines Ereignisses, stehen dessen übrige Einträge am Anfang
         query = query.filter(seq__gte=position) if first and start else query.filter(seq__gt=position)
         first = False
@@ -837,6 +856,21 @@ def _addresses(feed: Feed, expansions: Sequence[Sequence[_Item]]) -> dict[bool, 
         False: {kind: feed.addresses(kind, ids) for kind, ids in wanted[False].items()},
         True: {kind: current(kind, ids) for kind, ids in wanted[True].items()},
     }
+
+
+def entries_since(feed: Feed, seq: int) -> Iterator[Objekt]:
+    """
+    Alle Einträge nach dem Profil hinter der Folgenummer ``seq``, seitenweise gelesen wie von einem Abnehmer (mit
+    einbettenden Objekten und ohne Doppelungen je Seite). Nur für Messungen vor dem Einschalten
+    (``manage.py oparl_feed_messen``); die Einträge gehen an niemanden.
+    """
+    position = (seq, b"")
+    while True:
+        page = _read(feed, position, MAX_LIMIT, today(), _kommparl_entry, profile=True)
+        yield from page.entries
+        if page.last == position or (len(page.entries) < MAX_LIMIT and not page.exhausted):
+            return
+        position = page.last
 
 
 # =============================================================================

@@ -256,10 +256,23 @@ def _embedded_files() -> QuerySet[OParlFile]:
     return OParlFile.objects.filter(deleted=False).defer("text_content")
 
 
+def public_agenda_items(queryset: QuerySet[OParlAgendaItem]) -> QuerySet[OParlAgendaItem]:
+    """
+    Tagesordnungspunkte, die die Schnittstelle ausgibt: ohne die, die die Quelle nichtöffentlich kennzeichnet
+    (``public: false``).
+
+    Wie im Bürgerportal und in den Ereignissen des Ingestors: Deren Ereignisse gehen nur an Empfänger der Sichtbarkeit
+    ``nichtoeffentlich``, und wird ein öffentlicher Punkt nichtöffentlich, meldet der Änderungsfeed ihn als ``delete``
+    (``nonPublic``). Unter seiner Adresse steht dann das gekürzte Objekt mit ``deleted: true`` (Profil Änderungsfeed,
+    „Operationen“, Issue #1229); die Sitzung bettet ihn nicht mehr ein, keine Beratung verweist auf ihn.
+    """
+    return queryset.exclude(public=False)
+
+
 def prepare_meetings(queryset: QuerySet[OParlMeeting]) -> QuerySet[OParlMeeting]:
     return queryset.prefetch_related(
         Prefetch("organizations", queryset=OParlOrganization.objects.filter(deleted=False).only("id")),
-        Prefetch("agenda_items", queryset=OParlAgendaItem.objects.filter(deleted=False)),
+        Prefetch("agenda_items", queryset=public_agenda_items(OParlAgendaItem.objects.filter(deleted=False))),
         Prefetch("files", queryset=_embedded_files()),
     )
 
@@ -561,9 +574,9 @@ class RefContext:
             )
         if agenda_exts:
             ctx.agenda_item_by_ext = dict(
-                OParlAgendaItem.objects.filter(external_id__in=agenda_exts, deleted=False).values_list(
-                    "external_id", "id"
-                )
+                public_agenda_items(
+                    OParlAgendaItem.objects.filter(external_id__in=agenda_exts, deleted=False)
+                ).values_list("external_id", "id")
             )
         return ctx
 

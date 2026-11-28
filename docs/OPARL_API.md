@@ -489,16 +489,27 @@ leitet weiter.
   Feed nach kommParl auch das einbettende Objekt (oben). Die ältere Form nennt nur das geänderte Objekt; wer sie
   nutzt und Sitzungen oder Vorlagen samt Einbettungen speichert, ruft das einbettende Objekt
   (`AgendaItem.meeting`, `Consultation.paper`, `File.paper`/`meeting`) mit ab.
-- Noch offen für das Profil Änderungsfeed: Ändert sich `modified` eines Objekts, ohne dass sich sein Inhalt in der
-  Quelle geändert hat (manche Quellen stempeln bei jedem Abruf neu), oder ergänzt die Texterkennung `File.text`,
-  gibt es keinen Eintrag. Ein Tagesordnungspunkt, den die Quelle nichtöffentlich stellt, erscheint als `delete`
-  (`nonPublic`), bleibt unter seiner Adresse aber ohne `deleted: true` abrufbar. Hängt eine Datei in der Quelle an
-  einer anderen Vorlage, gibt es keinen Eintrag, auch nicht für die frühere Vorlage.
-- Gespiegelte Session-Mandanten: Der Aggregator nennt nur Objekte, die sein Bestand kennt. Meldet ein
-  Session-Mandant eine Änderung, bevor der Abgleich sie übernommen hat, fehlt ein neues Objekt im Feed,
-  und `id` eines bekannten liefert kurz noch den alten Stand. Die Übernahme erscheint verlässlich erst,
-  wenn der RIS-Projektor sie mit einem eigenen Ereignis meldet; er kennt bisher nur die Betriebsarten `aus` und
-  `schatten` (`RIS_SESSION_PROJECTOR`, aktiv erst mit Issue #537).
+- `modified` ändert sich nur mit einem Eintrag (#1229): Liefert die Quelle ein Objekt ohne inhaltliche Änderung,
+  aber mit neuem `modified` (manche Quellen stempeln bei jedem Abruf neu), behält der Bestand seinen Zeitstempel.
+  Das gilt, solange die Erzeuger Ereignisse schreiben (`INGESTOR_EVENTS_ENABLED`).
+- Tagesordnungspunkte, die die Quelle nichtöffentlich kennzeichnet (`public: false`), gibt der Aggregator nicht aus,
+  wie das Bürgerportal: Die Sitzung bettet sie nicht ein, keine Beratung verweist auf sie, und unter ihrer Adresse
+  steht das gekürzte Objekt mit `deleted: true`. Wird ein öffentlicher Punkt nichtöffentlich, nennt der Feed ihn als
+  `delete` (`nonPublic`).
+- Hängt eine Datei in der Quelle an einer anderen Vorlage, Sitzung oder einem anderen Tagesordnungspunkt, nennt der
+  Feed auch die frühere Vorlage bzw. Sitzung. Eine Datei, die an mehreren Vorlagen oder Sitzungen hängt, gibt der
+  Bestand an der aus, an der er sie zuerst gefunden hat, solange diese sie nennt.
+- Gespiegelte Session-Mandanten: Der Aggregator liest nur die Ereignisse, die seinen Bestand ändern (Mandant
+  `source:` im Journal). Was mandari Session selbst meldet (`session:`), erscheint im Feed des Aggregators erst mit
+  dem Abgleich, der es in den Bestand übernimmt; dessen Ereignis nennt es. So steht die Änderung unter `id`, sobald
+  der Eintrag im Feed steht. Ein künftiger Erzeuger, der den Bestand aus den Ereignissen von Session fortschreibt
+  (RIS-Projektor, Issue #537), muss seine Ereignisse ebenfalls unter der Quelle schreiben.
+- Noch offen für das Profil Änderungsfeed, deshalb nennt `kommparl:conformsTo` es noch nicht: Ergänzt die
+  Texterkennung `File.text`, gibt es keinen Eintrag (das Ereignis ist `intern`). Ereignisse zu Dateien an
+  nichtöffentlichen Tagesordnungspunkten gehen nur an nichtöffentliche Empfänger, der Aggregator gibt diese Dateien
+  aber aus. Angaben, die mandari selbst ergänzt (etwa `mandari:summary` und die Antragsteller einer Vorlage),
+  ändern sich ohne Ereignis. In der Session-Schnittstelle ändert sich `modified` auch bei Änderungen, die nicht
+  öffentlich sind.
 
 ### Snapshot: Einstieg mit Cursor-Übergabe
 
@@ -696,7 +707,8 @@ markiert die Anwendung die Zeile im Bestand und meldet die Rücknahme selbst (`h
 Ingestor findet sie beim nächsten Abgleich schon markiert vor und meldet sie nicht noch einmal.
 Mit `SESSION_EVENTS` meldet Session ihre Änderungen an Sitzungen, Tagesordnung, Vorlagen, Beratungsfolge,
 Anlagen, Abstimmungen, Beschlüssen und Niederschriften zusätzlich sofort selbst (`docs/DATENDREHSCHEIBE.md`, Abschnitt „Session als Erzeuger“);
-bis der Spiegel abgelöst ist, kann der Feed ein Objekt dann zweimal nennen. Mit Docker Compose reicht
+der Feed der Session-Schnittstelle nennt ein Objekt dann bis zur Ablösung des Spiegels zweimal. Der Aggregator liest
+diese Ereignisse nicht, nur die des Abgleichs (Abschnitt „Einschränkungen“). Mit Docker Compose reicht
 `docker-compose.yml` die Schalter aus der `.env` an Anwendung und Worker durch.
 Ausgeschaltet gibt es die Adresse nicht, und kein Body weist auf sie hin. Das Journal muss seine Zeilen
 mindestens `OPARL_CHANGES_RETENTION_DAYS` Tage behalten; ein Aufräumen darf nie kürzer greifen und
@@ -727,6 +739,17 @@ Container (`docker compose run --rm --no-deps mandari python manage.py oparl_sna
 Messung nicht am Speicherlimit der laufenden Anwendung zehrt. Ein Snapshot belegt beim Bauen CPU im
 Anwendungsprozess. Läuft die Anwendung in einem einzigen Prozess, `OPARL_SNAPSHOT_PARALLEL=1` setzen,
 damit gleichzeitige Snapshots die übrigen Anfragen nicht spürbar verlangsamen.
+
+**Ereignismenge messen:** Wie viele Ereignisse ein Vollabgleich schreibt und wie viele Einträge der Feed daraus macht
+(mit den einbettenden Objekten), zählt ein zweiter Befehl, ebenfalls nur lesend und ohne den Schalter. Ereignisse gibt
+es erst mit eingeschalteten Erzeugern (`INGESTOR_EVENTS_ENABLED`): erst sie einschalten, einen Vollabgleich abwarten,
+dann seinen Zeitraum messen:
+
+```bash
+python manage.py oparl_feed_messen                  # die fünf Kommunen mit den meisten Ereignissen, letzte 24 Stunden
+python manage.py oparl_feed_messen --stunden 168    # eine Woche
+python manage.py oparl_feed_messen --body <uuid>    # eine bestimmte Kommune
+```
 
 **Nach dem Einschalten prüfen:** `scripts/feed_abnehmer.py` liest eine Kommune wie ein Abnehmer – Body,
 Snapshot, Feed ab dem Cursor des Snapshots bis zur leeren Seite, eine Stichprobe der Adressen, zuletzt

@@ -33,6 +33,7 @@ from mandari_oparl import (
     ProcessedPerson,
 )
 from mandari_oparl.extensions import AGENDA_ITEM_COLUMNS, MEETING_COLUMNS
+from mandari_oparl.utils import parse_datetime
 from sqlalchemy import Text, and_, bindparam, case, func, literal, literal_column, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -259,6 +260,41 @@ def _tombstone_update(model: type, stmt: Any) -> dict[str, Any]:
         "deleted_at": case((held, model.deleted_at), else_=None),  # type: ignore[attr-defined]
         "deletion_reason": case((held, model.deletion_reason), else_=None),  # type: ignore[attr-defined]
     }
+
+
+def _latest(modified: datetime | None, source_modified: str | None) -> datetime | None:
+    """Der jüngere aus gespeichertem ``oparl_modified`` und dem ``modified`` der Quelle in ``raw_json``."""
+    parsed = parse_datetime(source_modified) if isinstance(source_modified, str) else None
+    if parsed is not None and parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    if modified is not None and modified.tzinfo is None:
+        modified = modified.replace(tzinfo=UTC)
+    candidates = [moment for moment in (modified, parsed) if moment is not None]
+    return max(candidates) if candidates else None
+
+
+#: Felder der Rohdaten, in denen eine Vorlage bzw. Sitzung ihre Dateien nennt (``DatabaseStorage._still_lists``)
+FILE_FIELDS: Final[dict[type, tuple[str, ...]]] = {
+    OParlPaper: ("mainFile", "auxiliaryFile"),
+    OParlMeeting: ("invitation", "resultsProtocol", "verbatimProtocol", "auxiliaryFile"),
+}
+
+
+def _stamp_update(model: type, update_set: dict[str, Any], *, keep: bool) -> dict[str, Any]:
+    """
+    ``oparl_modified`` und ``updated_at`` im ``update_set`` eines Upserts: Ändert er nichts, was ein Empfänger erfahren
+    würde (``ris_events.unchanged``), bleiben beide stehen (Issue #1229).
+
+    Die Schnittstelle gibt ``modified`` aus diesen Spalten aus. Manche Quellen stempeln ``modified`` bei jedem Abruf
+    neu, und ohne eigene Angabe der Quelle zählt ``updated_at``; jeder Vollabgleich verschöbe ``modified`` sonst ohne
+    Ereignis. Das Profil Änderungsfeed von kommParl verlangt für jede Änderung von ``modified`` einen Eintrag. Ob der
+    Abgleich ein Objekt neu schreiben muss, vergleicht er mit dem ``modified`` der Quelle in ``raw_json``
+    (``batch_check_entities_exist``), nicht mit der Spalte.
+    """
+    if keep:
+        update_set["oparl_modified"] = model.oparl_modified  # type: ignore[attr-defined]
+        update_set["updated_at"] = model.updated_at  # type: ignore[attr-defined]
+    return update_set
 
 
 #: Abgelöste Kennung eines Tagesordnungspunkts in ``raw_json`` (Umstellung der Kennungen aus Sitzungsseiten,
@@ -1604,6 +1640,18 @@ class DatabaseStorage:
                 logger.info("Quelle %s ist von den Ereignissen ausgenommen (sync_config)", origin.source_id)
         return origin
 
+    @staticmethod
+    async def _advance_stamp(session: AsyncSession, model: type, row_id: UUID, modified: datetime | None) -> None:
+        """
+        ``modified`` und ``updated_at`` doch fortschreiben, wenn sich nach dem Upsert eine Zuordnung geändert hat, die
+        das Ereignis nennt (``_stamp_update`` ließ sie stehen). Selten: nur bei geänderten Gremien bzw. Orten.
+        """
+        await session.execute(
+            update(model)
+            .where(model.id == row_id)  # type: ignore[attr-defined]
+            .values(oparl_modified=modified, updated_at=func.now())
+        )
+
     async def _prior(self, session: AsyncSession, model: type, external_id: str) -> ris_events.Prior | None:
         """
         Stand einer Zeile vor dem Upsert, für den Vergleich, ob sich etwas geändert hat.
@@ -1792,6 +1840,9 @@ class DatabaseStorage:
                 **_tombstone_update(OParlBody, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(prior, ris_events.body_events(body.id, body.raw_json or {}, prior))
+            _stamp_update(OParlBody, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -1844,6 +1895,10 @@ class DatabaseStorage:
 
         Returns:
             Dict mapping external_id -> oparl_modified (or None if not found)
+
+        Maßgeblich ist der jüngere Zeitpunkt aus ``oparl_modified`` und dem ``modified`` der Quelle in ``raw_json``: Ein
+        Upsert ohne inhaltliche Änderung lässt ``oparl_modified`` stehen (``_stamp_update``, Issue #1229), die Rohdaten
+        tragen aber den Stand der Quelle. Sonst schriebe jeder Lauf ein solches Objekt erneut.
         """
         model_map = {
             "meeting": OParlMeeting,
@@ -1863,15 +1918,17 @@ class DatabaseStorage:
             return {}
 
         async with self.get_session() as session:
-            stmt = select(model.external_id, model.oparl_modified).where(model.external_id.in_(external_ids))
+            stmt = select(model.external_id, model.oparl_modified, model.raw_json["modified"].astext).where(
+                model.external_id.in_(external_ids)
+            )
             result = await session.execute(stmt)
             rows = result.all()
 
             # Create dict with all IDs defaulting to None
             result_dict: dict[str, datetime | None] = dict.fromkeys(external_ids)
             # Update with found entries
-            for external_id, modified in rows:
-                result_dict[external_id] = modified
+            for external_id, modified, source_modified in rows:
+                result_dict[external_id] = _latest(modified, source_modified)
 
             return result_dict
 
@@ -2101,6 +2158,11 @@ class DatabaseStorage:
                 **_tombstone_update(OParlMeeting, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(
+                prior, ris_events.meeting_events(meeting.id, meeting.raw_json or {}, prior, ids=self.id_bases)
+            )
+            _stamp_update(OParlMeeting, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -2113,6 +2175,9 @@ class DatabaseStorage:
             organizations_changed = await self._link_meeting_organizations(
                 session, meeting_id, org_ids, compare=prior is not None
             )
+            if keep and organizations_changed:
+                # Die Zuordnung der Gremien ist eine Änderung der Sitzung (``meeting_events``)
+                await self._advance_stamp(session, OParlMeeting, meeting_id, meeting.oparl_modified)
             if emit:
                 drafts = ris_events.meeting_events(
                     meeting_id,
@@ -2266,6 +2331,9 @@ class DatabaseStorage:
                 **_tombstone_update(OParlPaper, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(prior, ris_events.paper_events(paper.id, paper.raw_json or {}, prior))
+            _stamp_update(OParlPaper, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -2279,6 +2347,9 @@ class DatabaseStorage:
             locations_changed = await self._link_paper_locations(
                 session, paper_id, paper.location_external_ids, body_id
             )
+            if keep and locations_changed:
+                # Die Zuordnung der Orte ist eine Änderung der Vorlage (``paper_events``)
+                await self._advance_stamp(session, OParlPaper, paper_id, paper.oparl_modified)
             # Beratungen, die die Vorlage nicht mehr nennt, mit der neuen Liste der Vorlage festschreiben
             unlisted = await self._mark_unlisted_consultations(session, paper_id, paper, body_id)
             if emit:
@@ -2548,6 +2619,11 @@ class DatabaseStorage:
                 **_tombstone_update(OParlPerson, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(
+                prior, ris_events.person_events(person.id, person.raw_json or {}, prior)
+            )
+            _stamp_update(OParlPerson, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -2607,6 +2683,11 @@ class DatabaseStorage:
                 **_tombstone_update(OParlOrganization, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(
+                prior, ris_events.organization_events(org.id, org.raw_json or {}, prior)
+            )
+            _stamp_update(OParlOrganization, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -2886,6 +2967,14 @@ class DatabaseStorage:
                 **_tombstone_update(OParlAgendaItem, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(
+                prior,
+                ris_events.agenda_item_events(
+                    item.id, item.raw_json or {}, prior, meeting_id=meeting_id, public=item.public is not False
+                ),
+            )
+            _stamp_update(OParlAgendaItem, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -2932,11 +3021,17 @@ class DatabaseStorage:
         auflösen; ohne Angabe bleibt ein vorhandener Bezug stehen. Hängt die Datei an einem nichtöffentlichen Punkt
         (``agenda_item_public``), geht ihr Ereignis nur an Empfänger der Sichtbarkeit ``nichtoeffentlich``: Es nennt
         die Kennung des Punkts.
+
+        Hängt die Datei an einer anderen Vorlage oder Sitzung, bleibt sie dort, solange diese sie nennt
+        (``_keep_parents``). Sonst wechselt sie, und das Ereignis nennt die frühere (``previous_paper`` bzw.
+        ``previous_meeting``, Issue #1229), ebenso einen früheren Tagesordnungspunkt, wenn er öffentlich ist.
         """
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlFile, file.external_id) if emit else None
             emit = emit and not _withheld(prior)
+            # Eine Datei an mehreren Vorlagen oder Sitzungen bleibt an der bisherigen (sonst Wechsel mit jedem Abgleich)
+            paper_id, meeting_id = await self._keep_parents(session, file.external_id, prior, paper_id, meeting_id)
             stmt = pg_insert(OParlFile).values(
                 id=file.id,
                 external_id=file.external_id,
@@ -2985,6 +3080,20 @@ class DatabaseStorage:
                 update_set["meeting_id"] = meeting_id
             if agenda_item_id is not None:
                 update_set["agenda_item_id"] = agenda_item_id
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(
+                prior,
+                ris_events.file_events(
+                    file.id,
+                    file.raw_json or {},
+                    prior,
+                    paper_id=paper_id,
+                    meeting_id=meeting_id,
+                    ids=self.id_bases,
+                    agenda_item_id=agenda_item_id,
+                ),
+            )
+            _stamp_update(OParlFile, update_set, keep=keep)
 
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
@@ -3009,9 +3118,88 @@ class DatabaseStorage:
                     and await self._agenda_item_public(session, body_id, agenda_item_id, file.raw_json or {})
                 ):
                     drafts = [replace(draft, visibility=ris_events.NICHTOEFFENTLICH) for draft in drafts]
+                drafts = [await self._without_hidden_previous(session, body_id, draft) for draft in drafts]
                 await self._emit(session, body_id, drafts, file.oparl_modified)
             await session.commit()
             return file_id
+
+    async def _keep_parents(
+        self,
+        session: AsyncSession,
+        external_id: str,
+        prior: ris_events.Prior | None,
+        paper_id: UUID | None,
+        meeting_id: UUID | None,
+    ) -> tuple[UUID | None, UUID | None]:
+        """
+        Vorlage und Sitzung, die der Upsert der Datei ``external_id`` schreiben soll: ``None``, wo die bisherige bleibt.
+
+        Die Zeile kennt nur eine Vorlage und eine Sitzung. Bettet jetzt eine andere die Datei ein, bleibt die bisherige,
+        solange sie nicht gelöscht ist und die Datei in ihren Rohdaten nennt (``FILE_FIELDS``, als Adresse oder
+        eingebettetes Objekt). Eine Datei an zwei Vorlagen (oder als Niederschrift der einen und Anlage der nächsten
+        Sitzung) wechselte sonst mit jedem Abgleich hin und her, und jeder Wechsel wäre eine Änderung beider. Nennt die
+        bisherige sie nicht mehr, ist es ein echter Wechsel.
+        """
+        if paper_id is None and meeting_id is None:
+            return paper_id, meeting_id
+        if prior is not None:
+            current_paper, current_meeting = prior.paper_id, prior.meeting_id
+        else:
+            row = (
+                await session.execute(
+                    select(OParlFile.paper_id, OParlFile.meeting_id).where(OParlFile.external_id == external_id)
+                )
+            ).first()
+            current_paper, current_meeting = (row[0], row[1]) if row is not None else (None, None)
+        if (
+            paper_id is not None
+            and current_paper not in (None, paper_id)
+            and await self._still_lists(session, OParlPaper, current_paper, external_id)
+        ):
+            paper_id = None
+        if (
+            meeting_id is not None
+            and current_meeting not in (None, meeting_id)
+            and await self._still_lists(session, OParlMeeting, current_meeting, external_id)
+        ):
+            meeting_id = None
+        return paper_id, meeting_id
+
+    @staticmethod
+    async def _still_lists(session: AsyncSession, model: type, row_id: UUID, external_id: str) -> bool:
+        """Nennt die Vorlage bzw. Sitzung ``row_id`` (nicht gelöscht) die Datei in ihren Rohdaten (``FILE_FIELDS``)?"""
+        raw = model.raw_json  # type: ignore[attr-defined]
+        named = [
+            condition
+            for name in FILE_FIELDS[model]
+            for condition in (
+                raw[name].astext == external_id,
+                raw[name]["id"].astext == external_id,
+                raw[name].contains([external_id]),
+                raw[name].contains([{"id": external_id}]),
+            )
+        ]
+        listed = select(model.id).where(  # type: ignore[attr-defined]
+            model.id == row_id,  # type: ignore[attr-defined]
+            model.deleted.is_(False),  # type: ignore[attr-defined]
+            or_(*named),
+        )
+        return (await session.execute(listed)).first() is not None
+
+    async def _without_hidden_previous(
+        self, session: AsyncSession, body_id: UUID, draft: ris_events.Draft
+    ) -> ris_events.Draft:
+        """
+        Ereignis einer Datei ohne ``previous_agenda_item``, wenn der frühere Tagesordnungspunkt nichtöffentlich ist: Ein
+        Ereignis nennt keine Kennung eines nichtöffentlichen Punkts, und öffentlich hat er die Datei nie ausgegeben.
+        """
+        earlier = draft.payload.get("previous_agenda_item")
+        if not earlier or draft.visibility != ris_events.OEFFENTLICH:
+            return draft
+        if await self._agenda_item_public(session, body_id, UUID(str(earlier)), {}):
+            return draft
+        payload = {key: value for key, value in draft.payload.items() if key != "previous_agenda_item"}
+        return replace(draft, payload=payload)
 
     async def _agenda_item_public(
         self, session: AsyncSession, body_id: UUID, item_id: UUID | None, raw: Mapping[str, Any]
@@ -3184,6 +3372,11 @@ class DatabaseStorage:
                 **_tombstone_update(OParlLocation, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(
+                prior, ris_events.location_events(location.id, location.raw_json or {}, prior)
+            )
+            _stamp_update(OParlLocation, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -3277,6 +3470,19 @@ class DatabaseStorage:
                 **_tombstone_update(OParlConsultation, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(
+                prior,
+                ris_events.consultation_events(
+                    consultation.id,
+                    consultation.raw_json or {},
+                    prior,
+                    paper_id=paper_id,
+                    paper_external_id=consultation.paper_external_id,
+                    ids=self.id_bases,
+                ),
+            )
+            _stamp_update(OParlConsultation, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             # Für das Ereignis die Zeile des Punkts im Bestand, nicht die Kennung aus seiner Adresse (umgeschriebene
             # Punkte, Issue #863); im selben Befehl, ohne eigene Abfrage, nur ein Punkt der eigenen Quelle
@@ -3802,6 +4008,18 @@ class DatabaseStorage:
                 **_tombstone_update(OParlMembership, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = emit and ris_events.unchanged(
+                prior,
+                ris_events.membership_events(
+                    membership.id,
+                    membership.raw_json or {},
+                    prior,
+                    person_id=person_id,
+                    organization_id=organization_id,
+                ),
+            )
+            _stamp_update(OParlMembership, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -3862,6 +4080,13 @@ class DatabaseStorage:
                 **_tombstone_update(OParlLegislativeTerm, stmt),
                 "updated_at": func.now(),
             }
+            # Ohne Änderung bleiben ``modified`` und ``updated_at`` stehen (Issue #1229)
+            keep = (
+                self.events_enabled
+                and not _withheld(prior)
+                and ris_events.unchanged(prior, ris_events.legislative_term_events(term.id, term.raw_json or {}, prior))
+            )
+            _stamp_update(OParlLegislativeTerm, update_set, keep=keep)
             _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
