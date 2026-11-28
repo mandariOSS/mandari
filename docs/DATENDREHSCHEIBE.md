@@ -638,7 +638,8 @@ Stand in `scripts/ris_access_baseline.json`.
 ([Fremdschlüssel auf den RIS-Bestand](adr/20260929-fremdschluessel-ris-bestand.md), #524). Die
 Fitnessfunktion prüft alle Modelle zur Laufzeit; ihre Ausnahmeliste ist der Bestand. K6a zählt die
 Einträge aus anderen Apps als `insight_core` (seit #524 null), K6b die Daten des Bürgerportals und
-abgeleitete Geodaten in `insight_core`, über die eine Entscheidung aussteht.
+abgeleitete Geodaten in `insight_core` (seit dem zweiten Schritt von #524 ebenfalls null: Abos und Ratsfragen
+`PROTECT`, Rückmeldungen `SET_NULL`, Geodaten `PROTECT` mit ausdrücklichem Entfernen beim harten Löschen).
 
 **K7: import-linter-Ausnahmen.** Verschiedene Einträge in `ignore_imports` der Verträge
 (`schichten`, `module-unabhaengig`, `plattform-fachfrei`, `abruf-ein-weg`) ohne die Freistellung der Tests, gelesen vom

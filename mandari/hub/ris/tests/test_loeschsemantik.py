@@ -6,11 +6,13 @@ Löschsemantik des RIS-Bestands (Issue #524, ADRs ``docs/adr/20260929-kanonische
 - Objekte werden markiert, nicht gelöscht: ``deleted`` mit Grund (``quelle_geloescht``) bzw. ``depublished``
   (``zurueckgenommen``, ``nichtoeffentlich``, ``datenschutz``).
 - Kein Modell außerhalb des RIS-Bestands zeigt mit ``CASCADE`` auf ihn (Fitnessfunktion); die Ausnahmen stehen in einer
-  Liste, die nur kürzer werden darf.
+  Liste, die nur kürzer werden darf. Seit #524 ist sie leer.
+- Für eine markierte, pausierte oder zurückgenommene Kommune entstehen keine neuen Abo-Hinweise; die Abos bleiben.
 """
 
 from __future__ import annotations
 
+from io import StringIO
 from typing import Any, cast
 
 import pytest
@@ -18,38 +20,28 @@ from django.apps import apps
 from django.db import models
 
 from hub.ris import retraction
+from insight_core import publication
 from insight_core.models import (
+    ABGELEITETE_GEODATEN,
     DELETION_REASON_CHOICES,
     REASON_DELETED_AT_SOURCE,
     REASON_NOT_PUBLIC,
     REASON_PRIVACY,
     REASON_WITHDRAWN,
+    InsightSubscriber,
     OParlBody,
     OParlMeeting,
+    OParlPaper,
     OParlSource,
+    SubscriptionAlert,
+    abgeleitete_geodaten,
 )
 from insight_sync.session_mirror import SessionMirror
 
-#: Relationen mit ``CASCADE`` auf den RIS-Bestand, die (noch) erlaubt sind: Daten des Bürgerportals und abgeleitete
-#: Geodaten in insight_core selbst. Über sie ist eine Grundsatzentscheidung offen (Kommentar in Issue #524); die Liste
-#: darf nur kürzer werden, Ziel ist null.
-AUSNAHMEN_CASCADE = frozenset(
-    {
-        "insight_core.Address.body",
-        "insight_core.InsightSubscriber.body",
-        "insight_core.LocationMapping.body",
-        "insight_core.PageFeedback.body",
-        "insight_core.PaperLocation.body",
-        "insight_core.PaperLocation.paper",
-        "insight_core.PaperPlanReference.body",
-        "insight_core.PaperPlanReference.paper",
-        "insight_core.PlanBoundary.body",
-        "insight_core.PlanBoundarySource.body",
-        "insight_core.PublicQuestion.body",
-        "insight_core.PublicQuestion.recipient",
-        "insight_core.Street.body",
-    }
-)
+#: Relationen mit ``CASCADE`` auf den RIS-Bestand, die (noch) erlaubt sind. Seit #524 keine mehr: Abos und Ratsfragen
+#: des Bürgerportals und die abgeleiteten Geodaten zeigen mit ``PROTECT`` auf den Bestand, Rückmeldungen zu Seiten mit
+#: ``SET_NULL``. Die Liste darf nicht wieder wachsen (Kennzahl K6, ``scripts/architektur_kennzahlen.py``).
+AUSNAHMEN_CASCADE = frozenset[str]()
 
 RIS = "https://ris.example.org/oparl"
 SESSION = "https://mandari.example/session/nord/api/oparl/"
@@ -85,6 +77,15 @@ def test_kein_verweis_auf_den_ris_bestand_mit_cascade() -> None:
     # Work und Mandanten zeigen auf den Bestand; keiner dieser Verweise ist CASCADE (Issue #420, #421, #524)
     assert any(name.startswith("work.") for name in verweise)
     assert not {name for name in cascade if not name.startswith("insight_core.")}
+
+
+def test_abgeleitete_geodaten_wie_beim_loeschen() -> None:
+    """Was die Verweisprüfung nicht zählt, entfernt das harte Löschen vorher, und umgekehrt."""
+    entfernt = {rows.model._meta.label for rows in abgeleitete_geodaten(OParlBody.objects.none())}
+    assert entfernt == ABGELEITETE_GEODATEN
+    verweise = _verweise_auf_den_bestand()
+    for label in ABGELEITETE_GEODATEN:
+        assert {on_delete for name, on_delete in verweise.items() if name.startswith(f"{label}.")} == {"PROTECT"}
 
 
 def test_gruende_wie_im_vertrag_der_ruecknahme() -> None:
@@ -178,3 +179,31 @@ def test_spiegel_markiert_mit_grund_und_hebt_ihn_wieder_auf(db: None) -> None:
     mirror._upsert_meeting(body, daten)
     sitzung.refresh_from_db()
     assert (sitzung.deleted, sitzung.deletion_reason, sitzung.deletion_label) == (False, None, "")
+
+
+def test_keine_neuen_hinweise_fuer_markierte_oder_pausierte_kommunen(
+    db: None, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Abos einer Kommune bleiben (PROTECT), neue Hinweise entstehen für sie aber nicht mehr (Issue #524)."""
+    from django.core.management import call_command
+
+    def ohne_suchdienst() -> Any:
+        raise ConnectionError("Suchdienst nicht erreichbar")
+
+    monkeypatch.setattr("insight_core.services.search_service.get_search_service", ohne_suchdienst)
+    settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True
+    abos = {}
+    for name in ("aktiv", "markiert", "pausiert"):
+        source = OParlSource.objects.create(name=name, url=f"{RIS}/{name}/system")
+        body = OParlBody.objects.create(external_id=f"{RIS}/{name}/body", source=source, name=name, slug=name)
+        OParlPaper.objects.create(external_id=f"{RIS}/{name}/paper", body=body, name="Radweg an der Aa")
+        abos[name] = InsightSubscriber.objects.create(
+            email=f"{name}@example.org", body=body, keyword="Radweg", keyword_active=True, confirmed=True
+        )
+    abos["markiert"].body.mark_deleted()
+    publication.set_source_state(abos["pausiert"].body.source, publication.PAUSED)
+
+    call_command("generate_alerts", stdout=StringIO())
+
+    assert set(SubscriptionAlert.objects.values_list("subscriber__email", flat=True)) == {"aktiv@example.org"}
+    assert InsightSubscriber.objects.count() == 3

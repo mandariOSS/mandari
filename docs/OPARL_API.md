@@ -787,6 +787,10 @@ python manage.py purge_deleted --ids <uuid> <uuid>
 python manage.py purge_deleted --body <slug> --yes
 ```
 
+Objekte mit Verweisen aus Work, Mandanten oder Session bleiben stehen, ebenso Personen mit Ratsfragen aus dem
+Bürgerportal; der Dry-Run nennt sie je Art. Abgeleitete Geodaten gelöschter Vorgänge (Verortungen, Planbezüge) gehen
+mit (Issue #524).
+
 Smoke-Tests: `python scripts/smoke_oparl_api.py` (SQLite, synthetische Daten aller
 zwölf Objekttypen, 95 Checks) und `python scripts/smoke_tombstones.py`
 (Tombstone-Verhalten: Sync-Markierung, Portal-Ausblendung, API-Tombstones,
