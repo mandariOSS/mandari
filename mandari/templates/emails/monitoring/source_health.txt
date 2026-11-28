@@ -1,20 +1,37 @@
-{% if kind == "recovered" %}Entwarnung: Quelle wieder erreichbar{% elif kind == "daemon" %}Alarm: Ingestor-Daemon liefert keine Sync-Läufe{% else %}Alarm: OParl-Quelle kritisch{% endif %}
+{% autoescape off %}{% if kind == "daemon" %}Alarm: Ingestor-Daemon liefert keine Sync-Läufe
 ==================================================
 
-{% if kind == "daemon" %}Der Ingestor hat seit längerem keinen Sync-Lauf protokolliert.
+Der Ingestor hat seit längerem keinen Sync-Lauf protokolliert.
 
 Status: {{ item.detail }}
-{% else %}Quelle: {{ source.name }}
-URL: {{ source.url }}
-Status: {{ item.label }}
-{% if item.error_kind_label %}Grund: {{ item.error_kind_label }}
-{% endif %}{% if item.bodies %}Kommunen: {{ item.bodies|join:", " }}{% endif %}
-{% if source.last_sync %}Letzter erfolgreicher Sync: {{ source.last_sync|date:"d.m.Y H:i" }}{% else %}Letzter erfolgreicher Sync: nie{% endif %}
-{% if item.consecutive_failures %}Fehlversuche in Folge: {{ item.consecutive_failures }}{% endif %}
-{% for reason in item.reasons %}- {{ reason }}
-{% endfor %}{% if item.recommendation %}
-Empfehlung: {{ item.recommendation }}
-{% endif %}{% endif %}
+{% else %}Betriebsmonitor: {{ titel }}
+==================================================
+{% if stoerungen %}
+GESTÖRT: {{ stoerungen|length }} Quelle{{ stoerungen|length|pluralize:"n" }}
+Der Abruf ist gestört (Sperre, Fehlversuche oder veralteter Abgleich). Die Daten der betroffenen Kommunen werden nicht mehr aktualisiert.
+{% for item in stoerungen %}
+* {{ item.source.name }}{% if item.bodies %} ({{ item.bodies|join:", " }}){% endif %}
+  URL: {{ item.source.url }}
+  Letzter erfolgreicher Sync: {% if item.source.last_sync %}{{ item.source.last_sync|date:"d.m.Y H:i" }}{% else %}nie{% endif %}
+{% if item.error_kind_label %}  Grund: {{ item.error_kind_label }}
+{% endif %}{% if item.consecutive_failures %}  Fehlversuche in Folge: {{ item.consecutive_failures }}
+{% endif %}{% for reason in item.reasons %}  - {{ reason }}
+{% endfor %}{% if item.recommendation %}  Empfehlung: {{ item.recommendation }}
+{% endif %}  Details: {{ item.admin_url }}
+{% endfor %}{% endif %}{% if luecken %}
+DATENLÜCKEN: {{ luecken|length }} Quelle{{ luecken|length|pluralize:"n" }}
+Der Abruf läuft, aber im Bestand fehlt ein großer Teil dessen, was die Schnittstelle der Kommune meldet (Datenabgleich). Kein Ausfall: Diese Übersicht kommt höchstens einmal am Tag, dieselbe Quelle frühestens nach 7 Tagen wieder.
+{% for item in luecken %}
+* {{ item.source.name }}
+{% for reason in item.datenabgleich.reasons %}  - {{ reason }}
+{% endfor %}  Details: {{ item.admin_url }}
+{% endfor %}
+Empfehlung: {{ datenabgleich_empfehlung }}
+{% endif %}{% if erholt or geschlossen %}
+ENTWARNUNG
+{% for item in erholt %}* {{ item.source.name }}: Abruf wieder in Ordnung
+{% endfor %}{% for item in geschlossen %}* {{ item.source.name }}: Datenlücken nicht mehr kritisch
+{% endfor %}{% endif %}{% endif %}
 ---
 
 Betriebsmonitor: {{ monitoring_url }}
@@ -22,4 +39,4 @@ Betriebsmonitor: {{ monitoring_url }}
 
 --
 Mandari - Kommunalpolitische Transparenz
-{{ site_url }}
+{{ site_url }}{% endautoescape %}

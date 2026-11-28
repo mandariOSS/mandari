@@ -244,6 +244,9 @@ def evaluate_source(source, now=None) -> dict:
                 "robots.txt, Sperren und das Kalenderfenster prüfen."
             )
 
+    # Zustand des Abrufs ohne Datenabgleich: Danach richtet sich der sofortige Alarm (send_health_alerts)
+    info["betrieb_status"] = info["status"]
+
     # Datenabgleich mit der Schnittstelle der Kommune (Issue #1525): Lücken im Bestand trotz erfolgreicher Abgleiche
     from .datenabgleich import EMPFEHLUNG as DATENABGLEICH_EMPFEHLUNG
     from .datenabgleich import bewerte_quelle
@@ -678,52 +681,123 @@ def _send_health_mail(kind: str, subject: str, context: dict) -> bool:
     )
 
 
-def send_health_alerts(dry_run: bool = False) -> dict:
+def datenabgleich_mail_hour() -> int:
+    """Stunde (Ortszeit) des Prüflaufs, der Datenlücken meldet: nach dem Zeitplan ``befehl:datenabgleich`` um 06:05."""
+    return int(getattr(settings, "INSIGHT_DATENABGLEICH_MAIL_HOUR", 7))
+
+
+def ist_uebersichtslauf(now) -> bool:
+    """Meldet dieser stündliche Lauf (``now``) auch die Datenlücken? Nur der in der Stunde ``datenabgleich_mail_hour``."""
+    return timezone.localtime(now).hour == datenabgleich_mail_hour()
+
+
+def _faellig(gesendet, now) -> bool:
     """
-    Alarm bei kritischen Quellen (einmalig, Wiederholung nach 7 Tagen), Entwarnung
-    bei Erholung; Alarm bei stehendem Ingestor-Daemon (max. einmal je 24 h).
+    Wiederholung nach ``ALERT_REPEAT_DAYS``, mit Spielraum: Ein Lauf beginnt nicht jedes Mal auf die Millisekunde gleich,
+    ohne ihn rutschte die Wiederholung eine Stunde (Störung) bzw. einen Tag (Datenlücken) nach hinten.
+    """
+    return gesendet is None or gesendet <= now - timedelta(days=ALERT_REPEAT_DAYS) + timedelta(minutes=30)
+
+
+def _je_anzahl(items: list[dict], einzeln: str, mehrere: str) -> str:
+    return einzeln.format(name=items[0]["source"].name) if len(items) == 1 else mehrere.format(n=len(items))
+
+
+def sammel_titel(stoerungen: list[dict], luecken: list[dict], entwarnungen: list[dict]) -> str:
+    """Betreff der Sammelmail ohne Präfix, z. B. „2 Quellen gestört; Datenlücken in 16 Quellen“."""
+    teile = []
+    if stoerungen:
+        teile.append(_je_anzahl(stoerungen, "Quelle gestört: {name}", "{n} Quellen gestört"))
+    if luecken:
+        teile.append(_je_anzahl(luecken, "Datenlücken: {name}", "Datenlücken in {n} Quellen"))
+    if entwarnungen:
+        teile.append(_je_anzahl(entwarnungen, "Entwarnung: {name}", "Entwarnung für {n} Quellen"))
+    return "; ".join(teile)
+
+
+def send_health_alerts(dry_run: bool = False, *, uebersicht: bool | None = None) -> dict:
+    """
+    Alarme und Entwarnungen der Quellen als **eine Sammelmail je Lauf** statt einer Mail je Quelle: Quellen, die im selben
+    Lauf kritisch wurden, kamen sonst auch mit jeder Wiederholung alle in derselben Minute (28.11.2026: 17 Mails).
+
+    - **Störung des Abrufs** (Sperre, Fehlversuche, veralteter Abgleich, Parser; ``betrieb_status``): sofort,
+      Wiederholung nach 7 Tagen (``health_alert_sent_at``), Entwarnung, sobald der Abruf wieder in Ordnung ist.
+    - **Datenlücken** (Datenabgleich, Issue #1525): Der Abruf läuft, im Bestand fehlt aber viel. Kein Ausfall, deshalb
+      nur im täglichen Übersichtslauf (``INSIGHT_DATENABGLEICH_MAIL_HOUR``, Standard 7 Uhr), Wiederholung nach 7 Tagen
+      (``datenabgleich_alert_sent_at``), Entwarnung, sobald keine Kommune der Quelle mehr kritisch ist. ``uebersicht``
+      erzwingt (True) oder unterdrückt (False) diesen Teil unabhängig von der Uhrzeit.
+
+    Dazu der Alarm bei stehendem Ingestor-Daemon (eigene Mail, höchstens einmal je 24 h).
     """
     now = timezone.now()
-    result = {"alerts": [], "recoveries": [], "daemon_alert": False}
+    if uebersicht is None:
+        uebersicht = ist_uebersichtslauf(now)
+    stoerungen: list[dict] = []
+    erholt: list[dict] = []
+    luecken: list[dict] = []
+    geschlossen: list[dict] = []
 
     for item in collect_source_health(now)["items"]:
         source = item["source"]
-        if item["status"] == "critical":
-            due = source.health_alert_sent_at is None or source.health_alert_sent_at < now - timedelta(
-                days=ALERT_REPEAT_DAYS
-            )
-            if not due:
-                continue
-            result["alerts"].append(source.name)
-            if dry_run:
-                continue
-            _send_health_mail(
-                "alert",
-                f"[mandari] Quelle kritisch: {source.name}",
-                {
-                    "item": item,
-                    "source": source,
-                    "admin_url": f"{_site_url()}/admin/insight_core/oparlsource/{source.id}/change/",
-                },
-            )
-            source.health_alert_sent_at = now
-            source.save(update_fields=["health_alert_sent_at"])
-        elif item["status"] == "ok" and source.health_alert_sent_at:
-            result["recoveries"].append(source.name)
-            if dry_run:
-                continue
-            _send_health_mail(
-                "recovered",
-                f"[mandari] Quelle wieder erreichbar: {source.name}",
-                {
-                    "item": item,
-                    "source": source,
-                    "admin_url": f"{_site_url()}/admin/insight_core/oparlsource/{source.id}/change/",
-                },
-            )
-            source.health_alert_sent_at = None
-            source.save(update_fields=["health_alert_sent_at"])
+        item["admin_url"] = f"{_site_url()}/admin/insight_core/oparlsource/{source.id}/change/"
+        betrieb = item.get("betrieb_status", item["status"])
+        if betrieb == "critical":
+            if _faellig(source.health_alert_sent_at, now):
+                stoerungen.append(item)
+        elif betrieb == "ok" and source.health_alert_sent_at:
+            erholt.append(item)
+        # Bei einer Störung nennt deren Eintrag auch die Lücken; der Zeitstempel der Lücken bleibt für später stehen
+        if uebersicht and betrieb != "critical":
+            if (item.get("datenabgleich") or {}).get("status") == "critical":
+                if _faellig(source.datenabgleich_alert_sent_at, now):
+                    luecken.append(item)
+            elif source.datenabgleich_alert_sent_at:
+                geschlossen.append(item)
 
+    result = {
+        "alerts": [i["source"].name for i in stoerungen],
+        "recoveries": [i["source"].name for i in erholt],
+        "gaps": [i["source"].name for i in luecken],
+        "gaps_closed": [i["source"].name for i in geschlossen],
+        "mail": bool(stoerungen or erholt or luecken or geschlossen),
+        "daemon_alert": False,
+    }
+    if result["mail"] and not dry_run:
+        from .datenabgleich import EMPFEHLUNG as DATENABGLEICH_EMPFEHLUNG
+
+        titel = sammel_titel(stoerungen, luecken, erholt + geschlossen)
+        gesendet = _send_health_mail(
+            "quellen",
+            f"[mandari] {titel}",
+            {
+                "titel": titel,
+                "stoerungen": stoerungen,
+                "luecken": luecken,
+                "erholt": erholt,
+                "geschlossen": geschlossen,
+                "datenabgleich_empfehlung": DATENABGLEICH_EMPFEHLUNG,
+                "source": None,
+                "admin_url": "",
+            },
+        )
+        if not gesendet:
+            # Zeitstempel bleiben stehen: Der nächste Lauf versucht es erneut, statt Alarme sieben Tage zu verschlucken
+            logger.warning("Betriebsmonitor: Sammelmail nicht versendet (%s)", titel)
+            result["mail"] = False
+            return _daemon_alarm(result, dry_run)
+        for item, feld, wert in (
+            *((i, "health_alert_sent_at", now) for i in stoerungen),
+            *((i, "health_alert_sent_at", None) for i in erholt),
+            *((i, "datenabgleich_alert_sent_at", now) for i in luecken),
+            *((i, "datenabgleich_alert_sent_at", None) for i in geschlossen),
+        ):
+            setattr(item["source"], feld, wert)
+            item["source"].save(update_fields=[feld])
+    return _daemon_alarm(result, dry_run)
+
+
+def _daemon_alarm(result: dict, dry_run: bool) -> dict:
+    """Alarm bei stehendem Ingestor-Daemon als eigene Mail, höchstens einmal je 24 h (``result["daemon_alert"]``)."""
     # Nur die Ingestor-Checks: die übrigen Systemchecks braucht der Alarm nicht (Issue #1409)
     try:
         ingestor = _ingestor_checks()

@@ -225,6 +225,7 @@ class OParlSourceAdmin(ModelAdmin):
         "last_error_kind",
         "consecutive_failures",
         "health_alert_sent_at",
+        "datenabgleich_alert_sent_at",
     ]
     actions_detail = ["sync_incremental_action", "sync_full_action"]
     actions = ["sync_all_incremental", "sync_all_full", "reset_health"]
@@ -268,6 +269,7 @@ class OParlSourceAdmin(ModelAdmin):
             last_error_kind=None,
             consecutive_failures=0,
             health_alert_sent_at=None,
+            datenabgleich_alert_sent_at=None,
         )
         messages.success(request, f"Gesundheitsstatus von {count} Quelle(n) zurückgesetzt.")
 

@@ -1066,6 +1066,8 @@ INSIGHT_DIGEST_FROM_EMAIL = os.environ.get("INSIGHT_DIGEST_FROM_EMAIL", "")  # F
 INSIGHT_ALERT_EMAILS = [e.strip() for e in os.environ.get("INSIGHT_ALERT_EMAILS", "").split(",") if e.strip()]
 INSIGHT_SOURCE_STALE_WARNING_HOURS = int(os.environ.get("INSIGHT_SOURCE_STALE_WARNING_HOURS", "48"))
 INSIGHT_SOURCE_STALE_CRITICAL_DAYS = int(os.environ.get("INSIGHT_SOURCE_STALE_CRITICAL_DAYS", "7"))
+# Stunde (Ortszeit) des stündlichen Prüflaufs, der auch die Datenlücken aus dem Datenabgleich meldet (nach 06:05)
+INSIGHT_DATENABGLEICH_MAIL_HOUR = int(os.environ.get("INSIGHT_DATENABGLEICH_MAIL_HOUR", "7"))
 # Ratsfragen: Empfänger für Moderations-Hinweise (kommagetrennt); leer → aktive Superuser
 INSIGHT_MODERATION_EMAILS = [e.strip() for e in os.environ.get("INSIGHT_MODERATION_EMAILS", "").split(",") if e.strip()]
 

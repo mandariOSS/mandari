@@ -228,21 +228,37 @@ def insight_digest(org: Any, make_member: Any) -> dict[str, Any]:
 
 
 def monitoring_source_health(org: Any, make_member: Any) -> dict[str, Any]:
+    """Sammelmail eines Laufs: eine Störung, eine Quelle mit Datenlücken, zwei Entwarnungen."""
     source = _body().source
-    return {
-        "kind": "alert",
+    admin_url = f"{SITE_URL}/admin/insight_core/oparlsource/{source.id}/change/"
+    stoerung = {
         "source": source,
-        "item": {
-            "label": "kritisch",
-            "bodies": ["Musterstadt", "Nachbarstadt"],
-            "consecutive_failures": 5,
-            "error_kind_label": "User-Agent gesperrt",
-            "reasons": ["HTTP 503 seit 3 Tagen", "Zertifikat der Quelle abgelaufen"],
-            "recommendation": "Betreiber der Quelle kontaktieren und um Freischaltung unseres User-Agents bitten.",
+        "admin_url": admin_url,
+        "bodies": ["Musterstadt", "Nachbarstadt"],
+        "consecutive_failures": 5,
+        "error_kind_label": "User-Agent gesperrt",
+        "reasons": ["HTTP 503 seit 3 Tagen", "Zertifikat der Quelle abgelaufen"],
+        "recommendation": "Betreiber der Quelle kontaktieren und um Freischaltung unseres User-Agents bitten.",
+    }
+    luecke = {
+        "source": source,
+        "admin_url": admin_url,
+        "datenabgleich": {
+            "reasons": ["Datenabgleich Musterstadt kritisch: TOPs: Quelle 12280, Bestand 148 (12132 fehlen, 99%)"]
         },
+    }
+    return {
+        "kind": "quellen",
+        "titel": "Quelle gestört: Musterstadt; Datenlücken: Musterstadt; Entwarnung für 2 Quellen",
+        "stoerungen": [stoerung],
+        "luecken": [luecke],
+        "erholt": [{"source": source}],
+        "geschlossen": [{"source": source}],
+        "datenabgleich_empfehlung": "Einzelheiten zeigt „python manage.py datenabgleich --kommune <Name>“.",
+        "source": None,
+        "admin_url": "",
         "site_url": SITE_URL,
         "monitoring_url": f"{SITE_URL}/admin/monitoring/",
-        "admin_url": f"{SITE_URL}/admin/insight_core/oparlsource/{source.id}/change/",
     }
 
 

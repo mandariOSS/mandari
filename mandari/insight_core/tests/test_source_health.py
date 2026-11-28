@@ -179,3 +179,75 @@ def test_reset_health_action_clears_kind(blocked_source: OParlSource, admin_clie
     blocked_source.refresh_from_db()
     assert blocked_source.last_error_kind is None
     assert blocked_source.consecutive_failures == 0
+
+
+# Sammelmail je Lauf (28.11.2026: 17 Mails „Quelle kritisch“ in derselben Minute, Nachtrag zu #1525)
+
+
+def _gesperrt(name: str) -> OParlSource:
+    return OParlSource.objects.create(
+        name=name,
+        url=f"https://ris.{name.lower()}.example/oparl/system",
+        last_sync=timezone.now() - timedelta(hours=3),
+        last_error_kind=OParlSource.ERROR_KIND_UA_BLOCKED,
+        consecutive_failures=1,
+    )
+
+
+def test_eine_sammelmail_fuer_alle_stoerungen_eines_laufs(db: Any, settings: Any) -> None:
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    settings.MAILERS = {"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend", "OPTIONS": {}}}
+    for name in ("Astadt", "Bstadt", "Cstadt"):
+        _gesperrt(name)
+
+    result = send_health_alerts(uebersicht=False)
+
+    assert result["alerts"] == ["Astadt", "Bstadt", "Cstadt"]
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].subject == "[mandari] 3 Quellen gestört"
+    assert all(name in mail.outbox[0].body for name in ("Astadt", "Bstadt", "Cstadt"))
+    assert OParlSource.objects.filter(health_alert_sent_at__isnull=False).count() == 3
+
+    mail.outbox.clear()
+    assert send_health_alerts(uebersicht=False)["mail"] is False, "Wiederholung erst nach 7 Tagen"
+    assert mail.outbox == []
+
+
+def test_entwarnung_kommt_gesammelt(db: Any, settings: Any) -> None:
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    settings.MAILERS = {"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend", "OPTIONS": {}}}
+    quellen = [_gesperrt(name) for name in ("Astadt", "Bstadt")]
+    send_health_alerts(uebersicht=False)
+    OParlSource.objects.filter(pk__in=[q.pk for q in quellen]).update(last_error_kind=None, consecutive_failures=0)
+    mail.outbox.clear()
+
+    result = send_health_alerts(uebersicht=False)
+
+    assert result["recoveries"] == ["Astadt", "Bstadt"]
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].subject == "[mandari] Entwarnung für 2 Quellen"
+    assert "Astadt: Abruf wieder in Ordnung" in mail.outbox[0].body
+    assert not OParlSource.objects.filter(health_alert_sent_at__isnull=False).exists()
+
+
+def test_check_source_health_meldet_die_sammelmail(blocked_source: OParlSource, settings: Any, capsys: Any) -> None:
+    from django.core.management import call_command
+
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    call_command("check_source_health", "--dry-run", "--uebersicht")
+    out = capsys.readouterr().out
+    assert "Sammelmail fällig: ja (Störungen 1, Entwarnungen 0, Datenlücken 0, Lücken geschlossen 0)" in out
+    assert mail.outbox == []
+
+
+def test_wiederholung_nach_sieben_tagen_auch_wenn_der_lauf_etwas_frueher_beginnt(db: Any, settings: Any) -> None:
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    quelle = _gesperrt("Astadt")
+    quelle.health_alert_sent_at = timezone.now() - timedelta(days=7) + timedelta(seconds=5)
+    quelle.save(update_fields=["health_alert_sent_at"])
+
+    assert send_health_alerts(uebersicht=False)["alerts"] == ["Astadt"]
+
+    quelle.health_alert_sent_at = timezone.now() - timedelta(days=6)
+    quelle.save(update_fields=["health_alert_sent_at"])
+    assert send_health_alerts(uebersicht=False)["alerts"] == []

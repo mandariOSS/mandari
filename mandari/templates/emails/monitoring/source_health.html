@@ -1,43 +1,61 @@
 {% extends "emails/base_email.html" %}
-{% block subject %}{% if kind == "recovered" %}Entwarnung: Quelle wieder erreichbar{% elif kind == "daemon" %}Ingestor-Daemon liefert keine Sync-Läufe{% else %}OParl-Quelle kritisch{% endif %}{% endblock %}
-{% block preheader %}{% if kind == "daemon" %}{{ item.detail }}{% else %}{{ source.name }}{% endif %}{% endblock %}
+{% block subject %}{% if kind == "daemon" %}Ingestor-Daemon liefert keine Sync-Läufe{% else %}Betriebsmonitor: {{ titel }}{% endif %}{% endblock %}
+{% block preheader %}{% if kind == "daemon" %}{{ item.detail }}{% else %}{{ titel }}{% endif %}{% endblock %}
 {% block content %}
-<h1 class="h1">{% if kind == "recovered" %}Entwarnung: Quelle wieder erreichbar{% elif kind == "daemon" %}Ingestor-Daemon liefert keine Sync-Läufe{% else %}OParl-Quelle kritisch{% endif %}</h1>
 {% if kind == "daemon" %}
+<h1 class="h1">Ingestor-Daemon liefert keine Sync-Läufe</h1>
 <p>Der Ingestor hat seit längerem keinen Sync-Lauf protokolliert. Ohne laufenden Daemon werden keine Ratsinformationen mehr aktualisiert.</p>
 <div class="card card-warning">
     <p class="label">Status</p>
     <p>{{ item.detail }}</p>
 </div>
 {% else %}
-<p>{% if kind == "recovered" %}Die Quelle synchronisiert wieder erfolgreich.{% else %}Die Quelle konnte längere Zeit nicht erfolgreich synchronisiert werden. Die Daten der betroffenen Kommunen sind eingefroren.{% endif %}</p>
-<div class="card {% if kind == "recovered" %}card-success{% else %}card-danger{% endif %}">
+<h1 class="h1">Betriebsmonitor: {{ titel }}</h1>
+{% if stoerungen %}
+<h2 class="h2">Gestört: {{ stoerungen|length }} Quelle{{ stoerungen|length|pluralize:"n" }}</h2>
+<p>Der Abruf ist gestört (Sperre, Fehlversuche oder veralteter Abgleich). Die Daten der betroffenen Kommunen werden nicht mehr aktualisiert.</p>
+{% for item in stoerungen %}
+<div class="card card-danger">
     <p class="label">Quelle</p>
-    <p>{{ source.name }}</p>
-    <p class="label">URL</p>
-    <p>{{ source.url }}</p>
-    {% if item.bodies %}
-    <p class="label">Kommunen</p>
-    <p>{{ item.bodies|join:", " }}</p>
-    {% endif %}
+    <p><a href="{{ item.admin_url }}">{{ item.source.name }}</a>{% if item.bodies %} ({{ item.bodies|join:", " }}){% endif %}</p>
     <p class="label">Letzter erfolgreicher Sync</p>
-    <p>{% if source.last_sync %}{{ source.last_sync|date:"d.m.Y H:i" }}{% else %}nie{% endif %}</p>
+    <p>{% if item.source.last_sync %}{{ item.source.last_sync|date:"d.m.Y H:i" }}{% else %}nie{% endif %}{% if item.consecutive_failures %}, {{ item.consecutive_failures }} Fehlversuche in Folge{% endif %}</p>
     {% if item.error_kind_label %}
     <p class="label">Grund</p>
     <p>{{ item.error_kind_label }}</p>
     {% endif %}
-    {% if item.consecutive_failures %}
-    <p class="label">Fehlversuche in Folge</p>
-    <p>{{ item.consecutive_failures }}</p>
+    {% if item.reasons %}
+    <ul class="list muted">
+        {% for reason in item.reasons %}<li>{{ reason }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if item.recommendation %}
+    <p><strong>Empfehlung:</strong> {{ item.recommendation }}</p>
     {% endif %}
 </div>
-{% if item.reasons %}
-<ul class="list muted">
-    {% for reason in item.reasons %}<li>{{ reason }}</li>{% endfor %}
-</ul>
+{% endfor %}
 {% endif %}
-{% if item.recommendation %}
-<p><strong>Empfehlung:</strong> {{ item.recommendation }}</p>
+{% if luecken %}
+<h2 class="h2">Datenlücken: {{ luecken|length }} Quelle{{ luecken|length|pluralize:"n" }}</h2>
+<p>Der Abruf läuft, aber im Bestand fehlt ein großer Teil dessen, was die Schnittstelle der Kommune meldet (Datenabgleich). Kein Ausfall: Diese Übersicht kommt höchstens einmal am Tag, dieselbe Quelle frühestens nach 7 Tagen wieder.</p>
+<div class="card card-warning">
+    {% for item in luecken %}
+    <p class="label"><a href="{{ item.admin_url }}">{{ item.source.name }}</a></p>
+    <ul class="list muted">
+        {% for reason in item.datenabgleich.reasons %}<li>{{ reason }}</li>{% endfor %}
+    </ul>
+    {% endfor %}
+</div>
+<p><strong>Empfehlung:</strong> {{ datenabgleich_empfehlung }}</p>
+{% endif %}
+{% if erholt or geschlossen %}
+<h2 class="h2">Entwarnung</h2>
+<div class="card card-success">
+    <ul class="list">
+        {% for item in erholt %}<li>{{ item.source.name }}: Abruf wieder in Ordnung</li>{% endfor %}
+        {% for item in geschlossen %}<li>{{ item.source.name }}: Datenlücken nicht mehr kritisch</li>{% endfor %}
+    </ul>
+</div>
 {% endif %}
 {% endif %}
 <div class="btn-wrap">
