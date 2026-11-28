@@ -20,6 +20,7 @@ from django.views.generic import (
     UpdateView,
 )
 
+from .. import hub_events
 from ..models import (
     SessionPerson,
 )
@@ -266,8 +267,12 @@ class PersonCreateView(PersonFormMixin, SessionViewMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.tenant = self.session_tenant
+        # Drehscheibe (Issue #860): ris.person.changed (added)
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.person(form.instance, created=True)
+            response = super().form_valid(form)
         messages.success(self.request, "Person wurde angelegt.")
-        return super().form_valid(form)
+        return response
 
 
 class PersonUpdateView(PersonFormMixin, SessionViewMixin, UpdateView):
@@ -278,7 +283,9 @@ class PersonUpdateView(PersonFormMixin, SessionViewMixin, UpdateView):
     def form_valid(self, form):
         # Konto und Genehmigungen in einer Transaktion: Ein neues Empfängerkonto gelangt nie mit einer Genehmigung
         # in einen Export, die noch dem alten Konto galt
-        with transaction.atomic():
+        # Drehscheibe (Issue #860): ris.person.changed nur mit Feldern der Schnittstelle (nie Kontakt- oder Bankdaten)
+        with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
+            tracked.person(form.instance)
             response = super().form_valid(form)
             verfallen = (
                 allowance_service.reset_approvals_after_account_change(self.object, self.session_user)
@@ -305,7 +312,9 @@ class PersonDeactivateView(SessionViewMixin, View):
     def post(self, request, tenant_slug, person_id):
         person = get_object_or_404(SessionPerson, pk=person_id, tenant=self.session_tenant)
         person.is_active = not person.is_active
-        person.save()
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.person(person)
+            person.save()
         state = "reaktiviert" if person.is_active else "deaktiviert"
         messages.success(request, f"{person.display_name} wurde {state}.")
         return redirect("session:person_detail", tenant_slug=tenant_slug, person_id=person.id)

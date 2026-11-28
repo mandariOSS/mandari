@@ -312,11 +312,18 @@ class SessionTenantAdmin(ModelAdmin):
     def save_model(self, request, obj, form, change):
         # Deaktivieren/Reaktivieren im Formular: Signal nimmt die Bürgerportal-Quelle zurück bzw.
         # stellt sie wieder her und protokolliert, wer gehandelt hat (Issue #317)
+        from . import hub_events
         from .admin_provisioning import actor_for
 
         obj._lifecycle_actor = actor_for(request)
         obj._lifecycle_request = request
-        super().save_model(request, obj, form, change)
+        # Drehscheibe (Issue #860): Die Körperschaft der Schnittstelle (Name, Kurzname, Art, AGS, Kontakt, Website)
+        # pflegt der Betrieb nur hier; ris.body.changed nennt die geänderten Felder. Aktivieren und Deaktivieren
+        # melden wie die Freischaltung nichts.
+        with hub_events.track(obj) as tracked:
+            if change:
+                tracked.body()
+            super().save_model(request, obj, form, change)
         # Der pre_save-Hook merkt sich den gespeicherten Stand vor dem Speichern (signals.py)
         if change and getattr(obj, "_is_active_old", None) is False and obj.is_active:
             self._warn_locked(request, [obj])

@@ -14,7 +14,8 @@ Kommune hinterlassen hat. Verbunden wird über die Adresse (``external_id``), un
 Beidseitig nicht sichtbar (gelöscht bzw. nicht vorhanden) ist gleich. Zeitstempel der Quelle (``modified``) und die
 Rohdaten zählen nicht: Ändert sich in Session nur, was das kanonische Modell nicht kennt, gibt es kein Ereignis, der
 Spiegel übernimmt aber den neuen Zeitstempel. Werte werden wie in der Schatten-Quelle normiert (``wert``): leerer
-Text gilt wie ein fehlender Wert.
+Text gilt wie ein fehlender Wert. Ein Datum und ein Zeitpunkt um Mitternacht desselben Tages sind gleich (``tag``):
+In bestehenden Installationen sind die Datumsspalten des Bestands Zeitpunkte (Befund in #536 vom 28.11.2026).
 
 Ausgegeben werden nur Zahlen, Feldnamen und Kennungen des Bestands, nie Inhalte.
 """
@@ -25,12 +26,13 @@ import uuid
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, time
 from typing import Any, Final
 
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Count, Q, QuerySet
 from django.db.models.functions import Now
+from django.utils import timezone
 
 from apps.events.dispatch import head_seq
 from apps.events.models import Event, ParkedEvent, Subscription, SubscriptionState
@@ -109,6 +111,39 @@ def _bestand(typ: str, kommunen: list[uuid.UUID]) -> QuerySet[Any]:
     raise ValueError("Unbekannter Objekttyp.")
 
 
+def tag(value: Any) -> Any:
+    """
+    Zeitpunkt um Mitternacht -> Datum dieses Tages; alles andere unverändert.
+
+    Die Tabellen des Bestands legt der Ingestor an; in bestehenden Installationen sind die Datumsspalten dort
+    Zeitpunkte (``hub.ris.canonical.iso_date``), und ein Datum steht als Mitternacht darin, in UTC oder in der
+    Zeitzone der Installation. Die Schatten-Quelle führt es als Datum (``hub.ris.uebernahme.parse_date``). Beides ist
+    derselbe Kalendertag. Ein Zeitpunkt zu einer anderen Uhrzeit bleibt, wie er ist, und weicht ab.
+    """
+    if not isinstance(value, datetime):
+        return value
+    moment = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    for zone in (UTC, timezone.get_current_timezone()):
+        lokal = moment.astimezone(zone)
+        if lokal.time() == time(0):
+            return lokal.date()
+    return value
+
+
+def datumsspalten(model: type[models.Model]) -> frozenset[str]:
+    """Spalten, die das Modell des Bestands als Datum führt (die Datenbank kann einen Zeitpunkt liefern)."""
+    return frozenset(
+        feld.name
+        for feld in model._meta.concrete_fields
+        if isinstance(feld, models.DateField) and not isinstance(feld, models.DateTimeField)
+    )
+
+
+def spaltenwert(value: Any, *, datum: bool) -> Any:
+    """Wert einer Spalte des Bestands, normiert wie die Schatten-Quelle (Datumsspalten über ``tag``)."""
+    return ris_session.wert(tag(value) if datum else value)
+
+
 @dataclass(frozen=True)
 class Stand:
     """Eine Zeile, normiert: Kennung im Bestand, sichtbar, Grund, Spalten und Bezüge."""
@@ -124,9 +159,9 @@ def bestand_staende(typ: str, kommunen: list[uuid.UUID]) -> dict[str, Stand]:
     """Zeilen des Bestands der Kommunen je Adresse, normiert wie die Schatten-Quelle."""
     spalten = uebernahme.SPALTEN[typ]
     verweise = VERWEISE[typ]
-    zeilen = _bestand(typ, kommunen).values(
-        "pk", "external_id", "deleted", "deletion_reason", *spalten, *verweise.values()
-    )
+    abfrage = _bestand(typ, kommunen)
+    daten = datumsspalten(abfrage.model)
+    zeilen = abfrage.values("pk", "external_id", "deleted", "deletion_reason", *spalten, *verweise.values())
     gremien: dict[str, list[str]] = {}
     if typ == "meeting":
         for adresse, gremium in OParlMeeting.objects.filter(body__in=kommunen).values_list(
@@ -143,7 +178,7 @@ def bestand_staende(typ: str, kommunen: list[uuid.UUID]) -> dict[str, Stand]:
             kennung=str(zeile["pk"]),
             sichtbar=not zeile["deleted"],
             grund=zeile["deletion_reason"],
-            spalten={name: ris_session.wert(zeile[name]) for name in spalten},
+            spalten={name: spaltenwert(zeile[name], datum=name in daten) for name in spalten},
             verweise=bezuege,
         )
     return staende

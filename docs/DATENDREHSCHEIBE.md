@@ -171,13 +171,16 @@ Grundlagen: [Ereignistechnik](adr/20260929-ereignistechnik-postgres.md),
 | umgesetzt | Sitzungen, Tagesordnung, Ladung | #533 |
 | umgesetzt | Vorlagen, Beratungsfolge, Anlagen | #534 |
 | umgesetzt | Abstimmung, Beschluss, Niederschrift, Rücknahme | #535 |
+| umgesetzt | Körperschaft, Wahlperioden, Gremien, Personen, Mitgliedschaften | #860 |
 
 ### Aufbau
 
 - **`apps/session/hub_events.py`** (Session): Schalter und Erfassung. Eine Fachfunktion legt
   `hub_events.track(tenant)` um ihre Änderung und nennt die betroffenen Objekte, **bevor** sie sie ändert
   (`tracked.meeting(...)`, `tracked.agenda(...)`, `tracked.paper(...)`, `tracked.file(...)`,
-  `tracked.protocol(...)`, `tracked.invited(...)`). Mit einer Sitzung beobachtet `track` auch ihre Anlagen und die Beratungen in ihr, mit
+  `tracked.protocol(...)`, `tracked.invited(...)`; Stammdaten mit `tracked.body()`, `tracked.legislative_term(...)`,
+  `tracked.organization(...)`, `tracked.person(...)`, `tracked.membership(...)`, `tracked.memberships(gremium)` und
+  `tracked.master_data()` für alle Stammdaten des Mandanten). Mit einer Sitzung beobachtet `track` auch ihre Anlagen und die Beratungen in ihr, mit
   einer Tagesordnung die Anlagen und Beratungen ihrer Punkte, mit einer Vorlage ihre Beratungsfolge, Anlagen und
   die TOPs, auf denen sie steht; deren Sichtbarkeit hängt daran. Am Ende des Blocks liest
   `track` den Zustand erneut und schreibt die Ereignisse in derselben Transaktion.
@@ -185,7 +188,8 @@ Grundlagen: [Ereignistechnik](adr/20260929-ereignistechnik-postgres.md),
   schreibt sie mit `publish()`. Die Verträge `ris.*` gehören der Drehscheibe (`x-owner: hub.ris`, die Übertragungen `ris.broadcast.*` `hub.live`); dieselben
   Typen erzeugt der Ingestor für fremde RIS. Die Drehscheibe importiert Session nicht.
 - **Keine Signale.** Ereignisse entstehen nur in Fachfunktionen. Änderungen im Django-Admin oder per
-  Shell melden nichts.
+  Shell melden nichts. Ausnahmen sind die Stammdaten der Körperschaft, die der Betrieb nur im Admin des Mandanten
+  pflegt, und der Stammdaten-Import (`session_stammdaten_import`, Auslöser `system:stammdatenimport`).
 - **Verschachtelung.** Ein `track` in einem anderen für denselben Mandanten schließt sich dem äußeren an;
   jedes Objekt wird einmal gemeldet (Sitzung anlegen mit Standard-TOPs: erst die Sitzung, dann die TOPs).
   Die Erfassung endet noch in ihrer Transaktion. Ein Rückruf nach dem Commit (`transaction.on_commit`), der
@@ -215,10 +219,10 @@ Grundlagen: [Ereignistechnik](adr/20260929-ereignistechnik-postgres.md),
 | Fachfunktion | Ereignisse |
 |---|---|
 | Sitzung anlegen (Formular, Jahresplanung) | `ris.meeting.scheduled`, danach je Standard-TOP `ris.agendaitem.changed` (`added`) |
-| Sitzung bearbeiten, absagen | `ris.meeting.changed` mit den geänderten Feldern (`name`, `start`, `end`, `meetingState`, `cancelled`, `organization`, `location`, `meetingFormat`), bei Absage `cancelled: true` |
+| Sitzung bearbeiten, absagen | `ris.meeting.changed` mit den geänderten Feldern (`name`, `start`, `end`, `meetingState`, `cancelled`, `organization`, `location`, `mandari_meetingFormat`), bei Absage `cancelled: true` |
 | Öffentlichkeit der Sitzung ändern | siehe Sichtbarkeit; die Tagesordnung folgt mit |
 | TOP anlegen, bearbeiten, Ö/NÖ wechseln, absetzen, löschen, verschieben, Reihenfolge | `ris.agendaitem.changed` (`added`, `changed`, `withdrawn`, `deleted`), Rücknahmen als `ris.object.depublished`; neu nummerierte Punkte mit `changed: [number, order]` |
-| TOP aus der Beratungsfolge terminieren, Tagesordnungsvorlage anwenden | wie TOP anlegen; ggf. `ris.meeting.changed` (`meetingFormat`) |
+| TOP aus der Beratungsfolge terminieren, Tagesordnungsvorlage anwenden | wie TOP anlegen; ggf. `ris.meeting.changed` (`mandari_meetingFormat`) |
 | Sitzungscockpit: eröffnen, schließen | `ris.meeting.changed` (`meetingState`) |
 | Ladung, Nachtrag, Vertretungsanfrage versenden | `ris.meeting.invited` (nur `nichtoeffentlich`, Versandart, Kennung des Versandvorgangs; keine Empfänger) mit dem Versandvorgang, vor dem Versand der Mails |
 | Erstladung | zusätzlich `ris.meeting.changed` (`meetingState`): Mit der Ladung ist die Tagesordnung veröffentlicht |
@@ -266,6 +270,33 @@ bzw. `previous_agenda_item`.
 | Öffentlichen Inhalt nach der Veröffentlichung ändern (TOP nichtöffentlich, Sitzung umbenannt …) | nach dem Commit erneuert `refresh_meeting` die Fassung in eigener Erfassung: `ris.protocol.published` (`renewed`) und `ris.object.depublished` der alten Datei |
 | Veröffentlichung zurücknehmen (auch wenn die Sitzung nichtöffentlich wird) | `ris.object.depublished` der Datei (`zurueckgenommen`) und `ris.meeting.changed` (`resultsProtocol`) |
 | Berichtigung übernehmen | wie Abstimmung und Beschluss für die berichtigten TOPs |
+
+### Ereignisse je Fachfunktion (#860)
+
+Stammdaten unterteilt die Schnittstelle nicht in öffentlich und nichtöffentlich: Sie liefert sie alle aus, sobald
+sie freigeschaltet ist. Die Ereignisse sind dann `oeffentlich`, vorher `nichtoeffentlich`. Die Nutzlast nennt nur
+Kennungen und die Namen geänderter Felder, nie Namen, Kontakt- oder Bankdaten einer Person.
+
+| Fachfunktion | Ereignisse |
+|---|---|
+| Gremium anlegen (Formular, Gremienvorlage einer Körperschaft) | `ris.organization.changed` (`added`) |
+| Gremium bearbeiten | `ris.organization.changed` (`changed` mit `name`, `shortName`, `organizationType`, `classification`, `startDate`, `endDate`, `subOrganizationOf`) |
+| Person anlegen | `ris.person.changed` (`added`) |
+| Person bearbeiten, Datenschutz-Löschlauf | `ris.person.changed` (`changed` mit `name`, `familyName`, `givenName`, `formOfAddress`, `title`, `email`); `email` nur, wenn die Adresse veröffentlicht ist oder war |
+| Besetzung anlegen, bearbeiten, beenden, Nachrücken | `ris.membership.changed` (`added`, `changed` mit `role`, `votingRight`, `startDate`, `endDate`), immer mit `person` und `organization` |
+| Wahlperiode anlegen, bearbeiten | `ris.legislativeterm.changed` (`added`, `changed` mit `name`, `startDate`, `endDate`) |
+| Wahlperiode löschen | `ris.object.depublished` (`quelle_geloescht`) |
+| Periodenwechsel | `ris.legislativeterm.changed` für die alte und die neue Periode, `ris.membership.changed` für beendete und übernommene Besetzungen |
+| Stammdaten-Import | je angelegtem oder geändertem Stammdatum wie oben |
+| Lizenz der offenen Daten festlegen | `ris.body.changed` (`license`, `licenseValidSince`) |
+| Körperschaft im Admin des Mandanten bearbeiten | `ris.body.changed` (`name`, `shortName`, `website`, `contactEmail`, `classification`, `ags`) |
+
+Nicht gemeldet, weil das kanonische Modell es nicht kennt: Aktiv-Kennzeichen, Ausschussart, Sitzungsturnus,
+Ladungsfrist, Sitzungsgeld, Vertretung, Abberufungsvermerk, Wahlperiode einer Besetzung, Nummer einer Wahlperiode,
+Zustellweg, Widerspruch gegen Aufnahmen und alle geschützten Daten einer Person. Die eingebetteten Wahlperioden der
+Körperschaft und die Mitgliedschaften einer Person melden eigene Ereignisse; der Änderungsfeed nennt das einbettende
+Objekt mit. Freischaltung, Aktivieren und Deaktivieren des Mandanten melden wie bisher nichts. Gremien, Personen und
+Mitgliedschaften löscht Session nicht; das geht nur im Admin und meldet nichts.
 
 Die Abstimmung hat in Session keine eigene Adresse: Ihre Kennung bildet sich aus der Adresse des TOP mit dem
 Zusatz `voting`; im Änderungsfeed erscheint sie am TOP. Ebenso die Niederschrift (`protocol`): Adresse der
@@ -339,7 +370,8 @@ den Ereignissen des Ingestors aus, sobald Session `aktiv` meldet.
 
 ### Reihenfolge
 
-Innerhalb einer Änderung: Sitzungen, Vorlagen, Tagesordnungspunkte in der Reihenfolge der Tagesordnung,
+Innerhalb einer Änderung: Stammdaten (Körperschaft, Wahlperioden, Gremien, Personen, Mitgliedschaften),
+Sitzungen, Vorlagen, Tagesordnungspunkte in der Reihenfolge der Tagesordnung,
 Beratungen je Vorlage in der Reihenfolge der Stationen, Anlagen, dann ausdrücklich gemeldete Vorgänge
 (Ladung). Der Sequenzierer übernimmt die Reihenfolge des Schreibens.
 
@@ -351,6 +383,8 @@ Beratungen je Vorlage in der Reihenfolge der Stationen, Anlagen, dann ausdrückl
   Anlagen, Antrag, Beratungsfolge, Terminieren, Anlagen.
 - `apps/session/tests/test_drehscheibe_beschluesse.py`: Abstimmung, Vertagung, Rücknahme eines Ergebnisses,
   nichtöffentliche TOPs, Beschlussnummer, Beschlusskontrolle, Niederschrift vom Entwurf bis zur Rücknahme.
+- `apps/session/tests/test_drehscheibe_stammdaten.py`: Gremien, Personen ohne geschützte Daten, Besetzungen,
+  Wahlperioden, Periodenwechsel, Lizenz und Körperschaft im Admin.
 - `hub/ris/tests/test_session_events.py`: Übergänge der Sichtbarkeit ohne Datenbank.
 - Jedes Ereignis prüft `publish()` in Tests gegen seinen Vertrag (`EVENTS_VALIDATE_CONTRACTS`).
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Ereignisse aus mandari Session im kanonischen RIS-Modell (Datendrehscheibe, Etappe E4, Issues #533–#535).
+Ereignisse aus mandari Session im kanonischen RIS-Modell (Datendrehscheibe, Etappe E4, Issues #533–#535, #860).
 
 Session meldet ihre fachlichen Änderungen als Ereignisse ``ris.*``. Die Verträge gehören der Drehscheibe
 (``x-owner: hub.ris``, ``docs/adr/20260929-ereignisvertraege.md``): Dieselben Typen entstehen auch beim Abgleich
@@ -31,11 +31,14 @@ Schnittstelle (bis #758 einer je Mandant), der Mandant ``session:<uuid>``. Damit
   Ingestor und bei ``hub.ris.retraction`` (``drafts``) an die Empfänger, die es kannten.
 - Alles Übrige ist ``nichtoeffentlich``. Ein öffentliches Ereignis nennt keine Kennung eines nichtöffentlichen
   Objekts (die Vorlage eines Tagesordnungspunkts nur, solange sie veröffentlicht ist).
+- Stammdaten (Körperschaft, Wahlperioden, Gremien, Personen, Mitgliedschaften) sind nicht in öffentlich und
+  nichtöffentlich unterteilt: öffentlich, sobald die Schnittstelle freigeschaltet ist (``record_drafts``).
 
 **Nutzlast:** nur Kennungen, Codes und Namen geänderter Felder (Namen des kanonischen Modells), nie Inhalte und
 nie Personen. Inhalte liest der Empfänger mit Rechteprüfung beim Eigentümer.
 
-**Reihenfolge** innerhalb einer Änderung: Sitzungen, Vorlagen, Tagesordnungspunkte (in der Reihenfolge der
+**Reihenfolge** innerhalb einer Änderung: Stammdaten (Körperschaft, Wahlperioden, Gremien, Personen,
+Mitgliedschaften), Sitzungen, Vorlagen, Tagesordnungspunkte (in der Reihenfolge der
 Tagesordnung), Beratungen (je Vorlage in der Reihenfolge der Stationen), Anlagen, zuletzt ausdrücklich gemeldete
 Vorgänge wie die Ladung. Der Sequenzierer übernimmt die Reihenfolge des Schreibens.
 """
@@ -53,7 +56,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from apps.events import CanonicalRef, publish, tenant_ref
 from apps.events.models import Operation, Visibility
 from hub.ris import retraction
-from hub.ris.mapping.session import SessionUris
+from hub.ris.mapping.session import ORGANIZATION_TYPES, SessionUris
 from hub.ris.retraction import Draft
 
 #: Schemaversion der Ereignisse dieses Moduls
@@ -73,8 +76,10 @@ HIDDEN: Final = "verborgen"
 #: Felder einer Sitzung im kanonischen Modell, die auch der veröffentlichte Termin einer nichtöffentlichen
 #: Sitzung zeigt (``SessionMapping._meeting_date``)
 MEETING_DATE_FIELDS: Final = ("name", "start", "end", "meetingState", "cancelled", "organization")
-#: ... und die nur eine öffentliche Sitzung zeigt (Ort und Sitzungsformat, ``SessionMapping.meeting``)
-MEETING_FULL_FIELDS: Final = ("location", "meetingFormat")
+#: ... und die nur eine öffentliche Sitzung zeigt (Ort und Sitzungsformat, ``SessionMapping.meeting``). Das
+#: Sitzungsformat ist eine Erweiterung mit Namensraum (``mandari:meetingFormat``); es heißt wie beim Ingestor mit
+#: Unterstrich, damit Abnehmer nicht nach Herkunft unterscheiden müssen (Issue #860)
+MEETING_FULL_FIELDS: Final = ("location", "mandari_meetingFormat")
 MEETING_FIELDS: Final = MEETING_DATE_FIELDS + MEETING_FULL_FIELDS
 
 #: Felder eines Tagesordnungspunkts im kanonischen Modell (``consultation``: die beratene Vorlage,
@@ -144,6 +149,69 @@ FILE_REFS: Final = (
     ("meeting", "meeting", "meeting"),
     ("agendaItem", "agendaitem", "agenda_item"),
 )
+
+BODY_CHANGED: Final = "ris.body.changed"
+LEGISLATIVE_TERM_CHANGED: Final = "ris.legislativeterm.changed"
+ORGANIZATION_CHANGED: Final = "ris.organization.changed"
+PERSON_CHANGED: Final = "ris.person.changed"
+MEMBERSHIP_CHANGED: Final = "ris.membership.changed"
+
+#: Felder der Stammdaten im kanonischen Modell, wie die Schnittstelle sie ausliefert (``SessionMapping.body``,
+#: ``legislative_term``, ``organization``, ``person``, ``membership``). Eingebettete Wahlperioden und
+#: Mitgliedschaften melden eigene Ereignisse, ebenso die Mitgliedschaften eines Gremiums.
+BODY_FIELDS: Final = (
+    "name",
+    "shortName",
+    "website",
+    "license",
+    "licenseValidSince",
+    "contactEmail",
+    "classification",
+    "ags",
+)
+LEGISLATIVE_TERM_FIELDS: Final = ("name", "startDate", "endDate")
+ORGANIZATION_FIELDS: Final = (
+    "name",
+    "shortName",
+    "organizationType",
+    "classification",
+    "startDate",
+    "endDate",
+    "subOrganizationOf",
+)
+#: Person ohne geschützte Daten: die E-Mail nur, wenn sie veröffentlicht ist (Einwilligung, Issue #319)
+PERSON_FIELDS: Final = ("name", "familyName", "givenName", "formOfAddress", "title", "email")
+MEMBERSHIP_FIELDS: Final = ("person", "organization", "role", "votingRight", "startDate", "endDate")
+
+
+@dataclass(frozen=True)
+class RecordKind:
+    """Eine Art der Stammdaten: Ereignis, Objekttyp, Schlüssel der Nutzlast, Felder und Bezüge der Nutzlast."""
+
+    event_type: str
+    aggregate_type: str
+    key: str
+    fields: tuple[str, ...]
+    #: Bezüge, die die Nutzlast nennt: Feld, Objektart der Schnittstelle, Schlüssel der Nutzlast
+    refs: tuple[tuple[str, str, str], ...] = ()
+
+
+#: Art der Schnittstelle -> Stammdaten-Art
+RECORD_KINDS: Final[Mapping[str, RecordKind]] = {
+    "body": RecordKind(BODY_CHANGED, "Body", "body", BODY_FIELDS),
+    "legislativeterm": RecordKind(
+        LEGISLATIVE_TERM_CHANGED, "LegislativeTerm", "legislative_term", LEGISLATIVE_TERM_FIELDS
+    ),
+    "organization": RecordKind(ORGANIZATION_CHANGED, "Organization", "organization", ORGANIZATION_FIELDS),
+    "person": RecordKind(PERSON_CHANGED, "Person", "person", PERSON_FIELDS),
+    "membership": RecordKind(
+        MEMBERSHIP_CHANGED,
+        "Membership",
+        "membership",
+        MEMBERSHIP_FIELDS,
+        refs=(("person", "person", "person"), ("organization", "organization", "organization")),
+    ),
+}
 
 
 # =============================================================================
@@ -241,7 +309,7 @@ def meeting_state(meeting: Any, *, is_published: Callable[[Any], bool]) -> Meeti
         "cancelled": bool(meeting.cancelled),
         "organization": organizations,
         "location": _location(meeting),
-        "meetingFormat": _meeting_format(meeting),
+        "mandari_meetingFormat": _meeting_format(meeting),
     }
     return MeetingState(id=meeting.pk, publicity=publicity, fields=fields, organizations=organizations)
 
@@ -498,6 +566,91 @@ def protocol_state(protocol: Any, *, interface_open: bool) -> ProtocolState:
         last_correction_at=getattr(protocol, "last_correction_at", None),
         interface_open=interface_open,
     )
+
+
+@dataclass(frozen=True)
+class RecordState:
+    """
+    Stammdaten: Körperschaft, Wahlperiode, Gremium, Person oder Mitgliedschaft.
+
+    Die Schnittstelle unterteilt sie nicht in öffentlich und nichtöffentlich (``oparl_publication``): Sie liefert
+    alle aus, sobald sie freigeschaltet ist. ``kind`` ist die Art der Schnittstelle (``RECORD_KINDS``), ``id`` die
+    Kennung in Session (bei der Körperschaft die des Mandanten).
+    """
+
+    kind: str
+    id: Any
+    published: bool
+    fields: Mapping[str, Any]
+
+
+def _text(value: Any) -> str:
+    return str(value or "")
+
+
+def body_state(tenant: Any, *, published: bool) -> RecordState:
+    """Zustand der Körperschaft der Schnittstelle (``SessionTenant``, wie ``SessionMapping.body``)."""
+    license_url = _text(tenant.oparl_license)
+    fields = {
+        "name": _text(tenant.name),
+        "shortName": _text(tenant.short_name),
+        "website": _text(tenant.website),
+        "license": license_url,
+        "licenseValidSince": tenant.oparl_license_valid_since if license_url else None,
+        "contactEmail": _text(tenant.contact_email),
+        "classification": tenant.get_body_type_display() if tenant.body_type else "Kommune",
+        "ags": _text(tenant.ags),
+    }
+    return RecordState(kind="body", id=tenant.pk, published=published, fields=fields)
+
+
+def legislative_term_state(term: Any, *, published: bool) -> RecordState:
+    """Zustand einer Wahlperiode (``SessionLegislativeTerm``)."""
+    fields = {"name": _text(term.name), "startDate": term.start_date, "endDate": term.end_date}
+    return RecordState(kind="legislativeterm", id=term.pk, published=published, fields=fields)
+
+
+def organization_state(org: Any, *, published: bool) -> RecordState:
+    """Zustand eines Gremiums (``SessionOrganization``); Art und Einordnung wie die Abbildung."""
+    fields = {
+        "name": _text(org.name),
+        "shortName": _text(org.short_name),
+        "organizationType": ORGANIZATION_TYPES.get(org.organization_type, "Sonstiges"),
+        "classification": _text(org.get_organization_type_display()),
+        "startDate": org.start_date,
+        "endDate": org.end_date,
+        "subOrganizationOf": org.parent_id,
+    }
+    return RecordState(kind="organization", id=org.pk, published=published, fields=fields)
+
+
+def person_state(person: Any, *, published: bool) -> RecordState:
+    """
+    Zustand einer Person (``SessionPerson``) ohne geschützte Daten: Verschlüsselte Felder werden nie gelesen, die
+    E-Mail nur, wenn sie veröffentlicht ist. Die Nutzlast nennt ohnehin nur die Namen geänderter Felder.
+    """
+    fields = {
+        "name": _text(person.display_name),
+        "familyName": _text(person.family_name),
+        "givenName": _text(person.given_name),
+        "formOfAddress": _text(person.form_of_address),
+        "title": _text(person.title),
+        "email": _text(person.published_email),
+    }
+    return RecordState(kind="person", id=person.pk, published=published, fields=fields)
+
+
+def membership_state(membership: Any, *, published: bool) -> RecordState:
+    """Zustand einer Mitgliedschaft (``SessionOrganizationMembership``)."""
+    fields = {
+        "person": membership.person_id,
+        "organization": membership.organization_id,
+        "role": _text(membership.role),
+        "votingRight": bool(membership.has_voting_rights),
+        "startDate": membership.start_date,
+        "endDate": membership.end_date,
+    }
+    return RecordState(kind="membership", id=membership.pk, published=published, fields=fields)
 
 
 def _deleting(draft: Draft) -> Draft:
@@ -1111,6 +1264,75 @@ class SessionEvents:
                 payload[f"previous_{key}"] = str(self.ref(kind, earlier))
         visibility = Visibility.OEFFENTLICH if public else Visibility.NICHTOEFFENTLICH
         return Draft(FILE_CHANGED, "File", file_id, visibility, Operation.UPSERT, payload)
+
+    # -- Stammdaten --------------------------------------------------------------------------------
+
+    def record_id(self, state: RecordState) -> uuid.UUID:
+        """Kanonische Kennung eines Stammdatums (die Körperschaft ist der Body der Schnittstelle)."""
+        return self.body_id if state.kind == "body" else self.ref(state.kind, state.id)
+
+    def records_drafts(self, before: Mapping[Any, RecordState | None], after: Mapping[Any, RecordState]) -> list[Draft]:
+        """Ereignisse zu Stammdaten einer Art (nach Kennung geordnet, Gelöschtes zuletzt)."""
+
+        def position(key: Any) -> tuple[int, str]:
+            return (0 if key in after else 1, str(key))
+
+        drafts: list[Draft] = []
+        for key in sorted(set(before) | set(after), key=position):
+            drafts.extend(self.record_drafts(before.get(key), after.get(key)))
+        return drafts
+
+    def record_drafts(self, before: RecordState | None, after: RecordState | None) -> list[Draft]:
+        """
+        Ereignisse zur Änderung eines Stammdatums (``before``/``after`` ``None``: neu bzw. gelöscht).
+
+        Öffentlich ist alles, was die freigeschaltete Schnittstelle vorher und nachher ausliefert. Ihre Freischaltung
+        und deren Rücknahme melden nichts (wie bei allen Objekten): Ändert sich nur, ob die Schnittstelle ausliefert,
+        entsteht kein Ereignis; ändert sich dabei auch ein Feld, erfahren es nur die übrigen Empfänger.
+        """
+        if before is None and after is None:
+            return []
+        state = after if after is not None else before
+        assert state is not None
+        spec = RECORD_KINDS[state.kind]
+        object_id = self.record_id(state)
+        if before is None:
+            assert after is not None
+            return [self._record_draft(spec, after, object_id, "added", None, after.published)]
+        if after is None:
+            if not before.published:
+                return []
+            # Eine Mitgliedschaft ist in ihre Person eingebettet: Die Rücknahme nennt sie (Änderungsfeed, #1229)
+            embedded_in = (
+                {"person": self.ref("person", before.fields["person"])} if state.kind == "membership" else None
+            )
+            return retraction.drafts(
+                spec.aggregate_type, object_id, retraction.REASON_DELETED_AT_SOURCE, embedded_in=embedded_in
+            )
+        changed = _changed(spec.fields, before.fields, after.fields)
+        if not changed:
+            return []
+        public = before.published and after.published
+        return [self._record_draft(spec, after, object_id, "changed", changed, public)]
+
+    def _record_draft(
+        self,
+        spec: RecordKind,
+        state: RecordState,
+        object_id: uuid.UUID,
+        change: str,
+        changed: list[str] | None,
+        public: bool,
+    ) -> Draft:
+        payload: dict[str, Any] = {spec.key: str(object_id), "change": change}
+        if changed:
+            payload["changed"] = changed
+        for name, kind, key in spec.refs:
+            found = state.fields.get(name)
+            if found is not None:
+                payload[key] = str(self.ref(kind, found))
+        visibility = Visibility.OEFFENTLICH if public else Visibility.NICHTOEFFENTLICH
+        return Draft(spec.event_type, spec.aggregate_type, object_id, visibility, Operation.UPSERT, payload)
 
     # -- Ladung ------------------------------------------------------------------------------------
 

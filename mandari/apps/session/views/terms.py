@@ -26,7 +26,7 @@ from django.views.generic import TemplateView
 from apps.common.formatting import parse_iso_date
 from apps.common.params import uuid_param
 
-from .. import audit
+from .. import audit, hub_events
 from ..models import (
     SessionLegislativeTerm,
     SessionMeeting,
@@ -148,21 +148,26 @@ class TermSaveView(SessionViewMixin, View):
             messages.error(request, f"Der Zeitraum überschneidet sich mit der Wahlperiode „{conflict.name}“.")
             return redirect("session:terms", tenant_slug=tenant_slug)
 
+        # Drehscheibe (Issue #860): ris.legislativeterm.changed (added bzw. changed)
         if term is not None:
             term.name = name
             term.start_date = start_date
             term.end_date = end_date
             term.number = _parse_number(request.POST.get("number"))
-            term.save()
+            with hub_events.track(self.session_tenant) as tracked:
+                tracked.legislative_term(term)
+                term.save()
             messages.success(request, f"Wahlperiode „{term.name}“ wurde aktualisiert.")
         else:
-            term = SessionLegislativeTerm.objects.create(
-                number=_parse_number(request.POST.get("number")),
-                tenant=self.session_tenant,
-                name=name,
-                start_date=start_date,
-                end_date=end_date,
-            )
+            with hub_events.track(self.session_tenant) as tracked:
+                term = SessionLegislativeTerm.objects.create(
+                    number=_parse_number(request.POST.get("number")),
+                    tenant=self.session_tenant,
+                    name=name,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                tracked.legislative_term(term, created=True)
             messages.success(request, f"Wahlperiode „{term.name}“ wurde angelegt.")
         return redirect("session:terms", tenant_slug=tenant_slug)
 
@@ -183,7 +188,10 @@ class TermDeleteView(SessionViewMixin, View):
             )
             return redirect("session:terms", tenant_slug=tenant_slug)
         name = term.name
-        term.delete()
+        # Drehscheibe (Issue #860): ris.object.depublished (quelle_geloescht)
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.legislative_term(term)
+            term.delete()
         messages.success(request, f"Wahlperiode „{name}“ wurde gelöscht.")
         return redirect("session:terms", tenant_slug=tenant_slug)
 
