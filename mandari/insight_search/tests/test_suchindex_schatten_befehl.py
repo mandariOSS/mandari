@@ -87,6 +87,14 @@ def test_vollbau_trocken_und_grenzen(settings: Any, es: FakeElasticsearch, kommu
 # --- vergleichen --------------------------------------------------------------------------------
 
 
+def test_zeitstempel_der_quelle_sind_keine_abweichung() -> None:
+    # gremien.info stempelt Vorlagen neu, ohne Inhalt zu ändern; der Ingestor meldet das nicht (Issue #527)
+    live = {"id": "1", "name": "A", "oparl_created": "2026-11-19T23:00:00+00:00", "oparl_modified": "2026-11-19"}
+    schatten = {"id": "1", "name": "A", "oparl_created": "2026-09-28T22:00:00+00:00", "oparl_modified": "2026-09-28"}
+    assert differing_fields(live, schatten) == []
+    assert differing_fields(live, {**schatten, "name": "B"}) == ["name"]
+
+
 def test_abweichende_felder_ohne_reihenfolge_von_listen() -> None:
     live = {"id": "1", "organization_names": ["Rat", "Ausschuss"], "name": "A"}
     assert differing_fields(live, {"id": "1", "organization_names": ["Ausschuss", "Rat"], "name": "A"}) == []
