@@ -10,8 +10,9 @@ from django.http import Http404
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
+from hub.ris import selectors as ris_selectors
+
 from ..models import (
-    OParlMeeting,
     OParlPerson,
     PublicQuestion,
     withdrawn_q,
@@ -73,11 +74,11 @@ class PersonListView(FilterInAdresseMixin, ActiveBodyRequiredMixin, BegrenzteSei
     def get_queryset(self):
         body = get_active_body(self.request)
         if not body:
-            return OParlPerson.objects.none()
+            return ris_selectors.persons([]).none()
 
         # Nur Personen mit laufendem Amt (Issue #1560), ohne Test- und Platzhalterkonten des RIS (Issue #1258);
         # die übrigen bleiben im Bestand
-        qs = personen_sichtbarkeit.nur_oeffentliche(OParlPerson.objects.filter(body=body)).select_related("body")
+        qs = personen_sichtbarkeit.nur_oeffentliche(ris_selectors.persons([body])).select_related("body")
 
         # Suche (Name + Funktion/Gremium über Mitgliedschaften)
         q = self.request.GET.get("q", "").strip()
@@ -148,16 +149,11 @@ class PersonDetailView(DetailView):
         context["funktion"] = personen_liste.funktion_aus(context["active_memberships"])
         # Randspalte: nächste Sitzungen der Gremien der Person – nichts, was Kopf oder Liste schon zeigen
         context["naechste_sitzungen"] = list(
-            OParlMeeting.objects.filter(
-                organizations__in=[m.organization_id for m in context["active_memberships"]],
-                start__gte=timezone.now(),
-                cancelled=False,
-                deleted=False,
-            )
-            .exclude(withdrawn_q())
-            .prefetch_related("organizations")
-            .distinct()
-            .order_by("start")[:3]
+            ris_selectors.public_meetings_of_organizations(
+                [m.organization_id for m in context["active_memberships"]],
+                starts_from=timezone.now(),
+                include_cancelled=False,
+            ).prefetch_related("organizations")[:3]
         )
         context["hat_randspalte"] = bool(person.title or context["naechste_sitzungen"])
 

@@ -16,7 +16,8 @@ Fachmodule (Work, Session, Bürgerportal) lesen RIS-Daten über diese fachlichen
 
 Die Fassade liest nur. Geschrieben wird der RIS-Bestand vom Ingestor und von der Abbildung für
 Session-Mandanten. ``scripts/check_ris_access_ratchet.py`` zählt Direktzugriffe außerhalb von ``hub``
-und ``insight_core``; die Zahl darf nur sinken.
+und ``insight_core`` und im Code des Bürgerportals, der noch in ``insight_core`` liegt (Issue #1593); die
+Zahlen dürfen nur sinken.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from hub.ris.canonical import implementation_extension, roll_call_extension, vot
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
+    OParlBodyQuerySet,
     OParlConsultation,
     OParlFile,
     OParlLocation,
@@ -1362,7 +1364,11 @@ def public_meetings_between(
     """
     found = meetings(bodies).filter(deleted=False, start__gte=start, start__lte=end)
     if organizations is not None:
-        found = found.filter(organizations__in=list(organizations)).distinct()
+        gremien = list(organizations)
+        found = found.filter(organizations__in=gremien)
+        # Mit einem Gremium gibt es keine doppelten Zeilen; DISTINCT liefe sonst über alle Spalten samt Rohdaten
+        if len(gremien) > 1:
+            found = found.distinct()
     return found.prefetch_related("organizations").order_by("start")
 
 
@@ -1612,9 +1618,14 @@ def public_file_with_text(bodies: Bodies, file_id: object, *, max_chars: int = M
     return cast(OParlFile | None, dateien.select_related("paper").first())
 
 
-def public_organizations(bodies: Bodies, text: str = "", *, on: date | None = None) -> QuerySet[OParlOrganization]:
-    """Nicht gelöschte, am Stichtag (Standard heute) bestehende Gremien der Kommunen, wahlweise mit ``text`` im Namen."""
-    found = active_organizations(bodies, on=on).filter(deleted=False)
+def public_organizations(
+    bodies: Bodies, text: str = "", *, on: date | None = None, include_ended: bool = False
+) -> QuerySet[OParlOrganization]:
+    """
+    Nicht gelöschte, am Stichtag (Standard heute) bestehende Gremien der Kommunen, wahlweise mit ``text`` im Namen,
+    nach Namen. ``include_ended`` nimmt aufgelöste Gremien dazu (Reiter „Alle“ der Gremienliste).
+    """
+    found = (organizations(bodies) if include_ended else active_organizations(bodies, on=on)).filter(deleted=False)
     if text:
         found = found.filter(Q(name__icontains=text) | Q(short_name__icontains=text))
     return found.order_by("name")
@@ -1757,3 +1768,304 @@ def text_starts_of_files(file_ids: Iterable[object], *, max_chars: int) -> dict[
         .values_list("pk", "text_begrenzt")
     )
     return {pk: text or "" for pk, text in rows}
+
+
+# =============================================================================
+# Bürgerportal: Kommunenauswahl, Listen und Feeds (Issue #1593)
+# =============================================================================
+#
+# Das Bürgerportal liest den Bestand über diese Fassade (Etappe 7 der Datendrehscheibe), auch solange sein Code noch
+# in ``insight_core`` liegt; ``scripts/check_ris_access_ratchet.py`` zählt Direktzugriffe dort als K5b. Listen zeigen
+# nur nicht gelöschte Einträge. Die Ausdrücke für ``annotate`` beziehen sich über ``OuterRef("pk")`` auf die Sitzung
+# bzw. das Gremium der äußeren Abfrage.
+
+
+def body_by_id(body_id: object) -> OParlBody | None:
+    """Eine Kommune in jedem Zustand (auch gelöscht oder nicht gelistet), etwa die gewählte der Sitzung; sonst ``None``."""
+    pk = _uuid(body_id)
+    return OParlBody.objects.filter(pk=pk).first() if pk else None
+
+
+def listed_body_by_id(body_id: object) -> OParlBody | None:
+    """Eine gelistete Kommune zur Kennung; ``None`` bei ungültiger Kennung oder wenn sie nicht gelistet ist."""
+    pk = _uuid(body_id)
+    return OParlBody.objects.listed().filter(pk=pk).first() if pk else None
+
+
+def listed_body_by_slug(slug: str) -> OParlBody | None:
+    """Die gelistete Kommune mit genau diesem Kurznamen (Einstieg ``/insight/k/<slug>/``, Sitemap); sonst ``None``."""
+    return OParlBody.objects.listed().filter(slug=slug).first() if slug else None
+
+
+def body_id_by_reference(reference: str) -> uuid.UUID | None:
+    """Kennung einer Kommune in jedem Zustand zu Kurzname (``slug``) oder Kennung; ``None``, wenn es keine gibt."""
+    reference = reference.strip()
+    if not reference:
+        return None
+    pk = _uuid(reference)
+    kennung = (Q(slug=reference) | Q(pk=pk)) if pk else Q(slug=reference)
+    return OParlBody.objects.filter(kennung).values_list("id", flat=True).first()
+
+
+def bodies_of_sources(sources: QuerySet[OParlSource] | Iterable[OParlSource | uuid.UUID]) -> OParlBodyQuerySet:
+    """Kommunen der Quellen in jedem Zustand; ``.listed()`` schränkt auf die gelisteten ein."""
+    return OParlBody.objects.filter(source__in=sources)
+
+
+def public_meetings(bodies: Bodies) -> QuerySet[OParlMeeting]:
+    """Nicht gelöschte Sitzungen der Kommunen, auch abgesagte."""
+    return meetings(bodies).filter(deleted=False)
+
+
+def public_upcoming_meetings(bodies: Bodies, *, since: datetime | None = None) -> QuerySet[OParlMeeting]:
+    """Nicht gelöschte, nicht abgesagte Sitzungen ab ``since`` (Standard: jetzt), nach Beginn sortiert."""
+    return upcoming_meetings(bodies, since=since).filter(deleted=False)
+
+
+def public_meetings_of_organizations(
+    organizations: Organizations,
+    *,
+    starts_from: datetime | None = None,
+    starts_until: datetime | None = None,
+    starts_before: datetime | None = None,
+    include_cancelled: bool = True,
+) -> QuerySet[OParlMeeting]:
+    """
+    Nicht gelöschte Sitzungen, an denen mindestens eines der Gremien beteiligt ist, nach Beginn sortiert: ab
+    ``starts_from`` und bis ``starts_until`` (beide einschließlich) bzw. vor ``starts_before`` (ausschließlich). Jede
+    Sitzung einmal; ``DISTINCT`` nur bei mehreren Gremien, sonst liefe es über alle Spalten samt Rohdaten.
+    """
+    gremien = list(organizations)
+    found = OParlMeeting.objects.filter(organizations__in=gremien, deleted=False)
+    if starts_from is not None:
+        found = found.filter(start__gte=starts_from)
+    if starts_until is not None:
+        found = found.filter(start__lte=starts_until)
+    if starts_before is not None:
+        found = found.filter(start__lt=starts_before)
+    if not include_cancelled:
+        found = found.filter(cancelled=False)
+    if len(gremien) > 1:
+        found = found.distinct()
+    return found.order_by("start")
+
+
+def meeting_with_organizations(meeting_id: object) -> OParlMeeting | None:
+    """Eine Sitzung in jedem Zustand mit vorgeladenen Gremien (Sitzungsseite, Kalenderdatei); sonst ``None``."""
+    pk = _uuid(meeting_id)
+    return OParlMeeting.objects.filter(pk=pk).prefetch_related("organizations").first() if pk else None
+
+
+def has_agenda() -> Exists:
+    """Ausdruck je Sitzung: Gibt es Tagesordnungspunkte (ohne gelöschte, damit auch ohne zurückgenommene)?"""
+    return Exists(OParlAgendaItem.objects.filter(meeting=OuterRef("pk"), deleted=False))
+
+
+def meeting_has_agenda(meeting: OParlMeeting) -> bool:
+    """Gibt es zur Sitzung Tagesordnungspunkte (wie die Sitzungsseite: ohne gelöschte)?"""
+    return OParlAgendaItem.objects.filter(meeting=meeting, deleted=False).exists()
+
+
+def _public_agenda_items_of_meeting() -> QuerySet[OParlAgendaItem]:
+    return OParlAgendaItem.objects.filter(meeting=OuterRef("pk"), public=True, deleted=False)
+
+
+def public_agenda_item_count() -> Coalesce:
+    """Ausdruck je Sitzung: Zahl ihrer öffentlichen, nicht gelöschten Tagesordnungspunkte (0 ohne Punkte)."""
+    zahl = _public_agenda_items_of_meeting().order_by().values("meeting").annotate(n=Count("pk")).values("n")[:1]
+    return Coalesce(Subquery(zahl), 0)
+
+
+def first_public_agenda_item_created() -> Subquery:
+    """Ausdruck je Sitzung: Zeitpunkt, zu dem ihr erster öffentlicher Tagesordnungspunkt im Bestand ankam."""
+    return Subquery(_public_agenda_items_of_meeting().order_by("created_at").values("created_at")[:1])
+
+
+def recent_public_results(
+    bodies: Bodies, *, since: datetime, until: datetime, exclude: Q | None = None
+) -> QuerySet[OParlAgendaItem]:
+    """
+    Öffentliche Tagesordnungspunkte mit Ergebnis aus Sitzungen der Kommunen mit Beginn ab ``since`` und vor ``until``
+    (Punkt und Sitzung nicht gelöscht und nicht zurückgenommen, Sitzung nicht abgesagt), neueste Sitzung zuerst, dann
+    in der Reihenfolge der Tagesordnung. ``exclude`` lässt weitere Punkte aus, etwa Ergebnisse ohne Entscheidung. Jeder
+    Punkt trägt ``gremium``, den alphabetisch ersten Gremiennamen seiner Sitzung (Unterabfrage über die Zuordnung).
+    """
+    gremien = OParlOrganization.objects.filter(meetings=OuterRef("meeting_id")).order_by("name")
+    found = (
+        OParlAgendaItem.objects.filter(
+            meeting__body__in=bodies,
+            meeting__deleted=False,
+            meeting__cancelled=False,
+            meeting__start__lt=until,
+            meeting__start__gte=since,
+            public=True,
+            deleted=False,
+        )
+        .exclude(result__isnull=True)
+        .exclude(result="")
+    )
+    if exclude is not None:
+        found = found.exclude(exclude)
+    return (
+        found.exclude(withdrawn_q())
+        .exclude(withdrawn_q("meeting"))
+        .annotate(gremium=Subquery(gremien.values("name")[:1]))
+        .select_related("meeting")
+        .order_by("-meeting__start", "order", "number")
+    )
+
+
+def first_public_paper_of_agenda_items(external_ids: Iterable[str]) -> dict[str, OParlPaper]:
+    """
+    Je Tagesordnungspunkt (OParl-Kennung) die zuerst erfasste dort beratene Vorlage: ohne gelöschte und zurückgenommene
+    Vorlagen und Beratungen, Bezug nur innerhalb der Quelle. Eine Abfrage; Punkte ohne Vorlage fehlen.
+    """
+    kennungen = [kennung for kennung in external_ids if kennung]
+    if not kennungen:
+        return {}
+    beratungen = (
+        OParlConsultation.objects.filter(
+            agenda_item_external_id__in=kennungen, paper__isnull=False, paper__deleted=False
+        )
+        .filter(consultation_agenda_item_in_source())
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .select_related("paper")
+        .order_by("pk")
+    )
+    ergebnis: dict[str, OParlPaper] = {}
+    for beratung in beratungen:
+        if beratung.paper is not None:
+            ergebnis.setdefault(str(beratung.agenda_item_external_id), beratung.paper)
+    return ergebnis
+
+
+def recent_public_papers(bodies: Bodies, *, limit: int = 5) -> QuerySet[OParlPaper]:
+    """Neueste nicht gelöschte Vorlagen der Kommunen (nach Datum, dann Anlage im RIS)."""
+    return public_papers(bodies).order_by("-date", "-oparl_created")[:limit]
+
+
+def public_paper_types(bodies: Bodies) -> QuerySet[OParlPaper, str | None]:
+    """Arten der nicht gelöschten Vorlagen der Kommunen (``paper_type``) für den Filter der Liste, alphabetisch."""
+    return (
+        public_papers(bodies)
+        .exclude(paper_type__isnull=True)
+        .values_list("paper_type", flat=True)
+        .distinct()
+        .order_by("paper_type")
+    )
+
+
+def paper_by_id(paper_id: object) -> OParlPaper | None:
+    """Eine Vorlage in jedem Zustand samt Kommune (der Aufrufer prüft die Rücknahme); sonst ``None``."""
+    pk = _uuid(paper_id)
+    return OParlPaper.objects.filter(pk=pk).select_related("body").first() if pk else None
+
+
+def not_withdrawn_paper(paper_id: object) -> OParlPaper | None:
+    """Eine Vorlage, die mandari Session nicht zurückgenommen hat (in der Quelle gelöschte zählen mit); sonst ``None``."""
+    pk = _uuid(paper_id)
+    if pk is None:
+        return None
+    return OParlPaper.objects.exclude(withdrawn_q()).filter(pk=pk).defer("raw_json").first()
+
+
+def paper_ids_consulted_between(bodies: Bodies, start: datetime, end: datetime) -> QuerySet[OParlConsultation, Any]:
+    """
+    Kennungen der Vorlagen (``paper_id``) mit einer Beratung in einer nicht gelöschten Sitzung der Kommunen mit Beginn
+    zwischen ``start`` und ``end`` (beide einschließlich), ohne zurückgenommene Beratungen und Vorlagen. Als
+    Unterabfrage für ``pk__in``.
+    """
+    sitzungen = public_meetings(bodies).filter(start__gte=start, start__lte=end).values("external_id")
+    return (
+        OParlConsultation.objects.filter(meeting_external_id__in=sitzungen, paper__isnull=False)
+        .filter(consultation_meeting_in_source())
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .values("paper_id")
+    )
+
+
+def public_organization(bodies: Bodies, organization_id: object) -> OParlOrganization | None:
+    """Ein nicht gelöschtes Gremium der Kommunen; ``None`` bei ungültiger Kennung oder wenn es das dort nicht gibt."""
+    pk = _uuid(organization_id)
+    return organizations(bodies).filter(pk=pk, deleted=False).first() if pk else None
+
+
+def organization_by_id(organization_id: object) -> OParlOrganization | None:
+    """Ein Gremium in jedem Zustand samt Kommune (der Aufrufer prüft die Rücknahme); sonst ``None``."""
+    pk = _uuid(organization_id)
+    return OParlOrganization.objects.filter(pk=pk).select_related("body").first() if pk else None
+
+
+def not_withdrawn_organization(organization_id: object) -> OParlOrganization | None:
+    """Ein Gremium, das mandari Session nicht zurückgenommen hat (in der Quelle gelöschte zählen mit); sonst ``None``."""
+    pk = _uuid(organization_id)
+    if pk is None:
+        return None
+    return OParlOrganization.objects.exclude(withdrawn_q()).filter(pk=pk).defer("raw_json").first()
+
+
+def organizations_by_ids(organization_ids: Iterable[object]) -> QuerySet[OParlOrganization]:
+    """Gremien zu Kennungen (etwa die Fraktionen einer Personenliste), nach Namen; unbekannte fehlen."""
+    ids = [pk for pk in (_uuid(value) for value in organization_ids) if pk is not None]
+    return OParlOrganization.objects.filter(pk__in=ids).order_by("name")
+
+
+def public_organizations_with_meetings(bodies: Bodies) -> QuerySet[OParlOrganization]:
+    """
+    Nicht gelöschte Gremien der Kommunen (auch aufgelöste) mit mindestens einer nicht gelöschten Sitzung, nach Namen;
+    ``meeting_count`` zählt diese Sitzungen (Auswahl im Kalender-Abo und im Sitzungsplan).
+    """
+    return (
+        organizations(bodies)
+        .filter(deleted=False)
+        .annotate(meeting_count=Count("meetings", filter=Q(meetings__deleted=False)))
+        .filter(meeting_count__gt=0)
+        .order_by("name")
+    )
+
+
+def next_meeting_start(now: datetime) -> Subquery:
+    """Ausdruck je Gremium: Beginn seiner nächsten nicht abgesagten, nicht gelöschten Sitzung ab ``now``."""
+    return Subquery(
+        OParlMeeting.objects.filter(organizations=OuterRef("pk"), start__gte=now, cancelled=False, deleted=False)
+        .order_by("start")
+        .values("start")[:1]
+    )
+
+
+def last_meeting_start(now: datetime) -> Subquery:
+    """Ausdruck je Gremium: Beginn seiner letzten nicht gelöschten Sitzung vor ``now``."""
+    return Subquery(
+        OParlMeeting.objects.filter(organizations=OuterRef("pk"), start__lt=now, deleted=False)
+        .order_by("-start")
+        .values("start")[:1]
+    )
+
+
+def has_public_meetings() -> Exists:
+    """Ausdruck je Gremium: Hat es mindestens eine nicht gelöschte Sitzung?"""
+    return Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk"), deleted=False))
+
+
+def current_member_count(on: date, *, exclude: Q | None = None) -> Coalesce:
+    """
+    Ausdruck je Gremium: Zahl der nicht gelöschten Mitgliedschaften ohne Ende oder mit Ende ab ``on``; ``exclude``
+    lässt Mitgliedschaften aus, etwa Test- und Systemkonten des RIS.
+    """
+    laufende = OParlMembership.objects.filter(organization=OuterRef("pk"), deleted=False).filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=on)
+    )
+    if exclude is not None:
+        laufende = laufende.exclude(exclude)
+    zahl = laufende.order_by().values("organization").annotate(n=Count("pk")).values("n")[:1]
+    return Coalesce(Subquery(zahl), 0)
+
+
+def public_person(bodies: Bodies, person_id: object) -> OParlPerson | None:
+    """Eine Person der Kommunen mit laufendem Amt (Issue #1560); sonst ``None``, auch bei ungültiger Kennung."""
+    from insight_core.services.personen_sichtbarkeit import nur_oeffentliche
+
+    pk = _uuid(person_id)
+    return nur_oeffentliche(persons(bodies).filter(pk=pk)).first() if pk else None

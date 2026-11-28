@@ -11,7 +11,7 @@ In Deutschland gibt es rund 11.000 Gemeinden. Der Wechsel zeigt deshalb nie eine
 - ein Stöbern Land → Kreis → (Gemeindeverband →) Kommune (``stoebern``).
 
 Grundlage ist das Kommunenverzeichnis (``Municipality``/``MunicipalityTerm``). Wählbar ist ein Eintrag, wenn eine
-gelistete Kommune (``OParlBody.objects.listed()``) denselben Regionalschlüssel oder AGS trägt; alle anderen
+gelistete Kommune (``hub.ris.selectors.listed_bodies``) denselben Regionalschlüssel oder AGS trägt; alle anderen
 erscheinen mit dem Hinweis „noch nicht verfügbar“. Gelistete Kommunen ohne Verzeichniseintrag (etwa ein
 Regionalrat ohne Gemeindeschlüssel) werden über ihren Namen gefunden, damit der Wechsel auch mit leerem
 Verzeichnis funktioniert.
@@ -32,6 +32,8 @@ from django.core.cache import cache
 from django.db import connection, transaction
 from django.db.models import Count, Q
 from django.urls import reverse
+
+from hub.ris import selectors as ris_selectors
 
 from ..models import Municipality, MunicipalityTerm, OParlBody
 
@@ -232,7 +234,7 @@ def ort_der_koerperschaft(body: OParlBody) -> str:
 
 def _gelistete_koerperschaften() -> list[OParlBody]:
     return list(
-        OParlBody.objects.listed().only(
+        ris_selectors.listed_bodies().only(
             "id", "name", "short_name", "display_name", "ags", "rgs", "classification", "latitude", "longitude"
         )
     )

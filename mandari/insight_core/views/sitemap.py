@@ -8,7 +8,6 @@ Aufteilung und Abfragen der Sitemaps: ``insight_core/services/sitemaps.py`` (Iss
 import uuid
 from datetime import UTC
 
-from django.db.models import Q
 from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
 from django.urls import reverse
 from django.utils import timezone
@@ -17,9 +16,9 @@ from django.utils import timezone
 from django.views.decorators.http import require_safe
 
 from apps.common import module
+from hub.ris import selectors as ris_selectors
 
 from .. import publication
-from ..models import OParlBody
 from ..navigation import KOMMUNEN_LISTEN
 from ..services import sitemaps
 
@@ -122,7 +121,7 @@ def sitemap_index(request):
             xml_parts.append(f"    <lastmod>{_w3c(lastmod)}</lastmod>")
         xml_parts.append("  </sitemap>")
 
-    bodies = list(OParlBody.objects.listed().only("id", "slug").order_by("name"))
+    bodies = list(ris_selectors.listed_bodies().only("id", "slug"))
     dateien = sitemaps.index_dateien(body.pk for body in bodies)
     for body in bodies:
         kennung = _sitemap_key(body)
@@ -148,7 +147,7 @@ def _kommune_der_sitemap(body_slug, umleitung):
     Kommunen mit Slug haben nur die Adresse mit Slug, die ID leitet dauerhaft um (``umleitung`` baut das Ziel
     aus dem Slug). Dauerhaft zurückgenommen: 410, vorübergehend abgeschaltet: 503 mit Retry-After (Issue #618).
     """
-    body = OParlBody.objects.listed().filter(slug=body_slug).first()
+    body = ris_selectors.listed_body_by_slug(body_slug)
     body_id = None
     if body is None:
         # Kommunen ohne Slug stehen mit ihrer ID im Index; mit Slug gilt nur dessen Adresse
@@ -156,13 +155,12 @@ def _kommune_der_sitemap(body_slug, umleitung):
             body_id = uuid.UUID(body_slug)
         except ValueError:
             body_id = None
-        body = OParlBody.objects.listed().filter(pk=body_id).first() if body_id else None
+        body = ris_selectors.listed_body_by_id(body_id) if body_id else None
         if body is not None and body.slug:
             return None, HttpResponsePermanentRedirect(umleitung(body.slug))
     if body is None:
         # Dauerhaft zurückgenommen (Issue #618): „nicht mehr verfügbar“ statt „gibt es nicht“
-        kennung = (Q(slug=body_slug) | Q(pk=body_id)) if body_id else Q(slug=body_slug)
-        gone = OParlBody.objects.filter(kennung).values_list("id", flat=True).first()
+        gone = ris_selectors.body_id_by_reference(body_slug)
         state = publication.body_state(gone)
         if state is not None and state.withdrawn:
             return None, HttpResponse(

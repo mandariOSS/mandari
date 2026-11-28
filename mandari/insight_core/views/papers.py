@@ -48,7 +48,7 @@ def vorgaenge_der_auswahl(
     in Name und Nummer (``q``). Dieselbe Auswahl für Liste und Feed (Issue #1274). ``fraktionen`` liefert die
     Fraktionen der Kommune (die Liste rechnet sie einmal je Anfrage).
     """
-    qs = OParlPaper.objects.filter(body=body, deleted=False)
+    qs = ris_selectors.public_papers([body])
 
     # Typ-Filter
     paper_type = str(get.get("type", "") or "").strip()
@@ -107,7 +107,7 @@ class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, Be
     def get_queryset(self):
         body = get_active_body(self.request)
         if not body:
-            return OParlPaper.objects.none()
+            return ris_selectors.papers([]).none()
         return vorgaenge_der_auswahl(body, self.request.GET, self._fraktionen)
 
     def get_context_data(self, **kwargs):
@@ -124,13 +124,7 @@ class PaperListView(HTMXMixin, FilterInAdresseMixin, ActiveBodyRequiredMixin, Be
 
         if body:
             # Verfügbare Typen für Filter
-            context["paper_types"] = (
-                OParlPaper.objects.filter(body=body, deleted=False)
-                .exclude(paper_type__isnull=True)
-                .values_list("paper_type", flat=True)
-                .distinct()
-                .order_by("paper_type")
-            )
+            context["paper_types"] = ris_selectors.public_paper_types([body])
             # Fraktionen der laufenden Wahlperiode, die in der Kommune Vorgänge gestellt haben (Filter, Issues #1138,
             # #1258)
             context["paper_fraktionen"] = self._fraktionen(body)

@@ -15,13 +15,6 @@ from django.views.generic import TemplateView
 
 from hub.ris import selectors as ris_selectors
 
-from ..models import (
-    OParlBody,
-    OParlMeeting,
-    OParlOrganization,
-    OParlPaper,
-    OParlPerson,
-)
 from ..services import fraktionskuerzel, personen_sichtbarkeit
 from ..services.search_filters import MAX_QUERY_LENGTH
 from ._helpers import get_active_body, is_all_bodies_mode, page_number
@@ -36,7 +29,7 @@ def _searchable_body_ids() -> list[str]:
     from ..publication import paused_body_ids
 
     paused = paused_body_ids()
-    return [str(pk) for pk in OParlBody.objects.listed().values_list("id", flat=True) if str(pk) not in paused]
+    return [str(pk) for pk in ris_selectors.listed_bodies().values_list("id", flat=True) if str(pk) not in paused]
 
 
 class SearchView(TemplateView):
@@ -215,10 +208,10 @@ def search_results(request):
         results = []
 
         # Optionaler Body-Filter: body=None bedeutet kommunenübergreifende Suche über gelistete Kommunen
-        body_filter = {"body": body} if body else {"body_id__in": _searchable_body_ids()}
+        bodies = [body] if body else _searchable_body_ids()
 
         # Vorgänge; Vorlagennummern in jeder Schreibweise, passende Nummer vorn (Issue #1102)
-        papers = ris_selectors.search_papers_in(OParlPaper.objects.filter(deleted=False, **body_filter), query)[:10]
+        papers = ris_selectors.search_papers_in(ris_selectors.public_papers(bodies), query)[:10]
         for paper in papers:
             results.append(
                 {
@@ -232,7 +225,7 @@ def search_results(request):
 
         # Personen
         # Nur Personen mit laufendem Amt (Issue #1560)
-        persons = personen_sichtbarkeit.nur_oeffentliche(OParlPerson.objects.filter(**body_filter)).filter(
+        persons = personen_sichtbarkeit.nur_oeffentliche(ris_selectors.persons(bodies)).filter(
             Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query)
         )[:10]
         for person in persons:
@@ -246,9 +239,7 @@ def search_results(request):
             )
 
         # Gremien
-        orgs = OParlOrganization.objects.filter(deleted=False, **body_filter).filter(
-            Q(name__icontains=query) | Q(short_name__icontains=query)
-        )[:10]
+        orgs = ris_selectors.public_organizations(bodies, query, include_ended=True)[:10]
         for org in orgs:
             results.append(
                 {
@@ -261,7 +252,7 @@ def search_results(request):
 
         # Sitzungen
         meetings = (
-            OParlMeeting.objects.filter(deleted=False, **body_filter)
+            ris_selectors.public_meetings(bodies)
             .filter(Q(name__icontains=query) | Q(location_name__icontains=query))
             .prefetch_related("organizations")[:10]
         )

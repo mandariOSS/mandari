@@ -8,22 +8,16 @@ Server-Side Rendering mit Django Templates + HTMX.
 import json
 from datetime import timedelta
 
-from django.db.models import OuterRef, Q, Subquery
+from django.db.models import Q
 from django.http import HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.cache import add_never_cache_headers
 from django.views.generic import TemplateView
 
-from ..models import (
-    OParlAgendaItem,
-    OParlBody,
-    OParlConsultation,
-    OParlMeeting,
-    OParlOrganization,
-    OParlPaper,
-    withdrawn_q,
-)
+from hub.ris import selectors as ris_selectors
+
+from ..models import OParlAgendaItem, OParlBody, OParlPaper
 from ..services import fraktionskuerzel, indexierung, kommunenverzeichnis
 from ..services.paper_status import ENTSCHEIDUNG, KEINE_ENTSCHEIDUNG, ist_beschluss
 from ._helpers import get_active_body, is_all_bodies_mode
@@ -48,7 +42,6 @@ def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> li
     Jeder Punkt trägt ``vorgang`` (beratener Vorgang oder ``None``) und ``gremium``.
     """
     jetzt = timezone.now()
-    gremien = OParlOrganization.objects.filter(meetings=OuterRef("meeting_id")).order_by("name")
     # Kenntnisnahmen, Antworten und Vertagungen ohne Entscheidungswort schon in der Abfrage aussortieren: Auch nach
     # vielen Kenntnisnahmen erscheinen so bis zu ``anzahl`` Beschlüsse (Feinprüfung danach mit ist_beschluss)
     keine = Q()
@@ -58,43 +51,12 @@ def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> li
     for wort in ENTSCHEIDUNG:
         entscheidung |= Q(result__icontains=wort)
     ohne_entscheidung = keine & ~entscheidung
-    kandidaten = (
-        OParlAgendaItem.objects.filter(
-            meeting__body=body,
-            meeting__deleted=False,
-            meeting__cancelled=False,
-            meeting__start__lt=jetzt,
-            meeting__start__gte=jetzt - timedelta(days=BESCHLUESSE_TAGE),
-            public=True,
-            deleted=False,
-        )
-        .exclude(result__isnull=True)
-        .exclude(result="")
-        .exclude(ohne_entscheidung)
-        .exclude(withdrawn_q())
-        .exclude(withdrawn_q("meeting"))
-        .annotate(gremium=Subquery(gremien.values("name")[:1]))
-        .select_related("meeting")
-        .order_by("-meeting__start", "order", "number")
+    kandidaten = ris_selectors.recent_public_results(
+        [body], since=jetzt - timedelta(days=BESCHLUESSE_TAGE), until=jetzt, exclude=ohne_entscheidung
     )
     # Etwas mehr laden, als gezeigt wird: seltene Schreibweisen fallen erst bei der Feinprüfung heraus
     punkte = [punkt for punkt in kandidaten[: anzahl * 8] if ist_beschluss(punkt.result)][:anzahl]
-    vorgaenge: dict[str, OParlPaper] = {}
-    if punkte:
-        from hub.ris.selectors import consultation_agenda_item_in_source
-
-        beratungen = (
-            OParlConsultation.objects.filter(
-                agenda_item_external_id__in=[p.external_id for p in punkte], paper__isnull=False, paper__deleted=False
-            )
-            .filter(consultation_agenda_item_in_source())
-            .exclude(withdrawn_q())
-            .exclude(withdrawn_q("paper"))
-            .select_related("paper")
-            .order_by("pk")
-        )
-        for beratung in beratungen:
-            vorgaenge.setdefault(str(beratung.agenda_item_external_id), beratung.paper)
+    vorgaenge: dict[str, OParlPaper] = ris_selectors.first_public_paper_of_agenda_items(p.external_id for p in punkte)
     for punkt in punkte:
         punkt.vorgang = vorgaenge.get(punkt.external_id)
     return punkte
@@ -112,7 +74,7 @@ class PortalHomeView(TemplateView):
         # Crawler verwirft KeineSitzungFuerCrawlerMiddleware die neue Sitzung, eine Weiterleitung auf diese Seite
         # liefe dann im Kreis (Issue #1110)
         if is_all_bodies_mode(request):
-            bodies = list(OParlBody.objects.listed()[:2])
+            bodies = list(ris_selectors.listed_bodies()[:2])
             if len(bodies) == 1:
                 request.session["active_body_id"] = str(bodies[0].id)
                 request.session.modified = True
@@ -136,7 +98,7 @@ class PortalHomeView(TemplateView):
         if all_bodies_mode:
             # Kommunenauswahl (Issue #783): keine Liste aller Kommunen, sondern Suche, Nähe und Stöbern über das
             # Kommunenverzeichnis (services/kommunenverzeichnis.py); hier nur, ob es überhaupt Kommunen gibt
-            context["hat_kommunen"] = OParlBody.objects.listed().exists()
+            context["hat_kommunen"] = ris_selectors.listed_bodies().exists()
             if context["hat_kommunen"]:
                 # Erste Stufe des Stöberns (Länder) gleich im Markup: Sie hält ihren Platz, statt nach dem Laden
                 # alles darunter zu verschieben (CLS), und spart die erste Anfrage
@@ -149,16 +111,12 @@ class PortalHomeView(TemplateView):
 
         elif body:
             # Nächste Sitzungen (5 für einheitliche Listen)
-            context["upcoming_meetings"] = (
-                OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False, deleted=False)
-                .prefetch_related("organizations")
-                .order_by("start")[:5]
-            )
+            context["upcoming_meetings"] = ris_selectors.public_upcoming_meetings([body]).prefetch_related(
+                "organizations"
+            )[:5]
 
             # Neueste Vorgänge
-            context["recent_papers"] = list(
-                OParlPaper.objects.filter(body=body, deleted=False).order_by("-date", "-oparl_created")[:5]
-            )
+            context["recent_papers"] = list(ris_selectors.recent_public_papers([body], limit=5))
 
             # Zuletzt beschlossen: dritte Spalte auf breiten Bildschirmen (Issue #841)
             context["recent_decisions"] = zuletzt_beschlossen(body)
@@ -195,9 +153,8 @@ def set_body(request, body_id):
     if aktuell is not None and not aktuell.can_leave:
         # Eigener Host einer Körperschaft (Issue #317): Die Kommune ist fest
         return redirect("insight_core:insight:portal_home")
-    body = None
-    try:
-        body = OParlBody.objects.get(id=body_id)
+    body = ris_selectors.body_by_id(body_id)
+    if body is not None:
         if aktuell is not None and aktuell.body.pk != body.pk:
             # Andere Kommune gewählt: Einstieg der Körperschaft verlassen
             portal_context.leave(request)
@@ -205,8 +162,6 @@ def set_body(request, body_id):
         # Explicitly mark session as modified and save to ensure persistence
         request.session.modified = True
         request.session.save()
-    except OParlBody.DoesNotExist:
-        pass
 
     # SECURITY: Use Django's built-in URL validation to prevent Open Redirect
     default_redirect = "/insight/"

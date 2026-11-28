@@ -10,7 +10,8 @@ Wo es schon eine Zählung oder eine Liste gibt, übernimmt das Skript sie, statt
 
 - K3b aus der Liste ``SOFORT`` in ``mandari/apps/common/tests/test_mail_dienst.py``,
 - K4 mit der Liste ``ERLAUBT`` aus ``mandari/apps/events/tests/test_zeitplaene_statt_faden.py``,
-- K5 aus ``scripts/check_ris_access_ratchet.py`` (Direktzugriffe auf ``OParl*.objects``),
+- K5 und K5b aus ``scripts/check_ris_access_ratchet.py`` (Direktzugriffe auf ``OParl*.objects`` außerhalb von ``hub``
+  und ``insight_core`` bzw. im Code des Bürgerportals in ``insight_core``),
 - K6 aus der Liste ``AUSNAHMEN_CASCADE`` in ``mandari/hub/ris/tests/test_loeschsemantik.py``,
 - die Einzelheit ``bei_aktiv`` von K2a mit der Liste ``ABGESCHALTET_BEI_AKTIV`` aus
   ``mandari/insight_search/tests/test_suchindex_umschalten.py`` (Schreibwege, die das Umschalten abschaltet),
@@ -520,6 +521,7 @@ def erheben(wurzel: Path | None = None) -> list[Kennzahl]:
     threads = thread_starts(anwendung, worker_pfade(wurzel))
     zugriffe: dict[str, int] = ris.measure(projekt)
     schreibzugriffe: dict[str, int] = views.measure(projekt)
+    portal_zugriffe: dict[str, int] = ris.measure(projekt, "buergerportal")
     cascade = cascade_ausnahmen(wurzel)
     cascade_bestand = [eintrag for eintrag in cascade if eintrag.split(".")[0] == RIS_APP]
     cascade_fremd = [eintrag for eintrag in cascade if eintrag.split(".")[0] != RIS_APP]
@@ -579,6 +581,14 @@ def erheben(wurzel: Path | None = None) -> list[Kennzahl]:
             "0",
             "`scripts/check_ris_access_ratchet.py`",
             {"dateien": len(zugriffe)},
+        ),
+        Kennzahl(
+            "K5b",
+            f"`OParl*.objects` im Code des Bürgerportals in `{RIS_APP}`",
+            sum(portal_zugriffe.values()),
+            "0",
+            "`scripts/check_ris_access_ratchet.py`",
+            {"dateien": len(portal_zugriffe)},
         ),
         Kennzahl(
             "K6a",

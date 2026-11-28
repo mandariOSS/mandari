@@ -90,6 +90,16 @@ alle Modelle haben feste Tabellennamen (`db_table`).
 - Test gegen nichtöffentliche Inhalte in Seiten, Suche, Sitemap und Feed des Portals.
 - Rückfallprobe: vorheriges Image gegen die migrierte Datenbank, Smoke-Test.
 
+## Nachtrag vom 28.11.2026: Inventar und erster Schritt (#1593)
+
+Das Inventar von `insight_core` (Portal, RIS-Bestand, gemeinsame Bausteine mit Work, Geodaten) und der Schnitt der
+Etappe 7 stehen in #1593. Die Geodaten liest auch Work (Karte der Recherche) und die KI; sie bleiben deshalb als
+abgeleitete Daten bei der Drehscheibe. Die Prüfung „`OParl*`-Modelle nur über die Fassade“ gilt schon vor dem
+Umzug: `scripts/check_ris_access_ratchet.py` zählt den Portal-Code in `insight_core` als Kennzahl K5b
+(`docs/DATENDREHSCHEIBE.md`, Abschnitt 5). Der State-Move folgt erst, wenn die Kopplungen der Portal-Modelle an
+Session (`DecisionSubscription`) und Work (`ContactRequest`) gelöst sind; sonst bräuchte `apps/portal` neue
+import-linter-Ausnahmen.
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),

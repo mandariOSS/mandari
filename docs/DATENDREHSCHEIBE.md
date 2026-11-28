@@ -536,6 +536,7 @@ Erhoben am 28. November 2026 am Stand `c33c6126` (`dev`) mit #1607, Anlass: Befe
 | K3b | Mails, die immer im Aufruf rausgehen (Stellen mit `sofort=True`) | 6 | – | `SOFORT` in `mandari/apps/common/tests/test_mail_dienst.py` |
 | K4 | Hintergrund-Threads im Webprozess (Thread-Starts außerhalb des Workers) | 0 | 0 | `scripts/architektur_kennzahlen.py` mit `ERLAUBT` aus `mandari/apps/events/tests/test_zeitplaene_statt_faden.py` |
 | K5 | `OParl*.objects` außerhalb von `hub` und `insight_core` | 124 | 0 | `scripts/check_ris_access_ratchet.py` |
+| K5b | `OParl*.objects` im Code des Bürgerportals in `insight_core` | 39 | 0 | `scripts/check_ris_access_ratchet.py` |
 | K6a | `CASCADE` von Fachmodulen auf den RIS-Bestand (alle Apps außer `insight_core`) | 0 | 0 | `AUSNAHMEN_CASCADE` in `mandari/hub/ris/tests/test_loeschsemantik.py` |
 | K6b | `CASCADE` auf den RIS-Bestand aus `insight_core` selbst (Bürgerportal, Geodaten) | 13 | 0 | `AUSNAHMEN_CASCADE` in `mandari/hub/ris/tests/test_loeschsemantik.py` |
 | K7 | import-linter-Ausnahmen (verschiedene Importe über alle Verträge) | 54 | 0 | `scripts/check_import_linter_ratchet.py` |
@@ -563,6 +564,9 @@ Zur Einordnung (die ersten drei Punkte beschreiben die erste Erhebung am 10. Nov
 - **K9 (neu):** 204 Schreibzugriffe in 45 View-Modulen: 88 in Session, 89 in Work, 17 im Bürgerportal, der Rest in
   Konten, Bereitstellung und Plattform. Am Stand der ersten Erhebung wären es 216 gewesen; 3 davon baut das Beispiel
   der Befehlsschicht ab (Textbausteine). Ziel ist null: Jede Änderung ist ein Befehl beim Eigentümer (Abschnitt 6).
+- **K5b** kam mit #1593 dazu (Etappe 7, Bürgerportal herauslösen) und ist nicht Teil dieser Erhebung: 119
+  Direktzugriffe vor, 39 nach dem ersten Schritt (Stand 28. November 2026). Seiten, Einstieg je Körperschaft und
+  Kontext des Portals lesen seitdem nur über die Fassade.
 
 ### 5.2 Verlauf
 
@@ -570,10 +574,10 @@ Eine Zeile je Erhebung, die neueste unten. „Stand“ nennt den Commit auf `dev
 aufsetzt, und den Pull Request, dessen Änderungen mitgezählt sind. K8 trägt ein, wer die Zeile schreibt
 (Abschnitt 5.4).
 
-| Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 | K9 |
-|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2026-11-10 | `3a63808d` + #1304 | erste Erhebung | 55 | 4 | 7 | 32 | 6 | 0 | 126 | 0 | 13 | 54 | – | – |
-| 2026-11-28 | `c33c6126` + #1607 | Befehlsschicht, K9 neu | 56 | 4 | 7 | 34 | 6 | 0 | 124 | 0 | 13 | 54 | – | 204 |
+| Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K5b | K6a | K6b | K7 | K8 | K9 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-11-10 | `3a63808d` + #1304 | erste Erhebung | 55 | 4 | 7 | 32 | 6 | 0 | 126 | – | 0 | 13 | 54 | – | – |
+| 2026-11-28 | `c33c6126` + #1607 | Befehlsschicht, K9 neu | 56 | 4 | 7 | 34 | 6 | 0 | 124 | – | 0 | 13 | 54 | – | 204 |
 
 ### 5.3 Zählregeln
 
@@ -643,7 +647,13 @@ Zeitplan im Worker ([Aufträge und Zeitpläne](adr/20260929-auftraege-und-zeitpl
 
 **K5: `OParl*.objects` außerhalb von `hub` und `insight_core`.** Summe des Ratchets für die Lese-Fassade
 `hub.ris.selectors` ([Kanonisches Modell](adr/20260929-kanonisches-modell.md), #522); je Datei steht der
-Stand in `scripts/ris_access_baseline.json`.
+Stand in `scripts/ris_access_baseline.json`, Abschnitt `files`.
+
+**K5b: `OParl*.objects` im Code des Bürgerportals in `insight_core`.** K5 nimmt `insight_core` als Eigentümer
+des Bestands ganz aus. Das Bürgerportal liegt aber noch dort und soll wie ein Fachmodul nur über die Fassade
+lesen ([Portal-Modul](adr/20260929-portal-modul.md), #1593). Welche Dateien dazugehören, steht in `PORTAL` in
+`scripts/check_ris_access_ratchet.py` (Inventar in #1593), der Stand je Datei im Abschnitt `buergerportal`
+der Baseline. Zieht Portal-Code nach `apps/portal` um, wechseln seine Einträge von K5b nach K5.
 
 **K6: `CASCADE` auf den RIS-Bestand.** Fremdschlüssel auf den RIS-Bestand sind `PROTECT` oder `SET_NULL`
 ([Fremdschlüssel auf den RIS-Bestand](adr/20260929-fremdschluessel-ris-bestand.md), #524). Die

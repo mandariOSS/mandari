@@ -7,6 +7,8 @@ Server-Side Rendering mit Django Templates + HTMX.
 
 from django.http import HttpRequest
 
+from hub.ris import selectors as ris_selectors
+
 from ..models import (
     OParlBody,
 )
@@ -43,14 +45,13 @@ def _resolve_active_body(request: HttpRequest) -> OParlBody | None:
         # "Alle Kommunen"-Modus: Auswahl NICHT überschreiben. Views, die zwingend
         # eine einzelne Kommune brauchen, erhalten die erste Kommune als Fallback,
         # is_all_bodies_mode() bleibt dabei True.
-        return OParlBody.objects.listed().first()
+        return ris_selectors.listed_bodies().first()
     if body_id:
-        try:
-            return OParlBody.objects.get(id=body_id)
-        except OParlBody.DoesNotExist:
-            pass
+        gewaehlt = ris_selectors.body_by_id(body_id)
+        if gewaehlt is not None:
+            return gewaehlt
     # Fallback: Erste Kommune als Standard
-    default_body = OParlBody.objects.listed().first()
+    default_body = ris_selectors.listed_bodies().first()
     if default_body:
         request.session["active_body_id"] = str(default_body.id)
         return default_body
@@ -153,7 +154,7 @@ class ActiveBodyRequiredMixin:
 
     def dispatch(self, request, *args, **kwargs):
         if is_all_bodies_mode(request):
-            bodies = list(OParlBody.objects.listed()[:2])
+            bodies = list(ris_selectors.listed_bodies()[:2])
             if len(bodies) == 1:
                 request.session["active_body_id"] = str(bodies[0].id)
                 request.session.modified = True

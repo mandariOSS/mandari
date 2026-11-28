@@ -10,7 +10,9 @@ from django.http import JsonResponse
 from django.views.decorators.cache import cache_page
 from django.views.decorators.http import require_GET
 
-from .models import ContactRequest, OParlBody
+from hub.ris import selectors as ris_selectors
+
+from .models import ContactRequest
 from .services import portal_stats
 
 
@@ -27,7 +29,7 @@ def stats(request):
     selbst über die großen Tabellen, er liest nur die Kommunen (wenige Zeilen) und summiert die gelisteten.
     """
     stand = portal_stats.api_stand()
-    gelistet = {str(pk) for pk in OParlBody.objects.listed().values_list("pk", flat=True)}
+    gelistet = {str(pk) for pk in ris_selectors.listed_bodies().values_list("pk", flat=True)}
     gesamt = portal_stats.api_gesamt(stand, gelistet)
     return JsonResponse(
         {
@@ -49,7 +51,7 @@ def stats_bodies(request):
     GET /api/stats/bodies/
     Returns list of all bodies with basic info.
     """
-    bodies = OParlBody.objects.listed().order_by("name")
+    bodies = ris_selectors.listed_bodies()
     # Zahlen je Kommune aus dem vorberechneten Stand statt vier Zählungen je Kommune (Issue #1478)
     je_kommune = portal_stats.api_stand()["je_kommune"]
     data = []
