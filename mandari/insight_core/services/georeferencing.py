@@ -928,22 +928,37 @@ def hauptteil(text: str) -> str:
 
 #: Postleitzahl und Ort einer Anschrift („48153 Münster“, „D-48153 Münster“)
 _PLZ_ORT_RE = re.compile(r"(?<![\w-])(?:D-[ \t]?)?\d{5}[ \t]+[A-ZÄÖÜ][\w.-]*")
-#: Hausnummer am Ende des Stücks vor Postleitzahl und Ort, dazwischen Leerraum, Komma oder ein Trennzeichen
-#: („Hammer Straße 10 · 48153 Münster“)
-_NR_AM_ENDE_RE = re.compile(r"(?<!\d)\d{1,4}[ \t]?[a-zA-Z]?[ \t]*[,·•|/–-]?[ \t]*$")
+#: Hausnummer vor Postleitzahl und Ort in derselben Zeile, getrennt durch Komma, Trennzeichen oder breiten Leerraum
+#: („Hammer Straße 10, 48153 Münster“, „Mauritzstraße 4-6 • 48143 Münster“). Ein einzelnes Leerzeichen genügt nicht:
+#: So stehen laufende Nummer und Kennziffer in Tabellen („Mitte 1 25405 Hafenweg“)
+_NR_VOR_PLZ_RE = re.compile(r"(?<!\d)\d{1,4}(?:[ \t]?[a-zA-Z])?(?:[ \t]*[,·•|/–-][ \t]*|[ \t]{2,}|\t)$")
+#: Hausnummer am Ende der Zeile über Postleitzahl und Ort („Münsterstraße 7⏎48167 Münster“)
+_NR_ZEILENENDE_RE = re.compile(r"(?<!\d)\d{1,4}(?:[ \t]?[a-zA-Z])?[ \t]*(?:[,·•|/–-][ \t]*)?$")
 #: Trenner vor dem Straßennamen einer Anschrift in derselben Zeile (Briefköpfe stehen oft zweispaltig in einer Zeile)
 _ANSCHRIFT_TRENNER_RE = re.compile(r"[,;\t|·•]| {2,}")
-#: Zeile eines Kontaktblocks (Telefon, Fax, E-Mail, Internet, Postfach): Eine Anschrift darin ist die eines Absenders,
-#: auch ohne Postleitzahl („Hammer Straße 10 · Tel. 0251 41842-0“)
-_KONTAKTZEILE_RE = re.compile(
-    r"^[^\n]*(?:\b(?:Tel|Telefon|Telefax|Fax|Fon|Mobil|Postfach)\b|E-?Mail|@|\bwww\.)[^\n]*$",
-    re.MULTILINE | re.IGNORECASE,
+#: Merkmal einer Kontaktzeile: Telefonnummer, E-Mail- oder Internetadresse, Postfach mit Nummer. Eine Anschrift in
+#: derselben Zeile ist die eines Absenders, auch ohne Postleitzahl („Hammer Straße 10 · Tel. 0251 41842-0“)
+_KONTAKT_RE = re.compile(
+    r"\b(?:Tel|Telefon|Telefax|Fax|Fon|Mobil)\b\.?:?[ \t]*\(?\+?\d|[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\bwww\.[\w-]+\.[a-z]|"
+    r"\bPostfach[ \t]+\d",
+    re.IGNORECASE,
 )
+#: Nur so kurze Zeilen gelten als Kontaktzeile; ein Absatz in einer einzigen Zeile (Text ohne Umbrüche) bleibt stehen
+_KONTAKTZEILE_MAX = 200
 #: Mindestens ein Wort vor der Hausnummer (der Straßenname); fehlt es, ist die Zahl eine laufende Nummer in einer
-#: Tabelle („2 25117 Mergelberg Nord“: Zeile 2, Spielplatz 25117), keine Anschrift
+#: Tabelle („2⏎25117 Mergelberg Nord“: Zeile 2, Spielplatz 25117), keine Anschrift
 _WORT_RE = re.compile(r"[^\W\d_]{3}")
-#: So weit reicht eine Anschrift höchstens vor die Hausnummer zurück (Zeichen)
+_NICHT_LEER_RE = re.compile(r"\S+")
+#: So weit reicht eine Anschrift höchstens vor die Hausnummer zurück: Zeichen und Wörter („Straße des 17. Juni“)
 _ANSCHRIFT_MAX = 80
+_ANSCHRIFT_WOERTER = 4
+
+
+def _ohne_kontaktzeilen(text: str) -> str:
+    """Kurze Zeilen mit Telefonnummer, E-Mail- oder Internetadresse oder Postfach fallen ganz weg."""
+    return "\n".join(
+        zeile for zeile in text.split("\n") if len(zeile) > _KONTAKTZEILE_MAX or not _KONTAKT_RE.search(zeile)
+    )
 
 
 def _zeilenanfang(text: str, ende: int) -> tuple[int, bool]:
@@ -953,13 +968,13 @@ def _zeilenanfang(text: str, ende: int) -> tuple[int, bool]:
     return (umbruch + 1, True) if umbruch >= 0 else (fenster, fenster == 0)
 
 
-def _anschrift_davor(text: str, zeile_anfang: int, ende: int) -> int | None:
+def _anschrift_davor(text: str, zeile_anfang: int, ende: int, nummer_re: re.Pattern[str]) -> int | None:
     """
     Anfang einer Anschrift (Straße und Hausnummer), die in ``text[zeile_anfang:ende]`` direkt vor ``ende`` endet: nach
-    dem letzten Trenner der Zeile, höchstens ``_ANSCHRIFT_MAX`` vor der Hausnummer. ``None`` ohne Hausnummer oder ohne
-    Wort davor.
+    dem letzten Trenner der Zeile, höchstens ``_ANSCHRIFT_WOERTER`` Wörter und ``_ANSCHRIFT_MAX`` Zeichen vor der
+    Hausnummer; der Satz davor bleibt. ``None`` ohne Hausnummer (``nummer_re``) oder ohne Wort davor.
     """
-    nummer = _NR_AM_ENDE_RE.search(text, max(zeile_anfang, ende - _ANSCHRIFT_MAX), ende)
+    nummer = nummer_re.search(text, max(zeile_anfang, ende - _ANSCHRIFT_MAX), ende)
     if nummer is None:
         return None
     anfang = max(zeile_anfang, nummer.start() - _ANSCHRIFT_MAX)
@@ -968,6 +983,9 @@ def _anschrift_davor(text: str, zeile_anfang: int, ende: int) -> int | None:
         letzter = treffer
     if letzter:
         anfang = letzter.end()
+    woerter = [treffer.start() for treffer in _NICHT_LEER_RE.finditer(text, anfang, nummer.start())]
+    if len(woerter) > _ANSCHRIFT_WOERTER:
+        anfang = woerter[-_ANSCHRIFT_WOERTER]
     return anfang if _WORT_RE.search(text, anfang, nummer.start()) else None
 
 
@@ -978,12 +996,12 @@ def ohne_anschriften(text: str) -> str:
     „Hammer Straße 10, 48153 Münster“ oder „Münsterstraße 7⏎48167 Münster“ ist eine Postanschrift (Geschäftsstelle
     einer Fraktion, Wohnung der Unterzeichnenden, Bezirksverwaltung), nicht der Ort, um den es im Vorgang geht. Die
     Straße davor fällt samt Hausnummer, Postleitzahl und Ort weg; nennt der Text dieselbe Straße an anderer Stelle ohne
-    Postleitzahl, wird sie dort weiter gefunden. Zeilen mit Telefon, Fax, E-Mail, Internetadresse oder Postfach fallen
-    ganz weg, auch ohne Postleitzahl. Der Titel läuft nicht hier durch.
+    Postleitzahl, wird sie dort weiter gefunden. Kurze Zeilen mit Telefonnummer, E-Mail- oder Internetadresse oder
+    Postfach fallen ganz weg, auch ohne Postleitzahl. Der Titel läuft nicht hier durch.
     """
     if not text:
         return ""
-    text = _KONTAKTZEILE_RE.sub("", text.replace("\r", ""))
+    text = _ohne_kontaktzeilen(text.replace("\r\n", "\n").replace("\r", "\n"))
     if not any(zeichen.isdigit() for zeichen in text):
         return text
     weg: list[tuple[int, int]] = []
@@ -991,11 +1009,11 @@ def ohne_anschriften(text: str) -> str:
         zeile_anfang, umbruch_davor = _zeilenanfang(text, plz.start())
         if text[zeile_anfang : plz.start()].strip():
             # „Straße 10, 48153 Münster“ in einer Zeile
-            anfang = _anschrift_davor(text, zeile_anfang, plz.start())
+            anfang = _anschrift_davor(text, zeile_anfang, plz.start(), _NR_VOR_PLZ_RE)
         elif umbruch_davor and zeile_anfang > 0:
             # „Straße 10“ in der Zeile über „48153 Münster“
             vorzeile_ende = zeile_anfang - 1
-            anfang = _anschrift_davor(text, _zeilenanfang(text, vorzeile_ende)[0], vorzeile_ende)
+            anfang = _anschrift_davor(text, _zeilenanfang(text, vorzeile_ende)[0], vorzeile_ende, _NR_ZEILENENDE_RE)
         else:
             anfang = None
         if anfang is not None:

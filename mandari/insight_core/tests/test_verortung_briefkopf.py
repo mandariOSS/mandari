@@ -11,6 +11,7 @@ wenn er nur als Teil eines Einrichtungs- oder Stadtteilnamens vorkommt.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 
 import pytest
@@ -93,7 +94,10 @@ class TestOhneAnschriften:
             ),
             ("Bezirksverwaltung, Wolbecker Str. 7a, D-48167 Beispielstadt", "Bezirksverwaltung", "Wolbecker"),
             ("Rathaus\r\nWolbecker Straße 7\r\n48167 Beispielstadt", "Rathaus", "Wolbecker"),
+            ("Rathaus\rWolbecker Straße 7\r48167 Beispielstadt\rDatum", "Rathaus\n", "Wolbecker"),
             ("Fraktionsbüro · Hafenweg 10 · 48153 Beispielstadt", "Fraktionsbüro", "Hafenweg"),
+            ("Erika Musterfrau Am Lindenhof 124, 48167 Beispielstadt", "", "Lindenhof"),
+            ("Kreisverband  Hafenweg 10  48153 Beispielstadt", "Kreisverband", "Hafenweg"),
         ],
     )
     def test_anschrift_faellt_weg(self, text: str, bleibt: str, faellt_weg: str) -> None:
@@ -127,10 +131,25 @@ class TestOhneAnschriften:
             # Tabelle mit laufender Nummer und fünfstelliger Spielplatznummer: keine Postleitzahl
             "Rang Nr. Spielplatz\n1 25405 Hafenweg 2. BA\n2 25117 Rothenburg Nord",
             "25117\nSP ROTHENBURG-NORD",
+            "Mitte 1 25405 Hafenweg 2. BA",
+            "Spielplatz 3 25117 Rothenburg Nord",
+            "Wolbecker Straße 2019 14500 Kfz/24h",
+            # Wörter wie „mobil“ oder „E-Mail“ im Fließtext machen keine Kontaktzeile
+            "Für mobil eingeschränkte Menschen wird die Haltestelle Hafenweg umgebaut.",
+            "Zebrastreifen am Hafenweg. Rückfragen per E-Mail an die Fraktion.",
+            # Ein Absatz in einer einzigen Zeile ist keine Kontaktzeile, auch mit Adresse darin
+            "Der Hafenweg wird saniert. " * 10 + "Kontakt: info@example.org, Tel. 0251 123",
         ],
     )
     def test_ohne_postleitzahl_bleibt_alles(self, text: str) -> None:
         assert ohne_anschriften(text) == text
+
+    def test_satz_vor_der_anschrift_bleibt(self, kommune: OParlBody) -> None:
+        text = ohne_anschriften(
+            "Die Stadt mietet für die OGS am Hafenweg Räume in der Wolbecker Straße 7, 48167 Beispielstadt an."
+        )
+        assert "Wolbecker" not in text
+        assert _namen(text, kommune) == ["Hafenweg"]
 
     def test_dieselbe_strasse_ohne_postleitzahl_bleibt_ein_ort(self, kommune: OParlBody) -> None:
         text = ohne_anschriften("Stadt Beispielstadt\nHafenweg 10\n48153 Beispielstadt\n\nDer Hafenweg wird saniert.")
@@ -143,8 +162,12 @@ class TestOhneAnschriften:
         assert [ort["name"] for ort in orte] == ["Hafenweg 10"]
 
     def test_lange_zeile_ohne_umbruch_bleibt_schnell(self) -> None:
-        text = ("Wort " * 20_000) + "Hafenweg 10, 48153 Beispielstadt " + ("48153 Beispielstadt " * 2_000)
-        assert "Hafenweg" not in ohne_anschriften(text)
+        text = ("Wort " * 20_000) + "Hafenweg 10, 48153 Beispielstadt " + ("1  48153 Beispielstadt " * 5_000)
+        beginn = time.perf_counter()
+        ergebnis = ohne_anschriften(text)
+        # Großzügige Grenze für langsame CI-Rechner; quadratischer Aufwand bräuchte hier Minuten
+        assert time.perf_counter() - beginn < 5
+        assert "Hafenweg" not in ergebnis and ergebnis.startswith("Wort Wort")
 
 
 class TestEinrichtungsname:
