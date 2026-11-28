@@ -1,7 +1,8 @@
 # =============================================================================
 # Mandari - CI Checks
 # =============================================================================
-# Lint, Typprüfung, Frontend-Gates, Link-Prüfung, Tests, Smoke, OParl-Validator, E2E, Docker-Build, CodeQL.
+# Lint, Typprüfung, Frontend-Gates, Link-Prüfung, Tests, Smoke, Installationsprofile, OParl-Validator, E2E,
+# Docker-Build, CodeQL.
 #
 # Pfadfilter (Issue #621): Der Job "Geänderte Bereiche" ordnet die Dateien eines
 # Pull Requests Bereichen zu; jeder Job läuft nur, wenn sein Bereich betroffen
@@ -1324,6 +1325,90 @@ jobs:
           scripts/smoke_insight_calendar.py
 
   # ===========================================================================
+  # Installationsprofile (Issue #1594): mandari je Profil starten
+  # ===========================================================================
+  # Session allein, Work allein, Bürgerportal allein und alle zusammen (MODUL_SESSION, MODUL_WORK, MODUL_PORTAL;
+  # apps/common/module.py, docs/adr/20261128-installationsprofile.md). Je Profil gegen PostgreSQL: Systemprüfung,
+  # Migrationen und manage.py installationsprofil_pruefen (Adressen, WebSocket, Zeitpläne, Abonnements,
+  # Probeabrufe mit 404 für abgeschaltete Module, keine geladenen Einstiege abgeschalteter Module). Läuft bei jeder
+  # Änderung am Anwendungscode (Bereich smoke). Die Vite-Dateien braucht keine geprüfte Seite (DJANGO_VITE_DEV_MODE).
+  installationsprofile:
+    name: Installationsprofile
+    needs: changes
+    if: needs.changes.outputs.smoke == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Jedes Profil läuft zu Ende, damit alle Befunde auf einmal sichtbar sind
+      fail-fast: false
+      matrix:
+        profil: [alle, session, work, portal]
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      REDIS_URL: ''
+      SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+      DEBUG: 'false'
+      DJANGO_VITE_DEV_MODE: '1'
+      MODUL_SESSION: ${{ (matrix.profil == 'alle' || matrix.profil == 'session') && 'an' || 'aus' }}
+      MODUL_WORK: ${{ (matrix.profil == 'alle' || matrix.profil == 'work') && 'an' || 'aus' }}
+      MODUL_PORTAL: ${{ (matrix.profil == 'alle' || matrix.profil == 'portal') && 'an' || 'aus' }}
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data:rw
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev libpango1.0-dev libffi-dev shared-mime-info pkg-config
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: |
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          uv pip install -r /tmp/requirements.lock
+          uv pip install --no-deps shared/
+
+      - name: Schlüssel der Feldverschlüsselung für diesen Job
+        run: |
+          schluessel=$(python -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')
+          echo "::add-mask::$schluessel"
+          echo "ENCRYPTION_MASTER_KEY=$schluessel" >> "$GITHUB_ENV"
+
+      - name: Systemprüfung (manage.py check)
+        run: cd mandari && python manage.py check --fail-level ERROR
+
+      - name: Migrationen
+        run: cd mandari && python manage.py migrate --noinput
+
+      - name: Statische Dateien (Manifest für DEBUG=false)
+        run: cd mandari && python manage.py collectstatic --noinput -v 0
+
+      - name: Profil prüfen (Adressen, Zeitpläne, Abonnements, Probeabrufe, Einstiege)
+        run: cd mandari && python manage.py installationsprofil_pruefen
+
+  # ===========================================================================
   # OParl-Konformität: externer Validator gegen eine Testinstanz mit Demo-Daten
   # ===========================================================================
   # Prüft beide OParl-Ausgaben (Aggregator und Session-Schnittstelle) mit oparl-validator-rs
@@ -1837,6 +1922,7 @@ jobs:
       - test-ergebnis
       - events-pgbouncer
       - smoke
+      - installationsprofile
       - oparl-validator
       - schnittstelle
       - e2e

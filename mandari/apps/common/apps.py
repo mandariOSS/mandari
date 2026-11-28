@@ -25,3 +25,6 @@ class CommonConfig(AppConfig):
         from .mail_domain import apply as apply_mail_domain
 
         apply_mail_domain()
+
+        # Systemprüfung der Module (Issue #1594): keine Adresse setzt ein abgeschaltetes Modul voraus
+        from . import module  # noqa: F401 – der Import registriert die Prüfung

@@ -46,6 +46,7 @@ from django.db.models import Case, DateTimeField, F, Max, Min, When
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
+from apps.common import module
 from hub.adapters.dcat import adressen, http, katalog, vokabular
 from hub.adapters.dcat.katalog import Angebot, Dienst, Katalog, Kennzahlen, Kontakt, Stelle
 from hub.api import changes
@@ -140,7 +141,10 @@ def _lizenz(body: OParlBody) -> vokabular.Lizenz | None:
     return vokabular.lizenz(getattr(settings, "OPARL_LICENSE_URL", ""))
 
 
-def _webseite(body: OParlBody) -> str:
+def _webseite(body: OParlBody) -> str | None:
+    """Seite der Kommune im Bürgerportal; ohne Bürgerportal keine (Issue #1594)."""
+    if not module.aktiv(module.PORTAL):
+        return None
     if body.slug:
         return f"{adressen.site()}{reverse('insight_core:insight:portal_entry', kwargs={'slug': body.slug})}"
     return f"{adressen.site()}{reverse('insight_core:insight:set_body', kwargs={'body_id': body.id})}"
@@ -157,7 +161,12 @@ def angebot(body: OParlBody, state: publication.BodyState | None = None) -> Ange
     uris = BestandUris(settings.OPARL_BASE_URL, settings.SITE_URL)
     basis = kommunen_adresse(body.id)
     feed = changes.enabled() and body.is_listed
-    kalender = f"{adressen.site()}{reverse('insight_core:insight:calendar_feed')}?kommune={body.id}"
+    # Sitzungskalender des Bürgerportals; ohne Bürgerportal keiner (Issue #1594)
+    kalender = (
+        f"{adressen.site()}{reverse('insight_core:insight:calendar_feed')}?kommune={body.id}"
+        if module.aktiv(module.PORTAL)
+        else None
+    )
     return Angebot(
         basis=basis,
         kommune=body.name,

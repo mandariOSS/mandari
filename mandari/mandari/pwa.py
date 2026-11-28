@@ -18,6 +18,8 @@ from django.templatetags.static import static
 from django.urls import reverse
 from django.views.decorators.http import require_GET
 
+from apps.common import module
+
 
 def _cache_version() -> str:
     """Build-abhängige Cache-Version für den Service Worker.
@@ -40,7 +42,8 @@ def manifest(request):
         "short_name": "mandari",
         "description": "mandari work — Arbeitsbereich für Fraktionen und kommunalpolitische Organisationen.",
         "lang": "de",
-        "start_url": "/work/",
+        # Ohne Work der Einstieg der Installation (Issue #1594)
+        "start_url": module.startseite(),
         "scope": "/",
         "display": "standalone",
         "orientation": "any",

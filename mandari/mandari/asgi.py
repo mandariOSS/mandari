@@ -19,17 +19,10 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mandari.settings")
 django_asgi_app = get_asgi_application()
 
 # Import WebSocket routing after Django is initialized
-from apps.session.routing import websocket_urlpatterns as session_websocket_urlpatterns  # noqa: E402
-from apps.work.faction.routing import websocket_urlpatterns as faction_websocket_urlpatterns  # noqa: E402
-from apps.work.meetings.routing import websocket_urlpatterns as meetings_websocket_urlpatterns  # noqa: E402
-from apps.work.motions.routing import websocket_urlpatterns as motions_websocket_urlpatterns  # noqa: E402
+# Nur die Routen eingeschalteter Module (Issue #1594, apps/common/module.py)
+from mandari.routing import websocket_urlpatterns as websocket_routen  # noqa: E402
 
-websocket_urlpatterns = (
-    motions_websocket_urlpatterns
-    + meetings_websocket_urlpatterns
-    + faction_websocket_urlpatterns
-    + session_websocket_urlpatterns
-)
+websocket_urlpatterns = websocket_routen()
 
 # Was beim Start im Hauptthread an Datenbankverbindungen geöffnet wurde (Importe,
 # App-Initialisierung), zurückgeben. Dieser Thread bedient keine Anfragen und hielte sie

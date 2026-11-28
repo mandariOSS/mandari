@@ -396,6 +396,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "512"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
           resources:
             requests:
               cpu: 50m
@@ -490,6 +497,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "512"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
           ports:
             - name: http
               containerPort: 8000
@@ -708,6 +722,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "512"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
           resources:
             requests:
               cpu: 50m
@@ -1010,6 +1031,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "512"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
           resources:
             requests:
               cpu: 50m
@@ -1118,6 +1146,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "512"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
             # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
             - name: TASKS_MAX_MEMORY_MB
               value: "400"
@@ -1324,6 +1359,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "512"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
           resources:
             requests:
               cpu: 50m
@@ -1432,6 +1474,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "2048"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
             # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
             - name: TASKS_MAX_MEMORY_MB
               value: "800"
@@ -1638,6 +1687,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "512"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
           resources:
             requests:
               cpu: 50m
@@ -1748,6 +1804,13 @@ spec:
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
               value: "512"
+            # Module der Installation (Installationsprofil, apps/common/module.py): an oder aus
+            - name: MODUL_SESSION
+              value: "an"
+            - name: MODUL_WORK
+              value: "an"
+            - name: MODUL_PORTAL
+              value: "an"
             # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
             - name: TASKS_MAX_MEMORY_MB
               value: "400"

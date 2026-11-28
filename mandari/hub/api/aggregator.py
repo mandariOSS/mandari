@@ -50,6 +50,7 @@ from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
 from django.urls import reverse
 
+from apps.common import module
 from hub.api import changes, kommparl, snapshot, verzeichnis
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import TimeFilters, list_cache_key, list_response, page_number
@@ -283,11 +284,13 @@ def directory_url(slug: str = "") -> str:
     """Seite „Offene Daten“: alle Kommunen mit ihren Adressen (Issue #1282), mit ``slug`` die einer Kommune.
 
     Mit ``INSIGHT_OFFENE_DATEN_URL`` die dort eingestellte Seite (Issue #1309) und je Kommune ``<Adresse><slug>/``,
-    sonst die Seite im Bürgerportal mit der Kommune als Sprungmarke.
+    sonst die Seite im Bürgerportal mit der Kommune als Sprungmarke; ohne Bürgerportal leer (Issue #1594).
     """
     extern = getattr(settings, "INSIGHT_OFFENE_DATEN_URL", "")
     if extern:
         return f"{extern}{slug}/" if slug else extern
+    if not module.aktiv(module.PORTAL):
+        return ""
     seite = f"{settings.SITE_URL.rstrip('/')}{reverse('insight_core:insight:offene_daten')}"
     return f"{seite}#kommune-{slug}" if slug else seite
 
@@ -313,7 +316,7 @@ def root_view(request: HttpRequest) -> HttpResponse:
             "system": uris.system(),
             "bodies": uris.bodies(),
             "documentation": DOCUMENTATION_URL,
-            "bodyDirectory": directory_url(),
+            **({"bodyDirectory": verzeichnisseite} if (verzeichnisseite := directory_url()) else {}),
             # MCP-Server für KI-Assistenten (Issue #1309), nur wenn eingeschaltet
             **({"mcp": url} if (url := mcp_url()) else {}),
             "specification": "https://oparl.org/spezifikation/",

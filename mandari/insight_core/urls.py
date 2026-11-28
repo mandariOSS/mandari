@@ -6,14 +6,27 @@ Struktur:
 - /insight/         → RIS-Portal (Ratsinformationen)
 - /public/          → Öffentliche Protokolle
 - /sitemap-insight- → Body-Sitemaps
+
+Ohne Bürgerportal (``MODUL_PORTAL=aus``, Issue #1594) bleiben nur robots.txt und die gemeinsamen Adressen unter
+/insight/ (``gemeinsame_patterns``), die auch Work nutzt. Die öffentlichen Protokolle brauchen zusätzlich Work.
 """
 
-from django.urls import include, path, re_path
+from django.urls import URLPattern, URLResolver, include, path, re_path
+
+from apps.common import module
 
 from . import views
 from .services.indexierung import listenseite, ohne_index, suchseite
 
 app_name = "insight_core"
+
+#: Adressen unter /insight/, die auch ohne Bürgerportal bleiben: Die Recherche in Work zeigt Dokumente und Karten über
+#: sie an. Sie gehören zur Drehscheibe (``apps.common.module``, ``gemeinsam`` des Bürgerportals).
+gemeinsame_patterns = [
+    path("dokumente/<uuid:file_id>/preview/", ohne_index(views.file_proxy), name="file_proxy"),
+    # Tile Proxy (DSGVO-konform - alle Map-Tiles werden serverseitig geladen)
+    path("tiles/<int:z>/<int:x>/<int:y>", ohne_index(views.tile_proxy), name="tile_proxy"),
+]
 
 # =============================================================================
 # Insight Portal URLs (RIS) - unter /insight/
@@ -111,7 +124,6 @@ insight_patterns = [
     path("termine/partials/calendar-events/", ohne_index(views.calendar_events), name="calendar_events"),
     # Dokumente (Files)
     path("dokumente/", views.FileListView.as_view(), name="file_list"),
-    path("dokumente/<uuid:file_id>/preview/", ohne_index(views.file_proxy), name="file_proxy"),
     # Suche
     path("suche/", suchseite(views.SearchView.as_view()), name="search"),
     path("suche/partials/results/", ohne_index(views.search_results), name="search_results"),
@@ -121,8 +133,6 @@ insight_patterns = [
     # Karte
     path("karte/", listenseite(views.MapView.as_view()), name="map"),
     path("karte/partials/markers/", ohne_index(views.map_markers), name="map_markers"),
-    # Tile Proxy (DSGVO-konform - alle Map-Tiles werden serverseitig geladen)
-    path("tiles/<int:z>/<int:x>/<int:y>", ohne_index(views.tile_proxy), name="tile_proxy"),
     # Nachbarschaft
     path("nachbarschaft/", listenseite(views.NeighborhoodView.as_view()), name="neighborhood"),
     path("nachbarschaft/autocomplete/", ohne_index(views.neighborhood_autocomplete), name="neighborhood_autocomplete"),
@@ -148,38 +158,59 @@ insight_patterns = [
     path("neuigkeiten/", views.NeuigkeitenView.as_view(), name="neuigkeiten"),
     # „Offene Daten“: OParl-Schnittstelle mit den Adressen je Kommune, verlinkt im Fuß und aus /oparl/ (Issue #1282)
     path("offene-daten/", views.offene_daten, name="offene_daten"),
+    *gemeinsame_patterns,
 ]
 
 # =============================================================================
 # Haupt-URL-Patterns
 # =============================================================================
+
+
+def portal_patterns() -> list[URLPattern | URLResolver]:
+    """Adressen des Bürgerportals (Sitemaps, /insight/, öffentliche Protokolle mit Work)."""
+    return [
+        # SEO: Sitemap-Index + Body-Sitemaps (bleiben in Mandari, da OParl-Daten hier liegen)
+        # Wichtig: Index VOR dem Slug-Pattern registrieren ("index" wäre ein gültiger Slug). Alle Pfade beginnen
+        # mit /sitemap-insight-: Nur dieser Präfix geht in der Produktion an Django (Caddyfile).
+        path("sitemap-insight-index.xml", views.sitemap_index, name="sitemap_index"),
+        # Vorgänge und Sitzungen je Kommune in nummerierten Dateien (Issue #914); vor dem Slug-Pattern, das
+        # „koeln-vorgaenge-2“ sonst als Slug läse
+        re_path(
+            r"^sitemap-insight-(?P<body_slug>[-a-zA-Z0-9_]+)-(?P<art>vorgaenge|sitzungen)-(?P<seite>[1-9][0-9]{0,5})"
+            r"\.xml$",
+            views.body_sitemap_seite,
+            name="body_sitemap_seite",
+        ),
+        path("sitemap-insight-<slug:body_slug>.xml", views.body_sitemap, name="body_sitemap"),
+        # Insight Portal (RIS) - alle unter /insight/
+        path("insight/", include((insight_patterns, "insight"))),
+        *module.nur_mit(module.WORK, oeffentliche_protokolle),
+    ]
+
+
+def oeffentliche_protokolle() -> list[URLPattern | URLResolver]:
+    """Öffentliche Fraktionsprotokolle (ohne Login); sie lesen Work."""
+    return [
+        path(
+            "public/<slug:body_slug>/protokolle/",
+            views.PublicProtocolListView.as_view(),
+            name="public_protocols",
+        ),
+        path(
+            "public/<slug:body_slug>/protokolle/<uuid:meeting_id>/",
+            views.PublicProtocolDetailView.as_view(),
+            name="public_protocol_detail",
+        ),
+    ]
+
+
+def ohne_portal() -> list[URLPattern | URLResolver]:
+    """Ohne Bürgerportal nur die gemeinsamen Adressen unter /insight/, im selben Namensraum."""
+    return [path("insight/", include((gemeinsame_patterns, "insight")))]
+
+
 urlpatterns = [
     # SEO: robots.txt (greift im Self-Hosting; in Produktion via Marketing-Site)
     path("robots.txt", views.robots_txt, name="robots_txt"),
-    # SEO: Sitemap-Index + Body-Sitemaps (bleiben in Mandari, da OParl-Daten hier liegen)
-    # Wichtig: Index VOR dem Slug-Pattern registrieren ("index" wäre ein gültiger Slug). Alle Pfade beginnen
-    # mit /sitemap-insight-: Nur dieser Präfix geht in der Produktion an Django (Caddyfile).
-    path("sitemap-insight-index.xml", views.sitemap_index, name="sitemap_index"),
-    # Vorgänge und Sitzungen je Kommune in nummerierten Dateien (Issue #914); vor dem Slug-Pattern, das
-    # „koeln-vorgaenge-2“ sonst als Slug läse
-    re_path(
-        r"^sitemap-insight-(?P<body_slug>[-a-zA-Z0-9_]+)-(?P<art>vorgaenge|sitzungen)-(?P<seite>[1-9][0-9]{0,5})"
-        r"\.xml$",
-        views.body_sitemap_seite,
-        name="body_sitemap_seite",
-    ),
-    path("sitemap-insight-<slug:body_slug>.xml", views.body_sitemap, name="body_sitemap"),
-    # Insight Portal (RIS) - alle unter /insight/
-    path("insight/", include((insight_patterns, "insight"))),
-    # Öffentliche Fraktionsprotokolle (ohne Login)
-    path(
-        "public/<slug:body_slug>/protokolle/",
-        views.PublicProtocolListView.as_view(),
-        name="public_protocols",
-    ),
-    path(
-        "public/<slug:body_slug>/protokolle/<uuid:meeting_id>/",
-        views.PublicProtocolDetailView.as_view(),
-        name="public_protocol_detail",
-    ),
+    *(portal_patterns() if module.aktiv(module.PORTAL) else ohne_portal()),
 ]

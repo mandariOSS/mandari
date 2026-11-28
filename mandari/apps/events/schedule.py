@@ -32,6 +32,9 @@ Schedulers geladen) oder als Dekorator über ``@task``::
 - ``EVENTS_SCHEDULES_DISABLED`` (Namen, kommagetrennt) schaltet einzelne Zeitpläne ab: Ihre Termine
   verstreichen ohne Auftrag (``disabled_schedules``). Wieder eingeschaltet, geht es mit dem nächsten
   Termin weiter; verstrichene werden nicht nachgeholt.
+- Zeitpläne abgeschalteter Module (``apps.common.module``, Issue #1594) gibt es nicht: Ihre ``schedules.py`` wird
+  nicht geladen, und was sonst ein solches Modul voraussetzt, registriert sich nicht. Wird das Modul wieder
+  eingeschaltet, holt ``Catchup.NACHHOLEN`` wie nach einem Ausfall des Schedulers einen Termin nach.
 
 Argumente müssen JSON sein und dürfen wie bei jedem Auftrag nur Kennungen enthalten.
 """
@@ -49,7 +52,8 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.tasks import Task
 from django.utils.json import normalize_json
-from django.utils.module_loading import autodiscover_modules
+
+from apps.common import module
 
 #: Name des Moduls, das je App nach Zeitplänen durchsucht wird
 MODULE_NAME: Final = "schedules"
@@ -282,6 +286,8 @@ def _registrieren[T: Task[Any, Any]](
             normalize_json([list(args), dict(kwargs or {})])
         except TypeError:
             raise ImproperlyConfigured(f"Zeitplan für {task.module_path}: Argumente müssen JSON sein") from None
+        if module.abgeschaltet_fuer(task.module_path) is not None:
+            return task  # setzt ein abgeschaltetes Modul voraus (Issue #1594)
         (ziel if ziel is not None else registry).add(
             Schedule(
                 name=name or task.module_path,
@@ -353,5 +359,5 @@ def disabled_schedules() -> frozenset[str]:
 
 
 def autodiscover() -> None:
-    """Lädt ``schedules.py`` aller installierten Apps, damit sich deren Zeitpläne registrieren."""
-    autodiscover_modules(MODULE_NAME)
+    """Lädt ``schedules.py`` aller installierten Apps außer denen abgeschalteter Module."""
+    module.entdecken(MODULE_NAME)
