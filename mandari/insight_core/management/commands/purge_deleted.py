@@ -26,7 +26,9 @@ Hinweise:
   werden NICHT gelöscht. Dry-Run und Ergebnis listen sie mit der Anzahl der
   verweisenden Datensätze je Typ (Issue #421).
 - Elasticsearch wird über die bestehenden post_delete-Signale aufgeräumt
-  (ELASTICSEARCH_AUTO_INDEX). Lokale Dateikopien (OParlFile.local_path)
+  (ELASTICSEARCH_AUTO_INDEX). Mit SEARCH_INDEX_SUBSCRIPTION=aktiv schweigen
+  sie; das Abonnement suchindex hat die Dokumente dann schon mit der
+  Löschmarkierung (ris.object.depublished) entfernt. Lokale Dateikopien (OParlFile.local_path)
   werden vor dem Löschen der DB-Zeile vom Datenträger entfernt, das Foto
   einer Person nach dem Löschen ihrer Zeile.
 - Wortmeldungen der Live-Übertragung mit Verweis auf eine markierte Person

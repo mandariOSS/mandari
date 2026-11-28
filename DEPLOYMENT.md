@@ -1080,18 +1080,18 @@ erst den Postausgang leeren lassen (`mandari_tasks_queued{queue="mail"}` = 0), s
 Worker den Auftrag nicht. `python manage.py postausgang` zeigt Zeilen je Zustand und verwaiste Zeilen
 (wartend ohne Auftrag); `--einreihen` reiht sie neu ein, `--verwerfen` gibt sie auf und löscht den Inhalt.
 
-### Suchindex als Abonnement (Schattenbetrieb)
+### Suchindex als Abonnement (Schattenbetrieb und Umschalten)
 
-Heute schreiben Django-Signale, der Ingestor und `reindex_elasticsearch` den Suchindex. Künftig
-schreibt ihn nur das Abonnement `suchindex` aus den `ris.*`-Ereignissen der Datendrehscheibe
-(Issue #526, Umschalten in #527). Vor dem Umschalten läuft es im Schattenbetrieb: Es pflegt
-Schattenindizes `schatten-papers`, `schatten-meetings`, `schatten-persons`,
+Bis zum Umschalten schreiben Django-Signale, der Ingestor und `reindex_elasticsearch` den Suchindex
+(die alten Wege). Danach schreibt ihn nur das Abonnement `suchindex` aus den `ris.*`-Ereignissen der
+Datendrehscheibe (Issue #526, Umschalten in #527). Vor dem Umschalten läuft es im Schattenbetrieb: Es
+pflegt Schattenindizes `schatten-papers`, `schatten-meetings`, `schatten-persons`,
 `schatten-organizations` und `schatten-files` mit derselben Abbildung wie der Live-Index, der
 unverändert weiterläuft.
 
 | Einstellung | Bedeutung |
 |---|---|
-| `SEARCH_INDEX_SUBSCRIPTION` | `aus` (Standard), `schatten`, `aktiv` (erst mit #527) |
+| `SEARCH_INDEX_SUBSCRIPTION` | `aus` (Standard), `schatten`, `aktiv` (Tabelle unten); gilt für Anwendung, Worker und Ingestor |
 | `SEARCH_INDEX_SHADOW_BODIES` | Kommunen des Schattenbetriebs (Kennungen, kommagetrennt; leer = alle) |
 | `SEARCH_INDEX_SHADOW_MAX_DOCS` | ungefähre Obergrenze aller Schattendokumente (Standard 100000, 0 = keine) |
 
@@ -1171,14 +1171,63 @@ der Vollbau neuer ist, bleiben `indexed` und `deleted` der Kennzahl bei 0 (auße
 Text erst nach dem Vollbau erkannt wurde); es wachsen nur `stale`, `skipped_body` und `absent`
 (Löschen eines Objekts, das nicht im Index steht, etwa eine Datei ohne erkannten Text).
 
-**Umschalten (erst mit #527):** `SEARCH_INDEX_SUBSCRIPTION=aktiv` allein genügt nicht. Steht das
-Abonnement in der Datenbank auf `schatten`, schreibt es weiter nur den Schattenindex. Im Admin
-(„Ereignistechnik → Abonnements“) erst „Pausieren“, dann „Fortsetzen (aktiv)“.
+**Wer schreibt den Live-Index?** Ein Schalter für alle drei Wege (Issue #527):
 
-**Rückfall:** `SEARCH_INDEX_SUBSCRIPTION=aus`, `docker compose up -d worker mandari`, dann
-`python manage.py suchindex_schatten loeschen --ja --abonnement`. Der Live-Index ist nie betroffen.
-`loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt (Schalter oder
-Zustand `schatten`); `--abonnement` zusätzlich, solange es überhaupt zugestellt wird.
+| `SEARCH_INDEX_SUBSCRIPTION` | Signale (`insight_core/signals.py`) | Ingestor | `reindex_elasticsearch` | Abonnement `suchindex` |
+|---|---|---|---|---|
+| `aus` | schreiben (`ELASTICSEARCH_AUTO_INDEX`) | schreibt (`ELASTICSEARCH_INDEXING_ENABLED`) | schreibt selbst | nicht registriert |
+| `schatten` | schreiben | schreibt | schreibt selbst | nur Schattenindex |
+| `aktiv` | schreiben nichts, bauen keine Dokumente | schreibt nicht | baut über das Abonnement (Version = Folgenummer) | Live-Index |
+
+Mit `aktiv` ist die Kennzahl K2a im Betrieb 1 (`docs/DATENDREHSCHEIBE.md`, Abschnitt 5, Einzelheit
+`bei_aktiv`). Steht das Abonnement in der Datenbank dann noch auf `schatten`, pflegte den Live-Index
+niemand: Die Zustellung hält an (Protokoll „wartet auf den Zustand aktiv“, Rückstand
+`mandari_events_lag_seconds{subscription="suchindex"}` wächst, `suchindex_schatten status` warnt) und
+holt die Ereignisse in den Live-Index nach, sobald das Abonnement auf `aktiv` steht.
+`reindex_elasticsearch --clear` gibt es mit `aktiv` nicht; einen leeren Index legt
+`setup_elasticsearch --reset` an, danach `reindex_elasticsearch`.
+
+**Umschalten (Compose):** in einem Zeitfenster ohne Sitzungen und Vollabgleich, nach dem Vergleich
+ohne unerklärte Abweichung (Checkliste in Issue #527). Vorher in den Betriebskalender.
+
+1. Admin („Ereignistechnik → Abonnements“): `suchindex` **pausieren**. Der Cursor bleibt stehen; die
+   alten Wege schreiben weiter den Live-Index.
+2. In der `.env` `SEARCH_INDEX_SUBSCRIPTION=aktiv` setzen, dann
+   `docker compose up -d mandari worker worker-heavy worker-live ingestor`. Ab dem Neustart schweigen
+   Signale und Ingestor; das pausierte Abonnement sammelt die Ereignisse.
+3. Admin: `suchindex` **„Fortsetzen (aktiv)“**. Die Zustellung holt alles seit Schritt 1 in den
+   Live-Index nach (`suchindex_schatten status`: Rückstand geht gegen 0).
+4. Live-Index einmal aus dem Bestand bauen, außerhalb der Hauptlast und als eigener Prozess:
+   `docker compose run --rm --no-deps mandari python manage.py reindex_elasticsearch` (mit `aktiv` über das
+   Abonnement, Version = höchste Folgenummer vor dem Lesen; je Kommune mit `--body <Kennung>`). Das
+   gleicht Felder an, die die alten Wege anders schrieben, und schließt Lücken aus dem Neustart.
+5. Nach 1 h und 24 h prüfen: Rückstand unter 5 min, keine geparkten oder toten Ereignisse,
+   `mandari_search_subscription_documents_total{target="live"}` wächst, Stichproben in der Suche.
+
+**Rückfall (Probe und Ernstfall):** zurück auf die alten Wege, ohne den Live-Index zu verlieren.
+
+1. In der `.env` `SEARCH_INDEX_SUBSCRIPTION=schatten` setzen (das Abonnement schreibt wieder nur den
+   Schattenindex) oder `aus` (es ruht ganz). Erst `docker compose up -d mandari ingestor`, dann
+   `docker compose up -d worker worker-heavy worker-live`: So schreiben die alten Wege wieder, bevor das
+   Abonnement den Live-Index loslässt.
+2. Änderungen aus der Zeit des Neustarts holt ein `reindex_elasticsearch --body <Kennung>` (jetzt der alte
+   Weg) für die betroffenen Kommunen nach; der nächste Abgleich des Ingestors schreibt nur, was sich seit
+   seinem letzten Lauf geändert hat.
+3. Der Zustand in der Datenbank bleibt `aktiv`. Mit `schatten` als Schalter schreibt das Abonnement
+   trotzdem nur den Schattenindex; wieder umschalten heißt dann nur Schritt 2 und 4 des Umschaltens
+   (Schalter `aktiv`, Neustart, Neuaufbau).
+
+Die Schattenindizes und das Abonnement entfernt: `SEARCH_INDEX_SUBSCRIPTION=aus`, Worker neu starten,
+dann `python manage.py suchindex_schatten loeschen --ja --abonnement`. Der Live-Index ist dabei nie
+betroffen. `loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt oder
+dafür bereitsteht (Schalter `schatten` oder Zustand `schatten`); `--abonnement` zusätzlich, solange es
+überhaupt zugestellt wird.
+
+**Vor dem Umschalten bekannt (Issue #527):** Der Löschabgleich (`manage.py loeschabgleich`,
+`insight_core/services/file_reconcile.py`) sperrt, entsperrt und ersetzt Dokumente ohne Ereignis. Bisher
+nahmen die Signale eine gesperrte Datei sofort aus dem Index; mit `aktiv` bliebe sie darin, bis ein anderes
+Ereignis sie neu baut oder ein Neuaufbau läuft. Im Vergleich zeigt sich das als überzählige Datei im
+Schattenindex.
 
 ### RIS-Projektor für Session-Mandanten (Schattenbetrieb)
 

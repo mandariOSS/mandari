@@ -13,6 +13,11 @@ Schattenindex (``insight_core.services.search_projection``): Dateitexte in klein
 der Datenbank gekürzt, von den Dateien eines Vorgangs nur der Anfang. Die Bulk-Anfragen sind nach Anzahl
 (``BATCH_SIZE``) und Bytes (``abonnement.BULK_BYTES``) begrenzt, sodass der Speicherbedarf nicht von der
 Größe einzelner Texte abhängt.
+
+Mit ``SEARCH_INDEX_SUBSCRIPTION=aktiv`` (Issue #527) schreibt der Befehl nicht selbst: Er baut den Live-Index über
+das Abonnement (``abonnement.vollbau``) mit der höchsten Folgenummer vor dem Lesen als externer Version. Danach
+eintreffende Ereignisse gewinnen, ältere verlieren gegen den Neuaufbau. ``--clear`` gibt es dann nicht; einen
+leeren Index legt ``setup_elasticsearch --reset`` an.
 """
 
 from __future__ import annotations
@@ -22,10 +27,13 @@ import uuid
 from typing import Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.exceptions import ValidationError
+from django.core.management.base import BaseCommand, CommandError
 
+from apps.events.dispatch import head_seq
 from insight_core.models import OParlBody
 from insight_core.services.search_projection import count_documents, iter_all_documents
+from insight_search import abonnement
 from insight_search.abonnement import BULK_BYTES
 from insight_search.indices import INDEXES
 
@@ -72,6 +80,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        if settings.SEARCH_INDEX_SUBSCRIPTION == "aktiv":
+            self._ueber_das_abonnement(options)
+            return
         try:
             from elasticsearch import Elasticsearch
             from elasticsearch.helpers import streaming_bulk
@@ -161,3 +172,40 @@ class Command(BaseCommand):
 
         elapsed = time.monotonic() - start_time
         self.stdout.write(self.style.SUCCESS(f"\nDone! {total_indexed} documents indexed in {elapsed:.1f}s"))
+
+    def _ueber_das_abonnement(self, options: dict[str, Any]) -> None:
+        """Neuaufbau mit ``SEARCH_INDEX_SUBSCRIPTION=aktiv``: über das Abonnement, Version = Folgenummer."""
+        if options.get("clear"):
+            raise CommandError(
+                "--clear gibt es mit SEARCH_INDEX_SUBSCRIPTION=aktiv nicht: Der Neuaufbau überschreibt jedes Dokument, "
+                "das Abonnement löscht, was aus dem Bestand fällt. Für einen leeren Index erst "
+                "setup_elasticsearch --reset, dann reindex_elasticsearch."
+            )
+        kommunen: list[uuid.UUID] = []
+        if options.get("body"):
+            try:
+                kommunen = [OParlBody.objects.get(id=options["body"]).pk]
+            except (OParlBody.DoesNotExist, ValueError, ValidationError):
+                raise CommandError(f"Body not found: {options['body']}") from None
+        indizes = [options["index"]] if options.get("index") else list(INDEXES)
+        es = abonnement.client()
+        start_time = time.monotonic()
+        # Vor dem Lesen: Was danach geschieht, hat eine höhere Folgenummer und gewinnt
+        version = head_seq()
+        self.stdout.write(
+            f"SEARCH_INDEX_SUBSCRIPTION=aktiv: Neuaufbau über das Abonnement {abonnement.NAME}, "
+            f"Version (Folgenummer) {version}"
+        )
+        gesamt = 0
+        fehlerhaft = False
+        for index in indizes:
+            self.stdout.write(f"Indexing {count_documents(index, kommunen)} {index}...")
+            tally = abonnement.vollbau(es, index, kommunen, version, shadow=False)
+            werte = ", ".join(f"{name} {anzahl}" for name, anzahl in tally.as_dict().items() if anzahl) or "nichts"
+            self.stdout.write(f"  {index}: {werte}")
+            gesamt += tally.indexed
+            fehlerhaft = fehlerhaft or bool(tally.rejected or tally.unavailable)
+        if fehlerhaft:
+            raise CommandError("Nicht alle Dokumente geschrieben (abgelehnt bzw. nicht verfügbar); Protokoll prüfen.")
+        elapsed = time.monotonic() - start_time
+        self.stdout.write(self.style.SUCCESS(f"\nDone! {gesamt} documents indexed in {elapsed:.1f}s"))

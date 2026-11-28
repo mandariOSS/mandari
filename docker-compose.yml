@@ -745,6 +745,9 @@ services:
       INGESTOR_DATENABGLEICH: ${INGESTOR_DATENABGLEICH:-true}
       # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
       INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
+      # Suchindex als Abonnement (gleicher Wert wie bei der Anwendung): mit "aktiv" schreibt der Ingestor nicht mehr
+      # in Elasticsearch, das übernimmt das Abonnement suchindex (#527)
+      SEARCH_INDEX_SUBSCRIPTION: ${SEARCH_INDEX_SUBSCRIPTION:-aus}
       # Dateien für den Text gleich in der Ablage der Anwendung ablegen (ein Abruf je Datei, #788)
       OPARL_FILES_ROOT: /app/files
       FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}

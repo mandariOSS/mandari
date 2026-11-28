@@ -229,6 +229,10 @@ class Settings(BaseSettings):
     # Elasticsearch Indexing
     elasticsearch_indexing_enabled: bool = True
     elasticsearch_batch_size: int = 500
+    # Suchindex als Abonnement der Anwendung (Issue #527, DEPLOYMENT.md „Suchindex als Abonnement“): Mit "aktiv"
+    # schreibt nur noch das Abonnement suchindex den Index, der Ingestor schreibt dann nicht mehr, gleich was
+    # ELASTICSEARCH_INDEXING_ENABLED sagt. Derselbe Schalter wie in der Anwendung (aus, schatten, aktiv).
+    search_index_subscription: str = "aus"
 
     # Ereignistechnik (docs/adr/20260929-ereignistechnik-postgres.md): Der Ingestor meldet Änderungen am
     # RIS-Bestand als ris.*-Ereignisse im Journal (events_event), in derselben Transaktion wie die
@@ -269,6 +273,11 @@ class Settings(BaseSettings):
     # Bremse (Issue #556, wie FILE_RECONCILE_MAX_MISSING beim Datei-Löschabgleich): Fehlen in einem
     # vollständigen Full-Crawl mehr Objekte eines Typs, zählt der Lauf für diesen Typ keines davon.
     scraper_tombstone_max_missing: int = 10
+
+
+def elasticsearch_writes_enabled(current: Settings) -> bool:
+    """Schreibt der Ingestor den Suchindex? Nicht ausgeschaltet und nicht, wenn ihn das Abonnement schreibt (#527)."""
+    return current.elasticsearch_indexing_enabled and current.search_index_subscription.strip().lower() != "aktiv"
 
 
 @lru_cache

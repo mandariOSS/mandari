@@ -67,7 +67,7 @@ from src.client.oparl_compat import (
     timestamps_unreliable,
 )
 from src.client.source_options import FullSyncWindow, SourceFetchOptions
-from src.config import settings
+from src.config import elasticsearch_writes_enabled, settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD
@@ -1886,13 +1886,12 @@ class SyncOrchestrator:
         )
         total_tombstoned = sum(len(ids) for ids in es_deletions.values())
         text_extracted = stats.get("text_extracted", 0) or 0
-        if settings.elasticsearch_indexing_enabled and (
-            full or total_synced > 0 or total_tombstoned > 0 or text_extracted > 0
-        ):
+        indexing = elasticsearch_writes_enabled(settings)
+        if indexing and (full or total_synced > 0 or total_tombstoned > 0 or text_extracted > 0):
             await self._index_body_elasticsearch(
                 body_id, stats, es_deletions, full, since=index_since(full, previous_sync)
             )
-        elif settings.elasticsearch_indexing_enabled and not full:
+        elif indexing and not full:
             console.print("[dim]  Elasticsearch indexing skipped (no changes)[/dim]")
 
         # Print summary
@@ -1929,7 +1928,12 @@ class SyncOrchestrator:
         Django setzt (z. B. organization_names), bleiben erhalten (Issue #429).
 
         Fehler landen in stats["errors"]; der Sync bricht dadurch nicht ab.
+
+        Mit ``SEARCH_INDEX_SUBSCRIPTION=aktiv`` schreibt nur noch das Abonnement ``suchindex`` der Anwendung den
+        Index (Issue #527); dann schreibt diese Methode nichts, auch wenn ein Aufrufer sie ruft.
         """
+        if not elasticsearch_writes_enabled(settings):
+            return
         total_tombstoned = sum(len(ids) for ids in es_deletions.values())
         try:
             from src.indexing.document_builders import (
