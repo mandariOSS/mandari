@@ -53,7 +53,7 @@ from _smoke_db import prepare_database  # noqa: E402
 prepare_database(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
-from apps.tenants.models import Membership, Organization, Role  # noqa: E402
+from apps.tenants.models import Membership, Organization, Permission, Role  # noqa: E402
 from apps.work.motions.models import DocumentFolder, FolderGuestShare, Motion, MotionShare  # noqa: E402
 from apps.work.notifications.models import Notification, NotificationPreference  # noqa: E402
 from insight_core.models import OParlBody, OParlSource  # noqa: E402
@@ -98,6 +98,10 @@ user_member = User.objects.create_user(
     email="member@example.org", password="test1234!", first_name="Max", last_name="Mitglied"
 )
 m_member = Membership.objects.create(user=user_member, organization=org)
+# Nur Lesen: Ein Mitglied erfährt von einer Freigabe nur, wenn es das Dokument auch öffnen darf (Issue #529)
+leserolle = Role.objects.create(organization=org, name="Lesen")
+leserolle.permissions.add(*Permission.objects.filter(codename__in=["motions.view", "motions.view_drafts"]))
+m_member.roles.add(leserolle)
 
 c_admin = client_for(user_admin)
 c_member = client_for(user_member)

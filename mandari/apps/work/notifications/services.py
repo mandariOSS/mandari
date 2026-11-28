@@ -256,18 +256,41 @@ class NotificationHub:
             return False
         return task is not None and task.noe_gesperrt(recipient)
 
+    @staticmethod
+    def _dokument_verschlossen(recipient, metadata: dict | None) -> bool:
+        """
+        Betrifft die Benachrichtigung (``motion_id``) ein Dokument, das der Empfänger heute nicht öffnen darf, das im
+        Papierkorb liegt oder das es nicht mehr gibt? Titel und Auszüge stehen im Text; zu einem endgültig gelöschten
+        Dokument lässt sich der Zugang nicht mehr prüfen. Nur für die E-Mail (``bezug_verborgen``).
+        """
+        motion_id = (metadata or {}).get("motion_id")
+        if not motion_id:
+            return False
+        from django.core.exceptions import ValidationError
+
+        from apps.work.motions.models import Motion
+
+        try:
+            motion = Motion.objects.filter(pk=motion_id, organization_id=recipient.organization_id).first()
+        except (ValueError, TypeError, ValidationError):
+            return False
+        return motion is None or motion.status == "deleted" or not motion.can_access(recipient)
+
     @classmethod
     def bezug_verborgen(cls, recipient, notification_type: str, metadata: Any) -> bool:
         """
-        Die Prüfungen aus ``send`` zum Bezug einer Nachricht (Fraktionssitzung, Aufgabe), am heutigen Stand.
+        Die Prüfungen aus ``send`` zum Bezug einer Nachricht (Fraktionssitzung, Aufgabe), am heutigen Stand, dazu der
+        Zugang zum Dokument (``motion_id``).
 
-        Der Versand der E-Mail läuft nach dem Anlegen in einem eigenen Auftrag. Dazwischen kann die Vereidigung
-        entzogen, der TOP nichtöffentlich gestellt oder die Sitzungsart geändert sein; eine versandte Mail lässt sich
-        nicht zurückholen.
+        Der Versand der E-Mail läuft nach dem Anlegen in einem eigenen Auftrag und wartet unter Umständen im
+        Postausgang. Dazwischen kann die Vereidigung entzogen, der TOP nichtöffentlich gestellt, die Sitzungsart
+        geändert oder die Freigabe des Dokuments entzogen sein; eine versandte Mail lässt sich nicht zurückholen.
         """
         metadata = metadata if isinstance(metadata, dict) else None
-        return cls._sitzung_verborgen(recipient, notification_type, metadata) or cls._aufgabe_verschlossen(
-            recipient, metadata
+        return (
+            cls._sitzung_verborgen(recipient, notification_type, metadata)
+            or cls._aufgabe_verschlossen(recipient, metadata)
+            or cls._dokument_verschlossen(recipient, metadata)
         )
 
     @classmethod
@@ -373,8 +396,9 @@ class NotificationHub:
         Darf die Vertretung den Bezug der Benachrichtigung sehen? Titel und Auszüge stehen im Text und gehen ihr
         auch per E-Mail zu.
 
-        Unterlagen aus „Nichtöffentliche Vorgänge“ erhält nur, wer sie öffnen darf (``_hidden_from``); dasselbe
-        gilt für Aufgaben zu einer solchen Unterlage oder aus einem nichtöffentlichen TOP einer Fraktionssitzung.
+        Nachrichten zu einem Dokument erhält nur, wer es öffnen darf (``can_access``, Issue #529; bisher nur für
+        Unterlagen aus „Nichtöffentliche Vorgänge“). Aufgaben zu einer solchen Unterlage oder aus einem
+        nichtöffentlichen TOP einer Fraktionssitzung erhält nur, wer den Bezug öffnen darf.
         Einladungen zu eigenen Terminen erhält nur, wer den Termin sehen darf (``termine.sichtbare``).
         Lässt sich der Bezug nicht mehr auflösen, wird nicht weitergeleitet. Alles andere geht wie bisher an die
         Vertretung, auch gewöhnliche private Aufgaben: Die Sperre reicht nicht weiter als beim Empfänger selbst.
@@ -389,8 +413,9 @@ class NotificationHub:
         org_id = deputy.organization_id
         try:
             if metadata.get("motion_id"):
+                # Wie bei Kommentaren und Freigaben: nur an eine Vertretung, die das Dokument selbst öffnen darf
                 motion = Motion.objects.filter(pk=metadata["motion_id"], organization_id=org_id).first()
-                return motion is not None and not cls._hidden_from(motion, deputy)
+                return motion is not None and motion.can_access(deputy)
             if metadata.get("task_id"):
                 task = (
                     Task.objects.filter(pk=metadata["task_id"], organization_id=org_id)
@@ -731,7 +756,17 @@ class NotificationHub:
         return motion.is_sworn_in_only() and not motion.can_access(recipient)
 
     @classmethod
-    def notify_document_shared(cls, motion, recipient, level: str, sharer, send_email: bool = True):
+    def notify_document_shared(
+        cls,
+        motion,
+        recipient,
+        level: str,
+        sharer,
+        send_email: bool = True,
+        *,
+        event_key: str | None = None,
+        direct_since: datetime | None = None,
+    ):
         """
         Dokument wurde für ein Mitglied oder einen Gast freigegeben (Issue #75).
 
@@ -751,6 +786,8 @@ class NotificationHub:
             actor=sharer,
             metadata={"motion_id": str(motion.id), "level": level},
             send_email=send_email,
+            event_key=event_key,
+            direct_since=direct_since,
         )
 
     @classmethod
@@ -788,30 +825,41 @@ class NotificationHub:
         )
 
     @classmethod
-    def notify_motion_comment(cls, comment, actor):
+    def notify_motion_comment(
+        cls,
+        comment,
+        actor,
+        *,
+        event_key: str | None = None,
+        send_email: bool = True,
+        direct_since: datetime | None = None,
+    ):
         """
         Neuer Kommentar: Autor:in des Dokuments und alle bisherigen
         Kommentator:innen informieren (ohne die kommentierende Person selbst).
-        Gäste erhalten die Nachricht per E-Mail.
+        Gäste erhalten die Nachricht per E-Mail. ``actor`` ``None``: nicht mehr zuzuordnen.
         """
         from apps.work.motions.models import MotionComment
 
         motion = comment.motion
+        actor_id = actor.id if actor is not None else None
         recipients = {}
-        if motion.author_id and motion.author_id != actor.id:
+        if motion.author_id and motion.author_id != actor_id:
             recipients[motion.author_id] = motion.author
-        previous = (
-            MotionComment.objects.filter(motion=motion)
-            .exclude(author=actor)
-            .exclude(id=comment.id)
-            .select_related("author__user")
-        )
+        previous = MotionComment.objects.filter(motion=motion).exclude(id=comment.id).select_related("author__user")
+        if actor_id is not None:
+            previous = previous.exclude(author_id=actor_id)
         for prev in previous:
             if prev.author is not None:  # Kommentare ehemaliger Mitglieder
                 recipients.setdefault(prev.author_id, prev.author)
 
         excerpt = " ".join((comment.content or "").split())[:140]
-        actor_name = actor.user.get_display_name() if hasattr(actor.user, "get_display_name") else actor.user.email
+        if actor is None:
+            actor_name = "Jemand"
+        elif hasattr(actor.user, "get_display_name"):
+            actor_name = actor.user.get_display_name()
+        else:
+            actor_name = actor.user.email
         sent = []
         for recipient in recipients.values():
             # Die Liste stammt aus früheren Kommentaren. Wer das Dokument inzwischen nicht mehr öffnen darf
@@ -826,6 +874,9 @@ class NotificationHub:
                 link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
                 actor=actor,
                 metadata={"motion_id": str(motion.id), "comment_id": str(comment.id)},
+                event_key=event_key,
+                send_email=send_email,
+                direct_since=direct_since,
             )
             if notification:
                 sent.append(notification)
@@ -837,6 +888,10 @@ class NotificationHub:
         motion,
         assignee,  # Membership
         assigner,  # Membership
+        *,
+        event_key: str | None = None,
+        send_email: bool = True,
+        direct_since: datetime | None = None,
     ):
         """Notify user when they are set as responsible for a document."""
         if cls._hidden_from(motion, assignee):
@@ -849,6 +904,9 @@ class NotificationHub:
             link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
             actor=assigner,
             metadata={"motion_id": str(motion.id)},
+            event_key=event_key,
+            send_email=send_email,
+            direct_since=direct_since,
         )
 
     @classmethod
@@ -896,10 +954,14 @@ class NotificationHub:
         cls,
         approval,  # MotionApproval
         requester,  # Membership
+        *,
+        event_key: str | None = None,
+        send_email: bool = True,
+        direct_since: datetime | None = None,
     ):
         """Notify a member that their approval was requested for a document."""
         motion = approval.motion
-        if cls._hidden_from(motion, approval.approver):
+        if approval.approver is None or cls._hidden_from(motion, approval.approver):
             return None
         return cls.send(
             recipient=approval.approver,
@@ -909,6 +971,9 @@ class NotificationHub:
             link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
             actor=requester,
             metadata={"motion_id": str(motion.id), "approval_id": str(approval.id)},
+            event_key=event_key,
+            send_email=send_email,
+            direct_since=direct_since,
         )
 
     @classmethod
@@ -917,6 +982,10 @@ class NotificationHub:
         approval,  # MotionApproval
         decider,  # Membership
         recipient,  # Membership (z. B. Autor oder Federführung)
+        *,
+        event_key: str | None = None,
+        send_email: bool = True,
+        direct_since: datetime | None = None,
     ):
         """Notify document owner about an approval decision."""
         motion = approval.motion
@@ -933,7 +1002,29 @@ class NotificationHub:
             link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
             actor=decider,
             metadata={"motion_id": str(motion.id), "approval_id": str(approval.id)},
+            event_key=event_key,
+            send_email=send_email,
+            direct_since=direct_since,
         )
+
+    @classmethod
+    def notify_motion_approval_decision(cls, approval, decider, **optionen: Any) -> list:
+        """Entschiedene Freigabe an Autor:in und Federführung melden (ehemalige Mitglieder haben keinen Verweis mehr).
+
+        ``optionen`` gehen an :meth:`notify_motion_approval_decided` (``event_key``, ``send_email``, ``direct_since``).
+        """
+        motion = approval.motion
+        recipients = {}
+        if motion.author:
+            recipients[motion.author_id] = motion.author
+        if motion.responsible:
+            recipients[motion.responsible_id] = motion.responsible
+        sent = []
+        for recipient in recipients.values():
+            notification = cls.notify_motion_approval_decided(approval, decider, recipient, **optionen)
+            if notification:
+                sent.append(notification)
+        return sent
 
     @classmethod
     def notify_member_joined(

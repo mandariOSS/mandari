@@ -107,6 +107,66 @@ def test_smtp_fehler_wird_im_runner_wiederholt(journal: JournalBackend, mitglied
     assert (zeile.status, zeile.attempts, zeile.result_code) == (TaskStatus.WARTEND, 1, "builtins.OSError")
 
 
+def test_mit_mail_queue_geht_die_mail_ueber_den_postausgang(
+    journal: JournalBackend, settings: Any, mitglied: Any
+) -> None:
+    """Issue #529: Der Auftrag legt die Mail in den Postausgang, einmal je Benachrichtigung; erst er versendet."""
+    from apps.common.models import MailOutbox
+    from apps.work.background_tasks import send_notification_email_task
+
+    settings.MAIL_QUEUE = ["work.benachrichtigung"]
+    notification = _benachrichtigen(mitglied)
+    assert run_pending(limit=1) == 1, "nur der Auftrag zur Benachrichtigung"
+
+    assert mail.outbox == []
+    zeile = MailOutbox.objects.get()
+    assert (zeile.kind, zeile.status) == ("work.benachrichtigung", MailOutbox.Status.WARTEND)
+    assert zeile.idempotency_key == f"work.benachrichtigung:{notification.id}"
+    assert zeile.organization_id == mitglied.organization_id, "versiegelt mit dem Mandantenschlüssel"
+    notification.refresh_from_db()
+    assert notification.email_sent
+
+    # Abbruch zwischen Postausgang und Vermerk: Die Wiederholung legt die Mail nicht noch einmal an
+    Notification.objects.filter(pk=notification.pk).update(email_sent=False)
+    cast(Any, send_notification_email_task).func(str(notification.id))
+    assert MailOutbox.objects.count() == 1
+
+    assert run_pending() == 1, "Versandauftrag des Postausgangs"
+    assert [m.to for m in mail.outbox] == [["empfaengerin@example.org"]]
+    zeile.refresh_from_db()
+    assert zeile.status == MailOutbox.Status.VERSENDET
+
+
+def test_wartende_mail_an_inzwischen_deaktivierte_wird_verworfen(
+    journal: JournalBackend, settings: Any, mitglied: Any
+) -> None:
+    """Zwischen Postausgang und Versand deaktiviert: Der Postausgang prüft vor dem Versand und verwirft die Mail."""
+    from apps.common.mail.outbox import VERWORFEN_VOR_VERSAND
+    from apps.common.models import MailOutbox
+
+    settings.MAIL_QUEUE = ["work.benachrichtigung"]
+    _benachrichtigen(mitglied)
+    assert run_pending(limit=1) == 1
+    mitglied.is_active = False
+    mitglied.save(update_fields=["is_active"])
+
+    assert run_pending() == 1
+    assert mail.outbox == []
+    zeile = MailOutbox.objects.get()
+    assert (zeile.status, zeile.error_code) == (MailOutbox.Status.FEHLGESCHLAGEN, VERWORFEN_VOR_VERSAND)
+    assert zeile.payload_encrypted is None, "Inhalt gelöscht"
+
+
+def test_pruefung_vor_dem_versand_laesst_mails_ohne_bezug_durch(mitglied: Any) -> None:
+    from apps.work.background_tasks import benachrichtigungsmail_zustellen
+
+    notification = _benachrichtigen(mitglied)
+    assert benachrichtigungsmail_zustellen(f"work.benachrichtigung:{notification.id}")
+    assert benachrichtigungsmail_zustellen(""), "ohne Schlüssel einer Benachrichtigung nichts zu prüfen"
+    assert not benachrichtigungsmail_zustellen("work.benachrichtigung:00000000-0000-4000-8000-000000000001")
+    assert not benachrichtigungsmail_zustellen("work.benachrichtigung:keine-kennung")
+
+
 def test_smtp_fehler_ohne_umschalten_bricht_die_anfrage_nicht_ab(mitglied: Any) -> None:
     with mock.patch("apps.common.mail.delivery.send_with", side_effect=OSError("SMTP nicht erreichbar")):
         notification = _benachrichtigen(mitglied)

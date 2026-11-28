@@ -69,7 +69,7 @@ REQUEST_ERRORS = Counter("mandari_http_request_errors_total", "Antworten mit Sta
 # ---------------------------------------------------------------------------
 
 EMAILS = Counter("mandari_emails_total", "Versandversuche von E-Mails", ["result"])
-# Mail-Dienst (apps.common.mail, Issue #528): je Mailart und Weg; result = sent | failed | queued | expired
+# Mail-Dienst (apps.common.mail, Issue #528): je Mailart und Weg; result = sent | failed | queued | expired | dropped
 MAILS = Counter("mandari_mail_total", "Mails des Mail-Dienstes nach Art, Weg und Ergebnis", ["kind", "route", "result"])
 PDF_DOCUMENTS = Counter("mandari_pdf_documents_total", "Erzeugte PDF-Dokumente", ["result"])
 PDF_DURATION = Histogram(

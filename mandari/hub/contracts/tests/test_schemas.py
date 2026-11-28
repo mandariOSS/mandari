@@ -63,6 +63,11 @@ STARTUMFANG: dict[str, tuple[str, str, frozenset[str]]] = {
     "session.allowance.approved": (EVENT, "apps.session", frozenset({PB})),
     "session.payment.exported": (EVENT, "apps.session", frozenset({PB})),
     "work.document.status_changed": (EVENT, "apps.work", frozenset({INTERN})),
+    "work.document.commented": (EVENT, "apps.work", frozenset({INTERN})),
+    "work.document.assigned": (EVENT, "apps.work", frozenset({INTERN})),
+    "work.document.approval_requested": (EVENT, "apps.work", frozenset({INTERN})),
+    "work.document.approval_decided": (EVENT, "apps.work", frozenset({INTERN})),
+    "work.document.shared": (EVENT, "apps.work", frozenset({INTERN})),
     "work.factionmeeting.invited": (EVENT, "apps.work", frozenset({INTERN})),
     "work.task.assigned": (EVENT, "apps.work", frozenset({INTERN})),
     "work.task.completed": (EVENT, "apps.work", frozenset({INTERN})),
@@ -145,7 +150,7 @@ def _vertrag(register: Registry, name: str) -> Contract:
 
 
 def test_register_enthaelt_genau_den_startumfang(register: Registry) -> None:
-    assert len(register.names(EVENT)) == 40
+    assert len(register.names(EVENT)) == 45
     assert len(register.names(COMMAND)) == 7
     assert set(register.names()) == set(STARTUMFANG)
     assert all(register.versions(name) == (1,) for name in STARTUMFANG)

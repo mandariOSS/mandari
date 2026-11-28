@@ -23,7 +23,10 @@ Mail-Dienst der Plattform (Issue #528): der einzige Einstieg für ausgehende Mai
   Mail über das eigene SMTP einer Organisation, die keinen Ersatzweg erlaubt: Ihr Scheitern muss der
   Auslöser sehen (#65), im Auftrag stünde es nur im Protokoll. ``MAIL_QUEUE`` leeren ist der Rückweg; was
   schon im Postausgang liegt, versendet der Worker trotzdem.
-- **Metrik:** ``mandari_mail_total{kind, route, result}`` (``sent``, ``failed``, ``queued``, ``expired``),
+- **Prüfung vor dem Versand:** ``vor_dem_versand(kind, pruefung)`` meldet für eine Mailart eine Prüfung an, die der
+  Postausgang vor jedem Versuch mit dem Idempotenzschlüssel aufruft; lehnt sie ab, wird die Mail verworfen
+  (``apps.common.mail.outbox``).
+- **Metrik:** ``mandari_mail_total{kind, route, result}`` (``sent``, ``failed``, ``queued``, ``expired``, ``dropped``),
   dazu wie bisher ``mandari_emails_total{result}``.
 
 Rückgabe ``True``: versendet bzw. zum Versand angenommen. Fehler: Ausnahme, mit ``fail_silently=True``
@@ -45,8 +48,9 @@ from apps.common.email import render_email
 
 from . import config, delivery, outbox
 from .message import Attachment, Mail, check_kind
+from .outbox import vor_dem_versand
 
-__all__ = ["Attachment", "Mail", "queue_enabled", "render_email", "send", "send_template"]
+__all__ = ["Attachment", "Mail", "queue_enabled", "render_email", "send", "send_template", "vor_dem_versand"]
 
 logger = logging.getLogger("apps.common.mail")
 

@@ -20,6 +20,59 @@ from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
 
+#: Mailart der Benachrichtigungsmails und Präfix ihres Idempotenzschlüssels im Postausgang
+MAILART = "work.benachrichtigung"
+SCHLUESSEL = f"{MAILART}:"
+
+
+def _empfaenger_hindernis(notification: Any) -> str | None:
+    """
+    Darf die Mail zu dieser Benachrichtigung am heutigen Stand (noch) an die Empfängerin gehen? Sonst der Grund.
+
+    Zwischen Anlegen und Versand kann die Mitgliedschaft oder das Konto deaktiviert sein oder die Person den Bezug
+    verloren haben (Vereidigung entzogen, TOP nichtöffentlich gestellt, Sitzungsart geändert): dieselben Prüfungen wie
+    beim Anlegen, denn eine Mail lässt sich nicht zurückholen.
+    """
+    from apps.work.notifications.services import NotificationHub
+
+    if not notification.recipient.is_active or not notification.recipient.user.is_active:
+        return "recipient is no longer active"
+    if NotificationHub.bezug_verborgen(notification.recipient, notification.notification_type, notification.metadata):
+        return "reference is no longer visible to the recipient"
+    return None
+
+
+def benachrichtigungsmail_zustellen(schluessel: str) -> bool:
+    """
+    Prüfung des Postausgangs vor jedem Versandversuch (``mail.vor_dem_versand``, Issue #529).
+
+    Eine Benachrichtigungsmail wartet im Postausgang, solange Warteschlange und Wiederholungen dauern. Sie geht nur
+    raus, wenn es die Benachrichtigung noch gibt und die Empfängerin sie noch bekommen darf (``_empfaenger_hindernis``).
+    Eine Mail dieser Art ohne Schlüssel einer Benachrichtigung hat keinen Bezug, den es zu prüfen gäbe.
+    """
+    from django.core.exceptions import ValidationError
+
+    from apps.work.notifications.models import Notification
+
+    if not schluessel.startswith(SCHLUESSEL):
+        return True
+    try:
+        notification = (
+            Notification.objects.select_related("recipient__user")
+            .filter(pk=schluessel.removeprefix(SCHLUESSEL))
+            .first()
+        )
+    except (ValueError, ValidationError):
+        return False
+    if notification is None:
+        logger.info("Notification email dropped before delivery, notification no longer exists")
+        return False
+    grund = _empfaenger_hindernis(notification)
+    if grund is not None:
+        logger.info("Notification email %s dropped before delivery, %s", notification.pk, grund)
+        return False
+    return True
+
 
 @task(queue_name="mail")
 def send_notification_email_task(notification_id: str):
@@ -29,7 +82,11 @@ def send_notification_email_task(notification_id: str):
     This task is scheduled to run in the background after a notification is created.
     Idempotent: a notification whose email was already sent is skipped (at-least-once delivery).
     Versand über den Mail-Dienst auf dem Weg der Organisation der Empfängerin (eigenes SMTP oder
-    mandari-Standard, Issue #528); der Auftrag versendet selbst, statt einen zweiten einzureihen.
+    mandari-Standard, Issue #528). Passt ``work.benachrichtigung`` zu ``MAIL_QUEUE``, legt der Auftrag die Mail
+    in den Postausgang (Issue #529): Wiederholung, endgültige Ablehnung und Aufbewahrung wie bei jeder Mail des
+    Postausgangs; der Schlüssel je Benachrichtigung legt sie auch bei einem wiederholten Auftrag nur einmal an. Vor
+    jedem Versandversuch prüft der Postausgang die Empfängerin erneut (``benachrichtigungsmail_zustellen``). Sonst
+    versendet der Auftrag selbst.
     """
     from apps.work.notifications.models import Notification, NotificationPreference
 
@@ -45,17 +102,10 @@ def send_notification_email_task(notification_id: str):
         logger.info("Notification email %s already sent, skipping", notification_id)
         return
 
-    # Zwischen Anlegen und Versand deaktiviert (Mitgliedschaft oder Konto): keine Mail mehr
-    if not notification.recipient.is_active or not notification.recipient.user.is_active:
-        logger.info("Notification email %s skipped, recipient is no longer active", notification_id)
-        return
-
-    # Zwischen Anlegen und Versand kann die Person den Bezug verloren haben (Vereidigung entzogen, TOP nichtöffentlich
-    # gestellt, Sitzungsart geändert): dieselben Prüfungen wie beim Anlegen, denn eine Mail lässt sich nicht zurückholen
-    from apps.work.notifications.services import NotificationHub
-
-    if NotificationHub.bezug_verborgen(notification.recipient, notification.notification_type, notification.metadata):
-        logger.info("Notification email %s skipped, reference is no longer visible to the recipient", notification_id)
+    # Zwischen Anlegen und Versand deaktiviert oder Bezug verloren: keine Mail mehr
+    grund = _empfaenger_hindernis(notification)
+    if grund is not None:
+        logger.info("Notification email %s skipped, %s", notification_id, grund)
         return
 
     recipient_email = notification.recipient.user.email
@@ -91,19 +141,19 @@ def send_notification_email_task(notification_id: str):
         logger.error(f"Failed to render email template: {e}")
         return
 
-    # Send email
+    # Send email (bzw. in den Postausgang legen, siehe oben)
     try:
         mail.send(
-            kind="work.benachrichtigung",
+            kind=MAILART,
             subject=notification.title,
             body=text_content,
             html_body=html_content,
             to=[recipient_email],
             organization=notification.recipient.organization,
-            sofort=True,
+            idempotency_key=f"{SCHLUESSEL}{notification.id}",
         )
 
-        # Mark as sent
+        # Mark as sent (bzw. zum Versand angenommen)
         notification.email_sent = True
         from django.utils import timezone
 

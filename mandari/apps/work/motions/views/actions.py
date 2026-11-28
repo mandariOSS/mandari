@@ -26,7 +26,7 @@ from apps.common.uploads import IMPORTABLE_DOCUMENTS, MB, validate_upload
 from apps.work.notifications.services import NotificationHub
 from apps.work.rahmen import NeueVorlageMixin
 
-from .. import freigaben, references, vorschlaege
+from .. import ereignisse, freigaben, references, vorschlaege
 from ..forms import (
     AIAssistantForm,
     MotionCommentForm,
@@ -144,9 +144,13 @@ class MotionCommentView(WorkViewMixin, View):
                         comment.mark_id = uuid.uuid4()
                 else:
                     comment.mark_id = uuid.uuid4()
-            comment.save()
-            # Beteiligte informieren (Autor:in + bisherige Kommentator:innen), Issue #75
-            NotificationHub.notify_motion_comment(comment, self.membership)
+            # Beteiligte informieren (Autor:in + bisherige Kommentator:innen), Issue #75: über das Abonnement
+            # „benachrichtigung“ (Ereignis in derselben Transaktion, Issue #529) bzw. wie bisher direkt
+            with transaction.atomic():
+                comment.save()
+                gemeldet = ereignisse.melden(ereignisse.KOMMENTIERT, motion, self.membership, comment=comment.id)
+            if not gemeldet:
+                NotificationHub.notify_motion_comment(comment, self.membership)
 
             if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                 return JsonResponse(
@@ -265,10 +269,14 @@ class MotionMetaUpdateView(WorkViewMixin, View):
                 motion.responsible = responsible
             else:
                 motion.responsible = None
-            motion.save(update_fields=["responsible", "updated_at"])
-
-            # Benachrichtigung an neu zugewiesene Person
-            if motion.responsible and motion.responsible_id != old_responsible_id:
+            # Benachrichtigung an neu zugewiesene Person: Ereignis in derselben Transaktion bzw. wie bisher direkt
+            neu_zugewiesen = bool(motion.responsible) and motion.responsible_id != old_responsible_id
+            with transaction.atomic():
+                motion.save(update_fields=["responsible", "updated_at"])
+                gemeldet = neu_zugewiesen and ereignisse.melden(
+                    ereignisse.ZUGEWIESEN, motion, self.membership, responsible=motion.responsible_id
+                )
+            if neu_zugewiesen and not gemeldet:
                 NotificationHub.notify_motion_assigned(motion, motion.responsible, self.membership)
 
         elif action == "set_contributors":
@@ -460,28 +468,35 @@ class MotionApprovalRequestView(WorkViewMixin, View):
                 status=403,
             )
 
-        approval, created = MotionApproval.objects.get_or_create(
-            motion=motion,
-            approver=approver,
-            approval_type=approval_type,
-        )
-        if not created and approval.approved is not None:
-            return JsonResponse({"error": "Diese Freigabe wurde bereits entschieden."}, status=400)
+        # Anfrage, Zugriff und Ereignis (Abonnement „benachrichtigung“, Issue #529) in einer Transaktion
+        gemeldet = False
+        with transaction.atomic():
+            approval, created = MotionApproval.objects.get_or_create(
+                motion=motion,
+                approver=approver,
+                approval_type=approval_type,
+            )
+            if not created and approval.approved is not None:
+                return JsonResponse({"error": "Diese Freigabe wurde bereits entschieden."}, status=400)
 
-        if created:
-            # Angefragte Person braucht Zugriff auf das Dokument,
-            # um die Freigabe entscheiden zu können
-            if not motion.can_access(approver):
-                MotionShare.objects.get_or_create(
-                    motion=motion,
-                    scope="user",
-                    user=approver.user,
-                    defaults={"level": "comment", "created_by": request.user},
+            if created:
+                # Angefragte Person braucht Zugriff auf das Dokument,
+                # um die Freigabe entscheiden zu können
+                if not motion.can_access(approver):
+                    MotionShare.objects.get_or_create(
+                        motion=motion,
+                        scope="user",
+                        user=approver.user,
+                        defaults={"level": "comment", "created_by": request.user},
+                    )
+                    if motion.visibility == "private":
+                        motion.visibility = "shared"
+                        motion.save(update_fields=["visibility"])
+                gemeldet = ereignisse.melden(
+                    ereignisse.FREIGABE_ANGEFRAGT, motion, self.membership, approval=approval.id
                 )
-                if motion.visibility == "private":
-                    motion.visibility = "shared"
-                    motion.save(update_fields=["visibility"])
 
+        if created and not gemeldet:
             NotificationHub.notify_motion_approval_requested(approval, self.membership)
 
         return JsonResponse({"success": True, "created": created})
@@ -515,17 +530,18 @@ class MotionApprovalDecideView(WorkViewMixin, View):
         approval.approved = decision == "approve"
         approval.comment = request.POST.get("comment", "").strip()
         approval.decided_at = timezone.now()
-        approval.save(update_fields=["approved", "comment", "decided_at"])
-
-        # Autor und Federführung informieren (ehemalige Mitglieder haben keinen Verweis mehr)
-        motion = approval.motion
-        recipients = {}
-        if motion.author:
-            recipients[motion.author_id] = motion.author
-        if motion.responsible:
-            recipients[motion.responsible_id] = motion.responsible
-        for recipient in recipients.values():
-            NotificationHub.notify_motion_approval_decided(approval, self.membership, recipient)
+        # Autor und Federführung informieren: Ereignis in derselben Transaktion (Issue #529) bzw. wie bisher direkt
+        with transaction.atomic():
+            approval.save(update_fields=["approved", "comment", "decided_at"])
+            gemeldet = ereignisse.melden(
+                ereignisse.FREIGABE_ENTSCHIEDEN,
+                approval.motion,
+                self.membership,
+                approval=approval.id,
+                approved=approval.approved,
+            )
+        if not gemeldet:
+            NotificationHub.notify_motion_approval_decision(approval, self.membership)
 
         return JsonResponse({"success": True, "approved": approval.approved})
 
@@ -913,13 +929,16 @@ class MotionShareUpdateView(WorkViewMixin, View):
                     # neue Freigaben erlauben es ohne Angabe
                     defaults={"level": level, "created_by": request.user, **freigaben.download_update(request.POST)},
                 )
-                # Benachrichtigung bei neuer Freigabe oder geänderter Stufe (Issue #75), nach dem Festschreiben und
+                # Benachrichtigung bei neuer Freigabe oder geänderter Stufe (Issue #75): als Ereignis in dieser
+                # Transaktion (Abonnement „benachrichtigung“, Issue #529), sonst wie bisher nach dem Festschreiben und
                 # damit außerhalb der Sperre
                 if previous is None or previous.level != level:
                     target = Membership.objects.filter(
                         user=user, organization=self.organization, is_active=True
                     ).first()
-                    if target is not None:
+                    if target is not None and not ereignisse.melden(
+                        ereignisse.FREIGEGEBEN, motion, self.membership, member=target.id, level=level
+                    ):
                         transaction.on_commit(
                             lambda: NotificationHub.notify_document_shared(motion, target, level, self.membership)
                         )

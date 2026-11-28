@@ -60,6 +60,11 @@ die diese Person nennen, im Journal geleert.
 | `submission.status_changed` | Ereignis | 1 | `apps.session` | nichtoeffentlich | Bearbeitungsstand einer Einreichung geändert |
 | `submission.submit` | Befehl | 1 | `apps.session` | nichtoeffentlich | Antrag einreichen |
 | `submission.withdraw` | Befehl | 1 | `apps.session` | nichtoeffentlich | Einreichung zurückziehen |
+| `work.document.approval_decided` | Ereignis | 1 | `apps.work` | intern | Freigabe eines Dokuments entschieden |
+| `work.document.approval_requested` | Ereignis | 1 | `apps.work` | intern | Freigabe eines Dokuments angefragt |
+| `work.document.assigned` | Ereignis | 1 | `apps.work` | intern | Federführung eines Dokuments übertragen |
+| `work.document.commented` | Ereignis | 1 | `apps.work` | intern | Dokument kommentiert |
+| `work.document.shared` | Ereignis | 1 | `apps.work` | intern | Dokument für eine Person freigegeben |
 | `work.document.status_changed` | Ereignis | 1 | `apps.work` | intern | Dokumentstatus in Work geändert |
 | `work.factionmeeting.invited` | Ereignis | 1 | `apps.work` | intern | Einladung zur Fraktionssitzung versendet |
 | `work.task.assigned` | Ereignis | 1 | `apps.work` | intern | Aufgabe zugewiesen |
@@ -1384,6 +1389,135 @@ Beispiel 2:
   "status": "converted",
   "previous_status": "accepted",
   "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
+}
+```
+
+### work.document.approval_decided v1
+
+**Freigabe eines Dokuments entschieden.** Eine angefragte Freigabe für ein Dokument in Work wurde erteilt oder abgelehnt. Aggregat: Document.
+
+- Art: Ereignis
+- Eigentümer: `apps.work`
+- Sichtbarkeit: intern
+- Schema: [`work.document.approval_decided/v1.json`](../mandari/hub/contracts/schemas/work.document.approval_decided/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `document` | ja | Zeichenkette (uuid) | Kennung des Dokuments. |
+| `organization` | ja | Zeichenkette (uuid) | Organisation, der das Dokument gehört. |
+| `approval` | ja | Zeichenkette (uuid) | Kennung der entschiedenen Freigabe. |
+| `approved` | ja | Wahrheitswert | Die Freigabe wurde erteilt (sonst abgelehnt). |
+
+Beispiel 1:
+
+```json
+{
+  "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+  "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "approval": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+  "approved": true
+}
+```
+
+### work.document.approval_requested v1
+
+**Freigabe eines Dokuments angefragt.** Für ein Dokument in Work wurde die Freigabe einer Mitgliedschaft angefragt. Aggregat: Document.
+
+- Art: Ereignis
+- Eigentümer: `apps.work`
+- Sichtbarkeit: intern
+- Schema: [`work.document.approval_requested/v1.json`](../mandari/hub/contracts/schemas/work.document.approval_requested/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `document` | ja | Zeichenkette (uuid) | Kennung des Dokuments. |
+| `organization` | ja | Zeichenkette (uuid) | Organisation, der das Dokument gehört. |
+| `approval` | ja | Zeichenkette (uuid) | Kennung der angefragten Freigabe; sie nennt die angefragte Mitgliedschaft und die Art der Freigabe. |
+
+Beispiel 1:
+
+```json
+{
+  "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+  "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "approval": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+}
+```
+
+### work.document.assigned v1
+
+**Federführung eines Dokuments übertragen.** Einer Mitgliedschaft wurde die Federführung für ein Dokument in Work übertragen. Aggregat: Document.
+
+- Art: Ereignis
+- Eigentümer: `apps.work`
+- Sichtbarkeit: intern
+- Schema: [`work.document.assigned/v1.json`](../mandari/hub/contracts/schemas/work.document.assigned/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `document` | ja | Zeichenkette (uuid) | Kennung des Dokuments. |
+| `organization` | ja | Zeichenkette (uuid) | Organisation, der das Dokument gehört. |
+| `responsible` | ja | Zeichenkette (uuid) | Mitgliedschaft, die jetzt die Federführung hat. |
+
+Beispiel 1:
+
+```json
+{
+  "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+  "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "responsible": "abcdef01-2345-4678-9abc-def012345678"
+}
+```
+
+### work.document.commented v1
+
+**Dokument kommentiert.** Zu einem Dokument (Antrag, Anfrage …) in Work wurde ein Kommentar oder Änderungsvorschlag geschrieben. Aggregat: Document.
+
+- Art: Ereignis
+- Eigentümer: `apps.work`
+- Sichtbarkeit: intern
+- Schema: [`work.document.commented/v1.json`](../mandari/hub/contracts/schemas/work.document.commented/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `document` | ja | Zeichenkette (uuid) | Kennung des Dokuments. |
+| `organization` | ja | Zeichenkette (uuid) | Organisation, der das Dokument gehört. |
+| `comment` | ja | Zeichenkette (uuid) | Kennung des Kommentars. |
+
+Beispiel 1:
+
+```json
+{
+  "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+  "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "comment": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+}
+```
+
+### work.document.shared v1
+
+**Dokument für eine Person freigegeben.** Ein Dokument in Work wurde für eine Mitgliedschaft oder einen Gastzugang freigegeben, oder die Stufe einer solchen Freigabe hat sich geändert. Aggregat: Document.
+
+- Art: Ereignis
+- Eigentümer: `apps.work`
+- Sichtbarkeit: intern
+- Schema: [`work.document.shared/v1.json`](../mandari/hub/contracts/schemas/work.document.shared/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `document` | ja | Zeichenkette (uuid) | Kennung des Dokuments. |
+| `organization` | ja | Zeichenkette (uuid) | Organisation, der das Dokument gehört. |
+| `member` | ja | Zeichenkette (uuid) | Mitgliedschaft bzw. Gastzugang, für die das Dokument freigegeben wurde. |
+| `level` | ja | Code: `view`, `comment`, `edit` | Stufe der Freigabe: Lesen, Kommentieren oder Bearbeiten. |
+
+Beispiel 1:
+
+```json
+{
+  "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+  "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "member": "abcdef01-2345-4678-9abc-def012345678",
+  "level": "comment"
 }
 ```
 

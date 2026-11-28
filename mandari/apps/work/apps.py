@@ -66,3 +66,10 @@ class WorkConfig(AppConfig):
         from apps.work.files import remove_organization_exports_on_commit
 
         demo.beim_loeschen_melden(remove_organization_exports_on_commit)
+
+        # Benachrichtigungsmails im Postausgang: vor jedem Versand prüfen, ob die Empfängerin sie noch bekommen darf
+        # (deaktiviert, Bezug verloren; Issue #529)
+        from apps.common import mail
+        from apps.work import background_tasks
+
+        mail.vor_dem_versand(background_tasks.MAILART, background_tasks.benachrichtigungsmail_zustellen)
