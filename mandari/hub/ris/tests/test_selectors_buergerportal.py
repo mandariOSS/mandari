@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from typing import Any
 
 import pytest
 from django.db.models import Q
@@ -114,10 +115,10 @@ def test_tagesordnung_als_ausdruck_je_sitzung(stadt: Musterstadt) -> None:
 
 def test_juengste_ergebnisse_mit_gremium_und_vorgang(stadt: Musterstadt) -> None:
     top_ausschuss = OParlAgendaItem.objects.get(meeting=stadt.vergangene_sitzung)
-    punkte = ris.recent_public_results([stadt.body], since=zeit(1, 0, monat=9), until=zeit(10, 0))
+    punkte: list[Any] = list(ris.recent_public_results([stadt.body], since=zeit(1, 0, monat=9), until=zeit(10, 0)))
     # Der nichtöffentliche Punkt mit Ergebnis bleibt außen vor, Punkte ohne Ergebnis ebenso
-    assert list(punkte) == [top_ausschuss]
-    assert list(punkte.values_list("gremium", flat=True)) == [stadt.ausschuss.name]
+    assert punkte == [top_ausschuss]
+    assert punkte[0].gremium == stadt.ausschuss.name
     ohne = ris.recent_public_results(
         [stadt.body], since=zeit(1, 0, monat=9), until=zeit(10, 0), exclude=Q(result__icontains="empfohlen")
     )
@@ -179,7 +180,8 @@ def test_gremien_der_listen_und_feeds(stadt: Musterstadt) -> None:
     assert ris.not_withdrawn_organization(stadt.rat.pk) == stadt.rat
     assert list(ris.organizations_by_ids([stadt.rat.pk, stadt.ausschuss.pk, "x"])) == [stadt.ausschuss, stadt.rat]
 
-    mit_sitzungen = dict(ris.public_organizations_with_meetings([stadt.body]).values_list("name", "meeting_count"))
+    gremien: list[Any] = list(ris.public_organizations_with_meetings([stadt.body]))
+    mit_sitzungen = {gremium.name: gremium.meeting_count for gremium in gremien}
     # Die gelöschte Sitzung zählt nicht; der Sonderausschuss hat keine
     assert mit_sitzungen == {stadt.ausschuss.name: 3, stadt.rat.name: 2}
 
