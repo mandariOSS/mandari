@@ -450,6 +450,80 @@ class TestAggregatorEinbettungen:
         assert _kurz(_feed(kommune), _namen(b)) == [("delete", "sitzung", "deleted"), ("delete", "top", "deleted")]
 
 
+class TestAggregatorVollstaendigkeit:
+    """Profil Änderungsfeed, „Vollständigkeit und Reihenfolge“ und „Operationen“ im Aggregator (Issue #1229)."""
+
+    def test_datei_an_einer_anderen_vorlage_nennt_beide(self, kommune: OParlBody, bestand: dict[str, Any]) -> None:
+        """Der Ingestor nennt die frühere Vorlage (``previous_paper``); sie gibt die Datei nicht mehr aus."""
+        b = bestand
+        neue = OParlPaper.objects.create(external_id=f"{RIS}/paper/2", body=kommune, name="Radweg II")
+        OParlFile.objects.filter(pk=b["anlage"].pk).update(paper=neue)
+        _e(
+            "ris.file.changed",
+            kommune.pk,
+            b["anlage"].pk,
+            paper=neue.pk,
+            previous_paper=b["vorlage"].pk,
+            change="added",
+        )
+
+        namen = {**_namen(b), f"{API}/paper/{neue.pk}": "neue"}
+        eintraege = _kurz(_feed(kommune), namen)
+
+        assert eintraege[0] == ("upsert", "anlage", None)
+        assert sorted(eintraege[1:]) == [("upsert", "neue", None), ("upsert", "vorlage", None)]
+
+    def test_aenderungen_von_session_erst_mit_dem_abgleich(self, kommune: OParlBody, bestand: dict[str, Any]) -> None:
+        """
+        Was mandari Session selbst meldet (``session:``), steht im Bestand erst nach dem Abgleich: Der Aggregator
+        nennt es erst mit dessen Ereignis (``source:``). Auch der Cursor des Snapshots richtet sich nur danach.
+        """
+        b = bestand
+        sitzung = b["sitzung"].pk
+        ereignis("ris.meeting.changed", kommune.pk, sitzung, mandant=MANDANT, nutzlast={"changed": ["name"]})
+
+        leer = _feed(kommune)
+        assert leer["data"] == []
+        assert changes.head(kommune.pk, ("source:",)) == 0
+        kopf = _zeilen(f"{API}/body/{kommune.pk}/kommparl/snapshot")[0]
+        assert kopf["cursor"] == leer["cursor"]
+
+        _e("ris.meeting.changed", kommune.pk, sitzung, changed=["name"])
+
+        assert _kurz(_feed(kommune, after=leer["cursor"]), _namen(b)) == [("upsert", "sitzung", None)]
+
+    def test_nichtoeffentlicher_punkt_ist_geloescht(self, kommune: OParlBody, bestand: dict[str, Any]) -> None:
+        """
+        Stellt die Quelle einen Punkt nichtöffentlich, meldet der Feed ``delete`` (``nonPublic``). Unter seiner
+        Adresse steht dann das gekürzte Objekt mit ``deleted: true``, und die Ausgabe nennt ihn sonst nirgends mehr.
+        """
+        b = bestand
+        top = b["top"]
+        OParlConsultation.objects.filter(pk=b["beratung"].pk).update(
+            meeting_external_id=b["sitzung"].external_id, agenda_item_external_id=top.external_id
+        )
+        OParlAgendaItem.objects.filter(pk=top.pk).update(public=False)
+        _zurueck(kommune.pk, "AgendaItem", top.pk, "nichtoeffentlich")
+
+        assert _kurz(_feed(kommune), _namen(b)) == [("delete", "top", "nonPublic"), ("upsert", "sitzung", None)]
+        adresse = f"{API}/agendaitem/{top.pk}"
+        geloescht = _json(adresse)
+        assert geloescht["deleted"] is True
+        assert "name" not in geloescht
+        sitzung = _json(f"{API}/meeting/{b['sitzung'].pk}")
+        assert [punkt["id"] for punkt in sitzung["agendaItem"]] == [f"{API}/agendaitem/{b['top2'].pk}"]
+        vorlage = _json(f"{API}/paper/{b['vorlage'].pk}")
+        assert all(beratung.get("agendaItem") != adresse for beratung in vorlage["consultation"])
+        liste = _json(f"{API}/body/{kommune.pk}/agendaitems")
+        assert adresse not in [punkt["id"] for punkt in liste["data"]]
+        inkrementell = _json(f"{API}/body/{kommune.pk}/agendaitems", modified_since="2000-01-01T00:00:00+00:00")
+        assert {"id": adresse, "deleted": True}.items() <= next(
+            punkt for punkt in inkrementell["data"] if punkt["id"] == adresse
+        ).items()
+        zeilen = _zeilen(f"{API}/body/{kommune.pk}/kommparl/snapshot")
+        assert adresse not in json.dumps(zeilen)
+
+
 class TestAggregatorSeiten:
     def _ereignisse(self, kommune: OParlBody, b: dict[str, Any]) -> None:
         """Zwei Punkte derselben Sitzung, dann eine Datei an Vorlage und Sitzung: 2 + 2 + 3 Einträge."""
