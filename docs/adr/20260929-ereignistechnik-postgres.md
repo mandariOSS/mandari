@@ -398,15 +398,21 @@ Umgesetzt in `apps/session/hub_events.py` (Erfassung in den Fachfunktionen) und
 
 ## Nachtrag zum Abonnement `benachrichtigung` (#529)
 
-Umgesetzt in `apps/work/notifications/abonnement.py` (Regeln je Ereignistyp) und
-`apps/work/tasks/ereignisse.py` (Erzeuger). Die Entscheidung bleibt; präzisiert wurde:
+Umgesetzt in `apps/work/notifications/abonnement.py` (Regeln je Ereignistyp),
+`apps/work/notifications/ereignisse.py` (Schalter und Schreiben) und den Erzeugern
+`apps/work/tasks/ereignisse.py` (Aufgaben) und `apps/work/motions/ereignisse.py` (Dokumente: Kommentar,
+Federführung, Freigabe angefragt und entschieden, Freigabe für eine Person; seit dem Nachtrag vom
+28.11.2026). Die Entscheidung bleibt; präzisiert wurde:
 
 - **Sicht mit externem Effekt:** Das Abonnement läuft transaktional; Benachrichtigungen und der
   Mailauftrag entstehen in der Transaktion der Zustellung. Der Mailauftrag trägt den
   Idempotenzschlüssel `<event_id>:<empfänger>`, die Benachrichtigung denselben Schlüssel eindeutig
   (`event_key`); Nachspielen legt nichts doppelt an.
-- **Empfänger beim Eigentümer:** Das Ereignis nennt Aufgabe, Organisation und gegebenenfalls Zuständige
-  bzw. Kommentar; wer benachrichtigt wird, liest die Regel bei der Zustellung aus der Aufgabe.
+- **Empfänger beim Eigentümer:** Das Ereignis nennt Aufgabe bzw. Dokument, Organisation und gegebenenfalls
+  Zuständige, Kommentar oder Freigabe; wer benachrichtigt wird, liest die Regel bei der Zustellung aus der
+  Aufgabe bzw. dem Dokument. Dabei gilt der Stand der Zustellung: Eine inzwischen entschiedene Freigabe wird
+  nicht mehr angefragt, ein Dokument, das die Person nicht mehr öffnen darf, nicht mehr als freigegeben
+  gemeldet.
 - **Schattenbetrieb ohne Schattenziel:** Die Regel läuft im Sicherungspunkt ohne Mail und wird
   zurückgerollt; gezählt wird, ob der bisherige Weg dieselbe Benachrichtigung angelegt hat.
 

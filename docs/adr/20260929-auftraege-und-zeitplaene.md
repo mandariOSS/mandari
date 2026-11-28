@@ -134,6 +134,17 @@ Zur Liste der Warteschlangen kam `text` (#1107): Sie liest die Textebene abgeleg
 Erkennung mit Tesseract bleibt in `ocr` im Dienst `worker-heavy`. Die vollständige Liste mit Parallelität steht in
 `TASK_QUEUES` (`mandari/mandari/settings.py`).
 
+## Nachtrag vom 28.11.2026: Benachrichtigungsmails über den Postausgang (#529)
+
+Der Auftrag zu einer Benachrichtigung (`send_notification_email_task`) versendet nicht mehr mit `sofort=True`:
+Passt `work.benachrichtigung` zu `MAIL_QUEUE`, legt er die Mail mit dem Schlüssel
+`work.benachrichtigung:<kennung>` in den Postausgang. Damit gelten für sie dieselbe Wiederholung, dieselbe
+Erkennung dauerhafter Ablehnung und dieselbe Aufbewahrung wie für jede andere Mail; ein wiederholter Auftrag legt
+sie nicht doppelt an. Die Liste `SOFORT` (Kennzahl K3b) enthält danach nur noch die Testmails, die Einreichung
+per E-Mail und die Ladung. Bei diesen drei braucht der Vorgang das Ergebnis je Empfänger sofort; als Auftrag
+müsste der Postausgang Zustellung und Scheitern an den Eigentümer zurückmelden, was eine eigene Entscheidung
+über Zustellnachweis und Oberfläche verlangt.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md) (Worker, Leases, Überwachung)

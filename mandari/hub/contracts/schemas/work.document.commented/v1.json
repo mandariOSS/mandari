@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:work.document.commented:v1",
+  "title": "Dokument kommentiert",
+  "description": "Zu einem Dokument (Antrag, Anfrage …) in Work wurde ein Kommentar oder Änderungsvorschlag geschrieben. Aggregat: Document.",
+  "x-kind": "event",
+  "x-owner": "apps.work",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "document",
+    "organization",
+    "comment"
+  ],
+  "properties": {
+    "document": {
+      "description": "Kennung des Dokuments.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization": {
+      "description": "Organisation, der das Dokument gehört.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "comment": {
+      "description": "Kennung des Kommentars.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+      "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "comment": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+    }
+  ]
+}

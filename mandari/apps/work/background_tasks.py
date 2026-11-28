@@ -29,7 +29,10 @@ def send_notification_email_task(notification_id: str):
     This task is scheduled to run in the background after a notification is created.
     Idempotent: a notification whose email was already sent is skipped (at-least-once delivery).
     Versand über den Mail-Dienst auf dem Weg der Organisation der Empfängerin (eigenes SMTP oder
-    mandari-Standard, Issue #528); der Auftrag versendet selbst, statt einen zweiten einzureihen.
+    mandari-Standard, Issue #528). Passt ``work.benachrichtigung`` zu ``MAIL_QUEUE``, legt der Auftrag die Mail
+    in den Postausgang (Issue #529): Wiederholung, endgültige Ablehnung und Aufbewahrung wie bei jeder Mail des
+    Postausgangs; der Schlüssel je Benachrichtigung legt sie auch bei einem wiederholten Auftrag nur einmal an.
+    Sonst versendet er selbst.
     """
     from apps.work.notifications.models import Notification, NotificationPreference
 
@@ -91,7 +94,7 @@ def send_notification_email_task(notification_id: str):
         logger.error(f"Failed to render email template: {e}")
         return
 
-    # Send email
+    # Send email (bzw. in den Postausgang legen, siehe oben)
     try:
         mail.send(
             kind="work.benachrichtigung",
@@ -100,10 +103,10 @@ def send_notification_email_task(notification_id: str):
             html_body=html_content,
             to=[recipient_email],
             organization=notification.recipient.organization,
-            sofort=True,
+            idempotency_key=f"work.benachrichtigung:{notification.id}",
         )
 
-        # Mark as sent
+        # Mark as sent (bzw. zum Versand angenommen)
         notification.email_sent = True
         from django.utils import timezone
 

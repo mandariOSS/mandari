@@ -3,9 +3,11 @@
 Abonnement ``benachrichtigung`` (Issue #529): Benachrichtigungen als Konsument der Datendrehscheibe.
 
 Statt die Benachrichtigung in der Anfrage anzulegen, meldet die Fachfunktion ein Ereignis
-(``apps.work.tasks.ereignisse``); dieses Abonnement legt daraus die Benachrichtigungen an und reiht die
-Mail als Auftrag ein. Regeln je Modul stehen in ``REGELN`` (Ereignistyp → Regel), zunächst für Aufgaben,
-die häufigste Quelle von Benachrichtigungen.
+(``apps.work.tasks.ereignisse``, ``apps.work.motions.ereignisse``; Schalter in
+``apps.work.notifications.ereignisse``); dieses Abonnement legt daraus die Benachrichtigungen an und reiht die
+Mail als Auftrag ein. Regeln je Modul stehen in ``REGELN`` (Ereignistyp → Regel): für Aufgaben (zugewiesen,
+erledigt, kommentiert) und Dokumente (kommentiert, Federführung, Freigabe angefragt bzw. entschieden, für eine
+Person freigegeben), die häufigsten Quellen von Benachrichtigungen.
 
 - **Eine Benachrichtigung je Ereignis und Empfänger:** Der Schlüssel ``<event_id>:<mitgliedschaft>``
   steht eindeutig an der Benachrichtigung (``event_key``) und ist der Idempotenzschlüssel des
@@ -13,7 +15,8 @@ die häufigste Quelle von Benachrichtigungen.
 - **Datenbank-Sicht:** Das Abonnement läuft transaktional; Benachrichtigungen, Mailauftrag und
   Cursor werden zusammen festgeschrieben.
 - **Inhalte beim Eigentümer:** Das Ereignis nennt nur Kennungen; Titel und Empfänger liest die Regel aus
-  der Aufgabe. Ist sie inzwischen gelöscht, entsteht nichts.
+  der Aufgabe bzw. dem Dokument. Ist es inzwischen gelöscht, entsteht nichts; ebenso nichts zu einer Freigabe,
+  die nicht mehr offen ist, und zu einem freigegebenen Dokument, das die Person nicht mehr öffnen darf.
 - **Schattenbetrieb:** Die Regel läuft in einem Sicherungspunkt ohne Mail, der wieder zurückgerollt
   wird; verglichen wird mit dem, was der bisherige Weg in der Anfrage angelegt hat
   (``mandari_notification_subscription_total{result="gleich"|"fehlt"}``).
@@ -151,11 +154,121 @@ def aufgabe_kommentiert(event: Event, **optionen: Any) -> list[Any]:
     return list(_hub().notify_task_comment(task, kommentar, kommentar.actor, event_key=str(event.event_id), **optionen))
 
 
+def _dokument(event: Event) -> Any:
+    from apps.work.motions.models import Motion
+
+    return (
+        Motion.objects.select_related("organization", "author__user", "responsible__user")
+        .filter(pk=_uuid(event.payload.get("document")), organization_id=_uuid(event.payload.get("organization")))
+        .first()
+    )
+
+
+def _mitgliedschaft(kennung: object, organization_id: Any) -> Membership | None:
+    from apps.tenants.models import Membership
+
+    return Membership.objects.select_related("user").filter(pk=_uuid(kennung), organization_id=organization_id).first()
+
+
+def _freigabe(event: Event, motion: Any) -> Any:
+    from apps.work.motions.models import MotionApproval
+
+    approval = (
+        MotionApproval.objects.select_related("approver__user")
+        .filter(pk=_uuid(event.payload.get("approval")), motion=motion)
+        .first()
+    )
+    if approval is not None:
+        approval.motion = motion
+    return approval
+
+
+def dokument_kommentiert(event: Event, **optionen: Any) -> list[Any]:
+    """``work.document.commented``: Autor:in und bisherige Kommentierende, außer wer kommentiert hat."""
+    from apps.work.motions.models import MotionComment
+
+    motion = _dokument(event)
+    if motion is None:
+        return []
+    kommentar = (
+        MotionComment.objects.select_related("author__user")
+        .filter(pk=_uuid(event.payload.get("comment")), motion=motion)
+        .first()
+    )
+    if kommentar is None:
+        return []
+    kommentar.motion = motion
+    return list(_hub().notify_motion_comment(kommentar, kommentar.author, event_key=str(event.event_id), **optionen))
+
+
+def dokument_zugewiesen(event: Event, **optionen: Any) -> list[Any]:
+    """``work.document.assigned``: die Mitgliedschaft mit der Federführung (nicht, wer sie selbst übernommen hat)."""
+    motion = _dokument(event)
+    if motion is None:
+        return []
+    # Auch eine inzwischen deaktivierte Mitgliedschaft geht an den NotificationHub (Weiterleitung an die Vertretung)
+    zustaendig = _mitgliedschaft(event.payload.get("responsible"), motion.organization_id)
+    if zustaendig is None:
+        return []
+    actor = _actor(event, motion.organization_id)
+    benachrichtigung = _hub().notify_motion_assigned(
+        motion, zustaendig, actor, event_key=str(event.event_id), **optionen
+    )
+    return [benachrichtigung] if benachrichtigung else []
+
+
+def freigabe_angefragt(event: Event, **optionen: Any) -> list[Any]:
+    """``work.document.approval_requested``: die angefragte Mitgliedschaft, solange die Freigabe offen ist."""
+    motion = _dokument(event)
+    if motion is None:
+        return []
+    approval = _freigabe(event, motion)
+    if approval is None or approval.approved is not None:
+        return []
+    actor = _actor(event, motion.organization_id)
+    benachrichtigung = _hub().notify_motion_approval_requested(
+        approval, actor, event_key=str(event.event_id), **optionen
+    )
+    return [benachrichtigung] if benachrichtigung else []
+
+
+def freigabe_entschieden(event: Event, **optionen: Any) -> list[Any]:
+    """``work.document.approval_decided``: Autor:in und Federführung, außer wer entschieden hat."""
+    motion = _dokument(event)
+    if motion is None:
+        return []
+    approval = _freigabe(event, motion)
+    if approval is None or approval.approved is None:
+        return []
+    actor = _actor(event, motion.organization_id)
+    return list(_hub().notify_motion_approval_decision(approval, actor, event_key=str(event.event_id), **optionen))
+
+
+def dokument_freigegeben(event: Event, **optionen: Any) -> list[Any]:
+    """``work.document.shared``: die Person, für die das Dokument freigegeben wurde, wenn sie es noch öffnen darf."""
+    motion = _dokument(event)
+    if motion is None:
+        return []
+    person = _mitgliedschaft(event.payload.get("member"), motion.organization_id)
+    if person is None or not motion.can_access(person):
+        return []
+    actor = _actor(event, motion.organization_id)
+    benachrichtigung = _hub().notify_document_shared(
+        motion, person, str(event.payload.get("level", "")), actor, event_key=str(event.event_id), **optionen
+    )
+    return [benachrichtigung] if benachrichtigung else []
+
+
 #: Regeln je Modul: Ereignistyp → Regel
 REGELN: Final[Mapping[str, Regel]] = {
     "work.task.assigned": aufgabe_zugewiesen,
     "work.task.completed": aufgabe_erledigt,
     "work.task.commented": aufgabe_kommentiert,
+    "work.document.commented": dokument_kommentiert,
+    "work.document.assigned": dokument_zugewiesen,
+    "work.document.approval_requested": freigabe_angefragt,
+    "work.document.approval_decided": freigabe_entschieden,
+    "work.document.shared": dokument_freigegeben,
 }
 TYPES: Final = tuple(REGELN)
 

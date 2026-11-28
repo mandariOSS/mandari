@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:work.document.shared:v1",
+  "title": "Dokument für eine Person freigegeben",
+  "description": "Ein Dokument in Work wurde für eine Mitgliedschaft oder einen Gastzugang freigegeben, oder die Stufe einer solchen Freigabe hat sich geändert. Aggregat: Document.",
+  "x-kind": "event",
+  "x-owner": "apps.work",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "document",
+    "organization",
+    "member",
+    "level"
+  ],
+  "properties": {
+    "document": {
+      "description": "Kennung des Dokuments.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization": {
+      "description": "Organisation, der das Dokument gehört.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "member": {
+      "description": "Mitgliedschaft bzw. Gastzugang, für die das Dokument freigegeben wurde.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "level": {
+      "description": "Stufe der Freigabe: Lesen, Kommentieren oder Bearbeiten.",
+      "type": "string",
+      "enum": [
+        "view",
+        "comment",
+        "edit"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+      "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "member": "abcdef01-2345-4678-9abc-def012345678",
+      "level": "comment"
+    }
+  ]
+}

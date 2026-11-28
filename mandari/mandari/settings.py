@@ -871,7 +871,7 @@ if SEARCH_INDEX_SUBSCRIPTION not in ("aus", "schatten", "aktiv"):
     raise ImproperlyConfigured("SEARCH_INDEX_SUBSCRIPTION muss aus, schatten oder aktiv sein.")
 # Benachrichtigungen als Abonnement der Datendrehscheibe (Issue #529, DEPLOYMENT.md „Benachrichtigungen als
 # Abonnement“): "aus" (Standard) benachrichtigt wie bisher in der Anfrage. "schatten" schreibt zusätzlich
-# Ereignisse der Aufgaben, das Abonnement "benachrichtigung" vergleicht nur. "aktiv" benachrichtigt nur
+# Ereignisse der Aufgaben und Dokumente, das Abonnement "benachrichtigung" vergleicht nur. "aktiv" benachrichtigt nur
 # noch über das Abonnement (Worker, Rolle dispatch). Rückweg: "aus".
 WORK_NOTIFICATION_SUBSCRIPTION = os.environ.get("WORK_NOTIFICATION_SUBSCRIPTION", "aus").strip().lower() or "aus"
 if WORK_NOTIFICATION_SUBSCRIPTION not in ("aus", "schatten", "aktiv"):

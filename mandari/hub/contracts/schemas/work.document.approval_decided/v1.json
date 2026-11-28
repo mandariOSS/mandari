@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:work.document.approval_decided:v1",
+  "title": "Freigabe eines Dokuments entschieden",
+  "description": "Eine angefragte Freigabe für ein Dokument in Work wurde erteilt oder abgelehnt. Aggregat: Document.",
+  "x-kind": "event",
+  "x-owner": "apps.work",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "document",
+    "organization",
+    "approval",
+    "approved"
+  ],
+  "properties": {
+    "document": {
+      "description": "Kennung des Dokuments.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization": {
+      "description": "Organisation, der das Dokument gehört.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "approval": {
+      "description": "Kennung der entschiedenen Freigabe.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "approved": {
+      "description": "Die Freigabe wurde erteilt (sonst abgelehnt).",
+      "type": "boolean"
+    }
+  },
+  "examples": [
+    {
+      "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+      "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "approval": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+      "approved": true
+    }
+  ]
+}
