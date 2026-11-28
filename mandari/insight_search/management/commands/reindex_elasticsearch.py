@@ -27,11 +27,10 @@ import uuid
 from typing import Any
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.events.dispatch import head_seq
-from insight_core.models import OParlBody
+from hub.ris.selectors import public_body
 from insight_core.services.search_projection import count_documents, iter_all_documents
 from insight_search import abonnement
 from insight_search.abonnement import BULK_BYTES
@@ -111,12 +110,11 @@ class Command(BaseCommand):
         body_name = ""
         kommunen: list[uuid.UUID] = []
         if body_uuid:
-            try:
-                body = OParlBody.objects.get(id=body_uuid)
-                body_name = body.name or body.short_name or str(body.id)
-            except OParlBody.DoesNotExist:
+            body = public_body(body_uuid)
+            if body is None:
                 self.stderr.write(self.style.ERROR(f"Body not found: {body_uuid}"))
                 return
+            body_name = body.name or body.short_name or str(body.id)
             kommunen = [body.pk]
 
         start_time = time.monotonic()
@@ -183,10 +181,10 @@ class Command(BaseCommand):
             )
         kommunen: list[uuid.UUID] = []
         if options.get("body"):
-            try:
-                kommunen = [OParlBody.objects.get(id=options["body"]).pk]
-            except (OParlBody.DoesNotExist, ValueError, ValidationError):
-                raise CommandError(f"Body not found: {options['body']}") from None
+            body = public_body(options["body"])
+            if body is None:
+                raise CommandError(f"Body not found: {options['body']}")
+            kommunen = [body.pk]
         indizes = [options["index"]] if options.get("index") else list(INDEXES)
         es = abonnement.client()
         start_time = time.monotonic()

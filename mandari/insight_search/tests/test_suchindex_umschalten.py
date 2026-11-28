@@ -96,6 +96,18 @@ def _bestand_aendern(body: OParlBody) -> None:
     person.delete()
 
 
+def _mitschreiben(
+    name: str, bauen: Callable[[Any], dict[str, Any]], gebaut: list[str]
+) -> Callable[[Any], dict[str, Any]]:
+    """Dokumentbauer der Signale, der sich merkt, dass er gerufen wurde."""
+
+    def bauen_und_merken(objekt: Any) -> dict[str, Any]:
+        gebaut.append(name)
+        return bauen(objekt)
+
+    return bauen_und_merken
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(("modus", "schreibt"), [("aktiv", False), ("schatten", True), ("aus", True)])
 def test_signale_schreiben_mit_aktiv_nichts(
@@ -112,8 +124,7 @@ def test_signale_schreiben_mit_aktiv_nichts(
     monkeypatch.setattr(signals, "_get_elasticsearch_client", lambda: client)
     gebaut: list[str] = []
     for name in ("_paper_to_doc", "_meeting_to_doc", "_organization_to_doc", "_person_to_doc", "_file_to_doc"):
-        echt = getattr(signals, name)
-        monkeypatch.setattr(signals, name, lambda objekt, _echt=echt, _name=name: gebaut.append(_name) or _echt(objekt))
+        monkeypatch.setattr(signals, name, _mitschreiben(name, getattr(signals, name), gebaut))
 
     with django_capture_on_commit_callbacks(execute=True):
         _bestand_aendern(kommune("Beispielstadt"))
@@ -147,6 +158,7 @@ def test_neuaufbau_mit_aktiv_ueber_das_abonnement(
     body, andere = kommune("Gewählt"), kommune("Andere")
     vorgang, neuer, fremd = _vorgang(body), _vorgang(body), _vorgang(andere)
     letzte = nummeriert()
+    assert letzte.seq is not None
     # Ein Ereignis nach dem Lesen des Neuaufbaus hat eine höhere Folgenummer und gewinnt
     es.ablegen("papers", {"id": str(neuer.pk), "name": "neuerer Stand"}, version=letzte.seq + 5)
 
