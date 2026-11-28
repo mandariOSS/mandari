@@ -90,7 +90,9 @@ class TestEinstieg:
             "oparl-mandant-nichtoeffentlich",
             "einreichung",
             "session-v1",
+            "befehle",
         ]
+        assert bereiche["befehle"]["entry"] == f"{SITE}/api/mandari/v1/{{bereich}}/{{mandant}}/befehle/"
         assert bereiche["oparl-mandant-nichtoeffentlich"]["entry"] == (
             f"{SITE}/session/{{tenant_slug}}/api/oparl/nichtoeffentlich/"
         )
@@ -157,6 +159,7 @@ class TestBeschreibung:
             "OParl je Mandant, nichtöffentlich",
             "Profil Einreichung",
             "Session-API v1",
+            "Befehle",
         ]
         for method, path, operation in operations(beschreibung):
             assert len(operation["tags"]) == 1 and operation["tags"][0] in tags, (method, path)
@@ -176,6 +179,7 @@ class TestBeschreibung:
             "/session/{tenant_slug}/api/oparl/paper/{id}/",
             "/session/{tenant_slug}/api/oparl/file/{id}/download/",
             "/api/v1/session/{tenant_slug}/applications/submit/",
+            "/api/mandari/v1/session/{mandant}/befehle/session.textblock.create/v1",
         ):
             assert path in paths, path
 

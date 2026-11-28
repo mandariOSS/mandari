@@ -524,7 +524,7 @@ Fitnessfunktionen, aus denen ein Teil der Zahlen stammt (Spalte „Quelle“).
 
 ### 5.1 Letzte Erhebung
 
-Erhoben am 28. November 2026 am Stand `91a6d14a` (`dev`) mit #PRNUMMER, Anlass: Befehlsschicht, Kennzahl K9 neu.
+Erhoben am 28. November 2026 am Stand `91a6d14a` (`dev`) mit #1607, Anlass: Befehlsschicht, Kennzahl K9 neu.
 
 | Nr. | Kennzahl | Wert | Ziel | Quelle |
 |---|---|---:|---:|---|
@@ -572,7 +572,7 @@ aufsetzt, und den Pull Request, dessen Änderungen mitgezählt sind. K8 trägt e
 | Datum | Stand | Anlass | K1 | K2a | K2b | K3a | K3b | K4 | K5 | K6a | K6b | K7 | K8 | K9 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 2026-11-10 | `3a63808d` + #1304 | erste Erhebung | 55 | 4 | 7 | 32 | 6 | 0 | 126 | 0 | 13 | 54 | – | – |
-| 2026-11-28 | `91a6d14a` + #PRNUMMER | Befehlsschicht, K9 neu | 56 | 4 | 7 | 34 | 6 | 0 | 125 | 0 | 13 | 54 | – | 204 |
+| 2026-11-28 | `91a6d14a` + #1607 | Befehlsschicht, K9 neu | 56 | 4 | 7 | 34 | 6 | 0 | 125 | 0 | 13 | 54 | – | 204 |
 
 ### 5.3 Zählregeln
 
