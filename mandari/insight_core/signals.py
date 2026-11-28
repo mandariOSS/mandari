@@ -2,7 +2,10 @@
 """
 Django Signals für automatische Elasticsearch-Indexierung.
 
-Aktualisiert die Suchindizes automatisch bei Änderungen an OParl-Modellen.
+Aktualisiert die Suchindizes automatisch bei Änderungen an OParl-Modellen. Ein alter Weg: Mit
+``SEARCH_INDEX_SUBSCRIPTION=aktiv`` schreibt nur noch das Abonnement ``suchindex`` den Index
+(``insight_search.abonnement``, Issue #527); die Signale schreiben dann nichts und bauen auch keine Dokumente.
+Was sie sonst noch tun (Abo-Hinweise verwerfen, Fotos aus der Ablage nehmen), bleibt.
 """
 
 from __future__ import annotations
@@ -35,8 +38,21 @@ from .services.search_documents import person_to_doc as _person_to_doc
 logger = logging.getLogger(__name__)
 
 
+def subscription_writes_index() -> bool:
+    """
+    Schreibt das Abonnement ``suchindex`` den Index (``SEARCH_INDEX_SUBSCRIPTION=aktiv``, Issue #527)? Dann bauen die
+    Signale auch keine Dokumente mehr.
+    """
+    return getattr(settings, "SEARCH_INDEX_SUBSCRIPTION", "aus") == "aktiv"
+
+
 def is_auto_indexing_enabled() -> bool:
-    """Prüft ob automatische Indexierung aktiviert ist."""
+    """
+    Schreiben die Signale den Suchindex? Nicht mit ``ELASTICSEARCH_AUTO_INDEX=False`` und nicht, sobald das
+    Abonnement ``suchindex`` ihn schreibt.
+    """
+    if subscription_writes_index():
+        return False
     return getattr(settings, "ELASTICSEARCH_AUTO_INDEX", True)
 
 
@@ -95,6 +111,8 @@ def _delete_document(index_name: str, doc_id: str):
 @receiver(post_save, sender=OParlPaper)
 def index_paper(sender, instance, **kwargs):
     """Indexiert einen Vorgang nach dem Speichern (Tombstones werden entfernt)."""
+    if subscription_writes_index():
+        return
     if instance.deleted:
         _delete_document("papers", str(instance.id))
         return
@@ -112,6 +130,8 @@ def delete_paper(sender, instance, **kwargs):
 @receiver(post_save, sender=OParlMeeting)
 def index_meeting(sender, instance, **kwargs):
     """Indexiert eine Sitzung nach dem Speichern (Tombstones werden entfernt)."""
+    if subscription_writes_index():
+        return
     if instance.deleted:
         _delete_document("meetings", str(instance.id))
         return
@@ -165,6 +185,8 @@ def index_person(sender, instance, **kwargs):
             instance.photo = None
             instance.photo_status = "missing"
         return
+    if subscription_writes_index():
+        return
     # Nur Personen mit laufendem Amt stehen im Suchindex (Issue #1560)
     if not personen_sichtbarkeit.ist_oeffentlich(instance):
         _delete_document("persons", str(instance.id))
@@ -203,6 +225,8 @@ def index_person_of_membership(sender, instance, **kwargs):
 @receiver(post_save, sender=OParlOrganization)
 def index_organization(sender, instance, **kwargs):
     """Indexiert ein Gremium nach dem Speichern (Tombstones werden entfernt)."""
+    if subscription_writes_index():
+        return
     if instance.deleted:
         _delete_document("organizations", str(instance.id))
         return
@@ -226,6 +250,8 @@ def index_file(sender, instance, **kwargs):
     nie gab, und das Dokument entstünde aus einem Bestand, den noch niemand sonst sieht. Ohne Transaktion
     läuft die Indexierung wie bisher sofort.
     """
+    if subscription_writes_index():
+        return
     update_fields = kwargs.get("update_fields")
     transaction.on_commit(lambda: _index_file_now(instance, update_fields))
 
@@ -255,7 +281,7 @@ def _index_file_now(instance: OParlFile, update_fields: Any) -> None:
 
 def _reindex_paper_files(paper_id) -> None:
     """Vorgang neu indexieren, damit die Textvorschau seiner Dateien aktuell bleibt."""
-    if not paper_id:
+    if not paper_id or subscription_writes_index():
         return
     try:
         paper = OParlPaper.objects.get(id=paper_id)

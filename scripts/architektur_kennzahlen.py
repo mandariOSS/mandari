@@ -12,6 +12,8 @@ Wo es schon eine Zählung oder eine Liste gibt, übernimmt das Skript sie, statt
 - K4 mit der Liste ``ERLAUBT`` aus ``mandari/apps/events/tests/test_zeitplaene_statt_faden.py``,
 - K5 aus ``scripts/check_ris_access_ratchet.py`` (Direktzugriffe auf ``OParl*.objects``),
 - K6 aus der Liste ``AUSNAHMEN_CASCADE`` in ``mandari/hub/ris/tests/test_loeschsemantik.py``,
+- die Einzelheit ``bei_aktiv`` von K2a mit der Liste ``ABGESCHALTET_BEI_AKTIV`` aus
+  ``mandari/insight_search/tests/test_suchindex_umschalten.py`` (Schreibwege, die das Umschalten abschaltet),
 - K7 aus ``scripts/check_import_linter_ratchet.py`` (Ausnahmen der Schichtverträge); dieselben Verträge
   bestimmen für K1, welchem Modul ein Modell gehört.
 
@@ -58,6 +60,8 @@ MAIL_TEST = (PurePosixPath("mandari/apps/common/tests/test_mail_dienst.py"), "SO
 THREAD_TEST = (PurePosixPath("mandari/apps/events/tests/test_zeitplaene_statt_faden.py"), "ERLAUBT")
 #: Relationen ``<app>.<Modell>.<Feld>``, die noch mit ``CASCADE`` auf den RIS-Bestand zeigen.
 CASCADE_TEST = (PurePosixPath("mandari/hub/ris/tests/test_loeschsemantik.py"), "AUSNAHMEN_CASCADE")
+#: Schreibwege des Suchindex, die ``SEARCH_INDEX_SUBSCRIPTION=aktiv`` abschaltet: Pfad → Test, der es belegt.
+UMSCHALT_TEST = (PurePosixPath("mandari/insight_search/tests/test_suchindex_umschalten.py"), "ABGESCHALTET_BEI_AKTIV")
 #: App, in der der RIS-Bestand liegt.
 RIS_APP = "insight_core"
 
@@ -386,6 +390,12 @@ def suchindex_schreibstellen(datei: Datei) -> int:
     return anzahl
 
 
+def abgeschaltet_bei_aktiv(wurzel: Path) -> list[str]:
+    """Schreibwege des Suchindex, die ``SEARCH_INDEX_SUBSCRIPTION=aktiv`` abschaltet, laut Fitnessfunktion (#527)."""
+    liste = ast.literal_eval(liste_aus_test(wurzel, UMSCHALT_TEST))
+    return sorted(str(pfad) for pfad in liste)
+
+
 def suchindex_schreiber(quellen: Sequence[tuple[str, Sequence[Datei]]]) -> dict[str, int]:
     """Schreibstellen je Datei (``<verzeichnis>/<pfad>``), nur Dateien mit mindestens einer."""
     gefunden: dict[str, int] = {}
@@ -502,6 +512,7 @@ def erheben(wurzel: Path | None = None) -> list[Kennzahl]:
     schreiber = fremde_schreiber(anwendung, einheiten, frozenset(ris.MANAGERS))
     richtungen = Counter(f"{s.modul} -> {eigentuemer}" for s in schreiber for eigentuemer in s.eigentuemer)
     index = suchindex_schreiber([("mandari", anwendung), ("ingestor/src", abgleich)])
+    abgeschaltet = set(abgeschaltet_bei_aktiv(wurzel))
     mails = mail_funktionen(anwendung)
     sofort = sofort_stellen(wurzel)
     threads = thread_starts(anwendung, worker_pfade(wurzel))
@@ -530,7 +541,8 @@ def erheben(wurzel: Path | None = None) -> list[Kennzahl]:
             len(index),
             "1",
             skript,
-            {"dateien": index},
+            # Nach dem Umschalten (SEARCH_INDEX_SUBSCRIPTION=aktiv) schreiben nur noch diese Dateien
+            {"dateien": index, "bei_aktiv": {pfad: n for pfad, n in index.items() if pfad not in abgeschaltet}},
         ),
         Kennzahl("K2b", "Schreibstellen des Suchindex (Aufrufe in diesen Dateien)", sum(index.values()), "–", skript),
         Kennzahl(

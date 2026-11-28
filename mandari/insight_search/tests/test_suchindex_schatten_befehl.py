@@ -285,7 +285,8 @@ def test_loeschen_schuetzt_auch_bei_schalter_aktiv_und_protokolliert(settings: A
     Subscription.objects.create(name="suchindex", cursor_seq=7, state=SubscriptionState.SCHATTEN)
     es.ablegen("schatten-papers", {"id": "1"})
 
-    # Zustand "schatten" in der Datenbank: Der Handler schreibt weiter in den Schattenindex
+    # Zustand "schatten" in der Datenbank: Das Abonnement steht noch für den Schatten bereit (mit dem Schalter
+    # aktiv hält die Zustellung an, Issue #527); die Schattenindizes bleiben geschützt
     with pytest.raises(CommandError, match="schreibt noch"):
         _befehl("loeschen", "--ja")
 

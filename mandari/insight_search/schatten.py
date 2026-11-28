@@ -42,7 +42,7 @@ from django.db.models.functions import Now
 from apps.events.dispatch import head_seq
 from apps.events.models import Event, ParkedEvent, Subscription, SubscriptionState
 from apps.events.registry import type_filter
-from insight_core.services.search_projection import count_documents, iter_all_documents, iter_documents
+from insight_core.services.search_projection import count_documents, iter_documents
 from insight_search import abonnement
 from insight_search.indices import INDEXES, ensure_shadow_indices, shadow_name
 
@@ -213,18 +213,7 @@ def plan_build(es: Any, kommunen: Iterable[uuid.UUID], indizes: Iterable[str]) -
 def build(es: Any, plan: BuildPlan) -> dict[str, abonnement.Tally]:
     """Schreibt die Dokumente des Plans in den Schattenindex (externe Version ``plan.version``)."""
     ensure_shadow_indices(es)
-    ergebnis: dict[str, abonnement.Tally] = {}
-    for index in plan.indizes:
-        tally = abonnement.Tally()
-        name = shadow_name(index)
-        operationen = (
-            abonnement.Operation(name, str(dokument["id"]), plan.version, dokument)
-            for dokument in iter_all_documents(index, plan.kommunen)
-        )
-        abonnement.write(es, operationen, tally)
-        tally.count_to("schatten")
-        ergebnis[index] = tally
-    return ergebnis
+    return {index: abonnement.vollbau(es, index, plan.kommunen, plan.version, shadow=True) for index in plan.indizes}
 
 
 # --- Vergleich ----------------------------------------------------------------------------------
@@ -449,10 +438,18 @@ def subscription_running(stand: SubscriptionStatus) -> bool:
 
 
 def writes_shadow(stand: SubscriptionStatus) -> bool:
-    """Schreibt das Abonnement in den Schattenindex (Schalter ``schatten`` oder Zustand ``schatten``)?"""
+    """
+    Schreibt das Abonnement in den Schattenindex (Schalter ``schatten``) oder steht es dafür bereit (Zustand
+    ``schatten``; mit dem Schalter ``aktiv`` hält es dann an, ``waits_for_activation``)?
+    """
     return subscription_running(stand) and (
         settings.SEARCH_INDEX_SUBSCRIPTION == "schatten" or stand.zustand == SubscriptionState.SCHATTEN
     )
+
+
+def waits_for_activation(stand: SubscriptionStatus) -> bool:
+    """Hält die Zustellung an, weil der Schalter auf ``aktiv``, das Abonnement aber noch auf ``schatten`` steht?"""
+    return stand.vorhanden and abonnement.waits_for_activation(shadow_state=stand.zustand == SubscriptionState.SCHATTEN)
 
 
 @dataclass

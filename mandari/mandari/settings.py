@@ -848,8 +848,9 @@ ELASTICSEARCH_AUTO_INDEX = os.environ.get("ELASTICSEARCH_AUTO_INDEX", "True").lo
 # Suchindex als Abonnement der Datendrehscheibe (insight_search.abonnement, Issue #526): "aus" (Standard)
 # registriert kein Abonnement. "schatten" pflegt aus den ris.*-Ereignissen einen Schattenindex
 # (schatten-papers usw., gleiche Abbildung) neben dem Live-Index; Vergleich mit
-# manage.py suchindex_schatten vergleichen. "aktiv" schreibt den Live-Index; erst mit dem Umschalten
-# (Issue #527) verwenden, das die bisherigen Wege abschaltet. Der Schattenbetrieb lässt sich auf
+# manage.py suchindex_schatten vergleichen. "aktiv" schreibt den Live-Index und schaltet die bisherigen Wege ab
+# (Issue #527): Signale und Ingestor schreiben nicht mehr, reindex_elasticsearch baut über das Abonnement. Rückfall:
+# "schatten" (DEPLOYMENT.md, „Suchindex als Abonnement“). Der Schattenbetrieb lässt sich auf
 # Kommunen (Kennungen, kommagetrennt; leer = alle) und eine ungefähre Obergrenze an Dokumenten
 # begrenzen (Speicher von Elasticsearch, 0 = keine Grenze).
 SEARCH_INDEX_SUBSCRIPTION = os.environ.get("SEARCH_INDEX_SUBSCRIPTION", "aus").strip().lower() or "aus"

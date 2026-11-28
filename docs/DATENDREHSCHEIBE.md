@@ -459,7 +459,7 @@ Befehle beschreibt `DEPLOYMENT.md`.
 
 | Weg | Abonnement | Schalter | Betrieb (`DEPLOYMENT.md`) | Issue |
 |---|---|---|---|---|
-| Suchindex | `suchindex` | `SEARCH_INDEX_SUBSCRIPTION` (`aus`, `schatten`, `aktiv`) | „Suchindex als Abonnement (Schattenbetrieb)“ | #526, #527 |
+| Suchindex | `suchindex` | `SEARCH_INDEX_SUBSCRIPTION` (`aus`, `schatten`, `aktiv`) | „Suchindex als Abonnement (Schattenbetrieb und Umschalten)“ | #526, #527 |
 | RIS-Bestand der Session-Mandanten | `ris.session_projektor` | `RIS_SESSION_PROJECTOR` (`aus`, `schatten`; aktiv erst mit #537) | „RIS-Projektor für Session-Mandanten (Schattenbetrieb)“ | #536, #537 |
 | Benachrichtigungen in Work | `benachrichtigung` | `WORK_NOTIFICATION_SUBSCRIPTION` (`aus`, `schatten` zählt nur, `aktiv`) | „Benachrichtigungen als Abonnement“ | #529 |
 | Verortung und KI-Zusammenfassung nach neuem Text | `insight.verortung`, `insight.zusammenfassung` | `GEOREF_SUBSCRIPTION`, `SUMMARY_SUBSCRIPTION` (Schatten zählt nur) | „Nachfolger der Texterkennung“ | #919 |
@@ -513,7 +513,10 @@ Zur Einordnung der ersten Erhebung:
   Tabellen).
 - **K2a:** Die vier Wege sind die Signale (`insight_core/signals.py`), der Ingestor, der Neuaufbau
   (`reindex_elasticsearch`) und das Abonnement `suchindex`, das die anderen ablöst
-  (Issue #527, `DEPLOYMENT.md`, „Suchindex als Abonnement“).
+  (Issue #527, `DEPLOYMENT.md`, „Suchindex als Abonnement“). Seit #527 schaltet
+  `SEARCH_INDEX_SUBSCRIPTION=aktiv` die drei alten Wege ab: Im Betrieb schreibt dann nur das Abonnement
+  (K2a nach dem Umschalten 1, Einzelheit `bei_aktiv`). Der Wert selbst zählt den Quellstand und sinkt auf 1,
+  wenn die alten Wege im Folge-Release entfallen.
 - **K7:** je Vertrag 34 (`schichten`), 31 (`module-unabhaengig`) und 29 (`plattform-fachfrei`) Einträge;
   derselbe Import steht oft in mehreren Verträgen.
 
@@ -563,6 +566,11 @@ Datenbestand hat genau einen Eigentümer, nur er schreibt.
   verwandte Pfade, wie sie der Ingestor nutzt.
 - Lesen (`search`, `count`, `mget`) und Index-Verwaltung (`.indices.…`) zählen nicht. Das Schattenziel
   des Abonnements schreibt dieselbe Stelle wie das aktive Ziel und zählt nicht eigens.
+- `--json` nennt in `bei_aktiv` die Dateien, die mit `SEARCH_INDEX_SUBSCRIPTION=aktiv` weiter schreiben: alle
+  aus K2a ohne die Liste `ABGESCHALTET_BEI_AKTIV` in `mandari/insight_search/tests/test_suchindex_umschalten.py`.
+  Jeder Eintrag dort nennt den Test, der belegt, dass der Weg mit `aktiv` nichts schreibt; ein neuer
+  Schreibweg ohne Schalter erscheint in `bei_aktiv`, und `test_nach_dem_umschalten_schreibt_nur_das_abonnement`
+  schlägt fehl.
 
 **K3: Mailversand.** Mails gehen nur über den Mail-Dienst `apps.common.mail` (#528); ob eine Mail im Aufruf
 oder als Auftrag im Worker rausgeht, entscheidet der Betrieb je Mailart mit `MAIL_QUEUE`

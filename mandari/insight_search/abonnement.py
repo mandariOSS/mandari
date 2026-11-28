@@ -2,17 +2,22 @@
 """
 Abonnement ``suchindex``: pflegt den Suchindex aus den Ereignissen der Datendrehscheibe (Issue #526).
 
-Heute schreiben drei Wege den Suchindex: Django-Signale, der Ingestor und ``reindex_elasticsearch``.
-Künftig schreibt ihn nur dieses Abonnement (``docs/adr/20260929-ereignistechnik-postgres.md``,
-Punkt 7). Bis zum Umschalten (Issue #527) läuft es im **Schattenbetrieb** und schreibt einen
-Schattenindex (``schatten-papers`` …, ``insight_search.indices``) mit derselben Abbildung; der
-Vergleich mit dem Live-Index zeigt, ob die Ereignisse alles abdecken
-(``manage.py suchindex_schatten vergleichen``).
+Bis zum Umschalten schreiben drei Wege den Suchindex: Django-Signale, der Ingestor und
+``reindex_elasticsearch``. Danach schreibt ihn nur dieses Abonnement (``docs/adr/20260929-ereignistechnik-postgres.md``,
+Punkt 7, Issue #527). Vorher läuft es im **Schattenbetrieb** und schreibt einen Schattenindex
+(``schatten-papers`` …, ``insight_search.indices``) mit derselben Abbildung; der Vergleich mit dem Live-Index
+zeigt, ob die Ereignisse alles abdecken (``manage.py suchindex_schatten vergleichen``).
 
-**Schalter** ``SEARCH_INDEX_SUBSCRIPTION`` (``insight_search.subscribers``): ``aus`` (Standard)
-registriert nichts; ``schatten`` schreibt nur den Schattenindex, auch wenn das Abonnement in der
-Datenbank auf ``aktiv`` steht; ``aktiv`` schreibt den Live-Index, außer das Abonnement steht in der
-Datenbank auf ``schatten``.
+**Schalter** ``SEARCH_INDEX_SUBSCRIPTION`` (``insight_search.subscribers``):
+
+- ``aus`` (Standard) registriert nichts; die alten Wege schreiben den Live-Index.
+- ``schatten`` schreibt nur den Schattenindex, auch wenn das Abonnement in der Datenbank auf ``aktiv`` steht;
+  die alten Wege schreiben weiter den Live-Index.
+- ``aktiv`` schreibt den Live-Index und schaltet die alten Wege ab: Die Signale (``insight_core.signals``) und der
+  Ingestor (``ingestor/src/config.py``, ``elasticsearch_writes_enabled``) schreiben nicht mehr,
+  ``reindex_elasticsearch`` baut über ``vollbau`` mit der Folgenummer als Version. Steht das Abonnement in der
+  Datenbank noch auf ``schatten``, pflegte den Live-Index niemand: Die Zustellung hält dann an
+  (``TargetUnavailableError``, Rückstand wächst) und holt die Ereignisse nach, sobald es auf ``aktiv`` steht.
 
 **Ablauf je Batch:**
 
@@ -81,6 +86,7 @@ from apps.events import Delivery, TargetUnavailableError
 from apps.events.models import Event, Visibility
 from insight_core.services.search_projection import (
     context_file_ids,
+    iter_all_documents,
     iter_documents,
     meetings_of_organizations,
     papers_of_organizations,
@@ -453,6 +459,29 @@ def _senden(es: Any, paket: list[Any], tally: Tally) -> None:
             )
 
 
+# --- Vollbau ------------------------------------------------------------------------------------
+
+
+def vollbau(es: Any, index: str, kommunen: list[uuid.UUID], version: int, *, shadow: bool) -> Tally:
+    """
+    Baut einen Index für die Kommunen (leer = alle) einmal aus dem Bestand, mit externer Version ``version``.
+
+    ``version`` ist die höchste Folgenummer **vor** dem Lesen (``apps.events.dispatch.head_seq``): Danach
+    eintreffende Ereignisse gewinnen, ältere verlieren gegen den Vollbau (409, ``stale``). Das gilt für den
+    Schattenindex (``suchindex_schatten aufbauen``) wie für den Live-Index (``reindex_elasticsearch`` mit
+    ``SEARCH_INDEX_SUBSCRIPTION=aktiv``). Dokumente, die nicht mehr in den Index gehören, löscht der Vollbau nicht.
+    Die Schattenindizes legt der Aufrufer an (``ensure_shadow_indices``).
+    """
+    tally = Tally()
+    name = index_name(index, shadow=shadow)
+    operationen = (
+        Operation(name, str(dokument["id"]), version, dokument) for dokument in iter_all_documents(index, kommunen)
+    )
+    write(es, operationen, tally)
+    tally.count_to("schatten" if shadow else "live")
+    return tally
+
+
 # --- Obergrenze des Schattenindex -----------------------------------------------------------------
 
 
@@ -514,9 +543,26 @@ def _mit_ziel(aufruf: Callable[[], None]) -> None:
         raise
 
 
+def waits_for_activation(*, shadow_state: bool) -> bool:
+    """
+    Hält die Zustellung an? Mit dem Schalter ``aktiv`` schreiben die alten Wege den Live-Index nicht mehr; steht das
+    Abonnement in der Datenbank noch auf ``schatten`` (``shadow_state``), pflegte ihn sonst niemand.
+    """
+    return shadow_state and settings.SEARCH_INDEX_SUBSCRIPTION == "aktiv"
+
+
 def suchindex(events: list[Event], delivery: Delivery) -> None:
     """Handler des Abonnements ``suchindex`` (idempotent über die externe Version)."""
-    shadow = delivery.shadow or settings.SEARCH_INDEX_SUBSCRIPTION != "aktiv"
+    if waits_for_activation(shadow_state=delivery.shadow):
+        # Nichts zustellen, nichts parken: Der Batch kommt wieder und geht in den Live-Index, sobald das Abonnement
+        # auf aktiv steht (Admin: Pausieren, dann Fortsetzen (aktiv)). Bis dahin wächst der Rückstand.
+        logger.warning(
+            "Suchindex: Schalter SEARCH_INDEX_SUBSCRIPTION=aktiv, Abonnement %s steht noch auf schatten; "
+            "Zustellung hält an, bis es auf aktiv steht",
+            NAME,
+        )
+        raise TargetUnavailableError("Abonnement suchindex wartet auf den Zustand aktiv")
+    shadow = settings.SEARCH_INDEX_SUBSCRIPTION != "aktiv"
     bodies = shadow_bodies() if shadow else None
     ziele, uebergangen = affected(events, bodies)
     delivery.alive()
