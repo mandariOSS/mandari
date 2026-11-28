@@ -497,8 +497,8 @@ leitet weiter.
   steht das gekürzte Objekt mit `deleted: true`. Wird ein öffentlicher Punkt nichtöffentlich, nennt der Feed ihn als
   `delete` (`nonPublic`).
 - Hängt eine Datei in der Quelle an einer anderen Vorlage, Sitzung oder einem anderen Tagesordnungspunkt, nennt der
-  Feed auch die frühere Vorlage bzw. Sitzung. Eine Datei, die an mehreren Vorlagen hängt, gibt der Bestand an der
-  Vorlage aus, an der er sie zuerst gefunden hat, solange diese sie nennt.
+  Feed auch die frühere Vorlage bzw. Sitzung. Eine Datei, die an mehreren Vorlagen oder Sitzungen hängt, gibt der
+  Bestand an der aus, an der er sie zuerst gefunden hat, solange diese sie nennt.
 - Gespiegelte Session-Mandanten: Der Aggregator liest nur die Ereignisse, die seinen Bestand ändern (Mandant
   `source:` im Journal). Was mandari Session selbst meldet (`session:`), erscheint im Feed des Aggregators erst mit
   dem Abgleich, der es in den Bestand übernimmt; dessen Ereignis nennt es. So steht die Änderung unter `id`, sobald

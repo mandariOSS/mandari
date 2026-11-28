@@ -585,8 +585,8 @@ def file_events(
     Zugehörigkeit. Hängt sie jetzt an einer anderen Vorlage, Sitzung oder einem anderen Tagesordnungspunkt als
     bisher, nennen ``previous_paper``, ``previous_meeting`` bzw. ``previous_agenda_item`` die frühere (``moved_from``):
     Sie gibt die Datei nicht mehr aus, und der Änderungsfeed nennt auch sie (Issue #1229). Eine Datei, die an
-    mehreren Vorlagen hängt, bleibt an der bisherigen, solange diese sie nennt (``DatabaseStorage.upsert_file``);
-    sonst meldete jeder Vollabgleich den Wechsel hin und zurück.
+    mehreren Vorlagen oder Sitzungen hängt, bleibt an der bisherigen, solange diese sie nennt
+    (``DatabaseStorage._keep_parents``); sonst meldete jeder Vollabgleich den Wechsel hin und zurück.
     """
     payload: dict[str, Any] = {"file": str(file_id)}
     previous: dict[str, str] = {}

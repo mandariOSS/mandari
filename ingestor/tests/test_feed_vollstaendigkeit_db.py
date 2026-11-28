@@ -6,7 +6,7 @@ Vollständigkeit des Änderungsfeeds aus Sicht des Ingestors (Issue #1229, Profi
   ``updated_at`` stehen, auch wenn die Quelle ``modified`` neu stempelt. Ob ein Objekt neu zu schreiben ist, entscheidet
   danach der Zeitstempel der Quelle in ``raw_json``.
 - Eine Datei, die an einer anderen Vorlage hängt, nennt die frühere (``previous_paper``). Eine Datei an zwei Vorlagen
-  bleibt an der bisherigen, solange diese sie nennt; kein Wechsel hin und her.
+  oder Sitzungen bleibt an der bisherigen, solange diese sie nennt; kein Wechsel hin und her.
 
 Gegen PostgreSQL (``INGESTOR_TEST_DATABASE_URL``, in der CI gesetzt; lokal ohne Datenbank übersprungen).
 """
@@ -25,7 +25,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from src.storage.database import DatabaseStorage
-from src.storage.models import Base, OParlFile, OParlPaper
+from src.storage.models import Base, OParlFile, OParlMeeting, OParlPaper
 from src.sync.orchestrator import SyncOrchestrator
 from src.sync.processor import OParlProcessor
 
@@ -35,6 +35,8 @@ KOMMUNE = BASE
 VORLAGE_A = f"{BASE}/papers/1"
 VORLAGE_B = f"{BASE}/papers/2"
 DATEI = f"{BASE}/files/1"
+SITZUNG_1 = f"{BASE}/meetings/1"
+SITZUNG_2 = f"{BASE}/meetings/2"
 T1 = "2026-11-01T10:00:00+01:00"
 T2 = "2026-11-20T10:00:00+01:00"
 
@@ -250,3 +252,29 @@ async def test_datei_wechselt_die_vorlage_und_nennt_die_fruehere(speicher: Datab
     if speicher.events_enabled:
         letzte = (await _ereignisse(speicher, "ris.file.changed"))[-1]
         assert (letzte["change"], letzte["paper"], letzte["previous_paper"]) == ("added", str(zweite), str(erste))
+
+
+@pytest.mark.integration
+async def test_niederschrift_als_anlage_der_naechsten_sitzung_bleibt(speicher: DatabaseStorage) -> None:
+    """Die Niederschrift der ersten Sitzung steht als Anlage in der zweiten: Sie bleibt bei der ersten, ohne Wechsel."""
+    orchestrator, kommune = await _abgleich(speicher)
+    erste = {"id": SITZUNG_1, "type": f"{OPARL}Meeting", "name": "Rat", "resultsProtocol": _datei()}
+    zweite = {"id": SITZUNG_2, "type": f"{OPARL}Meeting", "name": "Rat", "auxiliaryFile": [_datei()]}
+
+    for _lauf in range(2):
+        for sitzung in (erste, zweite):
+            objekt = orchestrator.processor.process(sitzung, KOMMUNE)
+            assert objekt is not None
+            assert await orchestrator._store_entity(objekt, kommune, "meeting") is True
+
+    async with speicher.get_session() as session:
+        bei = (await session.execute(select(OParlFile.meeting_id).where(OParlFile.external_id == DATEI))).scalar_one()
+        kennung = (
+            await session.execute(select(OParlMeeting.id).where(OParlMeeting.external_id == SITZUNG_1))
+        ).scalar_one()
+    assert bei == kennung
+    if speicher.events_enabled:
+        anlagen = await _ereignisse(speicher, "ris.file.changed")
+        assert [(n["change"], n.get("meeting"), n.get("previous_meeting")) for n in anlagen] == [
+            ("added", str(kennung), None)
+        ]

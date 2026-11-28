@@ -273,6 +273,13 @@ def _latest(modified: datetime | None, source_modified: str | None) -> datetime 
     return max(candidates) if candidates else None
 
 
+#: Felder der Rohdaten, in denen eine Vorlage bzw. Sitzung ihre Dateien nennt (``DatabaseStorage._still_lists``)
+FILE_FIELDS: Final[dict[type, tuple[str, ...]]] = {
+    OParlPaper: ("mainFile", "auxiliaryFile"),
+    OParlMeeting: ("invitation", "resultsProtocol", "verbatimProtocol", "auxiliaryFile"),
+}
+
+
 def _stamp_update(model: type, update_set: dict[str, Any], *, keep: bool) -> dict[str, Any]:
     """
     ``oparl_modified`` und ``updated_at`` im ``update_set`` eines Upserts: Ändert er nichts, was ein Empfänger erfahren
@@ -3015,17 +3022,16 @@ class DatabaseStorage:
         (``agenda_item_public``), geht ihr Ereignis nur an Empfänger der Sichtbarkeit ``nichtoeffentlich``: Es nennt
         die Kennung des Punkts.
 
-        Hängt die Datei an einer anderen Vorlage, bleibt sie dort, solange diese sie nennt (``_keeps_paper``). Sonst
-        wechselt sie, und das Ereignis nennt die frühere Vorlage (``previous_paper``, Issue #1229), ebenso eine
-        frühere Sitzung und einen früheren Tagesordnungspunkt, diesen nur, wenn er öffentlich ist.
+        Hängt die Datei an einer anderen Vorlage oder Sitzung, bleibt sie dort, solange diese sie nennt
+        (``_keep_parents``). Sonst wechselt sie, und das Ereignis nennt die frühere (``previous_paper`` bzw.
+        ``previous_meeting``, Issue #1229), ebenso einen früheren Tagesordnungspunkt, wenn er öffentlich ist.
         """
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlFile, file.external_id) if emit else None
             emit = emit and not _withheld(prior)
-            if paper_id is not None and await self._keeps_paper(session, file.external_id, paper_id, prior):
-                # Eine Datei an mehreren Vorlagen: Sie bleibt an der bisherigen, sonst wechselte sie mit jedem Abgleich
-                paper_id = None
+            # Eine Datei an mehreren Vorlagen oder Sitzungen bleibt an der bisherigen (sonst Wechsel mit jedem Abgleich)
+            paper_id, meeting_id = await self._keep_parents(session, file.external_id, prior, paper_id, meeting_id)
             stmt = pg_insert(OParlFile).values(
                 id=file.id,
                 external_id=file.external_id,
@@ -3117,34 +3123,66 @@ class DatabaseStorage:
             await session.commit()
             return file_id
 
-    async def _keeps_paper(
-        self, session: AsyncSession, external_id: str, paper_id: UUID, prior: ris_events.Prior | None
-    ) -> bool:
+    async def _keep_parents(
+        self,
+        session: AsyncSession,
+        external_id: str,
+        prior: ris_events.Prior | None,
+        paper_id: UUID | None,
+        meeting_id: UUID | None,
+    ) -> tuple[UUID | None, UUID | None]:
         """
-        Bleibt die Datei ``external_id`` an ihrer bisherigen Vorlage, obwohl jetzt ``paper_id`` sie einbettet?
+        Vorlage und Sitzung, die der Upsert der Datei ``external_id`` schreiben soll: ``None``, wo die bisherige bleibt.
 
-        Ja, solange die bisherige Vorlage nicht gelöscht ist und die Datei in ihren Rohdaten nennt (``mainFile`` oder
-        ``auxiliaryFile``, als Adresse oder eingebettetes Objekt). Die Zeile kennt nur eine Vorlage; eine Datei an
-        mehreren wechselte sonst mit jedem Abgleich hin und her, und jeder Wechsel wäre eine Änderung beider Vorlagen.
-        Nennt die bisherige sie nicht mehr, ist es ein echter Wechsel.
+        Die Zeile kennt nur eine Vorlage und eine Sitzung. Bettet jetzt eine andere die Datei ein, bleibt die bisherige,
+        solange sie nicht gelöscht ist und die Datei in ihren Rohdaten nennt (``FILE_FIELDS``, als Adresse oder
+        eingebettetes Objekt). Eine Datei an zwei Vorlagen (oder als Niederschrift der einen und Anlage der nächsten
+        Sitzung) wechselte sonst mit jedem Abgleich hin und her, und jeder Wechsel wäre eine Änderung beider. Nennt die
+        bisherige sie nicht mehr, ist es ein echter Wechsel.
         """
+        if paper_id is None and meeting_id is None:
+            return paper_id, meeting_id
         if prior is not None:
-            current = prior.paper_id
+            current_paper, current_meeting = prior.paper_id, prior.meeting_id
         else:
-            found = await session.execute(select(OParlFile.paper_id).where(OParlFile.external_id == external_id))
-            current = found.scalar_one_or_none()
-        if current is None or current == paper_id:
-            return False
-        raw = OParlPaper.raw_json
-        listed = select(OParlPaper.id).where(
-            OParlPaper.id == current,
-            OParlPaper.deleted.is_(False),
-            or_(
-                raw["mainFile"].astext == external_id,
-                raw["mainFile"]["id"].astext == external_id,
-                raw["auxiliaryFile"].contains([external_id]),
-                raw["auxiliaryFile"].contains([{"id": external_id}]),
-            ),
+            row = (
+                await session.execute(
+                    select(OParlFile.paper_id, OParlFile.meeting_id).where(OParlFile.external_id == external_id)
+                )
+            ).first()
+            current_paper, current_meeting = (row[0], row[1]) if row is not None else (None, None)
+        if (
+            paper_id is not None
+            and current_paper not in (None, paper_id)
+            and await self._still_lists(session, OParlPaper, current_paper, external_id)
+        ):
+            paper_id = None
+        if (
+            meeting_id is not None
+            and current_meeting not in (None, meeting_id)
+            and await self._still_lists(session, OParlMeeting, current_meeting, external_id)
+        ):
+            meeting_id = None
+        return paper_id, meeting_id
+
+    @staticmethod
+    async def _still_lists(session: AsyncSession, model: type, row_id: UUID, external_id: str) -> bool:
+        """Nennt die Vorlage bzw. Sitzung ``row_id`` (nicht gelöscht) die Datei in ihren Rohdaten (``FILE_FIELDS``)?"""
+        raw = model.raw_json  # type: ignore[attr-defined]
+        named = [
+            condition
+            for name in FILE_FIELDS[model]
+            for condition in (
+                raw[name].astext == external_id,
+                raw[name]["id"].astext == external_id,
+                raw[name].contains([external_id]),
+                raw[name].contains([{"id": external_id}]),
+            )
+        ]
+        listed = select(model.id).where(  # type: ignore[attr-defined]
+            model.id == row_id,  # type: ignore[attr-defined]
+            model.deleted.is_(False),  # type: ignore[attr-defined]
+            or_(*named),
         )
         return (await session.execute(listed)).first() is not None
 
