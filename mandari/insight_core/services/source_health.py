@@ -746,7 +746,8 @@ def send_health_alerts(dry_run: bool = False, *, uebersicht: bool | None = None)
                 stoerungen.append(item)
         elif betrieb == "ok" and source.health_alert_sent_at:
             erholt.append(item)
-        if uebersicht:
+        # Bei einer Störung nennt deren Eintrag auch die Lücken; der Zeitstempel der Lücken bleibt für später stehen
+        if uebersicht and betrieb != "critical":
             if (item.get("datenabgleich") or {}).get("status") == "critical":
                 if _faellig(source.datenabgleich_alert_sent_at, now):
                     luecken.append(item)
@@ -765,7 +766,7 @@ def send_health_alerts(dry_run: bool = False, *, uebersicht: bool | None = None)
         from .datenabgleich import EMPFEHLUNG as DATENABGLEICH_EMPFEHLUNG
 
         titel = sammel_titel(stoerungen, luecken, erholt + geschlossen)
-        _send_health_mail(
+        gesendet = _send_health_mail(
             "quellen",
             f"[mandari] {titel}",
             {
@@ -779,6 +780,11 @@ def send_health_alerts(dry_run: bool = False, *, uebersicht: bool | None = None)
                 "admin_url": "",
             },
         )
+        if not gesendet:
+            # Zeitstempel bleiben stehen: Der nächste Lauf versucht es erneut, statt Alarme sieben Tage zu verschlucken
+            logger.warning("Betriebsmonitor: Sammelmail nicht versendet (%s)", titel)
+            result["mail"] = False
+            return _daemon_alarm(result, dry_run)
         for item, feld, wert in (
             *((i, "health_alert_sent_at", now) for i in stoerungen),
             *((i, "health_alert_sent_at", None) for i in erholt),
@@ -787,7 +793,11 @@ def send_health_alerts(dry_run: bool = False, *, uebersicht: bool | None = None)
         ):
             setattr(item["source"], feld, wert)
             item["source"].save(update_fields=[feld])
+    return _daemon_alarm(result, dry_run)
 
+
+def _daemon_alarm(result: dict, dry_run: bool) -> dict:
+    """Alarm bei stehendem Ingestor-Daemon als eigene Mail, höchstens einmal je 24 h (``result["daemon_alert"]``)."""
     # Nur die Ingestor-Checks: die übrigen Systemchecks braucht der Alarm nicht (Issue #1409)
     try:
         ingestor = _ingestor_checks()

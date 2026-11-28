@@ -338,6 +338,36 @@ def test_datenluecken_schalten_eine_stoerung_nicht_stumm(quelle: OParlSource, se
     assert mail.outbox[0].subject == "[mandari] Quelle gestört: Beispielstadt"
 
 
+def test_bei_einer_stoerung_stehen_die_luecken_nur_in_deren_eintrag(quelle: OParlSource, settings: Any) -> None:
+    settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
+    _mit(quelle, datenabgleich={BASIS: _befund(top_luecke=37, beratung_fehlt=37, work_ohne_vorlage=20)})
+    quelle.last_error_kind = OParlSource.ERROR_KIND_UA_BLOCKED
+    quelle.save(update_fields=["last_error_kind"])
+
+    ergebnis = send_health_alerts(uebersicht=True)
+
+    assert (ergebnis["alerts"], ergebnis["gaps"]) == (["Beispielstadt"], [])
+    assert mail.outbox[0].subject == "[mandari] Quelle gestört: Beispielstadt"
+    assert "Datenabgleich Beispielstadt kritisch" in mail.outbox[0].body
+    quelle.refresh_from_db()
+    assert quelle.datenabgleich_alert_sent_at is None, "die Lücken kommen nach der Störung in die Übersicht"
+
+
+def test_ohne_versand_bleiben_die_zeitstempel_stehen(
+    quelle: OParlSource, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    quelle.last_error_kind = OParlSource.ERROR_KIND_UA_BLOCKED
+    quelle.save(update_fields=["last_error_kind"])
+    monkeypatch.setattr(source_health, "get_alert_emails", lambda: [])
+
+    ergebnis = send_health_alerts(uebersicht=False)
+
+    assert ergebnis["alerts"] == ["Beispielstadt"]
+    assert ergebnis["mail"] is False
+    quelle.refresh_from_db()
+    assert quelle.health_alert_sent_at is None, "der nächste Lauf versucht es erneut"
+
+
 def test_entwarnung_wenn_die_luecken_geschlossen_sind(quelle: OParlSource, settings: Any) -> None:
     settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
     _mit(quelle, datenabgleich={BASIS: _befund(top_luecke=37, beratung_fehlt=37, work_ohne_vorlage=20)})
@@ -381,6 +411,16 @@ def test_migration_uebernimmt_bisherige_hinweise_auf_datenluecken() -> None:
             last_sync=jetzt - timedelta(days=9),
             health_alert_sent_at=jetzt,
         )
+        parser = alt.objects.create(
+            name="Parser",
+            url="https://ris.example.org/parser/system",
+            last_sync=jetzt,
+            health_alert_sent_at=jetzt,
+            sync_config={
+                "source_type": "scraper:beispiel",
+                "scraper_state": {"last_run": {"parse_quota": 0.5, "detail_pages_attempted": 10}},
+            },
+        )
 
         MigrationExecutor(connection).migrate([nachher])
         neu = (
@@ -391,7 +431,9 @@ def test_migration_uebernimmt_bisherige_hinweise_auf_datenluecken() -> None:
             for q in neu.objects.all()
         }
         assert stand[luecke.pk] == (False, True)
-        assert stand[gesperrt.pk] == stand[veraltet.pk] == (True, False), "Störungen behalten ihren Alarm"
+        assert stand[gesperrt.pk] == stand[veraltet.pk] == stand[parser.pk] == (True, False), (
+            "Störungen behalten ihren Alarm"
+        )
 
         MigrationExecutor(connection).migrate([vorher])
         zurueck = (
