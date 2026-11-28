@@ -304,12 +304,20 @@ def _normalisiert(wert: Any) -> Any:
     return wert
 
 
+#: Zeitstempel der Quelle. Manche Quellen (gremien.info) setzen ``created`` und ``modified`` neu, ohne dass sich der
+#: Inhalt ändert; der Ingestor meldet das bewusst nicht als Ereignis (``VOLATILE_FIELDS`` in
+#: ``ingestor/src/storage/ris_events.py``), schreibt den Live-Index aber direkt. Der Schatten trägt deshalb den Stand
+#: der letzten fachlichen Änderung. Das ist kein Fehler des Abonnements und zählt nicht als Abweichung (Issue #527).
+ZEITSTEMPEL_DER_QUELLE: Final = frozenset({"oparl_created", "oparl_modified"})
+
+
 def differing_fields(live: dict[str, Any], schatten: dict[str, Any]) -> list[str]:
-    """Felder, deren Wert abweicht oder nur auf einer Seite steht (sortiert)."""
+    """Felder, deren Wert abweicht oder nur auf einer Seite steht (sortiert), ohne die Zeitstempel der Quelle."""
     return sorted(
         schluessel
         for schluessel in live.keys() | schatten.keys()
-        if _normalisiert(live.get(schluessel)) != _normalisiert(schatten.get(schluessel))
+        if schluessel not in ZEITSTEMPEL_DER_QUELLE
+        and _normalisiert(live.get(schluessel)) != _normalisiert(schatten.get(schluessel))
         or (schluessel in live) != (schluessel in schatten)
     )
 
