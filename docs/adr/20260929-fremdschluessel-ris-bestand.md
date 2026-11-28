@@ -91,9 +91,23 @@ sind oft nicht wiederherstellbar.
   Datei-Anmerkungen, Aussetzungsregeln und regional geteilte Anträge zeigen mit `PROTECT` auf den Bestand, der
   optionale Sitzungsbezug eines Redebeitrags mit `SET_NULL`. Die Verweise aus Session und `tenants` waren schon
   `SET_NULL`.
-- **Fitnessfunktion:** `hub/ris/tests/test_loeschsemantik.py` prüft alle Relationen auf den Bestand. Ausnahmen sind die
-  Daten des Bürgerportals und abgeleitete Geodaten in insight_core (Abos, Ratsfragen, Rückmeldungen, Straßen,
-  Adressen, Verortungen); über sie steht eine Entscheidung aus (Issue #524). Die Liste darf nur kürzer werden.
+- **Fitnessfunktion:** `hub/ris/tests/test_loeschsemantik.py` prüft alle Relationen auf den Bestand. Die Liste der
+  Ausnahmen ist seit dem zweiten Schritt von #524 leer und darf nicht wieder wachsen (Kennzahl K6).
+- **Bürgerportal und Geodaten in insight_core** (Entscheidung in #524: Bürgerdaten geschützt, Geodaten gehen mit):
+  - Abos und Ratsfragen (auch die angefragte Person) zeigen mit `PROTECT` auf Kommune bzw. Person. Die Verweisprüfung
+    (`insight_core/services/external_references.py`) zählt jede `PROTECT`-Relation innerhalb von insight_core wie
+    Arbeitsdaten: Das Entfernen einer Kommune und `purge_deleted` brechen mit einer Liste ab, statt Daten von
+    Bürgerinnen und Bürgern still mitzunehmen. Vorher braucht es einen bewussten Schritt (Abos beenden, Fragen
+    abschließen). Für eine als gelöscht markierte, pausierte oder zurückgenommene Kommune erzeugt `generate_alerts`
+    keine neuen Hinweise; ihre Abos bleiben bestehen.
+  - Rückmeldungen zu Seiten zeigen mit `SET_NULL` auf die Kommune (die Spalte war schon optional). Sie bleiben ohne
+    Kommune stehen, bis der tägliche Auftrag sie nach der Aufbewahrungsfrist löscht.
+  - Abgeleitete Geodaten (Straßen, Adressen, Orts-Zuordnungen, Verortungen, Umring-Quellen, Umringe, Planbezüge)
+    zeigen mit `PROTECT` auf Kommune bzw. Vorgang (`insight_core.models.ABGELEITETE_GEODATEN`). Das harte Löschen
+    entfernt sie vorher ausdrücklich (`abgeleitete_geodaten_entfernen`): das Entfernen einer Kommune, `purge_deleted`
+    für Vorgänge und das Zurücksetzen der Demo. Die Verweisprüfung zählt sie nicht. Eine Quelle, an deren Kommunen
+    noch Geodaten hängen, löscht der Admin nicht; er verweist auf das Löschen der Kommunen.
+  - Die Umstellung ändert nur das Verhalten in Django (Migration `insight_core/0078`, jede Operation ohne SQL).
 - **Work** zeigt markierte Sitzungen und Tagesordnungspunkte mit dem Hinweis „Zurückgezogen“ bzw. „In der Quelle
   gelöscht“; Vorbereitung, Notizen und Positionen bleiben.
 - **Dokumente:** Der Löschabgleich (#787) entfernt Kopie und Text einer in der Quelle gelöschten Datei nach 30 Tagen

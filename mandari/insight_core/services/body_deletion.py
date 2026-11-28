@@ -9,15 +9,19 @@ Batches über das ORM (Kaskaden und Signale bleiben intakt, Speicher bleibt
 begrenzt) und läuft als Background-Task.
 
 Verweisen Daten anderer Module (Arbeitsdaten der Fraktionen, Mandanten- und
-Session-Verknüpfungen) noch auf RIS-Daten der Kommune, wird nichts gelöscht
-(Issue #421). Der Admin prüft das schon auf der Bestätigungsseite; die Prüfung
-hier schützt jeden anderen Aufrufer.
+Session-Verknüpfungen) oder Abos und Ratsfragen des Bürgerportals noch auf
+RIS-Daten der Kommune, wird nichts gelöscht (Issues #421, #524). Der Admin prüft
+das schon auf der Bestätigungsseite; die Prüfung hier schützt jeden anderen
+Aufrufer. Abgeleitete Geodaten (Straßen, Adressen, Verortungen, Umringe) gehen
+mit der Kommune; sie zeigen mit PROTECT auf sie und werden deshalb vor den
+RIS-Daten ausdrücklich entfernt.
 """
 
 import logging
 from typing import Any
 
 from django.db import transaction
+from django.db.models import ProtectedError
 from django.tasks import task
 
 from insight_core.services.external_references import ExternalReference, external_references
@@ -95,6 +99,7 @@ def delete_body_data(body_id: str) -> dict:
         OParlOrganization,
         OParlPaper,
         OParlPerson,
+        abgeleitete_geodaten_entfernen,
     )
 
     try:
@@ -123,6 +128,9 @@ def delete_body_data(body_id: str) -> dict:
     release_queryset(OParlFile.objects.filter(body=body, blob__isnull=False))
 
     counts = {}
+    # Abgeleitete Geodaten zuerst: Verortungen und Planbezüge halten sonst die Vorgänge auf (PROTECT, Issue #524)
+    counts["derived_geodata"] = abgeleitete_geodaten_entfernen(OParlBody.objects.filter(pk=body.pk))
+    logger.info(f"[BodyDeletion] {body_name}: {counts['derived_geodata']} abgeleitete Geodaten gelöscht")
     # Wahlperioden, die andere Kommunen der Quelle mitnutzen, gehen vorher an eine von ihnen über (Issue #1453)
     counts["legislative_terms_handed_over"] = _geteilte_wahlperioden_uebergeben(body)
     steps = [
@@ -150,11 +158,24 @@ def delete_body_data(body_id: str) -> dict:
         counts[name] = _chunked_delete(qs)
         logger.info(f"[BodyDeletion] {body_name}: {counts[name]} {name} gelöscht")
 
-    # Restliche kleine Kaskade (Subscriber, LocationMappings, …) über den
-    # normalen Delete — jetzt speicherunkritisch.
-    with transaction.atomic():
-        counts["legislative_terms_handed_over"] += _geteilte_wahlperioden_uebergeben(body)
-        deleted, detail = body.delete()
+    # Restliche kleine Kaskade über den normalen Delete — jetzt speicherunkritisch. Rückmeldungen zu Seiten
+    # behalten ihren Satz ohne Kommune (SET_NULL). Geodaten, die ein Import währenddessen angelegt hat, gehen mit.
+    try:
+        with transaction.atomic():
+            counts["legislative_terms_handed_over"] += _geteilte_wahlperioden_uebergeben(body)
+            counts["derived_geodata"] += abgeleitete_geodaten_entfernen(OParlBody.objects.filter(pk=body.pk))
+            deleted, detail = body.delete()
+    except ProtectedError:
+        # Während des Laufs neu entstanden, etwa ein Abo: Die Kommune bleibt mit diesen Daten stehen
+        references = body_references(body_id)
+        logger.warning(
+            "[BodyDeletion] Kommune '%s' (%s) bleibt: Während der Löschung sind Verweise entstanden: %s",
+            body_name,
+            body_id,
+            "; ".join(str(reference) for reference in references),
+        )
+        total = sum(wert for name, wert in counts.items() if name != "legislative_terms_handed_over")
+        return {"deleted": total, "body": body_name, "detail": counts, "blocked_by": [str(r) for r in references]}
     counts["body_cascade"] = deleted
     total = sum(wert for name, wert in counts.items() if name != "legislative_terms_handed_over")
     logger.info(f"[BodyDeletion] '{body_name}' vollständig gelöscht ({total} Zeilen): {counts}")

@@ -11,7 +11,10 @@ Verknüpfung.
 Die Prüfung ist generisch und folgt den Relationen der Modelle (``_meta``): Innerhalb von insight_core geht
 sie der Lösch-Kaskade nach (eine Sitzung nimmt ihre TOPs und Dateien mit), jede Relation aus einem anderen
 Modul zählt als Verweis – unabhängig von ``on_delete``. Neue Verweise anderer Module sind damit ohne
-Anpassung abgedeckt. Gepflegte Daten in insight_core selbst (``GEPFLEGTE_MODELLE``) zählen ebenso.
+Anpassung abgedeckt. Gepflegte Daten in insight_core selbst (``GEPFLEGTE_MODELLE``) zählen ebenso, dazu jede
+Relation mit ``PROTECT`` innerhalb von insight_core: Abos und Ratsfragen des Bürgerportals (Issue #524). Nicht als
+Verweis zählen die abgeleiteten Geodaten (``insight_core.models.ABGELEITETE_GEODATEN``); das harte Löschen entfernt sie
+vorher.
 
 Alles läuft als Datenbankabfrage mit Unterabfragen; es werden keine Objekte in den Speicher geladen, auch
 nicht für eine ganze Kommune.
@@ -28,6 +31,8 @@ from typing import Any
 from django.db import models
 from django.db.models import Q, QuerySet
 from django.db.models.fields.reverse_related import ForeignObjectRel
+
+from insight_core.models import ABGELEITETE_GEODATEN
 
 # Apps, deren Daten gemeinsam mit den RIS-Objekten gelöscht werden dürfen. insight_sync verweist nur mit
 # Protokollen (SyncLog, SET_NULL) auf Quellen; das sind Betriebsdaten, keine Arbeitsdaten.
@@ -73,6 +78,19 @@ def _is_foreign(model: ModelType) -> bool:
     return model._meta.app_label not in RIS_APP_LABELS or model._meta.label in GEPFLEGTE_MODELLE
 
 
+def _counts(rel: ForeignObjectRel) -> bool:
+    """Hält diese Relation das Löschen auf, zählt sie also als Verweis?
+
+    Jede Relation eines fremden Moduls und gepflegter Daten. Innerhalb der RIS-Apps zusätzlich jede mit ``PROTECT``,
+    etwa Abos und Ratsfragen des Bürgerportals (Issue #524): Django bräche das Löschen sonst erst mittendrin ab, nach
+    den Kind-Tabellen. Ausgenommen sind die abgeleiteten Geodaten, die das Löschen vorher entfernt.
+    """
+    related = rel.related_model
+    if _is_foreign(related):
+        return True
+    return not rel.many_to_many and rel.on_delete is models.PROTECT and related._meta.label not in ABGELEITETE_GEODATEN
+
+
 def _cascades(rel: ForeignObjectRel) -> bool:
     """Löscht Django beim Löschen des Ziels auch die Datensätze dieser Relation?"""
     return not rel.many_to_many and rel.on_delete is models.CASCADE
@@ -84,7 +102,7 @@ def _referencing(
     """(Relation eines fremden Moduls, betroffene RIS-Objekte) – entlang der Lösch-Kaskade in insight_core."""
     for rel in _reverse_relations(model):
         related = rel.related_model
-        if _is_foreign(related):
+        if _counts(rel):
             yield rel, queryset
         elif _cascades(rel) and related not in path:
             children = related._base_manager.filter(**{f"{rel.field.name}__in": queryset})
@@ -126,7 +144,7 @@ def referenced_condition(model: ModelType, path: frozenset[ModelType] | None = N
     for rel in _reverse_relations(model):
         related = rel.related_model
         name = rel.field.name
-        if _is_foreign(related):
+        if _counts(rel):
             referencing = related._base_manager.filter(**{f"{name}__isnull": False})
         elif _cascades(rel) and related not in path:
             child_condition = referenced_condition(related, path | {related})
