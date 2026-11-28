@@ -518,12 +518,14 @@ def test_vertretung_nur_mit_zugang_zum_dokument(org: Any, make_member: Any, auto
     assert weitergeleitet.title.startswith("[Vertretung]")
 
 
-@pytest.mark.parametrize("aenderung", ["freigabe_entzogen", "papierkorb"])
+@pytest.mark.parametrize("aenderung", ["freigabe_entzogen", "papierkorb", "endgueltig_geloescht", "nach_fehlversuch"])
 def test_wartende_mail_nach_entzug_der_freigabe_wird_verworfen(
     settings: Any, org: Any, autorin: Any, kollege: Any, aenderung: str
 ) -> None:
     """Die Mail liegt schon im Postausgang, dann wird die Freigabe entzogen bzw. das Dokument in den Papierkorb
-    verschoben: Der Versand prüft den Bezug erneut."""
+    verschoben oder gelöscht: Der Versand prüft den Bezug erneut, auch bei einer Wiederholung nach einem Fehlversuch."""
+    from unittest import mock
+
     from apps.common.mail.outbox import VERWORFEN_VOR_VERSAND
     from apps.common.models import MailOutbox
     from apps.events.task_runner import run_pending
@@ -539,10 +541,23 @@ def test_wartende_mail_nach_entzug_der_freigabe_wird_verworfen(
     assert run_pending(limit=1) == 1, "Auftrag zur Benachrichtigung legt die Mail in den Postausgang"
     assert MailOutbox.objects.get().status == MailOutbox.Status.WARTEND
 
-    if aenderung == "freigabe_entzogen":
+    if aenderung == "nach_fehlversuch":
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.events.models import Task as TaskRow
+
+        with mock.patch("apps.common.mail.delivery.send_with", side_effect=OSError("SMTP nicht erreichbar")):
+            assert run_pending() == 1
+        assert MailOutbox.objects.get().status == MailOutbox.Status.WARTEND, "wird wiederholt"
+        TaskRow.objects.update(run_after=timezone.now() - timedelta(seconds=1))
+    if aenderung in ("freigabe_entzogen", "nach_fehlversuch"):
         freigabe.delete()
-    else:
+    elif aenderung == "papierkorb":
         Motion.objects.filter(pk=geteilt.pk).update(status="deleted")
+    else:
+        geteilt.delete()
     assert run_pending() == 1
     assert not mail.outbox
     zeile = MailOutbox.objects.get()
