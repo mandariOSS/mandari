@@ -11,8 +11,10 @@
  */
 
 import type { PdfJsModul } from '../editor/pdfjs-laden'
-import type { SatzKonfig, Seitengeometrie } from './vertrag'
+import type { SatzKonfig, Seitengeometrie, Seitenzahl } from './vertrag'
 import { mmZuPx, seitenAnfang } from './vertrag'
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
 
 interface Bild {
   url: string
@@ -21,7 +23,10 @@ interface Bild {
 
 export class Boegen {
   readonly ebene: HTMLDivElement
-  private bilder: { erste: Bild | null; folge: Bild | null } = { erste: null, folge: null }
+  /** Gezeichnete Seiten des Briefpapier-PDFs (Index = Seite im PDF) */
+  private bilder: (Bild | null)[] = []
+  /** Seite des Briefpapiers je Seite des Dokuments (treu übernommenes PDF); leer: immer die erste */
+  private zuordnung: number[] = []
   private bildLaden: Promise<void> | null = null
   private bildQuelle = ''
 
@@ -40,6 +45,7 @@ export class Boegen {
   /** Briefpapier-PDF als Bild vorbereiten (nur im Editor) */
   vorbereiten(konfig: SatzKonfig, g: Seitengeometrie): Promise<void> {
     const url = this.druck || !this.pdfjsLaden || konfig.briefpapier.art !== 'pdf' ? '' : konfig.briefpapier.pdf_url
+    this.zuordnung = konfig.briefpapier.seiten ?? []
     if (url === this.bildQuelle && this.bildLaden) return this.bildLaden
     this.bildQuelle = url
     this.bilderFreigeben()
@@ -75,16 +81,28 @@ export class Boegen {
       const blob = await new Promise<Blob | null>((fertig) => canvas.toBlob(fertig, 'image/png'))
       return blob ? { url: URL.createObjectURL(blob), quelle: url } : null
     }
-    const erste = await zeichnen(1)
-    // Der Server legt die erste Seite des Briefpapiers unter jede Seite (overlay_pdf_letterhead): ebenso hier
-    this.bilder = { erste, folge: erste }
+    // Der Server legt die erste Seite des Briefpapiers unter jede Seite, beim treu übernommenen PDF jede
+    // Originalseite unter ihre Seite (overlay_pdf_letterhead): ebenso hier
+    const benoetigt = new Set(this.zuordnung.length ? this.zuordnung : [0])
+    const bilder: (Bild | null)[] = []
+    for (const index of [...benoetigt].sort((a, b) => a - b)) {
+      if (index >= dokument.numPages) continue
+      bilder[index] = await zeichnen(index + 1)
+    }
+    this.bilder = bilder
     void dokument.cleanup()
   }
 
   private bilderFreigeben(): void {
-    const urls = new Set([this.bilder.erste?.url, this.bilder.folge?.url].filter(Boolean) as string[])
-    for (const url of urls) URL.revokeObjectURL(url)
-    this.bilder = { erste: null, folge: null }
+    for (const bild of this.bilder) if (bild) URL.revokeObjectURL(bild.url)
+    this.bilder = []
+  }
+
+  /** Bild des Briefpapiers für Seite `i` (0-basiert) */
+  private bildFuer(i: number): Bild | null {
+    if (!this.zuordnung.length) return this.bilder[0] ?? null
+    const index = this.zuordnung[Math.min(i, this.zuordnung.length - 1)] ?? 0
+    return this.bilder[index] ?? this.bilder.find(Boolean) ?? null
   }
 
   /**
@@ -135,9 +153,9 @@ export class Boegen {
     }
   }
 
-  private inhalt(i: number, seiten: number, g: Seitengeometrie, konfig: SatzKonfig): HTMLElement[] {
-    const teile: HTMLElement[] = []
-    const bild = i === 0 ? this.bilder.erste : this.bilder.folge
+  private inhalt(i: number, seiten: number, g: Seitengeometrie, konfig: SatzKonfig): Element[] {
+    const teile: Element[] = []
+    const bild = this.bildFuer(i)
     if (bild) {
       const img = document.createElement('img')
       img.className = 'satz-briefpapier'
@@ -168,6 +186,7 @@ export class Boegen {
       }
       teile.push(fuss)
     }
+    if (bp.seitenzahl && i + 1 >= bp.seitenzahl.ab_seite) teile.push(seitenzahlElement(bp.seitenzahl, i, seiten, g))
     return teile
   }
 
@@ -177,4 +196,28 @@ export class Boegen {
     this.bildLaden = null
     this.ebene.remove()
   }
+}
+
+/**
+ * Seitenzahl eines treu übernommenen PDFs (#1600) an der Stelle des Originals: als SVG-Text, weil SVG genau auf der
+ * Grundlinie setzt (im PDF bleibt sie Vektortext).
+ */
+function seitenzahlElement(zahl: Seitenzahl, i: number, seiten: number, g: Seitengeometrie): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('class', 'satz-seitenzahl-treu')
+  svg.setAttribute('width', String(g.breite))
+  svg.setAttribute('height', String(g.hoehe))
+  svg.setAttribute('aria-hidden', 'true')
+  const text = document.createElementNS(SVG_NS, 'text')
+  const anker = { links: 'start', mitte: 'middle', rechts: 'end' }[zahl.ausrichtung]
+  const x = { links: zahl.x_mm, mitte: zahl.mitte_mm, rechts: zahl.rechts_mm }[zahl.ausrichtung]
+  text.setAttribute('x', String(mmZuPx(x)))
+  text.setAttribute('y', String(mmZuPx(zahl.grund_mm)))
+  text.setAttribute('text-anchor', anker)
+  text.setAttribute('font-size', `${zahl.groesse_pt}pt`)
+  text.setAttribute('font-weight', zahl.fett ? '700' : '400')
+  text.style.fontFamily = zahl.stapel
+  text.textContent = zahl.text.replace('{n}', String(i + 1)).replace('{gesamt}', String(seiten))
+  svg.appendChild(text)
+  return svg
 }

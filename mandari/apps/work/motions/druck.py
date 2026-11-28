@@ -130,6 +130,11 @@ def druck_dateien(motion: Motion) -> dict[str, bytes]:
     """Alle Dateien für die PDF-Erzeugung über Chromium."""
     kontext = druck_kontext(motion, paket=True)
     liste = verwendete_schriften(kontext["inhalt"], kontext["konfig"]["schrift"]["schluessel"])
+    # Seitenzahl eines treu übernommenen PDFs (#1600) in ihrer eigenen Schrift
+    seitenzahl = kontext["konfig"]["briefpapier"].get("seitenzahl")
+    zahl_schrift = schriften.schrift(seitenzahl["schluessel"]) if seitenzahl else None
+    if zahl_schrift is not None and all(s.schluessel != zahl_schrift.schluessel for s in liste):
+        liste.append(zahl_schrift)
     # Chromium lädt die Schriften des Texts selbst nach: Die Konfiguration nennt alle, die das Paket mitbringt
     kontext["konfig"]["schriften"] = [{"schluessel": s.schluessel, "name": s.name} for s in liste]
     dateien: dict[str, bytes] = {

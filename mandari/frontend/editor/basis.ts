@@ -17,6 +17,7 @@ import Underline from '@tiptap/extension-underline'
 import { CharacterCount, Placeholder } from '@tiptap/extensions'
 import StarterKit from '@tiptap/starter-kit'
 import { Satz } from '../satz/erweiterung'
+import { Absatzformat, AbsatzMitTabulator } from './absatzformat'
 import { CommentMark } from './extensions/comment-mark'
 import { FindReplace } from './extensions/find-replace'
 import { Indent } from './extensions/indent'
@@ -43,6 +44,8 @@ export function dokumentStarterKit(ohneVerlauf = false) {
     link: false,
     underline: false,
     trailingNode: false,
+    // Absatz aus absatzformat.ts (behält Tabulatoren treu übernommener PDFs, #1600)
+    paragraph: false,
     ...(ohneVerlauf ? { undoRedo: false as const } : {}),
   })
 }
@@ -50,6 +53,7 @@ export function dokumentStarterKit(ohneVerlauf = false) {
 /** Erweiterungen nach dem StarterKit (Solo, Kollaboration und Druck) */
 export function dokumentErweiterungen(options: DokumentErweiterungsOptionen) {
   return [
+    AbsatzMitTabulator,
     Underline,
     Placeholder.configure({
       placeholder: options.placeholder ?? 'Beginnen Sie hier mit dem Schreiben...',
@@ -98,6 +102,8 @@ export function dokumentErweiterungen(options: DokumentErweiterungsOptionen) {
     }),
     CommentMark,
     Indent,
+    // Abstände, Zeilenabstand und Einzüge treu übernommener PDFs (#1600)
+    Absatzformat,
     // Seiten: echte Seiten über die Satz-Kette oder (bisheriger Editor) geschätzte Lücken
     ...(options.satz ? [Satz] : [PageBreaks.configure({ onPageCount: options.onPageCount })]),
     // Manueller Seitenumbruch (Strg+Enter, Toolbar, /-Menü)

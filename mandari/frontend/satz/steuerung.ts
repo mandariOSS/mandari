@@ -117,6 +117,9 @@ export class SatzSteuerung {
       this.rahmen.classList.add('satz-aktiv')
       this.text.classList.add('dokument-satz')
     }
+    // Treu übernommenes PDF (#1600): ohne Unterschneidung und Ligaturen, wie Word setzt
+    this.text.classList.toggle('satz-treu', !!konfig.treu)
+    this.text.classList.toggle('satz-treu-unterschneidung', !!konfig.treu && !!konfig.treu_unterschneidung)
     // Am Rahmen: Text und Bögen (Fußzeilen) erben Schrift und Größe
     const s = this.rahmen.style
     s.setProperty('--satz-schrift', konfig.schrift.stapel)
@@ -137,7 +140,7 @@ export class SatzSteuerung {
     this.boegen = null
     this.geometrie = null
     this.rahmen.classList.remove('satz-aktiv')
-    this.text.classList.remove('dokument-satz')
+    this.text.classList.remove('dokument-satz', 'satz-treu', 'satz-treu-unterschneidung')
     for (const name of ['--satz-schrift', '--satz-groesse', '--satz-zeilenabstand'])
       this.rahmen.style.removeProperty(name)
     this.text.style.removeProperty('padding')

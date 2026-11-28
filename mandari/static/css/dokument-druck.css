@@ -32,6 +32,13 @@ body {
   }
 }
 @media print {
+  /* Durchsichtig: Ein PDF-Briefpapier legt der Server unter die Seiten (apps/common/pdf.py); eine weiße Fläche
+     verdeckte es. Papier und PDF-Betrachter sind ohnehin weiß. */
+  html,
+  body,
+  .satz-bogen {
+    background: transparent;
+  }
   .satz-bogen {
     box-shadow: none;
   }

@@ -97,6 +97,13 @@ class MotionType(models.Model):
         return self.name
 
 
+class OrganisationsBriefkoepfe(models.Manager):
+    """Briefköpfe der Organisation ohne das dokumenteigene Briefpapier treu übernommener PDFs (Issue #1600)."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(dokument__isnull=True)
+
+
 class OrganizationLetterhead(models.Model):
     """
     Letterhead for document exports.
@@ -181,8 +188,26 @@ class OrganizationLetterhead(models.Model):
     is_default = models.BooleanField(default=False, verbose_name="Standard-Briefkopf")
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
 
+    # Dokumenteigenes Briefpapier aus einem treu übernommenen PDF (Issue #1600): der Hintergrund der Originalseiten
+    # (Logos, Kopf, Fuß). Es gehört zu genau einem Dokument und steht in keiner Auswahl der Organisation.
+    dokument = models.ForeignKey(
+        "Motion",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="eigene_briefpapiere",
+        verbose_name="Dokument",
+    )
+    #: Genaue Maße des übernommenen Satzes (Ränder in mm als Gleitkomma, Seitengröße, Grundschrift, Seitenzahl,
+    #: Hintergrundseite je Seite); leer bei Briefköpfen der Organisation (``satz.py``)
+    satz = models.JSONField(default=dict, blank=True, null=True, verbose_name="Satz")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    #: Briefköpfe der Organisation (Auswahl, Einstellungen); dokumenteigene nur über ``alle`` oder ``motion.letterhead``
+    objects = OrganisationsBriefkoepfe()
+    alle = models.Manager()
 
     class Meta:
         verbose_name = "Briefkopf"

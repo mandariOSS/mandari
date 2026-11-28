@@ -160,6 +160,15 @@ _LENGTH = r"(?:0|\d{1,5}(?:\.\d{1,3})?(?:px|em|rem|%|pt|mm|cm))"
 STYLE_RULES: dict[str, re.Pattern[str]] = {
     "text-align": re.compile(r"^(?:left|right|center|justify|start|end)$"),
     "margin-left": re.compile(rf"^{_LENGTH}$"),
+    # Absatzformat treu übernommener PDFs (Issue #1600): Abstand vor/nach, Zeilenabstand, Einzüge, Tabulatorweite
+    "margin-top": re.compile(rf"^-?{_LENGTH}$"),
+    "margin-bottom": re.compile(rf"^{_LENGTH}$"),
+    "line-height": re.compile(rf"^(?:{_LENGTH}|\d(?:\.\d{{1,3}})?)$"),
+    "padding-left": re.compile(rf"^{_LENGTH}$"),
+    "text-indent": re.compile(rf"^-?{_LENGTH}$"),
+    "tab-size": re.compile(rf"^{_LENGTH}$"),
+    "word-spacing": re.compile(r"^-?\d{1,2}(?:\.\d{1,3})?pt$"),
+    "letter-spacing": re.compile(r"^-?0(?:\.\d{1,3})?pt$"),
     "color": re.compile(rf"^{_COLOR}$"),
     "background-color": re.compile(rf"^{_COLOR}$"),
     "width": re.compile(rf"^{_LENGTH}$"),

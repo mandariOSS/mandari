@@ -354,3 +354,23 @@
   color: #4b5563;
   text-align: center;
 }
+
+/* Treu übernommenes PDF (Issue #1600): Word setzt ohne Unterschneidung und Ligaturen; so brechen Zeilen gleich um */
+#editor-container .tiptap.dokument-satz.satz-treu {
+  font-kerning: none;
+  font-variant-ligatures: none;
+  /* ProseMirror setzt break-spaces: Dann zählt das Leerzeichen am Zeilenende mit, ein Wort am Rand passt nicht mehr
+     und Blocksatz endet um ein Leerzeichen vor dem Rand. pre-wrap lässt es hängen wie Word. */
+  white-space: pre-wrap;
+}
+#editor-container .tiptap.dokument-satz.satz-treu.satz-treu-unterschneidung {
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+}
+/* Seitenzahl an der Stelle des Originals (boegen.ts) */
+.satz-seitenzahl-treu {
+  position: absolute;
+  inset: 0 auto auto 0;
+  overflow: visible;
+  fill: #111827;
+}
