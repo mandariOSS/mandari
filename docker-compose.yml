@@ -174,6 +174,8 @@ x-app-environment: &app-environment
   # Work-Daten folgen dem RIS über Neuveröffentlichungen (aus, probe, aktiv; siehe .env.example), Standard aus
   WORK_RIS_RELINK: ${WORK_RIS_RELINK:-aus}
   WORK_RIS_RELINK_INTERVAL_MINUTES: ${WORK_RIS_RELINK_INTERVAL_MINUTES:-15}
+  # Beschluss-Tracking in Work und Bürgerportal (session, bestand; siehe .env.example), Standard session
+  RIS_DECISION_TRACKING: ${RIS_DECISION_TRACKING:-session}
   # Abfrage der Volltextsuche (v2 Standard, v1 = bisherige Abfrage als Rückfall; siehe .env.example)
   SEARCH_RANKING: ${SEARCH_RANKING:-v2}
   SEARCH_RECENCY_WEIGHT: ${SEARCH_RECENCY_WEIGHT:-1.0}

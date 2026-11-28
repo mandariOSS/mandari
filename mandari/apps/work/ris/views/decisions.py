@@ -2,13 +2,14 @@
 """
 Beschlusskontrolle für Mandatsträger (Issue #37, Sichtbarkeit in Work).
 
-Zeigt den Umsetzungsstand der öffentlichen Beschlüsse aller Verwaltungen
-(Session-Mandanten), die mit den Kommunen der Organisation verknüpft sind.
-Nicht-öffentliche TOPs und Sitzungen erscheinen hier nie.
+Zeigt die öffentlichen Beschlüsse der Kommunen der Organisation mit ihrem Umsetzungsstand. Nicht-öffentliche TOPs und
+Sitzungen erscheinen hier nie. Woher die Beschlüsse kommen (Session-Mandanten oder RIS-Bestand), bestimmt der Schalter
+``RIS_DECISION_TRACKING`` (Issue #538, ``apps.work.ris.beschluesse``). Aus dem RIS-Bestand zeigen Adressen aus der Zeit
+vor der Umstellung (Kennung eines Session-Beschlusses) weiter den bisherigen Beschluss.
 
 Im neuen Erscheinungsbild (Issue #951) zeigt die Liste ``work/ris/neu/beschluesse.html``; jeder Beschluss hat dort eine
 eigene Seite (``RISDecisionDetailView``) mit vollem Beschlusstext und Umsetzungsstand – dieselben Angaben wie in der
-Liste, aus derselben Auswahl (öffentlich, entschieden, Verwaltungen der eigenen Kommunen).
+Liste, aus derselben Auswahl (öffentlich, entschieden, eigene Kommunen).
 """
 
 from django.core.paginator import Paginator
@@ -19,7 +20,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.session.models import SessionAgendaItem
 
-from .. import neu, selectors
+from .. import beschluesse, neu, selectors
 from ._mixins import RISBodiesMixin
 
 PAGE_SIZE = 50
@@ -41,46 +42,39 @@ class RISDecisionsView(RISBodiesMixin, WorkViewMixin, TemplateView):
         if bodies is None:
             return context
 
-        tenants = selectors.session_tenants(bodies)
-        context["tenants"] = tenants
-        if not tenants.exists():
-            context["no_session_tenant"] = True
-            return context
-
-        params = self.request.GET
-        organization_id = params.get("organization", "")
-        year = params.get("year", "")
-        status = params.get("status", "")
-        overdue = params.get("overdue") == "1"
-        query = (params.get("q") or "").strip()
+        auswahl = beschluesse.Auswahl.aus_anfrage(self.request.GET)
         today = timezone.localdate()
-
-        qs = selectors.filter_decisions(
-            selectors.decided_items(tenants), organization_id=organization_id, year=year, query=query
-        )
-        context["tracking_stats"] = selectors.tracking_stats(qs, today)
-
-        qs = selectors.filter_implementation(qs, status=status, overdue_only=overdue, today=today)
-
-        paginator = Paginator(qs, PAGE_SIZE)
-        page = paginator.get_page(params.get("page"))
-        context.update(
-            {
-                "items": page.object_list,
-                "page_obj": page,
-                "paginator": paginator,
+        if beschluesse.aus_bestand():
+            qs, angaben = beschluesse.liste_aus_bestand(bodies, auswahl, today)
+            anzeige = beschluesse.anzeige_bestand
+        else:
+            tenants = selectors.session_tenants(bodies)
+            context["tenants"] = tenants
+            if not tenants.exists():
+                context["no_session_tenant"] = True
+                return context
+            qs = selectors.filter_decisions(
+                selectors.decided_items(tenants),
+                organization_id=auswahl.organization_id,
+                year=auswahl.year,
+                query=auswahl.query,
+            )
+            angaben = {
+                "tracking_stats": selectors.tracking_stats(qs, today),
+                "mehrere_herausgeber": len(tenants) > 1,
                 "organizations": selectors.decision_organizations(tenants),
                 "years": selectors.decision_years(tenants),
                 "implementation_choices": SessionAgendaItem.IMPLEMENTATION_CHOICES,
-                "filter_organization": organization_id,
-                "filter_year": year,
-                "filter_status": status,
-                "filter_overdue": overdue,
-                "search_query": query,
-                "has_filter": bool(organization_id or year or status or overdue or query),
-                "today": today,
             }
-        )
+            qs = selectors.filter_implementation(qs, status=auswahl.status, overdue_only=auswahl.overdue, today=today)
+            anzeige = beschluesse.anzeige_session
+
+        paginator = Paginator(qs, PAGE_SIZE)
+        page = paginator.get_page(auswahl.page)
+        items = list(page.object_list)
+        anzeige(items)
+        context |= angaben | auswahl.kontext()
+        context |= {"items": items, "page_obj": page, "paginator": paginator, "today": today}
         if self.neu:
             context |= neu.beschluesse(context)
         return context
@@ -101,12 +95,22 @@ class RISDecisionDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
         if bodies is None:
             return context
 
+        if beschluesse.aus_bestand():
+            gefunden = beschluesse.beschluss_aus_bestand(bodies, kwargs["item_id"])
+            if gefunden is not None:
+                context |= gefunden
+                return context
+            # Sonst eine Adresse aus der Zeit vor der Umstellung: Kennung eines Session-Beschlusses (unten)
+
         tenants, item = selectors.decision_detail(bodies, kwargs["item_id"])
         context["tenants"] = tenants
         if tenants is None:
+            if beschluesse.aus_bestand():
+                raise Http404("Beschluss nicht gefunden")
             context["no_session_tenant"] = True
             return context
         if item is None:
             raise Http404("Beschluss nicht gefunden")
-        context["item"] = item
+        beschluesse.anzeige_session([item])
+        context |= {"item": item, "mehrere_herausgeber": len(tenants) > 1}
         return context

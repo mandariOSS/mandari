@@ -498,6 +498,7 @@ Befehle beschreibt `DEPLOYMENT.md`.
 | Benachrichtigungen in Work | `benachrichtigung` | `WORK_NOTIFICATION_SUBSCRIPTION` (`aus`, `schatten` zählt nur, `aktiv`) | „Benachrichtigungen als Abonnement“ | #529 |
 | Verortung und KI-Zusammenfassung nach neuem Text | `insight.verortung`, `insight.zusammenfassung` | `GEOREF_SUBSCRIPTION`, `SUMMARY_SUBSCRIPTION` (Schatten zählt nur) | „Nachfolger der Texterkennung“ | #919 |
 | Dokumentkette (Abruf und Erkennung) | – (Etappe 2 über Aufträge) | `TASKS_BACKEND=journal`, `TEXT_EXTRACTION_RUNNER=worker` | „Dokumentkette einschalten (Issue #919)“ | #919 |
+| Beschluss-Tracking in Work und Bürgerportal | – (Lese-Fassade `hub.ris.selectors`) | `RIS_DECISION_TRACKING` (`session`, `bestand`) | „Beschluss-Tracking aus dem RIS-Bestand“ | #538 |
 
 Ohne Umstellung eines alten Weges laufen außerdem die Abonnements `insight.urheber` (`URHEBER_SUBSCRIPTION`,
 Standard `aktiv`), `insight.indexnow` (mit `INDEXNOW_KEY`) und `insight.fraktionen_live` (Live-Übertragungen).

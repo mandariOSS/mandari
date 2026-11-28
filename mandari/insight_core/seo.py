@@ -861,10 +861,13 @@ def get_person_seo(
     )
 
 
-def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpRequest) -> SEOContext:
+def get_decision_seo(
+    item: Any, body: Any, status_label: str, request: HttpRequest, *, gremium: str | None = None
+) -> SEOContext:
     """
     SEO-Kontext eines öffentlichen Beschlusses (Umsetzungsstand, Issue #48): „{Beschluss} – Umsetzungsstand,
     {Kommune}“; die Description nennt Gremium, Datum, Stand der Umsetzung und den Anfang des Beschlusstexts.
+    ``gremium`` nennt das Gremium, wenn der Beschluss aus dem RIS-Bestand kommt (Issue #538); sonst das der Sitzung.
     """
     kommune = _kommune(body)
     # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
@@ -875,7 +878,8 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
     name = " ".join(oeffentlich.split()) or "Beschluss"
     title = seitentitel([f"{name} – Umsetzungsstand", name], name, kommune)
     meeting = item.meeting
-    gremium = getattr(getattr(meeting, "organization", None), "name", "") or ""
+    if gremium is None:
+        gremium = getattr(getattr(meeting, "organization", None), "name", "") or ""
     datum = _datum(meeting.start) if meeting.start else ""
     satz = " ".join(t for t in ("Beschluss", in_committee(gremium), f"vom {datum}" if datum else "") if t)
     teile = [f"{kommune}: {satz}." if kommune else f"{satz}."]

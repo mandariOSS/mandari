@@ -1464,6 +1464,36 @@ dann ohne `--dry-run` (einzelne Umzüge mit `--eintrag <Kennung>`). Zurückgedre
 früheren Punkt bzw. an der früheren Vorlage und ziehen von dort nie wieder automatisch um. Ein älteres Image läuft
 ohne Rückbau der Migration (zwei neue Tabellen).
 
+### Beschluss-Tracking aus dem RIS-Bestand
+
+Die Beschlusskontrolle in Work (Recherche › Beschlüsse) und der Reiter „Umsetzung“ der Beschlüsse im Bürgerportal
+lesen mit `RIS_DECISION_TRACKING=bestand` über die Lese-Fassade aus dem RIS-Bestand (`hub.ris.selectors`, kanonisches
+Modell; Issue #538) statt aus den Session-Tabellen. Keine Migration, kein Zeitplan; der Schalter wirkt nach dem
+Neustart der Anwendung.
+
+| `RIS_DECISION_TRACKING` | Bedeutung |
+|---|---|
+| `session` (Standard) | wie bisher: Beschlüsse der Session-Mandanten, die mit der Kommune verknüpft sind |
+| `bestand` | Beschlüsse jeder Kommune, deren RIS Abstimmungsergebnisse liefert (Erweiterungen `mandari:vote` und `mandari:implementation`), auch ohne mandari Session |
+
+**Was sich mit `bestand` ändert:**
+
+- Work zeigt nur noch den veröffentlichten Umsetzungsstand mit der öffentlichen Statusmeldung. Zuständigkeit, interner
+  Erledigungsvermerk und ein nicht veröffentlichter Stand stehen nicht im Bestand und entfallen; solche Beschlüsse
+  stehen mit „kein Stand veröffentlicht“ in der Liste. Beschlüsse eines Session-Mandanten erscheinen erst, wenn sie im
+  Bestand angekommen sind (Abruf der Session-Schnittstelle bzw. später der RIS-Projektor, #537).
+- Im Bürgerportal heißt die Detailseite eines Beschlusses nach dem Tagesordnungspunkt im Bestand. Adressen mit der
+  Kennung des Session-Beschlusses (Abo-Mails, Lesezeichen) zeigen weiter den Beschluss. Abos und ihre Mails bleiben an
+  den Session-Beschluss gebunden; Beschlüsse aus fremden Quellen haben kein Abo. Archiv, Pause und Rücknahme folgen
+  dem Stand der Kommune (`publication`), nicht mehr den Feldern am Session-Mandanten.
+- Der Gremienfilter nennt die Gremien des Bestands; gespeicherte Filteradressen mit einer Gremienkennung aus Session
+  ergeben eine leere Liste.
+
+**Einschalten:** Vorher in Work und im Bürgerportal für eine Kommune mit Session-Mandant vergleichen, ob dieselben
+Beschlüsse erscheinen (Zahlen im Kopf der Liste). Dann `RIS_DECISION_TRACKING=bestand` setzen und die Anwendung neu
+starten. **Rückweg:** `RIS_DECISION_TRACKING=session` und neu starten; nichts wird geschrieben, Adressen mit
+Bestandskennung führen dann wieder auf 404.
+
 ### KI-Anbieter: eine Konfiguration, nur freigegebene Endpunkte
 
 Jeder KI-Aufruf (Schreibhilfe und Co-Editor in Work, Zusammenfassung, KI-Assistent und KI-Verortung im

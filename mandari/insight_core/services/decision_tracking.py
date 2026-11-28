@@ -12,11 +12,18 @@ Es werden ausschließlich Daten gezeigt, die die Verwaltung dafür freigegeben
 hat: öffentliche Sitzung, öffentlicher TOP, Beschluss angenommen, Schalter am
 Mandanten und am Beschluss aktiv. Interne Erledigungsvermerke bleiben intern —
 nach außen geht nur die separate öffentliche Statusmeldung.
+
+Mit ``RIS_DECISION_TRACKING=bestand`` (Issue #538, ``aus_bestand``) lesen Liste, Zahlen und Detailseite die
+Beschlüsse über die Lese-Fassade aus dem RIS-Bestand (``hub.ris.selectors``): Dort steht der Umsetzungsstand nur,
+wenn ihn der Herausgeber nach dieser Regel veröffentlicht hat (Erweiterung ``mandari:implementation``). Den
+Veröffentlichungsstand der Kommune (Archiv, Pause, Rücknahme) bestimmt dann ``publication``. Abos und ihre Mails
+bleiben an den Session-Beschluss gebunden (``session_beschluss``), bis die Benachrichtigung aus Ereignissen kommt.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from django.conf import settings
@@ -24,6 +31,9 @@ from django.utils import timezone
 
 from apps.common import mail
 from apps.common.email import render_email
+from hub.ris import selectors as ris
+
+from ..models import OParlAgendaItem
 
 logger = logging.getLogger(__name__)
 
@@ -113,9 +123,42 @@ def public_decisions(body: Any) -> Any:
     )
 
 
+def aus_bestand() -> bool:
+    """Lesen die Beschlussseiten den RIS-Bestand (``RIS_DECISION_TRACKING=bestand``, Issue #538)?"""
+    return getattr(settings, "RIS_DECISION_TRACKING", "session") == "bestand"
+
+
 def has_public_decisions(body: Any) -> bool:
     """Gibt es in der Kommune lesbare Beschlüsse? Nur dann steht „Beschlüsse“ in der Navigation (Issue #1261)."""
+    if aus_bestand():
+        return ris.decided_agenda_items([body], published_only=True).exists()
     return public_decisions(body).exists()
+
+
+#: Adresse eines Tagesordnungspunkts in der OParl-Schnittstelle von mandari Session (``hub.ris.mapping.session``)
+_SESSION_PUNKT = re.compile(r"/session/(?P<slug>[^/]+)/api/oparl/agendaitem/(?P<id>[0-9a-fA-F-]{36})/?$")
+
+
+def session_beschluss(item: OParlAgendaItem) -> Any:
+    """
+    Session-Beschluss zu einem Tagesordnungspunkt des RIS-Bestands (Abos, Issue #538): Der Spiegel eines Session-
+    Mandanten nennt Mandant und Kennung in der Adresse. ``None`` bei fremden Quellen und unbekannten Kennungen.
+    """
+    from apps.session.models import SessionAgendaItem
+
+    treffer = _SESSION_PUNKT.search(item.external_id or "")
+    if treffer is None:
+        return None
+    return (
+        SessionAgendaItem.objects.select_related("meeting__organization", "meeting__tenant__oparl_body", "paper")
+        .filter(
+            pk=treffer["id"],
+            meeting__tenant__slug=treffer["slug"],
+            # Nur der Mandant, der diese Kommune veröffentlicht (nie ein gleichnamiger einer anderen Installation)
+            meeting__tenant__oparl_body_id=item.meeting.body_id,
+        )
+        .first()
+    )
 
 
 def visibility(item: Any) -> str:
@@ -144,6 +187,8 @@ def is_publicly_visible(item: Any) -> bool:
 
 
 def stats(body) -> dict:
+    if aus_bestand():
+        return ris.implementation_stats(ris.decided_agenda_items([body], published_only=True), timezone.localdate())
     qs = public_decisions(body)
     counts = {status: qs.filter(implementation_status=status).count() for status, _ in PUBLIC_STATUS_LABELS.items()}
     counts["total"] = qs.count()
@@ -157,7 +202,8 @@ def timeline(item) -> list[dict]:
     """Status-Zeitleiste: beschlossen → in Umsetzung → umgesetzt (bzw. zurückgestellt)."""
     status = item.implementation_status
     decided_at = item.meeting.start
-    updated = item.implementation_updated_at
+    # Aus dem RIS-Bestand (Issue #538) heißt der Zeitpunkt wie in der Erweiterung ``mandari:implementation``
+    updated = item.implementation_modified if isinstance(item, OParlAgendaItem) else item.implementation_updated_at
     steps = [
         {"key": "decided", "label": "Beschlossen", "date": decided_at, "reached": True, "current": status == "open"},
         {
@@ -192,6 +238,9 @@ def oeffentlicher_name(item) -> str:
     """
     from .ortsschutz import grund_nach_art, oeffentlicher_titel
 
+    if isinstance(item, OParlAgendaItem):
+        # Aus dem RIS-Bestand: Vorlagen des Punkts hat der Aufrufer als ``_ortsschutz`` ausgewertet (Issue #538)
+        return item.titel_oeffentlich
     paper = item.paper if getattr(item, "paper_id", None) else None
     schutz = grund_nach_art(None, item.name) or (
         grund_nach_art(paper.get_paper_type_display(), paper.name) if paper is not None else ""

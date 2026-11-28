@@ -1258,6 +1258,13 @@ class OParlAgendaItem(SourceDeletionModel):
 
         return oeffentlicher_titel(self.name, None, getattr(self, "_ortsschutz", None))
 
+    @property
+    def implementation_overdue(self) -> bool:
+        """Veröffentlichte Frist verstrichen, Beschluss aber noch nicht erledigt (Beschlusskontrolle, Issue #538)."""
+        if not self.implementation_deadline or not self.implementation_status or self.implementation_status == "done":
+            return False
+        return self.implementation_deadline < timezone.localdate()
+
     def get_papers(self):
         """Liefert alle Papers/Vorgänge, die mit diesem TOP verknüpft sind."""
         # Nutze prefetched Daten wenn vorhanden (von MeetingDetailView)

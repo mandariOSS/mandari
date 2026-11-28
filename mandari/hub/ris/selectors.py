@@ -28,10 +28,11 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Final, cast
 
-from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
-from django.db.models.functions import Coalesce, Length, Substr
+from django.db.models import Count, Exists, F, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce, ExtractYear, Length, Substr
 from django.utils import timezone
 from mandari_dokumente import MAX_TEXT_CHARS
+from mandari_oparl.extensions import IMPLEMENTATION_LABELS
 
 from hub.ris import vorlagennummer
 from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
@@ -370,6 +371,162 @@ def protocol_approval(meeting: OParlMeeting) -> ProtocolApproval | None:
     return ProtocolApproval(
         mode=meeting.protocol_approval_mode, approved_on=meeting.protocol_approved_on, approved_in=approved_in
     )
+
+
+# =============================================================================
+# Beschlusskontrolle (Issue #538)
+# =============================================================================
+#
+# Beschlüsse und ihr Umsetzungsstand aus den Spalten des kanonischen Modells (Issue #525), für jede Quelle mit den
+# Erweiterungen ``mandari:vote`` und ``mandari:implementation``: Work zeigt die Beschlusskontrolle, das Bürgerportal
+# „Was wurde aus …?“, beide ohne Session-Tabellen. Im Bestand steht der Umsetzungsstand nur, wenn der Herausgeber ihn
+# veröffentlicht; den internen Erledigungsvermerk und die Zuständigkeit gibt es hier nicht.
+
+#: Ergebnisse, die als Entscheidung zählen (wie in mandari Session); „zurückgezogen“ ist keine
+DECIDED_RESULTS: Final = ("approved", "rejected", "deferred", "noted")
+#: Umsetzungsstände mit Bezeichnung, in der Reihenfolge der Auswahl
+IMPLEMENTATION_CHOICES: Final = tuple(IMPLEMENTATION_LABELS.items())
+#: Neueste Sitzung zuerst, die Punkte einer Sitzung in Tagesordnungsreihenfolge; Sitzung, Nummer und Kennung als
+#: eindeutiger Nachrang, damit die Folge auch über Seitengrenzen feststeht (Issue #653)
+DECISIONS_ORDERING: Final = ("-meeting__start", "meeting_id", "order", "number", "id")
+
+
+def _decided(bodies: Bodies | None, *, published_only: bool) -> QuerySet[OParlAgendaItem]:
+    """Auswahl der Beschlüsse ohne Laden und Reihenfolge; ``bodies=None``: alle Kommunen."""
+    items = OParlAgendaItem.objects.filter(
+        meeting__deleted=False, deleted=False, public=True, vote_result__in=DECIDED_RESULTS
+    )
+    if bodies is not None:
+        items = items.filter(meeting__body__in=bodies)
+    if published_only:
+        items = items.filter(vote_result="approved", implementation_status__in=list(IMPLEMENTATION_LABELS))
+    return items
+
+
+def decided_agenda_items(bodies: Bodies, *, published_only: bool = False) -> QuerySet[OParlAgendaItem]:
+    """
+    Beschlüsse der Kommunen: öffentliche Tagesordnungspunkte mit Ergebnis der Abstimmung in nicht gelöschten Sitzungen,
+    ohne gelöschte und zurückgenommene Punkte, in ``DECISIONS_ORDERING``. Sitzung und Kommune sind geladen, die Gremien
+    der Sitzung vorgeladen.
+
+    ``published_only``: nur angenommene Beschlüsse mit veröffentlichtem Umsetzungsstand (Bürgerportal).
+    """
+    return (
+        _decided(bodies, published_only=published_only)
+        .select_related("meeting__body")
+        .prefetch_related("meeting__organizations")
+        .order_by(*DECISIONS_ORDERING)
+    )
+
+
+def decided_agenda_item(
+    bodies: Bodies | None, item_id: object, *, published_only: bool = False
+) -> OParlAgendaItem | None:
+    """
+    Ein Beschluss aus derselben Auswahl wie ``decided_agenda_items``; ``None``, wenn es ihn dort nicht gibt.
+    ``bodies=None`` sucht in allen Kommunen (Detailseite im Bürgerportal, die Kommune folgt dem Beschluss).
+    """
+    pk = _uuid(item_id)
+    if pk is None:
+        return None
+    found = _decided(bodies, published_only=published_only).filter(pk=pk)
+    return found.select_related("meeting__body").prefetch_related("meeting__organizations").first()
+
+
+def filter_decisions(
+    items: QuerySet[OParlAgendaItem], *, organization_id: object = "", year: object = "", query: str = ""
+) -> QuerySet[OParlAgendaItem]:
+    """
+    Beschlüsse nach Gremium (Kennung; eine ungültige ergibt eine leere Liste statt eines Fehlers), Jahr der Sitzung
+    (außerhalb von 1 bis 9999 ohne Wirkung, wie ein fehlendes) und Text (Name, Beschlusstext, Beschlussnummer,
+    veröffentlichte Statusmeldung).
+    """
+    if organization_id:
+        pk = _uuid(organization_id)
+        if pk is None:
+            return items.none()
+        items = items.filter(meeting__organizations=pk)
+    jahr = _year(year)
+    if jahr is not None:
+        items = items.filter(meeting__start__year=jahr)
+    if query:
+        items = items.filter(
+            Q(name__icontains=query)
+            | Q(resolution_text__icontains=query)
+            | Q(resolution_number__icontains=query)
+            | Q(implementation_public_note__icontains=query)
+        )
+    return items
+
+
+def _year(value: object) -> int | None:
+    """Jahr aus der Adresse; ``None`` ohne gültige Zahl von 1 bis 9999 (sonst scheitert die Datumsgrenze)."""
+    try:
+        jahr = int(str(value or "").strip())
+    except ValueError:
+        return None
+    return jahr if 1 <= jahr <= 9999 else None
+
+
+#: Umsetzungsstände, die noch nicht erledigt sind (ohne Stand zählt ein Beschluss nie als überfällig)
+_NOT_DONE: Final = tuple(status for status in IMPLEMENTATION_LABELS if status != "done")
+
+
+def implementation_overdue_q(today: date) -> Q:
+    """Angenommen, Frist überschritten und mit einem Stand, der nicht erledigt ist (wie ``implementation_overdue``)."""
+    return Q(vote_result="approved", implementation_deadline__lt=today, implementation_status__in=_NOT_DONE)
+
+
+def filter_implementation(
+    items: QuerySet[OParlAgendaItem],
+    *,
+    status: str = "",
+    open_only: bool = False,
+    overdue_only: bool = False,
+    today: date,
+) -> QuerySet[OParlAgendaItem]:
+    """Beschlüsse nach Umsetzungsstand (nur angenommene), ohne erledigte bzw. nur mit überschrittener Frist."""
+    if status in IMPLEMENTATION_LABELS:
+        items = items.filter(vote_result="approved", implementation_status=status)
+    if open_only:
+        items = items.exclude(implementation_status="done")
+    if overdue_only:
+        items = items.filter(implementation_overdue_q(today))
+    return items
+
+
+def implementation_stats(items: QuerySet[OParlAgendaItem], today: date) -> dict[str, int]:
+    """
+    Zahlen zum Umsetzungsstand in einer Abfrage: angenommene Beschlüsse je Stand (``open``, ``in_progress``, ``done``,
+    ``deferred``), überfällige (``overdue``) und alle (``total``).
+    """
+    approved = Q(vote_result="approved")
+    counts = items.order_by().aggregate(
+        **{status: Count("pk", filter=approved & Q(implementation_status=status)) for status in IMPLEMENTATION_LABELS},
+        overdue=Count("pk", filter=implementation_overdue_q(today)),
+        total=Count("pk"),
+    )
+    return {key: int(value or 0) for key, value in counts.items()}
+
+
+def decision_organizations(bodies: Bodies, *, published_only: bool = False) -> QuerySet[OParlOrganization]:
+    """Gremien der Kommunen mit mindestens einem Beschluss aus ``decided_agenda_items``, nach Name."""
+    if not isinstance(bodies, QuerySet):
+        bodies = list(bodies)  # zweimal gebraucht
+    beschluesse = _decided(bodies, published_only=published_only).filter(meeting__organizations=OuterRef("pk"))
+    return OParlOrganization.objects.filter(body__in=bodies).filter(Exists(beschluesse)).order_by("name", "id")
+
+
+def decision_years(bodies: Bodies, *, published_only: bool = False) -> list[int]:
+    """Jahre mit Beschlüssen aus ``decided_agenda_items``, absteigend."""
+    years = (
+        _decided(bodies, published_only=published_only)
+        .annotate(jahr=ExtractYear("meeting__start"))
+        .order_by()
+        .values_list("jahr", flat=True)
+        .distinct()
+    )
+    return sorted((int(jahr) for jahr in years if jahr), reverse=True)
 
 
 def agenda_items_by_external_id(external_ids: Iterable[str]) -> QuerySet[OParlAgendaItem]:
