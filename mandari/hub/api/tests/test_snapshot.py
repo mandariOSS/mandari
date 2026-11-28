@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import tempfile
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from datetime import date
 from typing import Any, cast
 
@@ -262,8 +262,8 @@ def test_aenderung_nach_dem_festhalten_des_cursors_geht_nicht_verloren(
     vorlage = welt["vorlagen"][0]
     stand_lesen = changes.head
 
-    def stand_dann_aenderung(body_id: uuid.UUID) -> int:
-        stand = stand_lesen(body_id)
+    def stand_dann_aenderung(body_id: uuid.UUID, producers: Sequence[str] = ()) -> int:
+        stand = stand_lesen(body_id, producers)
         _vorlage_aendern(welt, vorlage, "Geändert vor dem Lesen")
         return stand
 
