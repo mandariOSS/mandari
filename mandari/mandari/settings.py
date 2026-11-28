@@ -876,6 +876,15 @@ if WORK_RIS_RELINK not in ("aus", "probe", "aktiv"):
 
     raise ImproperlyConfigured("WORK_RIS_RELINK muss aus, probe oder aktiv sein.")
 WORK_RIS_RELINK_INTERVAL_MINUTES = int(os.environ.get("WORK_RIS_RELINK_INTERVAL_MINUTES", "15"))
+# Beschluss-Tracking (Issue #538): "session" (Standard) liest die Beschlusskontrolle in Work und die Umsetzung im
+# Bürgerportal wie bisher aus den Session-Tabellen. "bestand" liest beide über die Lese-Fassade aus dem RIS-Bestand
+# (hub.ris.selectors, kanonisches Modell): für jede Kommune mit Abstimmungsergebnissen, aber nur mit dem
+# veröffentlichten Umsetzungsstand (ohne internen Erledigungsvermerk und Zuständigkeit). Rückweg: "session".
+RIS_DECISION_TRACKING = os.environ.get("RIS_DECISION_TRACKING", "session").strip().lower() or "session"
+if RIS_DECISION_TRACKING not in ("session", "bestand"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("RIS_DECISION_TRACKING muss session oder bestand sein.")
 SEARCH_INDEX_SHADOW_BODIES = [
     teil.strip().lower() for teil in os.environ.get("SEARCH_INDEX_SHADOW_BODIES", "").split(",") if teil.strip()
 ]

@@ -1,4 +1,8 @@
 {% extends "base_insight.html" %}
+{% comment %}
+Ein Beschluss mit Umsetzungsstand (Issue #48). Gremium, Herausgeber, Stand und Zuständigkeit setzt der View, aus
+Session oder aus dem RIS-Bestand (Issue #538, dort ohne Zuständigkeit).
+{% endcomment %}
 
 {% block title %}{% if seo.title %}{{ seo.title }}{% else %}{{ titel|default:item.name }} – Umsetzungsstand{% endif %}{% endblock %}
 {# Ohne Zusatz: Der Titel nennt die Kommune schon, die Marke steht in og:site_name (Issue #939) #}
@@ -30,7 +34,7 @@
         </div>
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ titel|default:item.name }}</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Beschlossen am {{ item.meeting.start|date:"d.m.Y" }} im Gremium <strong>{{ item.meeting.organization.name }}</strong> · {{ tenant.name }}
+            Beschlossen am {{ item.meeting.start|date:"d.m.Y" }} im Gremium <strong>{{ gremium }}</strong> · {{ herausgeber }}
         </p>
         {% if item.resolution_text %}
         <div class="mt-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900/40">
@@ -58,14 +62,14 @@
                     {% endfor %}
                 </ol>
                 <div class="mt-6 p-4 rounded-lg {% if item.implementation_public_note %}bg-primary-50 dark:bg-primary-900/20{% else %}bg-gray-50 dark:bg-gray-900/40{% endif %}">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Stand der Verwaltung{% if item.implementation_updated_at %} · {{ item.implementation_updated_at|date:"d.m.Y" }}{% endif %}</p>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Stand der Verwaltung{% if stand %} · {{ stand|date:"d.m.Y" }}{% endif %}</p>
                     {% if item.implementation_public_note %}
                     <p class="text-gray-800 dark:text-gray-100 whitespace-pre-line">{{ item.implementation_public_note }}</p>
                     {% else %}
                     <p class="text-gray-500 dark:text-gray-400 text-sm">Die Verwaltung hat noch keine öffentliche Statusmeldung hinterlegt.</p>
                     {% endif %}
                     <dl class="mt-3 grid grid-cols-2 gap-3 text-sm">
-                        {% if item.implementation_recipient %}<div><dt class="text-gray-500 dark:text-gray-400">Zuständig</dt><dd class="text-gray-900 dark:text-white">{{ item.implementation_recipient }}</dd></div>{% endif %}
+                        {% if zustaendig %}<div><dt class="text-gray-500 dark:text-gray-400">Zuständig</dt><dd class="text-gray-900 dark:text-white">{{ zustaendig }}</dd></div>{% endif %}
                         {% if item.implementation_deadline and item.implementation_status != 'done' %}<div><dt class="text-gray-500 dark:text-gray-400">Geplante Umsetzung bis</dt><dd class="{% if overdue %}text-red-600 dark:text-red-400 font-medium{% else %}text-gray-900 dark:text-white{% endif %}">{{ item.implementation_deadline|date:"d.m.Y" }}{% if overdue %} (überschritten){% endif %}</dd></div>{% endif %}
                     </dl>
                 </div>

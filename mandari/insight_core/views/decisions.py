@@ -6,6 +6,10 @@ Beschlüsse im Bürgerportal: die Liste der Entscheidungen (Issue #1270) und die
 (``services.beschlussliste``). Die Beschlusskontrolle mit dem Umsetzungsstand der Verwaltung steht als Reiter
 „Umsetzung“ unter ``/insight/beschluesse/umsetzung/``; der Reiter erscheint nur, wenn die Kommune solche Beschlüsse
 veröffentlicht. Alte Adressen der Beschlusskontrolle (``?status=…``, ``?offen=1``, ``?jahr=…``, ``?q=…``) führen dorthin.
+
+Mit ``RIS_DECISION_TRACKING=bestand`` (Issue #538) lesen Reiter und Detailseite die Beschlüsse über die Lese-Fassade
+aus dem RIS-Bestand; die Detailseite heißt dann nach der Kennung des Tagesordnungspunkts im Bestand. Adressen mit der
+Kennung des Session-Beschlusses (Abo-Mails, Lesezeichen) zeigen weiter den bisherigen Beschluss.
 """
 
 from urllib.parse import urlencode
@@ -24,9 +28,10 @@ from django.views.generic import TemplateView
 
 from apps.common.next_url import safe_next_url
 from apps.common.params import uuid_param
+from hub.ris import selectors as ris
 
 from .. import publication, throttle
-from ..models import DecisionSubscription, OParlBody
+from ..models import DecisionSubscription, OParlAgendaItem, OParlBody
 from ..portal import get_portal
 from ..seo import get_list_seo, get_page_seo
 from ..services import beschlussliste, decision_tracking
@@ -201,7 +206,8 @@ class DecisionTrackingView(ActiveBodyRequiredMixin, TemplateView):
 
     def get(self, request, *args, **kwargs):
         body = get_active_body(request)
-        if body is not None:
+        # Aus dem RIS-Bestand (Issue #538) setzt die Middleware den Stand der Kommune durch (``publication``)
+        if body is not None and not decision_tracking.aus_bestand():
             response = _apply_state(request, decision_tracking.body_visibility(body), body)
             if response is not None:
                 return response
@@ -228,6 +234,9 @@ class DecisionTrackingView(ActiveBodyRequiredMixin, TemplateView):
         ).to_dict()
         if not context["publishing"]:
             context["zuletzt_beraten"] = zuletzt_beschlossen(body, anzahl=LEER_ANZAHL) if body is not None else []
+            return context
+        if decision_tracking.aus_bestand():
+            context.update(self._aus_bestand(body))
             return context
         tenants = decision_tracking.publishing_tenants(body)
 
@@ -266,6 +275,7 @@ class DecisionTrackingView(ActiveBodyRequiredMixin, TemplateView):
             )
             # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
             item.titel_oeffentlich = decision_tracking.oeffentlicher_name(item)
+            item.gremium = item.meeting.organization.name if item.meeting.organization_id else ""
         context.update(
             {
                 "stats": decision_tracking.stats(body),
@@ -294,9 +304,84 @@ class DecisionTrackingView(ActiveBodyRequiredMixin, TemplateView):
         )
         return context
 
+    def _aus_bestand(self, body: OParlBody) -> dict:
+        """Reiter aus dem RIS-Bestand (Issue #538): dieselben Filter und Angaben über die Lese-Fassade."""
+        params = self.request.GET
+        status = params.get("status", "")
+        organization_id = params.get("gremium", "")
+        year = params.get("jahr", "")
+        query = (params.get("q") or "").strip()
+        only_open = params.get("offen") == "1"
+        today = timezone.localdate()
+
+        qs = ris.filter_decisions(
+            ris.decided_agenda_items([body], published_only=True),
+            organization_id=organization_id,
+            year=year,
+            query=query,
+        )
+        qs = ris.filter_implementation(
+            qs,
+            status=status if status in decision_tracking.PUBLIC_STATUS_LABELS else "",
+            open_only=only_open,
+            today=today,
+        )
+        page = Paginator(qs, PAGE_SIZE).get_page(params.get("page"))
+        items = list(page.object_list)
+        vorlagen = ris.papers_of_agenda_items(items)
+        for item in items:
+            item.public_label = decision_tracking.PUBLIC_STATUS_LABELS.get(
+                item.implementation_status, item.get_implementation_status_display()
+            )
+            # Ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269): nach dem Punkt und
+            # den Vorlagen, die unter ihm beraten werden
+            item._ortsschutz = _ortsschutz(item, vorlagen.get(item.pk, []))
+            item.gremium = _gremien(item)
+        return {
+            "stats": decision_tracking.stats(body),
+            "status_labels": decision_tracking.PUBLIC_STATUS_LABELS,
+            "items": items,
+            "page_obj": page,
+            "organizations": ris.decision_organizations([body], published_only=True),
+            "years": ris.decision_years([body], published_only=True),
+            "filter_status": status,
+            "filter_organization": organization_id,
+            "filter_year": year,
+            "filter_open": only_open,
+            "search_query": query,
+            "has_filter": bool(status or organization_id or year or query or only_open),
+            "today": today,
+        }
+
+
+def _ortsschutz(item, vorlagen) -> str:
+    """Grund, die Hausnummer im Namen auszulassen, nach Art und Titel der Vorlagen bzw. des Punkts (Issue #1269)."""
+    from ..services import ortsschutz
+
+    return next(
+        (g for p in vorlagen if (g := ortsschutz.grund_nach_art(p.paper_type, p.name))),
+        ortsschutz.grund_nach_art(None, item.name),
+    )
+
+
+def _gremien(item) -> str:
+    """Gremien der Sitzung eines Beschlusses aus dem RIS-Bestand (vorgeladen)."""
+    return ", ".join(o.name for o in item.meeting.organizations.all() if o.name)
+
 
 class DecisionDetailView(TemplateView):
+    """
+    Ein Beschluss mit Umsetzungsstand und Abo (Issue #48). Aus dem RIS-Bestand (Issue #538) heißt die Seite nach dem
+    Tagesordnungspunkt im Bestand; das Abo gilt weiter dem Session-Beschluss dahinter (``session_beschluss``).
+    """
+
     template_name = "pages/decisions/detail.html"
+
+    def _aus_bestand(self) -> OParlAgendaItem | None:
+        """Beschluss aus dem RIS-Bestand; ``None`` ohne Schalter oder bei einer Kennung aus Session."""
+        if not decision_tracking.aus_bestand():
+            return None
+        return ris.decided_agenda_item(None, self.kwargs["pk"], published_only=True)
 
     def _get_item(self):
         from apps.session.models import SessionAgendaItem
@@ -311,6 +396,12 @@ class DecisionDetailView(TemplateView):
         return item
 
     def get(self, request, *args, **kwargs):
+        beschluss = self._aus_bestand()
+        if beschluss is not None:
+            response = _bestand_state(request, beschluss)
+            if response is not None:
+                return response
+            return self.render_to_response(self._bestand_context(beschluss, **kwargs))
         item = self._get_item()
         response = _apply_state(request, self.visibility, item.meeting.tenant.oparl_body)
         if response is not None:
@@ -327,6 +418,7 @@ class DecisionDetailView(TemplateView):
         # Kommune der Seite folgt dem Beschluss (Deep-Links aus E-Mails)
         if str(self.request.session.get("active_body_id")) != str(body.id):
             self.request.session["active_body_id"] = str(body.id)
+        gremium = item.meeting.organization.name if item.meeting.organization_id else ""
         context.update(
             {
                 "active_body": body,
@@ -334,7 +426,10 @@ class DecisionDetailView(TemplateView):
                 "item": item,
                 # Name ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
                 "titel": decision_tracking.oeffentlicher_name(item),
-                "tenant": item.meeting.tenant,
+                "gremium": gremium,
+                "herausgeber": item.meeting.tenant.name,
+                "stand": item.implementation_updated_at,
+                "zustaendig": item.implementation_recipient,
                 "timeline": decision_tracking.timeline(item),
                 "status_label": status_label,
                 "overdue": bool(
@@ -355,31 +450,88 @@ class DecisionDetailView(TemplateView):
         # Geladenen (Issue #914): Der Umsetzungsstand ist eine eigene, öffentliche Seite
         from ..seo import get_decision_seo
 
-        context["seo"] = get_decision_seo(item, body, str(status_label), self.request).to_dict()
+        context["seo"] = get_decision_seo(item, body, str(status_label), self.request, gremium=gremium).to_dict()
+        return context
+
+    def _bestand_context(self, item: OParlAgendaItem, **kwargs) -> dict:
+        """Kontext aus dem RIS-Bestand (Issue #538): dieselben Angaben, ohne Zuständigkeit."""
+        context = super().get_context_data(**kwargs)
+        body = item.meeting.body
+        status_label = decision_tracking.PUBLIC_STATUS_LABELS.get(
+            item.implementation_status or "", item.get_implementation_status_display()
+        )
+        # Kommune der Seite folgt dem Beschluss (Deep-Links aus E-Mails)
+        if str(self.request.session.get("active_body_id")) != str(body.id):
+            self.request.session["active_body_id"] = str(body.id)
+        vorlagen = ris.papers_of_agenda_items([item]).get(item.pk, [])
+        # Name ohne Hausnummer bei Eingaben aus der Einwohnerschaft und Bauanträgen (Issue #1269)
+        item._ortsschutz = _ortsschutz(item, vorlagen)
+        gremium = _gremien(item)
+        session_item = decision_tracking.session_beschluss(item)
+        context.update(
+            {
+                "active_body": body,
+                "nav": "decision_detail",
+                "item": item,
+                "titel": decision_tracking.oeffentlicher_name(item),
+                "gremium": gremium,
+                "herausgeber": body.get_display_name(),
+                "stand": item.implementation_modified,
+                "zustaendig": "",
+                "timeline": decision_tracking.timeline(item),
+                "status_label": status_label,
+                "overdue": item.implementation_overdue,
+                "oparl_meeting_id": item.meeting_id,
+                "oparl_paper_id": vorlagen[0].pk if vorlagen else None,
+                "subscriber_count": (
+                    DecisionSubscription.objects.filter(
+                        agenda_item=session_item, confirmed=True, unsubscribed_at__isnull=True
+                    ).count()
+                    if session_item is not None
+                    else 0
+                ),
+                # Abos gelten dem Session-Beschluss; im Archiv kommen keine Meldungen mehr
+                "can_subscribe": _abo_sichtbarkeit(item, session_item) == decision_tracking.VISIBLE,
+            }
+        )
+        from ..seo import get_decision_seo
+
+        context["seo"] = get_decision_seo(item, body, str(status_label), self.request, gremium=gremium).to_dict()
         return context
 
     def post(self, request, *args, **kwargs):
         """Beschluss abonnieren (Double-Opt-In)."""
-        item = self._get_item()
-        if self.visibility != decision_tracking.VISIBLE:
-            response = _apply_state(request, self.visibility, item.meeting.tenant.oparl_body)
+        beschluss = self._aus_bestand()
+        if beschluss is not None:
+            response = _bestand_state(request, beschluss)
             if response is not None:
                 return response
+            item = decision_tracking.session_beschluss(beschluss)
+            self.visibility = _abo_sichtbarkeit(beschluss, item)
+            ziel = beschluss.pk
+        else:
+            item = self._get_item()
+            ziel = item.id
+        if self.visibility != decision_tracking.VISIBLE:
+            if beschluss is None:
+                response = _apply_state(request, self.visibility, item.meeting.tenant.oparl_body)
+                if response is not None:
+                    return response
             messages.info(request, "Dieser Beschluss steht im Archiv; es gibt keine neuen Meldungen mehr.")
-            return redirect("insight_core:insight:decision_detail", pk=item.id)
+            return redirect("insight_core:insight:decision_detail", pk=ziel)
         email = (request.POST.get("email") or "").strip().lower()
         try:
             validate_email(email)
         except ValidationError:
             messages.error(request, "Bitte eine gültige E-Mail-Adresse angeben.")
-            return redirect("insight_core:insight:decision_detail", pk=item.id)
+            return redirect("insight_core:insight:decision_detail", pk=ziel)
         if request.POST.get("privacy") != "on":
             messages.error(request, "Bitte der Verarbeitung der E-Mail-Adresse zustimmen.")
-            return redirect("insight_core:insight:decision_detail", pk=item.id)
+            return redirect("insight_core:insight:decision_detail", pk=ziel)
         # Das Formular löst eine Bestätigungsmail aus: je IP-Adresse gedrosselt
         if throttle.mail_ip_exceeded(request):
             messages.error(request, "Es wurden gerade zu viele Benachrichtigungen angefragt. Bitte später erneut.")
-            return redirect("insight_core:insight:decision_detail", pk=item.id)
+            return redirect("insight_core:insight:decision_detail", pk=ziel)
 
         subscription, created = DecisionSubscription.objects.get_or_create(agenda_item=item, email=email)
         # Die Antwort ist für jede Adresse dieselbe: Wer eine fremde Adresse einträgt, erfährt nicht, ob sie den
@@ -397,7 +549,32 @@ class DecisionDetailView(TemplateView):
             "Fast geschafft: Ist die Adresse für diesen Beschluss noch nicht eingetragen, haben wir eine E-Mail zur "
             "Bestätigung geschickt. Erst nach dem Klick auf den Link erhalten Sie Benachrichtigungen.",
         )
-        return redirect("insight_core:insight:decision_detail", pk=item.id)
+        return redirect("insight_core:insight:decision_detail", pk=ziel)
+
+
+def _bestand_state(request, item: OParlAgendaItem):
+    """
+    Stand der Kommune eines Beschlusses aus dem RIS-Bestand (Issue #538, ``publication``): Hinweisseite bei Pause
+    (503) und Rücknahme (410), im Archiv läuft die Seite mit Hinweis, wie auf den übrigen Detailseiten.
+    """
+    state = publication.body_state(item.meeting.body_id)
+    if state is None:
+        return None
+    request.insight_publication_state = state
+    return publication.state_response(request, state)
+
+
+def _abo_sichtbarkeit(item: OParlAgendaItem, session_item) -> str:
+    """
+    Sichtbarkeit für Abos eines Beschlusses aus dem RIS-Bestand: die des Session-Beschlusses dahinter, der die Meldungen
+    auslöst; ohne ihn (fremde Quelle) keine Abos, im Archiv der Kommune keine neuen.
+    """
+    if session_item is None:
+        return decision_tracking.HIDDEN
+    sichtbarkeit = decision_tracking.visibility(session_item)
+    if sichtbarkeit == decision_tracking.VISIBLE and publication.body_state(item.meeting.body_id) is not None:
+        return decision_tracking.ARCHIVED
+    return sichtbarkeit
 
 
 def _subscription_status(request, context):

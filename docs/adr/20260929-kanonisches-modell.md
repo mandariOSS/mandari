@@ -134,6 +134,20 @@ ein Rückfall auf einen älteren Ingestor braucht deshalb den Rückweg `top-kenn
 gelesene Tagesordnung nicht mehr liefert, markiert der Abruf nach der Regel aus #556 (vollständige
 Vollabgleiche in Folge, Bremse je Sitzung). Einzelheiten in `docs/SCRAPER_SOURCES.md`.
 
+## Nachtrag: Beschluss-Tracking über die Lese-Fassade (#538)
+
+Die Fassade hat fachliche Abfragen für die Beschlusskontrolle (`decided_agenda_items`, `decided_agenda_item`,
+`filter_decisions`, `filter_implementation`, `implementation_stats`, `decision_organizations`, `decision_years`):
+öffentliche Punkte mit Ergebnis der Abstimmung (`DECIDED_RESULTS`) in nicht gelöschten Sitzungen, für das
+Bürgerportal nur angenommene mit veröffentlichtem Umsetzungsstand. Work und Bürgerportal lesen darüber, sobald der
+Schalter `RIS_DECISION_TRACKING` auf `bestand` steht (Standard `session`, der bisherige Weg). Damit gilt die
+Beschlusskontrolle für jede Quelle mit diesen Erweiterungen. Bewusst nicht im Bestand und damit in Work entfallen:
+Zuständigkeit, interner Erledigungsvermerk und ein nicht veröffentlichter Stand. Abos im Bürgerportal bleiben an den
+Session-Beschluss gebunden, bis die Benachrichtigung aus Ereignissen (`ris.resolution.implementation_changed`) kommt;
+erst dann entfallen die Importe von `apps.session` in `insight_core.services.decision_tracking` und
+`insight_core.views.decisions`, in Work die in `apps.work.ris.selectors` und `apps.work.ris.views.decisions` mit dem
+bisherigen Weg.
+
 ## Alternativen
 
 - **Interne Session-Modelle als gemeinsames Modell.** Bindet Work, Portal und App an Session;
