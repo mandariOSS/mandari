@@ -373,6 +373,7 @@ def test_empfaenger_als_zeichenkette_wird_abgelehnt() -> None:
 
 def test_verwaiste_zeilen_neu_einreihen_oder_verwerfen(journal: JournalBackend) -> None:
     _senden(to=["eins@example.org"])
+    eins_pk = MailOutbox.objects.get().pk
     _senden(to=["zwei@example.org"])
     # Ein älterer Worker kannte den Auftrag nicht und hat ihn aufgegeben
     TaskRow.objects.update(status=TaskStatus.TOT)
@@ -381,8 +382,8 @@ def test_verwaiste_zeilen_neu_einreihen_oder_verwerfen(journal: JournalBackend) 
     call_command("postausgang", stdout=ausgabe)
     assert "verwaist: 2" in ausgabe.getvalue() and "@" not in ausgabe.getvalue()
 
-    eins = MailOutbox.objects.order_by("created_at").first()
-    assert eins is not None
+    # Beide Zeilen haben jetzt denselben Zeitpunkt: über die Kennung wählen, nicht über die Reihenfolge
+    eins = MailOutbox.objects.get(pk=eins_pk)
     outbox.neu_einreihen([eins])
     assert run_pending() == 1
     assert [m.to for m in django_mail.outbox] == [["eins@example.org"]]
