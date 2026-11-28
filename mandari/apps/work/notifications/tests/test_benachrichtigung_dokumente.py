@@ -317,6 +317,62 @@ def test_geloeschtes_dokument_ergibt_nichts(
     assert not Notification.objects.exists() and not mail.outbox
 
 
+def test_dokument_im_papierkorb_ergibt_nichts(
+    settings: Any,
+    leeres_register: dict[str, Subscriber],
+    org: Any,
+    autorin: Any,
+    kollege: Any,
+    dokument: Motion,
+    client_for: Any,
+) -> None:
+    spec = _abonnement(settings)
+    _xhr(
+        client_for(autorin.user),
+        _url("document_meta", org, dokument),
+        {"action": "set_responsible", "responsible": str(kollege.id)},
+    )
+    Motion.objects.filter(pk=dokument.pk).update(status="deleted")
+
+    assert _zustellen(spec) == 1
+    assert not Notification.objects.exists() and not mail.outbox
+
+
+def test_ohne_zugang_keine_federfuehrung_und_keine_freigabeanfrage(
+    settings: Any,
+    leeres_register: dict[str, Subscriber],
+    org: Any,
+    autorin: Any,
+    kollege: Any,
+    client_for: Any,
+) -> None:
+    """Bis zur Zustellung hat die Person den Zugang zum privaten Dokument wieder verloren: kein Titel an sie."""
+    spec = _abonnement(settings)
+    privat = Motion.objects.create(organization=org, author=autorin, title="Haushaltsrede", visibility="private")
+    client = client_for(autorin.user)
+    antwort = _xhr(
+        client, _url("document_meta", org, privat), {"action": "set_responsible", "responsible": str(kollege.id)}
+    )
+    assert antwort.status_code == 200
+    antwort = _xhr(
+        client, _url("document_approval_request", org, privat), {"approver": str(kollege.id), "approval_type": "chair"}
+    )
+    assert antwort.status_code == 200
+    assert sorted(Event.objects.values_list("type", flat=True)) == [
+        "work.document.approval_requested",
+        "work.document.assigned",
+    ]
+
+    # Federführung zurückgenommen, Freigabe für die Anfrage entzogen, Dokument wieder privat
+    Motion.objects.filter(pk=privat.pk).update(responsible=None, visibility="private")
+    MotionShare.objects.filter(motion=privat).delete()
+
+    assert _zustellen(spec) == 2
+    assert not _benachrichtigungen(kollege, NotificationType.MOTION_ASSIGNED)
+    assert not _benachrichtigungen(kollege, NotificationType.MOTION_APPROVAL_REQUESTED)
+    assert not mail.outbox
+
+
 def test_doppelte_zustellung_benachrichtigt_einmal(
     settings: Any,
     leeres_register: dict[str, Subscriber],

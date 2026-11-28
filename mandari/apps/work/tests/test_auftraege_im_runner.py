@@ -137,6 +137,36 @@ def test_mit_mail_queue_geht_die_mail_ueber_den_postausgang(
     assert zeile.status == MailOutbox.Status.VERSENDET
 
 
+def test_wartende_mail_an_inzwischen_deaktivierte_wird_verworfen(
+    journal: JournalBackend, settings: Any, mitglied: Any
+) -> None:
+    """Zwischen Postausgang und Versand deaktiviert: Der Postausgang prüft vor dem Versand und verwirft die Mail."""
+    from apps.common.mail.outbox import VERWORFEN_VOR_VERSAND
+    from apps.common.models import MailOutbox
+
+    settings.MAIL_QUEUE = ["work.benachrichtigung"]
+    _benachrichtigen(mitglied)
+    assert run_pending(limit=1) == 1
+    mitglied.is_active = False
+    mitglied.save(update_fields=["is_active"])
+
+    assert run_pending() == 1
+    assert mail.outbox == []
+    zeile = MailOutbox.objects.get()
+    assert (zeile.status, zeile.error_code) == (MailOutbox.Status.FEHLGESCHLAGEN, VERWORFEN_VOR_VERSAND)
+    assert zeile.payload_encrypted is None, "Inhalt gelöscht"
+
+
+def test_pruefung_vor_dem_versand_laesst_mails_ohne_bezug_durch(mitglied: Any) -> None:
+    from apps.work.background_tasks import benachrichtigungsmail_zustellen
+
+    notification = _benachrichtigen(mitglied)
+    assert benachrichtigungsmail_zustellen(f"work.benachrichtigung:{notification.id}")
+    assert benachrichtigungsmail_zustellen(""), "ohne Schlüssel einer Benachrichtigung nichts zu prüfen"
+    assert not benachrichtigungsmail_zustellen("work.benachrichtigung:00000000-0000-4000-8000-000000000001")
+    assert not benachrichtigungsmail_zustellen("work.benachrichtigung:keine-kennung")
+
+
 def test_smtp_fehler_ohne_umschalten_bricht_die_anfrage_nicht_ab(mitglied: Any) -> None:
     with mock.patch("apps.common.mail.delivery.send_with", side_effect=OSError("SMTP nicht erreichbar")):
         notification = _benachrichtigen(mitglied)

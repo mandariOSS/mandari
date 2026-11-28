@@ -30,12 +30,20 @@ ab, kann eine Mail doppelt ankommen (Zustellung mindestens einmal).
 
 **Aufbewahrung:** versendete Zeilen 14 Tage, fehlgeschlagene 90 Tage, jeweils ohne Inhalt (``purge``,
 täglicher Zeitplan in ``apps/common/schedules.py``).
+
+**Prüfung vor dem Versand:** Zwischen Einreihen und Versand liegen Warteschlange und Wiederholungen. Ein Fachmodul
+kann für seine Mailart eine Prüfung anmelden (``vor_dem_versand``, beim Start der App). Sie bekommt den
+Idempotenzschlüssel der Zeile, den Bezug der Mail, und läuft vor jedem Versuch. Lehnt sie ab, verwirft der
+Auftrag die Mail ohne Versand („fehlgeschlagen“, Fehlerklasse ``verworfen_vor_versand``, Metrik ``dropped``). So
+erreicht etwa eine Benachrichtigung niemanden mehr, der inzwischen deaktiviert ist oder den Bezug verloren hat.
+Die Plattform kennt die Regeln der Fachmodule nicht; sie ruft nur die angemeldete Prüfung auf.
 """
 
 from __future__ import annotations
 
 import logging
 import smtplib
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any, Final
 
@@ -55,6 +63,22 @@ KEEP_SENT: Final = timedelta(days=14)
 KEEP_FAILED: Final = timedelta(days=90)
 #: Zeilen je Löschschritt
 PURGE_BATCH: Final = 5000
+#: Fehlerklasse einer Mail, deren Prüfung vor dem Versand abgelehnt hat
+VERWORFEN_VOR_VERSAND: Final = "verworfen_vor_versand"
+
+#: Prüfungen vor dem Versand je Mailart (``vor_dem_versand``): Idempotenzschlüssel → noch zustellen?
+Pruefung = Callable[[str], bool]
+_PRUEFUNGEN: dict[str, Pruefung] = {}
+
+
+def vor_dem_versand(kind: str, pruefung: Pruefung) -> None:
+    """Prüfung für die Mailart ``kind`` anmelden (im ``ready()`` des Fachmoduls; eine je Art, die letzte gilt).
+
+    ``pruefung`` bekommt den Idempotenzschlüssel der Zeile (leer, wenn keiner gesetzt ist) und liefert, ob die Mail
+    noch zugestellt werden soll. Sie läuft vor jedem Versuch im Auftrag ``deliver_mail``; eine Ausnahme gilt als
+    Fehler des Versuchs (Wiederholung).
+    """
+    _PRUEFUNGEN[kind] = pruefung
 
 
 def _seal(organization: Any, data: bytes) -> dict[str, bytes | None]:
@@ -192,6 +216,14 @@ def deliver_mail(context: TaskContext[Any, Any], outbox_id: str) -> str:
         return str(row.status)  # schon erledigt: eine Wiederholung versendet nichts
 
     attempt = int(context.attempt)
+    pruefung = _PRUEFUNGEN.get(row.kind)
+    if pruefung is not None and not pruefung(row.idempotency_key or ""):
+        # Bezug inzwischen entfallen (vom Fachmodul geprüft): nicht mehr zustellen, Inhalt löschen
+        logger.info("Postausgang: Mail %s (%s) vor dem Versand verworfen", row.pk, row.kind)
+        _abschliessen(row.pk, MailOutbox.Status.FEHLGESCHLAGEN, attempt=attempt, error_code=VERWORFEN_VOR_VERSAND)
+        MAILS.labels(kind=row.kind, route="postausgang", result="dropped").inc()
+        return "verworfen"
+
     try:
         mail = _open(row)
     except Exception as exc:  # noqa: BLE001 – unlesbar bleibt unlesbar, Wiederholen hilft nicht

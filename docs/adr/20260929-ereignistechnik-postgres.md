@@ -410,9 +410,12 @@ Federführung, Freigabe angefragt und entschieden, Freigabe für eine Person; se
   (`event_key`); Nachspielen legt nichts doppelt an.
 - **Empfänger beim Eigentümer:** Das Ereignis nennt Aufgabe bzw. Dokument, Organisation und gegebenenfalls
   Zuständige, Kommentar oder Freigabe; wer benachrichtigt wird, liest die Regel bei der Zustellung aus der
-  Aufgabe bzw. dem Dokument. Dabei gilt der Stand der Zustellung: Eine inzwischen entschiedene Freigabe wird
-  nicht mehr angefragt, ein Dokument, das die Person nicht mehr öffnen darf, nicht mehr als freigegeben
-  gemeldet.
+  Aufgabe bzw. dem Dokument. Dabei gilt der Stand der Zustellung: Zu gelöschten Dokumenten (auch im Papierkorb)
+  entsteht nichts, eine inzwischen entschiedene Freigabe wird nicht mehr angefragt, und wer ein Dokument nicht
+  mehr öffnen darf, erfährt nichts dazu.
+- **Prüfung vor dem Versand:** Liegt die Mail im Postausgang, prüft er vor jedem Versuch über die vom Work-Modul
+  angemeldete Prüfung (`mail.vor_dem_versand`), ob die Empfängerin noch aktiv ist und den Bezug sehen darf;
+  sonst verwirft er die Mail.
 - **Schattenbetrieb ohne Schattenziel:** Die Regel läuft im Sicherungspunkt ohne Mail und wird
   zurückgerollt; gezählt wird, ob der bisherige Weg dieselbe Benachrichtigung angelegt hat.
 

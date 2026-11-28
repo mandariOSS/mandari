@@ -249,6 +249,30 @@ def test_wiederholter_auftrag_versendet_nicht_zweimal(journal: JournalBackend) -
     assert len(django_mail.outbox) == 1
 
 
+def test_pruefung_vor_dem_versand(journal: JournalBackend, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ein Fachmodul meldet für seine Mailart eine Prüfung an; lehnt sie ab, verwirft der Postausgang die Mail."""
+    monkeypatch.setattr(outbox, "_PRUEFUNGEN", {})
+    gesehen: list[str] = []
+
+    def pruefung(schluessel: str) -> bool:
+        gesehen.append(schluessel)
+        return schluessel == "bezug:1"
+
+    mail.vor_dem_versand("konto.passwort", pruefung)
+    _senden(idempotency_key="bezug:1")
+    _senden(idempotency_key="bezug:2")
+    verworfen = _sample("mandari_mail_total", kind="konto.passwort", route="postausgang", result="dropped")
+
+    assert run_pending() == 2
+    assert sorted(gesehen) == ["bezug:1", "bezug:2"]
+    assert len(django_mail.outbox) == 1
+    zweite = MailOutbox.objects.get(idempotency_key="bezug:2")
+    assert (zweite.status, zweite.error_code) == (MailOutbox.Status.FEHLGESCHLAGEN, outbox.VERWORFEN_VOR_VERSAND)
+    assert zweite.payload_platform_encrypted is None, "Inhalt gelöscht"
+    assert set(TaskRow.objects.values_list("status", flat=True)) == {TaskStatus.ERLEDIGT}, "keine Wiederholung"
+    assert _sample("mandari_mail_total", kind="konto.passwort", route="postausgang", result="dropped") == verworfen + 1
+
+
 def test_smtp_fehler_wird_wiederholt(journal: JournalBackend) -> None:
     _senden()
     with mock.patch("apps.common.mail.delivery.send_with", side_effect=OSError("SMTP nicht erreichbar")):

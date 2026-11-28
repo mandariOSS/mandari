@@ -140,10 +140,15 @@ Der Auftrag zu einer Benachrichtigung (`send_notification_email_task`) versendet
 Passt `work.benachrichtigung` zu `MAIL_QUEUE`, legt er die Mail mit dem Schlüssel
 `work.benachrichtigung:<kennung>` in den Postausgang. Damit gelten für sie dieselbe Wiederholung, dieselbe
 Erkennung dauerhafter Ablehnung und dieselbe Aufbewahrung wie für jede andere Mail; ein wiederholter Auftrag legt
-sie nicht doppelt an. Die Liste `SOFORT` (Kennzahl K3b) enthält danach nur noch die Testmails, die Einreichung
-per E-Mail und die Ladung. Bei diesen drei braucht der Vorgang das Ergebnis je Empfänger sofort; als Auftrag
-müsste der Postausgang Zustellung und Scheitern an den Eigentümer zurückmelden, was eine eigene Entscheidung
-über Zustellnachweis und Oberfläche verlangt.
+sie nicht doppelt an. Weil die Mail dort warten kann (Warteschlange, Wiederholungen), meldet das Work-Modul für
+diese Mailart eine Prüfung an (`mail.vor_dem_versand`): Der Postausgang ruft sie vor jedem Versuch mit dem
+Idempotenzschlüssel auf und verwirft die Mail, wenn die Empfängerin inzwischen deaktiviert ist oder den Bezug
+verloren hat. Die Plattform kennt die Regeln nicht, sie ruft nur die angemeldete Prüfung.
+
+Die Liste `SOFORT` (Kennzahl K3b) enthält danach nur noch die Testmails, die Einreichung per E-Mail und die
+Ladung. Bei diesen drei braucht der Vorgang das Ergebnis je Empfänger sofort; als Auftrag müsste der Postausgang
+Zustellung und Scheitern an den Eigentümer zurückmelden, was eine eigene Entscheidung über Zustellnachweis und
+Oberfläche verlangt.
 
 ## Bezug
 

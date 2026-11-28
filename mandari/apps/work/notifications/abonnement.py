@@ -15,8 +15,9 @@ Person freigegeben), die häufigsten Quellen von Benachrichtigungen.
 - **Datenbank-Sicht:** Das Abonnement läuft transaktional; Benachrichtigungen, Mailauftrag und
   Cursor werden zusammen festgeschrieben.
 - **Inhalte beim Eigentümer:** Das Ereignis nennt nur Kennungen; Titel und Empfänger liest die Regel aus
-  der Aufgabe bzw. dem Dokument. Ist es inzwischen gelöscht, entsteht nichts; ebenso nichts zu einer Freigabe,
-  die nicht mehr offen ist, und zu einem freigegebenen Dokument, das die Person nicht mehr öffnen darf.
+  der Aufgabe bzw. dem Dokument. Ist es inzwischen gelöscht (Dokumente auch im Papierkorb), entsteht nichts;
+  ebenso nichts zu einer Freigabe, die nicht mehr offen ist, und nichts für eine aktive Person, die das Dokument
+  nicht mehr öffnen darf (Federführung, Freigabeanfrage, Freigabe für eine Person).
 - **Schattenbetrieb:** Die Regel läuft in einem Sicherungspunkt ohne Mail, der wieder zurückgerollt
   wird; verglichen wird mit dem, was der bisherige Weg in der Anfrage angelegt hat
   (``mandari_notification_subscription_total{result="gleich"|"fehlt"}``).
@@ -155,13 +156,25 @@ def aufgabe_kommentiert(event: Event, **optionen: Any) -> list[Any]:
 
 
 def _dokument(event: Event) -> Any:
+    """Das Dokument des Ereignisses; ``None``, wenn es inzwischen gelöscht ist (auch im Papierkorb)."""
     from apps.work.motions.models import Motion
 
     return (
         Motion.objects.select_related("organization", "author__user", "responsible__user")
         .filter(pk=_uuid(event.payload.get("document")), organization_id=_uuid(event.payload.get("organization")))
+        .exclude(status="deleted")
         .first()
     )
+
+
+def _zugang_entzogen(motion: Any, person: Any) -> bool:
+    """
+    Darf eine aktive Person das Dokument inzwischen nicht mehr öffnen? Dann erfährt sie auch den Titel nicht.
+
+    Deaktivierte Mitgliedschaften gehen weiter an den NotificationHub: Er stellt ihnen nichts zu, leitet aber an eine
+    eingetragene Vertretung weiter und prüft dort deren Zugang.
+    """
+    return person.is_active and person.user.is_active and not motion.can_access(person)
 
 
 def _mitgliedschaft(kennung: object, organization_id: Any) -> Membership | None:
@@ -208,7 +221,7 @@ def dokument_zugewiesen(event: Event, **optionen: Any) -> list[Any]:
         return []
     # Auch eine inzwischen deaktivierte Mitgliedschaft geht an den NotificationHub (Weiterleitung an die Vertretung)
     zustaendig = _mitgliedschaft(event.payload.get("responsible"), motion.organization_id)
-    if zustaendig is None:
+    if zustaendig is None or _zugang_entzogen(motion, zustaendig):
         return []
     actor = _actor(event, motion.organization_id)
     benachrichtigung = _hub().notify_motion_assigned(
@@ -223,7 +236,9 @@ def freigabe_angefragt(event: Event, **optionen: Any) -> list[Any]:
     if motion is None:
         return []
     approval = _freigabe(event, motion)
-    if approval is None or approval.approved is not None:
+    if approval is None or approval.approved is not None or approval.approver is None:
+        return []
+    if _zugang_entzogen(motion, approval.approver):
         return []
     actor = _actor(event, motion.organization_id)
     benachrichtigung = _hub().notify_motion_approval_requested(

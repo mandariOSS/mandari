@@ -1102,7 +1102,8 @@ Ladung (`session.ladung`, Zustellung je Empfänger). Ebenfalls sofort gehen Mail
 einer Organisation, die keinen Ersatzweg über mandari erlaubt: Ihr Scheitern muss in der Oberfläche
 sichtbar bleiben. Benachrichtigungsmails (`work.benachrichtigung`) entstehen in einem eigenen Auftrag;
 passt ihre Art zu `MAIL_QUEUE`, legt er sie in den Postausgang (ein Schlüssel je Benachrichtigung, Issue
-#529), sonst versendet er sie direkt. Vorübergehende SMTP-Antworten (4xx, etwa Greylisting) werden
+#529), sonst versendet er sie direkt. Vor jedem Versandversuch prüft der Postausgang, ob die Empfängerin noch
+aktiv ist und den Bezug sehen darf; sonst verwirft er die Mail (`mandari_mail_total{result="dropped"}`). Vorübergehende SMTP-Antworten (4xx, etwa Greylisting) werden
 wiederholt, nur dauerhafte (5xx) beenden den Versand sofort.
 
 **Einschalten in Stufen**, jeweils Anwendung neu starten und `mandari_mail_total` sowie
